@@ -71,3 +71,4 @@ export:
     git-add: false
 
 no-git-ops: true
+no-hooks: true
