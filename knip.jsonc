@@ -1,0 +1,12 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"workspaces": {
+		".": {
+			"entry": ["scripts/*.ts", "test/**/*.test.ts", "test/fixtures/**/*.ts"],
+			"project": ["scripts/**/*.ts", "test/**/*.ts"]
+		},
+		"packages/pi-stuff": {
+			"project": ["*.ts"]
+		}
+	}
+}

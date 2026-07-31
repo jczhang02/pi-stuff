@@ -1,0 +1,21 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/jczhang02/pi-stuff/main/schemas/suite.schema.json",
+	"title": "Pi Stuff Suite registry",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schemaVersion", "capabilities"],
+	"properties": {
+		"schemaVersion": {
+			"const": 1
+		},
+		"capabilities": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"pattern": "^@jczhang02/pi-[a-z0-9-]+$"
+			},
+			"uniqueItems": true
+		}
+	}
+}

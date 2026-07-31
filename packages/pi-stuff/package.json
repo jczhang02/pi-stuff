@@ -1,0 +1,45 @@
+{
+	"name": "@jczhang02/pi-stuff",
+	"version": "0.0.0",
+	"description": "The aggregate package for JC Zhang's Pi Stuff Suite",
+	"type": "module",
+	"keywords": [
+		"pi-package",
+		"pi",
+		"extensions"
+	],
+	"license": "MIT",
+	"publishConfig": {
+		"access": "public"
+	},
+	"exports": {
+		".": "./index.ts"
+	},
+	"files": [
+		"index.ts",
+		"README.md",
+		"LICENSE"
+	],
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
+	"dependencies": {},
+	"bundledDependencies": [],
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "0.83.0"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/jczhang02/pi-stuff.git",
+		"directory": "packages/pi-stuff"
+	},
+	"homepage": "https://github.com/jczhang02/pi-stuff/tree/main/packages/pi-stuff#readme",
+	"bugs": {
+		"url": "https://github.com/jczhang02/pi-stuff/issues"
+	}
+}

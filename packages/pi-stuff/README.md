@@ -1,0 +1,19 @@
+# `@jczhang02/pi-stuff`
+
+The ordered Aggregate Package for the Pi Stuff Suite.
+
+> This Package is unreleased and contains no product capabilities during M0.
+
+## Contract
+
+- Loads through the native Pi Package system.
+- Exports one default Extension factory.
+- Invokes Capability factories in the explicit registry order.
+- Fails fast when a Capability cannot initialize.
+- Does not install itself or mutate Host settings.
+
+After the first release:
+
+```bash
+pi install npm:@jczhang02/pi-stuff
+```

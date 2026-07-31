@@ -1,5 +1,16 @@
+node_modules/
+coverage/
+dist/
+.artifacts/
+.tmp/
+*.tgz
+.env
+.env.*
+!.env.example
+.pi/
+.DS_Store
 
-# Beads / Dolt files (added by bd init)
+# Beads / Dolt runtime state
 .dolt/
 *.db
 .beads-credential-key
