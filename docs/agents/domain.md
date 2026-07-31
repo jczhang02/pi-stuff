@@ -1,0 +1,34 @@
+# Domain docs
+
+This repository uses a single-context domain layout.
+
+## Before exploring
+
+Read:
+
+- `CONTEXT.md` at the repository root;
+- relevant ADRs under `docs/adr/`.
+
+If either location is absent, proceed silently. Domain documentation is created and extended only when terminology or architectural decisions are actually resolved.
+
+## Layout
+
+```text
+/
+├── CONTEXT.md
+├── docs/
+│   └── adr/
+└── packages/
+```
+
+Workspace Package boundaries do not automatically create separate domain contexts. Introduce `CONTEXT-MAP.md` only when genuinely independent domain languages emerge.
+
+## Vocabulary
+
+Use the terms defined in `CONTEXT.md` in code, tests, issues, plans, and documentation. Do not silently replace canonical terms with synonyms.
+
+If a required concept is absent, either reconsider whether it belongs to the domain or update the glossary through the domain-modeling workflow.
+
+## Architectural decisions
+
+Read ADRs affecting an area before changing it. If proposed work contradicts an ADR, surface the conflict explicitly rather than silently overriding the decision.

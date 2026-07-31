@@ -1,0 +1,36 @@
+name: Bug report
+description: Report reproducible incorrect behavior
+title: "bug: "
+labels:
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting a problem. Do not include credentials or private paths.
+  - type: input
+    id: pi-version
+    attributes:
+      label: Pi version
+      placeholder: 0.83.0
+    validations:
+      required: true
+  - type: input
+    id: package-version
+    attributes:
+      label: Pi Stuff version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide deterministic steps with sensitive values removed.
+    validations:
+      required: true

@@ -1,0 +1,68 @@
+# Repository instructions
+
+These instructions apply only while developing this repository. This file is not a Pi Package resource and must never be copied to the user's global Pi agent directory.
+
+## Before changing code
+
+- Read `CONTEXT.md` and the relevant records under `docs/adr/`.
+- Use the canonical terms from the glossary in code, tests, issues, and documentation.
+- Read `docs/agents/issue-tracker.md` before creating or changing work items.
+- Target the certified host and toolchain versions documented in `docs/compatibility.md`.
+
+## Architecture
+
+- Pi is the Host. Do not create another CLI, runtime, session layer, SDK, or TUI shell.
+- `@jczhang02/pi-stuff` is an Aggregate Package with one default Extension factory.
+- A Capability Package owns one coherent behavior and remains independently versioned.
+- Keep Extension import and startup pure: no network calls, file writes, subprocesses, or host-setting mutations.
+- A future Capability may produce side effects only from an explicit user-triggered command or tool whose contract documents them.
+- Let initialization errors propagate. A partially loaded Suite is not a supported state.
+
+## Package contract
+
+- Ship TypeScript source; do not add a `dist/` build lane.
+- Pi core packages are wildcard peer dependencies and exact `0.83.0` development dependencies.
+- Runtime Capability dependencies of the Aggregate must also be listed in `bundledDependencies`.
+- Only files in each Package's explicit `files` allowlist may enter its tarball.
+- Do not add lifecycle scripts to a publishable Package.
+- `packages/pi-stuff/suite.json` is the ordered composition source of truth. Run `bun run suite:generate` after changing it; never edit generated composition output alone.
+
+## Verification seams
+
+Tests observe behavior at these agreed seams:
+
+- the Suite generator's result and committed artifacts;
+- repository safety through its audit command;
+- Extension discovery through Pi's public RPC protocol;
+- the extracted npm tarball through Pi's Package loader.
+
+Use `bun test` and integration-style assertions at these seams. Do not test private helpers or replace Pi with mocks when certifying host compatibility. No test may call an LLM or require credentials.
+
+## Tooling
+
+- Use Bun 1.3.14 for dependency management, scripts, and tests.
+- Keep all direct dependencies exact and keep `trustedDependencies` empty.
+- Run `bun run check` before committing.
+- Engineering text is English.
+- Use Conventional Commits and preserve GPG signing.
+
+## Generated and local state
+
+- Never commit auth, model-store, session, cache, `.env`, or machine-specific state.
+- Never put private absolute paths or credentials in Beads or public documentation.
+- The repository root `AGENTS.md`, `CONTEXT.md`, and `docs/` are engineering material, not Runtime Resources.
+- Installing the local Suite is an explicit maintainer action through `pi install`; Suite code must not perform installation.
+
+## Agent skills
+
+### Issue tracker
+
+Beads is the canonical issue tracker; GitHub Issues is a public push-only mirror and external request inbox. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five canonical triage labels without aliases. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses a single-context domain layout. See `docs/agents/domain.md`.

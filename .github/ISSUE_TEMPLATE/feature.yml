@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose one coherent Suite capability or improvement
+title: "feature: "
+labels:
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: Describe the user problem before proposing implementation details.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is difficult or impossible with native Pi and the current Suite?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What observable behavior would resolve the problem?
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Boundaries and trade-offs
+      description: Note important exclusions, side effects, or compatibility constraints.
