@@ -10,7 +10,7 @@ A personal suite of extensions and resources for the native [Pi coding agent](ht
 </div>
 
 > [!IMPORTANT]
-> `@jczhang02/pi-stuff` is still unreleased. Its first product capability is now under active development and host certification.
+> `@jczhang02/pi-stuff` is still unreleased. Its initial capability set is under active development and host certification.
 
 ## Shape
 
@@ -25,7 +25,9 @@ Pi remains the host. The Suite is a normal Pi Package: it exports an ordered agg
 | Package | Purpose | Status |
 | --- | --- | --- |
 | `@jczhang02/pi-stuff` | Aggregate entry point for the full Suite | Unreleased |
+| `@jczhang02/pi-stuff-ui` | Shared non-floating Command Dialog coordinator | In development |
 | `@jczhang02/pi-stuff-todo` | Recoverable per-session task tracking with a compact editor widget | In development |
+| `@jczhang02/pi-stuff-btw` | One-shot side questions isolated from the main transcript | In development |
 
 Capability Packages remain independently versioned. Certified versions are bundled into the Aggregate Package as required by Pi's package contract.
 

@@ -126,6 +126,19 @@ describe("TodoOverlay rendering", () => {
 		expect(widget?.render(200)).toEqual(["□ one", "□ two"]);
 	});
 
+	test("retains forceExpanded while a Command Dialog suppresses the widget", () => {
+		const { overlay, widget } = setup([task("1", "one"), task("2", "two")]);
+		overlay.toggle();
+		expect(widget?.render(200)).toEqual(["Next: one"]);
+
+		overlay.setSuppressed(true);
+		overlay.refresh({ forceExpanded: true });
+		overlay.setSuppressed(false);
+
+		expect(widget?.render(200)).toEqual(["□ one", "□ two"]);
+		expect(overlay.isRegistered()).toBe(true);
+	});
+
 	test("normalizes and truncates a long subject to one terminal row", () => {
 		const { widget } = setup([task("1", "a long\nsubject that cannot fit")]);
 		const lines = widget?.render(18) ?? [];
@@ -181,5 +194,31 @@ describe("TodoOverlay all-complete linger", () => {
 		const { overlay, setWidgetCalls } = setup([task("1", "finished", "completed"), task("2", "remaining")]);
 		expect(overlay.isRegistered()).toBe(true);
 		expect(setWidgetCalls).toHaveLength(1);
+	});
+
+	test("retains all-complete linger while a Command Dialog suppresses the widget", () => {
+		const originalSetTimeout = globalThis.setTimeout;
+		let scheduledCallback: (() => void) | undefined;
+		let scheduledDelay: number | undefined;
+		const timerHandle = { unref: () => {} };
+		globalThis.setTimeout = ((callback: () => void, delay?: number) => {
+			scheduledCallback = callback;
+			scheduledDelay = delay;
+			return timerHandle;
+		}) as unknown as typeof setTimeout;
+		try {
+			const { overlay } = setup([task("1", "finishing")]);
+			overlay.setSuppressed(true);
+			replaceState(SESSION_ID, { tasks: [task("1", "finishing", "completed")], nextId: 2 });
+			overlay.refresh({ forceExpanded: true, lingerCompleted: true });
+			expect(scheduledDelay).toBe(5_000);
+
+			overlay.setSuppressed(false);
+			expect(overlay.isRegistered()).toBe(true);
+			scheduledCallback?.();
+			expect(overlay.isRegistered()).toBe(false);
+		} finally {
+			globalThis.setTimeout = originalSetTimeout;
+		}
 	});
 });

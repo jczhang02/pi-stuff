@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
+import { getCommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
 import { replayFromBranch } from "./state/replay.js";
 import {
 	clearActiveRenderSession,
@@ -21,6 +22,9 @@ function isStaleContext(error: unknown): boolean {
 
 export default function piStuffTodo(pi: ExtensionAPI): void {
 	const overlay = new TodoOverlay();
+	getCommandDialogCoordinator(pi).registerChrome("todo", {
+		setSuppressed: (suppressed) => overlay.setSuppressed(suppressed),
+	});
 
 	function refreshAfterMutation(sessionId: string): void {
 		if (sessionId !== getActiveRenderSession()) return;

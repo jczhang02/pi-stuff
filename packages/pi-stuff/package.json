@@ -26,10 +26,14 @@
 		]
 	},
 	"dependencies": {
-		"@jczhang02/pi-stuff-todo": "0.0.0"
+		"@jczhang02/pi-stuff-ui": "0.0.0",
+		"@jczhang02/pi-stuff-todo": "0.0.0",
+		"@jczhang02/pi-stuff-btw": "0.0.0"
 	},
 	"bundledDependencies": [
-		"@jczhang02/pi-stuff-todo"
+		"@jczhang02/pi-stuff-ui",
+		"@jczhang02/pi-stuff-todo",
+		"@jczhang02/pi-stuff-btw"
 	],
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*"

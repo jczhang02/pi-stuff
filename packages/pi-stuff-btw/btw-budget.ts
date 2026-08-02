@@ -1,7 +1,8 @@
 /**
- * Context-budget engine for /btw: bounds how much prior side-question history
- * and cloned-primary-branch content ride into a fresh side call so the
- * assembled context stays within the model's window.
+ * Context-budget engine for /btw: bounds how much cloned primary-context
+ * content rides into a fresh side call so the request stays within the model's
+ * window. Display history is intentionally absent from this module and from
+ * every model request.
  *
  * Pure host-primitive consumers — no ExtensionContext/globalThis access. The
  * caller reads session state and passes plain data in; results are computed
@@ -19,72 +20,14 @@ import {
 	type SessionEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import type { BtwTurn } from "./btw.js";
 
 // ---------------------------------------------------------------------------
 // Budget constants — the engine's tuning surface. Defined in this leaf module so
 // the btw.ts ↔ btw-budget.ts dependency is type-only at runtime (btw.ts re-exports
 // them for the package's public surface).
 // ---------------------------------------------------------------------------
-export const BTW_HISTORY_TOKEN_BUDGET = 8192; // cap /btw history (newest-suffix of BtwTurn[])
-export const BTW_CONTEXT_RESERVE = 16384; // matches host DEFAULT_COMPACTION_SETTINGS.reserveTokens
-export const BTW_NO_ANCHOR_SAFETY_FACTOR = 1.2; // no-anchor fallback overcount, applied HERE (host does not)
-
-/**
- * Result of {@link capHistory}: the newest suffix of `/btw` turns admitted into
- * a fresh side-call context, plus accounting surfaced to the trim-notice overlay.
- */
-export interface CappedHistory {
-	/** Newest-suffix turns, reference-identical to the input `history` elements. */
-	admitted: BtwTurn[];
-	/** Sum of `estimateTokens` over BOTH messages of every admitted turn (chars/4 each). */
-	estimate: number;
-	/** Older turns dropped to stay within `budget` (=== `history.length - admitted.length`). */
-	droppedTurns: number;
-}
-
-/**
- * Pure maximal-suffix walk over `/btw` history.
- *
- * Admits the MAXIMAL newest suffix of whole turns (user+assistant, atomic) whose
- * summed `estimateTokens` cost is `≤ budget`. Newer turns are never sacrificed
- * to admit older ones: the walk extends greedily from the newest backward, and
- * the first older turn that would overflow breaks it.
- *
- * Floor guarantee: `history.length >= 1` ⇒ `admitted.length >= 1`. If the newest
- * turn ALONE exceeds `budget`, it is still admitted (a side call carries no
- * history otherwise) and `estimate` carries its over-budget actual cost — never
- * clamped to the budget.
- *
- * `admitted` is `history.slice(k)`: reference-identical elements, no copy/mutate.
- * The caller (the build step) owns reading the session history; this function
- * touches no `ExtensionContext`/`globalThis`/`getSessionHistory`.
- */
-export function capHistory(history: BtwTurn[], budget = BTW_HISTORY_TOKEN_BUDGET): CappedHistory {
-	if (history.length === 0) return { admitted: [], estimate: 0, droppedTurns: 0 };
-
-	// Seed with the newest turn — this IS the floor guarantee: even an over-budget
-	// newest turn is admitted (estimate unclamped) so the side call always carries it.
-	let estimate =
-		estimateTokens(history[history.length - 1].userMessage) +
-		estimateTokens(history[history.length - 1].assistantMessage);
-	let k = history.length - 1;
-
-	// Greedily extend backward over older turns while the running sum stays within budget.
-	// All turns have positive cost, so the first overflow breaks the maximal suffix.
-	for (let i = history.length - 2; i >= 0; i--) {
-		const cost = estimateTokens(history[i].userMessage) + estimateTokens(history[i].assistantMessage);
-		if (estimate + cost > budget) break;
-		estimate += cost;
-		k = i;
-	}
-
-	return {
-		admitted: history.slice(k),
-		estimate,
-		droppedTurns: k,
-	};
-}
+const BTW_CONTEXT_RESERVE = 16384; // matches host DEFAULT_COMPACTION_SETTINGS.reserveTokens
+const BTW_NO_ANCHOR_SAFETY_FACTOR = 1.2; // no-anchor fallback overcount, applied HERE (host does not)
 
 // ---------------------------------------------------------------------------
 // Branch-fit engine — pure; no ctx/globalThis access.
@@ -103,8 +46,6 @@ export interface FitBranchInput {
 	model: Model<Api>;
 	systemPrompt: string;
 	question: UserMessage;
-	/** capHistory estimate over admitted /btw turns (subtracted from the window). */
-	admittedEstimate: number;
 	/** Retry override: when set, skip the window formula and trim/stub to this
 	 *  many branch tokens directly; the cached snapshot is NOT re-read. */
 	keepBudget?: number;
@@ -122,8 +63,9 @@ export interface FitBranchResult {
 
 // Stub/truncation literals (research-grounded). BTW_STUB_TEXT is exported for the
 // stub-content test assertion; BTW_TRUNCATE_MARKER_FMT stays private (test asserts the marker substring).
-export const BTW_STUB_TEXT = "[tool result elided by /btw to fit the context window]";
+const BTW_STUB_TEXT = "[tool result elided by /btw to fit the context window]";
 const BTW_TRUNCATE_MARKER_FMT = (truncatedChars: number): string => `[... ${truncatedChars} characters truncated]`;
+const BTW_IMAGE_STUB_TEXT = "[image elided by /btw to fit the context window]";
 
 // Turn-start discriminator (message-level, NOT the host's entry-level isTurnStartEntry
 // which excludes compaction). branchSummary/compactionSummary are included so a head
@@ -172,6 +114,7 @@ function estimateBranchTokens(entries: SessionEntry[]): number {
 		let anchorFound = false;
 		for (let i = entries.length - 1; i >= 0; i--) {
 			const e = entries[i];
+			if (!e) continue;
 			if (e.type === "message" && e.message.role === "assistant" && e.message.usage === usage) {
 				anchorFound = true;
 				break;
@@ -203,7 +146,8 @@ function isTurnStartEntry(entry: SessionEntry): boolean {
  *  no toolCall without its toolResult and vice versa. */
 function forwardScanToTurnStart(entries: SessionEntry[], fromIndex: number): number {
 	for (let i = fromIndex; i < entries.length; i++) {
-		if (isTurnStartEntry(entries[i])) return i;
+		const entry = entries[i];
+		if (entry && isTurnStartEntry(entry)) return i;
 	}
 	return -1;
 }
@@ -237,9 +181,56 @@ function stubToolResultsToFit(result: Message[], budget: number): boolean {
 	for (let i = 0; i < result.length; i++) {
 		if (estimateMessagesTokens(result) <= budget) break;
 		const msg = result[i];
+		if (!msg) continue;
 		if (msg.role === "toolResult") {
 			result[i] = { ...msg, content: [{ type: "text", text: BTW_STUB_TEXT }] };
 			stubbed = true;
+		}
+	}
+	return stubbed;
+}
+
+/** Replace high-cost non-text payloads before character truncation. Historical
+ * tool arguments are no longer executable, and image/thinking payloads can be
+ * reduced without changing the visible answer request. */
+function stubStructuredContentToFit(result: Message[], budget: number): boolean {
+	let stubbed = false;
+	for (let index = 0; index < result.length; index++) {
+		if (estimateMessagesTokens(result) <= budget) break;
+		const message = result[index];
+		if (!message) continue;
+
+		if (message.role === "user" && Array.isArray(message.content)) {
+			let changed = false;
+			const content = message.content.map((part) => {
+				if (part.type !== "image") return part;
+				changed = true;
+				return { type: "text" as const, text: BTW_IMAGE_STUB_TEXT };
+			});
+			if (changed) {
+				result[index] = { ...message, content };
+				stubbed = true;
+			}
+			continue;
+		}
+
+		if (message.role === "assistant") {
+			let changed = false;
+			const content = message.content.flatMap((part) => {
+				if (part.type === "thinking") {
+					changed = true;
+					return [];
+				}
+				if (part.type === "toolCall" && JSON.stringify(part.arguments).length > 2) {
+					changed = true;
+					return [{ type: "toolCall" as const, id: part.id, name: part.name, arguments: {} }];
+				}
+				return [part];
+			});
+			if (changed) {
+				result[index] = { ...message, content };
+				stubbed = true;
+			}
 		}
 	}
 	return stubbed;
@@ -269,7 +260,7 @@ function truncateToFit(result: Message[], budget: number): boolean {
 		// Locate the largest text content block (string content OR a {type:"text"} part).
 		let target = { mi: -1, ci: -1, len: 0, isString: false };
 		for (let i = 0; i < result.length; i++) {
-			const content = result[i].content;
+			const content = result[i]?.content;
 			if (typeof content === "string") {
 				if (content.length > target.len) target = { mi: i, ci: -1, len: content.length, isString: true };
 				continue;
@@ -292,6 +283,7 @@ function truncateToFit(result: Message[], budget: number): boolean {
 		const truncatedChars = target.len - keepChars;
 		const marker = BTW_TRUNCATE_MARKER_FMT(truncatedChars);
 		const msg = result[target.mi];
+		if (!msg) break;
 		// Rebuild with role narrowing so each spread yields a valid Message variant
 		// (Message is a discriminated union — spreading the union and overriding `content`
 		// directly does not typecheck). Top-level branches are pure msg.role checks so
@@ -302,7 +294,7 @@ function truncateToFit(result: Message[], budget: number): boolean {
 			} else {
 				const content = [...msg.content];
 				const part = content[target.ci];
-				if (part.type === "text") {
+				if (part?.type === "text") {
 					content[target.ci] = { ...part, text: `${part.text.slice(0, keepChars)}${marker}` };
 					result[target.mi] = { ...msg, content };
 				}
@@ -310,7 +302,7 @@ function truncateToFit(result: Message[], budget: number): boolean {
 		} else if (msg.role === "assistant") {
 			const content = [...msg.content];
 			const part = content[target.ci];
-			if (part.type === "text") {
+			if (part?.type === "text") {
 				content[target.ci] = { ...part, text: `${part.text.slice(0, keepChars)}${marker}` };
 				result[target.mi] = { ...msg, content };
 			}
@@ -318,7 +310,7 @@ function truncateToFit(result: Message[], budget: number): boolean {
 			// toolResult (msg narrowed to ToolResultMessage)
 			const content = [...msg.content];
 			const part = content[target.ci];
-			if (part.type === "text") {
+			if (part?.type === "text") {
 				content[target.ci] = { ...part, text: `${part.text.slice(0, keepChars)}${marker}` };
 				result[target.mi] = { ...msg, content };
 			}
@@ -337,15 +329,19 @@ function truncateToFit(result: Message[], budget: number): boolean {
 function stubToFit(messages: Message[], budget: number): { messages: Message[]; stubbed: boolean } {
 	const result = messages.slice(); // shallow: new array, shared message objects — one place, guards both phases
 	const stubbedTool = stubToolResultsToFit(result, budget);
+	const stubbedStructured = stubStructuredContentToFit(result, budget);
 	const stubbedTruncated = truncateToFit(result, budget);
-	return { messages: result, stubbed: stubbedTool || stubbedTruncated };
+	if (estimateMessagesTokens(result) > Math.max(0, budget)) {
+		return { messages: [], stubbed: true };
+	}
+	return { messages: result, stubbed: stubbedTool || stubbedStructured || stubbedTruncated };
 }
 
 /** Orchestrating pure branch-fit. Fast path returns the cached `messages` by reference
  *  (byte-identical prefix). Otherwise forward-scan trim, then stub/truncate. `keepBudget`
  *  is populated on every path. */
 export function fitBranch(input: FitBranchInput): FitBranchResult {
-	const { entries, messages, model, systemPrompt, question, admittedEstimate } = input;
+	const { entries, messages, model, systemPrompt, question } = input;
 
 	// --- Budget resolution ---
 	let branchKeepBudget: number;
@@ -355,7 +351,7 @@ export function fitBranch(input: FitBranchInput): FitBranchResult {
 		branchKeepBudget = input.keepBudget;
 	} else {
 		const available = model.contextWindow - model.maxTokens - BTW_CONTEXT_RESERVE;
-		const windowBudget = available - estimateTextTokens(systemPrompt) - estimateTokens(question) - admittedEstimate;
+		const windowBudget = available - estimateTextTokens(systemPrompt) - estimateTokens(question);
 		if (!isBudgetable(model)) {
 			// Skip guard: window unusable → fast-path the cached messages, no trim.
 			// keepBudget is still populated (the window-derived value, possibly negative on an

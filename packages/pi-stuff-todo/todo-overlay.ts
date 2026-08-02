@@ -39,6 +39,7 @@ export class TodoOverlay {
 	private widgetRegistered = false;
 	private tui: TUI | undefined;
 	private collapsed = false;
+	private suppressed = false;
 	private completedHidden = false;
 	private completedHideTimer: ReturnType<typeof setTimeout> | undefined;
 	private previousStatusById = new Map<string, TaskStatus>();
@@ -84,7 +85,7 @@ export class TodoOverlay {
 			this.completedHidden = true;
 		}
 
-		if (this.completedHidden) {
+		if (this.suppressed || this.completedHidden) {
 			this.unregisterWidget();
 			return;
 		}
@@ -100,11 +101,19 @@ export class TodoOverlay {
 		return this.widgetRegistered;
 	}
 
+	setSuppressed(suppressed: boolean): void {
+		if (suppressed === this.suppressed) return;
+		this.suppressed = suppressed;
+		if (suppressed) this.unregisterWidget();
+		else this.refresh();
+	}
+
 	dispose(): void {
 		this.cancelCompletedHide();
 		this.unregisterWidget();
 		this.uiCtx = undefined;
 		this.collapsed = false;
+		this.suppressed = false;
 		this.completedHidden = false;
 		this.previousStatusById.clear();
 		this.completedAtById.clear();

@@ -1,12 +1,35 @@
 import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+	createReleaseArtifacts,
+	packPackageArchive,
+	RELEASE_MANIFEST_FILENAME,
+	type ReleaseManifest,
+	readReleaseManifest,
+	resolveReleaseArchive,
+	sha256File,
+	verifyReleaseArchivePaths,
+	verifyReleaseArtifactHash,
+	writeReleaseVerification,
+} from "./release-artifacts.ts";
 import { runPiRpcSmoke } from "./smoke-pi.ts";
+import { verifyBtwPty } from "./verify-btw-pty.ts";
 
-const CERTIFIED_PI_VERSION = "0.83.0";
+export const CERTIFIED_PI_VERSION = "0.83.0";
 const DEVELOPMENT_ARCHIVE_FILE = /(?:^|\/)(?:[^/]+\.(?:test|spec)\.[cm]?[jt]sx?|tsconfig(?:\.[^/]+)?\.json)$/;
 const root = resolve(import.meta.dir, "..");
 const aggregateDirectory = join(root, "packages", "pi-stuff");
+const uiPackageName = "@jczhang02/pi-stuff-ui";
+const todoToolInspector = join(root, "test/fixtures/assert-todo-tools.ts");
+const forkLicenseSha256 = "25d0d5e4e54033f939a9657109044f1d71a0b6e8db9adc400456ca9190df3fb1";
+const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
+	"@jczhang02/pi-stuff": ["@earendil-works/pi-coding-agent"],
+	"@jczhang02/pi-stuff-btw": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-todo": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+};
 
 export interface PackageArchiveManifest {
 	bundledDependencies?: unknown;
@@ -60,6 +83,7 @@ function readBundledDependencies(value: unknown): string[] {
 }
 
 export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFiles: readonly string[]): void {
+	verifyReleaseArchivePaths(archiveFiles);
 	const files = readStringArray(manifest.files, "files", false);
 	if (!files.some((entry) => !entry.startsWith("!"))) {
 		throw new Error("Package manifest files must contain at least one included entry");
@@ -132,15 +156,232 @@ function verifyPiVersion(piBinary: string): void {
 	}
 }
 
-async function main(): Promise<void> {
-	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
-	const piBinary = PI_BIN;
+function verifyPiDependencyContract(
+	packageName: string,
+	peerDependencies: Record<string, unknown> | undefined,
+	devDependencies: Record<string, unknown> | undefined,
+): void {
+	const expected = expectedPiPeers[packageName];
+	if (!expected) throw new Error(`No certified Pi dependency contract for ${packageName}`);
+	const peers = Object.keys(peerDependencies ?? {}).sort();
+	const development = Object.keys(devDependencies ?? {})
+		.filter((name) => name.startsWith("@earendil-works/pi-"))
+		.sort();
+	if (peers.join("\n") !== [...expected].sort().join("\n") || development.join("\n") !== peers.join("\n")) {
+		throw new Error(`${packageName} does not declare the exact certified Pi peer set`);
+	}
+	for (const dependency of expected) {
+		if (peerDependencies?.[dependency] !== "*" || devDependencies?.[dependency] !== CERTIFIED_PI_VERSION) {
+			throw new Error(`${packageName} has an invalid Pi contract for ${dependency}`);
+		}
+	}
+}
+
+async function verifyStandaloneInstalls(
+	temporaryDirectory: string,
+	piBinary: string,
+	bunEnvironment: Record<string, string | undefined>,
+	releaseDirectory: string,
+	releaseManifest: ReleaseManifest,
+): Promise<void> {
+	const packsDirectory = join(temporaryDirectory, "standalone-packs");
+	const btwInstallDirectory = join(temporaryDirectory, "standalone-btw");
+	const btwNpmCacheDirectory = join(temporaryDirectory, "npm-cache-btw");
+	const todoInstallDirectory = join(temporaryDirectory, "standalone-todo");
+	const todoNpmCacheDirectory = join(temporaryDirectory, "npm-cache-todo");
+	await Promise.all([
+		mkdir(packsDirectory),
+		mkdir(btwInstallDirectory),
+		mkdir(btwNpmCacheDirectory),
+		mkdir(todoInstallDirectory),
+		mkdir(todoNpmCacheDirectory),
+	]);
+
+	const releaseArchive = (name: string): string => {
+		const artifact = releaseManifest.artifacts.find((candidate) => candidate.name === name);
+		if (!artifact) throw new Error(`Release manifest is missing ${name}`);
+		return resolveReleaseArchive(releaseDirectory, artifact);
+	};
+	const uiArchive = releaseArchive(uiPackageName);
+	const btwArchive = releaseArchive("@jczhang02/pi-stuff-btw");
+	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
+	const typeboxArchive = (
+		await packPackageArchive(join(root, "node_modules/typebox"), join(packsDirectory, "typebox"), bunEnvironment)
+	).archivePath;
+	const install = (installDirectory: string, npmCacheDirectory: string, archive: string): void => {
+		run(
+			[
+				"npm",
+				"install",
+				"--prefix",
+				installDirectory,
+				"--ignore-scripts",
+				"--legacy-peer-deps",
+				"--no-audit",
+				"--no-fund",
+				"--offline",
+				archive,
+			],
+			root,
+			{
+				...process.env,
+				npm_config_cache: npmCacheDirectory,
+				npm_config_update_notifier: "false",
+			},
+		);
+	};
+
+	// npm can satisfy exact local dependencies offline when their archives are
+	// installed first. This is the same dependency shape Pi's package installer sees.
+	install(btwInstallDirectory, btwNpmCacheDirectory, uiArchive);
+	install(btwInstallDirectory, btwNpmCacheDirectory, btwArchive);
+	install(todoInstallDirectory, todoNpmCacheDirectory, uiArchive);
+	install(todoInstallDirectory, todoNpmCacheDirectory, typeboxArchive);
+	install(todoInstallDirectory, todoNpmCacheDirectory, todoArchive);
+
+	const verifyUiDependency = async (installDirectory: string, capability: string): Promise<void> => {
+		const installedRoot = join(installDirectory, "node_modules");
+		const uiManifest = JSON.parse(await readFile(join(installedRoot, uiPackageName, "package.json"), "utf8")) as {
+			version?: unknown;
+		};
+		const manifest = JSON.parse(
+			await readFile(join(installedRoot, "@jczhang02", capability, "package.json"), "utf8"),
+		) as { dependencies?: Record<string, unknown> };
+		if (typeof uiManifest.version !== "string" || manifest.dependencies?.[uiPackageName] !== uiManifest.version) {
+			throw new Error(`${capability} must install ${uiPackageName} as an exact runtime dependency`);
+		}
+	};
+	await verifyUiDependency(btwInstallDirectory, "pi-stuff-btw");
+	await verifyUiDependency(todoInstallDirectory, "pi-stuff-todo");
+
+	const todoInstalledRoot = join(todoInstallDirectory, "node_modules");
+	const todoManifest = JSON.parse(
+		await readFile(join(todoInstalledRoot, "@jczhang02/pi-stuff-todo/package.json"), "utf8"),
+	) as { dependencies?: { typebox?: unknown } };
+	const typeboxManifest = JSON.parse(await readFile(join(todoInstalledRoot, "typebox/package.json"), "utf8")) as {
+		version?: unknown;
+	};
+	if (typeboxManifest.version !== "1.3.7" || todoManifest.dependencies?.typebox !== typeboxManifest.version) {
+		throw new Error("Standalone Todo must install the certified exact typebox runtime dependency");
+	}
+
+	const installedBtw = join(btwInstallDirectory, "node_modules/@jczhang02/pi-stuff-btw");
+	const btwSmoke = await runPiRpcSmoke({ piBinary, packages: [installedBtw], cwd: btwInstallDirectory });
+	if (!btwSmoke.commandNames.includes("btw")) throw new Error("Standalone BTW Package did not register /btw");
+	const todoSmoke = await runPiRpcSmoke({
+		piBinary,
+		extensions: [todoToolInspector],
+		packages: [join(todoInstalledRoot, "@jczhang02/pi-stuff-todo")],
+		cwd: todoInstallDirectory,
+	});
+	if (!todoSmoke.commandNames.includes("todo-tools-certified")) {
+		throw new Error("Standalone Todo did not register and activate all four Task tools");
+	}
+}
+
+async function verifySharedCoordinatorIdentity(
+	extractDirectory: string,
+	archiveFiles: readonly string[],
+): Promise<void> {
+	const entries = archiveFiles.filter((path) => path.endsWith("node_modules/@jczhang02/pi-stuff-ui/index.ts"));
+	if (entries.length === 0) throw new Error("Package archive contains no pi-stuff-ui runtime");
+
+	const events = {};
+	let shared: unknown;
+	for (const [index, entry] of entries.entries()) {
+		const moduleUrl = `${pathToFileURL(join(extractDirectory, entry)).href}?identity=${index}`;
+		const uiModule = (await import(moduleUrl)) as {
+			getCommandDialogCoordinator(pi: { events: object; on(event: string, handler: () => void): void }): unknown;
+		};
+		const coordinator = uiModule.getCommandDialogCoordinator({ events, on: () => {} });
+		shared ??= coordinator;
+		if (coordinator !== shared) {
+			throw new Error("Physical pi-stuff-ui copies do not share one logical coordinator");
+		}
+	}
+}
+
+async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles: readonly string[]): Promise<void> {
+	const aggregate = JSON.parse(await readFile(join(extractDirectory, "package/package.json"), "utf8")) as {
+		dependencies?: Record<string, unknown>;
+		devDependencies?: Record<string, unknown>;
+		name?: unknown;
+		peerDependencies?: Record<string, unknown>;
+	};
+	if (typeof aggregate.name !== "string") throw new Error("Aggregate Package has no name");
+	verifyPiDependencyContract(aggregate.name, aggregate.peerDependencies, aggregate.devDependencies);
+	const manifests = archiveFiles.filter((path) =>
+		/(?:^|\/)node_modules\/@jczhang02\/pi-stuff-[^/]+\/package\.json$/.test(path),
+	);
+	if (manifests.length === 0) throw new Error("Package archive contains no Pi Stuff Capability manifests");
+	for (const path of manifests) {
+		const manifest = JSON.parse(await readFile(join(extractDirectory, path), "utf8")) as {
+			devDependencies?: Record<string, unknown>;
+			license?: unknown;
+			name?: unknown;
+			peerDependencies?: Record<string, unknown>;
+			version?: unknown;
+		};
+		if (manifest.license !== "MIT") throw new Error(`${path} must declare the MIT license`);
+		if (typeof manifest.name !== "string" || aggregate.dependencies?.[manifest.name] !== manifest.version) {
+			throw new Error(`${path} does not match the Aggregate's exact dependency version`);
+		}
+		verifyPiDependencyContract(manifest.name, manifest.peerDependencies, manifest.devDependencies);
+		const licensePath = path.replace(/package\.json$/, "LICENSE");
+		if (!archiveFiles.includes(licensePath)) throw new Error(`${path} is missing its LICENSE file`);
+		if (
+			(manifest.name === "@jczhang02/pi-stuff-btw" || manifest.name === "@jczhang02/pi-stuff-todo") &&
+			(await sha256File(join(extractDirectory, licensePath))) !== forkLicenseSha256
+		) {
+			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
+		}
+	}
+
+	const provenance = [
+		{
+			archiveSha256: "5318bbf4256b83825cb56a314bdbfa605e495e68043d83a169a65dd35ceabf59",
+			capability: "pi-stuff-btw",
+			deltaHeading: "## Pi Stuff changes",
+			package: "@juicesharp/rpiv-btw",
+			shasum: "568af4a3235b344a4f91d354cc0d1c967977cc06",
+		},
+		{
+			archiveSha256: "b0ae0f1f4245f471c3fa724dc50425cfa241eb37e399c4948d393fe7965d1fa8",
+			capability: "pi-stuff-todo",
+			deltaHeading: "## Pi Stuff delta",
+			package: "@juicesharp/rpiv-todo",
+			shasum: "8797586bad201f4b2153505347c3b997c320eaa2",
+		},
+	] as const;
+	for (const record of provenance) {
+		const { capability } = record;
+		const upstream = `package/node_modules/@jczhang02/${capability}/UPSTREAM.md`;
+		if (!archiveFiles.includes(upstream)) throw new Error(`${capability} is missing fork provenance`);
+		const contents = await readFile(join(extractDirectory, upstream), "utf8");
+		for (const required of [
+			record.package,
+			"2.3.1",
+			"75823a68024a0a649cc28087976074be791ca554",
+			record.shasum,
+			record.archiveSha256,
+			record.deltaHeading,
+		]) {
+			if (!contents.includes(required)) throw new Error(`${capability} provenance is missing ${required}`);
+		}
+		if (!contents.slice(contents.indexOf(record.deltaHeading) + record.deltaHeading.length).includes("\n- ")) {
+			throw new Error(`${capability} provenance has no local change record`);
+		}
+	}
+}
+
+export async function certifyReleaseArtifacts(
+	releaseDirectory: string,
+	piBinary = "/opt/pi-coding-agent/pi",
+): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-package-"));
 
 	try {
 		verifyPiVersion(piBinary);
-		await runPiRpcSmoke({ piBinary, packages: [aggregateDirectory] });
-
 		const bunTemporaryDirectory = join(temporaryDirectory, "bun-tmp");
 		const bunInstallDirectory = join(temporaryDirectory, "bun-install");
 		const bunCacheDirectory = join(temporaryDirectory, "bun-cache");
@@ -154,31 +395,61 @@ async function main(): Promise<void> {
 			TMP: bunTemporaryDirectory,
 			TMPDIR: bunTemporaryDirectory,
 		};
-		run(
-			["bun", "pm", "pack", "--ignore-scripts", "--destination", temporaryDirectory, "--quiet"],
-			aggregateDirectory,
-			bunEnvironment,
+		const releaseManifest = await readReleaseManifest(join(releaseDirectory, RELEASE_MANIFEST_FILENAME));
+		const expectedReleaseFiles = new Set([
+			RELEASE_MANIFEST_FILENAME,
+			...releaseManifest.artifacts.map((artifact) => artifact.archive),
+		]);
+		const unexpectedReleaseFiles = (await readdir(releaseDirectory)).filter(
+			(entry) => !expectedReleaseFiles.has(entry),
 		);
-		const archives = (await readdir(temporaryDirectory)).filter((entry) => entry.endsWith(".tgz"));
-		if (archives.length !== 1) {
-			throw new Error(`Expected one Package archive, found ${archives.length}`);
+		if (unexpectedReleaseFiles.length > 0) {
+			throw new Error(`Unexpected release artifact files:\n${unexpectedReleaseFiles.sort().join("\n")}`);
 		}
-		const archiveName = archives[0];
-		if (!archiveName) {
-			throw new Error("Package archive name was unavailable");
+		await Promise.all(
+			releaseManifest.artifacts.map((artifact) => verifyReleaseArtifactHash(releaseDirectory, artifact)),
+		);
+		for (const artifact of releaseManifest.artifacts) {
+			const archivePath = resolveReleaseArchive(releaseDirectory, artifact);
+			run([process.execPath, "publish", "--dry-run", "--ignore-scripts", "--access", "public", archivePath], root, {
+				...bunEnvironment,
+				NPM_CONFIG_TOKEN: "pi-stuff-offline-certification",
+			});
 		}
-		const archivePath = join(temporaryDirectory, archiveName);
+		await verifyStandaloneInstalls(temporaryDirectory, piBinary, bunEnvironment, releaseDirectory, releaseManifest);
+		const aggregateArtifact = releaseManifest.artifacts.find((artifact) => artifact.name === "@jczhang02/pi-stuff");
+		if (!aggregateArtifact) throw new Error("Release manifest is missing the Aggregate Package");
+		const archivePath = resolveReleaseArchive(releaseDirectory, aggregateArtifact);
 		const archiveFiles = run(["tar", "-tzf", archivePath], root).trim().split("\n").sort();
 		const manifest = JSON.parse(
-			await readFile(join(aggregateDirectory, "package.json"), "utf8"),
+			run(["tar", "-xOzf", archivePath, "package/package.json"], root),
 		) as PackageArchiveManifest;
 		verifyPackageArchive(manifest, archiveFiles);
 
 		const extractDirectory = join(temporaryDirectory, "extract");
 		await mkdir(extractDirectory);
 		run(["tar", "-xzf", archivePath, "-C", extractDirectory], root);
-		await runPiRpcSmoke({ piBinary, packages: [join(extractDirectory, "package")] });
+		await verifyBundledSuiteMetadata(extractDirectory, archiveFiles);
+		await verifySharedCoordinatorIdentity(extractDirectory, archiveFiles);
+		const extractedPackage = join(extractDirectory, "package");
+		await runPiRpcSmoke({ piBinary, packages: [extractedPackage] });
+		await verifyBtwPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
+		await writeReleaseVerification(releaseDirectory, CERTIFIED_PI_VERSION);
 		console.log(`Certified @jczhang02/pi-stuff with Pi ${CERTIFIED_PI_VERSION}`);
+	} finally {
+		await rm(temporaryDirectory, { recursive: true, force: true });
+	}
+}
+
+async function main(): Promise<void> {
+	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-package-artifacts-"));
+	try {
+		verifyPiVersion(PI_BIN);
+		await runPiRpcSmoke({ piBinary: PI_BIN, packages: [aggregateDirectory] });
+		const releaseDirectory = join(temporaryDirectory, "release");
+		await createReleaseArtifacts(releaseDirectory);
+		await certifyReleaseArtifacts(releaseDirectory, PI_BIN);
 	} finally {
 		await rm(temporaryDirectory, { recursive: true, force: true });
 	}

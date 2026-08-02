@@ -1,268 +1,384 @@
-/**
- * btw-ui — dynamic-height bottom-slot overlay for /btw.
- *
- * Layout (grows with content, bottom-anchored, max = terminal height):
- *   banner (theme.bg stripe, padded to width)        sticky top
- *   blank
- *   history  — "/btw <q>" (accent prefix + muted text), left-padded 2 cols
- *   echo     — "/btw <q>" (accent prefix + muted text), left-padded 2 cols
- *   blank
- *   answer   — body wrapped at width-2, left-padded 2 cols
- *   blank
- *   footer   — key hints (dim)                       sticky bottom
- *
- * Natural height = fixed(5: banner, 3 blanks, footer) + 2 (echo + 1 blank before answer)
- *                  + history.length + answerLines.length.
- * Pi-tui bottom-anchors the overlay so it grows upward with each /btw message.
- * If natural height > terminal rows, we clip from the top (older history scrolls off)
- * and ↑/↓ scroll the clip window.
- *
- * Keys (via matchesKey — handles ANSI + Kitty):
- *   Esc → abort in-flight call + dismiss
- *   ↑/↓ → scroll (when content exceeds terminal)
- *   x   → clear current-session /btw history
- *   (f fork key deferred)
- */
-
-import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import type { OverlayOptions } from "@earendil-works/pi-tui";
+import { copyToClipboard, type Theme } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
 	Key,
+	Markdown,
+	type MarkdownTheme,
 	matchesKey,
 	type TUI,
 	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { type BtwTurn, userMessageText } from "./btw-messages.js";
+import { BTW_VISIBLE_EARLIER_LIMIT, type BtwExchange } from "./btw-history.js";
 
-const BTW_MAX_HEIGHT_RATIO = 0.85;
+const GUTTER = "  ";
+const COPY_FEEDBACK_MS = 2_000;
+const SCROLL_STEP = 3;
 
-const BTW_OVERLAY_OPTIONS: OverlayOptions = {
-	anchor: "bottom-center",
-	width: "100%",
-	maxHeight: `${BTW_MAX_HEIGHT_RATIO * 100}%`,
-	margin: { left: 0, right: 0, bottom: 0 },
-};
+type DisplayState = "pending" | "success" | "error";
 
-const SIDE_PAD = "  "; // 2-col left gutter for history, echo, footer
-const ANSWER_PAD = "    "; // 4-col left gutter for answer body (double of SIDE_PAD)
-const BTW_LITERAL = "/btw";
-const PENDING_GLYPH = "…";
-const FOOTER_SCROLL = "↑/↓ to scroll";
-const FOOTER_CLEAR = "x to clear history";
-const FOOTER_DISMISS = "Esc to dismiss";
-const FOOTER_SEP = " · ";
-const MSG_TRIMMED = "context trimmed to fit budget";
-
-type Mode = "pending" | "answer" | "error";
-
-export interface ShowBtwOverlayParams {
-	ctx: ExtensionCommandContext;
+interface DisplayExchange {
+	id: string | undefined;
 	question: string;
-	history: BtwTurn[];
-	controller: AbortController;
-	onClearHistory: () => void;
+	answer: string;
+	state: DisplayState;
+	error: string | undefined;
+	contextTrimmed: boolean;
 }
 
-export interface ShowBtwOverlayResult {
-	overlayPromise: Promise<void>;
-	controllerReady: Promise<BtwOverlayController>;
+export interface BtwDialogOptions {
+	readonly question?: string;
+	readonly history: readonly BtwExchange[];
+	readonly error?: string;
+	readonly onClose: () => void;
+	readonly onClearEarlier: (currentId: string | undefined) => void;
+	readonly copyText?: (text: string) => Promise<void>;
 }
 
-export class BtwOverlayController implements Component {
-	private mode: Mode = "pending";
-	private answer = "";
-	private error = "";
-	private scrollOffset = 0;
-	private trimmed = false;
-	private history: BtwTurn[];
+function successfulDisplay(exchange: BtwExchange): DisplayExchange {
+	return {
+		id: exchange.id,
+		question: exchange.question,
+		answer: exchange.answer,
+		state: "success",
+		error: undefined,
+		contextTrimmed: exchange.contextTrimmed,
+	};
+}
 
-	constructor(
-		private readonly question: string,
-		history: BtwTurn[],
-		private readonly theme: Theme,
-		private readonly tui: TUI,
-		private readonly done: (result?: undefined) => void,
-		private readonly controller: AbortController,
-		private readonly onClearHistory: () => void,
-	) {
-		this.history = [...history];
+function stripTerminalControls(text: string): string {
+	let result = "";
+	for (let index = 0; index < text.length; index++) {
+		const code = text.charCodeAt(index);
+		if (code === 27 && text[index + 1] === "[") {
+			index += 2;
+			while (index < text.length) {
+				const terminator = text.charCodeAt(index);
+				if (terminator >= 64 && terminator <= 126) break;
+				index++;
+			}
+			continue;
+		}
+		if (code === 9 || code === 10 || code >= 32) {
+			if (code !== 127) result += text[index] ?? "";
+		}
+	}
+	return result;
+}
+
+function oneLine(text: string): string {
+	return stripTerminalControls(text).replace(/\s+/g, " ").trim();
+}
+
+function bounded(line: string, width: number): string {
+	return truncateToWidth(line, Math.max(1, width), "…");
+}
+
+function divider(theme: Theme, width: number): string {
+	return theme.fg("border", "─".repeat(Math.max(1, width)));
+}
+
+function markdownTheme(theme: Theme): MarkdownTheme {
+	return {
+		heading: (text) => theme.fg("text", theme.bold(text)),
+		link: (text) => theme.fg("accent", text),
+		linkUrl: (text) => theme.fg("dim", text),
+		code: (text) => theme.fg("accent", text),
+		codeBlock: (text) => theme.fg("text", text),
+		codeBlockBorder: (text) => theme.fg("borderMuted", text),
+		quote: (text) => theme.fg("muted", text),
+		quoteBorder: (text) => theme.fg("borderMuted", text),
+		hr: (text) => theme.fg("border", text),
+		listBullet: (text) => theme.fg("accent", text),
+		bold: (text) => theme.bold(text),
+		italic: (text) => theme.italic(text),
+		strikethrough: (text) => theme.strikethrough(text),
+		underline: (text) => theme.underline(text),
+	};
+}
+
+function joinHints(theme: Theme, width: number, hints: readonly string[]): string {
+	const available = Math.max(1, width - GUTTER.length);
+	let text = "";
+	for (const hint of hints) {
+		const candidate = text.length === 0 ? hint : `${text} · ${hint}`;
+		if (visibleWidth(candidate) > available) break;
+		text = candidate;
+	}
+	return `${GUTTER}${theme.fg("dim", text || "Esc return")}`;
+}
+
+export class BtwDialogController implements Component {
+	private readonly theme: Theme;
+	private readonly tui: TUI;
+	private readonly closeDialog: () => void;
+	private readonly clearEarlier: (currentId: string | undefined) => void;
+	private readonly copyText: (text: string) => Promise<void>;
+	private readonly markdown: Markdown;
+	private exchanges: DisplayExchange[];
+	private currentIndex: number;
+	private selectedIndex: number;
+	private hiddenEarlier: number;
+	private scrollTop = 0;
+	private followTail = true;
+	private copyFeedback: "copied" | "failed" | undefined;
+	private copyTimer: ReturnType<typeof setTimeout> | undefined;
+	private disposed = false;
+
+	constructor(theme: Theme, tui: TUI, options: BtwDialogOptions) {
+		this.theme = theme;
+		this.tui = tui;
+		this.closeDialog = options.onClose;
+		this.clearEarlier = options.onClearEarlier;
+		this.copyText = options.copyText ?? copyToClipboard;
+
+		const visibleHistoryCount =
+			options.question === undefined ? BTW_VISIBLE_EARLIER_LIMIT + 1 : BTW_VISIBLE_EARLIER_LIMIT;
+		const earlier = options.history.slice(-visibleHistoryCount);
+		this.hiddenEarlier = Math.max(0, options.history.length - earlier.length);
+		this.exchanges = earlier.map(successfulDisplay);
+		if (options.question !== undefined) {
+			this.exchanges.push({
+				id: undefined,
+				question: options.question,
+				answer: "",
+				state: options.error === undefined ? "pending" : "error",
+				error: options.error,
+				contextTrimmed: false,
+			});
+		}
+		if (this.exchanges.length === 0) {
+			this.exchanges.push({
+				id: undefined,
+				question: "/btw",
+				answer: "",
+				state: "error",
+				error: options.error ?? "No previous /btw exchange in this session.",
+				contextTrimmed: false,
+			});
+		}
+		this.currentIndex = this.exchanges.length - 1;
+		this.selectedIndex = this.currentIndex;
+		this.markdown = new Markdown("", 0, 0, markdownTheme(theme));
 	}
 
-	setAnswer(text: string): void {
-		this.mode = "answer";
-		this.answer = text;
-		this.tui.requestRender();
+	appendText(delta: string): void {
+		const current = this.exchanges[this.currentIndex];
+		if (this.disposed || current?.state !== "pending") return;
+		current.answer += delta;
+		this.requestRender();
 	}
 
-	setError(message: string): void {
-		this.mode = "error";
-		this.error = message;
-		this.tui.requestRender();
+	resetForRetry(): void {
+		const current = this.exchanges[this.currentIndex];
+		if (this.disposed || !current) return;
+		current.answer = "";
+		current.error = undefined;
+		current.state = "pending";
+		this.scrollTop = 0;
+		this.followTail = true;
+		this.requestRender();
 	}
 
-	// Orthogonal to mode: a trimmed result is also a successful answer.
-	// Idempotent; a fresh controller is built per /btw command in showBtwOverlay,
-	// so there is no reset path.
-	setTrimmed(): void {
-		this.trimmed = true;
-		this.tui.requestRender();
+	setSuccess(exchange: BtwExchange): void {
+		const current = this.exchanges[this.currentIndex];
+		if (this.disposed || !current) return;
+		current.id = exchange.id;
+		current.answer = exchange.answer;
+		current.state = "success";
+		current.error = undefined;
+		current.contextTrimmed = exchange.contextTrimmed;
+		this.selectedIndex = this.currentIndex;
+		this.followTail = true;
+		this.requestRender();
+	}
+
+	setError(message: string, partial: string): void {
+		const current = this.exchanges[this.currentIndex];
+		if (this.disposed || !current) return;
+		current.answer = partial;
+		current.error = message;
+		current.state = "error";
+		this.selectedIndex = this.currentIndex;
+		this.followTail = true;
+		this.requestRender();
 	}
 
 	handleInput(data: string): void {
 		if (matchesKey(data, Key.escape)) {
-			this.controller.abort();
-			this.done();
+			this.closeDialog();
 			return;
 		}
-		if (matchesKey(data, Key.up)) {
-			this.scrollOffset = Math.max(0, this.scrollOffset - 1);
-			this.tui.requestRender();
+		if (matchesKey(data, Key.left)) {
+			this.select(Math.max(0, this.selectedIndex - 1));
 			return;
 		}
-		if (matchesKey(data, Key.down)) {
-			this.scrollOffset = this.scrollOffset + 1;
-			this.tui.requestRender();
+		if (matchesKey(data, Key.right)) {
+			this.select(Math.min(this.exchanges.length - 1, this.selectedIndex + 1));
 			return;
 		}
-		if (data === "x") {
-			this.history = [];
-			this.onClearHistory();
-			this.scrollOffset = 0;
-			this.tui.requestRender();
+		if (matchesKey(data, Key.up) || matchesKey(data, Key.ctrl("p"))) {
+			this.followTail = false;
+			this.scrollTop = Math.max(0, this.scrollTop - SCROLL_STEP);
+			this.requestRender();
 			return;
 		}
+		if (matchesKey(data, Key.down) || matchesKey(data, Key.ctrl("n"))) {
+			this.scrollTop += SCROLL_STEP;
+			this.requestRender();
+			return;
+		}
+		if (data === "c") {
+			void this.copySelected();
+			return;
+		}
+		if (data === "x" && this.hasEarlier()) this.clearEarlierHistory();
 	}
 
 	render(width: number): string[] {
-		const banner = this.renderBanner(width);
-		const historyLines = this.history.map((h) => this.historyLine(userMessageText(h.userMessage), width));
-		const echoLine = this.echoLine(this.question, width);
-		const answerLines = this.renderAnswer(width);
-		const footerAvail = Math.max(1, width - SIDE_PAD.length);
-		const footerParts: string[] = [];
-		if (this.mode !== "pending") footerParts.push(FOOTER_SCROLL);
-		if (this.history.length > 0) footerParts.push(FOOTER_CLEAR);
-		footerParts.push(FOOTER_DISMISS);
-		const footer =
-			SIDE_PAD + truncateToWidth(this.theme.fg("dim", footerParts.join(FOOTER_SEP)), footerAvail, "…", false);
+		const selected = this.exchangeAt(this.selectedIndex);
+		const historyLines = this.renderHistory(width);
+		const questionWidth = Math.max(1, width - GUTTER.length);
+		const question = bounded(`${GUTTER}${this.theme.fg("text", oneLine(selected.question))}`, width);
+		const answerLines = this.renderAnswer(selected, questionWidth);
+		const terminalRows = (this.tui.terminal as { rows?: number }).rows ?? 24;
+		const viewportHeight = Math.max(5, terminalRows - 11 - historyLines.length);
+		const maxScroll = Math.max(0, answerLines.length - viewportHeight);
+		if (this.followTail) this.scrollTop = maxScroll;
+		this.scrollTop = Math.min(maxScroll, Math.max(0, this.scrollTop));
+		if (this.scrollTop === maxScroll) this.followTail = true;
+		const visibleAnswer = answerLines.slice(this.scrollTop, this.scrollTop + viewportHeight);
 
-		// Natural content: banner + blank + history + echo + blank + answer [+ trim notice] + blank + footer
-		const natural: string[] = [
-			banner,
-			"",
+		const titleSuffix = width >= 64 ? this.theme.fg("dim", " · side question · main task continues") : "";
+		const lines = [
+			divider(this.theme, width),
+			bounded(`${GUTTER}${this.theme.fg("text", this.theme.bold("BTW"))}${titleSuffix}`, width),
 			...historyLines,
-			echoLine,
 			"",
-			...answerLines,
-			...(this.trimmed
-				? [
-						ANSWER_PAD +
-							truncateToWidth(
-								this.theme.fg("warning", MSG_TRIMMED),
-								Math.max(1, width - ANSWER_PAD.length),
-								"…",
-								false,
-							),
-					]
-				: []),
+			bounded(`${GUTTER}${this.theme.fg("muted", "Question")}`, width),
+			question,
 			"",
-			footer,
+			bounded(`${GUTTER}${this.theme.fg("muted", "Answer")}`, width),
+			...visibleAnswer.map((line) => bounded(`${GUTTER}${line}`, width)),
 		];
-
-		// Clip to terminal height if we overflow. Bottom-anchor keeps footer+answer visible;
-		// ↑/↓ scrolls the top (history) up into the clipped region.
-		const termRows = (this.tui.terminal as { rows?: number }).rows ?? 24;
-		const maxRows = Math.max(4, Math.floor(termRows * BTW_MAX_HEIGHT_RATIO));
-		if (natural.length <= maxRows) {
-			return natural;
+		if (selected.contextTrimmed) {
+			lines.push(bounded(`${GUTTER}${this.theme.fg("warning", "Context trimmed to fit the model window")}`, width));
 		}
-		const excess = natural.length - maxRows;
-		if (this.scrollOffset > excess) this.scrollOffset = excess;
-		// scrollOffset=0 shows the BOTTOM (newest). Scrolling up reveals older history.
-		const start = excess - this.scrollOffset;
-		return natural.slice(start, start + maxRows);
+		lines.push("", this.renderFooter(selected, width, maxScroll));
+		return lines;
 	}
 
 	invalidate(): void {
-		// no-op — render recomputes from state each cycle
+		this.markdown.invalidate();
 	}
 
-	private renderBanner(width: number): string {
-		const prefix = `${SIDE_PAD}${BTW_LITERAL} `;
-		const prefixWidth = visibleWidth(prefix);
-		const qAvail = Math.max(0, width - prefixWidth);
-		const qTrunc = truncateToWidth(this.question, qAvail, "…", false);
-		const raw = prefix + qTrunc;
-		const padded = raw + " ".repeat(Math.max(0, width - visibleWidth(raw)));
-		return this.theme.bg("customMessageBg", this.theme.fg("customMessageText", padded));
+	dispose(): void {
+		this.disposed = true;
+		if (this.copyTimer) clearTimeout(this.copyTimer);
+		this.copyTimer = undefined;
 	}
 
-	private historyLine(question: string, width: number): string {
-		const qAvail = Math.max(0, width - SIDE_PAD.length);
-		const qClean = question.replace(/\s+/g, " ").trim();
-		const raw = `${BTW_LITERAL} ${qClean}`;
-		const trunc = truncateToWidth(raw, qAvail, "…", false);
-		return SIDE_PAD + this.theme.fg("muted", trunc);
+	private requestRender(): void {
+		if (!this.disposed) this.tui.requestRender();
 	}
 
-	private echoLine(question: string, width: number): string {
-		const bodyAvail = Math.max(1, width - SIDE_PAD.length);
-		const prefixWidth = visibleWidth(BTW_LITERAL) + 1; // "/btw "
-		const qAvail = Math.max(0, bodyAvail - prefixWidth);
-		const qClean = question.replace(/\s+/g, " ").trim();
-		const qTrunc = truncateToWidth(qClean, qAvail, "…", false);
-		return `${SIDE_PAD + this.theme.fg("accent", BTW_LITERAL)} ${this.theme.fg("muted", qTrunc)}`;
+	private select(index: number): void {
+		if (index === this.selectedIndex) return;
+		this.selectedIndex = index;
+		this.scrollTop = 0;
+		this.followTail = false;
+		this.copyFeedback = undefined;
+		this.requestRender();
 	}
 
-	private wrapBodyLines(text: string, bodyWidth: number, colorFn?: (s: string) => string): string[] {
-		const out: string[] = [];
-		for (const ln of text.split("\n")) {
-			const src = ln.length === 0 ? " " : ln;
-			const colored = colorFn ? colorFn(src) : src;
-			out.push(...wrapTextWithAnsi(colored, bodyWidth));
+	private hasEarlier(): boolean {
+		return this.hiddenEarlier > 0 || this.exchanges.length > 1;
+	}
+
+	private clearEarlierHistory(): void {
+		const selected = this.exchangeAt(this.selectedIndex);
+		const active = this.exchangeAt(this.currentIndex);
+		const retained = active.state === "pending" ? active : selected;
+		this.clearEarlier(retained.state === "success" ? retained.id : undefined);
+		this.exchanges = [retained];
+		this.currentIndex = 0;
+		this.selectedIndex = 0;
+		this.hiddenEarlier = 0;
+		this.scrollTop = 0;
+		this.followTail = true;
+		this.requestRender();
+	}
+
+	private async copySelected(): Promise<void> {
+		const selected = this.exchangeAt(this.selectedIndex);
+		if (selected.state !== "success" || selected.answer.length === 0) return;
+		try {
+			await this.copyText(stripTerminalControls(selected.answer));
+			this.copyFeedback = "copied";
+		} catch {
+			this.copyFeedback = "failed";
 		}
-		return out;
+		if (this.copyTimer) clearTimeout(this.copyTimer);
+		this.copyTimer = setTimeout(() => {
+			this.copyFeedback = undefined;
+			this.copyTimer = undefined;
+			this.requestRender();
+		}, COPY_FEEDBACK_MS);
+		this.copyTimer.unref();
+		this.requestRender();
 	}
 
-	private renderAnswer(width: number): string[] {
-		const bodyWidth = Math.max(1, width - ANSWER_PAD.length);
-		const indent = (lines: string[]) => lines.map((l) => ANSWER_PAD + l);
-
-		if (this.mode === "pending") {
-			return indent([this.theme.fg("warning", PENDING_GLYPH)]);
+	private renderHistory(width: number): string[] {
+		if (this.exchanges.length === 1 && this.hiddenEarlier === 0) return [];
+		const lines: string[] = [];
+		if (this.hiddenEarlier > 0) {
+			lines.push(bounded(`${GUTTER}${this.theme.fg("dim", `(+${this.hiddenEarlier} earlier /btw)`)}`, width));
 		}
-		if (this.mode === "error") {
-			return indent(this.wrapBodyLines(this.error, bodyWidth, (s) => this.theme.fg("error", s)));
+		for (let index = 0; index < this.exchanges.length; index++) {
+			const exchange = this.exchanges[index];
+			if (!exchange) continue;
+			const selected = index === this.selectedIndex;
+			const marker = selected ? this.theme.fg("accent", "●") : this.theme.fg("dim", "○");
+			const text = oneLine(exchange.question);
+			const styled = selected ? this.theme.fg("text", this.theme.bold(text)) : this.theme.fg("muted", text);
+			lines.push(bounded(`${GUTTER}${marker} ${styled}`, width));
 		}
-		return indent(this.wrapBodyLines(this.answer, bodyWidth));
+		return lines;
 	}
-}
 
-export function showBtwOverlay(params: ShowBtwOverlayParams): ShowBtwOverlayResult {
-	let resolveReady!: (controller: BtwOverlayController) => void;
-	const controllerReady = new Promise<BtwOverlayController>((resolve) => {
-		resolveReady = resolve;
-	});
+	private exchangeAt(index: number): DisplayExchange {
+		const exchange = this.exchanges[index];
+		if (!exchange) throw new Error(`Missing /btw display exchange at index ${index}`);
+		return exchange;
+	}
 
-	const overlayPromise = params.ctx.ui.custom<void>(
-		(tui, theme, _kb, done) => {
-			const controller = new BtwOverlayController(
-				params.question,
-				params.history,
-				theme,
-				tui,
-				done,
-				params.controller,
-				params.onClearHistory,
-			);
-			resolveReady(controller);
-			return controller;
-		},
-		{ overlay: true, overlayOptions: BTW_OVERLAY_OPTIONS },
-	);
+	private renderAnswer(exchange: DisplayExchange, width: number): string[] {
+		const safeAnswer = stripTerminalControls(exchange.answer);
+		if (safeAnswer.length > 0) {
+			this.markdown.setText(safeAnswer);
+		} else {
+			this.markdown.setText("");
+		}
+		const lines = safeAnswer.length > 0 ? this.markdown.render(Math.max(1, width)) : [];
+		if (exchange.state === "pending") {
+			lines.push(this.theme.fg("warning", safeAnswer.length === 0 ? "Answering…" : "…"));
+		} else if (exchange.state === "error") {
+			if (safeAnswer.length > 0) lines.push(this.theme.fg("warning", "Incomplete answer"));
+			const error = stripTerminalControls(exchange.error ?? "Unknown /btw error");
+			lines.push(...wrapTextWithAnsi(this.theme.fg("error", error), Math.max(1, width)));
+		}
+		return lines.length > 0 ? lines : [this.theme.fg("dim", "(empty answer)")];
+	}
 
-	return { overlayPromise, controllerReady };
+	private renderFooter(exchange: DisplayExchange, width: number, maxScroll: number): string {
+		if (this.copyFeedback === "copied") return `${GUTTER}${this.theme.fg("success", "Copied answer")}`;
+		if (this.copyFeedback === "failed") return `${GUTTER}${this.theme.fg("error", "Could not copy answer")}`;
+		const hints = [exchange.state === "pending" ? "Esc cancel" : "Esc return"];
+		if (maxScroll > 0) hints.push("↑/↓ scroll");
+		if (this.exchanges.length > 1) hints.push("←/→ history");
+		if (exchange.state === "success") hints.push("c copy");
+		if (this.hasEarlier()) hints.push("x clear earlier");
+		return joinHints(this.theme, width, hints);
+	}
 }

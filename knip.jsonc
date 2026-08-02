@@ -8,7 +8,13 @@
 		"packages/pi-stuff": {
 			"project": ["*.ts"]
 		},
+		"packages/pi-stuff-btw": {
+			"project": ["**/*.ts"]
+		},
 		"packages/pi-stuff-todo": {
+			"project": ["**/*.ts"]
+		},
+		"packages/pi-stuff-ui": {
 			"project": ["**/*.ts"]
 		}
 	}

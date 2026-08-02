@@ -136,19 +136,26 @@ describe("registered Task tools", () => {
 describe("extension registration", () => {
 	it("registers Ctrl+Shift+T as the task-list toggle", () => {
 		const shortcuts: Array<{ key: string; description: string }> = [];
-		const events: string[] = [];
+		const lifecycleEvents: string[] = [];
 		const api = {
+			events: {},
 			registerTool: () => {},
 			registerShortcut: (key: unknown, options: { description?: string }) => {
 				shortcuts.push({ key: String(key), description: options.description ?? "" });
 			},
-			on: (event: string) => events.push(event),
+			on: (event: string) => lifecycleEvents.push(event),
 		} as unknown as ExtensionAPI;
 
 		piStuffTodo(api);
 
 		expect(shortcuts).toEqual([{ key: TODO_TOGGLE_KEY, description: "Collapse or expand the current task list" }]);
 		expect(TODO_TOGGLE_KEY).toBe("ctrl+shift+t");
-		expect(events.sort()).toEqual(["session_compact", "session_shutdown", "session_start", "session_tree"]);
+		expect(lifecycleEvents.sort()).toEqual([
+			"session_compact",
+			"session_shutdown",
+			"session_shutdown",
+			"session_start",
+			"session_tree",
+		]);
 	});
 });

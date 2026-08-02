@@ -34,9 +34,9 @@ function capabilityIdentifier(packageName: string): string {
 }
 
 function renderIndex(capabilities: readonly string[]): string {
-	const imports = capabilities.map(
-		(packageName) => `import ${capabilityIdentifier(packageName)} from "${packageName}";`,
-	);
+	const imports = [...capabilities]
+		.sort((left, right) => left.localeCompare(right))
+		.map((packageName) => `import ${capabilityIdentifier(packageName)} from "${packageName}";`);
 	const identifiers = capabilities.map(capabilityIdentifier);
 	const importBlock = [`import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`, ...imports].join("\n");
 	const sections = [

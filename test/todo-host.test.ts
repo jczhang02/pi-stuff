@@ -11,6 +11,9 @@ import {
 
 const REPOSITORY_ROOT = resolve(import.meta.dir, "..");
 const TODO_EXTENSION = join(REPOSITORY_ROOT, "packages", "pi-stuff-todo", "index.ts");
+const TODO_PACKAGE = resolve(TODO_EXTENSION, "..");
+const BTW_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-btw");
+const UI_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-ui");
 const AGGREGATE_EXTENSION = join(REPOSITORY_ROOT, "packages", "pi-stuff", "index.ts");
 const EXPECTED_TOOLS = ["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"];
 
@@ -69,11 +72,15 @@ test("Pi 0.83 loads exactly the Todo tools from the Capability package", async (
 test("Pi 0.83 loads exactly the Todo tools through the Aggregate package", async () => {
 	const session = await loadExtension(async (root) => {
 		const aggregateDirectory = join(root, "aggregate");
-		const dependencyDirectory = join(aggregateDirectory, "node_modules", "@jczhang02", "pi-stuff-todo");
+		const dependencyScope = join(aggregateDirectory, "node_modules", "@jczhang02");
 		await mkdir(aggregateDirectory);
-		await mkdir(resolve(dependencyDirectory, ".."), { recursive: true });
+		await mkdir(dependencyScope, { recursive: true });
 		await writeFile(join(aggregateDirectory, "index.ts"), await readFile(AGGREGATE_EXTENSION));
-		await symlink(resolve(TODO_EXTENSION, ".."), dependencyDirectory, "dir");
+		await Promise.all([
+			symlink(UI_PACKAGE, join(dependencyScope, "pi-stuff-ui"), "dir"),
+			symlink(TODO_PACKAGE, join(dependencyScope, "pi-stuff-todo"), "dir"),
+			symlink(BTW_PACKAGE, join(dependencyScope, "pi-stuff-btw"), "dir"),
+		]);
 		return join(aggregateDirectory, "index.ts");
 	});
 

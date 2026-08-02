@@ -1,7 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { createVerifiedReleaseSnapshot, type ReleaseManifest } from "../scripts/release-artifacts.ts";
 import { verifyPackageArchive } from "../scripts/verify-package.ts";
 
 const TEMPORARY_ROOTS: string[] = [];
@@ -118,4 +120,45 @@ test("Package archive verification rejects bundled development files", () => {
 			"package/package.json",
 		]),
 	).toThrow("Bundled Package contains development-only files");
+});
+
+test("Package archive verification rejects traversal inside a bundled dependency", () => {
+	expect(() =>
+		verifyPackageArchive({ files: ["index.ts"], bundledDependencies: ["@jczhang02/pi-smoke"] }, [
+			"package/index.ts",
+			"package/node_modules/@jczhang02/pi-smoke/../../../escaped.txt",
+			"package/node_modules/@jczhang02/pi-smoke/package.json",
+			"package/package.json",
+		]),
+	).toThrow("Unsafe release archive path");
+});
+
+test("Publication snapshots preserve the exact verified artifact bytes", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-stuff-publish-snapshot-test-"));
+	TEMPORARY_ROOTS.push(root);
+	const archive = "jczhang02-pi-stuff-ui-1.0.0.tgz";
+	const archivePath = join(root, archive);
+	const certifiedBytes = Buffer.from("certified release bytes");
+	await writeFile(archivePath, certifiedBytes);
+	const manifest: ReleaseManifest = {
+		artifacts: [
+			{
+				archive,
+				integrity: `sha512-${createHash("sha512").update(certifiedBytes).digest("base64")}`,
+				name: "@jczhang02/pi-stuff-ui",
+				sha256: createHash("sha256").update(certifiedBytes).digest("hex"),
+				version: "1.0.0",
+			},
+		],
+		bunVersion: Bun.version,
+		packer: "bun pm pack",
+		schemaVersion: 1,
+	};
+
+	const snapshot = await createVerifiedReleaseSnapshot(root, manifest);
+	TEMPORARY_ROOTS.push(snapshot.directory);
+	await writeFile(archivePath, "mutated source bytes");
+
+	expect(await readFile(snapshot.archivePaths[0] as string, "utf8")).toBe(certifiedBytes.toString());
+	expect((await stat(snapshot.archivePaths[0] as string)).mode & 0o222).toBe(0);
 });
