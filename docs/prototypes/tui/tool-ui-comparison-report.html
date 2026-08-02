@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway evidence report, not Runtime Resource code.
+  Three transcript variants, switchable via ?variant=flat|summary|bounded.
+  Every TUI image is an expected real Pi 0.83 PTY capture. HTML only organizes evidence.
+-->
+<html lang="zh-CN" data-variant="flat">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi Stuff · 工具 UI 对照报告</title>
+<meta name="author" content="Pi Stuff">
+<meta name="description" content="在真实 Pi 0.83 PTY 中比较逐条、单摘要与有限展开三种工具记录，并审查非浮动 Tool Details Command Dialog。">
+<style>
+  :root {
+    --paper: #f4f2e9;
+    --paper-strong: #fbfaf5;
+    --ink: #171714;
+    --ink-soft: #484740;
+    --muted: #747168;
+    --line: #d8d4c7;
+    --line-strong: #aaa493;
+    --brand: #16365d;
+    --brand-soft: #e4ebf3;
+    --terminal: #141413;
+    --warning: #8a4c11;
+    --pending: #eeeae0;
+    --serif: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+    --sans: Inter, "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
+    --mono: "Iosevka Nerd Font Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html {
+    background: var(--paper);
+    color: var(--ink);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 64px 58px 144px;
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.62;
+  }
+
+  a {
+    color: var(--brand);
+    text-underline-offset: 3px;
+  }
+
+  code, kbd, .mono {
+    font-family: var(--mono);
+  }
+
+  .eyebrow {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+  }
+
+  .hero {
+    min-height: 66vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 44px 0 62px;
+  }
+
+  h1, h2, h3, p { margin-top: 0; }
+
+  h1 {
+    max-width: 920px;
+    margin: 22px 0 28px;
+    font-family: var(--serif);
+    font-size: clamp(50px, 7vw, 86px);
+    font-weight: 600;
+    line-height: 1.08;
+    letter-spacing: -1.2px;
+  }
+
+  .hero-lead {
+    max-width: 820px;
+    color: var(--ink-soft);
+    font-family: var(--serif);
+    font-size: clamp(21px, 2.5vw, 29px);
+    line-height: 1.5;
+  }
+
+  .hero-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .metric {
+    padding: 18px 20px 19px 0;
+  }
+
+  .metric + .metric {
+    padding-left: 20px;
+    border-left: 1px solid var(--line);
+  }
+
+  .metric-value {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 23px;
+    font-weight: 700;
+  }
+
+  .metric-label {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .evidence-notice {
+    margin: 28px 0 96px;
+    padding: 16px 18px;
+    border-left: 4px solid var(--warning);
+    background: rgba(255, 255, 255, 0.34);
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+
+  .evidence-notice strong { color: var(--warning); }
+
+  section {
+    padding: 82px 0 42px;
+    border-top: 1px solid var(--line);
+  }
+
+  .section-kicker {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  h2 {
+    max-width: 900px;
+    margin: 14px 0 20px;
+    font-family: var(--serif);
+    font-size: clamp(34px, 4.7vw, 55px);
+    font-weight: 600;
+    line-height: 1.16;
+  }
+
+  .section-lead {
+    max-width: 790px;
+    color: var(--ink-soft);
+    font-size: 19px;
+  }
+
+  .foundation-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 44px;
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .foundation-item {
+    padding: 20px 18px 22px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .foundation-item + .foundation-item {
+    padding-left: 18px;
+    border-left: 1px solid var(--line);
+  }
+
+  .foundation-num {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .foundation-item h3 {
+    margin: 10px 0 7px;
+    font-family: var(--serif);
+    font-size: 20px;
+  }
+
+  .foundation-item p {
+    margin-bottom: 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .variant-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 48px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .variant-tab {
+    appearance: none;
+    padding: 18px 16px;
+    border: 0;
+    border-left: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+  }
+
+  .variant-tab:first-child { border-left: 0; }
+
+  .variant-tab strong {
+    display: block;
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 18px;
+  }
+
+  .variant-tab span {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  html[data-variant="flat"] .variant-tab[data-select="flat"],
+  html[data-variant="summary"] .variant-tab[data-select="summary"],
+  html[data-variant="bounded"] .variant-tab[data-select="bounded"] {
+    box-shadow: inset 0 4px 0 var(--brand);
+    background: var(--brand-soft);
+  }
+
+  .variant-panel {
+    padding-top: 48px;
+  }
+
+  .variant-panel[hidden] { display: none; }
+
+  .variant-heading {
+    display: grid;
+    grid-template-columns: 66px minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+    margin-bottom: 30px;
+  }
+
+  .variant-letter {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 54px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .variant-heading h3 {
+    margin-bottom: 7px;
+    font-family: var(--serif);
+    font-size: 31px;
+    line-height: 1.2;
+  }
+
+  .variant-heading p {
+    max-width: 780px;
+    margin-bottom: 0;
+    color: var(--ink-soft);
+  }
+
+  .capture {
+    margin: 0;
+  }
+
+  .capture-frame {
+    min-height: 320px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid #292925;
+    border-radius: 5px;
+    background: var(--terminal);
+  }
+
+  .capture-frame img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .pending-copy {
+    display: none;
+    max-width: 560px;
+    padding: 48px 28px;
+    color: #ddd9cd;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.65;
+    text-align: center;
+  }
+
+  .capture-frame.is-pending .pending-copy { display: block; }
+
+  .pending-path {
+    display: block;
+    margin-top: 10px;
+    color: #9fb5d0;
+    overflow-wrap: anywhere;
+  }
+
+  figcaption {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px;
+    padding-top: 14px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .capture-title {
+    color: var(--ink);
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .capture-path {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-align: right;
+  }
+
+  .reading-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 40px;
+  }
+
+  .reading-card {
+    padding-top: 16px;
+    border-top: 2px solid var(--brand);
+  }
+
+  .reading-card h4 {
+    margin: 0 0 7px;
+    font-family: var(--serif);
+    font-size: 18px;
+  }
+
+  .reading-card p {
+    margin-bottom: 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .comparison-wrap {
+    margin-top: 46px;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    padding: 15px 16px 15px 0;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+
+  td:first-child {
+    width: 18%;
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  td { color: var(--ink-soft); }
+
+  .dialog-rule {
+    margin-top: 44px;
+    padding: 26px 28px;
+    border: 2px solid var(--brand);
+    background: var(--paper-strong);
+  }
+
+  .dialog-rule strong {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--brand);
+    font-family: var(--serif);
+    font-size: 21px;
+  }
+
+  .dialog-rule p { margin-bottom: 0; }
+
+  .dialog-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(250px, .8fr);
+    gap: 30px;
+    margin-top: 42px;
+    align-items: start;
+  }
+
+  .dialog-layout .capture-frame { min-height: 280px; }
+
+  .steps {
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .step-num {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .step strong { display: block; }
+
+  .step p {
+    margin: 3px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .acceptance-list {
+    margin-top: 42px;
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .acceptance-item {
+    display: grid;
+    grid-template-columns: 42px minmax(170px, .7fr) minmax(0, 1.4fr) 112px;
+    gap: 16px;
+    padding: 17px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: baseline;
+  }
+
+  .acceptance-item .index,
+  .acceptance-item .state {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .acceptance-item .name { font-weight: 700; }
+
+  .acceptance-item .desc {
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .acceptance-item .state {
+    color: var(--warning);
+    text-align: right;
+  }
+
+  .decision {
+    min-height: 62vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .decision-question {
+    max-width: 930px;
+    margin: 18px 0 24px;
+    font-family: var(--serif);
+    font-size: clamp(35px, 5vw, 58px);
+    font-weight: 600;
+    line-height: 1.18;
+  }
+
+  .decision p {
+    max-width: 790px;
+    color: var(--ink-soft);
+    font-size: 18px;
+  }
+
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    margin-top: 32px;
+    font-size: 14px;
+  }
+
+  .prototype-switcher {
+    position: fixed;
+    z-index: 1000;
+    left: 50%;
+    bottom: 18px;
+    width: min(720px, calc(100vw - 28px));
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) 48px;
+    border: 3px solid #ffd84a;
+    background: #10100f;
+    color: #fff;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .26);
+    transform: translateX(-50%);
+  }
+
+  .prototype-switcher button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: #ffd84a;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 24px;
+  }
+
+  .prototype-switcher button:hover,
+  .prototype-switcher button:focus-visible {
+    background: #ffd84a;
+    color: #10100f;
+    outline: none;
+  }
+
+  .switcher-label {
+    padding: 8px 12px 9px;
+    border-right: 1px solid #3d3d38;
+    border-left: 1px solid #3d3d38;
+    font-family: var(--mono);
+    text-align: center;
+  }
+
+  .switcher-warning {
+    display: block;
+    color: #ffd84a;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .7px;
+  }
+
+  .switcher-current {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+  }
+
+  @media (max-width: 820px) {
+    body { padding: 42px 28px 136px; }
+
+    .hero-meta,
+    .foundation-grid,
+    .reading-grid,
+    .dialog-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .metric + .metric,
+    .foundation-item + .foundation-item {
+      padding-left: 0;
+      border-left: 0;
+    }
+
+    .variant-tab { padding: 14px 10px; }
+    .variant-tab strong { font-size: 15px; }
+
+    .capture-frame { min-height: 220px; }
+
+    .acceptance-item {
+      grid-template-columns: 32px minmax(0, 1fr);
+      gap: 5px 12px;
+    }
+
+    .acceptance-item .desc,
+    .acceptance-item .state {
+      grid-column: 2;
+      text-align: left;
+    }
+  }
+
+  @media (max-width: 560px) {
+    body { padding: 28px 17px 132px; }
+    h1 { font-size: 44px; }
+
+    .variant-tabs { grid-template-columns: 1fr; }
+    .variant-tab { border-top: 1px solid var(--line); border-left: 0; }
+    .variant-tab:first-child { border-top: 0; }
+
+    .variant-heading { grid-template-columns: 44px minmax(0, 1fr); gap: 12px; }
+    .variant-letter { font-size: 40px; }
+    .variant-heading h3 { font-size: 25px; }
+
+    figcaption { grid-template-columns: 1fr; }
+    .capture-path { text-align: left; overflow-wrap: anywhere; }
+  }
+
+  @media print {
+    body { max-width: none; padding: 12mm; }
+    .prototype-switcher { display: none; }
+    .variant-panel[hidden] { display: block; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div>
+    <div class="eyebrow">Pi Stuff · real PTY review · tools</div>
+    <h1>所有工具，一套渲染；三种对话密度。</h1>
+    <p class="hero-lead">
+      工具能力不变，只比较用户最后在对话里看到什么：<strong>每次调用逐条留下、一次探索只留一个摘要，或摘要下最多保留两条线索。</strong>
+    </p>
+  </div>
+
+  <div class="hero-meta">
+    <div class="metric">
+      <div class="metric-value">3</div>
+      <div class="metric-label">种 transcript 方案</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">1</div>
+      <div class="metric-label">个共用 Tool Details 界面</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">0</div>
+      <div class="metric-label">张 HTML 重画的终端图</div>
+    </div>
+  </div>
+</header>
+
+<aside class="evidence-notice" aria-label="Evidence status">
+  <strong>证据门槛：</strong>
+  下方画面只能来自仓库锁定的 Pi 0.83.0、固定 fixture 与真实 PTY。截图尚未生成时，报告只显示预期 PNG 路径；路径占位不是 TUI 设计，也不能用于确认视觉。
+</aside>
+
+<main>
+  <section id="foundation">
+    <div class="section-kicker">00 · Shared foundation</div>
+    <h2>三种方案只争论“记录怎么收拢”。</h2>
+    <p class="section-lead">
+      Pi Stuff 默认包含的工具先进入同一套渲染。名称、运行中、成功、失败、简要结果与完整结果都遵守共同规则；A / B / C 不会各自发明一套工具 UI。
+    </p>
+
+    <div class="foundation-grid">
+      <article class="foundation-item">
+        <div class="foundation-num">01</div>
+        <h3>统一接管</h3>
+        <p>Read、search、shell、编辑、网页读取及 Suite 内其他工具，都使用同一种状态和文字层级。</p>
+      </article>
+      <article class="foundation-item">
+        <div class="foundation-num">02</div>
+        <h3>原始结果仍在</h3>
+        <p>紧凑只改变默认阅读密度，不删除调用、错误或完整输出；需要时仍能逐项检查。</p>
+      </article>
+      <article class="foundation-item">
+        <div class="foundation-num">03</div>
+        <h3>失败不被吞掉</h3>
+        <p>失败、需要用户处理以及产生修改的动作保持清楚归属，不藏进一句“已探索”。</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="variants">
+    <div class="section-kicker">01 · Transcript variants</div>
+    <h2>同一次探索，应该留下多少痕迹？</h2>
+    <p class="section-lead">
+      三张 PNG 使用相同 fixture、相同 100 × 32 terminal grid 和相同工具结果：前三次 read / search / read 属于一次探索，最后一次 baseline test 因为会实际执行代码而始终单独显示。只有 transcript 的组织方式不同。
+    </p>
+
+    <div class="variant-tabs" role="tablist" aria-label="工具 transcript 方案">
+      <button class="variant-tab" type="button" role="tab" data-select="flat">
+        <strong>A · 逐条</strong>
+        <span>FLAT ROWS</span>
+      </button>
+      <button class="variant-tab" type="button" role="tab" data-select="summary">
+        <strong>B · 单摘要</strong>
+        <span>ONE SUMMARY</span>
+      </button>
+      <button class="variant-tab" type="button" role="tab" data-select="bounded">
+        <strong>C · 有限展开</strong>
+        <span>MAX TWO CHILDREN</span>
+      </button>
+    </div>
+
+    <article class="variant-panel" data-panel="flat" role="tabpanel">
+      <div class="variant-heading">
+        <div class="variant-letter">A</div>
+        <div>
+          <h3>每次调用各留一条紧凑记录</h3>
+          <p>read、search、read 和 baseline test 各留一条，共四条。每次调用都容易定位，但探索变长时，对话也会被工具过程拉长。</p>
+        </div>
+      </div>
+
+      <figure class="capture">
+        <a class="capture-frame" href="./artifacts/pi-0.83-tool-ui-individual.png" data-capture-frame>
+          <img src="./artifacts/pi-0.83-tool-ui-individual.png" alt="Pi 0.83 真实 PTY：每次工具调用逐条显示的紧凑 transcript" data-real-pty>
+          <span class="pending-copy">真实 PTY 截图尚未捕获。<span class="pending-path">./artifacts/pi-0.83-tool-ui-individual.png</span></span>
+        </a>
+        <figcaption>
+          <div><span class="capture-title">A · Flat rows</span><br>相同 fixture 的逐条版本；点击打开原始 PNG。</div>
+          <div class="capture-path">pi-0.83-tool-ui-individual.png</div>
+        </figcaption>
+      </figure>
+
+      <div class="reading-grid">
+        <article class="reading-card"><h4>最直接</h4><p>调用和记录一一对应，用户不用猜一次摘要里包含了什么。</p></article>
+        <article class="reading-card"><h4>过程最明显</h4><p>连续读取和搜索会占据较多垂直空间，尤其是长 session。</p></article>
+        <article class="reading-card"><h4>适合检查</h4><p>失败和修改天然能贴着具体工具，不需要再解释分组边界。</p></article>
+      </div>
+    </article>
+
+    <article class="variant-panel" data-panel="summary" role="tabpanel" hidden>
+      <div class="variant-heading">
+        <div class="variant-letter">B</div>
+        <div>
+          <h3>连续探索只留一个折叠摘要</h3>
+          <p>前三次 read / search / read 只留下包含来源数和命中数的语义摘要；baseline test 仍单独留一条。主对话最干净，但用户必须进入 Tool Details 才知道探索具体看过什么。</p>
+        </div>
+      </div>
+
+      <figure class="capture">
+        <a class="capture-frame" href="./artifacts/pi-0.83-tool-ui-grouped.png" data-capture-frame>
+          <img src="./artifacts/pi-0.83-tool-ui-grouped.png" alt="Pi 0.83 真实 PTY：连续探索合成一个折叠摘要" data-real-pty>
+          <span class="pending-copy">真实 PTY 截图尚未捕获。<span class="pending-path">./artifacts/pi-0.83-tool-ui-grouped.png</span></span>
+        </a>
+        <figcaption>
+          <div><span class="capture-title">B · One collapsed summary</span><br>相同 fixture 的单摘要版本；点击打开原始 PNG。</div>
+          <div class="capture-path">pi-0.83-tool-ui-grouped.png</div>
+        </figcaption>
+      </figure>
+
+      <div class="reading-grid">
+        <article class="reading-card"><h4>最安静</h4><p>工具过程几乎不打断回答，长 session 的阅读成本最低。</p></article>
+        <article class="reading-card"><h4>上下文最少</h4><p>默认看不到具体文件和搜索词，摘要文案必须足够可信。</p></article>
+        <article class="reading-card"><h4>依赖详情</h4><p>Tool Details 必须快速打开，并准确恢复组内每一次原始调用。</p></article>
+      </div>
+    </article>
+
+    <article class="variant-panel" data-panel="bounded" role="tabpanel" hidden>
+      <div class="variant-heading">
+        <div class="variant-letter">C</div>
+        <div>
+          <h3>一条分组摘要，最多露出两条子记录</h3>
+          <p>探索摘要下面保留两次代表调用，再显示“+1 more”；baseline test 仍单独留一条。用户能快速判断探索方向，又不会让所有调用铺满对话。</p>
+        </div>
+      </div>
+
+      <figure class="capture">
+        <a class="capture-frame" href="./artifacts/pi-0.83-tool-ui-bounded.png" data-capture-frame>
+          <img src="./artifacts/pi-0.83-tool-ui-bounded.png" alt="Pi 0.83 真实 PTY：探索摘要下最多显示两条子记录" data-real-pty>
+          <span class="pending-copy">真实 PTY 截图尚未捕获。<span class="pending-path">./artifacts/pi-0.83-tool-ui-bounded.png</span></span>
+        </a>
+        <figcaption>
+          <div><span class="capture-title">C · Bounded group</span><br>相同 fixture 的有限展开版本；点击打开原始 PNG。</div>
+          <div class="capture-path">pi-0.83-tool-ui-bounded.png</div>
+        </figcaption>
+      </figure>
+
+      <div class="reading-grid">
+        <article class="reading-card"><h4>保留方向感</h4><p>不用离开对话，也能看见 Agent 主要检查了什么。</p></article>
+        <article class="reading-card"><h4>密度有上限</h4><p>无论组内有三次还是五十次调用，默认最多显示两条子记录。</p></article>
+        <article class="reading-card"><h4>选择更复杂</h4><p>必须明确哪两条值得露出，避免让选择规则显得随机。</p></article>
+      </div>
+    </article>
+  </section>
+
+  <section id="comparison">
+    <div class="section-kicker">02 · Same facts, different density</div>
+    <h2>比较的是日常使用感，不是实现技巧。</h2>
+    <p class="section-lead">截图完成后，应先按下面四个问题评审，再讨论具体颜色、符号或缩进。</p>
+
+    <div class="comparison-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>观察点</th>
+            <th>A · 逐条</th>
+            <th>B · 单摘要</th>
+            <th>C · 最多两条</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>扫读回答</td>
+            <td>过程清楚，但最占空间</td>
+            <td>最容易直接读正文</td>
+            <td>保留方向感，空间有上限</td>
+          </tr>
+          <tr>
+            <td>知道看过什么</td>
+            <td>无需额外动作</td>
+            <td>必须打开详情</td>
+            <td>先看到两条代表线索</td>
+          </tr>
+          <tr>
+            <td>长 session</td>
+            <td>工具记录持续累积</td>
+            <td>默认最短</td>
+            <td>长度可预测</td>
+          </tr>
+          <tr>
+            <td>Test / 失败 / 修改</td>
+            <td>始终独立可见</td>
+            <td>不收入探索摘要</td>
+            <td>不收入探索分组</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tool-details">
+    <div class="section-kicker">03 · Shared Tool Details</div>
+    <h2>完整结果不浮在对话上面。</h2>
+    <p class="section-lead">
+      A / B / C 共用同一个 Tool Details Command Dialog。它不是第四种 transcript 方案，而是检查单次调用完整结果的共同入口。
+    </p>
+
+    <div class="dialog-rule">
+      <strong>硬规则：拒绝浮动窗口。</strong>
+      <p>Tool Details 出现在对话分隔线以下，临时接管原 editor 区域；它不覆盖 transcript，不做居中弹窗、四周边框、阴影或背景遮罩。打开时普通输入区与普通 statusline 暂时隐藏，Esc 后原样恢复。</p>
+    </div>
+
+    <div class="dialog-layout">
+      <figure class="capture">
+        <a class="capture-frame" href="./artifacts/pi-0.83-tool-details-dialog.png" data-capture-frame>
+          <img src="./artifacts/pi-0.83-tool-details-dialog.png" alt="Pi 0.83 真实 PTY：分隔线以下的非浮动 Tool Details Command Dialog" data-real-pty>
+          <span class="pending-copy">真实 PTY 截图尚未捕获。<span class="pending-path">./artifacts/pi-0.83-tool-details-dialog.png</span></span>
+        </a>
+        <figcaption>
+          <div><span class="capture-title">共用详情界面</span><br>分隔线以下替换 editor，不覆盖上方对话。</div>
+          <div class="capture-path">pi-0.83-tool-details-dialog.png</div>
+        </figcaption>
+      </figure>
+
+      <div class="steps" aria-label="Tool Details interaction">
+        <div class="step">
+          <div class="step-num">01</div>
+          <div><strong>打开</strong><p>原型用 Ctrl+O 打开最近的工具记录。Pi 也把它用于全局展开和 tree filter，因此最终键位仍待确认。</p></div>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <div><strong>选择</strong><p>同一位置列出相关工具记录；↑/↓ 选择一项，下方结果随选择更新。</p></div>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <div><strong>检查</strong><p>只渲染当前一项的完整输出，并在同一块区域滚动。</p></div>
+        </div>
+        <div class="step">
+          <div class="step-num">04</div>
+          <div><strong>关闭</strong><p>Esc 一次关闭界面并恢复普通 editor 与 statusline；对话不跳动。</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="acceptance">
+    <div class="section-kicker">04 · Evidence checklist</div>
+    <h2>只有真实 Pi 画面能完成这次选择。</h2>
+    <p class="section-lead">报告骨架完成不等于设计完成。四张截图都满足以下条件后，才进入视觉评审。</p>
+
+    <div class="acceptance-list">
+      <div class="acceptance-item">
+        <div class="index">01</div>
+        <div class="name">同一份 fixture</div>
+        <div class="desc">三种 transcript 必须包含相同工具调用、顺序、状态和结果。</div>
+        <div class="state">REQUIRED</div>
+      </div>
+      <div class="acceptance-item">
+        <div class="index">02</div>
+        <div class="name">真实 Host</div>
+        <div class="desc">使用仓库锁定的 Pi 0.83.0；不以网页、Canvas 或图片编辑器重画。</div>
+        <div class="state">REQUIRED</div>
+      </div>
+      <div class="acceptance-item">
+        <div class="index">03</div>
+        <div class="name">相同 terminal grid</div>
+        <div class="desc">全部画面固定为 100 × 32 cells，避免窗口大小替方案制造优势。</div>
+        <div class="state">REQUIRED</div>
+      </div>
+      <div class="acceptance-item">
+        <div class="index">04</div>
+        <div class="name">非浮动详情</div>
+        <div class="desc">截图必须同时看见上方 transcript、分隔线和下方替换 editor 的 Tool Details。</div>
+        <div class="state">REQUIRED</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="decision" id="decision">
+    <div class="section-kicker">Decision after capture</div>
+    <div class="decision-question">日常对话里，你希望 Agent 的探索过程留下 A、B，还是 C？</div>
+    <p>这次只选择默认密度。Tool Details 的具体快捷键、颜色、每种工具的摘要文案与分组规则，将在方向确认后分别验证。</p>
+    <div class="links">
+      <a href="./transcript-ui-reference-report.html">对话内容 UI 参考</a>
+      <a href="./agents-ui-reference-report.html">非浮动 Command Dialog 参考</a>
+      <a href="./README.md">真实 PTY 捕获方法</a>
+    </div>
+  </section>
+</main>
+
+<!--
+  Prototype review control only. It intentionally looks unlike Pi Stuff and never
+  appears inside the PTY captures. This static engineering report is not shipped.
+-->
+<div class="prototype-switcher" data-prototype-only aria-label="浏览器报告方案切换器">
+  <button type="button" data-direction="-1" aria-label="上一个方案">←</button>
+  <div class="switcher-label" aria-live="polite">
+    <span class="switcher-warning">浏览器报告评审控件 · 不是 PI STUFF UI</span>
+    <span class="switcher-current" data-switcher-current>A · 逐条（Flat rows）</span>
+  </div>
+  <button type="button" data-direction="1" aria-label="下一个方案">→</button>
+</div>
+
+<script>
+  (() => {
+    const variants = [
+      { key: "flat", label: "A · 逐条（Flat rows）" },
+      { key: "summary", label: "B · 单摘要（One summary）" },
+      { key: "bounded", label: "C · 最多两条（Bounded group）" }
+    ];
+
+    const root = document.documentElement;
+    const panels = [...document.querySelectorAll("[data-panel]")];
+    const tabs = [...document.querySelectorAll("[data-select]")];
+    const currentLabel = document.querySelector("[data-switcher-current]");
+
+    function normalizedVariant(value) {
+      return variants.some((variant) => variant.key === value) ? value : variants[0].key;
+    }
+
+    function setVariant(value, updateUrl = true) {
+      const key = normalizedVariant(value);
+      root.dataset.variant = key;
+
+      panels.forEach((panel) => {
+        panel.hidden = panel.dataset.panel !== key;
+      });
+
+      tabs.forEach((tab) => {
+        const selected = tab.dataset.select === key;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      });
+
+      const variant = variants.find((item) => item.key === key);
+      currentLabel.textContent = variant.label;
+
+      if (updateUrl) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("variant", key);
+        window.history.replaceState({}, "", url);
+      }
+    }
+
+    function cycle(direction) {
+      const currentIndex = variants.findIndex((variant) => variant.key === root.dataset.variant);
+      const nextIndex = (currentIndex + direction + variants.length) % variants.length;
+      setVariant(variants[nextIndex].key);
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => setVariant(tab.dataset.select));
+    });
+
+    document.querySelectorAll("[data-direction]").forEach((button) => {
+      button.addEventListener("click", () => cycle(Number(button.dataset.direction)));
+    });
+
+    document.addEventListener("keydown", (event) => {
+      const target = event.target;
+      const isEditing = target instanceof HTMLElement && (
+        target.matches("input, textarea, select") || target.isContentEditable
+      );
+      if (isEditing) return;
+      if (event.key === "ArrowLeft") cycle(-1);
+      if (event.key === "ArrowRight") cycle(1);
+    });
+
+    document.querySelectorAll("img[data-real-pty]").forEach((image) => {
+      const markPending = () => {
+        image.hidden = true;
+        image.closest("[data-capture-frame]").classList.add("is-pending");
+      };
+      image.addEventListener("error", markPending);
+      if (image.complete && image.naturalWidth === 0) markPending();
+    });
+
+    const initial = new URL(window.location.href).searchParams.get("variant");
+    setVariant(initial || variants[0].key, Boolean(initial));
+  })();
+</script>
+
+</body>
+</html>

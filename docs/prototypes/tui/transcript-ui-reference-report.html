@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<!--
+  Based on the existing Pi Stuff / Kami evidence-report template.
+  Every terminal image below is a real PTY capture. HTML is only the report layer.
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi Stuff · 对话内容 UI 参考报告</title>
+<meta name="author" content="Pi Stuff">
+<meta name="description" content="用 Claude Code 2.1.220 与 Pi 0.83.0 的真实 PTY 画面，确定工具、错误和进度在对话中的共同呈现方式。">
+<meta name="keywords" content="Pi Stuff, Claude Code, Pi, TUI, transcript UI, tool display">
+<meta name="generator" content="Kami">
+<style>
+  @font-face {
+    font-family: "TsangerJinKai02";
+    src: url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W04.ttf") format("truetype");
+    font-weight: 400;
+    font-style: normal;
+  }
+
+  @font-face {
+    font-family: "TsangerJinKai02";
+    src: url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W05.ttf") format("truetype");
+    font-weight: 500;
+    font-style: normal;
+  }
+
+  :root {
+    --parchment: #f5f4ed;
+    --ivory: #faf9f5;
+    --near-black: #141413;
+    --dark-warm: #3d3d3a;
+    --olive: #504e49;
+    --stone: #6b6a64;
+    --brand: #1b365d;
+    --border: #e8e6dc;
+    --border-soft: #e5e3d8;
+    --tag-bg: #eef2f7;
+    --terminal: #141413;
+    --serif: "TsangerJinKai02", "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", Georgia, serif;
+    --mono: "Iosevka Nerd Font Mono", "JetBrains Mono", "SF Mono", Consolas, "TsangerJinKai02", monospace;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    background: var(--parchment);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 72px 64px 112px;
+    color: var(--near-black);
+    background: var(--parchment);
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 1.58;
+    letter-spacing: 0.15px;
+  }
+
+  a {
+    color: var(--brand);
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+  }
+
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+  }
+
+  .eyebrow::before {
+    width: 12px;
+    height: 2px;
+    background: var(--brand);
+    content: "";
+  }
+
+  .hero {
+    min-height: 66vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding-bottom: 64px;
+  }
+
+  .hero-copy {
+    padding: 88px 0 56px;
+  }
+
+  h1 {
+    max-width: 940px;
+    margin-top: 22px;
+    font-size: clamp(54px, 7.2vw, 92px);
+    font-weight: 500;
+    line-height: 1.06;
+    letter-spacing: 0;
+  }
+
+  .hero-lead {
+    max-width: 810px;
+    margin-top: 28px;
+    color: var(--dark-warm);
+    font-size: clamp(21px, 2.5vw, 29px);
+    line-height: 1.48;
+  }
+
+  .hero-lead strong,
+  .section-lead strong {
+    color: var(--brand);
+    font-weight: 500;
+  }
+
+  .hero-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .metric {
+    padding: 18px 18px 20px 0;
+  }
+
+  .metric + .metric {
+    padding-left: 22px;
+    border-left: 1px solid var(--border);
+  }
+
+  .metric-value {
+    color: var(--brand);
+    font-size: 25px;
+    font-weight: 500;
+    line-height: 1.2;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+
+  .metric-label {
+    margin-top: 5px;
+    color: var(--stone);
+    font-size: 13px;
+  }
+
+  .orientation {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: 20px 0 100px;
+    border-top: 1px solid var(--border);
+  }
+
+  .orientation-item {
+    min-height: 122px;
+    padding: 18px 18px 18px 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .orientation-item + .orientation-item {
+    padding-left: 18px;
+    border-left: 1px solid var(--border-soft);
+  }
+
+  .orientation-num {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .orientation-title {
+    margin-top: 9px;
+    font-size: 17px;
+    font-weight: 500;
+  }
+
+  .orientation-state {
+    margin-top: 4px;
+    color: var(--stone);
+    font-size: 13px;
+  }
+
+  .orientation-item.current {
+    border-top: 3px solid var(--brand);
+    margin-top: -3px;
+  }
+
+  section {
+    padding: 84px 0 32px;
+    border-top: 1px solid var(--border);
+  }
+
+  .section-kicker {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  h2 {
+    max-width: 880px;
+    margin-top: 14px;
+    font-size: clamp(34px, 4.8vw, 56px);
+    font-weight: 500;
+    line-height: 1.14;
+  }
+
+  .section-lead {
+    max-width: 790px;
+    margin-top: 20px;
+    color: var(--olive);
+    font-size: 20px;
+    line-height: 1.55;
+  }
+
+  .evidence-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 52px 22px;
+    margin-top: 52px;
+  }
+
+  .evidence-grid.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  figure {
+    min-width: 0;
+  }
+
+  .screen-link {
+    display: block;
+    overflow: hidden;
+    background: var(--terminal);
+    border-radius: 6px;
+    line-height: 0;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
+  }
+
+  .screen-link img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  figcaption {
+    padding-top: 14px;
+  }
+
+  .caption-title {
+    font-size: 18px;
+    font-weight: 500;
+  }
+
+  .caption-body {
+    margin-top: 5px;
+    color: var(--olive);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .source-note {
+    max-width: 850px;
+    margin-top: 44px;
+    padding-top: 18px;
+    border-top: 1px dotted var(--border);
+    color: var(--stone);
+    font-size: 13px;
+  }
+
+  .rule-list {
+    margin-top: 50px;
+    border-top: 1px solid var(--border);
+  }
+
+  .rule {
+    display: grid;
+    grid-template-columns: 52px minmax(170px, 0.72fr) minmax(0, 1.7fr) 120px;
+    gap: 18px;
+    align-items: baseline;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .rule-num {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .rule-name {
+    font-size: 17px;
+    font-weight: 500;
+  }
+
+  .rule-desc {
+    color: var(--olive);
+    font-size: 15px;
+  }
+
+  .rule-state {
+    color: var(--stone);
+    font-family: var(--mono);
+    font-size: 12px;
+    text-align: right;
+  }
+
+  .not-deciding {
+    display: grid;
+    grid-template-columns: 0.8fr 1.2fr;
+    gap: 46px;
+    margin-top: 76px;
+    padding: 36px 0;
+    border-top: 3px solid var(--brand);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .not-deciding h3 {
+    font-size: 25px;
+    font-weight: 500;
+    line-height: 1.25;
+  }
+
+  .not-deciding p {
+    color: var(--olive);
+  }
+
+  .decision {
+    min-height: 62vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .decision-question {
+    max-width: 900px;
+    margin-top: 22px;
+    font-size: clamp(34px, 5vw, 60px);
+    font-weight: 500;
+    line-height: 1.18;
+  }
+
+  .decision-answer {
+    max-width: 760px;
+    margin-top: 28px;
+    color: var(--olive);
+    font-size: 20px;
+  }
+
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    margin-top: 44px;
+    font-size: 14px;
+  }
+
+  @media (max-width: 900px) {
+    body {
+      padding: 54px 34px 90px;
+    }
+
+    .hero-meta,
+    .orientation,
+    .evidence-grid.three {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .orientation-item:nth-child(3) {
+      border-left: 0;
+    }
+
+    .rule {
+      grid-template-columns: 42px minmax(150px, 0.72fr) minmax(0, 1.4fr);
+    }
+
+    .rule-state {
+      grid-column: 3;
+      text-align: left;
+    }
+  }
+
+  @media (max-width: 640px) {
+    body {
+      padding: 32px 18px 72px;
+      font-size: 15px;
+    }
+
+    .hero {
+      min-height: auto;
+      padding-bottom: 48px;
+    }
+
+    .hero-copy {
+      padding: 64px 0 42px;
+    }
+
+    h1 {
+      font-size: 46px;
+    }
+
+    .hero-lead,
+    .section-lead,
+    .decision-answer {
+      font-size: 18px;
+    }
+
+    .hero-meta,
+    .orientation,
+    .evidence-grid,
+    .evidence-grid.three,
+    .not-deciding {
+      grid-template-columns: 1fr;
+    }
+
+    .metric + .metric,
+    .orientation-item + .orientation-item {
+      padding-left: 0;
+      border-left: 0;
+    }
+
+    .orientation-item.current {
+      margin-top: 0;
+    }
+
+    section {
+      padding-top: 64px;
+    }
+
+    .evidence-grid,
+    .evidence-grid.three {
+      gap: 40px;
+      margin-top: 40px;
+    }
+
+    .rule {
+      grid-template-columns: 34px 1fr;
+      gap: 6px 12px;
+    }
+
+    .rule-desc,
+    .rule-state {
+      grid-column: 2;
+    }
+
+    .not-deciding {
+      gap: 16px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-copy">
+    <div class="eyebrow">Pi Stuff · UI system · 02</div>
+    <h1>工具、错误与进度，都只是对话中的记录。</h1>
+    <p class="hero-lead">
+      它们不应各自发明一种界面。<strong>同一次操作在原地更新，结束后留下短记录，详情需要时再展开。</strong>
+    </p>
+  </div>
+
+  <div class="hero-meta">
+    <div class="metric">
+      <div class="metric-value">4</div>
+      <div class="metric-label">张 Claude Code 当前版实机图</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">3</div>
+      <div class="metric-label">张 Pi 0.83 原型实机图</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">0</div>
+      <div class="metric-label">模型调用与模拟终端画面</div>
+    </div>
+  </div>
+</header>
+
+<nav class="orientation" aria-label="Pi Stuff UI categories">
+  <div class="orientation-item">
+    <div class="orientation-num">01</div>
+    <div class="orientation-title">Command Dialog</div>
+    <div class="orientation-state">已确认 · Agents / BTW / Settings</div>
+  </div>
+  <div class="orientation-item current">
+    <div class="orientation-num">02</div>
+    <div class="orientation-title">对话内容</div>
+    <div class="orientation-state">本报告 · 等待整体确认</div>
+  </div>
+  <div class="orientation-item">
+    <div class="orientation-num">03</div>
+    <div class="orientation-title">工作提示行</div>
+    <div class="orientation-state">下一步再看</div>
+  </div>
+  <div class="orientation-item">
+    <div class="orientation-num">04</div>
+    <div class="orientation-title">Pi Statusline</div>
+    <div class="orientation-state">只放稳定环境信息</div>
+  </div>
+</nav>
+
+<main>
+  <section id="claude-evidence">
+    <div class="section-kicker">01 · Released reference</div>
+    <h2>Claude Code 默认给摘要，不把终端日志倒进对话。</h2>
+    <p class="section-lead">
+      下面四张图来自 <strong>Claude Code 2.1.220 发布版</strong>。它们只运行本地无害 shell 命令，不需要登录，也没有调用模型。
+    </p>
+
+    <div class="evidence-grid">
+      <figure>
+        <a class="screen-link" href="./artifacts/claude-2.1.220-inline-collapsed.png" title="打开默认折叠态原图">
+          <img src="./artifacts/claude-2.1.220-inline-collapsed.png" alt="Claude Code 默认折叠长命令结果，只保留前三行和展开提示">
+        </a>
+        <figcaption>
+          <div class="caption-title">完成后：短记录留在原处</div>
+          <p class="caption-body">长结果只显示前三行和剩余行数。对话还能继续读，不会被一次工具输出淹没。</p>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <a class="screen-link" href="./artifacts/claude-2.1.220-inline-running.png" title="打开运行态原图">
+          <img src="./artifacts/claude-2.1.220-inline-running.png" alt="Claude Code 命令运行中在同一位置更新最近输出、耗时和后台化提示">
+        </a>
+        <figcaption>
+          <div class="caption-title">运行中：同一条记录原地变化</div>
+          <p class="caption-body">最近输出、耗时和当前可做的动作都附着在这次操作上；不会每秒新增一条进度消息。</p>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <a class="screen-link" href="./artifacts/claude-2.1.220-inline-error.png" title="打开错误态原图">
+          <img src="./artifacts/claude-2.1.220-inline-error.png" alt="Claude Code 把命令错误直接显示在对应操作下面">
+        </a>
+        <figcaption>
+          <div class="caption-title">失败时：错误贴着失败的操作</div>
+          <p class="caption-body">不另开错误中心，不弹出大面板。用户能直接看出哪一步失败以及返回了什么。</p>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <a class="screen-link" href="./artifacts/claude-2.1.220-inline-expanded.png" title="打开详细 transcript 原图">
+          <img src="./artifacts/claude-2.1.220-inline-expanded.png" alt="Claude Code Ctrl+O 详细 transcript 展开长工具结果">
+        </a>
+        <figcaption>
+          <div class="caption-title">需要时：在对话里展开完整内容</div>
+          <p class="caption-body">Ctrl+O 切换详细 transcript。长日志仍属于原来的对话记录，不会突然变成另一套 GUI。</p>
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="source-note">
+      可观察行为与官方说明相符：<a href="https://code.claude.com/docs/en/fullscreen">Ctrl+O detailed transcript</a>；运行计时、折叠工具摘要与失败结果展开见 <a href="https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md">Claude Code 官方 changelog</a>。截图终端为 100 × 38 cells。
+    </p>
+  </section>
+
+  <section id="pi-translation">
+    <div class="section-kicker">02 · Native Pi translation</div>
+    <h2>Pi 不需要换 Host，也能表达同一套层级。</h2>
+    <p class="section-lead">
+      下面是仓库锁定的 <strong>Pi 0.83.0</strong>。固定 Session fixture 让真实 Pi 重建对话，再由一次性 Extension 只负责工具文案和折叠内容；无网络、无模型、无伪造终端。
+    </p>
+
+    <div class="evidence-grid three">
+      <figure>
+        <a class="screen-link" href="./artifacts/pi-0.83-transcript-compact-success.png" title="打开 Pi 紧凑成功态原图">
+          <img src="./artifacts/pi-0.83-transcript-compact-success.png" alt="Pi 0.83 中工具成功后留下紧凑摘要和详情提示">
+        </a>
+        <figcaption>
+          <div class="caption-title">默认：一句结果</div>
+          <p class="caption-body">工具名、对象和结论留下；三行版本详情先收起。</p>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <a class="screen-link" href="./artifacts/pi-0.83-transcript-expanded-detail.png" title="打开 Pi 展开态原图">
+          <img src="./artifacts/pi-0.83-transcript-expanded-detail.png" alt="Pi 0.83 中同一工具记录展开三行详情">
+        </a>
+        <figcaption>
+          <div class="caption-title">展开：仍是同一条</div>
+          <p class="caption-body">Ctrl+O 后，Pi / Bun / TypeScript 详情回到原工具记录下面。</p>
+        </figcaption>
+      </figure>
+
+      <figure>
+        <a class="screen-link" href="./artifacts/pi-0.83-transcript-compact-error.png" title="打开 Pi 紧凑错误态原图">
+          <img src="./artifacts/pi-0.83-transcript-compact-error.png" alt="Pi 0.83 中工具错误附着在失败的读取操作下面">
+        </a>
+        <figcaption>
+          <div class="caption-title">错误：结论与下一步</div>
+          <p class="caption-body">失败原因留在原处；一句提示说明接下来需要什么。</p>
+        </figcaption>
+      </figure>
+    </div>
+
+    <p class="source-note">
+      这是结构原型，不是最终皮肤。颜色、图标、具体状态词和每种工具的摘要仍会单独打磨。可复现文件：<a href="./transcript-content-blocks.ts">renderer Extension</a>、<a href="./transcript-content-fixture.ts">Session fixture</a>、<a href="./capture-transcript-content-blocks.sh">capture script</a>。截图终端为 100 × 32 cells。
+    </p>
+  </section>
+
+  <section id="recommendation">
+    <div class="section-kicker">03 · One shared rule set</div>
+    <h2>建议确认的，是共同规则，不是七种新组件。</h2>
+    <p class="section-lead">
+      Read、Bash、diff、测试、错误和前台 Agent 可以有不同内容，但都服从同一套对话行为。
+    </p>
+
+    <div class="rule-list">
+      <div class="rule">
+        <div class="rule-num">01</div>
+        <div class="rule-name">普通回答</div>
+        <div class="rule-desc">像正文一样直接阅读，不包进卡片或工具框。</div>
+        <div class="rule-state">KEEP PLAIN</div>
+      </div>
+      <div class="rule">
+        <div class="rule-num">02</div>
+        <div class="rule-name">工具与前台 Agent</div>
+        <div class="rule-desc">每次操作在对话中只有一条归属明确的记录。</div>
+        <div class="rule-state">ONE RECORD</div>
+      </div>
+      <div class="rule">
+        <div class="rule-num">03</div>
+        <div class="rule-name">运行中</div>
+        <div class="rule-desc">更新同一条记录的动作、最近输出和耗时，不连续刷出进度卡。</div>
+        <div class="rule-state">UPDATE IN PLACE</div>
+      </div>
+      <div class="rule">
+        <div class="rule-num">04</div>
+        <div class="rule-name">完成后</div>
+        <div class="rule-desc">默认留一至两行有用结论；不把原始日志当交付物。</div>
+        <div class="rule-state">COMPACT</div>
+      </div>
+      <div class="rule">
+        <div class="rule-num">05</div>
+        <div class="rule-name">失败时</div>
+        <div class="rule-desc">错误贴在失败操作下面；能说明下一步时，再加一句提示。</div>
+        <div class="rule-state">CONTEXTUAL</div>
+      </div>
+      <div class="rule">
+        <div class="rule-num">06</div>
+        <div class="rule-name">长日志 / diff / 测试详情</div>
+        <div class="rule-desc">在 detailed transcript 中展开，不为它们另开 Review 页面。</div>
+        <div class="rule-state">EXPAND HERE</div>
+      </div>
+      <div class="rule">
+        <div class="rule-num">07</div>
+        <div class="rule-name">后台 Agent</div>
+        <div class="rule-desc">主对话只收到完成或需输入的短记录；完整过程从 Agents Command Dialog 查看。</div>
+        <div class="rule-state">SUMMARY + DIALOG</div>
+      </div>
+    </div>
+
+    <div class="not-deciding">
+      <h3>这次明确不决定</h3>
+      <p>不决定最终图标、绿色或灰色的具体范围、每种工具显示几行、展开快捷键是否永远是 Ctrl+O，也不决定 Agent 摘要的文案模板。那些要等功能边界明确后，用同一套真实 TUI 方法逐项看。</p>
+    </div>
+  </section>
+
+  <section class="decision" id="decision">
+    <div class="section-kicker">Decision requested</div>
+    <div class="decision-question">是否确认这个大方向：对话里只有“正文”和“紧凑操作记录”，详情按需展开？</div>
+    <p class="decision-answer">
+      如果确认，这会成为 Pi Stuff 所有 fork 的共同约束。下一步再看第三类 UI：输入框附近那一行“现在正在做什么”。
+    </p>
+    <div class="links">
+      <a href="./agents-ui-reference-report.html">上一份：Command Dialog / Agents</a>
+      <a href="https://code.claude.com/docs/en/interactive-mode">Claude Code interactive mode</a>
+      <a href="https://code.claude.com/docs/en/sub-agents">Claude Code subagents</a>
+    </div>
+  </section>
+</main>
+
+</body>
+</html>

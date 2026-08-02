@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway evidence report, not Pi Stuff Runtime UI.
+  Switch variants with ?variant=vertical|grouped|rail.
+  Terminal images come from genuine Claude Code 2.1.197 or native Pi 0.83 PTYs.
+  HTML only arranges the evidence.
+-->
+<html lang="zh-CN" data-variant="vertical">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi Stuff · Agent roster UI 对照</title>
+<meta name="author" content="Pi Stuff">
+<meta name="description" content="用真实 Claude Code 2.1.197 与 Pi 0.83 PTY 确定编辑器下方 Agent roster。">
+<style>
+  :root {
+    --paper: #f2f0e7;
+    --paper-strong: #faf9f4;
+    --ink: #171715;
+    --ink-soft: #4b4942;
+    --muted: #747168;
+    --line: #d4d0c4;
+    --line-strong: #9c9789;
+    --brand: #204f55;
+    --brand-soft: #dfe9e6;
+    --terminal: #151514;
+    --warning: #8a4c11;
+    --serif: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+    --sans: Inter, "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif;
+    --mono: "Iosevka Nerd Font Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html {
+    background: var(--paper);
+    color: var(--ink);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 64px 58px 150px;
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+  }
+
+  a { color: var(--brand); text-underline-offset: 3px; }
+  code, kbd, .mono { font-family: var(--mono); }
+  code {
+    padding: 0.08em 0.3em;
+    background: rgba(32, 79, 85, 0.08);
+    font-size: 0.91em;
+  }
+
+  h1, h2, h3, h4, p { margin-top: 0; }
+
+  .eyebrow,
+  .section-kicker,
+  .evidence-label {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .hero {
+    min-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 42px 0 66px;
+  }
+
+  h1 {
+    max-width: 990px;
+    margin: 24px 0 30px;
+    font-family: var(--serif);
+    font-size: clamp(48px, 7vw, 84px);
+    font-weight: 600;
+    letter-spacing: -1.2px;
+    line-height: 1.08;
+  }
+
+  .hero-lead {
+    max-width: 880px;
+    color: var(--ink-soft);
+    font-family: var(--serif);
+    font-size: clamp(21px, 2.5vw, 29px);
+    line-height: 1.5;
+  }
+
+  .hero-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .metric { padding: 18px 20px 20px 0; }
+  .metric + .metric { padding-left: 20px; border-left: 1px solid var(--line); }
+  .metric-value { color: var(--brand); font: 700 23px var(--mono); }
+  .metric-label { margin-top: 4px; color: var(--muted); font-size: 13px; }
+
+  .notice {
+    margin: 28px 0 96px;
+    padding: 16px 19px;
+    border-left: 4px solid var(--warning);
+    background: rgba(255, 255, 255, 0.34);
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+
+  .notice strong { color: var(--warning); }
+
+  section {
+    padding: 82px 0 48px;
+    border-top: 1px solid var(--line);
+  }
+
+  h2 {
+    max-width: 980px;
+    margin: 14px 0 20px;
+    font-family: var(--serif);
+    font-size: clamp(34px, 4.7vw, 54px);
+    font-weight: 600;
+    line-height: 1.17;
+  }
+
+  .section-lead { max-width: 900px; color: var(--ink-soft); font-size: 19px; }
+
+  .decision-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 46px;
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .decision {
+    padding: 25px 28px 28px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .decision + .decision { padding-left: 28px; border-left: 1px solid var(--line); }
+  .decision h3 { margin-bottom: 9px; font-family: var(--serif); font-size: 25px; }
+  .decision p { margin: 0; color: var(--ink-soft); }
+
+  .comparison-wrap { margin-top: 44px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; border-top: 1px solid var(--line-strong); font-size: 14px; }
+  th, td { padding: 15px 16px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--muted); font: 700 12px var(--mono); }
+  th:first-child, td:first-child { padding-left: 0; }
+  td:first-child { width: 19%; color: var(--ink-soft); font-weight: 650; }
+
+  .variant-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 48px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .variant-tab {
+    appearance: none;
+    min-height: 88px;
+    padding: 17px 18px;
+    border: 0;
+    border-left: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+  }
+
+  .variant-tab:first-child { border-left: 0; }
+  .variant-tab strong { display: block; color: var(--ink); font-family: var(--serif); font-size: 19px; }
+  .variant-tab span { display: block; margin-top: 3px; color: var(--muted); font: 11px var(--mono); }
+
+  html[data-variant="vertical"] [data-select="vertical"],
+  html[data-variant="grouped"] [data-select="grouped"],
+  html[data-variant="rail"] [data-select="rail"] {
+    box-shadow: inset 0 4px 0 var(--brand);
+    background: var(--brand-soft);
+  }
+
+  .variant-panel { padding-top: 48px; }
+  .variant-panel[hidden] { display: none; }
+
+  .variant-heading {
+    display: grid;
+    grid-template-columns: 68px minmax(0, 1fr);
+    gap: 22px;
+    margin-bottom: 34px;
+  }
+
+  .variant-letter { color: var(--brand); font: 700 55px/1 var(--mono); }
+  .variant-heading h3 { margin-bottom: 8px; font-family: var(--serif); font-size: 31px; line-height: 1.2; }
+  .variant-heading p { max-width: 880px; margin-bottom: 0; color: var(--ink-soft); }
+
+  .capture-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+  .capture-grid + .capture-grid { margin-top: 28px; }
+  .capture--wide { grid-column: 1 / -1; }
+  .capture { margin: 0; }
+  .capture-frame {
+    min-height: 300px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid #2b2b28;
+    background: var(--terminal);
+  }
+  .capture-frame img { display: block; width: 100%; height: auto; }
+  figcaption { padding-top: 13px; color: var(--muted); font-size: 13px; }
+  figcaption strong { display: block; margin-bottom: 3px; color: var(--ink); font-size: 14px; }
+  .evidence-label { display: block; margin-bottom: 5px; font-size: 10px; }
+  .evidence-label.reference { color: #8a4c11; }
+
+  .reading {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 26px;
+    margin-top: 34px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+  }
+  .reading h4 { margin: 0 0 8px; font-family: var(--serif); font-size: 19px; }
+  .reading p { margin: 0; color: var(--ink-soft); font-size: 14px; }
+
+  .recommendation {
+    display: grid;
+    grid-template-columns: 0.7fr 1.3fr;
+    gap: 54px;
+    margin-top: 42px;
+  }
+  .recommendation-mark { color: var(--brand); font: 700 clamp(52px, 8vw, 92px)/0.95 var(--mono); }
+  .recommendation h3 { margin-bottom: 14px; font-family: var(--serif); font-size: 30px; }
+  .recommendation p, .recommendation li { color: var(--ink-soft); }
+  .recommendation ol { padding-left: 1.25em; }
+  .recommendation li + li { margin-top: 9px; }
+
+  .pending {
+    margin-top: 28px;
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    background: var(--paper-strong);
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+
+  .report-switcher {
+    position: fixed;
+    z-index: 20;
+    right: 22px;
+    bottom: 18px;
+    left: 22px;
+    max-width: 760px;
+    margin: auto;
+    padding: 9px;
+    border: 1px solid #aaa599;
+    background: rgba(250, 249, 244, 0.96);
+    box-shadow: 0 8px 28px rgba(23, 23, 21, 0.14);
+    backdrop-filter: blur(12px);
+  }
+  .switcher-note { padding: 1px 8px 7px; color: var(--muted); font: 10px var(--mono); text-align: center; }
+  .switcher-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .switcher-button {
+    appearance: none;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font: 12px var(--mono);
+  }
+  html[data-variant="vertical"] .switcher-button[data-select="vertical"],
+  html[data-variant="grouped"] .switcher-button[data-select="grouped"],
+  html[data-variant="rail"] .switcher-button[data-select="rail"] {
+    border-color: var(--brand);
+    background: var(--brand);
+    color: #fff;
+  }
+
+  @media (max-width: 820px) {
+    body { padding: 34px 20px 138px; }
+    .hero { min-height: auto; padding: 26px 0 56px; }
+    .hero-meta, .decision-grid, .capture-grid, .reading, .recommendation { grid-template-columns: 1fr; }
+    .metric + .metric, .decision + .decision { padding-left: 0; border-left: 0; }
+    .decision { padding-right: 0; }
+    .variant-tabs { grid-template-columns: 1fr; }
+    .variant-tab { border-top: 1px solid var(--line); border-left: 0; }
+    .variant-tab:first-child { border-top: 0; }
+    .variant-heading { grid-template-columns: 48px minmax(0, 1fr); }
+    .variant-letter { font-size: 42px; }
+    .capture-grid { gap: 38px; }
+    .recommendation { gap: 20px; }
+    .report-switcher { right: 10px; bottom: 10px; left: 10px; }
+    .switcher-button { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <div class="eyebrow">Pi Stuff / Agent roster / Evidence 02</div>
+      <h1>Agent 列表放在编辑器下方，具体应该长什么样？</h1>
+      <p class="hero-lead">大方向已经收敛：保留 C 的生命周期分工，但实时界面采用 Claude Code 的下方 roster。这里不再比较“放上面还是下面”，只比较下方 roster 的三种信息密度。</p>
+    </div>
+    <div class="hero-meta" aria-label="原型元数据">
+      <div class="metric">
+        <div class="metric-value">3</div>
+        <div class="metric-label">结构不同的 Pi roster</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value">11</div>
+        <div class="metric-label">真实 Pi 0.83 PTY 帧</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value">100×32</div>
+        <div class="metric-label">主要终端网格；另测 64×28</div>
+      </div>
+    </div>
+  </header>
+
+  <aside class="notice">
+    <strong>先区分 reference 和 proposal。</strong> Claude 图来自官方 Claude Code 2.1.197 Linux x64 发布二进制，界面与键盘处理是真实的，模型内容来自本地 deterministic fixture。Pi 图来自仓库固定的 Pi 0.83 Host，使用公开 <code>belowEditor</code>、terminal-input 与非 overlay custom UI API；Agent 数据是静态 session fixture。静态完成帧只证明布局，不证明完成项应该停留多久。
+  </aside>
+
+  <main>
+    <section id="decision">
+      <div class="section-kicker">01 / Current product decision</div>
+      <h2>旧方案 C 留下生命周期；Claude 决定实时界面的位置</h2>
+      <p class="section-lead">这不是把旧 C 全盘推翻。保留的是“运行态与永久历史分工”；被替换的是编辑器上方的 bounded activity widget。最终只保留一个下方 roster，不再重复显示同一批 Agent。</p>
+
+      <div class="decision-grid">
+        <article class="decision">
+          <h3>对话记录</h3>
+          <p>启动时留一行事实；结束时留一组结果。它回答“发生过什么”，不会持续滚动完整 child transcript。</p>
+        </article>
+        <article class="decision">
+          <h3>编辑器下方</h3>
+          <p>只放一个 Claude 风格 roster。它回答“现在有哪些会话、哪一个被选中、各自处于什么状态”。</p>
+        </article>
+        <article class="decision">
+          <h3>显式详情</h3>
+          <p>Enter 打开全宽、divider-led、非浮动的 Agent 详情 / 会话。这里承担 steer、stop、resume 与完整对话。</p>
+        </article>
+      </div>
+
+      <div class="comparison-wrap">
+        <table>
+          <thead>
+            <tr><th>表面</th><th>保留什么</th><th>明确不放什么</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Transcript</td><td>launch、settled summary、失败或需要用户处理的事件</td><td>持续 live activity、完整 child conversation</td></tr>
+            <tr><td>Below-editor roster</td><td>main、Agent、任务、当前状态、选择态</td><td>tool 日志、长结果预览、第二份 statusline 计数</td></tr>
+            <tr><td>Command Dialog</td><td>完整会话、控制、局部详情</td><td>居中 overlay、覆盖在 transcript 上的浮窗</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="variants">
+      <div class="section-kicker">02 / Native Pi proposals</div>
+      <h2>现在只剩一个问题：下方 roster 要多“直白”</h2>
+      <p class="section-lead">三种方案共享同一套 Pi 键盘实现：编辑器为空时按 <kbd>↓</kbd> 进入，方向键选择，Enter 查看，Esc 返回。capture 对三种方案都验证了进入与选择；A 另外验证了 Enter 打开详情、Esc 恢复 roster/footer，以及普通文字不会被 roster 吞掉。</p>
+
+      <div class="variant-tabs" role="tablist" aria-label="Agent roster 方案">
+        <button class="variant-tab" type="button" role="tab" data-select="vertical">
+          <strong>A · 逐行 roster</strong>
+          <span>closest to Claude · selected</span>
+        </button>
+        <button class="variant-tab" type="button" role="tab" data-select="grouped">
+          <strong>B · 按批次分组</strong>
+          <span>more ownership · more height</span>
+        </button>
+        <button class="variant-tab" type="button" role="tab" data-select="rail">
+          <strong>C · 横向 session rail</strong>
+          <span>least height · least overview</span>
+        </button>
+      </div>
+
+      <article class="variant-panel" data-panel="vertical">
+        <div class="variant-heading">
+          <div class="variant-letter">A</div>
+          <div>
+            <h3>逐行 roster：最像 Claude，也最容易一眼看懂</h3>
+            <p>main 与每个 Agent 各占一行；任务在左，时间 / 队列 / 完成统计在右。默认圆点停在 main；进入管理后，实心圆跟随选择。没有分组标题，也没有实时 tool 行。</p>
+          </div>
+        </div>
+
+        <div class="capture-grid">
+          <figure class="capture">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-vertical-running.png" alt="Pi 0.83 逐行 Agent roster 运行态"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / static session fixture</span><strong>默认运行态</strong>四个 child session 全部可见，右侧只显示最短的状态；主编辑器仍可输入。</figcaption>
+          </figure>
+          <figure class="capture">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-vertical-selected.png" alt="Pi 0.83 逐行 Agent roster 选择态"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / real key input</span><strong>↓ 进入，再 ↓ 选择 explorer</strong>提示切成选择 / 查看 / 返回，选择态用行首圆点表达，不绘制卡片或高亮整行。</figcaption>
+          </figure>
+        </div>
+
+        <div class="capture-grid">
+          <figure class="capture">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-vertical-completed.png" alt="Pi 0.83 逐行 Agent roster 完成后短暂保留态"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / static session fixture</span><strong>刚完成后的候选留存态</strong>每行切成 done、耗时与 tokens。画面不证明留存时长；时长仍待决定。</figcaption>
+          </figure>
+          <figure class="capture">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-detail.png" alt="Pi 0.83 非浮动 Agent 详情 Command Dialog"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / real Enter path</span><strong>Enter 打开详情</strong>roster 暂时让位给全宽 Command Dialog；没有 overlay，也没有 Agent statusline。</figcaption>
+          </figure>
+        </div>
+
+        <div class="capture-grid">
+          <figure class="capture capture--wide">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-vertical-narrow.png" alt="Pi 0.83 逐行 Agent roster 64 列窄终端"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / 64×28 smoke frame</span><strong>64 列窄终端</strong>这个四项 fixture 仍完整显示，右侧 queued / elapsed 保留。它证明窄终端的基本可用性，没有验证 10 个 Agent、<code>+N more</code> 或最终最大高度。</figcaption>
+          </figure>
+        </div>
+
+        <div class="reading">
+          <div><h4>为什么选择它</h4><p>用户不需要理解“batch ownership”或“session rail”；看到名字、任务和状态就能直接使用。它也是三者中最接近真实 Claude roster 的。</p></div>
+          <div><h4>需要设上限</h4><p>Agent 很多时不能无限向下长。实现阶段仍需决定显示上限、<code>+N more</code> 规则与完成项 linger 时间。</p></div>
+        </div>
+      </article>
+
+      <article class="variant-panel" data-panel="grouped">
+        <div class="variant-heading">
+          <div class="variant-letter">B</div>
+          <div>
+            <h3>按批次分组：上下文更多，但 roster 变成第二棵树</h3>
+            <p>每个 Agent 仍有一行，同时增加“UI references / Pi validation”等批次标题和组内统计。它说明 Agent 从哪一轮工作产生，却持续占用更多终端高度。</p>
+          </div>
+        </div>
+
+        <div class="capture-grid">
+          <figure class="capture">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-grouped-running.png" alt="Pi 0.83 分组 Agent roster 运行态"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / static session fixture</span><strong>默认运行态</strong>组标题与 child rows 同时存在。来源关系清楚，但 transcript 已经有批次记录，因此这里出现重复。</figcaption>
+          </figure>
+          <figure class="capture">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-grouped-selected.png" alt="Pi 0.83 分组 Agent roster 选择态"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / real key input</span><strong>选择态</strong>操作仍然直接，但视觉层级比 Claude 多一层，100×32 已明显挤压主对话。</figcaption>
+          </figure>
+        </div>
+
+        <div class="capture-grid">
+          <figure class="capture capture--wide">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-grouped-completed.png" alt="Pi 0.83 分组 Agent roster 完成态"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / static session fixture</span><strong>完成态</strong>组统计与 child 统计同时保留，信息完整但不再“quiet”。</figcaption>
+          </figure>
+        </div>
+
+        <div class="reading">
+          <div><h4>适合什么</h4><p>多个长期 team / batch 同时运行，而且用户经常需要按来源判断状态时，分组会有价值。</p></div>
+          <div><h4>为什么不推荐默认使用</h4><p>Pi Stuff 已决定 transcript 负责“这批工作为何产生”。roster 再复述一次批次结构，职责不够干净。</p></div>
+        </div>
+      </article>
+
+      <article class="variant-panel" data-panel="rail">
+        <div class="variant-heading">
+          <div class="variant-letter">C</div>
+          <div>
+            <h3>横向 rail：高度最小，但必须逐个选择才知道情况</h3>
+            <p>第一行只列 session 名称，第二行只解释当前选中项。它适合少量、名字短的会话；任务、排队与耗时不能同时扫读。</p>
+          </div>
+        </div>
+
+        <div class="capture-grid">
+          <figure class="capture">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-rail-running.png" alt="Pi 0.83 横向 Agent session rail 运行态"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / static session fixture</span><strong>默认运行态</strong>只占三行，但默认选中 main 时几乎看不到 child work 的具体状态。</figcaption>
+          </figure>
+          <figure class="capture">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-rail-selected.png" alt="Pi 0.83 横向 Agent session rail 选择态"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / real key input</span><strong>选择 explorer</strong>当前任务与状态才出现在第二行；Agent 名较长时第一行很快出现 <code>+more</code>。</figcaption>
+          </figure>
+        </div>
+
+        <div class="capture-grid">
+          <figure class="capture capture--wide">
+            <div class="capture-frame"><img src="./artifacts/pi-0.83-agent-roster-rail-completed.png" alt="Pi 0.83 横向 Agent session rail 完成态"></div>
+            <figcaption><span class="evidence-label">Proposal / Pi 0.83 Host / static session fixture</span><strong>完成态</strong>高度仍小，但无法同时确认四个 Agent 是否都完成。</figcaption>
+          </figure>
+        </div>
+
+        <div class="reading">
+          <div><h4>实际优点</h4><p>对 transcript 的垂直空间影响最小；结构也没有 card、tree 或浮窗。</p></div>
+          <div><h4>实际代价</h4><p>它把“看一眼就知道所有 Agent 状态”变成“先进入 roster，再逐个切换”，不符合我们采用 Claude roster 的主要理由。</p></div>
+        </div>
+      </article>
+    </section>
+
+    <section id="claude-evidence">
+      <div class="section-kicker">03 / Genuine Claude Code evidence</div>
+      <h2>Claude 的 roster 不是静态装饰，它有完整的选择路径</h2>
+      <p class="section-lead">以下画面来自第三次独立的 2.1.197 黑盒运行。先让两个前台 Agent 工作，再在空编辑器按 <kbd>↓</kbd>、继续选择 child、按 Enter。此前“↓ 是否真的可管理”这个缺口已经补上。</p>
+
+      <div class="capture-grid">
+        <figure class="capture">
+          <div class="capture-frame"><img src="./artifacts/claude-2.1.197-agent-activity-roster-manage.png" alt="Claude Code 2.1.197 Agent roster 管理模式真实 TUI"></div>
+          <figcaption><span class="evidence-label reference">Reference / Claude Code 2.1.197 release / local response fixture</span><strong>按 ↓ 进入 roster</strong>提示明确变为 <code>↑/↓ to select · Enter to view</code>，实心圆位于 main。</figcaption>
+        </figure>
+        <figure class="capture">
+          <div class="capture-frame"><img src="./artifacts/claude-2.1.197-agent-activity-roster-manage-child.png" alt="Claude Code 2.1.197 Agent roster child 选择态真实 TUI"></div>
+          <figcaption><span class="evidence-label reference">Reference / Claude Code 2.1.197 release / local response fixture</span><strong>继续 ↓ 选择 child</strong>实心圆移动到 explorer；提示增加 Enter 查看与 stop 控制。</figcaption>
+        </figure>
+      </div>
+
+      <div class="capture-grid">
+        <figure class="capture capture--wide">
+          <div class="capture-frame"><img src="./artifacts/claude-2.1.197-agent-activity-roster-agent-view.png" alt="Claude Code 2.1.197 进入 child Agent 会话真实 TUI"></div>
+          <figcaption><span class="evidence-label reference">Reference / Claude Code 2.1.197 release / local response fixture</span><strong>Enter 查看 child</strong>上方主工作区切到 selected Agent 会话，roster 仍标出当前 child。Pi Stuff 借鉴“从 roster 进入会话”的关系，不复制 Claude 的具体 renderer。</figcaption>
+        </figure>
+      </div>
+
+      <div class="capture-grid">
+        <figure class="capture">
+          <div class="capture-frame"><img src="./artifacts/claude-2.1.197-agent-activity-background-running.png" alt="Claude Code 2.1.197 后台 Agent 运行与下方 roster 真实 TUI"></div>
+          <figcaption><span class="evidence-label reference">Reference / Claude Code 2.1.197 release / local response fixture</span><strong>后台运行</strong>transcript 留 launch record，主 Agent 继续，roster 持续提供 live presence。</figcaption>
+        </figure>
+        <figure class="capture">
+          <div class="capture-frame"><img src="./artifacts/claude-2.1.197-agent-activity-background-finished.png" alt="Claude Code 2.1.197 后台 Agent 完成与下方 roster 真实 TUI"></div>
+          <figcaption><span class="evidence-label reference">Reference / Claude Code 2.1.197 release / local response fixture</span><strong>后台完成瞬间</strong>transcript 收到完成通知，画面中的 roster 仍显示耗时和 token；留存时长未测量。</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="recommendation">
+      <div class="section-kicker">04 / Confirmed decision</div>
+      <h2>已确认采用 A；把“更聪明”的信息留给显式详情</h2>
+      <div class="recommendation">
+        <div class="recommendation-mark">A</div>
+        <div>
+          <h3>逐行 roster 是目前最稳的默认形态</h3>
+          <p>它与 Claude Code 的使用体验最接近，同时能由 Pi 的公开 API 自然实现。B 的批次关系已经存在于 transcript；C 又隐藏了我们最想保留的“一眼看全局”。因此默认 roster 不需要发明新的结构。</p>
+          <ol>
+            <li>固定位置：编辑器下方；取消旧的 above-editor Agent widget。</li>
+            <li>一项一行：Agent 名 + 当前任务 + 最短状态；默认不显示 tool activity。</li>
+            <li>只在空编辑器时由 <kbd>↓</kbd> 进入；选择与 Enter 查看均是实际可实现路径。</li>
+            <li>详情采用 Pi Stuff 通用的非浮动 Command Dialog；roster 打开详情时暂时隐藏。</li>
+            <li>Agent 不进入 statusline，也不出现 centered overlay。</li>
+          </ol>
+          <div class="pending"><strong>还没有冻结的三件事：</strong> roster 最多显示几行；completed / failed / stopped 各自 linger 多久；很多 Agent 时 <code>+N more</code> 放在哪一行。这些应该在真实 fork 接入后用 1、4、10 个 Agent 的状态帧决定，不必现在凭术语讨论。</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="history">
+      <div class="section-kicker">05 / History and method</div>
+      <h2>旧 A / B / C 报告保留，但不再代表当前 UI 决策</h2>
+      <p class="section-lead"><a href="./agent-activity-comparison-report.html">上一份 Agent activity location report</a> 证明了 transcript 与 live state 应分工，也暴露了 above-editor widget 的重复密度。当前报告继承它的生命周期结论，替换其空间结论。新的 Pi 画面由 <a href="./agent-roster-comparison-capture.sh">capture script</a> 一次生成；fixture tool 不执行模型、网络、文件或 shell I/O。Claude 画面由 <a href="./claude-2.1.197-agent-activity-capture.sh">pinned-release capture</a> 生成，脚本同时校验版本与发布二进制 SHA-256。</p>
+    </section>
+  </main>
+
+  <nav class="report-switcher" aria-label="浏览器报告方案切换">
+    <div class="switcher-note">浏览器报告控制 · 不是 Pi Stuff UI · 不代表允许浮动窗口</div>
+    <div class="switcher-buttons">
+      <button class="switcher-button" type="button" data-select="vertical">A · 逐行</button>
+      <button class="switcher-button" type="button" data-select="grouped">B · 分组</button>
+      <button class="switcher-button" type="button" data-select="rail">C · 横向</button>
+    </div>
+  </nav>
+
+<script>
+  const variants = new Set(["vertical", "grouped", "rail"]);
+
+  function selectVariant(next, updateHistory = true) {
+    const variant = variants.has(next) ? next : "vertical";
+    document.documentElement.dataset.variant = variant;
+
+    for (const panel of document.querySelectorAll("[data-panel]")) {
+      panel.hidden = panel.dataset.panel !== variant;
+    }
+
+    for (const button of document.querySelectorAll("[data-select]")) {
+      const selected = button.dataset.select === variant;
+      if (button.getAttribute("role") === "tab") button.setAttribute("aria-selected", String(selected));
+    }
+
+    if (updateHistory) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("variant", variant);
+      window.history.replaceState({}, "", url);
+    }
+  }
+
+  for (const button of document.querySelectorAll("[data-select]")) {
+    button.addEventListener("click", () => selectVariant(button.dataset.select));
+  }
+
+  const initial = new URL(window.location.href).searchParams.get("variant");
+  selectVariant(initial, false);
+</script>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!doctype html>
+<!--
+  PROTOTYPE — evidence report, not Runtime UI.
+  Every terminal frame is an actual released-Claude or native-Pi PTY capture.
+  The browser page only arranges evidence and is not a GUI proposal.
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pi Stuff · 后台 Agent 防呆线与界面接管验证</title>
+<meta name="description" content="真实 Claude Code 2.1.220 参考界面与原生 Pi 0.83 破坏性操作防呆线生命周期验证。">
+<style>
+  :root {
+    --paper: #f4f1e8;
+    --raised: #faf8f1;
+    --ink: #191816;
+    --soft: #59564f;
+    --muted: #777268;
+    --line: #d7d1c2;
+    --brand: #165760;
+    --brand-soft: #dcebea;
+    --amber: #9a4d0d;
+    --amber-soft: #f3e5d4;
+    --serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
+    --mono: "Iosevka Nerd Font Mono", "SFMono-Regular", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin: 0; color: var(--ink); background: var(--paper); font: 17px/1.7 var(--serif); }
+  a { color: var(--brand); text-underline-offset: 3px; }
+  code, kbd { font: .88em/1.3 var(--mono); }
+  code { padding: .08em .35em; background: rgba(22,87,96,.08); border-radius: 2px; }
+  kbd { padding: .12em .38em; border: 1px solid var(--line); background: var(--raised); }
+  .hero, main, .notice { width: min(1180px, calc(100% - 48px)); margin-inline: auto; }
+  .hero { padding: 96px 0 72px; }
+  .eyebrow, .kicker { color: var(--brand); font: 700 12px/1.4 var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+  h1 { max-width: 1080px; margin: 24px 0 28px; font-size: clamp(50px, 7.5vw, 100px); font-weight: 500; line-height: 1; letter-spacing: -.035em; }
+  .lead { max-width: 880px; margin: 0; color: var(--soft); font-size: clamp(20px, 2.2vw, 28px); line-height: 1.55; }
+  .metrics { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 64px; border-block: 1px solid var(--line); }
+  .metric { padding: 20px 18px 18px 0; }
+  .metric + .metric { padding-left: 22px; border-left: 1px solid var(--line); }
+  .metric strong { display: block; color: var(--brand); font: 700 27px/1 var(--mono); }
+  .metric span { display: block; margin-top: 8px; color: var(--muted); font-size: 14px; }
+  .notice { padding: 20px 24px; border-left: 4px solid var(--amber); background: var(--amber-soft); color: var(--soft); }
+  .notice strong { color: var(--amber); }
+  main { padding: 34px 0 130px; }
+  section { padding: 82px 0; border-bottom: 1px solid var(--line); }
+  h2 { max-width: 960px; margin: 15px 0 20px; font-size: clamp(34px, 4.5vw, 60px); font-weight: 500; line-height: 1.08; letter-spacing: -.025em; }
+  .section-lead { max-width: 900px; margin: 0 0 32px; color: var(--soft); font-size: 20px; }
+  .rules { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+  .rule { padding: 24px; border-top: 3px solid var(--brand); background: var(--raised); }
+  .rule h3 { margin: 0 0 10px; font-size: 23px; }
+  .rule p { margin: 0; color: var(--soft); }
+  .grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin-top: 18px; }
+  .grid.three { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  figure { margin: 0; min-width: 0; border: 1px solid var(--line); background: var(--raised); }
+  .frame { overflow: hidden; background: #111; }
+  img { display: block; width: 100%; height: auto; }
+  figcaption { padding: 16px 18px 19px; color: var(--soft); font-size: 15px; line-height: 1.55; }
+  figcaption strong { display: block; margin: 4px 0; color: var(--ink); font-size: 18px; }
+  .label { color: var(--brand); font: 700 10px/1.4 var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+  .label.reference { color: var(--amber); }
+  .verdict { display: grid; grid-template-columns: 170px 1fr; gap: 30px; align-items: start; }
+  .mark { color: var(--brand); font: 700 96px/.88 var(--mono); }
+  .verdict h3 { margin: 0 0 12px; font-size: 31px; }
+  .verdict p, .verdict li { color: var(--soft); }
+  .decision { margin-top: 18px; padding: 17px 20px; background: var(--brand-soft); color: var(--soft); }
+  @media (max-width: 780px) {
+    .hero, main, .notice { width: min(100% - 28px,1180px); }
+    .hero { padding: 66px 0 44px; }
+    .metrics, .rules, .grid, .grid.three, .verdict { grid-template-columns: 1fr; }
+    .metric + .metric { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+    .mark { font-size: 70px; }
+  }
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div class="eyebrow">Pi Stuff / Work UI / lifecycle evidence 01</div>
+    <h1>后台 Agent 碰到破坏性防呆线时，谁可以接管输入？</h1>
+    <p class="lead">这不是另一轮风格选择。它验证一个受 Claude Code 启发、但更窄的 Pi Stuff 规则：普通工作不询问；一个目标静态明确、位于 session cwd 外的破坏性操作才接管输入，只能精确允许一次或拒绝，处理后准确恢复。</p>
+    <div class="metrics">
+      <div class="metric"><strong>1</strong><span>真实 Claude Code 2.1.220 参考状态，不继承其授权选项</span></div>
+      <div class="metric"><strong>9</strong><span>原生 Pi 0.83 状态与恢复帧</span></div>
+      <div class="metric"><strong>0</strong><span>浮窗、Agent statusline 与重复状态</span></div>
+    </div>
+  </header>
+
+  <aside class="notice">
+    <strong>证据边界：</strong>Claude 图来自真实发布版，localhost fixture 只制造一个无害的后台 Bash permission；其中“项目内长期允许”等选项只用于说明上游行为，不是 Pi Stuff 最终选择。Pi 图来自仓库固定的 Pi 0.83 Host 和 model-free fixture。画面中的 <code>rm -- /tmp/pi-stuff-tripwire-prototype/obsolete.txt</code> 只是字符串，从未执行。Pi 图仅证明公共 API、键盘所有权和恢复路径，不证明破坏性分类器或真实权限 Package 已经接入。报告中的网页排版不是 Pi Stuff GUI，也不改变“拒绝 floating UI”的规则。
+  </aside>
+
+  <main>
+    <section id="rules">
+      <div class="kicker">01 / Selected lifecycle</div>
+      <h2>对话记录、当前状态和完整管理，各自只有一个位置</h2>
+      <p class="section-lead">同一事实不应同时塞进 transcript、Todo、roster 和 statusline。三个位置分别回答“发生了什么”“谁还在工作”“我现在要控制什么”。</p>
+      <div class="rules">
+        <article class="rule"><h3>普通结果不抢焦点</h3><p>完成、失败和停止留在原有分组记录与 roster 状态中；完整结果进入 Agent Command Dialog。失败必须保留最短原因与 partial-result 提示。</p></article>
+        <article class="rule"><h3>防呆线才接管</h3><p>界面明确写出哪个 Agent、具体命令和触发原因。只能允许这一个精确操作一次，或用 <kbd>Esc</kbd> 拒绝；不提供 session 或持久授权。</p></article>
+        <article class="rule"><h3>用户问题先提醒</h3><p>子 Agent 的内部提问先交给 main Agent 自动回答。只有 main 判断必须由人回答，才出现持续 attention row；它不吞掉你正在输入的文字。</p></article>
+      </div>
+    </section>
+
+    <section id="claude">
+      <div class="kicker">02 / Genuine Claude Code 2.1.220</div>
+      <h2>Claude 只提供界面与生命周期参考，不替 Pi Stuff 决定授权范围</h2>
+      <p class="section-lead">真实发布版把正在运行的 Agent、主会话说明与权限选择放在同一个终端流中。没有居中的弹窗；权限区域临时取得输入控制。实际 Esc 实验确认：工具调用被拒绝，但后台 Agent 继续并最终完成。它显示的项目级持久允许是 Claude 自己的选择，Pi Stuff 的防呆线不继承该选项。</p>
+      <div class="grid">
+        <figure>
+          <div class="frame"><img src="./artifacts/claude-2.1.220-background-agent-permission.png" alt="Claude Code 2.1.220 后台 Agent 权限请求"></div>
+          <figcaption><span class="label reference">Reference only / genuine 2.1.220 / isolated PTY</span><strong>Bash command · from the probe agent</strong>这是上游真实行为证据，不是 Pi Stuff 选项清单。Pi Stuff 借用“命名 Agent、显示精确操作、Esc 只拒绝一次调用”的层级，不采用项目内长期允许。</figcaption>
+        </figure>
+        <figure>
+          <div class="frame"><img src="./artifacts/pi-0.83-work-agent-lifecycle-permission.png" alt="Pi 0.83 非浮动 Agent 权限 Command Dialog"></div>
+          <figcaption><span class="label">Final Pi interaction / native Pi 0.83 / model-free</span><strong>只保留“精确允许一次”与“拒绝”</strong>全宽 divider-led 区域写出静态目标、session cwd 边界和触发原因；没有 session/persistent approval、overlay 或 statusline duplication。</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="preemption">
+      <div class="kicker">03 / One coordinator, one surface</div>
+      <h2>防呆线不是再开一层界面，而是切换同一个 Command Dialog 的当前状态</h2>
+      <p class="section-lead">这正是统一协调器存在的原因。BTW、Agents、Tool Details 和 Settings 不能各自维护互不知情的 dialog。高优先级事件在同一个状态机里暂停低优先级内容，因此恢复不依赖私有 Pi API。</p>
+      <div class="grid three">
+        <figure><div class="frame"><img src="./artifacts/pi-0.83-work-agent-lifecycle-btw.png" alt="Pi 0.83 BTW 在权限到达前"></div><figcaption><span class="label">Pi 0.83 / before</span><strong>BTW 正在显示</strong>main draft、Todo、roster 和 footer 已由协调器保存。</figcaption></figure>
+        <figure><div class="frame"><img src="./artifacts/pi-0.83-work-agent-lifecycle-permission.png" alt="Pi 0.83 防呆线接管 BTW"></div><figcaption><span class="label">Pi 0.83 / preempted</span><strong>防呆线取得焦点</strong>同一个非 overlay component 改变 active state；请求只有两种处理，没有嵌套 dialog。</figcaption></figure>
+        <figure><div class="frame"><img src="./artifacts/pi-0.83-work-agent-lifecycle-permission-rejected-btw-restored.png" alt="Pi 0.83 拒绝操作后恢复 BTW"></div><figcaption><span class="label">Pi 0.83 / Esc path</span><strong>拒绝后 BTW 原位恢复</strong>拒绝的是这个精确操作，不是 BTW 或 Agent。</figcaption></figure>
+      </div>
+      <div class="grid">
+        <figure><div class="frame"><img src="./artifacts/pi-0.83-work-agent-lifecycle-permission-allowed-btw-restored.png" alt="Pi 0.83 精确允许一次后恢复 BTW"></div><figcaption><span class="label">Pi 0.83 / Enter path</span><strong>精确允许一次后同样恢复</strong>决定不写入 session 或持久规则；允许与拒绝共享同一恢复契约。</figcaption></figure>
+        <figure><div class="frame"><img src="./artifacts/pi-0.83-work-agent-lifecycle-main-restored.png" alt="Pi 0.83 关闭 BTW 后恢复主界面和草稿"></div><figcaption><span class="label">Pi 0.83 / final return</span><strong>最后回到完整主界面</strong>原 editor draft、五行 Todo、attention、Agent roster 与普通 footer 都回来。</figcaption></figure>
+      </div>
+    </section>
+
+    <section id="attention">
+      <div class="kicker">04 / Non-modal attention and terminal outcomes</div>
+      <h2>需要回答不等于立刻夺走你正在打的字</h2>
+      <p class="section-lead">这里的 needs input 已经过 main Agent 判断，确实只能由用户决定。它持续显示在 Todo 之前，并把对应 roster 行标为 waiting；但 editor 仍拥有按键。内部 <code>contact_supervisor → reply</code> 不自动升级为这条用户提醒。</p>
+      <div class="grid">
+        <figure><div class="frame"><img src="./artifacts/pi-0.83-work-agent-lifecycle-needs-input-editor-owned.png" alt="Pi 0.83 用户输入提醒不打断 editor"></div><figcaption><span class="label">Pi 0.83 / editor-owned input</span><strong>提醒到达后继续输入</strong>原 draft 后的新文字真实进入 editor；attention 不复制到 Todo，也不打开浮窗。</figcaption></figure>
+        <figure><div class="frame"><img src="./artifacts/pi-0.83-work-agent-lifecycle-stop-requested.png" alt="Pi 0.83 选中 Agent 后按 x 停止"></div><figcaption><span class="label">Pi 0.83 / selected stop</span><strong>先选中，再按 x</strong>明确 selection 本身就是防误触步骤；状态经过 stopping 再变成 stopped，不出现确认 popup。</figcaption></figure>
+      </div>
+      <div class="grid">
+        <figure><div class="frame"><img src="./artifacts/pi-0.83-work-agent-lifecycle-mixed.png" alt="Pi 0.83 Agent done failed stopped waiting 混合状态"></div><figcaption><span class="label">Pi 0.83 / 100×32</span><strong>混合结果仍在一套语法里</strong>done、failed、stopped、waiting 都是同一 roster 的短状态；failure 的原因和 partial result 留在 durable transcript。</figcaption></figure>
+        <figure><div class="frame"><img src="./artifacts/pi-0.83-work-agent-lifecycle-mixed-narrow.png" alt="Pi 0.83 64x28 Agent 混合状态"></div><figcaption><span class="label">Pi 0.83 / 64×28</span><strong>窄终端先压缩次要文字</strong>右侧状态优先保留，任务文字截断；不增加横向 rail 或浮动 detail。</figcaption></figure>
+      </div>
+    </section>
+
+    <section id="verdict">
+      <div class="kicker">05 / Engineering verdict</div>
+      <h2>这套焦点与恢复生命周期在 Pi 0.83 扩展层成立；破坏性识别仍需另行证明</h2>
+      <div class="verdict">
+        <div class="mark">OK</div>
+        <div>
+          <h3>原型只冻结审批形状，不把静态分析包装成安全边界</h3>
+          <p>原型证明的是 UI ownership：一个 Pi Stuff coordinator 可以通过公共 <code>setEditorComponent</code>、widgets、footer 和非 overlay <code>custom()</code> 组合完成焦点与恢复。它没有证明任意第三方 dialog 可被抢占，没有执行画面中的命令，也没有证明所有等价破坏写法都能被识别。</p>
+          <ol>
+            <li>Pi Stuff-owned Command Dialog 共享一个状态栈；破坏性 tripwire 高于 user-input attention，attention 高于 BTW。</li>
+            <li>第三方扩展自行打开的 dialog 无法可靠暂停；它占用界面时，高优先级请求只能排队到 Suite 重新获得控制。</li>
+            <li>生产 coordinator 必须组合已有 custom editor factory；本隔离原型可以直接安装自己的 <code>CustomEditor</code>。</li>
+            <li>生产事件需要稳定 ID、reload 去重和多请求队列；本原型只模拟一个 attention 和一个静态 tripwire。</li>
+          </ol>
+          <div class="decision"><strong>已选择的 Pi 交互：默认不审批日常工作，命中防呆线时只允许精确一次或拒绝。</strong>本原型只验证一个不会执行的固定案例：<code>rm -- /tmp/pi-stuff-tripwire-prototype/obsolete.txt</code>，其目标静态明确且位于 session cwd 外。界面没有“本 session 允许”或持久授权。无法解析的破坏性目标应直接退回 Agent 改写，而不是让用户批准含糊范围。具体首版命令范围、旁路与平台行为仍需独立的对抗测试；该机制不是 sandbox。</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sources">
+      <div class="kicker">06 / Reproduce and inspect</div>
+      <h2>所有 Pi 状态可以用一条命令重跑</h2>
+      <p class="section-lead">从仓库根目录运行 <code>FREEZE_BIN=/tmp/pi-proto-bin/freeze ./docs/prototypes/tui/work-agent-lifecycle-spike-capture.sh</code>。状态机在 <a href="./work-agent-lifecycle-machine.ts">work-agent-lifecycle-machine.ts</a>，原生 Extension 在 <a href="./work-agent-lifecycle-spike.ts">work-agent-lifecycle-spike.ts</a>，session fixture 在 <a href="./work-agent-lifecycle-spike-fixture.ts">work-agent-lifecycle-spike-fixture.ts</a>。Claude 与产品结论见 <a href="../../research/work-background-notification-ui-reference.md">研究记录</a>；当前官方依据为 <a href="https://code.claude.com/docs/en/sub-agents">Claude Code subagents</a>、<a href="https://code.claude.com/docs/en/agent-view">Agent View</a> 与 <a href="https://code.claude.com/docs/en/terminal-config">terminal notifications</a>。</p>
+    </section>
+  </main>
+</body>
+</html>
