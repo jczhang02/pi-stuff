@@ -1,16 +1,13 @@
 import { join } from "node:path";
-import {
-  type ForwarderContext,
-  getSessionId,
-} from "#src/authority/forwarder-context";
+import { type ForwarderContext, getSessionId } from "#src/authority/forwarder-context";
 import type { PermissionPromptDecision } from "#src/authority/permission-dialog";
 import {
-  type ForwardedAccessFacts,
-  type ForwardedAccessIntent,
-  type ForwardedPermissionRequest,
-  type ForwardedPermissionResponse,
-  isForwardedPermissionRequestForSession,
-  type PermissionForwardingLocation,
+	type ForwardedAccessFacts,
+	type ForwardedAccessIntent,
+	type ForwardedPermissionRequest,
+	type ForwardedPermissionResponse,
+	isForwardedPermissionRequestForSession,
+	type PermissionForwardingLocation,
 } from "#src/authority/permission-forwarding";
 import type { SubagentSessionRegistry } from "#src/authority/subagent-registry";
 import { SessionApproval } from "#src/session-approval";
@@ -19,15 +16,15 @@ import type { DebugReviewLogger } from "#src/session-logger";
 import type { PermissionCheckResult } from "#src/types";
 import type { AskEscalator } from "./authorizer-selection";
 import {
-  cleanupPermissionForwardingLocationIfEmpty,
-  ensureDirectoryExists,
-  getExistingPermissionForwardingLocation,
-  listRequestFiles,
-  logPermissionForwardingError,
-  logPermissionForwardingWarning,
-  readForwardedPermissionRequest,
-  safeDeleteFile,
-  writeJsonFileAtomic,
+	cleanupPermissionForwardingLocationIfEmpty,
+	ensureDirectoryExists,
+	getExistingPermissionForwardingLocation,
+	listRequestFiles,
+	logPermissionForwardingError,
+	logPermissionForwardingWarning,
+	readForwardedPermissionRequest,
+	safeDeleteFile,
+	writeJsonFileAtomic,
 } from "./forwarding-io";
 import type { PromptPermissionDetails } from "./permission-prompter";
 
@@ -40,7 +37,7 @@ import type { PromptPermissionDetails } from "./permission-prompter";
  * `{ processInbox: vi.fn() }` mock.
  */
 export interface InboxProcessor {
-  processInbox(ctx: ForwarderContext): Promise<void>;
+	processInbox(ctx: ForwarderContext): Promise<void>;
 }
 
 /**
@@ -56,39 +53,32 @@ export interface InboxProcessor {
  * `resolve` entry point `LocalPermissionsService` composes.
  */
 export interface ServingPolicy {
-  resolve(intent: ForwardedAccessIntent): PermissionCheckResult;
+	resolve(intent: ForwardedAccessIntent): PermissionCheckResult;
 }
 
 /** Constructor config for `ForwardedRequestServer`. */
 export interface ForwardedRequestServerDeps {
-  forwardingDir: string;
-  logger: DebugReviewLogger;
-  /** Recorded-authority resolution for a forwarded `ForwardedAccessIntent`. */
-  policy: ServingPolicy;
-  /** Escalation seam to the serving session's selected `Authorizer` on `ask`. */
-  escalator: AskEscalator;
-  /**
-   * The serving session's `SessionRules`. Records a whole-session grant when a
-   * human approves a forwarded request for the entire serving session.
-   */
-  recorder: SessionApprovalRecorder;
-  /** In-process subagent registry, read only by the one-hop canary. */
-  registry?: SubagentSessionRegistry;
+	forwardingDir: string;
+	logger: DebugReviewLogger;
+	/** Recorded-authority resolution for a forwarded `ForwardedAccessIntent`. */
+	policy: ServingPolicy;
+	/** Escalation seam to the serving session's selected `Authorizer` on `ask`. */
+	escalator: AskEscalator;
+	/**
+	 * The serving session's `SessionRules`. Records a whole-session grant when a
+	 * human approves a forwarded request for the entire serving session.
+	 */
+	recorder: SessionApprovalRecorder;
+	/** In-process subagent registry, read only by the one-hop canary. */
+	registry?: SubagentSessionRegistry;
 }
 
 // ── Module-private helpers ────────────────────────────────────────────────
 
-function formatForwardedPermissionPrompt(
-  request: ForwardedPermissionRequest,
-): string {
-  const agentName = request.requesterAgentName || "unknown";
-  const sessionId = request.requesterSessionId || "unknown";
-  return [
-    `Subagent '${agentName}' requested permission.`,
-    `Session ID: ${sessionId}`,
-    "",
-    request.message,
-  ].join("\n");
+function formatForwardedPermissionPrompt(request: ForwardedPermissionRequest): string {
+	const agentName = request.requesterAgentName || "unknown";
+	const sessionId = request.requesterSessionId || "unknown";
+	return [`Subagent '${agentName}' requested permission.`, `Session ID: ${sessionId}`, "", request.message].join("\n");
 }
 
 /**
@@ -103,32 +93,29 @@ function formatForwardedPermissionPrompt(
  * gate surface the rule fired on (what the bounded-delegation checkpoint
  * excludes on).
  */
-function buildForwardedAskDetails(
-  request: ForwardedPermissionRequest,
-): PromptPermissionDetails {
-  return {
-    requestId: request.id,
-    source: request.source ?? "tool_call",
-    agentName: request.requesterAgentName || null,
-    message: formatForwardedPermissionPrompt(request),
-    surface: request.surface ?? null,
-    value: request.value ?? null,
-    forwarding: {
-      requesterAgentName: request.requesterAgentName || null,
-      requesterSessionId: request.requesterSessionId || null,
-    },
-    // Carries the child's suggestion so LocalUserAuthorizer can offer the
-    // whole-session grant scope; absent for a legacy/version-skew request.
-    ...(request.sessionApproval
-      ? { sessionApproval: request.sessionApproval }
-      : {}),
-    // Absent for a version-skew request that carried no intent — which the
-    // delegation envelope reads as "surface undetermined" and fail-safes to
-    // excluded, so absence must stay absence rather than become `undefined`.
-    ...(request.accessIntent
-      ? { accessIntent: toAccessFacts(request.accessIntent) }
-      : {}),
-  };
+function buildForwardedAskDetails(request: ForwardedPermissionRequest): PromptPermissionDetails {
+	return {
+		requestId: request.id,
+		source: request.source ?? "tool_call",
+		agentName: request.requesterAgentName || null,
+		message: formatForwardedPermissionPrompt(request),
+		...(request.exactCallOnly ? { exactCallOnly: true } : {}),
+		...(request.tripwire ? { tripwire: request.tripwire } : {}),
+		...(request.tripwire ? { command: request.tripwire.command } : {}),
+		surface: request.surface ?? null,
+		value: request.value ?? null,
+		forwarding: {
+			requesterAgentName: request.requesterAgentName || null,
+			requesterSessionId: request.requesterSessionId || null,
+		},
+		// Carries the child's suggestion so LocalUserAuthorizer can offer the
+		// whole-session grant scope; absent for a legacy/version-skew request.
+		...(request.sessionApproval ? { sessionApproval: request.sessionApproval } : {}),
+		// Absent for a version-skew request that carried no intent — which the
+		// delegation envelope reads as "surface undetermined" and fail-safes to
+		// excluded, so absence must stay absence rather than become `undefined`.
+		...(request.accessIntent ? { accessIntent: toAccessFacts(request.accessIntent) } : {}),
+	};
 }
 
 /**
@@ -145,11 +132,11 @@ function buildForwardedAskDetails(
  * projected or deliberately withheld.
  */
 function toAccessFacts(intent: ForwardedAccessIntent): ForwardedAccessFacts {
-  return {
-    surface: intent.surface,
-    matchValues: intent.matchValues,
-    boundaryValue: intent.boundaryValue,
-  };
+	return {
+		surface: intent.surface,
+		matchValues: intent.matchValues,
+		boundaryValue: intent.boundaryValue,
+	};
 }
 
 // ── ForwardedRequestServer ────────────────────────────────────────────────
@@ -163,270 +150,242 @@ function toAccessFacts(intent: ForwardedAccessIntent): ForwardedAccessFacts {
  * 0008).
  */
 export class ForwardedRequestServer implements InboxProcessor {
-  private readonly forwardingDir: string;
-  private readonly logger: DebugReviewLogger;
-  private readonly policy: ServingPolicy;
-  private readonly escalator: AskEscalator;
-  private readonly recorder: SessionApprovalRecorder;
-  private readonly registry: SubagentSessionRegistry | undefined;
+	private readonly forwardingDir: string;
+	private readonly logger: DebugReviewLogger;
+	private readonly policy: ServingPolicy;
+	private readonly escalator: AskEscalator;
+	private readonly recorder: SessionApprovalRecorder;
+	private readonly registry: SubagentSessionRegistry | undefined;
 
-  constructor(deps: ForwardedRequestServerDeps) {
-    this.forwardingDir = deps.forwardingDir;
-    this.logger = deps.logger;
-    this.policy = deps.policy;
-    this.escalator = deps.escalator;
-    this.recorder = deps.recorder;
-    this.registry = deps.registry;
-  }
+	constructor(deps: ForwardedRequestServerDeps) {
+		this.forwardingDir = deps.forwardingDir;
+		this.logger = deps.logger;
+		this.policy = deps.policy;
+		this.escalator = deps.escalator;
+		this.recorder = deps.recorder;
+		this.registry = deps.registry;
+	}
 
-  /** Drain and respond to this session's forwarded-permission inbox. */
-  async processInbox(ctx: ForwarderContext): Promise<void> {
-    const currentSessionId = getSessionId(ctx);
-    const location = getExistingPermissionForwardingLocation(
-      this.forwardingDir,
-      currentSessionId,
-    );
-    if (!location) {
-      return;
-    }
+	/** Drain and respond to this session's forwarded-permission inbox. */
+	async processInbox(ctx: ForwarderContext): Promise<void> {
+		const currentSessionId = getSessionId(ctx);
+		const location = getExistingPermissionForwardingLocation(this.forwardingDir, currentSessionId);
+		if (!location) {
+			return;
+		}
 
-    const requestFiles = listRequestFiles(this.logger, location.requestsDir);
-    if (requestFiles.length === 0) {
-      return;
-    }
+		const requestFiles = listRequestFiles(this.logger, location.requestsDir);
+		if (requestFiles.length === 0) {
+			return;
+		}
 
-    // Defensively recreate responses/ before writing any response — a
-    // concurrent cleanup pass may have removed it between the requestsDir
-    // existence check above and the write inside processSingleForwardedRequest
-    // (the ENOENT write loop reported in issue #398).
-    if (
-      !ensureDirectoryExists(
-        this.logger,
-        location.responsesDir,
-        "permission forwarding responses",
-      )
-    ) {
-      return;
-    }
+		// Defensively recreate responses/ before writing any response — a
+		// concurrent cleanup pass may have removed it between the requestsDir
+		// existence check above and the write inside processSingleForwardedRequest
+		// (the ENOENT write loop reported in issue #398).
+		if (!ensureDirectoryExists(this.logger, location.responsesDir, "permission forwarding responses")) {
+			return;
+		}
 
-    for (const fileName of requestFiles) {
-      const requestPath = join(location.requestsDir, fileName);
-      const request = readForwardedPermissionRequest(this.logger, requestPath);
-      if (!request) {
-        safeDeleteFile(
-          this.logger,
-          requestPath,
-          `${location.label} forwarded permission request`,
-        );
-        continue;
-      }
+		const pending: Array<{
+			request: ForwardedPermissionRequest;
+			requestPath: string;
+		}> = [];
+		for (const fileName of requestFiles) {
+			const requestPath = join(location.requestsDir, fileName);
+			const request = readForwardedPermissionRequest(this.logger, requestPath);
+			if (!request) {
+				safeDeleteFile(this.logger, requestPath, `${location.label} forwarded permission request`);
+				continue;
+			}
+			pending.push({ request, requestPath });
+		}
 
-      await this.processSingleForwardedRequest(
-        request,
-        location,
-        requestPath,
-        currentSessionId,
-      );
-    }
+		pending.sort(
+			(left, right) =>
+				left.request.createdAt - right.request.createdAt || left.request.id.localeCompare(right.request.id),
+		);
+		// Start the batch in FIFO order before awaiting any one human decision.
+		// Exact child asks therefore enter the shared blocking queue together and
+		// expose the real pending count instead of being hidden by this IO loop.
+		await Promise.all(
+			pending.map(({ request, requestPath }) =>
+				this.processSingleForwardedRequest(request, location, requestPath, currentSessionId),
+			),
+		);
 
-    cleanupPermissionForwardingLocationIfEmpty(this.logger, location);
-  }
+		cleanupPermissionForwardingLocationIfEmpty(this.logger, location);
+	}
 
-  // ── Private methods ────────────────────────────────────────────────────
+	// ── Private methods ────────────────────────────────────────────────────
 
-  private async processSingleForwardedRequest(
-    request: ForwardedPermissionRequest,
-    location: PermissionForwardingLocation,
-    requestPath: string,
-    currentSessionId: string,
-  ): Promise<void> {
-    if (!isForwardedPermissionRequestForSession(request, currentSessionId)) {
-      logPermissionForwardingWarning(
-        this.logger,
-        `Ignoring forwarded permission request '${request.id}' because it targets session '${request.targetSessionId}' instead of '${currentSessionId}'`,
-      );
-      safeDeleteFile(
-        this.logger,
-        requestPath,
-        `${location.label} forwarded permission request`,
-      );
-      return;
-    }
+	private async processSingleForwardedRequest(
+		request: ForwardedPermissionRequest,
+		location: PermissionForwardingLocation,
+		requestPath: string,
+		currentSessionId: string,
+	): Promise<void> {
+		if (!isForwardedPermissionRequestForSession(request, currentSessionId)) {
+			logPermissionForwardingWarning(
+				this.logger,
+				`Ignoring forwarded permission request '${request.id}' because it targets session '${request.targetSessionId}' instead of '${currentSessionId}'`,
+			);
+			safeDeleteFile(this.logger, requestPath, `${location.label} forwarded permission request`);
+			return;
+		}
 
-    this.warnOnMultiHop(request, currentSessionId);
+		this.warnOnMultiHop(request, currentSessionId);
 
-    const forwardedPermissionLogDetails = {
-      requestId: request.id,
-      source: location.label,
-      requesterAgentName: request.requesterAgentName,
-      requesterSessionId: request.requesterSessionId,
-      targetSessionId: request.targetSessionId,
-      requestPath,
-    };
+		const forwardedPermissionLogDetails = {
+			requestId: request.id,
+			source: location.label,
+			requesterAgentName: request.requesterAgentName,
+			requesterSessionId: request.requesterSessionId,
+			targetSessionId: request.targetSessionId,
+			requestPath,
+		};
 
-    const decision = await this.resolveDecision(
-      request,
-      forwardedPermissionLogDetails,
-    );
+		const decision = await this.resolveDecision(request, forwardedPermissionLogDetails);
 
-    this.recordForwardedDecision(
-      request,
-      location,
-      requestPath,
-      currentSessionId,
-      this.applyGrantScope(request, decision, forwardedPermissionLogDetails),
-    );
-  }
+		this.recordForwardedDecision(
+			request,
+			location,
+			requestPath,
+			currentSessionId,
+			this.applyGrantScope(request, decision, forwardedPermissionLogDetails),
+		);
+	}
 
-  /**
-   * Apply the human's grant-scope choice on a forwarded approval.
-   *
-   * A whole-session grant (`approved_for_serving_session`) records the child's
-   * suggested pattern into this serving node's `SessionRules` — the single
-   * source of truth for the scope — and is then translated to a plain
-   * `approved` so the child records nothing (its next identical action
-   * re-forwards and resolves as recorded authority). Every other decision
-   * passes through unchanged (`approved_for_session` → the child records).
-   */
-  private applyGrantScope(
-    request: ForwardedPermissionRequest,
-    decision: PermissionPromptDecision,
-    logDetails: Record<string, unknown>,
-  ): PermissionPromptDecision {
-    if (decision.state !== "approved_for_serving_session") {
-      return decision;
-    }
-    if (request.sessionApproval) {
-      this.recorder.recordSessionApproval(
-        SessionApproval.multiple(
-          request.sessionApproval.surface,
-          request.sessionApproval.patterns,
-        ),
-      );
-      this.logger.review("forwarded_permission.session_recorded", {
-        ...logDetails,
-        surface: request.sessionApproval.surface,
-        patterns: request.sessionApproval.patterns,
-      });
-    }
-    return { approved: true, state: "approved" };
-  }
+	/**
+	 * Apply the human's grant-scope choice on a forwarded approval.
+	 *
+	 * A whole-session grant (`approved_for_serving_session`) records the child's
+	 * suggested pattern into this serving node's `SessionRules` — the single
+	 * source of truth for the scope — and is then translated to a plain
+	 * `approved` so the child records nothing (its next identical action
+	 * re-forwards and resolves as recorded authority). Every other decision
+	 * passes through unchanged (`approved_for_session` → the child records).
+	 */
+	private applyGrantScope(
+		request: ForwardedPermissionRequest,
+		decision: PermissionPromptDecision,
+		logDetails: Record<string, unknown>,
+	): PermissionPromptDecision {
+		if (decision.state !== "approved_for_serving_session") {
+			return decision;
+		}
+		if (request.sessionApproval) {
+			this.recorder.recordSessionApproval(
+				SessionApproval.multiple(request.sessionApproval.surface, request.sessionApproval.patterns),
+			);
+			this.logger.review("forwarded_permission.session_recorded", {
+				...logDetails,
+				surface: request.sessionApproval.surface,
+				patterns: request.sessionApproval.patterns,
+			});
+		}
+		return { approved: true, state: "approved" };
+	}
 
-  /**
-   * Persist the served decision: write the response file the child polls for,
-   * log the outcome, and delete the drained request. The symmetric "respond"
-   * half to {@link resolveDecision}'s "decide" half.
-   */
-  private recordForwardedDecision(
-    request: ForwardedPermissionRequest,
-    location: PermissionForwardingLocation,
-    requestPath: string,
-    currentSessionId: string,
-    decision: PermissionPromptDecision,
-  ): void {
-    const responsePath = join(location.responsesDir, `${request.id}.json`);
-    this.logger.review(
-      decision.approved
-        ? "forwarded_permission.approved"
-        : "forwarded_permission.denied",
-      {
-        requestId: request.id,
-        source: location.label,
-        requesterAgentName: request.requesterAgentName,
-        requesterSessionId: request.requesterSessionId,
-        targetSessionId: request.targetSessionId,
-        responsePath,
-        resolution: decision.state,
-        denialReason: decision.denialReason ?? null,
-      },
-    );
-    try {
-      writeJsonFileAtomic(this.logger, responsePath, {
-        approved: decision.approved,
-        state: decision.state,
-        denialReason: decision.denialReason,
-        responderSessionId: currentSessionId,
-        respondedAt: Date.now(),
-      } satisfies ForwardedPermissionResponse);
-    } catch (error) {
-      logPermissionForwardingError(
-        this.logger,
-        `Failed to write ${location.label} forwarded permission response '${responsePath}'`,
-        error,
-      );
-      return;
-    }
+	/**
+	 * Persist the served decision: write the response file the child polls for,
+	 * log the outcome, and delete the drained request. The symmetric "respond"
+	 * half to {@link resolveDecision}'s "decide" half.
+	 */
+	private recordForwardedDecision(
+		request: ForwardedPermissionRequest,
+		location: PermissionForwardingLocation,
+		requestPath: string,
+		currentSessionId: string,
+		decision: PermissionPromptDecision,
+	): void {
+		const responsePath = join(location.responsesDir, `${request.id}.json`);
+		this.logger.review(decision.approved ? "forwarded_permission.approved" : "forwarded_permission.denied", {
+			requestId: request.id,
+			source: location.label,
+			requesterAgentName: request.requesterAgentName,
+			requesterSessionId: request.requesterSessionId,
+			targetSessionId: request.targetSessionId,
+			responsePath,
+			resolution: decision.state,
+			denialReason: decision.denialReason ?? null,
+		});
+		try {
+			writeJsonFileAtomic(this.logger, responsePath, {
+				approved: decision.approved,
+				state: decision.state,
+				denialReason: decision.denialReason,
+				responderSessionId: currentSessionId,
+				respondedAt: Date.now(),
+			} satisfies ForwardedPermissionResponse);
+		} catch (error) {
+			logPermissionForwardingError(
+				this.logger,
+				`Failed to write ${location.label} forwarded permission response '${responsePath}'`,
+				error,
+			);
+			return;
+		}
 
-    safeDeleteFile(
-      this.logger,
-      requestPath,
-      `${location.label} forwarded permission request`,
-    );
-  }
+		safeDeleteFile(this.logger, requestPath, `${location.label} forwarded permission request`);
+	}
 
-  /**
-   * Resolve the request the same way the session resolves a local action:
-   * recorded authority first (a request carrying an `accessIntent` — the
-   * child-fixed facts, ADR 0008 §2 — resolves against the serving node's
-   * composed ruleset — `allow`, including yolo-rewritten, auto-approves;
-   * `deny` auto-denies), then escalate `ask` (or a request missing
-   * `accessIntent`, the version-skew floor, ADR 0008 §4) to the selected
-   * `Authorizer`.
-   */
-  private async resolveDecision(
-    request: ForwardedPermissionRequest,
-    logDetails: Record<string, unknown>,
-  ): Promise<PermissionPromptDecision> {
-    const state = request.accessIntent
-      ? this.policy.resolve(request.accessIntent).state
-      : "ask";
+	/**
+	 * Resolve the request the same way the session resolves a local action:
+	 * recorded authority first (a request carrying an `accessIntent` — the
+	 * child-fixed facts, ADR 0008 §2 — resolves against the serving node's
+	 * composed ruleset — `allow`, including yolo-rewritten, auto-approves;
+	 * `deny` auto-denies), then escalate `ask` (or a request missing
+	 * `accessIntent`, the version-skew floor, ADR 0008 §4) to the selected
+	 * `Authorizer`.
+	 */
+	private async resolveDecision(
+		request: ForwardedPermissionRequest,
+		logDetails: Record<string, unknown>,
+	): Promise<PermissionPromptDecision> {
+		const recordedState = request.accessIntent ? this.policy.resolve(request.accessIntent).state : "ask";
+		const state = request.exactCallOnly && recordedState !== "deny" ? "ask" : recordedState;
 
-    if (state === "allow") {
-      this.logger.review("forwarded_permission.auto_approved", logDetails);
-      return { approved: true, state: "approved" };
-    }
-    if (state === "deny") {
-      this.logger.review("forwarded_permission.auto_denied", logDetails);
-      return { approved: false, state: "denied" };
-    }
+		if (state === "allow") {
+			this.logger.review("forwarded_permission.auto_approved", logDetails);
+			return { approved: true, state: "approved" };
+		}
+		if (state === "deny") {
+			this.logger.review("forwarded_permission.auto_denied", logDetails);
+			return { approved: false, state: "denied" };
+		}
 
-    this.logger.review("forwarded_permission.prompted", logDetails);
-    try {
-      return await this.escalator.escalate(buildForwardedAskDetails(request));
-    } catch (error) {
-      logPermissionForwardingError(
-        this.logger,
-        `Failed to escalate forwarded permission request '${request.id}'`,
-        error,
-      );
-      return { approved: false, state: "denied" };
-    }
-  }
+		this.logger.review("forwarded_permission.prompted", logDetails);
+		try {
+			return await this.escalator.escalate(buildForwardedAskDetails(request));
+		} catch (error) {
+			logPermissionForwardingError(
+				this.logger,
+				`Failed to escalate forwarded permission request '${request.id}'`,
+				error,
+			);
+			return { approved: false, state: "denied" };
+		}
+	}
 
-  /**
-   * One-hop canary: forwarding is depth-1 (child → root). If the requester is
-   * itself a registered subagent whose parent is not this serving session, the
-   * request came through more than one hop (or was misrouted) — resolution is
-   * still well-defined, so keep serving, but warn loudly so a future
-   * recursion-guard break is visible rather than silent. Unregistered
-   * (external file-based) requesters have no recorded parent and are silent.
-   */
-  private warnOnMultiHop(
-    request: ForwardedPermissionRequest,
-    currentSessionId: string,
-  ): void {
-    const requesterInfo = this.registry?.get(request.requesterSessionId);
-    if (
-      requesterInfo?.parentSessionId &&
-      requesterInfo.parentSessionId !== currentSessionId
-    ) {
-      logPermissionForwardingWarning(
-        this.logger,
-        `Forwarded permission request '${request.id}' violates the one-hop ` +
-          `invariant: requester '${request.requesterSessionId}' is a registered ` +
-          `subagent whose parent '${requesterInfo.parentSessionId}' is not this ` +
-          `serving session '${currentSessionId}' (multi-hop or misrouted).`,
-      );
-    }
-  }
+	/**
+	 * One-hop canary: forwarding is depth-1 (child → root). If the requester is
+	 * itself a registered subagent whose parent is not this serving session, the
+	 * request came through more than one hop (or was misrouted) — resolution is
+	 * still well-defined, so keep serving, but warn loudly so a future
+	 * recursion-guard break is visible rather than silent. Unregistered
+	 * (external file-based) requesters have no recorded parent and are silent.
+	 */
+	private warnOnMultiHop(request: ForwardedPermissionRequest, currentSessionId: string): void {
+		const requesterInfo = this.registry?.get(request.requesterSessionId);
+		if (requesterInfo?.parentSessionId && requesterInfo.parentSessionId !== currentSessionId) {
+			logPermissionForwardingWarning(
+				this.logger,
+				`Forwarded permission request '${request.id}' violates the one-hop ` +
+					`invariant: requester '${request.requesterSessionId}' is a registered ` +
+					`subagent whose parent '${requesterInfo.parentSessionId}' is not this ` +
+					`serving session '${currentSessionId}' (multi-hop or misrouted).`,
+			);
+		}
+	}
 }

@@ -1,5 +1,10 @@
 {
 	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"paths": {
+			"@jczhang02/pi-stuff-permissions": ["./scripts/types/pi-stuff-permissions.d.ts"]
+		}
+	},
 	"include": ["scripts/**/*.ts", "test/**/*.ts", "packages/*/**/*.ts"],
-	"exclude": ["node_modules", ".artifacts"]
+	"exclude": ["node_modules", ".artifacts", "packages/pi-stuff-permissions", "test/permissions"]
 }

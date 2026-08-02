@@ -10,15 +10,15 @@ import { isSafeSystemPath } from "#src/safe-system-paths";
  * geometry lives on {@link PathFlavor.isWithin}.
  */
 export function isPathOutsideWorkingDirectory(
-  canonicalPath: string,
-  canonicalCwd: string,
-  flavor: PathFlavor,
+	canonicalPath: string,
+	canonicalCwd: string,
+	flavor: PathFlavor,
 ): boolean {
-  if (!canonicalCwd || !canonicalPath) {
-    return false;
-  }
-  if (isSafeSystemPath(canonicalPath)) {
-    return false;
-  }
-  return !flavor.isWithin(canonicalPath, canonicalCwd);
+	if (!canonicalCwd || !canonicalPath) {
+		return false;
+	}
+	if (isSafeSystemPath(canonicalPath)) {
+		return false;
+	}
+	return !flavor.isWithin(canonicalPath, canonicalCwd);
 }

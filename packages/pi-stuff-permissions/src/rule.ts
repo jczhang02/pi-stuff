@@ -16,33 +16,33 @@ import { type WildcardMatchOptions, wildcardMatch } from "./wildcard-matcher";
  *                invalid non-global config scope is detected).
  */
 export type RuleOrigin =
-  | "global"
-  | "project"
-  | "agent"
-  | "project-agent"
-  | "builtin"
-  | "baseline"
-  | "session"
-  | "yolo"
-  | "fail-closed";
+	| "global"
+	| "project"
+	| "agent"
+	| "project-agent"
+	| "builtin"
+	| "baseline"
+	| "session"
+	| "yolo"
+	| "fail-closed";
 
 /** A single permission rule — the atomic unit of policy. */
 export interface Rule {
-  /** The permission surface: "bash", "read", "mcp", "skill", "external_directory", etc. */
-  surface: string;
-  /** The match pattern: a command glob, tool name, skill name, or "*". */
-  pattern: string;
-  /** The permission decision. */
-  action: PermissionState;
-  /** Custom denial reason for deny rules (optional). */
-  reason?: string;
-  /**
-   * Origin layer — used to derive PermissionCheckResult.source after evaluation.
-   * Not used by evaluate(); purely informational metadata.
-   */
-  layer?: "default" | "baseline" | "config" | "session";
-  /** Which source contributed this rule. */
-  origin: RuleOrigin;
+	/** The permission surface: "bash", "read", "mcp", "skill", "external_directory", etc. */
+	surface: string;
+	/** The match pattern: a command glob, tool name, skill name, or "*". */
+	pattern: string;
+	/** The permission decision. */
+	action: PermissionState;
+	/** Custom denial reason for deny rules (optional). */
+	reason?: string;
+	/**
+	 * Origin layer — used to derive PermissionCheckResult.source after evaluation.
+	 * Not used by evaluate(); purely informational metadata.
+	 */
+	layer?: "default" | "baseline" | "config" | "session";
+	/** Which source contributed this rule. */
+	origin: RuleOrigin;
 }
 
 /** An ordered list of rules. Later rules take priority (last-match-wins). */
@@ -61,9 +61,7 @@ export type Ruleset = Rule[];
  * and `origin` change.
  */
 export function rewriteAsksToYolo(rules: Ruleset): Ruleset {
-  return rules.map((rule) =>
-    rule.action === "ask" ? { ...rule, action: "allow", origin: "yolo" } : rule,
-  );
+	return rules.map((rule) => (rule.action === "ask" ? { ...rule, action: "allow", origin: "yolo" } : rule));
 }
 
 /**
@@ -81,11 +79,7 @@ export function rewriteAsksToYolo(rules: Ruleset): Ruleset {
  * and `origin` change.
  */
 export function floorAllowsToAsk(rules: Ruleset): Ruleset {
-  return rules.map((rule) =>
-    rule.action === "allow"
-      ? { ...rule, action: "ask", origin: "fail-closed" }
-      : rule,
-  );
+	return rules.map((rule) => (rule.action === "allow" ? { ...rule, action: "ask", origin: "fail-closed" } : rule));
 }
 
 /**
@@ -98,20 +92,20 @@ export function floorAllowsToAsk(rules: Ruleset): Ruleset {
  * (defaults to "ask" — least privilege).
  */
 export function evaluate(
-  surface: string,
-  pattern: string,
-  rules: Ruleset,
-  flavor: PathFlavor,
-  defaultAction?: PermissionState,
+	surface: string,
+	pattern: string,
+	rules: Ruleset,
+	flavor: PathFlavor,
+	defaultAction?: PermissionState,
 ): Rule {
-  const rule = rules.findLast((r) => ruleMatches(r, surface, pattern, flavor));
-  if (rule !== undefined) return rule;
-  return {
-    surface,
-    pattern,
-    action: defaultAction ?? "ask",
-    origin: "builtin",
-  };
+	const rule = rules.findLast((r) => ruleMatches(r, surface, pattern, flavor));
+	if (rule !== undefined) return rule;
+	return {
+		surface,
+		pattern,
+		action: defaultAction ?? "ask",
+		origin: "builtin",
+	};
 }
 
 /**
@@ -119,24 +113,13 @@ export function evaluate(
  * pattern→value match (case and separators) so mixed-case / forward-slash
  * overrides still match. The surface→surface match stays exact.
  */
-export function pathMatchOptions(
-  surface: string,
-  flavor: PathFlavor,
-): WildcardMatchOptions | undefined {
-  return PATH_SURFACES.has(surface) ? flavor.matchOptions : undefined;
+export function pathMatchOptions(surface: string, flavor: PathFlavor): WildcardMatchOptions | undefined {
+	return PATH_SURFACES.has(surface) ? flavor.matchOptions : undefined;
 }
 
-function ruleMatches(
-  rule: Rule,
-  surface: string,
-  value: string,
-  flavor: PathFlavor,
-): boolean {
-  const matchOptions = pathMatchOptions(surface, flavor);
-  return (
-    wildcardMatch(rule.surface, surface) &&
-    wildcardMatch(rule.pattern, value, matchOptions)
-  );
+function ruleMatches(rule: Rule, surface: string, value: string, flavor: PathFlavor): boolean {
+	const matchOptions = pathMatchOptions(surface, flavor);
+	return wildcardMatch(rule.surface, surface) && wildcardMatch(rule.pattern, value, matchOptions);
 }
 
 /**
@@ -164,40 +147,40 @@ function ruleMatches(
  * Returns the first `ask` if no `deny` is found.
  */
 export function evaluateMostRestrictive(
-  surface: string,
-  values: string[],
-  rules: Ruleset,
-  flavor: PathFlavor,
+	surface: string,
+	values: string[],
+	rules: Ruleset,
+	flavor: PathFlavor,
 ): { rule: Rule; value: string } | null {
-  let worst: { rule: Rule; value: string } | null = null;
-  for (const value of values) {
-    const rule = evaluate(surface, value, rules, flavor);
-    if (rule.action === "deny") return { rule, value };
-    if (rule.action === "ask" && worst?.rule.action !== "ask") {
-      worst = { rule, value };
-    }
-  }
-  return worst;
+	let worst: { rule: Rule; value: string } | null = null;
+	for (const value of values) {
+		const rule = evaluate(surface, value, rules, flavor);
+		if (rule.action === "deny") return { rule, value };
+		if (rule.action === "ask" && worst?.rule.action !== "ask") {
+			worst = { rule, value };
+		}
+	}
+	return worst;
 }
 
 export function evaluateFirst(
-  surface: string,
-  values: string[],
-  rules: Ruleset,
-  flavor: PathFlavor,
+	surface: string,
+	values: string[],
+	rules: Ruleset,
+	flavor: PathFlavor,
 ): { rule: Rule; value: string } {
-  for (const value of values) {
-    const rule = evaluate(surface, value, rules, flavor);
-    if (rule.layer !== "default") {
-      return { rule, value };
-    }
-  }
-  // All candidates matched only the synthesized default — use the first.
-  const fallbackValue = values[0] ?? "*";
-  return {
-    rule: evaluate(surface, fallbackValue, rules, flavor),
-    value: fallbackValue,
-  };
+	for (const value of values) {
+		const rule = evaluate(surface, value, rules, flavor);
+		if (rule.layer !== "default") {
+			return { rule, value };
+		}
+	}
+	// All candidates matched only the synthesized default — use the first.
+	const fallbackValue = values[0] ?? "*";
+	return {
+		rule: evaluate(surface, fallbackValue, rules, flavor),
+		value: fallbackValue,
+	};
 }
 
 /**
@@ -209,25 +192,21 @@ export function evaluateFirst(
  * masking a later, more specific rule on another alias.
  */
 export function evaluateAnyValue(
-  surface: string,
-  values: string[],
-  rules: Ruleset,
-  flavor: PathFlavor,
+	surface: string,
+	values: string[],
+	rules: Ruleset,
+	flavor: PathFlavor,
 ): { rule: Rule; value: string } {
-  const fallbackValue = values[0] ?? "*";
-  const rule = rules.findLast((r) =>
-    values.some((value) => ruleMatches(r, surface, value, flavor)),
-  );
-  if (rule !== undefined) {
-    return {
-      rule,
-      value:
-        values.find((value) => ruleMatches(rule, surface, value, flavor)) ??
-        fallbackValue,
-    };
-  }
-  return {
-    rule: evaluate(surface, fallbackValue, rules, flavor),
-    value: fallbackValue,
-  };
+	const fallbackValue = values[0] ?? "*";
+	const rule = rules.findLast((r) => values.some((value) => ruleMatches(r, surface, value, flavor)));
+	if (rule !== undefined) {
+		return {
+			rule,
+			value: values.find((value) => ruleMatches(rule, surface, value, flavor)) ?? fallbackValue,
+		};
+	}
+	return {
+		rule: evaluate(surface, fallbackValue, rules, flavor),
+		value: fallbackValue,
+	};
 }

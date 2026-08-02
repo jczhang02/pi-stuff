@@ -50,14 +50,14 @@ import type { PathFlavor } from "#src/path/path-flavor";
  * Returns the raw token string if it qualifies, or `null` to skip.
  */
 export function classifyTokenAsPathCandidate(token: string): string | null {
-  if (rejectNonPathToken(token)) return null;
+	if (rejectNonPathToken(token)) return null;
 
-  if (token.startsWith("/")) return token;
-  if (token.startsWith("~/")) return token;
-  if (token.includes("..")) return token;
-  if (WINDOWS_DRIVE_PATH_PATTERN.test(token)) return token;
+	if (token.startsWith("/")) return token;
+	if (token.startsWith("~/")) return token;
+	if (token.includes("..")) return token;
+	if (WINDOWS_DRIVE_PATH_PATTERN.test(token)) return token;
 
-  return null;
+	return null;
 }
 
 /**
@@ -82,18 +82,15 @@ export function classifyTokenAsPathCandidate(token: string): string | null {
  *
  * Returns the raw token string if it qualifies, or `null` to skip.
  */
-export function classifyTokenAsRuleCandidate(
-  token: string,
-  flavor: PathFlavor,
-): string | null {
-  if (rejectNonPathToken(token)) return null;
+export function classifyTokenAsRuleCandidate(token: string, flavor: PathFlavor): string | null {
+	if (rejectNonPathToken(token)) return null;
 
-  if (token.startsWith(".")) return token;
-  if (flavor.hasPathSeparator(token)) return token; // ~/ paths, relative paths with /, and win32 dir\file
-  if (token.includes("..")) return token; // bare ".." (no slash)
-  if (WINDOWS_DRIVE_PATH_PATTERN.test(token)) return token; // backslash-only drive form
+	if (token.startsWith(".")) return token;
+	if (flavor.hasPathSeparator(token)) return token; // ~/ paths, relative paths with /, and win32 dir\file
+	if (token.includes("..")) return token; // bare ".." (no slash)
+	if (WINDOWS_DRIVE_PATH_PATTERN.test(token)) return token; // backslash-only drive form
 
-  return null;
+	return null;
 }
 
 /**
@@ -118,7 +115,7 @@ export function classifyTokenAsRuleCandidate(
  * Returns the raw token string if it qualifies, or `null` to skip.
  */
 export function classifyBareTokenCandidate(token: string): string | null {
-  return rejectNonPathToken(token) ? null : token;
+	return rejectNonPathToken(token) ? null : token;
 }
 
 // ── Private rejection predicate ────────────────────────────────────────────
@@ -156,23 +153,22 @@ const REGEX_METACHAR_PATTERN = /\.\*|\.\+|\\\||\\\(|\\\)|\[.*?\]|\^\//;
  * the path surfaces like any other absolute token (#583).
  */
 function rejectNonPathToken(token: string): boolean {
-  if (!token) return true;
-  if (token.startsWith("-")) return true;
+	if (!token) return true;
+	if (token.startsWith("-")) return true;
 
-  // Env assignment: = appears before any /  (FOO=/bar is an assignment,
-  // /foo=bar is not because the slash comes first).
-  const eqIndex = token.indexOf("=");
-  const slashIndex = token.indexOf("/");
-  if (eqIndex !== -1 && (slashIndex === -1 || eqIndex < slashIndex))
-    return true;
+	// Env assignment: = appears before any /  (FOO=/bar is an assignment,
+	// /foo=bar is not because the slash comes first).
+	const eqIndex = token.indexOf("=");
+	const slashIndex = token.indexOf("/");
+	if (eqIndex !== -1 && (slashIndex === -1 || eqIndex < slashIndex)) return true;
 
-  if (URL_PATTERN.test(token)) return true;
+	if (URL_PATTERN.test(token)) return true;
 
-  // @scope/package patterns (npm scoped packages) — but @/ is allowed through
-  // since it looks like an absolute-rooted path, not an npm scope.
-  if (token.startsWith("@") && !token.startsWith("@/")) return true;
+	// @scope/package patterns (npm scoped packages) — but @/ is allowed through
+	// since it looks like an absolute-rooted path, not an npm scope.
+	if (token.startsWith("@") && !token.startsWith("@/")) return true;
 
-  if (REGEX_METACHAR_PATTERN.test(token)) return true;
+	if (REGEX_METACHAR_PATTERN.test(token)) return true;
 
-  return false;
+	return false;
 }

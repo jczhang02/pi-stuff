@@ -18,10 +18,7 @@ import type { Authorizer } from "./authorizer";
 import type { PromptPermissionDetails } from "./permission-prompter";
 
 /** Surfaces on which a link may never grant an `allow` (ADR 0007 §5). */
-export const DELEGATION_EXCLUDED_SURFACES: ReadonlySet<string> = new Set([
-  "external_directory",
-  "path",
-]);
+export const DELEGATION_EXCLUDED_SURFACES: ReadonlySet<string> = new Set(["external_directory", "path"]);
 
 /**
  * Wrap a link's `authorize` so an `allow` on an excluded surface is capped to
@@ -29,16 +26,14 @@ export const DELEGATION_EXCLUDED_SURFACES: ReadonlySet<string> = new Set([
  * through unchanged. `details`, the injected `query`, and the review-log `log`
  * are forwarded as-is.
  */
-export function encloseInDelegationEnvelope(
-  authorize: Authorizer["authorize"],
-): Authorizer["authorize"] {
-  return async (details, query, log) => {
-    const verdict = await authorize(details, query, log);
-    if (verdict.kind === "allow" && isExcludedSurface(details)) {
-      return { kind: "defer" };
-    }
-    return verdict;
-  };
+export function encloseInDelegationEnvelope(authorize: Authorizer["authorize"]): Authorizer["authorize"] {
+	return async (details, query, log) => {
+		const verdict = await authorize(details, query, log);
+		if (verdict.kind === "allow" && isExcludedSurface(details)) {
+			return { kind: "defer" };
+		}
+		return verdict;
+	};
 }
 
 /**
@@ -48,6 +43,6 @@ export function encloseInDelegationEnvelope(
  * excluded (more prompting, never less — ADR 0007 invariant 2).
  */
 function isExcludedSurface(details: PromptPermissionDetails): boolean {
-  const surface = details.accessIntent?.surface ?? details.surface ?? undefined;
-  return surface === undefined || DELEGATION_EXCLUDED_SURFACES.has(surface);
+	const surface = details.accessIntent?.surface ?? details.surface ?? undefined;
+	return surface === undefined || DELEGATION_EXCLUDED_SURFACES.has(surface);
 }

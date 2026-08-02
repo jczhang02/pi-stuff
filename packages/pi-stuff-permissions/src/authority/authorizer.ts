@@ -1,9 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { CommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
 import type { PermissionPromptDecision } from "#src/authority/permission-dialog";
-import type {
-  PromptPreferences,
-  requestPermissionDecision,
-} from "#src/authority/permission-prompt-component";
+import type { PromptPreferences, requestPermissionDecision } from "#src/authority/permission-prompt-component";
 import type { SubagentSessionRegistry } from "#src/authority/subagent-registry";
 import type { PermissionEventBus } from "#src/permission-events";
 import type { AuthorizerLog, PermissionQuery } from "#src/service";
@@ -19,10 +17,7 @@ import type { SubagentDetector } from "./subagent-detection";
  * pass the ask on to the next link (`defer`). A `deny` carries an optional
  * teaching `reason` the invoking model sees, so it can self-correct.
  */
-export type AuthorizerVerdict =
-  | { kind: "allow" }
-  | { kind: "deny"; reason?: string }
-  | { kind: "defer" };
+export type AuthorizerVerdict = { kind: "allow" } | { kind: "deny"; reason?: string } | { kind: "defer" };
 
 /**
  * A non-terminal link in the live-authority chain: reviews an `ask` and may
@@ -34,11 +29,7 @@ export type AuthorizerVerdict =
  * permission review log (same §3 injection pattern).
  */
 export interface Authorizer {
-  authorize(
-    details: PromptPermissionDetails,
-    query: PermissionQuery,
-    log: AuthorizerLog,
-  ): Promise<AuthorizerVerdict>;
+	authorize(details: PromptPermissionDetails, query: PermissionQuery, log: AuthorizerLog): Promise<AuthorizerVerdict>;
 }
 
 /**
@@ -53,26 +44,26 @@ export interface Authorizer {
  * forwarded display from it.
  */
 export interface TerminalAuthorizer {
-  authorize(
-    details: PromptPermissionDetails,
-  ): Promise<PermissionPromptDecision>;
+	authorize(details: PromptPermissionDetails): Promise<PermissionPromptDecision>;
 }
 
 /** Construction inputs for {@link selectAuthorizer}. */
 export interface AuthorizerSelectionDeps {
-  /** Single owner of subagent detection; the ParentAuthorizer-selection predicate. */
-  detection: SubagentDetector;
-  /** Event bus used by `LocalUserAuthorizer` for the `permissions:ui_prompt` broadcast. */
-  events: PermissionEventBus;
-  /** Read live at prompt time; threaded into `LocalUserAuthorizer`. */
-  getPromptPreferences: () => PromptPreferences;
-  /** Injected for testability; production callers pass the real function. */
-  requestPermissionDecision: typeof requestPermissionDecision;
-  /** Forwarding directory `ParentAuthorizer` reads/writes request and response files under. */
-  forwardingDir: string;
-  /** In-process subagent session registry for forwarding target resolution. */
-  registry?: SubagentSessionRegistry;
-  logger: DebugReviewLogger;
+	/** Single owner of subagent detection; the ParentAuthorizer-selection predicate. */
+	detection: SubagentDetector;
+	/** Event bus used by `LocalUserAuthorizer` for the `permissions:ui_prompt` broadcast. */
+	events: PermissionEventBus;
+	/** Read live at prompt time; threaded into `LocalUserAuthorizer`. */
+	getPromptPreferences: () => PromptPreferences;
+	/** Injected for testability; production callers pass the real function. */
+	requestPermissionDecision: typeof requestPermissionDecision;
+	/** Shared full-width, non-floating dialog owner. */
+	coordinator: CommandDialogCoordinator;
+	/** Forwarding directory `ParentAuthorizer` reads/writes request and response files under. */
+	forwardingDir: string;
+	/** In-process subagent session registry for forwarding target resolution. */
+	registry?: SubagentSessionRegistry;
+	logger: DebugReviewLogger;
 }
 
 /**
@@ -83,25 +74,22 @@ export interface AuthorizerSelectionDeps {
  * replacing the re-derivation of the same predicates across
  * `PromptingGateway`, `PermissionPrompter`, and `ApprovalEscalator`.
  */
-export function selectAuthorizer(
-  ctx: ExtensionContext,
-  deps: AuthorizerSelectionDeps,
-): TerminalAuthorizer {
-  if (ctx.hasUI) {
-    return new LocalUserAuthorizer({
-      ui: ctx.ui,
-      mode: ctx.mode,
-      events: deps.events,
-      getPromptPreferences: deps.getPromptPreferences,
-      requestPermissionDecision: deps.requestPermissionDecision,
-    });
-  }
-  if (deps.detection.isSubagent(ctx)) {
-    return new ParentAuthorizer(ctx, {
-      forwardingDir: deps.forwardingDir,
-      registry: deps.registry,
-      logger: deps.logger,
-    });
-  }
-  return new DenyingAuthorizer();
+export function selectAuthorizer(ctx: ExtensionContext, deps: AuthorizerSelectionDeps): TerminalAuthorizer {
+	if (ctx.hasUI) {
+		return new LocalUserAuthorizer({
+			ctx,
+			coordinator: deps.coordinator,
+			events: deps.events,
+			getPromptPreferences: deps.getPromptPreferences,
+			requestPermissionDecision: deps.requestPermissionDecision,
+		});
+	}
+	if (deps.detection.isSubagent(ctx)) {
+		return new ParentAuthorizer(ctx, {
+			forwardingDir: deps.forwardingDir,
+			registry: deps.registry,
+			logger: deps.logger,
+		});
+	}
+	return new DenyingAuthorizer();
 }

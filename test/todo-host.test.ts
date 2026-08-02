@@ -13,6 +13,7 @@ const REPOSITORY_ROOT = resolve(import.meta.dir, "..");
 const TODO_EXTENSION = join(REPOSITORY_ROOT, "packages", "pi-stuff-todo", "index.ts");
 const TODO_PACKAGE = resolve(TODO_EXTENSION, "..");
 const BTW_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-btw");
+const PERMISSIONS_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-permissions");
 const UI_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-ui");
 const AGGREGATE_EXTENSION = join(REPOSITORY_ROOT, "packages", "pi-stuff", "index.ts");
 const EXPECTED_TOOLS = ["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"];
@@ -78,6 +79,7 @@ test("Pi 0.83 loads exactly the Todo tools through the Aggregate package", async
 		await writeFile(join(aggregateDirectory, "index.ts"), await readFile(AGGREGATE_EXTENSION));
 		await Promise.all([
 			symlink(UI_PACKAGE, join(dependencyScope, "pi-stuff-ui"), "dir"),
+			symlink(PERMISSIONS_PACKAGE, join(dependencyScope, "pi-stuff-permissions"), "dir"),
 			symlink(TODO_PACKAGE, join(dependencyScope, "pi-stuff-todo"), "dir"),
 			symlink(BTW_PACKAGE, join(dependencyScope, "pi-stuff-btw"), "dir"),
 		]);

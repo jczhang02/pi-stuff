@@ -1,7 +1,4 @@
-import {
-  type BashCommand,
-  collectCommands,
-} from "#src/access-intent/bash/command-enumeration";
+import { type BashCommand, collectCommands } from "#src/access-intent/bash/command-enumeration";
 import { getWarmBashParser } from "#src/access-intent/bash/parser";
 
 /**
@@ -19,13 +16,13 @@ import { getWarmBashParser } from "#src/access-intent/bash/parser";
  * fails it closed via `resolveBashCommandCheck`, #452).
  */
 export function parseBashCommandsSync(command: string): BashCommand[] | null {
-  const parser = getWarmBashParser();
-  if (!parser) return null;
-  const tree = parser.parse(command);
-  if (!tree) return [];
-  try {
-    return collectCommands(tree.rootNode);
-  } finally {
-    tree.delete();
-  }
+	const parser = getWarmBashParser();
+	if (!parser) return null;
+	const tree = parser.parse(command);
+	if (!tree) return [];
+	try {
+		return collectCommands(tree.rootNode);
+	} finally {
+		tree.delete();
+	}
 }

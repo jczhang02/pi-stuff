@@ -15,6 +15,7 @@ The ordered Aggregate Package for the Pi Stuff Suite.
 ## Included capabilities
 
 - `@jczhang02/pi-stuff-ui`: the shared, non-floating Command Dialog host used by Suite commands.
+- `@jczhang02/pi-stuff-permissions`: quiet-by-default destructive-command protection, with exact-call approval when a risky operation is recoverable.
 - `@jczhang02/pi-stuff-todo`: four model-facing Task tools and a compact task widget above Pi's editor.
 - `@jczhang02/pi-stuff-btw`: one-shot side questions that use the effective conversation context without changing the main transcript.
 

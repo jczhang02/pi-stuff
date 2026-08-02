@@ -11,22 +11,19 @@
  * prompter or forwarding modules (no import cycles, correct layering).
  */
 
-import type {
-  ForwardedPromptContext,
-  PermissionUiPromptEvent,
-} from "./permission-events";
+import type { ForwardedPromptContext, PermissionUiPromptEvent } from "./permission-events";
 
 /** Input for a direct (non-forwarded) tool or skill prompt. */
 export interface DirectPromptInput {
-  requestId: string;
-  source: "tool_call" | "skill_input" | "skill_read";
-  agentName: string | null;
-  message: string;
-  toolName?: string;
-  skillName?: string;
-  path?: string;
-  command?: string;
-  target?: string;
+	requestId: string;
+	source: "tool_call" | "skill_input" | "skill_read";
+	agentName: string | null;
+	message: string;
+	toolName?: string;
+	skillName?: string;
+	path?: string;
+	command?: string;
+	target?: string;
 }
 
 /**
@@ -39,12 +36,12 @@ export interface DirectPromptInput {
  * (the #292 contract hardening).
  */
 export interface UiPromptInput extends DirectPromptInput {
-  /** Explicit display surface; falls back to the derived projection when omitted. */
-  surface?: string | null;
-  /** Explicit display value; falls back to the derived projection when omitted. */
-  value?: string | null;
-  /** Forwarding context for a forwarded subagent ask; `null`/omitted for a direct prompt. */
-  forwarding?: ForwardedPromptContext | null;
+	/** Explicit display surface; falls back to the derived projection when omitted. */
+	surface?: string | null;
+	/** Explicit display value; falls back to the derived projection when omitted. */
+	value?: string | null;
+	/** Forwarding context for a forwarded subagent ask; `null`/omitted for a direct prompt. */
+	forwarding?: ForwardedPromptContext | null;
 }
 
 /**
@@ -56,33 +53,26 @@ export interface UiPromptInput extends DirectPromptInput {
  * to `null`.
  */
 export function buildUiPrompt(input: UiPromptInput): PermissionUiPromptEvent {
-  return {
-    requestId: input.requestId,
-    source: input.source,
-    surface: input.surface !== undefined ? input.surface : directSurface(input),
-    value: input.value !== undefined ? input.value : directValue(input),
-    agentName: input.agentName,
-    message: input.message,
-    forwarding: input.forwarding ?? null,
-  };
+	return {
+		requestId: input.requestId,
+		source: input.source,
+		surface: input.surface !== undefined ? input.surface : directSurface(input),
+		value: input.value !== undefined ? input.value : directValue(input),
+		agentName: input.agentName,
+		message: input.message,
+		forwarding: input.forwarding ?? null,
+	};
 }
 
 /** Normalized display surface for a direct prompt. */
 function directSurface(input: DirectPromptInput): string | null {
-  if (input.source === "skill_input" || input.source === "skill_read") {
-    return "skill";
-  }
-  return input.toolName ?? null;
+	if (input.source === "skill_input" || input.source === "skill_read") {
+		return "skill";
+	}
+	return input.toolName ?? null;
 }
 
 /** Normalized display value for a direct prompt. */
 function directValue(input: DirectPromptInput): string | null {
-  return (
-    input.command ??
-    input.path ??
-    input.target ??
-    input.skillName ??
-    input.toolName ??
-    null
-  );
+	return input.command ?? input.path ?? input.target ?? input.skillName ?? input.toolName ?? null;
 }

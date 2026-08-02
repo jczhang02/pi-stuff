@@ -33,20 +33,20 @@ export type ToolKind = "bash" | "mcp" | "skill" | "path" | "extension";
 
 /** Classify a tool name into its {@link ToolKind}. */
 export function classifyToolKind(toolName: string): ToolKind {
-  const name = toolName.trim();
-  if (name === "bash") return "bash";
-  if (name === "mcp") return "mcp";
-  if (name === "skill") return "skill";
-  if (PATH_BEARING_TOOLS.has(name)) return "path";
-  return "extension";
+	const name = toolName.trim();
+	if (name === "bash") return "bash";
+	if (name === "mcp") return "mcp";
+	if (name === "skill") return "skill";
+	if (PATH_BEARING_TOOLS.has(name)) return "path";
+	return "extension";
 }
 
 /** A shell invocation's effective command and optional working directory. */
 export interface ShellInvocation {
-  /** The shell command string to decompose and gate. */
-  command: string;
-  /** The working directory the command runs in, if the tool projects one. */
-  workdir: string | undefined;
+	/** The shell command string to decompose and gate. */
+	command: string;
+	/** The working directory the command runs in, if the tool projects one. */
+	workdir: string | undefined;
 }
 
 /**
@@ -67,37 +67,35 @@ export interface ShellInvocation {
  * string — `classifyToolKind` stays AccessPath-free and config-free.
  */
 export function resolveShellInvocation(
-  toolName: string,
-  input: unknown,
-  aliases: ShellToolsConfig | undefined,
+	toolName: string,
+	input: unknown,
+	aliases: ShellToolsConfig | undefined,
 ): ShellInvocation | null {
-  const name = toolName.trim();
-  const record = toRecord(input);
+	const name = toolName.trim();
+	const record = toRecord(input);
 
-  if (name === "bash") {
-    return {
-      command: getNonEmptyString(record.command) ?? "",
-      workdir: undefined,
-    };
-  }
+	if (name === "bash") {
+		return {
+			command: getNonEmptyString(record.command) ?? "",
+			workdir: undefined,
+		};
+	}
 
-  const alias = aliases?.[name];
-  if (alias) {
-    return {
-      command: getNonEmptyString(record[alias.commandArgument]) ?? "",
-      workdir: alias.workdirArgument
-        ? (getNonEmptyString(record[alias.workdirArgument]) ?? undefined)
-        : undefined,
-    };
-  }
+	const alias = aliases?.[name];
+	if (alias) {
+		return {
+			command: getNonEmptyString(record[alias.commandArgument]) ?? "",
+			workdir: alias.workdirArgument ? (getNonEmptyString(record[alias.workdirArgument]) ?? undefined) : undefined,
+		};
+	}
 
-  return null;
+	return null;
 }
 
 /** The resolved-check fields that decide MCP-ness. */
 interface McpKindFields {
-  toolName: string;
-  source: string;
+	toolName: string;
+	source: string;
 }
 
 /**
@@ -108,5 +106,5 @@ interface McpKindFields {
  * server-qualified string.
  */
 export function isMcpCheck(check: McpKindFields): boolean {
-  return check.source === "mcp" || classifyToolKind(check.toolName) === "mcp";
+	return check.source === "mcp" || classifyToolKind(check.toolName) === "mcp";
 }

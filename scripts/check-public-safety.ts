@@ -13,7 +13,11 @@ const LIFECYCLE_SCRIPTS = new Set([
 	"prepublish",
 	"prepublishOnly",
 ]);
-const PRIVATE_PATH_PATTERNS = [/\/home\/[^/\s]+\//, /\/Users\/[^/\s]+\//, /[A-Za-z]:\\Users\\[^\\\s]+\\/];
+const PRIVATE_PATH_PATTERNS = [
+	/\/home\/[^/\s]+\//,
+	/\/Users\/(?!me\/)[^/\s]+\//,
+	/[A-Za-z]:\\Users\\(?!me\\)[^\\\s]+\\/,
+];
 const CREDENTIAL_PATTERNS = [
 	/-----BEGIN (?:OPENSSH|RSA|EC|DSA) PRIVATE KEY-----/,
 	/\bAKIA[0-9A-Z]{16}\b/,
@@ -148,7 +152,8 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 		if (!hasExplicitFilesAllowlist(manifest.files)) {
 			findings.push({ path, rule: "package-files-allowlist" });
 		}
-		const expectedPiManifest = JSON.stringify({ extensions: ["./index.ts"] });
+		const extensionEntry = path === "packages/pi-stuff-permissions/package.json" ? "./src/index.ts" : "./index.ts";
+		const expectedPiManifest = JSON.stringify({ extensions: [extensionEntry] });
 		if (JSON.stringify(manifest.pi) !== expectedPiManifest) {
 			findings.push({ path, rule: "package-pi-manifest" });
 		}

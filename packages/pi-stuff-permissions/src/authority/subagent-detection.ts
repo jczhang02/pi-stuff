@@ -1,7 +1,7 @@
 import {
-  isRegisteredSubagentChild,
-  isSubagentExecutionContext,
-  type SubagentDetectionContext,
+	isRegisteredSubagentChild,
+	isSubagentExecutionContext,
+	type SubagentDetectionContext,
 } from "#src/authority/subagent-context";
 import type { SubagentSessionRegistry } from "#src/authority/subagent-registry";
 import type { PathFlavor } from "#src/path/path-flavor";
@@ -14,7 +14,7 @@ import type { PathFlavor } from "#src/path/path-flavor";
  * casts. It is the Authorizer-selection predicate the Phase 9 spine consumes.
  */
 export interface SubagentDetector {
-  isSubagent(ctx: SubagentDetectionContext): boolean;
+	isSubagent(ctx: SubagentDetectionContext): boolean;
 }
 
 /**
@@ -25,14 +25,14 @@ export interface SubagentDetector {
  * registered child never publishes over its parent's process-global slot.
  */
 export interface RegisteredChildDetector {
-  isRegisteredChild(ctx: SubagentDetectionContext): boolean;
+	isRegisteredChild(ctx: SubagentDetectionContext): boolean;
 }
 
 /** Composition-root inputs for {@link SubagentDetection}. */
 export interface SubagentDetectionDeps {
-  subagentSessionsDir: string;
-  flavor: PathFlavor;
-  registry?: SubagentSessionRegistry;
+	subagentSessionsDir: string;
+	flavor: PathFlavor;
+	registry?: SubagentSessionRegistry;
 }
 
 /**
@@ -44,23 +44,14 @@ export interface SubagentDetectionDeps {
  * individually. Delegates to the pure detection functions in
  * {@link ./subagent-context}, holding only the deps.
  */
-export class SubagentDetection
-  implements SubagentDetector, RegisteredChildDetector
-{
-  constructor(private readonly deps: SubagentDetectionDeps) {}
+export class SubagentDetection implements SubagentDetector, RegisteredChildDetector {
+	constructor(private readonly deps: SubagentDetectionDeps) {}
 
-  isSubagent(ctx: SubagentDetectionContext): boolean {
-    return isSubagentExecutionContext(
-      ctx,
-      this.deps.subagentSessionsDir,
-      this.deps.flavor,
-      this.deps.registry,
-    );
-  }
+	isSubagent(ctx: SubagentDetectionContext): boolean {
+		return isSubagentExecutionContext(ctx, this.deps.subagentSessionsDir, this.deps.flavor, this.deps.registry);
+	}
 
-  isRegisteredChild(ctx: SubagentDetectionContext): boolean {
-    return this.deps.registry
-      ? isRegisteredSubagentChild(ctx, this.deps.registry)
-      : false;
-  }
+	isRegisteredChild(ctx: SubagentDetectionContext): boolean {
+		return this.deps.registry ? isRegisteredSubagentChild(ctx, this.deps.registry) : false;
+	}
 }

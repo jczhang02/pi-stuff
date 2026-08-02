@@ -17,38 +17,36 @@ export type JsonValueTransform = (key: string, value: unknown) => unknown;
  * Build a `JSON.stringify` replacer. Each call owns a fresh `seen` set, so a
  * replacer must not be reused across `stringify` calls.
  */
-export function createJsonSafeReplacer(
-  transform?: JsonValueTransform,
-): (key: string, value: unknown) => unknown {
-  const seen = new WeakSet<object>();
+export function createJsonSafeReplacer(transform?: JsonValueTransform): (key: string, value: unknown) => unknown {
+	const seen = new WeakSet<object>();
 
-  return (key: string, rawValue: unknown): unknown => {
-    const value = transform ? transform(key, rawValue) : rawValue;
+	return (key: string, rawValue: unknown): unknown => {
+		const value = transform ? transform(key, rawValue) : rawValue;
 
-    if (value instanceof Error) {
-      return {
-        name: value.name,
-        message: value.message,
-        stack: value.stack,
-      };
-    }
+		if (value instanceof Error) {
+			return {
+				name: value.name,
+				message: value.message,
+				stack: value.stack,
+			};
+		}
 
-    if (typeof value === "bigint") {
-      return value.toString();
-    }
+		if (typeof value === "bigint") {
+			return value.toString();
+		}
 
-    if (typeof value === "object" && value !== null) {
-      if (seen.has(value)) {
-        return "[Circular]";
-      }
-      seen.add(value);
-    }
+		if (typeof value === "object" && value !== null) {
+			if (seen.has(value)) {
+				return "[Circular]";
+			}
+			seen.add(value);
+		}
 
-    return value;
-  };
+		return value;
+	};
 }
 
 /** Serialize `value` to JSON, tolerating errors, bigints, and cycles. */
 export function safeJsonStringify(value: unknown): string | undefined {
-  return JSON.stringify(value, createJsonSafeReplacer());
+	return JSON.stringify(value, createJsonSafeReplacer());
 }

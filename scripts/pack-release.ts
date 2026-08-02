@@ -13,7 +13,7 @@ const pendingChangesets = (await readdir(join(root, ".changeset"))).filter(
 if (pendingChangesets.length > 0) {
 	throw new Error(`Run bun run release:version before packing; pending Changesets: ${pendingChangesets.join(", ")}`);
 }
-for (const packagePath of ["pi-stuff-ui", "pi-stuff-todo", "pi-stuff-btw", "pi-stuff"]) {
+for (const packagePath of ["pi-stuff-ui", "pi-stuff-permissions", "pi-stuff-todo", "pi-stuff-btw", "pi-stuff"]) {
 	const manifest = JSON.parse(await readFile(join(root, "packages", packagePath, "package.json"), "utf8")) as {
 		version?: unknown;
 	};

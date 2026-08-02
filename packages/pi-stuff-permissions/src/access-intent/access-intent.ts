@@ -7,11 +7,11 @@ import type { AccessPath } from "#src/access-intent/access-path";
  * an MCP server name).
  */
 export interface ToolAccessIntent {
-  kind: "tool";
-  /** Tool name fed to input normalization. */
-  surface: string;
-  input: unknown;
-  agentName?: string;
+	kind: "tool";
+	/** Tool name fed to input normalization. */
+	surface: string;
+	input: unknown;
+	agentName?: string;
 }
 
 /**
@@ -26,11 +26,11 @@ export interface ToolAccessIntent {
  * `docs/decisions/0002-path-values-string-boundary.md`).
  */
 export interface PathValuesAccessIntent {
-  kind: "path-values";
-  /** `"path"` or `"external_directory"`. */
-  surface: string;
-  values: readonly string[];
-  agentName?: string;
+	kind: "path-values";
+	/** `"path"` or `"external_directory"`. */
+	surface: string;
+	values: readonly string[];
+	agentName?: string;
 }
 
 /**
@@ -44,10 +44,10 @@ export interface PathValuesAccessIntent {
  * `matchValues()` (Tell-Don't-Ask).
  */
 export interface AccessPathAccessIntent {
-  kind: "access-path";
-  surface: string;
-  path: AccessPath;
-  agentName?: string;
+	kind: "access-path";
+	surface: string;
+	path: AccessPath;
+	agentName?: string;
 }
 
 /** What a gate emits — a raw tool input or an `AccessPath`. */

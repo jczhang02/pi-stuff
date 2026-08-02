@@ -22,18 +22,18 @@ import type { BashCommandContext } from "#src/types";
 export type WrapperKind = "opaque-payload" | "indirection";
 
 export interface BashCommand {
-  readonly text: string;
-  /**
-   * Execution context for a nested command (substitution or subshell); absent
-   * for a current-shell (top-level) command.
-   */
-  readonly context?: BashCommandContext;
-  /**
-   * Set when this unit is a floored indirection wrapper; its decision is floored
-   * to at least `ask` so the wrapped command cannot ride a permissive `allow`.
-   * Absent for an ordinary command.
-   */
-  readonly wrapperKind?: WrapperKind;
+	readonly text: string;
+	/**
+	 * Execution context for a nested command (substitution or subshell); absent
+	 * for a current-shell (top-level) command.
+	 */
+	readonly context?: BashCommandContext;
+	/**
+	 * Set when this unit is a floored indirection wrapper; its decision is floored
+	 * to at least `ask` so the wrapped command cannot ride a permissive `allow`.
+	 * Absent for an ordinary command.
+	 */
+	readonly wrapperKind?: WrapperKind;
 }
 
 // ── Command enumeration ──────────────────────────────────────────────────────
@@ -41,12 +41,7 @@ export interface BashCommand {
 /**
  * Container node types descended into when enumerating command units.
  */
-const COMMAND_ENUM_DESCEND = new Set([
-  "program",
-  "list",
-  "pipeline",
-  "redirected_statement",
-]);
+const COMMAND_ENUM_DESCEND = new Set(["program", "list", "pipeline", "redirected_statement"]);
 
 /**
  * Named node types skipped during command enumeration: redirect targets,
@@ -56,12 +51,12 @@ const COMMAND_ENUM_DESCEND = new Set([
  * listed here.
  */
 const COMMAND_ENUM_SKIP = new Set([
-  "file_redirect",
-  "heredoc_redirect",
-  "herestring_redirect",
-  "comment",
-  "heredoc_body",
-  "heredoc_end",
+	"file_redirect",
+	"heredoc_redirect",
+	"herestring_redirect",
+	"comment",
+	"heredoc_body",
+	"heredoc_end",
 ]);
 
 /**
@@ -72,8 +67,8 @@ const COMMAND_ENUM_SKIP = new Set([
  * whole.
  */
 const NESTED_EXECUTION_CONTEXTS = new Map<string, BashCommandContext>([
-  ["command_substitution", "command_substitution"],
-  ["process_substitution", "process_substitution"],
+	["command_substitution", "command_substitution"],
+	["process_substitution", "process_substitution"],
 ]);
 
 /**
@@ -98,54 +93,44 @@ const NESTED_EXECUTION_CONTEXTS = new Map<string, BashCommandContext>([
  * tagged with a {@link WrapperKind} so its decision is later floored to `ask`.
  */
 export function collectCommands(node: TSNode): BashCommand[] {
-  const out: BashCommand[] = [];
-  collectCommandsInto(node, undefined, out);
-  return out;
+	const out: BashCommand[] = [];
+	collectCommandsInto(node, undefined, out);
+	return out;
 }
 
-function collectCommandsInto(
-  node: TSNode,
-  context: BashCommandContext | undefined,
-  out: BashCommand[],
-): void {
-  // Anonymous tokens (operators `&&`/`;`/`|`, delimiters `$(`/`)`/`` ` ``/`(`)
-  // carry no command.
-  if (!node.isNamed) return;
-  if (COMMAND_ENUM_SKIP.has(node.type)) return;
+function collectCommandsInto(node: TSNode, context: BashCommandContext | undefined, out: BashCommand[]): void {
+	// Anonymous tokens (operators `&&`/`;`/`|`, delimiters `$(`/`)`/`` ` ``/`(`)
+	// carry no command.
+	if (!node.isNamed) return;
+	if (COMMAND_ENUM_SKIP.has(node.type)) return;
 
-  if (node.type === "command") {
-    out.push(
-      makeUnit(commandUnitText(node), context, classifyWrapperCommand(node)),
-    );
-    // A command's text already contains any substitution; descend its subtree
-    // to ALSO emit the inner commands of command/process substitutions.
-    collectSubstitutionCommands(node, out);
-    return;
-  }
+	if (node.type === "command") {
+		out.push(makeUnit(commandUnitText(node), context, classifyWrapperCommand(node)));
+		// A command's text already contains any substitution; descend its subtree
+		// to ALSO emit the inner commands of command/process substitutions.
+		collectSubstitutionCommands(node, out);
+		return;
+	}
 
-  if (node.type === "subshell") {
-    out.push(makeUnit(node.text, context)); // never-weaker whole emit
-    descendCommandChildren(node, "subshell", out);
-    return;
-  }
+	if (node.type === "subshell") {
+		out.push(makeUnit(node.text, context)); // never-weaker whole emit
+		descendCommandChildren(node, "subshell", out);
+		return;
+	}
 
-  if (COMMAND_ENUM_DESCEND.has(node.type)) {
-    descendCommandChildren(node, context, out);
-    return;
-  }
+	if (COMMAND_ENUM_DESCEND.has(node.type)) {
+		descendCommandChildren(node, context, out);
+		return;
+	}
 
-  // Any other named statement (compound_statement `{ … }`, if/while/for/case,
-  // function_definition): emit whole, do not descend — deferred (#306).
-  out.push(makeUnit(node.text, context));
+	// Any other named statement (compound_statement `{ … }`, if/while/for/case,
+	// function_definition): emit whole, do not descend — deferred (#306).
+	out.push(makeUnit(node.text, context));
 }
 
-function makeUnit(
-  text: string,
-  context: BashCommandContext | undefined,
-  wrapperKind?: WrapperKind,
-): BashCommand {
-  const unit: BashCommand = context ? { text, context } : { text };
-  return wrapperKind ? { ...unit, wrapperKind } : unit;
+function makeUnit(text: string, context: BashCommandContext | undefined, wrapperKind?: WrapperKind): BashCommand {
+	const unit: BashCommand = context ? { text, context } : { text };
+	return wrapperKind ? { ...unit, wrapperKind } : unit;
 }
 
 /**
@@ -159,24 +144,24 @@ const SHELL_WRAPPER_NAMES = new Set(["bash", "sh", "dash", "zsh", "ksh"]);
  * basename alone. Extend this set to cover another always-invoking wrapper.
  */
 const INDIRECTION_WRAPPER_NAMES = new Set([
-  "sudo",
-  "env",
-  "xargs",
-  "time",
-  "nohup",
-  "timeout",
-  "nice",
-  // Exec-capable rewrites and prefix wrappers surveyed in #575: parallelizers
-  // (parallel/rust-parallel/rush), a sudo rewrite (doas), and prefix wrappers
-  // (setsid/stdbuf/watch/flock) that all always invoke a following command.
-  "parallel",
-  "rust-parallel",
-  "rush",
-  "doas",
-  "setsid",
-  "stdbuf",
-  "watch",
-  "flock",
+	"sudo",
+	"env",
+	"xargs",
+	"time",
+	"nohup",
+	"timeout",
+	"nice",
+	// Exec-capable rewrites and prefix wrappers surveyed in #575: parallelizers
+	// (parallel/rust-parallel/rush), a sudo rewrite (doas), and prefix wrappers
+	// (setsid/stdbuf/watch/flock) that all always invoke a following command.
+	"parallel",
+	"rust-parallel",
+	"rush",
+	"doas",
+	"setsid",
+	"stdbuf",
+	"watch",
+	"flock",
 ]);
 
 /**
@@ -186,8 +171,8 @@ const INDIRECTION_WRAPPER_NAMES = new Set([
  * its exec-flag set.
  */
 const EXEC_CONDITIONAL_WRAPPERS = new Map<string, ReadonlySet<string>>([
-  ["find", new Set(["-exec", "-execdir", "-ok", "-okdir"])],
-  ["fd", new Set(["-x", "--exec", "-X", "--exec-batch"])],
+	["find", new Set(["-exec", "-execdir", "-ok", "-okdir"])],
+	["fd", new Set(["-x", "--exec", "-X", "--exec-batch"])],
 ]);
 
 /**
@@ -207,16 +192,16 @@ const EXEC_CONDITIONAL_WRAPPERS = new Map<string, ReadonlySet<string>>([
  * `find`/`fd` search runs no subcommand and is not flagged.
  */
 function classifyWrapperCommand(node: TSNode): WrapperKind | undefined {
-  const { commandName, args } = readWrapperCommand(node);
-  if (commandName === undefined) return undefined;
-  if (commandName === "eval") return "opaque-payload";
-  if (SHELL_WRAPPER_NAMES.has(commandName) && hasShortFlagC(args)) {
-    return "opaque-payload";
-  }
-  if (INDIRECTION_WRAPPER_NAMES.has(commandName)) return "indirection";
-  const execFlags = EXEC_CONDITIONAL_WRAPPERS.get(commandName);
-  if (execFlags && args.some((arg) => execFlags.has(arg))) return "indirection";
-  return undefined;
+	const { commandName, args } = readWrapperCommand(node);
+	if (commandName === undefined) return undefined;
+	if (commandName === "eval") return "opaque-payload";
+	if (SHELL_WRAPPER_NAMES.has(commandName) && hasShortFlagC(args)) {
+		return "opaque-payload";
+	}
+	if (INDIRECTION_WRAPPER_NAMES.has(commandName)) return "indirection";
+	const execFlags = EXEC_CONDITIONAL_WRAPPERS.get(commandName);
+	if (execFlags && args.some((arg) => execFlags.has(arg))) return "indirection";
+	return undefined;
 }
 
 /**
@@ -225,22 +210,22 @@ function classifyWrapperCommand(node: TSNode): WrapperKind | undefined {
  * `undefined` for a pure assignment with no `command_name`.
  */
 function readWrapperCommand(node: TSNode): {
-  commandName: string | undefined;
-  args: string[];
+	commandName: string | undefined;
+	args: string[];
 } {
-  let commandName: string | undefined;
-  const args: string[] = [];
-  for (let i = 0; i < node.childCount; i++) {
-    const child = node.child(i);
-    if (!child?.isNamed) continue;
-    if (child.type === "variable_assignment") continue;
-    if (commandName === undefined) {
-      commandName = basename(child.text);
-      continue;
-    }
-    args.push(child.text);
-  }
-  return { commandName, args };
+	let commandName: string | undefined;
+	const args: string[] = [];
+	for (let i = 0; i < node.childCount; i++) {
+		const child = node.child(i);
+		if (!child?.isNamed) continue;
+		if (child.type === "variable_assignment") continue;
+		if (commandName === undefined) {
+			commandName = basename(child.text);
+			continue;
+		}
+		args.push(child.text);
+	}
+	return { commandName, args };
 }
 
 /**
@@ -249,19 +234,19 @@ function readWrapperCommand(node: TSNode): {
  * flag for `bash`/`sh`/`dash`/`zsh`/`ksh`.
  */
 function hasShortFlagC(args: string[]): boolean {
-  for (const arg of args) {
-    if (arg === "--") return false;
-    if (arg.startsWith("-") && !arg.startsWith("--") && arg.includes("c")) {
-      return true;
-    }
-  }
-  return false;
+	for (const arg of args) {
+		if (arg === "--") return false;
+		if (arg.startsWith("-") && !arg.startsWith("--") && arg.includes("c")) {
+			return true;
+		}
+	}
+	return false;
 }
 
 /** The final path segment of a command name (`/bin/bash` → `bash`). */
 function basename(name: string): string {
-  const slash = name.lastIndexOf("/");
-  return slash === -1 ? name : name.slice(slash + 1);
+	const slash = name.lastIndexOf("/");
+	return slash === -1 ? name : name.slice(slash + 1);
 }
 
 /**
@@ -276,24 +261,20 @@ function basename(name: string): string {
  * unchanged.
  */
 function commandUnitText(node: TSNode): string {
-  for (let i = 0; i < node.childCount; i++) {
-    const child = node.child(i);
-    if (child?.isNamed && child.type !== "variable_assignment") {
-      return node.text.slice(child.startIndex - node.startIndex);
-    }
-  }
-  return node.text;
+	for (let i = 0; i < node.childCount; i++) {
+		const child = node.child(i);
+		if (child?.isNamed && child.type !== "variable_assignment") {
+			return node.text.slice(child.startIndex - node.startIndex);
+		}
+	}
+	return node.text;
 }
 
-function descendCommandChildren(
-  node: TSNode,
-  context: BashCommandContext | undefined,
-  out: BashCommand[],
-): void {
-  for (let i = 0; i < node.childCount; i++) {
-    const child = node.child(i);
-    if (child) collectCommandsInto(child, context, out);
-  }
+function descendCommandChildren(node: TSNode, context: BashCommandContext | undefined, out: BashCommand[]): void {
+	for (let i = 0; i < node.childCount; i++) {
+		const child = node.child(i);
+		if (child) collectCommandsInto(child, context, out);
+	}
 }
 
 /**
@@ -303,14 +284,14 @@ function descendCommandChildren(
  * `$(…)`) or under an argument, so the entire subtree is searched.
  */
 function collectSubstitutionCommands(node: TSNode, out: BashCommand[]): void {
-  for (let i = 0; i < node.childCount; i++) {
-    const child = node.child(i);
-    if (!child) continue;
-    const nestedContext = NESTED_EXECUTION_CONTEXTS.get(child.type);
-    if (nestedContext) {
-      descendCommandChildren(child, nestedContext, out);
-    } else {
-      collectSubstitutionCommands(child, out);
-    }
-  }
+	for (let i = 0; i < node.childCount; i++) {
+		const child = node.child(i);
+		if (!child) continue;
+		const nestedContext = NESTED_EXECUTION_CONTEXTS.get(child.type);
+		if (nestedContext) {
+			descendCommandChildren(child, nestedContext, out);
+		} else {
+			collectSubstitutionCommands(child, out);
+		}
+	}
 }

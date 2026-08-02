@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
 	createReleaseArtifacts,
@@ -24,9 +25,16 @@ const aggregateDirectory = join(root, "packages", "pi-stuff");
 const uiPackageName = "@jczhang02/pi-stuff-ui";
 const todoToolInspector = join(root, "test/fixtures/assert-todo-tools.ts");
 const forkLicenseSha256 = "25d0d5e4e54033f939a9657109044f1d71a0b6e8db9adc400456ca9190df3fb1";
+const permissionLicenseSha256 = "220a81ab89687aa207c1b9257a7f3636c8c78b5c1092b7563ad662950d21dd00";
+const permissionRuntimeVersions = {
+	"tree-sitter-bash": "0.25.1",
+	"web-tree-sitter": "0.26.11",
+	zod: "4.4.3",
+} as const;
 const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 	"@jczhang02/pi-stuff": ["@earendil-works/pi-coding-agent"],
 	"@jczhang02/pi-stuff-btw": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-permissions": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-todo": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 };
@@ -109,6 +117,9 @@ export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFi
 	}
 
 	const bundledPrefixes = bundledDependencies.map((dependency) => `node_modules/${dependency}/`);
+	const firstPartyBundledPrefixes = bundledDependencies
+		.filter((dependency) => dependency.startsWith("@jczhang02/pi-"))
+		.map((dependency) => `node_modules/${dependency}/`);
 	for (const prefix of bundledPrefixes) {
 		const packageManifest = `package/${prefix}package.json`;
 		if (!archiveSet.has(packageManifest)) {
@@ -119,8 +130,10 @@ export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFi
 		if (!archivePath.startsWith("package/")) return false;
 		const relativePath = archivePath.slice("package/".length);
 		return (
-			bundledPrefixes.some((prefix) => relativePath.startsWith(prefix)) &&
-			DEVELOPMENT_ARCHIVE_FILE.test(relativePath)
+			firstPartyBundledPrefixes.some(
+				(prefix) =>
+					relativePath.startsWith(prefix) && !relativePath.slice(prefix.length).startsWith("node_modules/"),
+			) && DEVELOPMENT_ARCHIVE_FILE.test(relativePath)
 		);
 	});
 	if (bundledDevelopmentFiles.length > 0) {
@@ -187,12 +200,16 @@ async function verifyStandaloneInstalls(
 	const packsDirectory = join(temporaryDirectory, "standalone-packs");
 	const btwInstallDirectory = join(temporaryDirectory, "standalone-btw");
 	const btwNpmCacheDirectory = join(temporaryDirectory, "npm-cache-btw");
+	const permissionsInstallDirectory = join(temporaryDirectory, "standalone-permissions");
+	const permissionsNpmCacheDirectory = join(temporaryDirectory, "npm-cache-permissions");
 	const todoInstallDirectory = join(temporaryDirectory, "standalone-todo");
 	const todoNpmCacheDirectory = join(temporaryDirectory, "npm-cache-todo");
 	await Promise.all([
 		mkdir(packsDirectory),
 		mkdir(btwInstallDirectory),
 		mkdir(btwNpmCacheDirectory),
+		mkdir(permissionsInstallDirectory),
+		mkdir(permissionsNpmCacheDirectory),
 		mkdir(todoInstallDirectory),
 		mkdir(todoNpmCacheDirectory),
 	]);
@@ -204,10 +221,33 @@ async function verifyStandaloneInstalls(
 	};
 	const uiArchive = releaseArchive(uiPackageName);
 	const btwArchive = releaseArchive("@jczhang02/pi-stuff-btw");
+	const permissionsArchive = releaseArchive("@jczhang02/pi-stuff-permissions");
 	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
-	const typeboxArchive = (
-		await packPackageArchive(join(root, "node_modules/typebox"), join(packsDirectory, "typebox"), bunEnvironment)
-	).archivePath;
+	const treeSitterManifest = await realpath(join(root, "node_modules", "tree-sitter-bash", "package.json"));
+	const treeSitterRequire = createRequire(treeSitterManifest);
+	const transitiveRuntimeDirectories = Object.fromEntries(
+		["node-addon-api", "node-gyp-build"].map((name) => [
+			name,
+			dirname(treeSitterRequire.resolve(`${name}/package.json`)),
+		]),
+	) as Record<string, string>;
+	const runtimeArchives = Object.fromEntries(
+		await Promise.all(
+			["node-addon-api", "node-gyp-build", ...Object.keys(permissionRuntimeVersions), "typebox"].map(
+				async (name) =>
+					[
+						name,
+						(
+							await packPackageArchive(
+								transitiveRuntimeDirectories[name] ?? join(root, "node_modules", name),
+								join(packsDirectory, name),
+								bunEnvironment,
+							)
+						).archivePath,
+					] as const,
+			),
+		),
+	) as Record<string, string>;
 	const install = (installDirectory: string, npmCacheDirectory: string, archive: string): void => {
 		run(
 			[
@@ -235,7 +275,17 @@ async function verifyStandaloneInstalls(
 	// installed first. This is the same dependency shape Pi's package installer sees.
 	install(btwInstallDirectory, btwNpmCacheDirectory, uiArchive);
 	install(btwInstallDirectory, btwNpmCacheDirectory, btwArchive);
+	install(permissionsInstallDirectory, permissionsNpmCacheDirectory, uiArchive);
+	for (const dependency of ["node-addon-api", "node-gyp-build", ...Object.keys(permissionRuntimeVersions)]) {
+		const archive = runtimeArchives[dependency];
+		if (!archive) throw new Error(`Standalone dependency archive is missing ${dependency}`);
+		install(permissionsInstallDirectory, permissionsNpmCacheDirectory, archive);
+	}
+	install(permissionsInstallDirectory, permissionsNpmCacheDirectory, permissionsArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, uiArchive);
+	// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
+	const typeboxArchive = runtimeArchives["typebox"];
+	if (!typeboxArchive) throw new Error("Standalone dependency archive is missing typebox");
 	install(todoInstallDirectory, todoNpmCacheDirectory, typeboxArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, todoArchive);
 
@@ -252,7 +302,24 @@ async function verifyStandaloneInstalls(
 		}
 	};
 	await verifyUiDependency(btwInstallDirectory, "pi-stuff-btw");
+	await verifyUiDependency(permissionsInstallDirectory, "pi-stuff-permissions");
 	await verifyUiDependency(todoInstallDirectory, "pi-stuff-todo");
+
+	const permissionsInstalledRoot = join(permissionsInstallDirectory, "node_modules");
+	const permissionsManifest = JSON.parse(
+		await readFile(join(permissionsInstalledRoot, "@jczhang02/pi-stuff-permissions/package.json"), "utf8"),
+	) as { dependencies?: Record<string, unknown> };
+	for (const [name, expectedVersion] of Object.entries(permissionRuntimeVersions)) {
+		const dependencyManifest = JSON.parse(
+			await readFile(join(permissionsInstalledRoot, name, "package.json"), "utf8"),
+		) as { version?: unknown };
+		if (
+			dependencyManifest.version !== expectedVersion ||
+			permissionsManifest.dependencies?.[name] !== expectedVersion
+		) {
+			throw new Error(`Standalone Permissions must install exact ${name} ${expectedVersion}`);
+		}
+	}
 
 	const todoInstalledRoot = join(todoInstallDirectory, "node_modules");
 	const todoManifest = JSON.parse(
@@ -268,6 +335,14 @@ async function verifyStandaloneInstalls(
 	const installedBtw = join(btwInstallDirectory, "node_modules/@jczhang02/pi-stuff-btw");
 	const btwSmoke = await runPiRpcSmoke({ piBinary, packages: [installedBtw], cwd: btwInstallDirectory });
 	if (!btwSmoke.commandNames.includes("btw")) throw new Error("Standalone BTW Package did not register /btw");
+	const permissionsSmoke = await runPiRpcSmoke({
+		piBinary,
+		packages: [join(permissionsInstalledRoot, "@jczhang02/pi-stuff-permissions")],
+		cwd: permissionsInstallDirectory,
+	});
+	if (!permissionsSmoke.commandNames.includes("permissions")) {
+		throw new Error("Standalone Permissions Package did not register /permissions");
+	}
 	const todoSmoke = await runPiRpcSmoke({
 		piBinary,
 		extensions: [todoToolInspector],
@@ -335,22 +410,48 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 		) {
 			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
 		}
+		if (
+			manifest.name === "@jczhang02/pi-stuff-permissions" &&
+			(await sha256File(join(extractDirectory, licensePath))) !== permissionLicenseSha256
+		) {
+			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
+		}
 	}
 
 	const provenance = [
 		{
-			archiveSha256: "5318bbf4256b83825cb56a314bdbfa605e495e68043d83a169a65dd35ceabf59",
 			capability: "pi-stuff-btw",
 			deltaHeading: "## Pi Stuff changes",
-			package: "@juicesharp/rpiv-btw",
-			shasum: "568af4a3235b344a4f91d354cc0d1c967977cc06",
+			required: [
+				"@juicesharp/rpiv-btw",
+				"2.3.1",
+				"75823a68024a0a649cc28087976074be791ca554",
+				"568af4a3235b344a4f91d354cc0d1c967977cc06",
+				"5318bbf4256b83825cb56a314bdbfa605e495e68043d83a169a65dd35ceabf59",
+			],
 		},
 		{
-			archiveSha256: "b0ae0f1f4245f471c3fa724dc50425cfa241eb37e399c4948d393fe7965d1fa8",
+			capability: "pi-stuff-permissions",
+			deltaHeading: "Major product changes in this fork:",
+			required: [
+				"@gotgenes/pi-permission-system@24.0.0",
+				"776ebcc764ca6c720b1f7eb430007de06f145b5f",
+				"ebfe84ad3ac0946577a665473966f5c6385c362b",
+				"0698d8b61ef1bcb197fae5987709e46a12290fb7bb07b4f35db369efcfcf0d32",
+				"sha512-4WncumJPPDDs8Ulrjk7qvU3kHjQSjGyZnpLx1Nu9EkxWQZQi+qvVOpGpPGbHwlXt6rg8AjvI8zSl2Aj2bo5lfA==",
+				"220a81ab89687aa207c1b9257a7f3636c8c78b5c1092b7563ad662950d21dd00",
+			],
+		},
+		{
 			capability: "pi-stuff-todo",
 			deltaHeading: "## Pi Stuff delta",
-			package: "@juicesharp/rpiv-todo",
-			shasum: "8797586bad201f4b2153505347c3b997c320eaa2",
+			required: [
+				"@juicesharp/rpiv-todo",
+				"2.3.1",
+				"75823a68024a0a649cc28087976074be791ca554",
+				"8797586bad201f4b2153505347c3b997c320eaa2",
+				"b0ae0f1f4245f471c3fa724dc50425cfa241eb37e399c4948d393fe7965d1fa8",
+			],
 		},
 	] as const;
 	for (const record of provenance) {
@@ -358,14 +459,7 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 		const upstream = `package/node_modules/@jczhang02/${capability}/UPSTREAM.md`;
 		if (!archiveFiles.includes(upstream)) throw new Error(`${capability} is missing fork provenance`);
 		const contents = await readFile(join(extractDirectory, upstream), "utf8");
-		for (const required of [
-			record.package,
-			"2.3.1",
-			"75823a68024a0a649cc28087976074be791ca554",
-			record.shasum,
-			record.archiveSha256,
-			record.deltaHeading,
-		]) {
+		for (const required of [...record.required, record.deltaHeading]) {
 			if (!contents.includes(required)) throw new Error(`${capability} provenance is missing ${required}`);
 		}
 		if (!contents.slice(contents.indexOf(record.deltaHeading) + record.deltaHeading.length).includes("\n- ")) {

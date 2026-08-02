@@ -23,10 +23,10 @@ import { isSafeSystemPath } from "#src/safe-system-paths";
  *   paths); handled by ordinary win32 resolution.
  */
 export type BashTokenShape =
-  | { kind: "device" }
-  | { kind: "drive-mount"; windowsPath: string }
-  | { kind: "posix-absolute" }
-  | { kind: "plain" };
+	| { kind: "device" }
+	| { kind: "drive-mount"; windowsPath: string }
+	| { kind: "posix-absolute" }
+	| { kind: "plain" };
 
 /**
  * A single-letter first path segment identifies an MSYS drive mount: `/c`,
@@ -37,19 +37,19 @@ export type BashTokenShape =
 const MSYS_DRIVE_MOUNT_PATTERN = /^\/([a-zA-Z])(\/.*)?$/;
 
 export function classifyWin32BashToken(token: string): BashTokenShape {
-  if (isSafeSystemPath(token)) return { kind: "device" };
+	if (isSafeSystemPath(token)) return { kind: "device" };
 
-  const driveMatch = MSYS_DRIVE_MOUNT_PATTERN.exec(token);
-  if (driveMatch) {
-    return {
-      kind: "drive-mount",
-      windowsPath: toWindowsDrivePath(driveMatch[1], driveMatch[2]),
-    };
-  }
+	const driveMatch = MSYS_DRIVE_MOUNT_PATTERN.exec(token);
+	if (driveMatch) {
+		return {
+			kind: "drive-mount",
+			windowsPath: toWindowsDrivePath(driveMatch[1], driveMatch[2]),
+		};
+	}
 
-  if (token.startsWith("/")) return { kind: "posix-absolute" };
+	if (token.startsWith("/")) return { kind: "posix-absolute" };
 
-  return { kind: "plain" };
+	return { kind: "plain" };
 }
 
 /**
@@ -58,7 +58,7 @@ export function classifyWin32BashToken(token: string): BashTokenShape {
  * trailing-slash mount (`/c`, `/c/`) maps to the drive root (`C:\`).
  */
 function toWindowsDrivePath(letter: string, rest: string | undefined): string {
-  const drive = `${letter.toUpperCase()}:`;
-  const tail = (rest ?? "").replace(/^\//, "").replaceAll("/", "\\");
-  return tail ? `${drive}\\${tail}` : `${drive}\\`;
+	const drive = `${letter.toUpperCase()}:`;
+	const tail = (rest ?? "").replace(/^\//, "").replaceAll("/", "\\");
+	return tail ? `${drive}\\${tail}` : `${drive}\\`;
 }

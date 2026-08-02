@@ -21,18 +21,18 @@ import type { PermissionCheckResult } from "#src/types";
  * the only async step (parser init) happens earlier, at `before_agent_start`.
  */
 export function resolveBashAdvisoryCheck(
-  command: string,
-  agentName: string | undefined,
-  resolver: ScopedPermissionResolver,
+	command: string,
+	agentName: string | undefined,
+	resolver: ScopedPermissionResolver,
 ): PermissionCheckResult {
-  const commands = parseBashCommandsSync(command);
-  if (commands === null) {
-    return resolver.resolve({
-      kind: "tool",
-      surface: "bash",
-      input: { command },
-      agentName,
-    });
-  }
-  return resolveBashCommandCheck(command, commands, agentName, resolver);
+	const commands = parseBashCommandsSync(command);
+	if (commands === null) {
+		return resolver.resolve({
+			kind: "tool",
+			surface: "bash",
+			input: { command },
+			agentName,
+		});
+	}
+	return resolveBashCommandCheck(command, commands, agentName, resolver);
 }

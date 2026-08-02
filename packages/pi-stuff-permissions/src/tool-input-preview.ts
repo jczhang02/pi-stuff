@@ -6,28 +6,24 @@ export const TOOL_INPUT_LOG_PREVIEW_MAX_LENGTH = 1000;
 export const TOOL_TEXT_SUMMARY_MAX_LENGTH = 80;
 
 export function truncateInlineText(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+	return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 }
 
 export function countTextLines(value: string): number {
-  if (!value) {
-    return 0;
-  }
+	if (!value) {
+		return 0;
+	}
 
-  return value.split(/\r\n|\r|\n/).length;
+	return value.split(/\r\n|\r|\n/).length;
 }
 
-export function formatCount(
-  value: number,
-  singular: string,
-  plural: string,
-): string {
-  return `${value} ${value === 1 ? singular : plural}`;
+export function formatCount(value: number, singular: string, plural: string): string {
+	return `${value} ${value === 1 ? singular : plural}`;
 }
 
 /** Serialize tool input for display in a permission prompt, unredacted. */
 export function serializeToolInputPreview(input: unknown): string {
-  return normalizeSerializedPreview(safeJsonStringify(input));
+	return normalizeSerializedPreview(safeJsonStringify(input));
 }
 
 /**
@@ -38,13 +34,13 @@ export function serializeToolInputPreview(input: unknown): string {
  * that boundary's redaction pass can no longer see them.
  */
 export function serializeRedactedToolInputPreview(input: unknown): string {
-  return normalizeSerializedPreview(redactedJsonStringify(input));
+	return normalizeSerializedPreview(redactedJsonStringify(input));
 }
 
 function normalizeSerializedPreview(serialized: string | undefined): string {
-  if (!serialized || serialized === "{}" || serialized === "null") {
-    return "";
-  }
+	if (!serialized || serialized === "{}" || serialized === "null") {
+		return "";
+	}
 
-  return serialized.replace(/\s+/g, " ").trim();
+	return serialized.replace(/\s+/g, " ").trim();
 }

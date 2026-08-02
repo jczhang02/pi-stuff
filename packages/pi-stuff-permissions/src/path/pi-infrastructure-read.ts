@@ -5,7 +5,7 @@ import type { PathFlavor } from "#src/path/path-flavor";
 import { wildcardMatch } from "#src/wildcard-matcher";
 
 function containsGlobChars(value: string): boolean {
-  return value.includes("*") || value.includes("?");
+	return value.includes("*") || value.includes("?");
 }
 
 /**
@@ -24,36 +24,36 @@ function containsGlobChars(value: string): boolean {
  * follow working-directory changes without a runtime rebuild.
  */
 export function isPiInfrastructureRead(
-  toolName: string,
-  normalizedPath: string,
-  infrastructureDirs: readonly string[],
-  cwd: string,
-  flavor: PathFlavor,
+	toolName: string,
+	normalizedPath: string,
+	infrastructureDirs: readonly string[],
+	cwd: string,
+	flavor: PathFlavor,
 ): boolean {
-  if (!READ_ONLY_PATH_BEARING_TOOLS.has(toolName)) {
-    return false;
-  }
+	if (!READ_ONLY_PATH_BEARING_TOOLS.has(toolName)) {
+		return false;
+	}
 
-  // On Windows the path value is canonicalized + lowercased; the flavor's match
-  // options fold case (and separators) so mixed-case infra dirs and glob
-  // patterns still match.
-  for (const dir of infrastructureDirs) {
-    if (containsGlobChars(dir)) {
-      if (wildcardMatch(dir, normalizedPath, flavor.matchOptions)) return true;
-    } else {
-      if (flavor.isWithin(normalizedPath, expandHomePath(dir))) return true;
-    }
-  }
+	// On Windows the path value is canonicalized + lowercased; the flavor's match
+	// options fold case (and separators) so mixed-case infra dirs and glob
+	// patterns still match.
+	for (const dir of infrastructureDirs) {
+		if (containsGlobChars(dir)) {
+			if (wildcardMatch(dir, normalizedPath, flavor.matchOptions)) return true;
+		} else {
+			if (flavor.isWithin(normalizedPath, expandHomePath(dir))) return true;
+		}
+	}
 
-  // Project-local Pi packages — checked fresh every call so CWD changes work.
-  const projectNpmDir = join(cwd, ".pi", "npm");
-  const projectGitDir = join(cwd, ".pi", "git");
-  if (flavor.isWithin(normalizedPath, projectNpmDir)) {
-    return true;
-  }
-  if (flavor.isWithin(normalizedPath, projectGitDir)) {
-    return true;
-  }
+	// Project-local Pi packages — checked fresh every call so CWD changes work.
+	const projectNpmDir = join(cwd, ".pi", "npm");
+	const projectGitDir = join(cwd, ".pi", "git");
+	if (flavor.isWithin(normalizedPath, projectNpmDir)) {
+		return true;
+	}
+	if (flavor.isWithin(normalizedPath, projectGitDir)) {
+		return true;
+	}
 
-  return false;
+	return false;
 }

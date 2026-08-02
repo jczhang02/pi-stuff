@@ -14,10 +14,8 @@ import type { PathNormalizer } from "#src/path-normalizer";
  * without migrating to the `AccessPath` accessors.
  */
 export async function extractExternalPathsFromBashCommand(
-  command: string,
-  normalizer: PathNormalizer,
+	command: string,
+	normalizer: PathNormalizer,
 ): Promise<string[]> {
-  return (await BashProgram.parse(command, normalizer))
-    .externalPaths()
-    .map((p) => p.value());
+	return (await BashProgram.parse(command, normalizer)).externalPaths().map((p) => p.value());
 }

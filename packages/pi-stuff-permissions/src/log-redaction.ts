@@ -17,11 +17,11 @@ import { createJsonSafeReplacer } from "./json-safe-stringify";
 export const REDACTED_PLACEHOLDER = "[redacted]";
 
 const SENSITIVE_KEY_PATTERN =
-  /authorization|api[-_]?key|secret|token|password|passwd|credential|cookie|private[-_]?key/i;
+	/authorization|api[-_]?key|secret|token|password|passwd|credential|cookie|private[-_]?key/i;
 
 /** True when a log key names a credential-bearing value. */
 export function isSensitiveLogKey(key: string): boolean {
-  return SENSITIVE_KEY_PATTERN.test(key);
+	return SENSITIVE_KEY_PATTERN.test(key);
 }
 
 /**
@@ -33,12 +33,10 @@ export function isSensitiveLogKey(key: string): boolean {
  * field does not read as a suppressed one.
  */
 export function redactedJsonStringify(value: unknown): string | undefined {
-  return JSON.stringify(
-    value,
-    createJsonSafeReplacer((key, currentValue) =>
-      currentValue != null && isSensitiveLogKey(key)
-        ? REDACTED_PLACEHOLDER
-        : currentValue,
-    ),
-  );
+	return JSON.stringify(
+		value,
+		createJsonSafeReplacer((key, currentValue) =>
+			currentValue != null && isSensitiveLogKey(key) ? REDACTED_PLACEHOLDER : currentValue,
+		),
+	);
 }

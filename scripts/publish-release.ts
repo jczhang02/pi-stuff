@@ -54,7 +54,7 @@ const { manifestPath, tag } = parseArguments();
 if (basename(manifestPath) !== RELEASE_MANIFEST_FILENAME) fail(`manifest must be named ${RELEASE_MANIFEST_FILENAME}`);
 const destination = dirname(manifestPath);
 const manifest = await readVerifiedRelease(destination, CERTIFIED_PI_VERSION);
-const packagePaths = ["pi-stuff-ui", "pi-stuff-todo", "pi-stuff-btw", "pi-stuff"] as const;
+const packagePaths = ["pi-stuff-ui", "pi-stuff-permissions", "pi-stuff-todo", "pi-stuff-btw", "pi-stuff"] as const;
 const snapshot = await createVerifiedReleaseSnapshot(destination, manifest);
 
 try {

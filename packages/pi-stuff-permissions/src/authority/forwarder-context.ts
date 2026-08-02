@@ -10,30 +10,30 @@ import type { PermissionDecisionUi } from "#src/authority/permission-dialog";
  * callers pass `ctx` unchanged.
  */
 export interface ForwarderContext {
-  hasUI: boolean;
-  ui: PermissionDecisionUi;
-  /** The session's working directory, stamped onto a forwarded request as the requester cwd. */
-  cwd: string;
-  sessionManager: {
-    getSessionId(): string;
-    getSessionDir(): string;
-    getEntries(): readonly SessionEntryView[];
-  };
+	hasUI: boolean;
+	ui: PermissionDecisionUi;
+	/** The session's working directory, stamped onto a forwarded request as the requester cwd. */
+	cwd: string;
+	sessionManager: {
+		getSessionId(): string;
+		getSessionDir(): string;
+		getEntries(): readonly SessionEntryView[];
+	};
 }
 
 /** Reads the current session cwd off `ctx`. */
 export function getCwd(ctx: ForwarderContext): string {
-  return ctx.cwd;
+	return ctx.cwd;
 }
 
 /** Reads the current session id off `ctx`, falling back to `"unknown"`. */
 export function getSessionId(ctx: ForwarderContext): string {
-  try {
-    const sessionId = ctx.sessionManager.getSessionId();
-    if (typeof sessionId === "string" && sessionId.trim()) {
-      return sessionId.trim();
-    }
-  } catch {}
+	try {
+		const sessionId = ctx.sessionManager.getSessionId();
+		if (typeof sessionId === "string" && sessionId.trim()) {
+			return sessionId.trim();
+		}
+	} catch {}
 
-  return "unknown";
+	return "unknown";
 }

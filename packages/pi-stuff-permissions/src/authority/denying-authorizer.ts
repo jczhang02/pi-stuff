@@ -10,11 +10,11 @@ import type { TerminalAuthorizer } from "./authorizer";
  * derives the review-entry and decision-event resolution.
  */
 export class DenyingAuthorizer implements TerminalAuthorizer {
-  authorize(): Promise<PermissionPromptDecision> {
-    return Promise.resolve({
-      approved: false,
-      state: "denied",
-      confirmationUnavailable: true,
-    });
-  }
+	authorize(): Promise<PermissionPromptDecision> {
+		return Promise.resolve({
+			approved: false,
+			state: "denied",
+			confirmationUnavailable: true,
+		});
+	}
 }

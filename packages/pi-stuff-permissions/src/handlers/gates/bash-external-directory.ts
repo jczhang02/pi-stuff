@@ -22,102 +22,99 @@ import type { ToolCallContext } from "./types";
  * this gate does not re-derive the input field name (#574).
  */
 export function describeBashExternalDirectoryGate(
-  tcc: ToolCallContext,
-  bashProgram: BashProgram | null,
-  resolver: ScopedPermissionResolver,
+	tcc: ToolCallContext,
+	bashProgram: BashProgram | null,
+	resolver: ScopedPermissionResolver,
 ): GateResult {
-  if (!bashProgram) return null;
-  const command = bashProgram.commandText();
+	if (!bashProgram) return null;
+	const command = bashProgram.commandText();
 
-  const externalPaths = bashProgram.externalPaths();
-  if (externalPaths.length === 0) return null;
+	const externalPaths = bashProgram.externalPaths();
+	if (externalPaths.length === 0) return null;
 
-  // Resolve every external path on the external_directory surface and keep the
-  // ones not already allowed (config-level allows suppress the prompt just as
-  // session-level allows do); the shared helper single-sources the #418 alias
-  // matching and the worst-uncovered selection.
-  const { uncovered: uncoveredEntries, worstCheck } =
-    selectUncoveredExternalPaths(
-      externalPaths,
-      resolver,
-      tcc.agentName ?? undefined,
-    );
-  const uncoveredPaths = uncoveredEntries.map(({ path }) => path.value());
+	// Resolve every external path on the external_directory surface and keep the
+	// ones not already allowed (config-level allows suppress the prompt just as
+	// session-level allows do); the shared helper single-sources the #418 alias
+	// matching and the worst-uncovered selection.
+	const { uncovered: uncoveredEntries, worstCheck } = selectUncoveredExternalPaths(
+		externalPaths,
+		resolver,
+		tcc.agentName ?? undefined,
+	);
+	const uncoveredPaths = uncoveredEntries.map(({ path }) => path.value());
 
-  if (uncoveredPaths.length === 0) {
-    return {
-      action: "allow",
-      log: {
-        event: "permission_request.session_approved",
-        details: {
-          source: "tool_call",
-          toolCallId: tcc.toolCallId,
-          toolName: tcc.toolName,
-          agentName: tcc.agentName,
-          command,
-          externalPaths: externalPaths.map((p) => p.value()),
-          resolution: "session_approved",
-        },
-      },
-    };
-  }
+	if (uncoveredPaths.length === 0) {
+		return {
+			action: "allow",
+			log: {
+				event: "permission_request.session_approved",
+				details: {
+					source: "tool_call",
+					toolCallId: tcc.toolCallId,
+					toolName: tcc.toolName,
+					agentName: tcc.agentName,
+					command,
+					externalPaths: externalPaths.map((p) => p.value()),
+					resolution: "session_approved",
+				},
+			},
+		};
+	}
 
-  // After the early bypass, at least one path is uncovered, so worstCheck is
-  // defined; the fallback keeps TypeScript happy across the early return. A
-  // config-level "deny" is preserved (not downgraded to the catch-all "ask").
-  const preCheck = worstCheck ?? uncoveredEntries[0].check;
-  // The AccessPath the decision was made against — its facts ride the wire.
-  const worstEntry =
-    uncoveredEntries.find(({ check }) => check === preCheck) ??
-    uncoveredEntries[0];
+	// After the early bypass, at least one path is uncovered, so worstCheck is
+	// defined; the fallback keeps TypeScript happy across the early return. A
+	// config-level "deny" is preserved (not downgraded to the catch-all "ask").
+	const preCheck = worstCheck ?? uncoveredEntries[0].check;
+	// The AccessPath the decision was made against — its facts ride the wire.
+	const worstEntry = uncoveredEntries.find(({ check }) => check === preCheck) ?? uncoveredEntries[0];
 
-  const disclosures = uncoveredEntries.map(({ path }) => ({
-    path: path.value(),
-    resolvedPath: path.resolvedAlias(),
-  }));
+	const disclosures = uncoveredEntries.map(({ path }) => ({
+		path: path.value(),
+		resolvedPath: path.resolvedAlias(),
+	}));
 
-  const bashExtMessage = formatBashExternalDirectoryAskPrompt(
-    command,
-    disclosures,
-    tcc.cwd,
-    tcc.agentName ?? undefined,
-  );
+	const bashExtMessage = formatBashExternalDirectoryAskPrompt(
+		command,
+		disclosures,
+		tcc.cwd,
+		tcc.agentName ?? undefined,
+	);
 
-  const patterns = uncoveredPaths.map((p) => deriveApprovalPattern(p));
+	const patterns = uncoveredPaths.map((p) => deriveApprovalPattern(p));
 
-  return {
-    surface: "external_directory",
-    input: {},
-    denialContext: {
-      kind: "bash_external_directory",
-      command,
-      externalPaths: disclosures,
-      cwd: tcc.cwd,
-      agentName: tcc.agentName ?? undefined,
-    },
-    sessionApproval: SessionApproval.multiple("external_directory", patterns),
-    promptDetails: {
-      source: "tool_call",
-      agentName: tcc.agentName,
-      message: bashExtMessage,
-      toolCallId: tcc.toolCallId,
-      toolName: tcc.toolName,
-      command,
-      accessIntent: accessFactsFromPath("external_directory", worstEntry.path),
-    },
-    logContext: {
-      source: "tool_call",
-      toolCallId: tcc.toolCallId,
-      toolName: tcc.toolName,
-      agentName: tcc.agentName,
-      command,
-      externalPaths: uncoveredPaths,
-      message: bashExtMessage,
-    },
-    decision: {
-      surface: "external_directory",
-      value: command,
-    },
-    preCheck,
-  };
+	return {
+		surface: "external_directory",
+		input: {},
+		denialContext: {
+			kind: "bash_external_directory",
+			command,
+			externalPaths: disclosures,
+			cwd: tcc.cwd,
+			agentName: tcc.agentName ?? undefined,
+		},
+		sessionApproval: SessionApproval.multiple("external_directory", patterns),
+		promptDetails: {
+			source: "tool_call",
+			agentName: tcc.agentName,
+			message: bashExtMessage,
+			toolCallId: tcc.toolCallId,
+			toolName: tcc.toolName,
+			command,
+			accessIntent: accessFactsFromPath("external_directory", worstEntry.path),
+		},
+		logContext: {
+			source: "tool_call",
+			toolCallId: tcc.toolCallId,
+			toolName: tcc.toolName,
+			agentName: tcc.agentName,
+			command,
+			externalPaths: uncoveredPaths,
+			message: bashExtMessage,
+		},
+		decision: {
+			surface: "external_directory",
+			value: command,
+		},
+		preCheck,
+	};
 }

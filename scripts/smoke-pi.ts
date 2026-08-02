@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -15,6 +15,7 @@ export interface PiRpcSmokeOptions {
 
 export interface PiRpcSmokeResult {
 	commandNames: string[];
+	createdFiles: string[];
 	stderr: string;
 }
 
@@ -79,6 +80,19 @@ function isolatedEnvironment(temporaryDirectory: string): Record<string, string>
 		XDG_DATA_HOME: join(temporaryDirectory, "data"),
 		XDG_STATE_HOME: join(temporaryDirectory, "state"),
 	};
+}
+
+async function listFiles(root: string, directory = root): Promise<string[]> {
+	const files: string[] = [];
+	for (const entry of await readdir(directory, { withFileTypes: true })) {
+		const path = join(directory, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...(await listFiles(root, path)));
+		} else {
+			files.push(path.slice(root.length + 1));
+		}
+	}
+	return files.sort();
 }
 
 export async function runPiRpcSmoke(options: PiRpcSmokeOptions): Promise<PiRpcSmokeResult> {
@@ -146,7 +160,7 @@ export async function runPiRpcSmoke(options: PiRpcSmokeOptions): Promise<PiRpcSm
 		if (response?.success !== true) {
 			throw new Error(`Pi did not return a successful get_commands response: ${stdout.trim()}`);
 		}
-		return { commandNames: commandNames(response), stderr };
+		return { commandNames: commandNames(response), createdFiles: await listFiles(temporaryDirectory), stderr };
 	} finally {
 		await rm(temporaryDirectory, { recursive: true, force: true });
 	}

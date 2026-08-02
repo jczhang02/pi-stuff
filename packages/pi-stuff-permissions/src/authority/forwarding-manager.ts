@@ -8,8 +8,8 @@ import type { SubagentDetector } from "./subagent-detection";
  * `ForwardingManager` satisfies it; tests can provide a plain object mock.
  */
 export interface ForwardingController {
-  start(ctx: ExtensionContext): void;
-  stop(): void;
+	start(ctx: ExtensionContext): void;
+	stop(): void;
 }
 
 /**
@@ -21,48 +21,48 @@ export interface ForwardingController {
  * shutdown.
  */
 export class ForwardingManager {
-  private timer: NodeJS.Timeout | null = null;
-  private context: ExtensionContext | null = null;
-  private processing = false;
+	private timer: NodeJS.Timeout | null = null;
+	private context: ExtensionContext | null = null;
+	private processing = false;
 
-  constructor(
-    private readonly detection: SubagentDetector,
-    private readonly forwarder: InboxProcessor,
-  ) {}
+	constructor(
+		private readonly detection: SubagentDetector,
+		private readonly forwarder: InboxProcessor,
+	) {}
 
-  /**
-   * Start polling if `ctx` has UI and is not a subagent execution context.
-   * No-op (timer stays running) if already polling — updates the stored
-   * context so the next tick uses the latest session.
-   * Stops any existing poll when the context does not qualify for forwarding.
-   */
-  start(ctx: ExtensionContext): void {
-    if (!ctx.hasUI || this.detection.isSubagent(ctx)) {
-      this.stop();
-      return;
-    }
-    this.context = ctx;
-    if (this.timer) {
-      return;
-    }
-    this.timer = setInterval(() => {
-      if (!this.context || this.processing) {
-        return;
-      }
-      this.processing = true;
-      void this.forwarder.processInbox(this.context).finally(() => {
-        this.processing = false;
-      });
-    }, PERMISSION_FORWARDING_POLL_INTERVAL_MS);
-  }
+	/**
+	 * Start polling if `ctx` has UI and is not a subagent execution context.
+	 * No-op (timer stays running) if already polling — updates the stored
+	 * context so the next tick uses the latest session.
+	 * Stops any existing poll when the context does not qualify for forwarding.
+	 */
+	start(ctx: ExtensionContext): void {
+		if (!ctx.hasUI || this.detection.isSubagent(ctx)) {
+			this.stop();
+			return;
+		}
+		this.context = ctx;
+		if (this.timer) {
+			return;
+		}
+		this.timer = setInterval(() => {
+			if (!this.context || this.processing) {
+				return;
+			}
+			this.processing = true;
+			void this.forwarder.processInbox(this.context).finally(() => {
+				this.processing = false;
+			});
+		}, PERMISSION_FORWARDING_POLL_INTERVAL_MS);
+	}
 
-  /** Stop polling and clear all internal state. */
-  stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-    this.context = null;
-    this.processing = false;
-  }
+	/** Stop polling and clear all internal state. */
+	stop(): void {
+		if (this.timer) {
+			clearInterval(this.timer);
+			this.timer = null;
+		}
+		this.context = null;
+		this.processing = false;
+	}
 }

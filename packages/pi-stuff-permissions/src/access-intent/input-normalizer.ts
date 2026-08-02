@@ -19,26 +19,26 @@ import { classifyToolKind } from "./tool-kind";
  * the manager's `normalizeInput` `["*"]` fallback is preserved.
  */
 export function buildAccessIntentForSurface(
-  surface: string,
-  value: string | undefined,
-  normalizer: PathNormalizer,
-  agentName: string | undefined,
+	surface: string,
+	value: string | undefined,
+	normalizer: PathNormalizer,
+	agentName: string | undefined,
 ): AccessIntent {
-  const pathValue = getNonEmptyString(value);
-  if (pathValue !== null && PATH_SURFACES.has(surface)) {
-    return {
-      kind: "access-path",
-      surface,
-      path: normalizer.forPath(pathValue),
-      agentName,
-    };
-  }
-  return {
-    kind: "tool",
-    surface,
-    input: buildInputForSurface(surface, value),
-    agentName,
-  };
+	const pathValue = getNonEmptyString(value);
+	if (pathValue !== null && PATH_SURFACES.has(surface)) {
+		return {
+			kind: "access-path",
+			surface,
+			path: normalizer.forPath(pathValue),
+			agentName,
+		};
+	}
+	return {
+		kind: "tool",
+		surface,
+		input: buildInputForSurface(surface, value),
+		agentName,
+	};
 }
 
 /**
@@ -54,24 +54,24 @@ export function buildAccessIntentForSurface(
  * `principal.agentName` (ADR 0008 §3, agent-scoped serving).
  */
 export function buildResolvedIntentFromMatchValues(
-  surface: string,
-  matchValues: readonly string[],
-  agentName: string,
+	surface: string,
+	matchValues: readonly string[],
+	agentName: string,
 ): ResolvedAccessIntent {
-  if (PATH_SURFACES.has(surface)) {
-    return {
-      kind: "path-values",
-      surface,
-      values: [...matchValues],
-      agentName,
-    };
-  }
-  return {
-    kind: "tool",
-    surface,
-    input: buildInputForSurface(surface, matchValues[0]),
-    agentName,
-  };
+	if (PATH_SURFACES.has(surface)) {
+		return {
+			kind: "path-values",
+			surface,
+			values: [...matchValues],
+			agentName,
+		};
+	}
+	return {
+		kind: "tool",
+		surface,
+		input: buildInputForSurface(surface, matchValues[0]),
+		agentName,
+	};
 }
 
 /**
@@ -88,16 +88,13 @@ export function buildResolvedIntentFromMatchValues(
  * value as a pre-qualified target string. Pass the fully-qualified target
  * (e.g. "exa:search" or "exa") directly.
  */
-function buildInputForSurface(
-  surface: string,
-  value: string | undefined,
-): unknown {
-  const v = value ?? "";
-  if (surface === "bash") return { command: v };
-  if (surface === "skill") return { name: v };
-  if (surface === "external_directory") return { path: v };
-  // MCP and tool surfaces: normalizeInput handles them from the surface alone.
-  return {};
+function buildInputForSurface(surface: string, value: string | undefined): unknown {
+	const v = value ?? "";
+	if (surface === "bash") return { command: v };
+	if (surface === "skill") return { name: v };
+	if (surface === "external_directory") return { path: v };
+	// MCP and tool surfaces: normalizeInput handles them from the surface alone.
+	return {};
 }
 
 /**
@@ -105,19 +102,19 @@ function buildInputForSurface(
  * `checkPermission()` to feed a single `evaluateFirst()` call.
  */
 export interface NormalizedInput {
-  /** The permission surface for `evaluate()` (e.g. "bash", "mcp", "skill"). */
-  surface: string;
-  /**
-   * Candidate lookup values in priority order (most-specific first).
-   * Most surfaces produce a single-element array; MCP produces a
-   * multi-candidate list derived from the invocation input.
-   */
-  values: string[];
-  /**
-   * Surface-specific fields forwarded verbatim into `PermissionCheckResult`
-   * (e.g. `{ command }` for bash, `{ target }` for mcp).
-   */
-  resultExtras: Record<string, unknown>;
+	/** The permission surface for `evaluate()` (e.g. "bash", "mcp", "skill"). */
+	surface: string;
+	/**
+	 * Candidate lookup values in priority order (most-specific first).
+	 * Most surfaces produce a single-element array; MCP produces a
+	 * multi-candidate list derived from the invocation input.
+	 */
+	values: string[];
+	/**
+	 * Surface-specific fields forwarded verbatim into `PermissionCheckResult`
+	 * (e.g. `{ command }` for bash, `{ target }` for mcp).
+	 */
+	resultExtras: Record<string, unknown>;
 }
 
 /**
@@ -136,63 +133,60 @@ export interface NormalizedInput {
  *   global MCP config, used to derive server-qualified MCP targets.
  */
 export function normalizeInput(
-  toolName: string,
-  input: unknown,
-  configuredMcpServerNames: readonly string[],
+	toolName: string,
+	input: unknown,
+	configuredMcpServerNames: readonly string[],
 ): NormalizedInput {
-  switch (classifyToolKind(toolName)) {
-    // --- Skill ---
-    case "skill": {
-      const record = toRecord(input);
-      const skillName = record.name;
-      const lookupValue = typeof skillName === "string" ? skillName : "*";
-      return {
-        surface: "skill",
-        values: [lookupValue],
-        resultExtras: {},
-      };
-    }
+	switch (classifyToolKind(toolName)) {
+		// --- Skill ---
+		case "skill": {
+			const record = toRecord(input);
+			const skillName = record.name;
+			const lookupValue = typeof skillName === "string" ? skillName : "*";
+			return {
+				surface: "skill",
+				values: [lookupValue],
+				resultExtras: {},
+			};
+		}
 
-    // --- Bash ---
-    case "bash": {
-      const record = toRecord(input);
-      const command = typeof record.command === "string" ? record.command : "";
-      // Strip leading shell comment lines so pattern matching operates on the
-      // actual command, not a `# description` prefix agents often prepend.
-      // Fall back to the raw command when stripping leaves nothing, so an
-      // all-comment command still evaluates against its literal text.
-      const matchValue = stripBashCommentLines(command) || command;
-      return {
-        surface: "bash",
-        values: [matchValue],
-        resultExtras: { command },
-      };
-    }
+		// --- Bash ---
+		case "bash": {
+			const record = toRecord(input);
+			const command = typeof record.command === "string" ? record.command : "";
+			// Strip leading shell comment lines so pattern matching operates on the
+			// actual command, not a `# description` prefix agents often prepend.
+			// Fall back to the raw command when stripping leaves nothing, so an
+			// all-comment command still evaluates against its literal text.
+			const matchValue = stripBashCommentLines(command) || command;
+			return {
+				surface: "bash",
+				values: [matchValue],
+				resultExtras: { command },
+			};
+		}
 
-    // --- MCP ---
-    case "mcp": {
-      const mcpTargets = [
-        ...createMcpPermissionTargets(input, configuredMcpServerNames),
-        "mcp",
-      ];
-      const fallbackTarget = mcpTargets[0] ?? "mcp";
-      return {
-        surface: "mcp",
-        values: mcpTargets,
-        resultExtras: { target: fallbackTarget },
-      };
-    }
+		// --- MCP ---
+		case "mcp": {
+			const mcpTargets = [...createMcpPermissionTargets(input, configuredMcpServerNames), "mcp"];
+			const fallbackTarget = mcpTargets[0] ?? "mcp";
+			return {
+				surface: "mcp",
+				values: mcpTargets,
+				resultExtras: { target: fallbackTarget },
+			};
+		}
 
-    // --- All other surfaces (path-bearing tools and extension tools) ---
-    // Path-bearing tools with a present path never reach here — the gate emits
-    // an access-path intent (#502). Missing-path and extension-tool cases both
-    // collapse to the surface catch-all.
-    case "path":
-    case "extension":
-      return {
-        surface: toolName,
-        values: ["*"],
-        resultExtras: {},
-      };
-  }
+		// --- All other surfaces (path-bearing tools and extension tools) ---
+		// Path-bearing tools with a present path never reach here — the gate emits
+		// an access-path intent (#502). Missing-path and extension-tool cases both
+		// collapse to the surface catch-all.
+		case "path":
+		case "extension":
+			return {
+				surface: toolName,
+				values: ["*"],
+				resultExtras: {},
+			};
+	}
 }

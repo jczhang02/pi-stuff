@@ -1,7 +1,4 @@
-import type {
-  BeforeAgentStartEventResult,
-  ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
+import type { BeforeAgentStartEventResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { PermissionResolver } from "#src/permission-resolver";
 import type { PermissionSession } from "#src/permission-session";
 import { resolveSkillPromptEntries } from "#src/skill-prompt-sanitizer";
@@ -11,7 +8,7 @@ import type { PermissionState } from "#src/types";
 
 /** Minimal subset of BeforeAgentStartEvent used by this handler. */
 interface BeforeAgentStartPayload {
-  systemPrompt: string;
+	systemPrompt: string;
 }
 
 /**
@@ -20,12 +17,12 @@ interface BeforeAgentStartPayload {
  * `bash: deny` hides the tool entirely before any invocation is attempted.
  */
 export function shouldExposeTool(
-  toolName: string,
-  agentName: string | null,
-  getToolPermission: (toolName: string, agentName?: string) => PermissionState,
+	toolName: string,
+	agentName: string | null,
+	getToolPermission: (toolName: string, agentName?: string) => PermissionState,
 ): boolean {
-  const toolPermission = getToolPermission(toolName, agentName ?? undefined);
-  return toolPermission !== "deny";
+	const toolPermission = getToolPermission(toolName, agentName ?? undefined);
+	return toolPermission !== "deny";
 }
 
 /**
@@ -45,62 +42,50 @@ export function shouldExposeTool(
  *   tool call, so triggering it here closes the pre-warm window (#309)
  */
 export class AgentPrepHandler {
-  constructor(
-    private readonly session: PermissionSession,
-    private readonly resolver: PermissionResolver,
-    private readonly toolRegistry: ToolRegistry,
-    private readonly warmParser: () => void,
-  ) {}
+	constructor(
+		private readonly session: PermissionSession,
+		private readonly resolver: PermissionResolver,
+		private readonly toolRegistry: ToolRegistry,
+		private readonly warmParser: () => void,
+	) {}
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async handle(
-    event: BeforeAgentStartPayload,
-    ctx: ExtensionContext,
-  ): Promise<BeforeAgentStartEventResult> {
-    // Fire-and-forget: warming is idempotent and best-effort, so it never
-    // delays agent start. A bash advisory query before it completes falls back
-    // to whole-string matching.
-    this.warmParser();
-    this.session.activate(ctx);
-    // Gate the mid-session runtime-config refresh on project trust too, so an
-    // untrusted project cannot slip its runtime config (e.g. `yoloMode`) in
-    // right before agent start after session_start withheld it (#644). The
-    // session_start handler already warned; do not re-warn on every start.
-    this.session.refreshConfig(ctx, ctx.isProjectTrusted());
+	// eslint-disable-next-line @typescript-eslint/require-await
+	async handle(event: BeforeAgentStartPayload, ctx: ExtensionContext): Promise<BeforeAgentStartEventResult> {
+		// Fire-and-forget: warming is idempotent and best-effort, so it never
+		// delays agent start. A bash advisory query before it completes falls back
+		// to whole-string matching.
+		this.warmParser();
+		this.session.activate(ctx);
+		// Gate the mid-session runtime-config refresh on project trust too, so an
+		// untrusted project cannot slip its runtime config (e.g. `yoloMode`) in
+		// right before agent start after session_start withheld it (#644). The
+		// session_start handler already warned; do not re-warn on every start.
+		this.session.refreshConfig(ctx, ctx.isProjectTrusted());
 
-    const agentName = this.session.resolveAgentName(ctx, event.systemPrompt);
-    const activeTools = this.toolRegistry.getActive();
-    const allowedTools: string[] = [];
+		const agentName = this.session.resolveAgentName(ctx, event.systemPrompt);
+		const activeTools = this.toolRegistry.getActive();
+		const allowedTools: string[] = [];
 
-    for (const tool of activeTools) {
-      const toolName = getToolNameFromValue(tool);
-      if (!toolName) {
-        continue;
-      }
-      if (
-        shouldExposeTool(toolName, agentName, (t, a) =>
-          this.resolver.getToolPermission(t, a),
-        )
-      ) {
-        allowedTools.push(toolName);
-      }
-    }
+		for (const tool of activeTools) {
+			const toolName = getToolNameFromValue(tool);
+			if (!toolName) {
+				continue;
+			}
+			if (shouldExposeTool(toolName, agentName, (t, a) => this.resolver.getToolPermission(t, a))) {
+				allowedTools.push(toolName);
+			}
+		}
 
-    this.toolRegistry.setActive(allowedTools);
+		this.toolRegistry.setActive(allowedTools);
 
-    const toolPromptResult = sanitizeAvailableToolsSection(
-      event.systemPrompt,
-      allowedTools,
-    );
-    const skillPromptResult = resolveSkillPromptEntries(
-      toolPromptResult.prompt,
-      this.resolver,
-      agentName,
-      this.session.getPathNormalizer(),
-    );
-    this.session.setActiveSkillEntries(skillPromptResult.entries);
-    return skillPromptResult.prompt !== event.systemPrompt
-      ? { systemPrompt: skillPromptResult.prompt }
-      : {};
-  }
+		const toolPromptResult = sanitizeAvailableToolsSection(event.systemPrompt, allowedTools);
+		const skillPromptResult = resolveSkillPromptEntries(
+			toolPromptResult.prompt,
+			this.resolver,
+			agentName,
+			this.session.getPathNormalizer(),
+		);
+		this.session.setActiveSkillEntries(skillPromptResult.entries);
+		return skillPromptResult.prompt !== event.systemPrompt ? { systemPrompt: skillPromptResult.prompt } : {};
+	}
 }

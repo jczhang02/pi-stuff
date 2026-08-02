@@ -11,36 +11,36 @@ import { accessFactsFromValue } from "./helpers";
  * re-running the check inside the runner.
  */
 export function describeSkillInputGate(
-  skillName: string,
-  agentName: string | null,
-  preCheck: PermissionCheckResult,
+	skillName: string,
+	agentName: string | null,
+	preCheck: PermissionCheckResult,
 ): GateDescriptor {
-  const message = formatSkillAskPrompt(skillName, agentName ?? undefined);
-  return {
-    surface: "skill",
-    input: { name: skillName },
-    preCheck,
-    denialContext: {
-      kind: "skill_input",
-      skillName,
-      agentName: agentName ?? undefined,
-    },
-    promptDetails: {
-      source: "skill_input",
-      agentName,
-      message,
-      skillName,
-      accessIntent: accessFactsFromValue("skill", skillName),
-    },
-    logContext: {
-      source: "skill_input",
-      skillName,
-      agentName,
-      message,
-    },
-    decision: {
-      surface: "skill",
-      value: skillName,
-    },
-  };
+	const message = formatSkillAskPrompt(skillName, agentName ?? undefined);
+	return {
+		surface: "skill",
+		input: { name: skillName },
+		preCheck,
+		denialContext: {
+			kind: "skill_input",
+			skillName,
+			agentName: agentName ?? undefined,
+		},
+		promptDetails: {
+			source: "skill_input",
+			agentName,
+			message,
+			skillName,
+			accessIntent: accessFactsFromValue("skill", skillName),
+		},
+		logContext: {
+			source: "skill_input",
+			skillName,
+			agentName,
+			message,
+		},
+		decision: {
+			surface: "skill",
+			value: skillName,
+		},
+	};
 }

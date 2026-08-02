@@ -1,9 +1,5 @@
 import type { AuthorizerLog, PermissionQuery } from "#src/service";
-import type {
-  Authorizer,
-  AuthorizerVerdict,
-  TerminalAuthorizer,
-} from "./authorizer";
+import type { Authorizer, AuthorizerVerdict, TerminalAuthorizer } from "./authorizer";
 import { createDeniedPermissionDecision } from "./permission-dialog";
 
 /**
@@ -24,39 +20,39 @@ import { createDeniedPermissionDecision } from "./permission-dialog";
  * ships until a link registers.
  */
 export function composeAuthorizerChain(
-  links: readonly Authorizer[],
-  terminal: TerminalAuthorizer,
-  query: PermissionQuery,
-  log: AuthorizerLog,
+	links: readonly Authorizer[],
+	terminal: TerminalAuthorizer,
+	query: PermissionQuery,
+	log: AuthorizerLog,
 ): TerminalAuthorizer {
-  if (links.length === 0) {
-    return terminal;
-  }
-  return {
-    async authorize(details) {
-      for (const link of links) {
-        const verdict = await link.authorize(details, query, log);
-        const decision = decideFromVerdict(verdict);
-        if (decision) {
-          return decision;
-        }
-        // `defer` \u2014 try the next link.
-      }
-      return terminal.authorize(details);
-    },
-  };
+	if (links.length === 0) {
+		return terminal;
+	}
+	return {
+		async authorize(details) {
+			for (const link of links) {
+				const verdict = await link.authorize(details, query, log);
+				const decision = decideFromVerdict(verdict);
+				if (decision) {
+					return decision;
+				}
+				// `defer` \u2014 try the next link.
+			}
+			return terminal.authorize(details);
+		},
+	};
 }
 
 /** Map a link's decisive verdict to a decision; `defer` yields `null`. */
 function decideFromVerdict(verdict: AuthorizerVerdict) {
-  switch (verdict.kind) {
-    case "allow":
-      // A link grant is non-persistent (state `approved`, never
-      // `approved_for_session`), per ADR 0007's off-by-default envelope.
-      return { approved: true, state: "approved" } as const;
-    case "deny":
-      return createDeniedPermissionDecision(verdict.reason);
-    case "defer":
-      return null;
-  }
+	switch (verdict.kind) {
+		case "allow":
+			// A link grant is non-persistent (state `approved`, never
+			// `approved_for_session`), per ADR 0007's off-by-default envelope.
+			return { approved: true, state: "approved" } as const;
+		case "deny":
+			return createDeniedPermissionDecision(verdict.reason);
+		case "defer":
+			return null;
+	}
 }

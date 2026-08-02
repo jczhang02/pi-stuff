@@ -11,15 +11,15 @@ import { expandHomePath } from "./expand-home";
  * inert on Windows (#653).
  */
 export interface CompiledWildcardPattern<TState> {
-  readonly pattern: string;
-  readonly state: TState;
-  matches(value: string): boolean;
+	readonly pattern: string;
+	readonly state: TState;
+	matches(value: string): boolean;
 }
 
 export type WildcardPatternMatch<TState> = {
-  state: TState;
-  matchedPattern: string;
-  matchedName: string;
+	state: TState;
+	matchedPattern: string;
+	matchedName: string;
 };
 
 /**
@@ -34,69 +34,62 @@ export type WildcardPatternMatch<TState> = {
  *   unmatchable (#653).
  */
 export interface WildcardMatchOptions {
-  caseInsensitive?: boolean;
-  windowsSeparators?: boolean;
+	caseInsensitive?: boolean;
+	windowsSeparators?: boolean;
 }
 
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function compileWildcardPattern<TState>(
-  pattern: string,
-  state: TState,
-  options?: WildcardMatchOptions,
+	pattern: string,
+	state: TState,
+	options?: WildcardMatchOptions,
 ): CompiledWildcardPattern<TState> {
-  const expanded = foldSeparators(expandHomePath(pattern), options);
-  let escaped = expanded
-    .split("*")
-    .map((part) => escapeRegExp(part).replaceAll("\\?", "."))
-    .join(".*");
+	const expanded = foldSeparators(expandHomePath(pattern), options);
+	let escaped = expanded
+		.split("*")
+		.map((part) => escapeRegExp(part).replaceAll("\\?", "."))
+		.join(".*");
 
-  // If the pattern ends with " *" (space + wildcard), make the trailing
-  // space-and-arguments portion optional so that e.g. "git *" matches both
-  // "git status" and bare "git". Mirrors OpenCode wildcard semantics.
-  if (escaped.endsWith(" .*")) {
-    escaped = `${escaped.slice(0, -3)}( .*)?`;
-  }
+	// If the pattern ends with " *" (space + wildcard), make the trailing
+	// space-and-arguments portion optional so that e.g. "git *" matches both
+	// "git status" and bare "git". Mirrors OpenCode wildcard semantics.
+	if (escaped.endsWith(" .*")) {
+		escaped = `${escaped.slice(0, -3)}( .*)?`;
+	}
 
-  const regex = new RegExp(
-    `^${escaped}$`,
-    options?.caseInsensitive ? "si" : "s",
-  );
+	const regex = new RegExp(`^${escaped}$`, options?.caseInsensitive ? "si" : "s");
 
-  return {
-    pattern,
-    state,
-    matches: (value) => regex.test(foldSeparators(value, options)),
-  };
+	return {
+		pattern,
+		state,
+		matches: (value) => regex.test(foldSeparators(value, options)),
+	};
 }
 
 export function compileWildcardPatternEntries<TState>(
-  entries: Iterable<readonly [string, TState]>,
+	entries: Iterable<readonly [string, TState]>,
 ): CompiledWildcardPattern<TState>[] {
-  return Array.from(entries, ([pattern, state]) =>
-    compileWildcardPattern(pattern, state),
-  );
+	return Array.from(entries, ([pattern, state]) => compileWildcardPattern(pattern, state));
 }
 
-function _compileWildcardPatterns<TState>(
-  patterns: Record<string, TState>,
-): CompiledWildcardPattern<TState>[] {
-  return compileWildcardPatternEntries(Object.entries(patterns));
+function _compileWildcardPatterns<TState>(patterns: Record<string, TState>): CompiledWildcardPattern<TState>[] {
+	return compileWildcardPatternEntries(Object.entries(patterns));
 }
 
 export function findCompiledWildcardMatch<TState>(
-  patterns: readonly CompiledWildcardPattern<TState>[],
-  name: string,
+	patterns: readonly CompiledWildcardPattern<TState>[],
+	name: string,
 ): WildcardPatternMatch<TState> | null {
-  const match = patterns.findLast((p) => p.matches(name));
-  if (match === undefined) return null;
-  return {
-    state: match.state,
-    matchedPattern: match.pattern,
-    matchedName: name,
-  };
+	const match = patterns.findLast((p) => p.matches(name));
+	if (match === undefined) return null;
+	return {
+		state: match.state,
+		matchedPattern: match.pattern,
+		matchedName: name,
+	};
 }
 
 /**
@@ -105,12 +98,8 @@ export function findCompiledWildcardMatch<TState>(
  * `?` matches exactly one character.
  * Used by evaluate() for rule matching.
  */
-export function wildcardMatch(
-  pattern: string,
-  value: string,
-  options?: WildcardMatchOptions,
-): boolean {
-  return compileWildcardPattern(pattern, null, options).matches(value);
+export function wildcardMatch(pattern: string, value: string, options?: WildcardMatchOptions): boolean {
+	return compileWildcardPattern(pattern, null, options).matches(value);
 }
 
 /**
@@ -120,26 +109,24 @@ export function wildcardMatch(
  * the fold is an equivalence relation, so both sides must pass through it.
  */
 function foldSeparators(value: string, options?: WildcardMatchOptions): string {
-  return options?.windowsSeparators ? value.replaceAll("/", "\\") : value;
+	return options?.windowsSeparators ? value.replaceAll("/", "\\") : value;
 }
 
 export function findCompiledWildcardMatchForNames<TState>(
-  patterns: readonly CompiledWildcardPattern<TState>[],
-  names: readonly string[],
+	patterns: readonly CompiledWildcardPattern<TState>[],
+	names: readonly string[],
 ): WildcardPatternMatch<TState> | null {
-  const normalizedNames = names
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
-  if (normalizedNames.length === 0) {
-    return null;
-  }
+	const normalizedNames = names.map((value) => value.trim()).filter((value) => value.length > 0);
+	if (normalizedNames.length === 0) {
+		return null;
+	}
 
-  for (const name of normalizedNames) {
-    const match = findCompiledWildcardMatch(patterns, name);
-    if (match) {
-      return match;
-    }
-  }
+	for (const name of normalizedNames) {
+		const match = findCompiledWildcardMatch(patterns, name);
+		if (match) {
+			return match;
+		}
+	}
 
-  return null;
+	return null;
 }

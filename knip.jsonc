@@ -2,7 +2,7 @@
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"workspaces": {
 		".": {
-			"entry": ["scripts/*.ts", "test/**/*.test.ts", "test/fixtures/**/*.ts"],
+			"entry": ["scripts/*.ts", "test/**/*.test.ts", "test/fixtures/**/*.ts", "test/permissions/fixtures/**/*.ts"],
 			"project": ["scripts/**/*.ts", "test/**/*.ts"]
 		},
 		"packages/pi-stuff": {
@@ -10,6 +10,11 @@
 		},
 		"packages/pi-stuff-btw": {
 			"project": ["**/*.ts"]
+		},
+		"packages/pi-stuff-permissions": {
+			"entry": ["src/**/*.ts"],
+			"ignoreDependencies": ["tree-sitter-bash"],
+			"project": ["src/**/*.ts"]
 		},
 		"packages/pi-stuff-todo": {
 			"project": ["**/*.ts"]

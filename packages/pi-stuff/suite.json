@@ -1,5 +1,10 @@
 {
 	"$schema": "../../schemas/suite.schema.json",
 	"schemaVersion": 1,
-	"capabilities": ["@jczhang02/pi-stuff-ui", "@jczhang02/pi-stuff-todo", "@jczhang02/pi-stuff-btw"]
+	"capabilities": [
+		"@jczhang02/pi-stuff-ui",
+		"@jczhang02/pi-stuff-permissions",
+		"@jczhang02/pi-stuff-todo",
+		"@jczhang02/pi-stuff-btw"
+	]
 }

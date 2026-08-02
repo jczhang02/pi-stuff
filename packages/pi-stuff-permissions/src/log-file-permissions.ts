@@ -26,9 +26,9 @@ export const OWNER_ONLY_DIRECTORY_MODE = 0o700;
  * break the gate, which is the caller's real work.
  */
 export function restrictExistingPathToOwner(path: string, mode: number): void {
-  try {
-    chmodSync(path, mode);
-  } catch {
-    // Intentionally ignored — see above.
-  }
+	try {
+		chmodSync(path, mode);
+	} catch {
+		// Intentionally ignored — see above.
+	}
 }
