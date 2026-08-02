@@ -28,6 +28,7 @@ export interface CommandDialogView<Result = void> {
 export interface CommandDialogCoordinator {
 	registerChrome(id: string, chrome: CommandDialogChrome): () => void;
 	show<Result = void>(ctx: ExtensionContext, view: CommandDialogView<Result>): Promise<Result | undefined>;
+	whenIdle(): Promise<void>;
 }
 
 type DialogRequestState = "mounted" | "mounting" | "queued" | "settled";
@@ -229,6 +230,10 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		this.enqueue(run, request);
 		void this.openRun(run);
 		return promise;
+	}
+
+	async whenIdle(): Promise<void> {
+		while (this.activeRun) await this.activeRun.finished.promise;
 	}
 
 	dismissRun(run: HostRun): void {

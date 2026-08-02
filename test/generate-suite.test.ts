@@ -23,12 +23,13 @@ async function createRepository(): Promise<string> {
 	});
 	await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
 		schemaVersion: 1,
-		capabilities: ["@jczhang02/pi-beta", "@jczhang02/pi-alpha"],
+		capabilities: ["@jczhang02/pi-beta", "@jczhang02/pi-stuff-agents", "@jczhang02/pi-alpha"],
 	});
 
 	for (const [directory, name, version] of [
 		["pi-alpha", "@jczhang02/pi-alpha", "0.1.2"],
 		["pi-beta", "@jczhang02/pi-beta", "0.3.4"],
+		["pi-stuff-agents", "@jczhang02/pi-stuff-agents", "0.5.6"],
 	] as const) {
 		await mkdir(join(root, "packages", directory), { recursive: true });
 		await writeJson(join(root, "packages", directory, "package.json"), { name, version });
@@ -55,10 +56,15 @@ describe("generateSuite", () => {
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import piAlpha from "@jczhang02/pi-alpha";
 import piBeta from "@jczhang02/pi-beta";
+import piStuffAgents from "@jczhang02/pi-stuff-agents";
 
 type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;
 
-const CAPABILITIES: readonly CapabilityFactory[] = [piBeta, piAlpha];
+const CAPABILITIES: readonly CapabilityFactory[] = [
+	piBeta,
+	piStuffAgents,
+	piAlpha,
+];
 
 export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 \tfor (const capability of CAPABILITIES) {
@@ -71,9 +77,10 @@ export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 			version: "0.0.0",
 			dependencies: {
 				"@jczhang02/pi-beta": "0.3.4",
+				"@jczhang02/pi-stuff-agents": "0.5.6",
 				"@jczhang02/pi-alpha": "0.1.2",
 			},
-			bundledDependencies: ["@jczhang02/pi-beta", "@jczhang02/pi-alpha"],
+			bundledDependencies: ["@jczhang02/pi-beta", "@jczhang02/pi-stuff-agents", "@jczhang02/pi-alpha"],
 		});
 	});
 

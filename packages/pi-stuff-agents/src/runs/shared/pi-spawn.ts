@@ -5,9 +5,7 @@ import { fileURLToPath } from "node:url";
 export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
 export const PI_SUBAGENT_PI_BINARY_ENV = "PI_SUBAGENT_PI_BINARY";
 
-export function findPiPackageRootFromEntry(
-	entryPoint: string,
-): string | undefined {
+export function findPiPackageRootFromEntry(entryPoint: string): string | undefined {
 	let dir = path.dirname(entryPoint);
 	while (dir !== path.dirname(dir)) {
 		const packageJsonPath = path.join(dir, "package.json");
@@ -23,17 +21,13 @@ export function findPiPackageRootFromEntry(
 }
 
 export function resolveInstalledPiPackageRoot(): string | undefined {
-	return findPiPackageRootFromEntry(
-		fileURLToPath(import.meta.resolve(PI_CODING_AGENT_PACKAGE)),
-	);
+	return findPiPackageRootFromEntry(fileURLToPath(import.meta.resolve(PI_CODING_AGENT_PACKAGE)));
 }
 
 export function resolvePiPackageRoot(): string | undefined {
 	try {
 		const entry = process.argv[1];
-		return entry
-			? findPiPackageRootFromEntry(fs.realpathSync(entry))
-			: undefined;
+		return entry ? findPiPackageRootFromEntry(fs.realpathSync(entry)) : undefined;
 	} catch {
 		// process.argv[1] probing is best-effort; callers can fall back to PATH/package resolution.
 		return undefined;
@@ -58,10 +52,7 @@ interface PiSpawnCommand {
 	args: string[];
 }
 
-function isRunnableNodeScript(
-	filePath: string,
-	existsSync: (filePath: string) => boolean,
-): boolean {
+function isRunnableNodeScript(filePath: string, existsSync: (filePath: string) => boolean): boolean {
 	if (!existsSync(filePath)) return false;
 	return /\.(?:mjs|cjs|js)$/i.test(filePath);
 }
@@ -70,14 +61,10 @@ function normalizePath(filePath: string): string {
 	return path.isAbsolute(filePath) ? filePath : path.resolve(filePath);
 }
 
-export function resolvePiCliScript(
-	deps: PiSpawnDeps = {},
-): string | undefined {
+export function resolvePiCliScript(deps: PiSpawnDeps = {}): string | undefined {
 	const existsSync = deps.existsSync ?? fs.existsSync;
 	const realpathSync = deps.realpathSync ?? fs.realpathSync;
-	const readFileSync =
-		deps.readFileSync ??
-		((filePath, encoding) => fs.readFileSync(filePath, encoding));
+	const readFileSync = deps.readFileSync ?? ((filePath, encoding) => fs.readFileSync(filePath, encoding));
 	const argv1 = deps.argv1 ?? process.argv[1];
 
 	if (argv1) {
@@ -103,10 +90,7 @@ export function resolvePiCliScript(
 				const packageRoot = deps.resolvePackageEntry
 					? findPiPackageRootFromEntry(deps.resolvePackageEntry())
 					: resolveInstalledPiPackageRoot();
-				if (!packageRoot)
-					throw new Error(
-						`Could not resolve ${PI_CODING_AGENT_PACKAGE} package root`,
-					);
+				if (!packageRoot) throw new Error(`Could not resolve ${PI_CODING_AGENT_PACKAGE} package root`);
 				return path.join(packageRoot, "package.json");
 			});
 		const packageJsonPath = resolvePackageJson();
@@ -114,10 +98,7 @@ export function resolvePiCliScript(
 			bin?: string | Record<string, string>;
 		};
 		const binField = packageJson.bin;
-		const binPath =
-			typeof binField === "string"
-				? binField
-				: (binField?.pi ?? Object.values(binField ?? {})[0]);
+		const binPath = typeof binField === "string" ? binField : (binField?.pi ?? Object.values(binField ?? {})[0]);
 		if (!binPath) return undefined;
 		const candidate = path.resolve(path.dirname(packageJsonPath), binPath);
 		if (isRunnableNodeScript(candidate, existsSync)) {
@@ -131,10 +112,7 @@ export function resolvePiCliScript(
 	return undefined;
 }
 
-export function getPiSpawnCommand(
-	args: string[],
-	deps: PiSpawnDeps = {},
-): PiSpawnCommand {
+export function getPiSpawnCommand(args: string[], deps: PiSpawnDeps = {}): PiSpawnCommand {
 	const env = deps.env ?? process.env;
 	const piBinary = env[PI_SUBAGENT_PI_BINARY_ENV]?.trim();
 	if (piBinary) {

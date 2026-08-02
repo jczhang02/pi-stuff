@@ -3,6 +3,7 @@ coverage/
 dist/
 .artifacts/
 .tmp/
+.bun-tmp/
 *.tgz
 .env
 .env.*

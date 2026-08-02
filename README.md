@@ -26,6 +26,8 @@ Pi remains the host. The Suite is a normal Pi Package: it exports an ordered agg
 | --- | --- | --- |
 | `@jczhang02/pi-stuff` | Aggregate entry point for the full Suite | Unreleased |
 | `@jczhang02/pi-stuff-ui` | Shared non-floating Command Dialog coordinator | In development |
+| `@jczhang02/pi-stuff-permissions` | Quiet destructive-command circuit breaker | In development |
+| `@jczhang02/pi-stuff-agents` | Current-session foreground and background Agents | In development |
 | `@jczhang02/pi-stuff-todo` | Recoverable per-session task tracking with a compact editor widget | In development |
 | `@jczhang02/pi-stuff-btw` | One-shot side questions isolated from the main transcript | In development |
 

@@ -57,7 +57,7 @@ export function parseFrontmatterList(raw: string | undefined): string[] | undefi
 }
 
 /**
- * Parse YAML frontmatter from agent/chain files.
+ * Parse YAML frontmatter from Agent definition files.
  * Handles both flat (key: value) and nested block (key: \n  sub: val) values.
  * Block values are stored as single strings with embedded newlines.
  * The indentation of the block content is preserved relative to the key.
@@ -88,7 +88,11 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
 		const indent = line.search(/\S|$/); // position of first non-whitespace char
 		const trimmed = line.trim();
 
-		if (currentKey !== null && currentBlockLines !== null && (indent > (currentIndent ?? 0) || (currentFolded && trimmed === ""))) {
+		if (
+			currentKey !== null &&
+			currentBlockLines !== null &&
+			(indent > (currentIndent ?? 0) || (currentFolded && trimmed === ""))
+		) {
 			// This line is part of the current block value
 			currentBlockLines.push(line);
 			continue;
@@ -114,7 +118,9 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
 		const match = line.match(/^([\w-]+):\s*(.*)$/);
 		if (match) {
 			const rawValue = match[2].trim();
-			const isQuoted = (rawValue.startsWith('"') && rawValue.endsWith('"')) || (rawValue.startsWith("'") && rawValue.endsWith("'"));
+			const isQuoted =
+				(rawValue.startsWith('"') && rawValue.endsWith('"')) ||
+				(rawValue.startsWith("'") && rawValue.endsWith("'"));
 			const value = isQuoted ? rawValue.slice(1, -1) : rawValue;
 			const isFolded = !isQuoted && (rawValue === ">" || rawValue === ">-");
 

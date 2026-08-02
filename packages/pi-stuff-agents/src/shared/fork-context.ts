@@ -65,8 +65,7 @@ export function forkedChildRequiresThinkingOff(
 	if (!model) return true;
 	const info = findModelInfo(model, availableModels, preferredProvider);
 	if (!info) return true;
-	return info.provider.toLowerCase() === "anthropic"
-		|| info.api?.toLowerCase() === "anthropic-messages";
+	return info.provider.toLowerCase() === "anthropic" || info.api?.toLowerCase() === "anthropic-messages";
 }
 
 function isUnsafeAnthropicThinkingBlock(message: BranchSessionEntry["message"], block: unknown): boolean {
@@ -77,8 +76,9 @@ function isUnsafeAnthropicThinkingBlock(message: BranchSessionEntry["message"], 
 	const isAnthropic = provider === "anthropic" || api === "anthropic-messages" || model.startsWith("anthropic/");
 	if (block.type === "redacted_thinking") return true;
 	if (block.type !== "thinking" || !isAnthropic) return false;
-	const signature = "thinkingSignature" in block ? block.thinkingSignature : "signature" in block ? block.signature : undefined;
-	return block.redacted === true || (typeof signature === "string" && signature.length > 0);
+	const signature =
+		"thinkingSignature" in block ? block.thinkingSignature : "signature" in block ? block.signature : undefined;
+	return ("redacted" in block && block.redacted === true) || (typeof signature === "string" && signature.length > 0);
 }
 
 function createEntryId(entries: BranchSessionEntry[]): string {
@@ -106,7 +106,8 @@ function appendThinkingOffEntry(entries: BranchSessionEntry[]): void {
 function sanitizeUnsafeThinkingBlocks(entries: BranchSessionEntry[]): boolean {
 	let sanitized = false;
 	for (const entry of entries) {
-		if (entry.type !== "message" || entry.message?.role !== "assistant" || !Array.isArray(entry.message.content)) continue;
+		if (entry.type !== "message" || entry.message?.role !== "assistant" || !Array.isArray(entry.message.content))
+			continue;
 		const filtered = entry.message.content.filter((block) => !isUnsafeAnthropicThinkingBlock(entry.message, block));
 		if (filtered.length === entry.message.content.length) continue;
 		entry.message.content = filtered;
@@ -116,13 +117,19 @@ function sanitizeUnsafeThinkingBlocks(entries: BranchSessionEntry[]): boolean {
 }
 
 function readSessionEntries(sessionFile: string): BranchSessionEntry[] {
-	const lines = fs.readFileSync(sessionFile, "utf-8").split("\n").filter((line) => line.trim().length > 0);
+	const lines = fs
+		.readFileSync(sessionFile, "utf-8")
+		.split("\n")
+		.filter((line) => line.trim().length > 0);
 	return lines.map((line, index) => {
 		try {
 			return JSON.parse(line) as BranchSessionEntry;
 		} catch (error) {
 			const cause = error instanceof Error ? error : new Error(String(error));
-			throw new Error(`Unable to inspect forked session ${sessionFile}: invalid JSONL on line ${index + 1}: ${cause.message}`, { cause });
+			throw new Error(
+				`Unable to inspect forked session ${sessionFile}: invalid JSONL on line ${index + 1}: ${cause.message}`,
+				{ cause },
+			);
 		}
 	});
 }
@@ -149,9 +156,10 @@ export function createForkContextResolver(
 		throw new Error("Forked subagent context requires a current leaf to fork from.");
 	}
 
-	const openSession = options.openSession
-		?? sessionManager.openSession
-		?? ((file: string, dir?: string) => SessionManager.open(file, dir));
+	const openSession =
+		options.openSession ??
+		sessionManager.openSession ??
+		((file: string, dir?: string) => SessionManager.open(file, dir));
 	const sessionDir = sessionManager.getSessionDir?.();
 	const cachedResolutions = new Map<number, ForkContextResolution>();
 
@@ -160,7 +168,9 @@ export function createForkContextResolver(
 		if (cached) return cached;
 		try {
 			if (!fs.existsSync(parentSessionFile)) {
-				throw new Error(`Parent session file does not exist: ${parentSessionFile}. Pi has not persisted enough history to fork yet.`);
+				throw new Error(
+					`Parent session file does not exist: ${parentSessionFile}. Pi has not persisted enough history to fork yet.`,
+				);
 			}
 			const sourceManager = openSession(parentSessionFile, sessionDir);
 			const sessionFile = sourceManager.createBranchedSession(leafId);
@@ -174,14 +184,20 @@ export function createForkContextResolver(
 				const header = sourceManager.getHeader?.();
 				const entries = sourceManager.getEntries?.();
 				if (!header || !entries) {
-					throw new Error(`Session manager returned a forked session file that does not exist and cannot be persisted by fallback: ${sessionFile}`);
+					throw new Error(
+						`Session manager returned a forked session file that does not exist and cannot be persisted by fallback: ${sessionFile}`,
+					);
 				}
 				if (forceThinkingOff(sanitizeUnsafeThinkingBlocks(entries))) {
 					appendThinkingOffEntry(entries);
 					thinkingOverride = "off";
 				}
 				fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
-				fs.writeFileSync(sessionFile, `${[header, ...entries].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
+				fs.writeFileSync(
+					sessionFile,
+					`${[header, ...entries].map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+					"utf-8",
+				);
 			} else {
 				const entries = readSessionEntries(sessionFile);
 				if (sanitizeUnsafeThinkingBlocks(entries)) {

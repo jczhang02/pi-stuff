@@ -84,9 +84,10 @@ function readOptionalJsonFile(filePath: string, label: string): unknown {
 	try {
 		return JSON.parse(fs.readFileSync(filePath, "utf-8"));
 	} catch (error) {
-		const code = typeof error === "object" && error !== null && "code" in error
-			? (error as { code?: unknown }).code
-			: undefined;
+		const code =
+			typeof error === "object" && error !== null && "code" in error
+				? (error as { code?: unknown }).code
+				: undefined;
 		if (code === "ENOENT") return null;
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`Failed to read ${label} '${filePath}': ${message}`, {
@@ -104,7 +105,11 @@ function readJsonFileBestEffort(filePath: string): unknown {
 	}
 }
 
-function extractSkillPathsFromPackageRoot(packageRoot: string, source: SkillSource, bestEffort = false): SkillSearchPath[] {
+function extractSkillPathsFromPackageRoot(
+	packageRoot: string,
+	source: SkillSource,
+	bestEffort = false,
+): SkillSearchPath[] {
 	const packageJsonPath = path.join(packageRoot, "package.json");
 	const pkg = bestEffort
 		? readJsonFileBestEffort(packageJsonPath)
@@ -191,7 +196,11 @@ function collectSettingsSkillPaths(cwd: string, agentDir: string): SkillSearchPa
 	const results: SkillSearchPath[] = [];
 	const projectConfigDir = getProjectConfigDir(cwd);
 	const settingsFiles = [
-		{ file: path.join(projectConfigDir, "settings.json"), base: projectConfigDir, source: "project-settings" as const },
+		{
+			file: path.join(projectConfigDir, "settings.json"),
+			base: projectConfigDir,
+			source: "project-settings" as const,
+		},
 		{ file: path.join(agentDir, "settings.json"), base: agentDir, source: "user-settings" as const },
 	];
 
@@ -216,9 +225,11 @@ function collectSettingsSkillPaths(cwd: string, agentDir: string): SkillSearchPa
 }
 
 function isSafePackagePath(value: string): boolean {
-	return value.length > 0
-		&& !path.isAbsolute(value)
-		&& value.split(/[\\/]/).every((part) => part.length > 0 && part !== "." && part !== "..");
+	return (
+		value.length > 0 &&
+		!path.isAbsolute(value) &&
+		value.split(/[\\/]/).every((part) => part.length > 0 && part !== "." && part !== "..")
+	);
 }
 
 function parseNpmPackageName(source: string): string | undefined {
@@ -261,8 +272,15 @@ function parseGitPackagePath(source: string): { host: string; repoPath: string }
 		repoPath = spec.slice(slashIndex + 1);
 	}
 
-	const normalizedPath = stripGitRef(repoPath).replace(/\.git$/, "").replace(/^\/+/, "");
-	if (!host || !isSafePackagePath(host) || !isSafePackagePath(normalizedPath) || normalizedPath.split(/[\\/]/).length < 2) {
+	const normalizedPath = stripGitRef(repoPath)
+		.replace(/\.git$/, "")
+		.replace(/^\/+/, "");
+	if (
+		!host ||
+		!isSafePackagePath(host) ||
+		!isSafePackagePath(normalizedPath) ||
+		normalizedPath.split(/[\\/]/).length < 2
+	) {
 		return undefined;
 	}
 	return { host, repoPath: normalizedPath };
@@ -292,7 +310,11 @@ function resolveSettingsPackageRoot(source: string, baseDir: string): string | u
 function collectSettingsPackageSkillPaths(cwd: string, agentDir: string): SkillSearchPath[] {
 	const projectConfigDir = getProjectConfigDir(cwd);
 	const settingsFiles = [
-		{ file: path.join(projectConfigDir, "settings.json"), base: projectConfigDir, source: "project-package" as const },
+		{
+			file: path.join(projectConfigDir, "settings.json"),
+			base: projectConfigDir,
+			source: "project-package" as const,
+		},
 		{ file: path.join(agentDir, "settings.json"), base: agentDir, source: "user-package" as const },
 	];
 	const results: SkillSearchPath[] = [];
@@ -304,11 +326,14 @@ function collectSettingsPackageSkillPaths(cwd: string, agentDir: string): SkillS
 		if (!Array.isArray(packages)) continue;
 
 		for (const entry of packages) {
-			const packageSource = typeof entry === "string"
-				? entry
-				: typeof entry === "object" && entry !== null && typeof (entry as { source?: unknown }).source === "string"
-					? (entry as { source: string }).source
-					: undefined;
+			const packageSource =
+				typeof entry === "string"
+					? entry
+					: typeof entry === "object" &&
+							entry !== null &&
+							typeof (entry as { source?: unknown }).source === "string"
+						? (entry as { source: string }).source
+						: undefined;
 			if (!packageSource) continue;
 
 			const packageRoot = resolveSettingsPackageRoot(packageSource, base);
@@ -370,7 +395,10 @@ function inferSkillSource(filePath: string, cwd: string, agentDir: string, sourc
 	return "unknown";
 }
 
-function chooseHigherPrioritySkill(existing: CachedSkillEntry | undefined, candidate: CachedSkillEntry): CachedSkillEntry {
+function chooseHigherPrioritySkill(
+	existing: CachedSkillEntry | undefined,
+	candidate: CachedSkillEntry,
+): CachedSkillEntry {
 	if (!existing) return candidate;
 	const existingPriority = SOURCE_PRIORITY[existing.source] ?? 0;
 	const candidatePriority = SOURCE_PRIORITY[candidate.source] ?? 0;
@@ -388,7 +416,7 @@ function parseSkillDescription(content: string): string | undefined {
 
 	const frontmatter = normalized.slice(3, endIndex).trim();
 	const match = frontmatter.match(/^description:\s*(.+)$/m);
-	return match?.[1]?.trim().replace(/^['\"]|['\"]$/g, "");
+	return match?.[1]?.trim().replace(/^['"]|['"]$/g, "");
 }
 
 function maybeReadSkillDescription(filePath: string): string | undefined {
@@ -442,7 +470,7 @@ function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: Skil
 		} catch {
 			resolvedDir = path.resolve(dirPath);
 		}
-		const priority = sourceHint ? SOURCE_PRIORITY[sourceHint] ?? 0 : SOURCE_PRIORITY.unknown;
+		const priority = sourceHint ? (SOURCE_PRIORITY[sourceHint] ?? 0) : SOURCE_PRIORITY.unknown;
 		const previousPriority = visitedDirectories.get(resolvedDir);
 		if (previousPriority !== undefined && previousPriority >= priority) return false;
 		visitedDirectories.set(resolvedDir, priority);
@@ -495,9 +523,10 @@ function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: Skil
 		if (stat.isFile()) {
 			const fileName = path.basename(skillPath.path);
 			if (!fileName.toLowerCase().endsWith(".md")) continue;
-			const skillName = fileName.toLowerCase() === "skill.md"
-				? path.basename(path.dirname(skillPath.path))
-				: path.basename(fileName, path.extname(fileName));
+			const skillName =
+				fileName.toLowerCase() === "skill.md"
+					? path.basename(path.dirname(skillPath.path))
+					: path.basename(fileName, path.extname(fileName));
 			pushEntry(skillName, skillPath.path, skillPath.source);
 			continue;
 		}
@@ -545,7 +574,12 @@ function collectFilesystemSkills(cwd: string, agentDir: string, skillPaths: Skil
 function getCachedSkills(cwd: string): CachedSkillEntry[] {
 	const now = Date.now();
 	const agentDir = getAgentDir();
-	if (loadSkillsCache && loadSkillsCache.cwd === cwd && loadSkillsCache.agentDir === agentDir && now - loadSkillsCache.timestamp < LOAD_SKILLS_CACHE_TTL_MS) {
+	if (
+		loadSkillsCache &&
+		loadSkillsCache.cwd === cwd &&
+		loadSkillsCache.agentDir === agentDir &&
+		now - loadSkillsCache.timestamp < LOAD_SKILLS_CACHE_TTL_MS
+	) {
 		return loadSkillsCache.skills;
 	}
 
@@ -563,21 +597,14 @@ function getCachedSkills(cwd: string): CachedSkillEntry[] {
 	return skills;
 }
 
-export function resolveSkillPath(
-	skillName: string,
-	cwd: string,
-): { path: string; source: SkillSource } | undefined {
+export function resolveSkillPath(skillName: string, cwd: string): { path: string; source: SkillSource } | undefined {
 	const skills = getCachedSkills(cwd);
 	const skill = skills.find((s) => s.name === skillName);
 	if (!skill) return undefined;
 	return { path: skill.filePath, source: skill.source };
 }
 
-function readSkill(
-	skillName: string,
-	skillPath: string,
-	source: SkillSource,
-): ResolvedSkill | undefined {
+function readSkill(skillName: string, skillPath: string, source: SkillSource): ResolvedSkill | undefined {
 	try {
 		const stat = fs.statSync(skillPath);
 		const cached = skillCache.get(skillPath);
@@ -620,10 +647,14 @@ export function resolveSkills(
 	const localByName = new Map<string, CachedSkillEntry>();
 	if (localSkillPaths?.length) {
 		const agentDir = getAgentDir();
-		const localEntries = collectFilesystemSkills(cwd, agentDir, localSkillPaths.map((entry) => ({
-			path: path.resolve(localBaseDir ?? cwd, entry),
-			source: "unknown" as const,
-		})));
+		const localEntries = collectFilesystemSkills(
+			cwd,
+			agentDir,
+			localSkillPaths.map((entry) => ({
+				path: path.resolve(localBaseDir ?? cwd, entry),
+				source: "unknown" as const,
+			})),
+		);
 		for (const entry of localEntries) {
 			if (!localByName.has(entry.name)) localByName.set(entry.name, entry);
 		}
@@ -690,15 +721,10 @@ export function buildSkillInjection(skills: ResolvedSkill[]): string {
 }
 
 function escapeXmlText(value: string): string {
-	return value
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;");
+	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export function normalizeSkillInput(
-	input: string | string[] | boolean | undefined,
-): string[] | false | undefined {
+export function normalizeSkillInput(input: string | string[] | boolean | undefined): string[] | false | undefined {
 	if (input === false) return false;
 	if (input === true || input === undefined) return undefined;
 	if (Array.isArray(input)) {
@@ -719,7 +745,14 @@ export function normalizeSkillInput(
 			// Not valid JSON – fall through to comma-split
 		}
 	}
-	return [...new Set(input.split(",").map((s) => s.trim()).filter((s) => s.length > 0))];
+	return [
+		...new Set(
+			input
+				.split(",")
+				.map((s) => s.trim())
+				.filter((s) => s.length > 0),
+		),
+	];
 }
 
 export function discoverAvailableSkills(cwd: string): Array<{

@@ -40,7 +40,7 @@ This is the mature-agent behavior the user recognizes from Claude Code: reading 
 
 The same task reads, edits, and runs shell tools without a Pi Stuff confirmation panel. The permission engine is still present. It stays silent unless a registered shell tool issues one of the explicitly recognized high-risk deletion or Git-discard command shapes.
 
-When an outside-directory deletion or Git-discard target is explicit, the common full-width prompt asks about that exact call once. When the target cannot be resolved safely because of substitutions, unresolved variables, broad globs, parse failure, or unsupported nested forwarding, the operation is denied with a reason so the Agent can rewrite it as a concrete request. Deleting `/`, the resolved user home, the session working directory, the Git worktree root, or an equivalent “clear all contents” target is denied rather than offered for approval.
+When an outside-directory deletion or Git-discard target is explicit, the common full-width prompt asks about that exact call once. When the target cannot be resolved safely because of substitutions, unresolved variables, broad globs, or parse failure, or when a child cannot resolve a live root broker, the operation is denied with a reason so the Agent can rewrite it as a concrete request. Deleting `/`, the resolved user home, the session working directory, the Git worktree root, or an equivalent “clear all contents” target is denied rather than offered for approval.
 
 The earlier research recommendation was A because it most closely matched Claude Code's normal permission mode. The maintainer instead selected this B variant to preserve uninterrupted daily work while retaining protection against commands that are obviously too broad or destructive. This selected product preference overrides the research recommendation.
 
@@ -50,7 +50,7 @@ The first implementation uses three outcomes over a deliberately narrow command 
 
 - **Run silently:** ordinary reads, searches, edits, writes, builds, tests, normal shell commands, and explicitly named `rm`, `rmdir`, or `unlink` targets inside the session working directory that do not erase the directory as a whole.
 - **Ask once:** statically resolved `rm`, `rmdir`, `unlink`, or `find -delete` targets outside the session working directory, plus tested Git forms that discard uncommitted work such as `reset --hard`, destructive `clean`, and discard forms of `restore` or `checkout`. Approval is bound to the exact tool, arguments, working directory, Agent, and request ID; it creates no session or persistent allow rule.
-- **Deny and ask the Agent to rewrite:** `/`, the resolved user home, the session working directory, the Git worktree root, or an equivalent command that clears all of their contents; a destructive target containing unresolved variables, command/process substitution, unsafe glob expansion, an unrecognized wrapper, or a parse failure; and unsupported nested-Agent forwarding. Explicit user deny rules also remain hard denies.
+- **Deny and ask the Agent to rewrite:** `/`, the resolved user home, the session working directory, the Git worktree root, or an equivalent command that clears all of their contents; a destructive target containing unresolved variables, command/process substitution, unsafe glob expansion, an unrecognized wrapper, or a parse failure; and child requests whose root authority is unavailable or cyclic. Explicit user deny rules also remain hard denies.
 
 The first guarantee covers Pi's registered shell tools and shell-like aliases explicitly enrolled in the fork. Direct child Agents receive the same guarantee only after end-to-end certification. It does not claim to detect equivalent deletion hidden inside Python/Node code, a generated script, arbitrary MCP tools, third-party Extension side effects, shell functions/aliases, or every wrapper, and it does not prevent symlink or time-of-check/time-of-use races. Unregistered shell-like Suite tools fail certification rather than silently bypassing the circuit breaker.
 
@@ -126,11 +126,11 @@ This path is technically plausible and source-complete, but it has not yet passe
 
 ### Nested child Agents
 
-Nested prompts do **not** work acceptably as currently composed.
+The audited upstream packages did not compose nested prompts acceptably.
 
 The selected subagent package deliberately passes the launching session as `PI_SUBAGENT_PARENT_SESSION`. For a grandchild, that target is the headless child, not the root TUI. The permission package starts its inbox poller only for a context that has UI and is not itself a subagent. Therefore the intermediate child never serves the grandchild's request. The grandchild waits for the fixed ten-minute forwarding timeout and is then denied. See the selected package's explicit [direct-child-only warning](https://github.com/nicobailon/pi-subagents/blob/f9aa1d22580657a267b946bd54b358c0a6440bf8/README.md#L461-L474), the permission package's [root-only poller guard](https://github.com/gotgenes/pi-packages/blob/776ebcc764ca6c720b1f7eb430007de06f145b5f/packages/pi-permission-system/src/authority/forwarding-manager.ts#L33-L56), and its [timeout and denial path](https://github.com/gotgenes/pi-packages/blob/776ebcc764ca6c720b1f7eb430007de06f145b5f/packages/pi-permission-system/src/authority/approval-escalator.ts#L260-L313).
 
-Pi Stuff must choose one honest interim rule: nested `ask` is denied immediately with a clear explanation. A ten-minute invisible wait is unacceptable. Root-routed nested approval may be designed later, with depth, identity, scope, stale-request, and loop tests; it is not part of the current adoption claim.
+Pi Stuff initially selected immediate denial as the honest interim rule. The owned forks now supersede that interim behavior: every process depth preserves the root session identity, the in-process registry resolves complete parent ancestry, and cyclic ancestry fails closed. Forwarding uses a short root-broker acknowledgement deadline; after acknowledgement, a separate decision window leaves the visible root prompt usable. Direct, nested, unavailable-root, slow-human, and cycle tests cover the protocol. Real selected-fork PTY certification remains required before the composition is called complete.
 
 ## Default behavior and persistence
 
@@ -165,10 +165,10 @@ Claude Code's current default mode allows reads and asks before edits and shell 
 | Session approval | Scope depends on tool; Bash can become project-persistent | All suggestions are session-memory rules | A tripwire approval applies to one exact call only; no remembered grant from the prompt |
 | Main prompt | Native inline permission UI | Non-floating inline UI | Common full-width Command Dialog managed by Suite coordinator |
 | Background child | Since 2.1.186, the prompt surfaces in the main session and names the child | Direct child forwards and pauses | Preserve named forwarding through the common Suite coordinator |
-| Nested child | Claude subagents cannot spawn subagents | Ten-minute wait, then deny | Immediate clear deny until root routing is certified |
+| Nested child | Claude subagents cannot spawn subagents | Ten-minute wait, then deny | Every supported Pi Stuff depth routes directly to the root; unavailable or cyclic authority denies quickly |
 | Sandbox | Separate Claude sandbox layer exists | Explicitly not a sandbox | Safety tripwires now; sandbox remains a separate future Capability |
 
-Direct-child forwarding conceptually matches current Claude behavior, but its transport is specific to the two selected Pi packages. Anthropic's current [subagent documentation](https://code.claude.com/docs/en/sub-agents) says foreground prompts pass through and, since 2.1.186, background prompts also surface in the main session, name the requesting subagent, and deny only the current tool call on `Esc`. Pi Stuff must certify that same user-visible contract through its own forwarding and recovery tests rather than assume package composition makes it reliable.
+Root-routed forwarding conceptually matches current Claude behavior, but its transport is specific to the two selected Pi packages. Anthropic's current [subagent documentation](https://code.claude.com/docs/en/sub-agents) says foreground prompts pass through and, since 2.1.186, background prompts also surface in the main session, name the requesting subagent, and deny only the current tool call on `Esc`. Pi Stuff must certify that same user-visible contract through its own forwarding and recovery tests rather than assume package composition makes it reliable.
 
 ## Pi 0.83 compatibility audit
 
@@ -243,7 +243,7 @@ Before adoption, the owned fork must at minimum:
 6. run the circuit breaker before unrestricted mode, session allows, project/Agent rules, and external authorizers; make its deny rules and dangerous-mode controls user-owned, non-relaxable boundaries;
 7. integrate prompts and settings with the shared non-floating UI coordinator; remove overlay and statusline UI;
 8. preserve direct-child requester identity and least-privilege grant scope;
-9. deny nested `ask` immediately until root-routed nested forwarding is implemented and certified;
+9. route every nested `ask` directly to the root broker, fail closed quickly when it is unavailable, and retain a visible acknowledged request long enough for a human decision;
 10. expose effective rules and their source in a user-facing management surface;
 11. require every Suite-owned shell-like tool to register for the same Bash/path gate and fail package certification if one is omitted;
 12. keep permissions distinct from sandboxing and from the subagent tool-visibility allowlist.
@@ -255,7 +255,7 @@ The fork may become a default Capability only after all of these pass:
 - exact Pi 0.83 real-Host tests for silent allow, one-call tripwire approval, hard deny, denial reason, optional manual mode, reload, resume, and invalid config;
 - real TUI captures at normal and narrow widths for main and direct-child prompts, including simultaneous requests and preemption of a Suite-owned Command Dialog;
 - selected `nicobailon/pi-subagents` direct foreground and background child end-to-end tests;
-- an explicit nested-child test proving immediate denial, not a ten-minute wait;
+- an explicit nested-child test proving root routing, short unavailable-root denial, and no premature timeout after root acknowledgement;
 - trusted/untrusted project tests proving project policy cannot loosen a global deny or enable unrestricted mode;
 - custom shell-tool tests proving Pi Stuff's actual shell tools receive Bash/path gating;
 - adversarial command-shape tests covering absolute executable paths, reordered flags, `--`, chains, variables, globs, command/process substitution, wrappers, `find -delete`, `rm -rf .`, `rm -rf *`, symlinks, generated scripts, interpreters, and time-of-check/time-of-use limitations;

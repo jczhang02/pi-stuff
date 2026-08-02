@@ -2,11 +2,22 @@
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"workspaces": {
 		".": {
-			"entry": ["scripts/*.ts", "test/**/*.test.ts", "test/fixtures/**/*.ts", "test/permissions/fixtures/**/*.ts"],
+			"entry": [
+				"scripts/*.ts",
+				"test/**/*.test.ts",
+				"test/fixtures/**/*.ts",
+				"test/agents/fixtures/**/*.ts",
+				"test/permissions/fixtures/**/*.ts"
+			],
 			"project": ["scripts/**/*.ts", "test/**/*.ts"]
 		},
 		"packages/pi-stuff": {
 			"project": ["*.ts"]
+		},
+		"packages/pi-stuff-agents": {
+			"entry": ["src/**/*.ts"],
+			"ignoreDependencies": ["@jczhang02/pi-stuff-permissions"],
+			"project": ["**/*.ts"]
 		},
 		"packages/pi-stuff-btw": {
 			"project": ["**/*.ts"]

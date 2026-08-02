@@ -2,25 +2,45 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
-import { consumeSteerRequestsFromDir, steerAckPathFromDir, writeSteerAckAt, writeSteerCapabilityAt, writeSteerRequestToDir, type SteerRequest } from "../background/control-channel.ts";
-import { SUBAGENT_CHILD_AGENT_ENV, SUBAGENT_CHILD_INDEX_ENV, SUBAGENT_FANOUT_CHILD_ENV, SUBAGENT_STEER_ACK_DIR_ENV, SUBAGENT_STEER_CAPABILITY_ENV, SUBAGENT_STEER_INBOX_ENV } from "./pi-args.ts";
-import { createStructuredOutputToolParameters, STRUCTURED_OUTPUT_CAPTURE_ENV, STRUCTURED_OUTPUT_SCHEMA_ENV, validateStructuredOutputValue } from "./structured-output.ts";
+import type { JsonSchemaObject, ResolvedToolBudget } from "../../shared/types.ts";
+import { resolveWatchPath } from "../../shared/utils.ts";
+import {
+	consumeSteerRequestsFromDir,
+	type SteerRequest,
+	steerAckPathFromDir,
+	writeSteerAckAt,
+	writeSteerCapabilityAt,
+	writeSteerRequestToDir,
+} from "../background/control-channel.ts";
+import {
+	SUBAGENT_CHILD_AGENT_ENV,
+	SUBAGENT_CHILD_INDEX_ENV,
+	SUBAGENT_FANOUT_CHILD_ENV,
+	SUBAGENT_STEER_ACK_DIR_ENV,
+	SUBAGENT_STEER_CAPABILITY_ENV,
+	SUBAGENT_STEER_INBOX_ENV,
+} from "./pi-args.ts";
+import {
+	createStructuredOutputToolParameters,
+	STRUCTURED_OUTPUT_CAPTURE_ENV,
+	STRUCTURED_OUTPUT_SCHEMA_ENV,
+	validateStructuredOutputValue,
+} from "./structured-output.ts";
 import {
 	CHILD_TOOL_DIAGNOSTIC_PATH_ENV,
+	type ChildToolDiagnostic,
 	MCP_DIRECT_CHILD_TOOLS_ENV,
 	REQUIRED_CHILD_TOOLS_ENV,
 	writeChildToolDiagnostic,
-	type ChildToolDiagnostic,
 } from "./tool-availability.ts";
-import { TOOL_BUDGET_ENV, TOOL_BUDGET_ZERO_AUTH_ENV, decodeToolBudgetEnv, shouldBlockToolForBudget, toolBudgetBlockedMessage, toolBudgetSoftNudge } from "./tool-budget.ts";
-import type { JsonSchemaObject, ResolvedToolBudget, SubagentState } from "../../shared/types.ts";
-import { resolveCurrentSessionId } from "../../shared/session-identity.ts";
-import { resolveWatchPath } from "../../shared/utils.ts";
-import { registerChildWatchdog } from "../../watchdog/register-child.ts";
-import { SUBAGENT_WATCHDOG_WARNING_TYPE } from "../../watchdog/types.ts";
-import { resolveWaitToolConfig } from "../background/wait-config.ts";
-import { registerWaitTool } from "../background/wait-tool.ts";
-import { drainOutstandingWork } from "../background/auto-drain.ts";
+import {
+	decodeToolBudgetEnv,
+	shouldBlockToolForBudget,
+	TOOL_BUDGET_ENV,
+	TOOL_BUDGET_ZERO_AUTH_ENV,
+	toolBudgetBlockedMessage,
+	toolBudgetSoftNudge,
+} from "./tool-budget.ts";
 
 const SUBAGENT_INHERIT_PROJECT_CONTEXT_ENV = "PI_SUBAGENT_INHERIT_PROJECT_CONTEXT";
 const SUBAGENT_INHERIT_SKILLS_ENV = "PI_SUBAGENT_INHERIT_SKILLS";
@@ -96,7 +116,13 @@ function refreshChildToolDiagnostic(pi: ExtensionAPI): ChildToolDiagnostic | und
 	const required = readRequiredChildTools();
 	if (!filePath || !required) return undefined;
 	const available = pi.getAllTools().map((tool) => tool.name);
-	return writeChildToolDiagnostic(filePath, required, available, process.env[SUBAGENT_CHILD_AGENT_ENV]?.trim(), readMcpDirectChildTools());
+	return writeChildToolDiagnostic(
+		filePath,
+		required,
+		available,
+		process.env[SUBAGENT_CHILD_AGENT_ENV]?.trim(),
+		readMcpDirectChildTools(),
+	);
 }
 
 function findSectionEnd(prompt: string, startIndex: number, nextHeaders: string[]): number {
@@ -127,7 +153,9 @@ export function stripInheritedSkills(prompt: string): string {
 export function stripSubagentOrchestrationSkill(prompt: string): string {
 	return prompt
 		.replace(/\n{0,2}<skill\s+name=["']pi-subagents["'][^>]*>[\s\S]*?<\/skill>\n{0,2}/g, "\n\n")
-		.replace(/[ \t]*<skill>\s*[\s\S]*?<\/skill>\s*/g, (block) => SUBAGENT_ORCHESTRATION_SKILL_NAME_PATTERN.test(block) ? "" : block);
+		.replace(/[ \t]*<skill>\s*[\s\S]*?<\/skill>\s*/g, (block) =>
+			SUBAGENT_ORCHESTRATION_SKILL_NAME_PATTERN.test(block) ? "" : block,
+		);
 }
 
 function stripChildBoundaryInstructions(prompt: string): string {
@@ -159,7 +187,6 @@ export function rewriteSubagentPrompt(
 function isParentOnlySubagentMessage(message: unknown): boolean {
 	const m = message as { role?: string; customType?: string };
 	if (m?.role !== "custom" || typeof m.customType !== "string") return false;
-	if (m.customType === SUBAGENT_WATCHDOG_WARNING_TYPE) return true;
 	return PARENT_ONLY_CUSTOM_MESSAGE_TYPES.has(m.customType);
 }
 
@@ -187,7 +214,10 @@ export function stripParentOnlySubagentMessages(messages: unknown[]): unknown[] 
 	let changed = false;
 	const filtered: unknown[] = [];
 	for (const message of messages) {
-		if (isParentOnlySubagentMessage(message) || (!preserveCurrentFanoutToolHistory && isSubagentToolResultMessage(message))) {
+		if (
+			isParentOnlySubagentMessage(message) ||
+			(!preserveCurrentFanoutToolHistory && isSubagentToolResultMessage(message))
+		) {
 			changed = true;
 			continue;
 		}
@@ -216,8 +246,12 @@ function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget | undef
 	if (!budget) return;
 	let toolCount = 0;
 	let softNudged = false;
-	const sendUserMessage = (pi as { sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => unknown }).sendUserMessage;
-	const onRuntimeEvent = pi.on as unknown as (event: string, handler: (event: { toolName?: string }) => unknown) => void;
+	const sendUserMessage = (pi as { sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => unknown })
+		.sendUserMessage;
+	const onRuntimeEvent = pi.on as unknown as (
+		event: string,
+		handler: (event: { toolName?: string }) => unknown,
+	) => void;
 	onRuntimeEvent("tool_call", (event) => {
 		const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
 		toolCount++;
@@ -242,13 +276,14 @@ export function registerSteeringInbox(
 	if (!steerInbox) return;
 	const capabilityPath = process.env[SUBAGENT_STEER_CAPABILITY_ENV]?.trim();
 	const ackDir = process.env[SUBAGENT_STEER_ACK_DIR_ENV]?.trim();
-	const sendUserMessage = (pi as { sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => unknown }).sendUserMessage;
+	const sendUserMessage = (pi as { sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => unknown })
+		.sendUserMessage;
 	const childIndex = Number(process.env[SUBAGENT_CHILD_INDEX_ENV]);
 	const pending = new Map<string, string[]>();
 	let disposed = false;
 	let flushing = false;
 	let started = false;
-	let canSteer = typeof sendUserMessage === "function";
+	const canSteer = typeof sendUserMessage === "function";
 	let watcher: fs.FSWatcher | undefined;
 	let interval: NodeJS.Timeout | undefined;
 	const acknowledge = (request: SteerRequest, state: "delivered" | "failed", message: string): void => {
@@ -263,15 +298,19 @@ export function registerSteeringInbox(
 	};
 	const publishCapability = (): void => {
 		if (!capabilityPath || !Number.isInteger(childIndex) || childIndex < 0) return;
-		writeSteerCapabilityAt(capabilityPath, { index: childIndex, pid: process.pid, readyAt: Date.now(), supported: canSteer });
+		writeSteerCapabilityAt(capabilityPath, {
+			index: childIndex,
+			pid: process.pid,
+			readyAt: Date.now(),
+			supported: canSteer,
+		});
 	};
 	const flush = (): void => {
 		if (disposed || flushing) return;
 		flushing = true;
 		try {
 			const requests = consumeSteerRequestsFromDir(steerInbox);
-			for (let index = 0; index < requests.length; index++) {
-				const request = requests[index]!;
+			for (const [index, request] of requests.entries()) {
 				if (!canSteer || typeof sendUserMessage !== "function") {
 					acknowledge(request, "failed", "Child Pi session does not support sendUserMessage steering.");
 					continue;
@@ -298,13 +337,18 @@ export function registerSteeringInbox(
 		if (disposed || !event || typeof event !== "object") return undefined;
 		const input = event as { source?: unknown; streamingBehavior?: unknown; text?: unknown; content?: unknown };
 		if (input.source !== "extension" || input.streamingBehavior !== "steer") return undefined;
-		const text = typeof input.text === "string" ? input.text : typeof input.content === "string" ? input.content : undefined;
+		const text =
+			typeof input.text === "string" ? input.text : typeof input.content === "string" ? input.content : undefined;
 		if (!text) return undefined;
 		const ids = pending.get(text);
 		const requestId = ids?.shift();
 		if (!requestId) return undefined;
 		if (ids?.length === 0) pending.delete(text);
-		acknowledge({ type: "steer", id: requestId, ts: Date.now(), message: text }, "delivered", "Pi accepted the correlated steering input.");
+		acknowledge(
+			{ type: "steer", id: requestId, ts: Date.now(), message: text },
+			"delivered",
+			"Pi accepted the correlated steering input.",
+		);
 		return undefined;
 	};
 	const start = (): void => {
@@ -335,36 +379,31 @@ export function registerSteeringInbox(
 	// Register input before the watcher so an accepted extension input cannot race request dispatch.
 	onRuntimeEvent("input", onInput);
 	onRuntimeEvent("session_start", () => start());
-	for (const eventName of ["message_start", "message_update", "message_end", "tool_execution_start", "tool_execution_end", "turn_end"] as const) {
+	for (const eventName of [
+		"message_start",
+		"message_update",
+		"message_end",
+		"tool_execution_start",
+		"tool_execution_end",
+		"turn_end",
+	] as const) {
 		onRuntimeEvent(eventName, activate);
 	}
 	onRuntimeEvent("session_shutdown", () => {
 		disposed = true;
-		try { watcher?.close(); } catch {}
+		try {
+			watcher?.close();
+		} catch {}
 		if (interval) clearInterval(interval);
 	});
 }
 
 export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	registerSteeringInbox(pi);
-	registerToolBudget(pi, decodeToolBudgetEnv(process.env[TOOL_BUDGET_ENV], { allowZero: process.env[TOOL_BUDGET_ZERO_AUTH_ENV] === "1" }));
-	registerChildWatchdog(pi);
-	const waitToolEnabled = resolveWaitToolConfig().enabled;
-	const waitState = {
-		baseCwd: "",
-		currentSessionId: null,
-		asyncJobs: new Map(),
-		foregroundControls: new Map(),
-		lastForegroundControlId: null,
-		cleanupTimers: new Map(),
-		lastUiContext: null,
-		poller: null,
-		completionSeen: new Map(),
-		watcher: null,
-		watcherRestartTimer: null,
-		resultFileCoalescer: { schedule: () => false, clear: () => {} },
-	} as unknown as SubagentState;
-	if (typeof pi.registerTool === "function") registerWaitTool(pi, waitState, waitToolEnabled);
+	registerToolBudget(
+		pi,
+		decodeToolBudgetEnv(process.env[TOOL_BUDGET_ENV], { allowZero: process.env[TOOL_BUDGET_ZERO_AUTH_ENV] === "1" }),
+	);
 	let nativeSupervisorClientRegistered = false;
 	let nativeSupervisorFallbackRegistered = false;
 	const registerNativeSupervisorClientOnce = (): void => {
@@ -378,19 +417,12 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		nativeSupervisorFallbackRegistered = true;
 		registerNativeSupervisorClient(pi);
 	};
-	const onRuntimeEvent = pi.on as unknown as (event: string, handler: (event: unknown) => unknown) => void;
-	onRuntimeEvent("session_start", (_event: unknown, ctx: unknown) => {
-		const sessionManager = (ctx as { sessionManager?: Parameters<typeof resolveCurrentSessionId>[0] } | undefined)?.sessionManager;
-		waitState.currentSessionId = sessionManager ? resolveCurrentSessionId(sessionManager) : null;
+	pi.on("session_start", () => {
 		registerNativeSupervisorClientOnce();
 		if (readRequiredChildTools()?.includes("intercom")) registerNativeSupervisorFallbackOnce();
 	});
-	onRuntimeEvent("agent_start", () => {
+	pi.on("agent_start", () => {
 		refreshChildToolDiagnostic(pi);
-	});
-	onRuntimeEvent("agent_end", async (_event: unknown, ctx: unknown) => {
-		if ((ctx as { hasUI?: boolean } | undefined)?.hasUI === true) return;
-		await drainOutstandingWork({ state: waitState, events: pi.events });
 	});
 	const structuredOutputPath = process.env[STRUCTURED_OUTPUT_CAPTURE_ENV];
 	const structuredSchemaPath = process.env[STRUCTURED_OUTPUT_SCHEMA_ENV];
@@ -425,13 +457,13 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		});
 	}
 
-	onRuntimeEvent("context", (event: { messages: unknown[] }) => {
+	pi.on("context", (event) => {
 		const messages = stripParentOnlySubagentMessages(event.messages);
 		if (messages === event.messages) return undefined;
-		return { messages };
+		return { messages: messages as typeof event.messages };
 	});
 
-	onRuntimeEvent("before_agent_start", async (event: { systemPrompt: string }) => {
+	pi.on("before_agent_start", async (event) => {
 		registerNativeSupervisorFallbackOnce();
 		const intercomSessionName = process.env[SUBAGENT_INTERCOM_SESSION_NAME_ENV]?.trim();
 		if (intercomSessionName && typeof pi.setSessionName === "function") {

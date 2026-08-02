@@ -72,7 +72,10 @@ function getProcessStartIdentity(pid: number): string | undefined {
 			const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf-8");
 			const commandEnd = stat.lastIndexOf(")");
 			if (commandEnd === -1) return undefined;
-			const fields = stat.slice(commandEnd + 1).trim().split(/\s+/);
+			const fields = stat
+				.slice(commandEnd + 1)
+				.trim()
+				.split(/\s+/);
 			const startTicks = fields[19];
 			return startTicks ? `linux:${startTicks}` : undefined;
 		} catch {
@@ -117,7 +120,8 @@ export function inspectSessionLease(sessionFile: string, rootDir = SESSION_LEASE
 	const canonicalSessionFile = canonicalSessionFilePath(sessionFile);
 	const canonicalSessionIdValue = canonicalSessionId(canonicalSessionFile);
 	const leaseDir = path.join(rootDir, canonicalSessionIdValue);
-	if (!fs.existsSync(leaseDir)) return { state: "free", canonicalSessionFile, canonicalSessionId: canonicalSessionIdValue };
+	if (!fs.existsSync(leaseDir))
+		return { state: "free", canonicalSessionFile, canonicalSessionId: canonicalSessionIdValue };
 	const owner = readLeaseOwner(leaseDir);
 	return owner
 		? { state: "owned", canonicalSessionFile, canonicalSessionId: canonicalSessionIdValue, owner }
@@ -127,25 +131,37 @@ export function inspectSessionLease(sessionFile: string, rootDir = SESSION_LEASE
 function parseOwner(value: unknown): SessionLeaseOwner | undefined {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
 	const owner = value as Partial<SessionLeaseOwner>;
-	if (owner.version !== 1
-		|| typeof owner.token !== "string"
-		|| typeof owner.canonicalSessionFile !== "string"
-		|| typeof owner.runId !== "string"
-		|| typeof owner.sourceRunId !== "string"
-		|| typeof owner.pid !== "number"
-		|| !Number.isInteger(owner.pid)
-		|| owner.pid <= 0
-		|| typeof owner.hostname !== "string"
-		|| (owner.writerState !== "none" && owner.writerState !== "spawning" && owner.writerState !== "running")
-		|| typeof owner.acquiredAt !== "string"
-		|| typeof owner.acquiredAtMs !== "number"
-		|| typeof owner.updatedAtMs !== "number") return undefined;
+	if (
+		owner.version !== 1 ||
+		typeof owner.token !== "string" ||
+		typeof owner.canonicalSessionFile !== "string" ||
+		typeof owner.runId !== "string" ||
+		typeof owner.sourceRunId !== "string" ||
+		typeof owner.pid !== "number" ||
+		!Number.isInteger(owner.pid) ||
+		owner.pid <= 0 ||
+		typeof owner.hostname !== "string" ||
+		(owner.writerState !== "none" && owner.writerState !== "spawning" && owner.writerState !== "running") ||
+		typeof owner.acquiredAt !== "string" ||
+		typeof owner.acquiredAtMs !== "number" ||
+		typeof owner.updatedAtMs !== "number"
+	)
+		return undefined;
 	if (owner.parentSessionId !== undefined && typeof owner.parentSessionId !== "string") return undefined;
 	if (owner.processStartIdentity !== undefined && typeof owner.processStartIdentity !== "string") return undefined;
-	if (owner.writerPid !== undefined && (typeof owner.writerPid !== "number" || !Number.isInteger(owner.writerPid) || owner.writerPid <= 0)) return undefined;
-	if (owner.writerProcessStartIdentity !== undefined && typeof owner.writerProcessStartIdentity !== "string") return undefined;
+	if (
+		owner.writerPid !== undefined &&
+		(typeof owner.writerPid !== "number" || !Number.isInteger(owner.writerPid) || owner.writerPid <= 0)
+	)
+		return undefined;
+	if (owner.writerProcessStartIdentity !== undefined && typeof owner.writerProcessStartIdentity !== "string")
+		return undefined;
 	if (owner.writerState === "running" && owner.writerPid === undefined) return undefined;
-	if (owner.writerState !== "running" && (owner.writerPid !== undefined || owner.writerProcessStartIdentity !== undefined)) return undefined;
+	if (
+		owner.writerState !== "running" &&
+		(owner.writerPid !== undefined || owner.writerProcessStartIdentity !== undefined)
+	)
+		return undefined;
 	return owner as SessionLeaseOwner;
 }
 
@@ -177,13 +193,18 @@ function processDemonstrablyGone(
 	return currentIdentity !== undefined && currentIdentity !== startIdentity;
 }
 
-function demonstrablyStale(owner: SessionLeaseOwner, options: Required<Pick<SessionLeaseOptions, "hostname" | "isProcessAlive" | "getProcessStartIdentity">>): boolean {
+function demonstrablyStale(
+	owner: SessionLeaseOwner,
+	options: Required<Pick<SessionLeaseOptions, "hostname" | "isProcessAlive" | "getProcessStartIdentity">>,
+): boolean {
 	if (owner.hostname !== options.hostname) return false;
 	if (!processDemonstrablyGone(owner.pid, owner.processStartIdentity, options)) return false;
 	if (owner.writerState === "spawning") return false;
 	if (owner.writerState === "none") return true;
-	return owner.writerPid !== undefined
-		&& processDemonstrablyGone(owner.writerPid, owner.writerProcessStartIdentity, options);
+	return (
+		owner.writerPid !== undefined &&
+		processDemonstrablyGone(owner.writerPid, owner.writerProcessStartIdentity, options)
+	);
 }
 
 function createLeaseDirectory(leaseDir: string, owner: SessionLeaseOwner): boolean {
@@ -192,7 +213,10 @@ function createLeaseDirectory(leaseDir: string, owner: SessionLeaseOwner): boole
 	fs.rmSync(tempDir, { recursive: true, force: true });
 	fs.mkdirSync(tempDir, { mode: 0o700 });
 	try {
-		fs.writeFileSync(path.join(tempDir, "owner.json"), JSON.stringify(owner, null, 2), { encoding: "utf-8", mode: 0o600 });
+		fs.writeFileSync(path.join(tempDir, "owner.json"), JSON.stringify(owner, null, 2), {
+			encoding: "utf-8",
+			mode: 0o600,
+		});
 		try {
 			fs.renameSync(tempDir, leaseDir);
 			return true;
@@ -205,7 +229,10 @@ function createLeaseDirectory(leaseDir: string, owner: SessionLeaseOwner): boole
 	}
 }
 
-export function acquireSessionLease(request: SessionLeaseRequest, options: SessionLeaseOptions = {}): SessionLeaseHandle {
+export function acquireSessionLease(
+	request: SessionLeaseRequest,
+	options: SessionLeaseOptions = {},
+): SessionLeaseHandle {
 	const canonicalSessionFile = canonicalSessionFilePath(request.sessionFile);
 	const rootDir = options.rootDir ?? SESSION_LEASES_DIR;
 	const leaseDir = sessionLeaseDir(canonicalSessionFile, rootDir);
@@ -213,9 +240,10 @@ export function acquireSessionLease(request: SessionLeaseRequest, options: Sessi
 	const pid = options.pid ?? process.pid;
 	const hostname = options.hostname ?? os.hostname();
 	const getIdentity = options.getProcessStartIdentity ?? getProcessStartIdentity;
-	const processStartIdentity = options.processStartIdentity
-		?? getIdentity(pid)
-		?? (pid === process.pid ? `runtime:${Math.round(Date.now() - process.uptime() * 1000)}` : undefined);
+	const processStartIdentity =
+		options.processStartIdentity ??
+		getIdentity(pid) ??
+		(pid === process.pid ? `runtime:${Math.round(Date.now() - process.uptime() * 1000)}` : undefined);
 	const acquiredAtMs = now();
 	const owner: SessionLeaseOwner = {
 		version: 1,

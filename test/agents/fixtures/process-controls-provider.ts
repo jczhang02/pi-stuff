@@ -1,0 +1,122 @@
+import { appendFileSync } from "node:fs";
+import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+const PROVIDER = "pi-stuff-process-controls";
+const MODEL = "fixture-model";
+const CHILD_INDEX_ENV = "PI_SUBAGENT_CHILD_INDEX";
+export const PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH = import.meta.path;
+const ZERO_USAGE = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+function assistant(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
+	return {
+		role: "assistant",
+		content,
+		api: "openai-completions",
+		provider: PROVIDER,
+		model: MODEL,
+		usage: ZERO_USAGE,
+		stopReason,
+		timestamp: Date.now(),
+	};
+}
+
+function lastUserText(context: Context): string {
+	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
+		const entry = context.messages[index];
+		if (entry?.role !== "user") continue;
+		if (typeof entry.content === "string") return entry.content;
+		return entry.content
+			.filter((part): part is { type: "text"; text: string } => part.type === "text")
+			.map((part) => part.text)
+			.join("\n");
+	}
+	return "";
+}
+
+function record(value: Record<string, unknown>): void {
+	const logPath = process.env.PI_STUFF_PROCESS_CONTROLS_LOG;
+	if (!logPath) return;
+	appendFileSync(logPath, `${JSON.stringify({ at: Date.now(), ...value })}\n`);
+}
+
+function textStream(text: string, delayMs: number, signal?: AbortSignal) {
+	const stream = createAssistantMessageEventStream();
+	const pending = assistant([], "pending");
+	let settled = false;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const finish = (): void => {
+		if (settled) return;
+		settled = true;
+		if (timer) clearTimeout(timer);
+		stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
+		stream.push({ type: "done", reason: "stop", message: assistant([{ type: "text", text }], "stop") });
+		record({ kind: "finished", childIndex: process.env[CHILD_INDEX_ENV], text });
+	};
+	const abort = (): void => {
+		if (settled) return;
+		settled = true;
+		if (timer) clearTimeout(timer);
+		stream.push({ type: "error", reason: "aborted", error: assistant([{ type: "text", text }], "aborted") });
+		record({ kind: "aborted", childIndex: process.env[CHILD_INDEX_ENV], text });
+	};
+
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
+	if (delayMs > 0) timer = setTimeout(finish, delayMs);
+	else queueMicrotask(finish);
+	signal?.addEventListener("abort", abort, { once: true });
+	return stream;
+}
+
+function streamFixture(context: Context, options?: SimpleStreamOptions) {
+	const userText = lastUserText(context);
+	const childIndex = process.env[CHILD_INDEX_ENV] ?? "seed";
+	record({ kind: "request", childIndex, userText });
+	if (userText.includes("PROCESS_SEED")) return textStream("PROCESS_SEEDED", 0, options?.signal);
+	if (userText.includes("PROCESS_RESUME_FINISH")) {
+		return textStream("PROCESS_RESUME_COMPLETED", 100, options?.signal);
+	}
+	if (userText.includes("PROCESS_CRASH_HOLD")) {
+		return textStream(`PROCESS_CRASH_RUNNING_${childIndex}`, 60_000, options?.signal);
+	}
+	if (userText.includes("TARGET_ONLY_CHILD_ZERO")) {
+		return textStream(`PROCESS_CONTROL_STEERED_${childIndex}`, 7_000, options?.signal);
+	}
+	return textStream(
+		`PROCESS_CONTROL_RUNNING_${childIndex}`,
+		userText.includes("PROCESS_CONTROL_HOLD_0") ? 800 : 4_000,
+		options?.signal,
+	);
+}
+
+export default function registerProcessControlsProvider(pi: ExtensionAPI): void {
+	pi.registerProvider(PROVIDER, {
+		name: "Pi Stuff process controls fixture",
+		baseUrl: "https://fixture.invalid",
+		apiKey: "fixture",
+		api: "openai-completions",
+		models: [
+			{
+				id: MODEL,
+				name: "Pi Stuff process controls fixture",
+				reasoning: false,
+				input: ["text"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 200_000,
+				maxTokens: 4_096,
+			},
+		],
+		streamSimple: (_model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
+			streamFixture(context, options),
+	});
+}

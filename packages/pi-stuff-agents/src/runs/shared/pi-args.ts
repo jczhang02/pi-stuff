@@ -2,22 +2,41 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { encodeNestedPathEnv, parseNestedPathEnv, type NestedPathEntry } from "./nested-path.ts";
-import { resolveMcpDirectToolSelections, type ResolvedMcpDirectToolSelection } from "./mcp-direct-tool-allowlist.ts";
+import { resolvePermissionsExtensionPath } from "../../runtime/permissions-extension-path.ts";
+import { THINKING_LEVELS } from "../../shared/model-info.ts";
+import { type JsonSchemaObject, type ResolvedToolBudget, TEMP_ROOT_DIR } from "../../shared/types.ts";
+import { PI_CODING_AGENT_PACKAGE_ROOT_ENV } from "../../shared/utils.ts";
+import {
+	decodeSubagentCapabilityCeiling,
+	encodeSubagentCapabilityCeiling,
+	intersectSubagentCapabilityCeilings,
+	type ResolvedSubagentCapabilityCeiling,
+	SUBAGENT_CAPABILITY_CEILING_ENV,
+	type SubagentCapabilityAudit,
+} from "./capability-ceiling.ts";
+import { type ResolvedMcpDirectToolSelection, resolveMcpDirectToolSelections } from "./mcp-direct-tool-allowlist.ts";
+import { encodeNestedPathEnv, type NestedPathEntry, parseNestedPathEnv } from "./nested-path.ts";
 import { resolvePiPackageRoot } from "./pi-spawn.ts";
 import { STRUCTURED_OUTPUT_CAPTURE_ENV, STRUCTURED_OUTPUT_SCHEMA_ENV } from "./structured-output.ts";
-import { TEMP_ROOT_DIR, type JsonSchemaObject, type ResolvedToolBudget } from "../../shared/types.ts";
-import { THINKING_LEVELS } from "../../shared/model-info.ts";
-import { TOOL_BUDGET_ENV, TOOL_BUDGET_ZERO_AUTH_ENV, encodeToolBudgetEnv } from "./tool-budget.ts";
-import { CHILD_TOOL_DIAGNOSTIC_PATH_ENV, MCP_DIRECT_CHILD_TOOLS_ENV, REQUIRED_CHILD_TOOLS_ENV } from "./tool-availability.ts";
-import { CHILD_WATCHDOG_CONFIG_ENV, encodeChildWatchdogConfig, type ChildWatchdogConfig } from "../../watchdog/child-status.ts";
-import { WAIT_TOOL_ENABLED_ENV } from "../background/wait-config.ts";
-import { PI_CODING_AGENT_PACKAGE_ROOT_ENV } from "../../shared/utils.ts";
-import { SUBAGENT_CAPABILITY_CEILING_ENV, decodeSubagentCapabilityCeiling, encodeSubagentCapabilityCeiling, intersectSubagentCapabilityCeilings, type ResolvedSubagentCapabilityCeiling, type SubagentCapabilityAudit } from "./capability-ceiling.ts";
+import {
+	CHILD_TOOL_DIAGNOSTIC_PATH_ENV,
+	MCP_DIRECT_CHILD_TOOLS_ENV,
+	REQUIRED_CHILD_TOOLS_ENV,
+} from "./tool-availability.ts";
+import { encodeToolBudgetEnv, TOOL_BUDGET_ENV, TOOL_BUDGET_ZERO_AUTH_ENV } from "./tool-budget.ts";
 
 const TASK_ARG_LIMIT = 8000;
-const PROMPT_RUNTIME_EXTENSION_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "subagent-prompt-runtime.ts");
-const FANOUT_CHILD_EXTENSION_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "extension", "fanout-child.ts");
+const PROMPT_RUNTIME_EXTENSION_PATH = path.join(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"subagent-prompt-runtime.ts",
+);
+const FANOUT_CHILD_EXTENSION_PATH = path.join(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"..",
+	"..",
+	"extension",
+	"fanout-child.ts",
+);
 export const SUBAGENT_CHILD_ENV = "PI_SUBAGENT_CHILD";
 export const SUBAGENT_ORCHESTRATOR_TARGET_ENV = "PI_SUBAGENT_ORCHESTRATOR_TARGET";
 export const SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV = "PI_SUBAGENT_ORCHESTRATOR_SESSION_ID";
@@ -35,6 +54,7 @@ export const SUBAGENT_PARENT_DEPTH_ENV = "PI_SUBAGENT_PARENT_DEPTH";
 export const SUBAGENT_PARENT_PATH_ENV = "PI_SUBAGENT_PARENT_PATH";
 export const SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV = "PI_SUBAGENT_PARENT_CAPABILITY_TOKEN";
 export const SUBAGENT_PARENT_SESSION_ENV = "PI_SUBAGENT_PARENT_SESSION";
+export const PI_STUFF_AGENT_PATH_ENV = "PI_STUFF_AGENT_PATH";
 export const SUBAGENT_STEER_INBOX_ENV = "PI_SUBAGENT_STEER_INBOX";
 export const SUBAGENT_STEER_CAPABILITY_ENV = "PI_SUBAGENT_STEER_CAPABILITY";
 export const SUBAGENT_STEER_ACK_DIR_ENV = "PI_SUBAGENT_STEER_ACK_DIR";
@@ -84,8 +104,6 @@ export interface BuildPiArgsInput {
 	};
 	toolBudget?: ResolvedToolBudget;
 	allowZeroToolBudget?: boolean;
-	childWatchdog?: ChildWatchdogConfig;
-	waitToolEnabled?: boolean;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 }
 
@@ -98,14 +116,27 @@ export interface BuildPiArgsResult {
 }
 
 function sanitizeSupervisorChannelSegment(value: string): string {
-	return value.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
+	return (
+		value
+			.trim()
+			.replace(/[^A-Za-z0-9._-]+/g, "-")
+			.replace(/^-+|-+$/g, "") || "unknown"
+	);
 }
 
 function supervisorChannelDir(runId: string, agent: string, childIndex: number): string {
-	return path.join(TEMP_ROOT_DIR, "supervisor-channels", `${sanitizeSupervisorChannelSegment(runId)}-${sanitizeSupervisorChannelSegment(agent)}-${childIndex}`);
+	return path.join(
+		TEMP_ROOT_DIR,
+		"supervisor-channels",
+		`${sanitizeSupervisorChannelSegment(runId)}-${sanitizeSupervisorChannelSegment(agent)}-${childIndex}`,
+	);
 }
 
-export function applyThinkingSuffix(model: string | undefined, thinking: string | false | undefined, replaceExisting = false): string | undefined {
+export function applyThinkingSuffix(
+	model: string | undefined,
+	thinking: string | false | undefined,
+	replaceExisting = false,
+): string | undefined {
 	if (!model || !thinking) return model;
 	const colonIdx = model.lastIndexOf(":");
 	if (colonIdx !== -1 && THINKING_LEVELS.some((level) => level === model.substring(colonIdx + 1))) {
@@ -147,52 +178,94 @@ export interface PiLaunchToolPlan {
 }
 
 export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): PiLaunchToolPlan {
-	const capabilityCeiling = intersectSubagentCapabilityCeilings(input.capabilityCeiling, input.inheritedCapabilityCeiling);
-	const allowedToolSet = capabilityCeiling?.allowedTools === undefined ? undefined : new Set(capabilityCeiling.allowedTools);
-	const requestedBuiltinTools = input.tools?.filter((tool) => !(tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js"))) ?? [];
+	const capabilityCeiling = intersectSubagentCapabilityCeilings(
+		input.capabilityCeiling,
+		input.inheritedCapabilityCeiling,
+	);
+	const allowedToolSet =
+		capabilityCeiling?.allowedTools === undefined ? undefined : new Set(capabilityCeiling.allowedTools);
+	const requestedBuiltinTools =
+		input.tools?.filter((tool) => !(tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js"))) ?? [];
 	if (input.requireReadTool && allowedToolSet && !allowedToolSet.has("read")) {
-		throw new Error(`Capability ceiling from ${capabilityCeiling?.sources.join(", ") || "unknown source"} excludes required tool 'read' for lazy skill loading.`);
+		throw new Error(
+			`Capability ceiling from ${capabilityCeiling?.sources.join(", ") || "unknown source"} excludes required tool 'read' for lazy skill loading.`,
+		);
 	}
-	const declaredBuiltinTools = input.tools === undefined
-		? (allowedToolSet ? [...allowedToolSet] : [])
-		: (input.requireReadTool && requestedBuiltinTools.length > 0 && !requestedBuiltinTools.includes("read") && !allowedToolSet
-			? ["read", ...requestedBuiltinTools]
-			: requestedBuiltinTools).filter((tool) => !allowedToolSet || allowedToolSet.has(tool));
-	const fanoutAuthorized = declaredBuiltinTools.includes("subagent");
-	const toolExtensionPaths: string[] = capabilityCeiling?.denyExtensions ? [] : (input.tools ?? []).filter((tool) => !requestedBuiltinTools.includes(tool) && (tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js")));
-	const resolvedMcpSelections = capabilityCeiling?.denyExtensions ? [] : resolveMcpDirectToolSelections(input.mcpDirectTools, input.cwd);
-	const effectiveMcpSelections = resolvedMcpSelections.filter((selection) => !allowedToolSet || allowedToolSet.has(selection.name));
+	const declaredBuiltinTools =
+		input.tools === undefined
+			? allowedToolSet
+				? [...allowedToolSet]
+				: []
+			: (input.requireReadTool &&
+				requestedBuiltinTools.length > 0 &&
+				!requestedBuiltinTools.includes("read") &&
+				!allowedToolSet
+					? ["read", ...requestedBuiltinTools]
+					: requestedBuiltinTools
+				).filter((tool) => !allowedToolSet || allowedToolSet.has(tool));
+	const fanoutAuthorized =
+		(input.tools === undefined && allowedToolSet === undefined) || declaredBuiltinTools.includes("subagent");
+	const toolExtensionPaths: string[] = capabilityCeiling?.denyExtensions
+		? []
+		: (input.tools ?? []).filter(
+				(tool) =>
+					!requestedBuiltinTools.includes(tool) &&
+					(tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js")),
+			);
+	const resolvedMcpSelections = capabilityCeiling?.denyExtensions
+		? []
+		: resolveMcpDirectToolSelections(input.mcpDirectTools, input.cwd);
+	const effectiveMcpSelections = resolvedMcpSelections.filter(
+		(selection) => !allowedToolSet || allowedToolSet.has(selection.name),
+	);
 	const effectiveMcpTools = effectiveMcpSelections.map((selection) => selection.name);
-	const explicitToolAllowlist = input.tools !== undefined || (input.mcpDirectTools?.length ?? 0) > 0 || allowedToolSet !== undefined;
+	const explicitToolAllowlist =
+		input.tools !== undefined || (input.mcpDirectTools?.length ?? 0) > 0 || allowedToolSet !== undefined;
 	const internalTools = input.structuredOutput ? ["structured_output"] : [];
 	const effectiveToolAllowlist = [...new Set([...declaredBuiltinTools, ...effectiveMcpTools, ...internalTools])];
-	const requiredChildTools = explicitToolAllowlist ? [...new Set([
-		...(input.tools !== undefined ? declaredBuiltinTools : []),
-		...(input.mcpDirectTools?.length ? effectiveMcpTools : []),
-		...internalTools,
-	])] : [];
+	const requiredChildTools = explicitToolAllowlist
+		? [
+				...new Set([
+					...(input.tools !== undefined ? declaredBuiltinTools : []),
+					...(input.mcpDirectTools?.length ? effectiveMcpTools : []),
+					...internalTools,
+				]),
+			]
+		: [];
+	const permissionsExtensionPath = resolvePermissionsExtensionPath();
 	const runtimeExtensions = fanoutAuthorized
-		? [PROMPT_RUNTIME_EXTENSION_PATH, FANOUT_CHILD_EXTENSION_PATH]
-		: [PROMPT_RUNTIME_EXTENSION_PATH];
+		? [permissionsExtensionPath, PROMPT_RUNTIME_EXTENSION_PATH, FANOUT_CHILD_EXTENSION_PATH]
+		: [permissionsExtensionPath, PROMPT_RUNTIME_EXTENSION_PATH];
 	const disableAmbientExtensions = capabilityCeiling?.denyExtensions === true || input.extensions !== undefined;
-	const configuredExtensions = capabilityCeiling?.denyExtensions ? [] : [...toolExtensionPaths, ...(input.extensions ?? []), ...(input.subagentOnlyExtensions ?? [])];
+	const configuredExtensions = capabilityCeiling?.denyExtensions
+		? []
+		: [...toolExtensionPaths, ...(input.extensions ?? []), ...(input.subagentOnlyExtensions ?? [])];
 	const extensionArgs = disableAmbientExtensions
 		? [...new Set([...runtimeExtensions, ...configuredExtensions])]
 		: [...new Set([...runtimeExtensions, ...toolExtensionPaths, ...(input.subagentOnlyExtensions ?? [])])];
-	const requestedToolNames = input.tools !== undefined
-		? [...new Set([...requestedBuiltinTools, ...resolvedMcpSelections.map((selection) => selection.name)])]
+	const requestedToolNames =
+		input.tools !== undefined
+			? [...new Set([...requestedBuiltinTools, ...resolvedMcpSelections.map((selection) => selection.name)])]
+			: undefined;
+	const capabilityAudit = capabilityCeiling
+		? ({
+				ceiling: capabilityCeiling,
+				...(requestedToolNames ? { requestedTools: requestedToolNames } : {}),
+				effectiveTools: effectiveToolAllowlist,
+				removedTools: requestedToolNames?.filter((tool) => !effectiveToolAllowlist.includes(tool)) ?? [],
+				internalTools,
+				extensionsDenied: capabilityCeiling.denyExtensions,
+				removedExtensionCount: capabilityCeiling.denyExtensions
+					? (input.extensions?.length ?? 0) +
+						(input.subagentOnlyExtensions?.length ?? 0) +
+						(input.tools ?? []).filter(
+							(tool) => tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js"),
+						).length
+					: 0,
+				requestedMcpToolCount: input.mcpDirectTools?.length ?? 0,
+				effectiveMcpTools,
+			} satisfies SubagentCapabilityAudit)
 		: undefined;
-	const capabilityAudit = capabilityCeiling ? {
-		ceiling: capabilityCeiling,
-		...(requestedToolNames ? { requestedTools: requestedToolNames } : {}),
-		effectiveTools: effectiveToolAllowlist,
-		removedTools: requestedToolNames?.filter((tool) => !effectiveToolAllowlist.includes(tool)) ?? [],
-		internalTools,
-		extensionsDenied: capabilityCeiling.denyExtensions,
-		removedExtensionCount: capabilityCeiling.denyExtensions ? (input.extensions?.length ?? 0) + (input.subagentOnlyExtensions?.length ?? 0) + ((input.tools ?? []).filter((tool) => tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js")).length) : 0,
-		requestedMcpToolCount: input.mcpDirectTools?.length ?? 0,
-		effectiveMcpTools,
-	} satisfies SubagentCapabilityAudit : undefined;
 	return {
 		...(capabilityCeiling ? { capabilityCeiling } : {}),
 		requestedBuiltinTools,
@@ -242,7 +315,7 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		mcpDirectTools: input.mcpDirectTools,
 		cwd: input.cwd,
 		requireReadTool: input.requireReadTool,
-		structuredOutput: input.structuredOutput,
+		structuredOutput: input.structuredOutput !== undefined,
 		capabilityCeiling: input.capabilityCeiling,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 	});
@@ -292,44 +365,59 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		env[REQUIRED_CHILD_TOOLS_ENV] = JSON.stringify(toolPlan.requiredChildTools);
 		env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV] = toolDiagnosticPath;
 	}
-	env[MCP_DIRECT_CHILD_TOOLS_ENV] = toolPlan.effectiveMcpTools.length > 0 ? JSON.stringify(toolPlan.effectiveMcpTools) : undefined;
+	env[MCP_DIRECT_CHILD_TOOLS_ENV] =
+		toolPlan.effectiveMcpTools.length > 0 ? JSON.stringify(toolPlan.effectiveMcpTools) : undefined;
 	env[SUBAGENT_CHILD_ENV] = "1";
 	env[SUBAGENT_FANOUT_CHILD_ENV] = toolPlan.fanoutAuthorized ? "1" : "0";
-	if (input.waitToolEnabled !== undefined) {
-		env[WAIT_TOOL_ENABLED_ENV] = input.waitToolEnabled ? "true" : "false";
-	}
-	const inheritedNestedRoute = Boolean(process.env[SUBAGENT_PARENT_EVENT_SINK_ENV] && process.env[SUBAGENT_PARENT_ROOT_RUN_ID_ENV] && process.env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV]);
-	const parentRunId = input.parentRunId ?? input.runId ?? (inheritedNestedRoute ? process.env[SUBAGENT_RUN_ID_ENV] : undefined) ?? process.env[SUBAGENT_PARENT_RUN_ID_ENV] ?? "";
-	const parentChildIndex = input.parentChildIndex !== undefined
-		? String(input.parentChildIndex)
-		: input.childIndex !== undefined
-			? String(input.childIndex)
-			: process.env[SUBAGENT_PARENT_CHILD_INDEX_ENV] ?? "";
+	const inheritedNestedRoute = Boolean(
+		process.env[SUBAGENT_PARENT_EVENT_SINK_ENV] &&
+			process.env[SUBAGENT_PARENT_ROOT_RUN_ID_ENV] &&
+			process.env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV],
+	);
+	const parentRunId =
+		input.parentRunId ??
+		input.runId ??
+		(inheritedNestedRoute ? process.env[SUBAGENT_RUN_ID_ENV] : undefined) ??
+		process.env[SUBAGENT_PARENT_RUN_ID_ENV] ??
+		"";
+	const parentChildIndex =
+		input.parentChildIndex !== undefined
+			? String(input.parentChildIndex)
+			: input.childIndex !== undefined
+				? String(input.childIndex)
+				: (process.env[SUBAGENT_PARENT_CHILD_INDEX_ENV] ?? "");
 	const inheritedDepth = Number(process.env[SUBAGENT_PARENT_DEPTH_ENV]);
-	const parentDepth = input.parentDepth ?? (inheritedNestedRoute && Number.isFinite(inheritedDepth) ? inheritedDepth + 1 : 1);
+	const parentDepth =
+		input.parentDepth ?? (inheritedNestedRoute && Number.isFinite(inheritedDepth) ? inheritedDepth + 1 : 1);
 	const parentPath = input.parentPath ?? [
 		...parseNestedPathEnv(process.env[SUBAGENT_PARENT_PATH_ENV]),
-		...(parentRunId ? [{
-			runId: parentRunId,
-			...(parentChildIndex && /^\d+$/.test(parentChildIndex) ? { stepIndex: Number(parentChildIndex) } : {}),
-			...(input.childAgentName ? { agent: input.childAgentName } : {}),
-		}] : []),
+		...(parentRunId
+			? [
+					{
+						runId: parentRunId,
+						...(parentChildIndex && /^\d+$/.test(parentChildIndex)
+							? { stepIndex: Number(parentChildIndex) }
+							: {}),
+						...(input.childAgentName ? { agent: input.childAgentName } : {}),
+					},
+				]
+			: []),
 	];
 	env[SUBAGENT_PARENT_EVENT_SINK_ENV] = toolPlan.fanoutAuthorized
-		? input.parentEventSink ?? process.env[SUBAGENT_PARENT_EVENT_SINK_ENV] ?? ""
+		? (input.parentEventSink ?? process.env[SUBAGENT_PARENT_EVENT_SINK_ENV] ?? "")
 		: "";
 	env[SUBAGENT_PARENT_CONTROL_INBOX_ENV] = toolPlan.fanoutAuthorized
-		? input.parentControlInbox ?? process.env[SUBAGENT_PARENT_CONTROL_INBOX_ENV] ?? ""
+		? (input.parentControlInbox ?? process.env[SUBAGENT_PARENT_CONTROL_INBOX_ENV] ?? "")
 		: "";
 	env[SUBAGENT_PARENT_ROOT_RUN_ID_ENV] = toolPlan.fanoutAuthorized
-		? input.parentRootRunId ?? process.env[SUBAGENT_PARENT_ROOT_RUN_ID_ENV] ?? input.runId ?? ""
+		? (input.parentRootRunId ?? process.env[SUBAGENT_PARENT_ROOT_RUN_ID_ENV] ?? input.runId ?? "")
 		: "";
 	env[SUBAGENT_PARENT_RUN_ID_ENV] = toolPlan.fanoutAuthorized ? parentRunId : "";
 	env[SUBAGENT_PARENT_CHILD_INDEX_ENV] = toolPlan.fanoutAuthorized ? parentChildIndex : "";
 	env[SUBAGENT_PARENT_DEPTH_ENV] = toolPlan.fanoutAuthorized ? String(parentDepth) : "";
 	env[SUBAGENT_PARENT_PATH_ENV] = toolPlan.fanoutAuthorized ? encodeNestedPathEnv(parentPath) : "";
 	env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV] = toolPlan.fanoutAuthorized
-		? input.parentCapabilityToken ?? process.env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV] ?? ""
+		? (input.parentCapabilityToken ?? process.env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV] ?? "")
 		: "";
 	env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT = input.inheritProjectContext ? "1" : "0";
 	env.PI_SUBAGENT_INHERIT_SKILLS = input.inheritSkills ? "1" : "0";
@@ -357,11 +445,27 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	if (input.childAgentName) {
 		env[SUBAGENT_CHILD_AGENT_ENV] = input.childAgentName;
 	}
+	const parentAgentPath = process.env[PI_STUFF_AGENT_PATH_ENV]?.trim();
+	if (input.runId) {
+		const childPathComponent = `${input.runId}:${input.childIndex ?? 0}`;
+		env[PI_STUFF_AGENT_PATH_ENV] = parentAgentPath
+			? `${parentAgentPath} › ${childPathComponent}`
+			: childPathComponent;
+	} else if (parentAgentPath) {
+		// Agent names can repeat, so retain the parent path instead of appending an ambiguous child identity.
+		env[PI_STUFF_AGENT_PATH_ENV] = parentAgentPath;
+	}
 	if (input.childIndex !== undefined) {
 		env[SUBAGENT_CHILD_INDEX_ENV] = String(input.childIndex);
 	}
-	if (!toolPlan.capabilityCeiling && input.mcpDirectTools?.length) env.MCP_DIRECT_TOOLS = input.mcpDirectTools.join(",");
-	else if (toolPlan.capabilityCeiling && toolPlan.effectiveMcpSelections.length && !toolPlan.capabilityCeiling.denyExtensions) env.MCP_DIRECT_TOOLS = toolPlan.effectiveMcpSelections.map((selection) => selection.selector).join(",");
+	if (!toolPlan.capabilityCeiling && input.mcpDirectTools?.length)
+		env.MCP_DIRECT_TOOLS = input.mcpDirectTools.join(",");
+	else if (
+		toolPlan.capabilityCeiling &&
+		toolPlan.effectiveMcpSelections.length &&
+		!toolPlan.capabilityCeiling.denyExtensions
+	)
+		env.MCP_DIRECT_TOOLS = toolPlan.effectiveMcpSelections.map((selection) => selection.selector).join(",");
 	else env.MCP_DIRECT_TOOLS = "__none__";
 	const encodedCapabilityCeiling = encodeSubagentCapabilityCeiling(toolPlan.capabilityCeiling);
 	if (encodedCapabilityCeiling) env[SUBAGENT_CAPABILITY_CEILING_ENV] = encodedCapabilityCeiling;
@@ -377,10 +481,8 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	const encodedToolBudget = encodeToolBudgetEnv(input.toolBudget);
 	if (encodedToolBudget) env[TOOL_BUDGET_ENV] = encodedToolBudget;
 	env[TOOL_BUDGET_ZERO_AUTH_ENV] = input.allowZeroToolBudget ? "1" : undefined;
-	const encodedChildWatchdog = encodeChildWatchdogConfig(input.childWatchdog);
-	if (encodedChildWatchdog) env[CHILD_WATCHDOG_CONFIG_ENV] = encodedChildWatchdog;
 
-	env[SUBAGENT_PARENT_SESSION_ENV] = input.parentSessionId ?? process.env[SUBAGENT_PARENT_SESSION_ENV] ?? "";
+	env[SUBAGENT_PARENT_SESSION_ENV] = process.env[SUBAGENT_PARENT_SESSION_ENV] ?? input.parentSessionId ?? "";
 
 	return { args, env, tempDir, toolDiagnosticPath, capabilityAudit: toolPlan.capabilityAudit };
 }

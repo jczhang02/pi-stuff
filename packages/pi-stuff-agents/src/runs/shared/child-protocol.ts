@@ -42,13 +42,23 @@ export function createBoundedLineReader(options: {
 		if (observedBytes > maxPendingLineBytes) {
 			const prior = pendingBytes > 0 ? Buffer.concat(pending, pendingBytes) : Buffer.alloc(0);
 			const prefixFromPrior = prior.subarray(0, MAX_PROTOCOL_DIAGNOSTIC_BYTES);
-			const prefix = prefixFromPrior.length === MAX_PROTOCOL_DIAGNOSTIC_BYTES
-				? prefixFromPrior
-				: Buffer.concat([prefixFromPrior, segment.subarray(0, MAX_PROTOCOL_DIAGNOSTIC_BYTES - prefixFromPrior.length)]);
+			const prefix =
+				prefixFromPrior.length === MAX_PROTOCOL_DIAGNOSTIC_BYTES
+					? prefixFromPrior
+					: Buffer.concat([
+							prefixFromPrior,
+							segment.subarray(0, MAX_PROTOCOL_DIAGNOSTIC_BYTES - prefixFromPrior.length),
+						]);
 			const tailFromSegment = segment.subarray(Math.max(0, segment.length - MAX_PROTOCOL_DIAGNOSTIC_BYTES));
-			const tail = tailFromSegment.length === MAX_PROTOCOL_DIAGNOSTIC_BYTES
-				? tailFromSegment
-				: Buffer.concat([prior.subarray(Math.max(0, prior.length - (MAX_PROTOCOL_DIAGNOSTIC_BYTES - tailFromSegment.length))), tailFromSegment]);
+			const tail =
+				tailFromSegment.length === MAX_PROTOCOL_DIAGNOSTIC_BYTES
+					? tailFromSegment
+					: Buffer.concat([
+							prior.subarray(
+								Math.max(0, prior.length - (MAX_PROTOCOL_DIAGNOSTIC_BYTES - tailFromSegment.length)),
+							),
+							tailFromSegment,
+						]);
 			limitExceeded = true;
 			pending = [];
 			pendingBytes = 0;
@@ -90,7 +100,11 @@ export function createBoundedLineReader(options: {
 function trimToUtf8Boundary(buffer: Buffer, maxBytes: number): Buffer {
 	if (buffer.length <= maxBytes) return buffer;
 	let start = buffer.length - maxBytes;
-	while (start < buffer.length && (buffer[start]! & 0xc0) === 0x80) start++;
+	while (start < buffer.length) {
+		const byte = buffer[start];
+		if (byte === undefined || (byte & 0xc0) !== 0x80) break;
+		start++;
+	}
 	return buffer.subarray(start);
 }
 
@@ -100,7 +114,7 @@ export function createBoundedByteTail(maxBytes = MAX_CHILD_STDERR_BYTES): {
 	byteLength(): number;
 } {
 	if (!Number.isInteger(maxBytes) || maxBytes < 1) throw new Error("maxBytes must be a positive integer.");
-	let tail = Buffer.alloc(0);
+	let tail: Buffer = Buffer.alloc(0);
 	return {
 		push(chunk) {
 			const bytes = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
@@ -113,7 +127,10 @@ export function createBoundedByteTail(maxBytes = MAX_CHILD_STDERR_BYTES): {
 
 export type ChildLifecycleAction = "start-drain" | "cancel-drain" | "none";
 
-export function projectChildLifecycle(event: { type?: string; willRetry?: unknown }, terminalAssistantStop = false): ChildLifecycleAction {
+export function projectChildLifecycle(
+	event: { type?: string; willRetry?: unknown },
+	terminalAssistantStop = false,
+): ChildLifecycleAction {
 	if (event.type === "agent_end" && event.willRetry === true) return "cancel-drain";
 	if (event.type === "agent_settled") return "start-drain";
 	if (terminalAssistantStop) return "start-drain";

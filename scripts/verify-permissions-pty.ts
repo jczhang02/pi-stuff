@@ -34,6 +34,7 @@ proc must_expect {pattern} {
 
 spawn -noecho script -qefc $env(PI_STUFF_PTY_RUNNER) /dev/null
 must_expect "fixture-model"
+must_expect "permissions-pty-trigger.ts"
 after 100
 send -- "DRAFT_RESTORED"
 send -- "\\033\\[23~"

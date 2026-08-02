@@ -1,10 +1,23 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
-import { RESULTS_DIR, type AsyncParallelGroupStatus, type AsyncStatus, type NestedRunSummary, type SubagentRunMode } from "../../shared/types.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
+import {
+	type AsyncParallelGroupStatus,
+	type AsyncStatus,
+	type NestedRunSummary,
+	RESULTS_DIR,
+	type SubagentRunMode,
+} from "../../shared/types.ts";
+import {
+	type NestedRoute,
+	nestedSummaryFromAsyncStatus,
+	projectNestedEvents,
+	resolveNestedAsyncDir,
+	writeNestedEvent,
+} from "../shared/nested-events.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
-import { nestedSummaryFromAsyncStatus, projectNestedEvents, resolveNestedAsyncDir, writeNestedEvent, type NestedRoute } from "../shared/nested-events.ts";
+import { terminateOrphanWriterProcesses } from "./writer-process-registry.ts";
 
 export type PidLiveness = "alive" | "dead" | "unknown";
 
@@ -16,7 +29,6 @@ interface StartedRunMetadata {
 	sessionId?: string;
 	mode?: SubagentRunMode;
 	agents?: string[];
-	chainStepCount?: number;
 	parallelGroups?: AsyncParallelGroupStatus[];
 	startedAt?: number;
 	sessionFile?: string;
@@ -68,10 +80,12 @@ function readRunnerStartupDiagnostics(asyncDir: string): string | undefined {
 }
 
 function isNotFoundError(error: unknown): boolean {
-	return typeof error === "object"
-		&& error !== null
-		&& "code" in error
-		&& (error as NodeJS.ErrnoException).code === "ENOENT";
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		(error as NodeJS.ErrnoException).code === "ENOENT"
+	);
 }
 
 function appendJsonlBestEffort(filePath: string, payload: object): void {
@@ -122,16 +136,33 @@ interface ResultRepairData {
 
 function readResultRepairData(resultPath: string): ResultRepairData | undefined {
 	try {
-		const data = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as { success?: boolean; state?: string; exitCode?: number; results?: unknown };
-		const state = data.success ? "complete" : data.state === "stopped" ? "stopped" : data.state === "paused" || data.exitCode === 0 ? "paused" : "failed";
+		const data = JSON.parse(fs.readFileSync(resultPath, "utf-8")) as {
+			success?: boolean;
+			state?: string;
+			exitCode?: number;
+			results?: unknown;
+		};
+		const state = data.success
+			? "complete"
+			: data.state === "stopped"
+				? "stopped"
+				: data.state === "paused" || data.exitCode === 0
+					? "paused"
+					: "failed";
 		const results = Array.isArray(data.results)
 			? data.results.map((entry, index) => {
-				if (!entry || typeof entry !== "object" || Array.isArray(entry)) return {};
-				const child = entry as ResultChildOutcome;
-				if (child.model !== undefined && typeof child.model !== "string") throw new Error(`Invalid async result file '${resultPath}': results[${index}].model must be a string.`);
-				if (child.thinking !== undefined && typeof child.thinking !== "string") throw new Error(`Invalid async result file '${resultPath}': results[${index}].thinking must be a string.`);
-				return child;
-			})
+					if (!entry || typeof entry !== "object" || Array.isArray(entry)) return {};
+					const child = entry as ResultChildOutcome;
+					if (child.model !== undefined && typeof child.model !== "string")
+						throw new Error(
+							`Invalid async result file '${resultPath}': results[${index}].model must be a string.`,
+						);
+					if (child.thinking !== undefined && typeof child.thinking !== "string")
+						throw new Error(
+							`Invalid async result file '${resultPath}': results[${index}].thinking must be a string.`,
+						);
+					return child;
+				})
 			: undefined;
 		return { state, ...(results ? { results } : {}) };
 	} catch (error) {
@@ -142,7 +173,10 @@ function readResultRepairData(resultPath: string): ResultRepairData | undefined 
 	}
 }
 
-function childState(overallState: ResultRepairData["state"], child: ResultChildOutcome | undefined): "complete" | "failed" | "paused" | "stopped" {
+function childState(
+	overallState: ResultRepairData["state"],
+	child: ResultChildOutcome | undefined,
+): "complete" | "failed" | "paused" | "stopped" {
 	if (child?.success === true) return "complete";
 	if (child?.success === false) return "failed";
 	return overallState;
@@ -159,11 +193,14 @@ function terminalStatusFromResult(status: AsyncStatus, resultPath: string, now: 
 		const thinking = resolveEffectiveThinking(model, child?.thinking ?? step.thinking);
 		return {
 			...step,
-			status: state === "complete" ? "complete" as const : state,
+			status: state === "complete" ? ("complete" as const) : state,
 			endedAt: step.endedAt ?? now,
-			durationMs: step.startedAt !== undefined && step.durationMs === undefined ? Math.max(0, now - step.startedAt) : step.durationMs,
+			durationMs:
+				step.startedAt !== undefined && step.durationMs === undefined
+					? Math.max(0, now - step.startedAt)
+					: step.durationMs,
 			exitCode: step.exitCode ?? (state === "complete" || state === "paused" ? 0 : 1),
-			error: state === "failed" || state === "stopped" ? step.error ?? child?.error : step.error,
+			error: state === "failed" || state === "stopped" ? (step.error ?? child?.error) : step.error,
 			stopped: state === "stopped" ? true : step.stopped,
 			sessionFile: step.sessionFile ?? child?.sessionFile,
 			model,
@@ -175,9 +212,18 @@ function terminalStatusFromResult(status: AsyncStatus, resultPath: string, now: 
 	return {
 		...status,
 		state: repair.state,
-		...(status.lifecycleArtifactVersion === 3 && (!status.processTerminal || status.processTerminal.state === "pending") ? {
-			processTerminal: { version: 1 as const, state: "unknown" as const, runId: status.runId, runnerProcessInstanceId: "observer-unavailable", reason: "observer-unavailable" as const },
-		} : {}),
+		...(status.lifecycleArtifactVersion === 3 &&
+		(!status.processTerminal || status.processTerminal.state === "pending")
+			? {
+					processTerminal: {
+						version: 1 as const,
+						state: "unknown" as const,
+						runId: status.runId,
+						runnerProcessInstanceId: "observer-unavailable",
+						reason: "observer-unavailable" as const,
+					},
+				}
+			: {}),
 		...(repair.state === "stopped" ? { stopped: true } : {}),
 		activityState: undefined,
 		lastUpdate: now,
@@ -189,20 +235,16 @@ function terminalStatusFromResult(status: AsyncStatus, resultPath: string, now: 
 function buildStartedStatus(asyncDir: string, startedRun: StartedRunMetadata, now: number): AsyncStatus {
 	const startedAt = startedRun.startedAt ?? now;
 	const agents = startedRun.agents?.length ? startedRun.agents : ["subagent"];
-	const chainStepCount = startedRun.chainStepCount;
-	const parallelGroups = chainStepCount !== undefined
-		? normalizeParallelGroups(startedRun.parallelGroups, agents.length, chainStepCount)
-		: [];
+	const parallelGroups = normalizeParallelGroups(startedRun.parallelGroups, agents.length);
 	return {
 		runId: startedRun.runId || path.basename(asyncDir),
 		...(startedRun.sessionId ? { sessionId: startedRun.sessionId } : {}),
-		mode: startedRun.mode ?? "single",
+		mode: startedRun.mode ?? (agents.length > 1 ? "parallel" : "single"),
 		state: "running",
 		pid: startedRun.pid,
 		startedAt,
 		lastUpdate: now,
 		currentStep: 0,
-		...(chainStepCount !== undefined ? { chainStepCount } : {}),
 		...(parallelGroups.length ? { parallelGroups } : {}),
 		steps: agents.map((agent) => ({
 			agent,
@@ -213,30 +255,51 @@ function buildStartedStatus(asyncDir: string, startedRun: StartedRunMetadata, no
 	};
 }
 
-function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, reason?: string): { status: AsyncStatus; result: object; message: string } {
+function buildFailedRepair(
+	status: AsyncStatus,
+	asyncDir: string,
+	now: number,
+	reason?: string,
+): { status: AsyncStatus; result: object; message: string } {
 	const runId = status.runId || path.basename(asyncDir);
 	const pid = typeof status.pid === "number" ? status.pid : "unknown";
-	const baseMessage = reason ?? `Async runner process ${pid} exited or disappeared before writing a result. Marked run failed by stale-run reconciliation.`;
+	const baseMessage =
+		reason ??
+		`Async runner process ${pid} exited or disappeared before writing a result. Marked run failed by stale-run reconciliation.`;
 	const diagnostics = readRunnerStartupDiagnostics(asyncDir);
 	const message = diagnostics ? `${baseMessage}\n\nRunner stderr tail:\n${diagnostics}` : baseMessage;
 	const steps = status.steps?.length ? status.steps : [{ agent: "subagent", status: "running" as const }];
-	const repairedSteps = steps.map((step) => step.status === "running" || step.status === "pending"
-		? {
-			...step,
-			status: "failed" as const,
-			activityState: undefined,
-			endedAt: step.endedAt ?? now,
-			durationMs: step.startedAt !== undefined && step.durationMs === undefined ? Math.max(0, now - step.startedAt) : step.durationMs,
-			exitCode: step.exitCode ?? 1,
-			error: step.error ?? message,
-		}
-		: step);
+	const repairedSteps = steps.map((step) =>
+		step.status === "running" || step.status === "pending"
+			? {
+					...step,
+					status: "failed" as const,
+					activityState: undefined,
+					endedAt: step.endedAt ?? now,
+					durationMs:
+						step.startedAt !== undefined && step.durationMs === undefined
+							? Math.max(0, now - step.startedAt)
+							: step.durationMs,
+					exitCode: step.exitCode ?? 1,
+					error: step.error ?? message,
+				}
+			: step,
+	);
 	const repairedStatus: AsyncStatus = {
 		...status,
 		state: "failed",
-		...(status.lifecycleArtifactVersion === 3 && (!status.processTerminal || status.processTerminal.state === "pending") ? {
-			processTerminal: { version: 1 as const, state: "unknown" as const, runId, runnerProcessInstanceId: "observer-unavailable", reason: "stale-repair" as const },
-		} : {}),
+		...(status.lifecycleArtifactVersion === 3 &&
+		(!status.processTerminal || status.processTerminal.state === "pending")
+			? {
+					processTerminal: {
+						version: 1 as const,
+						state: "unknown" as const,
+						runId,
+						runnerProcessInstanceId: "observer-unavailable",
+						reason: "stale-repair" as const,
+					},
+				}
+			: {}),
 		activityState: undefined,
 		lastUpdate: now,
 		endedAt: now,
@@ -256,7 +319,7 @@ function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, r
 			results: repairedSteps.map((step) => ({
 				agent: step.agent,
 				output: step.status === "complete" || step.status === "completed" ? "" : message,
-				error: step.status === "complete" || step.status === "completed" ? undefined : step.error ?? message,
+				error: step.status === "complete" || step.status === "completed" ? undefined : (step.error ?? message),
 				success: step.status === "complete" || step.status === "completed",
 				model: step.model,
 				attemptedModels: step.attemptedModels,
@@ -273,7 +336,13 @@ function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, r
 	};
 }
 
-function writeFailedRepair(asyncDir: string, status: AsyncStatus, resultPath: string, now: number, reason?: string): ReconcileAsyncRunResult {
+function writeFailedRepair(
+	asyncDir: string,
+	status: AsyncStatus,
+	resultPath: string,
+	now: number,
+	reason?: string,
+): ReconcileAsyncRunResult {
 	const repair = buildFailedRepair(status, asyncDir, now, reason);
 	writeAtomicJson(resultPath, repair.result);
 	writeAtomicJson(path.join(asyncDir, "status.json"), repair.status);
@@ -337,9 +406,10 @@ export function checkPidLiveness(pid: number, kill: KillFn = process.kill): PidL
 		kill(pid, 0);
 		return "alive";
 	} catch (error) {
-		const code = typeof error === "object" && error !== null && "code" in error
-			? (error as NodeJS.ErrnoException).code
-			: undefined;
+		const code =
+			typeof error === "object" && error !== null && "code" in error
+				? (error as NodeJS.ErrnoException).code
+				: undefined;
 		if (code === "ESRCH") return "dead";
 		if (code === "EPERM") return "unknown";
 		return "unknown";
@@ -349,25 +419,34 @@ export function checkPidLiveness(pid: number, kill: KillFn = process.kill): PidL
 export function reconcileAsyncRun(asyncDir: string, options: ReconcileAsyncRunOptions = {}): ReconcileAsyncRunResult {
 	const now = options.now?.() ?? Date.now();
 	const status = readStatusFile(asyncDir);
-	const startedStatus = !status && options.startedRun ? buildStartedStatus(asyncDir, options.startedRun, now) : undefined;
+	const startedStatus =
+		!status && options.startedRun ? buildStartedStatus(asyncDir, options.startedRun, now) : undefined;
 	const effectiveStatus = status ?? startedStatus;
 	if (!effectiveStatus) return { status: null, repaired: false };
 	const statusPath = path.join(asyncDir, "status.json");
 	for (const [index, step] of (effectiveStatus.steps ?? []).entries()) {
 		const stepRecord = step as Record<string, unknown>;
-		if (stepRecord.model !== undefined && typeof stepRecord.model !== "string") throw new Error(`Invalid async status file '${statusPath}': steps[${index}].model must be a string.`);
-		if (stepRecord.thinking !== undefined && typeof stepRecord.thinking !== "string") throw new Error(`Invalid async status file '${statusPath}': steps[${index}].thinking must be a string.`);
+		if (stepRecord.model !== undefined && typeof stepRecord.model !== "string")
+			throw new Error(`Invalid async status file '${statusPath}': steps[${index}].model must be a string.`);
+		if (stepRecord.thinking !== undefined && typeof stepRecord.thinking !== "string")
+			throw new Error(`Invalid async status file '${statusPath}': steps[${index}].thinking must be a string.`);
 	}
 
 	const runId = effectiveStatus.runId || path.basename(asyncDir);
 	const resultPath = path.join(options.resultsDir ?? RESULTS_DIR, `${runId}.json`);
 	if (fs.existsSync(resultPath)) {
-		const terminalStatus = effectiveStatus.state === "running" || effectiveStatus.state === "queued"
-			? terminalStatusFromResult(effectiveStatus, resultPath, now)
-			: undefined;
+		const terminalStatus =
+			effectiveStatus.state === "running" || effectiveStatus.state === "queued"
+				? terminalStatusFromResult(effectiveStatus, resultPath, now)
+				: undefined;
 		if (terminalStatus) {
 			writeAtomicJson(path.join(asyncDir, "status.json"), terminalStatus);
-			return { status: terminalStatus, repaired: true, resultPath, message: "Existing async result file was used to repair stale running status." };
+			return {
+				status: terminalStatus,
+				repaired: true,
+				resultPath,
+				message: "Existing async result file was used to repair stale running status.",
+			};
 		}
 		return { status: effectiveStatus, repaired: false, resultPath };
 	}
@@ -388,9 +467,27 @@ export function reconcileAsyncRun(asyncDir: string, options: ReconcileAsyncRunOp
 		const staleAfterMs = options.staleAlivePidMs ?? 24 * 60 * 60 * 1000;
 		const lastUpdate = effectiveStatus.lastUpdate ?? effectiveStatus.startedAt;
 		if (now - lastUpdate <= staleAfterMs) return { status: status ?? null, repaired: false, resultPath };
+		const writers = terminateOrphanWriterProcesses(asyncDir, options.kill);
+		if (writers.remaining > 0) {
+			return {
+				status: status ?? null,
+				repaired: false,
+				resultPath,
+				message: `Refusing to repair stale run '${runId}' while ${writers.remaining} writer process(es) cannot be proven terminated.`,
+			};
+		}
 		const message = `Async runner process ${effectiveStatus.pid} still has a live PID, but status has not updated for ${now - lastUpdate}ms. Marked run failed by stale-run reconciliation because PID ownership cannot be verified.`;
 		return writeFailedRepair(asyncDir, effectiveStatus, resultPath, now, message);
 	}
 
+	const writers = terminateOrphanWriterProcesses(asyncDir, options.kill);
+	if (writers.remaining > 0) {
+		return {
+			status: status ?? null,
+			repaired: false,
+			resultPath,
+			message: `Runner '${runId}' exited, but ${writers.remaining} writer process(es) remain live or unverifiable; the run stays active and counted.`,
+		};
+	}
 	return writeFailedRepair(asyncDir, effectiveStatus, resultPath, now);
 }

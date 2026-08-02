@@ -16,7 +16,10 @@ import {
 	writeReleaseVerification,
 } from "./release-artifacts.ts";
 import { runPiRpcSmoke } from "./smoke-pi.ts";
+import { verifyAgentsExecutionMatrix } from "./verify-agents-execution-matrix.ts";
+import { verifyAgentsPty } from "./verify-agents-pty.ts";
 import { verifyBtwPty } from "./verify-btw-pty.ts";
+import { verifyNestedPermissionsPty } from "./verify-nested-permissions-pty.ts";
 
 export const CERTIFIED_PI_VERSION = "0.83.0";
 const DEVELOPMENT_ARCHIVE_FILE = /(?:^|\/)(?:[^/]+\.(?:test|spec)\.[cm]?[jt]sx?|tsconfig(?:\.[^/]+)?\.json)$/;
@@ -25,7 +28,12 @@ const aggregateDirectory = join(root, "packages", "pi-stuff");
 const uiPackageName = "@jczhang02/pi-stuff-ui";
 const todoToolInspector = join(root, "test/fixtures/assert-todo-tools.ts");
 const forkLicenseSha256 = "25d0d5e4e54033f939a9657109044f1d71a0b6e8db9adc400456ca9190df3fb1";
+const agentsLicenseSha256 = "2d20dfacd9742706e564470dc77438608a1e54b0ed46959f080709389209093c";
 const permissionLicenseSha256 = "220a81ab89687aa207c1b9257a7f3636c8c78b5c1092b7563ad662950d21dd00";
+const agentsRuntimeVersions = {
+	jiti: "2.7.0",
+	typebox: "1.3.7",
+} as const;
 const permissionRuntimeVersions = {
 	"tree-sitter-bash": "0.25.1",
 	"web-tree-sitter": "0.26.11",
@@ -33,6 +41,12 @@ const permissionRuntimeVersions = {
 } as const;
 const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 	"@jczhang02/pi-stuff": ["@earendil-works/pi-coding-agent"],
+	"@jczhang02/pi-stuff-agents": [
+		"@earendil-works/pi-agent-core",
+		"@earendil-works/pi-ai",
+		"@earendil-works/pi-coding-agent",
+		"@earendil-works/pi-tui",
+	],
 	"@jczhang02/pi-stuff-btw": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-permissions": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-todo": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
@@ -162,6 +176,22 @@ function run(command: readonly string[], cwd: string, env: Record<string, string
 	return stdout;
 }
 
+async function resolvePackageDirectory(
+	resolver: { resolve(specifier: string): string },
+	packageName: string,
+): Promise<string> {
+	let directory = dirname(resolver.resolve(packageName));
+	while (true) {
+		const manifest = await readFile(join(directory, "package.json"), "utf8")
+			.then((contents) => JSON.parse(contents) as { name?: unknown })
+			.catch(() => undefined);
+		if (manifest?.name === packageName) return directory;
+		const parent = dirname(directory);
+		if (parent === directory) throw new Error(`Cannot resolve Package root for ${packageName}`);
+		directory = parent;
+	}
+}
+
 function verifyPiVersion(piBinary: string): void {
 	const version = run([piBinary, "--version"], root).trim();
 	if (version !== CERTIFIED_PI_VERSION) {
@@ -198,6 +228,8 @@ async function verifyStandaloneInstalls(
 	releaseManifest: ReleaseManifest,
 ): Promise<void> {
 	const packsDirectory = join(temporaryDirectory, "standalone-packs");
+	const agentsInstallDirectory = join(temporaryDirectory, "standalone-agents");
+	const agentsNpmCacheDirectory = join(temporaryDirectory, "npm-cache-agents");
 	const btwInstallDirectory = join(temporaryDirectory, "standalone-btw");
 	const btwNpmCacheDirectory = join(temporaryDirectory, "npm-cache-btw");
 	const permissionsInstallDirectory = join(temporaryDirectory, "standalone-permissions");
@@ -206,6 +238,8 @@ async function verifyStandaloneInstalls(
 	const todoNpmCacheDirectory = join(temporaryDirectory, "npm-cache-todo");
 	await Promise.all([
 		mkdir(packsDirectory),
+		mkdir(agentsInstallDirectory),
+		mkdir(agentsNpmCacheDirectory),
 		mkdir(btwInstallDirectory),
 		mkdir(btwNpmCacheDirectory),
 		mkdir(permissionsInstallDirectory),
@@ -220,6 +254,7 @@ async function verifyStandaloneInstalls(
 		return resolveReleaseArchive(releaseDirectory, artifact);
 	};
 	const uiArchive = releaseArchive(uiPackageName);
+	const agentsArchive = releaseArchive("@jczhang02/pi-stuff-agents");
 	const btwArchive = releaseArchive("@jczhang02/pi-stuff-btw");
 	const permissionsArchive = releaseArchive("@jczhang02/pi-stuff-permissions");
 	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
@@ -241,6 +276,24 @@ async function verifyStandaloneInstalls(
 							await packPackageArchive(
 								transitiveRuntimeDirectories[name] ?? join(root, "node_modules", name),
 								join(packsDirectory, name),
+								bunEnvironment,
+							)
+						).archivePath,
+					] as const,
+			),
+		),
+	) as Record<string, string>;
+	const agentsRequire = createRequire(join(root, "packages", "pi-stuff-agents", "package.json"));
+	const agentsRuntimeArchives = Object.fromEntries(
+		await Promise.all(
+			Object.keys(agentsRuntimeVersions).map(
+				async (name) =>
+					[
+						name,
+						(
+							await packPackageArchive(
+								await resolvePackageDirectory(agentsRequire, name),
+								join(packsDirectory, `agents-${name}`),
 								bunEnvironment,
 							)
 						).archivePath,
@@ -282,6 +335,19 @@ async function verifyStandaloneInstalls(
 		install(permissionsInstallDirectory, permissionsNpmCacheDirectory, archive);
 	}
 	install(permissionsInstallDirectory, permissionsNpmCacheDirectory, permissionsArchive);
+	install(agentsInstallDirectory, agentsNpmCacheDirectory, uiArchive);
+	for (const dependency of ["node-addon-api", "node-gyp-build", ...Object.keys(permissionRuntimeVersions)]) {
+		const archive = runtimeArchives[dependency];
+		if (!archive) throw new Error(`Standalone Agents dependency archive is missing ${dependency}`);
+		install(agentsInstallDirectory, agentsNpmCacheDirectory, archive);
+	}
+	install(agentsInstallDirectory, agentsNpmCacheDirectory, permissionsArchive);
+	for (const dependency of Object.keys(agentsRuntimeVersions)) {
+		const archive = agentsRuntimeArchives[dependency];
+		if (!archive) throw new Error(`Standalone Agents dependency archive is missing ${dependency}`);
+		install(agentsInstallDirectory, agentsNpmCacheDirectory, archive);
+	}
+	install(agentsInstallDirectory, agentsNpmCacheDirectory, agentsArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, uiArchive);
 	// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
 	const typeboxArchive = runtimeArchives["typebox"];
@@ -302,6 +368,7 @@ async function verifyStandaloneInstalls(
 		}
 	};
 	await verifyUiDependency(btwInstallDirectory, "pi-stuff-btw");
+	await verifyUiDependency(agentsInstallDirectory, "pi-stuff-agents");
 	await verifyUiDependency(permissionsInstallDirectory, "pi-stuff-permissions");
 	await verifyUiDependency(todoInstallDirectory, "pi-stuff-todo");
 
@@ -332,9 +399,39 @@ async function verifyStandaloneInstalls(
 		throw new Error("Standalone Todo must install the certified exact typebox runtime dependency");
 	}
 
+	const agentsInstalledRoot = join(agentsInstallDirectory, "node_modules");
+	const agentsManifest = JSON.parse(
+		await readFile(join(agentsInstalledRoot, "@jczhang02/pi-stuff-agents/package.json"), "utf8"),
+	) as { dependencies?: Record<string, unknown> };
+	const installedPermissionsManifest = JSON.parse(
+		await readFile(join(agentsInstalledRoot, "@jczhang02/pi-stuff-permissions/package.json"), "utf8"),
+	) as { version?: unknown };
+	if (
+		typeof installedPermissionsManifest.version !== "string" ||
+		agentsManifest.dependencies?.["@jczhang02/pi-stuff-permissions"] !== installedPermissionsManifest.version
+	) {
+		throw new Error("Standalone Agents must install Permissions as an exact runtime dependency");
+	}
+	for (const [name, expectedVersion] of Object.entries(agentsRuntimeVersions)) {
+		const dependencyManifest = JSON.parse(
+			await readFile(join(agentsInstalledRoot, name, "package.json"), "utf8"),
+		) as { version?: unknown };
+		if (dependencyManifest.version !== expectedVersion || agentsManifest.dependencies?.[name] !== expectedVersion) {
+			throw new Error(`Standalone Agents must install exact ${name} ${expectedVersion}`);
+		}
+	}
+
 	const installedBtw = join(btwInstallDirectory, "node_modules/@jczhang02/pi-stuff-btw");
 	const btwSmoke = await runPiRpcSmoke({ piBinary, packages: [installedBtw], cwd: btwInstallDirectory });
 	if (!btwSmoke.commandNames.includes("btw")) throw new Error("Standalone BTW Package did not register /btw");
+	const agentsSmoke = await runPiRpcSmoke({
+		piBinary,
+		packages: [join(agentsInstalledRoot, "@jczhang02/pi-stuff-agents")],
+		cwd: agentsInstallDirectory,
+	});
+	if (!agentsSmoke.commandNames.includes("agents")) {
+		throw new Error("Standalone Agents Package did not register /agents");
+	}
 	const permissionsSmoke = await runPiRpcSmoke({
 		piBinary,
 		packages: [join(permissionsInstalledRoot, "@jczhang02/pi-stuff-permissions")],
@@ -411,6 +508,12 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
 		}
 		if (
+			manifest.name === "@jczhang02/pi-stuff-agents" &&
+			(await sha256File(join(extractDirectory, licensePath))) !== agentsLicenseSha256
+		) {
+			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
+		}
+		if (
 			manifest.name === "@jczhang02/pi-stuff-permissions" &&
 			(await sha256File(join(extractDirectory, licensePath))) !== permissionLicenseSha256
 		) {
@@ -419,6 +522,19 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 	}
 
 	const provenance = [
+		{
+			capability: "pi-stuff-agents",
+			deltaHeading: "Major removed upstream areas include",
+			required: [
+				"pi-subagents",
+				"0.38.0",
+				"89de10e4bc8895e7948704c38620a5b35ddcd17e",
+				"d7c3ce31cf71c0b96d02f2d48c1a715c07868dd1",
+				"b44d87afc519f96c627fe56320c7c405e7b48cd22791c7526759b6c10a061b4f",
+				"sha512-8wGQiX6rkR5J4V+AnWtQg3+LmC+cHnZIM1f/VWTjCTkVmcoKdeLsTAYG6BS2yKAugyEUjNUGj3vE5d9nj9m61A==",
+				"2d20dfacd9742706e564470dc77438608a1e54b0ed46959f080709389209093c",
+			],
+		},
 		{
 			capability: "pi-stuff-btw",
 			deltaHeading: "## Pi Stuff changes",
@@ -527,6 +643,9 @@ export async function certifyReleaseArtifacts(
 		await verifySharedCoordinatorIdentity(extractDirectory, archiveFiles);
 		const extractedPackage = join(extractDirectory, "package");
 		await runPiRpcSmoke({ piBinary, packages: [extractedPackage] });
+		await verifyAgentsPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
+		await verifyAgentsExecutionMatrix({ piBinary, packagePath: extractedPackage });
+		await verifyNestedPermissionsPty({ piBinary, packagePath: extractedPackage });
 		await verifyBtwPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await writeReleaseVerification(releaseDirectory, CERTIFIED_PI_VERSION);
 		console.log(`Certified @jczhang02/pi-stuff with Pi ${CERTIFIED_PI_VERSION}`);

@@ -1,15 +1,5 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { buildCompletionKey, markSeenWithTtl } from "./completion-dedupe.ts";
-import { createFileCoalescer } from "../../shared/file-coalescer.ts";
-import {
-	SUBAGENT_ASYNC_COMPLETE_EVENT,
-	type IntercomEventBus,
-	type NestedRunSummary,
-	type ParallelHandoffReference,
-	type SubagentResultIntercomChild,
-	type SubagentState,
-} from "../../shared/types.ts";
 import {
 	attachNestedChildrenToResultChildren,
 	buildSubagentResultIntercomPayload,
@@ -17,15 +7,27 @@ import {
 	deliverSubagentResultIntercomEvent,
 	resolveSubagentResultStatus,
 } from "../../intercom/result-intercom.ts";
-import { projectNestedRegistryForRoot, sanitizeSummary } from "../shared/nested-events.ts";
+import { createFileCoalescer } from "../../shared/file-coalescer.ts";
+import {
+	type IntercomEventBus,
+	type NestedRunSummary,
+	SUBAGENT_ASYNC_COMPLETE_EVENT,
+	type SubagentResultIntercomChild,
+	type SubagentState,
+} from "../../shared/types.ts";
 import { resolveWatchPath } from "../../shared/utils.ts";
-import type { CompletionNotifier, CompletionNotification } from "./notify.ts";
+import { projectNestedRegistryForRoot, sanitizeSummary } from "../shared/nested-events.ts";
+import { buildCompletionKey, markSeenWithTtl } from "./completion-dedupe.ts";
+import type { CompletionNotification } from "./notify.ts";
 
 const WATCHER_RESTART_DELAY_MS = 3000;
 const POLL_INTERVAL_MS = 3000;
 const RETRY_DELAY_MS = 100;
 
-type ResultWatcherFs = Pick<typeof fs, "existsSync" | "readFileSync" | "unlinkSync" | "readdirSync" | "mkdirSync" | "realpathSync" | "watch">;
+type ResultWatcherFs = Pick<
+	typeof fs,
+	"existsSync" | "readFileSync" | "unlinkSync" | "readdirSync" | "mkdirSync" | "realpathSync" | "watch"
+>;
 
 type ResultWatcherTimers = {
 	setTimeout: typeof setTimeout;
@@ -37,7 +39,7 @@ type ResultWatcherTimers = {
 type ResultWatcherDeps = {
 	fs?: ResultWatcherFs;
 	timers?: ResultWatcherTimers;
-	notifier?: Pick<CompletionNotifier, "deliver">;
+	notifier?: { deliver(notification: CompletionNotification): Promise<boolean> };
 	/** External grouped-result transport. Disable when native completion notifications own delivery. */
 	deliverIntercomResults?: boolean;
 };
@@ -62,24 +64,105 @@ type ResultFileData = CompletionNotification & {
 	nestedChildren?: unknown;
 	asyncDir?: string;
 	intercomTarget?: string;
-	parallelHandoff?: ParallelHandoffReference;
 };
 
-function sanitizeNestedResultChildren(value: unknown, resultPath: string, label: string): NestedRunSummary[] | undefined {
+const COMPLETION_FIELDS = [
+	"source",
+	"agent",
+	"success",
+	"summary",
+	"exitCode",
+	"state",
+	"timestamp",
+	"durationMs",
+	"cwd",
+	"sessionFile",
+	"taskIndex",
+	"totalTasks",
+	"sessionId",
+	"stopped",
+	"timedOut",
+	"interrupted",
+	"startedAt",
+	"endedAt",
+	"asyncDir",
+	"worktree",
+	"launchContractDigest",
+	"capabilityCeiling",
+] as const;
+
+const RESULT_CHILD_FIELDS = [
+	"context",
+	"output",
+	"success",
+	"exitCode",
+	"error",
+	"interrupted",
+	"timedOut",
+	"stopped",
+	"turnBudget",
+	"turnBudgetExceeded",
+	"wrapUpRequested",
+	"toolBudget",
+	"toolBudgetBlocked",
+	"sessionFile",
+	"intercomTarget",
+	"model",
+	"thinking",
+	"attemptedModels",
+	"modelAttempts",
+	"totalCost",
+	"artifactPaths",
+	"transcriptPath",
+	"transcriptError",
+	"launchContractDigest",
+	"capabilityCeiling",
+	"capabilityAudit",
+	"writerProcesses",
+	"writerAttemptCount",
+] as const;
+
+function pickFields(source: object, fields: readonly string[]): Record<string, unknown> {
+	const record = source as Record<string, unknown>;
+	const picked: Record<string, unknown> = {};
+	for (const field of fields) {
+		if (record[field] !== undefined) picked[field] = record[field];
+	}
+	return picked;
+}
+
+function resultFileFromWatchEntry(fileName: string): string | undefined {
+	if (fileName.endsWith(".json")) return fileName;
+	return /^\.([^/\\]+\.json)\.\d+\.\d+\.[a-z0-9]+\.tmp$/i.exec(fileName)?.[1];
+}
+
+function sanitizeNestedResultChildren(
+	value: unknown,
+	resultPath: string,
+	label: string,
+): NestedRunSummary[] | undefined {
 	if (value === undefined) return undefined;
 	if (!Array.isArray(value)) {
-		console.error(`Ignoring invalid nested children in subagent result file '${resultPath}' at ${label}: expected an array.`);
+		console.error(
+			`Ignoring invalid nested children in subagent result file '${resultPath}' at ${label}: expected an array.`,
+		);
 		return undefined;
 	}
-	const children = value.map((child) => sanitizeSummary(child)).filter((child): child is NestedRunSummary => Boolean(child));
+	const children = value
+		.map((child) => sanitizeSummary(child))
+		.filter((child): child is NestedRunSummary => Boolean(child));
 	if (children.length !== value.length) {
-		console.error(`Ignoring ${value.length - children.length} invalid nested child record(s) in subagent result file '${resultPath}' at ${label}.`);
+		console.error(
+			`Ignoring ${value.length - children.length} invalid nested child record(s) in subagent result file '${resultPath}' at ${label}.`,
+		);
 	}
 	return children.length ? children : undefined;
 }
 
 function errorCode(error: unknown): string | undefined {
-	return typeof error === "object" && error !== null && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;
+	return typeof error === "object" && error !== null && "code" in error
+		? (error as NodeJS.ErrnoException).code
+		: undefined;
 }
 
 function isNotFound(error: unknown): boolean {
@@ -127,7 +210,7 @@ export function createResultWatcher(
 
 	const scheduleResult = (file: string, triggerTurn: boolean, delayMs = 0) => {
 		const pendingMode = pendingTriggerTurn.get(file);
-		pendingTriggerTurn.set(file, pendingMode === false || !triggerTurn ? false : true);
+		pendingTriggerTurn.set(file, !(pendingMode === false || !triggerTurn));
 		state.resultFileCoalescer.schedule(file, delayMs);
 	};
 
@@ -143,12 +226,17 @@ export function createResultWatcher(
 
 			const runId = data.runId ?? data.id ?? file.replace(/\.json$/i, "");
 			const hasExplicitNestedChildren = data.nestedChildren !== undefined;
-			let nestedChildren = compactNestedResultChildren(sanitizeNestedResultChildren(data.nestedChildren, resultPath, "nestedChildren"));
+			let nestedChildren = compactNestedResultChildren(
+				sanitizeNestedResultChildren(data.nestedChildren, resultPath, "nestedChildren"),
+			);
 			if (!nestedChildren?.length && !hasExplicitNestedChildren) {
 				try {
 					nestedChildren = compactNestedResultChildren(projectNestedRegistryForRoot(runId)?.children);
 				} catch (error) {
-					console.error(`Failed to enrich subagent result file '${resultPath}' with nested registry children; will retry later:`, error);
+					console.error(
+						`Failed to enrich subagent result file '${resultPath}' with nested registry children; will retry later:`,
+						error,
+					);
 					scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
 					return;
 				}
@@ -171,94 +259,55 @@ export function createResultWatcher(
 				return;
 			}
 
-			const hasResultChildren = Array.isArray(data.results) && data.results.length > 0;
-			const resultChildren: ResultFileChild[] = hasResultChildren
-				? data.results!
-				: [{ agent: data.agent ?? undefined, output: data.summary, success: data.success }];
-			const normalizedChildren = attachNestedChildrenToResultChildren(runId, resultChildren.map((result = {}, index): SubagentResultIntercomChild => {
-				const baseOutput = result.output ?? data.summary;
-				const hasRealOutput = typeof baseOutput === "string" && baseOutput.trim().length > 0;
-				const output = hasRealOutput ? baseOutput : "(no output)";
-				const summary = result.success === false && result.error
-					? `${result.error}${hasRealOutput ? `\n\nOutput:\n${baseOutput}` : ""}`
-					: output;
-				const sessionPath = result.sessionFile ?? (resultChildren.length === 1 ? data.sessionFile : undefined);
-				const childNestedChildren = sanitizeNestedResultChildren(result.children, resultPath, `results[${index}].children`);
-				const childState = result.state === "paused" || result.state === "stopped"
-					? result.state
-					: result.stopped === true
-						? "stopped"
-						: data.state === "paused" || (!hasResultChildren && (data.state === "stopped" || typeof result.success !== "boolean"))
-							? data.state
-							: undefined;
-				return {
-					agent: result.agent ?? data.agent ?? `step-${index + 1}`,
-					status: resolveSubagentResultStatus({ success: result.success, state: childState }),
-					summary,
-					index,
-					artifactPath: result.artifactPaths?.outputPath,
-					...(typeof sessionPath === "string" && fsApi.existsSync(sessionPath) ? { sessionPath } : {}),
-					...(result.intercomTarget ? { intercomTarget: result.intercomTarget } : {}),
-					...(childNestedChildren ? { children: childNestedChildren } : {}),
-				};
-			}), nestedChildren);
-
-			const intercomTarget = data.intercomTarget?.trim();
-			let intercomDelivered = false;
-			if (deliverIntercomResults && intercomTarget && triggerTurn) {
-				const mode = data.mode === "single" || data.mode === "parallel" || data.mode === "chain"
-					? data.mode
-					: resultChildren.length > 1 ? "chain" : "single";
-				intercomDelivered = await deliverSubagentResultIntercomEvent(pi.events, buildSubagentResultIntercomPayload({
-					to: intercomTarget,
-					runId,
-					mode,
-					source: "async",
-					children: normalizedChildren,
-					asyncId: data.id,
-					asyncDir: data.asyncDir,
-					...(data.parallelHandoff ? { parallelHandoff: data.parallelHandoff } : {}),
-				}));
-				if (!ownsSession(data.sessionId, epoch)) return;
-				if (!intercomDelivered) console.error(`Subagent async grouped result intercom delivery was not acknowledged for '${resultPath}'.`);
-			}
-
-			const accepted = await notifier.deliver({
-				...data,
-				id: data.id ?? runId,
+			const persistedResults = Array.isArray(data.results) && data.results.length > 0 ? data.results : undefined;
+			const hasResultChildren = persistedResults !== undefined;
+			const resultChildren: ResultFileChild[] = persistedResults ?? [
+				{ agent: data.agent ?? undefined, output: data.summary, success: data.success },
+			];
+			const normalizedChildren = attachNestedChildrenToResultChildren(
 				runId,
-				triggerTurn,
-				intercomDelivered,
-				...(nestedChildren?.length ? { nestedChildren } : {}),
-				...(Array.isArray(data.results) ? {
-					results: hasResultChildren ? normalizedChildren.map((child, index) => ({
-						...data.results![index],
-						agent: child.agent,
-						status: child.status,
-						summary: child.summary,
-						index: child.index,
-						artifactPath: child.artifactPath,
-						sessionPath: child.sessionPath,
-						children: child.children,
-					})) : [],
-				} : {}),
-			});
-			if (!ownsSession(data.sessionId, epoch)) return;
-			if (!accepted) {
-				scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
-				return;
-			}
-			markSeenWithTtl(state.completionSeen, completionKey, Date.now(), completionTtlMs);
-			try {
-				pi.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, {
-					...data,
-					runId,
-					triggerTurn,
-					intercomDelivered,
-					...(nestedChildren?.length ? { nestedChildren } : {}),
-					...(Array.isArray(data.results) ? {
-						results: hasResultChildren ? normalizedChildren.map((child, index) => ({
-							...data.results![index],
+				resultChildren.map((result = {}, index): SubagentResultIntercomChild => {
+					const baseOutput = result.output ?? data.summary;
+					const hasRealOutput = typeof baseOutput === "string" && baseOutput.trim().length > 0;
+					const output = hasRealOutput ? baseOutput : "(no output)";
+					const summary =
+						result.success === false && result.error
+							? `${result.error}${hasRealOutput ? `\n\nOutput:\n${baseOutput}` : ""}`
+							: output;
+					const sessionPath = result.sessionFile ?? (resultChildren.length === 1 ? data.sessionFile : undefined);
+					const childNestedChildren = sanitizeNestedResultChildren(
+						result.children,
+						resultPath,
+						`results[${index}].children`,
+					);
+					const childState =
+						result.state === "paused" || result.state === "stopped"
+							? result.state
+							: result.stopped === true
+								? "stopped"
+								: data.state === "paused" ||
+										(!hasResultChildren && (data.state === "stopped" || typeof result.success !== "boolean"))
+									? data.state
+									: undefined;
+					return {
+						agent: result.agent ?? data.agent ?? `step-${index + 1}`,
+						status: resolveSubagentResultStatus({ success: result.success, state: childState }),
+						summary,
+						index,
+						artifactPath: result.artifactPaths?.outputPath,
+						...(typeof sessionPath === "string" && fsApi.existsSync(sessionPath) ? { sessionPath } : {}),
+						...(result.intercomTarget ? { intercomTarget: result.intercomTarget } : {}),
+						...(childNestedChildren ? { children: childNestedChildren } : {}),
+					};
+				}),
+				nestedChildren,
+			);
+			const mode =
+				data.mode === "parallel" || (data.mode !== "single" && resultChildren.length > 1) ? "parallel" : "single";
+			const projectedResults = Array.isArray(data.results)
+				? hasResultChildren
+					? normalizedChildren.map((child, index) => ({
+							...pickFields(persistedResults?.[index] ?? {}, RESULT_CHILD_FIELDS),
 							agent: child.agent,
 							status: child.status,
 							summary: child.summary,
@@ -266,9 +315,51 @@ export function createResultWatcher(
 							artifactPath: child.artifactPath,
 							sessionPath: child.sessionPath,
 							children: child.children,
-						})) : [],
-					} : {}),
-				});
+						}))
+					: []
+				: undefined;
+			const completion: CompletionNotification = {
+				...pickFields(data, COMPLETION_FIELDS),
+				id: data.id ?? runId,
+				runId,
+				mode,
+				triggerTurn,
+				...(nestedChildren?.length ? { nestedChildren } : {}),
+				...(projectedResults ? { results: projectedResults } : {}),
+			};
+
+			const intercomTarget = data.intercomTarget?.trim();
+			let intercomDelivered = false;
+			if (deliverIntercomResults && intercomTarget && triggerTurn) {
+				intercomDelivered = await deliverSubagentResultIntercomEvent(
+					pi.events,
+					buildSubagentResultIntercomPayload({
+						to: intercomTarget,
+						runId,
+						mode,
+						source: "async",
+						children: normalizedChildren,
+						asyncId: data.id ?? undefined,
+						asyncDir: data.asyncDir,
+					}),
+				);
+				if (!ownsSession(data.sessionId, epoch)) return;
+				if (!intercomDelivered)
+					console.error(
+						`Subagent async grouped result intercom delivery was not acknowledged for '${resultPath}'.`,
+					);
+			}
+
+			completion.intercomDelivered = intercomDelivered;
+			const accepted = await notifier.deliver(completion);
+			if (!ownsSession(data.sessionId, epoch)) return;
+			if (!accepted) {
+				scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
+				return;
+			}
+			markSeenWithTtl(state.completionSeen, completionKey, Date.now(), completionTtlMs);
+			try {
+				pi.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completion);
 			} catch (error) {
 				console.error(`Completion observer failed for '${resultPath}':`, error);
 			}
@@ -297,9 +388,12 @@ export function createResultWatcher(
 	const primeExistingResults = (options: { triggerTurn?: boolean } = {}) => {
 		try {
 			const triggerTurn = options.triggerTurn !== false;
-			fsApi.readdirSync(resultsDir)
+			fsApi
+				.readdirSync(resultsDir)
 				.filter((f) => f.endsWith(".json"))
-				.forEach((file) => scheduleResult(file, triggerTurn));
+				.forEach((file) => {
+					scheduleResult(file, triggerTurn);
+				});
 		} catch (error) {
 			if (!isNotFound(error)) console.error(`Failed to scan subagent result directory '${resultsDir}':`, error);
 		}
@@ -309,7 +403,9 @@ export function createResultWatcher(
 		state.watcher?.close();
 		state.watcher = null;
 		if (state.watcherRestartTimer) return;
-		console.error(`Subagent result watcher for '${resultsDir}' fell back to polling because native fs.watch is unavailable (${errorCode(reason) ?? "unknown error"}).`);
+		console.error(
+			`Subagent result watcher for '${resultsDir}' fell back to polling because native fs.watch is unavailable (${errorCode(reason) ?? "unknown error"}).`,
+		);
 		primeExistingResults();
 		state.watcherRestartTimer = timers.setInterval(primeExistingResults, POLL_INTERVAL_MS);
 		state.watcherRestartTimer.unref?.();
@@ -346,7 +442,9 @@ export function createResultWatcher(
 			state.watcher = fsApi.watch(watchDir, (event, file) => {
 				if (event !== "rename" || !file) return;
 				const fileName = file.toString();
-				if (fileName.endsWith(".json")) scheduleResult(fileName, true);
+				const resultFile = resultFileFromWatchEntry(fileName);
+				if (!resultFile) return;
+				scheduleResult(resultFile, true, resultFile === fileName ? undefined : RETRY_DELAY_MS);
 			});
 			state.watcher.on("error", (error) => {
 				if (shouldPoll(error)) return startPolling(error);

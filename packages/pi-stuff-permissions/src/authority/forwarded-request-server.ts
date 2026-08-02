@@ -4,10 +4,12 @@ import type { PermissionPromptDecision } from "#src/authority/permission-dialog"
 import {
 	type ForwardedAccessFacts,
 	type ForwardedAccessIntent,
+	type ForwardedPermissionAcknowledgement,
 	type ForwardedPermissionRequest,
 	type ForwardedPermissionResponse,
 	isForwardedPermissionRequestForSession,
 	type PermissionForwardingLocation,
+	resolvePermissionForwardingRootSessionId,
 } from "#src/authority/permission-forwarding";
 import type { SubagentSessionRegistry } from "#src/authority/subagent-registry";
 import { SessionApproval } from "#src/session-approval";
@@ -69,7 +71,7 @@ export interface ForwardedRequestServerDeps {
 	 * human approves a forwarded request for the entire serving session.
 	 */
 	recorder: SessionApprovalRecorder;
-	/** In-process subagent registry, read only by the one-hop canary. */
+	/** In-process subagent registry, read only by the root-route canary. */
 	registry?: SubagentSessionRegistry;
 }
 
@@ -186,6 +188,9 @@ export class ForwardedRequestServer implements InboxProcessor {
 		if (!ensureDirectoryExists(this.logger, location.responsesDir, "permission forwarding responses")) {
 			return;
 		}
+		if (!ensureDirectoryExists(this.logger, location.acknowledgementsDir, "permission forwarding acknowledgements")) {
+			return;
+		}
 
 		const pending: Array<{
 			request: ForwardedPermissionRequest;
@@ -233,8 +238,23 @@ export class ForwardedRequestServer implements InboxProcessor {
 			safeDeleteFile(this.logger, requestPath, `${location.label} forwarded permission request`);
 			return;
 		}
+		const acknowledgementPath = join(location.acknowledgementsDir, `${request.id}.json`);
+		try {
+			writeJsonFileAtomic(this.logger, acknowledgementPath, {
+				requestId: request.id,
+				targetSessionId: currentSessionId,
+				acknowledgedAt: Date.now(),
+			} satisfies ForwardedPermissionAcknowledgement);
+		} catch (error) {
+			logPermissionForwardingError(
+				this.logger,
+				`Failed to acknowledge forwarded permission request '${request.id}'`,
+				error,
+			);
+			return;
+		}
 
-		this.warnOnMultiHop(request, currentSessionId);
+		this.warnOnMisroute(request, currentSessionId);
 
 		const forwardedPermissionLogDetails = {
 			requestId: request.id,
@@ -312,6 +332,8 @@ export class ForwardedRequestServer implements InboxProcessor {
 		});
 		try {
 			writeJsonFileAtomic(this.logger, responsePath, {
+				requestId: request.id,
+				targetSessionId: currentSessionId,
 				approved: decision.approved,
 				state: decision.state,
 				denialReason: decision.denialReason,
@@ -369,22 +391,20 @@ export class ForwardedRequestServer implements InboxProcessor {
 	}
 
 	/**
-	 * One-hop canary: forwarding is depth-1 (child → root). If the requester is
-	 * itself a registered subagent whose parent is not this serving session, the
-	 * request came through more than one hop (or was misrouted) — resolution is
-	 * still well-defined, so keep serving, but warn loudly so a future
-	 * recursion-guard break is visible rather than silent. Unregistered
-	 * (external file-based) requesters have no recorded parent and are silent.
+	 * Root-route canary: every depth forwards directly to the outermost registered
+	 * parent. Keep serving a misrouted request because its target already matched
+	 * this inbox, but make the broken ancestry visible. Unregistered external
+	 * requesters have no inspectable ancestry and remain silent.
 	 */
-	private warnOnMultiHop(request: ForwardedPermissionRequest, currentSessionId: string): void {
-		const requesterInfo = this.registry?.get(request.requesterSessionId);
-		if (requesterInfo?.parentSessionId && requesterInfo.parentSessionId !== currentSessionId) {
+	private warnOnMisroute(request: ForwardedPermissionRequest, currentSessionId: string): void {
+		if (!this.registry?.get(request.requesterSessionId)?.parentSessionId) return;
+		const rootSessionId = resolvePermissionForwardingRootSessionId(this.registry, request.requesterSessionId);
+		if (rootSessionId !== currentSessionId) {
 			logPermissionForwardingWarning(
 				this.logger,
-				`Forwarded permission request '${request.id}' violates the one-hop ` +
-					`invariant: requester '${request.requesterSessionId}' is a registered ` +
-					`subagent whose parent '${requesterInfo.parentSessionId}' is not this ` +
-					`serving session '${currentSessionId}' (multi-hop or misrouted).`,
+				`Forwarded permission request '${request.id}' is misrouted: requester ` +
+					`'${request.requesterSessionId}' resolves to root '${rootSessionId ?? "unknown"}', ` +
+					`not serving session '${currentSessionId}'.`,
 			);
 		}
 	}

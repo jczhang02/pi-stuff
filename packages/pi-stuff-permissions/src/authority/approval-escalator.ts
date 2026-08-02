@@ -7,6 +7,7 @@ import {
 	ensurePermissionForwardingLocation,
 	logPermissionForwardingError,
 	logPermissionForwardingWarning,
+	readForwardedPermissionAcknowledgement,
 	readForwardedPermissionResponse,
 	safeDeleteFile,
 	sleep,
@@ -18,8 +19,9 @@ import {
 	type ForwardedPermissionRequest,
 	type ForwardedPromptDisplay,
 	type ForwardedSessionApproval,
+	PERMISSION_FORWARDING_ACK_TIMEOUT_MS,
 	PERMISSION_FORWARDING_POLL_INTERVAL_MS,
-	PERMISSION_FORWARDING_TIMEOUT_MS,
+	PERMISSION_FORWARDING_RESPONSE_TIMEOUT_MS,
 	type PermissionForwardingLocation,
 	resolvePermissionForwardingTargetSessionId,
 	SUBAGENT_PARENT_SESSION_ENV_CANDIDATES,
@@ -81,6 +83,9 @@ export interface ParentAuthorizerDeps {
 	/** In-process subagent session registry for forwarding target resolution. */
 	registry?: SubagentSessionRegistry;
 	logger: DebugReviewLogger;
+	acknowledgementTimeoutMs?: number;
+	responseTimeoutMs?: number;
+	pollIntervalMs?: number;
 }
 
 /**
@@ -99,6 +104,9 @@ export class ParentAuthorizer implements TerminalAuthorizer {
 	private readonly forwardingDir: string;
 	private readonly registry: SubagentSessionRegistry | undefined;
 	private readonly logger: DebugReviewLogger;
+	private readonly acknowledgementTimeoutMs: number;
+	private readonly responseTimeoutMs: number;
+	private readonly pollIntervalMs: number;
 
 	constructor(
 		private readonly ctx: ForwarderContext,
@@ -107,21 +115,12 @@ export class ParentAuthorizer implements TerminalAuthorizer {
 		this.forwardingDir = deps.forwardingDir;
 		this.registry = deps.registry;
 		this.logger = deps.logger;
+		this.acknowledgementTimeoutMs = deps.acknowledgementTimeoutMs ?? PERMISSION_FORWARDING_ACK_TIMEOUT_MS;
+		this.responseTimeoutMs = deps.responseTimeoutMs ?? PERMISSION_FORWARDING_RESPONSE_TIMEOUT_MS;
+		this.pollIntervalMs = deps.pollIntervalMs ?? PERMISSION_FORWARDING_POLL_INTERVAL_MS;
 	}
 
 	authorize(details: PromptPermissionDetails): Promise<PermissionPromptDecision> {
-		const depth = Number.parseInt(process.env.PI_SUBAGENT_DEPTH ?? "1", 10);
-		const requesterSessionId = getSessionId(this.ctx);
-		const parentSessionId = this.registry?.get(requesterSessionId)?.parentSessionId;
-		const nestedByRegistry = parentSessionId ? this.registry?.has(parentSessionId) === true : false;
-		if ((Number.isFinite(depth) && depth > 1) || nestedByRegistry) {
-			return Promise.resolve({
-				approved: false,
-				state: "denied_with_reason",
-				denialReason:
-					"Nested-Agent approval is not yet root-routed. Rewrite the task so the direct parent performs this destructive call.",
-			});
-		}
 		const uiPrompt = buildUiPrompt(details);
 		return this.waitForForwardedApproval(this.ctx, {
 			message: details.message,
@@ -178,6 +177,7 @@ export class ParentAuthorizer implements TerminalAuthorizer {
 		const request = this.buildForwardedRequest(ctx, facts, requesterSessionId, targetSessionId);
 		const requestPath = join(location.requestsDir, `${request.id}.json`);
 		const responsePath = join(location.responsesDir, `${request.id}.json`);
+		const acknowledgementPath = join(location.acknowledgementsDir, `${request.id}.json`);
 
 		this.logger.review("forwarded_permission.request_created", {
 			requestId: request.id,
@@ -199,7 +199,7 @@ export class ParentAuthorizer implements TerminalAuthorizer {
 			return { approved: false, state: "denied" };
 		}
 
-		return this.pollForForwardedResponse(location, request, requestPath, responsePath);
+		return this.pollForForwardedResponse(location, request, requestPath, responsePath, acknowledgementPath);
 	}
 
 	private buildForwardedRequest(
@@ -211,7 +211,11 @@ export class ParentAuthorizer implements TerminalAuthorizer {
 		const createdAt = performance.timeOrigin + performance.now();
 		const requestId = `${Math.floor(createdAt * 1000)}-${Math.random().toString(36).slice(2, 10)}-${process.pid}`;
 		const requesterAgentName =
-			getActiveAgentName(ctx) ?? getActiveAgentNameFromSystemPrompt(getContextSystemPrompt(ctx)) ?? "unknown";
+			process.env.PI_STUFF_AGENT_PATH ??
+			getActiveAgentName(ctx) ??
+			getActiveAgentNameFromSystemPrompt(getContextSystemPrompt(ctx)) ??
+			process.env.PI_SUBAGENT_CHILD_AGENT ??
+			"unknown";
 		// Complete the child-fixed facts into a full ForwardedAccessIntent: the
 		// gate fixed the access facts; the edge stamps the requester identity it
 		// alone knows (cwd + principal). The parent resolves against this intent
@@ -252,13 +256,31 @@ export class ParentAuthorizer implements TerminalAuthorizer {
 		request: ForwardedPermissionRequest,
 		requestPath: string,
 		responsePath: string,
+		acknowledgementPath: string,
 	): Promise<PermissionPromptDecision> {
 		const { id: requestId, requesterAgentName, targetSessionId } = request;
-		const deadline = Date.now() + PERMISSION_FORWARDING_TIMEOUT_MS;
+		const acknowledgementDeadline = Date.now() + this.acknowledgementTimeoutMs;
+		let responseDeadline: number | undefined;
 
-		while (Date.now() < deadline) {
-			if (existsSync(responsePath)) {
+		while (Date.now() < (responseDeadline ?? acknowledgementDeadline)) {
+			if (responseDeadline === undefined && existsSync(acknowledgementPath)) {
+				const acknowledgement = readForwardedPermissionAcknowledgement(this.logger, acknowledgementPath);
+				if (acknowledgement?.requestId === requestId && acknowledgement.targetSessionId === targetSessionId) {
+					responseDeadline = Date.now() + this.responseTimeoutMs;
+					this.logger.review("forwarded_permission.request_acknowledged", {
+						requestId,
+						requesterAgentName,
+						targetSessionId,
+						acknowledgementPath,
+					});
+				}
+			}
+			if (responseDeadline !== undefined && existsSync(responsePath)) {
 				const response = readForwardedPermissionResponse(this.logger, responsePath);
+				const responseMatches =
+					response?.requestId === requestId &&
+					response.targetSessionId === targetSessionId &&
+					response.responderSessionId === targetSessionId;
 				this.logger.review("forwarded_permission.response_received", {
 					requestId,
 					approved: response?.approved ?? null,
@@ -267,28 +289,53 @@ export class ParentAuthorizer implements TerminalAuthorizer {
 					responderSessionId: response?.responderSessionId ?? null,
 					targetSessionId,
 					responsePath,
+					responseMatches,
 				});
 				safeDeleteFile(this.logger, responsePath, "forwarded permission response");
-				safeDeleteFile(this.logger, requestPath, "forwarded permission request");
-				cleanupPermissionForwardingLocationIfEmpty(this.logger, location);
-				return response ?? { approved: false, state: "denied" };
+				if (!responseMatches || !response) {
+					logPermissionForwardingWarning(
+						this.logger,
+						`Ignored forwarded permission response '${responsePath}' because it was not bound to request '${requestId}' and target '${targetSessionId}'.`,
+					);
+				} else {
+					safeDeleteFile(this.logger, acknowledgementPath, "forwarded permission acknowledgement");
+					safeDeleteFile(this.logger, requestPath, "forwarded permission request");
+					cleanupPermissionForwardingLocationIfEmpty(this.logger, location);
+					return response;
+				}
 			}
 
-			await sleep(PERMISSION_FORWARDING_POLL_INTERVAL_MS);
+			await sleep(this.pollIntervalMs);
 		}
 
+		const rootAcknowledged = responseDeadline !== undefined;
 		logPermissionForwardingWarning(
 			this.logger,
-			`Timed out waiting for forwarded permission response '${responsePath}'`,
+			rootAcknowledged
+				? `Timed out waiting for forwarded permission response '${responsePath}'`
+				: `Root permission broker did not acknowledge forwarded request '${requestPath}'`,
 		);
-		this.logger.review("forwarded_permission.response_timed_out", {
-			requestId,
-			requesterAgentName,
-			targetSessionId,
-			responsePath,
-		});
+		this.logger.review(
+			rootAcknowledged
+				? "forwarded_permission.response_timed_out"
+				: "forwarded_permission.acknowledgement_timed_out",
+			{
+				requestId,
+				requesterAgentName,
+				targetSessionId,
+				responsePath,
+			},
+		);
+		safeDeleteFile(this.logger, acknowledgementPath, "forwarded permission acknowledgement");
+		safeDeleteFile(this.logger, responsePath, "forwarded permission response");
 		safeDeleteFile(this.logger, requestPath, "forwarded permission request");
 		cleanupPermissionForwardingLocationIfEmpty(this.logger, location);
-		return { approved: false, state: "denied" };
+		return {
+			approved: false,
+			state: "denied_with_reason",
+			denialReason: rootAcknowledged
+				? "The root permission request expired before a decision."
+				: "The root permission broker was unavailable, so the destructive call was denied.",
+		};
 	}
 }

@@ -16,13 +16,17 @@ export function validateToolBudgetConfig(
 	options: { minimumHard?: 0 | 1 } = {},
 ): { budget?: ResolvedToolBudget; error?: string } {
 	if (raw === undefined) return {};
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { error: `${label} must be an object with hard and optional soft/block.` };
+	if (!raw || typeof raw !== "object" || Array.isArray(raw))
+		return { error: `${label} must be an object with hard and optional soft/block.` };
 	const value = raw as ToolBudgetConfig;
 	const minimumHard = options.minimumHard ?? 1;
 	if (typeof value.hard !== "number" || !Number.isInteger(value.hard) || value.hard < minimumHard) {
 		return { error: `${label}.hard must be an integer >= ${minimumHard}.` };
 	}
-	if (value.soft !== undefined && (typeof value.soft !== "number" || !Number.isInteger(value.soft) || value.soft < 1)) {
+	if (
+		value.soft !== undefined &&
+		(typeof value.soft !== "number" || !Number.isInteger(value.soft) || value.soft < 1)
+	) {
 		return { error: `${label}.soft must be an integer >= 1 when provided.` };
 	}
 	if (value.soft !== undefined && value.soft > value.hard) {
@@ -32,10 +36,17 @@ export function validateToolBudgetConfig(
 		if (!Array.isArray(value.block)) return { error: `${label}.block must be "*" or an array of tool names.` };
 		if (value.block.length === 0) return { error: `${label}.block must contain at least one tool name.` };
 		for (const item of value.block) {
-			if (typeof item !== "string" || !item.trim()) return { error: `${label}.block must contain non-empty tool names.` };
+			if (typeof item !== "string" || !item.trim())
+				return { error: `${label}.block must contain non-empty tool names.` };
 		}
 	}
-	return { budget: { hard: value.hard, ...(value.soft !== undefined ? { soft: value.soft } : {}), block: normalizeToolBudgetBlock(value.block) } };
+	return {
+		budget: {
+			hard: value.hard,
+			...(value.soft !== undefined ? { soft: value.soft } : {}),
+			block: normalizeToolBudgetBlock(value.block),
+		},
+	};
 }
 
 export function initialToolBudgetState(budget: ResolvedToolBudget): ToolBudgetState {
@@ -71,10 +82,17 @@ export function encodeToolBudgetEnv(budget: ResolvedToolBudget | undefined): str
 	return budget ? JSON.stringify(budget) : undefined;
 }
 
-export function decodeToolBudgetEnv(value: string | undefined, options: { allowZero?: boolean } = {}): ResolvedToolBudget | undefined {
+export function decodeToolBudgetEnv(
+	value: string | undefined,
+	options: { allowZero?: boolean } = {},
+): ResolvedToolBudget | undefined {
 	if (!value?.trim()) return undefined;
 	const parsed = JSON.parse(value) as unknown;
-	const normalized = validateToolBudgetConfig(parsed, TOOL_BUDGET_ENV, options.allowZero ? { minimumHard: 0 } : undefined);
+	const normalized = validateToolBudgetConfig(
+		parsed,
+		TOOL_BUDGET_ENV,
+		options.allowZero ? { minimumHard: 0 } : undefined,
+	);
 	if (normalized.error) throw new Error(normalized.error);
 	return normalized.budget;
 }

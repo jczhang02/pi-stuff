@@ -7,7 +7,17 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import { formatToolCall } from "./formatters.ts";
-import type { AgentProgress, AsyncStatus, Details, DisplayItem, ErrorInfo, NestedRunSummary, SingleResult, ToolCallSummary, Usage } from "./types.ts";
+import type {
+	AgentProgress,
+	AsyncStatus,
+	Details,
+	DisplayItem,
+	ErrorInfo,
+	NestedRunSummary,
+	SingleResult,
+	ToolCallSummary,
+	Usage,
+} from "./types.ts";
 
 // ============================================================================
 // File System Utilities
@@ -47,7 +57,10 @@ function readConfigDirNameFromPackageRoot(packageRoot: string | undefined): stri
 	}
 }
 
-function resolveConfigDirNameFromPackageJson(entryPoint = process.argv[1], packageRoot = process.env[PI_CODING_AGENT_PACKAGE_ROOT_ENV]): string | undefined {
+function resolveConfigDirNameFromPackageJson(
+	entryPoint = process.argv[1],
+	packageRoot = process.env[PI_CODING_AGENT_PACKAGE_ROOT_ENV],
+): string | undefined {
 	const packageRootValue = readConfigDirNameFromPackageRoot(packageRoot);
 	if (packageRootValue) return packageRootValue;
 	if (!entryPoint) return undefined;
@@ -65,12 +78,11 @@ function resolveConfigDirNameFromPackageJson(entryPoint = process.argv[1], packa
 }
 
 export function resolveConfigDirName(codingAgentModule?: unknown, entryPoint?: string, packageRoot?: string): string {
-	const moduleValue = codingAgentModule && typeof codingAgentModule === "object"
-		? validConfigDirName((codingAgentModule as { CONFIG_DIR_NAME?: unknown }).CONFIG_DIR_NAME)
-		: undefined;
-	return moduleValue
-		?? resolveConfigDirNameFromPackageJson(entryPoint, packageRoot)
-		?? DEFAULT_CONFIG_DIR_NAME;
+	const moduleValue =
+		codingAgentModule && typeof codingAgentModule === "object"
+			? validConfigDirName((codingAgentModule as { CONFIG_DIR_NAME?: unknown }).CONFIG_DIR_NAME)
+			: undefined;
+	return moduleValue ?? resolveConfigDirNameFromPackageJson(entryPoint, packageRoot) ?? DEFAULT_CONFIG_DIR_NAME;
 }
 
 export function getConfigDirName(): string {
@@ -100,10 +112,12 @@ export function resolveChildCwd(baseCwd: string, childCwd: string | undefined): 
 }
 
 function isNotFoundError(error: unknown): boolean {
-	return typeof error === "object"
-		&& error !== null
-		&& "code" in error
-		&& (error as NodeJS.ErrnoException).code === "ENOENT";
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		(error as NodeJS.ErrnoException).code === "ENOENT"
+	);
 }
 
 /**
@@ -124,11 +138,11 @@ export function readStatus(asyncDir: string): AsyncStatus | null {
 
 	const cached = statusCache.get(statusPath);
 	if (
-		cached
-		&& cached.mtime === stat.mtimeMs
-		&& cached.ctime === stat.ctimeMs
-		&& cached.size === stat.size
-		&& cached.ino === stat.ino
+		cached &&
+		cached.mtime === stat.mtimeMs &&
+		cached.ctime === stat.ctimeMs &&
+		cached.size === stat.size &&
+		cached.ino === stat.ino
 	) {
 		return cached.status;
 	}
@@ -166,57 +180,10 @@ export function readStatus(asyncDir: string): AsyncStatus | null {
 	return status;
 }
 
-const outputTailCache = new Map<string, { mtime: number; size: number; lines: string[] }>();
-
-/**
- * Get the last N lines from an output file (with mtime/size-based caching)
- */
-function getOutputTail(outputFile: string | undefined, maxLines: number = 3): string[] {
-	if (!outputFile) return [];
-	let fd: number | null = null;
-	try {
-		const stat = fs.statSync(outputFile);
-		if (stat.size === 0) return [];
-
-		const cached = outputTailCache.get(outputFile);
-		if (cached && cached.mtime === stat.mtimeMs && cached.size === stat.size) {
-			return cached.lines;
-		}
-
-		const tailBytes = 4096;
-		const start = Math.max(0, stat.size - tailBytes);
-		fd = fs.openSync(outputFile, "r");
-		const buffer = Buffer.alloc(Math.min(tailBytes, stat.size));
-		fs.readSync(fd, buffer, 0, buffer.length, start);
-		const content = buffer.toString("utf-8");
-		const allLines = content.split("\n").filter((l) => l.trim());
-		const lines = allLines.slice(-maxLines).map((l) => l.slice(0, 120) + (l.length > 120 ? "..." : ""));
-
-		outputTailCache.set(outputFile, { mtime: stat.mtimeMs, size: stat.size, lines });
-		if (outputTailCache.size > 20) {
-			const firstKey = outputTailCache.keys().next().value;
-			if (firstKey) outputTailCache.delete(firstKey);
-		}
-
-		return lines;
-	} catch {
-		// Output tails are UI-only hints; unreadable or missing files should render as no tail.
-		return [];
-	} finally {
-		if (fd !== null) {
-			try {
-				fs.closeSync(fd);
-			} catch {
-				// Closing the best-effort tail file handle should not surface over the main status view.
-			}
-		}
-	}
-}
-
 /**
  * Get human-readable last activity time for a file
  */
-	export function getLastActivity(outputFile: string | undefined): string {
+export function getLastActivity(outputFile: string | undefined): string {
 	if (!outputFile) return "";
 	try {
 		const stat = fs.statSync(outputFile);
@@ -235,7 +202,8 @@ function getOutputTail(outputFile: string | undefined, maxLines: number = 3): st
  */
 export function findLatestSessionFile(sessionDir: string): string | null {
 	if (!fs.existsSync(sessionDir)) return null;
-	const files = fs.readdirSync(sessionDir)
+	const files = fs
+		.readdirSync(sessionDir)
 		.filter((f) => f.endsWith(".jsonl"))
 		.map((f) => {
 			const filePath = path.join(sessionDir, f);
@@ -246,16 +214,6 @@ export function findLatestSessionFile(sessionDir: string): string | null {
 		})
 		.sort((a, b) => b.mtime - a.mtime);
 	return files.length > 0 ? files[0].path : null;
-}
-
-/**
- * Write a prompt to a temporary file
- */
-function writePrompt(agent: string, prompt: string): { dir: string; path: string } {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
-	const p = path.join(dir, `${agent.replace(/[^\w.-]/g, "_")}.md`);
-	fs.writeFileSync(p, prompt, { mode: 0o600 });
-	return { dir, path: p };
 }
 
 // ============================================================================
@@ -270,12 +228,13 @@ export function getFinalOutput(messages: Message[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
 		if (msg.role !== "assistant") continue;
-		const hasAssistantError = ("errorMessage" in msg && typeof msg.errorMessage === "string" && msg.errorMessage.length > 0)
-			|| ("stopReason" in msg && msg.stopReason === "error");
+		const hasAssistantError =
+			("errorMessage" in msg && typeof msg.errorMessage === "string" && msg.errorMessage.length > 0) ||
+			("stopReason" in msg && msg.stopReason === "error");
 		if (hasAssistantError) continue;
 		const messageText = msg.content
 			.filter((part) => part.type === "text" && part.text.trim().length > 0)
-			.map((part) => part.type === "text" ? part.text : "")
+			.map((part) => (part.type === "text" ? part.text : ""))
 			.join("\n");
 		for (let j = msg.content.length - 1; j >= 0; j--) {
 			const part = msg.content[j];
@@ -284,7 +243,12 @@ export function getFinalOutput(messages: Message[]): string {
 			if (/```acceptance[-_]report\s*\n[\s\S]*?```/i.test(part.text)) return messageText;
 			for (const match of part.text.matchAll(/```(?:json|jsonc|json5)\s*\n([\s\S]*?)```/gi)) {
 				const body = match[1] ?? "";
-				if (/"(?:criteriaSatisfied|criteria_satisfied)"/.test(body) && /"(?:changedFiles|changed_files|testsAddedOrUpdated|tests_added_or_updated|commandsRun|commands_run|validationOutput|validation_output|residualRisks|residual_risks|noStagedFiles|no_staged_files|diffSummary|diff_summary|reviewFindings|review_findings|manualNotes|manual_notes)"/.test(body)) {
+				if (
+					/"(?:criteriaSatisfied|criteria_satisfied)"/.test(body) &&
+					/"(?:changedFiles|changed_files|testsAddedOrUpdated|tests_added_or_updated|commandsRun|commands_run|validationOutput|validation_output|residualRisks|residual_risks|noStagedFiles|no_staged_files|diffSummary|diff_summary|reviewFindings|review_findings|manualNotes|manual_notes)"/.test(
+						body,
+					)
+				) {
 					return messageText;
 				}
 			}
@@ -341,9 +305,10 @@ function extractToolCallSummaries(messages: Message[] | undefined): ToolCallSumm
 		if (msg.role !== "assistant") continue;
 		for (const part of msg.content) {
 			if (part.type !== "toolCall") continue;
-			const args = typeof part.arguments === "object" && part.arguments !== null && !Array.isArray(part.arguments)
-				? part.arguments
-				: {};
+			const args =
+				typeof part.arguments === "object" && part.arguments !== null && !Array.isArray(part.arguments)
+					? part.arguments
+					: {};
 			summaries.push({
 				text: formatToolCall(part.name, args),
 				expandedText: formatToolCall(part.name, args, true),
@@ -406,9 +371,7 @@ export function compactForegroundDetails(details: Details): Details {
 	return {
 		...details,
 		results: details.results.map(compactForegroundResult),
-		progress: details.progress
-			? details.progress.map(compactCompletedProgress)
-			: undefined,
+		progress: details.progress ? details.progress.map(compactCompletedProgress) : undefined,
 	};
 }
 
@@ -449,7 +412,9 @@ export function boundStreamedRecentOutput(recentOutput: string[]): string[] {
  * unbounded `messages` transcript. Prefers an existing `toolCalls` summary, else
  * derives one from `messages`; bounded to the most recent calls.
  */
-export function boundStreamedToolCalls(result: Pick<SingleResult, "toolCalls" | "messages">): ToolCallSummary[] | undefined {
+export function boundStreamedToolCalls(
+	result: Pick<SingleResult, "toolCalls" | "messages">,
+): ToolCallSummary[] | undefined {
 	const summaries = result.toolCalls?.length ? result.toolCalls : extractToolCallSummaries(result.messages);
 	if (!summaries.length) return undefined;
 	return summaries.slice(-MAX_STREAMED_TOOL_CALLS).map((summary) => ({ ...summary }));
@@ -457,10 +422,12 @@ export function boundStreamedToolCalls(result: Pick<SingleResult, "toolCalls" | 
 
 export function hasEmptyTerminalAssistantResponse(messages: Message[]): boolean {
 	const lastAssistant = messages.findLast((message) => message.role === "assistant");
-	return lastAssistant?.role === "assistant"
-		&& Array.isArray(lastAssistant.content)
-		&& lastAssistant.content.length === 0
-		&& lastAssistant.usage.output === 0;
+	return (
+		lastAssistant?.role === "assistant" &&
+		Array.isArray(lastAssistant.content) &&
+		lastAssistant.content.length === 0 &&
+		lastAssistant.usage.output === 0
+	);
 }
 
 /**
@@ -471,9 +438,11 @@ export function detectSubagentError(messages: Message[]): ErrorInfo {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
 		if (msg.role === "assistant") {
-			const hasText = Array.isArray(msg.content) && msg.content.some(
-				(c) => c.type === "text" && "text" in c && typeof c.text === "string" && c.text.trim().length > 0,
-			);
+			const hasText =
+				Array.isArray(msg.content) &&
+				msg.content.some(
+					(c) => c.type === "text" && "text" in c && typeof c.text === "string" && c.text.trim().length > 0,
+				);
 			if (hasText) {
 				lastAssistantTextIndex = i;
 				break;
@@ -536,13 +505,12 @@ export function extractToolArgsPreview(args: Record<string, unknown>): string {
 	const queriesPreview = previewArray(args.queries);
 	if (queriesPreview) return truncatePreview(queriesPreview, 60);
 	if (typeof args.query === "string" && args.query.trim().length > 0) return truncatePreview(args.query, 60);
-	if (typeof args.workflow === "string" && args.workflow.trim().length > 0) return `workflow=${truncatePreview(args.workflow, 48)}`;
 
 	if (typeof args.url === "string" && args.url.trim().length > 0) return truncatePreview(args.url, 60);
 	const urlsPreview = previewArray(args.urls);
 	if (urlsPreview) return truncatePreview(urlsPreview, 60);
 	if (typeof args.prompt === "string" && args.prompt.trim().length > 0) return truncatePreview(args.prompt, 60);
-	
+
 	const previewKeys = ["command", "path", "file_path", "pattern", "query", "url", "task", "describe", "search"];
 	for (const key of previewKeys) {
 		if (args[key] && typeof args[key] === "string") {
@@ -550,7 +518,7 @@ export function extractToolArgsPreview(args: Record<string, unknown>): string {
 			return truncatePreview(value, 60);
 		}
 	}
-	
+
 	// Fallback: show first string value found
 	for (const [key, value] of Object.entries(args)) {
 		const arrayPreview = previewArray(value);

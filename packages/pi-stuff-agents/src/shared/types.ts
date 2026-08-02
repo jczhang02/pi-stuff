@@ -2,14 +2,14 @@
  * Type definitions for the subagent extension
  */
 
+import type { FSWatcher } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
-import type { AgentConfig } from "../agents/agents.ts";
-import type { FSWatcher } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
+import type { AgentConfig } from "../agents/agents.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../runs/shared/capability-ceiling.ts";
+import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
 
 // ============================================================================
 // Basic Types
@@ -25,49 +25,6 @@ export type OutputMode = "inline" | "file-only";
 export type AcceptanceRole = "read-only" | "writer";
 
 export type JsonSchemaObject = Record<string, unknown>;
-
-export interface ChainOutputMapEntry {
-	text: string;
-	structured?: unknown;
-	agent: string;
-	stepIndex: number;
-}
-
-export type ChainOutputMap = Record<string, ChainOutputMapEntry>;
-
-export type WorkflowNodeStatus = "pending" | "running" | "completed" | "failed" | "paused" | "stopped" | "detached";
-
-export interface WorkflowGraphNode {
-	id: string;
-	kind: "step" | "parallel-group" | "dynamic-parallel-group" | "agent";
-	agent?: string;
-	phase?: string;
-	label: string;
-	status: WorkflowNodeStatus;
-	flatIndex?: number;
-	stepIndex?: number;
-	children?: WorkflowGraphNode[];
-	dynamic?: {
-		sourceOutput: string;
-		sourcePath: string;
-		itemName: string;
-		maxItems?: number;
-		collectAs?: string;
-	};
-	itemKey?: string;
-	outputName?: string;
-	structured?: boolean;
-	acceptanceStatus?: AcceptanceLedgerStatus;
-	error?: string;
-}
-
-export interface WorkflowGraphSnapshot {
-	runId: string;
-	mode: "chain" | "parallel" | "single";
-	phases: Array<{ title: string; nodeIds: string[] }>;
-	nodes: WorkflowGraphNode[];
-	currentNodeId?: string;
-}
 
 export interface SavedOutputReference {
 	path: string;
@@ -167,31 +124,6 @@ export interface ResolvedControlConfig {
 	notifyChannels: ControlNotificationChannel[];
 }
 
-/**
- * Smart completion batching for async-completion notifications. Successful
- * sibling completions are held briefly so they arrive as one grouped message;
- * failure and attention signals bypass grouping and always fire immediately.
- */
-export interface CompletionBatchConfig {
-	enabled?: boolean;
-	/** Idle window after each arrival; resets on every new item. */
-	debounceMs?: number;
-	/** Hard cap measured from the first item in a group. */
-	maxWaitMs?: number;
-	/** Shorter idle window for straggler groups. */
-	stragglerDebounceMs?: number;
-	/** Shorter hard cap for straggler groups. */
-	stragglerMaxWaitMs?: number;
-	/** Arrivals within this window after an emit join a straggler group. */
-	stragglerWindowMs?: number;
-}
-
-export interface WaitToolConfigObject {
-	enabled?: boolean;
-}
-
-export type WaitToolConfig = boolean | WaitToolConfigObject;
-
 export interface ControlEvent {
 	type: ControlEventType;
 	from?: ActivityState;
@@ -203,7 +135,15 @@ export interface ControlEvent {
 	nestedRunId?: string;
 	nestingPath?: NestedRunAddress["path"];
 	message: string;
-	reason?: "idle" | "completion_guard" | "active_long_running" | "tool_failures" | "supervisor_request" | "time_threshold" | "turn_threshold" | "token_threshold";
+	reason?:
+		| "idle"
+		| "completion_guard"
+		| "active_long_running"
+		| "tool_failures"
+		| "supervisor_request"
+		| "time_threshold"
+		| "turn_threshold"
+		| "token_threshold";
 	turns?: number;
 	tokens?: number;
 	toolCount?: number;
@@ -215,79 +155,11 @@ export interface ControlEvent {
 }
 
 export type SubagentResultStatus = "completed" | "failed" | "paused" | "stopped" | "detached";
-export type SubagentRunMode = "single" | "parallel" | "chain";
-
-export interface ParallelHandoffPatch {
-	path: string;
-	branch: string;
-	changed: boolean;
-	diffStat: string;
-	filesChanged: number;
-	insertions: number;
-	deletions: number;
-	error?: string;
-}
-
-export interface ParallelHandoffChild {
-	index: number;
-	taskIndex: number;
-	agent: string;
-	status: SubagentResultStatus;
-	summary: string;
-	outputPath?: string;
-	structuredOutput?: unknown;
-	structuredOutputPath?: string;
-	sessionPath?: string;
-	patch: ParallelHandoffPatch;
-}
-
-export interface ParallelHandoffCleanupTask {
-	index: number;
-	path: string;
-	branch: string;
-	worktreeRemoved: boolean;
-	branchRemoved: boolean;
-	errors?: string[];
-}
-
-export interface ParallelHandoffGroup {
-	stepIndex: number;
-	baseCommit: string;
-	repoRoot: string;
-	children: ParallelHandoffChild[];
-	cleanup: {
-		state: "complete" | "partial";
-		tasks: ParallelHandoffCleanupTask[];
-		pruned: boolean;
-		errors?: string[];
-	};
-}
-
-export interface ParallelHandoffManifest {
-	version: 1;
-	runId: string;
-	mode: "parallel" | "chain";
-	source: "foreground" | "async";
-	cwd: string;
-	createdAt: number;
-	updatedAt: number;
-	groups: ParallelHandoffGroup[];
-}
-
-export interface ParallelHandoffReference {
-	version: 1;
-	path: string;
-	groupCount: number;
-	childCount: number;
-	changedPatches: number;
-	cleanupState: "complete" | "partial";
-}
+export type SubagentRunMode = "single" | "parallel";
 
 export interface AgentContract {
 	version: 1;
 }
-
-export type ChainGateLayer = "execution" | "acceptance";
 
 export type ExecutionProjectionStatus = "completed" | "failed" | "paused" | "stopped" | "detached";
 
@@ -370,16 +242,16 @@ interface ProcessTerminalBaseV1 {
 export type ProcessTerminalV1 =
 	| (ProcessTerminalBaseV1 & { state: "pending" | "not-started" })
 	| (ProcessTerminalBaseV1 & {
-		state: "observed";
-		observedAt: number;
-		instances: ProcessInstanceExitV1[];
-		canonicalSession?: CanonicalSessionTerminalV1;
-	})
+			state: "observed";
+			observedAt: number;
+			instances: ProcessInstanceExitV1[];
+			canonicalSession?: CanonicalSessionTerminalV1;
+	  })
 	| (ProcessTerminalBaseV1 & {
-		state: "unknown";
-		reason: ProcessTerminalReason;
-		diagnostic?: string;
-	});
+			state: "unknown";
+			reason: ProcessTerminalReason;
+			diagnostic?: string;
+	  });
 
 export type SteeringActionState = "delivered" | "scheduled" | "pending" | "partial" | "recovered" | "failed";
 export type SteeringTargetState = "scheduled" | "routed" | "delivered" | "late" | "failed" | "recovered";
@@ -466,7 +338,6 @@ export interface SteeringRecoveryDescriptor {
 	skillPath?: string[];
 	agentFilePath?: string;
 	completionGuard?: boolean;
-	memory?: { scope: "project" | "user"; path: string };
 	outputPath?: string;
 	outputMode: "inline" | "file-only";
 	structuredOutputSchema?: JsonSchemaObject;
@@ -478,7 +349,6 @@ export interface SteeringRecoveryDescriptor {
 	maxSubagentDepth: number;
 	maxOutput?: MaxOutputConfig;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
-	share: boolean;
 	sessionDir?: string;
 	artifactsDir?: string;
 	artifactConfig?: ArtifactConfig;
@@ -486,7 +356,25 @@ export interface SteeringRecoveryDescriptor {
 
 export type PublicNestedStepSummary = Pick<
 	NestedStepSummary,
-	"agent" | "status" | "sessionFile" | "transcriptPath" | "transcriptError" | "activityState" | "lastActivityAt" | "currentTool" | "currentToolStartedAt" | "currentPath" | "turnCount" | "toolCount" | "toolBudget" | "toolBudgetBlocked" | "startedAt" | "endedAt" | "error" | "timedOut" | "stopped"
+	| "agent"
+	| "status"
+	| "sessionFile"
+	| "transcriptPath"
+	| "transcriptError"
+	| "activityState"
+	| "lastActivityAt"
+	| "currentTool"
+	| "currentToolStartedAt"
+	| "currentPath"
+	| "turnCount"
+	| "toolCount"
+	| "toolBudget"
+	| "toolBudgetBlocked"
+	| "startedAt"
+	| "endedAt"
+	| "error"
+	| "timedOut"
+	| "stopped"
 > & {
 	children?: PublicNestedRunSummary[];
 };
@@ -499,7 +387,47 @@ export type CostSummary = {
 
 export type PublicNestedRunSummary = Pick<
 	NestedRunSummary,
-	"id" | "parentRunId" | "parentStepIndex" | "parentAgent" | "depth" | "path" | "asyncDir" | "sessionId" | "sessionFile" | "intercomTarget" | "ownerIntercomTarget" | "leafIntercomTarget" | "ownerState" | "mode" | "state" | "agent" | "agents" | "currentStep" | "chainStepCount" | "parallelGroups" | "activityState" | "lastActivityAt" | "currentTool" | "currentToolStartedAt" | "currentPath" | "turnCount" | "toolCount" | "toolBudget" | "toolBudgetBlocked" | "totalTokens" | "totalCost" | "startedAt" | "endedAt" | "lastUpdate" | "error" | "timeoutMs" | "deadlineAt" | "timedOut" | "stopped" | "turnBudget" | "turnBudgetExceeded" | "wrapUpRequested"
+	| "id"
+	| "parentRunId"
+	| "parentStepIndex"
+	| "parentAgent"
+	| "depth"
+	| "path"
+	| "asyncDir"
+	| "sessionId"
+	| "sessionFile"
+	| "intercomTarget"
+	| "ownerIntercomTarget"
+	| "leafIntercomTarget"
+	| "ownerState"
+	| "mode"
+	| "state"
+	| "agent"
+	| "agents"
+	| "currentStep"
+	| "parallelGroups"
+	| "activityState"
+	| "lastActivityAt"
+	| "currentTool"
+	| "currentToolStartedAt"
+	| "currentPath"
+	| "turnCount"
+	| "toolCount"
+	| "toolBudget"
+	| "toolBudgetBlocked"
+	| "totalTokens"
+	| "totalCost"
+	| "startedAt"
+	| "endedAt"
+	| "lastUpdate"
+	| "error"
+	| "timeoutMs"
+	| "deadlineAt"
+	| "timedOut"
+	| "stopped"
+	| "turnBudget"
+	| "turnBudgetExceeded"
+	| "wrapUpRequested"
 > & {
 	steps?: PublicNestedStepSummary[];
 	children?: PublicNestedRunSummary[];
@@ -528,26 +456,15 @@ export interface SubagentResultIntercomPayload {
 	children: SubagentResultIntercomChild[];
 	asyncId?: string;
 	asyncDir?: string;
-	chainSteps?: number;
 	agent?: string;
 	index?: number;
 	artifactPath?: string;
 	sessionPath?: string;
-	parallelHandoff?: ParallelHandoffReference;
 }
 
 // ============================================================================
 // Progress Tracking
 // ============================================================================
-
-export interface ChildWatchdogProgress {
-	phase: "idle" | "reviewing" | "autofollow" | "settling" | "stale" | "failed";
-	seq: number;
-	lastUpdate: number;
-	followUpPending: boolean;
-	reason?: string;
-	timedOut?: boolean;
-}
 
 export interface AgentProgress {
 	index: number;
@@ -574,7 +491,6 @@ export interface AgentProgress {
 	durationMs: number;
 	error?: string;
 	failedTool?: string;
-	watchdog?: ChildWatchdogProgress;
 }
 
 export interface ToolCallSummary {
@@ -727,11 +643,7 @@ export type AcceptanceEvidenceStatus =
 	| "verified"
 	| "rejected";
 
-export type AcceptanceLedgerStatus =
-	| AcceptanceEvidenceStatus
-	| "review-required"
-	| "reviewed"
-	| "accepted";
+export type AcceptanceLedgerStatus = AcceptanceEvidenceStatus | "review-required" | "reviewed" | "accepted";
 
 export interface AcceptanceLedger {
 	status: AcceptanceLedgerStatus;
@@ -814,7 +726,6 @@ export interface SingleResult {
 	transcriptPath?: string;
 	transcriptError?: string;
 	children?: NestedRunSummary[];
-	watchdog?: ChildWatchdogProgress;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
 }
@@ -865,12 +776,6 @@ export interface Details {
 		originalLines?: number;
 		artifactPath?: string;
 	};
-	// Chain metadata for observability
-	chainAgents?: string[];      // Agent names in order, e.g., ["scout", "planner"]
-	totalSteps?: number;         // Total steps in chain
-	currentStepIndex?: number;   // 0-indexed current step (for running chains)
-	workflowGraph?: WorkflowGraphSnapshot;
-	outputs?: ChainOutputMap;
 	// Aggregated child usage across all agents in the run
 	totalChildUsage?: Usage;
 	// Aggregated cost across all agents in the run
@@ -878,7 +783,6 @@ export interface Details {
 	spawnBudget?: SpawnBudgetSnapshot;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
-	parallelHandoff?: ParallelHandoffReference;
 	lifecycleStatus?: {
 		processTerminal?: ProcessTerminalV1;
 	};
@@ -950,7 +854,6 @@ export interface NestedStepSummary {
 	startedAt?: number;
 	endedAt?: number;
 	error?: string;
-	watchdog?: ChildWatchdogProgress;
 	timedOut?: boolean;
 	stopped?: boolean;
 	turnBudget?: TurnBudgetState;
@@ -983,7 +886,6 @@ export interface NestedRunSummary extends NestedRunAddress {
 	agent?: string;
 	agents?: string[];
 	currentStep?: number;
-	chainStepCount?: number;
 	parallelGroups?: AsyncParallelGroupStatus[];
 	steps?: NestedStepSummary[];
 	children?: NestedRunSummary[];
@@ -1031,12 +933,9 @@ export interface AsyncStartedEvent {
 	agents?: string[];
 	/** Truncated first child task retained for backwards compatibility. */
 	task?: string;
-	/** Workflow-level caller task, falling back to the first child task. */
+	/** Caller task, falling back to the first child task. */
 	goal?: string;
-	chain?: string[];
-	chainStepCount?: number;
 	parallelGroups?: AsyncParallelGroupStatus[];
-	workflowGraph?: WorkflowGraphSnapshot;
 	launchContractDigest?: string;
 	timeoutMs?: number;
 	deadlineAt?: number;
@@ -1076,10 +975,7 @@ export interface AsyncStatus {
 	pid?: number;
 	cwd?: string;
 	currentStep?: number;
-	chainStepCount?: number;
-	pendingAppends?: number;
 	parallelGroups?: AsyncParallelGroupStatus[];
-	workflowGraph?: WorkflowGraphSnapshot;
 	processTerminal?: ProcessTerminalV1;
 	launchContractDigest?: string;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
@@ -1136,7 +1032,6 @@ export interface AsyncStatus {
 		execution?: ExecutionProjection;
 		review?: ReviewProjection;
 		effects?: EffectsProjection;
-		watchdog?: ChildWatchdogProgress;
 		processTerminal?: ProcessTerminalV1;
 		capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 		capabilityAudit?: SubagentCapabilityAudit;
@@ -1146,8 +1041,6 @@ export interface AsyncStatus {
 	totalTokens?: TokenUsage;
 	totalCost?: CostSummary;
 	sessionFile?: string;
-	outputs?: ChainOutputMap;
-	parallelHandoff?: ParallelHandoffReference;
 }
 
 export type AsyncJobStep = NonNullable<AsyncStatus["steps"]>[number] & {
@@ -1160,7 +1053,7 @@ export interface AsyncJobState {
 	/** Parent-resolved launch directory retained for trusted live artifact lookup. */
 	cwd?: string;
 	status: "queued" | "running" | "complete" | "failed" | "paused" | "stopped";
-	/** Short caller-facing task/goal shown in fleet surfaces when available. */
+	/** Short caller-facing task/goal shown in Agent surfaces when available. */
 	description?: string;
 	pid?: number;
 	sessionId?: string;
@@ -1177,7 +1070,6 @@ export interface AsyncJobState {
 	context?: "fresh" | "fork" | "mixed";
 	agents?: string[];
 	currentStep?: number;
-	chainStepCount?: number;
 	parallelGroups?: AsyncParallelGroupStatus[];
 	steps?: AsyncJobStep[];
 	stepsTotal?: number;
@@ -1275,7 +1167,7 @@ export interface ForegroundChildControl {
 
 export interface ForegroundRunControl {
 	runId: string;
-	/** Originating parent session; required for public fleet projection. */
+	/** Originating parent session; required for current-session projection. */
 	sessionId?: string;
 	mode: SubagentRunMode;
 	startedAt: number;
@@ -1284,7 +1176,7 @@ export interface ForegroundRunControl {
 	cwd?: string;
 	currentAgent?: string;
 	currentIndex?: number;
-	/** Short caller-facing task/goal shown in fleet surfaces when available. */
+	/** Short caller-facing task/goal shown in Agent surfaces when available. */
 	description?: string;
 	currentActivityState?: ActivityState;
 	lastActivityAt?: number;
@@ -1298,7 +1190,7 @@ export interface ForegroundRunControl {
 	model?: string;
 	thinking?: string;
 	toolCount?: number;
-	/** Independently tracked children for foreground parallel work and fleet inspection. */
+	/** Independently tracked children for foreground parallel work and Agent inspection. */
 	activeChildren?: Map<number, ForegroundChildControl>;
 	nestedRoute?: NestedRouteInfo;
 	nestedChildren?: NestedRunSummary[];
@@ -1308,7 +1200,7 @@ export interface ForegroundRunControl {
 export interface SubagentState {
 	baseCwd: string;
 	currentSessionId: string | null;
-	/** Runtime-owned artifact resolution inputs used by Fleet transcript targeting. */
+	/** Runtime-owned artifact resolution inputs used by Agent transcript targeting. */
 	artifactDirPreference?: ArtifactDirPreference;
 	parentSessionFile?: string | null;
 	/** Last valid parent session model observed for this session; used when continuation contexts omit ctx.model. */
@@ -1322,10 +1214,8 @@ export interface SubagentState {
 		grantHistory?: SpawnBudgetGrant[];
 	};
 	asyncJobs: Map<string, AsyncJobState>;
-	/** Current-session active and recent async runs for the native fleet inspector. */
-	fleetJobs?: Map<string, AsyncJobState>;
-	/** Suppress dynamic status widgets while the fleet overlay owns the viewport. */
-	fleetInspectorOpen?: boolean;
+	/** Current-session active and recent runs retained for the Agent roster. */
+	recentAgentJobs?: Map<string, AsyncJobState>;
 	foregroundRuns?: Map<string, ForegroundResumeRun>;
 	foregroundControls: Map<string, ForegroundRunControl>;
 	lastForegroundControlId: string | null;
@@ -1346,8 +1236,8 @@ export interface SubagentState {
 // Display
 // ============================================================================
 
-export type DisplayItem = 
-	| { type: "text"; text: string } 
+export type DisplayItem =
+	| { type: "text"; text: string }
 	| { type: "tool"; name: string; args: Record<string, unknown> };
 
 // ============================================================================
@@ -1412,12 +1302,9 @@ export interface RunSyncOptions {
 	index?: number;
 	sessionDir?: string;
 	sessionFile?: string;
-	share?: boolean;
 	outputPath?: string;
 	outputMode?: OutputMode;
 	maxSubagentDepth?: number;
-	/** Effective parent wait-tool setting propagated to the child runtime. */
-	waitToolEnabled?: boolean;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	nestedRoute?: NestedRouteInfo;
 	/** Override the agent's default model (format: "provider/id" or just "id") */
@@ -1447,76 +1334,16 @@ export interface RunSyncOptions {
 	};
 }
 
-export type IntercomBridgeMode = "off" | "fork-only" | "always";
-
-export interface IntercomBridgeConfig {
-	mode?: IntercomBridgeMode;
-	instructionFile?: string;
-	/** Deliver grouped completion messages through an external acknowledged intercom listener. */
-	resultDelivery?: boolean;
-}
-
-interface TopLevelParallelConfig {
-	maxTasks?: number;
-	concurrency?: number;
-}
-
-interface ExtensionChainConfig {
-	dynamicFanout?: {
-		maxItems?: number;
-	};
-}
-
-export interface ProactiveSkillSubagentsConfig {
-	enabled?: boolean;
-	minReferences?: number;
-	maxRecommendations?: number;
-	preferredAgent?: string;
-}
-
-export type ToolDescriptionMode = "full" | "compact" | "custom";
-
-export interface ScheduledRunsConfig {
-	enabled?: boolean;
-	maxLatenessMs?: number;
-	maxPending?: number;
-}
-
-export type FleetViewPlacement = "aboveEditor" | "belowEditor";
-
+/** Internal inputs read by the owned Agent executor; there is no private settings surface. */
 export interface ExtensionConfig {
-	asyncByDefault?: boolean;
-	/** Show the Claude Code-style navigable fleet. Defaults to true. */
-	fleetView?: boolean;
-	/** Place the persistent FleetView above or below the editor. Defaults to belowEditor. */
-	fleetViewPlacement?: FleetViewPlacement;
-	/** Show the legacy above-editor async runs widget. Defaults to true only when fleetView is disabled. */
-	asyncWidget?: boolean;
-	/** Tool description variant registered for the parent-facing subagent tool. Defaults to full. */
-	toolDescriptionMode?: ToolDescriptionMode;
-	forceTopLevelAsync?: boolean;
-	waitTool?: WaitToolConfig;
 	defaultSessionDir?: string;
-	singleRunOutputBaseDir?: string;
 	maxSubagentDepth?: number;
-	/** Optional cumulative session cap. Unset or 0 means unlimited. */
-	maxSubagentSpawnsPerSession?: number;
-	/** Global cap on simultaneously-running subagent tasks within a single run. Defaults to 20. */
-	globalConcurrencyLimit?: number;
-	control?: ControlConfig;
-	completionBatch?: CompletionBatchConfig;
 	turnBudget?: TurnBudgetConfig;
 	toolBudget?: ToolBudgetConfig;
-	parallel?: TopLevelParallelConfig;
-	chain?: ExtensionChainConfig;
 	worktreeSetupHook?: string;
 	worktreeSetupHookTimeoutMs?: number;
 	worktreeBaseDir?: string;
-	/** Where to store subagent artifact files. Defaults to "project" (cwd/.pi-subagents). Set to "session" for pi session dir, or "temp" for OS temp. */
 	artifactDir?: ArtifactDirPreference;
-	intercomBridge?: IntercomBridgeConfig;
-	proactiveSkillSubagents?: ProactiveSkillSubagentsConfig | false;
-	scheduledRuns?: ScheduledRunsConfig;
 }
 
 // ============================================================================
@@ -1554,9 +1381,7 @@ export function resolveTempScopeId(options?: {
 	homedir?: (() => string) | undefined;
 }): string {
 	const env = options?.env ?? process.env;
-	const getuid = options && Object.hasOwn(options, "getuid")
-		? options.getuid
-		: process.getuid?.bind(process);
+	const getuid = options && Object.hasOwn(options, "getuid") ? options.getuid : process.getuid?.bind(process);
 	if (typeof getuid === "function") {
 		return `uid-${getuid()}`;
 	}
@@ -1566,9 +1391,7 @@ export function resolveTempScopeId(options?: {
 		if (value) return `user-${sanitizeTempScopeSegment(value)}`;
 	}
 
-	const userInfo = options && Object.hasOwn(options, "userInfo")
-		? options.userInfo
-		: os.userInfo;
+	const userInfo = options && Object.hasOwn(options, "userInfo") ? options.userInfo : os.userInfo;
 	try {
 		const username = userInfo?.().username;
 		if (username) return `user-${sanitizeTempScopeSegment(username)}`;
@@ -1579,9 +1402,7 @@ export function resolveTempScopeId(options?: {
 	const homedir = env.USERPROFILE ?? env.HOME;
 	if (homedir) return `home-${sanitizeTempScopeSegment(homedir)}`;
 
-	const resolveHomedir = options && Object.hasOwn(options, "homedir")
-		? options.homedir
-		: os.homedir;
+	const resolveHomedir = options && Object.hasOwn(options, "homedir") ? options.homedir : os.homedir;
 	try {
 		const fallbackHomedir = resolveHomedir?.();
 		if (fallbackHomedir) return `home-${sanitizeTempScopeSegment(fallbackHomedir)}`;
@@ -1594,12 +1415,10 @@ export function resolveTempScopeId(options?: {
 
 const MAX_PARALLEL = 8;
 export const MAX_CONCURRENCY = 4;
-export const TEMP_ROOT_DIR = path.join(os.tmpdir(), `pi-subagents-${resolveTempScopeId()}`);
+export const TEMP_ROOT_DIR = path.join(os.tmpdir(), `pi-stuff-agents-${resolveTempScopeId()}`);
 export const RESULTS_DIR = path.join(TEMP_ROOT_DIR, "async-subagent-results");
 export const ASYNC_DIR = path.join(TEMP_ROOT_DIR, "async-subagent-runs");
-export const CHAIN_RUNS_DIR = path.join(TEMP_ROOT_DIR, "chain-runs");
 export const TEMP_ARTIFACTS_DIR = path.join(TEMP_ROOT_DIR, "artifacts");
-export const WIDGET_KEY = "subagent-async";
 export const SLASH_RESULT_TYPE = "subagent-slash-result";
 export const SLASH_TEXT_RESULT_TYPE = "subagent-slash-text-result";
 export const SLASH_SUBAGENT_REQUEST_EVENT = "subagent:slash:request";
@@ -1608,9 +1427,8 @@ export const SLASH_SUBAGENT_RESPONSE_EVENT = "subagent:slash:response";
 export const SLASH_SUBAGENT_UPDATE_EVENT = "subagent:slash:update";
 export const SLASH_SUBAGENT_CANCEL_EVENT = "subagent:slash:cancel";
 export const POLL_INTERVAL_MS = 250;
-export const MAX_WIDGET_JOBS = 4;
-export const DEFAULT_SUBAGENT_MAX_DEPTH = 2;
-export const SUBAGENT_ACTIONS = ["list", "get", "models", "create", "update", "delete", "eject", "disable", "enable", "reset", "status", "grant-spawn-budget", "interrupt", "resume", "steer", "stop", "append-step", "doctor", "watchdog.status", "watchdog.check", "watchdog.configure", "watchdog.recommend-model", "schedule", "schedule-list", "schedule-status", "schedule-cancel"] as const;
+export const DEFAULT_SUBAGENT_MAX_DEPTH = 3;
+export const SUBAGENT_ACTIONS = ["status", "resume", "steer", "stop"] as const;
 
 export const DEFAULT_FORK_PREAMBLE =
 	"You are a delegated subagent running from a fork of the parent session. " +
@@ -1628,13 +1446,8 @@ export function resolveTopLevelParallelMaxTasks(value: unknown): number {
 	return normalizeTopLevelParallelValue(value) ?? MAX_PARALLEL;
 }
 
-export function resolveTopLevelParallelConcurrency(
-	override: unknown,
-	configValue: unknown,
-): number {
-	return normalizeTopLevelParallelValue(override)
-		?? normalizeTopLevelParallelValue(configValue)
-		?? MAX_CONCURRENCY;
+export function resolveTopLevelParallelConcurrency(override: unknown, configValue: unknown): number {
+	return normalizeTopLevelParallelValue(override) ?? normalizeTopLevelParallelValue(configValue) ?? MAX_CONCURRENCY;
 }
 
 export function getAsyncConfigPath(suffix: string): string {
@@ -1660,13 +1473,16 @@ function normalizeNonNegativeInteger(value: unknown): number | undefined {
 }
 
 export function normalizeMaxSubagentDepth(value: unknown): number | undefined {
-	return normalizeNonNegativeInteger(value);
+	const normalized = normalizeNonNegativeInteger(value);
+	return normalized !== undefined && normalized >= 1 ? normalized : undefined;
 }
 
 export function resolveCurrentMaxSubagentDepth(configMaxDepth?: number): number {
-	return normalizeMaxSubagentDepth(process.env.PI_SUBAGENT_MAX_DEPTH)
-		?? normalizeMaxSubagentDepth(configMaxDepth)
-		?? DEFAULT_SUBAGENT_MAX_DEPTH;
+	return (
+		normalizeMaxSubagentDepth(process.env.PI_SUBAGENT_MAX_DEPTH) ??
+		normalizeMaxSubagentDepth(configMaxDepth) ??
+		DEFAULT_SUBAGENT_MAX_DEPTH
+	);
 }
 
 export function resolveChildMaxSubagentDepth(parentMaxDepth: number, agentMaxDepth?: number): number {
@@ -1682,24 +1498,29 @@ export function checkSubagentDepth(configMaxDepth?: number): { blocked: boolean;
 	return { blocked, depth, maxDepth };
 }
 
-export function getSubagentDepthEnv(maxDepth?: number): Record<string, string> {
-	const parentDepth = Number(process.env.PI_SUBAGENT_DEPTH ?? "0");
+export function getSubagentDepthEnv(maxDepth?: number, env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+	const parentDepth = Number(env.PI_SUBAGENT_DEPTH ?? "0");
 	const nextDepth = Number.isFinite(parentDepth) ? parentDepth + 1 : 1;
 	return {
 		PI_SUBAGENT_DEPTH: String(nextDepth),
-		PI_SUBAGENT_MAX_DEPTH: String(normalizeMaxSubagentDepth(maxDepth) ?? resolveCurrentMaxSubagentDepth()),
+		PI_SUBAGENT_MAX_DEPTH: String(
+			normalizeMaxSubagentDepth(maxDepth) ??
+				normalizeMaxSubagentDepth(env.PI_SUBAGENT_MAX_DEPTH) ??
+				DEFAULT_SUBAGENT_MAX_DEPTH,
+		),
 	};
 }
 
 export function normalizeMaxSubagentSpawnsPerSession(value: unknown): number | undefined {
-	return normalizeNonNegativeInteger(value);
+	const normalized = normalizeNonNegativeInteger(value);
+	return normalized !== undefined && normalized >= 1 ? normalized : undefined;
 }
 
-export function resolveMaxSubagentSpawnsPerSession(configMaxSpawns?: number): number | undefined {
+export function resolveMaxSubagentSpawnsPerSession(configMaxSpawns?: number): number {
 	const envMaxSpawns = normalizeMaxSubagentSpawnsPerSession(process.env.PI_SUBAGENT_MAX_SPAWNS_PER_SESSION);
-	if (envMaxSpawns !== undefined) return envMaxSpawns === 0 ? undefined : envMaxSpawns;
+	if (envMaxSpawns !== undefined) return envMaxSpawns;
 	const configuredMaxSpawns = normalizeMaxSubagentSpawnsPerSession(configMaxSpawns);
-	return configuredMaxSpawns === 0 ? undefined : configuredMaxSpawns;
+	return configuredMaxSpawns ?? 200;
 }
 
 // ============================================================================

@@ -4,7 +4,8 @@ import type { PermissionDecisionState } from "./permission-dialog";
 import type { SubagentSessionRegistry } from "./subagent-registry";
 
 export const PERMISSION_FORWARDING_POLL_INTERVAL_MS = 250;
-export const PERMISSION_FORWARDING_TIMEOUT_MS = 10 * 60 * 1000;
+export const PERMISSION_FORWARDING_ACK_TIMEOUT_MS = 5_000;
+export const PERMISSION_FORWARDING_RESPONSE_TIMEOUT_MS = 10 * 60 * 1000;
 export const SUBAGENT_ENV_HINT_KEYS = [
 	// pi-agent-router (original)
 	"PI_IS_SUBAGENT",
@@ -36,6 +37,7 @@ export const SUBAGENT_PARENT_SESSION_ENV_KEY = SUBAGENT_PARENT_SESSION_ENV_CANDI
 const SESSION_FORWARDING_ROOT_DIRECTORY_NAME = "sessions";
 const SESSION_FORWARDING_REQUESTS_DIRECTORY_NAME = "requests";
 const SESSION_FORWARDING_RESPONSES_DIRECTORY_NAME = "responses";
+const SESSION_FORWARDING_ACKNOWLEDGEMENTS_DIRECTORY_NAME = "acknowledgements";
 
 /**
  * Display fields relayed from a forwarding child to the parent UI so the parent
@@ -146,6 +148,8 @@ export type ForwardedPermissionRequest = {
 };
 
 export type ForwardedPermissionResponse = {
+	requestId: string;
+	targetSessionId: string;
 	approved: boolean;
 	state: PermissionDecisionState;
 	denialReason?: string;
@@ -153,11 +157,18 @@ export type ForwardedPermissionResponse = {
 	respondedAt: number;
 };
 
+export type ForwardedPermissionAcknowledgement = {
+	requestId: string;
+	targetSessionId: string;
+	acknowledgedAt: number;
+};
+
 export type PermissionForwardingLocation = {
 	sessionId: string;
 	sessionRootDir: string;
 	requestsDir: string;
 	responsesDir: string;
+	acknowledgementsDir: string;
 	label: "primary";
 };
 
@@ -198,6 +209,7 @@ export function createPermissionForwardingLocation(
 		sessionRootDir,
 		requestsDir: join(sessionRootDir, SESSION_FORWARDING_REQUESTS_DIRECTORY_NAME),
 		responsesDir: join(sessionRootDir, SESSION_FORWARDING_RESPONSES_DIRECTORY_NAME),
+		acknowledgementsDir: join(sessionRootDir, SESSION_FORWARDING_ACKNOWLEDGEMENTS_DIRECTORY_NAME),
 		label: "primary",
 	};
 }
@@ -220,10 +232,11 @@ export function resolvePermissionForwardingTargetSessionId(options: {
 		return null;
 	}
 
-	// 1. Registry — in-process subagents register parentSessionId explicitly.
+	// 1. Registry — in-process subagents register every parent edge. Follow the
+	// complete chain so a deeply nested Agent asks the one root session that owns
+	// UI instead of waiting on an intermediate child that cannot render a prompt.
 	if (options.registry && options.sessionId) {
-		const entry = options.registry.get(options.sessionId);
-		const resolved = normalizePermissionForwardingSessionId(entry?.parentSessionId);
+		const resolved = resolvePermissionForwardingRootSessionId(options.registry, options.sessionId);
 		if (resolved) return resolved;
 	}
 
@@ -234,6 +247,26 @@ export function resolvePermissionForwardingTargetSessionId(options: {
 		if (resolved) return resolved;
 	}
 	return null;
+}
+
+/** Resolve a registered child to its outermost known parent, rejecting cycles. */
+export function resolvePermissionForwardingRootSessionId(
+	registry: Pick<SubagentSessionRegistry, "get">,
+	sessionId: string,
+): string | null {
+	let current = normalizePermissionForwardingSessionId(sessionId);
+	if (!current) return null;
+
+	const seen = new Set<string>([current]);
+	let traversed = false;
+	while (true) {
+		const parent = normalizePermissionForwardingSessionId(registry.get(current)?.parentSessionId);
+		if (!parent) return traversed ? current : null;
+		if (seen.has(parent)) return null;
+		seen.add(parent);
+		current = parent;
+		traversed = true;
+	}
 }
 
 export function isForwardedPermissionRequestForSession(

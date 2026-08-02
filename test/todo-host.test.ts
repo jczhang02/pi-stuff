@@ -12,6 +12,7 @@ import {
 const REPOSITORY_ROOT = resolve(import.meta.dir, "..");
 const TODO_EXTENSION = join(REPOSITORY_ROOT, "packages", "pi-stuff-todo", "index.ts");
 const TODO_PACKAGE = resolve(TODO_EXTENSION, "..");
+const AGENTS_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-agents");
 const BTW_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-btw");
 const PERMISSIONS_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-permissions");
 const UI_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-ui");
@@ -70,7 +71,7 @@ test("Pi 0.83 loads exactly the Todo tools from the Capability package", async (
 	expect([...session.getActiveToolNames()].sort()).toEqual(EXPECTED_TOOLS);
 });
 
-test("Pi 0.83 loads exactly the Todo tools through the Aggregate package", async () => {
+test("Pi 0.83 loads all Todo tools through the Aggregate package", async () => {
 	const session = await loadExtension(async (root) => {
 		const aggregateDirectory = join(root, "aggregate");
 		const dependencyScope = join(aggregateDirectory, "node_modules", "@jczhang02");
@@ -80,11 +81,13 @@ test("Pi 0.83 loads exactly the Todo tools through the Aggregate package", async
 		await Promise.all([
 			symlink(UI_PACKAGE, join(dependencyScope, "pi-stuff-ui"), "dir"),
 			symlink(PERMISSIONS_PACKAGE, join(dependencyScope, "pi-stuff-permissions"), "dir"),
+			symlink(AGENTS_PACKAGE, join(dependencyScope, "pi-stuff-agents"), "dir"),
 			symlink(TODO_PACKAGE, join(dependencyScope, "pi-stuff-todo"), "dir"),
 			symlink(BTW_PACKAGE, join(dependencyScope, "pi-stuff-btw"), "dir"),
 		]);
 		return join(aggregateDirectory, "index.ts");
 	});
 
-	expect([...session.getActiveToolNames()].sort()).toEqual(EXPECTED_TOOLS);
+	const activeTools = new Set(session.getActiveToolNames());
+	for (const name of EXPECTED_TOOLS) expect(activeTools.has(name)).toBe(true);
 });

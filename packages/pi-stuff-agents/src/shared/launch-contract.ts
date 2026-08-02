@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import type { AgentConfig } from "../agents/agents.ts";
 
-export const AGENT_DEFINITION_PROJECTION_VERSION = 1 as const;
-export const LAUNCH_BINDING_PROJECTION_VERSION = 1 as const;
+export const AGENT_DEFINITION_PROJECTION_VERSION = 2 as const;
+export const LAUNCH_BINDING_PROJECTION_VERSION = 2 as const;
 
 function stableJson(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -51,20 +51,9 @@ export function projectAgentDefinition(agent: AgentConfig): Record<string, unkno
 		subagentOnlyExtensions: agent.subagentOnlyExtensions,
 		skills: agent.skills,
 		skillPath: agent.skillPath,
-		output: agent.output,
-		defaultReads: agent.defaultReads,
-		defaultProgress: agent.defaultProgress,
-		defaultContext: agent.defaultContext,
-		defaultAsync: agent.defaultAsync,
-		defaultTimeoutMs: agent.defaultTimeoutMs,
 		defaultTurnBudget: agent.defaultTurnBudget,
-		defaultAcceptance: agent.defaultAcceptance,
-		acceptanceRole: agent.acceptanceRole,
-		interactive: agent.interactive,
 		maxSubagentDepth: agent.maxSubagentDepth,
-		completionGuard: agent.completionGuard,
 		toolBudget: agent.toolBudget,
-		memory: agent.memory,
 	};
 }
 
@@ -76,7 +65,6 @@ export interface LaunchBindingInput {
 	definitionDigest: string;
 	/** Caller task; runtime acceptance/output task annotations are explicitly outside the preflight-known subset. */
 	task?: string;
-	model?: string;
 	modelCandidates?: string[];
 	thinking?: string;
 	systemPrompt?: string | null;
@@ -88,9 +76,10 @@ export interface LaunchBindingInput {
 	extensions?: string[];
 	subagentOnlyExtensions?: string[];
 	mcpDirectTools?: string[];
-	outputPath?: string;
-	outputMode?: string;
-	structuredOutputSchema?: unknown;
+	turnBudget?: AgentConfig["defaultTurnBudget"];
+	toolBudget?: AgentConfig["toolBudget"];
+	maxSubagentDepth?: number;
+	capabilityCeiling?: unknown;
 }
 
 /** Canonical projection of the resolved inputs handed to the child. */
@@ -103,7 +92,8 @@ export function projectLaunchBinding(input: LaunchBindingInput): Record<string, 
 		// this set makes retries correlate to the same preflight binding.
 		modelCandidates: input.modelCandidates,
 		thinking: input.thinking,
-		systemPromptDigest: input.systemPrompt === undefined || input.systemPrompt === null ? undefined : sha256(input.systemPrompt),
+		systemPromptDigest:
+			input.systemPrompt === undefined || input.systemPrompt === null ? undefined : sha256(input.systemPrompt),
 		systemPromptMode: input.systemPromptMode,
 		inheritProjectContext: input.inheritProjectContext,
 		inheritSkills: input.inheritSkills,
@@ -112,9 +102,10 @@ export function projectLaunchBinding(input: LaunchBindingInput): Record<string, 
 		extensions: input.extensions,
 		subagentOnlyExtensions: input.subagentOnlyExtensions,
 		mcpDirectTools: input.mcpDirectTools,
-		outputPath: input.outputPath,
-		outputMode: input.outputMode,
-		structuredOutputSchema: input.structuredOutputSchema,
+		turnBudget: input.turnBudget,
+		toolBudget: input.toolBudget,
+		maxSubagentDepth: input.maxSubagentDepth,
+		capabilityCeiling: input.capabilityCeiling,
 	};
 }
 

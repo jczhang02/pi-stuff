@@ -83,10 +83,7 @@ export function checkModelScope(
  * Throws a descriptive error for malformed configs (matching the surrounding
  * settings-parsing style). Returns `undefined` when the field is absent.
  */
-export function parseModelScopeConfig(
-	value: unknown,
-	meta: { filePath: string },
-): ModelScopeConfig | undefined {
+export function parseModelScopeConfig(value: unknown, meta: { filePath: string }): ModelScopeConfig | undefined {
 	if (value === undefined) return undefined;
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		throw new Error(`Subagent settings in '${meta.filePath}' have invalid 'modelScope'; expected an object.`);
@@ -97,31 +94,41 @@ export function parseModelScopeConfig(
 
 	if ("enforce" in input) {
 		if (typeof input.enforce !== "boolean") {
-			throw new Error(`Subagent settings in '${meta.filePath}' have invalid 'modelScope.enforce'; expected a boolean.`);
+			throw new Error(
+				`Subagent settings in '${meta.filePath}' have invalid 'modelScope.enforce'; expected a boolean.`,
+			);
 		}
 		config.enforce = input.enforce;
 	}
 
 	if ("allow" in input) {
 		if (!Array.isArray(input.allow)) {
-			throw new Error(`Subagent settings in '${meta.filePath}' have invalid 'modelScope.allow'; expected an array of strings.`);
+			throw new Error(
+				`Subagent settings in '${meta.filePath}' have invalid 'modelScope.allow'; expected an array of strings.`,
+			);
 		}
 		const allow: string[] = [];
 		for (const entry of input.allow) {
 			if (typeof entry !== "string") {
-				throw new Error(`Subagent settings in '${meta.filePath}' have invalid 'modelScope.allow'; expected an array of strings.`);
+				throw new Error(
+					`Subagent settings in '${meta.filePath}' have invalid 'modelScope.allow'; expected an array of strings.`,
+				);
 			}
 			const trimmed = entry.trim();
 			if (trimmed) allow.push(trimmed);
 		}
 		if (allow.length === 0) {
-			throw new Error(`Subagent settings in '${meta.filePath}' have invalid 'modelScope.allow'; expected a non-empty array of patterns.`);
+			throw new Error(
+				`Subagent settings in '${meta.filePath}' have invalid 'modelScope.allow'; expected a non-empty array of patterns.`,
+			);
 		}
 		config.allow = allow;
 	}
 
 	if (config.enforce === true && (!config.allow || config.allow.length === 0)) {
-		throw new Error(`Subagent settings in '${meta.filePath}' set modelScope.enforce without a non-empty 'allow' list; supply allowed model patterns or disable enforcement.`);
+		throw new Error(
+			`Subagent settings in '${meta.filePath}' set modelScope.enforce without a non-empty 'allow' list; supply allowed model patterns or disable enforcement.`,
+		);
 	}
 
 	return Object.keys(config).length > 0 ? config : undefined;

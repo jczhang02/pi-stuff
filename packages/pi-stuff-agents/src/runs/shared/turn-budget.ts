@@ -25,7 +25,8 @@ export function resolveTurnBudgetConfig(
 
 export function appendTurnBudgetSystemPrompt(systemPrompt: string, budget: ResolvedTurnBudget | undefined): string {
 	if (!budget) return systemPrompt;
-	const grace = budget.graceTurns === 1 ? "1 additional assistant turn" : `${budget.graceTurns} additional assistant turns`;
+	const grace =
+		budget.graceTurns === 1 ? "1 additional assistant turn" : `${budget.graceTurns} additional assistant turns`;
 	const block = [
 		"## Turn budget",
 		`This child run has a soft budget of ${budget.maxTurns} assistant turn${budget.maxTurns === 1 ? "" : "s"}.`,
@@ -50,9 +51,7 @@ export function turnBudgetDeferredNote(budget: ResolvedTurnBudget, turnCount: nu
 }
 
 export function formatTurnBudgetOutput(message: string, output: string): string {
-	return output.trim()
-		? `${message}\n\nPartial output before turn-budget abort:\n${output}`
-		: message;
+	return output.trim() ? `${message}\n\nPartial output before turn-budget abort:\n${output}` : message;
 }
 
 export function initialTurnBudgetState(budget: ResolvedTurnBudget): TurnBudgetState {

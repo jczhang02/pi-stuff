@@ -141,6 +141,7 @@ describe("exact-call permission prompt", () => {
 		}> = [];
 		const coordinator = {
 			registerChrome: () => () => {},
+			whenIdle: async () => {},
 			show: <Result>(_ctx: ExtensionContext, view: CommandDialogView<Result>): Promise<Result | undefined> =>
 				new Promise((resolve) => {
 					const component = view.create({

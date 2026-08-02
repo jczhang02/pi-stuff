@@ -437,6 +437,64 @@ describe("Command Dialog coordinator", () => {
 		expect(components.get("normal")?.disposeCalls).toBe(1);
 	});
 
+	test("reports idle only after a preempted view closes and all shared chrome is restored", async () => {
+		const api = createApiHarness();
+		const coordinator = getCommandDialogCoordinator(api.api);
+		const ui = new UiHarness();
+		ui.autoResolveOnDone = false;
+		ui.editorText = "draft before dialog";
+		const ctx = createContext(ui);
+		const components = new Map<string, TestComponent>();
+		const contexts = new Map<string, CommandDialogViewContext<string>>();
+		const todoWrites: boolean[] = [];
+		const agentWrites: boolean[] = [];
+		coordinator.registerChrome("todo", {
+			setSuppressed: (suppressed) => todoWrites.push(suppressed),
+		});
+		coordinator.registerChrome("agents", {
+			setSuppressed: (suppressed) => agentWrites.push(suppressed),
+		});
+
+		const normal = coordinator.show(ctx, createView("btw", "normal", components, contexts));
+		const blocker = coordinator.show(ctx, createView("permission", "blocking", components, contexts));
+		let idleSettled = false;
+		const idle = coordinator.whenIdle().then(() => {
+			idleSettled = true;
+		});
+
+		expect(ui.currentHost.render(80)).toEqual(["permission"]);
+		expect(todoWrites).toEqual([true]);
+		expect(agentWrites).toEqual([true]);
+		expect(ui.editorText).toBe("");
+		const normalComponent = components.get("btw");
+		const blockingContext = contexts.get("permission");
+		if (!normalComponent || !blockingContext) throw new Error("Expected both views to mount");
+
+		blockingContext.close("denied");
+		expect(await blocker).toBe("denied");
+		expect(ui.currentHost.render(80)).toEqual(["btw"]);
+		expect(components.get("btw")).toBe(normalComponent);
+		await drainMicrotasks();
+		expect(idleSettled).toBe(false);
+
+		const normalContext = contexts.get("btw");
+		if (!normalContext) throw new Error("Expected the normal view to resume");
+		normalContext.close("dismissed");
+		await drainMicrotasks();
+		expect(idleSettled).toBe(false);
+		expect(ui.editorText).toBe("");
+		expect(todoWrites).toEqual([true]);
+		expect(agentWrites).toEqual([true]);
+
+		ui.settleCurrentDone();
+		expect(await normal).toBe("dismissed");
+		await idle;
+		expect(idleSettled).toBe(true);
+		expect(ui.editorText).toBe("draft before dialog");
+		expect(todoWrites).toEqual([true, false]);
+		expect(agentWrites).toEqual([true, false]);
+	});
+
 	test("session shutdown aborts and dismisses every view before restoring UI", async () => {
 		const api = createApiHarness();
 		const coordinator = getCommandDialogCoordinator(api.api);

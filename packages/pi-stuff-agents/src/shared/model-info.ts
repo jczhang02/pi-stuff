@@ -1,5 +1,5 @@
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
-export type ThinkingLevel = typeof THINKING_LEVELS[number];
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export type ThinkingLevelMap = Partial<Record<ThinkingLevel, string | null>>;
 
 export interface ModelInfo {
@@ -33,7 +33,10 @@ export function toModelInfo(model: RegistryModelLike): ModelInfo {
 /** Resolve the effective thinking level from a model string (which may contain a known suffix like `:high`)
  * and an explicit thinking config value. Returns `undefined` when no thinking is applicable
  * (e.g. no model was specified, or the model has no suffix and no config was provided). */
-export function resolveEffectiveThinking(model: string | undefined, configThinking: string | false | undefined): string | undefined {
+export function resolveEffectiveThinking(
+	model: string | undefined,
+	configThinking: string | false | undefined,
+): string | undefined {
 	if (!model) return undefined;
 	const { thinkingSuffix } = splitKnownThinkingSuffix(model);
 	if (thinkingSuffix) return thinkingSuffix.slice(1);
@@ -51,7 +54,11 @@ export function splitKnownThinkingSuffix(model: string): { baseModel: string; th
 	};
 }
 
-export function findModelInfo(model: string | undefined, availableModels: ModelInfo[] | undefined, preferredProvider?: string): ModelInfo | undefined {
+export function findModelInfo(
+	model: string | undefined,
+	availableModels: ModelInfo[] | undefined,
+	preferredProvider?: string,
+): ModelInfo | undefined {
 	if (!model || !availableModels || availableModels.length === 0) return undefined;
 	const { baseModel } = splitKnownThinkingSuffix(model);
 	const exact = availableModels.find((entry) => entry.fullId === baseModel);

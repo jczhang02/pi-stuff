@@ -29,8 +29,8 @@ Major product changes in this fork:
 - user-owned runtime controls and shell-tool enrollment;
 - user-owned global denies that project, Agent, and session rules cannot relax;
 - custom shell aliases bound to their declared working directory;
-- direct-child forwarding with nested destructive asks denied until root
-  routing is available;
+- all-depth Agent forwarding directly to the root session, with a short broker
+  acknowledgement deadline and a separate visible human-decision window;
 - Pi Stuff aggregate, release, and verification integration.
 
 The upstream range `web-tree-sitter@^0.26.9` resolved to `0.26.11` in the

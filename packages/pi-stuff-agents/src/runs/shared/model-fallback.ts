@@ -44,11 +44,7 @@ export function normalizeParentModel(model: unknown): ParentModel | undefined {
  * repeated separators. Pure.
  */
 export function normalizeModelSegment(segment: string): string {
-	return segment
-		.toLowerCase()
-		.replace(/[._]+/g, "-")
-		.replace(/-+/g, "-")
-		.replace(/^-|-$/g, "");
+	return segment.toLowerCase().replace(/[._]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 }
 
 function isPlausibleDateStamp(year: string, month: string, day: string): boolean {
@@ -235,13 +231,10 @@ export function resolveEffectiveSubagentModel(
 		{ ...options, source: explicitModel !== undefined ? "explicit" : "inherited" },
 	);
 	if (resolved || explicitModel === undefined) return resolved;
-	return resolveSubagentModelOverride(
-		agentModel,
-		parentModel,
-		availableModels,
-		preferredProvider,
-		{ ...options, source: "inherited" },
-	);
+	return resolveSubagentModelOverride(agentModel, parentModel, availableModels, preferredProvider, {
+		...options,
+		source: "inherited",
+	});
 }
 
 export interface BuildModelCandidatesOptions {

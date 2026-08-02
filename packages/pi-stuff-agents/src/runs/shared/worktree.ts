@@ -34,6 +34,9 @@ export interface WorktreeCleanupTask {
 	index: number;
 	path: string;
 	branch: string;
+	outcome: "removed" | "retained" | "partial";
+	reason: "clean" | "changes" | "commits" | "git-check-failed" | "worktree-removal-failed" | "branch-removal-failed";
+	message: string;
 	worktreeRemoved: boolean;
 	branchRemoved: boolean;
 	errors?: string[];
@@ -145,8 +148,7 @@ export function findWorktreeTaskCwdConflict(
 	sharedCwd: string,
 ): WorktreeTaskCwdConflict | undefined {
 	const normalizedSharedCwd = normalizeComparableCwd(sharedCwd);
-	for (let index = 0; index < tasks.length; index++) {
-		const task = tasks[index]!;
+	for (const [index, task] of tasks.entries()) {
 		if (!task.cwd) continue;
 		const taskCwd = path.isAbsolute(task.cwd) ? task.cwd : path.resolve(sharedCwd, task.cwd);
 		if (normalizeComparableCwd(taskCwd) === normalizedSharedCwd) continue;
@@ -155,10 +157,7 @@ export function findWorktreeTaskCwdConflict(
 	return undefined;
 }
 
-export function formatWorktreeTaskCwdConflict(
-	conflict: WorktreeTaskCwdConflict,
-	sharedCwd: string,
-): string {
+export function formatWorktreeTaskCwdConflict(conflict: WorktreeTaskCwdConflict, sharedCwd: string): string {
 	return `worktree isolation uses the shared cwd (${sharedCwd}); task ${conflict.index + 1} (${conflict.agent}) sets cwd to ${conflict.cwd}. Remove task-level cwd overrides or disable worktree.`;
 }
 
@@ -198,9 +197,7 @@ function resolveRepoCwdRelative(cwd: string): string {
 		throw new Error("worktree isolation requires a git repository");
 	}
 	const rawPrefix = runGitChecked(cwd, ["rev-parse", "--show-prefix"]).trim();
-	const normalizedPrefix = rawPrefix
-		? path.normalize(rawPrefix.replace(/[\\/]+$/, ""))
-		: "";
+	const normalizedPrefix = rawPrefix ? path.normalize(rawPrefix.replace(/[\\/]+$/, "")) : "";
 	return normalizedPrefix === "." ? "" : normalizedPrefix;
 }
 
@@ -304,10 +301,7 @@ function parseWorktreeSetupHookOutput(rawStdout: string): WorktreeSetupHookOutpu
 	return parsed as WorktreeSetupHookOutput;
 }
 
-function runWorktreeSetupHook(
-	hook: ResolvedWorktreeSetupHook,
-	input: WorktreeSetupHookInput,
-): string[] {
+function runWorktreeSetupHook(hook: ResolvedWorktreeSetupHook, input: WorktreeSetupHookInput): string[] {
 	const result = spawnSync(hook.hookPath, [], {
 		cwd: input.worktreePath,
 		encoding: "utf-8",
@@ -368,9 +362,11 @@ function createSingleWorktree(
 	}
 
 	const agentCwd = cwdRelative ? path.join(worktreePath, cwdRelative) : worktreePath;
+	let nodeModulesLinked = false;
+	const syntheticPaths: string[] = [];
 	try {
-		const nodeModulesLinked = linkNodeModulesIfPresent(toplevel, worktreePath);
-		const syntheticPaths = nodeModulesLinked ? ["node_modules"] : [];
+		nodeModulesLinked = linkNodeModulesIfPresent(toplevel, worktreePath);
+		if (nodeModulesLinked) syntheticPaths.push("node_modules");
 
 		if (setupHook) {
 			const hookSyntheticPaths = runWorktreeSetupHook(setupHook, {
@@ -396,11 +392,21 @@ function createSingleWorktree(
 			syntheticPaths,
 		};
 	} catch (error) {
-		try { runGitChecked(toplevel, ["worktree", "remove", "--force", worktreePath]); } catch {
-			// Best-effort rollback; preserve the original setup failure.
-		}
-		try { runGitChecked(toplevel, ["branch", "-D", branch]); } catch {
-			// Best-effort rollback; preserve the original setup failure.
+		const cleanup = cleanupSingleWorktree(
+			toplevel,
+			{
+				path: worktreePath,
+				agentCwd,
+				branch,
+				index,
+				nodeModulesLinked,
+				syntheticPaths,
+			},
+			baseCommit,
+		);
+		if (cleanup.outcome !== "removed") {
+			const originalMessage = error instanceof Error ? error.message : String(error);
+			throw new Error(`${originalMessage}\n${cleanup.message}`);
 		}
 		throw error;
 	}
@@ -409,15 +415,43 @@ function createSingleWorktree(
 function removeSyntheticPath(worktree: WorktreeInfo, syntheticPath: string): void {
 	const resolved = path.resolve(worktree.path, syntheticPath);
 	const relative = path.relative(worktree.path, resolved);
-	if (!relative || relative === "." || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+	if (
+		!relative ||
+		relative === "." ||
+		relative === ".." ||
+		relative.startsWith(`..${path.sep}`) ||
+		path.isAbsolute(relative)
+	) {
 		return;
+	}
+
+	let ancestor = worktree.path;
+	const components = relative.split(path.sep);
+	for (const component of components.slice(0, -1)) {
+		ancestor = path.join(ancestor, component);
+		let ancestorStat: fs.Stats;
+		try {
+			ancestorStat = fs.lstatSync(ancestor);
+		} catch (error) {
+			const code =
+				error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+			if (code === "ENOENT") return;
+			throw error;
+		}
+		if (ancestorStat.isSymbolicLink()) {
+			throw new Error(
+				`Refusing to remove synthetic path '${syntheticPath}' through symbolic-link ancestor '${ancestor}'.`,
+			);
+		}
+		if (!ancestorStat.isDirectory()) return;
 	}
 
 	let stat: fs.Stats;
 	try {
 		stat = fs.lstatSync(resolved);
 	} catch (error) {
-		const code = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+		const code =
+			error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
 		if (code === "ENOENT") return;
 		throw error;
 	}
@@ -515,29 +549,98 @@ function writeEmptyPatch(patchPath: string): void {
 	}
 }
 
-function cleanupSingleWorktree(repoCwd: string, worktree: WorktreeInfo): WorktreeCleanupTask {
-	const errors: string[] = [];
-	let worktreeRemoved = false;
-	let branchRemoved = false;
-	try {
-		runGitChecked(repoCwd, ["worktree", "remove", "--force", worktree.path]);
-		worktreeRemoved = true;
-	} catch (error) {
-		errors.push(`worktree removal failed: ${error instanceof Error ? error.message : String(error)}`);
-	}
-	try {
-		runGitChecked(repoCwd, ["branch", "-D", worktree.branch]);
-		branchRemoved = true;
-	} catch (error) {
-		errors.push(`branch removal failed: ${error instanceof Error ? error.message : String(error)}`);
-	}
+function gitFailureMessage(result: GitResult): string {
+	return result.stderr.trim() || result.stdout.trim() || "Git command failed without an error message";
+}
+
+function retainedWorktree(
+	worktree: WorktreeInfo,
+	reason: "changes" | "commits" | "git-check-failed" | "worktree-removal-failed",
+	message: string,
+	error?: string,
+): WorktreeCleanupTask {
 	return {
 		index: worktree.index,
 		path: worktree.path,
 		branch: worktree.branch,
-		worktreeRemoved,
-		branchRemoved,
-		...(errors.length ? { errors } : {}),
+		outcome: "retained",
+		reason,
+		message,
+		worktreeRemoved: false,
+		branchRemoved: false,
+		...(error ? { errors: [error] } : {}),
+	};
+}
+
+function cleanupSingleWorktree(repoCwd: string, worktree: WorktreeInfo, baseCommit: string): WorktreeCleanupTask {
+	const status = runGit(worktree.path, ["status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching"]);
+	if (status.status !== 0) {
+		const error = `Git status check failed: ${gitFailureMessage(status)}`;
+		return retainedWorktree(
+			worktree,
+			"git-check-failed",
+			`Retained because Git could not verify the worktree state. Inspect ${worktree.path} manually.`,
+			error,
+		);
+	}
+	if (status.stdout.trim().length > 0) {
+		return retainedWorktree(
+			worktree,
+			"changes",
+			`Retained because tracked, staged, or untracked changes exist at ${worktree.path}.`,
+		);
+	}
+
+	const head = runGit(worktree.path, ["rev-parse", "HEAD"]);
+	if (head.status !== 0) {
+		const error = `Git HEAD check failed: ${gitFailureMessage(head)}`;
+		return retainedWorktree(
+			worktree,
+			"git-check-failed",
+			`Retained because Git could not verify the worktree commit. Inspect ${worktree.path} manually.`,
+			error,
+		);
+	}
+	if (head.stdout.trim() !== baseCommit) {
+		return retainedWorktree(worktree, "commits", `Retained because the Agent created commits on ${worktree.branch}.`);
+	}
+
+	const remove = runGit(repoCwd, ["worktree", "remove", worktree.path]);
+	if (remove.status !== 0) {
+		const error = `Worktree removal failed: ${gitFailureMessage(remove)}`;
+		return retainedWorktree(
+			worktree,
+			"worktree-removal-failed",
+			`Retained because the clean worktree could not be removed safely. Inspect ${worktree.path} manually.`,
+			error,
+		);
+	}
+
+	const removeBranch = runGit(repoCwd, ["branch", "-d", worktree.branch]);
+	if (removeBranch.status !== 0) {
+		const error = `Branch removal failed: ${gitFailureMessage(removeBranch)}`;
+		return {
+			index: worktree.index,
+			path: worktree.path,
+			branch: worktree.branch,
+			outcome: "partial",
+			reason: "branch-removal-failed",
+			message: `Removed the clean worktree, but retained branch ${worktree.branch} because Git would not delete it safely.`,
+			worktreeRemoved: true,
+			branchRemoved: false,
+			errors: [error],
+		};
+	}
+
+	return {
+		index: worktree.index,
+		path: worktree.path,
+		branch: worktree.branch,
+		outcome: "removed",
+		reason: "clean",
+		message: "Removed after verifying that the worktree was clean and had no Agent commits.",
+		worktreeRemoved: true,
+		branchRemoved: true,
 	};
 }
 
@@ -545,7 +648,12 @@ function hasWorktreeChanges(diff: WorktreeDiff): boolean {
 	return diff.filesChanged > 0 || diff.insertions > 0 || diff.deletions > 0 || diff.diffStat.trim().length > 0;
 }
 
-export function createWorktrees(cwd: string, runId: string, count: number, options?: CreateWorktreesOptions): WorktreeSetup {
+export function createWorktrees(
+	cwd: string,
+	runId: string,
+	count: number,
+	options?: CreateWorktreesOptions,
+): WorktreeSetup {
 	const repo = resolveRepoState(cwd);
 	const setupHook = resolveWorktreeSetupHook(repo.toplevel, options?.setupHook);
 	const baseDir = resolveWorktreeBaseDir(options?.baseDir, repo.toplevel);
@@ -553,16 +661,18 @@ export function createWorktrees(cwd: string, runId: string, count: number, optio
 
 	try {
 		for (let index = 0; index < count; index++) {
-			worktrees.push(createSingleWorktree(
-				repo.toplevel,
-				repo.cwdRelative,
-				runId,
-				index,
-				repo.baseCommit,
-				setupHook,
-				options?.agents?.[index],
-				baseDir,
-			));
+			worktrees.push(
+				createSingleWorktree(
+					repo.toplevel,
+					repo.cwdRelative,
+					runId,
+					index,
+					repo.baseCommit,
+					setupHook,
+					options?.agents?.[index],
+					baseDir,
+				),
+			);
 		}
 	} catch (error) {
 		cleanupWorktrees({
@@ -589,8 +699,7 @@ export function diffWorktrees(setup: WorktreeSetup, agents: string[], diffsDir: 
 	}
 
 	const diffs: WorktreeDiff[] = [];
-	for (let index = 0; index < setup.worktrees.length; index++) {
-		const worktree = setup.worktrees[index]!;
+	for (const [index, worktree] of setup.worktrees.entries()) {
 		const agent = agents[index] ?? `task-${index + 1}`;
 		const patchPath = path.join(diffsDir, `task-${index}-${safePatchAgentName(agent)}.patch`);
 		try {
@@ -598,7 +707,9 @@ export function diffWorktrees(setup: WorktreeSetup, agents: string[], diffsDir: 
 		} catch (error) {
 			// Preserve execution flow while retaining the failed capture as handoff evidence.
 			writeEmptyPatch(patchPath);
-			diffs.push(emptyDiff(index, agent, worktree.branch, patchPath, error instanceof Error ? error.message : String(error)));
+			diffs.push(
+				emptyDiff(index, agent, worktree.branch, patchPath, error instanceof Error ? error.message : String(error)),
+			);
 		}
 	}
 
@@ -608,18 +719,23 @@ export function diffWorktrees(setup: WorktreeSetup, agents: string[], diffsDir: 
 export function cleanupWorktrees(setup: WorktreeSetup): WorktreeCleanupReport {
 	const tasks: WorktreeCleanupTask[] = [];
 	for (let index = setup.worktrees.length - 1; index >= 0; index--) {
-		tasks.push(cleanupSingleWorktree(setup.cwd, setup.worktrees[index]!));
+		const worktree = setup.worktrees[index];
+		if (!worktree) continue;
+		tasks.push(cleanupSingleWorktree(setup.cwd, worktree, setup.baseCommit));
 	}
 	tasks.sort((left, right) => left.index - right.index);
 	const errors: string[] = [];
 	let pruned = false;
-	try {
-		runGitChecked(setup.cwd, ["worktree", "prune"]);
-		pruned = true;
-	} catch (error) {
-		errors.push(`worktree prune failed: ${error instanceof Error ? error.message : String(error)}`);
+	const allRemoved = tasks.every((task) => task.worktreeRemoved && task.branchRemoved);
+	if (allRemoved) {
+		try {
+			runGitChecked(setup.cwd, ["worktree", "prune"]);
+			pruned = true;
+		} catch (error) {
+			errors.push(`worktree prune failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
-	const state = tasks.every((task) => task.worktreeRemoved && task.branchRemoved) && pruned ? "complete" : "partial";
+	const state = allRemoved && pruned ? "complete" : "partial";
 	return {
 		state,
 		tasks,
@@ -643,7 +759,9 @@ export function formatWorktreeDiffSummary(diffs: WorktreeDiff[]): string {
 		lines.push("");
 	}
 
-	const patchesDir = path.dirname(changed[0]!.patchPath);
+	const firstChanged = changed[0];
+	if (!firstChanged) return "";
+	const patchesDir = path.dirname(firstChanged.patchPath);
 	lines.push(`Full patches: ${patchesDir}`);
 	return lines.join("\n").trimEnd();
 }

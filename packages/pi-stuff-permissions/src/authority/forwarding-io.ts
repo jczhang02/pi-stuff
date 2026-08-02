@@ -13,6 +13,7 @@ import { isPermissionDecisionState } from "#src/authority/permission-dialog";
 import {
 	createPermissionForwardingLocation,
 	type ForwardedAccessIntent,
+	type ForwardedPermissionAcknowledgement,
 	type ForwardedPermissionRequest,
 	type ForwardedPermissionResponse,
 	type ForwardedSessionApproval,
@@ -218,8 +219,13 @@ export function ensurePermissionForwardingLocation(
 	);
 	const requestsReady = ensureDirectoryExists(logger, location.requestsDir, "permission forwarding requests");
 	const responsesReady = ensureDirectoryExists(logger, location.responsesDir, "permission forwarding responses");
+	const acknowledgementsReady = ensureDirectoryExists(
+		logger,
+		location.acknowledgementsDir,
+		"permission forwarding acknowledgements",
+	);
 
-	return sessionRootReady && requestsReady && responsesReady ? location : null;
+	return sessionRootReady && requestsReady && responsesReady && acknowledgementsReady ? location : null;
 }
 
 export function getExistingPermissionForwardingLocation(
@@ -293,6 +299,11 @@ export function cleanupPermissionForwardingLocationIfEmpty(
 	);
 	if (requestsGone) {
 		tryRemoveDirectoryIfEmpty(logger, location.responsesDir, `${location.label} permission forwarding responses`);
+		tryRemoveDirectoryIfEmpty(
+			logger,
+			location.acknowledgementsDir,
+			`${location.label} permission forwarding acknowledgements`,
+		);
 	}
 	tryRemoveDirectoryIfEmpty(logger, location.sessionRootDir, `${location.label} permission forwarding session root`);
 }
@@ -374,6 +385,39 @@ export function readForwardedPermissionRequest(
 	}
 }
 
+export function readForwardedPermissionAcknowledgement(
+	logger: DebugReviewLogger | null,
+	filePath: string,
+): ForwardedPermissionAcknowledgement | null {
+	try {
+		const parsed = JSON.parse(readFileSync(filePath, "utf-8")) as Partial<ForwardedPermissionAcknowledgement>;
+		if (
+			!parsed ||
+			typeof parsed.requestId !== "string" ||
+			typeof parsed.targetSessionId !== "string" ||
+			typeof parsed.acknowledgedAt !== "number"
+		) {
+			logPermissionForwardingWarning(
+				logger,
+				`Ignoring invalid forwarded permission acknowledgement format in '${filePath}'`,
+			);
+			return null;
+		}
+		return {
+			requestId: parsed.requestId,
+			targetSessionId: parsed.targetSessionId,
+			acknowledgedAt: parsed.acknowledgedAt,
+		};
+	} catch (error) {
+		logPermissionForwardingWarning(
+			logger,
+			`Failed to read forwarded permission acknowledgement '${filePath}'`,
+			error,
+		);
+		return null;
+	}
+}
+
 export function readForwardedPermissionResponse(
 	logger: DebugReviewLogger | null,
 	filePath: string,
@@ -384,6 +428,8 @@ export function readForwardedPermissionResponse(
 		if (
 			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- JSON.parse can return null for the string "null"
 			!parsed ||
+			typeof parsed.requestId !== "string" ||
+			typeof parsed.targetSessionId !== "string" ||
 			typeof parsed.approved !== "boolean" ||
 			!isPermissionDecisionState(parsed.state) ||
 			typeof parsed.responderSessionId !== "string"
@@ -396,6 +442,8 @@ export function readForwardedPermissionResponse(
 		}
 
 		return {
+			requestId: parsed.requestId,
+			targetSessionId: parsed.targetSessionId,
 			approved: parsed.approved,
 			state: parsed.state,
 			denialReason: typeof parsed.denialReason === "string" ? parsed.denialReason : undefined,

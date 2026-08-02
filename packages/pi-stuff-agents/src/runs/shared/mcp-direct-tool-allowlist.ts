@@ -15,7 +15,9 @@ const IMPORT_PATHS = {
 		path.join(os.homedir(), ".claude.json"),
 		path.join(os.homedir(), ".claude", "claude_desktop_config.json"),
 	],
-	"claude-desktop": [path.join(os.homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json")],
+	"claude-desktop": [
+		path.join(os.homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json"),
+	],
 	codex: [path.join(os.homedir(), ".codex", "config.json")],
 	windsurf: [path.join(os.homedir(), ".windsurf", "mcp.json")],
 	vscode: [".vscode/mcp.json"],
@@ -71,9 +73,15 @@ interface MetadataCache {
 	servers: Record<string, ServerCacheEntry>;
 }
 
-export interface ResolvedMcpDirectToolSelection { name: string; selector: string }
+export interface ResolvedMcpDirectToolSelection {
+	name: string;
+	selector: string;
+}
 
-export function resolveMcpDirectToolSelections(mcpDirectTools: string[] | undefined, cwd = process.cwd()): ResolvedMcpDirectToolSelection[] {
+export function resolveMcpDirectToolSelections(
+	mcpDirectTools: string[] | undefined,
+	cwd = process.cwd(),
+): ResolvedMcpDirectToolSelection[] {
 	if (!mcpDirectTools?.length) return [];
 
 	try {
@@ -140,11 +148,17 @@ function validateConfig(raw: unknown): McpConfig {
 	const obj = raw as Record<string, unknown>;
 	const servers = obj.mcpServers ?? obj["mcp-servers"] ?? {};
 	return {
-		mcpServers: servers && typeof servers === "object" && !Array.isArray(servers) ? servers as Record<string, ServerEntry> : {},
-		imports: Array.isArray(obj.imports) ? obj.imports.filter((value): value is ImportKind => isImportKind(value)) : undefined,
-		settings: obj.settings && typeof obj.settings === "object" && !Array.isArray(obj.settings)
-			? obj.settings as McpConfig["settings"]
+		mcpServers:
+			servers && typeof servers === "object" && !Array.isArray(servers)
+				? (servers as Record<string, ServerEntry>)
+				: {},
+		imports: Array.isArray(obj.imports)
+			? obj.imports.filter((value): value is ImportKind => isImportKind(value))
 			: undefined,
+		settings:
+			obj.settings && typeof obj.settings === "object" && !Array.isArray(obj.settings)
+				? (obj.settings as McpConfig["settings"])
+				: undefined,
 	};
 }
 
@@ -193,13 +207,21 @@ function resolveImportPath(importKind: ImportKind, cwd: string): string | null {
 function extractServers(config: unknown, kind: ImportKind): Record<string, ServerEntry> {
 	if (!config || typeof config !== "object" || Array.isArray(config)) return {};
 	const obj = config as Record<string, unknown>;
-	const servers = kind === "cursor" || kind === "windsurf" || kind === "vscode"
-		? obj.mcpServers ?? obj["mcp-servers"]
-		: obj.mcpServers;
-	return servers && typeof servers === "object" && !Array.isArray(servers) ? servers as Record<string, ServerEntry> : {};
+	const servers =
+		kind === "cursor" || kind === "windsurf" || kind === "vscode"
+			? (obj.mcpServers ?? obj["mcp-servers"])
+			: obj.mcpServers;
+	return servers && typeof servers === "object" && !Array.isArray(servers)
+		? (servers as Record<string, ServerEntry>)
+		: {};
 }
 
-function resolveDirectToolSelections(config: McpConfig, cache: MetadataCache, prefix: ToolPrefix, envOverride: string[]): ResolvedMcpDirectToolSelection[] {
+function resolveDirectToolSelections(
+	config: McpConfig,
+	cache: MetadataCache,
+	prefix: ToolPrefix,
+	envOverride: string[],
+): ResolvedMcpDirectToolSelection[] {
 	const names: ResolvedMcpDirectToolSelection[] = [];
 	const seenNames = new Set<string>();
 	const { servers: selectedServers, tools: selectedTools } = parseSelections(envOverride);
@@ -208,9 +230,7 @@ function resolveDirectToolSelections(config: McpConfig, cache: MetadataCache, pr
 		const serverCache = cache.servers[serverName];
 		if (!isServerCacheValid(serverCache, definition)) continue;
 
-		const toolFilter = selectedServers.has(serverName)
-			? true
-			: selectedTools.get(serverName);
+		const toolFilter = selectedServers.has(serverName) ? true : selectedTools.get(serverName);
 		if (!toolFilter) continue;
 
 		for (const tool of Array.isArray(serverCache.tools) ? serverCache.tools : []) {
@@ -225,7 +245,8 @@ function resolveDirectToolSelections(config: McpConfig, cache: MetadataCache, pr
 
 		if (definition.exposeResources === false) continue;
 		for (const resource of Array.isArray(serverCache.resources) ? serverCache.resources : []) {
-			if (typeof resource?.name !== "string" || !resource.name || typeof resource.uri !== "string" || !resource.uri) continue;
+			if (typeof resource?.name !== "string" || !resource.name || typeof resource.uri !== "string" || !resource.uri)
+				continue;
 			const baseName = `get_${resourceNameToToolName(resource.name)}`;
 			if (toolFilter !== true && !toolFilter.has(baseName)) continue;
 			if (isToolExcluded(baseName, serverName, prefix, definition.excludeTools)) continue;
@@ -368,7 +389,9 @@ function resolveServerUrl(definition: Pick<ServerEntry, "url">): string | undefi
 
 	const missing = getMissingEnvVars(definition.url);
 	if (missing.length > 0) {
-		throw new Error(`Missing environment variable${missing.length === 1 ? "" : "s"} in MCP server URL: ${missing.join(", ")}`);
+		throw new Error(
+			`Missing environment variable${missing.length === 1 ? "" : "s"} in MCP server URL: ${missing.join(", ")}`,
+		);
 	}
 
 	const resolved = interpolateEnvVars(definition.url);
@@ -400,5 +423,8 @@ function stableStringify(value: unknown): string {
 	}
 	if (Array.isArray(value)) return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
 	const obj = value as Record<string, unknown>;
-	return `{${Object.keys(obj).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(obj[key])}`).join(",")}}`;
+	return `{${Object.keys(obj)
+		.sort()
+		.map((key) => `${JSON.stringify(key)}:${stableStringify(obj[key])}`)
+		.join(",")}}`;
 }

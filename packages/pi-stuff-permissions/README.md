@@ -17,6 +17,9 @@ small non-relaxable circuit breaker catches destructive shell mistakes.
 - Git worktree-discard operations such as `reset --hard`, `clean`,
   `restore`, path checkout, forced switch, and destructive stash operations
   use the same exact-call review.
+- A request from any supported Agent depth appears in the root Pi session and
+  names its Agent path. If the root broker is unavailable, the destructive
+  call is denied quickly instead of waiting invisibly.
 
 The review is a full-width, non-floating Command Dialog shared with the rest of
 Pi Stuff. It has only **Allow this exact call once** and **Deny**. Long evidence

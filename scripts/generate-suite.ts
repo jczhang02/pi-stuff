@@ -43,7 +43,7 @@ function renderIndex(capabilities: readonly string[]): string {
 		GENERATED_HEADER,
 		importBlock,
 		"type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;",
-		`const CAPABILITIES: readonly CapabilityFactory[] = [${identifiers.join(", ")}];`,
+		`const CAPABILITIES: readonly CapabilityFactory[] = [\n${identifiers.map((identifier) => `\t${identifier},`).join("\n")}\n];`,
 		`export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 \tfor (const capability of CAPABILITIES) {
 \t\tawait capability(pi);
