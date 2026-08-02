@@ -114,12 +114,10 @@ export async function runPiRpcSmoke(options: PiRpcSmokeOptions): Promise<PiRpcSm
 		const child = Bun.spawn(arguments_, {
 			cwd: options.cwd ?? resolve(import.meta.dir, ".."),
 			env: isolatedEnvironment(temporaryDirectory),
-			stdin: "pipe",
+			stdin: new Blob([`${JSON.stringify({ id: RPC_REQUEST_ID, type: "get_commands" })}\n`]),
 			stdout: "pipe",
 			stderr: "pipe",
 		});
-		child.stdin.write(`${JSON.stringify({ id: RPC_REQUEST_ID, type: "get_commands" })}\n`);
-		child.stdin.end();
 
 		let timedOut = false;
 		const timeout = setTimeout(() => {
