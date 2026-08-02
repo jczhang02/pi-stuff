@@ -1,56 +1,53 @@
 import type { Task } from "../tool/types.js";
 
-/**
- * Detect whether merging `newBlockedBy` into `taskId`'s `blockedBy` set would
- * introduce a cycle in the dependency graph.
- *
- * Pure of any module state; takes the existing `taskList` and the proposed
- * additions explicitly so the reducer can ask "would this update cycle?"
- * without mutating state first.
- */
-export function detectCycle(taskList: readonly Task[], taskId: number, newBlockedBy: readonly number[]): boolean {
-	const edges = new Map<number, number[]>();
-	for (const t of taskList) {
-		if (t.id === taskId) {
-			const merged = new Set([...(t.blockedBy ?? []), ...newBlockedBy]);
-			edges.set(t.id, [...merged]);
-		} else {
-			edges.set(t.id, t.blockedBy ? [...t.blockedBy] : []);
-		}
+/** Return true when any task dependency path loops back to an active node. */
+export function hasCycle(taskList: readonly Task[]): boolean {
+	const edges = new Map<string, readonly string[]>();
+	for (const task of taskList) {
+		edges.set(task.id, task.blockedBy ?? []);
 	}
 
-	const visiting = new Set<number>();
-	const visited = new Set<number>();
-	const hasCycleFrom = (node: number): boolean => {
-		if (visiting.has(node)) return true;
-		if (visited.has(node)) return false;
-		visiting.add(node);
-		for (const nb of edges.get(node) ?? []) {
-			if (hasCycleFrom(nb)) return true;
-		}
-		visiting.delete(node);
-		visited.add(node);
-		return false;
-	};
+	const visiting = new Set<string>();
+	const visited = new Set<string>();
 
-	for (const node of edges.keys()) {
-		if (hasCycleFrom(node)) return true;
+	function visit(taskId: string): boolean {
+		if (visiting.has(taskId)) return true;
+		if (visited.has(taskId)) return false;
+
+		visiting.add(taskId);
+		for (const blockerId of edges.get(taskId) ?? []) {
+			if (visit(blockerId)) return true;
+		}
+		visiting.delete(taskId);
+		visited.add(taskId);
+		return false;
+	}
+
+	for (const taskId of edges.keys()) {
+		if (visit(taskId)) return true;
 	}
 	return false;
 }
 
 /**
- * Build the inverse adjacency map: for each task `T`, which other tasks list
- * `T` in their `blockedBy`. Consumed by `selectShowTaskIds` (overlay gating)
- * and the `get` action's "blocks: #x, #y" suffix line.
+ * Compatibility helper for callers that want to validate one prospective
+ * blockedBy change without constructing the tentative task list themselves.
  */
-export function deriveBlocks(taskList: readonly Task[]): Map<number, number[]> {
-	const blocks = new Map<number, number[]>();
-	for (const t of taskList) {
-		for (const dep of t.blockedBy ?? []) {
-			const arr = blocks.get(dep) ?? [];
-			arr.push(t.id);
-			blocks.set(dep, arr);
+export function detectCycle(taskList: readonly Task[], taskId: string, newBlockedBy: readonly string[]): boolean {
+	const tasks = taskList.map((task) =>
+		task.id === taskId ? { ...task, blockedBy: [...new Set([...(task.blockedBy ?? []), ...newBlockedBy])] } : task,
+	);
+	return hasCycle(tasks);
+}
+
+/** Build the inverse dependency map: blocker id -> task ids it blocks. */
+export function deriveBlocks(taskList: readonly Task[]): Map<string, string[]> {
+	const blocks = new Map<string, string[]>();
+	for (const task of taskList) {
+		for (const blockerId of task.blockedBy ?? []) {
+			const blockedTaskIds = blocks.get(blockerId) ?? [];
+			blockedTaskIds.push(task.id);
+			blocks.set(blockerId, blockedTaskIds);
 		}
 	}
 	return blocks;

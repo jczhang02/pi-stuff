@@ -1,129 +1,100 @@
-import { StringEnum } from "@earendil-works/pi-ai";
-import { type Static, Type } from "typebox";
+import { Type } from "typebox";
 
-// ---------------------------------------------------------------------------
-// Tool / command identity — verbatim string boundaries.
-// Tool name "todo" is the persistence key for branch replay (filtering
-// `toolResult.toolName === "todo"`) AND the permissions entry at
-// `templates/pi-permissions.jsonc:26`. DO NOT rename.
-// ---------------------------------------------------------------------------
+export const TASK_CREATE_TOOL_NAME = "TaskCreate";
+export const TASK_GET_TOOL_NAME = "TaskGet";
+export const TASK_LIST_TOOL_NAME = "TaskList";
+export const TASK_UPDATE_TOOL_NAME = "TaskUpdate";
 
-export const TOOL_NAME = "todo";
-export const TOOL_LABEL = "Todo";
-export const COMMAND_NAME = "todos";
+export const TASK_TOOL_NAMES = {
+	create: TASK_CREATE_TOOL_NAME,
+	get: TASK_GET_TOOL_NAME,
+	list: TASK_LIST_TOOL_NAME,
+	update: TASK_UPDATE_TOOL_NAME,
+} as const;
 
-// ---------------------------------------------------------------------------
-// User-facing strings (kept stable for /todos UX parity).
-// ---------------------------------------------------------------------------
-
-export const ERR_REQUIRES_INTERACTIVE = "/todos requires interactive mode";
-export const MSG_NO_TODOS = "No todos yet. Ask the agent to add some!";
-
-// ---------------------------------------------------------------------------
-// Public domain types
-// ---------------------------------------------------------------------------
-
+export type TaskAction = keyof typeof TASK_TOOL_NAMES;
 export type TaskStatus = "pending" | "in_progress" | "completed" | "deleted";
 
-export type TaskAction = "create" | "update" | "list" | "get" | "delete" | "clear";
+export const TASK_SNAPSHOT_CAPABILITY = "pi-stuff-todo";
+export const TASK_SNAPSHOT_SCHEMA_VERSION = 1;
 
 export interface Task {
-	id: number;
+	id: string;
 	subject: string;
-	description?: string;
+	description: string;
 	activeForm?: string;
 	status: TaskStatus;
-	blockedBy?: number[];
+	blockedBy?: string[];
 	owner?: string;
 	metadata?: Record<string, unknown>;
 }
 
-/**
- * Persistence + replay snapshot. Every successful `todo` tool call returns this
- * shape under `details`; `state/replay.ts` reads the latest one from the branch
- * to reconstruct module state. Field order and field names are pinned by
- * cross-version replay compatibility.
- */
+/** Tool-result details may carry operation metadata, but replay only trusts the versioned snapshot fields. */
 export interface TaskDetails {
-	action: TaskAction;
-	params: Record<string, unknown>;
+	capability: typeof TASK_SNAPSHOT_CAPABILITY;
+	schemaVersion: typeof TASK_SNAPSHOT_SCHEMA_VERSION;
 	tasks: Task[];
 	nextId: number;
+	action?: TaskAction;
+	params?: Record<string, unknown>;
 	error?: string;
 }
 
-/**
- * Open-shape input bag the reducer accepts. Stays an interface so the index
- * signature (`[key: string]: unknown`) lets the runtime pass through TypeBox
- * `Static<typeof TodoParamsSchema>` without `as` casts.
- */
+const TaskStatusSchema = Type.Union(
+	[Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed"), Type.Literal("deleted")],
+	{ description: "Current task lifecycle state" },
+);
+
+const MetadataSchema = Type.Record(Type.String(), Type.Unknown(), {
+	description: "Metadata keys to merge; a null value removes an existing key",
+});
+
+export const TaskCreateParamsSchema = Type.Object(
+	{
+		subject: Type.String({ description: "Brief task title" }),
+		description: Type.String({ description: "Detailed task description and completion context" }),
+		activeForm: Type.Optional(Type.String({ description: "Present-continuous label shown while work is active" })),
+		metadata: Type.Optional(MetadataSchema),
+	},
+	{ additionalProperties: false },
+);
+
+export const TaskGetParamsSchema = Type.Object(
+	{
+		taskId: Type.String({ description: "Task ID" }),
+	},
+	{ additionalProperties: false },
+);
+
+export const TaskListParamsSchema = Type.Object({}, { additionalProperties: false });
+
+export const TaskUpdateParamsSchema = Type.Object(
+	{
+		taskId: Type.String({ description: "Task ID" }),
+		subject: Type.Optional(Type.String({ description: "Replacement task title" })),
+		description: Type.Optional(Type.String({ description: "Replacement task description" })),
+		activeForm: Type.Optional(Type.String({ description: "Replacement active-work label" })),
+		status: Type.Optional(TaskStatusSchema),
+		addBlockedBy: Type.Optional(
+			Type.Array(Type.String(), { description: "Task IDs that must finish before this task" }),
+		),
+		addBlocks: Type.Optional(Type.Array(Type.String(), { description: "Task IDs that this task blocks" })),
+		owner: Type.Optional(Type.String({ description: "Agent or owner assigned to the task" })),
+		metadata: Type.Optional(MetadataSchema),
+	},
+	{ additionalProperties: false },
+);
+
+/** Structural bag used by the pure reducer after schema validation at the tool boundary. */
 export interface TaskMutationParams {
 	[key: string]: unknown;
+	taskId?: string;
 	subject?: string;
 	description?: string;
 	activeForm?: string;
 	status?: TaskStatus;
-	blockedBy?: number[];
-	addBlockedBy?: number[];
-	removeBlockedBy?: number[];
+	addBlockedBy?: string[];
+	addBlocks?: string[];
 	owner?: string;
 	metadata?: Record<string, unknown>;
-	id?: number;
-	includeDeleted?: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// TypeBox parameter schema — every `description` doubles as LLM-facing prompt
-// copy. Field order and wording are pinned by registration tests and the
-// pre-refactor schema at `packages/rpiv-todo/todo.ts:512-573`.
-// ---------------------------------------------------------------------------
-
-export const TodoParamsSchema = Type.Object({
-	action: StringEnum(["create", "update", "list", "get", "delete", "clear"] as const),
-	subject: Type.Optional(Type.String({ description: "Task subject line (required for create)" })),
-	description: Type.Optional(Type.String({ description: "Long-form task description" })),
-	activeForm: Type.Optional(
-		Type.String({
-			description: "Present-continuous spinner label shown while status is in_progress (e.g. 'writing tests')",
-		}),
-	),
-	status: Type.Optional(
-		StringEnum(["pending", "in_progress", "completed", "deleted"] as const, {
-			description:
-				"Set this task's status (update): one of pending, in_progress, completed, deleted. When action is list, filters returned tasks by this status.",
-		}),
-	),
-	blockedBy: Type.Optional(
-		Type.Array(Type.Number(), {
-			description: "Initial blockedBy ids (create only)",
-		}),
-	),
-	addBlockedBy: Type.Optional(
-		Type.Array(Type.Number(), {
-			description: "Task ids to add to blockedBy (update only, additive merge)",
-		}),
-	),
-	removeBlockedBy: Type.Optional(
-		Type.Array(Type.Number(), {
-			description: "Task ids to remove from blockedBy (update only, additive merge)",
-		}),
-	),
-	owner: Type.Optional(Type.String({ description: "Agent/owner assigned to this task" })),
-	metadata: Type.Optional(
-		Type.Record(Type.String(), Type.Unknown(), {
-			description: "Arbitrary metadata; pass null value for a key to delete that key on update",
-		}),
-	),
-	id: Type.Optional(
-		Type.Number({
-			description: "Task id (required for update, get, delete)",
-		}),
-	),
-	includeDeleted: Type.Optional(
-		Type.Boolean({
-			description: "If true, list action returns deleted (tombstoned) tasks as well. Default: false.",
-		}),
-	),
-});
-
-export type TodoParams = Static<typeof TodoParamsSchema>;

@@ -1,5 +1,5 @@
 {
 	"$schema": "../../schemas/suite.schema.json",
 	"schemaVersion": 1,
-	"capabilities": []
+	"capabilities": ["@jczhang02/pi-stuff-todo"]
 }

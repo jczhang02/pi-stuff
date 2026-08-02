@@ -25,8 +25,12 @@
 			"./index.ts"
 		]
 	},
-	"dependencies": {},
-	"bundledDependencies": [],
+	"dependencies": {
+		"@jczhang02/pi-stuff-todo": "0.0.0"
+	},
+	"bundledDependencies": [
+		"@jczhang02/pi-stuff-todo"
+	],
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*"
 	},

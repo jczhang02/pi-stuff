@@ -1,73 +1,61 @@
 {
-	"name": "@juicesharp/rpiv-todo",
-	"version": "2.3.1",
-	"description": "Pi extension. A todo list for the model, rendered as a live overlay that survives /reload and conversation compaction.",
+	"name": "@jczhang02/pi-stuff-todo",
+	"version": "0.0.0",
+	"description": "A bounded, recoverable session Todo capability for Pi Stuff",
+	"type": "module",
 	"keywords": [
 		"pi-package",
 		"pi-extension",
-		"rpiv",
-		"todo"
+		"todo",
+		"tasks"
 	],
-	"type": "module",
 	"license": "MIT",
-	"author": "juicesharp",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/juicesharp/rpiv-mono.git",
-		"directory": "packages/rpiv-todo"
-	},
-	"homepage": "https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-todo#readme",
-	"bugs": {
-		"url": "https://github.com/juicesharp/rpiv-mono/issues"
-	},
 	"publishConfig": {
 		"access": "public"
 	},
-	"scripts": {
-		"test": "vitest run"
+	"exports": {
+		".": "./index.ts"
 	},
 	"files": [
-		"config.ts",
 		"index.ts",
-		"locales/",
 		"todo.ts",
 		"todo-overlay.ts",
-		"LICENSE",
-		"docs/",
-		"!docs/*.png",
-		"!docs/*.jpg",
-		"!docs/*.svg",
-		"README.md",
 		"state/invariants.ts",
-		"state/i18n-bridge.ts",
 		"state/replay.ts",
-		"state/selectors.ts",
 		"state/state-reducer.ts",
 		"state/state.ts",
 		"state/store.ts",
 		"state/task-graph.ts",
 		"tool/response-envelope.ts",
 		"tool/types.ts",
-		"view/format.ts"
+		"view/format.ts",
+		"README.md",
+		"UPSTREAM.md",
+		"LICENSE"
 	],
 	"pi": {
 		"extensions": [
 			"./index.ts"
 		]
 	},
+	"dependencies": {
+		"typebox": "1.3.7"
+	},
 	"peerDependencies": {
-		"@juicesharp/rpiv-i18n": "*",
-		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*"
 	},
-	"peerDependenciesMeta": {
-		"@juicesharp/rpiv-i18n": {
-			"optional": true
-		}
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "0.83.0",
+		"@earendil-works/pi-tui": "0.83.0"
 	},
-	"dependencies": {
-		"@juicesharp/rpiv-config": "^2.3.1",
-		"typebox": "^1.1.24"
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/jczhang02/pi-stuff.git",
+		"directory": "packages/pi-stuff-todo"
+	},
+	"homepage": "https://github.com/jczhang02/pi-stuff/tree/main/packages/pi-stuff-todo#readme",
+	"bugs": {
+		"url": "https://github.com/jczhang02/pi-stuff/issues"
 	}
 }

@@ -40,6 +40,11 @@ async function createRepository(): Promise<string> {
 	return root;
 }
 
+async function writeCapabilityManifest(root: string, manifest: Record<string, unknown>): Promise<void> {
+	await mkdir(join(root, "packages", "pi-example"), { recursive: true });
+	await writeFile(join(root, "packages", "pi-example", "package.json"), `${JSON.stringify(manifest, null, "\t")}\n`);
+}
+
 afterEach(async () => {
 	await Promise.all(TEMPORARY_ROOTS.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -47,6 +52,13 @@ afterEach(async () => {
 describe("auditPublicFiles", () => {
 	test("accepts public files and the minimal Aggregate Package allowlist", async () => {
 		const root = await createRepository();
+		await writeCapabilityManifest(root, {
+			name: "@jczhang02/pi-example",
+			version: "0.0.1",
+			files: ["index.ts", "README.md", "LICENSE"],
+			pi: { extensions: ["./index.ts"] },
+			dependencies: { typebox: "1.1.24" },
+		});
 
 		expect(await auditPublicFiles(root)).toEqual([]);
 	});
@@ -98,5 +110,35 @@ describe("auditPublicFiles", () => {
 			{ path: "package.json", rule: "direct-dependency-must-be-exact" },
 			{ path: "package.json", rule: "trusted-dependencies-must-be-empty" },
 		]);
+	});
+
+	test("applies the publishable Package contract to Capability workspaces", async () => {
+		const root = await createRepository();
+		await writeCapabilityManifest(root, {
+			name: "@jczhang02/pi-example",
+			version: "0.0.1",
+			files: ["index.ts", "../private.txt"],
+			pi: { extensions: ["./extension.ts"] },
+			scripts: { prepare: "generate-package" },
+			dependencies: { typebox: "^1.1.24" },
+		});
+
+		expect(await auditPublicFiles(root)).toEqual([
+			{ path: "packages/pi-example/package.json", rule: "direct-dependency-must-be-exact" },
+			{ path: "packages/pi-example/package.json", rule: "package-files-allowlist" },
+			{ path: "packages/pi-example/package.json", rule: "package-pi-manifest" },
+			{ path: "packages/pi-example/package.json", rule: "package-lifecycle-script" },
+		]);
+	});
+
+	test("ignores tracked files deleted from the working tree", async () => {
+		const root = await createRepository();
+		const deletedPath = join(root, "README.md");
+		const privatePath = ["", "home", "example", "secret"].join("/");
+		await writeFile(deletedPath, `private path: ${privatePath}\n`);
+		Bun.spawnSync(["git", "add", "README.md"], { cwd: root });
+		await rm(deletedPath);
+
+		expect(await auditPublicFiles(root)).toEqual([]);
 	});
 });

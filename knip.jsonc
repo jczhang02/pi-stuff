@@ -7,6 +7,9 @@
 		},
 		"packages/pi-stuff": {
 			"project": ["*.ts"]
+		},
+		"packages/pi-stuff-todo": {
+			"project": ["**/*.ts"]
 		}
 	}
 }

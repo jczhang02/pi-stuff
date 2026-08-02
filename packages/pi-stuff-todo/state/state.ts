@@ -6,9 +6,7 @@ import type { Task } from "../tool/types.js";
  * this shape. Replay (`state/replay.ts`) returns a fresh `TaskState`; the
  * lifecycle handlers in `index.ts` write it via `replaceState`.
  *
- * The shape is intentionally minimal — no derived caches or runtime cells.
- * Selectors in `state/selectors.ts` are pure of `TaskState` and own all
- * derivations (visible/grouped/counted/etc).
+ * The shape is intentionally minimal: no derived caches or runtime cells.
  */
 export interface TaskState {
 	tasks: Task[];

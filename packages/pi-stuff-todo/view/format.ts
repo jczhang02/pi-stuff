@@ -1,163 +1,141 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
-import { formatStatusLabel } from "../state/i18n-bridge.js";
-import { selectTaskSubjectById } from "../state/selectors.js";
-import type { TaskState } from "../state/state.js";
-import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } from "../tool/types.js";
+import type { TaskStatus } from "../tool/types.js";
 
-// Re-export so legacy import paths (todo.ts, tests) continue to resolve;
-// the canonical definition lives in the i18n bridge.
-export { formatStatusLabel };
+export type OverlayTaskId = string;
 
-// ---------------------------------------------------------------------------
-// Status presentation tables — the single source of truth for glyph/color.
-// ---------------------------------------------------------------------------
+/** Structural view input kept independent from persistence-only task fields. */
+export interface OverlayTask {
+	readonly id: OverlayTaskId;
+	readonly subject: string;
+	readonly status: TaskStatus;
+	readonly blockedBy?: readonly OverlayTaskId[];
+}
 
-export const STATUS_GLYPH: Record<TaskStatus, string> = {
-	pending: "○",
-	in_progress: "◐",
-	completed: "●",
-	deleted: "⊘",
-};
+export interface OverlayTaskRow {
+	readonly task: OverlayTask;
+	readonly openBlockers: readonly OverlayTaskId[];
+}
 
-/**
- * Color palette for the renderResult status echo. `deleted` uses `muted` so a
- * successful delete is visually distinct from the error branch (which uses
- * `error` + `✗`). Mirrors pre-refactor `todo.ts:444-450`.
- */
-export const STATUS_COLOR: Record<TaskStatus, "dim" | "warning" | "success" | "muted"> = {
-	pending: "dim",
-	in_progress: "warning",
-	completed: "success",
-	deleted: "muted",
-};
+export interface OverlayLayout {
+	readonly visible: readonly OverlayTaskRow[];
+	readonly hidden: readonly OverlayTaskRow[];
+	readonly next: OverlayTaskRow | undefined;
+}
 
-/**
- * Per-action prefix glyph for renderCall. `+` create, `→` update, `×` delete,
- * `›` get, `☰` list, `∅` clear. Pre-refactor `todo.ts:457-464`.
- */
-export const ACTION_GLYPH: Record<TaskAction, string> = {
-	create: "+",
-	update: "→",
-	delete: "×",
-	get: "›",
-	list: "☰",
-	clear: "∅",
-};
+const MAX_OVERLAY_TASK_ROWS = 5;
+
+function compareTaskIds(left: OverlayTask, right: OverlayTask): number {
+	if (left.id === right.id) return 0;
+	if (/^\d+$/.test(left.id) && /^\d+$/.test(right.id)) {
+		const leftNumber = BigInt(left.id);
+		const rightNumber = BigInt(right.id);
+		if (leftNumber !== rightNumber) return leftNumber < rightNumber ? -1 : 1;
+	}
+	return left.id < right.id ? -1 : 1;
+}
+
+function singleLine(value: string): string {
+	return value.replace(/\s+/g, " ").trim();
+}
 
 /**
- * Glyph for the persistent overlay's per-task row. Differs from `STATUS_GLYPH`
- * for `completed` (`✓` vs `●`) and `deleted` (`✗` vs `⊘`) because the
- * overlay caller never renders a `deleted` row but uses `✗` in its
- * error-toned palette. Mirrors pre-refactor `todo-overlay.ts:23-33`.
+ * Resolve dependencies against the complete task set. Missing references stay
+ * open; completed and deleted dependencies are resolved.
  */
-export function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
+export function selectOpenBlockers(
+	task: OverlayTask,
+	tasksById: ReadonlyMap<string, OverlayTask>,
+): readonly OverlayTaskId[] {
+	return (task.blockedBy ?? []).filter((blockerId) => {
+		const blocker = tasksById.get(blockerId);
+		return blocker === undefined || (blocker.status !== "completed" && blocker.status !== "deleted");
+	});
+}
+
+function rowRank(row: OverlayTaskRow, recentCompletedIds: ReadonlySet<string>): number {
+	if (row.task.status === "completed") return recentCompletedIds.has(row.task.id) ? 0 : 4;
+	if (row.task.status === "in_progress") return 1;
+	if (row.task.status === "pending") return row.openBlockers.length === 0 ? 2 : 3;
+	return 5;
+}
+
+/**
+ * Order the bounded checklist as recent completions, active work, runnable
+ * pending work, blocked pending work, then older completions. Rows inside each
+ * group are deterministic by task id.
+ */
+export function selectOverlayLayout(
+	tasks: readonly OverlayTask[],
+	recentCompletedIds: ReadonlySet<string> = new Set<string>(),
+	maxRows = MAX_OVERLAY_TASK_ROWS,
+): OverlayLayout {
+	const tasksById = new Map(tasks.map((task) => [task.id, task]));
+	const rows = tasks
+		.filter((task) => task.status !== "deleted")
+		.map((task) => ({ task, openBlockers: selectOpenBlockers(task, tasksById) }))
+		.sort((left, right) => {
+			const rankDifference = rowRank(left, recentCompletedIds) - rowRank(right, recentCompletedIds);
+			return rankDifference || compareTaskIds(left.task, right.task);
+		});
+	const rowLimit = Math.max(0, Math.min(MAX_OVERLAY_TASK_ROWS, Math.floor(maxRows)));
+	const visible = rows.slice(0, rowLimit);
+	const hidden = rows.slice(rowLimit);
+	const next = rows.find((row) => row.task.status === "in_progress" || row.task.status === "pending");
+	return { visible, hidden, next };
+}
+
+function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
 	switch (status) {
 		case "pending":
-			return theme.fg("dim", "○");
+			return theme.fg("dim", "□");
 		case "in_progress":
-			return theme.fg("warning", "◐");
+			return theme.fg("accent", "■");
 		case "completed":
-			return theme.fg("success", "✓");
+			return theme.fg("dim", "✓");
 		case "deleted":
 			return theme.fg("error", "✗");
 	}
 }
 
-/**
- * Format a single task row for the persistent overlay. The subject color
- * reflects task state while IDs and supporting metadata stay visually quiet.
- */
-export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean): string {
-	const glyph = overlayStatusGlyph(t.status, theme);
-	const subjectColor =
-		t.status === "in_progress" ? "accent" : t.status === "completed" || t.status === "deleted" ? "muted" : "text";
-	let subject = theme.fg(subjectColor, t.subject);
-	if (t.status === "completed" || t.status === "deleted") {
-		subject = theme.strikethrough(subject);
+/** Format one unheaded, single-line task row. */
+export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme): string {
+	const { task, openBlockers } = row;
+	const glyph = overlayStatusGlyph(task.status, theme);
+	const text = singleLine(task.subject);
+	let subject: string;
+	if (task.status === "completed" || task.status === "deleted") {
+		subject = theme.strikethrough(theme.fg("dim", text));
+	} else if (task.status === "in_progress") {
+		subject = theme.bold(theme.fg("accent", text));
+	} else if (openBlockers.length > 0) {
+		subject = theme.fg("dim", text);
+	} else {
+		subject = theme.fg("text", text);
 	}
-	let line = `${glyph}`;
-	if (showId) line += ` ${theme.fg("dim", `#${t.id}`)}`;
-	line += ` ${subject}`;
-	if (t.status === "in_progress" && t.activeForm) {
-		line += ` ${theme.fg("muted", `(${t.activeForm})`)}`;
-	}
-	if (t.blockedBy && t.blockedBy.length > 0) {
-		line += ` ${theme.fg("muted", `⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}`)}`;
-	}
-	return line;
+
+	const blockerSuffix =
+		openBlockers.length > 0
+			? ` ${theme.fg("dim", `blocked by ${openBlockers.map((id) => `#${id}`).join(", ")}`)}`
+			: "";
+	return `${glyph} ${subject}${blockerSuffix}`;
 }
 
-/**
- * Format a single task line for the `/todos` slash command (no glyph color,
- * indented bullet prefix). Pre-refactor `todo.ts:670-674`.
- */
-export function formatCommandTaskLine(t: Task, glyph: string): string {
-	const form = t.status === "in_progress" && t.activeForm ? ` (${t.activeForm})` : "";
-	const block = t.blockedBy?.length ? `    ⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}` : "";
-	return `  ${glyph} #${t.id} ${t.subject}${form}${block}`;
+export function formatOverlayOverflowLine(hidden: readonly OverlayTaskRow[], theme: Theme): string {
+	const statuses = new Set(hidden.map((row) => row.task.status));
+	let label = "more";
+	if (statuses.size === 1) {
+		const status = hidden[0]?.task.status;
+		if (status === "pending") label = "pending";
+		else if (status === "in_progress") label = "in progress";
+		else if (status === "completed") label = "completed";
+	}
+	return theme.fg("dim", `… +${hidden.length} ${label}`);
 }
 
-// ---------------------------------------------------------------------------
-// Tool render hooks — wrapped so `todo.ts` becomes a thin call-site.
-// ---------------------------------------------------------------------------
-
-/**
- * `renderCall` body. Receives the parsed args, the theme, and the live
- * `TaskState` (resolved by the caller via `getState()`). Returns a `Text`
- * node identical to pre-refactor `todo.ts:507-525`.
- */
-export function renderTodoCall(
-	args: TaskMutationParams & { action: TaskAction },
-	theme: Theme,
-	state: TaskState,
-): Text {
-	const glyph = ACTION_GLYPH[args.action] ?? args.action;
-	let text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", glyph);
-
-	if (args.action === "create" && args.subject) {
-		text += ` ${theme.fg("dim", args.subject)}`;
-	} else if (
-		(args.action === "update" || args.action === "get" || args.action === "delete") &&
-		args.id !== undefined
-	) {
-		const subject = selectTaskSubjectById(state, args.id);
-		text += ` ${theme.fg("accent", subject ?? `#${args.id}`)}`;
-	} else if (args.action === "list" && args.status) {
-		text += ` ${theme.fg("muted", formatStatusLabel(args.status))}`;
-	}
-	return new Text(text, 0, 0);
-}
-
-/**
- * `renderResult` body. Inspects `details` to pick the per-action status echo
- * (only `create`/`update`/`delete` advertise a status; `list`/`get`/`clear`
- * fall back to plain `✓`). Identical visual output to pre-refactor
- * `todo.ts:533-565`.
- */
-export function renderTodoResult(result: { details?: unknown }, theme: Theme): Text {
-	const details = result.details as TaskDetails | undefined;
-	let status: TaskStatus | undefined;
-	if (details) {
-		const params = details.params as TaskMutationParams;
-		switch (details.action) {
-			case "create":
-				status = details.tasks[details.tasks.length - 1]?.status;
-				break;
-			case "update":
-				status = params.status ?? details.tasks.find((t) => t.id === params.id)?.status;
-				break;
-			case "delete":
-				status = details.tasks.find((t) => t.id === params.id)?.status;
-				break;
-			case "list":
-			case "get":
-			case "clear":
-				break;
-		}
-	}
-	if (status) {
-		return new Text(theme.fg(STATUS_COLOR[status], `${STATUS_GLYPH[status]} ${formatStatusLabel(status)}`), 0, 0);
-	}
-	return new Text(theme.fg("success", "✓"), 0, 0);
+export function formatCollapsedNextLine(next: OverlayTaskRow | undefined, theme: Theme): string {
+	const label = theme.fg("dim", "Next:");
+	if (!next) return `${label} ${theme.fg("dim", "all tasks complete")}`;
+	const subject = singleLine(next.task.subject);
+	const text = next.openBlockers.length > 0 ? theme.fg("dim", subject) : theme.fg("text", subject);
+	return `${label} ${text}`;
 }
