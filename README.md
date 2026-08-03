@@ -25,7 +25,8 @@ Pi remains the host. The Suite is a normal Pi Package: it exports an ordered agg
 | Package | Purpose | Status |
 | --- | --- | --- |
 | `@jczhang02/pi-stuff` | Aggregate entry point for the full Suite | Unreleased |
-| `@jczhang02/pi-stuff-ui` | Shared non-floating Command Dialog coordinator | In development |
+| `@jczhang02/pi-stuff-ui` | Responsive Statusline, input presentation, and shared non-floating Command Dialog coordinator | In development |
+| `@jczhang02/pi-stuff-tools` | Compact built-in and Suite-owned Tool presentation with focused details | In development |
 | `@jczhang02/pi-stuff-permissions` | Quiet destructive-command circuit breaker | In development |
 | `@jczhang02/pi-stuff-agents` | Current-session foreground and background Agents | In development |
 | `@jczhang02/pi-stuff-todo` | Recoverable per-session task tracking with a compact editor widget | In development |
@@ -54,12 +55,42 @@ The Package itself never edits `settings.json`. Both commands ask the Pi host to
 Requirements:
 
 - Bun 1.3.14
-- Pi 0.83.0 for host certification
+- Node.js 24.16.0 and npm 11.13.0 for the certified Host build
+- Git, Bash, tar, gzip, and standard Unix utilities (`cp`, `mkdir`, `mv`, and `rm`)
+- Linux x64 for the certified Host build; CI uses Ubuntu 24.04 as its system-utility baseline
+- Pi upstream `bf4a90d81985bd45052eeeae59d84fe13e0bd2c8` (reports 0.83.0) for Host certification
 - Beads 1.1.0 for issue maintenance
+
+Build a certified Host instance on Linux x64. The command checks out the pinned source into ignored `.artifacts/`,
+restores the repository-owned content-addressed model snapshot, checks the exact Node/npm/Bun versions, and writes a
+hash-bound local source-build record. The default build never reads the live model catalog:
+
+```bash
+bun run host:build
+```
+
+The command prints the exact `PI_BIN`, `PI_HOST_ATTESTATION`, and `PI_HOST_SOURCE_CHECKOUT` environment needed below.
+The profile certifies source, model-data, and compiler inputs; it does not claim that different system utilities produce
+the same Host bytes. Each accepted build record separately binds the binary it produced. The record is an operational
+guard against accidental Host mismatch, not a cryptographic attestation of a potentially hostile local machine.
+
+Refreshing model data is a separate maintainer workflow. It hydrates the live catalog, normalizes its non-input
+timestamp, and writes a new immutable candidate under `vendor/pi-host-model-data/<sha256>` without changing the
+certified profile:
+
+```bash
+bun run host:model-data:refresh
+```
+
+Review the resulting file diff, then update `CERTIFIED_PI_MODEL_DATA_SHA256` explicitly in the same change if the
+candidate should become certified.
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts
-bun run check
+PI_BIN="$PWD/.artifacts/pi-host/linux-x64/pi" \
+PI_HOST_ATTESTATION="$PWD/.artifacts/pi-host-attestation.json" \
+PI_HOST_SOURCE_CHECKOUT="$PWD/.artifacts/pi-source" \
+  bun run check
 ```
 
 Engineering work is tracked in Beads and mirrored to [GitHub Issues](https://github.com/jczhang02/pi-stuff/issues). See [`CONTRIBUTING.md`](CONTRIBUTING.md) before changing publishable behavior.

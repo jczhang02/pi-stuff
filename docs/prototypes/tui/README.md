@@ -204,6 +204,23 @@ FREEZE_BIN=/tmp/pi-proto-bin/freeze \
 
 The capture verifies both permission choices, exact BTW and main-draft restoration, continued editor typing after human-required input arrives, explicit selection before `x` stops an Agent, and mixed `done` / `failed` / `stopped` / `waiting` rows at `100 × 32` and `64 × 28`. Production code must put `ctx.ui.custom()` and `ctx.ui.setEditorComponent()` behind one Suite coordinator; an Extension cannot reliably preempt an unrelated third-party dialog.
 
+## Compact footer lifecycle acceptance
+
+[`footer-shell-capture.ts`](./footer-shell-capture.ts) loads the production `@jczhang02/pi-stuff-ui` Extension and adds
+one capture-only Command Dialog shortcut. [`footer-shell-fixture.ts`](./footer-shell-fixture.ts) supplies a deterministic
+persisted CJK transcript and offline model metadata. The harness does not call a model or modify user settings.
+
+Reproduce the nine native-Pi frames from the repository root:
+
+```bash
+FREEZE_BIN=/tmp/pi-proto-bin/freeze \
+  ./docs/prototypes/tui/footer-shell-capture.sh
+```
+
+The [HTML report](./footer-shell-report.html) covers fixed `100 × 32` and `64 × 28` normal, dialog, and restored states,
+plus a live `100 → 64 → 100` resize cycle. The script asserts one normal footer row, absence of footer/draft/floating chrome
+inside the Command Dialog, project/branch/model/context presence after every restoration, and exact CJK draft recovery.
+
 ## Preview standard
 
 For future Pi Stuff UI decisions:

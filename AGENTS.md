@@ -16,12 +16,23 @@ These instructions apply only while developing this repository. This file is not
 - A Capability Package owns one coherent behavior and remains independently versioned.
 - Keep Extension import and startup pure: no network calls, file writes, subprocesses, or host-setting mutations.
 - A future Capability may produce side effects only from an explicit user-triggered command or tool whose contract documents them.
+- The Statusline has one observation-only exception: after a user-driven Agent turn it may run a bounded, no-lock `git status` read to obtain change counts that Pi 0.83 does not expose. It must never run during import, initialization, or `session_start`, and failure must degrade to branch-only display.
 - Let initialization errors propagate. A partially loaded Suite is not a supported state.
+
+## UI contract
+
+- Use Claude Code as the primary visible-behavior reference and Pi's native interaction grammar as the Host constraint. Reproduce the useful hierarchy, density, and lifecycle rather than copying source code or introducing another shell.
+- Temporary focused surfaces are full-width, non-floating Command Dialogs. Settings use Pi's native SettingsList and keyboard behavior.
+- Use Pi semantic theme tokens only. Never hard-code a personal theme, ANSI palette, or package-specific decorative frame.
+- Preserve the conversation-first layout: reduce or omit lower-priority information at narrow widths before allowing overlap, stale chrome, editor displacement, or unbounded growth.
+- Focus, Escape, draft, footer, working row, Todo widget, and Agent roster restoration are one deterministic cross-Capability contract.
+- Keep information at one authority. Do not duplicate Todo, Agent, BTW, Permission, or Tool state in the Statusline or another permanent dashboard.
 
 ## Package contract
 
 - Ship TypeScript source; do not add a `dist/` build lane.
-- Pi core packages are wildcard peer dependencies and exact `0.83.0` development dependencies.
+- Pi core packages are wildcard peer dependencies and exact `0.83.0` development dependencies. Runtime certification
+  uses the upstream source profile in `docs/compatibility.md`; never treat the same version string as sufficient proof.
 - Runtime Capability dependencies of the Aggregate must also be listed in `bundledDependencies`.
 - Only files in each Package's explicit `files` allowlist may enter its tarball.
 - Do not add lifecycle scripts to a publishable Package.
