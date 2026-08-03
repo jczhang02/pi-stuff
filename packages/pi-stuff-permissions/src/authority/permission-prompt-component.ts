@@ -1,5 +1,5 @@
 import type { ExtensionContext, ExtensionUIContext, KeybindingsManager } from "@earendil-works/pi-coding-agent";
-import { type Component, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type Component, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { CommandDialogCoordinator, CommandDialogView } from "@jczhang02/pi-stuff-ui";
 import {
 	createDeniedPermissionDecision,
@@ -206,7 +206,7 @@ export class PermissionPromptComponent implements Component {
 	render(width: number): string[] {
 		const terminalRows = this.terminalRows();
 		const panelRows = Math.min(MAX_PANEL_ROWS, terminalRows);
-		const minimumRows = this.config.exactCallOnly ? 8 : 10;
+		const minimumRows = this.minimumReviewRows(width);
 		const canReview = width >= MIN_REVIEW_WIDTH && panelRows >= minimumRows;
 		if (!canReview) {
 			this.reviewEnabled = false;
@@ -244,6 +244,14 @@ export class PermissionPromptComponent implements Component {
 			case "scope":
 				return this.renderScope(width, panelRows);
 		}
+	}
+
+	private minimumReviewRows(width: number): number {
+		const baseline = this.config.exactCallOnly ? 8 : 10;
+		if (this.state.step !== "decision") return baseline;
+		const feedbackRows = this.state.hint ? packHintLines(width, [this.state.hint]).length : 0;
+		const actionRows = packHintLines(width, ["↑/↓ choose", "Enter confirm", "Esc deny"]).length;
+		return Math.max(baseline, 4 + this.optionOrder().length + feedbackRows + actionRows);
 	}
 
 	private handleViewportInput(data: string): boolean {
@@ -314,7 +322,11 @@ export class PermissionPromptComponent implements Component {
 		const optionOrder = this.optionOrder();
 		const roomy = panelRows >= 12;
 		const spacerCount = roomy ? 3 : 0;
-		const bodyRows = Math.max(1, panelRows - (optionOrder.length + 4 + spacerCount));
+		const footer = [
+			...(this.state.hint ? hintLines(this.theme, width, [this.state.hint], "warning") : []),
+			...hintLines(this.theme, width, ["↑/↓ choose", "Enter confirm", "Esc deny"]),
+		];
+		const bodyRows = Math.max(1, panelRows - (optionOrder.length + 3 + spacerCount + footer.length));
 		const viewport = this.renderEvidenceViewport(width, bodyRows);
 		const suffix = this.pendingCount > 1 ? ` · 1 of ${this.pendingCount} pending` : "";
 		const lines = [
@@ -332,7 +344,7 @@ export class PermissionPromptComponent implements Component {
 			lines.push(selected ? this.theme.fg("accent", row) : row);
 		}
 		if (roomy) lines.push("");
-		lines.push(`${GUTTER}${this.state.hint || this.theme.fg("dim", "↑/↓ choose · Enter confirm · Esc deny")}`);
+		lines.push(...footer);
 		return fitScreen(lines, width);
 	}
 
@@ -340,7 +352,8 @@ export class PermissionPromptComponent implements Component {
 		const roomy = panelRows >= 12;
 		const errorRows = this.state.reasonError ? 1 : 0;
 		const spacerCount = roomy ? 3 : 0;
-		const bodyRows = Math.max(1, panelRows - (5 + errorRows + spacerCount));
+		const footer = hintLines(this.theme, width, ["Enter submit", "Esc back"]);
+		const bodyRows = Math.max(1, panelRows - (4 + errorRows + spacerCount + footer.length));
 		const viewport = this.renderEvidenceViewport(width, bodyRows);
 		const lines = [
 			this.theme.fg("border", "─".repeat(width)),
@@ -355,7 +368,7 @@ export class PermissionPromptComponent implements Component {
 			lines.push(`${GUTTER}${this.theme.fg("error", this.state.reasonError)}`);
 		}
 		if (roomy) lines.push("");
-		lines.push(`${GUTTER}${this.theme.fg("dim", "Enter submit · Esc back")}`);
+		lines.push(...footer);
 		return fitScreen(lines, width);
 	}
 
@@ -376,7 +389,7 @@ export class PermissionPromptComponent implements Component {
 			const text = `${GUTTER}${selected ? "›" : " "} ${sanitizeTerminalInline(row.label)}`;
 			lines.push(selected ? this.theme.fg("accent", text) : text);
 		}
-		lines.push("", `${GUTTER}${this.theme.fg("dim", "↑/↓ navigate · Enter confirm · Esc back")}`);
+		lines.push("", ...hintLines(this.theme, width, ["↑/↓ navigate", "Enter confirm", "Esc back"]));
 		return fitScreen(lines, width).slice(0, panelRows);
 	}
 
@@ -435,7 +448,7 @@ export class PermissionPromptComponent implements Component {
 			`${GUTTER}${this.theme.bold("Permission review paused")}`,
 			`${GUTTER}Terminal too small to review safely.`,
 			`${GUTTER}Resize to at least ${MIN_REVIEW_WIDTH} columns × ${minimumRows} rows.`,
-			`${GUTTER}${this.theme.fg("dim", "Esc deny")}`,
+			...hintLines(this.theme, width, ["Esc deny"]),
 		];
 		return fitScreen(lines, width).slice(0, panelRows);
 	}
@@ -452,6 +465,34 @@ export class PermissionPromptComponent implements Component {
 
 function fitScreen(lines: string[], width: number): string[] {
 	return lines.map((line) => truncateToWidth(line, Math.max(1, width)));
+}
+
+function hintLines(theme: PromptTheme, width: number, hints: readonly string[], color = "dim"): string[] {
+	return packHintLines(width, hints).map((line) => `${GUTTER}${theme.fg(color, line)}`);
+}
+
+function packHintLines(width: number, hints: readonly string[]): string[] {
+	const available = Math.max(1, width - GUTTER.length);
+	const lines: string[] = [];
+	let current = "";
+	for (const hint of hints) {
+		const safeHint = sanitizeTerminalInline(hint).trim();
+		if (!safeHint) continue;
+		const candidate = current ? `${current} · ${safeHint}` : safeHint;
+		if (current && visibleWidth(candidate) > available) {
+			lines.push(current);
+			current = "";
+		}
+		if (visibleWidth(safeHint) <= available) {
+			current = current ? `${current} · ${safeHint}` : safeHint;
+			continue;
+		}
+		const wrapped = wrapTextWithAnsi(safeHint, available);
+		lines.push(...wrapped.slice(0, -1));
+		current = wrapped.at(-1) ?? "";
+	}
+	if (current) lines.push(current);
+	return lines;
 }
 
 /** Make terminal control and direction-changing characters visible as text. */

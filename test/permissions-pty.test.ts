@@ -5,7 +5,7 @@ import { verifyPermissionsPty } from "../scripts/verify-permissions-pty.ts";
 const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 const AGGREGATE_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff");
 
-test("real Pi TUI renders and restores the blocking permission dialog at both target sizes", async () => {
+test("real Pi TUI certifies native settings and blocking permission dialogs at both target sizes", async () => {
 	for (const [columns, rows] of [
 		[100, 32],
 		[64, 28],

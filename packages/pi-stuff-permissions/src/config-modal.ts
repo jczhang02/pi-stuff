@@ -21,6 +21,9 @@ interface PermissionSystemConfigController {
 
 const ON_OFF = ["on", "off"];
 const PERMISSION_MODES = ["unrestricted", "manual"];
+const GUTTER = "  ";
+const NORMAL_SCREEN_RESERVE_ROWS = 3;
+const MIN_SETTINGS_RENDER_WIDTH = 24;
 const COMMAND_ARGUMENTS = [
 	{
 		value: "show",
@@ -44,6 +47,37 @@ const COMMAND_ARGUMENTS = [
 	},
 ] as const;
 const USAGE_TEXT = "Usage: /permissions [show|path|reset|help] (or run /permissions with no args to open settings)";
+
+function normalizeTerminalRows(rows: unknown): number {
+	if (typeof rows !== "number" || !Number.isFinite(rows)) return 24;
+	return Math.max(0, Math.floor(rows));
+}
+
+function dialogRows(rows: unknown): number {
+	const normalized = normalizeTerminalRows(rows);
+	if (normalized === 0) return 0;
+	return Math.max(1, normalized - NORMAL_SCREEN_RESERVE_ROWS);
+}
+
+function fitSettingsRows(
+	theme: Theme,
+	width: number,
+	maximumRows: number,
+	header: readonly string[],
+	nativeLines: readonly string[],
+): string[] {
+	const full = [...header, "", ...nativeLines];
+	if (width >= MIN_SETTINGS_RENDER_WIDTH && full.length <= maximumRows) return full;
+	if (maximumRows <= 0) return [];
+
+	const selected = nativeLines.find((line) => line.includes("→")) ?? nativeLines.find(Boolean) ?? GUTTER;
+	const escapeHint = `${GUTTER}${theme.fg("dim", "Esc to cancel")}`;
+	if (maximumRows === 1) return [escapeHint];
+	if (maximumRows === 2) return [selected, escapeHint];
+	if (maximumRows === 3) return [header[1] ?? header[0] ?? GUTTER, selected, escapeHint];
+
+	return maximumRows >= 5 ? [...header, "", selected, escapeHint] : [...header, selected, escapeHint];
+}
 
 function cloneDefaultConfig(): PermissionSystemExtensionConfig {
 	return {
@@ -166,10 +200,11 @@ async function openSettings(
 		priority: "normal",
 		create: ({ tui, theme, close }) => {
 			let current = controller.config.current();
-			const rows = (tui.terminal as { rows?: number }).rows ?? 24;
+			const getTerminalRows = (): number => normalizeTerminalRows((tui.terminal as { rows?: number }).rows);
+			const rows = getTerminalRows();
 			const settingsList = new SettingsList(
 				buildSettingItems(current),
-				Math.max(6, Math.min(14, rows - 8)),
+				Math.max(1, Math.min(14, rows - 8)),
 				getSettingsListTheme(),
 				(id, newValue) => {
 					current = applySetting(current, id, newValue);
@@ -179,15 +214,16 @@ async function openSettings(
 				},
 				() => close(),
 			);
-			return new PermissionSettingsDialog(theme, settingsList);
+			return new PermissionSettingsDialog(theme, settingsList, getTerminalRows);
 		},
 	});
 }
 
-class PermissionSettingsDialog implements Component {
+export class PermissionSettingsDialog implements Component {
 	constructor(
 		private readonly theme: Theme,
 		private readonly settings: SettingsList,
+		private readonly getTerminalRows: () => number,
 	) {}
 
 	handleInput(data: string): void {
@@ -199,13 +235,13 @@ class PermissionSettingsDialog implements Component {
 	}
 
 	render(width: number): string[] {
-		const bounded = (line: string): string => truncateToWidth(line, Math.max(1, width), "…");
-		return [
-			this.theme.fg("border", "─".repeat(Math.max(1, width))),
-			bounded(`  ${this.theme.bold("Permissions")} ${this.theme.fg("dim", "· settings")}`),
-			"",
-			...this.settings.render(width).map(bounded),
-		];
+		const renderWidth = Math.max(1, Math.floor(width));
+		const bounded = (line: string): string => truncateToWidth(line, renderWidth, "…");
+		const header = [this.theme.fg("border", "─".repeat(renderWidth)), `${GUTTER}${this.theme.bold("Permissions")}`];
+		const nativeLines = this.settings.render(Math.max(MIN_SETTINGS_RENDER_WIDTH, renderWidth));
+		return fitSettingsRows(this.theme, renderWidth, dialogRows(this.getTerminalRows()), header, nativeLines).map(
+			bounded,
+		);
 	}
 }
 

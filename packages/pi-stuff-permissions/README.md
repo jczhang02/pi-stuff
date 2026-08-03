@@ -25,7 +25,9 @@ The review is a full-width, non-floating Command Dialog shared with the rest of
 Pi Stuff. It has only **Allow this exact call once** and **Deny**. Long evidence
 scrolls with Page Up/Page Down while the title and decisions remain fixed.
 Control characters are rendered visibly rather than interpreted by the
-terminal.
+terminal. Custom decision rows use the Suite's two-cell gutter and `›` focus
+marker; action hints wrap without hiding Escape. Escape denies from the decision
+step and returns one level from reason or scope selection.
 
 ## Settings
 
@@ -33,6 +35,9 @@ Run `/permissions` to open Pi's native settings list inside the shared Command
 Dialog. The default mode is `unrestricted`. Optional `manual` mode restores
 policy prompts for ordinary consequential tools without weakening the
 destructive circuit breaker.
+
+The settings surface deliberately retains Pi's native `SettingsList` focus
+marker, keymap, descriptions, and Escape-to-close behavior.
 
 User configuration is stored at:
 

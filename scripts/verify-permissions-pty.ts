@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -36,7 +36,16 @@ spawn -noecho script -qefc $env(PI_STUFF_PTY_RUNNER) /dev/null
 must_expect "fixture-model"
 must_expect "permissions-pty-trigger.ts"
 after 100
-send -- "DRAFT_RESTORED"
+send -- "/permissions\\r"
+must_expect [string repeat "─" $env(PI_STUFF_PTY_COLUMNS)]
+must_expect "Permissions"
+must_expect "→"
+must_expect "Permission mode"
+must_expect "unrestricted"
+must_expect "Esc to cancel"
+send -- "\\033"
+after 150
+send -- "SETTINGS_DRAFT"
 send -- "\\033\\[23~"
 must_expect "Bash command"
 must_expect "Allow this exact call once"
@@ -44,7 +53,7 @@ must_expect "Deny"
 send -- "\\033\\[6~"
 must_expect "target-10"
 send -- "y"
-must_expect "PERMISSION_PTY:approved:DRAFT_RESTORED"
+must_expect "PERMISSION_PTY:approved:SETTINGS_DRAFT"
 send -- "\\003"
 after 200
 send -- "\\004"
@@ -94,6 +103,13 @@ export async function verifyPermissionsPty(options: PermissionsPtyVerificationOp
 					.filter(Boolean)
 					.join("\n"),
 			);
+		}
+		const configPath = join(configDirectory, "extensions", "pi-stuff-permissions", "config.json");
+		try {
+			await access(configPath);
+			fail("opening and closing native settings unexpectedly persisted a config change");
+		} catch (error) {
+			if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
 		}
 	} finally {
 		await rm(temporaryDirectory, { recursive: true, force: true });
