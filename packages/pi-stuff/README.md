@@ -2,7 +2,7 @@
 
 The ordered Aggregate Package for the Pi Stuff Suite.
 
-> This Package is unreleased. Its included capabilities are under host certification.
+Version `0.1.0` is the first public release line.
 
 ## Contract
 
@@ -28,7 +28,7 @@ The ordered Aggregate Package for the Pi Stuff Suite.
 preferences; Welcome header; input highlighting; inline slash autocomplete; and the Tool running timer. The boolean
 settings are enabled by default, density and icons default to automatic, and `/tool-settings` is no longer registered.
 
-After the first release:
+Published releases install through Pi's Package system:
 
 ```bash
 pi install npm:@jczhang02/pi-stuff

@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "The aggregate package for JC Zhang's Pi Stuff Suite",
 	"type": "module",
 	"keywords": [
@@ -17,6 +17,7 @@
 	},
 	"files": [
 		"index.ts",
+		"CHANGELOG.md",
 		"README.md",
 		"LICENSE"
 	],
@@ -26,12 +27,12 @@
 		]
 	},
 	"dependencies": {
-		"@jczhang02/pi-stuff-ui": "0.0.0",
-		"@jczhang02/pi-stuff-tools": "0.0.0",
-		"@jczhang02/pi-stuff-permissions": "0.0.0",
-		"@jczhang02/pi-stuff-agents": "0.0.0",
-		"@jczhang02/pi-stuff-todo": "0.0.0",
-		"@jczhang02/pi-stuff-btw": "0.0.0"
+		"@jczhang02/pi-stuff-ui": "0.1.0",
+		"@jczhang02/pi-stuff-tools": "0.1.0",
+		"@jczhang02/pi-stuff-permissions": "0.1.0",
+		"@jczhang02/pi-stuff-agents": "0.1.0",
+		"@jczhang02/pi-stuff-todo": "0.1.0",
+		"@jczhang02/pi-stuff-btw": "0.1.0"
 	},
 	"bundledDependencies": [
 		"@jczhang02/pi-stuff-ui",

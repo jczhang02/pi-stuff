@@ -10,7 +10,9 @@ A personal suite of extensions and resources for the native [Pi coding agent](ht
 </div>
 
 > [!IMPORTANT]
-> `@jczhang02/pi-stuff` is still unreleased. Its initial capability set is under active development and host certification.
+> The current Package version is `0.1.0`. Registry publication remains a separate, explicitly approved maintainer action.
+
+See the [0.1.0 release notes](docs/releases/0.1.0.md) for the shipped scope, compatibility boundary, and known limitations.
 
 ## Shape
 
@@ -22,27 +24,27 @@ Pi remains the host. The Suite is a normal Pi Package: it exports an ordered agg
 
 ## Packages
 
-| Package | Purpose | Status |
+| Package | Purpose | Version |
 | --- | --- | --- |
-| `@jczhang02/pi-stuff` | Aggregate entry point for the full Suite | Unreleased |
-| `@jczhang02/pi-stuff-ui` | Responsive Statusline, input presentation, and shared non-floating Command Dialog coordinator | In development |
-| `@jczhang02/pi-stuff-tools` | Compact built-in and Suite-owned Tool presentation with focused details | In development |
-| `@jczhang02/pi-stuff-permissions` | Quiet destructive-command circuit breaker | In development |
-| `@jczhang02/pi-stuff-agents` | Current-session foreground and background Agents | In development |
-| `@jczhang02/pi-stuff-todo` | Recoverable per-session task tracking with a compact editor widget | In development |
-| `@jczhang02/pi-stuff-btw` | One-shot side questions isolated from the main transcript | In development |
+| `@jczhang02/pi-stuff` | Aggregate entry point for the full Suite | `0.1.0` |
+| `@jczhang02/pi-stuff-ui` | Responsive Statusline, input presentation, and shared non-floating Command Dialog coordinator | `0.1.0` |
+| `@jczhang02/pi-stuff-tools` | Compact built-in and Suite-owned Tool presentation with focused details | `0.1.0` |
+| `@jczhang02/pi-stuff-permissions` | Quiet destructive-command circuit breaker | `0.1.0` |
+| `@jczhang02/pi-stuff-agents` | Current-session foreground and background Agents | `0.1.0` |
+| `@jczhang02/pi-stuff-todo` | Recoverable per-session task tracking with a compact editor widget | `0.1.0` |
+| `@jczhang02/pi-stuff-btw` | One-shot side questions isolated from the main transcript | `0.1.0` |
 
 Capability Packages remain independently versioned. Certified versions are bundled into the Aggregate Package as required by Pi's package contract.
 
 ## Installation
 
-During repository development, install the local Aggregate Package explicitly through Pi:
+From a source checkout, install the local Aggregate Package explicitly through Pi:
 
 ```bash
 pi install ./packages/pi-stuff
 ```
 
-After the first npm release:
+Published releases install from the registry:
 
 ```bash
 pi install npm:@jczhang02/pi-stuff

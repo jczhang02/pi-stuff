@@ -2,7 +2,12 @@
 
 ## Supported versions
 
-Pi Stuff is currently unreleased. Security fixes apply to the latest commit on `main` until the first npm release defines a supported-version policy.
+| Version | Supported |
+| --- | --- |
+| `0.1.x` | Yes |
+| `< 0.1.0` | No |
+
+Security fixes are provided for the latest published `0.1.x` release.
 
 ## Reporting a vulnerability
 

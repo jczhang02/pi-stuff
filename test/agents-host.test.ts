@@ -95,11 +95,25 @@ test("Agents declares its exact workspace and certified Pi dependency contracts"
 		files?: string[];
 		peerDependencies?: Record<string, string>;
 	};
+	const readWorkspaceVersion = async (packageDirectory: string): Promise<string> => {
+		const packageManifest = JSON.parse(await readFile(resolve(packageDirectory, "package.json"), "utf8")) as {
+			version?: unknown;
+		};
+		if (typeof packageManifest.version !== "string") {
+			throw new Error(`Workspace Package has no version: ${packageDirectory}`);
+		}
+		return packageManifest.version;
+	};
+	const [permissionsVersion, toolsVersion, uiVersion] = await Promise.all([
+		readWorkspaceVersion(PERMISSIONS_PACKAGE),
+		readWorkspaceVersion(TOOLS_PACKAGE),
+		readWorkspaceVersion(UI_PACKAGE),
+	]);
 
 	expect(manifest.dependencies).toEqual({
-		"@jczhang02/pi-stuff-permissions": "0.0.0",
-		"@jczhang02/pi-stuff-tools": "0.0.0",
-		"@jczhang02/pi-stuff-ui": "0.0.0",
+		"@jczhang02/pi-stuff-permissions": permissionsVersion,
+		"@jczhang02/pi-stuff-tools": toolsVersion,
+		"@jczhang02/pi-stuff-ui": uiVersion,
 		jiti: "2.7.0",
 		typebox: "1.3.7",
 	});
@@ -115,7 +129,7 @@ test("Agents declares its exact workspace and certified Pi dependency contracts"
 		"@earendil-works/pi-coding-agent": "0.83.0",
 		"@earendil-works/pi-tui": "0.83.0",
 	});
-	expect(manifest.files).toEqual(["index.ts", "agents", "src", "README.md", "UPSTREAM.md", "LICENSE"]);
+	expect(manifest.files).toEqual(["index.ts", "agents", "src", "CHANGELOG.md", "README.md", "UPSTREAM.md", "LICENSE"]);
 });
 
 test("Pi 0.83 loads Agents through workspace dependency resolution", async () => {
