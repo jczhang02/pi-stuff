@@ -6,7 +6,15 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**/*.{ts,json,jsonc}", "!**/node_modules", "!**/.artifacts", "!**/.beads", "!bun.lock"]
+		"includes": [
+			"**/*.{ts,json,jsonc}",
+			"!**/node_modules",
+			"!**/.artifacts",
+			"!**/.beads",
+			"!**/.pi-subagents",
+			"!vendor/pi-host-model-data",
+			"!bun.lock"
+		]
 	},
 	"formatter": {
 		"enabled": true,

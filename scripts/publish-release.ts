@@ -1,7 +1,7 @@
 import { readFile, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { createVerifiedReleaseSnapshot, RELEASE_MANIFEST_FILENAME, readVerifiedRelease } from "./release-artifacts.ts";
-import { CERTIFIED_PI_VERSION } from "./verify-package.ts";
+import { CERTIFIED_PI_HOST_PROFILE } from "./verify-package.ts";
 
 function fail(message: string): never {
 	throw new Error(`Release publication refused: ${message}`);
@@ -53,9 +53,10 @@ function parseArguments(): { manifestPath: string; tag: string } {
 const { manifestPath, tag } = parseArguments();
 if (basename(manifestPath) !== RELEASE_MANIFEST_FILENAME) fail(`manifest must be named ${RELEASE_MANIFEST_FILENAME}`);
 const destination = dirname(manifestPath);
-const manifest = await readVerifiedRelease(destination, CERTIFIED_PI_VERSION);
+const manifest = await readVerifiedRelease(destination, CERTIFIED_PI_HOST_PROFILE);
 const packagePaths = [
 	"pi-stuff-ui",
+	"pi-stuff-tools",
 	"pi-stuff-permissions",
 	"pi-stuff-agents",
 	"pi-stuff-todo",

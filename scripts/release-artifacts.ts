@@ -12,6 +12,7 @@ if (Bun.version !== CERTIFIED_BUN_VERSION) {
 
 const RELEASE_PACKAGES = [
 	{ name: "@jczhang02/pi-stuff-ui", path: "packages/pi-stuff-ui" },
+	{ name: "@jczhang02/pi-stuff-tools", path: "packages/pi-stuff-tools" },
 	{ name: "@jczhang02/pi-stuff-permissions", path: "packages/pi-stuff-permissions" },
 	{ name: "@jczhang02/pi-stuff-agents", path: "packages/pi-stuff-agents" },
 	{ name: "@jczhang02/pi-stuff-todo", path: "packages/pi-stuff-todo" },
@@ -50,8 +51,8 @@ export interface ReleaseManifest {
 export interface ReleaseVerification {
 	readonly bunVersion: string;
 	readonly manifestSha256: string;
-	readonly piVersion: string;
-	readonly schemaVersion: 1;
+	readonly piHostProfile: string;
+	readonly schemaVersion: 2;
 	readonly verifier: "scripts/verify-package.ts";
 }
 
@@ -287,14 +288,14 @@ export async function createVerifiedReleaseSnapshot(
 	}
 }
 
-export async function writeReleaseVerification(destination: string, piVersion: string): Promise<void> {
+export async function writeReleaseVerification(destination: string, piHostProfile: string): Promise<void> {
 	const manifestPath = join(resolve(destination), RELEASE_MANIFEST_FILENAME);
 	await readReleaseManifest(manifestPath);
 	const verification: ReleaseVerification = {
 		bunVersion: Bun.version,
 		manifestSha256: await sha256File(manifestPath),
-		piVersion,
-		schemaVersion: 1,
+		piHostProfile,
+		schemaVersion: 2,
 		verifier: "scripts/verify-package.ts",
 	};
 	await writeFile(
@@ -304,7 +305,7 @@ export async function writeReleaseVerification(destination: string, piVersion: s
 	);
 }
 
-export async function readVerifiedRelease(destination: string, piVersion: string): Promise<ReleaseManifest> {
+export async function readVerifiedRelease(destination: string, piHostProfile: string): Promise<ReleaseManifest> {
 	const resolvedDestination = resolve(destination);
 	const manifestPath = join(resolvedDestination, RELEASE_MANIFEST_FILENAME);
 	const manifest = await readReleaseManifest(manifestPath);
@@ -312,10 +313,10 @@ export async function readVerifiedRelease(destination: string, piVersion: string
 	if (typeof value !== "object" || value === null) throw new Error("Invalid release verification: expected an object");
 	const verification = value as Partial<ReleaseVerification>;
 	if (
-		verification.schemaVersion !== 1 ||
+		verification.schemaVersion !== 2 ||
 		verification.verifier !== "scripts/verify-package.ts" ||
 		verification.bunVersion !== Bun.version ||
-		verification.piVersion !== piVersion ||
+		verification.piHostProfile !== piHostProfile ||
 		verification.manifestSha256 !== (await sha256File(manifestPath))
 	) {
 		throw new Error("Invalid release verification: certification does not match the manifest or toolchain");

@@ -14,6 +14,8 @@
 		"check:public": "bun scripts/check-public-safety.ts",
 		"format": "biome check --write .",
 		"format:check": "biome check .",
+		"host:build": "bun scripts/build-certified-pi-host.ts",
+		"host:model-data:refresh": "bun scripts/refresh-certified-pi-model-data.ts",
 		"knip": "knip --no-progress",
 		"pack:verify": "bun scripts/verify-package.ts",
 		"release:pack": "bun scripts/pack-release.ts",

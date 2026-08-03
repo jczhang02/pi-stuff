@@ -1,8 +1,9 @@
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_SOURCE_COMMIT, CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import {
 	createReleaseArtifacts,
 	packPackageArchive,
@@ -20,16 +21,31 @@ import { verifyAgentsExecutionMatrix } from "./verify-agents-execution-matrix.ts
 import { verifyAgentsPty } from "./verify-agents-pty.ts";
 import { verifyBtwPty } from "./verify-btw-pty.ts";
 import { verifyNestedPermissionsPty } from "./verify-nested-permissions-pty.ts";
+import { verifyPiHostProvenance } from "./verify-pi-host-provenance.ts";
+import { verifyToolsPty } from "./verify-tools-pty.ts";
+import { verifyUiPty } from "./verify-ui-pty.ts";
 
-export const CERTIFIED_PI_VERSION = "0.83.0";
+export { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_SOURCE_COMMIT, CERTIFIED_PI_VERSION };
+
 const DEVELOPMENT_ARCHIVE_FILE = /(?:^|\/)(?:[^/]+\.(?:test|spec)\.[cm]?[jt]sx?|tsconfig(?:\.[^/]+)?\.json)$/;
 const root = resolve(import.meta.dir, "..");
 const aggregateDirectory = join(root, "packages", "pi-stuff");
 const uiPackageName = "@jczhang02/pi-stuff-ui";
+const uiRuntimeFiles = [
+	"index.ts",
+	"settings.ts",
+	"ui-settings-dialog.ts",
+	"live-thought.ts",
+	"input-enhancement.ts",
+	"statusline.ts",
+	"welcome-header.ts",
+	"session-presentation.ts",
+] as const;
 const todoToolInspector = join(root, "test/fixtures/assert-todo-tools.ts");
 const forkLicenseSha256 = "25d0d5e4e54033f939a9657109044f1d71a0b6e8db9adc400456ca9190df3fb1";
 const agentsLicenseSha256 = "2d20dfacd9742706e564470dc77438608a1e54b0ed46959f080709389209093c";
 const permissionLicenseSha256 = "220a81ab89687aa207c1b9257a7f3636c8c78b5c1092b7563ad662950d21dd00";
+const toolsLicenseSha256 = "e6b72a9973ccabb20d8bef65a366a9b2357d6cea6cdd1eee4f2c3c69e61fb11c";
 const agentsRuntimeVersions = {
 	jiti: "2.7.0",
 	typebox: "1.3.7",
@@ -50,7 +66,8 @@ const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 	"@jczhang02/pi-stuff-btw": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-permissions": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-todo": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
-	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-tools": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 };
 
 export interface PackageArchiveManifest {
@@ -85,7 +102,7 @@ function normalizedFilesEntry(entry: string): string {
 function matchesFilesEntry(entry: string, path: string): boolean {
 	const normalized = normalizedFilesEntry(entry);
 	if (normalized.endsWith("/")) return path.startsWith(normalized);
-	if (!/[*?[\]{}]/.test(normalized)) return path === normalized;
+	if (!/[*?[\]{}]/.test(normalized)) return path === normalized || path.startsWith(`${normalized}/`);
 	return new Bun.Glob(normalized).match(path);
 }
 
@@ -124,7 +141,7 @@ export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFi
 		const normalized = normalizedFilesEntry(entry);
 		if (!normalized.endsWith("/") && !/[*?[\]{}]/.test(normalized)) {
 			const expectedPath = `package/${normalized}`;
-			if (!archiveSet.has(expectedPath)) {
+			if (!archiveSet.has(expectedPath) && !archiveFiles.some((path) => path.startsWith(`${expectedPath}/`))) {
 				throw new Error(`Package archive is missing declared file: ${expectedPath}`);
 			}
 		}
@@ -163,6 +180,14 @@ export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFi
 	});
 	if (unexpected.length > 0) {
 		throw new Error(`Unexpected Package archive files:\n${[...unexpected].sort().join("\n")}`);
+	}
+}
+
+function verifyUiRuntimeArchive(archiveFiles: readonly string[]): void {
+	const archiveSet = new Set(archiveFiles);
+	const missing = uiRuntimeFiles.map((path) => `package/${path}`).filter((path) => !archiveSet.has(path));
+	if (missing.length > 0) {
+		throw new Error(`Packed UI Package is missing runtime files:\n${missing.join("\n")}`);
 	}
 }
 
@@ -236,6 +261,8 @@ async function verifyStandaloneInstalls(
 	const permissionsNpmCacheDirectory = join(temporaryDirectory, "npm-cache-permissions");
 	const todoInstallDirectory = join(temporaryDirectory, "standalone-todo");
 	const todoNpmCacheDirectory = join(temporaryDirectory, "npm-cache-todo");
+	const toolsInstallDirectory = join(temporaryDirectory, "standalone-tools");
+	const toolsNpmCacheDirectory = join(temporaryDirectory, "npm-cache-tools");
 	await Promise.all([
 		mkdir(packsDirectory),
 		mkdir(agentsInstallDirectory),
@@ -246,6 +273,8 @@ async function verifyStandaloneInstalls(
 		mkdir(permissionsNpmCacheDirectory),
 		mkdir(todoInstallDirectory),
 		mkdir(todoNpmCacheDirectory),
+		mkdir(toolsInstallDirectory),
+		mkdir(toolsNpmCacheDirectory),
 	]);
 
 	const releaseArchive = (name: string): string => {
@@ -258,6 +287,7 @@ async function verifyStandaloneInstalls(
 	const btwArchive = releaseArchive("@jczhang02/pi-stuff-btw");
 	const permissionsArchive = releaseArchive("@jczhang02/pi-stuff-permissions");
 	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
+	const toolsArchive = releaseArchive("@jczhang02/pi-stuff-tools");
 	const treeSitterManifest = await realpath(join(root, "node_modules", "tree-sitter-bash", "package.json"));
 	const treeSitterRequire = createRequire(treeSitterManifest);
 	const transitiveRuntimeDirectories = Object.fromEntries(
@@ -347,13 +377,18 @@ async function verifyStandaloneInstalls(
 		if (!archive) throw new Error(`Standalone Agents dependency archive is missing ${dependency}`);
 		install(agentsInstallDirectory, agentsNpmCacheDirectory, archive);
 	}
+	install(agentsInstallDirectory, agentsNpmCacheDirectory, toolsArchive);
 	install(agentsInstallDirectory, agentsNpmCacheDirectory, agentsArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, uiArchive);
 	// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
 	const typeboxArchive = runtimeArchives["typebox"];
 	if (!typeboxArchive) throw new Error("Standalone dependency archive is missing typebox");
 	install(todoInstallDirectory, todoNpmCacheDirectory, typeboxArchive);
+	install(todoInstallDirectory, todoNpmCacheDirectory, toolsArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, todoArchive);
+	install(toolsInstallDirectory, toolsNpmCacheDirectory, uiArchive);
+	install(toolsInstallDirectory, toolsNpmCacheDirectory, typeboxArchive);
+	install(toolsInstallDirectory, toolsNpmCacheDirectory, toolsArchive);
 
 	const verifyUiDependency = async (installDirectory: string, capability: string): Promise<void> => {
 		const installedRoot = join(installDirectory, "node_modules");
@@ -371,6 +406,7 @@ async function verifyStandaloneInstalls(
 	await verifyUiDependency(agentsInstallDirectory, "pi-stuff-agents");
 	await verifyUiDependency(permissionsInstallDirectory, "pi-stuff-permissions");
 	await verifyUiDependency(todoInstallDirectory, "pi-stuff-todo");
+	await verifyUiDependency(toolsInstallDirectory, "pi-stuff-tools");
 
 	const permissionsInstalledRoot = join(permissionsInstallDirectory, "node_modules");
 	const permissionsManifest = JSON.parse(
@@ -391,12 +427,22 @@ async function verifyStandaloneInstalls(
 	const todoInstalledRoot = join(todoInstallDirectory, "node_modules");
 	const todoManifest = JSON.parse(
 		await readFile(join(todoInstalledRoot, "@jczhang02/pi-stuff-todo/package.json"), "utf8"),
-	) as { dependencies?: { typebox?: unknown } };
+	) as { dependencies?: Record<string, unknown> };
 	const typeboxManifest = JSON.parse(await readFile(join(todoInstalledRoot, "typebox/package.json"), "utf8")) as {
 		version?: unknown;
 	};
-	if (typeboxManifest.version !== "1.3.7" || todoManifest.dependencies?.typebox !== typeboxManifest.version) {
+	// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
+	if (typeboxManifest.version !== "1.3.7" || todoManifest.dependencies?.["typebox"] !== typeboxManifest.version) {
 		throw new Error("Standalone Todo must install the certified exact typebox runtime dependency");
+	}
+	const installedTodoToolsManifest = JSON.parse(
+		await readFile(join(todoInstalledRoot, "@jczhang02/pi-stuff-tools/package.json"), "utf8"),
+	) as { version?: unknown };
+	if (
+		typeof installedTodoToolsManifest.version !== "string" ||
+		todoManifest.dependencies?.["@jczhang02/pi-stuff-tools"] !== installedTodoToolsManifest.version
+	) {
+		throw new Error("Standalone Todo must install Tools as an exact runtime dependency");
 	}
 
 	const agentsInstalledRoot = join(agentsInstallDirectory, "node_modules");
@@ -411,6 +457,15 @@ async function verifyStandaloneInstalls(
 		agentsManifest.dependencies?.["@jczhang02/pi-stuff-permissions"] !== installedPermissionsManifest.version
 	) {
 		throw new Error("Standalone Agents must install Permissions as an exact runtime dependency");
+	}
+	const installedAgentsToolsManifest = JSON.parse(
+		await readFile(join(agentsInstalledRoot, "@jczhang02/pi-stuff-tools/package.json"), "utf8"),
+	) as { version?: unknown };
+	if (
+		typeof installedAgentsToolsManifest.version !== "string" ||
+		agentsManifest.dependencies?.["@jczhang02/pi-stuff-tools"] !== installedAgentsToolsManifest.version
+	) {
+		throw new Error("Standalone Agents must install Tools as an exact runtime dependency");
 	}
 	for (const [name, expectedVersion] of Object.entries(agentsRuntimeVersions)) {
 		const dependencyManifest = JSON.parse(
@@ -449,6 +504,20 @@ async function verifyStandaloneInstalls(
 	if (!todoSmoke.commandNames.includes("todo-tools-certified")) {
 		throw new Error("Standalone Todo did not register and activate all four Task tools");
 	}
+	const toolsSmoke = await runPiRpcSmoke({
+		piBinary,
+		packages: [join(toolsInstallDirectory, "node_modules/@jczhang02/pi-stuff-tools")],
+		cwd: toolsInstallDirectory,
+	});
+	if (!toolsSmoke.commandNames.includes("tools")) {
+		throw new Error("Standalone Tools Package did not register /tools");
+	}
+	if (!toolsSmoke.commandNames.includes("ui")) {
+		throw new Error("Standalone Tools Package did not register the shared /ui settings surface");
+	}
+	if (toolsSmoke.commandNames.includes("tool-settings")) {
+		throw new Error("Standalone Tools Package retained the removed /tool-settings entry point");
+	}
 }
 
 async function verifySharedCoordinatorIdentity(
@@ -457,19 +526,33 @@ async function verifySharedCoordinatorIdentity(
 ): Promise<void> {
 	const entries = archiveFiles.filter((path) => path.endsWith("node_modules/@jczhang02/pi-stuff-ui/index.ts"));
 	if (entries.length === 0) throw new Error("Package archive contains no pi-stuff-ui runtime");
+	const peerPrefix = "package/node_modules/@earendil-works/";
+	if (archiveFiles.some((path) => path.startsWith(peerPrefix))) {
+		throw new Error("Aggregate Package must not bundle Host-supplied Pi peers");
+	}
+	const peerScope = join(extractDirectory, peerPrefix);
+	await mkdir(peerScope, { recursive: true });
+	for (const dependency of expectedPiPeers[uiPackageName] ?? []) {
+		const packageName = dependency.slice("@earendil-works/".length);
+		await symlink(join(root, "node_modules", dependency), join(peerScope, packageName), "dir");
+	}
 
-	const events = {};
-	let shared: unknown;
-	for (const [index, entry] of entries.entries()) {
-		const moduleUrl = `${pathToFileURL(join(extractDirectory, entry)).href}?identity=${index}`;
-		const uiModule = (await import(moduleUrl)) as {
-			getCommandDialogCoordinator(pi: { events: object; on(event: string, handler: () => void): void }): unknown;
-		};
-		const coordinator = uiModule.getCommandDialogCoordinator({ events, on: () => {} });
-		shared ??= coordinator;
-		if (coordinator !== shared) {
-			throw new Error("Physical pi-stuff-ui copies do not share one logical coordinator");
+	try {
+		const events = {};
+		let shared: unknown;
+		for (const [index, entry] of entries.entries()) {
+			const moduleUrl = `${pathToFileURL(join(extractDirectory, entry)).href}?identity=${index}`;
+			const uiModule = (await import(moduleUrl)) as {
+				getCommandDialogCoordinator(pi: { events: object; on(event: string, handler: () => void): void }): unknown;
+			};
+			const coordinator = uiModule.getCommandDialogCoordinator({ events, on: () => {} });
+			shared ??= coordinator;
+			if (coordinator !== shared) {
+				throw new Error("Physical pi-stuff-ui copies do not share one logical coordinator");
+			}
 		}
+	} finally {
+		await rm(peerScope, { recursive: true, force: true });
 	}
 }
 
@@ -516,6 +599,12 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 		if (
 			manifest.name === "@jczhang02/pi-stuff-permissions" &&
 			(await sha256File(join(extractDirectory, licensePath))) !== permissionLicenseSha256
+		) {
+			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
+		}
+		if (
+			manifest.name === "@jczhang02/pi-stuff-tools" &&
+			(await sha256File(join(extractDirectory, licensePath))) !== toolsLicenseSha256
 		) {
 			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
 		}
@@ -569,6 +658,18 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 				"b0ae0f1f4245f471c3fa724dc50425cfa241eb37e399c4948d393fe7965d1fa8",
 			],
 		},
+		{
+			capability: "pi-stuff-tools",
+			deltaHeading: "## Pi Stuff delta",
+			required: [
+				"@mobrienv/pi-tidy-tools",
+				"0.4.1",
+				"pi-tidy-tools-v0.4.1",
+				"4b251377f1b64f904704e7f760e8947688d12a9a",
+				"3412d29d584f9226b02a13279d88a3ea03a1422e",
+				"59bf767e047a0799257af3c510a92f0841db2791e8e11aceca14fc2f7221f71a",
+			],
+		},
 	] as const;
 	for (const record of provenance) {
 		const { capability } = record;
@@ -592,6 +693,7 @@ export async function certifyReleaseArtifacts(
 
 	try {
 		verifyPiVersion(piBinary);
+		await verifyPiHostProvenance(piBinary);
 		const bunTemporaryDirectory = join(temporaryDirectory, "bun-tmp");
 		const bunInstallDirectory = join(temporaryDirectory, "bun-install");
 		const bunCacheDirectory = join(temporaryDirectory, "bun-cache");
@@ -621,6 +723,12 @@ export async function certifyReleaseArtifacts(
 		);
 		for (const artifact of releaseManifest.artifacts) {
 			const archivePath = resolveReleaseArchive(releaseDirectory, artifact);
+			const archiveFiles = run(["tar", "-tzf", archivePath], root).trim().split("\n").sort();
+			const archiveManifest = JSON.parse(
+				run(["tar", "-xOzf", archivePath, "package/package.json"], root),
+			) as PackageArchiveManifest;
+			verifyPackageArchive(archiveManifest, archiveFiles);
+			if (artifact.name === uiPackageName) verifyUiRuntimeArchive(archiveFiles);
 			run([process.execPath, "publish", "--dry-run", "--ignore-scripts", "--access", "public", archivePath], root, {
 				...bunEnvironment,
 				NPM_CONFIG_TOKEN: "pi-stuff-offline-certification",
@@ -642,13 +750,18 @@ export async function certifyReleaseArtifacts(
 		await verifyBundledSuiteMetadata(extractDirectory, archiveFiles);
 		await verifySharedCoordinatorIdentity(extractDirectory, archiveFiles);
 		const extractedPackage = join(extractDirectory, "package");
-		await runPiRpcSmoke({ piBinary, packages: [extractedPackage] });
+		const extractedSmoke = await runPiRpcSmoke({ piBinary, packages: [extractedPackage] });
+		if (!extractedSmoke.commandNames.includes("ui") || extractedSmoke.commandNames.includes("tool-settings")) {
+			throw new Error("Packed Aggregate did not expose only the unified /ui settings entry point");
+		}
+		await verifyUiPty({ piBinary, packagePath: extractedPackage });
 		await verifyAgentsPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyAgentsExecutionMatrix({ piBinary, packagePath: extractedPackage });
 		await verifyNestedPermissionsPty({ piBinary, packagePath: extractedPackage });
 		await verifyBtwPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
-		await writeReleaseVerification(releaseDirectory, CERTIFIED_PI_VERSION);
-		console.log(`Certified @jczhang02/pi-stuff with Pi ${CERTIFIED_PI_VERSION}`);
+		await verifyToolsPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
+		await writeReleaseVerification(releaseDirectory, CERTIFIED_PI_HOST_PROFILE);
+		console.log(`Certified @jczhang02/pi-stuff with Pi Host ${CERTIFIED_PI_HOST_PROFILE}`);
 	} finally {
 		await rm(temporaryDirectory, { recursive: true, force: true });
 	}
@@ -659,7 +772,11 @@ async function main(): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-package-artifacts-"));
 	try {
 		verifyPiVersion(PI_BIN);
-		await runPiRpcSmoke({ piBinary: PI_BIN, packages: [aggregateDirectory] });
+		await verifyPiHostProvenance(PI_BIN);
+		const aggregateSmoke = await runPiRpcSmoke({ piBinary: PI_BIN, packages: [aggregateDirectory] });
+		if (!aggregateSmoke.commandNames.includes("ui") || aggregateSmoke.commandNames.includes("tool-settings")) {
+			throw new Error("Source Aggregate did not expose only the unified /ui settings entry point");
+		}
 		const releaseDirectory = join(temporaryDirectory, "release");
 		await createReleaseArtifacts(releaseDirectory);
 		await certifyReleaseArtifacts(releaseDirectory, PI_BIN);
