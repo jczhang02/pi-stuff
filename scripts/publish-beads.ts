@@ -46,6 +46,11 @@ if (!beadId || extraArguments.length > 0 || !BEAD_ID_PATTERN.test(beadId)) {
 }
 
 const environment = { ...process.env, GITHUB_TOKEN: githubToken() };
-run(["bd", "github", "sync", "--push-only", "--parent", beadId, "--dry-run"], environment);
-run(["bd", "github", "sync", "--push-only", "--parent", beadId], environment);
+const syncCommand = ["bd", "github", "sync", "--push-only", "--parent", beadId] as const;
+run([...syncCommand, "--dry-run"], environment);
+run(syncCommand, environment);
+
+// GitHub creates every new issue open. Once the first pass records external_ref,
+// a second pass applies the canonical Beads state to newly created closed issues.
+run(syncCommand, environment);
 run(["bd", "export", "--scrub", "-o", ".beads/issues.jsonl"], environment);
