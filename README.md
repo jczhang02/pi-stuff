@@ -59,6 +59,7 @@ Requirements:
 - Bun 1.3.14
 - Node.js 24.16.0 and npm 11.13.0 for the certified Host build
 - Git, Bash, tar, gzip, and standard Unix utilities (`cp`, `mkdir`, `mv`, and `rm`)
+- Expect and tmux for real-terminal verification; CI uses the Ubuntu 24.04 packages
 - Linux x64 for the certified Host build; CI uses Ubuntu 24.04 as its system-utility baseline
 - Pi upstream `bf4a90d81985bd45052eeeae59d84fe13e0bd2c8` (reports 0.83.0) for Host certification
 - Beads 1.1.0 for issue maintenance

@@ -10,6 +10,7 @@
 | npm toolchain | 11.13.0 |
 | Model-data snapshot | SHA-256 `676b91ad13829f58c8e92e391f116ce91a45ec878362a41ce7104e916de86e3a` |
 | System-utility baseline | Ubuntu 24.04 with Git, Bash, tar, gzip, and standard Unix utilities |
+| PTY verification tools | Ubuntu 24.04 packages for Expect and tmux |
 | TypeScript checker | 5.9.3 |
 
 The certified upstream Host reports `0.83.0` but is intentionally newer than the `v0.83.0` tag. It is the earliest
