@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { type Tool, validateToolArguments } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { CommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
 import type { PiStuffAgentsConfig } from "../../packages/pi-stuff-agents/src/extension/config.js";
@@ -44,9 +45,8 @@ interface RegisteredCommand {
 	readonly handler: (args: string, ctx: ExtensionContext) => Promise<void> | void;
 }
 
-interface TestTool {
+interface TestTool extends Tool {
 	readonly label: string;
-	readonly name: string;
 	execute(
 		id: string,
 		params: Record<string, unknown>,
@@ -426,6 +426,53 @@ describe("Agents extension composition root", () => {
 
 		await root.api.commands.get("agents")?.handler("", context());
 		expect(root.dialogs).toEqual([{ hasReader: true }]);
+	});
+
+	test("publishes one discoverable Agent call contract and rejects repair-prone legacy shapes", () => {
+		const root = createHarness();
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+
+		expect(tool.description).toContain("Choose exactly one call shape");
+		expect(tool.description).toContain("Never send background");
+		expect(tool.description).toContain('action="status", "steer", "stop", or "resume"');
+
+		for (const args of [
+			{ agent: "general-purpose", task: "Inspect the parser" },
+			{
+				tasks: [
+					{ agent: "general-purpose", task: "Implement the parser" },
+					{ agent: "general-purpose", task: "Review the parser" },
+				],
+			},
+			{ action: "status" },
+		]) {
+			expect(() =>
+				validateToolArguments(tool, { type: "toolCall", id: "call-1", name: "subagent", arguments: args }),
+			).not.toThrow();
+		}
+
+		for (const args of [
+			{ agent: "general-purpose", background: true, task: "Inspect the parser" },
+			{ action: "list" },
+		]) {
+			expect(() =>
+				validateToolArguments(tool, { type: "toolCall", id: "call-2", name: "subagent", arguments: args }),
+			).toThrow('Validation failed for tool "subagent"');
+		}
+
+		expect(() =>
+			validateToolArguments(tool, {
+				type: "toolCall",
+				id: "call-3",
+				name: "subagent",
+				arguments: {
+					agent: "general-purpose",
+					task: "Inspect the parser",
+					tasks: [{ agent: "general-purpose", task: "Review the parser" }],
+				},
+			}),
+		).toThrow("must match exactly one schema in oneOf");
 	});
 
 	test("keeps ordinary startup pure and lazily starts persistence on first launch", async () => {

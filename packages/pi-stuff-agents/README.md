@@ -11,7 +11,10 @@ grammar as Host tools. Full Agent inspection and control remains in `/agents`.
 
 ## Everyday behavior
 
-- Delegation runs in the background unless the main Agent needs the result before it can continue.
+- The public tool has three mutually exclusive call shapes: `agent` plus `task` for one launch, `tasks` for parallel
+  work, or `action` for current-session control. It rejects mixed shapes instead of guessing which request to run.
+- Launches are background by default. Omit `foreground` to continue immediately; set `foreground: true` only when the
+  result is required before the main Agent can continue. The retired `background` field is not accepted.
 - Each delegated item carries a short, caller-provided `description` for terminal surfaces and a separate full `task`
   for execution. Existing task-only callers remain compatible through a bounded local fallback; no extra model call is
   made to name legacy work.

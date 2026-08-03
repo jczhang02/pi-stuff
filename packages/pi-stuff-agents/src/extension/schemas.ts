@@ -61,17 +61,20 @@ export const SubagentParams = Type.Object(
 				description: "Short 3–5 word UI description; keep paths and execution detail in task.",
 			}),
 		),
-		task: Type.Optional(Type.String({ minLength: 1, description: "Concrete task for one Agent." })),
+		task: Type.Optional(
+			Type.String({ minLength: 1, description: "Concrete task for a single launch; use tasks for parallel work." }),
+		),
 		tasks: Type.Optional(
 			Type.Array(AgentTask, {
 				minItems: 1,
-				description: "Independent Agent tasks to launch concurrently as one group.",
+				description:
+					"Parallel launch only: independent Agent tasks to run concurrently. Do not combine with agent or task.",
 			}),
 		),
 		foreground: Type.Optional(
 			Type.Boolean({
 				description:
-					"Wait for the result only when it is required before the main Agent can continue. Defaults to false.",
+					"Omit for the default background launch. Set true only when the result is required before continuing; never send background.",
 			}),
 		),
 		context: Type.Optional(
@@ -97,12 +100,64 @@ export const SubagentParams = Type.Object(
 		action: Type.Optional(
 			Type.String({
 				enum: ["status", "steer", "stop", "resume"],
-				description: "Current-session control action. Omit for a new delegation.",
+				description:
+					"Control only: status, steer, stop, or resume. Do not combine a control action with launch fields.",
 			}),
 		),
-		id: Type.Optional(Type.String({ minLength: 1, description: "Stable Agent or run id for a control action." })),
+		id: Type.Optional(
+			Type.String({
+				minLength: 1,
+				description: "Stable Agent or run id. Optional for status; required for steer, stop, and resume.",
+			}),
+		),
 		index: Type.Optional(Type.Integer({ minimum: 0 })),
-		message: Type.Optional(Type.String({ minLength: 1, description: "Steering or resume message." })),
+		message: Type.Optional(
+			Type.String({ minLength: 1, description: "Required steering message, or an optional resume message." }),
+		),
 	},
-	{ additionalProperties: false },
+	{
+		additionalProperties: false,
+		description:
+			"Exactly one shape: agent plus task for one launch, tasks for a parallel launch, or action for current-session control.",
+		oneOf: [
+			{
+				title: "Single Agent launch: agent plus task",
+				required: ["agent", "task"],
+				properties: { tasks: false, action: false, id: false, index: false, message: false },
+			},
+			{
+				title: "Parallel Agent launch: tasks",
+				required: ["tasks"],
+				properties: {
+					agent: false,
+					description: false,
+					task: false,
+					action: false,
+					id: false,
+					index: false,
+					message: false,
+				},
+			},
+			{
+				title: "Current-session Agent control: action",
+				required: ["action"],
+				properties: {
+					agent: false,
+					description: false,
+					task: false,
+					tasks: false,
+					foreground: false,
+					context: false,
+					isolation: false,
+					cwd: false,
+					model: false,
+					thinking: false,
+					skill: false,
+					timeoutMs: false,
+					turnBudget: false,
+					toolBudget: false,
+				},
+			},
+		],
+	},
 );
