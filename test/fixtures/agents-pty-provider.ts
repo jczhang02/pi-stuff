@@ -79,18 +79,26 @@ function textStream(first: string, second = "", delayMs = 0, onFinish?: () => vo
 }
 
 function launchStream() {
+	return toolCallStream("agents-pty-launch", "subagent", {
+		agent: "general-purpose",
+		task: TASK,
+		foreground: false,
+		context: "fresh",
+	});
+}
+
+function childReadStream() {
+	return toolCallStream("agents-pty-child-read", "read", { path: "agent-tool-target.txt" });
+}
+
+function toolCallStream(id: string, name: string, argumentsValue: Record<string, unknown>) {
 	const stream = createAssistantMessageEventStream();
 	const pending = message([], "pending");
 	const toolCall = {
 		type: "toolCall" as const,
-		id: "agents-pty-launch",
-		name: "subagent",
-		arguments: {
-			agent: "general-purpose",
-			task: TASK,
-			foreground: false,
-			context: "fresh",
-		},
+		id,
+		name,
+		arguments: argumentsValue,
 	};
 	stream.push({ type: "start", partial: pending });
 	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
@@ -105,6 +113,7 @@ function fixtureStream(context: Context, options?: SimpleStreamOptions) {
 	const serialized = JSON.stringify(context.messages);
 	const completion = serialized.includes("CHILD_FINAL_SUMMARY");
 	const toolResult = context.messages.some((entry) => entry.role === "toolResult" && entry.toolName === "subagent");
+	const childReadResult = context.messages.some((entry) => entry.role === "toolResult" && entry.toolName === "read");
 	const phase = child ? "child" : completion ? "completion" : toolResult ? "continued" : "launch";
 	record({
 		kind: "request",
@@ -116,6 +125,7 @@ function fixtureStream(context: Context, options?: SimpleStreamOptions) {
 	});
 
 	if (child) {
+		if (!childReadResult) return childReadStream();
 		const result = textStream("CHILD_RUNNING", "\nCHILD_FINAL_SUMMARY", 4_000, () => {
 			record({ kind: "child-finished", role: "child" });
 		});

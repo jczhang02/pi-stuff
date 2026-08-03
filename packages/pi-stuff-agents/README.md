@@ -20,6 +20,9 @@ grammar as Host tools. Full Agent inspection and control remains in `/agents`.
   setting is required.
 - The main conversation receives only a compact result from each direct child. Nested work remains available in the
   Agent detail view.
+- The Agent detail transcript associates each child Tool call with its persisted call identity and renders a compact
+  `● Tool … · outcome` row beside that Tool's bounded result. Mixed or out-of-order results remain attributable;
+  identity-free legacy records are paired only when ownership is unambiguous.
 - A background Agent completion asks the UI Capability to refresh its bounded Git snapshot. The Agents Capability does
   not render or own the Statusline.
 - Destructive-command approval is inherited from `@jczhang02/pi-stuff-permissions` and routed to the root session.

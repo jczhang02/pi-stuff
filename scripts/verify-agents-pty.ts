@@ -44,8 +44,7 @@ proc must_expect {pattern} {
 
 spawn -noecho script -qefc $env(PI_STUFF_AGENTS_PTY_RUNNER) /dev/null
 must_expect "MAIN_NOT_BLOCKED"
-must_expect "↓ to manage"
-must_expect "AGENT_PTY_TASK"
+must_expect "MAIN_SAW_DIRECT_SUMMARY"
 after 200
 send -- "/agents\\r"
 must_expect "↑/↓ navigate · Enter inspect"
@@ -53,6 +52,11 @@ must_expect "x dismiss · Esc close"
 send -- "\\r"
 must_expect "Agents / general-purpose"
 must_expect "Transcript"
+for {set index 0} {$index < 12} {incr index} {
+    send -- "\\033\\[B"
+    after 20
+}
+must_expect "AGENT_TOOL_RESULT"
 send -- "\\033"
 must_expect "↑/↓ navigate · Enter inspect"
 send -- "\\033"
@@ -166,6 +170,8 @@ function verifyTerminalOutput(output: string, columns: number): void {
 		"Agent general-purpose completed.",
 		"CHILD_FINAL_SUMMARY",
 		"MAIN_SAW_DIRECT_SUMMARY",
+		"● Read agent-tool-target.txt · completed",
+		"AGENT_TOOL_RESULT",
 	]) {
 		if (!visible.includes(required)) fail(`terminal output is missing ${required}`);
 	}
@@ -213,6 +219,7 @@ export async function verifyAgentsPty(options: AgentsPtyVerificationOptions): Pr
 	const sessionDirectory = join(temporaryDirectory, "sessions");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
 	await Promise.all([mkdir(agentsDirectory, { recursive: true }), mkdir(sessionDirectory)]);
+	await writeFile(join(temporaryDirectory, "agent-tool-target.txt"), "AGENT_TOOL_RESULT\n", { mode: 0o600 });
 	await writeFile(
 		join(agentsDirectory, "general-purpose.md"),
 		`---
