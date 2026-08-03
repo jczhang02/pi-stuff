@@ -62,7 +62,8 @@ The selected Package already implements most of the difficult non-UI boundary:
 - an independent `AbortController`, so BTW cancellation cannot signal the main turn;
 - branch-snapshot invalidation on compaction and tree changes;
 - bounded context accounting, history capping, branch trimming, and one context-overflow retry;
-- no transcript entry and no durable write of the answer;
+- no formal transcript entry; Pi Stuff adds a separate invisible, no-context
+  history record so the accepted session-local history can survive resume;
 - a focused test suite for budgeting, context assembly, lifecycle, errors, cancellation, UI width, and Host API compatibility.
 
 These mechanisms are visible in the exact [request implementation](https://github.com/juicesharp/rpiv-mono/blob/75823a68024a0a649cc28087976074be791ca554/packages/rpiv-btw/btw.ts), [context model](https://github.com/juicesharp/rpiv-mono/blob/75823a68024a0a649cc28087976074be791ca554/packages/rpiv-btw/docs/context-model.md), and [architecture record](https://github.com/juicesharp/rpiv-mono/blob/75823a68024a0a649cc28087976074be791ca554/packages/rpiv-btw/docs/architecture.md).
@@ -83,7 +84,7 @@ The upstream Package is a base, not the finished Pi Stuff Capability. The fork m
 8. **Integrate with shared surface priority.** A destructive-safety prompt or genuinely human-required Agent question may suspend BTW; resolving it restores the exact BTW state. Completion, failure, and ordinary Agent status never steal BTW focus.
 9. **Preserve provenance visibly.** Keep the MIT notice, exact upstream revision and archive identity, and a maintained local-change record. The Aggregate Package must depend on the owned Capability Package, never on the upstream npm Package.
 
-Whether display history remains process-memory-only or is stored as invisible session state across a fresh Pi restart is still a later persistence decision. It does not change the selected source base.
+The later product decision selected invisible session-owned persistence. A history event records its owner session id, so resume restores it while `/clear`, a new session, and Pi's ordinary session fork receive a different id and do not inherit it. Abnormal guards retain the newest 1,000 exchanges within 8 MiB; this is not a short rolling-history product limit.
 
 ## Why `@narumitw/pi-btw` is no longer the selected base
 
@@ -119,7 +120,7 @@ The exact `@juicesharp/rpiv-btw@2.3.1` production source is unchanged from the l
 
 The same compatibility lane established that current `@narumitw/pi-btw@0.43.0` typechecks, passes **119** Package tests, and loads `/btw` through the real Pi 0.83.0 Host. The unscoped `pi-btw@0.4.1` archive also loaded and registered its command family.
 
-These checks made no model request and used no credentials. They prove source compatibility, tested logic, import/startup behavior, and command registration. They do not yet certify real provider streaming, concurrent main/BTW model calls, terminal focus arbitration, session switching during a late result, or the rewritten Command Dialog. Those are implementation acceptance gates.
+Those initial checks made no model request and used no credentials. The owned fork now also has a deterministic real-Pi provider lane covering streaming, concurrent main/BTW work, terminal focus arbitration, the rewritten Command Dialog, durable-history resume, and idle-safe promotion. The fixture is local and credential-free.
 
 ## Fork acceptance gates
 
@@ -127,13 +128,17 @@ Before the owned fork becomes a default Capability, it must pass:
 
 - real Pi 0.83 tests for one concurrent main turn and BTW call;
 - an assertion that every BTW request carries `tools: []` and has its own abort signal;
-- no main transcript/custom-entry mutation for routine BTW history;
+- no main formal-message or model-context mutation for routine BTW history;
+- invisible history persistence across process restart and resume, with no inheritance into a promoted/new session;
 - incremental answer, error, cancellation, and empty-answer states;
 - branch switch, compaction, context overflow, and stale-late-result cases;
 - exact suspension and restoration when a higher-priority Suite surface appears;
 - terminal interaction at `100 × 32` and `64 × 28`, including scrolling and draft restoration;
+- copy/clear/history controls, Space/Enter/Esc dismissal, and `f` promotion after main idle;
 - no floating overlay, no statusline entry, and zero BTW rows while closed;
 - a packed-archive audit covering files, exact Pi peers, preserved MIT notice, bundled-dependency rules, and the local-change record.
+
+The production implementation satisfies the BTW-specific unit, real-Host, and real-PTY gates above. The Pi 0.83 provider-lifecycle seam remains an explicit compatibility limitation rather than a reason to fork Pi.
 
 ## Final selection statement
 

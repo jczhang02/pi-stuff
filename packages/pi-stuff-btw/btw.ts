@@ -26,7 +26,6 @@ const ERR_EMPTY_RESPONSE = "/btw returned no text content.";
 const ERR_PROVIDER_ABORT = "/btw was aborted by the model provider.";
 const ERR_TOOL_ATTEMPT = "/btw attempted to call a tool even though tools are disabled.";
 const ERR_NO_MODEL = "/btw requires an active model.";
-const IMAGE_OMITTED = "Image omitted from /btw context.";
 
 const BTW_SYSTEM_PROMPT = readFileSync(
 	fileURLToPath(new URL("./prompts/btw-system.txt", import.meta.url)),
@@ -70,32 +69,15 @@ function isPendingAssistant(entry: SessionEntry | undefined): boolean {
 	return entry?.type === "message" && entry.message.role === "assistant" && entry.message.stopReason === "pending";
 }
 
-function omitContextImages(messages: Message[]): Message[] {
-	return messages.map((message) => {
-		if ((message.role !== "user" && message.role !== "toolResult") || !Array.isArray(message.content)) {
-			return message;
-		}
-		if (!message.content.some((part) => part.type === "image")) return message;
-		return {
-			...message,
-			content: message.content.map((part) =>
-				part.type === "image" ? { type: "text" as const, text: IMAGE_OMITTED } : part,
-			),
-		};
-	});
-}
-
 /** Pi's effective active context, with compaction/branch summaries applied. */
 export function readEffectiveContext(ctx: Pick<ExtensionContext, "sessionManager">): {
 	entries: SessionEntry[];
 	messages: Message[];
 } {
-	const entries = [...ctx.sessionManager.buildContextEntries()] as SessionEntry[];
-	while (isPendingAssistant(entries.at(-1))) entries.pop();
-	// Pi 0.83 does not expose its blockImages setting to extensions. BTW takes
-	// the privacy-preserving side of that boundary and never forwards historical
-	// images, even when the main Agent is allowed to do so.
-	const messages = omitContextImages(convertToLlm(entries.flatMap((entry) => sessionEntryToContextMessages(entry))));
+	const entries = ([...ctx.sessionManager.buildContextEntries()] as SessionEntry[]).filter(
+		(entry) => !isPendingAssistant(entry),
+	);
+	const messages = convertToLlm(entries.flatMap((entry) => sessionEntryToContextMessages(entry)));
 	return { entries, messages };
 }
 

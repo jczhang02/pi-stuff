@@ -29,6 +29,7 @@ function setup(
 		history?: BtwExchange[];
 		error?: string;
 		copyText?: (text: string) => Promise<void>;
+		onFork?: (exchange: BtwExchange, signal: AbortSignal) => Promise<void>;
 	} = {},
 ) {
 	let closeCount = 0;
@@ -48,6 +49,7 @@ function setup(
 			closeCount++;
 		},
 		onClearEarlier: (id) => clearCalls.push(id),
+		onFork: options.onFork ?? (async () => {}),
 		...(options.copyText === undefined ? {} : { copyText: options.copyText }),
 	});
 	return {
@@ -63,15 +65,21 @@ function setup(
 }
 
 describe("BTW Command Dialog", () => {
-	test("renders a divider-led one-shot pending surface with no composer or frame", () => {
+	test("renders only the command, native Answering spinner, and contextual hint", () => {
 		const { controller } = setup({ question: "Why keep this isolated?" });
 		const output = controller.render(100).join("\n");
 
-		expect(output).toContain("BTW · side question · main task continues");
-		expect(output).toContain("Question\n  Why keep this isolated?");
-		expect(output).toContain("Answer\n  Answering…");
+		expect(output).toContain("/btw Why keep this isolated?");
+		expect(output).toContain("Answering…");
 		expect(output).toContain("Esc cancel");
-		expect(output).not.toContain("Follow-up");
+		for (const redundant of [
+			"side question · main task continues",
+			"single exchange",
+			"\n  Question",
+			"\n  Answer",
+		]) {
+			expect(output).not.toContain(redundant);
+		}
 		expect(output).not.toContain("╭");
 		controller.dispose();
 	});
@@ -98,40 +106,27 @@ describe("BTW Command Dialog", () => {
 		const output = controller.render(80).join("\n");
 		expect(output).toContain("final answer");
 		expect(output).toContain("Copied answer");
+		expect(output).toContain("Esc close");
 		expect(copied).toEqual(["**final answer**"]);
 		controller.dispose();
 	});
 
-	test("shows at most five earlier exchanges plus current and clears only earlier history", () => {
+	test("keeps all history navigable while rendering only a compact five-question window", () => {
 		const history = Array.from({ length: 10 }, (_, index) => exchange(index));
-		const setupResult = setup({ question: "current question", history });
-		const before = setupResult.controller.render(100).join("\n");
-		expect(before).toContain("(+5 earlier /btw)");
-		expect(before).not.toContain("earlier question 4");
-		expect(before).toContain("earlier question 5");
+		const result = setup({ question: "current question", history });
+		const newest = result.controller.render(100).join("\n");
+		expect(newest).not.toContain("earlier question 5");
+		expect(newest).toContain("earlier question 6");
+		expect(newest).toContain("/btw current question");
 
-		setupResult.controller.handleInput("x");
-		const after = setupResult.controller.render(100).join("\n");
-		expect(setupResult.clearCalls).toEqual([undefined]);
-		expect(after).not.toContain("earlier question");
-		expect(after).not.toContain("earlier /btw");
-		setupResult.controller.dispose();
+		for (let index = 0; index < 10; index++) result.controller.handleInput("\u001b[D");
+		const oldest = result.controller.render(100).join("\n");
+		expect(oldest).toContain("/btw earlier question 0");
+		expect(oldest).toContain("earlier answer 0");
+		result.controller.dispose();
 	});
 
-	test("navigates display-only history without creating a second composer", () => {
-		const result = setup({ history: [exchange(1), exchange(2)] });
-		const { controller } = result;
-		controller.handleInput("\u001b[D");
-		const output = controller.render(80).join("\n");
-		expect(output).toContain("Question\n  earlier question 1");
-		expect(output).not.toContain("Follow-up");
-		controller.handleInput("x");
-		expect(result.clearCalls).toEqual(["exchange-1"]);
-		expect(controller.render(80).join("\n")).toContain("Question\n  earlier question 1");
-		controller.dispose();
-	});
-
-	test("never discards an in-flight current exchange when clearing from history", () => {
+	test("clears siblings but never discards the in-flight current exchange", () => {
 		const result = setup({ question: "current question", history: [exchange(1), exchange(2)] });
 		result.controller.handleInput("\u001b[D");
 		result.controller.handleInput("x");
@@ -144,8 +139,67 @@ describe("BTW Command Dialog", () => {
 		});
 		const output = result.controller.render(80).join("\n");
 		expect(result.clearCalls).toEqual([undefined]);
-		expect(output).toContain("Question\n  current question");
+		expect(output).toContain("/btw current question");
 		expect(output).toContain("current answer");
+		expect(output).not.toContain("earlier question");
+		result.controller.dispose();
+	});
+
+	test("retains the selected successful exchange when clearing history", () => {
+		const result = setup({ history: [exchange(1), exchange(2)] });
+		result.controller.handleInput("\u001b[D");
+		result.controller.handleInput("x");
+		expect(result.clearCalls).toEqual(["exchange-1"]);
+		const output = result.controller.render(80).join("\n");
+		expect(output).toContain("/btw earlier question 1");
+		expect(output).toContain("earlier answer 1");
+		expect(output).toContain("Cleared BTW history");
+		result.controller.dispose();
+	});
+
+	test("promotes only a completed selected exchange and aborts a pending promotion on close", async () => {
+		const promoted: BtwExchange[] = [];
+		let promotionSignal: AbortSignal | undefined;
+		const result = setup({
+			history: [exchange(1)],
+			onFork: async (selected, signal) => {
+				promoted.push(selected);
+				promotionSignal = signal;
+				await new Promise<void>(() => {});
+			},
+		});
+		result.controller.handleInput("f");
+		await Promise.resolve();
+		expect(promoted.map((item) => item.id)).toEqual(["exchange-1"]);
+		const waiting = result.controller.render(80).join("\n");
+		expect(waiting).toContain("Waiting for the main Agent to finish");
+		expect(waiting).toContain("Esc close");
+		result.controller.handleInput("\u001b");
+		result.controller.dispose();
+		expect(result.closeCount).toBe(1);
+		expect(promotionSignal?.aborted).toBe(true);
+	});
+
+	test("accepts Kitty keyboard encoding for copy, fork, and clear", async () => {
+		const copied: string[] = [];
+		const promoted: string[] = [];
+		const result = setup({
+			history: [exchange(1), exchange(2)],
+			copyText: async (text) => {
+				copied.push(text);
+			},
+			onFork: async (selected) => {
+				promoted.push(selected.id);
+			},
+		});
+		result.controller.handleInput("\u001b[99u");
+		result.controller.handleInput("\u001b[102u");
+		await Promise.resolve();
+		expect(copied).toEqual(["earlier answer 2"]);
+		expect(promoted).toEqual(["exchange-2"]);
+
+		result.controller.handleInput("\u001b[120u");
+		expect(result.clearCalls).toEqual(["exchange-2"]);
 		result.controller.dispose();
 	});
 
@@ -159,21 +213,45 @@ describe("BTW Command Dialog", () => {
 		controller.dispose();
 	});
 
-	test("Esc is the only advertised close key and every line fits a 64-column terminal", () => {
-		const result = setup({ question: "a very long question ".repeat(10), history: [exchange(1), exchange(2)] });
-		const lines = result.controller.render(64);
-		expect(lines.every((line) => visibleWidth(line) <= 64)).toBe(true);
-		result.controller.handleInput("\u001b");
-		expect(result.closeCount).toBe(1);
-		result.controller.dispose();
+	test("Space, Enter, and Esc match Claude by cancelling the pending Answering surface", () => {
+		for (const key of [" ", "\r", "\u001b"]) {
+			const result = setup({
+				question: "a very long question ".repeat(10),
+				history: [exchange(1), exchange(2)],
+			});
+			const lines = result.controller.render(64);
+			expect(lines.every((line) => visibleWidth(line) <= 64)).toBe(true);
+			result.controller.handleInput(key);
+			expect(result.closeCount).toBe(1);
+			result.controller.dispose();
+		}
 	});
 
-	test("strips terminal control sequences from questions and answers", () => {
-		const { controller } = setup({ question: "safe\u001b[31m question" });
-		controller.setError("bad\u001b[2J error", "partial\u001b[31m answer");
+	test("strips ESC and C1 terminal protocols plus bidi controls from every rendered field", () => {
+		const { controller } = setup({
+			question: "safe\u001b[31m question\u001b]0;hidden-title\u0007 after\u009b32m 中文\u202e end",
+		});
+		controller.setError(
+			"bad\u001bXhidden-sos\u001b\\ error\u0090hidden-c1-dcs\u009c tail",
+			"partial\u001bPhidden-dcs\u0007hidden-dcs-after-bell\u001b\\ answer\u009d0;hidden-c1-osc\u0007 kept\u2066 text",
+		);
 		const output = controller.render(80).join("\n");
-		expect(output).not.toContain("\u001b");
-		expect(output).toContain("safe question");
+		for (const control of ["\u001b", "\u0090", "\u009b", "\u009c", "\u009d", "\u202e", "\u2066"]) {
+			expect(output).not.toContain(control);
+		}
+		for (const hidden of [
+			"hidden-title",
+			"hidden-sos",
+			"hidden-c1-dcs",
+			"hidden-dcs",
+			"hidden-dcs-after-bell",
+			"hidden-c1-osc",
+		]) {
+			expect(output).not.toContain(hidden);
+		}
+		expect(output).toContain("safe question after 中文 end");
+		expect(output).toContain("partial answer kept  text");
+		expect(output).toContain("bad error tail");
 		controller.dispose();
 	});
 });

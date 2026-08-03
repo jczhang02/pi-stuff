@@ -90,7 +90,7 @@ function completedStream(deltas: readonly string[], final: AssistantMessage) {
 }
 
 describe("BTW effective context", () => {
-	test("uses Pi's compaction-aware context and removes a trailing pending assistant", () => {
+	test("uses Pi's compaction-aware context, preserves completed images, and removes any pending assistant", () => {
 		const entries: SessionEntry[] = [
 			{
 				type: "branch_summary",
@@ -128,9 +128,41 @@ describe("BTW effective context", () => {
 
 		expect(serialized).toContain("effective compacted summary");
 		expect(serialized).toContain("effective custom context");
-		expect(serialized).toContain("Image omitted from /btw context.");
-		expect(serialized).not.toContain("sensitive-base64");
+		expect(serialized).toContain("sensitive-base64");
 		expect(serialized).not.toContain("unfinished");
+	});
+
+	test("preserves completed tool calls and tool results while excluding a non-trailing partial", () => {
+		const toolCall = {
+			...assistant("", "toolUse"),
+			content: [{ type: "toolCall" as const, id: "tool-1", name: "read", arguments: { path: "src/a.ts" } }],
+		};
+		const toolResult: Message = {
+			role: "toolResult",
+			toolCallId: "tool-1",
+			toolName: "read",
+			content: [{ type: "text", text: "completed tool result" }],
+			isError: false,
+			timestamp: Date.now(),
+		};
+		const entries: SessionEntry[] = [
+			messageEntry("user", user("inspect the file")),
+			messageEntry("tool-call", toolCall, "user"),
+			messageEntry("tool-result", toolResult, "tool-call"),
+			messageEntry("partial", assistant("unfinished partial", "pending"), "tool-result"),
+			{
+				type: "custom",
+				id: "invisible-state",
+				parentId: "partial",
+				timestamp: new Date().toISOString(),
+				customType: "fixture",
+				data: { ignored: true },
+			},
+		];
+		const serialized = JSON.stringify(readEffectiveContext(extensionContext(() => entries)).messages);
+		expect(serialized).toContain("src/a.ts");
+		expect(serialized).toContain("completed tool result");
+		expect(serialized).not.toContain("unfinished partial");
 	});
 });
 

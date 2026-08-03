@@ -1,7 +1,9 @@
 import { copyToClipboard, type Theme } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
+	decodeKittyPrintable,
 	Key,
+	Loader,
 	Markdown,
 	type MarkdownTheme,
 	matchesKey,
@@ -10,7 +12,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { BTW_VISIBLE_EARLIER_LIMIT, type BtwExchange } from "./btw-history.js";
+import { BTW_VISIBLE_HISTORY_LIMIT, type BtwExchange } from "./btw-history.js";
 
 const GUTTER = "  ";
 const COPY_FEEDBACK_MS = 2_000;
@@ -24,7 +26,9 @@ interface DisplayExchange {
 	answer: string;
 	state: DisplayState;
 	error: string | undefined;
+	timestamp: number;
 	contextTrimmed: boolean;
+	response: BtwExchange["response"];
 }
 
 export interface BtwDialogOptions {
@@ -33,6 +37,7 @@ export interface BtwDialogOptions {
 	readonly error?: string;
 	readonly onClose: () => void;
 	readonly onClearEarlier: (currentId: string | undefined) => void;
+	readonly onFork: (exchange: BtwExchange, signal: AbortSignal) => Promise<void>;
 	readonly copyText?: (text: string) => Promise<void>;
 }
 
@@ -43,28 +48,92 @@ function successfulDisplay(exchange: BtwExchange): DisplayExchange {
 		answer: exchange.answer,
 		state: "success",
 		error: undefined,
+		timestamp: exchange.timestamp,
 		contextTrimmed: exchange.contextTrimmed,
+		response: exchange.response,
 	};
 }
 
 function stripTerminalControls(text: string): string {
 	let result = "";
-	for (let index = 0; index < text.length; index++) {
+	for (let index = 0; index < text.length; index += 1) {
 		const code = text.charCodeAt(index);
-		if (code === 27 && text[index + 1] === "[") {
-			index += 2;
-			while (index < text.length) {
-				const terminator = text.charCodeAt(index);
-				if (terminator >= 64 && terminator <= 126) break;
-				index++;
+		if (code === 0x1b) {
+			const introducer = text.charCodeAt(index + 1);
+			if (introducer === 0x5b) {
+				index = skipControlSequence(text, index + 2);
+				continue;
 			}
+			if (isStringControlIntroducer(introducer)) {
+				index = skipStringControl(text, index + 2, introducer === 0x5d);
+				continue;
+			}
+			index = skipEscapeSequence(text, index + 1);
 			continue;
 		}
-		if (code === 9 || code === 10 || code >= 32) {
-			if (code !== 127) result += text[index] ?? "";
+		if (code === 0x9b) {
+			index = skipControlSequence(text, index + 1);
+			continue;
 		}
+		if (isC1StringControlIntroducer(code)) {
+			index = skipStringControl(text, index + 1, code === 0x9d);
+			continue;
+		}
+		if (code === 0x0a || code === 0x09) {
+			result += text[index] ?? "";
+			continue;
+		}
+		if (isBidiControl(code) || code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
+			result += " ";
+			continue;
+		}
+		result += text[index] ?? "";
 	}
 	return result;
+}
+
+function skipControlSequence(text: string, start: number): number {
+	for (let index = start; index < text.length; index += 1) {
+		const code = text.charCodeAt(index);
+		if (code >= 0x40 && code <= 0x7e) return index;
+	}
+	return text.length;
+}
+
+function skipStringControl(text: string, start: number, allowBell: boolean): number {
+	for (let index = start; index < text.length; index += 1) {
+		const code = text.charCodeAt(index);
+		if ((allowBell && code === 0x07) || code === 0x9c) return index;
+		if (code === 0x1b && text.charCodeAt(index + 1) === 0x5c) return index + 1;
+	}
+	return text.length;
+}
+
+function skipEscapeSequence(text: string, start: number): number {
+	let index = start;
+	while (index < text.length) {
+		const code = text.charCodeAt(index);
+		if (code < 0x20 || code > 0x2f) break;
+		index += 1;
+	}
+	return Math.min(index, text.length);
+}
+
+function isStringControlIntroducer(code: number): boolean {
+	return code === 0x5d || code === 0x50 || code === 0x58 || code === 0x5e || code === 0x5f;
+}
+
+function isC1StringControlIntroducer(code: number): boolean {
+	return code === 0x9d || code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f;
+}
+
+function isBidiControl(code: number): boolean {
+	return (
+		code === 0x061c ||
+		(code >= 0x200e && code <= 0x200f) ||
+		(code >= 0x202a && code <= 0x202e) ||
+		(code >= 0x2066 && code <= 0x2069)
+	);
 }
 
 function oneLine(text: string): string {
@@ -98,32 +167,48 @@ function markdownTheme(theme: Theme): MarkdownTheme {
 	};
 }
 
-function joinHints(theme: Theme, width: number, hints: readonly string[]): string {
+function hintLines(theme: Theme, width: number, hints: readonly string[]): string[] {
 	const available = Math.max(1, width - GUTTER.length);
-	let text = "";
+	const lines: string[] = [];
+	let current = "";
 	for (const hint of hints) {
-		const candidate = text.length === 0 ? hint : `${text} · ${hint}`;
-		if (visibleWidth(candidate) > available) break;
-		text = candidate;
+		const candidate = current.length === 0 ? hint : `${current} · ${hint}`;
+		if (current.length > 0 && visibleWidth(candidate) > available) {
+			lines.push(`${GUTTER}${theme.fg("dim", current)}`);
+			current = hint;
+		} else {
+			current = candidate;
+		}
 	}
-	return `${GUTTER}${theme.fg("dim", text || "Esc return")}`;
+	if (current.length > 0) lines.push(`${GUTTER}${theme.fg("dim", current)}`);
+	return lines.length > 0 ? lines : [`${GUTTER}${theme.fg("dim", "Esc close")}`];
+}
+
+function questionLine(theme: Theme, exchange: DisplayExchange, selected: boolean, width: number): string {
+	const command = theme.fg(selected ? "accent" : "dim", "/btw");
+	const question = oneLine(exchange.question);
+	const text = selected ? theme.fg("text", question) : theme.fg("muted", question);
+	return bounded(`${GUTTER}${command}${question.length > 0 ? ` ${text}` : ""}`, width);
 }
 
 export class BtwDialogController implements Component {
 	private readonly theme: Theme;
 	private readonly tui: TUI;
+	private readonly loader: Loader;
+	private readonly markdown: Markdown;
+	private readonly promotionController = new AbortController();
 	private readonly closeDialog: () => void;
 	private readonly clearEarlier: (currentId: string | undefined) => void;
+	private readonly forkExchange: (exchange: BtwExchange, signal: AbortSignal) => Promise<void>;
 	private readonly copyText: (text: string) => Promise<void>;
-	private readonly markdown: Markdown;
 	private exchanges: DisplayExchange[];
 	private currentIndex: number;
 	private selectedIndex: number;
-	private hiddenEarlier: number;
 	private scrollTop = 0;
 	private followTail = true;
-	private copyFeedback: "copied" | "failed" | undefined;
+	private feedback: { kind: "success" | "error" | "dim"; text: string } | undefined;
 	private copyTimer: ReturnType<typeof setTimeout> | undefined;
+	private promoting = false;
 	private disposed = false;
 
 	constructor(theme: Theme, tui: TUI, options: BtwDialogOptions) {
@@ -131,13 +216,9 @@ export class BtwDialogController implements Component {
 		this.tui = tui;
 		this.closeDialog = options.onClose;
 		this.clearEarlier = options.onClearEarlier;
+		this.forkExchange = options.onFork;
 		this.copyText = options.copyText ?? copyToClipboard;
-
-		const visibleHistoryCount =
-			options.question === undefined ? BTW_VISIBLE_EARLIER_LIMIT + 1 : BTW_VISIBLE_EARLIER_LIMIT;
-		const earlier = options.history.slice(-visibleHistoryCount);
-		this.hiddenEarlier = Math.max(0, options.history.length - earlier.length);
-		this.exchanges = earlier.map(successfulDisplay);
+		this.exchanges = options.history.map(successfulDisplay);
 		if (options.question !== undefined) {
 			this.exchanges.push({
 				id: undefined,
@@ -145,22 +226,33 @@ export class BtwDialogController implements Component {
 				answer: "",
 				state: options.error === undefined ? "pending" : "error",
 				error: options.error,
+				timestamp: Date.now(),
 				contextTrimmed: false,
+				response: undefined,
 			});
 		}
 		if (this.exchanges.length === 0) {
 			this.exchanges.push({
 				id: undefined,
-				question: "/btw",
+				question: "",
 				answer: "",
 				state: "error",
 				error: options.error ?? "No previous /btw exchange in this session.",
+				timestamp: Date.now(),
 				contextTrimmed: false,
+				response: undefined,
 			});
 		}
 		this.currentIndex = this.exchanges.length - 1;
 		this.selectedIndex = this.currentIndex;
 		this.markdown = new Markdown("", 0, 0, markdownTheme(theme));
+		this.loader = new Loader(
+			tui,
+			(frame) => theme.fg("accent", frame),
+			(message) => theme.fg("muted", message),
+			"Answering…",
+		);
+		if (this.exchangeAt(this.currentIndex).state !== "pending") this.loader.stop();
 	}
 
 	appendText(delta: string): void {
@@ -178,6 +270,7 @@ export class BtwDialogController implements Component {
 		current.state = "pending";
 		this.scrollTop = 0;
 		this.followTail = true;
+		this.feedback = undefined;
 		this.requestRender();
 	}
 
@@ -189,8 +282,11 @@ export class BtwDialogController implements Component {
 		current.state = "success";
 		current.error = undefined;
 		current.contextTrimmed = exchange.contextTrimmed;
+		current.timestamp = exchange.timestamp;
+		current.response = exchange.response;
 		this.selectedIndex = this.currentIndex;
 		this.followTail = true;
+		this.loader.stop();
 		this.requestRender();
 	}
 
@@ -202,11 +298,12 @@ export class BtwDialogController implements Component {
 		current.state = "error";
 		this.selectedIndex = this.currentIndex;
 		this.followTail = true;
+		this.loader.stop();
 		this.requestRender();
 	}
 
 	handleInput(data: string): void {
-		if (matchesKey(data, Key.escape)) {
+		if (matchesKey(data, Key.escape) || matchesKey(data, Key.space) || matchesKey(data, Key.enter)) {
 			this.closeDialog();
 			return;
 		}
@@ -229,52 +326,55 @@ export class BtwDialogController implements Component {
 			this.requestRender();
 			return;
 		}
-		if (data === "c") {
+		const printable = decodeKittyPrintable(data) ?? data;
+		if (printable === "c") {
 			void this.copySelected();
 			return;
 		}
-		if (data === "x" && this.hasEarlier()) this.clearEarlierHistory();
+		if (printable === "f") {
+			void this.promoteSelected();
+			return;
+		}
+		if (printable === "x" && this.hasEarlier()) this.clearEarlierHistory();
 	}
 
 	render(width: number): string[] {
 		const selected = this.exchangeAt(this.selectedIndex);
 		const historyLines = this.renderHistory(width);
-		const questionWidth = Math.max(1, width - GUTTER.length);
-		const question = bounded(`${GUTTER}${this.theme.fg("text", oneLine(selected.question))}`, width);
-		const answerLines = this.renderAnswer(selected, questionWidth);
+		const answerWidth = Math.max(1, width - GUTTER.length);
+		const answerLines = this.renderAnswer(selected, answerWidth);
 		const terminalRows = (this.tui.terminal as { rows?: number }).rows ?? 24;
-		const viewportHeight = Math.max(5, terminalRows - 11 - historyLines.length);
-		const maxScroll = Math.max(0, answerLines.length - viewportHeight);
+		let viewportHeight = Math.max(4, terminalRows - historyLines.length - 7);
+		let maxScroll = Math.max(0, answerLines.length - viewportHeight);
+		let footer = this.renderFooter(selected, width, maxScroll);
+		viewportHeight = Math.max(4, terminalRows - historyLines.length - 5 - footer.length);
+		maxScroll = Math.max(0, answerLines.length - viewportHeight);
+		footer = this.renderFooter(selected, width, maxScroll);
 		if (this.followTail) this.scrollTop = maxScroll;
 		this.scrollTop = Math.min(maxScroll, Math.max(0, this.scrollTop));
 		if (this.scrollTop === maxScroll) this.followTail = true;
-		const visibleAnswer = answerLines.slice(this.scrollTop, this.scrollTop + viewportHeight);
 
-		const titleSuffix = width >= 64 ? this.theme.fg("dim", " · side question · main task continues") : "";
-		const lines = [
+		return [
 			divider(this.theme, width),
-			bounded(`${GUTTER}${this.theme.fg("text", this.theme.bold("BTW"))}${titleSuffix}`, width),
 			...historyLines,
 			"",
-			bounded(`${GUTTER}${this.theme.fg("muted", "Question")}`, width),
-			question,
+			...answerLines
+				.slice(this.scrollTop, this.scrollTop + viewportHeight)
+				.map((line) => bounded(`${GUTTER}${line}`, width)),
 			"",
-			bounded(`${GUTTER}${this.theme.fg("muted", "Answer")}`, width),
-			...visibleAnswer.map((line) => bounded(`${GUTTER}${line}`, width)),
+			...footer,
 		];
-		if (selected.contextTrimmed) {
-			lines.push(bounded(`${GUTTER}${this.theme.fg("warning", "Context trimmed to fit the model window")}`, width));
-		}
-		lines.push("", this.renderFooter(selected, width, maxScroll));
-		return lines;
 	}
 
 	invalidate(): void {
 		this.markdown.invalidate();
+		this.loader.invalidate();
 	}
 
 	dispose(): void {
 		this.disposed = true;
+		this.promotionController.abort();
+		this.loader.stop();
 		if (this.copyTimer) clearTimeout(this.copyTimer);
 		this.copyTimer = undefined;
 	}
@@ -288,12 +388,12 @@ export class BtwDialogController implements Component {
 		this.selectedIndex = index;
 		this.scrollTop = 0;
 		this.followTail = false;
-		this.copyFeedback = undefined;
+		this.feedback = undefined;
 		this.requestRender();
 	}
 
 	private hasEarlier(): boolean {
-		return this.hiddenEarlier > 0 || this.exchanges.length > 1;
+		return this.exchanges.length > 1;
 	}
 
 	private clearEarlierHistory(): void {
@@ -304,9 +404,9 @@ export class BtwDialogController implements Component {
 		this.exchanges = [retained];
 		this.currentIndex = 0;
 		this.selectedIndex = 0;
-		this.hiddenEarlier = 0;
 		this.scrollTop = 0;
 		this.followTail = true;
+		this.feedback = { kind: "success", text: "Cleared BTW history" };
 		this.requestRender();
 	}
 
@@ -315,13 +415,13 @@ export class BtwDialogController implements Component {
 		if (selected.state !== "success" || selected.answer.length === 0) return;
 		try {
 			await this.copyText(stripTerminalControls(selected.answer));
-			this.copyFeedback = "copied";
+			this.feedback = { kind: "success", text: "Copied answer" };
 		} catch {
-			this.copyFeedback = "failed";
+			this.feedback = { kind: "error", text: "Could not copy answer" };
 		}
 		if (this.copyTimer) clearTimeout(this.copyTimer);
 		this.copyTimer = setTimeout(() => {
-			this.copyFeedback = undefined;
+			this.feedback = undefined;
 			this.copyTimer = undefined;
 			this.requestRender();
 		}, COPY_FEEDBACK_MS);
@@ -329,20 +429,43 @@ export class BtwDialogController implements Component {
 		this.requestRender();
 	}
 
-	private renderHistory(width: number): string[] {
-		if (this.exchanges.length === 1 && this.hiddenEarlier === 0) return [];
-		const lines: string[] = [];
-		if (this.hiddenEarlier > 0) {
-			lines.push(bounded(`${GUTTER}${this.theme.fg("dim", `(+${this.hiddenEarlier} earlier /btw)`)}`, width));
+	private async promoteSelected(): Promise<void> {
+		const selected = this.exchangeAt(this.selectedIndex);
+		if (this.promoting || selected.state !== "success" || !selected.id) return;
+		this.promoting = true;
+		this.feedback = { kind: "dim", text: "Waiting for the main Agent to finish…" };
+		this.requestRender();
+		try {
+			await this.forkExchange(
+				{
+					id: selected.id,
+					question: selected.question,
+					answer: selected.answer,
+					timestamp: selected.timestamp,
+					contextTrimmed: selected.contextTrimmed,
+					...(selected.response === undefined ? {} : { response: selected.response }),
+				},
+				this.promotionController.signal,
+			);
+		} catch (error) {
+			if (this.disposed || this.promotionController.signal.aborted) return;
+			this.promoting = false;
+			this.feedback = {
+				kind: "error",
+				text: error instanceof Error ? error.message : "Could not fork this BTW exchange",
+			};
+			this.requestRender();
 		}
-		for (let index = 0; index < this.exchanges.length; index++) {
+	}
+
+	private renderHistory(width: number): string[] {
+		const maximumStart = Math.max(0, this.exchanges.length - BTW_VISIBLE_HISTORY_LIMIT);
+		const start = Math.min(maximumStart, Math.max(0, this.selectedIndex - BTW_VISIBLE_HISTORY_LIMIT + 1));
+		const end = Math.min(this.exchanges.length, start + BTW_VISIBLE_HISTORY_LIMIT);
+		const lines: string[] = [];
+		for (let index = start; index < end; index++) {
 			const exchange = this.exchanges[index];
-			if (!exchange) continue;
-			const selected = index === this.selectedIndex;
-			const marker = selected ? this.theme.fg("accent", "●") : this.theme.fg("dim", "○");
-			const text = oneLine(exchange.question);
-			const styled = selected ? this.theme.fg("text", this.theme.bold(text)) : this.theme.fg("muted", text);
-			lines.push(bounded(`${GUTTER}${marker} ${styled}`, width));
+			if (exchange) lines.push(questionLine(this.theme, exchange, index === this.selectedIndex, width));
 		}
 		return lines;
 	}
@@ -355,14 +478,10 @@ export class BtwDialogController implements Component {
 
 	private renderAnswer(exchange: DisplayExchange, width: number): string[] {
 		const safeAnswer = stripTerminalControls(exchange.answer);
-		if (safeAnswer.length > 0) {
-			this.markdown.setText(safeAnswer);
-		} else {
-			this.markdown.setText("");
-		}
+		this.markdown.setText(safeAnswer);
 		const lines = safeAnswer.length > 0 ? this.markdown.render(Math.max(1, width)) : [];
 		if (exchange.state === "pending") {
-			lines.push(this.theme.fg("warning", safeAnswer.length === 0 ? "Answering…" : "…"));
+			lines.push(...this.loader.render(Math.max(1, width)));
 		} else if (exchange.state === "error") {
 			if (safeAnswer.length > 0) lines.push(this.theme.fg("warning", "Incomplete answer"));
 			const error = stripTerminalControls(exchange.error ?? "Unknown /btw error");
@@ -371,14 +490,19 @@ export class BtwDialogController implements Component {
 		return lines.length > 0 ? lines : [this.theme.fg("dim", "(empty answer)")];
 	}
 
-	private renderFooter(exchange: DisplayExchange, width: number, maxScroll: number): string {
-		if (this.copyFeedback === "copied") return `${GUTTER}${this.theme.fg("success", "Copied answer")}`;
-		if (this.copyFeedback === "failed") return `${GUTTER}${this.theme.fg("error", "Could not copy answer")}`;
-		const hints = [exchange.state === "pending" ? "Esc cancel" : "Esc return"];
-		if (maxScroll > 0) hints.push("↑/↓ scroll");
+	private renderFooter(exchange: DisplayExchange, width: number, maxScroll: number): string[] {
+		if (this.feedback) {
+			return [
+				bounded(`${GUTTER}${this.theme.fg(this.feedback.kind, oneLine(this.feedback.text))}`, width),
+				...hintLines(this.theme, width, [exchange.state === "pending" ? "Esc cancel" : "Esc close"]),
+			];
+		}
+		const hints: string[] = [];
 		if (this.exchanges.length > 1) hints.push("←/→ history");
-		if (exchange.state === "success") hints.push("c copy");
-		if (this.hasEarlier()) hints.push("x clear earlier");
-		return joinHints(this.theme, width, hints);
+		if (maxScroll > 0) hints.push("↑/↓ scroll");
+		if (exchange.state === "success") hints.push("c copy", "f fork");
+		if (this.hasEarlier()) hints.push("x clear");
+		hints.push(exchange.state === "pending" ? "Esc cancel" : "Esc close");
+		return hintLines(this.theme, width, hints);
 	}
 }

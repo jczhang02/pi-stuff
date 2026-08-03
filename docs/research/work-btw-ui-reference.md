@@ -124,7 +124,7 @@ The confirmed large structure freezes these points:
 - closing restores the main editor draft captured when the dialog opened, plus Todo and the Agent roster;
 - tool-requiring or continuing work is promoted to the existing Agent/session system.
 
-The following remain later questions: exact promotion action, copy behavior, history capacity, whether history is memory-only or survives resume through invisible session state, provider/model selection, shortcut, colors, line budget, and narrow-terminal thresholds. Independent calls also resend context and incur provider cost; a separately configured provider creates an additional privacy boundary that must be explicit.
+The implementation decisions are now fixed. BTW uses the active main model; the surface follows Pi theme tokens and the native Answering loader; copy is `c`, clear is `x`, history is Left/Right, scrolling is Up/Down, promotion is `f`, and Space/Enter/Esc dismiss. `f` waits for the main Agent to become idle and then opens a new session containing the selected question and answer as formal turns. History survives resume as invisible no-context state owned by the original session, is not inherited by new/forked sessions, and only evicts oldest entries at abnormal guards of 1,000 exchanges or 8 MiB. Real Pi 0.83 gates cover both `100 × 32` and `64 × 28`. Independent calls still resend context and incur provider cost.
 
 ## Feasibility boundary
 
