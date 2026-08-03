@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -289,28 +289,39 @@ async function verifyStandaloneInstalls(
 	const permissionsArchive = releaseArchive("@jczhang02/pi-stuff-permissions");
 	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
 	const toolsArchive = releaseArchive("@jczhang02/pi-stuff-tools");
-	const treeSitterManifest = await realpath(join(root, "node_modules", "tree-sitter-bash", "package.json"));
-	const treeSitterRequire = createRequire(treeSitterManifest);
+	const permissionsRequire = createRequire(join(root, "packages", "pi-stuff-permissions", "package.json"));
+	const treeSitterDirectory = await resolvePackageDirectory(permissionsRequire, "tree-sitter-bash");
+	const treeSitterRequire = createRequire(join(treeSitterDirectory, "package.json"));
 	const transitiveRuntimeDirectories = Object.fromEntries(
 		["node-addon-api", "node-gyp-build"].map((name) => [
 			name,
 			dirname(treeSitterRequire.resolve(`${name}/package.json`)),
 		]),
 	) as Record<string, string>;
+	const permissionRuntimeDirectories = Object.fromEntries(
+		await Promise.all(
+			Object.keys(permissionRuntimeVersions).map(
+				async (name) => [name, await resolvePackageDirectory(permissionsRequire, name)] as const,
+			),
+		),
+	) as Record<string, string>;
+	const rootRequire = createRequire(join(root, "package.json"));
+	const runtimeDirectories: Record<string, string> = {
+		...transitiveRuntimeDirectories,
+		...permissionRuntimeDirectories,
+		typebox: await resolvePackageDirectory(rootRequire, "typebox"),
+	};
 	const runtimeArchives = Object.fromEntries(
 		await Promise.all(
 			["node-addon-api", "node-gyp-build", ...Object.keys(permissionRuntimeVersions), "typebox"].map(
-				async (name) =>
-					[
+				async (name) => {
+					const directory = runtimeDirectories[name];
+					if (!directory) throw new Error(`Cannot resolve standalone runtime dependency ${name}`);
+					return [
 						name,
-						(
-							await packPackageArchive(
-								transitiveRuntimeDirectories[name] ?? join(root, "node_modules", name),
-								join(packsDirectory, name),
-								bunEnvironment,
-							)
-						).archivePath,
-					] as const,
+						(await packPackageArchive(directory, join(packsDirectory, name), bunEnvironment)).archivePath,
+					] as const;
+				},
 			),
 		),
 	) as Record<string, string>;
