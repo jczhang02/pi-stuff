@@ -24,6 +24,7 @@
         "@jczhang02/pi-stuff-btw": "0.0.0",
         "@jczhang02/pi-stuff-permissions": "0.0.0",
         "@jczhang02/pi-stuff-todo": "0.0.0",
+        "@jczhang02/pi-stuff-tools": "0.0.0",
         "@jczhang02/pi-stuff-ui": "0.0.0",
       },
       "devDependencies": {
@@ -38,6 +39,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@jczhang02/pi-stuff-permissions": "0.0.0",
+        "@jczhang02/pi-stuff-tools": "0.0.0",
         "@jczhang02/pi-stuff-ui": "0.0.0",
         "jiti": "2.7.0",
         "typebox": "1.3.7",
@@ -94,6 +96,23 @@
       "name": "@jczhang02/pi-stuff-todo",
       "version": "0.0.0",
       "dependencies": {
+        "@jczhang02/pi-stuff-tools": "0.0.0",
+        "@jczhang02/pi-stuff-ui": "0.0.0",
+        "typebox": "1.3.7",
+      },
+      "devDependencies": {
+        "@earendil-works/pi-coding-agent": "0.83.0",
+        "@earendil-works/pi-tui": "0.83.0",
+      },
+      "peerDependencies": {
+        "@earendil-works/pi-coding-agent": "*",
+        "@earendil-works/pi-tui": "*",
+      },
+    },
+    "packages/pi-stuff-tools": {
+      "name": "@jczhang02/pi-stuff-tools",
+      "version": "0.0.0",
+      "dependencies": {
         "@jczhang02/pi-stuff-ui": "0.0.0",
         "typebox": "1.3.7",
       },
@@ -110,10 +129,12 @@
       "name": "@jczhang02/pi-stuff-ui",
       "version": "0.0.0",
       "devDependencies": {
+        "@earendil-works/pi-ai": "0.83.0",
         "@earendil-works/pi-coding-agent": "0.83.0",
         "@earendil-works/pi-tui": "0.83.0",
       },
       "peerDependencies": {
+        "@earendil-works/pi-ai": "*",
         "@earendil-works/pi-coding-agent": "*",
         "@earendil-works/pi-tui": "*",
       },
@@ -251,6 +272,8 @@
     "@jczhang02/pi-stuff-permissions": ["@jczhang02/pi-stuff-permissions@workspace:packages/pi-stuff-permissions"],
 
     "@jczhang02/pi-stuff-todo": ["@jczhang02/pi-stuff-todo@workspace:packages/pi-stuff-todo"],
+
+    "@jczhang02/pi-stuff-tools": ["@jczhang02/pi-stuff-tools@workspace:packages/pi-stuff-tools"],
 
     "@jczhang02/pi-stuff-ui": ["@jczhang02/pi-stuff-ui@workspace:packages/pi-stuff-ui"],
 

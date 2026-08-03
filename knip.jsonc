@@ -5,6 +5,7 @@
 			"entry": [
 				"scripts/*.ts",
 				"test/**/*.test.ts",
+				"test/ui/settings-lock-race-worker.ts",
 				"test/fixtures/**/*.ts",
 				"test/agents/fixtures/**/*.ts",
 				"test/permissions/fixtures/**/*.ts"
@@ -28,6 +29,9 @@
 			"project": ["src/**/*.ts"]
 		},
 		"packages/pi-stuff-todo": {
+			"project": ["**/*.ts"]
+		},
+		"packages/pi-stuff-tools": {
 			"project": ["**/*.ts"]
 		},
 		"packages/pi-stuff-ui": {

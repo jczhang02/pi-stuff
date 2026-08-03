@@ -27,6 +27,7 @@
 	},
 	"dependencies": {
 		"@jczhang02/pi-stuff-ui": "0.0.0",
+		"@jczhang02/pi-stuff-tools": "0.0.0",
 		"@jczhang02/pi-stuff-permissions": "0.0.0",
 		"@jczhang02/pi-stuff-agents": "0.0.0",
 		"@jczhang02/pi-stuff-todo": "0.0.0",
@@ -34,6 +35,7 @@
 	},
 	"bundledDependencies": [
 		"@jczhang02/pi-stuff-ui",
+		"@jczhang02/pi-stuff-tools",
 		"@jczhang02/pi-stuff-permissions",
 		"@jczhang02/pi-stuff-agents",
 		"@jczhang02/pi-stuff-todo",
