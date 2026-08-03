@@ -298,8 +298,13 @@ function firstGrapheme(value: string): string {
 
 function joinColumns(left: string, right: string, startColumn: number, width: number): string {
 	if (!right) return clip(left, width);
-	const gap = " ".repeat(Math.max(2, startColumn - visibleWidth(left)));
-	return clip(`${left}${gap}${right}`, width);
+	const normalizedWidth = Math.max(1, Math.floor(width));
+	const rightStart = Math.min(Math.max(1, startColumn), Math.max(1, normalizedWidth - 1));
+	const leftBudget = Math.max(0, rightStart - 2);
+	const fittedLeft = truncateToWidth(left, leftBudget, "…");
+	const gap = " ".repeat(Math.max(1, rightStart - visibleWidth(fittedLeft)));
+	const rightBudget = Math.max(0, normalizedWidth - visibleWidth(fittedLeft) - visibleWidth(gap));
+	return `${fittedLeft}${gap}${truncateToWidth(right, rightBudget, "…")}`;
 }
 
 function clip(line: string, width: number): string {

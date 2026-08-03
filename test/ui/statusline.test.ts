@@ -670,6 +670,28 @@ describe("StatuslineController", () => {
 		for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(48);
 	});
 
+	test("omits a meaningless prompt ellipsis before a long skill badge", () => {
+		const skill = `review-${"x".repeat(24)}`;
+		const expandedPrompt = `<skill name="${skill}" location="/private/review/SKILL.md">\nbody\n</skill>\n\n${"检查🙂超长路径 ".repeat(40)}`;
+		const controller = new StatuslineController(api(), { enabled: new ValueSource(true) });
+		const component = controller.createFooter(
+			context({ branch: messageEntries(expandedPrompt, 0, 0) }),
+			tuiHarness().tui,
+			theme,
+			footerData("main"),
+		);
+
+		for (const width of [100, 64, 48, 32, 24]) {
+			const lines = withNerdFontPreference(false, () => component.render(width));
+			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			expect(lines.join("\n")).not.toMatch(/…\s+\[skill:/u);
+		}
+
+		const narrowPrompt = withNerdFontPreference(false, () => component.render(48).join("\n"));
+		expect(narrowPrompt).toContain(`[skill:${skill}]`);
+		expect(narrowPrompt).not.toContain("检查…");
+	});
+
 	test("matches the old footer usage accounting by ignoring aborted turns and compaction metadata", () => {
 		const [user, assistant] = turnEntries("aborted", "Retry the interrupted task", null, 18_000, 0.42);
 		if (assistant.type !== "message" || assistant.message.role !== "assistant") {

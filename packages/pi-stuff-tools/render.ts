@@ -10,6 +10,10 @@ const ROW_PREVIEW_MAX_CODE_UNITS = 8 * 1024;
 const SUMMARY_TEXT_MAX_CODE_UNITS = 64 * 1024;
 
 const MAX_ROW_CACHE_WIDTHS = 6;
+const MAX_TRUNCATED_SUMMARY_WIDTH = 12;
+const MIN_TRUNCATED_LABEL_WIDTH = 4;
+const MIN_TRUNCATED_SUMMARY_WIDTH = 6;
+const MIN_TRUNCATED_TARGET_WIDTH = 8;
 
 export interface ToolRowModel {
 	readonly durationMs: number | undefined;
@@ -121,9 +125,37 @@ function fitIdentity(markerSlot: string, label: string, width: number): string {
 	return `${markerSlot}${truncateToWidth(label, width - markerWidth, "…")}`;
 }
 
-function fitRow(markerSlot: string, label: string, target: string, summary: string, width: number): string {
+function fitIdentityAndSummary(markerSlot: string, label: string, summary: string, width: number): string {
+	const markerWidth = visibleWidth(markerSlot);
+	const separator = " · ";
+	const separatorWidth = visibleWidth(separator);
+	const available = width - markerWidth - separatorWidth;
+	if (available <= 1) return fitIdentity(markerSlot, label, width);
+
+	const summaryWidth = visibleWidth(summary);
+	const minimumSummaryWidth = Math.min(summaryWidth, MIN_TRUNCATED_SUMMARY_WIDTH);
+	const labelFloor = Math.min(MIN_TRUNCATED_LABEL_WIDTH, Math.max(1, available - minimumSummaryWidth));
+	const maximumSummaryWidth = available - labelFloor;
+	if (maximumSummaryWidth < minimumSummaryWidth) return fitIdentity(markerSlot, label, width);
+
+	const summaryBudget = Math.min(summaryWidth, MAX_TRUNCATED_SUMMARY_WIDTH, maximumSummaryWidth);
+	const fittedSummary = truncateToWidth(summary, summaryBudget, "…");
+	const labelBudget = Math.max(1, available - visibleWidth(fittedSummary));
+	return `${markerSlot}${truncateToWidth(label, labelBudget, "…")}${separator}${fittedSummary}`;
+}
+
+/** Fit one Tool row with identity first, result second, and optional target last. */
+export function fitToolRowParts(
+	markerSlot: string,
+	label: string,
+	target: string,
+	summary: string,
+	width: number,
+): string {
 	const identity = `${markerSlot}${label}`;
-	if (visibleWidth(identity) >= width) return fitIdentity(markerSlot, label, width);
+	if (visibleWidth(identity) >= width) {
+		return summary ? fitIdentityAndSummary(markerSlot, label, summary, width) : fitIdentity(markerSlot, label, width);
+	}
 
 	const targetPart = target ? ` ${target}` : "";
 	const summaryPart = summary ? ` · ${summary}` : "";
@@ -135,15 +167,17 @@ function fitRow(markerSlot: string, label: string, target: string, summary: stri
 
 	const summarySeparator = " · ";
 	const separatorWidth = visibleWidth(summarySeparator);
-	if (remaining <= separatorWidth) return identity;
+	if (remaining <= separatorWidth) return fitIdentityAndSummary(markerSlot, label, summary, width);
 	const fullSummaryPart = `${summarySeparator}${summary}`;
 	const fullSummaryWidth = visibleWidth(fullSummaryPart);
-	if (fullSummaryWidth >= remaining) {
-		return `${identity}${summarySeparator}${truncateToWidth(summary, remaining - separatorWidth, "…")}`;
-	}
+	if (fullSummaryWidth > remaining) return fitIdentityAndSummary(markerSlot, label, summary, width);
 
 	const targetBudget = remaining - fullSummaryWidth;
-	const fittedTarget = targetBudget > 1 ? truncateToWidth(targetPart, targetBudget, "…") : "";
+	// A tiny path fragment adds noise and can visually bind its ellipsis to the
+	// independently-owned result. Keep the result boundary and omit the optional
+	// target until there is room for a recognisable fragment.
+	const fittedTarget =
+		targetBudget >= MIN_TRUNCATED_TARGET_WIDTH ? truncateToWidth(targetPart, targetBudget, "…") : "";
 	return `${identity}${fittedTarget}${fullSummaryPart}`;
 }
 
@@ -157,7 +191,7 @@ function renderToolRow(model: ToolRowModel, theme: Theme, width: number, markerV
 	const target = safeTarget ? theme.fg("muted", safeTarget) : "";
 	const summary =
 		model.state === "success" ? theme.fg("muted", safeSummary) : styleState(theme, model.state, safeSummary);
-	return fitRow(markerSlot, label, target, summary, width);
+	return fitToolRowParts(markerSlot, label, target, summary, width);
 }
 
 export function formatElapsed(milliseconds: number): string {

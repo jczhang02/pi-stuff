@@ -3,7 +3,7 @@ import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextW
 import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
 import type { ToolUiRuntime } from "./contract.js";
-import { formatElapsed, oneLine, sanitizeTerminalText, toolStateGlyph } from "./render.js";
+import { fitToolRowParts, formatElapsed, oneLine, sanitizeTerminalText, toolStateGlyph } from "./render.js";
 
 type ToolDialogMode = "detail" | "list";
 
@@ -226,9 +226,17 @@ class ToolDialogComponent implements CommandDialogComponent {
 				const cursor = selected ? theme.fg("accent", "›") : " ";
 				const glyph = stateText(theme, activity.state, toolStateGlyph(activity.state));
 				const label = selected ? theme.bold(activity.label) : activity.label;
-				const target = activity.target ? ` ${theme.fg("dim", oneLine(activity.target))}` : "";
-				const summary = activity.summary ? ` · ${stateText(theme, activity.state, oneLine(activity.summary))}` : "";
-				body.push(`${GUTTER}${cursor} ${glyph} ${label}${target}${summary}`);
+				const target = activity.target ? theme.fg("dim", oneLine(activity.target)) : "";
+				const summary = activity.summary ? stateText(theme, activity.state, oneLine(activity.summary)) : "";
+				body.push(
+					`${GUTTER}${fitToolRowParts(
+						`${cursor} ${glyph} `,
+						label,
+						target,
+						summary,
+						Math.max(1, width - visibleWidth(GUTTER)),
+					)}`,
+				);
 			}
 			const older = this.activities.length - start - visible.length;
 			if (older > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${String(older)} older`)}`);

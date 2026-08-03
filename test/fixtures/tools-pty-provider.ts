@@ -7,6 +7,7 @@ import { registerSuiteOwnedTool } from "../../packages/pi-stuff-tools/contract.j
 
 const PROVIDER = "pi-stuff-tools-pty";
 const MODEL = "fixture-model";
+const LONG_READ_TARGET = "pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/deep/sample-工具.txt";
 
 const ZERO_USAGE = {
 	input: 0,
@@ -18,7 +19,7 @@ const ZERO_USAGE = {
 };
 
 const TOOL_SEQUENCE = [
-	{ name: "read", arguments: { path: "input-工具.txt" } },
+	{ name: "read", arguments: { path: LONG_READ_TARGET } },
 	{ name: "write", arguments: { path: "written.txt", content: "旧内容\nsecond line\n" } },
 	{ name: "edit", arguments: { path: "written.txt", oldText: "旧内容", newText: "新内容" } },
 	{ name: "bash", arguments: { command: "printf '\u001b]0;OWNED_TITLE\u0007BASH_CJK_工具\\n'" } },

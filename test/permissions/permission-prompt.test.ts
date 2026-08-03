@@ -143,6 +143,36 @@ describe("exact-call permission prompt", () => {
 		}
 	});
 
+	test("keeps pending state separate from a truncated Unicode title", () => {
+		const component = new PermissionPromptComponent(
+			THEME,
+			CONFIG,
+			"检查🙂非常长的工作区路径和危险操作标题".repeat(4),
+			"rm /var/tmp/output",
+			123,
+			undefined,
+			() => 28,
+			() => false,
+			() => {},
+			() => {},
+		);
+
+		for (const width of [100, 64, 48, 32]) {
+			const lines = component.render(width);
+			const title = lines.find((line) => line.includes("pending")) ?? "";
+			const plain = Bun.stripANSI(title);
+			expect(visibleWidth(title)).toBeLessThanOrEqual(width);
+			expect(plain).toContain("pending");
+			expect(plain).not.toContain("… pending");
+			if (plain.includes("…")) expect(plain).toContain("… · ");
+		}
+
+		const paused = component.render(24);
+		expect(Bun.stripANSI(paused.join("\n"))).toContain("Permission review p");
+		expect(Bun.stripANSI(paused.join("\n"))).toContain("Esc deny");
+		expect(paused.every((line) => visibleWidth(line) <= 24)).toBe(true);
+	});
+
 	test("fails closed below the safe width while retaining Esc deny", () => {
 		const harness = createPrompt("rm /var/tmp/output");
 		const rendered = harness.component.render(31);

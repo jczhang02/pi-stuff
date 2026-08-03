@@ -1,4 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { TaskStatus } from "../tool/types.js";
 
 export type OverlayTaskId = string;
@@ -23,6 +24,7 @@ export interface OverlayLayout {
 }
 
 const MAX_OVERLAY_TASK_ROWS = 5;
+const MIN_TRUNCATED_SUBJECT_WIDTH = 6;
 const UNTITLED_TASK = "untitled task";
 
 function compareTaskIds(left: OverlayTask, right: OverlayTask): number {
@@ -178,8 +180,14 @@ function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
 	}
 }
 
-/** Format one unheaded, single-line task row. */
-export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme): string {
+function fitOptionalSubject(subject: string, width: number): string {
+	if (width <= 0) return "";
+	if (visibleWidth(subject) <= width) return subject;
+	return width >= MIN_TRUNCATED_SUBJECT_WIDTH ? truncateToWidth(subject, width, "…") : "";
+}
+
+/** Format one unheaded, single-line task row with blocker state kept at narrow widths. */
+export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme, width = Number.POSITIVE_INFINITY): string {
 	const { task, openBlockers } = row;
 	const glyph = overlayStatusGlyph(task.status, theme);
 	const text = singleLine(task.subject) || UNTITLED_TASK;
@@ -194,11 +202,33 @@ export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme): string
 		subject = theme.fg("text", text);
 	}
 
-	const blockerSuffix =
-		openBlockers.length > 0
-			? ` ${theme.fg("dim", `blocked by ${openBlockers.map((id) => `#${singleLine(id) || "?"}`).join(", ")}`)}`
-			: "";
-	return `${glyph} ${subject}${blockerSuffix}`;
+	const identity = `${glyph} `;
+	if (openBlockers.length === 0 || !Number.isFinite(width)) {
+		const blockerSuffix =
+			openBlockers.length > 0
+				? theme.fg("dim", ` · blocked by ${openBlockers.map((id) => `#${singleLine(id) || "?"}`).join(", ")}`)
+				: "";
+		if (!Number.isFinite(width)) return `${identity}${subject}${blockerSuffix}`;
+		const normalizedWidth = Math.max(0, Math.floor(width));
+		if (normalizedWidth <= visibleWidth(identity)) return truncateToWidth(identity, normalizedWidth, "");
+		return `${identity}${fitOptionalSubject(subject, normalizedWidth - visibleWidth(identity))}`;
+	}
+
+	const fullBlockerState = theme.fg(
+		"dim",
+		` · blocked by ${openBlockers.map((id) => `#${singleLine(id) || "?"}`).join(", ")}`,
+	);
+	const compactBlockerState = theme.fg("dim", " · blocked");
+	const normalizedWidth = Math.max(0, Math.floor(width));
+	if (normalizedWidth <= visibleWidth(identity)) return truncateToWidth(identity, normalizedWidth, "");
+
+	for (const blockerState of [fullBlockerState, compactBlockerState]) {
+		const subjectWidth = normalizedWidth - visibleWidth(identity) - visibleWidth(blockerState);
+		const fittedSubject = fitOptionalSubject(subject, subjectWidth);
+		if (fittedSubject) return `${identity}${fittedSubject}${blockerState}`;
+	}
+
+	return truncateToWidth(`${glyph} ${theme.fg("dim", "blocked")}`, normalizedWidth, "…");
 }
 
 export function formatOverlayOverflowLine(hidden: readonly OverlayTaskRow[], theme: Theme): string {

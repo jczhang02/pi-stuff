@@ -103,6 +103,29 @@ describe("WelcomeHeaderController", () => {
 		expect(visibleWidth(orientation)).toBeLessThanOrEqual(64);
 	});
 
+	test("reserves the right column before clipping long Unicode identity fields", () => {
+		const longModel = `model-🧪-${"超长模型".repeat(18)}`;
+		const longCwd = join(homedir(), ...Array.from({ length: 12 }, () => "非常长的🙂工作区"));
+		const largeInventory = { contextFiles: 1234, extensions: 5678, skills: 9012, tools: 3456 };
+		const controller = new WelcomeHeaderController(context(longModel, "provider-非常长", longCwd), {
+			enabled: { get: () => true },
+			inventory: new InventorySource(largeInventory),
+		});
+		const component = controller.createHeader(tuiHarness().tui, theme);
+
+		const wide = component.render(100);
+		expect(wide[1]).toContain("Loaded");
+		expect(wide[2]).toContain("Context files 1234");
+		expect(wide[3]).toContain("Tips");
+		expect(wide[4]).toContain("/tools details");
+		for (const line of wide) expect(visibleWidth(line)).toBeLessThanOrEqual(100);
+
+		const narrow = component.render(88);
+		expect(narrow[2]).toContain("·");
+		expect(narrow[2]).toMatch(/1234(?: context|c)/u);
+		for (const line of narrow) expect(visibleWidth(line)).toBeLessThanOrEqual(88);
+	});
+
 	test("captures enablement for the launch but repaints live inventory changes", () => {
 		let enabled = false;
 		const source = new InventorySource(inventory);

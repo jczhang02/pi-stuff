@@ -14,6 +14,7 @@ import { type Component, type TUI, truncateToWidth, visibleWidth, wrapTextWithAn
 const DEFAULT_EXTENSION_STATUS_KEYS = ["goal", "codex-goal", "mcp", "loadout"] as const;
 const GIT_STATUS_TIMEOUT_MS = 2_000;
 const MAX_DYNAMIC_TEXT_CODE_UNITS = 16 * 1024;
+const MIN_TRUNCATED_PROMPT_WIDTH = 6;
 const STATUSLINE_SEPARATOR = "|";
 
 interface StatuslineIcons {
@@ -809,9 +810,7 @@ function renderPromptRows(
 		const badgeWidth = visibleWidth(badge);
 		if (badgeWidth <= contentWidth) {
 			const remainingText = wrappedPromptRemainder(promptText, contentWidth);
-			const reserved = remainingText ? badgeWidth + 1 : badgeWidth;
-			const truncatedText = truncateToWidth(remainingText, Math.max(0, contentWidth - reserved), "…");
-			overflow = joinPromptAndBadge(truncatedText, badge);
+			overflow = fitPromptAndBadge(remainingText, badge, contentWidth);
 		}
 	}
 	overflow = truncateToWidth(overflow, contentWidth, "…");
@@ -824,7 +823,11 @@ function fitPromptAndBadge(prompt: string, badge: string, width: number): string
 	const badgeWidth = visibleWidth(badge);
 	if (badgeWidth >= width) return truncateToWidth(badge, width, "…");
 	const promptWidth = Math.max(0, width - badgeWidth - (prompt ? 1 : 0));
-	return joinPromptAndBadge(truncateToWidth(prompt, promptWidth, "…"), badge);
+	const fittedPrompt =
+		visibleWidth(prompt) <= promptWidth || promptWidth >= MIN_TRUNCATED_PROMPT_WIDTH
+			? truncateToWidth(prompt, promptWidth, "…")
+			: "";
+	return joinPromptAndBadge(fittedPrompt, badge);
 }
 
 function promptRowLimit(width: number, density: StatuslineDensity): 0 | 1 | 2 {

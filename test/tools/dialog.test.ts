@@ -223,3 +223,35 @@ test("/tools uses the same dim, success, and error state colors as transcript ro
 	component.dispose?.();
 	runtime.clear();
 });
+
+test("/tools list preserves result metadata before optional long targets at every supported width", () => {
+	const runtime = new ToolUiRuntime();
+	runtime.activities.begin({
+		id: "read-long",
+		label: "Read",
+		name: "read",
+		target: "/tmp/很长的🧪工具路径/pi-max-tools/session/sample.txt",
+	});
+	runtime.activities.settle("read-long", {
+		detailLines: ["ok"],
+		durationMs: 18_000,
+		state: "success",
+		summary: "done in 18s",
+	});
+	const harness = contextHarness();
+	const component = createToolDialogView(runtime).create(harness.context);
+
+	for (const width of [100, 64, 48, 32, 24]) {
+		const lines = component.render(width);
+		const row = lines.find((line) => line.includes("● Read")) ?? "";
+		const plain = Bun.stripANSI(row);
+		expect(visibleWidth(row)).toBeLessThanOrEqual(width);
+		expect(plain).toContain("done in 18s");
+		expect(plain).not.toContain("…done");
+		if (plain.includes("…")) expect(plain).toContain("… · done in 18s");
+	}
+
+	expect(component.render(24)).toContain("  › ● Read · done in 18s");
+	component.dispose?.();
+	runtime.clear();
+});

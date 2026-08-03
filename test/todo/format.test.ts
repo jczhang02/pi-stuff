@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	formatCollapsedNextLine,
 	formatOverlayOverflowLine,
@@ -56,7 +57,7 @@ describe("formatOverlayTaskLine", () => {
 
 	test("dims blocked work and explains every unresolved string id", () => {
 		expect(formatOverlayTaskLine({ task: task(), openBlockers: ["dep-2", "missing"] }, recordingTheme)).toBe(
-			"<dim>□</dim> <dim>quiet task</dim> <dim>blocked by #dep-2, #missing</dim>",
+			"<dim>□</dim> <dim>quiet task</dim><dim> · blocked by #dep-2, #missing</dim>",
 		);
 	});
 
@@ -82,10 +83,31 @@ describe("formatOverlayTaskLine", () => {
 		);
 
 		expect(line).toContain("检查危险 输出完成 保留");
-		expect(line).toContain("blocked by #依赖-2");
+		expect(line).toContain("· blocked by #依赖-2");
 		expect(line).not.toContain("伪造标题");
 		expect(containsTerminalControl(line)).toBe(false);
 		expect(containsBidiFormatControl(line)).toBe(false);
+	});
+
+	test("keeps blocked state separate from a truncated CJK and emoji subject", () => {
+		const row = {
+			task: task({ subject: "检查🙂非常长的子任务路径与输出内容" }),
+			openBlockers: ["依赖-🧪-非常长的名称"],
+		};
+		const plainTheme = {
+			fg: (_color: string, text: string) => text,
+			bold: (text: string) => text,
+			strikethrough: (text: string) => text,
+		} as unknown as Theme;
+
+		for (const width of [100, 64, 48, 32, 24]) {
+			const line = formatOverlayTaskLine(row, plainTheme, width);
+			const plain = Bun.stripANSI(line);
+			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			expect(plain).toContain("blocked");
+			expect(plain).not.toContain("… blocked");
+			if (plain.includes("…")) expect(plain).toContain("… · blocked");
+		}
 	});
 
 	test("keeps a meaningful row when the subject contains only terminal commands", () => {

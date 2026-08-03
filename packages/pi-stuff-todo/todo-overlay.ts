@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
+import { type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { getRenderState } from "./state/store.js";
 import type { TaskStatus } from "./tool/types.js";
 import {
@@ -166,7 +166,10 @@ export class TodoOverlay {
 
 		if (this.collapsed) return [truncate(`${WIDGET_GUTTER}${formatCollapsedNextLine(layout.next, theme)}`)];
 
-		const lines = layout.visible.map((row) => truncate(`${WIDGET_GUTTER}${formatOverlayTaskLine(row, theme)}`));
+		const taskWidth = Math.max(0, width - visibleWidth(WIDGET_GUTTER));
+		const lines = layout.visible.map((row) =>
+			truncate(`${WIDGET_GUTTER}${formatOverlayTaskLine(row, theme, taskWidth)}`),
+		);
 		if (layout.hidden.length > 0) {
 			lines.push(truncate(`${WIDGET_GUTTER}${formatOverlayOverflowLine(layout.hidden, theme)}`));
 		}

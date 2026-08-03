@@ -160,6 +160,7 @@ interface PromptTheme {
 
 const GUTTER = "  ";
 const DEFAULT_SESSION_LABEL = "Yes, for this session";
+const MIN_TRUNCATED_TITLE_WIDTH = 8;
 const OPTION_LABELS: Record<PromptKey, string> = {
 	y: "Allow this exact call once",
 	s: DEFAULT_SESSION_LABEL,
@@ -168,6 +169,29 @@ const OPTION_LABELS: Record<PromptKey, string> = {
 };
 const FULL_OPTION_ORDER: readonly PromptKey[] = ["y", "s", "n", "r"];
 const EXACT_OPTION_ORDER: readonly PromptKey[] = ["y", "n"];
+
+function fitPromptTitle(theme: PromptTheme, title: string, pendingCount: number, width: number): string {
+	const normalizedWidth = Math.max(1, Math.floor(width));
+	const available = Math.max(0, normalizedWidth - visibleWidth(GUTTER));
+	const styledTitle = theme.fg("text", theme.bold(sanitizeTerminalInline(title)));
+	if (pendingCount <= 1) return `${GUTTER}${truncateToWidth(styledTitle, available, "…")}`;
+
+	const fullState = theme.fg("dim", ` · 1 of ${String(pendingCount)} pending`);
+	const full = `${GUTTER}${styledTitle}${fullState}`;
+	if (visibleWidth(full) <= normalizedWidth) return full;
+
+	for (const state of [fullState, theme.fg("dim", " · pending")]) {
+		const titleWidth = available - visibleWidth(state);
+		if (titleWidth <= 0) continue;
+		const fittedTitle =
+			visibleWidth(styledTitle) <= titleWidth || titleWidth >= MIN_TRUNCATED_TITLE_WIDTH
+				? truncateToWidth(styledTitle, titleWidth, "…")
+				: "";
+		if (fittedTitle) return `${GUTTER}${fittedTitle}${state}`;
+	}
+
+	return `${GUTTER}${truncateToWidth(theme.fg("dim", "pending"), available, "…")}`;
+}
 
 export class PermissionPromptComponent implements Component {
 	private state: PromptViewState;
@@ -328,10 +352,9 @@ export class PermissionPromptComponent implements Component {
 		];
 		const bodyRows = Math.max(1, panelRows - (optionOrder.length + 3 + spacerCount + footer.length));
 		const viewport = this.renderEvidenceViewport(width, bodyRows);
-		const suffix = this.pendingCount > 1 ? ` · 1 of ${this.pendingCount} pending` : "";
 		const lines = [
 			this.theme.fg("border", "─".repeat(width)),
-			`${GUTTER}${this.theme.fg("text", this.theme.bold(sanitizeTerminalInline(this.title)))}${this.theme.fg("dim", suffix)}`,
+			fitPromptTitle(this.theme, this.title, this.pendingCount, width),
 		];
 		if (roomy) lines.push("");
 		lines.push(...viewport.lines);

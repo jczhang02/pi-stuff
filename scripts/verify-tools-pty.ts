@@ -8,6 +8,7 @@ const runner = join(root, "test/fixtures/tools-pty-runner.sh");
 const activeParityRunner = join(root, "test/fixtures/tools-active-parity-runner.sh");
 const CERTIFIED_PI_VERSION = "0.83.0";
 const BUILTINS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
+const LONG_READ_DIRECTORY = "pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/deep";
 
 export interface ToolsPtyVerificationOptions {
 	readonly piBinary: string;
@@ -48,7 +49,7 @@ must_expect "Tools"
 must_expect "cancelled"
 must_expect "rejected"
 must_expect "error"
-must_expect "BUILTIN_FAILURE_工具"
+must_expect "Command exited with code 7"
 must_expect "List"
 must_expect "Find"
 must_expect "older"
@@ -257,6 +258,12 @@ function verifyOutput(output: string, columns: number): void {
 	for (const forbidden of ["╭", "╮", "╰", "╯", "OWNED_TITLE"]) {
 		if (visible.includes(forbidden)) fail(`terminal output exposed forbidden UI or control payload: ${forbidden}`);
 	}
+	if (!/● Read pi-max-tools-[^\n]* · 1 lines/u.test(visible)) {
+		fail("long Tool target did not retain a semantic boundary before its settled result");
+	}
+	if (/pi-max-tools-[^\n]*…[ \t]+1 lines/u.test(visible)) {
+		fail("long Tool target joined its ellipsis directly to the settled result");
+	}
 }
 
 function verifyLifecycleFrames(visible: string): void {
@@ -384,8 +391,13 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 	const shellEvidence = join(temporaryDirectory, "shell-path-used.log");
 	const shellWrapper = join(temporaryDirectory, "fixture-shell.sh");
 	const projectConfigDirectory = join(temporaryDirectory, ".pi");
-	await Promise.all([mkdir(configDirectory), mkdir(sessionDirectory), mkdir(projectConfigDirectory)]);
-	await writeFile(join(temporaryDirectory, "input-工具.txt"), "输入内容\n", { mode: 0o600 });
+	await Promise.all([
+		mkdir(configDirectory),
+		mkdir(sessionDirectory),
+		mkdir(projectConfigDirectory),
+		mkdir(join(temporaryDirectory, LONG_READ_DIRECTORY), { recursive: true }),
+	]);
+	await writeFile(join(temporaryDirectory, LONG_READ_DIRECTORY, "sample-工具.txt"), "输入内容\n", { mode: 0o600 });
 	await writeFile(shellWrapper, `#!/bin/sh\nprintf 'SHELL_PATH_USED\\n' >> '${shellEvidence}'\nexec /bin/sh "$@"\n`, {
 		mode: 0o700,
 	});

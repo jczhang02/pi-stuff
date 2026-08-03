@@ -153,6 +153,93 @@ describe("terminal-safe Tool rendering", () => {
 		expect(row.render(4)[0]).toStartWith("● ");
 	});
 
+	test("omits useless target fragments and keeps result metadata on a semantic boundary", () => {
+		const rows = [
+			new CachedToolRow(theme, {
+				durationMs: 18_000,
+				label: "Read",
+				state: "success",
+				summary: "done in 18s",
+				target: "/tmp/pi-max-tools/session/sample.txt",
+			}),
+			new CachedToolRow(theme, {
+				durationMs: 18_000,
+				label: "Read",
+				state: "success",
+				summary: "完成🙂",
+				target: "目录/很长的🧪工具结果/sample.txt",
+			}),
+		];
+
+		for (const width of [100, 64, 48, 32, 24]) {
+			for (const row of rows) {
+				const line = row.render(width)[0] ?? "";
+				const plain = Bun.stripANSI(line);
+				expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+				expect(line).not.toContain("\n");
+				expect(plain).not.toMatch(/…(?:done|完成)/u);
+				if (plain.includes("…") && plain.includes("·")) expect(plain).toContain("… · ");
+			}
+		}
+
+		expect(rows[0]?.render(24)).toEqual(["● Read · done in 18s"]);
+		expect(Bun.stripANSI(rows[0]?.render(32)[0] ?? "")).toContain("… · done in 18s");
+	});
+
+	test("reserves recognizable results before truncating long Tool labels", () => {
+		const rows = [
+			new CachedToolRow(theme, {
+				durationMs: 1,
+				label: "Contact Supervisor",
+				state: "running",
+				summary: "running",
+				target: "parent-agent",
+			}),
+			new CachedToolRow(theme, {
+				durationMs: 1,
+				label: "Structured Output",
+				state: "success",
+				summary: "done",
+				target: "result.json",
+			}),
+			new CachedToolRow(theme, {
+				durationMs: 1,
+				label: "Contact Supervisor",
+				state: "error",
+				summary: "Command exited with code 7",
+				target: "parent-agent",
+			}),
+			new CachedToolRow(theme, {
+				durationMs: 1,
+				label: "AnExtremelyLongCustomToolName",
+				state: "running",
+				summary: "running",
+				target: "custom-target",
+			}),
+			new CachedToolRow(theme, {
+				durationMs: 1,
+				label: "X".repeat(22),
+				state: "success",
+				summary: "done",
+				target: "",
+			}),
+		];
+
+		for (const width of [32, 24]) {
+			for (const row of rows) {
+				const line = Bun.stripANSI(row.render(width)[0] ?? "");
+				expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+				expect(line).toContain(" · ");
+				expect(line).not.toMatch(/ · [rdw]…$/u);
+			}
+		}
+		expect(rows[0]?.render(24)[0]).toEndWith(" · running");
+		expect(rows[1]?.render(24)[0]).toEndWith(" · done");
+		expect(rows[2]?.render(24)[0]).toContain(" · Command");
+		expect(rows[3]?.render(24)[0]).toEndWith(" · running");
+		expect(rows[4]?.render(24)[0]).toEndWith(" · done");
+	});
+
 	test("bounds work and retained previews for multi-megabyte arguments and results", () => {
 		let lateGetterReads = 0;
 		const hugeArguments: Record<string, unknown> = { command: "x".repeat(8 * 1024 * 1024) };

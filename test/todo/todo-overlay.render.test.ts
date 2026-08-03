@@ -108,7 +108,7 @@ describe("TodoOverlay rendering", () => {
 		]);
 		const output = widget?.render(200).join("\n") ?? "";
 		expect(output).toContain("□ now runnable");
-		expect(output).toContain("□ still blocked blocked by #2");
+		expect(output).toContain("□ still blocked · blocked by #2");
 		expect(output).not.toContain("blocked by #1");
 	});
 
@@ -157,6 +157,19 @@ describe("TodoOverlay rendering", () => {
 			const lines = widget?.render(width) ?? [];
 			expect(lines).toHaveLength(2);
 			expect(lines.every((line) => visibleWidth(line) <= width && !line.includes("\n"))).toBe(true);
+		}
+	});
+
+	test("keeps blocker state after a semantic boundary across the width matrix", () => {
+		const { widget } = setup([task("1", "检查🙂非常长的工作区路径和结果文件", "pending", ["依赖-🧪-非常长的名称"])]);
+
+		for (const width of [100, 64, 48, 32, 24]) {
+			const line = widget?.render(width)[0] ?? "";
+			const plain = Bun.stripANSI(line);
+			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			expect(plain).toContain("blocked");
+			expect(plain).not.toContain("… blocked");
+			if (plain.includes("…")) expect(plain).toContain("… · blocked");
 		}
 	});
 
