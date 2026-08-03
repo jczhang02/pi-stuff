@@ -1,0 +1,28 @@
+                                                                
+ Implement the accepted Pi Stuff statusline and keep the        
+ current task moving.                                           
+                                                                
+
+ The deterministic Statusline fixture is ready for native PTY   
+ review.        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────
+                
+────────────────────────────────────────────────────────────────
+sonnet-4.5 · med · ~/d/pi-stuff · main +12 ~3 -1 · 42% · ↻18k ·…
+› Implement the accepted Pi Stuff statusline and keep the       
+  current task moving.          

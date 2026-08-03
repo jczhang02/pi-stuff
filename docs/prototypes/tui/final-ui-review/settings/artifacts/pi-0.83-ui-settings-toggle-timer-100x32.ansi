@@ -1,0 +1,32 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[38;2;95;135;255m────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [1mUI[0m                     
+> timer[7m [0m                 
+
+[38;2;138;190;183m→ Tool running timer       [39m  [38;2;138;190;183mfalse[39m                
+
+[38;2;102;102;102m  Show elapsed time while long-running tools work[39m 
+
+[38;2;102;102;102m  Type to search · Enter/Space to change · Esc to cancel[39m                                            
+

@@ -1,0 +1,1204 @@
+import { basename } from "node:path";
+import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	ReadonlyFooterDataProvider,
+	SessionEntry,
+	Theme,
+	ThemeColor,
+} from "@earendil-works/pi-coding-agent";
+import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
+import { type Component, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+
+const DEFAULT_EXTENSION_STATUS_KEYS = ["goal", "codex-goal", "mcp", "loadout"] as const;
+const GIT_STATUS_TIMEOUT_MS = 2_000;
+const MAX_DYNAMIC_TEXT_CODE_UNITS = 16 * 1024;
+const STATUSLINE_SEPARATOR = "|";
+
+interface StatuslineIcons {
+	readonly branch: string;
+	readonly cache: string;
+	readonly context: string;
+	readonly folder: string;
+	readonly git: string;
+	readonly input: string;
+	readonly model: string;
+}
+
+const ASCII_STATUSLINE_ICONS: StatuslineIcons = {
+	branch: "⎇",
+	cache: "cache",
+	context: "◫",
+	folder: "dir",
+	git: "⎇",
+	input: "in:",
+	model: "",
+};
+
+const NERD_STATUSLINE_ICONS: StatuslineIcons = {
+	branch: "\uF126",
+	cache: "\uF1C0",
+	context: "\uE70F",
+	folder: "\uF115",
+	git: "\uF1D3",
+	input: "\uF090",
+	model: "\uEC19",
+};
+
+export interface BooleanValueSource {
+	get(): boolean;
+	subscribe(listener: () => void): () => void;
+}
+
+export type StatuslineDensity = "auto" | "full" | "compact";
+export type StatuslineIconMode = "auto" | "nerd" | "ascii";
+
+export interface StatuslinePreferences {
+	readonly density: StatuslineDensity;
+	readonly enabled: boolean;
+	readonly iconMode: StatuslineIconMode;
+	readonly latestPrompt: boolean;
+}
+
+export interface StatuslinePreferencesSource {
+	get(): StatuslinePreferences;
+	subscribe(listener: () => void): () => void;
+}
+
+export interface GitChangeCounts {
+	readonly ahead?: number;
+	readonly behind?: number;
+	readonly conflicted?: number;
+	readonly staged: number;
+	readonly unstaged: number;
+	readonly untracked: number;
+}
+
+interface GitChangeCountsSource {
+	get(cwd?: string, branch?: string): GitChangeCounts | undefined;
+	subscribe(listener: () => void): () => void;
+}
+
+interface SharedStatuslineControllerOptions {
+	readonly autocompleteVisible?: BooleanValueSource;
+	readonly extensionStatusKeys?: readonly string[];
+	readonly gitChanges?: GitChangeCountsSource;
+}
+
+export type StatuslineControllerOptions = SharedStatuslineControllerOptions &
+	(
+		| { readonly enabled: BooleanValueSource; readonly preferences?: never }
+		| { readonly enabled?: never; readonly preferences: StatuslinePreferencesSource }
+	);
+
+interface UsageTotals {
+	cacheRead: number;
+	cost: number;
+}
+
+interface PromptPreview {
+	readonly skills: readonly string[];
+	readonly text: string | undefined;
+}
+
+interface SessionStatusSnapshot {
+	readonly latestPrompt: PromptPreview | undefined;
+	readonly usage: UsageTotals;
+}
+
+interface RenderRegistration {
+	requestRender(): void;
+}
+
+/**
+ * Mutable Git summary refreshed by the integration layer after accepted Host
+ * lifecycle events. Construction and session startup remain free of subprocess
+ * work.
+ */
+export class GitStatusSource implements GitChangeCountsSource {
+	private counts: GitChangeCounts | undefined;
+	private disposed = false;
+	private generation = 0;
+	private readonly listeners = new Set<() => void>();
+	private measuredBranch: string | undefined;
+	private measuredCwd: string | undefined;
+	private refreshPromise: Promise<void> | undefined;
+	private requestedCwd: string | undefined;
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.generation += 1;
+		this.requestedCwd = undefined;
+		this.listeners.clear();
+	}
+
+	get(cwd?: string, branch?: string): GitChangeCounts | undefined {
+		if (cwd !== undefined && cwd !== this.measuredCwd) return undefined;
+		if (branch !== undefined && branch !== this.measuredBranch) return undefined;
+		return this.counts;
+	}
+
+	refresh(pi: ExtensionAPI, cwd: string): Promise<void> {
+		if (this.disposed) return Promise.resolve();
+		this.requestedCwd = cwd;
+		if (this.refreshPromise) return this.refreshPromise;
+		const refresh = this.drainRefreshes(pi);
+		const completion = refresh.finally(() => {
+			if (this.refreshPromise === completion) {
+				this.refreshPromise = undefined;
+			}
+		});
+		this.refreshPromise = completion;
+		return completion;
+	}
+
+	private async drainRefreshes(pi: ExtensionAPI): Promise<void> {
+		while (!this.disposed && this.requestedCwd !== undefined) {
+			const cwd = this.requestedCwd;
+			this.requestedCwd = undefined;
+			await this.performRefresh(pi, cwd);
+		}
+	}
+
+	private async performRefresh(pi: ExtensionAPI, cwd: string): Promise<void> {
+		const generation = ++this.generation;
+		let next: GitChangeCounts | undefined;
+		let nextBranch: string | undefined;
+		try {
+			const result = await pi.exec(
+				"git",
+				["--no-optional-locks", "status", "--porcelain=v1", "-z", "--branch", "--untracked-files=normal"],
+				{ cwd, timeout: GIT_STATUS_TIMEOUT_MS },
+			);
+			if (!result.killed && result.code === 0) {
+				next = parseGitStatusPorcelain(result.stdout);
+				nextBranch = parseGitBranchPorcelain(result.stdout);
+			}
+		} catch {
+			// Missing Git and a non-repository cwd are ordinary Statusline states.
+			next = undefined;
+		}
+		if (this.disposed || generation !== this.generation) return;
+		this.set(next, next ? cwd : undefined, nextBranch);
+	}
+
+	subscribe(listener: () => void): () => void {
+		if (this.disposed) return () => {};
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
+
+	private set(next: GitChangeCounts | undefined, measuredCwd?: string, measuredBranch?: string): void {
+		if (
+			sameGitCounts(this.counts, next) &&
+			this.measuredCwd === measuredCwd &&
+			this.measuredBranch === measuredBranch
+		) {
+			return;
+		}
+		this.counts = next;
+		this.measuredCwd = measuredCwd;
+		this.measuredBranch = measuredBranch;
+		for (const listener of this.listeners) callObserver(listener);
+	}
+}
+
+/** Interpret NUL-delimited `git status --porcelain=v1 -z` output. */
+export function parseGitStatusPorcelain(output: string): GitChangeCounts {
+	let ahead = 0;
+	let behind = 0;
+	let conflicted = 0;
+	let staged = 0;
+	let unstaged = 0;
+	let untracked = 0;
+	const records = output.split("\0");
+	for (let index = 0; index < records.length; index += 1) {
+		const record = records[index] ?? "";
+		if (record.startsWith("## ")) {
+			ahead = parseGitTrackingCount(record, "ahead");
+			behind = parseGitTrackingCount(record, "behind");
+			continue;
+		}
+		if (record.length < 3) continue;
+		const indexStatus = record[0] ?? " ";
+		const worktreeStatus = record[1] ?? " ";
+		if (indexStatus === "!" && worktreeStatus === "!") continue;
+
+		if (isGitConflict(indexStatus, worktreeStatus)) {
+			conflicted += 1;
+		} else if (indexStatus === "?" && worktreeStatus === "?") {
+			untracked += 1;
+		} else {
+			if (indexStatus !== " ") staged += 1;
+			if (worktreeStatus !== " ") unstaged += 1;
+		}
+
+		// Rename/copy records carry a second NUL-delimited path with no status.
+		if (/[RC]/u.test(indexStatus) || /[RC]/u.test(worktreeStatus)) index += 1;
+	}
+	return { ahead, behind, conflicted, staged, unstaged, untracked };
+}
+
+function parseGitTrackingCount(header: string, label: "ahead" | "behind"): number {
+	const match = header.match(new RegExp(`\\b${label} (\\d+)(?:[,\\]]|$)`, "u"));
+	return match?.[1] ? Number.parseInt(match[1], 10) : 0;
+}
+
+function isGitConflict(indexStatus: string, worktreeStatus: string): boolean {
+	return ["DD", "AU", "UD", "UA", "DU", "AA", "UU"].includes(`${indexStatus}${worktreeStatus}`);
+}
+
+function parseGitBranchPorcelain(output: string): string | undefined {
+	const header = output.split("\0", 1)[0];
+	if (!header?.startsWith("## ")) return undefined;
+	const value = header.slice(3);
+	for (const prefix of ["No commits yet on ", "Initial commit on "]) {
+		if (value.startsWith(prefix)) return sanitizeOneLine(value.slice(prefix.length)) || undefined;
+	}
+	if (value === "HEAD (no branch)") return "detached";
+	const upstream = value.indexOf("...");
+	return sanitizeOneLine(upstream >= 0 ? value.slice(0, upstream) : value) || undefined;
+}
+
+/**
+ * Owns Statusline suppression independently from its data and settings. The
+ * controller is structurally compatible with CommandDialogChrome.
+ */
+export class StatuslineController {
+	private disposed = false;
+	private readonly options: StatuslineControllerOptions;
+	private readonly pi: ExtensionAPI;
+	private readonly renderers = new Set<RenderRegistration>();
+	private readonly sessionStatusSources = new WeakMap<ExtensionContext["sessionManager"], SessionStatusSource>();
+	private readonly skillAliases: ReadonlyMap<string, string>;
+	private suppressed = false;
+
+	constructor(pi: ExtensionAPI, options: StatuslineControllerOptions) {
+		this.pi = pi;
+		this.options = options;
+		this.skillAliases = readSkillAliases(pi);
+	}
+
+	createFooter(
+		ctx: ExtensionContext,
+		tui: TUI,
+		theme: Theme,
+		footerData: ReadonlyFooterDataProvider,
+	): Component & { dispose(): void } {
+		return new StatuslineFooter(this, ctx, tui, theme, footerData);
+	}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.requestRender();
+		this.renderers.clear();
+	}
+
+	isVisible(): boolean {
+		return (
+			!this.disposed &&
+			!this.suppressed &&
+			this.getPreferences().enabled &&
+			!(this.options.autocompleteVisible?.get() ?? false)
+		);
+	}
+
+	isEnabled(): boolean {
+		return !this.disposed && this.getPreferences().enabled;
+	}
+
+	registerRenderer(renderer: RenderRegistration): () => void {
+		if (this.disposed) return () => {};
+		this.renderers.add(renderer);
+		return () => this.renderers.delete(renderer);
+	}
+
+	subscribe(listener: () => void): () => void {
+		if (this.disposed) return () => {};
+		const notify = () => callObserver(listener);
+		const unsubscribe: Array<() => void> = [];
+		const preferencesSource = this.options.preferences ?? this.options.enabled;
+		subscribeObserver(preferencesSource, notify, unsubscribe);
+		if (this.options.autocompleteVisible) subscribeObserver(this.options.autocompleteVisible, notify, unsubscribe);
+		if (this.options.gitChanges) subscribeObserver(this.options.gitChanges, notify, unsubscribe);
+		return () => {
+			for (const remove of unsubscribe.splice(0)) callObserver(remove);
+		};
+	}
+
+	render(ctx: ExtensionContext, theme: Theme, footerData: ReadonlyFooterDataProvider, width: number): string[] {
+		if (!this.isVisible()) return [];
+		const renderWidth = Math.max(0, Math.floor(width));
+		if (renderWidth < 1) return [];
+		const sessionStatus = this.getSessionStatusSource(ctx).get();
+		const branch = sanitizeOneLine(footerData.getGitBranch() ?? "");
+		const preferences = this.getPreferences();
+		const lines = renderStatusline(
+			this.pi,
+			ctx,
+			theme,
+			footerData,
+			branch,
+			this.options.gitChanges?.get(readRawCwd(ctx), branch),
+			this.options.extensionStatusKeys ?? DEFAULT_EXTENSION_STATUS_KEYS,
+			sessionStatus,
+			renderWidth,
+			preferences,
+		);
+		return lines.map((line) =>
+			visibleWidth(line) <= renderWidth ? line : truncateToWidth(line, renderWidth, theme.fg("dim", "…")),
+		);
+	}
+
+	setSuppressed(suppressed: boolean): void {
+		if (this.disposed || this.suppressed === suppressed) return;
+		this.suppressed = suppressed;
+		this.requestRender();
+	}
+
+	handleBranchChange(): void {
+		if (this.disposed) return;
+		this.requestRender();
+	}
+
+	private requestRender(): void {
+		for (const renderer of this.renderers) callObserver(() => renderer.requestRender());
+	}
+
+	private getPreferences(): StatuslinePreferences {
+		if (this.options.preferences) return this.options.preferences.get();
+		return {
+			density: "auto",
+			enabled: this.options.enabled.get(),
+			iconMode: "auto",
+			latestPrompt: true,
+		};
+	}
+
+	private getSessionStatusSource(ctx: ExtensionContext): SessionStatusSource {
+		const sessionManager = ctx.sessionManager;
+		let source = this.sessionStatusSources.get(sessionManager);
+		if (!source) {
+			source = new SessionStatusSource(sessionManager, this.skillAliases);
+			this.sessionStatusSources.set(sessionManager, source);
+		}
+		return source;
+	}
+}
+
+/**
+ * Incrementally derives the session-backed fields from Pi's append-only entry
+ * tree. A repaint only reads the current leaf id; new tails are folded until a
+ * cached ancestor is reached, including after tree navigation or compaction.
+ */
+class SessionStatusSource {
+	private activeLeafId: string | null | undefined;
+	private readonly byEntryId = new Map<string, SessionStatusSnapshot>();
+	private readonly sessionManager: ExtensionContext["sessionManager"];
+	private sessionId: string | undefined;
+	private snapshot = emptySessionStatus();
+	private readonly skillAliases: ReadonlyMap<string, string>;
+
+	constructor(sessionManager: ExtensionContext["sessionManager"], skillAliases: ReadonlyMap<string, string>) {
+		this.sessionManager = sessionManager;
+		this.skillAliases = skillAliases;
+	}
+
+	get(): SessionStatusSnapshot {
+		let leafId: string | null;
+		let sessionId: string;
+		try {
+			sessionId = this.sessionManager.getSessionId();
+			leafId = this.sessionManager.getLeafId();
+		} catch {
+			return emptySessionStatus();
+		}
+
+		if (sessionId !== this.sessionId) this.reset(sessionId);
+		if (leafId === this.activeLeafId) return this.snapshot;
+		if (leafId === null) {
+			this.activeLeafId = null;
+			this.snapshot = emptySessionStatus();
+			return this.snapshot;
+		}
+
+		let next: SessionStatusSnapshot | undefined;
+		try {
+			next = this.buildSnapshot(leafId);
+		} catch {
+			// A partial third-party SessionManager must not take down the TUI. Do
+			// not cache the failure, so a later repaint can recover automatically.
+			return emptySessionStatus();
+		}
+		if (!next) return emptySessionStatus();
+
+		this.activeLeafId = leafId;
+		this.snapshot = next;
+		return next;
+	}
+
+	private buildSnapshot(leafId: string): SessionStatusSnapshot | undefined {
+		const tail: SessionEntry[] = [];
+		const visited = new Set<string>();
+		let ancestor = emptySessionStatus();
+		let entryId: string | null = leafId;
+
+		while (entryId !== null) {
+			const cached = this.byEntryId.get(entryId);
+			if (cached) {
+				ancestor = cached;
+				break;
+			}
+			if (visited.has(entryId)) return undefined;
+			visited.add(entryId);
+
+			const entry = this.sessionManager.getEntry(entryId);
+			if (!entry || entry.id !== entryId) return undefined;
+			tail.push(entry);
+			entryId = entry.parentId;
+		}
+
+		for (let index = tail.length - 1; index >= 0; index -= 1) {
+			const entry = tail[index];
+			if (!entry) continue;
+			ancestor = extendSessionStatus(ancestor, entry, this.skillAliases);
+			this.byEntryId.set(entry.id, ancestor);
+		}
+		return ancestor;
+	}
+
+	private reset(sessionId: string): void {
+		this.sessionId = sessionId;
+		this.activeLeafId = undefined;
+		this.snapshot = emptySessionStatus();
+		this.byEntryId.clear();
+	}
+}
+
+class StatuslineFooter implements Component {
+	private readonly controller: StatuslineController;
+	private readonly ctx: ExtensionContext;
+	private disposed = false;
+	private readonly footerData: ReadonlyFooterDataProvider;
+	private readonly theme: Theme;
+	private readonly tui: TUI;
+	private readonly unsubscribe: Array<() => void>;
+
+	constructor(
+		controller: StatuslineController,
+		ctx: ExtensionContext,
+		tui: TUI,
+		theme: Theme,
+		footerData: ReadonlyFooterDataProvider,
+	) {
+		this.controller = controller;
+		this.ctx = ctx;
+		this.tui = tui;
+		this.theme = theme;
+		this.footerData = footerData;
+		const render = () => callObserver(() => this.tui.requestRender());
+		this.unsubscribe = [controller.registerRenderer({ requestRender: render })];
+		try {
+			this.unsubscribe.push(footerData.onBranchChange(() => this.controller.handleBranchChange()));
+		} catch {
+			// A broken branch observer must not prevent the footer from rendering.
+		}
+		this.unsubscribe.push(controller.subscribe(render));
+	}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		for (const unsubscribe of this.unsubscribe.splice(0)) callObserver(unsubscribe);
+	}
+
+	invalidate(): void {}
+
+	render(width: number): string[] {
+		if (this.disposed) return [];
+		return this.controller.render(this.ctx, this.theme, this.footerData, width);
+	}
+}
+
+type StatusSegmentId = "model" | "thinking" | "cwd" | "git" | "context" | "cache" | "cost" | "extension";
+
+interface StatusSegment {
+	readonly compact: string;
+	readonly full: string;
+	readonly id: StatusSegmentId;
+	readonly priority: number;
+}
+
+interface SegmentText {
+	readonly compact: string;
+	readonly full: string;
+}
+
+interface StatusRows {
+	readonly complete: boolean;
+	readonly rows: string[];
+}
+
+function renderStatusline(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	theme: Theme,
+	footerData: ReadonlyFooterDataProvider,
+	branch: string,
+	gitChanges: GitChangeCounts | undefined,
+	extensionStatusKeys: readonly string[],
+	sessionStatus: SessionStatusSnapshot,
+	width: number,
+	preferences: StatuslinePreferences,
+): string[] {
+	const icons = statuslineIcons(preferences.iconMode);
+	const usage = sessionStatus.usage;
+	const segments: StatusSegment[] = [];
+	const modelName = displayModelName(ctx);
+	const model = theme.fg("customMessageLabel", withIcon(icons.model, modelName));
+	const compactModel = theme.fg("customMessageLabel", withIcon(icons.model, middleTruncate(modelName, 11)));
+	segments.push(statusSegment("model", 0, model, compactModel));
+	if (ctx.model?.reasoning !== false) {
+		const thinkingLevel = readThinkingLevel(pi, ctx);
+		const thinking = theme.fg(thinkingColor(thinkingLevel), `think:${formatThinking(thinkingLevel)}`);
+		segments.push(statusSegment("thinking", 4, thinking));
+	}
+	const cwd = readCwd(ctx);
+	const cwdSegment = theme.fg("accent", withIcon(icons.folder, basename(cwd) || cwd));
+	segments.push(statusSegment("cwd", 3, cwdSegment));
+
+	const gitSegment = renderGitSegment(theme, icons, branch, gitChanges);
+	if (gitSegment) segments.push(statusSegment("git", 2, gitSegment.full, gitSegment.compact));
+
+	const statuses = footerData.getExtensionStatuses();
+	const contextSegment = renderContextSegment(ctx, theme, icons, statuses);
+	if (contextSegment) segments.push(statusSegment("context", 1, contextSegment.full, contextSegment.compact));
+	if (usage.cacheRead > 0) {
+		const cache = theme.fg(
+			"muted",
+			[icons.cache, icons.input, formatTokens(usage.cacheRead)].filter(Boolean).join(" "),
+		);
+		const compactCache = theme.fg("muted", [icons.cache, formatTokens(usage.cacheRead)].filter(Boolean).join(" "));
+		segments.push(statusSegment("cache", 6, cache, compactCache));
+	}
+	if (usage.cost > 0 && shouldShowCost(ctx)) {
+		segments.push(statusSegment("cost", 5, theme.fg("text", `$${usage.cost.toFixed(2)}`)));
+	}
+
+	const extensionStatusSegment = renderExtensionStatusSegment(theme, statuses, extensionStatusKeys);
+	if (extensionStatusSegment) segments.push(statusSegment("extension", 7, extensionStatusSegment));
+
+	const status = renderStatusRows(segments, width, theme, preferences.density);
+	const promptRows =
+		preferences.latestPrompt && status.complete
+			? renderPromptRows(sessionStatus.latestPrompt, width, theme, icons, promptRowLimit(width, preferences.density))
+			: [];
+	if (status.rows.length < 2) return [...status.rows, ...promptRows];
+	return [status.rows[0] ?? "", ...promptRows, status.rows[1] ?? ""].filter(Boolean);
+}
+
+function statusSegment(id: StatusSegmentId, priority: number, full: string, compact = full): StatusSegment {
+	return { compact, full, id, priority };
+}
+
+function renderGitSegment(
+	theme: Theme,
+	icons: StatuslineIcons,
+	branch: string,
+	counts: GitChangeCounts | undefined,
+): SegmentText | undefined {
+	const ahead = counts?.ahead ?? 0;
+	const behind = counts?.behind ?? 0;
+	const conflicted = counts?.conflicted ?? 0;
+	const dirty = !!counts && (counts.staged > 0 || counts.unstaged > 0 || counts.untracked > 0 || conflicted > 0);
+	const parts: string[] = [];
+	const branchColor: ThemeColor = conflicted > 0 ? "error" : dirty || behind > 0 ? "warning" : "success";
+	if (branch) parts.push(theme.fg(branchColor, withIcon(icons.branch, branch)));
+	if (conflicted > 0) {
+		parts.push(theme.fg("error", conflicted === 1 ? "!conflict" : `!conflict:${String(conflicted)}`));
+	}
+	if (counts?.unstaged) parts.push(theme.fg("warning", `*${String(counts.unstaged)}`));
+	if (counts?.staged) parts.push(theme.fg("success", `+${String(counts.staged)}`));
+	if (counts?.untracked) parts.push(theme.fg("muted", `?${String(counts.untracked)}`));
+	if (ahead > 0) parts.push(theme.fg("success", `⇡${String(ahead)}`));
+	if (behind > 0) parts.push(theme.fg("warning", `⇣${String(behind)}`));
+	if (parts.length === 0) return undefined;
+	const full = branch || !icons.git ? parts.join(" ") : `${theme.fg("warning", icons.git)} ${parts.join(" ")}`;
+	const compactState: string[] = [];
+	if (conflicted > 0) compactState.push(theme.fg("error", `!${compactCount(conflicted)}`));
+	const changed = (counts?.staged ?? 0) + (counts?.unstaged ?? 0) + (counts?.untracked ?? 0);
+	if (changed > 0) compactState.push(theme.fg("warning", `Δ${compactCount(changed)}`));
+	if (ahead > 0) compactState.push(theme.fg("success", `⇡${compactCount(ahead)}`));
+	if (behind > 0) compactState.push(theme.fg("warning", `⇣${compactCount(behind)}`));
+	const compact = compactState.length > 0 ? renderCompactGit(theme, icons, branch, branchColor, compactState) : full;
+	return { compact, full };
+}
+
+function compactCount(value: number): string {
+	return value > 99 ? "99+" : String(value);
+}
+
+function renderCompactGit(
+	theme: Theme,
+	icons: StatuslineIcons,
+	branch: string,
+	branchColor: ThemeColor,
+	state: readonly string[],
+): string {
+	const maximumWidth = 21;
+	const stateWidth = state.reduce((total, marker) => total + visibleWidth(marker), Math.max(0, state.length - 1));
+	const branchBudget = maximumWidth - stateWidth - 1;
+	const iconWidth = icons.branch ? visibleWidth(icons.branch) + 1 : 0;
+	if (branch && branchBudget - iconWidth >= 3) {
+		const compactBranch = withIcon(icons.branch, middleTruncate(branch, branchBudget - iconWidth));
+		return [theme.fg(branchColor, compactBranch), ...state].join(" ");
+	}
+	return [icons.git ? theme.fg(branchColor, icons.git) : "", ...state].filter(Boolean).join(" ");
+}
+
+function renderContextSegment(
+	ctx: ExtensionContext,
+	theme: Theme,
+	icons: StatuslineIcons,
+	statuses: ReadonlyMap<string, string>,
+): SegmentText | undefined {
+	if (statuses.has("compact-policy")) return undefined;
+	let usage: ReturnType<ExtensionContext["getContextUsage"]>;
+	try {
+		usage = ctx.getContextUsage();
+	} catch {
+		return undefined;
+	}
+	const percent = usage?.percent;
+	const reportedWindow = usage?.contextWindow;
+	const contextWindow =
+		typeof reportedWindow === "number" && Number.isFinite(reportedWindow) && reportedWindow > 0
+			? reportedWindow
+			: ctx.model?.contextWindow;
+	const knownPercent = typeof percent === "number" && Number.isFinite(percent);
+	const knownWindow = typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0;
+	if (!knownPercent && !knownWindow) return undefined;
+	const boundedPercent = knownPercent ? Math.max(0, percent) : undefined;
+	const fullValue = `${boundedPercent === undefined ? "?" : `${boundedPercent.toFixed(1)}%`}${
+		knownWindow ? `/${formatTokens(contextWindow)}` : ""
+	}`;
+	const compactValue = boundedPercent === undefined ? fullValue : `${String(Math.round(boundedPercent))}%`;
+	const color: ThemeColor =
+		boundedPercent === undefined ? "dim" : boundedPercent >= 90 ? "error" : boundedPercent >= 70 ? "warning" : "dim";
+	return {
+		compact: theme.fg(color, withIcon(icons.context, compactValue)),
+		full: theme.fg(color, withIcon(icons.context, fullValue)),
+	};
+}
+
+function renderExtensionStatusSegment(
+	theme: Theme,
+	statuses: ReadonlyMap<string, string>,
+	keys: readonly string[],
+): string | undefined {
+	const selected: string[] = [];
+	const seen = new Set<string>();
+	for (const key of keys) {
+		const status = sanitizeOneLine(statuses.get(key) ?? "");
+		if (!status || status.startsWith("[") || seen.has(status)) continue;
+		seen.add(status);
+		selected.push(status);
+	}
+	return selected.length > 0 ? theme.fg("muted", selected.join(" · ")) : undefined;
+}
+
+function renderStatusRows(
+	segments: readonly StatusSegment[],
+	width: number,
+	theme: Theme,
+	density: StatuslineDensity,
+): StatusRows {
+	if (density !== "compact") {
+		const legacy = packStatusRows(
+			segments.map((segment) => segment.full),
+			width,
+			theme,
+		);
+		if (legacy.complete) return legacy;
+	}
+
+	const prioritized = [...segments].sort((left, right) => left.priority - right.priority);
+	const selected = density === "compact" ? prioritized.filter((segment) => segment.priority <= 4) : prioritized;
+	const segmentWidth = Math.max(1, width - 2);
+	const values = selected.map((segment) => {
+		if (density !== "full") return segment.compact;
+		return visibleWidth(segment.full) <= segmentWidth ? segment.full : segment.compact;
+	});
+	return packStatusRows(values, width, theme);
+}
+
+function packStatusRows(
+	segments: readonly string[],
+	availableWidth: number,
+	theme: Theme,
+): { readonly complete: boolean; readonly rows: string[] } {
+	if (availableWidth < 3 || segments.length === 0) return { complete: segments.length === 0, rows: [] };
+	const rows: string[][] = [];
+	let selected: string[] = [];
+	let currentWidth = 2;
+	let truncated = false;
+	const separatorWidth = visibleWidth(STATUSLINE_SEPARATOR) + 2;
+	const segmentWidth = Math.max(1, availableWidth - 2);
+
+	for (const rawSegment of segments) {
+		const rawWidth = visibleWidth(rawSegment);
+		if (rawWidth > segmentWidth) truncated = true;
+		const segment =
+			rawWidth <= segmentWidth ? rawSegment : truncateToWidth(rawSegment, segmentWidth, theme.fg("dim", "…"));
+		const measuredWidth = visibleWidth(segment);
+		const requiredWidth = measuredWidth + (selected.length > 0 ? separatorWidth : 0);
+		if (currentWidth + requiredWidth <= availableWidth) {
+			selected.push(segment);
+			currentWidth += requiredWidth;
+			continue;
+		}
+		if (selected.length > 0 && rows.length === 0) {
+			rows.push(selected);
+			selected = [segment];
+			currentWidth = 2 + measuredWidth;
+			continue;
+		}
+		return { complete: false, rows: [...rows, selected].map((row) => buildStatusRow(row, theme)).filter(Boolean) };
+	}
+	if (selected.length > 0) rows.push(selected);
+	return { complete: !truncated, rows: rows.map((row) => buildStatusRow(row, theme)).filter(Boolean) };
+}
+
+function buildStatusRow(segments: readonly string[], theme: Theme): string {
+	if (segments.length === 0) return "";
+	return ` ${segments.join(` ${theme.fg("dim", STATUSLINE_SEPARATOR)} `)} `;
+}
+
+function renderPromptRows(
+	prompt: PromptPreview | undefined,
+	width: number,
+	theme: Theme,
+	icons: StatuslineIcons,
+	maximumRows: 0 | 1 | 2,
+): string[] {
+	if (!prompt || width < 4 || maximumRows === 0) return [];
+	const prefix = icons.input ? ` ${icons.input} ` : " ";
+	const contentWidth = width - visibleWidth(prefix) - 1;
+	if (contentWidth < 1) return [];
+	const promptText = prompt.text ?? "";
+	const fullBadge = formatSkillBadge(prompt.skills, false);
+	const compactBadge = formatSkillBadge(prompt.skills, true);
+	const fullPreview = joinPromptAndBadge(promptText, fullBadge);
+	const badge =
+		fullBadge !== compactBadge && visibleWidth(fullPreview) > contentWidth * maximumRows ? compactBadge : fullBadge;
+	const preview = joinPromptAndBadge(promptText, badge);
+	if (!preview) return [];
+	if (maximumRows === 1) {
+		const content = fitPromptAndBadge(promptText, badge, contentWidth);
+		return [`${prefix}${theme.fg("text", content)} `];
+	}
+	const wrapped = wrapTextWithAnsi(preview, contentWidth);
+	const firstContent = wrapped[0] ?? "";
+	const first = `${prefix}${theme.fg("text", firstContent)} `;
+	if (wrapped.length < 2) return [first];
+	let overflow = wrapped.slice(1).join(" ");
+	if (badge && visibleWidth(overflow) > contentWidth) {
+		const badgeWidth = visibleWidth(badge);
+		if (badgeWidth <= contentWidth) {
+			const remainingText = wrappedPromptRemainder(promptText, contentWidth);
+			const reserved = remainingText ? badgeWidth + 1 : badgeWidth;
+			const truncatedText = truncateToWidth(remainingText, Math.max(0, contentWidth - reserved), "…");
+			overflow = joinPromptAndBadge(truncatedText, badge);
+		}
+	}
+	overflow = truncateToWidth(overflow, contentWidth, "…");
+	const continuation = `${" ".repeat(visibleWidth(prefix))}${theme.fg("text", overflow)} `;
+	return [first, continuation];
+}
+
+function fitPromptAndBadge(prompt: string, badge: string, width: number): string {
+	if (!badge) return truncateToWidth(prompt, width, "…");
+	const badgeWidth = visibleWidth(badge);
+	if (badgeWidth >= width) return truncateToWidth(badge, width, "…");
+	const promptWidth = Math.max(0, width - badgeWidth - (prompt ? 1 : 0));
+	return joinPromptAndBadge(truncateToWidth(prompt, promptWidth, "…"), badge);
+}
+
+function promptRowLimit(width: number, density: StatuslineDensity): 0 | 1 | 2 {
+	if (density === "compact" || width < 48) return 0;
+	return width >= 80 ? 2 : 1;
+}
+
+function wrappedPromptRemainder(prompt: string, width: number): string {
+	const rows = wrapTextWithAnsi(prompt, width);
+	return rows.slice(1).join(" ");
+}
+
+function joinPromptAndBadge(prompt: string, badge: string): string {
+	return [prompt, badge].filter(Boolean).join(" ");
+}
+
+function formatSkillBadge(skills: readonly string[], compact: boolean): string {
+	if (skills.length === 0) return "";
+	if (skills.length === 1) return `[skill:${skills[0] ?? ""}]`;
+	return compact ? `[skills:${String(skills.length)}]` : `[skills:${skills.join(",")}]`;
+}
+
+function emptySessionStatus(): SessionStatusSnapshot {
+	return { latestPrompt: undefined, usage: { cacheRead: 0, cost: 0 } };
+}
+
+function extendSessionStatus(
+	previous: SessionStatusSnapshot,
+	entry: SessionEntry,
+	skillAliases: ReadonlyMap<string, string>,
+): SessionStatusSnapshot {
+	const usage = { ...previous.usage };
+	let latestPrompt = previous.latestPrompt;
+	if (entry.type === "message") {
+		if (
+			entry.message.role === "assistant" &&
+			entry.message.stopReason !== "error" &&
+			entry.message.stopReason !== "aborted"
+		) {
+			addUsage(usage, (entry.message as AssistantMessage).usage);
+		}
+		if (entry.message.role === "user") latestPrompt = userPrompt(entry.message.content, skillAliases) ?? latestPrompt;
+	}
+	return { latestPrompt, usage };
+}
+
+function userPrompt(
+	content: string | ReadonlyArray<{ type: string; text?: string }>,
+	skillAliases: ReadonlyMap<string, string>,
+): PromptPreview | undefined {
+	const text =
+		typeof content === "string"
+			? content
+			: content
+					.filter((part): part is { type: "text"; text: string } => part.type === "text" && !!part.text)
+					.map((part) => part.text)
+					.join(" ");
+	return buildPromptPreview(text, skillAliases);
+}
+
+function buildPromptPreview(rawText: string, skillAliases: ReadonlyMap<string, string>): PromptPreview | undefined {
+	const parsed = parseSkillBlock(rawText);
+	if (parsed) {
+		const skill = normalizeSkillName(parsed.name);
+		const userText = parsed.userMessage ?? extractEmbeddedSkillUserText(parsed.content);
+		const rawPreview = rawSkillPromptPreview(userText ?? "", skillAliases);
+		return promptPreview(rawPreview.text, uniqueSkills([...(skill ? [skill] : []), ...rawPreview.skills]));
+	}
+
+	const source = rawText;
+	const skills: string[] = [];
+	for (const match of source.matchAll(/<skill\b[^>]*\bname\s*=\s*["']([^"']+)["'][^>]*>/giu)) {
+		const skill = normalizeSkillName(match[1] ?? "");
+		if (skill && !skills.includes(skill)) skills.push(skill);
+	}
+	const embeddedUserText = extractEmbeddedSkillUserText(source);
+	if (embeddedUserText) {
+		const rawPreview = rawSkillPromptPreview(embeddedUserText, skillAliases);
+		return promptPreview(rawPreview.text, uniqueSkills([...skills, ...rawPreview.skills]));
+	}
+
+	const withoutSkillPayloads = source
+		.replace(/<skill\b[^>]*>[\s\S]*?<\/skill>/giu, " ")
+		.replace(/<skill\b[^>]*>[\s\S]*$/giu, " ");
+	const rawPreview = rawSkillPromptPreview(withoutSkillPayloads, skillAliases);
+	return promptPreview(rawPreview.text, uniqueSkills([...skills, ...rawPreview.skills]));
+}
+
+function rawSkillPromptPreview(
+	value: string,
+	aliases: ReadonlyMap<string, string>,
+): { readonly skills: readonly string[]; readonly text: string | undefined } {
+	const skills: string[] = [];
+	const text = value.replace(/(^|\s)\/([^\s]+)/gu, (match, prefix: string, commandName: string) => {
+		const skill = aliases.get(commandName.toLowerCase());
+		if (!skill) return match;
+		skills.push(skill);
+		return prefix;
+	});
+	return { skills: uniqueSkills(skills), text: sanitizeOneLine(text) || undefined };
+}
+
+function readSkillAliases(pi: ExtensionAPI): ReadonlyMap<string, string> {
+	const aliases = new Map<string, string>();
+	try {
+		for (const command of pi.getCommands()) {
+			if (command.source !== "skill") continue;
+			const name = sanitizeOneLine(command.name);
+			const skill = normalizeSkillName(name);
+			if (name && skill) aliases.set(name.toLowerCase(), skill);
+		}
+	} catch {
+		// Registry discovery is optional presentation data.
+	}
+	return aliases;
+}
+
+function uniqueSkills(values: readonly string[]): string[] {
+	return [...new Set(values.filter(Boolean))];
+}
+
+function extractEmbeddedSkillUserText(value: string): string | undefined {
+	let latest: string | undefined;
+	for (const match of value.matchAll(/(?:^|\r?\n)\s*User:\s*([\s\S]*?)(?=\r?\n\s*<\/skill>|<\/skill>|$)/giu)) {
+		const candidate = match[1]?.trim();
+		if (candidate) latest = candidate;
+	}
+	return latest;
+}
+
+function normalizeSkillName(value: string): string {
+	return sanitizeOneLine(value).replace(/^skill:/iu, "");
+}
+
+function promptPreview(text: string | undefined, skills: readonly string[]): PromptPreview | undefined {
+	const normalizedText = text || undefined;
+	if (!normalizedText && skills.length === 0) return undefined;
+	return { skills, text: normalizedText };
+}
+
+function addUsage(totals: UsageTotals, usage: Usage | undefined): void {
+	if (!usage) return;
+	if (Number.isFinite(usage.cacheRead) && usage.cacheRead > 0) totals.cacheRead += usage.cacheRead;
+	if (Number.isFinite(usage.cost.total) && usage.cost.total > 0) totals.cost += usage.cost.total;
+}
+
+function shouldShowCost(ctx: ExtensionContext): boolean {
+	const model = ctx.model;
+	if (!model) return false;
+	if (model.provider === "kimi-coding") return false;
+	try {
+		if (ctx.modelRegistry.isUsingOAuth(model)) return false;
+	} catch {
+		// A partial or third-party registry may not expose auth state. Fall back
+		// to the model's public metering table rather than hiding real cost.
+	}
+	const cost = model.cost;
+	if (!cost) return false;
+	const rates = [cost.input, cost.output, cost.cacheRead, cost.cacheWrite];
+	for (const tier of cost.tiers ?? []) rates.push(tier.input, tier.output, tier.cacheRead, tier.cacheWrite);
+	return rates.some((rate) => Number.isFinite(rate) && rate > 0);
+}
+
+function readThinkingLevel(pi: ExtensionAPI, ctx: ExtensionContext): string {
+	try {
+		return pi.getThinkingLevel();
+	} catch {
+		return ctx.thinkingLevel ?? "off";
+	}
+}
+
+function formatThinking(level: string): string {
+	const labels: Record<string, string> = {
+		high: "high",
+		low: "low",
+		max: "max",
+		medium: "med",
+		minimal: "min",
+		off: "off",
+		xhigh: "xhigh",
+	};
+	return labels[level] ?? sanitizeOneLine(level);
+}
+
+function thinkingColor(level: string): ThemeColor {
+	const colors: Record<string, ThemeColor> = {
+		high: "thinkingHigh",
+		low: "thinkingLow",
+		max: "thinkingMax",
+		medium: "thinkingMedium",
+		minimal: "thinkingMinimal",
+		off: "thinkingOff",
+		xhigh: "thinkingXhigh",
+	};
+	return colors[level] ?? "thinkingText";
+}
+
+function displayModelName(ctx: ExtensionContext): string {
+	const name = sanitizeOneLine(ctx.model?.name ?? ctx.model?.id ?? "no-model");
+	return name.replace(/^Claude\s+/u, "") || "no-model";
+}
+
+function middleTruncate(value: string, maximumWidth: number): string {
+	if (visibleWidth(value) <= maximumWidth) return value;
+	if (maximumWidth <= 1) return truncateToWidth(value, maximumWidth, "…");
+	const suffixWidth = Math.floor((maximumWidth - 1) / 2);
+	const prefixWidth = maximumWidth - suffixWidth - 1;
+	const prefix = truncateToWidth(value, prefixWidth, "");
+	return `${prefix}…${visibleSuffix(value, suffixWidth)}`;
+}
+
+function visibleSuffix(value: string, maximumWidth: number): string {
+	let suffix = "";
+	for (const character of [...value].reverse()) {
+		const candidate = `${character}${suffix}`;
+		if (visibleWidth(candidate) > maximumWidth) break;
+		suffix = candidate;
+	}
+	return suffix;
+}
+
+function withIcon(icon: string, text: string): string {
+	return icon ? `${icon} ${text}` : text;
+}
+
+function statuslineIcons(mode: StatuslineIconMode): StatuslineIcons {
+	if (mode === "nerd") return NERD_STATUSLINE_ICONS;
+	if (mode === "ascii") return ASCII_STATUSLINE_ICONS;
+	return hasNerdFonts() ? NERD_STATUSLINE_ICONS : ASCII_STATUSLINE_ICONS;
+}
+
+function hasNerdFonts(): boolean {
+	const { GHOSTTY_RESOURCES_DIR, POWERLINE_NERD_FONTS, TERM_PROGRAM } = process.env;
+	if (POWERLINE_NERD_FONTS === "1") return true;
+	if (POWERLINE_NERD_FONTS === "0") return false;
+	if (GHOSTTY_RESOURCES_DIR) return true;
+	const terminal = (TERM_PROGRAM ?? "").toLowerCase();
+	return ["iterm", "wezterm", "kitty", "ghostty", "alacritty"].some((name) => terminal.includes(name));
+}
+
+function formatTokens(value: number): string {
+	const count = Number.isFinite(value) ? Math.max(0, value) : 0;
+	if (count < 1_000) return String(Math.round(count));
+	if (count < 10_000) return `${(count / 1_000).toFixed(1)}k`;
+	if (count < 1_000_000) return `${String(Math.round(count / 1_000))}k`;
+	if (count < 10_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+	return `${String(Math.round(count / 1_000_000))}M`;
+}
+
+function readCwd(ctx: ExtensionContext): string {
+	return sanitizeOneLine(readRawCwd(ctx)) || ".";
+}
+
+function readRawCwd(ctx: ExtensionContext): string {
+	try {
+		return ctx.sessionManager.getCwd() || ctx.cwd || ".";
+	} catch {
+		return ctx.cwd || ".";
+	}
+}
+
+function sanitizeOneLine(value: string): string {
+	return stripTerminalControls(value.slice(0, MAX_DYNAMIC_TEXT_CODE_UNITS)).replace(/\s+/gu, " ").trim();
+}
+
+function stripTerminalControls(value: string): string {
+	let text = "";
+	let index = 0;
+	while (index < value.length) {
+		const code = value.charCodeAt(index);
+		if (code === 0x1b) {
+			const introducer = value.charCodeAt(index + 1);
+			if (introducer === 0x5b) {
+				index = skipControlSequence(value, index + 2);
+				continue;
+			}
+			if (isStringControl(introducer)) {
+				index = skipControlString(value, index + 2);
+				continue;
+			}
+			index += 1;
+			while (index < value.length && value.charCodeAt(index) >= 0x20 && value.charCodeAt(index) <= 0x2f) index += 1;
+			if (index < value.length) index += 1;
+			continue;
+		}
+		if (code === 0x9b) {
+			index = skipControlSequence(value, index + 1);
+			continue;
+		}
+		if (isC1StringControl(code)) {
+			index = skipControlString(value, index + 1);
+			continue;
+		}
+		if (isBidiControl(code) || code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
+			text += " ";
+			index += 1;
+			continue;
+		}
+		const point = value.codePointAt(index);
+		if (point === undefined) break;
+		text += String.fromCodePoint(point);
+		index += point > 0xffff ? 2 : 1;
+	}
+	return text;
+}
+
+function skipControlSequence(value: string, start: number): number {
+	let index = start;
+	while (index < value.length) {
+		const code = value.charCodeAt(index++);
+		if (code >= 0x40 && code <= 0x7e) break;
+	}
+	return index;
+}
+
+function skipControlString(value: string, start: number): number {
+	let index = start;
+	while (index < value.length) {
+		const code = value.charCodeAt(index);
+		if (code === 0x07 || code === 0x9c) return index + 1;
+		if (code === 0x1b && value.charCodeAt(index + 1) === 0x5c) return index + 2;
+		index += 1;
+	}
+	return index;
+}
+
+function isStringControl(code: number): boolean {
+	return code === 0x5d || code === 0x50 || code === 0x58 || code === 0x5e || code === 0x5f;
+}
+
+function isC1StringControl(code: number): boolean {
+	return code === 0x9d || code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f;
+}
+
+function isBidiControl(code: number): boolean {
+	return (
+		code === 0x061c ||
+		code === 0x200e ||
+		code === 0x200f ||
+		(code >= 0x202a && code <= 0x202e) ||
+		(code >= 0x2066 && code <= 0x2069)
+	);
+}
+
+function callObserver(observer: () => void): void {
+	try {
+		observer();
+	} catch {
+		// Presentation observers are recoverable and independent.
+	}
+}
+
+function subscribeObserver(
+	source: { subscribe(listener: () => void): () => void },
+	listener: () => void,
+	unsubscribers: Array<() => void>,
+): void {
+	try {
+		unsubscribers.push(source.subscribe(listener));
+	} catch {
+		// One unavailable observer source must not disable the Statusline.
+	}
+}
+
+function sameGitCounts(left: GitChangeCounts | undefined, right: GitChangeCounts | undefined): boolean {
+	return (
+		left === right ||
+		(left !== undefined &&
+			right !== undefined &&
+			(left.ahead ?? 0) === (right.ahead ?? 0) &&
+			(left.behind ?? 0) === (right.behind ?? 0) &&
+			(left.conflicted ?? 0) === (right.conflicted ?? 0) &&
+			left.staged === right.staged &&
+			left.unstaged === right.unstaged &&
+			left.untracked === right.untracked)
+	);
+}

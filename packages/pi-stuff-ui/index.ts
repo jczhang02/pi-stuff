@@ -1,5 +1,25 @@
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import { registerLiveThoughtDisplay } from "./live-thought.js";
+import { installUiSessionPresentation, type UiSessionPresentation } from "./session-presentation.js";
+import {
+	beginUiSettingsGeneration,
+	registerOwnedUiSettings,
+	type UiSettingRegistry,
+	UiSettingsStore,
+} from "./settings.js";
+import { createUiSettingsView } from "./ui-settings-dialog.js";
+
+export {
+	beginUiSettingsGeneration,
+	getUiSettingRegistry,
+	type RegisteredUiSetting,
+	registerOwnedUiSettings,
+	type UiSettingId,
+	type UiSettingRegistry,
+	type UiSettings,
+	UiSettingsStore,
+} from "./settings.js";
 
 export type CommandDialogPriority = "blocking" | "normal";
 
@@ -27,9 +47,12 @@ export interface CommandDialogView<Result = void> {
 
 export interface CommandDialogCoordinator {
 	registerChrome(id: string, chrome: CommandDialogChrome): () => void;
+	setWorkingVisible(ctx: ExtensionContext, visible: boolean): void;
 	show<Result = void>(ctx: ExtensionContext, view: CommandDialogView<Result>): Promise<Result | undefined>;
 	whenIdle(): Promise<void>;
 }
+
+export type FooterFactory = NonNullable<Parameters<ExtensionUIContext["setFooter"]>[0]>;
 
 type DialogRequestState = "mounted" | "mounting" | "queued" | "settled";
 type HostRunState = "closed" | "closing" | "open" | "opening";
@@ -78,6 +101,11 @@ interface HostRun {
 	state: HostRunState;
 }
 
+interface NormalUiState {
+	footer: FooterFactory | undefined;
+	workingVisible: boolean;
+}
+
 type RequestOutcome =
 	| { readonly kind: "reject"; readonly reason: unknown }
 	| { readonly kind: "resolve"; readonly value: unknown };
@@ -117,7 +145,7 @@ class CommandDialogHost implements Component {
 
 	activate(): void {
 		this.activeComponent();
-		this.tui.requestRender(true);
+		this.tui.requestRender();
 	}
 
 	dispose(): void {
@@ -151,23 +179,22 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 	private activeRun: HostRun | undefined;
 	private accepting = true;
 	private generation = 0;
-	private generationOwner: ExtensionAPI | undefined;
+	private generationActive = false;
+	private readonly normalUiState: NormalUiState = { footer: undefined, workingVisible: true };
 
 	bind(pi: ExtensionAPI): void {
 		if (this.boundApis.has(pi)) return;
 		this.boundApis.add(pi);
-		this.accepting = true;
-		this.generation += 1;
 		pi.on("session_shutdown", async () => {
 			await this.shutdown();
 		});
 	}
 
-	beginGeneration(pi: ExtensionAPI): void {
+	ensureGeneration(pi: ExtensionAPI): void {
 		this.bind(pi);
-		if (this.generationOwner === pi) return;
+		if (this.generationActive) return;
 
-		this.generationOwner = pi;
+		this.generationActive = true;
 		this.accepting = true;
 		this.generation += 1;
 		const run = this.activeRun;
@@ -200,6 +227,17 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 			if (!currentRun?.suppressedChrome.delete(record)) return;
 			this.setChromeSuppressed(record, false);
 		};
+	}
+
+	installFooter(ctx: ExtensionContext, factory: FooterFactory): void {
+		if (ctx.mode !== "tui") return;
+		this.normalUiState.footer = factory;
+		if (!this.runOwnsUi()) ctx.ui.setFooter(factory);
+	}
+
+	setWorkingVisible(ctx: ExtensionContext, visible: boolean): void {
+		this.normalUiState.workingVisible = visible;
+		if (!this.runOwnsUi()) ctx.ui.setWorkingVisible(visible);
 	}
 
 	show<Result = void>(ctx: ExtensionContext, view: CommandDialogView<Result>): Promise<Result | undefined> {
@@ -387,8 +425,8 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 
 	private restoreRun(run: HostRun): void {
 		const restorations: Array<() => void> = [
-			() => run.ctx.ui.setFooter(undefined),
-			() => run.ctx.ui.setWorkingVisible(true),
+			() => run.ctx.ui.setFooter(this.normalUiState.footer),
+			() => run.ctx.ui.setWorkingVisible(this.normalUiState.workingVisible),
 			() => {
 				if (run.draftCaptured) run.ctx.ui.setEditorText(run.draft);
 			},
@@ -401,6 +439,11 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 				// Teardown is best effort, but one failing adapter must not skip the rest.
 			}
 		}
+	}
+
+	private runOwnsUi(): boolean {
+		const run = this.activeRun;
+		return run !== undefined && run.state !== "closed";
 	}
 
 	private restoreChrome(run: HostRun): void {
@@ -418,8 +461,12 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 	}
 
 	private async shutdown(): Promise<void> {
+		if (!this.generationActive) return;
+		this.generationActive = false;
 		this.accepting = false;
 		this.generation += 1;
+		this.normalUiState.footer = undefined;
+		this.normalUiState.workingVisible = true;
 		const run = this.activeRun;
 		if (!run) return;
 		this.dismissRun(run);
@@ -448,18 +495,133 @@ export function getCommandDialogCoordinator(pi: ExtensionAPI): CommandDialogCoor
 	const registry = coordinatorRegistry();
 	const existing = registry.get(pi.events);
 	if (existing) {
-		existing.bind(pi);
+		existing.ensureGeneration(pi);
 		return existing;
 	}
 	const coordinator = new CommandDialogCoordinatorImplementation();
-	coordinator.bind(pi);
+	coordinator.ensureGeneration(pi);
 	registry.set(pi.events, coordinator);
 	return coordinator;
 }
 
-export default function piStuffUi(pi: ExtensionAPI): void {
-	const coordinator = getCommandDialogCoordinator(pi) as CommandDialogCoordinatorImplementation;
-	coordinator.beginGeneration(pi);
+interface UiSettingsCommandState {
+	active: boolean;
+	readonly registry: UiSettingRegistry;
+}
+
+const UI_SETTINGS_COMMAND_STATES = Symbol.for("@jczhang02/pi-stuff-ui/settings-command-states/v1");
+
+const STATUSLINE_GIT_REFRESH_REQUEST = "@jczhang02/pi-stuff-ui/statusline-git-refresh-request/v1";
+const STATUSLINE_GIT_REFRESH_LISTENERS = Symbol.for("@jczhang02/pi-stuff-ui/statusline-git-refresh-listeners/v1");
+
+function statuslineGitRefreshListeners(): WeakMap<ExtensionAPI["events"], () => void> {
+	const root = globalThis as unknown as {
+		[key: symbol]: WeakMap<ExtensionAPI["events"], () => void> | undefined;
+	};
+	root[STATUSLINE_GIT_REFRESH_LISTENERS] ??= new WeakMap();
+	return root[STATUSLINE_GIT_REFRESH_LISTENERS];
+}
+
+function listenForStatuslineGitRefreshRequests(pi: ExtensionAPI, refresh: () => void): () => void {
+	const listeners = statuslineGitRefreshListeners();
+	listeners.get(pi.events)?.();
+
+	let active = true;
+	const unsubscribe = pi.events.on(STATUSLINE_GIT_REFRESH_REQUEST, () => {
+		if (active) refresh();
+	});
+	const cleanup = (): void => {
+		if (!active) return;
+		active = false;
+		if (typeof unsubscribe === "function") unsubscribe();
+		if (listeners.get(pi.events) === cleanup) listeners.delete(pi.events);
+	};
+	listeners.set(pi.events, cleanup);
+	return cleanup;
+}
+
+/** Ask the active UI presentation to refresh its Git snapshot, if one exists. */
+export function requestStatuslineGitRefresh(pi: Pick<ExtensionAPI, "events">): void {
+	try {
+		pi.events.emit(STATUSLINE_GIT_REFRESH_REQUEST, undefined);
+	} catch {
+		// A cosmetic refresh request cannot be allowed to break the caller's lifecycle.
+	}
+}
+
+function uiSettingsCommandStates(): WeakMap<ExtensionAPI["events"], UiSettingsCommandState> {
+	const root = globalThis as unknown as {
+		[key: symbol]: WeakMap<ExtensionAPI["events"], UiSettingsCommandState> | undefined;
+	};
+	root[UI_SETTINGS_COMMAND_STATES] ??= new WeakMap();
+	return root[UI_SETTINGS_COMMAND_STATES];
+}
+
+/** Ensure every independently loadable Capability can contribute to one /ui list. */
+export function ensureUiSettingsCommand(pi: ExtensionAPI): UiSettingRegistry {
+	const coordinator = getCommandDialogCoordinator(pi);
+	const commandStates = uiSettingsCommandStates();
+	const current = commandStates.get(pi.events);
+	if (current?.active) return current.registry;
+	const registry = beginUiSettingsGeneration(pi);
+	const state: UiSettingsCommandState = { active: true, registry };
+	commandStates.set(pi.events, state);
+	pi.on("session_shutdown", () => {
+		if (commandStates.get(pi.events) === state) state.active = false;
+	});
+	pi.registerCommand("ui", {
+		description: "Configure Pi Stuff UI",
+		handler: async (_args, ctx) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("/ui requires interactive TUI mode.", "warning");
+				return;
+			}
+			await coordinator.show(
+				ctx,
+				createUiSettingsView(registry, {
+					onPersistenceError: (message) => ctx.ui.notify(message, "error"),
+				}),
+			);
+		},
+	});
+	return registry;
+}
+
+export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
+	const coordinator = getCommandDialogCoordinator(pi);
+	const registry = ensureUiSettingsCommand(pi);
+	registerLiveThoughtDisplay(pi);
+	const settings = await UiSettingsStore.load();
+	let unregisterOwnedSettings: (() => void) | undefined = registerOwnedUiSettings(registry, settings);
+	let presentation: UiSessionPresentation | undefined;
+	let stopListeningForGitRefresh = listenForStatuslineGitRefreshRequests(pi, () => {
+		presentation?.refreshGit();
+	});
+
+	pi.on("session_start", (_event, ctx) => {
+		presentation?.dispose();
+		presentation = installUiSessionPresentation(
+			pi,
+			ctx,
+			settings,
+			coordinator as CommandDialogCoordinatorImplementation,
+		);
+	});
+	pi.on("before_agent_start", (event) => {
+		presentation?.updateContextFileCount(event.systemPromptOptions.contextFiles?.length);
+	});
+	pi.on("turn_end", () => {
+		presentation?.refreshGit();
+	});
+	pi.on("session_shutdown", async () => {
+		stopListeningForGitRefresh();
+		stopListeningForGitRefresh = () => {};
+		presentation?.dispose();
+		presentation = undefined;
+		await settings.whenIdle();
+		unregisterOwnedSettings?.();
+		unregisterOwnedSettings = undefined;
+	});
 }
 
 function createDeferred<Value>(): Deferred<Value> {

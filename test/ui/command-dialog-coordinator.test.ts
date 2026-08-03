@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { KeybindingsManager, TUI } from "@earendil-works/pi-tui";
 import piStuffUi, {
@@ -6,10 +8,17 @@ import piStuffUi, {
 	type CommandDialogPriority,
 	type CommandDialogView,
 	type CommandDialogViewContext,
+	ensureUiSettingsCommand,
 	getCommandDialogCoordinator,
+	requestStatuslineGitRefresh,
+	UiSettingsStore,
 } from "../../packages/pi-stuff-ui/index.js";
+import { installUiSessionPresentation } from "../../packages/pi-stuff-ui/session-presentation.js";
 
 type FooterFactory = Parameters<ExtensionUIContext["setFooter"]>[0];
+type HeaderFactory = Parameters<ExtensionUIContext["setHeader"]>[0];
+type EditorFactory = NonNullable<ReturnType<ExtensionUIContext["getEditorComponent"]>>;
+type SessionHandler = (event: unknown, ctx: ExtensionContext) => Promise<void> | void;
 type ShutdownHandler = (event: unknown, ctx: ExtensionContext) => Promise<void> | void;
 
 interface TestDeferred<Value> {
@@ -54,16 +63,43 @@ class TestComponent implements CommandDialogComponent {
 	}
 }
 
+interface EventBusLike {
+	emit(event: string, data: unknown): void;
+	on(event: string, listener: (data: unknown) => void): (() => void) | undefined;
+}
+
+class EventBusHarness implements EventBusLike {
+	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
+
+	emit(event: string, data: unknown): void {
+		for (const listener of [...(this.listeners.get(event) ?? [])]) listener(data);
+	}
+
+	on(event: string, listener: (data: unknown) => void): () => void {
+		let listeners = this.listeners.get(event);
+		if (!listeners) {
+			listeners = new Set();
+			this.listeners.set(event, listeners);
+		}
+		listeners.add(listener);
+		return () => listeners?.delete(listener);
+	}
+}
+
 class UiHarness {
 	autoResolveOnDone = true;
 	editorText = "saved draft";
 	readonly editorWrites: string[] = [];
 	readonly footerWrites: Array<FooterFactory | undefined> = [];
+	readonly headerWrites: Array<HeaderFactory | undefined> = [];
 	readonly forbiddenCalls: string[] = [];
 	readonly hostCalls: HostCall[] = [];
 	readonly keybindings = { identity: "keybindings" } as unknown as KeybindingsManager;
 	readonly renderRequests: Array<boolean | undefined> = [];
-	readonly theme = { identity: "theme" } as unknown as Theme;
+	readonly theme = {
+		fg: (_color: string, text: string) => text,
+		identity: "theme",
+	} as unknown as Theme;
 	throwOnFooterRestore = false;
 	readonly tui = {
 		requestRender: (force?: boolean) => {
@@ -71,6 +107,7 @@ class UiHarness {
 		},
 	} as unknown as TUI;
 	readonly workingWrites: boolean[] = [];
+	private editorFactory: EditorFactory | undefined;
 
 	get currentHost(): CommandDialogComponent {
 		const host = this.hostCalls.at(-1)?.component;
@@ -116,14 +153,26 @@ class UiHarness {
 		return this.editorText;
 	}
 
+	getEditorComponent(): EditorFactory | undefined {
+		return this.editorFactory;
+	}
+
 	setEditorText(text: string): void {
 		this.editorText = text;
 		this.editorWrites.push(text);
 	}
 
+	setEditorComponent(factory: EditorFactory | undefined): void {
+		this.editorFactory = factory;
+	}
+
 	setFooter(factory: FooterFactory | undefined): void {
 		this.footerWrites.push(factory);
 		if (factory === undefined && this.throwOnFooterRestore) throw new Error("footer restore failed");
+	}
+
+	setHeader(factory: HeaderFactory | undefined): void {
+		this.headerWrites.push(factory);
 	}
 
 	setStatus(): void {
@@ -151,18 +200,39 @@ class UiHarness {
 	}
 }
 
-function createApiHarness(events: object = {}) {
+function createApiHarness(events: EventBusLike = new EventBusHarness()) {
+	const execCalls: unknown[][] = [];
+	const registeredCommands: string[] = [];
+	const sessionHandlers: SessionHandler[] = [];
 	const shutdownHandlers: ShutdownHandler[] = [];
 	const api = {
 		events,
+		exec: async (...args: unknown[]) => {
+			execCalls.push(args);
+			return { code: 1, killed: false, stderr: "", stdout: "" };
+		},
+		getAllTools: () => [],
+		getCommands: () => [],
+		getThinkingLevel: () => "medium",
 		on: (event: string, handler: ShutdownHandler) => {
+			if (event === "session_start") sessionHandlers.push(handler);
 			if (event === "session_shutdown") shutdownHandlers.push(handler);
 		},
+		registerCommand: (name: string) => registeredCommands.push(name),
+		registerMarkdownTransformer: () => {},
 	} as unknown as ExtensionAPI;
 
 	return {
 		api,
+		execCalls,
+		registeredCommands,
+		sessionHandlers,
 		shutdownHandlers,
+		async start(ctx: ExtensionContext): Promise<void> {
+			for (const handler of sessionHandlers) {
+				await handler({ type: "session_start" }, ctx);
+			}
+		},
 		async shutdown(ctx: ExtensionContext): Promise<void> {
 			for (const handler of shutdownHandlers) {
 				await handler({ reason: "quit", type: "session_shutdown" }, ctx);
@@ -171,8 +241,43 @@ function createApiHarness(events: object = {}) {
 	};
 }
 
-function createContext(ui: UiHarness, mode: ExtensionContext["mode"] = "tui"): ExtensionContext {
-	return { mode, ui: ui as unknown as ExtensionUIContext } as unknown as ExtensionContext;
+interface ContextOptions {
+	readonly contextUsage?: {
+		readonly contextWindow: number;
+		readonly percent: number | null;
+		readonly tokens: number | null;
+	};
+	readonly cwd?: string;
+	readonly modelId?: string;
+}
+
+function createContext(
+	ui: UiHarness,
+	mode: ExtensionContext["mode"] = "tui",
+	options: ContextOptions = {},
+): ExtensionContext {
+	const cwd = options.cwd ?? "/workspace";
+	return {
+		cwd,
+		getContextUsage: () => options.contextUsage,
+		mode,
+		model: options.modelId ? { id: options.modelId } : undefined,
+		sessionManager: { getBranch: () => [], getCwd: () => cwd },
+		ui: ui as unknown as ExtensionUIContext,
+	} as unknown as ExtensionContext;
+}
+
+function createFooterData(branch: string | null = null) {
+	const listeners = new Set<() => void>();
+	return {
+		getAvailableProviderCount: () => 1,
+		getExtensionStatuses: () => new Map<string, string>(),
+		getGitBranch: () => branch,
+		onBranchChange: (listener: () => void) => {
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		},
+	};
 }
 
 function createView<Result>(
@@ -207,20 +312,100 @@ function createDeferred<Value>(): TestDeferred<Value> {
 	return { promise, reject: rejectPromise, resolve: resolvePromise };
 }
 
+describe("normal UI presentation integration", () => {
+	test("installs the accepted Statusline, Welcome header, and editor decorator", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui, "tui", {
+			contextUsage: { contextWindow: 200_000, percent: 42.4, tokens: 84_800 },
+			cwd: join(homedir(), "dev", "pi-stuff"),
+			modelId: "gpt-5.6-sol",
+		});
+		await api.start(ctx);
+		expect(api.execCalls).toEqual([]);
+
+		const factory = ui.footerWrites.at(-1);
+		if (!factory) throw new Error("Expected the Suite footer factory");
+		const footerData = createFooterData("main");
+		const footer = factory(ui.tui, ui.theme, footerData as never);
+		const statusline = footer.render(100).join("\n");
+		for (const expected of ["gpt-5.6-sol", "think:med", "pi-stuff", "main", "42.4%/200k"]) {
+			expect(statusline).toContain(expected);
+		}
+		expect(statusline).not.toContain("$0.00");
+		expect(ui.headerWrites.at(-1)).toBeTypeOf("function");
+		expect(ui.getEditorComponent()).toBeTypeOf("function");
+	});
+
+	test("does not probe Git while Statusline is disabled", async () => {
+		const api = createApiHarness();
+		const ui = new UiHarness();
+		const ctx = createContext(ui);
+		const settings = UiSettingsStore.memory();
+		const coordinator = {
+			installFooter: (_ctx: ExtensionContext, factory: FooterFactory) => ui.setFooter(factory),
+			registerChrome: () => () => {},
+			setWorkingVisible: () => {},
+			show: async () => undefined,
+			whenIdle: async () => {},
+		};
+		const presentation = installUiSessionPresentation(api.api, ctx, settings, coordinator as never);
+		if (!presentation) throw new Error("Expected a TUI presentation");
+
+		await settings.set("statusline", false);
+		presentation.refreshGit();
+		expect(api.execCalls).toHaveLength(0);
+
+		await settings.set("statusline", true);
+		presentation.refreshGit();
+		expect(api.execCalls).toHaveLength(1);
+		presentation.dispose();
+	});
+
+	test("refreshes Git through the generic UI request only while its generation is active", async () => {
+		const events = new EventBusHarness();
+		const first = createApiHarness(events);
+		await piStuffUi(first.api);
+		requestStatuslineGitRefresh(first.api);
+		expect(first.execCalls).toEqual([]);
+
+		const firstContext = createContext(new UiHarness());
+		await first.start(firstContext);
+		requestStatuslineGitRefresh(first.api);
+		expect(first.execCalls).toHaveLength(1);
+
+		await first.shutdown(firstContext);
+		requestStatuslineGitRefresh(first.api);
+		expect(first.execCalls).toHaveLength(1);
+
+		const reloaded = createApiHarness(events);
+		await piStuffUi(reloaded.api);
+		await reloaded.start(createContext(new UiHarness()));
+		requestStatuslineGitRefresh(reloaded.api);
+		expect(first.execCalls).toHaveLength(1);
+		expect(reloaded.execCalls).toHaveLength(1);
+
+		await reloaded.shutdown(createContext(new UiHarness()));
+		requestStatuslineGitRefresh(reloaded.api);
+		expect(reloaded.execCalls).toHaveLength(1);
+	});
+});
+
 describe("Command Dialog coordinator", () => {
 	test("is a WeakMap singleton for one Extension event bus and ignores non-TUI contexts", async () => {
-		const events = {};
+		const events = new EventBusHarness();
 		const first = createApiHarness(events);
 		const second = createApiHarness(events);
-		const other = createApiHarness({});
+		const other = createApiHarness(new EventBusHarness());
 		const coordinator = getCommandDialogCoordinator(first.api);
 
 		expect(getCommandDialogCoordinator(second.api)).toBe(coordinator);
 		expect(getCommandDialogCoordinator(other.api)).not.toBe(coordinator);
 		expect(first.shutdownHandlers).toHaveLength(1);
 		expect(second.shutdownHandlers).toHaveLength(1);
-		piStuffUi(first.api);
-		expect(first.shutdownHandlers).toHaveLength(1);
+		await piStuffUi(first.api);
+		expect(first.shutdownHandlers).toHaveLength(3);
 
 		const ui = new UiHarness();
 		const result = await coordinator.show(createContext(ui, "rpc"), {
@@ -232,18 +417,19 @@ describe("Command Dialog coordinator", () => {
 	});
 
 	test("starts a reload generation with fresh chrome and a newly bound shutdown lifecycle", async () => {
-		const events = {};
+		const events = new EventBusHarness();
 		const first = createApiHarness(events);
-		piStuffUi(first.api);
+		await piStuffUi(first.api);
 		const coordinator = getCommandDialogCoordinator(first.api);
 		const oldChromeWrites: boolean[] = [];
 		const unregisterOld = coordinator.registerChrome("todo", {
 			setSuppressed: (suppressed) => oldChromeWrites.push(suppressed),
 		});
+		await first.shutdown(createContext(new UiHarness()));
 
 		const reloaded = createApiHarness(events);
-		piStuffUi(reloaded.api);
-		expect(reloaded.shutdownHandlers).toHaveLength(1);
+		await piStuffUi(reloaded.api);
+		expect(reloaded.shutdownHandlers).toHaveLength(3);
 		expect(getCommandDialogCoordinator(reloaded.api)).toBe(coordinator);
 		const newChromeWrites: boolean[] = [];
 		coordinator.registerChrome("todo", {
@@ -269,11 +455,48 @@ describe("Command Dialog coordinator", () => {
 		expect(newChromeWrites).toEqual([true, false]);
 	});
 
+	test("shares one /ui registry across distinct Package APIs in one Host generation", async () => {
+		const events = new EventBusHarness();
+		const toolsApi = createApiHarness(events);
+		const uiApi = createApiHarness(events);
+		const toolsRegistry = ensureUiSettingsCommand(toolsApi.api);
+		toolsRegistry.register({
+			description: "Timer",
+			get: () => "true",
+			id: "toolRunningTimer",
+			label: "Tool running timer",
+			order: 50,
+			set: async () => {},
+			subscribe: () => () => {},
+			values: ["true", "false"],
+		});
+		const uiRegistry = ensureUiSettingsCommand(uiApi.api);
+		uiRegistry.register({
+			description: "Statusline",
+			get: () => "true",
+			id: "statusline",
+			label: "Statusline",
+			order: 10,
+			set: async () => {},
+			subscribe: () => () => {},
+			values: ["true", "false"],
+		});
+
+		expect(uiRegistry).toBe(toolsRegistry);
+		expect(uiRegistry.list().map((setting) => setting.id)).toEqual(["statusline", "toolRunningTimer"]);
+		expect(toolsApi.registeredCommands).toEqual(["ui"]);
+		expect(uiApi.registeredCommands).toEqual([]);
+	});
+
 	test("owns one non-overlay host and restores the draft, footer, working row, and chrome", async () => {
 		const api = createApiHarness();
+		await piStuffUi(api.api);
 		const coordinator = getCommandDialogCoordinator(api.api);
 		const ui = new UiHarness();
 		const ctx = createContext(ui);
+		await api.start(ctx);
+		const normalFooter = ui.footerWrites.at(-1);
+		if (!normalFooter) throw new Error("Expected the normal Suite footer");
 		const chromeWrites: boolean[] = [];
 		const unregister = coordinator.registerChrome("todo", {
 			setSuppressed: (suppressed) => chromeWrites.push(suppressed),
@@ -294,10 +517,11 @@ describe("Command Dialog coordinator", () => {
 		expect(ui.editorWrites).toEqual([""]);
 		expect(ui.workingWrites).toEqual([false]);
 		expect(chromeWrites).toEqual([true]);
-		const footerFactory = ui.footerWrites[0];
+		const footerFactory = ui.footerWrites[1];
 		expect(typeof footerFactory).toBe("function");
 		expect(footerFactory?.(ui.tui, ui.theme, {} as never).render(80)).toEqual([]);
 		expect(ui.currentHost.render(80)).toEqual(["normal"]);
+		expect(ui.renderRequests).toEqual([undefined]);
 
 		const mountedContext = viewContext;
 		if (!mountedContext) throw new Error("Expected the normal view to mount");
@@ -313,7 +537,7 @@ describe("Command Dialog coordinator", () => {
 		expect(mountedContext.signal.aborted).toBe(true);
 		expect(component.disposeCalls).toBe(1);
 		expect(ui.hostCalls[0]?.doneCalls).toBe(1);
-		expect(ui.footerWrites.at(-1)).toBeUndefined();
+		expect(ui.footerWrites.at(-1)).toBe(normalFooter);
 		expect(ui.workingWrites).toEqual([false, true]);
 		expect(ui.editorWrites).toEqual(["", "saved draft"]);
 		expect(chromeWrites).toEqual([true, false]);
@@ -322,6 +546,95 @@ describe("Command Dialog coordinator", () => {
 		mountedContext.close("late");
 		expect(ui.hostCalls[0]?.doneCalls).toBe(1);
 		unregister();
+	});
+
+	test("restores the Suite-owned working visibility that preceded the dialog", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const coordinator = getCommandDialogCoordinator(api.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui);
+		await api.start(ctx);
+		coordinator.setWorkingVisible(ctx, false);
+		let viewContext: CommandDialogViewContext | undefined;
+
+		const shown = coordinator.show(ctx, {
+			priority: "normal",
+			create: (context) => {
+				viewContext = context;
+				return new TestComponent("normal");
+			},
+		});
+		if (!viewContext) throw new Error("Expected the dialog to mount");
+		viewContext.close();
+		await shown;
+
+		expect(ui.workingWrites.at(-1)).toBe(false);
+	});
+
+	test("restores footer and working updates made while the dialog owns Pi UI", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const coordinator = getCommandDialogCoordinator(api.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui);
+		await api.start(ctx);
+		const initialFooter = ui.footerWrites.at(-1);
+		if (!initialFooter) throw new Error("Expected the initial Suite footer");
+		let viewContext: CommandDialogViewContext | undefined;
+		const shown = coordinator.show(ctx, {
+			priority: "normal",
+			create: (context) => {
+				viewContext = context;
+				return new TestComponent("normal");
+			},
+		});
+		if (!viewContext) throw new Error("Expected the dialog to mount");
+		const writesWhileOwned = ui.footerWrites.length;
+		const updatedFooter: FooterFactory = () => new TestComponent("updated footer");
+		(
+			coordinator as typeof coordinator & {
+				installFooter(context: ExtensionContext, factory: NonNullable<FooterFactory>): void;
+			}
+		).installFooter(ctx, updatedFooter);
+		coordinator.setWorkingVisible(ctx, false);
+
+		expect(ui.footerWrites).toHaveLength(writesWhileOwned);
+		viewContext.close();
+		await shown;
+
+		expect(ui.footerWrites.at(-1)).toBe(updatedFooter);
+		expect(ui.footerWrites.at(-1)).not.toBe(initialFooter);
+		expect(ui.workingWrites).toEqual([false, false]);
+	});
+
+	test("restores the Suite footer when Pi supplies a fresh UI context wrapper", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const coordinator = getCommandDialogCoordinator(api.api);
+		const ui = new UiHarness();
+		const startupContext = createContext(ui);
+		await api.start(startupContext);
+		const normalFooter = ui.footerWrites.at(-1);
+		if (!normalFooter) throw new Error("Expected the normal Suite footer");
+		const commandContext = {
+			...startupContext,
+			ui: new Proxy(startupContext.ui, {}),
+		} as ExtensionContext;
+		let viewContext: CommandDialogViewContext | undefined;
+
+		const shown = coordinator.show(commandContext, {
+			priority: "normal",
+			create: (context) => {
+				viewContext = context;
+				return new TestComponent("normal");
+			},
+		});
+		if (!viewContext) throw new Error("Expected the dialog to mount");
+		viewContext.close();
+		await shown;
+
+		expect(ui.footerWrites.at(-1)).toBe(normalFooter);
 	});
 
 	test("settles the final view only after host chrome and the saved draft are restored", async () => {
@@ -394,9 +707,13 @@ describe("Command Dialog coordinator", () => {
 
 	test("preempts a normal view with FIFO blockers, then resumes the same component", async () => {
 		const api = createApiHarness();
+		await piStuffUi(api.api);
 		const coordinator = getCommandDialogCoordinator(api.api);
 		const ui = new UiHarness();
 		const ctx = createContext(ui);
+		await api.start(ctx);
+		const normalFooter = ui.footerWrites.at(-1);
+		if (!normalFooter) throw new Error("Expected the normal Suite footer");
 		const components = new Map<string, TestComponent>();
 		const contexts = new Map<string, CommandDialogViewContext<string>>();
 
@@ -405,6 +722,7 @@ describe("Command Dialog coordinator", () => {
 		const secondBlockingPromise = coordinator.show(ctx, createView("blocking-2", "blocking", components, contexts));
 
 		expect(ui.hostCalls).toHaveLength(1);
+		expect(ui.footerWrites).toHaveLength(2);
 		expect(ui.currentHost.render(80)).toEqual(["blocking-1"]);
 		const normalContext = contexts.get("normal");
 		const firstContext = contexts.get("blocking-1");
@@ -428,6 +746,7 @@ describe("Command Dialog coordinator", () => {
 		expect(components.get("normal")?.disposeCalls).toBe(0);
 		ui.currentHost.handleInput?.("n");
 		expect(components.get("normal")?.input).toEqual(["n"]);
+		expect(ui.renderRequests).not.toContain(true);
 
 		normalContext.close("normal result");
 		expect(await normalPromise).toBe("normal result");
@@ -435,6 +754,7 @@ describe("Command Dialog coordinator", () => {
 		expect(ui.hostCalls).toHaveLength(1);
 		expect(normalContext.signal.aborted).toBe(true);
 		expect(components.get("normal")?.disposeCalls).toBe(1);
+		expect(ui.footerWrites.at(-1)).toBe(normalFooter);
 	});
 
 	test("reports idle only after a preempted view closes and all shared chrome is restored", async () => {
@@ -497,9 +817,13 @@ describe("Command Dialog coordinator", () => {
 
 	test("session shutdown aborts and dismisses every view before restoring UI", async () => {
 		const api = createApiHarness();
+		await piStuffUi(api.api);
 		const coordinator = getCommandDialogCoordinator(api.api);
 		const ui = new UiHarness();
 		const ctx = createContext(ui);
+		await api.start(ctx);
+		const normalFooter = ui.footerWrites.at(-1);
+		if (!normalFooter) throw new Error("Expected the normal Suite footer");
 		const components = new Map<string, TestComponent>();
 		const contexts = new Map<string, CommandDialogViewContext<string>>();
 		const chromeWrites: boolean[] = [];
@@ -521,11 +845,34 @@ describe("Command Dialog coordinator", () => {
 		for (const component of components.values()) expect(component.disposeCalls).toBe(1);
 		expect(ui.hostCalls[0]?.doneCalls).toBe(1);
 		expect(ui.editorText).toBe("saved draft");
+		expect(normalFooter).toBeTypeOf("function");
+		expect(ui.footerWrites.at(-1)).toBeUndefined();
 		expect(ui.workingWrites).toEqual([false, true]);
 		expect(chromeWrites).toEqual([true, false]);
 
 		contexts.get("blocking")?.close("late");
 		expect(ui.hostCalls[0]?.doneCalls).toBe(1);
+	});
+
+	test("restores the exact Suite footer after a custom Host failure", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const coordinator = getCommandDialogCoordinator(api.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui);
+		await api.start(ctx);
+		const normalFooter = ui.footerWrites.at(-1);
+		if (!normalFooter) throw new Error("Expected the normal Suite footer");
+
+		const failed = coordinator.show(ctx, {
+			priority: "normal",
+			create: () => new TestComponent("failed host"),
+		});
+		ui.rejectCurrent(new Error("custom failed"));
+
+		await expect(failed).rejects.toThrow("custom failed");
+		expect(ui.footerWrites.at(-1)).toBe(normalFooter);
+		expect(ui.workingWrites).toEqual([false, true]);
 	});
 
 	test("does not reopen a deferred or late view after shutdown begins", async () => {

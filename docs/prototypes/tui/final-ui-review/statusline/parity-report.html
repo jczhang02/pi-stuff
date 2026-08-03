@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pi Stuff · Statusline parity correction</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111318;
+      --panel: #181b22;
+      --line: #343946;
+      --text: #d4d4d4;
+      --muted: #808080;
+      --dim: #666;
+      --model: #9575cd;
+      --think: #81a2be;
+      --path: #8abeb7;
+      --warning: #ff0;
+      --success: #7aa874;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.55 Inter, ui-sans-serif, system-ui, sans-serif;
+    }
+    main { width: min(1180px, calc(100% - 40px)); margin: 48px auto 72px; }
+    h1 { margin: 0 0 8px; font-size: clamp(30px, 5vw, 58px); letter-spacing: -0.04em; }
+    h2 { margin: 48px 0 14px; font-size: 20px; }
+    p { max-width: 860px; color: #aeb3be; }
+    .eyebrow { color: var(--think); font: 700 12px/1.2 ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; }
+    .verdict { margin-top: 24px; padding: 14px 0; border-block: 1px solid var(--line); color: var(--text); }
+    .terminals { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .terminal { min-width: 0; border-top: 1px solid var(--line); background: var(--panel); }
+    .terminal header { padding: 10px 14px; color: var(--muted); border-bottom: 1px solid var(--line); font: 12px ui-monospace, monospace; }
+    pre {
+      margin: 0;
+      padding: 18px 16px 22px;
+      overflow-x: auto;
+      color: var(--text);
+      font: 15px/1.5 "Iosevka Nerd Font Mono", "JetBrains Mono", ui-monospace, monospace;
+      white-space: pre;
+    }
+    .model { color: var(--model); }
+    .think { color: var(--think); }
+    .path { color: var(--path); }
+    .git, .unstaged { color: var(--warning); }
+    .staged { color: var(--success); }
+    .muted { color: var(--muted); }
+    .dim, .sep { color: var(--dim); }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font: 12px ui-monospace, monospace; }
+    td:first-child { width: 20%; color: var(--text); }
+    code { color: #c6cbd6; font-family: ui-monospace, monospace; }
+    .links { display: flex; flex-wrap: wrap; gap: 12px 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+    a { color: var(--think); }
+    @media (max-width: 820px) {
+      main { width: min(100% - 24px, 1180px); margin-top: 28px; }
+      .terminals { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">Real Pi Host · parity correction · 2026-08-03</div>
+    <h1>Statusline 已恢复旧 Footer 的视觉语法</h1>
+    <p>之前通过验收的是另一套点分隔、无图标原型。它的信息顺序接近，但样式并没有迁移。当前生产实现已按旧 Footer 的真实 renderer 与真实 PTY 重新对齐，并用明确的响应式优先级取代简单截断。</p>
+    <p class="verdict">明确差异包括：颜色继续来自 Pi 主题、不显示 <code>(sub)</code> 或未经 Host 证明的压缩状态、Prompt 随宽度降为两行／一行／隐藏，以及只接入不重复的 Goal / MCP / Loadout 状态。</p>
+
+    <h2>同一 fixture · 旧 renderer 与当前生产 renderer</h2>
+    <div class="terminals">
+      <section class="terminal">
+        <header>旧 jc-powerline-footer · actual renderer · ASCII · 64 columns</header>
+        <pre> sonnet-4.5 <span class="sep">|</span> <span class="think">think:med</span> <span class="sep">|</span> <span class="path">dir pi-stuff</span> <span class="sep">|</span> <span class="git">⎇ main</span> <span class="unstaged">*3</span> <span class="staged">+12</span> <span class="muted">?1</span>
+ in: Implement the accepted Pi Stuff statusline.
+ <span class="dim">◫ 42.4%/200k</span> <span class="sep">|</span> <span class="muted">cache in: 18k</span> <span class="sep">|</span> $0.42</pre>
+      </section>
+      <section class="terminal">
+        <header>当前 Pi Stuff · production renderer · ASCII · 64 columns</header>
+        <pre> sonnet-4.5 <span class="sep">|</span> <span class="think">think:med</span> <span class="sep">|</span> <span class="path">dir pi-stuff</span> <span class="sep">|</span> <span class="git">⎇ main</span> <span class="unstaged">*3</span> <span class="staged">+12</span> <span class="muted">?1</span>
+ in: Implement the accepted Pi Stuff statusline.
+ <span class="dim">◫ 42.4%/200k</span> <span class="sep">|</span> <span class="muted">cache in: 18k</span> <span class="sep">|</span> $0.42</pre>
+      </section>
+    </div>
+
+    <h2>当前真实 Pi 0.83 · Nerd Font · streamed turn</h2>
+    <section class="terminal">
+      <header>production Aggregate · 100 × 32 · retained ANSI colors</header>
+      <pre> <span class="model"> ui-pty-model</span> <span class="sep">|</span> <span class="think">think:med</span> <span class="sep">|</span> <span class="path"> 验证</span> <span class="sep">|</span> <span class="git"> main *1</span> <span class="muted">?1</span> <span class="sep">|</span> <span class="dim"> 42.0%/200k</span> <span class="sep">|</span> <span class="muted">  18k</span> <span class="sep">|</span> $0.42
+  LONG_CJK_PROMPT_开始 长提示01中文🧪 长提示02中文🧪 长提示03中文🧪 长提示04中文🧪 长提示05中文🧪
+   长提示06中文🧪 长提示07中文🧪 长提示08中文🧪 长提示09中文🧪 长提示10中文🧪 长提示11中文🧪 长提…
+ <span class="muted">goal:UI · mcp:2 · load:full</span></pre>
+    </section>
+
+    <h2>修正内容</h2>
+    <table>
+      <thead><tr><th>字段</th><th>rejected prototype</th><th>当前生产实现</th></tr></thead>
+      <tbody>
+        <tr><td>分隔与留白</td><td><code> · </code>，无外边距</td><td>灰色 <code> | </code>，左右各一格</td></tr>
+        <tr><td>Model / Thinking</td><td>raw id；<code>med</code></td><td>display name + icon；<code>think:med</code></td></tr>
+        <tr><td>路径 / Git</td><td>缩写全路径；<code>+added ~modified -deleted</code></td><td>basename + icon；<code>!conflict *unstaged +staged ?untracked ⇡ahead ⇣behind</code></td></tr>
+        <tr><td>Context / Cache</td><td><code>42%</code>；<code>↻18k</code></td><td><code>42.0%/200k</code>，百分比未知时为 <code>?/200k</code>；cache/input icons</td></tr>
+        <tr><td>窄屏</td><td>从整行中间截断</td><td>完整 segment 按 Model / Context / Git 优先级保留；长身份从中间缩写，Git 用 <code>ΔN</code> 并优先保留异常标记；Prompt 在中等宽度最多一行、极窄屏隐藏</td></tr>
+        <tr><td>Skill Prompt</td><td>展开内容可能进入普通预览</td><td>只显示用户任务与紧凑 Skill badge；隐藏 XML 和本地路径</td></tr>
+      </tbody>
+    </table>
+
+    <h2>验证</h2>
+    <p>自动化验证覆盖真实 Aggregate PTY 的 100×32、64×28、48×22、32×18、24×16、实时 resize、响应式字段优先级、CJK Prompt 行数、完整八项 <code>/ui</code>、订阅费用隐藏、Command Dialog 与 autocomplete 恢复；打包后的 Aggregate 另由认证 Host gate 检查。</p>
+    <div class="links">
+      <a href="./parity-artifacts/pi-0.83-statusline-parity-metered-100x32.txt">真实 100×32 文本帧</a>
+      <a href="./parity-artifacts/pi-0.83-statusline-parity-metered-100x32.ansi">真实 100×32 ANSI 帧</a>
+      <a href="./parity-artifacts/pi-0.83-statusline-parity-fresh-64x28.txt">真实 64×28</a>
+      <a href="./parity-artifacts/pi-0.83-statusline-parity-fresh-32x18.txt">真实 32×18</a>
+      <a href="./README.md">复现说明</a>
+    </div>
+  </main>
+</body>
+</html>

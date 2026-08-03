@@ -1,0 +1,32 @@
+                                                                                                    
+ Implement the accepted Pi Stuff statusline and keep the current task moving.                       
+                                                                                                    
+
+ The deterministic Statusline fixture is ready for native PTY review.                               
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+/proto                   
+────────────────────────────────────────────────────────────────────────────────────────────────────
+→ prototype-statusline-selector  [t] Open the temporary selector used by the Statusline prototype   
+

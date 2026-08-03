@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pi Stuff · Welcome Header · Real PTY Review</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115;
+      --panel: #171a20;
+      --line: #303641;
+      --text: #e5e9f0;
+      --muted: #98a2b3;
+      --accent: #d3b7ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.55 ui-sans-serif, system-ui, sans-serif;
+    }
+    main { width: min(1180px, calc(100% - 40px)); margin: 48px auto 72px; }
+    .eyebrow { color: var(--accent); font: 700 12px/1.2 ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { margin: 12px 0 8px; font-size: clamp(28px, 5vw, 48px); line-height: 1.05; }
+    .lead { max-width: 780px; margin: 0; color: var(--muted); }
+    .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 32px 0; background: var(--line); border: 1px solid var(--line); }
+    .fact { min-height: 110px; padding: 18px; background: var(--panel); }
+    .fact strong { display: block; margin-bottom: 6px; }
+    .fact span { color: var(--muted); }
+    section { margin-top: 36px; }
+    h2 { margin: 0 0 6px; font-size: 22px; }
+    .caption { margin: 0 0 14px; color: var(--muted); }
+    figure { margin: 0; border: 1px solid var(--line); background: #08090c; overflow: auto; }
+    figure img { display: block; max-width: none; }
+    .wide img { width: 100%; height: auto; }
+    .compact img { width: auto; max-width: 100%; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    code { color: var(--accent); font-family: ui-monospace, monospace; }
+    footer { margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); }
+    @media (max-width: 760px) {
+      main { width: min(100% - 24px, 1180px); margin-top: 28px; }
+      .facts, .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">Prototype · genuine Pi PTY capture</div>
+    <h1>Welcome Header 最终视觉核验</h1>
+    <p class="lead">以下不是 HTML 模拟终端，而是本机 <code>/opt/bin/pi</code> 在固定 PTY 网格中的真实输出。HTML 只负责把截图和结论放在一起。</p>
+
+    <div class="facts">
+      <div class="fact"><strong>位置</strong><span>通过 <code>setHeader()</code> 成为对话文档第一块，会随 transcript 自然滚走。</span></div>
+      <div class="fact"><strong>外形</strong><span>小 π、上下细分隔线，没有矩形框、浮窗、版本号或 recent sessions。</span></div>
+      <div class="fact"><strong>响应式</strong><span>100 列保留信息层次；64 列压平；32 列只保留一行身份，不整块消失。</span></div>
+    </div>
+
+    <section>
+      <h2>宽 · 100 × 32</h2>
+      <p class="caption">六行双栏：身份、完整路径、Loaded 四类统计和三条固定 Tips 都在首屏。</p>
+      <figure class="wide"><img src="./artifacts/real-pi-welcome-100x32.png" alt="Real Pi Welcome Header at 100 by 32 cells"></figure>
+    </section>
+
+    <section>
+      <h2>窄与极窄</h2>
+      <p class="caption">64 列压成五行；32 列保留一行 Welcome 身份。两种状态均由同一个真实 Pi Component 根据传入宽度渲染。</p>
+      <div class="grid">
+        <figure class="compact"><img src="./artifacts/real-pi-welcome-64x28.png" alt="Real Pi Welcome Header at 64 by 28 cells"></figure>
+        <figure class="compact"><img src="./artifacts/real-pi-welcome-32x18.png" alt="Real Pi Welcome Header at 32 by 18 cells"></figure>
+      </div>
+    </section>
+
+    <section>
+      <h2>随对话滚走 · 64 × 28</h2>
+      <p class="caption">同一进程追加二十条确定性 transcript 行后，Welcome 已离开 viewport；它没有固定在顶部，也没有占用 editor widget 区域。</p>
+      <figure class="wide"><img src="./artifacts/real-pi-welcome-scrolled-64x28.png" alt="Real Pi transcript after the Welcome Header naturally scrolled away"></figure>
+    </section>
+
+    <footer>PROTOTYPE：固定数据、离线运行、无 session 持久化；不得直接作为生产实现提交。</footer>
+  </main>
+</body>
+</html>

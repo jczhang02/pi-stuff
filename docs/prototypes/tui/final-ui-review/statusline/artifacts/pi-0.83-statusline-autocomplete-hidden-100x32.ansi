@@ -1,0 +1,32 @@
+[48;2;52;53;65m                                                                                                    
+ [38;2;212;212;212mImplement the accepted Pi Stuff statusline and keep the current task moving.[39m                       
+                                                                                                    
+
+[49m The deterministic Statusline fixture is ready for native PTY review.                               
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[38;2;129;162;190m────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m/proto[7m [0m                  
+[38;2;129;162;190m────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;2;138;190;183m→ prototype-statusline-selector  [t] Open the temporary selector used by the Statusline prototype[39m   
+

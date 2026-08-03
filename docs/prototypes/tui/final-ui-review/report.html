@@ -1,0 +1,760 @@
+<!doctype html>
+<!--
+  PROTOTYPE — disposable review artifact, not production UI.
+  Every terminal image is a real /opt/bin/pi 0.83.0 PTY capture.
+  HTML is only the Kami report layer.
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pi Stuff · 启动与输入区 UI 最终核验</title>
+  <meta name="author" content="Pi Stuff">
+  <meta name="description" content="用真实 Pi 0.83 PTY 画面核验 Welcome Header、Statusline 与统一 /ui。">
+  <meta name="keywords" content="Pi Stuff, Pi, TUI, Statusline, Welcome Header, SettingsList">
+  <meta name="generator" content="Kami">
+  <style>
+    @font-face {
+      font-family: "TsangerJinKai02";
+      src: url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W04.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+    }
+
+    @font-face {
+      font-family: "TsangerJinKai02";
+      src: url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W05.ttf") format("truetype");
+      font-weight: 500;
+      font-style: normal;
+    }
+
+    :root {
+      --parchment: #f5f4ed;
+      --ivory: #faf9f5;
+      --near-black: #141413;
+      --dark-warm: #3d3d3a;
+      --olive: #504e49;
+      --stone: #6b6a64;
+      --brand: #1b365d;
+      --border: #e8e6dc;
+      --border-soft: #e5e3d8;
+      --terminal: #141413;
+      --serif: "TsangerJinKai02", "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", Georgia, serif;
+      --mono: "Iosevka Nerd Font Mono", "JetBrains Mono", "SF Mono", Consolas, "TsangerJinKai02", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      background: var(--parchment);
+      scroll-behavior: smooth;
+    }
+
+    body {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 72px 64px 128px;
+      color: var(--near-black);
+      background: var(--parchment);
+      font-family: var(--serif);
+      font-size: 16px;
+      line-height: 1.58;
+      letter-spacing: 0.15px;
+    }
+
+    a {
+      color: var(--brand);
+      text-underline-offset: 3px;
+      text-decoration-thickness: 1px;
+    }
+
+    code {
+      font-family: var(--mono);
+      font-size: 0.88em;
+    }
+
+    .eyebrow,
+    .section-kicker {
+      color: var(--brand);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 1.1px;
+      text-transform: uppercase;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .eyebrow::before {
+      width: 12px;
+      height: 2px;
+      background: var(--brand);
+      content: "";
+    }
+
+    .hero {
+      min-height: 66vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding-bottom: 64px;
+    }
+
+    .hero-copy {
+      padding: 88px 0 56px;
+    }
+
+    h1 {
+      max-width: 930px;
+      margin-top: 22px;
+      font-size: clamp(52px, 7vw, 88px);
+      font-weight: 500;
+      line-height: 1.06;
+    }
+
+    .hero-lead {
+      max-width: 820px;
+      margin-top: 28px;
+      color: var(--dark-warm);
+      font-size: clamp(21px, 2.5vw, 28px);
+      line-height: 1.48;
+    }
+
+    strong {
+      color: var(--brand);
+      font-weight: 500;
+    }
+
+    .hero-meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .metric {
+      padding: 18px 18px 20px 0;
+    }
+
+    .metric + .metric {
+      padding-left: 22px;
+      border-left: 1px solid var(--border);
+    }
+
+    .metric-value {
+      color: var(--brand);
+      font-size: 25px;
+      font-weight: 500;
+      font-variant-numeric: lining-nums tabular-nums;
+      line-height: 1.2;
+    }
+
+    .metric-label {
+      margin-top: 5px;
+      color: var(--stone);
+      font-size: 13px;
+    }
+
+    .truth-note {
+      display: grid;
+      grid-template-columns: 0.7fr 1.3fr;
+      gap: 40px;
+      margin: 28px 0 92px;
+      padding: 28px 0;
+      border-top: 3px solid var(--brand);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .truth-note h2 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .truth-note p {
+      color: var(--olive);
+    }
+
+    section.surface {
+      padding: 84px 0 36px;
+      border-top: 1px solid var(--border);
+    }
+
+    section.surface[hidden] {
+      display: none;
+    }
+
+    h2 {
+      max-width: 900px;
+      margin-top: 14px;
+      font-size: clamp(34px, 4.8vw, 54px);
+      font-weight: 500;
+      line-height: 1.14;
+    }
+
+    .section-lead {
+      max-width: 800px;
+      margin-top: 20px;
+      color: var(--olive);
+      font-size: 20px;
+      line-height: 1.55;
+    }
+
+    .evidence-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 52px 22px;
+      margin-top: 52px;
+    }
+
+    .evidence-grid.featured {
+      grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.55fr);
+    }
+
+    figure {
+      min-width: 0;
+    }
+
+    .screen-link {
+      display: block;
+      overflow: hidden;
+      background: var(--terminal);
+      border-radius: 6px;
+      line-height: 0;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
+    }
+
+    .screen-link img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    figcaption {
+      padding-top: 14px;
+    }
+
+    .caption-title {
+      font-size: 18px;
+      font-weight: 500;
+    }
+
+    .caption-body,
+    .source-note {
+      color: var(--olive);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .caption-body {
+      margin-top: 5px;
+    }
+
+    .source-note {
+      max-width: 860px;
+      margin-top: 44px;
+      padding-top: 18px;
+      border-top: 1px dotted var(--border);
+      color: var(--stone);
+      font-size: 13px;
+    }
+
+    .contract {
+      margin-top: 48px;
+      border-top: 1px solid var(--border);
+    }
+
+    .contract-row {
+      display: grid;
+      grid-template-columns: 48px minmax(170px, 0.7fr) minmax(0, 1.5fr);
+      gap: 18px;
+      padding: 18px 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .contract-num {
+      color: var(--brand);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .contract-name {
+      font-size: 17px;
+      font-weight: 500;
+    }
+
+    .contract-desc {
+      color: var(--olive);
+      font-size: 15px;
+    }
+
+    .decision {
+      min-height: 64vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      margin-top: 80px;
+      border-top: 1px solid var(--border);
+    }
+
+    .decision-question {
+      max-width: 920px;
+      margin-top: 22px;
+      font-size: clamp(34px, 5vw, 58px);
+      font-weight: 500;
+      line-height: 1.18;
+    }
+
+    .decision-answer {
+      max-width: 790px;
+      margin-top: 28px;
+      color: var(--olive);
+      font-size: 20px;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 24px;
+      margin-top: 38px;
+      font-size: 14px;
+    }
+
+    .prototype-switcher {
+      position: fixed;
+      z-index: 10;
+      right: 50%;
+      bottom: 18px;
+      display: grid;
+      grid-template-columns: 38px minmax(160px, auto) 38px;
+      align-items: center;
+      overflow: hidden;
+      border: 1px solid #3d3d3a;
+      border-radius: 999px;
+      background: #141413;
+      color: #faf9f5;
+      font-family: var(--mono);
+      font-size: 12px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+      transform: translateX(50%);
+    }
+
+    .prototype-switcher button {
+      height: 38px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .prototype-switcher button:hover,
+    .prototype-switcher button:focus-visible {
+      background: #30302e;
+      outline: none;
+    }
+
+    .prototype-label {
+      padding: 0 14px;
+      color: #b0aea5;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 900px) {
+      body {
+        padding: 54px 34px 108px;
+      }
+
+      .hero-meta,
+      .evidence-grid.featured {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 32px 18px 100px;
+        font-size: 15px;
+      }
+
+      .hero {
+        min-height: auto;
+        padding-bottom: 48px;
+      }
+
+      .hero-copy {
+        padding: 64px 0 42px;
+      }
+
+      h1 {
+        font-size: 44px;
+      }
+
+      .hero-lead,
+      .section-lead,
+      .decision-answer {
+        font-size: 18px;
+      }
+
+      .hero-meta,
+      .truth-note,
+      .evidence-grid,
+      .evidence-grid.featured {
+        grid-template-columns: 1fr;
+      }
+
+      .metric + .metric {
+        padding-left: 0;
+        border-left: 0;
+      }
+
+      section.surface {
+        padding-top: 64px;
+      }
+
+      .evidence-grid,
+      .evidence-grid.featured {
+        gap: 40px;
+        margin-top: 40px;
+      }
+
+      .contract-row {
+        grid-template-columns: 34px 1fr;
+        gap: 6px 12px;
+      }
+
+      .contract-desc {
+        grid-column: 2;
+      }
+
+      .prototype-switcher {
+        bottom: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero" data-always-visible>
+    <div class="hero-copy">
+      <div class="eyebrow">Pi Stuff · Real TUI review · 2026.08.03</div>
+      <h1>先让每天都看见的地方，真正舒服。</h1>
+      <p class="hero-lead">
+        这一轮只核验三个常驻入口：<strong>启动时的 Welcome、输入框下方的 Statusline，以及统一的 <code>/ui</code>。</strong>
+        所有终端像素都来自真实 Pi；HTML 没有重画任何 TUI。
+      </p>
+    </div>
+
+    <div class="hero-meta">
+      <div class="metric">
+        <div class="metric-value">16</div>
+        <div class="metric-label">张真实 Pi 0.83 PTY 截图</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value">3</div>
+        <div class="metric-label">种终端宽度：100 / 64 / 32 columns</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value">0</div>
+        <div class="metric-label">模型调用、浮动窗口与 HTML 终端模拟</div>
+      </div>
+    </div>
+  </header>
+
+  <aside class="truth-note" data-always-visible>
+    <h2>怎么看这份报告</h2>
+    <p>
+      每张图都由 <code>/opt/bin/pi 0.83.0</code> 在隔离设置、固定数据和真实 PTY 中渲染，再由 Freeze 转成 PNG。
+      原型没有加载当前安装的 Suite，也没有改动个人设置。图中的模型、数量、费用和 Prompt 是确定性演示数据；布局、颜色、换行和交互容器是真实 Host 输出。
+    </p>
+  </aside>
+
+  <main>
+    <section class="surface" id="welcome" data-surface="welcome">
+      <div class="section-kicker">01 · Welcome header</div>
+      <h2>启动信息属于对话开头，不属于固定屏幕边框。</h2>
+      <p class="section-lead">
+        宽屏保留身份、环境统计和三条提示；窗口变窄时压平信息，极窄时只留一行。它通过 Pi 的 Header 区进入 transcript，后续对话自然把它滚走。
+      </p>
+
+      <div class="evidence-grid featured">
+        <figure>
+          <a class="screen-link" href="./welcome/artifacts/real-pi-welcome-100x32.png" title="打开 100 × 32 原图">
+            <img src="./welcome/artifacts/real-pi-welcome-100x32.png" alt="Pi Welcome Header at 100 by 32 terminal cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">100 × 32 · 六行双栏</div>
+            <p class="caption-body">小 π、模型与 provider、完整缩写路径；右侧是四类 Loaded 统计和固定 Tips。只有上下细分隔线，没有卡片边框。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./welcome/artifacts/real-pi-welcome-32x18.png" title="打开 32 × 18 原图">
+            <img src="./welcome/artifacts/real-pi-welcome-32x18.png" alt="Pi Welcome Header at 32 by 18 terminal cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">32 × 18 · 一行身份</div>
+            <p class="caption-body">空间不足时，统计与提示让路；Welcome 不会整块消失。</p>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="evidence-grid">
+        <figure>
+          <a class="screen-link" href="./welcome/artifacts/real-pi-welcome-64x28.png" title="打开 64 × 28 原图">
+            <img src="./welcome/artifacts/real-pi-welcome-64x28.png" alt="Pi Welcome Header at 64 by 28 terminal cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">64 × 28 · 五行压平</div>
+            <p class="caption-body">路径、四类统计和三条 Tips 仍在，但取消双栏标题，避免窄屏留下不均匀空洞。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./welcome/artifacts/real-pi-welcome-scrolled-64x28.png" title="打开滚动后的原图">
+            <img src="./welcome/artifacts/real-pi-welcome-scrolled-64x28.png" alt="Pi transcript after Welcome Header has scrolled away">
+          </a>
+          <figcaption>
+            <div class="caption-title">对话增长后 · 自然滚走</div>
+            <p class="caption-body">Welcome 没有固定占用顶端空间；正常 transcript 填满 viewport 后，它已经离开当前画面。</p>
+          </figcaption>
+        </figure>
+      </div>
+
+      <p class="source-note">
+        可复现：<a href="./welcome/README.md">说明</a>、<a href="./welcome/capture.sh">PTY 捕获脚本</a>、<a href="./welcome/welcome-header-prototype.ts">一次性 Extension</a>。
+      </p>
+    </section>
+
+    <section class="surface" id="statusline" data-surface="statusline">
+      <div class="section-kicker">02 · Statusline</div>
+      <h2>生产版已恢复旧 Powerline 视觉语法；下方原型图仅保留为被拒绝的历史记录。</h2>
+      <p class="section-lead">
+        2026-08-03 的真实使用发现，下方点分隔、无图标截图并没有迁移旧 JC Footer 的视觉样式。生产实现现已改回左右一格留白、灰色竖线分隔、旧图标与 ASCII fallback、<code>think:&lt;level&gt;</code>、basename 路径、<code>*unstaged +staged ?untracked</code>、详细 context/cache，以及按完整 segment 流入第二状态行；仍使用 Pi 主题色，并保留不显示 <code>(sub)</code> 与 Prompt 最多两行的已确认差异。
+      </p>
+      <p class="source-note">
+        当前真实 Aggregate 证据：<a href="./statusline/parity-artifacts/pi-0.83-statusline-parity-metered-100x32.txt">完整按量文本帧</a>、<a href="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-64x28.txt">64 × 28</a>、<a href="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-32x18.txt">32 × 18</a>。下方 PNG 是缺陷修复前的 rejected prototype，不代表当前产品。
+      </p>
+
+      <div class="evidence-grid">
+        <figure>
+          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-metered-100x32.png" title="打开按量模型 100 × 32 原图">
+            <img src="./statusline/artifacts/pi-0.83-statusline-metered-100x32.png" alt="Full Pi Stuff Statusline at 100 by 32 cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">100 × 32 · 完整主行</div>
+            <p class="caption-body">按量模型显示 <code>$0.42</code>；Goal、MCP、Loadout 保留为末端扩展状态。Prompt 独占下一行，不与环境字段争宽度。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-metered-64x28.png" title="打开 64 × 28 原图">
+            <img src="./statusline/artifacts/pi-0.83-statusline-metered-64x28.png" alt="Truncated Pi Stuff Statusline at 64 by 28 cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">64 × 28 · 从右侧安全裁切</div>
+            <p class="caption-body">高优先级字段仍在；右端低优先级内容收束为省略号。Prompt 可以正常换行，不破坏编辑区域。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-subscription-100x32.png" title="打开订阅模型原图">
+            <img src="./statusline/artifacts/pi-0.83-statusline-subscription-100x32.png" alt="Pi Stuff Statusline for a subscription model">
+          </a>
+          <figcaption>
+            <div class="caption-title">订阅模型 · 不伪造费用</div>
+            <p class="caption-body">费用段直接消失；旧版的 <code>(sub)</code> 也不再出现。其余字段位置不改变。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-prompt-overflow-100x32.png" title="打开长 Prompt 原图">
+            <img src="./statusline/artifacts/pi-0.83-statusline-prompt-overflow-100x32.png" alt="Pi Stuff Statusline with a long Chinese prompt occupying two rows">
+          </a>
+          <figcaption>
+            <div class="caption-title">长 Prompt · 最多两行</div>
+            <p class="caption-body">中文宽字符按终端 cell 计算；溢出只占第三行，不把主状态行挤乱。</p>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="evidence-grid">
+        <figure>
+          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-selector-hidden-100x32.png" title="打开 selector 隐藏态原图">
+            <img src="./statusline/artifacts/pi-0.83-statusline-selector-hidden-100x32.png" alt="Full-width selector with the Pi Stuff Statusline hidden">
+          </a>
+          <figcaption>
+            <div class="caption-title">临时界面 · 整块隐藏</div>
+            <p class="caption-body">Settings、Agents、BTW、Permissions 等非浮动界面取得焦点时，Statusline 与 Prompt 行均返回零行。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-autocomplete-hidden-100x32.png" title="打开 autocomplete 隐藏态原图">
+            <img src="./statusline/artifacts/pi-0.83-statusline-autocomplete-hidden-100x32.png" alt="Autocomplete list with the Pi Stuff Statusline hidden">
+          </a>
+          <figcaption>
+            <div class="caption-title">自动补全 · 让出垂直空间</div>
+            <p class="caption-body">补全菜单出现时使用同一规则；关闭后原来的 Statusline、Prompt 和草稿恢复。</p>
+          </figcaption>
+        </figure>
+      </div>
+
+      <p class="source-note">
+        可复现：<a href="./statusline/README.md">说明</a>、<a href="./statusline/capture.sh">PTY 捕获脚本</a>、<a href="./statusline/statusline-prototype.ts">一次性 Extension</a>。图中字段内容是固定 fixture；终端布局、主题色、CJK 宽度和隐藏生命周期由真实 Pi 渲染。
+      </p>
+    </section>
+
+    <section class="surface" id="settings" data-surface="settings">
+      <div class="section-kicker">03 · Unified /ui</div>
+      <h2>五个外观开关放在一个 Pi 原生列表里。</h2>
+      <p class="section-lead">
+        <code>/ui</code> 使用 Pi 自己的 SettingsList：全宽、非浮动、输入即搜索、Enter 或 Space 即时切换。五项都能同时看见，因此不为了装饰计数而制造滚动。
+      </p>
+
+      <div class="evidence-grid">
+        <figure>
+          <a class="screen-link" href="./settings/artifacts/pi-0.83-ui-settings-open-100x32.png" title="打开 /ui 100 × 32 原图">
+            <img src="./settings/artifacts/pi-0.83-ui-settings-open-100x32.png" alt="Pi native UI SettingsList at 100 by 32 cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">100 × 32 · 五项平铺</div>
+            <p class="caption-body">Statusline、Welcome、输入高亮、句中 Slash 补全与 Tool timer 默认开启；选中项说明放在列表下方。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./settings/artifacts/pi-0.83-ui-settings-open-64x28.png" title="打开 /ui 64 × 28 原图">
+            <img src="./settings/artifacts/pi-0.83-ui-settings-open-64x28.png" alt="Pi native UI SettingsList at 64 by 28 cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">64 × 28 · 同一组件</div>
+            <p class="caption-body">没有另造窄屏布局；Pi 原生列宽自然收紧，五项、当前值和选中说明仍可读。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./settings/artifacts/pi-0.83-ui-settings-search-timer-100x32.png" title="打开搜索态原图">
+            <img src="./settings/artifacts/pi-0.83-ui-settings-search-timer-100x32.png" alt="Pi UI SettingsList filtered by timer">
+          </a>
+          <figcaption>
+            <div class="caption-title">直接输入 <code>timer</code></div>
+            <p class="caption-body">搜索复用 Pi 原生行为，不再加一个 GUI 式常驻搜索框。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./settings/artifacts/pi-0.83-ui-settings-toggle-timer-100x32.png" title="打开切换态原图">
+            <img src="./settings/artifacts/pi-0.83-ui-settings-toggle-timer-100x32.png" alt="Pi UI SettingsList after Tool running timer changes to false">
+          </a>
+          <figcaption>
+            <div class="caption-title">Enter · <code>true → false</code></div>
+            <p class="caption-body">除 Welcome 在下次启动生效外，其余选项切换后立即更新当前界面；Esc 关闭并恢复编辑器。</p>
+          </figcaption>
+        </figure>
+      </div>
+
+      <p class="source-note">
+        可复现：<a href="./settings/README.md">说明</a>、<a href="./settings/capture.sh">PTY 捕获脚本</a>、<a href="./settings/prototype-ui-settings.ts">一次性 Extension</a>。正式实现会把现有 <code>/tool-settings</code> 合并进这里。
+      </p>
+    </section>
+
+    <section class="surface" id="contract" data-surface="contract">
+      <div class="section-kicker">04 · Shared visual contract</div>
+      <h2>三个入口看起来不同，但服从同一套边界。</h2>
+      <div class="contract">
+        <div class="contract-row">
+          <div class="contract-num">01</div>
+          <div class="contract-name">只使用 Pi 主题语义色</div>
+          <div class="contract-desc">不写死 Catppuccin、RGB 或某个个人主题；切换 Pi Theme 时，Pi Stuff 一起变化。</div>
+        </div>
+        <div class="contract-row">
+          <div class="contract-num">02</div>
+          <div class="contract-name">拒绝浮动窗口</div>
+          <div class="contract-desc">Settings、Agents、BTW、Permissions 与详情界面都占用 Pi 原生的全宽临时区域。</div>
+        </div>
+        <div class="contract-row">
+          <div class="contract-num">03</div>
+          <div class="contract-name">窗口变窄时先降信息量</div>
+          <div class="contract-desc">高优先级身份与状态先保留；低优先级字段裁切或收起，不缩成难读的小字。</div>
+        </div>
+        <div class="contract-row">
+          <div class="contract-num">04</div>
+          <div class="contract-name">宿主边界如实退化</div>
+          <div class="contract-desc">增强版 Pi 提供实时单行 <code>thoughts:</code>；普通 Pi 0.83 回退原生 thinking。Fullscreen 滚动条接受宿主固定的 <code>auto</code>。</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="decision" id="decision" data-always-visible>
+      <div class="section-kicker">Final visible review</div>
+      <div class="decision-question">Welcome、Statusline 和 <code>/ui</code> 的最终可见效果，是否接受？</div>
+      <p class="decision-answer">
+        如果接受，我会把整棵决策树完整复述一遍，请你做最后的「理解一致」确认；确认后才进入正式实现、Beads 记录与 <code>AGENTS.md</code> 规则更新。若不接受，只需指出具体截图和想改的地方。
+      </p>
+      <div class="links">
+        <a href="./welcome/report.html">Welcome 单项报告</a>
+        <a href="./settings/report.html"><code>/ui</code> 单项报告</a>
+        <a href="../transcript-ui-reference-report.html">已确认的对话内容规则</a>
+        <a href="../agents-ui-reference-report.html">已确认的 Command Dialog / Agents</a>
+      </div>
+    </section>
+  </main>
+
+  <nav class="prototype-switcher" aria-label="报告画面切换器">
+    <button type="button" id="previousSurface" aria-label="上一组画面">←</button>
+    <span class="prototype-label" id="surfaceLabel">ALL · 全部画面</span>
+    <button type="button" id="nextSurface" aria-label="下一组画面">→</button>
+  </nav>
+
+  <script>
+    const surfaces = [
+      { key: "all", label: "ALL · 全部画面" },
+      { key: "welcome", label: "A · Welcome" },
+      { key: "statusline", label: "B · Statusline" },
+      { key: "settings", label: "C · /ui Settings" },
+      { key: "contract", label: "D · 共同规则" },
+    ];
+
+    const params = new URLSearchParams(window.location.search);
+    let currentIndex = Math.max(0, surfaces.findIndex(({ key }) => key === params.get("surface")));
+
+    function renderSurface() {
+      const current = surfaces[currentIndex] ?? surfaces[0];
+      document.querySelectorAll("[data-surface]").forEach((section) => {
+        section.hidden = current.key !== "all" && section.dataset.surface !== current.key;
+      });
+      document.querySelector("#surfaceLabel").textContent = current.label;
+      const nextParams = new URLSearchParams(window.location.search);
+      if (current.key === "all") nextParams.delete("surface");
+      else nextParams.set("surface", current.key);
+      const query = nextParams.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
+    }
+
+    function cycleSurface(direction) {
+      currentIndex = (currentIndex + direction + surfaces.length) % surfaces.length;
+      renderSurface();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    document.querySelector("#previousSurface").addEventListener("click", () => cycleSurface(-1));
+    document.querySelector("#nextSurface").addEventListener("click", () => cycleSurface(1));
+    document.addEventListener("keydown", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.matches("input, textarea, [contenteditable='true']") || target.isContentEditable)) return;
+      if (event.key === "ArrowLeft") cycleSurface(-1);
+      if (event.key === "ArrowRight") cycleSurface(1);
+    });
+
+    renderSurface();
+  </script>
+</body>
+</html>
