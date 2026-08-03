@@ -10,7 +10,10 @@ const theme = {
 	fg: (_color: string, value: string) => value,
 } as unknown as Theme;
 
-function contextHarness(rows = 28): {
+function contextHarness(
+	rows = 28,
+	activeTheme = theme,
+): {
 	readonly context: CommandDialogViewContext<void>;
 	readonly terminal: { rows: number };
 	readonly closed: () => number;
@@ -30,7 +33,7 @@ function contextHarness(rows = 28): {
 				renders += 1;
 			},
 			signal: new AbortController().signal,
-			theme,
+			theme: activeTheme,
 			tui: { terminal },
 		} as unknown as CommandDialogViewContext<void>,
 		renders: () => renders,
@@ -56,7 +59,7 @@ test("/tools moves from a focused list to bounded details and back", () => {
 	const component = createToolDialogView(runtime).create(harness.context);
 
 	const list = component.render(28).join("\n");
-	expect(list).toContain("  › ⊛ Read 工具.txt");
+	expect(list).toContain("  › ● Read 工具.txt");
 	expect(list).not.toContain("current-session operations");
 	expect(list).toContain("Enter details");
 	expect(list).toContain("Esc close");
@@ -88,14 +91,14 @@ test("/tools bounds long lists while keeping every operation reachable", () => {
 	const component = createToolDialogView(runtime).create(harness.context);
 
 	const newestWindow = component.render(100);
-	expect(newestWindow.join("\n")).toContain("› ⦿ Tool 11");
+	expect(newestWindow.join("\n")).toContain("› ● Tool 11");
 	expect(newestWindow.join("\n")).toContain("… 3 older");
 	expect(newestWindow.join("\n")).not.toContain("Tool 3 target-3");
 	expect(newestWindow.at(-1)).toContain("Esc close");
 
 	for (let index = 0; index < 10; index += 1) component.handleInput?.("\u001b[B");
 	const oldestWindow = component.render(100).join("\n");
-	expect(oldestWindow).toContain("› ⦿ Tool 1");
+	expect(oldestWindow).toContain("› ● Tool 1");
 	expect(oldestWindow).toContain("… 3 newer");
 	expect(oldestWindow).not.toContain("… 3 older");
 
@@ -186,6 +189,37 @@ test("/tools wraps hints by visible width and never budgets rows the terminal do
 	harness.terminal.rows = 0;
 	expect(component.render(64)).toEqual([]);
 
+	component.dispose?.();
+	runtime.clear();
+});
+
+test("/tools uses the same dim, success, and error state colors as transcript rows", () => {
+	const colorCodes: Record<string, number> = { dim: 2, error: 31, success: 32 };
+	const semanticTheme = {
+		bold: (value: string) => value,
+		fg: (color: string, value: string) => {
+			const code = colorCodes[color];
+			return code === undefined ? value : `\u001b[${String(code)}m${value}\u001b[0m`;
+		},
+	} as unknown as Theme;
+	const runtime = new ToolUiRuntime();
+	runtime.activities.begin({ id: "running", label: "Running", name: "fixture", target: "" });
+	for (const state of ["success", "error", "rejected", "cancelled"] as const) {
+		runtime.activities.begin({ id: state, label: state, name: "fixture", target: "" });
+		runtime.activities.settle(state, {
+			detailLines: [],
+			durationMs: 1,
+			state,
+			summary: state,
+		});
+	}
+	const harness = contextHarness(28, semanticTheme);
+	const component = createToolDialogView(runtime).create(harness.context);
+	const output = component.render(100).join("\n");
+
+	expect(output).toContain("\u001b[2m●\u001b[0m");
+	expect(output).toContain("\u001b[32m●\u001b[0m");
+	expect(output.split("\u001b[31m●\u001b[0m")).toHaveLength(4);
 	component.dispose?.();
 	runtime.clear();
 });

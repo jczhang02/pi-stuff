@@ -79,6 +79,7 @@ function fixtureStream(context: Context) {
 	// biome-ignore lint/complexity/useLiteralKeys: the test suite enables noPropertyAccessFromIndexSignature
 	const logPath = process.env["PI_STUFF_TOOLS_PTY_LOG"];
 	if (logPath) appendFileSync(logPath, `${JSON.stringify({ completed, tools })}\n`);
+	// biome-ignore lint/complexity/useLiteralKeys: tests enable noPropertyAccessFromIndexSignature
 	if (process.env["PI_STUFF_TOOLS_PTY_PROBE_ONLY"] === "1") return textStream("TOOLS_PROBE_DONE");
 	return completed < TOOL_SEQUENCE.length ? toolCallStream(completed) : textStream("TOOLS_DONE");
 }
@@ -88,20 +89,23 @@ export default function toolsPtyProvider(pi: ExtensionAPI): void {
 		pi,
 		{
 			description: "Return deterministic terminal states for Tool UI certification",
-			execute: async (_toolCallId, args) => ({
-				content: [
-					{
-						type: "text",
-						text:
-							args.state === "rejected"
-								? "[pi-stuff-permissions] FIXTURE_REJECTED"
-								: args.state === "cancelled"
-									? "Command aborted: FIXTURE_CANCELLED"
-									: "FIXTURE_ERROR",
-					},
-				],
-				details: { state: args.state },
-			}),
+			execute: async (_toolCallId, args) => {
+				if (args.state === "error") await new Promise((resolve) => setTimeout(resolve, 1_900));
+				return {
+					content: [
+						{
+							type: "text",
+							text:
+								args.state === "rejected"
+									? "[pi-stuff-permissions] FIXTURE_REJECTED"
+									: args.state === "cancelled"
+										? "Command aborted: FIXTURE_CANCELLED"
+										: "FIXTURE_ERROR",
+						},
+					],
+					details: { state: args.state },
+				};
+			},
 			label: "State",
 			name: "fixture_state",
 			parameters: Type.Object({

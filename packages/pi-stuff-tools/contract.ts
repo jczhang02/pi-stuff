@@ -33,7 +33,7 @@ export interface SuiteToolPresentation<TArgs extends Record<string, unknown>, TD
 		durationMs: number | undefined,
 	) => string;
 	readonly target?: (args: Readonly<TArgs>) => string;
-	/** Opt into one-second running-row invalidation because runningSummary displays duration. */
+	/** Let runningSummary receive the live duration while the shared Tool blink tick repaints the row. */
 	readonly tracksElapsed?: boolean;
 	readonly transcript?: ToolTranscriptMode;
 }
@@ -59,18 +59,38 @@ interface RendererContext<TArgs extends Record<string, unknown>> {
 }
 
 interface RuntimeTimer {
-	id: ReturnType<typeof setInterval> | undefined;
-	readonly invalidate: () => void;
+	id: unknown;
+	invalidate: () => void;
+	markerVisible: boolean;
+	setMarkerVisible: (visible: boolean) => void;
 }
+
+export interface ToolUiTimerScheduler {
+	clearInterval(id: unknown): void;
+	setInterval(callback: () => void, delayMs: number): unknown;
+}
+
+const TOOL_BLINK_INTERVAL_MS = 600;
+
+const SYSTEM_TIMER_SCHEDULER: ToolUiTimerScheduler = {
+	clearInterval: (id) => clearInterval(id as ReturnType<typeof setInterval>),
+	setInterval: (callback, delayMs) => {
+		const id = setInterval(callback, delayMs);
+		id.unref?.();
+		return id;
+	},
+};
 
 export class ToolUiRuntime {
 	readonly activities = new ToolActivityStore();
+	private readonly scheduler: ToolUiTimerScheduler;
 	private reloadActiveToolNames: readonly string[] | undefined;
 	private settingsStore: ToolUiSettingsStore;
 	private readonly timers = new Map<string, RuntimeTimer>();
 
-	constructor(settings = ToolUiSettingsStore.memory()) {
+	constructor(settings = ToolUiSettingsStore.memory(), scheduler = SYSTEM_TIMER_SCHEDULER) {
 		this.settingsStore = settings;
+		this.scheduler = scheduler;
 	}
 
 	get settings(): ToolUiSettingsStore {
@@ -79,10 +99,7 @@ export class ToolUiRuntime {
 
 	/** Keep one runtime identity when Suite packages load before the Tool package. */
 	configure(settings: ToolUiSettingsStore): void {
-		for (const timer of this.timers.values()) {
-			if (timer.id !== undefined) clearInterval(timer.id);
-		}
-		this.timers.clear();
+		this.stopAllTimers();
 		this.settingsStore = settings;
 	}
 
@@ -108,40 +125,56 @@ export class ToolUiRuntime {
 
 	/** Stop repaint work while retaining the bounded session projection across /reload. */
 	suspend(): void {
-		for (const timer of this.timers.values()) {
-			if (timer.id !== undefined) clearInterval(timer.id);
-		}
-		this.timers.clear();
+		this.stopAllTimers();
 	}
 
-	startTimer(toolCallId: string, invalidate: () => void): void {
+	startTimer(
+		toolCallId: string,
+		invalidate: () => void,
+		setMarkerVisible: (visible: boolean) => void = () => {},
+	): void {
 		let timer = this.timers.get(toolCallId);
-		if (!timer) {
-			timer = { id: undefined, invalidate };
-			this.timers.set(toolCallId, timer);
+		if (timer) {
+			timer.invalidate = invalidate;
+			timer.setMarkerVisible = setMarkerVisible;
+			timer.setMarkerVisible(timer.markerVisible);
+			return;
 		}
-		if (!this.settingsStore.get().liveElapsed || timer.id !== undefined) return;
-		timer.id = setInterval(() => timer?.invalidate(), 1_000);
-		timer.id.unref?.();
+
+		timer = {
+			id: undefined,
+			invalidate,
+			markerVisible: true,
+			setMarkerVisible,
+		};
+		this.timers.set(toolCallId, timer);
+		const activeTimer = timer;
+		activeTimer.id = this.scheduler.setInterval(() => {
+			if (this.timers.get(toolCallId) !== activeTimer) return;
+			activeTimer.markerVisible = !activeTimer.markerVisible;
+			activeTimer.setMarkerVisible(activeTimer.markerVisible);
+			activeTimer.invalidate();
+		}, TOOL_BLINK_INTERVAL_MS);
 	}
 
 	stopTimer(toolCallId: string): void {
 		const timer = this.timers.get(toolCallId);
 		if (!timer) return;
-		if (timer.id !== undefined) clearInterval(timer.id);
 		this.timers.delete(toolCallId);
+		this.scheduler.clearInterval(timer.id);
+		timer.setMarkerVisible(true);
 	}
 
 	syncTimers(): void {
-		const enabled = this.settingsStore.get().liveElapsed;
-		for (const timer of this.timers.values()) {
-			if (timer.id !== undefined) clearInterval(timer.id);
-			timer.id = undefined;
-			if (enabled) {
-				timer.id = setInterval(() => timer.invalidate(), 1_000);
-				timer.id.unref?.();
-			}
-			timer.invalidate();
+		for (const timer of this.timers.values()) timer.invalidate();
+	}
+
+	private stopAllTimers(): void {
+		const timers = [...this.timers.values()];
+		this.timers.clear();
+		for (const timer of timers) {
+			this.scheduler.clearInterval(timer.id);
+			timer.setMarkerVisible(true);
 		}
 	}
 }
@@ -227,7 +260,8 @@ function updateRunningRow<TArgs extends Record<string, unknown>, TDetails>(
 	state.row ??=
 		context.lastComponent instanceof CachedToolRow ? context.lastComponent : new CachedToolRow(theme, model);
 	state.row.setModel(model);
-	state.row.setVisible(visibleFor(presentation.transcript ?? "normal", "running"));
+	const visible = visibleFor(presentation.transcript ?? "normal", "running");
+	state.row.setVisible(visible);
 	runtime.activities.begin({
 		id: context.toolCallId,
 		label: model.label,
@@ -235,9 +269,11 @@ function updateRunningRow<TArgs extends Record<string, unknown>, TDetails>(
 		...(state.startedAt !== undefined ? { startedAt: state.startedAt } : {}),
 		target: model.target,
 	});
-	if (context.executionStarted && presentation.tracksElapsed === true) {
-		runtime.startTimer(context.toolCallId, context.invalidate);
-	}
+	if (context.executionStarted && visible)
+		runtime.startTimer(context.toolCallId, context.invalidate, (markerVisible) =>
+			state.row?.setMarkerVisible(markerVisible),
+		);
+	else runtime.stopTimer(context.toolCallId);
 	return state.row;
 }
 

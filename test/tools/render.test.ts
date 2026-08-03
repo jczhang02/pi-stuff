@@ -26,27 +26,60 @@ function result(text: string, details?: unknown): AgentToolResult<unknown> {
 }
 
 describe("terminal-safe Tool rendering", () => {
-	test("uses one-cell, optically coherent status glyphs", () => {
-		const glyphs = [
-			["running", "⦿"],
-			["success", "⊛"],
-			["error", "⊗"],
-			["rejected", "⊘"],
-			["cancelled", "⊖"],
+	test("keeps one fixed dot slot and semantic colors across lifecycle states", () => {
+		const states = [
+			["running", "dim"],
+			["success", "success"],
+			["error", "error"],
+			["rejected", "error"],
+			["cancelled", "error"],
 		] as const;
 
-		for (const [state, glyph] of glyphs) {
-			const row = new CachedToolRow(theme, {
+		for (const [state, expectedColor] of states) {
+			const markerColors: string[] = [];
+			const recordingTheme = {
+				bold: (value: string) => value,
+				fg: (color: string, value: string) => {
+					if (value === "●") markerColors.push(color);
+					return value;
+				},
+			} as unknown as Theme;
+			const row = new CachedToolRow(recordingTheme, {
 				durationMs: 0,
 				label: "Tool",
 				state,
 				summary: "status",
 				target: "",
 			});
-			expect(row.render(80)).toEqual([`${glyph} Tool · status`]);
-			expect([...glyph]).toHaveLength(1);
-			expect(visibleWidth(glyph)).toBe(1);
+			expect(row.render(80)).toEqual(["● Tool · status"]);
+			expect(markerColors).toEqual([expectedColor]);
+			expect([..."●"]).toHaveLength(1);
+			expect(visibleWidth("●")).toBe(1);
 		}
+
+		const running = new CachedToolRow(theme, {
+			durationMs: 0,
+			label: "Tool",
+			state: "running",
+			summary: "status",
+			target: "",
+		});
+		const visible = running.render(80)[0] ?? "";
+		running.setMarkerVisible(false);
+		const blank = running.render(80)[0] ?? "";
+		expect(visible).toBe("● Tool · status");
+		expect(blank).toBe("  Tool · status");
+		expect(visible.indexOf("Tool")).toBe(blank.indexOf("Tool"));
+
+		const settled = new CachedToolRow(theme, {
+			durationMs: 0,
+			label: "Tool",
+			state: "success",
+			summary: "done",
+			target: "",
+		});
+		settled.setMarkerVisible(false);
+		expect(settled.render(80)).toEqual(["● Tool · done"]);
 	});
 
 	test("removes ANSI, OSC, DCS, C0, and C1 protocols while preserving CJK", () => {
@@ -92,6 +125,32 @@ describe("terminal-safe Tool rendering", () => {
 		expect(row.computationCount).toBe(7);
 		row.render(12);
 		expect(row.computationCount).toBe(8);
+	});
+
+	test("keeps marker and label ahead of CJK target and summary at narrow widths", () => {
+		const row = new CachedToolRow(theme, {
+			durationMs: 1,
+			label: "Read",
+			state: "running",
+			summary: "正在读取🙂",
+			target: "目录/工具结果.txt",
+		});
+
+		for (let width = 1; width <= 24; width += 1) {
+			const visible = row.render(width)[0] ?? "";
+			expect(visibleWidth(visible)).toBeLessThanOrEqual(width);
+			row.setMarkerVisible(false);
+			const blank = row.render(width)[0] ?? "";
+			expect(visibleWidth(blank)).toBeLessThanOrEqual(width);
+			row.setMarkerVisible(true);
+		}
+
+		expect(row.render(8)[0]).toStartWith("● Read");
+		row.setMarkerVisible(false);
+		expect(row.render(8)[0]).toStartWith("  Read");
+		expect(row.render(8)[0]?.indexOf("Read")).toBe(2);
+		row.setMarkerVisible(true);
+		expect(row.render(4)[0]).toStartWith("● ");
 	});
 
 	test("bounds work and retained previews for multi-megabyte arguments and results", () => {

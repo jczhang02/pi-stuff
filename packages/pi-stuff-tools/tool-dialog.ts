@@ -29,15 +29,13 @@ function dialogRows(context: CommandDialogViewContext): number {
 function stateText(theme: Theme, state: ToolActivityState, value: string): string {
 	switch (state) {
 		case "running":
-			return theme.fg("accent", value);
+			return theme.fg("dim", value);
 		case "success":
 			return theme.fg("success", value);
 		case "error":
-			return theme.fg("error", value);
 		case "rejected":
-			return theme.fg("warning", value);
 		case "cancelled":
-			return theme.fg("muted", value);
+			return theme.fg("error", value);
 	}
 }
 

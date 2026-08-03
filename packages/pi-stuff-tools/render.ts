@@ -41,6 +41,7 @@ function sameModel(left: ToolRowModel, right: ToolRowModel): boolean {
 export class CachedToolRow implements Component {
 	private readonly cache = new Map<number, string[]>();
 	private computationCountValue = 0;
+	private markerVisible = true;
 	private model: ToolRowModel;
 	private readonly theme: Theme;
 	private visible = true;
@@ -64,7 +65,7 @@ export class CachedToolRow implements Component {
 		const normalizedWidth = Math.max(1, Math.floor(width));
 		const cached = this.cache.get(normalizedWidth);
 		if (cached) return cached;
-		const rendered = [renderToolRow(this.model, this.theme, normalizedWidth)];
+		const rendered = [renderToolRow(this.model, this.theme, normalizedWidth, this.markerVisible)];
 		this.computationCountValue += 1;
 		this.cache.set(normalizedWidth, rendered);
 		while (this.cache.size > MAX_ROW_CACHE_WIDTHS) {
@@ -81,6 +82,12 @@ export class CachedToolRow implements Component {
 		this.cache.clear();
 	}
 
+	setMarkerVisible(visible: boolean): void {
+		if (this.markerVisible === visible) return;
+		this.markerVisible = visible;
+		this.cache.clear();
+	}
+
 	setVisible(visible: boolean): void {
 		if (this.visible === visible) return;
 		this.visible = visible;
@@ -88,55 +95,69 @@ export class CachedToolRow implements Component {
 	}
 }
 
-const TOOL_STATE_GLYPHS = {
-	running: "⦿",
-	success: "⊛",
-	error: "⊗",
-	rejected: "⊘",
-	cancelled: "⊖",
-} as const satisfies Record<ToolActivityState, string>;
+const TOOL_STATE_GLYPH = "●";
 
-/** One neutral-width circled-math family keeps status marks optically aligned. */
-export function toolStateGlyph(state: ToolActivityState): string {
-	return TOOL_STATE_GLYPHS[state];
+/** One portable marker shape keeps every lifecycle transition in the same cell. */
+export function toolStateGlyph(_state: ToolActivityState): string {
+	return TOOL_STATE_GLYPH;
 }
 
 function styleState(theme: Theme, state: ToolActivityState, text: string): string {
 	switch (state) {
 		case "running":
-			return theme.fg("accent", text);
+			return theme.fg("dim", text);
 		case "success":
 			return theme.fg("success", text);
 		case "error":
-			return theme.fg("error", text);
 		case "rejected":
-			return theme.fg("warning", text);
 		case "cancelled":
-			return theme.fg("muted", text);
+			return theme.fg("error", text);
 	}
 }
 
-function fitRow(prefix: string, tail: string, width: number): string {
-	const separator = tail ? " · " : "";
-	const full = `${prefix}${separator}${tail}`;
-	if (visibleWidth(full) <= width) return full;
-	if (!tail) return truncateToWidth(prefix, width, "…");
-	const tailWidth = visibleWidth(tail);
-	if (tailWidth + visibleWidth(separator) >= width) return truncateToWidth(tail, width, "…");
-	const prefixWidth = Math.max(1, width - tailWidth - visibleWidth(separator));
-	return `${truncateToWidth(prefix, prefixWidth, "…")}${separator}${tail}`;
+function fitIdentity(markerSlot: string, label: string, width: number): string {
+	const markerWidth = visibleWidth(markerSlot);
+	if (width <= markerWidth) return truncateToWidth(markerSlot, width, "");
+	return `${markerSlot}${truncateToWidth(label, width - markerWidth, "…")}`;
 }
 
-function renderToolRow(model: ToolRowModel, theme: Theme, width: number): string {
-	const glyph = styleState(theme, model.state, toolStateGlyph(model.state));
+function fitRow(markerSlot: string, label: string, target: string, summary: string, width: number): string {
+	const identity = `${markerSlot}${label}`;
+	if (visibleWidth(identity) >= width) return fitIdentity(markerSlot, label, width);
+
+	const targetPart = target ? ` ${target}` : "";
+	const summaryPart = summary ? ` · ${summary}` : "";
+	const full = `${identity}${targetPart}${summaryPart}`;
+	if (visibleWidth(full) <= width) return full;
+
+	const remaining = width - visibleWidth(identity);
+	if (!summary) return `${identity}${truncateToWidth(targetPart, remaining, "…")}`;
+
+	const summarySeparator = " · ";
+	const separatorWidth = visibleWidth(summarySeparator);
+	if (remaining <= separatorWidth) return identity;
+	const fullSummaryPart = `${summarySeparator}${summary}`;
+	const fullSummaryWidth = visibleWidth(fullSummaryPart);
+	if (fullSummaryWidth >= remaining) {
+		return `${identity}${summarySeparator}${truncateToWidth(summary, remaining - separatorWidth, "…")}`;
+	}
+
+	const targetBudget = remaining - fullSummaryWidth;
+	const fittedTarget = targetBudget > 1 ? truncateToWidth(targetPart, targetBudget, "…") : "";
+	return `${identity}${fittedTarget}${fullSummaryPart}`;
+}
+
+function renderToolRow(model: ToolRowModel, theme: Theme, width: number, markerVisible: boolean): string {
+	const marker = model.state === "running" && !markerVisible ? " " : toolStateGlyph(model.state);
+	const markerSlot = `${styleState(theme, model.state, marker)} `;
 	const safeLabel = oneLine(model.label);
 	const safeTarget = oneLine(model.target);
 	const safeSummary = oneLine(model.summary);
 	const label = theme.fg("toolTitle", theme.bold(safeLabel));
-	const target = safeTarget ? ` ${theme.fg("muted", safeTarget)}` : "";
+	const target = safeTarget ? theme.fg("muted", safeTarget) : "";
 	const summary =
 		model.state === "success" ? theme.fg("muted", safeSummary) : styleState(theme, model.state, safeSummary);
-	return fitRow(`${glyph} ${label}${target}`, summary, width);
+	return fitRow(markerSlot, label, target, summary, width);
 }
 
 export function formatElapsed(milliseconds: number): string {

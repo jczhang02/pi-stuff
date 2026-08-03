@@ -120,7 +120,7 @@ must_expect "Reloaded keybindings, extensions"
 must_expect "context files"
 set resized_columns [expr {$env(PI_STUFF_TOOLS_PTY_COLUMNS) + 1}]
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $resized_columns < $tool_pty
-must_expect "⊛"
+must_expect "●"
 must_expect "List"
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $env(PI_STUFF_TOOLS_PTY_COLUMNS) < $tool_pty
 after 150
@@ -226,13 +226,16 @@ function verifyOutput(output: string, columns: number): void {
 		fail("model-visible terminal controls reached the terminal");
 	}
 	const visible = stripTerminalControls(output);
+	verifyLifecycleFrames(visible);
 	for (const required of [
 		"TOOLS_DONE",
-		"⊛ List",
-		"⊗ Bash",
-		"⊗ State error",
-		"⊘ State rejected",
-		"⊖ State cancelled",
+		"● List",
+		"● Bash",
+		"● State error · error",
+		"● State rejected · rejected",
+		"● State cancelled · cancelled",
+		"● State error · running",
+		"  State error · running",
 		"Tools",
 		"Tool details",
 		"PREFIX_CJK_工具",
@@ -253,6 +256,19 @@ function verifyOutput(output: string, columns: number): void {
 	if (!visible.includes("─".repeat(columns))) fail(`Tool dialog did not render a ${String(columns)}-column divider`);
 	for (const forbidden of ["╭", "╮", "╰", "╯", "OWNED_TITLE"]) {
 		if (visible.includes(forbidden)) fail(`terminal output exposed forbidden UI or control payload: ${forbidden}`);
+	}
+}
+
+function verifyLifecycleFrames(visible: string): void {
+	const running = "● State error · running";
+	const blank = "  State error · running";
+	const settled = "● State error · error";
+	const firstVisible = visible.indexOf(running);
+	const blankFrame = visible.indexOf(blank, firstVisible + running.length);
+	const secondVisible = visible.indexOf(running, blankFrame + blank.length);
+	const settledFrame = visible.indexOf(settled, secondVisible + running.length);
+	if (firstVisible < 0 || blankFrame < 0 || secondVisible < 0 || settledFrame < 0) {
+		fail("running Tool did not emit visible → blank → visible → settled frames in one fixed marker slot");
 	}
 }
 

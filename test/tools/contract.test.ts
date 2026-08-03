@@ -6,8 +6,9 @@ import {
 	installToolUiRuntime,
 	registerSuiteOwnedTool,
 	ToolUiRuntime,
+	type ToolUiTimerScheduler,
 } from "../../packages/pi-stuff-tools/contract.js";
-import { summarizeBuiltin } from "../../packages/pi-stuff-tools/render.js";
+import { CachedToolRow, summarizeBuiltin } from "../../packages/pi-stuff-tools/render.js";
 import { ToolUiSettingsStore } from "../../packages/pi-stuff-tools/settings.js";
 
 const Params = Type.Object({ value: Type.String() });
@@ -18,6 +19,32 @@ const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
 } as unknown as Theme;
+
+class ManualTimerScheduler implements ToolUiTimerScheduler {
+	private readonly callbacks = new Map<number, () => void>();
+	private nextId = 1;
+	readonly delays: number[] = [];
+
+	get activeCount(): number {
+		return this.callbacks.size;
+	}
+
+	clearInterval(id: unknown): void {
+		if (typeof id === "number") this.callbacks.delete(id);
+	}
+
+	setInterval(callback: () => void, delayMs: number): unknown {
+		const id = this.nextId;
+		this.nextId += 1;
+		this.callbacks.set(id, callback);
+		this.delays.push(delayMs);
+		return id;
+	}
+
+	tick(): void {
+		for (const callback of [...this.callbacks.values()]) callback();
+	}
+}
 
 function apiHarness(): {
 	readonly api: ExtensionAPI;
@@ -98,13 +125,17 @@ test("renderer decoration preserves the tool contract and model-visible result",
 
 	const state = {};
 	const args = { value: "工具.txt" };
+	const runtime = getToolUiRuntime(api);
+	const stopTimer = spyOn(runtime, "stopTimer");
 	const row = decorated.renderCall?.(args, theme, renderContext(state, args));
 	expect(row?.render(80).join("\n")).toContain("working");
 	decorated.renderResult?.(executionResult, { expanded: false, isPartial: false }, theme, renderContext(state, args));
 	expect(row?.render(80).join("\n")).toContain("done");
-	expect(getToolUiRuntime(api).activities.get("call-1")?.detailLines.join("\n")).toContain("MODEL_VISIBLE");
-	expect(getToolUiRuntime(api).activities.get("call-1")).not.toHaveProperty("args");
-	getToolUiRuntime(api).clear();
+	expect(stopTimer).toHaveBeenCalledWith("call-1");
+	expect(runtime.activities.get("call-1")?.detailLines.join("\n")).toContain("MODEL_VISIBLE");
+	expect(runtime.activities.get("call-1")).not.toHaveProperty("args");
+	runtime.clear();
+	stopTimer.mockRestore();
 });
 
 test("keeps one runtime identity when Suite tools register before the Tool package", () => {
@@ -211,7 +242,7 @@ test("errors-only Suite tools stay silent on success and reveal domain errors", 
 	getToolUiRuntime(api).clear();
 });
 
-test("only elapsed-aware presentations schedule one-second row invalidation", () => {
+test("all visible live rows schedule blink invalidation while replay stays static", () => {
 	const { api, tools } = apiHarness();
 	const tool = (name: string): ToolDefinition<typeof Params> => ({
 		description: name,
@@ -232,12 +263,12 @@ test("only elapsed-aware presentations schedule one-second row invalidation", ()
 	tools
 		.get("quiet")
 		?.renderCall?.({ value: "one" }, theme, renderContext(quietState, { value: "one" }, { toolCallId: "quiet-1" }));
-	expect(startTimer).not.toHaveBeenCalled();
+	expect(startTimer).toHaveBeenCalledTimes(1);
 	const timedState = {};
 	tools
 		.get("timed")
 		?.renderCall?.({ value: "two" }, theme, renderContext(timedState, { value: "two" }, { toolCallId: "timed-1" }));
-	expect(startTimer).toHaveBeenCalledTimes(1);
+	expect(startTimer).toHaveBeenCalledTimes(2);
 	runtime.configure(ToolUiSettingsStore.memory({ liveElapsed: false, schemaVersion: 1 }));
 	const disabledState = {};
 	const disabledRow = tools
@@ -249,23 +280,61 @@ test("only elapsed-aware presentations schedule one-second row invalidation", ()
 		);
 	expect(disabledRow?.render(80).join("\n")).toContain("running");
 	expect(disabledRow?.render(80).join("\n")).not.toContain("ms");
-	expect(startTimer).toHaveBeenCalledTimes(2);
+	expect(startTimer).toHaveBeenCalledTimes(3);
+
+	const replayState = {};
+	tools
+		.get("quiet")
+		?.renderCall?.(
+			{ value: "replay" },
+			theme,
+			renderContext(replayState, { value: "replay" }, { executionStarted: false, toolCallId: "quiet-replay" }),
+		);
+	expect(startTimer).toHaveBeenCalledTimes(3);
 	runtime.clear();
 	startTimer.mockRestore();
 });
 
-test("timer setting changes repaint active elapsed-aware rows", async () => {
+test("uses a deterministic 600 ms blink and clears stopped timers", async () => {
 	const settings = ToolUiSettingsStore.memory({ liveElapsed: true, schemaVersion: 1 });
-	const runtime = new ToolUiRuntime(settings);
-	let invalidations = 0;
-	runtime.startTimer("active-1", () => {
-		invalidations += 1;
+	const scheduler = new ManualTimerScheduler();
+	const runtime = new ToolUiRuntime(settings, scheduler);
+	const row = new CachedToolRow(theme, {
+		durationMs: 0,
+		label: "Read",
+		state: "running",
+		summary: "running",
+		target: "工具.txt",
 	});
+	let invalidations = 0;
+	runtime.startTimer(
+		"active-1",
+		() => {
+			invalidations += 1;
+		},
+		(visible) => row.setMarkerVisible(visible),
+	);
+	expect(scheduler.delays).toEqual([600]);
+	expect(scheduler.activeCount).toBe(1);
+	expect(row.render(80)[0]).toStartWith("● Read");
+	scheduler.tick();
+	expect(invalidations).toBe(1);
+	expect(row.render(80)[0]).toStartWith("  Read");
+	scheduler.tick();
+	expect(invalidations).toBe(2);
+	expect(row.render(80)[0]).toStartWith("● Read");
+
 	await settings.setLiveElapsed(false);
 	runtime.syncTimers();
-	expect(invalidations).toBe(1);
+	expect(invalidations).toBe(3);
+	expect(scheduler.activeCount).toBe(1);
 	await settings.setLiveElapsed(true);
 	runtime.syncTimers();
-	expect(invalidations).toBe(2);
+	expect(invalidations).toBe(4);
+	expect(scheduler.activeCount).toBe(1);
 	runtime.stopTimer("active-1");
+	expect(scheduler.activeCount).toBe(0);
+	expect(row.render(80)[0]).toStartWith("● Read");
+	scheduler.tick();
+	expect(invalidations).toBe(4);
 });
