@@ -21,6 +21,7 @@
 		"builtin-tools.ts",
 		"activity-store.ts",
 		"contract.ts",
+		"session-handoff.ts",
 		"render.ts",
 		"settings.ts",
 		"tool-dialog.ts",

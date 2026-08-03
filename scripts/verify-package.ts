@@ -23,6 +23,7 @@ import { verifyBtwPty } from "./verify-btw-pty.ts";
 import { verifyNestedPermissionsPty } from "./verify-nested-permissions-pty.ts";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.ts";
 import { verifyToolsPty } from "./verify-tools-pty.ts";
+import { verifyToolsResumePty } from "./verify-tools-resume-pty.ts";
 import { verifyUiPty } from "./verify-ui-pty.ts";
 
 export { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_SOURCE_COMMIT, CERTIFIED_PI_VERSION };
@@ -760,6 +761,7 @@ export async function certifyReleaseArtifacts(
 		await verifyNestedPermissionsPty({ piBinary, packagePath: extractedPackage });
 		await verifyBtwPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyToolsPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
+		await verifyToolsResumePty({ piBinary, packagePath: extractedPackage });
 		await writeReleaseVerification(releaseDirectory, CERTIFIED_PI_HOST_PROFILE);
 		console.log(`Certified @jczhang02/pi-stuff with Pi Host ${CERTIFIED_PI_HOST_PROFILE}`);
 	} finally {

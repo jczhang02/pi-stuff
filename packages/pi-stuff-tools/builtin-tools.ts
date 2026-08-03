@@ -42,66 +42,81 @@ export function registerBuiltins(
 	cwd: string,
 	hostSettings: BuiltinHostSettings,
 	factories: BuiltinFactoryOverrides = {},
+	selectedNames?: ReadonlySet<string>,
 ): void {
-	const read = (factories.read ?? createReadToolDefinition)(cwd, {
-		autoResizeImages: hostSettings.autoResizeImages,
-	});
-	registerSuiteOwnedTool(pi, read, {
-		label: "Read",
-		runningSummary: "reading",
-		summarize: (args, result, state, durationMs) => summarizeBuiltin("read", args, result, state, durationMs),
-		target: (args) => describeBuiltinTarget("read", args),
-	});
+	if (!selectedNames || selectedNames.has("read")) {
+		const read = (factories.read ?? createReadToolDefinition)(cwd, {
+			autoResizeImages: hostSettings.autoResizeImages,
+		});
+		registerSuiteOwnedTool(pi, read, {
+			label: "Read",
+			runningSummary: "reading",
+			summarize: (args, result, state, durationMs) => summarizeBuiltin("read", args, result, state, durationMs),
+			target: (args) => describeBuiltinTarget("read", args),
+		});
+	}
 
-	const write = createWriteToolDefinition(cwd);
-	registerSuiteOwnedTool(pi, write, {
-		label: "Write",
-		runningSummary: "writing",
-		summarize: (args, result, state, durationMs) => summarizeBuiltin("write", args, result, state, durationMs),
-		target: (args) => describeBuiltinTarget("write", args),
-	});
+	if (!selectedNames || selectedNames.has("write")) {
+		const write = createWriteToolDefinition(cwd);
+		registerSuiteOwnedTool(pi, write, {
+			label: "Write",
+			runningSummary: "writing",
+			summarize: (args, result, state, durationMs) => summarizeBuiltin("write", args, result, state, durationMs),
+			target: (args) => describeBuiltinTarget("write", args),
+		});
+	}
 
-	const edit = createEditToolDefinition(cwd);
-	registerSuiteOwnedTool(pi, edit, {
-		label: "Edit",
-		runningSummary: "editing",
-		summarize: (args, result, state, durationMs) => summarizeBuiltin("edit", args, result, state, durationMs),
-		target: (args) => describeBuiltinTarget("edit", args),
-	});
+	if (!selectedNames || selectedNames.has("edit")) {
+		const edit = createEditToolDefinition(cwd);
+		registerSuiteOwnedTool(pi, edit, {
+			label: "Edit",
+			runningSummary: "editing",
+			summarize: (args, result, state, durationMs) => summarizeBuiltin("edit", args, result, state, durationMs),
+			target: (args) => describeBuiltinTarget("edit", args),
+		});
+	}
 
-	const bash = (factories.bash ?? createBashToolDefinition)(cwd, {
-		...(hostSettings.shellCommandPrefix !== undefined ? { commandPrefix: hostSettings.shellCommandPrefix } : {}),
-		...(hostSettings.shellPath !== undefined ? { shellPath: hostSettings.shellPath } : {}),
-	});
-	registerSuiteOwnedTool(pi, bash, {
-		label: "Bash",
-		runningSummary: (_args, durationMs) => `running ${formatElapsed(durationMs)}`,
-		summarize: (args, result, state, durationMs) => summarizeBuiltin("bash", args, result, state, durationMs),
-		target: (args) => describeBuiltinTarget("bash", args),
-		tracksElapsed: true,
-	});
+	if (!selectedNames || selectedNames.has("bash")) {
+		const bash = (factories.bash ?? createBashToolDefinition)(cwd, {
+			...(hostSettings.shellCommandPrefix !== undefined ? { commandPrefix: hostSettings.shellCommandPrefix } : {}),
+			...(hostSettings.shellPath !== undefined ? { shellPath: hostSettings.shellPath } : {}),
+		});
+		registerSuiteOwnedTool(pi, bash, {
+			label: "Bash",
+			runningSummary: (_args, durationMs) => `running ${formatElapsed(durationMs)}`,
+			summarize: (args, result, state, durationMs) => summarizeBuiltin("bash", args, result, state, durationMs),
+			target: (args) => describeBuiltinTarget("bash", args),
+			tracksElapsed: true,
+		});
+	}
 
-	const grep = createGrepToolDefinition(cwd);
-	registerSuiteOwnedTool(pi, grep, {
-		label: "Grep",
-		runningSummary: "searching",
-		summarize: (args, result, state, durationMs) => summarizeBuiltin("grep", args, result, state, durationMs),
-		target: (args) => describeBuiltinTarget("grep", args),
-	});
+	if (!selectedNames || selectedNames.has("grep")) {
+		const grep = createGrepToolDefinition(cwd);
+		registerSuiteOwnedTool(pi, grep, {
+			label: "Grep",
+			runningSummary: "searching",
+			summarize: (args, result, state, durationMs) => summarizeBuiltin("grep", args, result, state, durationMs),
+			target: (args) => describeBuiltinTarget("grep", args),
+		});
+	}
 
-	const find = createFindToolDefinition(cwd);
-	registerSuiteOwnedTool(pi, find, {
-		label: "Find",
-		runningSummary: "searching",
-		summarize: (args, result, state, durationMs) => summarizeBuiltin("find", args, result, state, durationMs),
-		target: (args) => describeBuiltinTarget("find", args),
-	});
+	if (!selectedNames || selectedNames.has("find")) {
+		const find = createFindToolDefinition(cwd);
+		registerSuiteOwnedTool(pi, find, {
+			label: "Find",
+			runningSummary: "searching",
+			summarize: (args, result, state, durationMs) => summarizeBuiltin("find", args, result, state, durationMs),
+			target: (args) => describeBuiltinTarget("find", args),
+		});
+	}
 
-	const ls = createLsToolDefinition(cwd);
-	registerSuiteOwnedTool(pi, ls, {
-		label: "List",
-		runningSummary: "listing",
-		summarize: (args, result, state, durationMs) => summarizeBuiltin("ls", args, result, state, durationMs),
-		target: (args) => describeBuiltinTarget("ls", args),
-	});
+	if (!selectedNames || selectedNames.has("ls")) {
+		const ls = createLsToolDefinition(cwd);
+		registerSuiteOwnedTool(pi, ls, {
+			label: "List",
+			runningSummary: "listing",
+			summarize: (args, result, state, durationMs) => summarizeBuiltin("ls", args, result, state, durationMs),
+			target: (args) => describeBuiltinTarget("ls", args),
+		});
+	}
 }

@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { ensureUiSettingsCommand, getCommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
 import { registerBuiltins, resolveBuiltinHostSettings } from "./builtin-tools.js";
 import { installToolUiRuntime } from "./contract.js";
+import { consumeResumeToolHandoff, prepareResumeToolHandoff, restoreResumeActiveToolOrder } from "./session-handoff.js";
 import { ToolUiSettingsStore } from "./settings.js";
 import { createToolDialogView } from "./tool-dialog.js";
 
@@ -16,6 +17,19 @@ export {
 } from "./contract.js";
 
 export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
+	const resumeHandoff = consumeResumeToolHandoff();
+	if (resumeHandoff !== undefined) {
+		// Pi reconstructs a replaced session before session_start. Register only
+		// the outgoing active built-ins so historical rows get compact renderers
+		// without reviving disabled built-ins in the incoming runtime.
+		registerBuiltins(
+			pi,
+			process.cwd(),
+			resolveBuiltinHostSettings(process.cwd(), false),
+			{},
+			new Set(resumeHandoff.builtinNames),
+		);
+	}
 	const settings = await ToolUiSettingsStore.load();
 	const runtime = installToolUiRuntime(pi, settings);
 	const unsubscribeSettings = settings.subscribe(() => runtime.syncTimers());
@@ -57,10 +71,13 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 
 	pi.on("session_start", (_event, ctx) => {
 		registerBuiltins(pi, ctx.cwd, resolveBuiltinHostSettings(ctx.cwd, ctx.isProjectTrusted()));
-		const reloadActiveBuiltins = runtime.consumeReloadActiveTools();
-		if (reloadActiveBuiltins) {
+		if (resumeHandoff) {
+			pi.setActiveTools(restoreResumeActiveToolOrder(pi.getActiveTools(), resumeHandoff));
+		} else {
+			const restoreActiveBuiltins = runtime.consumeReloadActiveTools();
+			if (!restoreActiveBuiltins) return;
 			const activeNonBuiltins = pi.getActiveTools().filter((name) => !BUILTIN_TOOL_NAMES.has(name));
-			pi.setActiveTools([...activeNonBuiltins, ...reloadActiveBuiltins]);
+			pi.setActiveTools([...activeNonBuiltins, ...restoreActiveBuiltins]);
 		}
 	});
 	pi.on("session_compact", () => {
@@ -75,6 +92,11 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 		unregisterUiSetting();
 		if (event.reason === "reload") {
 			runtime.prepareReload(pi.getActiveTools().filter((name) => BUILTIN_TOOL_NAMES.has(name)));
-		} else runtime.clear();
+		} else {
+			if (event.reason === "resume") {
+				prepareResumeToolHandoff(pi.getActiveTools());
+			}
+			runtime.clear();
+		}
 	});
 }
