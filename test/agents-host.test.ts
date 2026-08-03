@@ -13,6 +13,7 @@ import { runPiRpcSmoke } from "../scripts/smoke-pi.ts";
 const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
 const AGENTS_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-agents");
 const PERMISSIONS_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-permissions");
+const TOOLS_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-tools");
 const UI_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-ui");
 const TYPEBOX_PACKAGE = resolve(import.meta.dir, "../node_modules/typebox");
 const TEMPORARY_ROOTS: string[] = [];
@@ -97,6 +98,7 @@ test("Agents declares its exact workspace and certified Pi dependency contracts"
 
 	expect(manifest.dependencies).toEqual({
 		"@jczhang02/pi-stuff-permissions": "0.0.0",
+		"@jczhang02/pi-stuff-tools": "0.0.0",
 		"@jczhang02/pi-stuff-ui": "0.0.0",
 		jiti: "2.7.0",
 		typebox: "1.3.7",
@@ -146,6 +148,7 @@ test("Pi 0.83 loads Agents through workspace dependency resolution", async () =>
 	await mkdir(agentsDependencyScope, { recursive: true });
 	await Promise.all([
 		cp(PERMISSIONS_PACKAGE, join(agentsDependencyScope, "pi-stuff-permissions"), { recursive: true }),
+		cp(TOOLS_PACKAGE, join(agentsDependencyScope, "pi-stuff-tools"), { recursive: true }),
 		cp(UI_PACKAGE, join(agentsDependencyScope, "pi-stuff-ui"), { recursive: true }),
 	]);
 	await symlink(TYPEBOX_PACKAGE, join(installedAgents, "node_modules", "typebox"), "dir");

@@ -3,7 +3,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
+import { type TSchema, Type } from "typebox";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
 	SUBAGENT_CHILD_INDEX_ENV,
@@ -324,6 +325,33 @@ function hasTool(pi: ExtensionAPI, name: string): boolean {
 	}
 }
 
+function toolResultText(result: AgentToolResult<Record<string, unknown>>): string {
+	for (const entry of result.content) {
+		if (entry.type !== "text") continue;
+		const preview = entry.text.slice(0, 8 * 1024).trim();
+		if (preview) return preview;
+	}
+	return "";
+}
+
+function communicationTarget(args: Readonly<Record<string, unknown>>): string {
+	const action = typeof args.action === "string" ? args.action : typeof args.reason === "string" ? args.reason : "";
+	const destination = typeof args.replyTo === "string" ? args.replyTo : typeof args.to === "string" ? args.to : "";
+	return [action, destination].filter(Boolean).join(" · ");
+}
+
+function registerCommunicationTool<TParams extends TSchema>(
+	pi: ExtensionAPI,
+	tool: ToolDefinition<TParams, Record<string, unknown>>,
+	runningSummary: string,
+): void {
+	registerSuiteOwnedTool(pi, tool, {
+		runningSummary,
+		summarize: (_args, result, state) => toolResultText(result) || (state === "success" ? "done" : "failed"),
+		target: communicationTarget,
+	});
+}
+
 export function registerNativeSupervisorClient(
 	pi: ExtensionAPI,
 	options: { includeIntercomFallback?: boolean } = {},
@@ -341,7 +369,7 @@ export function registerNativeSupervisorClient(
 				return sendSupervisorRequest(params as ContactSupervisorParams, signal);
 			},
 		};
-		pi.registerTool(tool);
+		registerCommunicationTool(pi, tool, "contacting");
 	}
 	if (includeIntercomFallback && !hasTool(pi, "intercom")) {
 		const tool: ToolDefinition<typeof IntercomParamsSchema, Record<string, unknown>> = {
@@ -377,7 +405,7 @@ export function registerNativeSupervisorClient(
 				);
 			},
 		};
-		pi.registerTool(tool);
+		registerCommunicationTool(pi, tool, "sending");
 	}
 }
 
@@ -757,8 +785,12 @@ export function createNativeSupervisorChannel(
 
 	const registerParentTools = (): void => {
 		if (!hasTool(pi, NATIVE_SUPERVISOR_TOOL_NAME))
-			pi.registerTool(buildParentIntercomTool(pending, state, NATIVE_SUPERVISOR_TOOL_NAME));
-		if (!hasTool(pi, "intercom")) pi.registerTool(buildParentIntercomTool(pending, state));
+			registerCommunicationTool(
+				pi,
+				buildParentIntercomTool(pending, state, NATIVE_SUPERVISOR_TOOL_NAME),
+				"checking",
+			);
+		if (!hasTool(pi, "intercom")) registerCommunicationTool(pi, buildParentIntercomTool(pending, state), "checking");
 	};
 
 	const cleanupStaleChannelsIfDue = (): void => {

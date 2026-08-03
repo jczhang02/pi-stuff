@@ -5,7 +5,12 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { type CommandDialogCoordinator, getCommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
+import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
+import {
+	type CommandDialogCoordinator,
+	getCommandDialogCoordinator,
+	requestStatuslineGitRefresh,
+} from "@jczhang02/pi-stuff-ui";
 import { discoverAgents } from "../agents/agents.ts";
 import { createNativeSupervisorChannel } from "../intercom/native-supervisor-channel.ts";
 import { createAsyncJobTracker } from "../runs/background/async-job-tracker.ts";
@@ -46,6 +51,7 @@ import {
 import { type AgentDialogOptions, openAgentDialog } from "../ui/agent-dialog.ts";
 import { AgentRoster, type AgentRosterOptions } from "../ui/agent-roster.ts";
 import { readAgentTranscript } from "../ui/agent-transcript.ts";
+import { createAgentToolPresentation } from "./agent-tool-presentation.ts";
 import { loadConfig, type PiStuffAgentsConfig } from "./config.ts";
 import { type PublicAgentParams, projectEngineResult, toEngineParams } from "./product-executor.ts";
 import { SubagentParams } from "./schemas.ts";
@@ -338,19 +344,6 @@ function resultIsError(result: unknown): boolean {
 	return record(result).isError === true;
 }
 
-function renderCallLabel(params: PublicAgentParams): string {
-	if (params.action) return `Agent ${params.action}${params.id ? ` ${params.id}` : ""}`;
-	if (params.tasks?.length) return `Agents ×${String(params.tasks.length)}`;
-	return `Agent ${params.agent ?? "?"}${params.task ? ` · ${params.task}` : ""}`;
-}
-
-function renderResultText(result: AgentToolResult<Details>, expanded: boolean): string {
-	const text = firstText(result) || (resultIsError(result) ? "Agent request failed." : "Agent request finished.");
-	if (expanded) return text;
-	const lines = text.split("\n").filter((line) => line.trim().length > 0);
-	return (lines[0] ?? "") + (lines.length > 1 ? " …" : "");
-}
-
 function hasLiveWork(state: SubagentState): boolean {
 	if (state.foregroundControls.size > 0) return true;
 	return [...state.asyncJobs.values()].some((job) => job.status === "queued" || job.status === "running");
@@ -575,16 +568,9 @@ export default function registerSubagentExtension(
 			const params = rawParams as PublicAgentParams;
 			return executePublicAgent(id, params, signal ?? new AbortController().signal, onUpdate, ctx);
 		},
-		renderCall(rawParams, theme) {
-			return new Text(theme.fg("toolTitle", renderCallLabel(rawParams as PublicAgentParams)), 0, 0);
-		},
-		renderResult(result, options, theme) {
-			const color = resultIsError(result) ? "error" : "muted";
-			return new Text(theme.fg(color, renderResultText(result, options.expanded)), 0, 0);
-		},
 	};
 
-	pi.registerTool(tool);
+	registerSuiteOwnedTool(pi, tool, createAgentToolPresentation());
 	pi.registerCommand("agents", {
 		description: "Inspect and control Agents in the current session",
 		handler: async (_args, ctx) => showAgents(ctx),
@@ -616,6 +602,7 @@ export default function registerSubagentExtension(
 		tracker.handleComplete(data);
 		current.refresh();
 		ensureRosterRefresh();
+		requestStatuslineGitRefresh(pi);
 	});
 	onBus(SUBAGENT_FOREGROUND_COMPLETE_EVENT, (data) => {
 		if (!active) return;

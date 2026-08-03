@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
+import type { TSchema } from "typebox";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
 import type { JsonSchemaObject, ResolvedToolBudget } from "../../shared/types.ts";
 import { resolveWatchPath } from "../../shared/utils.ts";
@@ -429,14 +431,7 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	if (structuredOutputPath && structuredSchemaPath) {
 		const schema = JSON.parse(fs.readFileSync(structuredSchemaPath, "utf-8")) as JsonSchemaObject;
 		const parameters = createStructuredOutputToolParameters(schema);
-		const registerTool = pi.registerTool as unknown as (tool: {
-			name: string;
-			label: string;
-			description: string;
-			parameters: unknown;
-			execute: (_id: string, params: { value: unknown }) => Promise<unknown>;
-		}) => void;
-		registerTool({
+		const structuredOutputTool = {
 			name: "structured_output",
 			label: "Structured Output",
 			description: "Submit the required final structured output for this subagent step. This terminates the step.",
@@ -454,6 +449,11 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 					terminate: true,
 				};
 			},
+		} as unknown as ToolDefinition<TSchema, Record<string, unknown>>;
+		registerSuiteOwnedTool(pi, structuredOutputTool, {
+			runningSummary: "validating",
+			summarize: () => "captured",
+			target: () => "final output",
 		});
 	}
 

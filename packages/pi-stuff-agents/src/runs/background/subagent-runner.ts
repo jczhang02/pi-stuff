@@ -558,6 +558,7 @@ function runChildProcess(input: {
 		const spawnSpec = getPiSpawnCommand(built.args, {
 			...(input.config.piPackageRoot ? { piPackageRoot: input.config.piPackageRoot } : {}),
 			...(input.config.piArgv1 ? { argv1: input.config.piArgv1 } : {}),
+			...(input.config.piExecutable ? { execPath: input.config.piExecutable } : {}),
 		});
 		const usage = emptyUsage();
 		const messages: Message[] = [];
@@ -655,7 +656,9 @@ function runChildProcess(input: {
 			}
 			appendRawEvent(line, event);
 			input.transcript.writeChildEvent(event);
-			const lifecycle = projectChildLifecycle(event);
+			const terminalStop =
+				event.type === "message_end" && event.message?.role === "assistant" && terminalAssistantStop(event.message);
+			const lifecycle = projectChildLifecycle(event, terminalStop);
 			if (lifecycle === "start-drain") startFinalDrain();
 			else if (lifecycle === "cancel-drain" && finalDrainTimer) {
 				clearTimeout(finalDrainTimer);
@@ -692,7 +695,6 @@ function runChildProcess(input: {
 				addUsage(usage, event.message);
 				input.statusStep.turnCount = usage.turns;
 				input.statusStep.tokens = tokenUsage(usage);
-				if (terminalAssistantStop(event.message)) startFinalDrain();
 				if (input.task.turnBudget) {
 					const decision = turnBudgetDecision(
 						input.task.turnBudget,

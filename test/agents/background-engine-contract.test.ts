@@ -13,6 +13,7 @@ import {
 	createBackgroundCompletion,
 	createInitialStatus,
 	runBackgroundWork,
+	runConfiguredBackground,
 } from "../../packages/pi-stuff-agents/src/runs/background/subagent-runner.js";
 import type {
 	BackgroundRunnerConfig,
@@ -24,11 +25,14 @@ import {
 } from "../../packages/pi-stuff-agents/src/shared/launch-contract.js";
 
 const temporaryDirectories: string[] = [];
+const originalPiBinary = process.env.PI_SUBAGENT_PI_BINARY;
 
 afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) {
 		fs.rmSync(directory, { recursive: true, force: true });
 	}
+	if (originalPiBinary === undefined) delete process.env.PI_SUBAGENT_PI_BINARY;
+	else process.env.PI_SUBAGENT_PI_BINARY = originalPiBinary;
 });
 
 function fixtureRoot(): string {
@@ -412,4 +416,64 @@ describe("background runner execution", () => {
 			stopped: true,
 		});
 	});
+
+	test("keeps a steered writer alive when new input follows a valid terminal report", async () => {
+		const root = fixtureRoot();
+		const writer = path.join(root, "steered-writer.ts");
+		fs.writeFileSync(
+			writer,
+			`#!/usr/bin/env bun
+const assistant = (text) => ({
+  type: "message_end",
+  message: {
+    role: "assistant",
+    content: [{ type: "text", text }],
+    stopReason: "stop",
+    timestamp: Date.now(),
+  },
+});
+const user = (text) => ({
+  type: "message_end",
+  message: { role: "user", content: [{ type: "text", text }], timestamp: Date.now() },
+});
+const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+process.on("SIGTERM", () => process.exit(143));
+emit(assistant("VALID_COMPLETED_REVIEW"));
+setTimeout(() => emit(user("Late correlated steering input")), 25);
+setTimeout(() => emit(assistant("VALID_COMPLETED_REVIEW_AFTER_STEERING")), 1_200);
+setTimeout(() => process.exit(0), 1_225);
+`,
+			{ mode: 0o700 },
+		);
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const asyncDir = path.join(root, "async");
+		const resultPath = path.join(asyncDir, "result.json");
+		const config: BackgroundRunnerConfig = {
+			version: 2,
+			id: "steered-terminal-report",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: { mode: "single", task: task(0) },
+		};
+
+		await runConfiguredBackground(config);
+		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
+			state: string;
+			success: boolean;
+			results: Array<{ exitCode: number | null; output: string; success: boolean }>;
+		};
+
+		expect(completion).toMatchObject({
+			state: "complete",
+			success: true,
+			results: [
+				{
+					exitCode: 0,
+					output: "VALID_COMPLETED_REVIEW_AFTER_STEERING",
+					success: true,
+				},
+			],
+		});
+	}, 5_000);
 });

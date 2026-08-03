@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
 import { discoverAgents } from "../agents/agents.ts";
 import { deliverSubagentIntercomMessageEvent } from "../intercom/result-intercom.ts";
 import { resolveSubagentIntercomTarget } from "../intercom/subagent-target.ts";
@@ -36,6 +37,7 @@ import {
 	type SubagentState,
 	TEMP_ROOT_DIR,
 } from "../shared/types.ts";
+import { createAgentToolPresentation } from "./agent-tool-presentation.ts";
 import { loadConfig, type PiStuffAgentsConfig } from "./config.ts";
 import { type PublicAgentParams, projectEngineResult, toEngineParams } from "./product-executor.ts";
 import { SubagentParams } from "./schemas.ts";
@@ -316,7 +318,7 @@ export default function registerFanoutChildSubagentExtension(
 		},
 	};
 
-	pi.registerTool(tool);
+	registerSuiteOwnedTool(pi, tool, createAgentToolPresentation());
 	const nestedControlTimer = startNestedControlInboxListener(pi, state);
 	const eventUnsubscribes: Array<() => void> = [];
 	const onBus = (event: string, handler: (data: unknown) => void): void => {

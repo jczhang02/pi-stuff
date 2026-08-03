@@ -168,6 +168,17 @@ function lineFor(lines: readonly string[], name: string): string {
 	return line;
 }
 
+function containsTerminalControl(value: string): boolean {
+	return [...value].some((character) => {
+		const code = character.codePointAt(0) ?? 0;
+		return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+	});
+}
+
+function containsBidiFormatControl(value: string): boolean {
+	return /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u.test(value);
+}
+
 describe("AgentRoster", () => {
 	test("mounts below the editor only while direct children exist", () => {
 		const result = setup([]);
@@ -231,6 +242,25 @@ describe("AgentRoster", () => {
 		result.roster.dispose();
 	});
 
+	test("removes terminal controls while preserving CJK names, tasks, and the right state", () => {
+		const result = setup([
+			row("unsafe", "failed", {
+				name: "审\u202e查\u001b]0;伪造标题\u0007员",
+				task: "检查\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u001b[31m失败\u001b[0m\u009b32m输出\u009b0m\u001b7 保留很长的中文说明",
+			}),
+		]);
+		const rendered = result.ui.render(64);
+		const agentLine = lineFor(rendered, "审查员");
+
+		expect(agentLine.trimEnd().endsWith("failed")).toBe(true);
+		expect(agentLine).toContain("检查失败输出 保留");
+		expect(agentLine).not.toContain("伪造标题");
+		expect(containsTerminalControl(agentLine)).toBe(false);
+		expect(containsBidiFormatControl(agentLine)).toBe(false);
+		expect(visibleWidth(agentLine)).toBeLessThanOrEqual(64);
+		result.roster.dispose();
+	});
+
 	test("only enters keyboard navigation from an empty, truly focused editor", () => {
 		const result = setup([row("child", "running")]);
 		result.ui.editorText = "draft";
@@ -271,6 +301,25 @@ describe("AgentRoster", () => {
 		expect(result.ui.emit("\r")).toEqual({ consume: true });
 		expect(result.ui.render(80)[0]).toContain("↓ to manage");
 		result.roster.dispose();
+	});
+
+	test("only advertises the action available for the selected row", () => {
+		const live = setup([row("live", "running")]);
+		live.ui.emit("\u001b[B");
+		expect(live.ui.render(80)[0]).not.toContain("x ");
+		live.ui.emit("\u001b[B");
+		expect(live.ui.render(80)[0]).toContain("x stop");
+		expect(live.ui.render(80)[0]).not.toContain("dismiss");
+		expect(live.ui.render(64)[0]).toContain("x stop · Esc return");
+		live.roster.dispose();
+
+		const terminal = setup([row("done", "completed")]);
+		terminal.ui.emit("\u001b[B");
+		terminal.ui.emit("\u001b[B");
+		expect(terminal.ui.render(80)[0]).toContain("x dismiss");
+		expect(terminal.ui.render(80)[0]).not.toContain("x stop");
+		expect(terminal.ui.render(64)[0]).toContain("x dismiss · Esc return");
+		terminal.roster.dispose();
 	});
 
 	test("stops live rows, dismisses terminal rows, and lets unrelated printable input through", () => {

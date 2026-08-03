@@ -5,7 +5,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const PROVIDER = "pi-stuff-agents-pty";
 const MODEL = "fixture-model";
-const TASK = "AGENT_PTY_TASK";
+const TASK = "AGENT_PTY_TASK · 中文长任务检查终端截断与状态保留";
+const SUBAGENT_CHILD_ENV = "PI_SUBAGENT_CHILD";
+const SUBAGENT_PI_BINARY_ENV = "PI_SUBAGENT_PI_BINARY";
 
 const ZERO_USAGE = {
 	input: 0,
@@ -126,6 +128,9 @@ function fixtureStream(context: Context, options?: SimpleStreamOptions) {
 }
 
 export default function agentsPtyProvider(pi: ExtensionAPI): void {
+	// The parent Host must be inherited without the supported emergency override;
+	// child processes keep the already-clean environment.
+	if (process.env[SUBAGENT_CHILD_ENV] !== "1") delete process.env[SUBAGENT_PI_BINARY_ENV];
 	pi.registerProvider(PROVIDER, {
 		name: "Pi Stuff Agents PTY fixture",
 		baseUrl: "https://fixture.invalid",

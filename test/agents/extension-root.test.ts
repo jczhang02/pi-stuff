@@ -57,9 +57,11 @@ interface TestTool {
 }
 
 class EventBusHarness {
+	readonly emissions: string[] = [];
 	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
 
 	emit(event: string, data: unknown): void {
+		this.emissions.push(event);
 		for (const listener of [...(this.listeners.get(event) ?? [])]) listener(data);
 	}
 
@@ -410,6 +412,14 @@ describe("Agents extension composition root", () => {
 
 		expect([...root.api.tools.keys()]).toEqual(["subagent"]);
 		expect(root.api.tools.get("subagent")?.label).toBe("Agent");
+		const presentation = root.api.tools.get("subagent") as unknown as {
+			renderCall?: unknown;
+			renderResult?: unknown;
+			renderShell?: unknown;
+		};
+		expect(presentation.renderShell).toBe("self");
+		expect(presentation.renderCall).toBeFunction();
+		expect(presentation.renderResult).toBeFunction();
 		expect([...root.api.commands.keys()]).toEqual(["agents"]);
 		expect(root.api.renderers).toEqual(["pi-stuff-agent-complete"]);
 		expect(root.chrome.registered).toBe(1);
@@ -497,6 +507,14 @@ describe("Agents extension composition root", () => {
 		expect(root.governor.starts).toHaveLength(1);
 		expect(root.current.refreshes).toBeGreaterThan(before);
 		expect(root.timers.callbacks).toHaveLength(1);
+		const beforeBackgroundCompletion = root.api.events.emissions.length;
+		root.api.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, {
+			id: "live",
+			sessionId: "/sessions/root.jsonl",
+		});
+		expect(root.tracker.completed).toBe(1);
+		// The accepted completion emits one additional, UI-owned Git refresh request.
+		expect(root.api.events.emissions).toHaveLength(beforeBackgroundCompletion + 2);
 
 		const notifier = root.notifier.value;
 		if (!notifier) throw new Error("Expected completion notifier");
@@ -512,6 +530,7 @@ describe("Agents extension composition root", () => {
 		expect(root.api.messages.at(-1)?.options).toEqual({ deliverAs: "followUp", triggerTurn: true });
 		expect(JSON.stringify(root.api.messages.at(-1))).not.toContain("/private/session.jsonl");
 		const messageCount = root.api.messages.length;
+		const beforeForegroundCompletion = root.api.events.emissions.length;
 		root.api.events.emit(SUBAGENT_FOREGROUND_COMPLETE_EVENT, {
 			runId: "foreground-live",
 			taskIndex: 0,
@@ -521,6 +540,7 @@ describe("Agents extension composition root", () => {
 		});
 		await Promise.resolve();
 		expect(root.governor.completions.at(-1)).toMatchObject({ runId: "foreground-live", taskIndex: 0 });
+		expect(root.api.events.emissions).toHaveLength(beforeForegroundCompletion + 1);
 		expect(root.api.messages).toHaveLength(messageCount);
 
 		await root.api.fire("session_shutdown", { reason: "quit", type: "session_shutdown" });

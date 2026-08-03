@@ -59,7 +59,7 @@ import {
 	type RunnerAgentTask,
 } from "../shared/parallel-utils.ts";
 import { resolvePiLaunchToolPlan } from "../shared/pi-args.ts";
-import { resolvePiPackageRoot } from "../shared/pi-spawn.ts";
+import { resolvePiPackageRoot, resolveStandalonePiHostExecutable } from "../shared/pi-spawn.ts";
 import type { SessionLeaseRequest } from "../shared/session-lease.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
 import { initialTurnBudgetState, resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
@@ -67,6 +67,7 @@ import { finalizeProcessTerminal, readProcessTerminal } from "./process-terminal
 
 const require = createRequire(import.meta.url);
 const piPackageRoot = resolvePiPackageRoot();
+const piExecutable = resolveStandalonePiHostExecutable();
 
 export interface AsyncExecutionContext {
 	pi: ExtensionAPI;
@@ -1012,6 +1013,7 @@ export function executeAsyncParallel(id: string, params: AsyncParallelParams): A
 		...(sessionDir ? { sessionDir } : {}),
 		piPackageRoot,
 		piArgv1: process.argv[1],
+		...(piExecutable ? { piExecutable } : {}),
 		worktreeSetupHook: params.worktreeSetupHook,
 		worktreeSetupHookTimeoutMs: params.worktreeSetupHookTimeoutMs,
 		worktreeBaseDir: params.worktreeBaseDir,
@@ -1125,6 +1127,7 @@ export function executeAsyncSingle(id: string, params: AsyncSingleParams): Async
 		...(sessionDir ? { sessionDir } : {}),
 		piPackageRoot,
 		piArgv1: process.argv[1],
+		...(piExecutable ? { piExecutable } : {}),
 		worktreeSetupHook: params.worktreeSetupHook,
 		worktreeSetupHookTimeoutMs: params.worktreeSetupHookTimeoutMs,
 		worktreeBaseDir: params.worktreeBaseDir,

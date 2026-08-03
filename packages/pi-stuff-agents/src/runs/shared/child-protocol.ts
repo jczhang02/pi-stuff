@@ -134,5 +134,8 @@ export function projectChildLifecycle(
 	if (event.type === "agent_end" && event.willRetry === true) return "cancel-drain";
 	if (event.type === "agent_settled") return "start-drain";
 	if (terminalAssistantStop) return "start-drain";
+	if (event.type === "agent_start" || event.type === "message_start" || event.type === "message_end") {
+		return "cancel-drain";
+	}
 	return "none";
 }

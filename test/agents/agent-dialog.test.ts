@@ -188,10 +188,12 @@ describe("Agent Command Dialog", () => {
 			row("second", "completed", { nestedCount: 3 }),
 		]);
 		input(component, "\u001b[A");
-		expect(text(component)).toContain("❯ first");
+		expect(text(component)).toContain("  › first");
+		expect(text(component)).toContain("x stop");
 		input(component, "\u001b[B");
 		input(component, "\u001b[B");
-		expect(text(component)).toContain("❯ second");
+		expect(text(component)).toContain("  › second");
+		expect(text(component)).toContain("x dismiss");
 
 		input(component, "\r");
 		await flush();
@@ -200,10 +202,39 @@ describe("Agent Command Dialog", () => {
 		expect(text(component)).toContain("3 nested");
 
 		input(component, "\u001b");
-		expect(text(component)).toContain("❯ second");
+		expect(text(component)).toContain("  › second");
 		expect(context.closed).toBe(0);
 		input(component, "\u001b");
 		expect(context.closed).toBe(1);
+	});
+
+	test("keeps CJK rows safe and wraps every action hint instead of clipping Escape", async () => {
+		const dangerousName = "编译\u001b]0;renamed\u0007助手";
+		const { component } = setup(
+			[
+				row("cjk", "failed", {
+					name: dangerousName,
+					task: "检查中文路径与很长的终端输出是否安全换行",
+				}),
+			],
+			{ initialKey: "cjk", readTranscript: () => "第一行\n第二行\n第三行" },
+		);
+		await flush();
+
+		for (const width of [100, 64, 32]) {
+			const rendered = component.render(width);
+			const renderedText = rendered.join("\n");
+			expect(rendered.every((line) => visibleWidth(line) <= width && !line.includes("\n"))).toBe(true);
+			expect(renderedText).not.toContain("\u001b]");
+			expect(renderedText).not.toContain("renamed");
+			expect(renderedText).toContain("Esc back");
+		}
+
+		input(component, "\u001b");
+		const list = component.render(32);
+		expect(list.join("\n")).toContain("  › 编译助手");
+		expect(list.join("\n")).toContain("Esc close");
+		expect(list.every((line) => visibleWidth(line) <= 32)).toBe(true);
 	});
 
 	test("loads a bounded transcript, strips terminal controls, and scrolls it", async () => {

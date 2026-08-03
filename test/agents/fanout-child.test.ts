@@ -160,6 +160,14 @@ describe("fanout child Agent composition", () => {
 		registerFanoutChild(api.api, dependencies);
 		expect(api.tool?.label).toBe("Agent");
 		expect(api.tool?.description).not.toContain("Allowed management/control actions");
+		const presentation = api.tool as unknown as {
+			renderCall?: unknown;
+			renderResult?: unknown;
+			renderShell?: unknown;
+		};
+		expect(presentation.renderShell).toBe("self");
+		expect(presentation.renderCall).toBeFunction();
+		expect(presentation.renderResult).toBeFunction();
 
 		const result = await api.tool?.execute(
 			"fanout-call",

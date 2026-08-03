@@ -49,6 +49,7 @@ must_expect "AGENT_PTY_TASK"
 after 200
 send -- "/agents\\r"
 must_expect "↑/↓ navigate · Enter inspect"
+must_expect "x dismiss · Esc close"
 send -- "\\r"
 must_expect "Agents / general-purpose"
 must_expect "Transcript"
@@ -59,9 +60,6 @@ after 200
 send -- "DRAFT_RESTORED"
 must_expect "DRAFT_RESTORED"
 send -- "\\025"
-must_expect "Agent general-purpose completed."
-must_expect "CHILD_FINAL_SUMMARY"
-must_expect "MAIN_SAW_DIRECT_SUMMARY"
 send -- "\\003"
 after 200
 send -- "\\004"
@@ -162,6 +160,7 @@ function verifyTerminalOutput(output: string, columns: number): void {
 		"MAIN_NOT_BLOCKED",
 		"↓ to manage",
 		"AGENT_PTY_TASK",
+		"中文长任务",
 		"Agents / general-purpose",
 		"DRAFT_RESTORED",
 		"Agent general-purpose completed.",

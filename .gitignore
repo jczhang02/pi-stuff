@@ -9,6 +9,7 @@ dist/
 .env.*
 !.env.example
 .pi/
+.pi-subagents/
 .DS_Store
 
 # Beads / Dolt runtime state

@@ -61,6 +61,24 @@ function normalizePath(filePath: string): string {
 	return path.isAbsolute(filePath) ? filePath : path.resolve(filePath);
 }
 
+/**
+ * Bun standalone executables expose their bundled entry through a virtual
+ * `/$bunfs/...` path while `process.execPath` remains the real Host binary.
+ */
+export function resolveStandalonePiHostExecutable(deps: PiSpawnDeps = {}): string | undefined {
+	const argv1 = deps.argv1 ?? process.argv[1];
+	if (!argv1?.startsWith("/$bunfs/")) return undefined;
+	const existsSync = deps.existsSync ?? fs.existsSync;
+	const realpathSync = deps.realpathSync ?? fs.realpathSync;
+	const execPath = deps.execPath ?? process.execPath;
+	try {
+		const candidate = realpathSync(normalizePath(execPath));
+		return existsSync(candidate) ? candidate : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 export function resolvePiCliScript(deps: PiSpawnDeps = {}): string | undefined {
 	const existsSync = deps.existsSync ?? fs.existsSync;
 	const realpathSync = deps.realpathSync ?? fs.realpathSync;
@@ -118,6 +136,8 @@ export function getPiSpawnCommand(args: string[], deps: PiSpawnDeps = {}): PiSpa
 	if (piBinary) {
 		return { command: piBinary, args };
 	}
+	const standaloneHost = resolveStandalonePiHostExecutable(deps);
+	if (standaloneHost) return { command: standaloneHost, args };
 
 	const piCliPath = resolvePiCliScript(deps);
 	if (piCliPath) {

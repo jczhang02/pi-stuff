@@ -437,17 +437,18 @@ class AgentDialogComponent implements CommandDialogComponent {
 			const later = rows.length - window.start - window.rows.length;
 			if (later > 0) lines.push(`${GUTTER}${this.context.theme.fg("dim", `… ${later} later`)}`);
 		}
-		lines.push(
-			"",
-			`${GUTTER}${this.context.theme.fg("dim", "↑/↓ navigate · Enter inspect · x stop/dismiss · Esc close")}`,
-		);
+		const hints = ["↑/↓ navigate", "Enter inspect"];
+		const selected = this.listRow();
+		if (selected) hints.push(TERMINAL_STATUSES.has(selected.status) ? "x dismiss" : "x stop");
+		hints.push("Esc close");
+		lines.push("", ...hintLines(this.context.theme, width, hints));
 		return lines;
 	}
 
 	private renderListRow(row: AgentRow, width: number): string {
 		const theme = this.context.theme;
 		const selected = row.key === this.listSelectedKey;
-		const prefix = selected ? theme.fg("accent", "❯ ") : "  ";
+		const prefix = `${GUTTER}${selected ? theme.fg("accent", "› ") : "  "}`;
 		const name = oneLine(row.name) || "agent";
 		const task = oneLine(row.task);
 		const state = styledStatus(row, theme);
@@ -482,7 +483,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 		if (this.feedback) lines.push(renderFeedback(theme, this.feedback, width));
 		lines.push("", `${GUTTER}${theme.fg("muted", "Transcript")}`);
 		lines.push(...this.renderScrollableContent(row, width));
-		lines.push("", this.renderDetailFooter(row, width));
+		lines.push("", ...this.renderDetailFooter(row, width));
 		return lines;
 	}
 
@@ -520,12 +521,12 @@ class AgentDialogComponent implements CommandDialogComponent {
 		return result;
 	}
 
-	private renderDetailFooter(row: AgentRow, width: number): string {
+	private renderDetailFooter(row: AgentRow, width: number): string[] {
 		const actions = ["↑/↓ scroll"];
 		if (!TERMINAL_STATUSES.has(row.status) && row.status !== "stopping") actions.push("s steer");
 		if (RESUMABLE_STATUSES.has(row.status)) actions.push("r resume");
 		actions.push(TERMINAL_STATUSES.has(row.status) ? "x dismiss" : "x stop", "Esc back");
-		return truncateToWidth(`${GUTTER}${this.context.theme.fg("dim", actions.join(" · "))}`, width, "");
+		return hintLines(this.context.theme, width, actions);
 	}
 
 	private renderComposer(width: number): string[] {
@@ -541,7 +542,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 			`${GUTTER}${theme.fg("accent", "›")} ${this.input || theme.fg("dim", resume ? "Continue the task…" : "Send new guidance…")}`,
 		];
 		if (this.feedback) lines.push(renderFeedback(theme, this.feedback, width));
-		lines.push("", `${GUTTER}${theme.fg("dim", `Enter ${resume ? "resume" : "send"} · Esc cancel`)}`);
+		lines.push("", ...hintLines(theme, width, [`Enter ${resume ? "resume" : "send"}`, "Esc cancel"]));
 		return lines;
 	}
 
@@ -586,6 +587,31 @@ function title(theme: Theme, value: string): string {
 function renderFeedback(theme: Theme, feedback: Feedback, width: number): string {
 	const color = feedback.kind === "error" ? "error" : feedback.kind === "success" ? "success" : "warning";
 	return truncateToWidth(`${GUTTER}${theme.fg(color, feedback.message)}`, width, "…");
+}
+
+function hintLines(theme: Theme, width: number, hints: readonly string[]): string[] {
+	const available = Math.max(1, width - visibleWidth(GUTTER));
+	const lines: string[] = [];
+	let current = "";
+	for (const hint of hints) {
+		const safeHint = oneLine(hint);
+		if (!safeHint) continue;
+		const candidate = current ? `${current} · ${safeHint}` : safeHint;
+		if (current && visibleWidth(candidate) > available) {
+			lines.push(current);
+			current = "";
+		}
+		if (visibleWidth(safeHint) <= available) {
+			current = current ? `${current} · ${safeHint}` : safeHint;
+			continue;
+		}
+		const wrapped = wrapTextWithAnsi(safeHint, available);
+		lines.push(...wrapped.slice(0, -1));
+		current = wrapped.at(-1) ?? "";
+	}
+	if (current) lines.push(current);
+	if (lines.length === 0) lines.push("Esc close");
+	return lines.map((line) => `${GUTTER}${theme.fg("dim", line)}`);
 }
 
 function styledStatus(row: AgentRow, theme: Theme, detailed = false): string {

@@ -71,6 +71,7 @@ export interface BackgroundRunnerConfig {
 	sessionDir?: string;
 	piPackageRoot?: string;
 	piArgv1?: string;
+	piExecutable?: string;
 	worktreeSetupHook?: string;
 	worktreeSetupHookTimeoutMs?: number;
 	worktreeBaseDir?: string;
