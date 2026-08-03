@@ -54,11 +54,13 @@ works after slash text elsewhere in the input, while preserving Pi's native edit
 
 ### Live Thoughts
 
-Through Pi's public Markdown-transform hook, streaming and settled thinking blocks are projected as one bounded row
-beginning with `✻ thoughts:` and the latest meaningful fragment. The projection is display-only: it does not alter
-model messages or session data. Pi Stuff fails clearly on an older Host that lacks this required rendering API instead
-of silently presenting a different UI. Keep Pi's native **Hide thinking blocks** setting disabled so the transformed
-live row is rendered.
+Through Pi's public Markdown-transform hook, streaming and settled thinking are projected as one bounded row beginning
+with `✻ thoughts:`. Blank paragraphs, headings, list items, and standalone emphasis start a new semantic block; only
+the current block remains visible, so consecutive model thoughts replace the same row instead of accumulating on one
+line. Narrow rows preserve a readable action word and the newest tail without cutting into the middle of a word. The
+projection is display-only: the complete original Thinking remains in model context and session data. Pi Stuff fails
+clearly on an older Host that lacks this required rendering API instead of silently presenting a different UI. Keep
+Pi's native **Hide thinking blocks** setting disabled so the transformed live row is rendered.
 
 ## `/ui`
 

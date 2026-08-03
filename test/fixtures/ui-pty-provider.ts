@@ -9,10 +9,16 @@ const PROVIDER = "pi-stuff-ui-pty";
 const MODEL = "ui-pty-model";
 const SUBSCRIPTION_PROVIDER = "kimi-coding";
 const SUBSCRIPTION_MODEL = "ui-pty-subscription";
-export const FIRST_THOUGHT = "第一帧安全\u001b]0;OWNED_TITLE\u0007尾部。";
-export const FINAL_THOUGHT = "正在验证中文🧪宽度与实时更新。";
-const PRIMING_THOUGHT = "准备。";
-export const FIXTURE_THINKING = `${PRIMING_THOUGHT}${FIRST_THOUGHT}${FINAL_THOUGHT}`;
+export const THOUGHT_PHASES = [
+	"Creating diagnostic script for false failure",
+	"Drafting failure detection logic in script",
+	"Listing and ranking failure hypotheses",
+	"Adding failure hypotheses commentary",
+] as const;
+const THOUGHT_DELTAS = THOUGHT_PHASES.map(
+	(phase, index) => `${index === 0 ? "" : "\n\n"}**${phase}${index === 0 ? "\u001b]0;OWNED_TITLE\u0007" : ""}**`,
+);
+export const FIXTURE_THINKING = THOUGHT_DELTAS.join("");
 const RESPONSE = [
 	"UI_PTY_DONE 中文结果🧪",
 	...Array.from({ length: 20 }, (_, index) => `真实输出 ${String(index + 1).padStart(2, "0")} · 对话保持优先`),
@@ -160,27 +166,15 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 	stream.push({ type: "start", partial: pending });
 	pending.content = [{ type: "thinking", thinking }];
 	stream.push({ type: "thinking_start", contentIndex: 0, partial: pending });
-	thinking += PRIMING_THOUGHT;
-	pending.content = [{ type: "thinking", thinking }];
-	stream.push({ type: "thinking_delta", contentIndex: 0, delta: PRIMING_THOUGHT, partial: pending });
-	setTimeout(() => {
-		if (settled) return;
-		thinking += FIRST_THOUGHT;
-		pending.content = [{ type: "thinking", thinking }];
-		stream.push({ type: "thinking_delta", contentIndex: 0, delta: FIRST_THOUGHT, partial: pending });
-	}, 800);
-	setTimeout(() => {
-		if (settled) return;
-		thinking += FINAL_THOUGHT;
-		pending.content = [{ type: "thinking", thinking }];
-		stream.push({
-			type: "thinking_delta",
-			contentIndex: 0,
-			delta: FINAL_THOUGHT,
-			partial: pending,
-		});
-	}, 2_000);
-	setTimeout(finish, 3_200);
+	for (const [index, delta] of THOUGHT_DELTAS.entries()) {
+		setTimeout(() => {
+			if (settled) return;
+			thinking += delta;
+			pending.content = [{ type: "thinking", thinking }];
+			stream.push({ type: "thinking_delta", contentIndex: 0, delta, partial: pending });
+		}, index * 900);
+	}
+	setTimeout(finish, THOUGHT_DELTAS.length * 900);
 	options?.signal?.addEventListener("abort", abort, { once: true });
 	return stream;
 }

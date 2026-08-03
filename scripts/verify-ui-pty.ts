@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { FIXTURE_THINKING } from "../test/fixtures/ui-pty-provider.js";
+import { createLiveThoughtTransformer } from "../packages/pi-stuff-ui/live-thought.js";
+import { FIXTURE_THINKING, THOUGHT_PHASES } from "../test/fixtures/ui-pty-provider.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
 
@@ -38,6 +39,7 @@ const LONG_PROMPT = `${LONG_PROMPT_PREFIX} ${Array.from(
 const SUBSCRIPTION_MODEL = "ui-pty-subscription";
 const POLL_INTERVAL_MS = 50;
 const WAIT_TIMEOUT_MS = 20_000;
+const thoughtTransformer = createLiveThoughtTransformer();
 
 export interface UiPtyVerificationOptions {
 	readonly artifactDirectory?: string;
@@ -475,13 +477,25 @@ async function waitForPersistedThinking(sessionDirectory: string): Promise<void>
 	fail("settled session JSONL did not retain the original Thinking content");
 }
 
-function thoughtRows(screen: string): string[] {
-	return screen.split("\n").filter((line) => line.includes("✻ thoughts:"));
+function expectedThoughtProjection(phaseIndex: number, columns: number): string {
+	const markdown = THOUGHT_PHASES.slice(0, phaseIndex + 1)
+		.map((phase) => `**${phase}**`)
+		.join("\n\n");
+	return thoughtTransformer(markdown, {
+		// Pi's assistant message component reserves one column on each side.
+		availableWidth: Math.max(0, columns - 2),
+		isStreaming: true,
+		messageType: "assistant-thinking",
+	}).replaceAll(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/gu, "$1");
 }
 
-function verifySingleThoughtRow(screen: string, marker: string, columns: number, phase: string): void {
+function thoughtRows(screen: string): string[] {
+	return screen.split("\n").filter((line) => /(?:^|\s)✻(?: thoughts:)?\s/u.test(line));
+}
+
+function verifySingleThoughtRow(screen: string, expected: string, columns: number, phase: string): void {
 	const rows = thoughtRows(screen);
-	if (rows.length !== 1 || !rows[0]?.includes(marker)) {
+	if (rows.length !== 1 || !rows[0]?.includes(expected)) {
 		fail(`${phase} did not render exactly one expected Thought row in ${String(columns)} columns\n${screen}`);
 	}
 	if (visibleWidth(rows[0]) > columns) {
@@ -499,19 +513,20 @@ async function verifyThoughtLifecycle(
 	session.sendLiteral(`THOUGHT_PROBE_${String(columns)}`);
 	session.sendKey("Enter");
 
-	let screen: string;
-	const settledThoughtMarker = columns < 32 ? "时更新。" : "实时更新。";
-	if (columns >= 32) {
-		screen = await session.waitForText("✻ thoughts: 第一帧安全尾部。");
-		verifySingleThoughtRow(screen, "第一帧安全尾部。", columns, "first live frame");
-		if (screen.includes(settledMarker)) fail("first Thought frame was captured only after the response settled");
-		if (session.paneTitle().includes("OWNED_TITLE")) fail("model-provided OSC changed the real PTY title");
-
-		screen = await session.waitForText("实时更新。");
-		verifySingleThoughtRow(screen, "实时更新。", columns, "replacement live frame");
-		if (screen.includes("第一帧安全尾部。")) fail("live Thought appended instead of replacing its prior frame");
-		if (screen.includes(settledMarker))
-			fail("replacement Thought frame was captured only after the response settled");
+	let screen = "";
+	for (const [index, phase] of THOUGHT_PHASES.entries()) {
+		const expected = expectedThoughtProjection(index, columns);
+		screen = await session.waitForText(expected);
+		verifySingleThoughtRow(screen, expected, columns, `live frame ${String(index + 1)}`);
+		if (screen.includes(settledMarker)) {
+			fail(`Thought frame ${String(index + 1)} was captured only after the response settled`);
+		}
+		for (let priorIndex = 0; priorIndex < index; priorIndex += 1) {
+			const prior = expectedThoughtProjection(priorIndex, columns);
+			if (prior !== expected && screen.includes(prior)) {
+				fail(`Thought phase ${JSON.stringify(phase)} appended instead of replacing ${JSON.stringify(prior)}`);
+			}
+		}
 		if (session.paneTitle().includes("OWNED_TITLE")) fail("model-provided OSC changed the real PTY title");
 	}
 
@@ -519,8 +534,9 @@ async function verifyThoughtLifecycle(
 	session.resize(columns - 1, rows);
 	await delay(100);
 	session.resize(columns, rows);
-	screen = await session.waitForText(settledThoughtMarker);
-	verifySingleThoughtRow(screen, settledThoughtMarker, columns, "settled resize rerender");
+	const settledThought = expectedThoughtProjection(THOUGHT_PHASES.length - 1, columns);
+	screen = await session.waitForText(settledThought);
+	verifySingleThoughtRow(screen, settledThought, columns, "settled resize rerender");
 	if (!screen.includes(settledMarker)) fail("settled Thought was not present beside its completed response");
 	const promptRows = rowsBelowEditorDivider(screen).filter((line) =>
 		line.includes(`THOUGHT_PROBE_${String(columns)}`),
@@ -614,7 +630,8 @@ async function verifyWideInteractions(
 
 	session.sendLiteral(LONG_PROMPT);
 	session.sendKey("Enter");
-	await session.waitForText("✻ thoughts: 正在验证中文");
+	const finalThought = expectedThoughtProjection(THOUGHT_PHASES.length - 1, 100);
+	await session.waitForText(finalThought);
 	const liveThought = true;
 	await session.waitForText("UI_PTY_DONE 中文结果🧪");
 	await session.waitForText("18k");
@@ -631,7 +648,7 @@ async function verifyWideInteractions(
 	if (!screen.includes(LONG_PROMPT_PREFIX) || screen.includes(LONG_PROMPT_SUFFIX)) {
 		fail("long prompt did not retain its beginning and truncate its bounded tail");
 	}
-	const history = await session.waitForText("✻ thoughts: 正在验证中文", true);
+	const history = await session.waitForText(finalThought, true);
 	if (history.includes("OWNED_TITLE")) fail("Thought rendering exposed a model-provided terminal control payload");
 	verifyTerminalWidth(screen, 100, "settled Thought and long-prompt screen");
 	await writePtyEvidence(options.artifactDirectory, "pi-0.83-statusline-parity-metered-100x32", session);

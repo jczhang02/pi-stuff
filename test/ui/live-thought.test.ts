@@ -14,6 +14,13 @@ const CONTEXT: ThoughtMarkdownTransformContext = {
 	messageType: "assistant-thinking",
 };
 
+const SCREENSHOT_PHASES = [
+	"Creating diagnostic script for false failure",
+	"Drafting failure detection logic in script",
+	"Listing and ranking failure hypotheses",
+	"Adding failure hypotheses commentary",
+] as const;
+
 function transform(markdown: string, overrides: Partial<ThoughtMarkdownTransformContext> = {}): string {
 	return createLiveThoughtTransformer()(markdown, { ...CONTEXT, ...overrides });
 }
@@ -29,32 +36,114 @@ describe("live Thought display", () => {
 		expect(transform(markdown, { messageType: "assistant" })).toBe(markdown);
 	});
 
-	test("projects the newest meaningful live fragment onto one row", () => {
+	test("advances through the screenshot's bold blocks one visible frame at a time", () => {
+		const transformer = createLiveThoughtTransformer();
+
+		for (const [index, phase] of SCREENSHOT_PHASES.entries()) {
+			const markdown = SCREENSHOT_PHASES.slice(0, index + 1)
+				.map((value) => `**${value}**`)
+				.join("\n\n");
+			const rendered = transformer(markdown, CONTEXT);
+			const visible = visibleMarkdown(rendered);
+
+			expect(visible).toBe(`✻ thoughts: ${phase}`);
+			expect(visible).not.toContain("**");
+			expect(visible).not.toContain("\n");
+			expect(visible).not.toMatch(/…\p{L}/u);
+			for (const prior of SCREENSHOT_PHASES.slice(0, index)) {
+				expect(visible).not.toContain(prior);
+			}
+		}
+	});
+
+	test("grows an incomplete current wrapper and replaces it when a new block starts", () => {
+		const transformer = createLiveThoughtTransformer();
+		const snapshots = [
+			["**Creating", "Creating"],
+			["**Creating diagnostic script", "Creating diagnostic script"],
+			["**Creating diagnostic script**", "Creating diagnostic script"],
+			["**Creating diagnostic script**\n\n**Drafting", "Drafting"],
+			["**Creating diagnostic script**\n\n**Drafting failure detection**", "Drafting failure detection"],
+		] as const;
+
+		for (const [markdown, current] of snapshots) {
+			expect(visibleMarkdown(transformer(markdown, CONTEXT))).toBe(`✻ thoughts: ${current}`);
+		}
+	});
+
+	test("recognizes paragraph, heading, list-item, and standalone-emphasis boundaries", () => {
+		expect(
+			visibleMarkdown(transform("First paragraph without punctuation\n\nNewest paragraph without punctuation")),
+		).toBe("✻ thoughts: Newest paragraph without punctuation");
+		expect(visibleMarkdown(transform("Earlier paragraph\n## Current heading"))).toBe("✻ thoughts: Current heading");
+		expect(visibleMarkdown(transform("- First list action\n- Current list action"))).toBe(
+			"✻ thoughts: Current list action",
+		);
+		expect(visibleMarkdown(transform("**First emphasized action**\n_Current emphasized action_"))).toBe(
+			"✻ thoughts: Current emphasized action",
+		);
+	});
+
+	test("lets the current prose block grow without collapsing it to its final sentence", () => {
 		const transformer = createLiveThoughtTransformer();
 		const first = transformer("Inspecting the repository", CONTEXT);
 		const next = transformer("Inspecting the repository. 正在运行真实测试", CONTEXT);
 
 		expect(visibleMarkdown(first)).toBe("✻ thoughts: Inspecting the repository");
-		expect(visibleMarkdown(next)).toBe("✻ thoughts: 正在运行真实测试");
-		expect(next).not.toContain("\n");
+		expect(visibleMarkdown(next)).toBe("✻ thoughts: Inspecting the repository. 正在运行真实测试");
 	});
 
-	test("retains the final meaningful fragment after streaming settles", () => {
-		const markdown = "First possibility was rejected. 最后选择公开 Host seam。";
+	test("retains the final block after settlement, resize, restored replay, and resume", () => {
+		const markdown = "**First possibility was rejected**\n\n**最后选择公开 Host seam。**";
 		const live = transform(markdown);
 		const settled = transform(markdown, { isStreaming: false });
+		const resized = transform(markdown, { availableWidth: 32, isStreaming: false });
+		const restored = createLiveThoughtTransformer()(markdown, {
+			...CONTEXT,
+			availableWidth: 32,
+			isStreaming: false,
+		});
+		const resumed = createLiveThoughtTransformer()(markdown, { ...CONTEXT, isStreaming: false });
 
 		expect(visibleMarkdown(settled)).toBe("✻ thoughts: 最后选择公开 Host seam。");
 		expect(settled).toBe(live);
+		expect(restored).toBe(resized);
+		expect(visibleMarkdown(resized)).not.toContain("First possibility");
+		expect(visibleWidth(visibleMarkdown(resized))).toBeLessThanOrEqual(32);
+		expect(resumed).toBe(settled);
 	});
 
-	test("fits CJK and emoji by terminal columns while preserving the newest tail", () => {
+	test("fits CJK and emoji by terminal columns while preserving a readable start and newest tail", () => {
 		const rendered = transform("旧步骤完成。正在检查中文🧪结果", { availableWidth: 24 });
 		const visible = visibleMarkdown(rendered);
 
 		expect(visibleWidth(visible)).toBeLessThanOrEqual(24);
-		expect(visible).toStartWith("✻ thoughts: …");
+		expect(visible).toStartWith("✻ thoughts: 旧");
 		expect(visible).toEndWith("结果");
+		expect(visible).not.toMatch(/…\p{L}/u);
+	});
+
+	test("does not expose a mid-word leading ellipsis when fitting long prose", () => {
+		const rendered = transform(
+			"Creating an exceptionally verbose diagnostic script for the newest failure hypothesis",
+			{
+				availableWidth: 42,
+			},
+		);
+		const visible = visibleMarkdown(rendered);
+
+		expect(visibleWidth(visible)).toBeLessThanOrEqual(42);
+		expect(visible).toStartWith("✻ thoughts: Creating");
+		expect(visible).toEndWith("hypothesis");
+		expect(visible).not.toContain("…reating");
+	});
+
+	test("reduces the label when that preserves both the action start and newest tail", () => {
+		const rendered = transform("Adding failure hypotheses commentary", { availableWidth: 30 });
+		const visible = visibleMarkdown(rendered);
+
+		expect(visible).toBe("✻ Adding … commentary");
+		expect(visibleWidth(visible)).toBeLessThanOrEqual(30);
 	});
 
 	test("reduces the label before allowing narrow-terminal wrapping", () => {
@@ -70,7 +159,7 @@ describe("live Thought display", () => {
 	});
 
 	test("removes terminal protocols and direction controls without damaging CJK", () => {
-		const rendered = transform("Old. \u001b]0;forged title\u0007最新\u001b[31m红色\u001b[0m\u202efragment");
+		const rendered = transform("Old.\n\n\u001b]0;forged title\u0007最新\u001b[31m红色\u001b[0m\u202efragment");
 		const visible = visibleMarkdown(rendered);
 
 		expect(visible).toBe("✻ thoughts: 最新红色 fragment");
@@ -80,11 +169,12 @@ describe("live Thought display", () => {
 		expect(rendered).not.toContain("forged title");
 	});
 
-	test("escapes model-provided Markdown so it remains literal and one-line", () => {
-		const rendered = transform("Old. **Use [x](url), <tag> & `code`**");
+	test("strips outer display emphasis while keeping inner model text literal and one-line", () => {
+		const rendered = transform("Old.\n\n**Use [x](url), <tag> & `code`**");
 
-		expect(visibleMarkdown(rendered)).toBe("✻ thoughts: **Use [x](url), <tag> & `code`**");
-		expect(rendered).toContain("\\*\\*Use");
+		expect(visibleMarkdown(rendered)).toBe("✻ thoughts: Use [x](url), <tag> & `code`");
+		expect(rendered).not.toContain("\\*\\*Use");
+		expect(rendered).toContain("\\[x\\]");
 		expect(rendered).not.toContain("\n");
 	});
 
@@ -105,7 +195,7 @@ describe("live Thought Host adapter", () => {
 
 		registerLiveThoughtDisplay(api);
 		expect(registered).toBeDefined();
-		expect(visibleMarkdown(registered?.("Checking. Ready", CONTEXT) ?? "")).toBe("✻ thoughts: Ready");
+		expect(visibleMarkdown(registered?.("Checking. Ready", CONTEXT) ?? "")).toBe("✻ thoughts: Checking. Ready");
 	});
 
 	test("fails clearly when the Host cannot provide the accepted projection", () => {

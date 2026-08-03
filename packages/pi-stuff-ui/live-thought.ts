@@ -17,10 +17,16 @@ const FULL_PREFIX = "✻ thoughts: ";
 const COMPACT_PREFIX = "✻ ";
 const LABEL = "✻ thoughts:";
 const ELLIPSIS = "…";
-const SENTENCE_SEGMENTER = new Intl.Segmenter("und", { granularity: "sentence" });
+const MIDDLE_ELLIPSIS = " … ";
 const GRAPHEME_SEGMENTER = new Intl.Segmenter("und", { granularity: "grapheme" });
+const WORD_SEGMENTER = new Intl.Segmenter("und", { granularity: "word" });
 const MEANINGFUL_TEXT = /[\p{L}\p{N}\p{S}]/u;
+const LATIN_WORD = /^[\p{Script=Latin}\p{M}\p{N}'’-]+$/u;
 const MARKDOWN_PUNCTUATION = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/gu;
+const HEADING = /^(#{1,6})[ \t]+(.*)$/u;
+const TRAILING_HEADING_MARKER = /[ \t]+#+[ \t]*$/u;
+const LIST_ITEM = /^(?:[-+*]|\d{1,9}[.)])[ \t]+(.*)$/u;
+const EMPHASIS_MARKERS = ["***", "___", "**", "__", "*", "_"] as const;
 
 /** Register the display-only Thought projection through Pi's public Host seam. */
 export function registerLiveThoughtDisplay(pi: ExtensionAPI): void {
@@ -35,7 +41,7 @@ export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 	return (markdown, context) => {
 		if (context.messageType !== "assistant-thinking") return markdown;
 
-		const fragment = latestMeaningfulFragment(sanitizeInline(markdown));
+		const fragment = latestMeaningfulMarkdownFragment(markdown);
 		if (!fragment) return "";
 		return renderThought(fragment, context.availableWidth);
 	};
@@ -46,13 +52,95 @@ function hasMarkdownTransformer(pi: ExtensionAPI): pi is ExtensionAPI & Markdown
 	return typeof candidate.registerMarkdownTransformer === "function";
 }
 
-function latestMeaningfulFragment(text: string): string {
+function latestMeaningfulMarkdownFragment(markdown: string): string {
 	let latest = "";
-	for (const { segment } of SENTENCE_SEGMENTER.segment(text)) {
-		const candidate = segment.trim();
+	for (const block of semanticMarkdownBlocks(sanitizeMarkdown(markdown))) {
+		const candidate = sanitizeInline(stripOuterPresentationMarkers(block));
 		if (MEANINGFUL_TEXT.test(candidate)) latest = candidate;
 	}
 	return latest;
+}
+
+function semanticMarkdownBlocks(markdown: string): string[] {
+	const blocks: string[] = [];
+	let currentLines: string[] = [];
+	let currentEmphasis: (typeof EMPHASIS_MARKERS)[number] | undefined;
+
+	const flush = () => {
+		const block = currentLines.join(" ").trim();
+		if (block) blocks.push(block);
+		currentLines = [];
+		currentEmphasis = undefined;
+	};
+
+	for (const rawLine of markdown.split("\n")) {
+		const line = rawLine.trim();
+		if (!line) {
+			flush();
+			continue;
+		}
+
+		const heading = HEADING.exec(line);
+		if (heading) {
+			flush();
+			const content = (heading[2] ?? "").replace(TRAILING_HEADING_MARKER, "").trim();
+			if (content) blocks.push(content);
+			continue;
+		}
+
+		const listItem = LIST_ITEM.exec(line);
+		if (listItem) {
+			flush();
+			currentLines = [(listItem[1] ?? "").trim()];
+			continue;
+		}
+
+		const emphasis = openingEmphasisMarker(line);
+		if (emphasis) {
+			flush();
+			currentLines = [line];
+			currentEmphasis = emphasis;
+			if (hasClosingEmphasis(line, emphasis)) flush();
+			continue;
+		}
+
+		currentLines.push(line);
+		if (currentEmphasis && hasClosingEmphasis(currentLines.join(" "), currentEmphasis)) flush();
+	}
+
+	flush();
+	return blocks;
+}
+
+function openingEmphasisMarker(text: string): (typeof EMPHASIS_MARKERS)[number] | undefined {
+	return EMPHASIS_MARKERS.find((marker) => text.startsWith(marker));
+}
+
+function hasClosingEmphasis(text: string, marker: (typeof EMPHASIS_MARKERS)[number]): boolean {
+	const content = text.slice(marker.length).trimEnd();
+	return content.length > 0 && content.endsWith(marker);
+}
+
+function stripOuterPresentationMarkers(value: string): string {
+	let text = value.trim();
+	const heading = HEADING.exec(text);
+	if (heading) text = (heading[2] ?? "").replace(TRAILING_HEADING_MARKER, "").trim();
+
+	const listItem = LIST_ITEM.exec(text);
+	if (listItem) text = (listItem[1] ?? "").trim();
+
+	const marker = openingEmphasisMarker(text);
+	if (!marker) return text;
+
+	text = text.slice(marker.length).trimStart();
+	for (let markerLength = marker.length; markerLength > 0; markerLength -= 1) {
+		const partialMarker = marker.slice(0, markerLength);
+		if (text.trimEnd().endsWith(partialMarker)) {
+			text = text.trimEnd().slice(0, -partialMarker.length).trimEnd();
+			break;
+		}
+	}
+	return text;
 }
 
 function renderThought(fragment: string, availableWidth: number): string {
@@ -61,14 +149,22 @@ function renderThought(fragment: string, availableWidth: number): string {
 
 	const fullPrefixWidth = visibleWidth(FULL_PREFIX);
 	if (width > fullPrefixWidth) {
-		const content = fitTail(fragment, width - fullPrefixWidth);
+		const content = fitFragment(fragment, width - fullPrefixWidth, true);
 		if (content) return `${FULL_PREFIX}${escapeMarkdown(content)}`;
 	}
 
 	const compactPrefixWidth = visibleWidth(COMPACT_PREFIX);
 	if (width > compactPrefixWidth) {
-		const content = fitTail(fragment, width - compactPrefixWidth);
-		return `${COMPACT_PREFIX}${escapeMarkdown(content)}`;
+		const content = fitFragment(fragment, width - compactPrefixWidth, true);
+		if (content) return `${COMPACT_PREFIX}${escapeMarkdown(content)}`;
+	}
+	if (width > fullPrefixWidth) {
+		const content = fitFragment(fragment, width - fullPrefixWidth, false);
+		if (content) return `${FULL_PREFIX}${escapeMarkdown(content)}`;
+	}
+	if (width > compactPrefixWidth) {
+		const content = fitFragment(fragment, width - compactPrefixWidth, false);
+		if (content) return `${COMPACT_PREFIX}${escapeMarkdown(content)}`;
 	}
 
 	return fitHead(LABEL, width);
@@ -94,27 +190,57 @@ function fitHead(text: string, width: number): string {
 	return `${result}${ELLIPSIS}`;
 }
 
-function fitTail(text: string, width: number): string {
+function fitFragment(text: string, width: number, requireNewestTail: boolean): string {
 	if (visibleWidth(text) <= width) return text;
 	if (width <= 0) return "";
 
-	const budget = width - visibleWidth(ELLIPSIS);
-	const segments = [...GRAPHEME_SEGMENTER.segment(text)].map(({ segment }) => segment);
-	const last = segments.at(-1) ?? "";
-	if (budget <= 0) return visibleWidth(last) <= width ? last : "";
+	const segments = [...WORD_SEGMENTER.segment(text)];
+	const firstMeaningful = segments.find(({ segment }) => MEANINGFUL_TEXT.test(segment));
+	if (!firstMeaningful) return "";
 
+	const prefixEnd = firstMeaningful.index + firstMeaningful.segment.length;
+	const prefix = text.slice(0, prefixEnd).trim();
+	const tailBudget = width - visibleWidth(prefix) - visibleWidth(MIDDLE_ELLIPSIS);
+	if (tailBudget > 0) {
+		for (const segment of segments) {
+			if (segment.index < prefixEnd || !MEANINGFUL_TEXT.test(segment.segment)) continue;
+			const tail = text.slice(segment.index).trim();
+			if (visibleWidth(tail) <= tailBudget) return `${prefix}${MIDDLE_ELLIPSIS}${tail}`;
+		}
+		let finalMeaningful: (typeof segments)[number] | undefined;
+		for (let index = segments.length - 1; index >= 0; index -= 1) {
+			const segment = segments[index];
+			if (segment && MEANINGFUL_TEXT.test(segment.segment)) {
+				finalMeaningful = segment;
+				break;
+			}
+		}
+		if (
+			finalMeaningful &&
+			finalMeaningful.index >= prefixEnd &&
+			visibleWidth(finalMeaningful.segment) <= tailBudget
+		) {
+			return `${prefix}${MIDDLE_ELLIPSIS}${finalMeaningful.segment}`;
+		}
+	}
+
+	if (requireNewestTail) return "";
+	if (visibleWidth(prefix) + visibleWidth(ELLIPSIS) <= width) return `${prefix}${ELLIPSIS}`;
+	if (LATIN_WORD.test(firstMeaningful.segment)) return "";
+	return fitReadableHead(text, width);
+}
+
+function fitReadableHead(text: string, width: number): string {
 	let result = "";
 	let used = 0;
-	for (let index = segments.length - 1; index >= 0; index -= 1) {
-		const segment = segments[index];
-		if (segment === undefined) continue;
+	for (const { segment } of GRAPHEME_SEGMENTER.segment(text)) {
 		const segmentWidth = visibleWidth(segment);
-		if (used + segmentWidth > budget) break;
-		result = `${segment}${result}`;
+		if (used + segmentWidth > width) break;
+		result += segment;
 		used += segmentWidth;
 	}
-	if (!result) return visibleWidth(last) <= width ? last : "";
-	return `${ELLIPSIS}${result.trimStart()}`;
+	if (!result) return "";
+	return used + visibleWidth(ELLIPSIS) <= width ? `${result}${ELLIPSIS}` : result;
 }
 
 function firstGrapheme(text: string, width: number): string {
@@ -161,8 +287,7 @@ function skipControlString(value: string, start: number): number {
 	return index;
 }
 
-/** Remove terminal protocols and collapse real model text to one printable row. */
-function sanitizeInline(value: string): string {
+function sanitizeMarkdown(value: string): string {
 	let text = "";
 	let index = 0;
 	while (index < value.length) {
@@ -200,6 +325,16 @@ function sanitizeInline(value: string): string {
 			index = skipControlString(value, index + 1);
 			continue;
 		}
+		if (code === 0x0d) {
+			text += "\n";
+			index += value.charCodeAt(index + 1) === 0x0a ? 2 : 1;
+			continue;
+		}
+		if (code === 0x0a) {
+			text += "\n";
+			index += 1;
+			continue;
+		}
 		if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || isBidiControl(code)) {
 			text += " ";
 			index += 1;
@@ -208,5 +343,11 @@ function sanitizeInline(value: string): string {
 		text += value[index];
 		index += 1;
 	}
+	return text;
+}
+
+/** Collapse sanitized model text to one printable row. */
+function sanitizeInline(value: string): string {
+	const text = sanitizeMarkdown(value);
 	return text.replaceAll(/\s+/gu, " ").trim();
 }
