@@ -18,6 +18,7 @@ import {
 } from "./view/format.js";
 
 const WIDGET_KEY = "rpiv-todos";
+const WIDGET_GUTTER = "  ";
 const ALL_COMPLETE_LINGER_MS = 5_000;
 const RECENT_COMPLETION_MS = 30_000;
 
@@ -163,11 +164,11 @@ export class TodoOverlay {
 		const layout = selectOverlayLayout(tasks, recentCompletedIds);
 		const truncate = (line: string): string => truncateToWidth(line, Math.max(0, width), "…");
 
-		if (this.collapsed) return [truncate(formatCollapsedNextLine(layout.next, theme))];
+		if (this.collapsed) return [truncate(`${WIDGET_GUTTER}${formatCollapsedNextLine(layout.next, theme)}`)];
 
-		const lines = layout.visible.map((row) => truncate(formatOverlayTaskLine(row, theme)));
+		const lines = layout.visible.map((row) => truncate(`${WIDGET_GUTTER}${formatOverlayTaskLine(row, theme)}`));
 		if (layout.hidden.length > 0) {
-			lines.push(truncate(formatOverlayOverflowLine(layout.hidden, theme)));
+			lines.push(truncate(`${WIDGET_GUTTER}${formatOverlayOverflowLine(layout.hidden, theme)}`));
 		}
 		return lines;
 	}

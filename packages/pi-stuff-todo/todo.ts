@@ -1,5 +1,5 @@
-import type { AgentToolResult, ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
 import { applyTaskMutation, type Op } from "./state/state-reducer.js";
 import { commitState, getState, sid } from "./state/store.js";
 import { buildToolResult } from "./tool/response-envelope.js";
@@ -25,29 +25,38 @@ interface TaskMutationEvent {
 
 type TaskMutationListener = (event: TaskMutationEvent) => void;
 
+interface TaskIdPresentationParams extends Record<string, unknown> {
+	readonly taskId?: unknown;
+}
+
 const SHARED_GUIDELINES = [
 	"Use the Task tools for multi-step work that benefits from visible progress; skip them for a single trivial action.",
 	"Set a task to in_progress before working on it and completed only after its result has been verified.",
 	"Use TaskUpdate to add dependencies. A pending task with unresolved blockers should not be started.",
 ];
 
-function hiddenComponent(): Text {
-	return new Text("", 0, 0);
-}
-
 function resultText(result: AgentToolResult<TaskDetails>): string {
 	const content = result.content.find((item) => item.type === "text");
 	return content?.type === "text" ? content.text : "Task operation failed";
 }
 
-function renderTaskResult(
-	result: AgentToolResult<TaskDetails>,
-	theme: Theme,
-	context: { readonly isError: boolean },
-): Text {
-	const details = result.details as TaskDetails | undefined;
-	if (!context.isError && !details?.error) return hiddenComponent();
-	return new Text(theme.fg("error", details?.error ?? resultText(result)), 0, 0);
+function taskIdTarget(params: Readonly<TaskIdPresentationParams>): string {
+	const taskId = params.taskId;
+	return typeof taskId === "string" && taskId ? `#${taskId}` : "";
+}
+
+function taskPresentation<TParams extends Record<string, unknown>>(
+	label: string,
+	target: (params: Readonly<TParams>) => string,
+): SuiteToolPresentation<TParams, TaskDetails> {
+	return {
+		label,
+		resultIsError: (_params, result) => Boolean(result.details?.error),
+		runningSummary: "updating",
+		summarize: (_params, result) => result.details?.error ?? resultText(result),
+		target,
+		transcript: "errors-only",
+	};
 }
 
 export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationListener): void {
@@ -68,73 +77,65 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 		return buildToolResult(action, params, result.state, result.op);
 	}
 
-	pi.registerTool<typeof TaskCreateParamsSchema, TaskDetails>({
+	const createTool: ToolDefinition<typeof TaskCreateParamsSchema, TaskDetails> = {
 		name: TASK_CREATE_TOOL_NAME,
 		label: TASK_CREATE_TOOL_NAME,
 		description: "Create one task with a short subject and enough detail to know when it is done.",
 		promptSnippet: "Create a task in the current session task list",
 		promptGuidelines: SHARED_GUIDELINES,
 		parameters: TaskCreateParamsSchema,
-		renderShell: "self",
 		executionMode: "parallel",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return execute("create", params, ctx);
 		},
-		renderCall: hiddenComponent,
-		renderResult(result, _options, theme, context) {
-			return renderTaskResult(result, theme, context);
-		},
-	});
+	};
+	registerSuiteOwnedTool(
+		pi,
+		createTool,
+		taskPresentation("Task create", (params) => params.subject),
+	);
 
-	pi.registerTool<typeof TaskGetParamsSchema, TaskDetails>({
+	const getTool: ToolDefinition<typeof TaskGetParamsSchema, TaskDetails> = {
 		name: TASK_GET_TOOL_NAME,
 		label: TASK_GET_TOOL_NAME,
 		description: "Return the full current record for one task, or not found when the ID is absent.",
 		promptSnippet: "Retrieve one task by ID",
 		parameters: TaskGetParamsSchema,
-		renderShell: "self",
 		executionMode: "parallel",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return execute("get", params, ctx);
 		},
-		renderCall: hiddenComponent,
-		renderResult(result, _options, theme, context) {
-			return renderTaskResult(result, theme, context);
-		},
-	});
+	};
+	registerSuiteOwnedTool(pi, getTool, taskPresentation("Task get", taskIdTarget));
 
-	pi.registerTool<typeof TaskListParamsSchema, TaskDetails>({
+	const listTool: ToolDefinition<typeof TaskListParamsSchema, TaskDetails> = {
 		name: TASK_LIST_TOOL_NAME,
 		label: TASK_LIST_TOOL_NAME,
 		description: "Return the authoritative list of current, non-deleted tasks and unresolved blockers.",
 		promptSnippet: "List all current tasks",
 		parameters: TaskListParamsSchema,
-		renderShell: "self",
 		executionMode: "parallel",
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			return execute("list", {}, ctx);
 		},
-		renderCall: hiddenComponent,
-		renderResult(result, _options, theme, context) {
-			return renderTaskResult(result, theme, context);
-		},
-	});
+	};
+	registerSuiteOwnedTool(
+		pi,
+		listTool,
+		taskPresentation("Task list", () => ""),
+	);
 
-	pi.registerTool<typeof TaskUpdateParamsSchema, TaskDetails>({
+	const updateTool: ToolDefinition<typeof TaskUpdateParamsSchema, TaskDetails> = {
 		name: TASK_UPDATE_TOOL_NAME,
 		label: TASK_UPDATE_TOOL_NAME,
 		description:
 			"Incrementally update one task's fields, status, owner, or dependencies. Set status to deleted to remove it.",
 		promptSnippet: "Update a task or its dependencies",
 		parameters: TaskUpdateParamsSchema,
-		renderShell: "self",
 		executionMode: "parallel",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			return execute("update", params, ctx);
 		},
-		renderCall: hiddenComponent,
-		renderResult(result, _options, theme, context) {
-			return renderTaskResult(result, theme, context);
-		},
-	});
+	};
+	registerSuiteOwnedTool(pi, updateTool, taskPresentation("Task update", taskIdTarget));
 }

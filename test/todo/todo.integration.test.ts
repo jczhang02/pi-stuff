@@ -24,6 +24,7 @@ type TaskMutationEvent = Parameters<NonNullable<Parameters<typeof registerTaskTo
 function createToolHarness(onMutation: (event: TaskMutationEvent) => void) {
 	const definitions = new Map<string, ToolDefinition>();
 	const api = {
+		events: {},
 		registerTool(definition: ToolDefinition) {
 			definitions.set(definition.name, definition);
 		},
@@ -59,13 +60,31 @@ function text(result: AgentToolResult<unknown>): string {
 }
 
 function renderedLines(tool: ToolDefinition, result: AgentToolResult<unknown>, isError: boolean): string[] {
+	const callRenderer = tool.renderCall;
 	const renderer = tool.renderResult;
-	if (!renderer) throw new Error(`Tool ${tool.name} has no result renderer`);
+	if (!callRenderer || !renderer) throw new Error(`Tool ${tool.name} has no complete renderer`);
 	const theme = {
+		bold: (value: string) => value,
 		fg: (_color: string, value: string) => value,
 	} as unknown as Theme;
-	const context = { isError } as Parameters<typeof renderer>[3];
-	return renderer(result, { expanded: false, isPartial: false }, theme, context).render(80);
+	const state = {};
+	const context = {
+		args: {},
+		argsComplete: true,
+		cwd: "/project",
+		executionStarted: true,
+		expanded: false,
+		invalidate: () => {},
+		isError,
+		isPartial: false,
+		lastComponent: undefined,
+		showImages: true,
+		state,
+		toolCallId: `render-${tool.name}`,
+	} as Parameters<typeof renderer>[3];
+	const row = callRenderer({}, theme, context);
+	renderer(result, { expanded: false, isPartial: false }, theme, context);
+	return row.render(80);
 }
 
 beforeEach(() => {
@@ -127,7 +146,7 @@ describe("registered Task tools", () => {
 			details: undefined,
 		} as unknown as AgentToolResult<unknown>;
 		expect(renderedLines(harness.tool(TASK_UPDATE_TOOL_NAME), validationFailure, true).join("\n").trim()).toBe(
-			"Invalid TaskUpdate input",
+			"⊗ Task update · Invalid TaskUpdate input",
 		);
 		expect(mutations.map(({ action }) => action)).toEqual(["create", "create", "update"]);
 	});

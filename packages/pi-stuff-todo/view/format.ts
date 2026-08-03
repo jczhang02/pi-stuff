@@ -23,6 +23,7 @@ export interface OverlayLayout {
 }
 
 const MAX_OVERLAY_TASK_ROWS = 5;
+const UNTITLED_TASK = "untitled task";
 
 function compareTaskIds(left: OverlayTask, right: OverlayTask): number {
 	if (left.id === right.id) return 0;
@@ -34,8 +35,88 @@ function compareTaskIds(left: OverlayTask, right: OverlayTask): number {
 	return left.id < right.id ? -1 : 1;
 }
 
+function skipControlString(value: string, start: number): number {
+	let index = start;
+	while (index < value.length) {
+		const code = value.charCodeAt(index);
+		if (code === 0x07 || code === 0x9c) return index + 1;
+		if (code === 0x1b && value.charCodeAt(index + 1) === 0x5c) return index + 2;
+		index++;
+	}
+	return index;
+}
+
+function skipControlSequence(value: string, start: number): number {
+	let index = start;
+	while (index < value.length) {
+		const code = value.charCodeAt(index++);
+		if (code >= 0x40 && code <= 0x7e) break;
+	}
+	return index;
+}
+
+function isBidiFormatControl(code: number): boolean {
+	return (
+		code === 0x061c ||
+		code === 0x200e ||
+		code === 0x200f ||
+		(code >= 0x202a && code <= 0x202e) ||
+		(code >= 0x2066 && code <= 0x2069)
+	);
+}
+
+/** Remove terminal commands and collapse user-controlled content to one row. */
 function singleLine(value: string): string {
-	return value.replace(/\s+/g, " ").trim();
+	let text = "";
+	let index = 0;
+	while (index < value.length) {
+		const code = value.charCodeAt(index);
+		if (code === 0x1b) {
+			const introducer = value.charCodeAt(index + 1);
+			if (introducer === 0x5b) {
+				index = skipControlSequence(value, index + 2);
+				continue;
+			}
+			if (
+				introducer === 0x5d ||
+				introducer === 0x50 ||
+				introducer === 0x58 ||
+				introducer === 0x5e ||
+				introducer === 0x5f
+			) {
+				index = skipControlString(value, index + 2);
+				continue;
+			}
+			index++;
+			while (index < value.length && value.charCodeAt(index) >= 0x20 && value.charCodeAt(index) <= 0x2f) {
+				index++;
+			}
+			if (index < value.length) index++;
+			continue;
+		}
+		if (code === 0x9b) {
+			index = skipControlSequence(value, index + 1);
+			continue;
+		}
+		if (code === 0x90 || code === 0x98 || code === 0x9d || code === 0x9e || code === 0x9f) {
+			index = skipControlString(value, index + 1);
+			continue;
+		}
+		if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
+			if (code === 0x09 || code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d) text += " ";
+			index++;
+			continue;
+		}
+		if (isBidiFormatControl(code)) {
+			index++;
+			continue;
+		}
+		const point = value.codePointAt(index);
+		if (point === undefined) break;
+		text += String.fromCodePoint(point);
+		index += point > 0xffff ? 2 : 1;
+	}
+	return text.replace(/\s+/gu, " ").trim();
 }
 
 /**
@@ -101,7 +182,7 @@ function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
 export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme): string {
 	const { task, openBlockers } = row;
 	const glyph = overlayStatusGlyph(task.status, theme);
-	const text = singleLine(task.subject);
+	const text = singleLine(task.subject) || UNTITLED_TASK;
 	let subject: string;
 	if (task.status === "completed" || task.status === "deleted") {
 		subject = theme.strikethrough(theme.fg("dim", text));
@@ -115,7 +196,7 @@ export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme): string
 
 	const blockerSuffix =
 		openBlockers.length > 0
-			? ` ${theme.fg("dim", `blocked by ${openBlockers.map((id) => `#${id}`).join(", ")}`)}`
+			? ` ${theme.fg("dim", `blocked by ${openBlockers.map((id) => `#${singleLine(id) || "?"}`).join(", ")}`)}`
 			: "";
 	return `${glyph} ${subject}${blockerSuffix}`;
 }
@@ -135,7 +216,7 @@ export function formatOverlayOverflowLine(hidden: readonly OverlayTaskRow[], the
 export function formatCollapsedNextLine(next: OverlayTaskRow | undefined, theme: Theme): string {
 	const label = theme.fg("dim", "Next:");
 	if (!next) return `${label} ${theme.fg("dim", "all tasks complete")}`;
-	const subject = singleLine(next.task.subject);
+	const subject = singleLine(next.task.subject) || UNTITLED_TASK;
 	const text = next.openBlockers.length > 0 ? theme.fg("dim", subject) : theme.fg("text", subject);
 	return `${label} ${text}`;
 }

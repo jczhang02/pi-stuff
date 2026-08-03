@@ -24,6 +24,17 @@ function task(overrides: Partial<OverlayTask> = {}): OverlayTask {
 	};
 }
 
+function containsTerminalControl(value: string): boolean {
+	return [...value].some((character) => {
+		const code = character.codePointAt(0) ?? 0;
+		return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+	});
+}
+
+function containsBidiFormatControl(value: string): boolean {
+	return /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u.test(value);
+}
+
 describe("formatOverlayTaskLine", () => {
 	test("uses a quiet checkbox for runnable pending work", () => {
 		expect(formatOverlayTaskLine({ task: task(), openBlockers: [] }, recordingTheme)).toBe(
@@ -56,6 +67,35 @@ describe("formatOverlayTaskLine", () => {
 		);
 		expect(line).toContain("first second third");
 		expect(line).not.toContain("\n");
+	});
+
+	test("removes terminal controls without damaging CJK task text", () => {
+		const line = formatOverlayTaskLine(
+			{
+				task: task({
+					subject:
+						"检查\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u001b[31m危险\u001b[0m\u001b]0;伪造标题\u0007 输出\u009b32m完成\u009b0m\u001b7 保留",
+				}),
+				openBlockers: ["依赖\u202e-2"],
+			},
+			recordingTheme,
+		);
+
+		expect(line).toContain("检查危险 输出完成 保留");
+		expect(line).toContain("blocked by #依赖-2");
+		expect(line).not.toContain("伪造标题");
+		expect(containsTerminalControl(line)).toBe(false);
+		expect(containsBidiFormatControl(line)).toBe(false);
+	});
+
+	test("keeps a meaningful row when the subject contains only terminal commands", () => {
+		const line = formatOverlayTaskLine(
+			{ task: task({ subject: "\u001b[31m\u001b[0m\u001b]0;hidden\u0007" }), openBlockers: [] },
+			recordingTheme,
+		);
+
+		expect(line).toContain("untitled task");
+		expect(line).not.toContain("hidden");
 	});
 });
 
@@ -107,5 +147,14 @@ describe("formatCollapsedNextLine", () => {
 
 	test("has an all-complete fallback during the five-second linger", () => {
 		expect(formatCollapsedNextLine(undefined, recordingTheme)).toBe("<dim>Next:</dim> <dim>all tasks complete</dim>");
+	});
+
+	test("uses the same fallback for a collapsed control-only subject", () => {
+		expect(
+			formatCollapsedNextLine(
+				{ task: task({ subject: "\u001b]0;hidden\u0007" }), openBlockers: [] },
+				recordingTheme,
+			),
+		).toBe("<dim>Next:</dim> <text>untitled task</text>");
 	});
 });

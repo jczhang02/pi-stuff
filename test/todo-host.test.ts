@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -8,16 +8,14 @@ import {
 	DefaultResourceLoader,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { runPiRpcSmoke } from "../scripts/smoke-pi.js";
 
 const REPOSITORY_ROOT = resolve(import.meta.dir, "..");
 const TODO_EXTENSION = join(REPOSITORY_ROOT, "packages", "pi-stuff-todo", "index.ts");
-const TODO_PACKAGE = resolve(TODO_EXTENSION, "..");
-const AGENTS_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-agents");
-const BTW_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-btw");
-const PERMISSIONS_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-permissions");
-const UI_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff-ui");
-const AGGREGATE_EXTENSION = join(REPOSITORY_ROOT, "packages", "pi-stuff", "index.ts");
+const AGGREGATE_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff");
+const TODO_TOOL_INSPECTOR = join(REPOSITORY_ROOT, "test", "fixtures", "assert-todo-tools.ts");
 const EXPECTED_TOOLS = ["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"];
+const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
 
 const sessions: AgentSession[] = [];
 const temporaryRoots: string[] = [];
@@ -72,22 +70,12 @@ test("Pi 0.83 loads exactly the Todo tools from the Capability package", async (
 });
 
 test("Pi 0.83 loads all Todo tools through the Aggregate package", async () => {
-	const session = await loadExtension(async (root) => {
-		const aggregateDirectory = join(root, "aggregate");
-		const dependencyScope = join(aggregateDirectory, "node_modules", "@jczhang02");
-		await mkdir(aggregateDirectory);
-		await mkdir(dependencyScope, { recursive: true });
-		await writeFile(join(aggregateDirectory, "index.ts"), await readFile(AGGREGATE_EXTENSION));
-		await Promise.all([
-			symlink(UI_PACKAGE, join(dependencyScope, "pi-stuff-ui"), "dir"),
-			symlink(PERMISSIONS_PACKAGE, join(dependencyScope, "pi-stuff-permissions"), "dir"),
-			symlink(AGENTS_PACKAGE, join(dependencyScope, "pi-stuff-agents"), "dir"),
-			symlink(TODO_PACKAGE, join(dependencyScope, "pi-stuff-todo"), "dir"),
-			symlink(BTW_PACKAGE, join(dependencyScope, "pi-stuff-btw"), "dir"),
-		]);
-		return join(aggregateDirectory, "index.ts");
+	const result = await runPiRpcSmoke({
+		extensions: [TODO_TOOL_INSPECTOR],
+		packages: [AGGREGATE_PACKAGE],
+		piBinary: PI_BINARY,
 	});
 
-	const activeTools = new Set(session.getActiveToolNames());
-	for (const name of EXPECTED_TOOLS) expect(activeTools.has(name)).toBe(true);
+	expect(result.stderr).toBe("");
+	expect(result.commandNames).toContain("todo-tools-certified");
 });
