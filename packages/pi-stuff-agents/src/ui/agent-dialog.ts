@@ -23,6 +23,8 @@ import type {
 	AgentStatus,
 	CurrentAgents,
 } from "../session/current-agents.js";
+import { boundedTerminalLine } from "../shared/display-description.js";
+import { fitAgentDescription } from "./agent-roster.js";
 
 const GUTTER = "  ";
 const NARROW_WIDTH = 64;
@@ -216,7 +218,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 		}
 		if (decodePrintable(data)?.toLowerCase() === "x") {
 			const row = this.listRow();
-			if (row) this.stopOrDismiss(row);
+			if (row && !TERMINAL_STATUSES.has(row.status)) this.stop(row);
 		}
 	}
 
@@ -247,8 +249,8 @@ class AgentDialogComponent implements CommandDialogComponent {
 		}
 		const printable = decodePrintable(data)?.toLowerCase();
 		if (this.operationPending) return;
-		if (printable === "x") {
-			this.stopOrDismiss(row);
+		if (printable === "x" && !TERMINAL_STATUSES.has(row.status)) {
+			this.stop(row);
 			return;
 		}
 		if (printable === "s" && !TERMINAL_STATUSES.has(row.status) && row.status !== "stopping") {
@@ -312,9 +314,8 @@ class AgentDialogComponent implements CommandDialogComponent {
 		this.requestRender();
 	}
 
-	private stopOrDismiss(row: AgentRow): void {
-		const type = TERMINAL_STATUSES.has(row.status) ? "dismiss-terminal" : "stop";
-		this.runControl({ type, key: row.key });
+	private stop(row: AgentRow): void {
+		this.runControl({ type: "stop", key: row.key });
 	}
 
 	private runControl(action: Exclude<AgentControlAction, { type: "inspect" }>): void {
@@ -439,7 +440,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 		}
 		const hints = ["↑/↓ navigate", "Enter inspect"];
 		const selected = this.listRow();
-		if (selected) hints.push(TERMINAL_STATUSES.has(selected.status) ? "x dismiss" : "x stop");
+		if (selected && !TERMINAL_STATUSES.has(selected.status)) hints.push("x stop");
 		hints.push("Esc close");
 		lines.push("", ...hintLines(this.context.theme, width, hints));
 		return lines;
@@ -450,16 +451,16 @@ class AgentDialogComponent implements CommandDialogComponent {
 		const selected = row.key === this.listSelectedKey;
 		const prefix = `${GUTTER}${selected ? theme.fg("accent", "› ") : "  "}`;
 		const name = oneLine(row.name) || "agent";
-		const task = oneLine(row.task);
+		const description = oneLine(row.description ?? row.task);
 		const state = styledStatus(row, theme);
 		const rightWidth = visibleWidth(state);
 		const contentWidth = Math.max(1, width - visibleWidth(prefix) - rightWidth - 3);
 		const nameBudget = Math.min(Math.max(8, Math.floor(contentWidth * 0.38)), contentWidth);
 		const renderedName = truncateToWidth(name, nameBudget, "…");
 		const remaining = Math.max(0, contentWidth - visibleWidth(renderedName) - 2);
-		const renderedTask = remaining > 0 ? truncateToWidth(task, remaining, "…") : "";
+		const renderedDescription = fitAgentDescription(description, remaining);
 		const left = `${prefix}${selected ? theme.fg("text", renderedName) : theme.fg("muted", renderedName)}${
-			renderedTask ? `  ${theme.fg("dim", renderedTask)}` : ""
+			renderedDescription ? `  ${theme.fg("dim", renderedDescription)}` : ""
 		}`;
 		const gap = Math.max(1, width - visibleWidth(left) - rightWidth);
 		return `${left}${" ".repeat(gap)}${state}`;
@@ -525,7 +526,8 @@ class AgentDialogComponent implements CommandDialogComponent {
 		const actions = ["↑/↓ scroll"];
 		if (!TERMINAL_STATUSES.has(row.status) && row.status !== "stopping") actions.push("s steer");
 		if (RESUMABLE_STATUSES.has(row.status)) actions.push("r resume");
-		actions.push(TERMINAL_STATUSES.has(row.status) ? "x dismiss" : "x stop", "Esc back");
+		if (!TERMINAL_STATUSES.has(row.status)) actions.push("x stop");
+		actions.push("Esc back");
 		return hintLines(this.context.theme, width, actions);
 	}
 
@@ -629,7 +631,7 @@ function styledStatus(row: AgentRow, theme: Theme, detailed = false): string {
 		case "resuming":
 			return theme.fg("warning", `resuming${suffix}`);
 		case "completed":
-			return theme.fg("success", `done${suffix}`);
+			return detailed ? theme.fg("success", `completed${suffix}`) : theme.fg("success", elapsed || "✓");
 		case "failed":
 			return theme.fg("error", `failed${suffix}`);
 		case "crashed":
@@ -655,8 +657,6 @@ function elapsedText(row: AgentRow): string {
 
 function pendingMessage(type: Exclude<AgentControlAction, { type: "inspect" }>["type"]): string {
 	switch (type) {
-		case "dismiss-terminal":
-			return "Dismissing… waiting for acknowledgement.";
 		case "resume":
 			return "Resuming… waiting for acknowledgement.";
 		case "steer":
@@ -671,7 +671,7 @@ function transcriptLines(text: string, width: number): string[] {
 }
 
 function oneLine(value: string): string {
-	return boundedTerminalText(value, Math.max(1, value.length)).replace(/\s+/g, " ").trim();
+	return boundedTerminalLine(value);
 }
 
 function boundedTerminalText(value: string, limit: number): string {

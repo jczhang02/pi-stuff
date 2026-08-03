@@ -20,6 +20,8 @@ function tempDirectory(): string {
 function row(overrides: Partial<AgentRow>): AgentRow {
 	return {
 		childIndex: 0,
+		description: "work",
+		endedAt: null,
 		elapsedMs: 100,
 		key: "run:0",
 		name: "worker",

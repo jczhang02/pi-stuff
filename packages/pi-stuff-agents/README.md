@@ -12,6 +12,9 @@ grammar as Host tools. Full Agent inspection and control remains in `/agents`.
 ## Everyday behavior
 
 - Delegation runs in the background unless the main Agent needs the result before it can continue.
+- Each delegated item carries a short, caller-provided `description` for terminal surfaces and a separate full `task`
+  for execution. Existing task-only callers remain compatible through a bounded local fallback; no extra model call is
+  made to name legacy work.
 - Independent tasks may run concurrently. The session-wide defaults are 20 running Agents, 200 total launches, and a
   maximum nesting depth of three.
 - Each Agent has a stable identity, its own transcript, acknowledged steering, independent stop, and safe resume when
@@ -31,6 +34,12 @@ grammar as Host tools. Full Agent inspection and control remains in `/agents`.
 
 With an empty editor, press Down to enter the roster, use Up or Down to select an Agent, and press Enter to inspect it.
 The `/agents` command opens the same current-session view. The Capability creates no statusline or floating window.
+
+The below-editor roster keeps terminal rows for 30 seconds, then hides them automatically. Live rows never expire and
+`x` may dismiss a terminal row early. Hiding a row from the roster does not remove its bounded Task preview, result, or
+transcript from `/agents`. Normal completion uses the semantic marker color and elapsed time without a redundant `done` label;
+exceptional states remain explicit. At narrow widths, an unreadable description is omitted as a unit instead of being
+joined to the state as an ellipsis fragment.
 
 The Agent Command Dialog uses the Suite's divider and two-cell gutter, with `›` marking the focused custom row.
 Action hints wrap instead of dropping the close or back key: Escape closes the Agent list and returns one level from

@@ -11,12 +11,14 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { AgentRow, AgentSessionSnapshot, CurrentAgents } from "../session/current-agents.js";
+import { boundedTerminalLine } from "../shared/display-description.js";
 
 const WIDGET_KEY = "pi-stuff-agent-roster";
 const NORMAL_CHILD_LIMIT = 5;
 const NARROW_CHILD_LIMIT = 4;
 const NARROW_WIDTH = 64;
 const ELAPSED_REFRESH_MS = 1_000;
+const TERMINAL_LINGER_MS = 30_000;
 
 const LIVE_STATUSES = new Set([
 	"queued",
@@ -37,6 +39,9 @@ export interface AgentRosterContext {
 
 export interface AgentRosterOptions {
 	readonly onOpen: (key: string) => Promise<void> | void;
+	readonly now?: () => number;
+	readonly setTimeout?: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>;
+	readonly clearTimeout?: (timer: ReturnType<typeof setTimeout>) => void;
 }
 
 interface IndexedRow {
@@ -47,11 +52,17 @@ interface IndexedRow {
 /** Claude-style, below-editor projection of the current session's direct children. */
 export class AgentRoster {
 	private readonly current: CurrentAgents;
+	private readonly clearTimeout: NonNullable<AgentRosterOptions["clearTimeout"]>;
+	private readonly dismissedTerminalKeys = new Set<string>();
+	private readonly now: () => number;
 	private readonly onOpen: AgentRosterOptions["onOpen"];
+	private readonly setTimeout: NonNullable<AgentRosterOptions["setTimeout"]>;
+	private readonly terminalStartedAt = new Map<string, number>();
 	private readonly unsubscribeCurrent: () => void;
 	private context: AgentRosterContext | undefined;
 	private inputUnsubscribe: (() => void) | undefined;
 	private refreshTimer: ReturnType<typeof setInterval> | undefined;
+	private lingerTimer: ReturnType<typeof setTimeout> | undefined;
 	private snapshotValue: AgentSessionSnapshot;
 	private suppressed = false;
 	private navigationActive = false;
@@ -62,9 +73,18 @@ export class AgentRoster {
 	constructor(current: CurrentAgents, options: AgentRosterOptions) {
 		this.current = current;
 		this.onOpen = options.onOpen;
+		this.now = options.now ?? Date.now;
+		this.setTimeout = options.setTimeout ?? setTimeout;
+		this.clearTimeout = options.clearTimeout ?? clearTimeout;
 		this.snapshotValue = current.snapshot();
+		this.reconcileTerminalStarts();
 		this.unsubscribeCurrent = current.subscribe((snapshot) => {
+			if (snapshot.sessionId !== this.snapshotValue.sessionId) {
+				this.terminalStartedAt.clear();
+				this.dismissedTerminalKeys.clear();
+			}
 			this.snapshotValue = snapshot;
+			this.reconcileTerminalStarts();
 			this.reconcileSelection();
 			this.syncRegistration();
 		});
@@ -102,7 +122,33 @@ export class AgentRoster {
 	}
 
 	private rows(): readonly AgentRow[] {
-		return this.snapshotValue.rows;
+		const now = this.now();
+		return this.snapshotValue.rows.filter((row) => {
+			if (!isTerminal(row)) return true;
+			if (this.dismissedTerminalKeys.has(row.key)) return false;
+			const startedAt = this.terminalStartedAt.get(row.key) ?? now;
+			return now - startedAt < TERMINAL_LINGER_MS;
+		});
+	}
+
+	private reconcileTerminalStarts(): void {
+		const present = new Set(this.snapshotValue.rows.map((row) => row.key));
+		for (const key of this.terminalStartedAt.keys()) {
+			if (!present.has(key)) {
+				this.terminalStartedAt.delete(key);
+				this.dismissedTerminalKeys.delete(key);
+			}
+		}
+		for (const row of this.snapshotValue.rows) {
+			if (!isTerminal(row)) {
+				this.terminalStartedAt.delete(row.key);
+				this.dismissedTerminalKeys.delete(row.key);
+				continue;
+			}
+			if (!this.terminalStartedAt.has(row.key)) {
+				this.terminalStartedAt.set(row.key, row.endedAt ?? this.now());
+			}
+		}
 	}
 
 	private orderedRows(): readonly AgentRow[] {
@@ -148,17 +194,44 @@ export class AgentRoster {
 			this.widgetRegistered = true;
 		}
 		this.syncRefreshTimer();
+		this.syncLingerTimer();
 		this.tui?.requestRender();
 	}
 
 	private clearRegistration(): void {
 		if (this.refreshTimer) clearInterval(this.refreshTimer);
 		this.refreshTimer = undefined;
+		if (this.lingerTimer) this.clearTimeout(this.lingerTimer);
+		this.lingerTimer = undefined;
 		this.inputUnsubscribe?.();
 		this.inputUnsubscribe = undefined;
 		if (this.widgetRegistered) this.context?.ui.setWidget(WIDGET_KEY, undefined);
 		this.widgetRegistered = false;
 		this.tui = undefined;
+	}
+
+	private syncLingerTimer(): void {
+		if (this.lingerTimer) this.clearTimeout(this.lingerTimer);
+		this.lingerTimer = undefined;
+		const now = this.now();
+		let nextExpiry = Number.POSITIVE_INFINITY;
+		for (const row of this.snapshotValue.rows) {
+			if (!isTerminal(row)) continue;
+			const startedAt = this.terminalStartedAt.get(row.key);
+			if (startedAt === undefined) continue;
+			const expiresAt = startedAt + TERMINAL_LINGER_MS;
+			if (expiresAt > now) nextExpiry = Math.min(nextExpiry, expiresAt);
+		}
+		if (!Number.isFinite(nextExpiry)) return;
+		this.lingerTimer = this.setTimeout(
+			() => {
+				this.lingerTimer = undefined;
+				this.reconcileSelection();
+				this.syncRegistration();
+			},
+			Math.max(0, nextExpiry - now),
+		);
+		this.lingerTimer.unref?.();
 	}
 
 	private syncRefreshTimer(): void {
@@ -245,12 +318,14 @@ export class AgentRoster {
 	private controlSelected(): void {
 		const row = this.rows().find((candidate) => candidate.key === this.selectedKey);
 		if (!row) return;
-		const type = isTerminal(row) ? "dismiss-terminal" : "stop";
-		void this.current.control({ type, key: row.key }).catch((error) => {
-			this.context?.ui.notify(
-				`Unable to ${type === "stop" ? "stop" : "dismiss"} Agent: ${errorMessage(error)}`,
-				"error",
-			);
+		if (isTerminal(row)) {
+			this.dismissedTerminalKeys.add(row.key);
+			this.reconcileSelection();
+			this.syncRegistration();
+			return;
+		}
+		void this.current.control({ type: "stop", key: row.key }).catch((error) => {
+			this.context?.ui.notify(`Unable to stop Agent: ${errorMessage(error)}`, "error");
 		});
 	}
 
@@ -269,7 +344,7 @@ export class AgentRoster {
 		const lines = [
 			this.renderHint(theme, renderWidth),
 			this.renderMain(theme, renderWidth),
-			...visible.map((row) => renderAgentRow(row, this.selectedMarker(row.key, theme), theme, renderWidth)),
+			...visible.map((row) => renderAgentRow(row, this.rowMarker(row, theme), theme, renderWidth, this.now())),
 		];
 		if (hidden > 0) lines.push(truncateToWidth(`  ${theme.fg("dim", `… +${hidden} more`)}`, renderWidth, ""));
 		return lines;
@@ -298,6 +373,16 @@ export class AgentRoster {
 	private selectedMarker(key: string, theme: Theme): string {
 		const selected = this.navigationActive ? this.selectedKey === key : key === "main";
 		return selected ? theme.fg("accent", "●") : theme.fg("muted", "○");
+	}
+
+	private rowMarker(row: AgentRow, theme: Theme): string {
+		if (this.navigationActive && this.selectedKey === row.key) return theme.fg("accent", "●");
+		if (row.status === "completed") return theme.fg("success", "○");
+		if (row.status === "failed" || row.status === "crashed") return theme.fg("error", "○");
+		if (row.status === "waiting_permission" || row.status === "waiting_supervisor") {
+			return theme.fg("warning", "○");
+		}
+		return theme.fg("muted", "○");
 	}
 }
 
@@ -344,31 +429,31 @@ function decodePrintable(data: string): string | undefined {
 	return codePoint !== undefined && codePoint >= 32 && codePoint !== 127 ? data : undefined;
 }
 
-function renderAgentRow(row: AgentRow, marker: string, theme: Theme, width: number): string {
-	const name = oneLine(row.name) || "agent";
-	const task = oneLine(row.task);
-	const right = styledState(row, theme);
+function renderAgentRow(row: AgentRow, marker: string, theme: Theme, width: number, now: number): string {
+	const name = boundedTerminalLine(row.name) || "agent";
+	const description = boundedTerminalLine(row.description ?? row.task);
+	const right = styledState(row, theme, now);
 	const markerPrefix = `  ${marker} `;
 	const rightWidth = visibleWidth(right);
-	const leftWidth = Math.max(1, width - (rightWidth > 0 ? rightWidth + 1 : 0));
+	const leftWidth = Math.max(1, width - (rightWidth > 0 ? rightWidth + 2 : 0));
 	const plainPrefixWidth = visibleWidth(markerPrefix);
 	const nameBudget = Math.max(1, leftWidth - plainPrefixWidth);
 	const boundedName = truncateToWidth(name, nameBudget, "…");
 	const styledName = theme.fg("text", boundedName);
-	const taskBudget = Math.max(0, leftWidth - plainPrefixWidth - visibleWidth(styledName) - 2);
-	const boundedTask = taskBudget > 0 ? truncateToWidth(task, taskBudget, "…") : "";
+	const descriptionBudget = Math.max(0, leftWidth - plainPrefixWidth - visibleWidth(styledName) - 2);
+	const fittedDescription = fitAgentDescription(description, descriptionBudget);
 	const left = truncateToWidth(
-		`${markerPrefix}${styledName}${boundedTask ? `  ${theme.fg("muted", boundedTask)}` : ""}`,
+		`${markerPrefix}${styledName}${fittedDescription ? `  ${theme.fg("muted", fittedDescription)}` : ""}`,
 		leftWidth,
 		"",
 	);
 	if (rightWidth === 0) return truncateToWidth(left, width, "");
-	const gap = Math.max(1, width - visibleWidth(left) - rightWidth);
+	const gap = Math.max(2, width - visibleWidth(left) - rightWidth);
 	return truncateToWidth(`${left}${" ".repeat(gap)}${right}`, width, "");
 }
 
-function styledState(row: AgentRow, theme: Theme): string {
-	const elapsed = elapsedText(row);
+function styledState(row: AgentRow, theme: Theme, now: number): string {
+	const elapsed = elapsedText(row, now);
 	switch (row.status) {
 		case "queued":
 			return theme.fg("warning", "queued");
@@ -381,7 +466,7 @@ function styledState(row: AgentRow, theme: Theme): string {
 		case "resuming":
 			return theme.fg("warning", "resuming");
 		case "completed":
-			return theme.fg("success", elapsed ? `done · ${elapsed}` : "done");
+			return theme.fg("success", elapsed || "✓");
 		case "failed":
 			return theme.fg("error", elapsed ? `failed · ${elapsed}` : "failed");
 		case "crashed":
@@ -395,10 +480,10 @@ function styledState(row: AgentRow, theme: Theme): string {
 	}
 }
 
-function elapsedText(row: AgentRow): string {
+function elapsedText(row: AgentRow, now: number): string {
 	const elapsedMs =
 		!isTerminal(row) && typeof row.startedAt === "number" && Number.isFinite(row.startedAt)
-			? Date.now() - row.startedAt
+			? now - row.startedAt
 			: typeof row.elapsedMs === "number" && Number.isFinite(row.elapsedMs)
 				? row.elapsedMs
 				: undefined;
@@ -410,87 +495,10 @@ function elapsedText(row: AgentRow): string {
 	return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-function skipControlString(value: string, start: number): number {
-	let index = start;
-	while (index < value.length) {
-		const code = value.charCodeAt(index);
-		if (code === 0x07 || code === 0x9c) return index + 1;
-		if (code === 0x1b && value.charCodeAt(index + 1) === 0x5c) return index + 2;
-		index++;
-	}
-	return index;
-}
-
-function skipControlSequence(value: string, start: number): number {
-	let index = start;
-	while (index < value.length) {
-		const code = value.charCodeAt(index++);
-		if (code >= 0x40 && code <= 0x7e) break;
-	}
-	return index;
-}
-
-function isBidiFormatControl(code: number): boolean {
-	return (
-		code === 0x061c ||
-		code === 0x200e ||
-		code === 0x200f ||
-		(code >= 0x202a && code <= 0x202e) ||
-		(code >= 0x2066 && code <= 0x2069)
-	);
-}
-
-function oneLine(value: string): string {
-	let text = "";
-	let index = 0;
-	while (index < value.length) {
-		const code = value.charCodeAt(index);
-		if (code === 0x1b) {
-			const introducer = value.charCodeAt(index + 1);
-			if (introducer === 0x5b) {
-				index = skipControlSequence(value, index + 2);
-				continue;
-			}
-			if (
-				introducer === 0x5d ||
-				introducer === 0x50 ||
-				introducer === 0x58 ||
-				introducer === 0x5e ||
-				introducer === 0x5f
-			) {
-				index = skipControlString(value, index + 2);
-				continue;
-			}
-			index++;
-			while (index < value.length && value.charCodeAt(index) >= 0x20 && value.charCodeAt(index) <= 0x2f) {
-				index++;
-			}
-			if (index < value.length) index++;
-			continue;
-		}
-		if (code === 0x9b) {
-			index = skipControlSequence(value, index + 1);
-			continue;
-		}
-		if (code === 0x90 || code === 0x98 || code === 0x9d || code === 0x9e || code === 0x9f) {
-			index = skipControlString(value, index + 1);
-			continue;
-		}
-		if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
-			if (code === 0x09 || code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d) text += " ";
-			index++;
-			continue;
-		}
-		if (isBidiFormatControl(code)) {
-			index++;
-			continue;
-		}
-		const point = value.codePointAt(index);
-		if (point === undefined) break;
-		text += String.fromCodePoint(point);
-		index += point > 0xffff ? 2 : 1;
-	}
-	return text.replace(/\s+/gu, " ").trim();
+/** Keep a description only when the complete short label remains readable. */
+export function fitAgentDescription(description: string, availableWidth: number): string {
+	const safe = boundedTerminalLine(description);
+	return safe && visibleWidth(safe) <= availableWidth ? safe : "";
 }
 
 function errorMessage(error: unknown): string {

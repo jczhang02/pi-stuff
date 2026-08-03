@@ -139,6 +139,7 @@ describe("background runner configuration", () => {
 		const startedAt = 123_456;
 		const task: RunnerAgentTask = {
 			agent: "writer",
+			description: "Implement parser change",
 			task: "Implement",
 			cwd: root,
 			context: "fresh",
@@ -165,9 +166,34 @@ describe("background runner configuration", () => {
 		expect(status.steps).toHaveLength(1);
 		expect(status.steps[0]).toMatchObject({
 			agent: "writer",
-			label: "Implement",
+			label: "Implement parser change",
 			status: "pending",
+			task: "Implement",
 		});
+	});
+
+	test("keeps the detached runner independent from Host UI description fallback", () => {
+		const root = fixtureRoot();
+		const task: RunnerAgentTask = {
+			agent: "legacy-writer",
+			task: "Inspect /tmp/deep/sample.txt without changing it",
+			cwd: root,
+			inheritProjectContext: true,
+			inheritSkills: false,
+		};
+		const config: BackgroundRunnerConfig = {
+			version: 2,
+			id: "legacy-runtime-status",
+			cwd: root,
+			asyncDir: path.join(root, "async"),
+			resultPath: path.join(root, "result.json"),
+			work: { mode: "single", task },
+		};
+
+		const [step] = createInitialStatus(config, 123_456).steps;
+
+		expect(step).toMatchObject({ agent: "legacy-writer", task: task.task, status: "pending" });
+		expect(step).not.toHaveProperty("label");
 	});
 
 	test("builds one parallel group and resolves every task override before persistence", () => {
@@ -189,6 +215,7 @@ describe("background runner configuration", () => {
 			tasks: [
 				{
 					agent: "writer",
+					description: "Implement core change",
 					task: "Implement",
 					cwd: "packages/core",
 					model: "provider/fast",
@@ -196,7 +223,7 @@ describe("background runner configuration", () => {
 					turnBudget: { maxTurns: 7, graceTurns: 1 },
 					toolBudget: { hard: 9, soft: 6, block: ["browser"] },
 				},
-				{ agent: "reviewer", task: "Review", skill: ["review"] },
+				{ agent: "reviewer", description: "Review core change", task: "Review", skill: ["review"] },
 			],
 			agents,
 			ctx: buildContext(root),
@@ -219,6 +246,7 @@ describe("background runner configuration", () => {
 		expect(built.work.group.tasks).toHaveLength(2);
 		expect(built.work.group.tasks[0]).toMatchObject({
 			agent: "writer",
+			description: "Implement core change",
 			task: "Implement",
 			cwd: path.join(root, "packages", "core"),
 			context: "fork",
@@ -230,6 +258,7 @@ describe("background runner configuration", () => {
 		});
 		expect(built.work.group.tasks[1]).toMatchObject({
 			agent: "reviewer",
+			description: "Review core change",
 			task: "Review",
 			cwd: root,
 			context: "fork",

@@ -10,6 +10,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { buildSkillInjection, normalizeSkillInput, resolveSkillsWithFallback } from "../../agents/skills.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { resolveDisplayDescription } from "../../shared/display-description.ts";
 import { agentDefinitionDigest, launchBindingDigest } from "../../shared/launch-contract.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
 import {
@@ -65,9 +66,17 @@ import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
 import { initialTurnBudgetState, resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
 import { finalizeProcessTerminal, readProcessTerminal } from "./process-terminal.ts";
 
+const START_EVENT_TASK_PREVIEW_CODE_UNITS = 500;
+
 const require = createRequire(import.meta.url);
 const piPackageRoot = resolvePiPackageRoot();
 const piExecutable = resolveStandalonePiHostExecutable();
+
+function taskPreview(task: string): string {
+	return task.length <= START_EVENT_TASK_PREVIEW_CODE_UNITS
+		? task
+		: `${task.slice(0, START_EVENT_TASK_PREVIEW_CODE_UNITS - 1)}…`;
+}
 
 export interface AsyncExecutionContext {
 	pi: ExtensionAPI;
@@ -83,6 +92,7 @@ export interface AsyncExecutionContext {
 
 export interface AsyncParallelTaskInput {
 	agent: string;
+	description?: string;
 	task: string;
 	cwd?: string;
 	model?: string;
@@ -121,6 +131,7 @@ export interface AsyncParallelRunnerWorkBuildParams extends CommonBuildParams {
 
 export interface AsyncSingleRunnerWorkBuildParams extends CommonBuildParams {
 	agent: string;
+	description?: string;
 	task: string;
 	agentConfig: AgentConfig;
 	context?: ContextMode;
@@ -404,6 +415,7 @@ function buildResolvedTask(input: {
 	const task: RunnerAgentTask = {
 		parentSessionId: params.ctx.parentSessionId ?? params.ctx.currentSessionId,
 		agent: agent.name,
+		description: resolveDisplayDescription(taskInput.description, taskInput.task),
 		task: taskInput.task,
 		...(input.context ? { context: input.context } : {}),
 		cwd: taskCwd,
@@ -518,7 +530,7 @@ export function buildAsyncSingleRunnerWork(
 	const built = buildResolvedTask({
 		runId: id,
 		index: 0,
-		taskInput: { agent: params.agent, task: params.task },
+		taskInput: { agent: params.agent, description: params.description, task: params.task },
 		agent: params.agentConfig,
 		params,
 		runnerCwd,
@@ -940,7 +952,10 @@ function emitStarted(input: {
 		mode: input.work.mode,
 		agent: first.agent,
 		agents: tasks.map((task) => task.agent),
+		description: first.description,
+		descriptions: tasks.map((task) => resolveDisplayDescription(task.description, task.task)),
 		task: first.task.slice(0, 50),
+		tasks: tasks.map((task) => taskPreview(task.task)),
 		goal: (input.goal ?? first.task).slice(0, 120),
 		cwd: input.runnerCwd,
 		asyncDir: input.asyncDir,

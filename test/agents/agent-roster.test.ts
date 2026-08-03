@@ -8,7 +8,11 @@ import type {
 	AgentStatus,
 	CurrentAgents,
 } from "../../packages/pi-stuff-agents/src/session/current-agents.js";
-import { AgentRoster, type AgentRosterContext } from "../../packages/pi-stuff-agents/src/ui/agent-roster.js";
+import {
+	AgentRoster,
+	type AgentRosterContext,
+	type AgentRosterOptions,
+} from "../../packages/pi-stuff-agents/src/ui/agent-roster.js";
 
 type InputResult = { consume?: boolean; data?: string } | undefined;
 type InputHandler = (data: string) => InputResult;
@@ -137,19 +141,29 @@ class UiHarness {
 function row(
 	key: string,
 	status: AgentStatus,
-	overrides: { elapsedMs?: number; name?: string; startedAt?: number; task?: string } = {},
+	overrides: {
+		description?: string;
+		elapsedMs?: number;
+		endedAt?: number;
+		name?: string;
+		startedAt?: number;
+		task?: string;
+	} = {},
 ): AgentRow {
+	const task = overrides.task ?? `work assigned to ${key}`;
 	return {
+		description: overrides.description ?? task,
+		endedAt: overrides.endedAt ?? null,
 		key,
 		name: overrides.name ?? key,
 		status,
-		task: overrides.task ?? `work assigned to ${key}`,
+		task,
 		...(overrides.elapsedMs === undefined ? {} : { elapsedMs: overrides.elapsedMs }),
 		...(overrides.startedAt === undefined ? {} : { startedAt: overrides.startedAt }),
 	} as AgentRow;
 }
 
-function setup(rows: readonly AgentRow[]) {
+function setup(rows: readonly AgentRow[], options: Partial<AgentRosterOptions> = {}) {
 	const current = new CurrentAgentsHarness(rows);
 	const ui = new UiHarness();
 	const opened: string[] = [];
@@ -157,6 +171,7 @@ function setup(rows: readonly AgentRow[]) {
 		onOpen: (key) => {
 			opened.push(key);
 		},
+		...options,
 	});
 	roster.setContext(ui.context());
 	return { current, opened, roster, ui };
@@ -177,6 +192,34 @@ function containsTerminalControl(value: string): boolean {
 
 function containsBidiFormatControl(value: string): boolean {
 	return /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u.test(value);
+}
+
+class FakeClock {
+	now = 1_000;
+	private nextId = 1;
+	private readonly timers = new Map<number, { callback: () => void; dueAt: number }>();
+
+	readonly clearTimeout = (timer: ReturnType<typeof setTimeout>): void => {
+		this.timers.delete(timer as unknown as number);
+	};
+
+	readonly setTimeout = (callback: () => void, delayMs: number): ReturnType<typeof setTimeout> => {
+		const id = this.nextId++;
+		this.timers.set(id, { callback, dueAt: this.now + delayMs });
+		return id as unknown as ReturnType<typeof setTimeout>;
+	};
+
+	advance(ms: number): void {
+		this.now += ms;
+		for (;;) {
+			const due = [...this.timers.entries()]
+				.filter(([, timer]) => timer.dueAt <= this.now)
+				.sort((left, right) => left[1].dueAt - right[1].dueAt)[0];
+			if (!due) return;
+			this.timers.delete(due[0]);
+			due[1].callback();
+		}
+	}
 }
 
 describe("AgentRoster", () => {
@@ -224,41 +267,125 @@ describe("AgentRoster", () => {
 		result.roster.dispose();
 	});
 
-	test("keeps the short state at the right and truncates task content first", () => {
+	test("keeps the short state at the right and omits an unreadable description", () => {
 		const result = setup([
 			row("queued-child", "queued", {
+				description: "复核 sample.txt 🧪",
 				name: "researcher",
-				task: "a deliberately long task description that cannot fit into a narrow terminal row",
+				task: "Inspect /tmp/pi-run/deep/sample.txt and verify every byte without changing the file",
 			}),
 		]);
-		const rendered = result.ui.render(42);
-		const agentLine = lineFor(rendered, "researcher");
-
-		expect(agentLine.trimEnd().endsWith("queued")).toBe(true);
-		expect(agentLine).toContain("researcher");
-		expect(agentLine).not.toContain("cannot fit");
-		expect(visibleWidth(agentLine)).toBeLessThanOrEqual(42);
-		expect(rendered.join("\n")).not.toMatch(/tokens?|tool|latest action|statusline/i);
+		for (const width of [100, 64, 48, 32, 24]) {
+			const rendered = result.ui.render(width);
+			const agentLine = rendered.find((line) => line.trimEnd().endsWith("queued"));
+			expect(agentLine).toBeDefined();
+			if (!agentLine) continue;
+			expect(agentLine).not.toContain("sample.tx…");
+			expect(agentLine).not.toContain("…queued");
+			expect(agentLine).toMatch(/\S\s{2,}queued$/);
+			expect(visibleWidth(agentLine)).toBeLessThanOrEqual(width);
+			expect(rendered.every((line) => visibleWidth(line) <= width && !line.includes("\n"))).toBe(true);
+			expect(rendered.join("\n")).not.toMatch(/tokens?|tool|latest action|statusline/i);
+			if (agentLine.includes("sample")) expect(agentLine).toContain("复核 sample.txt 🧪");
+		}
 		result.roster.dispose();
 	});
 
 	test("removes terminal controls while preserving CJK names, tasks, and the right state", () => {
 		const result = setup([
 			row("unsafe", "failed", {
+				description:
+					"检查\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u001b[31m失败\u001b[0m\u009b32m输出\u009b0m",
 				name: "审\u202e查\u001b]0;伪造标题\u0007员",
-				task: "检查\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u001b[31m失败\u001b[0m\u009b32m输出\u009b0m\u001b7 保留很长的中文说明",
+				task: "完整任务保留很长的中文说明与 /tmp/run/deep/sample.txt",
 			}),
 		]);
 		const rendered = result.ui.render(64);
 		const agentLine = lineFor(rendered, "审查员");
 
 		expect(agentLine.trimEnd().endsWith("failed")).toBe(true);
-		expect(agentLine).toContain("检查失败输出 保留");
+		expect(agentLine).toContain("检查失败输出");
 		expect(agentLine).not.toContain("伪造标题");
 		expect(containsTerminalControl(agentLine)).toBe(false);
 		expect(containsBidiFormatControl(agentLine)).toBe(false);
 		expect(visibleWidth(agentLine)).toBeLessThanOrEqual(64);
 		result.roster.dispose();
+	});
+
+	test("lingers terminal rows for 30 seconds while live rows never expire", () => {
+		const clock = new FakeClock();
+		const terminal = row("finished", "completed", {
+			description: "Review sample output",
+			elapsedMs: 2_000,
+			endedAt: clock.now,
+		});
+		const live = row("live", "running", { description: "Watch build", startedAt: clock.now });
+		const result = setup([terminal, live], {
+			clearTimeout: clock.clearTimeout,
+			now: () => clock.now,
+			setTimeout: clock.setTimeout,
+		});
+
+		expect(result.ui.render(64).join("\n")).toContain("finished");
+		clock.advance(29_999);
+		expect(result.ui.render(64).join("\n")).toContain("finished");
+		clock.advance(1);
+		const afterExpiry = result.ui.render(64).join("\n");
+		expect(afterExpiry).not.toContain("finished");
+		expect(afterExpiry).toContain("live");
+		expect(result.current.snapshot().rows.some(({ key }) => key === "finished")).toBe(true);
+		clock.advance(60_000);
+		expect(result.ui.render(64).join("\n")).toContain("live");
+		result.roster.dispose();
+	});
+
+	test("omits an already-old terminal row on the first roster frame without deleting detail state", () => {
+		const clock = new FakeClock();
+		const oldTerminal = row("old-review", "completed", {
+			description: "Review old output",
+			elapsedMs: 2_000,
+			endedAt: clock.now - 30_000,
+		});
+		const result = setup([oldTerminal], {
+			clearTimeout: clock.clearTimeout,
+			now: () => clock.now,
+			setTimeout: clock.setTimeout,
+		});
+
+		expect(result.ui.render(64)).toEqual([]);
+		expect(result.ui.hasInputListener()).toBe(false);
+		expect(result.current.snapshot().rows).toEqual([oldTerminal]);
+		result.roster.dispose();
+	});
+
+	test("uses the completed marker and elapsed time without a literal completion word", () => {
+		const clock = new FakeClock();
+		const result = setup(
+			[
+				row("reviewer", "completed", {
+					description: "Review sample output",
+					elapsedMs: 18_000,
+					endedAt: clock.now,
+				}),
+			],
+			{ clearTimeout: clock.clearTimeout, now: () => clock.now, setTimeout: clock.setTimeout },
+		);
+		for (const width of [100, 64, 48, 32, 24]) {
+			const agentLine = result.ui.render(width).find((line) => line.trimEnd().endsWith("18s"));
+			expect(agentLine).toBeDefined();
+			if (!agentLine) continue;
+			expect(agentLine).not.toMatch(/\b(?:done|completed)\b/i);
+			expect(agentLine).not.toContain("…18s");
+			expect(agentLine).toMatch(/\S\s{2,}18s$/);
+			expect(visibleWidth(agentLine)).toBeLessThanOrEqual(width);
+		}
+		result.roster.dispose();
+
+		const legacy = setup([row("legacy", "completed", { description: "Review legacy output" })]);
+		const legacyLine = lineFor(legacy.ui.render(48), "legacy");
+		expect(legacyLine).toContain("✓");
+		expect(legacyLine).not.toMatch(/\b(?:done|completed)\b/i);
+		legacy.roster.dispose();
 	});
 
 	test("only enters keyboard navigation from an empty, truly focused editor", () => {
@@ -336,7 +463,9 @@ describe("AgentRoster", () => {
 		terminal.ui.emit("\u001b[B");
 		terminal.ui.emit("\u001b[B");
 		expect(terminal.ui.emit("x")).toEqual({ consume: true });
-		expect(terminal.current.actions).toEqual([{ key: "finished", type: "dismiss-terminal" }]);
+		expect(terminal.current.actions).toEqual([]);
+		expect(terminal.ui.render(80)).toEqual([]);
+		expect(terminal.current.snapshot().rows.map(({ key }) => key)).toEqual(["finished"]);
 		terminal.roster.dispose();
 	});
 

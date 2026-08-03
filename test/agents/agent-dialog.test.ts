@@ -111,6 +111,8 @@ function snapshot(rows: readonly AgentRow[], revision = 1): AgentSessionSnapshot
 function row(key: string, status: AgentStatus, overrides: Partial<Omit<AgentRow, "key" | "status">> = {}): AgentRow {
 	return {
 		childIndex: 0,
+		description: `work assigned to ${key}`,
+		endedAt: ["agent_stopped", "completed", "crashed", "failed", "user_cancelled"].includes(status) ? 12_001 : null,
 		elapsedMs: 12_000,
 		key,
 		name: key,
@@ -182,6 +184,34 @@ describe("Agent Command Dialog", () => {
 		expect(rendered.every((line) => visibleWidth(line) <= 64 && !line.includes("\n"))).toBe(true);
 	});
 
+	test("uses the short description in the list and preserves the full Task in detail", async () => {
+		const fullTask = "Inspect /tmp/pi-run/deep/sample.txt without changing the file";
+		const { component } = setup([
+			row("reviewer", "completed", {
+				description: "Review sample output",
+				endedAt: 12_001,
+				task: fullTask,
+			}),
+		]);
+		const list = text(component, 64);
+		expect(list).toContain("Review sample output");
+		expect(list).not.toContain("/tmp/pi-run/deep");
+		expect(list).not.toMatch(/\b(?:done|completed)\b/i);
+
+		input(component, "\r");
+		await flush();
+		expect(text(component, 100)).toContain(fullTask);
+	});
+
+	test("keeps timestamp-free legacy completion semantically visible", async () => {
+		const { component } = setup([row("legacy", "completed", { elapsedMs: null, endedAt: null, startedAt: null })]);
+		expect(text(component, 64)).toContain("✓");
+		expect(text(component, 64)).not.toMatch(/\b(?:done|completed)\b/i);
+		input(component, "\r");
+		await flush();
+		expect(text(component, 64)).toContain("completed");
+	});
+
 	test("navigates without wrapping and uses Escape as back then close", async () => {
 		const { component, context, requests } = setup([
 			row("first", "running"),
@@ -193,7 +223,7 @@ describe("Agent Command Dialog", () => {
 		input(component, "\u001b[B");
 		input(component, "\u001b[B");
 		expect(text(component)).toContain("  › second");
-		expect(text(component)).toContain("x dismiss");
+		expect(text(component)).not.toContain("x dismiss");
 
 		input(component, "\r");
 		await flush();
@@ -360,7 +390,7 @@ describe("Agent Command Dialog", () => {
 		expect(text(component)).toContain("Acknowledged: guidance received");
 	});
 
-	test("resumes only resumable terminal states and dismisses terminal rows", async () => {
+	test("resumes only resumable terminal states and keeps their details durable", async () => {
 		const failed = setup([row("failed", "failed")], { initialKey: "failed" });
 		input(failed.component, "r");
 		input(failed.component, "\r");
@@ -368,7 +398,8 @@ describe("Agent Command Dialog", () => {
 		expect(failed.current.actions[0]).toEqual({ key: "failed", type: "resume" });
 		input(failed.component, "x");
 		await flush();
-		expect(failed.current.actions[1]).toEqual({ key: "failed", type: "dismiss-terminal" });
+		expect(failed.current.actions).toEqual([{ key: "failed", type: "resume" }]);
+		expect(text(failed.component)).toContain("Agents / failed");
 
 		const cancelled = setup([row("cancelled", "user_cancelled")], { initialKey: "cancelled" });
 		input(cancelled.component, "r");

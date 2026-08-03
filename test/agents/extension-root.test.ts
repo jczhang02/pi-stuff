@@ -452,6 +452,7 @@ describe("Agents extension composition root", () => {
 			agent: "researcher",
 			async: true,
 			context: "fresh",
+			description: "Find the cause",
 			task: "Find the cause",
 		});
 		expect(root.governor.prepares).toEqual([

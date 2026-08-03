@@ -21,6 +21,8 @@ export interface RunnerAgentTask {
 	/** Session id of the direct parent session for permission-system ask forwarding. */
 	parentSessionId?: string;
 	agent: string;
+	/** Short launcher-normalized label for terminal surfaces. */
+	description?: string;
 	task: string;
 	/** Resolved launch context for this child. */
 	context?: "fresh" | "fork";

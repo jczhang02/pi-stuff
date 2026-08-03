@@ -1,6 +1,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { SubagentParamsLike } from "../runs/foreground/subagent-executor.ts";
 import { scanAgentReport } from "../runtime/final-report-scanner.ts";
+import { resolveDisplayDescription } from "../shared/display-description.ts";
 import type { Details, SingleResult } from "../shared/types.ts";
 import { getSingleResultOutput } from "../shared/utils.ts";
 
@@ -9,6 +10,7 @@ const MAX_PARENT_RESULT_CHARS = 12_000;
 
 export interface PublicAgentTask {
 	readonly agent: string;
+	readonly description?: string;
 	readonly task: string;
 	readonly cwd?: string;
 	readonly model?: string;
@@ -22,6 +24,7 @@ export interface PublicAgentParams {
 	readonly agent?: string;
 	readonly context?: "fork" | "fresh";
 	readonly cwd?: string;
+	readonly description?: string;
 	readonly foreground?: boolean;
 	readonly id?: string;
 	readonly index?: number;
@@ -54,6 +57,7 @@ function mutableToolBudget(value: PublicAgentParams["toolBudget"]): SubagentPara
 function mapTask(task: PublicAgentTask) {
 	return {
 		agent: task.agent,
+		description: resolveDisplayDescription(task.description, task.task),
 		task: task.task,
 		...(task.cwd ? { cwd: task.cwd } : {}),
 		...(task.model ? { model: task.model } : {}),
@@ -100,6 +104,7 @@ export function toEngineParams(params: PublicAgentParams): SubagentParamsLike {
 			tasks: [
 				mapTask({
 					agent: params.agent,
+					...(params.description ? { description: params.description } : {}),
 					task: params.task,
 					...(params.cwd ? { cwd: params.cwd } : {}),
 					...(params.model ? { model: params.model } : {}),
@@ -113,6 +118,7 @@ export function toEngineParams(params: PublicAgentParams): SubagentParamsLike {
 	return {
 		...common,
 		...(params.agent ? { agent: params.agent } : {}),
+		...(params.task ? { description: resolveDisplayDescription(params.description, params.task) } : {}),
 		...(params.task ? { task: params.task } : {}),
 	};
 }

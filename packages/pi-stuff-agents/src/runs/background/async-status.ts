@@ -37,6 +37,7 @@ interface AsyncRunStepSummary {
 	index: number;
 	agent: string;
 	context?: ContextMode;
+	task?: string;
 	label?: string;
 	phase?: string;
 	outputName?: string;
@@ -272,6 +273,7 @@ function statusToSummary(
 			index,
 			agent: step.agent,
 			...(step.context ? { context: step.context } : {}),
+			...(step.task ? { task: step.task } : {}),
 			...(step.label ? { label: step.label } : {}),
 			...(step.phase ? { phase: step.phase } : {}),
 			...(step.outputName ? { outputName: step.outputName } : {}),

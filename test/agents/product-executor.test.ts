@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { projectEngineResult, toEngineParams } from "../../packages/pi-stuff-agents/src/extension/product-executor.js";
 import type { Details } from "../../packages/pi-stuff-agents/src/shared/types.js";
 
@@ -12,6 +13,7 @@ describe("toEngineParams", () => {
 			agent: "researcher",
 			async: true,
 			context: "fresh",
+			description: "Find the cause",
 			task: "Find the cause",
 		});
 	});
@@ -28,9 +30,45 @@ describe("toEngineParams", () => {
 		).toEqual({
 			async: false,
 			context: "fork",
-			tasks: [{ agent: "worker", task: "Implement it" }],
+			tasks: [{ agent: "worker", description: "Implement it", task: "Implement it" }],
 			worktree: true,
 		});
+	});
+
+	test("keeps caller descriptions separate from complete single and parallel tasks", () => {
+		const longTask = "Inspect /tmp/work/deep/sample.txt and verify every checksum without changing the file.";
+		expect(
+			toEngineParams({ agent: "reviewer", description: "Verify sample checksums", task: longTask }),
+		).toMatchObject({ description: "Verify sample checksums", task: longTask });
+		expect(
+			toEngineParams({
+				tasks: [{ agent: "reviewer", description: "复核样本 🧪", task: longTask }],
+			}),
+		).toMatchObject({ tasks: [{ description: "复核样本 🧪", task: longTask }] });
+	});
+
+	test("bounds and sanitizes legacy display fallback without changing a large execution task", () => {
+		const task = `独立只读复核 /tmp/pi-run/deep/sample.txt ${"very-long-tail ".repeat(100_000)}`;
+		const mapped = toEngineParams({ agent: "reviewer", task });
+		expect(mapped.task).toBe(task);
+		expect(mapped.description).toContain("sample.txt");
+		expect(mapped.description).not.toContain("/tmp/pi-run/deep");
+		expect(visibleWidth(mapped.description ?? "")).toBeLessThanOrEqual(60);
+
+		const explicit = toEngineParams({
+			agent: "reviewer",
+			description: "审\u202e查\u001b[31m结果\u001b[0m",
+			task,
+		});
+		expect(explicit).toMatchObject({ description: "审查结果", task });
+	});
+
+	test("uses Pi terminal width rules for complex Unicode descriptions", () => {
+		for (const description of ["กำ".repeat(80), "ກຳ".repeat(80), "ｦﾞ".repeat(80), "⚙️".repeat(80)]) {
+			const mapped = toEngineParams({ agent: "reviewer", description, task: "Review the result" });
+			expect(mapped.description).toEndWith("…");
+			expect(visibleWidth(mapped.description ?? "")).toBeLessThanOrEqual(60);
+		}
 	});
 
 	test("does not pass launch-only fields into control actions", () => {

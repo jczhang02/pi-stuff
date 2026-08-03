@@ -931,8 +931,14 @@ export interface AsyncStartedEvent {
 	mode?: SubagentRunMode;
 	agent?: string;
 	agents?: string[];
+	/** Short first-child UI description. */
+	description?: string;
+	/** Short per-child UI descriptions. */
+	descriptions?: string[];
 	/** Truncated first child task retained for backwards compatibility. */
 	task?: string;
+	/** Bounded per-child task previews retained by the current-session detail surface. */
+	tasks?: string[];
 	/** Caller task, falling back to the first child task. */
 	goal?: string;
 	parallelGroups?: AsyncParallelGroupStatus[];
@@ -985,6 +991,8 @@ export interface AsyncStatus {
 		/** Resolved launch context for this child step. */
 		context?: "fresh" | "fork";
 		phase?: string;
+		/** Full execution task; legacy status files may only have label. */
+		task?: string;
 		label?: string;
 		outputName?: string;
 		structured?: boolean;
@@ -1055,6 +1063,10 @@ export interface AsyncJobState {
 	status: "queued" | "running" | "complete" | "failed" | "paused" | "stopped";
 	/** Short caller-facing task/goal shown in Agent surfaces when available. */
 	description?: string;
+	/** Short per-child UI descriptions available before the first status poll. */
+	descriptions?: string[];
+	/** Bounded per-child task previews available before the first status poll. */
+	tasks?: string[];
 	pid?: number;
 	sessionId?: string;
 	activityState?: ActivityState;
@@ -1100,6 +1112,8 @@ export interface AsyncJobState {
 export interface ForegroundResumeChild {
 	agent: string;
 	index: number;
+	description?: string;
+	task?: string;
 	context?: "fresh" | "fork";
 	sessionFile?: string;
 	model?: string;
@@ -1148,6 +1162,7 @@ export interface ForegroundChildControl {
 	index: number;
 	agent: string;
 	description?: string;
+	task?: string;
 	startedAt: number;
 	updatedAt: number;
 	currentActivityState?: ActivityState;
@@ -1178,6 +1193,8 @@ export interface ForegroundRunControl {
 	currentIndex?: number;
 	/** Short caller-facing task/goal shown in Agent surfaces when available. */
 	description?: string;
+	/** Full execution task for the detail surface. */
+	task?: string;
 	currentActivityState?: ActivityState;
 	lastActivityAt?: number;
 	currentTool?: string;

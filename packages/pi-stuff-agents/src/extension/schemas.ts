@@ -36,6 +36,12 @@ const ToolBudget = Type.Object(
 const AgentTask = Type.Object(
 	{
 		agent: Type.String({ minLength: 1, description: "Agent definition name." }),
+		description: Type.Optional(
+			Type.String({
+				minLength: 1,
+				description: "Short 3–5 word UI description; keep paths and execution detail in task.",
+			}),
+		),
 		task: Type.String({ minLength: 1, description: "Concrete task delegated to this Agent." }),
 		cwd: Type.Optional(Type.String({ minLength: 1 })),
 		model: Type.Optional(Type.String({ minLength: 1 })),
@@ -49,6 +55,12 @@ const AgentTask = Type.Object(
 export const SubagentParams = Type.Object(
 	{
 		agent: Type.Optional(Type.String({ minLength: 1, description: "Agent definition name for one delegated task." })),
+		description: Type.Optional(
+			Type.String({
+				minLength: 1,
+				description: "Short 3–5 word UI description; keep paths and execution detail in task.",
+			}),
+		),
 		task: Type.Optional(Type.String({ minLength: 1, description: "Concrete task for one Agent." })),
 		tasks: Type.Optional(
 			Type.Array(AgentTask, {

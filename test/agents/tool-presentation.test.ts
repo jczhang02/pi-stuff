@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createAgentToolPresentation } from "../../packages/pi-stuff-agents/src/extension/agent-tool-presentation.js";
 import {
 	createNativeSupervisorChannel,
 	registerNativeSupervisorClient,
@@ -55,6 +56,22 @@ afterEach(() => {
 	}
 	environment.clear();
 	for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { force: true, recursive: true });
+});
+
+test("Agent Tool rows use short descriptions instead of full execution tasks", () => {
+	const presentation = createAgentToolPresentation();
+	const fullTask = "Inspect /tmp/pi-run/deep/sample.txt and verify every checksum without changing the file.";
+	expect(presentation.target?.({ agent: "reviewer", description: "Verify sample checksums", task: fullTask })).toBe(
+		"reviewer · Verify sample checksums",
+	);
+	expect(
+		presentation.target?.({
+			tasks: [
+				{ agent: "reviewer", description: "复核样本 🧪", task: fullTask },
+				{ agent: "writer", description: "Update fixture docs", task: "Update every relevant fixture document." },
+			],
+		}),
+	).toBe("reviewer · 复核样本 🧪, writer · Update fixture docs");
 });
 
 test("native parent and child communication tools use the shared Tool row", () => {

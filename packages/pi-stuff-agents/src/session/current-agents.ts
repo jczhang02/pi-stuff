@@ -1,3 +1,4 @@
+import { resolveDisplayDescription } from "../shared/display-description.ts";
 import type { SubagentState } from "../shared/types.ts";
 
 export type AgentStatus =
@@ -19,9 +20,11 @@ export interface AgentRow {
 	readonly childIndex: number;
 	readonly sessionId: string;
 	readonly name: string;
+	readonly description: string;
 	readonly task: string;
 	readonly status: AgentStatus;
 	readonly startedAt: number | null;
+	readonly endedAt: number | null;
 	readonly elapsedMs: number | null;
 	readonly partialResult: string | null;
 	readonly nestedCount: number;
@@ -39,7 +42,6 @@ export interface AgentSessionSnapshot {
 export type AgentControlAction =
 	| { readonly type: "inspect"; readonly key: string }
 	| { readonly type: "stop"; readonly key: string }
-	| { readonly type: "dismiss-terminal"; readonly key: string }
 	| { readonly type: "steer"; readonly key: string; readonly message: string }
 	| { readonly type: "resume"; readonly key: string; readonly message?: string };
 
@@ -70,9 +72,7 @@ export interface CurrentAgentsOptions {
 		row: AgentRow,
 		message?: string,
 	) => AgentControlAcknowledgement | Promise<AgentControlAcknowledgement>;
-	readonly dismiss: (row: AgentRow) => AgentControlAcknowledgement | Promise<AgentControlAcknowledgement>;
 	readonly subscribeState?: (listener: () => void) => () => void;
-	readonly subscribeMainUserSubmission?: (listener: () => void) => () => void;
 	readonly now?: () => number;
 }
 
@@ -91,6 +91,7 @@ interface RowDraft {
 	childIndex: number;
 	sessionId: string;
 	name: string;
+	description: string;
 	task: string;
 	status: AgentStatus;
 	startedAt: number | null;
@@ -126,6 +127,7 @@ const STATUS_ORDER: Record<AgentStatus, number> = {
 };
 const MAX_PARTIAL_RESULT_CHARS = 4_000;
 const MAX_TASK_CHARS = 500;
+const MAX_DYNAMIC_SOURCE_CODE_UNITS = 4_096;
 
 function asRecord(value: unknown): Record<string, unknown> {
 	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
@@ -136,7 +138,9 @@ function finiteNumber(value: unknown): number | null {
 }
 
 function optionalString(value: unknown): string | null {
-	return typeof value === "string" && value.trim() ? value : null;
+	if (typeof value !== "string") return null;
+	const bounded = value.slice(0, MAX_DYNAMIC_SOURCE_CODE_UNITS);
+	return bounded.trim() ? bounded : null;
 }
 
 function boundedText(value: unknown, limit: number): string | null {
@@ -251,6 +255,20 @@ function nestedForChild(value: unknown, childIndex: number, directCount: number)
 	return directCount === 1 ? value : [];
 }
 
+function boundedRecentOutput(value: unknown): string | null {
+	if (!Array.isArray(value)) return null;
+	let combined = "";
+	for (const line of value) {
+		if (typeof line !== "string") continue;
+		const separator = combined ? "\n" : "";
+		const remaining = MAX_PARTIAL_RESULT_CHARS + 1 - combined.length;
+		if (remaining <= 0) break;
+		combined += `${separator}${line.slice(0, Math.max(0, remaining - separator.length))}`;
+		if (combined.length > MAX_PARTIAL_RESULT_CHARS) break;
+	}
+	return boundedText(combined, MAX_PARTIAL_RESULT_CHARS);
+}
+
 function partialResult(...values: unknown[]): string | null {
 	for (const value of values) {
 		const record = asRecord(value);
@@ -259,13 +277,8 @@ function partialResult(...values: unknown[]): string | null {
 			MAX_PARTIAL_RESULT_CHARS,
 		);
 		if (direct) return direct;
-		if (Array.isArray(record["recentOutput"])) {
-			const recent = boundedText(
-				record["recentOutput"].filter((line) => typeof line === "string").join("\n"),
-				MAX_PARTIAL_RESULT_CHARS,
-			);
-			if (recent) return recent;
-		}
+		const recent = boundedRecentOutput(record["recentOutput"]);
+		if (recent) return recent;
 	}
 	return null;
 }
@@ -285,6 +298,12 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 
 	return steps.map(({ step, childIndex }) => {
 		const stepRecord = asRecord(step);
+		const persistedTask = firstString(stepRecord["task"], job.tasks?.[childIndex]);
+		const taskSource = persistedTask ?? firstString(stepRecord["label"], stepRecord["phase"], job.description) ?? "";
+		const explicitDescription = firstString(
+			job.descriptions?.[childIndex],
+			...(persistedTask ? [stepRecord["label"], stepRecord["phase"], job.description] : []),
+		);
 		const rawStepStatus = sourceStatus(stepRecord["status"] ?? jobStatus);
 		const effectiveStatus =
 			TERMINAL_SOURCE_STATUSES.has(jobStatus) && !TERMINAL_SOURCE_STATUSES.has(rawStepStatus)
@@ -301,7 +320,8 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 			childIndex,
 			sessionId,
 			name: firstString(stepRecord["agent"], job.agents?.[childIndex]) ?? "agent",
-			task: boundedText(stepRecord["label"] ?? stepRecord["phase"] ?? job.description, MAX_TASK_CHARS) ?? "",
+			description: resolveDisplayDescription(explicitDescription, taskSource),
+			task: boundedText(taskSource, MAX_TASK_CHARS) ?? "",
 			status: deriveStatus(statusRecord, effectiveStatus),
 			startedAt: finiteNumber(stepRecord["startedAt"] ?? job.startedAt),
 			endedAt: finiteNumber(
@@ -346,6 +366,7 @@ function projectForegroundControl(
 						{
 							agent: control.currentAgent,
 							description: control.description,
+							task: control.task,
 							startedAt: control.startedAt,
 							updatedAt: control.updatedAt,
 							currentActivityState: control.currentActivityState,
@@ -358,6 +379,8 @@ function projectForegroundControl(
 
 	return children.map(([childIndex, child]) => {
 		const childRecord = asRecord(child);
+		const persistedTask = firstString(childRecord["task"], control.task);
+		const taskSource = persistedTask ?? firstString(childRecord["description"], control.description) ?? "";
 		const rememberedChild = remembered.get(rowKey(control.runId, childIndex)) ?? {};
 		const statusRecord = {
 			...asRecord(control),
@@ -372,7 +395,11 @@ function projectForegroundControl(
 			childIndex,
 			sessionId,
 			name: firstString(childRecord["agent"], control.currentAgent) ?? "agent",
-			task: boundedText(childRecord["description"] ?? control.description, MAX_TASK_CHARS) ?? "",
+			description: resolveDisplayDescription(
+				persistedTask ? firstString(childRecord["description"], control.description) : undefined,
+				taskSource,
+			),
+			task: boundedText(taskSource, MAX_TASK_CHARS) ?? "",
 			status: deriveStatus(statusRecord, "running"),
 			startedAt: finiteNumber(childRecord["startedAt"] ?? control.startedAt),
 			endedAt: null,
@@ -393,6 +420,8 @@ function projectForegroundRun(run: ForegroundRun, sessionId: string): RowDraft[]
 	return run.children.flatMap((child) => {
 		if (!child) return [];
 		const childRecord = asRecord(child);
+		const persistedTask = firstString(childRecord["task"]);
+		const taskSource = persistedTask ?? firstString(childRecord["description"]) ?? "";
 		return [
 			{
 				key: rowKey(run.runId, child.index),
@@ -400,7 +429,8 @@ function projectForegroundRun(run: ForegroundRun, sessionId: string): RowDraft[]
 				childIndex: child.index,
 				sessionId,
 				name: child.agent || "agent",
-				task: boundedText(childRecord["description"], MAX_TASK_CHARS) ?? "",
+				description: resolveDisplayDescription(persistedTask ? childRecord["description"] : undefined, taskSource),
+				task: boundedText(taskSource, MAX_TASK_CHARS) ?? "",
 				status: deriveStatus(childRecord, child.status),
 				startedAt: finiteNumber(childRecord["startedAt"]),
 				endedAt: finiteNumber(child.updatedAt ?? run.updatedAt),
@@ -424,9 +454,11 @@ function freezeRow(draft: RowDraft, now: number): AgentRow {
 		childIndex: draft.childIndex,
 		sessionId: draft.sessionId,
 		name: draft.name,
+		description: draft.description,
 		task: draft.task,
 		status: draft.status,
 		startedAt: draft.startedAt,
+		endedAt: draft.endedAt,
 		elapsedMs,
 		partialResult: draft.partialResult,
 		nestedCount: draft.nestedCount,
@@ -458,7 +490,6 @@ function controlResult(
 
 export class CurrentAgents {
 	private disposed = false;
-	private readonly dismissedTerminalKeys = new Set<string>();
 	private readonly listeners = new Set<(snapshot: AgentSessionSnapshot) => void>();
 	private readonly now: () => number;
 	private readonly options: CurrentAgentsOptions;
@@ -480,9 +511,6 @@ export class CurrentAgents {
 		this.now = options.now ?? Date.now;
 		this.rebuild(false);
 		if (options.subscribeState) this.unsubscribe.push(options.subscribeState(() => this.rebuild(true)));
-		if (options.subscribeMainUserSubmission) {
-			this.unsubscribe.push(options.subscribeMainUserSubmission(() => this.hideTerminalRowsForSubmission()));
-		}
 	}
 
 	snapshot(): AgentSessionSnapshot {
@@ -534,9 +562,7 @@ export class CurrentAgents {
 
 		this.rebuild(false);
 		const current = this.snapshotValue.rows.find((candidate) => candidate.key === action.key);
-		if (action.type === "dismiss-terminal") {
-			this.dismissedTerminalKeys.add(action.key);
-		} else if (current && action.type === "stop" && !TERMINAL_STATUSES.has(current.status)) {
+		if (current && action.type === "stop" && !TERMINAL_STATUSES.has(current.status)) {
 			this.overrides.set(action.key, {
 				sourceStatus: current.status,
 				status: acknowledgement.status ?? "stopping",
@@ -579,8 +605,6 @@ export class CurrentAgents {
 				return this.options.stop(row);
 			case "resume":
 				return this.options.resume(row, action.message?.trim() || undefined);
-			case "dismiss-terminal":
-				return this.options.dismiss(row);
 		}
 	}
 
@@ -591,8 +615,6 @@ export class CurrentAgents {
 				return null;
 			case "stop":
 				return terminal || row.status === "stopping" ? `Agent '${row.key}' is not running.` : null;
-			case "dismiss-terminal":
-				return terminal ? null : `Agent '${row.key}' is still active.`;
 			case "steer":
 				if (!action.message.trim()) return "Steering requires a non-empty message.";
 				return terminal || row.status === "stopping"
@@ -605,20 +627,11 @@ export class CurrentAgents {
 		}
 	}
 
-	private hideTerminalRowsForSubmission(): void {
-		if (this.disposed) return;
-		for (const row of this.snapshot().rows) {
-			if (TERMINAL_STATUSES.has(row.status)) this.dismissedTerminalKeys.add(row.key);
-		}
-		this.rebuild(true);
-	}
-
 	private rebuild(notify: boolean): void {
 		if (this.disposed) return;
 		const currentSessionId = this.state.currentSessionId;
 		if (currentSessionId !== this.sessionId) {
 			this.sessionId = currentSessionId;
-			this.dismissedTerminalKeys.clear();
 			this.overrides.clear();
 		}
 
@@ -634,13 +647,11 @@ export class CurrentAgents {
 			} else if (override) {
 				draft.status = override.status;
 			}
-			if (!TERMINAL_STATUSES.has(draft.status)) this.dismissedTerminalKeys.delete(draft.key);
 		}
 
 		const now = this.now();
 		const rows = Object.freeze(
 			drafts
-				.filter((draft) => !(TERMINAL_STATUSES.has(draft.status) && this.dismissedTerminalKeys.has(draft.key)))
 				.map((draft) => freezeRow(draft, now))
 				.sort(
 					(left, right) =>

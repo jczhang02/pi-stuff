@@ -59,7 +59,11 @@ function context(cwd: string): ExtensionContext {
 	} as unknown as ExtensionContext;
 }
 
-function executor(cwd: string, runState: SubagentState) {
+function executor(
+	cwd: string,
+	runState: SubagentState,
+	onBackgroundSingle?: (launch: { description?: string; task: string }) => void,
+) {
 	const pi = { events: { emit: () => {} } } as unknown as ExtensionAPI;
 	return createSubagentExecutor({
 		pi,
@@ -71,6 +75,13 @@ function executor(cwd: string, runState: SubagentState) {
 		expandTilde: (value) => value,
 		discoverAgents: () => ({ agents: [agent()] }),
 		engines: {
+			backgroundSingle: (id, launch) => {
+				onBackgroundSingle?.(launch);
+				return {
+					content: [{ type: "text", text: `Background Agent started [${id}]` }],
+					details: { asyncId: id, mode: "single", results: [], runId: id },
+				};
+			},
 			foreground: async (config) =>
 				projectForegroundCompletion(config, {
 					id: config.id,
@@ -137,6 +148,50 @@ describe("reduced foreground Agent engine", () => {
 		expect(result.isError).not.toBe(true);
 		expect(result.details.mode).toBe("parallel");
 		expect(result.details.results.map((child) => child.finalOutput)).toEqual(["result-1", "result-2"]);
+	});
+
+	test("resume labels the revived Agent from the follow-up while preserving the recovery task", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-resume-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		const childSession = path.join(cwd, "child.jsonl");
+		fs.writeFileSync(childSession, "");
+		const runState = state();
+		const sessionIdentity = path.join(cwd, "parent.jsonl");
+		runState.currentSessionId = sessionIdentity;
+		runState.foregroundRuns?.set("source-run", {
+			children: [
+				{
+					agent: "general-purpose",
+					index: 0,
+					sessionFile: childSession,
+					status: "completed",
+					task: "Inspect every parser edge case in full detail",
+				},
+			],
+			cwd,
+			mode: "single",
+			runId: "source-run",
+			sessionId: sessionIdentity,
+			updatedAt: 1_000,
+		});
+		let captured: { description?: string; task: string } | undefined;
+		const result = await executor(cwd, runState, (launch) => {
+			captured = launch;
+		}).execute(
+			"resume-call",
+			{ action: "resume", id: "source-run", message: "复核恢复结果 🧪" },
+			new AbortController().signal,
+			undefined,
+			context(cwd),
+		);
+
+		if (result.isError) {
+			throw new Error(result.content.map((part) => ("text" in part ? part.text : "")).join("\n"));
+		}
+		expect(captured?.description).toBe("复核恢复结果 🧪");
+		expect(captured?.task).toContain("复核恢复结果 🧪");
+		expect(captured?.task).toContain("source-run");
 	});
 
 	test("the private executor contract contains no removed orchestration fields or legacy branches", () => {

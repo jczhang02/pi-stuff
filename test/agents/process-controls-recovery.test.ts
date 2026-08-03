@@ -434,7 +434,6 @@ describe("process-level Agent controls and crash recovery", () => {
 					steer: () => true,
 					stop: () => true,
 					resume: () => true,
-					dismiss: () => true,
 				}).snapshot().rows;
 				expect(rows.find((row) => row.runId === sourceRunId)?.status).toBe("crashed");
 				expect(restoredState.asyncJobs.has(sourceRunId)).toBeFalse();

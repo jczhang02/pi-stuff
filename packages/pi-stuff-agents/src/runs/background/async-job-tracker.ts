@@ -452,7 +452,9 @@ export function createAsyncJobTracker(
 				info.mode === "parallel" || (info.mode !== "single" && (rawAgents?.length ?? 0) > 1)
 					? "parallel"
 					: "single",
-			description: info.goal ?? info.task,
+			description: info.description ?? info.goal ?? info.task,
+			descriptions: info.descriptions,
+			tasks: info.tasks,
 			agents,
 			parallelGroups: validParallelGroups,
 			nestedRoute: info.nestedRoute,

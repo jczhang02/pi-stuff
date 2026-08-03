@@ -76,7 +76,6 @@ function currentRows(deps: RunStatusDeps): readonly AgentRow[] {
 		steer: rejectControl,
 		stop: rejectControl,
 		resume: rejectControl,
-		dismiss: rejectControl,
 		...(deps.now ? { now: deps.now } : {}),
 	});
 	try {

@@ -1,5 +1,6 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
+import { resolveDisplayDescription } from "../shared/display-description.ts";
 import type { Details } from "../shared/types.ts";
 import type { PublicAgentParams } from "./product-executor.ts";
 
@@ -26,10 +27,12 @@ function target(params: PublicAgentParams): string {
 	if (params.tasks?.length)
 		return params.tasks
 			.slice(0, 32)
-			.map((task) => task.agent)
+			.map((task) => `${task.agent} · ${resolveDisplayDescription(task.description, task.task)}`)
 			.filter(Boolean)
 			.join(", ");
-	return [params.agent, params.task].filter(Boolean).join(" · ");
+	return [params.agent, params.task ? resolveDisplayDescription(params.description, params.task) : undefined]
+		.filter(Boolean)
+		.join(" · ");
 }
 
 /** One shared row grammar for root and nested public Agent tools. */

@@ -381,7 +381,6 @@ export default function registerSubagentExtension(
 	const supervisor = deps.createSupervisor(pi, state);
 	const notifier = createCompactCompletionNotifier(pi, state, coordinator);
 	const watcher = deps.createWatcher({ notifier, pi, state });
-	const mainSubmissionListeners = new Set<() => void>();
 	let active = true;
 	let launchCallsInFlight = 0;
 	let rosterRefreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -455,11 +454,6 @@ export default function registerSubagentExtension(
 			};
 		},
 		resume: (row, message) => runEngineControl(row, "resume", message),
-		dismiss: () => ({ acknowledged: true, message: "Terminal Agent dismissed." }),
-		subscribeMainUserSubmission: (listener) => {
-			mainSubmissionListeners.add(listener);
-			return () => mainSubmissionListeners.delete(listener);
-		},
 	});
 
 	const roster = deps.createRoster(current, {
@@ -624,10 +618,6 @@ export default function registerSubagentExtension(
 	pi.on("tool_execution_update", refreshFromTool);
 	pi.on("tool_execution_end", refreshFromTool);
 	pi.on("tool_result", refreshFromTool);
-	pi.on("input", (event) => {
-		if (!active || event.source === "extension") return;
-		for (const listener of [...mainSubmissionListeners]) listener();
-	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (!active) return;
@@ -687,7 +677,6 @@ export default function registerSubagentExtension(
 		state.currentSessionId = null;
 		state.parentSessionFile = null;
 		state.lastUiContext = null;
-		mainSubmissionListeners.clear();
 		notifier.dispose();
 		executionGovernor.dispose();
 		supervisor.dispose();

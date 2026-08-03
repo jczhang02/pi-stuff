@@ -394,7 +394,8 @@ export function createInitialStatus(config: BackgroundRunnerConfig, startedAt: n
 		steps: tasks.map((task) => ({
 			agent: task.agent,
 			...(task.context ? { context: task.context } : {}),
-			label: task.task,
+			...(task.description ? { label: task.description } : {}),
+			task: task.task,
 			status: "pending" as const,
 			...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
 			...(task.model ? { model: task.model } : {}),

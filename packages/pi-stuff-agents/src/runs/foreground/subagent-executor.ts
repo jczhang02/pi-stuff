@@ -6,6 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { AgentConfig, AgentScope } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { getArtifactsDir } from "../../shared/artifacts.ts";
+import { resolveDisplayDescription } from "../../shared/display-description.ts";
 import { createForkContextResolver, forkedChildRequiresThinkingOff } from "../../shared/fork-context.ts";
 import { type ModelInfo, toModelInfo } from "../../shared/model-info.ts";
 import { resolveCurrentSessionId } from "../../shared/session-identity.ts";
@@ -74,6 +75,7 @@ export function deriveLaunchRunId(toolCallId: string): string {
 
 interface TaskParam {
 	agent: string;
+	description?: string;
 	task: string;
 	cwd?: string;
 	model?: string;
@@ -88,6 +90,7 @@ export interface SubagentParamsLike {
 	id?: string;
 	index?: number;
 	agent?: string;
+	description?: string;
 	task?: string;
 	message?: string;
 	tasks?: TaskParam[];
@@ -237,6 +240,7 @@ function taskInputs(params: SubagentParamsLike): TaskParam[] {
 	return [
 		{
 			agent: params.agent,
+			...(params.description ? { description: params.description } : {}),
 			task: params.task,
 			...(params.cwd ? { cwd: params.cwd } : {}),
 			...(params.model ? { model: params.model } : {}),
@@ -426,6 +430,7 @@ function parallelInputs(data: PreparedLaunch) {
 		const skill = normalizeSkillInput(task.skill);
 		return {
 			agent: task.agent,
+			...(task.description ? { description: task.description } : {}),
 			task: childTask(data, task),
 			...(task.cwd ? { cwd: task.cwd } : {}),
 			...(task.model ? { model: task.model } : {}),
@@ -480,7 +485,7 @@ function launchBackground(
 			...common,
 			agents: data.agents,
 			tasks,
-			goal: data.params.tasks?.[0]?.task ?? "",
+			goal: data.params.tasks?.[0]?.description ?? data.params.tasks?.[0]?.task ?? "",
 			contextForAgent: () => data.context,
 			thinking: data.params.thinking,
 			thinkingOverridesByIndex: data.thinkingOverrides,
@@ -505,8 +510,9 @@ function launchBackground(
 	return engines.backgroundSingle(data.runId, {
 		...common,
 		agent: agent.name,
+		description: data.params.description,
 		task: childTask(data, { agent: agent.name, task }),
-		goal: data.params.task ?? "",
+		goal: data.params.description ?? data.params.task ?? "",
 		agentConfig: agent,
 		context: data.context,
 		skills: skills === false ? [] : skills,
@@ -551,6 +557,7 @@ function buildForegroundConfig(
 				: buildAsyncSingleRunnerWork(data.runId, {
 						...common,
 						agent: singleName,
+						description: data.params.description,
 						task: childTask(data, { agent: singleName, task: singleTask }),
 						agentConfig: singleAgent(data),
 						context: data.context,
@@ -610,7 +617,8 @@ function foregroundControl(data: PreparedLaunch, config: BackgroundRunnerConfig)
 			{
 				index,
 				agent: task.agent,
-				description: task.task,
+				description: task.description,
+				task: task.task,
 				startedAt: now,
 				updatedAt: now,
 				interrupt: () => {
@@ -635,7 +643,8 @@ function foregroundControl(data: PreparedLaunch, config: BackgroundRunnerConfig)
 		startedAt: now,
 		updatedAt: now,
 		cwd: data.effectiveCwd,
-		description: taskInputs(data.params)[0]?.task,
+		description: taskInputs(data.params)[0]?.description,
+		task: taskInputs(data.params)[0]?.task,
 		activeChildren,
 		nestedRoute: data.nestedRoute,
 		interrupt: () => {
@@ -722,7 +731,11 @@ function rememberForegroundResult(
 		children: result.details.results.map((child, index) => ({
 			agent: child.agent,
 			index,
-			...({ description: rememberedTasks[index]?.task, startedAt } as Record<string, unknown>),
+			...({
+				description: rememberedTasks[index]?.description,
+				task: rememberedTasks[index]?.task,
+				startedAt,
+			} as Record<string, unknown>),
 			...(child.context ? { context: child.context } : {}),
 			status: child.stopped
 				? "stopped"
@@ -976,6 +989,7 @@ async function resumeRun(input: {
 	if (!currentSessionId) return errorResult("management", "Current session identity is unavailable.");
 	const result = input.engines.backgroundSingle(runId, {
 		agent: target.agent,
+		description: resolveDisplayDescription(undefined, followUp),
 		task: buildRevivedAsyncTask(target as Parameters<typeof buildRevivedAsyncTask>[0], followUp),
 		goal: followUp,
 		agentConfig: agent,

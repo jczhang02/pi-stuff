@@ -1,4 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createAsyncJobTracker } from "../../packages/pi-stuff-agents/src/runs/background/async-job-tracker.js";
 import {
 	type AgentControlAcknowledgement,
 	type AgentRow,
@@ -49,6 +54,25 @@ function createState(sessionId = "root-session"): StateInput {
 	};
 }
 
+function createFullState(sessionId: string): SubagentState {
+	return {
+		baseCwd: "",
+		cleanupTimers: new Map(),
+		completionSeen: new Map(),
+		currentSessionId: sessionId,
+		asyncJobs: new Map(),
+		foregroundControls: new Map(),
+		foregroundRuns: new Map(),
+		lastForegroundControlId: null,
+		lastUiContext: null,
+		poller: null,
+		recentAgentJobs: new Map(),
+		resultFileCoalescer: { clear: () => {}, schedule: () => false },
+		watcher: null,
+		watcherRestartTimer: null,
+	};
+}
+
 function asyncJob(id: string, status: AsyncJobState["status"], overrides: Partial<AsyncJobState> = {}): AsyncJobState {
 	return {
 		asyncId: id,
@@ -95,7 +119,6 @@ function acknowledgedOptions(overrides: Partial<CurrentAgentsOptions> = {}): Cur
 		steer: acknowledged,
 		stop: acknowledged,
 		resume: acknowledged,
-		dismiss: acknowledged,
 		now: () => 5_000,
 		...overrides,
 	};
@@ -243,6 +266,131 @@ describe("CurrentAgents snapshot", () => {
 		});
 	});
 
+	test("restores task-only legacy rows through the bounded description fallback", () => {
+		const state = createState();
+		const legacyTask = "独立只读复核 /tmp/pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/sample.txt 并检查状态";
+		state.recentAgentJobs?.set(
+			"legacy-background",
+			asyncJob("legacy-background", "complete", {
+				description: legacyTask,
+				steps: [
+					{
+						agent: "background-reviewer",
+						endedAt: 3_000,
+						label: legacyTask,
+						startedAt: 1_000,
+						status: "completed",
+					},
+				],
+			}),
+		);
+		state.foregroundRuns?.set(
+			"legacy-foreground",
+			foregroundRun({
+				children: [
+					{
+						agent: "foreground-reviewer",
+						description: legacyTask,
+						index: 0,
+						status: "completed",
+						updatedAt: 3_000,
+					},
+				],
+				runId: "legacy-foreground",
+			}),
+		);
+
+		const snapshot = new CurrentAgents(state, acknowledgedOptions()).snapshot();
+		for (const key of ["legacy-background:0", "legacy-foreground:0"]) {
+			const restored = row(snapshot, key);
+			expect(restored.description).toBe("独立只读复核 sample.txt 并检查状态");
+			expect(restored.task).toBe(legacyTask);
+		}
+	});
+
+	test("reconstructs a task-only legacy background label from persisted status", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-legacy-agent-restore-"));
+		const runDir = path.join(root, "legacy-run");
+		const sessionId = "legacy-session";
+		const legacyTask = "独立只读复核 /tmp/pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/sample.txt 并检查状态";
+		fs.mkdirSync(runDir);
+		fs.writeFileSync(
+			path.join(runDir, "status.json"),
+			JSON.stringify({
+				cwd: "/repo",
+				endedAt: 3_000,
+				lastUpdate: 3_000,
+				mode: "single",
+				runId: "legacy-run",
+				sessionId,
+				startedAt: 1_000,
+				state: "complete",
+				steps: [
+					{
+						agent: "reviewer",
+						endedAt: 3_000,
+						label: legacyTask,
+						startedAt: 1_000,
+						status: "completed",
+					},
+				],
+			}),
+		);
+		const state = createFullState(sessionId);
+		const tracker = createAsyncJobTracker(
+			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
+			state,
+			root,
+			{ now: () => 4_000, resultsDir: path.join(root, "results") },
+		);
+
+		try {
+			tracker.restoreActiveJobs();
+			const restored = row(new CurrentAgents(state, acknowledgedOptions()).snapshot(), "legacy-run:0");
+			expect(restored.description).toBe("独立只读复核 sample.txt 并检查状态");
+			expect(restored.task).toBe(legacyTask);
+		} finally {
+			tracker.resetJobs();
+			fs.rmSync(root, { force: true, recursive: true });
+		}
+	});
+
+	test("bounds legacy source scanning before trimming restored task text", () => {
+		const state = createState();
+		const leadingWhitespaceTask = `${" ".repeat(4 * 1024 * 1024)}LATE_TASK_TEXT_MUST_NOT_BE_SCANNED`;
+		let lateOutputReads = 0;
+		const recentOutput = ["x".repeat(4 * 1024 * 1024)];
+		Object.defineProperty(recentOutput, 1, {
+			configurable: true,
+			enumerable: true,
+			get: () => {
+				lateOutputReads += 1;
+				return "LATE_OUTPUT_MUST_NOT_BE_READ";
+			},
+		});
+		state.recentAgentJobs?.set(
+			"bounded-legacy",
+			asyncJob("bounded-legacy", "complete", {
+				steps: [{ agent: "reviewer", label: leadingWhitespaceTask, status: "completed" }],
+			}),
+		);
+		state.recentAgentJobs?.set(
+			"bounded-output",
+			asyncJob("bounded-output", "complete", {
+				steps: [{ agent: "reviewer", recentOutput, status: "completed" }],
+			}),
+		);
+
+		const snapshot = new CurrentAgents(state, acknowledgedOptions()).snapshot();
+		const restored = row(snapshot, "bounded-legacy:0");
+		expect(restored.description).toBe("Agent task");
+		expect(restored.task).toBe("");
+		const output = row(snapshot, "bounded-output:0").partialResult;
+		expect(output).toHaveLength(4_000);
+		expect(output).toEndWith("…");
+		expect(lateOutputReads).toBe(0);
+	});
+
 	test("represents every explicit lifecycle state without inventing nested rows", () => {
 		const state = createState();
 		const active = [
@@ -311,7 +459,6 @@ describe("CurrentAgents controls", () => {
 		state.recentAgentJobs?.set("done", asyncJob("done", "complete"));
 		state.recentAgentJobs?.set("cancelled", asyncJob("cancelled", "stopped"));
 		const calls: string[] = [];
-		let dismissAcknowledged = false;
 		const current = new CurrentAgents(
 			state,
 			acknowledgedOptions({
@@ -331,10 +478,6 @@ describe("CurrentAgents controls", () => {
 					calls.push(`resume:${agent.key}:${message ?? ""}`);
 					return true;
 				},
-				dismiss: (agent) => {
-					calls.push(`dismiss:${agent.key}`);
-					return dismissAcknowledged;
-				},
 			}),
 		);
 
@@ -344,14 +487,6 @@ describe("CurrentAgents controls", () => {
 
 		expect((await current.control({ type: "steer", key: "live:0", message: "  " })).acknowledged).toBe(false);
 		expect((await current.control({ type: "inspect", key: "done:0" })).acknowledged).toBe(true);
-
-		const rejectedDismiss = await current.control({ type: "dismiss-terminal", key: "done:0" });
-		expect(rejectedDismiss.acknowledged).toBe(false);
-		expect(current.snapshot().rows.some(({ key }) => key === "done:0")).toBe(true);
-		dismissAcknowledged = true;
-		const dismissed = await current.control({ type: "dismiss-terminal", key: "done:0" });
-		expect(dismissed).toMatchObject({ acknowledged: true, status: null });
-		expect(current.snapshot().rows.some(({ key }) => key === "done:0")).toBe(false);
 
 		const resume = await current.control({ type: "resume", key: "cancelled:0", message: "retry" });
 		expect(resume).toMatchObject({ acknowledged: false, status: "user_cancelled" });
@@ -399,10 +534,9 @@ describe("CurrentAgents lifecycle", () => {
 		expect(tasks).toEqual(["first", "changed"]);
 	});
 
-	test("keeps terminal rows until dismiss or the next main user submission", () => {
+	test("keeps terminal rows in the detail authority across elapsed time", () => {
 		const state = createState();
 		const stateSignal = signalChannel();
-		const submissions = signalChannel();
 		let now = 5_000;
 		state.asyncJobs.set("live", asyncJob("live", "running"));
 		state.recentAgentJobs?.set("old-terminal", asyncJob("old-terminal", "complete"));
@@ -412,7 +546,6 @@ describe("CurrentAgents lifecycle", () => {
 			acknowledgedOptions({
 				now: () => now,
 				subscribeState: stateSignal.subscribe,
-				subscribeMainUserSubmission: submissions.subscribe,
 			}),
 		);
 		current.subscribe((snapshot) => snapshots.push(snapshot.rows.map(({ key }) => key)));
@@ -422,12 +555,11 @@ describe("CurrentAgents lifecycle", () => {
 		expect(snapshots).toHaveLength(1);
 		expect(current.snapshot().rows.some(({ key }) => key === "old-terminal:0")).toBe(true);
 
-		submissions.emit();
-		expect(current.snapshot().rows.map(({ key }) => key)).toEqual(["live:0"]);
+		expect(current.snapshot().rows.map(({ key }) => key)).toEqual(["live:0", "old-terminal:0"]);
 		state.recentAgentJobs?.set("new-terminal", asyncJob("new-terminal", "failed"));
 		stateSignal.emit();
 		expect(current.snapshot().rows.some(({ key }) => key === "new-terminal:0")).toBe(true);
-		expect(current.snapshot().rows.some(({ key }) => key === "old-terminal:0")).toBe(false);
+		expect(current.snapshot().rows.some(({ key }) => key === "old-terminal:0")).toBe(true);
 
 		state.currentSessionId = "second-session";
 		state.asyncJobs.clear();
@@ -439,7 +571,6 @@ describe("CurrentAgents lifecycle", () => {
 	test("deduplicates notifications and becomes quiet after unsubscribe or dispose", async () => {
 		const state = createState();
 		const stateSignal = signalChannel();
-		const submissions = signalChannel();
 		const live = asyncJob("live", "running", { description: "first" });
 		state.asyncJobs.set(live.asyncId, live);
 		let stopCalls = 0;
@@ -447,7 +578,6 @@ describe("CurrentAgents lifecycle", () => {
 			state,
 			acknowledgedOptions({
 				subscribeState: stateSignal.subscribe,
-				subscribeMainUserSubmission: submissions.subscribe,
 				stop: () => {
 					stopCalls += 1;
 					return true;
@@ -469,13 +599,10 @@ describe("CurrentAgents lifecycle", () => {
 		stateSignal.emit();
 		expect(revisions).toHaveLength(2);
 		expect(stateSignal.size).toBe(1);
-		expect(submissions.size).toBe(1);
 
 		current.dispose();
 		expect(stateSignal.size).toBe(0);
-		expect(submissions.size).toBe(0);
 		stateSignal.emit();
-		submissions.emit();
 		const result = await current.control({ type: "stop", key: "live:0" });
 		expect(result).toMatchObject({ acknowledged: false, status: null });
 		expect(stopCalls).toBe(0);

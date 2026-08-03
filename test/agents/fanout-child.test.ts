@@ -176,7 +176,15 @@ describe("fanout child Agent composition", () => {
 			undefined,
 			context(),
 		);
-		expect(engineParams).toEqual([{ agent: "worker", task: "Inspect nested state", async: true, context: "fresh" }]);
+		expect(engineParams).toEqual([
+			{
+				agent: "worker",
+				description: "Inspect nested state",
+				task: "Inspect nested state",
+				async: true,
+				context: "fresh",
+			},
+		]);
 		expect(governor.binds).toEqual([
 			{ sessionId: "parent-session-id", ownerAgentPath: ["root-run:0", "nested-run:2"] },
 		]);

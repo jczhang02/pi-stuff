@@ -10,7 +10,7 @@ describe("Agent product contract", () => {
 			{ agent: "general-purpose", task: "Investigate" },
 			{
 				tasks: [
-					{ agent: "general-purpose", task: "Implement" },
+					{ agent: "general-purpose", description: "Implement parser", task: "Implement" },
 					{ agent: "general-purpose", task: "Review" },
 				],
 				foreground: true,
@@ -52,6 +52,7 @@ describe("Agent product contract", () => {
 					{
 						agent: "general-purpose",
 						cwd: "packages/core",
+						description: "Implement core change",
 						model: "provider/model",
 						skill: ["research", "review"],
 						task: "Implement and verify",
@@ -67,6 +68,7 @@ describe("Agent product contract", () => {
 				{
 					agent: "general-purpose",
 					cwd: "packages/core",
+					description: "Implement core change",
 					model: "provider/model",
 					skill: ["research", "review"],
 					task: "Implement and verify",

@@ -5,7 +5,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const PROVIDER = "pi-stuff-agents-pty";
 const MODEL = "fixture-model";
-const TASK = "AGENT_PTY_TASK · 中文长任务检查终端截断与状态保留";
+const DESCRIPTION = "复核工具结果 🧪";
+const TASK =
+	"AGENT_PTY_TASK · 中文长任务：独立只读复核 /tmp/pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/sample.txt 并检查终端截断与状态保留";
 const SUBAGENT_CHILD_ENV = "PI_SUBAGENT_CHILD";
 const SUBAGENT_PI_BINARY_ENV = "PI_SUBAGENT_PI_BINARY";
 
@@ -81,6 +83,7 @@ function textStream(first: string, second = "", delayMs = 0, onFinish?: () => vo
 function launchStream() {
 	return toolCallStream("agents-pty-launch", "subagent", {
 		agent: "general-purpose",
+		description: DESCRIPTION,
 		task: TASK,
 		foreground: false,
 		context: "fresh",
