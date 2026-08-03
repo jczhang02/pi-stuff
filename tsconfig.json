@@ -3,7 +3,8 @@
 	"compilerOptions": {
 		"paths": {
 			"@jczhang02/pi-stuff-agents": ["./scripts/types/pi-stuff-agents.d.ts"],
-			"@jczhang02/pi-stuff-permissions": ["./scripts/types/pi-stuff-permissions.d.ts"]
+			"@jczhang02/pi-stuff-permissions": ["./scripts/types/pi-stuff-permissions.d.ts"],
+			"@jczhang02/pi-stuff-ui": ["./packages/pi-stuff-ui/index.ts"]
 		}
 	},
 	"include": ["scripts/**/*.ts", "test/**/*.ts", "packages/*/**/*.ts"],

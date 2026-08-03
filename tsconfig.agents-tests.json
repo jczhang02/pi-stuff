@@ -1,6 +1,9 @@
 {
 	"extends": "./tsconfig.agents.json",
 	"compilerOptions": {
+		"paths": {
+			"@jczhang02/pi-stuff-ui": ["./packages/pi-stuff-ui/index.ts"]
+		},
 		"types": ["bun"]
 	},
 	"include": [
