@@ -1,6 +1,11 @@
 import { readFile, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { createVerifiedReleaseSnapshot, RELEASE_MANIFEST_FILENAME, readVerifiedRelease } from "./release-artifacts.ts";
+import {
+	createVerifiedReleaseSnapshot,
+	RELEASE_MANIFEST_FILENAME,
+	RELEASE_PACKAGES,
+	readVerifiedRelease,
+} from "./release-artifacts.ts";
 import { CERTIFIED_PI_HOST_PROFILE } from "./verify-package.ts";
 
 function fail(message: string): never {
@@ -54,26 +59,16 @@ const { manifestPath, tag } = parseArguments();
 if (basename(manifestPath) !== RELEASE_MANIFEST_FILENAME) fail(`manifest must be named ${RELEASE_MANIFEST_FILENAME}`);
 const destination = dirname(manifestPath);
 const manifest = await readVerifiedRelease(destination, CERTIFIED_PI_HOST_PROFILE);
-const packagePaths = [
-	"pi-stuff-ui",
-	"pi-stuff-tools",
-	"pi-stuff-rtk",
-	"pi-stuff-codex",
-	"pi-stuff-goal",
-	"pi-stuff-context",
-	"pi-stuff-agents",
-	"pi-stuff-todo",
-	"pi-stuff-btw",
-	"pi-stuff",
-] as const;
 const snapshot = await createVerifiedReleaseSnapshot(destination, manifest);
 
 try {
 	for (const [index, artifact] of manifest.artifacts.entries()) {
-		const packagePath = packagePaths[index];
-		if (!packagePath) fail(`artifact ${artifact.name} has no workspace Package`);
+		const releasePackage = RELEASE_PACKAGES[index];
+		if (!releasePackage || releasePackage.name !== artifact.name) {
+			fail(`artifact ${artifact.name} has no matching workspace Package`);
+		}
 		const workspaceManifest = JSON.parse(
-			await readFile(join(resolve(import.meta.dir, ".."), "packages", packagePath, "package.json"), "utf8"),
+			await readFile(join(resolve(import.meta.dir, ".."), releasePackage.path, "package.json"), "utf8"),
 		) as { name?: unknown; version?: unknown };
 		if (workspaceManifest.name !== artifact.name || workspaceManifest.version !== artifact.version) {
 			fail(`${artifact.name}@${artifact.version} no longer matches the workspace`);

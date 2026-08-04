@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { createReleaseArtifacts } from "./release-artifacts.ts";
+import { createReleaseArtifacts, RELEASE_PACKAGES } from "./release-artifacts.ts";
 import { certifyReleaseArtifacts } from "./verify-package.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -13,23 +13,12 @@ const pendingChangesets = (await readdir(join(root, ".changeset"))).filter(
 if (pendingChangesets.length > 0) {
 	throw new Error(`Run bun run release:version before packing; pending Changesets: ${pendingChangesets.join(", ")}`);
 }
-for (const packagePath of [
-	"pi-stuff-ui",
-	"pi-stuff-tools",
-	"pi-stuff-rtk",
-	"pi-stuff-codex",
-	"pi-stuff-goal",
-	"pi-stuff-context",
-	"pi-stuff-agents",
-	"pi-stuff-todo",
-	"pi-stuff-btw",
-	"pi-stuff",
-]) {
-	const manifest = JSON.parse(await readFile(join(root, "packages", packagePath, "package.json"), "utf8")) as {
+for (const releasePackage of RELEASE_PACKAGES) {
+	const manifest = JSON.parse(await readFile(join(root, releasePackage.path, "package.json"), "utf8")) as {
 		version?: unknown;
 	};
 	if (typeof manifest.version !== "string" || manifest.version === "0.0.0") {
-		throw new Error(`Refusing to pack unreleased version ${String(manifest.version)} for ${packagePath}`);
+		throw new Error(`Refusing to pack unreleased version ${String(manifest.version)} for ${releasePackage.path}`);
 	}
 }
 
