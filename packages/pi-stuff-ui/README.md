@@ -11,12 +11,13 @@ Command Dialog used by focused Suite commands.
 The Statusline preserves the visual grammar of the maintainer's former Powerline footer through an independent Pi Stuff
 implementation. Each row has one-cell outer padding and dim `|` separators. It presents the model display name,
 `think:<level>`, working-directory basename, Git branch with `!conflict`, `*unstaged`, `+staged`, `?untracked`, `⇡ahead`,
-and `⇣behind`, context percentage/window, cache hit rate, metered cost or Codex weekly allowance, then the selected
-Goal, MCP, and Loadout statuses. Context renders as `?/200k` when the Host knows the window but cannot yet calculate a
-percentage. Complete segments flow to a second Statusline row instead of being cut in half.
+and `⇣behind`, context percentage/window, cache hit rate, and metered cost or Codex weekly allowance. Context renders as
+`?/200k` when the Host knows the window but cannot yet calculate a percentage. Complete segments flow to a second
+Statusline row instead of being cut in half. Capability state such as Goal, MCP, Agents, Todo, BTW, and Tool activity
+stays on its own focused surface instead of adding Statusline segments.
 
 Automatic density preserves the former wide ordering when it fits. As space narrows, it retains model and Context
-first, then Git, cwd and Thinking, cost and cache, and finally extension statuses. The latest user prompt may use two
+first, then Git, cwd and Thinking, and finally cost and cache. The latest user prompt may use two
 rows at 80 columns or wider, one row from 48 through 79 columns, and no row below 48 columns; Compact density also omits
 it. Long model and branch names shorten from the middle; a constrained dirty Git segment aggregates file changes as
 `ΔN` and reserves space for conflict and `⇡`/`⇣` markers before branch text. Persisted skill expansion and recognized
