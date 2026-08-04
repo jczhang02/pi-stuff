@@ -150,6 +150,31 @@ describe("reduced foreground Agent engine", () => {
 		expect(result.details.results.map((child) => child.finalOutput)).toEqual(["result-1", "result-2"]);
 	});
 
+	test("places the private Context projection before the child task", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-context-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		let captured: { description?: string; task: string } | undefined;
+		await executor(cwd, state(), (launch) => {
+			captured = launch;
+		}).execute(
+			"context-call",
+			{
+				agent: "general-purpose",
+				context: "fresh",
+				contextProjection: '<pi-stuff-context trust="reference-only">memory</pi-stuff-context>',
+				task: "Inspect the parser",
+			},
+			new AbortController().signal,
+			undefined,
+			context(cwd),
+		);
+
+		expect(captured?.task).toBe(
+			'<pi-stuff-context trust="reference-only">memory</pi-stuff-context>\n\nInspect the parser',
+		);
+	});
+
 	test("resume labels the revived Agent from the follow-up while preserving the recovery task", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-resume-"));
 		temporaryDirectories.push(cwd);

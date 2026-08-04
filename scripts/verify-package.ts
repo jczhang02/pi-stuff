@@ -20,6 +20,7 @@ import { runPiRpcSmoke } from "./smoke-pi.ts";
 import { verifyAgentsExecutionMatrix } from "./verify-agents-execution-matrix.ts";
 import { verifyAgentsPty } from "./verify-agents-pty.ts";
 import { verifyBtwPty } from "./verify-btw-pty.ts";
+import { verifyContextPty } from "./verify-context-pty.ts";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.ts";
 import { verifyToolsPty } from "./verify-tools-pty.ts";
 import { verifyToolsResumePty } from "./verify-tools-resume-pty.ts";
@@ -45,6 +46,7 @@ const todoToolInspector = join(root, "test/fixtures/assert-todo-tools.ts");
 const forkLicenseSha256 = "25d0d5e4e54033f939a9657109044f1d71a0b6e8db9adc400456ca9190df3fb1";
 const agentsLicenseSha256 = "2d20dfacd9742706e564470dc77438608a1e54b0ed46959f080709389209093c";
 const toolsLicenseSha256 = "e6b72a9973ccabb20d8bef65a366a9b2357d6cea6cdd1eee4f2c3c69e61fb11c";
+const magicContextLicenseSha256 = "0e3d1aa1cbe4aec50224fc6c91eb898d42949d6ff84fe515f9e2bb0663f5d483";
 const agentsRuntimeVersions = {
 	jiti: "2.7.0",
 	typebox: "1.3.7",
@@ -58,6 +60,7 @@ const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 		"@earendil-works/pi-tui",
 	],
 	"@jczhang02/pi-stuff-btw": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-context": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-todo": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-tools": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
@@ -114,7 +117,11 @@ function readBundledDependencies(value: unknown): string[] {
 	return dependencies;
 }
 
-export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFiles: readonly string[]): void {
+export function verifyPackageArchive(
+	manifest: PackageArchiveManifest,
+	archiveFiles: readonly string[],
+	additionalBundledDependencies: readonly string[] = [],
+): void {
 	verifyReleaseArchivePaths(archiveFiles);
 	const files = readStringArray(manifest.files, "files", false);
 	if (!files.some((entry) => !entry.startsWith("!"))) {
@@ -123,7 +130,13 @@ export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFi
 	for (const entry of files) {
 		normalizedFilesEntry(entry.startsWith("!") ? entry.slice(1) : entry);
 	}
-	const bundledDependencies = readBundledDependencies(manifest.bundledDependencies);
+	const bundledDependencies = [
+		...readBundledDependencies(manifest.bundledDependencies),
+		...readBundledDependencies(additionalBundledDependencies),
+	];
+	if (new Set(bundledDependencies).size !== bundledDependencies.length) {
+		throw new Error("Package archive dependency allowlist contains duplicates");
+	}
 	const archiveSet = new Set(archiveFiles);
 	if (!archiveSet.has("package/package.json")) {
 		throw new Error("Package archive is missing package/package.json");
@@ -224,7 +237,9 @@ function verifyPiDependencyContract(
 ): void {
 	const expected = expectedPiPeers[packageName];
 	if (!expected) throw new Error(`No certified Pi dependency contract for ${packageName}`);
-	const peers = Object.keys(peerDependencies ?? {}).sort();
+	const peers = Object.keys(peerDependencies ?? {})
+		.filter((name) => name.startsWith("@earendil-works/pi-"))
+		.sort();
 	const development = Object.keys(devDependencies ?? {})
 		.filter((name) => name.startsWith("@earendil-works/pi-"))
 		.sort();
@@ -248,6 +263,8 @@ async function verifyStandaloneInstalls(
 	const packsDirectory = join(temporaryDirectory, "standalone-packs");
 	const agentsInstallDirectory = join(temporaryDirectory, "standalone-agents");
 	const agentsNpmCacheDirectory = join(temporaryDirectory, "npm-cache-agents");
+	const contextInstallDirectory = join(temporaryDirectory, "standalone-context");
+	const contextNpmCacheDirectory = join(temporaryDirectory, "npm-cache-context");
 	const btwInstallDirectory = join(temporaryDirectory, "standalone-btw");
 	const btwNpmCacheDirectory = join(temporaryDirectory, "npm-cache-btw");
 	const todoInstallDirectory = join(temporaryDirectory, "standalone-todo");
@@ -258,6 +275,8 @@ async function verifyStandaloneInstalls(
 		mkdir(packsDirectory),
 		mkdir(agentsInstallDirectory),
 		mkdir(agentsNpmCacheDirectory),
+		mkdir(contextInstallDirectory),
+		mkdir(contextNpmCacheDirectory),
 		mkdir(btwInstallDirectory),
 		mkdir(btwNpmCacheDirectory),
 		mkdir(todoInstallDirectory),
@@ -274,6 +293,7 @@ async function verifyStandaloneInstalls(
 	const uiArchive = releaseArchive(uiPackageName);
 	const agentsArchive = releaseArchive("@jczhang02/pi-stuff-agents");
 	const btwArchive = releaseArchive("@jczhang02/pi-stuff-btw");
+	const contextArchive = releaseArchive("@jczhang02/pi-stuff-context");
 	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
 	const toolsArchive = releaseArchive("@jczhang02/pi-stuff-tools");
 	const rootRequire = createRequire(join(root, "package.json"));
@@ -310,6 +330,9 @@ async function verifyStandaloneInstalls(
 			),
 		),
 	) as Record<string, string>;
+	// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
+	const typeboxArchive = runtimeArchives["typebox"];
+	if (!typeboxArchive) throw new Error("Standalone dependency archive is missing typebox");
 	const install = (installDirectory: string, npmCacheDirectory: string, archive: string): void => {
 		run(
 			[
@@ -335,7 +358,14 @@ async function verifyStandaloneInstalls(
 
 	// npm can satisfy exact local dependencies offline when their archives are
 	// installed first. This is the same dependency shape Pi's package installer sees.
+	install(contextInstallDirectory, contextNpmCacheDirectory, uiArchive);
+	install(contextInstallDirectory, contextNpmCacheDirectory, typeboxArchive);
+	install(contextInstallDirectory, contextNpmCacheDirectory, toolsArchive);
+	install(contextInstallDirectory, contextNpmCacheDirectory, contextArchive);
 	install(btwInstallDirectory, btwNpmCacheDirectory, uiArchive);
+	install(btwInstallDirectory, btwNpmCacheDirectory, typeboxArchive);
+	install(btwInstallDirectory, btwNpmCacheDirectory, toolsArchive);
+	install(btwInstallDirectory, btwNpmCacheDirectory, contextArchive);
 	install(btwInstallDirectory, btwNpmCacheDirectory, btwArchive);
 	install(agentsInstallDirectory, agentsNpmCacheDirectory, uiArchive);
 	for (const dependency of Object.keys(agentsRuntimeVersions)) {
@@ -344,11 +374,9 @@ async function verifyStandaloneInstalls(
 		install(agentsInstallDirectory, agentsNpmCacheDirectory, archive);
 	}
 	install(agentsInstallDirectory, agentsNpmCacheDirectory, toolsArchive);
+	install(agentsInstallDirectory, agentsNpmCacheDirectory, contextArchive);
 	install(agentsInstallDirectory, agentsNpmCacheDirectory, agentsArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, uiArchive);
-	// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
-	const typeboxArchive = runtimeArchives["typebox"];
-	if (!typeboxArchive) throw new Error("Standalone dependency archive is missing typebox");
 	install(todoInstallDirectory, todoNpmCacheDirectory, typeboxArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, toolsArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, todoArchive);
@@ -372,6 +400,24 @@ async function verifyStandaloneInstalls(
 	await verifyUiDependency(agentsInstallDirectory, "pi-stuff-agents");
 	await verifyUiDependency(todoInstallDirectory, "pi-stuff-todo");
 	await verifyUiDependency(toolsInstallDirectory, "pi-stuff-tools");
+
+	const verifyContextDependency = async (installDirectory: string, capability: string): Promise<void> => {
+		const installedRoot = join(installDirectory, "node_modules");
+		const contextManifest = JSON.parse(
+			await readFile(join(installedRoot, "@jczhang02/pi-stuff-context/package.json"), "utf8"),
+		) as { version?: unknown };
+		const manifest = JSON.parse(
+			await readFile(join(installedRoot, "@jczhang02", capability, "package.json"), "utf8"),
+		) as { peerDependencies?: Record<string, unknown> };
+		if (
+			typeof contextManifest.version !== "string" ||
+			manifest.peerDependencies?.["@jczhang02/pi-stuff-context"] !== contextManifest.version
+		) {
+			throw new Error(`${capability} must declare Context as an exact shared-runtime peer`);
+		}
+	};
+	await verifyContextDependency(btwInstallDirectory, "pi-stuff-btw");
+	await verifyContextDependency(agentsInstallDirectory, "pi-stuff-agents");
 
 	const todoInstalledRoot = join(todoInstallDirectory, "node_modules");
 	const todoManifest = JSON.parse(
@@ -417,6 +463,27 @@ async function verifyStandaloneInstalls(
 	}
 
 	const installedBtw = join(btwInstallDirectory, "node_modules/@jczhang02/pi-stuff-btw");
+	const installedContext = join(contextInstallDirectory, "node_modules/@jczhang02/pi-stuff-context");
+	const installedContextManifest = JSON.parse(await readFile(join(installedContext, "package.json"), "utf8")) as {
+		dependencies?: Record<string, unknown>;
+	};
+	const installedContextToolsManifest = JSON.parse(
+		await readFile(join(contextInstallDirectory, "node_modules/@jczhang02/pi-stuff-tools/package.json"), "utf8"),
+	) as { version?: unknown };
+	if (
+		typeof installedContextToolsManifest.version !== "string" ||
+		installedContextManifest.dependencies?.["@jczhang02/pi-stuff-tools"] !== installedContextToolsManifest.version
+	) {
+		throw new Error("Standalone Context must install Tools as an exact runtime dependency");
+	}
+	const contextSmoke = await runPiRpcSmoke({
+		piBinary,
+		packages: [installedContext],
+		cwd: contextInstallDirectory,
+	});
+	if (contextSmoke.commandNames.some((name) => name.startsWith("ctx-") || name.includes("magic"))) {
+		throw new Error("Standalone Context Package exposed Magic Context's removed command surface at startup");
+	}
 	const btwSmoke = await runPiRpcSmoke({ piBinary, packages: [installedBtw], cwd: btwInstallDirectory });
 	if (!btwSmoke.commandNames.includes("btw")) throw new Error("Standalone BTW Package did not register /btw");
 	const agentsSmoke = await runPiRpcSmoke({
@@ -535,6 +602,40 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
 		}
 	}
+	const expectedCapabilities = ["@jczhang02/pi-stuff-context"];
+	for (const capability of expectedCapabilities) {
+		const suffix = `node_modules/${capability}/package.json`;
+		const copies = manifests.filter((path) => path.endsWith(suffix));
+		if (copies.length !== 1) {
+			throw new Error(
+				`Aggregate must contain exactly one physical ${capability}; received ${String(copies.length)}`,
+			);
+		}
+	}
+	const magicContextLicenses = archiveFiles.filter((path) =>
+		path.endsWith("node_modules/@jczhang02/pi-magic-context/LICENSE"),
+	);
+	if (magicContextLicenses.length !== 1) {
+		throw new Error(
+			`Aggregate must contain exactly one physical Magic Context runtime; received ${String(magicContextLicenses.length)}`,
+		);
+	}
+	for (const magicContextLicense of magicContextLicenses) {
+		if ((await sha256File(join(extractDirectory, magicContextLicense))) !== magicContextLicenseSha256) {
+			throw new Error("Bundled Magic Context does not preserve the owned fork's upstream MIT notice");
+		}
+		const magicContextManifestPath = magicContextLicense.replace(/LICENSE$/, "package.json");
+		const magicContextManifest = JSON.parse(
+			await readFile(join(extractDirectory, magicContextManifestPath), "utf8"),
+		) as { license?: unknown; name?: unknown; version?: unknown };
+		if (
+			magicContextManifest.name !== "@jczhang02/pi-magic-context" ||
+			magicContextManifest.version !== "0.33.1-pi-stuff.2" ||
+			magicContextManifest.license !== "MIT"
+		) {
+			throw new Error("Aggregate contains an uncertified Magic Context runtime");
+		}
+	}
 
 	const provenance = [
 		{
@@ -559,6 +660,18 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 				"75823a68024a0a649cc28087976074be791ca554",
 				"568af4a3235b344a4f91d354cc0d1c967977cc06",
 				"5318bbf4256b83825cb56a314bdbfa605e495e68043d83a169a65dd35ceabf59",
+			],
+		},
+		{
+			capability: "pi-stuff-context",
+			deltaHeading: "## Pi Stuff delta",
+			required: [
+				"cortexkit/magic-context",
+				"v0.33.1",
+				"dea65a94abf61b698160d14dc8b621b1387f1d2c",
+				"fff20435536814cf881a5c8daf4c0fc88e8fe78f",
+				"pi-stuff-v0.33.1-2",
+				"0c4cadfb35ad64d90a119eb8cd2bb5dffab43f5ba8096dfb9378b74dcd99bab3",
 			],
 		},
 		{
@@ -672,6 +785,7 @@ export async function certifyReleaseArtifacts(
 		await verifyAgentsPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyAgentsExecutionMatrix({ piBinary, packagePath: extractedPackage });
 		await verifyBtwPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
+		await verifyContextPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyToolsPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyToolsResumePty({ piBinary, packagePath: extractedPackage });
 		await writeReleaseVerification(releaseDirectory, CERTIFIED_PI_HOST_PROFILE);

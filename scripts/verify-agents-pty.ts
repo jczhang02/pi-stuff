@@ -248,6 +248,7 @@ Return the deterministic fixture result.
 			cwd: temporaryDirectory,
 			env: {
 				...process.env,
+				MAGIC_CONTEXT_PI_SUBAGENT: "1",
 				PI_CODING_AGENT_DIR: configDirectory,
 				PI_SUBAGENT_PI_BINARY: options.piBinary,
 				PI_STUFF_AGENTS_PTY_BIN: options.piBinary,

@@ -122,6 +122,7 @@ class TmuxPiSession {
 		this.socket = join(paths.config, `${this.label}.sock`);
 		this.environment = {
 			...process.env,
+			MAGIC_CONTEXT_PI_SUBAGENT: "1",
 			PI_CODING_AGENT_DIR: paths.config,
 			PI_OFFLINE: "1",
 			PI_STUFF_UI_PTY_BIN: options.piBinary,

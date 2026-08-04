@@ -63,6 +63,36 @@ describe("auditPublicFiles", () => {
 		expect(await auditPublicFiles(root)).toEqual([]);
 	});
 
+	test("accepts only the checksum-named owned Magic Context release artifact", async () => {
+		const root = await createRepository();
+		await writeCapabilityManifest(root, {
+			name: "@jczhang02/pi-example",
+			version: "0.0.1",
+			files: ["index.ts", "README.md", "LICENSE"],
+			pi: { extensions: ["./index.ts"] },
+			dependencies: {
+				"@jczhang02/pi-magic-context":
+					"https://github.com/jczhang02/magic-context/releases/download/pi-stuff-v0.33.1-2/pi-magic-context-0.33.1-pi-stuff.2-sha256-0c4cadfb35ad64d90a119eb8cd2bb5dffab43f5ba8096dfb9378b74dcd99bab3.tgz",
+			},
+		});
+
+		expect(await auditPublicFiles(root)).toEqual([]);
+
+		await writeCapabilityManifest(root, {
+			name: "@jczhang02/pi-example",
+			version: "0.0.1",
+			files: ["index.ts", "README.md", "LICENSE"],
+			pi: { extensions: ["./index.ts"] },
+			dependencies: {
+				"@jczhang02/pi-magic-context": "https://github.com/jczhang02/magic-context/archive/refs/heads/main.tgz",
+			},
+		});
+		expect(await auditPublicFiles(root)).toContainEqual({
+			path: "packages/pi-example/package.json",
+			rule: "direct-dependency-must-be-exact",
+		});
+	});
+
 	test("rejects host state, private absolute paths, and Package lifecycle side effects", async () => {
 		const root = await createRepository();
 		await writeFile(join(root, "auth.json"), "{}\n");

@@ -191,6 +191,7 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 	try {
 		const baseEnvironment = {
 			...process.env,
+			MAGIC_CONTEXT_PI_SUBAGENT: "1",
 			PI_CODING_AGENT_DIR: configDirectory,
 			PI_STUFF_PTY_BIN: options.piBinary,
 			PI_STUFF_PTY_COLUMNS: String(options.columns),

@@ -107,6 +107,7 @@ class ApiHarness {
 }
 
 interface HarnessOptions {
+	contextProjection?: string;
 	coordinatorIdle?: Promise<void>;
 	governorLedgerExists?: boolean;
 	governorReject?: boolean;
@@ -132,6 +133,7 @@ interface RootHarness {
 		starts: unknown[];
 	};
 	readonly notifier: { value?: { deliver(result: CompletionNotification): Promise<boolean> } };
+	readonly projections: string[];
 	readonly roster: { contexts: number; disposed: number; suppressed: boolean[] };
 	readonly state: { value?: SubagentState };
 	readonly supervisor: { disposed: number; started: number };
@@ -188,6 +190,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		starts: [] as unknown[],
 	};
 	const notifier = { value: undefined as { deliver(result: CompletionNotification): Promise<boolean> } | undefined };
+	const projections: string[] = [];
 	const roster = { contexts: 0, disposed: 0, suppressed: [] as boolean[] };
 	const state = { value: undefined as SubagentState | undefined };
 	const supervisor = { disposed: 0, started: 0 };
@@ -350,6 +353,14 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 				hasReader: typeof dialogOptions.readTranscript === "function",
 			});
 		},
+		projectContext: async (audience) => {
+			projections.push(audience);
+			return {
+				source: "magic-context",
+				text: options.contextProjection ?? "",
+				truncated: false,
+			};
+		},
 		timers: {
 			setInterval: (callback) => {
 				timers.callbacks.push(callback);
@@ -371,6 +382,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		engineParams,
 		governor,
 		notifier,
+		projections,
 		roster,
 		state,
 		supervisor,
@@ -518,6 +530,35 @@ describe("Agents extension composition root", () => {
 			},
 		]);
 		expect(JSON.stringify(result?.content)).not.toContain("/private");
+	});
+
+	test("adds the bounded Context projection privately according to the Agent context mode", async () => {
+		const root = createHarness({
+			contextProjection: '<pi-stuff-context trust="reference-only">memory</pi-stuff-context>',
+		});
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+
+		await tool.execute(
+			"fresh-call",
+			{ agent: "researcher", task: "Fresh task" },
+			new AbortController().signal,
+			undefined,
+			context(),
+		);
+		await tool.execute(
+			"fork-call",
+			{ agent: "researcher", context: "fork", task: "Fork task" },
+			new AbortController().signal,
+			undefined,
+			context(),
+		);
+
+		expect(root.projections).toEqual(["agent-fresh", "agent-fork"]);
+		expect(root.engineParams.map((params) => params.contextProjection)).toEqual([
+			'<pi-stuff-context trust="reference-only">memory</pi-stuff-context>',
+			'<pi-stuff-context trust="reference-only">memory</pi-stuff-context>',
+		]);
 	});
 
 	test("reconciles an existing ledger even when Pi reports session_start as startup", async () => {

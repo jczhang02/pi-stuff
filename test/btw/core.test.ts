@@ -4,6 +4,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { type ExtensionContext, estimateTokens, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { executeBtw, type OpenBtwStream, readEffectiveContext } from "../../packages/pi-stuff-btw/btw.js";
 import { fitBranch } from "../../packages/pi-stuff-btw/btw-budget.js";
+import piStuffContext, { __test as contextTest } from "../../packages/pi-stuff-context/index.js";
 
 const MODEL: Model<Api> = {
 	id: "fixture-model",
@@ -198,6 +199,57 @@ describe("BTW context budget", () => {
 });
 
 describe("BTW stream execution", () => {
+	test("adds the bounded Context projection to the side call as reference-only system context", async () => {
+		const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
+		const activeTools: string[] = [];
+		const api = {
+			events: {},
+			on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
+				const current = handlers.get(event) ?? [];
+				current.push(handler);
+				handlers.set(event, current);
+			},
+			registerTool: () => undefined,
+			getActiveTools: () => [...activeTools],
+			setActiveTools: (names: string[]) => {
+				activeTools.splice(0, activeTools.length, ...names);
+			},
+		} as never;
+		let captured: Parameters<OpenBtwStream>[0] | undefined;
+		try {
+			piStuffContext(api, {
+				loadMagicContext: async () => ({
+					default: async (magicPi) => {
+						const register = magicPi.on.bind(magicPi) as unknown as (
+							event: string,
+							handler: (event: unknown) => unknown,
+						) => void;
+						register("context", () => ({
+							messages: [
+								user("<session-history><project-memory>side memory</project-memory></session-history>"),
+							],
+						}));
+					},
+				}),
+			});
+			await executeBtw(
+				"isolated question",
+				extensionContext(() => [messageEntry("main", user("main conversation"))]),
+				new AbortController().signal,
+				{},
+				async (request) => {
+					captured = request;
+					return completedStream(["answer"], assistant("answer"));
+				},
+			);
+		} finally {
+			contextTest.clear();
+		}
+
+		expect(captured?.context.systemPrompt).toContain('<pi-stuff-context audience="btw" trust="reference-only">');
+		expect(captured?.context.systemPrompt).toContain("side memory");
+	});
+
 	test("streams text through the composed transport with no tools and an independent signal", async () => {
 		const mainController = new AbortController();
 		const sideController = new AbortController();
