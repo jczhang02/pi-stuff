@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pi Stuff · Statusline icon footer prototype</title>
+  <style>
+    :root { color-scheme: dark; --bg:#101216; --panel:#171a20; --line:#2b3039; --text:#e5e7eb; --muted:#9ca3af; --accent:#68c7d4; --green:#8ccf7e; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font:15px/1.55 Inter, ui-sans-serif, system-ui, sans-serif; }
+    main { width:min(1180px, calc(100% - 40px)); margin:0 auto; padding:48px 0 116px; }
+    header { display:grid; grid-template-columns:1fr auto; align-items:end; gap:24px; padding-bottom:24px; border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 6px; font-size:clamp(26px, 4vw, 44px); line-height:1.08; letter-spacing:-.035em; }
+    p { margin:0; color:var(--muted); }
+    .badge { padding:6px 10px; border:1px solid #33545b; border-radius:999px; color:var(--accent); white-space:nowrap; }
+    .variant { display:none; padding-top:30px; }
+    .variant.active { display:block; }
+    .summary { display:grid; grid-template-columns:minmax(0, 1fr) minmax(260px, .48fr); gap:22px; margin-bottom:22px; }
+    .decision, .facts { border:1px solid var(--line); background:var(--panel); padding:20px; }
+    h2 { margin:0 0 8px; font-size:22px; letter-spacing:-.02em; }
+    h3 { margin:0 0 10px; font-size:14px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.08em; }
+    .facts dl { display:grid; grid-template-columns:auto 1fr; gap:7px 14px; margin:0; }
+    dt { color:var(--muted); } dd { margin:0; }
+    .captures { display:grid; gap:22px; }
+    figure { margin:0; border:1px solid var(--line); background:#0d0f12; overflow:hidden; }
+    figcaption { display:flex; justify-content:space-between; gap:16px; padding:12px 14px; border-bottom:1px solid var(--line); color:var(--muted); background:var(--panel); }
+    figure img { display:block; width:100%; height:auto; image-rendering:auto; }
+    .narrow img { width:auto; max-width:100%; }
+    .reference { margin-top:22px; padding-top:22px; border-top:1px solid var(--line); }
+    .reference img { display:block; max-width:100%; margin-top:12px; border:1px solid var(--line); }
+    .switcher { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); display:flex; gap:4px; padding:5px; border:1px solid #3a414c; border-radius:12px; background:rgba(22,25,31,.94); box-shadow:0 12px 40px rgba(0,0,0,.45); backdrop-filter:blur(12px); }
+    button { appearance:none; border:0; border-radius:8px; background:transparent; color:var(--muted); padding:9px 14px; font:inherit; cursor:pointer; }
+    button[aria-pressed="true"] { background:#273139; color:#dffbff; }
+    button:hover { color:var(--text); }
+    code { color:#c7d2fe; }
+    @media (max-width:760px) { main { width:min(100% - 22px, 1180px); padding-top:28px; } header, .summary { grid-template-columns:1fr; } .badge { justify-self:start; } .switcher { width:calc(100% - 22px); justify-content:center; } button { flex:1; padding-inline:8px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Statusline · icon footer</h1>
+        <p>这里展示的是 Pi 0.83 在真实 PTY 中输出的 ANSI cells；HTML 只负责并排查看，不伪造终端界面。</p>
+      </div>
+      <span class="badge">Prototype · not production</span>
+    </header>
+
+    <section class="variant" data-variant="a">
+      <div class="summary">
+        <div class="decision"><h2>A · Pi-footer 平衡版（推荐）</h2><p>图标承担字段识别，值保持可读；Git diff 独立成段，颜色只表达模型、Fast、增删与额度。它最接近已确认的参考方向。</p></div>
+        <div class="facts"><h3>固定行为</h3><dl><dt>第一行</dt><dd>永远一行</dd><dt>第二行</dt><dd>蓝点 + 上次 prompt</dd><dt>窄屏</dt><dd>整段隐藏，不换行</dd></dl></div>
+      </div>
+      <div class="captures">
+			<figure><figcaption><span>120 × 30</span><span>真实 PTY 底部裁切 · 点击看完整画面</span></figcaption><a href="artifacts/variant-a-120x30.png"><img src="artifacts/variant-a-120x30-footer.png" alt="Variant A wide real Pi capture"></a></figure>
+			<figure class="narrow"><figcaption><span>72 × 24</span><span>按优先级隐藏整段 · 点击看完整画面</span></figcaption><a href="artifacts/variant-a-72x24.png"><img src="artifacts/variant-a-72x24-footer.png" alt="Variant A narrow real Pi capture"></a></figure>
+      </div>
+    </section>
+
+    <section class="variant" data-variant="b">
+      <div class="summary">
+        <div class="decision"><h2>B · 克制配色版</h2><p>只有图标带语义色，正文更统一；Git branch 与 diff 合并，视觉更安静，但字段边界不如 A 清楚。</p></div>
+        <div class="facts"><h3>对照变量</h3><dl><dt>图标</dt><dd>更轻</dd><dt>Git</dt><dd>branch + diff 合段</dd><dt>颜色</dt><dd>集中在图标</dd></dl></div>
+      </div>
+      <div class="captures">
+			<figure><figcaption><span>120 × 30</span><span>真实 PTY 底部裁切 · 点击看完整画面</span></figcaption><a href="artifacts/variant-b-120x30.png"><img src="artifacts/variant-b-120x30-footer.png" alt="Variant B wide real Pi capture"></a></figure>
+			<figure class="narrow"><figcaption><span>72 × 24</span><span>按优先级隐藏整段 · 点击看完整画面</span></figcaption><a href="artifacts/variant-b-72x24.png"><img src="artifacts/variant-b-72x24-footer.png" alt="Variant B narrow real Pi capture"></a></figure>
+      </div>
+    </section>
+
+    <section class="variant" data-variant="c">
+      <div class="summary">
+        <div class="decision"><h2>C · 紧凑分组版</h2><p>cwd 与 branch 合并，三个百分比收紧，能在相同宽度保留更多信息；代价是更像仪表盘，呼吸感较弱。</p></div>
+        <div class="facts"><h3>对照变量</h3><dl><dt>项目</dt><dd>cwd / branch 合段</dd><dt>比例</dt><dd>图标和值紧邻</dd><dt>密度</dt><dd>最高</dd></dl></div>
+      </div>
+      <div class="captures">
+			<figure><figcaption><span>120 × 30</span><span>真实 PTY 底部裁切 · 点击看完整画面</span></figcaption><a href="artifacts/variant-c-120x30.png"><img src="artifacts/variant-c-120x30-footer.png" alt="Variant C wide real Pi capture"></a></figure>
+			<figure class="narrow"><figcaption><span>72 × 24</span><span>按优先级隐藏整段 · 点击看完整画面</span></figcaption><a href="artifacts/variant-c-72x24.png"><img src="artifacts/variant-c-72x24-footer.png" alt="Variant C narrow real Pi capture"></a></figure>
+      </div>
+    </section>
+
+    <aside class="reference">
+      <h3>用户提供的 pi-footer 参考</h3>
+      <p>只提取 icon 化、一行状态和低噪声层级；字段内容仍按 Pi Stuff 已确认需求。</p>
+      <img src="../../../../docs/prototypes/tui/final-ui-review/statusline/reference/user-statusline-reference.png" alt="User-provided pi-footer reference">
+    </aside>
+  </main>
+
+  <nav class="switcher" aria-label="Prototype variants">
+    <button type="button" data-target="a">A · 推荐</button>
+    <button type="button" data-target="b">B · 克制</button>
+    <button type="button" data-target="c">C · 紧凑</button>
+  </nav>
+  <script>
+    const variants = ["a", "b", "c"];
+    const activate = (requested, replace = false) => {
+      const variant = variants.includes(requested) ? requested : "a";
+      document.querySelectorAll("[data-variant]").forEach((node) => node.classList.toggle("active", node.dataset.variant === variant));
+      document.querySelectorAll("[data-target]").forEach((node) => node.setAttribute("aria-pressed", String(node.dataset.target === variant)));
+      const url = new URL(location.href); url.searchParams.set("variant", variant); history[replace ? "replaceState" : "pushState"]({}, "", url);
+    };
+    document.querySelectorAll("[data-target]").forEach((button) => button.addEventListener("click", () => activate(button.dataset.target)));
+    addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      const current = new URL(location.href).searchParams.get("variant") || "a";
+      const delta = event.key === "ArrowRight" ? 1 : -1;
+      activate(variants[(variants.indexOf(current) + delta + variants.length) % variants.length]);
+    });
+    addEventListener("popstate", () => activate(new URL(location.href).searchParams.get("variant"), true));
+    activate(new URL(location.href).searchParams.get("variant"), true);
+  </script>
+</body>
+</html>
