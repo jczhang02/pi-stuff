@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends expect tmux
+          sudo apt-get install --yes --no-install-recommends expect iproute2 tmux
 
       - name: Verify toolchain and install dependencies
         shell: bash
@@ -98,8 +98,11 @@ jobs:
           export RTK_BIN="$GITHUB_WORKSPACE/.artifacts/rtk/bin/rtk"
           export PATH="$GITHUB_WORKSPACE/.artifacts/rtk/bin:$PATH"
           sudo --preserve-env=HOME,PATH,PI_BIN,PI_HOST_ATTESTATION,RTK_BIN,CI,GITHUB_ACTIONS,GITHUB_WORKSPACE unshare --net -- \
-            setpriv --reuid="$(id -u)" --regid="$(id -g)" --clear-groups \
             bash -euo pipefail -c '
+              ip link set lo up
+              exec setpriv --reuid="$1" --regid="$2" --clear-groups \
+                bash -euo pipefail -c "$3"
+            ' _ "$(id -u)" "$(id -g)" '
               if curl --silent --max-time 2 https://example.com >/dev/null 2>&1; then
                 echo "network namespace is not isolated" >&2
                 exit 1
