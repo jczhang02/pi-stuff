@@ -21,6 +21,8 @@ import { verifyAgentsExecutionMatrix } from "./verify-agents-execution-matrix.ts
 import { verifyAgentsPty } from "./verify-agents-pty.ts";
 import { verifyBtwPty } from "./verify-btw-pty.ts";
 import { verifyContextPty } from "./verify-context-pty.ts";
+import { verifyGoalLifecycle } from "./verify-goal-lifecycle.ts";
+import { verifyGoalPty } from "./verify-goal-pty.ts";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.ts";
 import { verifyRtkPty } from "./verify-rtk-pty.ts";
 import { verifyToolsPty } from "./verify-tools-pty.ts";
@@ -58,12 +60,14 @@ const codexNativeSha256: Readonly<Record<(typeof codexRuntimeFiles)[number], str
 	"LICENSES/Apache-2.0.txt": "",
 };
 const todoToolInspector = join(root, "test/fixtures/assert-todo-tools.ts");
+const goalToolInspector = join(root, "test/fixtures/assert-goal-tools.ts");
 const forkLicenseSha256 = "25d0d5e4e54033f939a9657109044f1d71a0b6e8db9adc400456ca9190df3fb1";
 const agentsLicenseSha256 = "2d20dfacd9742706e564470dc77438608a1e54b0ed46959f080709389209093c";
 const rtkLicenseSha256 = "7d9473dcd84975a7191bc13dcc744f3b4d6578c937c879cc73e31e0107fa4d46";
 const codexLicenseSha256 = "ad600d98577a0949ad30c81867bd86f08f872ff12f6a7a519af14edc6f997ee9";
 const toolsLicenseSha256 = "e6b72a9973ccabb20d8bef65a366a9b2357d6cea6cdd1eee4f2c3c69e61fb11c";
 const magicContextLicenseSha256 = "0e3d1aa1cbe4aec50224fc6c91eb898d42949d6ff84fe515f9e2bb0663f5d483";
+const goalLicenseSha256 = "5293e92f073f47012e723990a8605431b438757e9c6eb00c89868b1203e157da";
 const agentsRuntimeVersions = {
 	jiti: "2.7.0",
 	typebox: "1.3.7",
@@ -85,6 +89,7 @@ const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 		"@earendil-works/pi-tui",
 	],
 	"@jczhang02/pi-stuff-codex": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-goal": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-todo": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-tools": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
@@ -301,6 +306,8 @@ async function verifyStandaloneInstalls(
 	const rtkNpmCacheDirectory = join(temporaryDirectory, "npm-cache-rtk");
 	const codexInstallDirectory = join(temporaryDirectory, "standalone-codex");
 	const codexNpmCacheDirectory = join(temporaryDirectory, "npm-cache-codex");
+	const goalInstallDirectory = join(temporaryDirectory, "standalone-goal");
+	const goalNpmCacheDirectory = join(temporaryDirectory, "npm-cache-goal");
 	const todoInstallDirectory = join(temporaryDirectory, "standalone-todo");
 	const todoNpmCacheDirectory = join(temporaryDirectory, "npm-cache-todo");
 	const toolsInstallDirectory = join(temporaryDirectory, "standalone-tools");
@@ -317,6 +324,8 @@ async function verifyStandaloneInstalls(
 		mkdir(rtkNpmCacheDirectory),
 		mkdir(codexInstallDirectory),
 		mkdir(codexNpmCacheDirectory),
+		mkdir(goalInstallDirectory),
+		mkdir(goalNpmCacheDirectory),
 		mkdir(todoInstallDirectory),
 		mkdir(todoNpmCacheDirectory),
 		mkdir(toolsInstallDirectory),
@@ -334,6 +343,7 @@ async function verifyStandaloneInstalls(
 	const contextArchive = releaseArchive("@jczhang02/pi-stuff-context");
 	const rtkArchive = releaseArchive("@jczhang02/pi-stuff-rtk");
 	const codexArchive = releaseArchive("@jczhang02/pi-stuff-codex");
+	const goalArchive = releaseArchive("@jczhang02/pi-stuff-goal");
 	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
 	const toolsArchive = releaseArchive("@jczhang02/pi-stuff-tools");
 	const rootRequire = createRequire(join(root, "package.json"));
@@ -410,6 +420,7 @@ async function verifyStandaloneInstalls(
 	install(rtkInstallDirectory, rtkNpmCacheDirectory, uiArchive);
 	install(rtkInstallDirectory, rtkNpmCacheDirectory, rtkArchive);
 	install(codexInstallDirectory, codexNpmCacheDirectory, uiArchive);
+	install(goalInstallDirectory, goalNpmCacheDirectory, uiArchive);
 	install(agentsInstallDirectory, agentsNpmCacheDirectory, uiArchive);
 	for (const dependency of Object.keys(agentsRuntimeVersions)) {
 		const archive = agentsRuntimeArchives[dependency];
@@ -420,6 +431,8 @@ async function verifyStandaloneInstalls(
 	install(agentsInstallDirectory, agentsNpmCacheDirectory, contextArchive);
 	install(agentsInstallDirectory, agentsNpmCacheDirectory, agentsArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, uiArchive);
+	install(goalInstallDirectory, goalNpmCacheDirectory, typeboxArchive);
+	install(goalInstallDirectory, goalNpmCacheDirectory, goalArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, typeboxArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, toolsArchive);
 	install(todoInstallDirectory, todoNpmCacheDirectory, todoArchive);
@@ -445,6 +458,7 @@ async function verifyStandaloneInstalls(
 	await verifyUiDependency(btwInstallDirectory, "pi-stuff-btw");
 	await verifyUiDependency(rtkInstallDirectory, "pi-stuff-rtk");
 	await verifyUiDependency(codexInstallDirectory, "pi-stuff-codex");
+	await verifyUiDependency(goalInstallDirectory, "pi-stuff-goal");
 	await verifyUiDependency(agentsInstallDirectory, "pi-stuff-agents");
 	await verifyUiDependency(todoInstallDirectory, "pi-stuff-todo");
 	await verifyUiDependency(toolsInstallDirectory, "pi-stuff-tools");
@@ -468,6 +482,19 @@ async function verifyStandaloneInstalls(
 	await verifyContextDependency(agentsInstallDirectory, "pi-stuff-agents");
 
 	const todoInstalledRoot = join(todoInstallDirectory, "node_modules");
+	const goalInstalledRoot = join(goalInstallDirectory, "node_modules");
+	const goalManifest = JSON.parse(
+		await readFile(join(goalInstalledRoot, "@jczhang02/pi-stuff-goal/package.json"), "utf8"),
+	) as { dependencies?: Record<string, unknown> };
+	const goalTypeboxManifest = JSON.parse(await readFile(join(goalInstalledRoot, "typebox/package.json"), "utf8")) as {
+		version?: unknown;
+	};
+	if (
+		goalTypeboxManifest.version !== "1.3.7" ||
+		goalManifest.dependencies?.["typebox"] !== goalTypeboxManifest.version
+	) {
+		throw new Error("Standalone Goal must install the certified exact typebox runtime dependency");
+	}
 	const todoManifest = JSON.parse(
 		await readFile(join(todoInstalledRoot, "@jczhang02/pi-stuff-todo/package.json"), "utf8"),
 	) as { dependencies?: Record<string, unknown> };
@@ -574,6 +601,15 @@ async function verifyStandaloneInstalls(
 	}
 	if (codexSmoke.createdFiles.includes("agent/pi-stuff-codex.json")) {
 		throw new Error("Standalone Codex wrote settings during startup");
+	}
+	const goalSmoke = await runPiRpcSmoke({
+		piBinary,
+		extensions: [goalToolInspector],
+		packages: [join(goalInstalledRoot, "@jczhang02/pi-stuff-goal")],
+		cwd: goalInstallDirectory,
+	});
+	if (!goalSmoke.commandNames.includes("goal") || !goalSmoke.commandNames.includes("goal-tools-certified")) {
+		throw new Error("Standalone Goal did not register /goal and both terminal tools");
 	}
 	const agentsSmoke = await runPiRpcSmoke({
 		piBinary,
@@ -717,6 +753,12 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 		) {
 			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
 		}
+		if (
+			manifest.name === "@jczhang02/pi-stuff-goal" &&
+			(await sha256File(join(extractDirectory, licensePath))) !== goalLicenseSha256
+		) {
+			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
+		}
 	}
 	const expectedCapabilities = ["@jczhang02/pi-stuff-context"];
 	for (const capability of expectedCapabilities) {
@@ -832,6 +874,20 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 			],
 		},
 		{
+			capability: "pi-stuff-goal",
+			deltaHeading: "## Pi Stuff delta",
+			required: [
+				"@narumitw/pi-goal",
+				"0.48.0",
+				"f0963e4c343124a6f1419163b0425f571282c9b0",
+				"https://github.com/jczhang02/pi-extensions",
+				"pi-stuff-goal-v0.48.0",
+				"2b8a6ec48afb4f1f5d7139b7ae42adc58c338bcf",
+				"sha512-IOvGEPvqCwuHCNN+hAAGG1B4IzlC8QUj/clPq3E3G5iRHdNip6nsqWnTFCBnLHEiNrMFJkJw0L14n4ugjSft1Q==",
+				"5293e92f073f47012e723990a8605431b438757e9c6eb00c89868b1203e157da",
+			],
+		},
+		{
 			capability: "pi-stuff-tools",
 			deltaHeading: "## Pi Stuff delta",
 			required: [
@@ -924,11 +980,22 @@ export async function certifyReleaseArtifacts(
 		await verifyBundledSuiteMetadata(extractDirectory, archiveFiles);
 		await verifySharedCoordinatorIdentity(extractDirectory, archiveFiles);
 		const extractedPackage = join(extractDirectory, "package");
-		const extractedSmoke = await runPiRpcSmoke({ piBinary, packages: [extractedPackage] });
-		if (!extractedSmoke.commandNames.includes("ui") || extractedSmoke.commandNames.includes("tool-settings")) {
-			throw new Error("Packed Aggregate did not expose only the unified /ui settings entry point");
+		const extractedSmoke = await runPiRpcSmoke({
+			piBinary,
+			extensions: [goalToolInspector],
+			packages: [extractedPackage],
+		});
+		if (
+			!extractedSmoke.commandNames.includes("ui") ||
+			!extractedSmoke.commandNames.includes("goal") ||
+			!extractedSmoke.commandNames.includes("goal-tools-certified") ||
+			extractedSmoke.commandNames.includes("tool-settings")
+		) {
+			throw new Error("Packed Aggregate did not expose the required /ui and /goal surfaces");
 		}
+		await verifyGoalLifecycle({ piBinary, packagePath: extractedPackage });
 		await verifyUiPty({ piBinary, packagePath: extractedPackage });
+		await verifyGoalPty({ piBinary, packagePath: extractedPackage, columns: 56, rows: 24 });
 		await verifyAgentsPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyAgentsExecutionMatrix({ piBinary, packagePath: extractedPackage });
 		await verifyBtwPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
@@ -949,9 +1016,18 @@ async function main(): Promise<void> {
 	try {
 		verifyPiVersion(PI_BIN);
 		await verifyPiHostProvenance(PI_BIN);
-		const aggregateSmoke = await runPiRpcSmoke({ piBinary: PI_BIN, packages: [aggregateDirectory] });
-		if (!aggregateSmoke.commandNames.includes("ui") || aggregateSmoke.commandNames.includes("tool-settings")) {
-			throw new Error("Source Aggregate did not expose only the unified /ui settings entry point");
+		const aggregateSmoke = await runPiRpcSmoke({
+			piBinary: PI_BIN,
+			extensions: [goalToolInspector],
+			packages: [aggregateDirectory],
+		});
+		if (
+			!aggregateSmoke.commandNames.includes("ui") ||
+			!aggregateSmoke.commandNames.includes("goal") ||
+			!aggregateSmoke.commandNames.includes("goal-tools-certified") ||
+			aggregateSmoke.commandNames.includes("tool-settings")
+		) {
+			throw new Error("Source Aggregate did not expose the required /ui and /goal surfaces");
 		}
 		const releaseDirectory = join(temporaryDirectory, "release");
 		await createReleaseArtifacts(releaseDirectory);

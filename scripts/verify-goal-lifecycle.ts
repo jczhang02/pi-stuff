@@ -1,0 +1,325 @@
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+const PROVIDER = "pi-stuff-goal-lifecycle";
+const MODEL = "fixture-model";
+const TIMEOUT_MS = 30_000;
+
+type Scenario = "blocker" | "compaction" | "normal" | "reload";
+
+interface RpcRecord {
+	command?: unknown;
+	data?: unknown;
+	id?: unknown;
+	success?: unknown;
+	type?: unknown;
+	[key: string]: unknown;
+}
+
+interface RpcTransport {
+	records: RpcRecord[];
+	send(command: Record<string, unknown>): Promise<RpcRecord>;
+	stop(): Promise<void>;
+}
+
+export interface VerifyGoalLifecycleOptions {
+	packagePath: string;
+	piBinary: string;
+}
+
+function environment(temporaryDirectory: string, scenario: Scenario, logPath: string): Record<string, string> {
+	const { PATH: path } = process.env;
+	if (!path) throw new Error("PATH is required to start the Pi host");
+	return {
+		HOME: join(temporaryDirectory, "home"),
+		LANG: "C.UTF-8",
+		LC_ALL: "C.UTF-8",
+		NO_COLOR: "1",
+		PATH: path,
+		PI_CODING_AGENT_DIR: join(temporaryDirectory, "agent"),
+		PI_OFFLINE: "1",
+		PI_STUFF_GOAL_LIFECYCLE_LOG: logPath,
+		PI_STUFF_GOAL_LIFECYCLE_SCENARIO: scenario,
+		PI_TELEMETRY: "0",
+		TERM: "dumb",
+		XDG_CACHE_HOME: join(temporaryDirectory, "cache"),
+		XDG_CONFIG_HOME: join(temporaryDirectory, "config"),
+		XDG_DATA_HOME: join(temporaryDirectory, "data"),
+		XDG_STATE_HOME: join(temporaryDirectory, "state"),
+	};
+}
+
+function parseRecords(stdout: string): RpcRecord[] {
+	return stdout
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => {
+			const value: unknown = JSON.parse(line);
+			if (typeof value !== "object" || value === null) throw new Error(`Invalid Pi RPC record: ${line}`);
+			return value as RpcRecord;
+		});
+}
+
+async function createRpcTransport(command: string[], cwd: string, env: Record<string, string>): Promise<RpcTransport> {
+	const child = Bun.spawn(command, { cwd, env, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+	const records: RpcRecord[] = [];
+	const pending = new Map<
+		string,
+		{ reject: (error: Error) => void; resolve: (record: RpcRecord) => void; timeout: ReturnType<typeof setTimeout> }
+	>();
+	const reader = child.stdout.getReader();
+	const decoder = new TextDecoder();
+	let buffer = "";
+	let sequence = 0;
+	let readError: Error | undefined;
+	const consume = (line: string) => {
+		if (!line) return;
+		const parsed: unknown = JSON.parse(line);
+		if (typeof parsed !== "object" || parsed === null) throw new Error(`Invalid Pi RPC record: ${line}`);
+		const record = parsed as RpcRecord;
+		records.push(record);
+		if (typeof record.id !== "string" || record.type !== "response") return;
+		const request = pending.get(record.id);
+		if (!request) return;
+		pending.delete(record.id);
+		clearTimeout(request.timeout);
+		request.resolve(record);
+	};
+	const reading = (async () => {
+		while (true) {
+			const { done, value } = await reader.read();
+			buffer += decoder.decode(value, { stream: !done });
+			while (buffer.includes("\n")) {
+				const newline = buffer.indexOf("\n");
+				const line = buffer.slice(0, newline).replace(/\r$/u, "");
+				buffer = buffer.slice(newline + 1);
+				consume(line);
+			}
+			if (done) {
+				consume(buffer.replace(/\r$/u, ""));
+				break;
+			}
+		}
+	})().catch((error: unknown) => {
+		readError = error instanceof Error ? error : new Error(String(error));
+		for (const request of pending.values()) {
+			clearTimeout(request.timeout);
+			request.reject(readError);
+		}
+		pending.clear();
+	});
+	await new Promise((resolve) => setTimeout(resolve, 100));
+	if (child.exitCode !== null) {
+		const stderr = await new Response(child.stderr).text();
+		throw new Error(`Pi exited during RPC startup: ${stderr.trim() || String(child.exitCode)}`);
+	}
+	return {
+		records,
+		async send(command_) {
+			if (readError) throw readError;
+			const id = `goal-lifecycle-rpc-${String(++sequence)}`;
+			const result = new Promise<RpcRecord>((resolve, reject) => {
+				const timeout = setTimeout(() => {
+					pending.delete(id);
+					reject(new Error(`Pi RPC request timed out: ${JSON.stringify(command_)}`));
+				}, TIMEOUT_MS);
+				pending.set(id, { reject, resolve, timeout });
+			});
+			child.stdin.write(`${JSON.stringify({ ...command_, id })}\n`);
+			await child.stdin.flush();
+			const record = await result;
+			if (record.success !== true) throw new Error(`Pi RPC request failed: ${JSON.stringify(record)}`);
+			return record;
+		},
+		async stop() {
+			child.kill("SIGTERM");
+			await Promise.race([child.exited, new Promise((resolve) => setTimeout(resolve, 1_000))]);
+			if (child.exitCode === null) child.kill("SIGKILL");
+			await reading;
+		},
+	};
+}
+
+function response(records: readonly RpcRecord[], id: string): RpcRecord {
+	const record = records.find((candidate) => candidate.id === id && candidate.type === "response");
+	if (record?.success !== true) throw new Error(`Pi RPC request ${id} failed: ${JSON.stringify(record)}`);
+	return record;
+}
+
+function entries(record: RpcRecord): Record<string, unknown>[] {
+	const data = record.data;
+	if (typeof data !== "object" || data === null) throw new Error("Pi get_entries response has no data");
+	const value = Reflect.get(data, "entries");
+	if (!Array.isArray(value)) throw new Error("Pi get_entries response has no entries");
+	return value as Record<string, unknown>[];
+}
+
+function goalStates(records: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+	return records
+		.filter((entry) => Reflect.get(entry, "type") === "custom" && Reflect.get(entry, "customType") === "goal-state")
+		.map((entry) => Reflect.get(entry, "data"))
+		.filter((data): data is Record<string, unknown> => typeof data === "object" && data !== null);
+}
+
+function goal(state: Record<string, unknown>): Record<string, unknown> | null {
+	const value = Reflect.get(state, "goal");
+	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function assertScenario(scenario: Scenario, records: readonly RpcRecord[], logRecords: readonly RpcRecord[]): void {
+	const sessionEntries = entries(response(records, `${scenario}-entries`));
+	const states = goalStates(sessionEntries);
+	if (states.length === 0) throw new Error(`${scenario}: no persisted Goal states were observed`);
+	const goals = states.map(goal);
+	const finalGoal = goals.at(-1);
+	if (scenario === "blocker") {
+		if (!finalGoal || Reflect.get(finalGoal, "status") !== "blocked") {
+			throw new Error("blocker: Goal did not reach blocked status");
+		}
+		const audit = Reflect.get(finalGoal, "blockerAudit");
+		const attempts = typeof audit === "object" && audit !== null ? Reflect.get(audit, "attempts") : undefined;
+		if (!Array.isArray(attempts) || attempts.length !== 3) {
+			throw new Error("blocker: three distinct persisted attempts were not certified");
+		}
+		return;
+	}
+	if (finalGoal !== null) throw new Error(`${scenario}: Goal was not cleared after completion`);
+	if (!goals.some((candidate) => candidate && Reflect.get(candidate, "status") === "active")) {
+		throw new Error(`${scenario}: active Goal state was not persisted`);
+	}
+	if (scenario === "reload") {
+		if (!logRecords.some((record) => record.type === "session_start" && Reflect.get(record, "reason") === "reload")) {
+			throw new Error("reload: certified host did not emit session_start reason=reload");
+		}
+	}
+	if (scenario === "compaction") {
+		const compactionEnd = records.find((record) => record.type === "compaction_end");
+		if (!compactionEnd || Reflect.get(compactionEnd, "aborted") === true || !Reflect.get(compactionEnd, "result")) {
+			throw new Error(
+				`compaction: certified host did not complete compaction successfully: ${JSON.stringify(compactionEnd)}`,
+			);
+		}
+		if (!logRecords.some((record) => record.type === "session_compact")) {
+			throw new Error("compaction: Goal did not cross the session_compact lifecycle");
+		}
+	}
+}
+
+async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenario): Promise<void> {
+	const temporaryDirectory = await mkdtemp(join(tmpdir(), `pi-stuff-goal-${scenario}-`));
+	const agentDirectory = join(temporaryDirectory, "agent");
+	const logPath = join(temporaryDirectory, "lifecycle.jsonl");
+	const fixture = resolve(import.meta.dir, "..", "test", "fixtures", "goal-lifecycle-provider.ts");
+	try {
+		await Promise.all([
+			mkdir(join(temporaryDirectory, "home"), { recursive: true }),
+			mkdir(agentDirectory, { recursive: true }),
+		]);
+		await writeFile(
+			join(agentDirectory, "settings.json"),
+			`${JSON.stringify({ packages: [options.packagePath], compaction: { enabled: false }, retry: { enabled: false } }, null, "\t")}\n`,
+		);
+		const startMessage =
+			scenario === "normal"
+				? "/goal Certify packed multi-turn completion"
+				: scenario === "blocker"
+					? "/goal Certify packed three-turn blocker audit"
+					: scenario === "compaction"
+						? "/goal Certify packed active Goal compaction"
+						: "/goal-lifecycle-seed";
+		const transport = await createRpcTransport(
+			[
+				options.piBinary,
+				"--mode",
+				"rpc",
+				"--offline",
+				"--no-context-files",
+				"--no-skills",
+				"--no-prompt-templates",
+				"--no-themes",
+				"--no-builtin-tools",
+				"--no-approve",
+				"--provider",
+				PROVIDER,
+				"--model",
+				MODEL,
+				"--session-dir",
+				join(temporaryDirectory, "sessions"),
+				"--extension",
+				fixture,
+			],
+			temporaryDirectory,
+			environment(temporaryDirectory, scenario, logPath),
+		);
+		try {
+			if (scenario === "compaction") {
+				for (const index of [1, 2, 3, 4]) {
+					const settledBefore = transport.records.filter((record) => record.type === "agent_settled").length;
+					await transport.send({
+						type: "prompt",
+						message: `Create historical compaction context ${String(index)}.`,
+					});
+					const deadline = Date.now() + TIMEOUT_MS;
+					while (transport.records.filter((record) => record.type === "agent_settled").length === settledBefore) {
+						if (Date.now() >= deadline) throw new Error("compaction: historical prompt did not settle");
+						await new Promise((resolve) => setTimeout(resolve, 20));
+					}
+				}
+			}
+			await transport.send({ type: "prompt", message: startMessage });
+			const deadline = Date.now() + TIMEOUT_MS;
+			let finalRecords: RpcRecord[] | undefined;
+			while (!finalRecords) {
+				if (Date.now() >= deadline) {
+					const diagnostics = transport.records
+						.filter((record) => record.command !== "get_entries")
+						.slice(-30)
+						.map((record) => ({
+							command: record.command,
+							id: record.id,
+							reason: Reflect.get(record, "reason"),
+							success: record.success,
+							type: record.type,
+						}));
+					throw new Error(
+						`${scenario}: Goal lifecycle did not reach a terminal state: ${JSON.stringify(diagnostics)}`,
+					);
+				}
+				const entryResponse = await transport.send({ type: "get_entries" });
+				const sessionEntries = entries(entryResponse);
+				const goals = goalStates(sessionEntries).map(goal);
+				const latest = goals.at(-1);
+				const terminal =
+					scenario === "blocker"
+						? latest !== null && latest !== undefined && Reflect.get(latest, "status") === "blocked"
+						: latest === null &&
+							goals.some((candidate) => candidate !== null) &&
+							(scenario !== "compaction" ||
+								transport.records.some(
+									(record) => record.type === "compaction_end" && Reflect.get(record, "aborted") !== true,
+								));
+				if (terminal) {
+					entryResponse.id = `${scenario}-entries`;
+					finalRecords = [...transport.records];
+					break;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 20));
+			}
+			const extensionError = finalRecords.find((record) => record.type === "extension_error");
+			if (extensionError) throw new Error(`${scenario}: Pi extension error: ${JSON.stringify(extensionError)}`);
+			const logContents = await readFile(logPath, "utf8").catch(() => "");
+			assertScenario(scenario, finalRecords, parseRecords(logContents));
+		} finally {
+			await transport.stop();
+		}
+	} finally {
+		await rm(temporaryDirectory, { recursive: true, force: true });
+	}
+}
+
+export async function verifyGoalLifecycle(options: VerifyGoalLifecycleOptions): Promise<void> {
+	for (const scenario of ["normal", "reload", "compaction", "blocker"] as const) {
+		await runScenario(options, scenario);
+	}
+}

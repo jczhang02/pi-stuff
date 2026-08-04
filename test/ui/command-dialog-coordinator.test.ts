@@ -11,6 +11,7 @@ import piStuffUi, {
 	ensureUiSettingsCommand,
 	getCodexStatusChannel,
 	getCommandDialogCoordinator,
+	getGoalStatusChannel,
 	requestStatuslineGitRefresh,
 	UiSettingsStore,
 } from "../../packages/pi-stuff-ui/index.js";
@@ -353,6 +354,48 @@ describe("normal UI presentation integration", () => {
 		footer.dispose?.();
 		const rendersAfterDispose = ui.renderRequests.length;
 		codexChannel.publish({ fastEnabled: true, weeklyRemainingPercent: 71 });
+		expect(ui.renderRequests).toHaveLength(rendersAfterDispose);
+	});
+
+	test("observes late Goal status publication through one read-only shared channel", async () => {
+		const events = new EventBusHarness();
+		const uiApi = createApiHarness(events);
+		await piStuffUi(uiApi.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui, "tui", {
+			contextUsage: { contextWindow: 200_000, percent: 42.4, tokens: 84_800 },
+			modelId: "gpt-5.6-sol",
+		});
+		await uiApi.start(ctx);
+
+		const factory = ui.footerWrites.at(-1);
+		if (!factory) throw new Error("Expected the Suite footer factory");
+		const footer = factory(ui.tui, ui.theme, createFooterData("main") as never);
+		expect(footer.render(120).join("\n")).not.toContain("goal");
+
+		const goalApi = createApiHarness(events);
+		const uiChannel = getGoalStatusChannel(uiApi.api);
+		const goalChannel = getGoalStatusChannel(goalApi.api);
+		expect(goalChannel).toBe(uiChannel);
+
+		const rendersBeforeActive = ui.renderRequests.length;
+		goalChannel.publish({ status: "active", tokenBudget: 12_000, tokensUsed: 1_250 });
+		expect(footer.render(120).join("\n")).toContain("goal 1.3k/12k");
+		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforeActive);
+
+		goalChannel.publish({ status: "paused", tokensUsed: 1_250 });
+		expect(footer.render(120).join("\n")).toContain("goal:paused");
+		goalChannel.publish({ status: "budget_limited", tokenBudget: 12_000, tokensUsed: 12_000 });
+		expect(footer.render(120).join("\n")).toContain("goal:budget");
+
+		const rendersBeforeClear = ui.renderRequests.length;
+		goalChannel.clear();
+		expect(footer.render(120).join("\n")).not.toContain("goal");
+		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforeClear);
+
+		footer.dispose?.();
+		const rendersAfterDispose = ui.renderRequests.length;
+		goalChannel.publish({ status: "blocked", tokensUsed: 1_250 });
 		expect(ui.renderRequests).toHaveLength(rendersAfterDispose);
 	});
 
