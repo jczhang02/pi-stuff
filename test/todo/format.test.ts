@@ -55,9 +55,9 @@ describe("formatOverlayTaskLine", () => {
 		);
 	});
 
-	test("dims blocked work and explains every unresolved string id", () => {
+	test("dims blocked work without exposing contextless dependency ids", () => {
 		expect(formatOverlayTaskLine({ task: task(), openBlockers: ["dep-2", "missing"] }, recordingTheme)).toBe(
-			"<dim>□</dim> <dim>quiet task</dim><dim> · blocked by #dep-2, #missing</dim>",
+			"<dim>□</dim> <dim>quiet task</dim>",
 		);
 	});
 
@@ -83,13 +83,13 @@ describe("formatOverlayTaskLine", () => {
 		);
 
 		expect(line).toContain("检查危险 输出完成 保留");
-		expect(line).toContain("· blocked by #依赖-2");
+		expect(line).not.toContain("依赖-2");
 		expect(line).not.toContain("伪造标题");
 		expect(containsTerminalControl(line)).toBe(false);
 		expect(containsBidiFormatControl(line)).toBe(false);
 	});
 
-	test("keeps blocked state separate from a truncated CJK and emoji subject", () => {
+	test("gives a blocked CJK and emoji subject the full width budget", () => {
 		const row = {
 			task: task({ subject: "检查🙂非常长的子任务路径与输出内容" }),
 			openBlockers: ["依赖-🧪-非常长的名称"],
@@ -104,9 +104,8 @@ describe("formatOverlayTaskLine", () => {
 			const line = formatOverlayTaskLine(row, plainTheme, width);
 			const plain = Bun.stripANSI(line);
 			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-			expect(plain).toContain("blocked");
-			expect(plain).not.toContain("… blocked");
-			if (plain.includes("…")) expect(plain).toContain("… · blocked");
+			expect(plain).not.toContain("依赖");
+			expect(plain).toContain("检查🙂");
 		}
 	});
 

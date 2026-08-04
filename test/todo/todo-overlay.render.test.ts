@@ -101,7 +101,7 @@ describe("TodoOverlay rendering", () => {
 		]);
 	});
 
-	test("only reports blockers that are still unresolved", () => {
+	test("keeps dependency metadata out of the user-facing checklist", () => {
 		const { widget } = setup([
 			task("1", "finished dependency", "completed"),
 			task("2", "now runnable", "pending", ["1"]),
@@ -109,8 +109,8 @@ describe("TodoOverlay rendering", () => {
 		]);
 		const output = widget?.render(200).join("\n") ?? "";
 		expect(output).toContain("□ now runnable");
-		expect(output).toContain("□ still blocked · blocked by #2");
-		expect(output).not.toContain("blocked by #1");
+		expect(output).toContain("□ still blocked");
+		expect(output).not.toContain("blocked by");
 	});
 
 	test("collapses to exactly one Next line and prefers active work", () => {
@@ -161,16 +161,15 @@ describe("TodoOverlay rendering", () => {
 		}
 	});
 
-	test("keeps blocker state after a semantic boundary across the width matrix", () => {
+	test("preserves the blocked task subject across the width matrix", () => {
 		const { widget } = setup([task("1", "检查🙂非常长的工作区路径和结果文件", "pending", ["依赖-🧪-非常长的名称"])]);
 
 		for (const width of [100, 64, 48, 32, 24]) {
 			const line = widget?.render(width)[1] ?? "";
 			const plain = Bun.stripANSI(line);
 			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-			expect(plain).toContain("blocked");
-			expect(plain).not.toContain("… blocked");
-			if (plain.includes("…")) expect(plain).toContain("… · blocked");
+			expect(plain).toContain("检查🙂");
+			expect(plain).not.toContain("依赖");
 		}
 	});
 

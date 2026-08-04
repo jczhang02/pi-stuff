@@ -186,7 +186,7 @@ function fitOptionalSubject(subject: string, width: number): string {
 	return width >= MIN_TRUNCATED_SUBJECT_WIDTH ? truncateToWidth(subject, width, "…") : "";
 }
 
-/** Format one unheaded, single-line task row with blocker state kept at narrow widths. */
+/** Format one unheaded, single-line task row with the subject always taking the available width. */
 export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme, width = Number.POSITIVE_INFINITY): string {
 	const { task, openBlockers } = row;
 	const glyph = overlayStatusGlyph(task.status, theme);
@@ -203,32 +203,10 @@ export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme, width =
 	}
 
 	const identity = `${glyph} `;
-	if (openBlockers.length === 0 || !Number.isFinite(width)) {
-		const blockerSuffix =
-			openBlockers.length > 0
-				? theme.fg("dim", ` · blocked by ${openBlockers.map((id) => `#${singleLine(id) || "?"}`).join(", ")}`)
-				: "";
-		if (!Number.isFinite(width)) return `${identity}${subject}${blockerSuffix}`;
-		const normalizedWidth = Math.max(0, Math.floor(width));
-		if (normalizedWidth <= visibleWidth(identity)) return truncateToWidth(identity, normalizedWidth, "");
-		return `${identity}${fitOptionalSubject(subject, normalizedWidth - visibleWidth(identity))}`;
-	}
-
-	const fullBlockerState = theme.fg(
-		"dim",
-		` · blocked by ${openBlockers.map((id) => `#${singleLine(id) || "?"}`).join(", ")}`,
-	);
-	const compactBlockerState = theme.fg("dim", " · blocked");
+	if (!Number.isFinite(width)) return `${identity}${subject}`;
 	const normalizedWidth = Math.max(0, Math.floor(width));
 	if (normalizedWidth <= visibleWidth(identity)) return truncateToWidth(identity, normalizedWidth, "");
-
-	for (const blockerState of [fullBlockerState, compactBlockerState]) {
-		const subjectWidth = normalizedWidth - visibleWidth(identity) - visibleWidth(blockerState);
-		const fittedSubject = fitOptionalSubject(subject, subjectWidth);
-		if (fittedSubject) return `${identity}${fittedSubject}${blockerState}`;
-	}
-
-	return truncateToWidth(`${glyph} ${theme.fg("dim", "blocked")}`, normalizedWidth, "…");
+	return `${identity}${fitOptionalSubject(subject, normalizedWidth - visibleWidth(identity))}`;
 }
 
 export function formatOverlayOverflowLine(hidden: readonly OverlayTaskRow[], theme: Theme): string {
