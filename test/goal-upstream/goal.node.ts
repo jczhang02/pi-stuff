@@ -239,7 +239,7 @@ test("session restore stays read-only until the next agent turn begins", async (
 
 	assert.equal(mock.entries.length, 1, "the first real turn must flush the restored Goal snapshot");
 	assert.equal(mock.entries[0]?.customType, "goal-state");
-	assert.equal((mock.entries[0]?.data as { goal?: StoredGoal }).goal?.id, restoredGoal.id);
+	assert.equal((mock.entries[0]?.data as { goal?: StoredGoal } | undefined)?.goal?.id, restoredGoal.id);
 });
 
 test("missing and invalid settings fall back to always-visible tools", () => {
