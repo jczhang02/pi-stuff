@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff-rtk",
-	"version": "0.2.2",
+	"version": "0.2.3",
 	"description": "Fail-open RTK command rewriting and model-only output projection for Pi Stuff",
 	"type": "module",
 	"keywords": [
@@ -35,7 +35,7 @@
 		]
 	},
 	"dependencies": {
-		"@jczhang02/pi-stuff-ui": "0.2.2"
+		"@jczhang02/pi-stuff-ui": "0.2.3"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-agent-core": "*",

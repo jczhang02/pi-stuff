@@ -1,5 +1,14 @@
 # @jczhang02/pi-stuff-todo
 
+## 0.1.4
+
+### Patch Changes
+
+- 9da041a: Tighten the visible checklist heading and task-row alignment.
+- Updated dependencies [bd6ae2d]
+  - @jczhang02/pi-stuff-ui@0.2.3
+  - @jczhang02/pi-stuff-tools@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes

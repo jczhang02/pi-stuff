@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff-tools",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"description": "Compact, inspectable Tool presentation for Pi Stuff",
 	"type": "module",
 	"keywords": [
@@ -37,7 +37,7 @@
 		]
 	},
 	"dependencies": {
-		"@jczhang02/pi-stuff-ui": "0.2.2",
+		"@jczhang02/pi-stuff-ui": "0.2.3",
 		"typebox": "1.3.7"
 	},
 	"peerDependencies": {

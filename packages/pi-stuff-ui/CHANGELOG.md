@@ -1,5 +1,11 @@
 # @jczhang02/pi-stuff-ui
 
+## 0.2.3
+
+### Patch Changes
+
+- bd6ae2d: Reproduce the Claude Code welcome-card geometry and restore Fast to its former Statusline position.
+
 ## 0.2.2
 
 ### Patch Changes

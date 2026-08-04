@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3
+
+### Patch Changes
+
+- 2377f24: Move RTK behavior controls out of `/ui` and into `/rtk settings`.
+- Updated dependencies [bd6ae2d]
+  - @jczhang02/pi-stuff-ui@0.2.3
+
 ## 0.2.2
 
 ### Patch Changes

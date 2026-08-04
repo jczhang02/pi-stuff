@@ -1,5 +1,24 @@
 # @jczhang02/pi-stuff
 
+## 0.2.3
+
+### Patch Changes
+
+- Updated dependencies [bd6ae2d]
+- Updated dependencies [2377f24]
+- Updated dependencies [9da041a]
+  - @jczhang02/pi-stuff-ui@0.2.3
+  - @jczhang02/pi-stuff-rtk@0.2.3
+  - @jczhang02/pi-stuff-todo@0.1.4
+  - @jczhang02/pi-stuff-agents@0.2.3
+  - @jczhang02/pi-stuff-btw@0.1.4
+  - @jczhang02/pi-stuff-codex@0.1.3
+  - @jczhang02/pi-stuff-goal@0.2.3
+  - @jczhang02/pi-stuff-mcp@0.2.3
+  - @jczhang02/pi-stuff-tools@0.1.4
+  - @jczhang02/pi-stuff-context@0.1.4
+  - @jczhang02/pi-stuff-web@0.2.3
+
 ## 0.2.2
 
 ### Patch Changes
