@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0
+
+### Minor Changes
+
+- 14396c9: Add bounded Web reading/search and a lazy proxy-only MCP gateway to the default Suite, including shared Tool rendering, non-floating status UI, owned immutable forks, and real Pi 0.83 transport verification.
+
+### Patch Changes
+
+- Updated dependencies [563d427]
+- Updated dependencies [14396c9]
+- Updated dependencies [dcc49da]
+- Updated dependencies [60ba544]
+- Updated dependencies [f7037f1]
+  - @jczhang02/pi-stuff-ui@0.2.0
+  - @jczhang02/pi-stuff-tools@0.1.1
+
 ## 0.1.0 - 2026-08-04
 
 - Added one lazy MCP gateway Tool backed by the owned adapter fork.

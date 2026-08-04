@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff-context",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Lazy context continuity and bounded projection for Pi Stuff",
 	"type": "module",
 	"keywords": [
@@ -31,7 +31,7 @@
 	},
 	"dependencies": {
 		"@jczhang02/pi-magic-context": "https://github.com/jczhang02/magic-context/releases/download/pi-stuff-v0.33.1-2/pi-magic-context-0.33.1-pi-stuff.2-sha256-0c4cadfb35ad64d90a119eb8cd2bb5dffab43f5ba8096dfb9378b74dcd99bab3.tgz",
-		"@jczhang02/pi-stuff-tools": "0.1.0",
+		"@jczhang02/pi-stuff-tools": "0.1.1",
 		"typebox": "1.3.7"
 	},
 	"bundledDependencies": [

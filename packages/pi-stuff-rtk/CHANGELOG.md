@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0
+
+### Minor Changes
+
+- 34af590: Add fail-open RTK command rewriting and model-only Tool output projection as an owned Pi Stuff Capability.
+
+### Patch Changes
+
+- Updated dependencies [563d427]
+- Updated dependencies [f7037f1]
+  - @jczhang02/pi-stuff-ui@0.2.0
+
 ## 0.1.0
 
 - Add certified, fail-open RTK 0.42.4 command rewriting without installing a shell hook.

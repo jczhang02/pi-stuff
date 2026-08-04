@@ -1,5 +1,49 @@
 # @jczhang02/pi-stuff
 
+## 0.2.0
+
+### Minor Changes
+
+- 563d427: Add the owned Goal Capability with structured evidence gates, active reload recovery, session-persistent continuation,
+  provider-error recovery, a non-disableable emergency backstop, and Suite-native presentation.
+- c26a3d7: Add the lazy Magic Context capability, route its tools through the shared Tool renderer, and provide bounded
+  reference-only context projections to BTW and child Agents while preserving native Pi fail-open behavior.
+- 34af590: Add fail-open RTK command rewriting and model-only Tool output projection as an owned Pi Stuff Capability.
+- 14396c9: Add bounded Web reading/search and a lazy proxy-only MCP gateway to the default Suite, including shared Tool rendering, non-floating status UI, owned immutable forks, and real Pi 0.83 transport verification.
+- dcc49da: Add the owned Codex Capability with one non-floating control surface, real Fast request state, subscription usage,
+  and shared-rendered apply patch, image viewing, and confirmed GPT Image 2 generation Tools.
+- 60ba544: Remove the Permissions Capability and all child-Agent injection, approval forwarding, runtime dependencies, and release artifacts. Pi Stuff now adds no permission or command-interception layer.
+- f7037f1: Align the bounded Todo summary with conversation output, replace cache-read token counts with active-branch cache hit
+  rate, and add the shared observation-only Codex weekly/Fast Statusline channel.
+
+### Patch Changes
+
+- f51759f: Keep Goal control prompts in model context while hiding their internal protocol and ownership markers from the TUI and
+  rendered HTML conversation export.
+- 24de36a: Keep background Agent completions out of model turns and store Agent artifacts beside Pi sessions by default.
+- Updated dependencies [563d427]
+- Updated dependencies [c26a3d7]
+- Updated dependencies [34af590]
+- Updated dependencies [14396c9]
+- Updated dependencies [dcc49da]
+- Updated dependencies [c7fc358]
+- Updated dependencies [f51759f]
+- Updated dependencies [24de36a]
+- Updated dependencies [60ba544]
+- Updated dependencies [3705d7a]
+- Updated dependencies [f7037f1]
+  - @jczhang02/pi-stuff-goal@0.2.0
+  - @jczhang02/pi-stuff-ui@0.2.0
+  - @jczhang02/pi-stuff-agents@0.2.0
+  - @jczhang02/pi-stuff-btw@0.1.1
+  - @jczhang02/pi-stuff-context@0.1.1
+  - @jczhang02/pi-stuff-rtk@0.2.0
+  - @jczhang02/pi-stuff-web@0.2.0
+  - @jczhang02/pi-stuff-mcp@0.2.0
+  - @jczhang02/pi-stuff-tools@0.1.1
+  - @jczhang02/pi-stuff-codex@0.1.0
+  - @jczhang02/pi-stuff-todo@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes

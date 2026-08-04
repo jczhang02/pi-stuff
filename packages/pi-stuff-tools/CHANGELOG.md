@@ -1,5 +1,17 @@
 # @jczhang02/pi-stuff-tools
 
+## 0.1.1
+
+### Patch Changes
+
+- 14396c9: Add bounded Web reading/search and a lazy proxy-only MCP gateway to the default Suite, including shared Tool rendering, non-floating status UI, owned immutable forks, and real Pi 0.83 transport verification.
+- dcc49da: Add the owned Codex Capability with one non-floating control surface, real Fast request state, subscription usage,
+  and shared-rendered apply patch, image viewing, and confirmed GPT Image 2 generation Tools.
+- 60ba544: Remove the Permissions Capability and all child-Agent injection, approval forwarding, runtime dependencies, and release artifacts. Pi Stuff now adds no permission or command-interception layer.
+- Updated dependencies [563d427]
+- Updated dependencies [f7037f1]
+  - @jczhang02/pi-stuff-ui@0.2.0
+
 ## 0.1.0
 
 ### Minor Changes

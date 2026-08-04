@@ -1,5 +1,14 @@
 # @jczhang02/pi-stuff-ui
 
+## 0.2.0
+
+### Minor Changes
+
+- 563d427: Add the owned Goal Capability with structured evidence gates, active reload recovery, session-persistent continuation,
+  provider-error recovery, a non-disableable emergency backstop, and Suite-native presentation.
+- f7037f1: Align the bounded Todo summary with conversation output, replace cache-read token counts with active-branch cache hit
+  rate, and add the shared observation-only Codex weekly/Fast Statusline channel.
+
 ## 0.1.0
 
 ### Minor Changes
