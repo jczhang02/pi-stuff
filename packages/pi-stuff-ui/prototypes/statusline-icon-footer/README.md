@@ -15,7 +15,7 @@ Open `report.html?variant=a`. Use the bottom switcher or the left/right arrow ke
 The accepted information architecture is held constant:
 
 - one Statusline row;
-- one optional previous-prompt row with a blue `●` marker;
+- one optional previous-prompt row with a small blue filled-circle marker;
 - raw `provider/model` identity;
 - conditional `⚡ Fast`;
 - cwd, Git branch and diff, context %, cache-hit %, and weekly-remaining %;

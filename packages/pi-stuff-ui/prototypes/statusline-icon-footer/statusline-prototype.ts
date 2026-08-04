@@ -45,19 +45,23 @@ function latestPrompt(ctx: ExtensionContext): string | undefined {
 	return undefined;
 }
 
+function accentLead(theme: Theme, icon: string): string {
+	return `${theme.fg("accent", icon)} `;
+}
+
 function aSegments(theme: Theme, cwd: string, branch: string): readonly Segment[] {
 	return [
-		{ id: "model", priority: 100, text: theme.fg("accent", `󰚩 ${MODEL_IDENTITY}`) },
-		{ id: "thinking", priority: 65, text: `${theme.fg("accent", "◉")} ${theme.fg("muted", "high")}` },
+		{ id: "model", priority: 100, text: `${accentLead(theme, "󰚩")}${theme.fg("accent", MODEL_IDENTITY)}` },
+		{ id: "thinking", priority: 65, text: `${theme.fg("accent", "")} ${theme.fg("muted", "high")}` },
 		{ id: "fast", priority: 55, text: theme.fg("warning", " Fast") },
 		{ id: "cwd", priority: 95, text: `${theme.fg("accent", "󰉋")} ${theme.fg("text", cwd)}` },
-		{ id: "branch", priority: 90, text: `${theme.fg("muted", "")} ${theme.fg("text", branch)}` },
+		{ id: "branch", priority: 90, text: `${theme.fg("muted", "")} ${theme.fg("text", branch)}` },
 		{
 			id: "diff",
 			priority: 50,
-			text: `${theme.fg("muted", "")} ${theme.fg("success", "(+6,")}${theme.fg("error", "-0")}${theme.fg("success", ")")}`,
+			text: `${theme.fg("muted", "")} ${theme.fg("success", "(+6,")}${theme.fg("error", "-0")}${theme.fg("success", ")")}`,
 		},
-		{ id: "context", priority: 85, text: `${theme.fg("muted", "◈")} ${theme.fg("text", "42%")}` },
+		{ id: "context", priority: 85, text: `${theme.fg("muted", "󰍛")} ${theme.fg("text", "42%")}` },
 		{ id: "cache", priority: 45, text: `${theme.fg("muted", "󰆼")} ${theme.fg("text", "78%")}` },
 		{ id: "weekly", priority: 80, text: `${theme.fg("warning", "󰃭")} ${theme.fg("text", "52%")}` },
 	];
@@ -65,7 +69,7 @@ function aSegments(theme: Theme, cwd: string, branch: string): readonly Segment[
 
 function bSegments(theme: Theme, cwd: string, branch: string): readonly Segment[] {
 	return [
-		{ id: "model", priority: 100, text: `${theme.fg("accent", "")} ${theme.fg("text", MODEL_IDENTITY)}` },
+		{ id: "model", priority: 100, text: `${accentLead(theme, "")}${theme.fg("text", MODEL_IDENTITY)}` },
 		{ id: "thinking", priority: 65, text: `${theme.fg("accent", "✻")} ${theme.fg("text", "high")}` },
 		{ id: "fast", priority: 55, text: `${theme.fg("warning", "")} ${theme.fg("text", "Fast")}` },
 		{ id: "cwd", priority: 95, text: `${theme.fg("accent", "")} ${theme.fg("text", cwd)}` },
@@ -82,7 +86,7 @@ function bSegments(theme: Theme, cwd: string, branch: string): readonly Segment[
 
 function cSegments(theme: Theme, cwd: string, branch: string): readonly Segment[] {
 	return [
-		{ id: "model", priority: 100, text: `${theme.fg("accent", "󰚩")} ${theme.fg("text", MODEL_IDENTITY)}` },
+		{ id: "model", priority: 100, text: `${accentLead(theme, "󰚩")}${theme.fg("text", MODEL_IDENTITY)}` },
 		{ id: "thinking", priority: 65, text: `${theme.fg("accent", "◉")} ${theme.fg("dim", "high")}` },
 		{ id: "fast", priority: 55, text: theme.fg("warning", " Fast") },
 		{
@@ -126,7 +130,7 @@ function packOneRow(segments: readonly Segment[], width: number, theme: Theme): 
 }
 
 function promptRow(prompt: string, width: number, theme: Theme): string {
-	const marker = `${theme.fg("accent", "●")} `;
+	const marker = accentLead(theme, "");
 	const available = Math.max(1, width - visibleWidth(marker));
 	return `${marker}${theme.fg("dim", truncateToWidth(prompt, available, "…"))}`;
 }

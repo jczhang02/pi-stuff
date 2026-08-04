@@ -60,6 +60,15 @@ reject_text() {
 	fi
 }
 
+require_pattern() {
+	local expected_pattern=$1
+	if ! tmux capture-pane -p -t "$tmux_session" | rg --quiet --regexp "$expected_pattern"; then
+		echo "Expected aligned Pi PTY pattern: $expected_pattern" >&2
+		tmux capture-pane -p -t "$tmux_session" >&2
+		return 1
+	fi
+}
+
 capture_frame() {
 	local name=$1
 	local ansi_file="$artifact_dir/$name.ansi"
@@ -115,7 +124,11 @@ capture_case() {
 	tmux new-session -d -s "$tmux_session" -x "$width" -y "$height" -c "$repo_root" "$command"
 	wait_for_text "deterministic Statusline fixture"
 	wait_for_text "openai-codex/gpt-5.6-sol"
-	wait_for_text "● 请按 pi-footer"
+	wait_for_text " 请按 pi-footer"
+	if [[ $variant == a ]]; then
+		require_pattern '^󰚩 openai-codex/gpt-5\.6-sol'
+		require_pattern '^ 请按 pi-footer'
+	fi
 	if [[ $width == 120 ]]; then
 		for expected in "high" "Fast" "pi-stuff" "main" "+6" "-0" "42%" "78%" "52%"; do
 			wait_for_text "$expected"
