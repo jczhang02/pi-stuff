@@ -74,6 +74,24 @@ function lastUserText(context: Context): string {
 	return "";
 }
 
+function lastOwnedGoalPrompt(context: Context): string | undefined {
+	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
+		const message = context.messages[index] as unknown as {
+			role?: unknown;
+			customType?: unknown;
+			content?: unknown;
+		};
+		if (
+			message.role === "custom" &&
+			message.customType === "pi-stuff-goal-prompt" &&
+			typeof message.content === "string"
+		) {
+			return message.content;
+		}
+	}
+	return undefined;
+}
+
 function appendRecord(record: unknown): void {
 	const { PI_STUFF_UI_PTY_LOG: path } = process.env;
 	if (path) appendFileSync(path, `${JSON.stringify(record)}\n`);
@@ -102,15 +120,60 @@ function textOnlyStream(model: Model<Api>, text: string) {
 	return stream;
 }
 
+function goalCompletionStream(model: Model<Api>, prompt: string) {
+	const goalId = /<goal_id>\s*([^<\s]+)\s*<\/goal_id>/u.exec(prompt)?.[1];
+	if (!goalId) throw new Error("UI PTY fixture did not receive a Goal id");
+	const stream = createAssistantMessageEventStream();
+	const pending = assistantMessage([], "pending", ZERO_USAGE, model.provider, model.id);
+	const toolCall = {
+		type: "toolCall" as const,
+		id: `ui-pty-goal-complete-${goalId}`,
+		name: "goal_complete",
+		arguments: {
+			goal_id: goalId,
+			summary: "Hidden Goal prompt delivery completed and verified.",
+			evidence: [
+				{
+					requirement: "Deliver the Goal protocol to the model without rendering it",
+					proof: "The real Pi provider request log confirmed the hidden protocol and this guarded completion call passed.",
+				},
+			],
+		},
+	};
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
+	stream.push({
+		type: "done",
+		reason: "toolUse",
+		message: assistantMessage([toolCall], "toolUse", ZERO_USAGE, model.provider, model.id),
+	});
+	return stream;
+}
+
+function hasGoalCompletionResult(context: Context): boolean {
+	return context.messages.some(
+		(message) => message.role === "toolResult" && Reflect.get(message, "toolName") === "goal_complete",
+	);
+}
+
 function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
 	const lastUser = lastUserText(context);
+	const ownedGoalPrompt =
+		lastOwnedGoalPrompt(context) ?? (lastUser.includes("<!-- pi-goal-prompt:") ? lastUser : undefined);
 	const priorThinkingPreserved = preservesFixtureThinking(context);
 	appendRecord({
 		type: "request",
 		lastUser,
+		ownedGoalPrompt,
 		priorThinkingPreserved,
 		tools: (context.tools ?? []).map((tool) => tool.name),
 	});
+	if (ownedGoalPrompt) {
+		return hasGoalCompletionResult(context)
+			? textOnlyStream(model, "GOAL_PROMPT_RECEIVED")
+			: goalCompletionStream(model, ownedGoalPrompt);
+	}
 	if (lastUser === "VERIFY_CONTEXT_REUSE") {
 		return textOnlyStream(model, priorThinkingPreserved ? "CONTEXT_PRESERVED" : "CONTEXT_LOST");
 	}

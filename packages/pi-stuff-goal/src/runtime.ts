@@ -137,6 +137,8 @@ const MAX_CANCELLED_CONTINUATION_PROMPTS = 20;
 const MAX_PENDING_GOAL_PROMPTS = 20;
 const MAX_PENDING_NON_GOAL_INPUTS = 20;
 const BUDGET_WRAP_UP_MESSAGE_TYPE = "goal-budget-wrap-up";
+export const GOAL_PROMPT_MESSAGE_TYPE = "pi-stuff-goal-prompt";
+export const GOAL_CONTEXT_MESSAGE_TYPE = "pi-stuff-goal-context";
 const BUDGET_WRAP_UP_PROMPT =
 	"The active /goal token budget is exhausted. Stop substantive work and do not call substantive tools. Summarize progress, verified results, remaining work, and blockers concisely. Treat completion as unproven. Do not call goal_complete unless authoritative, requirement-by-requirement evidence already proves every requirement is complete. Weak, indirect, or missing evidence is not enough. Budget exhaustion is not completion.";
 const CONTRADICTORY_COMPLETION_PATTERNS = [
@@ -312,7 +314,7 @@ export class GoalRuntime {
 		this.continuationIntent = undefined;
 		this.continuationDelivery = intent;
 		try {
-			this.pi.sendUserMessage(intent.prompt, { deliverAs: "followUp" });
+			sendHiddenGoalPrompt(this.pi, intent.prompt);
 			return true;
 		} catch (error) {
 			if (this.continuationDelivery?.marker === intent.marker) {
@@ -1140,7 +1142,7 @@ function inputFingerprint(prompt: string) {
 
 async function sendPrompt(pi: ExtensionAPI, ctx: StatusContext, prompt: string, isCurrent?: () => boolean) {
 	try {
-		await pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+		await sendHiddenGoalPrompt(pi, prompt);
 		return true;
 	} catch (error) {
 		if (!isCurrent || isCurrent()) {
@@ -1148,6 +1150,17 @@ async function sendPrompt(pi: ExtensionAPI, ctx: StatusContext, prompt: string, 
 		}
 		return false;
 	}
+}
+
+function sendHiddenGoalPrompt(pi: ExtensionAPI, prompt: string) {
+	return pi.sendMessage(
+		{
+			customType: GOAL_PROMPT_MESSAGE_TYPE,
+			content: prompt,
+			display: false,
+		},
+		{ deliverAs: "followUp", triggerTurn: true },
+	);
 }
 
 function goalCommandHint(status: GoalStatus, experimentalGoals = false) {

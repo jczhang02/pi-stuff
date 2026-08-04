@@ -16,6 +16,8 @@ import {
 	formatError,
 	GOAL_BLOCKED_TOOL,
 	GOAL_COMPLETE_TOOL,
+	GOAL_CONTEXT_MESSAGE_TYPE,
+	GOAL_PROMPT_MESSAGE_TYPE,
 	GoalRuntime,
 	goalIdRejectionReason,
 	incrementGoal,
@@ -761,7 +763,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("message_start", (event, ctx) => {
-		const message = event.message as { role?: unknown; content?: unknown };
+		const message = event.message as { role?: unknown; customType?: unknown; content?: unknown };
 		if (
 			message.role === "assistant" &&
 			runtime.activeGoal?.status === "paused" &&
@@ -771,6 +773,11 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			return;
 		}
 		if (message.role === "custom") {
+			if (message.customType === GOAL_PROMPT_MESSAGE_TYPE && typeof message.content === "string") {
+				beginPromptRun(message.content, ctx);
+				return;
+			}
+			if (message.customType === GOAL_CONTEXT_MESSAGE_TYPE) return;
 			if (runtime.isActiveBudgetWrapUpMessage(message)) return;
 			if (runtime.guardAbortGoalId === runtime.activeGoal?.id) {
 				runtime.guardAbortGoalId = undefined;
@@ -812,7 +819,11 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("context", (event, ctx) => {
-		const messages = event.messages.filter((message) => keepBudgetWrapUpMessage(message));
+		const latestGoalContextIndex = findLatestGoalContextIndex(event.messages);
+		const messages = event.messages.filter(
+			(message, index) =>
+				keepBudgetWrapUpMessage(message) && (!isGoalContextMessage(message) || index === latestGoalContextIndex),
+		);
 		if (runtime.activeGoal?.status === "paused" && runtime.guardAbortGoalId === runtime.activeGoal.id) {
 			// A current custom follow-up clears the guard at message_start. Otherwise,
 			// context transformation aborts before the provider adapter receives the signal.
@@ -884,23 +895,40 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("before_agent_start", (event, ctx) => {
+		const activeGoal = beginPromptRun(event.prompt, ctx);
+		if (!activeGoal) return;
+		return {
+			message: {
+				customType: GOAL_CONTEXT_MESSAGE_TYPE,
+				content: buildGoalSystemPrompt(activeGoal),
+				display: false,
+			},
+		};
+	});
+
+	function beginPromptRun(prompt: string, ctx: StatusContext): ActiveGoal | undefined {
 		runtime.clearAgentRun();
+		if (consumeCancelledContinuationPrompt(prompt) || consumeStaleOwnedGoalPrompt(prompt)) {
+			runtime.beginAgentRun(null, undefined);
+			abortCurrentTurn(ctx);
+			return;
+		}
 		if (runtime.queueFrozen) return;
 		// Pi-owned retries emit agent_start directly. Reaching a normal prompt
 		// boundary means cleanup no longer owns the next run, so the hard-cap guard
 		// must not abort it.
 		if (runtime.guardAbortGoalId) runtime.guardAbortGoalId = undefined;
-		const goalPrompt = consumePendingGoalPrompt(event.prompt);
+		const goalPrompt = consumePendingGoalPrompt(prompt);
 		const goalPromptGoalId = goalPrompt?.goalId;
-		const continuationGoalId = goalPromptGoalId ? undefined : markContinuationStarted(event.prompt);
+		const continuationGoalId = goalPromptGoalId ? undefined : markContinuationStarted(prompt);
 		const ownedPromptGoalId = goalPromptGoalId ?? continuationGoalId;
-		const ownedPromptBoundary = runtime.hasOwnedPromptBoundary(event.prompt);
+		const ownedPromptBoundary = runtime.hasOwnedPromptBoundary(prompt);
 		const activeBudgetWrapUp = runtime.hasActiveBudgetWrapUp();
 		const activeGoalRecovery = runtime.hasActiveGoalRecovery();
 		const queuedNonGoalInput = activeBudgetWrapUp
 			? undefined
 			: runtime.consumeQueuedNonGoalInput(
-					event.prompt,
+					prompt,
 					!activeGoalRecovery && ownedPromptGoalId === undefined && !ownedPromptBoundary,
 				);
 		if (queuedNonGoalInput?.behavior === "followUp") {
@@ -960,11 +988,8 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			persistGoal(runtime.activeGoal);
 			updateStatus(ctx, runtime.activeGoal);
 		}
-
-		return {
-			systemPrompt: `${event.systemPrompt}\n\n${buildGoalSystemPrompt(runtime.activeGoal)}`,
-		};
-	});
+		return runtime.activeGoal;
+	}
 
 	pi.on("agent_start", (_event, _ctx) => {
 		if (runtime.queueFrozen) return;
@@ -1182,7 +1207,25 @@ export {
 	EMERGENCY_AUTOMATIC_TURN_LIMIT,
 	findFinalAssistantMessage,
 	formatStatus,
+	GOAL_CONTEXT_MESSAGE_TYPE,
+	GOAL_PROMPT_MESSAGE_TYPE,
 	isContradictoryCompletionSummary,
 	isRetryableGoalInterruption,
 	isUsageLimitedGoalInterruption,
 } from "./runtime.js";
+
+function isGoalContextMessage(message: unknown) {
+	if (!message || typeof message !== "object") return false;
+	const customType = (message as { role?: unknown; customType?: unknown }).customType;
+	return (
+		(message as { role?: unknown }).role === "custom" &&
+		(customType === GOAL_PROMPT_MESSAGE_TYPE || customType === GOAL_CONTEXT_MESSAGE_TYPE)
+	);
+}
+
+function findLatestGoalContextIndex(messages: readonly unknown[]) {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		if (isGoalContextMessage(messages[index])) return index;
+	}
+	return -1;
+}

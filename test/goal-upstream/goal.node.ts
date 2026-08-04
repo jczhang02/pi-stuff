@@ -15,6 +15,8 @@ import goal, {
 	formatDuration,
 	formatStatus,
 	formatTokenCount,
+	GOAL_CONTEXT_MESSAGE_TYPE,
+	GOAL_PROMPT_MESSAGE_TYPE,
 	isContradictoryCompletionSummary,
 	isRetryableGoalInterruption,
 	isUsageLimitedGoalInterruption,
@@ -504,7 +506,10 @@ test("a later restrictive tool policy pauses the goal at agent_end without conti
 		{ prompt: "continue work", systemPrompt: "base" },
 		context.ctx,
 	);
-	assert.match(String((promptResult as { systemPrompt?: string } | undefined)?.systemPrompt), /Active \/goal/);
+	assert.match(
+		String((promptResult as { message?: { content?: string } } | undefined)?.message?.content),
+		/Active \/goal/,
+	);
 	mock.rawPi.setActiveTools(["read", "bash"]);
 	mock.events.get("agent_end")?.[0]?.({ messages: [{ role: "assistant", stopReason: "stop" }] }, context.ctx);
 	mock.events.get("agent_settled")?.[0]?.({}, context.ctx);
@@ -1634,11 +1639,12 @@ test("all goal prompt paths share the goal_id guard and hardened audit", async (
 	assertPromptHasGoalId(initialPrompt, initialGoal.id);
 	assertHardenedGoalPrompt(initialPrompt);
 
-	const systemPrompt = started.mock.events.get("before_agent_start")?.[0]?.({ systemPrompt: "base" }, started.ctx) as
-		| { systemPrompt?: string }
+	const hiddenContext = started.mock.events.get("before_agent_start")?.[0]?.({ systemPrompt: "base" }, started.ctx) as
+		| { message?: { content?: string; display?: boolean } }
 		| undefined;
-	assertPromptHasGoalId(systemPrompt?.systemPrompt ?? "", initialGoal.id);
-	assertHardenedGoalPrompt(systemPrompt?.systemPrompt ?? "");
+	assert.equal(hiddenContext?.message?.display, false);
+	assertPromptHasGoalId(hiddenContext?.message?.content ?? "", initialGoal.id);
+	assertHardenedGoalPrompt(hiddenContext?.message?.content ?? "");
 
 	await started.mock.events.get("agent_end")?.[0]?.(
 		{ messages: [{ role: "assistant", stopReason: "stop" }] },
@@ -1676,6 +1682,46 @@ test("all goal prompt paths share the goal_id guard and hardened audit", async (
 	assertHardenedGoalPrompt(editedPrompt);
 	assert.match(editedPrompt, /updated objective supersedes every previous goal objective/i);
 	assert.match(editedPrompt, /work that only served the previous objective/i);
+
+	assert.equal(started.mock.sentHiddenGoalMessages.length, 4);
+	for (const delivery of started.mock.sentHiddenGoalMessages) {
+		assert.deepEqual(delivery.options, { deliverAs: "followUp", triggerTurn: true });
+		assert.deepEqual(delivery.message, {
+			customType: GOAL_PROMPT_MESSAGE_TYPE,
+			content: (delivery.message as { content: string }).content,
+			display: false,
+		});
+	}
+});
+
+test("goal protocol stays hidden and only its latest context reaches the provider", async () => {
+	const started = await startGoalForTest();
+	const beforeStart = started.mock.events.get("before_agent_start")?.[0];
+	const hiddenContext = beforeStart?.({ prompt: "continue current goal", systemPrompt: "base" }, started.ctx) as
+		| { message?: { customType?: string; content?: string; display?: boolean } }
+		| undefined;
+	assert.equal(hiddenContext?.message?.customType, GOAL_CONTEXT_MESSAGE_TYPE);
+	assert.equal(hiddenContext?.message?.display, false);
+
+	const currentContext = hiddenContext?.message;
+	assert.ok(currentContext);
+	const ordinaryMessage = { role: "user", content: "ordinary work" };
+	const contextResult = started.mock.events.get("context")?.[0]?.(
+		{
+			messages: [
+				ordinaryMessage,
+				{
+					role: "custom",
+					customType: GOAL_PROMPT_MESSAGE_TYPE,
+					content: "stale goal protocol",
+					display: false,
+				},
+				{ role: "custom", ...currentContext },
+			],
+		},
+		started.ctx,
+	) as { messages?: unknown[] } | undefined;
+	assert.deepEqual(contextResult?.messages, [ordinaryMessage, { role: "custom", ...currentContext }]);
 });
 
 test("automatic continuation keeps adversarial objective text escaped", async () => {
@@ -3197,8 +3243,8 @@ test("queued non-goal follow-up does not inherit automatic recovery ownership", 
 	const followUpStart = active.mock.events.get("before_agent_start")?.[0]?.(
 		{ prompt: "unrelated follow-up", systemPrompt: "base" },
 		active.ctx,
-	) as { systemPrompt?: string } | undefined;
-	assert.match(followUpStart?.systemPrompt ?? "", /Active \/goal/);
+	) as { message?: { content?: string } } | undefined;
+	assert.match(followUpStart?.message?.content ?? "", /Active \/goal/);
 	active.mock.events.get("turn_end")?.[0]?.(
 		{ message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] },
 		active.ctx,

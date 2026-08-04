@@ -63,6 +63,7 @@ export function createMockPi(
 	const entries: Array<{ customType: string; data: unknown }> = [];
 	const sentUserMessages: Array<{ text: string; options?: unknown }> = [];
 	const sentMessages: Array<{ message: unknown; options?: unknown }> = [];
+	const sentHiddenGoalMessages: Array<{ message: unknown; options?: unknown }> = [];
 	const setModels: unknown[] = [];
 	const thinkingLevels: string[] = [];
 	const eventBusSubscriptions = new Map<string, Array<(data: unknown) => void>>();
@@ -156,6 +157,18 @@ export function createMockPi(
 			sentUserMessages.push({ text, options: messageOptions });
 		},
 		sendMessage(message: unknown, messageOptions?: unknown) {
+			if (
+				isRecord(message) &&
+				message.customType === "pi-stuff-goal-prompt" &&
+				typeof message.content === "string"
+			) {
+				sentHiddenGoalMessages.push({ message, options: messageOptions });
+				const deliverAs = isRecord(messageOptions) ? messageOptions.deliverAs : undefined;
+				return rawPi.sendUserMessage(
+					message.content,
+					deliverAs === "steer" || deliverAs === "followUp" ? { deliverAs } : undefined,
+				);
+			}
 			sentMessages.push({ message, options: messageOptions });
 		},
 		async setModel(model: unknown) {
@@ -180,6 +193,7 @@ export function createMockPi(
 		entries,
 		sentUserMessages,
 		sentMessages,
+		sentHiddenGoalMessages,
 		setModels,
 		thinkingLevels,
 		get thinkingLevel() {

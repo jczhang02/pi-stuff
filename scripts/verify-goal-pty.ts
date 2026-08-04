@@ -1,5 +1,5 @@
-import { rmSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync, rmSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -16,6 +16,14 @@ export interface GoalPtyVerificationOptions {
 	readonly rows: number;
 }
 
+interface PersistedGoalSessionEntry {
+	readonly customType?: unknown;
+	readonly data?: unknown;
+	readonly display?: unknown;
+	readonly message?: unknown;
+	readonly type?: unknown;
+}
+
 function fail(message: string): never {
 	throw new Error(`Goal PTY verification failed: ${message}`);
 }
@@ -24,11 +32,12 @@ function delay(milliseconds: number): Promise<void> {
 	return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
-function verifyScreen(screen: string, columns: number, label: string): void {
+function verifyScreen(screen: string, columns: number, label: string, allowNormalChrome = false): void {
 	if (!screen.includes("─".repeat(columns))) {
 		fail(`${label} did not render a ${String(columns)}-column divider\n${screen}`);
 	}
-	for (const forbidden of ["╭", "╮", "╰", "╯", "think:med", "Working..."]) {
+	const forbiddenChrome = allowNormalChrome ? ["╭", "╮", "╰", "╯"] : ["╭", "╮", "╰", "╯", "think:med", "Working..."];
+	for (const forbidden of forbiddenChrome) {
 		if (screen.includes(forbidden)) fail(`${label} exposed forbidden floating or normal chrome: ${forbidden}`);
 	}
 	for (const [index, line] of screen.split("\n").entries()) {
@@ -73,6 +82,7 @@ class GoalPtySession {
 			PI_STUFF_GOAL_PTY_ROWS: String(this.options.rows),
 			PI_STUFF_GOAL_PTY_SESSIONS: this.sessionDirectory,
 			PI_STUFF_GOAL_PTY_SESSION_ID: `goal-pty-${String(this.options.columns)}x${String(this.options.rows)}`,
+			PI_STUFF_UI_PTY_LOG: join(this.directory, "provider.jsonl"),
 			PI_TELEMETRY: "0",
 			TERM: "xterm-256color",
 		};
@@ -191,6 +201,82 @@ export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promis
 		const restored = await session.waitForText("think:med");
 		for (const dialogText of ["Pi Goal Settings", "No goal is currently set"]) {
 			if (restored.includes(dialogText)) fail(`Goal dialog did not close cleanly: ${dialogText}`);
+		}
+
+		const objective = "verify hidden Goal protocol";
+		session.sendLiteral(`/goal ${objective}`);
+		session.sendKey("Enter");
+		const active = await session.waitForText("Goal complete:");
+		for (const forbidden of ["<goal_objective>", "Goal-mode rules", "pi-goal-prompt:", "Continuation behavior:"]) {
+			if (active.includes(forbidden)) fail(`hidden Goal protocol leaked into the TUI: ${forbidden}\n${active}`);
+		}
+		verifyScreen(active, options.columns, "active hidden Goal prompt", true);
+
+		const requestLog = await readFile(join(temporaryDirectory, "provider.jsonl"), "utf8");
+		const requests = requestLog
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { ownedGoalPrompt?: string });
+		const deliveredPrompt = requests.find((request) => request.ownedGoalPrompt)?.ownedGoalPrompt ?? "";
+		for (const required of [
+			`<goal_objective>\n${objective}\n</goal_objective>`,
+			"Goal-mode rules:",
+			"<!-- pi-goal-prompt:",
+		]) {
+			if (!deliveredPrompt.includes(required)) fail(`model context is missing hidden Goal protocol: ${required}`);
+		}
+
+		await delay(500);
+		const sessionFiles = (await readdir(sessionDirectory, { recursive: true }))
+			.filter((file) => file.endsWith(".jsonl"))
+			.map((file) => join(sessionDirectory, file));
+		if (sessionFiles.length !== 1) {
+			fail(`expected one persisted Goal session, found ${String(sessionFiles.length)}`);
+		}
+		const sessionJsonl = await readFile(sessionFiles[0] as string, "utf8");
+		const entries = sessionJsonl
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as PersistedGoalSessionEntry);
+		const hiddenEntry = entries.find(
+			(entry) => entry.type === "custom_message" && entry.customType === "pi-stuff-goal-prompt",
+		);
+		if (hiddenEntry?.display !== false) fail("persisted Goal protocol is not marked display=false");
+		const goalStates = entries.filter((entry) => entry.type === "custom" && entry.customType === "goal-state");
+		const completedGoal = goalStates
+			.map((entry) => (entry.data as { goal?: { status?: unknown } } | undefined)?.goal)
+			.find((goal) => goal?.status === "complete");
+		const completionResults = entries
+			.filter((entry) => {
+				const message = entry.message as { role?: unknown; toolName?: unknown } | undefined;
+				return entry.type === "message" && message?.role === "toolResult" && message.toolName === "goal_complete";
+			})
+			.map((entry) => entry.message as { content?: Array<{ text?: unknown }> });
+		const successfulCompletion = completionResults.some((message) =>
+			message.content?.some((part) => typeof part.text === "string" && part.text.startsWith("Goal complete:")),
+		);
+		if (!completedGoal || !successfulCompletion) {
+			fail(
+				`hidden Goal prompt fixture did not complete its Goal: ${JSON.stringify({ completedGoal, completionResults })}`,
+			);
+		}
+
+		const exportPath = join(temporaryDirectory, "goal-session.html");
+		const certifiedExporter = join(root, ".artifacts/pi-host/linux-x64/pi");
+		const requestedExporterAssets = join(resolve(options.piBinary, ".."), "export-html/template.css");
+		const exporter = existsSync(requestedExporterAssets) ? options.piBinary : certifiedExporter;
+		if (!existsSync(exporter)) fail("no export-capable certified Pi binary is available");
+		const exported = Bun.spawnSync([exporter, "--export", sessionFiles[0] as string, exportPath], {
+			env: { ...process.env, PI_TELEMETRY: "0" },
+			stderr: "pipe",
+			stdout: "pipe",
+		});
+		if (exported.exitCode !== 0) {
+			fail(`Pi HTML export failed: ${exported.stderr.toString().trim() || exported.stdout.toString().trim()}`);
+		}
+		const exportedHtml = await readFile(exportPath, "utf8");
+		for (const forbidden of ["<goal_objective>", "Goal-mode rules:", "pi-goal-prompt:"]) {
+			if (exportedHtml.includes(forbidden)) fail(`Goal protocol leaked as plaintext into HTML export: ${forbidden}`);
 		}
 	} finally {
 		session.stop();

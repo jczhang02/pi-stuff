@@ -184,7 +184,7 @@ async function createHarness(
 }
 
 function completionResponse(context) {
-	const goalId = /<goal_id>\s*([^<\s]+)\s*<\/goal_id>/.exec(context.systemPrompt ?? "")?.[1];
+	const goalId = latestGoalId(context);
 	assert.ok(goalId, "expected goal id in continuation system prompt");
 	return fauxAssistantMessage(
 		fauxToolCall("goal_complete", {
@@ -202,7 +202,7 @@ function completionResponse(context) {
 
 function blockerResponse(repeatedTurns) {
 	return (context) => {
-		const goalId = /<goal_id>\s*([^<\s]+)\s*<\/goal_id>/.exec(context.systemPrompt ?? "")?.[1];
+		const goalId = latestGoalId(context);
 		assert.ok(goalId, "expected goal id in blocker audit system prompt");
 		return fauxAssistantMessage(
 			fauxToolCall("goal_blocked", {
@@ -228,6 +228,25 @@ function userMessageText(message) {
 		.filter((part) => part?.type === "text")
 		.map((part) => part.text)
 		.join("\n");
+}
+
+function storedPromptText(message) {
+	const userText = userMessageText(message);
+	if (userText || message.role !== "custom") return userText;
+	if (typeof message.content === "string") return message.content;
+	if (!Array.isArray(message.content)) return "";
+	return message.content
+		.filter((part) => part?.type === "text")
+		.map((part) => part.text)
+		.join("\n");
+}
+
+function contextText(context) {
+	return [context.systemPrompt ?? "", ...context.messages.map(storedPromptText)].filter(Boolean).join("\n");
+}
+
+function latestGoalId(context) {
+	return [...contextText(context).matchAll(/<goal_id>\s*([^<\s]+)\s*<\/goal_id>/g)].at(-1)?.[1];
 }
 
 async function agentDirectoryIsolationScenario() {
@@ -283,7 +302,7 @@ async function normalContinuationScenario() {
 		assert.equal(persistedGoalStatus(harness.session), null);
 		assert.ok(
 			harness.session.messages
-				.map(userMessageText)
+				.map(storedPromptText)
 				.some((text) => text.includes("pi-goal-continuation:")),
 		);
 	} finally {
@@ -308,7 +327,7 @@ async function strictBlockerAuditScenario() {
 		assert.equal(persistedGoalState(harness.session)?.goal?.blockerAudit?.consecutiveTurns, 3);
 		assert.equal(
 			harness.session.messages
-				.map(userMessageText)
+				.map(storedPromptText)
 				.filter((text) => text.includes("pi-goal-continuation:")).length,
 			2,
 		);
@@ -340,7 +359,7 @@ async function runawayNoProgressScenario() {
 		assert.equal(persistedGoalState(harness.session)?.goal?.toolFreeRepeatCount, 3);
 		assert.equal(
 			harness.session.messages
-				.map(userMessageText)
+				.map(storedPromptText)
 				.filter((text) => text.includes("pi-goal-continuation:")).length,
 			3,
 		);
@@ -497,7 +516,7 @@ async function exhaustedRetryContinuesScenario() {
 		assert.equal(persistedGoalStatus(harness.session), null);
 		assert.ok(
 			harness.session.messages
-				.map(userMessageText)
+				.map(storedPromptText)
 				.some((text) => text.includes("pi-goal-continuation:")),
 		);
 	} finally {
@@ -610,7 +629,7 @@ async function busyEditOwnershipScenario() {
 		assert.equal(persistedGoalStatus(harness.session), null);
 		assert.ok(
 			harness.session.messages
-				.map(userMessageText)
+				.map(storedPromptText)
 				.some((text) => text.includes("updated objective supersedes")),
 		);
 	} finally {
@@ -633,7 +652,7 @@ async function pauseScenario() {
 		assert.equal(persistedGoalStatus(harness.session), "paused");
 		assert.equal(
 			harness.session.messages
-				.map(userMessageText)
+				.map(storedPromptText)
 				.filter((text) => text.includes("pi-goal-continuation:")).length,
 			0,
 		);
@@ -671,7 +690,7 @@ async function reloadResumeScenario() {
 				`Post-reload Goal did not complete: ${JSON.stringify({
 					callCount: harness.faux.state.callCount,
 					status: persistedGoalStatus(harness.session),
-					messages: harness.session.messages.map(userMessageText).filter(Boolean),
+					messages: harness.session.messages.map(storedPromptText).filter(Boolean),
 				})}`,
 				{ cause: error },
 			);
@@ -680,7 +699,7 @@ async function reloadResumeScenario() {
 		assert.equal(persistedGoalStatus(harness.session), null);
 		assert.ok(
 			harness.session.messages
-				.map(userMessageText)
+				.map(storedPromptText)
 				.some((text) => text.includes("pi-goal-continuation:")),
 		);
 	} finally {
@@ -964,7 +983,7 @@ async function manualCompactionScenario() {
 		assert.equal(persistedGoalStatus(harness.session), null);
 		assert.ok(
 			harness.session.messages
-				.map(userMessageText)
+				.map(storedPromptText)
 				.some((text) => text.includes("pi-goal-continuation:")),
 		);
 	} finally {
@@ -973,36 +992,47 @@ async function manualCompactionScenario() {
 	}
 }
 
+async function runScenarios(scenarios) {
+	for (const [name, scenario] of scenarios) {
+		console.log(`goal runtime smoke: ${name}`);
+		await scenario();
+	}
+}
+
 if (runtimeMode === "packed") {
-	await normalContinuationScenario();
-	await strictBlockerAuditScenario();
-	await reloadResumeScenario();
-	await manualCompactionScenario();
+	await runScenarios([
+		["normal continuation", normalContinuationScenario],
+		["strict blocker audit", strictBlockerAuditScenario],
+		["reload resume", reloadResumeScenario],
+		["manual compaction", manualCompactionScenario],
+	]);
 	console.log(
 		"packed Aggregate pi-goal lifecycle: multi-turn completion, active reload recovery, strict three-turn blocking, and compaction passed",
 	);
 } else {
-	await agentDirectoryIsolationScenario();
-	await normalContinuationScenario();
-	await strictBlockerAuditScenario();
-	await runawayNoProgressScenario();
-	await automaticToolLoopLimitScenario();
-	await retryAtHardLimitScenario();
-	await automaticRetryOwnershipScenario();
-	await exhaustedRetryContinuesScenario();
-	await orderedQueueScenario();
-	await queuedInputScenario();
-	await busyEditOwnershipScenario();
-	await pauseScenario();
-	await reloadResumeScenario();
-	await frozenQueueBlockedToolAbortScenario();
-	await stalePausedToolAbortScenario();
-	await budgetBoundaryScenario();
-	await budgetViolationScenario();
-	await budgetAgentEndFallbackScenario();
-	await managedRunRpcScenario();
-	await managedRunDisabledScenario();
-	await manualCompactionScenario();
+	await runScenarios([
+		["agent directory isolation", agentDirectoryIsolationScenario],
+		["normal continuation", normalContinuationScenario],
+		["strict blocker audit", strictBlockerAuditScenario],
+		["runaway no-progress", runawayNoProgressScenario],
+		["automatic tool-loop limit", automaticToolLoopLimitScenario],
+		["retry at hard limit", retryAtHardLimitScenario],
+		["automatic retry ownership", automaticRetryOwnershipScenario],
+		["exhausted retry continuation", exhaustedRetryContinuesScenario],
+		["ordered queue", orderedQueueScenario],
+		["queued input", queuedInputScenario],
+		["busy edit ownership", busyEditOwnershipScenario],
+		["pause", pauseScenario],
+		["reload resume", reloadResumeScenario],
+		["frozen queue guard", frozenQueueBlockedToolAbortScenario],
+		["stale paused-tool guard", stalePausedToolAbortScenario],
+		["budget boundary", budgetBoundaryScenario],
+		["budget violation", budgetViolationScenario],
+		["budget agent-end fallback", budgetAgentEndFallbackScenario],
+		["managed run RPC", managedRunRpcScenario],
+		["managed run disabled", managedRunDisabledScenario],
+		["manual compaction", manualCompactionScenario],
+	]);
 	console.log(
 		"pi-goal runtime smoke: normal and strict three-turn blocker continuation, runaway guards, retry and busy-edit ownership, ordered queue, queued input, pause and automatic active reload recovery, frozen-queue and stale paused-tool aborts, managed-run RPC, bounded budget behavior, and manual compaction passed",
 	);

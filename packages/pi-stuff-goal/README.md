@@ -29,6 +29,9 @@ budget remain authoritative.
 
 Goal state is appended to Pi's session JSONL and restored on reload, resume, and compaction. Reload automatically
 continues an active idle Goal from a fresh guarded continuation; a new session does not inherit another session's Goal.
+The full objective, completion guard, and continuation protocol are delivered as non-rendered Pi custom messages: the
+model receives them and the session retains them, while the TUI and HTML conversation export stay focused on the
+user's command, Tool outcome, and final response.
 
 ## Terminal tools
 
