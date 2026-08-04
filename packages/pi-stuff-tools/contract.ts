@@ -5,6 +5,7 @@ import type {
 	ToolDefinition,
 	ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
 import type { Static, TSchema } from "typebox";
 import { type ToolActivityState, ToolActivityStore } from "./activity-store.js";
 import {
@@ -25,6 +26,13 @@ export interface SuiteToolPresentation<TArgs extends Record<string, unknown>, TD
 	readonly label?: string | ((args: Readonly<TArgs>) => string);
 	readonly runningSummary?: string | ((args: Readonly<TArgs>, durationMs: number) => string);
 	readonly resultIsError?: (args: Readonly<TArgs>, result: AgentToolResult<TDetails>) => boolean;
+	/** Optional settled content below the shared lifecycle row, for media that cannot be reduced to text. */
+	readonly resultBody?: (
+		args: Readonly<TArgs>,
+		result: AgentToolResult<TDetails>,
+		options: ToolRenderResultOptions,
+		theme: Theme,
+	) => Component | undefined;
 	readonly summarize?: (
 		args: Readonly<TArgs>,
 		result: AgentToolResult<TDetails>,
@@ -346,6 +354,7 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 				context,
 			),
 		renderResult: (result, options, theme, context) => {
+			const args = (context.state.args ?? context.args) as Readonly<Args>;
 			settleRow(
 				tool as unknown as ToolDefinition<TSchema, TDetails>,
 				presentation,
@@ -355,7 +364,10 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 				theme,
 				context,
 			);
-			return new EmptyToolComponent();
+			return (
+				(options.isPartial ? undefined : presentation.resultBody?.(args, result, options, theme)) ??
+				new EmptyToolComponent()
+			);
 		},
 	};
 	pi.registerTool(decorated);
