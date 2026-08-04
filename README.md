@@ -10,9 +10,9 @@ A personal suite of extensions and resources for the native [Pi coding agent](ht
 </div>
 
 > [!IMPORTANT]
-> The current Package version is `0.1.0`. Registry publication remains a separate, explicitly approved maintainer action.
+> The current Package version is `0.2.1`. Registry publication remains a separate, explicitly approved maintainer action.
 
-See the [0.1.0 release notes](docs/releases/0.1.0.md) for the shipped scope, compatibility boundary, and known limitations.
+See the [0.2.1 release notes](docs/releases/0.2.1.md) for the current scope, compatibility boundary, and acceptance gates.
 
 ## Shape
 
@@ -26,18 +26,18 @@ Pi remains the host. The Suite is a normal Pi Package: it exports an ordered agg
 
 | Package | Purpose | Version |
 | --- | --- | --- |
-| `@jczhang02/pi-stuff` | Aggregate entry point for the full Suite | `0.1.0` |
-| `@jczhang02/pi-stuff-ui` | Responsive Statusline, input presentation, and shared non-floating Command Dialog coordinator | `0.1.0` |
-| `@jczhang02/pi-stuff-tools` | Compact built-in and Suite-owned Tool presentation with focused details | `0.1.0` |
-| `@jczhang02/pi-stuff-context` | Lazy Magic Context continuity with native Pi fail-open behavior | `0.1.0` |
-| `@jczhang02/pi-stuff-rtk` | Certified fail-open RTK rewriting and model-only Tool output projection | `0.1.0` |
-| `@jczhang02/pi-stuff-codex` | Codex Fast and usage controls plus selected patch and image Tools | `0.0.0` |
-| `@jczhang02/pi-stuff-goal` | Persistent, evidence-gated continuation for one current-session objective | `0.1.0` |
-| `@jczhang02/pi-stuff-web` | Bounded public Web search, page/PDF reading, and continuation retrieval | `0.1.0` |
-| `@jczhang02/pi-stuff-mcp` | Lazy proxy-only MCP gateway with stdio/HTTP transports and non-floating status UI | `0.1.0` |
-| `@jczhang02/pi-stuff-agents` | Current-session foreground and background Agents | `0.1.0` |
-| `@jczhang02/pi-stuff-todo` | Recoverable per-session task tracking with a compact editor widget | `0.1.0` |
-| `@jczhang02/pi-stuff-btw` | One-shot side questions isolated from the main transcript | `0.1.0` |
+| `@jczhang02/pi-stuff` | Aggregate entry point for the full Suite | `0.2.1` |
+| `@jczhang02/pi-stuff-ui` | Responsive Statusline, input presentation, and shared non-floating Command Dialog coordinator | `0.2.1` |
+| `@jczhang02/pi-stuff-tools` | Compact built-in and Suite-owned Tool presentation with focused details | `0.1.2` |
+| `@jczhang02/pi-stuff-context` | Lazy Magic Context continuity with native Pi fail-open behavior | `0.1.2` |
+| `@jczhang02/pi-stuff-rtk` | Certified fail-open RTK rewriting and model-only Tool output projection | `0.2.1` |
+| `@jczhang02/pi-stuff-codex` | Codex Fast and usage controls plus selected patch and image Tools | `0.1.1` |
+| `@jczhang02/pi-stuff-goal` | Persistent, evidence-gated continuation for one current-session objective | `0.2.1` |
+| `@jczhang02/pi-stuff-web` | Bounded public Web search, page/PDF reading, and continuation retrieval | `0.2.1` |
+| `@jczhang02/pi-stuff-mcp` | Lazy proxy-only MCP gateway with stdio/HTTP transports and non-floating status UI | `0.2.1` |
+| `@jczhang02/pi-stuff-agents` | Current-session foreground and background Agents | `0.2.1` |
+| `@jczhang02/pi-stuff-todo` | Recoverable per-session task tracking with a compact editor widget | `0.1.2` |
+| `@jczhang02/pi-stuff-btw` | One-shot side questions isolated from the main transcript | `0.1.2` |
 
 Capability Packages remain independently versioned. Certified versions are bundled into the Aggregate Package as required by Pi's package contract.
 

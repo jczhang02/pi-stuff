@@ -1,5 +1,13 @@
 # @jczhang02/pi-stuff-btw
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies [e44dfe7]
+  - @jczhang02/pi-stuff-ui@0.2.1
+  - @jczhang02/pi-stuff-context@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+### Patch Changes
+
+- 9f26a85: Support system TUN fake-IP DNS automatically for public page fetches through a guarded process-local SSRF default, without writing settings or allowing literal-IP URL bypasses.
+- Updated dependencies [e44dfe7]
+  - @jczhang02/pi-stuff-tools@0.1.2
+
 ## 0.2.0
 
 ### Minor Changes

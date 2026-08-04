@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff-goal",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "Persistent, evidence-gated goal continuation for Pi Stuff",
 	"type": "module",
 	"keywords": [
@@ -30,8 +30,8 @@
 		]
 	},
 	"dependencies": {
-		"@jczhang02/pi-stuff-tools": "0.1.1",
-		"@jczhang02/pi-stuff-ui": "0.2.0",
+		"@jczhang02/pi-stuff-tools": "0.1.2",
+		"@jczhang02/pi-stuff-ui": "0.2.1",
 		"typebox": "1.3.7"
 	},
 	"peerDependencies": {

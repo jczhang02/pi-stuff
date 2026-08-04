@@ -1,5 +1,11 @@
 # @jczhang02/pi-stuff-ui
 
+## 0.2.1
+
+### Patch Changes
+
+- e44dfe7: Keep Agent and TaskList lifecycle rows semantically useful at narrow widths, make `/ui` hints responsive without mid-phrase clipping, render Goal terminal tools through the shared Tool contract, and accept concrete multilingual completion evidence.
+
 ## 0.2.0
 
 ### Minor Changes
