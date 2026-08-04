@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
-	CERTIFIED_RTK_LINUX_X64_SHA256,
+	CERTIFIED_RTK_LINUX_X64_SHA256S,
 	CERTIFIED_RTK_VERSION,
 	RtkRuntime,
 } from "../../packages/pi-stuff-rtk/runtime.js";
@@ -32,10 +32,13 @@ test.skipIf(!localRtk)("certifies and uses the real local RTK 0.42.4 executable"
 	const runtime = new RtkRuntime();
 
 	expect(await runtime.rewrite(pi, "git status")).toBe("rtk git status");
-	expect(runtime.snapshot()).toMatchObject({
+	const snapshot = runtime.snapshot();
+	expect(snapshot).toMatchObject({
 		path: localRtk,
-		sha256: CERTIFIED_RTK_LINUX_X64_SHA256,
 		state: "ready",
 		version: CERTIFIED_RTK_VERSION,
 	});
+	const sha256 = snapshot.sha256;
+	expect(sha256).toBeDefined();
+	expect(CERTIFIED_RTK_LINUX_X64_SHA256S.some((candidate) => candidate === sha256)).toBeTrue();
 });
