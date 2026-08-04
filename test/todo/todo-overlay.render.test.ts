@@ -66,12 +66,12 @@ describe("TodoOverlay rendering", () => {
 		expect(widget).toBeUndefined();
 	});
 
-	test("registers only an above-editor widget and renders no heading, frame, or trailing blank", () => {
+	test("aligns the summary with conversation output and indents task rows", () => {
 		const { setWidgetCalls, widget } = setup([task("1", "write tests")]);
 		expect(setWidgetCalls).toHaveLength(1);
 		expect(setWidgetCalls[0]?.[0]).toBe("rpiv-todos");
 		expect(setWidgetCalls[0]?.[2]).toEqual({ placement: "aboveEditor" });
-		expect(widget?.render(200)).toEqual(["  □ write tests"]);
+		expect(widget?.render(200)).toEqual(["1 tasks (0 done, 1 open)", "   □ write tests"]);
 	});
 
 	test("shows at most five ordered task rows plus one overflow row", () => {
@@ -91,12 +91,13 @@ describe("TodoOverlay rendering", () => {
 		replaceState(SESSION_ID, { tasks: finalTasks, nextId: 8 });
 		overlay.refresh({ forceExpanded: true });
 		expect(widget?.render(200)).toEqual([
-			"  ✓ recent 3",
-			"  ✓ recent 7",
-			"  ■ active",
-			"  □ runnable 1",
-			"  □ runnable 5",
-			"  … +2 pending",
+			"7 tasks (2 done, 5 open)",
+			"   ✓ recent 3",
+			"   ✓ recent 7",
+			"   ■ active",
+			"   □ runnable 1",
+			"   □ runnable 5",
+			"   … +2 pending",
 		]);
 	});
 
@@ -123,7 +124,7 @@ describe("TodoOverlay rendering", () => {
 		overlay.toggle();
 		expect(widget?.render(200)).toHaveLength(1);
 		overlay.refresh({ forceExpanded: true });
-		expect(widget?.render(200)).toEqual(["  □ one", "  □ two"]);
+		expect(widget?.render(200)).toEqual(["2 tasks (0 done, 2 open)", "   □ one", "   □ two"]);
 	});
 
 	test("retains forceExpanded while a Command Dialog suppresses the widget", () => {
@@ -135,16 +136,16 @@ describe("TodoOverlay rendering", () => {
 		overlay.refresh({ forceExpanded: true });
 		overlay.setSuppressed(false);
 
-		expect(widget?.render(200)).toEqual(["  □ one", "  □ two"]);
+		expect(widget?.render(200)).toEqual(["2 tasks (0 done, 2 open)", "   □ one", "   □ two"]);
 		expect(overlay.isRegistered()).toBe(true);
 	});
 
 	test("normalizes and truncates a long subject to one terminal row", () => {
 		const { widget } = setup([task("1", "a long\nsubject that cannot fit")]);
 		const lines = widget?.render(18) ?? [];
-		expect(lines).toHaveLength(1);
-		expect(lines[0]).not.toContain("\n");
-		expect(visibleWidth(lines[0] ?? "")).toBeLessThanOrEqual(18);
+		expect(lines).toHaveLength(2);
+		expect(lines[1]).not.toContain("\n");
+		expect(lines.every((line) => visibleWidth(line) <= 18)).toBe(true);
 	});
 
 	test("keeps CJK rows inside both certified terminal widths", () => {
@@ -155,7 +156,7 @@ describe("TodoOverlay rendering", () => {
 
 		for (const width of [100, 64]) {
 			const lines = widget?.render(width) ?? [];
-			expect(lines).toHaveLength(2);
+			expect(lines).toHaveLength(3);
 			expect(lines.every((line) => visibleWidth(line) <= width && !line.includes("\n"))).toBe(true);
 		}
 	});
@@ -164,7 +165,7 @@ describe("TodoOverlay rendering", () => {
 		const { widget } = setup([task("1", "检查🙂非常长的工作区路径和结果文件", "pending", ["依赖-🧪-非常长的名称"])]);
 
 		for (const width of [100, 64, 48, 32, 24]) {
-			const line = widget?.render(width)[0] ?? "";
+			const line = widget?.render(width)[1] ?? "";
 			const plain = Bun.stripANSI(line);
 			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 			expect(plain).toContain("blocked");
@@ -203,7 +204,7 @@ describe("TodoOverlay all-complete linger", () => {
 				lingerCompleted: true,
 			});
 			expect(scheduledDelay).toBe(5_000);
-			expect(widget?.render(200)).toEqual(["  ✓ finished"]);
+			expect(widget?.render(200)).toEqual(["1 tasks (1 done, 0 open)", "   ✓ finished"]);
 			expect(overlay.isRegistered()).toBe(true);
 
 			scheduledCallback?.();

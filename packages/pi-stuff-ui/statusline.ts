@@ -52,6 +52,82 @@ export interface BooleanValueSource {
 	subscribe(listener: () => void): () => void;
 }
 
+export interface CodexStatusSnapshot {
+	readonly fastEnabled: boolean;
+	readonly weeklyRemainingPercent?: number;
+}
+
+export interface CodexStatusSource {
+	getSnapshot(): CodexStatusSnapshot;
+	subscribe(listener: () => void): () => void;
+}
+
+export interface CodexStatusChannel {
+	readonly source: CodexStatusSource;
+	clear(): void;
+	publish(snapshot: CodexStatusSnapshot): void;
+}
+
+const CODEX_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/codex-status-channels/v1");
+
+class SharedCodexStatusChannel implements CodexStatusChannel, CodexStatusSource {
+	private readonly listeners = new Set<() => void>();
+	private snapshot: CodexStatusSnapshot = { fastEnabled: false };
+	readonly source: CodexStatusSource = this;
+
+	clear(): void {
+		this.setSnapshot({ fastEnabled: false });
+	}
+
+	getSnapshot(): CodexStatusSnapshot {
+		return this.snapshot;
+	}
+
+	publish(snapshot: CodexStatusSnapshot): void {
+		const next: CodexStatusSnapshot = {
+			fastEnabled: snapshot.fastEnabled === true,
+			...(typeof snapshot.weeklyRemainingPercent === "number" && Number.isFinite(snapshot.weeklyRemainingPercent)
+				? { weeklyRemainingPercent: snapshot.weeklyRemainingPercent }
+				: {}),
+		};
+		this.setSnapshot(next);
+	}
+
+	subscribe(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
+
+	private setSnapshot(next: CodexStatusSnapshot): void {
+		if (
+			this.snapshot.fastEnabled === next.fastEnabled &&
+			this.snapshot.weeklyRemainingPercent === next.weeklyRemainingPercent
+		) {
+			return;
+		}
+		this.snapshot = next;
+		for (const listener of this.listeners) callObserver(listener);
+	}
+}
+
+function codexStatusChannels(): WeakMap<ExtensionAPI["events"], CodexStatusChannel> {
+	const root = globalThis as unknown as {
+		[key: symbol]: WeakMap<ExtensionAPI["events"], CodexStatusChannel> | undefined;
+	};
+	root[CODEX_STATUS_CHANNELS] ??= new WeakMap();
+	return root[CODEX_STATUS_CHANNELS];
+}
+
+/** Share one late-bindable Codex presentation channel across Capability copies. */
+export function getCodexStatusChannel(pi: Pick<ExtensionAPI, "events">): CodexStatusChannel {
+	const channels = codexStatusChannels();
+	const existing = channels.get(pi.events);
+	if (existing) return existing;
+	const channel = new SharedCodexStatusChannel();
+	channels.set(pi.events, channel);
+	return channel;
+}
+
 export type StatuslineDensity = "auto" | "full" | "compact";
 export type StatuslineIconMode = "auto" | "nerd" | "ascii";
 
@@ -83,6 +159,7 @@ interface GitChangeCountsSource {
 
 interface SharedStatuslineControllerOptions {
 	readonly autocompleteVisible?: BooleanValueSource;
+	readonly codexStatus?: CodexStatusSource;
 	readonly extensionStatusKeys?: readonly string[];
 	readonly gitChanges?: GitChangeCountsSource;
 }
@@ -95,7 +172,9 @@ export type StatuslineControllerOptions = SharedStatuslineControllerOptions &
 
 interface UsageTotals {
 	cacheRead: number;
+	cacheWrite: number;
 	cost: number;
+	input: number;
 }
 
 interface PromptPreview {
@@ -324,6 +403,7 @@ export class StatuslineController {
 		const preferencesSource = this.options.preferences ?? this.options.enabled;
 		subscribeObserver(preferencesSource, notify, unsubscribe);
 		if (this.options.autocompleteVisible) subscribeObserver(this.options.autocompleteVisible, notify, unsubscribe);
+		if (this.options.codexStatus) subscribeObserver(this.options.codexStatus, notify, unsubscribe);
 		if (this.options.gitChanges) subscribeObserver(this.options.gitChanges, notify, unsubscribe);
 		return () => {
 			for (const remove of unsubscribe.splice(0)) callObserver(remove);
@@ -346,6 +426,7 @@ export class StatuslineController {
 			this.options.gitChanges?.get(readRawCwd(ctx), branch),
 			this.options.extensionStatusKeys ?? DEFAULT_EXTENSION_STATUS_KEYS,
 			sessionStatus,
+			readCodexStatus(ctx, this.options.codexStatus),
 			renderWidth,
 			preferences,
 		);
@@ -524,7 +605,7 @@ class StatuslineFooter implements Component {
 	}
 }
 
-type StatusSegmentId = "model" | "thinking" | "cwd" | "git" | "context" | "cache" | "cost" | "extension";
+type StatusSegmentId = "model" | "thinking" | "cwd" | "git" | "context" | "cache" | "cost" | "codex" | "extension";
 
 interface StatusSegment {
 	readonly compact: string;
@@ -552,6 +633,7 @@ function renderStatusline(
 	gitChanges: GitChangeCounts | undefined,
 	extensionStatusKeys: readonly string[],
 	sessionStatus: SessionStatusSnapshot,
+	codexStatus: CodexStatusSnapshot | undefined,
 	width: number,
 	preferences: StatuslinePreferences,
 ): string[] {
@@ -577,15 +659,15 @@ function renderStatusline(
 	const statuses = footerData.getExtensionStatuses();
 	const contextSegment = renderContextSegment(ctx, theme, icons, statuses);
 	if (contextSegment) segments.push(statusSegment("context", 1, contextSegment.full, contextSegment.compact));
-	if (usage.cacheRead > 0) {
-		const cache = theme.fg(
-			"muted",
-			[icons.cache, icons.input, formatTokens(usage.cacheRead)].filter(Boolean).join(" "),
-		);
-		const compactCache = theme.fg("muted", [icons.cache, formatTokens(usage.cacheRead)].filter(Boolean).join(" "));
-		segments.push(statusSegment("cache", 6, cache, compactCache));
+	const cacheHitRate = formatCacheHitRate(usage);
+	if (cacheHitRate) {
+		const cache = theme.fg("muted", [icons.cache, cacheHitRate].filter(Boolean).join(" "));
+		segments.push(statusSegment("cache", 6, cache));
 	}
-	if (usage.cost > 0 && shouldShowCost(ctx)) {
+	if (ctx.model?.provider === "openai-codex") {
+		const codex = formatCodexStatus(codexStatus);
+		if (codex) segments.push(statusSegment("codex", 5, theme.fg("text", codex)));
+	} else if (usage.cost > 0 && shouldShowCost(ctx)) {
 		segments.push(statusSegment("cost", 5, theme.fg("text", `$${usage.cost.toFixed(2)}`)));
 	}
 
@@ -851,7 +933,7 @@ function formatSkillBadge(skills: readonly string[], compact: boolean): string {
 }
 
 function emptySessionStatus(): SessionStatusSnapshot {
-	return { latestPrompt: undefined, usage: { cacheRead: 0, cost: 0 } };
+	return { latestPrompt: undefined, usage: { cacheRead: 0, cacheWrite: 0, cost: 0, input: 0 } };
 }
 
 function extendSessionStatus(
@@ -970,8 +1052,39 @@ function promptPreview(text: string | undefined, skills: readonly string[]): Pro
 
 function addUsage(totals: UsageTotals, usage: Usage | undefined): void {
 	if (!usage) return;
+	if (Number.isFinite(usage.input) && usage.input > 0) totals.input += usage.input;
 	if (Number.isFinite(usage.cacheRead) && usage.cacheRead > 0) totals.cacheRead += usage.cacheRead;
+	if (Number.isFinite(usage.cacheWrite) && usage.cacheWrite > 0) totals.cacheWrite += usage.cacheWrite;
 	if (Number.isFinite(usage.cost.total) && usage.cost.total > 0) totals.cost += usage.cost.total;
+}
+
+function formatCacheHitRate(usage: UsageTotals): string | undefined {
+	const denominator = usage.input + usage.cacheRead + usage.cacheWrite;
+	if (!Number.isFinite(denominator) || denominator <= 0) return undefined;
+	const percent = (usage.cacheRead / denominator) * 100;
+	return `${percent.toFixed(1).replace(/\.0$/u, "")}%`;
+}
+
+function readCodexStatus(
+	ctx: ExtensionContext,
+	source: CodexStatusSource | undefined,
+): CodexStatusSnapshot | undefined {
+	if (ctx.model?.provider !== "openai-codex" || !source) return undefined;
+	try {
+		return source.getSnapshot();
+	} catch {
+		return undefined;
+	}
+}
+
+function formatCodexStatus(snapshot: CodexStatusSnapshot | undefined): string | undefined {
+	if (!snapshot) return undefined;
+	const weekly = snapshot.weeklyRemainingPercent;
+	const weeklyText =
+		typeof weekly === "number" && Number.isFinite(weekly)
+			? `weekly ${String(Math.round(Math.max(0, Math.min(100, weekly))))}%`
+			: undefined;
+	return [weeklyText, snapshot.fastEnabled ? "fast" : undefined].filter(Boolean).join(" · ") || undefined;
 }
 
 function shouldShowCost(ctx: ExtensionContext): boolean {

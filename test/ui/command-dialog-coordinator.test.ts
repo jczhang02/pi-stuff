@@ -9,6 +9,7 @@ import piStuffUi, {
 	type CommandDialogView,
 	type CommandDialogViewContext,
 	ensureUiSettingsCommand,
+	getCodexStatusChannel,
 	getCommandDialogCoordinator,
 	requestStatuslineGitRefresh,
 	UiSettingsStore,
@@ -249,6 +250,7 @@ interface ContextOptions {
 	};
 	readonly cwd?: string;
 	readonly modelId?: string;
+	readonly provider?: string;
 }
 
 function createContext(
@@ -261,7 +263,7 @@ function createContext(
 		cwd,
 		getContextUsage: () => options.contextUsage,
 		mode,
-		model: options.modelId ? { id: options.modelId } : undefined,
+		model: options.modelId ? { id: options.modelId, provider: options.provider } : undefined,
 		sessionManager: { getBranch: () => [], getCwd: () => cwd },
 		ui: ui as unknown as ExtensionUIContext,
 	} as unknown as ExtensionContext;
@@ -313,6 +315,47 @@ function createDeferred<Value>(): TestDeferred<Value> {
 }
 
 describe("normal UI presentation integration", () => {
+	test("observes late Codex status publication through one shared channel", async () => {
+		const events = new EventBusHarness();
+		const uiApi = createApiHarness(events);
+		await piStuffUi(uiApi.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui, "tui", {
+			contextUsage: { contextWindow: 200_000, percent: 42.4, tokens: 84_800 },
+			modelId: "gpt-5.6-sol",
+			provider: "openai-codex",
+		});
+		await uiApi.start(ctx);
+
+		const factory = ui.footerWrites.at(-1);
+		if (!factory) throw new Error("Expected the Suite footer factory");
+		const footer = factory(ui.tui, ui.theme, createFooterData("main") as never);
+		const initial = footer.render(120).join("\n");
+		expect(initial).not.toContain("weekly");
+		expect(initial).not.toContain("fast");
+
+		const codexApi = createApiHarness(events);
+		const uiChannel = getCodexStatusChannel(uiApi.api);
+		const codexChannel = getCodexStatusChannel(codexApi.api);
+		expect(codexChannel).toBe(uiChannel);
+		const rendersBeforePublish = ui.renderRequests.length;
+		codexChannel.publish({ fastEnabled: true, weeklyRemainingPercent: 72.4 });
+		expect(footer.render(120).join("\n")).toContain("weekly 72% · fast");
+		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforePublish);
+
+		const rendersBeforeClear = ui.renderRequests.length;
+		codexChannel.clear();
+		const cleared = footer.render(120).join("\n");
+		expect(cleared).not.toContain("weekly");
+		expect(cleared).not.toContain("fast");
+		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforeClear);
+
+		footer.dispose?.();
+		const rendersAfterDispose = ui.renderRequests.length;
+		codexChannel.publish({ fastEnabled: true, weeklyRemainingPercent: 71 });
+		expect(ui.renderRequests).toHaveLength(rendersAfterDispose);
+	});
+
 	test("installs the accepted Statusline, Welcome header, and editor decorator", async () => {
 		const api = createApiHarness();
 		await piStuffUi(api.api);

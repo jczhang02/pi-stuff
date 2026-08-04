@@ -20,6 +20,12 @@ export {
 	type UiSettings,
 	UiSettingsStore,
 } from "./settings.js";
+export {
+	type CodexStatusChannel,
+	type CodexStatusSnapshot,
+	type CodexStatusSource,
+	getCodexStatusChannel,
+} from "./statusline.js";
 
 export type CommandDialogPriority = "blocking" | "normal";
 

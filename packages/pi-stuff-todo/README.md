@@ -9,7 +9,8 @@ The Package gives the Agent four incremental tools—`TaskCreate`, `TaskGet`, `T
 - Stable string task IDs are never reused within a session authority.
 - Dependencies are validated and committed atomically.
 - State recovers after reload, compaction, and tree changes from the Pi transcript.
-- The normal checklist has no heading and shows at most five tasks plus one overflow row.
+- The normal checklist begins with `N tasks (D done, O open)` aligned to conversation output, then indents at most five
+  task rows plus one overflow row.
 - Completed work lingers briefly, then the widget disappears without deleting state.
 - No floating window, statusline, project backlog, or separate task database is added.
 - Successful Task tool calls stay silent in the transcript because the checklist already shows their effect; errors

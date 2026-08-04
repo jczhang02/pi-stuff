@@ -11,6 +11,8 @@ import type {
 import { type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	type BooleanValueSource,
+	type CodexStatusSnapshot,
+	type CodexStatusSource,
 	type GitChangeCounts,
 	GitStatusSource,
 	parseGitStatusPorcelain,
@@ -41,18 +43,41 @@ class ValueSource<Value> {
 	}
 }
 
-function usage(cacheRead: number, cost: number) {
+class CodexStatusValueSource implements CodexStatusSource {
+	private readonly listeners = new Set<() => void>();
+	private snapshot: CodexStatusSnapshot;
+
+	constructor(snapshot: CodexStatusSnapshot) {
+		this.snapshot = snapshot;
+	}
+
+	getSnapshot(): CodexStatusSnapshot {
+		return this.snapshot;
+	}
+
+	set(snapshot: CodexStatusSnapshot): void {
+		this.snapshot = snapshot;
+		for (const listener of this.listeners) listener();
+	}
+
+	subscribe(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
+}
+
+function usage(cacheRead: number, cost: number, input = 10, cacheWrite = 0) {
 	return {
 		cacheRead,
-		cacheWrite: 0,
+		cacheWrite,
 		cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0, total: cost },
-		input: 10,
+		input,
 		output: 5,
-		totalTokens: 15 + cacheRead,
+		totalTokens: input + 5 + cacheRead + cacheWrite,
 	};
 }
 
-function messageEntries(prompt: string, cacheRead = 18_200, cost = 0.42): SessionEntry[] {
+function messageEntries(prompt: string, cacheRead = 18_200, cost = 0.42, input = 10, cacheWrite = 0): SessionEntry[] {
 	return [
 		{
 			id: "user",
@@ -71,7 +96,7 @@ function messageEntries(prompt: string, cacheRead = 18_200, cost = 0.42): Sessio
 				role: "assistant",
 				stopReason: "stop",
 				timestamp: 2,
-				usage: usage(cacheRead, cost),
+				usage: usage(cacheRead, cost, input, cacheWrite),
 			},
 			parentId: "user",
 			timestamp: "2026-08-03T00:00:01Z",
@@ -251,6 +276,62 @@ function preferences(overrides: Partial<StatuslinePreferences> = {}): ValueSourc
 }
 
 describe("StatuslineController", () => {
+	test("renders cache hit rate and observed Codex weekly and Fast state", () => {
+		const codexStatus = new CodexStatusValueSource({ fastEnabled: true, weeklyRemainingPercent: 63.4 });
+		const controller = new StatuslineController(api(), {
+			codexStatus,
+			enabled: new ValueSource(true),
+		});
+		const harness = tuiHarness();
+		const component = controller.createFooter(
+			context({ provider: "openai-codex", subscription: true }),
+			harness.tui,
+			theme,
+			footerData("main"),
+		);
+
+		const active = withNerdFontPreference(false, () => component.render(160).join("\n"));
+		expect(active).toContain("cache 99.9%");
+		expect(active).toContain("weekly 63%");
+		expect(active).toContain("fast");
+		expect(active).not.toContain("18k");
+		expect(active).not.toContain("$0.42");
+
+		const rendersBeforeUpdate = harness.requests.length;
+		codexStatus.set({ fastEnabled: false, weeklyRemainingPercent: 62.6 });
+		const inactive = withNerdFontPreference(false, () => component.render(160).join("\n"));
+		expect(inactive).toContain("weekly 63%");
+		expect(inactive).not.toContain("fast");
+		expect(harness.requests.length).toBeGreaterThan(rendersBeforeUpdate);
+	});
+
+	test("includes input and cache writes in the cache hit denominator", () => {
+		const controller = new StatuslineController(api(), { enabled: new ValueSource(true) });
+		const component = controller.createFooter(
+			context({ branch: messageEntries("Cache denominator", 60, 0, 20, 20), reasoning: false }),
+			tuiHarness().tui,
+			theme,
+			footerData("main"),
+		);
+
+		expect(withNerdFontPreference(false, () => component.render(120).join("\n"))).toContain("cache 60%");
+	});
+
+	test("hides Codex weekly, Fast, and cost when no observer data exists", () => {
+		const controller = new StatuslineController(api(), { enabled: new ValueSource(true) });
+		const component = controller.createFooter(
+			context({ provider: "openai-codex", subscription: false }),
+			tuiHarness().tui,
+			theme,
+			footerData("main"),
+		);
+
+		const rendered = component.render(160).join("\n");
+		expect(rendered).not.toContain("weekly");
+		expect(rendered).not.toContain("fast");
+		expect(rendered).not.toContain("$");
+	});
+
 	test("preserves the old footer visual grammar with the accepted Pi Stuff deviations", () => {
 		withNerdFontPreference(false, () => {
 			const enabled = new ValueSource(true);
@@ -273,7 +354,7 @@ describe("StatuslineController", () => {
 			);
 
 			expect(component.render(160)).toEqual([
-				" Sonnet 4.5 | think:med | dir pi-stuff | ⎇ main *3 +12 ?1 | ◫ 42.4%/200k | cache in: 18k | $0.42 | goal:UI · mcp:2 · load:full ",
+				" Sonnet 4.5 | think:med | dir pi-stuff | ⎇ main *3 +12 ?1 | ◫ 42.4%/200k | cache 99.9% | $0.42 | goal:UI · mcp:2 · load:full ",
 				" in: Implement the accepted Pi Stuff statusline. ",
 			]);
 		});
@@ -298,7 +379,7 @@ describe("StatuslineController", () => {
 			);
 
 			expect(component.render(160)).toEqual([
-				"  Sonnet 4.5 | think:med |  pi-stuff |  main *3 +12 ?1 |  42.4%/200k |   18k | $0.42 | goal:UI · mcp:2 · load:full ",
+				"  Sonnet 4.5 | think:med |  pi-stuff |  main *3 +12 ?1 |  42.4%/200k |  99.9% | $0.42 | goal:UI · mcp:2 · load:full ",
 				"  Implement the accepted Pi Stuff statusline. ",
 			]);
 		});
@@ -327,7 +408,7 @@ describe("StatuslineController", () => {
 			const full = component.render(160).join("\n");
 			expect(full).toContain("dir pi-stuff");
 			expect(full).toContain("in: Implement the accepted Pi Stuff statusline.");
-			expect(full).toContain("cache in: 18k");
+			expect(full).toContain("cache 99.9%");
 			expect(full).toContain("goal:UI");
 			expect(harness.requests.length).toBeGreaterThan(0);
 		});
@@ -379,7 +460,7 @@ describe("StatuslineController", () => {
 			expect(colored.get("warning")).toEqual(expect.arrayContaining(["⎇ main", "*3"]));
 			expect(colored.get("success")).toContain("+12");
 			expect(colored.get("dim")).toEqual(expect.arrayContaining(["◫ 42.4%/200k", "|"]));
-			expect(colored.get("muted")).toEqual(expect.arrayContaining(["?1", "cache in: 18k", "goal:UI"]));
+			expect(colored.get("muted")).toEqual(expect.arrayContaining(["?1", "cache 99.9%", "goal:UI"]));
 			expect(colored.get("text")).toEqual(
 				expect.arrayContaining(["$0.42", "Implement the accepted Pi Stuff statusline."]),
 			);
@@ -419,7 +500,7 @@ describe("StatuslineController", () => {
 			const controller = new StatuslineController(api("off"), { enabled: new ValueSource(true) });
 			const component = controller.createFooter(
 				context({
-					branch: messageEntries("Optional fields are absent.", 0, 0),
+					branch: messageEntries("Optional fields are absent.", 0, 0, 0, 0),
 					contextPercent: null,
 					reasoning: false,
 				}),
@@ -575,7 +656,7 @@ describe("StatuslineController", () => {
 
 		const lines = withNerdFontPreference(false, () => component.render(120));
 		expect(lines).toEqual([
-			" sonnet-4.5 | think:med | dir pi-stuff | ⎇ main *3 +12 ?1 | ◫ 42.4%/200k | cache in: 18k | $0.42 ",
+			" sonnet-4.5 | think:med | dir pi-stuff | ⎇ main *3 +12 ?1 | ◫ 42.4%/200k | cache 99.9% | $0.42 ",
 			" in: Implement the accepted Pi Stuff statusline. ",
 			" goal:UI · mcp:2 · load:full ",
 		]);
@@ -754,7 +835,7 @@ describe("StatuslineController", () => {
 		);
 
 		const main = component.render(120).join("\n");
-		expect(main).toContain("300");
+		expect(main).toContain("93.8%");
 		expect(main).toContain("$0.30");
 		expect(main).toContain("Main branch prompt");
 		expect(session.reads.branches).toBe(0);
@@ -767,7 +848,7 @@ describe("StatuslineController", () => {
 
 		session.setLeaf(alternateAssistant.id);
 		const alternate = component.render(120).join("\n");
-		expect(alternate).toContain("400");
+		expect(alternate).toContain("95.2%");
 		expect(alternate).toContain("$0.40");
 		expect(alternate).toContain("Alternate branch prompt");
 		expect(session.reads.entries).toBe(readsAfterFirstRender + 2);
@@ -789,7 +870,7 @@ describe("StatuslineController", () => {
 		const rendered = component.render(100).join("\n");
 		expect(rendered).not.toContain("$");
 		expect(rendered).not.toMatch(/\bsub\b/iu);
-		expect(rendered).toContain("18k");
+		expect(rendered).toContain("99.9%");
 	});
 
 	test("omits cost for Kimi Coding subscription models that use API-key authentication", () => {
@@ -802,7 +883,7 @@ describe("StatuslineController", () => {
 		);
 		const rendered = component.render(100).join("\n");
 		expect(rendered).not.toContain("$");
-		expect(rendered).toContain("18k");
+		expect(rendered).toContain("99.9%");
 	});
 
 	test("removes every row for settings, Command Dialog, and autocomplete suppression", () => {

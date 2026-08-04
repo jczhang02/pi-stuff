@@ -633,7 +633,7 @@ async function verifyWideInteractions(
 	await session.waitForText(finalThought);
 	const liveThought = true;
 	await session.waitForText("UI_PTY_DONE 中文结果🧪");
-	await session.waitForText("18k");
+	await session.waitForText("22%");
 	await session.waitForText("$0.42");
 	await session.waitForText("main *1 ?1");
 	await session.waitForText("goal:UI");
@@ -657,7 +657,7 @@ async function verifyWideInteractions(
 	session.sendKey("F11");
 	await session.waitForText("SUBSCRIPTION_MODEL_READY");
 	await session.waitForText(SUBSCRIPTION_MODEL);
-	await session.waitForText("18k");
+	await session.waitForText("22%");
 	screen = session.capture();
 	if (screen.includes("$") || screen.includes("(sub)")) {
 		fail("API-key kimi-coding subscription exposed cost or a (sub) label");

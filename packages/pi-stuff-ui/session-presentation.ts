@@ -5,6 +5,7 @@ import type { UiSettingsStore } from "./settings.js";
 import {
 	type BooleanValueSource,
 	GitStatusSource,
+	getCodexStatusChannel,
 	StatuslineController,
 	type StatuslinePreferences,
 	type StatuslinePreferencesSource,
@@ -107,6 +108,7 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 		this.git = new GitStatusSource();
 		this.statusline = new StatuslineController(pi, {
 			autocompleteVisible: new EditorAutocompleteSource(this.editor),
+			codexStatus: getCodexStatusChannel(pi).source,
 			gitChanges: this.git,
 			preferences: new StoreStatuslinePreferencesSource(store),
 		});

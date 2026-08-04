@@ -11,9 +11,9 @@ Command Dialog used by focused Suite commands.
 The Statusline preserves the visual grammar of the maintainer's former Powerline footer through an independent Pi Stuff
 implementation. Each row has one-cell outer padding and dim `|` separators. It presents the model display name,
 `think:<level>`, working-directory basename, Git branch with `!conflict`, `*unstaged`, `+staged`, `?untracked`, `⇡ahead`,
-and `⇣behind`, context percentage/window, cache-read input tokens, metered cost, then the selected Goal, MCP, and Loadout
-statuses. Context renders as `?/200k` when the Host knows the window but cannot yet calculate a percentage. Complete
-segments flow to a second Statusline row instead of being cut in half.
+and `⇣behind`, context percentage/window, cache hit rate, metered cost or Codex weekly allowance, then the selected
+Goal, MCP, and Loadout statuses. Context renders as `?/200k` when the Host knows the window but cannot yet calculate a
+percentage. Complete segments flow to a second Statusline row instead of being cut in half.
 
 Automatic density preserves the former wide ordering when it fits. As space narrows, it retains model and Context
 first, then Git, cwd and Thinking, cost and cache, and finally extension statuses. The latest user prompt may use two
@@ -28,10 +28,16 @@ the width-safe `dir`, `⎇`, `◫`, `cache`, and `in:` fallbacks. Set `POWERLINE
 detection, or choose a fixed mode in `/ui`. Colors still come only from Pi semantic theme tokens; the former hard-coded
 personal palette is intentionally not copied.
 
-The cache/input value is the cumulative count of cache-read tokens from successful assistant messages on the active
-branch. Repeated reuse can make it larger than the current context size; it is not a second context-usage gauge. Failed
-or aborted messages and compaction metadata do not inflate cache or cost. Zero cache and cost, unavailable context, and
-Thinking for a non-reasoning model are omitted. Subscription models omit both cost and the former `(sub)` label.
+The cache value is the active branch's cumulative hit rate across successful assistant messages:
+`cacheRead / (input + cacheRead + cacheWrite)`. Failed or aborted messages and compaction metadata do not affect the
+rate or cost. A zero denominator, unavailable context, and Thinking for a non-reasoning model are omitted. Subscription
+models omit both cost and the former `(sub)` label.
+
+For `openai-codex`, cost is always replaced by observed weekly allowance. The independently loaded Codex Capability
+publishes that snapshot through `getCodexStatusChannel(pi)`; the Statusline performs no authentication or network work.
+Weekly allowance stays hidden until real data arrives, and `fast` appears only while Fast mode is enabled. The shared
+channel is keyed by Pi's Extension event bus, so late-loaded and physically separate Capability copies still converge
+on one observer identity.
 
 Session import and startup do not probe Git. A user-driven Agent turn or background Agent completion requests one
 bounded, read-only, no-lock status refresh that binds counts to the measured working directory and branch. Stale counts

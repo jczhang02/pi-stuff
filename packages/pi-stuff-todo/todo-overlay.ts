@@ -18,7 +18,8 @@ import {
 } from "./view/format.js";
 
 const WIDGET_KEY = "rpiv-todos";
-const WIDGET_GUTTER = "  ";
+const COLLAPSED_GUTTER = "  ";
+const TASK_ROW_GUTTER = "   ";
 const ALL_COMPLETE_LINGER_MS = 5_000;
 const RECENT_COMPLETION_MS = 30_000;
 
@@ -164,14 +165,22 @@ export class TodoOverlay {
 		const layout = selectOverlayLayout(tasks, recentCompletedIds);
 		const truncate = (line: string): string => truncateToWidth(line, Math.max(0, width), "…");
 
-		if (this.collapsed) return [truncate(`${WIDGET_GUTTER}${formatCollapsedNextLine(layout.next, theme)}`)];
+		if (this.collapsed) return [truncate(`${COLLAPSED_GUTTER}${formatCollapsedNextLine(layout.next, theme)}`)];
 
-		const taskWidth = Math.max(0, width - visibleWidth(WIDGET_GUTTER));
-		const lines = layout.visible.map((row) =>
-			truncate(`${WIDGET_GUTTER}${formatOverlayTaskLine(row, theme, taskWidth)}`),
+		const renderable = renderableTasks(tasks);
+		const completed = renderable.filter((task) => task.status === "completed").length;
+		const open = renderable.length - completed;
+		const summary = theme.fg(
+			"dim",
+			`${String(renderable.length)} tasks (${String(completed)} done, ${String(open)} open)`,
+		);
+		const taskWidth = Math.max(0, width - visibleWidth(TASK_ROW_GUTTER));
+		const lines = [truncate(summary)];
+		lines.push(
+			...layout.visible.map((row) => truncate(`${TASK_ROW_GUTTER}${formatOverlayTaskLine(row, theme, taskWidth)}`)),
 		);
 		if (layout.hidden.length > 0) {
-			lines.push(truncate(`${WIDGET_GUTTER}${formatOverlayOverflowLine(layout.hidden, theme)}`));
+			lines.push(truncate(`${TASK_ROW_GUTTER}${formatOverlayOverflowLine(layout.hidden, theme)}`));
 		}
 		return lines;
 	}
