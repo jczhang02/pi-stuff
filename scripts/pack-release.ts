@@ -16,7 +16,6 @@ if (pendingChangesets.length > 0) {
 for (const packagePath of [
 	"pi-stuff-ui",
 	"pi-stuff-tools",
-	"pi-stuff-permissions",
 	"pi-stuff-agents",
 	"pi-stuff-todo",
 	"pi-stuff-btw",

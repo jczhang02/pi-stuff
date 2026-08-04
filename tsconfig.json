@@ -3,7 +3,6 @@
 	"compilerOptions": {
 		"paths": {
 			"@jczhang02/pi-stuff-agents": ["./scripts/types/pi-stuff-agents.d.ts"],
-			"@jczhang02/pi-stuff-permissions": ["./scripts/types/pi-stuff-permissions.d.ts"],
 			"@jczhang02/pi-stuff-ui": ["./packages/pi-stuff-ui/index.ts"]
 		}
 	},
@@ -12,10 +11,8 @@
 		"node_modules",
 		".artifacts",
 		"packages/pi-stuff-agents",
-		"packages/pi-stuff-permissions",
 		"test/agents-host.test.ts",
 		"test/agents-pty.test.ts",
-		"test/agents",
-		"test/permissions"
+		"test/agents"
 	]
 }

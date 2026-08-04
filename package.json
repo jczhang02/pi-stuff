@@ -23,7 +23,7 @@
 		"release:version": "changeset version && bun run suite:generate && bun install --ignore-scripts",
 		"suite:generate": "bun scripts/generate-suite.ts",
 		"test": "bun test --timeout 30000",
-		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.permissions.json && tsc --noEmit -p tsconfig.permissions-tests.json && tsc --noEmit -p tsconfig.agents.json && tsc --noEmit -p tsconfig.agents-tests.json"
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.agents.json && tsc --noEmit -p tsconfig.agents-tests.json"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.6",

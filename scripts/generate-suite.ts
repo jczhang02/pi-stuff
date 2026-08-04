@@ -39,11 +39,17 @@ function renderIndex(capabilities: readonly string[]): string {
 		.map((packageName) => `import ${capabilityIdentifier(packageName)} from "${packageName}";`);
 	const identifiers = capabilities.map(capabilityIdentifier);
 	const importBlock = [`import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`, ...imports].join("\n");
+	const capabilityPrefix = "const CAPABILITIES: readonly CapabilityFactory[] = ";
+	const inlineCapabilities = `[${identifiers.join(", ")}]`;
+	const capabilityDeclaration =
+		capabilityPrefix.length + inlineCapabilities.length + 1 <= 120
+			? `${capabilityPrefix}${inlineCapabilities};`
+			: `${capabilityPrefix}[\n${identifiers.map((identifier) => `\t${identifier},`).join("\n")}\n];`;
 	const sections = [
 		GENERATED_HEADER,
 		importBlock,
 		"type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;",
-		`const CAPABILITIES: readonly CapabilityFactory[] = [\n${identifiers.map((identifier) => `\t${identifier},`).join("\n")}\n];`,
+		capabilityDeclaration,
 		`export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 \tfor (const capability of CAPABILITIES) {
 \t\tawait capability(pi);

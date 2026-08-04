@@ -18,7 +18,7 @@ import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from 
  * without rediscovering agents or inheriting settings.
  */
 export interface RunnerAgentTask {
-	/** Session id of the direct parent session for permission-system ask forwarding. */
+	/** Session id of the direct parent session for supervisor routing. */
 	parentSessionId?: string;
 	agent: string;
 	/** Short launcher-normalized label for terminal surfaces. */

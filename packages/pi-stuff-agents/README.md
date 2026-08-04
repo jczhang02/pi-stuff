@@ -31,7 +31,6 @@ grammar as Host tools. Full Agent inspection and control remains in `/agents`.
   identity-free legacy records are paired only when ownership is unambiguous.
 - A background Agent completion asks the UI Capability to refresh its bounded Git snapshot. The Agents Capability does
   not render or own the Statusline.
-- Destructive-command approval is inherited from `@jczhang02/pi-stuff-permissions` and routed to the root session.
 - Per-Agent Git worktree isolation is optional. Changed or uncertain worktrees are preserved; only clean worktrees may
   be removed automatically.
 

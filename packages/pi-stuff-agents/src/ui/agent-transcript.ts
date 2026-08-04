@@ -224,7 +224,7 @@ function toolOutcome(tool: ToolProjection): ToolOutcome {
 	if (!tool.ended && !tool.resultSeen) return "running";
 	if (tool.isError !== true) return "completed";
 	const result = cleanTerminalText(tool.result).trim();
-	if (/^\[pi-stuff-permissions\]\s|^Tool execution was blocked\b/iu.test(result)) return "rejected";
+	if (/^Tool execution was blocked\b/iu.test(result)) return "rejected";
 	if (/\b(?:operation|request|command) (?:was )?abort(?:ed)?\b|\bcancel(?:led|ed)\b/iu.test(result)) {
 		return "cancelled";
 	}

@@ -7,8 +7,7 @@
 				"test/**/*.test.ts",
 				"test/ui/settings-lock-race-worker.ts",
 				"test/fixtures/**/*.ts",
-				"test/agents/fixtures/**/*.ts",
-				"test/permissions/fixtures/**/*.ts"
+				"test/agents/fixtures/**/*.ts"
 			],
 			"project": ["scripts/**/*.ts", "test/**/*.ts"]
 		},
@@ -17,16 +16,10 @@
 		},
 		"packages/pi-stuff-agents": {
 			"entry": ["src/**/*.ts"],
-			"ignoreDependencies": ["@jczhang02/pi-stuff-permissions"],
 			"project": ["**/*.ts"]
 		},
 		"packages/pi-stuff-btw": {
 			"project": ["**/*.ts"]
-		},
-		"packages/pi-stuff-permissions": {
-			"entry": ["src/**/*.ts"],
-			"ignoreDependencies": ["tree-sitter-bash"],
-			"project": ["src/**/*.ts"]
 		},
 		"packages/pi-stuff-todo": {
 			"project": ["**/*.ts"]

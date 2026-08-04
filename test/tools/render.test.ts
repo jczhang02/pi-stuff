@@ -271,7 +271,7 @@ describe("terminal-safe Tool rendering", () => {
 describe("Tool semantics", () => {
 	test("classifies success, rejection, cancellation, and error honestly", () => {
 		expect(classifyTerminalState(result("ok"), false)).toBe("success");
-		expect(classifyTerminalState(result("[pi-stuff-permissions] blocked"), true)).toBe("rejected");
+		expect(classifyTerminalState(result("Tool execution was blocked by the fixture"), true)).toBe("rejected");
 		expect(classifyTerminalState(result("Command aborted"), true)).toBe("cancelled");
 		expect(classifyTerminalState(result("boom"), true)).toBe("error");
 	});

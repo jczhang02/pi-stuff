@@ -396,7 +396,6 @@ describe("CurrentAgents snapshot", () => {
 		const active = [
 			asyncJob("queued", "queued"),
 			asyncJob("running", "running"),
-			asyncJob("permission", "running", { currentTool: "permission_request", activityState: "needs_attention" }),
 			asyncJob("supervisor", "running", { currentTool: "contact_supervisor", activityState: "needs_attention" }),
 			asyncJob("stopping", "running", { stopping: true } as Partial<AsyncJobState>),
 		];
@@ -421,7 +420,6 @@ describe("CurrentAgents snapshot", () => {
 			new Set([
 				"queued",
 				"running",
-				"waiting_permission",
 				"waiting_supervisor",
 				"stopping",
 				"completed",

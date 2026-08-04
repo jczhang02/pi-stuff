@@ -60,11 +60,7 @@ import piStuffAgents from "@jczhang02/pi-stuff-agents";
 
 type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;
 
-const CAPABILITIES: readonly CapabilityFactory[] = [
-	piBeta,
-	piStuffAgents,
-	piAlpha,
-];
+const CAPABILITIES: readonly CapabilityFactory[] = [piBeta, piStuffAgents, piAlpha];
 
 export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 \tfor (const capability of CAPABILITIES) {

@@ -31,7 +31,6 @@
 		]
 	},
 	"dependencies": {
-		"@jczhang02/pi-stuff-permissions": "0.1.0",
 		"@jczhang02/pi-stuff-tools": "0.1.0",
 		"@jczhang02/pi-stuff-ui": "0.1.0",
 		"jiti": "2.7.0",

@@ -168,7 +168,7 @@ async function flush(): Promise<void> {
 describe("Agent Command Dialog", () => {
 	test("is a normal full-width view with a bounded 64-column list", () => {
 		const rows = Array.from({ length: 9 }, (_, index) =>
-			row(`agent-${index + 1}`, index === 0 ? "waiting_permission" : "running", {
+			row(`agent-${index + 1}`, index === 0 ? "waiting_supervisor" : "running", {
 				task: `task ${index + 1} with a deliberately long explanation that should not escape the terminal width`,
 			}),
 		);
@@ -178,7 +178,7 @@ describe("Agent Command Dialog", () => {
 		expect(view.priority).toBe("normal");
 		expect(rendered[0]).toBe("─".repeat(64));
 		expect(rendered.join("\n")).toContain("Agents");
-		expect(rendered.join("\n")).toContain("permission");
+		expect(rendered.join("\n")).toContain("waiting");
 		expect(rendered.join("\n")).toContain("later");
 		expect(rendered.length).toBeLessThanOrEqual(28);
 		expect(rendered.every((line) => visibleWidth(line) <= 64 && !line.includes("\n"))).toBe(true);

@@ -98,7 +98,7 @@ export default function toolsPtyProvider(pi: ExtensionAPI): void {
 							type: "text",
 							text:
 								args.state === "rejected"
-									? "[pi-stuff-permissions] FIXTURE_REJECTED"
+									? "Tool execution was blocked: FIXTURE_REJECTED"
 									: args.state === "cancelled"
 										? "Command aborted: FIXTURE_CANCELLED"
 										: "FIXTURE_ERROR",

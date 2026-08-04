@@ -152,8 +152,7 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 		if (!hasExplicitFilesAllowlist(manifest.files)) {
 			findings.push({ path, rule: "package-files-allowlist" });
 		}
-		const extensionEntry = path === "packages/pi-stuff-permissions/package.json" ? "./src/index.ts" : "./index.ts";
-		const expectedPiManifest = JSON.stringify({ extensions: [extensionEntry] });
+		const expectedPiManifest = JSON.stringify({ extensions: ["./index.ts"] });
 		if (JSON.stringify(manifest.pi) !== expectedPiManifest) {
 			findings.push({ path, rule: "package-pi-manifest" });
 		}

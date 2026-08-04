@@ -3,21 +3,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import piStuffAgents from "@jczhang02/pi-stuff-agents";
 import piStuffBtw from "@jczhang02/pi-stuff-btw";
-import piStuffPermissions from "@jczhang02/pi-stuff-permissions";
 import piStuffTodo from "@jczhang02/pi-stuff-todo";
 import piStuffTools from "@jczhang02/pi-stuff-tools";
 import piStuffUi from "@jczhang02/pi-stuff-ui";
 
 type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;
 
-const CAPABILITIES: readonly CapabilityFactory[] = [
-	piStuffUi,
-	piStuffTools,
-	piStuffPermissions,
-	piStuffAgents,
-	piStuffTodo,
-	piStuffBtw,
-];
+const CAPABILITIES: readonly CapabilityFactory[] = [piStuffUi, piStuffTools, piStuffAgents, piStuffTodo, piStuffBtw];
 
 export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 	for (const capability of CAPABILITIES) {

@@ -20,14 +20,7 @@ const NARROW_WIDTH = 64;
 const ELAPSED_REFRESH_MS = 1_000;
 const TERMINAL_LINGER_MS = 30_000;
 
-const LIVE_STATUSES = new Set([
-	"queued",
-	"resuming",
-	"running",
-	"stopping",
-	"waiting_permission",
-	"waiting_supervisor",
-]);
+const LIVE_STATUSES = new Set(["queued", "resuming", "running", "stopping", "waiting_supervisor"]);
 const TERMINAL_STATUSES = new Set(["agent_stopped", "completed", "crashed", "failed", "user_cancelled"]);
 
 type RosterUi = Pick<ExtensionUIContext, "getEditorText" | "notify" | "onTerminalInput" | "setWidget">;
@@ -379,7 +372,7 @@ export class AgentRoster {
 		if (this.navigationActive && this.selectedKey === row.key) return theme.fg("accent", "●");
 		if (row.status === "completed") return theme.fg("success", "○");
 		if (row.status === "failed" || row.status === "crashed") return theme.fg("error", "○");
-		if (row.status === "waiting_permission" || row.status === "waiting_supervisor") {
+		if (row.status === "waiting_supervisor") {
 			return theme.fg("warning", "○");
 		}
 		return theme.fg("muted", "○");
@@ -457,8 +450,6 @@ function styledState(row: AgentRow, theme: Theme, now: number): string {
 	switch (row.status) {
 		case "queued":
 			return theme.fg("warning", "queued");
-		case "waiting_permission":
-			return theme.fg("warning", "permission");
 		case "waiting_supervisor":
 			return theme.fg("warning", "waiting");
 		case "stopping":

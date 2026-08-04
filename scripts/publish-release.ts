@@ -57,7 +57,6 @@ const manifest = await readVerifiedRelease(destination, CERTIFIED_PI_HOST_PROFIL
 const packagePaths = [
 	"pi-stuff-ui",
 	"pi-stuff-tools",
-	"pi-stuff-permissions",
 	"pi-stuff-agents",
 	"pi-stuff-todo",
 	"pi-stuff-btw",

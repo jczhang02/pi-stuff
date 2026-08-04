@@ -2,7 +2,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolvePermissionsExtensionPath } from "../../runtime/permissions-extension-path.ts";
 import { THINKING_LEVELS } from "../../shared/model-info.ts";
 import { type JsonSchemaObject, type ResolvedToolBudget, TEMP_ROOT_DIR } from "../../shared/types.ts";
 import { PI_CODING_AGENT_PACKAGE_ROOT_ENV } from "../../shared/utils.ts";
@@ -232,10 +231,9 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 				]),
 			]
 		: [];
-	const permissionsExtensionPath = resolvePermissionsExtensionPath();
 	const runtimeExtensions = fanoutAuthorized
-		? [permissionsExtensionPath, PROMPT_RUNTIME_EXTENSION_PATH, FANOUT_CHILD_EXTENSION_PATH]
-		: [permissionsExtensionPath, PROMPT_RUNTIME_EXTENSION_PATH];
+		? [PROMPT_RUNTIME_EXTENSION_PATH, FANOUT_CHILD_EXTENSION_PATH]
+		: [PROMPT_RUNTIME_EXTENSION_PATH];
 	const disableAmbientExtensions = capabilityCeiling?.denyExtensions === true || input.extensions !== undefined;
 	const configuredExtensions = capabilityCeiling?.denyExtensions
 		? []

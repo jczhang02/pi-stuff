@@ -4,7 +4,6 @@ import type { SubagentState } from "../shared/types.ts";
 export type AgentStatus =
 	| "queued"
 	| "running"
-	| "waiting_permission"
 	| "waiting_supervisor"
 	| "stopping"
 	| "completed"
@@ -113,17 +112,16 @@ const TERMINAL_SOURCE_STATUSES = new Set(["complete", "completed", "failed", "pa
 const TERMINAL_STATUSES = new Set<AgentStatus>(["completed", "failed", "agent_stopped", "user_cancelled", "crashed"]);
 const RESUMABLE_STATUSES = new Set<AgentStatus>(["completed", "failed", "agent_stopped", "crashed"]);
 const STATUS_ORDER: Record<AgentStatus, number> = {
-	waiting_permission: 0,
-	waiting_supervisor: 1,
-	stopping: 2,
-	resuming: 3,
-	running: 4,
-	queued: 5,
-	crashed: 6,
-	failed: 7,
-	user_cancelled: 8,
-	agent_stopped: 9,
-	completed: 10,
+	waiting_supervisor: 0,
+	stopping: 1,
+	resuming: 2,
+	running: 3,
+	queued: 4,
+	crashed: 5,
+	failed: 6,
+	user_cancelled: 7,
+	agent_stopped: 8,
+	completed: 9,
 };
 const MAX_PARTIAL_RESULT_CHARS = 4_000;
 const MAX_TASK_CHARS = 500;
@@ -165,18 +163,6 @@ function sourceStatus(value: unknown): string {
 	return typeof value === "string" ? value : "running";
 }
 
-function isPermissionWait(record: Record<string, unknown>): boolean {
-	const waitingFor = firstString(record["waitingFor"], record["attentionKind"], record["waitReason"])?.toLowerCase();
-	const currentTool = optionalString(record["currentTool"])?.toLowerCase();
-	return (
-		waitingFor === "permission" ||
-		Boolean(record["permissionRequestId"]) ||
-		currentTool === "permission" ||
-		currentTool === "permission_request" ||
-		currentTool?.includes("permission") === true
-	);
-}
-
 function isSupervisorWait(record: Record<string, unknown>): boolean {
 	const waitingFor = firstString(record["waitingFor"], record["attentionKind"], record["waitReason"])?.toLowerCase();
 	const currentTool = optionalString(record["currentTool"])?.toLowerCase();
@@ -209,7 +195,6 @@ function deriveStatus(value: unknown, fallback: string): AgentStatus {
 			return "queued";
 		case "running":
 		case "detached":
-			if (isPermissionWait(record)) return "waiting_permission";
 			if (isSupervisorWait(record)) return "waiting_supervisor";
 			return "running";
 		case "complete":

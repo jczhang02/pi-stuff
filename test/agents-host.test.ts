@@ -2,17 +2,11 @@ import { afterEach, expect, test } from "bun:test";
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import {
-	buildPiArgs,
-	PI_STUFF_AGENT_PATH_ENV,
-	resolvePiLaunchToolPlan,
-} from "../packages/pi-stuff-agents/src/runs/shared/pi-args.ts";
-import { resolvePermissionsExtensionPath } from "../packages/pi-stuff-agents/src/runtime/permissions-extension-path.ts";
+import { buildPiArgs, PI_STUFF_AGENT_PATH_ENV } from "../packages/pi-stuff-agents/src/runs/shared/pi-args.ts";
 import { runPiRpcSmoke } from "../scripts/smoke-pi.ts";
 
 const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
 const AGENTS_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-agents");
-const PERMISSIONS_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-permissions");
 const TOOLS_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-tools");
 const UI_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-ui");
 const TYPEBOX_PACKAGE = resolve(import.meta.dir, "../node_modules/typebox");
@@ -47,47 +41,6 @@ test("Agents gives same-name sibling processes stable unique path components", (
 	}
 });
 
-test("Agents child launches resolve the real Permissions extension at every fanout depth", () => {
-	for (const tools of [undefined, ["subagent"], ["read"]]) {
-		const plan = resolvePiLaunchToolPlan({ ...(tools ? { tools } : {}) });
-		const permissionsExtension = plan.runtimeExtensions.find((entry) => entry.includes("pi-stuff-permissions"));
-		expect(permissionsExtension).toBeDefined();
-		expect(permissionsExtension?.endsWith(".d.ts")).toBeFalse();
-	}
-});
-
-test("Agents resolves Permissions from source, bundled-sibling, and nested dependency layouts", async () => {
-	expect(resolvePermissionsExtensionPath()).toBe(resolve(PERMISSIONS_PACKAGE, "src/index.ts"));
-
-	const root = await mkdtemp(join(tmpdir(), "pi-stuff-permissions-resolution-"));
-	TEMPORARY_ROOTS.push(root);
-	const scope = join(root, "node_modules", "@jczhang02");
-	const agents = join(scope, "pi-stuff-agents");
-	const sibling = join(scope, "pi-stuff-permissions");
-	const nested = join(agents, "node_modules", "@jczhang02", "pi-stuff-permissions");
-	await mkdir(agents, { recursive: true });
-
-	const installPermissionsFixture = async (directory: string, marker: string): Promise<string> => {
-		const extension = join(directory, "src", "index.ts");
-		await mkdir(join(directory, "src"), { recursive: true });
-		await writeFile(
-			join(directory, "package.json"),
-			`${JSON.stringify({
-				name: "@jczhang02/pi-stuff-permissions",
-				pi: { extensions: ["./src/index.ts"] },
-			})}\n`,
-		);
-		await writeFile(extension, `export const marker = ${JSON.stringify(marker)};\n`);
-		return extension;
-	};
-
-	const siblingExtension = await installPermissionsFixture(sibling, "sibling");
-	expect(resolvePermissionsExtensionPath(agents)).toBe(siblingExtension);
-	await rm(sibling, { recursive: true, force: true });
-	const nestedExtension = await installPermissionsFixture(nested, "nested");
-	expect(resolvePermissionsExtensionPath(agents)).toBe(nestedExtension);
-});
-
 test("Agents declares its exact workspace and certified Pi dependency contracts", async () => {
 	const manifest = JSON.parse(await readFile(resolve(AGENTS_PACKAGE, "package.json"), "utf8")) as {
 		dependencies?: Record<string, string>;
@@ -104,14 +57,12 @@ test("Agents declares its exact workspace and certified Pi dependency contracts"
 		}
 		return packageManifest.version;
 	};
-	const [permissionsVersion, toolsVersion, uiVersion] = await Promise.all([
-		readWorkspaceVersion(PERMISSIONS_PACKAGE),
+	const [toolsVersion, uiVersion] = await Promise.all([
 		readWorkspaceVersion(TOOLS_PACKAGE),
 		readWorkspaceVersion(UI_PACKAGE),
 	]);
 
 	expect(manifest.dependencies).toEqual({
-		"@jczhang02/pi-stuff-permissions": permissionsVersion,
 		"@jczhang02/pi-stuff-tools": toolsVersion,
 		"@jczhang02/pi-stuff-ui": uiVersion,
 		jiti: "2.7.0",
@@ -161,7 +112,6 @@ test("Pi 0.83 loads Agents through workspace dependency resolution", async () =>
 	});
 	await mkdir(agentsDependencyScope, { recursive: true });
 	await Promise.all([
-		cp(PERMISSIONS_PACKAGE, join(agentsDependencyScope, "pi-stuff-permissions"), { recursive: true }),
 		cp(TOOLS_PACKAGE, join(agentsDependencyScope, "pi-stuff-tools"), { recursive: true }),
 		cp(UI_PACKAGE, join(agentsDependencyScope, "pi-stuff-ui"), { recursive: true }),
 	]);

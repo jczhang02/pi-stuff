@@ -29,7 +29,6 @@ Pi remains the host. The Suite is a normal Pi Package: it exports an ordered agg
 | `@jczhang02/pi-stuff` | Aggregate entry point for the full Suite | `0.1.0` |
 | `@jczhang02/pi-stuff-ui` | Responsive Statusline, input presentation, and shared non-floating Command Dialog coordinator | `0.1.0` |
 | `@jczhang02/pi-stuff-tools` | Compact built-in and Suite-owned Tool presentation with focused details | `0.1.0` |
-| `@jczhang02/pi-stuff-permissions` | Quiet destructive-command circuit breaker | `0.1.0` |
 | `@jczhang02/pi-stuff-agents` | Current-session foreground and background Agents | `0.1.0` |
 | `@jczhang02/pi-stuff-todo` | Recoverable per-session task tracking with a compact editor widget | `0.1.0` |
 | `@jczhang02/pi-stuff-btw` | One-shot side questions isolated from the main transcript | `0.1.0` |
@@ -100,7 +99,7 @@ Engineering work is tracked in Beads and mirrored to [GitHub Issues](https://git
 
 ## Security
 
-Pi Extensions execute with the user's operating-system permissions. Review source before installation and report vulnerabilities according to [`SECURITY.md`](SECURITY.md).
+Pi Extensions execute with the user's operating-system permissions. Pi Stuff does not add a permission or command-interception layer. Review source before installation and report vulnerabilities according to [`SECURITY.md`](SECURITY.md).
 
 ## License
 

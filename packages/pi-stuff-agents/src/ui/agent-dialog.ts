@@ -622,8 +622,6 @@ function styledStatus(row: AgentRow, theme: Theme, detailed = false): string {
 	switch (row.status) {
 		case "queued":
 			return theme.fg("warning", `queued${suffix}`);
-		case "waiting_permission":
-			return theme.fg("warning", `permission${suffix}`);
 		case "waiting_supervisor":
 			return theme.fg("warning", `waiting${suffix}`);
 		case "stopping":

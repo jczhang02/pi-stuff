@@ -354,7 +354,7 @@ export function classifyTerminalState(
 ): Exclude<ToolActivityState, "running"> {
 	if (!isError) return "success";
 	const text = textFromResult(result);
-	if (/^\[pi-stuff-permissions\]\s/iu.test(text) || /^Tool execution was blocked\b/iu.test(text)) {
+	if (/^Tool execution was blocked\b/iu.test(text)) {
 		return "rejected";
 	}
 	if (/\b(?:operation|request|command) (?:was )?abort(?:ed)?\b|\bcancel(?:led|ed)\b/iu.test(text)) {

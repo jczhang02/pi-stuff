@@ -19,4 +19,4 @@ Include the affected Package or Runtime Resource, reproduction steps, impact, an
 
 ## Trust model
 
-Pi Extensions execute with the user's operating-system permissions. The Suite therefore treats import and startup purity, explicit Package allowlists, exact development dependencies, and user-triggered side effects as security contracts.
+Pi Extensions execute with the user's operating-system permissions. The Suite does not add a permission or command-interception layer. It therefore treats import and startup purity, explicit Package allowlists, exact development dependencies, and user-triggered side effects as security contracts.

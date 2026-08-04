@@ -168,7 +168,7 @@ describe("readAgentTranscript", () => {
 						toolCallId: "write-1",
 						toolName: "write",
 						isError: true,
-						content: [{ type: "text", text: "\u001b[31m[pi-stuff-permissions] approval rejected\u001b[0m" }],
+						content: [{ type: "text", text: "\u001b[31mTool execution was blocked by the fixture\u001b[0m" }],
 					},
 				}),
 				JSON.stringify({

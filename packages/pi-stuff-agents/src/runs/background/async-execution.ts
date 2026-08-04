@@ -82,7 +82,7 @@ export interface AsyncExecutionContext {
 	pi: ExtensionAPI;
 	cwd: string;
 	currentSessionId: string;
-	/** Direct parent session used for permission requests from the child. */
+	/** Direct parent session used for supervisor routing from the child. */
 	parentSessionId?: string;
 	currentModelProvider?: string;
 	currentModel?: ParentModel;
