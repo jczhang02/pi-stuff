@@ -46,16 +46,25 @@ function state(): SubagentState {
 	};
 }
 
-function context(cwd: string): ExtensionContext {
+function context(
+	cwd: string,
+	models: Array<{ provider: string; id: string; contextWindow: number; maxTokens: number }> = [],
+	usageTokens?: number,
+): ExtensionContext {
 	return {
 		cwd,
 		hasUI: true,
 		model: { provider: "test", id: "model" },
-		modelRegistry: { getAvailable: () => [] },
+		modelRegistry: { getAvailable: () => models },
 		sessionManager: {
+			buildContextEntries: () => [],
+			getLeafId: () => "leaf",
 			getSessionFile: () => path.join(cwd, "parent.jsonl"),
 			getSessionId: () => "parent-session",
+			openSession: () => ({ createBranchedSession: () => path.join(cwd, "parent.jsonl") }),
 		},
+		getContextUsage: () =>
+			usageTokens === undefined ? undefined : { tokens: usageTokens, contextWindow: 200_000, percent: 1 },
 	} as unknown as ExtensionContext;
 }
 
@@ -63,6 +72,10 @@ function executor(
 	cwd: string,
 	runState: SubagentState,
 	onBackgroundSingle?: (launch: { description?: string; task: string }) => void,
+	options: {
+		agent?: AgentConfig;
+		projectContext?: Parameters<typeof createSubagentExecutor>[0]["projectContext"];
+	} = {},
 ) {
 	const pi = { events: { emit: () => {} } } as unknown as ExtensionAPI;
 	return createSubagentExecutor({
@@ -73,7 +86,8 @@ function executor(
 		tempArtifactsDir: cwd,
 		getSubagentSessionRoot: () => path.join(cwd, "sessions"),
 		expandTilde: (value) => value,
-		discoverAgents: () => ({ agents: [agent()] }),
+		discoverAgents: () => ({ agents: [options.agent ?? agent()] }),
+		projectContext: options.projectContext,
 		engines: {
 			backgroundSingle: (id, launch) => {
 				onBackgroundSingle?.(launch);
@@ -150,29 +164,136 @@ describe("reduced foreground Agent engine", () => {
 		expect(result.details.results.map((child) => child.finalOutput)).toEqual(["result-1", "result-2"]);
 	});
 
-	test("places the private Context projection before the child task", async () => {
+	test("fits the private Context projection to the tightest child fallback model", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-context-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 		let captured: { description?: string; task: string } | undefined;
-		await executor(cwd, state(), (launch) => {
-			captured = launch;
-		}).execute(
+		const requestedBudgets: number[] = [];
+		const smallAgent = { ...agent(), model: "test/large", fallbackModels: ["test/small"] };
+		await executor(
+			cwd,
+			state(),
+			(launch) => {
+				captured = launch;
+			},
+			{
+				agent: smallAgent,
+				projectContext: async (_audience, _ctx, projectionOptions) => {
+					requestedBudgets.push(projectionOptions?.maxTokens ?? -1);
+					return {
+						source: "magic-context",
+						text: '<pi-stuff-context trust="reference-only">memory</pi-stuff-context>',
+						truncated: false,
+					};
+				},
+			},
+		).execute(
 			"context-call",
 			{
 				agent: "general-purpose",
 				context: "fresh",
-				contextProjection: '<pi-stuff-context trust="reference-only">memory</pi-stuff-context>',
 				task: "Inspect the parser",
 			},
+			new AbortController().signal,
+			undefined,
+			context(cwd, [
+				{ provider: "test", id: "large", contextWindow: 128_000, maxTokens: 8_000 },
+				{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 },
+			]),
+		);
+
+		expect(requestedBudgets).toHaveLength(1);
+		expect(requestedBudgets[0]).toBeGreaterThan(0);
+		expect(requestedBudgets[0]).toBeLessThanOrEqual(4_000);
+		expect(captured?.task).toBe(
+			'<pi-stuff-context trust="reference-only">memory</pi-stuff-context>\n\nInspect the parser',
+		);
+	});
+
+	test("subtracts inherited fork usage from the child projection budget", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-context-fork-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		const requestedBudgets: number[] = [];
+		await executor(cwd, state(), undefined, {
+			agent: { ...agent(), model: "test/small" },
+			projectContext: async (_audience, _ctx, projectionOptions) => {
+				requestedBudgets.push(projectionOptions?.maxTokens ?? -1);
+				return { source: "magic-context", text: "memory", truncated: false };
+			},
+		}).execute(
+			"fork-budget-call",
+			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
+			new AbortController().signal,
+			undefined,
+			context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 3_500),
+		);
+
+		expect(requestedBudgets).toHaveLength(1);
+		expect(requestedBudgets[0]).toBeGreaterThan(0);
+		expect(requestedBudgets[0]).toBeLessThanOrEqual(500);
+	});
+
+	test("launches without a projection when model limits are unknown", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-context-unknown-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		let projections = 0;
+		let captured: { task: string } | undefined;
+		await executor(
+			cwd,
+			state(),
+			(launch) => {
+				captured = launch;
+			},
+			{
+				projectContext: async () => {
+					projections++;
+					throw new Error("projection should not be requested");
+				},
+			},
+		).execute(
+			"unknown-budget-call",
+			{ agent: "general-purpose", task: "Inspect the parser" },
 			new AbortController().signal,
 			undefined,
 			context(cwd),
 		);
 
-		expect(captured?.task).toBe(
-			'<pi-stuff-context trust="reference-only">memory</pi-stuff-context>\n\nInspect the parser',
+		expect(projections).toBe(0);
+		expect(captured?.task).toBe("Inspect the parser");
+	});
+
+	test("launches without a projection when Context fails open", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-context-failure-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		let projections = 0;
+		let captured: { task: string } | undefined;
+		await executor(
+			cwd,
+			state(),
+			(launch) => {
+				captured = launch;
+			},
+			{
+				agent: { ...agent(), model: "test/small" },
+				projectContext: async () => {
+					projections++;
+					throw new Error("Magic unavailable");
+				},
+			},
+		).execute(
+			"failed-projection-call",
+			{ agent: "general-purpose", task: "Inspect the parser" },
+			new AbortController().signal,
+			undefined,
+			context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }]),
 		);
+
+		expect(projections).toBe(1);
+		expect(captured?.task).toBe("Inspect the parser");
 	});
 
 	test("resume labels the revived Agent from the follow-up while preserving the recovery task", async () => {

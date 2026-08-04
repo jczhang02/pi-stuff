@@ -133,6 +133,7 @@ interface RootHarness {
 		starts: unknown[];
 	};
 	readonly notifier: { value?: { deliver(result: CompletionNotification): Promise<boolean> } };
+	readonly projectionOwnership: { delegated: boolean };
 	readonly projections: string[];
 	readonly roster: { contexts: number; disposed: number; suppressed: boolean[] };
 	readonly state: { value?: SubagentState };
@@ -190,6 +191,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		starts: [] as unknown[],
 	};
 	const notifier = { value: undefined as { deliver(result: CompletionNotification): Promise<boolean> } | undefined };
+	const projectionOwnership = { delegated: false };
 	const projections: string[] = [];
 	const roster = { contexts: 0, disposed: 0, suppressed: [] as boolean[] };
 	const state = { value: undefined as SubagentState | undefined };
@@ -246,8 +248,9 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 				governor.disposed += 1;
 			},
 		}),
-		createExecutor: ({ state: rootState }) => {
+		createExecutor: ({ projectContext, state: rootState }) => {
 			state.value = rootState;
+			projectionOwnership.delegated = typeof projectContext === "function";
 			return {
 				execute: async (_id, params) => {
 					engineParams.push(params);
@@ -382,6 +385,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		engineParams,
 		governor,
 		notifier,
+		projectionOwnership,
 		projections,
 		roster,
 		state,
@@ -532,7 +536,7 @@ describe("Agents extension composition root", () => {
 		expect(JSON.stringify(result?.content)).not.toContain("/private");
 	});
 
-	test("adds the bounded Context projection privately according to the Agent context mode", async () => {
+	test("delegates private Context projection fitting to the Agent executor", async () => {
 		const root = createHarness({
 			contextProjection: '<pi-stuff-context trust="reference-only">memory</pi-stuff-context>',
 		});
@@ -554,11 +558,9 @@ describe("Agents extension composition root", () => {
 			context(),
 		);
 
-		expect(root.projections).toEqual(["agent-fresh", "agent-fork"]);
-		expect(root.engineParams.map((params) => params.contextProjection)).toEqual([
-			'<pi-stuff-context trust="reference-only">memory</pi-stuff-context>',
-			'<pi-stuff-context trust="reference-only">memory</pi-stuff-context>',
-		]);
+		expect(root.projectionOwnership.delegated).toBe(true);
+		expect(root.projections).toEqual([]);
+		expect(root.engineParams.map((params) => params.contextProjection)).toEqual([undefined, undefined]);
 	});
 
 	test("reconciles an existing ledger even when Pi reports session_start as startup", async () => {

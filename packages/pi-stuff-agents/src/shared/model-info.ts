@@ -7,6 +7,8 @@ export interface ModelInfo {
 	id: string;
 	fullId: string;
 	api?: string;
+	contextWindow?: number;
+	maxTokens?: number;
 	reasoning?: boolean;
 	thinkingLevelMap?: ThinkingLevelMap;
 }
@@ -15,6 +17,8 @@ interface RegistryModelLike {
 	provider: string;
 	id: string;
 	api?: string;
+	contextWindow?: number;
+	maxTokens?: number;
 	reasoning?: boolean;
 	thinkingLevelMap?: ThinkingLevelMap;
 }
@@ -25,6 +29,8 @@ export function toModelInfo(model: RegistryModelLike): ModelInfo {
 		id: model.id,
 		fullId: `${model.provider}/${model.id}`,
 		api: model.api,
+		contextWindow: model.contextWindow,
+		maxTokens: model.maxTokens,
 		reasoning: model.reasoning,
 		thinkingLevelMap: model.thinkingLevelMap,
 	};

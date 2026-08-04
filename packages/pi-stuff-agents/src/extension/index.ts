@@ -103,6 +103,7 @@ interface CompactCompletionNotifier {
 interface RootExecutorInput {
 	readonly config: PiStuffAgentsConfig;
 	readonly pi: ExtensionAPI;
+	readonly projectContext: typeof projectCurrentContext;
 	readonly state: SubagentState;
 }
 
@@ -152,7 +153,7 @@ function expandTilde(value: string): string {
 
 const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	createCurrentAgents: (state, options) => new CurrentAgents(state, options),
-	createExecutor: ({ config, pi, state }) =>
+	createExecutor: ({ config, pi, projectContext, state }) =>
 		createSubagentExecutor({
 			pi,
 			state,
@@ -162,6 +163,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 			getSubagentSessionRoot,
 			expandTilde,
 			discoverAgents,
+			projectContext,
 		}),
 	createGovernorCoordinator: (config) =>
 		createDurableAgentExecutionCoordinator({
@@ -378,7 +380,7 @@ export default function registerSubagentExtension(
 	const config = deps.loadConfiguration();
 	const state = createState(config);
 	const coordinator = deps.getCoordinator(pi);
-	const executor = deps.createExecutor({ config, pi, state });
+	const executor = deps.createExecutor({ config, pi, projectContext: deps.projectContext, state });
 	const executionGovernor = deps.createGovernorCoordinator(config);
 	const tracker = deps.createTracker(pi, state);
 	const supervisor = deps.createSupervisor(pi, state);
@@ -533,11 +535,6 @@ export default function registerSubagentExtension(
 		}
 		try {
 			const engineParams = toEngineParams(params);
-			if (!params.action) {
-				const audience = (params.context ?? "fresh") === "fork" ? "agent-fork" : "agent-fresh";
-				const projection = await deps.projectContext(audience, ctx);
-				if (projection.text) engineParams.contextProjection = projection.text;
-			}
 			const result = await executor.execute(
 				id,
 				engineParams,

@@ -2,13 +2,19 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult as CoreAgentToolResult } from "@earendil-works/pi-agent-core";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	type ExtensionAPI,
+	type ExtensionContext,
+	estimateTokens,
+	sessionEntryToContextMessages,
+} from "@earendil-works/pi-coding-agent";
+import type { projectCurrentContext } from "@jczhang02/pi-stuff-context";
 import type { AgentConfig, AgentScope } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { getArtifactsDir } from "../../shared/artifacts.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
 import { createForkContextResolver, forkedChildRequiresThinkingOff } from "../../shared/fork-context.ts";
-import { type ModelInfo, toModelInfo } from "../../shared/model-info.ts";
+import { findModelInfo, type ModelInfo, toModelInfo } from "../../shared/model-info.ts";
 import { resolveCurrentSessionId } from "../../shared/session-identity.ts";
 import {
 	type ArtifactConfig,
@@ -126,6 +132,7 @@ interface ExecutorDeps {
 		cwd: string,
 		scope: AgentScope,
 	) => { agents: AgentConfig[]; modelScope?: import("../shared/model-scope.ts").ModelScopeConfig };
+	projectContext?: typeof projectCurrentContext;
 	allowMutatingManagementActions?: boolean;
 	kill?: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 	engines?: Partial<ExecutorEngines>;
@@ -166,6 +173,8 @@ const DEFAULT_ENGINES: ExecutorEngines = {
 	foreground: executeForegroundConfig,
 };
 
+const CHILD_CONTEXT_RESERVE_MAX_TOKENS = 16_384;
+
 function errorResult(mode: Details["mode"], message: string, extras: Partial<Details> = {}): AgentToolResult<Details> {
 	return {
 		content: [{ type: "text", text: message }],
@@ -187,6 +196,81 @@ function availableModels(ctx: ExtensionContext): ModelInfo[] {
 		return ctx.modelRegistry.getAvailable().map(toModelInfo);
 	} catch {
 		return [];
+	}
+}
+
+function estimateTextTokens(text: string): number {
+	return Math.ceil(text.length / 4);
+}
+
+function inheritedContextTokens(ctx: ExtensionContext): number {
+	try {
+		const measured = ctx.getContextUsage()?.tokens;
+		if (typeof measured === "number" && Number.isFinite(measured) && measured >= 0) return measured;
+	} catch {
+		// Fall through to the same generic estimator Pi uses for compaction.
+	}
+	try {
+		return ctx.sessionManager
+			.buildContextEntries()
+			.flatMap((entry) => sessionEntryToContextMessages(entry))
+			.reduce((total, message) => total + estimateTokens(message), 0);
+	} catch {
+		return Number.POSITIVE_INFINITY;
+	}
+}
+
+function taskModelCandidates(data: PreparedLaunch, task: TaskParam, agent: AgentConfig): string[] {
+	const primary = resolveEffectiveSubagentModel(
+		task.model,
+		agent.model,
+		data.parentModel,
+		data.availableModels,
+		data.parentModel?.provider,
+		{ scope: data.modelScope },
+	);
+	return buildModelCandidates(primary, agent.fallbackModels, data.availableModels, data.parentModel?.provider, {
+		scope: data.modelScope,
+	});
+}
+
+function projectionTokenBudget(data: PreparedLaunch, ctx: ExtensionContext): number {
+	const inherited = data.context === "fork" ? inheritedContextTokens(ctx) : 0;
+	let launchBudget = Number.POSITIVE_INFINITY;
+	for (const task of taskInputs(data.params)) {
+		const agent = data.agents.find((candidate) => candidate.name === task.agent);
+		if (!agent) return 0;
+		const candidates = taskModelCandidates(data, task, agent);
+		if (candidates.length === 0) return 0;
+		const knownTokens = estimateTextTokens(task.task) + estimateTextTokens(agent.systemPrompt ?? "");
+		for (const candidate of candidates) {
+			const model = findModelInfo(candidate, data.availableModels, data.parentModel?.provider);
+			if (!model?.contextWindow || !model.maxTokens) return 0;
+			const reserve = Math.min(CHILD_CONTEXT_RESERVE_MAX_TOKENS, Math.floor(model.contextWindow * 0.25));
+			launchBudget = Math.min(
+				launchBudget,
+				model.contextWindow - model.maxTokens - reserve - inherited - knownTokens,
+			);
+		}
+	}
+	return Number.isFinite(launchBudget) ? Math.max(0, Math.floor(launchBudget)) : 0;
+}
+
+async function attachContextProjection(
+	data: PreparedLaunch,
+	ctx: ExtensionContext,
+	projectContext: typeof projectCurrentContext | undefined,
+): Promise<void> {
+	data.params.contextProjection = undefined;
+	if (!projectContext) return;
+	const maxTokens = projectionTokenBudget(data, ctx);
+	if (maxTokens <= 0) return;
+	try {
+		const audience = data.context === "fork" ? "agent-fork" : "agent-fresh";
+		const projection = await projectContext(audience, ctx, { maxTokens });
+		if (projection.text) data.params.contextProjection = projection.text;
+	} catch {
+		// Context continuity is optional; Agent launch remains fail-open.
 	}
 }
 
@@ -1195,6 +1279,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 		try {
 			const prepared = prepareLaunch(id, params, ctx, deps);
 			if ("content" in prepared) return prepared;
+			await attachContextProjection(prepared, ctx, deps.projectContext);
 			return foreground
 				? await launchForeground(prepared, ctx, deps, engines, signal, onUpdate)
 				: launchBackground(prepared, ctx, deps, engines);
