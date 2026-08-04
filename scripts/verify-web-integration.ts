@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -73,10 +73,6 @@ export async function verifyWebIntegration(options: WebIntegrationVerificationOp
 	process.env["PI_CODING_AGENT_DIR"] = join(temporaryDirectory, "agent");
 	delete process.env["KAGI_API_KEY"];
 	await mkdir(process.env["PI_CODING_AGENT_DIR"]);
-	await writeFile(
-		join(process.env["PI_CODING_AGENT_DIR"], "web-search.json"),
-		`${JSON.stringify({ ssrf: { allowRanges: ["198.18.0.0/15"] } }, null, "\t")}\n`,
-	);
 
 	try {
 		const packageDirectory = resolve(options.packagePath ?? join(root, "packages/pi-stuff-web"));
@@ -210,6 +206,9 @@ export async function verifyWebIntegration(options: WebIntegrationVerificationOp
 		if (!failureDetails.error && !(failureDetails.urlCount === 1 && failureDetails.successful === 0)) {
 			fail("network failure was not returned as a bounded Tool error");
 		}
+		if ((await readdir(process.env["PI_CODING_AGENT_DIR"])).includes("web-search.json")) {
+			fail("Web compatibility wrote a user settings file");
+		}
 	} finally {
 		if (pdfOutputPath) await rm(pdfOutputPath, { force: true });
 		if (priorAgentDirectory === undefined) delete process.env["PI_CODING_AGENT_DIR"];
@@ -223,6 +222,6 @@ export async function verifyWebIntegration(options: WebIntegrationVerificationOp
 if (import.meta.main) {
 	await verifyWebIntegration({ publicNetwork: true });
 	console.log(
-		"Certified real public search, missing credentials, HTML, redirect/PDF, continuation, SSRF, and failure paths",
+		"Certified zero-config public search, HTML, redirect/PDF, continuation, SSRF, and failure paths without settings writes",
 	);
 }

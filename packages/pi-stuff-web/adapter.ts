@@ -2,10 +2,15 @@ import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-wo
 import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
 import { createPiWebAccess } from "@jczhang02/pi-web-access";
 import { type TSchema, Type } from "typebox";
+import { FakeIpCompatibility } from "./fake-ip.js";
 import { WEB_CONTENT_PRESENTATION, WEB_FETCH_PRESENTATION, WEB_SEARCH_PRESENTATION } from "./presentation.js";
 import { validateWebFetchInput } from "./url-policy.js";
 
 type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
+
+export interface WebAdapterOptions {
+	readonly fakeIpCompatibility?: Pick<FakeIpCompatibility, "prepare">;
+}
 
 const piWebAccess = createPiWebAccess({
 	githubClone: false,
@@ -82,14 +87,19 @@ function registerSearch(pi: ExtensionAPI, upstream: CapturedTool): void {
 	registerSuiteOwnedTool(pi, tool, WEB_SEARCH_PRESENTATION);
 }
 
-function registerFetch(pi: ExtensionAPI, upstream: CapturedTool): void {
+function registerFetch(
+	pi: ExtensionAPI,
+	upstream: CapturedTool,
+	fakeIpCompatibility: Pick<FakeIpCompatibility, "prepare">,
+): void {
 	const tool: ToolDefinition<typeof WEB_FETCH_PARAMETERS, unknown> = {
 		...sharedToolFields(upstream),
 		description:
 			"Read one or more public HTTP(S) pages as bounded text. PDFs are converted to a temporary Markdown file whose path is returned for the read Tool. Use raw only for exact textual HTTP response bodies.",
-		execute: (toolCallId, params, signal, onUpdate, ctx) => {
+		execute: async (toolCallId, params, signal, onUpdate, ctx) => {
 			const validation = validateWebFetchInput(params);
-			if (!validation.ok) return Promise.resolve(errorResult(validation.error));
+			if (!validation.ok) return errorResult(validation.error);
+			await fakeIpCompatibility.prepare(validation.input);
 			return upstream.execute(toolCallId, validation.input, signal, onUpdate, ctx);
 		},
 		parameters: WEB_FETCH_PARAMETERS,
@@ -111,13 +121,17 @@ function registerContinuation(pi: ExtensionAPI, upstream: CapturedTool): void {
 	registerSuiteOwnedTool(pi, tool, WEB_CONTENT_PRESENTATION);
 }
 
-function registerSelectedTool(pi: ExtensionAPI, tool: CapturedTool): void {
+function registerSelectedTool(
+	pi: ExtensionAPI,
+	tool: CapturedTool,
+	fakeIpCompatibility: Pick<FakeIpCompatibility, "prepare">,
+): void {
 	switch (tool.label) {
 		case "Web Search":
 			registerSearch(pi, tool);
 			break;
 		case "Fetch Content":
-			registerFetch(pi, tool);
+			registerFetch(pi, tool, fakeIpCompatibility);
 			break;
 		case "Get Search Content":
 			registerContinuation(pi, tool);
@@ -129,8 +143,10 @@ function registerSelectedTool(pi: ExtensionAPI, tool: CapturedTool): void {
 }
 
 /** Build the narrow host facade supplied to the pinned fork. */
-export function createWebAdapterApi(pi: ExtensionAPI): ExtensionAPI {
-	const registerTool = ((tool: CapturedTool) => registerSelectedTool(pi, tool)) as ExtensionAPI["registerTool"];
+export function createWebAdapterApi(pi: ExtensionAPI, options: WebAdapterOptions = {}): ExtensionAPI {
+	const fakeIpCompatibility = options.fakeIpCompatibility ?? new FakeIpCompatibility();
+	const registerTool = ((tool: CapturedTool) =>
+		registerSelectedTool(pi, tool, fakeIpCompatibility)) as ExtensionAPI["registerTool"];
 	const ignoreCommand = (() => undefined) as ExtensionAPI["registerCommand"];
 	const ignoreShortcut = (() => undefined) as ExtensionAPI["registerShortcut"];
 	return new Proxy(pi, {

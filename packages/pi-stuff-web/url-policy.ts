@@ -68,6 +68,7 @@ function validateUrl(raw: string): string | undefined {
 	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "Only HTTP(S) URLs are supported.";
 	if (parsed.username || parsed.password) return "Credential-bearing URLs are not supported.";
 	if (localHostname(parsed.hostname)) return "Local and private network URLs are not supported.";
+	if (isIP(parsed.hostname.replace(/^\[|\]$/gu, "")) !== 0) return "Literal IP URLs are not supported.";
 	return undefined;
 }
 

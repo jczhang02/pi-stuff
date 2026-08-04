@@ -19,6 +19,8 @@ describe("Pi Stuff Web URL boundary", () => {
 			{ url: "http://127.0.0.1" },
 			{ url: "http://2130706433" },
 			{ url: "http://[::1]" },
+			{ url: "https://93.184.216.34" },
+			{ url: "https://198.18.4.8" },
 			{ url: "https://user:secret@example.com" },
 		]) {
 			const result = validateWebFetchInput(input);

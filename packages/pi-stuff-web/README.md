@@ -17,3 +17,9 @@ explicit through the Tool call or the owned upstream configuration.
 All three Tools use Pi Stuff's shared one-row lifecycle renderer. Model-visible
 results, citations, cancellation, SSRF protection, redirects, extraction, and
 PDF handling remain owned by the pinned fork.
+
+On systems whose TUN resolver maps public domains into `198.18.0.0/15`, page
+fetching detects the condition lazily with both the requested host and a public
+canary. Compatibility is process-local, explicit SSRF settings still win, and
+no settings file is created. Literal-IP URLs remain rejected at the Suite
+boundary.
