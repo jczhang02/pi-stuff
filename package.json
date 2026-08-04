@@ -23,11 +23,12 @@
 		"release:version": "changeset version && bun run suite:generate && bun install --ignore-scripts",
 		"suite:generate": "bun scripts/generate-suite.ts",
 		"test": "bun test --timeout 30000",
-		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.agents.json && tsc --noEmit -p tsconfig.agents-tests.json"
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.rtk.json && tsc --noEmit -p tsconfig.agents.json && tsc --noEmit -p tsconfig.agents-tests.json"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.6",
 		"@changesets/cli": "2.31.1",
+		"@earendil-works/pi-agent-core": "0.83.0",
 		"@earendil-works/pi-ai": "0.83.0",
 		"@earendil-works/pi-coding-agent": "0.83.0",
 		"@earendil-works/pi-tui": "0.83.0",

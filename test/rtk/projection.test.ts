@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { createRtkProjectionAdapter, type ContextProjectionAdapter } from "../../packages/pi-stuff-rtk/projection.js";
+import { type ContextProjectionAdapter, createRtkProjectionAdapter } from "../../packages/pi-stuff-rtk/projection.js";
 
 const ZERO_USAGE = {
 	input: 0,
@@ -48,18 +48,15 @@ function toolExchange(
 
 function resultText(messages: AgentMessage[]): string {
 	const result = messages.find((message) => message.role === "toolResult");
-	if (!result || result.role !== "toolResult") throw new Error("missing tool result");
+	if (result?.role !== "toolResult") throw new Error("missing tool result");
 	const text = result.content.find((part) => part.type === "text");
-	if (!text || text.type !== "text") throw new Error("missing text result");
+	if (text?.type !== "text") throw new Error("missing text result");
 	return text.text;
 }
 
 describe("RTK context projection", () => {
 	test("compacts model-visible Bash output without mutating the transcript messages", () => {
-		const messages = toolExchange(
-			"bash",
-			"## main...origin/main\n M src/alpha.ts\n M src/beta.ts\n?? notes.txt\n",
-		);
+		const messages = toolExchange("bash", "## main...origin/main\n M src/alpha.ts\n M src/beta.ts\n?? notes.txt\n");
 		const raw = JSON.stringify(messages);
 		const originalResult = messages[1];
 		const adapter = createRtkProjectionAdapter();
@@ -86,7 +83,7 @@ describe("RTK context projection", () => {
 	});
 
 	test("keeps reads, source text, failed results, and unknown tools exact", () => {
-		const source = "export function exact(): string {\n\treturn \"x\";\n}\n".repeat(500);
+		const source = 'export function exact(): string {\n\treturn "x";\n}\n'.repeat(500);
 		for (const messages of [
 			toolExchange("read", source),
 			toolExchange("bash", source, { command: "cat source.ts", isError: true }),

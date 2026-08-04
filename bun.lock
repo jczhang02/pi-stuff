@@ -7,6 +7,7 @@
       "devDependencies": {
         "@biomejs/biome": "2.5.6",
         "@changesets/cli": "2.31.1",
+        "@earendil-works/pi-agent-core": "0.83.0",
         "@earendil-works/pi-ai": "0.83.0",
         "@earendil-works/pi-coding-agent": "0.83.0",
         "@earendil-works/pi-tui": "0.83.0",
@@ -23,6 +24,7 @@
         "@jczhang02/pi-stuff-agents": "0.1.0",
         "@jczhang02/pi-stuff-btw": "0.1.0",
         "@jczhang02/pi-stuff-context": "0.1.0",
+        "@jczhang02/pi-stuff-rtk": "0.1.0",
         "@jczhang02/pi-stuff-todo": "0.1.0",
         "@jczhang02/pi-stuff-tools": "0.1.0",
         "@jczhang02/pi-stuff-ui": "0.1.0",
@@ -88,6 +90,25 @@
         "@earendil-works/pi-tui": "0.83.0",
       },
       "peerDependencies": {
+        "@earendil-works/pi-coding-agent": "*",
+        "@earendil-works/pi-tui": "*",
+      },
+    },
+    "packages/pi-stuff-rtk": {
+      "name": "@jczhang02/pi-stuff-rtk",
+      "version": "0.1.0",
+      "dependencies": {
+        "@jczhang02/pi-stuff-ui": "0.1.0",
+      },
+      "devDependencies": {
+        "@earendil-works/pi-agent-core": "0.83.0",
+        "@earendil-works/pi-ai": "0.83.0",
+        "@earendil-works/pi-coding-agent": "0.83.0",
+        "@earendil-works/pi-tui": "0.83.0",
+      },
+      "peerDependencies": {
+        "@earendil-works/pi-agent-core": "*",
+        "@earendil-works/pi-ai": "*",
         "@earendil-works/pi-coding-agent": "*",
         "@earendil-works/pi-tui": "*",
       },
@@ -328,6 +349,8 @@
     "@jczhang02/pi-stuff-btw": ["@jczhang02/pi-stuff-btw@workspace:packages/pi-stuff-btw"],
 
     "@jczhang02/pi-stuff-context": ["@jczhang02/pi-stuff-context@workspace:packages/pi-stuff-context"],
+
+    "@jczhang02/pi-stuff-rtk": ["@jczhang02/pi-stuff-rtk@workspace:packages/pi-stuff-rtk"],
 
     "@jczhang02/pi-stuff-todo": ["@jczhang02/pi-stuff-todo@workspace:packages/pi-stuff-todo"],
 

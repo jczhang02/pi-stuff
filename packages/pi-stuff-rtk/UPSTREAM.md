@@ -11,6 +11,7 @@ This Capability Package is an owned fork of the MIT-licensed `pi-rtk-optimizer` 
 | Source Git tree | `6ce01843a6b3edb7e63c8547d411387ec5ee8e04` |
 | Owned provenance commit | `489bf5f3c7ce619071c00fb0275cd4123e52a439` |
 | License | MIT, Copyright (c) 2026 MasuRii |
+| License SHA-256 | `7d9473dcd84975a7191bc13dcc744f3b4d6578c937c879cc73e31e0107fa4d46` |
 | npm archive SHA-1 | `f43bec4bc7385b8c045266abf95c6f87bfb5ea95` |
 | npm archive SHA-256 | `4f7c6d98ed90a999deee7b5a4f8315bd0fd17f99d21022b0d0b64f77bc11d3c8` |
 | npm integrity | `sha512-yj5DEdutRco5WvYEMEO0krZJP5Z6CpuNZoxlXSGmHEi2srB5Gao1xah/RnmVDn2se1FcqlmtS8+K/nzzkq0Pug==` |
@@ -33,13 +34,23 @@ The upstream `LICENSE` is preserved byte-for-byte. Files under `upstream/techniq
 | `test-output.ts` | `858b5a73b59738981a9b14c643de60a3e730b2ee73da17f6c67e59249e54ec33` |
 | `truncate.ts` | `9e532d4c450e58ba94a1d5b3ff47e219879935b7c742d04b7302967d86670ad4` |
 
+## External RTK runtime certification
+
+The optional executable is not bundled. Linux x64 command rewriting accepts only RTK `v0.42.4`, source commit `8a7dd7e5570d7744d4b6508479a3674fe8c49286`, with one of these immutable build identities:
+
+| Build | SHA-256 |
+| --- | --- |
+| Official `rtk-x86_64-unknown-linux-musl.tar.gz` archive | `34975116da11e09e502501daf758143e0b22ed3a42a10eb67fb693a6270d9e36` |
+| Official archive's `rtk` binary | `1d8bf5f1861f5ce33236400b1d93b967aec30b6a456e9a0b43b1584c5200119a` |
+| Maintainer source build | `5a5b40cd6807cec980af2e3caa2cdff1fc17d101befb287d9c207a1bfbc9d250` |
+
 ## Pi Stuff delta
 
 - Keeps only the upstream pure compaction algorithms behind a Suite-owned projection adapter.
 - Replaces upstream `tool_result` mutation with Pi 0.83's model-visible `context` seam so transcript and session JSONL remain raw.
 - Keeps `read` and source projection disabled; failed results and non-text blocks always remain exact.
 - Replaces upstream config modal, notifications, Statusline metrics, startup config creation, shell hook assumptions, and lifecycle with `/rtk`, `/ui`, and the shared non-floating Command Dialog.
-- Certifies the local Linux x64 RTK 0.42.4 executable by version and SHA-256; path, binary, timeout, or availability drift fails open.
+- Certifies the local Linux x64 RTK 0.42.4 executable against the documented official or maintainer build SHA-256; path, binary, timeout, or availability drift fails open.
 - Exposes one small `ContextProjectionAdapter` for composition with the Suite Context Capability.
 - Does not contain or derive from implementation code in `jczhang02/pi-agent`; that repository supplied behavior evidence only.
 

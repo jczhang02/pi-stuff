@@ -8,6 +8,12 @@ const REWRITE_TIMEOUT_MS = 2_500;
 
 export const CERTIFIED_RTK_VERSION = "0.42.4";
 export const CERTIFIED_RTK_LINUX_X64_SHA256 = "5a5b40cd6807cec980af2e3caa2cdff1fc17d101befb287d9c207a1bfbc9d250";
+export const CERTIFIED_RTK_OFFICIAL_LINUX_X64_SHA256 =
+	"1d8bf5f1861f5ce33236400b1d93b967aec30b6a456e9a0b43b1584c5200119a";
+export const CERTIFIED_RTK_LINUX_X64_SHA256S = [
+	CERTIFIED_RTK_LINUX_X64_SHA256,
+	CERTIFIED_RTK_OFFICIAL_LINUX_X64_SHA256,
+] as const;
 
 export type RtkRuntimeState = "drifted" | "ready" | "unavailable" | "unchecked";
 
@@ -66,7 +72,9 @@ function effectiveCommandStartsWithRtk(command: string): boolean {
 }
 
 async function sha256File(path: string): Promise<string> {
-	return createHash("sha256").update(await readFile(path)).digest("hex");
+	return createHash("sha256")
+		.update(await readFile(path))
+		.digest("hex");
 }
 
 async function fileFingerprint(path: string): Promise<string> {
@@ -75,14 +83,14 @@ async function fileFingerprint(path: string): Promise<string> {
 	return [info.dev, info.ino, info.size, info.mtimeMs, info.mode].join(":");
 }
 
-function defaultExpectedSha256(platform: NodeJS.Platform): string | undefined {
-	return platform === "linux" && process.arch === "x64" ? CERTIFIED_RTK_LINUX_X64_SHA256 : undefined;
+function defaultExpectedSha256s(platform: NodeJS.Platform): readonly string[] {
+	return platform === "linux" && process.arch === "x64" ? CERTIFIED_RTK_LINUX_X64_SHA256S : [];
 }
 
 /** Certifies one local RTK executable and fails open whenever that identity changes. */
 export class RtkRuntime {
 	private certificate: RuntimeCertificate | undefined;
-	private readonly expectedSha256: string | undefined;
+	private readonly expectedSha256s: ReadonlySet<string>;
 	private readonly expectedVersion: string;
 	private readonly platform: NodeJS.Platform;
 	private readonly resolveTimeoutMs: number;
@@ -94,7 +102,9 @@ export class RtkRuntime {
 	constructor(options: RtkRuntimeOptions = {}) {
 		this.platform = options.platform ?? process.platform;
 		this.expectedVersion = options.expectedVersion ?? CERTIFIED_RTK_VERSION;
-		this.expectedSha256 = options.expectedSha256 ?? defaultExpectedSha256(this.platform);
+		this.expectedSha256s = new Set(
+			options.expectedSha256 ? [options.expectedSha256] : defaultExpectedSha256s(this.platform),
+		);
 		this.resolveTimeoutMs = options.resolveTimeoutMs ?? RESOLVE_TIMEOUT_MS;
 		this.rewriteTimeoutMs = options.rewriteTimeoutMs ?? REWRITE_TIMEOUT_MS;
 		this.versionTimeoutMs = options.versionTimeoutMs ?? VERSION_TIMEOUT_MS;
@@ -124,13 +134,9 @@ export class RtkRuntime {
 		return this.verification;
 	}
 
-	async rewrite(
-		pi: Pick<ExtensionAPI, "exec">,
-		command: string,
-		signal?: AbortSignal,
-	): Promise<string | undefined> {
+	async rewrite(pi: Pick<ExtensionAPI, "exec">, command: string, signal?: AbortSignal): Promise<string | undefined> {
 		if (!command.trim() || effectiveCommandStartsWithRtk(command)) return undefined;
-		await this.verify(pi, { signal });
+		await this.verify(pi, signal ? { signal } : {});
 		const certificate = this.certificate;
 		if (!certificate) return undefined;
 
@@ -144,7 +150,7 @@ export class RtkRuntime {
 
 		try {
 			const result = await pi.exec(certificate.path, ["rewrite", command], {
-				signal,
+				...(signal ? { signal } : {}),
 				timeout: this.rewriteTimeoutMs,
 			});
 			if (result.code === 1 || result.code === 2) return undefined;
@@ -167,14 +173,17 @@ export class RtkRuntime {
 			const [fingerprint, sha256, versionResult] = await Promise.all([
 				fileFingerprint(path),
 				sha256File(path),
-				pi.exec(path, ["--version"], { signal, timeout: this.versionTimeoutMs }),
+				pi.exec(path, ["--version"], { ...(signal ? { signal } : {}), timeout: this.versionTimeoutMs }),
 			]);
 			const version = parseVersion(`${versionResult.stdout}\n${versionResult.stderr}`);
 			if (versionResult.code !== 0 || !version) throw new Error("RTK returned no valid version");
 			if (version !== this.expectedVersion) {
 				throw new Error(`RTK ${version} is not the certified ${this.expectedVersion} runtime`);
 			}
-			if (this.expectedSha256 && sha256 !== this.expectedSha256) {
+			if (this.expectedSha256s.size === 0) {
+				throw new Error(`RTK has no certified runtime for ${this.platform}/${process.arch}`);
+			}
+			if (!this.expectedSha256s.has(sha256)) {
 				throw new Error("RTK executable SHA-256 does not match the certified runtime");
 			}
 			this.certificate = { fingerprint, path, selectedPath, sha256, version };
@@ -207,7 +216,10 @@ export class RtkRuntime {
 
 	private async resolveSelectedPath(pi: Pick<ExtensionAPI, "exec">, signal?: AbortSignal): Promise<string> {
 		const resolver = this.platform === "win32" ? "where" : "which";
-		const result = await pi.exec(resolver, ["rtk"], { signal, timeout: this.resolveTimeoutMs });
+		const result = await pi.exec(resolver, ["rtk"], {
+			...(signal ? { signal } : {}),
+			timeout: this.resolveTimeoutMs,
+		});
 		const selectedPath = firstNonEmptyLine(result.stdout);
 		if (result.code !== 0 || !selectedPath) throw new Error(`${resolver} could not resolve rtk`);
 		return selectedPath.replace(/^(["'])(.*)\1$/u, "$2");
@@ -228,10 +240,8 @@ export class RtkRuntime {
 		this.certificate = undefined;
 		this.snapshotValue = {
 			lastError: error,
-			path: certificate?.path,
-			sha256: certificate?.sha256,
+			...(certificate ? { path: certificate.path, sha256: certificate.sha256, version: certificate.version } : {}),
 			state: "unavailable",
-			version: certificate?.version,
 		};
 	}
 }

@@ -13,6 +13,7 @@ if (Bun.version !== CERTIFIED_BUN_VERSION) {
 const RELEASE_PACKAGES = [
 	{ name: "@jczhang02/pi-stuff-ui", path: "packages/pi-stuff-ui" },
 	{ name: "@jczhang02/pi-stuff-tools", path: "packages/pi-stuff-tools" },
+	{ name: "@jczhang02/pi-stuff-rtk", path: "packages/pi-stuff-rtk" },
 	{ name: "@jczhang02/pi-stuff-context", path: "packages/pi-stuff-context" },
 	{ name: "@jczhang02/pi-stuff-agents", path: "packages/pi-stuff-agents" },
 	{ name: "@jczhang02/pi-stuff-todo", path: "packages/pi-stuff-todo" },

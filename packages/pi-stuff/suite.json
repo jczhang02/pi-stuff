@@ -4,6 +4,7 @@
 	"capabilities": [
 		"@jczhang02/pi-stuff-ui",
 		"@jczhang02/pi-stuff-tools",
+		"@jczhang02/pi-stuff-rtk",
 		"@jczhang02/pi-stuff-context",
 		"@jczhang02/pi-stuff-agents",
 		"@jczhang02/pi-stuff-todo",

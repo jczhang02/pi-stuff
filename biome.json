@@ -13,6 +13,7 @@
 			"!**/.beads",
 			"!**/.pi-subagents",
 			"!vendor/pi-host-model-data",
+			"!packages/pi-stuff-rtk/upstream",
 			"!bun.lock"
 		]
 	},

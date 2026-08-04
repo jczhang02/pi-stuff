@@ -30,6 +30,7 @@ Pi remains the host. The Suite is a normal Pi Package: it exports an ordered agg
 | `@jczhang02/pi-stuff-ui` | Responsive Statusline, input presentation, and shared non-floating Command Dialog coordinator | `0.1.0` |
 | `@jczhang02/pi-stuff-tools` | Compact built-in and Suite-owned Tool presentation with focused details | `0.1.0` |
 | `@jczhang02/pi-stuff-context` | Lazy Magic Context continuity with native Pi fail-open behavior | `0.1.0` |
+| `@jczhang02/pi-stuff-rtk` | Certified fail-open RTK rewriting and model-only Tool output projection | `0.1.0` |
 | `@jczhang02/pi-stuff-agents` | Current-session foreground and background Agents | `0.1.0` |
 | `@jczhang02/pi-stuff-todo` | Recoverable per-session task tracking with a compact editor widget | `0.1.0` |
 | `@jczhang02/pi-stuff-btw` | One-shot side questions isolated from the main transcript | `0.1.0` |
@@ -62,6 +63,7 @@ Requirements:
 - Expect and tmux for real-terminal verification; CI uses the Ubuntu 24.04 packages
 - Linux x64 for the certified Host build; CI uses Ubuntu 24.04 as its system-utility baseline
 - Pi upstream `bf4a90d81985bd45052eeeae59d84fe13e0bd2c8` (reports 0.83.0) for Host certification
+- Optional RTK `0.42.4` for automatic Bash command rewriting; output projection works without it
 - Beads 1.1.0 for issue maintenance
 
 Build a certified Host instance on Linux x64. The command checks out the pinned source into ignored `.artifacts/`,

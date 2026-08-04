@@ -22,6 +22,7 @@ import { verifyAgentsPty } from "./verify-agents-pty.ts";
 import { verifyBtwPty } from "./verify-btw-pty.ts";
 import { verifyContextPty } from "./verify-context-pty.ts";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.ts";
+import { verifyRtkPty } from "./verify-rtk-pty.ts";
 import { verifyToolsPty } from "./verify-tools-pty.ts";
 import { verifyToolsResumePty } from "./verify-tools-resume-pty.ts";
 import { verifyUiPty } from "./verify-ui-pty.ts";
@@ -45,6 +46,7 @@ const uiRuntimeFiles = [
 const todoToolInspector = join(root, "test/fixtures/assert-todo-tools.ts");
 const forkLicenseSha256 = "25d0d5e4e54033f939a9657109044f1d71a0b6e8db9adc400456ca9190df3fb1";
 const agentsLicenseSha256 = "2d20dfacd9742706e564470dc77438608a1e54b0ed46959f080709389209093c";
+const rtkLicenseSha256 = "7d9473dcd84975a7191bc13dcc744f3b4d6578c937c879cc73e31e0107fa4d46";
 const toolsLicenseSha256 = "e6b72a9973ccabb20d8bef65a366a9b2357d6cea6cdd1eee4f2c3c69e61fb11c";
 const magicContextLicenseSha256 = "0e3d1aa1cbe4aec50224fc6c91eb898d42949d6ff84fe515f9e2bb0663f5d483";
 const agentsRuntimeVersions = {
@@ -61,6 +63,12 @@ const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 	],
 	"@jczhang02/pi-stuff-btw": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-context": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-rtk": [
+		"@earendil-works/pi-agent-core",
+		"@earendil-works/pi-ai",
+		"@earendil-works/pi-coding-agent",
+		"@earendil-works/pi-tui",
+	],
 	"@jczhang02/pi-stuff-todo": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-tools": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
@@ -267,6 +275,8 @@ async function verifyStandaloneInstalls(
 	const contextNpmCacheDirectory = join(temporaryDirectory, "npm-cache-context");
 	const btwInstallDirectory = join(temporaryDirectory, "standalone-btw");
 	const btwNpmCacheDirectory = join(temporaryDirectory, "npm-cache-btw");
+	const rtkInstallDirectory = join(temporaryDirectory, "standalone-rtk");
+	const rtkNpmCacheDirectory = join(temporaryDirectory, "npm-cache-rtk");
 	const todoInstallDirectory = join(temporaryDirectory, "standalone-todo");
 	const todoNpmCacheDirectory = join(temporaryDirectory, "npm-cache-todo");
 	const toolsInstallDirectory = join(temporaryDirectory, "standalone-tools");
@@ -279,6 +289,8 @@ async function verifyStandaloneInstalls(
 		mkdir(contextNpmCacheDirectory),
 		mkdir(btwInstallDirectory),
 		mkdir(btwNpmCacheDirectory),
+		mkdir(rtkInstallDirectory),
+		mkdir(rtkNpmCacheDirectory),
 		mkdir(todoInstallDirectory),
 		mkdir(todoNpmCacheDirectory),
 		mkdir(toolsInstallDirectory),
@@ -294,6 +306,7 @@ async function verifyStandaloneInstalls(
 	const agentsArchive = releaseArchive("@jczhang02/pi-stuff-agents");
 	const btwArchive = releaseArchive("@jczhang02/pi-stuff-btw");
 	const contextArchive = releaseArchive("@jczhang02/pi-stuff-context");
+	const rtkArchive = releaseArchive("@jczhang02/pi-stuff-rtk");
 	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
 	const toolsArchive = releaseArchive("@jczhang02/pi-stuff-tools");
 	const rootRequire = createRequire(join(root, "package.json"));
@@ -367,6 +380,8 @@ async function verifyStandaloneInstalls(
 	install(btwInstallDirectory, btwNpmCacheDirectory, toolsArchive);
 	install(btwInstallDirectory, btwNpmCacheDirectory, contextArchive);
 	install(btwInstallDirectory, btwNpmCacheDirectory, btwArchive);
+	install(rtkInstallDirectory, rtkNpmCacheDirectory, uiArchive);
+	install(rtkInstallDirectory, rtkNpmCacheDirectory, rtkArchive);
 	install(agentsInstallDirectory, agentsNpmCacheDirectory, uiArchive);
 	for (const dependency of Object.keys(agentsRuntimeVersions)) {
 		const archive = agentsRuntimeArchives[dependency];
@@ -397,6 +412,7 @@ async function verifyStandaloneInstalls(
 		}
 	};
 	await verifyUiDependency(btwInstallDirectory, "pi-stuff-btw");
+	await verifyUiDependency(rtkInstallDirectory, "pi-stuff-rtk");
 	await verifyUiDependency(agentsInstallDirectory, "pi-stuff-agents");
 	await verifyUiDependency(todoInstallDirectory, "pi-stuff-todo");
 	await verifyUiDependency(toolsInstallDirectory, "pi-stuff-tools");
@@ -486,6 +502,14 @@ async function verifyStandaloneInstalls(
 	}
 	const btwSmoke = await runPiRpcSmoke({ piBinary, packages: [installedBtw], cwd: btwInstallDirectory });
 	if (!btwSmoke.commandNames.includes("btw")) throw new Error("Standalone BTW Package did not register /btw");
+	const installedRtk = join(rtkInstallDirectory, "node_modules/@jczhang02/pi-stuff-rtk");
+	const rtkSmoke = await runPiRpcSmoke({ piBinary, packages: [installedRtk], cwd: rtkInstallDirectory });
+	if (!rtkSmoke.commandNames.includes("rtk") || !rtkSmoke.commandNames.includes("ui")) {
+		throw new Error("Standalone RTK Package did not register /rtk and the shared /ui surface");
+	}
+	if (rtkSmoke.createdFiles.some((path) => path.endsWith("pi-stuff-rtk.json"))) {
+		throw new Error("Standalone RTK Package wrote settings during startup");
+	}
 	const agentsSmoke = await runPiRpcSmoke({
 		piBinary,
 		packages: [join(agentsInstalledRoot, "@jczhang02/pi-stuff-agents")],
@@ -601,6 +625,12 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 		) {
 			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
 		}
+		if (
+			manifest.name === "@jczhang02/pi-stuff-rtk" &&
+			(await sha256File(join(extractDirectory, licensePath))) !== rtkLicenseSha256
+		) {
+			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
+		}
 	}
 	const expectedCapabilities = ["@jczhang02/pi-stuff-context"];
 	for (const capability of expectedCapabilities) {
@@ -672,6 +702,24 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 				"fff20435536814cf881a5c8daf4c0fc88e8fe78f",
 				"pi-stuff-v0.33.1-2",
 				"0c4cadfb35ad64d90a119eb8cd2bb5dffab43f5ba8096dfb9378b74dcd99bab3",
+			],
+		},
+		{
+			capability: "pi-stuff-rtk",
+			deltaHeading: "## Pi Stuff delta",
+			required: [
+				"pi-rtk-optimizer",
+				"0.9.0",
+				"v0.9.0",
+				"d155d253cb2f1358e34e717d47a82ebccb08cb8e",
+				"489bf5f3c7ce619071c00fb0275cd4123e52a439",
+				"8a7dd7e5570d7744d4b6508479a3674fe8c49286",
+				"4f7c6d98ed90a999deee7b5a4f8315bd0fd17f99d21022b0d0b64f77bc11d3c8",
+				"34975116da11e09e502501daf758143e0b22ed3a42a10eb67fb693a6270d9e36",
+				"1d8bf5f1861f5ce33236400b1d93b967aec30b6a456e9a0b43b1584c5200119a",
+				"5a5b40cd6807cec980af2e3caa2cdff1fc17d101befb287d9c207a1bfbc9d250",
+				"sha512-yj5DEdutRco5WvYEMEO0krZJP5Z6CpuNZoxlXSGmHEi2srB5Gao1xah/RnmVDn2se1FcqlmtS8+K/nzzkq0Pug==",
+				"7d9473dcd84975a7191bc13dcc744f3b4d6578c937c879cc73e31e0107fa4d46",
 			],
 		},
 		{
@@ -786,6 +834,7 @@ export async function certifyReleaseArtifacts(
 		await verifyAgentsExecutionMatrix({ piBinary, packagePath: extractedPackage });
 		await verifyBtwPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyContextPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
+		await verifyRtkPty({ piBinary, packagePath: extractedPackage });
 		await verifyToolsPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyToolsResumePty({ piBinary, packagePath: extractedPackage });
 		await writeReleaseVerification(releaseDirectory, CERTIFIED_PI_HOST_PROFILE);

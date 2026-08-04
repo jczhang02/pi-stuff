@@ -1,4 +1,4 @@
-import { isToolCallEventType, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { ensureUiSettingsCommand, getCommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
 import { createRtkProjectionAdapter } from "./projection.js";
 import { createRtkDialogView } from "./rtk-dialog.js";
@@ -6,14 +6,16 @@ import { RtkRuntime } from "./runtime.js";
 import { RtkSettingsStore } from "./settings.js";
 
 export {
-	createRtkProjectionAdapter,
 	type ContextProjectionAdapter,
+	createRtkProjectionAdapter,
 	RtkProjectionAdapter,
 	type RtkProjectionOptions,
 	type RtkProjectionStatsSnapshot,
 } from "./projection.js";
 export {
 	CERTIFIED_RTK_LINUX_X64_SHA256,
+	CERTIFIED_RTK_LINUX_X64_SHA256S,
+	CERTIFIED_RTK_OFFICIAL_LINUX_X64_SHA256,
 	CERTIFIED_RTK_VERSION,
 	RtkRuntime,
 	type RtkRuntimeOptions,

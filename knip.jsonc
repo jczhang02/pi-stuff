@@ -25,6 +25,10 @@
 			"project": ["**/*.ts"],
 			"ignoreDependencies": ["@jczhang02/pi-magic-context"]
 		},
+		"packages/pi-stuff-rtk": {
+			"project": ["*.ts", "upstream/**/*.ts"],
+			"ignore": ["upstream/**"]
+		},
 		"packages/pi-stuff-todo": {
 			"project": ["**/*.ts"]
 		},

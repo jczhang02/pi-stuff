@@ -120,7 +120,9 @@ function contentKey(message: ToolResultMessage, command: string | undefined): st
 	return JSON.stringify([
 		message.toolName,
 		command,
-		message.content.map((part) => (part.type === "text" ? ["text", part.text] : ["image", part.mimeType, part.data.length])),
+		message.content.map((part) =>
+			part.type === "text" ? ["text", part.text] : ["image", part.mimeType, part.data.length],
+		),
 	]);
 }
 

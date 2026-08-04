@@ -18,6 +18,9 @@ env:
   NODE_VERSION: 24.16.0
   NPM_VERSION: 11.13.0
   PI_VERSION: 0.83.0
+  RTK_ARCHIVE_SHA256: 34975116da11e09e502501daf758143e0b22ed3a42a10eb67fb693a6270d9e36
+  RTK_BINARY_SHA256: 1d8bf5f1861f5ce33236400b1d93b967aec30b6a456e9a0b43b1584c5200119a
+  RTK_VERSION: 0.42.4
 
 jobs:
   verify:
@@ -59,6 +62,20 @@ jobs:
           bun install --frozen-lockfile --ignore-scripts
           bun pm untrusted
 
+      - name: Install certified RTK runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/rtk/bin
+          archive=".artifacts/rtk/rtk-${RTK_VERSION}-linux-x64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/rtk-x86_64-unknown-linux-musl.tar.gz" \
+            --output "$archive"
+          echo "$RTK_ARCHIVE_SHA256  $archive" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" --directory .artifacts/rtk/bin rtk
+          echo "$RTK_BINARY_SHA256  .artifacts/rtk/bin/rtk" | sha256sum --check --strict
+          test "$(.artifacts/rtk/bin/rtk --version)" = "rtk $RTK_VERSION"
+
       - name: Build certified Pi host
         shell: bash
         run: |
@@ -78,7 +95,9 @@ jobs:
           PI_HOST_ATTESTATION: ${{ github.workspace }}/.artifacts/pi-host-attestation.json
         run: |
           set -euo pipefail
-          sudo --preserve-env=HOME,PATH,PI_BIN,PI_HOST_ATTESTATION,CI,GITHUB_ACTIONS,GITHUB_WORKSPACE unshare --net -- \
+          export RTK_BIN="$GITHUB_WORKSPACE/.artifacts/rtk/bin/rtk"
+          export PATH="$GITHUB_WORKSPACE/.artifacts/rtk/bin:$PATH"
+          sudo --preserve-env=HOME,PATH,PI_BIN,PI_HOST_ATTESTATION,RTK_BIN,CI,GITHUB_ACTIONS,GITHUB_WORKSPACE unshare --net -- \
             setpriv --reuid="$(id -u)" --regid="$(id -g)" --clear-groups \
             bash -euo pipefail -c '
               if curl --silent --max-time 2 https://example.com >/dev/null 2>&1; then

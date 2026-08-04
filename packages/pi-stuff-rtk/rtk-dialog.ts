@@ -1,9 +1,5 @@
 import { isKeyRelease, Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type {
-	CommandDialogComponent,
-	CommandDialogView,
-	CommandDialogViewContext,
-} from "@jczhang02/pi-stuff-ui";
+import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
 import type { RtkProjectionAdapter } from "./projection.js";
 import type { RtkRuntime } from "./runtime.js";
 import type { RtkSettingsStore } from "./settings.js";
@@ -34,7 +30,10 @@ function percent(saved: number, original: number): string {
 }
 
 function oneLine(value: string): string {
-	return value.replaceAll(/[\p{Cc}\p{Cf}]+/gu, " ").replaceAll(/\s+/gu, " ").trim();
+	return value
+		.replaceAll(/[\p{Cc}\p{Cf}]+/gu, " ")
+		.replaceAll(/\s+/gu, " ")
+		.trim();
 }
 
 class RtkDialogComponent implements CommandDialogComponent {

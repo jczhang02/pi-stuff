@@ -18,7 +18,9 @@ async function fakeBinary(content = "fixture-rtk"): Promise<{ path: string; sha2
 	const path = join(directory, "rtk");
 	await writeFile(path, content);
 	await chmod(path, 0o755);
-	const sha256 = createHash("sha256").update(await readFile(path)).digest("hex");
+	const sha256 = createHash("sha256")
+		.update(await readFile(path))
+		.digest("hex");
 	return { path, sha256 };
 }
 
@@ -70,6 +72,24 @@ describe("RTK runtime certification", () => {
 		expect(await runtime.rewrite(pi, "git diff")).toBeUndefined();
 		expect(probes).toBe(1);
 		expect(runtime.snapshot().state).toBe("unavailable");
+	});
+
+	test("fails open when the current platform has no certified binary identity", async () => {
+		const binary = await fakeBinary();
+		let rewriteCalls = 0;
+		const pi = {
+			exec: async (command: string, args: string[]) => {
+				if (command === "which") return result(`${binary.path}\n`);
+				if (args[0] === "--version") return result(`rtk ${CERTIFIED_RTK_VERSION}\n`);
+				if (args[0] === "rewrite") rewriteCalls += 1;
+				return result("rtk git status\n", 3);
+			},
+		} as Pick<ExtensionAPI, "exec">;
+		const runtime = new RtkRuntime({ platform: "darwin" });
+
+		expect(await runtime.rewrite(pi, "git status")).toBeUndefined();
+		expect(rewriteCalls).toBe(0);
+		expect(runtime.snapshot()).toMatchObject({ state: "unavailable" });
 	});
 
 	test("fails open on timeout and stops retrying the slow executable", async () => {
@@ -137,7 +157,9 @@ describe("RTK runtime certification", () => {
 		expect(await runtime.rewrite(pi, "git status")).toBeUndefined();
 		expect(runtime.snapshot().state).toBe("drifted");
 
-		expectedSha256 = createHash("sha256").update(await readFile(binary.path)).digest("hex");
+		expectedSha256 = createHash("sha256")
+			.update(await readFile(binary.path))
+			.digest("hex");
 		const replacementRuntime = new RtkRuntime({ expectedSha256 });
 		expect((await replacementRuntime.verify(pi, { refresh: true })).state).toBe("ready");
 	});
