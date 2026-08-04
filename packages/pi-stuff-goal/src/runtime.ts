@@ -7,6 +7,7 @@ import { appendGoalPromptMarker, extractContinuationMarker, extractGoalPromptMar
 import {
 	type ActiveGoal,
 	clearLegacyPersistedGoal,
+	type GoalStateEntryData,
 	type PendingQueueAction,
 	type SafetyPauseCause,
 	serializeGoalState,
@@ -161,6 +162,8 @@ export class GoalRuntime {
 	/** Terminal details captured for the matching persisted-state snapshot. */
 	private terminalDetails?: GoalTerminalDetails;
 	private goalStateSink?: (snapshot: GoalStateSnapshot) => void;
+	private deferredSessionStartState?: GoalStateEntryData;
+	private sessionStartReadOnly = false;
 	queuedGoals: ActiveGoal[] = [];
 	pendingQueueAction?: PendingQueueAction;
 	queueFrozen = false;
@@ -196,6 +199,22 @@ export class GoalRuntime {
 
 	setGoalStateSink(sink: ((snapshot: GoalStateSnapshot) => void) | undefined) {
 		this.goalStateSink = sink;
+	}
+
+	beginReadOnlySessionStart() {
+		this.sessionStartReadOnly = true;
+		this.deferredSessionStartState = undefined;
+	}
+
+	endReadOnlySessionStart() {
+		this.sessionStartReadOnly = false;
+	}
+
+	flushDeferredSessionStartState() {
+		const state = this.deferredSessionStartState;
+		if (!state || this.sessionStartReadOnly) return;
+		this.deferredSessionStartState = undefined;
+		this.pi.appendEntry(GOAL_STATE_ENTRY_TYPE, state);
 	}
 
 	private publishGoalState(snapshot: GoalStateSnapshot) {
@@ -738,7 +757,7 @@ export class GoalRuntime {
 		if (!isTerminalGoalStatus(goal.status) || this.terminalDetails?.goalId !== goal.id) {
 			this.clearTerminalDetails();
 		}
-		this.pi.appendEntry(GOAL_STATE_ENTRY_TYPE, serializeGoalState(goal, this.queuedGoals, this.pendingQueueAction));
+		this.persistGoalState(serializeGoalState(goal, this.queuedGoals, this.pendingQueueAction));
 		this.publishGoalState(buildGoalStateSnapshot(goal, this.terminalDetails?.summary, this.terminalDetails?.reason));
 		// A synchronous managed-run listener may pause, clear, or replace the Goal
 		// while the state event is being published. Never let the older transition
@@ -749,7 +768,7 @@ export class GoalRuntime {
 	}
 
 	clearPersistedGoal(cwd: string, clearedGoal?: ActiveGoal, reason = "goal cleared") {
-		this.pi.appendEntry(GOAL_STATE_ENTRY_TYPE, serializeGoalState(undefined, [], undefined));
+		this.persistGoalState(serializeGoalState(undefined, [], undefined));
 		if (clearedGoal) {
 			this.publishGoalState({
 				goalId: clearedGoal.id,
@@ -760,6 +779,15 @@ export class GoalRuntime {
 		this.clearTerminalDetails();
 		this.clearPresentationStatus();
 		clearLegacyPersistedGoal(cwd);
+	}
+
+	private persistGoalState(state: GoalStateEntryData) {
+		if (this.sessionStartReadOnly) {
+			this.deferredSessionStartState = state;
+			return;
+		}
+		this.deferredSessionStartState = undefined;
+		this.pi.appendEntry(GOAL_STATE_ENTRY_TYPE, state);
 	}
 
 	clearActiveGoal(ctx: StatusContext, reason = "goal cleared") {

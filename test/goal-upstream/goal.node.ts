@@ -48,6 +48,7 @@ const INVALID_SETTINGS_PATH = join(GOAL_SETTINGS_DIRECTORY, "invalid.json");
 const MISSING_SETTINGS_PATH = join(GOAL_SETTINGS_DIRECTORY, "missing.json");
 const LOW_LIMITS_SETTINGS_PATH = join(GOAL_SETTINGS_DIRECTORY, "low-limits.json");
 const ONE_TURN_LIMIT_SETTINGS_PATH = join(GOAL_SETTINGS_DIRECTORY, "one-turn-limit.json");
+const runtimeByPi = new WeakMap<object, ReturnType<typeof goal>>();
 writeFileSync(ALWAYS_SETTINGS_PATH, '{"toolVisibility":"always"}\n');
 writeFileSync(LAZY_SETTINGS_PATH, '{"toolVisibility":"after-first-goal"}\n');
 writeFileSync(INVALID_SETTINGS_PATH, '{"toolVisibility":"sometimes"}\n');
@@ -74,7 +75,7 @@ function registerGoal(pi: Parameters<typeof goal>[0], toolVisibility: "always" |
 
 function registerGoalWithSettingsPath(pi: Parameters<typeof goal>[0], settingsPath: string) {
 	pi.setActiveTools([...new Set([...pi.getActiveTools(), "goal_complete", "goal_blocked"])]);
-	goal(pi, { settingsPath });
+	runtimeByPi.set(pi, goal(pi, { settingsPath }));
 }
 
 test("goal registers command, status tools, and lifecycle hooks", () => {
@@ -202,6 +203,43 @@ test("session start uses defaults without materializing missing settings", () =>
 	assert.equal(existsSync(parent), false);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 	assert.equal(context.notifications.length, 0);
+});
+
+test("session restore stays read-only until the next agent turn begins", async () => {
+	const restoredGoal: StoredGoal = {
+		id: "read-only-session-restore",
+		text: "resume without mutating the session during startup",
+		status: "active",
+		startedAt: 1,
+		updatedAt: 2,
+		iteration: 3,
+		tokensUsed: 5,
+		timeUsedSeconds: 4,
+		baselineTokens: 0,
+	};
+	const branch = [
+		{
+			type: "custom",
+			customType: "goal-state",
+			data: { goal: restoredGoal },
+		},
+	];
+	const mock = createMockPi();
+	registerGoal(mock.pi);
+	const context = createMockContext({
+		sessionManager: { getBranch: () => branch, getEntries: () => branch },
+	});
+
+	await mock.events.get("session_start")?.[0]?.({}, context.ctx);
+
+	assert.equal(mock.entries.length, 0, "opening a session must not append Goal state");
+	assert.equal(runtimeByPi.get(mock.pi)?.activeGoal?.id, restoredGoal.id);
+
+	await mock.events.get("before_agent_start")?.[0]?.({ prompt: "Continue the task." }, context.ctx);
+
+	assert.equal(mock.entries.length, 1, "the first real turn must flush the restored Goal snapshot");
+	assert.equal(mock.entries[0]?.customType, "goal-state");
+	assert.equal((mock.entries[0]?.data as { goal?: StoredGoal }).goal?.id, restoredGoal.id);
 });
 
 test("missing and invalid settings fall back to always-visible tools", () => {
@@ -4762,7 +4800,9 @@ function requireLastGoal(mock: ReturnType<typeof createMockPi>) {
 
 function lastGoal(mock: ReturnType<typeof createMockPi>) {
 	const entry = mock.entries.filter((entry) => entry.customType === "goal-state").at(-1);
-	return ((entry?.data as { goal?: StoredGoal | null } | undefined)?.goal ?? null) as StoredGoal | null;
+	const persisted = (entry?.data as { goal?: StoredGoal | null } | undefined)?.goal;
+	if (persisted !== undefined) return persisted as StoredGoal | null;
+	return (runtimeByPi.get(mock.pi)?.activeGoal ?? null) as StoredGoal | null;
 }
 
 function findPersistedGoal(mock: ReturnType<typeof createMockPi>, status: string) {

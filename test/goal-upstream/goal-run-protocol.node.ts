@@ -16,6 +16,7 @@ const ENABLED_SETTINGS_PATH = join(SETTINGS_DIRECTORY, "enabled.json");
 const DISABLED_SETTINGS_PATH = join(SETTINGS_DIRECTORY, "disabled.json");
 const INVALID_SETTINGS_PATH = join(SETTINGS_DIRECTORY, "invalid.json");
 const MISSING_SETTINGS_PATH = join(SETTINGS_DIRECTORY, "missing.json");
+const runtimeByPi = new WeakMap<object, ReturnType<typeof goal>>();
 writeFileSync(ENABLED_SETTINGS_PATH, '{"toolVisibility":"always","rpc":{"enabled":true}}\n');
 writeFileSync(DISABLED_SETTINGS_PATH, '{"toolVisibility":"always","rpc":{"enabled":false}}\n');
 writeFileSync(INVALID_SETTINGS_PATH, '{"rpc":{"enabled":"yes"}}\n');
@@ -63,7 +64,7 @@ const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 function registerGoal(mock: ReturnType<typeof createMockPi>, settingsPath = ENABLED_SETTINGS_PATH) {
 	mock.rawPi.setActiveTools([...new Set([...mock.rawPi.getActiveTools(), "goal_complete", "goal_blocked"])]);
-	goal(mock.pi, { settingsPath });
+	runtimeByPi.set(mock.pi, goal(mock.pi, { settingsPath }));
 }
 
 function bindSession(mock: ReturnType<typeof createMockPi>, context = createMockContext()) {
@@ -102,6 +103,8 @@ function errors(events: RunEvent[]) {
 }
 
 function lastPersistedGoal(mock: ReturnType<typeof createMockPi>) {
+	const current = runtimeByPi.get(mock.pi)?.activeGoal;
+	if (current) return current;
 	const entry = mock.entries.filter((candidate) => candidate.customType === "goal-state").at(-1);
 	return (entry?.data as { goal?: ActiveGoal })?.goal;
 }

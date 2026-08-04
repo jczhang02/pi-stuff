@@ -615,115 +615,121 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("session_start", async (event, ctx) => {
-		runtime.replaceMenuSession();
-		clearCompletionStatusTimer();
-		clearContinuationTracking();
-		clearPendingGoalPrompts();
-		runtime.clearAgentRun();
-		runtime.guardAbortGoalId = undefined;
-		clearGoalRecovery();
-		clearBudgetWrapUp();
-		clearStaleGoalToolCallBlock();
-		runtime.queuedGoals = [];
-		runtime.pendingQueueAction = undefined;
-		runtime.queueFrozen = false;
-		runtime.queueFreezeAwaitingSettle = false;
-		runtime.clearTerminalDetails();
-		const previousToolVisibility = runtime.settings.toolVisibility;
-		const settingsResult = readGoalSettings(options.settingsPath);
-		runtime.settings = settingsResult.kind === "loaded" ? settingsResult.settings : DEFAULT_GOAL_SETTINGS;
-		runtime.settingsLoadIssue = settingsResult.kind === "invalid" ? settingsResult : undefined;
-		if (settingsResult.kind === "invalid") {
-			ctx.ui.notify(`pi-goal settings ignored: ${settingsResult.reason}. Using default settings.`, "warning");
-		}
-		if (runtime.settings.experimental.goals) {
-			ctx.ui.notify(EXPERIMENTAL_GOALS_WARNING, "warning");
-		}
-		if (runtime.settings.toolVisibility === "after-first-goal" && previousToolVisibility === "always") {
-			runtime.goalToolsUnlocked = false;
-		}
-		if (runtime.settings.toolVisibility === "always") {
-			if (runtime.goalToolsHiddenByPolicy.size > 0) {
-				try {
-					restoreGoalToolsHiddenByPolicy();
-				} catch (error) {
-					ctx.ui.notify(`Could not restore always-visible goal tools: ${formatError(error)}`, "error");
+		runtime.beginReadOnlySessionStart();
+		try {
+			runtime.replaceMenuSession();
+			clearCompletionStatusTimer();
+			clearContinuationTracking();
+			clearPendingGoalPrompts();
+			runtime.clearAgentRun();
+			runtime.guardAbortGoalId = undefined;
+			clearGoalRecovery();
+			clearBudgetWrapUp();
+			clearStaleGoalToolCallBlock();
+			runtime.queuedGoals = [];
+			runtime.pendingQueueAction = undefined;
+			runtime.queueFrozen = false;
+			runtime.queueFreezeAwaitingSettle = false;
+			runtime.clearTerminalDetails();
+			const previousToolVisibility = runtime.settings.toolVisibility;
+			const settingsResult = readGoalSettings(options.settingsPath);
+			runtime.settings = settingsResult.kind === "loaded" ? settingsResult.settings : DEFAULT_GOAL_SETTINGS;
+			runtime.settingsLoadIssue = settingsResult.kind === "invalid" ? settingsResult : undefined;
+			if (settingsResult.kind === "invalid") {
+				ctx.ui.notify(`pi-goal settings ignored: ${settingsResult.reason}. Using default settings.`, "warning");
+			}
+			if (runtime.settings.experimental.goals) {
+				ctx.ui.notify(EXPERIMENTAL_GOALS_WARNING, "warning");
+			}
+			if (runtime.settings.toolVisibility === "after-first-goal" && previousToolVisibility === "always") {
+				runtime.goalToolsUnlocked = false;
+			}
+			if (runtime.settings.toolVisibility === "always") {
+				if (runtime.goalToolsHiddenByPolicy.size > 0) {
+					try {
+						restoreGoalToolsHiddenByPolicy();
+					} catch (error) {
+						ctx.ui.notify(`Could not restore always-visible goal tools: ${formatError(error)}`, "error");
+					}
 				}
-			}
-			runtime.goalToolsUnlocked = true;
-		}
-
-		const loaded = loadGoalStateFromSession(ctx);
-		runtime.activeGoal = loaded.goal;
-		runtime.queuedGoals = loaded.queue;
-		runtime.pendingQueueAction = loaded.pendingAction;
-		runtime.queueFrozen = loaded.hasExperimentalQueueState && !runtime.settings.experimental.goals;
-		runController.bindSession(ctx);
-		if (runtime.queueFrozen) {
-			if (runtime.activeGoal) persistGoal(runtime.activeGoal);
-			runtime.publishPresentationStatus(runtime.activeGoal);
-			ctx.ui.notify(
-				"An experimental goal queue is frozen because experimental.goals is disabled. Re-enable it and run /reload to continue, or use /goal clear.",
-				"warning",
-			);
-			return;
-		}
-
-		let startRestoredQueuedGoal = false;
-		if (runtime.activeGoal?.status === "queued" && !runtime.pendingQueueAction) {
-			runtime.activeGoal = activateQueuedGoal(runtime.activeGoal, currentTokenTotal(ctx));
-			startRestoredQueuedGoal = runtime.activeGoal.status === "active";
-		}
-		if (runtime.pendingQueueAction) await dispatchPendingQueueActionIfSettled(ctx);
-		if (runtime.activeGoal) {
-			if (runtime.activeGoal.status === "active" && runtime.activeGoal.safetyResetPending) {
-				// Resume/edit activation is persisted before its queued prompt starts. A
-				// reload must commit that promised reset before enforcing the old limits.
-				runtime.activeGoal = resetGoalSafetyEpoch(runtime.activeGoal);
-			}
-			if (runtime.activeGoal.status === "active") {
-				updateGoalUsage(runtime.activeGoal, ctx);
-				if (limitActiveGoalForBudget(ctx, false)) return;
-				if (enforceAutomaticTurnLimit(ctx, false) || enforceNoProgressLimit(ctx)) return;
-			}
-			if (runtime.settings.toolVisibility === "after-first-goal") {
-				// Registered tools are already active on an unrestricted fresh runtime.
-				// If an earlier session_start handler removed them, that restrictive
-				// policy wins: mark lazy visibility unlocked without widening its set.
 				runtime.goalToolsUnlocked = true;
-				runtime.goalToolsHiddenByPolicy.clear();
 			}
-			if (runtime.activeGoal.status === "active" && !goalToolsAvailable()) {
-				pauseGoalForUnavailableTools(ctx, false);
+
+			const loaded = loadGoalStateFromSession(ctx);
+			runtime.activeGoal = loaded.goal;
+			runtime.queuedGoals = loaded.queue;
+			runtime.pendingQueueAction = loaded.pendingAction;
+			runtime.queueFrozen = loaded.hasExperimentalQueueState && !runtime.settings.experimental.goals;
+			runController.bindSession(ctx);
+			if (runtime.queueFrozen) {
+				if (runtime.activeGoal) persistGoal(runtime.activeGoal);
+				runtime.publishPresentationStatus(runtime.activeGoal);
+				ctx.ui.notify(
+					"An experimental goal queue is frozen because experimental.goals is disabled. Re-enable it and run /reload to continue, or use /goal clear.",
+					"warning",
+				);
 				return;
 			}
-			persistGoal(runtime.activeGoal);
-			updateStatus(ctx, runtime.activeGoal);
-			if (startRestoredQueuedGoal) {
-				const restoredGoal = runtime.activeGoal;
-				const sent = await sendOwnedGoalPrompt(
-					runtime.pi,
-					ctx,
-					restoredGoal.id,
-					buildGoalPrompt(restoredGoal),
-					false, // Reloaded queue activation preserves its persisted safety epoch.
-				);
-				if (!sent && runtime.activeGoal?.id === restoredGoal.id) {
-					runtime.activeGoal = transitionGoal(restoredGoal, "paused");
-					blockStaleGoalToolCalls();
-					persistGoal(runtime.activeGoal);
-					updateStatus(ctx, runtime.activeGoal);
+
+			let startRestoredQueuedGoal = false;
+			if (runtime.activeGoal?.status === "queued" && !runtime.pendingQueueAction) {
+				runtime.activeGoal = activateQueuedGoal(runtime.activeGoal, currentTokenTotal(ctx));
+				startRestoredQueuedGoal = runtime.activeGoal.status === "active";
+			}
+			if (runtime.pendingQueueAction) await dispatchPendingQueueActionIfSettled(ctx);
+			if (runtime.activeGoal) {
+				if (runtime.activeGoal.status === "active" && runtime.activeGoal.safetyResetPending) {
+					// Resume/edit activation promises a fresh safety epoch. Session startup
+					// buffers the updated snapshot; the next prompt boundary flushes it before
+					// any model work starts.
+					runtime.activeGoal = resetGoalSafetyEpoch(runtime.activeGoal);
 				}
+				if (runtime.activeGoal.status === "active") {
+					updateGoalUsage(runtime.activeGoal, ctx);
+					if (limitActiveGoalForBudget(ctx, false)) return;
+					if (enforceAutomaticTurnLimit(ctx, false) || enforceNoProgressLimit(ctx)) return;
+				}
+				if (runtime.settings.toolVisibility === "after-first-goal") {
+					// Registered tools are already active on an unrestricted fresh runtime.
+					// If an earlier session_start handler removed them, that restrictive
+					// policy wins: mark lazy visibility unlocked without widening its set.
+					runtime.goalToolsUnlocked = true;
+					runtime.goalToolsHiddenByPolicy.clear();
+				}
+				if (runtime.activeGoal.status === "active" && !goalToolsAvailable()) {
+					pauseGoalForUnavailableTools(ctx, false);
+					return;
+				}
+				persistGoal(runtime.activeGoal);
+				updateStatus(ctx, runtime.activeGoal);
+				if (startRestoredQueuedGoal) {
+					const restoredGoal = runtime.activeGoal;
+					const sent = await sendOwnedGoalPrompt(
+						runtime.pi,
+						ctx,
+						restoredGoal.id,
+						buildGoalPrompt(restoredGoal),
+						false, // Reloaded queue activation preserves its persisted safety epoch.
+					);
+					if (!sent && runtime.activeGoal?.id === restoredGoal.id) {
+						runtime.activeGoal = transitionGoal(restoredGoal, "paused");
+						blockStaleGoalToolCalls();
+						persistGoal(runtime.activeGoal);
+						updateStatus(ctx, runtime.activeGoal);
+					}
+				}
+				if (runtime.activeGoal.status === "active" && !startRestoredQueuedGoal && event.reason === "reload") {
+					requestContinuation(runtime.activeGoal);
+					dispatchContinuationIfSettled(ctx);
+				}
+			} else {
+				if (runtime.settings.toolVisibility === "after-first-goal" && !runtime.goalToolsUnlocked) {
+					hideGoalToolsIfLocked();
+				}
+				runtime.clearPresentationStatus();
 			}
-			if (runtime.activeGoal.status === "active" && !startRestoredQueuedGoal && event.reason === "reload") {
-				requestContinuation(runtime.activeGoal);
-				dispatchContinuationIfSettled(ctx);
-			}
-		} else {
-			if (runtime.settings.toolVisibility === "after-first-goal" && !runtime.goalToolsUnlocked) {
-				hideGoalToolsIfLocked();
-			}
-			runtime.clearPresentationStatus();
+		} finally {
+			runtime.endReadOnlySessionStart();
 		}
 	});
 
@@ -973,6 +979,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("before_agent_start", (event, ctx) => {
+		runtime.flushDeferredSessionStartState();
 		const activeGoal = beginPromptRun(event.prompt, ctx);
 		if (!activeGoal) return;
 		return {
@@ -1259,10 +1266,11 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			"warning",
 		);
 	}
+	return runtime;
 }
 
 export default function goal(pi: ExtensionAPI, options: GoalOptions = {}) {
-	registerGoalRuntime(pi, options);
+	return registerGoalRuntime(pi, options);
 }
 
 export {

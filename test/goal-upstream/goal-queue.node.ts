@@ -4,12 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import goal from "../../packages/pi-stuff-goal/src/goal.js";
-import type { ActiveGoal, GoalStateEntryData } from "../../packages/pi-stuff-goal/src/persistence.js";
+import {
+	type ActiveGoal,
+	type GoalStateEntryData,
+	serializeGoalState,
+} from "../../packages/pi-stuff-goal/src/persistence.js";
 import { createMockContext, createMockPi, goalStatusSnapshot } from "./support.js";
 
 const settingsDirectory = mkdtempSync(join(tmpdir(), "pi-goal-queue-settings-"));
 const enabledSettingsPath = join(settingsDirectory, "enabled.json");
 const disabledSettingsPath = join(settingsDirectory, "disabled.json");
+const runtimeByPi = new WeakMap<object, ReturnType<typeof goal>>();
 writeFileSync(enabledSettingsPath, '{"experimental":{"goals":true}}\n');
 writeFileSync(disabledSettingsPath, "{}\n");
 
@@ -1374,7 +1379,8 @@ test("disabled settings freeze retained queues without losing state", async () =
 
 async function createHarness(overrides: Record<string, unknown> = {}, enabled = true) {
 	const mock = createMockPi({ activeTools: ["goal_complete", "goal_blocked"] });
-	goal(mock.pi, { settingsPath: enabled ? enabledSettingsPath : disabledSettingsPath });
+	const runtime = goal(mock.pi, { settingsPath: enabled ? enabledSettingsPath : disabledSettingsPath });
+	runtimeByPi.set(mock.pi, runtime);
 	const context = createMockContext(overrides);
 	await mock.events.get("session_start")?.[0]?.({}, context.ctx);
 	return {
@@ -1403,9 +1409,12 @@ function findGoalTool(mock: ReturnType<typeof createMockPi>, name: string) {
 }
 
 function lastState(mock: ReturnType<typeof createMockPi>) {
-	return mock.entries.filter(({ customType }) => customType === "goal-state").at(-1)?.data as
+	const persisted = mock.entries.filter(({ customType }) => customType === "goal-state").at(-1)?.data as
 		| GoalStateEntryData
 		| undefined;
+	if (persisted) return persisted;
+	const runtime = runtimeByPi.get(mock.pi);
+	return runtime ? serializeGoalState(runtime.activeGoal, runtime.queuedGoals, runtime.pendingQueueAction) : undefined;
 }
 
 function stateGoals(mock: ReturnType<typeof createMockPi>): ActiveGoal[] {
