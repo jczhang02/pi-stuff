@@ -178,7 +178,7 @@ export function projectEngineResult(params: PublicAgentParams, result: AgentEngi
 			content: [
 				{
 					type: "text",
-					text: `${subject} started in the background${id ? ` (${id})` : ""}. Continue independent work; the direct-child report will arrive automatically.`,
+					text: `${subject} started in the background${id ? ` (${id})` : ""}. Continue independent work; completion will not start another main turn. Inspect it with /agents.`,
 				},
 			],
 		};

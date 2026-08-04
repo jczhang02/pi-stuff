@@ -17,6 +17,10 @@ The published archive was imported unchanged in the isolated baseline commit. Pi
 session, lifecycle, steering, resume, capability-ceiling, recovery, and worktree foundations, then replaces the public
 product behavior and UI. Unrelated upstream product surfaces were excluded from this fork.
 
+Pi Stuff also keeps background completion out of model context: a durable custom session entry provides the compact
+TUI outcome, while `/agents` owns report inspection. Suite-owned artifacts default to Pi's Settings-owned session root
+instead of a project-local `.pi-subagents` directory.
+
 Major removed upstream areas include:
 
 - chain and workflow orchestration, scheduled runs, wait/auto-drain flows, and the Fleet control surface;

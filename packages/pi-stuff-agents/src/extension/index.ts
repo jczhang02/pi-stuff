@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -29,7 +29,6 @@ import {
 	createDurableAgentExecutionCoordinator,
 	parseAgentOwnerPath,
 } from "../runtime/agent-execution-coordinator.ts";
-import { scanAgentReport } from "../runtime/final-report-scanner.ts";
 import {
 	type AgentControlAcknowledgement,
 	type AgentRow,
@@ -60,11 +59,21 @@ import { buildSubagentToolDescription } from "./tool-description.ts";
 
 export { loadConfig } from "./config.ts";
 
+// Retained only so sessions written by older Pi Stuff releases still render.
 const COMPLETION_MESSAGE_TYPE = "pi-stuff-agent-complete";
+const COMPLETION_ENTRY_TYPE = "pi-stuff-agent-outcome";
 const ROSTER_REFRESH_MS = 250;
-const MAX_COMPLETION_CHILD_CHARS = 4_000;
-const MAX_COMPLETION_CHARS = 12_000;
 const RUNTIME_CLEANUP_KEY = "__piStuffAgentsRootCleanup";
+
+type CompletionOutcomeStatus = "completed" | "failed" | "stopped";
+
+interface CompletionOutcomeEntry {
+	readonly version: 1;
+	readonly key: string;
+	readonly count: number;
+	readonly status: CompletionOutcomeStatus;
+	readonly durationMs?: number;
+}
 
 interface RootExecutor {
 	execute(
@@ -241,55 +250,80 @@ function record(value: unknown): Record<string, unknown> {
 	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
 
-function bounded(value: string, limit: number): string {
-	if (value.length <= limit) return value;
-	return `${value.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
-}
-
-function completionState(value: Record<string, unknown>, fallback: CompletionNotification): string {
-	const state = typeof value.state === "string" ? value.state : fallback.state;
-	if (state === "paused" || state === "stopped") return "stopped";
+function completionState(value: Record<string, unknown>, fallback: CompletionNotification): CompletionOutcomeStatus {
+	const state =
+		typeof value.status === "string" ? value.status : typeof value.state === "string" ? value.state : fallback.state;
+	if (
+		["cancelled", "detached", "paused", "stopped"].includes(state ?? "") ||
+		value.stopped === true ||
+		value.interrupted === true ||
+		fallback.stopped === true ||
+		fallback.interrupted === true
+	) {
+		return "stopped";
+	}
+	if (state === "crashed" || state === "failed") return "failed";
 	const success = typeof value.success === "boolean" ? value.success : fallback.success;
 	return success === false ? "failed" : "completed";
 }
 
-function completionReport(value: Record<string, unknown>, fallback: CompletionNotification): string {
-	const source = [value.summary, value.output, value.error, fallback.summary].find(
-		(candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0,
-	);
-	return bounded(scanAgentReport(source?.trim() || "(no report)").text, MAX_COMPLETION_CHILD_CHARS);
+function completionKey(result: CompletionNotification): string {
+	const identity = JSON.stringify([result.sessionId, result.id, result.runId, result.taskIndex, result.timestamp]);
+	return createHash("sha256").update(identity).digest("hex").slice(0, 24);
 }
 
-function compactCompletion(result: CompletionNotification): {
-	readonly content: string;
-	readonly count: number;
-	readonly status: string;
-} {
+function completionDuration(result: CompletionNotification): number | undefined {
+	const duration =
+		typeof result.durationMs === "number"
+			? result.durationMs
+			: typeof result.startedAt === "number" && typeof result.endedAt === "number"
+				? result.endedAt - result.startedAt
+				: undefined;
+	return duration !== undefined && Number.isFinite(duration) && duration >= 0 ? Math.round(duration) : undefined;
+}
+
+function completionOutcome(result: CompletionNotification, key: string): CompletionOutcomeEntry {
 	const raw = record(result);
 	const children = Array.isArray(raw.results) && raw.results.length > 0 ? raw.results.map(record) : [raw];
-	const blocks = children.map((child, index) => {
-		const name =
-			typeof child.agent === "string"
-				? child.agent
-				: typeof result.agent === "string"
-					? result.agent
-					: `agent-${index + 1}`;
-		const status = completionState(child, result);
-		const heading = children.length === 1 ? `Agent ${name} ${status}.` : `${String(index + 1)}. ${name} — ${status}`;
-		return `${heading}\n${completionReport(child, result)}`;
-	});
 	const states = children.map((child) => completionState(child, result));
 	const status = states.includes("failed") ? "failed" : states.includes("stopped") ? "stopped" : "completed";
+	const durationMs = completionDuration(result);
 	return {
-		content: bounded(blocks.join("\n\n"), MAX_COMPLETION_CHARS),
+		version: 1,
+		key,
 		count: children.length,
 		status,
+		...(durationMs !== undefined ? { durationMs } : {}),
 	};
 }
 
+function isPersistedCompletion(state: Pick<SubagentState, "lastUiContext">, key: string): boolean {
+	const entries = state.lastUiContext?.sessionManager.getEntries() ?? [];
+	return entries.some((entry) => {
+		if (entry.type !== "custom" || entry.customType !== COMPLETION_ENTRY_TYPE) return false;
+		const data = record(entry.data);
+		return data.version === 1 && data.key === key;
+	});
+}
+
+function formatDuration(durationMs: number | undefined): string | undefined {
+	if (durationMs === undefined) return undefined;
+	const seconds = Math.max(1, Math.round(durationMs / 1_000));
+	if (seconds < 60) return `${String(seconds)}s`;
+	const minutes = Math.floor(seconds / 60);
+	const remainder = seconds % 60;
+	return remainder === 0 ? `${String(minutes)}m` : `${String(minutes)}m ${String(remainder)}s`;
+}
+
+function completionOutcomeText(data: CompletionOutcomeEntry): string {
+	const subject = data.count === 1 ? "Agent" : `${String(data.count)} Agents`;
+	const verb = data.status === "completed" ? "finished" : data.status;
+	return [`${subject} ${verb}`, formatDuration(data.durationMs), "inspect with /agents"].filter(Boolean).join(" · ");
+}
+
 function createCompactCompletionNotifier(
-	pi: Pick<ExtensionAPI, "sendMessage">,
-	state: Pick<SubagentState, "currentSessionId">,
+	pi: Pick<ExtensionAPI, "appendEntry">,
+	state: Pick<SubagentState, "currentSessionId" | "lastUiContext">,
 	coordinator: Pick<CommandDialogCoordinator, "whenIdle">,
 ): CompactCompletionNotifier {
 	const delivered = new Set<string>();
@@ -304,22 +338,15 @@ function createCompactCompletionNotifier(
 			) {
 				return result.intercomDelivered === true;
 			}
-			const key = JSON.stringify([result.sessionId, result.id, result.runId, result.taskIndex, result.timestamp]);
-			if (delivered.has(key)) return true;
+			const key = completionKey(result);
+			if (delivered.has(key) || isPersistedCompletion(state, key)) return true;
 			try {
 				await coordinator.whenIdle();
-				const alreadyDelivered = delivered.has(key);
+				const alreadyDelivered = delivered.has(key) || isPersistedCompletion(state, key);
 				if (disposed || result.sessionId !== state.currentSessionId || alreadyDelivered) return alreadyDelivered;
-				const compact = compactCompletion(result);
-				pi.sendMessage(
-					{
-						customType: COMPLETION_MESSAGE_TYPE,
-						content: compact.content,
-						display: true,
-						details: { count: compact.count, status: compact.status },
-					},
-					{ deliverAs: "followUp", triggerTurn: result.triggerTurn !== false },
-				);
+				// Custom entries persist and render with the session but are excluded from
+				// model context, so completion cannot create an unsolicited main turn.
+				pi.appendEntry<CompletionOutcomeEntry>(COMPLETION_ENTRY_TYPE, completionOutcome(result, key));
 				delivered.add(key);
 				return true;
 			} catch {
@@ -578,6 +605,12 @@ export default function registerSubagentExtension(
 	pi.registerMessageRenderer(COMPLETION_MESSAGE_TYPE, (message, _options, theme) => {
 		const content = typeof message.content === "string" ? message.content : "";
 		return new Text(theme.fg("text", content), 0, 0);
+	});
+	pi.registerEntryRenderer<CompletionOutcomeEntry>(COMPLETION_ENTRY_TYPE, (entry, _options, theme) => {
+		const data = entry.data;
+		if (data?.version !== 1) return undefined;
+		const color = data.status === "completed" ? "success" : data.status === "failed" ? "error" : "muted";
+		return new Text(`${theme.fg(color, "●")} ${theme.fg("muted", completionOutcomeText(data))}`, 0, 0);
 	});
 
 	const eventUnsubscribes: Array<() => void> = [];

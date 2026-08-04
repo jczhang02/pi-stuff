@@ -17,7 +17,7 @@ export function getProjectArtifactsDir(cwd: string): string {
 export function getArtifactsDir(
 	sessionFile: string | null,
 	projectCwd?: string,
-	dirPreference: ArtifactDirPreference = "project",
+	dirPreference: ArtifactDirPreference = "session",
 ): string {
 	switch (dirPreference) {
 		case "session":

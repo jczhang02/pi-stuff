@@ -96,7 +96,7 @@ describe("projectEngineResult", () => {
 		expect(result.content).toEqual([
 			{
 				type: "text",
-				text: "Agent researcher started in the background (run-1). Continue independent work; the direct-child report will arrive automatically.",
+				text: "Agent researcher started in the background (run-1). Continue independent work; completion will not start another main turn. Inspect it with /agents.",
 			},
 		]);
 		expect(JSON.stringify(result.content)).not.toContain("/private");

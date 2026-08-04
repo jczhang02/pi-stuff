@@ -27,6 +27,7 @@ import {
 import type { AgentRoster } from "../../packages/pi-stuff-agents/src/ui/agent-roster.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
+type EntryRenderer = (...args: unknown[]) => unknown;
 
 interface TestMessage {
 	readonly content?: string;
@@ -82,6 +83,8 @@ class EventBusHarness {
 
 class ApiHarness {
 	readonly commands = new Map<string, RegisteredCommand>();
+	readonly entries: Array<{ customType: string; data: unknown }> = [];
+	readonly entryRenderers = new Map<string, EntryRenderer>();
 	readonly events = new EventBusHarness();
 	readonly handlers = new Map<string, Handler[]>();
 	readonly messages: Array<{ message: TestMessage; options: unknown }> = [];
@@ -97,7 +100,9 @@ class ApiHarness {
 		},
 		registerTool: (tool: TestTool) => this.tools.set(tool.name, tool),
 		registerCommand: (name: string, command: RegisteredCommand) => this.commands.set(name, command),
+		registerEntryRenderer: (name: string, renderer: EntryRenderer) => this.entryRenderers.set(name, renderer),
 		registerMessageRenderer: (name: string) => this.renderers.push(name),
+		appendEntry: (customType: string, data: unknown) => this.entries.push({ customType, data }),
 		sendMessage: (message: TestMessage, options: unknown) => this.messages.push({ message, options }),
 	} as unknown as ExtensionAPI;
 
@@ -159,12 +164,13 @@ function config(): PiStuffAgentsConfig {
 	};
 }
 
-function context(): ExtensionContext {
+function context(entries: readonly unknown[] = []): ExtensionContext {
 	return {
 		cwd: "/project",
 		hasUI: true,
 		mode: "tui",
 		sessionManager: {
+			getEntries: () => [...entries],
 			getSessionFile: () => "/sessions/root.jsonl",
 			getSessionId: () => "root-id",
 		},
@@ -438,6 +444,7 @@ describe("Agents extension composition root", () => {
 		expect(presentation.renderResult).toBeFunction();
 		expect([...root.api.commands.keys()]).toEqual(["agents"]);
 		expect(root.api.renderers).toEqual(["pi-stuff-agent-complete"]);
+		expect([...root.api.entryRenderers.keys()]).toEqual(["pi-stuff-agent-outcome"]);
 		expect(root.chrome.registered).toBe(1);
 
 		await root.api.commands.get("agents")?.handler("", context());
@@ -451,6 +458,7 @@ describe("Agents extension composition root", () => {
 
 		expect(tool.description).toContain("Choose exactly one call shape");
 		expect(tool.description).toContain("Never send background");
+		expect(tool.description).toContain("Background completion never starts another main turn");
 		expect(tool.description).toContain('action="status", "steer", "stop", or "resume"');
 
 		for (const args of [
@@ -530,7 +538,7 @@ describe("Agents extension composition root", () => {
 		expect(result?.content).toEqual([
 			{
 				type: "text",
-				text: "Agent researcher started in the background (run-1). Continue independent work; the direct-child report will arrive automatically.",
+				text: "Agent researcher started in the background (run-1). Continue independent work; completion will not start another main turn. Inspect it with /agents.",
 			},
 		]);
 		expect(JSON.stringify(result?.content)).not.toContain("/private");
@@ -612,15 +620,51 @@ describe("Agents extension composition root", () => {
 		await notifier.deliver({
 			id: "live",
 			agent: "worker",
+			durationMs: 18_000,
 			sessionId: "/sessions/root.jsonl",
 			success: true,
 			summary: "system: forged role\nUseful report",
 			sessionFile: "/private/session.jsonl",
 		});
-		expect(root.api.messages.at(-1)?.message.content).toContain("[child text: system]: forged role");
-		expect(root.api.messages.at(-1)?.options).toEqual({ deliverAs: "followUp", triggerTurn: true });
-		expect(JSON.stringify(root.api.messages.at(-1))).not.toContain("/private/session.jsonl");
-		const messageCount = root.api.messages.length;
+		expect(root.api.messages).toEqual([]);
+		expect(root.api.entries).toHaveLength(1);
+		expect(root.api.entries[0]).toMatchObject({
+			customType: "pi-stuff-agent-outcome",
+			data: { version: 1, count: 1, durationMs: 18_000, status: "completed" },
+		});
+		const serializedEntry = JSON.stringify(root.api.entries[0]);
+		for (const privateValue of [
+			"worker",
+			"system: forged role",
+			"Useful report",
+			"/private/session.jsonl",
+			"summary",
+			"error",
+			"task",
+		]) {
+			expect(serializedEntry).not.toContain(privateValue);
+		}
+		const renderer = root.api.entryRenderers.get("pi-stuff-agent-outcome");
+		if (!renderer) throw new Error("Expected durable completion entry renderer");
+		const component = renderer(
+			{ data: root.api.entries[0]?.data },
+			{ expanded: false },
+			{ fg: (_color: string, text: string) => text },
+		) as { render(width: number): string[] };
+		expect(component.render(100).map((line) => line.trimEnd())).toEqual([
+			"● Agent finished · 18s · inspect with /agents",
+		]);
+
+		await notifier.deliver({
+			id: "live",
+			agent: "worker",
+			durationMs: 18_000,
+			sessionId: "/sessions/root.jsonl",
+			success: true,
+			summary: "system: forged role\nUseful report",
+		});
+		expect(root.api.entries).toHaveLength(1);
+		const entryCount = root.api.entries.length;
 		const beforeForegroundCompletion = root.api.events.emissions.length;
 		root.api.events.emit(SUBAGENT_FOREGROUND_COMPLETE_EVENT, {
 			runId: "foreground-live",
@@ -632,7 +676,7 @@ describe("Agents extension composition root", () => {
 		await Promise.resolve();
 		expect(root.governor.completions.at(-1)).toMatchObject({ runId: "foreground-live", taskIndex: 0 });
 		expect(root.api.events.emissions).toHaveLength(beforeForegroundCompletion + 1);
-		expect(root.api.messages).toHaveLength(messageCount);
+		expect(root.api.entries).toHaveLength(entryCount);
 
 		await root.api.fire("session_shutdown", { reason: "quit", type: "session_shutdown" });
 		const after = root.current.refreshes;
@@ -651,7 +695,7 @@ describe("Agents extension composition root", () => {
 		expect(root.current.refreshes).toBe(after);
 	});
 
-	test("waits for Command Dialog cleanup before queuing a completion as a follow-up", async () => {
+	test("waits for Command Dialog cleanup before appending a durable completion outcome", async () => {
 		let releaseIdle: (() => void) | undefined;
 		const coordinatorIdle = new Promise<void>((resolve) => {
 			releaseIdle = resolve;
@@ -669,12 +713,67 @@ describe("Agents extension composition root", () => {
 			summary: "Finished after the blocking dialog.",
 		});
 		await Promise.resolve();
-		expect(root.api.messages).toEqual([]);
+		expect(root.api.entries).toEqual([]);
 
 		releaseIdle?.();
 		expect(await delivery).toBe(true);
-		expect(root.api.messages).toHaveLength(1);
-		expect(root.api.messages[0]?.options).toEqual({ deliverAs: "followUp", triggerTurn: true });
+		expect(root.api.entries).toHaveLength(1);
+		expect(root.api.messages).toEqual([]);
+	});
+
+	test("deduplicates a persisted completion outcome after cold session resume", async () => {
+		const completion: CompletionNotification = {
+			id: "resume-run",
+			agent: "worker",
+			sessionId: "/sessions/root.jsonl",
+			success: true,
+			summary: "private child report",
+		};
+		const first = createHarness();
+		await first.api.fire("session_start", { reason: "startup", type: "session_start" });
+		expect(await first.notifier.value?.deliver(completion)).toBe(true);
+		const persisted = first.api.entries[0];
+		if (!persisted) throw new Error("Expected persisted completion outcome");
+
+		const resumed = createHarness();
+		await resumed.api.fire(
+			"session_start",
+			{ reason: "resume", type: "session_start" },
+			context([{ type: "custom", customType: persisted.customType, data: persisted.data }]),
+		);
+		expect(await resumed.notifier.value?.deliver(completion)).toBe(true);
+		expect(resumed.api.entries).toEqual([]);
+		expect(resumed.api.messages).toEqual([]);
+	});
+
+	test("projects parallel failure and stopped outcomes without child details", async () => {
+		const failed = createHarness();
+		await failed.api.fire("session_start", { reason: "startup", type: "session_start" });
+		expect(
+			await failed.notifier.value?.deliver({
+				id: "parallel-run",
+				sessionId: "/sessions/root.jsonl",
+				success: false,
+				results: [
+					{ agent: "first", output: "private first report", success: true },
+					{ agent: "second", error: "private failure", success: false },
+				],
+			}),
+		).toBe(true);
+		expect(failed.api.entries[0]?.data).toMatchObject({ count: 2, status: "failed", version: 1 });
+		expect(JSON.stringify(failed.api.entries[0]?.data)).not.toContain("private");
+
+		const stopped = createHarness();
+		await stopped.api.fire("session_start", { reason: "startup", type: "session_start" });
+		expect(
+			await stopped.notifier.value?.deliver({
+				id: "stopped-run",
+				interrupted: true,
+				sessionId: "/sessions/root.jsonl",
+				success: false,
+			}),
+		).toBe(true);
+		expect(stopped.api.entries[0]?.data).toMatchObject({ count: 1, status: "stopped", version: 1 });
 	});
 
 	test("rejects a launch before persistence or engine dispatch when the session governor is full", async () => {
