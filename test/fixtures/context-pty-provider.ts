@@ -163,6 +163,7 @@ function fixtureStream(context: Context) {
 		lastUser,
 		hasHistory: text.includes("<session-history>"),
 		hasSince: text.includes("<session-history-since>"),
+		hasNativeSummary: text.includes("NATIVE_COMPACTION_SUMMARY_MARKER"),
 		tools: (context.tools ?? []).map((tool) => tool.name),
 		searchResult: searchResult ? contentText(searchResult.content) : undefined,
 	});
@@ -175,6 +176,10 @@ function fixtureStream(context: Context) {
 		});
 	}
 	if (lastUser.includes("CONTEXT_MEMORY")) return textStream("CONTEXT_MEMORY_DONE");
+	if (lastUser.includes("CONTEXT_ISOLATION") && !searchResult) {
+		return toolCallStream("context-isolation-1", "ctx_search", { query: "中文检索标记" });
+	}
+	if (lastUser.includes("CONTEXT_ISOLATION")) return textStream("CONTEXT_ISOLATION_DONE");
 	if (lastUser.includes("CONTEXT_SEARCH_AGAIN") && !repeatSearchResult) {
 		return toolCallStream("context-search-2", "ctx_search", { query: "中文检索标记" });
 	}
@@ -191,6 +196,7 @@ function fixtureStream(context: Context) {
 	if (lastUser.includes("CONTEXT_SETTLE")) return textStream("CONTEXT_SETTLE_DONE", LOW_USAGE);
 	if (lastUser.includes("CONTEXT_RESUME")) return textStream("CONTEXT_RESUME_DONE");
 	if (lastUser.includes("CONTEXT_DRAIN")) return textStream("CONTEXT_DRAIN_DONE");
+	if (lastUser.includes("CONTEXT_NATIVE_RESUME")) return textStream("CONTEXT_NATIVE_RESUME_DONE");
 	if (lastUser.includes("CONTEXT_FAIL_OPEN")) return textStream("CONTEXT_FAIL_OPEN_DONE");
 	if (lastUser.includes("CONTEXT_SECOND")) return textStream("CONTEXT_SECOND_DONE");
 	return textStream("CONTEXT_FIRST_DONE");

@@ -2,10 +2,13 @@ import { Database } from "bun:sqlite";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/context-pty-provider.ts");
 const runner = join(root, "test/fixtures/context-pty-runner.sh");
+const MEMORY_EVIDENCE = "真实 Context 检索证据";
 
 export interface ContextPtyVerificationOptions {
 	readonly piBinary: string;
@@ -21,11 +24,21 @@ interface RecordLine {
 	readonly lastUser?: unknown;
 	readonly hasHistory?: unknown;
 	readonly hasSince?: unknown;
+	readonly hasNativeSummary?: unknown;
 	readonly commands?: unknown;
 	readonly tools?: unknown;
 	readonly searchResult?: unknown;
 	readonly subagent?: unknown;
 }
+
+const ZERO_USAGE = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
 
 interface SessionLine {
 	readonly type?: unknown;
@@ -134,9 +147,53 @@ expect { eof {} timeout { puts stderr "Fail-open Pi did not exit"; exit 4 } }
 `;
 }
 
-function runExpect(program: string, environment: Record<string, string | undefined>, label: string): string {
+function isolationProgram(): string {
+	return `
+set timeout 30
+spawn -noecho script -qefc $env(PI_STUFF_CONTEXT_PTY_RUNNER) /dev/null
+expect {
+    -exact "CONTEXT_ISOLATION_DONE" {}
+    timeout { puts stderr "Timed out waiting for isolated Context search"; exit 2 }
+    eof { puts stderr "Isolated Context Pi exited early"; exit 3 }
+}
+send -- "\\003"
+after 150
+send -- "\\004"
+expect { eof {} timeout { puts stderr "Isolated Context Pi did not exit"; exit 4 } }
+`;
+}
+
+function nativeCompactionProgram(): string {
+	return `
+set timeout 30
+
+proc must_expect {pattern} {
+    expect {
+        -exact $pattern {}
+        timeout { puts stderr "Timed out waiting for: $pattern"; exit 2 }
+        eof { puts stderr "Reached EOF waiting for: $pattern"; exit 3 }
+    }
+}
+
+spawn -noecho script -qefc $env(PI_STUFF_CONTEXT_PTY_RUNNER) /dev/null
+must_expect "NATIVE_TAIL_DONE"
+send -- "CONTEXT_NATIVE_RESUME\r"
+must_expect "CONTEXT_NATIVE_RESUME_DONE"
+send -- "\\003"
+after 150
+send -- "\\004"
+expect { eof {} timeout { puts stderr "Native-compacted Context Pi did not exit"; exit 4 } }
+`;
+}
+
+function runExpect(
+	program: string,
+	environment: Record<string, string | undefined>,
+	label: string,
+	cwd: string = root,
+): string {
 	const result = Bun.spawnSync(["expect", "-c", program], {
-		cwd: root,
+		cwd,
 		env: environment,
 		stdout: "pipe",
 		stderr: "pipe",
@@ -147,6 +204,45 @@ function runExpect(program: string, environment: Record<string, string | undefin
 		fail(`${label}: ${diagnostic.trim() || `expect exited ${String(result.exitCode)}`}`);
 	}
 	return output;
+}
+
+function seedNativeCompactedSession(sessionDirectory: string, cwd: string): string {
+	const manager = SessionManager.create(cwd, sessionDirectory, { id: "context-native-compacted" });
+	manager.appendModelChange("pi-stuff-context-pty", "fixture-model");
+	const oldUser: UserMessage = {
+		role: "user",
+		content: "NATIVE_OLD_HISTORY",
+		timestamp: Date.now(),
+	};
+	const oldAssistant: AssistantMessage = {
+		role: "assistant",
+		content: [{ type: "text", text: "NATIVE_OLD_DONE" }],
+		api: "openai-completions",
+		provider: "pi-stuff-context-pty",
+		model: "fixture-model",
+		usage: ZERO_USAGE,
+		stopReason: "stop",
+		timestamp: Date.now(),
+	};
+	manager.appendMessage(oldUser);
+	manager.appendMessage(oldAssistant);
+	const firstKeptEntryId = manager.appendMessage({
+		role: "user",
+		content: "NATIVE_TAIL_HISTORY",
+		timestamp: Date.now(),
+	} satisfies UserMessage);
+	manager.appendMessage({
+		...oldAssistant,
+		content: [{ type: "text", text: "NATIVE_TAIL_DONE" }],
+		timestamp: Date.now(),
+	});
+	manager.appendCompaction("NATIVE_COMPACTION_SUMMARY_MARKER", firstKeptEntryId, 50_000, {
+		modifiedFiles: [],
+		readFiles: [],
+	});
+	const sessionFile = manager.getSessionFile();
+	if (!sessionFile) fail("native-compacted target session was not persisted");
+	return sessionFile;
 }
 
 async function readRecords(path: string): Promise<RecordLine[]> {
@@ -173,6 +269,8 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 	const dataDirectory = join(temporaryDirectory, "data");
 	const cacheDirectory = join(temporaryDirectory, "cache");
 	const projectDirectory = join(temporaryDirectory, "项目隔离", "context");
+	const isolatedProjectDirectory = join(temporaryDirectory, "项目隔离", "other-context");
+	const nativeCompactedProjectDirectory = join(temporaryDirectory, "项目隔离", "native-compacted");
 	const sessionDirectory = join(temporaryDirectory, "sessions");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
 	const magicLog = join(temporaryDirectory, "magic-context.log");
@@ -181,9 +279,16 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 	const columns = options.columns ?? 64;
 	const rows = options.rows ?? 28;
 	await Promise.all(
-		[configDirectory, cortexConfigDirectory, dataDirectory, cacheDirectory, projectDirectory, sessionDirectory].map(
-			(path) => mkdir(path, { recursive: true }),
-		),
+		[
+			configDirectory,
+			cortexConfigDirectory,
+			dataDirectory,
+			cacheDirectory,
+			projectDirectory,
+			isolatedProjectDirectory,
+			nativeCompactedProjectDirectory,
+			sessionDirectory,
+		].map((path) => mkdir(path, { recursive: true })),
 	);
 	await Promise.all([
 		writeFile(requestLog, ""),
@@ -229,7 +334,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			XDG_CONFIG_HOME: xdgConfigDirectory,
 			XDG_DATA_HOME: dataDirectory,
 		};
-		const freshOutput = runExpect(expectProgram(), baseEnvironment, "fresh session");
+		const freshOutput = runExpect(expectProgram(), baseEnvironment, "fresh session", projectDirectory);
 		for (const forbidden of ["╭", "╮", "╰", "╯", "Magic Context", "ctx-aug", "ctx-doctor"]) {
 			if (freshOutput.includes(forbidden)) fail(`fresh TUI exposed forbidden UI text ${forbidden}`);
 		}
@@ -287,6 +392,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 				resumeProgram(),
 				{ ...baseEnvironment, PI_STUFF_CONTEXT_PTY_RESUME_SESSION: sessionFile },
 				"resume",
+				projectDirectory,
 			);
 		} catch (error) {
 			const diagnosticRecords = (await readFile(requestLog, "utf8").catch(() => "<request log unavailable>"))
@@ -368,8 +474,20 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			}
 		}
 		const searchRequest = requests.find((record) => typeof record.searchResult === "string");
-		if (!searchRequest || !(searchRequest.searchResult as string).includes("中文检索标记")) {
+		if (!searchRequest || !(searchRequest.searchResult as string).includes(MEMORY_EVIDENCE)) {
 			fail("ctx_search did not retrieve the Chinese memory written through ctx_memory");
+		}
+		const magicLogContents = await readFile(magicLog, "utf8");
+		const exercisedLexicalFallback =
+			magicLogContents.includes("continuing with lexical FTS retrieval only") ||
+			magicLogContents.includes("query embedding failed");
+		if (!exercisedLexicalFallback) {
+			const embeddingDiagnostics = magicLogContents
+				.split("\n")
+				.filter((line) => /embed|search/iu.test(line))
+				.slice(-40)
+				.join("\n");
+			fail(`embedding unavailability was not exercised before keyword retrieval fallback\n${embeddingDiagnostics}`);
 		}
 		const resumed = requests.find(
 			(record) => typeof record.lastUser === "string" && record.lastUser.includes("CONTEXT_RESUME"),
@@ -380,6 +498,57 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 
 		const sessionRecord = records.find((record) => record.type === "session");
 		if (typeof sessionRecord?.sessionId !== "string") fail("session identity was not recorded");
+		const isolationSessionDirectory = join(temporaryDirectory, "isolation-sessions");
+		const isolationLog = join(temporaryDirectory, "isolation.jsonl");
+		await mkdir(isolationSessionDirectory);
+		await writeFile(isolationLog, "");
+		runExpect(
+			isolationProgram(),
+			{
+				...baseEnvironment,
+				PI_STUFF_CONTEXT_PTY_INITIAL_PROMPT: "CONTEXT_ISOLATION",
+				PI_STUFF_CONTEXT_PTY_LOG: isolationLog,
+				PI_STUFF_CONTEXT_PTY_SESSIONS: isolationSessionDirectory,
+				PI_STUFF_CONTEXT_PTY_SESSION_ID: "context-isolation",
+			},
+			"project isolation",
+			isolatedProjectDirectory,
+		);
+		const isolationRequests = (await readRecords(isolationLog)).filter((record) => record.type === "request");
+		const isolationSearch = isolationRequests.find((record) => typeof record.searchResult === "string");
+		if (!isolationSearch) fail("isolated project did not execute ctx_search");
+		if ((isolationSearch.searchResult as string).includes(MEMORY_EVIDENCE)) {
+			fail("memory from the first project leaked into the isolated project search");
+		}
+
+		const nativeSessionDirectory = join(temporaryDirectory, "native-compacted-sessions");
+		const nativeLog = join(temporaryDirectory, "native-compacted.jsonl");
+		await mkdir(nativeSessionDirectory);
+		await writeFile(nativeLog, "");
+		const nativeSession = seedNativeCompactedSession(nativeSessionDirectory, nativeCompactedProjectDirectory);
+		runExpect(
+			nativeCompactionProgram(),
+			{
+				...baseEnvironment,
+				PI_STUFF_CONTEXT_PTY_LOG: nativeLog,
+				PI_STUFF_CONTEXT_PTY_RESUME_SESSION: nativeSession,
+				PI_STUFF_CONTEXT_PTY_SESSIONS: nativeSessionDirectory,
+			},
+			"native-compacted resume",
+			nativeCompactedProjectDirectory,
+		);
+		const nativeRequests = (await readRecords(nativeLog)).filter((record) => record.type === "request");
+		const nativeResume = nativeRequests.find(
+			(record) => typeof record.lastUser === "string" && record.lastUser.includes("CONTEXT_NATIVE_RESUME"),
+		);
+		if (nativeResume?.hasHistory !== true || nativeResume.hasNativeSummary !== true) {
+			fail("Magic Context did not adopt the existing Pi-native compaction summary on resume");
+		}
+		const nativeRaw = await readFile(nativeSession, "utf8");
+		if (!nativeRaw.includes('"type":"compaction"') || !nativeRaw.includes("NATIVE_COMPACTION_SUMMARY_MARKER")) {
+			fail("native compaction entry was rewritten or lost during Magic Context adoption");
+		}
+
 		const database = new Database(databasePath, { readonly: true });
 		try {
 			const ownership = database
@@ -390,6 +559,21 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			}
 			if (!ownership.project_path.startsWith("git:") && !ownership.project_path.startsWith("dir:")) {
 				fail(`unexpected project identity ${ownership.project_path}`);
+			}
+			const isolatedOwnership = database
+				.query("SELECT project_path FROM session_projects WHERE session_id = ? AND harness = 'pi'")
+				.get("context-isolation") as { readonly project_path?: unknown } | null;
+			if (typeof isolatedOwnership?.project_path !== "string") {
+				fail("isolated Pi session did not persist its project binding");
+			}
+			if (isolatedOwnership.project_path === ownership.project_path) {
+				fail("distinct project directories resolved to the same Magic Context identity");
+			}
+			const memoryOwnership = database
+				.query("SELECT DISTINCT project_path FROM memories WHERE content LIKE ?")
+				.all(`%${MEMORY_EVIDENCE}%`) as Array<{ readonly project_path?: unknown }>;
+			if (memoryOwnership.length !== 1 || memoryOwnership[0]?.project_path !== ownership.project_path) {
+				fail("written memory was not confined to the originating project identity");
 			}
 		} finally {
 			database.close();
@@ -410,6 +594,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 				XDG_DATA_HOME: "/dev/null",
 			},
 			"fail-open",
+			projectDirectory,
 		);
 		if (!failOpenOutput.includes("CONTEXT_FAIL_OPEN_DONE")) fail("native fail-open response was not rendered");
 		const failOpenRecords = (await readRecords(failOpenLog)).filter((record) => record.type === "request");
@@ -424,5 +609,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 if (import.meta.main) {
 	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 	await verifyContextPty({ piBinary: PI_BIN, packagePath: join(root, "packages/pi-stuff") });
-	console.log("Certified Magic Context in a real 64x28 Pi TUI, including resume and fail-open");
+	console.log(
+		"Certified Magic Context in a real 64x28 Pi TUI, including project isolation, native-compaction adoption, embedding fallback, resume, and fail-open",
+	);
 }
