@@ -12,6 +12,7 @@ import {
 import { Type } from "typebox";
 import piStuffContext, {
 	__test,
+	CONTEXT_COMPACTION_BYPASSED_EVENT,
 	getContextCapability,
 	projectCurrentContext,
 } from "../../packages/pi-stuff-context/index.js";
@@ -30,8 +31,23 @@ function apiFor(
 	registrations: HostRegistrations = { commands: [], entryRenderers: [] },
 ): ExtensionAPI {
 	let activeTools: string[] = [];
+	const eventBus = new Map<string, Array<(value: unknown) => void>>();
 	return {
-		events: {},
+		events: {
+			emit(name: string, value: unknown): void {
+				for (const listener of eventBus.get(name) ?? []) listener(value);
+			},
+			on(name: string, listener: (value: unknown) => void): () => void {
+				const listeners = eventBus.get(name) ?? [];
+				listeners.push(listener);
+				eventBus.set(name, listeners);
+				return () => {
+					const current = eventBus.get(name);
+					const index = current?.indexOf(listener) ?? -1;
+					if (index >= 0) current?.splice(index, 1);
+				};
+			},
+		},
 		on(event: string, handler: Handler): void {
 			const current = handlers.get(event) ?? [];
 			current.push(handler);
@@ -402,8 +418,11 @@ describe("Context capability lifecycle", () => {
 
 	test("restores native compaction while a live Magic transform is unhealthy", async () => {
 		const handlers: Handlers = new Map();
+		const api = apiFor(handlers);
+		const bypasses: unknown[] = [];
+		api.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (value) => bypasses.push(value));
 		let shouldFail = false;
-		piStuffContext(apiFor(handlers), {
+		piStuffContext(api, {
 			loadMagicContext: async () => ({
 				default: async (pi: ExtensionAPI) => {
 					const register = pi.on.bind(pi) as unknown as (event: string, handler: Handler) => void;
@@ -422,18 +441,21 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([{ cancel: true }]);
+		expect(bypasses).toEqual([{ schemaVersion: 1, sessionManager: ctx.sessionManager, source: "magic-context" }]);
 
 		shouldFail = true;
 		const original = { type: "context", messages: [taggedMessage("native")] };
 		expect(await emitResults(handlers, "context", original, ctx)).toEqual([{ messages: original.messages }]);
 		expect(getContextCapability(ctx).status().state).toBe("degraded");
 		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([undefined]);
+		expect(bypasses).toHaveLength(1);
 
 		shouldFail = false;
 		const recovered = await emitResults(handlers, "context", original, ctx);
 		expect(JSON.stringify(recovered)).toContain("healthy");
 		expect(getContextCapability(ctx).status().state).toBe("active");
 		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([{ cancel: true }]);
+		expect(bypasses).toHaveLength(2);
 	});
 });
 

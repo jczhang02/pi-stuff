@@ -167,7 +167,12 @@ function goal(state: Record<string, unknown>): Record<string, unknown> | null {
 	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
-function assertScenario(scenario: Scenario, records: readonly RpcRecord[], logRecords: readonly RpcRecord[]): void {
+function assertScenario(
+	scenario: Scenario,
+	records: readonly RpcRecord[],
+	logRecords: readonly RpcRecord[],
+	observedActiveGoal: boolean,
+): void {
 	const sessionEntries = entries(response(records, `${scenario}-entries`));
 	const states = goalStates(sessionEntries);
 	if (states.length === 0) throw new Error(`${scenario}: no persisted Goal states were observed`);
@@ -185,7 +190,7 @@ function assertScenario(scenario: Scenario, records: readonly RpcRecord[], logRe
 		return;
 	}
 	if (finalGoal !== null) throw new Error(`${scenario}: Goal was not cleared after completion`);
-	if (!goals.some((candidate) => candidate && Reflect.get(candidate, "status") === "active")) {
+	if (!observedActiveGoal) {
 		throw new Error(`${scenario}: active Goal state was not persisted`);
 	}
 	if (scenario === "reload") {
@@ -195,13 +200,28 @@ function assertScenario(scenario: Scenario, records: readonly RpcRecord[], logRe
 	}
 	if (scenario === "compaction") {
 		const compactionEnd = records.find((record) => record.type === "compaction_end");
-		if (!compactionEnd || Reflect.get(compactionEnd, "aborted") === true || !Reflect.get(compactionEnd, "result")) {
+		const completionBoundaries = logRecords.filter(
+			(record) => record.type === "session_compact" || record.type === "context_compaction_bypassed",
+		);
+		if (completionBoundaries.length !== 1) {
 			throw new Error(
-				`compaction: certified host did not complete compaction successfully: ${JSON.stringify(compactionEnd)}`,
+				`compaction: expected one native or Magic completion boundary, received ${JSON.stringify(completionBoundaries)}`,
 			);
 		}
-		if (!logRecords.some((record) => record.type === "session_compact")) {
-			throw new Error("compaction: Goal did not cross the session_compact lifecycle");
+		if (completionBoundaries[0]?.type === "session_compact") {
+			if (
+				!compactionEnd ||
+				Reflect.get(compactionEnd, "aborted") === true ||
+				!Reflect.get(compactionEnd, "result")
+			) {
+				throw new Error(
+					`compaction: certified host did not complete native compaction successfully: ${JSON.stringify(compactionEnd)}`,
+				);
+			}
+		} else if (!compactionEnd || Reflect.get(compactionEnd, "aborted") !== true) {
+			throw new Error(
+				`compaction: Magic Context bypass did not intentionally cancel native compaction: ${JSON.stringify(compactionEnd)}`,
+			);
 		}
 	}
 }
@@ -270,8 +290,11 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 			await transport.send({ type: "prompt", message: startMessage });
 			const deadline = Date.now() + TIMEOUT_MS;
 			let finalRecords: RpcRecord[] | undefined;
+			let latestGoalState: Record<string, unknown> | null | undefined;
+			let observedActiveGoal = false;
 			while (!finalRecords) {
 				if (Date.now() >= deadline) {
+					const lifecycleLog = parseRecords(await readFile(logPath, "utf8").catch(() => ""));
 					const diagnostics = transport.records
 						.filter((record) => record.command !== "get_entries")
 						.slice(-30)
@@ -282,23 +305,40 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 							success: record.success,
 							type: record.type,
 						}));
+					const appendedGoalEntries = transport.records
+						.filter((record) => record.type === "entry_appended")
+						.map((record) => Reflect.get(record, "entry"))
+						.filter(
+							(entry): entry is Record<string, unknown> =>
+								typeof entry === "object" &&
+								entry !== null &&
+								Reflect.get(entry, "customType") === "goal-state",
+						);
 					throw new Error(
-						`${scenario}: Goal lifecycle did not reach a terminal state: ${JSON.stringify(diagnostics)}`,
+						`${scenario}: Goal lifecycle did not reach a terminal state: ${JSON.stringify({ diagnostics, latestGoalState, observedActiveGoal, appendedGoalEntries, lifecycle: lifecycleLog.slice(-50) })}`,
 					);
 				}
 				const entryResponse = await transport.send({ type: "get_entries" });
 				const sessionEntries = entries(entryResponse);
 				const goals = goalStates(sessionEntries).map(goal);
+				const appendedGoals = goalStates(
+					transport.records
+						.filter((record) => record.type === "entry_appended")
+						.map((record) => Reflect.get(record, "entry"))
+						.filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null),
+				).map(goal);
 				const latest = goals.at(-1);
+				latestGoalState = latest;
+				observedActiveGoal ||= [...goals, ...appendedGoals].some(
+					(candidate) => candidate !== null && Reflect.get(candidate, "status") === "active",
+				);
 				const terminal =
 					scenario === "blocker"
 						? latest !== null && latest !== undefined && Reflect.get(latest, "status") === "blocked"
 						: latest === null &&
-							goals.some((candidate) => candidate !== null) &&
+							observedActiveGoal &&
 							(scenario !== "compaction" ||
-								transport.records.some(
-									(record) => record.type === "compaction_end" && Reflect.get(record, "aborted") !== true,
-								));
+								transport.records.some((record) => record.type === "compaction_end"));
 				if (terminal) {
 					entryResponse.id = `${scenario}-entries`;
 					finalRecords = [...transport.records];
@@ -309,7 +349,7 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 			const extensionError = finalRecords.find((record) => record.type === "extension_error");
 			if (extensionError) throw new Error(`${scenario}: Pi extension error: ${JSON.stringify(extensionError)}`);
 			const logContents = await readFile(logPath, "utf8").catch(() => "");
-			assertScenario(scenario, finalRecords, parseRecords(logContents));
+			assertScenario(scenario, finalRecords, parseRecords(logContents), observedActiveGoal);
 		} finally {
 			await transport.stop();
 		}

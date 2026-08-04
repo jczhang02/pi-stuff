@@ -56,6 +56,7 @@ export interface StatusContext {
 	};
 	isIdle?: () => boolean;
 	hasPendingMessages?: () => boolean;
+	waitForIdle?: () => Promise<void>;
 	abort?: () => void;
 	sessionManager?: unknown;
 }

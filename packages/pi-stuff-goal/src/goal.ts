@@ -71,6 +71,23 @@ const MAX_BLOCKER_REASON_LENGTH = 1_000;
 const MAX_BLOCKER_EVIDENCE_LENGTH = 4_000;
 const MAX_COMPLETION_EVIDENCE_ITEMS = 50;
 const MAX_COMPLETION_EVIDENCE_TEXT_LENGTH = 4_000;
+export const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
+
+interface ContextCompactionBypassedEvent {
+	readonly schemaVersion: 1;
+	readonly sessionManager: object;
+	readonly source: "magic-context";
+}
+
+function isContextCompactionBypassedEvent(value: unknown): value is ContextCompactionBypassedEvent {
+	if (typeof value !== "object" || value === null) return false;
+	return (
+		Reflect.get(value, "schemaVersion") === 1 &&
+		Reflect.get(value, "source") === "magic-context" &&
+		typeof Reflect.get(value, "sessionManager") === "object" &&
+		Reflect.get(value, "sessionManager") !== null
+	);
+}
 
 // Cohesion justification: command, tool, continuation, and lifecycle handlers coordinate one
 // guarded Goal state machine whose ordering and stale-turn invariants share the same closures.
@@ -124,6 +141,62 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		resetSafetyEpoch = true,
 	) => runtime.sendOwnedGoalPrompt(ctx, goalId, prompt, resetSafetyEpoch);
 	const dispatchPendingQueueActionIfSettled = commands.dispatchPendingQueueActionIfSettled.bind(commands);
+	type PendingOwnedCompaction = {
+		readonly ctx: StatusContext;
+		readonly event: unknown;
+		readonly generation: number;
+		readonly goalId: string;
+		readonly sessionManager: object;
+	};
+	let ownedCompactionGeneration = 0;
+	let ownedCompactionTimer: ReturnType<typeof setTimeout> | undefined;
+	let pendingOwnedCompaction: PendingOwnedCompaction | undefined;
+
+	const clearPendingOwnedCompaction = (): void => {
+		ownedCompactionGeneration++;
+		pendingOwnedCompaction = undefined;
+		if (ownedCompactionTimer !== undefined) clearTimeout(ownedCompactionTimer);
+		ownedCompactionTimer = undefined;
+	};
+	const armOwnedCompaction = (event: unknown, ctx: StatusContext, goalId: string): void => {
+		if (typeof ctx.sessionManager !== "object" || ctx.sessionManager === null) return;
+		pendingOwnedCompaction = {
+			ctx,
+			event,
+			generation: ownedCompactionGeneration,
+			goalId,
+			sessionManager: ctx.sessionManager,
+		};
+	};
+	const resumeAfterOwnedCompaction = async (pending: PendingOwnedCompaction): Promise<void> => {
+		try {
+			await pending.ctx.waitForIdle?.();
+		} catch {
+			// Fall through to the generation and live-idle checks below.
+		}
+		if (pending.generation !== ownedCompactionGeneration) return;
+		const activeGoal = runtime.activeGoal;
+		if (!activeGoal || activeGoal.id !== pending.goalId || activeGoal.status !== "active") return;
+		if (runtime.pendingQueueAction) {
+			await dispatchPendingQueueActionIfSettled(pending.ctx);
+			return;
+		}
+		if (isPiOwnedCompactionRetry(pending.event, activeGoal.id)) return;
+		clearGoalRecoveryForGoal(activeGoal.id);
+		requestContinuation(activeGoal);
+		dispatchContinuationIfSettled(pending.ctx);
+	};
+	const unsubscribeOwnedCompaction = pi.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (value) => {
+		if (!isContextCompactionBypassedEvent(value)) return;
+		const pending = pendingOwnedCompaction;
+		if (!pending || value.sessionManager !== pending.sessionManager) return;
+		pendingOwnedCompaction = undefined;
+		if (ownedCompactionTimer !== undefined) clearTimeout(ownedCompactionTimer);
+		ownedCompactionTimer = setTimeout(() => {
+			ownedCompactionTimer = undefined;
+			void resumeAfterOwnedCompaction(pending);
+		}, 0);
+	});
 
 	const goalCompleteTool = defineTool({
 		name: GOAL_COMPLETE_TOOL,
@@ -655,6 +728,8 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		clearPendingOwnedCompaction();
+		if (typeof unsubscribeOwnedCompaction === "function") unsubscribeOwnedCompaction();
 		runController.unbindSession();
 		runtime.closeMenuSession();
 		if (runtime.activeGoal) {
@@ -681,6 +756,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("session_before_compact", (event, ctx) => {
+		clearPendingOwnedCompaction();
 		if (runtime.queueFrozen) return;
 		if (runtime.activeGoal?.status === "budget_limited") {
 			if ((event as { willRetry?: boolean }).willRetry === true) return { cancel: true as const };
@@ -689,6 +765,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		if (runtime.activeGoal?.status !== "active") return;
 		if (!updateGoalUsage(runtime.activeGoal, ctx)) return;
 		cancelContinuationWork();
+		armOwnedCompaction(event, ctx, runtime.activeGoal.id);
 		persistGoal(runtime.activeGoal);
 		updateStatus(ctx, runtime.activeGoal);
 		if (runtime.pendingQueueAction) return;
@@ -696,6 +773,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("session_compact", async (event, ctx) => {
+		clearPendingOwnedCompaction();
 		if (runtime.queueFrozen) return;
 		if (runtime.activeGoal?.status !== "active") {
 			clearGoalRecovery();

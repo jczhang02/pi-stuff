@@ -13,6 +13,7 @@ import { registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/p
 import { Type } from "typebox";
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
+export const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
 const MAGIC_CONTEXT_MODULE = "@jczhang02/pi-magic-context";
 const MAGIC_SUBAGENT_ENV = "MAGIC_CONTEXT_PI_SUBAGENT";
 const BTW_PROJECTION_LIMIT = 48_000;
@@ -516,7 +517,24 @@ class ContextCapabilityRuntime implements ContextCapability {
 			register(event, async (rawEvent, ctx) => {
 				if (!this.isCurrentGeneration(generation) || this.state.state !== "active" || !this.magicContextHandler)
 					return;
-				return handler(rawEvent, ctx);
+				const result = await handler(rawEvent, ctx);
+				if (
+					this.isCurrentGeneration(generation) &&
+					typeof result === "object" &&
+					result !== null &&
+					Reflect.get(result, "cancel") === true
+				) {
+					try {
+						this.pi.events.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
+							schemaVersion: 1,
+							sessionManager: ctx.sessionManager,
+							source: "magic-context",
+						});
+					} catch {
+						// Goal handoff is optional; native cancellation remains authoritative.
+					}
+				}
+				return result;
 			});
 			return;
 		}

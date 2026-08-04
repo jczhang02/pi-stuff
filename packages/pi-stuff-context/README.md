@@ -38,3 +38,7 @@ This boundary deliberately works within Pi 0.83's extension interface:
   model-specific tokenizer. Agent projections use the resolved child and
   fallback model windows plus conservative prompt and fork reserves; exact
   provider tokenization remains the provider's responsibility.
+- When active Magic Context cancels native compaction, Context publishes one
+  session-identity-bound in-process event. Goal uses that event only to replace
+  a continuation it suspended at `session_before_compact`; degraded/native
+  operation continues to use Pi's ordinary `session_compact` event.

@@ -5,6 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
+const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
 const ZERO_USAGE = {
 	input: 0,
 	output: 0,
@@ -33,7 +34,11 @@ function log(record: Record<string, unknown>): void {
 	if (path) appendFileSync(path, `${JSON.stringify(record)}\n`);
 }
 
-function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
+function message(
+	content: AssistantMessage["content"],
+	stopReason: AssistantMessage["stopReason"],
+	errorMessage?: string,
+): AssistantMessage {
 	return {
 		role: "assistant",
 		content,
@@ -42,6 +47,7 @@ function message(content: AssistantMessage["content"], stopReason: AssistantMess
 		model: MODEL,
 		usage: ZERO_USAGE,
 		stopReason,
+		...(errorMessage ? { errorMessage } : {}),
 		timestamp: Date.now(),
 	};
 }
@@ -80,6 +86,13 @@ function toolStream(name: string, arguments_: Record<string, unknown>) {
 		],
 		"toolUse",
 	);
+}
+
+function retryableErrorStream(errorMessage: string) {
+	const result = createAssistantMessageEventStream();
+	result.push({ type: "start", partial: message([], "pending") });
+	result.push({ type: "error", reason: "error", error: message([], "error", errorMessage) });
+	return result;
 }
 
 function contextText(context: Context): string {
@@ -149,7 +162,9 @@ function response(context: Context) {
 	}
 	if (selected === "reload") return completion(context);
 	if (selected === "compaction") {
-		return goalCalls === 1 ? textStream("Initial packed Goal pass remains incomplete.") : completion(context);
+		return goalCalls === 1
+			? retryableErrorStream("HTTP 524 retryable boundary before owned compaction")
+			: completion(context);
 	}
 	const blockerAttempt = Math.floor((goalCalls + 1) / 2);
 	return goalCalls % 2 === 1
@@ -173,6 +188,16 @@ function activeGoal(objective: string) {
 }
 
 export default function goalLifecycleProvider(pi: ExtensionAPI): void {
+	pi.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (event) => {
+		if (
+			typeof event === "object" &&
+			event !== null &&
+			Reflect.get(event, "schemaVersion") === 1 &&
+			Reflect.get(event, "source") === "magic-context"
+		) {
+			log({ type: "context_compaction_bypassed" });
+		}
+	});
 	pi.registerProvider(PROVIDER, {
 		name: "Pi Stuff Goal lifecycle fixture",
 		baseUrl: "https://fixture.invalid",
@@ -217,11 +242,24 @@ export default function goalLifecycleProvider(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.on("agent_end", (_event, ctx) => {
+	pi.on("agent_end", async (_event, ctx) => {
 		if (scenario() !== "compaction" || goalCalls !== 1 || compactionRequested) return;
 		compactionRequested = true;
-		ctx.compact({ customInstructions: "Certify active Goal compaction." });
+		await ctx.compact({ customInstructions: "Certify active Goal compaction." });
 	});
+	pi.on("agent_start", () => log({ type: "agent_start" }));
+	pi.on("tool_call", (event) => log({ type: "tool_call", toolCallId: event.toolCallId, toolName: event.toolName }));
+	pi.on("tool_execution_start", (event) =>
+		log({ type: "tool_execution_start", toolCallId: event.toolCallId, toolName: event.toolName }),
+	);
+	pi.on("tool_execution_end", (event) =>
+		log({
+			type: "tool_execution_end",
+			isError: event.isError,
+			toolCallId: event.toolCallId,
+			toolName: event.toolName,
+		}),
+	);
 
 	pi.on("session_before_compact", (event) => {
 		if (scenario() !== "compaction") return;
