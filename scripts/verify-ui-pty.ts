@@ -388,7 +388,8 @@ function sanitizePtyEvidence(value: string): string {
 		.replace(/\/tmp\/pi-stuff-ui-pty-[^/\s]+/gu, "[fixture]")
 		.split("\n")
 		.map((line) => line.trimEnd())
-		.join("\n");
+		.join("\n")
+		.trimEnd();
 }
 
 function verifyFreshScreen(screen: string, columns: number): void {

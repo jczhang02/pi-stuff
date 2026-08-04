@@ -25,4 +25,3 @@
   Show session and context information below the editor
 
   Type to search · Enter/Space to change · Esc to close
-
