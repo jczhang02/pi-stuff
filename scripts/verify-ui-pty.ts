@@ -580,6 +580,55 @@ async function verifyLiveResize(session: TmuxPiSession): Promise<void> {
 	}
 }
 
+function verifyFullWidthDivider(screen: string, columns: number, label: string): void {
+	const divider = screen
+		.split("\n")
+		.find(
+			(line) =>
+				line.length > 0 && [...line].every((character) => character === "─") && visibleWidth(line) === columns,
+		);
+	if (!divider) fail(`${label} did not expose a ${String(columns)}-column divider\n${screen}`);
+}
+
+async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Promise<void> {
+	const settingsPath = join(paths.config, "pi-stuff-codex.json");
+	session.sendKey("C-u");
+	session.sendLiteral("/codex");
+	session.sendKey("Enter");
+	let screen = await session.waitForText("gpt-image-2");
+	await session.waitForText("Codex usage is unavailable in offline mode.");
+	verifySettingValue(screen, "Fast mode", "off");
+	if (screen.includes(STATUS_MARKER)) fail("Statusline remained visible while /codex owned the input region");
+	verifyNoFloatingFrame(screen, "/codex Command Dialog");
+	verifyFullWidthDivider(screen, 100, "/codex Command Dialog");
+	verifyTerminalWidth(screen, 100, "/codex Command Dialog");
+
+	session.resize(64, 28);
+	screen = await session.waitForText("gpt-image-2");
+	verifyNoFloatingFrame(screen, "narrow /codex Command Dialog");
+	verifyFullWidthDivider(screen, 64, "narrow /codex Command Dialog");
+	verifyTerminalWidth(screen, 64, "narrow /codex Command Dialog");
+	session.resize(100, 32);
+	await session.waitForText("gpt-image-2");
+	session.sendKey("Escape");
+	await session.waitForText(STATUS_MARKER);
+
+	session.sendKey("C-u");
+	session.sendLiteral("/codex fast");
+	session.sendKey("Enter");
+	await waitForPersistedSetting(settingsPath, "fast", true);
+	session.sendLiteral("/codex");
+	session.sendKey("Enter");
+	screen = await session.waitForText("gpt-image-2");
+	verifySettingValue(screen, "Fast mode", "on");
+	session.sendKey("Enter");
+	await waitForPersistedSetting(settingsPath, "fast", false);
+	screen = await session.waitForText("off");
+	verifySettingValue(screen, "Fast mode", "off");
+	session.sendKey("Escape");
+	await session.waitForText(STATUS_MARKER);
+}
+
 async function verifyWideInteractions(
 	session: TmuxPiSession,
 	paths: CasePaths,
@@ -587,6 +636,8 @@ async function verifyWideInteractions(
 ): Promise<{ readonly liveThought: boolean }> {
 	const settingsPath = join(paths.config, "pi-stuff-ui.json");
 	const toolSettingsPath = join(paths.config, "pi-stuff-tools.json");
+
+	await verifyCodexDialog(session, paths);
 
 	let screen = await openFilteredUi(session, "welcome", "Welcome header");
 	if (screen.includes(STATUS_MARKER)) fail("Statusline remained visible while /ui owned the input region");
@@ -836,6 +887,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						"native and inline autocomplete suppression and restoration",
 						"long CJK prompt, Welcome scroll-away, live and settled Thought",
 						"metered and API-key subscription Statusline cost behavior",
+						"responsive /codex controls, Fast persistence, and offline degradation",
 						"eight /ui settings, enum changes, and restart persistence",
 						"/ui search, immediate Statusline and Inline changes, Welcome next-launch persistence",
 					);

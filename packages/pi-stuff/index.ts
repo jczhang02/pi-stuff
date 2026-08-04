@@ -3,6 +3,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import piStuffAgents from "@jczhang02/pi-stuff-agents";
 import piStuffBtw from "@jczhang02/pi-stuff-btw";
+import piStuffCodex from "@jczhang02/pi-stuff-codex";
 import piStuffContext from "@jczhang02/pi-stuff-context";
 import piStuffRtk from "@jczhang02/pi-stuff-rtk";
 import piStuffTodo from "@jczhang02/pi-stuff-todo";
@@ -15,6 +16,7 @@ const CAPABILITIES: readonly CapabilityFactory[] = [
 	piStuffUi,
 	piStuffTools,
 	piStuffRtk,
+	piStuffCodex,
 	piStuffContext,
 	piStuffAgents,
 	piStuffTodo,

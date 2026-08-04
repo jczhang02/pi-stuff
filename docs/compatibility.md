@@ -50,3 +50,6 @@ locally until Pi publishes it in a tagged release.
 A Pi upgrade requires a dedicated change that reviews relevant Extension and Package interfaces, updates the pinned
 development dependency and Host source profile together, and passes the no-model standalone-host certification.
 Compatibility with other Pi builds is not claimed until that work is complete.
+
+The Codex Capability bundles its retained native helpers only for the certified Linux x64 profile. On another target,
+the command and ordinary Pi turns remain available while the unavailable Tool returns a bounded recovery error.

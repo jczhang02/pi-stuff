@@ -1,0 +1,359 @@
+// biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
+import { readFile, stat } from "node:fs/promises";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { Container, Image, Spacer, Text } from "@earendil-works/pi-tui";
+import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
+import { Type } from "typebox";
+import { isOpenAICodexResponsesModel, resolveCodexAccount, supportsCodexImages } from "./account.js";
+import { parseNativeJson, runNativeTool } from "./native-runner.js";
+
+export const IMAGE_GENERATION_MODEL = "gpt-image-2";
+
+const APPLY_PATCH_PARAMETERS = Type.Object({
+	input: Type.String({
+		description: "Full patch text using *** Begin Patch / *** End Patch and Add, Update, or Delete File sections",
+	}),
+});
+const VIEW_IMAGE_PARAMETERS = Type.Object({
+	path: Type.String(),
+	detail: Type.Optional(Type.Literal("original")),
+});
+const IMAGE_GENERATION_PARAMETERS = Type.Object({
+	prompt: Type.String(),
+	action: Type.Optional(Type.Union([Type.Literal("generate"), Type.Literal("edit")])),
+	images: Type.Optional(Type.Array(Type.String())),
+});
+
+const CODEX_TOOL_NAMES = ["apply_patch", "view_image", "imagegen"] as const;
+const MAX_INLINE_IMAGE_BYTES = 25 * 1024 * 1024;
+const MAX_INLINE_IMAGES = 4;
+
+interface ApplyPatchResult {
+	readonly changedFiles: string[];
+	readonly createdFiles: string[];
+	readonly deletedFiles: string[];
+	readonly fuzz: number;
+	readonly movedFiles: string[];
+}
+
+interface ApplyPatchNativeResult {
+	readonly error?: string | null;
+	readonly result?: ApplyPatchResult;
+	readonly status?: "failure" | "success";
+}
+
+interface ImageContent {
+	readonly data: string;
+	readonly mimeType: string;
+	readonly type: "image";
+}
+
+interface ViewImageDetails {
+	readonly mimeType: string;
+	readonly path: string;
+}
+
+interface GeneratedImage {
+	readonly absolute_path?: string;
+	readonly latest_path?: string;
+	readonly path?: string;
+}
+
+interface ImageGenerationNativeResult {
+	readonly images?: GeneratedImage[];
+	readonly latest_path?: string;
+	readonly path: string;
+}
+
+interface ImageGenerationDetails extends ImageGenerationNativeResult {
+	readonly model: typeof IMAGE_GENERATION_MODEL;
+}
+
+function oneLine(value: string): string {
+	return value
+		.split("")
+		.map((character) => {
+			const codePoint = character.codePointAt(0) ?? 0;
+			return codePoint < 32 || (codePoint >= 127 && codePoint <= 159) ? " " : character;
+		})
+		.join("")
+		.replaceAll(/\s+/gu, " ")
+		.trim();
+}
+
+function nativeError(
+	label: string,
+	result: { readonly status: number | null; readonly stderr: string; readonly stdout: string },
+): Error {
+	const message = oneLine(result.stderr || result.stdout) || `${label} exited with status ${String(result.status)}.`;
+	return new Error(message);
+}
+
+function patchTargets(patch: string): string[] {
+	return [...patch.matchAll(/^\*\*\* (?:Add|Delete|Update) File: (.+)$/gmu)]
+		.map((match) => oneLine(match[1] ?? ""))
+		.filter(Boolean);
+}
+
+function patchTarget(patch: string): string {
+	const targets = patchTargets(patch);
+	if (targets.length === 0) return "";
+	return targets.length === 1 ? (targets[0] ?? "") : `${targets[0] ?? ""} +${String(targets.length - 1)}`;
+}
+
+function patchSummary(result: ApplyPatchResult): string {
+	const changed = result.changedFiles.length;
+	return changed === 1 ? "changed 1 file" : `changed ${String(changed)} files`;
+}
+
+function createApplyPatchTool() {
+	return {
+		name: "apply_patch",
+		label: "apply_patch",
+		description: "Apply a structured patch to files",
+		promptSnippet: "Use apply_patch for text-file edits; split oversized patches",
+		parameters: APPLY_PATCH_PARAMETERS,
+		executionMode: "sequential" as const,
+		prepareArguments(args: unknown): { input: string } {
+			if (typeof args === "object" && args !== null) {
+				const source = args as Record<string, unknown>;
+				for (const key of ["input", "patch", "patchText"] as const) {
+					if (typeof source[key] === "string") return { input: source[key] };
+				}
+			}
+			return args as { input: string };
+		},
+		async execute(
+			_toolCallId: string,
+			params: { input: string },
+			signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			ctx: ExtensionContext,
+		) {
+			if (typeof params.input !== "string") throw new Error("apply_patch requires a string input.");
+			const native = await withFileMutationQueue(ctx.cwd, () =>
+				runNativeTool({
+					cwd: ctx.cwd,
+					env: { ...process.env, PI_APPLY_PATCH_JSON: "1" },
+					input: params.input,
+					signal,
+					tool: "apply_patch",
+				}),
+			);
+			let parsed: ApplyPatchNativeResult;
+			try {
+				parsed = parseNativeJson<ApplyPatchNativeResult>(native.stdout, "apply_patch");
+			} catch (error) {
+				if (native.status !== 0) throw nativeError("apply_patch", native);
+				throw error;
+			}
+			if (native.status !== 0 || parsed.status !== "success" || !parsed.result) {
+				const partial = parsed.result?.changedFiles.length
+					? ` Earlier actions changed ${String(parsed.result.changedFiles.length)} file(s); inspect them before retrying.`
+					: "";
+				throw new Error(`${oneLine(parsed.error ?? "") || nativeError("apply_patch", native).message}${partial}`);
+			}
+			return {
+				content: [{ type: "text" as const, text: `Applied patch successfully. ${patchSummary(parsed.result)}.` }],
+				details: parsed.result,
+			};
+		},
+	};
+}
+
+function parseImageDataUrl(stdout: string): ImageContent {
+	const value = parseNativeJson<{ detail?: unknown; image_url?: unknown }>(stdout, "view_image");
+	if (typeof value.image_url !== "string") throw new Error("view_image returned no image.");
+	const match = value.image_url.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/u);
+	if (!match?.[1] || !match[2]) throw new Error("view_image returned an unsupported image payload.");
+	return { data: match[2], mimeType: match[1], type: "image" };
+}
+
+function createViewImageTool() {
+	return {
+		name: "view_image",
+		label: "view_image",
+		description: "View a local image",
+		promptSnippet: "Use view_image to inspect local image files",
+		parameters: VIEW_IMAGE_PARAMETERS,
+		prepareArguments(args: unknown): { detail?: "original"; path: string } {
+			if (typeof args !== "object" || args === null) return args as { path: string };
+			const source = args as Record<string, unknown>;
+			const path = source["path"] ?? source["file_path"] ?? source["image_path"];
+			return {
+				...(source["detail"] === "original" ? { detail: "original" as const } : {}),
+				path: typeof path === "string" && path.startsWith("@") ? path.slice(1) : (path as string),
+			};
+		},
+		async execute(
+			_toolCallId: string,
+			params: { detail?: "original"; path: string },
+			signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			ctx: ExtensionContext,
+		) {
+			if (!supportsCodexImages(ctx.model))
+				throw new Error("view_image requires an image-capable OpenAI Codex model.");
+			if (typeof params.path !== "string" || !params.path.trim()) throw new Error("view_image requires a path.");
+			const native = await runNativeTool({
+				arguments: [JSON.stringify(params)],
+				cwd: ctx.cwd,
+				signal,
+				tool: "view_image",
+			});
+			if (native.status !== 0) throw nativeError("view_image", native);
+			const image = parseImageDataUrl(native.stdout);
+			return {
+				content: [image],
+				details: { mimeType: image.mimeType, path: params.path } satisfies ViewImageDetails,
+			};
+		},
+	};
+}
+
+async function inlineGeneratedImages(images: readonly GeneratedImage[]): Promise<ImageContent[]> {
+	const content: ImageContent[] = [];
+	for (const image of images.slice(0, MAX_INLINE_IMAGES)) {
+		if (!image.absolute_path) continue;
+		try {
+			const metadata = await stat(image.absolute_path);
+			if (!metadata.isFile() || metadata.size > MAX_INLINE_IMAGE_BYTES) continue;
+			content.push({
+				data: (await readFile(image.absolute_path)).toString("base64"),
+				mimeType: "image/png",
+				type: "image",
+			});
+		} catch {
+			// Persisted path remains in the text result when inline rendering cannot read it.
+		}
+	}
+	return content;
+}
+
+function createImageGenerationTool() {
+	return {
+		name: "imagegen",
+		label: "imagegen",
+		description: `Generate or edit images with ${IMAGE_GENERATION_MODEL}`,
+		promptSnippet: `Use imagegen for image generation or editing with ${IMAGE_GENERATION_MODEL}`,
+		parameters: IMAGE_GENERATION_PARAMETERS,
+		async execute(
+			_toolCallId: string,
+			params: { action?: "edit" | "generate"; images?: string[]; prompt: string },
+			signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			ctx: ExtensionContext,
+		) {
+			if (!supportsCodexImages(ctx.model)) throw new Error("imagegen requires an image-capable OpenAI Codex model.");
+			if (typeof params.prompt !== "string" || !params.prompt.trim()) throw new Error("imagegen requires a prompt.");
+			const account = await resolveCodexAccount(ctx);
+			const native = await runNativeTool({
+				arguments: [
+					JSON.stringify({
+						...params,
+						cwd: ctx.cwd,
+						model: IMAGE_GENERATION_MODEL,
+					}),
+				],
+				cwd: ctx.cwd,
+				env: {
+					...process.env,
+					PI_CODEX_ACCESS_TOKEN: account.token,
+					PI_CODEX_ACCOUNT_ID: account.accountId,
+					PI_CODEX_BASE_URL: account.baseUrl,
+				},
+				signal,
+				tool: "imagegen",
+			});
+			if (native.status !== 0) throw nativeError("imagegen", native);
+			const parsed = parseNativeJson<ImageGenerationNativeResult>(native.stdout, "imagegen");
+			if (typeof parsed.path !== "string") throw new Error("imagegen returned no image path.");
+			const images = await inlineGeneratedImages(parsed.images ?? []);
+			return {
+				content: [{ type: "text" as const, text: `Generated image: ${parsed.path}` }, ...images],
+				details: { ...parsed, model: IMAGE_GENERATION_MODEL } satisfies ImageGenerationDetails,
+			};
+		},
+	};
+}
+
+function imageResultBody(
+	result: { readonly content: readonly ({ readonly type: string; readonly text?: string } | ImageContent)[] },
+	theme: Theme,
+): Container | undefined {
+	const images = result.content.filter((item): item is ImageContent => item.type === "image" && "data" in item);
+	if (images.length === 0) return undefined;
+	const container = new Container();
+	const textItem = result.content.find(
+		(item): item is { readonly type: string; readonly text?: string } => item.type === "text",
+	);
+	const text = textItem?.text;
+	if (text) container.addChild(new Text(theme.fg("dim", text), 2, 0));
+	for (const image of images) {
+		if (text || images.indexOf(image) > 0) container.addChild(new Spacer(1));
+		container.addChild(
+			new Image(
+				image.data,
+				image.mimeType,
+				{ fallbackColor: (value) => theme.fg("dim", value) },
+				{ maxWidthCells: 60 },
+			),
+		);
+	}
+	return container;
+}
+
+export interface CodexToolController {
+	deactivate(): void;
+	sync(model: ExtensionContext["model"]): void;
+}
+
+export function registerCodexTools(pi: ExtensionAPI): CodexToolController {
+	const applyPatch = createApplyPatchTool();
+	const viewImage = createViewImageTool();
+	const imageGeneration = createImageGenerationTool();
+	registerSuiteOwnedTool(pi, applyPatch, {
+		detailLines: (_args, result) => result.details.changedFiles,
+		label: "Patch",
+		runningSummary: "applying",
+		summarize: (_args, result) => patchSummary(result.details),
+		target: (args) => patchTarget(args.input),
+	});
+	registerSuiteOwnedTool(pi, viewImage, {
+		detailLines: (_args, result) => [`${result.details.mimeType} · ${result.details.path}`],
+		label: "View",
+		resultBody: (_args, result, _options, theme) => imageResultBody(result, theme),
+		runningSummary: "loading",
+		summarize: () => "loaded",
+		target: (args) => args.path,
+	});
+	registerSuiteOwnedTool(pi, imageGeneration, {
+		detailLines: (_args, result) => [
+			`${result.details.model} · ${result.details.path}`,
+			...(result.details.latest_path ? [`latest · ${result.details.latest_path}`] : []),
+		],
+		label: "Image",
+		resultBody: (_args, result, _options, theme) => imageResultBody(result, theme),
+		runningSummary: "generating",
+		summarize: () => "generated",
+		target: (args) => oneLine(args.prompt),
+	});
+
+	const setActive = (names: readonly string[]): void => {
+		const owned = new Set<string>(CODEX_TOOL_NAMES);
+		const retained = pi.getActiveTools().filter((name) => !owned.has(name));
+		pi.setActiveTools([...retained, ...names]);
+	};
+	const controller: CodexToolController = {
+		deactivate: () => setActive([]),
+		sync(model) {
+			if (!isOpenAICodexResponsesModel(model)) {
+				setActive([]);
+				return;
+			}
+			setActive(supportsCodexImages(model) ? CODEX_TOOL_NAMES : ["apply_patch"]);
+		},
+	};
+	return controller;
+}

@@ -1,0 +1,148 @@
+// biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveCodexAccount } from "./account.js";
+
+const USAGE_TIMEOUT_MS = 10_000;
+const WEEKLY_WINDOW_MINUTES = 7 * 24 * 60;
+
+interface CodexUsageWindow {
+	readonly resetsAt?: number;
+	readonly usedPercent?: number;
+	readonly windowMinutes?: number;
+}
+
+export interface CodexUsageSnapshot {
+	readonly fiveHour?: CodexUsageWindow;
+	readonly plan?: string;
+	readonly weekly?: CodexUsageWindow;
+}
+
+type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+function record(value: unknown): Record<string, unknown> | undefined {
+	return typeof value === "object" && value !== null && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: undefined;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function text(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function parseWindow(value: unknown): CodexUsageWindow | undefined {
+	const source = record(value);
+	if (!source) return undefined;
+	const seconds = finiteNumber(source["limit_window_seconds"]);
+	const usedPercent = finiteNumber(source["used_percent"]);
+	const windowMinutes = finiteNumber(source["window_minutes"]) ?? (seconds === undefined ? undefined : seconds / 60);
+	const resetsAt = finiteNumber(source["resets_at"]) ?? finiteNumber(source["reset_at"]);
+	if (usedPercent === undefined && windowMinutes === undefined && resetsAt === undefined) return undefined;
+	return {
+		...(resetsAt === undefined ? {} : { resetsAt }),
+		...(usedPercent === undefined ? {} : { usedPercent }),
+		...(windowMinutes === undefined ? {} : { windowMinutes }),
+	};
+}
+
+export function parseCodexUsage(value: unknown): CodexUsageSnapshot {
+	const root = record(value) ?? {};
+	const rateLimit = record(root["rate_limit"]) ?? {};
+	let fiveHour = parseWindow(rateLimit["primary_window"] ?? rateLimit["primary"]);
+	let weekly = parseWindow(rateLimit["secondary_window"] ?? rateLimit["secondary"]);
+	if (fiveHour?.windowMinutes === WEEKLY_WINDOW_MINUTES && weekly === undefined) {
+		weekly = fiveHour;
+		fiveHour = undefined;
+	}
+	const plan = text(root["plan_type"]);
+	return {
+		...(fiveHour ? { fiveHour } : {}),
+		...(plan ? { plan } : {}),
+		...(weekly ? { weekly } : {}),
+	};
+}
+
+export function weeklyRemainingPercent(snapshot: CodexUsageSnapshot | undefined): number | undefined {
+	const used = snapshot?.weekly?.usedPercent;
+	return used === undefined ? undefined : Math.max(0, Math.min(100, 100 - used));
+}
+
+export function buildCodexUsageUrl(baseUrl: string): string {
+	const normalized = baseUrl.trim().replace(/\/+$/u, "");
+	try {
+		const url = new URL(normalized);
+		if (url.hostname === "chatgpt.com") return `${url.origin}/backend-api/wham/usage`;
+	} catch {
+		// Retain the bounded string fallback for a configured compatible endpoint.
+	}
+	const apiBase = normalized.endsWith("/codex/responses")
+		? normalized.slice(0, -"/codex/responses".length)
+		: normalized.endsWith("/codex")
+			? normalized.slice(0, -"/codex".length)
+			: normalized.endsWith("/backend-api")
+				? normalized
+				: `${normalized}/backend-api`;
+	return `${apiBase}/wham/usage`;
+}
+
+export async function fetchCodexUsage(
+	ctx: ExtensionContext,
+	fetcher: Fetcher = fetch,
+	signal: AbortSignal | undefined = ctx.signal,
+): Promise<CodexUsageSnapshot> {
+	if (process.env["PI_OFFLINE"] === "1") throw new Error("Codex usage is unavailable in offline mode.");
+	const account = await resolveCodexAccount(ctx);
+	const headers = new Headers(account.headers);
+	headers.set("authorization", `Bearer ${account.token}`);
+	headers.set("chatgpt-account-id", account.accountId);
+	headers.set("accept", "application/json");
+	headers.set("oai-language", "en");
+	headers.set("originator", "pi");
+
+	const controller = new AbortController();
+	const abort = (): void => controller.abort(signal?.reason);
+	signal?.addEventListener("abort", abort, { once: true });
+	const timeout = setTimeout(() => controller.abort(new Error("Codex usage request timed out.")), USAGE_TIMEOUT_MS);
+	timeout.unref?.();
+	try {
+		const response = await fetcher(buildCodexUsageUrl(account.baseUrl), { headers, signal: controller.signal });
+		const body = await response.text();
+		if (!response.ok) throw new Error(`Codex usage request failed (${String(response.status)}).`);
+		try {
+			return parseCodexUsage(JSON.parse(body) as unknown);
+		} catch {
+			throw new Error("Codex usage returned invalid JSON.");
+		}
+	} catch (error) {
+		if (controller.signal.aborted && !signal?.aborted) throw new Error("Codex usage request timed out.");
+		throw error;
+	} finally {
+		clearTimeout(timeout);
+		signal?.removeEventListener("abort", abort);
+	}
+}
+
+function remaining(window: CodexUsageWindow | undefined): string {
+	if (window?.usedPercent === undefined) return "unknown";
+	return `${String(Math.round(Math.max(0, Math.min(100, 100 - window.usedPercent))))}% left`;
+}
+
+function resetText(window: CodexUsageWindow | undefined): string | undefined {
+	if (!window?.resetsAt) return undefined;
+	const minutes = Math.max(0, Math.round((window.resetsAt * 1000 - Date.now()) / 60_000));
+	return minutes < 90
+		? `resets in ~${String(minutes)}m`
+		: `resets ${new Date(window.resetsAt * 1000).toLocaleString()}`;
+}
+
+export function formatCodexUsage(snapshot: CodexUsageSnapshot): string {
+	const weeklyReset = resetText(snapshot.weekly);
+	const fiveHourReset = resetText(snapshot.fiveHour);
+	return [
+		`Weekly ${remaining(snapshot.weekly)}${weeklyReset ? ` · ${weeklyReset}` : ""}`,
+		`5h ${remaining(snapshot.fiveHour)}${fiveHourReset ? ` · ${fiveHourReset}` : ""}`,
+	].join("\n");
+}

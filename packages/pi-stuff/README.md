@@ -22,6 +22,8 @@ Version `0.1.0` is the first public release line.
 - `@jczhang02/pi-stuff-context`: lazy continuity through the owned Magic Context fork, with raw Pi JSONL authority,
   bounded projections, project isolation, and automatic fallback to native Pi context when local derived state fails.
 - `@jczhang02/pi-stuff-rtk`: certified fail-open Bash command rewriting plus Bash/Grep compaction only in model-visible context; raw Tool results remain in the session.
+- `@jczhang02/pi-stuff-codex`: one `/codex` surface for Fast mode and subscription usage, plus shared-rendered
+  `apply_patch`, `view_image`, and confirmed `gpt-image-2` generation Tools.
 - `@jczhang02/pi-stuff-agents`: current-session foreground and background Agents with a compact roster and full-width control view.
 - `@jczhang02/pi-stuff-todo`: four model-facing Task tools and a compact task widget above Pi's editor.
 - `@jczhang02/pi-stuff-btw`: one-shot side questions that use the effective conversation context without changing the main transcript.
