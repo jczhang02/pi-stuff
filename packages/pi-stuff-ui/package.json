@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff-ui",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"description": "Unified Statusline, Welcome, input, Thought, settings, and Command Dialog UI for Pi Stuff",
 	"type": "module",
 	"keywords": [
@@ -18,6 +18,7 @@
 	},
 	"files": [
 		"index.ts",
+		"compaction-presentation.ts",
 		"settings.ts",
 		"ui-settings-dialog.ts",
 		"live-thought.ts",

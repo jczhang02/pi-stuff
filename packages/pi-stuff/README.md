@@ -2,7 +2,7 @@
 
 The ordered Aggregate Package for the Pi Stuff Suite.
 
-Version `0.2.1` is the current certified local release candidate.
+Version `0.2.2` is the current certified local release candidate.
 
 ## Contract
 
