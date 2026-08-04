@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createReleaseArtifacts, RELEASE_PACKAGES } from "./release-artifacts.ts";
+import { verifyLocalReleaseInstall } from "./verify-local-release-install.ts";
 import { certifyReleaseArtifacts } from "./verify-package.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -28,4 +29,5 @@ if (check.exitCode !== 0) throw new Error("Release packing refused because bun r
 const manifest = await createReleaseArtifacts(destination);
 const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 await certifyReleaseArtifacts(destination, PI_BIN);
+await verifyLocalReleaseInstall(destination, PI_BIN);
 console.log(`Packed and certified ${manifest.artifacts.length} immutable release artifacts in ${destination}`);

@@ -49,6 +49,14 @@ From a source checkout, install the local Aggregate Package explicitly through P
 pi install ./packages/pi-stuff
 ```
 
+To dogfood the exact certified tarball set, first run `bun run release:pack`, then use the maintainer installer. It
+verifies the release manifest and Host provenance, extracts the Aggregate to an immutable versioned directory, and asks
+Pi to keep one stable local Package source. The Suite itself never installs or edits settings:
+
+```bash
+bun run release:install-local -- .artifacts/release
+```
+
 Published releases install from the registry:
 
 ```bash

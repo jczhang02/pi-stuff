@@ -19,6 +19,8 @@
 		"knip": "knip --no-progress",
 		"pack:verify": "bun scripts/verify-package.ts",
 		"release:pack": "bun scripts/pack-release.ts",
+		"release:install-local": "bun scripts/install-certified-release.ts",
+		"release:install:verify": "bun scripts/verify-local-release-install.ts",
 		"release:publish": "bun scripts/publish-release.ts",
 		"release:version": "changeset version && bun run suite:generate && bun install --ignore-scripts",
 		"suite:generate": "bun scripts/generate-suite.ts",
