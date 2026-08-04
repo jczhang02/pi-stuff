@@ -8,6 +8,8 @@
 		"@jczhang02/pi-stuff-codex",
 		"@jczhang02/pi-stuff-goal",
 		"@jczhang02/pi-stuff-context",
+		"@jczhang02/pi-stuff-web",
+		"@jczhang02/pi-stuff-mcp",
 		"@jczhang02/pi-stuff-agents",
 		"@jczhang02/pi-stuff-todo",
 		"@jczhang02/pi-stuff-btw"

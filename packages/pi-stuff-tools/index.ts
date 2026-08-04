@@ -15,6 +15,7 @@ export {
 	type ToolTranscriptMode,
 	ToolUiRuntime,
 } from "./contract.js";
+export { sanitizeTerminalText } from "./render.js";
 
 export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 	const resumeHandoff = consumeResumeToolHandoff();

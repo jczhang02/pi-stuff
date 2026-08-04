@@ -1,0 +1,406 @@
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+
+const root = resolve(import.meta.dir, "..");
+const providerExtension = join(root, "test/fixtures/mcp-pty-provider.ts");
+const runner = join(root, "test/fixtures/mcp-pty-runner.sh");
+const server = join(root, "test/fixtures/mcp/stdio-server.mjs");
+const httpServer = join(root, "test/fixtures/mcp/http-server.mjs");
+const DEFAULT_COLUMNS = 64;
+const NARROW_COLUMNS = 48;
+const DEFAULT_ROWS = 28;
+const RESUME_FIRST_FRAME_BOUNDARY = "MCP_RESUME_FIRST_FRAME_BOUNDARY";
+const RESUME_RAW_MARKER = "RAW_MCP_RESUME_RESULT_MARKER";
+
+const ZERO_USAGE = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+export interface McpPtyVerificationOptions {
+	readonly piBinary: string;
+	readonly packagePath: string;
+	readonly columns?: number;
+	readonly rows?: number;
+}
+
+function fail(message: string): never {
+	throw new Error(`MCP PTY verification failed: ${message}`);
+}
+
+function seedResumeTarget(sessionDirectory: string, cwd: string): string {
+	const manager = SessionManager.create(cwd, sessionDirectory, { id: "mcp-resume-target" });
+	manager.appendModelChange("pi-stuff-mcp-pty", "fixture-model");
+	const user: UserMessage = {
+		role: "user",
+		content: "historical MCP operation",
+		timestamp: Date.now(),
+	};
+	const toolCall = {
+		type: "toolCall" as const,
+		id: "mcp-resume-call-1",
+		name: "mcp",
+		arguments: { args: { text: "historical" }, server: "local", tool: "local_resume_echo" },
+	};
+	const assistant: AssistantMessage = {
+		role: "assistant",
+		content: [toolCall],
+		api: "openai-completions",
+		provider: "pi-stuff-mcp-pty",
+		model: "fixture-model",
+		usage: ZERO_USAGE,
+		stopReason: "toolUse",
+		timestamp: Date.now(),
+	};
+	const result: ToolResultMessage = {
+		role: "toolResult",
+		toolCallId: toolCall.id,
+		toolName: toolCall.name,
+		content: [{ type: "text", text: RESUME_RAW_MARKER }],
+		details: { mode: "call", server: "local", tool: "echo" },
+		isError: false,
+		timestamp: Date.now(),
+	};
+	manager.appendMessage(user);
+	manager.appendMessage(assistant);
+	manager.appendMessage(result);
+	const sessionFile = manager.getSessionFile();
+	if (!sessionFile) fail("resume target session was not persisted");
+	return sessionFile;
+}
+
+function expectProgram(): string {
+	return `
+set timeout 25
+
+proc must_expect {pattern} {
+    expect {
+        -exact $pattern {}
+        timeout {
+            puts stderr "Timed out waiting for: $pattern"
+            exit 2
+        }
+        eof {
+            puts stderr "Reached EOF while waiting for: $pattern"
+            exit 3
+        }
+    }
+}
+
+proc wait_for_marker {} {
+    global env
+    for {set index 0} {$index < 100} {incr index} {
+        if {[file exists $env(PI_STUFF_MCP_PTY_MARKER)]} { return }
+        after 50
+    }
+    puts stderr "MCP stdio fixture was not started"
+    exit 5
+}
+
+spawn -noecho script -qefc $env(PI_STUFF_MCP_PTY_RUNNER) /dev/null
+set mcp_pty $spawn_out(slave,name)
+must_expect "Welcome back!"
+after 150
+if {[file exists $env(PI_STUFF_MCP_PTY_MARKER)]} {
+    puts stderr "MCP stdio fixture started during Pi startup"
+    exit 6
+}
+send -- "/mcp\\r"
+must_expect "MCP"
+must_expect "0/3 connected"
+must_expect "broken"
+must_expect "local"
+must_expect "remote"
+must_expect "Esc close"
+if {[file exists $env(PI_STUFF_MCP_PTY_MARKER)]} {
+    puts stderr "Opening /mcp connected a server"
+    exit 7
+}
+if {[file size $env(PI_STUFF_MCP_PTY_HTTP_LOG)] != 0} {
+    puts stderr "Opening /mcp contacted the HTTP server"
+    exit 8
+}
+send -- "\\033"
+after 100
+send -- "/mcp reconnect local\\r"
+wait_for_marker
+must_expect "MCP: Reconnected to local"
+send -- "/mcp\\r"
+must_expect "1/3 connected"
+must_expect "local"
+must_expect "1 tools"
+must_expect "Esc close"
+send -- "\\033"
+after 100
+send -- "/mcp reconnect broken\\r"
+must_expect "MCP: Failed to reconnect to broken"
+send -- "/mcp\\r"
+must_expect "1/3 connected"
+must_expect "broken"
+must_expect "failed"
+must_expect "Esc close"
+send -- "\\033"
+after 100
+send -- "/mcp reconnect remote\\r"
+must_expect "MCP: Reconnected to remote"
+send -- "/mcp\\r"
+must_expect "2/3 connected"
+must_expect "2 tools"
+must_expect "remote"
+must_expect "Esc close"
+send -- "\\033"
+stty rows $env(PI_STUFF_MCP_PTY_ROWS) columns $env(PI_STUFF_MCP_PTY_NARROW_COLUMNS) < $mcp_pty
+after 200
+send -- "/mcp\\r"
+must_expect "2/3 connected"
+must_expect "Esc close"
+send -- "\\033"
+after 100
+send -- "DRAFT_AFTER_MCP"
+must_expect "DRAFT_AFTER_MCP"
+send -- "\\003"
+after 200
+send -- "invoke local MCP\\r"
+must_expect "MCP_TOOL_CALL_"
+send -- "/fixture-resume\\r"
+must_expect "Resumed session"
+after 150
+puts "MCP_RESUME_FIRST_FRAME_BOUNDARY"
+send -- "probe after resume\\r"
+must_expect "MCP_RESUME_PROBE_DONE"
+send -- "/mcp reconnect remote\\r"
+must_expect "MCP: Reconnected to remote"
+send -- "\\004"
+expect {
+    eof {}
+    timeout {
+        puts stderr "Timed out waiting for Pi to exit"
+        exit 4
+    }
+}
+`;
+}
+
+function stripTerminalControls(output: string): string {
+	let visible = "";
+	for (let index = 0; index < output.length; index += 1) {
+		const code = output.charCodeAt(index);
+		if (code === 13) continue;
+		if (code !== 27) {
+			visible += output[index];
+			continue;
+		}
+
+		const introducer = output[index + 1];
+		if (introducer === "[") {
+			index += 2;
+			while (index < output.length) {
+				const sequenceCode = output.charCodeAt(index);
+				if (sequenceCode >= 0x40 && sequenceCode <= 0x7e) break;
+				index += 1;
+			}
+			continue;
+		}
+		if (introducer === "]") {
+			index += 2;
+			while (index < output.length) {
+				const sequenceCode = output.charCodeAt(index);
+				if (sequenceCode === 7) break;
+				if (sequenceCode === 27 && output[index + 1] === "\\") {
+					index += 1;
+					break;
+				}
+				index += 1;
+			}
+			continue;
+		}
+		if (introducer !== undefined) index += 1;
+	}
+	return visible;
+}
+
+async function waitForFile(path: string): Promise<void> {
+	const deadline = Date.now() + 10_000;
+	while (Date.now() < deadline) {
+		try {
+			await access(path);
+			return;
+		} catch {
+			await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+		}
+	}
+	fail(`timed out waiting for fixture file ${path}`);
+}
+
+async function processExists(pid: number): Promise<boolean> {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
+export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<void> {
+	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-pty-"));
+	const config = join(temporaryDirectory, "agent");
+	const home = join(temporaryDirectory, "home");
+	const project = join(temporaryDirectory, "project");
+	const sessions = join(temporaryDirectory, "sessions");
+	const marker = join(temporaryDirectory, "stdio-marker.txt");
+	const httpEndpoint = join(temporaryDirectory, "http-endpoint.txt");
+	const httpLog = join(temporaryDirectory, "http-requests.jsonl");
+	const columns = options.columns ?? DEFAULT_COLUMNS;
+	const rows = options.rows ?? DEFAULT_ROWS;
+	await Promise.all([mkdir(config), mkdir(home), mkdir(project), mkdir(sessions)]);
+	let httpChild: ReturnType<typeof Bun.spawn> | undefined;
+
+	try {
+		await writeFile(httpLog, "");
+		httpChild = Bun.spawn([process.execPath, httpServer], {
+			env: {
+				...process.env,
+				PI_STUFF_MCP_HTTP_ENDPOINT: httpEndpoint,
+				PI_STUFF_MCP_HTTP_LOG: httpLog,
+			},
+			stderr: "pipe",
+			stdout: "ignore",
+		});
+		await waitForFile(httpEndpoint);
+		const httpUrl = (await readFile(httpEndpoint, "utf8")).trim();
+		await Promise.all([
+			writeFile(
+				join(config, "settings.json"),
+				`${JSON.stringify({ defaultProjectTrust: "always", enableInstallTelemetry: false, quietStartup: true }, null, "\t")}\n`,
+			),
+			writeFile(
+				join(project, ".mcp.json"),
+				`${JSON.stringify(
+					{
+						mcpServers: {
+							broken: {
+								command: join(temporaryDirectory, "missing-mcp-server"),
+								env: { MCP_SECRET: "MCP_SECRET_SHOULD_NOT_APPEAR" },
+							},
+							local: {
+								args: [server],
+								command: process.execPath,
+								env: {
+									MCP_SECRET: "MCP_SECRET_SHOULD_NOT_APPEAR",
+									PI_STUFF_MCP_MARKER: marker,
+								},
+							},
+							remote: { url: httpUrl },
+						},
+					},
+					null,
+					"\t",
+				)}\n`,
+			),
+		]);
+		const resumeTarget = seedResumeTarget(sessions, project);
+		const result = Bun.spawnSync(["expect", "-c", expectProgram()], {
+			cwd: project,
+			env: {
+				...process.env,
+				HOME: home,
+				PI_CODING_AGENT_DIR: config,
+				PI_OFFLINE: "1",
+				PI_STUFF_MCP_PTY_BIN: options.piBinary,
+				PI_STUFF_MCP_PTY_COLUMNS: String(columns),
+				PI_STUFF_MCP_PTY_MARKER: marker,
+				PI_STUFF_MCP_PTY_HTTP_LOG: httpLog,
+				PI_STUFF_MCP_PTY_NARROW_COLUMNS: String(NARROW_COLUMNS),
+				PI_STUFF_MCP_PTY_PACKAGE: resolve(options.packagePath),
+				PI_STUFF_MCP_PTY_PROVIDER_EXTENSION: providerExtension,
+				PI_STUFF_MCP_PTY_RESUME_TARGET: resumeTarget,
+				PI_STUFF_MCP_PTY_ROWS: String(rows),
+				PI_STUFF_MCP_PTY_RUNNER: runner,
+				PI_STUFF_MCP_PTY_SESSIONS: sessions,
+				PI_STUFF_MCP_PTY_SESSION_ID: "mcp-source-session",
+				PI_TELEMETRY: "0",
+				TERM: "xterm-256color",
+			},
+			stderr: "pipe",
+			stdout: "pipe",
+		});
+		const output = `${result.stdout.toString()}\n${result.stderr.toString()}`;
+		if (result.exitCode !== 0) fail(output.trim() || `expect exited ${String(result.exitCode)}`);
+
+		const visible = stripTerminalControls(output);
+		for (const required of [
+			"2/3 connected",
+			"local",
+			"remote",
+			"2 tools",
+			"DRAFT_AFTER_MCP",
+			"MCP_TOOL_CALL_DONE",
+			"MCP local:local_echo",
+			"MCP_RESUME_PROBE_DONE",
+		]) {
+			if (!visible.includes(required)) {
+				const toolFailure = /MCP_TOOL_CALL_BAD_RESULT[^\n]*/u.exec(visible)?.[0];
+				fail(`terminal output is missing ${required}${toolFailure ? `: ${toolFailure}` : ""}`);
+			}
+		}
+		const resumeBoundary = output.indexOf(RESUME_FIRST_FRAME_BOUNDARY);
+		if (resumeBoundary < 0) fail("did not capture the first resumed MCP frame boundary");
+		const firstResumeFrame = stripTerminalControls(output.slice(0, resumeBoundary));
+		if (!firstResumeFrame.includes("● MCP local:local_resume_echo · done")) {
+			fail("first resumed frame did not contain the compact MCP Tool row");
+		}
+		if (firstResumeFrame.includes(RESUME_RAW_MARKER)) {
+			fail("first resumed frame exposed the raw historical MCP Tool result");
+		}
+		for (const width of [columns, NARROW_COLUMNS]) {
+			if (!visible.includes("─".repeat(width)))
+				fail(`Command Dialog did not render a ${String(width)}-column divider`);
+		}
+		for (const forbidden of ["╭", "╮", "╰", "╯"]) {
+			if (visible.includes(forbidden)) fail(`terminal output exposed a floating-window border: ${forbidden}`);
+		}
+		if (/mcp:\d+/u.test(visible)) fail("terminal output exposed a Capability-specific MCP Statusline segment");
+		if (visible.includes("MCP_SECRET_SHOULD_NOT_APPEAR")) fail("terminal output exposed an MCP configuration secret");
+
+		await access(marker);
+		const markerLines = (await readFile(marker, "utf8")).trim().split("\n");
+		const pid = Number(markerLines[0]);
+		if (!Number.isSafeInteger(pid) || pid <= 0) fail("stdio fixture did not record a valid process id");
+		if (await processExists(pid)) fail(`stdio fixture process ${String(pid)} survived Pi shutdown`);
+		if (!markerLines.some((line) => line.startsWith("exit:")))
+			fail("stdio fixture did not observe graceful shutdown");
+		if (!markerLines.includes("call:MCP_STDIO_ECHO_OK")) {
+			fail("stdio fixture did not receive the real MCP Tool call");
+		}
+		const httpMethods = (await readFile(httpLog, "utf8"))
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => (JSON.parse(line) as { method?: unknown }).method);
+		if (!httpMethods.includes("initialize") || !httpMethods.includes("tools/list")) {
+			fail("Streamable HTTP fixture did not complete initialize and Tool discovery");
+		}
+		if (!httpMethods.includes("HTTP DELETE")) {
+			fail(`Streamable HTTP fixture did not observe graceful session termination: ${JSON.stringify(httpMethods)}`);
+		}
+	} finally {
+		if (httpChild) {
+			httpChild.kill("SIGTERM");
+			await httpChild.exited;
+		}
+		await rm(temporaryDirectory, { force: true, recursive: true });
+	}
+}
+
+if (import.meta.main) {
+	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
+	await verifyMcpPty({ packagePath: join(root, "packages/pi-stuff"), piBinary: PI_BIN });
+	console.log("Certified lazy MCP lifecycle, Tool call/resume rendering, and Command Dialog in real Pi TUI");
+}

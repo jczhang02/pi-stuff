@@ -23,11 +23,13 @@ import { verifyBtwPty } from "./verify-btw-pty.ts";
 import { verifyContextPty } from "./verify-context-pty.ts";
 import { verifyGoalLifecycle } from "./verify-goal-lifecycle.ts";
 import { verifyGoalPty } from "./verify-goal-pty.ts";
+import { verifyMcpPty } from "./verify-mcp-pty.ts";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.ts";
 import { verifyRtkPty } from "./verify-rtk-pty.ts";
 import { verifyToolsPty } from "./verify-tools-pty.ts";
 import { verifyToolsResumePty } from "./verify-tools-resume-pty.ts";
 import { verifyUiPty } from "./verify-ui-pty.ts";
+import { verifyWebIntegration } from "./verify-web-integration.ts";
 
 export { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_SOURCE_COMMIT, CERTIFIED_PI_VERSION };
 
@@ -61,6 +63,8 @@ const codexNativeSha256: Readonly<Record<(typeof codexRuntimeFiles)[number], str
 };
 const todoToolInspector = join(root, "test/fixtures/assert-todo-tools.ts");
 const goalToolInspector = join(root, "test/fixtures/assert-goal-tools.ts");
+const webToolInspector = join(root, "test/fixtures/assert-web-tools.ts");
+const mcpToolInspector = join(root, "test/fixtures/assert-mcp-tools.ts");
 const forkLicenseSha256 = "25d0d5e4e54033f939a9657109044f1d71a0b6e8db9adc400456ca9190df3fb1";
 const agentsLicenseSha256 = "2d20dfacd9742706e564470dc77438608a1e54b0ed46959f080709389209093c";
 const rtkLicenseSha256 = "7d9473dcd84975a7191bc13dcc744f3b4d6578c937c879cc73e31e0107fa4d46";
@@ -68,9 +72,14 @@ const codexLicenseSha256 = "ad600d98577a0949ad30c81867bd86f08f872ff12f6a7a519af1
 const toolsLicenseSha256 = "e6b72a9973ccabb20d8bef65a366a9b2357d6cea6cdd1eee4f2c3c69e61fb11c";
 const magicContextLicenseSha256 = "0e3d1aa1cbe4aec50224fc6c91eb898d42949d6ff84fe515f9e2bb0663f5d483";
 const goalLicenseSha256 = "5293e92f073f47012e723990a8605431b438757e9c6eb00c89868b1203e157da";
+const webLicenseSha256 = "871b3c6c64e030c0647ca33543716bdae9511ae2d6a85d6f4ce63783bab52c8f";
 const agentsRuntimeVersions = {
 	jiti: "2.7.0",
 	typebox: "1.3.7",
+} as const;
+const embeddedForkVersions = {
+	"@jczhang02/pi-mcp-adapter": "2.19.0-pi-stuff.7",
+	"@jczhang02/pi-web-access": "0.18.0-pi-stuff.3",
 } as const;
 const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 	"@jczhang02/pi-stuff": ["@earendil-works/pi-coding-agent"],
@@ -93,6 +102,8 @@ const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 	"@jczhang02/pi-stuff-todo": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-tools": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-web": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-mcp": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 };
 
 export interface PackageArchiveManifest {
@@ -246,7 +257,13 @@ async function resolvePackageDirectory(
 	resolver: { resolve(specifier: string): string },
 	packageName: string,
 ): Promise<string> {
-	let directory = dirname(resolver.resolve(packageName));
+	let resolved: string;
+	try {
+		resolved = resolver.resolve(`${packageName}/package.json`);
+	} catch {
+		resolved = resolver.resolve(packageName);
+	}
+	let directory = dirname(resolved);
 	while (true) {
 		const manifest = await readFile(join(directory, "package.json"), "utf8")
 			.then((contents) => JSON.parse(contents) as { name?: unknown })
@@ -255,6 +272,62 @@ async function resolvePackageDirectory(
 		const parent = dirname(directory);
 		if (parent === directory) throw new Error(`Cannot resolve Package root for ${packageName}`);
 		directory = parent;
+	}
+}
+
+async function verifyRuntimeDependencyClosure(packageDirectory: string): Promise<void> {
+	const pending = [packageDirectory];
+	const visited = new Set<string>();
+	while (pending.length > 0) {
+		const current = pending.pop();
+		if (!current || visited.has(current)) continue;
+		visited.add(current);
+		if (visited.size > 2_000)
+			throw new Error(`Runtime dependency closure is unexpectedly large: ${packageDirectory}`);
+		const manifest = JSON.parse(await readFile(join(current, "package.json"), "utf8")) as {
+			dependencies?: Record<string, unknown>;
+			name?: unknown;
+		};
+		const resolver = createRequire(join(current, "package.json"));
+		for (const dependency of Object.keys(manifest.dependencies ?? {})) {
+			try {
+				pending.push(await resolvePackageDirectory(resolver, dependency));
+			} catch (error) {
+				throw new Error(`${String(manifest.name ?? current)} cannot resolve runtime dependency ${dependency}`, {
+					cause: error,
+				});
+			}
+		}
+	}
+}
+
+async function linkCertifiedHostPeers(installDirectory: string, packageName: string): Promise<void> {
+	const peers = expectedPiPeers[packageName];
+	if (!peers) throw new Error(`No certified Pi peer set for ${packageName}`);
+	const peerScope = join(installDirectory, "node_modules", "@earendil-works");
+	await mkdir(peerScope, { recursive: true });
+	for (const dependency of peers) {
+		await symlink(
+			join(root, "node_modules", dependency),
+			join(peerScope, dependency.slice("@earendil-works/".length)),
+			"dir",
+		);
+	}
+}
+
+async function verifyPackageIdentity(
+	packageDirectory: string,
+	expectedName: string,
+	expectedVersion: string,
+): Promise<void> {
+	const manifest = JSON.parse(await readFile(join(packageDirectory, "package.json"), "utf8")) as {
+		name?: unknown;
+		version?: unknown;
+	};
+	if (manifest.name !== expectedName || manifest.version !== expectedVersion) {
+		throw new Error(
+			`Expected ${expectedName}@${expectedVersion}, found ${String(manifest.name)}@${String(manifest.version)}`,
+		);
 	}
 }
 
@@ -312,6 +385,10 @@ async function verifyStandaloneInstalls(
 	const todoNpmCacheDirectory = join(temporaryDirectory, "npm-cache-todo");
 	const toolsInstallDirectory = join(temporaryDirectory, "standalone-tools");
 	const toolsNpmCacheDirectory = join(temporaryDirectory, "npm-cache-tools");
+	const webInstallDirectory = join(temporaryDirectory, "standalone-web");
+	const webNpmCacheDirectory = join(temporaryDirectory, "npm-cache-web");
+	const mcpInstallDirectory = join(temporaryDirectory, "standalone-mcp");
+	const mcpNpmCacheDirectory = join(temporaryDirectory, "npm-cache-mcp");
 	await Promise.all([
 		mkdir(packsDirectory),
 		mkdir(agentsInstallDirectory),
@@ -330,6 +407,10 @@ async function verifyStandaloneInstalls(
 		mkdir(todoNpmCacheDirectory),
 		mkdir(toolsInstallDirectory),
 		mkdir(toolsNpmCacheDirectory),
+		mkdir(webInstallDirectory),
+		mkdir(webNpmCacheDirectory),
+		mkdir(mcpInstallDirectory),
+		mkdir(mcpNpmCacheDirectory),
 	]);
 
 	const releaseArchive = (name: string): string => {
@@ -346,6 +427,8 @@ async function verifyStandaloneInstalls(
 	const goalArchive = releaseArchive("@jczhang02/pi-stuff-goal");
 	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
 	const toolsArchive = releaseArchive("@jczhang02/pi-stuff-tools");
+	const webArchive = releaseArchive("@jczhang02/pi-stuff-web");
+	const mcpArchive = releaseArchive("@jczhang02/pi-stuff-mcp");
 	const rootRequire = createRequire(join(root, "package.json"));
 	const runtimeDirectories: Record<string, string> = {
 		typebox: await resolvePackageDirectory(rootRequire, "typebox"),
@@ -442,6 +525,18 @@ async function verifyStandaloneInstalls(
 	install(codexInstallDirectory, codexNpmCacheDirectory, typeboxArchive);
 	install(codexInstallDirectory, codexNpmCacheDirectory, toolsArchive);
 	install(codexInstallDirectory, codexNpmCacheDirectory, codexArchive);
+	install(webInstallDirectory, webNpmCacheDirectory, uiArchive);
+	install(webInstallDirectory, webNpmCacheDirectory, typeboxArchive);
+	install(webInstallDirectory, webNpmCacheDirectory, toolsArchive);
+	install(webInstallDirectory, webNpmCacheDirectory, webArchive);
+	install(mcpInstallDirectory, mcpNpmCacheDirectory, uiArchive);
+	install(mcpInstallDirectory, mcpNpmCacheDirectory, typeboxArchive);
+	install(mcpInstallDirectory, mcpNpmCacheDirectory, toolsArchive);
+	install(mcpInstallDirectory, mcpNpmCacheDirectory, mcpArchive);
+	await Promise.all([
+		linkCertifiedHostPeers(webInstallDirectory, "@jczhang02/pi-stuff-web"),
+		linkCertifiedHostPeers(mcpInstallDirectory, "@jczhang02/pi-stuff-mcp"),
+	]);
 
 	const verifyUiDependency = async (installDirectory: string, capability: string): Promise<void> => {
 		const installedRoot = join(installDirectory, "node_modules");
@@ -462,6 +557,7 @@ async function verifyStandaloneInstalls(
 	await verifyUiDependency(agentsInstallDirectory, "pi-stuff-agents");
 	await verifyUiDependency(todoInstallDirectory, "pi-stuff-todo");
 	await verifyUiDependency(toolsInstallDirectory, "pi-stuff-tools");
+	await verifyUiDependency(mcpInstallDirectory, "pi-stuff-mcp");
 
 	const verifyContextDependency = async (installDirectory: string, capability: string): Promise<void> => {
 		const installedRoot = join(installDirectory, "node_modules");
@@ -528,6 +624,26 @@ async function verifyStandaloneInstalls(
 	) {
 		throw new Error("Standalone Agents must install Tools as an exact runtime dependency");
 	}
+	const installedWebFork = join(
+		webInstallDirectory,
+		"node_modules/@jczhang02/pi-stuff-web/node_modules/@jczhang02/pi-web-access",
+	);
+	const installedMcpFork = join(
+		mcpInstallDirectory,
+		"node_modules/@jczhang02/pi-stuff-mcp/node_modules/@jczhang02/pi-mcp-adapter",
+	);
+	await verifyPackageIdentity(
+		installedWebFork,
+		"@jczhang02/pi-web-access",
+		embeddedForkVersions["@jczhang02/pi-web-access"],
+	);
+	await verifyRuntimeDependencyClosure(installedWebFork);
+	await verifyPackageIdentity(
+		installedMcpFork,
+		"@jczhang02/pi-mcp-adapter",
+		embeddedForkVersions["@jczhang02/pi-mcp-adapter"],
+	);
+	await verifyRuntimeDependencyClosure(installedMcpFork);
 	for (const [name, expectedVersion] of Object.entries(agentsRuntimeVersions)) {
 		const dependencyManifest = JSON.parse(
 			await readFile(join(agentsInstalledRoot, name, "package.json"), "utf8"),
@@ -641,6 +757,28 @@ async function verifyStandaloneInstalls(
 	}
 	if (toolsSmoke.commandNames.includes("tool-settings")) {
 		throw new Error("Standalone Tools Package retained the removed /tool-settings entry point");
+	}
+	const webSmoke = await runPiRpcSmoke({
+		piBinary,
+		extensions: [webToolInspector],
+		packages: [join(webInstallDirectory, "node_modules/@jczhang02/pi-stuff-web")],
+		cwd: webInstallDirectory,
+	});
+	if (!webSmoke.commandNames.includes("web-tools-certified")) {
+		throw new Error("Standalone Web Package did not register its three bounded Tools");
+	}
+	await verifyWebIntegration({ packagePath: join(webInstallDirectory, "node_modules/@jczhang02/pi-stuff-web") });
+	const mcpSmoke = await runPiRpcSmoke({
+		piBinary,
+		extensions: [mcpToolInspector],
+		packages: [join(mcpInstallDirectory, "node_modules/@jczhang02/pi-stuff-mcp")],
+		cwd: mcpInstallDirectory,
+	});
+	if (!mcpSmoke.commandNames.includes("mcp") || !mcpSmoke.commandNames.includes("mcp-auth")) {
+		throw new Error("Standalone MCP Package did not register /mcp and /mcp-auth");
+	}
+	if (!mcpSmoke.commandNames.includes("mcp-tools-certified")) {
+		throw new Error("Standalone MCP Package did not expose exactly one gateway Tool");
 	}
 }
 
@@ -759,8 +897,20 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 		) {
 			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
 		}
+		if (
+			manifest.name === "@jczhang02/pi-stuff-web" &&
+			(await sha256File(join(extractDirectory, licensePath))) !== webLicenseSha256
+		) {
+			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
+		}
+		if (
+			manifest.name === "@jczhang02/pi-stuff-mcp" &&
+			(await sha256File(join(extractDirectory, licensePath))) !== agentsLicenseSha256
+		) {
+			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
+		}
 	}
-	const expectedCapabilities = ["@jczhang02/pi-stuff-context"];
+	const expectedCapabilities = ["@jczhang02/pi-stuff-context", "@jczhang02/pi-stuff-web", "@jczhang02/pi-stuff-mcp"];
 	for (const capability of expectedCapabilities) {
 		const suffix = `node_modules/${capability}/package.json`;
 		const copies = manifests.filter((path) => path.endsWith(suffix));
@@ -899,6 +1049,30 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 				"59bf767e047a0799257af3c510a92f0841db2791e8e11aceca14fc2f7221f71a",
 			],
 		},
+		{
+			capability: "pi-stuff-web",
+			deltaHeading: "## Pi Stuff delta",
+			required: [
+				"nicobailon/pi-web-access",
+				"0.18.0",
+				"d2aab00dcf0547572276d9de4bc4a2a49d640e13",
+				"9209f76bf16588351ffea57588cf3066a0e0ee6c",
+				"pi-stuff-v0.18.0-3",
+				"83c4a158a43360daf4e513d89f4942cd6eba360118529d0f30b8ca4f06c3b33f",
+			],
+		},
+		{
+			capability: "pi-stuff-mcp",
+			deltaHeading: "## Pi Stuff delta",
+			required: [
+				"nicobailon/pi-mcp-adapter",
+				"2.19.0",
+				"cde58793327b15d65f86e59ec9025d649cb8c300",
+				"2333b79429ea28f6a7d24ca7ad7a169e07b7cf7d",
+				"pi-stuff-v2.19.0-7",
+				"b0fbbcdcca56c28c49884b69002f1519504ab538afd1abf86e00247aeb441478",
+			],
+		},
 	] as const;
 	for (const record of provenance) {
 		const { capability } = record;
@@ -980,9 +1154,29 @@ export async function certifyReleaseArtifacts(
 		await verifyBundledSuiteMetadata(extractDirectory, archiveFiles);
 		await verifySharedCoordinatorIdentity(extractDirectory, archiveFiles);
 		const extractedPackage = join(extractDirectory, "package");
+		const extractedWebFork = join(
+			extractedPackage,
+			"node_modules/@jczhang02/pi-stuff-web/node_modules/@jczhang02/pi-web-access",
+		);
+		const extractedMcpFork = join(
+			extractedPackage,
+			"node_modules/@jczhang02/pi-stuff-mcp/node_modules/@jczhang02/pi-mcp-adapter",
+		);
+		await verifyPackageIdentity(
+			extractedWebFork,
+			"@jczhang02/pi-web-access",
+			embeddedForkVersions["@jczhang02/pi-web-access"],
+		);
+		await verifyRuntimeDependencyClosure(extractedWebFork);
+		await verifyPackageIdentity(
+			extractedMcpFork,
+			"@jczhang02/pi-mcp-adapter",
+			embeddedForkVersions["@jczhang02/pi-mcp-adapter"],
+		);
+		await verifyRuntimeDependencyClosure(extractedMcpFork);
 		const extractedSmoke = await runPiRpcSmoke({
 			piBinary,
-			extensions: [goalToolInspector],
+			extensions: [goalToolInspector, webToolInspector, mcpToolInspector],
 			packages: [extractedPackage],
 		});
 		if (
@@ -993,6 +1187,14 @@ export async function certifyReleaseArtifacts(
 		) {
 			throw new Error("Packed Aggregate did not expose the required /ui and /goal surfaces");
 		}
+		if (
+			!extractedSmoke.commandNames.includes("web-tools-certified") ||
+			!extractedSmoke.commandNames.includes("mcp-tools-certified") ||
+			!extractedSmoke.commandNames.includes("mcp") ||
+			!extractedSmoke.commandNames.includes("mcp-auth")
+		) {
+			throw new Error("Packed Aggregate did not expose the certified Web and MCP surfaces");
+		}
 		await verifyGoalLifecycle({ piBinary, packagePath: extractedPackage });
 		await verifyUiPty({ piBinary, packagePath: extractedPackage });
 		await verifyGoalPty({ piBinary, packagePath: extractedPackage, columns: 56, rows: 24 });
@@ -1001,6 +1203,7 @@ export async function certifyReleaseArtifacts(
 		await verifyBtwPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyContextPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyRtkPty({ piBinary, packagePath: extractedPackage });
+		await verifyMcpPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyToolsPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyToolsResumePty({ piBinary, packagePath: extractedPackage });
 		await writeReleaseVerification(releaseDirectory, CERTIFIED_PI_HOST_PROFILE);
@@ -1018,7 +1221,7 @@ async function main(): Promise<void> {
 		await verifyPiHostProvenance(PI_BIN);
 		const aggregateSmoke = await runPiRpcSmoke({
 			piBinary: PI_BIN,
-			extensions: [goalToolInspector],
+			extensions: [goalToolInspector, webToolInspector, mcpToolInspector],
 			packages: [aggregateDirectory],
 		});
 		if (
@@ -1028,6 +1231,14 @@ async function main(): Promise<void> {
 			aggregateSmoke.commandNames.includes("tool-settings")
 		) {
 			throw new Error("Source Aggregate did not expose the required /ui and /goal surfaces");
+		}
+		if (
+			!aggregateSmoke.commandNames.includes("web-tools-certified") ||
+			!aggregateSmoke.commandNames.includes("mcp-tools-certified") ||
+			!aggregateSmoke.commandNames.includes("mcp") ||
+			!aggregateSmoke.commandNames.includes("mcp-auth")
+		) {
+			throw new Error("Source Aggregate did not expose the certified Web and MCP surfaces");
 		}
 		const releaseDirectory = join(temporaryDirectory, "release");
 		await createReleaseArtifacts(releaseDirectory);

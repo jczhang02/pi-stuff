@@ -1,0 +1,19 @@
+# Pi Stuff Web
+
+Pi Stuff Web exposes three model-facing Tools:
+
+- `web_search` searches one to four bounded queries and returns cited sources.
+- `fetch_content` reads HTTP(S) pages in readable or raw mode. PDFs are
+  converted to a temporary Markdown artifact and return its path for Pi's
+  `read` Tool.
+- `get_search_content` retrieves bounded slices or matching passages from a
+  previous search/fetch result.
+
+The package deliberately has no interactive browser, floating window, activity
+widget, local-file/video reader, repository cloner, or separate research
+workflow. Search always uses the non-curator path. Provider selection remains
+explicit through the Tool call or the owned upstream configuration.
+
+All three Tools use Pi Stuff's shared one-row lifecycle renderer. Model-visible
+results, citations, cancellation, SSRF protection, redirects, extraction, and
+PDF handling remain owned by the pinned fork.

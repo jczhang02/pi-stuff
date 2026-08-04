@@ -1,0 +1,127 @@
+import type {
+	Api,
+	AssistantMessage,
+	Context,
+	Model,
+	SimpleStreamOptions,
+	ToolResultMessage,
+} from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+const PROVIDER = "pi-stuff-mcp-pty";
+const MODEL = "fixture-model";
+const CALL_MARKER = "MCP_STDIO_ECHO_OK";
+
+const ZERO_USAGE = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
+	return {
+		role: "assistant",
+		content,
+		api: "openai-completions",
+		provider: PROVIDER,
+		model: MODEL,
+		usage: ZERO_USAGE,
+		stopReason,
+		timestamp: Date.now(),
+	};
+}
+
+function textStream(text: string) {
+	const stream = createAssistantMessageEventStream();
+	const pending = message([], "pending");
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
+	stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
+	stream.push({ type: "done", reason: "stop", message: message([{ type: "text", text }], "stop") });
+	return stream;
+}
+
+function toolCallStream() {
+	const stream = createAssistantMessageEventStream();
+	const pending = message([], "pending");
+	const toolCall = {
+		type: "toolCall" as const,
+		id: "mcp-pty-call-1",
+		name: "mcp",
+		arguments: { args: { text: CALL_MARKER }, server: "local", tool: "local_echo" },
+	};
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
+	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
+	return stream;
+}
+
+function latestUserText(context: Context): string {
+	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
+		const entry = context.messages[index];
+		if (entry?.role !== "user") continue;
+		if (typeof entry.content === "string") return entry.content;
+		return entry.content
+			.filter((part): part is Extract<(typeof entry.content)[number], { type: "text" }> => part.type === "text")
+			.map((part) => part.text)
+			.join("\n");
+	}
+	return "";
+}
+
+function resultText(result: ToolResultMessage): string {
+	return result.content
+		.filter((part): part is Extract<(typeof result.content)[number], { type: "text" }> => part.type === "text")
+		.map((part) => part.text)
+		.join("\n");
+}
+
+function fixtureStream(context: Context) {
+	const userText = latestUserText(context);
+	if (userText.includes("probe after resume")) return textStream("MCP_RESUME_PROBE_DONE");
+	const result = [...context.messages]
+		.reverse()
+		.find((entry): entry is ToolResultMessage => entry.role === "toolResult" && entry.toolName === "mcp");
+	if (!result) return toolCallStream();
+	const text = resultText(result);
+	return textStream(
+		text.includes(CALL_MARKER)
+			? "MCP_TOOL_CALL_DONE"
+			: `MCP_TOOL_CALL_BAD_RESULT ${text.replace(/\s+/gu, " ").slice(0, 240)}`,
+	);
+}
+
+export default function mcpPtyProvider(pi: ExtensionAPI): void {
+	pi.registerProvider(PROVIDER, {
+		name: "Pi Stuff MCP PTY fixture",
+		baseUrl: "https://fixture.invalid",
+		apiKey: "fixture",
+		api: "openai-completions",
+		models: [
+			{
+				id: MODEL,
+				name: "Pi Stuff MCP PTY fixture",
+				reasoning: false,
+				input: ["text"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 200_000,
+				maxTokens: 4_096,
+			},
+		],
+		streamSimple: (_model: Model<Api>, context: Context, _options?: SimpleStreamOptions) => fixtureStream(context),
+	});
+	pi.registerCommand("fixture-resume", {
+		description: "Resume the isolated MCP Tool UI fixture session",
+		handler: async (_args, ctx) => {
+			const target = process.env["PI_STUFF_MCP_PTY_RESUME_TARGET"];
+			if (!target) throw new Error("PI_STUFF_MCP_PTY_RESUME_TARGET is required");
+			await ctx.switchSession(target);
+		},
+	});
+}

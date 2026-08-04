@@ -33,6 +33,8 @@ Pi remains the host. The Suite is a normal Pi Package: it exports an ordered agg
 | `@jczhang02/pi-stuff-rtk` | Certified fail-open RTK rewriting and model-only Tool output projection | `0.1.0` |
 | `@jczhang02/pi-stuff-codex` | Codex Fast and usage controls plus selected patch and image Tools | `0.0.0` |
 | `@jczhang02/pi-stuff-goal` | Persistent, evidence-gated continuation for one current-session objective | `0.1.0` |
+| `@jczhang02/pi-stuff-web` | Bounded public Web search, page/PDF reading, and continuation retrieval | `0.1.0` |
+| `@jczhang02/pi-stuff-mcp` | Lazy proxy-only MCP gateway with stdio/HTTP transports and non-floating status UI | `0.1.0` |
 | `@jczhang02/pi-stuff-agents` | Current-session foreground and background Agents | `0.1.0` |
 | `@jczhang02/pi-stuff-todo` | Recoverable per-session task tracking with a compact editor widget | `0.1.0` |
 | `@jczhang02/pi-stuff-btw` | One-shot side questions isolated from the main transcript | `0.1.0` |

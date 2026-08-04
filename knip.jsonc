@@ -34,6 +34,9 @@
 		"packages/pi-stuff-goal": {
 			"project": ["**/*.ts"]
 		},
+		"packages/pi-stuff-mcp": {
+			"project": ["**/*.ts"]
+		},
 		"packages/pi-stuff-todo": {
 			"project": ["**/*.ts"]
 		},
@@ -41,6 +44,9 @@
 			"project": ["**/*.ts"]
 		},
 		"packages/pi-stuff-ui": {
+			"project": ["**/*.ts"]
+		},
+		"packages/pi-stuff-web": {
 			"project": ["**/*.ts"]
 		}
 	}

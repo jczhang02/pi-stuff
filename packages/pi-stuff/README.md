@@ -25,6 +25,8 @@ Version `0.1.0` is the first public release line.
 - `@jczhang02/pi-stuff-codex`: one `/codex` surface for Fast mode and subscription usage, plus shared-rendered
   `apply_patch`, `view_image`, and confirmed `gpt-image-2` generation Tools.
 - `@jczhang02/pi-stuff-goal`: one session-persistent objective with settled-boundary continuation, explicit pause/resume/edit/clear, token budgets, and strict evidence-gated completion/blocking.
+- `@jczhang02/pi-stuff-web`: bounded search plus public HTTP(S) page/PDF reading and continuation retrieval, with no browser UI.
+- `@jczhang02/pi-stuff-mcp`: one lazy proxy gateway, explicit authentication, stdio/HTTP transports, and a non-floating `/mcp` status view.
 - `@jczhang02/pi-stuff-agents`: current-session foreground and background Agents with a compact roster and full-width control view.
 - `@jczhang02/pi-stuff-todo`: four model-facing Task tools and a compact task widget above Pi's editor.
 - `@jczhang02/pi-stuff-btw`: one-shot side questions that use the effective conversation context without changing the main transcript.

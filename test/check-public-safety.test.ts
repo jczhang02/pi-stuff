@@ -161,6 +161,32 @@ describe("auditPublicFiles", () => {
 		]);
 	});
 
+	test("allows only exact SHA-named owned fork release assets", async () => {
+		const root = await createRepository();
+		const exact =
+			"https://github.com/jczhang02/pi-web-access/releases/download/pi-stuff-v0.18.0-3/jczhang02-pi-web-access-0.18.0-pi-stuff.3-9209f76-sha256-83c4a158a43360daf4e513d89f4942cd6eba360118529d0f30b8ca4f06c3b33f.tgz";
+		await writeCapabilityManifest(root, {
+			dependencies: { "@jczhang02/pi-web-access": exact },
+			files: ["index.ts"],
+			name: "@jczhang02/pi-example",
+			pi: { extensions: ["./index.ts"] },
+			version: "0.0.1",
+		});
+		expect(await auditPublicFiles(root)).toEqual([]);
+
+		await writeCapabilityManifest(root, {
+			dependencies: { "@jczhang02/pi-web-access": exact.replace(/.$/u, "x") },
+			files: ["index.ts"],
+			name: "@jczhang02/pi-example",
+			pi: { extensions: ["./index.ts"] },
+			version: "0.0.1",
+		});
+		expect(await auditPublicFiles(root)).toContainEqual({
+			path: "packages/pi-example/package.json",
+			rule: "direct-dependency-must-be-exact",
+		});
+	});
+
 	test("ignores tracked files deleted from the working tree", async () => {
 		const root = await createRepository();
 		const deletedPath = join(root, "README.md");
