@@ -615,6 +615,9 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	session.sendKey("C-u");
 	session.sendLiteral("/codex fast");
 	session.sendKey("Enter");
+	// Pi may use the first Enter to accept the exact argument completion.
+	await delay(100);
+	session.sendKey("Enter");
 	await waitForPersistedSetting(settingsPath, "fast", true);
 	session.sendLiteral("/codex");
 	session.sendKey("Enter");
