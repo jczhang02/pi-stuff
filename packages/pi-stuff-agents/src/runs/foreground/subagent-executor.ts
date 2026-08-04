@@ -104,6 +104,8 @@ export interface SubagentParamsLike {
 	model?: string;
 	thinking?: string | false;
 	skill?: string | string[] | boolean;
+	/** Suite-owned, bounded reference context. Never part of the public tool schema. */
+	contextProjection?: string;
 }
 
 interface ExecutorEngines {
@@ -409,7 +411,8 @@ function prepareLaunch(
 }
 
 function childTask(data: PreparedLaunch, task: TaskParam): string {
-	return data.context === "fork" ? wrapForkTask(task.task) : task.task;
+	const taskText = data.context === "fork" ? wrapForkTask(task.task) : task.task;
+	return data.params.contextProjection ? `${data.params.contextProjection}\n\n${taskText}` : taskText;
 }
 
 function asyncContext(data: PreparedLaunch, ctx: ExtensionContext, pi: ExtensionAPI) {

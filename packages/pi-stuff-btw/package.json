@@ -39,6 +39,7 @@
 		"@jczhang02/pi-stuff-ui": "0.1.0"
 	},
 	"peerDependencies": {
+		"@jczhang02/pi-stuff-context": "0.1.0",
 		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*"

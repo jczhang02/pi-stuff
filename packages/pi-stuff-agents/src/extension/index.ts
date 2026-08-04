@@ -5,6 +5,7 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { projectCurrentContext } from "@jczhang02/pi-stuff-context";
 import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
 import {
 	type CommandDialogCoordinator,
@@ -130,6 +131,7 @@ export interface ExtensionRootDependencies {
 		current: CurrentAgents,
 		options: AgentDialogOptions,
 	) => Promise<void>;
+	readonly projectContext: typeof projectCurrentContext;
 	readonly randomId: () => string;
 	readonly timers: {
 		clearInterval(handle: ReturnType<typeof setInterval>): void;
@@ -192,6 +194,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	isChildProcess: () => process.env[SUBAGENT_CHILD_ENV] === "1",
 	loadConfiguration: loadConfig,
 	openDialog: openAgentDialog,
+	projectContext: projectCurrentContext,
 	randomId: randomUUID,
 	timers: {
 		clearInterval,
@@ -529,9 +532,15 @@ export default function registerSubagentExtension(
 			ensureRosterRefresh();
 		}
 		try {
+			const engineParams = toEngineParams(params);
+			if (!params.action) {
+				const audience = (params.context ?? "fresh") === "fork" ? "agent-fork" : "agent-fresh";
+				const projection = await deps.projectContext(audience, ctx);
+				if (projection.text) engineParams.contextProjection = projection.text;
+			}
 			const result = await executor.execute(
 				id,
-				toEngineParams(params),
+				engineParams,
 				signal,
 				onUpdate
 					? (update) => {

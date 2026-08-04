@@ -1,13 +1,14 @@
 {
-	"name": "@jczhang02/pi-stuff-agents",
+	"name": "@jczhang02/pi-stuff-context",
 	"version": "0.1.0",
-	"description": "Current-session foreground and background Agents for Pi Stuff",
+	"description": "Lazy context continuity and bounded projection for Pi Stuff",
 	"type": "module",
 	"keywords": [
 		"pi-package",
 		"pi-extension",
-		"agents",
-		"subagents"
+		"context",
+		"memory",
+		"compaction"
 	],
 	"license": "MIT",
 	"publishConfig": {
@@ -18,8 +19,6 @@
 	},
 	"files": [
 		"index.ts",
-		"agents",
-		"src",
 		"CHANGELOG.md",
 		"README.md",
 		"UPSTREAM.md",
@@ -31,30 +30,27 @@
 		]
 	},
 	"dependencies": {
+		"@jczhang02/pi-magic-context": "https://github.com/jczhang02/magic-context/releases/download/pi-stuff-v0.33.1-2/pi-magic-context-0.33.1-pi-stuff.2-sha256-0c4cadfb35ad64d90a119eb8cd2bb5dffab43f5ba8096dfb9378b74dcd99bab3.tgz",
 		"@jczhang02/pi-stuff-tools": "0.1.0",
-		"@jczhang02/pi-stuff-ui": "0.1.0",
-		"jiti": "2.7.0",
 		"typebox": "1.3.7"
 	},
+	"bundledDependencies": [
+		"@jczhang02/pi-magic-context"
+	],
 	"peerDependencies": {
-		"@jczhang02/pi-stuff-context": "0.1.0",
-		"@earendil-works/pi-agent-core": "*",
-		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-agent-core": "0.83.0",
-		"@earendil-works/pi-ai": "0.83.0",
 		"@earendil-works/pi-coding-agent": "0.83.0",
 		"@earendil-works/pi-tui": "0.83.0"
 	},
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/jczhang02/pi-stuff.git",
-		"directory": "packages/pi-stuff-agents"
+		"directory": "packages/pi-stuff-context"
 	},
-	"homepage": "https://github.com/jczhang02/pi-stuff/tree/main/packages/pi-stuff-agents#readme",
+	"homepage": "https://github.com/jczhang02/pi-stuff/tree/main/packages/pi-stuff-context#readme",
 	"bugs": {
 		"url": "https://github.com/jczhang02/pi-stuff/issues"
 	}

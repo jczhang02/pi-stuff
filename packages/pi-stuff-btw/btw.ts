@@ -16,6 +16,7 @@ import {
 	type SessionEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
+import { projectCurrentContext } from "@jczhang02/pi-stuff-context";
 import { fitBranch } from "./btw-budget.js";
 import { assistantMessageText } from "./btw-messages.js";
 import { openBtwStream } from "./pi-compat.js";
@@ -85,21 +86,23 @@ function buildBtwMessages(
 	ctx: ExtensionContext,
 	model: Model<Api>,
 	userMessage: UserMessage,
+	contextProjection: string,
 	keepBudget?: number,
 	effectiveContext: ReturnType<typeof readEffectiveContext> = readEffectiveContext(ctx),
 ): BtwBuiltContext {
 	const { entries, messages } = effectiveContext;
+	const systemPrompt = contextProjection ? `${BTW_SYSTEM_PROMPT}\n\n${contextProjection}` : BTW_SYSTEM_PROMPT;
 	const fit = fitBranch({
 		entries,
 		messages,
 		model,
-		systemPrompt: BTW_SYSTEM_PROMPT,
+		systemPrompt,
 		question: userMessage,
 		...(keepBudget === undefined ? {} : { keepBudget }),
 	});
 	return {
 		messages: [...fit.messages, userMessage],
-		systemPrompt: BTW_SYSTEM_PROMPT,
+		systemPrompt,
 		branchWasTrimmed: fit.branchWasTrimmed,
 		stubbed: fit.stubbed,
 		keepBudget: fit.keepBudget,
@@ -165,9 +168,11 @@ export async function executeBtw(
 	};
 	let built: BtwBuiltContext;
 	let effectiveContext: ReturnType<typeof readEffectiveContext>;
+	let contextProjection: string;
 	try {
+		contextProjection = (await projectCurrentContext("btw", ctx)).text;
 		effectiveContext = readEffectiveContext(ctx);
-		built = buildBtwMessages(ctx, model, userMessage, undefined, effectiveContext);
+		built = buildBtwMessages(ctx, model, userMessage, contextProjection, undefined, effectiveContext);
 	} catch (error) {
 		return errorResult(callError(error instanceof Error ? error.message : String(error)), "");
 	}
@@ -199,6 +204,7 @@ export async function executeBtw(
 					ctx,
 					model,
 					userMessage,
+					contextProjection,
 					Math.max(0, Math.floor(built.keepBudget / 2)),
 					effectiveContext,
 				);

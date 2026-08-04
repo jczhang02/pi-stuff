@@ -25,6 +25,8 @@ const CREDENTIAL_PATTERNS = [
 	/\bsk-ant-[A-Za-z0-9_-]{20,}\b/,
 	/\bsk-[A-Za-z0-9_-]{24,}\b/,
 ];
+const PINNED_MAGIC_CONTEXT_RELEASE =
+	/^https:\/\/github\.com\/jczhang02\/magic-context\/releases\/download\/pi-stuff-v\d+\.\d+\.\d+-\d+\/pi-magic-context-\d+\.\d+\.\d+-pi-stuff\.\d+-sha256-[0-9a-f]{64}\.tgz$/;
 
 export interface SafetyFinding {
 	path: string;
@@ -117,7 +119,12 @@ function hasInexactDependency(manifest: PackageManifest): boolean {
 		if (
 			typeof section === "object" &&
 			section !== null &&
-			Object.values(section).some((version) => typeof version !== "string" || !exactVersion.test(version))
+			Object.entries(section).some(
+				([name, version]) =>
+					typeof version !== "string" ||
+					(!exactVersion.test(version) &&
+						!(name === "@jczhang02/pi-magic-context" && PINNED_MAGIC_CONTEXT_RELEASE.test(version))),
+			)
 		) {
 			return true;
 		}

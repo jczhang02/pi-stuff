@@ -21,6 +21,10 @@
 		"packages/pi-stuff-btw": {
 			"project": ["**/*.ts"]
 		},
+		"packages/pi-stuff-context": {
+			"project": ["**/*.ts"],
+			"ignoreDependencies": ["@jczhang02/pi-magic-context"]
+		},
 		"packages/pi-stuff-todo": {
 			"project": ["**/*.ts"]
 		},
