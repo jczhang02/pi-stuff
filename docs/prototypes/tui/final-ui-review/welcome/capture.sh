@@ -143,12 +143,16 @@ capture_geometry 100 32
 capture_geometry 64 28 true
 capture_geometry 32 18
 
-rg -F --quiet -- "Context files 3 · Extensions 24 · Tools 30 · Skills 77" \
+rg -F --quiet -- "3 context · 24 extensions" \
 	"$artifact_dir/real-pi-welcome-100x32.txt"
-rg -F --quiet -- "$welcome_fixture_path · 3 context · 24 ext · 30 tools · 77 skills" \
+rg -F --quiet -- "$welcome_fixture_path" \
 	"$artifact_dir/real-pi-welcome-64x28.txt"
-rg -F --quiet -- "π Welcome back! · gpt-5.6-sol" \
+rg -F --quiet -- "Welcome back!" \
 	"$artifact_dir/real-pi-welcome-32x18.txt"
+if rg -F --quiet -- "24 extensions" "$artifact_dir/real-pi-welcome-64x28.txt"; then
+	echo "Narrow Welcome retained wide-only inventory" >&2
+	exit 1
+fi
 rg -F --quiet -- "Transcript line 20 · Welcome belongs to the document" \
 	"$artifact_dir/real-pi-welcome-scrolled-64x28.txt"
 if rg -F --quiet -- "Welcome back!" "$artifact_dir/real-pi-welcome-scrolled-64x28.txt"; then

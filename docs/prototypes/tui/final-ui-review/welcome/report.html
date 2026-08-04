@@ -53,19 +53,22 @@
 
     <div class="facts">
       <div class="fact"><strong>位置</strong><span>通过 <code>setHeader()</code> 成为对话文档第一块，会随 transcript 自然滚走。</span></div>
-      <div class="fact"><strong>外形</strong><span>小 π、上下细分隔线，没有矩形框、浮窗、版本号或 recent sessions。</span></div>
-      <div class="fact"><strong>响应式</strong><span>100 列保留信息层次；64 列压平；32 列只保留一行身份，不整块消失。</span></div>
+      <div class="fact"><strong>外形</strong><span>复现 Claude Code 2.1.197 的卡片几何、双栏比例和块状标志密度，内容使用 Pi Stuff 身份。</span></div>
+      <div class="fact"><strong>响应式</strong><span>70 列起为双栏，68 列及以下为单栏；低高度只减空白与 provider，不裁掉顶边。</span></div>
     </div>
 
     <section>
-      <h2>宽 · 100 × 32</h2>
-      <p class="caption">六行双栏：身份、完整路径、Loaded 四类统计和三条固定 Tips 都在首屏。</p>
-      <figure class="wide"><img src="./artifacts/real-pi-welcome-100x32.png" alt="Real Pi Welcome Header at 100 by 32 cells"></figure>
+      <h2>参考与当前 · 100 × 32</h2>
+      <p class="caption">左侧是真实 Claude Code 2.1.197，右侧是当前生产 Welcome。核对重点是标题嵌入顶边、固定 52 格身份列，以及右侧仅承载提示与统计。</p>
+      <div class="grid">
+        <figure class="compact"><img src="./reference/claude-code-2.1.197-welcome-100x32.png" alt="Genuine Claude Code 2.1.197 Welcome card at 100 by 32 cells"></figure>
+        <figure class="compact"><img src="./artifacts/real-pi-welcome-100x32.png" alt="Real Pi Welcome Header at 100 by 32 cells"></figure>
+      </div>
     </section>
 
     <section>
       <h2>窄与极窄</h2>
-      <p class="caption">64 列压成五行；32 列保留一行 Welcome 身份。两种状态均由同一个真实 Pi Component 根据传入宽度渲染。</p>
+      <p class="caption">64 列使用 Claude 式单栏卡片；32 × 18 仅收紧空白行，标题、欢迎语、标志、模型、provider 和目录仍完整。</p>
       <div class="grid">
         <figure class="compact"><img src="./artifacts/real-pi-welcome-64x28.png" alt="Real Pi Welcome Header at 64 by 28 cells"></figure>
         <figure class="compact"><img src="./artifacts/real-pi-welcome-32x18.png" alt="Real Pi Welcome Header at 32 by 18 cells"></figure>
@@ -78,7 +81,7 @@
       <figure class="wide"><img src="./artifacts/real-pi-welcome-scrolled-64x28.png" alt="Real Pi transcript after the Welcome Header naturally scrolled away"></figure>
     </section>
 
-    <footer>PROTOTYPE：固定数据、离线运行、无 session 持久化；不得直接作为生产实现提交。</footer>
+    <footer>REFERENCE + REAL-PTY EVIDENCE：参考图来自真实 Claude Code 2.1.197；当前图直接挂载生产 Welcome Component，仅模型和加载统计使用固定离线数据。</footer>
   </main>
 </body>
 </html>

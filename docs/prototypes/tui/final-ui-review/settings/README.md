@@ -2,9 +2,10 @@
 
 > **HISTORICAL PROTOTYPE plus current production contract.**
 
-The checked-in screenshots answer the original question: can Pi Stuff use a
-flat, full-width, non-overlay Pi `SettingsList`? They preserve the initial
-five-row prototype and are not the current settings inventory.
+The historical screenshots answer the original question: can Pi Stuff use a
+flat, full-width, non-overlay Pi `SettingsList`? Current production screenshots
+are stored under `../statusline/parity-artifacts/` because the same real
+Aggregate verifier captures Statusline, `/ui`, and Todo together.
 
 Current production `/ui` contains eight rows:
 
@@ -24,37 +25,38 @@ Enter or Space changes a value, and Escape closes the Command Dialog. Welcome
 continues to apply on the next launch; the other seven rows apply immediately.
 
 The historical five-row captures remain useful evidence for the native
-interaction grammar. Current eight-row behavior is certified by
-`scripts/verify-ui-pty.ts`; no claim about the current inventory should be
-inferred from the older images.
+interaction grammar. Current eight-row behavior and 100/64-column PNGs are
+certified by `scripts/verify-ui-pty.ts`; no claim about the current inventory
+should be inferred from the older images.
 
-## Reproduce
+## Reproduce current production evidence
 
 From the repository root:
 
 ```bash
-docs/prototypes/tui/final-ui-review/settings/capture.sh
+PI_STUFF_UI_PTY_ARTIFACT_DIR=docs/prototypes/tui/final-ui-review/statusline/parity-artifacts \
+bun scripts/verify-ui-pty.ts
 ```
 
-The default capture uses the real enhanced host at `/opt/bin/pi`, isolated
-temporary Pi settings, fullscreen mode, no model calls, no network, and no
-production Pi Stuff packages. A clearly invalid prototype-only Anthropic key
-only makes Pi's built-in model available to the editor; the script never
-submits a model prompt. Override `PI_BIN` or `FREEZE_BIN` only when reproducing
-on another machine.
+The verifier uses the real enhanced host at `/opt/bin/pi`, isolated temporary
+settings, the complete production Aggregate, a deterministic offline Provider,
+and no network. It writes the current `/ui` ANSI and text frames beside the
+Statusline and Todo evidence; the checked-in PNGs are Freeze renders of those
+same ANSI files.
 
-The script records raw ANSI plus PNG evidence for:
+The current run verifies:
 
 1. opening `/ui` at `100 × 32`;
 2. opening `/ui` at `64 × 28`;
-3. typing `timer` to search;
-4. pressing Enter to change `Tool running timer` from `true` to `false`.
+3. all eight rows and absence of RTK behavior settings;
+4. search, boolean and enum changes, restart persistence, and Escape restore.
 
-All generated evidence stays in [`artifacts/`](./artifacts/).
+Open [`report.html`](./report.html) for the two production frames.
 
-Open [`report.html`](./report.html) to review all four genuine PTY frames in
-one page. The capture also verifies that Escape removes the SettingsList and
-restores Pi's editor/footer, without adding a fifth redundant screenshot.
+## Reproduce historical prototype
+
+Run `docs/prototypes/tui/final-ui-review/settings/capture.sh` to regenerate the
+four original five-row prototype frames under [`artifacts/`](./artifacts/).
 
 ## Historical prototype result
 

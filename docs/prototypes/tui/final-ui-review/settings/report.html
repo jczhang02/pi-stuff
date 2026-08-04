@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Pi Stuff /ui — real TUI prototype</title>
+		<title>Pi Stuff /ui — production TUI evidence</title>
 		<style>
 			:root {
 				color-scheme: dark;
@@ -31,16 +31,16 @@
 	</head>
 	<body>
 		<main>
-			<span class="badge">Prototype · genuine /opt/bin/pi 0.83.0 PTY</span>
+			<span class="badge">Production Aggregate · genuine /opt/bin/pi 0.83.0 PTY</span>
 			<h1>Pi Stuff <code>/ui</code></h1>
-			<p class="lede">Four historical captures from Pi's real fullscreen Host and native <code>SettingsList</code>. They prove the selected interaction grammar, not the current inventory. Production now has eight rows: Statusline, density, latest prompt, icons, Welcome, input highlighting, inline slash autocomplete, and Tool running timer.</p>
+			<p class="lede">Current production captures from Pi's real fullscreen Host and native <code>SettingsList</code>. <code>/ui</code> contains eight presentation settings: Statusline, density, latest prompt, icons, Welcome, input highlighting, inline slash autocomplete, and Tool running timer. Capability behavior such as RTK stays under its own command.</p>
 
 			<section>
 				<h2>Open · 100 × 32</h2>
-				<p>The original flat inventory, native selected-row description, search input, and keyboard hint.</p>
+				<p>All eight presentation settings, the native selected-row description, search input, and keyboard hint.</p>
 				<figure>
-					<img src="artifacts/pi-0.83-ui-settings-open-100x32.png" alt="Real Pi SettingsList open at 100 by 32 cells" />
-					<figcaption>pi-0.83-ui-settings-open-100x32.png</figcaption>
+					<img src="../statusline/parity-artifacts/pi-0.83-ui-parity-open-100x32.png" alt="Production Pi SettingsList open at 100 by 32 cells" />
+					<figcaption>pi-0.83-ui-parity-open-100x32.png</figcaption>
 				</figure>
 			</section>
 
@@ -48,30 +48,12 @@
 				<h2>Open · 64 × 28</h2>
 				<p>The same surface stays readable without cards, sidebars, floating windows, or clipped help text.</p>
 				<figure>
-					<img src="artifacts/pi-0.83-ui-settings-open-64x28.png" alt="Real Pi SettingsList open at 64 by 28 cells" />
-					<figcaption>pi-0.83-ui-settings-open-64x28.png</figcaption>
+					<img src="../statusline/parity-artifacts/pi-0.83-ui-parity-open-64x28.png" alt="Production Pi SettingsList open at 64 by 28 cells" />
+					<figcaption>pi-0.83-ui-parity-open-64x28.png</figcaption>
 				</figure>
 			</section>
 
-			<section>
-				<h2>Search · <code>timer</code></h2>
-				<p>Typing immediately filters the prototype settings and retains the selected item's native description.</p>
-				<figure>
-					<img src="artifacts/pi-0.83-ui-settings-search-timer-100x32.png" alt="Real Pi SettingsList filtered to Tool running timer" />
-					<figcaption>pi-0.83-ui-settings-search-timer-100x32.png</figcaption>
-				</figure>
-			</section>
-
-			<section>
-				<h2>Immediate change · <code>false</code></h2>
-				<p>Enter cycles the selected setting from <code>true</code> to <code>false</code> without closing or moving the surface.</p>
-				<figure>
-					<img src="artifacts/pi-0.83-ui-settings-toggle-timer-100x32.png" alt="Real Pi SettingsList after toggling Tool running timer to false" />
-					<figcaption>pi-0.83-ui-settings-toggle-timer-100x32.png</figcaption>
-				</figure>
-			</section>
-
-			<p class="verdict"><strong>Historical result:</strong> the flat native design works in the real Host at both widths. The current eight-item production inventory, enum changes, persistence, and restart behavior are verified separately by <code>scripts/verify-ui-pty.ts</code>. Escape still restores the editor/footer.</p>
+			<p class="verdict"><strong>Certified result:</strong> the current flat native design works at both widths. The same real-Host run searches the list, changes boolean and enum values, restarts Pi, verifies persistence, and confirms that Escape restores the editor/footer.</p>
 		</main>
 	</body>
 </html>

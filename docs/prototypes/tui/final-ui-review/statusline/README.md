@@ -13,19 +13,29 @@ PI_STUFF_UI_PTY_ARTIFACT_DIR=docs/prototypes/tui/final-ui-review/statusline/pari
 bun scripts/verify-ui-pty.ts
 ```
 
-These ANSI and plain-text captures load the production Aggregate and cover fresh `100 × 32`, `64 × 28`, `48 × 22`,
-`32 × 18`, and `24 × 16` screens plus the complete metered `100 × 32` footer after a real streamed turn. They show the restored Powerline visual
+The visual evidence has three authority levels under `reference/` and `parity-artifacts/`:
+
+1. `user-statusline-reference.png` is the maintainer's accepted reference. It includes FleetView above the footer;
+   the bottom row is the authoritative spacing, icon, field-order, and gray `|` separator grammar.
+2. `former-config-statusline-footer-100x32.png` is a black-box capture of the former local configuration. It confirms
+   the migrated content and icons, but its dot separators are historical rather than authoritative.
+3. `pi-0.83-statusline-parity-metered-100x32.png` and the responsive matrix are the current production result.
+
+These ANSI, plain-text, and PNG captures load the production Aggregate and cover fresh `100 × 32`, `64 × 28`,
+`48 × 22`, `32 × 18`, and `24 × 16` screens plus the complete metered `100 × 32` footer after a real streamed turn. They show the restored Powerline visual
 grammar: one-cell padding, `|` separators, display-name and icon treatment, `think:<level>`, basename path,
 `*unstaged +staged ?untracked`, detailed context/cache fields, and whole-segment responsive flow. The hardened renderer
 also supports `!conflict`, `⇡ahead`, `⇣behind`, and explicit unknown Context such as `?/200k`. Pi semantic theme tokens,
-no subscription `(sub)` label, responsive prompt bounds, and the selected Goal/MCP/Loadout status subset are intentional
-Pi Stuff deviations. The metered frame also exercises the secondary extension-status row.
+no subscription `(sub)` label, responsive prompt bounds, and capability activity staying out of the Statusline are
+intentional Pi Stuff decisions. Fast appears between Thinking and cwd only when enabled; Codex weekly allowance replaces
+cost after cache when real usage data is available.
 
 At narrow widths the current contract is semantic, not merely truncation-based: model and Context survive first, then
 Git, cwd and Thinking, cost and cache, and extension statuses. Long identities shorten from the middle, while compact
 Git uses `ΔN` and reserves its bounded row for conflict and divergence markers before branch text. Latest prompt uses at most two rows at 80 columns or
 wider, at most one row at 48–79 columns, and no row below 48 columns. The same real-Host verifier checks all five widths and
-the complete eight-row `/ui` inventory.
+the complete eight-row `/ui` inventory. It also drives four real `TaskCreate` calls at both `100 × 32` and `64 × 28`
+and checks the expanded Todo alignment; the resulting `/ui` and Todo frames are stored beside the Statusline captures.
 
 ## Rejected prototype record
 
@@ -49,6 +59,6 @@ The eight PNG, ANSI, and plain-text captures under `artifacts/` cover:
 - complete Statusline removal and recovery around native autocomplete.
 
 The rejected prototype order was model → thinking → abbreviated cwd → branch/Git counts → context → cache read →
-metered cost → Goal/MCP/Loadout statuses. Theme colors came only from Pi semantic tokens. The fixture Git counts were
+metered cost → capability statuses. Theme colors came only from Pi semantic tokens. The fixture Git counts were
 deterministic display data; branch, session usage, thinking, model, prompt, and extension statuses travelled through real
 Pi public APIs.

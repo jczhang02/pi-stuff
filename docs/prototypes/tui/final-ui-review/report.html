@@ -1,16 +1,16 @@
 <!doctype html>
 <!--
-  PROTOTYPE — disposable review artifact, not production UI.
-  Every terminal image is a real /opt/bin/pi 0.83.0 PTY capture.
+  REVIEW REPORT — the HTML is not production UI.
+  Current-product images are real /opt/bin/pi 0.83.0 PTY captures; design references are labeled separately.
   HTML is only the Kami report layer.
 -->
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pi Stuff · 启动与输入区 UI 最终核验</title>
+  <title>Pi Stuff · 常用 UI 最终核验</title>
   <meta name="author" content="Pi Stuff">
-  <meta name="description" content="用真实 Pi 0.83 PTY 画面核验 Welcome Header、Statusline 与统一 /ui。">
+  <meta name="description" content="用真实 Pi 0.83 PTY 画面核验 Welcome Header、Statusline、Todo 与 /ui。">
   <meta name="keywords" content="Pi Stuff, Pi, TUI, Statusline, Welcome Header, SettingsList">
   <meta name="generator" content="Kami">
   <style>
@@ -444,26 +444,26 @@
 <body>
   <header class="hero" data-always-visible>
     <div class="hero-copy">
-      <div class="eyebrow">Pi Stuff · Real TUI review · 2026.08.03</div>
+      <div class="eyebrow">Pi Stuff · Real TUI review · 2026.08.05</div>
       <h1>先让每天都看见的地方，真正舒服。</h1>
       <p class="hero-lead">
-        这一轮只核验三个常驻入口：<strong>启动时的 Welcome、输入框下方的 Statusline，以及统一的 <code>/ui</code>。</strong>
+        这一轮只核验每天都会看见的四处：<strong>Welcome、Statusline、Todo，以及只管理显示方式的 <code>/ui</code>。</strong>
         所有终端像素都来自真实 Pi；HTML 没有重画任何 TUI。
       </p>
     </div>
 
     <div class="hero-meta">
       <div class="metric">
-        <div class="metric-value">16</div>
-        <div class="metric-label">张真实 Pi 0.83 PTY 截图</div>
+        <div class="metric-value">15</div>
+        <div class="metric-label">张可核对画面：12 张当前生产版 + 3 张设计依据</div>
       </div>
       <div class="metric">
-        <div class="metric-value">3</div>
-        <div class="metric-label">种终端宽度：100 / 64 / 32 columns</div>
+        <div class="metric-value">5</div>
+        <div class="metric-label">种真实验收宽度：100 / 64 / 48 / 32 / 24 columns</div>
       </div>
       <div class="metric">
         <div class="metric-value">0</div>
-        <div class="metric-label">模型调用、浮动窗口与 HTML 终端模拟</div>
+        <div class="metric-label">网络请求、浮动窗口与 HTML 终端模拟</div>
       </div>
     </div>
   </header>
@@ -471,8 +471,8 @@
   <aside class="truth-note" data-always-visible>
     <h2>怎么看这份报告</h2>
     <p>
-      每张图都由 <code>/opt/bin/pi 0.83.0</code> 在隔离设置、固定数据和真实 PTY 中渲染，再由 Freeze 转成 PNG。
-      原型没有加载当前安装的 Suite，也没有改动个人设置。图中的模型、数量、费用和 Prompt 是确定性演示数据；布局、颜色、换行和交互容器是真实 Host 输出。
+      当前生产版画面都由 <code>/opt/bin/pi 0.83.0</code> 在隔离设置和真实 PTY 中渲染，再由 Freeze 转成 PNG。
+      三张历史依据分别标明来源；它们用于核对设计，不冒充当前输出。Welcome 直接挂载生产组件；其余生产画面加载完整 Aggregate 与离线确定性 Provider。没有读取或改动个人设置，也没有发出网络请求。
     </p>
   </aside>
 
@@ -481,29 +481,30 @@
       <div class="section-kicker">01 · Welcome header</div>
       <h2>启动信息属于对话开头，不属于固定屏幕边框。</h2>
       <p class="section-lead">
-        宽屏保留身份、环境统计和三条提示；窗口变窄时压平信息，极窄时只留一行。它通过 Pi 的 Header 区进入 transcript，后续对话自然把它滚走。
+        宽屏复现 Claude Code 2.1.197 的固定双栏卡片；窄屏切成单栏，低高度只减少空白。它通过 Pi 的 Header 区进入 transcript，后续对话自然把它滚走。
       </p>
 
-      <div class="evidence-grid featured">
+      <div class="evidence-grid">
+        <figure>
+          <a class="screen-link" href="./welcome/reference/claude-code-2.1.197-welcome-100x32.png" title="打开 Claude Code 2.1.197 真实参考图">
+            <img src="./welcome/reference/claude-code-2.1.197-welcome-100x32.png" alt="Genuine Claude Code 2.1.197 Welcome card at 100 by 32 cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">设计依据 · Claude Code 2.1.197</div>
+            <p class="caption-body">真实旧版 Claude Code PTY：标题嵌入顶边、左侧身份区固定、右侧只放提示；这三项几何关系是复刻依据。</p>
+          </figcaption>
+        </figure>
+
         <figure>
           <a class="screen-link" href="./welcome/artifacts/real-pi-welcome-100x32.png" title="打开 100 × 32 原图">
             <img src="./welcome/artifacts/real-pi-welcome-100x32.png" alt="Pi Welcome Header at 100 by 32 terminal cells">
           </a>
           <figcaption>
-            <div class="caption-title">100 × 32 · 六行双栏</div>
-            <p class="caption-body">小 π、模型与 provider、完整缩写路径；右侧是四类 Loaded 统计和固定 Tips。只有上下细分隔线，没有卡片边框。</p>
+            <div class="caption-title">100 × 32 · Claude 式双栏</div>
+            <p class="caption-body">左侧固定 52 格，保留欢迎语、块状 π、模型和目录；右侧显示启动提示与实际加载统计。</p>
           </figcaption>
         </figure>
 
-        <figure>
-          <a class="screen-link" href="./welcome/artifacts/real-pi-welcome-32x18.png" title="打开 32 × 18 原图">
-            <img src="./welcome/artifacts/real-pi-welcome-32x18.png" alt="Pi Welcome Header at 32 by 18 terminal cells">
-          </a>
-          <figcaption>
-            <div class="caption-title">32 × 18 · 一行身份</div>
-            <p class="caption-body">空间不足时，统计与提示让路；Welcome 不会整块消失。</p>
-          </figcaption>
-        </figure>
       </div>
 
       <div class="evidence-grid">
@@ -512,8 +513,18 @@
             <img src="./welcome/artifacts/real-pi-welcome-64x28.png" alt="Pi Welcome Header at 64 by 28 terminal cells">
           </a>
           <figcaption>
-            <div class="caption-title">64 × 28 · 五行压平</div>
-            <p class="caption-body">路径、四类统计和三条 Tips 仍在，但取消双栏标题，避免窄屏留下不均匀空洞。</p>
+            <div class="caption-title">64 × 28 · Claude 式单栏</div>
+            <p class="caption-body">统计和提示整体让路，不在窄屏中硬换行；身份信息使用完整的十三行卡片节奏。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./welcome/artifacts/real-pi-welcome-32x18.png" title="打开 32 × 18 原图">
+            <img src="./welcome/artifacts/real-pi-welcome-32x18.png" alt="Pi Welcome Header at 32 by 18 terminal cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">32 × 18 · 低高度单栏</div>
+            <p class="caption-body">只减少一行空白，顶边、欢迎语、标志、模型、provider 和目录都不会被推出 viewport。</p>
           </figcaption>
         </figure>
 
@@ -529,146 +540,156 @@
       </div>
 
       <p class="source-note">
-        可复现：<a href="./welcome/README.md">说明</a>、<a href="./welcome/capture.sh">PTY 捕获脚本</a>、<a href="./welcome/welcome-header-prototype.ts">一次性 Extension</a>。
+        可复现：<a href="./welcome/README.md">说明</a>、<a href="./welcome/capture.sh">PTY 捕获脚本</a>、<a href="./welcome/welcome-header-prototype.ts">生产组件挂载 Fixture</a>。
       </p>
     </section>
 
     <section class="surface" id="statusline" data-surface="statusline">
       <div class="section-kicker">02 · Statusline</div>
-      <h2>生产版已恢复旧 Powerline 视觉语法；下方原型图仅保留为被拒绝的历史记录。</h2>
+      <h2>一眼读完环境状态，不把能力活动塞进底栏。</h2>
       <p class="section-lead">
-        2026-08-03 的真实使用发现，下方点分隔、无图标截图并没有迁移旧 JC Footer 的视觉样式。生产实现现已改回左右一格留白、灰色竖线分隔、旧图标与 ASCII fallback、<code>think:&lt;level&gt;</code>、basename 路径、<code>*unstaged +staged ?untracked</code>、详细 context/cache，以及按完整 segment 流入第二状态行；仍使用 Pi 主题色，并保留不显示 <code>(sub)</code> 与 Prompt 最多两行的已确认差异。
-      </p>
-      <p class="source-note">
-        当前真实 Aggregate 证据：<a href="./statusline/parity-artifacts/pi-0.83-statusline-parity-metered-100x32.txt">完整按量文本帧</a>、<a href="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-64x28.txt">64 × 28</a>、<a href="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-32x18.txt">32 × 18</a>。下方 PNG 是缺陷修复前的 rejected prototype，不代表当前产品。
+        当前生产版按用户截图恢复一格外边距、图标和灰色 <code>|</code> 分隔。顺序是模型、Thinking、仅开启时出现的 Fast、目录、Git、Context、缓存命中率，以及费用或 Codex weekly limit。Agent、Todo、BTW 与 Tool 活动留在各自界面，不重复占据 Statusline。
       </p>
 
       <div class="evidence-grid">
         <figure>
-          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-metered-100x32.png" title="打开按量模型 100 × 32 原图">
-            <img src="./statusline/artifacts/pi-0.83-statusline-metered-100x32.png" alt="Full Pi Stuff Statusline at 100 by 32 cells">
+          <a class="screen-link" href="./statusline/reference/user-statusline-reference.png" title="打开用户原始 Statusline 参考图">
+            <img src="./statusline/reference/user-statusline-reference.png" alt="Maintainer Statusline reference shown beneath FleetView">
+          </a>
+          <figcaption>
+            <div class="caption-title">最高依据 · 用户原始截图</div>
+            <p class="caption-body">图中上方是 FleetView；本轮要复刻的是最底部 Statusline 的一格外边距、图标、字段顺序和灰色 <code>|</code> 分隔。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./statusline/reference/former-config-statusline-footer-100x32.png" title="打开旧配置真实 Statusline 输出">
+            <img src="./statusline/reference/former-config-statusline-footer-100x32.png" alt="Former pi-agent configuration Statusline footer captured in a real terminal">
+          </a>
+          <figcaption>
+            <div class="caption-title">历史实现 · 旧配置黑盒输出</div>
+            <p class="caption-body">旧配置保留了字段和图标，但使用圆点分隔；它只证明迁移内容，不覆盖用户截图确定的最终视觉语法。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./statusline/parity-artifacts/pi-0.83-statusline-parity-metered-100x32.png" title="打开生产版 100 × 32 原图">
+            <img src="./statusline/parity-artifacts/pi-0.83-statusline-parity-metered-100x32.png" alt="Production Pi Stuff Statusline at 100 by 32 cells">
           </a>
           <figcaption>
             <div class="caption-title">100 × 32 · 完整主行</div>
-            <p class="caption-body">按量模型显示 <code>$0.42</code>；Goal、MCP、Loadout 保留为末端扩展状态。Prompt 独占下一行，不与环境字段争宽度。</p>
+            <p class="caption-body">真实流式回合结束后，Context、缓存命中率和按量费用都来自同一会话；长 Prompt 最多占下方两行。</p>
           </figcaption>
         </figure>
 
         <figure>
-          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-metered-64x28.png" title="打开 64 × 28 原图">
-            <img src="./statusline/artifacts/pi-0.83-statusline-metered-64x28.png" alt="Truncated Pi Stuff Statusline at 64 by 28 cells">
+          <a class="screen-link" href="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-64x28.png" title="打开生产版 64 × 28 原图">
+            <img src="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-64x28.png" alt="Production Pi Stuff Statusline at 64 by 28 cells">
           </a>
           <figcaption>
-            <div class="caption-title">64 × 28 · 从右侧安全裁切</div>
-            <p class="caption-body">高优先级字段仍在；右端低优先级内容收束为省略号。Prompt 可以正常换行，不破坏编辑区域。</p>
+            <div class="caption-title">64 × 28 · 完整字段换行</div>
+            <p class="caption-body">空间不足时按完整 segment 流到第二行，不会出现半个图标、半个字段或黏连的省略号。</p>
           </figcaption>
         </figure>
 
         <figure>
-          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-subscription-100x32.png" title="打开订阅模型原图">
-            <img src="./statusline/artifacts/pi-0.83-statusline-subscription-100x32.png" alt="Pi Stuff Statusline for a subscription model">
+          <a class="screen-link" href="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-32x18.png" title="打开生产版 32 × 18 原图">
+            <img src="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-32x18.png" alt="Production Pi Stuff Statusline at 32 by 18 cells">
           </a>
           <figcaption>
-            <div class="caption-title">订阅模型 · 不伪造费用</div>
-            <p class="caption-body">费用段直接消失；旧版的 <code>(sub)</code> 也不再出现。其余字段位置不改变。</p>
+            <div class="caption-title">32 × 18 · 优先保留身份</div>
+            <p class="caption-body">模型、目录、分支与 Context 仍然可读；低优先级字段先退出，不把整行截成无意义字符。</p>
           </figcaption>
         </figure>
 
         <figure>
-          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-prompt-overflow-100x32.png" title="打开长 Prompt 原图">
-            <img src="./statusline/artifacts/pi-0.83-statusline-prompt-overflow-100x32.png" alt="Pi Stuff Statusline with a long Chinese prompt occupying two rows">
+          <a class="screen-link" href="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-24x16.png" title="打开生产版 24 × 16 原图">
+            <img src="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-24x16.png" alt="Production Pi Stuff Statusline at 24 by 16 cells">
           </a>
           <figcaption>
-            <div class="caption-title">长 Prompt · 最多两行</div>
-            <p class="caption-body">中文宽字符按终端 cell 计算；溢出只占第三行，不把主状态行挤乱。</p>
-          </figcaption>
-        </figure>
-      </div>
-
-      <div class="evidence-grid">
-        <figure>
-          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-selector-hidden-100x32.png" title="打开 selector 隐藏态原图">
-            <img src="./statusline/artifacts/pi-0.83-statusline-selector-hidden-100x32.png" alt="Full-width selector with the Pi Stuff Statusline hidden">
-          </a>
-          <figcaption>
-            <div class="caption-title">临时界面 · 整块隐藏</div>
-            <p class="caption-body">Settings、Agents、BTW、Permissions 等非浮动界面取得焦点时，Statusline 与 Prompt 行均返回零行。</p>
-          </figcaption>
-        </figure>
-
-        <figure>
-          <a class="screen-link" href="./statusline/artifacts/pi-0.83-statusline-autocomplete-hidden-100x32.png" title="打开 autocomplete 隐藏态原图">
-            <img src="./statusline/artifacts/pi-0.83-statusline-autocomplete-hidden-100x32.png" alt="Autocomplete list with the Pi Stuff Statusline hidden">
-          </a>
-          <figcaption>
-            <div class="caption-title">自动补全 · 让出垂直空间</div>
-            <p class="caption-body">补全菜单出现时使用同一规则；关闭后原来的 Statusline、Prompt 和草稿恢复。</p>
+            <div class="caption-title">24 × 16 · 极窄仍不溢出</div>
+            <p class="caption-body">每一行都经过真实终端 cell 宽度检查；Prompt 在这个宽度完全让路。</p>
           </figcaption>
         </figure>
       </div>
 
       <p class="source-note">
-        可复现：<a href="./statusline/README.md">说明</a>、<a href="./statusline/capture.sh">PTY 捕获脚本</a>、<a href="./statusline/statusline-prototype.ts">一次性 Extension</a>。图中字段内容是固定 fixture；终端布局、主题色、CJK 宽度和隐藏生命周期由真实 Pi 渲染。
+        可复现：<a href="./statusline/README.md">说明</a>与 <a href="../../../../scripts/verify-ui-pty.ts">生产 Aggregate PTY 验收</a>。同一验收还覆盖实时 resize、订阅模型不显示伪费用、Fast 的条件显示，以及临时界面取得焦点时整块隐藏。
       </p>
     </section>
 
     <section class="surface" id="settings" data-surface="settings">
-      <div class="section-kicker">03 · Unified /ui</div>
-      <h2>五个外观开关放在一个 Pi 原生列表里。</h2>
+      <div class="section-kicker">03 · /ui presentation settings</div>
+      <h2><code>/ui</code> 只管显示方式，不变成整个 Suite 的设置仓库。</h2>
       <p class="section-lead">
-        <code>/ui</code> 使用 Pi 自己的 SettingsList：全宽、非浮动、输入即搜索、Enter 或 Space 即时切换。五项都能同时看见，因此不为了装饰计数而制造滚动。
+        八项显示设置使用 Pi 原生 SettingsList：全宽、非浮动、输入即搜索，Enter 或 Space 即时切换。RTK 等能力行为留在自己的命令下，例如 <code>/rtk settings</code>。
       </p>
 
       <div class="evidence-grid">
         <figure>
-          <a class="screen-link" href="./settings/artifacts/pi-0.83-ui-settings-open-100x32.png" title="打开 /ui 100 × 32 原图">
-            <img src="./settings/artifacts/pi-0.83-ui-settings-open-100x32.png" alt="Pi native UI SettingsList at 100 by 32 cells">
+          <a class="screen-link" href="./statusline/parity-artifacts/pi-0.83-ui-parity-open-100x32.png" title="打开生产版 /ui 100 × 32 原图">
+            <img src="./statusline/parity-artifacts/pi-0.83-ui-parity-open-100x32.png" alt="Production Pi native UI SettingsList at 100 by 32 cells">
           </a>
           <figcaption>
-            <div class="caption-title">100 × 32 · 五项平铺</div>
-            <p class="caption-body">Statusline、Welcome、输入高亮、句中 Slash 补全与 Tool timer 默认开启；选中项说明放在列表下方。</p>
+            <div class="caption-title">100 × 32 · 八项一次看全</div>
+            <p class="caption-body">Statusline 的密度、Prompt 和图标也在这里；Tool timer 作为纯显示选项由 Tools 贡献进同一列表。</p>
           </figcaption>
         </figure>
 
         <figure>
-          <a class="screen-link" href="./settings/artifacts/pi-0.83-ui-settings-open-64x28.png" title="打开 /ui 64 × 28 原图">
-            <img src="./settings/artifacts/pi-0.83-ui-settings-open-64x28.png" alt="Pi native UI SettingsList at 64 by 28 cells">
+          <a class="screen-link" href="./statusline/parity-artifacts/pi-0.83-ui-parity-open-64x28.png" title="打开生产版 /ui 64 × 28 原图">
+            <img src="./statusline/parity-artifacts/pi-0.83-ui-parity-open-64x28.png" alt="Production Pi native UI SettingsList at 64 by 28 cells">
           </a>
           <figcaption>
             <div class="caption-title">64 × 28 · 同一组件</div>
-            <p class="caption-body">没有另造窄屏布局；Pi 原生列宽自然收紧，五项、当前值和选中说明仍可读。</p>
+            <p class="caption-body">窗口缩窄时不另造布局；八项、当前值、选中说明与原生操作提示仍能同时读完。</p>
+          </figcaption>
+        </figure>
+
+      </div>
+
+      <p class="source-note">
+        可复现：<a href="./settings/README.md">说明</a>与 <a href="../../../../scripts/verify-ui-pty.ts">生产 Aggregate PTY 验收</a>。验收会实际搜索、切换布尔值和枚举值、重启 Pi，再确认八项持久化结果。
+      </p>
+    </section>
+
+    <section class="surface" id="todo" data-surface="todo">
+      <div class="section-kicker">04 · Todo</div>
+      <h2>Summary 与任务紧凑成一组，起点跟对话内容一致。</h2>
+      <p class="section-lead">
+        Agent 在真实回合中连续调用四次 <code>TaskCreate</code> 后，第一行向内两格，任务行向内三格；两者之间没有空白行。列表位于编辑器上方，不进入 Statusline，也不生成浮动窗口。
+      </p>
+
+      <div class="evidence-grid featured">
+        <figure>
+          <a class="screen-link" href="./statusline/parity-artifacts/pi-0.83-todo-parity-100x32.png" title="打开生产版 Todo 100 × 32 原图">
+            <img src="./statusline/parity-artifacts/pi-0.83-todo-parity-100x32.png" alt="Production Pi Stuff Todo checklist at 100 by 32 cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">100 × 32 · 真实四次 Tool 调用</div>
+            <p class="caption-body"><code>4 tasks (0 done, 4 open)</code> 与第一项竖向紧邻；四个方格共享同一列，不受上方对话长度影响。</p>
           </figcaption>
         </figure>
 
         <figure>
-          <a class="screen-link" href="./settings/artifacts/pi-0.83-ui-settings-search-timer-100x32.png" title="打开搜索态原图">
-            <img src="./settings/artifacts/pi-0.83-ui-settings-search-timer-100x32.png" alt="Pi UI SettingsList filtered by timer">
+          <a class="screen-link" href="./statusline/parity-artifacts/pi-0.83-todo-parity-64x28.png" title="打开生产版 Todo 64 × 28 原图">
+            <img src="./statusline/parity-artifacts/pi-0.83-todo-parity-64x28.png" alt="Production Pi Stuff Todo checklist at 64 by 28 cells">
           </a>
           <figcaption>
-            <div class="caption-title">直接输入 <code>timer</code></div>
-            <p class="caption-body">搜索复用 Pi 原生行为，不再加一个 GUI 式常驻搜索框。</p>
-          </figcaption>
-        </figure>
-
-        <figure>
-          <a class="screen-link" href="./settings/artifacts/pi-0.83-ui-settings-toggle-timer-100x32.png" title="打开切换态原图">
-            <img src="./settings/artifacts/pi-0.83-ui-settings-toggle-timer-100x32.png" alt="Pi UI SettingsList after Tool running timer changes to false">
-          </a>
-          <figcaption>
-            <div class="caption-title">Enter · <code>true → false</code></div>
-            <p class="caption-body">除 Welcome 在下次启动生效外，其余选项切换后立即更新当前界面；Esc 关闭并恢复编辑器。</p>
+            <div class="caption-title">64 × 28 · 窄屏仍保持同一列</div>
+            <p class="caption-body">窗口变窄不会改动 Todo 的起点或加入空行；Summary 和四个方格仍作为一个紧凑整体出现。</p>
           </figcaption>
         </figure>
       </div>
 
       <p class="source-note">
-        可复现：<a href="./settings/README.md">说明</a>、<a href="./settings/capture.sh">PTY 捕获脚本</a>、<a href="./settings/prototype-ui-settings.ts">一次性 Extension</a>。正式实现会把现有 <code>/tool-settings</code> 合并进这里。
+        可复现：<a href="../../../../scripts/verify-ui-pty.ts">真实 Pi PTY 验收</a>会在 100 和 64 列保留 Pi Stuff 工具、只禁用 Host 内置工具，并逐项检查两格 Summary、三格任务行、相邻行距和终端宽度。
       </p>
     </section>
 
     <section class="surface" id="contract" data-surface="contract">
-      <div class="section-kicker">04 · Shared visual contract</div>
-      <h2>三个入口看起来不同，但服从同一套边界。</h2>
+      <div class="section-kicker">05 · Shared visual contract</div>
+      <h2>四个入口看起来不同，但服从同一套边界。</h2>
       <div class="contract">
         <div class="contract-row">
           <div class="contract-num">01</div>
@@ -678,7 +699,7 @@
         <div class="contract-row">
           <div class="contract-num">02</div>
           <div class="contract-name">拒绝浮动窗口</div>
-          <div class="contract-desc">Settings、Agents、BTW、Permissions 与详情界面都占用 Pi 原生的全宽临时区域。</div>
+          <div class="contract-desc">Settings、Agents、BTW 与详情界面都占用 Pi 原生的全宽临时区域；Welcome 卡片属于可滚动 transcript，不是浮窗。</div>
         </div>
         <div class="contract-row">
           <div class="contract-num">03</div>
@@ -687,17 +708,17 @@
         </div>
         <div class="contract-row">
           <div class="contract-num">04</div>
-          <div class="contract-name">宿主边界如实退化</div>
-          <div class="contract-desc">增强版 Pi 提供实时单行 <code>thoughts:</code>；普通 Pi 0.83 回退原生 thinking。Fullscreen 滚动条接受宿主固定的 <code>auto</code>。</div>
+          <div class="contract-name">宿主边界不伪装</div>
+          <div class="contract-desc">实时单行 <code>thoughts:</code> 依赖已认证的 Pi Host API；缺失时明确报错，不静默换成另一套效果。Fullscreen 滚动条接受宿主固定的 <code>auto</code>。</div>
         </div>
       </div>
     </section>
 
     <section class="decision" id="decision" data-always-visible>
       <div class="section-kicker">Final visible review</div>
-      <div class="decision-question">Welcome、Statusline 和 <code>/ui</code> 的最终可见效果，是否接受？</div>
+      <div class="decision-question">Welcome、Statusline、<code>/ui</code> 与 Todo 的当前真实可见效果。</div>
       <p class="decision-answer">
-        如果接受，我会把整棵决策树完整复述一遍，请你做最后的「理解一致」确认；确认后才进入正式实现、Beads 记录与 <code>AGENTS.md</code> 规则更新。若不接受，只需指出具体截图和想改的地方。
+        截图直接来自生产组件与真实 Pi 0.83 PTY。Welcome 已按 Claude 参考重做；Statusline、<code>/ui</code> 与 Todo 均通过完整 Aggregate 验收。
       </p>
       <div class="links">
         <a href="./welcome/report.html">Welcome 单项报告</a>
@@ -720,7 +741,8 @@
       { key: "welcome", label: "A · Welcome" },
       { key: "statusline", label: "B · Statusline" },
       { key: "settings", label: "C · /ui Settings" },
-      { key: "contract", label: "D · 共同规则" },
+      { key: "todo", label: "D · Todo" },
+      { key: "contract", label: "E · 共同规则" },
     ];
 
     const params = new URLSearchParams(window.location.search);
