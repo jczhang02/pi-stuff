@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
 	getToolUiRuntime,
@@ -136,6 +137,42 @@ test("renderer decoration preserves the tool contract and model-visible result",
 	expect(runtime.activities.get("call-1")).not.toHaveProperty("args");
 	runtime.clear();
 	stopTimer.mockRestore();
+});
+
+test("settled Suite tools can keep media content below the shared lifecycle row", () => {
+	const { api, tools } = apiHarness();
+	const original: ToolDefinition<typeof Params, { readonly media: boolean }> = {
+		description: "media fixture",
+		execute: async () => ({ content: [{ type: "text", text: "ok" }], details: { media: true } }),
+		label: "Media",
+		name: "media",
+		parameters: Params,
+	};
+	registerSuiteOwnedTool(api, original, {
+		resultBody: (_args, result) => (result.details.media ? new Text("MEDIA_BODY", 0, 0) : undefined),
+		summarize: () => "done",
+	});
+	const decorated = tools.get("media");
+	if (!decorated) throw new Error("media tool was not registered");
+	const state = {};
+	const args = { value: "image.png" };
+	const context = renderContext(state, args);
+	decorated.renderCall?.(args, theme, context);
+	const partial = decorated.renderResult?.(
+		{ content: [{ type: "text", text: "pending" }], details: { media: true } },
+		{ expanded: false, isPartial: true },
+		theme,
+		context,
+	);
+	expect(partial?.render(80)).toEqual([]);
+	const settled = decorated.renderResult?.(
+		{ content: [{ type: "text", text: "ok" }], details: { media: true } },
+		{ expanded: false, isPartial: false },
+		theme,
+		context,
+	);
+	expect(settled?.render(80).join("\n")).toContain("MEDIA_BODY");
+	getToolUiRuntime(api).clear();
 });
 
 test("keeps one runtime identity when Suite tools register before the Tool package", () => {
