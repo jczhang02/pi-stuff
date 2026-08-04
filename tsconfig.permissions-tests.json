@@ -1,7 +1,0 @@
-{
-	"extends": "./tsconfig.permissions.json",
-	"compilerOptions": {
-		"types": ["bun"]
-	},
-	"include": ["packages/pi-stuff-permissions/src/**/*.ts", "packages/pi-stuff-ui/**/*.ts", "test/permissions/**/*.ts"]
-}
