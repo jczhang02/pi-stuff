@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { realpathSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	CERTIFIED_RTK_LINUX_X64_SHA256S,
@@ -34,7 +35,7 @@ test.skipIf(!localRtk)("certifies and uses the real local RTK 0.42.4 executable"
 	expect(await runtime.rewrite(pi, "git status")).toBe("rtk git status");
 	const snapshot = runtime.snapshot();
 	expect(snapshot).toMatchObject({
-		path: localRtk,
+		path: realpathSync(localRtk),
 		state: "ready",
 		version: CERTIFIED_RTK_VERSION,
 	});
