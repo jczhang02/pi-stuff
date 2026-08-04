@@ -232,16 +232,14 @@ describe("BTW stream execution", () => {
 					},
 				}),
 			});
-			await executeBtw(
-				"isolated question",
-				extensionContext(() => [messageEntry("main", user("main conversation"))]),
-				new AbortController().signal,
-				{},
-				async (request) => {
-					captured = request;
-					return completedStream(["answer"], assistant("answer"));
-				},
-			);
+			const ctx = extensionContext(() => [messageEntry("main", user("main conversation"))]);
+			for (const handler of handlers.get("session_start") ?? []) {
+				await handler({ type: "session_start", reason: "startup" }, ctx);
+			}
+			await executeBtw("isolated question", ctx, new AbortController().signal, {}, async (request) => {
+				captured = request;
+				return completedStream(["answer"], assistant("answer"));
+			});
 		} finally {
 			contextTest.clear();
 		}

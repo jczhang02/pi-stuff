@@ -14,3 +14,27 @@ Historian process is not represented as a Pi Stuff Agent.
 
 The bundled fork is pinned to signed release `pi-stuff-v0.33.1-2`. Exact source
 and artifact provenance are recorded in [UPSTREAM.md](./UPSTREAM.md).
+
+## Pi 0.83 host constraints
+
+This boundary deliberately works within Pi 0.83's extension interface:
+
+- Event, command, renderer, and tool registrations cannot be unregistered. Magic
+  registrations are therefore staged until activation succeeds, and committed
+  event handlers are guarded by the owning runtime generation.
+- Pi exposes no active-tool policy change event or mutation provenance. Context
+  never adds a name to the current active set during activation; it may only
+  preserve the set or remove an unavailable handoff. A handoff disabled after a
+  failed activation remains disabled until an external policy or session reload
+  explicitly enables it.
+- Extension contexts expose no Host identifier. Capabilities are routed by the
+  `sessionManager` object observed at `session_start`; an unbound context always
+  receives native Pi behavior rather than a process-global fallback.
+- The Magic factory provides neither an abort signal nor a returned disposer.
+  Reload invalidates late continuations and runs any staged shutdown handler,
+  but Pi Stuff cannot cancel a hung third-party factory or reverse side effects
+  performed before that handler is registered.
+- Pi's public token estimate is a generic four-code-unit heuristic, not a
+  model-specific tokenizer. Agent projections use the resolved child and
+  fallback model windows plus conservative prompt and fork reserves; exact
+  provider tokenization remains the provider's responsibility.

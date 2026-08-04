@@ -19,7 +19,16 @@ import piStuffContext, {
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type Handlers = Map<string, Handler[]>;
 
-function apiFor(handlers: Handlers, tools: ToolDefinition[] = []): ExtensionAPI {
+interface HostRegistrations {
+	commands: string[];
+	entryRenderers: string[];
+}
+
+function apiFor(
+	handlers: Handlers,
+	tools: ToolDefinition[] = [],
+	registrations: HostRegistrations = { commands: [], entryRenderers: [] },
+): ExtensionAPI {
 	let activeTools: string[] = [];
 	return {
 		events: {},
@@ -30,9 +39,16 @@ function apiFor(handlers: Handlers, tools: ToolDefinition[] = []): ExtensionAPI 
 		},
 		registerTool(tool: ToolDefinition): void {
 			const existing = tools.findIndex((candidate) => candidate.name === tool.name);
-			if (existing < 0) tools.push(tool);
-			else tools[existing] = tool;
-			if (!activeTools.includes(tool.name)) activeTools.push(tool.name);
+			if (existing < 0) {
+				tools.push(tool);
+				if (!activeTools.includes(tool.name)) activeTools.push(tool.name);
+			} else tools[existing] = tool;
+		},
+		registerCommand(name: string): void {
+			if (!registrations.commands.includes(name)) registrations.commands.push(name);
+		},
+		registerEntryRenderer(name: string): void {
+			if (!registrations.entryRenderers.includes(name)) registrations.entryRenderers.push(name);
 		},
 		getActiveTools: () => [...activeTools],
 		setActiveTools(names: string[]): void {
@@ -122,10 +138,11 @@ describe("Context capability lifecycle", () => {
 				return magicModule();
 			},
 		});
+		const ctx = context();
 
-		await emit(handlers, "session_start", { type: "session_start", resumed: false });
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		expect(loads).toBe(0);
-		expect(getContextCapability().status()).toEqual({ state: "dormant", engine: "native" });
+		expect(getContextCapability(ctx).status()).toEqual({ state: "dormant", engine: "native" });
 		expect(tools.map((tool) => tool.name).sort()).toEqual([
 			"ctx_expand",
 			"ctx_memory",
@@ -133,11 +150,11 @@ describe("Context capability lifecycle", () => {
 			"ctx_reduce",
 			"ctx_search",
 		]);
-		expect(api.getActiveTools()).toEqual([]);
+		expect(api.getActiveTools()).toEqual(["ctx_expand", "ctx_memory", "ctx_note", "ctx_reduce", "ctx_search"]);
 
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" });
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(loads).toBe(1);
-		expect(getContextCapability().status()).toEqual({
+		expect(getContextCapability(ctx).status()).toEqual({
 			state: "active",
 			engine: "magic-context",
 			trigger: "automatic-turn",
@@ -154,12 +171,60 @@ describe("Context capability lifecycle", () => {
 				return loads === 1 ? { default: async () => undefined } : magicModule();
 			},
 		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" });
-		expect(getContextCapability().status().state).toBe("degraded");
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" });
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		expect(getContextCapability(ctx).status().state).toBe("degraded");
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(loads).toBe(2);
-		expect(getContextCapability().status().state).toBe("active");
+		expect(getContextCapability(ctx).status().state).toBe("active");
+	});
+
+	test("discards partial Magic registrations before a retry", async () => {
+		const handlers: Handlers = new Map();
+		const tools: ToolDefinition[] = [];
+		const registrations: HostRegistrations = { commands: [], entryRenderers: [] };
+		const api = apiFor(handlers, tools, registrations);
+		let loads = 0;
+		let staleMessageEnds = 0;
+		piStuffContext(api, {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					loads++;
+					magicApi.on("context", (event) => event);
+					magicApi.on("message_end", () => {
+						staleMessageEnds++;
+					});
+					magicApi.registerCommand("ctx-partial", { handler: async () => undefined });
+					magicApi.registerEntryRenderer("ctx-partial", () => undefined);
+					magicApi.registerTool({
+						name: "ctx_search",
+						label: "Magic search",
+						description: "Committed Magic search",
+						parameters: Type.Object({}),
+						execute: async () => ({ content: [{ type: "text", text: "ok" }], details: undefined }),
+					});
+					if (loads === 1) throw new Error("partial factory failure");
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		expect(handlers.get("context")).toBeUndefined();
+		expect(handlers.get("message_end")).toBeUndefined();
+		expect(registrations).toEqual({ commands: [], entryRenderers: [] });
+		expect(tools.find((tool) => tool.name === "ctx_search")?.description).toContain("activates lazily");
+
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await emit(handlers, "message_end", { type: "message_end" }, ctx);
+		expect(handlers.get("context")).toHaveLength(1);
+		expect(handlers.get("message_end")).toHaveLength(1);
+		expect(registrations).toEqual({ commands: ["ctx-partial"], entryRenderers: ["ctx-partial"] });
+		expect(tools.find((tool) => tool.name === "ctx_search")?.description).toBe("Committed Magic search");
+		expect(staleMessageEnds).toBe(1);
 	});
 
 	test("keeps Magic's internal Historian agent native and recursion-free", async () => {
@@ -172,10 +237,12 @@ describe("Context capability lifecycle", () => {
 			},
 			magicSubagent: () => true,
 		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" });
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(loads).toBe(0);
-		expect(getContextCapability().status().state).toBe("native");
+		expect(getContextCapability(ctx).status().state).toBe("native");
 	});
 
 	test("routes Magic Context tools through the shared Tool row renderer", async () => {
@@ -194,6 +261,48 @@ describe("Context capability lifecycle", () => {
 		expect(search?.renderCall).toBeFunction();
 		expect(search?.renderResult).toBeFunction();
 		expect(api.getActiveTools()).toContain("ctx_search");
+	});
+
+	test("does not widen a tool policy changed after session start", async () => {
+		const handlers: Handlers = new Map();
+		const tools: ToolDefinition[] = [];
+		const api = apiFor(handlers, tools);
+		piStuffContext(api, {
+			loadMagicContext: async () => magicModule({ registerTool: true }),
+		});
+		const ctx = context();
+
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		api.setActiveTools(["read"]);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+
+		expect(api.getActiveTools()).toEqual(["read"]);
+	});
+
+	test("does not auto-activate a Magic tool that had no startup handoff", async () => {
+		const handlers: Handlers = new Map();
+		const tools: ToolDefinition[] = [];
+		const api = apiFor(handlers, tools);
+		piStuffContext(api, {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.registerTool({
+						name: "todowrite",
+						label: "TodoWrite",
+						description: "Write todos",
+						parameters: Type.Object({}),
+						execute: async () => ({ content: [{ type: "text", text: "ok" }], details: undefined }),
+					});
+				},
+			}),
+		});
+		const ctx = context();
+
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+
+		expect(api.getActiveTools()).not.toContain("todowrite");
 	});
 
 	test("awaits first-input activation before compaction can run", async () => {
@@ -219,15 +328,49 @@ describe("Context capability lifecycle", () => {
 				};
 			},
 		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		const input = emit(handlers, "input", { type: "input" });
+		const input = emit(handlers, "input", { type: "input" }, ctx);
 		await Promise.resolve();
-		expect(getContextCapability().status().state).toBe("loading");
+		expect(getContextCapability(ctx).status().state).toBe("loading");
 		expect(sequence).toEqual(["loading"]);
 		releaseLoad?.();
 		await input;
-		await emit(handlers, "session_before_compact", { type: "session_before_compact" });
+		await emit(handlers, "session_before_compact", { type: "session_before_compact" }, ctx);
 		expect(sequence).toEqual(["loading", "magic-compaction"]);
+	});
+
+	test("late activation after shutdown stays native and runs staged cleanup", async () => {
+		const handlers: Handlers = new Map();
+		let releaseFactory: (() => void) | undefined;
+		const factoryGate = new Promise<void>((resolve) => {
+			releaseFactory = resolve;
+		});
+		let cleanupRuns = 0;
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					await factoryGate;
+					magicApi.on("context", (event) => event);
+					magicApi.on("session_shutdown", () => {
+						cleanupRuns++;
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		const activating = emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await Promise.resolve();
+		await emit(handlers, "session_shutdown", { type: "session_shutdown", reason: "reload" }, ctx);
+		releaseFactory?.();
+		await activating;
+
+		expect(getContextCapability(ctx).status()).toEqual({ state: "native", engine: "native" });
+		expect(handlers.get("context")).toBeUndefined();
+		expect(cleanupRuns).toBe(1);
 	});
 
 	test("reuses one runtime when the same Host loads Context twice", async () => {
@@ -241,7 +384,9 @@ describe("Context capability lifecycle", () => {
 				return magicModule();
 			},
 		});
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" });
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		piStuffContext(api, {
 			loadMagicContext: async () => {
 				secondLoads++;
@@ -252,7 +397,7 @@ describe("Context capability lifecycle", () => {
 		expect(firstLoads).toBe(1);
 		expect(secondLoads).toBe(0);
 		expect(handlers.get("context")).toHaveLength(1);
-		expect(getContextCapability().status().state).toBe("active");
+		expect(getContextCapability(ctx).status().state).toBe("active");
 	});
 
 	test("restores native compaction while a live Magic transform is unhealthy", async () => {
@@ -273,28 +418,76 @@ describe("Context capability lifecycle", () => {
 				},
 			}),
 		});
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" });
-		expect(await emitResults(handlers, "session_before_compact", {})).toEqual([{ cancel: true }]);
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([{ cancel: true }]);
 
 		shouldFail = true;
 		const original = { type: "context", messages: [taggedMessage("native")] };
-		expect(await emitResults(handlers, "context", original)).toEqual([{ messages: original.messages }]);
-		expect(getContextCapability().status().state).toBe("degraded");
-		expect(await emitResults(handlers, "session_before_compact", {})).toEqual([undefined]);
+		expect(await emitResults(handlers, "context", original, ctx)).toEqual([{ messages: original.messages }]);
+		expect(getContextCapability(ctx).status().state).toBe("degraded");
+		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([undefined]);
 
 		shouldFail = false;
-		const recovered = await emitResults(handlers, "context", original);
+		const recovered = await emitResults(handlers, "context", original, ctx);
 		expect(JSON.stringify(recovered)).toContain("healthy");
-		expect(getContextCapability().status().state).toBe("active");
-		expect(await emitResults(handlers, "session_before_compact", {})).toEqual([{ cancel: true }]);
+		expect(getContextCapability(ctx).status().state).toBe("active");
+		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([{ cancel: true }]);
 	});
 });
 
 describe("Context projections", () => {
+	test("does not route an unbound Host through another Host with the same session id", async () => {
+		const handlers: Handlers = new Map();
+		const hostA = context([], "/workspace/shared", "same-session");
+		const hostB = context([], "/workspace/shared", "same-session");
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => magicModule(),
+		});
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, hostA);
+
+		const projectionA = await projectCurrentContext("agent-fresh", hostA);
+		const projectionB = await projectCurrentContext("agent-fresh", hostB);
+
+		expect(projectionA.source).toBe("magic-context");
+		expect(projectionB).toEqual({ source: "native", text: "", truncated: false });
+	});
+
+	test("isolates two loaded Hosts even when their session identities match", async () => {
+		const handlersA: Handlers = new Map();
+		const handlersB: Handlers = new Map();
+		const hostA = context([], "/workspace/host-a", "same-session");
+		const hostB = context([], "/workspace/host-b", "same-session");
+		const loadFor = (label: string) => async () => ({
+			default: async (pi: ExtensionAPI) => {
+				pi.on("context", (event) => ({
+					messages: [
+						taggedMessage(`<session-history><project-memory>${label}</project-memory></session-history>`),
+						...event.messages,
+					],
+				}));
+			},
+		});
+		piStuffContext(apiFor(handlersA), { loadMagicContext: loadFor("host-a-memory") });
+		piStuffContext(apiFor(handlersB), { loadMagicContext: loadFor("host-b-memory") });
+		await emit(handlersA, "session_start", { type: "session_start", reason: "startup" }, hostA);
+		await emit(handlersB, "session_start", { type: "session_start", reason: "startup" }, hostB);
+
+		const projectionA = await projectCurrentContext("agent-fresh", hostA);
+		const projectionB = await projectCurrentContext("agent-fresh", hostB);
+
+		expect(projectionA.text).toContain("host-a-memory");
+		expect(projectionA.text).not.toContain("host-b-memory");
+		expect(projectionB.text).toContain("host-b-memory");
+		expect(projectionB.text).not.toContain("host-a-memory");
+	});
+
 	test("projects bounded reference data and gives fresh agents project memory only", async () => {
 		const handlers: Handlers = new Map();
 		piStuffContext(apiFor(handlers), { loadMagicContext: async () => magicModule() });
 		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
 		const fork = await projectCurrentContext("agent-fork", ctx);
 		const fresh = await projectCurrentContext("agent-fresh", ctx);
@@ -329,9 +522,15 @@ describe("Context projections", () => {
 				},
 			}),
 		});
+		const projectAContext = context([], "/workspace/project-a");
+		const projectBContext = {
+			...projectAContext,
+			cwd: "/workspace/project-b",
+		} as ExtensionContext;
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, projectAContext);
 
-		const projectA = await projectCurrentContext("agent-fresh", context([], "/workspace/project-a"));
-		const projectB = await projectCurrentContext("agent-fresh", context([], "/workspace/project-b"));
+		const projectA = await projectCurrentContext("agent-fresh", projectAContext);
+		const projectB = await projectCurrentContext("agent-fresh", projectBContext);
 		expect(projectA.text).toContain("/workspace/project-a");
 		expect(projectB.text).toContain("/workspace/project-b");
 		expect(projectB.text).not.toContain("/workspace/project-a");
@@ -344,6 +543,32 @@ describe("Context projections", () => {
 		expect(projection.text.length).toBeLessThanOrEqual(48_300);
 		expect(projection.text).toContain("Pi Stuff omitted the middle");
 		expect(projection.text).toContain("TAIL");
+	});
+
+	test("honors a caller token budget while preserving the projection envelope", async () => {
+		const handlers: Handlers = new Map();
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (pi: ExtensionAPI) => {
+					pi.on("context", (event) => ({
+						messages: [
+							taggedMessage(`<session-history>${"memory ".repeat(2_000)}TAIL</session-history>`),
+							...event.messages,
+						],
+					}));
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		const projection = await projectCurrentContext("agent-fork", ctx, { maxTokens: 100 });
+
+		expect(projection.source).toBe("magic-context");
+		expect(projection.truncated).toBe(true);
+		expect(projection.text.length).toBeLessThanOrEqual(700);
+		expect(projection.text).toContain("Pi Stuff omitted the middle");
+		expect(projection.text).toEndWith("</pi-stuff-context>");
 	});
 });
 

@@ -60,6 +60,9 @@ test("physical Context package copies share one Host runtime", async () => {
 				getSessionId: () => "duplicate",
 			},
 		} as unknown as ExtensionContext;
+		for (const handler of handlers.get("session_start") ?? []) {
+			await handler({ type: "session_start", reason: "startup" }, ctx);
+		}
 		for (const handler of handlers.get("before_agent_start") ?? []) await handler({}, ctx);
 
 		second.default(api, {
@@ -71,7 +74,7 @@ test("physical Context package copies share one Host runtime", async () => {
 		expect(firstLoads).toBe(1);
 		expect(secondLoads).toBe(0);
 		expect(handlers.get("context")).toHaveLength(1);
-		expect(second.getContextCapability().status().state).toBe("active");
+		expect(second.getContextCapability(ctx).status().state).toBe("active");
 	} finally {
 		first?.__test.clear();
 		rmSync(directory, { recursive: true, force: true });
