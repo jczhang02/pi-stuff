@@ -6,8 +6,7 @@ import {
 	RtkRuntime,
 } from "../../packages/pi-stuff-rtk/runtime.js";
 
-const discovery = Bun.spawnSync(["mise", "which", "rtk"], { stderr: "pipe", stdout: "pipe" });
-const localRtk = discovery.exitCode === 0 ? discovery.stdout.toString().trim() : "";
+const localRtk = process.env.RTK_BIN?.trim() || Bun.which("rtk") || "";
 
 async function execute(command: string, args: string[], options: { timeout?: number } = {}) {
 	if (command === "which") {
