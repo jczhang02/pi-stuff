@@ -19,6 +19,7 @@ import {
 
 const WIDGET_KEY = "rpiv-todos";
 const COLLAPSED_GUTTER = "  ";
+const SUMMARY_GUTTER = "  ";
 const TASK_ROW_GUTTER = "   ";
 const ALL_COMPLETE_LINGER_MS = 5_000;
 const RECENT_COMPLETION_MS = 30_000;
@@ -175,7 +176,7 @@ export class TodoOverlay {
 			`${String(renderable.length)} tasks (${String(completed)} done, ${String(open)} open)`,
 		);
 		const taskWidth = Math.max(0, width - visibleWidth(TASK_ROW_GUTTER));
-		const lines = [truncate(summary)];
+		const lines = [truncate(`${SUMMARY_GUTTER}${summary}`)];
 		lines.push(
 			...layout.visible.map((row) => truncate(`${TASK_ROW_GUTTER}${formatOverlayTaskLine(row, theme, taskWidth)}`)),
 		);
