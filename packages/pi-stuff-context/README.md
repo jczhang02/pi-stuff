@@ -12,7 +12,7 @@ reference-only projection; fresh Agents receive project memory only, while
 forked Agents may receive bounded parent history. Magic's own internal
 Historian process is not represented as a Pi Stuff Agent.
 
-The bundled fork is pinned to signed release `pi-stuff-v0.33.1-2`. Exact source
+The bundled fork is pinned to signed release `pi-stuff-v0.33.1-3`. Exact source
 and artifact provenance are recorded in [UPSTREAM.md](./UPSTREAM.md).
 
 ## Pi 0.83 host constraints
@@ -38,7 +38,13 @@ This boundary deliberately works within Pi 0.83's extension interface:
   model-specific tokenizer. Agent projections use the resolved child and
   fallback model windows plus conservative prompt and fork reserves; exact
   provider tokenization remains the provider's responsibility.
-- When active Magic Context cancels native compaction, Context publishes one
-  session-identity-bound in-process event. Goal uses that event only to replace
-  a continuation it suspended at `session_before_compact`; degraded/native
-  operation continues to use Pi's ordinary `session_compact` event.
+- A manual `/compact` while Magic is healthy records one extension-owned Pi
+  compaction boundary with a positive managed-history result. Automatic
+  threshold or overflow compaction remains owned by Magic and publishes one
+  session-identity-bound in-process bypass event; Goal uses that event only to
+  replace a continuation it suspended at `session_before_compact`. If the
+  Magic hook fails or Context is already degraded, Pi's native compaction runs.
+- Explicit `ctx_search` synchronizes its derived message index from the active
+  Pi JSONL branch before searching. After compaction and cold resume it can
+  recall hidden early turns immediately, while the visible live tail remains
+  excluded from duplicate search results.

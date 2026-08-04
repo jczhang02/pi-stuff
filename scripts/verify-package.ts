@@ -945,7 +945,7 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 		) as { license?: unknown; name?: unknown; version?: unknown };
 		if (
 			magicContextManifest.name !== "@jczhang02/pi-magic-context" ||
-			magicContextManifest.version !== "0.33.1-pi-stuff.2" ||
+			magicContextManifest.version !== "0.33.1-pi-stuff.3" ||
 			magicContextManifest.license !== "MIT"
 		) {
 			throw new Error("Aggregate contains an uncertified Magic Context runtime");
@@ -984,9 +984,9 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 				"cortexkit/magic-context",
 				"v0.33.1",
 				"dea65a94abf61b698160d14dc8b621b1387f1d2c",
-				"fff20435536814cf881a5c8daf4c0fc88e8fe78f",
-				"pi-stuff-v0.33.1-2",
-				"0c4cadfb35ad64d90a119eb8cd2bb5dffab43f5ba8096dfb9378b74dcd99bab3",
+				"1414363e946915802a7d16ffc91999c63dd40744",
+				"pi-stuff-v0.33.1-3",
+				"5f93130518910291d29d6c8b98d042e0d757bd7edc2d07c03a195d93c872cdbd",
 			],
 		},
 		{

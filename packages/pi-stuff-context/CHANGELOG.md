@@ -1,5 +1,19 @@
 # @jczhang02/pi-stuff-context
 
+## 0.1.3
+
+### Patch Changes
+
+- Polish the real daily-use TUI after installed-model dogfood: keep narrow Welcome and Codex content semantically complete,
+  remove Goal state from the ordinary footer, show the persisted Goal completion summary and evidence, prevent wasteful
+  nested delegation for small Agent tasks, present Magic-owned manual compaction as a successful recoverable boundary,
+  and prevent settled Tool result bodies from being appended twice during synchronous rendering.
+- Upgrade the owned Magic Context fork so explicit recall synchronizes the Pi
+  JSONL-derived message index and finds hidden early turns after compact and
+  cold resume without echoing the visible live tail.
+- Updated dependencies
+  - @jczhang02/pi-stuff-tools@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes
