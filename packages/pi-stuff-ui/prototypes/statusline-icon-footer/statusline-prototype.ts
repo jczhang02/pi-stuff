@@ -130,7 +130,9 @@ function packOneRow(segments: readonly Segment[], width: number, theme: Theme): 
 }
 
 function promptRow(prompt: string, width: number, theme: Theme): string {
-	const marker = accentLead(theme, "");
+	const firstCodePoint = Array.from(prompt)[0] ?? "";
+	const markerGap = visibleWidth(firstCodePoint) > 1 ? "" : " ";
+	const marker = `${theme.fg("accent", "")}${markerGap}`;
 	const available = Math.max(1, width - visibleWidth(marker));
 	return `${marker}${theme.fg("dim", truncateToWidth(prompt, available, "…"))}`;
 }

@@ -124,10 +124,10 @@ capture_case() {
 	tmux new-session -d -s "$tmux_session" -x "$width" -y "$height" -c "$repo_root" "$command"
 	wait_for_text "deterministic Statusline fixture"
 	wait_for_text "openai-codex/gpt-5.6-sol"
-	wait_for_text " 请按 pi-footer"
+	wait_for_text "请按 pi-footer"
 	if [[ $variant == a ]]; then
 		require_pattern '^󰚩 openai-codex/gpt-5\.6-sol'
-		require_pattern '^ 请按 pi-footer'
+		require_pattern '^请按 pi-footer'
 	fi
 	if [[ $width == 120 ]]; then
 		for expected in "high" "Fast" "pi-stuff" "main" "+6" "-0" "42%" "78%" "52%"; do

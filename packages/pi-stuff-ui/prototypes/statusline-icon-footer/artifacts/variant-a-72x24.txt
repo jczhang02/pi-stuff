@@ -21,4 +21,4 @@
 
 ────────────────────────────────────────────────────────────────────────
 󰚩 openai-codex/gpt-5.6-sol · 󰉋 pi-stuff ·  main · 󰍛 42% · 󰃭 52%
- 请按 pi-footer 的 icon 化样式完成 Statusline，并保持当前任务继续。
+请按 pi-footer 的 icon 化样式完成 Statusline，并保持当前任务继续。
