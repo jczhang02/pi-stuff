@@ -20,6 +20,7 @@
 		"index.ts",
 		"projection.ts",
 		"rtk-dialog.ts",
+		"rtk-settings-dialog.ts",
 		"runtime.ts",
 		"settings.ts",
 		"upstream",

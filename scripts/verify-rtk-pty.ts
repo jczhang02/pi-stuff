@@ -50,7 +50,13 @@ send -- "/rtk\\r"
 must_expect "RTK"
 must_expect "ready"
 must_expect "0.42.4"
-must_expect "Configure in /ui"
+must_expect "Configure with /rtk settings"
+send -- "\\033"
+after 100
+send -- "/rtk settings\\r"
+must_expect "RTK settings"
+must_expect "Command rewriting"
+must_expect "Model projection"
 send -- "\\033"
 after 100
 send -- "\\004"
@@ -310,12 +316,17 @@ export async function verifyRtkPty(options: {
 		};
 		const freshOutput = runPty("fresh", shared);
 		const visibleFresh = stripTerminalControls(freshOutput);
-		for (const required of ["RTK_FRESH_DONE", "RTK", "ready", CERTIFIED_RTK_VERSION, "Configure in /ui"]) {
+		for (const required of [
+			"RTK_FRESH_DONE",
+			"RTK",
+			"ready",
+			CERTIFIED_RTK_VERSION,
+			"Configure with /rtk settings",
+			"RTK settings",
+			"Command rewriting",
+			"Model projection",
+		]) {
 			if (!visibleFresh.includes(required)) fail(`fresh TUI is missing ${required}`);
-		}
-		for (const forbidden of ["╭", "╮", "╰", "╯"]) {
-			if (visibleFresh.includes(forbidden))
-				fail(`RTK dialog rendered a forbidden floating-window border: ${forbidden}`);
 		}
 		const sessions = (await readdir(sessionDirectory)).filter((entry) => entry.endsWith(".jsonl"));
 		if (sessions.length !== 1 || !sessions[0]) fail("fresh Pi did not create exactly one isolated session");

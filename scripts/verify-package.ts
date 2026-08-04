@@ -686,8 +686,9 @@ async function verifyStandaloneInstalls(
 	if (!btwSmoke.commandNames.includes("btw")) throw new Error("Standalone BTW Package did not register /btw");
 	const installedRtk = join(rtkInstallDirectory, "node_modules/@jczhang02/pi-stuff-rtk");
 	const rtkSmoke = await runPiRpcSmoke({ piBinary, packages: [installedRtk], cwd: rtkInstallDirectory });
-	if (!rtkSmoke.commandNames.includes("rtk") || !rtkSmoke.commandNames.includes("ui")) {
-		throw new Error("Standalone RTK Package did not register /rtk and the shared /ui surface");
+	if (!rtkSmoke.commandNames.includes("rtk")) throw new Error("Standalone RTK Package did not register /rtk");
+	if (rtkSmoke.commandNames.includes("ui")) {
+		throw new Error("Standalone RTK Package claimed the presentation-only /ui surface");
 	}
 	if (rtkSmoke.createdFiles.some((path) => path.endsWith("pi-stuff-rtk.json"))) {
 		throw new Error("Standalone RTK Package wrote settings during startup");

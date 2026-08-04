@@ -76,7 +76,7 @@ function sameSettings(left: RtkSettings, right: RtkSettings): boolean {
 	);
 }
 
-/** Settings remain read-only until the user changes them from `/ui`. */
+/** Settings remain read-only until the user changes them from `/rtk settings`. */
 export class RtkSettingsStore {
 	private drainPromise: Promise<void> | undefined;
 	private generation = 0;

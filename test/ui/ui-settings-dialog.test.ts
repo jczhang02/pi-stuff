@@ -117,7 +117,7 @@ function failingSetting(persistence: Promise<void>): {
 	};
 }
 
-test("/ui uses one native searchable list for all eight settings", async () => {
+test("/ui uses one native searchable list for all eight presentation settings", async () => {
 	initTheme("dark", false);
 	const settings = [
 		setting("statusline", "Statusline", 10),
@@ -138,6 +138,7 @@ test("/ui uses one native searchable list for all eight settings", async () => {
 	expect(open[1]).toBe("  UI");
 	expect(open.join("\n")).toContain("Statusline");
 	expect(open.join("\n")).toContain("Tool running timer");
+	expect(open.join("\n")).not.toContain("RTK");
 	expect(open.every((line) => visibleWidth(line) <= 64)).toBe(true);
 
 	component.handleInput?.("timer");

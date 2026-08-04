@@ -49,7 +49,7 @@ The optional executable is not bundled. Linux x64 command rewriting accepts only
 - Keeps only the upstream pure compaction algorithms behind a Suite-owned projection adapter.
 - Replaces upstream `tool_result` mutation with Pi 0.83's model-visible `context` seam so transcript and session JSONL remain raw.
 - Keeps `read` and source projection disabled; failed results and non-text blocks always remain exact.
-- Replaces upstream config modal, notifications, Statusline metrics, startup config creation, shell hook assumptions, and lifecycle with `/rtk`, `/ui`, and the shared non-floating Command Dialog.
+- Replaces upstream config modal, notifications, Statusline metrics, startup config creation, shell hook assumptions, and lifecycle with `/rtk`, `/rtk settings`, and the shared non-floating Command Dialog.
 - Certifies the local Linux x64 RTK 0.42.4 executable against the documented official or maintainer build SHA-256; path, binary, timeout, or availability drift fails open.
 - Exposes one small `ContextProjectionAdapter` for composition with the Suite Context Capability.
 - Does not contain or derive from implementation code in `jczhang02/pi-agent`; that repository supplied behavior evidence only.

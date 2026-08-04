@@ -7,7 +7,8 @@ The Host transcript, Tool display, and session JSONL keep their original Tool re
 ## Behavior
 
 - `/rtk` opens the shared full-width Pi Stuff Command Dialog with runtime identity and session savings.
-- `/ui` owns the two persistent switches: **RTK command rewriting** and **RTK output projection**.
+- `/rtk settings` opens Pi's native settings component for the two persistent behavior switches: **Command rewriting**
+  and **Model projection**.
 - Startup performs no subprocess, file write, hook installation, notice, floating UI, or Statusline mutation.
 - The first Bash call verifies RTK `0.42.4`, its executable path, and one certified Linux x64 SHA-256 before rewriting.
 - Missing, slow, replaced, or otherwise drifting RTK executables leave the original Bash command unchanged.
@@ -19,6 +20,7 @@ The Host transcript, Tool display, and session JSONL keep their original Tool re
 ```text
 /rtk                 Verify and inspect RTK
 /rtk status          Verify and inspect RTK
+/rtk settings        Configure RTK behavior
 /rtk verify          Re-certify the current executable explicitly
 /rtk stats           Inspect this session's projection savings
 /rtk clear-stats     Clear in-memory projection statistics

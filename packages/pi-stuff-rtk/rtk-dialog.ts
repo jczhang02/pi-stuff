@@ -109,7 +109,7 @@ class RtkDialogComponent implements CommandDialogComponent {
 			...(techniques ? this.wrapped(renderWidth, `Techniques  ${techniques}`) : []),
 			...(this.options.note ? ["", ...this.wrapped(renderWidth, this.options.note)] : []),
 			"",
-			`${GUTTER}${theme.fg("dim", "Configure in /ui · Enter/Esc close")}`,
+			`${GUTTER}${theme.fg("dim", "Configure with /rtk settings · Enter/Esc close")}`,
 		];
 		return body.slice(0, maximumRows).map((line) => truncateToWidth(line, renderWidth, "…"));
 	}
