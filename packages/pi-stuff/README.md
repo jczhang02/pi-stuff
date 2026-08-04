@@ -19,6 +19,8 @@ Version `0.1.0` is the first public release line.
 - `@jczhang02/pi-stuff-ui`: responsive Statusline and Welcome header, live Thought projection, input highlighting and
   inline slash autocomplete, unified `/ui` settings, and the shared non-floating Command Dialog host.
 - `@jczhang02/pi-stuff-tools`: compact presentation for Pi's seven built-ins and participating Suite tools, with focused `/tools` details.
+- `@jczhang02/pi-stuff-codex`: one `/codex` surface for Fast mode and subscription usage, plus shared-rendered
+  `apply_patch`, `view_image`, and confirmed `gpt-image-2` generation Tools.
 - `@jczhang02/pi-stuff-agents`: current-session foreground and background Agents with a compact roster and full-width control view.
 - `@jczhang02/pi-stuff-todo`: four model-facing Task tools and a compact task widget above Pi's editor.
 - `@jczhang02/pi-stuff-btw`: one-shot side questions that use the effective conversation context without changing the main transcript.

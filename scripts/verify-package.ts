@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -41,9 +41,24 @@ const uiRuntimeFiles = [
 	"welcome-header.ts",
 	"session-presentation.ts",
 ] as const;
+const codexRuntimeFiles = [
+	"native/apply-patch/linux-x64/apply_patch",
+	"native/imagegen/linux-x64/imagegen",
+	"native/view-image/linux-x64/view_image",
+	"THIRD_PARTY_NOTICES.md",
+	"LICENSES/Apache-2.0.txt",
+] as const;
+const codexNativeSha256: Readonly<Record<(typeof codexRuntimeFiles)[number], string>> = {
+	"native/apply-patch/linux-x64/apply_patch": "9ded1c635a4e0e2aae2dd09d7f676b24fc4b377016f74c1a51d8b3b22ed6bb55",
+	"native/imagegen/linux-x64/imagegen": "7822c5d5eced5b0f6ef4763e7d85209ff87be6342d793c1ef308a0908c1122a5",
+	"native/view-image/linux-x64/view_image": "5b58243a8a64d926b6175b463017cdbbdda771ffc6da136eedeebeba80a33c23",
+	"THIRD_PARTY_NOTICES.md": "",
+	"LICENSES/Apache-2.0.txt": "",
+};
 const todoToolInspector = join(root, "test/fixtures/assert-todo-tools.ts");
 const forkLicenseSha256 = "25d0d5e4e54033f939a9657109044f1d71a0b6e8db9adc400456ca9190df3fb1";
 const agentsLicenseSha256 = "2d20dfacd9742706e564470dc77438608a1e54b0ed46959f080709389209093c";
+const codexLicenseSha256 = "ad600d98577a0949ad30c81867bd86f08f872ff12f6a7a519af14edc6f997ee9";
 const toolsLicenseSha256 = "e6b72a9973ccabb20d8bef65a366a9b2357d6cea6cdd1eee4f2c3c69e61fb11c";
 const agentsRuntimeVersions = {
 	jiti: "2.7.0",
@@ -58,6 +73,7 @@ const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 		"@earendil-works/pi-tui",
 	],
 	"@jczhang02/pi-stuff-btw": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-codex": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-todo": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-tools": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
@@ -184,6 +200,12 @@ function verifyUiRuntimeArchive(archiveFiles: readonly string[]): void {
 	}
 }
 
+function verifyCodexRuntimeArchive(archiveFiles: readonly string[]): void {
+	const archiveSet = new Set(archiveFiles);
+	const missing = codexRuntimeFiles.map((path) => `package/${path}`).filter((path) => !archiveSet.has(path));
+	if (missing.length > 0) throw new Error(`Packed Codex Package is missing runtime files:\n${missing.join("\n")}`);
+}
+
 function run(command: readonly string[], cwd: string, env: Record<string, string | undefined> = process.env): string {
 	const result = Bun.spawnSync([...command], { cwd, env, stdout: "pipe", stderr: "pipe" });
 	const stdout = result.stdout.toString();
@@ -250,6 +272,8 @@ async function verifyStandaloneInstalls(
 	const agentsNpmCacheDirectory = join(temporaryDirectory, "npm-cache-agents");
 	const btwInstallDirectory = join(temporaryDirectory, "standalone-btw");
 	const btwNpmCacheDirectory = join(temporaryDirectory, "npm-cache-btw");
+	const codexInstallDirectory = join(temporaryDirectory, "standalone-codex");
+	const codexNpmCacheDirectory = join(temporaryDirectory, "npm-cache-codex");
 	const todoInstallDirectory = join(temporaryDirectory, "standalone-todo");
 	const todoNpmCacheDirectory = join(temporaryDirectory, "npm-cache-todo");
 	const toolsInstallDirectory = join(temporaryDirectory, "standalone-tools");
@@ -260,6 +284,8 @@ async function verifyStandaloneInstalls(
 		mkdir(agentsNpmCacheDirectory),
 		mkdir(btwInstallDirectory),
 		mkdir(btwNpmCacheDirectory),
+		mkdir(codexInstallDirectory),
+		mkdir(codexNpmCacheDirectory),
 		mkdir(todoInstallDirectory),
 		mkdir(todoNpmCacheDirectory),
 		mkdir(toolsInstallDirectory),
@@ -274,6 +300,7 @@ async function verifyStandaloneInstalls(
 	const uiArchive = releaseArchive(uiPackageName);
 	const agentsArchive = releaseArchive("@jczhang02/pi-stuff-agents");
 	const btwArchive = releaseArchive("@jczhang02/pi-stuff-btw");
+	const codexArchive = releaseArchive("@jczhang02/pi-stuff-codex");
 	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
 	const toolsArchive = releaseArchive("@jczhang02/pi-stuff-tools");
 	const rootRequire = createRequire(join(root, "package.json"));
@@ -337,6 +364,7 @@ async function verifyStandaloneInstalls(
 	// installed first. This is the same dependency shape Pi's package installer sees.
 	install(btwInstallDirectory, btwNpmCacheDirectory, uiArchive);
 	install(btwInstallDirectory, btwNpmCacheDirectory, btwArchive);
+	install(codexInstallDirectory, codexNpmCacheDirectory, uiArchive);
 	install(agentsInstallDirectory, agentsNpmCacheDirectory, uiArchive);
 	for (const dependency of Object.keys(agentsRuntimeVersions)) {
 		const archive = agentsRuntimeArchives[dependency];
@@ -355,6 +383,9 @@ async function verifyStandaloneInstalls(
 	install(toolsInstallDirectory, toolsNpmCacheDirectory, uiArchive);
 	install(toolsInstallDirectory, toolsNpmCacheDirectory, typeboxArchive);
 	install(toolsInstallDirectory, toolsNpmCacheDirectory, toolsArchive);
+	install(codexInstallDirectory, codexNpmCacheDirectory, typeboxArchive);
+	install(codexInstallDirectory, codexNpmCacheDirectory, toolsArchive);
+	install(codexInstallDirectory, codexNpmCacheDirectory, codexArchive);
 
 	const verifyUiDependency = async (installDirectory: string, capability: string): Promise<void> => {
 		const installedRoot = join(installDirectory, "node_modules");
@@ -369,6 +400,7 @@ async function verifyStandaloneInstalls(
 		}
 	};
 	await verifyUiDependency(btwInstallDirectory, "pi-stuff-btw");
+	await verifyUiDependency(codexInstallDirectory, "pi-stuff-codex");
 	await verifyUiDependency(agentsInstallDirectory, "pi-stuff-agents");
 	await verifyUiDependency(todoInstallDirectory, "pi-stuff-todo");
 	await verifyUiDependency(toolsInstallDirectory, "pi-stuff-tools");
@@ -419,6 +451,39 @@ async function verifyStandaloneInstalls(
 	const installedBtw = join(btwInstallDirectory, "node_modules/@jczhang02/pi-stuff-btw");
 	const btwSmoke = await runPiRpcSmoke({ piBinary, packages: [installedBtw], cwd: btwInstallDirectory });
 	if (!btwSmoke.commandNames.includes("btw")) throw new Error("Standalone BTW Package did not register /btw");
+	const codexInstalledRoot = join(codexInstallDirectory, "node_modules");
+	const codexManifest = JSON.parse(
+		await readFile(join(codexInstalledRoot, "@jczhang02/pi-stuff-codex/package.json"), "utf8"),
+	) as { dependencies?: Record<string, unknown> };
+	const installedCodexToolsManifest = JSON.parse(
+		await readFile(join(codexInstalledRoot, "@jczhang02/pi-stuff-tools/package.json"), "utf8"),
+	) as { version?: unknown };
+	const installedCodexTypeboxManifest = JSON.parse(
+		await readFile(join(codexInstalledRoot, "typebox/package.json"), "utf8"),
+	) as { version?: unknown };
+	if (
+		codexManifest.dependencies?.["@jczhang02/pi-stuff-tools"] !== installedCodexToolsManifest.version ||
+		codexManifest.dependencies?.["typebox"] !== installedCodexTypeboxManifest.version ||
+		installedCodexTypeboxManifest.version !== "1.3.7"
+	) {
+		throw new Error("Standalone Codex must install exact Tools and typebox runtime dependencies");
+	}
+	const codexSmoke = await runPiRpcSmoke({
+		piBinary,
+		packages: [join(codexInstalledRoot, "@jczhang02/pi-stuff-codex")],
+		cwd: codexInstallDirectory,
+	});
+	if (!codexSmoke.commandNames.includes("codex")) {
+		throw new Error("Standalone Codex Package did not register /codex");
+	}
+	for (const excluded of ["codex-settings", "image-generation", "voice", "web"]) {
+		if (codexSmoke.commandNames.includes(excluded)) {
+			throw new Error(`Standalone Codex retained removed command /${excluded}`);
+		}
+	}
+	if (codexSmoke.createdFiles.includes("agent/pi-stuff-codex.json")) {
+		throw new Error("Standalone Codex wrote settings during startup");
+	}
 	const agentsSmoke = await runPiRpcSmoke({
 		piBinary,
 		packages: [join(agentsInstalledRoot, "@jczhang02/pi-stuff-agents")],
@@ -529,6 +594,27 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
 		}
 		if (
+			manifest.name === "@jczhang02/pi-stuff-codex" &&
+			(await sha256File(join(extractDirectory, licensePath))) !== codexLicenseSha256
+		) {
+			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
+		}
+		if (manifest.name === "@jczhang02/pi-stuff-codex") {
+			const packageRoot = dirname(join(extractDirectory, path));
+			for (const runtimePath of codexRuntimeFiles) {
+				const archivePath = path.replace(/package\.json$/u, runtimePath);
+				if (!archiveFiles.includes(archivePath)) throw new Error(`Codex runtime is missing ${runtimePath}`);
+				const expectedHash = codexNativeSha256[runtimePath];
+				if (expectedHash && (await sha256File(join(packageRoot, runtimePath))) !== expectedHash) {
+					throw new Error(`Codex native helper hash changed: ${runtimePath}`);
+				}
+				if (runtimePath.startsWith("native/")) {
+					const mode = (await stat(join(packageRoot, runtimePath))).mode;
+					if ((mode & 0o111) === 0) throw new Error(`Codex native helper is not executable: ${runtimePath}`);
+				}
+			}
+		}
+		if (
 			manifest.name === "@jczhang02/pi-stuff-tools" &&
 			(await sha256File(join(extractDirectory, licensePath))) !== toolsLicenseSha256
 		) {
@@ -570,6 +656,18 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 				"75823a68024a0a649cc28087976074be791ca554",
 				"8797586bad201f4b2153505347c3b997c320eaa2",
 				"b0ae0f1f4245f471c3fa724dc50425cfa241eb37e399c4948d393fe7965d1fa8",
+			],
+		},
+		{
+			capability: "pi-stuff-codex",
+			deltaHeading: "## Pi Stuff delta",
+			required: [
+				"@howaboua/pi-codex-conversion",
+				"3.0.7",
+				"@howaboua/pi-codex-conversion@3.0.7",
+				"b3591d996efbf6df293e426dea2bb2dd17fcbfe6",
+				"https://github.com/jczhang02/pi-codex-conversion",
+				"b545c94041017d000e2c8b2f6272705d21b85dfb",
 			],
 		},
 		{
@@ -643,6 +741,7 @@ export async function certifyReleaseArtifacts(
 			) as PackageArchiveManifest;
 			verifyPackageArchive(archiveManifest, archiveFiles);
 			if (artifact.name === uiPackageName) verifyUiRuntimeArchive(archiveFiles);
+			if (artifact.name === "@jczhang02/pi-stuff-codex") verifyCodexRuntimeArchive(archiveFiles);
 			run([process.execPath, "publish", "--dry-run", "--ignore-scripts", "--access", "public", archivePath], root, {
 				...bunEnvironment,
 				NPM_CONFIG_TOKEN: "pi-stuff-offline-certification",
