@@ -14,7 +14,8 @@
 		"access": "public"
 	},
 	"exports": {
-		".": "./index.ts"
+		".": "./index.ts",
+		"./contract": "./contract.ts"
 	},
 	"files": [
 		"index.ts",

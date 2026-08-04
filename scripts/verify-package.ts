@@ -79,7 +79,7 @@ const agentsRuntimeVersions = {
 } as const;
 const embeddedForkVersions = {
 	"@jczhang02/pi-mcp-adapter": "2.19.0-pi-stuff.7",
-	"@jczhang02/pi-web-access": "0.18.0-pi-stuff.3",
+	"@jczhang02/pi-web-access": "0.18.0-pi-stuff.4",
 } as const;
 const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 	"@jczhang02/pi-stuff": ["@earendil-works/pi-coding-agent"],
@@ -418,17 +418,6 @@ async function verifyStandaloneInstalls(
 		if (!artifact) throw new Error(`Release manifest is missing ${name}`);
 		return resolveReleaseArchive(releaseDirectory, artifact);
 	};
-	const uiArchive = releaseArchive(uiPackageName);
-	const agentsArchive = releaseArchive("@jczhang02/pi-stuff-agents");
-	const btwArchive = releaseArchive("@jczhang02/pi-stuff-btw");
-	const contextArchive = releaseArchive("@jczhang02/pi-stuff-context");
-	const rtkArchive = releaseArchive("@jczhang02/pi-stuff-rtk");
-	const codexArchive = releaseArchive("@jczhang02/pi-stuff-codex");
-	const goalArchive = releaseArchive("@jczhang02/pi-stuff-goal");
-	const todoArchive = releaseArchive("@jczhang02/pi-stuff-todo");
-	const toolsArchive = releaseArchive("@jczhang02/pi-stuff-tools");
-	const webArchive = releaseArchive("@jczhang02/pi-stuff-web");
-	const mcpArchive = releaseArchive("@jczhang02/pi-stuff-mcp");
 	const rootRequire = createRequire(join(root, "package.json"));
 	const runtimeDirectories: Record<string, string> = {
 		typebox: await resolvePackageDirectory(rootRequire, "typebox"),
@@ -489,50 +478,68 @@ async function verifyStandaloneInstalls(
 		);
 	};
 
-	// npm can satisfy exact local dependencies offline when their archives are
-	// installed first. This is the same dependency shape Pi's package installer sees.
-	install(contextInstallDirectory, contextNpmCacheDirectory, uiArchive);
-	install(contextInstallDirectory, contextNpmCacheDirectory, typeboxArchive);
-	install(contextInstallDirectory, contextNpmCacheDirectory, toolsArchive);
-	install(contextInstallDirectory, contextNpmCacheDirectory, contextArchive);
-	install(btwInstallDirectory, btwNpmCacheDirectory, uiArchive);
-	install(btwInstallDirectory, btwNpmCacheDirectory, typeboxArchive);
-	install(btwInstallDirectory, btwNpmCacheDirectory, toolsArchive);
-	install(btwInstallDirectory, btwNpmCacheDirectory, contextArchive);
-	install(btwInstallDirectory, btwNpmCacheDirectory, btwArchive);
-	install(rtkInstallDirectory, rtkNpmCacheDirectory, uiArchive);
-	install(rtkInstallDirectory, rtkNpmCacheDirectory, rtkArchive);
-	install(codexInstallDirectory, codexNpmCacheDirectory, uiArchive);
-	install(goalInstallDirectory, goalNpmCacheDirectory, uiArchive);
-	install(agentsInstallDirectory, agentsNpmCacheDirectory, uiArchive);
-	for (const dependency of Object.keys(agentsRuntimeVersions)) {
-		const archive = agentsRuntimeArchives[dependency];
-		if (!archive) throw new Error(`Standalone Agents dependency archive is missing ${dependency}`);
-		install(agentsInstallDirectory, agentsNpmCacheDirectory, archive);
-	}
-	install(agentsInstallDirectory, agentsNpmCacheDirectory, toolsArchive);
-	install(agentsInstallDirectory, agentsNpmCacheDirectory, contextArchive);
-	install(agentsInstallDirectory, agentsNpmCacheDirectory, agentsArchive);
-	install(todoInstallDirectory, todoNpmCacheDirectory, uiArchive);
-	install(goalInstallDirectory, goalNpmCacheDirectory, typeboxArchive);
-	install(goalInstallDirectory, goalNpmCacheDirectory, goalArchive);
-	install(todoInstallDirectory, todoNpmCacheDirectory, typeboxArchive);
-	install(todoInstallDirectory, todoNpmCacheDirectory, toolsArchive);
-	install(todoInstallDirectory, todoNpmCacheDirectory, todoArchive);
-	install(toolsInstallDirectory, toolsNpmCacheDirectory, uiArchive);
-	install(toolsInstallDirectory, toolsNpmCacheDirectory, typeboxArchive);
-	install(toolsInstallDirectory, toolsNpmCacheDirectory, toolsArchive);
-	install(codexInstallDirectory, codexNpmCacheDirectory, typeboxArchive);
-	install(codexInstallDirectory, codexNpmCacheDirectory, toolsArchive);
-	install(codexInstallDirectory, codexNpmCacheDirectory, codexArchive);
-	install(webInstallDirectory, webNpmCacheDirectory, uiArchive);
-	install(webInstallDirectory, webNpmCacheDirectory, typeboxArchive);
-	install(webInstallDirectory, webNpmCacheDirectory, toolsArchive);
-	install(webInstallDirectory, webNpmCacheDirectory, webArchive);
-	install(mcpInstallDirectory, mcpNpmCacheDirectory, uiArchive);
-	install(mcpInstallDirectory, mcpNpmCacheDirectory, typeboxArchive);
-	install(mcpInstallDirectory, mcpNpmCacheDirectory, toolsArchive);
-	install(mcpInstallDirectory, mcpNpmCacheDirectory, mcpArchive);
+	const releaseNames = new Set(releaseManifest.artifacts.map(({ name }) => name));
+	const externalArchives: Readonly<Record<string, string>> = { ...runtimeArchives, ...agentsRuntimeArchives };
+	const archiveManifests = new Map<
+		string,
+		{
+			bundledDependencies?: unknown;
+			dependencies?: Record<string, unknown>;
+			peerDependencies?: Record<string, unknown>;
+		}
+	>();
+	const readArchiveManifest = (name: string) => {
+		const existing = archiveManifests.get(name);
+		if (existing) return existing;
+		const manifest = JSON.parse(run(["tar", "-xOzf", releaseArchive(name), "package/package.json"], root)) as {
+			bundledDependencies?: unknown;
+			dependencies?: Record<string, unknown>;
+			peerDependencies?: Record<string, unknown>;
+		};
+		archiveManifests.set(name, manifest);
+		return manifest;
+	};
+	const installReleaseClosure = (name: string, installDirectory: string, npmCacheDirectory: string): void => {
+		const installed = new Set<string>();
+		const visiting = new Set<string>();
+		const visit = (dependency: string): void => {
+			if (installed.has(dependency)) return;
+			if (visiting.has(dependency)) throw new Error(`Circular standalone release dependency at ${dependency}`);
+			if (!releaseNames.has(dependency)) {
+				const archive = externalArchives[dependency];
+				if (!archive) throw new Error(`Standalone release dependency has no offline archive: ${dependency}`);
+				install(installDirectory, npmCacheDirectory, archive);
+				installed.add(dependency);
+				return;
+			}
+			visiting.add(dependency);
+			const manifest = readArchiveManifest(dependency);
+			const bundled = new Set(readBundledDependencies(manifest.bundledDependencies));
+			for (const child of Object.keys(manifest.dependencies ?? {}).sort()) {
+				if (!bundled.has(child)) visit(child);
+			}
+			for (const peer of Object.keys(manifest.peerDependencies ?? {}).sort()) {
+				if (releaseNames.has(peer)) visit(peer);
+			}
+			install(installDirectory, npmCacheDirectory, releaseArchive(dependency));
+			visiting.delete(dependency);
+			installed.add(dependency);
+		};
+		visit(name);
+	};
+
+	// Install every exact internal dependency from this release set before its
+	// consumer. Unknown unbundled dependencies fail instead of reaching a registry.
+	installReleaseClosure("@jczhang02/pi-stuff-context", contextInstallDirectory, contextNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-btw", btwInstallDirectory, btwNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-rtk", rtkInstallDirectory, rtkNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-codex", codexInstallDirectory, codexNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-goal", goalInstallDirectory, goalNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-agents", agentsInstallDirectory, agentsNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-todo", todoInstallDirectory, todoNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-tools", toolsInstallDirectory, toolsNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-web", webInstallDirectory, webNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-mcp", mcpInstallDirectory, mcpNpmCacheDirectory);
 	await Promise.all([
 		linkCertifiedHostPeers(webInstallDirectory, "@jczhang02/pi-stuff-web"),
 		linkCertifiedHostPeers(mcpInstallDirectory, "@jczhang02/pi-stuff-mcp"),
@@ -1056,9 +1063,9 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 				"nicobailon/pi-web-access",
 				"0.18.0",
 				"d2aab00dcf0547572276d9de4bc4a2a49d640e13",
-				"9209f76bf16588351ffea57588cf3066a0e0ee6c",
-				"pi-stuff-v0.18.0-3",
-				"83c4a158a43360daf4e513d89f4942cd6eba360118529d0f30b8ca4f06c3b33f",
+				"8e11f1a41547a9415b6d36742a04e3ee2896bcea",
+				"pi-stuff-v0.18.0-4",
+				"7030811f8c4b0e75a1e5fc60f72916ebec2add2d9d615cf5a01fbde349eaa638",
 			],
 		},
 		{

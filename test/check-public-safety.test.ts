@@ -164,7 +164,7 @@ describe("auditPublicFiles", () => {
 	test("allows only exact SHA-named owned fork release assets", async () => {
 		const root = await createRepository();
 		const exact =
-			"https://github.com/jczhang02/pi-web-access/releases/download/pi-stuff-v0.18.0-3/jczhang02-pi-web-access-0.18.0-pi-stuff.3-9209f76-sha256-83c4a158a43360daf4e513d89f4942cd6eba360118529d0f30b8ca4f06c3b33f.tgz";
+			"https://github.com/jczhang02/pi-web-access/releases/download/pi-stuff-v0.18.0-4/jczhang02-pi-web-access-0.18.0-pi-stuff.4-8e11f1a-sha256-7030811f8c4b0e75a1e5fc60f72916ebec2add2d9d615cf5a01fbde349eaa638.tgz";
 		await writeCapabilityManifest(root, {
 			dependencies: { "@jczhang02/pi-web-access": exact },
 			files: ["index.ts"],
