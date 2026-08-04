@@ -18,6 +18,8 @@ describe("Pi Stuff built-in Agent", () => {
 				systemPromptMode: "append",
 			});
 			expect(builtin[0]?.systemPrompt).toContain("Work on the delegated task independently");
+			expect(builtin[0]?.systemPrompt).toContain("Complete small or self-contained work directly");
+			expect(builtin[0]?.systemPrompt).toContain("never fan out merely to inspect a few files");
 		} finally {
 			rmSync(cwd, { force: true, recursive: true });
 		}

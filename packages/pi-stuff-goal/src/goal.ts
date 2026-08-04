@@ -1,10 +1,11 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools/contract";
 import { Type } from "typebox";
 import { currentTokenTotal } from "./accounting.js";
 import { completeGoalArguments, parseCommand } from "./command.js";
 import { GoalCommandController } from "./commands.js";
-import { showGoalManager } from "./menu.js";
+import { safeGoalMenuText, showGoalManager } from "./menu.js";
 import { type ActiveGoal, loadGoalStateFromSession } from "./persistence.js";
 import { buildGoalPrompt, buildGoalSystemPrompt } from "./prompts.js";
 import { activateQueuedGoal } from "./queue.js";
@@ -75,7 +76,25 @@ function goalToolText(result: {
 
 function goalCompletePresentation(): SuiteToolPresentation<Record<string, unknown>, GoalCompleteDetails> {
 	return {
+		detailLines: (_params, result) => {
+			if (goalToolText(result).startsWith("Goal completion rejected:")) return [goalToolText(result)];
+			return [
+				"Summary",
+				safeGoalMenuText(result.details.summary, MAX_COMPLETION_EVIDENCE_TEXT_LENGTH),
+				"",
+				"Evidence",
+				...result.details.evidence.flatMap((item, index) => [
+					`${String(index + 1)}. ${safeGoalMenuText(item.requirement, MAX_COMPLETION_EVIDENCE_TEXT_LENGTH)}`,
+					`   ${safeGoalMenuText(item.proof, MAX_COMPLETION_EVIDENCE_TEXT_LENGTH)}`,
+				]),
+			];
+		},
 		label: "Goal complete",
+		resultBody: (_params, result, _options, theme) => {
+			if (goalToolText(result).startsWith("Goal completion rejected:")) return undefined;
+			const summary = safeGoalMenuText(result.details.summary, MAX_COMPLETION_EVIDENCE_TEXT_LENGTH);
+			return summary ? new Text(theme.fg("muted", summary), 2, 0) : undefined;
+		},
 		resultIsError: (_params, result) => goalToolText(result).startsWith("Goal completion rejected:"),
 		runningSummary: "checking",
 		summarize: (_params, result, state) =>
@@ -392,7 +411,6 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			if (runtime.pendingQueueAction?.kind === "prioritize") {
 				persistGoal(runtime.activeGoal);
 				runtime.publishPresentationStatus(runtime.activeGoal);
-				ctx.ui.notify(`Goal complete: ${goal}. Priority goal waits for Pi to settle.`, "info");
 				return {
 					content: [{ type: "text", text: `Goal complete: ${summary}` }],
 					details: {
@@ -413,7 +431,6 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 				};
 				persistGoal(runtime.activeGoal);
 				runtime.publishPresentationStatus(runtime.activeGoal);
-				ctx.ui.notify(`Goal complete: ${goal}. Next goal queued: ${runtime.queuedGoals[0]?.text}`, "info");
 				return {
 					content: [
 						{
@@ -435,7 +452,6 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			runtime.publishPresentationStatus(runtime.activeGoal);
 			clearActiveGoal(ctx);
 			showCompletionStatus(ctx);
-			ctx.ui.notify(`Goal complete: ${goal}`, "info");
 
 			return {
 				content: [{ type: "text", text: `Goal complete: ${summary}` }],

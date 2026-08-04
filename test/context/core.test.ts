@@ -457,6 +457,85 @@ describe("Context capability lifecycle", () => {
 		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([{ cancel: true }]);
 		expect(bypasses).toHaveLength(2);
 	});
+
+	test("presents manual Magic compaction as one extension-owned managed-history boundary", async () => {
+		const handlers: Handlers = new Map();
+		const api = apiFor(handlers);
+		const bypasses: unknown[] = [];
+		api.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (value) => bypasses.push(value));
+		piStuffContext(api, {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => ({
+						messages: [taggedMessage("<session-history>healthy</session-history>"), ...event.messages],
+					}));
+					magicApi.on("session_before_compact", () => ({ cancel: true }));
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+
+		const result = await emitResults(
+			handlers,
+			"session_before_compact",
+			{
+				preparation: { firstKeptEntryId: "keep-this", tokensBefore: 42_000 },
+				reason: "manual",
+				type: "session_before_compact",
+			},
+			ctx,
+		);
+
+		expect(result).toEqual([
+			{
+				compaction: {
+					details: { engine: "magic-context", mode: "managed-history", source: "magic-context" },
+					firstKeptEntryId: "keep-this",
+					summary: "Magic Context manages prior history.",
+					tokensBefore: 42_000,
+				},
+			},
+		]);
+		expect(bypasses).toEqual([]);
+	});
+
+	test("fails open to native compaction when the Magic compaction hook throws", async () => {
+		const handlers: Handlers = new Map();
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => ({
+						messages: [taggedMessage("<session-history>healthy</session-history>"), ...event.messages],
+					}));
+					magicApi.on("session_before_compact", () => {
+						throw new Error("context store unavailable");
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+
+		expect(
+			await emitResults(
+				handlers,
+				"session_before_compact",
+				{
+					preparation: { firstKeptEntryId: "keep-this", tokensBefore: 42_000 },
+					reason: "manual",
+				},
+				ctx,
+			),
+		).toEqual([undefined]);
+		expect(getContextCapability(ctx).status()).toMatchObject({
+			engine: "native",
+			error: "context store unavailable",
+			state: "degraded",
+		});
+	});
 });
 
 describe("Context projections", () => {

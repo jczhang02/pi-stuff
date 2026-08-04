@@ -330,7 +330,10 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 		state: terminalState,
 		summary: model.summary,
 	});
-	context.invalidate();
+	// renderResult runs inside Pi's synchronous ToolExecutionComponent update.
+	// Invalidating from here re-enters that update before the outer render has
+	// appended its result body, causing the body to be appended twice. The shared
+	// row is already mutated in place and Pi requests a render after the tool event.
 }
 
 /** Decorate only presentation slots; schema, prompt metadata and execute stay referentially intact. */

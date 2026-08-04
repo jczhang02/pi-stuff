@@ -37,6 +37,13 @@ test("recognizes accounts where the weekly window is the only primary window", (
 	expect(usage.fiveHour).toBeUndefined();
 	expect(usage.weekly).toEqual({ usedPercent: 4, windowMinutes: 10_080 });
 	expect(weeklyRemainingPercent(usage)).toBe(96);
+	expect(formatCodexUsage(usage)).toBe("Weekly 96% left");
+	expect(formatCodexUsage(usage)).not.toContain("5h");
+});
+
+test("omits unavailable windows instead of rendering an unknown quota", () => {
+	expect(formatCodexUsage({ plan: "unknown" })).toBe("Usage unavailable");
+	expect(formatCodexUsage({ fiveHour: { usedPercent: 30 }, plan: "pro" })).toBe("5h 70% left");
 });
 
 test("builds the authenticated usage request only when explicitly invoked", async () => {

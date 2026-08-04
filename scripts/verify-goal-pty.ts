@@ -206,7 +206,12 @@ export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promis
 		const objective = "verify hidden Goal protocol";
 		session.sendLiteral(`/goal ${objective}`);
 		session.sendKey("Enter");
-		const active = await session.waitForText("Goal complete:");
+		const completionSummary = "Hidden Goal prompt delivery completed and verified.";
+		const active = await session.waitForText(completionSummary);
+		const visibleSummaryCount = active.split(completionSummary).length - 1;
+		if (visibleSummaryCount !== 1) {
+			fail(`Goal completion summary rendered ${String(visibleSummaryCount)} times instead of once\n${active}`);
+		}
 		for (const forbidden of ["<goal_objective>", "Goal-mode rules", "pi-goal-prompt:", "Continuation behavior:"]) {
 			if (active.includes(forbidden)) fail(`hidden Goal protocol leaked into the TUI: ${forbidden}\n${active}`);
 		}

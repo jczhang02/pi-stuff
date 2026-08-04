@@ -1,4 +1,5 @@
-import { isKeyRelease, Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { homedir } from "node:os";
+import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
 import type { RtkProjectionAdapter } from "./projection.js";
 import type { RtkRuntime } from "./runtime.js";
@@ -36,6 +37,27 @@ function oneLine(value: string): string {
 		.trim();
 }
 
+/** Keep the executable identity useful without letting a package-manager path consume the dialog. */
+export function compactRtkBinaryPath(value: string, maximumWidth: number): string {
+	const width = Math.max(1, Math.floor(maximumWidth));
+	const clean = oneLine(value);
+	const home = oneLine(homedir());
+	const display = home && (clean === home || clean.startsWith(`${home}/`)) ? `~${clean.slice(home.length)}` : clean;
+	if (visibleWidth(display) <= width) return display;
+
+	const root = display.startsWith("~/") ? "~/" : display.startsWith("/") ? "/" : "";
+	const remainder = root === "~/" ? display.slice(2) : root === "/" ? display.slice(1) : display;
+	const pieces = remainder.split("/").filter(Boolean);
+	if (pieces.length >= 3) {
+		const tail = pieces.slice(-2).join("/");
+		const withOrigin = `${root}${pieces[0]}/…/${tail}`;
+		if (visibleWidth(withOrigin) <= width) return withOrigin;
+		const tailOnly = `…/${tail}`;
+		if (visibleWidth(tailOnly) <= width) return tailOnly;
+	}
+	return truncateToWidth(display, width, "…");
+}
+
 class RtkDialogComponent implements CommandDialogComponent {
 	private readonly context: CommandDialogViewContext<void>;
 	private readonly options: RtkDialogOptions;
@@ -70,7 +92,14 @@ class RtkDialogComponent implements CommandDialogComponent {
 			`${GUTTER}${theme.bold("RTK")}`,
 			"",
 			`${GUTTER}${theme.fg(runtimeColor, runtime.state)}${runtime.version ? theme.fg("dim", ` · ${runtime.version}`) : ""}`,
-			...(runtime.path ? this.wrapped(renderWidth, `Binary  ${runtime.path}`) : []),
+			...(runtime.path
+				? [
+						`${GUTTER}Binary  ${compactRtkBinaryPath(
+							runtime.path,
+							Math.max(1, renderWidth - GUTTER.length - "Binary  ".length),
+						)}`,
+					]
+				: []),
 			...(runtime.sha256 ? [`${GUTTER}${theme.fg("dim", `SHA-256  ${runtime.sha256.slice(0, 16)}…`)}`] : []),
 			...(runtime.lastError ? this.wrapped(renderWidth, theme.fg("error", oneLine(runtime.lastError))) : []),
 			"",

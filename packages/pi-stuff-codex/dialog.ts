@@ -1,11 +1,36 @@
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { type SettingItem, SettingsList, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+	type SettingItem,
+	SettingsList,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
 import { type CodexUsageSnapshot, formatCodexUsage } from "./usage.js";
 
 const GUTTER = "  ";
 const MIN_RENDER_WIDTH = 24;
 const RESERVED_ROWS = 3;
+const TOOL_SEPARATOR = " · ";
+const TOOL_LABELS = ["apply_patch", "view_image", "imagegen · gpt-image-2"] as const;
+
+/** Pack complete semantic Tool labels without ever clipping a name or model mid-token. */
+export function formatCodexToolLines(width: number): string[] {
+	const available = Math.max(1, Math.floor(width));
+	const labels = TOOL_LABELS.map((label) =>
+		label === "imagegen · gpt-image-2" && visibleWidth(label) > available ? "imagegen" : label,
+	);
+	const lines: string[] = [];
+	for (const label of labels) {
+		const current = lines.at(-1);
+		const candidate = current ? `${current}${TOOL_SEPARATOR}${label}` : label;
+		if (current && visibleWidth(candidate) > available) lines.push(label);
+		else if (current) lines[lines.length - 1] = candidate;
+		else lines.push(label);
+	}
+	return lines;
+}
 
 export interface CodexControls {
 	getFast(): boolean;
@@ -80,6 +105,7 @@ class CodexDialog implements CommandDialogComponent {
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
+		const contentWidth = Math.max(1, renderWidth - GUTTER.length);
 		const nativeLines = this.settingsList.render(Math.max(MIN_RENDER_WIDTH, renderWidth));
 		const usageLines = this.loading
 			? [this.context.theme.fg("dim", "Loading usage…")]
@@ -92,10 +118,10 @@ class CodexDialog implements CommandDialogComponent {
 			...nativeLines,
 			"",
 			`${GUTTER}${this.context.theme.bold("Usage")}`,
-			...usageLines.map((line) => `${GUTTER}${line}`),
+			...usageLines.flatMap((line) => wrapTextWithAnsi(line, contentWidth).map((part) => `${GUTTER}${part}`)),
 			"",
 			`${GUTTER}${this.context.theme.bold("Tools")}`,
-			`${GUTTER}${this.context.theme.fg("dim", "apply_patch · view_image · imagegen (gpt-image-2)")}`,
+			...formatCodexToolLines(contentWidth).map((line) => `${GUTTER}${this.context.theme.fg("dim", line)}`),
 			...(this.error ? ["", `${GUTTER}${this.context.theme.fg("error", this.error)}`] : []),
 			"",
 			`${GUTTER}${this.context.theme.fg("dim", "Enter toggle · R refresh · Esc close")}`,

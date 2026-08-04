@@ -32,6 +32,10 @@ const MAGIC_TOOL_HANDOFF_PARAMETERS = Type.Object({}, { additionalProperties: tr
 
 type LooseEventHandler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type AgentMessage = ContextEvent["messages"][number];
+interface ManualCompactionPreparation {
+	readonly firstKeptEntryId: string;
+	readonly tokensBefore: number;
+}
 interface PiStuffMagicContextActivation {
 	readonly initialSessionStart?: {
 		readonly event: SessionStartEvent;
@@ -517,13 +521,27 @@ class ContextCapabilityRuntime implements ContextCapability {
 			register(event, async (rawEvent, ctx) => {
 				if (!this.isCurrentGeneration(generation) || this.state.state !== "active" || !this.magicContextHandler)
 					return;
-				const result = await handler(rawEvent, ctx);
+				let result: unknown;
+				try {
+					result = await handler(rawEvent, ctx);
+				} catch (error) {
+					const trigger = this.state.trigger;
+					this.state = {
+						state: "degraded",
+						engine: "native",
+						...(trigger === undefined ? {} : { trigger }),
+						error: error instanceof Error ? error.message : String(error),
+					};
+					return;
+				}
 				if (
 					this.isCurrentGeneration(generation) &&
 					typeof result === "object" &&
 					result !== null &&
 					Reflect.get(result, "cancel") === true
 				) {
+					const manual = magicManualCompaction(rawEvent);
+					if (manual) return manual;
 					try {
 						this.pi.events.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
 							schemaVersion: 1,
@@ -608,6 +626,43 @@ class ContextCapabilityRuntime implements ContextCapability {
 			},
 		});
 	}
+}
+
+function magicManualCompaction(event: unknown):
+	| {
+			readonly compaction: {
+				readonly details: {
+					readonly engine: "magic-context";
+					readonly mode: "managed-history";
+					readonly source: "magic-context";
+				};
+				readonly firstKeptEntryId: string;
+				readonly summary: string;
+				readonly tokensBefore: number;
+			};
+	  }
+	| undefined {
+	if (typeof event !== "object" || event === null || Reflect.get(event, "reason") !== "manual") return undefined;
+	const preparation = Reflect.get(event, "preparation");
+	if (typeof preparation !== "object" || preparation === null) return undefined;
+	const candidate = preparation as Partial<ManualCompactionPreparation>;
+	if (
+		typeof candidate.firstKeptEntryId !== "string" ||
+		!candidate.firstKeptEntryId ||
+		typeof candidate.tokensBefore !== "number" ||
+		!Number.isFinite(candidate.tokensBefore) ||
+		candidate.tokensBefore < 0
+	) {
+		return undefined;
+	}
+	return {
+		compaction: {
+			details: { engine: "magic-context", mode: "managed-history", source: "magic-context" },
+			firstKeptEntryId: candidate.firstKeptEntryId,
+			summary: "Magic Context manages prior history.",
+			tokensBefore: candidate.tokensBefore,
+		},
+	};
 }
 
 export default function piStuffContext(pi: ExtensionAPI, dependencies: ContextCapabilityDependencies = {}): void {

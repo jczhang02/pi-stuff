@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import { suppressDuplicatedLiveCompactionReplay } from "./compaction-presentation.js";
 import { registerLiveThoughtDisplay } from "./live-thought.js";
 import { installUiSessionPresentation, type UiSessionPresentation } from "./session-presentation.js";
 import {
@@ -605,11 +606,22 @@ export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 	const settings = await UiSettingsStore.load();
 	let unregisterOwnedSettings: (() => void) | undefined = registerOwnedUiSettings(registry, settings);
 	let presentation: UiSessionPresentation | undefined;
+	let compactionReplayDeduperRegistered = false;
 	let stopListeningForGitRefresh = listenForStatuslineGitRefreshRequests(pi, () => {
 		presentation?.refreshGit();
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		// Register after all Capability factories have initialized so this runs
+		// after their session_compact bookkeeping and immediately before Pi's
+		// live chat rebuild.
+		if (!compactionReplayDeduperRegistered) {
+			compactionReplayDeduperRegistered = true;
+			pi.on("session_compact", (event, compactCtx) => {
+				if (!compactCtx.hasUI) return;
+				suppressDuplicatedLiveCompactionReplay(compactCtx.sessionManager, event.compactionEntry.id);
+			});
+		}
 		presentation?.dispose();
 		presentation = installUiSessionPresentation(
 			pi,

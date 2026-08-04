@@ -357,7 +357,7 @@ describe("normal UI presentation integration", () => {
 		expect(ui.renderRequests).toHaveLength(rendersAfterDispose);
 	});
 
-	test("observes late Goal status publication through one read-only shared channel", async () => {
+	test("keeps Goal state out of the ordinary Statusline", async () => {
 		const events = new EventBusHarness();
 		const uiApi = createApiHarness(events);
 		await piStuffUi(uiApi.api);
@@ -380,18 +380,20 @@ describe("normal UI presentation integration", () => {
 
 		const rendersBeforeActive = ui.renderRequests.length;
 		goalChannel.publish({ status: "active", tokenBudget: 12_000, tokensUsed: 1_250 });
-		expect(footer.render(120).join("\n")).toContain("goal 1.3k/12k");
-		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforeActive);
+		expect(goalChannel.source.getSnapshot()).toEqual({ status: "active", tokenBudget: 12_000, tokensUsed: 1_250 });
+		expect(footer.render(120).join("\n")).not.toContain("goal");
+		expect(ui.renderRequests).toHaveLength(rendersBeforeActive);
 
 		goalChannel.publish({ status: "paused", tokensUsed: 1_250 });
-		expect(footer.render(120).join("\n")).toContain("goal:paused");
+		expect(footer.render(120).join("\n")).not.toContain("goal");
 		goalChannel.publish({ status: "budget_limited", tokenBudget: 12_000, tokensUsed: 12_000 });
-		expect(footer.render(120).join("\n")).toContain("goal:budget");
+		expect(footer.render(120).join("\n")).not.toContain("goal");
 
 		const rendersBeforeClear = ui.renderRequests.length;
 		goalChannel.clear();
+		expect(goalChannel.source.getSnapshot()).toBeUndefined();
 		expect(footer.render(120).join("\n")).not.toContain("goal");
-		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforeClear);
+		expect(ui.renderRequests).toHaveLength(rendersBeforeClear);
 
 		footer.dispose?.();
 		const rendersAfterDispose = ui.renderRequests.length;

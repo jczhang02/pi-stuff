@@ -691,10 +691,12 @@ async function verifyWideInteractions(
 	await session.waitForText("22%");
 	await session.waitForText("$0.42");
 	await session.waitForText("main *1 ?1");
-	await session.waitForText("goal:UI");
-	await session.waitForText("mcp:2");
-	await session.waitForText("load:full");
 	screen = await session.waitForAbsence("Welcome back!");
+	for (const capabilityStatus of ["goal:UI", "mcp:2", "load:full"]) {
+		if (screen.includes(capabilityStatus)) {
+			fail(`ordinary Statusline exposed capability-owned status: ${capabilityStatus}`);
+		}
+	}
 	const promptLines = rowsBelowEditorDivider(screen).filter((line) => line.includes(LONG_PROMPT_TOKEN));
 	if (promptLines.length < 1 || promptLines.length > 2) {
 		fail(`long prompt occupied ${String(promptLines.length)} Statusline rows instead of one or two\n${screen}`);

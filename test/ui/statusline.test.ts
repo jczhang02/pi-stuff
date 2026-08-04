@@ -354,7 +354,7 @@ describe("StatuslineController", () => {
 			);
 
 			expect(component.render(160)).toEqual([
-				" Sonnet 4.5 | think:med | dir pi-stuff | ⎇ main *3 +12 ?1 | ◫ 42.4%/200k | cache 99.9% | $0.42 | goal:UI · mcp:2 · load:full ",
+				" Sonnet 4.5 | think:med | dir pi-stuff | ⎇ main *3 +12 ?1 | ◫ 42.4%/200k | cache 99.9% | $0.42 ",
 				" in: Implement the accepted Pi Stuff statusline. ",
 			]);
 		});
@@ -379,7 +379,7 @@ describe("StatuslineController", () => {
 			);
 
 			expect(component.render(160)).toEqual([
-				"  Sonnet 4.5 | think:med |  pi-stuff |  main *3 +12 ?1 |  42.4%/200k |  99.9% | $0.42 | goal:UI · mcp:2 · load:full ",
+				"  Sonnet 4.5 | think:med |  pi-stuff |  main *3 +12 ?1 |  42.4%/200k |  99.9% | $0.42 ",
 				"  Implement the accepted Pi Stuff statusline. ",
 			]);
 		});
@@ -409,7 +409,7 @@ describe("StatuslineController", () => {
 			expect(full).toContain("dir pi-stuff");
 			expect(full).toContain("in: Implement the accepted Pi Stuff statusline.");
 			expect(full).toContain("cache 99.9%");
-			expect(full).toContain("goal:UI");
+			expect(full).not.toContain("goal:UI");
 			expect(harness.requests.length).toBeGreaterThan(0);
 		});
 	});
@@ -460,7 +460,8 @@ describe("StatuslineController", () => {
 			expect(colored.get("warning")).toEqual(expect.arrayContaining(["⎇ main", "*3"]));
 			expect(colored.get("success")).toContain("+12");
 			expect(colored.get("dim")).toEqual(expect.arrayContaining(["◫ 42.4%/200k", "|"]));
-			expect(colored.get("muted")).toEqual(expect.arrayContaining(["?1", "cache 99.9%", "goal:UI"]));
+			expect(colored.get("muted")).toEqual(expect.arrayContaining(["?1", "cache 99.9%"]));
+			expect([...colored.values()].flat()).not.toContain("goal:UI");
 			expect(colored.get("text")).toEqual(
 				expect.arrayContaining(["$0.42", "Implement the accepted Pi Stuff statusline."]),
 			);
@@ -488,8 +489,8 @@ describe("StatuslineController", () => {
 			const lines = component.render(64);
 			const rendered = lines.join("\n");
 			expect(rendered).toContain("sonnet-4.5");
-			expect(rendered).toContain("◫ 42%");
-			expect(rendered).toContain("⎇ main Δ16");
+			expect(rendered).toMatch(/◫ 42(?:\.4)?%/u);
+			expect(rendered).toContain("⎇ main *3 +12 ?1");
 			expect(rendered).not.toContain("AC");
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(64);
 		});
@@ -541,7 +542,7 @@ describe("StatuslineController", () => {
 				expect(rendered).toMatch(/42(?:\.4)?%/u);
 				for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 			}
-			expect(component.render(48).join("\n")).not.toContain("Implement the accepted");
+			expect(component.render(48).join("\n")).toContain("Implement the accepted");
 			expect(component.render(32).join("\n")).not.toContain("Implement the accepted");
 		});
 	});
@@ -658,9 +659,8 @@ describe("StatuslineController", () => {
 		expect(lines).toEqual([
 			" sonnet-4.5 | think:med | dir pi-stuff | ⎇ main *3 +12 ?1 | ◫ 42.4%/200k | cache 99.9% | $0.42 ",
 			" in: Implement the accepted Pi Stuff statusline. ",
-			" goal:UI · mcp:2 · load:full ",
 		]);
-		expect(lines.join("\n")).not.toContain("agents:3");
+		expect(lines.join("\n")).not.toMatch(/agents:3|goal:UI|mcp:2|load:full/u);
 
 		const longPrompt = "请实现已经确认的状态栏，并验证中文宽字符和非常长的输入。".repeat(20);
 		const longComponent = controller.createFooter(

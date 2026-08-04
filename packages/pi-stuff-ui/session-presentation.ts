@@ -6,7 +6,6 @@ import {
 	type BooleanValueSource,
 	GitStatusSource,
 	getCodexStatusChannel,
-	getGoalStatusChannel,
 	StatuslineController,
 	type StatuslinePreferences,
 	type StatuslinePreferencesSource,
@@ -111,7 +110,6 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 			autocompleteVisible: new EditorAutocompleteSource(this.editor),
 			codexStatus: getCodexStatusChannel(pi).source,
 			gitChanges: this.git,
-			goalStatus: getGoalStatusChannel(pi).source,
 			preferences: new StoreStatuslinePreferencesSource(store),
 		});
 		this.unregisterStatuslineChrome = coordinator.registerChrome("statusline", this.statusline);

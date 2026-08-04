@@ -11,7 +11,7 @@ import type {
 import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
 import { type Component, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-const DEFAULT_EXTENSION_STATUS_KEYS = ["goal", "codex-goal", "mcp", "loadout"] as const;
+const DEFAULT_EXTENSION_STATUS_KEYS: readonly string[] = [];
 const GIT_STATUS_TIMEOUT_MS = 2_000;
 const MAX_DYNAMIC_TEXT_CODE_UNITS = 16 * 1024;
 const MIN_TRUNCATED_PROMPT_WIDTH = 6;
@@ -242,7 +242,6 @@ interface SharedStatuslineControllerOptions {
 	readonly codexStatus?: CodexStatusSource;
 	readonly extensionStatusKeys?: readonly string[];
 	readonly gitChanges?: GitChangeCountsSource;
-	readonly goalStatus?: GoalStatusSource;
 }
 
 export type StatuslineControllerOptions = SharedStatuslineControllerOptions &
@@ -486,7 +485,6 @@ export class StatuslineController {
 		if (this.options.autocompleteVisible) subscribeObserver(this.options.autocompleteVisible, notify, unsubscribe);
 		if (this.options.codexStatus) subscribeObserver(this.options.codexStatus, notify, unsubscribe);
 		if (this.options.gitChanges) subscribeObserver(this.options.gitChanges, notify, unsubscribe);
-		if (this.options.goalStatus) subscribeObserver(this.options.goalStatus, notify, unsubscribe);
 		return () => {
 			for (const remove of unsubscribe.splice(0)) callObserver(remove);
 		};
@@ -509,7 +507,6 @@ export class StatuslineController {
 			this.options.extensionStatusKeys ?? DEFAULT_EXTENSION_STATUS_KEYS,
 			sessionStatus,
 			readCodexStatus(ctx, this.options.codexStatus),
-			readGoalStatus(this.options.goalStatus),
 			renderWidth,
 			preferences,
 		);
@@ -717,7 +714,6 @@ function renderStatusline(
 	extensionStatusKeys: readonly string[],
 	sessionStatus: SessionStatusSnapshot,
 	codexStatus: CodexStatusSnapshot | undefined,
-	goalStatus: GoalStatusSnapshot | undefined,
 	width: number,
 	preferences: StatuslinePreferences,
 ): string[] {
@@ -755,12 +751,7 @@ function renderStatusline(
 		segments.push(statusSegment("cost", 5, theme.fg("text", `$${usage.cost.toFixed(2)}`)));
 	}
 
-	const extensionStatusSegment = renderExtensionStatusSegment(
-		theme,
-		statuses,
-		extensionStatusKeys,
-		formatGoalStatus(goalStatus),
-	);
+	const extensionStatusSegment = renderExtensionStatusSegment(theme, statuses, extensionStatusKeys);
 	if (extensionStatusSegment) segments.push(statusSegment("extension", 7, extensionStatusSegment));
 
 	const status = renderStatusRows(segments, width, theme, preferences.density);
@@ -870,14 +861,9 @@ function renderExtensionStatusSegment(
 	theme: Theme,
 	statuses: ReadonlyMap<string, string>,
 	keys: readonly string[],
-	goalStatus?: string,
 ): string | undefined {
 	const selected: string[] = [];
 	const seen = new Set<string>();
-	if (goalStatus) {
-		selected.push(goalStatus);
-		seen.add(goalStatus);
-	}
 	for (const key of keys) {
 		const status = sanitizeOneLine(statuses.get(key) ?? "");
 		if (!status || status.startsWith("[") || seen.has(status)) continue;
@@ -885,32 +871,6 @@ function renderExtensionStatusSegment(
 		selected.push(status);
 	}
 	return selected.length > 0 ? theme.fg("muted", selected.join(" · ")) : undefined;
-}
-
-function readGoalStatus(source: GoalStatusSource | undefined): GoalStatusSnapshot | undefined {
-	try {
-		return source?.getSnapshot();
-	} catch {
-		return undefined;
-	}
-}
-
-function formatGoalStatus(snapshot: GoalStatusSnapshot | undefined): string | undefined {
-	if (!snapshot) return undefined;
-	if (snapshot.status === "active") {
-		return snapshot.tokenBudget === undefined
-			? "goal"
-			: `goal ${compactTokenCount(snapshot.tokensUsed)}/${compactTokenCount(snapshot.tokenBudget)}`;
-	}
-	if (snapshot.status === "usage_limited") return "goal:usage";
-	if (snapshot.status === "budget_limited") return "goal:budget";
-	return `goal:${snapshot.status}`;
-}
-
-function compactTokenCount(value: number): string {
-	if (value >= 1_000_000) return `${String(Math.round(value / 100_000) / 10)}m`;
-	if (value >= 1_000) return `${String(Math.round(value / 100) / 10)}k`;
-	return String(Math.round(value));
 }
 
 function finiteNonNegative(value: number): number {

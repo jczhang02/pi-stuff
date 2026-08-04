@@ -176,7 +176,7 @@ function wideLines(ctx: ExtensionContext, inventory: WelcomeHeaderInventory, the
 		joinColumns(title, loaded, rightColumn, width),
 		joinColumns(model, wideInventory(inventory, theme), rightColumn, width),
 		joinColumns(path, tips, rightColumn, width),
-		joinColumns("", tipLine(theme), rightColumn, width),
+		joinColumns("", tipLine(theme, Math.max(0, width - rightColumn)), rightColumn, width),
 		divider,
 	];
 }
@@ -191,7 +191,13 @@ function narrowLines(ctx: ExtensionContext, inventory: WelcomeHeaderInventory, t
 		.filter(Boolean)
 		.join(separator);
 	const orientation = narrowOrientation(ctx, inventory, theme, width, separator);
-	return [divider, clip(identity, width), clip(orientation, width), clip(`  ${tipLine(theme)}`, width), divider];
+	return [
+		divider,
+		clip(identity, width),
+		clip(orientation, width),
+		`  ${tipLine(theme, Math.max(0, width - 2))}`,
+		divider,
+	];
 }
 
 function narrowOrientation(
@@ -270,12 +276,20 @@ function terseInventory(inventory: WelcomeHeaderInventory, theme: Theme): string
 	return segments.join(theme.fg("dim", " · "));
 }
 
-function tipLine(theme: Theme): string {
-	return (
-		`${theme.fg("accent", "/tools")} ${theme.fg("muted", "details")}` +
-		`${theme.fg("dim", " · ")}${theme.fg("accent", "/ui")} ${theme.fg("muted", "appearance")}` +
-		`${theme.fg("dim", " · ")}${theme.fg("accent", "Shift+Tab")} ${theme.fg("muted", "thinking")}`
-	);
+function tipLine(theme: Theme, width: number): string {
+	const actions = [
+		`${theme.fg("accent", "/tools")} ${theme.fg("muted", "details")}`,
+		`${theme.fg("accent", "/ui")} ${theme.fg("muted", "appearance")}`,
+		`${theme.fg("accent", "Shift+Tab")} ${theme.fg("muted", "thinking")}`,
+	];
+	const separator = theme.fg("dim", " · ");
+	const selected: string[] = [];
+	for (const action of actions) {
+		const candidate = [...selected, action].join(separator);
+		if (visibleWidth(candidate) > width) break;
+		selected.push(action);
+	}
+	return selected.join(separator);
 }
 
 function displayCwd(ctx: ExtensionContext): string {
@@ -288,8 +302,13 @@ function abbreviatePath(path: string): string {
 	const pieces = path.split("/");
 	if (pieces.length <= 3) return path;
 	return pieces
-		.map((piece, index) => (index > 0 && index < pieces.length - 1 ? firstGrapheme(piece) : piece))
+		.map((piece, index) => (index > 0 && index < pieces.length - 1 ? abbreviatedPathPiece(piece) : piece))
 		.join("/");
+}
+
+function abbreviatedPathPiece(value: string): string {
+	if (value.startsWith(".") && value.length > 1) return `.${firstGrapheme(value.slice(1))}`;
+	return firstGrapheme(value);
 }
 
 function firstGrapheme(value: string): string {

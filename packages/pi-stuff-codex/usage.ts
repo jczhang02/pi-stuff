@@ -139,10 +139,14 @@ function resetText(window: CodexUsageWindow | undefined): string | undefined {
 }
 
 export function formatCodexUsage(snapshot: CodexUsageSnapshot): string {
-	const weeklyReset = resetText(snapshot.weekly);
-	const fiveHourReset = resetText(snapshot.fiveHour);
-	return [
-		`Weekly ${remaining(snapshot.weekly)}${weeklyReset ? ` · ${weeklyReset}` : ""}`,
-		`5h ${remaining(snapshot.fiveHour)}${fiveHourReset ? ` · ${fiveHourReset}` : ""}`,
-	].join("\n");
+	const lines: string[] = [];
+	if (snapshot.weekly) {
+		const weeklyReset = resetText(snapshot.weekly);
+		lines.push(`Weekly ${remaining(snapshot.weekly)}${weeklyReset ? ` · ${weeklyReset}` : ""}`);
+	}
+	if (snapshot.fiveHour) {
+		const fiveHourReset = resetText(snapshot.fiveHour);
+		lines.push(`5h ${remaining(snapshot.fiveHour)}${fiveHourReset ? ` · ${fiveHourReset}` : ""}`);
+	}
+	return lines.join("\n") || "Usage unavailable";
 }

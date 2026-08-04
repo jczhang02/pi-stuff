@@ -1837,7 +1837,7 @@ test("goal_complete rejects contradictory summaries and accepts verified complet
 	assert.equal(isContradictoryCompletionSummary("Was failing before, now passes."), false);
 	assert.equal(isContradictoryCompletionSummary("Coverage was below threshold, now passes."), false);
 
-	const { mock, ctx } = await startGoalForTest();
+	const { mock, ctx, notifications } = await startGoalForTest();
 	const tool = requireGoalTool(mock, "goal_complete");
 	const goalId = requireLastGoal(mock).id;
 
@@ -1900,6 +1900,8 @@ test("goal_complete rejects contradictory summaries and accepts verified complet
 	);
 
 	assert.equal(accepted.terminate, true);
+	assert.equal(accepted.content?.[0]?.text, "Goal complete: Implemented and verified with npm test.");
+	assert.doesNotMatch(notifications.at(-1)?.message ?? "", /^Goal complete:/u);
 	assert.equal(lastGoalStatus(mock), null);
 
 	const noActiveRejected = await tool.execute(

@@ -81,11 +81,16 @@ describe("WelcomeHeaderController", () => {
 		expect(narrow[2]).toContain("~/dev/pi-stuff · 3 context · 24 ext · 30 tools · 77 skills");
 		expect(narrow[3]).toContain("/tools details · /ui appearance · Shift+Tab thinking");
 
+		const minimumNarrow = component.render(48);
+		expect(minimumNarrow[3]).toContain("/tools details · /ui appearance");
+		expect(minimumNarrow[3]).not.toContain("Shift+Tab");
+		expect(minimumNarrow[3]).not.toContain("…");
+
 		const ultraNarrow = component.render(32);
 		expect(ultraNarrow).toHaveLength(3);
 		expect(ultraNarrow[1]).toContain("π Welcome back!");
 		expect(ultraNarrow.join("\n")).not.toMatch(/Loaded|Tips|Context files|recent|version/iu);
-		for (const lines of [wide, narrow, ultraNarrow]) {
+		for (const lines of [wide, narrow, minimumNarrow, ultraNarrow]) {
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(visibleWidth(lines[0] ?? ""));
 		}
 	});
@@ -101,6 +106,18 @@ describe("WelcomeHeaderController", () => {
 		expect(orientation).toContain("~/项/很/验证");
 		expect(orientation).toContain("3 context · 24 ext · 30 tools · 77 skills");
 		expect(visibleWidth(orientation)).toBeLessThanOrEqual(64);
+	});
+
+	test("keeps a hidden intermediate directory identifiable when abbreviating a narrow path", () => {
+		const hiddenCwd = join(homedir(), "dev", "pi-stuff", ".artifacts", "dogfood-0.2.2");
+		const controller = new WelcomeHeaderController(context("gpt-5.6-sol", "openai-codex", hiddenCwd), {
+			enabled: { get: () => true },
+			inventory: new InventorySource(inventory),
+		});
+		const orientation = controller.createHeader(tuiHarness().tui, theme).render(48)[2] ?? "";
+		expect(orientation).toContain("~/d/p/.a/dogfoo");
+		expect(orientation).not.toContain("/./");
+		expect(visibleWidth(orientation)).toBeLessThanOrEqual(48);
 	});
 
 	test("reserves the right column before clipping long Unicode identity fields", () => {
