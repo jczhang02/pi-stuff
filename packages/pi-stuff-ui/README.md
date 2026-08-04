@@ -34,8 +34,10 @@ The cache value is the active branch's cumulative hit rate across successful ass
 rate or cost. A zero denominator, unavailable context, and Thinking for a non-reasoning model are omitted. Subscription
 models omit both cost and the former `(sub)` label.
 
-For `openai-codex`, cost is always replaced by observed weekly allowance. The independently loaded Codex Capability
-publishes that snapshot through `getCodexStatusChannel(pi)`; the Statusline performs no authentication or network work.
+For `openai-codex`, cost is always replaced by observed weekly allowance. When Fast mode is active, `fast` occupies
+its former-footer position between Thinking and the working directory; weekly allowance remains after cache. The
+independently loaded Codex Capability publishes that snapshot through `getCodexStatusChannel(pi)`; the Statusline
+performs no authentication or network work.
 Weekly allowance stays hidden until real data arrives, and `fast` appears only while Fast mode is enabled. The shared
 channel is keyed by Pi's Extension event bus, so late-loaded and physically separate Capability copies still converge
 on one observer identity.
@@ -46,13 +48,15 @@ disappear across branch or cwd changes, and disabling Statusline stops future pr
 active probe collapse into one trailing measurement, so the newest state is not lost and bursts remain bounded.
 
 It reduces lower-priority information at narrow widths and disappears while autocomplete or a Command Dialog owns the
-input area. It does not duplicate Agent, Todo, BTW, Permission, or Tool activity.
+input area. It does not duplicate Agent, Todo, BTW, Goal, MCP, or Tool activity.
 
 ### Welcome header
 
-The startup header shows model and working-directory orientation plus counts available from Pi's public registries. It
-uses a two-column layout at wide widths, a compact stacked layout at narrow widths, and an identity-only layout at
-ultra-narrow widths. It is part of Pi's normal scrollback, not a floating window.
+The startup header follows the observed Claude Code 2.1.197 card geometry while keeping Pi Stuff's own identity and
+content. At 70 columns and above it uses the same fixed 52-cell identity column plus a responsive guidance column. At
+68 columns and below it becomes a centered single-column card and removes guidance and inventory instead of wrapping
+them. On 18-row and 16-row terminals it removes blank rhythm and then provider detail so Pi's editor and Statusline do
+not push the card's top edge out of view. It is part of Pi's normal scrollback, not a floating window.
 
 ### Input enhancements
 
@@ -71,8 +75,8 @@ Pi's native **Hide thinking blocks** setting disabled so the transformed live ro
 
 ## `/ui`
 
-`/ui` opens one searchable Pi-native `SettingsList` inside the shared Command Dialog. In the full Suite it contains
-eight settings:
+`/ui` opens one searchable Pi-native `SettingsList` inside the shared Command Dialog. It owns presentation settings
+only; behavior settings stay with the Capability they affect. In the full Suite it contains eight settings:
 
 | Setting | Effect | Applies |
 | --- | --- | --- |

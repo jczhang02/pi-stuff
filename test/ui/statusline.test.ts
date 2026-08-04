@@ -294,6 +294,10 @@ describe("StatuslineController", () => {
 		expect(active).toContain("cache 99.9%");
 		expect(active).toContain("weekly 63%");
 		expect(active).toContain("fast");
+		expect(active.indexOf("think:med")).toBeLessThan(active.indexOf("fast"));
+		expect(active.indexOf("fast")).toBeLessThan(active.indexOf("dir pi-stuff"));
+		expect(active.indexOf("cache 99.9%")).toBeLessThan(active.indexOf("weekly 63%"));
+		expect(active).not.toContain("weekly 63% · fast");
 		expect(active).not.toContain("18k");
 		expect(active).not.toContain("$0.42");
 

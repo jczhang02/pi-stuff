@@ -3,8 +3,9 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const MAX_DYNAMIC_TEXT_CODE_UNITS = 16 * 1024;
-const NARROW_MIN_WIDTH = 48;
-const WIDE_MIN_WIDTH = 92;
+const MIN_BOX_WIDTH = 13;
+const WIDE_LEFT_COLUMN_WIDTH = 52;
+const WIDE_MIN_WIDTH = 70;
 
 interface WelcomeHeaderToggle {
 	get(): boolean;
@@ -158,138 +159,148 @@ class WelcomeHeaderComponent implements Component {
 		if (renderWidth < 1) return [];
 		const inventory = this.inventory.get();
 		if (renderWidth >= WIDE_MIN_WIDTH) return wideLines(this.ctx, inventory, this.theme, renderWidth);
-		if (renderWidth >= NARROW_MIN_WIDTH) return narrowLines(this.ctx, inventory, this.theme, renderWidth);
-		return ultraNarrowLines(this.ctx, this.theme, renderWidth);
+		return narrowLines(this.ctx, this.theme, renderWidth, terminalRows(this.tui));
 	}
 }
 
 function wideLines(ctx: ExtensionContext, inventory: WelcomeHeaderInventory, theme: Theme, width: number): string[] {
-	const divider = theme.fg("borderMuted", "─".repeat(width));
-	const rightColumn = 42;
-	const title = `  ${theme.fg("accent", theme.bold("π"))}  ${theme.bold("Welcome back!")}`;
-	const model = modelIdentity(ctx, theme, "     ");
-	const path = `     ${theme.fg("muted", displayCwd(ctx))}`;
-	const loaded = theme.fg("muted", theme.bold("Loaded"));
-	const tips = theme.fg("muted", theme.bold("Tips"));
+	const rightWidth = Math.max(1, width - WIDE_LEFT_COLUMN_WIDTH - 3);
+	const logo = piLogo(theme);
+	const rightDivider = theme.fg("borderMuted", "─".repeat(Math.max(0, rightWidth - 2)));
+	const counts = welcomeInventoryLines(inventory, theme);
 	return [
-		divider,
-		joinColumns(title, loaded, rightColumn, width),
-		joinColumns(model, wideInventory(inventory, theme), rightColumn, width),
-		joinColumns(path, tips, rightColumn, width),
-		joinColumns("", tipLine(theme, Math.max(0, width - rightColumn)), rightColumn, width),
-		divider,
+		boxTop(theme, width, "Pi Stuff", true),
+		wideBoxRow(theme, width, "", theme.bold("Tips for getting started")),
+		wideBoxRow(theme, width, theme.bold("Welcome back!"), "Type / to browse commands"),
+		wideBoxRow(theme, width, "", rightDivider),
+		wideBoxRow(theme, width, logo[0] ?? "", theme.bold("Loaded")),
+		wideBoxRow(theme, width, logo[1] ?? "", counts[0] ?? ""),
+		wideBoxRow(theme, width, logo[2] ?? "", counts[1] ?? ""),
+		wideBoxRow(theme, width, "", ""),
+		wideBoxRow(theme, width, modelIdentity(ctx, theme, true), ""),
+		wideBoxRow(theme, width, theme.fg("muted", displayCwd(ctx)), ""),
+		boxBottom(theme, width),
 	];
 }
 
-function narrowLines(ctx: ExtensionContext, inventory: WelcomeHeaderInventory, theme: Theme, width: number): string[] {
-	const divider = theme.fg("borderMuted", "─".repeat(width));
-	const separator = theme.fg("dim", " · ");
-	const identity = [
-		`  ${theme.fg("accent", theme.bold("π"))} ${theme.bold("Welcome back!")}`,
-		modelIdentity(ctx, theme),
-	]
-		.filter(Boolean)
-		.join(separator);
-	const orientation = narrowOrientation(ctx, inventory, theme, width, separator);
+function narrowLines(ctx: ExtensionContext, theme: Theme, width: number, rows: number | undefined): string[] {
+	if (width < MIN_BOX_WIDTH) return [clip(theme.bold("Pi Stuff"), width)];
+	const logo = piLogo(theme);
+	const provider = sanitizeOneLine(ctx.model?.provider ?? "");
+	if (rows !== undefined && rows <= 16) {
+		return [
+			boxTop(theme, width, "Pi Stuff", false),
+			boxRow(theme, width, theme.bold("Welcome back!")),
+			boxRow(theme, width, ""),
+			boxRow(theme, width, logo[0] ?? ""),
+			boxRow(theme, width, logo[1] ?? ""),
+			boxRow(theme, width, logo[2] ?? ""),
+			boxRow(theme, width, modelIdentity(ctx, theme, false)),
+			boxRow(theme, width, theme.fg("muted", abbreviatePath(displayCwd(ctx)))),
+			boxRow(theme, width, ""),
+			boxBottom(theme, width),
+		];
+	}
+	if (rows !== undefined && rows <= 18) {
+		return [
+			boxTop(theme, width, "Pi Stuff", false),
+			boxRow(theme, width, theme.bold("Welcome back!")),
+			boxRow(theme, width, ""),
+			boxRow(theme, width, logo[0] ?? ""),
+			boxRow(theme, width, logo[1] ?? ""),
+			boxRow(theme, width, logo[2] ?? ""),
+			boxRow(theme, width, ""),
+			boxRow(theme, width, modelIdentity(ctx, theme, false)),
+			boxRow(theme, width, provider ? theme.fg("muted", provider) : ""),
+			boxRow(theme, width, theme.fg("muted", abbreviatePath(displayCwd(ctx)))),
+			boxRow(theme, width, ""),
+			boxBottom(theme, width),
+		];
+	}
 	return [
-		divider,
-		clip(identity, width),
-		clip(orientation, width),
-		`  ${tipLine(theme, Math.max(0, width - 2))}`,
-		divider,
+		boxTop(theme, width, "Pi Stuff", false),
+		boxRow(theme, width, ""),
+		boxRow(theme, width, theme.bold("Welcome back!")),
+		boxRow(theme, width, ""),
+		boxRow(theme, width, logo[0] ?? ""),
+		boxRow(theme, width, logo[1] ?? ""),
+		boxRow(theme, width, logo[2] ?? ""),
+		boxRow(theme, width, ""),
+		boxRow(theme, width, modelIdentity(ctx, theme, false)),
+		boxRow(theme, width, provider ? theme.fg("muted", provider) : ""),
+		boxRow(theme, width, theme.fg("muted", abbreviatePath(displayCwd(ctx)))),
+		boxRow(theme, width, ""),
+		boxBottom(theme, width),
 	];
 }
 
-function narrowOrientation(
-	ctx: ExtensionContext,
-	inventory: WelcomeHeaderInventory,
-	theme: Theme,
-	width: number,
-	separator: string,
-): string {
-	const gutter = "  ";
-	const available = Math.max(1, width - visibleWidth(gutter));
-	const path = abbreviatePath(displayCwd(ctx));
-	const minimumPathWidth = Math.min(12, Math.max(1, available - visibleWidth(separator) - 1));
-	const inventoryCandidates = [compactInventory(inventory, theme), terseInventory(inventory, theme)] as const;
-	const inventoryText =
-		inventoryCandidates.find(
-			(candidate) => visibleWidth(candidate) <= available - visibleWidth(separator) - minimumPathWidth,
-		) ?? inventoryCandidates[1];
-	const inventoryWidth = Math.min(
-		visibleWidth(inventoryText),
-		Math.max(1, available - visibleWidth(separator) - minimumPathWidth),
-	);
-	const pathWidth = Math.max(1, available - visibleWidth(separator) - inventoryWidth);
-	return `${gutter}${theme.fg("muted", truncateToWidth(path, pathWidth, "…"))}${separator}${truncateToWidth(
-		inventoryText,
-		inventoryWidth,
-		"…",
+function terminalRows(tui: TUI): number | undefined {
+	const rows = (tui as unknown as { terminal?: { rows?: unknown } }).terminal?.rows;
+	return typeof rows === "number" && Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : undefined;
+}
+
+function boxTop(theme: Theme, width: number, title: string, wide: boolean): string {
+	const leading = wide ? "───" : "─";
+	const titleText = ` ${title} `;
+	const remaining = Math.max(0, width - visibleWidth(leading) - visibleWidth(titleText) - 2);
+	return `${theme.fg("borderMuted", `╭${leading}`)}${theme.bold(titleText)}${theme.fg(
+		"borderMuted",
+		`${"─".repeat(remaining)}╮`,
 	)}`;
 }
 
-function ultraNarrowLines(ctx: ExtensionContext, theme: Theme, width: number): string[] {
-	const divider = theme.fg("borderMuted", "─".repeat(width));
-	const model = sanitizeOneLine(ctx.model?.id ?? "");
-	const identity =
-		theme.fg("accent", theme.bold("π")) +
-		` ${theme.bold("Welcome back!")}` +
-		(model ? `${theme.fg("dim", " · ")}${theme.fg("accent", model)}` : "");
-	return [divider, clip(identity, width), divider];
+function boxBottom(theme: Theme, width: number): string {
+	return theme.fg("borderMuted", `╰${"─".repeat(Math.max(0, width - 2))}╯`);
 }
 
-function modelIdentity(ctx: ExtensionContext, theme: Theme, prefix = ""): string {
-	const model = sanitizeOneLine(ctx.model?.id ?? "");
+function boxRow(theme: Theme, width: number, content: string): string {
+	const interiorWidth = Math.max(0, width - 2);
+	return `${theme.fg("borderMuted", "│")}${centerCell(content, interiorWidth)}${theme.fg("borderMuted", "│")}`;
+}
+
+function wideBoxRow(theme: Theme, width: number, left: string, right: string): string {
+	const rightWidth = Math.max(0, width - WIDE_LEFT_COLUMN_WIDTH - 3);
+	return `${theme.fg("borderMuted", "│")}${centerCell(left, WIDE_LEFT_COLUMN_WIDTH, 3)}${theme.fg(
+		"borderMuted",
+		"│",
+	)}${startCell(right, rightWidth)}${theme.fg("borderMuted", "│")}`;
+}
+
+function centerCell(content: string, width: number, minimumInset = 0): string {
+	const inset = Math.min(Math.max(0, minimumInset), Math.floor(Math.max(0, width) / 2));
+	const fitted = truncateToWidth(content, Math.max(0, width - inset * 2), "…");
+	const padding = Math.max(0, width - visibleWidth(fitted));
+	const left = Math.floor(padding / 2);
+	return `${" ".repeat(left)}${fitted}${" ".repeat(padding - left)}`;
+}
+
+function startCell(content: string, width: number): string {
+	if (width < 1) return "";
+	const fitted = truncateToWidth(content, Math.max(0, width - 2), "…");
+	const line = ` ${fitted}`;
+	return `${line}${" ".repeat(Math.max(0, width - visibleWidth(line)))}`;
+}
+
+function piLogo(theme: Theme): readonly [string, string, string] {
+	return [
+		theme.fg("accent", theme.bold("▐███████▌")),
+		theme.fg("accent", theme.bold("  ██ ██  ")),
+		theme.fg("accent", theme.bold("  ▀▀ ▀▀  ")),
+	];
+}
+
+function welcomeInventoryLines(inventory: WelcomeHeaderInventory, theme: Theme): readonly [string, string] {
+	const context = inventory.contextFiles === undefined ? undefined : `${String(inventory.contextFiles)} context`;
+	const first = [context, `${String(inventory.extensions)} extensions`].filter(Boolean).join(" · ");
+	const second = `${String(inventory.tools)} tools · ${String(inventory.skills)} skills`;
+	return [theme.fg("muted", first), theme.fg("muted", second)];
+}
+
+function modelIdentity(ctx: ExtensionContext, theme: Theme, includeProvider: boolean): string {
+	const model = sanitizeOneLine(ctx.model?.name ?? ctx.model?.id ?? "").replace(/^Claude\s+/u, "");
 	if (!model) return "";
 	const provider = sanitizeOneLine(ctx.model?.provider ?? "");
-	return `${prefix}${theme.fg("accent", model)}${provider ? theme.fg("dim", ` · ${provider}`) : ""}`;
-}
-
-function wideInventory(inventory: WelcomeHeaderInventory, theme: Theme): string {
-	const segments: string[] = [];
-	if (inventory.contextFiles !== undefined) {
-		segments.push(`${theme.fg("text", "Context files")} ${theme.fg("accent", String(inventory.contextFiles))}`);
-	}
-	segments.push(`${theme.fg("text", "Extensions")} ${theme.fg("accent", String(inventory.extensions))}`);
-	segments.push(`${theme.fg("text", "Tools")} ${theme.fg("accent", String(inventory.tools))}`);
-	segments.push(`${theme.fg("text", "Skills")} ${theme.fg("accent", String(inventory.skills))}`);
-	return segments.join(theme.fg("dim", " · "));
-}
-
-function compactInventory(inventory: WelcomeHeaderInventory, theme: Theme): string {
-	const segments: string[] = [];
-	if (inventory.contextFiles !== undefined) {
-		segments.push(`${theme.fg("accent", String(inventory.contextFiles))} ${theme.fg("muted", "context")}`);
-	}
-	segments.push(`${theme.fg("accent", String(inventory.extensions))} ${theme.fg("muted", "ext")}`);
-	segments.push(`${theme.fg("accent", String(inventory.tools))} ${theme.fg("muted", "tools")}`);
-	segments.push(`${theme.fg("accent", String(inventory.skills))} ${theme.fg("muted", "skills")}`);
-	return segments.join(theme.fg("dim", " · "));
-}
-
-function terseInventory(inventory: WelcomeHeaderInventory, theme: Theme): string {
-	const segments: string[] = [];
-	if (inventory.contextFiles !== undefined) segments.push(theme.fg("accent", `${String(inventory.contextFiles)}c`));
-	segments.push(theme.fg("accent", `${String(inventory.extensions)}e`));
-	segments.push(theme.fg("accent", `${String(inventory.tools)}t`));
-	segments.push(theme.fg("accent", `${String(inventory.skills)}s`));
-	return segments.join(theme.fg("dim", " · "));
-}
-
-function tipLine(theme: Theme, width: number): string {
-	const actions = [
-		`${theme.fg("accent", "/tools")} ${theme.fg("muted", "details")}`,
-		`${theme.fg("accent", "/ui")} ${theme.fg("muted", "appearance")}`,
-		`${theme.fg("accent", "Shift+Tab")} ${theme.fg("muted", "thinking")}`,
-	];
-	const separator = theme.fg("dim", " · ");
-	const selected: string[] = [];
-	for (const action of actions) {
-		const candidate = [...selected, action].join(separator);
-		if (visibleWidth(candidate) > width) break;
-		selected.push(action);
-	}
-	return selected.join(separator);
+	return `${theme.fg("accent", model)}${includeProvider && provider ? theme.fg("dim", ` · ${provider}`) : ""}`;
 }
 
 function displayCwd(ctx: ExtensionContext): string {
@@ -313,17 +324,6 @@ function abbreviatedPathPiece(value: string): string {
 
 function firstGrapheme(value: string): string {
 	return GRAPHEME_SEGMENTER.segment(value)[Symbol.iterator]().next().value?.segment ?? "";
-}
-
-function joinColumns(left: string, right: string, startColumn: number, width: number): string {
-	if (!right) return clip(left, width);
-	const normalizedWidth = Math.max(1, Math.floor(width));
-	const rightStart = Math.min(Math.max(1, startColumn), Math.max(1, normalizedWidth - 1));
-	const leftBudget = Math.max(0, rightStart - 2);
-	const fittedLeft = truncateToWidth(left, leftBudget, "…");
-	const gap = " ".repeat(Math.max(1, rightStart - visibleWidth(fittedLeft)));
-	const rightBudget = Math.max(0, normalizedWidth - visibleWidth(fittedLeft) - visibleWidth(gap));
-	return `${fittedLeft}${gap}${truncateToWidth(right, rightBudget, "…")}`;
 }
 
 function clip(line: string, width: number): string {
@@ -397,7 +397,9 @@ function stripTerminalControls(value: string): string {
 	return text;
 }
 
-const GRAPHEME_SEGMENTER = new Intl.Segmenter("und", { granularity: "grapheme" });
+const GRAPHEME_SEGMENTER = new Intl.Segmenter("und", {
+	granularity: "grapheme",
+});
 
 function skipControlSequence(value: string, start: number): number {
 	let index = start;

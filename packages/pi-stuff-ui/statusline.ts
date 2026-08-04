@@ -685,7 +685,17 @@ class StatuslineFooter implements Component {
 	}
 }
 
-type StatusSegmentId = "model" | "thinking" | "cwd" | "git" | "context" | "cache" | "cost" | "codex" | "extension";
+type StatusSegmentId =
+	| "model"
+	| "thinking"
+	| "fast"
+	| "cwd"
+	| "git"
+	| "context"
+	| "cache"
+	| "cost"
+	| "codex"
+	| "extension";
 
 interface StatusSegment {
 	readonly compact: string;
@@ -729,6 +739,9 @@ function renderStatusline(
 		const thinking = theme.fg(thinkingColor(thinkingLevel), `think:${formatThinking(thinkingLevel)}`);
 		segments.push(statusSegment("thinking", 4, thinking));
 	}
+	if (ctx.model?.provider === "openai-codex" && codexStatus?.fastEnabled === true) {
+		segments.push(statusSegment("fast", 5, theme.fg("accent", "fast")));
+	}
 	const cwd = readCwd(ctx);
 	const cwdSegment = theme.fg("accent", withIcon(icons.folder, basename(cwd) || cwd));
 	segments.push(statusSegment("cwd", 3, cwdSegment));
@@ -742,17 +755,17 @@ function renderStatusline(
 	const cacheHitRate = formatCacheHitRate(usage);
 	if (cacheHitRate) {
 		const cache = theme.fg("muted", [icons.cache, cacheHitRate].filter(Boolean).join(" "));
-		segments.push(statusSegment("cache", 6, cache));
+		segments.push(statusSegment("cache", 7, cache));
 	}
 	if (ctx.model?.provider === "openai-codex") {
-		const codex = formatCodexStatus(codexStatus);
-		if (codex) segments.push(statusSegment("codex", 5, theme.fg("text", codex)));
+		const weekly = formatCodexWeekly(codexStatus);
+		if (weekly) segments.push(statusSegment("codex", 6, theme.fg("text", weekly)));
 	} else if (usage.cost > 0 && shouldShowCost(ctx)) {
-		segments.push(statusSegment("cost", 5, theme.fg("text", `$${usage.cost.toFixed(2)}`)));
+		segments.push(statusSegment("cost", 6, theme.fg("text", `$${usage.cost.toFixed(2)}`)));
 	}
 
 	const extensionStatusSegment = renderExtensionStatusSegment(theme, statuses, extensionStatusKeys);
-	if (extensionStatusSegment) segments.push(statusSegment("extension", 7, extensionStatusSegment));
+	if (extensionStatusSegment) segments.push(statusSegment("extension", 8, extensionStatusSegment));
 
 	const status = renderStatusRows(segments, width, theme, preferences.density);
 	const promptRows =
@@ -1169,14 +1182,12 @@ function readCodexStatus(
 	}
 }
 
-function formatCodexStatus(snapshot: CodexStatusSnapshot | undefined): string | undefined {
+function formatCodexWeekly(snapshot: CodexStatusSnapshot | undefined): string | undefined {
 	if (!snapshot) return undefined;
 	const weekly = snapshot.weeklyRemainingPercent;
-	const weeklyText =
-		typeof weekly === "number" && Number.isFinite(weekly)
-			? `weekly ${String(Math.round(Math.max(0, Math.min(100, weekly))))}%`
-			: undefined;
-	return [weeklyText, snapshot.fastEnabled ? "fast" : undefined].filter(Boolean).join(" · ") || undefined;
+	return typeof weekly === "number" && Number.isFinite(weekly)
+		? `weekly ${String(Math.round(Math.max(0, Math.min(100, weekly))))}%`
+		: undefined;
 }
 
 function shouldShowCost(ctx: ExtensionContext): boolean {

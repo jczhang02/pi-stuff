@@ -23,7 +23,9 @@ These instructions apply only while developing this repository. This file is not
 
 - Use Claude Code as the primary visible-behavior reference and Pi's native interaction grammar as the Host constraint. Reproduce the useful hierarchy, density, and lifecycle rather than copying source code or introducing another shell.
 - Temporary focused surfaces are full-width, non-floating Command Dialogs. Settings use Pi's native SettingsList and keyboard behavior.
-- Use Pi semantic theme tokens only. Never hard-code a personal theme, ANSI palette, or package-specific decorative frame.
+- Use Pi semantic theme tokens only. Never hard-code a personal theme, ANSI palette, or decorative frame for a focused
+  Capability surface. The confirmed Claude-style bordered Welcome card is the sole exception: it is scrollable startup
+  identity inside the conversation document, not a modal, overlay, or permanent Package dashboard.
 - Preserve the conversation-first layout: reduce or omit lower-priority information at narrow widths before allowing overlap, stale chrome, editor displacement, or unbounded growth.
 - Focus, Escape, draft, footer, working row, Todo widget, and Agent roster restoration are one deterministic cross-Capability contract.
 - Keep information at one authority. Do not duplicate Todo, Agent, BTW, Permission, or Tool state in the Statusline or another permanent dashboard.
