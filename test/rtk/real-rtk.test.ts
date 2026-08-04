@@ -6,7 +6,7 @@ import {
 	RtkRuntime,
 } from "../../packages/pi-stuff-rtk/runtime.js";
 
-const localRtk = process.env.RTK_BIN?.trim() || Bun.which("rtk") || "";
+const localRtk = process.env["RTK_BIN"]?.trim() || Bun.which("rtk") || "";
 
 async function execute(command: string, args: string[], options: { timeout?: number } = {}) {
 	if (command === "which") {
