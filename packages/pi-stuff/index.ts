@@ -5,6 +5,7 @@ import piStuffAgents from "@jczhang02/pi-stuff-agents";
 import piStuffBtw from "@jczhang02/pi-stuff-btw";
 import piStuffCodex from "@jczhang02/pi-stuff-codex";
 import piStuffContext from "@jczhang02/pi-stuff-context";
+import piStuffGoal from "@jczhang02/pi-stuff-goal";
 import piStuffRtk from "@jczhang02/pi-stuff-rtk";
 import piStuffTodo from "@jczhang02/pi-stuff-todo";
 import piStuffTools from "@jczhang02/pi-stuff-tools";
@@ -17,6 +18,7 @@ const CAPABILITIES: readonly CapabilityFactory[] = [
 	piStuffTools,
 	piStuffRtk,
 	piStuffCodex,
+	piStuffGoal,
 	piStuffContext,
 	piStuffAgents,
 	piStuffTodo,

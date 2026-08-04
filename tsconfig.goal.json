@@ -1,0 +1,11 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"exactOptionalPropertyTypes": false,
+		"noPropertyAccessFromIndexSignature": false,
+		"paths": {
+			"@jczhang02/pi-stuff-ui": ["./packages/pi-stuff-ui/index.ts"]
+		}
+	},
+	"include": ["packages/pi-stuff-goal/**/*.ts"]
+}

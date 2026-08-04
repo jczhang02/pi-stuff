@@ -58,6 +58,8 @@ const packagePaths = [
 	"pi-stuff-ui",
 	"pi-stuff-tools",
 	"pi-stuff-rtk",
+	"pi-stuff-codex",
+	"pi-stuff-goal",
 	"pi-stuff-context",
 	"pi-stuff-agents",
 	"pi-stuff-todo",

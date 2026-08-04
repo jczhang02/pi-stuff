@@ -24,7 +24,12 @@ export {
 	type CodexStatusChannel,
 	type CodexStatusSnapshot,
 	type CodexStatusSource,
+	type GoalStatus,
+	type GoalStatusChannel,
+	type GoalStatusSnapshot,
+	type GoalStatusSource,
 	getCodexStatusChannel,
+	getGoalStatusChannel,
 } from "./statusline.js";
 
 export type CommandDialogPriority = "blocking" | "normal";

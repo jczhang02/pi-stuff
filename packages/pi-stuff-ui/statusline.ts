@@ -68,7 +68,27 @@ export interface CodexStatusChannel {
 	publish(snapshot: CodexStatusSnapshot): void;
 }
 
+export type GoalStatus = "active" | "paused" | "blocked" | "usage_limited" | "budget_limited" | "complete";
+
+export interface GoalStatusSnapshot {
+	readonly status: GoalStatus;
+	readonly tokenBudget?: number;
+	readonly tokensUsed: number;
+}
+
+export interface GoalStatusSource {
+	getSnapshot(): GoalStatusSnapshot | undefined;
+	subscribe(listener: () => void): () => void;
+}
+
+export interface GoalStatusChannel {
+	readonly source: GoalStatusSource;
+	clear(): void;
+	publish(snapshot: GoalStatusSnapshot): void;
+}
+
 const CODEX_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/codex-status-channels/v1");
+const GOAL_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/goal-status-channels/v1");
 
 class SharedCodexStatusChannel implements CodexStatusChannel, CodexStatusSource {
 	private readonly listeners = new Set<() => void>();
@@ -128,6 +148,66 @@ export function getCodexStatusChannel(pi: Pick<ExtensionAPI, "events">): CodexSt
 	return channel;
 }
 
+class SharedGoalStatusChannel implements GoalStatusChannel, GoalStatusSource {
+	private readonly listeners = new Set<() => void>();
+	private snapshot: GoalStatusSnapshot | undefined;
+	readonly source: GoalStatusSource = this;
+
+	clear(): void {
+		this.setSnapshot(undefined);
+	}
+
+	getSnapshot(): GoalStatusSnapshot | undefined {
+		return this.snapshot;
+	}
+
+	publish(snapshot: GoalStatusSnapshot): void {
+		if (!isGoalStatus(snapshot.status)) return;
+		const tokensUsed = finiteNonNegative(snapshot.tokensUsed);
+		const tokenBudget = finitePositive(snapshot.tokenBudget);
+		this.setSnapshot({
+			status: snapshot.status,
+			tokensUsed,
+			...(tokenBudget === undefined ? {} : { tokenBudget }),
+		});
+	}
+
+	subscribe(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
+
+	private setSnapshot(next: GoalStatusSnapshot | undefined): void {
+		if (
+			this.snapshot?.status === next?.status &&
+			this.snapshot?.tokensUsed === next?.tokensUsed &&
+			this.snapshot?.tokenBudget === next?.tokenBudget
+		) {
+			return;
+		}
+		this.snapshot = next;
+		for (const listener of this.listeners) callObserver(listener);
+	}
+}
+
+function goalStatusChannels(): WeakMap<ExtensionAPI["events"], GoalStatusChannel> {
+	const root = globalThis as unknown as {
+		[key: symbol]: WeakMap<ExtensionAPI["events"], GoalStatusChannel> | undefined;
+	};
+	root[GOAL_STATUS_CHANNELS] ??= new WeakMap();
+	return root[GOAL_STATUS_CHANNELS];
+}
+
+/** Share one observation-only Goal presentation channel across Capability copies. */
+export function getGoalStatusChannel(pi: Pick<ExtensionAPI, "events">): GoalStatusChannel {
+	const channels = goalStatusChannels();
+	const existing = channels.get(pi.events);
+	if (existing) return existing;
+	const channel = new SharedGoalStatusChannel();
+	channels.set(pi.events, channel);
+	return channel;
+}
+
 export type StatuslineDensity = "auto" | "full" | "compact";
 export type StatuslineIconMode = "auto" | "nerd" | "ascii";
 
@@ -162,6 +242,7 @@ interface SharedStatuslineControllerOptions {
 	readonly codexStatus?: CodexStatusSource;
 	readonly extensionStatusKeys?: readonly string[];
 	readonly gitChanges?: GitChangeCountsSource;
+	readonly goalStatus?: GoalStatusSource;
 }
 
 export type StatuslineControllerOptions = SharedStatuslineControllerOptions &
@@ -405,6 +486,7 @@ export class StatuslineController {
 		if (this.options.autocompleteVisible) subscribeObserver(this.options.autocompleteVisible, notify, unsubscribe);
 		if (this.options.codexStatus) subscribeObserver(this.options.codexStatus, notify, unsubscribe);
 		if (this.options.gitChanges) subscribeObserver(this.options.gitChanges, notify, unsubscribe);
+		if (this.options.goalStatus) subscribeObserver(this.options.goalStatus, notify, unsubscribe);
 		return () => {
 			for (const remove of unsubscribe.splice(0)) callObserver(remove);
 		};
@@ -427,6 +509,7 @@ export class StatuslineController {
 			this.options.extensionStatusKeys ?? DEFAULT_EXTENSION_STATUS_KEYS,
 			sessionStatus,
 			readCodexStatus(ctx, this.options.codexStatus),
+			readGoalStatus(this.options.goalStatus),
 			renderWidth,
 			preferences,
 		);
@@ -634,6 +717,7 @@ function renderStatusline(
 	extensionStatusKeys: readonly string[],
 	sessionStatus: SessionStatusSnapshot,
 	codexStatus: CodexStatusSnapshot | undefined,
+	goalStatus: GoalStatusSnapshot | undefined,
 	width: number,
 	preferences: StatuslinePreferences,
 ): string[] {
@@ -671,7 +755,12 @@ function renderStatusline(
 		segments.push(statusSegment("cost", 5, theme.fg("text", `$${usage.cost.toFixed(2)}`)));
 	}
 
-	const extensionStatusSegment = renderExtensionStatusSegment(theme, statuses, extensionStatusKeys);
+	const extensionStatusSegment = renderExtensionStatusSegment(
+		theme,
+		statuses,
+		extensionStatusKeys,
+		formatGoalStatus(goalStatus),
+	);
 	if (extensionStatusSegment) segments.push(statusSegment("extension", 7, extensionStatusSegment));
 
 	const status = renderStatusRows(segments, width, theme, preferences.density);
@@ -781,9 +870,14 @@ function renderExtensionStatusSegment(
 	theme: Theme,
 	statuses: ReadonlyMap<string, string>,
 	keys: readonly string[],
+	goalStatus?: string,
 ): string | undefined {
 	const selected: string[] = [];
 	const seen = new Set<string>();
+	if (goalStatus) {
+		selected.push(goalStatus);
+		seen.add(goalStatus);
+	}
 	for (const key of keys) {
 		const status = sanitizeOneLine(statuses.get(key) ?? "");
 		if (!status || status.startsWith("[") || seen.has(status)) continue;
@@ -791,6 +885,44 @@ function renderExtensionStatusSegment(
 		selected.push(status);
 	}
 	return selected.length > 0 ? theme.fg("muted", selected.join(" · ")) : undefined;
+}
+
+function readGoalStatus(source: GoalStatusSource | undefined): GoalStatusSnapshot | undefined {
+	try {
+		return source?.getSnapshot();
+	} catch {
+		return undefined;
+	}
+}
+
+function formatGoalStatus(snapshot: GoalStatusSnapshot | undefined): string | undefined {
+	if (!snapshot) return undefined;
+	if (snapshot.status === "active") {
+		return snapshot.tokenBudget === undefined
+			? "goal"
+			: `goal ${compactTokenCount(snapshot.tokensUsed)}/${compactTokenCount(snapshot.tokenBudget)}`;
+	}
+	if (snapshot.status === "usage_limited") return "goal:usage";
+	if (snapshot.status === "budget_limited") return "goal:budget";
+	return `goal:${snapshot.status}`;
+}
+
+function compactTokenCount(value: number): string {
+	if (value >= 1_000_000) return `${String(Math.round(value / 100_000) / 10)}m`;
+	if (value >= 1_000) return `${String(Math.round(value / 100) / 10)}k`;
+	return String(Math.round(value));
+}
+
+function finiteNonNegative(value: number): number {
+	return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function finitePositive(value: number | undefined): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function isGoalStatus(value: unknown): value is GoalStatus {
+	return ["active", "paused", "blocked", "usage_limited", "budget_limited", "complete"].includes(String(value));
 }
 
 function renderStatusRows(
