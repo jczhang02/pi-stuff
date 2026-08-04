@@ -24,9 +24,23 @@ interface LogRecord {
 	readonly tools?: unknown;
 }
 
+interface PersistedSessionEntry {
+	readonly customType?: unknown;
+	readonly data?: unknown;
+	readonly type?: unknown;
+}
+
+interface PersistedOutcome {
+	readonly [key: string]: unknown;
+	readonly count?: unknown;
+	readonly key?: unknown;
+	readonly status?: unknown;
+	readonly version?: unknown;
+}
+
 function expectProgram(): string {
 	return `
-set timeout 35
+set timeout 40
 
 proc must_expect {pattern} {
     expect {
@@ -44,7 +58,7 @@ proc must_expect {pattern} {
 
 spawn -noecho script -qefc $env(PI_STUFF_AGENTS_PTY_RUNNER) /dev/null
 must_expect "MAIN_NOT_BLOCKED"
-must_expect "MAIN_SAW_DIRECT_SUMMARY"
+must_expect "inspect with /agents"
 after 200
 send -- "/agents\\r"
 must_expect "↑/↓ navigate · Enter inspect"
@@ -56,14 +70,10 @@ for {set index 0} {$index < 12} {incr index} {
     after 20
 }
 must_expect "AGENT_TOOL_RESULT"
+must_expect "CHILD_FINAL_SUMMARY"
 send -- "\\033"
 must_expect "↑/↓ navigate · Enter inspect"
 send -- "\\033"
-after 200
-send -- "DRAFT_RESTORED"
-must_expect "DRAFT_RESTORED"
-send -- "\\025"
-send -- "\\003"
 after 200
 send -- "\\004"
 expect {
@@ -71,6 +81,33 @@ expect {
     timeout {
         puts stderr "Timed out waiting for Pi to exit"
         exit 4
+    }
+}
+
+set env(PI_STUFF_AGENTS_PTY_RESUME) 1
+spawn -noecho script -qefc $env(PI_STUFF_AGENTS_PTY_RUNNER) /dev/null
+must_expect "inspect with /agents"
+send -- "/agents\\r"
+must_expect "↑/↓ navigate · Enter inspect"
+send -- "\\r"
+must_expect "Agents / general-purpose"
+must_expect "Transcript"
+for {set index 0} {$index < 12} {incr index} {
+    send -- "\\033\\[B"
+    after 20
+}
+must_expect "AGENT_TOOL_RESULT"
+must_expect "CHILD_FINAL_SUMMARY"
+send -- "\\033"
+must_expect "↑/↓ navigate · Enter inspect"
+send -- "\\033"
+after 200
+send -- "\\004"
+expect {
+    eof {}
+    timeout {
+        puts stderr "Timed out waiting for resumed Pi to exit"
+        exit 5
     }
 }
 `;
@@ -120,6 +157,14 @@ function verifyHostVersion(piBinary: string): void {
 	}
 }
 
+function git(cwd: string, args: readonly string[]): string {
+	const result = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+	if (result.exitCode !== 0) {
+		fail(`git ${args.join(" ")} failed: ${result.stderr.toString().trim()}`);
+	}
+	return result.stdout.toString().trim();
+}
+
 function stripTerminalControls(output: string): string {
 	let visible = "";
 	for (let index = 0; index < output.length; index++) {
@@ -166,17 +211,26 @@ function verifyTerminalOutput(output: string, columns: number): void {
 		"AGENT_PTY_TASK",
 		"中文长任务",
 		"Agents / general-purpose",
-		"DRAFT_RESTORED",
-		"Agent general-purpose completed.",
+		"Agent finished",
+		"inspect with /agents",
 		"CHILD_FINAL_SUMMARY",
-		"MAIN_SAW_DIRECT_SUMMARY",
 		"● Read agent-tool-target.txt · completed",
 		"AGENT_TOOL_RESULT",
 	]) {
 		if (!visible.includes(required)) fail(`terminal output is missing ${required}`);
 	}
 	if (!visible.includes("─".repeat(columns))) fail(`Agent dialog did not render a ${columns}-column divider`);
-	for (const forbidden of ["Fleet", "latest action", "statusline", "╭", "╮", "╰", "╯"]) {
+	for (const forbidden of [
+		"Fleet",
+		"latest action",
+		"statusline",
+		"UNSOLICITED_MAIN_TURN",
+		"MAIN_SAW_DIRECT_SUMMARY",
+		"╭",
+		"╮",
+		"╰",
+		"╯",
+	]) {
 		if (visible.includes(forbidden)) fail(`terminal output exposed forbidden UI: ${forbidden}`);
 	}
 	if (
@@ -193,14 +247,23 @@ function verifyTerminalOutput(output: string, columns: number): void {
 
 function verifyRequests(records: readonly LogRecord[]): void {
 	const requests = records.filter((record) => record.kind === "request");
-	const launch = requests.find((record) => record.role === "main" && record.phase === "launch");
-	const continued = requests.find((record) => record.role === "main" && record.phase === "continued");
-	const child = requests.find((record) => record.role === "child" && record.phase === "child");
+	const mainRequests = requests.filter((record) => record.role === "main");
+	const launch = mainRequests.find((record) => record.phase === "launch");
+	const continued = mainRequests.find((record) => record.phase === "continued");
+	const childRequests = requests.filter((record) => record.role === "child" && record.phase === "child");
+	const child = childRequests[0];
 	const completion = requests.find((record) => record.role === "main" && record.phase === "completion");
 	const childFinished = records.find((record) => record.kind === "child-finished");
-	if (!launch || !continued || !child || !completion || !childFinished) {
-		fail("provider did not observe launch, non-blocking continuation, child, completion, and finish phases");
+	if (!launch || !continued || !child || !childFinished) {
+		fail("provider did not observe launch, non-blocking continuation, child, and finish phases");
 	}
+	if (completion || mainRequests.some((record) => record.completion === true)) {
+		fail("background completion triggered an unsolicited main-model turn");
+	}
+	if (mainRequests.length !== 2) {
+		fail(`expected exactly two main-model requests; received ${String(mainRequests.length)}`);
+	}
+	if (childRequests.length < 2) fail("the child did not complete its Tool call and final report turns");
 	if (launch.lastUser !== "launch one background general-purpose Agent") {
 		fail("main launch prompt was not observed");
 	}
@@ -210,7 +273,6 @@ function verifyRequests(records: readonly LogRecord[]): void {
 	if (typeof child.lastUser !== "string" || !child.lastUser.includes("AGENT_PTY_TASK")) {
 		fail("the general-purpose child did not receive its task");
 	}
-	if (completion.completion !== true) fail("the completion turn did not contain the direct child summary");
 	const continuedAt = number(continued.at);
 	const childFinishedAt = number(childFinished.at);
 	if (continuedAt === undefined || childFinishedAt === undefined || continuedAt >= childFinishedAt) {
@@ -223,10 +285,17 @@ export async function verifyAgentsPty(options: AgentsPtyVerificationOptions): Pr
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-agents-pty-"));
 	const configDirectory = join(temporaryDirectory, "config");
 	const agentsDirectory = join(configDirectory, "agents");
-	const sessionDirectory = join(temporaryDirectory, "sessions");
+	const runtimeDirectory = join(temporaryDirectory, "runtime");
+	const sessionDirectory = join(configDirectory, "sessions", "pty-project");
+	const workspaceDirectory = join(temporaryDirectory, "workspace");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
-	await Promise.all([mkdir(agentsDirectory, { recursive: true }), mkdir(sessionDirectory)]);
-	await writeFile(join(temporaryDirectory, "agent-tool-target.txt"), "AGENT_TOOL_RESULT\n", { mode: 0o600 });
+	await Promise.all([
+		mkdir(agentsDirectory, { recursive: true }),
+		mkdir(runtimeDirectory),
+		mkdir(sessionDirectory, { recursive: true }),
+		mkdir(workspaceDirectory),
+	]);
+	await writeFile(join(workspaceDirectory, "agent-tool-target.txt"), "AGENT_TOOL_RESULT\n", { mode: 0o600 });
 	await writeFile(
 		join(agentsDirectory, "general-purpose.md"),
 		`---
@@ -242,10 +311,16 @@ Return the deterministic fixture result.
 `,
 		{ mode: 0o600 },
 	);
+	git(workspaceDirectory, ["init", "--quiet"]);
+	git(workspaceDirectory, ["config", "user.name", "Pi Stuff PTY"]);
+	git(workspaceDirectory, ["config", "user.email", "pty@invalid.example"]);
+	git(workspaceDirectory, ["config", "commit.gpgsign", "false"]);
+	git(workspaceDirectory, ["add", "agent-tool-target.txt"]);
+	git(workspaceDirectory, ["commit", "--quiet", "-m", "test: seed read-only Agent fixture"]);
 
 	try {
 		const result = Bun.spawnSync(["expect", "-c", expectProgram()], {
-			cwd: temporaryDirectory,
+			cwd: workspaceDirectory,
 			env: {
 				...process.env,
 				MAGIC_CONTEXT_PI_SUBAGENT: "1",
@@ -261,7 +336,7 @@ Return the deterministic fixture result.
 				PI_STUFF_AGENTS_PTY_SESSIONS: sessionDirectory,
 				PI_STUFF_AGENTS_PTY_SESSION_ID: `agents-pty-${options.columns}x${options.rows}`,
 				TERM: "xterm-256color",
-				TMPDIR: temporaryDirectory,
+				TMPDIR: runtimeDirectory,
 			},
 			stdout: "pipe",
 			stderr: "pipe",
@@ -283,20 +358,62 @@ Return the deterministic fixture result.
 			.filter(Boolean)
 			.map((line) => JSON.parse(line) as LogRecord);
 		verifyRequests(records);
+		const gitStatus = git(workspaceDirectory, ["status", "--porcelain"]);
+		if (gitStatus) fail(`read-only Agent delegation dirtied the workspace:\n${gitStatus}`);
+		const workspaceEntries = await readdir(workspaceDirectory, { recursive: true });
+		if (workspaceEntries.some((entry) => entry.split(/[\\/]/).includes(".pi-subagents"))) {
+			fail("read-only Agent delegation created a project-local .pi-subagents directory");
+		}
 
 		const topLevelSessions = (await readdir(sessionDirectory)).filter((entry) => entry.endsWith(".jsonl"));
 		if (topLevelSessions.length !== 1 || !topLevelSessions[0]) fail("expected exactly one isolated main session");
 		const transcript = await readFile(join(sessionDirectory, topLevelSessions[0]), "utf8");
-		for (const required of [
-			"subagent",
-			"MAIN_NOT_BLOCKED",
-			"Agent general-purpose completed.",
-			"CHILD_FINAL_SUMMARY",
-		]) {
+		for (const required of ["subagent", "MAIN_NOT_BLOCKED", "pi-stuff-agent-outcome"]) {
 			if (!transcript.includes(required)) fail(`main session transcript is missing ${required}`);
 		}
-		for (const forbidden of ["Fleet", "statusline", "DRAFT_RESTORED"]) {
+		for (const forbidden of [
+			"Fleet",
+			"statusline",
+			"CHILD_FINAL_SUMMARY",
+			"AGENT_TOOL_RESULT",
+			"pi-stuff-agent-complete",
+			"UNSOLICITED_MAIN_TURN",
+		]) {
 			if (transcript.includes(forbidden)) fail(`ephemeral or removed UI leaked into the session: ${forbidden}`);
+		}
+		const sessionEntries = transcript
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as PersistedSessionEntry);
+		const outcomes = sessionEntries.filter(
+			(entry) => entry.type === "custom" && entry.customType === "pi-stuff-agent-outcome",
+		);
+		if (outcomes.length !== 1) {
+			fail(
+				`expected one durable completion outcome across fresh and resumed Pi; received ${String(outcomes.length)}`,
+			);
+		}
+		const outcomeData = outcomes[0]?.data;
+		if (!outcomeData || typeof outcomeData !== "object") fail("durable completion outcome has no data");
+		const outcome = outcomeData as PersistedOutcome;
+		if (outcome.version !== 1 || outcome.count !== 1 || outcome.status !== "completed") {
+			fail("durable completion outcome has the wrong public state projection");
+		}
+		if (typeof outcome.key !== "string" || !/^[a-f0-9]{24}$/.test(outcome.key)) {
+			fail("durable completion outcome does not use a safe digest key");
+		}
+		for (const forbiddenKey of ["agent", "task", "report", "summary", "path", "error", "output"]) {
+			if (forbiddenKey in outcome) fail(`durable completion outcome exposed ${forbiddenKey}`);
+		}
+
+		const artifactsDirectory = join(sessionDirectory, "subagent-artifacts");
+		const artifactEntries = await readdir(artifactsDirectory, { recursive: true }).catch(() => [] as string[]);
+		if (!artifactEntries.some((entry) => entry.endsWith("_transcript.jsonl"))) {
+			fail("Settings-owned session artifacts did not retain the Agent transcript for /agents resume inspection");
+		}
+		if (!artifactEntries.some((entry) => entry.endsWith("_output.md"))) {
+			fail("Settings-owned session artifacts did not retain the Agent report");
 		}
 	} finally {
 		await rm(temporaryDirectory, { recursive: true, force: true });

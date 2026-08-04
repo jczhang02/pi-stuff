@@ -135,7 +135,7 @@ function fixtureStream(context: Context, options?: SimpleStreamOptions) {
 		options?.signal?.addEventListener("abort", result.abort, { once: true });
 		return result.stream;
 	}
-	if (completion) return textStream("MAIN_SAW_DIRECT_SUMMARY").stream;
+	if (completion) return textStream("UNSOLICITED_MAIN_TURN").stream;
 	if (toolResult) return textStream("MAIN_NOT_BLOCKED").stream;
 	return launchStream();
 }
