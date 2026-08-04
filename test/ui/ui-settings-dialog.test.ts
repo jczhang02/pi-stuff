@@ -179,6 +179,9 @@ test("/ui remains bounded at narrow width and very low height", () => {
 	} as UiSettingRegistry;
 	const testHarness = harness(28);
 	const component = createUiSettingsView(registry).create(testHarness.context);
+	const fortyEightColumns = component.render(48).join("\n");
+	expect(fortyEightColumns).toContain("Esc close");
+	expect(fortyEightColumns).not.toContain("Esc…");
 
 	const narrow = component.render(12);
 	expect(narrow.every((line) => visibleWidth(line) <= 12)).toBe(true);

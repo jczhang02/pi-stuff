@@ -1,5 +1,5 @@
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { type SettingItem, SettingsList, truncateToWidth } from "@earendil-works/pi-tui";
+import { type SettingItem, SettingsList, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "./index.js";
 import type { RegisteredUiSetting, UiSettingRegistry } from "./settings.js";
 
@@ -30,6 +30,17 @@ function oneLine(value: string): string {
 		result += codePoint < 32 || (codePoint >= 127 && codePoint <= 159) ? " " : character;
 	}
 	return result.replaceAll(/\s+/gu, " ").trim();
+}
+
+function settingsHint(width: number): string {
+	const candidates = [
+		"  Type to search · Enter/Space to change · Esc to close",
+		"  Type search · Enter/Space change · Esc close",
+		"  Enter/Space · Esc close",
+		"  Enter · Esc close",
+		"  Esc close",
+	];
+	return candidates.find((candidate) => visibleWidth(candidate) <= width) ?? "Esc";
 }
 
 class UiSettingsDialog implements CommandDialogComponent {
@@ -97,6 +108,16 @@ class UiSettingsDialog implements CommandDialogComponent {
 		const maximumRows = dialogRows(this.context);
 		if (maximumRows === 0) return [];
 		const nativeLines = this.settingsList.render(Math.max(MIN_RENDER_WIDTH, renderWidth));
+		let nativeHintIndex = -1;
+		for (let index = nativeLines.length - 1; index >= 0; index -= 1) {
+			const line = nativeLines[index] ?? "";
+			if (!line.includes("Type to search") && !line.includes("Enter/Space to change")) continue;
+			nativeHintIndex = index;
+			break;
+		}
+		if (nativeHintIndex >= 0) {
+			nativeLines[nativeHintIndex] = this.context.theme.fg("dim", settingsHint(renderWidth));
+		}
 		const lines = [
 			this.context.theme.fg("border", "─".repeat(renderWidth)),
 			`${GUTTER}${this.context.theme.bold("UI")}`,

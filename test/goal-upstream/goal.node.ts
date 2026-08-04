@@ -27,6 +27,7 @@ import goal, {
 } from "../../packages/pi-stuff-goal/src/goal.js";
 import type { ActiveGoal } from "../../packages/pi-stuff-goal/src/persistence.js";
 import {
+	completionEvidenceRejectionReason,
 	fingerprintVisibleAssistantOutput,
 	hasAssistantToolCall,
 	nextToolFreeRepeatState,
@@ -90,6 +91,11 @@ test("goal registers command, status tools, and lifecycle hooks", () => {
 		mock.tools.map((tool) => tool.name),
 		["goal_complete", "goal_blocked"],
 	);
+	for (const tool of mock.tools) {
+		assert.equal(tool.renderShell, "self");
+		assert.equal(typeof tool.renderCall, "function");
+		assert.equal(typeof tool.renderResult, "function");
+	}
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 	const context = createMockContext();
 	mock.events.get("session_start")?.[0]?.({}, context.ctx);
@@ -1908,6 +1914,28 @@ test("goal_complete rejects contradictory summaries and accepts verified complet
 	assert.match(noActiveRejected.content?.[0]?.text ?? "", /no active goal/i);
 	assert.equal(lastGoalStatus(mock), null);
 	mock.events.get("session_shutdown")?.[0]?.({}, ctx);
+});
+
+test("completion evidence accepts concrete Chinese observations without source inspection", () => {
+	assert.equal(
+		completionEvidenceRejectionReason("目标文件已经创建，并完成了严格内容验证。", [
+			{
+				requirement: "在当前项目创建目标文件",
+				proof: "write 工具确认已写入 GOAL-PROOF.md，共 16 字节。",
+			},
+			{
+				requirement: "文件内容只能是指定文本",
+				proof: "read 工具读取该文件，返回内容恰为 PI_STUFF_GOAL_OK，无其他内容。",
+			},
+		]),
+		undefined,
+	);
+	assert.match(
+		completionEvidenceRejectionReason("所有用户要求现已全部完成，并已准备结束当前目标。", [
+			{ requirement: "完成并验证全部用户要求", proof: "看起来不错，我认为应该已经全部完成了。" },
+		]) ?? "",
+		/concrete verification result.*observed result/,
+	);
 });
 
 test("goal_complete rejects stale goal_id after replacement, pause/resume, and clear", async () => {

@@ -48,15 +48,23 @@ function taskIdTarget(params: Readonly<TaskIdPresentationParams>): string {
 function taskPresentation<TParams extends Record<string, unknown>>(
 	label: string,
 	target: (params: Readonly<TParams>) => string,
+	summarize: (result: AgentToolResult<TaskDetails>) => string = resultText,
 ): SuiteToolPresentation<TParams, TaskDetails> {
 	return {
 		label,
 		resultIsError: (_params, result) => Boolean(result.details?.error),
 		runningSummary: "updating",
-		summarize: (_params, result) => result.details?.error ?? resultText(result),
+		summarize: (_params, result) => result.details?.error ?? summarize(result),
 		target,
 		transcript: "errors-only",
 	};
+}
+
+/** Keep TaskList useful in /tools without retaining a clipped model-facing row. */
+export function summarizeTaskList(result: AgentToolResult<TaskDetails>): string {
+	const tasks = (result.details?.tasks ?? []).filter((task) => task.status !== "deleted");
+	const done = tasks.filter((task) => task.status === "completed").length;
+	return `${String(tasks.length)} tasks (${String(done)} done, ${String(tasks.length - done)} open)`;
 }
 
 export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationListener): void {
@@ -122,7 +130,7 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 	registerSuiteOwnedTool(
 		pi,
 		listTool,
-		taskPresentation("Task list", () => ""),
+		taskPresentation("Task list", () => "", summarizeTaskList),
 	);
 
 	const updateTool: ToolDefinition<typeof TaskUpdateParamsSchema, TaskDetails> = {

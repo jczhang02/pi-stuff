@@ -72,6 +72,14 @@ test("Agent Tool rows use short descriptions instead of full execution tasks", (
 			],
 		}),
 	).toBe("reviewer · 复核样本 🧪, writer · Update fixture docs");
+	const longReport = {
+		content: [
+			{ type: "text" as const, text: "Agent general-purpose returned a deliberately long final report.".repeat(20) },
+		],
+		details: {} as never,
+	};
+	expect(presentation.summarize?.({}, longReport, "success", 18_000)).toBe("done");
+	expect(presentation.summarize?.({}, longReport, "cancelled", 18_000)).toBe("cancelled");
 });
 
 test("native parent and child communication tools use the shared Tool row", () => {

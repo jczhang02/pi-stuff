@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TaskState } from "../../packages/pi-stuff-todo/state/state.js";
 import type { Op } from "../../packages/pi-stuff-todo/state/state-reducer.js";
+import { summarizeTaskList } from "../../packages/pi-stuff-todo/todo.js";
 import { buildToolResult, formatContent } from "../../packages/pi-stuff-todo/tool/response-envelope.js";
 import type { Task } from "../../packages/pi-stuff-todo/tool/types.js";
 
@@ -38,6 +39,27 @@ describe("Task tool response envelope", () => {
 		expect(formatContent({ kind: "list", tasks }, state(...tasks))).toBe(
 			"#1 [completed] Done\n#2 [pending] Open\n#3 [pending] Blocked [blocked by #2]",
 		);
+	});
+
+	test("TaskList uses a semantic /tools summary instead of clipping its first task", () => {
+		const tasks = [
+			task("1", "Done", { status: "completed" }),
+			task("2", "Open"),
+			task("3", "Deleted", { status: "deleted" }),
+		];
+		expect(
+			summarizeTaskList({
+				content: [{ type: "text", text: "#1 [completed] Done\n#2 [pending] Open" }],
+				details: {
+					action: "list",
+					capability: "pi-stuff-todo",
+					nextId: 4,
+					params: {},
+					schemaVersion: 1,
+					tasks,
+				},
+			}),
+		).toBe("2 tasks (1 done, 1 open)");
 	});
 
 	test("TaskGet reports reverse dependencies and null as not found", () => {

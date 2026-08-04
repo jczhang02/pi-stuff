@@ -40,7 +40,12 @@ export function createAgentToolPresentation(): SuiteToolPresentation<Presentatio
 	return {
 		label: (params) => label(params as PublicAgentParams),
 		runningSummary: "working",
-		summarize: (_params, result, state) => firstText(result) || (state === "success" ? "finished" : "request failed"),
+		summarize: (_params, result, state) => {
+			if (state === "success") return "done";
+			if (state === "cancelled") return "cancelled";
+			if (state === "rejected") return "rejected";
+			return firstText(result) || "failed";
+		},
 		target: (params) => target(params as PublicAgentParams),
 	};
 }

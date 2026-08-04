@@ -1,4 +1,5 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools/contract";
 import { Type } from "typebox";
 import { currentTokenTotal } from "./accounting.js";
 import { completeGoalArguments, parseCommand } from "./command.js";
@@ -63,6 +64,33 @@ interface GoalBlockedDetails {
 
 interface GoalOptions {
 	settingsPath?: string;
+}
+
+function goalToolText(result: {
+	readonly content: readonly { readonly type: string; readonly text?: string }[];
+}): string {
+	const text = result.content.find((part) => part.type === "text")?.text;
+	return typeof text === "string" ? text : "";
+}
+
+function goalCompletePresentation(): SuiteToolPresentation<Record<string, unknown>, GoalCompleteDetails> {
+	return {
+		label: "Goal complete",
+		resultIsError: (_params, result) => goalToolText(result).startsWith("Goal completion rejected:"),
+		runningSummary: "checking",
+		summarize: (_params, result, state) =>
+			state === "success" ? "done" : goalToolText(result).replace(/^Goal completion rejected:\s*/u, "") || state,
+	};
+}
+
+function goalBlockedPresentation(): SuiteToolPresentation<Record<string, unknown>, GoalBlockedDetails> {
+	return {
+		label: "Goal blocked",
+		resultIsError: (_params, result) => goalToolText(result).startsWith("goal_blocked rejected:"),
+		runningSummary: "checking",
+		summarize: (_params, result, state) =>
+			state === "success" ? "blocked" : goalToolText(result).replace(/^goal_blocked rejected:\s*/u, "") || state,
+	};
 }
 
 const EXPERIMENTAL_GOALS_WARNING =
@@ -224,8 +252,17 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			}),
 			evidence: Type.Array(
 				Type.Object({
-					requirement: Type.String({ minLength: 1, maxLength: MAX_COMPLETION_EVIDENCE_TEXT_LENGTH }),
-					proof: Type.String({ minLength: 1, maxLength: MAX_COMPLETION_EVIDENCE_TEXT_LENGTH }),
+					requirement: Type.String({
+						minLength: 1,
+						maxLength: MAX_COMPLETION_EVIDENCE_TEXT_LENGTH,
+						description: "One concrete requirement from the active goal, in the language of the objective.",
+					}),
+					proof: Type.String({
+						minLength: 1,
+						maxLength: MAX_COMPLETION_EVIDENCE_TEXT_LENGTH,
+						description:
+							"The observed verification result, including an exact output or value, command exit status, file path, test count, URL response, or hash. Any language is accepted.",
+					}),
 				}),
 				{
 					minItems: 1,
@@ -537,8 +574,8 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		},
 	});
 
-	pi.registerTool(goalCompleteTool);
-	pi.registerTool(goalBlockedTool);
+	registerSuiteOwnedTool(pi, goalCompleteTool, goalCompletePresentation());
+	registerSuiteOwnedTool(pi, goalBlockedTool, goalBlockedPresentation());
 	// Do not touch the active tool set during factory registration: ExtensionAPI
 	// actions are unbound until the session binds the runtime. session_start applies
 	// baseline visibility once actions work; later hooks only enforce goal safety.

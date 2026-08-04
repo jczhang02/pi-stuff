@@ -9,6 +9,13 @@ await run("bunx", ["tsc", "-p", "tsconfig.goal-upstream-run.json"], repositoryRo
 
 const compiledWorkspaceScope = join(outputDirectory, "packages", "pi-stuff-goal", "node_modules", "@jczhang02");
 await mkdir(compiledWorkspaceScope, { recursive: true });
+const compiledToolsPackage = join(outputDirectory, "packages", "pi-stuff-tools");
+await writeFile(
+	join(compiledToolsPackage, "package.json"),
+	`${JSON.stringify({ name: "@jczhang02/pi-stuff-tools", type: "module", exports: { ".": "./index.js", "./contract": "./contract.js" } })}\n`,
+	"utf8",
+);
+await symlink(compiledToolsPackage, join(compiledWorkspaceScope, "pi-stuff-tools"), "dir");
 const compiledUiPackage = join(outputDirectory, "test", "goal-upstream");
 await writeFile(
 	join(compiledUiPackage, "package.json"),

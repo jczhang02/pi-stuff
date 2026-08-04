@@ -30,6 +30,10 @@ interface TestCoordinator {
 
 const coordinators = new WeakMap<object, TestCoordinator>();
 
+export function ensureUiSettingsCommand() {
+	return { register: () => () => undefined };
+}
+
 export function getCommandDialogCoordinator(pi: ExtensionAPI): TestCoordinator {
 	const key = pi.events as object;
 	const existing = coordinators.get(key);

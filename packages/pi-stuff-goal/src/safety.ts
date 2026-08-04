@@ -12,7 +12,7 @@ const MIN_BLOCKER_REASON_LENGTH = 12;
 const MIN_BLOCKER_ATTEMPT_LENGTH = 16;
 const MIN_BLOCKER_EVIDENCE_LENGTH = 24;
 const CONCRETE_EVIDENCE_RE =
-	/(?:\b(?:test|check|build|lint|typecheck|command|file|line|output|response|status|exit|hash|url|request|query|inspection|observed|confirmed|verified|passed|failed|denied|unavailable)\b|(?:^|\s)(?:\d+|[A-Za-z0-9_.-]+\/[A-Za-z0-9_./-]+)(?:\s|$))/iu;
+	/(?:\b(?:test|check|build|lint|typecheck|command|file|line|output|response|status|exit|hash|url|request|query|inspection|observed|confirmed|verified|passed|failed|denied|unavailable|returned|wrote|read)\b|(?:^|\s)(?:\d+|[A-Za-z0-9_.-]+\/[A-Za-z0-9_./-]+)(?:\s|$)|[`“”「」『』][^`“”「」『』]{1,200}[`“”「」『』]|\b[A-Za-z][A-Za-z0-9]*[_./:=+-][A-Za-z0-9_./:=+-]+\b|(?:测试|检查|构建|命令|文件|行号|输出|响应|状态|退出码|哈希|网址|请求|查询|读取|写入|观察|确认|验证|通过|失败|拒绝|不可用|返回|结果|内容))/iu;
 const BLOCKER_ATTEMPT_RE = /\b(?:attempted|tried|checked|queried|requested|contacted|inspected|ran|tested|used)\b/iu;
 const BLOCKER_RESULT_RE =
 	/\b(?:returned|responded|failed|denied|unavailable|missing|not configured|not found|exit|status|error|rejected|refused|timed out)\b/iu;
@@ -89,7 +89,7 @@ export function completionEvidenceRejectionReason(
 			return `evidence ${index + 1} has no substantive requirement`;
 		}
 		if (!isSubstantiveText(proof, MIN_COMPLETION_EVIDENCE_LENGTH, 4) || !CONCRETE_EVIDENCE_RE.test(proof)) {
-			return `evidence ${index + 1} has no concrete verification result`;
+			return `evidence ${index + 1} has no concrete verification result; quote an observed result such as a command exit status, exact output, file path or value, test count, URL response, or hash`;
 		}
 		if (requirements.has(requirement)) return `evidence ${index + 1} repeats a requirement`;
 		requirements.add(requirement);
@@ -155,7 +155,9 @@ function normalizeAuditText(value: string) {
 function isSubstantiveText(value: string, minimumLength: number, minimumWords: number) {
 	if (value.length < minimumLength) return false;
 	const words = value.match(/[\p{L}\p{N}][\p{L}\p{N}_./:-]*/gu) ?? [];
-	return new Set(words).size >= minimumWords;
+	if (new Set(words).size >= minimumWords) return true;
+	const cjkCharacters = value.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu) ?? [];
+	return cjkCharacters.length >= minimumWords * 2;
 }
 
 export function nextToolFreeRepeatState(
