@@ -39,6 +39,7 @@ describe("MCP Command Dialog", () => {
 		expect(lines[0]).toBe("─".repeat(36));
 		expect(lines.join("\n")).toContain("MCP · 1/1 connected · 8 tools");
 		expect(lines.join("\n")).toContain("local-filesystem");
+		expect(lines.join("\n")).not.toMatch(/[╭╮╰╯]/u);
 		expect(lines.every((line) => visibleWidth(line) <= 36)).toBe(true);
 		component.handleInput?.("\u001b");
 		expect(closed).toBe(1);

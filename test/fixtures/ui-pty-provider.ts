@@ -23,6 +23,9 @@ const RESPONSE = [
 	"UI_PTY_DONE 中文结果🧪",
 	...Array.from({ length: 20 }, (_, index) => `真实输出 ${String(index + 1).padStart(2, "0")} · 对话保持优先`),
 ].join("\n");
+export const TODO_PTY_PROMPT = "请建立四项执行清单";
+export const TODO_PTY_READY = "任务清单已建立。";
+export const TODO_PTY_SUBJECTS = ["梳理需求", "设计实现方案", "完成核心实现", "测试与验收"] as const;
 
 const ZERO_USAGE = {
 	input: 0,
@@ -120,6 +123,41 @@ function textOnlyStream(model: Model<Api>, text: string) {
 	return stream;
 }
 
+function taskCreateStream(model: Model<Api>, index: number) {
+	const subject = TODO_PTY_SUBJECTS[index];
+	if (!subject) return textOnlyStream(model, TODO_PTY_READY);
+	const stream = createAssistantMessageEventStream();
+	const pending = assistantMessage([], "pending", ZERO_USAGE, model.provider, model.id);
+	const toolCall = {
+		type: "toolCall" as const,
+		id: `ui-pty-task-create-${String(index + 1)}`,
+		name: "TaskCreate",
+		arguments: {
+			subject,
+			description: `Real Pi TUI fixture task ${String(index + 1)}`,
+		},
+	};
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
+	stream.push({
+		type: "done",
+		reason: "toolUse",
+		message: assistantMessage([toolCall], "toolUse", ZERO_USAGE, model.provider, model.id),
+	});
+	return stream;
+}
+
+function taskCreatesSinceLatestUser(context: Context): number {
+	let count = 0;
+	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
+		const message = context.messages[index];
+		if (message?.role === "user") break;
+		if (message?.role === "toolResult" && Reflect.get(message, "toolName") === "TaskCreate") count += 1;
+	}
+	return count;
+}
+
 function goalCompletionStream(model: Model<Api>, prompt: string) {
 	const goalId = /<goal_id>\s*([^<\s]+)\s*<\/goal_id>/u.exec(prompt)?.[1];
 	if (!goalId) throw new Error("UI PTY fixture did not receive a Goal id");
@@ -177,6 +215,7 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 	if (lastUser === "VERIFY_CONTEXT_REUSE") {
 		return textOnlyStream(model, priorThinkingPreserved ? "CONTEXT_PRESERVED" : "CONTEXT_LOST");
 	}
+	if (lastUser === TODO_PTY_PROMPT) return taskCreateStream(model, taskCreatesSinceLatestUser(context));
 	const isThoughtProbe = lastUser.startsWith("THOUGHT_PROBE_");
 	const response = isThoughtProbe ? `THOUGHT_DONE_${lastUser.slice("THOUGHT_PROBE_".length)}` : RESPONSE;
 	const finalUsage = isThoughtProbe ? ZERO_USAGE : FINAL_USAGE;

@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createLiveThoughtTransformer } from "../packages/pi-stuff-ui/live-thought.js";
-import { FIXTURE_THINKING, THOUGHT_PHASES } from "../test/fixtures/ui-pty-provider.js";
+import {
+	FIXTURE_THINKING,
+	THOUGHT_PHASES,
+	TODO_PTY_PROMPT,
+	TODO_PTY_READY,
+	TODO_PTY_SUBJECTS,
+} from "../test/fixtures/ui-pty-provider.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
 
@@ -244,8 +250,14 @@ class TmuxPiSession {
 	stop(): void {
 		if (this.stopped) return;
 		this.stopped = true;
-		Bun.spawnSync(["tmux", "-S", this.socket, "kill-server"], { stderr: "pipe", stdout: "pipe" });
-		const probe = Bun.spawnSync(["tmux", "-S", this.socket, "has-session"], { stderr: "pipe", stdout: "pipe" });
+		Bun.spawnSync(["tmux", "-S", this.socket, "kill-server"], {
+			stderr: "pipe",
+			stdout: "pipe",
+		});
+		const probe = Bun.spawnSync(["tmux", "-S", this.socket, "has-session"], {
+			stderr: "pipe",
+			stdout: "pipe",
+		});
 		if (probe.exitCode === 0) fail(`isolated tmux server ${this.label} survived cleanup`);
 		rmSync(this.socket, { force: true });
 	}
@@ -308,16 +320,24 @@ async function createCase(rootDirectory: string, label: string): Promise<CasePat
 			{ mode: 0o600 },
 		),
 		writeFile(log, "", { mode: 0o600 }),
-		writeFile(join(project, "tracked-工具.txt"), "committed\n", { mode: 0o600 }),
+		writeFile(join(project, "tracked-工具.txt"), "committed\n", {
+			mode: 0o600,
+		}),
 	]);
 	commandOutput("git", ["init", "-b", "main"], { cwd: project });
-	commandOutput("git", ["config", "user.name", "Pi Stuff UI Fixture"], { cwd: project });
+	commandOutput("git", ["config", "user.name", "Pi Stuff UI Fixture"], {
+		cwd: project,
+	});
 	commandOutput("git", ["config", "user.email", "ui-fixture@example.invalid"], { cwd: project });
-	commandOutput("git", ["config", "commit.gpgsign", "false"], { cwd: project });
+	commandOutput("git", ["config", "commit.gpgsign", "false"], {
+		cwd: project,
+	});
 	commandOutput("git", ["add", "tracked-工具.txt"], { cwd: project });
 	commandOutput("git", ["commit", "-m", "fixture"], { cwd: project });
 	await Promise.all([
-		writeFile(join(project, "tracked-工具.txt"), "modified 中文\n", { mode: 0o600 }),
+		writeFile(join(project, "tracked-工具.txt"), "modified 中文\n", {
+			mode: 0o600,
+		}),
 		writeFile(join(project, "untracked-🧪.txt"), "new\n", { mode: 0o600 }),
 	]);
 	return { config, log, project, sessions };
@@ -333,8 +353,24 @@ function verifyTerminalWidth(screen: string, columns: number, label: string): vo
 }
 
 function verifyNoFloatingFrame(screen: string, label: string): void {
+	const lines = screen.split("\n");
+	let surfaceStart = 0;
+	for (const [index, line] of lines.entries()) {
+		if (line.length > 0 && [...line].every((character) => character === "─")) surfaceStart = index;
+	}
+	const surface = lines.slice(surfaceStart).join("\n");
 	for (const forbidden of ["╭", "╮", "╰", "╯"]) {
-		if (screen.includes(forbidden)) fail(`${label} exposed floating-frame glyph ${forbidden}`);
+		if (surface.includes(forbidden)) fail(`${label} exposed floating-frame glyph ${forbidden}`);
+	}
+}
+
+function verifyWelcomeCard(screen: string, columns: number): void {
+	for (const corner of ["╭", "╮", "╰", "╯"]) {
+		if (!screen.includes(corner)) fail(`${String(columns)}-column Welcome card is missing ${corner}`);
+	}
+	const title = screen.split("\n").find((line) => line.includes("Pi Stuff"));
+	if (!title || visibleWidth(title) !== columns) {
+		fail(`${String(columns)}-column Welcome title row is not full-width\n${screen}`);
 	}
 }
 
@@ -348,7 +384,11 @@ async function writePtyEvidence(directory: string | undefined, name: string, ses
 }
 
 function sanitizePtyEvidence(value: string): string {
-	return value.replace(/\/tmp\/pi-stuff-ui-pty-[^/\s]+/gu, "[fixture]");
+	return value
+		.replace(/\/tmp\/pi-stuff-ui-pty-[^/\s]+/gu, "[fixture]")
+		.split("\n")
+		.map((line) => line.trimEnd())
+		.join("\n");
 }
 
 function verifyFreshScreen(screen: string, columns: number): void {
@@ -359,27 +399,29 @@ function verifyFreshScreen(screen: string, columns: number): void {
 			fail(`${String(columns)}-column fresh screen is missing ${required}\n${screen}`);
 		}
 	}
-	const divider = screen
+	const editorDivider = screen
 		.split("\n")
 		.find((line) => line.length > 0 && [...line].every((character) => character === "─"));
-	if (!divider || visibleWidth(divider) !== columns) {
-		fail(`${String(columns)}-column Welcome did not render a full-width divider`);
+	if (!editorDivider || visibleWidth(editorDivider) !== columns) {
+		fail(`${String(columns)}-column editor did not render a full-width divider`);
 	}
+	verifyWelcomeCard(screen, columns);
 
-	if (columns >= 92) {
-		for (const required of ["Loaded", "Tips", "Tools", "/tools details", "/ui appearance", STATUS_MARKER]) {
+	if (columns >= 70) {
+		for (const required of [
+			"Loaded",
+			"Tips for getting started",
+			"Type / to browse commands",
+			"extensions",
+			"tools",
+			"skills",
+			STATUS_MARKER,
+		]) {
 			if (!screen.includes(required)) fail(`wide Welcome/Statusline is missing ${required}`);
 		}
-	} else if (columns >= 48) {
-		for (const required of [" ext", " tools", " skills", "/tools details", "/ui appearance"]) {
-			if (!screen.includes(required)) fail(`narrow Welcome is missing ${required}`);
-		}
-		for (const forbidden of ["Loaded", "Tips"]) {
-			if (screen.includes(forbidden)) fail(`narrow Welcome retained wide-only ${forbidden}`);
-		}
 	} else {
-		for (const forbidden of ["Loaded", "Tips", "/ui appearance", " tools", " skills"]) {
-			if (screen.includes(forbidden)) fail(`ultra-narrow Welcome retained lower-priority ${forbidden}`);
+		for (const forbidden of ["Loaded", "Tips for getting started", "extensions", " tools", " skills"]) {
+			if (screen.includes(forbidden)) fail(`single-column Welcome retained wide-only ${forbidden}`);
 		}
 	}
 	const statusline = rowsBelowEditorDivider(screen).join("\n");
@@ -389,7 +431,6 @@ function verifyFreshScreen(screen: string, columns: number): void {
 		}
 	}
 	verifyTerminalWidth(screen, columns, `fresh ${String(columns)}-column screen`);
-	verifyNoFloatingFrame(screen, `fresh ${String(columns)}-column screen`);
 }
 
 function rowsBelowEditorDivider(screen: string): readonly string[] {
@@ -408,6 +449,9 @@ async function openUi(session: TmuxPiSession): Promise<string> {
 	let screen = await session.waitForText("Tool running timer");
 	for (const label of UI_LABELS) {
 		if (!screen.includes(label)) screen = await session.waitForText(label);
+	}
+	if (screen.includes("RTK command") || screen.includes("RTK output")) {
+		fail("/ui retained RTK behavior settings");
 	}
 	return screen;
 }
@@ -632,6 +676,34 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	await session.waitForText(STATUS_MARKER);
 }
 
+async function verifyTodoOverlay(
+	session: TmuxPiSession,
+	options: UiPtyVerificationOptions,
+	columns: number,
+	rows: number,
+): Promise<void> {
+	session.sendKey("C-u");
+	session.sendLiteral(TODO_PTY_PROMPT);
+	session.sendKey("Enter");
+	await session.waitForText(TODO_PTY_READY);
+	let screen = await session.waitForText("4 tasks (0 done, 4 open)");
+	for (const subject of TODO_PTY_SUBJECTS) screen = await session.waitForText(`□ ${subject}`);
+
+	const lines = screen.split("\n");
+	const summaryIndex = lines.findIndex((line) => line.includes("4 tasks (0 done, 4 open)"));
+	if (summaryIndex < 0 || !lines[summaryIndex]?.startsWith("  4 tasks (0 done, 4 open)")) {
+		fail(`Todo summary is not aligned two cells from the output edge\n${screen}`);
+	}
+	for (const [index, subject] of TODO_PTY_SUBJECTS.entries()) {
+		const line = lines[summaryIndex + index + 1];
+		if (!line?.startsWith(`   □ ${subject}`)) {
+			fail(`Todo row ${String(index + 1)} is not adjacent and aligned beneath its summary\n${screen}`);
+		}
+	}
+	verifyTerminalWidth(screen, columns, "expanded Todo checklist");
+	await writePtyEvidence(options.artifactDirectory, `pi-0.83-todo-parity-${String(columns)}x${String(rows)}`, session);
+}
+
 async function verifyWideInteractions(
 	session: TmuxPiSession,
 	paths: CasePaths,
@@ -642,7 +714,18 @@ async function verifyWideInteractions(
 
 	await verifyCodexDialog(session, paths);
 
-	let screen = await openFilteredUi(session, "welcome", "Welcome header");
+	let screen = await openUi(session);
+	await writePtyEvidence(options.artifactDirectory, "pi-0.83-ui-parity-open-100x32", session);
+	session.resize(64, 28);
+	screen = await session.waitForText("Tool running timer");
+	verifyNoFloatingFrame(screen, "narrow /ui Command Dialog");
+	verifyFullWidthDivider(screen, 64, "narrow /ui Command Dialog");
+	verifyTerminalWidth(screen, 64, "narrow /ui Command Dialog");
+	await writePtyEvidence(options.artifactDirectory, "pi-0.83-ui-parity-open-64x28", session);
+	session.resize(100, 32);
+	await session.waitForText("Tool running timer");
+	session.sendLiteral("welcome");
+	screen = await session.waitForText("→ Welcome header");
 	if (screen.includes(STATUS_MARKER)) fail("Statusline remained visible while /ui owned the input region");
 	if (screen.includes("/tool-settings")) fail("removed /tool-settings appeared in /ui");
 	verifyNoFloatingFrame(screen, "/ui Command Dialog");
@@ -710,6 +793,8 @@ async function verifyWideInteractions(
 	await writePtyEvidence(options.artifactDirectory, "pi-0.83-statusline-parity-metered-100x32", session);
 	const request = [...(await readFixtureRecords(paths.log))].reverse().find((record) => record.type === "request");
 	if (request?.lastUser !== LONG_PROMPT) fail("fixture did not receive the complete long CJK prompt");
+
+	await verifyTodoOverlay(session, options, 100, 32);
 
 	session.sendKey("F11");
 	await session.waitForText("SUBSCRIPTION_MODEL_READY");
@@ -892,6 +977,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						"native and inline autocomplete suppression and restoration",
 						"long CJK prompt, Welcome scroll-away, live and settled Thought",
 						"metered and API-key subscription Statusline cost behavior",
+						"expanded four-task Todo alignment in a real Aggregate turn",
 						"responsive /codex controls, Fast persistence, and offline degradation",
 						"eight /ui settings, enum changes, and restart persistence",
 						"/ui search, immediate Statusline and Inline changes, Welcome next-launch persistence",
@@ -899,6 +985,10 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 				} else {
 					await verifyThoughtLifecycle(session, paths, columns, rows);
 					verified.push(`live and settled Thought ${String(columns)}x${String(rows)}`);
+					if (columns === 64) {
+						await verifyTodoOverlay(session, options, columns, rows);
+						verified.push("expanded four-task Todo alignment at 64x28");
+					}
 				}
 			} finally {
 				session.stop();

@@ -33,12 +33,14 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 function verifyScreen(screen: string, columns: number, label: string, allowNormalChrome = false): void {
-	if (!screen.includes("─".repeat(columns))) {
+	const divider = "─".repeat(columns);
+	if (!screen.includes(divider)) {
 		fail(`${label} did not render a ${String(columns)}-column divider\n${screen}`);
 	}
-	const forbiddenChrome = allowNormalChrome ? ["╭", "╮", "╰", "╯"] : ["╭", "╮", "╰", "╯", "think:med", "Working..."];
+	const surface = screen.slice(screen.lastIndexOf(divider));
+	const forbiddenChrome = allowNormalChrome ? [] : ["╭", "╮", "╰", "╯", "think:med", "Working..."];
 	for (const forbidden of forbiddenChrome) {
-		if (screen.includes(forbidden)) fail(`${label} exposed forbidden floating or normal chrome: ${forbidden}`);
+		if (surface.includes(forbidden)) fail(`${label} exposed forbidden floating or normal chrome: ${forbidden}`);
 	}
 	for (const [index, line] of screen.split("\n").entries()) {
 		const width = visibleWidth(line);

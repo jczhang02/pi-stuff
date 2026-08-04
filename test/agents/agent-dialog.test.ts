@@ -180,6 +180,7 @@ describe("Agent Command Dialog", () => {
 		expect(rendered.join("\n")).toContain("Agents");
 		expect(rendered.join("\n")).toContain("waiting");
 		expect(rendered.join("\n")).toContain("later");
+		expect(rendered.join("\n")).not.toMatch(/[╭╮╰╯]/u);
 		expect(rendered.length).toBeLessThanOrEqual(28);
 		expect(rendered.every((line) => visibleWidth(line) <= 64 && !line.includes("\n"))).toBe(true);
 	});

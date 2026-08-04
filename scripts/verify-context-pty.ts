@@ -335,7 +335,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			XDG_DATA_HOME: dataDirectory,
 		};
 		const freshOutput = runExpect(expectProgram(), baseEnvironment, "fresh session", projectDirectory);
-		for (const forbidden of ["╭", "╮", "╰", "╯", "Magic Context", "ctx-aug", "ctx-doctor"]) {
+		for (const forbidden of ["Magic Context", "ctx-aug", "ctx-doctor"]) {
 			if (freshOutput.includes(forbidden)) fail(`fresh TUI exposed forbidden UI text ${forbidden}`);
 		}
 

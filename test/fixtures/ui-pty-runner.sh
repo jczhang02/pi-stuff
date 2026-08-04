@@ -12,7 +12,7 @@ exec "$PI_STUFF_UI_PTY_BIN" \
 	--no-prompt-templates \
 	--no-context-files \
 	--no-themes \
-	--no-tools \
+	--no-builtin-tools \
 	--extension "$PI_STUFF_UI_PTY_PACKAGE" \
 	--extension "$PI_STUFF_UI_PTY_PROVIDER_EXTENSION" \
 	--provider pi-stuff-ui-pty \

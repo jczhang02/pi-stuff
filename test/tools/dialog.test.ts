@@ -60,12 +60,14 @@ test("/tools moves from a focused list to bounded details and back", () => {
 
 	const list = component.render(28).join("\n");
 	expect(list).toContain("  › ● Read 工具.txt");
+	expect(list).not.toMatch(/[╭╮╰╯]/u);
 	expect(list).not.toContain("current-session operations");
 	expect(list).toContain("Enter details");
 	expect(list).toContain("Esc close");
 	component.handleInput?.("\r");
 	const detail = component.render(28).join("\n");
 	expect(detail).toContain("Tool details");
+	expect(detail).not.toMatch(/[╭╮╰╯]/u);
 	expect(detail).toContain("path: 工具.txt");
 	expect(detail).toContain("Esc back");
 	component.handleInput?.("\u001b");

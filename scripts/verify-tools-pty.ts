@@ -255,7 +255,7 @@ function verifyOutput(output: string, columns: number): void {
 		if (!visible.includes(required)) fail(`terminal output is missing ${required}`);
 	}
 	if (!visible.includes("─".repeat(columns))) fail(`Tool dialog did not render a ${String(columns)}-column divider`);
-	for (const forbidden of ["╭", "╮", "╰", "╯", "OWNED_TITLE"]) {
+	for (const forbidden of ["OWNED_TITLE"]) {
 		if (visible.includes(forbidden)) fail(`terminal output exposed forbidden UI or control payload: ${forbidden}`);
 	}
 	if (!/● Read pi-max-tools-[^\n]* · 1 lines/u.test(visible)) {

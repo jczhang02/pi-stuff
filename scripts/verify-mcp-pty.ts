@@ -363,9 +363,6 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 			if (!visible.includes("─".repeat(width)))
 				fail(`Command Dialog did not render a ${String(width)}-column divider`);
 		}
-		for (const forbidden of ["╭", "╮", "╰", "╯"]) {
-			if (visible.includes(forbidden)) fail(`terminal output exposed a floating-window border: ${forbidden}`);
-		}
 		if (/mcp:\d+/u.test(visible)) fail("terminal output exposed a Capability-specific MCP Statusline segment");
 		if (visible.includes("MCP_SECRET_SHOULD_NOT_APPEAR")) fail("terminal output exposed an MCP configuration secret");
 

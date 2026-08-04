@@ -226,10 +226,6 @@ function verifyTerminalOutput(output: string, columns: number): void {
 		"statusline",
 		"UNSOLICITED_MAIN_TURN",
 		"MAIN_SAW_DIRECT_SUMMARY",
-		"╭",
-		"╮",
-		"╰",
-		"╯",
 	]) {
 		if (visible.includes(forbidden)) fail(`terminal output exposed forbidden UI: ${forbidden}`);
 	}
