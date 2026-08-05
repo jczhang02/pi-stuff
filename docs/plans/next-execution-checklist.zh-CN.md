@@ -83,7 +83,7 @@
 - [ ] Session 的原始记录仍由 Pi Session 文件保存。Magic Context 负责选择、压缩和召回提供给模型的上下文，不取代 Session 文件。
 - [ ] 保留延迟启用、遗漏生命周期补放、项目隔离、BTW/Agent 有界投影、Pi Stuff Tool UI，以及有用的 `/ctx-*` 诊断和恢复命令。
 - [ ] 屏蔽 Magic Context 自带的重复 Todo 和 Statusline，界面只保留 Pi Stuff 的唯一版本。
-- [ ] 明确唯一压缩权威：一次压缩只能由 Magic Context 或 Pi 原生压缩中的一个执行，绝不能生成两份摘要、两个压缩边界或两次 Goal 继续事件。
+- [ ] 明确唯一压缩权威：同一段历史只能由 Magic Context 或 Pi 原生压缩中的一个执行，绝不能重复生成两份摘要、两个同位置边界或两次 Goal 继续事件；长 Session 可以由 Magic Context 用多个不重叠、严格向前的边界逐段整理。
 - [ ] Magic Context 健康时，手动 `/compact`、自动阈值压缩和上下文溢出恢复都只由 Magic Context 执行；Pi 可以保留触发与 Session 记录职责，但不能再生成原生摘要。
 - [ ] Magic Context 在接管前已经不可用时，可以完整选择 Pi 原生路径；一旦 Magic 已开始本次压缩，失败后不能再叠加一次 Pi 压缩，应明确报告失败并保留完整 Session JSONL。
 - [ ] 真实验证新 Session、长 Session 恢复、压缩后重新加载、项目隔离、存储故障、BTW、Agents 和 Tool UI。
@@ -95,11 +95,11 @@
 - [ ] 使用真实 Pi、真实模型和真实 Context Window，而不是 Mock 或缩小版状态机。
 - [ ] 把上下文持续推到临界区，至少覆盖单个超长 Turn、大量 Tool 输出和多轮长 Session。
 - [ ] Magic Context 必须在请求超出窗口之前主动完成整理；主 Agent 不暂停、不报错，也不要求用户手动输入 `/compact`。
-- [ ] 除最多一条安静的压缩记录外，用户看不到取消、重试、双重输出、任务中断或界面跳动。
+- [ ] 每次完成一段整理时最多产生一条安静的压缩记录；用户看不到取消、重试、双重输出、任务中断或界面跳动。
 - [ ] Goal、Todo、Tool 状态、当前任务要求和仍在运行的工作不能在压缩时丢失或重复执行。
 - [ ] 压缩后继续追问时，Agent 能通过正常上下文或检索找回早期关键内容。
 - [ ] 退出 Pi 并冷 Resume 后仍然可用，原始 Session JSONL 保持完整。
-- [ ] 用事件、Session 记录和测试证据证明整个过程没有调用 Pi 原生压缩，也只产生一个压缩边界。
+- [ ] 用事件、Session 记录和测试证据证明整个过程没有调用 Pi 原生压缩；Magic 边界与成功发布一一对应、严格向前，所覆盖的历史区间不重叠。
 - [ ] 检查 Prompt Cache 表现，确认 Magic Context 没有因为不必要地反复重写历史而明显破坏缓存命中。
 - [ ] 如果这项独立验证失败，不能宣称 Magic Context 已替代 Pi 压缩，也不能删除当前 fork 或完成 `ps-5cb.21`；必须重新选择集成方式。
 
