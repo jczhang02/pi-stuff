@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { compactRtkBinaryPath } from "../../packages/pi-stuff-rtk/rtk-dialog.js";
+import { RtkProjectionAdapter } from "../../packages/pi-stuff-rtk/projection.js";
+import { compactRtkBinaryPath, createRtkDialogView } from "../../packages/pi-stuff-rtk/rtk-dialog.js";
 import { createRtkSettingsView } from "../../packages/pi-stuff-rtk/rtk-settings-dialog.js";
+import { RtkRuntime } from "../../packages/pi-stuff-rtk/runtime.js";
 import { RtkSettingsStore } from "../../packages/pi-stuff-rtk/settings.js";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff-ui/index.js";
 
@@ -30,6 +32,7 @@ describe("RTK-owned settings", () => {
 		initTheme("dark", false);
 		let closed = 0;
 		const settings = RtkSettingsStore.memory();
+		const terminal = { rows: 28 };
 		const context = {
 			close: () => {
 				closed += 1;
@@ -38,7 +41,7 @@ describe("RTK-owned settings", () => {
 			requestRender: () => {},
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows: 28 } },
+			tui: { terminal },
 		} as unknown as CommandDialogViewContext<void>;
 		const component = createRtkSettingsView(settings).create(context);
 
@@ -47,6 +50,13 @@ describe("RTK-owned settings", () => {
 		expect(initial).toContain("Command rewriting");
 		expect(initial).toContain("Model projection");
 		expect(initial).not.toMatch(/[╭╮╰╯]/u);
+		terminal.rows = 6;
+		const low = component.render(64);
+		expect(low).toHaveLength(3);
+		expect(low.join("\n")).toContain("RTK settings");
+		expect(low.join("\n")).toContain("Command rewriting");
+		expect(low.at(-1)).toMatch(/Esc(?: to)? close/);
+		terminal.rows = 28;
 		component.handleInput?.("\r");
 		await Promise.resolve();
 		expect(settings.get().rewriteCommands).toBe(false);
@@ -55,4 +65,35 @@ describe("RTK-owned settings", () => {
 		expect(closed).toBe(1);
 		component.dispose?.();
 	});
+});
+
+test("RTK status keeps unchecked and off states readable at low height", () => {
+	const colors: Array<{ color: string; text: string }> = [];
+	const recordingTheme = {
+		bold: (value: string) => value,
+		fg: (color: string, text: string) => {
+			colors.push({ color, text });
+			return text;
+		},
+	} as unknown as Theme;
+	const component = createRtkDialogView({
+		projection: new RtkProjectionAdapter(),
+		runtime: new RtkRuntime(),
+		settings: RtkSettingsStore.memory({ outputProjection: false, rewriteCommands: false, schemaVersion: 1 }),
+	}).create({
+		close: () => {},
+		keybindings: {},
+		requestRender: () => {},
+		signal: new AbortController().signal,
+		theme: recordingTheme,
+		tui: { terminal: { rows: 6 } },
+	} as unknown as CommandDialogViewContext<void>);
+	const lines = component.render(64);
+	expect(lines).toHaveLength(3);
+	expect(lines.join("\n")).toContain("RTK");
+	expect(lines.join("\n")).toContain("unchecked");
+	expect(lines.at(-1)).toContain("Esc close");
+	expect(colors).toContainEqual({ color: "muted", text: "unchecked" });
+	expect(colors.filter(({ color, text }) => color === "muted" && text === "off")).toHaveLength(2);
+	component.dispose?.();
 });

@@ -56,7 +56,10 @@ class RuntimeHarness {
 	}
 }
 
-function harness(rows = 24): {
+function harness(
+	rows = 24,
+	activeTheme = theme,
+): {
 	readonly closed: () => number;
 	readonly context: CommandDialogViewContext<void>;
 	readonly renders: () => number;
@@ -74,7 +77,7 @@ function harness(rows = 24): {
 				renders += 1;
 			},
 			signal: new AbortController().signal,
-			theme,
+			theme: activeTheme,
 			tui: { terminal: { rows } },
 		} as unknown as CommandDialogViewContext<void>,
 		renders: () => renders,
@@ -101,6 +104,27 @@ function sources(): CurrentWorkSources {
 }
 
 describe("/tasks Command Dialog", () => {
+	test("keeps running task identity and state above the tertiary dim token", () => {
+		const colors: Array<{ color: string; text: string }> = [];
+		const recordingTheme = {
+			...theme,
+			fg: (color: string, text: string) => {
+				colors.push({ color, text });
+				return text;
+			},
+		} as unknown as Theme;
+		const runtime = new RuntimeHarness();
+		const ui = harness(24, recordingTheme);
+		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime, sources()).create(
+			ui.context,
+		);
+		component.render(92);
+		expect(colors.some(({ color, text }) => color === "muted" && text.includes("Run the complete"))).toBe(true);
+		expect(colors.some(({ color, text }) => color === "muted" && text.includes("running"))).toBe(true);
+		expect(colors.some(({ color, text }) => color === "dim" && text.includes("Run the complete"))).toBe(false);
+		component.dispose?.();
+	});
+
 	test("renders owned work and read-only Agents as one full-width bounded list", () => {
 		const runtime = new RuntimeHarness();
 		const ui = harness();
@@ -159,12 +183,14 @@ describe("/tasks Command Dialog", () => {
 
 	test("preserves controls in a short terminal", () => {
 		const runtime = new RuntimeHarness();
-		const ui = harness(9);
+		const ui = harness(6);
 		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime, sources()).create(
 			ui.context,
 		);
 		const lines = component.render(38);
-		expect(lines.length).toBeLessThanOrEqual(6);
+		expect(lines).toHaveLength(3);
+		expect(lines.join("\n")).toContain("Tasks");
+		expect(lines.join("\n")).toContain("Shell");
 		expect(lines.at(-1)).toContain("Esc return");
 		component.dispose?.();
 	});

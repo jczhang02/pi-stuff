@@ -6,12 +6,17 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
+import {
+	type CommandDialogComponent,
+	type CommandDialogView,
+	type CommandDialogViewContext,
+	commandDialogRows,
+	fitCommandDialogRows,
+} from "@jczhang02/pi-stuff-ui";
 import { type CodexUsageSnapshot, formatCodexUsage } from "./usage.js";
 
 const GUTTER = "  ";
 const MIN_RENDER_WIDTH = 24;
-const RESERVED_ROWS = 3;
 const TOOL_SEPARATOR = " · ";
 const TOOL_LABELS = ["apply_patch", "view_image", "imagegen · gpt-image-2"] as const;
 
@@ -49,11 +54,6 @@ function oneLine(value: unknown): string {
 		.join("")
 		.replaceAll(/\s+/gu, " ")
 		.trim();
-}
-
-function maximumRows(context: CommandDialogViewContext): number {
-	const rows = (context.tui.terminal as { rows?: number }).rows;
-	return Math.max(1, Math.floor(typeof rows === "number" && Number.isFinite(rows) ? rows : 24) - RESERVED_ROWS);
 }
 
 class CodexDialog implements CommandDialogComponent {
@@ -107,35 +107,41 @@ class CodexDialog implements CommandDialogComponent {
 		const renderWidth = Math.max(1, Math.floor(width));
 		const contentWidth = Math.max(1, renderWidth - GUTTER.length);
 		const nativeLines = this.settingsList.render(Math.max(MIN_RENDER_WIDTH, renderWidth));
+		const nativeBody = nativeLines.filter(
+			(line) => !line.includes("Enter/Space to change") && !line.includes("Enter/Space change"),
+		);
 		const usageLines = this.loading
-			? [this.context.theme.fg("dim", "Loading usage…")]
+			? [this.context.theme.fg("muted", "Loading usage…")]
 			: this.usage
 				? formatCodexUsage(this.usage).split("\n")
-				: [this.context.theme.fg("dim", "Usage unavailable")];
-		const lines = [
-			this.context.theme.fg("border", "─".repeat(renderWidth)),
-			`${GUTTER}${this.context.theme.bold("Codex")}`,
-			...nativeLines,
+				: [this.context.theme.fg("muted", "Usage unavailable")];
+		const errorLine = this.error ? `${GUTTER}${this.context.theme.fg("error", this.error)}` : undefined;
+		const body = [
+			...nativeBody,
 			"",
 			`${GUTTER}${this.context.theme.bold("Usage")}`,
 			...usageLines.flatMap((line) => wrapTextWithAnsi(line, contentWidth).map((part) => `${GUTTER}${part}`)),
 			"",
 			`${GUTTER}${this.context.theme.bold("Tools")}`,
-			...formatCodexToolLines(contentWidth).map((line) => `${GUTTER}${this.context.theme.fg("dim", line)}`),
-			...(this.error ? ["", `${GUTTER}${this.context.theme.fg("error", this.error)}`] : []),
-			"",
-			`${GUTTER}${this.context.theme.fg("dim", "Enter toggle · R refresh · Esc close")}`,
+			...formatCodexToolLines(contentWidth).map((line) => `${GUTTER}${this.context.theme.fg("muted", line)}`),
+			...(errorLine ? ["", errorLine] : []),
 		];
-		return this.fitHeight(lines, maximumRows(this.context)).map((line) => truncateToWidth(line, renderWidth, "…"));
-	}
-
-	private fitHeight(lines: readonly string[], rows: number): string[] {
-		if (lines.length <= rows) return [...lines];
-		if (rows <= 2) return lines.slice(0, rows);
-		const selected = lines.find((line) => line.includes("→")) ?? lines[2] ?? GUTTER;
-		const usage = lines.find((line) => line.includes("Weekly")) ?? `${GUTTER}Usage unavailable`;
-		const compact = [lines[0] ?? "", lines[1] ?? `${GUTTER}Codex`, selected, usage];
-		return compact.slice(0, rows);
+		const selected = nativeBody.find((line) => line.includes("→"));
+		const usage =
+			body.find((line) => line.includes("Weekly")) ?? body.find((line) => line.includes("Usage unavailable"));
+		const lines = fitCommandDialogRows(
+			{
+				header: [
+					this.context.theme.fg("border", "─".repeat(renderWidth)),
+					`${GUTTER}${this.context.theme.bold("Codex")}`,
+				],
+				body,
+				footer: [`${GUTTER}${this.context.theme.fg("dim", "Enter toggle · R refresh · Esc close")}`],
+				priority: [errorLine ?? selected ?? usage ?? `${GUTTER}Usage unavailable`],
+			},
+			commandDialogRows(this.context),
+		);
+		return lines.map((line) => truncateToWidth(line, renderWidth, "…"));
 	}
 
 	private async refreshUsage(): Promise<void> {

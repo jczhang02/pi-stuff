@@ -1,15 +1,15 @@
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { McpServerStatusSnapshot, McpStatusSnapshot } from "@jczhang02/pi-mcp-adapter";
-import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
+import {
+	type CommandDialogComponent,
+	type CommandDialogView,
+	type CommandDialogViewContext,
+	commandDialogRows,
+	fitCommandDialogRows,
+} from "@jczhang02/pi-stuff-ui";
 import type { McpStatusStore } from "./status-store.js";
 
 const GUTTER = "  ";
-const NORMAL_SCREEN_RESERVE_ROWS = 3;
-
-function terminalRows(context: CommandDialogViewContext): number {
-	const rows = (context.tui.terminal as { rows?: number }).rows;
-	return typeof rows === "number" && Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : 24;
-}
 
 function statusLabel(server: McpServerStatusSnapshot): string {
 	switch (server.status) {
@@ -91,24 +91,34 @@ class McpStatusDialog implements CommandDialogComponent {
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
-		const maximumRows = Math.max(1, terminalRows(this.context) - NORMAL_SCREEN_RESERVE_ROWS);
+		const maximumRows = commandDialogRows(this.context);
+		if (maximumRows === 0) return [];
 		const servers = this.snapshot?.servers ?? [];
 		const viewportRows = this.viewportRows();
 		const visible = servers.slice(this.scroll, this.scroll + viewportRows);
-		const lines = [
-			this.context.theme.fg("border", "─".repeat(renderWidth)),
-			headerLine(this.context, this.snapshot),
-			...(servers.length === 0
-				? [`${GUTTER}${this.context.theme.fg("muted", "No MCP servers · add .mcp.json, then /reload")}`]
-				: visible.map((server) => serverLine(this.context, server))),
-			`${GUTTER}${this.context.theme.fg(
-				"dim",
-				servers.length > viewportRows
-					? "↑↓ scroll · Esc close · configure in .mcp.json"
-					: "Esc close · configure in .mcp.json",
-			)}`,
-		];
-		return lines.slice(0, maximumRows).map((line) => truncateToWidth(line, renderWidth, "…"));
+		const emptyLine = `${GUTTER}${this.context.theme.fg("muted", "No MCP servers · add .mcp.json, then /reload")}`;
+		const serverLines = visible.map((server) => serverLine(this.context, server));
+		const body = servers.length === 0 ? [emptyLine] : serverLines;
+		const footer = `${GUTTER}${this.context.theme.fg(
+			"dim",
+			servers.length > viewportRows
+				? "↑↓ scroll · Esc close · configure in .mcp.json"
+				: "Esc close · configure in .mcp.json",
+		)}`;
+		const priority =
+			serverLines.find((line) => line.includes("failed") || line.includes("needs auth")) ??
+			serverLines[0] ??
+			emptyLine;
+		const lines = fitCommandDialogRows(
+			{
+				header: [this.context.theme.fg("border", "─".repeat(renderWidth)), headerLine(this.context, this.snapshot)],
+				body,
+				footer: [footer],
+				priority: [priority],
+			},
+			maximumRows,
+		);
+		return lines.map((line) => truncateToWidth(line, renderWidth, "…"));
 	}
 
 	private clampScroll(): void {
@@ -117,7 +127,7 @@ class McpStatusDialog implements CommandDialogComponent {
 	}
 
 	private viewportRows(): number {
-		return Math.max(1, terminalRows(this.context) - NORMAL_SCREEN_RESERVE_ROWS - 3);
+		return Math.max(1, commandDialogRows(this.context) - 3);
 	}
 }
 

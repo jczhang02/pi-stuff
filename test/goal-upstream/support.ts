@@ -215,7 +215,7 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 	const inputOverride = overrides.input as ((title: string, placeholder?: string) => Promise<unknown>) | undefined;
 	const defaultCustom = async (factory: unknown) => {
 		if (!selectOverride) return undefined;
-		const harness = createCustomSelectorHarness(factory, 100);
+		const harness = createCustomSelectorHarness(factory, 100, undefined, Number(overrides.terminalRows ?? 24));
 		const options: string[] = [];
 		for (let index = 0; index < 200; index += 1) {
 			const selected = selectedKitRow(harness.render());
@@ -278,7 +278,7 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 	const custom =
 		customOverride && selectOverride
 			? async (factory: unknown, options?: unknown) => {
-					const probe = createCustomSelectorHarness(factory, 100);
+					const probe = createCustomSelectorHarness(factory, 100, undefined, Number(overrides.terminalRows ?? 24));
 					const standard = probe.isPiTuiKitScreen;
 					probe.dispose();
 					return standard ? defaultCustom(factory) : customOverride(factory, options);

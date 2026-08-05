@@ -167,10 +167,10 @@ export function selectOverlayLayout(
 	return { visible, hidden, next };
 }
 
-function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
+function overlayStatusGlyph(status: TaskStatus, blocked: boolean, theme: Theme): string {
 	switch (status) {
 		case "pending":
-			return theme.fg("dim", "□");
+			return blocked ? theme.fg("warning", "⊘") : theme.fg("muted", "□");
 		case "in_progress":
 			return theme.fg("accent", "■");
 		case "completed":
@@ -189,7 +189,7 @@ function fitOptionalSubject(subject: string, width: number): string {
 /** Format one unheaded, single-line task row with the subject always taking the available width. */
 export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme, width = Number.POSITIVE_INFINITY): string {
 	const { task, openBlockers } = row;
-	const glyph = overlayStatusGlyph(task.status, theme);
+	const glyph = overlayStatusGlyph(task.status, openBlockers.length > 0, theme);
 	const text = singleLine(task.subject) || UNTITLED_TASK;
 	let subject: string;
 	if (task.status === "completed" || task.status === "deleted") {
@@ -197,7 +197,7 @@ export function formatOverlayTaskLine(row: OverlayTaskRow, theme: Theme, width =
 	} else if (task.status === "in_progress") {
 		subject = theme.bold(theme.fg("accent", text));
 	} else if (openBlockers.length > 0) {
-		subject = theme.fg("dim", text);
+		subject = theme.fg("muted", text);
 	} else {
 		subject = theme.fg("text", text);
 	}
@@ -222,9 +222,11 @@ export function formatOverlayOverflowLine(hidden: readonly OverlayTaskRow[], the
 }
 
 export function formatCollapsedNextLine(next: OverlayTaskRow | undefined, theme: Theme): string {
-	const label = theme.fg("dim", "Next:");
+	const label = theme.fg("muted", "Next:");
 	if (!next) return `${label} ${theme.fg("dim", "all tasks complete")}`;
 	const subject = singleLine(next.task.subject) || UNTITLED_TASK;
-	const text = next.openBlockers.length > 0 ? theme.fg("dim", subject) : theme.fg("text", subject);
-	return `${label} ${text}`;
+	if (next.openBlockers.length > 0) {
+		return `${label} ${theme.fg("warning", "⊘")} ${theme.fg("muted", subject)}`;
+	}
+	return `${label} ${theme.fg("text", subject)}`;
 }

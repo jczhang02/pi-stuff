@@ -18,6 +18,7 @@
 	},
 	"files": [
 		"index.ts",
+		"dialog-layout.ts",
 		"compaction-presentation.ts",
 		"settings.ts",
 		"ui-settings-dialog.ts",

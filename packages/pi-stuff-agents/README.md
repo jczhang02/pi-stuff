@@ -17,6 +17,9 @@ grammar as Host tools. Full Agent inspection and control remains in `/agents`.
   work, or `action` for current-session control. It rejects mixed shapes instead of guessing which request to run.
 - Launches are background by default. Omit `foreground` to continue immediately; set `foreground: true` when the
   findings must inform the current answer. The retired `background` field is not accepted.
+- The settled Tool row names the operation that actually occurred: background launches say `launched`, foreground
+  executions say `finished`, and resume, steer, stop, or status actions use their own acknowledged verbs. Starting
+  background work is never mislabeled as completed.
 - Each delegated item carries a short, caller-provided `description` for terminal surfaces and a separate full `task`
   for execution. Existing task-only callers remain compatible through a bounded local fallback; no extra model call is
   made to name legacy work.
@@ -58,7 +61,8 @@ joined to the state as an ellipsis fragment.
 
 The Agent Command Dialog uses the Suite's divider and two-cell gutter, with `›` marking the focused custom row.
 Action hints wrap instead of dropping the close or back key: Escape closes the Agent list and returns one level from
-details or a steer/resume composer.
+details or a steer/resume composer. At low terminal heights, the selected Agent or attached error and that Escape path
+take priority over surrounding transcript rows.
 
 ## Scope
 

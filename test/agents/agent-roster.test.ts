@@ -223,6 +223,25 @@ class FakeClock {
 }
 
 describe("AgentRoster", () => {
+	test("keeps a live Agent state above the tertiary dim token", () => {
+		const colors: Array<{ color: string; text: string }> = [];
+		const recordingTheme = {
+			...theme,
+			fg: (color: string, text: string) => {
+				colors.push({ color, text });
+				return text;
+			},
+		} as unknown as Theme;
+		const result = setup([row("research", "running", { elapsedMs: 5_000 })]);
+		result.roster.setFooterHosted(true);
+		const tail = result.roster.createFooterTail(result.ui.tui, recordingTheme);
+		tail.render(80);
+		expect(colors).toContainEqual({ color: "muted", text: "5s" });
+		expect(colors).not.toContainEqual({ color: "dim", text: "5s" });
+		tail.dispose();
+		result.roster.dispose();
+	});
+
 	test("mounts below the editor only while direct children exist", () => {
 		const result = setup([]);
 		expect(result.ui.render(80)).toEqual([]);

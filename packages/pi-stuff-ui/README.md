@@ -21,7 +21,8 @@ aggregates file changes as `ΔN`; branch tracking remains attributable through `
 
 The previous prompt is always bounded to one row when enabled. Its filled marker occupies the same first visual column
 as the model icon. Both rows reserve one marker cell followed by one stable gap, so Latin, CJK, and emoji text begin in
-the same terminal column. Persisted skill expansion and recognized inline or multiple `/skill:*` commands are reduced
+the same terminal column. The prompt text uses the readable secondary `muted` token rather than the decorative `dim`
+token. Persisted skill expansion and recognized inline or multiple `/skill:*` commands are reduced
 back to the submitted task plus compact skill badges; Skill XML, instructions, and local paths never enter the preview.
 
 Nerd Font terminals receive the compact model, Thinking, Fast, folder, branch, file-state, Context, cache, allowance,
@@ -100,6 +101,11 @@ The Package gives independently owned Capabilities one full-width, non-floating 
 each other. A `blocking` view preempts the active `normal` view inside the same Pi component; blocking requests run FIFO,
 then the exact normal component resumes.
 
+All Suite Command Dialogs use one height-fitting rule. At ordinary sizes their layouts stay unchanged. Under severe
+height pressure they first preserve the semantic title or current state, the selected row or attached error, and an
+Escape/back footer; only then do they spend remaining rows on surrounding content. This keeps every focused surface
+operable at the certified 24×16 floor without introducing a floating overlay.
+
 The same coordinator owns one composed Footer seam. The Statusline remains the primary Footer, while Suite Capabilities
 may register ordered tails beneath it. This is how Fleetview stays below both Statusline rows without a Pi Host fork;
 standalone Packages can retain their native fallback. Dialog suppression and restoration operate on the composed Footer
@@ -134,4 +140,6 @@ The coordinator owns the Suite's desired working-row visibility through `setWork
 provides public setters for the footer and working row but no getters, so exact restoration covers state owned through
 this Package. Third-party extensions should not independently replace those surfaces after Pi Stuff loads.
 
-The Package uses Pi semantic theme tokens and does not create floating windows or transcript entries.
+The Package uses Pi semantic theme tokens and does not create floating windows or transcript entries. `dim` is reserved
+for separators, shortcuts, completed or stale metadata, and other safely optional decoration; required secondary
+identity and state use `muted`, while primary content uses `text` or the relevant success/warning/error token.

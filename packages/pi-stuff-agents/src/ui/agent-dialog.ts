@@ -15,6 +15,7 @@ import type {
 	CommandDialogView,
 	CommandDialogViewContext,
 } from "@jczhang02/pi-stuff-ui";
+import { commandDialogRows, fitCommandDialogRows } from "@jczhang02/pi-stuff-ui";
 import type {
 	AgentControlAction,
 	AgentControlResult,
@@ -427,23 +428,39 @@ class AgentDialogComponent implements CommandDialogComponent {
 		const rows = this.snapshotValue.rows;
 		const limit = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
 		const window = selectedWindow(rows, this.listSelectedKey, limit);
-		const lines = [divider(this.context.theme, width), title(this.context.theme, "Agents")];
-		if (this.feedback) lines.push(renderFeedback(this.context.theme, this.feedback, width));
-		lines.push("");
+		const header = [divider(this.context.theme, width), title(this.context.theme, "Agents")];
+		const feedbackLine = this.feedback ? renderFeedback(this.context.theme, this.feedback, width) : undefined;
+		const body = [...(feedbackLine ? [feedbackLine] : []), ""];
+		const emptyLine = `${GUTTER}${this.context.theme.fg("muted", "No Agents in the current session.")}`;
+		const rowLines: string[] = [];
 		if (rows.length === 0) {
-			lines.push(`${GUTTER}${this.context.theme.fg("muted", "No Agents in the current session.")}`);
+			body.push(emptyLine);
 		} else {
-			if (window.start > 0) lines.push(`${GUTTER}${this.context.theme.fg("dim", `… ${window.start} earlier`)}`);
-			for (const row of window.rows) lines.push(this.renderListRow(row, width));
+			if (window.start > 0) body.push(`${GUTTER}${this.context.theme.fg("dim", `… ${window.start} earlier`)}`);
+			for (const row of window.rows) {
+				const line = this.renderListRow(row, width);
+				rowLines.push(line);
+				body.push(line);
+			}
 			const later = rows.length - window.start - window.rows.length;
-			if (later > 0) lines.push(`${GUTTER}${this.context.theme.fg("dim", `… ${later} later`)}`);
+			if (later > 0) body.push(`${GUTTER}${this.context.theme.fg("dim", `… ${later} later`)}`);
 		}
 		const hints = ["↑/↓ navigate", "Enter inspect"];
 		const selected = this.listRow();
 		if (selected && !TERMINAL_STATUSES.has(selected.status)) hints.push("x stop");
 		hints.push("Esc close");
-		lines.push("", ...hintLines(this.context.theme, width, hints));
-		return lines;
+		body.push("");
+		const footer = hintLines(this.context.theme, width, hints);
+		const selectedIndex = window.rows.findIndex((row) => row.key === this.listSelectedKey);
+		return fitCommandDialogRows(
+			{
+				header,
+				body,
+				footer,
+				priority: [feedbackLine ?? rowLines[selectedIndex] ?? emptyLine],
+			},
+			commandDialogRows(this.context),
+		);
 	}
 
 	private renderListRow(row: AgentRow, width: number): string {
@@ -470,22 +487,31 @@ class AgentDialogComponent implements CommandDialogComponent {
 		const row = this.detailRow();
 		if (!row) return this.renderList(width);
 		const theme = this.context.theme;
-		const lines = [divider(theme, width), title(theme, `Agents / ${oneLine(row.name) || "agent"}`), ""];
-		lines.push(`${GUTTER}${theme.fg("muted", "Task")}`);
-		lines.push(
+		const header = [divider(theme, width), title(theme, `Agents / ${oneLine(row.name) || "agent"}`)];
+		const body = ["", `${GUTTER}${theme.fg("muted", "Task")}`];
+		body.push(
 			`${GUTTER}${truncateToWidth(oneLine(row.task) || "(no task)", Math.max(1, width - GUTTER.length), "…")}`,
 		);
-		lines.push(
-			`${GUTTER}${theme.fg("muted", "State")}  ${styledStatus(row, theme, true)}${theme.fg(
-				"dim",
-				` · ${row.nestedCount} nested`,
-			)}`,
+		const stateLine = `${GUTTER}${theme.fg("muted", "State")}  ${styledStatus(row, theme, true)}${theme.fg(
+			"dim",
+			` · ${row.nestedCount} nested`,
+		)}`;
+		body.push(stateLine);
+		const feedbackLine = this.feedback ? renderFeedback(theme, this.feedback, width) : undefined;
+		if (feedbackLine) body.push(feedbackLine);
+		body.push("", `${GUTTER}${theme.fg("muted", "Transcript")}`);
+		const transcript = this.renderScrollableContent(row, width);
+		body.push(...transcript, "");
+		const transcriptError = this.transcript.state === "error" ? transcript.find((line) => line.trim()) : undefined;
+		return fitCommandDialogRows(
+			{
+				header,
+				body,
+				footer: this.renderDetailFooter(row, width),
+				priority: [feedbackLine ?? transcriptError ?? stateLine],
+			},
+			commandDialogRows(this.context),
 		);
-		if (this.feedback) lines.push(renderFeedback(theme, this.feedback, width));
-		lines.push("", `${GUTTER}${theme.fg("muted", "Transcript")}`);
-		lines.push(...this.renderScrollableContent(row, width));
-		lines.push("", ...this.renderDetailFooter(row, width));
-		return lines;
 	}
 
 	private renderScrollableContent(row: AgentRow, width: number): string[] {
@@ -494,10 +520,10 @@ class AgentDialogComponent implements CommandDialogComponent {
 		const allLines: string[] = [];
 		switch (this.transcript.state) {
 			case "loading":
-				allLines.push(theme.fg("dim", "Loading transcript…"));
+				allLines.push(theme.fg("muted", "Loading transcript…"));
 				break;
 			case "unavailable":
-				allLines.push(theme.fg("dim", "Transcript unavailable."));
+				allLines.push(theme.fg("muted", "Transcript unavailable."));
 				break;
 			case "error":
 				allLines.push(theme.fg("error", truncateToWidth(this.transcript.text, contentWidth, "…")));
@@ -536,16 +562,24 @@ class AgentDialogComponent implements CommandDialogComponent {
 		if (!row) return this.renderList(width);
 		const theme = this.context.theme;
 		const resume = this.mode === "resume-input";
-		const lines = [
-			divider(theme, width),
-			title(theme, `Agents / ${oneLine(row.name) || "agent"}`),
+		const inputLine = `${GUTTER}${theme.fg("accent", "›")} ${this.input || theme.fg("dim", resume ? "Continue the task…" : "Send new guidance…")}`;
+		const feedbackLine = this.feedback ? renderFeedback(theme, this.feedback, width) : undefined;
+		const body = [
 			"",
 			`${GUTTER}${theme.fg("muted", resume ? "Resume message (optional)" : "Steer Agent")}`,
-			`${GUTTER}${theme.fg("accent", "›")} ${this.input || theme.fg("dim", resume ? "Continue the task…" : "Send new guidance…")}`,
+			inputLine,
+			...(feedbackLine ? [feedbackLine] : []),
+			"",
 		];
-		if (this.feedback) lines.push(renderFeedback(theme, this.feedback, width));
-		lines.push("", ...hintLines(theme, width, [`Enter ${resume ? "resume" : "send"}`, "Esc cancel"]));
-		return lines;
+		return fitCommandDialogRows(
+			{
+				header: [divider(theme, width), title(theme, `Agents / ${oneLine(row.name) || "agent"}`)],
+				body,
+				footer: hintLines(theme, width, [`Enter ${resume ? "resume" : "send"}`, "Esc cancel"]),
+				priority: [feedbackLine ?? inputLine],
+			},
+			commandDialogRows(this.context),
+		);
 	}
 
 	private detailViewportRows(): number {
@@ -639,7 +673,7 @@ function styledStatus(row: AgentRow, theme: Theme, detailed = false): string {
 		case "user_cancelled":
 			return theme.fg("muted", `cancelled${suffix}`);
 		case "running":
-			return theme.fg("dim", detailed ? `running${suffix}` : elapsed || "running");
+			return theme.fg("muted", detailed ? `running${suffix}` : elapsed || "running");
 	}
 }
 

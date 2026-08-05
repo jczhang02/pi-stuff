@@ -1,29 +1,23 @@
 import { homedir } from "node:os";
 import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
+import {
+	type CommandDialogComponent,
+	type CommandDialogView,
+	type CommandDialogViewContext,
+	commandDialogRows,
+	fitCommandDialogRows,
+} from "@jczhang02/pi-stuff-ui";
 import type { RtkProjectionAdapter } from "./projection.js";
 import type { RtkRuntime } from "./runtime.js";
 import type { RtkSettingsStore } from "./settings.js";
 
 const GUTTER = "  ";
-const NORMAL_SCREEN_RESERVE_ROWS = 3;
 
 export interface RtkDialogOptions {
 	readonly note?: string;
 	readonly projection: RtkProjectionAdapter;
 	readonly runtime: RtkRuntime;
 	readonly settings: RtkSettingsStore;
-}
-
-function terminalRows(context: CommandDialogViewContext): number {
-	const rows = (context.tui.terminal as { rows?: number }).rows;
-	if (rows === undefined || !Number.isFinite(rows)) return 24;
-	return Math.max(0, Math.floor(rows));
-}
-
-function dialogRows(context: CommandDialogViewContext): number {
-	const rows = terminalRows(context);
-	return rows === 0 ? 0 : Math.max(1, rows - NORMAL_SCREEN_RESERVE_ROWS);
 }
 
 function percent(saved: number, original: number): string {
@@ -76,22 +70,24 @@ class RtkDialogComponent implements CommandDialogComponent {
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
-		const maximumRows = dialogRows(this.context);
+		const maximumRows = commandDialogRows(this.context);
 		if (maximumRows === 0) return [];
 		const theme = this.context.theme;
 		const runtime = this.options.runtime.snapshot();
 		const settings = this.options.settings.get();
 		const stats = this.options.projection.stats();
-		const runtimeColor = runtime.state === "ready" ? "success" : runtime.state === "unchecked" ? "dim" : "error";
+		const runtimeColor = runtime.state === "ready" ? "success" : runtime.state === "unchecked" ? "muted" : "error";
 		const techniques = Object.entries(stats.techniques)
 			.sort(([left], [right]) => left.localeCompare(right))
 			.map(([name, count]) => `${name} ${String(count)}`)
 			.join(" · ");
+		const runtimeLine = `${GUTTER}${theme.fg(runtimeColor, runtime.state)}${runtime.version ? theme.fg("dim", ` · ${runtime.version}`) : ""}`;
+		const errorLines = runtime.lastError
+			? this.wrapped(renderWidth, theme.fg("error", oneLine(runtime.lastError)))
+			: [];
 		const body = [
-			theme.fg("border", "─".repeat(renderWidth)),
-			`${GUTTER}${theme.bold("RTK")}`,
 			"",
-			`${GUTTER}${theme.fg(runtimeColor, runtime.state)}${runtime.version ? theme.fg("dim", ` · ${runtime.version}`) : ""}`,
+			runtimeLine,
 			...(runtime.path
 				? [
 						`${GUTTER}Binary  ${compactRtkBinaryPath(
@@ -101,17 +97,24 @@ class RtkDialogComponent implements CommandDialogComponent {
 					]
 				: []),
 			...(runtime.sha256 ? [`${GUTTER}${theme.fg("dim", `SHA-256  ${runtime.sha256.slice(0, 16)}…`)}`] : []),
-			...(runtime.lastError ? this.wrapped(renderWidth, theme.fg("error", oneLine(runtime.lastError))) : []),
+			...errorLines,
 			"",
-			`${GUTTER}Command rewriting  ${settings.rewriteCommands ? theme.fg("success", "on") : theme.fg("dim", "off")}`,
-			`${GUTTER}Model projection  ${settings.outputProjection ? theme.fg("success", "on") : theme.fg("dim", "off")}`,
+			`${GUTTER}Command rewriting  ${settings.rewriteCommands ? theme.fg("success", "on") : theme.fg("muted", "off")}`,
+			`${GUTTER}Model projection  ${settings.outputProjection ? theme.fg("success", "on") : theme.fg("muted", "off")}`,
 			`${GUTTER}Saved  ${String(stats.savedChars)} chars (${percent(stats.savedChars, stats.originalChars)}) · ${String(stats.resultCount)} results`,
 			...(techniques ? this.wrapped(renderWidth, `Techniques  ${techniques}`) : []),
 			...(this.options.note ? ["", ...this.wrapped(renderWidth, this.options.note)] : []),
-			"",
-			`${GUTTER}${theme.fg("dim", "Configure with /rtk settings · Enter/Esc close")}`,
 		];
-		return body.slice(0, maximumRows).map((line) => truncateToWidth(line, renderWidth, "…"));
+		const lines = fitCommandDialogRows(
+			{
+				header: [theme.fg("border", "─".repeat(renderWidth)), `${GUTTER}${theme.bold("RTK")}`],
+				body,
+				footer: [`${GUTTER}${theme.fg("dim", "Configure with /rtk settings · Enter/Esc close")}`],
+				priority: [errorLines[0] ?? runtimeLine],
+			},
+			maximumRows,
+		);
+		return lines.map((line) => truncateToWidth(line, renderWidth, "…"));
 	}
 
 	private wrapped(width: number, value: string): string[] {

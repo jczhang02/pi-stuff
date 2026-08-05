@@ -186,6 +186,12 @@ test("/ui remains bounded at narrow width and very low height", () => {
 
 	const narrow = component.render(12);
 	expect(narrow.every((line) => visibleWidth(line) <= 12)).toBe(true);
+	testHarness.terminal.rows = 6;
+	const threeRows = component.render(64);
+	expect(threeRows).toHaveLength(3);
+	expect(threeRows.join("\n")).toContain("UI");
+	expect(threeRows.join("\n")).toContain("Statusline");
+	expect(threeRows.at(-1)).toMatch(/Esc(?: to)? close/);
 	testHarness.terminal.rows = 5;
 	expect(component.render(64).length).toBeLessThanOrEqual(2);
 	testHarness.terminal.rows = 0;

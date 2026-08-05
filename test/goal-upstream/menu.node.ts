@@ -9,7 +9,7 @@ import {
 import type { ActiveGoal, PendingQueueAction } from "../../packages/pi-stuff-goal/src/persistence.js";
 import { createGoal, transitionGoal } from "../../packages/pi-stuff-goal/src/runtime.js";
 import { DEFAULT_GOAL_SETTINGS } from "../../packages/pi-stuff-goal/src/settings.js";
-import { createMockContext } from "./support.js";
+import { createMockContext, createMockPi } from "./support.js";
 
 function runtime(goal?: ActiveGoal) {
 	return {
@@ -106,6 +106,30 @@ test("showGoalManager preserves non-TUI status behavior", async () => {
 		tracked.calls.map((call) => call.name),
 		["showGoal"],
 	);
+});
+
+test("Goal Command Dialog keeps title, selection, and Escape reachable at very low height", async () => {
+	const state = runtime();
+	state.settings.experimental.goals = true;
+	const mock = createMockPi();
+	(state as unknown as { pi: unknown }).pi = mock.pi;
+	let rendered = "";
+	const context = createMockContext({
+		mode: "tui",
+		hasUI: true,
+		terminalRows: 6,
+		select: async (title: string) => {
+			rendered = title;
+			return undefined;
+		},
+	});
+
+	await showGoalManager(state, commands().controller as never, context.ctx, async () => undefined);
+	const lines = rendered.split("\n");
+	assert.equal(lines.length, 3);
+	assert.match(rendered, /Goal/);
+	assert.match(rendered, /Start a goal/);
+	assert.match(lines.at(-1) ?? "", /Esc close/);
 });
 
 test("menu cancellation has no side effects and clear requires an exact preview", async () => {

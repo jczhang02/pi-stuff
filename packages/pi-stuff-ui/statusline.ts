@@ -949,7 +949,7 @@ function renderPromptRow(
 			? compactBadge
 			: fullBadge;
 	const content = fitPromptAndBadge(promptText, badge, contentWidth);
-	return `${prefix}${theme.fg("dim", content)}`;
+	return `${prefix}${theme.fg("muted", content)}`;
 }
 
 function fitPromptAndBadge(prompt: string, badge: string, width: number): string {

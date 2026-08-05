@@ -1,26 +1,14 @@
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { type SettingItem, SettingsList, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { commandDialogRows, fitCommandDialogRows } from "./dialog-layout.js";
 import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "./index.js";
 import type { RegisteredUiSetting, UiSettingRegistry } from "./settings.js";
 
 const GUTTER = "  ";
 const MIN_RENDER_WIDTH = 24;
-const NORMAL_SCREEN_RESERVE_ROWS = 3;
 
 export interface UiSettingsViewOptions {
 	readonly onPersistenceError?: (message: string) => void;
-}
-
-function terminalRows(context: CommandDialogViewContext): number {
-	const rows = (context.tui.terminal as { rows?: number }).rows;
-	if (rows === undefined || !Number.isFinite(rows)) return 24;
-	return Math.max(0, Math.floor(rows));
-}
-
-function dialogRows(context: CommandDialogViewContext): number {
-	const rows = terminalRows(context);
-	if (rows === 0) return 0;
-	return Math.max(1, rows - NORMAL_SCREEN_RESERVE_ROWS);
 }
 
 function oneLine(value: string): string {
@@ -105,7 +93,7 @@ class UiSettingsDialog implements CommandDialogComponent {
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
-		const maximumRows = dialogRows(this.context);
+		const maximumRows = commandDialogRows(this.context);
 		if (maximumRows === 0) return [];
 		const nativeLines = this.settingsList.render(Math.max(MIN_RENDER_WIDTH, renderWidth));
 		let nativeHintIndex = -1;
@@ -115,24 +103,28 @@ class UiSettingsDialog implements CommandDialogComponent {
 			nativeHintIndex = index;
 			break;
 		}
-		if (nativeHintIndex >= 0) {
-			nativeLines[nativeHintIndex] = this.context.theme.fg("dim", settingsHint(renderWidth));
-		}
-		const lines = [
-			this.context.theme.fg("border", "─".repeat(renderWidth)),
-			`${GUTTER}${this.context.theme.bold("UI")}`,
-			...nativeLines,
-			...(this.error ? ["", `${GUTTER}${this.context.theme.fg("error", this.error)}`] : []),
+		const footer = [
+			nativeHintIndex >= 0
+				? this.context.theme.fg("dim", settingsHint(renderWidth))
+				: `${GUTTER}${this.context.theme.fg("dim", "Esc close")}`,
 		];
-		const fitted = lines.length <= maximumRows ? lines : this.fitLowHeight(lines, maximumRows);
-		return fitted.map((line) => truncateToWidth(line, renderWidth, "…"));
-	}
-
-	private fitLowHeight(lines: readonly string[], maximumRows: number): string[] {
-		if (maximumRows === 1) return [`${GUTTER}${this.context.theme.fg("dim", "Esc close")}`];
-		const selected = lines.find((line) => line.includes("→")) ?? lines[2] ?? GUTTER;
-		if (maximumRows === 2) return [selected, `${GUTTER}${this.context.theme.fg("dim", "Esc close")}`];
-		return [lines[0] ?? "", lines[1] ?? `${GUTTER}${this.context.theme.bold("UI")}`, selected].slice(0, maximumRows);
+		const nativeBody = nativeLines.filter((_line, index) => index !== nativeHintIndex);
+		const errorLine = this.error ? `${GUTTER}${this.context.theme.fg("error", this.error)}` : undefined;
+		const body = [...nativeBody, ...(errorLine ? ["", errorLine] : [])];
+		const selected = nativeBody.find((line) => line.includes("→"));
+		const lines = fitCommandDialogRows(
+			{
+				header: [
+					this.context.theme.fg("border", "─".repeat(renderWidth)),
+					`${GUTTER}${this.context.theme.bold("UI")}`,
+				],
+				body,
+				footer,
+				priority: [errorLine ?? selected ?? `${GUTTER}${this.context.theme.fg("muted", "No UI settings")}`],
+			},
+			maximumRows,
+		);
+		return lines.map((line) => truncateToWidth(line, renderWidth, "…"));
 	}
 
 	private setValue(id: string, value: string): void {

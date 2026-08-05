@@ -1,25 +1,19 @@
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { type SettingItem, SettingsList, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
+import {
+	type CommandDialogComponent,
+	type CommandDialogView,
+	type CommandDialogViewContext,
+	commandDialogRows,
+	fitCommandDialogRows,
+} from "@jczhang02/pi-stuff-ui";
 import type { RtkSettingsStore } from "./settings.js";
 
 const GUTTER = "  ";
 const MIN_RENDER_WIDTH = 24;
-const NORMAL_SCREEN_RESERVE_ROWS = 3;
 
 export interface RtkSettingsViewOptions {
 	readonly onPersistenceError?: (message: string) => void;
-}
-
-function terminalRows(context: CommandDialogViewContext): number {
-	const rows = (context.tui.terminal as { rows?: number }).rows;
-	if (rows === undefined || !Number.isFinite(rows)) return 24;
-	return Math.max(0, Math.floor(rows));
-}
-
-function dialogRows(context: CommandDialogViewContext): number {
-	const rows = terminalRows(context);
-	return rows === 0 ? 0 : Math.max(1, rows - NORMAL_SCREEN_RESERVE_ROWS);
 }
 
 function settingsHint(width: number): string {
@@ -103,22 +97,32 @@ class RtkSettingsDialog implements CommandDialogComponent {
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
-		const maximumRows = dialogRows(this.context);
+		const maximumRows = commandDialogRows(this.context);
 		if (maximumRows === 0) return [];
 		const nativeLines = this.settingsList.render(Math.max(MIN_RENDER_WIDTH, renderWidth));
+		let nativeHintIndex = -1;
 		for (let index = nativeLines.length - 1; index >= 0; index -= 1) {
 			const line = nativeLines[index] ?? "";
 			if (!line.includes("Enter/Space to change")) continue;
-			nativeLines[index] = this.context.theme.fg("dim", settingsHint(renderWidth));
+			nativeHintIndex = index;
 			break;
 		}
-		const lines = [
-			this.context.theme.fg("border", "─".repeat(renderWidth)),
-			`${GUTTER}${this.context.theme.bold("RTK settings")}`,
-			...nativeLines,
-			...(this.error ? ["", `${GUTTER}${this.context.theme.fg("error", this.error)}`] : []),
-		];
-		return lines.slice(0, maximumRows).map((line) => truncateToWidth(line, renderWidth, "…"));
+		const nativeBody = nativeLines.filter((_line, index) => index !== nativeHintIndex);
+		const errorLine = this.error ? `${GUTTER}${this.context.theme.fg("error", this.error)}` : undefined;
+		const selected = nativeBody.find((line) => line.includes("→"));
+		const lines = fitCommandDialogRows(
+			{
+				header: [
+					this.context.theme.fg("border", "─".repeat(renderWidth)),
+					`${GUTTER}${this.context.theme.bold("RTK settings")}`,
+				],
+				body: [...nativeBody, ...(errorLine ? ["", errorLine] : [])],
+				footer: [this.context.theme.fg("dim", settingsHint(renderWidth))],
+				priority: [errorLine ?? selected ?? `${GUTTER}No RTK settings`],
+			},
+			maximumRows,
+		);
+		return lines.map((line) => truncateToWidth(line, renderWidth, "…"));
 	}
 
 	private setValue(id: string, value: string): void {

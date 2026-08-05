@@ -87,6 +87,11 @@ class DialogContextHarness {
 	renderRequests = 0;
 	readonly controller = new AbortController();
 	readonly tui = { terminal: { columns: 64, rows: 28 } } as unknown as TUI;
+	private readonly activeTheme: Theme;
+
+	constructor(activeTheme = theme) {
+		this.activeTheme = activeTheme;
+	}
 
 	context(): CommandDialogViewContext<void> {
 		return {
@@ -98,7 +103,7 @@ class DialogContextHarness {
 				this.renderRequests += 1;
 			},
 			signal: this.controller.signal,
-			theme,
+			theme: this.activeTheme,
 			tui: this.tui,
 		};
 	}
@@ -134,9 +139,9 @@ function result(action: AgentControlAction, acknowledged: boolean, message: stri
 	return { acknowledged, key: action.key, message, status: null, type: action.type };
 }
 
-function setup(rows: readonly AgentRow[], options: Partial<AgentDialogOptions> = {}) {
+function setup(rows: readonly AgentRow[], options: Partial<AgentDialogOptions> = {}, activeTheme = theme) {
 	const current = new CurrentAgentsHarness(rows);
-	const context = new DialogContextHarness();
+	const context = new DialogContextHarness(activeTheme);
 	const requests: AgentTranscriptRequest[] = [];
 	const view = createAgentDialogView(current.asCurrentAgents(), {
 		readTranscript: (request) => {
@@ -166,6 +171,22 @@ async function flush(): Promise<void> {
 }
 
 describe("Agent Command Dialog", () => {
+	test("keeps running identity and state above the tertiary dim token", () => {
+		const colors: Array<{ color: string; text: string }> = [];
+		const recordingTheme = {
+			...theme,
+			fg: (color: string, text: string) => {
+				colors.push({ color, text });
+				return text;
+			},
+		} as unknown as Theme;
+		const { component } = setup([row("reviewer", "running")], {}, recordingTheme);
+		component.render(64);
+		expect(colors).toContainEqual({ color: "muted", text: "12s" });
+		expect(colors).not.toContainEqual({ color: "dim", text: "12s" });
+		component.dispose?.();
+	});
+
 	test("is a normal full-width view with a bounded 64-column list", () => {
 		const rows = Array.from({ length: 9 }, (_, index) =>
 			row(`agent-${index + 1}`, index === 0 ? "waiting_supervisor" : "running", {
@@ -211,6 +232,30 @@ describe("Agent Command Dialog", () => {
 		input(component, "\r");
 		await flush();
 		expect(text(component, 64)).toContain("completed");
+	});
+
+	test("keeps title, selected state, errors, and Escape reachable at very low height", async () => {
+		const failure = new Error("transcript disk unavailable");
+		const { component, context } = setup([row("reviewer", "running")], {
+			readTranscript: async () => {
+				throw failure;
+			},
+		});
+		(context.tui.terminal as { rows: number }).rows = 6;
+		const list = component.render(64);
+		expect(list).toHaveLength(3);
+		expect(list.join("\n")).toContain("Agents");
+		expect(list.join("\n")).toContain("reviewer");
+		expect(list.at(-1)).toContain("Esc close");
+
+		input(component, "\r");
+		await flush();
+		const detail = component.render(64);
+		expect(detail).toHaveLength(3);
+		expect(detail.join("\n")).toContain("Agents / reviewer");
+		expect(detail.join("\n")).toContain("transcript disk unavailable");
+		expect(detail.at(-1)).toContain("Esc back");
+		component.dispose?.();
 	});
 
 	test("navigates without wrapping and uses Escape as back then close", async () => {

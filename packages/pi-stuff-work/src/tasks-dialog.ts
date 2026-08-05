@@ -1,6 +1,12 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
+import {
+	type CommandDialogComponent,
+	type CommandDialogView,
+	type CommandDialogViewContext,
+	commandDialogRows,
+	fitCommandDialogRows,
+} from "@jczhang02/pi-stuff-ui";
 import type { CurrentWorkProjectionItem, CurrentWorkSources } from "./current-work.js";
 import type { BackgroundWorkRuntime, BackgroundWorkSnapshot } from "./runtime.js";
 
@@ -19,7 +25,6 @@ interface TaskRow {
 }
 
 const GUTTER = "  ";
-const NORMAL_SCREEN_RESERVE_ROWS = 3;
 const LIST_ROWS = 9;
 const NARROW_LIST_ROWS = 6;
 const NARROW_WIDTH = 64;
@@ -29,16 +34,6 @@ function oneLine(value: string): string {
 		.replace(/[\r\n\t]+/gu, " ")
 		.replace(/\s+/gu, " ")
 		.trim();
-}
-
-function terminalRows(context: CommandDialogViewContext): number {
-	const rows = (context.tui.terminal as { rows?: number }).rows;
-	return rows === undefined || !Number.isFinite(rows) ? 24 : Math.max(0, Math.floor(rows));
-}
-
-function dialogRows(context: CommandDialogViewContext): number {
-	const rows = terminalRows(context);
-	return rows === 0 ? 0 : Math.max(1, rows - NORMAL_SCREEN_RESERVE_ROWS);
 }
 
 function bounded(width: number, line: string): string {
@@ -68,7 +63,7 @@ function kindLabel(kind: TaskRow["kind"]): string {
 function statusText(theme: Theme, status: string, value: string): string {
 	if (status === "stopping") return theme.fg("error", value);
 	if (status === "waiting" || status === "queued") return theme.fg("accent", value);
-	return theme.fg("dim", value);
+	return theme.fg("muted", value);
 }
 
 function fromOwned(snapshot: BackgroundWorkSnapshot): TaskRow {
@@ -103,7 +98,7 @@ function fitRow(theme: Theme, row: TaskRow, selected: boolean, width: number): s
 	const label = selected ? theme.bold(kindLabel(row.kind)) : kindLabel(row.kind);
 	const suffix = statusText(theme, row.status, `${row.status} · ${elapsed(row.startedAt)}`);
 	const prefix = `${cursor} ${glyph} ${label}`;
-	const title = theme.fg("dim", oneLine(row.title));
+	const title = theme.fg("muted", oneLine(row.title));
 	const available = Math.max(1, width - visibleWidth(GUTTER));
 	const identity = truncateToWidth(`${prefix}  ${title}`, available, "…");
 	const separator = " · ";
@@ -181,7 +176,7 @@ class TasksDialogComponent implements CommandDialogComponent {
 	render(width: number): string[] {
 		this.lastWidth = Math.max(1, Math.floor(width));
 		const lines = this.mode === "list" ? this.renderList() : this.renderDetail();
-		return lines.slice(0, dialogRows(this.context)).map((line) => bounded(this.lastWidth, line));
+		return lines.map((line) => bounded(this.lastWidth, line));
 	}
 
 	private refresh(): void {
@@ -228,7 +223,7 @@ class TasksDialogComponent implements CommandDialogComponent {
 		)
 			return;
 		const document = this.detailDocument(this.selected());
-		const page = Math.max(1, dialogRows(this.context) - 10);
+		const page = Math.max(1, commandDialogRows(this.context) - 10);
 		const delta = matchesKey(data, Key.up)
 			? -1
 			: matchesKey(data, Key.down)
@@ -271,7 +266,7 @@ class TasksDialogComponent implements CommandDialogComponent {
 			...(selected?.owned ? ["x stop"] : []),
 			"Esc return",
 		]);
-		const maximum = dialogRows(this.context);
+		const maximum = commandDialogRows(this.context);
 		const preferred = this.lastWidth <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
 		const viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
 		const selectedIndex = Math.max(
@@ -280,16 +275,17 @@ class TasksDialogComponent implements CommandDialogComponent {
 		);
 		const start = Math.max(0, Math.min(selectedIndex - Math.floor(viewport / 2), this.rows.length - viewport));
 		const visible = viewport > 0 ? this.rows.slice(start, start + viewport) : [];
-		const lines = [
+		const header = [
 			theme.fg("border", "─".repeat(this.lastWidth)),
 			`${GUTTER}${theme.bold("Tasks")}${theme.fg("dim", ` · ${String(this.rows.length)} current`)}`,
-			"",
 		];
-		if (visible.length === 0) lines.push(`${GUTTER}${theme.fg("dim", "No background work in this session.")}`);
-		else for (const row of visible) lines.push(fitRow(theme, row, row.id === this.selectedId, this.lastWidth));
-		if (this.note) lines.push(`${GUTTER}${theme.fg("dim", oneLine(this.note))}`);
-		while (lines.length + footer.length < maximum && lines.length < preferred + 3) lines.push("");
-		return [...lines, ...footer];
+		const emptyLine = `${GUTTER}${theme.fg("dim", "No background work in this session.")}`;
+		const rowLines = visible.map((row) => fitRow(theme, row, row.id === this.selectedId, this.lastWidth));
+		const noteLine = this.note ? `${GUTTER}${theme.fg("dim", oneLine(this.note))}` : undefined;
+		const body = ["", ...(rowLines.length === 0 ? [emptyLine] : rowLines), ...(noteLine ? [noteLine] : [])];
+		while (header.length + body.length + footer.length < maximum && body.length < preferred + 1) body.push("");
+		const selectedLine = selected ? fitRow(theme, selected, true, this.lastWidth) : undefined;
+		return fitCommandDialogRows({ header, body, footer, priority: [noteLine ?? selectedLine ?? emptyLine] }, maximum);
 	}
 
 	private renderDetail(): string[] {
@@ -300,26 +296,30 @@ class TasksDialogComponent implements CommandDialogComponent {
 		}
 		const theme = this.context.theme;
 		const footer = hint(theme, this.lastWidth, ["↑/↓ scroll", ...(row.owned ? ["x stop"] : []), "Esc back"]);
-		const maximum = dialogRows(this.context);
+		const maximum = commandDialogRows(this.context);
 		const document = this.detailDocument(row);
 		const fixedRows = 9 + footer.length + (this.note ? 1 : 0);
 		const viewport = Math.max(0, maximum - fixedRows);
 		const maxOffset = Math.max(0, document.length - viewport);
 		this.scrollOffset = Math.min(maxOffset, this.scrollOffset);
 		const visible = document.slice(this.scrollOffset, this.scrollOffset + viewport);
-		return [
+		const stateLine = `${GUTTER}${theme.fg("dim", "State")}  ${statusText(theme, row.status, row.status)} ${theme.fg("dim", `· ${elapsed(row.startedAt)}`)}`;
+		const noteLine = this.note ? `${GUTTER}${theme.fg("dim", oneLine(this.note))}` : undefined;
+		const header = [
 			theme.fg("border", "─".repeat(this.lastWidth)),
 			`${GUTTER}${theme.bold("Task details")} ${theme.fg("dim", `· ${kindLabel(row.kind)}`)}`,
+		];
+		const body = [
 			"",
-			`${GUTTER}${theme.fg("dim", "State")}  ${statusText(theme, row.status, row.status)} ${theme.fg("dim", `· ${elapsed(row.startedAt)}`)}`,
+			stateLine,
 			`${GUTTER}${theme.fg("dim", "Task")}   ${oneLine(row.title)}`,
 			`${GUTTER}${theme.fg("dim", "ID")}     ${oneLine(row.id)}`,
 			"",
 			...visible.map((line) => `${GUTTER}${line}`),
-			...(this.note ? [`${GUTTER}${theme.fg("dim", oneLine(this.note))}`] : []),
+			...(noteLine ? [noteLine] : []),
 			"",
-			...footer,
 		];
+		return fitCommandDialogRows({ header, body, footer, priority: [noteLine ?? stateLine] }, maximum);
 	}
 
 	private detailDocument(row: TaskRow | undefined): readonly string[] {

@@ -12,6 +12,12 @@ import {
 import { createUiSettingsView } from "./ui-settings-dialog.js";
 
 export {
+	type CommandDialogRowSections,
+	commandDialogRows,
+	fitCommandDialogRows,
+} from "./dialog-layout.js";
+
+export {
 	beginUiSettingsGeneration,
 	getUiSettingRegistry,
 	type RegisteredUiSetting,

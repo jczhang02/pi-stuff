@@ -494,10 +494,10 @@ describe("StatuslineController", () => {
 			expect(colored.get("thinkingMedium")).toContain("◉");
 			expect(colored.get("warning")).toEqual(expect.arrayContaining(["⎇", "~3", "¤"]));
 			expect(colored.get("success")).toContain("+12");
-			expect(colored.get("dim")).toEqual(
-				expect.arrayContaining(["◔", " · ", "Implement the accepted Pi Stuff statusline."]),
+			expect(colored.get("dim")).toEqual(expect.arrayContaining(["◔", " · "]));
+			expect(colored.get("muted")).toEqual(
+				expect.arrayContaining(["med", "Δ", "?1", "↻", "Implement the accepted Pi Stuff statusline."]),
 			);
-			expect(colored.get("muted")).toEqual(expect.arrayContaining(["med", "Δ", "?1", "↻"]));
 			expect([...colored.values()].flat()).not.toContain("goal:UI");
 			expect(colored.get("text")).toEqual(expect.arrayContaining(["pi-stuff", "main", "42.4%", "99.9%", "$0.42"]));
 		});

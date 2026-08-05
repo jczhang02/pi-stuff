@@ -499,7 +499,7 @@ function styledState(row: AgentRow, theme: Theme, now: number): string {
 		case "user_cancelled":
 			return theme.fg("muted", elapsed ? `cancelled · ${elapsed}` : "cancelled");
 		case "running":
-			return theme.fg("dim", elapsed || "running");
+			return theme.fg("muted", elapsed || "running");
 	}
 }
 

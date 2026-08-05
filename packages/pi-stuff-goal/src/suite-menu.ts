@@ -8,8 +8,13 @@ import {
 	truncateToWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import type { CommandDialogComponent, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
-import { getCommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
+import {
+	type CommandDialogComponent,
+	type CommandDialogViewContext,
+	commandDialogRows,
+	fitCommandDialogRows,
+	getCommandDialogCoordinator,
+} from "@jczhang02/pi-stuff-ui";
 
 type MenuTransition<ScreenId extends string> =
 	| { kind: "stay" }
@@ -108,7 +113,6 @@ type DialogEvent =
 
 const GUTTER = "  ";
 const MIN_RENDER_WIDTH = 24;
-const NORMAL_SCREEN_RESERVE_ROWS = 3;
 
 export function defineMenu<
 	State,
@@ -304,21 +308,41 @@ class SuiteMenuDialog<ScreenId extends string, ActionId extends string> implemen
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
-		const maximumRows = dialogRows(this.context);
+		const maximumRows = commandDialogRows(this.context);
 		if (maximumRows === 0) return [];
 		const bodyWidth = Math.max(MIN_RENDER_WIDTH, renderWidth);
-		const lines = [
-			this.context.theme.fg("border", "─".repeat(renderWidth)),
-			`${GUTTER}${this.context.theme.bold(oneLine(this.screen.title))}`,
-			...(this.screen.lines ?? []).flatMap((line) =>
-				wrapTextWithAnsi(this.context.theme.fg("muted", `${GUTTER}${oneLine(line)}`), bodyWidth),
-			),
-			...(this.screen.lines?.length ? [""] : []),
-			...(this.list ? this.list.render(bodyWidth) : [`${GUTTER}${this.context.theme.fg("dim", "Esc back")}`]),
-		];
-		return lines
-			.slice(0, maximumRows)
-			.map((line) => truncateToWidth(line, renderWidth, this.context.theme.fg("dim", "…")));
+		const introductoryLines = (this.screen.lines ?? []).flatMap((line) =>
+			wrapTextWithAnsi(this.context.theme.fg("muted", `${GUTTER}${oneLine(line)}`), bodyWidth),
+		);
+		const nativeLines = this.list?.render(bodyWidth) ?? [];
+		const nativeBody = nativeLines.filter(
+			(line) => !line.includes("Esc") && !line.includes("Type to search") && !line.includes("Enter/Space"),
+		);
+		const body = [...introductoryLines, ...(introductoryLines.length ? [""] : []), ...nativeBody];
+		const selected = nativeBody.find((line) => line.includes("→") || line.includes("›"));
+		const closeWord = this.screen.hint === "close" ? "close" : "back";
+		const footerText =
+			this.screen.kind === "actions"
+				? `↑/↓ select · Enter choose · Esc ${closeWord}`
+				: this.screen.kind === "settings"
+					? `Type search · Enter/Space change · Esc ${closeWord}`
+					: `Esc ${closeWord}`;
+		const footer = wrapTextWithAnsi(footerText, Math.max(1, renderWidth - GUTTER.length)).map(
+			(line) => `${GUTTER}${this.context.theme.fg("dim", line)}`,
+		);
+		const lines = fitCommandDialogRows(
+			{
+				header: [
+					this.context.theme.fg("border", "─".repeat(renderWidth)),
+					`${GUTTER}${this.context.theme.bold(oneLine(this.screen.title))}`,
+				],
+				body,
+				footer,
+				priority: [selected ?? introductoryLines[0] ?? `${GUTTER}${this.context.theme.fg("muted", "No options")}`],
+			},
+			maximumRows,
+		);
+		return lines.map((line) => truncateToWidth(line, renderWidth, this.context.theme.fg("dim", "…")));
 	}
 }
 
@@ -351,12 +375,6 @@ async function showLegacyScreen<ScreenId extends string, ActionId extends string
 		itemId: item.id,
 		value: values[(index + 1) % values.length] ?? item.currentValue,
 	};
-}
-
-function dialogRows<Result>(context: CommandDialogViewContext<Result>): number {
-	const rows = (context.tui.terminal as { readonly rows?: number }).rows;
-	if (rows === undefined || !Number.isFinite(rows)) return 24;
-	return Math.max(0, Math.floor(rows) - NORMAL_SCREEN_RESERVE_ROWS);
 }
 
 function oneLine(value: string): string {

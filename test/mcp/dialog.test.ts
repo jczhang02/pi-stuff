@@ -24,6 +24,7 @@ describe("MCP Command Dialog", () => {
 			version: 1,
 		});
 		let closed = 0;
+		const terminal = { rows: 20 };
 		const component = createMcpStatusView(store).create({
 			close: () => {
 				closed += 1;
@@ -32,7 +33,7 @@ describe("MCP Command Dialog", () => {
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows: 20 } } as unknown as TUI,
+			tui: { terminal } as unknown as TUI,
 		});
 		const lines = component.render(36);
 
@@ -41,6 +42,12 @@ describe("MCP Command Dialog", () => {
 		expect(lines.join("\n")).toContain("local-filesystem");
 		expect(lines.join("\n")).not.toMatch(/[╭╮╰╯]/u);
 		expect(lines.every((line) => visibleWidth(line) <= 36)).toBe(true);
+		terminal.rows = 6;
+		const low = component.render(36);
+		expect(low).toHaveLength(3);
+		expect(low.join("\n")).toContain("MCP");
+		expect(low.join("\n")).toContain("local-filesystem");
+		expect(low.at(-1)).toContain("Esc close");
 		component.handleInput?.("\u001b");
 		expect(closed).toBe(1);
 		component.dispose?.();

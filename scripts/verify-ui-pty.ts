@@ -53,6 +53,7 @@ export interface UiPtyVerificationOptions {
 	readonly artifactDirectory?: string;
 	readonly packagePath: string;
 	readonly piBinary: string;
+	readonly theme?: "dark" | "light";
 }
 
 export interface UiPtyEvidence {
@@ -300,7 +301,7 @@ class TmuxPiSession {
 	}
 }
 
-async function createCase(rootDirectory: string, label: string): Promise<CasePaths> {
+async function createCase(rootDirectory: string, label: string, theme: "dark" | "light"): Promise<CasePaths> {
 	const caseDirectory = join(rootDirectory, label);
 	const config = join(caseDirectory, "agent");
 	const sessions = join(caseDirectory, "sessions");
@@ -322,7 +323,7 @@ async function createCase(rootDirectory: string, label: string): Promise<CasePat
 					images: { autoResize: false },
 					outputPad: 1,
 					quietStartup: true,
-					theme: "dark",
+					theme,
 					uiMode: "fullscreen",
 				},
 				null,
@@ -1015,7 +1016,11 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 	let liveThought = false;
 	try {
 		for (const { columns, rows } of TARGET_SIZES) {
-			const paths = await createCase(temporaryDirectory, `${String(columns)}x${String(rows)}`);
+			const paths = await createCase(
+				temporaryDirectory,
+				`${String(columns)}x${String(rows)}`,
+				options.theme ?? "dark",
+			);
 			const session = new TmuxPiSession(paths, options, columns, rows);
 			try {
 				session.start();
@@ -1075,11 +1080,13 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 }
 
 if (import.meta.main) {
-	const { PI_BIN = "/opt/bin/pi", PI_STUFF_UI_PTY_ARTIFACT_DIR } = process.env;
+	const { PI_BIN = "/opt/bin/pi", PI_STUFF_UI_PTY_ARTIFACT_DIR, PI_STUFF_UI_PTY_THEME } = process.env;
+	const theme = PI_STUFF_UI_PTY_THEME === "light" ? "light" : "dark";
 	const evidence = await verifyUiPty({
 		...(PI_STUFF_UI_PTY_ARTIFACT_DIR ? { artifactDirectory: PI_STUFF_UI_PTY_ARTIFACT_DIR } : {}),
 		piBinary: PI_BIN,
 		packagePath: join(root, "packages/pi-stuff"),
+		theme,
 	});
 	console.log(`Certified production UI in ${evidence.sizes.join(", ")}`);
 	console.log(`Host profile: ${CERTIFIED_PI_HOST_PROFILE}`);

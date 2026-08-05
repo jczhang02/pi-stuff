@@ -39,7 +39,7 @@ function containsBidiFormatControl(value: string): boolean {
 describe("formatOverlayTaskLine", () => {
 	test("uses a quiet checkbox for runnable pending work", () => {
 		expect(formatOverlayTaskLine({ task: task(), openBlockers: [] }, recordingTheme)).toBe(
-			"<dim>□</dim> <text>quiet task</text>",
+			"<muted>□</muted> <text>quiet task</text>",
 		);
 	});
 
@@ -55,9 +55,9 @@ describe("formatOverlayTaskLine", () => {
 		);
 	});
 
-	test("dims blocked work without exposing contextless dependency ids", () => {
+	test("marks blocked work without relying on color or exposing contextless dependency ids", () => {
 		expect(formatOverlayTaskLine({ task: task(), openBlockers: ["dep-2", "missing"] }, recordingTheme)).toBe(
-			"<dim>□</dim> <dim>quiet task</dim>",
+			"<warning>⊘</warning> <muted>quiet task</muted>",
 		);
 	});
 
@@ -162,12 +162,14 @@ describe("selectOverlayLayout", () => {
 describe("formatCollapsedNextLine", () => {
 	test("renders one compact Next line", () => {
 		expect(formatCollapsedNextLine({ task: task({ subject: "ship it" }), openBlockers: [] }, recordingTheme)).toBe(
-			"<dim>Next:</dim> <text>ship it</text>",
+			"<muted>Next:</muted> <text>ship it</text>",
 		);
 	});
 
 	test("has an all-complete fallback during the five-second linger", () => {
-		expect(formatCollapsedNextLine(undefined, recordingTheme)).toBe("<dim>Next:</dim> <dim>all tasks complete</dim>");
+		expect(formatCollapsedNextLine(undefined, recordingTheme)).toBe(
+			"<muted>Next:</muted> <dim>all tasks complete</dim>",
+		);
 	});
 
 	test("uses the same fallback for a collapsed control-only subject", () => {
@@ -176,6 +178,15 @@ describe("formatCollapsedNextLine", () => {
 				{ task: task({ subject: "\u001b]0;hidden\u0007" }), openBlockers: [] },
 				recordingTheme,
 			),
-		).toBe("<dim>Next:</dim> <text>untitled task</text>");
+		).toBe("<muted>Next:</muted> <text>untitled task</text>");
+	});
+
+	test("keeps blocked state visible in collapsed mode without dependency ids", () => {
+		expect(
+			formatCollapsedNextLine(
+				{ task: task({ subject: "waiting task" }), openBlockers: ["secret-dependency"] },
+				recordingTheme,
+			),
+		).toBe("<muted>Next:</muted> <warning>⊘</warning> <muted>waiting task</muted>");
 	});
 });
