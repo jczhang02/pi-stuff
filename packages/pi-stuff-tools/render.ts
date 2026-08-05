@@ -14,6 +14,8 @@ const MAX_TRUNCATED_SUMMARY_WIDTH = 12;
 const MIN_TRUNCATED_LABEL_WIDTH = 4;
 const MIN_TRUNCATED_SUMMARY_WIDTH = 6;
 const MIN_TRUNCATED_TARGET_WIDTH = 8;
+const MIN_LATIN_PARTIAL_UNIT = 3;
+const MIN_COMPACT_PARTIAL_UNIT = 2;
 
 export interface ToolRowModel {
 	readonly durationMs: number | undefined;
@@ -109,7 +111,7 @@ export function toolStateGlyph(_state: ToolActivityState): string {
 function styleState(theme: Theme, state: ToolActivityState, text: string): string {
 	switch (state) {
 		case "running":
-			return theme.fg("dim", text);
+			return theme.fg("muted", text);
 		case "success":
 			return theme.fg("success", text);
 		case "error":
@@ -144,6 +146,50 @@ function fitIdentityAndSummary(markerSlot: string, label: string, summary: strin
 	return `${markerSlot}${truncateToWidth(label, labelBudget, "…")}${separator}${fittedSummary}`;
 }
 
+function semanticCharacters(value: string): string[] {
+	return value.match(/[\p{L}\p{N}\p{Extended_Pictographic}]/gu) ?? [];
+}
+
+function isCompactSemanticCharacter(value: string): boolean {
+	return /[\p{Script=Han}\p{Extended_Pictographic}]/u.test(value);
+}
+
+function removeDanglingShellBoundary(value: string): string {
+	return value
+		.replaceAll(/\s+/gu, " ")
+		.trimEnd()
+		.replace(/(?:\s*(?:\|\||&&|[|&;]))+$/u, "")
+		.trimEnd();
+}
+
+/** Truncate only after a recognizable unit; otherwise omit the optional target. */
+function fitOptionalTarget(targetPart: string, width: number): string {
+	const budget = Math.max(0, Math.floor(width));
+	if (budget < MIN_TRUNCATED_TARGET_WIDTH) return "";
+	if (visibleWidth(targetPart) <= budget) return targetPart;
+	const plain = sanitizeTerminalText(targetPart);
+	let prefix = sanitizeTerminalText(truncateToWidth(plain, Math.max(0, budget - visibleWidth("…")), "")).trimEnd();
+	if (!prefix) return "";
+
+	const next = plain.slice(prefix.length).at(0);
+	const last = prefix.at(-1);
+	const delimiter = /[\s/|&;,:=()[\]{}<>]/u;
+	if (next && last && !delimiter.test(last) && !delimiter.test(next)) {
+		let tokenStart = prefix.length;
+		while (tokenStart > 0 && !delimiter.test(prefix[tokenStart - 1] ?? "")) tokenStart -= 1;
+		const token = prefix.slice(tokenStart);
+		const semantic = semanticCharacters(token);
+		const compact = semantic.length > 0 && semantic.every(isCompactSemanticCharacter);
+		const minimum = compact ? MIN_COMPACT_PARTIAL_UNIT : MIN_LATIN_PARTIAL_UNIT;
+		if (semantic.length < minimum) prefix = prefix.slice(0, tokenStart);
+	}
+
+	prefix = removeDanglingShellBoundary(prefix);
+	const meaningfulUnits = prefix.match(/[\p{L}\p{N}\p{Extended_Pictographic}]+/gu) ?? [];
+	if (!meaningfulUnits.some((unit) => semanticCharacters(unit).length >= MIN_COMPACT_PARTIAL_UNIT)) return "";
+	return truncateToWidth(targetPart, Math.min(budget, visibleWidth(prefix) + visibleWidth("…")), "…");
+}
+
 /** Fit one Tool row with identity first, result second, and optional target last. */
 export function fitToolRowParts(
 	markerSlot: string,
@@ -163,7 +209,7 @@ export function fitToolRowParts(
 	if (visibleWidth(full) <= width) return full;
 
 	const remaining = width - visibleWidth(identity);
-	if (!summary) return `${identity}${truncateToWidth(targetPart, remaining, "…")}`;
+	if (!summary) return `${identity}${fitOptionalTarget(targetPart, remaining)}`;
 
 	const summarySeparator = " · ";
 	const separatorWidth = visibleWidth(summarySeparator);
@@ -176,8 +222,7 @@ export function fitToolRowParts(
 	// A tiny path fragment adds noise and can visually bind its ellipsis to the
 	// independently-owned result. Keep the result boundary and omit the optional
 	// target until there is room for a recognisable fragment.
-	const fittedTarget =
-		targetBudget >= MIN_TRUNCATED_TARGET_WIDTH ? truncateToWidth(targetPart, targetBudget, "…") : "";
+	const fittedTarget = fitOptionalTarget(targetPart, targetBudget);
 	return `${identity}${fittedTarget}${fullSummaryPart}`;
 }
 

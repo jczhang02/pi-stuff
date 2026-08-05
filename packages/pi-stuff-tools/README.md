@@ -13,8 +13,12 @@ unchanged. Suite-owned tools can opt into the same renderer contract through `re
   remain static.
 - Success uses the success color. Errors, permission rejection, and cancellation use the error color and remain
   explicit.
+- Narrow rows keep the result/state tail and shorten the optional target only at a useful semantic boundary. A target
+  fragment is omitted instead of ending in an orphaned shell operator, one-letter Latin stub, or otherwise meaningless
+  ellipsis such as `| s…`.
 - `/tools` opens the recent-operation list in the shared full-width non-floating Command Dialog. Enter opens one
-  bounded detail view and Esc returns without expanding the transcript.
+  bounded detail view and Esc returns without expanding the transcript. At low heights it preserves the selected
+  operation or attached error and the Escape/back footer before allocating result lines.
 - Pi's global `Ctrl+O` state does not expand Suite compact rows; use `/tools` to inspect one bounded result without
   expanding every prior operation.
 - `/ui` contains the default-on **Tool running timer** setting alongside the Suite's other presentation settings. It

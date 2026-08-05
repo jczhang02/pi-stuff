@@ -195,8 +195,8 @@ test("/tools wraps hints by visible width and never budgets rows the terminal do
 	runtime.clear();
 });
 
-test("/tools uses the same dim, success, and error state colors as transcript rows", () => {
-	const colorCodes: Record<string, number> = { dim: 2, error: 31, success: 32 };
+test("/tools uses readable running, success, and error state colors across transcript and dialog rows", () => {
+	const colorCodes: Record<string, number> = { error: 31, muted: 90, success: 32 };
 	const semanticTheme = {
 		bold: (value: string) => value,
 		fg: (color: string, value: string) => {
@@ -219,7 +219,7 @@ test("/tools uses the same dim, success, and error state colors as transcript ro
 	const component = createToolDialogView(runtime).create(harness.context);
 	const output = component.render(100).join("\n");
 
-	expect(output).toContain("\u001b[2m●\u001b[0m");
+	expect(output).toContain("\u001b[90m●\u001b[0m");
 	expect(output).toContain("\u001b[32m●\u001b[0m");
 	expect(output.split("\u001b[31m●\u001b[0m")).toHaveLength(4);
 	component.dispose?.();

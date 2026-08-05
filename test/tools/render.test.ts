@@ -25,10 +25,25 @@ function result(text: string, details?: unknown): AgentToolResult<unknown> {
 	};
 }
 
+function hasRecognizableTruncatedTarget(line: string): boolean {
+	const marker = "● Bash ";
+	const outcome = " · done";
+	if (!line.startsWith(marker) || !line.endsWith(outcome)) return true;
+	const target = line.slice(marker.length, -outcome.length);
+	if (!target.endsWith("…")) return true;
+	const prefix = target.slice(0, -1).trimEnd();
+	if (prefix.endsWith("/")) return true;
+	const unit = prefix.match(/[^\s/|&;,:=()[\]{}<>]+$/u)?.[0] ?? "";
+	const semantic = unit.match(/[\p{L}\p{N}\p{Extended_Pictographic}]/gu) ?? [];
+	const compact =
+		semantic.length > 0 && semantic.every((value) => /[\p{Script=Han}\p{Extended_Pictographic}]/u.test(value));
+	return semantic.length >= (compact ? 2 : 3);
+}
+
 describe("terminal-safe Tool rendering", () => {
 	test("keeps one fixed dot slot and semantic colors across lifecycle states", () => {
 		const states = [
-			["running", "dim"],
+			["running", "muted"],
 			["success", "success"],
 			["error", "error"],
 			["rejected", "error"],
@@ -184,6 +199,47 @@ describe("terminal-safe Tool rendering", () => {
 
 		expect(rows[0]?.render(24)).toEqual(["● Read · done in 18s"]);
 		expect(Bun.stripANSI(rows[0]?.render(32)[0] ?? "")).toContain("… · done in 18s");
+	});
+
+	test("backs off punctuation-only and one-character target tails at adjacent widths", () => {
+		const target = "pwd && printf '%s\\n' '--- files ---' && find . -maxdepth 2 -type f -printf '%P\\n' | sort";
+		const row = new CachedToolRow(theme, {
+			durationMs: 1,
+			label: "Bash",
+			state: "success",
+			summary: "done",
+			target,
+		});
+
+		for (const width of [100, 99, 98, 97, 96, 64, 48, 32, 24]) {
+			const line = Bun.stripANSI(row.render(width)[0] ?? "");
+			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			expect(line).toEndWith(" · done");
+			expect(line).not.toMatch(/(?:\|\s*[\p{L}\p{N}]?|-[\p{L}\p{N}]?|'%[\p{L}\p{N}]?|\bpr)… · done$/u);
+		}
+	});
+
+	test("keeps only recognizable Latin, path, shell, CJK, and emoji target units", () => {
+		for (const target of [
+			"complete | sort-command-that-keeps-going",
+			"/tmp/prefix/partial-component-that-keeps-going",
+			"printf '%single-character-fragment-that-keeps-going",
+			"目录/很长的中文目标仍然继续",
+			"🙂🙂🙂🙂🙂🙂",
+		]) {
+			const row = new CachedToolRow(theme, {
+				durationMs: 1,
+				label: "Bash",
+				state: "success",
+				summary: "done",
+				target,
+			});
+			for (let width = 16; width <= 48; width += 1) {
+				const line = Bun.stripANSI(row.render(width)[0] ?? "");
+				expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+				expect(hasRecognizableTruncatedTarget(line)).toBe(true);
+			}
+		}
 	});
 
 	test("reserves recognizable results before truncating long Tool labels", () => {

@@ -1,6 +1,12 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
+import {
+	type CommandDialogComponent,
+	type CommandDialogView,
+	type CommandDialogViewContext,
+	commandDialogRows,
+	fitCommandDialogRows,
+} from "@jczhang02/pi-stuff-ui";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
 import type { ToolUiRuntime } from "./contract.js";
 import { fitToolRowParts, formatElapsed, oneLine, sanitizeTerminalText, toolStateGlyph } from "./render.js";
@@ -8,28 +14,15 @@ import { fitToolRowParts, formatElapsed, oneLine, sanitizeTerminalText, toolStat
 type ToolDialogMode = "detail" | "list";
 
 const GUTTER = "  ";
-const NORMAL_SCREEN_RESERVE_ROWS = 3;
 const DETAIL_NON_DOCUMENT_ROWS = 9;
 const NARROW_WIDTH = 64;
 const LIST_ROWS = 8;
 const NARROW_LIST_ROWS = 6;
 
-function terminalRows(context: CommandDialogViewContext): number {
-	const rows = (context.tui.terminal as { rows?: number }).rows;
-	if (rows === undefined || !Number.isFinite(rows)) return 24;
-	return Math.max(0, Math.floor(rows));
-}
-
-function dialogRows(context: CommandDialogViewContext): number {
-	const rows = terminalRows(context);
-	if (rows === 0) return 0;
-	return Math.max(1, rows - NORMAL_SCREEN_RESERVE_ROWS);
-}
-
 function stateText(theme: Theme, state: ToolActivityState, value: string): string {
 	switch (state) {
 		case "running":
-			return theme.fg("dim", value);
+			return theme.fg("muted", value);
 		case "success":
 			return theme.fg("success", value);
 		case "error":
@@ -66,20 +59,6 @@ function hintLines(theme: Theme, width: number, hints: readonly string[]): strin
 	if (current) lines.push(current);
 	if (lines.length === 0) lines.push("Esc close");
 	return lines.map((line) => `${GUTTER}${theme.fg("dim", line)}`);
-}
-
-function fitRows(
-	header: readonly string[],
-	body: readonly string[],
-	footer: readonly string[],
-	maximumRows: number,
-): string[] {
-	if (maximumRows <= 0) return [];
-	const visibleFooter = footer.slice(-Math.min(maximumRows, footer.length));
-	const rowsBeforeFooter = maximumRows - visibleFooter.length;
-	const visibleHeader = header.slice(0, rowsBeforeFooter);
-	const bodyRows = Math.max(0, rowsBeforeFooter - visibleHeader.length);
-	return [...visibleHeader, ...body.slice(0, bodyRows), ...visibleFooter];
 }
 
 function wrapDetailLines(lines: readonly string[], width: number): string[] {
@@ -200,7 +179,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private renderList(width: number): string[] {
 		const theme = this.context.theme;
 		const footer = hintLines(theme, width, ["↑/↓ select", "Enter details", "Esc close"]);
-		const maximumRows = dialogRows(this.context);
+		const maximumRows = commandDialogRows(this.context);
 		const preferredRows = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
 		const viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
 		const selectedIndex = Math.max(
@@ -242,7 +221,8 @@ class ToolDialogComponent implements CommandDialogComponent {
 			if (older > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${String(older)} older`)}`);
 		}
 		body.push("");
-		return fitRows(header, body, footer, maximumRows);
+		const priority = body.find((line) => line.includes("›")) ?? body.find((line) => line.trim().length > 0);
+		return fitCommandDialogRows({ header, body, footer, ...(priority ? { priority: [priority] } : {}) }, maximumRows);
 	}
 
 	private renderDetail(width: number): string[] {
@@ -275,7 +255,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 			...detail.map((line) => `${GUTTER}${activity.detailLines.length === 0 ? theme.fg("dim", line) : line}`),
 			"",
 		];
-		return fitRows(header, body, layout.footer, dialogRows(this.context));
+		return fitCommandDialogRows(
+			{ header, body, footer: layout.footer, priority: body[1] ? [body[1]] : [] },
+			commandDialogRows(this.context),
+		);
 	}
 
 	private detailLayout(
@@ -288,7 +271,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		readonly viewportRows: number;
 	} {
 		const document = this.detailDocument(activity, width);
-		const maximumRows = dialogRows(this.context);
+		const maximumRows = commandDialogRows(this.context);
 		let viewportRows = Math.max(0, maximumRows - DETAIL_NON_DOCUMENT_ROWS - 1);
 		let footer = hintLines(this.context.theme, width, ["↑/↓ scroll", "Esc back"]);
 
