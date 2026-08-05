@@ -1,0 +1,28 @@
+╭─── Claude Code v2.1.220 ─────────────────────────────────────────────────────────────────────────╮
+│                                         │ Tips for getting started                               │
+│              Welcome back!              │ Run /init to create a CLAUDE.md file with instruction… │
+│                                         │ ────────────────────────────────────────────────────── │
+│                 ▐▛███▜▌                 │ What's new                                             │
+│                ▝▜█████▛▘                │ Check the Claude Code changelog for updates            │
+│                  ▘▘ ▝▝                  │                                                        │
+│                                         │                                                        │
+│     gpt-5.6-sol · API Usage Billing     │                                                        │
+│   /tmp/cc-statusline-capture-20260805   │                                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+❯ Reply exactly: ready                                                                              
+
+● ready                                                                                             
+                                                                                                    
+✻ Crunched for 0s        
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                        
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  ◆ gpt-5.6-sol │ ░░░░░░░░░░ 0% 200k │ $0.00                                                        
+  cc-statusline-capture-20260805                  
+  ⏵⏵ don't ask on (shift+tab to cycle) · ← for agents                                               
+
+
+

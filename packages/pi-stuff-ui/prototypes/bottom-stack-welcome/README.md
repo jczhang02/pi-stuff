@@ -17,3 +17,9 @@ Regenerate all twelve frames with:
 
 The script requires Pi 0.83.0, Bun 1.3.14, tmux, ImageMagick, and Freeze. It
 runs offline with isolated temporary Pi settings and does not write sessions.
+
+The `claude-code-2.1.220-statusline-*` artifacts are real Claude Code Host
+captures after configuring `kcchien/claude-code-statusline`. A deterministic
+local Messages API returned only `ready`; it did not simulate or replace any
+Claude Code layout. The upstream script required a local GNU/Linux portability
+fix for its Git-cache `stat` call before it could render.

@@ -155,17 +155,19 @@ function officialPiMark(theme: Theme, compact: boolean, color: "accent" | "text"
 function wideWelcome(theme: Theme, width: number, logo: readonly string[]): string[] {
 	const rightWidth = Math.max(1, width - WIDE_LEFT_COLUMN_WIDTH - 3);
 	const rightDivider = theme.fg("borderMuted", "─".repeat(Math.max(0, rightWidth - 2)));
-	const logoRows = [...logo];
-	while (logoRows.length < 4) logoRows.push("");
+	const loadedRows = [theme.bold("Loaded"), "3 context · 24 extensions", "30 tools · 77 skills"];
+	const identityRowCount = Math.max(logo.length, loadedRows.length);
+	const identityRows = Array.from({ length: identityRowCount }, (_unused, index) =>
+		wideBoxRow(theme, width, logo[index] ?? "", loadedRows[index] ?? ""),
+	);
+	const logoGap = logo.length >= loadedRows.length ? [wideBoxRow(theme, width, "", "")] : [];
 	return [
 		boxTop(theme, width, true),
 		wideBoxRow(theme, width, "", theme.bold("Tips for getting started")),
 		wideBoxRow(theme, width, theme.bold("Welcome back!"), "Type / to browse commands"),
 		wideBoxRow(theme, width, "", rightDivider),
-		wideBoxRow(theme, width, logoRows[0] ?? "", theme.bold("Loaded")),
-		wideBoxRow(theme, width, logoRows[1] ?? "", "3 context · 24 extensions"),
-		wideBoxRow(theme, width, logoRows[2] ?? "", "30 tools · 77 skills"),
-		wideBoxRow(theme, width, logoRows[3] ?? "", ""),
+		...identityRows,
+		...logoGap,
 		wideBoxRow(theme, width, `${theme.fg("accent", "gpt-5.6-sol")} · openai-codex`, ""),
 		wideBoxRow(theme, width, theme.fg("muted", "~/dev/pi-stuff"), ""),
 		boxBottom(theme, width),

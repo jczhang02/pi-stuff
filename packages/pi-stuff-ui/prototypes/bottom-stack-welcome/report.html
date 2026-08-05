@@ -31,13 +31,14 @@
     figcaption { display:flex; justify-content:space-between; gap:14px; padding:10px 12px; border-bottom:1px solid var(--line); color:var(--muted); background:var(--panel); }
     figure img { display:block; width:100%; height:auto; }
     .source { margin-top:28px; padding-top:21px; border-top:1px solid var(--line); }
+    .reference-captures { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,.65fr); gap:18px; margin-top:13px; align-items:start; }
     .switcher { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:3; display:flex; gap:4px; padding:5px; border:1px solid #3a414c; border-radius:12px; background:rgba(22,25,31,.94); box-shadow:0 12px 40px rgba(0,0,0,.45); backdrop-filter:blur(12px); }
     button { appearance:none; border:0; border-radius:8px; background:transparent; color:var(--muted); padding:9px 14px; font:inherit; cursor:pointer; }
     button[aria-pressed="true"] { background:#293735; color:#e5fffb; }
     button:hover { color:var(--text); }
     @media (max-width:820px) {
       main { width:min(100% - 22px,1220px); padding-top:28px; }
-      header, .summary, .captures { grid-template-columns:1fr; }
+      header, .summary, .captures, .reference-captures { grid-template-columns:1fr; }
       .badge { justify-self:start; }
       .surface-title { display:block; }
       .surface-title p { margin-top:4px; text-align:left; }
@@ -58,12 +59,12 @@
 
     <section class="variant" data-variant="a">
       <div class="summary">
-        <div class="decision"><h2>A · 连续层级 + 自适应标识（推荐）</h2><p>Statusline 第二行之后立即进入 Fleetview；正常空间使用 8×4 官方形状，低高度切换成等价的 4×2 半块字符；标识使用当前 Pi 主题的 accent 色。</p></div>
+        <div class="decision"><h2>A · 连续层级 + 自适应标识（推荐）</h2><p>Statusline 第二行之后立即进入 Fleetview；正常空间使用 8×4 官方形状，低高度切换成等价的 4×2 半块字符；标识使用当前 Pi 主题的 accent 色。完整标识下方固定保留一行呼吸空间。</p></div>
         <div class="facts"><h3>这个方案</h3><dl><dt>接缝</dt><dd>不留空、不画线</dd><dt>标识</dt><dd>8×4 ⇄ 4×2</dd><dt>颜色</dt><dd>Pi 主题 accent</dd><dt>空间</dt><dd>最省，层级靠缩进表达</dd></dl></div>
       </div>
       <p class="note">Fleetview 自带两格缩进，因此无需再用空行或横线强调边界。下面出现的紫色横线是 Pi 原生输入框边界，不是我们新增的分隔线。</p>
-      <div class="surface"><div class="surface-title"><h3>Welcome</h3><p>100×26 保留完整标识；42×18 自动压成 4×2。</p></div><div class="captures">
-        <figure><figcaption><span>100 × 26</span><span>完整官方形状</span></figcaption><a href="artifacts/variant-a-welcome-100x26.png"><img src="artifacts/variant-a-welcome-100x26.png" alt="A Welcome wide real Pi capture"></a></figure>
+      <div class="surface"><div class="surface-title"><h3>Welcome</h3><p>100×26 保留完整标识及其下方独立空行；42×18 自动压成 4×2。</p></div><div class="captures">
+        <figure><figcaption><span>100 × 26</span><span>完整形状 + 一行呼吸空间</span></figcaption><a href="artifacts/variant-a-welcome-100x26.png"><img src="artifacts/variant-a-welcome-100x26.png" alt="A Welcome wide real Pi capture"></a></figure>
         <figure><figcaption><span>42 × 18</span><span>低高度自动收紧</span></figcaption><a href="artifacts/variant-a-welcome-42x18.png"><img src="artifacts/variant-a-welcome-42x18.png" alt="A Welcome constrained real Pi capture"></a></figure>
       </div></div>
       <div class="surface"><div class="surface-title"><h3>Statusline → Fleetview</h3><p>100×24 与 64×18；信息直接连续，Fleetview 始终最后。</p></div><div class="captures">
@@ -102,6 +103,15 @@
         <figure><figcaption><span>100 × 24</span><span>弱分隔线</span></figcaption><a href="artifacts/variant-c-bottom-100x24.png"><img src="artifacts/variant-c-bottom-100x24-detail.png" alt="C bottom stack wide real Pi capture"></a></figure>
         <figure><figcaption><span>64 × 18</span><span>窄屏同样保留</span></figcaption><a href="artifacts/variant-c-bottom-64x18.png"><img src="artifacts/variant-c-bottom-64x18-detail.png" alt="C bottom stack narrow real Pi capture"></a></figure>
       </div></div>
+    </section>
+
+    <section class="source">
+      <h3>Claude Code 2.1.220 · 真实 Statusline 位置</h3>
+      <p>配置 <code>kcchien/claude-code-statusline</code> 后，真实 Claude Code 的顺序是：输入框下边线 → 自定义 Statusline 两行 → 内置 footer badges。三块之间均没有空白行，也没有额外分隔线。截图使用本地确定性 API 响应，只替代回答内容；Claude Code Host、Statusline 命令和所有布局均为真实运行结果。</p>
+      <div class="reference-captures">
+        <figure><figcaption><span>100 × 28</span><span>真实 Claude Code 底部</span></figcaption><a href="artifacts/claude-code-2.1.220-statusline-100x28.png"><img src="artifacts/claude-code-2.1.220-statusline-100x28-detail.png" alt="Claude Code 2.1.220 custom statusline wide capture"></a></figure>
+        <figure><figcaption><span>64 × 24</span><span>窄屏顺序不变</span></figcaption><a href="artifacts/claude-code-2.1.220-statusline-64x24.png"><img src="artifacts/claude-code-2.1.220-statusline-64x24-detail.png" alt="Claude Code 2.1.220 custom statusline narrow capture"></a></figure>
+      </div>
     </section>
 
     <aside class="source">
