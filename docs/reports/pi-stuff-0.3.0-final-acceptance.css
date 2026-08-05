@@ -1,0 +1,142 @@
+:root {
+	color-scheme: light;
+	--paper: #f7f5f0;
+	--panel: #fffdfa;
+	--ink: #272522;
+	--muted: #6f6b65;
+	--line: #d8d1c6;
+	--accent: #5a8080;
+	--accent-soft: #e4eded;
+	--good: #587e58;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html {
+	background: var(--paper);
+}
+
+body {
+	max-width: 1120px;
+	margin: 0 auto;
+	padding: 64px 48px 96px;
+	color: var(--ink);
+	background: var(--paper);
+	font-family: Inter, "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+	font-size: 17px;
+	line-height: 1.72;
+}
+
+h1,
+h2,
+h3 {
+	line-height: 1.2;
+	letter-spacing: -0.025em;
+}
+
+h1 {
+	margin: 0 0 20px;
+	font-size: clamp(2.4rem, 6vw, 4.8rem);
+	font-weight: 650;
+}
+
+h2 {
+	margin: 72px 0 22px;
+	padding-top: 18px;
+	border-top: 1px solid var(--line);
+	font-size: 2rem;
+}
+
+h3 {
+	margin: 44px 0 16px;
+	font-size: 1.35rem;
+}
+
+p,
+ul,
+ol {
+	max-width: 82ch;
+}
+
+strong {
+	font-weight: 660;
+}
+
+a {
+	color: var(--accent);
+	text-decoration-thickness: 1px;
+	text-underline-offset: 3px;
+}
+
+code {
+	padding: 0.12em 0.38em;
+	border: 1px solid #ddd6cb;
+	border-radius: 4px;
+	background: #eeeae3;
+	font-family: "JetBrainsMono Nerd Font", "Noto Sans Mono CJK SC", monospace;
+	font-size: 0.88em;
+}
+
+table {
+	width: 100%;
+	margin: 28px 0 42px;
+	border-collapse: collapse;
+	background: var(--panel);
+	font-size: 0.94rem;
+}
+
+th,
+td {
+	padding: 13px 16px;
+	border: 1px solid var(--line);
+	text-align: left;
+	vertical-align: top;
+}
+
+th {
+	background: var(--accent-soft);
+	font-weight: 650;
+}
+
+img {
+	display: block;
+	width: 100%;
+	height: auto;
+	margin: 24px 0 42px;
+	border: 1px solid var(--line);
+	background: #f4f4f4;
+}
+
+blockquote {
+	margin: 28px 0;
+	padding: 14px 20px;
+	border-left: 4px solid var(--accent);
+	background: var(--panel);
+}
+
+li + li {
+	margin-top: 7px;
+}
+
+body > p:first-of-type,
+body > p:nth-of-type(2),
+body > p:nth-of-type(3) {
+	margin: 0;
+	color: var(--muted);
+	font-family: "JetBrainsMono Nerd Font", monospace;
+	font-size: 0.86rem;
+}
+
+@media (max-width: 720px) {
+	body {
+		padding: 32px 20px 64px;
+		font-size: 16px;
+	}
+
+	table {
+		display: block;
+		overflow-x: auto;
+	}
+}

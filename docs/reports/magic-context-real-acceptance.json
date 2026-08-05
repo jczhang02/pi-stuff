@@ -1,59 +1,59 @@
 {
 	"artifact": {
-		"archive": "jczhang02-pi-stuff-0.2.3.tgz",
-		"sha256": "b22341d82caa06326ebd2775974ad2d88263157fc45687a44f534e530f133183"
+		"archive": "jczhang02-pi-stuff-0.3.0.tgz",
+		"sha256": "6fdb2a410ad38c202dffd08a416e7119390887d95d06f47748737556dfbcbed0"
 	},
 	"cache": {
-		"cacheRead": 430208,
-		"hitPercentage": 41.17,
-		"uncachedInput": 614792
+		"cacheRead": 461184,
+		"hitPercentage": 46.64,
+		"uncachedInput": 527701
 	},
 	"continuity": {
-		"canarySha256": "991b94c918afba1e8abe039a04860a6513ac7bb2caf7e6bb245e725c7589f733",
+		"canarySha256": "3b9b15a64969d56b702a5a9c5e5f6f086c308efe72828a9e1203f64eca9ea37e",
 		"coldResume": true,
 		"goalStatus": "paused",
 		"projectIsolation": {
 			"distinct": true,
-			"isolatedIdentitySha256": "681d4545e0d304a905181d955f42443c48272aa123002050f75d1091827732c7",
-			"mainIdentitySha256": "e8032fb18a633055236859eac3e3c54dacd879985a91095bdf669ad8894076f0"
+			"isolatedIdentitySha256": "d866caed67802edd2b0f170122adb3e7bbc8c7bbf655c4c6c21a0024b0e92ac4",
+			"mainIdentitySha256": "783080df07d977fff870ecc4c043a4ce80b29cd44eecdb60040c5a869e9edb84"
 		},
 		"todoSubjectSha256": "09b0d926c741cb723e498555e3d6bad65ccefd1bb1242479a0a76e011b629375"
 	},
 	"database": {
-		"compartments": 3,
+		"compartments": 2,
 		"historianFailures": 0,
 		"historianSuccesses": 2,
 		"pendingMarker": false
 	},
 	"evidence": {
 		"audit": {
-			"bytes": 4618,
-			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T08-17-15-322Z/audit.jsonl",
-			"sha256": "3db19bd1f421503b7ac475a7c39c9c6d3cdf67022f9af001a78002107a3f95b7"
+			"bytes": 4355,
+			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T10-15-07-522Z/audit.jsonl",
+			"sha256": "4b5fae14bf10f9fa65fc18cd934c5f8c2a8e45639d375f393f118ce1549df98c"
 		},
 		"database": {
 			"bytes": 966656,
-			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T08-17-15-322Z/database.db",
-			"sha256": "58d1371da38d7d23740e889c5f7480d1d36b4a8f0fa70fdfca2827434b2e648f"
+			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T10-15-07-522Z/database.db",
+			"sha256": "0bd24a6a510789dec17853234c4460cb4bb15d3416c61e042cd4bd23476ef7bf"
 		},
 		"magicConfig": {
 			"bytes": 476,
-			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T08-17-15-322Z/magicConfig.txt",
+			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T10-15-07-522Z/magicConfig.txt",
 			"sha256": "518f69536a1b97e2ed304cddf57c31073666d4a528d2c35f7c36c6ddaceba061"
 		},
 		"magicLog": {
-			"bytes": 217917,
-			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T08-17-15-322Z/magicLog.txt",
-			"sha256": "fcd7d3225955424cc43f77938284209e399a0d08269b7bcc17de6557c25f542c"
+			"bytes": 194514,
+			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T10-15-07-522Z/magicLog.txt",
+			"sha256": "1f63cfc107a341acda78269ef9bae8461ebab7c2bcf123a6cb43400073b5b449"
 		},
 		"session": {
-			"bytes": 666810,
-			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T08-17-15-322Z/session.jsonl",
-			"sha256": "fe6ef5a4e051e2650fe9b267b558efb03e4fbfd794e394549908bd6f5df8bcc4"
+			"bytes": 665470,
+			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T10-15-07-522Z/session.jsonl",
+			"sha256": "0b01e62dfeabef4bd7b47b5a45c2c3e6ceb189f88f193599daa8bb906b5d989c"
 		},
 		"settings": {
 			"bytes": 146,
-			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T08-17-15-322Z/settings.txt",
+			"path": ".artifacts/acceptance/magic-context-real-2026-08-05T10-15-07-522Z/settings.txt",
 			"sha256": "3830f053dfda6b23acbc0e61094e822105b08a14ccdc2d42e6b6f2acbac55d46"
 		}
 	},
@@ -74,87 +74,78 @@
 		"compartmentRanges": [
 			{
 				"start": 1,
+				"end": 6
+			},
+			{
+				"start": 7,
 				"end": 10
-			},
-			{
-				"start": 11,
-				"end": 15
-			},
-			{
-				"start": 16,
-				"end": 19
 			}
 		],
 		"magicBoundaries": 2,
-		"magicBoundaryOrdinals": [15, 19],
+		"magicBoundaryOrdinals": [6, 10],
 		"nativeAutoCompactionEnabled": false,
 		"nativeBoundaries": 0,
 		"nativeLifecycleEvents": 0
 	},
 	"passed": true,
 	"pressure": {
-		"maximumContextCharacters": 596059,
+		"maximumContextCharacters": 596045,
 		"maximumObservedAfterTurn": {
 			"label": "MAGIC_PRESSURE_12_DONE",
-			"percent": 73.76015625,
-			"tokens": 94413
+			"percent": 73.7390625,
+			"tokens": 94386
 		},
 		"maximumProviderPrompt": {
-			"percent": 73.75,
-			"tokens": 94400
+			"percent": 73.73,
+			"tokens": 94373
 		},
 		"officialMagicMaximum": {
 			"contextLimit": 128000,
-			"effectivePercentage": 105.2,
-			"rawTokens": 114442
+			"effectivePercentage": 104.6,
+			"rawTokens": 113765
 		},
 		"observations": [
 			{
 				"label": "setup",
-				"percent": 3.584375,
-				"tokens": 4588
+				"percent": 3.7234375,
+				"tokens": 4766
 			},
 			{
 				"label": "MAGIC_SINGLE_TURN_DONE",
-				"percent": 16.11640625,
-				"tokens": 20629
+				"percent": 16.409375,
+				"tokens": 21004
 			},
 			{
 				"label": "MAGIC_MULTI_TURN_1_DONE",
-				"percent": 21.453125,
-				"tokens": 27460
+				"percent": 21.447656249999998,
+				"tokens": 27453
 			},
 			{
 				"label": "MAGIC_CRITICAL_SINGLE_TURN_DONE",
-				"percent": 62.79453125,
-				"tokens": 80377
+				"percent": 62.64453125,
+				"tokens": 80185
 			},
 			{
 				"label": "MAGIC_PRESSURE_11_DONE",
-				"percent": 68.13203125,
-				"tokens": 87209
+				"percent": 68.11796875,
+				"tokens": 87191
 			},
 			{
 				"label": "MAGIC_PRESSURE_12_DONE",
-				"percent": 73.76015625,
-				"tokens": 94413
+				"percent": 73.7390625,
+				"tokens": 94386
 			},
 			{
 				"label": "historian-drive-1",
-				"percent": 62.25859375,
-				"tokens": 79691
-			},
-			{
-				"label": "marker-drive-1",
-				"percent": 62.3234375,
-				"tokens": 79774
+				"percent": 62.190625,
+				"tokens": 79604
 			}
 		]
 	},
-	"runAt": "2026-08-05T08:18:33.156Z",
+	"runAt": "2026-08-05T10:16:30.879Z",
 	"schemaVersion": 1,
 	"session": {
-		"entries": 65,
-		"sha256": "fe6ef5a4e051e2650fe9b267b558efb03e4fbfd794e394549908bd6f5df8bcc4"
+		"entries": 60,
+		"sha256": "0b01e62dfeabef4bd7b47b5a45c2c3e6ceb189f88f193599daa8bb906b5d989c"
 	}
 }
