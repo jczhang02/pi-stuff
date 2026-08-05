@@ -520,12 +520,14 @@ async function verifyStandaloneInstalls(
 		return resolveReleaseArchive(releaseDirectory, artifact);
 	};
 	const rootRequire = createRequire(join(root, "package.json"));
+	const toolsRequire = createRequire(join(root, "packages", "pi-stuff-tools", "package.json"));
 	const runtimeDirectories: Record<string, string> = {
 		typebox: await resolvePackageDirectory(rootRequire, "typebox"),
+		unbash: await resolvePackageDirectory(toolsRequire, "unbash"),
 	};
 	const runtimeArchives = Object.fromEntries(
 		await Promise.all(
-			["typebox"].map(async (name) => {
+			Object.keys(runtimeDirectories).map(async (name) => {
 				const directory = runtimeDirectories[name];
 				if (!directory) throw new Error(`Cannot resolve standalone runtime dependency ${name}`);
 				return [
@@ -707,6 +709,21 @@ async function verifyStandaloneInstalls(
 	};
 	await verifyContextDependency(btwInstallDirectory, "pi-stuff-btw");
 	await verifyContextDependency(agentsInstallDirectory, "pi-stuff-agents");
+
+	const toolsInstalledRoot = join(toolsInstallDirectory, "node_modules");
+	const toolsManifest = JSON.parse(
+		await readFile(join(toolsInstalledRoot, "@jczhang02/pi-stuff-tools/package.json"), "utf8"),
+	) as { dependencies?: Record<string, unknown> };
+	const toolsUnbashManifest = JSON.parse(await readFile(join(toolsInstalledRoot, "unbash/package.json"), "utf8")) as {
+		version?: unknown;
+	};
+	if (
+		toolsUnbashManifest.version !== "4.0.6" ||
+		// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
+		toolsManifest.dependencies?.["unbash"] !== toolsUnbashManifest.version
+	) {
+		throw new Error("Standalone Tools must install the certified exact unbash runtime dependency");
+	}
 
 	const todoInstalledRoot = join(todoInstallDirectory, "node_modules");
 	const goalInstalledRoot = join(goalInstallDirectory, "node_modules");

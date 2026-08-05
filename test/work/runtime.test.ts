@@ -9,6 +9,7 @@ import { BoundedOutputFile } from "../../packages/pi-stuff-work/src/output.js";
 import { captureProcessIdentity, processExists, signalProcessGroup } from "../../packages/pi-stuff-work/src/process.js";
 import { BackgroundWorkRuntime } from "../../packages/pi-stuff-work/src/runtime.js";
 import { reconcileStaleRuns } from "../../packages/pi-stuff-work/src/storage.js";
+import { isForegroundBashResult } from "../../packages/pi-stuff-work/src/tools.js";
 
 const roots: string[] = [];
 const children: ChildProcess[] = [];
@@ -83,6 +84,7 @@ describe("BackgroundWorkRuntime", () => {
 		const text = result.content.find((item) => item.type === "text");
 		expect(text?.type === "text" ? text.text : "").toBe("\u001b[31mRAW_FOREGROUND\u001b[0m\n");
 		expect(result.details).toBeUndefined();
+		expect(isForegroundBashResult(result)).toBe(true);
 		await active.shutdown();
 	});
 
@@ -116,6 +118,7 @@ describe("BackgroundWorkRuntime", () => {
 		const result = await active.executeBash({ command: "sleep 30", toolCallId: "tool-automatic" }, context(root));
 		const text = result.content.find((item) => item.type === "text");
 		expect(text?.type === "text" ? text.text : "").toContain("moved to background task");
+		expect(isForegroundBashResult(result)).toBe(false);
 		expect(active.snapshot()).toHaveLength(1);
 		await active.shutdown();
 	});

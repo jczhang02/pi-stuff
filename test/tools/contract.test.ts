@@ -175,6 +175,146 @@ test("settled Suite tools can keep media content below the shared lifecycle row"
 	getToolUiRuntime(api).clear();
 });
 
+test("collapses only adjacent successful exploration rows without losing local Tool records", () => {
+	const { api, tools } = apiHarness();
+	const explore: ToolDefinition<typeof Params> = {
+		description: "exploration fixture",
+		execute: async () => ({ content: [{ type: "text", text: "ok" }], details: undefined }),
+		label: "Read",
+		name: "explore",
+		parameters: Params,
+	};
+	const mutate: ToolDefinition<typeof Params> = {
+		...explore,
+		description: "mutation fixture",
+		label: "Write",
+		name: "mutate",
+	};
+	registerSuiteOwnedTool(api, explore, {
+		grouping: "exploration",
+		summarize: (_args, _result, state) => (state === "success" ? "1 line" : "boom"),
+		target: (args) => args.value,
+	});
+	registerSuiteOwnedTool(api, mutate, { summarize: () => "written" });
+	const runtime = getToolUiRuntime(api);
+	runtime.indexMessages([
+		{
+			role: "assistant",
+			content: [
+				{ type: "toolCall", id: "explore-1", name: "explore", arguments: { value: "一.txt" } },
+				{ type: "toolCall", id: "explore-2", name: "explore", arguments: { value: "二.txt" } },
+				{ type: "toolCall", id: "mutate-1", name: "mutate", arguments: { value: "out.txt" } },
+				{ type: "toolCall", id: "explore-3", name: "explore", arguments: { value: "三.txt" } },
+				{ type: "toolCall", id: "explore-4", name: "explore", arguments: { value: "四.txt" } },
+			],
+		},
+	]);
+
+	const settled = (name: "explore" | "mutate", id: string, value: string, isError = false) => {
+		const state = {};
+		const args = { value };
+		const context = renderContext(state, args, { isError, toolCallId: id });
+		const definition = tools.get(name);
+		const row = definition?.renderCall?.(args, theme, context);
+		definition?.renderResult?.(
+			{ content: [{ type: "text", text: isError ? "boom" : "ok" }], details: undefined },
+			{ expanded: false, isPartial: false },
+			theme,
+			context,
+		);
+		return row;
+	};
+
+	const first = settled("explore", "explore-1", "一.txt");
+	const second = settled("explore", "explore-2", "二.txt");
+	const mutation = settled("mutate", "mutate-1", "out.txt");
+	const third = settled("explore", "explore-3", "三.txt");
+	const failed = settled("explore", "explore-4", "四.txt", true);
+
+	expect(first?.render(80)).toEqual(["● Explore 2 operations · Read ×2"]);
+	expect(second?.render(80)).toEqual([]);
+	expect(mutation?.render(80).join("\n")).toContain("Write");
+	expect(third?.render(80).join("\n")).toContain("三.txt");
+	expect(failed?.render(80).join("\n")).toContain("boom");
+	expect(
+		runtime.activities
+			.list()
+			.map((activity) => activity.id)
+			.sort(),
+	).toEqual(["explore-1", "explore-2", "explore-3", "explore-4", "mutate-1"]);
+
+	runtime.indexMessages([]);
+	expect(first?.render(80).join("\n")).toContain("一.txt");
+	expect(second?.render(80).join("\n")).toContain("二.txt");
+	runtime.clear();
+});
+
+test("replans late grouping ownership and honors final-result collapse vetoes", () => {
+	const { api, tools } = apiHarness();
+	const tool: ToolDefinition<typeof Params, { readonly detached: boolean }> = {
+		description: "late grouping fixture",
+		execute: async () => ({ content: [{ type: "text", text: "ok" }], details: { detached: false } }),
+		label: "Bash",
+		name: "late",
+		parameters: Params,
+	};
+	registerSuiteOwnedTool(api, tool, {
+		grouping: "exploration",
+		summarize: () => "done",
+		target: (args) => args.value,
+	});
+	const runtime = getToolUiRuntime(api);
+	runtime.indexMessages([
+		{
+			role: "assistant",
+			content: [
+				{ type: "toolCall", id: "late-1", name: "late", arguments: { value: "foreground-one" } },
+				{ type: "toolCall", id: "late-2", name: "late", arguments: { value: "foreground-two" } },
+			],
+		},
+		{
+			role: "assistant",
+			content: [
+				{ type: "toolCall", id: "late-3", name: "late", arguments: { value: "background-one" } },
+				{ type: "toolCall", id: "late-4", name: "late", arguments: { value: "background-two" } },
+			],
+		},
+	]);
+
+	const settle = (id: string, value: string, detached = false) => {
+		const args = { value };
+		const context = renderContext({}, args, { toolCallId: id });
+		const row = tools.get("late")?.renderCall?.(args, theme, context);
+		tools
+			.get("late")
+			?.renderResult?.(
+				{ content: [{ type: "text", text: "ok" }], details: { detached } },
+				{ expanded: false, isPartial: false },
+				theme,
+				context,
+			);
+		return row;
+	};
+
+	const foregroundOne = settle("late-1", "foreground-one");
+	const foregroundTwo = settle("late-2", "foreground-two", true);
+	const backgroundOne = settle("late-3", "background-one");
+	const backgroundTwo = settle("late-4", "background-two");
+	expect(foregroundOne?.render(80).join("\n")).toContain("Explore 2 operations");
+	expect(backgroundOne?.render(80).join("\n")).toContain("Explore 2 operations");
+
+	runtime.registerGrouping<Params, { readonly detached: boolean }>(
+		"late",
+		(args) => (args.value.startsWith("foreground") ? "exploration" : "standalone"),
+		(_args, result) => !result.details.detached,
+	);
+	expect(foregroundOne?.render(80).join("\n")).toContain("foreground-one");
+	expect(foregroundTwo?.render(80).join("\n")).toContain("foreground-two");
+	expect(backgroundOne?.render(80).join("\n")).toContain("background-one");
+	expect(backgroundTwo?.render(80).join("\n")).toContain("background-two");
+	runtime.clear();
+});
+
 test("keeps one runtime identity when Suite tools register before the Tool package", () => {
 	const { api, tools } = apiHarness();
 	const beforeInstall = getToolUiRuntime(api);

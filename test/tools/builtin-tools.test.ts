@@ -11,6 +11,7 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { registerBuiltins, resolveBuiltinHostSettings } from "../../packages/pi-stuff-tools/builtin-tools.js";
+import { getToolUiRuntime } from "../../packages/pi-stuff-tools/contract.js";
 
 test("built-in overrides receive Pi's merged image and shell settings exactly", () => {
 	const directory = mkdtempSync(join(tmpdir(), "pi-stuff-builtin-settings-"));
@@ -65,4 +66,54 @@ test("built-in overrides receive Pi's merged image and shell settings exactly", 
 	} finally {
 		rmSync(directory, { force: true, recursive: true });
 	}
+});
+
+test("shell prefixes keep otherwise read-only Bash calls standalone", () => {
+	const tools = new Map<string, ToolDefinition>();
+	const pi = {
+		events: {},
+		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
+	} as unknown as ExtensionAPI;
+	registerBuiltins(pi, "/project", {
+		autoResizeImages: true,
+		shellCommandPrefix: "printf prefix",
+		shellPath: undefined,
+	});
+	const runtime = getToolUiRuntime(pi);
+	runtime.indexMessages([
+		{
+			role: "assistant",
+			content: [
+				{ type: "toolCall", id: "bash-prefix-1", name: "bash", arguments: { command: "pwd" } },
+				{ type: "toolCall", id: "bash-prefix-2", name: "bash", arguments: { command: "pwd" } },
+			],
+		},
+	]);
+	const bash = tools.get("bash");
+	if (!bash?.renderCall || !bash.renderResult) throw new Error("Expected decorated Bash renderers");
+	const theme = { bold: (value: string) => value, fg: (_color: string, value: string) => value } as never;
+	const settle = (toolCallId: string) => {
+		const state = {};
+		const args = { command: "pwd" };
+		const context = {
+			args,
+			executionStarted: false,
+			invalidate: () => {},
+			isError: false,
+			lastComponent: undefined,
+			state,
+			toolCallId,
+		} as never;
+		const row = bash.renderCall?.(args, theme, context);
+		bash.renderResult?.(
+			{ content: [{ type: "text", text: "/project\n" }], details: undefined },
+			{ expanded: false, isPartial: false },
+			theme,
+			context,
+		);
+		return row?.render(80).join("\n") ?? "";
+	};
+	expect(settle("bash-prefix-1")).toContain("Bash");
+	expect(settle("bash-prefix-2")).toContain("Bash");
+	runtime.clear();
 });

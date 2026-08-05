@@ -11,6 +11,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { registerSuiteOwnedTool } from "./contract.js";
+import { isLowImpactShellCommand } from "./exploration.js";
 import { describeBuiltinTarget, formatElapsed, summarizeBuiltin } from "./render.js";
 
 export interface BuiltinHostSettings {
@@ -49,6 +50,7 @@ export function registerBuiltins(
 			autoResizeImages: hostSettings.autoResizeImages,
 		});
 		registerSuiteOwnedTool(pi, read, {
+			grouping: "exploration",
 			label: "Read",
 			runningSummary: "reading",
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("read", args, result, state, durationMs),
@@ -82,6 +84,10 @@ export function registerBuiltins(
 			...(hostSettings.shellPath !== undefined ? { shellPath: hostSettings.shellPath } : {}),
 		});
 		registerSuiteOwnedTool(pi, bash, {
+			grouping: (args) =>
+				!hostSettings.shellCommandPrefix?.trim() && isLowImpactShellCommand(args.command)
+					? "exploration"
+					: "standalone",
 			label: "Bash",
 			runningSummary: (_args, durationMs) => `running ${formatElapsed(durationMs)}`,
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("bash", args, result, state, durationMs),
@@ -93,6 +99,7 @@ export function registerBuiltins(
 	if (!selectedNames || selectedNames.has("grep")) {
 		const grep = createGrepToolDefinition(cwd);
 		registerSuiteOwnedTool(pi, grep, {
+			grouping: "exploration",
 			label: "Grep",
 			runningSummary: "searching",
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("grep", args, result, state, durationMs),
@@ -103,6 +110,7 @@ export function registerBuiltins(
 	if (!selectedNames || selectedNames.has("find")) {
 		const find = createFindToolDefinition(cwd);
 		registerSuiteOwnedTool(pi, find, {
+			grouping: "exploration",
 			label: "Find",
 			runningSummary: "searching",
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("find", args, result, state, durationMs),
@@ -113,6 +121,7 @@ export function registerBuiltins(
 	if (!selectedNames || selectedNames.has("ls")) {
 		const ls = createLsToolDefinition(cwd);
 		registerSuiteOwnedTool(pi, ls, {
+			grouping: "exploration",
 			label: "List",
 			runningSummary: "listing",
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("ls", args, result, state, durationMs),

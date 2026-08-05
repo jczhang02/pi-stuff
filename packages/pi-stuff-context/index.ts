@@ -297,6 +297,13 @@ function firstPresentationTarget(args: Readonly<Record<string, unknown>>): strin
 
 function magicToolPresentation(name: string): SuiteToolPresentation<Record<string, unknown>, unknown> {
 	return {
+		grouping: (args) => {
+			if (name === "ctx_expand" || name === "ctx_search") return "exploration";
+			const action = args["action"];
+			if (name === "ctx_memory" && (action === "get" || action === "list")) return "exploration";
+			if (name === "ctx_note" && action === "read") return "exploration";
+			return "standalone";
+		},
 		label: MAGIC_TOOL_LABELS[name] ?? name,
 		runningSummary: name === "ctx_search" ? "searching" : "working",
 		target: firstPresentationTarget,

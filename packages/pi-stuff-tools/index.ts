@@ -1,4 +1,8 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+	type ExtensionAPI,
+	type ExtensionContext,
+	sessionEntryToContextMessages,
+} from "@earendil-works/pi-coding-agent";
 import { ensureUiSettingsCommand, getCommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
 import { registerBuiltins, resolveBuiltinHostSettings } from "./builtin-tools.js";
 import { installToolUiRuntime } from "./contract.js";
@@ -8,13 +12,19 @@ import { createToolDialogView } from "./tool-dialog.js";
 
 const BUILTIN_TOOL_NAMES = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
 
+function currentTranscriptMessages(ctx: ExtensionContext): unknown[] {
+	return ctx.sessionManager.buildContextEntries().flatMap(sessionEntryToContextMessages);
+}
+
 export {
 	getToolUiRuntime,
 	registerSuiteOwnedTool,
 	type SuiteToolPresentation,
+	type ToolGrouping,
 	type ToolTranscriptMode,
 	ToolUiRuntime,
 } from "./contract.js";
+export { isLowImpactShellCommand } from "./exploration.js";
 export { sanitizeTerminalText } from "./render.js";
 
 export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
@@ -76,16 +86,23 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 			pi.setActiveTools(restoreResumeActiveToolOrder(pi.getActiveTools(), resumeHandoff));
 		} else {
 			const restoreActiveBuiltins = runtime.consumeReloadActiveTools();
-			if (!restoreActiveBuiltins) return;
-			const activeNonBuiltins = pi.getActiveTools().filter((name) => !BUILTIN_TOOL_NAMES.has(name));
-			pi.setActiveTools([...activeNonBuiltins, ...restoreActiveBuiltins]);
+			if (restoreActiveBuiltins) {
+				const activeNonBuiltins = pi.getActiveTools().filter((name) => !BUILTIN_TOOL_NAMES.has(name));
+				pi.setActiveTools([...activeNonBuiltins, ...restoreActiveBuiltins]);
+			}
 		}
+		runtime.indexMessages(currentTranscriptMessages(ctx));
 	});
-	pi.on("session_compact", () => {
+	pi.on("session_compact", (_event, ctx) => {
 		runtime.clear();
+		runtime.indexMessages(currentTranscriptMessages(ctx));
 	});
-	pi.on("session_tree", () => {
+	pi.on("session_tree", (_event, ctx) => {
 		runtime.clear();
+		runtime.indexMessages(currentTranscriptMessages(ctx));
+	});
+	pi.on("message_end", (event) => {
+		if (event.message.role === "assistant") runtime.indexMessage(event.message);
 	});
 	pi.on("session_shutdown", async (event) => {
 		await settings.whenIdle();

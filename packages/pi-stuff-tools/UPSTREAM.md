@@ -24,6 +24,8 @@ This Capability Package is an owned fork of `@mobrienv/pi-tidy-tools` 0.4.1.
   Stuff Command Dialog.
 - Adds a renderer contract for Suite-owned tools. Todo success remains visually silent, while Agent work uses the
   same compact grammar.
+- Composes public lifecycle events and per-row invalidation to group only adjacent successful exploration calls in
+  the display, without changing model-visible results or persisted session data.
 - Does not contain or derive from code in `jczhang02/pi-agent`.
 
 The upstream license is preserved in `LICENSE`. Future rebases must update this record and keep local changes

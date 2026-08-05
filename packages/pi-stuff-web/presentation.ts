@@ -105,6 +105,7 @@ function retrievalSummary(_args: Readonly<Arguments>, result: AgentToolResult<un
 }
 
 export const WEB_SEARCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
+	grouping: "exploration",
 	label: "Web search",
 	resultIsError: searchResultIsError,
 	runningSummary: "searching",
@@ -113,6 +114,7 @@ export const WEB_SEARCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> 
 };
 
 export const WEB_FETCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
+	grouping: "exploration",
 	label: "Web fetch",
 	resultIsError: fetchResultIsError,
 	runningSummary: "reading",
@@ -121,6 +123,7 @@ export const WEB_FETCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> =
 };
 
 export const WEB_CONTENT_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
+	grouping: "exploration",
 	label: "Web content",
 	resultIsError: errorResult,
 	runningSummary: "retrieving",

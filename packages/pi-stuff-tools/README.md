@@ -25,12 +25,14 @@ unchanged. Suite-owned tools can opt into the same renderer contract through `re
   controls whether long-running tools show live elapsed time; the former `/tool-settings` command is removed.
 - Detail text is capped at 240 lines and 24 KiB. The model-visible tool result is never truncated or rewritten by
   this Capability.
+- Consecutive successful exploration calls in one assistant batch share one **Explore** row with at most two Tool
+  labels plus an overflow count. Reads, searches, listings, retrievals, and conservatively parsed read-only shell
+  commands may opt in; writes, state changes, tests/builds, ambiguous or backgrounded shell, and every failed call
+  stay standalone.
+  Grouping is display-only: `/tools` retains every operation, session JSONL and model-visible results are unchanged,
+  and the grouping is rebuilt after reload, restart/resume, tree navigation, and compaction.
 - In-process `/resume` pre-binds exactly the active built-in renderers before Pi reconstructs history. The first resumed
   frame therefore stays compact without reviving disabled tools; the complete active Tool order is preserved, and new
   calls are rebound to the target session's working directory, trust, and project settings.
-
-Pi 0.83 does not expose a public adjacent-transcript transformation seam. Consequently, this release does not hide
-or regroup historical rows and does not claim semantic cross-call density grouping. It favors a truthful compact row
-per operation until such grouping can be implemented without hiding failures or consequential work.
 
 See `UPSTREAM.md` for the owned-fork provenance and local delta.

@@ -214,6 +214,10 @@ export class BackgroundWorkRuntime {
 		this.supervisorExecutable = resolveSupervisorExecutable(options.supervisorExecutable);
 	}
 
+	hasCommandPrefix(): boolean {
+		return Boolean(this.commandPrefix?.trim());
+	}
+
 	snapshot(): readonly BackgroundWorkSnapshot[] {
 		return [
 			...Array.from(this.activities.values(), (activity) => this.activitySnapshot(activity)),

@@ -1,5 +1,5 @@
 import type { AgentToolResult, BashToolDetails, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
+import { isLowImpactShellCommand, registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
 import { Type } from "typebox";
 import { startMonitor } from "./monitor.js";
 import { DEFAULT_MODEL_OUTPUT_LIMIT } from "./output.js";
@@ -86,6 +86,10 @@ function resultText<T>(result: AgentToolResult<T>): string {
 	return item?.type === "text" ? item.text : "";
 }
 
+export function isForegroundBashResult(result: AgentToolResult<BashToolDetails | undefined>): boolean {
+	return !/\b(?:started|moved|manually moved) to background task\b/u.test(resultText(result));
+}
+
 function requireRuntime(ref: WorkToolRuntimeRef): BackgroundWorkRuntime {
 	const runtime = ref.current();
 	if (!runtime) throw new Error("Background Work is not available before session startup or during shutdown");
@@ -154,6 +158,13 @@ export function registerWorkTools(
 			},
 		};
 		registerSuiteOwnedTool(pi, bash, {
+			canCollapse: (_args, result) => isForegroundBashResult(result),
+			grouping: (args) =>
+				args.run_in_background !== true &&
+				runtimeRef.current()?.hasCommandPrefix() === false &&
+				isLowImpactShellCommand(args.command)
+					? "exploration"
+					: "standalone",
 			label: "Bash",
 			runningSummary: (_args, durationMs) => `running ${String(Math.max(0, Math.floor(durationMs / 1_000)))}s`,
 			summarize: (_args, result, state) => {
