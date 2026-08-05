@@ -11,7 +11,7 @@ The Package gives the Agent four incremental tools—`TaskCreate`, `TaskGet`, `T
 - State recovers after reload, compaction, and tree changes from the Pi transcript.
 - The normal checklist begins with a lightly indented `N tasks (D done, O open)` summary, then immediately indents at most five
   task rows plus one overflow row.
-- Runnable pending work uses a muted `□`; blocked pending work uses a warning-colored `⊘`, so the distinction survives
+- Runnable pending work uses a muted `□`; blocked pending work keeps the same `□` shape in the warning color, so the distinction survives
   both dark and light themes without depending on faint text alone. Completed work remains deliberately dim.
 - Completed work lingers briefly, then the widget disappears without deleting state.
 - No floating window, statusline, project backlog, or separate task database is added.

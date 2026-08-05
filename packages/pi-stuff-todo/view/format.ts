@@ -170,7 +170,7 @@ export function selectOverlayLayout(
 function overlayStatusGlyph(status: TaskStatus, blocked: boolean, theme: Theme): string {
 	switch (status) {
 		case "pending":
-			return blocked ? theme.fg("warning", "⊘") : theme.fg("muted", "□");
+			return theme.fg(blocked ? "warning" : "muted", "□");
 		case "in_progress":
 			return theme.fg("accent", "■");
 		case "completed":
@@ -226,7 +226,7 @@ export function formatCollapsedNextLine(next: OverlayTaskRow | undefined, theme:
 	if (!next) return `${label} ${theme.fg("dim", "all tasks complete")}`;
 	const subject = singleLine(next.task.subject) || UNTITLED_TASK;
 	if (next.openBlockers.length > 0) {
-		return `${label} ${theme.fg("warning", "⊘")} ${theme.fg("muted", subject)}`;
+		return `${label} ${theme.fg("warning", "□")} ${theme.fg("muted", subject)}`;
 	}
 	return `${label} ${theme.fg("text", subject)}`;
 }

@@ -109,7 +109,8 @@ describe("TodoOverlay rendering", () => {
 		]);
 		const output = widget?.render(200).join("\n") ?? "";
 		expect(output).toContain("□ now runnable");
-		expect(output).toContain("⊘ still blocked");
+		expect(output).toContain("□ still blocked");
+		expect(output).not.toContain("⊘");
 		expect(output).not.toContain("blocked by");
 	});
 

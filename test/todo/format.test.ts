@@ -55,9 +55,9 @@ describe("formatOverlayTaskLine", () => {
 		);
 	});
 
-	test("marks blocked work without relying on color or exposing contextless dependency ids", () => {
+	test("keeps the pending checkbox shape and warns through color without exposing dependency ids", () => {
 		expect(formatOverlayTaskLine({ task: task(), openBlockers: ["dep-2", "missing"] }, recordingTheme)).toBe(
-			"<warning>⊘</warning> <muted>quiet task</muted>",
+			"<warning>□</warning> <muted>quiet task</muted>",
 		);
 	});
 
@@ -187,6 +187,6 @@ describe("formatCollapsedNextLine", () => {
 				{ task: task({ subject: "waiting task" }), openBlockers: ["secret-dependency"] },
 				recordingTheme,
 			),
-		).toBe("<muted>Next:</muted> <warning>⊘</warning> <muted>waiting task</muted>");
+		).toBe("<muted>Next:</muted> <warning>□</warning> <muted>waiting task</muted>");
 	});
 });
