@@ -349,14 +349,17 @@ describe("editor composition", () => {
 		expect(result.getText()).toBe("保留");
 	});
 
-	test("retains ordinary submit behavior when no inline list owns Enter", () => {
-		const { editor } = createEditor({ inlineSlashAutocomplete: true, inputHighlighting: true }, [
+	test("hands ordinary submissions to the Host synchronously without requesting a render", () => {
+		const { editor, tui } = createEditor({ inlineSlashAutocomplete: true, inputHighlighting: true }, [
 			{ value: "review", label: "review" },
 		]);
 		const submissions: string[] = [];
 		editor.onSubmit = (text) => submissions.push(text);
 		editor.setText("普通输入");
 		editor.handleInput("\r");
-		expect(submissions).toEqual(["普通输入"]);
+		editor.setText("/ui");
+		editor.handleInput("\r");
+		expect(submissions).toEqual(["普通输入", "/ui"]);
+		expect(tui.renderRequests).toBe(0);
 	});
 });

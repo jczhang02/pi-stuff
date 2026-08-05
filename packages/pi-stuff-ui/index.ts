@@ -607,6 +607,8 @@ const UI_SETTINGS_COMMAND_STATES = Symbol.for("@jczhang02/pi-stuff-ui/settings-c
 
 const STATUSLINE_GIT_REFRESH_REQUEST = "@jczhang02/pi-stuff-ui/statusline-git-refresh-request/v1";
 const STATUSLINE_GIT_REFRESH_LISTENERS = Symbol.for("@jczhang02/pi-stuff-ui/statusline-git-refresh-listeners/v1");
+export const UI_RENDER_REQUEST_EVENT = "@jczhang02/pi-stuff-ui/render-request/v1";
+const UI_RENDER_REQUEST_LISTENERS = Symbol.for("@jczhang02/pi-stuff-ui/render-request-listeners/v1");
 
 function statuslineGitRefreshListeners(): WeakMap<ExtensionAPI["events"], () => void> {
 	const root = globalThis as unknown as {
@@ -641,6 +643,46 @@ export function requestStatuslineGitRefresh(pi: Pick<ExtensionAPI, "events">): v
 	} catch {
 		// A cosmetic refresh request cannot be allowed to break the caller's lifecycle.
 	}
+}
+
+function uiRenderRequestListeners(): WeakMap<ExtensionAPI["events"], () => void> {
+	const root = globalThis as unknown as {
+		[key: symbol]: WeakMap<ExtensionAPI["events"], () => void> | undefined;
+	};
+	root[UI_RENDER_REQUEST_LISTENERS] ??= new WeakMap();
+	return root[UI_RENDER_REQUEST_LISTENERS];
+}
+
+function listenForUiRenderRequests(pi: ExtensionAPI, render: (force: boolean) => void): () => void {
+	const listeners = uiRenderRequestListeners();
+	listeners.get(pi.events)?.();
+
+	let active = true;
+	const unsubscribe = pi.events.on(UI_RENDER_REQUEST_EVENT, (value) => {
+		if (!active || typeof value !== "object" || value === null) return;
+		const request = value as { force?: unknown; handled?: unknown };
+		request.handled = true;
+		render(request.force === true);
+	});
+	const cleanup = (): void => {
+		if (!active) return;
+		active = false;
+		if (typeof unsubscribe === "function") unsubscribe();
+		if (listeners.get(pi.events) === cleanup) listeners.delete(pi.events);
+	};
+	listeners.set(pi.events, cleanup);
+	return cleanup;
+}
+
+/** Request a normal-screen paint and report whether an active UI accepted it. */
+export function requestUiRender(pi: Pick<ExtensionAPI, "events">, force = false): boolean {
+	const request = { force, handled: false };
+	try {
+		pi.events.emit(UI_RENDER_REQUEST_EVENT, request);
+	} catch {
+		// A presentation handoff cannot be allowed to break Agent processing.
+	}
+	return request.handled;
 }
 
 function uiSettingsCommandStates(): WeakMap<ExtensionAPI["events"], UiSettingsCommandState> {
@@ -692,6 +734,9 @@ export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 	let stopListeningForGitRefresh = listenForStatuslineGitRefreshRequests(pi, () => {
 		presentation?.refreshGit();
 	});
+	let stopListeningForUiRender = listenForUiRenderRequests(pi, (force) => {
+		presentation?.requestRender(force);
+	});
 
 	pi.on("session_start", (_event, ctx) => {
 		// Register after all Capability factories have initialized so this runs
@@ -721,6 +766,8 @@ export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 	pi.on("session_shutdown", async () => {
 		stopListeningForGitRefresh();
 		stopListeningForGitRefresh = () => {};
+		stopListeningForUiRender();
+		stopListeningForUiRender = () => {};
 		presentation?.dispose();
 		presentation = undefined;
 		await settings.whenIdle();

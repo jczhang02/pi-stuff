@@ -16,6 +16,7 @@ import { WelcomeHeaderController, WelcomeRegistrySource } from "./welcome-header
 export interface UiSessionPresentation {
 	dispose(): void;
 	refreshGit(): void;
+	requestRender(force?: boolean): void;
 	updateContextFileCount(count: number | undefined): void;
 }
 
@@ -139,6 +140,11 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 	refreshGit(): void {
 		if (this.disposed || !this.statusline.isEnabled()) return;
 		void this.git.refresh(this.pi, this.cwd());
+	}
+
+	requestRender(force?: boolean): void {
+		if (this.disposed) return;
+		this.editor.requestRender(force);
 	}
 
 	updateContextFileCount(count: number | undefined): void {

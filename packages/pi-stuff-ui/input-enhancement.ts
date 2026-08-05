@@ -74,6 +74,7 @@ export interface InputEnhancementController {
 	(): void;
 	dispose(): void;
 	isShowingAutocomplete(): boolean;
+	requestRender(force?: boolean): void;
 	subscribe(listener: (visible: boolean) => void): () => void;
 }
 
@@ -818,6 +819,7 @@ export function installInputEnhancementEditor(
 	const controller = dispose as InputEnhancementController;
 	controller.dispose = dispose;
 	controller.isShowingAutocomplete = () => currentEditor?.isShowingAutocomplete() === true;
+	controller.requestRender = (force) => currentEditor?.requestRender(force);
 	controller.subscribe = (listener) => {
 		listeners.add(listener);
 		return () => listeners.delete(listener);

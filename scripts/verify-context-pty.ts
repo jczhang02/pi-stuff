@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
@@ -94,6 +94,23 @@ send -- "\\003"
 after 150
 send -- "\\004"
 expect { eof {} timeout { puts stderr "Pi did not exit"; exit 4 } }
+`;
+}
+
+function startupOnlyProgram(): string {
+	return `
+set timeout 30
+spawn -noecho script -qefc $env(PI_STUFF_CONTEXT_PTY_RUNNER) /dev/null
+expect {
+    -exact "fixture-model" {}
+    timeout { puts stderr "Timed out waiting for startup editor"; exit 2 }
+    eof { puts stderr "Startup-only Pi exited early"; exit 3 }
+}
+after 300
+send -- "\\003"
+after 150
+send -- "\\004"
+expect { eof {} timeout { puts stderr "Startup-only Pi did not exit"; exit 4 } }
 `;
 }
 
@@ -272,7 +289,9 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 	const isolatedProjectDirectory = join(temporaryDirectory, "项目隔离", "other-context");
 	const nativeCompactedProjectDirectory = join(temporaryDirectory, "项目隔离", "native-compacted");
 	const sessionDirectory = join(temporaryDirectory, "sessions");
+	const startupSessionDirectory = join(temporaryDirectory, "startup-only-sessions");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
+	const startupLog = join(temporaryDirectory, "startup-only-requests.jsonl");
 	const magicLog = join(temporaryDirectory, "magic-context.log");
 	const historianMarker = join(temporaryDirectory, "historian-ready");
 	const databasePath = join(dataDirectory, "cortexkit", "magic-context", "context.db");
@@ -288,10 +307,12 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			isolatedProjectDirectory,
 			nativeCompactedProjectDirectory,
 			sessionDirectory,
+			startupSessionDirectory,
 		].map((path) => mkdir(path, { recursive: true })),
 	);
 	await Promise.all([
 		writeFile(requestLog, ""),
+		writeFile(startupLog, ""),
 		writeFile(
 			join(configDirectory, "settings.json"),
 			`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, uiMode: "fullscreen" })}\n`,
@@ -340,6 +361,23 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			XDG_CONFIG_HOME: xdgConfigDirectory,
 			XDG_DATA_HOME: dataDirectory,
 		};
+		runExpect(
+			startupOnlyProgram(),
+			{
+				...baseEnvironment,
+				PI_STUFF_CONTEXT_PTY_LOG: startupLog,
+				PI_STUFF_CONTEXT_PTY_SESSIONS: startupSessionDirectory,
+				PI_STUFF_CONTEXT_PTY_SESSION_ID: "context-startup-only",
+				PI_STUFF_CONTEXT_PTY_STARTUP_ONLY: "1",
+			},
+			"startup purity",
+			projectDirectory,
+		);
+		const databaseCreatedAtStartup = await access(databasePath).then(
+			() => true,
+			() => false,
+		);
+		if (databaseCreatedAtStartup) fail("extension load or session_start created Magic Context state");
 		const freshOutput = runExpect(expectProgram(), baseEnvironment, "fresh session", projectDirectory);
 		for (const forbidden of ["Magic Context", "ctx-aug", "ctx-doctor"]) {
 			if (freshOutput.includes(forbidden)) fail(`fresh TUI exposed forbidden UI text ${forbidden}`);

@@ -23,4 +23,8 @@ if [ -n "${PI_STUFF_CONTEXT_PTY_RESUME_SESSION:-}" ]; then
 	exec "$@" --session "$PI_STUFF_CONTEXT_PTY_RESUME_SESSION"
 fi
 
+if [ "${PI_STUFF_CONTEXT_PTY_STARTUP_ONLY:-}" = "1" ]; then
+	exec "$@" --session-id "$PI_STUFF_CONTEXT_PTY_SESSION_ID"
+fi
+
 exec "$@" --session-id "$PI_STUFF_CONTEXT_PTY_SESSION_ID" "${PI_STUFF_CONTEXT_PTY_INITIAL_PROMPT:-CONTEXT_FIRST 中文检索标记}"

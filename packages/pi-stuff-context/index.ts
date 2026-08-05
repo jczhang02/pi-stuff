@@ -3,6 +3,7 @@ import type {
 	ContextEvent,
 	ExtensionAPI,
 	ExtensionContext,
+	InputEvent,
 	SessionEntry,
 	SessionShutdownEvent,
 	SessionStartEvent,
@@ -10,6 +11,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
 import { registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
+import { requestUiRender } from "@jczhang02/pi-stuff-ui";
 import { Type } from "typebox";
 import { prepareMagicContext } from "./config.ts";
 
@@ -47,7 +49,21 @@ type MagicContextHandler = (
 	ctx: ExtensionContext,
 ) => ContextEventResult | undefined | Promise<ContextEventResult | undefined>;
 type MagicFactory = (pi: ExtensionAPI) => unknown | Promise<unknown>;
+type MagicModule = { default: MagicFactory };
 type DeferredRegistration = () => void;
+
+interface MagicModuleSource {
+	invalidate(): void;
+	load(): Promise<MagicModule>;
+	preload(): Promise<void>;
+}
+
+interface ContextRuntimeDependencies {
+	readonly magicModules: MagicModuleSource;
+	readonly magicSubagent: () => boolean;
+	readonly prepareMagicContext: (ctx: ExtensionContext) => Promise<void>;
+	readonly yieldToUiFrame: () => Promise<void>;
+}
 
 interface StagedMagicHandler {
 	readonly event: string;
@@ -95,9 +111,10 @@ export interface ContextCapability {
 }
 
 export interface ContextCapabilityDependencies {
-	readonly loadMagicContext?: () => Promise<{ default: MagicFactory }>;
+	readonly loadMagicContext?: () => Promise<MagicModule>;
 	readonly magicSubagent?: () => boolean;
 	readonly prepareMagicContext?: (ctx: ExtensionContext) => Promise<void>;
+	readonly yieldToUiFrame?: () => Promise<void>;
 }
 
 interface CachedProjection {
@@ -248,8 +265,41 @@ function formatProjection(
 	};
 }
 
-function defaultLoadMagicContext(): Promise<{ default: MagicFactory }> {
-	return import(MAGIC_CONTEXT_MODULE) as Promise<{ default: MagicFactory }>;
+function defaultLoadMagicContext(): Promise<MagicModule> {
+	return import(MAGIC_CONTEXT_MODULE) as Promise<MagicModule>;
+}
+
+function createMagicModuleSource(loader: () => Promise<MagicModule>): MagicModuleSource {
+	let cached: Promise<MagicModule> | undefined;
+	const load = (): Promise<MagicModule> => {
+		if (cached) return cached;
+		let current: Promise<MagicModule>;
+		try {
+			current = Promise.resolve(loader());
+		} catch (error) {
+			current = Promise.reject(error);
+		}
+		cached = current;
+		void current.catch(() => {
+			if (cached === current) cached = undefined;
+		});
+		return current;
+	};
+	return {
+		invalidate: () => {
+			cached = undefined;
+		},
+		load,
+		preload: () =>
+			load().then(
+				() => undefined,
+				() => undefined,
+			),
+	};
+}
+
+function yieldToUiFrame(): Promise<void> {
+	return new Promise((resolveFrame) => setTimeout(resolveFrame, 17));
 }
 
 function quietMagicContext(ctx: ExtensionContext, notifications = false): ExtensionContext {
@@ -312,7 +362,7 @@ function magicToolPresentation(name: string): SuiteToolPresentation<Record<strin
 
 class ContextCapabilityRuntime implements ContextCapability {
 	private readonly pi: ExtensionAPI;
-	private readonly dependencies: Required<ContextCapabilityDependencies>;
+	private readonly dependencies: ContextRuntimeDependencies;
 	private state: ContextStatusSnapshot = { state: "dormant", engine: "native" };
 	private activation: Promise<ContextStatusSnapshot> | undefined;
 	private generation = 0;
@@ -326,12 +376,9 @@ class ContextCapabilityRuntime implements ContextCapability {
 	private readonly registry: ContextCapabilityRegistry;
 	private readonly owner: object;
 	private readonly ownedContexts = new Set<object>();
+	private interactivePaintPending = false;
 
-	constructor(
-		pi: ExtensionAPI,
-		dependencies: Required<ContextCapabilityDependencies>,
-		registry: ContextCapabilityRegistry,
-	) {
+	constructor(pi: ExtensionAPI, dependencies: ContextRuntimeDependencies, registry: ContextCapabilityRegistry) {
 		this.pi = pi;
 		this.dependencies = dependencies;
 		this.registry = registry;
@@ -340,6 +387,12 @@ class ContextCapabilityRuntime implements ContextCapability {
 
 	status(): ContextStatusSnapshot {
 		return { ...this.state };
+	}
+
+	async noteInput(source: InputEvent["source"]): Promise<void> {
+		if (source !== "interactive") return;
+		this.interactivePaintPending = true;
+		if (requestUiRender(this.pi)) await this.dependencies.yieldToUiFrame();
 	}
 
 	registerToolHandoffs(): void {
@@ -395,6 +448,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 	async dispose(event?: SessionShutdownEvent, ctx?: ExtensionContext): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.interactivePaintPending = false;
 		this.generation++;
 		if (event && ctx) this.shutdown = { event, ctx };
 		this.projections.clear();
@@ -475,7 +529,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		const plan = this.createRegistrationPlan();
 		try {
 			await this.dependencies.prepareMagicContext(ctx);
-			const module = await this.dependencies.loadMagicContext();
+			const module = await this.dependencies.magicModules.load();
 			const magicPi = this.magicPiAdapter(plan);
 			await module.default(magicPi);
 			await this.replaySessionStart(plan, ctx);
@@ -485,6 +539,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 			}
 			if (!plan.contextHandler) {
 				await this.rollbackRegistrationPlan(plan, ctx);
+				this.dependencies.magicModules.invalidate();
 				this.deactivateToolHandoffs();
 				this.state = {
 					state: "degraded",
@@ -499,6 +554,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 			return this.status();
 		} catch (error) {
 			await this.rollbackRegistrationPlan(plan, ctx);
+			this.dependencies.magicModules.invalidate();
 			if (!this.isCurrentGeneration(generation)) return { state: "native", engine: "native", trigger };
 			this.magicContextHandler = undefined;
 			this.deactivateToolHandoffs();
@@ -613,6 +669,10 @@ class ContextCapabilityRuntime implements ContextCapability {
 		const contextHandler = handler as MagicContextHandler;
 		register("context", async (rawEvent, ctx) => {
 			if (!this.isCurrentGeneration(generation)) return;
+			if (this.interactivePaintPending) {
+				this.interactivePaintPending = false;
+				if (requestUiRender(this.pi)) await this.dependencies.yieldToUiFrame();
+			}
 			const contextEvent = rawEvent as ContextEvent;
 			const nativeMessages = [...contextEvent.messages];
 			try {
@@ -736,19 +796,26 @@ function magicManualCompaction(event: unknown):
 	};
 }
 
-export default function piStuffContext(pi: ExtensionAPI, dependencies: ContextCapabilityDependencies = {}): void {
+export default async function piStuffContext(
+	pi: ExtensionAPI,
+	dependencies: ContextCapabilityDependencies = {},
+): Promise<void> {
 	const registry = capabilityRegistry();
 	const owner = ownerKey(pi);
 	const existing = registry.owners.get(owner);
 	if (existing) return;
+	const magicSubagent = dependencies.magicSubagent ?? (() => process.env[MAGIC_SUBAGENT_ENV] === "1");
+	const magicModules = createMagicModuleSource(dependencies.loadMagicContext ?? defaultLoadMagicContext);
+	const preloading = magicSubagent() ? Promise.resolve() : magicModules.preload();
 	const runtime = new ContextCapabilityRuntime(
 		pi,
 		{
-			loadMagicContext: dependencies.loadMagicContext ?? defaultLoadMagicContext,
-			magicSubagent: dependencies.magicSubagent ?? (() => process.env[MAGIC_SUBAGENT_ENV] === "1"),
+			magicModules,
+			magicSubagent,
 			prepareMagicContext:
 				dependencies.prepareMagicContext ??
 				(dependencies.loadMagicContext ? async () => undefined : prepareMagicContext),
+			yieldToUiFrame: dependencies.yieldToUiFrame ?? yieldToUiFrame,
 		},
 		registry,
 	);
@@ -759,13 +826,15 @@ export default function piStuffContext(pi: ExtensionAPI, dependencies: ContextCa
 	pi.on("session_start", (event, ctx) => runtime.captureSessionStart(event, ctx));
 	pi.on("session_compact", () => runtime.invalidateProjection());
 	pi.on("session_tree", () => runtime.invalidateProjection());
-	pi.on("input", async (_event, ctx) => {
+	pi.on("input", async (event, ctx) => {
+		await runtime.noteInput(event.source);
 		await runtime.activate(ctx, "input");
 	});
 	pi.on("before_agent_start", async (_event, ctx) => {
 		await runtime.activate(ctx, "automatic-turn");
 	});
 	pi.on("session_shutdown", (event, ctx) => runtime.dispose(event, ctx));
+	await preloading;
 }
 
 export const __test = {

@@ -19,6 +19,7 @@ import piStuffContext, {
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type Handlers = Map<string, Handler[]>;
+const UI_RENDER_REQUEST_EVENT = "@jczhang02/pi-stuff-ui/render-request/v1";
 
 interface HostRegistrations {
 	commands: string[];
@@ -148,21 +149,30 @@ function magicModule(options: { registerBeforeStart?: () => void; registerTool?:
 afterEach(() => __test.clear());
 
 describe("Context capability lifecycle", () => {
-	test("keeps startup pure and activates Magic Context only when work begins", async () => {
+	test("preloads Magic code while keeping session initialization user-triggered", async () => {
 		const handlers: Handlers = new Map();
 		const tools: ToolDefinition[] = [];
 		const api = apiFor(handlers, tools);
 		let loads = 0;
+		let factories = 0;
 		piStuffContext(api, {
 			loadMagicContext: async () => {
 				loads++;
-				return magicModule();
+				return {
+					default: async (magicApi: ExtensionAPI) => {
+						factories++;
+						magicApi.on("context", (event) => event);
+					},
+				};
 			},
 		});
 		const ctx = context();
 
+		expect(loads).toBe(1);
+		expect(factories).toBe(0);
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		expect(loads).toBe(0);
+		expect(loads).toBe(1);
+		expect(factories).toBe(0);
 		expect(getContextCapability(ctx).status()).toEqual({ state: "dormant", engine: "native" });
 		expect(tools.map((tool) => tool.name).sort()).toEqual([
 			"ctx_expand",
@@ -175,12 +185,52 @@ describe("Context capability lifecycle", () => {
 
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(loads).toBe(1);
+		expect(factories).toBe(1);
 		expect(getContextCapability(ctx).status()).toEqual({
 			state: "active",
 			engine: "magic-context",
 			trigger: "automatic-turn",
 		});
 		expect(api.getActiveTools()).toEqual([]);
+	});
+
+	test("paints before interactive activation and again before its first Context transform", async () => {
+		const handlers: Handlers = new Map();
+		const sequence: string[] = [];
+		const api = apiFor(handlers);
+		api.events.on(UI_RENDER_REQUEST_EVENT, (value) => {
+			(value as { handled: boolean }).handled = true;
+			sequence.push("paint");
+		});
+		piStuffContext(api, {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					sequence.push("activate");
+					magicApi.on("context", (event) => {
+						sequence.push("transform");
+						return event;
+					});
+				},
+			}),
+			prepareMagicContext: async () => {
+				sequence.push("prepare");
+			},
+			yieldToUiFrame: async () => {
+				sequence.push("frame");
+			},
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		await emit(handlers, "input", { type: "input", text: "first", source: "interactive" }, ctx);
+		await emit(handlers, "context", { type: "context", messages: [taggedMessage("first")] }, ctx);
+		await emit(handlers, "context", { type: "context", messages: [taggedMessage("tool result")] }, ctx);
+		expect(sequence).toEqual(["paint", "frame", "prepare", "activate", "paint", "frame", "transform", "transform"]);
+
+		sequence.length = 0;
+		await emit(handlers, "input", { type: "input", text: "rpc", source: "rpc" }, ctx);
+		await emit(handlers, "context", { type: "context", messages: [taggedMessage("rpc")] }, ctx);
+		expect(sequence).toEqual(["transform"]);
 	});
 
 	test("fails open to native context and retries on the next activation", async () => {
