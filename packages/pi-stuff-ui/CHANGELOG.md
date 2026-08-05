@@ -1,5 +1,12 @@
 # @jczhang02/pi-stuff-ui
 
+## 0.2.4
+
+### Patch Changes
+
+- 8d42a58: Render the accepted icon-led one-row Statusline and bounded previous-prompt row, use the official full and compact Pi
+  Welcome marks, and compose Fleetview beneath the Statusline through one shared Footer with a blank idle help slot.
+
 ## 0.2.3
 
 ### Patch Changes

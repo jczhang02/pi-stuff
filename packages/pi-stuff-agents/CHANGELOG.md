@@ -1,5 +1,24 @@
 # @jczhang02/pi-stuff-agents
 
+## 1.0.0
+
+### Minor Changes
+
+- e56bba8: Add session-owned Background Shell and one-shot Monitor tools, the full-width `/tasks` activity dialog, conditional
+  Ctrl+B foreground handoff, bounded output and process-tree cleanup, plus a read-only running-Agent projection.
+
+### Patch Changes
+
+- 8d42a58: Render the accepted icon-led one-row Statusline and bounded previous-prompt row, use the official full and compact Pi
+  Welcome marks, and compose Fleetview beneath the Statusline through one shared Footer with a blank idle help slot.
+- Updated dependencies [e56bba8]
+- Updated dependencies [47f2efd]
+- Updated dependencies [8d42a58]
+  - @jczhang02/pi-stuff-work@0.2.0
+  - @jczhang02/pi-stuff-context@0.1.5
+  - @jczhang02/pi-stuff-ui@0.2.4
+  - @jczhang02/pi-stuff-tools@0.1.5
+
 ## 0.2.3
 
 ### Patch Changes

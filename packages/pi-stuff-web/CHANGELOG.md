@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.4
+
+### Patch Changes
+
+- dd7bcb6: Internalize the required Web and MCP fork snapshots in the Pi Stuff monorepo, remove self-owned GitHub Release
+  dependencies, and preserve the certified narrow adapters, provenance, bundled runtime closure, and degraded behavior.
+  - @jczhang02/pi-stuff-tools@0.1.5
+
 ## 0.2.3
 
 ### Patch Changes

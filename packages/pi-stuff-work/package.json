@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff-work",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Session-owned Background Shell, Monitor, and current-work UI for Pi Stuff",
 	"type": "module",
 	"keywords": [
@@ -30,8 +30,8 @@
 		]
 	},
 	"dependencies": {
-		"@jczhang02/pi-stuff-tools": "0.1.4",
-		"@jczhang02/pi-stuff-ui": "0.2.3",
+		"@jczhang02/pi-stuff-tools": "0.1.5",
+		"@jczhang02/pi-stuff-ui": "0.2.4",
 		"typebox": "1.3.7"
 	},
 	"peerDependencies": {

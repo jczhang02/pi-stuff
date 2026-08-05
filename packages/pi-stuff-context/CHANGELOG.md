@@ -1,5 +1,16 @@
 # @jczhang02/pi-stuff-context
 
+## 0.1.5
+
+### Patch Changes
+
+- 47f2efd: Replace the retired Pi Stuff-owned Magic Context release with the exact official
+  `@cortexkit/pi-magic-context@0.33.1` Package behind the Context Capability. Preserve lazy activation and missed
+  `session_start` replay, suppress duplicate UI and Todo surfaces, expose focused diagnostics through the Suite, bootstrap
+  a non-destructive first-use configuration, and enforce one compaction owner without stacking a native summary after a
+  Magic attempt.
+  - @jczhang02/pi-stuff-tools@0.1.5
+
 ## 0.1.4
 
 ### Patch Changes

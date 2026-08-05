@@ -1,5 +1,38 @@
 # @jczhang02/pi-stuff
 
+## 0.3.0
+
+### Minor Changes
+
+- e56bba8: Add session-owned Background Shell and one-shot Monitor tools, the full-width `/tasks` activity dialog, conditional
+  Ctrl+B foreground handoff, bounded output and process-tree cleanup, plus a read-only running-Agent projection.
+
+### Patch Changes
+
+- dd7bcb6: Internalize the required Web and MCP fork snapshots in the Pi Stuff monorepo, remove self-owned GitHub Release
+  dependencies, and preserve the certified narrow adapters, provenance, bundled runtime closure, and degraded behavior.
+- 47f2efd: Replace the retired Pi Stuff-owned Magic Context release with the exact official
+  `@cortexkit/pi-magic-context@0.33.1` Package behind the Context Capability. Preserve lazy activation and missed
+  `session_start` replay, suppress duplicate UI and Todo surfaces, expose focused diagnostics through the Suite, bootstrap
+  a non-destructive first-use configuration, and enforce one compaction owner without stacking a native summary after a
+  Magic attempt.
+- Updated dependencies [e56bba8]
+- Updated dependencies [dd7bcb6]
+- Updated dependencies [47f2efd]
+- Updated dependencies [8d42a58]
+  - @jczhang02/pi-stuff-work@0.2.0
+  - @jczhang02/pi-stuff-agents@1.0.0
+  - @jczhang02/pi-stuff-web@0.2.4
+  - @jczhang02/pi-stuff-mcp@0.2.4
+  - @jczhang02/pi-stuff-context@0.1.5
+  - @jczhang02/pi-stuff-ui@0.2.4
+  - @jczhang02/pi-stuff-btw@0.1.5
+  - @jczhang02/pi-stuff-codex@0.1.4
+  - @jczhang02/pi-stuff-goal@0.2.4
+  - @jczhang02/pi-stuff-rtk@0.2.4
+  - @jczhang02/pi-stuff-todo@0.1.5
+  - @jczhang02/pi-stuff-tools@0.1.5
+
 ## 0.2.3
 
 ### Patch Changes
