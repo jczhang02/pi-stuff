@@ -19,6 +19,7 @@
 		"host:model-data:refresh": "bun scripts/refresh-certified-pi-model-data.ts",
 		"knip": "knip --no-progress",
 		"pack:verify": "bun scripts/verify-package.ts",
+		"prototype:magic-cache-ab": "bun scripts/prototype-magic-cache-ab.ts",
 		"release:pack": "bun scripts/pack-release.ts",
 		"release:install-local": "bun scripts/install-certified-release.ts",
 		"release:install:verify": "bun scripts/verify-local-release-install.ts",
