@@ -26,8 +26,6 @@ const CREDENTIAL_PATTERNS = [
 	/\bsk-[A-Za-z0-9_-]{24,}\b/,
 ];
 const IMMUTABLE_OWNED_RELEASE_DEPENDENCIES: Readonly<Record<string, string>> = {
-	"@jczhang02/pi-magic-context":
-		"https://github.com/jczhang02/magic-context/releases/download/pi-stuff-v0.33.1-3/pi-magic-context-0.33.1-pi-stuff.3-sha256-5f93130518910291d29d6c8b98d042e0d757bd7edc2d07c03a195d93c872cdbd.tgz",
 	"@jczhang02/pi-mcp-adapter":
 		"https://github.com/jczhang02/pi-mcp-adapter/releases/download/pi-stuff-v2.19.0-7/jczhang02-pi-mcp-adapter-2.19.0-pi-stuff.7-2333b79-sha256-b0fbbcdcca56c28c49884b69002f1519504ab538afd1abf86e00247aeb441478.tgz",
 	"@jczhang02/pi-web-access":

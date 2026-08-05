@@ -1,27 +1,37 @@
 # Bundled context engine provenance
 
-Pi Stuff integrates an owned fork of Magic Context through this small adapter.
+Pi Stuff integrates the official Magic Context Package through this adapter. It
+does not vendor or patch Magic Context Core.
 
 - Upstream: `https://github.com/cortexkit/magic-context`
-- Owned fork: `https://github.com/jczhang02/magic-context`
 - Upstream release: `v0.33.1`
-- Audited source baseline: `dea65a94abf61b698160d14dc8b621b1387f1d2c`
-- Pi Stuff fork commit: `1414363e946915802a7d16ffc91999c63dd40744`
-- Signed fork tag: `pi-stuff-v0.33.1-3`
-- Package: `@jczhang02/pi-magic-context@0.33.1-pi-stuff.3`
-- Release artifact SHA-256: `5f93130518910291d29d6c8b98d042e0d757bd7edc2d07c03a195d93c872cdbd`
-- Upstream npm integrity: `sha512-mybLPirFtUqVb+7cTS2Bpg/h33NbSSQvUOSfeP1C5QrxMVptQjGeNnSTLLrkfH5i5BUVY3D/r3OGE3PhzWsX0A==`
-- License: MIT; the fork package preserves the upstream notice.
+- Published source commit (`gitHead`): `075e21f77c671781b25de9440c1a727f5fa4413d`
+- Package: `@cortexkit/pi-magic-context@0.33.1`
+- npm integrity: `sha512-mybLPirFtUqVb+7cTS2Bpg/h33NbSSQvUOSfeP1C5QrxMVptQjGeNnSTLLrkfH5i5BUVY3D/r3OGE3PhzWsX0A==`
+- npm tarball SHA-1: `b0792c428cb1238ba33302403f6e13be3c865d77`
+- Audited tarball SHA-256: `106a276b631bbff324d17091ceb82959779678945596d17fd75d3b23abb6f261`
+- License: MIT, as declared by the official Package manifest and upstream repository.
 
-## Pi Stuff delta
+The Package declares Pi peers `^0.80.2`, which does not include the Suite's
+certified Pi 0.83 Host. Pi Stuff therefore does not infer compatibility from
+the peer range: its real-Host PTY gate separately certifies this exact artifact
+against the pinned Pi 0.83 source profile.
+
+## Pi Stuff adapter policy
 
 - lazy first-input activation with automatic-turn fallback;
 - native Pi fail-open behavior;
 - one bounded status/projection seam for BTW and Agents;
-- no competing Todo, statusline, command dialogs, notifications, Dreamer, or
-  Sidekick UI;
-- optional local embedding runtime with one-time lexical FTS fallback when the
-  embedding runtime is unavailable;
-- immediate JSONL-derived message-index reconciliation for explicit recall and
-  compact-and-resume search boundaries that exclude the still-visible live tail;
-- project identity separates forks while sharing clones of one origin.
+- exact official Package behind a replaceable Capability seam;
+- no competing Todo, statusline, announcement, Dreamer, or Sidekick UI;
+- only the five Context tools plus focused status, flush, recomposition,
+  wrap-up, and session-upgrade commands are exposed;
+- one explicit compaction authority: native fallback is allowed before Magic
+  takeover, never stacked after an active Magic attempt;
+- bounded reference-only projections for BTW and Agents;
+- a first-use configuration bootstrap that never overwrites either the shared
+  CortexKit config or a legacy Pi config;
+- a lexical-only first-use search profile. The official 0.33.1 local embedding
+  loader cannot resolve its Transformers dynamic import from the certified
+  single-file Host; disabling that optional path prevents repeated load errors
+  without patching Core. Explicit user embedding configuration is preserved.

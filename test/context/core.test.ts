@@ -22,6 +22,7 @@ type Handlers = Map<string, Handler[]>;
 
 interface HostRegistrations {
 	commands: string[];
+	commandDefinitions?: Map<string, { readonly handler?: (args: string, ctx: ExtensionContext) => unknown }>;
 	entryRenderers: string[];
 }
 
@@ -60,8 +61,12 @@ function apiFor(
 				if (!activeTools.includes(tool.name)) activeTools.push(tool.name);
 			} else tools[existing] = tool;
 		},
-		registerCommand(name: string): void {
+		registerCommand(
+			name: string,
+			definition: { readonly handler?: (args: string, ctx: ExtensionContext) => unknown },
+		): void {
 			if (!registrations.commands.includes(name)) registrations.commands.push(name);
+			registrations.commandDefinitions?.set(name, definition);
 		},
 		registerEntryRenderer(name: string): void {
 			if (!registrations.entryRenderers.includes(name)) registrations.entryRenderers.push(name);
@@ -238,9 +243,119 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "message_end", { type: "message_end" }, ctx);
 		expect(handlers.get("context")).toHaveLength(1);
 		expect(handlers.get("message_end")).toHaveLength(1);
-		expect(registrations).toEqual({ commands: ["ctx-partial"], entryRenderers: ["ctx-partial"] });
+		expect(registrations).toEqual({ commands: [], entryRenderers: [] });
 		expect(tools.find((tool) => tool.name === "ctx_search")?.description).toBe("Committed Magic search");
 		expect(staleMessageEnds).toBe(1);
+	});
+
+	test("replays the observed session start exactly once after lazy activation", async () => {
+		const handlers: Handlers = new Map();
+		let starts = 0;
+		let reason: unknown;
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.on("session_start", (event) => {
+						starts++;
+						reason = (event as { readonly reason?: unknown }).reason;
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "resume" }, ctx);
+
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+
+		expect(starts).toBe(1);
+		expect(reason).toBe("resume");
+	});
+
+	test("keeps only focused diagnostics and suppresses Magic's duplicate UI surfaces", async () => {
+		const handlers: Handlers = new Map();
+		const tools: ToolDefinition[] = [];
+		const commandDefinitions = new Map<
+			string,
+			{ readonly handler?: (args: string, ctx: ExtensionContext) => unknown }
+		>();
+		const registrations: HostRegistrations = { commands: [], commandDefinitions, entryRenderers: [] };
+		const uiCalls: string[] = [];
+		let statusHasUi: unknown;
+		piStuffContext(apiFor(handlers, tools, registrations), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.on("session_start", (_event, ctx) => {
+						ctx.ui.setStatus("magic", "duplicate");
+						ctx.ui.setWidget("magic", ["duplicate"]);
+						ctx.ui.notify("announcement");
+					});
+					magicApi.on("before_agent_start", (_event, ctx) => {
+						ctx.ui.setFooter(() => ({ render: () => [] }) as never);
+						ctx.ui.setHeader(() => ({ render: () => [] }) as never);
+					});
+					for (const name of [
+						"ctx-status",
+						"ctx-flush",
+						"ctx-recomp",
+						"ctx-wrapup",
+						"ctx-session-upgrade",
+						"ctx-aug",
+						"ctx-dream",
+					]) {
+						magicApi.registerCommand(name, {
+							handler: async (_args, ctx) => {
+								if (name === "ctx-status") {
+									statusHasUi = ctx.hasUI;
+									ctx.ui.setStatus("magic", "duplicate");
+									ctx.ui.notify("diagnostic");
+								}
+							},
+						});
+					}
+					magicApi.registerEntryRenderer("ctx-status", () => undefined);
+					magicApi.registerEntryRenderer("ctx-aug", () => undefined);
+					magicApi.registerTool({
+						name: "todowrite",
+						label: "TodoWrite",
+						description: "duplicate todo",
+						parameters: Type.Object({}),
+						execute: async () => ({ content: [{ type: "text", text: "duplicate" }], details: undefined }),
+					});
+				},
+			}),
+		});
+		const ctx = {
+			...context(),
+			hasUI: true,
+			ui: {
+				notify: (message: string) => uiCalls.push(`notify:${message}`),
+				setFooter: () => uiCalls.push("footer"),
+				setHeader: () => uiCalls.push("header"),
+				setStatus: () => uiCalls.push("status"),
+				setWidget: () => uiCalls.push("widget"),
+			},
+		} as unknown as ExtensionContext;
+
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+
+		expect(uiCalls).toEqual([]);
+		expect(registrations.commands).toEqual([
+			"ctx-status",
+			"ctx-flush",
+			"ctx-recomp",
+			"ctx-wrapup",
+			"ctx-session-upgrade",
+		]);
+		expect(registrations.entryRenderers).toEqual(["ctx-status"]);
+		expect(tools.some((tool) => tool.name === "todowrite")).toBeFalse();
+
+		await commandDefinitions.get("ctx-status")?.handler?.("", ctx);
+		expect(statusHasUi).toBeFalse();
+		expect(uiCalls).toEqual(["notify:diagnostic"]);
 	});
 
 	test("keeps Magic's internal Historian agent native and recursion-free", async () => {
@@ -319,6 +434,7 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 
 		expect(api.getActiveTools()).not.toContain("todowrite");
+		expect(tools.some((tool) => tool.name === "todowrite")).toBeFalse();
 	});
 
 	test("awaits first-input activation before compaction can run", async () => {
@@ -501,9 +617,12 @@ describe("Context capability lifecycle", () => {
 		expect(bypasses).toEqual([]);
 	});
 
-	test("fails open to native compaction when the Magic compaction hook throws", async () => {
+	test("does not stack native compaction after the Magic compaction hook throws", async () => {
 		const handlers: Handlers = new Map();
-		piStuffContext(apiFor(handlers), {
+		const api = apiFor(handlers);
+		const bypasses: unknown[] = [];
+		api.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (value) => bypasses.push(value));
+		piStuffContext(api, {
 			loadMagicContext: async () => ({
 				default: async (magicApi: ExtensionAPI) => {
 					magicApi.on("context", (event) => ({
@@ -515,7 +634,11 @@ describe("Context capability lifecycle", () => {
 				},
 			}),
 		});
-		const ctx = context();
+		const notifications: string[] = [];
+		const ctx = {
+			...context(),
+			ui: { notify: (message: string) => notifications.push(message) },
+		} as unknown as ExtensionContext;
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 
@@ -529,12 +652,15 @@ describe("Context capability lifecycle", () => {
 				},
 				ctx,
 			),
-		).toEqual([undefined]);
+		).toEqual([{ cancel: true }]);
 		expect(getContextCapability(ctx).status()).toMatchObject({
 			engine: "native",
 			error: "context store unavailable",
 			state: "degraded",
 		});
+		expect(notifications).toHaveLength(1);
+		expect(notifications[0]).toContain("full Session remains intact");
+		expect(bypasses).toEqual([{ schemaVersion: 1, sessionManager: ctx.sessionManager, source: "magic-context" }]);
 	});
 });
 

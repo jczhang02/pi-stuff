@@ -1,9 +1,10 @@
 # `@jczhang02/pi-stuff-context`
 
-The Pi Stuff continuity boundary. It loads the owned Magic Context fork only
-when a user input or automatic Agent turn actually needs context, keeps Pi's
-JSONL session as the raw authority, and falls back to Pi's native context path
-when the derived local store is unavailable.
+The Pi Stuff continuity boundary. It loads the exact official Magic Context
+Package only when a user input or automatic Agent turn actually needs context,
+keeps Pi's JSONL session as the raw authority, and falls back to Pi's native
+context path when the derived local store is unavailable before Magic takes
+ownership.
 
 The Capability exposes no floating UI, statusline entry, migration prompt, or
 second Todo authority. Magic Context's history, memory, search, notes, and
@@ -12,8 +13,19 @@ reference-only projection; fresh Agents receive project memory only, while
 forked Agents may receive bounded parent history. Magic's own internal
 Historian process is not represented as a Pi Stuff Agent.
 
-The bundled fork is pinned to signed release `pi-stuff-v0.33.1-3`. Exact source
-and artifact provenance are recorded in [UPSTREAM.md](./UPSTREAM.md).
+The bundled engine is pinned to `@cortexkit/pi-magic-context@0.33.1`. The
+adapter suppresses the upstream Todo, statusline, announcement, and auxiliary
+UI surfaces while retaining the five Context tools and focused diagnostics.
+On first lazy activation it writes a conservative user configuration only when
+neither the current CortexKit path nor a legacy Pi path exists; it never
+overwrites user configuration. Exact source and artifact provenance are
+recorded in [UPSTREAM.md](./UPSTREAM.md).
+
+The first-use profile selects Magic Context's official lexical search path and
+does not load its local embedding runtime. This avoids a published 0.33.1
+dynamic-import incompatibility in the certified single-file Pi 0.83 Host while
+keeping history and memory recall available. An existing user or project
+embedding configuration remains authoritative and is never rewritten.
 
 ## Pi 0.83 host constraints
 
@@ -42,9 +54,11 @@ This boundary deliberately works within Pi 0.83's extension interface:
   compaction boundary with a positive managed-history result. Automatic
   threshold or overflow compaction remains owned by Magic and publishes one
   session-identity-bound in-process bypass event; Goal uses that event only to
-  replace a continuation it suspended at `session_before_compact`. If the
-  Magic hook fails or Context is already degraded, Pi's native compaction runs.
-- Explicit `ctx_search` synchronizes its derived message index from the active
-  Pi JSONL branch before searching. After compaction and cold resume it can
-  recall hidden early turns immediately, while the visible live tail remains
-  excluded from duplicate search results.
+  replace a continuation it suspended at `session_before_compact`. If Context
+  is already degraded before a compaction attempt, Pi's native path remains
+  available. If an active Magic compaction hook itself fails, the adapter
+  cancels that attempt, reports the failure, and leaves the full JSONL intact
+  rather than stacking a native summary after a partial Magic attempt.
+- The official engine owns its durable message index. Context activation
+  replays the already-observed `session_start` exactly once so fresh and resumed
+  sessions enter that indexing lifecycle even though the engine loads lazily.

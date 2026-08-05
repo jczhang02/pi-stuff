@@ -63,7 +63,7 @@ describe("auditPublicFiles", () => {
 		expect(await auditPublicFiles(root)).toEqual([]);
 	});
 
-	test("accepts only the checksum-named owned Magic Context release artifact", async () => {
+	test("accepts an exact official dependency and rejects an unpinned source archive", async () => {
 		const root = await createRepository();
 		await writeCapabilityManifest(root, {
 			name: "@jczhang02/pi-example",
@@ -71,8 +71,7 @@ describe("auditPublicFiles", () => {
 			files: ["index.ts", "README.md", "LICENSE"],
 			pi: { extensions: ["./index.ts"] },
 			dependencies: {
-				"@jczhang02/pi-magic-context":
-					"https://github.com/jczhang02/magic-context/releases/download/pi-stuff-v0.33.1-3/pi-magic-context-0.33.1-pi-stuff.3-sha256-5f93130518910291d29d6c8b98d042e0d757bd7edc2d07c03a195d93c872cdbd.tgz",
+				"@cortexkit/pi-magic-context": "0.33.1",
 			},
 		});
 
@@ -84,7 +83,7 @@ describe("auditPublicFiles", () => {
 			files: ["index.ts", "README.md", "LICENSE"],
 			pi: { extensions: ["./index.ts"] },
 			dependencies: {
-				"@jczhang02/pi-magic-context": "https://github.com/jczhang02/magic-context/archive/refs/heads/main.tgz",
+				"@cortexkit/pi-magic-context": "https://github.com/cortexkit/magic-context/archive/refs/heads/main.tgz",
 			},
 		});
 		expect(await auditPublicFiles(root)).toContainEqual({

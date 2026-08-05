@@ -18,8 +18,8 @@ async function createRepository(): Promise<string> {
 	await writeJson(join(root, "packages", "pi-stuff", "package.json"), {
 		name: "@jczhang02/pi-stuff",
 		version: "0.0.0",
-		dependencies: {},
-		bundledDependencies: [],
+		dependencies: { zod: "4.4.3" },
+		bundledDependencies: ["zod"],
 	});
 	await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
 		schemaVersion: 1,
@@ -72,11 +72,12 @@ export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 			name: "@jczhang02/pi-stuff",
 			version: "0.0.0",
 			dependencies: {
+				zod: "4.4.3",
 				"@jczhang02/pi-beta": "0.3.4",
 				"@jczhang02/pi-stuff-agents": "0.5.6",
 				"@jczhang02/pi-alpha": "0.1.2",
 			},
-			bundledDependencies: ["@jczhang02/pi-beta", "@jczhang02/pi-stuff-agents", "@jczhang02/pi-alpha"],
+			bundledDependencies: ["@jczhang02/pi-beta", "@jczhang02/pi-stuff-agents", "@jczhang02/pi-alpha", "zod"],
 		});
 	});
 

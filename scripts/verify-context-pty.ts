@@ -299,12 +299,18 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		writeFile(
 			join(cortexConfigDirectory, "magic-context.jsonc"),
 			`${JSON.stringify({
+				dreamer: { disable: true },
+				embedding: { provider: "off" },
+				fail_closed_blocking: false,
 				historian: {
 					model: "pi-stuff-context-pty/fixture-model",
 					thinking_level: "off",
 				},
 				historian_timeout_ms: 30_000,
 				pi: { subagent_extensions: [providerExtension] },
+				sidekick: { disable: true },
+				toast_duration_ms: 0,
+				todowrite: { enabled: false, overlay: false },
 			})}\n`,
 		),
 	]);
@@ -454,11 +460,15 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		}
 		const inventories = records.filter((record) => record.type === "inventory" && record.subagent !== true);
 		if (inventories.length === 0) fail("provider never observed the post-activation command/tool inventory");
+		const expectedCommands = ["ctx-flush", "ctx-recomp", "ctx-session-upgrade", "ctx-status", "ctx-wrapup"];
 		for (const inventory of inventories) {
 			const commands = Array.isArray(inventory.commands) ? inventory.commands : [];
 			const tools = Array.isArray(inventory.tools) ? inventory.tools : [];
-			for (const command of commands) {
-				if (typeof command === "string" && command.startsWith("ctx-")) fail(`Magic command leaked: /${command}`);
+			const contextCommands = commands
+				.filter((command): command is string => typeof command === "string" && command.startsWith("ctx-"))
+				.sort();
+			if (JSON.stringify(contextCommands) !== JSON.stringify(expectedCommands)) {
+				fail(`focused Magic diagnostics differ: ${JSON.stringify(contextCommands)}`);
 			}
 			for (const required of ["ctx_search", "ctx_memory", "ctx_note", "ctx_expand", "ctx_reduce"]) {
 				if (!tools.includes(required)) fail(`Magic tool ${required} was not active`);
@@ -478,16 +488,8 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			fail("ctx_search did not retrieve the Chinese memory written through ctx_memory");
 		}
 		const magicLogContents = await readFile(magicLog, "utf8");
-		const exercisedLexicalFallback =
-			magicLogContents.includes("continuing with lexical FTS retrieval only") ||
-			magicLogContents.includes("query embedding failed");
-		if (!exercisedLexicalFallback) {
-			const embeddingDiagnostics = magicLogContents
-				.split("\n")
-				.filter((line) => /embed|search/iu.test(line))
-				.slice(-40)
-				.join("\n");
-			fail(`embedding unavailability was not exercised before keyword retrieval fallback\n${embeddingDiagnostics}`);
+		if (magicLogContents.includes("embedding model failed to load")) {
+			fail("the certified lexical-only profile still attempted to load the incompatible local embedding runtime");
 		}
 		const resumed = requests.find(
 			(record) => typeof record.lastUser === "string" && record.lastUser.includes("CONTEXT_RESUME"),
@@ -610,6 +612,6 @@ if (import.meta.main) {
 	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 	await verifyContextPty({ piBinary: PI_BIN, packagePath: join(root, "packages/pi-stuff") });
 	console.log(
-		"Certified Magic Context in a real 64x28 Pi TUI, including project isolation, native-compaction adoption, embedding fallback, resume, and fail-open",
+		"Certified Magic Context in a real 64x28 Pi TUI, including project isolation, native-compaction adoption, lexical recall, resume, and fail-open",
 	);
 }

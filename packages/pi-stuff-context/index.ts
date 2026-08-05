@@ -11,10 +11,11 @@ import type {
 import { sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
 import { registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
 import { Type } from "typebox";
+import { prepareMagicContext } from "./config.ts";
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 export const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
-const MAGIC_CONTEXT_MODULE = "@jczhang02/pi-magic-context";
+const MAGIC_CONTEXT_MODULE = "@cortexkit/pi-magic-context";
 const MAGIC_SUBAGENT_ENV = "MAGIC_CONTEXT_PI_SUBAGENT";
 const BTW_PROJECTION_LIMIT = 48_000;
 const AGENT_FORK_PROJECTION_LIMIT = 64_000;
@@ -28,6 +29,8 @@ const MAGIC_TOOL_LABELS: Readonly<Record<string, string>> = {
 };
 const MAGIC_TOOL_NAMES = Object.keys(MAGIC_TOOL_LABELS);
 const MAGIC_TOOL_NAME_SET = new Set(MAGIC_TOOL_NAMES);
+const MAGIC_COMMAND_NAMES = new Set(["ctx-flush", "ctx-recomp", "ctx-session-upgrade", "ctx-status", "ctx-wrapup"]);
+const MAGIC_QUIET_UI_METHODS = new Set(["setFooter", "setHeader", "setStatus", "setWidget"]);
 const MAGIC_TOOL_HANDOFF_PARAMETERS = Type.Object({}, { additionalProperties: true });
 
 type LooseEventHandler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
@@ -36,12 +39,6 @@ interface ManualCompactionPreparation {
 	readonly firstKeptEntryId: string;
 	readonly tokensBefore: number;
 }
-interface PiStuffMagicContextActivation {
-	readonly initialSessionStart?: {
-		readonly event: SessionStartEvent;
-		readonly ctx: ExtensionContext;
-	};
-}
 interface ContextEventResult {
 	readonly messages?: AgentMessage[];
 }
@@ -49,7 +46,7 @@ type MagicContextHandler = (
 	event: ContextEvent,
 	ctx: ExtensionContext,
 ) => ContextEventResult | undefined | Promise<ContextEventResult | undefined>;
-type MagicFactory = (pi: ExtensionAPI, activation?: PiStuffMagicContextActivation) => unknown | Promise<unknown>;
+type MagicFactory = (pi: ExtensionAPI) => unknown | Promise<unknown>;
 type DeferredRegistration = () => void;
 
 interface StagedMagicHandler {
@@ -100,6 +97,7 @@ export interface ContextCapability {
 export interface ContextCapabilityDependencies {
 	readonly loadMagicContext?: () => Promise<{ default: MagicFactory }>;
 	readonly magicSubagent?: () => boolean;
+	readonly prepareMagicContext?: (ctx: ExtensionContext) => Promise<void>;
 }
 
 interface CachedProjection {
@@ -254,6 +252,40 @@ function defaultLoadMagicContext(): Promise<{ default: MagicFactory }> {
 	return import(MAGIC_CONTEXT_MODULE) as Promise<{ default: MagicFactory }>;
 }
 
+function quietMagicContext(ctx: ExtensionContext, notifications = false): ExtensionContext {
+	const ui = ctx.ui;
+	if (!ui || typeof ui !== "object") return ctx;
+	const quietUi = new Proxy(ui, {
+		get(target, property, receiver) {
+			if (MAGIC_QUIET_UI_METHODS.has(String(property)) || (!notifications && property === "notify"))
+				return () => undefined;
+			const value = Reflect.get(target, property, receiver) as unknown;
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+	return new Proxy(ctx, {
+		get(target, property, receiver) {
+			if (property === "ui") return quietUi;
+			const value = Reflect.get(target, property, receiver) as unknown;
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+}
+
+function magicCommandContext(name: string, ctx: ExtensionContext): ExtensionContext {
+	const quiet = quietMagicContext(ctx, true);
+	if (name !== "ctx-status") return quiet;
+	return new Proxy(quiet, {
+		get(target, property, receiver) {
+			// The official status command otherwise opens a centered overlay. Pi
+			// Stuff selects its model-invisible inline renderer instead.
+			if (property === "hasUI") return false;
+			const value = Reflect.get(target, property, receiver) as unknown;
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+}
+
 function firstPresentationTarget(args: Readonly<Record<string, unknown>>): string {
 	for (const key of ["query", "memory_id", "id", "range", "content", "note", "reason"]) {
 		const value = args[key];
@@ -369,7 +401,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 			const handlers = this.magicShutdownHandlers.splice(0);
 			for (const handler of handlers) {
 				try {
-					await handler(event, ctx);
+					await handler(event, quietMagicContext(ctx));
 				} catch {
 					// Pi native shutdown must continue even if Magic cleanup fails.
 				}
@@ -408,7 +440,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		if (!cached && this.magicContextHandler) {
 			try {
 				const event: ContextEvent = { type: "context", messages: currentAgentMessages(ctx) };
-				const result = await this.magicContextHandler(event, ctx);
+				const result = await this.magicContextHandler(event, quietMagicContext(ctx));
 				const full = extractMagicProjection(result?.messages ?? event.messages);
 				if (!full) throw new Error("Magic Context produced no valid history projection.");
 				cached = { full };
@@ -435,11 +467,11 @@ class ContextCapabilityRuntime implements ContextCapability {
 	): Promise<ContextStatusSnapshot> {
 		const plan = this.createRegistrationPlan();
 		try {
+			await this.dependencies.prepareMagicContext(ctx);
 			const module = await this.dependencies.loadMagicContext();
 			const magicPi = this.magicPiAdapter(plan);
-			await module.default(magicPi, {
-				...(this.sessionStart ? { initialSessionStart: { event: this.sessionStart, ctx } } : {}),
-			});
+			await module.default(magicPi);
+			await this.replaySessionStart(plan, ctx);
 			if (!this.isCurrentGeneration(generation)) {
 				await this.rollbackRegistrationPlan(plan, ctx);
 				return { state: "native", engine: "native", trigger };
@@ -473,6 +505,13 @@ class ContextCapabilityRuntime implements ContextCapability {
 		}
 	}
 
+	private async replaySessionStart(plan: MagicRegistrationPlan, ctx: ExtensionContext): Promise<void> {
+		if (!this.sessionStart) return;
+		for (const staged of plan.handlers) {
+			if (staged.event === "session_start") await staged.handler(this.sessionStart, quietMagicContext(ctx));
+		}
+	}
+
 	private isCurrentGeneration(generation: number): boolean {
 		return !this.disposed && this.generation === generation;
 	}
@@ -488,7 +527,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		for (const { event: name, handler } of plan.handlers) {
 			if (name !== "session_shutdown") continue;
 			try {
-				await handler(event, this.shutdown?.ctx ?? ctx);
+				await handler(event, quietMagicContext(this.shutdown?.ctx ?? ctx));
 			} catch {
 				// A failed optional engine must not prevent native fallback.
 			}
@@ -523,7 +562,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 					return;
 				let result: unknown;
 				try {
-					result = await handler(rawEvent, ctx);
+					result = await handler(rawEvent, quietMagicContext(ctx));
 				} catch (error) {
 					const trigger = this.state.trigger;
 					this.state = {
@@ -532,7 +571,16 @@ class ContextCapabilityRuntime implements ContextCapability {
 						...(trigger === undefined ? {} : { trigger }),
 						error: error instanceof Error ? error.message : String(error),
 					};
-					return;
+					try {
+						ctx.ui.notify(
+							"Magic Context could not finish this compaction. Pi did not add a second native summary; the full Session remains intact.",
+							"error",
+						);
+					} catch {
+						// Compaction safety must not depend on the optional TUI notification.
+					}
+					this.emitCompactionBypassed(ctx);
+					return { cancel: true };
 				}
 				if (
 					this.isCurrentGeneration(generation) &&
@@ -542,15 +590,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 				) {
 					const manual = magicManualCompaction(rawEvent);
 					if (manual) return manual;
-					try {
-						this.pi.events.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
-							schemaVersion: 1,
-							sessionManager: ctx.sessionManager,
-							source: "magic-context",
-						});
-					} catch {
-						// Goal handoff is optional; native cancellation remains authoritative.
-					}
+					this.emitCompactionBypassed(ctx);
 				}
 				return result;
 			});
@@ -559,7 +599,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		if (event !== "context") {
 			register(event, async (rawEvent, ctx) => {
 				if (!this.isCurrentGeneration(generation)) return;
-				return handler(rawEvent, ctx);
+				return handler(rawEvent, quietMagicContext(ctx));
 			});
 			return;
 		}
@@ -569,7 +609,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 			const contextEvent = rawEvent as ContextEvent;
 			const nativeMessages = [...contextEvent.messages];
 			try {
-				const result = await contextHandler(contextEvent, ctx);
+				const result = await contextHandler(contextEvent, quietMagicContext(ctx));
 				const full = extractMagicProjection(result?.messages ?? contextEvent.messages);
 				if (!full) throw new Error("Magic Context produced no valid history projection.");
 				this.projections.set(projectionKey(ctx), { full });
@@ -592,19 +632,50 @@ class ContextCapabilityRuntime implements ContextCapability {
 		});
 	}
 
+	private emitCompactionBypassed(ctx: ExtensionContext): void {
+		try {
+			this.pi.events.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
+				schemaVersion: 1,
+				sessionManager: ctx.sessionManager,
+				source: "magic-context",
+			});
+		} catch {
+			// Goal handoff is optional; native cancellation remains authoritative.
+		}
+	}
+
 	private magicPiAdapter(plan: MagicRegistrationPlan): ExtensionAPI {
-		const deferredMethods = new Set<PropertyKey>([
-			"registerCommand",
-			"registerEntryRenderer",
-			"registerFlag",
-			"registerMessageRenderer",
-			"registerShortcut",
-		]);
+		const runtime = this;
+		const suppressedMethods = new Set<PropertyKey>(["registerFlag", "registerMessageRenderer", "registerShortcut"]);
 		return new Proxy(this.pi, {
 			get(target, property, receiver) {
 				if (property === "registerTool") {
 					return (tool: ToolDefinition): void => {
-						plan.tools.push(tool);
+						if (MAGIC_TOOL_NAME_SET.has(tool.name)) plan.tools.push(tool);
+					};
+				}
+				if (property === "registerCommand") {
+					return (
+						name: string,
+						definition: { readonly handler?: unknown; readonly [key: string]: unknown },
+					): void => {
+						if (!MAGIC_COMMAND_NAMES.has(name)) return;
+						const handler = definition.handler;
+						const wrapped =
+							typeof handler === "function"
+								? {
+										...definition,
+										handler: (args: string, ctx: ExtensionContext) =>
+											handler(args, magicCommandContext(name, ctx)),
+									}
+								: definition;
+						plan.registrations.push(() => target.registerCommand(name, wrapped as never));
+					};
+				}
+				if (property === "registerEntryRenderer") {
+					return (name: string, renderer: unknown): void => {
+						if (name !== "ctx-status") return;
+						plan.registrations.push(() => target.registerEntryRenderer(name, renderer as never));
 					};
 				}
 				if (property === "on") {
@@ -613,16 +684,9 @@ class ContextCapabilityRuntime implements ContextCapability {
 						if (event === "context") plan.contextHandler = handler as MagicContextHandler;
 					};
 				}
-				if (deferredMethods.has(property)) {
-					const value = Reflect.get(target, property, receiver) as (...args: unknown[]) => unknown;
-					return (...args: unknown[]): void => {
-						plan.registrations.push(() => {
-							value.apply(target, args);
-						});
-					};
-				}
+				if (suppressedMethods.has(property)) return () => undefined;
 				const value = Reflect.get(target, property, receiver) as unknown;
-				return typeof value === "function" ? value.bind(target) : value;
+				return typeof value === "function" ? value.bind(runtime.pi) : value;
 			},
 		});
 	}
@@ -675,6 +739,9 @@ export default function piStuffContext(pi: ExtensionAPI, dependencies: ContextCa
 		{
 			loadMagicContext: dependencies.loadMagicContext ?? defaultLoadMagicContext,
 			magicSubagent: dependencies.magicSubagent ?? (() => process.env[MAGIC_SUBAGENT_ENV] === "1"),
+			prepareMagicContext:
+				dependencies.prepareMagicContext ??
+				(dependencies.loadMagicContext ? async () => undefined : prepareMagicContext),
 		},
 		registry,
 	);

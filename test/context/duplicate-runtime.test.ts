@@ -13,8 +13,10 @@ test("physical Context package copies share one Host runtime", async () => {
 	const secondDirectory = join(directory, "second");
 	mkdirSync(firstDirectory);
 	mkdirSync(secondDirectory);
-	copyFileSync(join(process.cwd(), "packages/pi-stuff-context/index.ts"), join(firstDirectory, "index.ts"));
-	copyFileSync(join(process.cwd(), "packages/pi-stuff-context/index.ts"), join(secondDirectory, "index.ts"));
+	for (const copy of [firstDirectory, secondDirectory]) {
+		copyFileSync(join(process.cwd(), "packages/pi-stuff-context/index.ts"), join(copy, "index.ts"));
+		copyFileSync(join(process.cwd(), "packages/pi-stuff-context/config.ts"), join(copy, "config.ts"));
+	}
 	for (const copy of [firstDirectory, secondDirectory]) {
 		const scope = join(copy, "node_modules/@jczhang02");
 		mkdirSync(scope, { recursive: true });

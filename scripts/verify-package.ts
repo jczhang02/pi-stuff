@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -73,7 +74,6 @@ const agentsLicenseSha256 = "2d20dfacd9742706e564470dc77438608a1e54b0ed46959f080
 const rtkLicenseSha256 = "7d9473dcd84975a7191bc13dcc744f3b4d6578c937c879cc73e31e0107fa4d46";
 const codexLicenseSha256 = "ad600d98577a0949ad30c81867bd86f08f872ff12f6a7a519af14edc6f997ee9";
 const toolsLicenseSha256 = "e6b72a9973ccabb20d8bef65a366a9b2357d6cea6cdd1eee4f2c3c69e61fb11c";
-const magicContextLicenseSha256 = "0e3d1aa1cbe4aec50224fc6c91eb898d42949d6ff84fe515f9e2bb0663f5d483";
 const goalLicenseSha256 = "5293e92f073f47012e723990a8605431b438757e9c6eb00c89868b1203e157da";
 const webLicenseSha256 = "871b3c6c64e030c0647ca33543716bdae9511ae2d6a85d6f4ce63783bab52c8f";
 const workLicenseSha256 = "5b9bdcc9d1c8ff25c560200695de042b12052573cb1224af4d735fba06d30b65";
@@ -85,6 +85,42 @@ const embeddedForkVersions = {
 	"@jczhang02/pi-mcp-adapter": "2.19.0-pi-stuff.7",
 	"@jczhang02/pi-web-access": "0.18.0-pi-stuff.4",
 } as const;
+const officialMagicContextDependencies = {
+	"@huggingface/transformers": "^4.1.0",
+	"@jitl/quickjs-singlefile-cjs-release-asyncify": "0.32.0",
+	"ai-tokenizer": "^1.0.6",
+	"comment-json": "^5.0.0",
+	"quickjs-emscripten": "^0.32.0",
+	typebox: "^1.3.1",
+	zod: "^4.1.8",
+} as const;
+const officialMagicContextFiles: Readonly<Record<string, string>> = {
+	"README.md": "2ca9cac6865bd1eb88358096a55dbe9b55ab966c4f9b2907caa2fdada49fbcc4",
+	"dist/emscripten-module-682pfzaa.js": "b5c6af4c698b69e986182ec56a92b2502f87fa899813c23a46df46b458eddec1",
+	"dist/emscripten-module-ap8t3st0.js": "e33c4fb2d0b46d911a11c10258aa7978d89ea9b426661a08ae1512eb70658fb5",
+	"dist/emscripten-module-bkktz927.js": "6705947ff622298e39a60ee44c16f0495b004fddce84829efaf40b2b70f98b18",
+	"dist/emscripten-module-r5h7aghp.js": "2050ffc3ddffdc7a57541e323ff448ab4b5767bdc1577dbfae097f9d0b65df99",
+	"dist/ffi-04jzypzk.js": "24cc46c5c570f4276acd1cbc48b1221870e3759f9e14a92aa0de2ba1e4e48d68",
+	"dist/ffi-9wvt2wwz.js": "63b175632bc6830713eea54b97c91eede12719b05aad9be71295a30bee4ce714",
+	"dist/ffi-d8pnn3mn.js": "874fe3811b211a7c4b3e9cbdf3ec55c728a1a3264b10b4a28ef3339f9edd9b5d",
+	"dist/ffi-t8b862vx.js": "387846d74a8fb4c0933583e5dd9905be40a80eb81f88695a432650d3a0b4ae40",
+	"dist/index-9xexf8s7.js": "fa35479d9c383a16f5b2523ee9e51a9e75022236b2fdd4771c732ccb3e6fb42f",
+	"dist/index-ayd60xnw.js": "7d0ef19eed5388f8819fcc0d018dc3f3be570f92ff325e21e985f7b7ea303ec4",
+	"dist/index-dynqfgx1.js": "546d985fce781f0ddbbf3c3cfa9886c10555e4cc683d35a37a72437ab74a572e",
+	"dist/index-e3kftg52.js": "3930f85dd4f688c60e5fc97a57f272dcb7e3e4f9e3f1dfef911fbc1f81173532",
+	"dist/index-ss632za9.js": "46b33fb960c71a2faca1ff2e7bdd295447ffa0782cebca734f04035788725550",
+	"dist/index-v7fmc1s2.js": "4787d103f62cd603fed43d0769463971047ccf0b08923859e2fbd3a719053ab7",
+	"dist/index-wckvcay0.js": "9ec69a527ea19d0bad4ca6c93f13130677a5a588440d072be4613167aa7767f1",
+	"dist/index-zmyx6nf5.js": "bcdbe25bcc22d2a64e343fc430ebe400cedf3f8d1e2c5213bdd0eda6a19a43e4",
+	"dist/index.js": "1ae220672eaa565e77fb6749ff9d6ee0d485cdd1789a36e7c73bc92b1a937943",
+	"dist/module-ES6BEMUI-atfbtnbp.js": "3e4799bec136f7484350e0b6630bebf302e6c67ec84b605189a0bbcea3927968",
+	"dist/module-asyncify-2EFITU5U-7xckhw8w.js": "877bc12c3d31cd7d76bdfc3008388ccae4f963f642d79c675c223f2025acf95b",
+	"dist/prompt-context-602yq94t.js": "597aa8b3734a83c3816cedaff6b95d8ad7eb2afc1db351a50c5915960ec59c56",
+	"dist/rpc-notifications-td0amw6w.js": "9ecdd36468e61b7b69006fcd7e88f033625cc9c3d3f62fd57acab79f8f0d42bd",
+	"dist/safe-notification-target-ng8ygena.js": "20718f23358636ea77c36a22c4fb043d59f2a8c1a64cc8e6aacbc9a5d99d0fe7",
+	"dist/subagent-entry.js": "db2a09bb328255ec56d29bc263f92b03932c95ce1523c89f42c28d8ea14b8ea8",
+	"package.json": "06f05bfa8ece9db57343fb1e31daa5d9f8d7791c0121499987b40be9bc1227a6",
+};
 const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 	"@jczhang02/pi-stuff": ["@earendil-works/pi-coding-agent"],
 	"@jczhang02/pi-stuff-agents": [
@@ -519,6 +555,14 @@ async function verifyStandaloneInstalls(
 		archiveManifests.set(name, manifest);
 		return manifest;
 	};
+	const extractRelease = (name: string, installDirectory: string): void => {
+		const target = join(installDirectory, "node_modules", ...name.split("/"));
+		mkdirSync(target, { recursive: true });
+		run(
+			["tar", "--extract", "--gzip", "--file", releaseArchive(name), "--directory", target, "--strip-components=1"],
+			root,
+		);
+	};
 	const installReleaseClosure = (name: string, installDirectory: string, npmCacheDirectory: string): void => {
 		const installed = new Set<string>();
 		const visiting = new Set<string>();
@@ -538,10 +582,22 @@ async function verifyStandaloneInstalls(
 			for (const child of Object.keys(manifest.dependencies ?? {}).sort()) {
 				if (!bundled.has(child)) visit(child);
 			}
-			for (const peer of Object.keys(manifest.peerDependencies ?? {}).sort()) {
-				if (releaseNames.has(peer)) visit(peer);
-			}
-			install(installDirectory, npmCacheDirectory, releaseArchive(dependency));
+			// Context intentionally preserves the audited upstream manifest byte-for-byte.
+			// Its published build embeds every dependency used by the certified lexical
+			// profile, while the disabled local-embedding branch remains a dynamic
+			// Transformers import. Extracting this one release mirrors the certified
+			// Aggregate install and prevents npm's offline reifier from fetching that
+			// deliberately unused branch merely because upstream declares it as required.
+			if (dependency === "@jczhang02/pi-stuff-context") extractRelease(dependency, installDirectory);
+			else install(installDirectory, npmCacheDirectory, releaseArchive(dependency));
+			const releasePeers = Object.keys(manifest.peerDependencies ?? {})
+				.filter((peer) => releaseNames.has(peer))
+				.sort((left, right) => {
+					if (left === "@jczhang02/pi-stuff-context") return 1;
+					if (right === "@jczhang02/pi-stuff-context") return -1;
+					return left.localeCompare(right);
+				});
+			for (const peer of releasePeers) visit(peer);
 			visiting.delete(dependency);
 			installed.add(dependency);
 		};
@@ -722,6 +778,28 @@ async function verifyStandaloneInstalls(
 		installedContextManifest.dependencies?.["@jczhang02/pi-stuff-tools"] !== installedContextToolsManifest.version
 	) {
 		throw new Error("Standalone Context must install Tools as an exact runtime dependency");
+	}
+	const installedMagicContext = join(installedContext, "node_modules/@cortexkit/pi-magic-context");
+	await verifyPackageIdentity(installedMagicContext, "@cortexkit/pi-magic-context", "0.33.1");
+	const installedMagicContextManifest = JSON.parse(
+		await readFile(join(installedMagicContext, "package.json"), "utf8"),
+	) as { dependencies?: Record<string, unknown> };
+	if (
+		JSON.stringify(Object.entries(installedMagicContextManifest.dependencies ?? {}).sort()) !==
+		JSON.stringify(Object.entries(officialMagicContextDependencies).sort())
+	) {
+		throw new Error("Standalone Context changed the audited official Magic Context dependency contract");
+	}
+	if (
+		await stat(join(installedMagicContext, "node_modules/@huggingface/transformers")).then(
+			() => true,
+			() => false,
+		)
+	) {
+		throw new Error("Standalone Context unexpectedly installed the disabled local-embedding runtime");
+	}
+	if (installedContextManifest.dependencies?.["@cortexkit/pi-magic-context"] !== "0.33.1") {
+		throw new Error("Standalone Context must install the exact official Magic Context runtime");
 	}
 	const contextSmoke = await runPiRpcSmoke({
 		piBinary,
@@ -1001,28 +1079,39 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 			);
 		}
 	}
-	const magicContextLicenses = archiveFiles.filter((path) =>
-		path.endsWith("node_modules/@jczhang02/pi-magic-context/LICENSE"),
+	const magicContextManifests = archiveFiles.filter((path) =>
+		path.endsWith("node_modules/@cortexkit/pi-magic-context/package.json"),
 	);
-	if (magicContextLicenses.length !== 1) {
+	if (magicContextManifests.length !== 1) {
 		throw new Error(
-			`Aggregate must contain exactly one physical Magic Context runtime; received ${String(magicContextLicenses.length)}`,
+			`Aggregate must contain exactly one physical Magic Context runtime; received ${String(magicContextManifests.length)}`,
 		);
 	}
-	for (const magicContextLicense of magicContextLicenses) {
-		if ((await sha256File(join(extractDirectory, magicContextLicense))) !== magicContextLicenseSha256) {
-			throw new Error("Bundled Magic Context does not preserve the owned fork's upstream MIT notice");
-		}
-		const magicContextManifestPath = magicContextLicense.replace(/LICENSE$/, "package.json");
-		const magicContextManifest = JSON.parse(
-			await readFile(join(extractDirectory, magicContextManifestPath), "utf8"),
-		) as { license?: unknown; name?: unknown; version?: unknown };
-		if (
-			magicContextManifest.name !== "@jczhang02/pi-magic-context" ||
-			magicContextManifest.version !== "0.33.1-pi-stuff.3" ||
-			magicContextManifest.license !== "MIT"
-		) {
-			throw new Error("Aggregate contains an uncertified Magic Context runtime");
+	const magicContextManifestPath = magicContextManifests[0] as string;
+	const magicContextRoot = dirname(magicContextManifestPath);
+	const magicContextManifest = JSON.parse(
+		await readFile(join(extractDirectory, magicContextManifestPath), "utf8"),
+	) as { license?: unknown; name?: unknown; repository?: { url?: unknown }; version?: unknown };
+	if (
+		magicContextManifest.name !== "@cortexkit/pi-magic-context" ||
+		magicContextManifest.version !== "0.33.1" ||
+		magicContextManifest.license !== "MIT" ||
+		magicContextManifest.repository?.url !== "https://github.com/cortexkit/magic-context"
+	) {
+		throw new Error("Aggregate contains an uncertified official Magic Context runtime");
+	}
+	const actualMagicContextFiles = archiveFiles
+		.filter((path) => path.startsWith(`${magicContextRoot}/`))
+		.map((path) => path.slice(magicContextRoot.length + 1))
+		.filter((path) => !path.startsWith("node_modules/"))
+		.sort();
+	const expectedMagicContextFiles = Object.keys(officialMagicContextFiles).sort();
+	if (JSON.stringify(actualMagicContextFiles) !== JSON.stringify(expectedMagicContextFiles)) {
+		throw new Error("The official Magic Context runtime file inventory does not match the audited npm tarball");
+	}
+	for (const [path, expectedHash] of Object.entries(officialMagicContextFiles)) {
+		if ((await sha256File(join(extractDirectory, magicContextRoot, path))) !== expectedHash) {
+			throw new Error(`The official Magic Context runtime file changed: ${path}`);
 		}
 	}
 
@@ -1053,14 +1142,15 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 		},
 		{
 			capability: "pi-stuff-context",
-			deltaHeading: "## Pi Stuff delta",
+			deltaHeading: "## Pi Stuff adapter policy",
 			required: [
 				"cortexkit/magic-context",
 				"v0.33.1",
-				"dea65a94abf61b698160d14dc8b621b1387f1d2c",
-				"1414363e946915802a7d16ffc91999c63dd40744",
-				"pi-stuff-v0.33.1-3",
-				"5f93130518910291d29d6c8b98d042e0d757bd7edc2d07c03a195d93c872cdbd",
+				"@cortexkit/pi-magic-context@0.33.1",
+				"075e21f77c671781b25de9440c1a727f5fa4413d",
+				"sha512-mybLPirFtUqVb+7cTS2Bpg/h33NbSSQvUOSfeP1C5QrxMVptQjGeNnSTLLrkfH5i5BUVY3D/r3OGE3PhzWsX0A==",
+				"b0792c428cb1238ba33302403f6e13be3c865d77",
+				"106a276b631bbff324d17091ceb82959779678945596d17fd75d3b23abb6f261",
 			],
 		},
 		{

@@ -103,6 +103,14 @@ function updateManifest(
 			? (manifest.dependencies as Record<string, unknown>)
 			: {};
 	const dependencies: Record<string, unknown> = {};
+	const externalBundledDependencies = Array.isArray(manifest.bundledDependencies)
+		? manifest.bundledDependencies.filter(
+				(dependency): dependency is string =>
+					typeof dependency === "string" &&
+					!dependency.startsWith(PACKAGE_PREFIX) &&
+					Object.hasOwn(existingDependencies, dependency),
+			)
+		: [];
 	for (const [packageName, version] of Object.entries(existingDependencies)) {
 		if (!packageName.startsWith(PACKAGE_PREFIX)) {
 			dependencies[packageName] = version;
@@ -121,7 +129,7 @@ function updateManifest(
 	return {
 		...manifest,
 		dependencies,
-		bundledDependencies: [...capabilities],
+		bundledDependencies: [...capabilities, ...externalBundledDependencies],
 	};
 }
 
