@@ -1,5 +1,6 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"ignoreWorkspaces": ["packages/pi-web-access", "packages/pi-mcp-adapter"],
 	"workspaces": {
 		".": {
 			"entry": [

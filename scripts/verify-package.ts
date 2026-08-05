@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -84,6 +85,18 @@ const agentsRuntimeVersions = {
 const embeddedForkVersions = {
 	"@jczhang02/pi-mcp-adapter": "2.19.0-pi-stuff.7",
 	"@jczhang02/pi-web-access": "0.18.0-pi-stuff.4",
+} as const;
+const internalForkSourceFiles = {
+	"@jczhang02/pi-mcp-adapter": {
+		directory: "packages/pi-mcp-adapter",
+		sourceFileCount: 58,
+		sourceSha256: "64e60f2e34cd8c73e1349158e92e8ba8d2e0ae017e3a3092d8c6c3d69c8d1a7d",
+	},
+	"@jczhang02/pi-web-access": {
+		directory: "packages/pi-web-access",
+		sourceFileCount: 52,
+		sourceSha256: "541df6c01bc2c685d66a8dc847e5545148567837c208193e64a6f1b857cba736",
+	},
 } as const;
 const officialMagicContextDependencies = {
 	"@huggingface/transformers": "^4.1.0",
@@ -380,6 +393,38 @@ async function verifyPackageIdentity(
 		throw new Error(
 			`Expected ${expectedName}@${expectedVersion}, found ${String(manifest.name)}@${String(manifest.version)}`,
 		);
+	}
+}
+
+async function verifyInternalForkIdentity(
+	packageDirectory: string,
+	expectedName: keyof typeof internalForkSourceFiles,
+	expectedVersion: string,
+): Promise<void> {
+	await verifyPackageIdentity(packageDirectory, expectedName, expectedVersion);
+	const expected = internalForkSourceFiles[expectedName];
+	const manifest = JSON.parse(await readFile(join(packageDirectory, "package.json"), "utf8")) as {
+		private?: unknown;
+		repository?: { directory?: unknown; url?: unknown };
+	};
+	if (
+		manifest.private !== true ||
+		manifest.repository?.url !== "git+https://github.com/jczhang02/pi-stuff.git" ||
+		manifest.repository.directory !== expected.directory
+	) {
+		throw new Error(`${expectedName} is not bound to its private Pi Stuff monorepo source`);
+	}
+	const sourceFiles = (await readdir(packageDirectory)).filter((path) => /\.(?:cjs|js|mjs|ts)$/u.test(path)).sort();
+	const sourceHash = createHash("sha256");
+	for (const path of sourceFiles) {
+		sourceHash
+			.update(path)
+			.update("\0")
+			.update(await readFile(join(packageDirectory, path)))
+			.update("\0");
+	}
+	if (sourceFiles.length !== expected.sourceFileCount || sourceHash.digest("hex") !== expected.sourceSha256) {
+		throw new Error(`${expectedName} internal source snapshot drifted`);
 	}
 }
 
@@ -744,13 +789,13 @@ async function verifyStandaloneInstalls(
 		mcpInstallDirectory,
 		"node_modules/@jczhang02/pi-stuff-mcp/node_modules/@jczhang02/pi-mcp-adapter",
 	);
-	await verifyPackageIdentity(
+	await verifyInternalForkIdentity(
 		installedWebFork,
 		"@jczhang02/pi-web-access",
 		embeddedForkVersions["@jczhang02/pi-web-access"],
 	);
 	await verifyRuntimeDependencyClosure(installedWebFork);
-	await verifyPackageIdentity(
+	await verifyInternalForkIdentity(
 		installedMcpFork,
 		"@jczhang02/pi-mcp-adapter",
 		embeddedForkVersions["@jczhang02/pi-mcp-adapter"],
@@ -1346,13 +1391,13 @@ export async function certifyReleaseArtifacts(
 			extractedPackage,
 			"node_modules/@jczhang02/pi-stuff-mcp/node_modules/@jczhang02/pi-mcp-adapter",
 		);
-		await verifyPackageIdentity(
+		await verifyInternalForkIdentity(
 			extractedWebFork,
 			"@jczhang02/pi-web-access",
 			embeddedForkVersions["@jczhang02/pi-web-access"],
 		);
 		await verifyRuntimeDependencyClosure(extractedWebFork);
-		await verifyPackageIdentity(
+		await verifyInternalForkIdentity(
 			extractedMcpFork,
 			"@jczhang02/pi-mcp-adapter",
 			embeddedForkVersions["@jczhang02/pi-mcp-adapter"],

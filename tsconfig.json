@@ -16,6 +16,8 @@
 		"packages/pi-stuff-agents",
 		"packages/pi-stuff-rtk",
 		"packages/pi-stuff-goal",
+		"packages/pi-web-access",
+		"packages/pi-mcp-adapter",
 		"test/agents-host.test.ts",
 		"test/agents-pty.test.ts",
 		"test/agents",

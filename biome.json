@@ -14,6 +14,8 @@
 			"!**/.pi-subagents",
 			"!vendor/pi-host-model-data",
 			"!packages/pi-stuff-rtk/upstream",
+			"!packages/pi-web-access",
+			"!packages/pi-mcp-adapter",
 			"!bun.lock"
 		]
 	},

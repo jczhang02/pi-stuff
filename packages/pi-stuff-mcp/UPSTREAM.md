@@ -1,17 +1,18 @@
 # Upstream provenance
 
-Pi Stuff MCP is an adapter around an immutable release of the owned fork
-`jczhang02/pi-mcp-adapter`.
+Pi Stuff MCP is an adapter around the immutable fork snapshot now maintained at
+`packages/pi-mcp-adapter` in this monorepo.
 
 - Original upstream: `nicobailon/pi-mcp-adapter`
 - Original release: `2.19.0`
 - Original source commit: `cde58793327b15d65f86e59ec9025d649cb8c300`
 - Original npm SHA-1: `44fe4388436b507b3abfc073e34f82d5d7b8ff37`
 - Original npm integrity: `sha512-2FwyuQKFWJP9kO8nl83fAEl+d10MxENqw7TvMcINlJn0yLVCHb5WevN06jpKo19GBi7BBkD6Ri7Sq2rJyiYZiQ==`
-- Owned fork repository: `jczhang02/pi-mcp-adapter`
+- Former owned fork repository: `jczhang02/pi-mcp-adapter`
 - Owned fork commit: `2333b79429ea28f6a7d24ca7ad7a169e07b7cf7d`
 - Owned fork tag: `pi-stuff-v2.19.0-7`
 - Release asset SHA-256: `b0fbbcdcca56c28c49884b69002f1519504ab538afd1abf86e00247aeb441478`
+- Canonical Pi Stuff source: `packages/pi-mcp-adapter`
 - License: MIT
 
 ## Pi Stuff delta

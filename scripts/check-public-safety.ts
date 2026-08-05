@@ -25,13 +25,6 @@ const CREDENTIAL_PATTERNS = [
 	/\bsk-ant-[A-Za-z0-9_-]{20,}\b/,
 	/\bsk-[A-Za-z0-9_-]{24,}\b/,
 ];
-const IMMUTABLE_OWNED_RELEASE_DEPENDENCIES: Readonly<Record<string, string>> = {
-	"@jczhang02/pi-mcp-adapter":
-		"https://github.com/jczhang02/pi-mcp-adapter/releases/download/pi-stuff-v2.19.0-7/jczhang02-pi-mcp-adapter-2.19.0-pi-stuff.7-2333b79-sha256-b0fbbcdcca56c28c49884b69002f1519504ab538afd1abf86e00247aeb441478.tgz",
-	"@jczhang02/pi-web-access":
-		"https://github.com/jczhang02/pi-web-access/releases/download/pi-stuff-v0.18.0-4/jczhang02-pi-web-access-0.18.0-pi-stuff.4-8e11f1a-sha256-7030811f8c4b0e75a1e5fc60f72916ebec2add2d9d615cf5a01fbde349eaa638.tgz",
-};
-
 export interface SafetyFinding {
 	path: string;
 	rule: string;
@@ -119,20 +112,11 @@ async function auditTextFile(root: string, path: string): Promise<SafetyFinding[
 
 function hasInexactDependency(manifest: PackageManifest): boolean {
 	const exactVersion = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-	for (const [section, allowOwnedRelease] of [
-		[manifest.dependencies, true],
-		[manifest.devDependencies, false],
-		[manifest.optionalDependencies, false],
-	] as const) {
+	for (const section of [manifest.dependencies, manifest.devDependencies, manifest.optionalDependencies] as const) {
 		if (
 			typeof section === "object" &&
 			section !== null &&
-			Object.entries(section).some(
-				([name, version]) =>
-					typeof version !== "string" ||
-					(!exactVersion.test(version) &&
-						(!allowOwnedRelease || IMMUTABLE_OWNED_RELEASE_DEPENDENCIES[name] !== version)),
-			)
+			Object.values(section).some((version) => typeof version !== "string" || !exactVersion.test(version))
 		) {
 			return true;
 		}
