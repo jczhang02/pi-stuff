@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff-todo",
-	"version": "0.1.7",
+	"version": "0.1.8",
 	"description": "A bounded, recoverable session Todo capability for Pi Stuff",
 	"type": "module",
 	"keywords": [

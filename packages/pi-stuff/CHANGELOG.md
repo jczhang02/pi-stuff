@@ -1,5 +1,12 @@
 # @jczhang02/pi-stuff
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [fce3e45]
+  - @jczhang02/pi-stuff-todo@0.1.8
+
 ## 0.3.2
 
 ### Patch Changes

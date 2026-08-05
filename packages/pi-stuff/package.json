@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff",
-	"version": "0.3.2",
+	"version": "0.3.3",
 	"description": "The aggregate package for JC Zhang's Pi Stuff Suite",
 	"type": "module",
 	"keywords": [
@@ -38,7 +38,7 @@
 		"@jczhang02/pi-stuff-mcp": "0.2.6",
 		"@jczhang02/pi-stuff-work": "0.2.2",
 		"@jczhang02/pi-stuff-agents": "1.0.2",
-		"@jczhang02/pi-stuff-todo": "0.1.7",
+		"@jczhang02/pi-stuff-todo": "0.1.8",
 		"@jczhang02/pi-stuff-btw": "0.1.7"
 	},
 	"bundledDependencies": [

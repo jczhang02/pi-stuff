@@ -1,5 +1,11 @@
 # @jczhang02/pi-stuff-todo
 
+## 0.1.8
+
+### Patch Changes
+
+- fce3e45: Keep blocked pending Todo rows aligned with runnable work by using the same checkbox glyph and communicating the blocked state through the warning color.
+
 ## 0.1.7
 
 ### Patch Changes
