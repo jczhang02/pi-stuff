@@ -12,6 +12,7 @@ import {
 	getCommandDialogCoordinator,
 	requestStatuslineGitRefresh,
 } from "@jczhang02/pi-stuff-ui";
+import { registerCurrentWorkSource } from "@jczhang02/pi-stuff-work";
 import { discoverAgents } from "../agents/agents.ts";
 import { createNativeSupervisorChannel } from "../intercom/native-supervisor-channel.ts";
 import { createAsyncJobTracker } from "../runs/background/async-job-tracker.ts";
@@ -487,6 +488,31 @@ export default function registerSubagentExtension(
 		},
 		resume: (row, message) => runEngineControl(row, "resume", message),
 	});
+	const unregisterCurrentWorkSource = registerCurrentWorkSource(pi, {
+		id: "agents",
+		snapshot: () =>
+			current
+				.snapshot()
+				.rows.filter((row) =>
+					["queued", "running", "waiting_supervisor", "stopping", "resuming"].includes(row.status),
+				)
+				.map((row) => ({
+					...(row.description ? { description: row.description } : {}),
+					id: row.key,
+					kind: "agent" as const,
+					...(row.startedAt !== null ? { startedAt: row.startedAt } : {}),
+					status:
+						row.status === "waiting_supervisor"
+							? ("waiting" as const)
+							: row.status === "queued"
+								? ("queued" as const)
+								: row.status === "stopping"
+									? ("stopping" as const)
+									: ("running" as const),
+					title: row.description || row.name || row.task,
+				})),
+		subscribe: (listener) => current.subscribe(() => listener()),
+	});
 
 	const roster = deps.createRoster(current, {
 		onOpen: (key) => {
@@ -725,6 +751,7 @@ export default function registerSubagentExtension(
 		supervisor.dispose();
 		unregisterRosterFooterTail();
 		unregisterRosterChrome();
+		unregisterCurrentWorkSource();
 		roster.dispose();
 		current.dispose();
 		delete process.env[SUBAGENT_PARENT_SESSION_ENV];

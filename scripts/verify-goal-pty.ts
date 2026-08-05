@@ -38,7 +38,7 @@ function verifyScreen(screen: string, columns: number, label: string, allowNorma
 		fail(`${label} did not render a ${String(columns)}-column divider\n${screen}`);
 	}
 	const surface = screen.slice(screen.lastIndexOf(divider));
-	const forbiddenChrome = allowNormalChrome ? [] : ["╭", "╮", "╰", "╯", "think:med", "Working..."];
+	const forbiddenChrome = allowNormalChrome ? [] : ["╭", "╮", "╰", "╯", "Working..."];
 	for (const forbidden of forbiddenChrome) {
 		if (surface.includes(forbidden)) fail(`${label} exposed forbidden floating or normal chrome: ${forbidden}`);
 	}
@@ -146,6 +146,17 @@ class GoalPtySession {
 		fail(`timed out waiting for ${JSON.stringify(text)}\n${screen}`);
 	}
 
+	async waitForMissing(texts: readonly string[]): Promise<string> {
+		const deadline = Date.now() + WAIT_TIMEOUT_MS;
+		let screen = "";
+		while (Date.now() < deadline) {
+			screen = this.capture();
+			if (texts.every((text) => !screen.includes(text))) return screen;
+			await delay(50);
+		}
+		fail(`timed out waiting for closed dialog ${JSON.stringify(texts)}\n${screen}`);
+	}
+
 	stop(): void {
 		if (this.stopped) return;
 		this.stopped = true;
@@ -200,10 +211,8 @@ export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promis
 		session.sendKey("Escape");
 		await session.waitForText("No goal is currently set");
 		session.sendKey("Escape");
-		const restored = await session.waitForText("think:med");
-		for (const dialogText of ["Pi Goal Settings", "No goal is currently set"]) {
-			if (restored.includes(dialogText)) fail(`Goal dialog did not close cleanly: ${dialogText}`);
-		}
+		const restored = await session.waitForMissing(["Pi Goal Settings", "No goal is currently set"]);
+		verifyScreen(restored, options.columns, "restored conversation", true);
 
 		const objective = "verify hidden Goal protocol";
 		session.sendLiteral(`/goal ${objective}`);

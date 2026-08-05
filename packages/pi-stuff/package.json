@@ -35,6 +35,7 @@
 		"@jczhang02/pi-stuff-context": "0.1.4",
 		"@jczhang02/pi-stuff-web": "0.2.3",
 		"@jczhang02/pi-stuff-mcp": "0.2.3",
+		"@jczhang02/pi-stuff-work": "0.1.0",
 		"@jczhang02/pi-stuff-agents": "0.2.3",
 		"@jczhang02/pi-stuff-todo": "0.1.4",
 		"@jczhang02/pi-stuff-btw": "0.1.4"
@@ -48,6 +49,7 @@
 		"@jczhang02/pi-stuff-context",
 		"@jczhang02/pi-stuff-web",
 		"@jczhang02/pi-stuff-mcp",
+		"@jczhang02/pi-stuff-work",
 		"@jczhang02/pi-stuff-agents",
 		"@jczhang02/pi-stuff-todo",
 		"@jczhang02/pi-stuff-btw"

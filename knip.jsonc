@@ -48,6 +48,10 @@
 		},
 		"packages/pi-stuff-web": {
 			"project": ["**/*.ts"]
+		},
+		"packages/pi-stuff-work": {
+			"project": ["**/*.ts"],
+			"ignoreDependencies": ["@earendil-works/pi-agent-core"]
 		}
 	}
 }

@@ -19,6 +19,7 @@ export const RELEASE_PACKAGES = [
 	{ name: "@jczhang02/pi-stuff-context", path: "packages/pi-stuff-context" },
 	{ name: "@jczhang02/pi-stuff-web", path: "packages/pi-stuff-web" },
 	{ name: "@jczhang02/pi-stuff-mcp", path: "packages/pi-stuff-mcp" },
+	{ name: "@jczhang02/pi-stuff-work", path: "packages/pi-stuff-work" },
 	{ name: "@jczhang02/pi-stuff-agents", path: "packages/pi-stuff-agents" },
 	{ name: "@jczhang02/pi-stuff-todo", path: "packages/pi-stuff-todo" },
 	{ name: "@jczhang02/pi-stuff-btw", path: "packages/pi-stuff-btw" },

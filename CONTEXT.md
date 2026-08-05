@@ -31,3 +31,19 @@ _Avoid_: asset, plugin file
 **Settings Layer**:
 User-owned declarations that select and configure Packages and Runtime Resources for a Host installation.
 _Avoid_: Suite configuration, installer state
+
+**Todo Task**:
+A planned unit of work maintained by the Suite's Task tools and checklist. It describes intent; it is not an executing process, wait, or Agent.
+_Avoid_: Background task, job
+
+**Background Work**:
+Current-session activity that continues without occupying the main Agent, comprising a Background Shell, a Monitor, or a read-only projection of a running Agent. It is live management state, not a Todo Task or durable history.
+_Avoid_: Todo, daemon, scheduler
+
+**Background Shell**:
+A Host-session-owned operating-system command that continues independently after an explicit background launch or foreground detach. It ends with the current Host session and never becomes a cross-session daemon.
+_Avoid_: Job, service
+
+**Monitor**:
+A one-shot wait for one explicit observable condition in Background Work, such as a command result, log match, file state, or HTTP response. It is not a polling conversation, recurring loop, or schedule.
+_Avoid_: Watcher, cron, polling task

@@ -12,6 +12,7 @@ import piStuffTodo from "@jczhang02/pi-stuff-todo";
 import piStuffTools from "@jczhang02/pi-stuff-tools";
 import piStuffUi from "@jczhang02/pi-stuff-ui";
 import piStuffWeb from "@jczhang02/pi-stuff-web";
+import piStuffWork from "@jczhang02/pi-stuff-work";
 
 type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;
 
@@ -24,6 +25,7 @@ const CAPABILITIES: readonly CapabilityFactory[] = [
 	piStuffContext,
 	piStuffWeb,
 	piStuffMcp,
+	piStuffWork,
 	piStuffAgents,
 	piStuffTodo,
 	piStuffBtw,

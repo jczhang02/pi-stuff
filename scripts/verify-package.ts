@@ -30,6 +30,8 @@ import { verifyToolsPty } from "./verify-tools-pty.ts";
 import { verifyToolsResumePty } from "./verify-tools-resume-pty.ts";
 import { verifyUiPty } from "./verify-ui-pty.ts";
 import { verifyWebIntegration } from "./verify-web-integration.ts";
+import { verifyWorkMonitorMatrix } from "./verify-work-monitor-matrix.ts";
+import { verifyWorkPty } from "./verify-work-pty.ts";
 
 export { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_SOURCE_COMMIT, CERTIFIED_PI_VERSION };
 
@@ -65,6 +67,7 @@ const todoToolInspector = join(root, "test/fixtures/assert-todo-tools.ts");
 const goalToolInspector = join(root, "test/fixtures/assert-goal-tools.ts");
 const webToolInspector = join(root, "test/fixtures/assert-web-tools.ts");
 const mcpToolInspector = join(root, "test/fixtures/assert-mcp-tools.ts");
+const workToolInspector = join(root, "test/fixtures/assert-work-tools.ts");
 const forkLicenseSha256 = "25d0d5e4e54033f939a9657109044f1d71a0b6e8db9adc400456ca9190df3fb1";
 const agentsLicenseSha256 = "2d20dfacd9742706e564470dc77438608a1e54b0ed46959f080709389209093c";
 const rtkLicenseSha256 = "7d9473dcd84975a7191bc13dcc744f3b4d6578c937c879cc73e31e0107fa4d46";
@@ -73,6 +76,7 @@ const toolsLicenseSha256 = "e6b72a9973ccabb20d8bef65a366a9b2357d6cea6cdd1eee4f2c
 const magicContextLicenseSha256 = "0e3d1aa1cbe4aec50224fc6c91eb898d42949d6ff84fe515f9e2bb0663f5d483";
 const goalLicenseSha256 = "5293e92f073f47012e723990a8605431b438757e9c6eb00c89868b1203e157da";
 const webLicenseSha256 = "871b3c6c64e030c0647ca33543716bdae9511ae2d6a85d6f4ce63783bab52c8f";
+const workLicenseSha256 = "5b9bdcc9d1c8ff25c560200695de042b12052573cb1224af4d735fba06d30b65";
 const agentsRuntimeVersions = {
 	jiti: "2.7.0",
 	typebox: "1.3.7",
@@ -104,6 +108,11 @@ const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-web": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-mcp": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-work": [
+		"@earendil-works/pi-agent-core",
+		"@earendil-works/pi-coding-agent",
+		"@earendil-works/pi-tui",
+	],
 };
 
 export interface PackageArchiveManifest {
@@ -241,6 +250,13 @@ function verifyCodexRuntimeArchive(archiveFiles: readonly string[]): void {
 	const archiveSet = new Set(archiveFiles);
 	const missing = codexRuntimeFiles.map((path) => `package/${path}`).filter((path) => !archiveSet.has(path));
 	if (missing.length > 0) throw new Error(`Packed Codex Package is missing runtime files:\n${missing.join("\n")}`);
+}
+
+function verifyWorkRuntimeArchive(archiveFiles: readonly string[]): void {
+	const archiveSet = new Set(archiveFiles);
+	for (const runtimePath of ["package/src/process-supervisor.mjs", "package/UPSTREAM.md", "package/LICENSE"]) {
+		if (!archiveSet.has(runtimePath)) throw new Error(`Packed Work Package is missing ${runtimePath}`);
+	}
 }
 
 function run(command: readonly string[], cwd: string, env: Record<string, string | undefined> = process.env): string {
@@ -389,6 +405,8 @@ async function verifyStandaloneInstalls(
 	const webNpmCacheDirectory = join(temporaryDirectory, "npm-cache-web");
 	const mcpInstallDirectory = join(temporaryDirectory, "standalone-mcp");
 	const mcpNpmCacheDirectory = join(temporaryDirectory, "npm-cache-mcp");
+	const workInstallDirectory = join(temporaryDirectory, "standalone-work");
+	const workNpmCacheDirectory = join(temporaryDirectory, "npm-cache-work");
 	await Promise.all([
 		mkdir(packsDirectory),
 		mkdir(agentsInstallDirectory),
@@ -411,6 +429,8 @@ async function verifyStandaloneInstalls(
 		mkdir(webNpmCacheDirectory),
 		mkdir(mcpInstallDirectory),
 		mkdir(mcpNpmCacheDirectory),
+		mkdir(workInstallDirectory),
+		mkdir(workNpmCacheDirectory),
 	]);
 
 	const releaseArchive = (name: string): string => {
@@ -540,9 +560,11 @@ async function verifyStandaloneInstalls(
 	installReleaseClosure("@jczhang02/pi-stuff-tools", toolsInstallDirectory, toolsNpmCacheDirectory);
 	installReleaseClosure("@jczhang02/pi-stuff-web", webInstallDirectory, webNpmCacheDirectory);
 	installReleaseClosure("@jczhang02/pi-stuff-mcp", mcpInstallDirectory, mcpNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-work", workInstallDirectory, workNpmCacheDirectory);
 	await Promise.all([
 		linkCertifiedHostPeers(webInstallDirectory, "@jczhang02/pi-stuff-web"),
 		linkCertifiedHostPeers(mcpInstallDirectory, "@jczhang02/pi-stuff-mcp"),
+		linkCertifiedHostPeers(workInstallDirectory, "@jczhang02/pi-stuff-work"),
 	]);
 
 	const verifyUiDependency = async (installDirectory: string, capability: string): Promise<void> => {
@@ -565,6 +587,7 @@ async function verifyStandaloneInstalls(
 	await verifyUiDependency(todoInstallDirectory, "pi-stuff-todo");
 	await verifyUiDependency(toolsInstallDirectory, "pi-stuff-tools");
 	await verifyUiDependency(mcpInstallDirectory, "pi-stuff-mcp");
+	await verifyUiDependency(workInstallDirectory, "pi-stuff-work");
 
 	const verifyContextDependency = async (installDirectory: string, capability: string): Promise<void> => {
 		const installedRoot = join(installDirectory, "node_modules");
@@ -621,7 +644,7 @@ async function verifyStandaloneInstalls(
 	const agentsInstalledRoot = join(agentsInstallDirectory, "node_modules");
 	const agentsManifest = JSON.parse(
 		await readFile(join(agentsInstalledRoot, "@jczhang02/pi-stuff-agents/package.json"), "utf8"),
-	) as { dependencies?: Record<string, unknown> };
+	) as { dependencies?: Record<string, unknown>; peerDependencies?: Record<string, unknown> };
 	const installedAgentsToolsManifest = JSON.parse(
 		await readFile(join(agentsInstalledRoot, "@jczhang02/pi-stuff-tools/package.json"), "utf8"),
 	) as { version?: unknown };
@@ -630,6 +653,32 @@ async function verifyStandaloneInstalls(
 		agentsManifest.dependencies?.["@jczhang02/pi-stuff-tools"] !== installedAgentsToolsManifest.version
 	) {
 		throw new Error("Standalone Agents must install Tools as an exact runtime dependency");
+	}
+	const installedAgentsWorkManifest = JSON.parse(
+		await readFile(join(agentsInstalledRoot, "@jczhang02/pi-stuff-work/package.json"), "utf8"),
+	) as { version?: unknown };
+	if (
+		typeof installedAgentsWorkManifest.version !== "string" ||
+		agentsManifest.peerDependencies?.["@jczhang02/pi-stuff-work"] !== installedAgentsWorkManifest.version
+	) {
+		throw new Error("Standalone Agents must share Work as an exact peer dependency");
+	}
+	const workInstalledRoot = join(workInstallDirectory, "node_modules");
+	const workManifest = JSON.parse(
+		await readFile(join(workInstalledRoot, "@jczhang02/pi-stuff-work/package.json"), "utf8"),
+	) as { dependencies?: Record<string, unknown> };
+	const installedWorkToolsManifest = JSON.parse(
+		await readFile(join(workInstalledRoot, "@jczhang02/pi-stuff-tools/package.json"), "utf8"),
+	) as { version?: unknown };
+	const installedWorkTypeboxManifest = JSON.parse(
+		await readFile(join(workInstalledRoot, "typebox/package.json"), "utf8"),
+	) as { version?: unknown };
+	if (
+		workManifest.dependencies?.["@jczhang02/pi-stuff-tools"] !== installedWorkToolsManifest.version ||
+		workManifest.dependencies?.["typebox"] !== installedWorkTypeboxManifest.version ||
+		installedWorkTypeboxManifest.version !== "1.3.7"
+	) {
+		throw new Error("Standalone Work must install exact Tools and typebox runtime dependencies");
 	}
 	const installedWebFork = join(
 		webInstallDirectory,
@@ -788,6 +837,18 @@ async function verifyStandaloneInstalls(
 	if (!mcpSmoke.commandNames.includes("mcp-tools-certified")) {
 		throw new Error("Standalone MCP Package did not expose exactly one gateway Tool");
 	}
+	const workSmoke = await runPiRpcSmoke({
+		piBinary,
+		extensions: [workToolInspector],
+		packages: [join(workInstalledRoot, "@jczhang02/pi-stuff-work")],
+		cwd: workInstallDirectory,
+	});
+	if (!workSmoke.commandNames.includes("tasks") || !workSmoke.commandNames.includes("work-tools-certified")) {
+		throw new Error("Standalone Work did not expose /tasks and the certified active Tool surface");
+	}
+	if (workSmoke.createdFiles.some((path) => path.includes("pi-stuff-work") || path.includes("tasks"))) {
+		throw new Error("Standalone Work eagerly wrote runtime state during startup");
+	}
 }
 
 async function verifySharedCoordinatorIdentity(
@@ -847,7 +908,8 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 			peerDependencies?: Record<string, unknown>;
 			version?: unknown;
 		};
-		if (manifest.license !== "MIT") throw new Error(`${path} must declare the MIT license`);
+		const expectedLicense = manifest.name === "@jczhang02/pi-stuff-work" ? "ISC" : "MIT";
+		if (manifest.license !== expectedLicense) throw new Error(`${path} must declare the ${expectedLicense} license`);
 		if (typeof manifest.name !== "string" || aggregate.dependencies?.[manifest.name] !== manifest.version) {
 			throw new Error(`${path} does not match the Aggregate's exact dependency version`);
 		}
@@ -917,8 +979,19 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 		) {
 			throw new Error(`${manifest.name} does not preserve the upstream MIT notice`);
 		}
+		if (
+			manifest.name === "@jczhang02/pi-stuff-work" &&
+			(await sha256File(join(extractDirectory, licensePath))) !== workLicenseSha256
+		) {
+			throw new Error(`${manifest.name} does not preserve the upstream ISC notice`);
+		}
 	}
-	const expectedCapabilities = ["@jczhang02/pi-stuff-context", "@jczhang02/pi-stuff-web", "@jczhang02/pi-stuff-mcp"];
+	const expectedCapabilities = [
+		"@jczhang02/pi-stuff-context",
+		"@jczhang02/pi-stuff-web",
+		"@jczhang02/pi-stuff-mcp",
+		"@jczhang02/pi-stuff-work",
+	];
 	for (const capability of expectedCapabilities) {
 		const suffix = `node_modules/${capability}/package.json`;
 		const copies = manifests.filter((path) => path.endsWith(suffix));
@@ -1081,6 +1154,18 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 				"b0fbbcdcca56c28c49884b69002f1519504ab538afd1abf86e00247aeb441478",
 			],
 		},
+		{
+			capability: "pi-stuff-work",
+			deltaHeading: "## Pi Stuff delta",
+			required: [
+				"pi-background-tasks",
+				"2.0.0",
+				"db632653682c00852a38c0972a761fb1e9f24dc3",
+				"7b0b1220bacc3fa2516cf9d7cdb1933d90b12b2b3dcd36c56c882ab41e6cfaf0",
+				"sha512-LyTFnuPbL2BhzNQaq7l7KN3neV2WyQbH1uEiSTM4cpyAw7489SATqQDoZ9SCqkRIBH/zktP7xvk/VNerpU3QPQ==",
+				workLicenseSha256,
+			],
+		},
 	] as const;
 	for (const record of provenance) {
 		const { capability } = record;
@@ -1141,6 +1226,7 @@ export async function certifyReleaseArtifacts(
 			verifyPackageArchive(archiveManifest, archiveFiles);
 			if (artifact.name === uiPackageName) verifyUiRuntimeArchive(archiveFiles);
 			if (artifact.name === "@jczhang02/pi-stuff-codex") verifyCodexRuntimeArchive(archiveFiles);
+			if (artifact.name === "@jczhang02/pi-stuff-work") verifyWorkRuntimeArchive(archiveFiles);
 			run([process.execPath, "publish", "--dry-run", "--ignore-scripts", "--access", "public", archivePath], root, {
 				...bunEnvironment,
 				NPM_CONFIG_TOKEN: "pi-stuff-offline-certification",
@@ -1184,7 +1270,7 @@ export async function certifyReleaseArtifacts(
 		await verifyRuntimeDependencyClosure(extractedMcpFork);
 		const extractedSmoke = await runPiRpcSmoke({
 			piBinary,
-			extensions: [goalToolInspector, webToolInspector, mcpToolInspector],
+			extensions: [goalToolInspector, webToolInspector, mcpToolInspector, workToolInspector],
 			packages: [extractedPackage],
 		});
 		if (
@@ -1203,6 +1289,12 @@ export async function certifyReleaseArtifacts(
 		) {
 			throw new Error("Packed Aggregate did not expose the certified Web and MCP surfaces");
 		}
+		if (
+			!extractedSmoke.commandNames.includes("tasks") ||
+			!extractedSmoke.commandNames.includes("work-tools-certified")
+		) {
+			throw new Error("Packed Aggregate did not expose the certified Background Work surfaces");
+		}
 		await verifyGoalLifecycle({ piBinary, packagePath: extractedPackage });
 		await verifyUiPty({ piBinary, packagePath: extractedPackage });
 		await verifyGoalPty({ piBinary, packagePath: extractedPackage, columns: 56, rows: 24 });
@@ -1214,6 +1306,8 @@ export async function certifyReleaseArtifacts(
 		await verifyMcpPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyToolsPty({ piBinary, packagePath: extractedPackage, columns: 64, rows: 28 });
 		await verifyToolsResumePty({ piBinary, packagePath: extractedPackage });
+		await verifyWorkMonitorMatrix({ piBinary, packagePath: extractedPackage });
+		await verifyWorkPty({ piBinary, packagePath: extractedPackage, columns: 96, rows: 30 });
 		await writeReleaseVerification(releaseDirectory, CERTIFIED_PI_HOST_PROFILE);
 		console.log(`Certified @jczhang02/pi-stuff with Pi Host ${CERTIFIED_PI_HOST_PROFILE}`);
 	} finally {
@@ -1229,7 +1323,7 @@ async function main(): Promise<void> {
 		await verifyPiHostProvenance(PI_BIN);
 		const aggregateSmoke = await runPiRpcSmoke({
 			piBinary: PI_BIN,
-			extensions: [goalToolInspector, webToolInspector, mcpToolInspector],
+			extensions: [goalToolInspector, webToolInspector, mcpToolInspector, workToolInspector],
 			packages: [aggregateDirectory],
 		});
 		if (
@@ -1247,6 +1341,12 @@ async function main(): Promise<void> {
 			!aggregateSmoke.commandNames.includes("mcp-auth")
 		) {
 			throw new Error("Source Aggregate did not expose the certified Web and MCP surfaces");
+		}
+		if (
+			!aggregateSmoke.commandNames.includes("tasks") ||
+			!aggregateSmoke.commandNames.includes("work-tools-certified")
+		) {
+			throw new Error("Source Aggregate did not expose the certified Background Work surfaces");
 		}
 		const releaseDirectory = join(temporaryDirectory, "release");
 		await createReleaseArtifacts(releaseDirectory);

@@ -10,6 +10,7 @@ const AGENTS_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-agents");
 const CONTEXT_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-context");
 const TOOLS_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-tools");
 const UI_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-ui");
+const WORK_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff-work");
 const TYPEBOX_PACKAGE = resolve(import.meta.dir, "../node_modules/typebox");
 const TEMPORARY_ROOTS: string[] = [];
 
@@ -58,10 +59,11 @@ test("Agents declares its exact workspace and certified Pi dependency contracts"
 		}
 		return packageManifest.version;
 	};
-	const [contextVersion, toolsVersion, uiVersion] = await Promise.all([
+	const [contextVersion, toolsVersion, uiVersion, workVersion] = await Promise.all([
 		readWorkspaceVersion(CONTEXT_PACKAGE),
 		readWorkspaceVersion(TOOLS_PACKAGE),
 		readWorkspaceVersion(UI_PACKAGE),
+		readWorkspaceVersion(WORK_PACKAGE),
 	]);
 
 	expect(manifest.dependencies).toEqual({
@@ -72,6 +74,7 @@ test("Agents declares its exact workspace and certified Pi dependency contracts"
 	});
 	expect(manifest.peerDependencies).toEqual({
 		"@jczhang02/pi-stuff-context": contextVersion,
+		"@jczhang02/pi-stuff-work": workVersion,
 		"@earendil-works/pi-agent-core": "*",
 		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
@@ -121,6 +124,10 @@ test("Pi 0.83 loads Agents through workspace dependency resolution", async () =>
 		}),
 		cp(TOOLS_PACKAGE, join(agentsDependencyScope, "pi-stuff-tools"), { recursive: true }),
 		cp(UI_PACKAGE, join(agentsDependencyScope, "pi-stuff-ui"), { recursive: true }),
+		cp(WORK_PACKAGE, join(agentsDependencyScope, "pi-stuff-work"), {
+			recursive: true,
+			filter: (source) => source !== join(WORK_PACKAGE, "node_modules"),
+		}),
 	]);
 	await symlink(TYPEBOX_PACKAGE, join(installedAgents, "node_modules", "typebox"), "dir");
 	const result = await runPiRpcSmoke({ piBinary: PI_BINARY, packages: [packageDirectory] });

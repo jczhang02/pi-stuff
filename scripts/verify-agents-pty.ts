@@ -375,6 +375,10 @@ class TmuxAgentsSession {
 		this.tmux(["send-keys", "-t", this.target, key]);
 	}
 
+	sendLiteral(value: string): void {
+		this.tmux(["send-keys", "-t", this.target, "-l", value]);
+	}
+
 	async waitForText(text: string): Promise<string> {
 		return this.waitFor((screen) => screen.includes(text), `text ${JSON.stringify(text)}`);
 	}
@@ -501,6 +505,20 @@ async function verifyFleetviewFooterLayout(
 	try {
 		session.start();
 		await session.waitForText("MAIN_NOT_BLOCKED");
+		session.sendLiteral("/tasks");
+		session.sendKey("Enter");
+		await session.waitForText("Tasks");
+		await session.waitForText("Agent");
+		await session.waitForText("复核工具结果 🧪");
+		session.sendKey("Enter");
+		await session.waitForText("Task details");
+		await session.waitForText("Use /agents for the live transcript and controls.");
+		session.sendKey("x");
+		await session.waitForText("Open /agents to control an Agent.");
+		session.sendKey("Escape");
+		await session.waitForText("↑/↓ select");
+		session.sendKey("Escape");
+		await session.waitForAbsence("Tasks · 1 current");
 		let screen = await session.waitForText("general-purpose");
 		verifyFleetviewFrame(screen, options.columns, false);
 		if (options.artifactDirectory) {

@@ -1,0 +1,110 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	TerminalInputHandler,
+	ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
+import type { TSchema } from "typebox";
+import piStuffWork from "../../packages/pi-stuff-work/index.js";
+
+type Handler = (event: unknown, context: ExtensionContext) => unknown | Promise<unknown>;
+
+class HostHarness {
+	readonly activeTools = new Set<string>(["bash"]);
+	readonly commands = new Map<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }>();
+	readonly handlers = new Map<string, Handler[]>();
+	readonly renderers: string[] = [];
+	readonly tools = new Map<string, ToolDefinition<TSchema, unknown>>();
+	terminalInput: TerminalInputHandler | undefined;
+
+	readonly api = {
+		events: { on: () => () => {} },
+		getActiveTools: () => [...this.activeTools],
+		on: (event: string, handler: Handler) => {
+			const handlers = this.handlers.get(event) ?? [];
+			handlers.push(handler);
+			this.handlers.set(event, handlers);
+		},
+		registerCommand: (
+			name: string,
+			command: { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void },
+		) => {
+			this.commands.set(name, command);
+		},
+		registerMessageRenderer: (name: string) => this.renderers.push(name),
+		registerTool: (tool: ToolDefinition<TSchema, unknown>) => {
+			this.tools.set(tool.name, tool);
+			this.activeTools.add(tool.name);
+		},
+		setActiveTools: (names: string[]) => {
+			this.activeTools.clear();
+			for (const name of names) this.activeTools.add(name);
+		},
+		sendMessage: () => {},
+	} as unknown as ExtensionAPI;
+
+	context(cwd: string): ExtensionContext {
+		return {
+			cwd,
+			hasUI: true,
+			isProjectTrusted: () => true,
+			mode: "tui",
+			model: undefined,
+			sessionManager: {
+				getSessionFile: () => join(cwd, "session.jsonl"),
+				getSessionId: () => "host-test",
+			},
+			thinkingLevel: "off",
+			ui: {
+				onTerminalInput: (handler: TerminalInputHandler) => {
+					this.terminalInput = handler;
+					return () => {
+						if (this.terminalInput === handler) this.terminalInput = undefined;
+					};
+				},
+			},
+		} as unknown as ExtensionContext;
+	}
+
+	async emit(event: string, context: ExtensionContext): Promise<void> {
+		for (const handler of this.handlers.get(event) ?? []) await handler({ type: event }, context);
+	}
+}
+
+const roots: string[] = [];
+
+afterEach(() => {
+	for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
+});
+
+describe("Pi Stuff Work host composition", () => {
+	test("registers historical renderers, reclaims live Bash, and consumes Ctrl+B only during foreground Bash", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-work-host-"));
+		roots.push(root);
+		const host = new HostHarness();
+		await piStuffWork(host.api);
+		expect([...host.tools.keys()].sort()).toEqual(["background", "monitor"]);
+		expect(host.commands.has("tasks")).toBe(true);
+		expect(host.renderers).toContain("pi-stuff-background-work-result");
+
+		const ctx = host.context(root);
+		await host.emit("session_start", ctx);
+		expect([...host.tools.keys()].sort()).toEqual(["background", "bash", "monitor"]);
+		expect(host.terminalInput?.("\u0002")).toBeUndefined();
+		const bash = host.tools.get("bash");
+		if (!bash) throw new Error("Bash was not registered");
+		const execution = bash.execute("host-bash", { command: "sleep 30" }, undefined, undefined, ctx);
+		await Bun.sleep(100);
+		expect(host.terminalInput?.("\u0002")).toEqual({ consume: true });
+		const result = await execution;
+		const content = result.content.find((item) => item.type === "text");
+		expect(content?.type === "text" ? content.text : "").toContain("manually moved to background task");
+		expect(host.terminalInput?.("\u0002")).toBeUndefined();
+		await host.emit("session_shutdown", ctx);
+		expect(host.terminalInput).toBeUndefined();
+	});
+});

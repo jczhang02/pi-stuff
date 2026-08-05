@@ -5,6 +5,7 @@
 			"@jczhang02/pi-stuff-agents": ["./scripts/types/pi-stuff-agents.d.ts"],
 			"@jczhang02/pi-stuff-rtk": ["./scripts/types/pi-stuff-rtk.d.ts"],
 			"@jczhang02/pi-stuff-goal": ["./scripts/types/pi-stuff-goal.d.ts"],
+			"@jczhang02/pi-stuff-tools": ["./packages/pi-stuff-tools/index.ts"],
 			"@jczhang02/pi-stuff-ui": ["./packages/pi-stuff-ui/index.ts"]
 		}
 	},
