@@ -58,7 +58,7 @@ afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { force: true, recursive: true });
 });
 
-test("Agent Tool rows use short descriptions instead of full execution tasks", () => {
+test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () => {
 	const presentation = createAgentToolPresentation();
 	const fullTask = "Inspect /tmp/pi-run/deep/sample.txt and verify every checksum without changing the file.";
 	expect(presentation.target?.({ agent: "reviewer", description: "Verify sample checksums", task: fullTask })).toBe(
@@ -78,7 +78,29 @@ test("Agent Tool rows use short descriptions instead of full execution tasks", (
 		],
 		details: {} as never,
 	};
-	expect(presentation.summarize?.({}, longReport, "success", 18_000)).toBe("done");
+	expect(presentation.summarize?.({ agent: "reviewer", task: fullTask }, longReport, "success", 18_000)).toBe(
+		"launched",
+	);
+	expect(
+		presentation.summarize?.(
+			{
+				tasks: [
+					{ agent: "reviewer", task: fullTask },
+					{ agent: "writer", task: "Update fixture docs." },
+				],
+			},
+			longReport,
+			"success",
+			18_000,
+		),
+	).toBe("2 launched");
+	expect(
+		presentation.summarize?.({ agent: "reviewer", foreground: true, task: fullTask }, longReport, "success", 18_000),
+	).toBe("finished");
+	expect(presentation.summarize?.({ action: "resume", id: "run-1" }, longReport, "success", 18_000)).toBe("resumed");
+	expect(presentation.summarize?.({ action: "steer", id: "run-1" }, longReport, "success", 18_000)).toBe("sent");
+	expect(presentation.summarize?.({ action: "stop", id: "run-1" }, longReport, "success", 18_000)).toBe("stopped");
+	expect(presentation.summarize?.({ action: "status", id: "run-1" }, longReport, "success", 18_000)).toBe("checked");
 	expect(presentation.summarize?.({}, longReport, "cancelled", 18_000)).toBe("cancelled");
 });
 

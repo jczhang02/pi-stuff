@@ -220,6 +220,7 @@ function verifyTerminalOutput(output: string, columns: number): void {
 		"AGENT_PTY_TASK",
 		"中文长任务",
 		"Agents / general-purpose",
+		" · launched",
 		"Agent finished",
 		"inspect with /agents",
 		"CHILD_FINAL_SUMMARY",
@@ -238,6 +239,9 @@ function verifyTerminalOutput(output: string, columns: number): void {
 		"MAIN_SAW_DIRECT_SUMMARY",
 	]) {
 		if (visible.includes(forbidden)) fail(`terminal output exposed forbidden UI: ${forbidden}`);
+	}
+	if (/● Agent[^\n]* · done(?:\s|$)/u.test(visible)) {
+		fail("a live background Agent launch was presented as completed");
 	}
 	if (
 		/sample\.tx…[ \t]*(?:done|completed|queued|running|waiting|permission|failed|crashed|stopped|cancelled|\d+[smh])/i.test(

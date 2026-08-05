@@ -35,13 +35,23 @@ function target(params: PublicAgentParams): string {
 		.join(" · ");
 }
 
+function successSummary(params: PublicAgentParams): string {
+	if (params.action === "resume") return "resumed";
+	if (params.action === "steer") return "sent";
+	if (params.action === "stop") return "stopped";
+	if (params.action === "status") return "checked";
+	if (params.foreground === true) return "finished";
+	const count = params.tasks?.length ?? 1;
+	return count > 1 ? `${String(count)} launched` : "launched";
+}
+
 /** One shared row grammar for root and nested public Agent tools. */
 export function createAgentToolPresentation(): SuiteToolPresentation<PresentationParams, Details> {
 	return {
 		label: (params) => label(params as PublicAgentParams),
 		runningSummary: "working",
-		summarize: (_params, result, state) => {
-			if (state === "success") return "done";
+		summarize: (params, result, state) => {
+			if (state === "success") return successSummary(params as PublicAgentParams);
 			if (state === "cancelled") return "cancelled";
 			if (state === "rejected") return "rejected";
 			return firstText(result) || "failed";
