@@ -751,7 +751,7 @@ function renderStatusline(
 		segments.push(statusSegment("thinking", 65, thinking));
 	}
 	if (ctx.model?.provider === "openai-codex" && codexStatus?.fastEnabled === true) {
-		segments.push(statusSegment("fast", 55, theme.fg("warning", withIcon(icons.fast, "Fast"))));
+		segments.push(statusSegment("fast", 55, theme.fg("warning", withIcon(icons.fast, "fast"))));
 	}
 	const cwd = readCwd(ctx);
 	const cwdText = basename(cwd) || cwd;

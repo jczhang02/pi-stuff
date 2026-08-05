@@ -342,7 +342,7 @@ describe("normal UI presentation integration", () => {
 		const rendersBeforePublish = ui.renderRequests.length;
 		codexChannel.publish({ fastEnabled: true, weeklyRemainingPercent: 72.4 });
 		const active = footer.render(120).join("\n");
-		expect(active).toContain(" med ·  Fast ·");
+		expect(active).toContain(" med ·  fast ·");
 		expect(active).toContain("󰃭 72%");
 		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforePublish);
 

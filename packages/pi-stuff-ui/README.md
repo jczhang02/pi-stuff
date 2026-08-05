@@ -9,14 +9,14 @@ Command Dialog used by focused Suite commands.
 ### Statusline
 
 The Statusline is exactly one icon-led status row followed by one optional previous-prompt row. The status row uses dim
-middle-dot separators and this stable order: model, Thinking, conditional Fast, working directory, Git branch, Git file
+middle-dot separators and this stable order: model, Thinking, conditional `fast`, working directory, Git branch, Git file
 state, Context percentage, cache hit rate, and metered cost or Codex weekly allowance. It deliberately omits token-window
 counts and worktime. Capability state such as Goal, MCP, Agents, Todo, BTW, and Tool activity stays on its own focused
 surface instead of adding Statusline segments.
 
 Automatic density first changes long fields to their compact form, then removes complete low-priority segments. It
 never wraps the status row or leaves clipped field fragments. Model and Context survive first, followed by cwd, branch,
-Thinking, allowance, file state, Fast, and cache according to their accepted priorities. A constrained dirty Git state
+Thinking, allowance, file state, `fast`, and cache according to their accepted priorities. A constrained dirty Git state
 aggregates file changes as `ΔN`; branch tracking remains attributable through `⇡` and `⇣` markers.
 
 The previous prompt is always bounded to one row when enabled. Its filled marker occupies the same first visual column
@@ -25,7 +25,7 @@ the same terminal column. The prompt text uses the readable secondary `muted` to
 token. Persisted skill expansion and recognized inline or multiple `/skill:*` commands are reduced
 back to the submitted task plus compact skill badges; Skill XML, instructions, and local paths never enter the preview.
 
-Nerd Font terminals receive the compact model, Thinking, Fast, folder, branch, file-state, Context, cache, allowance,
+Nerd Font terminals receive the compact model, Thinking, `fast`, folder, branch, file-state, Context, cache, allowance,
 cost, and prompt icon family. Other terminals receive one-cell width-safe fallbacks. Set `POWERLINE_NERD_FONTS=1` or `0`
 to override automatic detection, or choose a fixed mode in `/ui`. Colors come only from Pi semantic theme tokens.
 
@@ -34,7 +34,7 @@ The cache value is the active branch's cumulative hit rate across successful ass
 rate or cost. A zero denominator, unavailable context, and Thinking for a non-reasoning model are omitted. Subscription
 models omit both cost and the former `(sub)` label.
 
-For `openai-codex`, cost is always replaced by observed weekly remaining percentage. When Fast mode is active, `Fast`
+For `openai-codex`, cost is always replaced by observed weekly remaining percentage. When Fast mode is active, `fast`
 occupies its former-footer position between Thinking and the working directory; weekly allowance remains after cache. The
 independently loaded Codex Capability publishes that snapshot through `getCodexStatusChannel(pi)`; the Statusline
 performs no authentication or network work.

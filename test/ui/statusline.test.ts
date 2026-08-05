@@ -293,9 +293,9 @@ describe("StatuslineController", () => {
 		const active = withNerdFontPreference(false, () => component.render(160).join("\n"));
 		expect(active).toContain("↻ 99.9%");
 		expect(active).toContain("◷ 63%");
-		expect(active).toContain("⚡ Fast");
-		expect(active.indexOf("◉ med")).toBeLessThan(active.indexOf("⚡ Fast"));
-		expect(active.indexOf("⚡ Fast")).toBeLessThan(active.indexOf("▣ pi-stuff"));
+		expect(active).toContain("⚡ fast");
+		expect(active.indexOf("◉ med")).toBeLessThan(active.indexOf("⚡ fast"));
+		expect(active.indexOf("⚡ fast")).toBeLessThan(active.indexOf("▣ pi-stuff"));
 		expect(active.indexOf("↻ 99.9%")).toBeLessThan(active.indexOf("◷ 63%"));
 		expect(active).not.toContain("18k");
 		expect(active).not.toContain("$0.42");
@@ -304,7 +304,7 @@ describe("StatuslineController", () => {
 		codexStatus.set({ fastEnabled: false, weeklyRemainingPercent: 62.6 });
 		const inactive = withNerdFontPreference(false, () => component.render(160).join("\n"));
 		expect(inactive).toContain("◷ 63%");
-		expect(inactive).not.toContain("⚡ Fast");
+		expect(inactive).not.toContain("⚡ fast");
 		expect(harness.requests.length).toBeGreaterThan(rendersBeforeUpdate);
 	});
 
@@ -331,7 +331,7 @@ describe("StatuslineController", () => {
 
 		const rendered = component.render(160).join("\n");
 		expect(rendered).not.toContain("◷");
-		expect(rendered).not.toContain("Fast");
+		expect(rendered).not.toContain("fast");
 		expect(rendered).not.toContain("$");
 	});
 
