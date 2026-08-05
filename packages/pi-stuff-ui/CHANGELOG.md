@@ -1,5 +1,11 @@
 # @jczhang02/pi-stuff-ui
 
+## 0.2.6
+
+### Patch Changes
+
+- e073e67: Harden the shared TUI presentation: preserve essential Command Dialog controls at low heights, use readable semantic colors, report Agent launches honestly, confirm BTW history clearing inline, and remove meaningless narrow Tool target fragments.
+
 ## 0.2.5
 
 ### Patch Changes

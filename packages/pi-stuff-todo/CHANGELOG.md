@@ -1,5 +1,14 @@
 # @jczhang02/pi-stuff-todo
 
+## 0.1.7
+
+### Patch Changes
+
+- e073e67: Harden the shared TUI presentation: preserve essential Command Dialog controls at low heights, use readable semantic colors, report Agent launches honestly, confirm BTW history clearing inline, and remove meaningless narrow Tool target fragments.
+- Updated dependencies [e073e67]
+  - @jczhang02/pi-stuff-tools@0.1.7
+  - @jczhang02/pi-stuff-ui@0.2.6
+
 ## 0.1.6
 
 ### Patch Changes

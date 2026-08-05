@@ -1,5 +1,12 @@
 # @jczhang02/pi-stuff-context
 
+## 0.1.7
+
+### Patch Changes
+
+- Updated dependencies [e073e67]
+  - @jczhang02/pi-stuff-tools@0.1.7
+
 ## 0.1.6
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff-btw",
-	"version": "0.1.6",
+	"version": "0.1.7",
 	"description": "A one-shot, context-isolated side-question capability for Pi Stuff",
 	"type": "module",
 	"keywords": [
@@ -36,10 +36,10 @@
 		]
 	},
 	"dependencies": {
-		"@jczhang02/pi-stuff-ui": "0.2.5"
+		"@jczhang02/pi-stuff-ui": "0.2.6"
 	},
 	"peerDependencies": {
-		"@jczhang02/pi-stuff-context": "0.1.6",
+		"@jczhang02/pi-stuff-context": "0.1.7",
 		"@earendil-works/pi-ai": "*",
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*"
