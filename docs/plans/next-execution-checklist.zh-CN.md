@@ -8,6 +8,7 @@
 - [ ] 把 Background Shell、Monitor 和 `/tasks` 从“以后再做”改成正式待实现任务。
 - [ ] 关闭已经明确不要的 Plan Mode、结构化提问、Loop/Cron、`/doctor` 和内置 Skills 等旧任务。
 - [ ] 保留已经明确暂不做的 BTW Host 级调用和 Tool 相邻分组；它们只能等待 Pi 提供合适接口，不能为了实现而修改 Pi。
+- [ ] 检查 Beads 依赖图不存在循环、互相等待或无法到达的验收门；Magic Context 必须按“正式集成 → 独立压缩证明 → 清理旧 fork → 最终总验收”的顺序推进。
 - [ ] 实现完成后，把 Beads 状态同步到 GitHub Issues 镜像。
 
 ## 1. 先完成三项最重要的 UI 修正
@@ -133,7 +134,9 @@
 
 ## 6. 用真实 Pi TUI 做最终验收
 
+- [ ] 安装前保存当前可恢复的 Pi Settings Layer 与 Pi Stuff 安装状态；安装或验收失败时必须能恢复，不覆盖或遗失用户自己的配置。
 - [ ] 从实际打包产物安装 Pi Stuff，不能只在源码测试或 Mock 中判断成功。
+- [ ] 完全退出已有 Pi 进程后，从新的 Shell 冷启动；确认实际只加载 `pi-stuff-current` 指向的打包版本，没有从源码目录、临时 worktree、旧 Extension 或重复 Package 偷偷加载能力。
 - [ ] 分别测试全新 Session、已有 Session Resume、长 Session、压缩后继续、普通宽度、窄屏、窗口缩放和不同主题。
 - [ ] 在真实任务中同时使用 Tool、Thinking、Todo、BTW、Subagents、后台命令、Monitor、Goal、Web、MCP、Codex、RTK 和 Magic Context。
 - [ ] 检查底部组件顺序、光标、草稿恢复、Escape、Dialog 返回、滚动、重绘、闪烁、重叠和残留行。
@@ -142,6 +145,7 @@
 - [ ] 运行完整自动化检查、Package 审计和安装测试。
 - [ ] 按主题分批提交并推送；最后 `main` 与 `origin/main` 一致，工作区干净。
 - [ ] 更新 Beads 和 GitHub 镜像，关闭真正完成的任务，并留下最终验收报告和截图证据。
+- [ ] 最终报告提供逐项证据索引：每个复选项都能对应到真实命令、测试结果、PTY 截图或 Session 记录；不能用一句“全部通过”代替证据。
 
 ## 明确不做
 
@@ -166,4 +170,5 @@
 3. UI 在普通宽度、窄屏、Resume 和长 Session 下都没有明显错位、重叠、闪烁或 Raw 回退。
 4. Magic Context 在完全关闭 Pi 原生压缩时也能独立、无感地完成真实长任务；同时具备明确且不会双重压缩的故障退化路径，不会绑死 Pi Stuff。
 5. 最终只剩一个正式 `pi-stuff` 源码仓库和 GitHub 仓库。
-6. Beads、GitHub 镜像、代码和文档状态一致，`main` 工作区干净。
+6. 冷启动实际加载的是安装后的唯一打包版本，不依赖源码目录、旧 Extension 或临时 worktree，并保留可用的安装回退点。
+7. Beads、GitHub 镜像、代码、逐项验收证据和文档状态一致，`main` 工作区干净。
