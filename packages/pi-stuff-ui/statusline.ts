@@ -941,9 +941,7 @@ function renderPromptRow(
 	const promptText = prompt.text ?? "";
 	const fullBadge = formatSkillBadge(prompt.skills, false);
 	const compactBadge = formatSkillBadge(prompt.skills, true);
-	const firstCodePoint = Array.from(promptText || fullBadge)[0] ?? "";
-	const markerGap = visibleWidth(firstCodePoint) > 1 ? "" : " ";
-	const prefix = `${theme.fg("accent", icons.prompt)}${markerGap}`;
+	const prefix = `${theme.fg("accent", icons.prompt)} `;
 	const contentWidth = width - visibleWidth(prefix);
 	if (contentWidth < 1) return truncateToWidth(prefix, width, "");
 	const badge =

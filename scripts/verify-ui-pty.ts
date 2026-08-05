@@ -825,8 +825,8 @@ async function verifyWideInteractions(
 	if (promptLines.length !== 1) {
 		fail(`long prompt occupied ${String(promptLines.length)} Statusline rows instead of exactly one\n${screen}`);
 	}
-	if (!promptLines[0]?.startsWith("\uF111中文")) {
-		fail(`wide-character Prompt did not remove the marker gap while keeping the shared first-column icon\n${screen}`);
+	if (!promptLines[0]?.startsWith("\uF111 中文")) {
+		fail(`wide-character Prompt text did not align with the model text through a stable icon gap\n${screen}`);
 	}
 	if (!promptLines[0].includes(LONG_PROMPT_PREFIX) || promptLines[0].includes(LONG_PROMPT_SUFFIX)) {
 		fail(`long prompt did not retain its beginning and truncate its bounded tail\n${screen}`);

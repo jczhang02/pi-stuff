@@ -388,7 +388,7 @@ describe("StatuslineController", () => {
 		});
 	});
 
-	test("aligns the Nerd prompt marker for Latin and wide CJK first characters", () => {
+	test("aligns Nerd prompt text for Latin, CJK, and emoji first characters", () => {
 		withNerdFontPreference(true, () => {
 			const controller = new StatuslineController(api(), {
 				preferences: preferences({ iconMode: "nerd" }),
@@ -405,12 +405,19 @@ describe("StatuslineController", () => {
 				theme,
 				footerData("main"),
 			);
+			const emoji = controller.createFooter(
+				context({ branch: messageEntries("🚀 Ship the aligned footer.") }),
+				tuiHarness().tui,
+				theme,
+				footerData("main"),
+			);
 
 			expect(latin.render(120)[0]).toStartWith("󰚩 ");
 			expect(latin.render(120)[1]).toStartWith(" Implement");
-			expect(cjk.render(120)[1]).toStartWith("中文");
+			expect(cjk.render(120)[1]).toStartWith(" 中文");
+			expect(emoji.render(120)[1]).toStartWith(" 🚀 Ship");
 			expect(visibleWidth(" ")).toBe(2);
-			expect(visibleWidth("中")).toBe(3);
+			expect(visibleWidth(" 中")).toBe(4);
 		});
 	});
 

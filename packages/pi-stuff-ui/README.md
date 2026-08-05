@@ -20,8 +20,8 @@ Thinking, allowance, file state, Fast, and cache according to their accepted pri
 aggregates file changes as `ΔN`; branch tracking remains attributable through `⇡` and `⇣` markers.
 
 The previous prompt is always bounded to one row when enabled. Its filled marker occupies the same first visual column
-as the model icon. Latin text keeps one readable gap; a wide CJK or emoji first character removes that gap so both rows'
-text starts align optically. Persisted skill expansion and recognized inline or multiple `/skill:*` commands are reduced
+as the model icon. Both rows reserve one marker cell followed by one stable gap, so Latin, CJK, and emoji text begin in
+the same terminal column. Persisted skill expansion and recognized inline or multiple `/skill:*` commands are reduced
 back to the submitted task plus compact skill badges; Skill XML, instructions, and local paths never enter the preview.
 
 Nerd Font terminals receive the compact model, Thinking, Fast, folder, branch, file-state, Context, cache, allowance,
