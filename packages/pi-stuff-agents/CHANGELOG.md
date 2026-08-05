@@ -1,5 +1,15 @@
 # @jczhang02/pi-stuff-agents
 
+## 1.0.1
+
+### Patch Changes
+
+- Updated dependencies [16bbd08]
+  - @jczhang02/pi-stuff-ui@0.2.5
+  - @jczhang02/pi-stuff-tools@0.1.6
+  - @jczhang02/pi-stuff-work@0.2.1
+  - @jczhang02/pi-stuff-context@0.1.6
+
 ## 1.0.0
 
 ### Minor Changes

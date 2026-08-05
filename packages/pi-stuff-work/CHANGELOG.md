@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [16bbd08]
+  - @jczhang02/pi-stuff-ui@0.2.5
+  - @jczhang02/pi-stuff-tools@0.1.6
+
 ## 0.2.0
 
 ### Minor Changes

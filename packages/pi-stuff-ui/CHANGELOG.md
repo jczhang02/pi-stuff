@@ -1,5 +1,11 @@
 # @jczhang02/pi-stuff-ui
 
+## 0.2.5
+
+### Patch Changes
+
+- 16bbd08: Align the previous-Prompt text origin with the model identity for Latin, CJK, and emoji input.
+
 ## 0.2.4
 
 ### Patch Changes

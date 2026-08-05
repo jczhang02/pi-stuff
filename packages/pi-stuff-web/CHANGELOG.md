@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5
+
+### Patch Changes
+
+- @jczhang02/pi-stuff-tools@0.1.6
+
 ## 0.2.4
 
 ### Patch Changes

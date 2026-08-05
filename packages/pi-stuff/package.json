@@ -1,6 +1,6 @@
 {
 	"name": "@jczhang02/pi-stuff",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"description": "The aggregate package for JC Zhang's Pi Stuff Suite",
 	"type": "module",
 	"keywords": [
@@ -28,18 +28,18 @@
 	},
 	"dependencies": {
 		"zod": "4.4.3",
-		"@jczhang02/pi-stuff-ui": "0.2.4",
-		"@jczhang02/pi-stuff-tools": "0.1.5",
-		"@jczhang02/pi-stuff-rtk": "0.2.4",
-		"@jczhang02/pi-stuff-codex": "0.1.4",
-		"@jczhang02/pi-stuff-goal": "0.2.4",
-		"@jczhang02/pi-stuff-context": "0.1.5",
-		"@jczhang02/pi-stuff-web": "0.2.4",
-		"@jczhang02/pi-stuff-mcp": "0.2.4",
-		"@jczhang02/pi-stuff-work": "0.2.0",
-		"@jczhang02/pi-stuff-agents": "1.0.0",
-		"@jczhang02/pi-stuff-todo": "0.1.5",
-		"@jczhang02/pi-stuff-btw": "0.1.5"
+		"@jczhang02/pi-stuff-ui": "0.2.5",
+		"@jczhang02/pi-stuff-tools": "0.1.6",
+		"@jczhang02/pi-stuff-rtk": "0.2.5",
+		"@jczhang02/pi-stuff-codex": "0.1.5",
+		"@jczhang02/pi-stuff-goal": "0.2.5",
+		"@jczhang02/pi-stuff-context": "0.1.6",
+		"@jczhang02/pi-stuff-web": "0.2.5",
+		"@jczhang02/pi-stuff-mcp": "0.2.5",
+		"@jczhang02/pi-stuff-work": "0.2.1",
+		"@jczhang02/pi-stuff-agents": "1.0.1",
+		"@jczhang02/pi-stuff-todo": "0.1.6",
+		"@jczhang02/pi-stuff-btw": "0.1.6"
 	},
 	"bundledDependencies": [
 		"@jczhang02/pi-stuff-ui",
