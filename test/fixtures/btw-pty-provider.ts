@@ -63,7 +63,7 @@ function fixtureStream(context: Context, options?: SimpleStreamOptions) {
 	recordRequest(context);
 	const stream = createAssistantMessageEventStream();
 	const pending = message("", "pending");
-	const sideQuestion = lastUserText(context).includes("side question");
+	const sideQuestion = (context.tools ?? []).length === 0;
 	const first = sideQuestion ? "BTW_STREAM" : "MAIN_START";
 	const second = sideQuestion
 		? `\nBTW_SCROLL_TOP\n${Array.from({ length: 48 }, (_, index) => `scroll line ${index + 1}`).join("\n")}\nBTW_DONE`

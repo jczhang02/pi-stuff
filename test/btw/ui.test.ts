@@ -55,6 +55,7 @@ function setup(
 	return {
 		controller,
 		clearCalls,
+		terminal: tui.terminal,
 		get closeCount() {
 			return closeCount;
 		},
@@ -130,6 +131,9 @@ describe("BTW Command Dialog", () => {
 		const result = setup({ question: "current question", history: [exchange(1), exchange(2)] });
 		result.controller.handleInput("\u001b[D");
 		result.controller.handleInput("x");
+		expect(result.clearCalls).toEqual([]);
+		expect(result.controller.render(80).join("\n")).toContain("Clear earlier BTW history?");
+		result.controller.handleInput("y");
 		result.controller.setSuccess({
 			id: "current",
 			question: "current question",
@@ -149,6 +153,12 @@ describe("BTW Command Dialog", () => {
 		const result = setup({ history: [exchange(1), exchange(2)] });
 		result.controller.handleInput("\u001b[D");
 		result.controller.handleInput("x");
+		expect(result.clearCalls).toEqual([]);
+		result.controller.handleInput("\u001b");
+		expect(result.clearCalls).toEqual([]);
+		expect(result.controller.render(80).join("\n")).not.toContain("Clear earlier BTW history?");
+		result.controller.handleInput("x");
+		result.controller.handleInput("y");
 		expect(result.clearCalls).toEqual(["exchange-1"]);
 		const output = result.controller.render(80).join("\n");
 		expect(output).toContain("/btw earlier question 1");
@@ -199,6 +209,8 @@ describe("BTW Command Dialog", () => {
 		expect(promoted).toEqual(["exchange-2"]);
 
 		result.controller.handleInput("\u001b[120u");
+		expect(result.clearCalls).toEqual([]);
+		result.controller.handleInput("\u001b[121u");
 		expect(result.clearCalls).toEqual(["exchange-2"]);
 		result.controller.dispose();
 	});
@@ -211,6 +223,18 @@ describe("BTW Command Dialog", () => {
 		expect(output).toContain("Incomplete answer");
 		expect(output).toContain("provider unavailable");
 		controller.dispose();
+	});
+
+	test("keeps the selected question, error, and Escape reachable at very low height", () => {
+		const result = setup({ question: "question", history: [exchange(1)] });
+		result.controller.setError("provider unavailable", "partial answer");
+		result.terminal.rows = 6;
+		const lines = result.controller.render(64);
+		expect(lines).toHaveLength(3);
+		expect(lines.join("\n")).toContain("/btw question");
+		expect(lines.join("\n")).toContain("provider unavailable");
+		expect(lines.at(-1)).toContain("Esc close");
+		result.controller.dispose();
 	});
 
 	test("Space, Enter, and Esc match Claude by cancelling the pending Answering surface", () => {

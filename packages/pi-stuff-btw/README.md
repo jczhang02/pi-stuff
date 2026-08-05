@@ -29,6 +29,11 @@ and answer. The original session remains unchanged apart from its invisible
 display-history entry. Space, Enter, and Esc dismiss the focused surface; Esc
 is the advertised close/cancel key.
 
+Clearing earlier history is a two-step inline action inside the same Command
+Dialog: `x` asks for confirmation, `y` commits it, and Esc cancels. It never
+opens a floating confirmation window. At low terminal heights the current
+question or error and an Escape hint remain visible before answer history.
+
 This is an owned fork of `@juicesharp/rpiv-btw`; see [UPSTREAM.md](./UPSTREAM.md).
 
 Pi 0.83 does not expose a public transcript-free Host model-call seam. `/btw`

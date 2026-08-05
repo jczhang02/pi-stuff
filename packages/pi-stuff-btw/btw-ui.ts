@@ -12,6 +12,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { type CommandDialogViewContext, commandDialogRows, fitCommandDialogRows } from "@jczhang02/pi-stuff-ui";
 import { BTW_VISIBLE_HISTORY_LIMIT, type BtwExchange } from "./btw-history.js";
 
 const GUTTER = "  ";
@@ -209,6 +210,7 @@ export class BtwDialogController implements Component {
 	private feedback: { kind: "success" | "error" | "dim"; text: string } | undefined;
 	private copyTimer: ReturnType<typeof setTimeout> | undefined;
 	private promoting = false;
+	private clearConfirmation = false;
 	private disposed = false;
 
 	constructor(theme: Theme, tui: TUI, options: BtwDialogOptions) {
@@ -271,6 +273,7 @@ export class BtwDialogController implements Component {
 		this.scrollTop = 0;
 		this.followTail = true;
 		this.feedback = undefined;
+		this.clearConfirmation = false;
 		this.requestRender();
 	}
 
@@ -303,6 +306,17 @@ export class BtwDialogController implements Component {
 	}
 
 	handleInput(data: string): void {
+		const printable = decodeKittyPrintable(data) ?? data;
+		if (this.clearConfirmation) {
+			if (matchesKey(data, Key.escape) || printable === "n") {
+				this.clearConfirmation = false;
+				this.requestRender();
+			} else if (printable === "y") {
+				this.clearConfirmation = false;
+				this.clearEarlierHistory();
+			}
+			return;
+		}
 		if (matchesKey(data, Key.escape) || matchesKey(data, Key.space) || matchesKey(data, Key.enter)) {
 			this.closeDialog();
 			return;
@@ -326,7 +340,6 @@ export class BtwDialogController implements Component {
 			this.requestRender();
 			return;
 		}
-		const printable = decodeKittyPrintable(data) ?? data;
 		if (printable === "c") {
 			void this.copySelected();
 			return;
@@ -335,7 +348,11 @@ export class BtwDialogController implements Component {
 			void this.promoteSelected();
 			return;
 		}
-		if (printable === "x" && this.hasEarlier()) this.clearEarlierHistory();
+		if (printable === "x" && this.hasEarlier()) {
+			this.clearConfirmation = true;
+			this.feedback = undefined;
+			this.requestRender();
+		}
 	}
 
 	render(width: number): string[] {
@@ -343,27 +360,40 @@ export class BtwDialogController implements Component {
 		const historyLines = this.renderHistory(width);
 		const answerWidth = Math.max(1, width - GUTTER.length);
 		const answerLines = this.renderAnswer(selected, answerWidth);
-		const terminalRows = (this.tui.terminal as { rows?: number }).rows ?? 24;
-		let viewportHeight = Math.max(4, terminalRows - historyLines.length - 7);
+		const maximumRows = commandDialogRows({
+			tui: this.tui,
+		} as Pick<CommandDialogViewContext<unknown>, "tui">);
+		if (maximumRows === 0) return [];
+		let viewportHeight = Math.max(0, maximumRows - historyLines.length - 3);
 		let maxScroll = Math.max(0, answerLines.length - viewportHeight);
 		let footer = this.renderFooter(selected, width, maxScroll);
-		viewportHeight = Math.max(4, terminalRows - historyLines.length - 5 - footer.length);
+		viewportHeight = Math.max(0, maximumRows - historyLines.length - footer.length - 3);
 		maxScroll = Math.max(0, answerLines.length - viewportHeight);
 		footer = this.renderFooter(selected, width, maxScroll);
 		if (this.followTail) this.scrollTop = maxScroll;
 		this.scrollTop = Math.min(maxScroll, Math.max(0, this.scrollTop));
 		if (this.scrollTop === maxScroll) this.followTail = true;
 
-		return [
-			divider(this.theme, width),
-			...historyLines,
-			"",
-			...answerLines
-				.slice(this.scrollTop, this.scrollTop + viewportHeight)
-				.map((line) => bounded(`${GUTTER}${line}`, width)),
-			"",
-			...footer,
-		];
+		const visibleAnswer = answerLines
+			.slice(this.scrollTop, this.scrollTop + viewportHeight)
+			.map((line) => bounded(`${GUTTER}${line}`, width));
+		const selectedQuestion = questionLine(this.theme, selected, true, width);
+		const stateLine =
+			selected.state === "error"
+				? answerLines.at(-1)
+					? bounded(`${GUTTER}${answerLines.at(-1)}`, width)
+					: undefined
+				: visibleAnswer.find((line) => line.trim().length > 0);
+		return fitCommandDialogRows(
+			{
+				header: [divider(this.theme, width)],
+				overflowTitle: selectedQuestion,
+				priority: [selectedQuestion, ...(stateLine ? [stateLine] : [])],
+				body: [...historyLines, "", ...visibleAnswer, ""],
+				footer,
+			},
+			maximumRows,
+		);
 	}
 
 	invalidate(): void {
@@ -389,6 +419,7 @@ export class BtwDialogController implements Component {
 		this.scrollTop = 0;
 		this.followTail = false;
 		this.feedback = undefined;
+		this.clearConfirmation = false;
 		this.requestRender();
 	}
 
@@ -491,6 +522,9 @@ export class BtwDialogController implements Component {
 	}
 
 	private renderFooter(exchange: DisplayExchange, width: number, maxScroll: number): string[] {
+		if (this.clearConfirmation) {
+			return hintLines(this.theme, width, ["Clear earlier BTW history?", "y confirm", "Esc cancel"]);
+		}
 		if (this.feedback) {
 			return [
 				bounded(`${GUTTER}${this.theme.fg(this.feedback.kind, oneLine(this.feedback.text))}`, width),

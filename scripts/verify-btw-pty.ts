@@ -114,9 +114,24 @@ send -- "\\033"
 must_expect "DRAFT_RESTORED"
 send -- "\\025"
 after 200
+send -- "/btw second question\\r"
+must_expect "second question"
+must_expect "BTW_STREAM"
+must_expect "BTW_DONE"
+send -- "\\033"
+after 150
 send -- "/btw\\r"
 must_expect "side question"
+must_expect "second question"
 must_expect "BTW_DONE"
+send -- "x"
+must_expect "Clear earlier BTW history?"
+send -- "\\033"
+after 150
+send -- "x"
+must_expect "Clear earlier BTW history?"
+send -- "y"
+must_expect "Cleared BTW history"
 send -- "f"
 after 700
 foreach close_key {" " "\\r" "\\033"} {
@@ -160,7 +175,7 @@ spawn -noecho script -qefc $env(PI_STUFF_PTY_RUNNER) /dev/null
 must_expect "MAIN_DONE"
 after 200
 send -- "/btw\\r"
-must_expect "side question"
+must_expect "second question"
 must_expect "BTW_DONE"
 send -- "\\033"
 after 150
@@ -221,14 +236,18 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 			.trim()
 			.split("\n")
 			.map((line) => JSON.parse(line) as RequestRecord);
-		if (requests.length !== 2) fail(`expected two model requests, received ${requests.length}`);
-		const [main, side] = requests;
+		if (requests.length !== 3) fail(`expected three model requests, received ${requests.length}`);
+		const [main, side, secondSide] = requests;
 		if (main?.lastUser !== "main request") fail("main request was not observed");
 		if (!Array.isArray(main.tools) || !main.tools.includes("TaskCreate"))
 			fail("Aggregate Todo tools were not active");
 		if (side?.lastUser !== "side question") fail("side request was not observed");
 		if (side.messageCount !== 2) fail("side request included the pending main assistant or missed the main user");
 		if (!Array.isArray(side.tools) || side.tools.length !== 0) fail("side request exposed tools");
+		if (secondSide?.lastUser !== "second question") fail("second side request was not observed");
+		if (secondSide.messageCount !== 3)
+			fail("second side request did not include the completed main turn exactly once");
+		if (!Array.isArray(secondSide.tools) || secondSide.tools.length !== 0) fail("second side request exposed tools");
 
 		const sessionFiles = (await readdir(sessionDirectory))
 			.filter((entry) => entry.endsWith(".jsonl"))
@@ -236,12 +255,12 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 		if (sessionFiles.length !== 2) fail(`expected original and promoted sessions, received ${sessionFiles.length}`);
 		const sessions = await Promise.all(sessionFiles.map(readSession));
 		const original = sessions.find((session) => session.messageText.includes("main request"));
-		const promoted = sessions.find((session) => session.messageText.includes("side question"));
+		const promoted = sessions.find((session) => session.messageText.includes("second question"));
 		if (!original || !promoted || original === promoted) fail("could not distinguish original and promoted sessions");
 		if (!original.messageText.includes("MAIN_START MAIN_DONE")) {
 			fail("the main turn did not finish while BTW was open");
 		}
-		for (const forbidden of ["side question", "BTW_STREAM", "BTW_DONE", "DRAFT_RESTORED"]) {
+		for (const forbidden of ["side question", "second question", "BTW_STREAM", "BTW_DONE", "DRAFT_RESTORED"]) {
 			if (original.messageText.some((text) => text.includes(forbidden))) {
 				fail(`ephemeral text leaked into the original formal transcript: ${forbidden}`);
 			}
@@ -249,11 +268,15 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 		const originalHistory = original.lines.filter(
 			(line) => line.type === "custom" && line.customType === "@jczhang02/pi-stuff-btw/history/v1",
 		);
-		if (originalHistory.length !== 1 || !JSON.stringify(originalHistory[0]).includes("BTW_DONE")) {
-			fail("the original session did not retain its invisible BTW history record");
+		if (
+			originalHistory.length !== 3 ||
+			!originalHistory.some((line) => JSON.stringify(line).includes('"operation":"retain"')) ||
+			!JSON.stringify(originalHistory).includes("second question")
+		) {
+			fail("the original session did not retain the confirmed BTW history reduction");
 		}
 		if (
-			!promoted.messageText.includes("side question") ||
+			!promoted.messageText.includes("second question") ||
 			!promoted.messageText.some((text) => text.includes("BTW_DONE"))
 		) {
 			fail("the selected BTW question and answer were not promoted as formal turns");
@@ -283,7 +306,7 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 			);
 		}
 		const requestsAfterResume = (await readFile(requestLog, "utf8")).trim().split("\n");
-		if (requestsAfterResume.length !== 2) fail("reopening durable BTW history made an unexpected model request");
+		if (requestsAfterResume.length !== 3) fail("reopening durable BTW history made an unexpected model request");
 	} finally {
 		await rm(temporaryDirectory, { recursive: true, force: true });
 	}
