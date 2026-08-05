@@ -114,12 +114,13 @@ function fleetRows(variant: Variant, state: FleetviewState, width: number, theme
 }
 
 function contextualRows(state: FleetviewState, width: number, theme: Theme): string[] {
-	const rows: string[] = [];
-	if (state === "active") {
-		const help =
-			width <= NARROW_WIDTH ? "↑/↓ select · Enter · x stop · Esc" : "↑/↓ select · Enter view · x stop · Esc return";
-		rows.push(indent(theme.fg("dim", help), width));
-	}
+	const help =
+		state === "idle"
+			? ""
+			: width <= NARROW_WIDTH
+				? "↑/↓ select · Enter · x stop · Esc"
+				: "↑/↓ select · Enter view · x stop · Esc return";
+	const rows: string[] = [help ? indent(theme.fg("dim", help), width) : ""];
 	rows.push(mainRow(state === "idle", "", width, theme));
 	for (const agent of AGENTS) {
 		rows.push(agentRow(agent, state === "active" && agent.name === "explorer", agent.elapsed, width, theme));

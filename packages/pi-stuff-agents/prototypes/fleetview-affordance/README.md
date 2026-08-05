@@ -6,7 +6,7 @@ Throwaway visual evidence for one question: what should replace the permanent
 The prototype keeps the accepted two-line Statusline and Agent data fixed, then
 compares three structures in both passive and management states:
 
-- A: no passive hint; show a contextual controls row only while managing;
+- A: reserve a blank passive row; replace it with controls while managing;
 - B: keep a stable neutral header and replace its content while managing;
 - C: keep every hint inside the row it affects.
 
@@ -16,8 +16,9 @@ Variant A is the recommended translation. Claude Code keeps its passive
 `↓ to manage` affordance in the Host footer, not in the roster itself, then
 shows a contextual controls row after management begins. Pi Stuff already uses
 that footer area for its two-line Statusline, so its passive Fleetview should
-start directly at `● main`; the controls row should exist only while navigation
-is active. `/agents` remains the explicit discoverability path.
+reserve that row as blank space and begin visibly at `● main`; management
+controls replace the blank row in place while navigation is active. `/agents`
+remains the explicit discoverability path.
 
 Open [`report.html`](./report.html) and switch between A/B/C. Every terminal image
 is a genuine Pi 0.83.0 fullscreen PTY capture, not an HTML reconstruction.

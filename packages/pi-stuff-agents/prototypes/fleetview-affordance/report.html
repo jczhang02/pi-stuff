@@ -62,17 +62,17 @@
 
     <section class="variant" data-variant="a">
       <div class="summary">
-        <div class="decision"><h2>A · 只在管理时提示（推荐）</h2><p>静止时从 <code>● main</code> 直接开始，不显示任何说明。按下 <code>↓</code> 进入管理后，才在列表上方临时展开一行完整操作提示；退出后这一行消失。</p></div>
-        <div class="facts"><h3>实际变化</h3><dl><dt>静止</dt><dd>零提示、零额外高度</dd><dt>管理</dt><dd>出现一行上下文操作</dd><dt>发现入口</dt><dd><code>/agents</code> 命令 + 已学会的 <code>↓</code></dd><dt>窄屏</dt><dd>压缩文案，不截断列表</dd></dl></div>
+        <div class="decision"><h2>A · 空白占位，原位提示（推荐）</h2><p>静止时保留一行纯空白，然后显示 <code>● main</code>。按下 <code>↓</code> 进入管理后，操作说明原位替换这行空白；退出后恢复空白。因此整个 Fleetview 的列表位置完全不动。</p></div>
+        <div class="facts"><h3>实际变化</h3><dl><dt>静止</dt><dd>一行空白占位</dd><dt>管理</dt><dd>同一行显示上下文操作</dd><dt>位置</dt><dd>main 与 Agent 始终不跳动</dd><dt>发现入口</dt><dd><code>/agents</code> + 已学会的 <code>↓</code></dd></dl></div>
       </div>
-      <p class="note">这保留了 Claude Code 的关键逻辑：管理模式中有明确的键位说明；但不把 Claude 内置 footer 里的常驻提示硬搬成 Fleetview 标题。</p>
-      <div class="state"><div class="state-title"><h3>静止状态</h3><p>列表本身就是内容，不再用说明抢第一眼。</p></div><div class="captures">
-        <figure><figcaption><span>100 × 24</span><span>直接从 main 开始</span></figcaption><a href="artifacts/variant-a-idle-100x24.png"><img src="artifacts/variant-a-idle-100x24-detail.png" alt="Variant A idle wide real Pi capture"></a></figure>
-        <figure><figcaption><span>64 × 18</span><span>不浪费一行</span></figcaption><a href="artifacts/variant-a-idle-64x18.png"><img src="artifacts/variant-a-idle-64x18-detail.png" alt="Variant A idle narrow real Pi capture"></a></figure>
+      <p class="note">空白行不是误留的间距，而是管理提示的固定槽位：内容在这个槽位内出现和消失，下面三行永远保持原坐标。</p>
+      <div class="state"><div class="state-title"><h3>静止状态</h3><p>Statusline 第二行与 main 之间保留一行无内容的固定槽位。</p></div><div class="captures">
+        <figure><figcaption><span>100 × 24</span><span>空白占位后显示 main</span></figcaption><a href="artifacts/variant-a-idle-100x24.png"><img src="artifacts/variant-a-idle-100x24-detail.png" alt="Variant A idle wide real Pi capture"></a></figure>
+        <figure><figcaption><span>64 × 18</span><span>窄屏同样保留槽位</span></figcaption><a href="artifacts/variant-a-idle-64x18.png"><img src="artifacts/variant-a-idle-64x18-detail.png" alt="Variant A idle narrow real Pi capture"></a></figure>
       </div></div>
-      <div class="state"><div class="state-title"><h3>管理状态</h3><p>进入后才出现完整、可撤销的操作语法。</p></div><div class="captures">
-        <figure><figcaption><span>100 × 24</span><span>上下文提示展开</span></figcaption><a href="artifacts/variant-a-active-100x24.png"><img src="artifacts/variant-a-active-100x24-detail.png" alt="Variant A active wide real Pi capture"></a></figure>
-        <figure><figcaption><span>64 × 18</span><span>紧凑键位文案</span></figcaption><a href="artifacts/variant-a-active-64x18.png"><img src="artifacts/variant-a-active-64x18-detail.png" alt="Variant A active narrow real Pi capture"></a></figure>
+      <div class="state"><div class="state-title"><h3>管理状态</h3><p>提示填入原有槽位，main 与 Agent 行坐标不变。</p></div><div class="captures">
+        <figure><figcaption><span>100 × 24</span><span>空白原位变为说明</span></figcaption><a href="artifacts/variant-a-active-100x24.png"><img src="artifacts/variant-a-active-100x24-detail.png" alt="Variant A active wide real Pi capture"></a></figure>
+        <figure><figcaption><span>64 × 18</span><span>同位置紧凑文案</span></figcaption><a href="artifacts/variant-a-active-64x18.png"><img src="artifacts/variant-a-active-64x18-detail.png" alt="Variant A active narrow real Pi capture"></a></figure>
       </div></div>
     </section>
 
@@ -115,12 +115,12 @@
         <figure><figcaption><span>静止</span><span>提示属于 Claude footer</span></figcaption><a href="../../../../docs/prototypes/tui/artifacts/claude-2.1.197-agent-activity-background-running.png"><img src="../../../../docs/prototypes/tui/artifacts/claude-2.1.197-agent-activity-background-running.png" alt="Genuine Claude Code 2.1.197 passive Agent roster"></a></figure>
         <figure><figcaption><span>管理</span><span>临时上下文提示行</span></figcaption><a href="../../../../docs/prototypes/tui/artifacts/claude-2.1.197-agent-activity-roster-manage-child.png"><img src="../../../../docs/prototypes/tui/artifacts/claude-2.1.197-agent-activity-roster-manage-child.png" alt="Genuine Claude Code 2.1.197 active Agent roster"></a></figure>
       </div>
-      <p class="verdict"><strong>建议采用 A：</strong>静止 Fleetview 没有标题、没有入口提示，从 <code>● main</code> 开始；只有按下 <code>↓</code> 后，列表才临时增加一行完整键位说明。<code>/agents</code> 继续作为明确、可发现的管理入口。</p>
+      <p class="verdict"><strong>建议采用 A：</strong>静止 Fleetview 没有标题、没有入口提示，但在 <code>● main</code> 上方保留一行空白；按下 <code>↓</code> 后，完整键位说明原位填入该行，列表绝不位移。<code>/agents</code> 继续作为明确、可发现的管理入口。</p>
     </section>
   </main>
 
   <nav class="switcher" aria-label="Prototype variants">
-    <button type="button" data-target="a">A · 上下文提示</button>
+    <button type="button" data-target="a">A · 原位提示</button>
     <button type="button" data-target="b">B · 固定标题</button>
     <button type="button" data-target="c">C · 行内操作</button>
   </nav>
