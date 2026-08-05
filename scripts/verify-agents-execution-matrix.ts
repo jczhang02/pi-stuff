@@ -91,12 +91,19 @@ async function runProcess(
 	return { exitCode, stdout: await stdout, stderr: await stderr, timedOut };
 }
 
-async function readRecords(logPath: string): Promise<LogRecord[]> {
-	const contents = await readFile(logPath, "utf8").catch(() => "");
+export function parseCompleteLogRecords(contents: string): LogRecord[] {
+	const completeEnd = contents.lastIndexOf("\n");
+	if (completeEnd < 0) return [];
 	return contents
+		.slice(0, completeEnd)
 		.split("\n")
 		.filter((line) => line.trim().length > 0)
 		.map((line) => JSON.parse(line) as LogRecord);
+}
+
+async function readRecords(logPath: string): Promise<LogRecord[]> {
+	const contents = await readFile(logPath, "utf8").catch(() => "");
+	return parseCompleteLogRecords(contents);
 }
 
 function scenarioRecords(records: readonly LogRecord[], scenario: ScenarioId): LogRecord[] {
