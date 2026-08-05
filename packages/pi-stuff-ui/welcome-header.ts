@@ -165,17 +165,19 @@ class WelcomeHeaderComponent implements Component {
 
 function wideLines(ctx: ExtensionContext, inventory: WelcomeHeaderInventory, theme: Theme, width: number): string[] {
 	const rightWidth = Math.max(1, width - WIDE_LEFT_COLUMN_WIDTH - 3);
-	const logo = piLogo(theme);
+	const logo = piLogo(theme, false);
 	const rightDivider = theme.fg("borderMuted", "─".repeat(Math.max(0, rightWidth - 2)));
 	const counts = welcomeInventoryLines(inventory, theme);
+	const loadedRows = [theme.bold("Loaded"), counts[0] ?? "", counts[1] ?? ""];
+	const identityRows = Array.from({ length: Math.max(logo.length, loadedRows.length) }, (_unused, index) =>
+		wideBoxRow(theme, width, logo[index] ?? "", loadedRows[index] ?? ""),
+	);
 	return [
 		boxTop(theme, width, "Pi Stuff", true),
 		wideBoxRow(theme, width, "", theme.bold("Tips for getting started")),
 		wideBoxRow(theme, width, theme.bold("Welcome back!"), "Type / to browse commands"),
 		wideBoxRow(theme, width, "", rightDivider),
-		wideBoxRow(theme, width, logo[0] ?? "", theme.bold("Loaded")),
-		wideBoxRow(theme, width, logo[1] ?? "", counts[0] ?? ""),
-		wideBoxRow(theme, width, logo[2] ?? "", counts[1] ?? ""),
+		...identityRows,
 		wideBoxRow(theme, width, "", ""),
 		wideBoxRow(theme, width, modelIdentity(ctx, theme, true), ""),
 		wideBoxRow(theme, width, theme.fg("muted", displayCwd(ctx)), ""),
@@ -185,51 +187,17 @@ function wideLines(ctx: ExtensionContext, inventory: WelcomeHeaderInventory, the
 
 function narrowLines(ctx: ExtensionContext, theme: Theme, width: number, rows: number | undefined): string[] {
 	if (width < MIN_BOX_WIDTH) return [clip(theme.bold("Pi Stuff"), width)];
-	const logo = piLogo(theme);
+	const logo = piLogo(theme, width < 48 || (rows !== undefined && rows <= 18));
 	const provider = sanitizeOneLine(ctx.model?.provider ?? "");
-	if (rows !== undefined && rows <= 16) {
-		return [
-			boxTop(theme, width, "Pi Stuff", false),
-			boxRow(theme, width, theme.bold("Welcome back!")),
-			boxRow(theme, width, ""),
-			boxRow(theme, width, logo[0] ?? ""),
-			boxRow(theme, width, logo[1] ?? ""),
-			boxRow(theme, width, logo[2] ?? ""),
-			boxRow(theme, width, modelIdentity(ctx, theme, false)),
-			boxRow(theme, width, theme.fg("muted", abbreviatePath(displayCwd(ctx)))),
-			boxRow(theme, width, ""),
-			boxBottom(theme, width),
-		];
-	}
-	if (rows !== undefined && rows <= 18) {
-		return [
-			boxTop(theme, width, "Pi Stuff", false),
-			boxRow(theme, width, theme.bold("Welcome back!")),
-			boxRow(theme, width, ""),
-			boxRow(theme, width, logo[0] ?? ""),
-			boxRow(theme, width, logo[1] ?? ""),
-			boxRow(theme, width, logo[2] ?? ""),
-			boxRow(theme, width, ""),
-			boxRow(theme, width, modelIdentity(ctx, theme, false)),
-			boxRow(theme, width, provider ? theme.fg("muted", provider) : ""),
-			boxRow(theme, width, theme.fg("muted", abbreviatePath(displayCwd(ctx)))),
-			boxRow(theme, width, ""),
-			boxBottom(theme, width),
-		];
-	}
 	return [
 		boxTop(theme, width, "Pi Stuff", false),
-		boxRow(theme, width, ""),
 		boxRow(theme, width, theme.bold("Welcome back!")),
 		boxRow(theme, width, ""),
-		boxRow(theme, width, logo[0] ?? ""),
-		boxRow(theme, width, logo[1] ?? ""),
-		boxRow(theme, width, logo[2] ?? ""),
+		...logo.map((line) => boxRow(theme, width, line)),
 		boxRow(theme, width, ""),
 		boxRow(theme, width, modelIdentity(ctx, theme, false)),
 		boxRow(theme, width, provider ? theme.fg("muted", provider) : ""),
 		boxRow(theme, width, theme.fg("muted", abbreviatePath(displayCwd(ctx)))),
-		boxRow(theme, width, ""),
 		boxBottom(theme, width),
 	];
 }
@@ -281,12 +249,9 @@ function startCell(content: string, width: number): string {
 	return `${line}${" ".repeat(Math.max(0, width - visibleWidth(line)))}`;
 }
 
-function piLogo(theme: Theme): readonly [string, string, string] {
-	return [
-		theme.fg("accent", theme.bold("▐███████▌")),
-		theme.fg("accent", theme.bold("  ██ ██  ")),
-		theme.fg("accent", theme.bold("  ▀▀ ▀▀  ")),
-	];
+function piLogo(theme: Theme, compact: boolean): readonly string[] {
+	const rows = compact ? ["█▀█ ", "█▀ █"] : ["██████  ", "██  ██  ", "████  ██", "██    ██"];
+	return rows.map((row) => theme.fg("accent", row));
 }
 
 function welcomeInventoryLines(inventory: WelcomeHeaderInventory, theme: Theme): readonly [string, string] {

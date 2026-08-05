@@ -347,9 +347,11 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		createRoster: (_current, rosterOptions) => {
 			expect(typeof rosterOptions.onOpen).toBe("function");
 			return {
+				createFooterTail: () => ({ invalidate: () => {}, render: () => [] }),
 				setContext: () => {
 					roster.contexts += 1;
 				},
+				setFooterHosted: () => {},
 				setSuppressed: (suppressed: boolean) => roster.suppressed.push(suppressed),
 				dispose: () => {
 					roster.disposed += 1;

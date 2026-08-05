@@ -4,7 +4,9 @@ Current-session foreground and background Agents for Pi Stuff.
 
 The Capability lets the main Pi Agent delegate isolated work and continue while background work runs. Background
 completion adds one durable, compact TUI outcome without adding child reports to model context or starting another main
-turn. It keeps one quiet roster below the editor and opens details in Pi Stuff's shared full-width Command Dialog.
+turn. In the full Suite, its Fleetview roster is the tail of Pi Stuff's shared Footer: it always follows both Statusline
+rows and is therefore the bottommost visible region. Standalone use keeps a native below-editor fallback. Agent details
+open in Pi Stuff's shared full-width Command Dialog.
 
 The public `subagent` tool adopts `@jczhang02/pi-stuff-tools` so its running and terminal row follows the same compact
 grammar as Host tools. Full Agent inspection and control remains in `/agents`.
@@ -41,8 +43,12 @@ grammar as Host tools. Full Agent inspection and control remains in `/agents`.
   the project. The engine retains an explicit project-directory policy for embedding compatibility, but Pi Stuff does
   not select it by default.
 
-With an empty editor, press Down to enter the roster, use Up or Down to select an Agent, and press Enter to inspect it.
-The `/agents` command opens the same current-session view. The Capability creates no statusline or floating window.
+Fleetview reserves one help row above `main`. The row is exactly blank while idle. With an empty editor, press Down to
+enter management and replace that same row with `↑/↓ select · Enter view · x stop · Esc return`; at 64 columns and below
+it becomes `↑/↓ select · Enter · x stop · Esc`. Use Up or Down to select an Agent, Enter to inspect it, `x` to stop or
+dismiss the selected row, and Escape to return. The `/agents` command opens the full current-session view. The
+Capability creates no statusline, divider, permanent management hint, floating window, or extra gap between Statusline
+and Fleetview.
 
 The below-editor roster keeps terminal rows for 30 seconds, then hides them automatically. Live rows never expire and
 `x` may dismiss a terminal row early. Hiding a row from the roster does not remove its bounded Task preview, result, or

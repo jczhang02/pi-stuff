@@ -8,34 +8,33 @@ Command Dialog used by focused Suite commands.
 
 ### Statusline
 
-The Statusline preserves the visual grammar of the maintainer's former Powerline footer through an independent Pi Stuff
-implementation. Each row has one-cell outer padding and dim `|` separators. It presents the model display name,
-`think:<level>`, working-directory basename, Git branch with `!conflict`, `*unstaged`, `+staged`, `?untracked`, `⇡ahead`,
-and `⇣behind`, context percentage/window, cache hit rate, and metered cost or Codex weekly allowance. Context renders as
-`?/200k` when the Host knows the window but cannot yet calculate a percentage. Complete segments flow to a second
-Statusline row instead of being cut in half. Capability state such as Goal, MCP, Agents, Todo, BTW, and Tool activity
-stays on its own focused surface instead of adding Statusline segments.
+The Statusline is exactly one icon-led status row followed by one optional previous-prompt row. The status row uses dim
+middle-dot separators and this stable order: model, Thinking, conditional Fast, working directory, Git branch, Git file
+state, Context percentage, cache hit rate, and metered cost or Codex weekly allowance. It deliberately omits token-window
+counts and worktime. Capability state such as Goal, MCP, Agents, Todo, BTW, and Tool activity stays on its own focused
+surface instead of adding Statusline segments.
 
-Automatic density preserves the former wide ordering when it fits. As space narrows, it retains model and Context
-first, then Git, cwd and Thinking, and finally cost and cache. The latest user prompt may use two
-rows at 80 columns or wider, one row from 48 through 79 columns, and no row below 48 columns; Compact density also omits
-it. Long model and branch names shorten from the middle; a constrained dirty Git segment aggregates file changes as
-`ΔN` and reserves space for conflict and `⇡`/`⇣` markers before branch text. Persisted skill expansion and recognized
-inline or multiple `/skill:*` commands are reduced back to the submitted
-task plus compact skill badges; Skill XML, instructions, and local paths never enter the preview.
+Automatic density first changes long fields to their compact form, then removes complete low-priority segments. It
+never wraps the status row or leaves clipped field fragments. Model and Context survive first, followed by cwd, branch,
+Thinking, allowance, file state, Fast, and cache according to their accepted priorities. A constrained dirty Git state
+aggregates file changes as `ΔN`; branch tracking remains attributable through `⇡` and `⇣` markers.
 
-Nerd Font terminals receive the former model, folder, branch, context, cache, and input glyphs. Other terminals receive
-the width-safe `dir`, `⎇`, `◫`, `cache`, and `in:` fallbacks. Set `POWERLINE_NERD_FONTS=1` or `0` to override automatic
-detection, or choose a fixed mode in `/ui`. Colors still come only from Pi semantic theme tokens; the former hard-coded
-personal palette is intentionally not copied.
+The previous prompt is always bounded to one row when enabled. Its filled marker occupies the same first visual column
+as the model icon. Latin text keeps one readable gap; a wide CJK or emoji first character removes that gap so both rows'
+text starts align optically. Persisted skill expansion and recognized inline or multiple `/skill:*` commands are reduced
+back to the submitted task plus compact skill badges; Skill XML, instructions, and local paths never enter the preview.
+
+Nerd Font terminals receive the compact model, Thinking, Fast, folder, branch, file-state, Context, cache, allowance,
+cost, and prompt icon family. Other terminals receive one-cell width-safe fallbacks. Set `POWERLINE_NERD_FONTS=1` or `0`
+to override automatic detection, or choose a fixed mode in `/ui`. Colors come only from Pi semantic theme tokens.
 
 The cache value is the active branch's cumulative hit rate across successful assistant messages:
 `cacheRead / (input + cacheRead + cacheWrite)`. Failed or aborted messages and compaction metadata do not affect the
 rate or cost. A zero denominator, unavailable context, and Thinking for a non-reasoning model are omitted. Subscription
 models omit both cost and the former `(sub)` label.
 
-For `openai-codex`, cost is always replaced by observed weekly allowance. When Fast mode is active, `fast` occupies
-its former-footer position between Thinking and the working directory; weekly allowance remains after cache. The
+For `openai-codex`, cost is always replaced by observed weekly remaining percentage. When Fast mode is active, `Fast`
+occupies its former-footer position between Thinking and the working directory; weekly allowance remains after cache. The
 independently loaded Codex Capability publishes that snapshot through `getCodexStatusChannel(pi)`; the Statusline
 performs no authentication or network work.
 Weekly allowance stays hidden until real data arrives, and `fast` appears only while Fast mode is enabled. The shared
@@ -53,10 +52,11 @@ input area. It does not duplicate Agent, Todo, BTW, Goal, MCP, or Tool activity.
 ### Welcome header
 
 The startup header follows the observed Claude Code 2.1.197 card geometry while keeping Pi Stuff's own identity and
-content. At 70 columns and above it uses the same fixed 52-cell identity column plus a responsive guidance column. At
-68 columns and below it becomes a centered single-column card and removes guidance and inventory instead of wrapping
-them. On 18-row and 16-row terminals it removes blank rhythm and then provider detail so Pi's editor and Statusline do
-not push the card's top edge out of view. It is part of Pi's normal scrollback, not a floating window.
+content. Its accent-colored Pi mark is reconstructed from the official pi.dev geometry: an 8×4 mark at ordinary sizes
+and a complete 4×2 mark below 48 columns or at 18 rows and shorter. It selects the compact mark instead of cropping the
+large one and always keeps one effective blank row below the mark. At 70 columns and above the card uses a fixed 52-cell
+identity column plus a responsive guidance column; below that it becomes a centered single-column card and removes
+guidance and inventory instead of wrapping them. It is part of Pi's normal scrollback, not a floating window.
 
 ### Input enhancements
 
@@ -99,6 +99,11 @@ another Pi process's lock; a leftover lock file is safe and is reused.
 The Package gives independently owned Capabilities one full-width, non-floating focus surface without coupling them to
 each other. A `blocking` view preempts the active `normal` view inside the same Pi component; blocking requests run FIFO,
 then the exact normal component resumes.
+
+The same coordinator owns one composed Footer seam. The Statusline remains the primary Footer, while Suite Capabilities
+may register ordered tails beneath it. This is how Fleetview stays below both Statusline rows without a Pi Host fork;
+standalone Packages can retain their native fallback. Dialog suppression and restoration operate on the composed Footer
+as one unit, while creation, rendering, invalidation, and disposal failures remain isolated by section.
 
 ```ts
 import { getCommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";

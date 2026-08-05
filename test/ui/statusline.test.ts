@@ -291,21 +291,20 @@ describe("StatuslineController", () => {
 		);
 
 		const active = withNerdFontPreference(false, () => component.render(160).join("\n"));
-		expect(active).toContain("cache 99.9%");
-		expect(active).toContain("weekly 63%");
-		expect(active).toContain("fast");
-		expect(active.indexOf("think:med")).toBeLessThan(active.indexOf("fast"));
-		expect(active.indexOf("fast")).toBeLessThan(active.indexOf("dir pi-stuff"));
-		expect(active.indexOf("cache 99.9%")).toBeLessThan(active.indexOf("weekly 63%"));
-		expect(active).not.toContain("weekly 63% · fast");
+		expect(active).toContain("↻ 99.9%");
+		expect(active).toContain("◷ 63%");
+		expect(active).toContain("⚡ Fast");
+		expect(active.indexOf("◉ med")).toBeLessThan(active.indexOf("⚡ Fast"));
+		expect(active.indexOf("⚡ Fast")).toBeLessThan(active.indexOf("▣ pi-stuff"));
+		expect(active.indexOf("↻ 99.9%")).toBeLessThan(active.indexOf("◷ 63%"));
 		expect(active).not.toContain("18k");
 		expect(active).not.toContain("$0.42");
 
 		const rendersBeforeUpdate = harness.requests.length;
 		codexStatus.set({ fastEnabled: false, weeklyRemainingPercent: 62.6 });
 		const inactive = withNerdFontPreference(false, () => component.render(160).join("\n"));
-		expect(inactive).toContain("weekly 63%");
-		expect(inactive).not.toContain("fast");
+		expect(inactive).toContain("◷ 63%");
+		expect(inactive).not.toContain("⚡ Fast");
 		expect(harness.requests.length).toBeGreaterThan(rendersBeforeUpdate);
 	});
 
@@ -318,7 +317,7 @@ describe("StatuslineController", () => {
 			footerData("main"),
 		);
 
-		expect(withNerdFontPreference(false, () => component.render(120).join("\n"))).toContain("cache 60%");
+		expect(withNerdFontPreference(false, () => component.render(120).join("\n"))).toContain("↻ 60%");
 	});
 
 	test("hides Codex weekly, Fast, and cost when no observer data exists", () => {
@@ -331,12 +330,12 @@ describe("StatuslineController", () => {
 		);
 
 		const rendered = component.render(160).join("\n");
-		expect(rendered).not.toContain("weekly");
-		expect(rendered).not.toContain("fast");
+		expect(rendered).not.toContain("◷");
+		expect(rendered).not.toContain("Fast");
 		expect(rendered).not.toContain("$");
 	});
 
-	test("preserves the old footer visual grammar with the accepted Pi Stuff deviations", () => {
+	test("renders the accepted icon-led one-row status and aligned prompt row", () => {
 		withNerdFontPreference(false, () => {
 			const enabled = new ValueSource(true);
 			const git = new ValueSource<GitChangeCounts | undefined>({ staged: 12, unstaged: 3, untracked: 1 });
@@ -358,13 +357,13 @@ describe("StatuslineController", () => {
 			);
 
 			expect(component.render(160)).toEqual([
-				" Sonnet 4.5 | think:med | dir pi-stuff | ⎇ main *3 +12 ?1 | ◫ 42.4%/200k | cache 99.9% | $0.42 ",
-				" in: Implement the accepted Pi Stuff statusline. ",
+				"◆ anthropic/sonnet-4.5 · ◉ med · ▣ pi-stuff · ⎇ main · Δ +12 ~3 ?1 · ◔ 42.4% · ↻ 99.9% · ¤ $0.42",
+				"• Implement the accepted Pi Stuff statusline.",
 			]);
 		});
 	});
 
-	test("uses the old Nerd Font icon grammar without changing the layout", () => {
+	test("uses the accepted compact Nerd Font icon family", () => {
 		withNerdFontPreference(true, () => {
 			const git = new ValueSource<GitChangeCounts | undefined>({ staged: 12, unstaged: 3, untracked: 1 });
 			const controller = new StatuslineController(api(), { enabled: new ValueSource(true), gitChanges: git });
@@ -383,9 +382,35 @@ describe("StatuslineController", () => {
 			);
 
 			expect(component.render(160)).toEqual([
-				"  Sonnet 4.5 | think:med |  pi-stuff |  main *3 +12 ?1 |  42.4%/200k |  99.9% | $0.42 ",
-				"  Implement the accepted Pi Stuff statusline. ",
+				"󰚩 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main ·  +12 ~3 ?1 · 󰍛 42.4% · 󰆼 99.9% ·  $0.42",
+				" Implement the accepted Pi Stuff statusline.",
 			]);
+		});
+	});
+
+	test("aligns the Nerd prompt marker for Latin and wide CJK first characters", () => {
+		withNerdFontPreference(true, () => {
+			const controller = new StatuslineController(api(), {
+				preferences: preferences({ iconMode: "nerd" }),
+			});
+			const latin = controller.createFooter(
+				context({ branch: messageEntries("Implement the footer.") }),
+				tuiHarness().tui,
+				theme,
+				footerData("main"),
+			);
+			const cjk = controller.createFooter(
+				context({ branch: messageEntries("中文状态栏需要视觉对齐。") }),
+				tuiHarness().tui,
+				theme,
+				footerData("main"),
+			);
+
+			expect(latin.render(120)[0]).toStartWith("󰚩 ");
+			expect(latin.render(120)[1]).toStartWith(" Implement");
+			expect(cjk.render(120)[1]).toStartWith("中文");
+			expect(visibleWidth(" ")).toBe(2);
+			expect(visibleWidth("中")).toBe(3);
 		});
 	});
 
@@ -402,17 +427,17 @@ describe("StatuslineController", () => {
 			);
 
 			const compact = component.render(160).join("\n");
-			expect(compact).toContain(" sonnet-4.5");
+			expect(compact).toContain("󰚩 sonnet-4.5");
 			expect(compact).not.toContain("Implement the accepted");
-			expect(compact).not.toContain("cache");
+			expect(compact).not.toContain("󰆼");
 			expect(compact).not.toContain("$0.42");
 			expect(compact).not.toContain("goal:UI");
 
 			preferenceSource.set({ density: "full", enabled: true, iconMode: "ascii", latestPrompt: true });
 			const full = component.render(160).join("\n");
-			expect(full).toContain("dir pi-stuff");
-			expect(full).toContain("in: Implement the accepted Pi Stuff statusline.");
-			expect(full).toContain("cache 99.9%");
+			expect(full).toContain("▣ pi-stuff");
+			expect(full).toContain("• Implement the accepted Pi Stuff statusline.");
+			expect(full).toContain("↻ 99.9%");
 			expect(full).not.toContain("goal:UI");
 			expect(harness.requests.length).toBeGreaterThan(0);
 		});
@@ -432,11 +457,11 @@ describe("StatuslineController", () => {
 			const component = controller.createFooter(context({}), tuiHarness().tui, theme, footerData("main"));
 			const rendered = component.render(160).join("\n");
 
-			expect(rendered).toContain("⎇ main !conflict:2 +1 ⇡2 ⇣1");
+			expect(rendered).toContain("⎇ main ⇡2 ⇣1 · Δ !2 +1");
 		});
 	});
 
-	test("maps the old semantic roles onto Pi theme tokens", () => {
+	test("maps the accepted icon grammar onto Pi semantic theme tokens", () => {
 		withNerdFontPreference(false, () => {
 			const colored = new Map<string, string[]>();
 			const recordingTheme = {
@@ -458,21 +483,20 @@ describe("StatuslineController", () => {
 			);
 
 			component.render(160);
-			expect(colored.get("customMessageLabel")).toContain("Sonnet 4.5");
-			expect(colored.get("thinkingMedium")).toContain("think:med");
-			expect(colored.get("accent")).toContain("dir pi-stuff");
-			expect(colored.get("warning")).toEqual(expect.arrayContaining(["⎇ main", "*3"]));
+			expect(colored.get("accent")).toEqual(expect.arrayContaining(["◆ anthropic/sonnet-4.5", "▣"]));
+			expect(colored.get("thinkingMedium")).toContain("◉");
+			expect(colored.get("warning")).toEqual(expect.arrayContaining(["⎇", "~3", "¤"]));
 			expect(colored.get("success")).toContain("+12");
-			expect(colored.get("dim")).toEqual(expect.arrayContaining(["◫ 42.4%/200k", "|"]));
-			expect(colored.get("muted")).toEqual(expect.arrayContaining(["?1", "cache 99.9%"]));
-			expect([...colored.values()].flat()).not.toContain("goal:UI");
-			expect(colored.get("text")).toEqual(
-				expect.arrayContaining(["$0.42", "Implement the accepted Pi Stuff statusline."]),
+			expect(colored.get("dim")).toEqual(
+				expect.arrayContaining(["◔", " · ", "Implement the accepted Pi Stuff statusline."]),
 			);
+			expect(colored.get("muted")).toEqual(expect.arrayContaining(["med", "Δ", "?1", "↻"]));
+			expect([...colored.values()].flat()).not.toContain("goal:UI");
+			expect(colored.get("text")).toEqual(expect.arrayContaining(["pi-stuff", "main", "42.4%", "99.9%", "$0.42"]));
 		});
 	});
 
-	test("flows complete segments at narrow widths instead of truncating the status row", () => {
+	test("drops complete low-priority segments instead of wrapping or fusing them", () => {
 		withNerdFontPreference(false, () => {
 			const git = new ValueSource<GitChangeCounts | undefined>({ staged: 12, unstaged: 3, untracked: 1 });
 			const controller = new StatuslineController(api(), { enabled: new ValueSource(true), gitChanges: git });
@@ -493,9 +517,11 @@ describe("StatuslineController", () => {
 			const lines = component.render(64);
 			const rendered = lines.join("\n");
 			expect(rendered).toContain("sonnet-4.5");
-			expect(rendered).toMatch(/◫ 42(?:\.4)?%/u);
-			expect(rendered).toContain("⎇ main *3 +12 ?1");
+			expect(rendered).toMatch(/◔ 42(?:\.4)?%/u);
+			expect(rendered).toContain("⎇ main");
+			expect(rendered).not.toMatch(/Δ\s*(?:\+|~|\?)[^\n]*…/u);
 			expect(rendered).not.toContain("AC");
+			expect(lines).toHaveLength(2);
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(64);
 		});
 	});
@@ -514,9 +540,9 @@ describe("StatuslineController", () => {
 				footerData("main"),
 			);
 			const rendered = component.render(160).join("\n");
-			expect(rendered).not.toContain("think:");
-			expect(rendered).toContain("◫ ?/200k");
-			expect(rendered).not.toContain("cache");
+			expect(rendered).not.toContain("◉");
+			expect(rendered).toContain("◔ ?");
+			expect(rendered).not.toContain("↻");
 			expect(rendered).not.toContain("$");
 		});
 	});
@@ -544,14 +570,16 @@ describe("StatuslineController", () => {
 				const rendered = lines.join("\n");
 				expect(rendered).toContain("sonnet");
 				expect(rendered).toMatch(/42(?:\.4)?%/u);
+				expect(lines).toHaveLength(2);
+				expect(lines[1]?.startsWith("•")).toBe(true);
 				for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 			}
 			expect(component.render(48).join("\n")).toContain("Implement the accepted");
-			expect(component.render(32).join("\n")).not.toContain("Implement the accepted");
+			expect(component.render(32).join("\n")).toContain("Implement the");
 		});
 	});
 
-	test("preserves every critical Git marker beside long model and branch names", () => {
+	test("keeps full Git detail wide and removes lower-priority Git fields atomically when narrow", () => {
 		withNerdFontPreference(false, () => {
 			const git = new ValueSource<GitChangeCounts | undefined>({
 				ahead: 2,
@@ -565,6 +593,7 @@ describe("StatuslineController", () => {
 			const component = controller.createFooter(
 				context({
 					branch: messageEntries("Long identity probe", 0, 0),
+					modelId: "ultra-long-provider-model-family-2026",
 					modelName: "ultra-long-provider-model-family-2026",
 					reasoning: false,
 				}),
@@ -573,21 +602,21 @@ describe("StatuslineController", () => {
 				footerData("feature/a-very-long-branch-name"),
 			);
 
+			const wide = component.render(400).join("\n");
+			for (const marker of ["!2", "+12", "~3", "?1", "⇡2", "⇣1"]) expect(wide).toContain(marker);
+
 			for (const width of [64, 48, 32, 24]) {
 				const lines = component.render(width);
 				const rendered = lines.join("\n");
 				expect(rendered).toContain("ultra");
 				expect(rendered).toMatch(/42(?:\.4)?%/u);
-				expect(rendered).toMatch(/!conflict:2|!2/u);
-				expect(rendered).toMatch(/\+12|Δ16/u);
-				expect(rendered).toContain("⇡2");
-				expect(rendered).toContain("⇣1");
+				expect(rendered).not.toMatch(/(?:!|\+|~|\?)…/u);
 				for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 			}
 		});
 	});
 
-	test("uses the semantic Git projection when Context is hidden and Git is the final full segment", () => {
+	test("keeps the semantic Git projection coherent when Context is intentionally hidden", () => {
 		withNerdFontPreference(false, () => {
 			const git = new ValueSource<GitChangeCounts | undefined>({
 				ahead: 2,
@@ -601,6 +630,7 @@ describe("StatuslineController", () => {
 			const component = controller.createFooter(
 				context({
 					branch: messageEntries("Semantic Git projection", 0, 0),
+					modelId: "ultra-long-provider-model-family-2026",
 					modelName: "ultra-long-provider-model-family-2026",
 					reasoning: false,
 				}),
@@ -612,19 +642,21 @@ describe("StatuslineController", () => {
 				),
 			);
 
+			const wide = component.render(600).join("\n");
+			for (const marker of ["!2", "+12", "~3", "?1", "⇡2", "⇣1"]) expect(wide).toContain(marker);
+			expect(wide).not.toContain("42.4%");
+
 			for (const width of [100, 64, 48, 32, 24]) {
 				const lines = component.render(width);
 				const rendered = lines.join("\n");
-				expect(rendered).toContain("!2");
-				expect(rendered).toContain("Δ16");
-				expect(rendered).toContain("⇡2");
-				expect(rendered).toContain("⇣1");
+				expect(rendered).toContain("ultra");
+				expect(rendered).not.toContain("42.4%");
 				for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 			}
 		});
 	});
 
-	test("falls back to the model Context window when usage reports an invalid window", () => {
+	test("keeps Context percentage without exposing token-window counts", () => {
 		withNerdFontPreference(false, () => {
 			for (const contextWindow of [0, Number.NaN]) {
 				const controller = new StatuslineController(api(), { enabled: new ValueSource(true) });
@@ -634,12 +666,14 @@ describe("StatuslineController", () => {
 					theme,
 					footerData("main"),
 				);
-				expect(component.render(100).join("\n")).toContain("◫ 42.4%/200k");
+				const rendered = component.render(100).join("\n");
+				expect(rendered).toContain("◔ 42.4%");
+				expect(rendered).not.toContain("200k");
 			}
 		});
 	});
 
-	test("renders the accepted ordered live fields and at most two prompt rows", () => {
+	test("renders one ordered status row and exactly one bounded prompt row", () => {
 		const enabled = new ValueSource(true);
 		const git = new ValueSource<GitChangeCounts | undefined>({ staged: 12, unstaged: 3, untracked: 1 });
 		const controller = new StatuslineController(api(), { enabled, gitChanges: git });
@@ -661,8 +695,8 @@ describe("StatuslineController", () => {
 
 		const lines = withNerdFontPreference(false, () => component.render(120));
 		expect(lines).toEqual([
-			" sonnet-4.5 | think:med | dir pi-stuff | ⎇ main *3 +12 ?1 | ◫ 42.4%/200k | cache 99.9% | $0.42 ",
-			" in: Implement the accepted Pi Stuff statusline. ",
+			"◆ anthropic/sonnet-4.5 · ◉ med · ▣ pi-stuff · ⎇ main · Δ +12 ~3 ?1 · ◔ 42.4% · ↻ 99.9% · ¤ $0.42",
+			"• Implement the accepted Pi Stuff statusline.",
 		]);
 		expect(lines.join("\n")).not.toMatch(/agents:3|goal:UI|mcp:2|load:full/u);
 
@@ -674,7 +708,7 @@ describe("StatuslineController", () => {
 			footerData("main"),
 		);
 		const narrow = withNerdFontPreference(false, () => longComponent.render(64));
-		expect(narrow).toHaveLength(3);
+		expect(narrow).toHaveLength(2);
 		for (const line of narrow) expect(visibleWidth(line)).toBeLessThanOrEqual(64);
 	});
 
@@ -1147,7 +1181,7 @@ describe("GitStatusSource", () => {
 		});
 		const component = controller.createFooter(context({}), tuiHarness().tui, theme, data);
 
-		expect(withNerdFontPreference(false, () => component.render(120).join("\n"))).toContain("old-branch *1");
+		expect(withNerdFontPreference(false, () => component.render(120).join("\n"))).toContain("⎇ old-branch · Δ ~1");
 		branch = "new-branch";
 		notifyBranchChange?.();
 		const changed = withNerdFontPreference(false, () => component.render(120).join("\n"));
@@ -1158,6 +1192,6 @@ describe("GitStatusSource", () => {
 		await source.refresh(fakeApi, cwd);
 		notifyBranchChange?.();
 		const settled = withNerdFontPreference(false, () => component.render(120).join("\n"));
-		expect(settled).toContain("new-branch *2");
+		expect(settled).toContain("⎇ new-branch · Δ ~2");
 	});
 });

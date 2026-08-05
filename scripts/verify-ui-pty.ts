@@ -34,8 +34,10 @@ const UI_LABELS = [
 	"Inline slash autocomplete",
 	"Tool running timer",
 ] as const;
-const STATUS_MARKER = "think:med";
-const LONG_PROMPT_PREFIX = "LONG_CJK_PROMPT_开始";
+const NERD_MODEL_MARKER = "\u{F06A9}";
+const ASCII_MODEL_MARKER = "◆";
+const NERD_THINKING_MARKER = "\uF441 med";
+const LONG_PROMPT_PREFIX = "中文_LONG_CJK_PROMPT_开始";
 const LONG_PROMPT_TOKEN = "长提示";
 const LONG_PROMPT_SUFFIX = "LONG_CJK_PROMPT_结尾";
 const LONG_PROMPT = `${LONG_PROMPT_PREFIX} ${Array.from(
@@ -131,6 +133,7 @@ class TmuxPiSession {
 			MAGIC_CONTEXT_PI_SUBAGENT: "1",
 			PI_CODING_AGENT_DIR: paths.config,
 			PI_OFFLINE: "1",
+			POWERLINE_NERD_FONTS: "1",
 			PI_STUFF_UI_PTY_BIN: options.piBinary,
 			PI_STUFF_UI_PTY_COLUMNS: String(columns),
 			PI_STUFF_UI_PTY_LOG: paths.log,
@@ -227,6 +230,14 @@ class TmuxPiSession {
 
 	async waitForAbsence(text: string): Promise<string> {
 		return this.waitFor((screen) => !screen.includes(text), `absence of ${JSON.stringify(text)}`);
+	}
+
+	async waitForStatusline(): Promise<string> {
+		return this.waitFor(hasStatusline, "the shared Statusline Footer");
+	}
+
+	async waitForStatuslineAbsence(): Promise<string> {
+		return this.waitFor((screen) => !hasStatusline(screen), "absence of the shared Statusline Footer");
 	}
 
 	async waitForDivider(columns: number): Promise<string> {
@@ -364,13 +375,28 @@ function verifyNoFloatingFrame(screen: string, label: string): void {
 	}
 }
 
-function verifyWelcomeCard(screen: string, columns: number): void {
+function verifyWelcomeCard(screen: string, columns: number, rows: number): void {
 	for (const corner of ["╭", "╮", "╰", "╯"]) {
 		if (!screen.includes(corner)) fail(`${String(columns)}-column Welcome card is missing ${corner}`);
 	}
 	const title = screen.split("\n").find((line) => line.includes("Pi Stuff"));
 	if (!title || visibleWidth(title) !== columns) {
 		fail(`${String(columns)}-column Welcome title row is not full-width\n${screen}`);
+	}
+	const lines = screen.split("\n");
+	const compact = columns < 48 || rows <= 18;
+	const finalLogoRow = lines.findIndex((line) => line.includes(compact ? "█▀ █" : "██    ██"));
+	if (finalLogoRow < 0) {
+		fail(
+			`${String(columns)}x${String(rows)} Welcome is missing the official ${compact ? "4×2" : "8×4"} Pi mark\n${screen}`,
+		);
+	}
+	const blankAfterLogo = lines[finalLogoRow + 1];
+	if (blankAfterLogo?.replace(/[│ ]/gu, "") !== "") {
+		fail(`${String(columns)}x${String(rows)} Welcome has no full blank row below the Pi mark\n${screen}`);
+	}
+	if (compact && screen.includes("██████")) {
+		fail(`${String(columns)}x${String(rows)} Welcome cropped the full Pi mark instead of selecting the compact mark`);
 	}
 }
 
@@ -392,7 +418,7 @@ function sanitizePtyEvidence(value: string): string {
 		.trimEnd();
 }
 
-function verifyFreshScreen(screen: string, columns: number): void {
+function verifyFreshScreen(screen: string, columns: number, rows: number): void {
 	const modelMarker = columns < 32 ? "ui-pt" : "ui-pty-model";
 	const requiredFields = ["Welcome back!", modelMarker, ...(columns >= 48 ? ["med"] : [])];
 	for (const required of requiredFields) {
@@ -406,7 +432,7 @@ function verifyFreshScreen(screen: string, columns: number): void {
 	if (!editorDivider || visibleWidth(editorDivider) !== columns) {
 		fail(`${String(columns)}-column editor did not render a full-width divider`);
 	}
-	verifyWelcomeCard(screen, columns);
+	verifyWelcomeCard(screen, columns, rows);
 
 	if (columns >= 70) {
 		for (const required of [
@@ -416,7 +442,6 @@ function verifyFreshScreen(screen: string, columns: number): void {
 			"extensions",
 			"tools",
 			"skills",
-			STATUS_MARKER,
 		]) {
 			if (!screen.includes(required)) fail(`wide Welcome/Statusline is missing ${required}`);
 		}
@@ -425,8 +450,15 @@ function verifyFreshScreen(screen: string, columns: number): void {
 			if (screen.includes(forbidden)) fail(`single-column Welcome retained wide-only ${forbidden}`);
 		}
 	}
-	const statusline = rowsBelowEditorDivider(screen).join("\n");
-	for (const required of ["ui-pt", "main", "%"]) {
+	const statusline = statuslineRow(screen);
+	if (!statusline) fail(`${String(columns)}-column screen has no icon-led Statusline below the editor\n${screen}`);
+	if (!statusline.startsWith(`${NERD_MODEL_MARKER} `)) {
+		fail(`${String(columns)}-column Statusline did not use the deterministic Nerd model icon\n${screen}`);
+	}
+	if (columns >= 48 && !statusline.includes(NERD_THINKING_MARKER)) {
+		fail(`${String(columns)}-column Statusline dropped or mis-rendered the Thinking segment\n${screen}`);
+	}
+	for (const required of ["ui-pt", "%", ...(columns >= 48 ? ["main"] : [])]) {
 		if (!statusline.includes(required)) {
 			fail(`${String(columns)}-column Statusline dropped priority field ${required}\n${screen}`);
 		}
@@ -441,6 +473,16 @@ function rowsBelowEditorDivider(screen: string): readonly string[] {
 		if (line.length > 0 && [...line].every((character) => character === "─")) dividerIndex = index;
 	}
 	return dividerIndex < 0 ? [] : lines.slice(dividerIndex + 1);
+}
+
+function statuslineRow(screen: string): string | undefined {
+	return rowsBelowEditorDivider(screen).find(
+		(line) => line.startsWith(`${NERD_MODEL_MARKER} `) || line.startsWith(`${ASCII_MODEL_MARKER} `),
+	);
+}
+
+function hasStatusline(screen: string): boolean {
+	return statuslineRow(screen) !== undefined;
 }
 
 async function openUi(session: TmuxPiSession): Promise<string> {
@@ -586,11 +628,9 @@ async function verifyThoughtLifecycle(
 	const promptRows = rowsBelowEditorDivider(screen).filter((line) =>
 		line.includes(`THOUGHT_PROBE_${String(columns)}`),
 	);
-	const maximumPromptRows = columns < 48 ? 0 : 1;
-	const requiresPrompt = columns >= 64;
-	if (promptRows.length > maximumPromptRows || (requiresPrompt && promptRows.length !== 1)) {
+	if (promptRows.length !== 1) {
 		fail(
-			`${String(columns)}-column latest prompt occupied ${String(promptRows.length)} rows, expected ${requiresPrompt ? "one" : `at most ${String(maximumPromptRows)}`}\n${screen}`,
+			`${String(columns)}-column latest prompt occupied ${String(promptRows.length)} rows instead of exactly one\n${screen}`,
 		);
 	}
 	verifyTerminalWidth(screen, columns, `settled ${String(columns)}-column Thought`);
@@ -620,8 +660,8 @@ async function verifyLiveResize(session: TmuxPiSession): Promise<void> {
 	]) {
 		session.resize(columns, rows);
 		await session.waitForDivider(columns);
-		const screen = await session.waitForText("main");
-		verifyFreshScreen(screen, columns);
+		const screen = await session.waitForStatusline();
+		verifyFreshScreen(screen, columns, rows);
 	}
 }
 
@@ -643,7 +683,7 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	let screen = await session.waitForText("gpt-image-2");
 	await session.waitForText("Codex usage is unavailable in offline mode.");
 	verifySettingValue(screen, "Fast mode", "off");
-	if (screen.includes(STATUS_MARKER)) fail("Statusline remained visible while /codex owned the input region");
+	if (hasStatusline(screen)) fail("Statusline remained visible while /codex owned the input region");
 	verifyNoFloatingFrame(screen, "/codex Command Dialog");
 	verifyFullWidthDivider(screen, 100, "/codex Command Dialog");
 	verifyTerminalWidth(screen, 100, "/codex Command Dialog");
@@ -656,7 +696,7 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	session.resize(100, 32);
 	await session.waitForText("gpt-image-2");
 	session.sendKey("Escape");
-	await session.waitForText(STATUS_MARKER);
+	await session.waitForStatusline();
 
 	session.sendKey("C-u");
 	session.sendLiteral("/codex fast");
@@ -674,7 +714,7 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	screen = await session.waitForText("off");
 	verifySettingValue(screen, "Fast mode", "off");
 	session.sendKey("Escape");
-	await session.waitForText(STATUS_MARKER);
+	await session.waitForStatusline();
 }
 
 async function verifyTodoOverlay(
@@ -727,7 +767,7 @@ async function verifyWideInteractions(
 	await session.waitForText("Tool running timer");
 	session.sendLiteral("welcome");
 	screen = await session.waitForText("→ Welcome header");
-	if (screen.includes(STATUS_MARKER)) fail("Statusline remained visible while /ui owned the input region");
+	if (hasStatusline(screen)) fail("Statusline remained visible while /ui owned the input region");
 	if (screen.includes("/tool-settings")) fail("removed /tool-settings appeared in /ui");
 	verifyNoFloatingFrame(screen, "/ui Command Dialog");
 	verifySettingValue(screen, "Welcome header", true);
@@ -736,7 +776,7 @@ async function verifyWideInteractions(
 	screen = await session.waitForText("false");
 	verifySettingValue(screen, "Welcome header", false);
 	session.sendKey("Escape");
-	await session.waitForText(STATUS_MARKER);
+	await session.waitForStatusline();
 	await session.waitForText("Welcome back!");
 
 	session.sendLiteral("DRAFT_草稿");
@@ -744,26 +784,26 @@ async function verifyWideInteractions(
 	session.sendKey("F12");
 	screen = await session.waitForText("DRAFT_SURFACE 中文");
 	if (screen.includes("DRAFT_草稿")) fail("Command Dialog did not temporarily remove the saved editor draft");
-	if (screen.includes(STATUS_MARKER)) fail("Statusline remained visible in a fixture Command Dialog");
+	if (hasStatusline(screen)) fail("Statusline remained visible in a fixture Command Dialog");
 	session.sendKey("Escape");
 	await session.waitForText("DRAFT_草稿");
-	await session.waitForText(STATUS_MARKER);
+	await session.waitForStatusline();
 
 	session.sendKey("C-u");
 	session.sendLiteral("/u");
 	screen = await session.waitForText("Configure Pi Stuff UI");
-	if (screen.includes(STATUS_MARKER)) fail("Statusline remained visible while native autocomplete was open");
+	if (hasStatusline(screen)) fail("Statusline remained visible while native autocomplete was open");
 	session.sendKey("Escape");
-	await session.waitForText(STATUS_MARKER);
+	await session.waitForStatusline();
 	if (!session.capture().includes("/u")) fail("native autocomplete Escape did not preserve the editor draft");
 
 	session.sendKey("C-u");
 	session.sendLiteral("prefix /u");
 	screen = await session.waitForText("Configure Pi Stuff UI");
-	if (screen.includes(STATUS_MARKER)) fail("Statusline remained visible while inline slash autocomplete was open");
+	if (hasStatusline(screen)) fail("Statusline remained visible while inline slash autocomplete was open");
 	session.sendKey("Escape");
 	await session.waitForText("prefix /u");
-	await session.waitForText(STATUS_MARKER);
+	await session.waitForStatusline();
 	session.sendKey("C-u");
 
 	session.sendLiteral(LONG_PROMPT);
@@ -774,7 +814,7 @@ async function verifyWideInteractions(
 	await session.waitForText("UI_PTY_DONE 中文结果🧪");
 	await session.waitForText("22%");
 	await session.waitForText("$0.42");
-	await session.waitForText("main *1 ?1");
+	await session.waitForText("~1 ?1");
 	screen = await session.waitForAbsence("Welcome back!");
 	for (const capabilityStatus of ["goal:UI", "mcp:2", "load:full"]) {
 		if (screen.includes(capabilityStatus)) {
@@ -782,12 +822,35 @@ async function verifyWideInteractions(
 		}
 	}
 	const promptLines = rowsBelowEditorDivider(screen).filter((line) => line.includes(LONG_PROMPT_TOKEN));
-	if (promptLines.length < 1 || promptLines.length > 2) {
-		fail(`long prompt occupied ${String(promptLines.length)} Statusline rows instead of one or two\n${screen}`);
+	if (promptLines.length !== 1) {
+		fail(`long prompt occupied ${String(promptLines.length)} Statusline rows instead of exactly one\n${screen}`);
 	}
-	if (!screen.includes(LONG_PROMPT_PREFIX) || screen.includes(LONG_PROMPT_SUFFIX)) {
-		fail("long prompt did not retain its beginning and truncate its bounded tail");
+	if (!promptLines[0]?.startsWith("\uF111中文")) {
+		fail(`wide-character Prompt did not remove the marker gap while keeping the shared first-column icon\n${screen}`);
 	}
+	if (!promptLines[0].includes(LONG_PROMPT_PREFIX) || promptLines[0].includes(LONG_PROMPT_SUFFIX)) {
+		fail(`long prompt did not retain its beginning and truncate its bounded tail\n${screen}`);
+	}
+	const status = statuslineRow(screen);
+	if (!status) fail(`settled long-prompt screen lost the shared Statusline\n${screen}`);
+	const orderedMarkers = [
+		NERD_MODEL_MARKER,
+		"\uF441",
+		"\u{F024B}",
+		"\uF418",
+		"\uF459",
+		"\u{F035B}",
+		"\u{F01BC}",
+		"\uF0E7",
+	];
+	let priorMarker = -1;
+	for (const marker of orderedMarkers) {
+		const markerIndex = status.indexOf(marker);
+		if (markerIndex < 0) fail(`wide Statusline is missing accepted segment icon ${marker}\n${screen}`);
+		if (markerIndex <= priorMarker) fail(`wide Statusline segment order is incorrect\n${screen}`);
+		priorMarker = markerIndex;
+	}
+	if (status.includes("Fast")) fail("disabled Fast mode left a Statusline segment or gap");
 	const history = await session.waitForText(finalThought, true);
 	if (history.includes("OWNED_TITLE")) fail("Thought rendering exposed a model-provided terminal control payload");
 	verifyTerminalWidth(screen, 100, "settled Thought and long-prompt screen");
@@ -823,7 +886,7 @@ async function verifyWideInteractions(
 	screen = await session.waitForText("full");
 	verifySettingValue(screen, "Statusline density", "full");
 	session.sendKey("Escape");
-	await session.waitForText(STATUS_MARKER);
+	await session.waitForStatusline();
 
 	screen = await openFilteredUi(session, "latest prompt", "Latest prompt");
 	verifySettingValue(screen, "Latest prompt", true);
@@ -832,7 +895,7 @@ async function verifyWideInteractions(
 	screen = await session.waitForText("false");
 	verifySettingValue(screen, "Latest prompt", false);
 	session.sendKey("Escape");
-	await session.waitForText(STATUS_MARKER);
+	await session.waitForStatusline();
 
 	screen = await openFilteredUi(session, "icons", "Statusline icons");
 	verifySettingValue(screen, "Statusline icons", "auto");
@@ -843,7 +906,10 @@ async function verifyWideInteractions(
 	screen = await session.waitForText("ascii");
 	verifySettingValue(screen, "Statusline icons", "ascii");
 	session.sendKey("Escape");
-	await session.waitForText(STATUS_MARKER);
+	screen = await session.waitForStatusline();
+	if (!statuslineRow(screen)?.startsWith(`${ASCII_MODEL_MARKER} `)) {
+		fail(`Statusline icon preference did not switch the real Footer to ASCII\n${screen}`);
+	}
 
 	screen = await openFilteredUi(session, "inline slash", "Inline slash autocomplete");
 	verifySettingValue(screen, "Inline slash autocomplete", true);
@@ -853,13 +919,13 @@ async function verifyWideInteractions(
 	verifySettingValue(screen, "Inline slash autocomplete", false);
 	session.sendKey("Escape");
 	await session.waitForAbsence("Type to search");
-	await session.waitForText(STATUS_MARKER);
+	await session.waitForStatusline();
 	session.sendKey("C-u");
 	session.sendLiteral("prefix /u");
 	await delay(500);
 	screen = session.capture();
 	if (screen.includes("Configure Pi Stuff UI")) fail("disabled inline autocomplete still opened suggestions");
-	if (!screen.includes("prefix /u") || !screen.includes(STATUS_MARKER)) {
+	if (!screen.includes("prefix /u") || !hasStatusline(screen)) {
 		fail("disabled inline autocomplete did not preserve the editor and Statusline");
 	}
 
@@ -870,11 +936,11 @@ async function verifyWideInteractions(
 	screen = await session.waitForText("false");
 	verifySettingValue(screen, "Tool running timer", false);
 	session.sendKey("Escape");
-	await session.waitForText(STATUS_MARKER);
+	await session.waitForStatusline();
 
 	screen = await openUi(session);
 	verifySettingValue(screen, "Statusline", true);
-	if (screen.includes(STATUS_MARKER)) fail("Statusline reappeared behind /ui after a completed model turn");
+	if (hasStatusline(screen)) fail("Statusline reappeared behind /ui after a completed model turn");
 	session.sendKey("Enter");
 	await waitForPersistedSetting(settingsPath, "statusline", false);
 	screen = await session.waitForText("false");
@@ -883,7 +949,7 @@ async function verifyWideInteractions(
 	await session.waitForAbsence("Type to search");
 	session.sendLiteral("STATUSLINE_OFF_草稿");
 	await session.waitForText("STATUSLINE_OFF_草稿");
-	if (session.capture().includes(STATUS_MARKER)) fail("disabled Statusline returned after /ui closed");
+	if (hasStatusline(session.capture())) fail("disabled Statusline returned after /ui closed");
 	session.stop();
 
 	const restarted = new TmuxPiSession(paths, options, 100, 32);
@@ -893,7 +959,7 @@ async function verifyWideInteractions(
 		await delay(150);
 		screen = restarted.capture();
 		if (screen.includes("Welcome back!")) fail("persisted Welcome=false was ignored on the next launch");
-		if (screen.includes(STATUS_MARKER)) fail("persisted Statusline=false was ignored after restart");
+		if (hasStatusline(screen)) fail("persisted Statusline=false was ignored after restart");
 		screen = await openUi(restarted);
 		verifySettingValue(screen, "Statusline", false);
 		verifySettingValue(screen, "Statusline density", "full");
@@ -954,8 +1020,8 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 			try {
 				session.start();
 				await session.waitForText("Welcome back!");
-				const fresh = await session.waitForText(columns >= 48 ? "med" : "main");
-				verifyFreshScreen(fresh, columns);
+				const fresh = await session.waitForStatusline();
+				verifyFreshScreen(fresh, columns, rows);
 				await writePtyEvidence(
 					options.artifactDirectory,
 					`pi-0.83-statusline-parity-fresh-${String(columns)}x${String(rows)}`,

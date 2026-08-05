@@ -78,7 +78,7 @@ describe("WelcomeHeaderController", () => {
 		const component = controller.createHeader(tuiHarness().tui, theme);
 
 		const wide = component.render(100);
-		expect(wide).toHaveLength(11);
+		expect(wide).toHaveLength(12);
 		expect(wide[0]).toContain("╭─── Pi Stuff ");
 		expect(wide[2]).toContain("Welcome back!");
 		expect(wide[1]).toContain("Tips for getting started");
@@ -86,43 +86,46 @@ describe("WelcomeHeaderController", () => {
 		expect(wide[4]).toContain("Loaded");
 		expect(wide[5]).toContain("3 context · 24 extensions");
 		expect(wide[6]).toContain("30 tools · 77 skills");
-		expect(wide[8]).toContain("gpt-5.6-sol · openai-codex");
-		expect(wide[9]).toContain("~/dev/pi-stuff");
-		expect(wide[4]).toContain("▐███████▌");
-		expect(wide[10]).toContain("╰");
+		expect(wide[9]).toContain("gpt-5.6-sol · openai-codex");
+		expect(wide[10]).toContain("~/dev/pi-stuff");
+		expect(wide.slice(4, 8).join("\n")).toContain("██████");
+		expect(wide[8]).toMatch(/^│\s+│\s+│$/u);
+		expect(wide[11]).toContain("╰");
 
 		const narrow = component.render(64);
-		expect(narrow).toHaveLength(13);
+		expect(narrow).toHaveLength(12);
 		expect(narrow[0]).toContain("╭─ Pi Stuff ");
-		expect(narrow[2]).toContain("Welcome back!");
+		expect(narrow[1]).toContain("Welcome back!");
 		expect(narrow[8]).toContain("gpt-5.6-sol");
 		expect(narrow[9]).toContain("openai-codex");
 		expect(narrow[10]).toContain("~/dev/pi-stuff");
-		expect(narrow[4]).toContain("▐███████▌");
+		expect(narrow.slice(3, 7).join("\n")).toContain("██████");
+		expect(narrow[7]).toMatch(/^│\s+│$/u);
 		expect(narrow.join("\n")).not.toMatch(/Loaded|Tips|extensions|tools|skills/iu);
 
 		const minimumNarrow = component.render(48);
-		expect(minimumNarrow).toHaveLength(13);
-		expect(minimumNarrow[2]).toContain("Welcome back!");
+		expect(minimumNarrow).toHaveLength(12);
+		expect(minimumNarrow[1]).toContain("Welcome back!");
 		expect(minimumNarrow[10]).toContain("~/dev/pi-stuff");
 
 		const ultraNarrow = component.render(32);
-		expect(ultraNarrow).toHaveLength(13);
-		expect(ultraNarrow[2]).toContain("Welcome back!");
-		expect(ultraNarrow[8]).toContain("gpt-5.6-sol");
+		expect(ultraNarrow).toHaveLength(10);
+		expect(ultraNarrow[1]).toContain("Welcome back!");
+		expect(ultraNarrow[6]).toContain("gpt-5.6-sol");
+		expect(ultraNarrow.slice(3, 5).join("\n")).toContain("█▀█");
 		expect(ultraNarrow.join("\n")).not.toMatch(/Loaded|Tips|Context files|recent|version/iu);
 		for (const lines of [wide, narrow, minimumNarrow, ultraNarrow]) {
 			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(visibleWidth(lines[0] ?? ""));
 		}
 	});
 
-	test("reduces only blank and provider rows when Pi's editor would push the card off a short screen", () => {
+	test("selects the compact official mark on short terminals without dropping identity", () => {
 		const controller = new WelcomeHeaderController(context(), {
 			enabled: { get: () => true },
 			inventory: new InventorySource(inventory),
 		});
 		const compact = controller.createHeader(tuiHarness(18).tui, theme).render(32);
-		expect(compact).toHaveLength(12);
+		expect(compact).toHaveLength(10);
 		expect(compact[0]).toContain("╭─ Pi Stuff ");
 		expect(compact.join("\n")).toContain("openai-codex");
 		expect(compact.at(-1)).toContain("╰");
@@ -131,7 +134,7 @@ describe("WelcomeHeaderController", () => {
 		expect(tight).toHaveLength(10);
 		expect(tight[0]).toContain("╭─ Pi Stuff ");
 		expect(tight.join("\n")).toContain("gpt-5.6-sol");
-		expect(tight.join("\n")).not.toContain("openai-codex");
+		expect(tight.join("\n")).toContain("openai-codex");
 		expect(tight.at(-1)).toContain("╰");
 	});
 

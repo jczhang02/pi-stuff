@@ -9,42 +9,54 @@ import type {
 	ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
-import { type Component, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const DEFAULT_EXTENSION_STATUS_KEYS: readonly string[] = [];
 const GIT_STATUS_TIMEOUT_MS = 2_000;
 const MAX_DYNAMIC_TEXT_CODE_UNITS = 16 * 1024;
 const MIN_TRUNCATED_PROMPT_WIDTH = 6;
-const STATUSLINE_SEPARATOR = "|";
+const STATUSLINE_SEPARATOR = " · ";
 
 interface StatuslineIcons {
 	readonly branch: string;
 	readonly cache: string;
 	readonly context: string;
+	readonly cost: string;
+	readonly diff: string;
+	readonly fast: string;
 	readonly folder: string;
-	readonly git: string;
-	readonly input: string;
 	readonly model: string;
+	readonly prompt: string;
+	readonly thinking: string;
+	readonly weekly: string;
 }
 
 const ASCII_STATUSLINE_ICONS: StatuslineIcons = {
 	branch: "⎇",
-	cache: "cache",
-	context: "◫",
-	folder: "dir",
-	git: "⎇",
-	input: "in:",
-	model: "",
+	cache: "↻",
+	context: "◔",
+	cost: "¤",
+	diff: "Δ",
+	fast: "⚡",
+	folder: "▣",
+	model: "◆",
+	prompt: "•",
+	thinking: "◉",
+	weekly: "◷",
 };
 
 const NERD_STATUSLINE_ICONS: StatuslineIcons = {
-	branch: "\uF126",
-	cache: "\uF1C0",
-	context: "\uE70F",
-	folder: "\uF115",
-	git: "\uF1D3",
-	input: "\uF090",
-	model: "\uEC19",
+	branch: "\uF418",
+	cache: "\u{F01BC}",
+	context: "\u{F035B}",
+	cost: "\uF0E7",
+	diff: "\uF459",
+	fast: "\uF0E7",
+	folder: "\u{F024B}",
+	model: "\u{F06A9}",
+	prompt: "\uF111",
+	thinking: "\uF441",
+	weekly: "\u{F00ED}",
 };
 
 export interface BooleanValueSource {
@@ -690,7 +702,8 @@ type StatusSegmentId =
 	| "thinking"
 	| "fast"
 	| "cwd"
-	| "git"
+	| "branch"
+	| "diff"
 	| "context"
 	| "cache"
 	| "cost"
@@ -709,11 +722,6 @@ interface SegmentText {
 	readonly full: string;
 }
 
-interface StatusRows {
-	readonly complete: boolean;
-	readonly rows: string[];
-}
-
 function renderStatusline(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
@@ -730,109 +738,111 @@ function renderStatusline(
 	const icons = statuslineIcons(preferences.iconMode);
 	const usage = sessionStatus.usage;
 	const segments: StatusSegment[] = [];
-	const modelName = displayModelName(ctx);
-	const model = theme.fg("customMessageLabel", withIcon(icons.model, modelName));
-	const compactModel = theme.fg("customMessageLabel", withIcon(icons.model, middleTruncate(modelName, 11)));
-	segments.push(statusSegment("model", 0, model, compactModel));
+	const modelName = displayModelIdentity(ctx);
+	const model = theme.fg("accent", withIcon(icons.model, modelName));
+	const compactModel = theme.fg("accent", withIcon(icons.model, displayCompactModelName(ctx)));
+	segments.push(statusSegment("model", 100, model, compactModel));
 	if (ctx.model?.reasoning !== false) {
 		const thinkingLevel = readThinkingLevel(pi, ctx);
-		const thinking = theme.fg(thinkingColor(thinkingLevel), `think:${formatThinking(thinkingLevel)}`);
-		segments.push(statusSegment("thinking", 4, thinking));
+		const thinking = `${theme.fg(thinkingColor(thinkingLevel), icons.thinking)} ${theme.fg(
+			"muted",
+			formatThinking(thinkingLevel),
+		)}`;
+		segments.push(statusSegment("thinking", 65, thinking));
 	}
 	if (ctx.model?.provider === "openai-codex" && codexStatus?.fastEnabled === true) {
-		segments.push(statusSegment("fast", 5, theme.fg("accent", "fast")));
+		segments.push(statusSegment("fast", 55, theme.fg("warning", withIcon(icons.fast, "Fast"))));
 	}
 	const cwd = readCwd(ctx);
-	const cwdSegment = theme.fg("accent", withIcon(icons.folder, basename(cwd) || cwd));
-	segments.push(statusSegment("cwd", 3, cwdSegment));
+	const cwdText = basename(cwd) || cwd;
+	const cwdSegment = `${theme.fg("accent", icons.folder)} ${theme.fg("text", cwdText)}`;
+	segments.push(statusSegment("cwd", 95, cwdSegment));
 
-	const gitSegment = renderGitSegment(theme, icons, branch, gitChanges);
-	if (gitSegment) segments.push(statusSegment("git", 2, gitSegment.full, gitSegment.compact));
+	const gitSegments = renderGitSegments(theme, icons, branch, gitChanges);
+	if (gitSegments.branch) {
+		segments.push(statusSegment("branch", 90, gitSegments.branch.full, gitSegments.branch.compact));
+	}
+	if (gitSegments.diff) segments.push(statusSegment("diff", 50, gitSegments.diff.full, gitSegments.diff.compact));
 
 	const statuses = footerData.getExtensionStatuses();
 	const contextSegment = renderContextSegment(ctx, theme, icons, statuses);
-	if (contextSegment) segments.push(statusSegment("context", 1, contextSegment.full, contextSegment.compact));
+	if (contextSegment) segments.push(statusSegment("context", 96, contextSegment.full, contextSegment.compact));
 	const cacheHitRate = formatCacheHitRate(usage);
 	if (cacheHitRate) {
-		const cache = theme.fg("muted", [icons.cache, cacheHitRate].filter(Boolean).join(" "));
-		segments.push(statusSegment("cache", 7, cache));
+		const cache = `${theme.fg("muted", icons.cache)} ${theme.fg("text", cacheHitRate)}`;
+		segments.push(statusSegment("cache", 45, cache));
 	}
 	if (ctx.model?.provider === "openai-codex") {
 		const weekly = formatCodexWeekly(codexStatus);
-		if (weekly) segments.push(statusSegment("codex", 6, theme.fg("text", weekly)));
+		if (weekly) {
+			const value = `${theme.fg("warning", icons.weekly)} ${theme.fg("text", weekly)}`;
+			segments.push(statusSegment("codex", 80, value));
+		}
 	} else if (usage.cost > 0 && shouldShowCost(ctx)) {
-		segments.push(statusSegment("cost", 6, theme.fg("text", `$${usage.cost.toFixed(2)}`)));
+		const cost = `${theme.fg("warning", icons.cost)} ${theme.fg("text", `$${usage.cost.toFixed(2)}`)}`;
+		segments.push(statusSegment("cost", 80, cost));
 	}
 
 	const extensionStatusSegment = renderExtensionStatusSegment(theme, statuses, extensionStatusKeys);
-	if (extensionStatusSegment) segments.push(statusSegment("extension", 8, extensionStatusSegment));
+	if (extensionStatusSegment) segments.push(statusSegment("extension", 35, extensionStatusSegment));
 
-	const status = renderStatusRows(segments, width, theme, preferences.density);
-	const promptRows =
-		preferences.latestPrompt && status.complete
-			? renderPromptRows(sessionStatus.latestPrompt, width, theme, icons, promptRowLimit(width, preferences.density))
-			: [];
-	if (status.rows.length < 2) return [...status.rows, ...promptRows];
-	return [status.rows[0] ?? "", ...promptRows, status.rows[1] ?? ""].filter(Boolean);
+	const status = renderStatusRow(segments, width, theme, preferences.density);
+	const prompt = preferences.latestPrompt
+		? renderPromptRow(sessionStatus.latestPrompt, width, theme, icons)
+		: undefined;
+	return [status, prompt].filter((line): line is string => line !== undefined && line.length > 0);
 }
 
 function statusSegment(id: StatusSegmentId, priority: number, full: string, compact = full): StatusSegment {
 	return { compact, full, id, priority };
 }
 
-function renderGitSegment(
+function renderGitSegments(
 	theme: Theme,
 	icons: StatuslineIcons,
 	branch: string,
 	counts: GitChangeCounts | undefined,
-): SegmentText | undefined {
+): { readonly branch?: SegmentText; readonly diff?: SegmentText } {
 	const ahead = counts?.ahead ?? 0;
 	const behind = counts?.behind ?? 0;
 	const conflicted = counts?.conflicted ?? 0;
 	const dirty = !!counts && (counts.staged > 0 || counts.unstaged > 0 || counts.untracked > 0 || conflicted > 0);
-	const parts: string[] = [];
 	const branchColor: ThemeColor = conflicted > 0 ? "error" : dirty || behind > 0 ? "warning" : "success";
-	if (branch) parts.push(theme.fg(branchColor, withIcon(icons.branch, branch)));
-	if (conflicted > 0) {
-		parts.push(theme.fg("error", conflicted === 1 ? "!conflict" : `!conflict:${String(conflicted)}`));
+	let branchSegment: SegmentText | undefined;
+	if (branch) {
+		const tracking = [
+			ahead > 0 ? theme.fg("success", `⇡${String(ahead)}`) : "",
+			behind > 0 ? theme.fg("warning", `⇣${String(behind)}`) : "",
+		].filter(Boolean);
+		const fullBranch = `${theme.fg(branchColor, icons.branch)} ${theme.fg("text", branch)}`;
+		const compactBranch = `${theme.fg(branchColor, icons.branch)} ${theme.fg("text", middleTruncate(branch, 14))}`;
+		branchSegment = {
+			compact: [compactBranch, ...tracking].join(" "),
+			full: [fullBranch, ...tracking].join(" "),
+		};
 	}
-	if (counts?.unstaged) parts.push(theme.fg("warning", `*${String(counts.unstaged)}`));
-	if (counts?.staged) parts.push(theme.fg("success", `+${String(counts.staged)}`));
-	if (counts?.untracked) parts.push(theme.fg("muted", `?${String(counts.untracked)}`));
-	if (ahead > 0) parts.push(theme.fg("success", `⇡${String(ahead)}`));
-	if (behind > 0) parts.push(theme.fg("warning", `⇣${String(behind)}`));
-	if (parts.length === 0) return undefined;
-	const full = branch || !icons.git ? parts.join(" ") : `${theme.fg("warning", icons.git)} ${parts.join(" ")}`;
+
+	const fullState: string[] = [];
+	if (conflicted > 0) fullState.push(theme.fg("error", `!${String(conflicted)}`));
+	if (counts?.staged) fullState.push(theme.fg("success", `+${String(counts.staged)}`));
+	if (counts?.unstaged) fullState.push(theme.fg("warning", `~${String(counts.unstaged)}`));
+	if (counts?.untracked) fullState.push(theme.fg("muted", `?${String(counts.untracked)}`));
 	const compactState: string[] = [];
 	if (conflicted > 0) compactState.push(theme.fg("error", `!${compactCount(conflicted)}`));
 	const changed = (counts?.staged ?? 0) + (counts?.unstaged ?? 0) + (counts?.untracked ?? 0);
 	if (changed > 0) compactState.push(theme.fg("warning", `Δ${compactCount(changed)}`));
-	if (ahead > 0) compactState.push(theme.fg("success", `⇡${compactCount(ahead)}`));
-	if (behind > 0) compactState.push(theme.fg("warning", `⇣${compactCount(behind)}`));
-	const compact = compactState.length > 0 ? renderCompactGit(theme, icons, branch, branchColor, compactState) : full;
-	return { compact, full };
+	const diffSegment =
+		fullState.length > 0
+			? {
+					compact: `${theme.fg("muted", icons.diff)} ${compactState.join(" ")}`,
+					full: `${theme.fg("muted", icons.diff)} ${fullState.join(" ")}`,
+				}
+			: undefined;
+	return { ...(branchSegment ? { branch: branchSegment } : {}), ...(diffSegment ? { diff: diffSegment } : {}) };
 }
 
 function compactCount(value: number): string {
 	return value > 99 ? "99+" : String(value);
-}
-
-function renderCompactGit(
-	theme: Theme,
-	icons: StatuslineIcons,
-	branch: string,
-	branchColor: ThemeColor,
-	state: readonly string[],
-): string {
-	const maximumWidth = 21;
-	const stateWidth = state.reduce((total, marker) => total + visibleWidth(marker), Math.max(0, state.length - 1));
-	const branchBudget = maximumWidth - stateWidth - 1;
-	const iconWidth = icons.branch ? visibleWidth(icons.branch) + 1 : 0;
-	if (branch && branchBudget - iconWidth >= 3) {
-		const compactBranch = withIcon(icons.branch, middleTruncate(branch, branchBudget - iconWidth));
-		return [theme.fg(branchColor, compactBranch), ...state].join(" ");
-	}
-	return [icons.git ? theme.fg(branchColor, icons.git) : "", ...state].filter(Boolean).join(" ");
 }
 
 function renderContextSegment(
@@ -849,24 +859,18 @@ function renderContextSegment(
 		return undefined;
 	}
 	const percent = usage?.percent;
-	const reportedWindow = usage?.contextWindow;
-	const contextWindow =
-		typeof reportedWindow === "number" && Number.isFinite(reportedWindow) && reportedWindow > 0
-			? reportedWindow
-			: ctx.model?.contextWindow;
 	const knownPercent = typeof percent === "number" && Number.isFinite(percent);
+	const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow;
 	const knownWindow = typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0;
 	if (!knownPercent && !knownWindow) return undefined;
 	const boundedPercent = knownPercent ? Math.max(0, percent) : undefined;
-	const fullValue = `${boundedPercent === undefined ? "?" : `${boundedPercent.toFixed(1)}%`}${
-		knownWindow ? `/${formatTokens(contextWindow)}` : ""
-	}`;
-	const compactValue = boundedPercent === undefined ? fullValue : `${String(Math.round(boundedPercent))}%`;
+	const fullValue = boundedPercent === undefined ? "?" : `${boundedPercent.toFixed(1).replace(/\.0$/u, "")}%`;
+	const compactValue = boundedPercent === undefined ? "?" : `${String(Math.round(boundedPercent))}%`;
 	const color: ThemeColor =
 		boundedPercent === undefined ? "dim" : boundedPercent >= 90 ? "error" : boundedPercent >= 70 ? "warning" : "dim";
 	return {
-		compact: theme.fg(color, withIcon(icons.context, compactValue)),
-		full: theme.fg(color, withIcon(icons.context, fullValue)),
+		compact: `${theme.fg(color, icons.context)} ${theme.fg("text", compactValue)}`,
+		full: `${theme.fg(color, icons.context)} ${theme.fg("text", fullValue)}`,
 	};
 }
 
@@ -898,111 +902,56 @@ function isGoalStatus(value: unknown): value is GoalStatus {
 	return ["active", "paused", "blocked", "usage_limited", "budget_limited", "complete"].includes(String(value));
 }
 
-function renderStatusRows(
+function renderStatusRow(
 	segments: readonly StatusSegment[],
 	width: number,
 	theme: Theme,
 	density: StatuslineDensity,
-): StatusRows {
-	if (density !== "compact") {
-		const legacy = packStatusRows(
-			segments.map((segment) => segment.full),
-			width,
-			theme,
-		);
-		if (legacy.complete) return legacy;
-	}
+): string {
+	const compactIds = new Set<StatusSegmentId>(["model", "thinking", "cwd", "branch", "context"]);
+	const eligible = density === "compact" ? segments.filter((segment) => compactIds.has(segment.id)) : segments;
+	if (eligible.length === 0 || width < 1) return "";
+	const full = eligible.map((segment) => segment.full).join(theme.fg("dim", STATUSLINE_SEPARATOR));
+	if (density !== "compact" && visibleWidth(full) <= width) return full;
 
-	const prioritized = [...segments].sort((left, right) => left.priority - right.priority);
-	const selected = density === "compact" ? prioritized.filter((segment) => segment.priority <= 4) : prioritized;
-	const segmentWidth = Math.max(1, width - 2);
-	const values = selected.map((segment) => {
-		if (density !== "full") return segment.compact;
-		return visibleWidth(segment.full) <= segmentWidth ? segment.full : segment.compact;
-	});
-	return packStatusRows(values, width, theme);
-}
-
-function packStatusRows(
-	segments: readonly string[],
-	availableWidth: number,
-	theme: Theme,
-): { readonly complete: boolean; readonly rows: string[] } {
-	if (availableWidth < 3 || segments.length === 0) return { complete: segments.length === 0, rows: [] };
-	const rows: string[][] = [];
-	let selected: string[] = [];
-	let currentWidth = 2;
-	let truncated = false;
-	const separatorWidth = visibleWidth(STATUSLINE_SEPARATOR) + 2;
-	const segmentWidth = Math.max(1, availableWidth - 2);
-
-	for (const rawSegment of segments) {
-		const rawWidth = visibleWidth(rawSegment);
-		if (rawWidth > segmentWidth) truncated = true;
-		const segment =
-			rawWidth <= segmentWidth ? rawSegment : truncateToWidth(rawSegment, segmentWidth, theme.fg("dim", "…"));
-		const measuredWidth = visibleWidth(segment);
-		const requiredWidth = measuredWidth + (selected.length > 0 ? separatorWidth : 0);
-		if (currentWidth + requiredWidth <= availableWidth) {
-			selected.push(segment);
-			currentWidth += requiredWidth;
-			continue;
+	const selected = eligible.map((segment) => ({
+		...segment,
+		text: density === "full" ? segment.full : segment.compact,
+	}));
+	const render = (): string => selected.map((segment) => segment.text).join(theme.fg("dim", STATUSLINE_SEPARATOR));
+	while (selected.length > 1 && visibleWidth(render()) > width) {
+		let removalIndex = 0;
+		for (let index = 1; index < selected.length; index += 1) {
+			if ((selected[index]?.priority ?? Number.POSITIVE_INFINITY) < (selected[removalIndex]?.priority ?? 0)) {
+				removalIndex = index;
+			}
 		}
-		if (selected.length > 0 && rows.length === 0) {
-			rows.push(selected);
-			selected = [segment];
-			currentWidth = 2 + measuredWidth;
-			continue;
-		}
-		return { complete: false, rows: [...rows, selected].map((row) => buildStatusRow(row, theme)).filter(Boolean) };
+		selected.splice(removalIndex, 1);
 	}
-	if (selected.length > 0) rows.push(selected);
-	return { complete: !truncated, rows: rows.map((row) => buildStatusRow(row, theme)).filter(Boolean) };
+	return truncateToWidth(render(), width, theme.fg("dim", "…"));
 }
 
-function buildStatusRow(segments: readonly string[], theme: Theme): string {
-	if (segments.length === 0) return "";
-	return ` ${segments.join(` ${theme.fg("dim", STATUSLINE_SEPARATOR)} `)} `;
-}
-
-function renderPromptRows(
+function renderPromptRow(
 	prompt: PromptPreview | undefined,
 	width: number,
 	theme: Theme,
 	icons: StatuslineIcons,
-	maximumRows: 0 | 1 | 2,
-): string[] {
-	if (!prompt || width < 4 || maximumRows === 0) return [];
-	const prefix = icons.input ? ` ${icons.input} ` : " ";
-	const contentWidth = width - visibleWidth(prefix) - 1;
-	if (contentWidth < 1) return [];
+): string | undefined {
+	if (!prompt || width < 2) return undefined;
 	const promptText = prompt.text ?? "";
 	const fullBadge = formatSkillBadge(prompt.skills, false);
 	const compactBadge = formatSkillBadge(prompt.skills, true);
-	const fullPreview = joinPromptAndBadge(promptText, fullBadge);
+	const firstCodePoint = Array.from(promptText || fullBadge)[0] ?? "";
+	const markerGap = visibleWidth(firstCodePoint) > 1 ? "" : " ";
+	const prefix = `${theme.fg("accent", icons.prompt)}${markerGap}`;
+	const contentWidth = width - visibleWidth(prefix);
+	if (contentWidth < 1) return truncateToWidth(prefix, width, "");
 	const badge =
-		fullBadge !== compactBadge && visibleWidth(fullPreview) > contentWidth * maximumRows ? compactBadge : fullBadge;
-	const preview = joinPromptAndBadge(promptText, badge);
-	if (!preview) return [];
-	if (maximumRows === 1) {
-		const content = fitPromptAndBadge(promptText, badge, contentWidth);
-		return [`${prefix}${theme.fg("text", content)} `];
-	}
-	const wrapped = wrapTextWithAnsi(preview, contentWidth);
-	const firstContent = wrapped[0] ?? "";
-	const first = `${prefix}${theme.fg("text", firstContent)} `;
-	if (wrapped.length < 2) return [first];
-	let overflow = wrapped.slice(1).join(" ");
-	if (badge && visibleWidth(overflow) > contentWidth) {
-		const badgeWidth = visibleWidth(badge);
-		if (badgeWidth <= contentWidth) {
-			const remainingText = wrappedPromptRemainder(promptText, contentWidth);
-			overflow = fitPromptAndBadge(remainingText, badge, contentWidth);
-		}
-	}
-	overflow = truncateToWidth(overflow, contentWidth, "…");
-	const continuation = `${" ".repeat(visibleWidth(prefix))}${theme.fg("text", overflow)} `;
-	return [first, continuation];
+		fullBadge !== compactBadge && visibleWidth(joinPromptAndBadge(promptText, fullBadge)) > contentWidth
+			? compactBadge
+			: fullBadge;
+	const content = fitPromptAndBadge(promptText, badge, contentWidth);
+	return `${prefix}${theme.fg("dim", content)}`;
 }
 
 function fitPromptAndBadge(prompt: string, badge: string, width: number): string {
@@ -1015,16 +964,6 @@ function fitPromptAndBadge(prompt: string, badge: string, width: number): string
 			? truncateToWidth(prompt, promptWidth, "…")
 			: "";
 	return joinPromptAndBadge(fittedPrompt, badge);
-}
-
-function promptRowLimit(width: number, density: StatuslineDensity): 0 | 1 | 2 {
-	if (density === "compact" || width < 48) return 0;
-	return width >= 80 ? 2 : 1;
-}
-
-function wrappedPromptRemainder(prompt: string, width: number): string {
-	const rows = wrapTextWithAnsi(prompt, width);
-	return rows.slice(1).join(" ");
 }
 
 function joinPromptAndBadge(prompt: string, badge: string): string {
@@ -1186,7 +1125,7 @@ function formatCodexWeekly(snapshot: CodexStatusSnapshot | undefined): string | 
 	if (!snapshot) return undefined;
 	const weekly = snapshot.weeklyRemainingPercent;
 	return typeof weekly === "number" && Number.isFinite(weekly)
-		? `weekly ${String(Math.round(Math.max(0, Math.min(100, weekly))))}%`
+		? `${String(Math.round(Math.max(0, Math.min(100, weekly))))}%`
 		: undefined;
 }
 
@@ -1241,9 +1180,16 @@ function thinkingColor(level: string): ThemeColor {
 	return colors[level] ?? "thinkingText";
 }
 
-function displayModelName(ctx: ExtensionContext): string {
-	const name = sanitizeOneLine(ctx.model?.name ?? ctx.model?.id ?? "no-model");
-	return name.replace(/^Claude\s+/u, "") || "no-model";
+function displayModelIdentity(ctx: ExtensionContext): string {
+	const provider = sanitizeOneLine(ctx.model?.provider ?? "");
+	const model = sanitizeOneLine(ctx.model?.id ?? ctx.model?.name ?? "no-model").replace(/^Claude\s+/u, "");
+	if (!provider || model.startsWith(`${provider}/`)) return model || "no-model";
+	return `${provider}/${model || "no-model"}`;
+}
+
+function displayCompactModelName(ctx: ExtensionContext): string {
+	const model = sanitizeOneLine(ctx.model?.id ?? ctx.model?.name ?? "no-model").replace(/^Claude\s+/u, "");
+	return middleTruncate(model || "no-model", 11);
 }
 
 function middleTruncate(value: string, maximumWidth: number): string {
@@ -1282,15 +1228,6 @@ function hasNerdFonts(): boolean {
 	if (GHOSTTY_RESOURCES_DIR) return true;
 	const terminal = (TERM_PROGRAM ?? "").toLowerCase();
 	return ["iterm", "wezterm", "kitty", "ghostty", "alacritty"].some((name) => terminal.includes(name));
-}
-
-function formatTokens(value: number): string {
-	const count = Number.isFinite(value) ? Math.max(0, value) : 0;
-	if (count < 1_000) return String(Math.round(count));
-	if (count < 10_000) return `${(count / 1_000).toFixed(1)}k`;
-	if (count < 1_000_000) return `${String(Math.round(count / 1_000))}k`;
-	if (count < 10_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
-	return `${String(Math.round(count / 1_000_000))}M`;
 }
 
 function readCwd(ctx: ExtensionContext): string {

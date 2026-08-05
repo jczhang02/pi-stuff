@@ -10,8 +10,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pi Stuff · 常用 UI 最终核验</title>
   <meta name="author" content="Pi Stuff">
-  <meta name="description" content="用真实 Pi 0.83 PTY 画面核验 Welcome Header、Statusline、Todo 与 /ui。">
-  <meta name="keywords" content="Pi Stuff, Pi, TUI, Statusline, Welcome Header, SettingsList">
+  <meta name="description" content="用真实 Pi 0.83 PTY 画面核验 Welcome Header、Statusline、Fleetview、Todo 与 /ui。">
+  <meta name="keywords" content="Pi Stuff, Pi, TUI, Statusline, Fleetview, Welcome Header, SettingsList">
   <meta name="generator" content="Kami">
   <style>
     @font-face {
@@ -188,6 +188,11 @@
     }
 
     section.surface[hidden] {
+      display: none;
+    }
+
+    body.surface-filtered .hero,
+    body.surface-filtered .truth-note {
       display: none;
     }
 
@@ -447,15 +452,15 @@
       <div class="eyebrow">Pi Stuff · Real TUI review · 2026.08.05</div>
       <h1>先让每天都看见的地方，真正舒服。</h1>
       <p class="hero-lead">
-        这一轮只核验每天都会看见的四处：<strong>Welcome、Statusline、Todo，以及只管理显示方式的 <code>/ui</code>。</strong>
+        这一轮核验每天都会看见的五处：<strong>Welcome、Statusline、Fleetview、Todo，以及只管理显示方式的 <code>/ui</code>。</strong>
         所有终端像素都来自真实 Pi；HTML 没有重画任何 TUI。
       </p>
     </div>
 
     <div class="hero-meta">
       <div class="metric">
-        <div class="metric-value">15</div>
-        <div class="metric-label">张可核对画面：12 张当前生产版 + 3 张设计依据</div>
+        <div class="metric-value">19</div>
+        <div class="metric-label">张可核对画面：16 张当前生产版 + 3 张设计依据</div>
       </div>
       <div class="metric">
         <div class="metric-value">5</div>
@@ -472,7 +477,7 @@
     <h2>怎么看这份报告</h2>
     <p>
       当前生产版画面都由 <code>/opt/bin/pi 0.83.0</code> 在隔离设置和真实 PTY 中渲染，再由 Freeze 转成 PNG。
-      三张历史依据分别标明来源；它们用于核对设计，不冒充当前输出。Welcome 直接挂载生产组件；其余生产画面加载完整 Aggregate 与离线确定性 Provider。没有读取或改动个人设置，也没有发出网络请求。
+      三张历史依据分别标明来源；它们用于核对设计，不冒充当前输出。Welcome 直接挂载生产组件；其余生产画面加载完整 Aggregate 与离线确定性 Provider。Fleetview 另经过真实后台 Agent 生命周期和 session resume。没有读取或改动个人设置，也没有发出网络请求。
     </p>
   </aside>
 
@@ -548,7 +553,7 @@
       <div class="section-kicker">02 · Statusline</div>
       <h2>一眼读完环境状态，不把能力活动塞进底栏。</h2>
       <p class="section-lead">
-        当前生产版按用户截图恢复一格外边距、图标和灰色 <code>|</code> 分隔。顺序是模型、Thinking、仅开启时出现的 Fast、目录、Git、Context、缓存命中率，以及费用或 Codex weekly limit。Agent、Todo、BTW 与 Tool 活动留在各自界面，不重复占据 Statusline。
+        当前生产版保留一行、统一紧凑图标，并以中点分隔完整字段。顺序是模型、Thinking、仅开启时出现的 Fast、目录、Git、Context、缓存命中率，以及费用或 Codex weekly limit。第二行只在有上一条 Prompt 时出现，而且始终恰好一行。Agent、Todo、BTW 与 Tool 活动留在各自界面，不重复占据 Statusline。
       </p>
 
       <div class="evidence-grid">
@@ -558,7 +563,7 @@
           </a>
           <figcaption>
             <div class="caption-title">最高依据 · 用户原始截图</div>
-            <p class="caption-body">图中上方是 FleetView；本轮要复刻的是最底部 Statusline 的一格外边距、图标、字段顺序和灰色 <code>|</code> 分隔。</p>
+            <p class="caption-body">图中上方是 Fleetview；它确定了 icon-led、单行、紧凑字段的方向。后续明确决策补充了中点分隔和独立 Prompt 行。</p>
           </figcaption>
         </figure>
 
@@ -568,7 +573,7 @@
           </a>
           <figcaption>
             <div class="caption-title">历史实现 · 旧配置黑盒输出</div>
-            <p class="caption-body">旧配置保留了字段和图标，但使用圆点分隔；它只证明迁移内容，不覆盖用户截图确定的最终视觉语法。</p>
+            <p class="caption-body">旧配置证明需要迁移哪些字段和图标；当前实现重新统一了图标尺寸、顺序和响应式优先级。</p>
           </figcaption>
         </figure>
 
@@ -578,7 +583,7 @@
           </a>
           <figcaption>
             <div class="caption-title">100 × 32 · 完整主行</div>
-            <p class="caption-body">真实流式回合结束后，Context、缓存命中率和按量费用都来自同一会话；长 Prompt 最多占下方两行。</p>
+            <p class="caption-body">真实流式回合结束后，Context、缓存命中率和按量费用都来自同一会话；长 Prompt 被限制为下方恰好一行。</p>
           </figcaption>
         </figure>
 
@@ -587,8 +592,8 @@
             <img src="./statusline/parity-artifacts/pi-0.83-statusline-parity-fresh-64x28.png" alt="Production Pi Stuff Statusline at 64 by 28 cells">
           </a>
           <figcaption>
-            <div class="caption-title">64 × 28 · 完整字段换行</div>
-            <p class="caption-body">空间不足时按完整 segment 流到第二行，不会出现半个图标、半个字段或黏连的省略号。</p>
+            <div class="caption-title">64 × 28 · 保持单行</div>
+            <p class="caption-body">空间不足时按优先级移除完整字段，不换行，也不会留下半个图标、半个字段或黏连的省略号。</p>
           </figcaption>
         </figure>
 
@@ -598,7 +603,7 @@
           </a>
           <figcaption>
             <div class="caption-title">32 × 18 · 优先保留身份</div>
-            <p class="caption-body">模型、目录、分支与 Context 仍然可读；低优先级字段先退出，不把整行截成无意义字符。</p>
+            <p class="caption-body">模型、目录与 Context 仍然可读；低优先级字段先退出，不把整行截成无意义字符。</p>
           </figcaption>
         </figure>
 
@@ -608,7 +613,7 @@
           </a>
           <figcaption>
             <div class="caption-title">24 × 16 · 极窄仍不溢出</div>
-            <p class="caption-body">每一行都经过真实终端 cell 宽度检查；Prompt 在这个宽度完全让路。</p>
+            <p class="caption-body">每一行都经过真实终端 cell 宽度检查；该 fresh 会话还没有上一条 Prompt，所以只出现状态主行。</p>
           </figcaption>
         </figure>
       </div>
@@ -687,9 +692,63 @@
       </p>
     </section>
 
+    <section class="surface" id="fleetview" data-surface="fleetview">
+      <div class="section-kicker">05 · Fleetview</div>
+      <h2>后台 Agent 总览永远是底部最后一块。</h2>
+      <p class="section-lead">
+        固定顺序是 Statusline → 上一条 Prompt → Fleetview 帮助位 → main → Agent。空闲时帮助位是一整行空白；只有进入管理模式后，才在原位显示按键提示，不再出现突兀的 <code>↓ to manage</code>。
+      </p>
+
+      <div class="evidence-grid">
+        <figure>
+          <a class="screen-link" href="./fleetview/artifacts/pi-0.83-footer-fleetview-idle-100x32.png" title="打开 Fleetview 空闲 100 × 32 原图">
+            <img src="./fleetview/artifacts/pi-0.83-footer-fleetview-idle-100x32.png" alt="Idle production Fleetview beneath Statusline at 100 by 32 cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">100 × 32 · 空闲</div>
+            <p class="caption-body">Prompt 下方保留一行安静的呼吸空间，再进入 main 与 Agent 列表；Fleetview 是 footer 最后一块。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./fleetview/artifacts/pi-0.83-footer-fleetview-active-100x32.png" title="打开 Fleetview 管理态 100 × 32 原图">
+            <img src="./fleetview/artifacts/pi-0.83-footer-fleetview-active-100x32.png" alt="Active production Fleetview beneath Statusline at 100 by 32 cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">100 × 32 · 管理中</div>
+            <p class="caption-body"><code>↑/↓ select · Enter view · x stop · Esc return</code> 原位替换空白行；列表位置完全不跳动。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./fleetview/artifacts/pi-0.83-footer-fleetview-idle-64x28.png" title="打开 Fleetview 空闲 64 × 28 原图">
+            <img src="./fleetview/artifacts/pi-0.83-footer-fleetview-idle-64x28.png" alt="Idle production Fleetview beneath Statusline at 64 by 28 cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">64 × 28 · 空闲</div>
+            <p class="caption-body">窄屏仍保留同一垂直顺序和空白帮助位，右侧状态不会与任务文字黏成 <code>…done</code>。</p>
+          </figcaption>
+        </figure>
+
+        <figure>
+          <a class="screen-link" href="./fleetview/artifacts/pi-0.83-footer-fleetview-active-64x28.png" title="打开 Fleetview 管理态 64 × 28 原图">
+            <img src="./fleetview/artifacts/pi-0.83-footer-fleetview-active-64x28.png" alt="Active production Fleetview beneath Statusline at 64 by 28 cells">
+          </a>
+          <figcaption>
+            <div class="caption-title">64 × 28 · 紧凑管理提示</div>
+            <p class="caption-body">提示缩为 <code>↑/↓ select · Enter · x stop · Esc</code>，但仍只占一行，Agent 状态继续右对齐。</p>
+          </figcaption>
+        </figure>
+      </div>
+
+      <p class="source-note">
+        可复现：<a href="./fleetview/README.md">说明</a>与 <a href="../../../../scripts/verify-agents-pty.ts">真实 Agents PTY 验收</a>。验收覆盖 fresh、resume、空闲与管理态，并逐行证明 Fleetview 位于共享 Footer 最底部。
+      </p>
+    </section>
+
     <section class="surface" id="contract" data-surface="contract">
-      <div class="section-kicker">05 · Shared visual contract</div>
-      <h2>四个入口看起来不同，但服从同一套边界。</h2>
+      <div class="section-kicker">06 · Shared visual contract</div>
+      <h2>五个入口看起来不同，但服从同一套边界。</h2>
       <div class="contract">
         <div class="contract-row">
           <div class="contract-num">01</div>
@@ -716,9 +775,9 @@
 
     <section class="decision" id="decision" data-always-visible>
       <div class="section-kicker">Final visible review</div>
-      <div class="decision-question">Welcome、Statusline、<code>/ui</code> 与 Todo 的当前真实可见效果。</div>
+      <div class="decision-question">Welcome、Statusline、Fleetview、<code>/ui</code> 与 Todo 的当前真实可见效果。</div>
       <p class="decision-answer">
-        截图直接来自生产组件与真实 Pi 0.83 PTY。Welcome 已按 Claude 参考重做；Statusline、<code>/ui</code> 与 Todo 均通过完整 Aggregate 验收。
+        截图直接来自生产组件与真实 Pi 0.83 PTY。Welcome 已按 Claude 参考重做；Statusline、Fleetview、<code>/ui</code> 与 Todo 均通过完整 Aggregate 验收。
       </p>
       <div class="links">
         <a href="./welcome/report.html">Welcome 单项报告</a>
@@ -742,7 +801,8 @@
       { key: "statusline", label: "B · Statusline" },
       { key: "settings", label: "C · /ui Settings" },
       { key: "todo", label: "D · Todo" },
-      { key: "contract", label: "E · 共同规则" },
+      { key: "fleetview", label: "E · Fleetview" },
+      { key: "contract", label: "F · 共同规则" },
     ];
 
     const params = new URLSearchParams(window.location.search);
@@ -750,6 +810,7 @@
 
     function renderSurface() {
       const current = surfaces[currentIndex] ?? surfaces[0];
+      document.body.classList.toggle("surface-filtered", current.key !== "all");
       document.querySelectorAll("[data-surface]").forEach((section) => {
         section.hidden = current.key !== "all" && section.dataset.surface !== current.key;
       });

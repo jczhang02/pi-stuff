@@ -66,10 +66,10 @@
 </head>
 <body>
   <main>
-    <div class="eyebrow">Real Pi Host · parity correction · 2026-08-03</div>
-    <h1>Statusline 已恢复用户参考图的视觉语法</h1>
-    <p>最高设计依据是用户在 FleetView 截图底部标出的 Statusline：一格外边距、图标、字段顺序和灰色 <code>|</code> 分隔。旧配置的黑盒输出用于确认迁移内容，但它实际使用圆点分隔，不能覆盖用户已经确认的样式。</p>
-    <p class="verdict">明确差异包括：颜色继续来自 Pi 主题、不显示 <code>(sub)</code> 或未经 Host 证明的压缩状态、Prompt 随宽度降为两行／一行／隐藏，以及只接入不重复的 Goal / MCP / Loadout 状态。</p>
+    <div class="eyebrow">Real Pi Host · final contract · 2026-08-05</div>
+    <h1>Statusline 已收敛为 icon-led 单行底栏</h1>
+    <p>用户参考图确定 icon-led、单行和紧凑字段方向；旧配置黑盒输出用于确认需要迁移的内容。后续明确决策确定：状态只占一行，中点分隔完整字段，上一条 Prompt 独占可选的第二行，并与主行视觉同列。</p>
+    <p class="verdict">颜色只来自 Pi 主题；不显示 token 总数、worktime、<code>(sub)</code> 或未经 Host 证明的压缩状态。Fast 只在开启时出现；OpenAI Codex 使用 weekly limit 替代费用。</p>
 
     <h2>设计依据 · 历史输出 · 当前生产</h2>
     <div class="terminals">
@@ -93,17 +93,17 @@
     <table>
       <thead><tr><th>字段</th><th>rejected prototype</th><th>当前生产实现</th></tr></thead>
       <tbody>
-        <tr><td>分隔与留白</td><td><code> · </code>，无外边距</td><td>灰色 <code> | </code>，左右各一格</td></tr>
-        <tr><td>Model / Thinking</td><td>raw id；<code>med</code></td><td>display name + icon；<code>think:med</code></td></tr>
-        <tr><td>路径 / Git</td><td>缩写全路径；<code>+added ~modified -deleted</code></td><td>basename + icon；<code>!conflict *unstaged +staged ?untracked ⇡ahead ⇣behind</code></td></tr>
-        <tr><td>Context / Cache</td><td>只有原始 token 数或简写百分比</td><td><code>42.0%/200k</code>，百分比未知时为 <code>?/200k</code>；缓存显示命中率</td></tr>
-        <tr><td>窄屏</td><td>从整行中间截断</td><td>完整 segment 按 Model / Context / Git 优先级保留；长身份从中间缩写，Git 用 <code>ΔN</code> 并优先保留异常标记；Prompt 在中等宽度最多一行、极窄屏隐藏</td></tr>
+        <tr><td>行数与分隔</td><td>状态可能换行，Prompt 可能占两行</td><td>状态恰好一行；中点分隔；有 Prompt 时恰好再加一行</td></tr>
+        <tr><td>Model / Thinking</td><td>raw id 或文字前缀</td><td>display name + 紧凑图标；Thinking 只显示等级</td></tr>
+        <tr><td>路径 / Git</td><td>缩写全路径；状态容易与文字黏连</td><td>basename + 独立图标；<code>!conflict +staged ~unstaged ?untracked ⇡ahead ⇣behind</code></td></tr>
+        <tr><td>Context / Cache</td><td>原始 token 数或简写百分比</td><td>只显示 Context 百分比与缓存命中率，不显示 token-window 数</td></tr>
+        <tr><td>窄屏</td><td>从整行中间截断</td><td>按优先级移除完整 segment；Model 与 Context 最后退出，Prompt 仍被限制为一行</td></tr>
         <tr><td>Skill Prompt</td><td>展开内容可能进入普通预览</td><td>只显示用户任务与紧凑 Skill badge；隐藏 XML 和本地路径</td></tr>
       </tbody>
     </table>
 
     <h2>验证</h2>
-    <p>自动化验证覆盖真实 Aggregate PTY 的 100×32、64×28、48×22、32×18、24×16、实时 resize、响应式字段优先级、CJK Prompt 行数、完整八项 <code>/ui</code>、100 与 64 列 Todo 对齐、订阅费用隐藏、Command Dialog 与 autocomplete 恢复；打包后的 Aggregate 另由认证 Host gate 检查。</p>
+    <p>自动化验证覆盖真实 Aggregate PTY 的 100×32、64×28、48×22、32×18、24×16、实时 resize、单行字段优先级、CJK Prompt 光学对齐、完整八项 <code>/ui</code>、100 与 64 列 Todo 对齐、订阅费用隐藏、Command Dialog 与 autocomplete 恢复；打包后的 Aggregate 另由认证 Host gate 检查。</p>
     <div class="links">
       <a href="./parity-artifacts/pi-0.83-statusline-parity-metered-100x32.txt">真实 100×32 文本帧</a>
       <a href="./parity-artifacts/pi-0.83-statusline-parity-metered-100x32.ansi">真实 100×32 ANSI 帧</a>

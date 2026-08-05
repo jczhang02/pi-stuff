@@ -495,9 +495,13 @@ export default function registerSubagentExtension(
 		},
 	});
 	const unregisterRosterChrome = coordinator.registerChrome("agents-roster", roster);
+	const unregisterRosterFooterTail =
+		coordinator.registerFooterTail?.("agents-roster", (tui, theme) => roster.createFooterTail(tui, theme)) ??
+		(() => {});
 
 	const bindContext = (ctx: ExtensionContext): void => {
 		state.lastUiContext = ctx;
+		roster.setFooterHosted(coordinator.hasInstalledFooter?.(ctx) === true);
 		roster.setContext(ctx);
 	};
 
@@ -719,6 +723,7 @@ export default function registerSubagentExtension(
 		notifier.dispose();
 		executionGovernor.dispose();
 		supervisor.dispose();
+		unregisterRosterFooterTail();
 		unregisterRosterChrome();
 		roster.dispose();
 		current.dispose();

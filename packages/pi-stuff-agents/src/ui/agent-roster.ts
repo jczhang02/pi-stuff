@@ -1,5 +1,6 @@
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
+	type Component,
 	decodeKittyPrintable,
 	type EditorComponent,
 	isKeyRelease,
@@ -42,7 +43,7 @@ interface IndexedRow {
 	readonly row: AgentRow;
 }
 
-/** Claude-style, below-editor projection of the current session's direct children. */
+/** Claude-style projection of the current session's direct children. */
 export class AgentRoster {
 	private readonly current: CurrentAgents;
 	private readonly clearTimeout: NonNullable<AgentRosterOptions["clearTimeout"]>;
@@ -60,7 +61,9 @@ export class AgentRoster {
 	private suppressed = false;
 	private navigationActive = false;
 	private selectedKey = "main";
-	private tui: TUI | undefined;
+	private footerAttachment: { readonly tui: TUI } | undefined;
+	private footerHosted = false;
+	private widgetTui: TUI | undefined;
 	private widgetRegistered = false;
 
 	constructor(current: CurrentAgents, options: AgentRosterOptions) {
@@ -106,12 +109,36 @@ export class AgentRoster {
 		this.syncRegistration();
 	}
 
+	/** Use the shared Footer in the Aggregate, retaining belowEditor as a standalone fallback. */
+	setFooterHosted(hosted: boolean): void {
+		if (this.footerHosted === hosted) return;
+		this.footerHosted = hosted;
+		if (hosted) this.clearWidget();
+		this.syncRegistration();
+		this.requestRender();
+	}
+
+	/** Create the Fleetview tail rendered after the shared Statusline. */
+	createFooterTail(tui: TUI, theme: Theme): Component & { dispose(): void } {
+		const attachment = { tui };
+		this.footerAttachment = attachment;
+		this.syncRegistration();
+		return {
+			dispose: () => {
+				if (this.footerAttachment === attachment) this.footerAttachment = undefined;
+			},
+			invalidate: () => {},
+			render: (width: number) => (this.footerHosted ? this.render(theme, width) : []),
+		};
+	}
+
 	dispose(): void {
 		this.unsubscribeCurrent();
 		this.clearRegistration();
 		this.context = undefined;
 		this.navigationActive = false;
 		this.selectedKey = "main";
+		this.footerAttachment = undefined;
 	}
 
 	private rows(): readonly AgentRow[] {
@@ -172,11 +199,11 @@ export class AgentRoster {
 		if (!this.inputUnsubscribe) {
 			this.inputUnsubscribe = context.ui.onTerminalInput((data) => this.handleInput(data));
 		}
-		if (!this.widgetRegistered) {
+		if (!this.footerHosted && !this.widgetRegistered) {
 			context.ui.setWidget(
 				WIDGET_KEY,
 				(tui, theme) => {
-					this.tui = tui;
+					this.widgetTui = tui;
 					return {
 						invalidate: () => {},
 						render: (width: number) => this.render(theme, width),
@@ -186,9 +213,10 @@ export class AgentRoster {
 			);
 			this.widgetRegistered = true;
 		}
+		if (this.footerHosted) this.clearWidget();
 		this.syncRefreshTimer();
 		this.syncLingerTimer();
-		this.tui?.requestRender();
+		this.requestRender();
 	}
 
 	private clearRegistration(): void {
@@ -198,9 +226,21 @@ export class AgentRoster {
 		this.lingerTimer = undefined;
 		this.inputUnsubscribe?.();
 		this.inputUnsubscribe = undefined;
+		this.clearWidget();
+	}
+
+	private clearWidget(): void {
 		if (this.widgetRegistered) this.context?.ui.setWidget(WIDGET_KEY, undefined);
 		this.widgetRegistered = false;
-		this.tui = undefined;
+		this.widgetTui = undefined;
+	}
+
+	private requestRender(): void {
+		this.activeTui()?.requestRender();
+	}
+
+	private activeTui(): TUI | undefined {
+		return this.footerAttachment?.tui ?? this.widgetTui;
 	}
 
 	private syncLingerTimer(): void {
@@ -237,7 +277,7 @@ export class AgentRoster {
 			return;
 		}
 		if (this.refreshTimer) return;
-		this.refreshTimer = setInterval(() => this.tui?.requestRender(), ELAPSED_REFRESH_MS);
+		this.refreshTimer = setInterval(() => this.requestRender(), ELAPSED_REFRESH_MS);
 		this.refreshTimer.unref?.();
 	}
 
@@ -253,7 +293,7 @@ export class AgentRoster {
 			if (!matchesKey(data, Key.down)) return undefined;
 			this.navigationActive = true;
 			this.selectedKey = "main";
-			this.tui?.requestRender();
+			this.requestRender();
 			return { consume: true };
 		}
 
@@ -268,7 +308,7 @@ export class AgentRoster {
 			const delta = matchesKey(data, Key.up) ? -1 : 1;
 			const nextIndex = Math.min(keys.length - 1, Math.max(0, currentIndex + delta));
 			this.selectedKey = keys[nextIndex] ?? "main";
-			this.tui?.requestRender();
+			this.requestRender();
 			return { consume: true };
 		}
 
@@ -294,7 +334,7 @@ export class AgentRoster {
 		if (!this.navigationActive && this.selectedKey === "main") return;
 		this.navigationActive = false;
 		this.selectedKey = "main";
-		this.tui?.requestRender();
+		this.requestRender();
 	}
 
 	private openSelected(): void {
@@ -323,7 +363,7 @@ export class AgentRoster {
 	}
 
 	private editorHasFocus(): boolean {
-		const focused = (this.tui as unknown as { focusedComponent?: unknown } | undefined)?.focusedComponent;
+		const focused = (this.activeTui() as unknown as { focusedComponent?: unknown } | undefined)?.focusedComponent;
 		return isEditorComponent(focused);
 	}
 
@@ -344,17 +384,9 @@ export class AgentRoster {
 	}
 
 	private renderHint(theme: Theme, width: number): string {
-		let hint = "↓ to manage";
-		if (this.navigationActive && this.selectedKey === "main") {
-			hint = width <= NARROW_WIDTH ? "↑/↓ select · Enter/Esc return" : "↑/↓ to select · Enter/Esc to return";
-		} else if (this.navigationActive) {
-			const selected = this.rows().find((row) => row.key === this.selectedKey);
-			const control = selected && isTerminal(selected) ? "dismiss" : "stop";
-			hint =
-				width <= NARROW_WIDTH
-					? `↑/↓ select · Enter view · x ${control} · Esc return`
-					: `↑/↓ to select · Enter to view · x ${control} · Esc to return`;
-		}
+		if (!this.navigationActive) return "";
+		const hint =
+			width <= NARROW_WIDTH ? "↑/↓ select · Enter · x stop · Esc" : "↑/↓ select · Enter view · x stop · Esc return";
 		return truncateToWidth(`  ${theme.fg("dim", hint)}`, width, "");
 	}
 

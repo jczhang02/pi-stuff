@@ -240,6 +240,22 @@ describe("AgentRoster", () => {
 		result.roster.dispose();
 	});
 
+	test("renders as the shared Footer tail without also mounting belowEditor", () => {
+		const result = setup([row("research", "running")]);
+		result.roster.setFooterHosted(true);
+		const tail = result.roster.createFooterTail(result.ui.tui, theme);
+
+		expect(result.ui.widgetWrites.at(-1)).toBeUndefined();
+		expect(tail.render(80)[0]).toBe("");
+		expect(tail.render(80).join("\n")).toContain("research");
+		expect(result.ui.hasInputListener()).toBe(true);
+
+		result.ui.emit("\u001b[B");
+		expect(tail.render(80)[0]).toContain("↑/↓ select · Enter view · x stop · Esc return");
+		tail.dispose();
+		result.roster.dispose();
+	});
+
 	test("orders live work before terminal work and caps the passive viewport", () => {
 		const rows = [
 			row("done", "completed"),
@@ -392,16 +408,16 @@ describe("AgentRoster", () => {
 		const result = setup([row("child", "running")]);
 		result.ui.editorText = "draft";
 		expect(result.ui.emit("\u001b[B")).toBeUndefined();
-		expect(result.ui.render(80)[0]).toContain("↓ to manage");
+		expect(result.ui.render(80)[0]).toBe("");
 
 		result.ui.editorText = "";
 		result.ui.focusedComponent = { render: () => [] };
 		expect(result.ui.emit("\u001b[B")).toBeUndefined();
-		expect(result.ui.render(80)[0]).toContain("↓ to manage");
+		expect(result.ui.render(80)[0]).toBe("");
 
 		result.ui.focusedComponent = editor;
 		expect(result.ui.emit("\u001b[B")).toEqual({ consume: true });
-		expect(result.ui.render(80)[0]).toContain("↑/↓ to select");
+		expect(result.ui.render(80)[0]).toContain("↑/↓ select · Enter view · x stop · Esc return");
 		result.roster.dispose();
 	});
 
@@ -423,29 +439,29 @@ describe("AgentRoster", () => {
 		expect(lineFor(result.ui.render(80), "second")).toContain("●");
 
 		expect(result.ui.emit("\u001b")).toEqual({ consume: true });
-		expect(result.ui.render(80)[0]).toContain("↓ to manage");
+		expect(result.ui.render(80)[0]).toBe("");
 		expect(result.ui.emit("\u001b[B")).toEqual({ consume: true });
 		expect(result.ui.emit("\r")).toEqual({ consume: true });
-		expect(result.ui.render(80)[0]).toContain("↓ to manage");
+		expect(result.ui.render(80)[0]).toBe("");
 		result.roster.dispose();
 	});
 
-	test("only advertises the action available for the selected row", () => {
+	test("keeps one stable management help line for every selection", () => {
 		const live = setup([row("live", "running")]);
 		live.ui.emit("\u001b[B");
-		expect(live.ui.render(80)[0]).not.toContain("x ");
+		expect(live.ui.render(80)[0]).toContain("x stop");
 		live.ui.emit("\u001b[B");
 		expect(live.ui.render(80)[0]).toContain("x stop");
 		expect(live.ui.render(80)[0]).not.toContain("dismiss");
-		expect(live.ui.render(64)[0]).toContain("x stop · Esc return");
+		expect(live.ui.render(64)[0]).toContain("Enter · x stop · Esc");
 		live.roster.dispose();
 
 		const terminal = setup([row("done", "completed")]);
 		terminal.ui.emit("\u001b[B");
 		terminal.ui.emit("\u001b[B");
-		expect(terminal.ui.render(80)[0]).toContain("x dismiss");
-		expect(terminal.ui.render(80)[0]).not.toContain("x stop");
-		expect(terminal.ui.render(64)[0]).toContain("x dismiss · Esc return");
+		expect(terminal.ui.render(80)[0]).toContain("x stop");
+		expect(terminal.ui.render(80)[0]).not.toContain("dismiss");
+		expect(terminal.ui.render(64)[0]).toContain("Enter · x stop · Esc");
 		terminal.roster.dispose();
 	});
 
@@ -456,7 +472,7 @@ describe("AgentRoster", () => {
 		expect(live.ui.emit("x")).toEqual({ consume: true });
 		expect(live.current.actions).toEqual([{ key: "live", type: "stop" }]);
 		expect(live.ui.emit("q")).toBeUndefined();
-		expect(live.ui.render(80)[0]).toContain("↓ to manage");
+		expect(live.ui.render(80)[0]).toBe("");
 		live.roster.dispose();
 
 		const terminal = setup([row("finished", "completed")]);

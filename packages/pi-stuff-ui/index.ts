@@ -59,12 +59,17 @@ export interface CommandDialogView<Result = void> {
 
 export interface CommandDialogCoordinator {
 	registerChrome(id: string, chrome: CommandDialogChrome): () => void;
+	/** Add a Suite-owned region after the primary Statusline Footer. */
+	registerFooterTail?(id: string, factory: FooterTailFactory): () => void;
+	/** Report whether this TUI context is currently hosted by the shared Footer. */
+	hasInstalledFooter?(ctx: ExtensionContext): boolean;
 	setWorkingVisible(ctx: ExtensionContext, visible: boolean): void;
 	show<Result = void>(ctx: ExtensionContext, view: CommandDialogView<Result>): Promise<Result | undefined>;
 	whenIdle(): Promise<void>;
 }
 
 export type FooterFactory = NonNullable<Parameters<ExtensionUIContext["setFooter"]>[0]>;
+export type FooterTailFactory = (tui: TUI, theme: Theme) => Component;
 
 type DialogRequestState = "mounted" | "mounting" | "queued" | "settled";
 type HostRunState = "closed" | "closing" | "open" | "opening";
@@ -114,6 +119,8 @@ interface HostRun {
 }
 
 interface NormalUiState {
+	baseFooter: FooterFactory | undefined;
+	ctx: ExtensionContext | undefined;
 	footer: FooterFactory | undefined;
 	workingVisible: boolean;
 }
@@ -128,6 +135,35 @@ class EmptyComponent implements Component {
 	}
 
 	invalidate(): void {}
+}
+
+class FooterStackComponent implements Component {
+	private disposed = false;
+	private readonly components: readonly Component[];
+
+	constructor(components: readonly Component[]) {
+		this.components = components;
+	}
+
+	dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
+		for (const component of [...this.components].reverse()) disposeComponent(component as CommandDialogComponent);
+	}
+
+	invalidate(): void {
+		if (this.disposed) return;
+		for (const component of this.components) callComponent(() => component.invalidate());
+	}
+
+	render(width: number): string[] {
+		if (this.disposed) return [];
+		const lines: string[] = [];
+		for (const component of this.components) {
+			callComponent(() => lines.push(...component.render(width)));
+		}
+		return lines;
+	}
 }
 
 class CommandDialogHost implements Component {
@@ -188,11 +224,17 @@ class CommandDialogHost implements Component {
 class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator {
 	private readonly chrome = new Map<string, ChromeRecord>();
 	private readonly boundApis = new WeakSet<ExtensionAPI>();
+	private readonly footerTails = new Map<string, FooterTailFactory>();
 	private activeRun: HostRun | undefined;
 	private accepting = true;
 	private generation = 0;
 	private generationActive = false;
-	private readonly normalUiState: NormalUiState = { footer: undefined, workingVisible: true };
+	private readonly normalUiState: NormalUiState = {
+		baseFooter: undefined,
+		ctx: undefined,
+		footer: undefined,
+		workingVisible: true,
+	};
 
 	bind(pi: ExtensionAPI): void {
 		if (this.boundApis.has(pi)) return;
@@ -212,6 +254,7 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		const run = this.activeRun;
 		if (run) this.dismissRun(run);
 		this.chrome.clear();
+		this.footerTails.clear();
 	}
 
 	registerChrome(id: string, chrome: CommandDialogChrome): () => void {
@@ -241,10 +284,31 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		};
 	}
 
+	registerFooterTail(id: string, factory: FooterTailFactory): () => void {
+		if (id.length === 0) throw new Error("Footer tail id must not be empty");
+		const record = factory;
+		this.footerTails.set(id, record);
+		this.rebuildFooter();
+
+		let registered = true;
+		return () => {
+			if (!registered) return;
+			registered = false;
+			if (this.footerTails.get(id) !== record) return;
+			this.footerTails.delete(id);
+			this.rebuildFooter();
+		};
+	}
+
+	hasInstalledFooter(ctx: ExtensionContext): boolean {
+		return this.normalUiState.ctx?.ui === ctx.ui && this.normalUiState.baseFooter !== undefined;
+	}
+
 	installFooter(ctx: ExtensionContext, factory: FooterFactory): void {
 		if (ctx.mode !== "tui") return;
-		this.normalUiState.footer = factory;
-		if (!this.runOwnsUi()) ctx.ui.setFooter(factory);
+		this.normalUiState.baseFooter = factory;
+		this.normalUiState.ctx = ctx;
+		this.rebuildFooter();
 	}
 
 	setWorkingVisible(ctx: ExtensionContext, visible: boolean): void {
@@ -458,6 +522,15 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		return run !== undefined && run.state !== "closed";
 	}
 
+	private rebuildFooter(): void {
+		const base = this.normalUiState.baseFooter;
+		const tails = [...this.footerTails.values()];
+		const footer = base ? composeFooter(base, tails) : undefined;
+		this.normalUiState.footer = footer;
+		const ctx = this.normalUiState.ctx;
+		if (ctx && !this.runOwnsUi()) ctx.ui.setFooter(footer);
+	}
+
 	private restoreChrome(run: HostRun): void {
 		const records = [...run.suppressedChrome];
 		run.suppressedChrome.clear();
@@ -477,8 +550,11 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		this.generationActive = false;
 		this.accepting = false;
 		this.generation += 1;
+		this.normalUiState.baseFooter = undefined;
+		this.normalUiState.ctx = undefined;
 		this.normalUiState.footer = undefined;
 		this.normalUiState.workingVisible = true;
+		this.footerTails.clear();
 		const run = this.activeRun;
 		if (!run) return;
 		this.dismissRun(run);
@@ -698,6 +774,31 @@ function createHostRun(ctx: ExtensionContext): HostRun {
 		state: "opening",
 		suppressedChrome: new Set(),
 	};
+}
+
+function composeFooter(base: FooterFactory, tails: readonly FooterTailFactory[]): FooterFactory {
+	return (tui, theme, footerData) => {
+		const components: Component[] = [];
+		callComponentFactory(() => base(tui, theme, footerData), components);
+		for (const tail of tails) callComponentFactory(() => tail(tui, theme), components);
+		return new FooterStackComponent(components);
+	};
+}
+
+function callComponentFactory(factory: () => Component, output: Component[]): void {
+	try {
+		output.push(factory());
+	} catch {
+		// One optional Footer tail must not take down the primary Statusline.
+	}
+}
+
+function callComponent(callback: () => void): void {
+	try {
+		callback();
+	} catch {
+		// Footer sections are independent presentation adapters.
+	}
 }
 
 function disposeComponent(component: CommandDialogComponent | undefined): void {

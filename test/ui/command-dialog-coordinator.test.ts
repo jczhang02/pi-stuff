@@ -342,8 +342,8 @@ describe("normal UI presentation integration", () => {
 		const rendersBeforePublish = ui.renderRequests.length;
 		codexChannel.publish({ fastEnabled: true, weeklyRemainingPercent: 72.4 });
 		const active = footer.render(120).join("\n");
-		expect(active).toContain("think:med | fast |");
-		expect(active).toContain("weekly 72%");
+		expect(active).toContain(" med ·  Fast ·");
+		expect(active).toContain("󰃭 72%");
 		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforePublish);
 
 		const rendersBeforeClear = ui.renderRequests.length;
@@ -420,12 +420,42 @@ describe("normal UI presentation integration", () => {
 		const footerData = createFooterData("main");
 		const footer = factory(ui.tui, ui.theme, footerData as never);
 		const statusline = footer.render(100).join("\n");
-		for (const expected of ["gpt-5.6-sol", "think:med", "pi-stuff", "main", "42.4%/200k"]) {
+		for (const expected of ["gpt-5.6-sol", " med", "pi-stuff", "main", "42.4%"]) {
 			expect(statusline).toContain(expected);
 		}
 		expect(statusline).not.toContain("$0.00");
 		expect(ui.headerWrites.at(-1)).toBeTypeOf("function");
 		expect(ui.getEditorComponent()).toBeTypeOf("function");
+	});
+
+	test("composes registered Footer tails after Statusline and preserves an intentional blank Fleetview slot", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const coordinator = getCommandDialogCoordinator(api.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui, "tui", { modelId: "gpt-5.6-sol" });
+		await api.start(ctx);
+		expect(coordinator.hasInstalledFooter?.(ctx)).toBe(true);
+
+		const unregister = coordinator.registerFooterTail?.("fleetview-fixture", () => ({
+			invalidate: () => {},
+			render: () => ["", "  ● main", "  ○ reviewer  3s"],
+		}));
+		const stackedFactory = ui.footerWrites.at(-1);
+		if (!stackedFactory) throw new Error("Expected the stacked Suite Footer");
+		const lines = stackedFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100);
+
+		expect(lines[0]).toContain("gpt-5.6-sol");
+		expect(lines.at(-3)).toBe("");
+		expect(lines.at(-2)).toBe("  ● main");
+		expect(lines.at(-1)).toBe("  ○ reviewer  3s");
+
+		unregister?.();
+		const statusOnlyFactory = ui.footerWrites.at(-1);
+		if (!statusOnlyFactory) throw new Error("Expected the restored primary Footer");
+		expect(statusOnlyFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100)).not.toContain(
+			"  ● main",
+		);
 	});
 
 	test("does not probe Git while Statusline is disabled", async () => {
@@ -693,8 +723,9 @@ describe("Command Dialog coordinator", () => {
 		viewContext.close();
 		await shown;
 
-		expect(ui.footerWrites.at(-1)).toBe(updatedFooter);
-		expect(ui.footerWrites.at(-1)).not.toBe(initialFooter);
+		const restoredFooter = ui.footerWrites.at(-1);
+		expect(restoredFooter).not.toBe(initialFooter);
+		expect(restoredFooter?.(ui.tui, ui.theme, {} as never).render(80)).toEqual(["updated footer"]);
 		expect(ui.workingWrites).toEqual([false, false]);
 	});
 
