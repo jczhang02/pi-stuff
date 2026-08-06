@@ -218,15 +218,25 @@ export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promis
 		session.sendLiteral(`/goal ${objective}`);
 		session.sendKey("Enter");
 		const completionSummary = "Hidden Goal prompt delivery completed and verified.";
-		const active = await session.waitForText(completionSummary);
-		const visibleSummaryCount = active.split(completionSummary).length - 1;
-		if (visibleSummaryCount !== 1) {
-			fail(`Goal completion summary rendered ${String(visibleSummaryCount)} times instead of once\n${active}`);
+		const active = await session.waitForText("Completed goal");
+		if (active.includes(completionSummary)) {
+			fail(`compact Goal Activity leaked its text result\n${active}`);
 		}
 		for (const forbidden of ["<goal_objective>", "Goal-mode rules", "pi-goal-prompt:", "Continuation behavior:"]) {
 			if (active.includes(forbidden)) fail(`hidden Goal protocol leaked into the TUI: ${forbidden}\n${active}`);
 		}
 		verifyScreen(active, options.columns, "active hidden Goal prompt", true);
+
+		session.sendKey("C-o");
+		const expanded = await session.waitForText(completionSummary);
+		const visibleSummaryCount = expanded.split(completionSummary).length - 1;
+		if (visibleSummaryCount !== 1) {
+			fail(
+				`expanded Goal completion summary rendered ${String(visibleSummaryCount)} times instead of once\n${expanded}`,
+			);
+		}
+		session.sendKey("C-o");
+		await session.waitForMissing([completionSummary]);
 
 		const requestLog = await readFile(join(temporaryDirectory, "provider.jsonl"), "utf8");
 		const requests = requestLog

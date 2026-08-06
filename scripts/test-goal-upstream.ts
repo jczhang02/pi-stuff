@@ -23,6 +23,9 @@ await writeFile(
 	"utf8",
 );
 await symlink(compiledUiPackage, join(compiledWorkspaceScope, "pi-stuff-ui"), "dir");
+const compiledToolsWorkspaceScope = join(compiledToolsPackage, "node_modules", "@jczhang02");
+await mkdir(compiledToolsWorkspaceScope, { recursive: true });
+await symlink(compiledUiPackage, join(compiledToolsWorkspaceScope, "pi-stuff-ui"), "dir");
 
 const compiledTests = [...new Bun.Glob("test/goal-upstream/*.node.js").scanSync(outputDirectory)].sort();
 if (compiledTests.length === 0) throw new Error("Goal upstream test compilation produced no Node test files");

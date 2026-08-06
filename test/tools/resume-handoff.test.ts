@@ -60,7 +60,7 @@ function context(cwd: string): ExtensionContext {
 	return {
 		cwd,
 		isProjectTrusted: () => true,
-		sessionManager: { buildContextEntries: () => [] },
+		sessionManager: { getBranch: () => [] },
 	} as unknown as ExtensionContext;
 }
 

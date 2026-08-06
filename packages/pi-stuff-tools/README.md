@@ -4,35 +4,41 @@ Compact, presentation-only Tool UI for the Pi Stuff Suite.
 
 The Capability re-registers Pi 0.83's seven built-in tools with their original definitions and replaces only their
 render slots. Tool schemas, prompt metadata, execution, result content, lifecycle events, and permission checks stay
-unchanged. Suite-owned tools can opt into the same renderer contract through `registerSuiteOwnedTool`.
+unchanged. Every Suite-owned Tool must declare Activity metadata through `registerSuiteOwnedTool`; unknown third-party
+Tools keep their native renderer and form a display boundary.
 
 ## Daily use
 
-- Running and settled operations occupy one compact semantic row with one fixed-width `●` state slot. A visible
-  running row blinks between the dot and a blank slot every 600 ms without moving its label; settled and replayed rows
-  remain static.
-- Success uses the success color. Errors, permission rejection, and cancellation use the error color and remain
-  explicit.
-- Narrow rows keep the result/state tail and shorten the optional target only at a useful semantic boundary. A target
-  fragment is omitted instead of ending in an orphaned shell operator, one-letter Latin stub, or otherwise meaningless
-  ellipsis such as `| s…`.
-- `/tools` opens the recent-operation list in the shared full-width non-floating Command Dialog. Enter opens one
-  bounded detail view and Esc returns without expanding the transcript. At low heights it preserves the selected
-  operation or attached error and the Escape/back footer before allocating result lines.
-- Pi's global `Ctrl+O` state does not expand Suite compact rows; use `/tools` to inspect one bounded result without
-  expanding every prior operation.
-- `/ui` contains the default-on **Tool running timer** setting alongside the Suite's other presentation settings. It
-  controls whether long-running tools show live elapsed time; the former `/tool-settings` command is removed.
-- Detail text is capped at 240 lines and 24 KiB. The model-visible tool result is never truncated or rewritten by
-  this Capability.
-- Consecutive successful exploration calls in one assistant batch share one **Explore** row with at most two Tool
-  labels plus an overflow count. Reads, searches, listings, retrievals, and conservatively parsed read-only shell
-  commands may opt in; writes, state changes, tests/builds, ambiguous or backgrounded shell, and every failed call
-  stay standalone.
-  Grouping is display-only: `/tools` retains every operation, session JSONL and model-visible results are unchanged,
-  and the grouping is rebuilt after reload, restart/resume, tree navigation, and compaction.
+- Every continuous phase of controlled Tool work is represented by one **Tool Activity Group**. The group begins with
+  its first Tool and can span Assistant Tool round-trips and visible Thinking. Assistant prose, user input, and visible
+  model-context Custom Messages close it.
+- A group appears immediately, even for one Tool. Running summaries use present-tense semantic language and one short,
+  width-safe target hint; settled summaries use past tense and remove raw commands, paths, result text, elapsed time,
+  and redundant `done` labels. Files and other domain objects are deduplicated while executions are counted.
+- All controlled Tool kinds participate: reads and searches, file changes, commands, MCP calls, Agents, Tasks, Goals,
+  background handoffs, and failures. Pure infrastructure operations may stay silent when successful. Errors,
+  permission rejection, and cancellation remain folded but are called out with counts and the first issue summary.
+- The compact transcript hides Tool arguments and textual results. Real media remains visible. Pi's global `Ctrl+O`
+  restores every controlled Tool row in native transcript order; `/tools [group-or-member-id]` opens one Activity Group
+  and paginates its complete member list with bounded per-member detail.
+- `/ui` contains the default-on **Tool running timer** setting. It controls whether long-running standalone/expanded
+  Tool rows show live elapsed time. Activity Group completion summaries never retain elapsed time.
+- Detail text is capped at 240 lines and 24 KiB. The model-visible Tool result is never truncated or rewritten by this
+  Capability.
+- Grouping is a deterministic display projection. Session JSONL, model-visible messages, active Tool membership, and
+  execution behavior remain unchanged, and groups are rebuilt after reload, restart/resume, tree navigation, and
+  compaction.
 - In-process `/resume` pre-binds exactly the active built-in renderers before Pi reconstructs history. The first resumed
   frame therefore stays compact without reviving disabled tools; the complete active Tool order is preserved, and new
   calls are rebound to the target session's working directory, trust, and project settings.
 
-See `UPSTREAM.md` for the owned-fork provenance and local delta.
+## Performance verification
+
+`bun run benchmark:tool-activity` reconstructs one 20,000-call cross-round-trip Activity Group, compares its median
+runtime with the former adjacent-Exploration projection, verifies all members survive, and enforces both a 25 ms
+maximum regression from that baseline and a conservative 250 ms absolute ceiling. It also measures 200 incremental
+stream updates after that 20,000-call history under a 250 ms ceiling. Streaming updates replan only the current
+Narrative Boundary tail, while timer frames reconcile only the affected group; neither path rescans the full Session.
+
+See `UPSTREAM.md` for the owned-fork provenance and local delta. The accepted interaction contract is recorded in
+`../../docs/adr/0002-group-complete-tool-activity-between-narrative-boundaries.md`.

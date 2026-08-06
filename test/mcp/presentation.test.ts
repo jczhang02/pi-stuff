@@ -1,15 +1,14 @@
 import { expect, test } from "bun:test";
 import { MCP_PRESENTATION } from "../../packages/pi-stuff-mcp/presentation.js";
 
-function grouping(args: Record<string, unknown>): "exploration" | "standalone" | undefined {
-	const policy = MCP_PRESENTATION.grouping;
-	return typeof policy === "function" ? policy(args) : policy;
+function category(args: Record<string, unknown>): string | undefined {
+	return MCP_PRESENTATION.activity.classify({ args, state: "running" })[0]?.category;
 }
 
-test("MCP grouping keeps execution and connection modes standalone", () => {
-	expect(grouping({ search: "tool", tool: "server.execute" })).toBe("standalone");
-	expect(grouping({ connect: "server", describe: "server.execute" })).toBe("standalone");
-	expect(grouping({ search: "browser" })).toBe("exploration");
-	expect(grouping({ describe: "server.execute" })).toBe("exploration");
-	expect(grouping({ action: "status" })).toBe("exploration");
+test("MCP activity metadata distinguishes invocation, connection, and catalog retrieval", () => {
+	expect(category({ search: "tool", tool: "server.execute" })).toBe("invoke-mcp");
+	expect(category({ connect: "server", describe: "server.execute" })).toBe("connect-mcp");
+	expect(category({ search: "browser" })).toBe("search-mcp");
+	expect(category({ describe: "server.execute" })).toBe("search-mcp");
+	expect(category({ action: "status" })).toBe("search-mcp");
 });

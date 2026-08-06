@@ -24,6 +24,7 @@ async function createRepository(): Promise<string> {
 	await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
 		schemaVersion: 1,
 		capabilities: ["@jczhang02/pi-beta", "@jczhang02/pi-stuff-agents", "@jczhang02/pi-alpha"],
+		tools: [],
 	});
 
 	for (const [directory, name, version] of [
@@ -79,6 +80,36 @@ export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 			},
 			bundledDependencies: ["@jczhang02/pi-beta", "@jczhang02/pi-stuff-agents", "@jczhang02/pi-alpha", "zod"],
 		});
+	});
+
+	test("generates a fail-fast Activity coverage gate for every declared Aggregate Tool", async () => {
+		const root = await createRepository();
+		await mkdir(join(root, "packages", "pi-stuff-tools"), { recursive: true });
+		await writeJson(join(root, "packages", "pi-stuff-tools", "package.json"), {
+			name: "@jczhang02/pi-stuff-tools",
+			version: "1.2.3",
+		});
+		await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
+			schemaVersion: 1,
+			capabilities: ["@jczhang02/pi-stuff-tools"],
+			tools: ["read", "write"],
+			deferredTools: ["ctx_search"],
+			optionalTools: ["intercom"],
+		});
+
+		await generateSuite(root, "write");
+		const generated = await readFile(join(root, "packages", "pi-stuff", "index.ts"), "utf8");
+		expect(generated).toContain("import piStuffTools, {");
+		expect(generated).toContain("\tassertSuiteToolActivityCoverage,");
+		expect(generated).toContain("\tcreateSuiteToolRegistrationTracker,");
+		expect(generated).toContain('const AGGREGATE_TOOL_NAMES = ["read", "write"] as const;');
+		expect(generated).toContain('const DEFERRED_AGGREGATE_TOOL_NAMES = ["ctx_search"] as const;');
+		expect(generated).toContain('const OPTIONAL_AGGREGATE_TOOL_NAMES = ["intercom"] as const;');
+		expect(generated).toContain("const registrations = createSuiteToolRegistrationTracker(pi);");
+		expect(generated).toContain("await capability(registrations.api);");
+		expect(generated).toContain("assertSuiteToolActivityCoverage(");
+		expect(generated).toContain("\t\t\tOPTIONAL_AGGREGATE_TOOL_NAMES,");
+		expect(generated).toContain("\t\t\tDEFERRED_AGGREGATE_TOOL_NAMES,");
 	});
 
 	test("reports generated drift without rewriting the working tree", async () => {

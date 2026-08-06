@@ -59,6 +59,8 @@ function text(result: AgentToolResult<unknown>): string {
 	return content.text;
 }
 
+let renderedCallSequence = 0;
+
 function renderedLines(tool: ToolDefinition, result: AgentToolResult<unknown>, isError: boolean): string[] {
 	const callRenderer = tool.renderCall;
 	const renderer = tool.renderResult;
@@ -68,6 +70,7 @@ function renderedLines(tool: ToolDefinition, result: AgentToolResult<unknown>, i
 		fg: (_color: string, value: string) => value,
 	} as unknown as Theme;
 	const state = {};
+	renderedCallSequence += 1;
 	const context = {
 		args: {},
 		argsComplete: true,
@@ -80,7 +83,7 @@ function renderedLines(tool: ToolDefinition, result: AgentToolResult<unknown>, i
 		lastComponent: undefined,
 		showImages: true,
 		state,
-		toolCallId: `render-${tool.name}`,
+		toolCallId: `render-${tool.name}-${String(renderedCallSequence)}`,
 	} as Parameters<typeof renderer>[3];
 	const row = callRenderer({}, theme, context);
 	renderer(result, { expanded: false, isPartial: false }, theme, context);
@@ -125,13 +128,17 @@ describe("registered Task tools", () => {
 		expect(updatedDetails.tasks.find((task) => task.id === "1")?.status).toBe("in_progress");
 		expect(updatedDetails.tasks.find((task) => task.id === "2")?.blockedBy).toEqual(["1"]);
 
-		const fetched = await harness.execute(TASK_GET_TOOL_NAME, { taskId: "2" });
+		const fetched = await harness.execute(TASK_GET_TOOL_NAME, {
+			taskId: "2",
+		});
 		expect(text(fetched)).toContain("Task #2: Implement feature");
 		expect(text(fetched)).toContain("Blocked by: #1");
 
 		expect(mutations.map(({ action }) => action)).toEqual(["create", "create", "update"]);
 		expect(mutations.every(({ sessionId }) => sessionId === "integration-session")).toBe(true);
-		expect(renderedLines(harness.tool(TASK_GET_TOOL_NAME), fetched, false)).toEqual([]);
+		expect(renderedLines(harness.tool(TASK_GET_TOOL_NAME), fetched, false)).toEqual([
+			"  Checked 1 task  (ctrl+o to expand)",
+		]);
 
 		const failed = await harness.execute(TASK_UPDATE_TOOL_NAME, {
 			taskId: "missing",
@@ -146,7 +153,7 @@ describe("registered Task tools", () => {
 			details: undefined,
 		} as unknown as AgentToolResult<unknown>;
 		expect(renderedLines(harness.tool(TASK_UPDATE_TOOL_NAME), validationFailure, true).join("\n").trim()).toBe(
-			"● Task update · Invalid TaskUpdate input",
+			"● Task update failed  (ctrl+o to expand)\n  ⎿ Task update Invalid TaskUpdate input",
 		);
 		expect(mutations.map(({ action }) => action)).toEqual(["create", "create", "update"]);
 	});
@@ -160,14 +167,22 @@ describe("extension registration", () => {
 			events: {},
 			registerTool: () => {},
 			registerShortcut: (key: unknown, options: { description?: string }) => {
-				shortcuts.push({ key: String(key), description: options.description ?? "" });
+				shortcuts.push({
+					key: String(key),
+					description: options.description ?? "",
+				});
 			},
 			on: (event: string) => lifecycleEvents.push(event),
 		} as unknown as ExtensionAPI;
 
 		piStuffTodo(api);
 
-		expect(shortcuts).toEqual([{ key: TODO_TOGGLE_KEY, description: "Collapse or expand the current task list" }]);
+		expect(shortcuts).toEqual([
+			{
+				key: TODO_TOGGLE_KEY,
+				description: "Collapse or expand the current task list",
+			},
+		]);
 		expect(TODO_TOGGLE_KEY).toBe("ctrl+shift+t");
 		expect(lifecycleEvents.sort()).toEqual([
 			"session_compact",

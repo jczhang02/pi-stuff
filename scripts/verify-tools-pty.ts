@@ -44,30 +44,20 @@ spawn -noecho script -qefc $env(PI_STUFF_TOOLS_PTY_RUNNER) /dev/null
 set tool_pty $spawn_out(slave,name)
 must_expect "TOOLS_DONE"
 after 200
+send -- "\\017"
+must_expect "Tool output: expanded"
+after 200
+send -- "\\017"
+after 100
 send -- "/tools\\r"
 must_expect "Tools"
-must_expect "cancelled"
-must_expect "rejected"
-must_expect "error"
-must_expect "Command exited with code 7"
-must_expect "List"
-must_expect "Find"
-must_expect "older"
-for {set index 0} {$index < 10} {incr index} {
-    send -- "\\033\\[B"
-    after 30
-}
-must_expect "newer"
-must_expect "Grep"
-must_expect "Bash"
-must_expect "Edit"
-must_expect "Write"
-must_expect "Read"
+must_expect "activity groups"
+must_expect "Changed 1 file"
 must_expect "Esc close"
 send -- "\\033"
 after 100
 send -- "/tools tools-pty-4\\r"
-must_expect "Tool details"
+must_expect "Tool activity details"
 must_expect "PREFIX_CJK_工具"
 must_expect "BASH_CJK_工具"
 must_expect "Esc back"
@@ -76,32 +66,8 @@ must_expect "Esc close"
 send -- "\\033"
 after 100
 send -- "/tools tools-pty-8\\r"
-must_expect "Tool details"
+must_expect "Tool activity details"
 must_expect "BUILTIN_FAILURE_工具"
-must_expect "Esc back"
-send -- "\\033"
-must_expect "Esc close"
-send -- "\\033"
-after 100
-send -- "/tools tools-pty-9\\r"
-must_expect "Tool details"
-must_expect "FIXTURE_ERROR"
-must_expect "Esc back"
-send -- "\\033"
-must_expect "Esc close"
-send -- "\\033"
-after 100
-send -- "/tools tools-pty-10\\r"
-must_expect "Tool details"
-must_expect "FIXTURE_REJECTED"
-must_expect "Esc back"
-send -- "\\033"
-must_expect "Esc close"
-send -- "\\033"
-after 100
-send -- "/tools tools-pty-11\\r"
-must_expect "Tool details"
-must_expect "FIXTURE_CANCELLED"
 must_expect "Esc back"
 send -- "\\033"
 must_expect "Esc close"
@@ -121,14 +87,12 @@ must_expect "Reloaded keybindings, extensions"
 must_expect "context files"
 set resized_columns [expr {$env(PI_STUFF_TOOLS_PTY_COLUMNS) + 1}]
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $resized_columns < $tool_pty
-must_expect "●"
-must_expect "List"
+must_expect "Changed 1 file"
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $env(PI_STUFF_TOOLS_PTY_COLUMNS) < $tool_pty
 after 150
 send -- "/tools\\r"
 must_expect "Tools"
-must_expect "List"
-must_expect "older"
+must_expect "activity groups"
 send -- "\\033"
 after 150
 send -- "DRAFT_AFTER_TOOLS"
@@ -232,13 +196,12 @@ function verifyOutput(output: string, columns: number): void {
 		"TOOLS_DONE",
 		"● List",
 		"● Bash",
-		"● State error · error",
-		"● State rejected · rejected",
-		"● State cancelled · cancelled",
-		"● State error · running",
-		"  State error · running",
+		"● Changing 1 file, running 3 commands",
+		"● Changed 1 file, ran 5 commands",
+		"2 failed, 1",
+		"rejected, 1 cancelled",
 		"Tools",
-		"Tool details",
+		"Tool activity details",
 		"PREFIX_CJK_工具",
 		"BASH_CJK_工具",
 		"BUILTIN_FAILURE_工具",
@@ -267,15 +230,16 @@ function verifyOutput(output: string, columns: number): void {
 }
 
 function verifyLifecycleFrames(visible: string): void {
-	const running = "● State error · running";
-	const blank = "  State error · running";
-	const settled = "● State error · error";
-	const firstVisible = visible.indexOf(running);
-	const blankFrame = visible.indexOf(blank, firstVisible + running.length);
-	const secondVisible = visible.indexOf(running, blankFrame + blank.length);
-	const settledFrame = visible.indexOf(settled, secondVisible + running.length);
-	if (firstVisible < 0 || blankFrame < 0 || secondVisible < 0 || settledFrame < 0) {
-		fail("running Tool did not emit visible → blank → visible → settled frames in one fixed marker slot");
+	const running = "● Changing 1 file, running 3 commands";
+	const settled = "● Changed 1 file, ran 5 commands";
+	const runningFrame = visible.indexOf(running);
+	const settledFrame = visible.indexOf(settled, runningFrame + running.length);
+	if (runningFrame < 0 || settledFrame < 0) {
+		const observed = visible
+			.split("\n")
+			.filter((line) => line.includes("Running") || line.includes("Ran"))
+			.slice(-40);
+		fail(`running Activity Group did not settle semantically: ${JSON.stringify(observed)}`);
 	}
 }
 
@@ -440,7 +404,12 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 				`${result.stderr.toString().trim() || `expect exited ${String(result.exitCode)}`}\nRequests:\n${log}\nPTY tail:\n${output.slice(-12_000)}`,
 			);
 		}
-		verifyOutput(output, options.columns);
+		try {
+			verifyOutput(output, options.columns);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`${message}\nPTY tail:\n${output.slice(-12_000)}`, { cause: error });
+		}
 		const records = (await readFile(requestLog, "utf8"))
 			.trim()
 			.split("\n")

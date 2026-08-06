@@ -82,6 +82,7 @@ describe("Task tool response envelope", () => {
 		expect(result.details.capability).toBe("pi-stuff-todo");
 		expect(result.details.schemaVersion).toBe(1);
 		expect(result.details.nextId).toBe(2);
+		expect(result.details.affectedTaskIds).toEqual(["1"]);
 		expect(result.details.tasks).not.toBe(current.tasks);
 		expect(result.details.tasks[0]?.metadata).not.toBe(created.metadata);
 	});
@@ -92,6 +93,7 @@ describe("Task tool response envelope", () => {
 			message: "Task not found",
 		});
 		expect(result.content).toEqual([{ type: "text", text: "Task not found" }]);
+		expect(result.details.affectedTaskIds).toBeUndefined();
 		expect(result.details.error).toBe("Task not found");
 	});
 });

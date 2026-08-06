@@ -1,5 +1,10 @@
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
+import {
+	activityKey,
+	registerSuiteOwnedTool,
+	type SuiteToolPresentation,
+	type ToolActivityCategory,
+} from "@jczhang02/pi-stuff-tools";
 import { applyTaskMutation, type Op } from "./state/state-reducer.js";
 import { commitState, getState, sid } from "./state/store.js";
 import { buildToolResult } from "./tool/response-envelope.js";
@@ -47,16 +52,30 @@ function taskIdTarget(params: Readonly<TaskIdPresentationParams>): string {
 
 function taskPresentation<TParams extends Record<string, unknown>>(
 	label: string,
+	category: Extract<ToolActivityCategory, "check-task" | "update-task">,
 	target: (params: Readonly<TParams>) => string,
 	summarize: (result: AgentToolResult<TaskDetails>) => string = resultText,
 ): SuiteToolPresentation<TParams, TaskDetails> {
 	return {
+		activity: {
+			categories: [category],
+			classify: ({ args, result }) => {
+				const value = target(args);
+				const returnedIds = result?.details?.affectedTaskIds?.map((taskId) => activityKey(taskId));
+				return [
+					{
+						category,
+						countKeys: returnedIds && returnedIds.length > 0 ? returnedIds : [activityKey(value || label)],
+						...(value ? { target: value } : {}),
+					},
+				];
+			},
+		},
 		label,
 		resultIsError: (_params, result) => Boolean(result.details?.error),
 		runningSummary: "updating",
 		summarize: (_params, result) => result.details?.error ?? summarize(result),
 		target,
-		transcript: "errors-only",
 	};
 }
 
@@ -100,7 +119,7 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 	registerSuiteOwnedTool(
 		pi,
 		createTool,
-		taskPresentation("Task create", (params) => params.subject),
+		taskPresentation("Task create", "update-task", (params) => params.subject),
 	);
 
 	const getTool: ToolDefinition<typeof TaskGetParamsSchema, TaskDetails> = {
@@ -114,7 +133,7 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 			return execute("get", params, ctx);
 		},
 	};
-	registerSuiteOwnedTool(pi, getTool, taskPresentation("Task get", taskIdTarget));
+	registerSuiteOwnedTool(pi, getTool, taskPresentation("Task get", "check-task", taskIdTarget));
 
 	const listTool: ToolDefinition<typeof TaskListParamsSchema, TaskDetails> = {
 		name: TASK_LIST_TOOL_NAME,
@@ -130,7 +149,7 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 	registerSuiteOwnedTool(
 		pi,
 		listTool,
-		taskPresentation("Task list", () => "", summarizeTaskList),
+		taskPresentation("Task list", "check-task", () => "", summarizeTaskList),
 	);
 
 	const updateTool: ToolDefinition<typeof TaskUpdateParamsSchema, TaskDetails> = {
@@ -145,5 +164,5 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 			return execute("update", params, ctx);
 		},
 	};
-	registerSuiteOwnedTool(pi, updateTool, taskPresentation("Task update", taskIdTarget));
+	registerSuiteOwnedTool(pi, updateTool, taskPresentation("Task update", "update-task", taskIdTarget));
 }

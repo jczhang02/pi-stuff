@@ -1,5 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import type { SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
+import { type SuiteToolPresentation, singleActivity } from "@jczhang02/pi-stuff-tools";
 
 type Arguments = Record<string, unknown>;
 
@@ -43,10 +43,18 @@ function summarize(_args: Readonly<Arguments>, result: AgentToolResult<unknown>)
 }
 
 export const MCP_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
-	grouping: (args) => {
-		if (typeof args["connect"] === "string" || args["tool"] !== undefined) return "standalone";
-		if (typeof args["search"] === "string" || typeof args["describe"] === "string") return "exploration";
-		return "exploration";
+	activity: {
+		categories: ["connect-mcp", "invoke-mcp", "search-mcp"],
+		classify: ({ args }) => {
+			const label = target(args);
+			if (typeof args["connect"] === "string") {
+				return singleActivity("connect-mcp", { count: 1, target: label });
+			}
+			if (args["tool"] !== undefined) {
+				return singleActivity("invoke-mcp", { count: 1, target: label });
+			}
+			return singleActivity("search-mcp", { count: 1, target: label });
+		},
 	},
 	label: "MCP",
 	resultIsError,

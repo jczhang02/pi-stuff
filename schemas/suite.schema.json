@@ -4,7 +4,7 @@
 	"title": "Pi Stuff Suite registry",
 	"type": "object",
 	"additionalProperties": false,
-	"required": ["schemaVersion", "capabilities"],
+	"required": ["schemaVersion", "capabilities", "tools"],
 	"properties": {
 		"schemaVersion": {
 			"const": 1
@@ -14,6 +14,31 @@
 			"items": {
 				"type": "string",
 				"pattern": "^@jczhang02/pi-[a-z0-9-]+$"
+			},
+			"uniqueItems": true
+		},
+		"tools": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			},
+			"uniqueItems": true
+		},
+		"deferredTools": {
+			"type": "array",
+			"description": "Aggregate-owned Tools that must declare Activity metadata but may register after session_start.",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			},
+			"uniqueItems": true
+		},
+		"optionalTools": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"minLength": 1
 			},
 			"uniqueItems": true
 		}

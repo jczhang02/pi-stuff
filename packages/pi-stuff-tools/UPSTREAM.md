@@ -22,10 +22,12 @@ This Capability Package is an owned fork of `@mobrienv/pi-tidy-tools` 0.4.1.
   `pi-fff`, command-driven configuration, and upstream file-writing startup/configuration behavior.
 - Uses Pi semantic theme tokens, a bounded width cache, hard-capped focused details, and the shared non-floating Pi
   Stuff Command Dialog.
-- Adds a renderer contract for Suite-owned tools. Todo success remains visually silent, while Agent work uses the
-  same compact grammar.
-- Composes public lifecycle events and per-row invalidation to group only adjacent successful exploration calls in
-  the display, without changing model-visible results or persisted session data.
+- Adds a required Activity metadata contract for every Aggregate-owned Tool, with semantic present/past clauses,
+  deduplication identities, bounded live targets, and honest issue states.
+- Composes public lifecycle events, current-branch reconstruction, and per-row invalidation into complete Tool
+  Activity Groups across Assistant Tool round-trips and visible Thinking. Assistant prose, user input, and visible
+  model-context Custom Messages are boundaries. Ctrl+O restores native Tool rows; model-visible results and persisted
+  session data remain unchanged.
 - Does not contain or derive from code in `jczhang02/pi-agent`.
 
 The upstream license is preserved in `LICENSE`. Future rebases must update this record and keep local changes

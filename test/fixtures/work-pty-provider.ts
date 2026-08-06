@@ -56,13 +56,14 @@ function fixtureStream(context: Context) {
 	requestNumber += 1;
 	const tools = (context.tools ?? []).map((tool) => tool.name);
 	const transcript = JSON.stringify(context.messages ?? []);
+	const monitorCompletedNotification =
+		transcript.includes('kind=\\"monitor\\"') && transcript.includes('status=\\"completed\\"');
 	const logPath = process.env["PI_STUFF_WORK_PTY_LOG"];
 	if (logPath) {
 		appendFileSync(
 			logPath,
 			`${JSON.stringify({
-				monitorCompletedNotification:
-					transcript.includes('kind=\\"monitor\\"') && transcript.includes('status=\\"completed\\"'),
+				monitorCompletedNotification,
 				monitorTimedOutNotification:
 					transcript.includes('kind=\\"monitor\\"') && transcript.includes('status=\\"timed_out\\"'),
 				request: current,
@@ -95,9 +96,10 @@ function fixtureStream(context: Context) {
 			});
 		case 4:
 			return textStream("MAIN_CONTINUES");
-		case 5:
-			return textStream("MONITOR_RESUMED");
 		default:
+			if (current >= 5) {
+				return textStream(monitorCompletedNotification ? "MONITOR_RESUMED" : "DRAINING_PENDING_NOTIFICATION");
+			}
 			return textStream(`UNEXPECTED_REQUEST_${String(current)}`);
 	}
 }

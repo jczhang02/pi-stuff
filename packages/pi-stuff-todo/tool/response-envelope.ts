@@ -65,12 +65,28 @@ export function formatContent(op: Op, state: TaskState): string {
 	}
 }
 
+function affectedTaskIds(op: Op): string[] {
+	switch (op.kind) {
+		case "create":
+			return [op.task.id];
+		case "get":
+			return op.task ? [op.task.id] : [];
+		case "list":
+			return op.tasks.map((task) => task.id);
+		case "update":
+			return [op.taskId];
+		case "error":
+			return [];
+	}
+}
+
 export function buildToolResult(
 	action: TaskAction,
 	params: TaskMutationParams,
 	state: TaskState,
 	op: Op,
 ): { content: Array<{ type: "text"; text: string }>; details: TaskDetails } {
+	const affected = affectedTaskIds(op);
 	const details: TaskDetails = {
 		capability: TASK_SNAPSHOT_CAPABILITY,
 		schemaVersion: TASK_SNAPSHOT_SCHEMA_VERSION,
@@ -78,6 +94,7 @@ export function buildToolResult(
 		params: { ...params },
 		tasks: state.tasks.map(cloneTask),
 		nextId: state.nextId,
+		...(affected.length > 0 ? { affectedTaskIds: affected } : {}),
 		...(op.kind === "error" ? { error: op.message } : {}),
 	};
 	return {

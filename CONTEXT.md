@@ -32,6 +32,14 @@ _Avoid_: asset, plugin file
 User-owned declarations that select and configure Packages and Runtime Resources for a Host installation.
 _Avoid_: Suite configuration, installer state
 
+**Narrative Boundary**:
+Visible Assistant prose, user input, or any visible model-context Custom Message that separates one Tool execution phase from the next. Thinking remains visible but does not create a boundary; hidden state and branch/compaction metadata do not either.
+_Avoid_: Assistant message boundary, API turn, Thinking block
+
+**Tool Activity Group**:
+A derived display-only summary of every participating Tool call and result between adjacent Narrative Boundaries, including calls separated by Thinking. It preserves the individual protocol events and session history; an unsupported third-party Tool remains standalone and acts as a compatibility boundary.
+_Avoid_: Exploration group, Tool batch, merged Tool call
+
 **Todo Task**:
 A planned unit of work maintained by the Suite's Task tools and checklist. It describes intent; it is not an executing process, wait, or Agent.
 _Avoid_: Background task, job

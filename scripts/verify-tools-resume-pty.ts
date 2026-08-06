@@ -201,7 +201,7 @@ export async function verifyToolsResumePty(options: {
 	verifyHostVersion(options.piBinary);
 	for (const fixture of [
 		{
-			compactRow: "● Read resume-target.txt · 1 lines",
+			compactRow: "Read 1 file",
 			expectedBuiltins: ["bash", "edit", "read", "write"],
 			mode: "default",
 			rawMarker: "RAW_RESUME_READ_RESULT_MARKER",
@@ -211,7 +211,7 @@ export async function verifyToolsResumePty(options: {
 			mode: "disabled",
 		},
 		{
-			compactRow: "● Grep NEEDLE in . · 1 match in 1 file",
+			compactRow: "Searched 1 pattern",
 			expectedBuiltins: ["find", "grep", "ls"],
 			mode: "allowlist",
 			rawMarker: "resume-target.txt:1:RAW_RESUME_GREP_RESULT_MARKER",

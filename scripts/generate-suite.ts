@@ -22,6 +22,9 @@ interface PackageManifest {
 interface SuiteRegistry {
 	schemaVersion?: unknown;
 	capabilities?: unknown;
+	tools?: unknown;
+	deferredTools?: unknown;
+	optionalTools?: unknown;
 }
 
 async function readJson<T>(path: string): Promise<T> {
@@ -33,10 +36,29 @@ function capabilityIdentifier(packageName: string): string {
 	return unscopedName.replace(/-([a-z0-9])/g, (_, character: string) => character.toUpperCase());
 }
 
-function renderIndex(capabilities: readonly string[]): string {
+function renderToolNamesConstant(identifier: string, names: readonly string[]): string {
+	const inline = `const ${identifier} = [${names.map((name) => JSON.stringify(name)).join(", ")}] as const;`;
+	return inline.length <= 120
+		? inline
+		: `const ${identifier} = [\n${names.map((name) => `\t${JSON.stringify(name)},`).join("\n")}\n] as const;`;
+}
+
+function renderIndex(
+	capabilities: readonly string[],
+	toolNames: readonly string[],
+	optionalToolNames: readonly string[],
+	deferredToolNames: readonly string[],
+): string {
+	if ((toolNames.length > 0 || deferredToolNames.length > 0) && !capabilities.includes("@jczhang02/pi-stuff-tools")) {
+		throw new Error("An Aggregate Tool inventory requires @jczhang02/pi-stuff-tools");
+	}
 	const imports = [...capabilities]
 		.sort((left, right) => left.localeCompare(right))
-		.map((packageName) => `import ${capabilityIdentifier(packageName)} from "${packageName}";`);
+		.map((packageName) =>
+			packageName === "@jczhang02/pi-stuff-tools"
+				? `import ${capabilityIdentifier(packageName)}, {\n\tassertSuiteToolActivityCoverage,\n\tcreateSuiteToolRegistrationTracker,\n} from "${packageName}";`
+				: `import ${capabilityIdentifier(packageName)} from "${packageName}";`,
+		);
 	const identifiers = capabilities.map(capabilityIdentifier);
 	const importBlock = [`import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`, ...imports].join("\n");
 	const capabilityPrefix = "const CAPABILITIES: readonly CapabilityFactory[] = ";
@@ -45,15 +67,36 @@ function renderIndex(capabilities: readonly string[]): string {
 		capabilityPrefix.length + inlineCapabilities.length + 1 <= 120
 			? `${capabilityPrefix}${inlineCapabilities};`
 			: `${capabilityPrefix}[\n${identifiers.map((identifier) => `\t${identifier},`).join("\n")}\n];`;
+	const coverageArguments = [
+		"pi",
+		"AGGREGATE_TOOL_NAMES",
+		"registrations.toolNames",
+		...(optionalToolNames.length > 0 || deferredToolNames.length > 0
+			? [optionalToolNames.length > 0 ? "OPTIONAL_AGGREGATE_TOOL_NAMES" : "[]"]
+			: []),
+		...(deferredToolNames.length > 0 ? ["DEFERRED_AGGREGATE_TOOL_NAMES"] : []),
+	];
+	const coverageCall = `assertSuiteToolActivityCoverage(\n${coverageArguments.map((argument) => `\t\t\t${argument},`).join("\n")}\n\t\t)`;
 	const sections = [
 		GENERATED_HEADER,
 		importBlock,
 		"type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;",
 		capabilityDeclaration,
+		...(toolNames.length > 0
+			? [
+					renderToolNamesConstant("AGGREGATE_TOOL_NAMES", toolNames),
+					...(deferredToolNames.length > 0
+						? [renderToolNamesConstant("DEFERRED_AGGREGATE_TOOL_NAMES", deferredToolNames)]
+						: []),
+					...(optionalToolNames.length > 0
+						? [renderToolNamesConstant("OPTIONAL_AGGREGATE_TOOL_NAMES", optionalToolNames)]
+						: []),
+				]
+			: []),
 		`export default async function piStuff(pi: ExtensionAPI): Promise<void> {
-\tfor (const capability of CAPABILITIES) {
-\t\tawait capability(pi);
-\t}
+${toolNames.length > 0 ? "\tconst registrations = createSuiteToolRegistrationTracker(pi);\n" : ""}\tfor (const capability of CAPABILITIES) {
+\t\tawait capability(${toolNames.length > 0 ? "registrations.api" : "pi"});
+\t}${toolNames.length > 0 ? `\n\tpi.on("session_start", () =>\n\t\t${coverageCall},\n\t);` : ""}
 }`,
 	];
 	return `${sections.join("\n\n")}\n`;
@@ -78,9 +121,67 @@ function parseRegistry(registry: SuiteRegistry): string[] {
 	return capabilities;
 }
 
+function parseTools(registry: SuiteRegistry): string[] {
+	if (
+		!Array.isArray(registry.tools) ||
+		!registry.tools.every((value) => typeof value === "string" && value.length > 0)
+	) {
+		throw new Error("packages/pi-stuff/suite.json tools must be an array of Tool names");
+	}
+	const tools = registry.tools as string[];
+	if (new Set(tools).size !== tools.length) throw new Error("packages/pi-stuff/suite.json contains duplicate Tools");
+	return tools;
+}
+
+function parseOptionalTools(registry: SuiteRegistry, requiredTools: readonly string[]): string[] {
+	if (registry.optionalTools === undefined) return [];
+	if (
+		!Array.isArray(registry.optionalTools) ||
+		!registry.optionalTools.every((value) => typeof value === "string" && value.length > 0)
+	) {
+		throw new Error("packages/pi-stuff/suite.json optionalTools must be an array of Tool names");
+	}
+	const tools = registry.optionalTools as string[];
+	if (new Set(tools).size !== tools.length) {
+		throw new Error("packages/pi-stuff/suite.json contains duplicate optional Tools");
+	}
+	const overlap = tools.filter((name) => requiredTools.includes(name));
+	if (overlap.length > 0) {
+		throw new Error(`Aggregate Tools cannot be both required and optional: ${overlap.join(", ")}`);
+	}
+	return tools;
+}
+
+function parseDeferredTools(
+	registry: SuiteRegistry,
+	requiredTools: readonly string[],
+	optionalTools: readonly string[],
+): string[] {
+	if (registry.deferredTools === undefined) return [];
+	if (
+		!Array.isArray(registry.deferredTools) ||
+		!registry.deferredTools.every((value) => typeof value === "string" && value.length > 0)
+	) {
+		throw new Error("packages/pi-stuff/suite.json deferredTools must be an array of Tool names");
+	}
+	const tools = registry.deferredTools as string[];
+	if (new Set(tools).size !== tools.length) {
+		throw new Error("packages/pi-stuff/suite.json contains duplicate deferred Tools");
+	}
+	const overlap = tools.filter((name) => requiredTools.includes(name) || optionalTools.includes(name));
+	if (overlap.length > 0) {
+		throw new Error(
+			`Aggregate Tools cannot be required, deferred, or optional at the same time: ${overlap.join(", ")}`,
+		);
+	}
+	return tools;
+}
+
 async function readWorkspacePackages(packagesDirectory: string): Promise<Map<string, PackageManifest>> {
 	const packages = new Map<string, PackageManifest>();
-	for (const entry of await readdir(packagesDirectory, { withFileTypes: true })) {
+	for (const entry of await readdir(packagesDirectory, {
+		withFileTypes: true,
+	})) {
 		if (!entry.isDirectory() || entry.name === AGGREGATE_DIRECTORY) {
 			continue;
 		}
@@ -152,10 +253,13 @@ export async function generateSuite(rootDirectory: string, mode: GenerationMode)
 	const indexPath = join(aggregateDirectory, "index.ts");
 	const registry = await readJson<SuiteRegistry>(join(aggregateDirectory, "suite.json"));
 	const capabilities = parseRegistry(registry);
+	const toolNames = parseTools(registry);
+	const optionalToolNames = parseOptionalTools(registry, toolNames);
+	const deferredToolNames = parseDeferredTools(registry, toolNames, optionalToolNames);
 	const workspacePackages = await readWorkspacePackages(packagesDirectory);
 	const manifest = await readJson<PackageManifest>(manifestPath);
 	const generatedManifest = `${JSON.stringify(updateManifest(manifest, capabilities, workspacePackages), null, "\t")}\n`;
-	const generatedIndex = renderIndex(capabilities);
+	const generatedIndex = renderIndex(capabilities, toolNames, optionalToolNames, deferredToolNames);
 	const changedFiles: string[] = [];
 
 	for (const [path, content] of [

@@ -102,6 +102,14 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 	expect(presentation.summarize?.({ action: "stop", id: "run-1" }, longReport, "success", 18_000)).toBe("stopped");
 	expect(presentation.summarize?.({ action: "status", id: "run-1" }, longReport, "success", 18_000)).toBe("checked");
 	expect(presentation.summarize?.({}, longReport, "cancelled", 18_000)).toBe("cancelled");
+	const backgroundActivities = presentation.activity?.classify({
+		args: { agent: "reviewer", task: fullTask },
+		result: { content: [], details: { mode: "single", results: [] } },
+		state: "success",
+		toolCallId: "agent-background",
+	} as never);
+	expect(backgroundActivities).toHaveLength(1);
+	expect(backgroundActivities?.[0]).toMatchObject({ category: "launch-agent", count: 1 });
 });
 
 test("native parent and child communication tools use the shared Tool row", () => {

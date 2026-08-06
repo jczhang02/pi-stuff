@@ -10,28 +10,16 @@ const theme = {
 	fg: (_color: string, value: string) => value,
 } as unknown as Theme;
 
-function contextHarness(
-	rows = 28,
-	activeTheme = theme,
-): {
-	readonly context: CommandDialogViewContext<void>;
-	readonly terminal: { rows: number };
-	readonly closed: () => number;
-	readonly renders: () => number;
-} {
+function contextHarness(rows = 28, activeTheme = theme) {
 	let closed = 0;
 	let renders = 0;
 	const terminal = { rows };
 	return {
 		closed: () => closed,
 		context: {
-			close: () => {
-				closed += 1;
-			},
+			close: () => closed++,
 			keybindings: {},
-			requestRender: () => {
-				renders += 1;
-			},
+			requestRender: () => renders++,
 			signal: new AbortController().signal,
 			theme: activeTheme,
 			tui: { terminal },
@@ -41,161 +29,124 @@ function contextHarness(
 	};
 }
 
-test("/tools moves from a focused list to bounded details and back", () => {
+function toolCall(id: string, path: string) {
+	return { type: "toolCall", id, name: "read", arguments: { path } };
+}
+
+function toolResult(id: string, isError = false) {
+	return {
+		role: "toolResult",
+		toolCallId: id,
+		content: [{ type: "text", text: isError ? "missing" : "safe" }],
+		details: {},
+		...(isError ? { isError: true } : {}),
+	};
+}
+
+function groupedRuntime(paths: readonly string[], errorIndex = -1): ToolUiRuntime {
 	const runtime = new ToolUiRuntime();
-	runtime.activities.begin({
-		id: "read-1",
-		label: "Read",
-		name: "read",
-		target: "工具.txt",
+	runtime.registerActivity("read", {
+		categories: ["read-file"],
+		classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["path"])] }],
 	});
-	runtime.activities.settle("read-1", {
-		detailLines: ["Call", "path: 工具.txt", "", "Result", "safe"],
-		durationMs: 25,
-		state: "success",
-		summary: "1 line",
-	});
+	const calls = paths.map((path, index) => toolCall(`read-${String(index + 1)}`, path));
+	const results = paths.map((_path, index) => toolResult(`read-${String(index + 1)}`, index === errorIndex));
+	runtime.indexMessages([{ role: "assistant", content: calls }, ...results], true);
+	for (const [index, path] of paths.entries()) {
+		const id = `read-${String(index + 1)}`;
+		runtime.activities.begin({ id, label: "Read", name: "read", target: path });
+		runtime.activities.settle(id, {
+			detailLines: ["Call", `path: ${path}`, "", "Result", index === errorIndex ? "missing" : "safe"],
+			durationMs: undefined,
+			state: index === errorIndex ? "error" : "success",
+			summary: index === errorIndex ? "missing" : "safe",
+		});
+	}
+	return runtime;
+}
+
+test("/tools lists Activity Groups and one detail view restores every member", () => {
+	const runtime = groupedRuntime(["工具.txt", "src/config.ts"]);
 	const harness = contextHarness();
 	const component = createToolDialogView(runtime).create(harness.context);
 
-	const list = component.render(28).join("\n");
-	expect(list).toContain("  › ● Read 工具.txt");
-	expect(list).not.toMatch(/[╭╮╰╯]/u);
-	expect(list).not.toContain("current-session operations");
+	const list = component.render(42).join("\n");
+	expect(list).toContain("Read 2 files");
+	expect(list).toContain("2 tools");
 	expect(list).toContain("Enter details");
-	expect(list).toContain("Esc close");
 	component.handleInput?.("\r");
-	const detail = component.render(28).join("\n");
-	expect(detail).toContain("Tool details");
-	expect(detail).not.toMatch(/[╭╮╰╯]/u);
+	const detail = component.render(42).join("\n");
+	expect(detail).toContain("Tool activity details");
 	expect(detail).toContain("path: 工具.txt");
-	expect(detail).toContain("Esc back");
+	expect(detail).toContain("path: src/config.ts");
 	component.handleInput?.("\u001b");
-	expect(component.render(28).join("\n")).toContain("Tools");
+	expect(component.render(42).join("\n")).toContain("Tools");
 	component.handleInput?.("\u001b");
 	expect(harness.closed()).toBe(1);
-	expect(harness.renders()).toBeGreaterThanOrEqual(2);
 	component.dispose?.();
-	runtime.clear();
 });
 
-test("/tools bounds long lists while keeping every operation reachable", () => {
-	const runtime = new ToolUiRuntime();
-	for (let index = 1; index <= 11; index += 1) {
-		runtime.activities.begin({
-			id: `tool-${String(index)}`,
-			label: `Tool ${String(index)}`,
-			name: "fixture",
-			target: `target-${String(index)}`,
-		});
-	}
-	const harness = contextHarness(32);
-	const component = createToolDialogView(runtime).create(harness.context);
-
-	const newestWindow = component.render(100);
-	expect(newestWindow.join("\n")).toContain("› ● Tool 11");
-	expect(newestWindow.join("\n")).toContain("… 3 older");
-	expect(newestWindow.join("\n")).not.toContain("Tool 3 target-3");
-	expect(newestWindow.at(-1)).toContain("Esc close");
-
-	for (let index = 0; index < 10; index += 1) component.handleInput?.("\u001b[B");
-	const oldestWindow = component.render(100).join("\n");
-	expect(oldestWindow).toContain("› ● Tool 1");
-	expect(oldestWindow).toContain("… 3 newer");
-	expect(oldestWindow).not.toContain("… 3 older");
-
+test("/tools <member-id> focuses the requested member within its complete group", () => {
+	const runtime = groupedRuntime(["a.ts", "b.ts", "c.ts"]);
+	const harness = contextHarness(36);
+	const component = createToolDialogView(runtime, "read-2").create(harness.context);
+	const detail = component.render(60).join("\n");
+	expect(detail).toContain("3 tools");
+	expect(detail).not.toContain("path: a.ts");
+	expect(detail).toContain("path: b.ts");
+	expect(detail).toContain("path: c.ts");
+	expect(detail).toContain("2–3/3 tools");
 	component.dispose?.();
-	runtime.clear();
 });
 
-test("/tools wraps visual detail lines before pagination and preserves unknown duration", () => {
+test("/tools <member-id> opens an infrastructure-only group hidden from the compact transcript", () => {
 	const runtime = new ToolUiRuntime();
+	runtime.registerActivity("internal", { categories: [], classify: () => [], silentSuccess: true });
+	runtime.indexMessages(
+		[
+			{ role: "assistant", content: [{ type: "toolCall", id: "internal-1", name: "internal", arguments: {} }] },
+			{ role: "toolResult", toolCallId: "internal-1", content: [{ type: "text", text: "done" }], details: {} },
+		],
+		true,
+	);
+	runtime.activities.begin({ id: "internal-1", label: "Internal", name: "internal", target: "internal" });
+	runtime.activities.settle("internal-1", {
+		detailLines: ["Call", "internal", "", "Result", "done"],
+		durationMs: undefined,
+		state: "success",
+		summary: "done",
+	});
+	const harness = contextHarness();
+	const component = createToolDialogView(runtime, "internal-1").create(harness.context);
+	const detail = component.render(60).join("\n");
+	expect(detail).toContain("Tool activity details");
+	expect(detail).toContain("internal-1");
+	expect(detail).toContain("Result");
+	component.dispose?.();
+});
+
+test("/tools wraps and paginates long member details without exceeding terminal width", () => {
+	const runtime = groupedRuntime(["long.txt"]);
 	const longDetail = ["输出内容".repeat(200), "TAIL-END"].join(" ");
-	runtime.activities.begin({ id: "read-wrap", label: "Read", name: "read", target: "很长的结果.txt" });
-	runtime.activities.settle("read-wrap", {
+	runtime.activities.settle("read-1", {
 		detailLines: [longDetail],
 		durationMs: undefined,
 		state: "success",
-		summary: "long line",
+		summary: "safe",
 	});
 	const harness = contextHarness(28);
-	const component = createToolDialogView(runtime, "read-wrap").create(harness.context);
-
+	const component = createToolDialogView(runtime, "read-1").create(harness.context);
 	const first = component.render(28);
 	expect(first.every((line) => visibleWidth(line) <= 28)).toBe(true);
-	expect(first.join("\n")).toContain("· —");
 	expect(first.join("\n")).not.toContain("TAIL-END");
-	for (let page = 0; page < 5; page += 1) component.handleInput?.("\u001b[6~");
+	for (let page = 0; page < 12; page++) component.handleInput?.("\u001b[6~");
 	const last = component.render(28);
 	expect(last.every((line) => visibleWidth(line) <= 28)).toBe(true);
 	expect(last.join("\n")).toContain("TAIL-END");
-	expect(last.join("\n")).toContain("Esc back");
-
 	component.dispose?.();
-	runtime.clear();
 });
 
-test("/tools caches wrapped detail at one width and rewraps exactly once after resize", () => {
-	const runtime = new ToolUiRuntime();
-	let detailReads = 0;
-	const detailLines = new Proxy(["缓存详情".repeat(120)], {
-		get: (target, property, receiver) => {
-			if (typeof property === "string" && /^\d+$/u.test(property)) detailReads += 1;
-			return Reflect.get(target, property, receiver) as unknown;
-		},
-	});
-	runtime.activities.begin({ id: "read-cache", label: "Read", name: "read", target: "cache.txt" });
-	runtime.activities.settle("read-cache", {
-		detailLines,
-		durationMs: 10,
-		state: "success",
-		summary: "cached",
-	});
-	const harness = contextHarness();
-	const component = createToolDialogView(runtime, "read-cache").create(harness.context);
-
-	component.render(28);
-	const firstPassReads = detailReads;
-	expect(firstPassReads).toBeGreaterThan(0);
-	component.handleInput?.("\u001b[6~");
-	component.render(28);
-	expect(detailReads).toBe(firstPassReads);
-	component.render(64);
-	const resizeReads = detailReads;
-	expect(resizeReads).toBeGreaterThan(firstPassReads);
-	component.render(64);
-	expect(detailReads).toBe(resizeReads);
-
-	component.dispose?.();
-	runtime.clear();
-});
-
-test("/tools wraps hints by visible width and never budgets rows the terminal does not have", () => {
-	const runtime = new ToolUiRuntime();
-	runtime.activities.begin({ id: "read-small", label: "Read", name: "read", target: "中文目标.txt" });
-	const harness = contextHarness(28);
-	const component = createToolDialogView(runtime).create(harness.context);
-
-	const narrow = component.render(12);
-	expect(narrow.every((line) => visibleWidth(line) <= 12)).toBe(true);
-	expect(narrow.join("\n")).toContain("Esc close");
-
-	harness.terminal.rows = 5;
-	const compactList = component.render(64);
-	expect(compactList.length).toBeLessThanOrEqual(5);
-	expect(compactList.join("\n")).toContain("Esc close");
-	component.handleInput?.("\r");
-	const compactDetail = component.render(64);
-	expect(compactDetail.length).toBeLessThanOrEqual(5);
-	expect(compactDetail.join("\n")).toContain("Esc back");
-	harness.terminal.rows = 0;
-	expect(component.render(64)).toEqual([]);
-
-	component.dispose?.();
-	runtime.clear();
-});
-
-test("/tools uses readable running, success, and error state colors across transcript and dialog rows", () => {
+test("/tools keeps error groups explicit and semantically colored", () => {
 	const colorCodes: Record<string, number> = { error: 31, muted: 90, success: 32 };
 	const semanticTheme = {
 		bold: (value: string) => value,
@@ -204,56 +155,27 @@ test("/tools uses readable running, success, and error state colors across trans
 			return code === undefined ? value : `\u001b[${String(code)}m${value}\u001b[0m`;
 		},
 	} as unknown as Theme;
-	const runtime = new ToolUiRuntime();
-	runtime.activities.begin({ id: "running", label: "Running", name: "fixture", target: "" });
-	for (const state of ["success", "error", "rejected", "cancelled"] as const) {
-		runtime.activities.begin({ id: state, label: state, name: "fixture", target: "" });
-		runtime.activities.settle(state, {
-			detailLines: [],
-			durationMs: 1,
-			state,
-			summary: state,
-		});
-	}
+	const runtime = groupedRuntime(["a.ts", "missing.ts"], 1);
 	const harness = contextHarness(28, semanticTheme);
 	const component = createToolDialogView(runtime).create(harness.context);
 	const output = component.render(100).join("\n");
-
-	expect(output).toContain("\u001b[90m●\u001b[0m");
-	expect(output).toContain("\u001b[32m●\u001b[0m");
-	expect(output.split("\u001b[31m●\u001b[0m")).toHaveLength(4);
+	expect(Bun.stripANSI(output)).toContain("Read 2 files · 1 failed");
+	expect(output).toContain("\u001b[31m●\u001b[0m");
 	component.dispose?.();
-	runtime.clear();
 });
 
-test("/tools list preserves result metadata before optional long targets at every supported width", () => {
-	const runtime = new ToolUiRuntime();
-	runtime.activities.begin({
-		id: "read-long",
-		label: "Read",
-		name: "read",
-		target: "/tmp/很长的🧪工具路径/pi-max-tools/session/sample.txt",
-	});
-	runtime.activities.settle("read-long", {
-		detailLines: ["ok"],
-		durationMs: 18_000,
-		state: "success",
-		summary: "done in 18s",
-	});
-	const harness = contextHarness();
+test("/tools respects narrow widths and terminal row budgets", () => {
+	const runtime = groupedRuntime(["中文目标.txt"]);
+	const harness = contextHarness(28);
 	const component = createToolDialogView(runtime).create(harness.context);
-
-	for (const width of [100, 64, 48, 32, 24]) {
-		const lines = component.render(width);
-		const row = lines.find((line) => line.includes("● Read")) ?? "";
-		const plain = Bun.stripANSI(row);
-		expect(visibleWidth(row)).toBeLessThanOrEqual(width);
-		expect(plain).toContain("done in 18s");
-		expect(plain).not.toContain("…done");
-		if (plain.includes("…")) expect(plain).toContain("… · done in 18s");
-	}
-
-	expect(component.render(24)).toContain("  › ● Read · done in 18s");
+	const narrow = component.render(12);
+	expect(narrow.every((line) => visibleWidth(line) <= 12)).toBe(true);
+	expect(narrow.join("\n")).toContain("Esc close");
+	harness.terminal.rows = 5;
+	expect(component.render(64).length).toBeLessThanOrEqual(5);
+	component.handleInput?.("\r");
+	expect(component.render(64).length).toBeLessThanOrEqual(5);
+	harness.terminal.rows = 0;
+	expect(component.render(64)).toEqual([]);
 	component.dispose?.();
-	runtime.clear();
 });

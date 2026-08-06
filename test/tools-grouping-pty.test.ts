@@ -5,7 +5,7 @@ import { verifyToolsGroupingPty } from "../scripts/verify-tools-grouping-pty.js"
 const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 const AGGREGATE_PACKAGE = resolve(import.meta.dir, "../packages/pi-stuff");
 
-test("real Pi groups only adjacent successful exploration Tool calls", async () => {
+test("real Pi groups complete Tool activity across round-trips and lifecycle rebuilds", async () => {
 	for (const scenario of ["lifecycle", "compaction", "resume", "tree"] as const) {
 		await verifyToolsGroupingPty({
 			columns: 100,

@@ -1,15 +1,15 @@
-import { expect, spyOn, test } from "bun:test";
-import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { expect, test } from "bun:test";
+import type { ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
+	assertSuiteToolActivityCoverage,
+	createSuiteToolRegistrationTracker,
 	getToolUiRuntime,
 	installToolUiRuntime,
 	registerSuiteOwnedTool,
 	ToolUiRuntime,
 	type ToolUiTimerScheduler,
 } from "../../packages/pi-stuff-tools/contract.js";
-import { CachedToolRow, summarizeBuiltin } from "../../packages/pi-stuff-tools/render.js";
 import { ToolUiSettingsStore } from "../../packages/pi-stuff-tools/settings.js";
 
 const Params = Type.Object({ value: Type.String() });
@@ -35,8 +35,7 @@ class ManualTimerScheduler implements ToolUiTimerScheduler {
 	}
 
 	setInterval(callback: () => void, delayMs: number): unknown {
-		const id = this.nextId;
-		this.nextId += 1;
+		const id = this.nextId++;
 		this.callbacks.set(id, callback);
 		this.delays.push(delayMs);
 		return id;
@@ -54,6 +53,7 @@ function apiHarness(): {
 	const tools = new Map<string, ToolDefinition>();
 	const api = {
 		events: {},
+		getAllTools: () => [...tools.values()],
 		on: () => {},
 		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
 	} as unknown as ExtensionAPI;
@@ -82,436 +82,519 @@ function renderContext(
 	};
 }
 
-test("renderer decoration preserves the tool contract and model-visible result", async () => {
-	const { api, tools } = apiHarness();
-	const execute = async (): Promise<AgentToolResult<{ readonly source: string }>> => ({
-		content: [{ type: "text", text: "MODEL_VISIBLE" }],
-		details: { source: "original" },
-	});
-	const original: ToolDefinition<typeof Params, { readonly source: string }> = {
-		description: "original description",
-		execute,
-		label: "Original",
-		name: "original",
-		parameters: Params,
-		promptGuidelines: ["original guideline"],
-		promptSnippet: "original snippet",
-	};
+function assistant(...content: unknown[]): unknown {
+	return { role: "assistant", content };
+}
 
-	registerSuiteOwnedTool(api, original, {
-		label: "Compact",
+function call(id: string, name: string, value: string): unknown {
+	return { type: "toolCall", id, name, arguments: { value } };
+}
+
+function result(id: string, text = "ok", isError = false): unknown {
+	return {
+		role: "toolResult",
+		toolCallId: id,
+		content: [{ type: "text", text }],
+		details: {},
+		...(isError ? { isError: true } : {}),
+	};
+}
+
+function presentation(category: "change-file" | "read-file" | "run-command") {
+	return {
+		activity: {
+			categories: [category],
+			classify: ({ args }: { args: Readonly<Params> }) => [
+				category === "run-command"
+					? { category, count: 1, target: args.value }
+					: { category, countKeys: [args.value], target: args.value },
+			],
+		},
+		label: category,
 		runningSummary: "working",
-		summarize: () => "done",
-		target: (args) => args.value,
-	});
-	const decorated = tools.get("original");
-	if (!decorated) throw new Error("tool was not registered");
-
-	expect(decorated.parameters).toBe(original.parameters);
-	expect(decorated.execute).toBe(original.execute);
-	expect(decorated.description).toBe(original.description);
-	expect(decorated.promptSnippet).toBe(original.promptSnippet);
-	expect(decorated.promptGuidelines).toBe(original.promptGuidelines);
-	const executionResult = await decorated.execute(
-		"call-1",
-		{ value: "工具.txt" },
-		new AbortController().signal,
-		undefined,
-		{} as never,
-	);
-	expect(executionResult).toEqual({
-		content: [{ type: "text", text: "MODEL_VISIBLE" }],
-		details: { source: "original" },
-	});
-
-	const state = {};
-	const args = { value: "工具.txt" };
-	const runtime = getToolUiRuntime(api);
-	const stopTimer = spyOn(runtime, "stopTimer");
-	const row = decorated.renderCall?.(args, theme, renderContext(state, args));
-	expect(row?.render(80).join("\n")).toContain("working");
-	decorated.renderResult?.(executionResult, { expanded: false, isPartial: false }, theme, renderContext(state, args));
-	expect(row?.render(80).join("\n")).toContain("done");
-	expect(stopTimer).toHaveBeenCalledWith("call-1");
-	expect(runtime.activities.get("call-1")?.detailLines.join("\n")).toContain("MODEL_VISIBLE");
-	expect(runtime.activities.get("call-1")).not.toHaveProperty("args");
-	runtime.clear();
-	stopTimer.mockRestore();
-});
-
-test("settled Suite tools can keep media content below the shared lifecycle row", () => {
-	const { api, tools } = apiHarness();
-	const original: ToolDefinition<typeof Params, { readonly media: boolean }> = {
-		description: "media fixture",
-		execute: async () => ({ content: [{ type: "text", text: "ok" }], details: { media: true } }),
-		label: "Media",
-		name: "media",
-		parameters: Params,
+		summarize: (_args: Readonly<Params>, _result: unknown, state: string) => (state === "success" ? "done" : state),
+		target: (args: Readonly<Params>) => args.value,
 	};
-	registerSuiteOwnedTool(api, original, {
-		resultBody: (_args, result) => (result.details.media ? new Text("MEDIA_BODY", 0, 0) : undefined),
-		summarize: () => "done",
-	});
-	const decorated = tools.get("media");
-	if (!decorated) throw new Error("media tool was not registered");
-	const state = {};
-	const args = { value: "image.png" };
-	const context = renderContext(state, args);
-	decorated.renderCall?.(args, theme, context);
-	const partial = decorated.renderResult?.(
-		{ content: [{ type: "text", text: "pending" }], details: { media: true } },
-		{ expanded: false, isPartial: true },
-		theme,
-		context,
-	);
-	expect(partial?.render(80)).toEqual([]);
-	const settled = decorated.renderResult?.(
-		{ content: [{ type: "text", text: "ok" }], details: { media: true } },
-		{ expanded: false, isPartial: false },
-		theme,
-		context,
-	);
-	expect(settled?.render(80).join("\n")).toContain("MEDIA_BODY");
-	getToolUiRuntime(api).clear();
-});
+}
 
-test("collapses only adjacent successful exploration rows without losing local Tool records", () => {
-	const { api, tools } = apiHarness();
-	const explore: ToolDefinition<typeof Params> = {
-		description: "exploration fixture",
-		execute: async () => ({ content: [{ type: "text", text: "ok" }], details: undefined }),
-		label: "Read",
-		name: "explore",
-		parameters: Params,
-	};
-	const mutate: ToolDefinition<typeof Params> = {
-		...explore,
-		description: "mutation fixture",
-		label: "Write",
-		name: "mutate",
-	};
-	registerSuiteOwnedTool(api, explore, {
-		grouping: "exploration",
-		summarize: (_args, _result, state) => (state === "success" ? "1 line" : "boom"),
-		target: (args) => args.value,
-	});
-	registerSuiteOwnedTool(api, mutate, { summarize: () => "written" });
-	const runtime = getToolUiRuntime(api);
-	runtime.indexMessages([
-		{
-			role: "assistant",
-			content: [
-				{ type: "toolCall", id: "explore-1", name: "explore", arguments: { value: "一.txt" } },
-				{ type: "toolCall", id: "explore-2", name: "explore", arguments: { value: "二.txt" } },
-				{ type: "toolCall", id: "mutate-1", name: "mutate", arguments: { value: "out.txt" } },
-				{ type: "toolCall", id: "explore-3", name: "explore", arguments: { value: "三.txt" } },
-				{ type: "toolCall", id: "explore-4", name: "explore", arguments: { value: "四.txt" } },
-			],
-		},
-	]);
-
-	const settled = (name: "explore" | "mutate", id: string, value: string, isError = false) => {
-		const state = {};
-		const args = { value };
-		const context = renderContext(state, args, { isError, toolCallId: id });
-		const definition = tools.get(name);
-		const row = definition?.renderCall?.(args, theme, context);
-		definition?.renderResult?.(
-			{ content: [{ type: "text", text: isError ? "boom" : "ok" }], details: undefined },
-			{ expanded: false, isPartial: false },
-			theme,
-			context,
-		);
-		return row;
-	};
-
-	const first = settled("explore", "explore-1", "一.txt");
-	const second = settled("explore", "explore-2", "二.txt");
-	const mutation = settled("mutate", "mutate-1", "out.txt");
-	const third = settled("explore", "explore-3", "三.txt");
-	const failed = settled("explore", "explore-4", "四.txt", true);
-
-	expect(first?.render(80)).toEqual(["● Explore 2 operations · Read ×2"]);
-	expect(second?.render(80)).toEqual([]);
-	expect(mutation?.render(80).join("\n")).toContain("Write");
-	expect(third?.render(80).join("\n")).toContain("三.txt");
-	expect(failed?.render(80).join("\n")).toContain("boom");
-	expect(
-		runtime.activities
-			.list()
-			.map((activity) => activity.id)
-			.sort(),
-	).toEqual(["explore-1", "explore-2", "explore-3", "explore-4", "mutate-1"]);
-
-	runtime.indexMessages([]);
-	expect(first?.render(80).join("\n")).toContain("一.txt");
-	expect(second?.render(80).join("\n")).toContain("二.txt");
-	runtime.clear();
-});
-
-test("replans late grouping ownership and honors final-result collapse vetoes", () => {
-	const { api, tools } = apiHarness();
-	const tool: ToolDefinition<typeof Params, { readonly detached: boolean }> = {
-		description: "late grouping fixture",
-		execute: async () => ({ content: [{ type: "text", text: "ok" }], details: { detached: false } }),
-		label: "Bash",
-		name: "late",
-		parameters: Params,
-	};
-	registerSuiteOwnedTool(api, tool, {
-		grouping: "exploration",
-		summarize: () => "done",
-		target: (args) => args.value,
-	});
-	const runtime = getToolUiRuntime(api);
-	runtime.indexMessages([
-		{
-			role: "assistant",
-			content: [
-				{ type: "toolCall", id: "late-1", name: "late", arguments: { value: "foreground-one" } },
-				{ type: "toolCall", id: "late-2", name: "late", arguments: { value: "foreground-two" } },
-			],
-		},
-		{
-			role: "assistant",
-			content: [
-				{ type: "toolCall", id: "late-3", name: "late", arguments: { value: "background-one" } },
-				{ type: "toolCall", id: "late-4", name: "late", arguments: { value: "background-two" } },
-			],
-		},
-	]);
-
-	const settle = (id: string, value: string, detached = false) => {
-		const args = { value };
-		const context = renderContext({}, args, { toolCallId: id });
-		const row = tools.get("late")?.renderCall?.(args, theme, context);
-		tools
-			.get("late")
-			?.renderResult?.(
-				{ content: [{ type: "text", text: "ok" }], details: { detached } },
-				{ expanded: false, isPartial: false },
-				theme,
-				context,
-			);
-		return row;
-	};
-
-	const foregroundOne = settle("late-1", "foreground-one");
-	const foregroundTwo = settle("late-2", "foreground-two", true);
-	const backgroundOne = settle("late-3", "background-one");
-	const backgroundTwo = settle("late-4", "background-two");
-	expect(foregroundOne?.render(80).join("\n")).toContain("Explore 2 operations");
-	expect(backgroundOne?.render(80).join("\n")).toContain("Explore 2 operations");
-
-	runtime.registerGrouping<Params, { readonly detached: boolean }>(
-		"late",
-		(args) => (args.value.startsWith("foreground") ? "exploration" : "standalone"),
-		(_args, result) => !result.details.detached,
-	);
-	expect(foregroundOne?.render(80).join("\n")).toContain("foreground-one");
-	expect(foregroundTwo?.render(80).join("\n")).toContain("foreground-two");
-	expect(backgroundOne?.render(80).join("\n")).toContain("background-one");
-	expect(backgroundTwo?.render(80).join("\n")).toContain("background-two");
-	runtime.clear();
-});
-
-test("keeps one runtime identity when Suite tools register before the Tool package", () => {
-	const { api, tools } = apiHarness();
-	const beforeInstall = getToolUiRuntime(api);
-	const original: ToolDefinition<typeof Params> = {
-		description: "reverse load fixture",
-		execute: async () => ({ content: [{ type: "text", text: "ok" }], details: undefined }),
-		label: "Reverse",
-		name: "reverse",
-		parameters: Params,
-	};
-	registerSuiteOwnedTool(api, original, { summarize: () => "done" });
-	const afterInstall = installToolUiRuntime(api, ToolUiSettingsStore.memory({ liveElapsed: false, schemaVersion: 1 }));
-
-	expect(afterInstall).toBe(beforeInstall);
-	const state = {};
-	const args = { value: "one" };
-	const context = renderContext(state, args, { toolCallId: "reverse-1" });
-	tools.get("reverse")?.renderCall?.(args, theme, context);
-	tools
-		.get("reverse")
-		?.renderResult?.(
-			{ content: [{ type: "text", text: "ok" }], details: undefined },
-			{ expanded: false, isPartial: false },
-			theme,
-			context,
-		);
-	expect(afterInstall.activities.get("reverse-1")?.summary).toBe("done");
-	afterInstall.clear();
-});
-
-test("does not fabricate elapsed time when Pi replays a historical result", () => {
-	const { api, tools } = apiHarness();
-	const original: ToolDefinition<typeof Params> = {
-		description: "replay fixture",
-		execute: async () => ({ content: [{ type: "text", text: "ok" }], details: undefined }),
-		label: "Bash",
-		name: "replayed-bash",
-		parameters: Params,
-	};
-	registerSuiteOwnedTool(api, original, {
-		summarize: (args, result, state, durationMs) => summarizeBuiltin("bash", args, result, state, durationMs),
-	});
-	const state = {};
-	const args = { value: "one" };
-	const replay = renderContext(state, args, { executionStarted: false, toolCallId: "replay-1" });
-	const row = tools.get("replayed-bash")?.renderCall?.(args, theme, replay);
-	tools
-		.get("replayed-bash")
-		?.renderResult?.(
-			{ content: [{ type: "text", text: "ok" }], details: undefined },
-			{ expanded: false, isPartial: false },
-			theme,
-			replay,
-		);
-
-	expect(row?.render(80).join("\n")).toContain("done");
-	expect(row?.render(80).join("\n")).not.toContain("<1s");
-	expect(getToolUiRuntime(api).activities.get("replay-1")?.durationMs).toBeUndefined();
-	getToolUiRuntime(api).clear();
-});
-
-test("errors-only Suite tools stay silent on success and reveal domain errors", () => {
-	const { api, tools } = apiHarness();
-	const tool: ToolDefinition<typeof Params, { readonly error?: string }> = {
-		description: "task fixture",
-		execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
-		label: "Task",
-		name: "task",
-		parameters: Params,
-	};
-	registerSuiteOwnedTool(api, tool, {
-		resultIsError: (_args, result) => Boolean(result.details?.error),
-		summarize: (_args, result) => result.details?.error ?? "done",
-		transcript: "errors-only",
-	});
-	const decorated = tools.get("task");
-	if (!decorated) throw new Error("tool was not registered");
-
-	const successState = {};
-	const args = { value: "1" };
-	const successRow = decorated.renderCall?.(args, theme, renderContext(successState, args));
-	expect(successRow?.render(80)).toEqual([]);
-	decorated.renderResult?.(
-		{ content: [{ type: "text", text: "ok" }], details: {} },
-		{ expanded: false, isPartial: false },
-		theme,
-		renderContext(successState, args),
-	);
-	expect(successRow?.render(80)).toEqual([]);
-
-	const errorState = {};
-	const errorContext = renderContext(errorState, args, { toolCallId: "call-2" });
-	const errorRow = decorated.renderCall?.(args, theme, errorContext);
-	decorated.renderResult?.(
-		{ content: [{ type: "text", text: "duplicate" }], details: { error: "duplicate" } },
-		{ expanded: false, isPartial: false },
-		theme,
-		errorContext,
-	);
-	expect(errorRow?.render(80).join("\n")).toContain("duplicate");
-	expect(getToolUiRuntime(api).activities.get("call-2")?.state).toBe("error");
-	getToolUiRuntime(api).clear();
-});
-
-test("all visible live rows schedule blink invalidation while replay stays static", () => {
-	const { api, tools } = apiHarness();
-	const tool = (name: string): ToolDefinition<typeof Params> => ({
-		description: name,
-		execute: async () => ({ content: [{ type: "text", text: "ok" }], details: undefined }),
+function toolFromHarness(
+	harness: ReturnType<typeof apiHarness>,
+	name: string,
+	category: "change-file" | "read-file" | "run-command",
+): ToolDefinition<typeof Params, { source: string }> {
+	const original: ToolDefinition<typeof Params, { source: string }> = {
+		description: `${name} fixture`,
+		execute: async () => ({
+			content: [{ type: "text", text: "MODEL_VISIBLE" }],
+			details: { source: name },
+		}),
 		label: name,
 		name,
 		parameters: Params,
-	});
-	const runtime = getToolUiRuntime(api);
-	const startTimer = spyOn(runtime, "startTimer");
-	registerSuiteOwnedTool(api, tool("quiet"), { runningSummary: "working" });
-	registerSuiteOwnedTool(api, tool("timed"), {
-		runningSummary: (_args, durationMs) => `running ${String(durationMs)}ms`,
-		tracksElapsed: true,
-	});
+	};
+	registerSuiteOwnedTool(harness.api, original, presentation(category));
+	const decorated = harness.tools.get(name);
+	if (!decorated) throw new Error(`missing ${name}`);
+	return decorated as ToolDefinition<typeof Params, { source: string }>;
+}
 
-	const quietState = {};
-	tools
-		.get("quiet")
-		?.renderCall?.({ value: "one" }, theme, renderContext(quietState, { value: "one" }, { toolCallId: "quiet-1" }));
-	expect(startTimer).toHaveBeenCalledTimes(1);
-	const timedState = {};
-	tools
-		.get("timed")
-		?.renderCall?.({ value: "two" }, theme, renderContext(timedState, { value: "two" }, { toolCallId: "timed-1" }));
-	expect(startTimer).toHaveBeenCalledTimes(2);
-	runtime.configure(ToolUiSettingsStore.memory({ liveElapsed: false, schemaVersion: 1 }));
-	const disabledState = {};
-	const disabledRow = tools
-		.get("timed")
-		?.renderCall?.(
-			{ value: "three" },
-			theme,
-			renderContext(disabledState, { value: "three" }, { toolCallId: "timed-2" }),
-		);
-	expect(disabledRow?.render(80).join("\n")).toContain("running");
-	expect(disabledRow?.render(80).join("\n")).not.toContain("ms");
-	expect(startTimer).toHaveBeenCalledTimes(3);
+function renderLines(component: { render(width: number): string[] }, width = 120): string[] {
+	return component.render(width);
+}
 
-	const replayState = {};
-	tools
-		.get("quiet")
-		?.renderCall?.(
-			{ value: "replay" },
-			theme,
-			renderContext(replayState, { value: "replay" }, { executionStarted: false, toolCallId: "quiet-replay" }),
-		);
-	expect(startTimer).toHaveBeenCalledTimes(3);
-	runtime.clear();
-	startTimer.mockRestore();
+test("Aggregate coverage fails fast when a Tool bypasses Activity metadata", () => {
+	const harness = apiHarness();
+	toolFromHarness(harness, "covered", "read-file");
+	expect(() => assertSuiteToolActivityCoverage(harness.api, ["covered"])).not.toThrow();
+	expect(() => assertSuiteToolActivityCoverage(harness.api, ["covered", "missing"])).toThrow(
+		"Aggregate Tools missing Activity metadata: missing",
+	);
 });
 
-test("uses a deterministic 600 ms blink and clears stopped timers", async () => {
-	const settings = ToolUiSettingsStore.memory({ liveElapsed: true, schemaVersion: 1 });
-	const scheduler = new ManualTimerScheduler();
-	const runtime = new ToolUiRuntime(settings, scheduler);
-	const row = new CachedToolRow(theme, {
-		durationMs: 0,
-		label: "Read",
-		state: "running",
-		summary: "running",
-		target: "工具.txt",
+test("Aggregate coverage checks the Tools actually registered by capabilities", () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	registrations.api.registerTool({
+		description: "untracked fixture",
+		execute: async () => ({
+			content: [{ type: "text", text: "ok" }],
+			details: {},
+		}),
+		label: "Untracked",
+		name: "untracked",
+		parameters: Params,
 	});
-	let invalidations = 0;
-	runtime.startTimer(
-		"active-1",
-		() => {
-			invalidations += 1;
+	expect(() => assertSuiteToolActivityCoverage(harness.api, [], registrations.toolNames)).toThrow(
+		"Aggregate registered undeclared Tools: untracked",
+	);
+	expect(() => assertSuiteToolActivityCoverage(harness.api, ["declared"], new Set())).toThrow(
+		"Aggregate declared unregistered Tools: declared",
+	);
+});
+
+test("Aggregate coverage accepts an already registered Tool from an idempotent capability", () => {
+	const harness = apiHarness();
+	toolFromHarness(harness, "existing", "read-file");
+	expect(() => assertSuiteToolActivityCoverage(harness.api, ["existing"], new Set())).not.toThrow();
+});
+
+test("Aggregate coverage permits optional Tools when absent and checks them when registered", () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	expect(() => assertSuiteToolActivityCoverage(harness.api, [], registrations.toolNames, ["optional"])).not.toThrow();
+	registerSuiteOwnedTool(
+		registrations.api,
+		{
+			description: "dynamic fixture",
+			execute: async () => ({
+				content: [{ type: "text", text: "ok" }],
+				details: {},
+			}),
+			label: "Optional",
+			name: "optional",
+			parameters: Params,
 		},
-		(visible) => row.setMarkerVisible(visible),
+		presentation("run-command"),
+	);
+	expect(() => assertSuiteToolActivityCoverage(harness.api, [], registrations.toolNames, ["optional"])).not.toThrow();
+});
+
+test("Aggregate coverage accepts deferred Tools before registration but still requires metadata", () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	expect(() => assertSuiteToolActivityCoverage(harness.api, [], registrations.toolNames, [], ["deferred"])).toThrow(
+		"Aggregate Tools missing Activity metadata: deferred",
+	);
+	getToolUiRuntime(harness.api).registerActivity("deferred", presentation("run-command").activity);
+	expect(() =>
+		assertSuiteToolActivityCoverage(harness.api, [], registrations.toolNames, [], ["deferred"]),
+	).not.toThrow();
+});
+
+function settle(
+	tool: ToolDefinition<typeof Params, { source: string }>,
+	id: string,
+	value: string,
+	isError = false,
+	expanded = false,
+): {
+	callComponent: { render(width: number): string[] };
+	callLines: string[];
+	resultLines: string[];
+} {
+	const state = {};
+	const args = { value };
+	const context = renderContext(state, args, {
+		expanded,
+		isError,
+		toolCallId: id,
+	});
+	const component = tool.renderCall?.(args, theme, context);
+	if (!component) throw new Error("missing call component");
+	const body = tool.renderResult?.(
+		{
+			content: [{ type: "text", text: isError ? "FAILED" : "MODEL_VISIBLE" }],
+			details: { source: value },
+		},
+		{ expanded, isPartial: false },
+		theme,
+		{ ...context, lastComponent: component },
+	);
+	return {
+		callComponent: component,
+		callLines: renderLines(component),
+		resultLines: body ? renderLines(body) : [],
+	};
+}
+
+test("decoration preserves execution and projects one Tool immediately", async () => {
+	const harness = apiHarness();
+	const tool = toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
+
+	const execution = await tool.execute("r1", { value: "a.ts" }, undefined, undefined, {} as never);
+	expect(execution.content).toEqual([{ type: "text", text: "MODEL_VISIBLE" }]);
+	const rendered = settle(tool, "r1", "a.ts");
+	expect(rendered.callLines.join("\n")).toContain("Reading 1 file");
+	expect(rendered.callLines.join("\n")).not.toContain("a.ts · done");
+	expect(rendered.resultLines).toEqual([]);
+
+	runtime.endTurn();
+	expect(renderLines(rendered.callComponent).join("\n")).toContain("Read 1 file");
+});
+
+test("live targets remain stable for at least 700 ms", () => {
+	let now = 0;
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), new ManualTimerScheduler(), () => now);
+	const stableTarget = (
+		runtime as unknown as {
+			stableTarget(leaderId: string, candidate: string, active: boolean): string;
+		}
+	).stableTarget.bind(runtime);
+
+	expect(stableTarget("group", "first.ts", true)).toBe("first.ts");
+	now = 699;
+	expect(stableTarget("group", "second.ts", true)).toBe("first.ts");
+	now = 700;
+	expect(stableTarget("group", "second.ts", true)).toBe("second.ts");
+	expect(stableTarget("group", "second.ts", false)).toBe("");
+});
+
+test("live Activity Groups advance to the latest target after the hold", () => {
+	const harness = apiHarness();
+	let now = 0;
+	const read = toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	(runtime as unknown as { now: () => number }).now = () => now;
+	const firstState = {};
+	runtime.startTurn([assistant(call("r1", "read", "first.ts"))]);
+	const first = read.renderCall?.(
+		{ value: "first.ts" },
+		theme,
+		renderContext(firstState, { value: "first.ts" }, { toolCallId: "r1" }),
+	);
+	if (!first) throw new Error("missing first component");
+	runtime.indexMessage(result("r1"));
+	runtime.indexMessage(assistant({ type: "thinking", thinking: "continue" }, call("r2", "read", "second.ts")));
+	read.renderCall?.({ value: "second.ts" }, theme, renderContext({}, { value: "second.ts" }, { toolCallId: "r2" }));
+	const hints = (
+		runtime as unknown as {
+			groupHints: Map<string, { candidate: string; shownAt: number; value: string }>;
+		}
+	).groupHints;
+	expect(hints.get("r1")).toEqual({
+		candidate: "second.ts",
+		shownAt: 0,
+		value: "first.ts",
+	});
+
+	now = 700;
+	runtime.indexMessages(
+		[
+			assistant(call("r1", "read", "first.ts")),
+			result("r1"),
+			assistant({ type: "thinking", thinking: "continue" }, call("r2", "read", "second.ts")),
+		],
+		false,
+	);
+	expect(hints.get("r1")).toEqual({
+		candidate: "second.ts",
+		shownAt: 700,
+		value: "second.ts",
+	});
+	expect(renderLines(first).join("\n")).toContain("second.ts");
+});
+
+test("one group spans Tool round-trips and Thinking, then closes on prose", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const edit = toolFromHarness(harness, "edit", "change-file");
+	const runtime = getToolUiRuntime(harness.api);
+	const messages = [
+		assistant({ type: "thinking", thinking: "inspect" }, call("r1", "read", "a.ts")),
+		result("r1"),
+		assistant({ type: "thinking", thinking: "change" }, call("e1", "edit", "a.ts")),
+	];
+	runtime.startTurn(messages);
+	const first = settle(read, "r1", "a.ts");
+	const second = settle(edit, "e1", "a.ts");
+	expect(first.callLines.join("\n")).toContain("Changing 1 file, reading 1 file");
+	expect(second.callLines).toEqual([]);
+
+	runtime.indexMessage(assistant({ type: "text", text: "Done." }));
+	expect(renderLines(first.callComponent).join("\n")).toContain("Changed 1 file, read 1 file");
+});
+
+test("projection rebuild rebinds grouped models to fresh Host row components", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const edit = toolFromHarness(harness, "edit", "change-file");
+	const runtime = getToolUiRuntime(harness.api);
+	const messages = [assistant(call("r1", "read", "a.ts"), call("e1", "edit", "b.ts")), result("r1"), result("e1")];
+	runtime.indexMessages(messages, true);
+	settle(read, "r1", "a.ts");
+	settle(edit, "e1", "b.ts");
+
+	runtime.resetProjection(messages);
+	const rebuiltLeader = settle(read, "r1", "a.ts");
+	const rebuiltFollower = settle(edit, "e1", "b.ts");
+	expect(renderLines(rebuiltLeader.callComponent).join("\n")).toContain("Changed 1 file, read 1 file");
+	expect(renderLines(rebuiltFollower.callComponent)).toEqual([]);
+});
+
+test("a user input boundary prevents the next turn from reusing the previous group", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const edit = toolFromHarness(harness, "edit", "change-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
+	const first = settle(read, "r1", "a.ts");
+
+	runtime.observeUserBoundary();
+	runtime.startTurn();
+	runtime.indexMessage(assistant(call("e1", "edit", "b.ts")));
+	const second = settle(edit, "e1", "b.ts");
+	expect(renderLines(first.callComponent).join("\n")).toContain("Read 1 file");
+	expect(renderLines(first.callComponent).join("\n")).not.toContain("Changed");
+	expect(renderLines(second.callComponent).join("\n")).toContain("Changing 1 file");
+});
+
+test("Tool results, Thinking, and hidden Custom Messages keep the live group open", () => {
+	const harness = apiHarness();
+	toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
+	runtime.indexMessage(result("r1"));
+	runtime.indexMessage(assistant({ type: "thinking", thinking: "continue" }));
+	runtime.indexMessage({
+		role: "custom",
+		customType: "state",
+		content: "hidden",
+		display: false,
+	});
+	const active = runtime.resolveGroup("r1");
+	if (!active || active === "ambiguous") throw new Error("active group missing");
+	expect(active.summary).toContain("Reading 1 file");
+
+	runtime.indexMessage({
+		role: "custom",
+		customType: "notice",
+		content: "visible",
+		display: true,
+	});
+	const closed = runtime.resolveGroup("r1");
+	if (!closed || closed === "ambiguous") throw new Error("closed group missing");
+	expect(closed.summary).toContain("Read 1 file");
+});
+
+test("Ctrl+O restores every member and bounded result detail", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const edit = toolFromHarness(harness, "edit", "change-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages(
+		[assistant(call("r1", "read", "a.ts"), call("e1", "edit", "b.ts")), result("r1"), result("e1")],
+		true,
+	);
+
+	const compactRead = settle(read, "r1", "a.ts");
+	const compactEdit = settle(edit, "e1", "b.ts");
+	expect(compactRead.callLines.join("\n")).toContain("Changed 1 file, read 1 file");
+	expect(compactEdit.callLines).toEqual([]);
+
+	const expandedRead = settle(read, "r1", "a.ts", false, true);
+	const expandedEdit = settle(edit, "e1", "b.ts", false, true);
+	expect(expandedRead.callLines.join("\n")).toContain("read-file");
+	expect(expandedEdit.callLines.join("\n")).toContain("change-file");
+	expect(expandedRead.resultLines.join("\n")).toContain("MODEL_VISIBLE");
+});
+
+test("compact projection hides text bodies but preserves real media", () => {
+	const harness = apiHarness();
+	const tool = toolFromHarness(harness, "view", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages([assistant(call("v1", "view", "pixel.png"))], true);
+	const state = {};
+	const args = { value: "pixel.png" };
+	const context = renderContext(state, args, { toolCallId: "v1" });
+	const component = tool.renderCall?.(args, theme, context);
+	if (!component) throw new Error("missing media call component");
+	const body = tool.renderResult?.(
+		{
+			content: [
+				{ type: "text", text: "hidden text" },
+				{
+					type: "image",
+					data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
+					mimeType: "image/png",
+				},
+			],
+			details: { source: "pixel.png" },
+		},
+		{ expanded: false, isPartial: false },
+		theme,
+		{ ...context, lastComponent: component },
+	);
+	expect(body?.render(80).length).toBeGreaterThan(0);
+	expect(body?.render(80).join("\n")).not.toContain("hidden text");
+});
+
+test("issues stay folded but expose the first failure and remaining count", () => {
+	const harness = apiHarness();
+	const command = toolFromHarness(harness, "bash", "run-command");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages(
+		[
+			assistant(call("b1", "bash", "typecheck"), call("b2", "bash", "tests")),
+			result("b1", "FIRST FAILED", true),
+			result("b2", "SECOND FAILED", true),
+		],
+		true,
+	);
+	const first = settle(command, "b1", "typecheck", true);
+	settle(command, "b2", "tests", true);
+	const output = renderLines(first.callComponent).join("\n");
+	expect(output).toContain("Ran 2 commands · 2 failed");
+	expect(output).toContain("run-command error · +1 issues");
+});
+
+test("failed mutations never produce successful change clauses", () => {
+	const harness = apiHarness();
+	const mutation = toolFromHarness(harness, "edit", "change-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages([assistant(call("e1", "edit", "broken.ts")), result("e1", "EDIT FAILED", true)], true);
+	const output = settle(mutation, "e1", "broken.ts", true).callLines.join("\n");
+	expect(output).toContain("change-file failed");
+	expect(output).not.toContain("Changed");
+});
+
+test("successful infrastructure-only groups disappear but expand normally", () => {
+	const harness = apiHarness();
+	const original: ToolDefinition<typeof Params, { source: string }> = {
+		description: "internal",
+		execute: async () => ({
+			content: [{ type: "text", text: "done" }],
+			details: { source: "internal" },
+		}),
+		label: "internal",
+		name: "internal",
+		parameters: Params,
+	};
+	registerSuiteOwnedTool(harness.api, original, {
+		activity: { categories: [], classify: () => [], silentSuccess: true },
+		label: "internal",
+		summarize: () => "done",
+	});
+	const tool = harness.tools.get("internal") as ToolDefinition<typeof Params, { source: string }>;
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages([assistant(call("i1", "internal", "context")), result("i1")], true);
+	expect(settle(tool, "i1", "context").callLines).toEqual([]);
+	expect(settle(tool, "i1", "context", false, true).callLines.join("\n")).toContain("internal");
+	const [details] = runtime.listGroups();
+	expect(details?.summary).toBe("Internal activity");
+	expect(details ? runtime.groupActivities(details.id) : []).toHaveLength(1);
+});
+
+test("group details rebuild every member from the current branch beyond the live cache limit", () => {
+	const runtime = new ToolUiRuntime();
+	runtime.registerActivity("read", {
+		categories: ["read-file"],
+		classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["value"])] }],
+	});
+	const content = Array.from({ length: 900 }, (_, index) =>
+		call(`read-${String(index)}`, "read", `${String(index)}.ts`),
+	);
+	const results = Array.from({ length: 900 }, (_, index) => result(`read-${String(index)}`));
+	runtime.indexMessages([assistant(...content), ...results], true);
+	const group = runtime.resolveGroup("read-0");
+	expect(group).not.toBe("ambiguous");
+	if (!group || group === "ambiguous") throw new Error("group missing");
+	expect(group.memberIds).toHaveLength(900);
+	expect(runtime.groupActivities(group.id)).toHaveLength(900);
+	expect(runtime.groupActivityPage(group.id, 512, 2).map((activity) => activity.id)).toEqual(["read-512", "read-513"]);
+	expect(runtime.groupActivityPage(group.id, 900, 2)).toEqual([]);
+});
+
+test("reload handoff crosses the fresh Extension event registry created by Pi", () => {
+	const outgoing = new ToolUiRuntime();
+	outgoing.prepareReload(["read", "bash"]);
+	const incoming = new ToolUiRuntime();
+	expect(incoming.hasReloadSnapshot()).toBe(true);
+	expect(incoming.consumeReloadActiveTools()).toEqual(["read", "bash"]);
+	expect(incoming.hasReloadSnapshot()).toBe(false);
+});
+
+test("timers blink, invalidate, synchronize, and are cleared for reload", () => {
+	const scheduler = new ManualTimerScheduler();
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	let invalidations = 0;
+	const markers: boolean[] = [];
+	runtime.startTimer(
+		"call",
+		() => invalidations++,
+		(visible) => markers.push(visible),
 	);
 	expect(scheduler.delays).toEqual([600]);
-	expect(scheduler.activeCount).toBe(1);
-	expect(row.render(80)[0]).toStartWith("● Read");
 	scheduler.tick();
 	expect(invalidations).toBe(1);
-	expect(row.render(80)[0]).toStartWith("  Read");
-	scheduler.tick();
+	expect(markers.at(-1)).toBe(false);
+	runtime.syncTimers();
+	expect(markers.at(-1)).toBe(true);
 	expect(invalidations).toBe(2);
-	expect(row.render(80)[0]).toStartWith("● Read");
-
-	await settings.setLiveElapsed(false);
-	runtime.syncTimers();
-	expect(invalidations).toBe(3);
-	expect(scheduler.activeCount).toBe(1);
-	await settings.setLiveElapsed(true);
-	runtime.syncTimers();
-	expect(invalidations).toBe(4);
-	expect(scheduler.activeCount).toBe(1);
-	runtime.stopTimer("active-1");
+	runtime.prepareReload([]);
 	expect(scheduler.activeCount).toBe(0);
-	expect(row.render(80)[0]).toStartWith("● Read");
+	expect(runtime.consumeReloadActiveTools()).toEqual([]);
+});
+
+test("parallel timers keep independent marker phases", () => {
+	const scheduler = new ManualTimerScheduler();
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	const first: boolean[] = [];
+	const second: boolean[] = [];
+	runtime.startTimer(
+		"first",
+		() => {},
+		(visible) => first.push(visible),
+	);
+	runtime.startTimer(
+		"second",
+		() => {},
+		(visible) => second.push(visible),
+	);
 	scheduler.tick();
-	expect(invalidations).toBe(4);
+	expect(first.at(-1)).toBe(false);
+	expect(second.at(-1)).toBe(false);
+});
+
+test("runtime registry is shared per Pi event bus and settings remain configurable", () => {
+	const first = apiHarness();
+	const second = apiHarness();
+	const settings = ToolUiSettingsStore.memory({
+		liveElapsed: false,
+		schemaVersion: 1,
+	});
+	expect(installToolUiRuntime(first.api, settings)).toBe(getToolUiRuntime(first.api));
+	expect(getToolUiRuntime(first.api)).not.toBe(getToolUiRuntime(second.api));
+	expect(getToolUiRuntime(first.api).showLiveElapsed()).toBe(false);
 });

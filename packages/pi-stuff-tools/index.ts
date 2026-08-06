@@ -13,18 +13,29 @@ import { createToolDialogView } from "./tool-dialog.js";
 const BUILTIN_TOOL_NAMES = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
 
 function currentTranscriptMessages(ctx: ExtensionContext): unknown[] {
-	return ctx.sessionManager.buildContextEntries().flatMap(sessionEntryToContextMessages);
+	return ctx.sessionManager.getBranch().flatMap(sessionEntryToContextMessages);
 }
 
 export {
+	activityKey,
+	activityTarget,
+	classifyBashActivity,
+	singleActivity,
+	type ToolActivityCategory,
+	type ToolActivityClassifierInput,
+	type ToolActivityItem,
+	type ToolActivityMetadata,
+} from "./activity.js";
+export {
+	assertSuiteToolActivityCoverage,
+	createSuiteToolRegistrationTracker,
 	getToolUiRuntime,
 	registerSuiteOwnedTool,
+	registerSuiteToolActivityMetadata,
 	type SuiteToolPresentation,
-	type ToolGrouping,
-	type ToolTranscriptMode,
+	type ToolActivityGroupView,
 	ToolUiRuntime,
 } from "./contract.js";
-export { isLowImpactShellCommand } from "./exploration.js";
 export { sanitizeTerminalText } from "./render.js";
 
 export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
@@ -72,10 +83,18 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 				return;
 			}
 			const requestedId = args.trim();
-			if (requestedId && !runtime.activities.resolve(requestedId)) {
-				ctx.ui.notify(`No current-session Tool operation matches ${requestedId}.`, "warning");
-				return;
+			if (requestedId) {
+				const resolved = runtime.resolveGroup(requestedId);
+				if (resolved === "ambiguous") {
+					ctx.ui.notify(`More than one Tool Activity Group matches ${requestedId}.`, "warning");
+					return;
+				}
+				if (!resolved) {
+					ctx.ui.notify(`No current-session Tool Activity Group matches ${requestedId}.`, "warning");
+					return;
+				}
 			}
+
 			await getCommandDialogCoordinator(pi).show(ctx, createToolDialogView(runtime, requestedId || undefined));
 		},
 	});
@@ -91,18 +110,39 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 				pi.setActiveTools([...activeNonBuiltins, ...restoreActiveBuiltins]);
 			}
 		}
-		runtime.indexMessages(currentTranscriptMessages(ctx));
+		runtime.resetProjection(currentTranscriptMessages(ctx));
 	});
 	pi.on("session_compact", (_event, ctx) => {
-		runtime.clear();
-		runtime.indexMessages(currentTranscriptMessages(ctx));
+		runtime.resetProjection(currentTranscriptMessages(ctx));
 	});
 	pi.on("session_tree", (_event, ctx) => {
-		runtime.clear();
-		runtime.indexMessages(currentTranscriptMessages(ctx));
+		runtime.resetProjection(currentTranscriptMessages(ctx));
+	});
+	pi.on("input", () => {
+		runtime.observeUserBoundary();
+	});
+	pi.on("agent_start", () => {
+		runtime.startTurn();
+	});
+	pi.on("message_update", (event) => {
+		if (
+			event.message.role === "assistant" &&
+			event.message.content.some((block) => block.type === "text" && block.text.trim().length > 0)
+		) {
+			runtime.observeAssistantProse();
+		}
 	});
 	pi.on("message_end", (event) => {
-		if (event.message.role === "assistant") runtime.indexMessage(event.message);
+		if (
+			event.message.role === "assistant" ||
+			event.message.role === "toolResult" ||
+			event.message.role === "custom"
+		) {
+			runtime.indexMessage(event.message);
+		}
+	});
+	pi.on("agent_end", () => {
+		runtime.endTurn();
 	});
 	pi.on("session_shutdown", async (event) => {
 		await settings.whenIdle();
@@ -114,7 +154,10 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 			if (event.reason === "resume") {
 				prepareResumeToolHandoff(pi.getActiveTools());
 			}
-			runtime.clear();
+			// Pi can emit session_shutdown while rebuilding the current transcript
+			// for tree navigation. Keep the display projection available to the
+			// surviving Tool components; the next session_start replaces it.
+			runtime.suspend();
 		}
 	});
 }

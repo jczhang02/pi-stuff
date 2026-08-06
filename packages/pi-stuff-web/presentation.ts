@@ -1,5 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import type { SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
+import { activityKey, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
 
 type Arguments = Record<string, unknown>;
 
@@ -105,7 +105,20 @@ function retrievalSummary(_args: Readonly<Arguments>, result: AgentToolResult<un
 }
 
 export const WEB_SEARCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
-	grouping: "exploration",
+	activity: {
+		categories: ["search-web"],
+		classify: ({ args }) => {
+			const queries =
+				typeof args["query"] === "string"
+					? [args["query"]]
+					: Array.isArray(args["queries"])
+						? args["queries"].filter((value): value is string => typeof value === "string")
+						: [];
+			return [
+				{ category: "search-web", countKeys: queries.map((query) => activityKey(query)), target: firstQuery(args) },
+			];
+		},
+	},
 	label: "Web search",
 	resultIsError: searchResultIsError,
 	runningSummary: "searching",
@@ -114,7 +127,18 @@ export const WEB_SEARCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> 
 };
 
 export const WEB_FETCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
-	grouping: "exploration",
+	activity: {
+		categories: ["fetch-page"],
+		classify: ({ args }) => {
+			const urls =
+				typeof args["url"] === "string"
+					? [args["url"]]
+					: Array.isArray(args["urls"])
+						? args["urls"].filter((value): value is string => typeof value === "string")
+						: [];
+			return [{ category: "fetch-page", countKeys: urls.map((url) => activityKey(url)), target: fetchTarget(args) }];
+		},
+	},
 	label: "Web fetch",
 	resultIsError: fetchResultIsError,
 	runningSummary: "reading",
@@ -123,7 +147,25 @@ export const WEB_FETCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> =
 };
 
 export const WEB_CONTENT_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
-	grouping: "exploration",
+	activity: {
+		categories: ["retrieve-passage"],
+		classify: ({ args }) => [
+			{
+				category: "retrieve-passage",
+				countKeys: [
+					activityKey(
+						args["responseId"],
+						args["query"],
+						args["queryIndex"],
+						args["url"],
+						args["urlIndex"],
+						args["offset"],
+					),
+				],
+				target: retrievalTarget(args),
+			},
+		],
+	},
 	label: "Web content",
 	resultIsError: errorResult,
 	runningSummary: "retrieving",

@@ -34,6 +34,7 @@ test("Pi loads a Capability through the generated Aggregate", async () => {
 	await writeJson(join(aggregateDirectory, "suite.json"), {
 		schemaVersion: 1,
 		capabilities: ["@jczhang02/pi-smoke"],
+		tools: [],
 	});
 	await writeJson(join(capabilityDirectory, "package.json"), {
 		name: "@jczhang02/pi-smoke",

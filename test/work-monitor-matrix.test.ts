@@ -5,8 +5,9 @@ import { verifyWorkMonitorMatrix } from "../scripts/verify-work-monitor-matrix.j
 const root = resolve(import.meta.dir, "..");
 
 test("real Pi verifies the Background Monitor success and failure matrix", async () => {
+	const { PI_BIN: configuredPiBinary } = process.env;
 	await verifyWorkMonitorMatrix({
 		packagePath: resolve(root, "packages/pi-stuff"),
-		piBinary: process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi",
+		piBinary: configuredPiBinary ?? "/opt/pi-coding-agent/pi",
 	});
 });

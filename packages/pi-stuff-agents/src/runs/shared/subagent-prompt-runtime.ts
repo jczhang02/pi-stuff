@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
+import { activityKey, registerSuiteOwnedTool, singleActivity } from "@jczhang02/pi-stuff-tools";
 import type { TSchema } from "typebox";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
 import type { JsonSchemaObject, ResolvedToolBudget } from "../../shared/types.ts";
@@ -451,6 +451,14 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 			},
 		} as unknown as ToolDefinition<TSchema, Record<string, unknown>>;
 		registerSuiteOwnedTool(pi, structuredOutputTool, {
+			activity: {
+				categories: ["record-result"],
+				classify: ({ result }) =>
+					singleActivity("record-result", {
+						key: activityKey(result?.details.path ?? structuredOutputPath),
+						target: "final output",
+					}),
+			},
 			runningSummary: "validating",
 			summarize: () => "captured",
 			target: () => "final output",

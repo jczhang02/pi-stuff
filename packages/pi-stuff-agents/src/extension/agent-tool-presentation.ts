@@ -1,5 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
+import { activityKey, type SuiteToolPresentation, singleActivity } from "@jczhang02/pi-stuff-tools";
 import { resolveDisplayDescription } from "../shared/display-description.ts";
 import type { Details } from "../shared/types.ts";
 import type { PublicAgentParams } from "./product-executor.ts";
@@ -48,6 +48,23 @@ function successSummary(params: PublicAgentParams): string {
 /** One shared row grammar for root and nested public Agent tools. */
 export function createAgentToolPresentation(): SuiteToolPresentation<PresentationParams, Details> {
 	return {
+		activity: {
+			categories: ["manage-agent", "run-agent", "launch-agent"],
+			classify: ({ args, result }) => {
+				const params = args as PublicAgentParams;
+				if (params.action) {
+					return singleActivity("manage-agent", {
+						key: activityKey(params.id, params.action),
+						target: target(params),
+					});
+				}
+				const requestedCount = params.tasks?.length ?? 1;
+				const count =
+					params.foreground === true && result ? result.details.results.length || requestedCount : requestedCount;
+				const category = params.foreground === true ? "run-agent" : "launch-agent";
+				return singleActivity(category, { count, target: target(params) });
+			},
+		},
 		label: (params) => label(params as PublicAgentParams),
 		runningSummary: "working",
 		summarize: (params, result, state) => {
