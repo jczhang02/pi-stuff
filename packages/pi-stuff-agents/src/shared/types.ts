@@ -10,6 +10,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../agents/agents.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../runs/shared/capability-ceiling.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
+import type { SessionCompatibilityScope } from "./session-identity.ts";
 
 // ============================================================================
 // Basic Types
@@ -220,6 +221,7 @@ export interface PiWriterProcessInstanceExitV1 {
 	closeObservedAt: number;
 	exitCode: number | null;
 	signal: string | null;
+	terminationOrigin?: "external" | "manager-final-drain" | "manager-request";
 }
 
 export type ProcessInstanceExitV1 = RunnerProcessInstanceExitV1 | PiWriterProcessInstanceExitV1;
@@ -357,6 +359,9 @@ export interface SteeringRecoveryDescriptor {
 export type PublicNestedStepSummary = Pick<
 	NestedStepSummary,
 	| "agent"
+	| "agentStatus"
+	| "task"
+	| "description"
 	| "status"
 	| "sessionFile"
 	| "transcriptPath"
@@ -388,6 +393,7 @@ export type CostSummary = {
 export type PublicNestedRunSummary = Pick<
 	NestedRunSummary,
 	| "id"
+	| "agentStatus"
 	| "parentRunId"
 	| "parentStepIndex"
 	| "parentAgent"
@@ -667,6 +673,7 @@ export interface AcceptanceLedger {
 export interface ProtocolOutputLimit {
 	code: "protocol_output_limit";
 	stream: "stdout" | "stderr";
+	scope?: "aggregate" | "line";
 	limitBytes: number;
 	observedBytes: number;
 	diagnosticPrefix: string;
@@ -676,6 +683,8 @@ export interface ProtocolOutputLimit {
 export interface SingleResult {
 	agent: string;
 	task: string;
+	/** Exact resolved child working directory, used by durable resume. */
+	cwd?: string;
 	/** Resolved launch context for this child. */
 	context?: "fresh" | "fork";
 	exitCode: number;
@@ -685,6 +694,8 @@ export interface SingleResult {
 	interrupted?: boolean;
 	timedOut?: boolean;
 	stopped?: boolean;
+	/** Explicit process proof that the writer died from an external signal. */
+	crashed?: boolean;
 	turnBudget?: TurnBudgetState;
 	turnBudgetExceeded?: boolean;
 	wrapUpRequested?: boolean;
@@ -751,6 +762,8 @@ export interface SpawnBudgetSnapshot {
 export interface Details {
 	mode: SubagentRunMode | "management";
 	runId?: string;
+	/** Exact effective working directory for durable foreground resume. */
+	cwd?: string;
 	/** Run-level context summary. "mixed" when children resolved to different modes. */
 	context?: "fresh" | "fork" | "mixed";
 	results: SingleResult[];
@@ -789,6 +802,15 @@ export interface Details {
 	launchContractDigest?: string;
 	/** Original launch contract whose persisted session is being revived. */
 	sourceLaunchContractDigest?: string;
+	/** Internal engine→governor startup gate; removed by the public projection. */
+	lifecycleBinding?: {
+		pid: number;
+		/** Absent only when startup identity capture failed and recovery must stay conservative. */
+		processStartIdentity?: string;
+		asyncDir: string;
+		acknowledgeStart?: () => void;
+		abortStart?: () => boolean;
+	};
 }
 
 // ============================================================================
@@ -840,6 +862,11 @@ export interface NestedRunAddress {
 
 export interface NestedStepSummary {
 	agent: string;
+	/** Bounded task text used to distinguish same-named nested Agents. */
+	task?: string;
+	description?: string;
+	/** Small UI projection retained when full process proof is intentionally omitted. */
+	agentStatus?: "crashed";
 	status: "pending" | "running" | "complete" | "completed" | "failed" | "paused" | "stopped";
 	sessionFile?: string;
 	transcriptPath?: string;
@@ -868,6 +895,7 @@ export interface NestedStepSummary {
 }
 
 export interface NestedRunSummary extends NestedRunAddress {
+	agentStatus?: "crashed";
 	asyncDir?: string;
 	pid?: number;
 	sessionId?: string;
@@ -927,6 +955,7 @@ export interface AsyncStartedEvent {
 	/** Parent-resolved launch directory, used as a trusted artifact root while this session is live. */
 	cwd?: string;
 	pid?: number;
+	processStartIdentity?: string;
 	sessionId?: string;
 	mode?: SubagentRunMode;
 	agent?: string;
@@ -956,6 +985,8 @@ export interface AsyncStatus {
 	sessionId?: string;
 	mode: SubagentRunMode;
 	isNested?: boolean;
+	/** Exact nested event route selected at launch; legacy statuses may omit it. */
+	nestedRoute?: NestedRouteInfo;
 	state: "queued" | "running" | "complete" | "failed" | "paused" | "stopped";
 	error?: string;
 	activityState?: ActivityState;
@@ -979,6 +1010,10 @@ export interface AsyncStatus {
 	toolBudget?: ToolBudgetState;
 	toolBudgetBlocked?: boolean;
 	pid?: number;
+	/** OS process-birth identity paired with pid to reject PID reuse. */
+	processStartIdentity?: string;
+	/** First escalation boundary for a proven, stale runner process. */
+	runnerTerminationRequestedAt?: number;
 	cwd?: string;
 	currentStep?: number;
 	parallelGroups?: AsyncParallelGroupStatus[];
@@ -988,6 +1023,8 @@ export interface AsyncStatus {
 	capabilityAudit?: SubagentCapabilityAudit;
 	steps?: Array<{
 		agent: string;
+		/** Small explicit UI projection when recovery proves an unexpected owner crash. */
+		agentStatus?: "crashed";
 		/** Resolved launch context for this child step. */
 		context?: "fresh" | "fork";
 		phase?: string;
@@ -1095,6 +1132,8 @@ export interface AsyncJobState {
 	deadlineAt?: number;
 	timedOut?: boolean;
 	stopped?: boolean;
+	/** Detached runner/writer proof; pending/unknown keeps physical recovery polled. */
+	processTerminal?: ProcessTerminalV1;
 	turnBudget?: TurnBudgetState;
 	turnBudgetExceeded?: boolean;
 	wrapUpRequested?: boolean;
@@ -1105,6 +1144,8 @@ export interface AsyncJobState {
 	totalTokens?: TokenUsage;
 	sessionFile?: string;
 	controlEventCursor?: number;
+	/** A restored observer failed to stat events; first successful read starts at EOF. */
+	controlEventCursorPending?: boolean;
 	nestedRoute?: NestedRouteInfo;
 	nestedChildren?: NestedRunSummary[];
 }
@@ -1112,6 +1153,7 @@ export interface AsyncJobState {
 export interface ForegroundResumeChild {
 	agent: string;
 	index: number;
+	cwd?: string;
 	description?: string;
 	task?: string;
 	context?: "fresh" | "fork";
@@ -1119,6 +1161,8 @@ export interface ForegroundResumeChild {
 	model?: string;
 	thinking?: string;
 	status: SubagentResultStatus;
+	/** Explicit process proof projected by the shared foreground runner. */
+	crashed?: boolean;
 	activityState?: ActivityState;
 	lastActivityAt?: number;
 	currentTool?: string;
@@ -1145,6 +1189,7 @@ export interface ForegroundResumeChild {
 	effects?: EffectsProjection;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
+	children?: NestedRunSummary[];
 	updatedAt?: number;
 }
 
@@ -1152,9 +1197,12 @@ export interface ForegroundResumeRun {
 	runId: string;
 	mode: SubagentRunMode;
 	cwd: string;
+	/** Exact private runtime directory used to resume root route settlement. */
+	asyncDir?: string;
 	/** Originating parent session. Detached exits can outlive the active session. */
 	sessionId?: string;
 	updatedAt: number;
+	nestedRoute?: NestedRouteInfo;
 	children: ForegroundResumeChild[];
 }
 
@@ -1165,6 +1213,7 @@ export interface ForegroundChildControl {
 	task?: string;
 	startedAt: number;
 	updatedAt: number;
+	status?: "pending" | "running" | "complete" | "completed" | "failed" | "paused" | "stopped";
 	currentActivityState?: ActivityState;
 	lastActivityAt?: number;
 	currentTool?: string;
@@ -1217,6 +1266,10 @@ export interface ForegroundRunControl {
 export interface SubagentState {
 	baseCwd: string;
 	currentSessionId: string | null;
+	/** In-memory v1 artifact bridge proven from the active Pi session branch. */
+	currentSessionScope?: SessionCompatibilityScope | null;
+	/** Selected governor namespace; normally v2, legacy only for a proven live upgrade. */
+	currentGovernorSessionId?: string | null;
 	/** Runtime-owned artifact resolution inputs used by Agent transcript targeting. */
 	artifactDirPreference?: ArtifactDirPreference;
 	parentSessionFile?: string | null;
@@ -1433,6 +1486,16 @@ export function resolveTempScopeId(options?: {
 const MAX_PARALLEL = 8;
 export const MAX_CONCURRENCY = 4;
 export const TEMP_ROOT_DIR = path.join(os.tmpdir(), `pi-stuff-agents-${resolveTempScopeId()}`);
+export function resolveSessionGovernorRoot(env: NodeJS.ProcessEnv = process.env, homeDirectory = os.homedir()): string {
+	const configured = env.XDG_STATE_HOME?.trim();
+	const stateRoot =
+		configured && path.isAbsolute(configured) ? configured : path.join(homeDirectory, ".local", "state");
+	return path.join(stateRoot, "pi-stuff", "agents", "session-governor");
+}
+
+export const SESSION_GOVERNOR_ROOT = resolveSessionGovernorRoot();
+/** Read-only compatibility location used by releases before the durable governor root. */
+export const LEGACY_SESSION_GOVERNOR_ROOT = path.join(TEMP_ROOT_DIR, "session-governor");
 export const RESULTS_DIR = path.join(TEMP_ROOT_DIR, "async-subagent-results");
 export const ASYNC_DIR = path.join(TEMP_ROOT_DIR, "async-subagent-runs");
 export const TEMP_ARTIFACTS_DIR = path.join(TEMP_ROOT_DIR, "artifacts");
@@ -1490,8 +1553,7 @@ function normalizeNonNegativeInteger(value: unknown): number | undefined {
 }
 
 export function normalizeMaxSubagentDepth(value: unknown): number | undefined {
-	const normalized = normalizeNonNegativeInteger(value);
-	return normalized !== undefined && normalized >= 1 ? normalized : undefined;
+	return normalizeNonNegativeInteger(value);
 }
 
 export function resolveCurrentMaxSubagentDepth(configMaxDepth?: number): number {

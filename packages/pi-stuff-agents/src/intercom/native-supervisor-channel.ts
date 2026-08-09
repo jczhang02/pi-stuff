@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
@@ -8,12 +8,24 @@ import { type TSchema, Type } from "typebox";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
 	SUBAGENT_CHILD_INDEX_ENV,
+	SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID_ENV,
 	SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV,
 	SUBAGENT_ORCHESTRATOR_TARGET_ENV,
 	SUBAGENT_RUN_ID_ENV,
 	SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV,
+	supervisorChannelDir,
 } from "../runs/shared/pi-args.ts";
 import { writeAtomicJson } from "../shared/atomic-json.ts";
+import { type DurableClaim, tryAcquireDurableClaim } from "../shared/durable-claim.ts";
+import {
+	ensurePrivateDirectory,
+	type OwnedFileSnapshot,
+	readBoundedOwnedFile,
+	readBoundedOwnedFileSnapshot,
+	removeOwnedFileSnapshot,
+} from "../shared/private-directory.ts";
+import { readProcessStartIdentity } from "../shared/process-identity.ts";
+import { sessionArtifactMatches } from "../shared/session-identity.ts";
 import {
 	INTERCOM_DETACH_REQUEST_EVENT,
 	type IntercomEventBus,
@@ -29,8 +41,19 @@ export const NATIVE_SUPERVISOR_TOOL_NAME = "subagent_supervisor";
 const MAX_MESSAGE_BYTES = 64 * 1024;
 const DEFAULT_ASK_TIMEOUT_MS = 10 * 60 * 1000;
 const CHANNEL_POLL_MS = Math.min(POLL_INTERVAL_MS, 500);
-const STALE_EMPTY_CHANNEL_AGE_MS = 60 * 1000;
-const STALE_EMPTY_CHANNEL_CLEANUP_INTERVAL_MS = 60 * 1000;
+const MAX_REQUEST_FILES_PER_POLL = 256;
+const MAX_CHANNEL_DIRS_PER_POLL = 128;
+const DELIVERY_RETRY_GRACE_MS = 5_000;
+const MAX_DELIVERY_STATE_BYTES = 8 * 1024;
+const MAX_SESSION_DELIVERY_SCAN_BYTES = 32 * 1024 * 1024;
+const CHANNEL_METADATA_FILE = "channel.json";
+const CHANNEL_LIFECYCLE_CLAIM = "channel-lifecycle";
+const MAX_CHANNEL_METADATA_BYTES = 16 * 1024;
+const METADATALESS_CHANNEL_GRACE_MS = 60_000;
+
+function requestDeliveryClaimName(requestId: string): string {
+	return `request-delivery-${createHash("sha256").update(requestId).digest("hex")}`;
+}
 
 type SupervisorReason = "need_decision" | "interview_request" | "progress_update";
 
@@ -44,6 +67,7 @@ interface SupervisorRequest {
 	expectsReply: boolean;
 	orchestratorTarget?: string;
 	orchestratorSessionId?: string;
+	physicalSessionId?: string;
 	runId: string;
 	agent: string;
 	childIndex: number;
@@ -52,8 +76,15 @@ interface SupervisorRequest {
 }
 
 interface PendingSupervisorRequest extends SupervisorRequest {
+	protocolVersion: 1 | 2;
 	channelDir: string;
 	requestFile: string;
+	requestSnapshot: OwnedFileSnapshot;
+}
+
+interface SupervisorRequestFileRead {
+	readonly request?: PendingSupervisorRequest;
+	readonly snapshot: OwnedFileSnapshot;
 }
 
 interface SupervisorReply {
@@ -61,6 +92,17 @@ interface SupervisorReply {
 	requestId: string;
 	createdAt: number;
 	message: string;
+}
+
+interface SupervisorChannelMetadata {
+	readonly version: 1;
+	readonly physicalSessionId: string;
+	readonly runId: string;
+	readonly agent: string;
+	readonly childIndex: number;
+	readonly ownerPid: number;
+	readonly ownerProcessStartIdentity?: string;
+	readonly updatedAt: number;
 }
 
 interface ContactSupervisorParams {
@@ -104,13 +146,85 @@ function safeSegment(value: string): string {
 	);
 }
 
-export function resolveSupervisorChannelDir(runId: string, agent: string, childIndex: number): string {
+export function resolveSupervisorChannelDir(
+	runId: string,
+	agent: string,
+	childIndex: number,
+	physicalSessionId = "legacy-test-session",
+): string {
+	return supervisorChannelDir(physicalSessionId, runId, agent, childIndex);
+}
+
+function resolveLegacySupervisorChannelDir(runId: string, agent: string, childIndex: number): string {
 	return path.join(SUPERVISOR_CHANNEL_ROOT, `${safeSegment(runId)}-${safeSegment(agent)}-${childIndex}`);
 }
 
 export function ensureSupervisorChannelDir(channelDir: string): void {
-	fs.mkdirSync(path.join(channelDir, REQUESTS_DIR), { recursive: true, mode: 0o700 });
-	fs.mkdirSync(path.join(channelDir, REPLIES_DIR), { recursive: true, mode: 0o700 });
+	const resolved = path.resolve(channelDir);
+	const root = path.resolve(SUPERVISOR_CHANNEL_ROOT);
+	if (resolved === root || !resolved.startsWith(`${root}${path.sep}`)) {
+		throw new Error(`Supervisor channel '${channelDir}' is outside the private channel root.`);
+	}
+	ensurePrivateDirectory(TEMP_ROOT_DIR);
+	ensurePrivateDirectory(SUPERVISOR_CHANNEL_ROOT);
+	ensurePrivateDirectory(resolved);
+	ensurePrivateDirectory(path.join(resolved, REQUESTS_DIR));
+	ensurePrivateDirectory(path.join(resolved, REPLIES_DIR));
+}
+
+function writeSupervisorChannelMetadata(
+	channelDir: string,
+	metadata: Omit<SupervisorChannelMetadata, "version" | "ownerPid" | "ownerProcessStartIdentity" | "updatedAt">,
+): void {
+	const ownerProcessStartIdentity = readProcessStartIdentity(process.pid);
+	writeAtomicJson(path.join(channelDir, CHANNEL_METADATA_FILE), {
+		version: 1,
+		...metadata,
+		ownerPid: process.pid,
+		...(ownerProcessStartIdentity ? { ownerProcessStartIdentity } : {}),
+		updatedAt: Date.now(),
+	} satisfies SupervisorChannelMetadata);
+}
+
+function readSupervisorChannelMetadata(channelDir: string): SupervisorChannelMetadata | undefined {
+	try {
+		const value = JSON.parse(
+			readBoundedOwnedFile(path.join(channelDir, CHANNEL_METADATA_FILE), MAX_CHANNEL_METADATA_BYTES),
+		) as Partial<SupervisorChannelMetadata>;
+		if (
+			value.version !== 1 ||
+			typeof value.physicalSessionId !== "string" ||
+			!value.physicalSessionId ||
+			typeof value.runId !== "string" ||
+			!value.runId ||
+			typeof value.agent !== "string" ||
+			!value.agent ||
+			!Number.isSafeInteger(value.childIndex) ||
+			(value.childIndex ?? -1) < 0 ||
+			!Number.isSafeInteger(value.ownerPid) ||
+			(value.ownerPid ?? -1) <= 0 ||
+			typeof value.updatedAt !== "number" ||
+			!Number.isFinite(value.updatedAt)
+		) {
+			return undefined;
+		}
+		if (
+			value.ownerProcessStartIdentity !== undefined &&
+			(typeof value.ownerProcessStartIdentity !== "string" || !value.ownerProcessStartIdentity)
+		) {
+			return undefined;
+		}
+		const expected = resolveSupervisorChannelDir(
+			value.runId,
+			value.agent,
+			value.childIndex!,
+			value.physicalSessionId,
+		);
+		if (path.resolve(expected) !== path.resolve(channelDir)) return undefined;
+		return value as SupervisorChannelMetadata;
+	} catch {
+		return undefined;
+	}
 }
 
 function requestPath(channelDir: string, requestId: string): string {
@@ -119,6 +233,61 @@ function requestPath(channelDir: string, requestId: string): string {
 
 function replyPath(channelDir: string, requestId: string): string {
 	return path.join(channelDir, REPLIES_DIR, `${safeSegment(requestId)}.json`);
+}
+
+function requestDeliveryStatePath(requestFile: string): string {
+	return path.join(path.dirname(requestFile), `.${path.basename(requestFile)}.delivery-state`);
+}
+
+interface RequestDeliveryState {
+	readonly version: 2;
+	readonly requestId: string;
+	readonly lastAttemptAt: number;
+	readonly acceptedAt?: number;
+}
+
+function readRequestDeliveryState(requestFile: string, requestId: string): RequestDeliveryState | undefined {
+	try {
+		const value = JSON.parse(
+			readBoundedOwnedFile(requestDeliveryStatePath(requestFile), MAX_DELIVERY_STATE_BYTES),
+		) as {
+			version?: unknown;
+			requestId?: unknown;
+			lastAttemptAt?: unknown;
+			acceptedAt?: unknown;
+		};
+		if (
+			(value.version !== 1 && value.version !== 2) ||
+			(value.requestId === requestId &&
+				(typeof value.lastAttemptAt !== "number" || !Number.isFinite(value.lastAttemptAt)))
+		)
+			return undefined;
+		if (value.requestId !== requestId) return undefined;
+		const acceptedAt =
+			typeof value.acceptedAt === "number" && Number.isFinite(value.acceptedAt) ? value.acceptedAt : undefined;
+		return {
+			version: 2,
+			requestId,
+			lastAttemptAt: value.lastAttemptAt as number,
+			...(acceptedAt !== undefined ? { acceptedAt } : {}),
+		};
+	} catch {
+		return undefined;
+	}
+}
+
+function writeRequestDeliveryState(requestFile: string, state: RequestDeliveryState): void {
+	writeAtomicJson(requestDeliveryStatePath(requestFile), {
+		...state,
+	});
+}
+
+function removeRequestDeliveryAttempt(requestFile: string): void {
+	try {
+		fs.unlinkSync(requestDeliveryStatePath(requestFile));
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
 }
 
 function readTextEnv(name: string): string | undefined {
@@ -134,6 +303,7 @@ function readChildMetadata():
 			childIndex: number;
 			orchestratorTarget?: string;
 			orchestratorSessionId?: string;
+			physicalSessionId: string;
 			childTarget?: string;
 	  }
 	| undefined {
@@ -142,15 +312,33 @@ function readChildMetadata():
 	const agent = readTextEnv(SUBAGENT_CHILD_AGENT_ENV);
 	const rawIndex = readTextEnv(SUBAGENT_CHILD_INDEX_ENV);
 	const orchestratorSessionId = readTextEnv(SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV);
-	if (!channelDir || !runId || !agent || !orchestratorSessionId || rawIndex === undefined || !/^\d+$/.test(rawIndex))
+	const physicalSessionId = readTextEnv(SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID_ENV);
+	if (
+		!channelDir ||
+		!runId ||
+		!agent ||
+		!orchestratorSessionId ||
+		!physicalSessionId ||
+		rawIndex === undefined ||
+		!/^\d+$/.test(rawIndex)
+	)
 		return undefined;
+	const childIndex = Number(rawIndex);
+	if (!Number.isSafeInteger(childIndex)) return undefined;
+	if (
+		path.resolve(channelDir) !==
+		path.resolve(resolveSupervisorChannelDir(runId, agent, childIndex, physicalSessionId))
+	) {
+		return undefined;
+	}
 	return {
 		channelDir,
 		runId,
 		agent,
-		childIndex: Number(rawIndex),
+		childIndex,
 		orchestratorTarget: readTextEnv(SUBAGENT_ORCHESTRATOR_TARGET_ENV),
 		orchestratorSessionId,
+		physicalSessionId,
 		childTarget: readTextEnv("PI_SUBAGENT_INTERCOM_SESSION_NAME"),
 	};
 }
@@ -227,6 +415,18 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 	});
 }
 
+async function acquireChannelLifecycleClaim(signal?: AbortSignal): Promise<DurableClaim> {
+	ensurePrivateDirectory(TEMP_ROOT_DIR);
+	ensurePrivateDirectory(SUPERVISOR_CHANNEL_ROOT);
+	const deadline = Date.now() + 3_000;
+	for (;;) {
+		const claim = tryAcquireDurableClaim(SUPERVISOR_CHANNEL_ROOT, CHANNEL_LIFECYCLE_CLAIM);
+		if (claim) return claim;
+		if (Date.now() >= deadline) throw new Error("Supervisor channel lifecycle is busy; retry the request.");
+		await delay(20, signal);
+	}
+}
+
 async function waitForReply(
 	channelDir: string,
 	requestId: string,
@@ -237,13 +437,31 @@ async function waitForReply(
 	while (Date.now() <= deadline) {
 		if (signal?.aborted) throw new Error("Supervisor request cancelled.");
 		if (fs.existsSync(file)) {
-			const parsed = JSON.parse(fs.readFileSync(file, "utf-8")) as Partial<SupervisorReply>;
+			let parsed: Partial<SupervisorReply> | undefined;
+			let snapshot: OwnedFileSnapshot | undefined;
+			try {
+				snapshot = readBoundedOwnedFileSnapshot(file, MAX_MESSAGE_BYTES);
+				parsed = JSON.parse(snapshot.text) as Partial<SupervisorReply>;
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				throw error;
+			}
 			if (
 				parsed.type === "subagent.supervisor.reply" &&
 				parsed.requestId === requestId &&
-				typeof parsed.message === "string"
+				typeof parsed.createdAt === "number" &&
+				Number.isFinite(parsed.createdAt) &&
+				typeof parsed.message === "string" &&
+				Buffer.byteLength(parsed.message, "utf-8") <= MAX_MESSAGE_BYTES
 			) {
-				return parsed as SupervisorReply;
+				const reply = parsed as SupervisorReply;
+				try {
+					if (!snapshot || removeOwnedFileSnapshot(file, snapshot) !== "removed") continue;
+				} catch (error) {
+					console.error(`Failed to remove consumed supervisor reply '${file}':`, error);
+				}
+				removeRequestFile(requestPath(channelDir, requestId));
+				return reply;
 			}
 		}
 		await delay(250, signal);
@@ -260,12 +478,11 @@ async function sendSupervisorRequest(
 	if (params.reason !== "progress_update" && !params.message?.trim() && params.reason !== "interview_request") {
 		throw new Error("message is required for supervisor decisions.");
 	}
-	ensureSupervisorChannelDir(metadata.channelDir);
 	const requestId = randomUUID();
 	const expectsReply = params.reason !== "progress_update";
 	const createdAt = Date.now();
 	const replyDeadline = createdAt + askTimeoutMs();
-	const expiresAt = expectsReply ? replyDeadline : undefined;
+	const expiresAt = replyDeadline;
 	const message = formatChildMessage({
 		...metadata,
 		reason: params.reason,
@@ -276,12 +493,13 @@ async function sendSupervisorRequest(
 		type: "subagent.supervisor.request",
 		id: requestId,
 		createdAt,
-		...(expiresAt !== undefined ? { expiresAt } : {}),
+		expiresAt,
 		reason: params.reason,
 		message,
 		expectsReply,
 		...(metadata.orchestratorTarget ? { orchestratorTarget: metadata.orchestratorTarget } : {}),
 		...(metadata.orchestratorSessionId ? { orchestratorSessionId: metadata.orchestratorSessionId } : {}),
+		physicalSessionId: metadata.physicalSessionId,
 		runId: metadata.runId,
 		agent: metadata.agent,
 		childIndex: metadata.childIndex,
@@ -290,7 +508,19 @@ async function sendSupervisorRequest(
 	};
 	const serialized = JSON.stringify(request, null, "\t");
 	if (Buffer.byteLength(serialized, "utf-8") > MAX_MESSAGE_BYTES) throw new Error("Supervisor request is too large.");
-	writeAtomicJson(requestPath(metadata.channelDir, requestId), request);
+	const lifecycleClaim = await acquireChannelLifecycleClaim(signal);
+	try {
+		ensureSupervisorChannelDir(metadata.channelDir);
+		writeSupervisorChannelMetadata(metadata.channelDir, {
+			physicalSessionId: metadata.physicalSessionId,
+			runId: metadata.runId,
+			agent: metadata.agent,
+			childIndex: metadata.childIndex,
+		});
+		writeAtomicJson(requestPath(metadata.channelDir, requestId), request);
+	} finally {
+		lifecycleClaim.release();
+	}
 
 	if (!expectsReply) {
 		return {
@@ -409,144 +639,266 @@ export function registerNativeSupervisorClient(
 	}
 }
 
-function parseRequestFile(file: string, channelDir: string): PendingSupervisorRequest | undefined {
+function parseRequestFile(file: string, channelDir: string): SupervisorRequestFileRead | undefined {
+	let snapshot: OwnedFileSnapshot;
 	try {
-		const parsed = JSON.parse(fs.readFileSync(file, "utf-8")) as Partial<SupervisorRequest>;
-		if (parsed.type !== "subagent.supervisor.request") return undefined;
-		if (typeof parsed.id !== "string" || !parsed.id) return undefined;
+		snapshot = readBoundedOwnedFileSnapshot(file, MAX_MESSAGE_BYTES);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
+	}
+	try {
+		const parsed = JSON.parse(snapshot.text) as Partial<SupervisorRequest>;
+		if (parsed.type !== "subagent.supervisor.request") return { snapshot };
+		if (typeof parsed.id !== "string" || !parsed.id.trim() || parsed.id.length > 256) return { snapshot };
 		if (
 			parsed.reason !== "need_decision" &&
 			parsed.reason !== "interview_request" &&
 			parsed.reason !== "progress_update"
 		)
-			return undefined;
-		if (typeof parsed.message !== "string" || !parsed.message) return undefined;
-		if (typeof parsed.runId !== "string" || typeof parsed.agent !== "string" || typeof parsed.childIndex !== "number")
-			return undefined;
-		return { ...(parsed as SupervisorRequest), channelDir, requestFile: file };
-	} catch {
-		return undefined;
-	}
-}
-
-function listRequestFiles(): Array<{ channelDir: string; file: string }> {
-	let channelEntries: fs.Dirent[];
-	try {
-		channelEntries = fs.readdirSync(SUPERVISOR_CHANNEL_ROOT, { withFileTypes: true });
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-		throw error;
-	}
-	const files: Array<{ channelDir: string; file: string }> = [];
-	for (const entry of channelEntries) {
-		if (!entry.isDirectory()) continue;
-		const channelDir = path.join(SUPERVISOR_CHANNEL_ROOT, entry.name);
-		const requestsDir = path.join(channelDir, REQUESTS_DIR);
-		let requestEntries: fs.Dirent[];
-		try {
-			requestEntries = fs.readdirSync(requestsDir, { withFileTypes: true });
-		} catch {
-			continue;
+			return { snapshot };
+		const protocolVersion = typeof parsed.physicalSessionId === "string" && parsed.physicalSessionId.trim() ? 2 : 1;
+		if (
+			typeof parsed.message !== "string" ||
+			!parsed.message ||
+			Buffer.byteLength(parsed.message, "utf-8") > MAX_MESSAGE_BYTES
+		)
+			return { snapshot };
+		if (
+			typeof parsed.createdAt !== "number" ||
+			!Number.isFinite(parsed.createdAt) ||
+			parsed.createdAt <= 0 ||
+			(parsed.expiresAt !== undefined &&
+				(typeof parsed.expiresAt !== "number" ||
+					!Number.isFinite(parsed.expiresAt) ||
+					parsed.expiresAt < parsed.createdAt)) ||
+			(protocolVersion === 2 && (typeof parsed.expiresAt !== "number" || !Number.isFinite(parsed.expiresAt))) ||
+			typeof parsed.expectsReply !== "boolean" ||
+			parsed.expectsReply !== (parsed.reason !== "progress_update") ||
+			typeof parsed.orchestratorSessionId !== "string" ||
+			!parsed.orchestratorSessionId.trim() ||
+			typeof parsed.runId !== "string" ||
+			!parsed.runId.trim() ||
+			typeof parsed.agent !== "string" ||
+			!parsed.agent.trim() ||
+			typeof parsed.childIndex !== "number" ||
+			!Number.isSafeInteger(parsed.childIndex) ||
+			(parsed.childIndex ?? -1) < 0
+		)
+			return { snapshot };
+		if (path.basename(file) !== `${safeSegment(parsed.id)}.json`) return { snapshot };
+		const expectedChannel =
+			protocolVersion === 2
+				? resolveSupervisorChannelDir(parsed.runId, parsed.agent, parsed.childIndex, parsed.physicalSessionId!)
+				: resolveLegacySupervisorChannelDir(parsed.runId, parsed.agent, parsed.childIndex);
+		if (path.resolve(channelDir) !== path.resolve(expectedChannel)) {
+			return { snapshot };
 		}
-		for (const requestEntry of requestEntries) {
-			if (requestEntry.isFile() && requestEntry.name.endsWith(".json"))
-				files.push({ channelDir, file: path.join(requestsDir, requestEntry.name) });
-		}
-	}
-	return files;
-}
-
-function readDirectoryEntries(dir: string): fs.Dirent[] | undefined {
-	try {
-		return fs.readdirSync(dir, { withFileTypes: true });
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-		return undefined;
-	}
-}
-
-function directoryMtimeMs(dir: string): number {
-	try {
-		return fs.statSync(dir).mtimeMs;
+		return {
+			snapshot,
+			request: {
+				...(parsed as SupervisorRequest),
+				protocolVersion,
+				channelDir,
+				requestFile: file,
+				requestSnapshot: snapshot,
+			},
+		};
 	} catch {
-		return 0;
+		return { snapshot };
 	}
 }
 
-function removeEmptyDirectory(dir: string): boolean {
+function requestFilesInChannel(channelDir: string, limit: number): string[] {
 	try {
-		fs.rmdirSync(dir);
-		return true;
-	} catch (error) {
-		const code = (error as NodeJS.ErrnoException).code;
-		if (code === "ENOENT") return true;
-		if (code === "ENOTEMPTY" || code === "EEXIST" || code === "EPERM" || code === "EBUSY") return false;
-		throw error;
+		return fs
+			.readdirSync(path.join(channelDir, REQUESTS_DIR), { withFileTypes: true })
+			.filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+			.sort((left, right) => left.name.localeCompare(right.name))
+			.slice(0, limit)
+			.map((entry) => path.join(channelDir, REQUESTS_DIR, entry.name));
+	} catch {
+		return [];
 	}
 }
 
-function removeStaleEmptySupervisorChannel(channelDir: string, nowMs: number): boolean {
-	const requestsDir = path.join(channelDir, REQUESTS_DIR);
-	const repliesDir = path.join(channelDir, REPLIES_DIR);
-	const newestKnownMtimeMs = Math.max(
-		directoryMtimeMs(channelDir),
-		directoryMtimeMs(requestsDir),
-		directoryMtimeMs(repliesDir),
+function channelOwnerAlive(metadata: SupervisorChannelMetadata): boolean | undefined {
+	if (metadata.ownerProcessStartIdentity) {
+		const current = readProcessStartIdentity(metadata.ownerPid);
+		if (current) return current === metadata.ownerProcessStartIdentity;
+	}
+	try {
+		process.kill(metadata.ownerPid, 0);
+		return undefined;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "ESRCH" ? false : undefined;
+	}
+}
+
+function channelRunInactive(metadata: SupervisorChannelMetadata, state: SubagentState): boolean {
+	return requestRunInactive(
+		{
+			type: "subagent.supervisor.request",
+			id: "channel-lifecycle",
+			createdAt: metadata.updatedAt,
+			reason: "progress_update",
+			message: "channel lifecycle",
+			expectsReply: false,
+			physicalSessionId: metadata.physicalSessionId,
+			runId: metadata.runId,
+			agent: metadata.agent,
+			childIndex: metadata.childIndex,
+		},
+		state,
 	);
-	if (nowMs - newestKnownMtimeMs < STALE_EMPTY_CHANNEL_AGE_MS) return false;
-
-	const requestEntries = readDirectoryEntries(requestsDir);
-	if (!requestEntries || requestEntries.length > 0) return false;
-	const replyEntries = readDirectoryEntries(repliesDir);
-	if (!replyEntries || replyEntries.length > 0) return false;
-
-	if (!removeEmptyDirectory(requestsDir)) return false;
-	if (!removeEmptyDirectory(repliesDir)) return false;
-	if (!removeEmptyDirectory(channelDir)) return false;
-	return true;
 }
 
-function cleanupStaleEmptySupervisorChannels(nowMs = Date.now()): number {
-	let channelEntries: fs.Dirent[];
+function metadataLessChannelSafeToCollect(channelDir: string, now: number): boolean {
+	const resolved = path.resolve(channelDir);
+	if (path.dirname(resolved) !== path.resolve(SUPERVISOR_CHANNEL_ROOT)) return false;
 	try {
-		channelEntries = fs.readdirSync(SUPERVISOR_CHANNEL_ROOT, { withFileTypes: true });
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
-		throw error;
-	}
-
-	let removed = 0;
-	for (const entry of channelEntries) {
-		if (!entry.isDirectory()) continue;
-		try {
-			if (removeStaleEmptySupervisorChannel(path.join(SUPERVISOR_CHANNEL_ROOT, entry.name), nowMs)) removed++;
-		} catch {
-			// Cleanup is opportunistic; active writers can race with us and will be picked up by a later pass.
+		const stat = fs.lstatSync(resolved);
+		const currentUid = process.getuid?.();
+		if (
+			!stat.isDirectory() ||
+			stat.isSymbolicLink() ||
+			(currentUid !== undefined && stat.uid !== currentUid) ||
+			now - stat.mtimeMs < METADATALESS_CHANNEL_GRACE_MS ||
+			fs.existsSync(path.join(resolved, CHANNEL_METADATA_FILE))
+		) {
+			return false;
 		}
+		for (const entry of fs.readdirSync(resolved, { withFileTypes: true })) {
+			if (entry.name !== REQUESTS_DIR && entry.name !== REPLIES_DIR) return false;
+			const child = path.join(resolved, entry.name);
+			const childStat = fs.lstatSync(child);
+			if (
+				!entry.isDirectory() ||
+				entry.isSymbolicLink() ||
+				(currentUid !== undefined && childStat.uid !== currentUid) ||
+				fs.readdirSync(child).length > 0
+			) {
+				return false;
+			}
+		}
+		return true;
+	} catch {
+		return false;
 	}
-	return removed;
 }
 
-function currentContextSessionId(
-	state: Pick<SubagentState, "currentSessionId">,
-	ctx: ExtensionContext,
-): string | undefined {
-	try {
-		const sessionId = ctx.sessionManager.getSessionId();
-		if (sessionId) return sessionId;
-	} catch {
-		// Fall through to the last known identity.
+export function garbageCollectSupervisorChannel(channelDir: string, state: SubagentState, now = Date.now()): boolean {
+	const metadata = readSupervisorChannelMetadata(channelDir);
+	if (metadata) {
+		if (requestFilesInChannel(channelDir, 1).length > 0) return false;
+		if (channelOwnerAlive(metadata) !== false && !channelRunInactive(metadata, state)) return false;
 	}
-	return state.currentSessionId ?? undefined;
+	const claim = tryAcquireDurableClaim(SUPERVISOR_CHANNEL_ROOT, CHANNEL_LIFECYCLE_CLAIM);
+	if (!claim) return false;
+	try {
+		const current = readSupervisorChannelMetadata(channelDir);
+		if (!current) {
+			if (!metadataLessChannelSafeToCollect(channelDir, now)) return false;
+		} else {
+			if (requestFilesInChannel(channelDir, 1).length > 0) return false;
+			if (channelOwnerAlive(current) !== false && !channelRunInactive(current, state)) return false;
+		}
+		const resolved = path.resolve(channelDir);
+		if (path.dirname(resolved) !== path.resolve(SUPERVISOR_CHANNEL_ROOT)) return false;
+		const stat = fs.lstatSync(resolved);
+		if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
+		fs.rmSync(resolved, { recursive: true });
+		return true;
+	} catch {
+		return false;
+	} finally {
+		claim.release();
+	}
 }
 
 function requestMatchesContext(
 	request: SupervisorRequest,
-	state: Pick<SubagentState, "currentSessionId">,
+	state: Pick<SubagentState, "currentSessionId" | "currentSessionScope">,
 	ctx: ExtensionContext,
 ): boolean {
-	const currentSessionId = currentContextSessionId(state, ctx);
-	return Boolean(currentSessionId && request.orchestratorSessionId === currentSessionId);
+	const scope = state.currentSessionScope;
+	if (!scope || !state.currentSessionId) return false;
+	if (request.physicalSessionId) {
+		const matches = sessionArtifactMatches(scope, request.physicalSessionId, request.runId);
+		if (!matches) return false;
+		return (
+			request.physicalSessionId === scope.sessionId ||
+			scope.startedAtMs === undefined ||
+			request.createdAt >= scope.startedAtMs
+		);
+	}
+	let logicalSessionId: string | null | undefined;
+	try {
+		logicalSessionId = ctx.sessionManager.getSessionId();
+	} catch {
+		return false;
+	}
+	return (
+		Boolean(logicalSessionId) &&
+		request.orchestratorSessionId === logicalSessionId &&
+		scope.legacyRunIds.has(request.runId) &&
+		(scope.startedAtMs === undefined || request.createdAt >= scope.startedAtMs)
+	);
+}
+
+function addPersistedSupervisorRequestId(entry: unknown, requestIds: Set<string>): void {
+	if (!entry || typeof entry !== "object") return;
+	const candidate = entry as { type?: unknown; customType?: unknown; details?: unknown };
+	if (candidate.type !== "custom_message" || candidate.customType !== "subagent_supervisor_request") return;
+	const details = candidate.details;
+	if (!details || typeof details !== "object") return;
+	const id = (details as { id?: unknown }).id;
+	if (typeof id === "string" && id) requestIds.add(id);
+}
+
+/** Build one delivery index for the whole poll instead of rescanning the session per request. */
+function persistedSupervisorRequestIds(ctx: ExtensionContext): ReadonlySet<string> {
+	const requestIds = new Set<string>();
+	try {
+		for (const entry of ctx.sessionManager.getEntries()) addPersistedSupervisorRequestId(entry, requestIds);
+	} catch {
+		// The canonical JSONL tail below remains an independent crash-safe source.
+	}
+
+	let sessionFile: string | null | undefined;
+	try {
+		sessionFile = ctx.sessionManager.getSessionFile();
+	} catch {
+		return requestIds;
+	}
+	if (!sessionFile || !path.isAbsolute(sessionFile)) return requestIds;
+	let descriptor: number | undefined;
+	try {
+		const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+		descriptor = fs.openSync(sessionFile, fs.constants.O_RDONLY | noFollow);
+		const stat = fs.fstatSync(descriptor);
+		const currentUid = process.getuid?.();
+		if (!stat.isFile() || (currentUid !== undefined && stat.uid !== currentUid)) return requestIds;
+		const length = Math.min(stat.size, MAX_SESSION_DELIVERY_SCAN_BYTES);
+		if (length <= 0) return requestIds;
+		const buffer = Buffer.allocUnsafe(length);
+		const bytesRead = fs.readSync(descriptor, buffer, 0, length, Math.max(0, stat.size - length));
+		let text = buffer.subarray(0, bytesRead).toString("utf-8");
+		if (stat.size > length) text = text.slice(Math.max(0, text.indexOf("\n") + 1));
+		for (const line of text.split("\n")) {
+			if (!line.includes("subagent_supervisor_request")) continue;
+			try {
+				addPersistedSupervisorRequestId(JSON.parse(line), requestIds);
+			} catch {
+				// Ignore unrelated or partially written JSONL records.
+			}
+		}
+		return requestIds;
+	} catch {
+		return requestIds;
+	} finally {
+		if (descriptor !== undefined) fs.closeSync(descriptor);
+	}
 }
 
 function rememberedForegroundChild(request: SupervisorRequest, state: SubagentState) {
@@ -596,11 +948,18 @@ function clearForegroundSupervisorAttention(
 	remembered.child.updatedAt = updatedAt;
 }
 
-function removeRequestFile(file: string): void {
+function removeRequestFile(file: string, snapshot?: OwnedFileSnapshot): boolean {
 	try {
-		fs.rmSync(file, { force: true });
+		if (snapshot) {
+			const outcome = removeOwnedFileSnapshot(file, snapshot);
+			if (outcome !== "removed") return false;
+		}
+		if (!snapshot) fs.rmSync(file, { force: true });
+		removeRequestDeliveryAttempt(file);
+		return true;
 	} catch {
 		// Request cleanup is best-effort; reply files and timeout errors remain authoritative.
+		return false;
 	}
 }
 
@@ -617,11 +976,23 @@ function requestRunInactive(request: SupervisorRequest, state: SubagentState): b
 	const foreground = rememberedForegroundChild(request, state);
 	if (foreground) return foreground.child.status !== "detached";
 
-	const asyncJob = state.asyncJobs.get(request.runId);
+	const asyncJob = state.asyncJobs.get(request.runId) ?? state.recentAgentJobs?.get(request.runId);
 	if (!asyncJob) return false;
-	if (asyncJob.status === "complete" || asyncJob.status === "failed" || asyncJob.status === "paused") return true;
+	if (
+		asyncJob.status === "complete" ||
+		asyncJob.status === "failed" ||
+		asyncJob.status === "paused" ||
+		asyncJob.status === "stopped"
+	)
+		return true;
 	const stepStatus = asyncJob.steps?.[request.childIndex]?.status;
-	return stepStatus === "complete" || stepStatus === "completed" || stepStatus === "failed" || stepStatus === "paused";
+	return (
+		stepStatus === "complete" ||
+		stepStatus === "completed" ||
+		stepStatus === "failed" ||
+		stepStatus === "paused" ||
+		stepStatus === "stopped"
+	);
 }
 
 function requestLifecycle(
@@ -630,17 +1001,17 @@ function requestLifecycle(
 	ctx: ExtensionContext | undefined,
 	now: number,
 ): SupervisorRequestLifecycle {
-	if (ctx && !requestMatchesContext(request, state, ctx)) return "wrong-session";
 	if (!fs.existsSync(request.requestFile)) return "missing";
 	if (request.expectsReply && fs.existsSync(replyPath(request.channelDir, request.id))) return "resolved";
-	if (request.expectsReply && now > requestExpiresAt(request, now)) return "expired";
+	if (now > requestExpiresAt(request, now)) return "expired";
+	if (ctx && !requestMatchesContext(request, state, ctx)) return "wrong-session";
 	if (request.expectsReply && requestRunInactive(request, state)) return "inactive";
 	return "pending";
 }
 
 function cleanupRequestLifecycle(request: PendingSupervisorRequest, lifecycle: SupervisorRequestLifecycle): void {
 	if (lifecycle === "resolved" || lifecycle === "expired" || lifecycle === "inactive")
-		removeRequestFile(request.requestFile);
+		removeRequestFile(request.requestFile, request.requestSnapshot);
 }
 
 function refreshPendingRequests(
@@ -654,6 +1025,7 @@ function refreshPendingRequests(
 		if (lifecycle === "pending") continue;
 		pending.delete(request.id);
 		cleanupRequestLifecycle(request, lifecycle);
+		clearForegroundSupervisorAttention(request, pending, state);
 	}
 }
 
@@ -675,7 +1047,11 @@ function requestVisibleText(request: PendingSupervisorRequest): string {
 	return lines.join("\n");
 }
 
-function writeReply(request: PendingSupervisorRequest, message: string): void {
+function writeReply(
+	request: PendingSupervisorRequest,
+	message: string,
+	afterPublish?: (replyPath: string) => void,
+): void {
 	if (!message.trim()) throw new Error("message is required for supervisor replies.");
 	const reply: SupervisorReply = {
 		type: "subagent.supervisor.reply",
@@ -683,8 +1059,32 @@ function writeReply(request: PendingSupervisorRequest, message: string): void {
 		createdAt: Date.now(),
 		message: message.trim(),
 	};
-	writeAtomicJson(replyPath(request.channelDir, request.id), reply);
-	removeRequestFile(request.requestFile);
+	if (Buffer.byteLength(JSON.stringify(reply), "utf-8") > MAX_MESSAGE_BYTES) {
+		throw new Error("Supervisor reply is too large.");
+	}
+	const outputPath = replyPath(request.channelDir, request.id);
+	writeAtomicJson(outputPath, reply);
+	afterPublish?.(outputPath);
+	if (removeRequestFile(request.requestFile, request.requestSnapshot)) return;
+
+	// The child consumes the reply before removing its request. Either file can
+	// therefore disappear between publication and parent cleanup. Missing reply
+	// or request is positive consumption evidence, not a failed delivery.
+	try {
+		fs.lstatSync(request.requestFile);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+		throw error;
+	}
+	let replySnapshot: OwnedFileSnapshot;
+	try {
+		replySnapshot = readBoundedOwnedFileSnapshot(outputPath, MAX_MESSAGE_BYTES);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+		throw error;
+	}
+	removeOwnedFileSnapshot(outputPath, replySnapshot);
+	throw new Error(`Supervisor request '${request.id}' is no longer pending.`);
 }
 
 function resolvePendingRequest(
@@ -729,6 +1129,7 @@ function buildParentIntercomTool(
 	pending: Map<string, PendingSupervisorRequest>,
 	state: SubagentState,
 	name = "intercom",
+	afterReplyPublish?: (replyPath: string) => void,
 ): ToolDefinition<typeof IntercomParamsSchema, Record<string, unknown>> {
 	return {
 		name,
@@ -756,7 +1157,7 @@ function buildParentIntercomTool(
 			}
 			if (input.action === "reply") {
 				const request = resolvePendingRequest(pending, input);
-				writeReply(request, input.message ?? "");
+				writeReply(request, input.message ?? "", afterReplyPublish);
 				pending.delete(request.id);
 				clearForegroundSupervisorAttention(request, pending, state);
 				return {
@@ -777,96 +1178,235 @@ function buildParentIntercomTool(
 export function createNativeSupervisorChannel(
 	pi: ExtensionAPI,
 	state: SubagentState,
-): { start: () => void; dispose: () => void; pending: Map<string, PendingSupervisorRequest> } {
+	options: {
+		acquireDeliveryClaim?: typeof tryAcquireDurableClaim;
+		afterReplyPublish?: (replyPath: string) => void;
+	} = {},
+): { start: () => void; pause: () => void; dispose: () => void; pending: Map<string, PendingSupervisorRequest> } {
 	const pending = new Map<string, PendingSupervisorRequest>();
-	const seenFiles = new Set<string>();
 	let poller: ReturnType<typeof setInterval> | undefined;
-	let lastStaleCleanupAt = 0;
+	let channelScanner: fs.Dir | undefined;
+	const deliveryClaims = new Map<string, DurableClaim>();
+	const deliveryClaimFiles = new Map<string, string>();
+	const acquireDeliveryClaim = options.acquireDeliveryClaim ?? tryAcquireDurableClaim;
+	const releaseDeliveryClaim = (requestId: string): void => {
+		try {
+			deliveryClaims.get(requestId)?.release();
+		} catch (error) {
+			console.error(`Failed to release supervisor delivery claim '${requestId}':`, error);
+		} finally {
+			deliveryClaims.delete(requestId);
+			deliveryClaimFiles.delete(requestId);
+		}
+	};
+	const releaseAllDeliveryClaims = (): void => {
+		for (const requestId of [...deliveryClaims.keys()]) releaseDeliveryClaim(requestId);
+	};
 
-	const registerParentTools = (): void => {
+	const registerPrimaryParentTool = (): void => {
 		if (!hasTool(pi, NATIVE_SUPERVISOR_TOOL_NAME))
 			registerCommunicationTool(
 				pi,
-				buildParentIntercomTool(pending, state, NATIVE_SUPERVISOR_TOOL_NAME),
+				buildParentIntercomTool(pending, state, NATIVE_SUPERVISOR_TOOL_NAME, options.afterReplyPublish),
 				"checking",
 			);
-		if (!hasTool(pi, "intercom")) registerCommunicationTool(pi, buildParentIntercomTool(pending, state), "checking");
 	};
+	const registerParentIntercomFallback = (): void => {
+		if (!hasTool(pi, "intercom"))
+			registerCommunicationTool(
+				pi,
+				buildParentIntercomTool(pending, state, "intercom", options.afterReplyPublish),
+				"checking",
+			);
+	};
+	pi.on("before_agent_start", () => {
+		if (poller) registerParentIntercomFallback();
+	});
 
-	const cleanupStaleChannelsIfDue = (): void => {
-		const nowMs = Date.now();
-		if (nowMs - lastStaleCleanupAt < STALE_EMPTY_CHANNEL_CLEANUP_INTERVAL_MS) return;
-		lastStaleCleanupAt = nowMs;
+	const closeChannelScanner = (): void => {
 		try {
-			cleanupStaleEmptySupervisorChannels(nowMs);
-		} catch {
-			// Supervisor delivery must not fail because best-effort temp cleanup failed.
+			channelScanner?.closeSync();
+		} catch {}
+		channelScanner = undefined;
+	};
+	const scanRequestFiles = (): Array<{ channelDir: string; file: string }> => {
+		const files: Array<{ channelDir: string; file: string }> = [];
+		let scannedChannels = 0;
+		try {
+			channelScanner ??= fs.opendirSync(SUPERVISOR_CHANNEL_ROOT);
+			while (scannedChannels < MAX_CHANNEL_DIRS_PER_POLL && files.length < MAX_REQUEST_FILES_PER_POLL) {
+				const entry = channelScanner.readSync();
+				if (!entry) {
+					closeChannelScanner();
+					break;
+				}
+				scannedChannels += 1;
+				if (!entry.isDirectory()) continue;
+				const channelDir = path.join(SUPERVISOR_CHANNEL_ROOT, entry.name);
+				const requestFiles = requestFilesInChannel(channelDir, MAX_REQUEST_FILES_PER_POLL - files.length);
+				if (requestFiles.length === 0) garbageCollectSupervisorChannel(channelDir, state);
+				else files.push(...requestFiles.map((file) => ({ channelDir, file })));
+			}
+		} catch (error) {
+			closeChannelScanner();
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 		}
+		return files;
 	};
 
 	const poll = (): void => {
-		cleanupStaleChannelsIfDue();
-		const ctx = state.lastUiContext;
-		if (!ctx) return;
-		refreshPendingRequests(pending, state, ctx);
-		const now = Date.now();
-		for (const { channelDir, file } of listRequestFiles()) {
-			if (seenFiles.has(file)) continue;
-			const request = parseRequestFile(file, channelDir);
-			if (!request || !requestMatchesContext(request, state, ctx)) continue;
-			const lifecycle = requestLifecycle(request, state, undefined, now);
-			if (lifecycle !== "pending") {
-				seenFiles.add(file);
-				cleanupRequestLifecycle(request, lifecycle);
-				continue;
+		try {
+			const ctx = state.lastUiContext;
+			if (!ctx) return;
+			refreshPendingRequests(pending, state, ctx);
+			for (const requestId of deliveryClaims.keys()) {
+				const requestFile = deliveryClaimFiles.get(requestId);
+				if (requestFile && fs.existsSync(requestFile)) continue;
+				releaseDeliveryClaim(requestId);
 			}
-			seenFiles.add(file);
-			if (request.expectsReply) {
-				pending.set(request.id, request);
-				markForegroundSupervisorAttention(request, state);
-			} else {
-				removeRequestFile(request.requestFile);
+			const now = Date.now();
+			const requestFiles = scanRequestFiles();
+			let persistedRequestIds: ReadonlySet<string> | undefined;
+			for (const { channelDir, file } of requestFiles) {
+				try {
+					let parsedRequest = parseRequestFile(file, channelDir);
+					if (!parsedRequest) continue;
+					let request = parsedRequest.request;
+					if (!request) {
+						removeRequestFile(file, parsedRequest.snapshot);
+						continue;
+					}
+					const requestId = request.id;
+					let claim = deliveryClaims.get(requestId);
+					if (!claim) {
+						claim = acquireDeliveryClaim(path.dirname(file), requestDeliveryClaimName(requestId));
+						if (!claim) continue;
+						deliveryClaims.set(requestId, claim);
+						deliveryClaimFiles.set(requestId, file);
+					}
+					// Re-read under the cross-process claim. The request may have been
+					// replied to, expired, or replaced since the directory scan.
+					parsedRequest = parseRequestFile(file, channelDir);
+					request = parsedRequest?.request;
+					if (!request) {
+						if (parsedRequest) removeRequestFile(file, parsedRequest.snapshot);
+						releaseDeliveryClaim(requestId);
+						continue;
+					}
+					const lifecycle = requestLifecycle(request, state, ctx, now);
+					if (lifecycle === "wrong-session") {
+						releaseDeliveryClaim(request.id);
+						continue;
+					}
+					if (lifecycle !== "pending") {
+						cleanupRequestLifecycle(request, lifecycle);
+						releaseDeliveryClaim(request.id);
+						continue;
+					}
+					let deliveryState = readRequestDeliveryState(request.requestFile, request.id);
+					if (
+						deliveryState &&
+						deliveryState.acceptedAt === undefined &&
+						now - deliveryState.lastAttemptAt < DELIVERY_RETRY_GRACE_MS
+					) {
+						continue;
+					}
+					if (deliveryState?.acceptedAt === undefined) {
+						persistedRequestIds ??= persistedSupervisorRequestIds(ctx);
+					}
+					if (persistedRequestIds?.has(request.id) && deliveryState?.acceptedAt === undefined) {
+						deliveryState = {
+							version: 2,
+							requestId: request.id,
+							lastAttemptAt: deliveryState?.lastAttemptAt ?? now,
+							acceptedAt: now,
+						};
+						writeRequestDeliveryState(request.requestFile, deliveryState);
+					}
+					if (deliveryState?.acceptedAt !== undefined) {
+						if (request.expectsReply) {
+							// The delivery claim is also the durable reply-owner claim. Keep it
+							// until this host replies, disposes, or the request expires so a
+							// second Pi host cannot become a concurrent responder.
+							pending.set(request.id, request);
+							markForegroundSupervisorAttention(request, state);
+						} else {
+							removeRequestFile(request.requestFile, request.requestSnapshot);
+							releaseDeliveryClaim(request.id);
+						}
+						continue;
+					}
+					// sendMessage is fire-and-forget. The attempt is not accepted until
+					// the request id appears in the canonical session file or active
+					// SessionManager; a Host crash before append therefore remains retryable.
+					writeRequestDeliveryState(request.requestFile, {
+						version: 2,
+						requestId: request.id,
+						lastAttemptAt: now,
+					});
+					pi.sendMessage(
+						{
+							customType: "subagent_supervisor_request",
+							content: requestVisibleText(request),
+							display: true,
+							details: {
+								id: request.id,
+								reason: request.reason,
+								expectsReply: request.expectsReply,
+								runId: request.runId,
+								agent: request.agent,
+								childIndex: request.childIndex,
+							},
+						},
+						{ triggerTurn: true },
+					);
+					if (request.expectsReply) {
+						pending.set(request.id, request);
+						markForegroundSupervisorAttention(request, state);
+						try {
+							(pi as { events?: IntercomEventBus }).events?.emit(INTERCOM_DETACH_REQUEST_EVENT, {
+								requestId: request.id,
+								runId: request.runId,
+								agent: request.agent,
+								childIndex: request.childIndex,
+							});
+						} catch (error) {
+							console.error(`Supervisor detach observer failed for request '${request.id}':`, error);
+						}
+					}
+				} catch (error) {
+					console.error(`Failed to deliver supervisor request '${file}'; retaining it for retry:`, error);
+				}
 			}
-			pi.sendMessage(
-				{
-					customType: "subagent_supervisor_request",
-					content: requestVisibleText(request),
-					display: true,
-					details: {
-						id: request.id,
-						reason: request.reason,
-						expectsReply: request.expectsReply,
-						runId: request.runId,
-						agent: request.agent,
-						childIndex: request.childIndex,
-					},
-				},
-				{ triggerTurn: true },
-			);
-			if (request.expectsReply) {
-				(pi as { events?: IntercomEventBus }).events?.emit(INTERCOM_DETACH_REQUEST_EVENT, {
-					requestId: request.id,
-					runId: request.runId,
-					agent: request.agent,
-					childIndex: request.childIndex,
-				});
-			}
+		} catch (error) {
+			console.error("Native supervisor channel poll failed; the next interval will retry:", error);
 		}
 	};
 
 	return {
 		start: () => {
 			if (poller) return;
-			registerParentTools();
+			registerPrimaryParentTool();
 			poll();
 			poller = setInterval(poll, CHANNEL_POLL_MS);
 			poller.unref?.();
 		},
+		pause: () => {
+			if (poller) clearInterval(poller);
+			poller = undefined;
+			closeChannelScanner();
+			pending.clear();
+			// A paused channel no longer represents the active physical session.
+			// Retaining reply-owner claims here would strand the child request until
+			// this Host exits, preventing another live Host from taking ownership.
+			releaseAllDeliveryClaims();
+		},
 		dispose: () => {
 			if (poller) clearInterval(poller);
 			poller = undefined;
+			closeChannelScanner();
 			pending.clear();
-			seenFiles.clear();
+			releaseAllDeliveryClaims();
 		},
 		pending,
 	};

@@ -3,10 +3,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { ArtifactPaths, Details, NestedRunSummary, SingleResult, Usage } from "../../shared/types.ts";
+import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { tryAcquireStatusMutationClaim } from "../../shared/status-mutation.ts";
+import type { ArtifactPaths, AsyncStatus, Details, NestedRunSummary, SingleResult, Usage } from "../../shared/types.ts";
+import { readStatus } from "../../shared/utils.ts";
 import { deliverStopRequest } from "../background/control-channel.ts";
 import { runConfiguredBackground } from "../background/subagent-runner.ts";
+import { reapOrphanWriterProcesses } from "../background/writer-process-registry.ts";
 import type { BackgroundRunnerConfig, BackgroundTaskResult, RunnerAgentTask } from "../shared/parallel-utils.ts";
+import { recordForegroundOwnerExit } from "./owner-exit.ts";
 
 export interface ForegroundCompletion {
 	id: string;
@@ -22,20 +27,40 @@ export interface ForegroundCompletion {
 }
 
 export interface ForegroundExecutionDependencies {
+	acquireStatusClaim(asyncDir: string): { release(): void } | undefined;
 	runConfigured(config: BackgroundRunnerConfig): Promise<void>;
 	readCompletion(filePath: string): ForegroundCompletion;
+	readNestedChildren(asyncDir: string, runId: string): NestedRunSummary[] | undefined;
 	requestStop(asyncDir: string): void;
+	reapWriters(asyncDir: string): Promise<{ remaining: number; terminated: number }>;
+	writeStatus(filePath: string, status: AsyncStatus): void;
 }
 
 const DEFAULT_DEPENDENCIES: ForegroundExecutionDependencies = {
+	acquireStatusClaim: tryAcquireStatusMutationClaim,
 	runConfigured: runConfiguredBackground,
 	readCompletion(filePath) {
 		const value = JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
 		return validateCompletion(value, filePath);
 	},
+	readNestedChildren(asyncDir, runId) {
+		const status = readStatus(asyncDir);
+		if (!status || status.runId !== runId) return undefined;
+		const children = status.steps?.flatMap((step) => step.children ?? []) ?? [];
+		if (children.length > 0) return children;
+		return !status.nestedRoute &&
+			(status.state === "complete" ||
+				status.state === "failed" ||
+				status.state === "paused" ||
+				status.state === "stopped")
+			? []
+			: undefined;
+	},
 	requestStop(asyncDir) {
 		deliverStopRequest({ asyncDir, source: "foreground-cancel" });
 	},
+	reapWriters: reapOrphanWriterProcesses,
+	writeStatus: writePrivateAtomicJson,
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -95,6 +120,25 @@ function childrenForResult(
 	return directCount === 1 ? nestedChildren : undefined;
 }
 
+function resultWasExternalCrash(result: BackgroundTaskResult): boolean {
+	if (
+		result.success ||
+		result.interrupted ||
+		result.timedOut ||
+		result.stopped ||
+		result.turnBudgetExceeded ||
+		result.toolBudgetBlocked
+	) {
+		return false;
+	}
+	const writers = result.writerProcesses ?? [];
+	const finalAttempt = writers.reduce(
+		(latest, process) => Math.max(latest, process.attempt),
+		Number.NEGATIVE_INFINITY,
+	);
+	return writers.some((process) => process.attempt === finalAttempt && process.terminationOrigin === "external");
+}
+
 function toSingleResult(
 	result: BackgroundTaskResult,
 	task: RunnerAgentTask,
@@ -103,14 +147,17 @@ function toSingleResult(
 	nestedChildren: NestedRunSummary[] | undefined,
 ): SingleResult {
 	const childResults = childrenForResult(nestedChildren, index, directCount);
+	const crashed = resultWasExternalCrash(result);
 	return {
 		agent: result.agent,
 		task: task.task,
+		...(task.cwd ? { cwd: task.cwd } : {}),
 		...(result.context ? { context: result.context } : {}),
 		exitCode: result.exitCode ?? 1,
 		...(result.interrupted ? { interrupted: true } : {}),
 		...(result.timedOut ? { timedOut: true } : {}),
 		...(result.stopped ? { stopped: true } : {}),
+		...(crashed ? { crashed: true } : {}),
 		...(result.turnBudget ? { turnBudget: result.turnBudget } : {}),
 		...(result.turnBudgetExceeded ? { turnBudgetExceeded: true } : {}),
 		...(result.wrapUpRequested ? { wrapUpRequested: true } : {}),
@@ -158,18 +205,165 @@ function configArtifactDir(files: readonly ArtifactPaths[]): string {
 function formatResult(results: readonly SingleResult[]): string {
 	return results
 		.map((result, index) => {
-			const state = result.stopped
-				? "stopped"
-				: result.interrupted
-					? "paused"
-					: result.exitCode === 0
-						? "completed"
-						: "failed";
+			const state = result.detached
+				? "detached"
+				: result.stopped
+					? "stopped"
+					: result.interrupted
+						? "paused"
+						: result.crashed
+							? "crashed"
+							: result.exitCode === 0
+								? "completed"
+								: "failed";
 			const heading =
 				results.length === 1 ? `Agent ${result.agent} ${state}.` : `${index + 1}. ${result.agent} — ${state}`;
 			return `${heading}\n${result.finalOutput || result.error || "(no report)"}`;
 		})
 		.join("\n\n");
+}
+
+function statusMatchesConfig(status: AsyncStatus | null, config: BackgroundRunnerConfig): status is AsyncStatus {
+	if (!status || status.runId !== config.id || status.mode !== config.work.mode) return false;
+	const configuredTasks = tasks(config);
+	if (!status.steps || status.steps.length !== configuredTasks.length) return false;
+	return status.steps.every((step, index) => step.agent === configuredTasks[index]?.agent);
+}
+
+function terminalStatus(status: AsyncStatus): boolean {
+	return (
+		status.state === "complete" ||
+		status.state === "failed" ||
+		status.state === "paused" ||
+		status.state === "stopped"
+	);
+}
+
+function stepWasExternalCrash(step: NonNullable<AsyncStatus["steps"]>[number]): boolean {
+	if (step.agentStatus === "crashed") return true;
+	return Boolean(
+		step.processTerminal?.state === "observed" &&
+			step.processTerminal.instances.some(
+				(instance) => instance.kind === "pi-writer" && instance.terminationOrigin === "external",
+			),
+	);
+}
+
+function projectForegroundStatus(
+	config: BackgroundRunnerConfig,
+	status: AsyncStatus,
+	detachedReason?: string,
+): AgentToolResult<Details> & { isError?: boolean } {
+	const configuredTasks = tasks(config);
+	const runIsTerminal = terminalStatus(status);
+	const results = (status.steps ?? []).map((step, index): SingleResult => {
+		const task = configuredTasks[index];
+		if (!task) throw new Error("Foreground Agent status has no configured task.");
+		const detached = !runIsTerminal && (step.status === "pending" || step.status === "running");
+		const paused = step.status === "paused";
+		const stopped = step.status === "stopped" || step.stopped === true;
+		const completed = step.status === "complete" || step.status === "completed";
+		const output = step.recentOutput?.join("\n") ?? "";
+		return {
+			agent: step.agent,
+			task: step.task ?? task.task,
+			cwd: task.cwd,
+			...(step.context ? { context: step.context } : {}),
+			exitCode: typeof step.exitCode === "number" ? step.exitCode : completed ? 0 : 1,
+			...(detached
+				? { detached: true, detachedReason: detachedReason ?? "Foreground owner recovery pending." }
+				: {}),
+			...(paused ? { interrupted: true } : {}),
+			...(stopped ? { stopped: true } : {}),
+			...(step.timedOut ? { timedOut: true } : {}),
+			...(stepWasExternalCrash(step) ? { crashed: true } : {}),
+			...(step.turnBudget ? { turnBudget: step.turnBudget } : {}),
+			...(step.turnBudgetExceeded ? { turnBudgetExceeded: true } : {}),
+			...(step.wrapUpRequested ? { wrapUpRequested: true } : {}),
+			...(step.toolBudget ? { toolBudget: step.toolBudget } : {}),
+			...(step.toolBudgetBlocked ? { toolBudgetBlocked: true } : {}),
+			usage: {
+				input: step.tokens?.input ?? 0,
+				output: step.tokens?.output ?? 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: 0,
+				turns: step.turnCount ?? 0,
+			},
+			...(step.model ? { model: step.model } : {}),
+			...(step.thinking ? { thinking: step.thinking } : {}),
+			...(step.attemptedModels ? { attemptedModels: [...step.attemptedModels] } : {}),
+			...(step.modelAttempts ? { modelAttempts: step.modelAttempts.map((attempt) => ({ ...attempt })) } : {}),
+			...(step.error || (!detached && status.error) ? { error: step.error ?? status.error } : {}),
+			...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
+			...(step.transcriptPath ? { transcriptPath: step.transcriptPath } : {}),
+			...(step.transcriptError ? { transcriptError: step.transcriptError } : {}),
+			...(step.launchContractDigest ? { launchContractDigest: step.launchContractDigest } : {}),
+			...(step.capabilityCeiling ? { capabilityCeiling: step.capabilityCeiling } : {}),
+			...(step.capabilityAudit ? { capabilityAudit: step.capabilityAudit } : {}),
+			...(step.children?.length ? { children: step.children } : {}),
+			finalOutput: output,
+		};
+	});
+	const artifacts = artifactDetails(results);
+	const context = contextSummary(results);
+	return {
+		content: [{ type: "text", text: formatResult(results) }],
+		...(status.state === "complete" ? {} : { isError: true }),
+		details: {
+			mode: config.work.mode,
+			runId: config.id,
+			cwd: config.cwd,
+			results,
+			...(context ? { context } : {}),
+			...(artifacts ? { artifacts } : {}),
+			...(status.timedOut ? { timedOut: true } : {}),
+			...(status.stopped ? { stopped: true } : {}),
+			...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
+			...(config.deadlineAt !== undefined ? { deadlineAt: config.deadlineAt } : {}),
+			...(config.capabilityCeiling ? { capabilityCeiling: config.capabilityCeiling } : {}),
+		},
+	};
+}
+
+function terminalizeForegroundOwnerFailure(status: AsyncStatus, message: string): AsyncStatus {
+	if (terminalStatus(status)) return status;
+	const endedAt = Date.now();
+	return {
+		...status,
+		state: "failed",
+		error: message,
+		endedAt,
+		lastUpdate: endedAt,
+		activityState: undefined,
+		currentTool: undefined,
+		currentToolStartedAt: undefined,
+		currentPath: undefined,
+		steps: status.steps?.map((step) =>
+			step.status === "pending" || step.status === "running"
+				? {
+						...step,
+						status: "failed" as const,
+						exitCode: 1,
+						error: message,
+						endedAt,
+						activityState: undefined,
+						currentTool: undefined,
+						currentToolStartedAt: undefined,
+						currentPath: undefined,
+					}
+				: step,
+		),
+	};
+}
+
+function readMatchingStatus(config: BackgroundRunnerConfig): AsyncStatus | undefined {
+	try {
+		const status = readStatus(config.asyncDir);
+		return statusMatchesConfig(status, config) ? status : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 export function projectForegroundCompletion(
@@ -190,6 +384,7 @@ export function projectForegroundCompletion(
 		details: {
 			mode: completion.mode,
 			runId: completion.runId,
+			cwd: config.cwd,
 			results,
 			...(context ? { context } : {}),
 			...(artifacts ? { artifacts } : {}),
@@ -212,20 +407,116 @@ export async function executeForegroundConfig(
 		return {
 			content: [{ type: "text", text: "Foreground Agent cancelled before launch." }],
 			isError: true,
-			details: { mode: config.work.mode, runId: config.id, results: [], stopped: true },
+			details: { mode: config.work.mode, runId: config.id, cwd: config.cwd, results: [], stopped: true },
 		};
 	}
 
-	const stop = () => deps.requestStop(config.asyncDir);
+	let stopRequestError: unknown;
+	const stop = () => {
+		try {
+			deps.requestStop(config.asyncDir);
+		} catch (error) {
+			stopRequestError = error;
+			console.error(`Failed to request foreground Agent cancellation for '${config.id}':`, error);
+		}
+	};
 	signal?.addEventListener("abort", stop, { once: true });
 	try {
 		await deps.runConfigured(config);
-		return projectForegroundCompletion(config, deps.readCompletion(config.resultPath));
-	} catch (error) {
+		const completion = deps.readCompletion(config.resultPath);
+		const nestedChildren = deps.readNestedChildren(config.asyncDir, config.id);
+		const projected = projectForegroundCompletion(
+			config,
+			nestedChildren === undefined ? completion : { ...completion, nestedChildren },
+		);
+		if (stopRequestError === undefined) return projected;
+		const message = stopRequestError instanceof Error ? stopRequestError.message : String(stopRequestError);
 		return {
-			content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+			...projected,
+			content: [...projected.content, { type: "text", text: `Cancellation request warning: ${message}` } as const],
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		const ownerFailure = `Foreground Agent execution owner ended unexpectedly: ${message}`;
+		const stopMessage =
+			stopRequestError === undefined
+				? undefined
+				: stopRequestError instanceof Error
+					? stopRequestError.message
+					: String(stopRequestError);
+		let status = readMatchingStatus(config);
+		// The execution frame has ended whether status.json is readable or not.
+		// Persist that semantic boundary first so the long-lived Pi PID cannot be
+		// mistaken for proof that this foreground frame is still active.
+		try {
+			recordForegroundOwnerExit(config.asyncDir, config.id, ownerFailure);
+		} catch (markerError) {
+			console.error(`Failed to persist foreground owner exit for '${config.id}':`, markerError);
+		}
+		let remainingWriters = 1;
+		try {
+			remainingWriters = (await deps.reapWriters(config.asyncDir)).remaining;
+		} catch (reapError) {
+			console.error(`Failed to reap foreground writers for '${config.id}':`, reapError);
+		}
+		let terminalOverlay: AsyncStatus | undefined;
+		if (status && !terminalStatus(status) && remainingWriters === 0) {
+			let claim: ReturnType<ForegroundExecutionDependencies["acquireStatusClaim"]>;
+			try {
+				claim = deps.acquireStatusClaim(config.asyncDir);
+			} catch (claimError) {
+				console.error(`Failed to acquire foreground status claim for '${config.id}':`, claimError);
+			}
+			if (claim) {
+				try {
+					const current = readMatchingStatus(config);
+					if (current) {
+						status = terminalizeForegroundOwnerFailure(current, ownerFailure);
+						terminalOverlay = status;
+						if (!terminalStatus(current)) {
+							deps.writeStatus(path.join(config.asyncDir, "status.json"), status);
+						}
+					}
+				} catch (statusError) {
+					console.error(`Failed to persist foreground owner failure for '${config.id}':`, statusError);
+				} finally {
+					try {
+						claim.release();
+					} catch (releaseError) {
+						console.error(`Failed to release foreground status claim for '${config.id}':`, releaseError);
+					}
+				}
+			}
+		}
+		if (status) {
+			const latest = terminalOverlay ?? readMatchingStatus(config) ?? status;
+			const projected = projectForegroundStatus(config, latest, terminalStatus(latest) ? undefined : ownerFailure);
+			if (!stopMessage) return projected;
+			return {
+				...projected,
+				content: [
+					...projected.content,
+					{ type: "text", text: `Cancellation transport also failed: ${stopMessage}` } as const,
+				],
+			};
+		}
+		return {
+			content: [
+				{
+					type: "text",
+					text: stopMessage
+						? `Foreground Agent failed: ${message}\nCancellation transport also failed: ${stopMessage}`
+						: message,
+				},
+			],
 			isError: true,
-			details: { mode: config.work.mode, runId: config.id, results: [] },
+			details: {
+				mode: config.work.mode,
+				runId: config.id,
+				cwd: config.cwd,
+				results: [],
+				...(signal?.aborted ? { stopped: true } : {}),
+			},
 		};
 	} finally {
 		signal?.removeEventListener("abort", stop);

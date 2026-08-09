@@ -21,31 +21,59 @@ import { createResultWatcher } from "../runs/background/result-watcher.ts";
 import {
 	createSubagentExecutor,
 	deriveLaunchRunId,
+	resolveResumeTargetRunId,
+	type SubagentExecutionHooks,
 	type SubagentParamsLike,
 } from "../runs/foreground/subagent-executor.ts";
-import { PI_STUFF_AGENT_PATH_ENV, SUBAGENT_CHILD_ENV, SUBAGENT_PARENT_SESSION_ENV } from "../runs/shared/pi-args.ts";
+import { hasLiveNestedDescendants } from "../runs/shared/nested-events.ts";
+import {
+	PI_STUFF_AGENT_PATH_ENV,
+	SUBAGENT_CHILD_ENV,
+	SUBAGENT_PARENT_PHYSICAL_SESSION_ENV,
+	SUBAGENT_PARENT_SESSION_ENV,
+} from "../runs/shared/pi-args.ts";
 import {
 	type AgentExecutionCoordinatorPort,
 	type AgentExecutionInvocation,
+	AgentRuntimeBindingRejectedError,
 	createDurableAgentExecutionCoordinator,
 	parseAgentOwnerPath,
 } from "../runtime/agent-execution-coordinator.ts";
+import { maintainAgentRuntime } from "../runtime/runtime-maintenance.ts";
+import {
+	type PrepareSessionGovernorCompatibilityInput,
+	prepareSessionGovernorCompatibility,
+	type SessionGovernorCompatibilityResult,
+} from "../runtime/session-governor-compatibility.ts";
 import {
 	type AgentControlAcknowledgement,
 	type AgentRow,
 	CurrentAgents,
 	type CurrentAgentsOptions,
 } from "../session/current-agents.ts";
+import {
+	mergeForegroundRuns,
+	observeForegroundRuntimeRuns,
+	recoverForegroundRuntimeRuns,
+	replayForegroundRuns,
+} from "../session/foreground-replay.ts";
 import { ensureAccessibleDir } from "../shared/accessible-dir.ts";
 import { getArtifactsDir } from "../shared/artifacts.ts";
-import { resolveCurrentSessionId } from "../shared/session-identity.ts";
+import {
+	buildSessionCompatibilityScope,
+	buildSessionGovernorCompatibilityScope,
+	resolveCurrentSessionIdentity,
+	sessionArtifactMatches,
+} from "../shared/session-identity.ts";
 import {
 	ASYNC_DIR,
 	type Details,
 	RESULTS_DIR,
+	SESSION_GOVERNOR_ROOT,
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
 	SUBAGENT_ASYNC_STARTED_EVENT,
 	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
+	SUBAGENT_PROCESS_TERMINAL_EVENT,
 	type SubagentState,
 	TEMP_ROOT_DIR,
 } from "../shared/types.ts";
@@ -54,6 +82,7 @@ import { AgentRoster, type AgentRosterOptions } from "../ui/agent-roster.ts";
 import { readAgentTranscript } from "../ui/agent-transcript.ts";
 import { createAgentToolPresentation } from "./agent-tool-presentation.ts";
 import { loadConfig, type PiStuffAgentsConfig } from "./config.ts";
+import { routeLiveNestedAgentControl } from "./nested-control-router.ts";
 import { type PublicAgentParams, projectEngineResult, toEngineParams } from "./product-executor.ts";
 import { SubagentParams } from "./schemas.ts";
 import { buildSubagentToolDescription } from "./tool-description.ts";
@@ -64,6 +93,8 @@ export { loadConfig } from "./config.ts";
 const COMPLETION_MESSAGE_TYPE = "pi-stuff-agent-complete";
 const COMPLETION_ENTRY_TYPE = "pi-stuff-agent-outcome";
 const ROSTER_REFRESH_MS = 250;
+const RUNTIME_MAINTENANCE_SUCCESS_INTERVAL_MS = 60 * 60 * 1_000;
+const RUNTIME_MAINTENANCE_FAILURE_RETRY_MS = 60 * 1_000;
 const RUNTIME_CLEANUP_KEY = "__piStuffAgentsRootCleanup";
 
 type CompletionOutcomeStatus = "completed" | "failed" | "stopped";
@@ -83,6 +114,7 @@ interface RootExecutor {
 		signal: AbortSignal,
 		onUpdate: ((result: AgentToolResult<Details>) => void) | undefined,
 		ctx: ExtensionContext,
+		hooks?: SubagentExecutionHooks,
 	): Promise<AgentToolResult<Details>>;
 }
 
@@ -96,17 +128,18 @@ interface RootTracker {
 
 interface RootWatcher {
 	primeExistingResults(options?: { triggerTurn?: boolean }): void;
-	startResultWatcher(): void;
+	startResultWatcher(): boolean;
 	stopResultWatcher(): void;
 }
 
 interface RootSupervisor {
 	dispose(): void;
+	pause?(): void;
 	start(): void;
 }
 
 interface CompactCompletionNotifier {
-	deliver(result: CompletionNotification): Promise<boolean>;
+	deliver(result: CompletionNotification, signal?: AbortSignal): Promise<boolean>;
 	dispose(): void;
 }
 
@@ -128,6 +161,9 @@ export interface ExtensionRootDependencies {
 	readonly createCurrentAgents: (state: SubagentState, options: CurrentAgentsOptions) => CurrentAgents;
 	readonly createExecutor: (input: RootExecutorInput) => RootExecutor;
 	readonly createGovernorCoordinator: (config: PiStuffAgentsConfig) => AgentExecutionCoordinatorPort;
+	readonly prepareGovernorCompatibility: (
+		input: PrepareSessionGovernorCompatibilityInput,
+	) => Promise<SessionGovernorCompatibilityResult>;
 	readonly createRoster: (current: CurrentAgents, options: AgentRosterOptions) => AgentRoster;
 	readonly createSupervisor: (pi: ExtensionAPI, state: SubagentState) => RootSupervisor;
 	readonly createTracker: (pi: ExtensionAPI, state: SubagentState) => RootTracker;
@@ -136,6 +172,8 @@ export interface ExtensionRootDependencies {
 	readonly getCoordinator: (pi: ExtensionAPI) => CommandDialogCoordinator;
 	readonly isChildProcess: () => boolean;
 	readonly loadConfiguration: () => PiStuffAgentsConfig;
+	readonly maintainRuntime: () => unknown | Promise<unknown>;
+	readonly monotonicNow: () => number;
 	readonly openDialog: (
 		ctx: ExtensionContext,
 		coordinator: CommandDialogCoordinator,
@@ -177,13 +215,14 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 		}),
 	createGovernorCoordinator: (config) =>
 		createDurableAgentExecutionCoordinator({
-			rootDir: path.join(TEMP_ROOT_DIR, "session-governor"),
+			rootDir: SESSION_GOVERNOR_ROOT,
 			limits: {
 				maxDepth: config.maxSubagentDepth,
 				maxRunning: config.maxRunningAgents,
 				maxTotal: config.maxAgentsPerSession,
 			},
 		}),
+	prepareGovernorCompatibility: prepareSessionGovernorCompatibility,
 	createRoster: (current, options) => new AgentRoster(current, options),
 	createSupervisor: (pi, state) => createNativeSupervisorChannel(pi, state),
 	createTracker: (pi, state) => {
@@ -205,6 +244,8 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	getCoordinator: getCommandDialogCoordinator,
 	isChildProcess: () => process.env[SUBAGENT_CHILD_ENV] === "1",
 	loadConfiguration: loadConfig,
+	maintainRuntime: maintainAgentRuntime,
+	monotonicNow: () => performance.now(),
 	openDialog: openAgentDialog,
 	projectContext: projectCurrentContext,
 	randomId: randomUUID,
@@ -218,6 +259,7 @@ function createState(config: PiStuffAgentsConfig): SubagentState {
 	return {
 		baseCwd: "",
 		currentSessionId: null,
+		currentSessionScope: null,
 		...(config.artifactDir ? { artifactDirPreference: config.artifactDir } : {}),
 		parentSessionFile: null,
 		subagentInProgress: false,
@@ -252,19 +294,26 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 function completionState(value: Record<string, unknown>, fallback: CompletionNotification): CompletionOutcomeStatus {
-	const state =
-		typeof value.status === "string" ? value.status : typeof value.state === "string" ? value.state : fallback.state;
+	const explicitState =
+		typeof value.status === "string" ? value.status : typeof value.state === "string" ? value.state : undefined;
 	if (
-		["cancelled", "detached", "paused", "stopped"].includes(state ?? "") ||
+		["cancelled", "detached", "paused", "stopped"].includes(explicitState ?? "") ||
 		value.stopped === true ||
-		value.interrupted === true ||
-		fallback.stopped === true ||
-		fallback.interrupted === true
+		value.interrupted === true
 	) {
 		return "stopped";
 	}
-	if (state === "crashed" || state === "failed") return "failed";
-	const success = typeof value.success === "boolean" ? value.success : fallback.success;
+	if (explicitState === "crashed" || explicitState === "failed") return "failed";
+	if (typeof value.success === "boolean") return value.success ? "completed" : "failed";
+	if (explicitState !== undefined) return "completed";
+	if (
+		["cancelled", "detached", "paused", "stopped"].includes(fallback.state ?? "") ||
+		fallback.stopped === true ||
+		fallback.interrupted === true
+	)
+		return "stopped";
+	if (fallback.state === "crashed" || fallback.state === "failed") return "failed";
+	const success = fallback.success;
 	return success === false ? "failed" : "completed";
 }
 
@@ -324,27 +373,43 @@ function completionOutcomeText(data: CompletionOutcomeEntry): string {
 
 function createCompactCompletionNotifier(
 	pi: Pick<ExtensionAPI, "appendEntry">,
-	state: Pick<SubagentState, "currentSessionId" | "lastUiContext">,
+	state: Pick<SubagentState, "currentSessionId" | "currentSessionScope" | "lastUiContext">,
 	coordinator: Pick<CommandDialogCoordinator, "whenIdle">,
 ): CompactCompletionNotifier {
 	const delivered = new Set<string>();
 	let disposed = false;
 	return {
-		async deliver(result) {
+		async deliver(result, signal) {
 			if (
 				disposed ||
 				result.intercomDelivered === true ||
 				typeof result.sessionId !== "string" ||
-				result.sessionId !== state.currentSessionId
+				!sessionArtifactMatches(state.currentSessionScope, result.sessionId, result.runId ?? result.id)
 			) {
 				return result.intercomDelivered === true;
 			}
 			const key = completionKey(result);
 			if (delivered.has(key) || isPersistedCompletion(state, key)) return true;
 			try {
-				await coordinator.whenIdle();
+				await Promise.race([
+					coordinator.whenIdle(),
+					new Promise<void>((_, reject) => {
+						if (signal?.aborted) return reject(signal.reason ?? new Error("Completion delivery cancelled."));
+						signal?.addEventListener(
+							"abort",
+							() => reject(signal.reason ?? new Error("Completion delivery cancelled.")),
+							{ once: true },
+						);
+					}),
+				]);
 				const alreadyDelivered = delivered.has(key) || isPersistedCompletion(state, key);
-				if (disposed || result.sessionId !== state.currentSessionId || alreadyDelivered) return alreadyDelivered;
+				if (
+					signal?.aborted ||
+					disposed ||
+					!sessionArtifactMatches(state.currentSessionScope, result.sessionId, result.runId ?? result.id) ||
+					alreadyDelivered
+				)
+					return alreadyDelivered;
 				// Custom entries persist and render with the session but are excluded from
 				// model context, so completion cannot create an unsolicited main turn.
 				pi.appendEntry<CompletionOutcomeEntry>(COMPLETION_ENTRY_TYPE, completionOutcome(result, key));
@@ -379,7 +444,22 @@ function resultIsError(result: unknown): boolean {
 
 function hasLiveWork(state: SubagentState): boolean {
 	if (state.foregroundControls.size > 0) return true;
-	return [...state.asyncJobs.values()].some((job) => job.status === "queued" || job.status === "running");
+	if (
+		[...state.asyncJobs.values()].some(
+			(job) =>
+				job.status === "queued" ||
+				job.status === "running" ||
+				(job.processTerminal !== undefined && job.processTerminal.state !== "observed") ||
+				hasLiveNestedDescendants(job.nestedChildren),
+		)
+	)
+		return true;
+	return [...(state.foregroundRuns?.values() ?? [])].some(
+		(run) =>
+			Boolean(run.nestedRoute) ||
+			(Boolean(run.asyncDir) && run.children.some((child) => child.status === "detached")) ||
+			run.children.some((child) => hasLiveNestedDescendants(child.children)),
+	);
 }
 
 function clearTimerMap(state: SubagentState): void {
@@ -418,6 +498,17 @@ export default function registerSubagentExtension(
 	let launchCallsInFlight = 0;
 	let rosterRefreshTimer: ReturnType<typeof setInterval> | undefined;
 	let watcherStarted = false;
+	let sessionEpoch = 0;
+	let runtimeActivatedEpoch = -1;
+	let runtimeActivation: { epoch: number; promise: Promise<void> } | undefined;
+	let governorCompatibilityReady = false;
+	let governorCompatibilityError: string | undefined;
+	let governorCompatibilityCheck: { epoch: number; promise: Promise<void> } | undefined;
+	let releaseLegacyGovernorBarrier: (() => void) | undefined;
+	let maintenanceTimer: ReturnType<typeof setTimeout> | undefined;
+	let maintenanceInFlight = false;
+	let nextMaintenanceAt = 0;
+	let ephemeralSessionNonce = randomUUID();
 	let executePublicAgent!: (
 		id: string,
 		params: PublicAgentParams,
@@ -425,10 +516,12 @@ export default function registerSubagentExtension(
 		onUpdate: ((result: AgentToolResult<Details>) => void) | undefined,
 		ctx: ExtensionContext,
 	) => Promise<AgentToolResult<Details>>;
+	let activateCurrentSessionRuntime!: (ctx: ExtensionContext) => Promise<void>;
 
 	let current!: CurrentAgents;
-	const showAgents = (ctx: ExtensionContext, initialKey?: string): Promise<void> => {
+	const showAgents = async (ctx: ExtensionContext, initialKey?: string): Promise<void> => {
 		if (!ctx.hasUI) return Promise.resolve();
+		await activateCurrentSessionRuntime(ctx);
 		return deps.openDialog(ctx, coordinator, current, {
 			...(initialKey ? { initialKey } : {}),
 			readTranscript: readAgentTranscript,
@@ -537,6 +630,31 @@ export default function registerSubagentExtension(
 		rosterRefreshTimer = undefined;
 	};
 
+	const scheduleRuntimeMaintenance = (): void => {
+		if (maintenanceTimer || maintenanceInFlight || !active) return;
+		if (deps.monotonicNow() < nextMaintenanceAt) return;
+		maintenanceTimer = setTimeout(() => {
+			maintenanceTimer = undefined;
+			if (!active) return;
+			maintenanceInFlight = true;
+			void Promise.resolve()
+				.then(() => deps.maintainRuntime())
+				.then(
+					() => {
+						nextMaintenanceAt = deps.monotonicNow() + RUNTIME_MAINTENANCE_SUCCESS_INTERVAL_MS;
+					},
+					(error) => {
+						nextMaintenanceAt = deps.monotonicNow() + RUNTIME_MAINTENANCE_FAILURE_RETRY_MS;
+						console.error("Failed to compact completed Agent runtime diagnostics:", error);
+					},
+				)
+				.finally(() => {
+					maintenanceInFlight = false;
+				});
+		}, 0);
+		maintenanceTimer.unref?.();
+	};
+
 	const ensureRosterRefresh = (): void => {
 		if (rosterRefreshTimer || (!hasLiveWork(state) && launchCallsInFlight === 0)) return;
 		rosterRefreshTimer = deps.timers.setInterval(() => {
@@ -547,23 +665,98 @@ export default function registerSubagentExtension(
 		rosterRefreshTimer.unref?.();
 	};
 
-	const startRunRuntime = (primeExisting: boolean): void => {
-		if (watcherStarted) return;
-		deps.ensureDirectory(RESULTS_DIR);
-		deps.ensureDirectory(ASYNC_DIR);
-		watcher.startResultWatcher();
-		watcherStarted = true;
-		if (primeExisting) watcher.primeExistingResults({ triggerTurn: false });
+	const startRunRuntime = (options: { createDirectories: boolean; primeExisting: boolean }): void => {
+		if (options.createDirectories) {
+			deps.ensureDirectory(RESULTS_DIR);
+			deps.ensureDirectory(ASYNC_DIR);
+		}
+		if (!watcherStarted) watcherStarted = watcher.startResultWatcher();
+		if (options.primeExisting) watcher.primeExistingResults({ triggerTurn: false });
 	};
 
 	const bindExecutionGovernor = (ctx: ExtensionContext): void => {
-		const parentSessionId = ctx.sessionManager.getSessionId()?.trim();
-		if (!parentSessionId) return;
-		process.env[SUBAGENT_PARENT_SESSION_ENV] = parentSessionId;
-		executionGovernor.bindSession({
-			sessionId: parentSessionId,
-			ownerAgentPath: parseAgentOwnerPath(process.env[PI_STUFF_AGENT_PATH_ENV]),
-		});
+		const identity =
+			state.currentSessionScope ?? resolveCurrentSessionIdentity(ctx.sessionManager, ctx.cwd, ephemeralSessionNonce);
+		const ownerAgentPath = parseAgentOwnerPath(process.env[PI_STUFF_AGENT_PATH_ENV]);
+		const ledgerSessionId = state.currentGovernorSessionId?.trim() || identity.governorSessionId;
+		process.env[SUBAGENT_PARENT_SESSION_ENV] = ledgerSessionId;
+		process.env[SUBAGENT_PARENT_PHYSICAL_SESSION_ENV] = identity.sessionId;
+		executionGovernor.bindSession({ sessionId: ledgerSessionId, ownerAgentPath });
+	};
+
+	const refreshGovernorCompatibility = async (ctx: ExtensionContext): Promise<void> => {
+		const epoch = sessionEpoch;
+		if (governorCompatibilityCheck?.epoch === epoch) return governorCompatibilityCheck.promise;
+		const check = { epoch, promise: Promise.resolve() };
+		check.promise = (async () => {
+			try {
+				const identity =
+					state.currentSessionScope ??
+					resolveCurrentSessionIdentity(ctx.sessionManager, ctx.cwd, ephemeralSessionNonce);
+				const entries = ctx.sessionManager.getEntries();
+				const result = await deps.prepareGovernorCompatibility({
+					scope: buildSessionGovernorCompatibilityScope(identity, entries),
+					limits: {
+						maxDepth: config.maxSubagentDepth,
+						maxRunning: config.maxRunningAgents,
+						maxTotal: config.maxAgentsPerSession,
+					},
+				});
+				if (active && epoch === sessionEpoch) {
+					if (result.ok && result.releaseLegacyBarrier) {
+						releaseLegacyGovernorBarrier?.();
+						releaseLegacyGovernorBarrier = result.releaseLegacyBarrier;
+					}
+					governorCompatibilityReady = result.ok;
+					governorCompatibilityError = result.ok ? undefined : result.message;
+				} else if (result.ok) result.releaseLegacyBarrier?.();
+			} catch (error) {
+				if (active && epoch === sessionEpoch) {
+					governorCompatibilityReady = false;
+					governorCompatibilityError = `Agent launches are paused because governor compatibility could not be verified: ${
+						error instanceof Error ? error.message : String(error)
+					}`;
+				}
+			} finally {
+				if (governorCompatibilityCheck === check) governorCompatibilityCheck = undefined;
+			}
+		})();
+		governorCompatibilityCheck = check;
+		return check.promise;
+	};
+
+	activateCurrentSessionRuntime = async (ctx: ExtensionContext): Promise<void> => {
+		bindContext(ctx);
+		if (!state.currentSessionId || !state.currentSessionScope) return;
+		const epoch = sessionEpoch;
+		const sessionScope = state.currentSessionScope;
+		if (runtimeActivatedEpoch === epoch) return;
+		if (runtimeActivation?.epoch === epoch) return runtimeActivation.promise;
+		const activation = { epoch, promise: Promise.resolve() };
+		activation.promise = (async () => {
+			try {
+				bindExecutionGovernor(ctx);
+				state.foregroundRuns = mergeForegroundRuns(
+					state.foregroundRuns ?? new Map(),
+					recoverForegroundRuntimeRuns(path.join(TEMP_ROOT_DIR, "foreground-runs"), sessionScope),
+				);
+				tracker.restoreActiveJobs();
+				await executionGovernor.reconcileExisting();
+				if (!active || epoch !== sessionEpoch) return;
+				startRunRuntime({ createDirectories: false, primeExisting: true });
+				if (hasLiveWork(state)) {
+					tracker.ensurePoller();
+					ensureRosterRefresh();
+				}
+				current.refresh();
+				supervisor.start();
+				runtimeActivatedEpoch = epoch;
+			} finally {
+				if (runtimeActivation === activation) runtimeActivation = undefined;
+			}
+		})();
+		runtimeActivation = activation;
+		return activation.promise;
 	};
 
 	const governorFailureResult = (params: PublicAgentParams, message: string): AgentToolResult<Details> =>
@@ -577,21 +770,88 @@ export default function registerSubagentExtension(
 		}) as AgentToolResult<Details>;
 
 	executePublicAgent = async (id, params, signal, onUpdate, ctx) => {
-		bindContext(ctx);
-		bindExecutionGovernor(ctx);
+		const requestedEpoch = sessionEpoch;
+		const requestedSessionId = state.currentSessionId;
+		await activateCurrentSessionRuntime(ctx);
+		if (!active || requestedEpoch !== sessionEpoch || state.currentSessionId !== requestedSessionId) {
+			return projectEngineResult(
+				params,
+				governorFailureResult(params, "Agent request cancelled because the parent session ended or changed."),
+			);
+		}
+		if ((!params.action || params.action === "resume") && !governorCompatibilityReady) {
+			await refreshGovernorCompatibility(ctx);
+			if (!active || requestedEpoch !== sessionEpoch || state.currentSessionId !== requestedSessionId) {
+				return projectEngineResult(
+					params,
+					governorFailureResult(params, "Agent request cancelled because the parent session ended or changed."),
+				);
+			}
+			if (!governorCompatibilityReady) {
+				return projectEngineResult(
+					params,
+					governorFailureResult(
+						params,
+						governorCompatibilityError ??
+							"Agent launches are paused because governor compatibility was not verified for this session.",
+					),
+				);
+			}
+		}
+		const launchIdentity = {
+			// The header id differentiates a newly-created session that intentionally
+			// reuses an old --session path without changing the persisted compatibility
+			// namespace used to cold-resume existing Agent artifacts.
+			sessionId: `${
+				state.currentSessionId ??
+				resolveCurrentSessionIdentity(ctx.sessionManager, ctx.cwd, ephemeralSessionNonce).sessionId
+			}\0header:${ctx.sessionManager.getSessionId() ?? "unknown"}`,
+			ownerAgentPath: parseAgentOwnerPath(process.env[PI_STUFF_AGENT_PATH_ENV]),
+		};
+		const launchRunId = deriveLaunchRunId(id, launchIdentity);
+		const invocationEpoch = sessionEpoch;
+		const invocationSessionId = state.currentSessionId;
+		const nestedControl = await routeLiveNestedAgentControl(params, state, signal);
+		if (nestedControl) return projectEngineResult(params, nestedControl);
+		let resumeTargetRunId: string | undefined;
+		try {
+			resumeTargetRunId = resolveResumeTargetRunId(params, state);
+		} catch (error) {
+			return projectEngineResult(
+				params,
+				governorFailureResult(params, error instanceof Error ? error.message : String(error)),
+			);
+		}
 		const prepared = await executionGovernor.prepare({
-			launchRunId: deriveLaunchRunId(id),
+			launchRunId,
 			params,
+			...(resumeTargetRunId ? { resumeTargetRunId } : {}),
 		});
 		if (!prepared.ok) return projectEngineResult(params, governorFailureResult(params, prepared.message));
 		const invocation: AgentExecutionInvocation | undefined = prepared.invocation;
-		if (invocation) {
-			startRunRuntime(false);
-			launchCallsInFlight += 1;
-			ensureRosterRefresh();
+		if (!active || invocationEpoch !== sessionEpoch || state.currentSessionId !== invocationSessionId) {
+			if (invocation) {
+				try {
+					await executionGovernor.fail(invocation);
+				} catch (error) {
+					console.error("Failed to release a cancelled Agent launch reservation:", error);
+				}
+			}
+			return projectEngineResult(
+				params,
+				governorFailureResult(params, "Agent launch cancelled because the parent session ended or changed."),
+			);
 		}
+		let countedInFlight = false;
+		let foregroundStarted = false;
 		try {
-			const engineParams = toEngineParams(params);
+			if (invocation) {
+				startRunRuntime({ createDirectories: true, primeExisting: true });
+				launchCallsInFlight += 1;
+				countedInFlight = true;
+				ensureRosterRefresh();
+			}
+			const engineParams = { ...toEngineParams(params), launchRunId };
 			const result = await executor.execute(
 				id,
 				engineParams,
@@ -603,14 +863,96 @@ export default function registerSubagentExtension(
 						}
 					: undefined,
 				ctx,
+				invocation && params.foreground === true
+					? {
+							beforeForegroundStart: async ({ runId, asyncDir, abortStart }) => {
+								await executionGovernor.observeAsyncStarted({
+									id: runId,
+									pid: process.pid,
+									asyncDir,
+									abortStart,
+								});
+								foregroundStarted = true;
+							},
+						}
+					: undefined,
 			);
-			if (invocation) await executionGovernor.settle(invocation, result);
+			if (
+				invocation &&
+				(!active || invocationEpoch !== sessionEpoch || state.currentSessionId !== invocationSessionId)
+			) {
+				if (params.foreground === true && foregroundStarted) {
+					try {
+						// The foreground engine already ran under the original session's
+						// durable authority. Settle its real terminal/detached children even
+						// though the obsolete UI call now returns a session-ended message.
+						await executionGovernor.settle(invocation, result);
+					} catch (error) {
+						console.error("Failed to settle a session-changed foreground Agent result:", error);
+					}
+				} else {
+					const binding = result.details.lifecycleBinding;
+					let safeToRelease = !binding && !result.details.asyncId;
+					if (binding?.abortStart) {
+						try {
+							safeToRelease = binding.abortStart();
+						} catch (error) {
+							// A failed abort is not proof that the runner stopped. Keep the
+							// original session's durable governor authority fail-closed.
+							console.error("Failed to abort a session-changed Agent runtime:", error);
+							safeToRelease = false;
+						}
+					}
+					if (safeToRelease) {
+						try {
+							await executionGovernor.fail(invocation);
+						} catch (error) {
+							console.error("Failed to release a session-changed Agent reservation:", error);
+						}
+					} else {
+						try {
+							// The exact runner could not be proven stopped. Bind it to the
+							// original session ledger so later physical recovery retains authority.
+							await executionGovernor.settle(invocation, result);
+						} catch (error) {
+							console.error("Failed to retain a session-changed Agent runtime binding:", error);
+						}
+					}
+				}
+				return projectEngineResult(
+					params,
+					governorFailureResult(params, "Agent launch cancelled because the parent session ended or changed."),
+				);
+			}
+			if (invocation) {
+				try {
+					await executionGovernor.settle(invocation, result);
+				} catch (error) {
+					if (error instanceof AgentRuntimeBindingRejectedError) {
+						return projectEngineResult(params, governorFailureResult(params, error.message));
+					}
+					// The engine result may represent an already-running detached Agent.
+					// Never convert post-launch ledger failure into a start failure or
+					// release its lease; completion/reconciliation remains authoritative.
+					console.error(
+						"Failed to persist the launched Agent lease binding; retaining it for reconciliation:",
+						error,
+					);
+				}
+			}
 			return projectEngineResult(params, result);
 		} catch (error) {
-			if (invocation) await executionGovernor.fail(invocation);
+			if (invocation) {
+				try {
+					await executionGovernor.fail(invocation);
+				} catch (releaseError) {
+					console.error("Failed to release an Agent reservation after engine launch failure:", releaseError);
+				}
+			}
 			throw error;
 		} finally {
-			if (invocation) launchCallsInFlight = Math.max(0, launchCallsInFlight - 1);
+			if (countedInFlight) launchCallsInFlight = Math.max(0, launchCallsInFlight - 1);
+			scheduleRuntimeMaintenance();
 			current.refresh();
 			ensureRosterRefresh();
 		}
@@ -648,33 +990,52 @@ export default function registerSubagentExtension(
 		const unsubscribe = pi.events.on(event, handler);
 		if (typeof unsubscribe === "function") eventUnsubscribes.push(unsubscribe);
 	};
+	const belongsToCurrentSession = (data: unknown): boolean => {
+		if (!data || typeof data !== "object") return false;
+		const event = data as { sessionId?: unknown; runId?: unknown; id?: unknown };
+		return sessionArtifactMatches(state.currentSessionScope, event.sessionId, event.runId ?? event.id);
+	};
+	const normalizeCurrentSessionEvent = (data: unknown): unknown =>
+		data && typeof data === "object" && state.currentSessionId
+			? { ...(data as Record<string, unknown>), sessionId: state.currentSessionId }
+			: data;
 	onBus(SUBAGENT_ASYNC_STARTED_EVENT, (data) => {
-		if (!active) return;
-		void executionGovernor.observeAsyncStarted(data).catch((error) => {
+		if (!active || !belongsToCurrentSession(data)) return;
+		const normalized = normalizeCurrentSessionEvent(data);
+		void executionGovernor.observeAsyncStarted(normalized).catch((error) => {
 			console.error("Failed to bind Agent governor runtime identity:", error);
 		});
-		tracker.handleStarted(data);
+		tracker.handleStarted(normalized);
 		current.refresh();
 		ensureRosterRefresh();
 	});
 	onBus(SUBAGENT_ASYNC_COMPLETE_EVENT, (data) => {
-		if (!active) return;
-		void executionGovernor.complete(data).catch((error) => {
+		if (!active || !belongsToCurrentSession(data)) return;
+		const normalized = normalizeCurrentSessionEvent(data);
+		void executionGovernor.complete(normalized).catch((error) => {
 			console.error("Failed to release completed background Agent lease:", error);
 		});
-		tracker.handleComplete(data);
+		tracker.handleComplete(normalized);
 		current.refresh();
 		ensureRosterRefresh();
 		requestStatuslineGitRefresh(pi);
 	});
 	onBus(SUBAGENT_FOREGROUND_COMPLETE_EVENT, (data) => {
-		if (!active) return;
-		void executionGovernor.complete(data).catch((error) => {
+		if (!active || !belongsToCurrentSession(data)) return;
+		void executionGovernor.complete(normalizeCurrentSessionEvent(data)).catch((error) => {
 			console.error("Failed to release completed foreground Agent lease:", error);
 		});
 		// Foreground summaries already return through the active tool call. A
 		// completion message here would trigger a duplicate main-model turn.
 		current.refresh();
+		tracker.ensurePoller();
+		ensureRosterRefresh();
+	});
+	onBus(SUBAGENT_PROCESS_TERMINAL_EVENT, () => {
+		if (!active) return;
+		void executionGovernor.reconcileDead().catch((error) => {
+			console.error("Failed to reconcile Agent leases after a runner terminal event:", error);
+		});
 	});
 
 	const refreshFromTool = (event: { toolName?: string }, ctx: ExtensionContext): void => {
@@ -690,13 +1051,37 @@ export default function registerSubagentExtension(
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (!active) return;
+		sessionEpoch += 1;
+		// A legacy compatibility barrier belongs to exactly one parent session.
+		// Release it before rebinding state so A→B→A cannot deadlock against this
+		// extension instance's own stale A lock.
+		releaseLegacyGovernorBarrier?.();
+		releaseLegacyGovernorBarrier = undefined;
+		runtimeActivatedEpoch = -1;
+		runtimeActivation = undefined;
 		stopRosterRefresh();
 		watcher.stopResultWatcher();
 		watcherStarted = false;
+		supervisor.pause?.();
 		tracker.resetJobs();
-		state.foregroundRuns?.clear();
 		state.baseCwd = ctx.cwd;
-		state.currentSessionId = resolveCurrentSessionId(ctx.sessionManager);
+		ephemeralSessionNonce = randomUUID();
+		const identity = resolveCurrentSessionIdentity(ctx.sessionManager, ctx.cwd, ephemeralSessionNonce);
+		state.currentSessionId = identity.sessionId;
+		state.currentGovernorSessionId = identity.governorSessionId;
+		governorCompatibilityReady = false;
+		governorCompatibilityError = undefined;
+		const sessionEntries =
+			typeof ctx.sessionManager.getBranch === "function"
+				? ctx.sessionManager.getBranch()
+				: ctx.sessionManager.getEntries();
+		state.currentSessionScope = buildSessionCompatibilityScope(identity, sessionEntries);
+		state.foregroundRuns = state.currentSessionId
+			? mergeForegroundRuns(
+					replayForegroundRuns(sessionEntries, state.currentSessionId),
+					observeForegroundRuntimeRuns(path.join(TEMP_ROOT_DIR, "foreground-runs"), state.currentSessionScope),
+				)
+			: new Map();
 		state.parentSessionFile = ctx.sessionManager.getSessionFile() ?? null;
 		state.subagentSpawns = {
 			sessionId: state.currentSessionId,
@@ -705,26 +1090,17 @@ export default function registerSubagentExtension(
 			granted: 0,
 			grantHistory: [],
 		};
-		bindExecutionGovernor(ctx);
 		bindContext(ctx);
 		tracker.restoreActiveJobs();
-		try {
-			await executionGovernor.reconcileExisting();
-		} catch (error) {
-			console.error("Failed to reconcile existing Agent leases:", error);
-		}
-		if (hasLiveWork(state)) {
-			startRunRuntime(true);
-			tracker.ensurePoller();
-			ensureRosterRefresh();
-		}
 		current.refresh();
-		supervisor.start();
 	});
 
 	const cleanup = (): void => {
 		if (!active) return;
 		active = false;
+		sessionEpoch += 1;
+		if (maintenanceTimer) clearTimeout(maintenanceTimer);
+		maintenanceTimer = undefined;
 		stopRosterRefresh();
 		watcher.stopResultWatcher();
 		watcherStarted = false;
@@ -744,6 +1120,12 @@ export default function registerSubagentExtension(
 		state.foregroundRuns?.clear();
 		state.foregroundControls.clear();
 		state.currentSessionId = null;
+		state.currentSessionScope = null;
+		state.currentGovernorSessionId = null;
+		governorCompatibilityReady = false;
+		governorCompatibilityError = undefined;
+		releaseLegacyGovernorBarrier?.();
+		releaseLegacyGovernorBarrier = undefined;
 		state.parentSessionFile = null;
 		state.lastUiContext = null;
 		notifier.dispose();
@@ -755,6 +1137,7 @@ export default function registerSubagentExtension(
 		roster.dispose();
 		current.dispose();
 		delete process.env[SUBAGENT_PARENT_SESSION_ENV];
+		delete process.env[SUBAGENT_PARENT_PHYSICAL_SESSION_ENV];
 		if (globalStore[RUNTIME_CLEANUP_KEY] === cleanup) delete globalStore[RUNTIME_CLEANUP_KEY];
 	};
 

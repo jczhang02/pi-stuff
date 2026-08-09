@@ -1,4 +1,6 @@
+import { readNestedRegistry, resolveNestedAsyncDir, sanitizeSummary } from "../runs/shared/nested-events.ts";
 import { resolveDisplayDescription } from "../shared/display-description.ts";
+import { readOwnedFileTail } from "../shared/private-directory.ts";
 import type { SubagentState } from "../shared/types.ts";
 
 export type AgentStatus =
@@ -13,8 +15,30 @@ export type AgentStatus =
 	| "crashed"
 	| "resuming";
 
-export interface AgentRow {
+export interface AgentTranscriptTarget {
 	readonly key: string;
+	/** Trusted deterministic nested run directory used only as a locator fallback. */
+	readonly asyncDir?: string | null;
+	readonly childIndex?: number;
+	readonly sessionFile: string | null;
+	readonly transcriptPath: string | null;
+	readonly savedOutputPath: string | null;
+	readonly partialResult: string | null;
+}
+
+export interface AgentNestedDetail extends AgentTranscriptTarget {
+	readonly runId: string;
+	readonly childIndex: number;
+	readonly parentRunId: string | null;
+	readonly depth: number;
+	readonly name: string;
+	readonly description: string;
+	readonly task: string;
+	readonly status: AgentStatus;
+	readonly nestedCount: number;
+}
+
+export interface AgentRow extends AgentTranscriptTarget {
 	readonly runId: string;
 	readonly childIndex: number;
 	readonly sessionId: string;
@@ -27,6 +51,7 @@ export interface AgentRow {
 	readonly elapsedMs: number | null;
 	readonly partialResult: string | null;
 	readonly nestedCount: number;
+	readonly nestedAgents: readonly AgentNestedDetail[];
 	readonly sessionFile: string | null;
 	readonly transcriptPath: string | null;
 	readonly savedOutputPath: string | null;
@@ -97,6 +122,7 @@ interface RowDraft {
 	endedAt: number | null;
 	partialResult: string | null;
 	nestedCount: number;
+	nestedAgents: AgentNestedDetail[];
 	sessionFile: string | null;
 	transcriptPath: string | null;
 	savedOutputPath: string | null;
@@ -126,6 +152,18 @@ const STATUS_ORDER: Record<AgentStatus, number> = {
 const MAX_PARTIAL_RESULT_CHARS = 4_000;
 const MAX_TASK_CHARS = 500;
 const MAX_DYNAMIC_SOURCE_CODE_UNITS = 4_096;
+const MAX_LEGACY_TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
+const MAX_LEGACY_TRANSCRIPT_CACHE_ENTRIES = 128;
+const legacyTranscriptCache = new Map<
+	string,
+	{
+		readonly dev: number;
+		readonly ino: number;
+		readonly mtimeMs: number;
+		readonly size: number;
+		readonly complete: boolean;
+	}
+>();
 
 function asRecord(value: unknown): Record<string, unknown> {
 	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
@@ -139,6 +177,19 @@ function optionalString(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	const bounded = value.slice(0, MAX_DYNAMIC_SOURCE_CODE_UNITS);
 	return bounded.trim() ? bounded : null;
+}
+
+function locatorString(value: unknown): string | null {
+	if (typeof value !== "string" || !value.trim()) return null;
+	return value.length <= MAX_DYNAMIC_SOURCE_CODE_UNITS ? value : null;
+}
+
+function firstLocator(...values: unknown[]): string | null {
+	for (const value of values) {
+		const locator = locatorString(value);
+		if (locator) return locator;
+	}
+	return null;
 }
 
 function boundedText(value: unknown, limit: number): string | null {
@@ -174,11 +225,102 @@ function isSupervisorWait(record: Record<string, unknown>): boolean {
 	);
 }
 
-function processHasSignal(record: Record<string, unknown>): boolean {
-	if (optionalString(record["processSignal"])) return true;
+function processHasExternalSignal(record: Record<string, unknown>): boolean {
 	const terminal = asRecord(record["processTerminal"]);
-	const instances = Array.isArray(terminal["instances"]) ? terminal["instances"] : [];
-	return instances.some((instance) => Boolean(optionalString(asRecord(instance)["signal"])));
+	const writers = (Array.isArray(terminal["instances"]) ? terminal["instances"] : [])
+		.map(asRecord)
+		.filter((instance) => instance["kind"] === "pi-writer" && Number.isInteger(instance["attempt"]));
+	const finalAttempt = writers.reduce(
+		(latest, instance) => Math.max(latest, instance["attempt"] as number),
+		Number.NEGATIVE_INFINITY,
+	);
+	return writers.some(
+		(instance) => instance["attempt"] === finalAttempt && instance["terminationOrigin"] === "external",
+	);
+}
+
+function processHasAmbiguousLegacyFinalDrain(record: Record<string, unknown>): boolean {
+	const terminal = asRecord(record["processTerminal"]);
+	if (terminal["state"] !== "observed") return false;
+	const instances = Array.isArray(terminal["instances"])
+		? terminal["instances"]
+				.map(asRecord)
+				.filter((instance) => instance["kind"] === "pi-writer" && Number.isInteger(instance["attempt"]))
+		: [];
+	const finalAttempt = instances.reduce(
+		(latest, instance) => Math.max(latest, instance["attempt"] as number),
+		Number.NEGATIVE_INFINITY,
+	);
+	return (
+		instances.length > 0 &&
+		instances.some(
+			(instance) =>
+				instance["attempt"] === finalAttempt &&
+				instance["terminationOrigin"] === undefined &&
+				(instance["signal"] === "SIGTERM" || (instance["signal"] === null && instance["exitCode"] === 143)),
+		)
+	);
+}
+
+function transcriptEndsWithCompleteAssistantReport(filePath: string): boolean {
+	try {
+		const tail = readOwnedFileTail(filePath, MAX_LEGACY_TRANSCRIPT_TAIL_BYTES);
+		if (tail.size <= 0) return false;
+		const cached = legacyTranscriptCache.get(filePath);
+		if (
+			cached?.size === tail.size &&
+			cached.mtimeMs === tail.mtimeMs &&
+			cached.dev === tail.dev &&
+			cached.ino === tail.ino
+		)
+			return cached.complete;
+
+		const lastLine = tail.text.trimEnd().split("\n").at(-1);
+		let complete = false;
+		if (lastLine) {
+			const record = asRecord(JSON.parse(lastLine));
+			const message = asRecord(record["message"]);
+			complete =
+				record["recordType"] === "message" &&
+				record["sourceEventType"] === "message_end" &&
+				record["role"] === "assistant" &&
+				record["stopReason"] === "stop" &&
+				record["isError"] !== true &&
+				!optionalString(record["error"]) &&
+				!optionalString(record["errorMessage"]) &&
+				!optionalString(message["errorMessage"]) &&
+				Boolean(optionalString(record["text"]));
+		}
+		legacyTranscriptCache.set(filePath, {
+			dev: tail.dev,
+			ino: tail.ino,
+			size: tail.size,
+			mtimeMs: tail.mtimeMs,
+			complete,
+		});
+		if (legacyTranscriptCache.size > MAX_LEGACY_TRANSCRIPT_CACHE_ENTRIES) {
+			const oldest = legacyTranscriptCache.keys().next().value;
+			if (oldest !== undefined) legacyTranscriptCache.delete(oldest);
+		}
+		return complete;
+	} catch {
+		return false;
+	}
+}
+
+function legacyFinalDrainHasCompleteReport(record: Record<string, unknown>): boolean {
+	if (optionalString(record["error"]) || !processHasAmbiguousLegacyFinalDrain(record)) return false;
+	const transcriptPath = firstString(record["transcriptPath"], asRecord(record["artifactPaths"])["transcriptPath"]);
+	return transcriptPath ? transcriptEndsWithCompleteAssistantReport(transcriptPath) : false;
+}
+
+function processTerminalIsStaleRepair(record: Record<string, unknown>): boolean {
+	const terminal = asRecord(record["processTerminal"]);
+	return terminal["state"] === "unknown" && terminal["reason"] === "stale-repair";
+}
+
+function isLegacyRunnerDisappearance(error: string): boolean {
+	return /async runner process .* exited or disappeared before writing a result/i.test(error);
 }
 
 function deriveStatus(value: unknown, fallback: string): AgentStatus {
@@ -208,11 +350,19 @@ function deriveStatus(value: unknown, fallback: string): AgentStatus {
 				: "user_cancelled";
 		case "failed": {
 			const error = optionalString(record["error"]) ?? "";
-			return record["crashed"] === true ||
-				processHasSignal(record) ||
-				/\b(?:crash|sig(?:kill|term|segv|abrt)|exited|disappeared)\b/i.test(error)
-				? "crashed"
-				: "failed";
+			const expectedTermination =
+				record["interrupted"] === true ||
+				record["timedOut"] === true ||
+				record["stopped"] === true ||
+				record["turnBudgetExceeded"] === true ||
+				record["toolBudgetBlocked"] === true;
+			const crashEvidence =
+				record["crashed"] === true ||
+				processTerminalIsStaleRepair(record) ||
+				isLegacyRunnerDisappearance(error) ||
+				processHasExternalSignal(record);
+			if (!expectedTermination && !crashEvidence && legacyFinalDrainHasCompleteReport(record)) return "completed";
+			return !expectedTermination && crashEvidence ? "crashed" : "failed";
 		}
 		default:
 			return "running";
@@ -238,6 +388,101 @@ function nestedForChild(value: unknown, childIndex: number, directCount: number)
 	const exact = value.filter((nested) => asRecord(nested)["parentStepIndex"] === childIndex);
 	if (exact.length > 0) return exact;
 	return directCount === 1 ? value : [];
+}
+
+function projectNestedAgents(value: unknown): AgentNestedDetail[] {
+	if (!Array.isArray(value)) return [];
+	const details: AgentNestedDetail[] = [];
+	const seenRuns = new Set<string>();
+	const walk = (runs: unknown[], inheritedDepth: number): void => {
+		for (const candidate of runs) {
+			if (details.length >= 200) return;
+			const run = asRecord(candidate);
+			const sanitizedRun = sanitizeSummary(candidate);
+			const runId = optionalString(run["id"]);
+			if (!runId || seenRuns.has(runId)) continue;
+			seenRuns.add(runId);
+			const depthValue = finiteNumber(run["depth"]);
+			const depth = Math.max(1, Math.min(3, depthValue === null ? inheritedDepth : Math.floor(depthValue)));
+			const runStatus = sourceStatus(run["state"] ?? run["status"]);
+			const steps = Array.isArray(run["steps"]) ? run["steps"] : [];
+			const runChildren = Array.isArray(run["children"]) ? run["children"] : [];
+			const parentRunId = optionalString(run["parentRunId"]);
+			const rootRunId =
+				sanitizedRun?.path[0]?.runId ?? (sanitizedRun?.depth === 1 ? sanitizedRun.parentRunId : undefined);
+			const asyncDir = rootRunId && sanitizedRun ? (resolveNestedAsyncDir(rootRunId, sanitizedRun) ?? null) : null;
+			if (steps.length === 0) {
+				details.push(
+					Object.freeze({
+						key: `nested:${runId}:0`,
+						asyncDir,
+						runId,
+						childIndex: 0,
+						parentRunId,
+						depth,
+						name: firstString(run["agent"], runId) ?? "agent",
+						description: resolveDisplayDescription(undefined, firstString(run["task"]) ?? ""),
+						task: boundedText(run["task"], MAX_TASK_CHARS) ?? "",
+						status: deriveStatus(run, runStatus),
+						nestedCount: countNestedRuns(runChildren),
+						sessionFile: firstLocator(run["sessionFile"]),
+						transcriptPath: firstLocator(run["transcriptPath"]),
+						savedOutputPath: firstLocator(run["savedOutputPath"]),
+						partialResult: partialResult(run),
+					}),
+				);
+			}
+			const assignedRunChildren = new Set<string>();
+			for (const [index, rawStep] of steps.slice(0, 20).entries()) {
+				if (details.length >= 200) return;
+				const step = asRecord(rawStep);
+				const explicitStepChildren = Array.isArray(step["children"]) ? step["children"] : [];
+				const attributedRunChildren = nestedForChild(runChildren, index, steps.length);
+				for (const child of attributedRunChildren) {
+					const childId = optionalString(asRecord(child)["id"]);
+					if (childId) assignedRunChildren.add(childId);
+				}
+				const stepChildren = [...explicitStepChildren, ...attributedRunChildren].filter((child, position, all) => {
+					const childId = optionalString(asRecord(child)["id"]);
+					return (
+						!childId ||
+						all.findIndex((candidate) => optionalString(asRecord(candidate)["id"]) === childId) === position
+					);
+				});
+				const task = boundedText(step["task"], MAX_TASK_CHARS) ?? "";
+				const description = resolveDisplayDescription(firstString(step["description"]), task);
+				details.push(
+					Object.freeze({
+						key: `nested:${runId}:${index}`,
+						asyncDir,
+						runId,
+						childIndex: index,
+						parentRunId,
+						depth,
+						name: firstString(step["agent"], run["agent"], runId) ?? "agent",
+						description,
+						task,
+						status: deriveStatus(step, sourceStatus(step["status"] ?? runStatus)),
+						nestedCount: countNestedRuns(stepChildren),
+						sessionFile: firstLocator(step["sessionFile"], run["sessionFile"]),
+						transcriptPath: firstLocator(step["transcriptPath"]),
+						savedOutputPath: firstLocator(step["savedOutputPath"]),
+						partialResult: partialResult(step, run),
+					}),
+				);
+				walk(stepChildren, depth + 1);
+			}
+			walk(
+				runChildren.filter((child) => {
+					const childId = optionalString(asRecord(child)["id"]);
+					return !childId || !assignedRunChildren.has(childId);
+				}),
+				depth + 1,
+			);
+		}
+	};
+	walk(value, 1);
+	return details;
 }
 
 function boundedRecentOutput(value: unknown): string | null {
@@ -273,8 +518,10 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 	const jobStatus = sourceStatus(job.status);
 	if (terminalOnly ? !TERMINAL_SOURCE_STATUSES.has(jobStatus) : !ACTIVE_SOURCE_STATUSES.has(jobStatus)) return [];
 
-	const steps = job.steps?.length
-		? job.steps.map((step, position) => ({ step, childIndex: step.index ?? position }))
+	const persistedSteps = job.steps?.length ? job.steps : undefined;
+	const hasPersistedSteps = persistedSteps !== undefined;
+	const steps = persistedSteps
+		? persistedSteps.map((step, position) => ({ step, childIndex: step.index ?? position }))
 		: (job.agents?.length ? job.agents : ["agent"]).map((name, childIndex) => ({
 				step: { agent: name },
 				childIndex,
@@ -294,7 +541,11 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 			TERMINAL_SOURCE_STATUSES.has(jobStatus) && !TERMINAL_SOURCE_STATUSES.has(rawStepStatus)
 				? jobStatus
 				: rawStepStatus;
-		const statusRecord = { ...asRecord(job), ...stepRecord, status: effectiveStatus };
+		const statusRecord = {
+			...(hasPersistedSteps && directCount > 1 ? {} : asRecord(job)),
+			...stepRecord,
+			status: effectiveStatus,
+		};
 		const nested =
 			Array.isArray(stepRecord["children"]) && stepRecord["children"].length > 0
 				? stepRecord["children"]
@@ -314,9 +565,10 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 			),
 			partialResult: partialResult(stepRecord, job),
 			nestedCount: countNestedRuns(nested),
-			sessionFile: firstString(stepRecord["sessionFile"], job.sessionFile),
-			transcriptPath: firstString(stepRecord["transcriptPath"]),
-			savedOutputPath: firstString(stepRecord["savedOutputPath"], stepRecord["structuredOutputPath"]),
+			nestedAgents: projectNestedAgents(nested),
+			sessionFile: firstLocator(stepRecord["sessionFile"], job.sessionFile),
+			transcriptPath: firstLocator(stepRecord["transcriptPath"]),
+			savedOutputPath: firstLocator(stepRecord["savedOutputPath"], stepRecord["structuredOutputPath"]),
 		};
 	});
 }
@@ -370,10 +622,11 @@ function projectForegroundControl(
 		const statusRecord = {
 			...asRecord(control),
 			...childRecord,
-			status: "running",
+			status: childRecord["status"] ?? "running",
 			activityState: childRecord["currentActivityState"] ?? control.currentActivityState,
 			currentTool: childRecord["currentTool"] ?? control.currentTool,
 		};
+		const nested = nestedForChild(control.nestedChildren, childIndex, directCount);
 		return {
 			key: rowKey(control.runId, childIndex),
 			runId: control.runId,
@@ -389,13 +642,14 @@ function projectForegroundControl(
 			startedAt: finiteNumber(childRecord["startedAt"] ?? control.startedAt),
 			endedAt: null,
 			partialResult: partialResult(rememberedChild, childRecord),
-			nestedCount: countNestedRuns(nestedForChild(control.nestedChildren, childIndex, directCount)),
-			sessionFile: firstString(rememberedChild["sessionFile"]),
-			transcriptPath: firstString(
+			nestedCount: countNestedRuns(nested),
+			nestedAgents: projectNestedAgents(nested),
+			sessionFile: firstLocator(rememberedChild["sessionFile"]),
+			transcriptPath: firstLocator(
 				rememberedChild["transcriptPath"],
 				asRecord(rememberedChild["artifactPaths"])["transcriptPath"],
 			),
-			savedOutputPath: firstString(rememberedChild["savedOutputPath"]),
+			savedOutputPath: firstLocator(rememberedChild["savedOutputPath"]),
 		};
 	});
 }
@@ -405,6 +659,7 @@ function projectForegroundRun(run: ForegroundRun, sessionId: string): RowDraft[]
 	return run.children.flatMap((child) => {
 		if (!child) return [];
 		const childRecord = asRecord(child);
+		const nested = Array.isArray(childRecord["children"]) ? childRecord["children"] : [];
 		const persistedTask = firstString(childRecord["task"]);
 		const taskSource = persistedTask ?? firstString(childRecord["description"]) ?? "";
 		return [
@@ -420,10 +675,11 @@ function projectForegroundRun(run: ForegroundRun, sessionId: string): RowDraft[]
 				startedAt: finiteNumber(childRecord["startedAt"]),
 				endedAt: finiteNumber(child.updatedAt ?? run.updatedAt),
 				partialResult: partialResult(childRecord),
-				nestedCount: countNestedRuns(childRecord["children"]),
-				sessionFile: firstString(child.sessionFile),
-				transcriptPath: firstString(child.transcriptPath, asRecord(child.artifactPaths)["transcriptPath"]),
-				savedOutputPath: firstString(child.savedOutputPath),
+				nestedCount: countNestedRuns(nested),
+				nestedAgents: projectNestedAgents(nested),
+				sessionFile: firstLocator(child.sessionFile),
+				transcriptPath: firstLocator(child.transcriptPath, asRecord(child.artifactPaths)["transcriptPath"]),
+				savedOutputPath: firstLocator(child.savedOutputPath),
 			} satisfies RowDraft,
 		];
 	});
@@ -447,6 +703,7 @@ function freezeRow(draft: RowDraft, now: number): AgentRow {
 		elapsedMs,
 		partialResult: draft.partialResult,
 		nestedCount: draft.nestedCount,
+		nestedAgents: Object.freeze([...draft.nestedAgents]),
 		sessionFile: draft.sessionFile,
 		transcriptPath: draft.transcriptPath,
 		savedOutputPath: draft.savedOutputPath,
@@ -665,12 +922,35 @@ export class CurrentAgents {
 			for (const row of projectAsyncJob(job, sessionId, false)) if (!rows.has(row.key)) rows.set(row.key, row);
 		}
 		for (const run of this.state.foregroundRuns?.values() ?? []) {
+			this.refreshForegroundNestedProjection(run);
 			for (const row of projectForegroundRun(run, sessionId)) if (!rows.has(row.key)) rows.set(row.key, row);
 		}
 		for (const job of this.state.recentAgentJobs?.values() ?? []) {
 			for (const row of projectAsyncJob(job, sessionId, true)) if (!rows.has(row.key)) rows.set(row.key, row);
 		}
 		return [...rows.values()];
+	}
+
+	private refreshForegroundNestedProjection(run: ForegroundRun): void {
+		const route = run.nestedRoute;
+		if (!route) return;
+		try {
+			// UI projection is observation-only. The active runtime poller owns event
+			// projection and cleanup; merely opening or refreshing `/agents` must never
+			// claim, write, or unlink nested runtime records.
+			const registry = readNestedRegistry(route);
+			const directChildren = registry.children.filter((child) => child.parentRunId === run.runId);
+			for (const child of run.children) {
+				const projected = nestedForChild(directChildren, child.index, run.children.length)
+					.map((nested) => sanitizeSummary(nested))
+					.filter((nested): nested is NonNullable<typeof nested> => Boolean(nested));
+				child.children = projected;
+			}
+			run.updatedAt = Math.max(run.updatedAt, registry.updatedAt);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+			console.error(`Failed to refresh foreground nested route for '${run.runId}':`, error);
+		}
 	}
 
 	private callListener(listener: (snapshot: AgentSessionSnapshot) => void, snapshot: AgentSessionSnapshot): void {

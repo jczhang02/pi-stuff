@@ -1,0 +1,68 @@
+import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+
+export interface ProcessIdentityGroupSnapshot {
+	readonly processStartIdentity: string;
+	readonly processGroupId: number;
+}
+
+/**
+ * Stable identity for the current operating-system boot. A differing value is
+ * positive proof that no process recorded during the previous boot can still
+ * exist, even when its transient runtime directory has been cleared.
+ */
+export function readSystemBootIdentity(): string | undefined {
+	if (process.platform === "linux") {
+		try {
+			return normalizedBootIdentity("linux", fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf-8"));
+		} catch {
+			return undefined;
+		}
+	}
+	// Node exposes no stable, side-effect-free boot identifier on the supported
+	// BSD hosts. Stay conservative there instead of spawning during Extension
+	// startup or deriving an unstable value from wall-clock uptime.
+	return undefined;
+}
+
+/** Read process birth identity and PGID from one Linux procfs record. */
+export function readProcessIdentityGroupSnapshot(pid: number): ProcessIdentityGroupSnapshot | undefined {
+	if (process.platform === "linux") {
+		try {
+			const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf-8");
+			const commandEnd = stat.lastIndexOf(")");
+			if (commandEnd === -1) return undefined;
+			const fields = stat
+				.slice(commandEnd + 1)
+				.trim()
+				.split(/\s+/u);
+			const processGroupId = Number(fields[2]);
+			const startTicks = fields[19];
+			if (!Number.isSafeInteger(processGroupId) || processGroupId <= 0 || !startTicks) return undefined;
+			return { processStartIdentity: `linux:${startTicks}`, processGroupId };
+		} catch {
+			return undefined;
+		}
+	}
+	if (process.platform !== "darwin" && process.platform !== "freebsd") return undefined;
+	const result = spawnSync("/bin/ps", ["-o", "lstart=", "-o", "pgid=", "-p", String(pid)], {
+		encoding: "utf-8",
+		maxBuffer: 64 * 1024,
+	});
+	const output = result.status === 0 ? result.stdout.trim() : "";
+	const match = /^(.*?)\s+(\d+)$/u.exec(output);
+	if (!match?.[1] || !match[2]) return undefined;
+	const processGroupId = Number(match[2]);
+	if (!Number.isSafeInteger(processGroupId) || processGroupId <= 0) return undefined;
+	return { processStartIdentity: `${process.platform}:${match[1]}`, processGroupId };
+}
+
+/** Stable OS process-birth identity used together with a PID to reject PID reuse. */
+export function readProcessStartIdentity(pid: number): string | undefined {
+	return readProcessIdentityGroupSnapshot(pid)?.processStartIdentity;
+}
+
+function normalizedBootIdentity(platform: string, value: string): string | undefined {
+	const normalized = value.trim().replace(/\s+/gu, " ");
+	return normalized.length > 0 && normalized.length <= 512 ? `${platform}:${normalized}` : undefined;
+}

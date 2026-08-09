@@ -15,6 +15,7 @@ import type {
 import { readStatus } from "../../shared/utils.ts";
 
 export const MAX_STEERING_REQUESTS = 20;
+export const MAX_PENDING_STEERING_REQUESTS = 20;
 export const STEERING_MESSAGE_PREVIEW_LIMIT = 160;
 
 export function createSteeringStatus(): SteeringStatus {
@@ -50,9 +51,27 @@ export function recordSteeringRequest(
 	};
 	status.requested++;
 	status.lastRequestedAt = input.requestedAt;
-	status.recent = [...status.recent, request].slice(-MAX_STEERING_REQUESTS);
+	status.recent = [...status.recent, request];
 	for (const target of request.targets) incrementStateCount(status, target.state);
+	trimSteeringHistory(status);
 	return request;
+}
+
+export function steeringRequestIsPending(request: SteeringRequestStatus): boolean {
+	return request.targets.some((target) => target.state === "scheduled" || target.state === "routed");
+}
+
+export function pendingSteeringRequestCount(status: SteeringStatus): number {
+	return status.recent.filter(steeringRequestIsPending).length;
+}
+
+/** Retain every unresolved request plus the newest bounded terminal history. */
+function trimSteeringHistory(status: SteeringStatus): void {
+	const terminal = status.recent.filter((request) => !steeringRequestIsPending(request));
+	const retainedTerminalIds = new Set(terminal.slice(-MAX_STEERING_REQUESTS).map((request) => request.id));
+	status.recent = status.recent.filter(
+		(request) => steeringRequestIsPending(request) || retainedTerminalIds.has(request.id),
+	);
 }
 
 function incrementStateCount(status: SteeringStatus, state: SteeringTargetState): void {
@@ -91,6 +110,9 @@ export function updateSteeringTarget(
 		if (fields.replacementRunId) target.replacementRunId = fields.replacementRunId;
 		return target;
 	}
+	if (target.state === "scheduled" && state !== "scheduled") {
+		status.scheduled = Math.max(0, status.scheduled - 1);
+	}
 	if (target.state === "routed" && state !== "routed") status.pending = Math.max(0, status.pending - 1);
 	target.state = state;
 	if (state === "routed") target.routedAt = now;
@@ -107,6 +129,7 @@ export function updateSteeringTarget(
 	if (fields.reason) target.reason = fields.reason;
 	if (fields.replacementRunId) target.replacementRunId = fields.replacementRunId;
 	incrementStateCount(status, state);
+	trimSteeringHistory(status);
 	return target;
 }
 

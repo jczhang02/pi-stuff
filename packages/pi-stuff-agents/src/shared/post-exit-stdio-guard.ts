@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import { readProcessStartIdentity } from "./process-identity.ts";
 
 interface PostExitStdioGuardOptions {
 	idleMs: number;
@@ -12,10 +13,37 @@ interface ChildWithPipedStdio {
 }
 
 interface ChildWithKill {
+	pid?: number;
 	kill(signal?: NodeJS.Signals | number): boolean;
 }
 
-export function trySignalChild(child: ChildWithKill, signal: NodeJS.Signals): boolean {
+export function trySignalChild(
+	child: ChildWithKill,
+	signal: NodeJS.Signals,
+	expectedProcessStartIdentity?: string,
+): boolean {
+	if (process.platform !== "win32" && typeof child.pid === "number") {
+		if (!expectedProcessStartIdentity) return false;
+		if (expectedProcessStartIdentity) {
+			const currentIdentity = readProcessStartIdentity(child.pid);
+			if (currentIdentity && currentIdentity !== expectedProcessStartIdentity) return false;
+			if (!currentIdentity) {
+				try {
+					process.kill(child.pid, 0);
+				} catch {}
+				// Whether the PID is unreadable or absent, a numeric PGID alone does
+				// not prove continuity with the writer captured at spawn time.
+				return false;
+			}
+		}
+		try {
+			process.kill(-child.pid, signal);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+	if (process.platform !== "win32") return false;
 	try {
 		return child.kill(signal);
 	} catch {

@@ -7,12 +7,12 @@ import { registerNativeSupervisorClient } from "../../intercom/native-supervisor
 import type { JsonSchemaObject, ResolvedToolBudget } from "../../shared/types.ts";
 import { resolveWatchPath } from "../../shared/utils.ts";
 import {
-	consumeSteerRequestsFromDir,
+	processSteerRequestsFromDir,
+	readSteerAckAt,
 	type SteerRequest,
 	steerAckPathFromDir,
 	writeSteerAckAt,
 	writeSteerCapabilityAt,
-	writeSteerRequestToDir,
 } from "../background/control-channel.ts";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
@@ -235,16 +235,30 @@ export function stripParentOnlySubagentMessages(messages: unknown[]): unknown[] 
 }
 
 export function formatSteerMessage(request: SteerRequest): string {
+	const marker = Buffer.from(request.id, "utf-8").toString("base64url");
 	return [
+		`<pi-stuff-steer request="${marker}">`,
 		"Mid-run steering from the parent orchestrator:",
 		"",
 		request.message,
 		"",
 		"Incorporate this guidance at the next safe point. Do not restart the task unless the guidance explicitly asks you to.",
+		"</pi-stuff-steer>",
 	].join("\n");
 }
 
-function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget | undefined): void {
+function steerRequestIdFromInput(text: string): string | undefined {
+	const encoded = /<pi-stuff-steer request="([A-Za-z0-9_-]{1,342})">/u.exec(text)?.[1];
+	if (!encoded) return undefined;
+	try {
+		const requestId = Buffer.from(encoded, "base64url").toString("utf-8");
+		return /^\S{1,256}$/u.test(requestId) ? requestId : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget | undefined): void {
 	if (!budget) return;
 	let toolCount = 0;
 	let softNudged = false;
@@ -260,7 +274,12 @@ function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget | undef
 		if (budget.soft !== undefined && toolCount >= budget.soft && !softNudged) {
 			softNudged = true;
 			try {
-				sendUserMessage?.(toolBudgetSoftNudge(budget, toolCount), { deliverAs: "steer" });
+				const dispatched = sendUserMessage?.(toolBudgetSoftNudge(budget, toolCount), { deliverAs: "steer" });
+				if (dispatched && typeof (dispatched as PromiseLike<unknown>).then === "function") {
+					void Promise.resolve(dispatched).catch(() => {
+						// Budget nudges are advisory; blocking below remains authoritative.
+					});
+				}
 			} catch {
 				// Budget nudges are advisory; blocking below remains authoritative.
 			}
@@ -281,22 +300,70 @@ export function registerSteeringInbox(
 	const sendUserMessage = (pi as { sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => unknown })
 		.sendUserMessage;
 	const childIndex = Number(process.env[SUBAGENT_CHILD_INDEX_ENV]);
-	const pending = new Map<string, string[]>();
+	type PendingDelivery = { request: SteerRequest; complete: () => boolean };
+	type PendingAck = {
+		request: SteerRequest;
+		state: "delivered" | "failed";
+		message: string;
+		complete: () => boolean;
+	};
+	const pendingById = new Map<string, PendingDelivery>();
+	const pendingAcks = new Map<string, PendingAck>();
 	let disposed = false;
 	let flushing = false;
 	let started = false;
 	const canSteer = typeof sendUserMessage === "function";
 	let watcher: fs.FSWatcher | undefined;
 	let interval: NodeJS.Timeout | undefined;
-	const acknowledge = (request: SteerRequest, state: "delivered" | "failed", message: string): void => {
-		if (!ackDir || !Number.isInteger(childIndex) || childIndex < 0) return;
-		writeSteerAckAt(steerAckPathFromDir(ackDir, request.id), {
-			requestId: request.id,
-			index: childIndex,
-			ts: Date.now(),
-			state,
-			message,
-		});
+	let lastRuntimeError = "";
+	let lastRuntimeErrorAt = 0;
+	const reportRuntimeError = (context: string, error: unknown): void => {
+		const message = `${context}: ${error instanceof Error ? error.message : String(error)}`;
+		const now = Date.now();
+		if (message === lastRuntimeError && now - lastRuntimeErrorAt < 30_000) return;
+		lastRuntimeError = message;
+		lastRuntimeErrorAt = now;
+		console.error(`[pi-stuff-agents] ${message}`);
+	};
+	const acknowledge = (
+		request: SteerRequest,
+		state: "delivered" | "failed",
+		message: string,
+		complete: () => boolean,
+	): boolean => {
+		if (!ackDir || !Number.isInteger(childIndex) || childIndex < 0) {
+			pendingAcks.delete(request.id);
+			complete();
+			return true;
+		}
+		try {
+			writeSteerAckAt(steerAckPathFromDir(ackDir, request.id), {
+				requestId: request.id,
+				index: childIndex,
+				ts: Date.now(),
+				state,
+				message,
+			});
+			pendingAcks.delete(request.id);
+			complete();
+			return true;
+		} catch (error) {
+			pendingAcks.set(request.id, { request, state, message, complete });
+			reportRuntimeError(`Failed to persist steering acknowledgement '${request.id}'`, error);
+			return false;
+		}
+	};
+	const retryAcknowledgements = (): void => {
+		for (const { request, state, message, complete } of [...pendingAcks.values()])
+			acknowledge(request, state, message, complete);
+	};
+	const forgetPendingDelivery = (delivery: PendingDelivery): void => {
+		pendingById.delete(delivery.request.id);
+	};
+	const existingAcknowledgement = (request: SteerRequest): boolean => {
+		if (!ackDir || !Number.isInteger(childIndex) || childIndex < 0) return false;
+		const ack = readSteerAckAt(steerAckPathFromDir(ackDir, request.id));
+		return ack?.requestId === request.id && ack.index === childIndex;
 	};
 	const publishCapability = (): void => {
 		if (!capabilityPath || !Number.isInteger(childIndex) || childIndex < 0) return;
@@ -311,46 +378,66 @@ export function registerSteeringInbox(
 		if (disposed || flushing) return;
 		flushing = true;
 		try {
-			const requests = consumeSteerRequestsFromDir(steerInbox);
-			for (const [index, request] of requests.entries()) {
+			retryAcknowledgements();
+			processSteerRequestsFromDir(steerInbox, (request, complete) => {
+				if (existingAcknowledgement(request)) {
+					complete();
+					return "retain";
+				}
+				if (pendingById.has(request.id) || pendingAcks.has(request.id)) return "retain";
 				if (!canSteer || typeof sendUserMessage !== "function") {
-					acknowledge(request, "failed", "Child Pi session does not support sendUserMessage steering.");
-					continue;
+					acknowledge(request, "failed", "Child Pi session does not support sendUserMessage steering.", complete);
+					return "retain";
 				}
 				const formatted = formatSteerMessage(request);
-				const ids = pending.get(formatted) ?? [];
-				ids.push(request.id);
-				pending.set(formatted, ids);
+				const delivery: PendingDelivery = { request, complete };
+				pendingById.set(request.id, delivery);
 				try {
-					sendUserMessage(formatted, { deliverAs: "steer" });
+					const dispatched = sendUserMessage(formatted, { deliverAs: "steer" });
+					if (dispatched && typeof (dispatched as PromiseLike<unknown>).then === "function") {
+						void Promise.resolve(dispatched).catch((error) => {
+							if (pendingById.get(request.id) !== delivery) return;
+							forgetPendingDelivery(delivery);
+							acknowledge(request, "failed", error instanceof Error ? error.message : String(error), complete);
+						});
+					}
 				} catch (error) {
-					ids.pop();
-					if (ids.length === 0) pending.delete(formatted);
-					acknowledge(request, "failed", error instanceof Error ? error.message : String(error));
-					for (const retry of requests.slice(index + 1)) writeSteerRequestToDir(steerInbox, retry);
-					break;
+					forgetPendingDelivery(delivery);
+					acknowledge(request, "failed", error instanceof Error ? error.message : String(error), complete);
 				}
-			}
+				return "retain";
+			});
 		} finally {
 			flushing = false;
+		}
+	};
+	const safeFlush = (): void => {
+		try {
+			flush();
+		} catch (error) {
+			reportRuntimeError("Failed to process child steering inbox", error);
 		}
 	};
 	const onInput = (event: unknown): undefined => {
 		if (disposed || !event || typeof event !== "object") return undefined;
 		const input = event as { source?: unknown; streamingBehavior?: unknown; text?: unknown; content?: unknown };
-		if (input.source !== "extension" || input.streamingBehavior !== "steer") return undefined;
+		// Pi reports `steer` only when the Agent is still streaming. If the same
+		// accepted extension message arrives just after the stream ends, it starts a
+		// normal turn and the field is undefined. Exact pending-text correlation makes
+		// both forms authoritative while still rejecting queued follow-ups.
+		if (
+			input.source !== "extension" ||
+			(input.streamingBehavior !== undefined && input.streamingBehavior !== "steer")
+		)
+			return undefined;
 		const text =
 			typeof input.text === "string" ? input.text : typeof input.content === "string" ? input.content : undefined;
 		if (!text) return undefined;
-		const ids = pending.get(text);
-		const requestId = ids?.shift();
-		if (!requestId) return undefined;
-		if (ids?.length === 0) pending.delete(text);
-		acknowledge(
-			{ type: "steer", id: requestId, ts: Date.now(), message: text },
-			"delivered",
-			"Pi accepted the correlated steering input.",
-		);
+		const requestId = steerRequestIdFromInput(text);
+		const delivery = requestId ? pendingById.get(requestId) : undefined;
+		if (!delivery) return undefined;
+		forgetPendingDelivery(delivery);
+		acknowledge(delivery.request, "delivered", "Pi accepted the correlated steering input.", delivery.complete);
 		return undefined;
 	};
 	const start = (): void => {
@@ -363,24 +450,24 @@ export function registerSteeringInbox(
 		}
 		started = true;
 		try {
-			watcher = (deps.watch ?? fs.watch)(resolveWatchPath(steerInbox, deps.nativeRealpath), () => flush());
+			watcher = (deps.watch ?? fs.watch)(resolveWatchPath(steerInbox, deps.nativeRealpath), safeFlush);
 			watcher.on("error", () => {});
 		} catch {
 			watcher = undefined;
 		}
-		interval = setInterval(flush, 250);
+		interval = setInterval(safeFlush, 250);
 		interval.unref?.();
 	};
 	const activate = (): undefined => {
 		start();
-		flush();
+		safeFlush();
 		return undefined;
 	};
 
 	const onRuntimeEvent = pi.on as unknown as (event: string, handler: (event: unknown) => unknown) => void;
 	// Register input before the watcher so an accepted extension input cannot race request dispatch.
 	onRuntimeEvent("input", onInput);
-	onRuntimeEvent("session_start", () => start());
+	onRuntimeEvent("session_start", activate);
 	for (const eventName of [
 		"message_start",
 		"message_update",
@@ -392,6 +479,10 @@ export function registerSteeringInbox(
 		onRuntimeEvent(eventName, activate);
 	}
 	onRuntimeEvent("session_shutdown", () => {
+		// A correlated input may be accepted immediately before shutdown. Give any
+		// acknowledgement whose first durable write failed one final synchronous
+		// retry before disabling the inbox timer.
+		retryAcknowledgements();
 		disposed = true;
 		try {
 			watcher?.close();
@@ -421,7 +512,6 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	};
 	pi.on("session_start", () => {
 		registerNativeSupervisorClientOnce();
-		if (readRequiredChildTools()?.includes("intercom")) registerNativeSupervisorFallbackOnce();
 	});
 	pi.on("agent_start", () => {
 		refreshChildToolDiagnostic(pi);
@@ -464,7 +554,7 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		registerNativeSupervisorFallbackOnce();
+		if (readRequiredChildTools()?.includes("intercom")) registerNativeSupervisorFallbackOnce();
 		const intercomSessionName = process.env[SUBAGENT_INTERCOM_SESSION_NAME_ENV]?.trim();
 		if (intercomSessionName && typeof pi.setSessionName === "function") {
 			pi.setSessionName(intercomSessionName);

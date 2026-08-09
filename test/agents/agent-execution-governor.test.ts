@@ -166,7 +166,7 @@ describe("Agent execution governor adapter", () => {
 		expect(await session.snapshot()).toMatchObject({ total: 5, running: 3 });
 	});
 
-	test("releases every provisional lease when execution fails to start", async () => {
+	test("rolls back every provisional spawn record when execution fails to start", async () => {
 		const { execution, session } = await createGovernor("start-error");
 		const reservation = requireReservation(
 			await execution.reserveSpawn({ launchRunId: "broken-launch", childCount: 3 }),
@@ -177,7 +177,39 @@ describe("Agent execution governor adapter", () => {
 			alreadyReleasedCount: 0,
 			retainedCount: 0,
 		});
-		expect(await session.snapshot()).toMatchObject({ total: 3, running: 0, leases: [] });
+		expect(await session.snapshot()).toMatchObject({ total: 0, running: 0, agents: [], leases: [] });
+		expect(await execution.reserveSpawn({ launchRunId: "broken-launch", childCount: 3 })).toMatchObject({
+			ok: true,
+		});
+	});
+
+	test("retains the logical Agent record when a resume attempt fails before start", async () => {
+		const { execution, session } = await createGovernor("resume-start-error");
+		const initial = requireReservation(
+			await execution.reserveSpawn({ launchRunId: "saved-run", childCount: 1 }),
+		).reservation;
+		await execution.settle(initial, { kind: "foreground", terminalChildIndexes: [0] });
+		const resume = requireReservation(
+			await execution.reserveResume({ launchRunId: "resume-attempt", targetRunId: "saved-run", childIndex: 0 }),
+		).reservation;
+
+		expect(await execution.settle(resume, { kind: "start-error" })).toEqual({
+			releasedCount: 1,
+			alreadyReleasedCount: 0,
+			retainedCount: 0,
+		});
+		expect(await session.snapshot()).toMatchObject({
+			total: 1,
+			running: 0,
+			agents: [{ logicalAgentId: "saved-run:0" }],
+		});
+		expect(
+			await execution.reserveResume({
+				launchRunId: "resume-retry",
+				targetRunId: "saved-run",
+				childIndex: 0,
+			}),
+		).toMatchObject({ ok: true });
 	});
 
 	test("uses runtime completion events as an idempotent release boundary", async () => {

@@ -1,0 +1,57 @@
+import * as path from "node:path";
+import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
+
+const FOREGROUND_OWNER_EXIT_FILE = ".foreground-owner-ended.json";
+const MAX_FOREGROUND_OWNER_EXIT_BYTES = 16 * 1024;
+const MAX_FOREGROUND_OWNER_ERROR_CHARS = 8 * 1024;
+
+export interface ForegroundOwnerExit {
+	readonly version: 1;
+	readonly runId: string;
+	readonly endedAt: number;
+	readonly error: string;
+}
+
+export function foregroundOwnerExitPath(asyncDir: string): string {
+	return path.join(asyncDir, FOREGROUND_OWNER_EXIT_FILE);
+}
+
+/**
+ * Persist the semantic owner boundary separately from status.json. A foreground
+ * adapter runs inside the long-lived Pi Host, so PID liveness cannot prove that
+ * its individual execution frame still exists after an exception.
+ */
+export function recordForegroundOwnerExit(asyncDir: string, runId: string, error: string): ForegroundOwnerExit {
+	const value: ForegroundOwnerExit = {
+		version: 1,
+		runId,
+		endedAt: Date.now(),
+		error: error.slice(0, MAX_FOREGROUND_OWNER_ERROR_CHARS),
+	};
+	writePrivateAtomicJson(foregroundOwnerExitPath(asyncDir), value);
+	return value;
+}
+
+export function readForegroundOwnerExit(asyncDir: string, runId: string): ForegroundOwnerExit | undefined {
+	try {
+		const value = JSON.parse(
+			readBoundedOwnedFile(foregroundOwnerExitPath(asyncDir), MAX_FOREGROUND_OWNER_EXIT_BYTES),
+		) as Partial<ForegroundOwnerExit>;
+		if (
+			value.version !== 1 ||
+			value.runId !== runId ||
+			typeof value.endedAt !== "number" ||
+			!Number.isFinite(value.endedAt) ||
+			value.endedAt < 0 ||
+			typeof value.error !== "string" ||
+			value.error.length === 0 ||
+			value.error.length > MAX_FOREGROUND_OWNER_ERROR_CHARS
+		) {
+			return undefined;
+		}
+		return value as ForegroundOwnerExit;
+	} catch {
+		return undefined;
+	}
+}

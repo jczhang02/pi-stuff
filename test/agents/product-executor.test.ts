@@ -35,6 +35,23 @@ describe("toEngineParams", () => {
 		});
 	});
 
+	test("keeps a single worktree cwd only at the shared runner level", () => {
+		expect(
+			toEngineParams({
+				agent: "worker",
+				cwd: "packages/core",
+				isolation: "worktree",
+				task: "Implement it",
+			}),
+		).toEqual({
+			async: true,
+			context: "fresh",
+			cwd: "packages/core",
+			tasks: [{ agent: "worker", description: "Implement it", task: "Implement it" }],
+			worktree: true,
+		});
+	});
+
 	test("keeps caller descriptions separate from complete single and parallel tasks", () => {
 		const longTask = "Inspect /tmp/work/deep/sample.txt and verify every checksum without changing the file.";
 		expect(

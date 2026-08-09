@@ -6,6 +6,7 @@ import type {
 	SessionGovernorAcquireError,
 	SessionGovernorAcquireResult,
 	SessionGovernorBatchAcquireResult,
+	SessionGovernorBatchReleaseResult,
 	SessionGovernorLimitInput,
 	SessionGovernorRebindResult,
 	SessionGovernorReleaseResult,
@@ -17,6 +18,7 @@ export interface AgentExecutionGovernorBackend {
 	acquireResume(request: AcquireAgentRequest): Promise<SessionGovernorAcquireResult>;
 	rebindRuntime(lease: AgentGovernorLease, request: RebindAgentRuntimeRequest): Promise<SessionGovernorRebindResult>;
 	findRuntimeLease(runtimeRunId: string, childIndex: number): Promise<AgentGovernorLease | undefined>;
+	abortSpawnBatch(leases: readonly AgentGovernorLease[]): Promise<SessionGovernorBatchReleaseResult>;
 	release(lease: AgentGovernorLease): Promise<SessionGovernorReleaseResult>;
 }
 
@@ -158,6 +160,15 @@ export class AgentExecutionGovernor {
 			};
 		}
 
+		if (settlement.kind === "start-error" && reservation.kind === "spawn") {
+			const aborted = await this.backend.abortSpawnBatch(reservation.leases);
+			return {
+				releasedCount: aborted.released ? aborted.releasedCount : 0,
+				alreadyReleasedCount: aborted.released ? 0 : reservation.leases.length,
+				retainedCount: 0,
+			};
+		}
+
 		const selectedIndexes =
 			settlement.kind === "start-error"
 				? reservation.leases.map((_, index) => index)
@@ -175,6 +186,13 @@ export class AgentExecutionGovernor {
 			alreadyReleasedCount,
 			retainedCount: reservation.leases.length - selectedIndexes.length,
 		};
+	}
+
+	async findRuntimeLease(event: AgentRuntimeCompletionEvent): Promise<AgentGovernorLease | undefined> {
+		return this.backend.findRuntimeLease(
+			requiredText("runtimeRunId", event.runtimeRunId),
+			nonNegativeSafeInteger("childIndex", event.childIndex),
+		);
 	}
 
 	/** Release the lease addressed by a durable runtime completion event. Duplicate events are harmless. */

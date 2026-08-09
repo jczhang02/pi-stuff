@@ -121,6 +121,7 @@ function row(key: string, status: AgentStatus, overrides: Partial<Omit<AgentRow,
 		elapsedMs: 12_000,
 		key,
 		name: key,
+		nestedAgents: [],
 		nestedCount: 0,
 		partialResult: null,
 		runId: `run-${key}`,
@@ -349,7 +350,8 @@ describe("Agent Command Dialog", () => {
 		expect(requests[0]?.signal).toBeInstanceOf(AbortSignal);
 		expect(before).toContain("line-2-red");
 		expect(before).toContain("hidden-link-target");
-		expect(before).toContain("State  running · 12s · 0 nested");
+		expect(before).toContain("State  running · 12s");
+		expect(before).not.toContain("0 nested");
 		expect(before).not.toContain("\u001b");
 		expect(before).not.toContain("https://example.invalid");
 		expect(before).not.toContain("\u202e");

@@ -3,6 +3,7 @@ import type {
 	CostSummary,
 	ModelAttempt,
 	NestedRouteInfo,
+	ProtocolOutputLimit,
 	ResolvedControlConfig,
 	ResolvedToolBudget,
 	ResolvedTurnBudget,
@@ -18,8 +19,14 @@ import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from 
  * without rediscovering agents or inheriting settings.
  */
 export interface RunnerAgentTask {
+	/** Durable ledger namespace; may be v1 only while finishing an in-flight upgrade. */
+	governorSessionId?: string;
+	/** Immutable physical root-session identity used by lifecycle artifacts. */
+	physicalSessionId?: string;
 	/** Session id of the direct parent session for supervisor routing. */
 	parentSessionId?: string;
+	/** Durable governor path component; resume keeps the original logical child identity. */
+	logicalAgentPathComponent?: string;
 	agent: string;
 	/** Short launcher-normalized label for terminal surfaces. */
 	description?: string;
@@ -79,6 +86,8 @@ export interface BackgroundRunnerConfig {
 	worktreeBaseDir?: string;
 	controlConfig?: ResolvedControlConfig;
 	controlIntercomTarget?: string;
+	/** Native child→root supervisor requests; safe only for detached root runs. */
+	nativeSupervisor?: boolean;
 	childIntercomTargets?: Array<string | undefined>;
 	nestedRoute?: NestedRouteInfo;
 	nestedSelf?: {
@@ -94,6 +103,10 @@ export interface BackgroundRunnerConfig {
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	launchContractDigest?: string;
 	runnerProcessInstanceId?: string;
+	/** One-way launcher gate used after durable status/registry precommit. */
+	startupGateToken?: string;
+	/** Timestamp shared by the launcher-precommitted and runner-loaded status. */
+	startedAt?: number;
 }
 
 export interface BackgroundTaskResult {
@@ -103,6 +116,7 @@ export interface BackgroundTaskResult {
 	success: boolean;
 	exitCode: number | null;
 	error?: string;
+	protocolError?: ProtocolOutputLimit;
 	interrupted?: boolean;
 	timedOut?: boolean;
 	stopped?: boolean;
@@ -131,6 +145,7 @@ export interface BackgroundTaskResult {
 		closeObservedAt: number;
 		exitCode: number | null;
 		signal: string | null;
+		terminationOrigin?: "external" | "manager-final-drain" | "manager-request";
 	}>;
 	writerAttemptCount?: number;
 }
@@ -156,3 +171,4 @@ export async function mapConcurrent<T, R>(
 }
 
 export const MAX_PARALLEL_CONCURRENCY = 4;
+export const MAX_BACKGROUND_TASKS = 20;

@@ -24,6 +24,9 @@ export function splitThinkingSuffix(model: string): { baseModel: string; thinkin
 /** Sentinel model value requesting that a subagent inherit the parent session's model. */
 export const INHERIT_MODEL = "inherit";
 
+/** Must stay aligned with durable process-terminal writer proof capacity. */
+export const MAX_MODEL_CANDIDATES_PER_CHILD = 64;
+
 /** Minimal shape of the parent session's in-memory model (`ctx.model`). */
 export interface ParentModel {
 	provider: string;
@@ -264,8 +267,21 @@ export function buildModelCandidates(
 		}
 		seen.add(normalized);
 		candidates.push(normalized);
+		if (candidates.length > MAX_MODEL_CANDIDATES_PER_CHILD) {
+			throw new RangeError(
+				`An Agent may try at most ${MAX_MODEL_CANDIDATES_PER_CHILD} model candidates (primary plus fallbacks).`,
+			);
+		}
 	}
 	return candidates;
+}
+
+export function assertModelCandidateLimit(candidates: readonly string[]): void {
+	if (candidates.length > MAX_MODEL_CANDIDATES_PER_CHILD) {
+		throw new RangeError(
+			`An Agent may try at most ${MAX_MODEL_CANDIDATES_PER_CHILD} model candidates (primary plus fallbacks).`,
+		);
+	}
 }
 
 const RETRYABLE_MODEL_FAILURE_PATTERNS = [

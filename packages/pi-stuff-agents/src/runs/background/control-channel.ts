@@ -17,9 +17,20 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { writeAtomicJson } from "../../shared/atomic-json.ts";
+import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import {
+	assertPrivateDirectory,
+	ensurePrivateDirectory,
+	ensurePrivateDirectoryWithin,
+	type OwnedFileSnapshot,
+	readBoundedOwnedFile,
+	readBoundedOwnedFileSnapshot,
+	removeOwnedFileSnapshot,
+} from "../../shared/private-directory.ts";
+import { readProcessStartIdentity } from "../../shared/process-identity.ts";
 import { POLL_INTERVAL_MS } from "../../shared/types.ts";
 import { resolveWatchPath } from "../../shared/utils.ts";
+import { MAX_BACKGROUND_TASKS } from "../shared/parallel-utils.ts";
 
 /**
  * Opportunistic fast-path interrupt signal. On Unix `SIGUSR2` is trapped by the
@@ -27,6 +38,9 @@ import { resolveWatchPath } from "../../shared/utils.ts";
  * cross-process and throws `ENOSYS`, so the file inbox below is the real channel.
  */
 export const INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
+const MAX_CONTROL_RECORD_BYTES = 64 * 1024;
+const CONTROL_INFLIGHT_SEPARATOR = ".pi-stuff-inflight.";
+const activeControlConsumers = new Set<string>();
 
 export type ControlChannelFs = Pick<
 	typeof fs,
@@ -131,7 +145,8 @@ export function steerInboxClosedPath(asyncDir: string): string {
 }
 
 export function closeSteerInbox(asyncDir: string, state: string): void {
-	writeAtomicJson(steerInboxClosedPath(asyncDir), { version: 1, closedAt: Date.now(), state });
+	prepareControlDirectory(asyncDir, controlInboxDir(asyncDir));
+	writePrivateAtomicJson(steerInboxClosedPath(asyncDir), { version: 1, closedAt: Date.now(), state });
 }
 
 /** Per-child inbox consumed by the child prompt runtime inside the Pi process. */
@@ -191,7 +206,7 @@ function validSteerRequest(request: Partial<SteerRequest>): request is SteerRequ
 			(request.targetIndex === undefined &&
 				Array.isArray(request.targetIndexes) &&
 				request.targetIndexes.length > 0 &&
-				request.targetIndexes.length <= 1_000 &&
+				request.targetIndexes.length <= MAX_BACKGROUND_TASKS &&
 				request.targetIndexes.every((index) => Number.isInteger(index) && index >= 0 && index <= 1_000_000) &&
 				new Set(request.targetIndexes).size === request.targetIndexes.length)) &&
 		(request.source === undefined ||
@@ -201,8 +216,9 @@ function validSteerRequest(request: Partial<SteerRequest>): request is SteerRequ
 
 export function writeSteerRequestToDir(dir: string, request: SteerRequest): string {
 	if (!validSteerRequest(request)) throw new Error("steer request is malformed or exceeds transport limits.");
+	ensurePrivateDirectory(dir);
 	const requestPath = path.join(dir, steerRequestFileName(request));
-	writeAtomicJson(requestPath, request);
+	writePrivateAtomicJson(requestPath, request);
 	return requestPath;
 }
 
@@ -216,7 +232,8 @@ export function writeSteerCapabilityAt(
 	if (!Number.isFinite(capability.readyAt) || capability.readyAt <= 0)
 		throw new Error("steer capability readyAt must be a finite timestamp.");
 	const record: SteerCapability = { type: "steer-capability", protocolVersion: 1, ...capability };
-	writeAtomicJson(filePath, record);
+	ensurePrivateDirectory(path.dirname(filePath));
+	writePrivateAtomicJson(filePath, record);
 	return filePath;
 }
 
@@ -224,6 +241,7 @@ export function writeSteerCapability(
 	asyncDir: string,
 	capability: Omit<SteerCapability, "type" | "protocolVersion">,
 ): string {
+	prepareControlDirectory(asyncDir, steerCapabilitiesDir(asyncDir));
 	return writeSteerCapabilityAt(steerCapabilityPath(asyncDir, capability.index), capability);
 }
 
@@ -234,12 +252,19 @@ export function writeSteerAckAt(filePath: string, ack: Omit<SteerAck, "type" | "
 	if (!Number.isFinite(ack.ts) || ack.ts <= 0) throw new Error("steer acknowledgment ts must be a finite timestamp.");
 	if (!ack.message.trim() || ack.message.length > 1000) throw new Error("steer acknowledgment message is invalid.");
 	const record: SteerAck = { type: "steer-ack", protocolVersion: 1, ...ack, message: ack.message.trim() };
-	writeAtomicJson(filePath, record);
+	ensurePrivateDirectory(path.dirname(filePath));
+	writePrivateAtomicJson(filePath, record);
 	return filePath;
 }
 
 export function writeSteerAck(asyncDir: string, ack: Omit<SteerAck, "type" | "protocolVersion">): string {
+	prepareControlDirectory(asyncDir, steerAcksDir(asyncDir, ack.index));
 	return writeSteerAckAt(path.join(steerAcksDir(asyncDir, ack.index), steerAckFileName(ack.requestId)), ack);
+}
+
+function prepareControlDirectory(asyncDir: string, directory: string): void {
+	assertPrivateDirectory(asyncDir);
+	ensurePrivateDirectoryWithin(asyncDir, directory);
 }
 
 /**
@@ -251,9 +276,10 @@ export function requestAsyncInterrupt(
 	payload: Omit<InterruptRequest, "type"> = {},
 	deps: { now?: () => number } = {},
 ): string {
+	prepareControlDirectory(asyncDir, controlInboxDir(asyncDir));
 	const requestPath = interruptRequestPath(asyncDir);
 	const request: InterruptRequest = { ...payload, ts: payload.ts ?? deps.now?.() ?? Date.now(), type: "interrupt" };
-	writeAtomicJson(requestPath, request);
+	writePrivateAtomicJson(requestPath, request);
 	return requestPath;
 }
 
@@ -262,9 +288,10 @@ export function requestAsyncTimeout(
 	payload: Omit<TimeoutRequest, "type"> = {},
 	deps: { now?: () => number } = {},
 ): string {
+	prepareControlDirectory(asyncDir, controlInboxDir(asyncDir));
 	const requestPath = timeoutRequestPath(asyncDir);
 	const request: TimeoutRequest = { ...payload, ts: payload.ts ?? deps.now?.() ?? Date.now(), type: "timeout" };
-	writeAtomicJson(requestPath, request);
+	writePrivateAtomicJson(requestPath, request);
 	return requestPath;
 }
 
@@ -289,8 +316,9 @@ export function requestAsyncStop(
 		stopRequestsDir(asyncDir),
 		`${String(ts).padStart(13, "0")}-${Buffer.from(id).toString("base64url")}.json`,
 	);
+	prepareControlDirectory(asyncDir, stopRequestsDir(asyncDir));
 	const request: StopRequest = { ...payload, id, ts, type: "stop" };
-	writeAtomicJson(requestPath, request);
+	writePrivateAtomicJson(requestPath, request);
 	return requestPath;
 }
 
@@ -306,6 +334,7 @@ export function requestAsyncSteer(
 	},
 	deps: { now?: () => number; randomId?: () => string } = {},
 ): string {
+	prepareControlDirectory(asyncDir, steerRequestsDir(asyncDir));
 	const message = payload.message.trim();
 	if (!message) throw new Error("steer message must not be empty.");
 	if (Buffer.byteLength(message, "utf8") > MAX_STEER_MESSAGE_BYTES)
@@ -321,12 +350,12 @@ export function requestAsyncSteer(
 		(!Array.isArray(payload.targetIndexes) ||
 			payload.targetIndex !== undefined ||
 			payload.targetIndexes.length === 0 ||
-			payload.targetIndexes.length > 1_000 ||
+			payload.targetIndexes.length > MAX_BACKGROUND_TASKS ||
 			payload.targetIndexes.some((index) => !Number.isInteger(index) || index < 0 || index > 1_000_000) ||
 			new Set(payload.targetIndexes).size !== payload.targetIndexes.length)
 	) {
 		throw new Error(
-			"steer targetIndexes must contain 1-1000 unique non-negative integers and cannot be combined with targetIndex.",
+			`steer targetIndexes must contain 1-${String(MAX_BACKGROUND_TASKS)} unique non-negative integers and cannot be combined with targetIndex.`,
 		);
 	}
 	const closedPath = steerInboxClosedPath(asyncDir);
@@ -350,6 +379,7 @@ export function requestAsyncSteer(
 
 export function enqueueStepSteer(asyncDir: string, index: number, request: SteerRequest): string {
 	assertChildIndex(index);
+	prepareControlDirectory(asyncDir, stepSteerInboxDir(asyncDir, index));
 	const { targetIndexes: _targetIndexes, ...singleTargetRequest } = request;
 	return writeSteerRequestToDir(stepSteerInboxDir(asyncDir, index), {
 		...singleTargetRequest,
@@ -397,9 +427,19 @@ function parseSteerAck(raw: unknown): SteerAck | undefined {
 	};
 }
 
+export function readSteerAckAt(filePath: string): SteerAck | undefined {
+	try {
+		return parseSteerAck(JSON.parse(readBoundedOwnedFile(filePath, MAX_CONTROL_RECORD_BYTES)));
+	} catch {
+		return undefined;
+	}
+}
+
 export function readSteerCapability(asyncDir: string, index: number): SteerCapability | undefined {
 	try {
-		return parseSteerCapability(JSON.parse(fs.readFileSync(steerCapabilityPath(asyncDir, index), "utf-8")));
+		return parseSteerCapability(
+			JSON.parse(readBoundedOwnedFile(steerCapabilityPath(asyncDir, index), MAX_CONTROL_RECORD_BYTES)),
+		);
 	} catch {
 		return undefined;
 	}
@@ -417,13 +457,242 @@ export function consumeSteerCapabilities(
 		.filter((name) => /^\d+\.json$/.test(name))
 		.sort()) {
 		try {
-			const capability = parseSteerCapability(JSON.parse(fsImpl.readFileSync(path.join(dir, entry), "utf-8")));
+			const target = path.join(dir, entry);
+			const text =
+				fsImpl === fs
+					? readBoundedOwnedFile(target, MAX_CONTROL_RECORD_BYTES)
+					: fsImpl.readFileSync(target, "utf-8");
+			const capability = parseSteerCapability(JSON.parse(text));
 			if (capability) capabilities.push(capability);
 		} catch {
 			// A partially written or malformed capability is ignored until a valid one arrives.
 		}
 	}
 	return capabilities;
+}
+
+/**
+ * Read a durable inbox record, then use a non-forcing unlink as the ownership
+ * claim. A transient read/unlink failure leaves the record for a later poll;
+ * concurrent consumers can both read it, but only the one whose unlink succeeds
+ * is allowed to invoke the callback.
+ */
+function consumeJsonRecord<T>(
+	target: string,
+	parse: (raw: unknown) => T | undefined,
+	fsImpl: Pick<typeof fs, "readFileSync" | "rmSync">,
+): T | undefined {
+	if (fsImpl === fs) {
+		try {
+			const snapshot = readBoundedOwnedFileSnapshot(target, MAX_CONTROL_RECORD_BYTES);
+			let parsed: T | undefined;
+			try {
+				parsed = parse(JSON.parse(snapshot.text));
+			} catch {
+				parsed = undefined;
+			}
+			return removeOwnedFileSnapshot(target, snapshot) === "removed" ? parsed : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+	let text: string;
+	try {
+		text = fsImpl.readFileSync(target, "utf-8");
+	} catch {
+		return undefined;
+	}
+	let parsed: T | undefined;
+	try {
+		parsed = parse(JSON.parse(text));
+	} catch {
+		parsed = undefined;
+	}
+	try {
+		fsImpl.rmSync(target);
+	} catch {
+		return undefined;
+	}
+	return parsed;
+}
+
+interface ClaimedControlRecord {
+	readonly claimedPath: string;
+	readonly originalName: string;
+}
+
+function parseClaimedControlRecord(
+	directory: string,
+	entry: string,
+):
+	| (ClaimedControlRecord & {
+			readonly ownerPid: number;
+			readonly ownerIdentity: string;
+			readonly consumerId: string;
+	  })
+	| undefined {
+	const separator = entry.lastIndexOf(CONTROL_INFLIGHT_SEPARATOR);
+	if (separator <= 0) return undefined;
+	const originalName = entry.slice(0, separator);
+	const metadata = entry.slice(separator + CONTROL_INFLIGHT_SEPARATOR.length).split(".");
+	if (metadata.length !== 3 || !/^\d+$/u.test(metadata[0] ?? "") || !/^[A-Za-z0-9_-]+$/u.test(metadata[1] ?? "")) {
+		return undefined;
+	}
+	let ownerIdentity: string;
+	try {
+		ownerIdentity = Buffer.from(metadata[1] ?? "", "base64url").toString("utf8");
+	} catch {
+		return undefined;
+	}
+	const ownerPid = Number(metadata[0]);
+	const consumerId = metadata[2] ?? "";
+	if (!Number.isSafeInteger(ownerPid) || ownerPid <= 0 || !ownerIdentity || !/^[a-f0-9-]{36}$/u.test(consumerId)) {
+		return undefined;
+	}
+	return { claimedPath: path.join(directory, entry), originalName, ownerPid, ownerIdentity, consumerId };
+}
+
+function controlClaimRecoverable(claim: ReturnType<typeof parseClaimedControlRecord>): boolean {
+	if (!claim || activeControlConsumers.has(claim.consumerId)) return false;
+	if (claim.ownerPid === process.pid && claim.ownerIdentity === "pid-only") return true;
+	const currentIdentity = readProcessStartIdentity(claim.ownerPid);
+	if (currentIdentity) return currentIdentity !== claim.ownerIdentity || claim.ownerPid === process.pid;
+	try {
+		process.kill(claim.ownerPid, 0);
+		return false;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "ESRCH";
+	}
+}
+
+function claimControlRecord(target: string, consumerId: string): ClaimedControlRecord | undefined {
+	const ownerIdentity = readProcessStartIdentity(process.pid) ?? "pid-only";
+	const originalName = path.basename(target);
+	const claimedPath = `${target}${CONTROL_INFLIGHT_SEPARATOR}${process.pid}.${Buffer.from(ownerIdentity).toString(
+		"base64url",
+	)}.${consumerId}`;
+	try {
+		fs.renameSync(target, claimedPath);
+		return { claimedPath, originalName };
+	} catch {
+		return undefined;
+	}
+}
+
+function processDurableControlRecords<T>(input: {
+	readonly directories: Array<{ readonly path: string; readonly accepts: (name: string) => boolean }>;
+	readonly parse: (raw: unknown) => T | undefined;
+	readonly callback: (value: T, complete: () => boolean) => void | "retain";
+	readonly kind: "interrupt" | "timeout" | "stop" | "steer" | "steer-ack";
+	readonly afterClaim?: (kind: string, claimedPath: string) => void;
+}): void {
+	const consumerId = randomUUID();
+	activeControlConsumers.add(consumerId);
+	try {
+		const candidates: ClaimedControlRecord[] = [];
+		for (const directory of input.directories) {
+			let entries: string[];
+			try {
+				entries = fs.readdirSync(directory.path).sort();
+			} catch {
+				continue;
+			}
+			for (const entry of entries) {
+				if (directory.accepts(entry)) {
+					const claimed = claimControlRecord(path.join(directory.path, entry), consumerId);
+					if (claimed) candidates.push(claimed);
+					continue;
+				}
+				const claimed = parseClaimedControlRecord(directory.path, entry);
+				if (claimed && directory.accepts(claimed.originalName) && controlClaimRecoverable(claimed)) {
+					candidates.push(claimed);
+				}
+			}
+		}
+		candidates.sort(
+			(left, right) =>
+				left.originalName.localeCompare(right.originalName) || left.claimedPath.localeCompare(right.claimedPath),
+		);
+		for (const candidate of candidates) {
+			let snapshot: OwnedFileSnapshot;
+			try {
+				snapshot = readBoundedOwnedFileSnapshot(candidate.claimedPath, MAX_CONTROL_RECORD_BYTES);
+			} catch {
+				continue;
+			}
+			let parsed: T | undefined;
+			try {
+				parsed = input.parse(JSON.parse(snapshot.text));
+			} catch {
+				parsed = undefined;
+			}
+			if (parsed === undefined) {
+				removeOwnedFileSnapshot(candidate.claimedPath, snapshot);
+				continue;
+			}
+			try {
+				input.afterClaim?.(input.kind, candidate.claimedPath);
+				const complete = (): boolean => removeOwnedFileSnapshot(candidate.claimedPath, snapshot) === "removed";
+				const disposition = input.callback(parsed, complete);
+				if (disposition !== "retain") complete();
+			} catch {
+				// The in-flight record remains durable. A later poll or replacement
+				// runner replays the idempotent request instead of silently losing it.
+			}
+		}
+	} finally {
+		activeControlConsumers.delete(consumerId);
+	}
+}
+
+function parseInterruptRequest(raw: unknown): InterruptRequest | undefined {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	const request = raw as Partial<InterruptRequest>;
+	return request.type === "interrupt" ? { ...request, type: "interrupt" } : undefined;
+}
+
+function parseTimeoutRequest(raw: unknown): TimeoutRequest | undefined {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	const request = raw as Partial<TimeoutRequest>;
+	return request.type === "timeout" ? { ...request, type: "timeout" } : undefined;
+}
+
+export function processSteerRequestsFromDir(
+	dir: string,
+	callback: (request: SteerRequest, complete: () => boolean) => void | "retain",
+	afterClaim?: (kind: string, claimedPath: string) => void,
+): void {
+	processDurableControlRecords({
+		directories: [{ path: dir, accepts: (name) => name.endsWith(".json") }],
+		parse: parseSteerRequest,
+		callback,
+		kind: "steer",
+		afterClaim,
+	});
+}
+
+export function processSteerAcks(
+	asyncDir: string,
+	callback: (ack: SteerAck) => void | "retain",
+	afterClaim?: (kind: string, claimedPath: string) => void,
+): void {
+	const root = path.join(controlInboxDir(asyncDir), STEER_ACKS_DIR);
+	let indexes: string[] = [];
+	try {
+		indexes = fs.readdirSync(root).filter((entry) => /^\d+$/u.test(entry));
+	} catch {
+		return;
+	}
+	processDurableControlRecords({
+		directories: indexes.map((index) => ({
+			path: path.join(root, index),
+			accepts: (name: string) => name.endsWith(".json"),
+		})),
+		parse: parseSteerAck,
+		callback,
+		kind: "steer-ack",
+		afterClaim,
+	});
 }
 
 export function consumeSteerAcks(
@@ -452,17 +721,7 @@ export function consumeSteerAcks(
 		}
 		for (const entry of entries) {
 			const target = path.join(dir, entry);
-			let ack: SteerAck | undefined;
-			try {
-				ack = parseSteerAck(JSON.parse(fsImpl.readFileSync(target, "utf-8")));
-			} catch {
-				ack = undefined;
-			}
-			try {
-				fsImpl.rmSync(target, { force: true });
-			} catch {
-				continue;
-			}
+			const ack = consumeJsonRecord(target, parseSteerAck, fsImpl);
 			if (ack) acks.push(ack);
 		}
 	}
@@ -502,18 +761,7 @@ export function consumeSteerRequestsFromDir(
 	const requests: SteerRequest[] = [];
 	for (const entry of entries) {
 		const requestPath = path.join(dir, entry);
-		let parsed: SteerRequest | undefined;
-		try {
-			parsed = parseSteerRequest(JSON.parse(fsImpl.readFileSync(requestPath, "utf-8")));
-		} catch {
-			parsed = undefined;
-		}
-		try {
-			fsImpl.rmSync(requestPath, { recursive: true });
-		} catch {
-			// Already removed by a concurrent check — do not execute it twice.
-			continue;
-		}
+		const parsed = consumeJsonRecord(requestPath, parseSteerRequest, fsImpl);
 		if (parsed) requests.push(parsed);
 	}
 	return requests.sort((left, right) => left.ts - right.ts || left.id.localeCompare(right.id));
@@ -537,9 +785,10 @@ export function consumeInterruptRequest(
 	const requestPath = interruptRequestPath(asyncDir);
 	if (!fsImpl.existsSync(requestPath)) return false;
 	try {
-		fsImpl.rmSync(requestPath, { force: true, recursive: true });
+		fsImpl.rmSync(requestPath);
 	} catch {
-		// Already removed by a concurrent check — still counts as consumed.
+		// A concurrent consumer or transient I/O failure owns the retry.
+		return false;
 	}
 	return true;
 }
@@ -551,9 +800,9 @@ export function consumeTimeoutRequest(
 	const requestPath = timeoutRequestPath(asyncDir);
 	if (!fsImpl.existsSync(requestPath)) return false;
 	try {
-		fsImpl.rmSync(requestPath, { force: true, recursive: true });
+		fsImpl.rmSync(requestPath);
 	} catch {
-		// Already removed by a concurrent check — still counts as consumed.
+		return false;
 	}
 	return true;
 }
@@ -587,19 +836,7 @@ function consumeStopFile(
 	fsImpl: Pick<typeof fs, "existsSync" | "readFileSync" | "rmSync">,
 ): StopRequest | undefined {
 	if (!fsImpl.existsSync(requestPath)) return undefined;
-	let request: StopRequest | undefined;
-	try {
-		request = parseStopRequest(JSON.parse(fsImpl.readFileSync(requestPath, "utf8")));
-	} catch {
-		request = undefined;
-	}
-	try {
-		fsImpl.rmSync(requestPath, { force: true });
-	} catch {
-		// Another watcher consumed it first; never execute the same request twice.
-		return undefined;
-	}
-	return request;
+	return consumeJsonRecord(requestPath, parseStopRequest, fsImpl);
 }
 
 /** Drain queued stop requests plus a valid legacy `stop.json`, ignoring malformed input. */
@@ -629,6 +866,40 @@ export function consumeStopRequests(
 	return requests.sort(
 		(left, right) => (left.ts ?? 0) - (right.ts ?? 0) || (left.id ?? "").localeCompare(right.id ?? ""),
 	);
+}
+
+function processStopRequests(
+	asyncDir: string,
+	callback: (request: StopRequest) => void,
+	afterClaim?: (kind: string, claimedPath: string) => void,
+): void {
+	processDurableControlRecords({
+		directories: [
+			{ path: stopRequestsDir(asyncDir), accepts: (name) => name.endsWith(".json") },
+			{ path: controlInboxDir(asyncDir), accepts: (name) => name === path.basename(stopRequestPath(asyncDir)) },
+		],
+		parse: parseStopRequest,
+		callback,
+		kind: "stop",
+		afterClaim,
+	});
+}
+
+function processSingletonRequest<T>(input: {
+	readonly target: string;
+	readonly parse: (raw: unknown) => T | undefined;
+	readonly callback: (request: T) => void;
+	readonly kind: "interrupt" | "timeout";
+	readonly afterClaim?: (kind: string, claimedPath: string) => void;
+}): void {
+	const name = path.basename(input.target);
+	processDurableControlRecords({
+		directories: [{ path: path.dirname(input.target), accepts: (entry) => entry === name }],
+		parse: input.parse,
+		callback: input.callback,
+		kind: input.kind,
+		afterClaim: input.afterClaim,
+	});
 }
 
 /**
@@ -711,10 +982,12 @@ export function watchAsyncControlInbox(
 		onStop?: (request: StopRequest) => void;
 		onSteer?: (request: SteerRequest) => void;
 		onSteerCapability?: (capability: SteerCapability) => void;
-		onSteerAck?: (ack: SteerAck) => void;
+		onSteerAck?: (ack: SteerAck) => void | "retain";
 		pollIntervalMs?: number;
 		fs?: ControlChannelFs;
 		timers?: ControlChannelTimers;
+		/** Deterministic crash-window seam used by process-level recovery tests. */
+		afterControlClaim?: (kind: string, claimedPath: string) => void;
 	},
 ): () => void {
 	const fsImpl = opts.fs ?? fs;
@@ -727,15 +1000,55 @@ export function watchAsyncControlInbox(
 	}
 
 	let disposed = false;
+	const invoke = <T>(callback: ((value: T) => void) | undefined, value: T): void => {
+		try {
+			callback?.(value);
+		} catch {
+			// One control observer must not prevent later durable requests from being consumed.
+		}
+	};
+	const invokeNoArg = (callback: (() => void) | undefined): void => {
+		try {
+			callback?.();
+		} catch {
+			// Continue draining the remaining durable control requests.
+		}
+	};
 	const check = (): void => {
 		if (disposed) return;
 		try {
-			for (const stop of consumeStopRequests(asyncDir, fsImpl)) opts.onStop?.(stop);
-			if (consumeTimeoutRequest(asyncDir, fsImpl)) opts.onTimeout?.();
-			if (consumeInterruptRequest(asyncDir, fsImpl)) opts.onInterrupt();
-			for (const request of consumeSteerRequests(asyncDir, fsImpl)) opts.onSteer?.(request);
-			for (const capability of consumeSteerCapabilities(asyncDir, fsImpl)) opts.onSteerCapability?.(capability);
-			for (const ack of consumeSteerAcks(asyncDir, fsImpl)) opts.onSteerAck?.(ack);
+			if (fsImpl === fs) {
+				processStopRequests(asyncDir, (stop) => opts.onStop?.(stop), opts.afterControlClaim);
+				processSingletonRequest({
+					target: timeoutRequestPath(asyncDir),
+					parse: parseTimeoutRequest,
+					callback: () => opts.onTimeout?.(),
+					kind: "timeout",
+					afterClaim: opts.afterControlClaim,
+				});
+				processSingletonRequest({
+					target: interruptRequestPath(asyncDir),
+					parse: parseInterruptRequest,
+					callback: () => opts.onInterrupt(),
+					kind: "interrupt",
+					afterClaim: opts.afterControlClaim,
+				});
+				processSteerRequestsFromDir(
+					steerRequestsDir(asyncDir),
+					(request) => opts.onSteer?.(request),
+					opts.afterControlClaim,
+				);
+			} else {
+				for (const stop of consumeStopRequests(asyncDir, fsImpl)) invoke(opts.onStop, stop);
+				if (consumeTimeoutRequest(asyncDir, fsImpl)) invokeNoArg(opts.onTimeout);
+				if (consumeInterruptRequest(asyncDir, fsImpl)) invokeNoArg(opts.onInterrupt);
+				for (const request of consumeSteerRequests(asyncDir, fsImpl)) invoke(opts.onSteer, request);
+			}
+			for (const capability of consumeSteerCapabilities(asyncDir, fsImpl)) {
+				invoke(opts.onSteerCapability, capability);
+			}
+			if (fsImpl === fs) processSteerAcks(asyncDir, (ack) => opts.onSteerAck?.(ack), opts.afterControlClaim);
+			else for (const ack of consumeSteerAcks(asyncDir, fsImpl)) invoke(opts.onSteerAck, ack);
 		} catch {
 			// Never let inbox errors crash the runner.
 		}

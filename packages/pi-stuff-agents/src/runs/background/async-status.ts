@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { formatDuration, formatModelThinking, formatTokens, shortenPath } from "../../shared/formatters.ts";
+import { type SessionCompatibilityScope, sessionArtifactMatches } from "../../shared/session-identity.ts";
 import { formatActivityLabel, formatParallelOutcome } from "../../shared/status-format.ts";
 import type {
 	ActivityState,
@@ -8,6 +9,7 @@ import type {
 	AsyncParallelGroupStatus,
 	AsyncStatus,
 	CostSummary,
+	NestedRouteInfo,
 	NestedRunSummary,
 	SteeringStatus,
 	SubagentRunMode,
@@ -27,6 +29,9 @@ import {
 	buildNestedRouteIndex,
 	type NestedRoute,
 	projectNestedEvents,
+	readNestedRegistry,
+	resolvePersistedNestedRoute,
+	sanitizeSummary,
 } from "../shared/nested-events.ts";
 import { formatNestedRunStatusLines } from "../shared/nested-render.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
@@ -110,6 +115,8 @@ export interface AsyncRunSummary {
 	currentStep?: number;
 	parallelGroups?: AsyncParallelGroupStatus[];
 	steps: AsyncRunStepSummary[];
+	/** Exact validated nested route retained across Host reload. */
+	nestedRoute?: NestedRouteInfo;
 	sessionDir?: string;
 	outputFile?: string;
 	totalTokens?: TokenUsage;
@@ -125,12 +132,15 @@ export interface AsyncRunSummary {
 interface AsyncRunListOptions {
 	states?: Array<AsyncRunSummary["state"]>;
 	sessionId?: string;
+	sessionScope?: SessionCompatibilityScope;
 	limit?: number;
 	resultsDir?: string;
 	kill?: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 	now?: () => number;
 	reconcile?: boolean;
 	runId?: string;
+	/** Order lightweight status candidates newest-first and stop after limit matches. */
+	preselectRecent?: boolean;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -147,15 +157,7 @@ function isNotFoundError(error: unknown): boolean {
 }
 
 function isAsyncRunDir(root: string, entry: string): boolean {
-	const entryPath = path.join(root, entry);
-	try {
-		return fs.statSync(entryPath).isDirectory();
-	} catch (error) {
-		if (isNotFoundError(error)) return false;
-		throw new Error(`Failed to inspect async run path '${entryPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
-	}
+	return resolveTargetedAsyncRun(root, entry).kind === "exact";
 }
 
 type TargetedAsyncRunResolution = { kind: "exact"; id: string } | { kind: "scan" } | { kind: "reject" };
@@ -239,6 +241,7 @@ function statusToSummary(
 	status: AsyncStatus & { cwd?: string },
 	nestedWarnings: string[] = [],
 	nestedRoute?: NestedRoute,
+	projectNested = true,
 ): AsyncRunSummary {
 	if (status.sessionId !== undefined && typeof status.sessionId !== "string") {
 		throw new Error(`Invalid async status '${path.join(asyncDir, "status.json")}': sessionId must be a string.`);
@@ -257,11 +260,13 @@ function statusToSummary(
 	const steps = status.steps ?? [];
 	const parallelGroups = normalizeParallelGroups(status.parallelGroups, steps.length);
 	let nestedChildren: NestedRunSummary[] = [];
+	let nestedProjectionAvailable = false;
 	if (nestedWarnings.length === 0 && nestedRoute) {
 		try {
 			// The route is resolved by the caller via buildNestedRouteIndex, so this
 			// avoids a fresh scan of the nested-events directory per run.
-			nestedChildren = projectNestedEvents(nestedRoute)?.children ?? [];
+			nestedChildren = (projectNested ? projectNestedEvents(nestedRoute) : readNestedRegistry(nestedRoute)).children;
+			nestedProjectionAvailable = true;
 		} catch (error) {
 			nestedWarnings.push(`Nested status unavailable: ${getErrorMessage(error)}`);
 		}
@@ -299,6 +304,7 @@ function statusToSummary(
 			...(step.attemptedModels ? { attemptedModels: step.attemptedModels } : {}),
 			...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
 			...(step.transcriptPath ? { transcriptPath: step.transcriptPath } : {}),
+			...(step.transcriptError ? { transcriptError: step.transcriptError } : {}),
 			...(step.error ? { error: step.error } : {}),
 			...(step.timedOut !== undefined ? { timedOut: step.timedOut } : {}),
 			...(step.stopped !== undefined ? { stopped: step.stopped } : {}),
@@ -322,10 +328,23 @@ function statusToSummary(
 				: {}),
 			...(step.capabilityCeiling ? { capabilityCeiling: step.capabilityCeiling } : {}),
 			...(step.capabilityAudit ? { capabilityAudit: step.capabilityAudit } : {}),
-			...(step.children?.length ? { children: step.children } : {}),
+			...(step.children?.length
+				? {
+						children: step.children
+							.map((child) => sanitizeSummary(child))
+							.filter((child): child is NestedRunSummary => child !== undefined),
+					}
+				: {}),
 		};
 	});
-	attachRootChildrenToSteps(status.runId || path.basename(asyncDir), summarizedSteps, nestedChildren);
+	if (nestedProjectionAvailable) {
+		attachRootChildrenToSteps(status.runId || path.basename(asyncDir), summarizedSteps, nestedChildren);
+	} else {
+		// Terminal status already contains a bounded nested projection. Preserve it
+		// when the route has been reclaimed or is temporarily unreadable so cold
+		// `/agents` inspection does not erase known descendants.
+		nestedChildren = summarizedSteps.flatMap((step) => step.children ?? []);
+	}
 	return {
 		id: status.runId || path.basename(asyncDir),
 		asyncDir,
@@ -358,6 +377,7 @@ function statusToSummary(
 		currentStep: status.currentStep,
 		...(parallelGroups.length ? { parallelGroups } : {}),
 		steps: summarizedSteps,
+		...(nestedRoute ? { nestedRoute } : {}),
 		...(nestedChildren.length ? { nestedChildren } : {}),
 		...(nestedWarnings.length ? { nestedWarnings } : {}),
 		...(processTerminal ? { processTerminal } : {}),
@@ -403,11 +423,19 @@ function sortRuns(runs: AsyncRunSummary[]): AsyncRunSummary[] {
 }
 
 export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions = {}): AsyncRunSummary[] {
+	const matchesSession = (status: AsyncStatus): boolean =>
+		options.sessionScope
+			? sessionArtifactMatches(options.sessionScope, status.sessionId, status.runId)
+			: !options.sessionId || status.sessionId === options.sessionId;
 	let entries: string[];
 	try {
 		if (options.runId !== undefined) {
 			const runId = options.runId;
-			const resolution = resolveTargetedAsyncRun(asyncDirRoot, runId, options.sessionId);
+			const resolution = resolveTargetedAsyncRun(
+				asyncDirRoot,
+				runId,
+				options.sessionScope ? undefined : options.sessionId,
+			);
 			entries =
 				resolution.kind === "exact"
 					? [resolution.id]
@@ -417,7 +445,11 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 								.filter(
 									(entry) =>
 										(entry === runId || entry.startsWith(runId)) &&
-										resolveTargetedAsyncRun(asyncDirRoot, entry, options.sessionId).kind === "exact",
+										resolveTargetedAsyncRun(
+											asyncDirRoot,
+											entry,
+											options.sessionScope ? undefined : options.sessionId,
+										).kind === "exact",
 								)
 						: [];
 		} else {
@@ -428,6 +460,22 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 		throw new Error(`Failed to list async runs in '${asyncDirRoot}': ${getErrorMessage(error)}`, {
 			cause: error instanceof Error ? error : undefined,
 		});
+	}
+	if (options.preselectRecent) {
+		const statusMtimes = new Map<string, number>();
+		for (const entry of entries) {
+			try {
+				const stat = fs.lstatSync(path.join(asyncDirRoot, entry, "status.json"));
+				statusMtimes.set(entry, stat.isFile() && !stat.isSymbolicLink() ? stat.mtimeMs : Number.NEGATIVE_INFINITY);
+			} catch {
+				statusMtimes.set(entry, Number.NEGATIVE_INFINITY);
+			}
+		}
+		entries.sort(
+			(left, right) =>
+				(statusMtimes.get(right) ?? Number.NEGATIVE_INFINITY) -
+					(statusMtimes.get(left) ?? Number.NEGATIVE_INFINITY) || left.localeCompare(right),
+		);
 	}
 
 	const allowedStates = options.states ? new Set(options.states) : undefined;
@@ -444,24 +492,44 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 	};
 	for (const entry of entries) {
 		const asyncDir = path.join(asyncDirRoot, entry);
-		const reconciliation =
-			options.reconcile === false
-				? undefined
-				: reconcileAsyncRun(asyncDir, { resultsDir: options.resultsDir, kill: options.kill, now: options.now });
-		const status = (reconciliation?.status ?? readStatus(asyncDir)) as (AsyncStatus & { cwd?: string }) | null;
-		if (!status) continue;
-		// Filter before the nested-route lookup: the lookup builds an index over
-		// the nested-events directory, so deferring it for filtered-out runs keeps
-		// restoration at load from scanning that directory when no active runs
-		// match.
-		if (allowedStates && !allowedStates.has(status.state)) continue;
-		if (options.sessionId && status.sessionId !== options.sessionId) continue;
-		const nestedWarnings: string[] = [];
-		let nestedRoute: NestedRoute | undefined;
-		if (options.reconcile !== false) {
+		try {
+			const preselectedStatus = options.preselectRecent ? readStatus(asyncDir) : null;
+			if (preselectedStatus) {
+				if (allowedStates && !allowedStates.has(preselectedStatus.state)) continue;
+				if (!matchesSession(preselectedStatus)) continue;
+			}
+			const reconciliation =
+				options.reconcile === false
+					? undefined
+					: reconcileAsyncRun(asyncDir, {
+							resultsDir: options.resultsDir,
+							kill: options.kill,
+							now: options.now,
+						});
+			const status = (reconciliation?.status ?? preselectedStatus ?? readStatus(asyncDir)) as
+				| (AsyncStatus & {
+						cwd?: string;
+				  })
+				| null;
+			if (!status) continue;
+			// Filter before the nested-route lookup: the lookup builds an index over
+			// the nested-events directory, so deferring it for filtered-out runs keeps
+			// restoration at load from scanning that directory when no active runs
+			// match.
+			if (allowedStates && !allowedStates.has(status.state)) continue;
+			if (!matchesSession(status)) continue;
+			const nestedWarnings: string[] = [];
+			let nestedRoute: NestedRoute | undefined;
 			try {
-				nestedRoute = resolveNestedRoute(status.runId || path.basename(asyncDir));
-				if (nestedRoute)
+				if (status.nestedRoute !== undefined) {
+					nestedRoute = resolvePersistedNestedRoute(status.nestedRoute, status.runId);
+					if (!nestedRoute) nestedWarnings.push("Persisted nested route is unavailable or no longer trusted.");
+				} else {
+					// Compatibility path for status files created before exact route
+					// persistence. New statuses never select an arbitrary same-root route.
+					nestedRoute = resolveNestedRoute(status.runId || path.basename(asyncDir));
+				}
+				if (nestedRoute && options.reconcile !== false)
 					reconcileNestedAsyncDescendants(nestedRoute, {
 						resultsDir: options.resultsDir,
 						kill: options.kill,
@@ -470,9 +538,15 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 			} catch (error) {
 				nestedWarnings.push(`Nested status unavailable: ${getErrorMessage(error)}`);
 			}
+			const summary = statusToSummary(asyncDir, status, nestedWarnings, nestedRoute, options.reconcile !== false);
+			runs.push(options.sessionScope ? { ...summary, sessionId: options.sessionScope.sessionId } : summary);
+			if (options.preselectRecent && options.limit !== undefined && runs.length >= options.limit) break;
+		} catch (error) {
+			// One transiently unreadable or corrupt run must not hide every healthy
+			// sibling during session restoration. The result watcher remains active
+			// and a later scan can recover this run once its durable state is readable.
+			console.error(`Failed to inspect async run '${asyncDir}'; leaving it untouched for retry:`, error);
 		}
-		const summary = statusToSummary(asyncDir, status, nestedWarnings, nestedRoute);
-		runs.push(summary);
 	}
 
 	const sorted = sortRuns(runs);

@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { MAX_BACKGROUND_TASKS } from "../runs/shared/parallel-utils.ts";
 
 const SkillSelection = Type.Unsafe({
 	anyOf: [
@@ -11,10 +12,22 @@ const SkillSelection = Type.Unsafe({
 
 const TurnBudget = Type.Object(
 	{
-		maxTurns: Type.Integer({ minimum: 1 }),
-		graceTurns: Type.Optional(Type.Integer({ minimum: 0 })),
+		maxTurns: Type.Integer({
+			minimum: 1,
+			description: "Soft threshold at which wrap-up is requested.",
+		}),
+		graceTurns: Type.Optional(
+			Type.Integer({
+				minimum: 0,
+				description: "Additional wrap-up turns allowed after the soft threshold and before forced termination.",
+			}),
+		),
 	},
-	{ additionalProperties: false },
+	{
+		additionalProperties: false,
+		description:
+			"Optional expert bounded-execution control. Omit for ordinary delegated work unless the user or project explicitly requires a turn bound; forced termination begins only after maxTurns plus graceTurns.",
+	},
 );
 
 const ToolBudget = Type.Object(
@@ -67,6 +80,7 @@ export const SubagentParams = Type.Object(
 		tasks: Type.Optional(
 			Type.Array(AgentTask, {
 				minItems: 1,
+				maxItems: MAX_BACKGROUND_TASKS,
 				description:
 					"Parallel launch only: independent Agent tasks to run concurrently. Do not combine with agent or task.",
 			}),
@@ -74,7 +88,7 @@ export const SubagentParams = Type.Object(
 		foreground: Type.Optional(
 			Type.Boolean({
 				description:
-					"Omit for the default background launch. Set true only when the result is required before continuing; never send background.",
+					"Omit foreground for the default background launch. Set true only when the result is required before continuing; do not invent or pass a background field.",
 			}),
 		),
 		context: Type.Optional(
@@ -157,6 +171,60 @@ export const SubagentParams = Type.Object(
 					turnBudget: false,
 					toolBudget: false,
 				},
+			},
+		],
+	},
+);
+
+/**
+ * Nested fanout children are launch-only and cannot detach work or manage runs.
+ *
+ * Keep this schema explicit. Deriving it with `Type.Omit` drops the root
+ * `oneOf`/`additionalProperties` contract and can accidentally expose future
+ * management fields added to `SubagentParams`.
+ */
+export const FanoutChildSubagentParams = Type.Object(
+	{
+		agent: Type.Optional(Type.String({ minLength: 1, description: "Agent definition name for one delegated task." })),
+		description: Type.Optional(
+			Type.String({
+				minLength: 1,
+				description: "Short 3–5 word UI description; keep paths and execution detail in task.",
+			}),
+		),
+		task: Type.Optional(
+			Type.String({ minLength: 1, description: "Concrete task for a single launch; use tasks for parallel work." }),
+		),
+		tasks: Type.Optional(
+			Type.Array(AgentTask, {
+				minItems: 1,
+				maxItems: MAX_BACKGROUND_TASKS,
+				description: "Parallel launch only: independent Agent tasks to run concurrently.",
+			}),
+		),
+		context: Type.Optional(Type.String({ enum: ["fresh", "fork"] })),
+		isolation: Type.Optional(Type.String({ enum: ["shared", "worktree"] })),
+		cwd: Type.Optional(Type.String({ minLength: 1 })),
+		model: Type.Optional(Type.String({ minLength: 1 })),
+		thinking: Type.Optional(Type.String({ minLength: 1 })),
+		skill: Type.Optional(SkillSelection),
+		timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
+		turnBudget: Type.Optional(TurnBudget),
+		toolBudget: Type.Optional(ToolBudget),
+	},
+	{
+		additionalProperties: false,
+		description: "Launch one or more nested Agents and wait for every result before returning to the owning Agent.",
+		oneOf: [
+			{
+				title: "Single nested Agent launch: agent plus task",
+				required: ["agent", "task"],
+				properties: { tasks: false },
+			},
+			{
+				title: "Parallel nested Agent launch: tasks",
+				required: ["tasks"],
+				properties: { agent: false, description: false, task: false },
 			},
 		],
 	},

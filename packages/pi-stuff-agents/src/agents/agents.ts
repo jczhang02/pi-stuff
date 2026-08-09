@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../runs/shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
 import { validateToolBudgetConfig } from "../runs/shared/tool-budget.ts";
 import { resolveTurnBudgetConfig } from "../runs/shared/turn-budget.ts";
@@ -137,6 +138,7 @@ function loadAgent(filePath: string, source: AgentSource): AgentConfig | undefin
 		const rawTools = parseFrontmatterList(frontmatter.tools);
 		const { tools, mcpDirectTools } = splitTools(rawTools);
 		const fallbackModels = nonEmpty(parseFrontmatterList(frontmatter.fallbackModels));
+		if (fallbackModels && fallbackModels.length >= MAX_MODEL_CANDIDATES_PER_CHILD) return undefined;
 		const skills = nonEmpty(parseFrontmatterList(frontmatter.skill ?? frontmatter.skills));
 		const skillPath = nonEmpty(parseFrontmatterList(frontmatter.skillPath));
 		const extensions = parseFrontmatterList(frontmatter.extensions);

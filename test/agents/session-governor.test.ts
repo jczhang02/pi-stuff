@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import * as nodeFs from "node:fs/promises";
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,8 +8,10 @@ import {
 	DEFAULT_SESSION_GOVERNOR_LIMITS,
 	SessionAgentGovernor,
 	type SessionGovernorBatchAcquireResult,
+	type SessionGovernorFileSystem,
 	SessionGovernorStateError,
 } from "../../packages/pi-stuff-agents/src/runtime/session-governor.js";
+import { resolveSessionGovernorRoot } from "../../packages/pi-stuff-agents/src/shared/types.js";
 
 const roots: string[] = [];
 
@@ -39,7 +42,24 @@ function requireBatchLeases(result: SessionGovernorBatchAcquireResult): readonly
 	return result.leases;
 }
 
+function ioError(message: string): NodeJS.ErrnoException {
+	return Object.assign(new Error(message), { code: "EIO" });
+}
+
+function governorFs(overrides: Partial<SessionGovernorFileSystem>): SessionGovernorFileSystem {
+	return { ...nodeFs, ...overrides };
+}
+
 describe("session-wide Agent resource governor", () => {
+	test("ignores a relative XDG_STATE_HOME instead of disabling the governor", () => {
+		expect(resolveSessionGovernorRoot({ XDG_STATE_HOME: "relative/state" }, "/workspace/example-user")).toBe(
+			"/workspace/example-user/.local/state/pi-stuff/agents/session-governor",
+		);
+		expect(resolveSessionGovernorRoot({ XDG_STATE_HOME: "/var/lib/test-state" }, "/workspace/example-user")).toBe(
+			"/var/lib/test-state/pi-stuff/agents/session-governor",
+		);
+	});
+
 	test("uses finite 3/20/200 defaults and rejects zero, fractional, or unlimited configuration", async () => {
 		const rootDir = await storageRoot("defaults");
 		const governor = new SessionAgentGovernor({ rootDir, sessionId: "session-defaults" });
@@ -103,7 +123,7 @@ describe("session-wide Agent resource governor", () => {
 		const sessionDir = join(rootDir, sessionEntries[0] ?? "missing");
 		expect((await stat(sessionDir)).mode & 0o777).toBe(0o700);
 		expect((await stat(join(sessionDir, "ledger.json"))).mode & 0o777).toBe(0o600);
-		expect(await readdir(sessionDir)).toEqual(["ledger.json"]);
+		expect((await readdir(sessionDir)).sort()).toEqual(["ledger.json", "ledger.lock"]);
 
 		expect(await reloaded.release(lease)).toMatchObject({ released: true, snapshot: { total: 1, running: 0 } });
 		expect(await reloaded.release(lease)).toMatchObject({
@@ -116,6 +136,17 @@ describe("session-wide Agent resource governor", () => {
 			leases: unknown[];
 		};
 		expect(persisted).toMatchObject({ total: 1, leases: [] });
+	});
+
+	test("rejects an oversized durable ledger before reading or parsing it", async () => {
+		const rootDir = await storageRoot("oversized-ledger");
+		const sessionId = "oversized-ledger-session";
+		await new SessionAgentGovernor({ rootDir, sessionId }).snapshot();
+		const pathToLedger = await ledgerPath(rootDir);
+		await writeFile(pathToLedger, "x".repeat(4 * 1024 * 1024 + 1), { mode: 0o600 });
+		const governor = new SessionAgentGovernor({ rootDir, sessionId });
+
+		await expect(governor.snapshot()).rejects.toThrow("exceeds the 4194304-byte safety limit");
 	});
 
 	test("persists explicit spawn runtime mappings and resolves the current lease", async () => {
@@ -614,5 +645,97 @@ describe("session-wide Agent resource governor", () => {
 		const root = new SessionAgentGovernor({ rootDir, sessionId: "owner-session" });
 		await root.snapshot();
 		await expect(child.snapshot()).rejects.toThrow("is not registered");
+	});
+
+	test("returns a committed reservation when post-rename ledger hardening fails", async () => {
+		const rootDir = await storageRoot("post-commit-chmod");
+		let injected = false;
+		const governor = new SessionAgentGovernor({
+			rootDir,
+			sessionId: "post-commit-chmod-session",
+			fs: governorFs({
+				chmod: async (target, mode) => {
+					if (!injected && String(target).endsWith("/ledger.json")) {
+						injected = true;
+						throw ioError("injected post-commit chmod failure");
+					}
+					await nodeFs.chmod(target, mode);
+				},
+			}),
+		});
+
+		const acquired = await governor.acquireSpawn({ logicalAgentId: "committed-agent", pid: 12_001 });
+		expect(acquired).toMatchObject({ ok: true, snapshot: { total: 1, running: 1 } });
+		expect(injected).toBe(true);
+		expect(
+			await new SessionAgentGovernor({ rootDir, sessionId: "post-commit-chmod-session" }).snapshot(),
+		).toMatchObject({ total: 1, running: 1, leases: [{ logicalAgentId: "committed-agent" }] });
+	});
+
+	test("does not turn best-effort temporary-ledger cleanup into a false reservation failure", async () => {
+		const rootDir = await storageRoot("temp-cleanup");
+		let injected = false;
+		const governor = new SessionAgentGovernor({
+			rootDir,
+			sessionId: "temp-cleanup-session",
+			fs: governorFs({
+				rm: async (target, options) => {
+					if (!injected && String(target).includes("/.ledger.") && String(target).endsWith(".tmp")) {
+						injected = true;
+						throw ioError("injected temporary cleanup failure");
+					}
+					await nodeFs.rm(target, options);
+				},
+			}),
+		});
+
+		const acquired = await governor.acquireSpawn({ logicalAgentId: "cleanup-agent", pid: 12_011 });
+		expect(acquired).toMatchObject({ ok: true, snapshot: { total: 1, running: 1 } });
+		expect(injected).toBe(true);
+		expect(await readFile(await ledgerPath(rootDir), "utf8")).toContain('"logicalAgentId": "cleanup-agent"');
+	});
+
+	test("keeps a stable kernel lock inode without making lock-file cleanup part of commit", async () => {
+		const rootDir = await storageRoot("release-lock-cleanup");
+		const governor = new SessionAgentGovernor({
+			rootDir,
+			sessionId: "release-lock-cleanup-session",
+		});
+
+		const acquired = await governor.acquireSpawn({ logicalAgentId: "unlock-agent", pid: 12_021 });
+		expect(acquired).toMatchObject({ ok: true, snapshot: { total: 1, running: 1 } });
+		expect(await readFile(await ledgerPath(rootDir), "utf8")).toContain('"logicalAgentId": "unlock-agent"');
+		const [sessionDirectory] = await readdir(rootDir);
+		if (!sessionDirectory) throw new Error("Expected a session governor directory");
+		expect((await stat(join(rootDir, sessionDirectory, "ledger.lock"))).isFile()).toBe(true);
+		expect(
+			await new SessionAgentGovernor({ rootDir, sessionId: "release-lock-cleanup-session" }).snapshot(),
+		).toMatchObject({ total: 1, running: 1 });
+	});
+
+	test("fails closed when the stable governor lock path is replaced by a directory", async () => {
+		const rootDir = await storageRoot("incomplete-lock");
+		const sessionId = "incomplete-lock-session";
+		await new SessionAgentGovernor({ rootDir, sessionId }).snapshot();
+		const [sessionDirectory] = await readdir(rootDir);
+		if (!sessionDirectory) throw new Error("Expected a session governor directory");
+		const lockPath = join(rootDir, sessionDirectory, "ledger.lock");
+		await rm(lockPath);
+		await nodeFs.mkdir(lockPath, { mode: 0o700 });
+		await expect(new SessionAgentGovernor({ rootDir, sessionId }).snapshot()).rejects.toThrow("regular file");
+	});
+
+	test("ignores stale diagnostic bytes because kernel ownership is the only lock authority", async () => {
+		const rootDir = await storageRoot("stale-diagnostic-lock");
+		const sessionId = "stale-diagnostic-lock-session";
+		await new SessionAgentGovernor({ rootDir, sessionId }).snapshot();
+		const [sessionDirectory] = await readdir(rootDir);
+		if (!sessionDirectory) throw new Error("Expected a session governor directory");
+		const lockPath = join(rootDir, sessionDirectory, "ledger.lock");
+		await writeFile(lockPath, JSON.stringify({ token: "abandoned", pid: 44_001, acquiredAtMs: 0 }), {
+			mode: 0o600,
+		});
+		expect(await new SessionAgentGovernor({ rootDir, sessionId }).snapshot()).toMatchObject({ total: 0, running: 0 });
+		expect((await readdir(join(rootDir, sessionDirectory))).sort()).toEqual(["ledger.json", "ledger.lock"]);
 	});
 });

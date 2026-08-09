@@ -25,6 +25,7 @@ function row(overrides: Partial<AgentRow>): AgentRow {
 		elapsedMs: 100,
 		key: "run:0",
 		name: "worker",
+		nestedAgents: [],
 		nestedCount: 0,
 		partialResult: null,
 		runId: "run",

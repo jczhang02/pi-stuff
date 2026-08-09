@@ -25,8 +25,10 @@ grammar as Host tools. Full Agent inspection and control remains in `/agents`.
   made to name legacy work.
 - Independent tasks may run concurrently. The session-wide defaults are 20 running Agents, 200 total launches, and a
   maximum nesting depth of three.
-- Each Agent has a stable identity, its own transcript, acknowledged steering, independent stop, and safe resume when
-  its terminal state permits it.
+- Each Agent has a stable identity, its own transcript, durable acknowledged steering, independent stop, and safe
+  resume when its terminal state permits it. Steering recovery is deliberately at-least-once: if a child accepts input
+  immediately before a crash prevents its acknowledgement from becoming durable, recovery may replay that request
+  instead of silently declaring it delivered.
 - Child Agents automatically reuse the exact standalone Pi Host that launched the session; no separate child-binary
   setting is required.
 - Background completion renders a compact `Agent finished/failed/stopped · … · inspect with /agents` session entry.

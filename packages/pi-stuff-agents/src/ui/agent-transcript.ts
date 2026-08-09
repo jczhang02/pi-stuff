@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { readStatus } from "../shared/utils.ts";
 import type { AgentTranscriptReader, AgentTranscriptRequest } from "./agent-dialog.ts";
 
 const READ_BYTE_MULTIPLIER = 4;
@@ -345,7 +346,16 @@ function jsonlTranscript(source: string, sourceTruncated: boolean): string {
 }
 
 function transcriptCandidate(request: AgentTranscriptRequest): string | null {
-	return request.row.transcriptPath ?? request.row.savedOutputPath ?? request.row.sessionFile;
+	const direct = request.row.transcriptPath ?? request.row.savedOutputPath ?? request.row.sessionFile;
+	if (direct) return direct;
+	if (!request.row.asyncDir || request.row.childIndex === undefined) return null;
+	try {
+		const status = readStatus(request.row.asyncDir);
+		const step = status?.steps?.[request.row.childIndex];
+		return step?.transcriptPath ?? step?.sessionFile ?? null;
+	} catch {
+		return null;
+	}
 }
 
 /** Bounded, no-follow transcript reader for the shared Agent Command Dialog. */

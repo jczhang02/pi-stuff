@@ -106,7 +106,6 @@ export function toEngineParams(params: PublicAgentParams): SubagentParamsLike {
 					agent: params.agent,
 					...(params.description ? { description: params.description } : {}),
 					task: params.task,
-					...(params.cwd ? { cwd: params.cwd } : {}),
 					...(params.model ? { model: params.model } : {}),
 					...(params.skill !== undefined ? { skill: params.skill } : {}),
 					...(params.turnBudget ? { turnBudget: params.turnBudget } : {}),
@@ -161,20 +160,22 @@ export type AgentEngineResult = AgentToolResult<Details> & { readonly isError?: 
 
 /** Parent-facing projection: direct summaries only, never engine bookkeeping paths. */
 export function projectEngineResult(params: PublicAgentParams, result: AgentEngineResult): AgentEngineResult {
+	const { lifecycleBinding: _lifecycleBinding, ...publicDetails } = result.details;
+	const publicResult: AgentEngineResult = { ...result, details: publicDetails };
 	if (params.action) {
 		const text = bounded(
-			scanAgentReport(firstText(result) || "Agent action finished.").text,
+			scanAgentReport(firstText(publicResult) || "Agent action finished.").text,
 			MAX_PARENT_RESULT_CHARS,
 		);
-		return { ...result, content: [{ type: "text", text }] };
+		return { ...publicResult, content: [{ type: "text", text }] };
 	}
 
-	if (params.foreground !== true && result.isError !== true) {
-		const id = result.details.asyncId ?? result.details.runId;
+	if (params.foreground !== true && publicResult.isError !== true) {
+		const id = publicResult.details.asyncId ?? publicResult.details.runId;
 		const names = params.tasks?.map(({ agent }) => agent) ?? (params.agent ? [params.agent] : []);
 		const subject = names.length > 1 ? `${names.length} Agents` : `Agent ${names[0] ?? "task"}`;
 		return {
-			...result,
+			...publicResult,
 			content: [
 				{
 					type: "text",
@@ -184,9 +185,15 @@ export function projectEngineResult(params: PublicAgentParams, result: AgentEngi
 		};
 	}
 
-	if (result.details.results.length > 0) {
-		return { ...result, content: [{ type: "text", text: foregroundContent(result.details.results) }] };
+	if (publicResult.details.results.length > 0) {
+		return {
+			...publicResult,
+			content: [{ type: "text", text: foregroundContent(publicResult.details.results) }],
+		};
 	}
-	const text = bounded(scanAgentReport(firstText(result) || "Agent execution failed.").text, MAX_PARENT_RESULT_CHARS);
-	return { ...result, content: [{ type: "text", text }] };
+	const text = bounded(
+		scanAgentReport(firstText(publicResult) || "Agent execution failed.").text,
+		MAX_PARENT_RESULT_CHARS,
+	);
+	return { ...publicResult, content: [{ type: "text", text }] };
 }

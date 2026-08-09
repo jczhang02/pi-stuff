@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { type Tool, validateToolArguments } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { CommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
@@ -112,11 +115,24 @@ class ApiHarness {
 }
 
 interface HarnessOptions {
+	backgroundGate?: Promise<void>;
+	backgroundLifecycleAbort?: boolean | "throw";
+	compatibility?: ExtensionRootDependencies["prepareGovernorCompatibility"];
 	contextProjection?: string;
 	coordinatorIdle?: Promise<void>;
+	maintenance?: () => unknown | Promise<unknown>;
+	monotonicNow?: () => number;
 	governorLedgerExists?: boolean;
 	governorReject?: boolean;
 	restoreActive?: boolean;
+	restoreFailure?: boolean;
+	runtimeStartFailure?: boolean;
+	settleFailure?: boolean;
+	prepareGate?: Promise<void>;
+	reconcileGate?: Promise<void>;
+	foregroundGate?: Promise<void>;
+	foregroundAsyncDir?: string;
+	foregroundDetails?: Details;
 }
 
 interface RootHarness {
@@ -155,6 +171,7 @@ interface RootHarness {
 }
 
 const roots: RootHarness[] = [];
+const temporaryDirectories = new Set<string>();
 
 function config(): PiStuffAgentsConfig {
 	return {
@@ -164,18 +181,27 @@ function config(): PiStuffAgentsConfig {
 	};
 }
 
-function context(entries: readonly unknown[] = []): ExtensionContext {
+function context(
+	entries: readonly unknown[] = [],
+	identity: { sessionFile?: string; sessionId?: string } = {},
+): ExtensionContext {
 	return {
 		cwd: "/project",
 		hasUI: true,
 		mode: "tui",
 		sessionManager: {
 			getEntries: () => [...entries],
-			getSessionFile: () => "/sessions/root.jsonl",
-			getSessionId: () => "root-id",
+			getSessionFile: () => identity.sessionFile ?? "/sessions/root.jsonl",
+			getSessionId: () => identity.sessionId ?? "root-id",
 		},
 		ui: {},
 	} as unknown as ExtensionContext;
+}
+
+function currentSessionId(root: RootHarness): string {
+	const value = root.state.value?.currentSessionId;
+	if (!value) throw new Error("Expected current physical session identity");
+	return value;
 }
 
 function createHarness(options: HarnessOptions = {}): RootHarness {
@@ -220,13 +246,20 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 	const dependencies: Partial<ExtensionRootDependencies> = {
 		isChildProcess: () => false,
 		loadConfiguration: config,
+		maintainRuntime: options.maintenance ?? (() => {}),
+		monotonicNow: options.monotonicNow ?? (() => performance.now()),
 		getCoordinator: () => coordinator,
-		ensureDirectory: (directory) => directories.push(directory),
+		ensureDirectory: (directory) => {
+			directories.push(directory);
+			if (options.runtimeStartFailure)
+				throw Object.assign(new Error("injected runtime directory EIO"), { code: "EIO" });
+		},
 		randomId: () => "control-id",
 		createGovernorCoordinator: () => ({
 			bindSession: (identity) => governor.binds.push(identity),
 			prepare: async (input) => {
 				governor.prepares.push({ launchRunId: input.launchRunId, params: input.params });
+				await options.prepareGate;
 				if (options.governorReject) return { ok: false, message: "Agent limit reached; wait for one to finish." };
 				if (input.params.action && input.params.action !== "resume") return { ok: true };
 				return { ok: true, invocation: { launchRunId: input.launchRunId } as AgentExecutionInvocation };
@@ -236,6 +269,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			},
 			settle: async () => {
 				governor.settlements += 1;
+				if (options.settleFailure) throw Object.assign(new Error("injected settle EIO"), { code: "EIO" });
 			},
 			fail: async () => {
 				governor.failures += 1;
@@ -248,21 +282,65 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			},
 			reconcileExisting: async () => {
 				governor.reconcileChecks += 1;
+				await options.reconcileGate;
 				if (options.restoreActive || options.governorLedgerExists) governor.reconciles += 1;
 			},
 			dispose: () => {
 				governor.disposed += 1;
 			},
 		}),
+		prepareGovernorCompatibility:
+			options.compatibility ??
+			(async () => ({
+				ok: true,
+				importedLogicalAgentIds: [],
+				legacyLedgerObserved: false,
+			})),
 		createExecutor: ({ projectContext, state: rootState }) => {
 			state.value = rootState;
 			projectionOwnership.delegated = typeof projectContext === "function";
 			return {
-				execute: async (_id, params) => {
+				execute: async (_id, params, _signal, _onUpdate, _ctx, hooks) => {
 					engineParams.push(params);
+					if (params.async === false && options.foregroundAsyncDir) {
+						await hooks?.beforeForegroundStart?.({
+							runId: params.launchRunId!,
+							asyncDir: options.foregroundAsyncDir,
+							writerCount: options.foregroundDetails?.results.length ?? 1,
+							abortStart: () => true,
+						});
+						await options.foregroundGate;
+						return {
+							content: [{ type: "text", text: "foreground engine receipt" }],
+							details:
+								options.foregroundDetails ??
+								({
+									mode: "single",
+									runId: params.launchRunId,
+									results: [{ agent: "worker", exitCode: 0, finalOutput: "done" }],
+								} as Details),
+						} as never;
+					}
+					await options.backgroundGate;
 					return {
 						content: [{ type: "text", text: "Async dir: /private/run" }],
-						details: { mode: "single", results: [], asyncId: "run-1" } as Details,
+						details: {
+							mode: "single",
+							results: [],
+							asyncId: "run-1",
+							...(options.backgroundLifecycleAbort === undefined
+								? {}
+								: {
+										lifecycleBinding: {
+											abortStart: () => {
+												if (options.backgroundLifecycleAbort === "throw") {
+													throw Object.assign(new Error("injected abort EIO"), { code: "EIO" });
+												}
+												return options.backgroundLifecycleAbort!;
+											},
+										},
+									}),
+						} as Details,
 					} as never;
 				},
 			};
@@ -295,6 +373,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			},
 			restoreActiveJobs: () => {
 				tracker.restored += 1;
+				if (options.restoreFailure) throw Object.assign(new Error("injected restore EIO"), { code: "EIO" });
 				if (!options.restoreActive) return;
 				rootState.asyncJobs.set("restored", {
 					asyncId: "restored",
@@ -312,6 +391,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			return {
 				startResultWatcher: () => {
 					watcher.starts += 1;
+					return true;
 				},
 				stopResultWatcher: () => {
 					watcher.stops += 1;
@@ -410,10 +490,56 @@ afterEach(async () => {
 	for (const root of roots.splice(0)) {
 		await root.api.fire("session_shutdown", { reason: "quit", type: "session_shutdown" });
 	}
+	for (const directory of temporaryDirectories) fs.rmSync(directory, { recursive: true, force: true });
+	temporaryDirectories.clear();
 	delete process.env[SUBAGENT_PARENT_SESSION_ENV];
 });
 
 describe("Agents extension composition root", () => {
+	test("throttles runtime maintenance after success and retries failures after a bounded delay", async () => {
+		let maintenanceCalls = 0;
+		let now = 1_000;
+		const root = createHarness({
+			maintenance: () => {
+				maintenanceCalls += 1;
+				if (maintenanceCalls === 1) throw new Error("injected maintenance failure");
+			},
+			monotonicNow: () => now,
+		});
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+		const execute = (id: string) =>
+			tool.execute(
+				id,
+				{ agent: "researcher", task: `Maintenance probe ${id}` },
+				new AbortController().signal,
+				undefined,
+				context(),
+			);
+		const waitForCalls = async (expected: number): Promise<void> => {
+			for (let attempt = 0; attempt < 100 && maintenanceCalls < expected; attempt++) await Bun.sleep(1);
+			expect(maintenanceCalls).toBe(expected);
+		};
+
+		await execute("maintenance-first");
+		await waitForCalls(1);
+		await execute("maintenance-before-retry");
+		await Bun.sleep(10);
+		expect(maintenanceCalls).toBe(1);
+
+		now += 60_001;
+		await execute("maintenance-retry");
+		await waitForCalls(2);
+		await execute("maintenance-before-success-window");
+		await Bun.sleep(10);
+		expect(maintenanceCalls).toBe(2);
+
+		now += 60 * 60 * 1_000 + 1;
+		await execute("maintenance-after-success-window");
+		await waitForCalls(3);
+	});
+
 	test("returns quietly in child processes", () => {
 		const api = new ApiHarness();
 		let loaded = 0;
@@ -459,7 +585,7 @@ describe("Agents extension composition root", () => {
 		if (!tool) throw new Error("Expected public Agent tool");
 
 		expect(tool.description).toContain("Choose exactly one call shape");
-		expect(tool.description).toContain("Never send background");
+		expect(tool.description).toContain("Do not invent or pass a background field");
 		expect(tool.description).toContain("Background completion never starts another main turn");
 		expect(tool.description).toContain('action="status", "steer", "stop", or "resume"');
 
@@ -486,6 +612,23 @@ describe("Agents extension composition root", () => {
 				validateToolArguments(tool, { type: "toolCall", id: "call-2", name: "subagent", arguments: args }),
 			).toThrow('Validation failed for tool "subagent"');
 		}
+		const task = { agent: "general-purpose", task: "Review the parser" };
+		expect(() =>
+			validateToolArguments(tool, {
+				type: "toolCall",
+				id: "call-20",
+				name: "subagent",
+				arguments: { tasks: Array.from({ length: 20 }, () => task) },
+			}),
+		).not.toThrow();
+		expect(() =>
+			validateToolArguments(tool, {
+				type: "toolCall",
+				id: "call-21",
+				name: "subagent",
+				arguments: { tasks: Array.from({ length: 21 }, () => task) },
+			}),
+		).toThrow('Validation failed for tool "subagent"');
 
 		expect(() =>
 			validateToolArguments(tool, {
@@ -501,15 +644,16 @@ describe("Agents extension composition root", () => {
 		).toThrow("must match exactly one schema in oneOf");
 	});
 
-	test("keeps ordinary startup pure and lazily starts persistence on first launch", async () => {
+	test("keeps session startup observation-only and activates recovery on the first Agent launch", async () => {
 		const root = createHarness();
 		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
 
 		expect(root.tracker.restored).toBe(1);
 		expect(root.directories).toEqual([]);
 		expect(root.watcher.starts).toBe(0);
-		expect(root.supervisor.started).toBe(1);
-		expect(root.governor.reconcileChecks).toBe(1);
+		expect(root.watcher.primes).toBe(0);
+		expect(root.supervisor.started).toBe(0);
+		expect(root.governor.reconcileChecks).toBe(0);
 		expect(root.governor.reconciles).toBe(0);
 
 		const result = await root.api.tools
@@ -521,22 +665,30 @@ describe("Agents extension composition root", () => {
 				undefined,
 				context(),
 			);
+		const launchRunId = deriveLaunchRunId("call-1", {
+			sessionId: `${currentSessionId(root)}\0header:root-id`,
+			ownerAgentPath: [],
+		});
 		expect(root.engineParams[0]).toEqual({
 			agent: "researcher",
 			async: true,
 			context: "fresh",
 			description: "Find the cause",
+			launchRunId,
 			task: "Find the cause",
 		});
 		expect(root.governor.prepares).toEqual([
 			{
-				launchRunId: deriveLaunchRunId("call-1"),
+				launchRunId,
 				params: { agent: "researcher", task: "Find the cause" },
 			},
 		]);
 		expect(root.governor.settlements).toBe(1);
 		expect(root.directories).toEqual([RESULTS_DIR, ASYNC_DIR]);
 		expect(root.watcher.starts).toBe(1);
+		expect(root.watcher.primes).toBe(2);
+		expect(root.supervisor.started).toBe(1);
+		expect(root.governor.reconcileChecks).toBe(1);
 		expect(result?.content).toEqual([
 			{
 				type: "text",
@@ -544,6 +696,175 @@ describe("Agents extension composition root", () => {
 			},
 		]);
 		expect(JSON.stringify(result?.content)).not.toContain("/private");
+	});
+
+	test("releases the governor invocation when post-prepare runtime startup fails", async () => {
+		const root = createHarness({ runtimeStartFailure: true });
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+
+		await expect(
+			tool.execute(
+				"runtime-start-failure",
+				{ agent: "researcher", task: "Inspect lifecycle ownership" },
+				new AbortController().signal,
+				undefined,
+				context(),
+			),
+		).rejects.toThrow("injected runtime directory EIO");
+		expect(root.governor.failures).toBe(1);
+		expect(root.governor.settlements).toBe(0);
+		expect(root.engineParams).toEqual([]);
+		expect(root.timers.callbacks).toHaveLength(0);
+	});
+
+	test("retains a launched background Agent lease when post-launch settlement persistence fails", async () => {
+		const root = createHarness({ settleFailure: true });
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
+		const result = await root.api.tools
+			.get("subagent")
+			?.execute(
+				"settle-failure",
+				{ agent: "researcher", task: "Continue in background" },
+				new AbortController().signal,
+				undefined,
+				context(),
+			);
+		expect(result?.content[0]?.text).toContain("started in the background");
+		expect(root.governor.settlements).toBe(1);
+		expect(root.governor.failures).toBe(0);
+		expect(root.engineParams).toHaveLength(1);
+	});
+
+	test("does not resurrect result recovery or the supervisor after shutdown during reconciliation", async () => {
+		const gate = Promise.withResolvers<void>();
+		const root = createHarness({ reconcileGate: gate.promise });
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
+		const starting = root.api.commands.get("agents")?.handler("", context());
+		while (root.governor.reconcileChecks === 0) await Bun.sleep(1);
+		await root.api.fire("session_shutdown", { reason: "quit", type: "session_shutdown" });
+		gate.resolve();
+		await starting;
+
+		expect(root.watcher.starts).toBe(0);
+		expect(root.watcher.primes).toBe(0);
+		expect(root.supervisor.started).toBe(0);
+	});
+
+	test("releases a prepared launch instead of dispatching it after shutdown", async () => {
+		const gate = Promise.withResolvers<void>();
+		const root = createHarness({ prepareGate: gate.promise });
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+		const executing = tool.execute(
+			"shutdown-during-prepare",
+			{ agent: "researcher", task: "Must never launch" },
+			new AbortController().signal,
+			undefined,
+			context(),
+		);
+		while (root.governor.prepares.length === 0) await Bun.sleep(1);
+		await root.api.fire("session_shutdown", { reason: "quit", type: "session_shutdown" });
+		gate.resolve();
+		const result = await executing;
+
+		expect(root.governor.failures).toBe(1);
+		expect(root.engineParams).toEqual([]);
+		expect(result.content[0]?.text).toContain("parent session ended or changed");
+	});
+
+	test("retains ledger authority when a background runner cannot be aborted across a session switch", async () => {
+		const gate = Promise.withResolvers<void>();
+		const root = createHarness({ backgroundGate: gate.promise, backgroundLifecycleAbort: false });
+		const headerA = context([], { sessionFile: "/sessions/background-a.jsonl", sessionId: "background-a" });
+		const headerB = context([], { sessionFile: "/sessions/background-b.jsonl", sessionId: "background-b" });
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" }, headerA);
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+		const executing = tool.execute(
+			"background-session-switch",
+			{ agent: "researcher", task: "Runner survives the switch" },
+			new AbortController().signal,
+			undefined,
+			headerA,
+		);
+		while (root.engineParams.length === 0) await Bun.sleep(1);
+		await root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerB);
+		gate.resolve();
+		const result = await executing;
+
+		expect(root.governor.settlements).toBe(1);
+		expect(root.governor.failures).toBe(0);
+		expect(result.content[0]?.text).toContain("session ended or changed");
+	});
+
+	test("retains ledger authority when aborting a session-switched runner throws", async () => {
+		const gate = Promise.withResolvers<void>();
+		const root = createHarness({ backgroundGate: gate.promise, backgroundLifecycleAbort: "throw" });
+		const headerA = context([], {
+			sessionFile: "/sessions/background-throw-a.jsonl",
+			sessionId: "background-throw-a",
+		});
+		const headerB = context([], {
+			sessionFile: "/sessions/background-throw-b.jsonl",
+			sessionId: "background-throw-b",
+		});
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" }, headerA);
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+		const executing = tool.execute(
+			"background-session-switch-abort-throws",
+			{ agent: "researcher", task: "Runner remains governed after failed abort transport" },
+			new AbortController().signal,
+			undefined,
+			headerA,
+		);
+		while (root.engineParams.length === 0) await Bun.sleep(1);
+		await root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerB);
+		gate.resolve();
+		const result = await executing;
+
+		expect(root.governor.settlements).toBe(1);
+		expect(root.governor.failures).toBe(0);
+		expect(result.content[0]?.text).toContain("session ended or changed");
+	});
+
+	test("settles a completed foreground result against its original session after shutdown", async () => {
+		const gate = Promise.withResolvers<void>();
+		const asyncDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-root-foreground-race-"));
+		temporaryDirectories.add(asyncDir);
+		const root = createHarness({
+			foregroundAsyncDir: asyncDir,
+			foregroundGate: gate.promise,
+			foregroundDetails: {
+				mode: "parallel",
+				runId: "foreground-mixed",
+				results: [
+					{ agent: "reviewer", success: true, exitCode: 0 } as never,
+					{ agent: "writer", success: true, exitCode: 0, detached: true } as never,
+				],
+			},
+		});
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+		const executing = tool.execute(
+			"foreground-shutdown-race",
+			{ agent: "reviewer", task: "Finish before returning", foreground: true },
+			new AbortController().signal,
+			undefined,
+			context(),
+		);
+		while (root.governor.starts.length === 0) await Bun.sleep(1);
+		await root.api.fire("session_shutdown", { reason: "quit", type: "session_shutdown" });
+		gate.resolve();
+		const result = await executing;
+
+		expect(root.governor.settlements).toBe(1);
+		expect(root.governor.failures).toBe(0);
+		expect(result.content[0]?.text).toContain("parent session ended or changed");
 	});
 
 	test("delegates private Context projection fitting to the Agent executor", async () => {
@@ -573,25 +894,265 @@ describe("Agents extension composition root", () => {
 		expect(root.engineParams.map((params) => params.contextProjection)).toEqual([undefined, undefined]);
 	});
 
-	test("reconciles an existing ledger even when Pi reports session_start as startup", async () => {
+	test("defers existing-ledger reconciliation until an explicit Agent interaction", async () => {
 		const root = createHarness({ governorLedgerExists: true });
 		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
 
+		expect(root.governor.reconcileChecks).toBe(0);
+		expect(root.governor.reconciles).toBe(0);
+		expect(root.directories).toEqual([]);
+		expect(root.watcher.starts).toBe(0);
+		expect(root.watcher.primes).toBe(0);
+
+		await root.api.commands.get("agents")?.handler("", context());
+
 		expect(root.governor.reconcileChecks).toBe(1);
 		expect(root.governor.reconciles).toBe(1);
-		expect(root.directories).toEqual([]);
+		expect(root.watcher.starts).toBe(1);
+		expect(root.watcher.primes).toBe(1);
 	});
 
 	test("restores an existing active run before starting its watcher", async () => {
 		const root = createHarness({ restoreActive: true });
 		await root.api.fire("session_start", { reason: "resume", type: "session_start" });
 
-		expect(root.directories).toEqual([RESULTS_DIR, ASYNC_DIR]);
+		expect(root.directories).toEqual([]);
+		expect(root.watcher.starts).toBe(0);
+		expect(root.watcher.primes).toBe(0);
+		expect(root.tracker.pollers).toBe(0);
+		expect(root.governor.reconciles).toBe(0);
+		expect(root.state.value?.asyncJobs.has("restored")).toBe(true);
+
+		await root.api.commands.get("agents")?.handler("", context());
+
 		expect(root.watcher.starts).toBe(1);
 		expect(root.watcher.primes).toBe(1);
 		expect(root.tracker.pollers).toBe(1);
 		expect(root.governor.reconciles).toBe(1);
-		expect(root.state.value?.asyncJobs.has("restored")).toBe(true);
+	});
+
+	test("propagates roster restoration failure instead of loading a partial Agent capability", async () => {
+		const root = createHarness({ restoreFailure: true });
+		await expect(root.api.fire("session_start", { reason: "resume", type: "session_start" })).rejects.toThrow(
+			"injected restore EIO",
+		);
+		expect(root.tracker.restored).toBe(1);
+		expect(root.watcher.starts).toBe(0);
+		expect(root.watcher.primes).toBe(0);
+		expect(root.supervisor.started).toBe(0);
+	});
+
+	test("isolates reused session paths by header identity while preserving ordinary reload continuity", async () => {
+		const root = createHarness();
+		const headerA = context([], { sessionFile: "/sessions/reused.jsonl", sessionId: "header-a" });
+		const headerB = context([], { sessionFile: "/sessions/reused.jsonl", sessionId: "header-b" });
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" }, headerA);
+		const identityA = currentSessionId(root);
+		await root.api.fire("session_start", { reason: "resume", type: "session_start" }, headerA);
+		expect(currentSessionId(root)).toBe(identityA);
+		await root.api.commands.get("agents")?.handler("", headerA);
+		expect(root.governor.binds.at(-1)?.sessionId).toBe(identityA);
+
+		await root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerB);
+		const identityB = currentSessionId(root);
+		expect(identityB).not.toBe(identityA);
+		await root.api.commands.get("agents")?.handler("", headerB);
+		expect(root.governor.binds.at(-1)?.sessionId).toBe(identityB);
+
+		const before = root.tracker.started;
+		root.api.events.emit(SUBAGENT_ASYNC_STARTED_EVENT, { id: "old-header-run", sessionId: identityA });
+		expect(root.tracker.started).toBe(before);
+		root.api.events.emit(SUBAGENT_ASYNC_STARTED_EVENT, { id: "new-header-run", sessionId: identityB });
+		expect(root.tracker.started).toBe(before + 1);
+	});
+
+	test("does not let an old session compatibility check authorize a new-session launch", async () => {
+		const firstCheck = Promise.withResolvers<{
+			ok: true;
+			importedLogicalAgentIds: string[];
+			legacyLedgerObserved: false;
+		}>();
+		let checks = 0;
+		const root = createHarness({
+			compatibility: async () => {
+				checks += 1;
+				if (checks === 1) return firstCheck.promise;
+				return { ok: true, importedLogicalAgentIds: [], legacyLedgerObserved: false };
+			},
+		});
+		const headerA = context([], { sessionFile: "/sessions/compat-a.jsonl", sessionId: "compat-a" });
+		const headerB = context([], { sessionFile: "/sessions/compat-b.jsonl", sessionId: "compat-b" });
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" }, headerA);
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+		const staleLaunch = tool.execute(
+			"stale-compatibility",
+			{ agent: "researcher", task: "Must remain in session A" },
+			new AbortController().signal,
+			undefined,
+			headerA,
+		);
+		while (checks < 1) await Bun.sleep(1);
+
+		await root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerB);
+		const currentLaunch = await tool.execute(
+			"current-compatibility",
+			{ agent: "researcher", task: "Launch in session B" },
+			new AbortController().signal,
+			undefined,
+			headerB,
+		);
+
+		expect(checks).toBe(2);
+		expect(currentLaunch.content[0]?.text).toContain("started in the background");
+		expect(root.engineParams).toHaveLength(1);
+		firstCheck.resolve({ ok: true, importedLogicalAgentIds: [], legacyLedgerObserved: false });
+		const staleResult = await staleLaunch;
+		expect(staleResult.content[0]?.text).toContain("session ended or changed");
+		expect(root.engineParams).toHaveLength(1);
+	});
+
+	test("releases a legacy governor barrier on A to B to A session transitions", async () => {
+		let barrierHeld = false;
+		let releases = 0;
+		const root = createHarness({
+			compatibility: async () => {
+				if (barrierHeld) return { ok: false, message: "self-held legacy barrier" };
+				barrierHeld = true;
+				let released = false;
+				return {
+					ok: true,
+					importedLogicalAgentIds: [],
+					legacyLedgerObserved: false,
+					releaseLegacyBarrier: () => {
+						if (released) return;
+						released = true;
+						barrierHeld = false;
+						releases += 1;
+					},
+				};
+			},
+		});
+		const headerA = context([], { sessionFile: "/sessions/barrier-a.jsonl", sessionId: "barrier-a" });
+		const headerB = context([], { sessionFile: "/sessions/barrier-b.jsonl", sessionId: "barrier-b" });
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" }, headerA);
+		const first = await tool.execute(
+			"barrier-a-first",
+			{ agent: "researcher", task: "First A launch" },
+			new AbortController().signal,
+			undefined,
+			headerA,
+		);
+		expect(first.content[0]?.text).toContain("started in the background");
+		expect(barrierHeld).toBeTrue();
+
+		await root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerB);
+		expect(barrierHeld).toBeFalse();
+		expect(releases).toBe(1);
+		await root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerA);
+		const second = await tool.execute(
+			"barrier-a-second",
+			{ agent: "researcher", task: "Second A launch" },
+			new AbortController().signal,
+			undefined,
+			headerA,
+		);
+		expect(second.content[0]?.text).toContain("started in the background");
+		expect(barrierHeld).toBeTrue();
+		await root.api.fire("session_shutdown", { reason: "quit", type: "session_shutdown" }, headerA);
+		expect(barrierHeld).toBeFalse();
+		expect(releases).toBe(2);
+	});
+
+	test("normalizes one branch-proven v1 lifecycle event before tracker projection", async () => {
+		const root = createHarness();
+		await root.api.fire("session_start", { reason: "resume", type: "session_start" });
+		const primary = currentSessionId(root);
+		if (!root.state.value) throw new Error("Expected root state");
+		root.state.value.currentSessionScope = {
+			sessionId: primary,
+			governorSessionId: primary,
+			legacyArtifactSessionId: "/sessions/root.jsonl",
+			legacyRunIds: new Set(["legacy-live"]),
+		};
+
+		root.api.events.emit(SUBAGENT_ASYNC_STARTED_EVENT, {
+			id: "legacy-live",
+			runId: "legacy-live",
+			sessionId: "/sessions/root.jsonl",
+		});
+
+		expect(root.tracker.started).toBe(1);
+		expect(root.state.value.asyncJobs.get("legacy-live")?.sessionId).toBe(primary);
+	});
+
+	test("replays foreground Agent rows from durable tool results on cold session start", async () => {
+		const root = createHarness();
+		await root.api.fire(
+			"session_start",
+			{ reason: "resume", type: "session_start" },
+			context([
+				{
+					type: "message",
+					timestamp: "2026-08-06T10:00:00.000Z",
+					message: {
+						role: "toolResult",
+						toolName: "subagent",
+						details: {
+							mode: "single",
+							runId: "cold-foreground",
+							cwd: "/project",
+							results: [
+								{
+									agent: "reviewer",
+									task: "Review the durable foreground result",
+									exitCode: 0,
+									finalOutput: "Review complete",
+									sessionFile: "/sessions/foreground-child.jsonl",
+								},
+							],
+						},
+					},
+				},
+			]),
+		);
+
+		expect(root.state.value?.foregroundRuns?.get("cold-foreground")?.cwd).toBe("/project");
+		expect(root.current.value?.snapshot().rows).toMatchObject([
+			{
+				key: "cold-foreground:0",
+				name: "reviewer",
+				status: "completed",
+				task: "Review the durable foreground result",
+			},
+		]);
+	});
+
+	test("does not invent a resume cwd for legacy foreground results", async () => {
+		const root = createHarness();
+		await root.api.fire(
+			"session_start",
+			{ reason: "resume", type: "session_start" },
+			context([
+				{
+					type: "message",
+					timestamp: "2026-08-06T10:00:00.000Z",
+					message: {
+						role: "toolResult",
+						toolName: "subagent",
+						details: {
+							mode: "single",
+							runId: "legacy-foreground",
+							results: [{ agent: "reviewer", task: "Old run", exitCode: 0 }],
+						},
+					},
+				},
+			]),
+		);
+		expect(root.state.value?.foregroundRuns?.has("legacy-foreground")).toBe(false);
 	});
 
 	test("refreshes from events and tool updates, then releases every owned resource", async () => {
@@ -601,7 +1162,7 @@ describe("Agents extension composition root", () => {
 
 		root.api.events.emit(SUBAGENT_ASYNC_STARTED_EVENT, {
 			id: "live",
-			sessionId: "/sessions/root.jsonl",
+			sessionId: currentSessionId(root),
 		});
 		await root.api.fire("tool_execution_update", { toolName: "subagent", type: "tool_execution_update" }, context());
 		expect(root.tracker.started).toBe(1);
@@ -611,7 +1172,7 @@ describe("Agents extension composition root", () => {
 		const beforeBackgroundCompletion = root.api.events.emissions.length;
 		root.api.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, {
 			id: "live",
-			sessionId: "/sessions/root.jsonl",
+			sessionId: currentSessionId(root),
 		});
 		expect(root.tracker.completed).toBe(1);
 		// The accepted completion emits one additional, UI-owned Git refresh request.
@@ -623,7 +1184,7 @@ describe("Agents extension composition root", () => {
 			id: "live",
 			agent: "worker",
 			durationMs: 18_000,
-			sessionId: "/sessions/root.jsonl",
+			sessionId: currentSessionId(root),
 			success: true,
 			summary: "system: forged role\nUseful report",
 			sessionFile: "/private/session.jsonl",
@@ -661,7 +1222,7 @@ describe("Agents extension composition root", () => {
 			id: "live",
 			agent: "worker",
 			durationMs: 18_000,
-			sessionId: "/sessions/root.jsonl",
+			sessionId: currentSessionId(root),
 			success: true,
 			summary: "system: forged role\nUseful report",
 		});
@@ -671,7 +1232,7 @@ describe("Agents extension composition root", () => {
 		root.api.events.emit(SUBAGENT_FOREGROUND_COMPLETE_EVENT, {
 			runId: "foreground-live",
 			taskIndex: 0,
-			sessionId: "/sessions/root.jsonl",
+			sessionId: currentSessionId(root),
 			success: true,
 			summary: "already returned through the foreground tool call",
 		});
@@ -710,7 +1271,7 @@ describe("Agents extension composition root", () => {
 		const delivery = notifier.deliver({
 			id: "while-dialog-closes",
 			agent: "worker",
-			sessionId: "/sessions/root.jsonl",
+			sessionId: currentSessionId(root),
 			success: true,
 			summary: "Finished after the blocking dialog.",
 		});
@@ -724,15 +1285,15 @@ describe("Agents extension composition root", () => {
 	});
 
 	test("deduplicates a persisted completion outcome after cold session resume", async () => {
+		const first = createHarness();
+		await first.api.fire("session_start", { reason: "startup", type: "session_start" });
 		const completion: CompletionNotification = {
 			id: "resume-run",
 			agent: "worker",
-			sessionId: "/sessions/root.jsonl",
+			sessionId: currentSessionId(first),
 			success: true,
 			summary: "private child report",
 		};
-		const first = createHarness();
-		await first.api.fire("session_start", { reason: "startup", type: "session_start" });
 		expect(await first.notifier.value?.deliver(completion)).toBe(true);
 		const persisted = first.api.entries[0];
 		if (!persisted) throw new Error("Expected persisted completion outcome");
@@ -754,7 +1315,7 @@ describe("Agents extension composition root", () => {
 		expect(
 			await failed.notifier.value?.deliver({
 				id: "parallel-run",
-				sessionId: "/sessions/root.jsonl",
+				sessionId: currentSessionId(failed),
 				success: false,
 				results: [
 					{ agent: "first", output: "private first report", success: true },
@@ -771,7 +1332,7 @@ describe("Agents extension composition root", () => {
 			await stopped.notifier.value?.deliver({
 				id: "stopped-run",
 				interrupted: true,
-				sessionId: "/sessions/root.jsonl",
+				sessionId: currentSessionId(stopped),
 				success: false,
 			}),
 		).toBe(true);

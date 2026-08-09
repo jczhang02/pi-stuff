@@ -69,7 +69,6 @@ test("Agents declares its exact workspace and certified Pi dependency contracts"
 	expect(manifest.dependencies).toEqual({
 		"@jczhang02/pi-stuff-tools": toolsVersion,
 		"@jczhang02/pi-stuff-ui": uiVersion,
-		jiti: "2.7.0",
 		typebox: "1.3.7",
 	});
 	expect(manifest.peerDependencies).toEqual({
