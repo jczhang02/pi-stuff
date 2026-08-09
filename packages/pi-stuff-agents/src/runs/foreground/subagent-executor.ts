@@ -3,10 +3,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult as CoreAgentToolResult } from "@earendil-works/pi-agent-core";
 import {
+	type BuildSystemPromptOptions,
 	type ContextEvent,
 	type ExtensionAPI,
 	type ExtensionContext,
 	estimateTokens,
+	formatSkillsForPrompt,
 	type SessionEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
@@ -341,6 +343,46 @@ function inheritedLaunchPromptTokens(ctx: ExtensionContext): number {
 	return promptTokens;
 }
 
+function inheritedReplacementPromptTokens(
+	ctx: ExtensionContext,
+	task: Pick<RunnerAgentTask, "cwd" | "inheritProjectContext" | "inheritSkills">,
+): number {
+	try {
+		const getOptions = (ctx as ExtensionContext & { getSystemPromptOptions?: () => unknown }).getSystemPromptOptions;
+		const value = getOptions?.call(ctx);
+		if (value && typeof value === "object" && !Array.isArray(value)) {
+			const options = value as Partial<BuildSystemPromptOptions>;
+			if (options.appendSystemPrompt !== undefined && typeof options.appendSystemPrompt !== "string") {
+				throw new Error("Invalid Host append-system-prompt surface.");
+			}
+			if (task.inheritProjectContext && options.contextFiles !== undefined && !Array.isArray(options.contextFiles)) {
+				throw new Error("Invalid Host project-context surface.");
+			}
+			if (task.inheritSkills && options.skills !== undefined && !Array.isArray(options.skills)) {
+				throw new Error("Invalid Host Skills surface.");
+			}
+			let retained = typeof options.appendSystemPrompt === "string" ? `\n\n${options.appendSystemPrompt}` : "";
+			if (task.inheritProjectContext && options.contextFiles?.length) {
+				retained += "\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n";
+				for (const contextFile of options.contextFiles) {
+					retained += `<project_instructions path="${contextFile.path}">\n${contextFile.content}\n</project_instructions>\n\n`;
+				}
+				retained += "</project_context>\n";
+			}
+			if (task.inheritSkills && options.skills?.length) retained += formatSkillsForPrompt(options.skills);
+			retained += `\nCurrent working directory: ${task.cwd.replace(/\\/gu, "/")}`;
+			return estimateTextTokens(retained);
+		}
+	} catch {
+		// Fall through to a conservative prompt estimate below.
+	}
+	// Pi 0.83+ exposes getSystemPromptOptions() at runtime. If an older compatible
+	// Host does not, only a child that disables both retained sections can safely
+	// exclude the replaced base prompt from admission accounting.
+	if (!task.inheritProjectContext && !task.inheritSkills) return estimateTextTokens(task.cwd);
+	return inheritedLaunchPromptTokens(ctx);
+}
+
 function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): number {
 	if (typeof pi.getAllTools !== "function" || typeof pi.getActiveTools !== "function") return 0;
 	try {
@@ -368,7 +410,7 @@ function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): numb
 			}
 			try {
 				// JSON omits executable callbacks while retaining every current and
-				// future serializable prompt/schema field (including prompt snippets).
+				// future serializable prompt/schema field (including prompt guidelines).
 				tokens += estimateTextTokens(JSON.stringify(tool));
 			} catch {
 				tokens += CHILD_UNKNOWN_TOOL_SURFACE_TOKENS;
@@ -525,10 +567,14 @@ function prepareLaunchModelPlan(input: {
 		});
 		if ("error" in built) throw new Error(built.error);
 		const candidates = built.task.modelCandidates ?? [];
+		const retainedHostPromptTokens =
+			built.task.systemPromptMode === "replace"
+				? inheritedReplacementPromptTokens(input.ctx, built.task)
+				: launchPromptTokens;
 		const taskTokens =
 			estimateTextTokens(built.task.task) +
 			estimateTextTokens(built.task.systemPrompt?.trim() ?? "") +
-			(built.task.systemPromptMode === "replace" ? 0 : launchPromptTokens) +
+			retainedHostPromptTokens +
 			childLaunchSurfaceTokens(input.pi, built.task);
 		fixedInputTokensByIndex[index] = taskTokens;
 		if (input.context !== "fork") {

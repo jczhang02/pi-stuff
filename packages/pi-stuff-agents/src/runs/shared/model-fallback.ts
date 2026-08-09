@@ -320,6 +320,7 @@ const RETRYABLE_MODEL_FAILURE_PATTERNS = [
 	/empty response/i,
 	/no output/i,
 	/model.*(?:load|fail|error)/i,
+	/final child payload.*above the safe/i,
 ];
 
 /**

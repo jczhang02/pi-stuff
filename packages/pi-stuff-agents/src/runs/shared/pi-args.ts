@@ -37,6 +37,14 @@ const FANOUT_CHILD_EXTENSION_PATH = path.join(
 	"extension",
 	"fanout-child.ts",
 );
+const STANDALONE_AGENTS_EXTENSION_PATH = path.resolve(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"..",
+	"..",
+	"..",
+	"index.ts",
+);
+export const PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV = "PI_STUFF_CHILD_BASE_EXTENSION_PATH";
 export const SUBAGENT_CHILD_ENV = "PI_SUBAGENT_CHILD";
 export const SUBAGENT_ORCHESTRATOR_TARGET_ENV = "PI_SUBAGENT_ORCHESTRATOR_TARGET";
 export const SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV = "PI_SUBAGENT_ORCHESTRATOR_SESSION_ID";
@@ -193,6 +201,20 @@ export interface PiLaunchToolPlan {
 	capabilityAudit?: SubagentCapabilityAudit;
 }
 
+function childBaseExtensionPath(): string {
+	const inherited = process.env[PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV]?.trim();
+	if (inherited && path.isAbsolute(inherited)) {
+		try {
+			const resolved = fs.realpathSync(inherited);
+			const stat = fs.lstatSync(resolved);
+			if (stat.isFile() && !stat.isSymbolicLink()) return resolved;
+		} catch {
+			// A stale inherited path must not make every child unlaunchable.
+		}
+	}
+	return STANDALONE_AGENTS_EXTENSION_PATH;
+}
+
 export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): PiLaunchToolPlan {
 	const capabilityCeiling = intersectSubagentCapabilityCeilings(
 		input.capabilityCeiling,
@@ -212,10 +234,7 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 			? allowedToolSet
 				? [...allowedToolSet]
 				: []
-			: (input.requireReadTool &&
-				requestedBuiltinTools.length > 0 &&
-				!requestedBuiltinTools.includes("read") &&
-				!allowedToolSet
+			: (input.requireReadTool && !requestedBuiltinTools.includes("read")
 					? ["read", ...requestedBuiltinTools]
 					: requestedBuiltinTools
 				).filter((tool) => !allowedToolSet || allowedToolSet.has(tool));
@@ -247,22 +266,33 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 				...new Set([
 					...(input.tools !== undefined ? declaredBuiltinTools : []),
 					...(input.mcpDirectTools?.length ? effectiveMcpTools : []),
+					...(input.requireReadTool ? ["read"] : []),
 					...internalTools,
 				]),
 			]
-		: [];
+		: input.requireReadTool
+			? ["read"]
+			: [];
 	const runtimeExtensions = fanoutAuthorized
 		? [FANOUT_CHILD_EXTENSION_PATH, PROMPT_RUNTIME_EXTENSION_PATH]
 		: [PROMPT_RUNTIME_EXTENSION_PATH];
-	const disableAmbientExtensions = capabilityCeiling?.denyExtensions === true || input.extensions !== undefined;
+	// Pi loads temporary CLI extensions before ambient package/project extensions.
+	// A child payload gate passed only through --extension could therefore run too
+	// early. Make the child extension surface deterministic instead: reload the
+	// parent Suite (or the standalone Agents package) explicitly, opt in Agent
+	// extensions, disable ambient discovery, and keep the runtime guard last.
+	const inheritedBaseExtension = input.extensions === undefined ? childBaseExtensionPath() : undefined;
+	const runtimeExtensionSet = new Set(runtimeExtensions);
 	const configuredExtensions = capabilityCeiling?.denyExtensions
 		? []
-		: [...toolExtensionPaths, ...(input.extensions ?? []), ...(input.subagentOnlyExtensions ?? [])];
-	// Keep the prompt runtime last among every explicitly controlled child
-	// extension so its provider-payload gate observes their final mutations.
-	const extensionArgs = disableAmbientExtensions
-		? [...new Set([...configuredExtensions, ...runtimeExtensions])]
-		: [...new Set([...toolExtensionPaths, ...(input.subagentOnlyExtensions ?? []), ...runtimeExtensions])];
+		: [
+				...(inheritedBaseExtension ? [inheritedBaseExtension] : []),
+				...toolExtensionPaths,
+				...(input.extensions ?? []),
+				...(input.subagentOnlyExtensions ?? []),
+			].filter((extension) => !runtimeExtensionSet.has(extension));
+	const extensionArgs = [...new Set(configuredExtensions), ...runtimeExtensions];
+	const disableAmbientExtensions = true;
 	const requestedToolNames =
 		input.tools !== undefined
 			? [...new Set([...requestedBuiltinTools, ...resolvedMcpSelections.map((selection) => selection.name)])]

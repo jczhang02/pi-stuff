@@ -1164,8 +1164,7 @@ describe("reduced foreground Agent engine", () => {
 					name: "read",
 					description: "Read a file.",
 					parameters: { type: "object", properties: { path: { type: "string" } } },
-					promptGuidelines: [],
-					promptSnippet: "s".repeat(20_000),
+					promptGuidelines: ["s".repeat(20_000)],
 				},
 			],
 		} as unknown as ExtensionAPI;
@@ -1203,7 +1202,7 @@ describe("reduced foreground Agent engine", () => {
 			getActiveTools: () => ["write"],
 			getAllTools: () => [
 				{ name: "write", description: "Write.", parameters: {} },
-				{ name: "read", description: "Read.", parameters: {}, promptSnippet: "r".repeat(20_000) },
+				{ name: "read", description: "Read.", parameters: {}, promptGuidelines: ["r".repeat(20_000)] },
 			],
 		} as unknown as ExtensionAPI;
 
@@ -1235,7 +1234,7 @@ describe("reduced foreground Agent engine", () => {
 		expect(engineCalls).toBe(0);
 	});
 
-	test("does not charge the inherited Host prompt when the child replaces it", async () => {
+	test("does not charge a replaced Host base prompt when inherited context and Skills are disabled", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-replace-prompt-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
@@ -1249,7 +1248,15 @@ describe("reduced foreground Agent engine", () => {
 			() => {
 				engineCalls += 1;
 			},
-			{ agent: { ...agent(), model: "test/small", systemPromptMode: "replace" } },
+			{
+				agent: {
+					...agent(),
+					model: "test/small",
+					systemPromptMode: "replace",
+					inheritProjectContext: false,
+					inheritSkills: false,
+				},
+			},
 		).execute(
 			"replace-prompt-fits",
 			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
@@ -1260,6 +1267,54 @@ describe("reduced foreground Agent engine", () => {
 
 		expect(result.isError).not.toBeTrue();
 		expect(engineCalls).toBe(1);
+	});
+
+	test("projects a replace-mode fork when retained project context makes the raw child too large", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-replace-context-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		const ctx = context(cwd, [{ provider: "test", id: "large", contextWindow: 32_000, maxTokens: 4_000 }], 17_000);
+		(ctx as unknown as { getSystemPrompt: () => string }).getSystemPrompt = () => "default base".repeat(20_000);
+		(ctx as unknown as { getSystemPromptOptions: () => unknown }).getSystemPromptOptions = () => ({
+			cwd,
+			customPrompt: "default base".repeat(20_000),
+			contextFiles: [{ path: path.join(cwd, "AGENTS.md"), content: "p".repeat(4_000) }],
+			skills: [],
+		});
+		let openSessionCalls = 0;
+		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+			openSessionCalls += 1;
+			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
+		};
+		let captured: { sessionFile?: string; task: string } | undefined;
+		let projectionCalls = 0;
+
+		const result = await executor(
+			cwd,
+			state(),
+			(launch) => {
+				captured = launch;
+			},
+			{
+				agent: { ...agent(), model: "test/large", systemPromptMode: "replace" },
+				projectContext: async () => {
+					projectionCalls += 1;
+					return { source: "magic-context", text: "bounded parent", truncated: true };
+				},
+			},
+		).execute(
+			"replace-context-projects",
+			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
+			new AbortController().signal,
+			undefined,
+			ctx,
+		);
+
+		expect(result.isError).not.toBeTrue();
+		expect(openSessionCalls).toBe(0);
+		expect(projectionCalls).toBe(1);
+		expect(captured?.sessionFile).toBeUndefined();
+		expect(captured?.task).toContain("bounded parent");
 	});
 
 	test("supports one native and one projected child in the same parallel fork", async () => {

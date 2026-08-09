@@ -83,8 +83,11 @@ const PARENT_ONLY_CUSTOM_MESSAGE_TYPES = new Set([
 ]);
 const SUBAGENT_ORCHESTRATION_SKILL_NAME_PATTERN = /<name>\s*pi-subagents\s*<\/name>/;
 const PROJECT_CONTEXT_HEADER = "\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n";
-const SKILLS_HEADER = "\n\nThe following skills provide specialized instructions for specific tasks.";
+const PROJECT_CONTEXT_XML_START = "\n\n<project_context>";
+const PROJECT_CONTEXT_XML_END = "</project_context>";
+const SKILLS_HEADER = "The following skills provide specialized instructions for specific tasks.";
 const DATE_HEADER = "\nCurrent date:";
+const WORKING_DIRECTORY_HEADER = "\nCurrent working directory:";
 const CHILD_FINAL_PAYLOAD_RESERVE_RATIO = 0.25;
 
 function finalProviderPayloadCapacity(ctx: {
@@ -188,18 +191,49 @@ function findSectionEnd(prompt: string, startIndex: number, nextHeaders: string[
 	return endIndex;
 }
 
+function removePromptSection(prompt: string, startIndex: number, endIndex: number): string {
+	const before = prompt.slice(0, startIndex).trimEnd();
+	const after = prompt.slice(endIndex).trimStart();
+	if (!before) return after;
+	if (!after) return before;
+	return `${before}\n${after}`;
+}
+
 export function stripProjectContext(prompt: string): string {
-	const startIndex = prompt.indexOf(PROJECT_CONTEXT_HEADER);
-	if (startIndex === -1) return prompt;
-	const endIndex = findSectionEnd(prompt, startIndex + PROJECT_CONTEXT_HEADER.length, [SKILLS_HEADER, DATE_HEADER]);
-	return `${prompt.slice(0, startIndex)}${prompt.slice(endIndex)}`;
+	let rewritten = prompt;
+	const xmlStart = rewritten.lastIndexOf(PROJECT_CONTEXT_XML_START);
+	if (xmlStart !== -1) {
+		const closing = rewritten.indexOf(PROJECT_CONTEXT_XML_END, xmlStart + PROJECT_CONTEXT_XML_START.length);
+		if (closing !== -1) {
+			let end = closing + PROJECT_CONTEXT_XML_END.length;
+			if (rewritten[end] === "\r") end += 1;
+			if (rewritten[end] === "\n") end += 1;
+			rewritten = removePromptSection(rewritten, xmlStart, end);
+		}
+	}
+	const legacyStart = rewritten.lastIndexOf(PROJECT_CONTEXT_HEADER);
+	if (legacyStart === -1) return rewritten;
+	const legacyEnd = findSectionEnd(rewritten, legacyStart + PROJECT_CONTEXT_HEADER.length, [
+		SKILLS_HEADER,
+		DATE_HEADER,
+		WORKING_DIRECTORY_HEADER,
+	]);
+	return removePromptSection(rewritten, legacyStart, legacyEnd);
 }
 
 export function stripInheritedSkills(prompt: string): string {
-	const startIndex = prompt.indexOf(SKILLS_HEADER);
-	if (startIndex === -1) return prompt;
-	const endIndex = findSectionEnd(prompt, startIndex + SKILLS_HEADER.length, [DATE_HEADER]);
-	return `${prompt.slice(0, startIndex)}${prompt.slice(endIndex)}`;
+	const availableSkillsEnd = prompt.lastIndexOf("</available_skills>");
+	if (availableSkillsEnd === -1) return prompt;
+	const availableSkillsStart = prompt.lastIndexOf("<available_skills>", availableSkillsEnd);
+	if (availableSkillsStart === -1) return prompt;
+	const headerIndex = prompt.lastIndexOf(SKILLS_HEADER, availableSkillsStart);
+	if (headerIndex === -1) return prompt;
+	let startIndex = headerIndex;
+	while (startIndex > 0 && (prompt[startIndex - 1] === "\n" || prompt[startIndex - 1] === "\r")) startIndex -= 1;
+	let endIndex = availableSkillsEnd + "</available_skills>".length;
+	if (prompt[endIndex] === "\r") endIndex += 1;
+	if (prompt[endIndex] === "\n") endIndex += 1;
+	return removePromptSection(prompt, startIndex, endIndex);
 }
 
 export function stripSubagentOrchestrationSkill(prompt: string): string {

@@ -38,7 +38,11 @@ function renderIndex(capabilities: readonly string[]): string {
 		.sort((left, right) => left.localeCompare(right))
 		.map((packageName) => `import ${capabilityIdentifier(packageName)} from "${packageName}";`);
 	const identifiers = capabilities.map(capabilityIdentifier);
-	const importBlock = [`import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`, ...imports].join("\n");
+	const importBlock = [
+		`import { fileURLToPath } from "node:url";`,
+		`import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`,
+		...imports,
+	].join("\n");
 	const capabilityPrefix = "const CAPABILITIES: readonly CapabilityFactory[] = ";
 	const inlineCapabilities = `[${identifiers.join(", ")}]`;
 	const capabilityDeclaration =
@@ -51,6 +55,7 @@ function renderIndex(capabilities: readonly string[]): string {
 		"type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;",
 		capabilityDeclaration,
 		`export default async function piStuff(pi: ExtensionAPI): Promise<void> {
+\tprocess.env["PI_STUFF_CHILD_BASE_EXTENSION_PATH"] = fileURLToPath(import.meta.url);
 \tfor (const capability of CAPABILITIES) {
 \t\tawait capability(pi);
 \t}

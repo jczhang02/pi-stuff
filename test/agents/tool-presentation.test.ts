@@ -16,6 +16,8 @@ import {
 } from "../../packages/pi-stuff-agents/src/runs/background/control-channel.js";
 import {
 	buildPiArgs,
+	PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV,
+	resolvePiLaunchToolPlan,
 	SUBAGENT_CHILD_AGENT_ENV,
 	SUBAGENT_CHILD_INDEX_ENV,
 	SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID_ENV,
@@ -32,6 +34,7 @@ import {
 import registerSubagentPromptRuntime, {
 	registerSteeringInbox,
 	registerToolBudget,
+	rewriteSubagentPrompt,
 	validateFinalProviderPayload,
 } from "../../packages/pi-stuff-agents/src/runs/shared/subagent-prompt-runtime.js";
 import {
@@ -250,7 +253,27 @@ test("detached root Agents keep native supervisor coordination with an explicit 
 	expect(foreground.env[SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV]).toBeUndefined();
 });
 
-test("places the child payload gate after explicit extensions and always provisions its diagnostic", () => {
+test("replaces ambient child discovery with a controlled Suite surface and a terminal payload gate", () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-stuff-child-base-extension-"));
+	temporaryDirectories.push(root);
+	const baseExtension = join(root, "suite.ts");
+	writeFileSync(baseExtension, "export default () => {};\n");
+	setEnvironment(PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV, baseExtension);
+	const ambientSafe = buildPiArgs({
+		baseArgs: ["--mode", "json", "-p"],
+		task: "Inspect the project.",
+		sessionEnabled: false,
+		inheritProjectContext: true,
+		inheritSkills: true,
+	});
+	if (ambientSafe.tempDir) temporaryDirectories.push(ambientSafe.tempDir);
+	const ambientSafePaths = ambientSafe.args.flatMap((argument, index) =>
+		argument === "--extension" && ambientSafe.args[index + 1] ? [ambientSafe.args[index + 1] as string] : [],
+	);
+	expect(ambientSafe.args).toContain("--no-extensions");
+	expect(ambientSafePaths[0]).toBe(baseExtension);
+	expect(ambientSafePaths.at(-1)?.endsWith("subagent-prompt-runtime.ts")).toBeTrue();
+
 	const configuredExtension = "/tmp/pi-stuff-explicit-child-extension.ts";
 	const built = buildPiArgs({
 		baseArgs: ["--mode", "json", "-p"],
@@ -267,8 +290,65 @@ test("places the child payload gate after explicit extensions and always provisi
 
 	expect(extensionPaths[0]).toBe(configuredExtension);
 	expect(extensionPaths.at(-1)?.endsWith("subagent-prompt-runtime.ts")).toBeTrue();
+	expect(extensionPaths).not.toContain(baseExtension);
+	expect(built.args).toContain("--no-extensions");
 	expect(built.toolDiagnosticPath).toBeTruthy();
 	expect(built.env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV]).toBe(built.toolDiagnosticPath);
+});
+
+test("forces and verifies read for every skill-enabled explicit Tool shape", () => {
+	for (const tools of [[], ["/tmp/child-tool.ts"], ["edit"]]) {
+		const plan = resolvePiLaunchToolPlan({
+			tools,
+			requireReadTool: true,
+			...(tools.includes("edit")
+				? {
+						capabilityCeiling: {
+							version: 1 as const,
+							allowedTools: ["edit", "read"],
+							denyExtensions: false,
+							sources: ["test"],
+						},
+					}
+				: {}),
+		});
+		expect(plan.effectiveToolAllowlist).toContain("read");
+		expect(plan.requiredChildTools).toContain("read");
+	}
+	const implicit = resolvePiLaunchToolPlan({ requireReadTool: true });
+	expect(implicit.requiredChildTools).toContain("read");
+});
+
+test("removes Pi 0.83 project context and Skills without leaving blank prompt sections", () => {
+	const prompt = [
+		"Replacement instructions.",
+		"",
+		"<project_context>",
+		"",
+		"Project-specific instructions and guidelines:",
+		"",
+		'<project_instructions path="/workspace/AGENTS.md">project rules</project_instructions>',
+		"",
+		"</project_context>",
+		"",
+		"The following skills provide specialized instructions for specific tasks.",
+		"Use the read tool to load a skill's file when the task matches its description.",
+		"",
+		"<available_skills>",
+		"  <skill><name>review</name></skill>",
+		"</available_skills>",
+		"Current working directory: /workspace",
+	].join("\n");
+
+	const rewritten = rewriteSubagentPrompt(prompt, {
+		inheritProjectContext: false,
+		inheritSkills: false,
+	});
+	expect(rewritten).toContain("Replacement instructions.");
+	expect(rewritten).toContain("Current working directory: /workspace");
+	expect(rewritten).not.toContain("project rules");
+	expect(rewritten).not.toContain("available_skills");
+	expect(rewritten).not.toContain("\n\n\n");
 });
 
 test("a rejected advisory tool-budget nudge cannot escape the child runtime", async () => {
