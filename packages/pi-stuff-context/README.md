@@ -8,8 +8,9 @@ ownership.
 
 The Capability exposes no floating UI, statusline entry, migration prompt, or
 second Todo authority. Magic Context's history, memory, search, notes, and
-Historian remain available behind this boundary. BTW receives a bounded
-reference-only projection; fresh Agents receive project memory only, while
+Historian remain available behind this boundary. BTW receives the exact frozen
+Pi branch plus a bounded reference-only copy of project memory captured by the
+normal Magic turn; fresh Agents receive project memory only, while
 forked Agents may receive bounded parent history. Magic's own internal
 Historian process is not represented as a Pi Stuff Agent.
 
@@ -47,9 +48,10 @@ This boundary deliberately works within Pi 0.83's extension interface:
   but Pi Stuff cannot cancel a hung third-party factory or reverse side effects
   performed before that handler is registered.
 - Pi's public token estimate is a generic four-code-unit heuristic, not a
-  model-specific tokenizer. Agent projections use the resolved child and
-  fallback model windows plus conservative prompt and fork reserves; exact
-  provider tokenization remains the provider's responsibility.
+  model-specific tokenizer. Safety-critical Agent projections therefore use
+  UTF-8 byte length as a tokenizer-independent upper bound, together with the
+  resolved child and fallback model windows and conservative launch reserves;
+  exact provider tokenization remains the provider's responsibility.
 - A manual `/compact` while Magic is healthy records one extension-owned Pi
   compaction boundary with a positive managed-history result. Automatic
   threshold or overflow compaction remains owned by Magic and publishes one
