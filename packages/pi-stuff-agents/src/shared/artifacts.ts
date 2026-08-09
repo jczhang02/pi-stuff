@@ -6,12 +6,15 @@ import { getAgentDir } from "./utils.ts";
 
 const CLEANUP_MARKER_FILE = ".last-cleanup";
 const CLEANUP_CURSOR_FILE = ".cleanup-cursor";
+const DISCOVERY_CURSOR_FILE = ".artifact-cleanup-frontier";
 const PROJECT_ARTIFACT_ROOT = ".pi-subagents";
 const ARTIFACT_DIRECTORY_NAME = "subagent-artifacts";
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 const MAX_ARTIFACT_DIRECTORIES_PER_PASS = 5_000;
 const MAX_ARTIFACT_ENTRIES_PER_PASS = 50_000;
 const SCAN_YIELD_INTERVAL = 32;
+const DISCOVERY_PAGE_SIZE = 32;
+const MAX_DISCOVERY_CURSOR_BYTES = 1024 * 1024;
 const ARTIFACT_SUFFIXES = ["_input.md", "_output.md", "_transcript.jsonl", "_meta.json", ".jsonl"] as const;
 
 export interface ArtifactMaintenanceReport {
@@ -185,6 +188,82 @@ interface ArtifactCleanupBudget {
 	readonly maxEntries: number;
 }
 
+function compareEntryNames(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function pushMaxHeap(heap: string[], value: string): void {
+	heap.push(value);
+	for (let index = heap.length - 1; index > 0; ) {
+		const parent = Math.floor((index - 1) / 2);
+		const parentValue = heap[parent];
+		if (parentValue === undefined || compareEntryNames(parentValue, value) >= 0) break;
+		heap[index] = parentValue;
+		heap[parent] = value;
+		index = parent;
+	}
+}
+
+function replaceMaxHeapRoot(heap: string[], value: string): void {
+	if (heap.length === 0) return;
+	heap[0] = value;
+	for (let index = 0; ; ) {
+		const left = index * 2 + 1;
+		const right = left + 1;
+		let largest = index;
+		if (
+			left < heap.length &&
+			heap[left] !== undefined &&
+			heap[largest] !== undefined &&
+			compareEntryNames(heap[left], heap[largest]) > 0
+		)
+			largest = left;
+		if (
+			right < heap.length &&
+			heap[right] !== undefined &&
+			heap[largest] !== undefined &&
+			compareEntryNames(heap[right], heap[largest]) > 0
+		)
+			largest = right;
+		if (largest === index) break;
+		const current = heap[index];
+		const next = heap[largest];
+		if (current === undefined || next === undefined) break;
+		heap[index] = next;
+		heap[largest] = current;
+		index = largest;
+	}
+}
+
+/**
+ * Select the next lexical page with O(limit) memory. The directory stream is
+ * yielded regularly, so even a legacy flat directory much larger than one
+ * mutation batch cannot monopolize Pi's event loop or be fully materialized.
+ */
+async function lexicalDirectoryPage(
+	directory: string,
+	after: string | undefined,
+	limit: number,
+	accept: (entry: fs.Dirent) => boolean,
+): Promise<{ names: string[]; more: boolean }> {
+	if (limit <= 0) return { names: [], more: true };
+	const heap: string[] = [];
+	let matches = 0;
+	let scanned = 0;
+	const entries = await fs.promises.opendir(directory);
+	for await (const entry of entries) {
+		scanned += 1;
+		if (scanned % SCAN_YIELD_INTERVAL === 0) await eventLoopTurn();
+		if ((after !== undefined && compareEntryNames(entry.name, after) <= 0) || !accept(entry)) continue;
+		matches += 1;
+		if (heap.length < limit) pushMaxHeap(heap, entry.name);
+		else if (heap[0] !== undefined && compareEntryNames(entry.name, heap[0]) < 0)
+			replaceMaxHeapRoot(heap, entry.name);
+	}
+	const names = heap.sort(compareEntryNames);
+	return { names, more: matches > names.length };
+}
+
 async function readCleanupCursor(directory: string): Promise<string | undefined> {
 	try {
 		const cursorPath = path.join(directory, CLEANUP_CURSOR_FILE);
@@ -277,32 +356,30 @@ async function cleanArtifactDirectory(
 	}
 	let filesRemoved = 0;
 	let bytesReclaimed = 0;
-	let complete = true;
 	let lastProcessed: string | undefined;
+	let complete = false;
 	try {
-		const entries = (await fs.promises.readdir(directory, { withFileTypes: true })).sort((left, right) =>
-			left.name.localeCompare(right.name),
-		);
 		const cursor = await readCleanupCursor(directory);
-		let start = cursor ? entries.findIndex((entry) => entry.name > cursor) : 0;
-		if (start < 0) start = entries.length;
-		for (let index = start; index < entries.length; index += 1) {
-			const entry = entries[index];
-			if (!entry || entry.name === CLEANUP_MARKER_FILE || entry.name === CLEANUP_CURSOR_FILE) continue;
-			if (budget.entries >= budget.maxEntries) {
-				complete = false;
-				break;
-			}
+		const page = await lexicalDirectoryPage(
+			directory,
+			cursor,
+			Math.max(0, budget.maxEntries - budget.entries),
+			(entry) =>
+				entry.name !== CLEANUP_MARKER_FILE &&
+				entry.name !== CLEANUP_CURSOR_FILE &&
+				artifactBaseName(entry.name) !== undefined,
+		);
+		for (const name of page.names) {
 			budget.entries += 1;
-			lastProcessed = entry.name;
-			const base = artifactBaseName(entry.name);
+			lastProcessed = name;
+			const base = artifactBaseName(name);
 			if (base) {
 				const removed = await removeTerminalArtifactGroup(directory, base, cutoff);
 				filesRemoved += removed.filesRemoved;
 				bytesReclaimed += removed.bytesReclaimed;
 			}
-			if (budget.entries % SCAN_YIELD_INTERVAL === 0) await eventLoopTurn();
 		}
+		complete = !page.more;
 	} catch {
 		return { filesRemoved, bytesReclaimed, complete: false };
 	}
@@ -319,6 +396,77 @@ async function cleanArtifactDirectory(
 	return { filesRemoved, bytesReclaimed, complete };
 }
 
+interface DiscoveryFrame {
+	readonly directory: string;
+	readonly after?: string;
+}
+
+interface DiscoveryFrontier {
+	readonly version: 1;
+	readonly pending: DiscoveryFrame[];
+}
+
+function safeDiscoveryDirectory(value: unknown): value is string {
+	if (typeof value !== "string" || value.length === 0 || value.length > 4_096 || path.isAbsolute(value)) return false;
+	return !value.split(/[\\/]+/u).some((part) => part === ".." || part.includes("\0"));
+}
+
+async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | undefined> {
+	try {
+		const cursorPath = path.join(root, DISCOVERY_CURSOR_FILE);
+		const stat = await fs.promises.lstat(cursorPath);
+		if (!ownedRegularFile(stat) || stat.size > MAX_DISCOVERY_CURSOR_BYTES) return undefined;
+		const parsed = JSON.parse(await fs.promises.readFile(cursorPath, "utf8")) as Partial<DiscoveryFrontier>;
+		if (
+			parsed.version !== 1 ||
+			!Array.isArray(parsed.pending) ||
+			parsed.pending.length > MAX_ARTIFACT_ENTRIES_PER_PASS
+		)
+			return undefined;
+		const pending: DiscoveryFrame[] = [];
+		for (const frame of parsed.pending) {
+			if (!frame || typeof frame !== "object") return undefined;
+			const candidate = frame as { directory?: unknown; after?: unknown };
+			if (!safeDiscoveryDirectory(candidate.directory)) return undefined;
+			if (candidate.after !== undefined && (typeof candidate.after !== "string" || candidate.after.length > 4_096))
+				return undefined;
+			pending.push({
+				directory: candidate.directory,
+				...(typeof candidate.after === "string" && candidate.after ? { after: candidate.after } : {}),
+			});
+		}
+		return pending;
+	} catch {
+		return undefined;
+	}
+}
+
+async function writeDiscoveryFrontier(root: string, pending: readonly DiscoveryFrame[]): Promise<void> {
+	const cursor = path.join(root, DISCOVERY_CURSOR_FILE);
+	const temporary = path.join(root, `.${DISCOVERY_CURSOR_FILE}.${randomUUID()}.tmp`);
+	try {
+		const serialized = `${JSON.stringify({ version: 1, pending })}\n`;
+		if (Buffer.byteLength(serialized, "utf8") > MAX_DISCOVERY_CURSOR_BYTES) {
+			throw new Error("Artifact discovery frontier exceeded its persistence bound.");
+		}
+		await fs.promises.writeFile(temporary, serialized, {
+			encoding: "utf8",
+			flag: "wx",
+			mode: 0o600,
+		});
+		await fs.promises.rename(temporary, cursor);
+	} finally {
+		await fs.promises.unlink(temporary).catch(() => undefined);
+	}
+}
+
+function resolveDiscoveryFrame(root: string, frame: DiscoveryFrame): string | undefined {
+	const candidate = path.resolve(root, frame.directory);
+	const relative = path.relative(root, candidate);
+	if (relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+	return candidate;
+}
+
 async function findSessionArtifactDirectories(
 	root: string,
 	maximum: number,
@@ -326,43 +474,59 @@ async function findSessionArtifactDirectories(
 	budget: ArtifactCleanupBudget,
 ): Promise<{ directories: string[]; complete: boolean }> {
 	if (!(await ownedDirectory(root))) return { directories: [], complete: true };
-	const pending = [root];
+	const pending = (await readDiscoveryFrontier(root)) ?? [{ directory: "." }];
 	const directories: string[] = [];
-	let complete = true;
-	while (pending.length > 0 && directories.length < maximum) {
-		const directory = pending.pop();
-		if (!directory) break;
-		let entries: fs.Dir;
+	while (pending.length > 0 && directories.length < maximum && budget.entries < budget.maxEntries) {
+		const frame = pending.pop();
+		if (!frame) break;
+		const directory = resolveDiscoveryFrame(root, frame);
+		if (!directory || !(await ownedDirectory(directory))) continue;
+		let page: { names: string[]; more: boolean };
 		try {
-			entries = await fs.promises.opendir(directory);
+			page = await lexicalDirectoryPage(
+				directory,
+				frame.after,
+				Math.min(DISCOVERY_PAGE_SIZE, Math.max(0, budget.maxEntries - budget.entries)),
+				(entry) => entry.isDirectory() && !entry.isSymbolicLink(),
+			);
 		} catch {
 			continue;
 		}
-		for await (const entry of entries) {
-			if (budget.entries >= budget.maxEntries) {
-				complete = false;
-				break;
-			}
+		let lastProcessed: string | undefined;
+		const childFrames: DiscoveryFrame[] = [];
+		for (const name of page.names) {
+			if (directories.length >= maximum || budget.entries >= budget.maxEntries) break;
 			budget.entries += 1;
-			if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
-			const candidate = path.join(directory, entry.name);
+			lastProcessed = name;
+			const candidate = path.join(directory, name);
 			if (!(await ownedDirectory(candidate))) continue;
-			if (entry.name === ARTIFACT_DIRECTORY_NAME) {
+			if (name === ARTIFACT_DIRECTORY_NAME) {
 				// Completed batches carry a fresh marker. Skipping them lets later
 				// interactions advance through a tree larger than one bounded pass.
-				if (!(await cleanupMarkerIsFresh(candidate, now))) {
-					directories.push(candidate);
-					if (directories.length >= maximum) {
-						complete = false;
-						break;
-					}
-				}
-			} else pending.push(candidate);
-			if (budget.entries % SCAN_YIELD_INTERVAL === 0) await eventLoopTurn();
+				if (!(await cleanupMarkerIsFresh(candidate, now))) directories.push(candidate);
+			} else {
+				const relative = path.relative(root, candidate);
+				if (safeDiscoveryDirectory(relative)) childFrames.push({ directory: relative });
+			}
 		}
-		if (!complete) break;
+		if (page.more || (page.names.length > 0 && lastProcessed !== page.names.at(-1))) {
+			pending.push({ directory: frame.directory, ...(lastProcessed ? { after: lastProcessed } : {}) });
+		}
+		// The frontier is a depth-first stack. Limiting each lexical page and pushing
+		// children in reverse order keeps persisted state bounded by width × depth
+		// instead of accumulating an entire broad session tree in memory.
+		for (let index = childFrames.length - 1; index >= 0; index -= 1) {
+			const child = childFrames[index];
+			if (child) pending.push(child);
+		}
 	}
-	if (pending.length > 0) complete = false;
+	const complete = pending.length === 0;
+	try {
+		if (complete) await fs.promises.unlink(path.join(root, DISCOVERY_CURSOR_FILE)).catch(() => undefined);
+		else await writeDiscoveryFrontier(root, pending);
+	} catch {
+		// Losing a best-effort frontier repeats safe discovery but never broadens deletion.
+	}
 	return { directories, complete };
 }
 

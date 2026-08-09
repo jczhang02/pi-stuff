@@ -196,4 +196,53 @@ describe("Agent artifact maintenance", () => {
 		expect(existsSync(terminal.inputPath)).toBeFalse();
 		expect(existsSync(terminal.metadataPath)).toBeFalse();
 	});
+
+	test("uses one code-unit ordering for mixed-case cleanup cursors", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-case-cursor-"));
+		temporaryDirectories.push(root);
+		const tempArtifacts = join(root, "temp-artifacts");
+		mkdirSync(tempArtifacts);
+		const now = Date.now();
+		writeArtifactGroup(tempArtifacts, "aaaaaaaaaaaa", "running", now);
+		const terminal = writeArtifactGroup(tempArtifacts, "BBBBBBBBBBBB", "complete", now);
+
+		for (let attempt = 0; attempt < 4 && existsSync(terminal.inputPath); attempt += 1) {
+			await maintainAgentArtifacts(7, {
+				sessionsRoot: join(root, "missing-sessions"),
+				tempArtifactsDir: tempArtifacts,
+				now,
+				maxEntries: 1,
+			});
+		}
+
+		expect(existsSync(terminal.inputPath)).toBeFalse();
+		expect(existsSync(terminal.metadataPath)).toBeFalse();
+	});
+
+	test("persists a discovery frontier across deeply bounded session-tree passes", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-discovery-frontier-"));
+		temporaryDirectories.push(root);
+		const sessionsRoot = join(root, "sessions");
+		const tempArtifacts = join(root, "temp-artifacts");
+		mkdirSync(sessionsRoot);
+		mkdirSync(tempArtifacts);
+		const now = Date.now();
+		const files = ["a", "b", "c"].map((name) => {
+			const directory = join(sessionsRoot, name, "nested", "subagent-artifacts");
+			mkdirSync(directory, { recursive: true });
+			return writeArtifactGroup(directory, name.repeat(12), "complete", now).inputPath;
+		});
+
+		for (let attempt = 0; attempt < 20 && files.some((file) => existsSync(file)); attempt += 1) {
+			await maintainAgentArtifacts(7, {
+				sessionsRoot,
+				tempArtifactsDir: tempArtifacts,
+				now,
+				maxDirectories: 1,
+				maxEntries: 2,
+			});
+		}
+
+		expect(files.every((file) => !existsSync(file))).toBeTrue();
+	});
 });
