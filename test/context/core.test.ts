@@ -715,6 +715,84 @@ describe("Context capability lifecycle", () => {
 });
 
 describe("Context projections", () => {
+	test("falls back to bounded native history for forked Agents without giving fresh Agents the whole session", async () => {
+		const entry = {
+			type: "message",
+			id: "message-1",
+			parentId: null,
+			timestamp: "2026-08-09T00:00:00.000Z",
+			message: taggedMessage("parent <instruction>history</instruction>"),
+		} as unknown as SessionEntry;
+		const ctx = context([entry]);
+
+		const fork = await projectCurrentContext("agent-fork", ctx, { maxTokens: 100 });
+		const fresh = await projectCurrentContext("agent-fresh", ctx, { maxTokens: 100 });
+		const btw = await projectCurrentContext("btw", ctx, { maxTokens: 100 });
+
+		expect(fork.source).toBe("native");
+		expect(fork.text).toContain('audience="agent-fork"');
+		expect(fork.text).toContain("parent &lt;instruction&gt;history&lt;/instruction&gt;");
+		expect(fork.text.length).toBeLessThanOrEqual(700);
+		expect(fresh).toEqual({ source: "native", text: "", truncated: false });
+		expect(btw).toEqual({ source: "native", text: "", truncated: false });
+	});
+
+	test("projects a caller-owned frozen snapshot without re-reading a changed session", async () => {
+		let reads = 0;
+		const ctx = context([
+			{
+				type: "message",
+				id: "leaked-message",
+				parentId: null,
+				timestamp: "2026-08-09T00:00:00.000Z",
+				message: taggedMessage("leaked later context"),
+			} as unknown as SessionEntry,
+		]);
+		const original = ctx.sessionManager.buildContextEntries.bind(ctx.sessionManager);
+		ctx.sessionManager.buildContextEntries = () => {
+			reads += 1;
+			return original();
+		};
+		const projection = await projectCurrentContext("agent-fork", ctx, {
+			maxTokens: 100,
+			sourceMessages: [taggedMessage("frozen context")],
+		});
+
+		expect(reads).toBe(0);
+		expect(projection.text).toContain("frozen context");
+		expect(projection.text).not.toContain("leaked later context");
+	});
+
+	test("does not replace an explicit frozen snapshot with an older Magic projection cache", async () => {
+		const handlers: Handlers = new Map();
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (pi: ExtensionAPI) => {
+					pi.on("context", (event) => {
+						const contextEvent = event as { messages: ReturnType<typeof taggedMessage>[] };
+						const input = contextEvent.messages.map((message) => message.content[0]?.text ?? "").join(" ");
+						return {
+							messages: [taggedMessage(`<session-history>${input}</session-history>`)],
+						};
+					});
+				},
+			}),
+		});
+		const ctx = context([], "/workspace/frozen", "frozen-session");
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		const cached = await projectCurrentContext("agent-fork", ctx, {
+			sourceMessages: [taggedMessage("old snapshot")],
+		});
+		const frozen = await projectCurrentContext("agent-fork", ctx, {
+			sourceMessages: [taggedMessage("new frozen snapshot")],
+		});
+
+		expect(cached.text).toContain("old snapshot");
+		expect(frozen.text).toContain("new frozen snapshot");
+		expect(frozen.text).not.toContain("old snapshot");
+	});
+
 	test("does not route an unbound Host through another Host with the same session id", async () => {
 		const handlers: Handlers = new Map();
 		const hostA = context([], "/workspace/shared", "same-session");

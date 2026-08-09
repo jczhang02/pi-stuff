@@ -98,6 +98,8 @@ export interface ContextProjection {
 export interface ContextProjectionOptions {
 	/** Maximum generic Pi tokens (Pi 0.83 estimates text at four UTF-16 code units per token). */
 	readonly maxTokens?: number;
+	/** Optional caller-owned frozen Pi context snapshot. Its array is copied before dispatch. */
+	readonly sourceMessages?: readonly ContextEvent["messages"][number][];
 }
 
 export interface ContextCapability {
@@ -143,11 +145,46 @@ function capabilityRegistry(): ContextCapabilityRegistry {
 	return root[CONTEXT_CAPABILITY_REGISTRY];
 }
 
+function nativeProjection(
+	audience: ContextProjectionAudience,
+	ctx: ExtensionContext,
+	options?: ContextProjectionOptions,
+): ContextProjection {
+	// BTW already carries its frozen effective branch as request messages, while
+	// fresh Agents intentionally receive no conversation history. Only a fork
+	// needs a native reference projection when Magic is unavailable.
+	if (audience !== "agent-fork") return { source: "native", text: "", truncated: false };
+	let messages: AgentMessage[];
+	try {
+		messages = options?.sourceMessages ? [...options.sourceMessages] : currentAgentMessages(ctx);
+	} catch {
+		return { source: "native", text: "", truncated: false };
+	}
+	const escaped = (value: string): string =>
+		value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+	const history = messages
+		.map((message) => {
+			const text = textOfMessage(message).trim();
+			if (!text) return "";
+			const role = typeof message.role === "string" ? message.role : "message";
+			return `<message role="${escaped(role)}">\n${escaped(text)}\n</message>`;
+		})
+		.filter(Boolean)
+		.join("\n");
+	if (!history) return { source: "native", text: "", truncated: false };
+	const formatted = formatProjection(
+		`<session-history source="pi-native-fallback">\n${history}\n</session-history>`,
+		audience,
+		options,
+	);
+	return { source: "native", ...formatted };
+}
+
 function nativeCapability(): ContextCapability {
 	return {
 		status: () => ({ state: "native", engine: "native" }),
 		activate: async () => ({ state: "native", engine: "native" }),
-		projectCurrentContext: async () => ({ source: "native", text: "", truncated: false }),
+		projectCurrentContext: async (audience, ctx, options) => nativeProjection(audience, ctx, options),
 	};
 }
 
@@ -497,15 +534,21 @@ class ContextCapabilityRuntime implements ContextCapability {
 	): Promise<ContextProjection> {
 		await this.activate(ctx, "projection");
 		const key = projectionKey(ctx);
-		let cached = this.projections.get(key);
+		// A caller-supplied snapshot is an explicit consistency boundary. It must
+		// not be replaced by a projection cached from another point in the turn.
+		const cacheable = options?.sourceMessages === undefined;
+		let cached = cacheable ? this.projections.get(key) : undefined;
 		if (!cached && this.magicContextHandler) {
 			try {
-				const event: ContextEvent = { type: "context", messages: currentAgentMessages(ctx) };
+				const event: ContextEvent = {
+					type: "context",
+					messages: options?.sourceMessages ? [...options.sourceMessages] : currentAgentMessages(ctx),
+				};
 				const result = await this.magicContextHandler(event, quietMagicContext(ctx));
 				const full = extractMagicProjection(result?.messages ?? event.messages);
 				if (!full) throw new Error("Magic Context produced no valid history projection.");
 				cached = { full };
-				this.projections.set(key, cached);
+				if (cacheable) this.projections.set(key, cached);
 				this.state = { state: "active", engine: "magic-context", trigger: "projection" };
 			} catch (error) {
 				this.state = {
@@ -516,7 +559,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 				};
 			}
 		}
-		if (!cached?.full) return { source: "native", text: "", truncated: false };
+		if (!cached?.full) return nativeProjection(audience, ctx, options);
 		const formatted = formatProjection(cached.full, audience, options);
 		return { source: "magic-context", ...formatted };
 	}

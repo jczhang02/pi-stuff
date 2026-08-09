@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import type { Api, AssistantMessage, Message, Model, StopReason, UserMessage } from "@earendil-works/pi-ai";
 import { isContextOverflow } from "@earendil-works/pi-ai";
 import {
+	type ContextEvent,
 	convertToLlm,
 	type ExtensionContext,
 	type SessionEntry,
@@ -73,13 +74,15 @@ function isPendingAssistant(entry: SessionEntry | undefined): boolean {
 /** Pi's effective active context, with compaction/branch summaries applied. */
 export function readEffectiveContext(ctx: Pick<ExtensionContext, "sessionManager">): {
 	entries: SessionEntry[];
+	contextMessages: ContextEvent["messages"];
 	messages: Message[];
 } {
 	const entries = ([...ctx.sessionManager.buildContextEntries()] as SessionEntry[]).filter(
 		(entry) => !isPendingAssistant(entry),
 	);
-	const messages = convertToLlm(entries.flatMap((entry) => sessionEntryToContextMessages(entry)));
-	return { entries, messages };
+	const contextMessages = entries.flatMap((entry) => sessionEntryToContextMessages(entry));
+	const messages = convertToLlm(contextMessages);
+	return { contextMessages, entries, messages };
 }
 
 function buildBtwMessages(
@@ -170,8 +173,10 @@ export async function executeBtw(
 	let effectiveContext: ReturnType<typeof readEffectiveContext>;
 	let contextProjection: string;
 	try {
-		contextProjection = (await projectCurrentContext("btw", ctx)).text;
 		effectiveContext = readEffectiveContext(ctx);
+		contextProjection = (
+			await projectCurrentContext("btw", ctx, { sourceMessages: effectiveContext.contextMessages })
+		).text;
 		built = buildBtwMessages(ctx, model, userMessage, contextProjection, undefined, effectiveContext);
 	} catch (error) {
 		return errorResult(callError(error instanceof Error ? error.message : String(error)), "");
