@@ -676,6 +676,7 @@ describe("reduced foreground Agent engine", () => {
 			openSessionCalls += 1;
 			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
 		};
+		let frozenProjectionMessages: readonly unknown[] | undefined;
 		const result = await executor(
 			cwd,
 			state(),
@@ -684,11 +685,14 @@ describe("reduced foreground Agent engine", () => {
 			},
 			{
 				agent: { ...agent(), model: "test/small" },
-				projectContext: async (_audience, _context, options) => ({
-					source: "magic-context",
-					text: `<bounded max="${String(options?.maxTokens)}">parent memory</bounded>`,
-					truncated: true,
-				}),
+				projectContext: async (_audience, _context, options) => {
+					frozenProjectionMessages = options?.sourceMessages;
+					return {
+						source: "magic-context",
+						text: `<bounded max="${String(options?.maxTokens)}">parent memory</bounded>`,
+						truncated: true,
+					};
+				},
 			},
 		).execute(
 			"oversized-fork-call",
@@ -704,6 +708,46 @@ describe("reduced foreground Agent engine", () => {
 		expect(captured?.sessionFile).toBeUndefined();
 		expect(captured?.task).toContain("parent memory");
 		expect(captured?.task).toContain("delegated subagent running from a fork");
+		expect(frozenProjectionMessages).toEqual([]);
+	});
+
+	test("projects multilingual parent history instead of admitting an overflowing raw fork", async () => {
+		for (const { label, history } of [
+			{ label: "cjk", history: "上下文".repeat(1_500) },
+			{ label: "emoji", history: "🧭".repeat(2_100) },
+		]) {
+			const cwd = fs.mkdtempSync(path.join(os.tmpdir(), `pi-stuff-parent-${label}-`));
+			temporaryDirectories.push(cwd);
+			fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+			const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 100);
+			(ctx.sessionManager as unknown as { buildContextEntries: () => unknown[] }).buildContextEntries = () => [
+				{ type: "message", message: { role: "user", content: history } },
+			];
+			let openSessionCalls = 0;
+			(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+				openSessionCalls += 1;
+				return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
+			};
+			let projectedSource = "";
+
+			const result = await executor(cwd, state(), undefined, {
+				agent: { ...agent(), model: "test/small" },
+				projectContext: async (_audience, _context, options) => {
+					projectedSource = JSON.stringify(options?.sourceMessages ?? []);
+					return { source: "native", text: "bounded multilingual history", truncated: true };
+				},
+			}).execute(
+				`parent-${label}`,
+				{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
+				new AbortController().signal,
+				undefined,
+				ctx,
+			);
+
+			expect(result.isError, label).not.toBeTrue();
+			expect(openSessionCalls, label).toBe(0);
+			expect(projectedSource, label).toContain(history.slice(0, 4));
+		}
 	});
 
 	test("conservatively preflights Chinese, emoji, and mixed fork inputs", async () => {
@@ -892,18 +936,21 @@ describe("reduced foreground Agent engine", () => {
 		expect(engineCalls).toBe(1);
 	});
 
-	test("keeps a fitting primary fork model while filtering an undersized fallback", async () => {
+	test("uses one projected fork so heterogeneous fallback candidates keep their order", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-filter-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
-		let captured: { modelCandidates?: string[] } | undefined;
+		let captured: { modelCandidates?: string[]; sessionFile?: string; task: string } | undefined;
 		const result = await executor(
 			cwd,
 			state(),
 			(launch) => {
 				captured = launch;
 			},
-			{ agent: { ...agent(), model: "test/large", fallbackModels: ["test/small"] } },
+			{
+				agent: { ...agent(), model: "test/large", fallbackModels: ["test/small"] },
+				projectContext: async () => ({ source: "native", text: "bounded parent", truncated: true }),
+			},
 		).execute(
 			"fork-filter-call",
 			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
@@ -920,7 +967,9 @@ describe("reduced foreground Agent engine", () => {
 		);
 
 		expect(result.isError).not.toBe(true);
-		expect(captured?.modelCandidates).toEqual(["test/large"]);
+		expect(captured?.modelCandidates).toEqual(["test/large", "test/small"]);
+		expect(captured?.sessionFile).toBeUndefined();
+		expect(captured?.task).toContain("bounded parent");
 	});
 
 	test("uses the persisted branch estimator to avoid cloning an oversized raw branch", async () => {
@@ -1071,6 +1120,33 @@ describe("reduced foreground Agent engine", () => {
 
 		expect(result.isError).toBe(true);
 		expect(openSessionCalls).toBe(0);
+	});
+
+	test("accounts for the Host system prompt before admitting a child launch", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-host-prompt-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 100);
+		(ctx as unknown as { getSystemPrompt: () => string }).getSystemPrompt = () => "p".repeat(20_000);
+		let engineCalls = 0;
+
+		const result = await executor(
+			cwd,
+			state(),
+			() => {
+				engineCalls += 1;
+			},
+			{ agent: { ...agent(), model: "test/small" } },
+		).execute(
+			"host-prompt-overflow",
+			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
+			new AbortController().signal,
+			undefined,
+			ctx,
+		);
+
+		expect(result.isError).toBeTrue();
+		expect(engineCalls).toBe(0);
 	});
 
 	test("supports one native and one projected child in the same parallel fork", async () => {

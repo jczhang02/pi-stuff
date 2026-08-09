@@ -4,7 +4,7 @@ import {
 	normalizePublicAgentParams,
 	toEngineParams,
 } from "../../packages/pi-stuff-agents/src/extension/product-executor.js";
-import { SubagentParams } from "../../packages/pi-stuff-agents/src/extension/schemas.js";
+import { FanoutChildSubagentParams, SubagentParams } from "../../packages/pi-stuff-agents/src/extension/schemas.js";
 import { deriveLaunchRunId } from "../../packages/pi-stuff-agents/src/runs/foreground/subagent-executor.js";
 
 describe("Agent product contract", () => {
@@ -99,6 +99,14 @@ describe("Agent product contract", () => {
 				],
 			}),
 		).toThrow("one shared context value");
+	});
+
+	test("keeps task-level foreground out of the owner-blocking fanout schema", () => {
+		const input = {
+			tasks: [{ agent: "general-purpose", foreground: false, task: "Implement" }],
+		};
+		expect(Check(SubagentParams, input)).toBeTrue();
+		expect(Check(FanoutChildSubagentParams, input)).toBeFalse();
 	});
 
 	test("maps the complete allowed parallel launch without legacy fields", () => {

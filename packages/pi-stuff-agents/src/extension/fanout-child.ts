@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { projectCurrentContext } from "@jczhang02/pi-stuff-context";
 import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
 import { discoverAgents } from "../agents/agents.ts";
 import {
@@ -59,6 +60,7 @@ interface FanoutExecutor {
 interface FanoutExecutorInput {
 	readonly config: PiStuffAgentsConfig;
 	readonly pi: ExtensionAPI;
+	readonly projectContext: typeof projectCurrentContext;
 	readonly state: SubagentState;
 }
 
@@ -82,7 +84,7 @@ function expandTilde(p: string): string {
 }
 
 const PRODUCTION_DEPENDENCIES: FanoutChildDependencies = {
-	createExecutor: ({ config, pi, state }) =>
+	createExecutor: ({ config, pi, projectContext, state }) =>
 		createSubagentExecutor({
 			pi,
 			state,
@@ -92,6 +94,7 @@ const PRODUCTION_DEPENDENCIES: FanoutChildDependencies = {
 			getSubagentSessionRoot,
 			expandTilde,
 			discoverAgents,
+			projectContext,
 			allowMutatingManagementActions: false,
 		}),
 	createGovernorCoordinator: (config) =>
@@ -148,7 +151,7 @@ export default function registerFanoutChildSubagentExtension(
 
 	const config = deps.loadConfiguration();
 	const state = createChildSafeState();
-	const executor = deps.createExecutor({ config, pi, state });
+	const executor = deps.createExecutor({ config, pi, projectContext: projectCurrentContext, state });
 	const executionGovernor = deps.createGovernorCoordinator(config);
 	let active = true;
 	let boundLaunchIdentity: { sessionId: string; ownerAgentPath: readonly string[] } | undefined;

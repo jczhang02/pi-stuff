@@ -182,27 +182,31 @@ describe("fanout child Agent composition", () => {
 			settled: 0,
 			disposed: 0,
 		};
+		let projectorProvided = false;
 		const dependencies: Partial<FanoutChildDependencies> = {
 			loadConfiguration: config,
-			createExecutor: () => ({
-				execute: async (_id, params, _signal, _onUpdate, _ctx, hooks) => {
-					engineParams.push(params);
-					await hooks?.beforeForegroundStart?.({
-						runId: params.launchRunId!,
-						asyncDir: runtimeDir,
-						writerCount: 1,
-						abortStart: () => true,
-					});
-					return {
-						content: [{ type: "text", text: "private engine receipt" }],
-						details: {
-							mode: "single",
-							runId: "nested-actual",
-							results: [{ agent: "worker", success: true, exitCode: 0, finalOutput: "done" }],
-						},
-					} as never;
-				},
-			}),
+			createExecutor: (input) => {
+				projectorProvided = typeof input.projectContext === "function";
+				return {
+					execute: async (_id, params, _signal, _onUpdate, _ctx, hooks) => {
+						engineParams.push(params);
+						await hooks?.beforeForegroundStart?.({
+							runId: params.launchRunId!,
+							asyncDir: runtimeDir,
+							writerCount: 1,
+							abortStart: () => true,
+						});
+						return {
+							content: [{ type: "text", text: "private engine receipt" }],
+							details: {
+								mode: "single",
+								runId: "nested-actual",
+								results: [{ agent: "worker", success: true, exitCode: 0, finalOutput: "done" }],
+							},
+						} as never;
+					},
+				};
+			},
 			createGovernorCoordinator: () => ({
 				bindSession: (identity) => governor.binds.push(identity),
 				prepare: async (input) => {
@@ -228,6 +232,7 @@ describe("fanout child Agent composition", () => {
 		};
 
 		registerFanoutChild(api.api, dependencies);
+		expect(projectorProvided).toBeTrue();
 		expect(api.tool?.label).toBe("Agent");
 		expect(api.tool?.description).not.toContain("Allowed management/control actions");
 		expect(api.tool?.description).toContain("always owner-blocking");

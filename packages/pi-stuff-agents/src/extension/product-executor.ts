@@ -205,9 +205,12 @@ function bounded(value: string, limit: number): string {
 	return `${value.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
-function resultStatus(result: SingleResult): "completed" | "failed" | "stopped" {
+function resultStatus(result: SingleResult): "completed" | "failed" | "stopped" | "status unknown" {
 	if (result.interrupted || result.stopped || result.detached) return "stopped";
-	return result.exitCode === 0 ? "completed" : "failed";
+	if (result.crashed || result.error || (typeof result.exitCode === "number" && result.exitCode !== 0))
+		return "failed";
+	if (result.exitCode === 0) return "completed";
+	return "status unknown";
 }
 
 function childSummary(result: SingleResult): string {
@@ -239,10 +242,15 @@ export type AgentEngineResult = AgentToolResult<Details> & { readonly isError?: 
 /** Parent-facing projection: direct summaries only, never engine bookkeeping paths. */
 export function projectEngineResult(params: PublicAgentParams, result: AgentEngineResult): AgentEngineResult {
 	const { lifecycleBinding: _lifecycleBinding, ...publicDetails } = result.details;
-	const childFailed = publicDetails.results.some(
-		(child) =>
-			(typeof child.exitCode === "number" && child.exitCode !== 0) || Boolean(child.error) || child.crashed === true,
-	);
+	const childFailed =
+		!params.action &&
+		params.foreground === true &&
+		publicDetails.results.some(
+			(child) =>
+				(typeof child.exitCode === "number" && child.exitCode !== 0) ||
+				Boolean(child.error) ||
+				child.crashed === true,
+		);
 	const publicResult: AgentEngineResult = {
 		...result,
 		...(childFailed ? { isError: true } : {}),

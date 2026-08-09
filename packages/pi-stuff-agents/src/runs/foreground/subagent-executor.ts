@@ -3,9 +3,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult as CoreAgentToolResult } from "@earendil-works/pi-agent-core";
 import {
+	type ContextEvent,
 	type ExtensionAPI,
 	type ExtensionContext,
 	estimateTokens,
+	type SessionEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import type { projectCurrentContext } from "@jczhang02/pi-stuff-context";
@@ -208,6 +210,8 @@ interface PreparedLaunch {
 	context: ContextMode;
 	contextSummary: ContextSummary;
 	forkContextTokens?: number;
+	/** Frozen persisted branch used for both fork admission and projected fallback. */
+	forkSourceMessages?: ContextEvent["messages"];
 	/** true uses Pi's native raw branch; false uses a bounded projected fork. */
 	rawForkByIndex: boolean[];
 	fixedInputTokensByIndex: number[];
@@ -227,7 +231,7 @@ const DEFAULT_ENGINES: ExecutorEngines = {
 	foreground: executeForegroundConfig,
 };
 
-const CHILD_CONTEXT_RESERVE_MAX_TOKENS = 16_384;
+const CHILD_RUNTIME_RESERVE_RATIO = 0.25;
 
 function errorResult(mode: Details["mode"], message: string, extras: Partial<Details> = {}): AgentToolResult<Details> {
 	return {
@@ -257,7 +261,7 @@ function estimateTextTokens(text: string): number {
 	let asciiCodePoints = 0;
 	let nonAsciiTokens = 0;
 	for (const codePoint of text) {
-		if (codePoint.codePointAt(0)! <= 0x7f) {
+		if ((codePoint.codePointAt(0) ?? 0) <= 0x7f) {
 			asciiCodePoints += 1;
 			continue;
 		}
@@ -270,7 +274,27 @@ function estimateTextTokens(text: string): number {
 	return Math.ceil(asciiCodePoints / 4) + nonAsciiTokens;
 }
 
-function inheritedContextTokens(ctx: ExtensionContext): number {
+function estimateContextMessageTokens(message: ContextEvent["messages"][number]): number {
+	let piEstimate = 0;
+	try {
+		piEstimate = estimateTokens(message);
+	} catch {
+		// The serialized conservative estimate below remains available.
+	}
+	let serializedEstimate = Number.POSITIVE_INFINITY;
+	try {
+		const serialized = JSON.stringify(message);
+		if (serialized !== undefined) serializedEstimate = estimateTextTokens(serialized);
+	} catch {
+		// A message that cannot be serialized must never be admitted as a raw fork.
+	}
+	return Math.max(piEstimate, serializedEstimate);
+}
+
+function inheritedContextSnapshot(ctx: ExtensionContext): {
+	readonly messages?: ContextEvent["messages"];
+	readonly tokens: number;
+} {
 	let effective: number | undefined;
 	try {
 		const value = ctx.getContextUsage()?.tokens;
@@ -279,20 +303,43 @@ function inheritedContextTokens(ctx: ExtensionContext): number {
 		// Continue with the persisted branch estimator.
 	}
 	try {
-		const persisted = ctx.sessionManager
-			.buildContextEntries()
-			.flatMap((entry) => sessionEntryToContextMessages(entry))
-			.reduce((total, message) => total + estimateTokens(message), 0);
+		const entries = [...ctx.sessionManager.buildContextEntries()] as SessionEntry[];
+		const persistedMessages = entries.flatMap((entry) => sessionEntryToContextMessages(entry));
+		const messages = entries
+			.filter(
+				(entry) =>
+					entry.type !== "message" || entry.message.role !== "assistant" || entry.message.stopReason !== "pending",
+			)
+			.flatMap((entry) => sessionEntryToContextMessages(entry));
+		const persisted = persistedMessages.reduce((total, message) => total + estimateContextMessageTokens(message), 0);
 		// A native fork clones persisted branch entries, not the post-transform
 		// prompt reported by getContextUsage(). Magic Context can make the latter
 		// much smaller, so use the conservative larger estimate.
-		return Math.max(effective ?? 0, persisted);
+		return { messages: [...messages], tokens: Math.max(effective ?? 0, persisted) };
 	} catch {
 		// If the persisted branch cannot be measured, the live usage may be a
 		// much smaller Magic-transformed prompt. Force the bounded projection path
 		// instead of risking an oversized native clone.
-		return Number.POSITIVE_INFINITY;
+		return { tokens: Number.POSITIVE_INFINITY };
 	}
+}
+
+function inheritedLaunchPromptTokens(ctx: ExtensionContext): number {
+	let promptTokens = 0;
+	try {
+		promptTokens = estimateTextTokens(ctx.getSystemPrompt());
+	} catch {
+		// Older compatible Hosts or focused tests may not expose this optional seam.
+	}
+	try {
+		const getOptions = (ctx as ExtensionContext & { getSystemPromptOptions?: () => unknown }).getSystemPromptOptions;
+		const options = getOptions?.call(ctx);
+		const serialized = JSON.stringify(options);
+		if (serialized !== undefined) promptTokens = Math.max(promptTokens, estimateTextTokens(serialized));
+	} catch {
+		// The proportional runtime reserve still covers the unknown Host surface.
+	}
+	return promptTokens;
 }
 
 function taskModelCandidates(data: PreparedLaunch, task: TaskParam, agent: AgentConfig): string[] {
@@ -323,7 +370,7 @@ function projectionTokenBudget(data: PreparedLaunch): number {
 		for (const candidate of candidates) {
 			const model = findModelInfo(candidate, data.availableModels, data.parentModel?.provider);
 			if (!model?.contextWindow || !model.maxTokens) return 0;
-			const reserve = Math.min(CHILD_CONTEXT_RESERVE_MAX_TOKENS, Math.floor(model.contextWindow * 0.25));
+			const reserve = Math.floor(model.contextWindow * CHILD_RUNTIME_RESERVE_RATIO);
 			launchBudget = Math.min(launchBudget, model.contextWindow - model.maxTokens - reserve - knownTokens);
 		}
 	}
@@ -340,7 +387,7 @@ function forkInputCapacity(model: ModelInfo): number | undefined {
 		model.maxTokens <= 0
 	)
 		return undefined;
-	const runtimeReserve = Math.min(CHILD_CONTEXT_RESERVE_MAX_TOKENS, Math.floor(model.contextWindow * 0.25));
+	const runtimeReserve = Math.floor(model.contextWindow * CHILD_RUNTIME_RESERVE_RATIO);
 	return Math.max(0, Math.floor(model.contextWindow - model.maxTokens - runtimeReserve));
 }
 
@@ -370,12 +417,16 @@ function prepareLaunchModelPlan(input: {
 	maxSubagentDepth: number;
 }): {
 	forkContextTokens?: number;
+	forkSourceMessages?: ContextEvent["messages"];
 	rawForkByIndex: boolean[];
 	fixedInputTokensByIndex: number[];
 	modelCandidatesByIndex: Array<string[] | undefined>;
 } {
 	const tasks = taskInputs(input.params);
-	const forkTokens = input.context === "fork" ? inheritedContextTokens(input.ctx) : 0;
+	const forkSnapshot: { readonly messages?: ContextEvent["messages"]; readonly tokens: number } =
+		input.context === "fork" ? inheritedContextSnapshot(input.ctx) : { tokens: 0 };
+	const forkTokens = forkSnapshot.tokens;
+	const launchPromptTokens = inheritedLaunchPromptTokens(input.ctx);
 	const fixedInputTokensByIndex: number[] = [];
 	const rawForkByIndex: boolean[] = [];
 	const modelCandidatesByIndex = tasks.map((task, index) => {
@@ -425,22 +476,13 @@ function prepareLaunchModelPlan(input: {
 		if ("error" in built) throw new Error(built.error);
 		const candidates = built.task.modelCandidates ?? [];
 		const taskTokens =
-			estimateTextTokens(built.task.task) + estimateTextTokens(built.task.systemPrompt?.trim() ?? "");
+			estimateTextTokens(built.task.task) +
+			estimateTextTokens(built.task.systemPrompt?.trim() ?? "") +
+			launchPromptTokens;
 		fixedInputTokensByIndex[index] = taskTokens;
 		if (input.context !== "fork") {
 			rawForkByIndex[index] = false;
 			return candidates.length > 0 ? candidates : undefined;
-		}
-
-		const requiredInputTokens = forkTokens + taskTokens;
-		const safeCandidates = candidates.filter((candidate) => {
-			const model = findModelInfo(candidate, input.availableModels, input.parentModel?.provider);
-			const capacity = model ? forkInputCapacity(model) : undefined;
-			return capacity !== undefined && requiredInputTokens <= capacity;
-		});
-		if (safeCandidates.length > 0) {
-			rawForkByIndex[index] = true;
-			return safeCandidates;
 		}
 
 		const projectedCandidates = candidates.filter((candidate) => {
@@ -448,6 +490,19 @@ function prepareLaunchModelPlan(input: {
 			const capacity = model ? forkInputCapacity(model) : undefined;
 			return capacity !== undefined && taskTokens <= capacity;
 		});
+		const allCandidatesFitRaw =
+			candidates.length > 0 &&
+			projectedCandidates.length === candidates.length &&
+			candidates.every((candidate) => {
+				const model = findModelInfo(candidate, input.availableModels, input.parentModel?.provider);
+				const capacity = model ? forkInputCapacity(model) : undefined;
+				return capacity !== undefined && forkTokens + taskTokens <= capacity;
+			});
+		if (allCandidatesFitRaw) {
+			rawForkByIndex[index] = true;
+			return candidates;
+		}
+
 		if (projectedCandidates.length > 0) {
 			rawForkByIndex[index] = false;
 			return projectedCandidates;
@@ -470,6 +525,7 @@ function prepareLaunchModelPlan(input: {
 	});
 	return {
 		...(input.context === "fork" ? { forkContextTokens: forkTokens } : {}),
+		...(input.context === "fork" && forkSnapshot.messages ? { forkSourceMessages: forkSnapshot.messages } : {}),
 		rawForkByIndex,
 		fixedInputTokensByIndex,
 		modelCandidatesByIndex,
@@ -488,7 +544,10 @@ async function attachContextProjection(
 	if (maxTokens <= 0) return;
 	try {
 		const audience = data.context === "fork" ? "agent-fork" : "agent-fresh";
-		const projection = await projectContext(audience, ctx, { maxTokens });
+		const projection = await projectContext(audience, ctx, {
+			maxTokens,
+			...(data.context === "fork" && data.forkSourceMessages ? { sourceMessages: data.forkSourceMessages } : {}),
+		});
 		if (projection.text) data.params.contextProjection = projection.text;
 	} catch {
 		// Context continuity is optional; Agent launch remains fail-open.
@@ -744,6 +803,7 @@ function prepareLaunch(
 		context,
 		contextSummary: context,
 		...(modelPlan.forkContextTokens !== undefined ? { forkContextTokens: modelPlan.forkContextTokens } : {}),
+		...(modelPlan.forkSourceMessages ? { forkSourceMessages: modelPlan.forkSourceMessages } : {}),
 		rawForkByIndex: modelPlan.rawForkByIndex,
 		fixedInputTokensByIndex: modelPlan.fixedInputTokensByIndex,
 		modelCandidatesByIndex: modelPlan.modelCandidatesByIndex,

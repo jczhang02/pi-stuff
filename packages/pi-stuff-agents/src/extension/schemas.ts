@@ -82,6 +82,37 @@ const AgentTask = Type.Object(
 	{ additionalProperties: false },
 );
 
+const FanoutAgentTask = Type.Object(
+	{
+		agent: Type.String({ minLength: 1, description: "Agent definition name." }),
+		description: Type.Optional(
+			Type.String({
+				minLength: 1,
+				description: "Short 3–5 word UI description; keep paths and execution detail in task.",
+			}),
+		),
+		task: Type.String({ minLength: 1, description: "Concrete task delegated to this Agent." }),
+		cwd: Type.Optional(Type.String({ minLength: 1 })),
+		model: Type.Optional(Type.String({ minLength: 1 })),
+		skill: Type.Optional(SkillSelection),
+		turnBudget: Type.Optional(TurnBudget),
+		toolBudget: Type.Optional(ToolBudget),
+		context: Type.Optional(
+			Type.String({
+				enum: ["fresh", "fork"],
+				description: "Shared launch hint. When supplied inside tasks, every task must use the same value.",
+			}),
+		),
+		isolation: Type.Optional(
+			Type.String({
+				enum: ["shared", "worktree"],
+				description: "Shared launch hint. When supplied inside tasks, every task must use the same value.",
+			}),
+		),
+	},
+	{ additionalProperties: false },
+);
+
 export const SubagentParams = Type.Object(
 	{
 		agent: Type.Optional(Type.String({ minLength: 1, description: "Agent definition name for one delegated task." })),
@@ -173,7 +204,7 @@ export const FanoutChildSubagentParams = Type.Object(
 			Type.String({ minLength: 1, description: "Concrete task for a single launch; use tasks for parallel work." }),
 		),
 		tasks: Type.Optional(
-			Type.Array(AgentTask, {
+			Type.Array(FanoutAgentTask, {
 				minItems: 1,
 				maxItems: MAX_BACKGROUND_TASKS,
 				description: "Parallel launch only: independent Agent tasks to run concurrently.",

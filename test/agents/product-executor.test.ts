@@ -192,5 +192,52 @@ describe("projectEngineResult", () => {
 			},
 		);
 		expect(result.isError).not.toBeTrue();
+		expect(result.content[0]).toMatchObject({ text: expect.stringContaining("status unknown") });
+	});
+
+	test("uses explicit child errors before a misleading zero exit code", () => {
+		const result = projectEngineResult(
+			{ agent: "worker", foreground: true, task: "Build" },
+			{
+				content: [{ type: "text", text: "engine receipt" }],
+				details: details({
+					results: [
+						{
+							agent: "worker",
+							error: "protocol failed after process exit",
+							exitCode: 0,
+							task: "Build",
+							usage: { cacheRead: 0, cacheWrite: 0, cost: 0, input: 0, output: 0, turns: 1 },
+						},
+					],
+				}),
+			},
+		);
+
+		expect(result.isError).toBeTrue();
+		expect(result.content[0]).toMatchObject({ text: expect.stringContaining("worker failed") });
+	});
+
+	test("does not turn a successful status inspection into a tool failure because a child failed", () => {
+		const result = projectEngineResult(
+			{ action: "status", id: "run-1" },
+			{
+				content: [{ type: "text", text: "Agent worker failed." }],
+				details: details({
+					mode: "management",
+					results: [
+						{
+							agent: "worker",
+							error: "child crashed",
+							exitCode: 1,
+							task: "Build",
+							usage: { cacheRead: 0, cacheWrite: 0, cost: 0, input: 0, output: 0, turns: 0 },
+						},
+					],
+				}),
+			},
+		);
+
+		expect(result.isError).not.toBeTrue();
 	});
 });
