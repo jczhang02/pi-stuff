@@ -2,16 +2,20 @@ import { dlopen, FFIType, read } from "bun:ffi";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { shardedDurableClaimName, tryAcquireDurableClaim } from "./durable-claim.ts";
+import { shardedDurableClaimName, tryAcquireDurableClaim, tryAcquireKernelClaim } from "./durable-claim.ts";
 import { type ArtifactDirPreference, type ArtifactPaths, TEMP_ARTIFACTS_DIR } from "./types.ts";
 import { getAgentDir } from "./utils.ts";
 
 const CLEANUP_MARKER_FILE = ".last-cleanup";
 const CLEANUP_CURSOR_FILE = ".cleanup-cursor";
 const CLEANUP_SNAPSHOT_FILE = ".cleanup-snapshot.jsonl";
+const CLEANUP_CONTROL_SWEEP_CURSOR_FILE = ".control-sweep-cursor";
+const CLEANUP_CONTROL_SWEEP_SNAPSHOT_FILE = ".control-sweep-snapshot.jsonl";
 const CLEANUP_CONTROL_DIRECTORY = ".artifact-cleanup-control";
 const DISCOVERY_CURSOR_FILE = ".artifact-cleanup-frontier";
 const DISCOVERY_SNAPSHOT_DIRECTORY = ".artifact-cleanup-snapshots";
+const DISCOVERY_SWEEP_CURSOR_FILE = ".orphan-sweep-cursor";
+const DISCOVERY_SWEEP_SNAPSHOT_FILE = ".orphan-sweep-snapshot.jsonl";
 const PROJECT_ARTIFACT_ROOT = ".pi-subagents";
 const ARTIFACT_DIRECTORY_NAME = "subagent-artifacts";
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
@@ -26,16 +30,16 @@ const SNAPSHOT_PARTIAL_SUFFIX = ".partial";
 const SNAPSHOT_BUILD_STATE_SUFFIX = ".build.json";
 const SNAPSHOT_OVERFLOW_SUFFIX = ".overflow.json";
 const SNAPSHOT_ORPHAN_GRACE_MS = 60 * 60 * 1_000;
+const MAX_CONTROL_ENTRIES_PER_PASS = 4_096;
+const MAX_CONTROL_TEMPORARIES_PER_PASS = 256;
 const ARTIFACT_WRITE_CLAIM_ATTEMPTS = 100;
 const ARTIFACT_WRITE_CLAIM_WAIT_MS = 5;
-const ARTIFACT_WRITE_CLAIM_IDLE_MS = 2_000;
 const ARTIFACT_SUFFIXES = ["_input.md", "_output.md", "_transcript.jsonl", "_meta.json", ".jsonl"] as const;
 const cachedArtifactClaims = new Map<
 	string,
 	{
-		claim: NonNullable<ReturnType<typeof tryAcquireDurableClaim>>;
+		claim: NonNullable<ReturnType<typeof tryAcquireKernelClaim>>;
 		users: number;
-		releaseTimer?: ReturnType<typeof setTimeout>;
 	}
 >();
 
@@ -176,13 +180,11 @@ function acquireArtifactGroupWriteClaim(control: string, claimName: string): () 
 	const cacheKey = `${String(controlStat.dev)}:${String(controlStat.ino)}:${claimName}`;
 	let cached = cachedArtifactClaims.get(cacheKey);
 	if (cached) {
-		if (cached.releaseTimer) clearTimeout(cached.releaseTimer);
-		cached.releaseTimer = undefined;
 		cached.users += 1;
 	} else {
-		let claim: ReturnType<typeof tryAcquireDurableClaim>;
+		let claim: ReturnType<typeof tryAcquireKernelClaim>;
 		for (let attempt = 0; attempt < ARTIFACT_WRITE_CLAIM_ATTEMPTS; attempt += 1) {
-			claim = tryAcquireDurableClaim(control, claimName);
+			claim = tryAcquireKernelClaim(control, claimName);
 			if (claim) break;
 			pauseForArtifactClaim();
 		}
@@ -197,12 +199,8 @@ function acquireArtifactGroupWriteClaim(control: string, claimName: string): () 
 		released = true;
 		acquired.users -= 1;
 		if (acquired.users > 0) return;
-		acquired.releaseTimer = setTimeout(() => {
-			if (acquired.users > 0 || cachedArtifactClaims.get(cacheKey) !== acquired) return;
-			cachedArtifactClaims.delete(cacheKey);
-			acquired.claim.release();
-		}, ARTIFACT_WRITE_CLAIM_IDLE_MS);
-		acquired.releaseTimer.unref?.();
+		if (cachedArtifactClaims.get(cacheKey) === acquired) cachedArtifactClaims.delete(cacheKey);
+		acquired.claim.release();
 	};
 }
 
@@ -734,9 +732,8 @@ function sameCleanupSnapshotIdentity(left: unknown, right: CleanupSnapshotIdenti
 	);
 }
 
-async function readCleanupCursor(directory: string, snapshot: string): Promise<number> {
+async function readSnapshotCursor(cursorPath: string, snapshot: string): Promise<number> {
 	try {
-		const cursorPath = path.join(directory, CLEANUP_CURSOR_FILE);
 		const stat = await fs.promises.lstat(cursorPath);
 		if (!ownedRegularFile(stat) || stat.size > 4_096) return 0;
 		const value = JSON.parse(await fs.promises.readFile(cursorPath, "utf8")) as {
@@ -769,9 +766,8 @@ async function readCleanupCursor(directory: string, snapshot: string): Promise<n
 	}
 }
 
-async function writeCleanupCursor(directory: string, snapshot: string, offset: number): Promise<void> {
-	const cursor = path.join(directory, CLEANUP_CURSOR_FILE);
-	const temporary = path.join(directory, `.${CLEANUP_CURSOR_FILE}.${randomUUID()}.tmp`);
+async function writeSnapshotCursor(cursor: string, snapshot: string, offset: number): Promise<void> {
+	const temporary = path.join(path.dirname(cursor), `.${path.basename(cursor)}.${randomUUID()}.tmp`);
 	try {
 		await fs.promises.writeFile(
 			temporary,
@@ -882,25 +878,47 @@ function legacyCleanupTemporaryName(name: string): boolean {
 function cleanupControlTemporaryName(name: string): boolean {
 	return (
 		/^\.cleanup-snapshot\.jsonl(?:\.(?:build|overflow)\.json)?\.[0-9a-f-]{36}\.tmp$/u.test(name) ||
-		/^\.\.cleanup-cursor\.[0-9a-f-]{36}\.tmp$/u.test(name)
+		/^\.\.cleanup-cursor\.[0-9a-f-]{36}\.tmp$/u.test(name) ||
+		/^\.control-sweep-snapshot\.jsonl(?:\.(?:build|overflow)\.json)?\.[0-9a-f-]{36}\.tmp$/u.test(name) ||
+		/^\.\.control-sweep-cursor\.[0-9a-f-]{36}\.tmp$/u.test(name)
 	);
 }
 
-async function sweepCleanupControlTemporaries(controlDirectory: string, now: number, maximum = 256): Promise<void> {
-	let scanned = 0;
-	const entries = await fs.promises.opendir(controlDirectory);
-	for await (const entry of entries) {
-		if (scanned >= maximum) break;
-		scanned += 1;
-		if (!cleanupControlTemporaryName(entry.name)) continue;
-		const candidate = path.join(controlDirectory, entry.name);
-		try {
-			const stat = await fs.promises.lstat(candidate);
-			if (!ownedRegularFile(stat) || now - stat.mtimeMs < SNAPSHOT_ORPHAN_GRACE_MS) continue;
-			await fs.promises.unlink(candidate);
-		} catch {
-			// A concurrent disappearance is already clean; unsafe entries fail closed.
+async function sweepCleanupControlTemporaries(controlDirectory: string, now: number): Promise<boolean> {
+	const snapshot = path.join(controlDirectory, CLEANUP_CONTROL_SWEEP_SNAPSHOT_FILE);
+	const cursor = path.join(controlDirectory, CLEANUP_CONTROL_SWEEP_CURSOR_FILE);
+	try {
+		const advanced = await advanceNameSnapshot(
+			controlDirectory,
+			snapshot,
+			(name, type) => type !== 10 && cleanupControlTemporaryName(name),
+			MAX_CONTROL_ENTRIES_PER_PASS,
+			now,
+		);
+		if (!advanced.complete) return false;
+		const offset = await readSnapshotCursor(cursor, snapshot);
+		const page = await readNameSnapshotPage(snapshot, offset, MAX_CONTROL_TEMPORARIES_PER_PASS);
+		for (const name of page.names) {
+			const candidate = path.join(controlDirectory, name);
+			try {
+				const stat = await fs.promises.lstat(candidate);
+				if (!ownedRegularFile(stat) || now - stat.mtimeMs < SNAPSHOT_ORPHAN_GRACE_MS) continue;
+				await fs.promises.unlink(candidate);
+			} catch {
+				// A concurrent disappearance is already clean; unsafe entries fail closed.
+			}
 		}
+		if (!page.complete) {
+			await writeSnapshotCursor(cursor, snapshot, page.nextOffset);
+			return false;
+		}
+		await fs.promises.unlink(cursor).catch(() => undefined);
+		await removeNameSnapshotControl(snapshot);
+		return true;
+	} catch {
+		await fs.promises.unlink(cursor).catch(() => undefined);
+		await removeNameSnapshotControl(snapshot);
+		return false;
 	}
 }
 
@@ -940,7 +958,9 @@ async function cleanArtifactDirectory(
 	let complete = false;
 	const snapshot = path.join(controlDirectory, CLEANUP_SNAPSHOT_FILE);
 	try {
-		await sweepCleanupControlTemporaries(controlDirectory, now);
+		if (!(await sweepCleanupControlTemporaries(controlDirectory, now))) {
+			return { filesRemoved, bytesReclaimed, complete: false };
+		}
 		const remaining = Math.max(0, budget.maxEntries - budget.entries);
 		const advanced = await advanceNameSnapshot(
 			directory,
@@ -957,7 +977,7 @@ async function cleanArtifactDirectory(
 		if (!advanced.complete) {
 			return { filesRemoved, bytesReclaimed, complete: false };
 		}
-		const cursor = await readCleanupCursor(controlDirectory, snapshot);
+		const cursor = await readSnapshotCursor(path.join(controlDirectory, CLEANUP_CURSOR_FILE), snapshot);
 		const page = await readNameSnapshotPage(snapshot, cursor, Math.max(0, budget.maxEntries - budget.records));
 		budget.records += page.records;
 		for (const name of page.names) {
@@ -974,7 +994,7 @@ async function cleanArtifactDirectory(
 		}
 		complete = page.complete;
 		if (!complete) {
-			await writeCleanupCursor(controlDirectory, snapshot, page.nextOffset);
+			await writeSnapshotCursor(path.join(controlDirectory, CLEANUP_CURSOR_FILE), snapshot, page.nextOffset);
 		} else {
 			try {
 				await fs.promises.unlink(path.join(controlDirectory, CLEANUP_CURSOR_FILE)).catch(() => undefined);
@@ -1048,12 +1068,19 @@ function discoverySnapshotControlName(name: string): boolean {
 	);
 }
 
+function discoverySweepTemporaryName(name: string): boolean {
+	return (
+		/^\.orphan-sweep-snapshot\.jsonl(?:\.(?:build|overflow)\.json)?\.[0-9a-f-]{36}\.tmp$/u.test(name) ||
+		/^\.\.orphan-sweep-cursor\.[0-9a-f-]{36}\.tmp$/u.test(name)
+	);
+}
+
 async function sweepDiscoverySnapshots(
 	snapshotDirectory: string,
 	pending: readonly DiscoveryFrame[],
 	now: number,
-	maximum = 256,
-): Promise<void> {
+	maximum = MAX_CONTROL_ENTRIES_PER_PASS,
+): Promise<boolean> {
 	const retained = new Set(
 		pending.flatMap((frame) => {
 			if (!frame.snapshot) return [];
@@ -1065,20 +1092,41 @@ async function sweepDiscoverySnapshots(
 			];
 		}),
 	);
-	let scanned = 0;
-	const entries = await fs.promises.opendir(snapshotDirectory);
-	for await (const entry of entries) {
-		if (scanned >= maximum) break;
-		scanned += 1;
-		if (retained.has(entry.name) || !discoverySnapshotControlName(entry.name)) continue;
-		const candidate = path.join(snapshotDirectory, entry.name);
-		try {
-			const stat = await fs.promises.lstat(candidate);
-			if (!ownedRegularFile(stat) || now - stat.mtimeMs < SNAPSHOT_ORPHAN_GRACE_MS) continue;
-			await fs.promises.unlink(candidate);
-		} catch {
-			// A concurrent disappearance is already clean; unsafe entries fail closed.
+	const snapshot = path.join(snapshotDirectory, DISCOVERY_SWEEP_SNAPSHOT_FILE);
+	const cursor = path.join(snapshotDirectory, DISCOVERY_SWEEP_CURSOR_FILE);
+	try {
+		const advanced = await advanceNameSnapshot(
+			snapshotDirectory,
+			snapshot,
+			(name, type) => type !== 10 && (discoverySnapshotControlName(name) || discoverySweepTemporaryName(name)),
+			maximum,
+			now,
+		);
+		if (!advanced.complete) return false;
+		const offset = await readSnapshotCursor(cursor, snapshot);
+		const page = await readNameSnapshotPage(snapshot, offset, MAX_CONTROL_TEMPORARIES_PER_PASS);
+		for (const name of page.names) {
+			if (retained.has(name)) continue;
+			const candidate = path.join(snapshotDirectory, name);
+			try {
+				const stat = await fs.promises.lstat(candidate);
+				if (!ownedRegularFile(stat) || now - stat.mtimeMs < SNAPSHOT_ORPHAN_GRACE_MS) continue;
+				await fs.promises.unlink(candidate);
+			} catch {
+				// A concurrent disappearance is already clean; unsafe entries fail closed.
+			}
 		}
+		if (!page.complete) {
+			await writeSnapshotCursor(cursor, snapshot, page.nextOffset);
+			return false;
+		}
+		await fs.promises.unlink(cursor).catch(() => undefined);
+		await removeNameSnapshotControl(snapshot);
+		return true;
+	} catch {
+		await fs.promises.unlink(cursor).catch(() => undefined);
+		await removeNameSnapshotControl(snapshot);
+		return false;
 	}
 }
 
@@ -1274,8 +1322,8 @@ async function findSessionArtifactDirectories(
 		} catch {
 			// Losing a best-effort frontier repeats safe discovery but never broadens deletion.
 		}
-		await sweepDiscoverySnapshots(snapshotDirectory, pending, now);
-		return { directories, complete };
+		const sweepComplete = await sweepDiscoverySnapshots(snapshotDirectory, pending, now);
+		return { directories, complete: complete && sweepComplete };
 	} finally {
 		claim.release();
 	}

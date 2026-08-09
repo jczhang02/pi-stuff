@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { spawn } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -12,7 +13,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
 	getArtifactPaths,
 	getArtifactsDir,
@@ -20,6 +22,7 @@ import {
 	maintainAgentArtifacts,
 	withArtifactGroupWriteClaim,
 } from "../../packages/pi-stuff-agents/src/shared/artifacts.js";
+import { shardedDurableClaimName } from "../../packages/pi-stuff-agents/src/shared/durable-claim.js";
 import { DEFAULT_ARTIFACT_CONFIG, TEMP_ARTIFACTS_DIR } from "../../packages/pi-stuff-agents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
@@ -383,6 +386,32 @@ describe("Agent artifact maintenance", () => {
 		expect(existsSync(freshSnapshot)).toBeTrue();
 	});
 
+	test("sweeps an orphan discovery snapshot beyond a large stable prefix", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-wide-discovery-control-"));
+		temporaryDirectories.push(root);
+		const sessionsRoot = join(root, "sessions");
+		const snapshotDirectory = join(sessionsRoot, ".artifact-cleanup-snapshots");
+		mkdirSync(snapshotDirectory, { recursive: true, mode: 0o700 });
+		chmodSync(snapshotDirectory, 0o700);
+		const now = Date.now();
+		for (let index = 0; index < 300; index += 1) {
+			writeFileSync(join(snapshotDirectory, `unknown-${String(index).padStart(3, "0")}`), "retained");
+		}
+		const orphan = join(snapshotDirectory, "00000000-0000-0000-0000-000000000007.jsonl");
+		writeFileSync(orphan, '"stale"\n');
+		const oldDate = new Date(now - 2 * 60 * 60 * 1_000);
+		utimesSync(orphan, oldDate, oldDate);
+
+		const report = await maintainAgentArtifacts(7, {
+			sessionsRoot,
+			tempArtifactsDir: join(root, "missing-temp"),
+			now,
+		});
+
+		expect(report.scanComplete).toBeTrue();
+		expect(existsSync(orphan)).toBeFalse();
+	});
+
 	test("removes the snapshot referenced by a discovery frame whose directory disappeared", async () => {
 		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-deleted-frontier-"));
 		temporaryDirectories.push(root);
@@ -449,6 +478,81 @@ describe("Agent artifact maintenance", () => {
 		});
 	});
 
+	test("does not strand a different process whose artifact group shares the same claim shard", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-claim-collision-"));
+		temporaryDirectories.push(root);
+		const artifacts = join(root, "artifacts");
+		mkdirSync(artifacts, { mode: 0o700 });
+
+		const groupsByClaim = new Map<string, string>();
+		let collidingGroups: readonly [string, string] | undefined;
+		for (let index = 0; index < 1_000 && !collidingGroups; index += 1) {
+			const group = `group-${index}`;
+			const claim = shardedDurableClaimName("artifact-group", group);
+			const prior = groupsByClaim.get(claim);
+			if (prior) collidingGroups = [prior, group];
+			else groupsByClaim.set(claim, group);
+		}
+		expect(collidingGroups).toBeDefined();
+		if (!collidingGroups) throw new Error("Unable to find an artifact claim collision.");
+
+		const moduleUrl = pathToFileURL(resolve("packages/pi-stuff-agents/src/shared/artifacts.ts")).href;
+		const holderPath = join(artifacts, `${collidingGroups[0]}_input.md`);
+		const contenderPath = join(artifacts, `${collidingGroups[1]}_input.md`);
+		const holderScript = `
+import * as fs from "node:fs";
+const { withArtifactGroupWriteClaim } = await import(${JSON.stringify(moduleUrl)});
+const deadline = Date.now() + 1_000;
+let ready = false;
+while (Date.now() < deadline) {
+	withArtifactGroupWriteClaim(${JSON.stringify(holderPath)}, () => fs.appendFileSync(${JSON.stringify(holderPath)}, "holder\\n"));
+	if (!ready) {
+		ready = true;
+		process.stdout.write("ready\\n");
+	}
+	await Bun.sleep(10);
+}
+`;
+		const holder = spawn(process.execPath, ["-e", holderScript], { stdio: ["ignore", "pipe", "pipe"] });
+		let holderStderr = "";
+		holder.stderr?.on("data", (chunk: Buffer) => {
+			holderStderr = `${holderStderr}${chunk.toString("utf8")}`.slice(-8_192);
+		});
+		try {
+			await new Promise<void>((resolveReady, reject) => {
+				const timeout = setTimeout(
+					() => reject(new Error(`Artifact claim holder timed out: ${holderStderr}`)),
+					3_000,
+				);
+				holder.once("error", reject);
+				holder.stdout?.once("data", (chunk: Buffer) => {
+					if (!chunk.toString("utf8").includes("ready")) return;
+					clearTimeout(timeout);
+					resolveReady();
+				});
+			});
+
+			const contenderScript = `
+import * as fs from "node:fs";
+const { withArtifactGroupWriteClaim } = await import(${JSON.stringify(moduleUrl)});
+withArtifactGroupWriteClaim(${JSON.stringify(contenderPath)}, () => fs.writeFileSync(${JSON.stringify(contenderPath)}, "contender"));
+`;
+			const contender = Bun.spawnSync([process.execPath, "-e", contenderScript], {
+				stderr: "pipe",
+				stdout: "pipe",
+			});
+			expect(new TextDecoder().decode(contender.stderr)).toBe("");
+			expect(contender.exitCode).toBe(0);
+			expect(readFileSync(contenderPath, "utf8")).toBe("contender");
+		} finally {
+			if (holder.exitCode === null && holder.signalCode === null) {
+				const closed = new Promise<void>((resolveClose) => holder.once("close", () => resolveClose()));
+				holder.kill("SIGKILL");
+				await closed;
+			}
+		}
+	}, 5_000);
+
 	test("recovers malformed overflow state and sweeps stale control temporaries", async () => {
 		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-control-recovery-"));
 		temporaryDirectories.push(root);
@@ -481,5 +585,32 @@ describe("Agent artifact maintenance", () => {
 		expect(existsSync(freshTemporary)).toBeTrue();
 		expect(existsSync(terminal.inputPath)).toBeFalse();
 		expect(existsSync(terminal.metadataPath)).toBeFalse();
+	});
+
+	test("sweeps a stale control temporary beyond a large stable prefix before throttling maintenance", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-wide-control-"));
+		temporaryDirectories.push(root);
+		const tempArtifacts = join(root, "temp-artifacts");
+		const control = join(tempArtifacts, ".artifact-cleanup-control");
+		mkdirSync(control, { recursive: true, mode: 0o700 });
+		chmodSync(control, 0o700);
+		const now = Date.now();
+		for (let index = 0; index < 300; index += 1) {
+			writeFileSync(join(control, `unknown-${String(index).padStart(3, "0")}`), "retained");
+		}
+		const orphan = join(control, ".cleanup-snapshot.jsonl.00000000-0000-0000-0000-000000000006.tmp");
+		writeFileSync(orphan, "stale");
+		const oldDate = new Date(now - 2 * 60 * 60 * 1_000);
+		utimesSync(orphan, oldDate, oldDate);
+
+		const report = await maintainAgentArtifacts(7, {
+			sessionsRoot: join(root, "missing-sessions"),
+			tempArtifactsDir: tempArtifacts,
+			now,
+		});
+
+		expect(report.scanComplete).toBeTrue();
+		expect(existsSync(orphan)).toBeFalse();
+		expect(existsSync(join(tempArtifacts, ".last-cleanup"))).toBeTrue();
 	});
 });

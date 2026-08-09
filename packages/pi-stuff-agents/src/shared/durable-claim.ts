@@ -112,7 +112,7 @@ function tryLock(fileDescriptor: number): boolean {
  * recovery entirely: closing the descriptor (including process death) releases
  * ownership, so no check-then-rename can ever pre-empt a newer owner.
  */
-export function tryAcquireDurableClaim(parentDirectory: string, name: string): DurableClaim | undefined {
+function tryAcquireClaim(parentDirectory: string, name: string, persistOwner: boolean): DurableClaim | undefined {
 	assertPrivateDirectory(parentDirectory);
 	const lockPath = path.join(parentDirectory, `${safeClaimName(name)}.lock`);
 	if (path.dirname(lockPath) !== path.resolve(parentDirectory)) {
@@ -138,19 +138,21 @@ export function tryAcquireDurableClaim(parentDirectory: string, name: string): D
 		if (!stat.isFile() || (currentUid !== undefined && stat.uid !== currentUid)) {
 			throw new Error(`Durable claim '${lockPath}' must be a regular file owned by the current user.`);
 		}
-		fs.fchmodSync(descriptor, 0o600);
+		if ((stat.mode & 0o777) !== 0o600) fs.fchmodSync(descriptor, 0o600);
 		if (!tryLock(descriptor)) return undefined;
 		const token = randomUUID();
-		const owner = {
-			version: 2,
-			token,
-			pid: process.pid,
-			processStartIdentity: readProcessStartIdentity(process.pid) ?? `pid-only:${process.pid}`,
-			createdAt: Date.now(),
-		};
-		fs.ftruncateSync(descriptor, 0);
-		fs.writeSync(descriptor, `${JSON.stringify(owner)}\n`, 0, "utf-8");
-		fs.fsyncSync(descriptor);
+		if (persistOwner) {
+			const owner = {
+				version: 2,
+				token,
+				pid: process.pid,
+				processStartIdentity: readProcessStartIdentity(process.pid) ?? `pid-only:${process.pid}`,
+				createdAt: Date.now(),
+			};
+			fs.ftruncateSync(descriptor, 0);
+			fs.writeSync(descriptor, `${JSON.stringify(owner)}\n`, 0, "utf-8");
+			fs.fsyncSync(descriptor);
+		}
 		let released = false;
 		keepOpen = true;
 		return {
@@ -165,4 +167,17 @@ export function tryAcquireDurableClaim(parentDirectory: string, name: string): D
 	} finally {
 		if (!keepOpen) fs.closeSync(descriptor);
 	}
+}
+
+export function tryAcquireDurableClaim(parentDirectory: string, name: string): DurableClaim | undefined {
+	return tryAcquireClaim(parentDirectory, name, true);
+}
+
+/**
+ * Acquire the same process-death-safe stable-inode claim without persisting an
+ * owner record. Hot synchronization paths can therefore open/flock/close for
+ * each short critical section without forcing an fsync on every event.
+ */
+export function tryAcquireKernelClaim(parentDirectory: string, name: string): DurableClaim | undefined {
+	return tryAcquireClaim(parentDirectory, name, false);
 }
