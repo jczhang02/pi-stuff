@@ -23,7 +23,11 @@ import {
 	processExists,
 	signalProcessGroup,
 } from "../../packages/pi-stuff-work/src/process.js";
-import { BackgroundWorkRuntime, projectNotificationBatch } from "../../packages/pi-stuff-work/src/runtime.js";
+import {
+	type BackgroundMonitorActivity,
+	BackgroundWorkRuntime,
+	projectNotificationBatch,
+} from "../../packages/pi-stuff-work/src/runtime.js";
 import {
 	createAuthenticatedRuntimeRecord,
 	reconcileStaleRuns,
@@ -989,6 +993,8 @@ describe("BackgroundWorkRuntime", () => {
 		};
 		expect(delivered.message.details.outcomes[0]?.status).toBe("completed");
 		expect(delivered.options.triggerTurn).toBe(true);
+		expect(active.readOutput(started.id)).toContain("observed its condition");
+		expect((await active.stop(started.id)).status).toBe("completed");
 		await active.shutdown();
 	});
 
@@ -1003,7 +1009,10 @@ describe("BackgroundWorkRuntime", () => {
 			);
 			const shellId = active.snapshot()[0]?.id;
 			expect(shellId).toBeString();
-			expect((await active.stop(shellId ?? "")).status).toBe("stopped");
+			const shellOutcome = await active.stop(shellId ?? "");
+			expect(shellOutcome.status).toBe("stopped");
+			expect(await active.stop(shellId ?? "")).toEqual(shellOutcome);
+			expect(active.readOutput(shellId ?? "")).toContain("stopped");
 
 			const monitor = await startMonitor(
 				active,
@@ -1017,12 +1026,110 @@ describe("BackgroundWorkRuntime", () => {
 				},
 				context(root),
 			);
-			expect((await active.stop(monitor.id)).status).toBe("stopped");
+			const monitorOutcome = await active.stop(monitor.id);
+			expect(monitorOutcome.status).toBe("stopped");
+			expect(await active.stop(monitor.id)).toEqual(monitorOutcome);
+			expect(active.readOutput(monitor.id)).toContain("stopped");
 			await Bun.sleep(250);
 			expect(messages).toEqual([]);
 		} finally {
 			await active.shutdown();
 		}
+	});
+
+	test("retains a failed Background Shell receipt with bounded in-memory fallback", async () => {
+		const root = temporaryRoot();
+		const messages: unknown[] = [];
+		const active = runtime(root, messages);
+		try {
+			const launched = await active.executeBash(
+				{
+					command: "sleep 0.1; printf 'BACKGROUND-FAILED\\n' >&2; exit 7",
+					runInBackground: true,
+					toolCallId: "tool-background-failed-receipt",
+				},
+				context(root),
+			);
+			const launchText = launched.content.find((item) => item.type === "text");
+			const taskId = (launchText?.type === "text" ? launchText.text : "").match(/background task ([a-z0-9]+)/u)?.[1];
+			expect(taskId).toBeString();
+			await waitUntil(() => active.snapshot().length === 0);
+			await waitUntil(() => messages.length === 1);
+			expect((await active.stop(taskId ?? "")).status).toBe("failed");
+			expect(active.readOutput(taskId ?? "")).toContain("BACKGROUND-FAILED");
+
+			const unreadablePath = join(root, "unreadable-output");
+			mkdirSync(unreadablePath);
+			const fallbackOutcome = Promise.resolve({
+				endedAt: 2,
+				id: "m-unreadable-terminal-output",
+				kind: "monitor" as const,
+				outputPath: unreadablePath,
+				recentOutput: `${"旧".repeat(100)}终TAIL`,
+				startedAt: 1,
+				status: "failed" as const,
+				summary: "Monitor failed",
+				title: "unreadable monitor",
+			});
+			active.registerMonitor({
+				cancel: async () => fallbackOutcome,
+				id: "m-unreadable-terminal-output",
+				outcome: fallbackOutcome,
+				readOutput: () => "live",
+				snapshot: () => ({
+					id: "m-unreadable-terminal-output",
+					kind: "monitor",
+					startedAt: 1,
+					status: "running",
+					title: "unreadable monitor",
+				}),
+			});
+			await fallbackOutcome;
+			await Bun.sleep(0);
+			const fallback = active.readOutput("m-unreadable-terminal-output", 16);
+			expect(fallback).toContain("终TAIL");
+			expect(fallback).not.toContain("旧旧旧旧旧旧");
+		} finally {
+			await active.shutdown();
+		}
+	});
+
+	test("keeps only the newest 64 terminal receipts", async () => {
+		const root = temporaryRoot();
+		const active = runtime(root);
+		for (let index = 0; index < 65; index += 1) {
+			const id = `m-terminal-${String(index)}`;
+			const outcome = Promise.resolve({
+				endedAt: index + 1,
+				id,
+				kind: "monitor" as const,
+				recentOutput: `evidence-${String(index)}`,
+				startedAt: index,
+				status: "completed" as const,
+				summary: `Monitor ${String(index)} completed`,
+				title: `monitor-${String(index)}`,
+			});
+			const monitor: BackgroundMonitorActivity = {
+				cancel: async () => outcome,
+				id,
+				outcome,
+				readOutput: () => `evidence-${String(index)}`,
+				snapshot: () => ({
+					id,
+					kind: "monitor",
+					startedAt: index,
+					status: "running",
+					title: `monitor-${String(index)}`,
+				}),
+			};
+			active.registerMonitor(monitor);
+			await outcome;
+			await Bun.sleep(0);
+		}
+
+		expect(() => active.readOutput("m-terminal-0")).toThrow("No current or recently finished");
+		expect(active.readOutput("m-terminal-64")).toContain("evidence-64");
+		await active.shutdown();
 	});
 
 	test("bounds and fairly tails a full batch of missing-file notifications", async () => {
@@ -1102,10 +1209,14 @@ describe("BackgroundWorkRuntime", () => {
 			{ command: "sleep 30", runInBackground: true, timeoutSeconds: 0.2, toolCallId: "tool-timeout" },
 			context(root),
 		);
+		const taskId = active.snapshot()[0]?.id;
+		expect(taskId).toBeString();
 		await waitUntil(() => active.snapshot().length === 0);
 		await waitUntil(() => messages.length === 1);
 		const delivered = messages[0] as { message: { details: { outcomes: Array<{ status: string }> } } };
 		expect(delivered.message.details.outcomes[0]?.status).toBe("timed_out");
+		expect(active.readOutput(taskId ?? "")).toContain("timed out");
+		expect((await active.stop(taskId ?? "")).status).toBe("timed_out");
 		await active.shutdown();
 	});
 });
