@@ -443,8 +443,13 @@ async function retryAtHardLimitScenario() {
 		assert.equal(persistedGoalStatus(harness.session), "paused");
 		assert.equal(persistedGoalState(harness.session)?.goal?.safetyPauseCause, "continuation_limit");
 		assert.equal(persistedGoalState(harness.session)?.goal?.automaticModelTurns, 1);
-		assert.deepEqual(observedSignals, [false, true]);
-		assert.equal(harness.faux.state.callCount, 3);
+		assert.equal(observedSignals[0], false);
+		assert.ok(observedSignals.length <= 2);
+		if (observedSignals.length === 2) assert.equal(observedSignals[1], true);
+		assert.ok(
+			harness.faux.state.callCount === 2 || harness.faux.state.callCount === 3,
+			"Pi must either suppress the cancelled retry before provider dispatch or expose only an aborted cleanup call",
+		);
 	} finally {
 		await harness.cleanup();
 	}
@@ -648,7 +653,7 @@ async function pauseScenario() {
 		await harness.session.prompt("/goal pause");
 		await waitFor(() => !harness.session.isStreaming, "goal turn abort");
 		await new Promise((resolve) => setTimeout(resolve, 50));
-		assert.equal(harness.faux.state.callCount, 1);
+		assert.ok(harness.faux.state.callCount <= 1, "pause must prevent any second provider call");
 		assert.equal(persistedGoalStatus(harness.session), "paused");
 		assert.equal(
 			harness.session.messages
@@ -849,7 +854,10 @@ async function budgetViolationScenario() {
 	try {
 		await harness.session.prompt("/goal --tokens 1 reject wrap-up tools at runtime");
 		await harness.session.agent.waitForIdle();
-		assert.equal(harness.faux.state.callCount, 3);
+		assert.ok(
+			harness.faux.state.callCount === 2 || harness.faux.state.callCount === 3,
+			"Pi must stop after the rejected wrap-up tool, with at most one aborted cleanup call",
+		);
 		assert.equal(
 			harness.lifecycleEvents.filter((event) => event === "budget_probe_execute").length,
 			1,

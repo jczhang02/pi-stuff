@@ -74,7 +74,7 @@ Requirements:
 - Git, Bash, tar, gzip, and standard Unix utilities (`cp`, `mkdir`, `mv`, and `rm`)
 - Expect and tmux for real-terminal verification; CI uses the Ubuntu 24.04 packages
 - Linux x64 for the certified Host build; CI uses Ubuntu 24.04 as its system-utility baseline
-- Pi upstream `bf4a90d81985bd45052eeeae59d84fe13e0bd2c8` (reports 0.83.0) for Host certification
+- Pi `0.84.1` at upstream `53fa77ccd8a279eb87e92294ef3687b03ff80112` for Host certification
 - Optional RTK `0.42.4` for automatic Bash command rewriting; output projection works without it
 - Beads 1.1.0 for issue maintenance
 

@@ -7,7 +7,7 @@ set -- \
 	"$PI_STUFF_CONTEXT_PTY_BIN" \
 	--offline \
 	--approve \
-	--ui-mode fullscreen \
+	--tui-mode fullscreen \
 	--no-extensions \
 	--no-skills \
 	--no-prompt-templates \

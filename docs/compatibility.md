@@ -4,19 +4,18 @@
 
 | Contract | Certified version |
 | --- | --- |
-| Pi standalone host | upstream `bf4a90d81985bd45052eeeae59d84fe13e0bd2c8`, Linux x64 |
+| Pi standalone host | `0.84.1`, upstream `53fa77ccd8a279eb87e92294ef3687b03ff80112`, Linux x64 |
 | Bun toolchain | 1.3.14 |
 | Node.js toolchain | 24.16.0 |
 | npm toolchain | 11.13.0 |
-| Model-data snapshot | SHA-256 `676b91ad13829f58c8e92e391f116ce91a45ec878362a41ce7104e916de86e3a` |
+| Model-data snapshot | SHA-256 `299c882258d4714113aab6531eb1d00ec4c7d2e95a303951715bd182799475ef` |
 | System-utility baseline | Ubuntu 24.04 with Git, Bash, tar, gzip, and standard Unix utilities |
 | PTY verification tools | Ubuntu 24.04 packages for Expect and tmux |
 | TypeScript checker | 5.9.3 |
 
-The certified upstream Host reports `0.83.0` but is intentionally newer than the `v0.83.0` tag. It is the earliest
-upstream source state verified against the complete Suite contract: public `registerMarkdownTransformer()`, fullscreen
-UI behavior, and space-preserving native settings search. The tagged `v0.83.0` binary is not compatible with the
-complete Aggregate. The pinned CI workflow builds the pinned commit and binds its binary hash to a build record; the
+The certified upstream Host is the released `v0.84.1` source and reports `0.84.1`. It is verified against the complete
+Suite contract, including public `registerMarkdownTransformer()`, regular and fullscreen UI behavior, and
+space-preserving native settings search. The pinned CI workflow builds the release commit and binds its binary hash to a build record; the
 local installed Host must match the audited executable SHA-256 allowlist and embedded source-map fingerprints, so a
 reused version string or swapped executable cannot produce a false certification. The CI record is accepted only with
 that workflow's markers and fixed artifact path. This is an operational trust convention that prevents accidental Host
@@ -24,8 +23,8 @@ mismatch, not cryptographic proof against a process that forges the workflow env
 is the trust root.
 
 The certified profile identifies the source commit, the repository-owned model-data content address, and exact Node.js,
-npm, and Bun versions. The default build copies all 38 snapshot files from
-`vendor/pi-host-model-data/676b91ad13829f58c8e92e391f116ce91a45ec878362a41ce7104e916de86e3a` and verifies every
+npm, and Bun versions. The default build copies all 40 snapshot files from
+`vendor/pi-host-model-data/299c882258d4714113aab6531eb1d00ec4c7d2e95a303951715bd182799475ef` and verifies every
 filename and byte before compilation; it never reads the live model catalog. `bun run host:model-data:refresh` is the
 only live-catalog seam. It canonicalizes the non-input `generatedAt` timestamp, writes a new content-addressed candidate,
 and leaves profile selection to an explicit reviewed constant change. Git, Bash, tar, gzip, and other Unix utilities
@@ -44,12 +43,23 @@ This local record has the same deliberately operational threat model: it detects
 prove integrity against a user who controls and forges the entire local environment.
 
 Pi core imports remain wildcard peer dependencies because the Host supplies them. Development dependencies stay pinned
-to the released `0.83.0` type surface; the one post-tag rendering seam is capability-checked at runtime and represented
-locally until Pi publishes it in a tagged release.
+to the released `0.84.1` type surface. Version-sensitive verification scripts read the shared certified Host contract
+instead of maintaining independent Pi version constants.
+
+Pi 0.84 gives independently loaded extensions distinct `ExtensionAPI.events` facade objects over one Host event bus.
+Suite-wide registries therefore use a synchronous event-bus discovery handoff and retain facade-keyed WeakMaps only as
+local caches. Object identity of an individual facade is never treated as Host identity. Real PTY and cross-facade unit
+tests cover Command Dialog restoration, Tool Activity metadata, Context ownership, `/ui` settings, status channels,
+Current Work sources, and duplicate lifecycle suppression.
 
 A Pi upgrade requires a dedicated change that reviews relevant Extension and Package interfaces, updates the pinned
 development dependency and Host source profile together, and passes the no-model standalone-host certification.
 Compatibility with other Pi builds is not claimed until that work is complete.
+
+Older version strings in changelogs, archived acceptance reports, research notes, and captured prototypes describe the
+Host that produced that historical evidence. They are not executable compatibility declarations and must not be
+rewritten to imply that old evidence was captured on the current Host. Current source, package manifests, CI, fixtures,
+and verification scripts follow the certified profile above.
 
 The Codex Capability bundles its retained native helpers only for the certified Linux x64 profile. On another target,
 the command and ordinary Pi turns remain available while the unavailable Tool returns a bounded recovery error.

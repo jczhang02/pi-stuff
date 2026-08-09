@@ -1,7 +1,7 @@
 /**
  * The sole Pi-model transport seam used by BTW.
  *
- * Pi 0.83 does not expose ModelRuntime.streamSimple on ExtensionContext. The
+ * Pi does not expose ModelRuntime.streamSimple on ExtensionContext. The
  * public ModelRegistry does expose the composed Provider and its resolved auth,
  * so BTW delegates to that Provider instead of the legacy global compat
  * dispatcher. This preserves extension-registered streamSimple handlers and

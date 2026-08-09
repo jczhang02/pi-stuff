@@ -3,6 +3,9 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+pi_bin="$repo_root/node_modules/.bin/pi"
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 freeze_bin=${FREEZE_BIN:-freeze}
 artifact_dir="$repo_root/docs/prototypes/tui/artifacts"
 capture_root=$(mktemp -d)
@@ -16,8 +19,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if ! command -v "$freeze_bin" >/dev/null 2>&1; then
-	echo "freeze executable not found: $freeze_bin" >&2
+for executable in bun rg tmux "$pi_bin" "$freeze_bin"; do
+	if ! command -v "$executable" >/dev/null 2>&1 && [[ ! -x $executable ]]; then
+		echo "Required executable not found: $executable" >&2
+		exit 1
+	fi
+done
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "Transcript content capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 
@@ -50,7 +59,7 @@ start_pi() {
 	printf -v command \
 		'env PI_CODING_AGENT_DIR=%q PI_OFFLINE=1 PI_TELEMETRY=0 %q --session %q --model fixture/transcript-fixture --no-extensions -e %q --no-skills --no-prompt-templates --no-context-files --tools prototype_inspect --no-themes --offline --approve' \
 		"$capture_root/agent" \
-		"$repo_root/node_modules/.bin/pi" \
+		"$pi_bin" \
 		"$session_file" \
 		"$repo_root/docs/prototypes/tui/transcript-content-blocks.ts"
 
@@ -81,13 +90,13 @@ capture_frame() {
 
 start_pi "$success_session"
 wait_for_text "3 项兼容性约束已确认"
-capture_frame "pi-0.83-transcript-compact-success"
+capture_frame "${artifact_prefix}-transcript-compact-success"
 
 tmux send-keys -t "$tmux_session" C-o
 wait_for_text "TypeScript    5.9.3"
-capture_frame "pi-0.83-transcript-expanded-detail"
+capture_frame "${artifact_prefix}-transcript-expanded-detail"
 tmux kill-session -t "$tmux_session"
 
 start_pi "$error_session"
 wait_for_text "检查路径后重试"
-capture_frame "pi-0.83-transcript-compact-error"
+capture_frame "${artifact_prefix}-transcript-compact-error"

@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/tools-resume-pty-provider.ts");
 const runner = join(root, "test/fixtures/tools-resume-pty-runner.sh");
-const CERTIFIED_PI_VERSION = "0.83.0";
 const BUILTINS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
 const FIRST_FRAME_BOUNDARY = "RESUME_FIRST_FRAME_BOUNDARY";
 

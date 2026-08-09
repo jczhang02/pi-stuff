@@ -17,7 +17,7 @@ Set Theme "Builtin Dark"
 Hide
 Type `test -x ./node_modules/.bin/pi`
 Enter
-Type `test "$(./node_modules/.bin/pi --version)" = "0.83.0"`
+Type `test "$(./node_modules/.bin/pi --version)" = "$(bun scripts/pi-host-contract.ts)"`
 Enter
 Type `clear`
 Enter

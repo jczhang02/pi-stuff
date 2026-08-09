@@ -29,7 +29,7 @@ export interface WelcomeHeaderControllerOptions {
 }
 
 /**
- * Registry-backed inventory available through Pi 0.83's public Extension API.
+ * Registry-backed inventory available through Pi's public Extension API.
  * Context-file count is supplied later from `before_agent_start` because the
  * Host does not expose it on `ExtensionContext` during initial startup.
  */

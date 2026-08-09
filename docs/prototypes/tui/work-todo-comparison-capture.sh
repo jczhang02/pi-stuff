@@ -24,12 +24,14 @@ for executable in bun rg tmux "$freeze_bin"; do
 done
 
 pi_bin="$repo_root/node_modules/.bin/pi"
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 if [[ ! -x $pi_bin ]]; then
 	echo "Repository-pinned Pi executable not found: $pi_bin" >&2
 	exit 1
 fi
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "Work Todo capture requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "Work Todo capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -134,7 +136,7 @@ capture_variant_state() {
 	wait_for_text "draft: record this in Beads"
 	reject_text "Extension issues"
 	reject_text "shortcut conflict"
-	capture_frame "pi-0.83-work-todo-$variant-$state"
+	capture_frame "${artifact_prefix}-work-todo-$variant-$state"
 	stop_pi
 }
 
@@ -156,6 +158,6 @@ for variant in checklist strip ondemand; do
 	fi
 	reject_text "Extension issues"
 	reject_text "shortcut conflict"
-	capture_frame "pi-0.83-work-todo-$variant-narrow"
+	capture_frame "${artifact_prefix}-work-todo-$variant-narrow"
 	stop_pi
 done

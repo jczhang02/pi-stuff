@@ -15,7 +15,7 @@ The upstream text baseline was imported before product changes. Documentation im
 
 ## Pi Stuff delta
 
-- Renames the owned Package and pins the Pi 0.83.0 development contract and direct dependencies.
+- Renames the owned Package and pins the Pi 0.84.1 development contract and direct dependencies.
 - Replaces the action-multiplexer tool with `TaskCreate`, `TaskGet`, `TaskList`, and `TaskUpdate`.
 - Exposes stable string IDs, adds atomic forward and reverse dependency updates, and never resets the ID counter.
 - Versions new replay snapshots while retaining migration from legacy numeric `todo` snapshots.

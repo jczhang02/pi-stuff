@@ -610,7 +610,7 @@ test("retries a failed steering acknowledgement without delivering the steer twi
 			ts: Date.now(),
 			message: "Continue with the lifecycle audit.",
 		});
-		handlers.get("message_start")?.({});
+		handlers.get("agent_start")?.({});
 		expect(delivered).toHaveLength(1);
 		const formatted = delivered[0];
 		expect(formatted).toContain("Continue with the lifecycle audit.");
@@ -660,7 +660,7 @@ test("retries a correlated steering acknowledgement once during immediate shutdo
 		ts: Date.now(),
 		message: "Finish the accepted work.",
 	});
-	handlers.get("message_start")?.({});
+	handlers.get("agent_start")?.({});
 	const formatted = delivered[0];
 	expect(formatted).toContain("Finish the accepted work.");
 	handlers.get("input")?.({ content: formatted, source: "extension", streamingBehavior: "steer" });
@@ -675,6 +675,34 @@ test("retries a correlated steering acknowledgement once during immediate shutdo
 	};
 	expect(ack).toMatchObject({ requestId: "shutdown-retry-ack", state: "delivered" });
 	expect(delivered).toHaveLength(1);
+});
+
+test("holds startup steering until the child's initial Agent turn has started", () => {
+	const directory = mkdtempSync(join(tmpdir(), "pi-stuff-steering-startup-"));
+	temporaryDirectories.push(directory);
+	const inbox = join(directory, "inbox");
+	setEnvironment(SUBAGENT_STEER_INBOX_ENV, inbox);
+
+	const handlers = new Map<string, (event: unknown) => unknown>();
+	const delivered: string[] = [];
+	registerSteeringInbox({
+		on: (event: string, handler: (event: unknown) => unknown) => handlers.set(event, handler),
+		sendUserMessage: (content: string) => delivered.push(content),
+	} as unknown as ExtensionAPI);
+	handlers.get("session_start")?.({});
+	writeSteerRequestToDir(inbox, {
+		type: "steer",
+		id: "startup-race",
+		ts: Date.now(),
+		message: "Wait for the initial task to start.",
+	});
+	handlers.get("message_start")?.({});
+	expect(delivered).toEqual([]);
+
+	handlers.get("agent_start")?.({});
+	expect(delivered).toHaveLength(1);
+	expect(delivered[0]).toContain("Wait for the initial task to start.");
+	handlers.get("session_shutdown")?.({});
 });
 
 test("replays a steering request after dispatch crashes before Pi accepts the input", () => {
@@ -701,7 +729,7 @@ test("replays a steering request after dispatch crashes before Pi accepts the in
 	} as unknown as ExtensionAPI);
 	firstHandlers.get("session_start")?.({});
 	writeSteerRequestToDir(inbox, request);
-	firstHandlers.get("message_start")?.({});
+	firstHandlers.get("agent_start")?.({});
 	expect(firstDeliveries).toHaveLength(1);
 	expect(readdirSync(inbox).some((entry) => entry.includes(".pi-stuff-inflight."))).toBeTrue();
 	firstHandlers.get("session_shutdown")?.({});
@@ -713,6 +741,7 @@ test("replays a steering request after dispatch crashes before Pi accepts the in
 		sendUserMessage: (content: string) => replacementDeliveries.push(content),
 	} as unknown as ExtensionAPI);
 	replacementHandlers.get("session_start")?.({});
+	replacementHandlers.get("agent_start")?.({});
 	expect(replacementDeliveries).toHaveLength(1);
 	replacementHandlers.get("input")?.({
 		content: replacementDeliveries[0],
@@ -755,6 +784,7 @@ test("uses an existing steering acknowledgement to retire a crash-left request w
 		sendUserMessage: (content: string) => delivered.push(content),
 	} as unknown as ExtensionAPI);
 	handlers.get("session_start")?.({});
+	handlers.get("agent_start")?.({});
 	expect(delivered).toEqual([]);
 	expect(
 		readdirSync(inbox).filter((entry) => entry.endsWith(".json") || entry.includes(".pi-stuff-inflight.")),

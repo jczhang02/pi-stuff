@@ -5,7 +5,7 @@
  * the already-selected Claude-like Agent roster?
  *
  * Every state is a deterministic fixture. The extension performs no I/O and
- * uses only Pi 0.83 public inline UI APIs; it never opens a floating window.
+ * uses only certified Pi public inline UI APIs; it never opens a floating window.
  */
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";

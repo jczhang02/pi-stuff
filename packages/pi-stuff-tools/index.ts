@@ -3,7 +3,7 @@ import {
 	type ExtensionContext,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import { ensureUiSettingsCommand, getCommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
+import { ensureUiSettingsCommand, getCommandDialogCoordinator, getHostSharedResource } from "@jczhang02/pi-stuff-ui";
 import { registerBuiltins, resolveBuiltinHostSettings } from "./builtin-tools.js";
 import { installToolUiRuntime } from "./contract.js";
 import { consumeResumeToolHandoff, prepareResumeToolHandoff, restoreResumeActiveToolOrder } from "./session-handoff.js";
@@ -11,7 +11,27 @@ import { ToolUiSettingsStore } from "./settings.js";
 import { createToolDialogView } from "./tool-dialog.js";
 
 const BUILTIN_TOOL_NAMES = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
-const INSTALLED_TOOL_LIFECYCLES = new WeakSet<ExtensionAPI["events"]>();
+const TOOL_LIFECYCLE_STATES = Symbol.for("@jczhang02/pi-stuff-tools/lifecycle-states/v1");
+const TOOL_LIFECYCLE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-tools/lifecycle-discovery/v1";
+
+interface ToolLifecycleState {
+	active: boolean;
+	activation?: object;
+}
+
+function toolLifecycleStates(): WeakMap<ExtensionAPI["events"], ToolLifecycleState> {
+	const root = globalThis as unknown as {
+		[key: symbol]: WeakMap<ExtensionAPI["events"], ToolLifecycleState> | undefined;
+	};
+	root[TOOL_LIFECYCLE_STATES] ??= new WeakMap();
+	return root[TOOL_LIFECYCLE_STATES];
+}
+
+function releaseToolLifecycle(state: ToolLifecycleState, activation: object): void {
+	if (state.activation !== activation) return;
+	state.active = false;
+	delete state.activation;
+}
 
 function currentTranscriptMessages(ctx: ExtensionContext): unknown[] {
 	return ctx.sessionManager.getBranch().flatMap(sessionEntryToContextMessages);
@@ -40,8 +60,17 @@ export {
 export { sanitizeTerminalText } from "./render.js";
 
 export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
-	if (INSTALLED_TOOL_LIFECYCLES.has(pi.events)) return;
-	INSTALLED_TOOL_LIFECYCLES.add(pi.events);
+	const lifecycle = getHostSharedResource<ToolLifecycleState>(
+		pi.events,
+		toolLifecycleStates() as WeakMap<object, ToolLifecycleState>,
+		TOOL_LIFECYCLE_DISCOVERY_EVENT,
+		() => ({ active: false }),
+		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
+	);
+	if (lifecycle.active) return;
+	const activation = {};
+	lifecycle.active = true;
+	lifecycle.activation = activation;
 	try {
 		const resumeHandoff = consumeResumeToolHandoff();
 		if (resumeHandoff !== undefined) {
@@ -144,7 +173,6 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 			runtime.endTurn();
 		});
 		pi.on("session_shutdown", async (event) => {
-			INSTALLED_TOOL_LIFECYCLES.delete(pi.events);
 			await settings.whenIdle();
 			unsubscribeSettings();
 			unregisterUiSetting();
@@ -159,9 +187,10 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 				// surviving Tool components; the next session_start replaces it.
 				runtime.suspend();
 			}
+			releaseToolLifecycle(lifecycle, activation);
 		});
 	} catch (error) {
-		INSTALLED_TOOL_LIFECYCLES.delete(pi.events);
+		releaseToolLifecycle(lifecycle, activation);
 		throw error;
 	}
 }

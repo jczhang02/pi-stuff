@@ -13,9 +13,9 @@ does not vendor or patch Magic Context Core.
 - License: MIT, as declared by the official Package manifest and upstream repository.
 
 The Package declares Pi peers `^0.80.2`, which does not include the Suite's
-certified Pi 0.83 Host. Pi Stuff therefore does not infer compatibility from
+certified Pi 0.84.1 Host. Pi Stuff therefore does not infer compatibility from
 the peer range: its real-Host PTY gate separately certifies this exact artifact
-against the pinned Pi 0.83 source profile.
+against the pinned Pi 0.84.1 source profile.
 
 ## Pi Stuff adapter policy
 

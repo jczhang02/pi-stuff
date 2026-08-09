@@ -233,8 +233,8 @@ class TmuxPiSession {
 		return this.waitFor((screen) => !screen.includes(text), `absence of ${JSON.stringify(text)}`);
 	}
 
-	async waitForStatusline(): Promise<string> {
-		return this.waitFor(hasStatusline, "the shared Statusline Footer");
+	async waitForStatusline(stage = "normal screen"): Promise<string> {
+		return this.waitFor(hasStatusline, `the shared Statusline Footer after ${stage}`);
 	}
 
 	async waitForStatuslineAbsence(): Promise<string> {
@@ -324,7 +324,7 @@ async function createCase(rootDirectory: string, label: string, theme: "dark" | 
 					outputPad: 1,
 					quietStartup: true,
 					theme,
-					uiMode: "fullscreen",
+					tuiMode: "fullscreen",
 				},
 				null,
 				"\t",
@@ -697,7 +697,7 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	session.resize(100, 32);
 	await session.waitForText("gpt-image-2");
 	session.sendKey("Escape");
-	await session.waitForStatusline();
+	await session.waitForStatusline("closing the first /codex dialog");
 
 	session.sendKey("C-u");
 	session.sendLiteral("/codex fast");
@@ -715,7 +715,7 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	screen = await session.waitForText("off");
 	verifySettingValue(screen, "Fast mode", "off");
 	session.sendKey("Escape");
-	await session.waitForStatusline();
+	await session.waitForStatusline("closing the Fast-mode /codex dialog");
 }
 
 async function verifyTodoOverlay(
@@ -743,7 +743,11 @@ async function verifyTodoOverlay(
 		}
 	}
 	verifyTerminalWidth(screen, columns, "expanded Todo checklist");
-	await writePtyEvidence(options.artifactDirectory, `pi-0.83-todo-parity-${String(columns)}x${String(rows)}`, session);
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-todo-parity-${String(columns)}x${String(rows)}`,
+		session,
+	);
 }
 
 async function verifyWideInteractions(
@@ -757,13 +761,13 @@ async function verifyWideInteractions(
 	await verifyCodexDialog(session, paths);
 
 	let screen = await openUi(session);
-	await writePtyEvidence(options.artifactDirectory, "pi-0.83-ui-parity-open-100x32", session);
+	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-ui-parity-open-100x32`, session);
 	session.resize(64, 28);
 	screen = await session.waitForText("Tool running timer");
 	verifyNoFloatingFrame(screen, "narrow /ui Command Dialog");
 	verifyFullWidthDivider(screen, 64, "narrow /ui Command Dialog");
 	verifyTerminalWidth(screen, 64, "narrow /ui Command Dialog");
-	await writePtyEvidence(options.artifactDirectory, "pi-0.83-ui-parity-open-64x28", session);
+	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-ui-parity-open-64x28`, session);
 	session.resize(100, 32);
 	await session.waitForText("Tool running timer");
 	session.sendLiteral("welcome");
@@ -777,7 +781,7 @@ async function verifyWideInteractions(
 	screen = await session.waitForText("false");
 	verifySettingValue(screen, "Welcome header", false);
 	session.sendKey("Escape");
-	await session.waitForStatusline();
+	await session.waitForStatusline("closing the Welcome /ui dialog");
 	await session.waitForText("Welcome back!");
 
 	session.sendLiteral("DRAFT_草稿");
@@ -788,14 +792,14 @@ async function verifyWideInteractions(
 	if (hasStatusline(screen)) fail("Statusline remained visible in a fixture Command Dialog");
 	session.sendKey("Escape");
 	await session.waitForText("DRAFT_草稿");
-	await session.waitForStatusline();
+	await session.waitForStatusline("closing the draft-restoration fixture dialog");
 
 	session.sendKey("C-u");
 	session.sendLiteral("/u");
 	screen = await session.waitForText("Configure Pi Stuff UI");
 	if (hasStatusline(screen)) fail("Statusline remained visible while native autocomplete was open");
 	session.sendKey("Escape");
-	await session.waitForStatusline();
+	await session.waitForStatusline("closing native autocomplete");
 	if (!session.capture().includes("/u")) fail("native autocomplete Escape did not preserve the editor draft");
 
 	session.sendKey("C-u");
@@ -804,7 +808,7 @@ async function verifyWideInteractions(
 	if (hasStatusline(screen)) fail("Statusline remained visible while inline slash autocomplete was open");
 	session.sendKey("Escape");
 	await session.waitForText("prefix /u");
-	await session.waitForStatusline();
+	await session.waitForStatusline("closing inline slash autocomplete");
 	session.sendKey("C-u");
 
 	session.sendLiteral(LONG_PROMPT);
@@ -855,7 +859,11 @@ async function verifyWideInteractions(
 	const history = await session.waitForText(finalThought, true);
 	if (history.includes("OWNED_TITLE")) fail("Thought rendering exposed a model-provided terminal control payload");
 	verifyTerminalWidth(screen, 100, "settled Thought and long-prompt screen");
-	await writePtyEvidence(options.artifactDirectory, "pi-0.83-statusline-parity-metered-100x32", session);
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-statusline-parity-metered-100x32`,
+		session,
+	);
 	const request = [...(await readFixtureRecords(paths.log))].reverse().find((record) => record.type === "request");
 	if (request?.lastUser !== LONG_PROMPT) fail("fixture did not receive the complete long CJK prompt");
 
@@ -1029,7 +1037,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 				verifyFreshScreen(fresh, columns, rows);
 				await writePtyEvidence(
 					options.artifactDirectory,
-					`pi-0.83-statusline-parity-fresh-${String(columns)}x${String(rows)}`,
+					`pi-${CERTIFIED_PI_VERSION}-statusline-parity-fresh-${String(columns)}x${String(rows)}`,
 					session,
 				);
 				const initialRecords = await readFixtureRecords(paths.log);

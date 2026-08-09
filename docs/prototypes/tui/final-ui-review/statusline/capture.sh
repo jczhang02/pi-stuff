@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# PROTOTYPE — capture the accepted Statusline layout in genuine Pi 0.83 PTYs.
+# PROTOTYPE — capture the accepted Statusline layout in certified Pi PTYs.
 # The harness is deterministic, offline, and isolated from the user's Pi settings.
 
 set -euo pipefail
@@ -8,6 +8,8 @@ set -euo pipefail
 prototype_root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd "$prototype_root/../../../../.." && pwd)
 pi_bin=${PI_BIN:-/opt/bin/pi}
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 freeze_bin=${FREEZE_BIN:-/tmp/pi-proto-bin/freeze}
 extension="$prototype_root/statusline-prototype.ts"
 fixture="$prototype_root/statusline-fixture.ts"
@@ -31,8 +33,8 @@ for executable in bun rg tmux "$pi_bin" "$freeze_bin"; do
 		exit 1
 	fi
 done
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "Statusline prototype requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "Statusline prototype requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -112,12 +114,12 @@ start_pi() {
 	local command
 
 	mkdir -p "$agent_dir" "$sessions_dir"
-	printf '%s\n' '{"theme":"dark","quietStartup":true,"enableInstallTelemetry":false,"outputPad":1,"uiMode":"fullscreen"}' \
+	printf '%s\n' '{"theme":"dark","quietStartup":true,"enableInstallTelemetry":false,"outputPad":1,"tuiMode":"fullscreen"}' \
 		> "$agent_dir/settings.json"
 	printf '%s\n' '{"tui.editor.cursorLeft":["left"]}' > "$agent_dir/keybindings.json"
 	session_file=$(cd "$repo_root" && bun "$fixture" "$sessions_dir" "$fixture_kind")
 	printf -v command \
-		'env PI_CODING_AGENT_DIR=%q PI_OFFLINE=1 PI_TELEMETRY=0 %q --session %q --model %q --thinking medium --ui-mode fullscreen --no-extensions -e %q --no-skills --no-prompt-templates --no-context-files --no-tools --no-themes --offline --approve' \
+		'env PI_CODING_AGENT_DIR=%q PI_OFFLINE=1 PI_TELEMETRY=0 %q --session %q --model %q --thinking medium --tui-mode fullscreen --no-extensions -e %q --no-skills --no-prompt-templates --no-context-files --no-tools --no-themes --offline --approve' \
 		"$agent_dir" \
 		"$pi_bin" \
 		"$session_file" \
@@ -151,13 +153,13 @@ assert_full_metered_statusline() {
 
 start_pi 100 32 "metered-100x32" short "sonnet-4.5-metered"
 assert_full_metered_statusline
-capture_frame "pi-0.83-statusline-metered-100x32"
+capture_frame "${artifact_prefix}-statusline-metered-100x32"
 stop_pi
 
 start_pi 64 28 "metered-64x28" short "sonnet-4.5-metered"
 wait_for_text "sonnet-4.5"
 wait_for_text "$expected_path"
-capture_frame "pi-0.83-statusline-metered-64x28"
+capture_frame "${artifact_prefix}-statusline-metered-64x28"
 stop_pi
 
 start_pi 100 32 "subscription-100x32" short "sonnet-4.5-subscription"
@@ -165,14 +167,14 @@ wait_for_text "sonnet-4.5"
 wait_for_text "load:full"
 reject_text "$expected_cost"
 reject_text "(sub)"
-capture_frame "pi-0.83-statusline-subscription-100x32"
+capture_frame "${artifact_prefix}-statusline-subscription-100x32"
 stop_pi
 
 start_pi 100 32 "overflow-100x32" overflow "sonnet-4.5-metered"
 assert_full_metered_statusline
 wait_for_text "请按照已经确认的 Claude Code 风格完成状态栏"
 wait_for_text "所有字段都应遵循 Pi 主题"
-capture_frame "pi-0.83-statusline-prompt-overflow-100x32"
+capture_frame "${artifact_prefix}-statusline-prompt-overflow-100x32"
 stop_pi
 
 start_pi 100 32 "temporary-surfaces" short "sonnet-4.5-metered"
@@ -180,29 +182,29 @@ assert_full_metered_statusline
 tmux send-keys -t "$tmux_session" C-b
 wait_for_text "Statusline hidden · temporary selector"
 wait_for_absence "sonnet-4.5"
-capture_frame "pi-0.83-statusline-selector-hidden-100x32"
+capture_frame "${artifact_prefix}-statusline-selector-hidden-100x32"
 tmux send-keys -t "$tmux_session" Escape
 assert_full_metered_statusline
-capture_frame "pi-0.83-statusline-selector-restored-100x32"
+capture_frame "${artifact_prefix}-statusline-selector-restored-100x32"
 
 tmux send-keys -t "$tmux_session" -l "/proto"
 wait_for_text "prototype-statusline-selector"
 wait_for_absence "sonnet-4.5"
-capture_frame "pi-0.83-statusline-autocomplete-hidden-100x32"
+capture_frame "${artifact_prefix}-statusline-autocomplete-hidden-100x32"
 tmux send-keys -t "$tmux_session" Escape
 assert_full_metered_statusline
-capture_frame "pi-0.83-statusline-autocomplete-restored-100x32"
+capture_frame "${artifact_prefix}-statusline-autocomplete-restored-100x32"
 stop_pi
 
 for artifact in \
-	pi-0.83-statusline-metered-100x32 \
-	pi-0.83-statusline-metered-64x28 \
-	pi-0.83-statusline-subscription-100x32 \
-	pi-0.83-statusline-prompt-overflow-100x32 \
-	pi-0.83-statusline-selector-hidden-100x32 \
-	pi-0.83-statusline-selector-restored-100x32 \
-	pi-0.83-statusline-autocomplete-hidden-100x32 \
-	pi-0.83-statusline-autocomplete-restored-100x32; do
+	${artifact_prefix}-statusline-metered-100x32 \
+	${artifact_prefix}-statusline-metered-64x28 \
+	${artifact_prefix}-statusline-subscription-100x32 \
+	${artifact_prefix}-statusline-prompt-overflow-100x32 \
+	${artifact_prefix}-statusline-selector-hidden-100x32 \
+	${artifact_prefix}-statusline-selector-restored-100x32 \
+	${artifact_prefix}-statusline-autocomplete-hidden-100x32 \
+	${artifact_prefix}-statusline-autocomplete-restored-100x32; do
 	for extension in ansi txt png; do
 		if [[ ! -s "$artifact_dir/$artifact.$extension" ]]; then
 			echo "Missing capture: $artifact.$extension" >&2
@@ -211,4 +213,4 @@ for artifact in \
 	done
 done
 
-echo "Captured 8 genuine Pi 0.83 Statusline frames under $artifact_dir"
+echo "Captured 8 genuine Pi $certified_pi_version Statusline frames under $artifact_dir"

@@ -3,7 +3,7 @@ import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-a
 type SessionManager = ExtensionContext["sessionManager"];
 
 /**
- * Pi 0.83 rebuilds the compacted branch and then appends the same compaction
+ * Pi rebuilds the compacted branch and then appends the same compaction
  * message again when a live compaction finishes. Hide the leading replay for
  * exactly that rebuild; persisted entries and later resume rendering remain
  * untouched.

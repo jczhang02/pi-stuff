@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# PROTOTYPE — capture one deterministic native-Pi 0.83 lifecycle interaction.
+# PROTOTYPE — capture one deterministic certified-Pi lifecycle interaction.
 # No command below starts a model, real Agent, network request, or product I/O.
 # Ctrl+B/Ctrl+N/P are capture-only harness controls, not product keybindings.
 # The displayed destructive command is fixture data and is never executed.
@@ -31,12 +31,14 @@ for executable in bun rg tmux "$freeze_bin"; do
 done
 
 pi_bin="$repo_root/node_modules/.bin/pi"
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 if [[ ! -x $pi_bin ]]; then
 	echo "Repository-pinned Pi executable not found: $pi_bin" >&2
 	exit 1
 fi
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "Work Agent lifecycle capture requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "Work Agent lifecycle capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -200,7 +202,7 @@ capture_command_coordinator() {
 	tmux send-keys -t "$tmux_session" C-b
 	wait_for_text "single exchange"
 	assert_command_surface 100
-	capture_frame "pi-0.83-work-agent-lifecycle-btw"
+	capture_frame "${artifact_prefix}-work-agent-lifecycle-btw"
 
 	# Capture-only P injects an inert, statically explicit destructive-operation
 	# tripwire into the same custom() component.
@@ -217,13 +219,13 @@ capture_command_coordinator() {
 	reject_text "Allow for this session"
 	reject_text "Always allow"
 	reject_text "Allow and remember"
-	capture_frame "pi-0.83-work-agent-lifecycle-permission"
+	capture_frame "${artifact_prefix}-work-agent-lifecycle-permission"
 
 	# Esc denies only this exact operation and restores the suspended BTW surface.
 	tmux send-keys -t "$tmux_session" Escape
 	wait_for_text "Denied reviewer operation · BTW restored"
 	assert_command_surface 100
-	capture_frame "pi-0.83-work-agent-lifecycle-permission-rejected-btw-restored"
+	capture_frame "${artifact_prefix}-work-agent-lifecycle-permission-rejected-btw-restored"
 
 	# The independent one-time approval path must restore the same BTW surface.
 	tmux send-keys -t "$tmux_session" -l p
@@ -232,13 +234,13 @@ capture_command_coordinator() {
 	tmux send-keys -t "$tmux_session" Enter
 	wait_for_text "Allowed this exact reviewer operation once · BTW restored"
 	assert_command_surface 100
-	capture_frame "pi-0.83-work-agent-lifecycle-permission-allowed-btw-restored"
+	capture_frame "${artifact_prefix}-work-agent-lifecycle-permission-allowed-btw-restored"
 
 	# A second Esc now closes BTW itself and restores all Host-owned chrome.
 	tmux send-keys -t "$tmux_session" Escape
 	wait_for_absence "PROTOTYPE state · surface BTW"
 	assert_main_surface
-	capture_frame "pi-0.83-work-agent-lifecycle-main-restored"
+	capture_frame "${artifact_prefix}-work-agent-lifecycle-main-restored"
 
 	# Capture-only Ctrl+N injects user-input-required after the main Agent has
 	# judged a human answer necessary. No custom surface opens and all later
@@ -250,7 +252,7 @@ capture_command_coordinator() {
 	wait_for_text "$continued_draft"
 	reject_text "Tripwire confirmation"
 	reject_text "PROTOTYPE state · surface BTW"
-	capture_frame "pi-0.83-work-agent-lifecycle-needs-input-editor-owned"
+	capture_frame "${artifact_prefix}-work-agent-lifecycle-needs-input-editor-owned"
 
 	# The custom editor admits roster navigation only after the draft is empty.
 	tmux send-keys -t "$tmux_session" C-u
@@ -264,14 +266,14 @@ capture_command_coordinator() {
 	reject_text "Are you sure"
 	reject_text "Confirm"
 	reject_text "Tripwire confirmation"
-	capture_frame "pi-0.83-work-agent-lifecycle-stop-requested"
+	capture_frame "${artifact_prefix}-work-agent-lifecycle-stop-requested"
 
 	wait_for_text "stopped · 12s"
 	wait_for_text "done · 18s"
 	wait_for_text "failed · 9s"
 	wait_for_text "waiting"
 	reject_text "reviewer + planner continue"
-	capture_frame "pi-0.83-work-agent-lifecycle-mixed"
+	capture_frame "${artifact_prefix}-work-agent-lifecycle-mixed"
 	stop_pi
 }
 
@@ -294,7 +296,7 @@ capture_narrow_mixed() {
 	wait_for_text "failed · 9s"
 	wait_for_text "waiting"
 	assert_no_floating_ui
-	capture_frame "pi-0.83-work-agent-lifecycle-mixed-narrow"
+	capture_frame "${artifact_prefix}-work-agent-lifecycle-mixed-narrow"
 	stop_pi
 }
 

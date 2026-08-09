@@ -160,7 +160,7 @@ describe("fanout child Agent composition", () => {
 		});
 
 		await api.fire("session_shutdown", { reason: "quit" });
-		expect(unsubscribeCalls).toBe(3);
+		expect(unsubscribeCalls).toBe(subscriptionIndex);
 		expect(disposed).toBe(1);
 	});
 

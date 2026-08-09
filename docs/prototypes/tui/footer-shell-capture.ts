@@ -1,5 +1,5 @@
 /**
- * ACCEPTANCE SUPPORT — load the production Pi Stuff UI shell in real Pi 0.83
+ * ACCEPTANCE SUPPORT — load the production Pi Stuff UI shell in certified Pi
  * and expose one deterministic Command Dialog used only by the PTY harness.
  */
 

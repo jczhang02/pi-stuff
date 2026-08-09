@@ -3,6 +3,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildPiArgs, PI_STUFF_AGENT_PATH_ENV } from "../packages/pi-stuff-agents/src/runs/shared/pi-args.ts";
+import { CERTIFIED_PI_VERSION } from "../scripts/pi-host-contract.ts";
 import { runPiRpcSmoke } from "../scripts/smoke-pi.ts";
 
 const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
@@ -80,15 +81,15 @@ test("Agents declares its exact workspace and certified Pi dependency contracts"
 		"@earendil-works/pi-tui": "*",
 	});
 	expect(manifest.devDependencies).toEqual({
-		"@earendil-works/pi-agent-core": "0.83.0",
-		"@earendil-works/pi-ai": "0.83.0",
-		"@earendil-works/pi-coding-agent": "0.83.0",
-		"@earendil-works/pi-tui": "0.83.0",
+		"@earendil-works/pi-agent-core": CERTIFIED_PI_VERSION,
+		"@earendil-works/pi-ai": CERTIFIED_PI_VERSION,
+		"@earendil-works/pi-coding-agent": CERTIFIED_PI_VERSION,
+		"@earendil-works/pi-tui": CERTIFIED_PI_VERSION,
 	});
 	expect(manifest.files).toEqual(["index.ts", "agents", "src", "CHANGELOG.md", "README.md", "UPSTREAM.md", "LICENSE"]);
 });
 
-test("Pi 0.83 loads Agents through workspace dependency resolution", async () => {
+test("the certified Pi Host loads Agents through workspace dependency resolution", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-agents-host-"));
 	TEMPORARY_ROOTS.push(root);
 	const packageDirectory = join(root, "package");

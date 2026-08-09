@@ -2,7 +2,7 @@
  * PROTOTYPE — throwaway reference translation, not product code.
  *
  * Question: Can the observable Claude Code 2.1.197 `/agents` interaction
- * translate into a native Pi 0.83 editor-replacement surface without an
+ * translate into a native certified-Pi editor-replacement surface without an
  * HTML terminal imitation or an experimental overlay?
  *
  * Run from the repository root:

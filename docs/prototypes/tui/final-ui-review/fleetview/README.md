@@ -1,8 +1,9 @@
 # Fleetview visual evidence
 
-These are production screenshots from real Pi `0.83.0`, not HTML terminal mockups. They load the complete Pi Stuff
-Aggregate, launch a background Agent through the public `Agent` tool, and exercise both the passive and keyboard-managed
-Fleetview states at `100 × 32` and `64 × 28`.
+The checked-in screenshots are recorded production evidence from real Pi `0.83.0`, not HTML terminal mockups. The
+verifier now resolves the repository-certified Pi Host and reproduces the same contract: it loads the complete Pi Stuff
+Aggregate, launches a background Agent through the public `Agent` tool, and exercises both the passive and
+keyboard-managed Fleetview states at `100 × 32` and `64 × 28`.
 
 Reproduce them from the repository root:
 

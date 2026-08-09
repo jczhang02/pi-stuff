@@ -136,7 +136,7 @@ Mounting, preempting, and resuming a view use Pi TUI's differential repaint. The
 replay the transcript; a Capability can still request an explicit forced repaint through `requestRender(true)` when it
 has a concrete need for one.
 
-The coordinator owns the Suite's desired working-row visibility through `setWorkingVisible(ctx, visible)`. Pi 0.83
+The coordinator owns the Suite's desired working-row visibility through `setWorkingVisible(ctx, visible)`. Pi
 provides public setters for the footer and working row but no getters, so exact restoration covers state owned through
 this Package. Third-party extensions should not independently replace those surfaces after Pi Stuff loads.
 

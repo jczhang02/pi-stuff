@@ -63,13 +63,13 @@ async function loadExtension(extensionPath: ExtensionPath): Promise<AgentSession
 	return session;
 }
 
-test("Pi 0.83 loads exactly the Todo tools from the Capability package", async () => {
+test("the certified Pi Host loads exactly the Todo tools from the Capability package", async () => {
 	const session = await loadExtension(TODO_EXTENSION);
 
 	expect([...session.getActiveToolNames()].sort()).toEqual(EXPECTED_TOOLS);
 });
 
-test("Pi 0.83 loads all Todo tools through the Aggregate package", async () => {
+test("the certified Pi Host loads all Todo tools through the Aggregate package", async () => {
 	const result = await runPiRpcSmoke({
 		extensions: [TODO_TOOL_INSPECTOR],
 		packages: [AGGREGATE_PACKAGE],

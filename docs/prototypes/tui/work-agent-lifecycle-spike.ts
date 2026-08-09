@@ -1,5 +1,5 @@
 /**
- * PROTOTYPE — throwaway native-Pi 0.83 interaction spike; not product code.
+ * PROTOTYPE — throwaway certified-Pi interaction spike; not product code.
  *
  * Question: can one non-floating Command Dialog coordinator suspend BTW for a
  * high-priority destructive-operation tripwire, offer only an exact one-time

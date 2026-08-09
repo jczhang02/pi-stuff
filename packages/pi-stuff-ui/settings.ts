@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getHostSharedResource } from "./host-resource.js";
 import type { StatuslineDensity, StatuslineIconMode } from "./statusline.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-ui.json";
@@ -410,6 +411,7 @@ class UiSettingRegistryGeneration implements UiSettingRegistry {
 }
 
 const SETTINGS_REGISTRY = Symbol.for("@jczhang02/pi-stuff-ui/settings-registry/v1");
+const SETTINGS_REGISTRY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/settings-registry-discovery/v1";
 
 function settingsRegistries(): WeakMap<ExtensionAPI["events"], UiSettingRegistryImplementation> {
 	const root = globalThis as unknown as {
@@ -429,11 +431,13 @@ export function getUiSettingRegistry(pi: ExtensionAPI): UiSettingRegistry {
 
 function getUiSettingRegistryImplementation(pi: ExtensionAPI): UiSettingRegistryImplementation {
 	const registries = settingsRegistries();
-	const existing = registries.get(pi.events);
-	if (existing) return existing;
-	const registry = new UiSettingRegistryImplementation();
-	registries.set(pi.events, registry);
-	return registry;
+	return getHostSharedResource(
+		pi.events,
+		registries as WeakMap<object, UiSettingRegistryImplementation>,
+		SETTINGS_REGISTRY_DISCOVERY_EVENT,
+		() => new UiSettingRegistryImplementation(),
+		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
+	);
 }
 
 interface OwnedSettingDefinition<Id extends UiSettingId> {

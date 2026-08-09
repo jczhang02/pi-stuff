@@ -24,12 +24,14 @@ for executable in bun rg tmux "$freeze_bin"; do
 done
 
 pi_bin="$repo_root/node_modules/.bin/pi"
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 if [[ ! -x $pi_bin ]]; then
 	echo "Repository-pinned Pi executable not found: $pi_bin" >&2
 	exit 1
 fi
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "Tool UI capture requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "Tool UI capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -138,17 +140,17 @@ capture_transcript_variant() {
 capture_transcript_variant \
 	"$individual_session" \
 	"12 matches in 5 files" \
-	"pi-0.83-tool-ui-individual"
+	"${artifact_prefix}-tool-ui-individual"
 
 capture_transcript_variant \
 	"$grouped_session" \
 	"Investigated tool UI · read 2 sources" \
-	"pi-0.83-tool-ui-grouped"
+	"${artifact_prefix}-tool-ui-grouped"
 
 capture_transcript_variant \
 	"$bounded_session" \
 	"+1 more" \
-	"pi-0.83-tool-ui-bounded"
+	"${artifact_prefix}-tool-ui-bounded"
 
 start_pi "$bounded_session"
 wait_for_text "入口、渲染约束和测试基线都已确认。"
@@ -159,7 +161,7 @@ reject_text "Extension issues"
 reject_text "shortcut conflict"
 tmux send-keys -t "$tmux_session" NPage NPage NPage
 wait_for_text "FULL TEST OUTPUT · shard 24/24 complete"
-capture_frame "pi-0.83-tool-details-dialog"
+capture_frame "${artifact_prefix}-tool-details-dialog"
 tmux send-keys -t "$tmux_session" Escape
 wait_for_text "tool-ui-fixture"
 stop_pi

@@ -346,7 +346,7 @@ test("pending prioritize excludes unrelated usage during shutdown", async () => 
 	);
 	branch.push(assistantUsageEntry(25));
 
-	await harness.mock.events.get("session_shutdown")?.[0]?.({}, harness.ctx);
+	await harness.mock.emitHostEvent("session_shutdown", {}, harness.ctx);
 	assert.equal(stateGoals(harness.mock)[0]?.tokensUsed, 0);
 	assert.equal(lastState(harness.mock)?.pendingAction?.kind, "prioritize");
 
@@ -823,7 +823,7 @@ test("pending prioritize survives shutdown with independent accounting", async (
 	await interrupted.command("original goal");
 	branch.push(assistantUsageEntry(25));
 	await interrupted.command("prioritize urgent goal");
-	await interrupted.mock.events.get("session_shutdown")?.[0]?.({}, interrupted.ctx);
+	await interrupted.mock.emitHostEvent("session_shutdown", {}, interrupted.ctx);
 	const persisted = lastState(interrupted.mock);
 	assert.equal(persisted?.pendingAction?.kind, "prioritize");
 	assert.equal(persisted?.goal?.tokensUsed, 25);

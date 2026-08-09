@@ -36,7 +36,7 @@ question or error and an Escape hint remain visible before answer history.
 
 This is an owned fork of `@juicesharp/rpiv-btw`; see [UPSTREAM.md](./UPSTREAM.md).
 
-Pi 0.83 does not expose a public transcript-free Host model-call seam. `/btw`
+Pi does not expose a public transcript-free Host model-call seam. `/btw`
 therefore uses the active model's registered provider and Model Registry auth,
 but it does not run provider lifecycle/context hooks or inherit Host retry and
 transport settings.

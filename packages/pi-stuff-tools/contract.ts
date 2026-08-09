@@ -11,6 +11,7 @@ import {
 	Spacer,
 	Text,
 } from "@earendil-works/pi-tui";
+import { getHostSharedResource } from "@jczhang02/pi-stuff-ui";
 import type { Static, TSchema } from "typebox";
 import {
 	type ActivityCategoryAggregate,
@@ -41,6 +42,7 @@ import {
 import { ToolUiSettingsStore } from "./settings.js";
 
 const TOOL_RUNTIME_REGISTRY = Symbol.for("@jczhang02/pi-stuff-tools/runtime-registry.v1");
+const TOOL_RUNTIME_DISCOVERY_EVENT = "@jczhang02/pi-stuff-tools/runtime-discovery/v1";
 const TOOL_RELOAD_HANDOFF = Symbol.for("@jczhang02/pi-stuff-tools/reload-handoff.v1");
 const SUITE_ACTIVITY_RENDERER = Symbol.for("@jczhang02/pi-stuff-tools/activity-renderer.v1");
 
@@ -1339,11 +1341,13 @@ function runtimeRegistry(): WeakMap<ExtensionAPI["events"], ToolUiRuntime> {
 
 export function getToolUiRuntime(pi: ExtensionAPI): ToolUiRuntime {
 	const registry = runtimeRegistry();
-	const existing = registry.get(pi.events);
-	if (existing) return existing;
-	const runtime = new ToolUiRuntime();
-	registry.set(pi.events, runtime);
-	return runtime;
+	return getHostSharedResource(
+		pi.events,
+		registry as WeakMap<object, ToolUiRuntime>,
+		TOOL_RUNTIME_DISCOVERY_EVENT,
+		() => new ToolUiRuntime(),
+		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
+	);
 }
 
 /** Predeclare Activity metadata for a conditionally registered owned Tool. */

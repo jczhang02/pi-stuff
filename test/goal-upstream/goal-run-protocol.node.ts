@@ -188,7 +188,7 @@ test("start reports no active session before bind and after shutdown", async () 
 	);
 
 	const context = bindSession(mock);
-	mock.events.get("session_shutdown")?.[0]?.({}, context.ctx);
+	mock.emitHostEvent("session_shutdown", {}, context.ctx);
 	const afterEvents = observeRun(mock, "after-session");
 	startRun(mock, "after-session");
 	await flush();
@@ -310,7 +310,7 @@ test("payload evaluation cannot revive a replaced session", async () => {
 	const payload = {
 		runId: "session-changing-payload",
 		get objective() {
-			mock.events.get("session_shutdown")?.[0]?.({}, context.ctx);
+			mock.emitHostEvent("session_shutdown", {}, context.ctx);
 			return "must not start after shutdown";
 		},
 	};
@@ -801,7 +801,7 @@ test("shutdown cancels a queued terminal publication from the old session", asyn
 	await flush();
 
 	cancelRun(mock, "shutdown-terminal");
-	mock.events.get("session_shutdown")?.[0]?.({}, context.ctx);
+	mock.emitHostEvent("session_shutdown", {}, context.ctx);
 	await flush();
 
 	assert.deepEqual(
@@ -827,7 +827,7 @@ test("shutdown invalidates a start continuation still awaiting kickoff delivery"
 		["active"],
 	);
 
-	mock.events.get("session_shutdown")?.[0]?.({}, firstContext.ctx);
+	mock.emitHostEvent("session_shutdown", {}, firstContext.ctx);
 	rejectKickoff(new Error("late kickoff rejection"));
 	await flush();
 
@@ -867,7 +867,7 @@ test("session replacement invalidates old run ownership and terminal details", a
 		() => undefined,
 		firstContext.ctx,
 	);
-	mock.events.get("session_shutdown")?.[0]?.({}, firstContext.ctx);
+	mock.emitHostEvent("session_shutdown", {}, firstContext.ctx);
 
 	const restoredGoal = {
 		id: "restored-manual-goal",

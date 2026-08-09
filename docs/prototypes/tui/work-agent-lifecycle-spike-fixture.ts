@@ -1,5 +1,5 @@
 /**
- * PROTOTYPE — generate one deterministic, model-free Pi 0.83 lifecycle session.
+ * PROTOTYPE — generate one deterministic, model-free certified-Pi lifecycle session.
  *
  * Question: can the native extension prove work-surface preemption, editor
  * ownership, selected-Agent stop, and mixed outcomes without a model or real

@@ -8,7 +8,7 @@ const AGGREGATE_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff");
 const INSPECTOR = join(REPOSITORY_ROOT, "test", "fixtures", "assert-codex-tools.ts");
 const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
 
-test("Pi 0.83 loads only the deliberate Codex command and leaves no startup settings", async () => {
+test("the certified Pi Host loads only the deliberate Codex command and leaves no startup settings", async () => {
 	const result = await runPiRpcSmoke({
 		extensions: [INSPECTOR],
 		packages: [CODEX_PACKAGE],

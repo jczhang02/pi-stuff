@@ -2,6 +2,7 @@ import { type ExtensionAPI, type ExtensionCommandContext, initTheme } from "@ear
 import { setKeybindings } from "@earendil-works/pi-tui";
 
 export { commandDialogRows, fitCommandDialogRows } from "../../packages/pi-stuff-ui/dialog-layout.js";
+export { getHostSharedResource } from "../../packages/pi-stuff-ui/host-resource.js";
 export { getGoalStatusChannel } from "../../packages/pi-stuff-ui/statusline.js";
 
 interface DialogComponent {

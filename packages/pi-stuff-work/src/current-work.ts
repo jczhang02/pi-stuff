@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getHostSharedResource } from "@jczhang02/pi-stuff-ui";
 
 export type CurrentWorkProjectionStatus = "queued" | "running" | "stopping" | "waiting";
 
@@ -80,6 +81,7 @@ export class CurrentWorkSources {
 }
 
 const SOURCE_REGISTRY = Symbol.for("@jczhang02/pi-stuff-work/current-work-sources/v1");
+const SOURCE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-work/current-work-sources-discovery/v1";
 
 function sourceRegistry(): WeakMap<ExtensionAPI["events"], CurrentWorkSources> {
 	const root = globalThis as unknown as {
@@ -91,11 +93,13 @@ function sourceRegistry(): WeakMap<ExtensionAPI["events"], CurrentWorkSources> {
 
 export function getCurrentWorkSources(pi: ExtensionAPI): CurrentWorkSources {
 	const registry = sourceRegistry();
-	const existing = registry.get(pi.events);
-	if (existing) return existing;
-	const sources = new CurrentWorkSources();
-	registry.set(pi.events, sources);
-	return sources;
+	return getHostSharedResource(
+		pi.events,
+		registry as WeakMap<object, CurrentWorkSources>,
+		SOURCE_DISCOVERY_EVENT,
+		() => new CurrentWorkSources(),
+		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
+	);
 }
 
 export function registerCurrentWorkSource(pi: ExtensionAPI, source: CurrentWorkSource): () => void {

@@ -27,6 +27,7 @@ import {
 	SUBAGENT_ASYNC_STARTED_EVENT,
 	type SubagentState,
 } from "../../packages/pi-stuff-agents/src/shared/types.ts";
+import { CERTIFIED_PI_VERSION } from "../../scripts/pi-host-contract.ts";
 import { PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH } from "./fixtures/process-controls-provider.ts";
 
 const providerExtension = PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH;
@@ -62,9 +63,9 @@ function fixtureRoot(prefix: string): string {
 	if (!piBinaryCertified) {
 		const version = Bun.spawnSync([piBinary, "--version"], { stdout: "pipe", stderr: "pipe" });
 		const reportedVersion = version.stdout.toString().trim();
-		if (version.exitCode !== 0 || reportedVersion !== "0.83.0") {
+		if (version.exitCode !== 0 || reportedVersion !== CERTIFIED_PI_VERSION) {
 			throw new Error(
-				`Set PI_BIN to the certified Pi 0.83.0 standalone binary; '${piBinary}' reported '${reportedVersion || version.stderr.toString().trim()}'.`,
+				`Set PI_BIN to the certified Pi ${CERTIFIED_PI_VERSION} standalone binary; '${piBinary}' reported '${reportedVersion || version.stderr.toString().trim()}'.`,
 			);
 		}
 		piBinaryCertified = true;

@@ -19,7 +19,8 @@ The visual evidence has three authority levels under `reference/` and `parity-ar
    footer and establishes the icon-led, compact, single-row direction.
 2. `former-config-statusline-footer-100x32.png` is a black-box capture of the former local configuration. It confirms
    the migrated content and icons, but its dot separators are historical rather than authoritative.
-3. `pi-0.83-statusline-parity-metered-100x32.png` and the responsive matrix are the current production result.
+3. `pi-0.83-statusline-parity-metered-100x32.png` and the responsive matrix are the recorded pre-upgrade production
+   result; the real-Host verifier is the authority for the currently certified Host.
 
 These ANSI, plain-text, and PNG captures load the production Aggregate and cover fresh `100 × 32`, `64 × 28`,
 `48 × 22`, `32 × 18`, and `24 × 16` screens plus the complete metered `100 × 32` footer after a real streamed turn. They show the accepted icon-led visual
@@ -48,7 +49,7 @@ Run from the repository root:
 ./docs/prototypes/tui/final-ui-review/statusline/capture.sh
 ```
 
-The script prefers `/opt/bin/pi`, requires version `0.83.0`, and uses `/tmp/pi-proto-bin/freeze` by default. Override either path with `PI_BIN` or `FREEZE_BIN`. It creates an isolated temporary Pi agent directory and offline persisted sessions; it does not load or modify the user's Pi settings.
+The script prefers `/opt/bin/pi`, validates it against the shared repository Host contract, and uses `/tmp/pi-proto-bin/freeze` by default. Override either path with `PI_BIN` or `FREEZE_BIN`. It creates an isolated temporary Pi agent directory and offline persisted sessions; it does not load or modify the user's Pi settings.
 
 The eight PNG, ANSI, and plain-text captures under `artifacts/` cover:
 

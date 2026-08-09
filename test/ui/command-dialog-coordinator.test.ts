@@ -88,6 +88,13 @@ class EventBusHarness implements EventBusLike {
 	}
 }
 
+function eventBusView(bus: EventBusHarness): EventBusLike {
+	return {
+		emit: (event, data) => bus.emit(event, data),
+		on: (event, listener) => bus.on(event, listener),
+	};
+}
+
 class UiHarness {
 	autoResolveOnDone = true;
 	editorText = "saved draft";
@@ -316,9 +323,23 @@ function createDeferred<Value>(): TestDeferred<Value> {
 }
 
 describe("normal UI presentation integration", () => {
+	test("installs one UI lifecycle across per-extension event API wrappers", async () => {
+		const bus = new EventBusHarness();
+		const first = createApiHarness(eventBusView(bus));
+		const duplicate = createApiHarness(eventBusView(bus));
+
+		await piStuffUi(first.api);
+		await piStuffUi(duplicate.api);
+
+		expect(first.registeredCommands).toEqual(["ui"]);
+		expect(first.sessionHandlers).toHaveLength(1);
+		expect(duplicate.registeredCommands).toEqual([]);
+		expect(duplicate.sessionHandlers).toHaveLength(0);
+	});
+
 	test("observes late Codex status publication through one shared channel", async () => {
 		const events = new EventBusHarness();
-		const uiApi = createApiHarness(events);
+		const uiApi = createApiHarness(eventBusView(events));
 		await piStuffUi(uiApi.api);
 		const ui = new UiHarness();
 		const ctx = createContext(ui, "tui", {
@@ -335,7 +356,7 @@ describe("normal UI presentation integration", () => {
 		expect(initial).not.toContain("weekly");
 		expect(initial).not.toContain("fast");
 
-		const codexApi = createApiHarness(events);
+		const codexApi = createApiHarness(eventBusView(events));
 		const uiChannel = getCodexStatusChannel(uiApi.api);
 		const codexChannel = getCodexStatusChannel(codexApi.api);
 		expect(codexChannel).toBe(uiChannel);
@@ -361,7 +382,7 @@ describe("normal UI presentation integration", () => {
 
 	test("keeps Goal state out of the ordinary Statusline", async () => {
 		const events = new EventBusHarness();
-		const uiApi = createApiHarness(events);
+		const uiApi = createApiHarness(eventBusView(events));
 		await piStuffUi(uiApi.api);
 		const ui = new UiHarness();
 		const ctx = createContext(ui, "tui", {
@@ -375,7 +396,7 @@ describe("normal UI presentation integration", () => {
 		const footer = factory(ui.tui, ui.theme, createFooterData("main") as never);
 		expect(footer.render(120).join("\n")).not.toContain("goal");
 
-		const goalApi = createApiHarness(events);
+		const goalApi = createApiHarness(eventBusView(events));
 		const uiChannel = getGoalStatusChannel(uiApi.api);
 		const goalChannel = getGoalStatusChannel(goalApi.api);
 		expect(goalChannel).toBe(uiChannel);
@@ -513,6 +534,35 @@ describe("normal UI presentation integration", () => {
 });
 
 describe("Command Dialog coordinator", () => {
+	test("shares and restores the Suite footer across real per-extension event API wrappers", async () => {
+		const bus = new EventBusHarness();
+		const suite = createApiHarness(eventBusView(bus));
+		const independentExtension = createApiHarness(eventBusView(bus));
+		await piStuffUi(suite.api);
+		const suiteCoordinator = getCommandDialogCoordinator(suite.api);
+		const externalCoordinator = getCommandDialogCoordinator(independentExtension.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui);
+		await suite.start(ctx);
+		const normalFooter = ui.footerWrites.at(-1);
+		if (!normalFooter) throw new Error("Expected the normal Suite footer");
+
+		expect(externalCoordinator).toBe(suiteCoordinator);
+		let viewContext: CommandDialogViewContext | undefined;
+		const shown = externalCoordinator.show(ctx, {
+			priority: "normal",
+			create: (context) => {
+				viewContext = context;
+				return new TestComponent("independent extension");
+			},
+		});
+		if (!viewContext) throw new Error("Expected the independent extension dialog to mount");
+		viewContext.close();
+		await shown;
+
+		expect(ui.footerWrites.at(-1)).toBe(normalFooter);
+	});
+
 	test("is a WeakMap singleton for one Extension event bus and ignores non-TUI contexts", async () => {
 		const events = new EventBusHarness();
 		const first = createApiHarness(events);
@@ -522,10 +572,15 @@ describe("Command Dialog coordinator", () => {
 
 		expect(getCommandDialogCoordinator(second.api)).toBe(coordinator);
 		expect(getCommandDialogCoordinator(other.api)).not.toBe(coordinator);
-		expect(first.shutdownHandlers).toHaveLength(1);
-		expect(second.shutdownHandlers).toHaveLength(1);
+		const firstCoordinatorHandlerCount = first.shutdownHandlers.length;
+		const secondCoordinatorHandlerCount = second.shutdownHandlers.length;
+		expect(firstCoordinatorHandlerCount).toBeGreaterThan(0);
+		expect(secondCoordinatorHandlerCount).toBeGreaterThan(0);
 		await piStuffUi(first.api);
-		expect(first.shutdownHandlers).toHaveLength(3);
+		const installedHandlerCount = first.shutdownHandlers.length;
+		expect(installedHandlerCount).toBeGreaterThan(firstCoordinatorHandlerCount);
+		await piStuffUi(first.api);
+		expect(first.shutdownHandlers).toHaveLength(installedHandlerCount);
 
 		const ui = new UiHarness();
 		const result = await coordinator.show(createContext(ui, "rpc"), {
@@ -549,17 +604,17 @@ describe("Command Dialog coordinator", () => {
 
 		const reloaded = createApiHarness(events);
 		await piStuffUi(reloaded.api);
-		expect(reloaded.shutdownHandlers).toHaveLength(3);
-		expect(getCommandDialogCoordinator(reloaded.api)).toBe(coordinator);
+		const reloadedCoordinator = getCommandDialogCoordinator(reloaded.api);
+		expect(reloadedCoordinator).not.toBe(coordinator);
 		const newChromeWrites: boolean[] = [];
-		coordinator.registerChrome("todo", {
+		reloadedCoordinator.registerChrome("todo", {
 			setSuppressed: (suppressed) => newChromeWrites.push(suppressed),
 		});
 		unregisterOld();
 
 		const ui = new UiHarness();
 		let viewContext: CommandDialogViewContext | undefined;
-		const shown = coordinator.show(createContext(ui), {
+		const shown = reloadedCoordinator.show(createContext(ui), {
 			priority: "normal",
 			create: (context) => {
 				viewContext = context;
@@ -577,8 +632,8 @@ describe("Command Dialog coordinator", () => {
 
 	test("shares one /ui registry across distinct Package APIs in one Host generation", async () => {
 		const events = new EventBusHarness();
-		const toolsApi = createApiHarness(events);
-		const uiApi = createApiHarness(events);
+		const toolsApi = createApiHarness(eventBusView(events));
+		const uiApi = createApiHarness(eventBusView(events));
 		const toolsRegistry = ensureUiSettingsCommand(toolsApi.api);
 		toolsRegistry.register({
 			description: "Timer",
@@ -1020,10 +1075,11 @@ describe("Command Dialog coordinator", () => {
 		expect(ui.hostCalls).toHaveLength(1);
 
 		const reloaded = createApiHarness(api.api.events);
-		expect(getCommandDialogCoordinator(reloaded.api)).toBe(coordinator);
+		const reloadedCoordinator = getCommandDialogCoordinator(reloaded.api);
+		expect(reloadedCoordinator).not.toBe(coordinator);
 		const reloadedUi = new UiHarness();
 		let reloadedContext: CommandDialogViewContext | undefined;
-		const reopened = coordinator.show(createContext(reloadedUi), {
+		const reopened = reloadedCoordinator.show(createContext(reloadedUi), {
 			priority: "normal",
 			create: (context) => {
 				reloadedContext = context;

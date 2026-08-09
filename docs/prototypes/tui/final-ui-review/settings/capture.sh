@@ -5,6 +5,8 @@ set -euo pipefail
 prototype_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd "$prototype_dir/../../../../.." && pwd)
 pi_bin=${PI_BIN:-/opt/bin/pi}
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 freeze_bin=${FREEZE_BIN:-/tmp/pi-proto-bin/freeze}
 artifact_dir="$prototype_dir/artifacts"
 capture_root=$(mktemp -d)
@@ -18,15 +20,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for executable in tmux "$pi_bin" "$freeze_bin"; do
+for executable in bun rg tmux "$pi_bin" "$freeze_bin"; do
 	if [[ ! -x $executable ]] && ! command -v "$executable" >/dev/null 2>&1; then
 		echo "Required executable not found: $executable" >&2
 		exit 1
 	fi
 done
 
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "This prototype requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "This prototype requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 
@@ -54,7 +56,7 @@ start_pi() {
 	local height=$2
 	local command
 	printf -v command \
-		'env TERM=xterm-256color COLORTERM=truecolor PI_CODING_AGENT_DIR=%q PI_OFFLINE=1 PI_TELEMETRY=0 ANTHROPIC_API_KEY=prototype-not-a-real-key %q --model anthropic/claude-sonnet-4-5 --no-session --no-extensions -e %q --no-skills --no-prompt-templates --no-context-files --no-tools --no-themes --ui-mode fullscreen --offline --approve' \
+		'env TERM=xterm-256color COLORTERM=truecolor PI_CODING_AGENT_DIR=%q PI_OFFLINE=1 PI_TELEMETRY=0 ANTHROPIC_API_KEY=prototype-not-a-real-key %q --model anthropic/claude-sonnet-4-5 --no-session --no-extensions -e %q --no-skills --no-prompt-templates --no-context-files --no-tools --no-themes --tui-mode fullscreen --offline --approve' \
 		"$capture_root/agent" \
 		"$pi_bin" \
 		"$prototype_dir/prototype-ui-settings.ts"
@@ -96,21 +98,21 @@ capture_frame() {
 }
 
 start_pi 100 32
-capture_frame "pi-0.83-ui-settings-open-100x32"
+capture_frame "${artifact_prefix}-ui-settings-open-100x32"
 stop_pi
 
 start_pi 64 28
-capture_frame "pi-0.83-ui-settings-open-64x28"
+capture_frame "${artifact_prefix}-ui-settings-open-64x28"
 stop_pi
 
 start_pi 100 32
 tmux send-keys -t "$tmux_session" -l 'timer'
 wait_for_text "Tool running timer"
 wait_for_text "Show elapsed time while long-running tools work"
-capture_frame "pi-0.83-ui-settings-search-timer-100x32"
+capture_frame "${artifact_prefix}-ui-settings-search-timer-100x32"
 tmux send-keys -t "$tmux_session" Enter
 wait_for_text "false"
-capture_frame "pi-0.83-ui-settings-toggle-timer-100x32"
+capture_frame "${artifact_prefix}-ui-settings-toggle-timer-100x32"
 tmux send-keys -t "$tmux_session" Escape
 wait_for_text "claude-sonnet-4-5"
 if tmux capture-pane -p -t "$tmux_session" | rg -F --quiet -- "Type to search"; then
