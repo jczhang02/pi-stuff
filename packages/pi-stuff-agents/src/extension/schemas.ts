@@ -61,6 +61,23 @@ const AgentTask = Type.Object(
 		skill: Type.Optional(SkillSelection),
 		turnBudget: Type.Optional(TurnBudget),
 		toolBudget: Type.Optional(ToolBudget),
+		context: Type.Optional(
+			Type.String({
+				enum: ["fresh", "fork"],
+				description: "Shared launch hint. When supplied inside tasks, every task must use the same value.",
+			}),
+		),
+		isolation: Type.Optional(
+			Type.String({
+				enum: ["shared", "worktree"],
+				description: "Shared launch hint. When supplied inside tasks, every task must use the same value.",
+			}),
+		),
+		foreground: Type.Optional(
+			Type.Boolean({
+				description: "Shared launch hint. When supplied inside tasks, every task must use the same value.",
+			}),
+		),
 	},
 	{ additionalProperties: false },
 );
@@ -132,55 +149,15 @@ export const SubagentParams = Type.Object(
 	{
 		additionalProperties: false,
 		description:
-			"Exactly one shape: agent plus task for one launch, tasks for a parallel launch, or action for current-session control.",
-		oneOf: [
-			{
-				title: "Single Agent launch: agent plus task",
-				required: ["agent", "task"],
-				properties: { tasks: false, action: false, id: false, index: false, message: false },
-			},
-			{
-				title: "Parallel Agent launch: tasks",
-				required: ["tasks"],
-				properties: {
-					agent: false,
-					description: false,
-					task: false,
-					action: false,
-					id: false,
-					index: false,
-					message: false,
-				},
-			},
-			{
-				title: "Current-session Agent control: action",
-				required: ["action"],
-				properties: {
-					agent: false,
-					description: false,
-					task: false,
-					tasks: false,
-					foreground: false,
-					context: false,
-					isolation: false,
-					cwd: false,
-					model: false,
-					thinking: false,
-					skill: false,
-					timeoutMs: false,
-					turnBudget: false,
-					toolBudget: false,
-				},
-			},
-		],
+			"Exactly one runtime-validated shape: agent plus task for one launch, tasks for a parallel launch, or action for current-session control.",
 	},
 );
 
 /**
  * Nested fanout children are launch-only and cannot detach work or manage runs.
  *
- * Keep this schema explicit. Deriving it with `Type.Omit` drops the root
- * `oneOf`/`additionalProperties` contract and can accidentally expose future
+ * Keep this schema explicit. Deriving it with `Type.Omit` weakens the root
+ * `additionalProperties` contract and can accidentally expose future
  * management fields added to `SubagentParams`.
  */
 export const FanoutChildSubagentParams = Type.Object(
@@ -214,18 +191,7 @@ export const FanoutChildSubagentParams = Type.Object(
 	},
 	{
 		additionalProperties: false,
-		description: "Launch one or more nested Agents and wait for every result before returning to the owning Agent.",
-		oneOf: [
-			{
-				title: "Single nested Agent launch: agent plus task",
-				required: ["agent", "task"],
-				properties: { tasks: false },
-			},
-			{
-				title: "Parallel nested Agent launch: tasks",
-				required: ["tasks"],
-				properties: { agent: false, description: false, task: false },
-			},
-		],
+		description:
+			"Launch one runtime-validated single or parallel nested Agent call and wait for every result before returning to the owning Agent.",
 	},
 );

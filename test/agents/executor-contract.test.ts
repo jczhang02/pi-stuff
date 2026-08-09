@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { Check } from "typebox/value";
-import { toEngineParams } from "../../packages/pi-stuff-agents/src/extension/product-executor.js";
+import {
+	normalizePublicAgentParams,
+	toEngineParams,
+} from "../../packages/pi-stuff-agents/src/extension/product-executor.js";
 import { SubagentParams } from "../../packages/pi-stuff-agents/src/extension/schemas.js";
 import { deriveLaunchRunId } from "../../packages/pi-stuff-agents/src/runs/foreground/subagent-executor.js";
 
@@ -40,6 +43,62 @@ describe("Agent product contract", () => {
 			{ action: "create", agent: "legacy" },
 		];
 		for (const input of excluded) expect(Check(SubagentParams, input)).toBe(false);
+	});
+
+	test("keeps the provider schema branch-free and enforces exclusive shapes at runtime", () => {
+		const nodes = [SubagentParams as unknown];
+		while (nodes.length > 0) {
+			const node = nodes.pop();
+			if (Array.isArray(node)) {
+				nodes.push(...node);
+				continue;
+			}
+			if (!node || typeof node !== "object") continue;
+			const schema = node as Record<string, unknown>;
+			expect(Object.hasOwn(schema, "oneOf")).toBeFalse();
+			if (schema.properties && typeof schema.properties === "object") {
+				for (const property of Object.values(schema.properties)) expect(property).not.toBe(false);
+			}
+			nodes.push(...Object.values(schema));
+		}
+		expect(() =>
+			normalizePublicAgentParams({
+				agent: "general-purpose",
+				task: "Inspect",
+				tasks: [{ agent: "general-purpose", task: "Review" }],
+			}),
+		).toThrow("either agent plus task or tasks");
+	});
+
+	test("promotes consistent task-level shared launch hints and rejects conflicts", () => {
+		expect(
+			toEngineParams({
+				tasks: [
+					{
+						agent: "general-purpose",
+						context: "fork",
+						foreground: true,
+						isolation: "worktree",
+						task: "Implement",
+					},
+					{
+						agent: "general-purpose",
+						context: "fork",
+						foreground: true,
+						isolation: "worktree",
+						task: "Review",
+					},
+				],
+			}),
+		).toMatchObject({ async: false, context: "fork", worktree: true });
+		expect(() =>
+			toEngineParams({
+				tasks: [
+					{ agent: "general-purpose", context: "fork", task: "Implement" },
+					{ agent: "general-purpose", context: "fresh", task: "Review" },
+				],
+			}),
+		).toThrow("one shared context value");
 	});
 
 	test("maps the complete allowed parallel launch without legacy fields", () => {

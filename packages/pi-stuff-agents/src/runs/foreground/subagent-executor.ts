@@ -208,6 +208,8 @@ interface PreparedLaunch {
 	context: ContextMode;
 	contextSummary: ContextSummary;
 	forkContextTokens?: number;
+	/** true uses Pi's native raw branch; false uses a bounded projected fork. */
+	rawForkByIndex: boolean[];
 	fixedInputTokensByIndex: number[];
 	modelCandidatesByIndex: Array<string[] | undefined>;
 	nestedRoute: ReturnType<typeof createNestedRoute>;
@@ -269,18 +271,26 @@ function estimateTextTokens(text: string): number {
 }
 
 function inheritedContextTokens(ctx: ExtensionContext): number {
+	let effective: number | undefined;
 	try {
 		const value = ctx.getContextUsage()?.tokens;
-		if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
+		if (typeof value === "number" && Number.isFinite(value) && value >= 0) effective = value;
 	} catch {
-		// Fall through to the persisted branch estimator.
+		// Continue with the persisted branch estimator.
 	}
 	try {
-		return ctx.sessionManager
+		const persisted = ctx.sessionManager
 			.buildContextEntries()
 			.flatMap((entry) => sessionEntryToContextMessages(entry))
 			.reduce((total, message) => total + estimateTokens(message), 0);
+		// A native fork clones persisted branch entries, not the post-transform
+		// prompt reported by getContextUsage(). Magic Context can make the latter
+		// much smaller, so use the conservative larger estimate.
+		return Math.max(effective ?? 0, persisted);
 	} catch {
+		// If the persisted branch cannot be measured, the live usage may be a
+		// much smaller Magic-transformed prompt. Force the bounded projection path
+		// instead of risking an oversized native clone.
 		return Number.POSITIVE_INFINITY;
 	}
 }
@@ -299,10 +309,10 @@ function taskModelCandidates(data: PreparedLaunch, task: TaskParam, agent: Agent
 	});
 }
 
-function projectionTokenBudget(data: PreparedLaunch, ctx: ExtensionContext): number {
-	const inherited = data.context === "fork" ? (data.forkContextTokens ?? inheritedContextTokens(ctx)) : 0;
+function projectionTokenBudget(data: PreparedLaunch): number {
 	let launchBudget = Number.POSITIVE_INFINITY;
 	for (const [index, task] of taskInputs(data.params).entries()) {
+		if (data.context === "fork" && data.rawForkByIndex[index]) continue;
 		const agent = data.agents.find((candidate) => candidate.name === task.agent);
 		if (!agent) return 0;
 		const candidates = data.modelCandidatesByIndex[index] ?? taskModelCandidates(data, task, agent);
@@ -314,10 +324,7 @@ function projectionTokenBudget(data: PreparedLaunch, ctx: ExtensionContext): num
 			const model = findModelInfo(candidate, data.availableModels, data.parentModel?.provider);
 			if (!model?.contextWindow || !model.maxTokens) return 0;
 			const reserve = Math.min(CHILD_CONTEXT_RESERVE_MAX_TOKENS, Math.floor(model.contextWindow * 0.25));
-			launchBudget = Math.min(
-				launchBudget,
-				model.contextWindow - model.maxTokens - reserve - inherited - knownTokens,
-			);
+			launchBudget = Math.min(launchBudget, model.contextWindow - model.maxTokens - reserve - knownTokens);
 		}
 	}
 	return Number.isFinite(launchBudget) ? Math.max(0, Math.floor(launchBudget)) : 0;
@@ -363,12 +370,14 @@ function prepareLaunchModelPlan(input: {
 	maxSubagentDepth: number;
 }): {
 	forkContextTokens?: number;
+	rawForkByIndex: boolean[];
 	fixedInputTokensByIndex: number[];
 	modelCandidatesByIndex: Array<string[] | undefined>;
 } {
 	const tasks = taskInputs(input.params);
 	const forkTokens = input.context === "fork" ? inheritedContextTokens(input.ctx) : 0;
 	const fixedInputTokensByIndex: number[] = [];
+	const rawForkByIndex: boolean[] = [];
 	const modelCandidatesByIndex = tasks.map((task, index) => {
 		const agent = input.agents.find((candidate) => candidate.name === task.agent);
 		if (!agent) throw new Error(`Unknown Agent: ${task.agent}`);
@@ -418,7 +427,10 @@ function prepareLaunchModelPlan(input: {
 		const taskTokens =
 			estimateTextTokens(built.task.task) + estimateTextTokens(built.task.systemPrompt?.trim() ?? "");
 		fixedInputTokensByIndex[index] = taskTokens;
-		if (input.context !== "fork") return candidates.length > 0 ? candidates : undefined;
+		if (input.context !== "fork") {
+			rawForkByIndex[index] = false;
+			return candidates.length > 0 ? candidates : undefined;
+		}
 
 		const requiredInputTokens = forkTokens + taskTokens;
 		const safeCandidates = candidates.filter((candidate) => {
@@ -426,7 +438,20 @@ function prepareLaunchModelPlan(input: {
 			const capacity = model ? forkInputCapacity(model) : undefined;
 			return capacity !== undefined && requiredInputTokens <= capacity;
 		});
-		if (safeCandidates.length > 0) return safeCandidates;
+		if (safeCandidates.length > 0) {
+			rawForkByIndex[index] = true;
+			return safeCandidates;
+		}
+
+		const projectedCandidates = candidates.filter((candidate) => {
+			const model = findModelInfo(candidate, input.availableModels, input.parentModel?.provider);
+			const capacity = model ? forkInputCapacity(model) : undefined;
+			return capacity !== undefined && taskTokens <= capacity;
+		});
+		if (projectedCandidates.length > 0) {
+			rawForkByIndex[index] = false;
+			return projectedCandidates;
+		}
 
 		const capacities = candidates
 			.map((candidate) => {
@@ -437,14 +462,15 @@ function prepareLaunchModelPlan(input: {
 			.join(", ");
 		const taskLabel = tasks.length > 1 ? ` task ${index + 1} (${task.agent})` : ` Agent '${task.agent}'`;
 		throw new Error(
-			`Cannot start forked${taskLabel}: the effective parent context and child launch require ${approximateTokens(
-				requiredInputTokens,
-			)} input tokens, but no candidate model has safe capacity${capacities ? ` (${capacities})` : ""}. ` +
-				`Use context:"fresh" or choose a model with a larger context window.`,
+			`Cannot start forked${taskLabel}: the fixed child instruction requires ${approximateTokens(
+				taskTokens,
+			)} input tokens before any bounded parent projection, but no candidate model has safe capacity${capacities ? ` (${capacities})` : ""}. ` +
+				`Shorten the task or choose a model with a larger context window.`,
 		);
 	});
 	return {
 		...(input.context === "fork" ? { forkContextTokens: forkTokens } : {}),
+		rawForkByIndex,
 		fixedInputTokensByIndex,
 		modelCandidatesByIndex,
 	};
@@ -457,7 +483,8 @@ async function attachContextProjection(
 ): Promise<void> {
 	data.params.contextProjection = undefined;
 	if (!projectContext) return;
-	const maxTokens = projectionTokenBudget(data, ctx);
+	if (data.context === "fork" && data.rawForkByIndex.every(Boolean)) return;
+	const maxTokens = projectionTokenBudget(data);
 	if (maxTokens <= 0) return;
 	try {
 		const audience = data.context === "fork" ? "agent-fork" : "agent-fresh";
@@ -539,6 +566,7 @@ function prepareForkSessions(input: {
 	availableModels: ModelInfo[];
 	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig;
 	modelCandidatesByIndex: Array<string[] | undefined>;
+	rawForkByIndex: boolean[];
 }): { sessionFiles: Array<string | undefined>; thinkingOverrides: Array<AgentConfig["thinking"] | undefined> } {
 	const tasks = taskInputs(input.params);
 	if (input.context !== "fork") {
@@ -547,9 +575,19 @@ function prepareForkSessions(input: {
 			thinkingOverrides: tasks.map(() => input.params.thinking),
 		};
 	}
+	if (!input.rawForkByIndex.some(Boolean)) {
+		return {
+			sessionFiles: tasks.map(() => undefined),
+			thinkingOverrides: tasks.map(() => input.params.thinking),
+		};
+	}
 
 	const forceThinkingOff = new Map<number, boolean>();
 	for (const index of tasks.keys()) {
+		if (!input.rawForkByIndex[index]) {
+			forceThinkingOff.set(index, false);
+			continue;
+		}
 		const candidates = input.modelCandidatesByIndex[index] ?? [];
 		forceThinkingOff.set(
 			index,
@@ -563,8 +601,14 @@ function prepareForkSessions(input: {
 	const resolver = createForkContextResolver(input.ctx.sessionManager, "fork", {
 		forceThinkingOffForIndex: (index) => forceThinkingOff.get(index) ?? true,
 	});
-	const sessionFiles = tasks.map((_, index) => resolver.sessionFileForIndex(index));
-	const thinkingOverrides = tasks.map((_, index) => resolver.thinkingOverrideForIndex(index) ?? input.params.thinking);
+	const sessionFiles = tasks.map((_, index) =>
+		input.rawForkByIndex[index] ? resolver.sessionFileForIndex(index) : undefined,
+	);
+	const thinkingOverrides = tasks.map((_, index) =>
+		input.rawForkByIndex[index]
+			? (resolver.thinkingOverrideForIndex(index) ?? input.params.thinking)
+			: input.params.thinking,
+	);
 	return { sessionFiles, thinkingOverrides };
 }
 
@@ -657,6 +701,7 @@ function prepareLaunch(
 			availableModels: models,
 			modelScope: discovered.modelScope,
 			modelCandidatesByIndex: modelPlan.modelCandidatesByIndex,
+			rawForkByIndex: modelPlan.rawForkByIndex,
 		});
 	} catch (error) {
 		return errorResult(mode, error instanceof Error ? error.message : String(error));
@@ -699,6 +744,7 @@ function prepareLaunch(
 		context,
 		contextSummary: context,
 		...(modelPlan.forkContextTokens !== undefined ? { forkContextTokens: modelPlan.forkContextTokens } : {}),
+		rawForkByIndex: modelPlan.rawForkByIndex,
 		fixedInputTokensByIndex: modelPlan.fixedInputTokensByIndex,
 		modelCandidatesByIndex: modelPlan.modelCandidatesByIndex,
 		nestedRoute: inheritedNestedRoute ?? createNestedRoute(runId),
@@ -711,9 +757,12 @@ function prepareLaunch(
 	};
 }
 
-function childTask(data: PreparedLaunch, task: TaskParam): string {
+function childTask(data: PreparedLaunch, task: TaskParam, index: number): string {
 	const taskText = data.context === "fork" ? wrapForkTask(task.task) : task.task;
-	return data.params.contextProjection ? `${data.params.contextProjection}\n\n${taskText}` : taskText;
+	const needsProjection = data.context !== "fork" || !data.rawForkByIndex[index];
+	return needsProjection && data.params.contextProjection
+		? `${data.params.contextProjection}\n\n${taskText}`
+		: taskText;
 }
 
 function asyncContext(data: PreparedLaunch, ctx: ExtensionContext, pi: ExtensionAPI) {
@@ -732,12 +781,12 @@ function asyncContext(data: PreparedLaunch, ctx: ExtensionContext, pi: Extension
 }
 
 function parallelInputs(data: PreparedLaunch) {
-	return (data.params.tasks ?? []).map((task) => {
+	return (data.params.tasks ?? []).map((task, index) => {
 		const skill = normalizeSkillInput(task.skill);
 		return {
 			agent: task.agent,
 			...(task.description ? { description: task.description } : {}),
-			task: childTask(data, task),
+			task: childTask(data, task, index),
 			...(task.cwd ? { cwd: task.cwd } : {}),
 			...(task.model ? { model: task.model } : {}),
 			...(skill !== undefined ? { skill } : {}),
@@ -818,7 +867,7 @@ async function launchBackground(
 		...common,
 		agent: agent.name,
 		description: data.params.description,
-		task: childTask(data, { agent: agent.name, task }),
+		task: childTask(data, { agent: agent.name, task }, 0),
 		goal: data.params.description ?? data.params.task ?? "",
 		agentConfig: agent,
 		context: data.context,
@@ -883,7 +932,7 @@ function buildForegroundConfig(
 						...common,
 						agent: singleName,
 						description: data.params.description,
-						task: childTask(data, { agent: singleName, task: singleTask }),
+						task: childTask(data, { agent: singleName, task: singleTask }, 0),
 						agentConfig: singleAgent(data),
 						context: data.context,
 						skills: (() => {

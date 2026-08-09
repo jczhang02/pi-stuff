@@ -112,6 +112,7 @@ function executor(
 			controlInbox: string;
 			capabilityToken: string;
 		};
+		sessionFile?: string;
 		task: string;
 	}) => void,
 	options: {
@@ -626,12 +627,25 @@ describe("reduced foreground Agent engine", () => {
 		);
 	});
 
-	test("subtracts inherited fork usage from the child projection budget", async () => {
+	test("uses a native raw fork when the parent history fits without adding duplicate projection", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-context-fork-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 		const requestedBudgets: number[] = [];
-		await executor(cwd, state(), undefined, {
+		let captured: { sessionFile?: string; task: string } | undefined;
+		let openSessionCalls = 0;
+		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 3_500);
+		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+			openSessionCalls += 1;
+			return {
+				createBranchedSession: () => {
+					const child = path.join(cwd, "child.jsonl");
+					fs.writeFileSync(child, "");
+					return child;
+				},
+			};
+		};
+		await executor(cwd, state(), (launch) => (captured = launch), {
 			agent: { ...agent(), model: "test/small" },
 			projectContext: async (_audience, _ctx, projectionOptions) => {
 				requestedBudgets.push(projectionOptions?.maxTokens ?? -1);
@@ -642,19 +656,20 @@ describe("reduced foreground Agent engine", () => {
 			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
 			new AbortController().signal,
 			undefined,
-			context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 3_500),
+			ctx,
 		);
 
-		expect(requestedBudgets).toHaveLength(1);
-		expect(requestedBudgets[0]).toBeGreaterThan(0);
-		expect(requestedBudgets[0]).toBeLessThanOrEqual(500);
+		expect(requestedBudgets).toHaveLength(0);
+		expect(openSessionCalls).toBe(1);
+		expect(captured?.sessionFile).toBe(path.join(cwd, "child.jsonl"));
+		expect(captured?.task).not.toContain("memory");
 	});
 
-	test("rejects an oversized fork before cloning a child session or starting an engine", async () => {
+	test("converts an oversized raw fork into a bounded projected fork without cloning history", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-too-large-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
-		let engineCalls = 0;
+		let captured: { sessionFile?: string; task: string } | undefined;
 		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 7_000);
 		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
@@ -664,10 +679,17 @@ describe("reduced foreground Agent engine", () => {
 		const result = await executor(
 			cwd,
 			state(),
-			() => {
-				engineCalls += 1;
+			(launch) => {
+				captured = launch;
 			},
-			{ agent: { ...agent(), model: "test/small" } },
+			{
+				agent: { ...agent(), model: "test/small" },
+				projectContext: async (_audience, _context, options) => ({
+					source: "magic-context",
+					text: `<bounded max="${String(options?.maxTokens)}">parent memory</bounded>`,
+					truncated: true,
+				}),
+			},
 		).execute(
 			"oversized-fork-call",
 			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
@@ -676,12 +698,12 @@ describe("reduced foreground Agent engine", () => {
 			ctx,
 		);
 
-		expect(result.isError).toBe(true);
-		expect(result.content[0]).toMatchObject({ text: expect.stringContaining('context:"fresh"') });
-		expect(engineCalls).toBe(0);
+		expect(result.isError).not.toBe(true);
 		expect(openSessionCalls).toBe(0);
 		expect(fs.existsSync(path.join(cwd, "child.jsonl"))).toBeFalse();
-		expect(fs.existsSync(path.join(cwd, "sessions"))).toBeFalse();
+		expect(captured?.sessionFile).toBeUndefined();
+		expect(captured?.task).toContain("parent memory");
+		expect(captured?.task).toContain("delegated subagent running from a fork");
 	});
 
 	test("conservatively preflights Chinese, emoji, and mixed fork inputs", async () => {
@@ -901,7 +923,7 @@ describe("reduced foreground Agent engine", () => {
 		expect(captured?.modelCandidates).toEqual(["test/large"]);
 	});
 
-	test("uses the persisted branch estimator when live context usage is unavailable", async () => {
+	test("uses the persisted branch estimator to avoid cloning an oversized raw branch", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-estimate-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
@@ -925,26 +947,38 @@ describe("reduced foreground Agent engine", () => {
 			ctx,
 		);
 
-		expect(result.isError).toBe(true);
-		expect(engineCalls).toBe(0);
+		expect(result.isError).not.toBe(true);
+		expect(engineCalls).toBe(1);
 	});
 
-	test("uses Pi's effective usage instead of rejecting a Magic Context-sized raw branch", async () => {
+	test("does not mistake Magic Context's effective usage for the larger persisted raw branch", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-effective-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
-		let engineCalls = 0;
+		let captured: { sessionFile?: string; task: string } | undefined;
+		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "large", contextWindow: 128_000, maxTokens: 8_000 }], 70_000);
 		(ctx.sessionManager as unknown as { buildContextEntries: () => unknown[] }).buildContextEntries = () => [
 			{ type: "message", message: { role: "user", content: "x".repeat(2_000_000) } },
 		];
+		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+			openSessionCalls += 1;
+			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
+		};
 		const result = await executor(
 			cwd,
 			state(),
-			() => {
-				engineCalls += 1;
+			(launch) => {
+				captured = launch;
 			},
-			{ agent: { ...agent(), model: "test/large" } },
+			{
+				agent: { ...agent(), model: "test/large" },
+				projectContext: async () => ({
+					source: "magic-context",
+					text: "bounded managed history",
+					truncated: true,
+				}),
+			},
 		).execute(
 			"effective-fork-call",
 			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
@@ -954,7 +988,52 @@ describe("reduced foreground Agent engine", () => {
 		);
 
 		expect(result.isError).not.toBe(true);
-		expect(engineCalls).toBe(1);
+		expect(openSessionCalls).toBe(0);
+		expect(captured?.sessionFile).toBeUndefined();
+		expect(captured?.task).toContain("bounded managed history");
+	});
+
+	test("uses a bounded projection when the persisted raw branch cannot be measured", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-unmeasured-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		let captured: { sessionFile?: string; task: string } | undefined;
+		let openSessionCalls = 0;
+		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 500);
+		(ctx.sessionManager as unknown as { buildContextEntries: () => unknown[] }).buildContextEntries = () => {
+			throw new Error("injected branch read failure");
+		};
+		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+			openSessionCalls += 1;
+			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
+		};
+
+		const result = await executor(
+			cwd,
+			state(),
+			(launch) => {
+				captured = launch;
+			},
+			{
+				agent: { ...agent(), model: "test/small" },
+				projectContext: async () => ({
+					source: "magic-context",
+					text: "bounded fallback history",
+					truncated: true,
+				}),
+			},
+		).execute(
+			"unmeasured-fork-call",
+			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
+			new AbortController().signal,
+			undefined,
+			ctx,
+		);
+
+		expect(result.isError).not.toBe(true);
+		expect(openSessionCalls).toBe(0);
+		expect(captured?.sessionFile).toBeUndefined();
+		expect(captured?.task).toContain("bounded fallback history");
 	});
 
 	test("accounts for resolved skill metadata before creating a fork session", async () => {
@@ -994,7 +1073,7 @@ describe("reduced foreground Agent engine", () => {
 		expect(openSessionCalls).toBe(0);
 	});
 
-	test("fails a parallel fork atomically when any child cannot fit", async () => {
+	test("supports one native and one projected child in the same parallel fork", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-parallel-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
@@ -1009,11 +1088,18 @@ describe("reduced foreground Agent engine", () => {
 		);
 		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
 			openSessionCalls += 1;
-			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
+			return {
+				createBranchedSession: () => {
+					const child = path.join(cwd, "child.jsonl");
+					fs.writeFileSync(child, "");
+					return child;
+				},
+			};
 		};
 		const runState = state();
 		const result = await executor(cwd, runState, undefined, {
 			agent: { ...agent(), model: "test/small" },
+			projectContext: async () => ({ source: "magic-context", text: "bounded parent", truncated: true }),
 		}).execute(
 			"parallel-oversized-fork-call",
 			{
@@ -1029,9 +1115,9 @@ describe("reduced foreground Agent engine", () => {
 			ctx,
 		);
 
-		expect(result.isError).toBe(true);
-		expect(openSessionCalls).toBe(0);
-		expect(runState.foregroundRuns?.size).toBe(0);
+		expect(result.isError).not.toBe(true);
+		expect(openSessionCalls).toBe(1);
+		expect(runState.foregroundRuns?.size).toBe(1);
 	});
 
 	test("launches without a projection when model limits are unknown", async () => {

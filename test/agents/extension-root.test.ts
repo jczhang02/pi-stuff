@@ -588,6 +588,7 @@ describe("Agents extension composition root", () => {
 		expect(tool.description).toContain("Do not invent or pass a background field");
 		expect(tool.description).toContain("Background completion never starts another main turn");
 		expect(tool.description).toContain('action="status", "steer", "stop", or "resume"');
+		expect(tool.description).toContain("Omit turnBudget and toolBudget for ordinary tasks");
 
 		for (const args of [
 			{ agent: "general-purpose", task: "Inspect the parser" },
@@ -641,7 +642,8 @@ describe("Agents extension composition root", () => {
 					tasks: [{ agent: "general-purpose", task: "Review the parser" }],
 				},
 			}),
-		).toThrow("must match exactly one schema in oneOf");
+		).not.toThrow();
+		expect(Object.hasOwn(tool.parameters as object, "oneOf")).toBeFalse();
 	});
 
 	test("keeps session startup observation-only and activates recovery on the first Agent launch", async () => {

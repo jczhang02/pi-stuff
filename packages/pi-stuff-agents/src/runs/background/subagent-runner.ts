@@ -1901,8 +1901,26 @@ async function runResolvedTask(input: {
 		const detected = !run.error ? detectSubagentError(run.messages) : undefined;
 		const emptyOutput =
 			!run.error && run.exitCode === 0 && !run.output.trim() ? "Agent produced no output." : undefined;
+		const expectedManagerSignal =
+			run.process?.terminationOrigin === "manager-final-drain" ||
+			run.process?.terminationOrigin === "manager-request" ||
+			run.interrupted ||
+			run.timedOut ||
+			run.stopped;
+		const unexplainedExit = !run.error
+			? run.signal && !expectedManagerSignal
+				? `Agent process terminated by ${run.signal} without a diagnostic.`
+				: run.exitCode === null
+					? "Agent process ended without an exit code or diagnostic."
+					: run.exitCode !== 0
+						? `Agent process exited with code ${String(run.exitCode)} without a diagnostic.`
+						: undefined
+			: undefined;
 		const error =
-			run.error ?? (detected?.hasError ? (detected.details ?? detected.errorType) : undefined) ?? emptyOutput;
+			run.error ??
+			(detected?.hasError ? (detected.details ?? detected.errorType) : undefined) ??
+			emptyOutput ??
+			unexplainedExit;
 		const exitCode = error && run.exitCode === 0 ? 1 : run.exitCode;
 		const attempt: ModelAttempt = {
 			model: candidate ?? run.model ?? "default",

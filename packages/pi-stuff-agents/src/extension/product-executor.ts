@@ -17,6 +17,83 @@ export interface PublicAgentTask {
 	readonly skill?: string | readonly string[] | boolean;
 	readonly turnBudget?: { readonly maxTurns: number; readonly graceTurns?: number };
 	readonly toolBudget?: { readonly soft?: number; readonly hard: number; readonly block?: readonly string[] | "*" };
+	readonly context?: "fork" | "fresh";
+	readonly isolation?: "shared" | "worktree";
+	readonly foreground?: boolean;
+}
+
+const CONTROL_ONLY_FIELDS = new Set(["action", "id", "index", "message"]);
+const LAUNCH_ONLY_FIELDS = [
+	"agent",
+	"context",
+	"cwd",
+	"description",
+	"foreground",
+	"isolation",
+	"model",
+	"skill",
+	"task",
+	"tasks",
+	"thinking",
+	"timeoutMs",
+	"turnBudget",
+	"toolBudget",
+] as const;
+
+function hasOwn(params: PublicAgentParams, field: keyof PublicAgentParams): boolean {
+	return Object.hasOwn(params, field);
+}
+
+function sharedTaskValue<K extends "context" | "isolation" | "foreground">(
+	params: PublicAgentParams,
+	field: K,
+): PublicAgentParams[K] {
+	const taskValues = (params.tasks ?? []).filter((task) => Object.hasOwn(task, field)).map((task) => task[field]);
+	if (taskValues.length === 0) return params[field];
+	const first = taskValues[0];
+	if (taskValues.some((value) => value !== first)) {
+		throw new Error(`Parallel Agent tasks must use one shared ${field} value.`);
+	}
+	if (hasOwn(params, field) && params[field] !== first) {
+		throw new Error(`Top-level ${field} conflicts with the shared task ${field} value.`);
+	}
+	return (hasOwn(params, field) ? params[field] : first) as PublicAgentParams[K];
+}
+
+/**
+ * Enforce the product contract without provider-hostile JSON Schema branches.
+ * Some OpenAI-compatible providers reject boolean schemas inside oneOf before
+ * the model can call the tool, so shape exclusivity belongs at this boundary.
+ */
+export function normalizePublicAgentParams(params: PublicAgentParams): PublicAgentParams {
+	if (params.action) {
+		const mixed = LAUNCH_ONLY_FIELDS.find((field) => hasOwn(params, field));
+		if (mixed) throw new Error(`Agent control action '${params.action}' cannot include launch field '${mixed}'.`);
+		return { ...params };
+	}
+	const control = [...CONTROL_ONLY_FIELDS].find((field) => field !== "action" && Object.hasOwn(params, field));
+	if (control) throw new Error(`Agent launch cannot include control field '${control}'.`);
+	const hasSingleField = hasOwn(params, "agent") || hasOwn(params, "task") || hasOwn(params, "description");
+	const hasParallel = Array.isArray(params.tasks) && params.tasks.length > 0;
+	if (hasSingleField && hasParallel) throw new Error("Provide either agent plus task or tasks, not both.");
+	if (hasParallel) {
+		const context = sharedTaskValue(params, "context");
+		const isolation = sharedTaskValue(params, "isolation");
+		const foreground = sharedTaskValue(params, "foreground");
+		return {
+			...params,
+			...(context !== undefined ? { context } : {}),
+			...(isolation !== undefined ? { isolation } : {}),
+			...(foreground !== undefined ? { foreground } : {}),
+			tasks: params.tasks?.map(
+				({ context: _context, isolation: _isolation, foreground: _foreground, ...task }) => task,
+			),
+		};
+	}
+	if (!params.agent?.trim() || !params.task?.trim()) {
+		throw new Error("Provide agent plus task for one launch, or a non-empty tasks list for parallel work.");
+	}
+	return { ...params };
 }
 
 export interface PublicAgentParams {
@@ -71,7 +148,8 @@ function mapTask(task: PublicAgentTask) {
  * Keep the public Claude-style contract small while retaining the mature fork's
  * execution engine behind this boundary.
  */
-export function toEngineParams(params: PublicAgentParams): SubagentParamsLike {
+export function toEngineParams(input: PublicAgentParams): SubagentParamsLike {
+	const params = normalizePublicAgentParams(input);
 	if (params.action) {
 		return {
 			action: params.action,
@@ -161,7 +239,15 @@ export type AgentEngineResult = AgentToolResult<Details> & { readonly isError?: 
 /** Parent-facing projection: direct summaries only, never engine bookkeeping paths. */
 export function projectEngineResult(params: PublicAgentParams, result: AgentEngineResult): AgentEngineResult {
 	const { lifecycleBinding: _lifecycleBinding, ...publicDetails } = result.details;
-	const publicResult: AgentEngineResult = { ...result, details: publicDetails };
+	const childFailed = publicDetails.results.some(
+		(child) =>
+			(typeof child.exitCode === "number" && child.exitCode !== 0) || Boolean(child.error) || child.crashed === true,
+	);
+	const publicResult: AgentEngineResult = {
+		...result,
+		...(childFailed ? { isError: true } : {}),
+		details: publicDetails,
+	};
 	if (params.action) {
 		const text = bounded(
 			scanAgentReport(firstText(publicResult) || "Agent action finished.").text,

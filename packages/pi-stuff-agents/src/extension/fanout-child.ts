@@ -36,7 +36,12 @@ import {
 } from "../shared/types.ts";
 import { createAgentToolPresentation } from "./agent-tool-presentation.ts";
 import { loadConfig, type PiStuffAgentsConfig } from "./config.ts";
-import { type PublicAgentParams, projectEngineResult, toEngineParams } from "./product-executor.ts";
+import {
+	normalizePublicAgentParams,
+	type PublicAgentParams,
+	projectEngineResult,
+	toEngineParams,
+} from "./product-executor.ts";
 import { FanoutChildSubagentParams } from "./schemas.ts";
 import { buildFanoutChildSubagentToolDescription } from "./tool-description.ts";
 
@@ -211,7 +216,16 @@ export default function registerFanoutChildSubagentExtension(
 			// A fanout owner must not finish while work it owns is still detached.
 			// Nested Agent calls therefore execute in the owner foreground and are
 			// collected before the parent writer can report terminal success.
-			const params = { ...(rawParams as PublicAgentParams), foreground: true };
+			let params: PublicAgentParams;
+			try {
+				params = normalizePublicAgentParams({ ...(rawParams as PublicAgentParams), foreground: true });
+			} catch (error) {
+				const supplied = { ...(rawParams as PublicAgentParams), foreground: true };
+				return projectEngineResult(
+					supplied,
+					governorFailureResult(supplied, error instanceof Error ? error.message : String(error)),
+				);
+			}
 			const bindingError = bindExecutionGovernor();
 			if (bindingError) return projectEngineResult(params, governorFailureResult(params, bindingError));
 			if (!boundLaunchIdentity) {

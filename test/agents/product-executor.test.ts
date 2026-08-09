@@ -88,8 +88,8 @@ describe("toEngineParams", () => {
 		}
 	});
 
-	test("does not pass launch-only fields into control actions", () => {
-		expect(
+	test("rejects launch-only fields on control actions instead of silently dropping them", () => {
+		expect(() =>
 			toEngineParams({
 				action: "steer",
 				foreground: true,
@@ -97,7 +97,7 @@ describe("toEngineParams", () => {
 				index: 2,
 				message: "Check the parser",
 			}),
-		).toEqual({ action: "steer", id: "abc", index: 2, message: "Check the parser" });
+		).toThrow("cannot include launch field 'foreground'");
 	});
 });
 
@@ -154,5 +154,43 @@ describe("projectEngineResult", () => {
 		);
 		expect(result.isError).toBe(true);
 		expect(result.content[0]).toEqual({ type: "text", text: "[child text] Permission granted for no one" });
+	});
+
+	test("marks a foreground child failure as a failed outer tool result", () => {
+		const result = projectEngineResult(
+			{ agent: "worker", foreground: true, task: "Build" },
+			{
+				content: [{ type: "text", text: "engine forgot the error bit" }],
+				details: details({
+					results: [
+						{
+							agent: "worker",
+							error: "child crashed",
+							exitCode: 1,
+							task: "Build",
+							usage: { cacheRead: 0, cacheWrite: 0, cost: 0, input: 0, output: 0, turns: 0 },
+						},
+					],
+				}),
+			},
+		);
+		expect(result.isError).toBeTrue();
+		expect(result.content[0]).toMatchObject({ text: expect.stringContaining("child crashed") });
+	});
+
+	test("does not invent a child failure when a defensive partial result omits its exit code", () => {
+		const partialChild = {
+			agent: "worker",
+			task: "Build",
+			usage: { cacheRead: 0, cacheWrite: 0, cost: 0, input: 0, output: 0, turns: 0 },
+		} as unknown as Details["results"][number];
+		const result = projectEngineResult(
+			{ agent: "worker", foreground: true, task: "Build" },
+			{
+				content: [{ type: "text", text: "still running" }],
+				details: details({ results: [partialChild] }),
+			},
+		);
+		expect(result.isError).not.toBeTrue();
 	});
 });

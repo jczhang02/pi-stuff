@@ -1854,6 +1854,66 @@ const timer = setInterval(() => {
 		expect(status.steps[0]?.endedAt).toBeNumber();
 	});
 
+	test("records a diagnostic when the Agent process exits nonzero without reporting an error", async () => {
+		const root = fixtureRoot();
+		const writer = path.join(root, "silent-nonzero-writer.ts");
+		fs.writeFileSync(writer, "#!/usr/bin/env bun\nprocess.exit(7);\n", { mode: 0o700 });
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const asyncDir = path.join(root, "async");
+		const resultPath = path.join(asyncDir, "result.json");
+
+		await runConfiguredBackground({
+			version: 2,
+			id: "silent-nonzero-exit",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: { mode: "single", task: { ...task(0), cwd: root } },
+		});
+		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
+			results: Array<{ error?: string; exitCode: number | null }>;
+		};
+		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
+			steps: Array<{ error?: string; exitCode?: number }>;
+		};
+
+		expect(completion.results[0]).toMatchObject({
+			exitCode: 7,
+			error: "Agent process exited with code 7 without a diagnostic.",
+		});
+		expect(status.steps[0]?.error).toBe("Agent process exited with code 7 without a diagnostic.");
+	});
+
+	test("records a diagnostic when the Agent process dies from a signal without reporting an error", async () => {
+		const root = fixtureRoot();
+		const writer = path.join(root, "silent-signal-writer.ts");
+		fs.writeFileSync(writer, '#!/usr/bin/env bun\nprocess.kill(process.pid, "SIGTERM");\n', { mode: 0o700 });
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const asyncDir = path.join(root, "async");
+		const resultPath = path.join(asyncDir, "result.json");
+
+		await runConfiguredBackground({
+			version: 2,
+			id: "silent-signal-exit",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: { mode: "single", task: { ...task(0), cwd: root } },
+		});
+		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
+			results: Array<{ error?: string; exitCode: number | null }>;
+		};
+		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
+			steps: Array<{ error?: string; exitCode?: number }>;
+		};
+
+		expect(completion.results[0]).toMatchObject({
+			exitCode: 1,
+			error: "Agent process terminated by SIGTERM without a diagnostic.",
+		});
+		expect(status.steps[0]?.error).toBe("Agent process terminated by SIGTERM without a diagnostic.");
+	});
+
 	test("reaps a writer and clears its registry when post-spawn identity binding fails", async () => {
 		const root = fixtureRoot();
 		const writer = path.join(root, "writer-binding-failure.ts");

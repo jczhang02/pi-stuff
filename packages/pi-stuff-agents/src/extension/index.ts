@@ -58,7 +58,7 @@ import {
 	replayForegroundRuns,
 } from "../session/foreground-replay.ts";
 import { ensureAccessibleDir } from "../shared/accessible-dir.ts";
-import { getArtifactsDir } from "../shared/artifacts.ts";
+import { getArtifactsDir, maintainAgentArtifacts } from "../shared/artifacts.ts";
 import {
 	buildSessionCompatibilityScope,
 	buildSessionGovernorCompatibilityScope,
@@ -67,6 +67,7 @@ import {
 } from "../shared/session-identity.ts";
 import {
 	ASYNC_DIR,
+	DEFAULT_ARTIFACT_CONFIG,
 	type Details,
 	RESULTS_DIR,
 	SESSION_GOVERNOR_ROOT,
@@ -83,7 +84,12 @@ import { readAgentTranscript } from "../ui/agent-transcript.ts";
 import { createAgentToolPresentation } from "./agent-tool-presentation.ts";
 import { loadConfig, type PiStuffAgentsConfig } from "./config.ts";
 import { routeLiveNestedAgentControl } from "./nested-control-router.ts";
-import { type PublicAgentParams, projectEngineResult, toEngineParams } from "./product-executor.ts";
+import {
+	normalizePublicAgentParams,
+	type PublicAgentParams,
+	projectEngineResult,
+	toEngineParams,
+} from "./product-executor.ts";
 import { SubagentParams } from "./schemas.ts";
 import { buildSubagentToolDescription } from "./tool-description.ts";
 
@@ -244,7 +250,10 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	getCoordinator: getCommandDialogCoordinator,
 	isChildProcess: () => process.env[SUBAGENT_CHILD_ENV] === "1",
 	loadConfiguration: loadConfig,
-	maintainRuntime: maintainAgentRuntime,
+	maintainRuntime: async () => {
+		await maintainAgentRuntime();
+		await maintainAgentArtifacts(DEFAULT_ARTIFACT_CONFIG.cleanupDays);
+	},
 	monotonicNow: () => performance.now(),
 	openDialog: openAgentDialog,
 	projectContext: projectCurrentContext,
@@ -645,7 +654,7 @@ export default function registerSubagentExtension(
 					},
 					(error) => {
 						nextMaintenanceAt = deps.monotonicNow() + RUNTIME_MAINTENANCE_FAILURE_RETRY_MS;
-						console.error("Failed to compact completed Agent runtime diagnostics:", error);
+						console.error("Failed to maintain completed Agent runtime data:", error);
 					},
 				)
 				.finally(() => {
@@ -964,7 +973,16 @@ export default function registerSubagentExtension(
 		description: buildSubagentToolDescription(),
 		parameters: SubagentParams,
 		async execute(id, rawParams, signal, onUpdate, ctx) {
-			const params = rawParams as PublicAgentParams;
+			let params: PublicAgentParams;
+			try {
+				params = normalizePublicAgentParams(rawParams as PublicAgentParams);
+			} catch (error) {
+				const supplied = rawParams as PublicAgentParams;
+				return projectEngineResult(
+					supplied,
+					governorFailureResult(supplied, error instanceof Error ? error.message : String(error)),
+				);
+			}
 			return executePublicAgent(id, params, signal ?? new AbortController().signal, onUpdate, ctx);
 		},
 	};
