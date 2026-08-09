@@ -7,6 +7,29 @@ const DEFAULT_ACTIVITY_OUTPUT_LIMIT = 20 * 1024 * 1024;
 export const DEFAULT_MODEL_OUTPUT_LIMIT = 50 * 1024;
 const MEMORY_TAIL_LIMIT = 64 * 1024;
 
+function completeUtf8End(buffer: Buffer): number {
+	let end = buffer.length;
+	while (end > 0) {
+		let start = end - 1;
+		while (start > 0 && ((buffer[start] ?? 0) & 0xc0) === 0x80) start -= 1;
+		const lead = buffer[start] ?? 0;
+		const width = lead < 0x80 ? 1 : lead < 0xe0 ? 2 : lead < 0xf0 ? 3 : lead < 0xf8 ? 4 : 1;
+		if (end - start >= width) return end;
+		end = start;
+	}
+	return 0;
+}
+
+export function utf8SafeTail(buffer: Buffer, maxBytes: number): Buffer {
+	let start = Math.max(0, buffer.length - Math.max(1, maxBytes));
+	while (start < buffer.length && ((buffer[start] ?? 0) & 0xc0) === 0x80) start += 1;
+	return buffer.subarray(start, completeUtf8End(buffer));
+}
+
+export function utf8SafePrefix(buffer: Buffer): Buffer {
+	return buffer.subarray(0, completeUtf8End(buffer));
+}
+
 export function sanitizeTerminalText(value: string): string {
 	let text = "";
 	let index = 0;
@@ -81,17 +104,26 @@ export class BoundedOutputFile {
 	readonly path: string;
 	private bytes = 0;
 	private closed = false;
-	private readonly fd: number;
+	private fd: number | undefined;
+	private readonly closeFile: typeof closeSync;
 	private readonly maxBytes: number;
 	private overflow = false;
+	private storageError: string | undefined;
 	private tail = Buffer.alloc(0);
+	private readonly writeFile: typeof writeSync;
 
-	constructor(path: string, maxBytes = DEFAULT_ACTIVITY_OUTPUT_LIMIT) {
+	constructor(
+		path: string,
+		maxBytes = DEFAULT_ACTIVITY_OUTPUT_LIMIT,
+		deps: { readonly closeSync?: typeof closeSync; readonly writeSync?: typeof writeSync } = {},
+	) {
 		if (!Number.isSafeInteger(maxBytes) || maxBytes <= OVERFLOW_MARKER.length) {
 			throw new Error("Background output limit is too small");
 		}
 		this.path = path;
 		this.maxBytes = maxBytes;
+		this.closeFile = deps.closeSync ?? closeSync;
+		this.writeFile = deps.writeSync ?? writeSync;
 		mkdirSync(dirname(path), { mode: 0o700, recursive: true });
 		this.fd = openSync(path, "wx", 0o600);
 	}
@@ -102,6 +134,10 @@ export class BoundedOutputFile {
 
 	get overflowed(): boolean {
 		return this.overflow;
+	}
+
+	get durable(): boolean {
+		return this.storageError === undefined;
 	}
 
 	/** Returns false once the hard cap has been reached. */
@@ -118,7 +154,7 @@ export class BoundedOutputFile {
 	}
 
 	recentText(maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
-		const selected = this.tail.subarray(Math.max(0, this.tail.length - Math.max(1, maxBytes)));
+		const selected = utf8SafeTail(this.tail, maxBytes);
 		const prefix = this.bytes > selected.length ? "…[earlier output omitted]\n" : "";
 		return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
 	}
@@ -126,15 +162,46 @@ export class BoundedOutputFile {
 	close(): void {
 		if (this.closed) return;
 		this.closed = true;
-		closeSync(this.fd);
+		this.closeStorage();
 	}
 
 	private write(chunk: Buffer): void {
-		let offset = 0;
-		while (offset < chunk.length) offset += writeSync(this.fd, chunk, offset, chunk.length - offset);
 		this.bytes += chunk.length;
+		this.remember(chunk);
+		if (this.fd === undefined) return;
+		try {
+			let offset = 0;
+			while (offset < chunk.length) {
+				const written = this.writeFile(this.fd, chunk, offset, chunk.length - offset);
+				if (written <= 0) throw new Error("Background output write made no progress");
+				offset += written;
+			}
+		} catch (error) {
+			this.degradeStorage(error);
+		}
+	}
+
+	private remember(chunk: Buffer): void {
 		const joined = Buffer.concat([this.tail, chunk]);
 		this.tail = Buffer.from(joined.subarray(Math.max(0, joined.length - MEMORY_TAIL_LIMIT)));
+	}
+
+	private degradeStorage(error: unknown): void {
+		if (this.storageError !== undefined) return;
+		this.storageError = error instanceof Error ? error.message : String(error);
+		this.remember(Buffer.from(`\n[Background output storage failed: ${this.storageError}]\n`, "utf-8"));
+		this.closeStorage();
+	}
+
+	private closeStorage(): void {
+		const fd = this.fd;
+		this.fd = undefined;
+		if (fd === undefined) return;
+		try {
+			this.closeFile(fd);
+		} catch (error) {
+			this.degradeStorage(error);
+		}
 	}
 }
 
@@ -146,11 +213,19 @@ export function readBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT_LI
 		const bytes = Math.min(size, Math.max(1, maxBytes));
 		const buffer = Buffer.alloc(bytes);
 		readSync(fd, buffer, 0, bytes, Math.max(0, size - bytes));
+		const selected = utf8SafeTail(buffer, bytes);
 		const prefix = size > bytes ? "…[earlier output omitted]\n" : "";
-		return sanitizeTerminalText(`${prefix}${buffer.toString("utf-8")}`).trimEnd();
+		return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
 	} catch {
 		return "(no output yet)";
 	} finally {
-		if (fd !== undefined) closeSync(fd);
+		if (fd !== undefined) {
+			try {
+				closeSync(fd);
+			} catch {
+				// Reading output is an observation path. A failed close must not make
+				// Background Work or its UI fail after the useful tail was read.
+			}
+		}
 	}
 }

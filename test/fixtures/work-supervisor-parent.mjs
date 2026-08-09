@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 
 function processStartIdentity(pid) {
 	try {
@@ -16,8 +16,12 @@ const [, , supervisorPath, readyPath, treePath] = process.argv;
 if (!supervisorPath || !readyPath || !treePath) throw new Error("missing supervisor fixture arguments");
 const parentStarted = processStartIdentity(process.pid);
 if (!parentStarted) throw new Error("cannot identify fixture parent");
+const commandAuthorizationPath = `${readyPath}.command`;
+const commandAuthorizationToken = `fixture-${process.pid}-${Date.now()}`;
 const envelope = Buffer.from(
 	JSON.stringify({
+		commandAuthorizationPath,
+		commandAuthorizationToken,
 		commandTransport: "argv",
 		cwd: process.cwd(),
 		parentPid: process.pid,
@@ -29,10 +33,14 @@ const envelope = Buffer.from(
 ).toString("base64url");
 const supervisor = spawn(process.execPath, [supervisorPath, envelope], {
 	detached: true,
-	stdio: ["pipe", "ignore", "ignore", "pipe"],
+	stdio: ["ignore", "ignore", "ignore", "pipe"],
 });
 const command = `trap '' TERM HUP INT; sh -c 'trap "" TERM HUP INT; while :; do sleep 1; done' & echo "$$ $!" > ${JSON.stringify(treePath)}; wait`;
-supervisor.stdin.end(command);
+const temporary = `${commandAuthorizationPath}.tmp`;
+writeFileSync(temporary, `${JSON.stringify({ version: 1, token: commandAuthorizationToken, command })}\n`, {
+	mode: 0o600,
+});
+renameSync(temporary, commandAuthorizationPath);
 let buffer = "";
 supervisor.stdio[3].on("data", (chunk) => {
 	buffer += chunk.toString("utf-8");

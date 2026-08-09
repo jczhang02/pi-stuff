@@ -10,6 +10,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
 import piStuffWork from "../../packages/pi-stuff-work/index.js";
+import type { BackgroundWorkRuntime } from "../../packages/pi-stuff-work/src/runtime.js";
 
 type Handler = (event: unknown, context: ExtensionContext) => unknown | Promise<unknown>;
 
@@ -106,5 +107,73 @@ describe("Pi Stuff Work host composition", () => {
 		expect(host.terminalInput?.("\u0002")).toBeUndefined();
 		await host.emit("session_shutdown", ctx);
 		expect(host.terminalInput).toBeUndefined();
+	});
+
+	test("does not recreate a runtime after shutdown wins during a pending session transition", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-work-host-race-"));
+		roots.push(root);
+		const host = new HostHarness();
+		let releaseShutdown: (() => void) | undefined;
+		const created: Array<{ shutdownCalls: number }> = [];
+		await piStuffWork(host.api, {
+			createRuntime: () => {
+				const record = { shutdownCalls: 0 };
+				created.push(record);
+				return {
+					detachActiveForeground: () => false,
+					prepare: async () => {},
+					shutdown: async () => {
+						record.shutdownCalls += 1;
+						if (record === created[0]) await new Promise<void>((resolve) => (releaseShutdown = resolve));
+					},
+				} as unknown as BackgroundWorkRuntime;
+			},
+		});
+		const ctx = host.context(root);
+		await host.emit("session_start", ctx);
+		const restarting = host.emit("session_start", ctx);
+		while (!releaseShutdown) await Bun.sleep(1);
+		const shuttingDown = host.emit("session_shutdown", ctx);
+		releaseShutdown();
+		await Promise.all([restarting, shuttingDown]);
+
+		expect(created).toHaveLength(1);
+		expect(created[0]?.shutdownCalls).toBe(1);
+		expect(host.terminalInput).toBeUndefined();
+	});
+
+	test("lets only the newest overlapping session_start create a replacement runtime", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-work-host-overlap-"));
+		roots.push(root);
+		const host = new HostHarness();
+		let releaseShutdown: (() => void) | undefined;
+		const created: Array<{ shutdownCalls: number }> = [];
+		await piStuffWork(host.api, {
+			createRuntime: () => {
+				const record = { shutdownCalls: 0 };
+				created.push(record);
+				return {
+					detachActiveForeground: () => false,
+					prepare: async () => {},
+					shutdown: async () => {
+						record.shutdownCalls += 1;
+						if (record === created[0]) await new Promise<void>((resolve) => (releaseShutdown = resolve));
+					},
+				} as unknown as BackgroundWorkRuntime;
+			},
+		});
+		const ctx = host.context(root);
+		await host.emit("session_start", ctx);
+		const first = host.emit("session_start", ctx);
+		while (!releaseShutdown) await Bun.sleep(1);
+		const second = host.emit("session_start", ctx);
+		releaseShutdown();
+		await Promise.all([first, second]);
+
+		expect(created).toHaveLength(2);
+		expect(created[0]?.shutdownCalls).toBe(1);
+		expect(created[1]?.shutdownCalls).toBe(0);
+		await host.emit("session_shutdown", ctx);
+		expect(created[1]?.shutdownCalls).toBe(1);
 	});
 });
