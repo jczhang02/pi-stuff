@@ -22,6 +22,17 @@ that workflow's markers and fixed artifact path. This is an operational trust co
 mismatch, not cryptographic proof against a process that forges the workflow environment; the exact pinned CI workflow
 is the trust root.
 
+CI exposes two stable checks. `Fast` always validates the frozen dependency graph, repository formatting, type surfaces,
+unused-code analysis, generated composition, and public-release safety. `Acceptance` then builds the certified Host and
+RTK runtime before running all tests, real TUI verification, the Tool Activity benchmark, and package verification in a
+network-isolated namespace. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip `Acceptance`;
+executable documentation remains fully certified. Manual dispatch always runs both checks. A separate weekly upstream
+watch reports when the npm `latest` tag moves beyond the certified Host, but never changes certification automatically.
+
+Bun dependency upgrades are deliberate maintainer changes because the frozen Bun lockfile, exact toolchain, and certified
+Pi profile must move coherently. Dependabot is limited to pinned GitHub Actions; it does not produce npm pull requests
+that omit or bypass the repository-owned Bun lockfile.
+
 The certified profile identifies the source commit, the repository-owned model-data content address, and exact Node.js,
 npm, and Bun versions. The default build copies all 40 snapshot files from
 `vendor/pi-host-model-data/299c882258d4714113aab6531eb1d00ec4c7d2e95a303951715bd182799475ef` and verifies every

@@ -11,6 +11,7 @@
 		"acceptance:magic-context:real": "bun scripts/verify-magic-context-real.ts",
 		"beads:publish": "bun scripts/publish-beads.ts",
 		"benchmark:tool-activity": "bun scripts/benchmark-tool-activity.ts",
+		"ci:acceptance-scope": "bun scripts/ci-acceptance-scope.ts",
 		"check": "bun run format:check && bun run typecheck && bun run test && bun run knip && bun run check:generated && bun run check:public && bun run benchmark:tool-activity && bun run pack:verify",
 		"check:generated": "bun scripts/generate-suite.ts --check",
 		"check:public": "bun scripts/check-public-safety.ts",
