@@ -49,6 +49,7 @@ function groupedRuntime(paths: readonly string[], errorIndex = -1): ToolUiRuntim
 		categories: ["read-file"],
 		classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["path"])] }],
 	});
+	runtime.markRendererAttached("read");
 	const calls = paths.map((path, index) => toolCall(`read-${String(index + 1)}`, path));
 	const results = paths.map((_path, index) => toolResult(`read-${String(index + 1)}`, index === errorIndex));
 	runtime.indexMessages([{ role: "assistant", content: calls }, ...results], true);

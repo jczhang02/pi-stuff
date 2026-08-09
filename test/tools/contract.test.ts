@@ -10,6 +10,7 @@ import {
 	ToolUiRuntime,
 	type ToolUiTimerScheduler,
 } from "../../packages/pi-stuff-tools/contract.js";
+import { CachedToolRow } from "../../packages/pi-stuff-tools/render.js";
 import { ToolUiSettingsStore } from "../../packages/pi-stuff-tools/settings.js";
 
 const Params = Type.Object({ value: Type.String() });
@@ -100,7 +101,7 @@ function result(id: string, text = "ok", isError = false): unknown {
 	};
 }
 
-function presentation(category: "change-file" | "read-file" | "run-command") {
+function presentation(category: "change-file" | "fetch-page" | "read-file" | "run-command" | "view-image") {
 	return {
 		activity: {
 			categories: [category],
@@ -120,7 +121,7 @@ function presentation(category: "change-file" | "read-file" | "run-command") {
 function toolFromHarness(
 	harness: ReturnType<typeof apiHarness>,
 	name: string,
-	category: "change-file" | "read-file" | "run-command",
+	category: "change-file" | "fetch-page" | "read-file" | "run-command" | "view-image",
 ): ToolDefinition<typeof Params, { source: string }> {
 	const original: ToolDefinition<typeof Params, { source: string }> = {
 		description: `${name} fixture`,
@@ -172,6 +173,25 @@ test("Aggregate coverage checks the Tools actually registered by capabilities", 
 	);
 });
 
+test("Aggregate coverage rejects metadata-only Tools without the owned Activity renderer", () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	getToolUiRuntime(harness.api).registerActivity("metadata-only", presentation("run-command").activity);
+	registrations.api.registerTool({
+		description: "metadata-only fixture",
+		execute: async () => ({
+			content: [{ type: "text", text: "ok" }],
+			details: {},
+		}),
+		label: "Metadata only",
+		name: "metadata-only",
+		parameters: Params,
+	});
+	expect(() => assertSuiteToolActivityCoverage(harness.api, ["metadata-only"], registrations.toolNames)).toThrow(
+		"Aggregate Tools missing Activity renderer: metadata-only",
+	);
+});
+
 test("Aggregate coverage accepts an already registered Tool from an idempotent capability", () => {
 	const harness = apiHarness();
 	toolFromHarness(harness, "existing", "read-file");
@@ -217,6 +237,7 @@ function settle(
 	value: string,
 	isError = false,
 	expanded = false,
+	resultText = isError ? "FAILED" : "MODEL_VISIBLE",
 ): {
 	callComponent: { render(width: number): string[] };
 	callLines: string[];
@@ -233,7 +254,7 @@ function settle(
 	if (!component) throw new Error("missing call component");
 	const body = tool.renderResult?.(
 		{
-			content: [{ type: "text", text: isError ? "FAILED" : "MODEL_VISIBLE" }],
+			content: [{ type: "text", text: resultText }],
 			details: { source: value },
 		},
 		{ expanded, isPartial: false },
@@ -264,66 +285,49 @@ test("decoration preserves execution and projects one Tool immediately", async (
 	expect(renderLines(rendered.callComponent).join("\n")).toContain("Read 1 file");
 });
 
-test("live targets remain stable for at least 700 ms", () => {
-	let now = 0;
-	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), new ManualTimerScheduler(), () => now);
-	const stableTarget = (
-		runtime as unknown as {
-			stableTarget(leaderId: string, candidate: string, active: boolean): string;
-		}
-	).stableTarget.bind(runtime);
-
-	expect(stableTarget("group", "first.ts", true)).toBe("first.ts");
-	now = 699;
-	expect(stableTarget("group", "second.ts", true)).toBe("first.ts");
-	now = 700;
-	expect(stableTarget("group", "second.ts", true)).toBe("second.ts");
-	expect(stableTarget("group", "second.ts", false)).toBe("");
-});
-
-test("live Activity Groups advance to the latest target after the hold", () => {
+test("live Activity Groups hold a target for 700 ms before advancing", async () => {
 	const harness = apiHarness();
-	let now = 0;
 	const read = toolFromHarness(harness, "read", "read-file");
 	const runtime = getToolUiRuntime(harness.api);
-	(runtime as unknown as { now: () => number }).now = () => now;
 	const firstState = {};
+	const firstContext = renderContext(firstState, { value: "first.ts" }, { toolCallId: "r1" });
 	runtime.startTurn([assistant(call("r1", "read", "first.ts"))]);
-	const first = read.renderCall?.(
-		{ value: "first.ts" },
-		theme,
-		renderContext(firstState, { value: "first.ts" }, { toolCallId: "r1" }),
-	);
+	const first = read.renderCall?.({ value: "first.ts" }, theme, firstContext);
 	if (!first) throw new Error("missing first component");
 	runtime.indexMessage(result("r1"));
 	runtime.indexMessage(assistant({ type: "thinking", thinking: "continue" }, call("r2", "read", "second.ts")));
 	read.renderCall?.({ value: "second.ts" }, theme, renderContext({}, { value: "second.ts" }, { toolCallId: "r2" }));
-	const hints = (
-		runtime as unknown as {
-			groupHints: Map<string, { candidate: string; shownAt: number; value: string }>;
-		}
-	).groupHints;
-	expect(hints.get("r1")).toEqual({
-		candidate: "second.ts",
-		shownAt: 0,
-		value: "first.ts",
-	});
-
-	now = 700;
-	runtime.indexMessages(
-		[
-			assistant(call("r1", "read", "first.ts")),
-			result("r1"),
-			assistant({ type: "thinking", thinking: "continue" }, call("r2", "read", "second.ts")),
-		],
-		false,
-	);
-	expect(hints.get("r1")).toEqual({
-		candidate: "second.ts",
-		shownAt: 700,
-		value: "second.ts",
-	});
+	expect(renderLines(first).join("\n")).toContain("first.ts");
+	await Bun.sleep(650);
+	read.renderCall?.({ value: "first.ts" }, theme, firstContext);
+	expect(renderLines(first).join("\n")).toContain("first.ts");
+	await Bun.sleep(80);
+	read.renderCall?.({ value: "first.ts" }, theme, firstContext);
 	expect(renderLines(first).join("\n")).toContain("second.ts");
+	runtime.clear();
+});
+
+test("settling an earlier group member preserves the latest source-order target", async () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn([assistant(call("r1", "read", "first.ts"), call("r2", "read", "second.ts"))]);
+	const firstState = {};
+	const firstContext = renderContext(firstState, { value: "first.ts" }, { toolCallId: "r1" });
+	const first = read.renderCall?.({ value: "first.ts" }, theme, firstContext);
+	if (!first) throw new Error("missing first component");
+	read.renderCall?.({ value: "second.ts" }, theme, renderContext({}, { value: "second.ts" }, { toolCallId: "r2" }));
+	read.renderResult?.(
+		{ content: [{ type: "text", text: "MODEL_VISIBLE" }], details: { source: "first.ts" } },
+		{ expanded: false, isPartial: false },
+		theme,
+		{ ...firstContext, lastComponent: first },
+	);
+	expect(renderLines(first).join("\n")).toContain("second.ts");
+	await Bun.sleep(720);
+	read.renderCall?.({ value: "first.ts" }, theme, firstContext);
+	expect(renderLines(first).join("\n")).toContain("second.ts");
+	runtime.clear();
 });
 
 test("one group spans Tool round-trips and Thinking, then closes on prose", () => {
@@ -344,6 +348,28 @@ test("one group spans Tool round-trips and Thinking, then closes on prose", () =
 
 	runtime.indexMessage(assistant({ type: "text", text: "Done." }));
 	expect(renderLines(first.callComponent).join("\n")).toContain("Changed 1 file, read 1 file");
+});
+
+test("Activity Groups deduplicate canonical image paths and fetched URLs", () => {
+	const harness = apiHarness();
+	const view = toolFromHarness(harness, "view", "view-image");
+	const fetch = toolFromHarness(harness, "fetch", "fetch-page");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn([
+		assistant(
+			call("v1", "view", "./images/sample.png"),
+			call("v2", "view", "/project/images/sample.png"),
+			call("f1", "fetch", "HTTPS://EXAMPLE.COM:443/a/../page#first"),
+			call("f2", "fetch", "https://example.com/page#second"),
+		),
+	]);
+	const leader = settle(view, "v1", "./images/sample.png");
+	settle(view, "v2", "/project/images/sample.png");
+	settle(fetch, "f1", "HTTPS://EXAMPLE.COM:443/a/../page#first");
+	settle(fetch, "f2", "https://example.com/page#second");
+	runtime.endTurn();
+
+	expect(renderLines(leader.callComponent).join("\n")).toContain("Fetched 1 page, viewed 1 image");
 });
 
 test("projection rebuild rebinds grouped models to fresh Host row components", () => {
@@ -408,6 +434,77 @@ test("Tool results, Thinking, and hidden Custom Messages keep the live group ope
 	expect(closed.summary).toContain("Read 1 file");
 });
 
+test("streaming Tool snapshots replace partial arguments and the final message wins", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	const partial = assistant(
+		{ type: "toolCall", id: "r1", name: "read", arguments: { value: "" } },
+		{ type: "toolCall", id: "r2", name: "read", arguments: { value: "" } },
+	);
+	const complete = assistant(call("r1", "read", "a.ts"), call("r2", "read", "b.ts"));
+	runtime.startTurn();
+	runtime.observeAssistantUpdate(partial);
+	read.renderCall?.({ value: "a.ts" }, theme, renderContext({}, { value: "a.ts" }, { toolCallId: "r1" }));
+	read.renderCall?.({ value: "b.ts" }, theme, renderContext({}, { value: "b.ts" }, { toolCallId: "r2" }));
+	const renderedGroup = runtime.resolveGroup("r1");
+	if (!renderedGroup || renderedGroup === "ambiguous") throw new Error("rendered streamed group missing");
+	expect(renderedGroup.summary).toContain("Reading 2 files");
+	runtime.observeAssistantUpdate(complete);
+	runtime.indexMessage(complete);
+
+	const group = runtime.resolveGroup("r1");
+	if (!group || group === "ambiguous") throw new Error("streamed group missing");
+	expect(group.summary).toContain("Reading 2 files");
+	runtime.clear();
+});
+
+test("an aborted final assistant message settles an unexecuted streamed Tool call", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	const pending = assistant(call("r1", "read", "a.ts"));
+	const aborted = {
+		role: "assistant",
+		content: [call("r1", "read", "a.ts")],
+		stopReason: "aborted",
+	};
+
+	runtime.startTurn();
+	runtime.observeAssistantUpdate(pending);
+	const component = read.renderCall?.(
+		{ value: "a.ts" },
+		theme,
+		renderContext({}, { value: "a.ts" }, { toolCallId: "r1" }),
+	);
+	if (!component) throw new Error("missing streamed call component");
+	expect(renderLines(component).join("\n")).toContain("Reading 1 file");
+
+	runtime.observeAssistantUpdate(aborted);
+	runtime.indexMessage(aborted);
+	runtime.endTurn();
+	const group = runtime.resolveGroup("r1");
+	if (!group || group === "ambiguous") throw new Error("aborted group missing");
+	expect(group.state).toBe("cancelled");
+	expect(group.summary).toContain("cancelled");
+	expect(group.summary).not.toContain("Reading");
+	expect(renderLines(component).join("\n")).toContain("cancelled");
+	runtime.clear();
+});
+
+test("unsupported Tool results never enter the owned pending-result cache or leak across projection resets", () => {
+	const harness = apiHarness();
+	toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessage(result("reused-id", "UNRELATED FAILURE", true));
+	runtime.startTurn();
+	runtime.indexMessage(assistant(call("reused-id", "read", "safe.ts")));
+	const group = runtime.resolveGroup("reused-id");
+	if (!group || group === "ambiguous") throw new Error("owned group missing after projection reset");
+	expect(group.summary).toContain("Reading 1 file");
+	expect(group.summary).not.toContain("failed");
+});
+
 test("Ctrl+O restores every member and bounded result detail", () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");
@@ -430,7 +527,7 @@ test("Ctrl+O restores every member and bounded result detail", () => {
 	expect(expandedRead.resultLines.join("\n")).toContain("MODEL_VISIBLE");
 });
 
-test("compact projection hides text bodies but preserves real media", () => {
+test("compact projection hides text bodies while preserving real media fallback", () => {
 	const harness = apiHarness();
 	const tool = toolFromHarness(harness, "view", "read-file");
 	const runtime = getToolUiRuntime(harness.api);
@@ -476,7 +573,26 @@ test("issues stay folded but expose the first failure and remaining count", () =
 	settle(command, "b2", "tests", true);
 	const output = renderLines(first.callComponent).join("\n");
 	expect(output).toContain("Ran 2 commands · 2 failed");
-	expect(output).toContain("run-command error · +1 issues");
+	expect(output).toContain("FIRST FAILED · +1 issues");
+});
+
+test("issue hints preserve chronological root-cause order across issue kinds", () => {
+	const harness = apiHarness();
+	const command = toolFromHarness(harness, "bash", "run-command");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages(
+		[
+			assistant(call("b1", "bash", "cancelled"), call("b2", "bash", "failed")),
+			result("b1", "command was cancelled", true),
+			result("b2", "LATER FAILED", true),
+		],
+		true,
+	);
+	const first = settle(command, "b1", "cancelled", true, false, "command was cancelled");
+	settle(command, "b2", "failed", true, false, "LATER FAILED");
+	const output = renderLines(first.callComponent).join("\n");
+	expect(output).toContain("Ran 2 commands · 1 failed, 1 cancelled");
+	expect(output).toContain("command was cancelled · +1 issues");
 });
 
 test("failed mutations never produce successful change clauses", () => {
@@ -485,7 +601,7 @@ test("failed mutations never produce successful change clauses", () => {
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.indexMessages([assistant(call("e1", "edit", "broken.ts")), result("e1", "EDIT FAILED", true)], true);
 	const output = settle(mutation, "e1", "broken.ts", true).callLines.join("\n");
-	expect(output).toContain("change-file failed");
+	expect(output).toContain("EDIT FAILED");
 	expect(output).not.toContain("Changed");
 });
 
@@ -516,12 +632,42 @@ test("successful infrastructure-only groups disappear but expand normally", () =
 	expect(details ? runtime.groupActivities(details.id) : []).toHaveLength(1);
 });
 
+test("failed infrastructure-only groups use the protocol fallback label", () => {
+	const harness = apiHarness();
+	const original: ToolDefinition<typeof Params, { source: string }> = {
+		description: "internal",
+		execute: async () => ({
+			content: [{ type: "text", text: "done" }],
+			details: { source: "internal" },
+		}),
+		label: "ctx_reduce",
+		name: "ctx_reduce",
+		parameters: Params,
+	};
+	registerSuiteOwnedTool(harness.api, original, {
+		activity: { categories: [], classify: () => [], silentSuccess: true },
+		label: "ctx_reduce",
+		summarize: () => "failed",
+	});
+	const tool = harness.tools.get("ctx_reduce") as ToolDefinition<typeof Params, { source: string }>;
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages(
+		[assistant(call("i1", "ctx_reduce", "context")), result("i1", "reduction failed", true)],
+		true,
+	);
+	const output = settle(tool, "i1", "context", true, false, "reduction failed").callLines.join("\n");
+	expect(output).toContain("Internal operation failed");
+	expect(output).not.toContain("ctx_reduce failed");
+	expect(runtime.resolveGroup("i1")).toMatchObject({ state: "error", summary: "Internal operation failed" });
+});
+
 test("group details rebuild every member from the current branch beyond the live cache limit", () => {
 	const runtime = new ToolUiRuntime();
 	runtime.registerActivity("read", {
 		categories: ["read-file"],
 		classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["value"])] }],
 	});
+	runtime.markRendererAttached("read");
 	const content = Array.from({ length: 900 }, (_, index) =>
 		call(`read-${String(index)}`, "read", `${String(index)}.ts`),
 	);
@@ -585,6 +731,110 @@ test("parallel timers keep independent marker phases", () => {
 	scheduler.tick();
 	expect(first.at(-1)).toBe(false);
 	expect(second.at(-1)).toBe(false);
+});
+
+test("the next running member keeps the folded group marker animated", () => {
+	const scheduler = new ManualTimerScheduler();
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	runtime.registerActivity("read", presentation("read-file").activity);
+	runtime.markRendererAttached("read");
+	runtime.startTurn([assistant(call("r1", "read", "a.ts"), call("r2", "read", "b.ts"))]);
+	const runningModel = {
+		durationMs: undefined,
+		label: "read",
+		state: "running" as const,
+		summary: "working",
+		target: "a.ts",
+	};
+	const leader = new CachedToolRow(theme, runningModel);
+	const follower = new CachedToolRow(theme, runningModel);
+	runtime.presentRow("r1", leader, runningModel, true, () => {}, false, {
+		args: { value: "a.ts" },
+		cwd: "/project",
+		name: "read",
+	});
+	runtime.presentRow("r2", follower, runningModel, true, () => {}, false, {
+		args: { value: "b.ts" },
+		cwd: "/project",
+		name: "read",
+	});
+	runtime.startTimer(
+		"r1",
+		() => {},
+		(visible) => leader.setMarkerVisible(visible),
+	);
+	runtime.startTimer(
+		"r2",
+		() => {},
+		(visible) => follower.setMarkerVisible(visible),
+	);
+	const successModel = { ...runningModel, state: "success" as const, summary: "done" };
+	runtime.presentRow("r1", leader, successModel, true, () => {}, false, {
+		args: { value: "a.ts" },
+		cwd: "/project",
+		name: "read",
+		result: { content: [{ type: "text", text: "done" }], details: {} },
+	});
+	runtime.stopTimer("r1");
+
+	scheduler.tick();
+	expect(leader.render(100)[0]).not.toStartWith("●");
+	runtime.clear();
+});
+
+test("live timer state is bounded while the shared ticker keeps recent rows active", () => {
+	const scheduler = new ManualTimerScheduler();
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	const invalidations = Array.from({ length: 769 }, () => 0);
+	for (let index = 0; index < invalidations.length; index += 1) {
+		runtime.startTimer(`call-${String(index)}`, () => {
+			invalidations[index] = (invalidations[index] ?? 0) + 1;
+		});
+	}
+
+	expect(scheduler.activeCount).toBe(1);
+	scheduler.tick();
+	expect(invalidations[0]).toBe(0);
+	expect(invalidations.at(-1)).toBe(1);
+	runtime.clear();
+	expect(scheduler.activeCount).toBe(0);
+});
+
+test("active groups share one fallback pulse ticker", () => {
+	const scheduler = new ManualTimerScheduler();
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	runtime.registerActivity("read", presentation("read-file").activity);
+	runtime.markRendererAttached("read");
+	runtime.startTurn([
+		assistant(
+			call("a1", "read", "a.ts"),
+			call("a2", "read", "b.ts"),
+			{ type: "text", text: "boundary" },
+			call("b1", "read", "c.ts"),
+			call("b2", "read", "d.ts"),
+		),
+	]);
+	const model = {
+		durationMs: undefined,
+		label: "read",
+		state: "running" as const,
+		summary: "working",
+		target: "a.ts",
+	};
+	for (const [id, value] of [
+		["a1", "a.ts"],
+		["b1", "c.ts"],
+	] as const) {
+		runtime.presentRow(id, new CachedToolRow(theme, model), model, true, () => {}, false, {
+			args: { value },
+			cwd: "/project",
+			name: "read",
+		});
+	}
+
+	expect(scheduler.activeCount).toBe(1);
+	runtime.clear();
+	expect(scheduler.activeCount).toBe(0);
 });
 
 test("runtime registry is shared per Pi event bus and settings remain configurable", () => {

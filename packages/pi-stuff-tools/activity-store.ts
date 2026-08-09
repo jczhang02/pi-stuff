@@ -37,6 +37,13 @@ function terminal(state: ToolActivityState): boolean {
 	return state !== "running";
 }
 
+function immutableActivity(activity: ToolActivity): ToolActivity {
+	return Object.freeze({
+		...activity,
+		detailLines: Object.freeze([...activity.detailLines]),
+	});
+}
+
 /** Bounded, process-local projection rebuilt from Host tool rows after reload. */
 export class ToolActivityStore {
 	private readonly activities = new Map<string, ToolActivity>();
@@ -58,13 +65,13 @@ export class ToolActivityStore {
 			existing.target === input.target
 		) {
 			if (existing.startedAt === undefined && input.startedAt !== undefined) {
-				const updated = { ...existing, startedAt: input.startedAt };
+				const updated = immutableActivity({ ...existing, startedAt: input.startedAt });
 				this.activities.set(input.id, updated);
 				return updated;
 			}
 			return existing;
 		}
-		const activity: ToolActivity = {
+		const activity = immutableActivity({
 			detailLines: existing?.detailLines ?? [],
 			durationMs: existing?.durationMs,
 			id: input.id,
@@ -75,7 +82,7 @@ export class ToolActivityStore {
 			state: "running",
 			summary: "running",
 			target: input.target,
-		};
+		});
 		this.activities.set(input.id, activity);
 		this.prune();
 		this.notify();
@@ -108,13 +115,13 @@ export class ToolActivityStore {
 	settle(id: string, input: SettleToolActivity): ToolActivity | undefined {
 		const existing = this.activities.get(id);
 		if (!existing) return undefined;
-		const activity: ToolActivity = {
+		const activity = immutableActivity({
 			...existing,
 			detailLines: input.detailLines,
 			durationMs: input.durationMs === undefined ? undefined : Math.max(0, Math.floor(input.durationMs)),
 			state: input.state,
 			summary: input.summary,
-		};
+		});
 		this.activities.set(id, activity);
 		this.notify();
 		return activity;

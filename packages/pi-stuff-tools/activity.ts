@@ -17,7 +17,8 @@ export type ToolActivityCategory =
 	| "launch-agent"
 	| "launch-background"
 	| "list-directory"
-	| "manage-agent"
+	| "check-agent"
+	| "message-agent"
 	| "merge"
 	| "read-background"
 	| "read-file"
@@ -28,6 +29,7 @@ export type ToolActivityCategory =
 	| "record-result"
 	| "retrieve-passage"
 	| "review-history-range"
+	| "resume-agent"
 	| "run-agent"
 	| "run-command"
 	| "save-memory"
@@ -37,7 +39,9 @@ export type ToolActivityCategory =
 	| "search-pattern"
 	| "search-web"
 	| "start-monitor"
+	| "steer-agent"
 	| "stop-background"
+	| "stop-agent"
 	| "update-memory"
 	| "update-note"
 	| "update-task"
@@ -57,6 +61,8 @@ export interface ToolActivityItem {
 
 export interface ToolActivityClassifierInput<TArgs extends Record<string, unknown>, TDetails> {
 	readonly args: Readonly<TArgs>;
+	/** Host working directory for canonicalizing relative Activity identities. */
+	readonly cwd?: string;
 	readonly result?: AgentToolResult<TDetails>;
 	readonly state: ToolActivityState;
 }
@@ -67,6 +73,12 @@ export interface ToolActivityMetadata<TArgs extends Record<string, unknown>, TDe
 	readonly classify: (input: ToolActivityClassifierInput<TArgs, TDetails>) => readonly ToolActivityItem[];
 	/** Successful calls intentionally contribute no compact clause. */
 	readonly silentSuccess?: boolean;
+	/** Optional semantic description for an exceptional result. */
+	readonly summarizeIssue?: (
+		args: Readonly<TArgs>,
+		result: AgentToolResult<TDetails>,
+		state: Exclude<ToolActivityState, "running" | "success">,
+	) => string;
 }
 
 export function activityKey(...parts: readonly unknown[]): string {
@@ -79,7 +91,10 @@ export function activityKey(...parts: readonly unknown[]): string {
 /** Keep live targets glanceable without exposing a complete deep path. */
 export function activityTarget(value: string): string {
 	const safe = oneLine(value);
-	if (!/^(?:~?[\\/]|\.{1,2}[\\/]|[A-Za-z]:[\\/])/u.test(safe)) return safe;
+	const pathLike =
+		/^(?:~?[\\/]|\.{1,2}[\\/]|[A-Za-z]:[\\/])/u.test(safe) ||
+		(!/^[a-z][a-z\d+.-]*:\/\//iu.test(safe) && /[\\/]/u.test(safe));
+	if (!pathLike) return safe;
 	const segments = safe.split(/[\\/]+/u).filter(Boolean);
 	if (segments.length <= 2) return safe;
 	return `…/${segments.slice(-2).join("/")}`;
@@ -106,6 +121,36 @@ function resultText(result: AgentToolResult<unknown> | undefined): string {
 		.join("\n");
 }
 
+function conservativeGitCommand(command: string): boolean {
+	return !/(?:\|\||(?<!\|)\|(?!\|)|;|`|\$\()/u.test(command);
+}
+
+function gitOperand(command: string, operation: "merge" | "rebase"): string | undefined {
+	if (!conservativeGitCommand(command)) return undefined;
+	const tail = command.match(new RegExp(`(?:^|&&\\s*)git\\s+${operation}\\b([^;&|]*)`, "iu"))?.[1] ?? "";
+	const tokens = tail.match(/[^\s]+/gu) ?? [];
+	const operand = tokens
+		.map((token) => token.replace(/^["']|["']$/gu, ""))
+		.filter((token) => token && !token.startsWith("-"))
+		.at(-1);
+	if (!operand || !/^[\w./:@+~-]+$/u.test(operand)) return undefined;
+	return oneLine(operand);
+}
+
+function hasPushEvidence(text: string): boolean {
+	return /(?:^|\n)(?:To\s+\S+|Everything up-to-date\s*$|\s*[+*! =-]*\[[^\]]+\].*->|\s*[0-9a-f]+\.\.[0-9a-f]+\s+\S+\s+->)/imu.test(
+		text,
+	);
+}
+
+function hasMergeEvidence(text: string): boolean {
+	return /(?:Already up[ -]to[ -]date|Fast-forward|Merge made by|Automatic merge went well)/iu.test(text);
+}
+
+function hasRebaseEvidence(text: string): boolean {
+	return /(?:Successfully rebased|Current branch .* is up to date|Current branch .* is up-to-date)/iu.test(text);
+}
+
 /** Conservative Bash semantics shared by Host Bash and Background Work Bash. */
 export function classifyBashActivity(
 	input: ToolActivityClassifierInput<Record<string, unknown>, unknown>,
@@ -124,18 +169,19 @@ export function classifyBashActivity(
 	const outcomes: ToolActivityItem[] = [];
 	const running = input.state === "running";
 	const dryRun = /(?:^|\s)--dry-run(?:\s|$)/u.test(command);
-	if (!dryRun && /(?:^|[;&|]\s*)git\s+commit\b/iu.test(command)) {
+	const conservative = conservativeGitCommand(command);
+	if (!dryRun && conservative && /(?:^|&&\s*)git\s+commit\b/iu.test(command)) {
 		const sha = text.match(/\[[^\]\r\n]+\s([0-9a-f]{7,40})\]/iu)?.[1];
 		if (running || sha) outcomes.push({ category: "commit", count: 1, ...(sha ? { detail: sha } : {}), target });
 	}
-	if (!dryRun && /(?:^|[;&|]\s*)git\s+push\b/iu.test(command)) {
+	if (!dryRun && conservative && /(?:^|&&\s*)git\s+push\b/iu.test(command)) {
 		const branchFromCommand = command.match(/\bgit\s+push(?:\s+\S+)?\s+([^\s;&|]+)/iu)?.[1];
 		const branchFromResult = text.match(/\s->\s([^\s]+)\s*$/mu)?.[1];
 		const branch = oneLine(branchFromResult ?? (running ? branchFromCommand : "") ?? "").replace(
 			/^refs\/heads\//u,
 			"",
 		);
-		if (running || branchFromResult) {
+		if (running || hasPushEvidence(text)) {
 			outcomes.push({
 				category: "push",
 				count: 1,
@@ -144,11 +190,15 @@ export function classifyBashActivity(
 			});
 		}
 	}
-	const mergeBranch = !dryRun ? command.match(/(?:^|[;&|]\s*)git\s+merge\s+(?!-)([^\s;&|]+)/iu)?.[1] : undefined;
-	if (mergeBranch) outcomes.push({ category: "merge", count: 1, detail: oneLine(mergeBranch), target });
-	const rebaseBranch = !dryRun ? command.match(/(?:^|[;&|]\s*)git\s+rebase\s+(?!-)([^\s;&|]+)/iu)?.[1] : undefined;
-	if (rebaseBranch) outcomes.push({ category: "rebase", count: 1, detail: oneLine(rebaseBranch), target });
-	if (!dryRun && /(?:^|[;&|]\s*)gh\s+pr\s+create\b/iu.test(command)) {
+	const mergeBranch = !dryRun ? gitOperand(command, "merge") : undefined;
+	if (mergeBranch && (running || hasMergeEvidence(text))) {
+		outcomes.push({ category: "merge", count: 1, detail: mergeBranch, target });
+	}
+	const rebaseBranch = !dryRun ? gitOperand(command, "rebase") : undefined;
+	if (rebaseBranch && (running || hasRebaseEvidence(text))) {
+		outcomes.push({ category: "rebase", count: 1, detail: rebaseBranch, target });
+	}
+	if (!dryRun && conservative && /(?:^|&&\s*)gh\s+pr\s+create\b/iu.test(command)) {
 		const number = text.match(/https:\/\/github\.com\/[^\s]+\/pull\/(\d+)/u)?.[1];
 		if (running || number) {
 			outcomes.push({ category: "create-pr", count: 1, ...(number ? { detail: `#${number}` } : {}), target });
@@ -162,6 +212,8 @@ export interface PlannedToolActivityMember {
 	readonly id: string;
 	readonly name: string;
 	readonly result?: AgentToolResult<unknown>;
+	/** Display-only terminal state when Pi persisted a call that never executed. */
+	readonly terminalState?: "cancelled" | "error";
 }
 
 export interface PlannedToolActivityGroup {
@@ -171,7 +223,10 @@ export interface PlannedToolActivityGroup {
 }
 
 export interface ActivitySummaryMember {
+	/** Stable semantic subject used by an issue-only group summary. */
 	readonly issueLabel?: string;
+	/** Bounded root-cause detail shown on the indented issue row. */
+	readonly issueDetail?: string;
 	readonly items: readonly ToolActivityItem[];
 	readonly state: ToolActivityState;
 }
@@ -228,7 +283,11 @@ const PHRASES: Readonly<Record<ToolActivityCategory, PhraseSpec>> = {
 		plural: "background agents",
 		priority: 31,
 	},
-	"manage-agent": { past: "Managed", present: "Managing", singular: "agent", plural: "agents", priority: 32 },
+	"check-agent": { past: "Checked", present: "Checking", singular: "agent", plural: "agents", priority: 32 },
+	"message-agent": { past: "Messaged", present: "Messaging", singular: "agent", plural: "agents", priority: 32 },
+	"resume-agent": { past: "Resumed", present: "Resuming", singular: "agent", plural: "agents", priority: 32 },
+	"steer-agent": { past: "Steered", present: "Steering", singular: "agent", plural: "agents", priority: 32 },
+	"stop-agent": { past: "Stopped", present: "Stopping", singular: "agent", plural: "agents", priority: 32 },
 	"launch-background": {
 		past: "Launched",
 		present: "Launching",
@@ -312,6 +371,19 @@ interface CategoryAccumulator {
 	readonly keys: Set<string>;
 }
 
+export interface ActivityCategoryAggregate {
+	readonly category: ToolActivityCategory;
+	readonly count: number;
+	readonly details?: readonly string[];
+}
+
+export interface ToolActivityAggregate {
+	readonly categories: readonly ActivityCategoryAggregate[];
+	readonly firstIssueLabel?: string;
+	readonly stateCounts: Readonly<Partial<Record<ToolActivityState, number>>>;
+	readonly target?: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -355,6 +427,10 @@ function isVisibleMessageBoundary(message: Record<string, unknown>): boolean {
 	return role === "user" || role === "bashExecution";
 }
 
+function assistantTerminalState(message: Record<string, unknown>): "cancelled" | "error" | undefined {
+	return message["stopReason"] === "aborted" ? "cancelled" : message["stopReason"] === "error" ? "error" : undefined;
+}
+
 /**
  * Derive display-only Activity Groups from the current model-visible message order.
  * Tool results and Thinking are transparent; prose, user-visible context, and
@@ -386,6 +462,7 @@ export function planToolActivityGroups(
 			continue;
 		}
 		if (candidate["role"] !== "assistant" || !Array.isArray(candidate["content"])) continue;
+		const terminalState = assistantTerminalState(candidate);
 		for (const block of candidate["content"]) {
 			if (hasVisibleText(block)) {
 				flush(true);
@@ -398,7 +475,7 @@ export function planToolActivityGroups(
 				continue;
 			}
 			const result = results.get(call.id);
-			members.push({ ...call, ...(result ? { result } : {}) });
+			members.push({ ...call, ...(result ? { result } : terminalState ? { terminalState } : {}) });
 		}
 	}
 	flush(closeTail);
@@ -421,39 +498,63 @@ function phrase(category: ToolActivityCategory, accumulator: CategoryAccumulator
 		if (category === "merge" || category === "rebase") return `${spec.past} ${details.join(", ")}`;
 		if (category === "create-pr") return `${spec.past} ${details.join(", ")}`;
 	}
-	const safeCount = Math.max(1, count);
+	const safeCount = Math.max(0, count);
 	if (safeCount === 1 && (category === "complete-goal" || category === "block-goal")) {
 		return `${active ? spec.present : spec.past} ${spec.singular}`;
 	}
 	return `${active ? spec.present : spec.past} ${String(safeCount)} ${safeCount === 1 ? spec.singular : spec.plural}`;
 }
 
-function issueSummary(members: readonly ActivitySummaryMember[]): {
+function issueSummaryFromCounts(
+	counts: Readonly<Partial<Record<ToolActivityState, number>>>,
+	firstIssueLabel = "",
+): {
 	readonly issueLabel: string;
 	readonly issueState: "cancelled" | "error" | "rejected" | undefined;
 	readonly text: string;
 } {
-	let failed = 0;
-	let rejected = 0;
-	let cancelled = 0;
-	for (const member of members) {
-		if (member.state === "error") failed += 1;
-		if (member.state === "rejected") rejected += 1;
-		if (member.state === "cancelled") cancelled += 1;
-	}
+	const failed = counts.error ?? 0;
+	const rejected = counts.rejected ?? 0;
+	const cancelled = counts.cancelled ?? 0;
 	const parts = [
 		...(failed > 0 ? [`${String(failed)} failed`] : []),
 		...(rejected > 0 ? [`${String(rejected)} rejected`] : []),
 		...(cancelled > 0 ? [`${String(cancelled)} cancelled`] : []),
 	];
 	return {
-		issueLabel: oneLine(
-			members.find(
-				(member) => member.state === "error" || member.state === "rejected" || member.state === "cancelled",
-			)?.issueLabel ?? "",
-		),
+		issueLabel: oneLine(firstIssueLabel),
 		issueState: failed > 0 ? "error" : rejected > 0 ? "rejected" : cancelled > 0 ? "cancelled" : undefined,
 		text: parts.join(", "),
+	};
+}
+
+/** Format a pre-aggregated Activity Group without rescanning every member. */
+export function summarizeToolActivityAggregate(aggregate: ToolActivityAggregate, closed: boolean): ToolActivitySummary {
+	const active = !closed || (aggregate.stateCounts.running ?? 0) > 0;
+	const clauses = [...aggregate.categories]
+		.sort((left, right) => PHRASES[left.category].priority - PHRASES[right.category].priority)
+		.map((entry, index) => {
+			const accumulator: CategoryAccumulator = {
+				count: Math.max(0, entry.count),
+				details: new Set(entry.details ?? []),
+				keys: new Set(),
+			};
+			const value = phrase(entry.category, accumulator, active);
+			return index === 0 ? value : `${value.slice(0, 1).toLocaleLowerCase()}${value.slice(1)}`;
+		});
+	const issues = issueSummaryFromCounts(aggregate.stateCounts, aggregate.firstIssueLabel);
+	const base = clauses.join(", ");
+	const issueOnly =
+		issues.text === "1 failed"
+			? `${issues.issueLabel || "Internal operation"} failed`
+			: `${issues.issueLabel || "Internal operation"} · ${issues.text}`;
+	const summary = issues.text ? (base ? `${base} · ${issues.text}` : issueOnly) : base;
+	return {
+		active,
+		issueState: issues.issueState,
+		issueText: issues.text,
+		summary,
+		target: active ? activityTarget(aggregate.target ?? "") : "",
 	};
 }
 
@@ -462,10 +563,18 @@ export function summarizeToolActivityGroup(
 	members: readonly ActivitySummaryMember[],
 	closed: boolean,
 ): ToolActivitySummary {
-	const active = !closed || members.some((member) => member.state === "running");
 	const categories = new Map<ToolActivityCategory, CategoryAccumulator>();
 	let target = "";
+	const stateCounts: Partial<Record<ToolActivityState, number>> = {};
+	let firstIssueLabel = "";
 	for (const member of members) {
+		stateCounts[member.state] = (stateCounts[member.state] ?? 0) + 1;
+		if (
+			!firstIssueLabel &&
+			(member.state === "error" || member.state === "rejected" || member.state === "cancelled")
+		) {
+			firstIssueLabel = member.issueLabel ?? "";
+		}
 		for (const item of member.items) {
 			let accumulator = categories.get(item.category);
 			if (!accumulator) {
@@ -483,25 +592,17 @@ export function summarizeToolActivityGroup(
 			if (nextTarget) target = nextTarget;
 		}
 	}
-	const clauses = [...categories.entries()]
-		.filter(([, accumulator]) => accumulator.keys.size + accumulator.count > 0 || accumulator.details.size > 0)
-		.sort(([left], [right]) => PHRASES[left].priority - PHRASES[right].priority)
-		.map(([category, accumulator], index) => {
-			const value = phrase(category, accumulator, active);
-			return index === 0 ? value : `${value.slice(0, 1).toLocaleLowerCase()}${value.slice(1)}`;
-		});
-	const issues = issueSummary(members);
-	const base = clauses.join(", ");
-	const issueOnly =
-		issues.text === "1 failed"
-			? `${issues.issueLabel || "Internal operation"} failed`
-			: `${issues.issueLabel || "Internal operation"} · ${issues.text}`;
-	const summary = issues.text ? (base ? `${base} · ${issues.text}` : issueOnly) : base;
-	return {
-		active,
-		issueState: issues.issueState,
-		issueText: issues.text,
-		summary,
-		target: active ? target : "",
-	};
+	return summarizeToolActivityAggregate(
+		{
+			categories: [...categories.entries()].map(([category, accumulator]) => ({
+				category,
+				count: accumulator.keys.size + accumulator.count,
+				details: [...accumulator.details],
+			})),
+			firstIssueLabel,
+			stateCounts,
+			target,
+		},
+		closed,
+	);
 }

@@ -169,12 +169,7 @@ function renderActivityGroupRow(
 	const hasMarker = model.active || model.issueState !== undefined;
 	const marker = hasMarker ? (model.active && !markerVisible ? " " : TOOL_STATE_GLYPH) : " ";
 	const markerSlot = `${hasMarker ? theme.fg(activityMarkerColor(model), marker) : marker} `;
-	const summary =
-		model.issueState === "error"
-			? theme.fg("error", model.summary)
-			: model.issueState === "rejected" || model.issueState === "cancelled"
-				? theme.fg("warning", model.summary)
-				: theme.fg(model.active ? "text" : "muted", model.summary);
+	const summary = theme.fg(model.active ? "text" : "muted", model.summary);
 	const progress = model.active ? theme.fg("dim", "…") : "";
 	const expandHint = model.expandable ? theme.fg("dim", "  (ctrl+o to expand)") : "";
 	const contentWidth = Math.max(1, width - visibleWidth(markerSlot));

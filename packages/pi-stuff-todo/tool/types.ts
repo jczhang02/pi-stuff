@@ -35,7 +35,6 @@ export interface TaskDetails {
 	schemaVersion: typeof TASK_SNAPSHOT_SCHEMA_VERSION;
 	tasks: Task[];
 	nextId: number;
-	affectedTaskIds?: string[];
 	action?: TaskAction;
 	params?: Record<string, unknown>;
 	error?: string;

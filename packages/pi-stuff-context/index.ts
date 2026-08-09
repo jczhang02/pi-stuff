@@ -439,7 +439,7 @@ function magicToolPresentation(name: string): SuiteToolPresentation<Record<strin
 						target || action,
 					);
 				}
-				const action = String(args["action"] ?? "read");
+				const action = String(args["action"] ?? (typeof args["content"] === "string" ? "write" : "read"));
 				const category = action === "read" ? "read-note" : action === "write" ? "save-note" : "update-note";
 				const argumentIds = typeof args["note_id"] === "number" ? [String(args["note_id"])] : [];
 				const ids = [...new Set([...argumentIds, ...resultObjectIds(text, "note")])];
@@ -450,6 +450,7 @@ function magicToolPresentation(name: string): SuiteToolPresentation<Record<strin
 					target || action,
 				);
 			},
+			summarizeIssue: (_args, result, state) => toolResultText(result).trim().split(/\r?\n/u)[0] || state,
 			...(name === "ctx_reduce" ? { silentSuccess: true } : {}),
 		},
 		label: MAGIC_TOOL_LABELS[name] ?? name,

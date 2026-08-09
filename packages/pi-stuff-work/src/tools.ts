@@ -130,6 +130,7 @@ const backgroundPresentation: SuiteToolPresentation<Record<string, unknown>, Wor
 			if (action === "stop") return singleActivity("stop-background", { key: activityKey(taskId), target: taskId });
 			return singleActivity("inspect-background", { count: 1, target: "background tasks" });
 		},
+		summarizeIssue: (_args, result, state) => result.details.error ?? (firstLine(resultText(result)) || state),
 	},
 	label: "Background",
 	resultIsError: (_args, result) => Boolean(result.details.error),
@@ -176,7 +177,21 @@ export function registerWorkTools(
 		registerSuiteOwnedTool(pi, bash, {
 			activity: {
 				categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
-				classify: classifyBashActivity,
+				classify: (input) => {
+					if (input.result && !isForegroundBashResult(input.result)) {
+						const text = resultText(input.result);
+						const taskId = text.match(/background task ([a-z0-9]+)/u)?.[1];
+						return singleActivity("launch-background", {
+							key: activityKey(taskId ?? input.args.description ?? input.args.command),
+							target: firstLine(input.args.description) || "background command",
+						});
+					}
+					return classifyBashActivity(input);
+				},
+				summarizeIssue: (_args, result, state) => {
+					const line = resultText(result).trim().split(/\r?\n/u).at(-1)?.trim();
+					return line || state;
+				},
 			},
 			label: "Bash",
 			runningSummary: (_args, durationMs) =>
@@ -275,6 +290,7 @@ export function registerWorkTools(
 					key: activityKey(result?.details.taskId ?? args.target),
 					target: firstLine(args.description) || `${args.source} monitor`,
 				}),
+			summarizeIssue: (_args, result, state) => result.details.error ?? (firstLine(resultText(result)) || state),
 		},
 		label: "Monitor",
 		resultIsError: (_args, result) => Boolean(result.details.error),

@@ -31,19 +31,13 @@ for (let start = 0; start < CALLS; start += CALLS_PER_ROUND) {
 	}
 }
 
-function legacyExplorationProjection(input: readonly unknown[]): number {
-	const successful = new Set<string>();
-	for (const candidate of input) {
-		if (typeof candidate !== "object" || candidate === null) continue;
-		const message = candidate as Record<string, unknown>;
-		if (
-			message["role"] === "toolResult" &&
-			typeof message["toolCallId"] === "string" &&
-			message["isError"] !== true
-		) {
-			successful.add(message["toolCallId"]);
-		}
-	}
+/**
+ * Behavior-preserving benchmark copy of ToolUiRuntime.planMessageGroups at the
+ * shipped Exploration Grouping fixed point (merge base 6cea279). That planner
+ * inspected each Assistant message once and formed groups from adjacent calls
+ * whose grouping policy returned exploration; it did not pre-scan results.
+ */
+function shippedExplorationProjection(input: readonly unknown[]): number {
 	let groups = 0;
 	for (const candidate of input) {
 		if (typeof candidate !== "object" || candidate === null) continue;
@@ -51,15 +45,22 @@ function legacyExplorationProjection(input: readonly unknown[]): number {
 		if (message["role"] !== "assistant" || !Array.isArray(message["content"])) continue;
 		let adjacent = 0;
 		const flush = () => {
-			if (adjacent > 0) groups += 1;
+			if (adjacent >= 2) groups += 1;
 			adjacent = 0;
 		};
 		for (const block of message["content"]) {
 			if (typeof block !== "object" || block === null) continue;
 			const value = block as Record<string, unknown>;
-			if (value["type"] === "text") flush();
-			if (value["type"] !== "toolCall") continue;
-			if (value["name"] === "read" && typeof value["id"] === "string" && successful.has(value["id"])) adjacent += 1;
+			const args = value["arguments"];
+			const explorationCall =
+				value["type"] === "toolCall" &&
+				typeof value["id"] === "string" &&
+				Boolean(value["id"]) &&
+				value["name"] === "read" &&
+				typeof args === "object" &&
+				args !== null &&
+				!Array.isArray(args);
+			if (explorationCall) adjacent += 1;
 			else flush();
 		}
 		flush();
@@ -83,7 +84,7 @@ function benchmark(run: () => unknown): number {
 	return median(samples);
 }
 
-const baselineMs = benchmark(() => legacyExplorationProjection(messages));
+const baselineMs = benchmark(() => shippedExplorationProjection(messages));
 const activityMs = benchmark(() => planToolActivityGroups(messages, owned, true));
 const streamingSamples: number[] = [];
 for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
@@ -97,11 +98,13 @@ for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
 			},
 		],
 	});
+	runtime.markRendererAttached("read");
 	runtime.indexMessages(messages);
 	runtime.indexMessage({
 		role: "user",
 		content: [{ type: "text", text: "stream" }],
 	});
+	runtime.startTurn();
 	const started = performance.now();
 	for (let index = 0; index < STREAMING_UPDATES / 2; index += 1) {
 		const id = `stream-${String(index)}`;
@@ -124,9 +127,17 @@ for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
 		});
 	}
 	streamingSamples.push(performance.now() - started);
+	const streamedGroup = runtime.resolveGroup("stream-0");
+	if (!streamedGroup || streamedGroup === "ambiguous" || streamedGroup.memberIds.length !== STREAMING_UPDATES / 2) {
+		throw new Error("Incremental Activity benchmark did not build the streamed Tool Activity Group");
+	}
 }
 const streamingMs = median(streamingSamples);
 const groups = planToolActivityGroups(messages, owned, true);
+const baselineGroups = shippedExplorationProjection(messages);
+if (baselineGroups !== CALLS / CALLS_PER_ROUND) {
+	throw new Error(`Shipped Exploration benchmark copy produced ${String(baselineGroups)} groups`);
+}
 if (groups.length !== 1 || groups[0]?.members.length !== CALLS) {
 	throw new Error(
 		`Activity reconstruction lost members: ${String(groups.length)} groups, ${String(groups[0]?.members.length)} members`,
@@ -150,7 +161,7 @@ console.log(
 			activityMedianMs: Number(activityMs.toFixed(2)),
 			calls: CALLS,
 			iterations: ITERATIONS,
-			legacyExplorationMedianMs: Number(baselineMs.toFixed(2)),
+			shippedExplorationMedianMs: Number(baselineMs.toFixed(2)),
 			ratio: Number((activityMs / baselineMs).toFixed(2)),
 			streamingTailMedianMs: Number(streamingMs.toFixed(2)),
 			streamingUpdates: STREAMING_UPDATES,

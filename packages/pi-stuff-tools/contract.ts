@@ -1,13 +1,26 @@
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { Container, Image, Spacer, Text } from "@earendil-works/pi-tui";
+import {
+	Container,
+	getCapabilities,
+	getImageDimensions,
+	Image,
+	imageFallback,
+	Spacer,
+	Text,
+} from "@earendil-works/pi-tui";
 import type { Static, TSchema } from "typebox";
 import {
+	type ActivityCategoryAggregate,
 	type ActivitySummaryMember,
 	type PlannedToolActivityGroup,
 	type PlannedToolActivityMember,
 	planToolActivityGroups,
+	summarizeToolActivityAggregate,
 	summarizeToolActivityGroup,
+	type ToolActivityAggregate,
 	type ToolActivityCategory,
 	type ToolActivityItem,
 	type ToolActivityMetadata,
@@ -22,16 +35,30 @@ import {
 	EmptyToolComponent,
 	oneLine,
 	sanitizeTerminalText,
+	summarizeBuiltin,
 	type ToolRowModel,
 } from "./render.js";
 import { ToolUiSettingsStore } from "./settings.js";
 
 const TOOL_RUNTIME_REGISTRY = Symbol.for("@jczhang02/pi-stuff-tools/runtime-registry.v1");
 const TOOL_RELOAD_HANDOFF = Symbol.for("@jczhang02/pi-stuff-tools/reload-handoff.v1");
+const SUITE_ACTIVITY_RENDERER = Symbol.for("@jczhang02/pi-stuff-tools/activity-renderer.v1");
+
+interface SuiteActivityRendererMarker {
+	readonly activity: ToolActivityMetadata<Record<string, unknown>, unknown>;
+	readonly resultIsError?: (args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean;
+}
 const DETAIL_LINE_LIMIT = 240;
 const DETAIL_BYTE_LIMIT = 24 * 1_024;
 const ACTIVITY_HINT_HOLD_MS = 700;
 const GROUP_LIST_LIMIT = 768;
+const PENDING_RESULT_LIMIT = 768;
+const BINDING_LIMIT = 768;
+const TIMER_STATE_LIMIT = 768;
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function reloadHandoff(value?: readonly string[]): readonly string[] | undefined {
 	const host = globalThis as typeof globalThis & {
@@ -82,12 +109,14 @@ interface RendererState<TArgs extends Record<string, unknown>, TDetails> {
 
 interface ToolRenderContext<TArgs extends Record<string, unknown>> {
 	readonly args: TArgs;
+	readonly cwd: string;
 	readonly executionStarted?: boolean;
 	readonly expanded: boolean;
 	readonly invalidate: () => void;
 	readonly isError: boolean;
 	readonly isPartial: boolean;
 	readonly lastComponent: Component | undefined;
+	readonly showImages: boolean;
 	readonly state: Record<string, unknown>;
 	readonly toolCallId: string;
 }
@@ -99,6 +128,7 @@ interface ToolResultRenderOptions {
 
 interface PresentedToolMetadata {
 	readonly args: Readonly<Record<string, unknown>>;
+	readonly cwd?: string;
 	readonly name: string;
 	readonly result?: AgentToolResult<unknown>;
 }
@@ -118,6 +148,160 @@ interface HintState {
 	value: string;
 }
 
+interface GroupPulseState {
+	visible: boolean;
+}
+
+interface ToolTimerState {
+	invalidate: () => void;
+	setMarkerVisible: (visible: boolean) => void;
+	visible: boolean;
+}
+
+interface IndexedCategory {
+	numericCount: number;
+	readonly details: Map<string, { readonly detail: string; readonly itemIndex: number; readonly order: number }>;
+	readonly keyRefs: Map<string, number>;
+}
+
+interface IndexedSummaryMember extends ActivitySummaryMember {
+	readonly order: number;
+	readonly signature: string;
+	readonly target: string;
+}
+
+class GroupSummaryIndex {
+	private readonly categories = new Map<ToolActivityCategory, IndexedCategory>();
+	private firstIssueId: string | undefined;
+	private readonly members = new Map<string, IndexedSummaryMember>();
+	private readonly stateCounts: Partial<Record<ToolActivityState, number>> = {};
+	private latestTargetOrder = -1;
+	private readonly targetsByOrder: string[] = [];
+
+	get size(): number {
+		return this.members.size;
+	}
+
+	upsert(id: string, order: number, member: ActivitySummaryMember): boolean {
+		const target =
+			member.items
+				.map((item) => item.target ?? "")
+				.filter(Boolean)
+				.at(-1) ?? "";
+		const signature = JSON.stringify([
+			member.state,
+			member.issueLabel ?? "",
+			member.issueDetail ?? "",
+			member.items,
+			target,
+		]);
+		const previous = this.members.get(id);
+		if (previous?.signature === signature && previous.order === order) return false;
+		if (previous) this.remove(id, previous);
+		const indexed: IndexedSummaryMember = { ...member, order, signature, target };
+		this.members.set(id, indexed);
+		this.stateCounts[indexed.state] = (this.stateCounts[indexed.state] ?? 0) + 1;
+		this.updateTarget(previous, indexed);
+		indexed.items.forEach((item, itemIndex) => {
+			this.addItem(id, indexed.order, itemIndex, item);
+		});
+		if (isIssueState(indexed.state)) {
+			const first = this.firstIssueId ? this.members.get(this.firstIssueId) : undefined;
+			if (!first || indexed.order < first.order) {
+				this.firstIssueId = id;
+			}
+		}
+		return true;
+	}
+
+	issue(): { readonly count: number; readonly detail: string | undefined; readonly id: string | undefined } {
+		const first = this.firstIssueId ? this.members.get(this.firstIssueId) : undefined;
+		return {
+			count: (this.stateCounts.error ?? 0) + (this.stateCounts.rejected ?? 0) + (this.stateCounts.cancelled ?? 0),
+			detail: first?.issueDetail ?? first?.issueLabel,
+			id: this.firstIssueId,
+		};
+	}
+
+	aggregate(): ToolActivityAggregate {
+		const target = this.targetsByOrder[this.latestTargetOrder] ?? "";
+		const categories: ActivityCategoryAggregate[] = [];
+		for (const [category, indexed] of this.categories) {
+			categories.push({
+				category,
+				count: indexed.keyRefs.size + indexed.numericCount,
+				details: [...indexed.details.values()]
+					.sort((left, right) => left.order - right.order || left.itemIndex - right.itemIndex)
+					.map((entry) => entry.detail),
+			});
+		}
+		const firstIssueLabel = this.firstIssueId ? this.members.get(this.firstIssueId)?.issueLabel : undefined;
+		return {
+			categories,
+			...(firstIssueLabel ? { firstIssueLabel } : {}),
+			stateCounts: { ...this.stateCounts },
+			target,
+		};
+	}
+
+	private addItem(id: string, order: number, itemIndex: number, item: ToolActivityItem): void {
+		let category = this.categories.get(item.category);
+		if (!category) {
+			category = { numericCount: 0, details: new Map(), keyRefs: new Map() };
+			this.categories.set(item.category, category);
+		}
+		if (item.countKeys && item.countKeys.length > 0) {
+			for (const rawKey of item.countKeys) {
+				const key = canonicalCountKey(item.category, rawKey);
+				category.keyRefs.set(key, (category.keyRefs.get(key) ?? 0) + 1);
+			}
+		} else {
+			const count = Number.isFinite(item.count ?? 1) ? Math.max(0, Math.floor(item.count ?? 1)) : 0;
+			category.numericCount += count;
+		}
+		if (item.detail)
+			category.details.set(`${id}\u0000${String(itemIndex)}`, { detail: item.detail, itemIndex, order });
+	}
+
+	private remove(id: string, member: IndexedSummaryMember): void {
+		this.members.delete(id);
+		this.stateCounts[member.state] = Math.max(0, (this.stateCounts[member.state] ?? 0) - 1);
+		member.items.forEach((item, itemIndex) => {
+			const category = this.categories.get(item.category);
+			if (!category) return;
+			if (item.countKeys && item.countKeys.length > 0) {
+				for (const rawKey of item.countKeys) {
+					const key = canonicalCountKey(item.category, rawKey);
+					const next = (category.keyRefs.get(key) ?? 0) - 1;
+					if (next > 0) category.keyRefs.set(key, next);
+					else category.keyRefs.delete(key);
+				}
+			} else {
+				const count = Number.isFinite(item.count ?? 1) ? Math.max(0, Math.floor(item.count ?? 1)) : 0;
+				category.numericCount = Math.max(0, category.numericCount - count);
+			}
+			category.details.delete(`${id}\u0000${String(itemIndex)}`);
+			if (category.numericCount === 0 && category.keyRefs.size === 0 && category.details.size === 0) {
+				this.categories.delete(item.category);
+			}
+		});
+		if (this.firstIssueId === id) {
+			this.firstIssueId = [...this.members.entries()]
+				.filter(([, candidate]) => isIssueState(candidate.state))
+				.sort(([, left], [, right]) => left.order - right.order)[0]?.[0];
+		}
+	}
+
+	private updateTarget(previous: IndexedSummaryMember | undefined, member: IndexedSummaryMember): void {
+		if (previous && previous.order !== member.order) this.targetsByOrder[previous.order] = "";
+		this.targetsByOrder[member.order] = member.target;
+		if (member.target && member.order >= this.latestTargetOrder) this.latestTargetOrder = member.order;
+		while (this.latestTargetOrder >= 0 && !this.targetsByOrder[this.latestTargetOrder]) {
+			this.latestTargetOrder -= 1;
+		}
+	}
+}
+
 export interface ToolActivityGroupView {
 	readonly id: string;
 	readonly memberIds: readonly string[];
@@ -131,12 +315,41 @@ export interface ToolUiTimerScheduler {
 }
 
 const DEFAULT_TIMER_SCHEDULER: ToolUiTimerScheduler = {
-	setInterval: (callback, delayMs) => setInterval(callback, delayMs),
+	setInterval: (callback, delayMs) => {
+		const id = setInterval(callback, delayMs);
+		id.unref?.();
+		return id;
+	},
 	clearInterval: (id) => clearInterval(id as ReturnType<typeof setInterval>),
 };
 
 function isIssueState(state: ToolActivityState): state is "cancelled" | "error" | "rejected" {
 	return state === "error" || state === "rejected" || state === "cancelled";
+}
+
+function assistantTerminalState(stopReason: unknown): "cancelled" | "error" | undefined {
+	return stopReason === "aborted" ? "cancelled" : stopReason === "error" ? "error" : undefined;
+}
+
+function canonicalCountKey(category: ToolActivityCategory, key: string, cwd = process.cwd()): string {
+	if (category === "fetch-page") {
+		try {
+			const url = new URL(key);
+			url.hash = "";
+			return url.href;
+		} catch {
+			return key;
+		}
+	}
+	if (
+		category !== "read-file" &&
+		category !== "change-file" &&
+		category !== "view-image" &&
+		category !== "generate-image"
+	)
+		return key;
+	const expanded = key === "~" ? homedir() : key.startsWith("~/") ? resolve(homedir(), key.slice(2)) : key;
+	return resolve(cwd, expanded);
 }
 
 const SUCCESS_ONLY_ACTIVITY_CATEGORIES = new Set<ToolActivityCategory>([
@@ -149,14 +362,18 @@ const SUCCESS_ONLY_ACTIVITY_CATEGORIES = new Set<ToolActivityCategory>([
 	"generate-image",
 	"launch-agent",
 	"launch-background",
+	"message-agent",
 	"merge",
 	"push",
 	"rebase",
 	"record-result",
+	"resume-agent",
 	"save-memory",
 	"save-note",
 	"start-monitor",
+	"steer-agent",
 	"stop-background",
+	"stop-agent",
 	"update-memory",
 	"update-note",
 	"update-task",
@@ -166,7 +383,7 @@ function terminalStateFromResult(
 	member: PlannedToolActivityMember,
 	resultIsError: ((args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean) | undefined,
 ): ToolActivityState {
-	if (!member.result) return "running";
+	if (!member.result) return member.terminalState ?? "running";
 	let domainError = Reflect.get(member.result, "isError") === true;
 	if (!domainError && resultIsError) {
 		try {
@@ -187,25 +404,31 @@ export class ToolUiRuntime {
 		(args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean
 	>();
 	private readonly groupHints = new Map<string, HintState>();
-	private readonly groupPulseTimers = new Map<string, unknown>();
-	private readonly groupPulseVisibility = new Map<string, boolean>();
+	private readonly groupPulses = new Map<string, GroupPulseState>();
+	private groupPulseTimer: unknown | undefined;
 	private readonly groupOrder: string[] = [];
 	private readonly groups = new Map<string, PlannedToolActivityGroup>();
+	private readonly groupSummaries = new Map<string, GroupSummaryIndex>();
 	private invalidationGeneration = 0;
 	private invalidationScheduled = false;
 	private readonly membership = new Map<string, string>();
+	private readonly memberIndexes = new Map<string, number>();
 	private readonly now: () => number;
+	private openGroupLeaderId: string | undefined;
 	private readonly pendingInvalidations = new Set<() => void>();
+	private readonly pendingResults = new Map<string, AgentToolResult<unknown>>();
 	private reloadActiveToolNames: readonly string[] | undefined;
 	private indexedMessages: unknown[] = [];
+	private readonly renderedToolNames = new Set<string>();
+	private streamActive = false;
+	private readonly streamedProseIndexes = new Set<number>();
+	private readonly streamedToolCallSignatures = new Map<string, string>();
 	private agentActive = false;
 	private readonly scheduler: ToolUiTimerScheduler;
 	private settings: ToolUiSettingsStore;
 	private tailForcedClosed = false;
 	private timer: unknown | undefined;
-	private readonly timerInvalidators = new Map<string, () => void>();
-	private readonly timerMarkers = new Map<string, (visible: boolean) => void>();
-	private readonly timerVisibility = new Map<string, boolean>();
+	private readonly timerStates = new Map<string, ToolTimerState>();
 
 	constructor(
 		settings = ToolUiSettingsStore.memory(),
@@ -261,6 +484,45 @@ export class ToolUiRuntime {
 		} else {
 			this.errorPolicies.delete(name);
 		}
+		if (this.renderedToolNames.has(name) && this.indexedMessages.length > 0) this.rebuildGroups();
+	}
+
+	hasActivityMetadata(name: string): boolean {
+		return this.activityPolicies.has(name);
+	}
+
+	markRendererAttached(name: string): void {
+		if (this.renderedToolNames.has(name)) return;
+		this.renderedToolNames.add(name);
+		if (this.indexedMessages.length > 0) this.rebuildGroups();
+	}
+
+	markRendererDetached(name: string): void {
+		if (!this.renderedToolNames.delete(name)) return;
+		if (this.indexedMessages.length > 0) this.rebuildGroups();
+	}
+
+	hasActivityRenderer(name: string): boolean {
+		return this.renderedToolNames.has(name);
+	}
+
+	missingActivityRenderers(toolNames: readonly string[]): readonly string[] {
+		return toolNames.filter((name) => !this.renderedToolNames.has(name));
+	}
+
+	synchronizeRenderedTools(names: ReadonlySet<string>): void {
+		let changed = names.size !== this.renderedToolNames.size;
+		if (!changed) {
+			for (const name of names) {
+				if (!this.renderedToolNames.has(name)) {
+					changed = true;
+					break;
+				}
+			}
+		}
+		if (!changed) return;
+		this.renderedToolNames.clear();
+		for (const name of names) this.renderedToolNames.add(name);
 		if (this.indexedMessages.length > 0) this.rebuildGroups();
 	}
 
@@ -281,22 +543,34 @@ export class ToolUiRuntime {
 	observeUserBoundary(): void {
 		this.indexedMessages.push({ role: "user", content: [] });
 		this.tailForcedClosed = true;
-		this.rebuildGroups(true);
+		this.closeOpenGroup();
 	}
 
 	endTurn(): void {
 		this.agentActive = false;
 		this.tailForcedClosed = true;
-		this.rebuildGroups();
+		this.closeOpenGroup();
 	}
 
 	observeAssistantProse(): void {
-		if (this.tailForcedClosed) return;
 		this.tailForcedClosed = true;
-		this.rebuildGroups(true);
+		this.closeOpenGroup();
+	}
+
+	observeAssistantUpdate(message: unknown): void {
+		if (typeof message !== "object" || message === null) return;
+		const value = message as Record<string, unknown>;
+		if (value["role"] !== "assistant" || !Array.isArray(value["content"])) return;
+		if (!this.streamActive) {
+			this.streamActive = true;
+			this.streamedProseIndexes.clear();
+			this.streamedToolCallSignatures.clear();
+		}
+		this.applyAssistantContent(value["content"], true, assistantTerminalState(value["stopReason"]));
 	}
 
 	indexMessages(messages: readonly unknown[], closeTail = !this.agentActive): void {
+		this.pendingResults.clear();
 		this.indexedMessages = [...messages];
 		this.tailForcedClosed = closeTail;
 		this.rebuildGroups();
@@ -304,16 +578,27 @@ export class ToolUiRuntime {
 
 	indexMessage(message: unknown): void {
 		this.indexedMessages.push(message);
-		const tailBoundary = messageTailBoundary(message);
-		if (tailBoundary !== undefined) this.tailForcedClosed = tailBoundary;
-		this.rebuildGroups(true);
+		this.applyMessage(message);
+		if (
+			typeof message === "object" &&
+			message !== null &&
+			(message as Record<string, unknown>)["role"] === "assistant"
+		) {
+			this.streamActive = false;
+			this.streamedProseIndexes.clear();
+			this.streamedToolCallSignatures.clear();
+		}
 	}
 
 	resetProjection(messages: readonly unknown[]): void {
 		this.suspend();
 		this.groupHints.clear();
 		this.activities.clear();
+		this.pendingResults.clear();
 		this.indexedMessages = [...messages];
+		this.streamActive = false;
+		this.streamedProseIndexes.clear();
+		this.streamedToolCallSignatures.clear();
 		this.rebuildGroups();
 		const currentToolCallIds = new Set(
 			this.groupOrder.flatMap((groupId) => this.groups.get(groupId)?.members.map((member) => member.id) ?? []),
@@ -328,18 +613,25 @@ export class ToolUiRuntime {
 		for (const binding of this.bindings.values()) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 		this.bindings.clear();
 		this.groups.clear();
+		this.groupSummaries.clear();
 		this.groupOrder.splice(0);
 		this.membership.clear();
+		this.memberIndexes.clear();
+		this.pendingResults.clear();
 		this.groupHints.clear();
 		this.indexedMessages = [];
+		this.openGroupLeaderId = undefined;
+		this.streamActive = false;
+		this.streamedProseIndexes.clear();
+		this.streamedToolCallSignatures.clear();
 		this.agentActive = false;
 		this.tailForcedClosed = false;
 		this.activities.clear();
 	}
 
 	suspend(): void {
-		for (const toolCallId of [...this.timerInvalidators.keys()]) this.stopTimer(toolCallId);
-		for (const leaderId of [...this.groupPulseTimers.keys()]) this.stopGroupPulse(leaderId);
+		for (const toolCallId of [...this.timerStates.keys()]) this.stopTimer(toolCallId);
+		for (const leaderId of [...this.groupPulses.keys()]) this.stopGroupPulse(leaderId);
 		this.invalidationGeneration += 1;
 		this.invalidationScheduled = false;
 		this.pendingInvalidations.clear();
@@ -364,7 +656,6 @@ export class ToolUiRuntime {
 				metadata,
 				row,
 			};
-			this.bindings.set(toolCallId, binding);
 		} else {
 			binding.row = row;
 			binding.baseModel = model;
@@ -373,24 +664,17 @@ export class ToolUiRuntime {
 			binding.invalidate = invalidate;
 			binding.metadata = metadata;
 		}
-		if (!this.membership.has(toolCallId) && this.activityPolicies.has(metadata.name)) {
-			const group: PlannedToolActivityGroup = {
-				closed: !this.agentActive,
-				leaderId: toolCallId,
-				members: [
-					{
-						args: metadata.args,
-						id: toolCallId,
-						name: metadata.name,
-						...(metadata.result ? { result: metadata.result } : {}),
-					},
-				],
-			};
-			this.groups.set(toolCallId, group);
-			this.groupOrder.push(toolCallId);
-			this.membership.set(toolCallId, toolCallId);
-		}
-		this.reconcileGroupForTool(toolCallId);
+		this.bindings.delete(toolCallId);
+		this.bindings.set(toolCallId, binding);
+		if (this.renderedToolNames.has(metadata.name)) {
+			this.appendToolCall({
+				args: metadata.args,
+				id: toolCallId,
+				name: metadata.name,
+				...(metadata.result ? { result: metadata.result } : {}),
+			});
+		} else this.reconcileGroupForTool(toolCallId);
+		this.trimBindings(toolCallId);
 	}
 
 	startTimer(
@@ -398,11 +682,21 @@ export class ToolUiRuntime {
 		invalidate: () => void,
 		setMarkerVisible: (visible: boolean) => void = () => {},
 	): void {
-		this.timerInvalidators.set(toolCallId, invalidate);
-		this.timerMarkers.set(toolCallId, setMarkerVisible);
-		this.timerVisibility.set(toolCallId, true);
-		setMarkerVisible(true);
-		if (this.isGroupMarkerDriver(toolCallId)) this.pulseGroup(toolCallId, true);
+		const existing = this.timerStates.get(toolCallId);
+		const visible = existing?.visible ?? true;
+		if (existing) this.timerStates.delete(toolCallId);
+		while (this.timerStates.size >= TIMER_STATE_LIMIT) {
+			const oldestId = this.timerStates.keys().next().value as string | undefined;
+			if (!oldestId) break;
+			const oldest = this.timerStates.get(oldestId);
+			this.timerStates.delete(oldestId);
+			oldest?.setMarkerVisible(true);
+			this.pulseGroup(oldestId, true);
+			this.reconcileGroupForTool(oldestId);
+		}
+		this.timerStates.set(toolCallId, { invalidate, setMarkerVisible, visible });
+		setMarkerVisible(visible);
+		if (this.isGroupMarkerDriver(toolCallId)) this.pulseGroup(toolCallId, visible);
 		if (this.timer === undefined) {
 			this.timer = this.scheduler.setInterval(() => this.tickTimers(), 600);
 		}
@@ -410,11 +704,14 @@ export class ToolUiRuntime {
 	}
 
 	stopTimer(toolCallId: string): void {
-		this.timerInvalidators.delete(toolCallId);
-		this.timerVisibility.delete(toolCallId);
-		this.timerMarkers.get(toolCallId)?.(true);
-		this.timerMarkers.delete(toolCallId);
-		if (this.timerInvalidators.size === 0 && this.timer !== undefined) {
+		const state = this.timerStates.get(toolCallId);
+		if (!state) {
+			this.reconcileGroupForTool(toolCallId);
+			return;
+		}
+		this.timerStates.delete(toolCallId);
+		state.setMarkerVisible(true);
+		if (this.timerStates.size === 0 && this.timer !== undefined) {
 			this.scheduler.clearInterval(this.timer);
 			this.timer = undefined;
 		}
@@ -423,28 +720,28 @@ export class ToolUiRuntime {
 	}
 
 	syncTimers(): void {
-		for (const [toolCallId, invalidate] of this.timerInvalidators) {
-			this.timerVisibility.set(toolCallId, true);
-			this.timerMarkers.get(toolCallId)?.(true);
+		for (const [toolCallId, state] of this.timerStates) {
+			state.visible = true;
+			state.setMarkerVisible(true);
 			this.pulseGroup(toolCallId, true);
-			invalidate();
+			state.invalidate();
 		}
 		this.reconcileTimerGroups();
 	}
 
 	private tickTimers(): void {
-		for (const [toolCallId, invalidate] of this.timerInvalidators) {
-			const visible = !(this.timerVisibility.get(toolCallId) ?? true);
-			this.timerVisibility.set(toolCallId, visible);
-			this.timerMarkers.get(toolCallId)?.(visible);
-			invalidate();
+		for (const [toolCallId, state] of this.timerStates) {
+			state.visible = !state.visible;
+			state.setMarkerVisible(state.visible);
+			if (this.isGroupMarkerDriver(toolCallId)) this.pulseGroup(toolCallId, state.visible);
+			state.invalidate();
 		}
 		this.reconcileTimerGroups();
 	}
 
 	private reconcileTimerGroups(): void {
 		const groups = new Set<string>();
-		for (const toolCallId of this.timerInvalidators.keys()) {
+		for (const toolCallId of this.timerStates.keys()) {
 			const leaderId = this.membership.get(toolCallId);
 			if (leaderId) groups.add(leaderId);
 			else this.reconcileGroupForTool(toolCallId);
@@ -453,10 +750,20 @@ export class ToolUiRuntime {
 	}
 
 	listGroups(): readonly ToolActivityGroupView[] {
+		return this.allGroupViews()
+			.sort((left, right) => right.order - left.order)
+			.slice(0, GROUP_LIST_LIMIT)
+			.map(({ order: _order, ...group }) => group);
+	}
+
+	private allGroupViews(): Array<ToolActivityGroupView & { order: number }> {
 		const grouped = this.groupOrder
 			.map((id) => this.groupView(this.groups.get(id)))
 			.filter((group): group is ToolActivityGroupView => group !== undefined)
-			.map((group) => (group.summary ? group : { ...group, summary: "Internal activity" }));
+			.map((group, order) => ({
+				...(group.summary ? group : { ...group, summary: "Internal activity" }),
+				order,
+			}));
 		const covered = new Set(grouped.flatMap((group) => group.memberIds));
 		const standalone = this.activities
 			.list()
@@ -464,26 +771,25 @@ export class ToolUiRuntime {
 			.map((activity) => ({
 				id: activity.id,
 				memberIds: [activity.id],
+				order: this.groupOrder.length + activity.sequence,
 				state: activity.state,
 				summary: activity.label,
 			}));
-		const sequence = (group: ToolActivityGroupView): number =>
-			Math.max(...group.memberIds.map((id) => this.activities.get(id)?.sequence ?? -1));
-		return [...grouped, ...standalone]
-			.sort((left, right) => sequence(right) - sequence(left))
-			.slice(0, GROUP_LIST_LIMIT);
+		return [...grouped, ...standalone];
 	}
 
 	resolveGroup(query: string): ToolActivityGroupView | "ambiguous" | undefined {
 		const normalized = query.trim();
 		if (!normalized) return undefined;
-		const matches = this.listGroups().filter(
+		const matches = this.allGroupViews().filter(
 			(group) =>
 				group.id === normalized ||
 				group.id.startsWith(normalized) ||
 				group.memberIds.some((memberId) => memberId === normalized || memberId.startsWith(normalized)),
 		);
-		return matches.length === 1 ? matches[0] : matches.length > 1 ? "ambiguous" : undefined;
+		if (matches.length !== 1) return matches.length > 1 ? "ambiguous" : undefined;
+		const { order: _order, ...group } = matches[0] as ToolActivityGroupView & { order: number };
+		return group;
 	}
 
 	groupActivities(groupId: string): readonly ToolActivity[] {
@@ -503,115 +809,186 @@ export class ToolUiRuntime {
 			.map((member) => this.activities.get(member.id) ?? this.activityFromPlan(member));
 	}
 
-	private rebuildGroups(tailOnly = false): void {
-		if (tailOnly && this.groups.size > 0) {
-			this.rebuildGroupsFromNarrativeTail();
-			return;
-		}
+	private rebuildGroups(): void {
 		for (const binding of this.bindings.values()) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 		this.groups.clear();
+		this.groupSummaries.clear();
 		this.groupOrder.splice(0);
 		this.membership.clear();
+		this.memberIndexes.clear();
+		this.openGroupLeaderId = undefined;
 		const closeTail = !this.agentActive || this.tailForcedClosed;
-		const planned = planToolActivityGroups(this.indexedMessages, new Set(this.activityPolicies.keys()), closeTail);
+		const planned = planToolActivityGroups(this.indexedMessages, this.renderedToolNames, closeTail);
 		for (const group of planned) {
 			this.groups.set(group.leaderId, group);
 			this.groupOrder.push(group.leaderId);
-			for (const member of group.members) this.membership.set(member.id, group.leaderId);
+			group.members.forEach((member, index) => {
+				this.membership.set(member.id, group.leaderId);
+				this.memberIndexes.set(member.id, index);
+			});
+			if (!group.closed) this.openGroupLeaderId = group.leaderId;
 		}
 		for (const group of planned) this.reconcileGroup(group);
 		for (const key of [...this.groupHints.keys()]) {
 			if (!this.groups.has(key)) this.groupHints.delete(key);
 		}
-		for (const leaderId of [...this.groupPulseTimers.keys()]) {
+		for (const leaderId of [...this.groupPulses.keys()]) {
 			if (!this.groups.has(leaderId)) this.stopGroupPulse(leaderId);
 		}
 	}
 
-	/**
-	 * Streaming messages only affect the current narrative tail. Replan that
-	 * bounded suffix instead of rescanning every historical session message on
-	 * every Tool result. Full lifecycle rebuilds still use rebuildGroups().
-	 */
-	private rebuildGroupsFromNarrativeTail(): void {
-		const tailStart = this.narrativeTailStart();
-		const closeTail = !this.agentActive || this.tailForcedClosed;
-		const planned = planToolActivityGroups(
-			this.indexedMessages.slice(tailStart),
-			new Set(this.activityPolicies.keys()),
-			closeTail,
-		);
-		const plannedMembers = new Set(planned.flatMap((group) => group.members.map((member) => member.id)));
-		const replaced = new Set(
-			this.groupOrder.filter((leaderId) =>
-				this.groups.get(leaderId)?.members.some((member) => plannedMembers.has(member.id)),
-			),
-		);
-
-		for (const leaderId of replaced) {
-			const group = this.groups.get(leaderId);
-			if (!group) continue;
-			for (const member of group.members) {
-				const binding = this.bindings.get(member.id);
-				if (binding) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
-				this.membership.delete(member.id);
-			}
-			this.groups.delete(leaderId);
+	private applyMessage(message: unknown): void {
+		if (typeof message !== "object" || message === null) return;
+		const value = message as Record<string, unknown>;
+		const role = value["role"];
+		if (role === "assistant" && Array.isArray(value["content"])) {
+			this.applyAssistantContent(value["content"], false, assistantTerminalState(value["stopReason"]));
+			return;
 		}
-
-		const preserved: string[] = [];
-		for (const leaderId of this.groupOrder) {
-			if (replaced.has(leaderId)) continue;
-			const group = this.groups.get(leaderId);
-			if (!group) continue;
-			if (!group.closed) {
-				const closed = { ...group, closed: true };
-				this.groups.set(leaderId, closed);
-				this.reconcileGroup(closed);
-			}
-			preserved.push(leaderId);
+		if (role === "toolResult") {
+			const id = value["toolCallId"];
+			const content = value["content"];
+			if (typeof id !== "string" || !Array.isArray(content)) return;
+			this.updateToolResult(id, {
+				content: content as AgentToolResult<unknown>["content"],
+				...(value["details"] !== undefined ? { details: value["details"] } : { details: undefined }),
+				...(value["isError"] === true ? { isError: true } : {}),
+			});
+			return;
 		}
-
-		this.groupOrder.splice(0, this.groupOrder.length, ...preserved);
-		for (const group of planned) {
-			this.groups.set(group.leaderId, group);
-			this.groupOrder.push(group.leaderId);
-			for (const member of group.members) this.membership.set(member.id, group.leaderId);
-		}
-		for (const group of planned) this.reconcileGroup(group);
-
-		for (const key of [...this.groupHints.keys()]) {
-			if (!this.groups.has(key)) this.groupHints.delete(key);
-		}
-		for (const leaderId of [...this.groupPulseTimers.keys()]) {
-			if (!this.groups.has(leaderId)) this.stopGroupPulse(leaderId);
+		if (role === "user" || role === "bashExecution" || (role === "custom" && value["display"] === true)) {
+			this.tailForcedClosed = true;
+			this.closeOpenGroup();
 		}
 	}
 
-	private narrativeTailStart(): number {
-		for (let index = this.indexedMessages.length - 1; index >= 0; index -= 1) {
-			const message = this.indexedMessages[index];
-			if (typeof message !== "object" || message === null) continue;
-			const value = message as Record<string, unknown>;
-			if (value["role"] === "user" || value["role"] === "bashExecution") return index + 1;
-			if (value["role"] === "custom" && value["display"] === true) return index + 1;
-			if (value["role"] !== "assistant" || !Array.isArray(value["content"])) continue;
-			for (const block of value["content"]) {
-				if (typeof block !== "object" || block === null) continue;
-				const item = block as Record<string, unknown>;
-				if (item["type"] === "text" && typeof item["text"] === "string" && item["text"].trim()) {
-					return index;
-				}
+	private applyAssistantContent(
+		content: readonly unknown[],
+		streaming: boolean,
+		terminalState?: "cancelled" | "error",
+	): void {
+		for (let index = 0; index < content.length; index += 1) {
+			const block = content[index];
+			if (typeof block !== "object" || block === null) continue;
+			const item = block as Record<string, unknown>;
+			if (item["type"] === "text" && typeof item["text"] === "string" && item["text"].trim()) {
 				if (
-					item["type"] === "toolCall" &&
-					typeof item["name"] === "string" &&
-					!this.activityPolicies.has(item["name"])
+					streaming
+						? this.streamedProseIndexes.has(index)
+						: this.streamActive && this.streamedProseIndexes.has(index)
 				) {
-					return index;
+					continue;
+				}
+				this.streamedProseIndexes.add(index);
+				this.tailForcedClosed = true;
+				this.closeOpenGroup();
+				continue;
+			}
+			if (item["type"] !== "toolCall") continue;
+			const id = item["id"];
+			const name = item["name"];
+			const args = item["arguments"];
+			if (typeof id !== "string" || !id || typeof name !== "string" || !name || !isRecordValue(args)) continue;
+			const trackedSnapshot = streaming || this.streamActive;
+			const signature = trackedSnapshot ? JSON.stringify([name, args, terminalState ?? ""]) : "";
+			const previousSignature = trackedSnapshot ? this.streamedToolCallSignatures.get(id) : undefined;
+			if (trackedSnapshot && previousSignature === signature) continue;
+			if (trackedSnapshot) this.streamedToolCallSignatures.set(id, signature);
+			if (!this.renderedToolNames.has(name)) {
+				if (previousSignature === undefined) {
+					this.tailForcedClosed = true;
+					this.closeOpenGroup();
+				}
+				continue;
+			}
+			this.appendToolCall({ args, id, name, ...(terminalState ? { terminalState } : {}) });
+		}
+	}
+
+	private appendToolCall(member: PlannedToolActivityMember): void {
+		const existingLeaderId = this.membership.get(member.id);
+		if (existingLeaderId) {
+			const group = this.groups.get(existingLeaderId);
+			const memberIndex = this.memberIndexes.get(member.id);
+			if (!group || memberIndex === undefined) return;
+			const previous = group.members[memberIndex];
+			const result = previous?.result ?? member.result ?? this.pendingResults.get(member.id);
+			const terminalState = result ? undefined : (member.terminalState ?? previous?.terminalState);
+			const completeMember: PlannedToolActivityMember = {
+				args: member.args,
+				id: member.id,
+				name: member.name,
+				...(result ? { result } : {}),
+				...(terminalState ? { terminalState } : {}),
+			};
+			this.mutableMembers(group)[memberIndex] = completeMember;
+			this.pendingResults.delete(member.id);
+			this.reconcileGroup(group, member.id);
+			if (terminalState) this.stopTimer(member.id);
+			return;
+		}
+		let group = this.openGroupLeaderId ? this.groups.get(this.openGroupLeaderId) : undefined;
+		const result = member.result ?? this.pendingResults.get(member.id);
+		const terminalState = result ? undefined : member.terminalState;
+		const completeMember: PlannedToolActivityMember = {
+			args: member.args,
+			id: member.id,
+			name: member.name,
+			...(result ? { result } : {}),
+			...(terminalState ? { terminalState } : {}),
+		};
+		this.pendingResults.delete(member.id);
+		if (!group || group.closed) {
+			group = { closed: !this.agentActive, leaderId: member.id, members: [completeMember] };
+			this.groups.set(group.leaderId, group);
+			this.groupOrder.push(group.leaderId);
+			if (!group.closed) this.openGroupLeaderId = group.leaderId;
+		} else {
+			this.mutableMembers(group).push(completeMember);
+		}
+		const index = group.members.length - 1;
+		this.membership.set(member.id, group.leaderId);
+		this.memberIndexes.set(member.id, index);
+		this.tailForcedClosed = group.closed;
+		this.reconcileGroup(group, member.id);
+		if (terminalState) this.stopTimer(member.id);
+	}
+
+	private updateToolResult(id: string, result: AgentToolResult<unknown>): void {
+		const leaderId = this.membership.get(id);
+		const group = leaderId ? this.groups.get(leaderId) : undefined;
+		const memberIndex = this.memberIndexes.get(id);
+		if (!group || memberIndex === undefined) {
+			const binding = this.bindings.get(id);
+			if (binding && this.renderedToolNames.has(binding.metadata.name)) {
+				this.pendingResults.set(id, result);
+				while (this.pendingResults.size > PENDING_RESULT_LIMIT) {
+					const oldest = this.pendingResults.keys().next().value as string | undefined;
+					if (oldest === undefined) break;
+					this.pendingResults.delete(oldest);
 				}
 			}
+			return;
 		}
-		return 0;
+		const previous = group.members[memberIndex];
+		if (!previous) return;
+		this.mutableMembers(group)[memberIndex] = { ...previous, result };
+		this.reconcileGroup(group, id);
+	}
+
+	private closeOpenGroup(): void {
+		const leaderId = this.openGroupLeaderId;
+		if (!leaderId) return;
+		const group = this.groups.get(leaderId);
+		this.openGroupLeaderId = undefined;
+		if (!group || group.closed) return;
+		const closed = { ...group, closed: true };
+		this.groups.set(leaderId, closed);
+		this.reconcileGroup(closed);
+	}
+
+	private mutableMembers(group: PlannedToolActivityGroup): PlannedToolActivityMember[] {
+		return group.members as PlannedToolActivityMember[];
 	}
 
 	private reconcileGroupForTool(toolCallId: string): void {
@@ -621,12 +998,13 @@ export class ToolUiRuntime {
 			if (binding) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 			return;
 		}
-		this.reconcileGroup(this.groups.get(leaderId));
+		this.reconcileGroup(this.groups.get(leaderId), toolCallId);
 	}
 
-	private reconcileGroup(group: PlannedToolActivityGroup | undefined): void {
+	private reconcileGroup(group: PlannedToolActivityGroup | undefined, changedMemberId?: string): void {
 		if (!group) return;
 		const leader = this.bindings.get(group.leaderId);
+		const index = this.summaryIndex(group, changedMemberId);
 		if (!leader) return;
 		if (leader.expanded) {
 			this.stopGroupPulse(group.leaderId);
@@ -636,11 +1014,11 @@ export class ToolUiRuntime {
 			}
 			return;
 		}
-		const members = group.members.map((member) => this.summaryMember(member));
-		const summary = summarizeToolActivityGroup(members, group.closed);
+		const summary = summarizeToolActivityAggregate(index.aggregate(), group.closed);
 		this.reconcileGroupPulse(group, summary.active);
-		const issueHint = this.issueHint(group);
-		const hint = issueHint || this.stableTarget(group.leaderId, summary.target, summary.active);
+		const issueHint = this.issueHint(index);
+		const elapsedHint = this.elapsedHint(group);
+		const hint = issueHint || elapsedHint || this.stableTarget(group.leaderId, summary.target, summary.active);
 		const model: ActivityGroupRowModel = {
 			active: summary.active,
 			expandable: true,
@@ -660,30 +1038,103 @@ export class ToolUiRuntime {
 		}
 	}
 
+	private summaryIndex(group: PlannedToolActivityGroup, changedMemberId?: string): GroupSummaryIndex {
+		let index = this.groupSummaries.get(group.leaderId);
+		if (!index) {
+			index = new GroupSummaryIndex();
+			this.groupSummaries.set(group.leaderId, index);
+		}
+		for (let memberIndex = index.size; memberIndex < group.members.length; memberIndex += 1) {
+			const member = group.members[memberIndex];
+			if (member) index.upsert(member.id, memberIndex, this.summaryMember(member));
+		}
+		if (changedMemberId) {
+			const memberIndex = this.memberIndexes.get(changedMemberId);
+			const member = memberIndex === undefined ? undefined : group.members[memberIndex];
+			if (member && memberIndex !== undefined) index.upsert(member.id, memberIndex, this.summaryMember(member));
+		}
+		return index;
+	}
+
 	private summaryMember(member: PlannedToolActivityMember): ActivitySummaryMember {
 		const binding = this.bindings.get(member.id);
-		const state = binding?.baseModel.state ?? terminalStateFromResult(member, this.errorPolicies.get(member.name));
-		const metadata = binding?.metadata ?? {
-			args: member.args,
+		const forcedTerminal = !member.result ? member.terminalState : undefined;
+		const state =
+			forcedTerminal ??
+			binding?.baseModel.state ??
+			terminalStateFromResult(member, this.errorPolicies.get(member.name));
+		const metadata: PresentedToolMetadata = {
+			...(binding?.metadata ?? {}),
+			args: binding?.metadata.args ?? member.args,
 			name: member.name,
 			...(member.result ? { result: member.result } : {}),
 		};
+		const items = forcedTerminal ? [] : this.classify(metadata, state);
+		const infrastructureIssue =
+			isIssueState(state) && items.length === 0 && this.activityPolicies.get(member.name)?.silentSuccess === true;
+		const issueLabel =
+			state === "success" || state === "running" || infrastructureIssue
+				? undefined
+				: (binding?.baseModel.label ?? member.name);
+		const issueDetail =
+			state === "success" || state === "running"
+				? undefined
+				: forcedTerminal
+					? state === "cancelled"
+						? "Tool call was cancelled before execution"
+						: "Tool call failed before execution"
+					: metadata.result
+						? this.issueDetail(member.name, metadata.args, metadata.result, state)
+						: (binding?.baseModel.summary ?? issueLabel);
 		return {
-			issueLabel: binding?.baseModel.label ?? member.name,
-			items: this.classify(metadata, state),
+			...(issueDetail ? { issueDetail } : {}),
+			...(issueLabel ? { issueLabel } : {}),
+			items,
 			state,
 		};
+	}
+
+	private issueDetail(
+		name: string,
+		args: Readonly<Record<string, unknown>>,
+		result: AgentToolResult<unknown>,
+		state: Exclude<ToolActivityState, "running" | "success">,
+	): string {
+		const summarizeIssue = this.activityPolicies.get(name)?.summarizeIssue;
+		if (summarizeIssue) {
+			try {
+				const summary = oneLine(summarizeIssue(args, result, state));
+				if (summary) return summary;
+			} catch {
+				// Keep the compact projection available when optional semantic extraction fails.
+			}
+		}
+		for (const item of result.content) {
+			if (item.type !== "text") continue;
+			const summary = oneLine(item.text.split(/\r?\n/u)[0] ?? "");
+			if (summary) return summary;
+		}
+		return summarizeBuiltin(name, args, result, state, undefined);
 	}
 
 	private classify(metadata: PresentedToolMetadata, state: ToolActivityState): readonly ToolActivityItem[] {
 		const policy = this.activityPolicies.get(metadata.name);
 		if (!policy) return [];
 		try {
-			const items = policy.classify({
+			const classified = policy.classify({
 				args: metadata.args,
+				...(metadata.cwd ? { cwd: metadata.cwd } : {}),
 				...(metadata.result ? { result: metadata.result } : {}),
 				state,
 			});
+			const items = classified.map((item) =>
+				item.countKeys
+					? {
+							...item,
+							countKeys: item.countKeys.map((key) => canonicalCountKey(item.category, key, metadata.cwd)),
+						}
+					: item,
+			);
 			return isIssueState(state)
 				? items.filter((item) => !SUCCESS_ONLY_ACTIVITY_CATEGORIES.has(item.category))
 				: items;
@@ -692,16 +1143,21 @@ export class ToolUiRuntime {
 		}
 	}
 
-	private issueHint(group: PlannedToolActivityGroup): string {
-		const issues = group.members
-			.map((member) => this.bindings.get(member.id))
-			.filter((binding): binding is GroupedRowBinding => Boolean(binding && isIssueState(binding.baseModel.state)));
-		const issue = issues[0];
-		if (!issue) return "";
-		const remaining = Math.max(0, issues.length - 1);
-		return oneLine(
-			`${issue.baseModel.label} ${issue.baseModel.summary}${remaining > 0 ? ` · +${String(remaining)} issues` : ""}`,
-		);
+	private issueHint(index: GroupSummaryIndex): string {
+		const issueSummary = index.issue();
+		if (!issueSummary.id || !issueSummary.detail) return "";
+		const remaining = Math.max(0, issueSummary.count - 1);
+		return oneLine(`${issueSummary.detail}${remaining > 0 ? ` · +${String(remaining)} issues` : ""}`);
+	}
+
+	private elapsedHint(group: PlannedToolActivityGroup): string {
+		for (let index = group.members.length - 1; index >= 0; index -= 1) {
+			const binding = this.bindings.get(group.members[index]?.id ?? "");
+			if (!binding || binding.baseModel.state !== "running") continue;
+			if ((binding.baseModel.durationMs ?? 0) < 2_000) return "";
+			return oneLine(binding.baseModel.summary);
+		}
+		return "";
 	}
 
 	private stableTarget(leaderId: string, candidate: string, active: boolean): string {
@@ -744,30 +1200,52 @@ export class ToolUiRuntime {
 	}
 
 	private reconcileGroupPulse(group: PlannedToolActivityGroup, active: boolean): void {
-		const hasToolTimer = group.members.some((member) => this.timerInvalidators.has(member.id));
+		const hasToolTimer = group.members.some((member) => this.timerStates.has(member.id));
 		if (!active || hasToolTimer) {
 			this.stopGroupPulse(group.leaderId);
 			return;
 		}
-		if (this.groupPulseTimers.has(group.leaderId)) return;
-		this.groupPulseVisibility.set(group.leaderId, true);
-		const timer = this.scheduler.setInterval(() => {
-			const visible = !(this.groupPulseVisibility.get(group.leaderId) ?? true);
-			this.groupPulseVisibility.set(group.leaderId, visible);
-			const leader = this.bindings.get(group.leaderId);
-			if (leader?.row.setMarkerVisible(visible)) this.scheduleInvalidation(leader.invalidate);
-			this.reconcileGroupForTool(group.leaderId);
-		}, 600);
-		this.groupPulseTimers.set(group.leaderId, timer);
+		if (this.groupPulses.has(group.leaderId)) return;
+		this.groupPulses.set(group.leaderId, { visible: true });
+		if (this.groupPulseTimer === undefined) {
+			this.groupPulseTimer = this.scheduler.setInterval(() => this.tickGroupPulses(), 600);
+		}
 	}
 
 	private stopGroupPulse(leaderId: string): void {
-		const timer = this.groupPulseTimers.get(leaderId);
-		if (timer !== undefined) this.scheduler.clearInterval(timer);
-		this.groupPulseTimers.delete(leaderId);
-		this.groupPulseVisibility.delete(leaderId);
+		if (!this.groupPulses.delete(leaderId)) return;
+		if (this.groupPulses.size === 0 && this.groupPulseTimer !== undefined) {
+			this.scheduler.clearInterval(this.groupPulseTimer);
+			this.groupPulseTimer = undefined;
+		}
 		const leader = this.bindings.get(leaderId);
 		if (leader?.row.setMarkerVisible(true)) this.scheduleInvalidation(leader.invalidate);
+	}
+
+	private tickGroupPulses(): void {
+		for (const [leaderId, pulse] of this.groupPulses) {
+			pulse.visible = !pulse.visible;
+			const leader = this.bindings.get(leaderId);
+			if (leader?.row.setMarkerVisible(pulse.visible)) this.scheduleInvalidation(leader.invalidate);
+			this.reconcileGroupForTool(leaderId);
+		}
+	}
+
+	private trimBindings(currentToolCallId: string): void {
+		const protectedIds = new Set([currentToolCallId]);
+		const leaderId = this.membership.get(currentToolCallId);
+		if (leaderId) protectedIds.add(leaderId);
+		while (this.bindings.size > BINDING_LIMIT) {
+			let oldest: string | undefined;
+			for (const id of this.bindings.keys()) {
+				if (!protectedIds.has(id)) {
+					oldest = id;
+					break;
+				}
+			}
+			if (!oldest) return;
+			this.bindings.delete(oldest);
+		}
 	}
 
 	private applyBinding(binding: GroupedRowBinding, model: ToolRowModel, visible: boolean): void {
@@ -792,10 +1270,7 @@ export class ToolUiRuntime {
 
 	private groupView(group: PlannedToolActivityGroup | undefined): ToolActivityGroupView | undefined {
 		if (!group) return undefined;
-		const summary = summarizeToolActivityGroup(
-			group.members.map((member) => this.summaryMember(member)),
-			group.closed,
-		);
+		const summary = summarizeToolActivityAggregate(this.summaryIndex(group).aggregate(), group.closed);
 		return {
 			id: group.leaderId,
 			memberIds: group.members.map((member) => member.id),
@@ -806,21 +1281,34 @@ export class ToolUiRuntime {
 
 	private activityFromPlan(member: PlannedToolActivityMember): ToolActivity {
 		const state = terminalStateFromResult(member, this.errorPolicies.get(member.name));
-		const items = this.classify(
-			{
-				args: member.args,
-				name: member.name,
-				...(member.result ? { result: member.result } : {}),
-			},
-			state,
-		);
+		const items =
+			member.terminalState && !member.result
+				? []
+				: this.classify(
+						{
+							args: member.args,
+							name: member.name,
+							...(member.result ? { result: member.result } : {}),
+						},
+						state,
+					);
 		const summary = summarizeToolActivityGroup([{ items, state }], state !== "running");
-		const pending: AgentToolResult<unknown> = {
-			content: [{ type: "text", text: "(pending)" }],
+		const fallback: AgentToolResult<unknown> = {
+			content: [
+				{
+					type: "text",
+					text:
+						state === "cancelled"
+							? "(cancelled before execution)"
+							: state === "error"
+								? "(failed before execution)"
+								: "(pending)",
+				},
+			],
 			details: undefined,
 		};
 		return {
-			detailLines: buildToolDetailLines(member.args, member.result ?? pending),
+			detailLines: buildToolDetailLines(member.args, member.result ?? fallback),
 			durationMs: undefined,
 			id: member.id,
 			label: member.name,
@@ -836,23 +1324,6 @@ export class ToolUiRuntime {
 					.at(-1) ?? "",
 		};
 	}
-}
-
-function messageTailBoundary(message: unknown): boolean | undefined {
-	if (typeof message !== "object" || message === null) return undefined;
-	const value = message as Record<string, unknown>;
-	if (value["role"] === "custom") return value["display"] === true ? true : undefined;
-	if (value["role"] !== "assistant" || !Array.isArray(value["content"])) {
-		return value["role"] === "user" || value["role"] === "bashExecution" ? true : undefined;
-	}
-	let boundary: boolean | undefined;
-	for (const block of value["content"]) {
-		if (typeof block !== "object" || block === null) continue;
-		const item = block as Record<string, unknown>;
-		if (item["type"] === "text" && typeof item["text"] === "string" && item["text"].trim()) boundary = true;
-		if (item["type"] === "toolCall") boundary = false;
-	}
-	return boundary;
 }
 
 function runtimeRegistry(): WeakMap<ExtensionAPI["events"], ToolUiRuntime> {
@@ -890,12 +1361,28 @@ export interface SuiteToolRegistrationTracker {
 	readonly toolNames: ReadonlySet<string>;
 }
 
+function suiteActivityRendererMarker(tool: unknown): SuiteActivityRendererMarker | undefined {
+	if (!isRecordValue(tool)) return undefined;
+	if (typeof tool["renderCall"] !== "function" || typeof tool["renderResult"] !== "function") return undefined;
+	const marker = Reflect.get(tool, SUITE_ACTIVITY_RENDERER);
+	return isRecordValue(marker) && isRecordValue(marker["activity"])
+		? (marker as unknown as SuiteActivityRendererMarker)
+		: undefined;
+}
+
+function hasSuiteActivityRenderer(tool: unknown): boolean {
+	return suiteActivityRendererMarker(tool) !== undefined;
+}
+
 /** Observe every Tool registered by Aggregate capabilities without changing the Host API. */
 export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolRegistrationTracker {
 	const toolNames = new Set<string>();
 	const registerTool: ExtensionAPI["registerTool"] = (tool) => {
 		toolNames.add(tool.name);
 		pi.registerTool(tool);
+		const runtime = getToolUiRuntime(pi);
+		if (hasSuiteActivityRenderer(tool)) runtime.markRendererAttached(tool.name);
+		else runtime.markRendererDetached(tool.name);
 	};
 	const api = new Proxy(pi, {
 		get(target, property) {
@@ -915,14 +1402,20 @@ export function assertSuiteToolActivityCoverage(
 	optionalToolNames: readonly string[] = [],
 	deferredToolNames: readonly string[] = [],
 ): void {
+	const finalTools = new Map(pi.getAllTools().map((tool) => [tool.name, tool] as const));
+	const runtime = getToolUiRuntime(pi);
 	let metadataToolNames = [...declaredToolNames, ...deferredToolNames];
+	let rendererToolNames = [
+		...declaredToolNames,
+		...deferredToolNames.filter((name) => runtime.hasActivityRenderer(name)),
+	];
 	if (registeredToolNames) {
 		const declared = new Set([...declaredToolNames, ...deferredToolNames, ...optionalToolNames]);
 		// A capability may be intentionally idempotent when the Aggregate is loaded
 		// twice in one Host. Count Tools that are already installed on the shared
 		// Extension API as present, while still using this invocation's tracker to
 		// reject newly registered undeclared Tools.
-		const available = new Set(pi.getAllTools().map((tool) => tool.name));
+		const available = new Set(finalTools.keys());
 		const undeclared = [...registeredToolNames].filter((name) => !declared.has(name)).sort();
 		if (undeclared.length > 0) {
 			throw new Error(`Aggregate registered undeclared Tools: ${undeclared.join(", ")}`);
@@ -936,12 +1429,21 @@ export function assertSuiteToolActivityCoverage(
 		metadataToolNames = [
 			...declaredToolNames,
 			...deferredToolNames,
-			...optionalToolNames.filter((name) => registeredToolNames.has(name) || available.has(name)),
+			...optionalToolNames.filter((name) => registeredToolNames.has(name) || runtime.hasActivityRenderer(name)),
+		];
+		rendererToolNames = [
+			...declaredToolNames,
+			...deferredToolNames.filter((name) => runtime.hasActivityRenderer(name)),
+			...optionalToolNames.filter((name) => registeredToolNames.has(name) || runtime.hasActivityRenderer(name)),
 		];
 	}
 	const missing = getToolUiRuntime(pi).missingActivityMetadata(metadataToolNames);
 	if (missing.length > 0) {
 		throw new Error(`Aggregate Tools missing Activity metadata: ${missing.join(", ")}`);
+	}
+	const missingRenderers = [...runtime.missingActivityRenderers(rendererToolNames)].sort();
+	if (missingRenderers.length > 0) {
+		throw new Error(`Aggregate Tools missing Activity renderer: ${missingRenderers.join(", ")}`);
 	}
 }
 
@@ -1001,7 +1503,7 @@ function updateRunningRow<TArgs extends Record<string, unknown>, TDetails>(
 		...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
 		target: model.target,
 	});
-	const metadata: PresentedToolMetadata = { args, name: tool.name };
+	const metadata: PresentedToolMetadata = { args, cwd: context.cwd, name: tool.name };
 	runtime.presentRow(context.toolCallId, state.component, model, true, context.invalidate, context.expanded, metadata);
 	if (state.wasLiveExecution) {
 		runtime.startTimer(context.toolCallId, context.invalidate, (visible) =>
@@ -1053,6 +1555,7 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 	runtime.stopTimer(context.toolCallId);
 	runtime.presentRow(context.toolCallId, state.component, model, true, context.invalidate, context.expanded, {
 		args,
+		cwd: context.cwd,
 		name: tool.name,
 		result: result as AgentToolResult<unknown>,
 	});
@@ -1076,29 +1579,42 @@ function resultBody<TArgs extends Record<string, unknown>, TDetails>(
 	state: RendererState<TArgs, TDetails>,
 	result: AgentToolResult<TDetails>,
 	expanded: boolean,
+	showImages: boolean,
 	theme: Theme,
 ): Component {
 	const container = new Container();
 	const text = expanded ? (state.detailLines?.join("\n") ?? "") : "";
 	if (text) container.addChild(new Text(theme.fg("toolOutput", text), 2, 0));
-	const images = result.content.filter(
-		(
-			item,
-		): item is {
-			readonly type: "image";
-			readonly data: string;
-			readonly mimeType: string;
-		} => item.type === "image" && typeof item.data === "string" && typeof item.mimeType === "string",
-	);
+	const hostRendersImages = Boolean(getCapabilities().images && showImages);
+	const images = hostRendersImages
+		? []
+		: result.content.filter(
+				(
+					item,
+				): item is {
+					readonly type: "image";
+					readonly data: string;
+					readonly mimeType: string;
+				} => item.type === "image" && typeof item.data === "string" && typeof item.mimeType === "string",
+			);
 	for (const [index, image] of images.entries()) {
 		if (text || index > 0) container.addChild(new Spacer(1));
 		container.addChild(
-			new Image(
-				image.data,
-				image.mimeType,
-				{ fallbackColor: (value) => theme.fg("dim", value) },
-				{ maxWidthCells: 60 },
-			),
+			showImages
+				? new Image(
+						image.data,
+						image.mimeType,
+						{ fallbackColor: (value) => theme.fg("dim", value) },
+						{ maxWidthCells: 60 },
+					)
+				: new Text(
+						theme.fg(
+							"dim",
+							imageFallback(image.mimeType, getImageDimensions(image.data, image.mimeType) ?? undefined),
+						),
+						2,
+						0,
+					),
 		);
 	}
 	return text || images.length > 0 ? container : new EmptyToolComponent();
@@ -1109,9 +1625,9 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 	presentation: SuiteToolPresentation<TArgs, TDetails>,
 	runtime: ToolUiRuntime,
 ): ToolDefinition<TSchema, TDetails> {
-	return {
+	const decorated: ToolDefinition<TSchema, TDetails> = {
 		...tool,
-		renderShell: "self",
+		renderShell: "self" as const,
 		renderCall: (args, theme, context) => {
 			const typed = {
 				...context,
@@ -1134,9 +1650,23 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 			} as unknown as ToolRenderContext<TArgs>;
 			if (renderOptions.isPartial) return new EmptyToolComponent();
 			settleRow(tool, presentation, runtime, state, result, typed, theme);
-			return resultBody(state, result, renderOptions.expanded, theme);
+			return resultBody(state, result, renderOptions.expanded, typed.showImages, theme);
 		},
 	};
+	Object.defineProperty(decorated, SUITE_ACTIVITY_RENDERER, {
+		enumerable: true,
+		value: {
+			activity: presentation.activity as unknown as ToolActivityMetadata<Record<string, unknown>, unknown>,
+			...(presentation.resultIsError
+				? {
+						resultIsError: presentation.resultIsError as unknown as NonNullable<
+							SuiteActivityRendererMarker["resultIsError"]
+						>,
+					}
+				: {}),
+		} satisfies SuiteActivityRendererMarker,
+	});
+	return decorated;
 }
 
 /** Register a Suite-owned Tool without changing its execute protocol or result. */
@@ -1153,4 +1683,5 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 			TDetails
 		>,
 	);
+	runtime.markRendererAttached(tool.name);
 }

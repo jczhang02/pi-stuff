@@ -340,6 +340,11 @@ function communicationTarget(args: Readonly<Record<string, unknown>>): string {
 	return [action, destination].filter(Boolean).join(" · ");
 }
 
+function communicationCategory(args: Readonly<Record<string, unknown>>) {
+	const action = typeof args.action === "string" ? args.action : "";
+	return action === "status" || action === "list" || action === "pending" ? "check-agent" : "message-agent";
+}
+
 function registerCommunicationTool<TParams extends TSchema>(
 	pi: ExtensionAPI,
 	tool: ToolDefinition<TParams, Record<string, unknown>>,
@@ -347,9 +352,9 @@ function registerCommunicationTool<TParams extends TSchema>(
 ): void {
 	registerSuiteOwnedTool(pi, tool, {
 		activity: {
-			categories: ["manage-agent"],
+			categories: ["check-agent", "message-agent"],
 			classify: ({ args }) =>
-				singleActivity("manage-agent", {
+				singleActivity(communicationCategory(args), {
 					key: activityKey(args.action, args.to, args.replyTo),
 					target: communicationTarget(args),
 				}),

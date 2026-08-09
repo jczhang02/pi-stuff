@@ -55,17 +55,35 @@ function taskPresentation<TParams extends Record<string, unknown>>(
 	category: Extract<ToolActivityCategory, "check-task" | "update-task">,
 	target: (params: Readonly<TParams>) => string,
 	summarize: (result: AgentToolResult<TaskDetails>) => string = resultText,
+	resultIdentities: (params: Readonly<TParams>, result: AgentToolResult<TaskDetails>) => readonly string[] = (
+		params,
+	) => {
+		const value = target(params);
+		return value ? [value] : [];
+	},
 ): SuiteToolPresentation<TParams, TaskDetails> {
 	return {
 		activity: {
-			categories: [category],
+			categories: category === "update-task" ? ["check-task", "update-task"] : [category],
 			classify: ({ args, result }) => {
 				const value = target(args);
-				const returnedIds = result?.details?.affectedTaskIds?.map((taskId) => activityKey(taskId));
+				const returnedIds = result?.details
+					? resultIdentities(args, result).map((identity) => activityKey(identity))
+					: undefined;
+				const effectiveCategory =
+					category === "update-task" &&
+					result &&
+					/already matches the requested values\s*$/u.test(resultText(result))
+						? "check-task"
+						: category;
 				return [
 					{
-						category,
-						countKeys: returnedIds && returnedIds.length > 0 ? returnedIds : [activityKey(value || label)],
+						category: effectiveCategory,
+						...(returnedIds
+							? returnedIds.length > 0
+								? { countKeys: returnedIds }
+								: { count: 0 }
+							: { countKeys: [activityKey(value || label)] }),
 						...(value ? { target: value } : {}),
 					},
 				];
@@ -119,7 +137,16 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 	registerSuiteOwnedTool(
 		pi,
 		createTool,
-		taskPresentation("Task create", "update-task", (params) => params.subject),
+		taskPresentation(
+			"Task create",
+			"update-task",
+			(params) => params.subject,
+			resultText,
+			(_params, result) => {
+				const id = resultText(result).match(/^Task #([^\s]+) created successfully:/u)?.[1];
+				return id ? [id] : [];
+			},
+		),
 	);
 
 	const getTool: ToolDefinition<typeof TaskGetParamsSchema, TaskDetails> = {
@@ -133,7 +160,14 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 			return execute("get", params, ctx);
 		},
 	};
-	registerSuiteOwnedTool(pi, getTool, taskPresentation("Task get", "check-task", taskIdTarget));
+	registerSuiteOwnedTool(
+		pi,
+		getTool,
+		taskPresentation("Task get", "check-task", taskIdTarget, resultText, (params, result) => {
+			const taskId = typeof params.taskId === "string" ? params.taskId : "";
+			return taskId && resultText(result) !== "Task not found" ? [taskId] : [];
+		}),
+	);
 
 	const listTool: ToolDefinition<typeof TaskListParamsSchema, TaskDetails> = {
 		name: TASK_LIST_TOOL_NAME,
@@ -149,7 +183,14 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 	registerSuiteOwnedTool(
 		pi,
 		listTool,
-		taskPresentation("Task list", "check-task", () => "", summarizeTaskList),
+		taskPresentation(
+			"Task list",
+			"check-task",
+			() => "",
+			summarizeTaskList,
+			(_params, result) =>
+				(result.details?.tasks ?? []).filter((task) => task.status !== "deleted").map((task) => task.id),
+		),
 	);
 
 	const updateTool: ToolDefinition<typeof TaskUpdateParamsSchema, TaskDetails> = {

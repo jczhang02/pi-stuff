@@ -299,7 +299,7 @@ export async function verifyToolsGroupingPty(options: {
 
 			await sendTurn(tmuxSession, "agent");
 			const agent = await waitForText(tmuxSession, "GROUP_AGENT_DONE");
-			if (!normalized(agent).includes("Managed 1 agent")) {
+			if (!normalized(agent).includes("Checked 1 agent")) {
 				fail(`Agent activity did not fold into a semantic Activity Group\n${agent}`);
 			}
 			if (agent.includes("Subagent") || agent.includes("action: status")) {

@@ -26,6 +26,7 @@ function apiHarness(initialActiveTools: readonly string[]): {
 	readonly tools: Map<string, ToolDefinition>;
 	emit(type: ExtensionEvent["type"], event: ExtensionEvent, ctx: ExtensionContext): Promise<void>;
 	getActiveTools(): readonly string[];
+	handlerCount(type: ExtensionEvent["type"]): number;
 	setActiveTools(names: readonly string[]): void;
 } {
 	const handlers = new Map<string, EventHandler[]>();
@@ -50,6 +51,7 @@ function apiHarness(initialActiveTools: readonly string[]): {
 			for (const handler of handlers.get(type) ?? []) await handler(event, ctx);
 		},
 		getActiveTools: () => [...activeTools],
+		handlerCount: (type) => handlers.get(type)?.length ?? 0,
 		setActiveTools: (names) => {
 			activeTools = [...names];
 		},
@@ -63,6 +65,18 @@ function context(cwd: string): ExtensionContext {
 		sessionManager: { getBranch: () => [] },
 	} as unknown as ExtensionContext;
 }
+
+test("Tool lifecycle installation deduplicates Aggregate proxies that share one Host event bus", async () => {
+	const harness = apiHarness(["read"]);
+	await piStuffTools(new Proxy(harness.api, {}));
+	const sessionStartHandlers = harness.handlerCount("session_start");
+	const sessionShutdownHandlers = harness.handlerCount("session_shutdown");
+	await piStuffTools(new Proxy(harness.api, {}));
+
+	expect(harness.handlerCount("session_start")).toBe(sessionStartHandlers);
+	expect(harness.handlerCount("session_shutdown")).toBe(sessionShutdownHandlers);
+	await harness.emit("session_shutdown", { reason: "quit", type: "session_shutdown" }, context("/project"));
+});
 
 test("resume pre-binds only active built-in renderers before historical rows are reconstructed", async () => {
 	const outgoing = apiHarness(["read", "grep", "fixture_state"]);

@@ -61,7 +61,12 @@ function text(result: AgentToolResult<unknown>): string {
 
 let renderedCallSequence = 0;
 
-function renderedLines(tool: ToolDefinition, result: AgentToolResult<unknown>, isError: boolean): string[] {
+function renderedLines(
+	tool: ToolDefinition,
+	result: AgentToolResult<unknown>,
+	isError: boolean,
+	args: Record<string, unknown> = {},
+): string[] {
 	const callRenderer = tool.renderCall;
 	const renderer = tool.renderResult;
 	if (!callRenderer || !renderer) throw new Error(`Tool ${tool.name} has no complete renderer`);
@@ -72,7 +77,7 @@ function renderedLines(tool: ToolDefinition, result: AgentToolResult<unknown>, i
 	const state = {};
 	renderedCallSequence += 1;
 	const context = {
-		args: {},
+		args,
 		argsComplete: true,
 		cwd: "/project",
 		executionStarted: true,
@@ -85,7 +90,7 @@ function renderedLines(tool: ToolDefinition, result: AgentToolResult<unknown>, i
 		state,
 		toolCallId: `render-${tool.name}-${String(renderedCallSequence)}`,
 	} as Parameters<typeof renderer>[3];
-	const row = callRenderer({}, theme, context);
+	const row = callRenderer(args, theme, context);
 	renderer(result, { expanded: false, isPartial: false }, theme, context);
 	return row.render(80);
 }
@@ -136,7 +141,7 @@ describe("registered Task tools", () => {
 
 		expect(mutations.map(({ action }) => action)).toEqual(["create", "create", "update"]);
 		expect(mutations.every(({ sessionId }) => sessionId === "integration-session")).toBe(true);
-		expect(renderedLines(harness.tool(TASK_GET_TOOL_NAME), fetched, false)).toEqual([
+		expect(renderedLines(harness.tool(TASK_GET_TOOL_NAME), fetched, false, { taskId: "2" })).toEqual([
 			"  Checked 1 task  (ctrl+o to expand)",
 		]);
 
@@ -145,15 +150,15 @@ describe("registered Task tools", () => {
 			status: "completed",
 		});
 		expect(details(failed).error).toBe("#missing not found");
-		expect(renderedLines(harness.tool(TASK_UPDATE_TOOL_NAME), failed, false).join("\n")).toContain(
-			"#missing not found",
-		);
+		expect(
+			renderedLines(harness.tool(TASK_UPDATE_TOOL_NAME), failed, false, { taskId: "missing" }).join("\n"),
+		).toContain("#missing not found");
 		const validationFailure = {
 			content: [{ type: "text", text: "Invalid TaskUpdate input" }],
 			details: undefined,
 		} as unknown as AgentToolResult<unknown>;
 		expect(renderedLines(harness.tool(TASK_UPDATE_TOOL_NAME), validationFailure, true).join("\n").trim()).toBe(
-			"● Task update failed  (ctrl+o to expand)\n  ⎿ Task update Invalid TaskUpdate input",
+			"● Task update failed  (ctrl+o to expand)\n  ⎿ Invalid TaskUpdate input",
 		);
 		expect(mutations.map(({ action }) => action)).toEqual(["create", "create", "update"]);
 	});

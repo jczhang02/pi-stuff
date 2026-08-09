@@ -42,6 +42,15 @@ function summarize(_args: Readonly<Arguments>, result: AgentToolResult<unknown>)
 	return truncated ? `${summary} · clipped` : summary;
 }
 
+function issueSummary(_args: Readonly<Arguments>, result: AgentToolResult<unknown>, state: string): string {
+	const details = record(result.details);
+	if (typeof details["error"] === "string" && details["error"].trim()) return details["error"].trim();
+	for (const item of result.content) {
+		if (item.type === "text" && item.text.trim()) return item.text.trim().split(/\r?\n/u)[0] ?? state;
+	}
+	return state;
+}
+
 export const MCP_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
 	activity: {
 		categories: ["connect-mcp", "invoke-mcp", "search-mcp"],
@@ -55,6 +64,7 @@ export const MCP_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
 			}
 			return singleActivity("search-mcp", { count: 1, target: label });
 		},
+		summarizeIssue: issueSummary,
 	},
 	label: "MCP",
 	resultIsError,

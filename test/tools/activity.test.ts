@@ -22,6 +22,7 @@ test("active path targets preserve only the nearest useful directory and basenam
 	expect(activityTarget("/workspace/pi-stuff/packages/pi-stuff-tools/contract.ts")).toBe(
 		"…/pi-stuff-tools/contract.ts",
 	);
+	expect(activityTarget("packages/pi-stuff-tools/contract.ts")).toBe("…/pi-stuff-tools/contract.ts");
 	expect(activityTarget("Running repository checks")).toBe("Running repository checks");
 });
 
@@ -90,6 +91,24 @@ test("a singleton forms a group and historical tails close deterministically", (
 	expect(group?.closed).toBe(true);
 });
 
+test("assistant lifecycle failures settle calls that never received Tool results", () => {
+	const groups = planToolActivityGroups(
+		[
+			{ ...assistant(call("cancelled", "read", "a")), stopReason: "aborted" },
+			{ ...assistant(call("failed", "read", "b")), stopReason: "error" },
+			{ ...assistant(call("completed", "read", "c")), stopReason: "aborted" },
+			{ role: "toolResult", toolCallId: "completed", content: [{ type: "text", text: "done" }], details: {} },
+		],
+		owned,
+		true,
+	);
+
+	expect(groups[0]?.members[0]?.terminalState).toBe("cancelled");
+	expect(groups[0]?.members[1]?.terminalState).toBe("error");
+	expect(groups[0]?.members[2]?.terminalState).toBeUndefined();
+	expect(groups[0]?.members[2]?.result).toBeDefined();
+});
+
 function member(state: ActivitySummaryMember["state"], items: ActivitySummaryMember["items"]): ActivitySummaryMember {
 	return { items, state };
 }
@@ -125,15 +144,27 @@ test("Bash outcomes are success-gated and expose bounded Git identities", () => 
 	});
 	expect(pullRequest).toEqual([expect.objectContaining({ category: "create-pr", detail: "#42" })]);
 
-	const branches = classifyBashActivity({
-		args: { command: "git merge feature && git rebase main" },
-		result: { content: [{ type: "text", text: "done" }], details: {} },
+	const merge = classifyBashActivity({
+		args: { command: "git merge feature" },
+		result: { content: [{ type: "text", text: "Fast-forward" }], details: {} },
 		state: "success",
 	});
-	expect(branches.map((item) => [item.category, item.detail])).toEqual([
-		["merge", "feature"],
-		["rebase", "main"],
-	]);
+	expect(merge).toEqual([expect.objectContaining({ category: "merge", detail: "feature" })]);
+	const rebase = classifyBashActivity({
+		args: { command: "git rebase main" },
+		result: { content: [{ type: "text", text: "Successfully rebased and updated refs/heads/topic." }], details: {} },
+		state: "success",
+	});
+	expect(rebase).toEqual([expect.objectContaining({ category: "rebase", detail: "main" })]);
+
+	for (const command of ["git merge feature || true", "git rebase main | cat", "git merge --abort"]) {
+		const masked = classifyBashActivity({
+			args: { command },
+			result: { content: [{ type: "text", text: "Fast-forward\nSuccessfully rebased" }], details: {} },
+			state: "success",
+		});
+		expect(masked.map((item) => item.category)).toEqual(["run-command"]);
+	}
 
 	for (const command of ["git commit --dry-run", "git push --dry-run origin main", "gh pr create --dry-run"]) {
 		const dryRun = classifyBashActivity({

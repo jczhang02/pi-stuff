@@ -6,6 +6,12 @@ import type { PublicAgentParams } from "./product-executor.ts";
 
 type PresentationParams = Record<string, unknown>;
 const PRESENTATION_PREVIEW_CODE_UNITS = 8 * 1024;
+const AGENT_ACTION_PRESENTATION = {
+	resume: { category: "resume-agent", summary: "resumed" },
+	status: { category: "check-agent", summary: "checked" },
+	steer: { category: "steer-agent", summary: "sent" },
+	stop: { category: "stop-agent", summary: "stopped" },
+} as const;
 
 function firstText(result: AgentToolResult<Details>): string {
 	for (const entry of result.content) {
@@ -36,10 +42,7 @@ function target(params: PublicAgentParams): string {
 }
 
 function successSummary(params: PublicAgentParams): string {
-	if (params.action === "resume") return "resumed";
-	if (params.action === "steer") return "sent";
-	if (params.action === "stop") return "stopped";
-	if (params.action === "status") return "checked";
+	if (params.action) return AGENT_ACTION_PRESENTATION[params.action].summary;
 	if (params.foreground === true) return "finished";
 	const count = params.tasks?.length ?? 1;
 	return count > 1 ? `${String(count)} launched` : "launched";
@@ -49,21 +52,21 @@ function successSummary(params: PublicAgentParams): string {
 export function createAgentToolPresentation(): SuiteToolPresentation<PresentationParams, Details> {
 	return {
 		activity: {
-			categories: ["manage-agent", "run-agent", "launch-agent"],
+			categories: ["check-agent", "launch-agent", "resume-agent", "run-agent", "steer-agent", "stop-agent"],
 			classify: ({ args, result }) => {
 				const params = args as PublicAgentParams;
 				if (params.action) {
-					return singleActivity("manage-agent", {
+					return singleActivity(AGENT_ACTION_PRESENTATION[params.action].category, {
 						key: activityKey(params.id, params.action),
 						target: target(params),
 					});
 				}
 				const requestedCount = params.tasks?.length ?? 1;
-				const count =
-					params.foreground === true && result ? result.details.results.length || requestedCount : requestedCount;
+				const count = params.foreground === true && result ? result.details.results.length : requestedCount;
 				const category = params.foreground === true ? "run-agent" : "launch-agent";
 				return singleActivity(category, { count, target: target(params) });
 			},
+			summarizeIssue: (_args, result, state) => firstText(result) || state,
 		},
 		label: (params) => label(params as PublicAgentParams),
 		runningSummary: "working",
