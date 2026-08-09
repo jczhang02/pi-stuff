@@ -1317,6 +1317,64 @@ describe("reduced foreground Agent engine", () => {
 		expect(captured?.task).toContain("bounded parent");
 	});
 
+	test("accounts for replace-mode project context from the child's actual cwd", async () => {
+		const parentCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-parent-cwd-"));
+		const childCwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-child-cwd-"));
+		temporaryDirectories.push(parentCwd, childCwd);
+		fs.writeFileSync(path.join(parentCwd, "parent.jsonl"), "");
+		fs.writeFileSync(path.join(parentCwd, "AGENTS.md"), "small parent rule");
+		fs.writeFileSync(path.join(childCwd, "AGENTS.md"), `large child rule\n${"x".repeat(9_000)}`);
+		const ctx = context(
+			parentCwd,
+			[{ provider: "test", id: "large", contextWindow: 32_000, maxTokens: 4_000 }],
+			13_000,
+		);
+		(ctx as unknown as { getSystemPromptOptions: () => unknown }).getSystemPromptOptions = () => ({
+			cwd: parentCwd,
+			contextFiles: [{ path: path.join(parentCwd, "AGENTS.md"), content: "small parent rule" }],
+			skills: [],
+		});
+		let openSessionCalls = 0;
+		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+			openSessionCalls += 1;
+			return { createBranchedSession: () => path.join(parentCwd, "child.jsonl") };
+		};
+		let projectionCalls = 0;
+		let captured: { sessionFile?: string; task: string } | undefined;
+
+		const result = await executor(
+			parentCwd,
+			state(),
+			(launch) => {
+				captured = launch;
+			},
+			{
+				agent: {
+					...agent(),
+					model: "test/large",
+					systemPromptMode: "replace",
+					inheritSkills: false,
+				},
+				projectContext: async () => {
+					projectionCalls += 1;
+					return { source: "magic-context", text: "bounded parent", truncated: true };
+				},
+			},
+		).execute(
+			"replace-child-cwd-projects",
+			{ agent: "general-purpose", context: "fork", cwd: childCwd, task: "Inspect the parser" },
+			new AbortController().signal,
+			undefined,
+			ctx,
+		);
+
+		expect(result.isError).not.toBeTrue();
+		expect(openSessionCalls).toBe(0);
+		expect(projectionCalls).toBe(1);
+		expect(captured?.sessionFile).toBeUndefined();
+		expect(captured?.task).toContain("bounded parent");
+	});
+
 	test("supports one native and one projected child in the same parallel fork", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-fork-parallel-"));
 		temporaryDirectories.push(cwd);

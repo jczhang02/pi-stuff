@@ -219,6 +219,7 @@ export interface CommonBuildParams {
 	/** Preserve the original governor identity when reviving under a new runtime id. */
 	logicalSourceRunId?: string;
 	logicalChildIndex?: number;
+	childBaseExtensionPath?: string;
 }
 
 export interface AsyncParallelRunnerWorkBuildParams extends CommonBuildParams {
@@ -461,7 +462,8 @@ export function buildResolvedTask(input: {
 		subagentOnlyExtensions: agent.subagentOnlyExtensions,
 		mcpDirectTools: agent.mcpDirectTools,
 		cwd: taskCwd,
-		requireReadTool: resolvedSkills.length > 0,
+		childBaseExtensionPath: params.childBaseExtensionPath,
+		requireReadTool: agent.inheritSkills || resolvedSkills.length > 0,
 		capabilityCeiling,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 	});
@@ -507,6 +509,7 @@ export function buildResolvedTask(input: {
 		systemPromptMode: agent.systemPromptMode,
 		inheritProjectContext: agent.inheritProjectContext,
 		inheritSkills: agent.inheritSkills,
+		...(params.childBaseExtensionPath ? { childBaseExtensionPath: params.childBaseExtensionPath } : {}),
 		skills: resolvedSkills.map((skill) => skill.name),
 		...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
 		maxSubagentDepth,

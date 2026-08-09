@@ -203,7 +203,10 @@ export function stripProjectContext(prompt: string): string {
 	let rewritten = prompt;
 	const xmlStart = rewritten.lastIndexOf(PROJECT_CONTEXT_XML_START);
 	if (xmlStart !== -1) {
-		const closing = rewritten.indexOf(PROJECT_CONTEXT_XML_END, xmlStart + PROJECT_CONTEXT_XML_START.length);
+		// Project instruction files are embedded verbatim and may themselves contain
+		// the closing tag. The Host-owned wrapper is necessarily the final closing
+		// tag because it is appended after every embedded file.
+		const closing = rewritten.lastIndexOf(PROJECT_CONTEXT_XML_END);
 		if (closing !== -1) {
 			let end = closing + PROJECT_CONTEXT_XML_END.length;
 			if (rewritten[end] === "\r") end += 1;

@@ -154,6 +154,7 @@ interface RootExecutorInput {
 	readonly pi: ExtensionAPI;
 	readonly projectContext: typeof projectCurrentContext;
 	readonly state: SubagentState;
+	readonly childBaseExtensionPath?: string;
 }
 
 interface RootWatcherInput {
@@ -164,6 +165,7 @@ interface RootWatcherInput {
 
 /** Narrow seams keep the production root auditable and the host contract testable. */
 export interface ExtensionRootDependencies {
+	readonly childBaseExtensionPath?: string;
 	readonly createCurrentAgents: (state: SubagentState, options: CurrentAgentsOptions) => CurrentAgents;
 	readonly createExecutor: (input: RootExecutorInput) => RootExecutor;
 	readonly createGovernorCoordinator: (config: PiStuffAgentsConfig) => AgentExecutionCoordinatorPort;
@@ -207,7 +209,7 @@ function expandTilde(value: string): string {
 
 const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	createCurrentAgents: (state, options) => new CurrentAgents(state, options),
-	createExecutor: ({ config, pi, projectContext, state }) =>
+	createExecutor: ({ childBaseExtensionPath, config, pi, projectContext, state }) =>
 		createSubagentExecutor({
 			pi,
 			state,
@@ -218,6 +220,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 			expandTilde,
 			discoverAgents,
 			projectContext,
+			childBaseExtensionPath,
 		}),
 	createGovernorCoordinator: (config) =>
 		createDurableAgentExecutionCoordinator({
@@ -497,7 +500,13 @@ export default function registerSubagentExtension(
 	const config = deps.loadConfiguration();
 	const state = createState(config);
 	const coordinator = deps.getCoordinator(pi);
-	const executor = deps.createExecutor({ config, pi, projectContext: deps.projectContext, state });
+	const executor = deps.createExecutor({
+		config,
+		pi,
+		projectContext: deps.projectContext,
+		state,
+		childBaseExtensionPath: deps.childBaseExtensionPath,
+	});
 	const executionGovernor = deps.createGovernorCoordinator(config);
 	const tracker = deps.createTracker(pi, state);
 	const supervisor = deps.createSupervisor(pi, state);

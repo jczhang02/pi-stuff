@@ -18,6 +18,7 @@ import {
 	getArtifactsDir,
 	getProjectArtifactsDir,
 	maintainAgentArtifacts,
+	withArtifactGroupWriteClaim,
 } from "../../packages/pi-stuff-agents/src/shared/artifacts.js";
 import { DEFAULT_ARTIFACT_CONFIG, TEMP_ARTIFACTS_DIR } from "../../packages/pi-stuff-agents/src/shared/types.js";
 
@@ -426,5 +427,59 @@ describe("Agent artifact maintenance", () => {
 		const leaked = readdirSync(snapshotDirectory).filter((name) => /\.jsonl(?:\.|$)/u.test(name));
 		expect(existsSync(terminal.inputPath)).toBeFalse();
 		expect(leaked).toEqual([]);
+	});
+
+	test("does not delete an artifact group while a Suite writer owns its claim", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-writer-claim-"));
+		temporaryDirectories.push(root);
+		const tempArtifacts = join(root, "temp-artifacts");
+		mkdirSync(tempArtifacts);
+		const now = Date.now();
+		const terminal = writeArtifactGroup(tempArtifacts, "claimedgroup", "complete", now);
+
+		await withArtifactGroupWriteClaim(terminal.inputPath, async () => {
+			const report = await maintainAgentArtifacts(7, {
+				sessionsRoot: join(root, "missing-sessions"),
+				tempArtifactsDir: tempArtifacts,
+				now,
+			});
+			expect(report.filesRemoved).toBe(0);
+			expect(existsSync(terminal.inputPath)).toBeTrue();
+			expect(existsSync(terminal.metadataPath)).toBeTrue();
+		});
+	});
+
+	test("recovers malformed overflow state and sweeps stale control temporaries", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-control-recovery-"));
+		temporaryDirectories.push(root);
+		const tempArtifacts = join(root, "temp-artifacts");
+		const control = join(tempArtifacts, ".artifact-cleanup-control");
+		mkdirSync(control, { recursive: true, mode: 0o700 });
+		chmodSync(control, 0o700);
+		const now = Date.now();
+		const terminal = writeArtifactGroup(tempArtifacts, "controlstate", "complete", now);
+		const overflow = join(control, ".cleanup-snapshot.jsonl.overflow.json");
+		const staleTemporary = join(
+			control,
+			".cleanup-snapshot.jsonl.build.json.00000000-0000-0000-0000-000000000004.tmp",
+		);
+		const freshTemporary = join(control, ".cleanup-snapshot.jsonl.00000000-0000-0000-0000-000000000005.tmp");
+		writeFileSync(overflow, "{malformed");
+		writeFileSync(staleTemporary, "stale");
+		writeFileSync(freshTemporary, "fresh");
+		const oldDate = new Date(now - 2 * 60 * 60 * 1_000);
+		utimesSync(staleTemporary, oldDate, oldDate);
+
+		await maintainAgentArtifacts(7, {
+			sessionsRoot: join(root, "missing-sessions"),
+			tempArtifactsDir: tempArtifacts,
+			now,
+		});
+
+		expect(existsSync(overflow)).toBeFalse();
+		expect(existsSync(staleTemporary)).toBeFalse();
+		expect(existsSync(freshTemporary)).toBeTrue();
+		expect(existsSync(terminal.inputPath)).toBeFalse();
+		expect(existsSync(terminal.metadataPath)).toBeFalse();
 	});
 });

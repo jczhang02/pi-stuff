@@ -87,6 +87,7 @@ export interface BuildPiArgsInput {
 	systemPromptMode?: "append" | "replace";
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
+	childBaseExtensionPath?: string;
 	requireReadTool?: boolean;
 	tools?: string[];
 	extensions?: string[];
@@ -179,6 +180,7 @@ export interface ResolvePiLaunchToolPlanInput {
 	nativeSupervisor?: boolean;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	inheritedCapabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+	childBaseExtensionPath?: string;
 }
 
 export interface PiLaunchToolPlan {
@@ -198,11 +200,12 @@ export interface PiLaunchToolPlan {
 	configuredExtensions: string[];
 	extensionArgs: string[];
 	disableAmbientExtensions: boolean;
+	baseExtensionPath?: string;
 	capabilityAudit?: SubagentCapabilityAudit;
 }
 
-function childBaseExtensionPath(): string {
-	const inherited = process.env[PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV]?.trim();
+function childBaseExtensionPath(configured?: string): string {
+	const inherited = configured?.trim() || process.env[PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV]?.trim();
 	if (inherited && path.isAbsolute(inherited)) {
 		try {
 			const resolved = fs.realpathSync(inherited);
@@ -281,7 +284,8 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 	// early. Make the child extension surface deterministic instead: reload the
 	// parent Suite (or the standalone Agents package) explicitly, opt in Agent
 	// extensions, disable ambient discovery, and keep the runtime guard last.
-	const inheritedBaseExtension = input.extensions === undefined ? childBaseExtensionPath() : undefined;
+	const resolvedBaseExtension = childBaseExtensionPath(input.childBaseExtensionPath);
+	const inheritedBaseExtension = input.extensions === undefined ? resolvedBaseExtension : undefined;
 	const runtimeExtensionSet = new Set(runtimeExtensions);
 	const configuredExtensions = capabilityCeiling?.denyExtensions
 		? []
@@ -333,6 +337,7 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 		configuredExtensions,
 		extensionArgs,
 		disableAmbientExtensions,
+		baseExtensionPath: resolvedBaseExtension,
 		...(capabilityAudit ? { capabilityAudit } : {}),
 	};
 }
@@ -368,6 +373,7 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		subagentOnlyExtensions: input.subagentOnlyExtensions,
 		mcpDirectTools: input.mcpDirectTools,
 		cwd: input.cwd,
+		childBaseExtensionPath: input.childBaseExtensionPath,
 		requireReadTool: input.requireReadTool,
 		structuredOutput: input.structuredOutput !== undefined,
 		nativeSupervisor,
@@ -421,6 +427,7 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	}
 	env[MCP_DIRECT_CHILD_TOOLS_ENV] =
 		toolPlan.effectiveMcpTools.length > 0 ? JSON.stringify(toolPlan.effectiveMcpTools) : undefined;
+	env[PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV] = toolPlan.baseExtensionPath;
 	env[SUBAGENT_CHILD_ENV] = "1";
 	env[SUBAGENT_FANOUT_CHILD_ENV] = toolPlan.fanoutAuthorized ? "1" : "0";
 	const inheritedNestedRoute = Boolean(

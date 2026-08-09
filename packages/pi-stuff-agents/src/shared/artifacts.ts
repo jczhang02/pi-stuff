@@ -2,7 +2,7 @@ import { dlopen, FFIType, read } from "bun:ffi";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { tryAcquireDurableClaim } from "./durable-claim.ts";
+import { shardedDurableClaimName, tryAcquireDurableClaim } from "./durable-claim.ts";
 import { type ArtifactDirPreference, type ArtifactPaths, TEMP_ARTIFACTS_DIR } from "./types.ts";
 import { getAgentDir } from "./utils.ts";
 
@@ -26,7 +26,18 @@ const SNAPSHOT_PARTIAL_SUFFIX = ".partial";
 const SNAPSHOT_BUILD_STATE_SUFFIX = ".build.json";
 const SNAPSHOT_OVERFLOW_SUFFIX = ".overflow.json";
 const SNAPSHOT_ORPHAN_GRACE_MS = 60 * 60 * 1_000;
+const ARTIFACT_WRITE_CLAIM_ATTEMPTS = 100;
+const ARTIFACT_WRITE_CLAIM_WAIT_MS = 5;
+const ARTIFACT_WRITE_CLAIM_IDLE_MS = 2_000;
 const ARTIFACT_SUFFIXES = ["_input.md", "_output.md", "_transcript.jsonl", "_meta.json", ".jsonl"] as const;
+const cachedArtifactClaims = new Map<
+	string,
+	{
+		claim: NonNullable<ReturnType<typeof tryAcquireDurableClaim>>;
+		users: number;
+		releaseTimer?: ReturnType<typeof setTimeout>;
+	}
+>();
 
 export interface ArtifactMaintenanceReport {
 	readonly directoriesInspected: number;
@@ -97,7 +108,7 @@ export function ensureArtifactsDir(dir: string): void {
 }
 
 export function writeArtifact(filePath: string, content: string): void {
-	fs.writeFileSync(filePath, content, "utf-8");
+	withArtifactGroupWriteClaim(filePath, () => fs.writeFileSync(filePath, content, "utf-8"));
 }
 
 export function formatOutputArtifactContent(input: {
@@ -114,11 +125,15 @@ export function formatOutputArtifactContent(input: {
 }
 
 export function writeMetadata(filePath: string, metadata: object): void {
-	fs.writeFileSync(filePath, JSON.stringify(metadata, null, 2), "utf-8");
+	withArtifactGroupWriteClaim(filePath, () => fs.writeFileSync(filePath, JSON.stringify(metadata, null, 2), "utf-8"));
 }
 
 export function appendJsonl(filePath: string, line: string): void {
 	fs.appendFileSync(filePath, `${line}\n`);
+}
+
+export function appendArtifactJsonl(filePath: string, line: string): void {
+	withArtifactGroupWriteClaim(filePath, () => fs.appendFileSync(filePath, `${line}\n`));
 }
 
 function artifactBaseName(fileName: string): string | undefined {
@@ -130,6 +145,90 @@ function artifactBaseName(fileName: string): string | undefined {
 
 function artifactGroupNames(base: string): string[] {
 	return ARTIFACT_SUFFIXES.map((suffix) => `${base}${suffix}`);
+}
+
+function ensureArtifactCleanupControlDirectorySync(directory: string): string {
+	const parent = fs.lstatSync(directory);
+	const currentUid = process.getuid?.();
+	if (parent.isSymbolicLink() || !parent.isDirectory() || (currentUid !== undefined && parent.uid !== currentUid)) {
+		throw new Error("Invalid artifact directory.");
+	}
+	const control = path.join(directory, CLEANUP_CONTROL_DIRECTORY);
+	try {
+		fs.mkdirSync(control, { mode: 0o700 });
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+	}
+	const stat = fs.lstatSync(control);
+	if (stat.isSymbolicLink() || !stat.isDirectory() || (currentUid !== undefined && stat.uid !== currentUid)) {
+		throw new Error("Invalid artifact cleanup control directory.");
+	}
+	fs.chmodSync(control, 0o700);
+	return control;
+}
+
+function pauseForArtifactClaim(): void {
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ARTIFACT_WRITE_CLAIM_WAIT_MS);
+}
+
+function acquireArtifactGroupWriteClaim(control: string, claimName: string): () => void {
+	const controlStat = fs.lstatSync(control);
+	const cacheKey = `${String(controlStat.dev)}:${String(controlStat.ino)}:${claimName}`;
+	let cached = cachedArtifactClaims.get(cacheKey);
+	if (cached) {
+		if (cached.releaseTimer) clearTimeout(cached.releaseTimer);
+		cached.releaseTimer = undefined;
+		cached.users += 1;
+	} else {
+		let claim: ReturnType<typeof tryAcquireDurableClaim>;
+		for (let attempt = 0; attempt < ARTIFACT_WRITE_CLAIM_ATTEMPTS; attempt += 1) {
+			claim = tryAcquireDurableClaim(control, claimName);
+			if (claim) break;
+			pauseForArtifactClaim();
+		}
+		if (!claim) throw new Error("Timed out waiting for the Agent artifact group writer claim.");
+		cached = { claim, users: 1 };
+		cachedArtifactClaims.set(cacheKey, cached);
+	}
+	const acquired = cached;
+	let released = false;
+	return () => {
+		if (released) return;
+		released = true;
+		acquired.users -= 1;
+		if (acquired.users > 0) return;
+		acquired.releaseTimer = setTimeout(() => {
+			if (acquired.users > 0 || cachedArtifactClaims.get(cacheKey) !== acquired) return;
+			cachedArtifactClaims.delete(cacheKey);
+			acquired.claim.release();
+		}, ARTIFACT_WRITE_CLAIM_IDLE_MS);
+		acquired.releaseTimer.unref?.();
+	};
+}
+
+/** Coordinate optional artifact writers with age-based cleanup of the same group. */
+export function withArtifactGroupWriteClaim<T>(filePath: string, operation: () => T): T {
+	const base = artifactBaseName(path.basename(filePath));
+	if (!base) throw new Error(`Unknown Agent artifact path '${filePath}'.`);
+	const control = ensureArtifactCleanupControlDirectorySync(path.dirname(filePath));
+	const claimName = shardedDurableClaimName("artifact-group", base);
+	const release = acquireArtifactGroupWriteClaim(control, claimName);
+	let releaseSynchronously = true;
+	try {
+		const result = operation();
+		if (
+			result !== null &&
+			(typeof result === "object" || typeof result === "function") &&
+			"then" in result &&
+			typeof (result as { then?: unknown }).then === "function"
+		) {
+			releaseSynchronously = false;
+			return Promise.resolve(result).finally(release) as T;
+		}
+		return result;
+	} finally {
+		if (releaseSynchronously) release();
+	}
 }
 
 function orderedArtifactGroupNames(base: string): string[] {
@@ -294,11 +393,23 @@ async function writeSnapshotBuildState(target: string, state: SnapshotBuildState
 }
 
 async function snapshotOverflowIsDeferred(target: string, now: number): Promise<boolean> {
+	const overflow = snapshotOverflowPath(target);
 	try {
-		const overflow = snapshotOverflowPath(target);
 		const stat = await fs.promises.lstat(overflow);
-		if (!ownedRegularFile(stat) || stat.size > 4_096) return true;
-		const parsed = JSON.parse(await fs.promises.readFile(overflow, "utf8")) as { retryAt?: unknown };
+		if (!ownedRegularFile(stat)) return true;
+		if (stat.size > 4_096) {
+			await fs.promises.unlink(overflow);
+			return false;
+		}
+		let parsed: { retryAt?: unknown };
+		try {
+			parsed = JSON.parse(await fs.promises.readFile(overflow, "utf8")) as { retryAt?: unknown };
+		} catch {
+			// This is an owned bounded control file, so malformed crash debris can be
+			// discarded safely instead of disabling maintenance forever.
+			await fs.promises.unlink(overflow);
+			return false;
+		}
 		if (typeof parsed.retryAt === "number" && Number.isFinite(parsed.retryAt) && parsed.retryAt > now) return true;
 		await fs.promises.unlink(overflow);
 		return false;
@@ -681,17 +792,17 @@ async function writeCleanupCursor(directory: string, snapshot: string, offset: n
 	}
 }
 
-async function terminalArtifactGroup(directory: string, base: string, cutoff: number): Promise<boolean> {
+function terminalArtifactGroup(directory: string, base: string, cutoff: number): boolean {
 	try {
 		const metadataPath = path.join(directory, `${base}_meta.json`);
-		const metadataStat = await fs.promises.lstat(metadataPath);
+		const metadataStat = fs.lstatSync(metadataPath);
 		if (!ownedRegularFile(metadataStat) || metadataStat.mtimeMs >= cutoff || metadataStat.size > 64 * 1024)
 			return false;
-		const metadata = JSON.parse(await fs.promises.readFile(metadataPath, "utf8"));
+		const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
 		if (!isTerminalArtifactMetadata(metadata)) return false;
 		for (const name of artifactGroupNames(base)) {
 			try {
-				const stat = await fs.promises.lstat(path.join(directory, name));
+				const stat = fs.lstatSync(path.join(directory, name));
 				if (!ownedRegularFile(stat) || stat.mtimeMs >= cutoff) return false;
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
@@ -708,27 +819,39 @@ async function removeTerminalArtifactGroup(
 	base: string,
 	cutoff: number,
 ): Promise<{ filesRemoved: number; bytesReclaimed: number }> {
-	if (!(await terminalArtifactGroup(directory, base, cutoff))) return { filesRemoved: 0, bytesReclaimed: 0 };
+	let claim: ReturnType<typeof tryAcquireDurableClaim>;
+	try {
+		const control = await ensureArtifactCleanupControlDirectory(directory);
+		claim = tryAcquireDurableClaim(control, shardedDurableClaimName("artifact-group", base));
+	} catch {
+		return { filesRemoved: 0, bytesReclaimed: 0 };
+	}
+	if (!claim) return { filesRemoved: 0, bytesReclaimed: 0 };
 	let filesRemoved = 0;
 	let bytesReclaimed = 0;
-	// Metadata is the terminal proof, so remove it last. Every unlink is preceded
-	// by a fresh ownership/age check to fail safe if a resumed writer touched it.
-	const names = orderedArtifactGroupNames(base);
-	for (const name of names) {
-		const candidate = path.join(directory, name);
-		try {
-			const stat = await fs.promises.lstat(candidate);
-			if (!ownedRegularFile(stat) || stat.mtimeMs >= cutoff) return { filesRemoved, bytesReclaimed };
-			await fs.promises.unlink(candidate);
-			filesRemoved += 1;
-			bytesReclaimed += stat.size;
-		} catch (error) {
-			// Missing siblings are valid for disabled artifact kinds; other failures
-			// leave the remaining group intact for a later safe pass.
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") return { filesRemoved, bytesReclaimed };
+	try {
+		if (!terminalArtifactGroup(directory, base, cutoff)) return { filesRemoved, bytesReclaimed };
+		// Metadata is the terminal proof, so remove it last. The group claim excludes
+		// every Suite-owned writer for the full validation-and-unlink sequence.
+		const names = orderedArtifactGroupNames(base);
+		for (const name of names) {
+			const candidate = path.join(directory, name);
+			try {
+				const stat = fs.lstatSync(candidate);
+				if (!ownedRegularFile(stat) || stat.mtimeMs >= cutoff) return { filesRemoved, bytesReclaimed };
+				fs.unlinkSync(candidate);
+				filesRemoved += 1;
+				bytesReclaimed += stat.size;
+			} catch (error) {
+				// Missing siblings are valid for disabled artifact kinds; other failures
+				// leave the remaining group intact for a later safe pass.
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") return { filesRemoved, bytesReclaimed };
+			}
 		}
+		return { filesRemoved, bytesReclaimed };
+	} finally {
+		claim.release();
 	}
-	return { filesRemoved, bytesReclaimed };
 }
 
 async function ensureArtifactCleanupControlDirectory(directory: string): Promise<string> {
@@ -754,6 +877,31 @@ function legacyCleanupTemporaryName(name: string): boolean {
 		/^\.\.cleanup-cursor\.[0-9a-f-]{36}\.tmp$/u.test(name) ||
 		/^\.\.last-cleanup\.[0-9a-f-]{36}\.tmp$/u.test(name)
 	);
+}
+
+function cleanupControlTemporaryName(name: string): boolean {
+	return (
+		/^\.cleanup-snapshot\.jsonl(?:\.(?:build|overflow)\.json)?\.[0-9a-f-]{36}\.tmp$/u.test(name) ||
+		/^\.\.cleanup-cursor\.[0-9a-f-]{36}\.tmp$/u.test(name)
+	);
+}
+
+async function sweepCleanupControlTemporaries(controlDirectory: string, now: number, maximum = 256): Promise<void> {
+	let scanned = 0;
+	const entries = await fs.promises.opendir(controlDirectory);
+	for await (const entry of entries) {
+		if (scanned >= maximum) break;
+		scanned += 1;
+		if (!cleanupControlTemporaryName(entry.name)) continue;
+		const candidate = path.join(controlDirectory, entry.name);
+		try {
+			const stat = await fs.promises.lstat(candidate);
+			if (!ownedRegularFile(stat) || now - stat.mtimeMs < SNAPSHOT_ORPHAN_GRACE_MS) continue;
+			await fs.promises.unlink(candidate);
+		} catch {
+			// A concurrent disappearance is already clean; unsafe entries fail closed.
+		}
+	}
 }
 
 async function removeOldCleanupTemporary(directory: string, name: string, now: number): Promise<boolean> {
@@ -792,6 +940,7 @@ async function cleanArtifactDirectory(
 	let complete = false;
 	const snapshot = path.join(controlDirectory, CLEANUP_SNAPSHOT_FILE);
 	try {
+		await sweepCleanupControlTemporaries(controlDirectory, now);
 		const remaining = Math.max(0, budget.maxEntries - budget.entries);
 		const advanced = await advanceNameSnapshot(
 			directory,

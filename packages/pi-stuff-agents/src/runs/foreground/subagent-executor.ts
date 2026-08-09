@@ -3,12 +3,14 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult as CoreAgentToolResult } from "@earendil-works/pi-agent-core";
 import {
-	type BuildSystemPromptOptions,
 	type ContextEvent,
 	type ExtensionAPI,
 	type ExtensionContext,
 	estimateTokens,
 	formatSkillsForPrompt,
+	getAgentDir,
+	loadProjectContextFiles,
+	loadSkills,
 	type SessionEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
@@ -175,6 +177,7 @@ interface ExecutorDeps {
 		scope: AgentScope,
 	) => { agents: AgentConfig[]; modelScope?: import("../shared/model-scope.ts").ModelScopeConfig };
 	projectContext?: typeof projectCurrentContext;
+	childBaseExtensionPath?: string;
 	allowMutatingManagementActions?: boolean;
 	kill?: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 	engines?: Partial<ExecutorEngines>;
@@ -344,43 +347,45 @@ function inheritedLaunchPromptTokens(ctx: ExtensionContext): number {
 }
 
 function inheritedReplacementPromptTokens(
-	ctx: ExtensionContext,
 	task: Pick<RunnerAgentTask, "cwd" | "inheritProjectContext" | "inheritSkills">,
-): number {
+): { readonly tokens: number; readonly rawForkSafe: boolean } {
 	try {
-		const getOptions = (ctx as ExtensionContext & { getSystemPromptOptions?: () => unknown }).getSystemPromptOptions;
-		const value = getOptions?.call(ctx);
-		if (value && typeof value === "object" && !Array.isArray(value)) {
-			const options = value as Partial<BuildSystemPromptOptions>;
-			if (options.appendSystemPrompt !== undefined && typeof options.appendSystemPrompt !== "string") {
-				throw new Error("Invalid Host append-system-prompt surface.");
-			}
-			if (task.inheritProjectContext && options.contextFiles !== undefined && !Array.isArray(options.contextFiles)) {
-				throw new Error("Invalid Host project-context surface.");
-			}
-			if (task.inheritSkills && options.skills !== undefined && !Array.isArray(options.skills)) {
-				throw new Error("Invalid Host Skills surface.");
-			}
-			let retained = typeof options.appendSystemPrompt === "string" ? `\n\n${options.appendSystemPrompt}` : "";
-			if (task.inheritProjectContext && options.contextFiles?.length) {
+		let retained = "";
+		if (task.inheritProjectContext) {
+			const contextFiles = loadProjectContextFiles({ cwd: task.cwd, agentDir: getAgentDir() });
+			if (contextFiles.length > 0) {
 				retained += "\n\n<project_context>\n\nProject-specific instructions and guidelines:\n\n";
-				for (const contextFile of options.contextFiles) {
+				for (const contextFile of contextFiles) {
 					retained += `<project_instructions path="${contextFile.path}">\n${contextFile.content}\n</project_instructions>\n\n`;
 				}
 				retained += "</project_context>\n";
 			}
-			if (task.inheritSkills && options.skills?.length) retained += formatSkillsForPrompt(options.skills);
-			retained += `\nCurrent working directory: ${task.cwd.replace(/\\/gu, "/")}`;
-			return estimateTextTokens(retained);
 		}
+		if (task.inheritSkills) {
+			const skills = loadSkills({
+				cwd: task.cwd,
+				agentDir: getAgentDir(),
+				skillPaths: [],
+				includeDefaults: true,
+			}).skills;
+			if (skills.length > 0) retained += formatSkillsForPrompt(skills);
+		}
+		retained += `\nCurrent working directory: ${task.cwd.replace(/\\/gu, "/")}`;
+		return {
+			tokens: estimateTextTokens(retained),
+			// ExtensionContext deliberately does not expose the command-only Host
+			// construction options. When replacement mode retains any ambient
+			// resources, use a bounded projection and let the final payload gate cover
+			// package-provided resources that cannot be inspected at this seam.
+			rawForkSafe: !task.inheritProjectContext && !task.inheritSkills,
+		};
 	} catch {
-		// Fall through to a conservative prompt estimate below.
+		// Resource discovery failure must not admit an unmeasured child payload.
 	}
-	// Pi 0.83+ exposes getSystemPromptOptions() at runtime. If an older compatible
-	// Host does not, only a child that disables both retained sections can safely
-	// exclude the replaced base prompt from admission accounting.
-	if (!task.inheritProjectContext && !task.inheritSkills) return estimateTextTokens(task.cwd);
-	return inheritedLaunchPromptTokens(ctx);
+	if (!task.inheritProjectContext && !task.inheritSkills) {
+		return { tokens: estimateTextTokens(task.cwd), rawForkSafe: true };
+	}
+	return { tokens: Number.POSITIVE_INFINITY, rawForkSafe: false };
 }
 
 function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): number {
@@ -392,7 +397,8 @@ function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): numb
 			subagentOnlyExtensions: task.subagentOnlyExtensions,
 			mcpDirectTools: task.mcpDirectTools,
 			cwd: task.cwd,
-			requireReadTool: Boolean(task.skills?.length),
+			childBaseExtensionPath: task.childBaseExtensionPath,
+			requireReadTool: task.inheritSkills || Boolean(task.skills?.length),
 			capabilityCeiling: task.capabilityCeiling,
 		});
 		const requestedNames = [
@@ -507,6 +513,7 @@ function prepareLaunchModelPlan(input: {
 	configToolBudget?: ResolvedToolBudget;
 	capabilityCeiling?: ReturnType<typeof resolveCurrentSubagentCapabilityCeiling>;
 	maxSubagentDepth: number;
+	childBaseExtensionPath?: string;
 }): {
 	forkContextTokens?: number;
 	forkSourceMessages?: ContextEvent["messages"];
@@ -559,6 +566,7 @@ function prepareLaunchModelPlan(input: {
 				toolBudget: input.toolBudget,
 				configToolBudget: input.configToolBudget,
 				capabilityCeiling: input.capabilityCeiling,
+				childBaseExtensionPath: input.childBaseExtensionPath,
 			},
 			runnerCwd: input.effectiveCwd,
 			context: input.context,
@@ -567,14 +575,14 @@ function prepareLaunchModelPlan(input: {
 		});
 		if ("error" in built) throw new Error(built.error);
 		const candidates = built.task.modelCandidates ?? [];
-		const retainedHostPromptTokens =
+		const replacementPromptEstimate =
 			built.task.systemPromptMode === "replace"
-				? inheritedReplacementPromptTokens(input.ctx, built.task)
-				: launchPromptTokens;
+				? inheritedReplacementPromptTokens(built.task)
+				: { tokens: launchPromptTokens, rawForkSafe: true };
 		const taskTokens =
 			estimateTextTokens(built.task.task) +
 			estimateTextTokens(built.task.systemPrompt?.trim() ?? "") +
-			retainedHostPromptTokens +
+			replacementPromptEstimate.tokens +
 			childLaunchSurfaceTokens(input.pi, built.task);
 		fixedInputTokensByIndex[index] = taskTokens;
 		if (input.context !== "fork") {
@@ -588,6 +596,7 @@ function prepareLaunchModelPlan(input: {
 			return capacity !== undefined && taskTokens <= capacity;
 		});
 		const allCandidatesFitRaw =
+			replacementPromptEstimate.rawForkSafe &&
 			candidates.length > 0 &&
 			projectedCandidates.length === candidates.length &&
 			candidates.every((candidate) => {
@@ -842,6 +851,7 @@ function prepareLaunch(
 			configToolBudget: configTool.budget,
 			capabilityCeiling,
 			maxSubagentDepth,
+			childBaseExtensionPath: deps.childBaseExtensionPath,
 		});
 	} catch (error) {
 		return errorResult(mode, error instanceof Error ? error.message : String(error));
@@ -975,6 +985,7 @@ function commonBuild(data: PreparedLaunch, ctx: ExtensionContext, deps: Executor
 		toolBudget: data.toolBudget,
 		configToolBudget: data.configToolBudget,
 		capabilityCeiling: data.capabilityCeiling,
+		childBaseExtensionPath: deps.childBaseExtensionPath,
 	};
 }
 
@@ -1925,6 +1936,7 @@ async function resumeRun(input: {
 				interactive: input.ctx.hasUI,
 			},
 			cwd: effectiveCwd,
+			childBaseExtensionPath: input.deps.childBaseExtensionPath,
 			artifactsDir: getArtifactsDir(parentSessionFile, effectiveCwd, artifactConfig.dir),
 			artifactConfig,
 			nestedRoute,

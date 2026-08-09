@@ -46,6 +46,7 @@ export interface RunnerAgentTask {
 	systemPromptMode?: "append" | "replace";
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
+	childBaseExtensionPath?: string;
 	skills?: string[];
 	sessionFile?: string;
 	maxSubagentDepth?: number;

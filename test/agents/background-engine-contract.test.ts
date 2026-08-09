@@ -1157,6 +1157,36 @@ describe("background runner configuration", () => {
 		}
 	});
 
+	test("keeps read available when a child inherits ambient Skills without an explicit skill list", () => {
+		const root = fixtureRoot();
+		const built = buildAsyncSingleRunnerWork("run-inherited-skills", {
+			agent: "writer",
+			task: "Inspect the implementation",
+			agentConfig: agent(root, "writer", {
+				inheritSkills: true,
+				tools: ["edit"],
+			}),
+			ctx: buildContext(root),
+			cwd: root,
+			context: "fresh",
+			maxSubagentDepth: 2,
+			capabilityCeiling: {
+				version: 1,
+				allowedTools: ["edit", "read"],
+				denyExtensions: false,
+				sources: ["test"],
+			},
+		});
+
+		expect("error" in built).toBe(false);
+		if ("error" in built) throw new Error(built.error);
+		expect(built.work.mode).toBe("single");
+		if (built.work.mode !== "single") throw new Error("Expected single work");
+		expect(built.work.task.skills).toEqual([]);
+		expect(built.work.task.inheritSkills).toBeTrue();
+		expect(built.work.task.tools).toEqual(["edit"]);
+	});
+
 	test("reads the selected child from a version 2 parallel recovery collection", () => {
 		const root = fixtureRoot();
 		const built = buildAsyncParallelRunnerWork("recover-parallel", {
@@ -1818,7 +1848,7 @@ const timer = setInterval(() => {
 				task: {
 					...task(0),
 					cwd: root,
-					skills: ["review"],
+					inheritSkills: true,
 					tools: ["edit"],
 					capabilityCeiling: {
 						version: 1,
@@ -2179,6 +2209,105 @@ setInterval(() => {}, 1_000);
 		expect(registry.writers?.["0"]?.state).toBe("none");
 		expect(leaked).toEqual([]);
 	});
+
+	test("restores a frozen fork before retrying a larger model", async () => {
+		const root = fixtureRoot();
+		const writer = path.join(root, "clean-fallback-session.ts");
+		fs.writeFileSync(
+			writer,
+			`#!/usr/bin/env bun
+import * as fs from "node:fs";
+const args = Bun.argv.slice(2);
+const valueAfter = (flag) => {
+  const index = args.indexOf(flag);
+  return index >= 0 ? args[index + 1] : undefined;
+};
+const session = valueAfter("--session");
+const model = valueAfter("--model") ?? "";
+if (!session) throw new Error("missing session");
+const before = fs.readFileSync(session, "utf8");
+if (model.endsWith("model-a")) {
+  fs.appendFileSync(session, "PRIMARY_ATTEMPT_POLLUTION\\n");
+  process.stdout.write(JSON.stringify({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [],
+      errorMessage: "final child payload is above the safe input bound",
+      stopReason: "error",
+      timestamp: Date.now(),
+    },
+  }) + "\\n", () => process.exit(0));
+} else if (before.includes("PRIMARY_ATTEMPT_POLLUTION")) {
+  process.stdout.write(JSON.stringify({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [],
+      errorMessage: "fallback inherited a polluted fork session",
+      stopReason: "error",
+      timestamp: Date.now(),
+    },
+  }) + "\\n", () => process.exit(0));
+} else {
+  fs.appendFileSync(session, "FALLBACK_SUCCESS\\n");
+  process.stdout.write(JSON.stringify({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "CLEAN_FALLBACK" }],
+      stopReason: "stop",
+      timestamp: Date.now(),
+    },
+  }) + "\\n", () => process.exit(0));
+}
+`,
+			{ mode: 0o700 },
+		);
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const sessionFile = path.join(root, "fork.jsonl");
+		fs.writeFileSync(sessionFile, "BASE_SESSION\n", { mode: 0o600 });
+		const asyncDir = path.join(root, "async-clean-fallback");
+		const resultPath = path.join(asyncDir, "result.json");
+
+		await runConfiguredBackground({
+			version: 2,
+			id: "clean-fallback",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: {
+				mode: "single",
+				task: {
+					...task(0),
+					cwd: root,
+					sessionFile,
+					modelCandidates: ["test/model-a", "test/model-b"],
+				},
+			},
+		});
+
+		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
+			state: string;
+			results: Array<{ output?: string; modelAttempts?: Array<{ model?: string; success?: boolean }> }>;
+		};
+		expect(completion).toMatchObject({
+			state: "complete",
+			results: [
+				{
+					output: "CLEAN_FALLBACK",
+					modelAttempts: [
+						{ model: "test/model-a", success: false },
+						{ model: "test/model-b", success: true },
+					],
+				},
+			],
+		});
+		const finalSession = fs.readFileSync(sessionFile, "utf8");
+		expect(finalSession).toContain("BASE_SESSION");
+		expect(finalSession).toContain("FALLBACK_SUCCESS");
+		expect(finalSession).not.toContain("PRIMARY_ATTEMPT_POLLUTION");
+	}, 5_000);
 
 	test("preserves prior writer proof when fallback persistence and the next launch fail", async () => {
 		const root = fixtureRoot();

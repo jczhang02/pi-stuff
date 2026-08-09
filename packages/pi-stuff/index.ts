@@ -17,6 +17,12 @@ import piStuffWork from "@jczhang02/pi-stuff-work";
 
 type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;
 
+const CHILD_BASE_EXTENSION_PATH = fileURLToPath(import.meta.url);
+
+function registerSuiteAgents(pi: ExtensionAPI): void {
+	piStuffAgents(pi, { childBaseExtensionPath: CHILD_BASE_EXTENSION_PATH });
+}
+
 const CAPABILITIES: readonly CapabilityFactory[] = [
 	piStuffUi,
 	piStuffTools,
@@ -27,13 +33,12 @@ const CAPABILITIES: readonly CapabilityFactory[] = [
 	piStuffWeb,
 	piStuffMcp,
 	piStuffWork,
-	piStuffAgents,
+	registerSuiteAgents,
 	piStuffTodo,
 	piStuffBtw,
 ];
 
 export default async function piStuff(pi: ExtensionAPI): Promise<void> {
-	process.env["PI_STUFF_CHILD_BASE_EXTENSION_PATH"] = fileURLToPath(import.meta.url);
 	for (const capability of CAPABILITIES) {
 		await capability(pi);
 	}

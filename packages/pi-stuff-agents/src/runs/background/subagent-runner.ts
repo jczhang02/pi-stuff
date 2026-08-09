@@ -3,10 +3,17 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Message } from "@earendil-works/pi-ai";
-import { appendJsonl, formatOutputArtifactContent, getArtifactPaths } from "../../shared/artifacts.ts";
+import {
+	appendArtifactJsonl,
+	appendJsonl,
+	formatOutputArtifactContent,
+	getArtifactPaths,
+	withArtifactGroupWriteClaim,
+} from "../../shared/artifacts.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { type ChildTranscriptWriter, createChildTranscriptWriter } from "../../shared/child-transcript.ts";
 import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
@@ -968,22 +975,124 @@ function createTranscript(
 			agent: task.agent,
 			childIndex: index,
 			cwd: task.cwd,
+			artifactManaged: transcriptPath === artifactPaths?.transcriptPath,
 		}),
 		path: transcriptPath,
 		artifactPaths,
 	};
 }
 
-function writeOptionalArtifact(filePath: string, content: string): string | undefined {
+function writeOptionalArtifact(filePath: string, content: string, artifactManaged = false): string | undefined {
 	try {
 		fs.mkdirSync(path.dirname(filePath), { recursive: true });
-		fs.writeFileSync(filePath, content, "utf-8");
+		if (artifactManaged) withArtifactGroupWriteClaim(filePath, () => fs.writeFileSync(filePath, content, "utf-8"));
+		else fs.writeFileSync(filePath, content, "utf-8");
 		return undefined;
 	} catch (error) {
 		return `Failed to write optional Agent artifact '${filePath}': ${
 			error instanceof Error ? error.message : String(error)
 		}`;
 	}
+}
+
+interface SessionFallbackSnapshot {
+	restore(): void;
+	dispose(): void;
+}
+
+function syncDirectoryBestEffort(directory: string): void {
+	let descriptor: number | undefined;
+	try {
+		descriptor = fs.openSync(directory, fs.constants.O_RDONLY);
+		fs.fsyncSync(descriptor);
+	} catch {
+		// Some supported filesystems do not permit fsync on directory handles.
+	} finally {
+		if (descriptor !== undefined) fs.closeSync(descriptor);
+	}
+}
+
+function assertOwnedFallbackSession(filePath: string, stat: fs.Stats): void {
+	const currentUid = process.getuid?.();
+	if (stat.isSymbolicLink() || !stat.isFile() || (currentUid !== undefined && stat.uid !== currentUid)) {
+		throw new Error(`Fallback session '${filePath}' must be an owned regular file.`);
+	}
+}
+
+/** Freeze a fork before model attempts so every retry starts from the same branch. */
+function createSessionFallbackSnapshot(
+	sessionFile: string | undefined,
+	candidateCount: number,
+): SessionFallbackSnapshot | undefined {
+	if (!sessionFile || candidateCount < 2) return undefined;
+	const snapshotDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-fallback-"));
+	fs.chmodSync(snapshotDirectory, 0o700);
+	const snapshotPath = path.join(snapshotDirectory, "session.jsonl");
+	let existed = false;
+	try {
+		try {
+			const stat = fs.lstatSync(sessionFile);
+			assertOwnedFallbackSession(sessionFile, stat);
+			fs.copyFileSync(sessionFile, snapshotPath, fs.constants.COPYFILE_EXCL);
+			fs.chmodSync(snapshotPath, 0o600);
+			const descriptor = fs.openSync(snapshotPath, fs.constants.O_RDONLY);
+			try {
+				fs.fsyncSync(descriptor);
+			} finally {
+				fs.closeSync(descriptor);
+			}
+			existed = true;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		}
+	} catch (error) {
+		fs.rmSync(snapshotDirectory, { recursive: true, force: true });
+		throw error;
+	}
+
+	return {
+		restore() {
+			const parent = path.dirname(sessionFile);
+			if (!existed) {
+				try {
+					const stat = fs.lstatSync(sessionFile);
+					assertOwnedFallbackSession(sessionFile, stat);
+					fs.unlinkSync(sessionFile);
+					syncDirectoryBestEffort(parent);
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+				}
+				return;
+			}
+			const temporary = path.join(parent, `.${path.basename(sessionFile)}.fallback-${randomUUID()}.tmp`);
+			try {
+				fs.copyFileSync(snapshotPath, temporary, fs.constants.COPYFILE_EXCL);
+				fs.chmodSync(temporary, 0o600);
+				const descriptor = fs.openSync(temporary, fs.constants.O_RDONLY);
+				try {
+					fs.fsyncSync(descriptor);
+				} finally {
+					fs.closeSync(descriptor);
+				}
+				fs.renameSync(temporary, sessionFile);
+				syncDirectoryBestEffort(parent);
+			} finally {
+				try {
+					fs.unlinkSync(temporary);
+				} catch {
+					// Atomic rename consumed the temporary, or later maintenance can
+					// remove an orphan without replacing the primary restoration error.
+				}
+			}
+		},
+		dispose() {
+			try {
+				fs.rmSync(snapshotDirectory, { recursive: true, force: true });
+			} catch (error) {
+				console.error(`Failed to remove frozen Agent fallback session '${snapshotDirectory}':`, error);
+			}
+		},
+	};
 }
 
 function rollBackWriterSpawning(
@@ -1038,7 +1147,8 @@ function runChildProcess(input: {
 					thinking: input.task.thinking,
 					inheritProjectContext: input.task.inheritProjectContext,
 					inheritSkills: input.task.inheritSkills,
-					requireReadTool: Boolean(input.task.skills?.length),
+					childBaseExtensionPath: input.task.childBaseExtensionPath,
+					requireReadTool: input.task.inheritSkills || Boolean(input.task.skills?.length),
 					tools: input.task.tools,
 					extensions: input.task.extensions,
 					subagentOnlyExtensions: input.task.subagentOnlyExtensions,
@@ -1345,7 +1455,7 @@ function runChildProcess(input: {
 					});
 					if (input.artifactJsonlPath) {
 						try {
-							appendJsonl(input.artifactJsonlPath, line);
+							appendArtifactJsonl(input.artifactJsonlPath, line);
 						} catch {
 							// Artifact JSONL is optional.
 						}
@@ -1829,6 +1939,7 @@ async function runResolvedTask(input: {
 		const error = writeOptionalArtifact(
 			transcript.artifactPaths.inputPath,
 			`# Task for ${task.agent}\n\n${task.task}`,
+			true,
 		);
 		if (error) console.error(error);
 	}
@@ -1848,6 +1959,7 @@ async function runResolvedTask(input: {
 				null,
 				2,
 			),
+			true,
 		);
 		if (error) console.error(error);
 	}
@@ -1863,110 +1975,124 @@ async function runResolvedTask(input: {
 	const attemptedModels: string[] = [];
 	const writerProcesses: WriterProcess[] = [];
 	let final: ChildProcessResult | undefined;
-	for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
-		const candidate = candidates[candidateIndex];
-		let run: ChildProcessResult;
-		try {
-			run = await runChildProcess({
-				config,
-				task,
-				index,
-				model: candidate,
-				taskCwd: input.taskCwd,
-				sessionDir: childSessionDir,
-				outputFile,
-				transcript: transcript.writer,
-				artifactJsonlPath:
-					transcript.artifactPaths && config.artifactConfig?.includeJsonl !== false
-						? transcript.artifactPaths.jsonlPath
-						: undefined,
-				statusStep,
-				statusPath,
-				status,
-				activeControls: input.activeControls,
-				consumeScheduledStop: () => input.consumeScheduledStop(index),
-				onWriterProcess: input.onWriterProcess,
-				afterWriterSpawnBeforeBinding: input.afterWriterSpawnBeforeBinding,
-				beforeWriterCloseRecovery: input.beforeWriterCloseRecovery,
-				beforeWriterSupervisorDispositionRead: input.beforeWriterSupervisorDispositionRead,
-				writerSupervisorRuntime: input.writerSupervisorRuntime,
-			});
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			const attemptError = boundResultText(message, MAX_MODEL_ATTEMPT_ERROR_BYTES);
-			attempts.push({
-				model: candidate ?? "default",
-				success: false,
-				exitCode: 1,
-				error: attemptError,
-				usage: emptyUsage(),
-			});
-			if (candidate) attemptedModels.push(candidate);
-			final = {
-				exitCode: 1,
-				signal: null,
-				stderr: "",
-				messages: [],
-				output: "",
-				error: message,
-				usage: emptyUsage(),
-				toolCount: 0,
-				durationMs: 0,
-				model: candidate,
+	const fallbackSnapshot = createSessionFallbackSnapshot(task.sessionFile, candidates.length);
+	try {
+		for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
+			const candidate = candidates[candidateIndex];
+			let run: ChildProcessResult;
+			try {
+				run = await runChildProcess({
+					config,
+					task,
+					index,
+					model: candidate,
+					taskCwd: input.taskCwd,
+					sessionDir: childSessionDir,
+					outputFile,
+					transcript: transcript.writer,
+					artifactJsonlPath:
+						transcript.artifactPaths && config.artifactConfig?.includeJsonl !== false
+							? transcript.artifactPaths.jsonlPath
+							: undefined,
+					statusStep,
+					statusPath,
+					status,
+					activeControls: input.activeControls,
+					consumeScheduledStop: () => input.consumeScheduledStop(index),
+					onWriterProcess: input.onWriterProcess,
+					afterWriterSpawnBeforeBinding: input.afterWriterSpawnBeforeBinding,
+					beforeWriterCloseRecovery: input.beforeWriterCloseRecovery,
+					beforeWriterSupervisorDispositionRead: input.beforeWriterSupervisorDispositionRead,
+					writerSupervisorRuntime: input.writerSupervisorRuntime,
+				});
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const attemptError = boundResultText(message, MAX_MODEL_ATTEMPT_ERROR_BYTES);
+				attempts.push({
+					model: candidate ?? "default",
+					success: false,
+					exitCode: 1,
+					error: attemptError,
+					usage: emptyUsage(),
+				});
+				if (candidate) attemptedModels.push(candidate);
+				final = {
+					exitCode: 1,
+					signal: null,
+					stderr: "",
+					messages: [],
+					output: "",
+					error: message,
+					usage: emptyUsage(),
+					toolCount: 0,
+					durationMs: 0,
+					model: candidate,
+				};
+				break;
+			}
+			if (run.process) writerProcesses.push({ ...run.process, attempt: candidateIndex });
+			const detected = !run.error ? detectSubagentError(run.messages) : undefined;
+			const emptyOutput =
+				!run.error && run.exitCode === 0 && !run.output.trim() ? "Agent produced no output." : undefined;
+			const expectedManagerSignal =
+				run.process?.terminationOrigin === "manager-final-drain" ||
+				run.process?.terminationOrigin === "manager-request" ||
+				run.interrupted ||
+				run.timedOut ||
+				run.stopped;
+			const unexplainedExit = !run.error
+				? run.signal && !expectedManagerSignal
+					? `Agent process terminated by ${run.signal} without a diagnostic.`
+					: run.exitCode === null
+						? "Agent process ended without an exit code or diagnostic."
+						: run.exitCode !== 0
+							? `Agent process exited with code ${String(run.exitCode)} without a diagnostic.`
+							: undefined
+				: undefined;
+			const error =
+				run.error ??
+				(detected?.hasError ? (detected.details ?? detected.errorType) : undefined) ??
+				emptyOutput ??
+				unexplainedExit;
+			const exitCode = error && run.exitCode === 0 ? 1 : run.exitCode;
+			const attempt: ModelAttempt = {
+				model: candidate ?? run.model ?? "default",
+				success: exitCode === 0 && !error,
+				exitCode,
+				error: error ? boundResultText(error, MAX_MODEL_ATTEMPT_ERROR_BYTES) : undefined,
+				usage: run.usage,
 			};
-			break;
+			attempts.push(attempt);
+			if (candidate) attemptedModels.push(candidate);
+			final = { ...run, exitCode, error };
+			if (
+				attempt.success ||
+				run.interrupted ||
+				run.timedOut ||
+				run.stopped ||
+				run.turnBudgetExceeded ||
+				!isRetryableModelFailure(error) ||
+				candidateIndex === candidates.length - 1
+			)
+				break;
+			try {
+				fallbackSnapshot?.restore();
+			} catch (restoreError) {
+				const message = `Agent model fallback stopped because the frozen fork session could not be restored: ${
+					restoreError instanceof Error ? restoreError.message : String(restoreError)
+				}`;
+				final = { ...run, exitCode: 1, error: message };
+				break;
+			}
+			appendRecentOutput(statusStep, formatModelAttemptNote(attempt, candidates[candidateIndex + 1]));
+			try {
+				writeStatus(statusPath, status);
+			} catch (error) {
+				console.error(`Failed to persist Agent fallback status for child ${String(index)}:`, error);
+			}
 		}
-		if (run.process) writerProcesses.push({ ...run.process, attempt: candidateIndex });
-		const detected = !run.error ? detectSubagentError(run.messages) : undefined;
-		const emptyOutput =
-			!run.error && run.exitCode === 0 && !run.output.trim() ? "Agent produced no output." : undefined;
-		const expectedManagerSignal =
-			run.process?.terminationOrigin === "manager-final-drain" ||
-			run.process?.terminationOrigin === "manager-request" ||
-			run.interrupted ||
-			run.timedOut ||
-			run.stopped;
-		const unexplainedExit = !run.error
-			? run.signal && !expectedManagerSignal
-				? `Agent process terminated by ${run.signal} without a diagnostic.`
-				: run.exitCode === null
-					? "Agent process ended without an exit code or diagnostic."
-					: run.exitCode !== 0
-						? `Agent process exited with code ${String(run.exitCode)} without a diagnostic.`
-						: undefined
-			: undefined;
-		const error =
-			run.error ??
-			(detected?.hasError ? (detected.details ?? detected.errorType) : undefined) ??
-			emptyOutput ??
-			unexplainedExit;
-		const exitCode = error && run.exitCode === 0 ? 1 : run.exitCode;
-		const attempt: ModelAttempt = {
-			model: candidate ?? run.model ?? "default",
-			success: exitCode === 0 && !error,
-			exitCode,
-			error: error ? boundResultText(error, MAX_MODEL_ATTEMPT_ERROR_BYTES) : undefined,
-			usage: run.usage,
-		};
-		attempts.push(attempt);
-		if (candidate) attemptedModels.push(candidate);
-		final = { ...run, exitCode, error };
-		if (
-			attempt.success ||
-			run.interrupted ||
-			run.timedOut ||
-			run.stopped ||
-			run.turnBudgetExceeded ||
-			!isRetryableModelFailure(error) ||
-			candidateIndex === candidates.length - 1
-		)
-			break;
-		appendRecentOutput(statusStep, formatModelAttemptNote(attempt, candidates[candidateIndex + 1]));
-		try {
-			writeStatus(statusPath, status);
-		} catch (error) {
-			console.error(`Failed to persist Agent fallback status for child ${String(index)}:`, error);
-		}
+	} finally {
+		fallbackSnapshot?.dispose();
 	}
 
 	const endedAt = Date.now();
@@ -2021,6 +2147,7 @@ async function runResolvedTask(input: {
 				metadataPath:
 					config.artifactConfig?.includeMetadata === false ? undefined : transcript.artifactPaths.metadataPath,
 			}),
+			true,
 		);
 		if (error) {
 			console.error(error);
@@ -2051,6 +2178,7 @@ async function runResolvedTask(input: {
 				null,
 				2,
 			),
+			true,
 		);
 		if (error) {
 			console.error(error);
