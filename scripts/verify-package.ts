@@ -79,7 +79,6 @@ const goalLicenseSha256 = "5293e92f073f47012e723990a8605431b438757e9c6eb00c89868
 const webLicenseSha256 = "871b3c6c64e030c0647ca33543716bdae9511ae2d6a85d6f4ce63783bab52c8f";
 const workLicenseSha256 = "5b9bdcc9d1c8ff25c560200695de042b12052573cb1224af4d735fba06d30b65";
 const agentsRuntimeVersions = {
-	jiti: "2.7.0",
 	typebox: "1.3.7",
 } as const;
 const embeddedForkVersions = {

@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Stats } from "node:fs";
-import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import * as nodeFs from "node:fs/promises";
 import * as path from "node:path";
+import { type DurableClaim, tryAcquireDurableClaim } from "../shared/durable-claim.ts";
+import { readProcessStartIdentity, readSystemBootIdentity } from "../shared/process-identity.ts";
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -9,6 +10,7 @@ const LEDGER_VERSION = 1;
 const DEFAULT_LOCK_RETRY_MS = 5;
 const DEFAULT_LOCK_TIMEOUT_MS = 5_000;
 const DEFAULT_STALE_LOCK_MS = 30_000;
+const MAX_LEDGER_BYTES = 4 * 1024 * 1024;
 
 export interface SessionGovernorLimits {
 	readonly maxDepth: number;
@@ -36,7 +38,15 @@ export interface SessionAgentGovernorOptions {
 	readonly lockTimeoutMs?: number;
 	readonly staleLockMs?: number;
 	readonly isLockOwnerAlive?: (pid: number) => boolean | undefined;
+	readonly readProcessStartIdentity?: (pid: number) => string | undefined;
+	readonly readSystemBootIdentity?: () => string | undefined;
+	readonly fs?: SessionGovernorFileSystem;
 }
+
+export type SessionGovernorFileSystem = Pick<
+	typeof nodeFs,
+	"chmod" | "lstat" | "mkdir" | "readFile" | "rename" | "rm" | "stat" | "writeFile"
+>;
 
 export interface AcquireAgentRequest {
 	readonly logicalAgentId: string;
@@ -58,12 +68,22 @@ export interface AgentGovernorLease {
 	readonly ownerAgentPath: readonly string[];
 	readonly agentPath: readonly string[];
 	readonly pid: number;
+	readonly processStartIdentity?: string;
+	readonly systemBootIdentity?: string;
 	readonly asyncDir?: string;
 	readonly mode: "spawn" | "resume";
 	readonly acquiredAtMs: number;
 }
 
 export interface SessionGovernorAgentSnapshot {
+	readonly logicalAgentId: string;
+	readonly ownerAgentPath: readonly string[];
+	readonly agentPath: readonly string[];
+	readonly limits: SessionGovernorLimits;
+	readonly createdAtMs: number;
+}
+
+export interface SessionGovernorHistoricalAgent {
 	readonly logicalAgentId: string;
 	readonly ownerAgentPath: readonly string[];
 	readonly agentPath: readonly string[];
@@ -143,6 +163,7 @@ export interface RebindAgentRuntimeRequest {
 	readonly runtimeRunId?: string;
 	readonly childIndex?: number;
 	readonly pid?: number;
+	readonly processStartIdentity?: string;
 	readonly asyncDir?: string;
 }
 
@@ -202,6 +223,8 @@ interface LeaseRecord {
 	ownerAgentPath: string[];
 	agentPath: string[];
 	pid: number;
+	processStartIdentity?: string;
+	systemBootIdentity?: string;
 	asyncDir?: string;
 	mode: "spawn" | "resume";
 	acquiredAtMs: number;
@@ -220,6 +243,7 @@ interface GovernorLedger {
 interface LockHandle {
 	readonly token: string;
 	readonly lockDir: string;
+	readonly claim: DurableClaim;
 }
 
 interface TransactionResult<Value> {
@@ -237,6 +261,7 @@ interface ValidatedSpawnRequest {
 	readonly runtimeRunId: string;
 	readonly childIndex: number;
 	readonly pid: number;
+	readonly processStartIdentity?: string;
 	readonly childLimits: SessionGovernorLimitInput;
 }
 
@@ -274,8 +299,11 @@ export class SessionAgentGovernor {
 	private readonly token: () => string;
 	private readonly lockRetryMs: number;
 	private readonly lockTimeoutMs: number;
-	private readonly staleLockMs: number;
-	private readonly isLockOwnerAlive: (pid: number) => boolean | undefined;
+	private readonly readProcessStartIdentity: (pid: number) => string | undefined;
+	private readonly readSystemBootIdentity: () => string | undefined;
+	private systemBootIdentity: string | undefined;
+	private systemBootIdentityRead = false;
+	private readonly fs: SessionGovernorFileSystem;
 
 	constructor(options: SessionAgentGovernorOptions) {
 		if (!path.isAbsolute(options.rootDir)) throw new TypeError("Session governor rootDir must be absolute.");
@@ -290,8 +318,10 @@ export class SessionAgentGovernor {
 		this.token = options.token ?? randomUUID;
 		this.lockRetryMs = nonNegativeInteger("lockRetryMs", options.lockRetryMs ?? DEFAULT_LOCK_RETRY_MS);
 		this.lockTimeoutMs = positiveInteger("lockTimeoutMs", options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS);
-		this.staleLockMs = positiveInteger("staleLockMs", options.staleLockMs ?? DEFAULT_STALE_LOCK_MS);
-		this.isLockOwnerAlive = options.isLockOwnerAlive ?? processIsAlive;
+		positiveInteger("staleLockMs", options.staleLockMs ?? DEFAULT_STALE_LOCK_MS);
+		this.readProcessStartIdentity = options.readProcessStartIdentity ?? readProcessStartIdentity;
+		this.readSystemBootIdentity = options.readSystemBootIdentity ?? readSystemBootIdentity;
+		this.fs = options.fs ?? nodeFs;
 
 		const sessionKey = createHash("sha256").update(this.sessionId).digest("hex");
 		this.sessionDir = path.join(this.rootDir, sessionKey);
@@ -302,11 +332,44 @@ export class SessionAgentGovernor {
 	/** Read-only existence probe used to keep ordinary session startup at zero writes. */
 	async hasLedger(): Promise<boolean> {
 		try {
-			return (await stat(this.ledgerPath)).isFile();
+			const stat = await this.fs.lstat(this.ledgerPath);
+			if (stat.isSymbolicLink() || !stat.isFile()) {
+				throw new SessionGovernorStateError(`Session governor ledger '${this.ledgerPath}' is not a safe file.`);
+			}
+			return true;
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
 			throw error;
 		}
+	}
+
+	/**
+	 * Inspect an existing ledger without creating directories, changing modes, or
+	 * taking the current lock. Used only to classify a pre-upgrade ledger that the
+	 * new process must never write.
+	 */
+	async inspectExistingSnapshot(): Promise<SessionGovernorSnapshot | undefined> {
+		if (!(await inspectExistingPrivateDirectory(this.fs, this.rootDir))) return undefined;
+		if (!(await inspectExistingPrivateDirectory(this.fs, this.sessionDir))) return undefined;
+		let raw: string;
+		try {
+			const stat = await this.fs.lstat(this.ledgerPath);
+			const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+			if (stat.isSymbolicLink() || !stat.isFile() || stat.size > MAX_LEDGER_BYTES) {
+				throw new SessionGovernorStateError(`Session governor ledger '${this.ledgerPath}' is not a safe file.`);
+			}
+			if (currentUid !== undefined && stat.uid !== currentUid) {
+				throw new SessionGovernorStateError(
+					`Session governor ledger '${this.ledgerPath}' is not owned by the current user.`,
+				);
+			}
+			raw = await this.fs.readFile(this.ledgerPath, "utf8");
+		} catch (error) {
+			if (errorCode(error) === "ENOENT") return undefined;
+			throw error;
+		}
+		const loaded = parseLedger(raw, this.sessionId);
+		return snapshotLedger(loaded.ledger, this.resolveOwnerLimits(loaded.ledger), this.ownerAgentPath);
 	}
 
 	async snapshot(): Promise<SessionGovernorSnapshot> {
@@ -314,6 +377,69 @@ export class SessionAgentGovernor {
 			value: snapshotLedger(ledger, effectiveLimits, this.ownerAgentPath),
 			changed: false,
 		}));
+	}
+
+	/** Atomically and idempotently account for proven pre-upgrade Agent records; never imports leases. */
+	async importHistoricalAgents(records: readonly SessionGovernorHistoricalAgent[]): Promise<SessionGovernorSnapshot> {
+		if (this.ownerAgentPath.length > 0) {
+			throw new SessionGovernorStateError("Only the root Agent host may import historical governor records.");
+		}
+		const validated = records
+			.map((record): AgentRecord => {
+				const logicalAgentId = stableText("logicalAgentId", record.logicalAgentId);
+				const ownerAgentPath = record.ownerAgentPath.map((entry) => stableText("ownerAgentPath entry", entry));
+				const agentPath = record.agentPath.map((entry) => stableText("agentPath entry", entry));
+				if (!samePath(agentPath, [...ownerAgentPath, logicalAgentId])) {
+					throw new SessionGovernorStateError(`Logical Agent '${logicalAgentId}' has an invalid import path.`);
+				}
+				return {
+					logicalAgentId,
+					ownerAgentPath,
+					agentPath,
+					limits: readCompleteLimits(record.limits),
+					createdAtMs: finiteNumber("createdAtMs", record.createdAtMs),
+				};
+			})
+			.sort((left, right) => left.agentPath.length - right.agentPath.length);
+		if (new Set(validated.map(({ logicalAgentId }) => logicalAgentId)).size !== validated.length) {
+			throw new SessionGovernorStateError("Historical governor import contains duplicate logical Agent IDs.");
+		}
+
+		return this.transact((ledger, effectiveLimits) => {
+			let changed = false;
+			for (const record of validated) {
+				const existing = ledger.agents.find(({ logicalAgentId }) => logicalAgentId === record.logicalAgentId);
+				if (existing) {
+					if (
+						!samePath(existing.ownerAgentPath, record.ownerAgentPath) ||
+						!samePath(existing.agentPath, record.agentPath)
+					) {
+						throw new SessionGovernorStateError(
+							`Historical Agent '${record.logicalAgentId}' conflicts with the durable governor ledger.`,
+						);
+					}
+					continue;
+				}
+				if (record.ownerAgentPath.length > 0) {
+					const owner = ledger.agents.find((candidate) => samePath(candidate.agentPath, record.ownerAgentPath));
+					if (!owner) {
+						throw new SessionGovernorStateError(
+							`Historical Agent '${record.logicalAgentId}' has no imported owner record.`,
+						);
+					}
+				}
+				ledger.agents.push({
+					...record,
+					limits: tightenSessionGovernorLimits(ledger.limits, record.limits),
+				});
+				changed = true;
+			}
+			if (changed) ledger.total = ledger.agents.length;
+			return {
+				value: snapshotLedger(ledger, effectiveLimits, this.ownerAgentPath),
+				changed,
+			};
+		});
 	}
 
 	async acquireSpawn(request: AcquireSpawnRequest): Promise<SessionGovernorAcquireResult> {
@@ -326,13 +452,17 @@ export class SessionAgentGovernor {
 
 	/** Reserve every spawn under one ledger lock; any rejection leaves both counters unchanged. */
 	async acquireSpawnBatch(requests: readonly AcquireSpawnRequest[]): Promise<SessionGovernorBatchAcquireResult> {
+		const systemBootIdentity = this.currentSystemBootIdentity();
 		const validated = requests.map((request): ValidatedSpawnRequest => {
 			const logicalAgentId = stableText("logicalAgentId", request.logicalAgentId);
+			const pid = positiveInteger("pid", request.pid ?? this.pid);
+			const processStartIdentity = this.readProcessStartIdentity(pid);
 			return {
 				logicalAgentId,
 				runtimeRunId: stableText("runtimeRunId", request.runtimeRunId ?? logicalAgentId),
 				childIndex: nonNegativeInteger("childIndex", request.childIndex ?? 0),
-				pid: positiveInteger("pid", request.pid ?? this.pid),
+				pid,
+				...(processStartIdentity ? { processStartIdentity } : {}),
 				childLimits: validateLimitInput(request.childLimits ?? {}),
 			};
 		});
@@ -436,6 +566,8 @@ export class SessionAgentGovernor {
 					ownerAgentPath: this.ownerAgentPath,
 					agentPath,
 					pid: request.pid,
+					...(request.processStartIdentity ? { processStartIdentity: request.processStartIdentity } : {}),
+					...(systemBootIdentity ? { systemBootIdentity } : {}),
 					mode: "spawn",
 					acquiredAtMs,
 				});
@@ -468,6 +600,8 @@ export class SessionAgentGovernor {
 		const runtimeRunId = stableText("runtimeRunId", request.runtimeRunId ?? logicalAgentId);
 		const childIndex = nonNegativeInteger("childIndex", request.childIndex ?? 0);
 		const pid = positiveInteger("pid", request.pid ?? this.pid);
+		const processStartIdentity = this.readProcessStartIdentity(pid);
+		const systemBootIdentity = this.currentSystemBootIdentity();
 
 		return this.transact<SessionGovernorAcquireResult>((ledger, effectiveLimits) => {
 			const agent = ledger.agents.find((candidate) => candidate.logicalAgentId === logicalAgentId);
@@ -525,6 +659,8 @@ export class SessionAgentGovernor {
 				ownerAgentPath: agent.ownerAgentPath,
 				agentPath: agent.agentPath,
 				pid,
+				...(processStartIdentity ? { processStartIdentity } : {}),
+				...(systemBootIdentity ? { systemBootIdentity } : {}),
 				mode: "resume",
 				acquiredAtMs: this.now(),
 			});
@@ -554,6 +690,10 @@ export class SessionAgentGovernor {
 		const childIndex =
 			request.childIndex === undefined ? undefined : nonNegativeInteger("childIndex", request.childIndex);
 		const pid = request.pid === undefined ? undefined : positiveInteger("pid", request.pid);
+		const processStartIdentity =
+			request.processStartIdentity === undefined
+				? undefined
+				: stableText("processStartIdentity", request.processStartIdentity);
 		const asyncDir = request.asyncDir === undefined ? undefined : stableText("asyncDir", request.asyncDir);
 
 		return this.transact<SessionGovernorRebindResult>((ledger, effectiveLimits) => {
@@ -582,15 +722,21 @@ export class SessionAgentGovernor {
 			const nextRuntimeRunId = runtimeRunId ?? current.runtimeRunId;
 			const nextChildIndex = childIndex ?? current.childIndex;
 			const nextPid = pid ?? current.pid;
+			const nextProcessStartIdentity =
+				processStartIdentity ??
+				(pid !== undefined && pid !== current.pid ? undefined : current.processStartIdentity);
 			const nextAsyncDir = asyncDir ?? current.asyncDir;
 			const changed =
 				nextRuntimeRunId !== current.runtimeRunId ||
 				nextChildIndex !== current.childIndex ||
 				nextPid !== current.pid ||
+				nextProcessStartIdentity !== current.processStartIdentity ||
 				nextAsyncDir !== current.asyncDir;
 			current.runtimeRunId = nextRuntimeRunId;
 			current.childIndex = nextChildIndex;
 			current.pid = nextPid;
+			if (nextProcessStartIdentity === undefined) delete current.processStartIdentity;
+			else current.processStartIdentity = nextProcessStartIdentity;
 			if (nextAsyncDir !== undefined) current.asyncDir = nextAsyncDir;
 			return {
 				value: {
@@ -652,6 +798,82 @@ export class SessionAgentGovernor {
 					snapshot: snapshotLedger(ledger, effectiveLimits, this.ownerAgentPath),
 				},
 				changed: true,
+			};
+		});
+	}
+
+	/**
+	 * Roll back a spawn that failed before any Agent started. Unlike release(),
+	 * this removes the newly-created logical records and restores maxTotal. The
+	 * transaction is all-or-none so a stale caller cannot erase a newer owner.
+	 */
+	async abortSpawnBatch(leases: readonly AgentGovernorLease[]): Promise<SessionGovernorBatchReleaseResult> {
+		const validated = leases.map((lease) => {
+			if (lease.sessionId !== this.sessionId) {
+				throw new TypeError("Cannot abort an Agent spawn reservation from another session.");
+			}
+			if (lease.mode !== "spawn") throw new TypeError("Only spawn reservations can be rolled back.");
+			return {
+				logicalAgentId: stableText("logicalAgentId", lease.logicalAgentId),
+				leaseId: stableText("leaseId", lease.leaseId),
+				acquiredAtMs: lease.acquiredAtMs,
+				ownerAgentPath: lease.ownerAgentPath,
+				agentPath: lease.agentPath,
+			};
+		});
+
+		return this.transact<SessionGovernorBatchReleaseResult>((ledger, effectiveLimits) => {
+			const duplicate = firstDuplicateLogicalAgentId(validated);
+			if (duplicate) {
+				return batchReleaseFailure(
+					ledger,
+					effectiveLimits,
+					this.ownerAgentPath,
+					duplicate,
+					"duplicate_logical_agent_id",
+				);
+			}
+			for (const lease of validated) {
+				const current = ledger.leases.find((candidate) => candidate.logicalAgentId === lease.logicalAgentId);
+				if (!current) {
+					return batchReleaseFailure(
+						ledger,
+						effectiveLimits,
+						this.ownerAgentPath,
+						lease.logicalAgentId,
+						"already_released",
+					);
+				}
+				const agent = ledger.agents.find((candidate) => candidate.logicalAgentId === lease.logicalAgentId);
+				if (
+					current.leaseId !== lease.leaseId ||
+					current.mode !== "spawn" ||
+					!agent ||
+					agent.createdAtMs !== lease.acquiredAtMs ||
+					!samePath(agent.ownerAgentPath, lease.ownerAgentPath) ||
+					!samePath(agent.agentPath, lease.agentPath)
+				) {
+					return batchReleaseFailure(
+						ledger,
+						effectiveLimits,
+						this.ownerAgentPath,
+						lease.logicalAgentId,
+						"ownership_changed",
+					);
+				}
+			}
+
+			const abortedIds = new Set(validated.map(({ logicalAgentId }) => logicalAgentId));
+			ledger.leases = ledger.leases.filter((lease) => !abortedIds.has(lease.logicalAgentId));
+			ledger.agents = ledger.agents.filter((agent) => !abortedIds.has(agent.logicalAgentId));
+			ledger.total = Math.max(0, ledger.total - abortedIds.size);
+			return {
+				value: {
+					released: true,
+					releasedCount: abortedIds.size,
+					snapshot: snapshotLedger(ledger, effectiveLimits, this.ownerAgentPath),
+				},
+				changed: abortedIds.size > 0,
 			};
 		});
 	}
@@ -720,14 +942,27 @@ export class SessionAgentGovernor {
 	async reconcile(
 		isPidAlive: (pid: number, lease: AgentGovernorLease) => boolean | undefined,
 	): Promise<SessionGovernorReconcileResult> {
+		// Process inspection may include bounded TERM/KILL waits. Snapshot under
+		// the ledger lock, perform every OS operation after releasing it, then
+		// conditionally remove only the same lease IDs under a fresh lock.
+		const observed = await this.transact((ledger, effectiveLimits) => ({
+			value: {
+				leases: ledger.leases.map((record) => toPublicLease(this.sessionId, record)),
+				snapshot: snapshotLedger(ledger, effectiveLimits, this.ownerAgentPath),
+			},
+			changed: false,
+		}));
+		const reclaimable = observed.leases.filter((lease) => isPidAlive(lease.pid, lease) === false);
+		if (reclaimable.length === 0) {
+			return { reclaimedLogicalAgentIds: [], snapshot: observed.snapshot };
+		}
+		const expectedLeaseIds = new Map(reclaimable.map((lease) => [lease.logicalAgentId, lease.leaseId]));
 		return this.transact((ledger, effectiveLimits) => {
 			const reclaimed = ledger.leases
-				.filter((record) => isPidAlive(record.pid, toPublicLease(this.sessionId, record)) === false)
+				.filter((record) => expectedLeaseIds.get(record.logicalAgentId) === record.leaseId)
 				.map((record) => record.logicalAgentId);
-			if (reclaimed.length > 0) {
-				const reclaimedSet = new Set(reclaimed);
-				ledger.leases = ledger.leases.filter((record) => !reclaimedSet.has(record.logicalAgentId));
-			}
+			const reclaimedSet = new Set(reclaimed);
+			ledger.leases = ledger.leases.filter((record) => !reclaimedSet.has(record.logicalAgentId));
 			return {
 				value: {
 					reclaimedLogicalAgentIds: reclaimed,
@@ -741,8 +976,8 @@ export class SessionAgentGovernor {
 	private async transact<Value>(
 		operation: (ledger: GovernorLedger, effectiveLimits: SessionGovernorLimits) => TransactionResult<Value>,
 	): Promise<Value> {
-		await ensurePrivateDirectory(this.rootDir);
-		await ensurePrivateDirectory(this.sessionDir);
+		await ensurePrivateDirectory(this.fs, this.rootDir);
+		await ensurePrivateDirectory(this.fs, this.sessionDir);
 		const lock = await this.acquireLock();
 		try {
 			const loaded = await this.readLedger();
@@ -761,7 +996,11 @@ export class SessionAgentGovernor {
 			}
 			return result.value;
 		} finally {
-			await this.releaseLock(lock);
+			try {
+				await this.releaseLock(lock);
+			} catch (error) {
+				console.error(`Failed to release committed session governor lock '${lock.lockDir}':`, error);
+			}
 		}
 	}
 
@@ -788,105 +1027,87 @@ export class SessionAgentGovernor {
 		return tightenSessionGovernorLimits(owner.limits, this.configuredLimits);
 	}
 
+	private currentSystemBootIdentity(): string | undefined {
+		if (!this.systemBootIdentityRead) {
+			this.systemBootIdentity = safeSystemBootIdentity(this.readSystemBootIdentity);
+			this.systemBootIdentityRead = true;
+		}
+		return this.systemBootIdentity;
+	}
+
 	private async readLedger(): Promise<ReadLedgerResult | undefined> {
 		let raw: string;
 		try {
-			raw = await readFile(this.ledgerPath, "utf8");
+			const stat = await this.fs.lstat(this.ledgerPath);
+			if (stat.isSymbolicLink() || !stat.isFile()) {
+				throw new SessionGovernorStateError(`Session governor ledger '${this.ledgerPath}' is not a safe file.`);
+			}
+			if (stat.size > MAX_LEDGER_BYTES) {
+				throw new SessionGovernorStateError(
+					`Session governor ledger '${this.ledgerPath}' exceeds the ${MAX_LEDGER_BYTES}-byte safety limit.`,
+				);
+			}
+			const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+			if (currentUid !== undefined && stat.uid !== currentUid) {
+				throw new SessionGovernorStateError(
+					`Session governor ledger '${this.ledgerPath}' is not owned by the current user.`,
+				);
+			}
+			raw = await this.fs.readFile(this.ledgerPath, "utf8");
 		} catch (error) {
 			if (errorCode(error) === "ENOENT") return undefined;
 			throw error;
 		}
-		await chmod(this.ledgerPath, PRIVATE_FILE_MODE);
+		await this.fs.chmod(this.ledgerPath, PRIVATE_FILE_MODE);
 		return parseLedger(raw, this.sessionId);
 	}
 
 	private async writeLedger(ledger: GovernorLedger): Promise<void> {
 		const tempPath = path.join(this.sessionDir, `.ledger.${this.pid}.${this.token()}.tmp`);
 		try {
-			await writeFile(tempPath, `${JSON.stringify(ledger, null, 2)}\n`, {
+			await this.fs.writeFile(tempPath, `${JSON.stringify(ledger, null, 2)}\n`, {
 				encoding: "utf8",
 				flag: "wx",
 				mode: PRIVATE_FILE_MODE,
 			});
-			await chmod(tempPath, PRIVATE_FILE_MODE);
-			await rename(tempPath, this.ledgerPath);
-			await chmod(this.ledgerPath, PRIVATE_FILE_MODE);
+			await this.fs.chmod(tempPath, PRIVATE_FILE_MODE);
+			await this.fs.rename(tempPath, this.ledgerPath);
 		} finally {
-			await rm(tempPath, { force: true });
+			try {
+				await this.fs.rm(tempPath, { force: true });
+			} catch (error) {
+				console.error(`Failed to remove session governor temporary ledger '${tempPath}':`, error);
+			}
+		}
+		try {
+			await this.fs.chmod(this.ledgerPath, PRIVATE_FILE_MODE);
+		} catch (error) {
+			// The temp file already had 0600 before the atomic rename. This is a
+			// post-commit hardening retry, not a reason to report the transaction failed.
+			console.error(`Failed to reassert private mode on committed governor ledger '${this.ledgerPath}':`, error);
 		}
 	}
 
 	private async acquireLock(): Promise<LockHandle> {
 		const startedAt = Date.now();
-		const token = this.token();
 		while (Date.now() - startedAt < this.lockTimeoutMs) {
 			try {
-				await mkdir(this.lockDir, { mode: PRIVATE_DIRECTORY_MODE });
-				await chmod(this.lockDir, PRIVATE_DIRECTORY_MODE);
-				try {
-					await writeFile(
-						path.join(this.lockDir, "owner.json"),
-						JSON.stringify({ token, pid: this.pid, acquiredAtMs: Date.now() }),
-						{ encoding: "utf8", flag: "wx", mode: PRIVATE_FILE_MODE },
-					);
-					return { token, lockDir: this.lockDir };
-				} catch (error) {
-					await rm(this.lockDir, { recursive: true, force: true });
-					throw error;
-				}
+				const claim = tryAcquireDurableClaim(this.sessionDir, "ledger");
+				if (claim) return { token: claim.token, lockDir: claim.directory, claim };
 			} catch (error) {
-				if (errorCode(error) !== "EEXIST") throw error;
-				if (await this.reclaimStaleLock(token)) continue;
-				await sleep(this.lockRetryMs);
+				throw new SessionGovernorStateError(
+					`Failed to acquire the session governor ledger lock '${this.lockDir}': ${String(error)}`,
+				);
 			}
+			await sleep(this.lockRetryMs);
 		}
 		throw new SessionGovernorStateError(
 			`Timed out acquiring the session governor ledger lock for session '${this.sessionId}'.`,
 		);
 	}
 
-	private async reclaimStaleLock(token: string): Promise<boolean> {
-		let lockStat: Stats;
-		try {
-			lockStat = await stat(this.lockDir);
-		} catch (error) {
-			return errorCode(error) === "ENOENT";
-		}
-		if (Date.now() - lockStat.mtimeMs < this.staleLockMs) return false;
-
-		let ownerPid: number | undefined;
-		try {
-			const owner = JSON.parse(await readFile(path.join(this.lockDir, "owner.json"), "utf8")) as unknown;
-			if (
-				isRecord(owner) &&
-				typeof owner["pid"] === "number" &&
-				Number.isInteger(owner["pid"]) &&
-				owner["pid"] > 0
-			) {
-				ownerPid = owner["pid"];
-			}
-		} catch {}
-		if (ownerPid !== undefined && this.isLockOwnerAlive(ownerPid) !== false) return false;
-
-		const stalePath = `${this.lockDir}.stale-${token}`;
-		try {
-			await rename(this.lockDir, stalePath);
-			await rm(stalePath, { recursive: true, force: true });
-			return true;
-		} catch (error) {
-			if (errorCode(error) === "ENOENT" || errorCode(error) === "EEXIST") return false;
-			throw error;
-		}
-	}
-
 	private async releaseLock(lock: LockHandle): Promise<void> {
-		try {
-			const owner = JSON.parse(await readFile(path.join(lock.lockDir, "owner.json"), "utf8")) as unknown;
-			if (!isRecord(owner) || owner["token"] !== lock.token) return;
-		} catch {
-			return;
-		}
-		await rm(lock.lockDir, { recursive: true, force: true });
+		lock.claim.release();
 	}
 }
 
@@ -1001,6 +1222,8 @@ function toLeaseRecord(lease: AgentGovernorLease): LeaseRecord {
 		ownerAgentPath: [...lease.ownerAgentPath],
 		agentPath: [...lease.agentPath],
 		pid: lease.pid,
+		...(lease.processStartIdentity ? { processStartIdentity: lease.processStartIdentity } : {}),
+		...(lease.systemBootIdentity ? { systemBootIdentity: lease.systemBootIdentity } : {}),
 		...(lease.asyncDir ? { asyncDir: lease.asyncDir } : {}),
 		mode: lease.mode,
 		acquiredAtMs: lease.acquiredAtMs,
@@ -1125,6 +1348,12 @@ function parseLeaseRecord(value: unknown): LeaseRecord {
 		ownerAgentPath: readAgentPath(value["ownerAgentPath"]),
 		agentPath: readAgentPath(value["agentPath"]),
 		pid: positiveInteger("pid", value["pid"]),
+		...(value["processStartIdentity"] === undefined
+			? {}
+			: { processStartIdentity: stableText("processStartIdentity", value["processStartIdentity"]) }),
+		...(value["systemBootIdentity"] === undefined
+			? {}
+			: { systemBootIdentity: stableText("systemBootIdentity", value["systemBootIdentity"]) }),
 		...(value["asyncDir"] === undefined ? {} : { asyncDir: stableText("asyncDir", value["asyncDir"]) }),
 		mode,
 		acquiredAtMs: finiteNumber("acquiredAtMs", value["acquiredAtMs"]),
@@ -1134,6 +1363,15 @@ function parseLeaseRecord(value: unknown): LeaseRecord {
 function readAgentPath(value: unknown): string[] {
 	if (!Array.isArray(value)) throw new SessionGovernorStateError("Session governor Agent path is invalid.");
 	return value.map((entry) => stableText("Agent path entry", entry));
+}
+
+function safeSystemBootIdentity(readIdentity: () => string | undefined): string | undefined {
+	try {
+		const identity = readIdentity();
+		return identity === undefined ? undefined : stableText("systemBootIdentity", identity);
+	} catch {
+		return undefined;
+	}
 }
 
 function readCompleteLimits(value: unknown): SessionGovernorLimits {
@@ -1205,21 +1443,38 @@ function errorCode(error: unknown): string | undefined {
 	return isRecord(error) && typeof error["code"] === "string" ? error["code"] : undefined;
 }
 
-function processIsAlive(pid: number): boolean | undefined {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		const code = errorCode(error);
-		if (code === "ESRCH") return false;
-		if (code === "EPERM") return true;
-		return undefined;
+async function ensurePrivateDirectory(fs: SessionGovernorFileSystem, directory: string): Promise<void> {
+	await fs.mkdir(directory, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+	const stat = await fs.lstat(directory);
+	if (stat.isSymbolicLink() || !stat.isDirectory()) {
+		throw new SessionGovernorStateError(`Session governor directory '${directory}' is not a safe real directory.`);
 	}
+	const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+	if (currentUid !== undefined && stat.uid !== currentUid) {
+		throw new SessionGovernorStateError(
+			`Session governor directory '${directory}' is not owned by the current user.`,
+		);
+	}
+	await fs.chmod(directory, PRIVATE_DIRECTORY_MODE);
 }
 
-async function ensurePrivateDirectory(directory: string): Promise<void> {
-	await mkdir(directory, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
-	await chmod(directory, PRIVATE_DIRECTORY_MODE);
+async function inspectExistingPrivateDirectory(fs: SessionGovernorFileSystem, directory: string): Promise<boolean> {
+	try {
+		const stat = await fs.lstat(directory);
+		const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+		if (stat.isSymbolicLink() || !stat.isDirectory()) {
+			throw new SessionGovernorStateError(`Session governor directory '${directory}' is not a safe real directory.`);
+		}
+		if (currentUid !== undefined && stat.uid !== currentUid) {
+			throw new SessionGovernorStateError(
+				`Session governor directory '${directory}' is not owned by the current user.`,
+			);
+		}
+		return true;
+	} catch (error) {
+		if (errorCode(error) === "ENOENT") return false;
+		throw error;
+	}
 }
 
 async function sleep(delayMs: number): Promise<void> {

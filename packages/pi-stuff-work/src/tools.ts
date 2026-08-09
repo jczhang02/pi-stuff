@@ -190,6 +190,7 @@ export function registerWorkTools(
 		async execute(_toolCallId, params) {
 			try {
 				const runtime = requireRuntime(runtimeRef);
+				await runtime.prepare();
 				if (params.action === "list") return textResult(listText(runtime), { action: "list", status: "listed" });
 				const taskId = requireTaskId(params.task_id, params.action);
 				if (params.action === "output") {
@@ -224,8 +225,10 @@ export function registerWorkTools(
 		executionMode: "parallel",
 		async execute(toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
-				const started = startMonitor(
-					requireRuntime(runtimeRef),
+				const runtime = requireRuntime(runtimeRef);
+				await runtime.prepare();
+				const started = await startMonitor(
+					runtime,
 					{
 						...(params.description ? { description: params.description } : {}),
 						...(params.failure_text ? { failureText: params.failure_text } : {}),

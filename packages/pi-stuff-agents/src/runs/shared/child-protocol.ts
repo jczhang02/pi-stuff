@@ -8,6 +8,9 @@ export const MAX_CHILD_STDERR_BYTES = 128 * 1024;
 const MAX_PROTOCOL_DIAGNOSTIC_BYTES = 4096;
 
 export function formatProtocolOutputLimit(limit: ProtocolOutputLimit): string {
+	if (limit.scope === "aggregate") {
+		return `${limit.code}: child ${limit.stream} exceeded the ${limit.limitBytes}-byte aggregate protocol limit (observed at least ${limit.observedBytes} bytes).`;
+	}
 	return `${limit.code}: child ${limit.stream} line exceeded ${limit.limitBytes} bytes (observed at least ${limit.observedBytes} bytes without a newline).`;
 }
 
@@ -65,6 +68,7 @@ export function createBoundedLineReader(options: {
 			options.onLimit({
 				code: "protocol_output_limit",
 				stream: options.stream ?? "stdout",
+				scope: "line",
 				limitBytes: maxPendingLineBytes,
 				observedBytes,
 				diagnosticPrefix: prefix.toString("utf8"),

@@ -7,12 +7,12 @@ import { registerNativeSupervisorClient } from "../../intercom/native-supervisor
 import type { JsonSchemaObject, ResolvedToolBudget } from "../../shared/types.ts";
 import { resolveWatchPath } from "../../shared/utils.ts";
 import {
-	consumeSteerRequestsFromDir,
+	processSteerRequestsFromDir,
+	readSteerAckAt,
 	type SteerRequest,
 	steerAckPathFromDir,
 	writeSteerAckAt,
 	writeSteerCapabilityAt,
-	writeSteerRequestToDir,
 } from "../background/control-channel.ts";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
@@ -33,6 +33,7 @@ import {
 	type ChildToolDiagnostic,
 	MCP_DIRECT_CHILD_TOOLS_ENV,
 	REQUIRED_CHILD_TOOLS_ENV,
+	writeChildLaunchDiagnostic,
 	writeChildToolDiagnostic,
 } from "./tool-availability.ts";
 import {
@@ -80,10 +81,55 @@ const PARENT_ONLY_CUSTOM_MESSAGE_TYPES = new Set([
 	"subagent-control",
 	"subagent-control-notice",
 ]);
-const SUBAGENT_ORCHESTRATION_SKILL_NAME_PATTERN = /<name>\s*pi-subagents\s*<\/name>/;
-const PROJECT_CONTEXT_HEADER = "\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n";
-const SKILLS_HEADER = "\n\nThe following skills provide specialized instructions for specific tasks.";
-const DATE_HEADER = "\nCurrent date:";
+const CHILD_FINAL_PAYLOAD_RESERVE_RATIO = 0.25;
+
+function finalProviderPayloadCapacity(ctx: {
+	model?: { contextWindow?: number; maxTokens?: number };
+}): number | undefined {
+	const contextWindow = ctx.model?.contextWindow;
+	const maxTokens = ctx.model?.maxTokens;
+	if (
+		typeof contextWindow !== "number" ||
+		!Number.isFinite(contextWindow) ||
+		contextWindow <= 0 ||
+		typeof maxTokens !== "number" ||
+		!Number.isFinite(maxTokens) ||
+		maxTokens <= 0
+	)
+		return undefined;
+	return Math.max(0, Math.floor(contextWindow - maxTokens - contextWindow * CHILD_FINAL_PAYLOAD_RESERVE_RATIO));
+}
+
+export function validateFinalProviderPayload(
+	payload: unknown,
+	model: { contextWindow?: number; maxTokens?: number } | undefined,
+): { ok: true } | { ok: false; message: string } {
+	const capacity = finalProviderPayloadCapacity({ model });
+	if (capacity === undefined) return { ok: true };
+	let serialized: string | undefined;
+	try {
+		serialized = JSON.stringify(payload);
+	} catch {
+		// A provider request that cannot be measured must not bypass the final gate.
+	}
+	if (serialized === undefined) {
+		return {
+			ok: false,
+			message:
+				"Agent launch stopped before the provider request because the final child payload could not be measured safely.",
+		};
+	}
+	const bytes = Buffer.byteLength(serialized, "utf8");
+	if (bytes <= capacity) return { ok: true };
+	return {
+		ok: false,
+		message: `Agent launch stopped before the provider request: the final child payload is ${bytes.toLocaleString(
+			"en-US",
+		)} UTF-8 bytes, above the safe ${capacity.toLocaleString(
+			"en-US",
+		)}-byte input bound for this model. Reduce the delegated context, Tools, or child extensions, or choose a model with a larger context window.`,
+	};
+}
 
 function readBooleanEnv(name: string): boolean | undefined {
 	const value = process.env[name];
@@ -127,63 +173,14 @@ function refreshChildToolDiagnostic(pi: ExtensionAPI): ChildToolDiagnostic | und
 	);
 }
 
-function findSectionEnd(prompt: string, startIndex: number, nextHeaders: string[]): number {
-	let endIndex = prompt.length;
-	for (const header of nextHeaders) {
-		const index = prompt.indexOf(header, startIndex);
-		if (index !== -1 && index < endIndex) {
-			endIndex = index;
-		}
-	}
-	return endIndex;
-}
-
-export function stripProjectContext(prompt: string): string {
-	const startIndex = prompt.indexOf(PROJECT_CONTEXT_HEADER);
-	if (startIndex === -1) return prompt;
-	const endIndex = findSectionEnd(prompt, startIndex + PROJECT_CONTEXT_HEADER.length, [SKILLS_HEADER, DATE_HEADER]);
-	return `${prompt.slice(0, startIndex)}${prompt.slice(endIndex)}`;
-}
-
-export function stripInheritedSkills(prompt: string): string {
-	const startIndex = prompt.indexOf(SKILLS_HEADER);
-	if (startIndex === -1) return prompt;
-	const endIndex = findSectionEnd(prompt, startIndex + SKILLS_HEADER.length, [DATE_HEADER]);
-	return `${prompt.slice(0, startIndex)}${prompt.slice(endIndex)}`;
-}
-
-export function stripSubagentOrchestrationSkill(prompt: string): string {
-	return prompt
-		.replace(/\n{0,2}<skill\s+name=["']pi-subagents["'][^>]*>[\s\S]*?<\/skill>\n{0,2}/g, "\n\n")
-		.replace(/[ \t]*<skill>\s*[\s\S]*?<\/skill>\s*/g, (block) =>
-			SUBAGENT_ORCHESTRATION_SKILL_NAME_PATTERN.test(block) ? "" : block,
-		);
-}
-
-function stripChildBoundaryInstructions(prompt: string): string {
-	let rewritten = prompt;
-	for (const boundary of [CHILD_SUBAGENT_BOUNDARY_INSTRUCTIONS, CHILD_FANOUT_BOUNDARY_INSTRUCTIONS]) {
-		rewritten = rewritten.split(boundary).join("");
-	}
-	return rewritten.replace(/^(?:[ \t]*\r?\n)+/, "");
-}
-
-export function rewriteSubagentPrompt(
-	prompt: string,
-	options: { inheritProjectContext: boolean; inheritSkills: boolean; fanoutChild?: boolean },
-): string {
-	let rewritten = prompt;
-	if (!options.inheritProjectContext) {
-		rewritten = stripProjectContext(rewritten);
-	}
-	if (!options.inheritSkills) {
-		rewritten = stripInheritedSkills(rewritten);
-	}
-	rewritten = stripSubagentOrchestrationSkill(rewritten);
-	rewritten = stripChildBoundaryInstructions(rewritten);
+export function rewriteSubagentPrompt(prompt: string, options: { fanoutChild?: boolean }): string {
 	const boundary = options.fanoutChild ? CHILD_FANOUT_BOUNDARY_INSTRUCTIONS : CHILD_SUBAGENT_BOUNDARY_INSTRUCTIONS;
 	const structured = process.env[STRUCTURED_OUTPUT_CAPTURE_ENV] ? `\n\n${STRUCTURED_OUTPUT_INSTRUCTIONS}` : "";
-	return `${boundary}${structured}\n\n${rewritten}`;
+	// Pi concatenates custom prompts and Runtime Resources without an escaped
+	// structural boundary. Treat the resulting prompt as opaque: child capability
+	// ceilings and resolved Skill selection enforce orchestration policy without
+	// deleting user-authored text that happens to resemble a Host resource block.
+	return `${boundary}${structured}\n\n${prompt}`;
 }
 
 function isParentOnlySubagentMessage(message: unknown): boolean {
@@ -235,16 +232,30 @@ export function stripParentOnlySubagentMessages(messages: unknown[]): unknown[] 
 }
 
 export function formatSteerMessage(request: SteerRequest): string {
+	const marker = Buffer.from(request.id, "utf-8").toString("base64url");
 	return [
+		`<pi-stuff-steer request="${marker}">`,
 		"Mid-run steering from the parent orchestrator:",
 		"",
 		request.message,
 		"",
 		"Incorporate this guidance at the next safe point. Do not restart the task unless the guidance explicitly asks you to.",
+		"</pi-stuff-steer>",
 	].join("\n");
 }
 
-function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget | undefined): void {
+function steerRequestIdFromInput(text: string): string | undefined {
+	const encoded = /<pi-stuff-steer request="([A-Za-z0-9_-]{1,342})">/u.exec(text)?.[1];
+	if (!encoded) return undefined;
+	try {
+		const requestId = Buffer.from(encoded, "base64url").toString("utf-8");
+		return /^\S{1,256}$/u.test(requestId) ? requestId : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget | undefined): void {
 	if (!budget) return;
 	let toolCount = 0;
 	let softNudged = false;
@@ -260,7 +271,12 @@ function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget | undef
 		if (budget.soft !== undefined && toolCount >= budget.soft && !softNudged) {
 			softNudged = true;
 			try {
-				sendUserMessage?.(toolBudgetSoftNudge(budget, toolCount), { deliverAs: "steer" });
+				const dispatched = sendUserMessage?.(toolBudgetSoftNudge(budget, toolCount), { deliverAs: "steer" });
+				if (dispatched && typeof (dispatched as PromiseLike<unknown>).then === "function") {
+					void Promise.resolve(dispatched).catch(() => {
+						// Budget nudges are advisory; blocking below remains authoritative.
+					});
+				}
 			} catch {
 				// Budget nudges are advisory; blocking below remains authoritative.
 			}
@@ -281,22 +297,70 @@ export function registerSteeringInbox(
 	const sendUserMessage = (pi as { sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => unknown })
 		.sendUserMessage;
 	const childIndex = Number(process.env[SUBAGENT_CHILD_INDEX_ENV]);
-	const pending = new Map<string, string[]>();
+	type PendingDelivery = { request: SteerRequest; complete: () => boolean };
+	type PendingAck = {
+		request: SteerRequest;
+		state: "delivered" | "failed";
+		message: string;
+		complete: () => boolean;
+	};
+	const pendingById = new Map<string, PendingDelivery>();
+	const pendingAcks = new Map<string, PendingAck>();
 	let disposed = false;
 	let flushing = false;
 	let started = false;
 	const canSteer = typeof sendUserMessage === "function";
 	let watcher: fs.FSWatcher | undefined;
 	let interval: NodeJS.Timeout | undefined;
-	const acknowledge = (request: SteerRequest, state: "delivered" | "failed", message: string): void => {
-		if (!ackDir || !Number.isInteger(childIndex) || childIndex < 0) return;
-		writeSteerAckAt(steerAckPathFromDir(ackDir, request.id), {
-			requestId: request.id,
-			index: childIndex,
-			ts: Date.now(),
-			state,
-			message,
-		});
+	let lastRuntimeError = "";
+	let lastRuntimeErrorAt = 0;
+	const reportRuntimeError = (context: string, error: unknown): void => {
+		const message = `${context}: ${error instanceof Error ? error.message : String(error)}`;
+		const now = Date.now();
+		if (message === lastRuntimeError && now - lastRuntimeErrorAt < 30_000) return;
+		lastRuntimeError = message;
+		lastRuntimeErrorAt = now;
+		console.error(`[pi-stuff-agents] ${message}`);
+	};
+	const acknowledge = (
+		request: SteerRequest,
+		state: "delivered" | "failed",
+		message: string,
+		complete: () => boolean,
+	): boolean => {
+		if (!ackDir || !Number.isInteger(childIndex) || childIndex < 0) {
+			pendingAcks.delete(request.id);
+			complete();
+			return true;
+		}
+		try {
+			writeSteerAckAt(steerAckPathFromDir(ackDir, request.id), {
+				requestId: request.id,
+				index: childIndex,
+				ts: Date.now(),
+				state,
+				message,
+			});
+			pendingAcks.delete(request.id);
+			complete();
+			return true;
+		} catch (error) {
+			pendingAcks.set(request.id, { request, state, message, complete });
+			reportRuntimeError(`Failed to persist steering acknowledgement '${request.id}'`, error);
+			return false;
+		}
+	};
+	const retryAcknowledgements = (): void => {
+		for (const { request, state, message, complete } of [...pendingAcks.values()])
+			acknowledge(request, state, message, complete);
+	};
+	const forgetPendingDelivery = (delivery: PendingDelivery): void => {
+		pendingById.delete(delivery.request.id);
+	};
+	const existingAcknowledgement = (request: SteerRequest): boolean => {
+		if (!ackDir || !Number.isInteger(childIndex) || childIndex < 0) return false;
+		const ack = readSteerAckAt(steerAckPathFromDir(ackDir, request.id));
+		return ack?.requestId === request.id && ack.index === childIndex;
 	};
 	const publishCapability = (): void => {
 		if (!capabilityPath || !Number.isInteger(childIndex) || childIndex < 0) return;
@@ -311,46 +375,66 @@ export function registerSteeringInbox(
 		if (disposed || flushing) return;
 		flushing = true;
 		try {
-			const requests = consumeSteerRequestsFromDir(steerInbox);
-			for (const [index, request] of requests.entries()) {
+			retryAcknowledgements();
+			processSteerRequestsFromDir(steerInbox, (request, complete) => {
+				if (existingAcknowledgement(request)) {
+					complete();
+					return "retain";
+				}
+				if (pendingById.has(request.id) || pendingAcks.has(request.id)) return "retain";
 				if (!canSteer || typeof sendUserMessage !== "function") {
-					acknowledge(request, "failed", "Child Pi session does not support sendUserMessage steering.");
-					continue;
+					acknowledge(request, "failed", "Child Pi session does not support sendUserMessage steering.", complete);
+					return "retain";
 				}
 				const formatted = formatSteerMessage(request);
-				const ids = pending.get(formatted) ?? [];
-				ids.push(request.id);
-				pending.set(formatted, ids);
+				const delivery: PendingDelivery = { request, complete };
+				pendingById.set(request.id, delivery);
 				try {
-					sendUserMessage(formatted, { deliverAs: "steer" });
+					const dispatched = sendUserMessage(formatted, { deliverAs: "steer" });
+					if (dispatched && typeof (dispatched as PromiseLike<unknown>).then === "function") {
+						void Promise.resolve(dispatched).catch((error) => {
+							if (pendingById.get(request.id) !== delivery) return;
+							forgetPendingDelivery(delivery);
+							acknowledge(request, "failed", error instanceof Error ? error.message : String(error), complete);
+						});
+					}
 				} catch (error) {
-					ids.pop();
-					if (ids.length === 0) pending.delete(formatted);
-					acknowledge(request, "failed", error instanceof Error ? error.message : String(error));
-					for (const retry of requests.slice(index + 1)) writeSteerRequestToDir(steerInbox, retry);
-					break;
+					forgetPendingDelivery(delivery);
+					acknowledge(request, "failed", error instanceof Error ? error.message : String(error), complete);
 				}
-			}
+				return "retain";
+			});
 		} finally {
 			flushing = false;
+		}
+	};
+	const safeFlush = (): void => {
+		try {
+			flush();
+		} catch (error) {
+			reportRuntimeError("Failed to process child steering inbox", error);
 		}
 	};
 	const onInput = (event: unknown): undefined => {
 		if (disposed || !event || typeof event !== "object") return undefined;
 		const input = event as { source?: unknown; streamingBehavior?: unknown; text?: unknown; content?: unknown };
-		if (input.source !== "extension" || input.streamingBehavior !== "steer") return undefined;
+		// Pi reports `steer` only when the Agent is still streaming. If the same
+		// accepted extension message arrives just after the stream ends, it starts a
+		// normal turn and the field is undefined. Exact pending-text correlation makes
+		// both forms authoritative while still rejecting queued follow-ups.
+		if (
+			input.source !== "extension" ||
+			(input.streamingBehavior !== undefined && input.streamingBehavior !== "steer")
+		)
+			return undefined;
 		const text =
 			typeof input.text === "string" ? input.text : typeof input.content === "string" ? input.content : undefined;
 		if (!text) return undefined;
-		const ids = pending.get(text);
-		const requestId = ids?.shift();
-		if (!requestId) return undefined;
-		if (ids?.length === 0) pending.delete(text);
-		acknowledge(
-			{ type: "steer", id: requestId, ts: Date.now(), message: text },
-			"delivered",
-			"Pi accepted the correlated steering input.",
-		);
+		const requestId = steerRequestIdFromInput(text);
+		const delivery = requestId ? pendingById.get(requestId) : undefined;
+		if (!delivery) return undefined;
+		forgetPendingDelivery(delivery);
+		acknowledge(delivery.request, "delivered", "Pi accepted the correlated steering input.", delivery.complete);
 		return undefined;
 	};
 	const start = (): void => {
@@ -363,24 +447,24 @@ export function registerSteeringInbox(
 		}
 		started = true;
 		try {
-			watcher = (deps.watch ?? fs.watch)(resolveWatchPath(steerInbox, deps.nativeRealpath), () => flush());
+			watcher = (deps.watch ?? fs.watch)(resolveWatchPath(steerInbox, deps.nativeRealpath), safeFlush);
 			watcher.on("error", () => {});
 		} catch {
 			watcher = undefined;
 		}
-		interval = setInterval(flush, 250);
+		interval = setInterval(safeFlush, 250);
 		interval.unref?.();
 	};
 	const activate = (): undefined => {
 		start();
-		flush();
+		safeFlush();
 		return undefined;
 	};
 
 	const onRuntimeEvent = pi.on as unknown as (event: string, handler: (event: unknown) => unknown) => void;
 	// Register input before the watcher so an accepted extension input cannot race request dispatch.
 	onRuntimeEvent("input", onInput);
-	onRuntimeEvent("session_start", () => start());
+	onRuntimeEvent("session_start", activate);
 	for (const eventName of [
 		"message_start",
 		"message_update",
@@ -392,6 +476,10 @@ export function registerSteeringInbox(
 		onRuntimeEvent(eventName, activate);
 	}
 	onRuntimeEvent("session_shutdown", () => {
+		// A correlated input may be accepted immediately before shutdown. Give any
+		// acknowledgement whose first durable write failed one final synchronous
+		// retry before disabling the inbox timer.
+		retryAcknowledgements();
 		disposed = true;
 		try {
 			watcher?.close();
@@ -421,10 +509,22 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	};
 	pi.on("session_start", () => {
 		registerNativeSupervisorClientOnce();
-		if (readRequiredChildTools()?.includes("intercom")) registerNativeSupervisorFallbackOnce();
 	});
 	pi.on("agent_start", () => {
 		refreshChildToolDiagnostic(pi);
+	});
+	pi.on("before_provider_request", (event, ctx) => {
+		const result = validateFinalProviderPayload(event.payload, ctx.model);
+		if (result.ok) return;
+		const diagnosticPath = process.env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV]?.trim();
+		if (diagnosticPath) {
+			try {
+				writeChildLaunchDiagnostic(diagnosticPath, result.message);
+			} catch (error) {
+				console.error("Failed to persist the child launch budget diagnostic:", error);
+			}
+		}
+		ctx.abort();
 	});
 	const structuredOutputPath = process.env[STRUCTURED_OUTPUT_CAPTURE_ENV];
 	const structuredSchemaPath = process.env[STRUCTURED_OUTPUT_SCHEMA_ENV];
@@ -464,7 +564,7 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		registerNativeSupervisorFallbackOnce();
+		if (readRequiredChildTools()?.includes("intercom")) registerNativeSupervisorFallbackOnce();
 		const intercomSessionName = process.env[SUBAGENT_INTERCOM_SESSION_NAME_ENV]?.trim();
 		if (intercomSessionName && typeof pi.setSessionName === "function") {
 			pi.setSessionName(intercomSessionName);
@@ -476,8 +576,6 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		let rewritten = event.systemPrompt;
 		if (inheritProjectContext !== undefined || inheritSkills !== undefined || fanoutChild !== undefined) {
 			rewritten = rewriteSubagentPrompt(event.systemPrompt, {
-				inheritProjectContext: inheritProjectContext ?? true,
-				inheritSkills: inheritSkills ?? true,
 				fanoutChild: fanoutChild === true,
 			});
 		}

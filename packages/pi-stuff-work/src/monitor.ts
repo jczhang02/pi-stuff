@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { sanitizeTerminalText } from "./output.js";
+import { sanitizeTerminalText, utf8SafePrefix, utf8SafeTail } from "./output.js";
 import type {
 	BackgroundMonitorActivity,
 	BackgroundWorkOutcome,
@@ -87,9 +87,16 @@ function readSlice(path: string, fromByte: number): string {
 		const buffer = Buffer.alloc(length);
 		readSync(fd, buffer, 0, length, start);
 		const prefix = start > fromByte ? "…[earlier monitored content omitted]\n" : "";
-		return sanitizeTerminalText(`${prefix}${buffer.toString("utf-8")}`).trimEnd();
+		return sanitizeTerminalText(`${prefix}${utf8SafeTail(buffer, length).toString("utf-8")}`).trimEnd();
 	} finally {
-		if (fd !== undefined) closeSync(fd);
+		if (fd !== undefined) {
+			try {
+				closeSync(fd);
+			} catch {
+				// Closing an observation descriptor is best effort after the slice
+				// has already been read; it must not change Monitor evidence.
+			}
+		}
 	}
 }
 
@@ -118,7 +125,7 @@ async function readResponseBody(response: Response): Promise<string> {
 		combined.set(chunk, offset);
 		offset += chunk.byteLength;
 	}
-	return new TextDecoder().decode(combined);
+	return new TextDecoder().decode(utf8SafePrefix(Buffer.from(combined)));
 }
 
 class PollingMonitor implements BackgroundMonitorActivity {
@@ -154,7 +161,7 @@ class PollingMonitor implements BackgroundMonitorActivity {
 
 	readOutput(maxBytes = MAX_EVIDENCE_BYTES): string {
 		const buffer = Buffer.from(this.evidence, "utf-8");
-		return buffer.subarray(Math.max(0, buffer.length - Math.max(1, maxBytes))).toString("utf-8");
+		return utf8SafeTail(buffer, maxBytes).toString("utf-8");
 	}
 
 	snapshot(): BackgroundWorkSnapshot {
@@ -270,11 +277,11 @@ class PollingMonitor implements BackgroundMonitorActivity {
 	}
 }
 
-export function startMonitor(
+export async function startMonitor(
 	runtime: BackgroundWorkRuntime,
 	input: MonitorInput,
 	ctx: ExtensionContext,
-): StartedMonitor {
+): Promise<StartedMonitor> {
 	const timeoutSeconds = boundedSeconds(input.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS, "Monitor timeout", 86_400);
 	const title = titleFor(input);
 	if (!input.target.trim()) throw new Error("Monitor target is empty");
@@ -284,7 +291,7 @@ export function startMonitor(
 			throw new Error("Monitor HTTP target must use http or https");
 	}
 	if (input.source === "command") {
-		const started = runtime.startCommandMonitor(
+		const started = await runtime.startCommandMonitor(
 			{
 				command: input.target,
 				...(input.description ? { description: input.description } : {}),
@@ -295,7 +302,7 @@ export function startMonitor(
 			},
 			ctx,
 		);
-		return { id: started.id, outputPath: started.outputPath, title };
+		return { id: started.id, ...(started.outputPath ? { outputPath: started.outputPath } : {}), title };
 	}
 	const intervalSeconds = boundedSeconds(input.intervalSeconds, DEFAULT_INTERVAL_SECONDS, "Monitor interval", 60);
 	const id = runtime.newMonitorId();

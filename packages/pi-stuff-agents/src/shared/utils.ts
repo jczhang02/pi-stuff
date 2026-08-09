@@ -7,6 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import { formatToolCall } from "./formatters.ts";
+import { assertPrivateDirectory, readBoundedOwnedFileSnapshot } from "./private-directory.ts";
 import type {
 	AgentProgress,
 	AsyncStatus,
@@ -100,7 +101,11 @@ export function getAgentDir(): string {
 	return configured || path.join(os.homedir(), getConfigDirName(), "agent");
 }
 
-const statusCache = new Map<string, { mtime: number; ctime: number; size: number; ino: number; status: AsyncStatus }>();
+const statusCache = new Map<
+	string,
+	{ mtime: number; ctime: number; size: number; ino: number; dev: number; status: AsyncStatus }
+>();
+export const MAX_ASYNC_STATUS_FILE_BYTES = 8 * 1024 * 1024;
 
 function getErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -126,51 +131,48 @@ function isNotFoundError(error: unknown): boolean {
 export function readStatus(asyncDir: string): AsyncStatus | null {
 	const statusPath = path.join(asyncDir, "status.json");
 
-	let stat: fs.Stats;
+	let snapshot: ReturnType<typeof readBoundedOwnedFileSnapshot>;
 	try {
-		stat = fs.statSync(statusPath);
+		assertPrivateDirectory(asyncDir);
+		if (fs.realpathSync(asyncDir) !== path.resolve(asyncDir))
+			throw new Error(`Async run directory '${asyncDir}' contains a redirected path component.`);
+		snapshot = readBoundedOwnedFileSnapshot(statusPath, MAX_ASYNC_STATUS_FILE_BYTES);
 	} catch (error) {
 		if (isNotFoundError(error)) return null;
 		throw new Error(`Failed to inspect async status file '${statusPath}': ${getErrorMessage(error)}`, {
 			cause: error instanceof Error ? error : undefined,
 		});
 	}
-
 	const cached = statusCache.get(statusPath);
 	if (
 		cached &&
-		cached.mtime === stat.mtimeMs &&
-		cached.ctime === stat.ctimeMs &&
-		cached.size === stat.size &&
-		cached.ino === stat.ino
+		cached.mtime === snapshot.mtimeMs &&
+		cached.ctime === snapshot.ctimeMs &&
+		cached.size === snapshot.size &&
+		cached.ino === snapshot.ino &&
+		cached.dev === snapshot.dev
 	) {
 		return cached.status;
 	}
 
-	let content: string;
-	try {
-		content = fs.readFileSync(statusPath, "utf-8");
-	} catch (error) {
-		if (isNotFoundError(error)) return null;
-		throw new Error(`Failed to read async status file '${statusPath}': ${getErrorMessage(error)}`, {
-			cause: error instanceof Error ? error : undefined,
-		});
-	}
-
 	let status: AsyncStatus;
 	try {
-		status = JSON.parse(content) as AsyncStatus;
+		status = JSON.parse(snapshot.text) as AsyncStatus;
 	} catch (error) {
 		throw new Error(`Failed to parse async status file '${statusPath}': ${getErrorMessage(error)}`, {
 			cause: error instanceof Error ? error : undefined,
 		});
 	}
+	if (!status || typeof status !== "object" || Array.isArray(status) || status.runId !== path.basename(asyncDir)) {
+		throw new Error(`Async status file '${statusPath}' runId must exactly match its run directory.`);
+	}
 
 	statusCache.set(statusPath, {
-		mtime: stat.mtimeMs,
-		ctime: stat.ctimeMs,
-		size: stat.size,
-		ino: stat.ino,
+		mtime: snapshot.mtimeMs,
+		ctime: snapshot.ctimeMs,
+		size: snapshot.size,
+		ino: snapshot.ino,
+		dev: snapshot.dev,
 		status,
 	});
 	if (statusCache.size > 50) {
@@ -227,18 +229,32 @@ export function getFinalOutput(messages: Message[]): string {
 	const validTextParts: string[] = [];
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
-		if (msg.role !== "assistant") continue;
+		if (!msg || typeof msg !== "object" || msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
 		const hasAssistantError =
 			("errorMessage" in msg && typeof msg.errorMessage === "string" && msg.errorMessage.length > 0) ||
 			("stopReason" in msg && msg.stopReason === "error");
 		if (hasAssistantError) continue;
 		const messageText = msg.content
-			.filter((part) => part.type === "text" && part.text.trim().length > 0)
+			.filter(
+				(part) =>
+					part !== null &&
+					typeof part === "object" &&
+					part.type === "text" &&
+					typeof part.text === "string" &&
+					part.text.trim().length > 0,
+			)
 			.map((part) => (part.type === "text" ? part.text : ""))
 			.join("\n");
 		for (let j = msg.content.length - 1; j >= 0; j--) {
 			const part = msg.content[j];
-			if (part.type !== "text" || part.text.trim().length === 0) continue;
+			if (
+				!part ||
+				typeof part !== "object" ||
+				part.type !== "text" ||
+				typeof part.text !== "string" ||
+				part.text.trim().length === 0
+			)
+				continue;
 			validTextParts.push(part.text);
 			if (/```acceptance[-_]report\s*\n[\s\S]*?```/i.test(part.text)) return messageText;
 			for (const match of part.text.matchAll(/```(?:json|jsonc|json5)\s*\n([\s\S]*?)```/gi)) {
@@ -269,10 +285,18 @@ export function getDisplayItems(messages: Message[] | undefined): DisplayItem[] 
 	if (!messages || messages.length === 0) return [];
 	const items: DisplayItem[] = [];
 	for (const msg of messages) {
-		if (msg.role === "assistant") {
+		if (msg && typeof msg === "object" && msg.role === "assistant" && Array.isArray(msg.content)) {
 			for (const part of msg.content) {
-				if (part.type === "text") items.push({ type: "text", text: part.text });
-				else if (part.type === "toolCall") items.push({ type: "tool", name: part.name, args: part.arguments });
+				if (!part || typeof part !== "object") continue;
+				if (part.type === "text" && typeof part.text === "string") items.push({ type: "text", text: part.text });
+				else if (
+					part.type === "toolCall" &&
+					typeof part.name === "string" &&
+					part.arguments !== null &&
+					typeof part.arguments === "object" &&
+					!Array.isArray(part.arguments)
+				)
+					items.push({ type: "tool", name: part.name, args: part.arguments });
 			}
 		}
 	}
@@ -421,12 +445,15 @@ export function boundStreamedToolCalls(
 }
 
 export function hasEmptyTerminalAssistantResponse(messages: Message[]): boolean {
-	const lastAssistant = messages.findLast((message) => message.role === "assistant");
+	const lastAssistant = messages.findLast(
+		(message) => message !== null && typeof message === "object" && message.role === "assistant",
+	);
 	return (
-		lastAssistant?.role === "assistant" &&
+		lastAssistant !== undefined &&
+		lastAssistant.role === "assistant" &&
 		Array.isArray(lastAssistant.content) &&
 		lastAssistant.content.length === 0 &&
-		lastAssistant.usage.output === 0
+		(!lastAssistant.usage || typeof lastAssistant.usage !== "object" || lastAssistant.usage.output === 0)
 	);
 }
 
@@ -437,11 +464,17 @@ export function detectSubagentError(messages: Message[]): ErrorInfo {
 	let lastAssistantTextIndex = -1;
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
-		if (msg.role === "assistant") {
+		if (msg && typeof msg === "object" && msg.role === "assistant") {
 			const hasText =
 				Array.isArray(msg.content) &&
 				msg.content.some(
-					(c) => c.type === "text" && "text" in c && typeof c.text === "string" && c.text.trim().length > 0,
+					(c) =>
+						c !== null &&
+						typeof c === "object" &&
+						c.type === "text" &&
+						"text" in c &&
+						typeof c.text === "string" &&
+						c.text.trim().length > 0,
 				);
 			if (hasText) {
 				lastAssistantTextIndex = i;
@@ -454,14 +487,16 @@ export function detectSubagentError(messages: Message[]): ErrorInfo {
 
 	for (let i = messages.length - 1; i >= scanStart; i--) {
 		const msg = messages[i];
-		if (msg.role !== "toolResult") continue;
+		if (!msg || typeof msg !== "object" || msg.role !== "toolResult" || !Array.isArray(msg.content)) continue;
 		const toolName = "toolName" in msg && typeof msg.toolName === "string" ? msg.toolName : undefined;
 		const isError = "isError" in msg && msg.isError === true;
 
 		if (!isError) continue;
 
-		const text = msg.content.find((c) => c.type === "text");
-		const details = text && "text" in text ? text.text : undefined;
+		const text = msg.content.find(
+			(c) => c !== null && typeof c === "object" && c.type === "text" && typeof c.text === "string",
+		);
+		const details = text && "text" in text && typeof text.text === "string" ? text.text : undefined;
 		const exitMatch = details?.match(/exit(?:ed)?\s*(?:with\s*)?(?:code|status)?\s*[:\s]?\s*(\d+)/i);
 		return {
 			hasError: true,

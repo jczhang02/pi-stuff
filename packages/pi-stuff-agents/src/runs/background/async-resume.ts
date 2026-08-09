@@ -1,13 +1,17 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentConfig } from "../../agents/agents.ts";
+import { readBoundedOwnedFile, validateOwnedRegularFile } from "../../shared/private-directory.ts";
+import { type SessionCompatibilityScope, sessionArtifactMatches } from "../../shared/session-identity.ts";
 import { ASYNC_DIR, type AsyncStatus, RESULTS_DIR } from "../../shared/types.ts";
+import { readStatus } from "../../shared/utils.ts";
 import {
 	intersectSubagentCapabilityCeilings,
 	parseSubagentCapabilityCeiling,
 	type ResolvedSubagentCapabilityCeiling,
 } from "../shared/capability-ceiling.ts";
 import type { ContextMode } from "../shared/context-mode.ts";
+import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../shared/model-fallback.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
 import { resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
 import type { BackgroundRecoveryDescriptor } from "./async-execution.ts";
@@ -35,7 +39,11 @@ export interface AsyncResumeDeps {
 export interface AsyncResumeOptions {
 	requireSessionFile?: boolean;
 	sessionId?: string;
+	sessionScope?: SessionCompatibilityScope;
 }
+
+const MAX_RECOVERY_DESCRIPTOR_BYTES = 2 * 1024 * 1024;
+const MAX_ASYNC_RESULT_BYTES = 32 * 1024 * 1024;
 
 export type AsyncResumeTarget = {
 	kind: "live" | "revive";
@@ -71,6 +79,9 @@ interface AsyncResultFile {
 	results?: Array<{
 		agent?: string;
 		success?: boolean;
+		state?: string;
+		interrupted?: boolean;
+		stopped?: boolean;
 		sessionFile?: string;
 		intercomTarget?: string;
 		model?: string;
@@ -145,8 +156,19 @@ function validateResultFile(value: unknown, resultPath: string): AsyncResultFile
 			const success = child.success;
 			if (success !== undefined && typeof success !== "boolean")
 				throw new Error(`Invalid async result file '${resultPath}': results[${index}].success must be a boolean.`);
+			const interrupted = child.interrupted;
+			if (interrupted !== undefined && typeof interrupted !== "boolean") {
+				throw new Error(
+					`Invalid async result file '${resultPath}': results[${index}].interrupted must be a boolean.`,
+				);
+			}
+			const stopped = child.stopped;
+			if (stopped !== undefined && typeof stopped !== "boolean") {
+				throw new Error(`Invalid async result file '${resultPath}': results[${index}].stopped must be a boolean.`);
+			}
 			return {
 				agent,
+				state: validateOptionalString(child, "state", resultPath, `results[${index}].state`),
 				sessionFile,
 				intercomTarget,
 				model,
@@ -154,6 +176,8 @@ function validateResultFile(value: unknown, resultPath: string): AsyncResultFile
 				launchContractDigest,
 				...(capabilityCeiling ? { capabilityCeiling } : {}),
 				...(typeof success === "boolean" ? { success } : {}),
+				...(typeof interrupted === "boolean" ? { interrupted } : {}),
+				...(typeof stopped === "boolean" ? { stopped } : {}),
 			};
 		});
 	}
@@ -188,7 +212,7 @@ function validateResultFile(value: unknown, resultPath: string): AsyncResultFile
 function readResultFile(resultPath: string): AsyncResultFile {
 	let raw: string;
 	try {
-		raw = fs.readFileSync(resultPath, "utf-8");
+		raw = readBoundedOwnedFile(resultPath, MAX_ASYNC_RESULT_BYTES);
 	} catch (error) {
 		throw new Error(`Failed to read async result file '${resultPath}': ${getErrorMessage(error)}`, {
 			cause: error instanceof Error ? error : undefined,
@@ -223,11 +247,35 @@ function assertInsideRoot(root: string, target: string, label: string): void {
 	throw new Error(`${label} must be inside ${rootPath}.`);
 }
 
+function isNotFoundError(error: unknown): boolean {
+	return typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+function isSafeDirectEntry(root: string, target: string, kind: "directory" | "file"): boolean {
+	assertInsideRoot(root, target, kind === "directory" ? "Async run directory" : "Async result file");
+	let stat: fs.Stats;
+	try {
+		stat = fs.lstatSync(target);
+	} catch (error) {
+		if (isNotFoundError(error)) return false;
+		throw error;
+	}
+	if (stat.isSymbolicLink() || (kind === "directory" ? !stat.isDirectory() : !stat.isFile())) return false;
+	const canonicalRoot = fs.realpathSync(root);
+	const canonicalTarget = fs.realpathSync(target);
+	return path.dirname(canonicalTarget) === canonicalRoot;
+}
+
 function prefixedRunIds(dir: string, prefix: string, suffix = ""): string[] {
 	if (!fs.existsSync(dir)) return [];
 	return fs
 		.readdirSync(dir)
-		.filter((entry) => entry.startsWith(prefix) && (!suffix || entry.endsWith(suffix)))
+		.filter(
+			(entry) =>
+				entry.startsWith(prefix) &&
+				(!suffix || entry.endsWith(suffix)) &&
+				isSafeDirectEntry(dir, path.join(dir, entry), suffix ? "file" : "directory"),
+		)
 		.map((entry) => (suffix ? entry.slice(0, -suffix.length) : entry))
 		.sort();
 }
@@ -235,13 +283,14 @@ function prefixedRunIds(dir: string, prefix: string, suffix = ""): string[] {
 function exactResultPath(resultsDir: string, runId: string): string | null {
 	const resultPath = path.join(resultsDir, `${runId}.json`);
 	assertInsideRoot(resultsDir, resultPath, "Async result file");
-	return fs.existsSync(resultPath) ? resultPath : null;
+	return isSafeDirectEntry(resultsDir, resultPath, "file") ? resultPath : null;
 }
 
 export function findAsyncRunPrefixMatches(
 	prefix: string,
 	asyncDirRoot: string,
 	resultsDir: string,
+	session?: string | SessionCompatibilityScope,
 ): Array<{ id: string; location: AsyncRunLocation }> {
 	const requestedId = assertRunId(prefix, "id");
 	if (!requestedId) return [];
@@ -250,17 +299,42 @@ export function findAsyncRunPrefixMatches(
 	const matchingIds = [
 		...new Set([...prefixedRunIds(asyncRoot, requestedId), ...prefixedRunIds(resultRoot, requestedId, ".json")]),
 	].sort();
-	return matchingIds.map((id) => {
+	return matchingIds.flatMap((id) => {
 		const asyncDir = path.join(asyncRoot, id);
 		assertInsideRoot(asyncRoot, asyncDir, "Async run directory");
-		return {
-			id,
-			location: {
-				asyncDir: fs.existsSync(asyncDir) ? asyncDir : null,
-				resultPath: exactResultPath(resultRoot, id),
-				resolvedId: id,
-			},
+		const location = {
+			asyncDir: isSafeDirectEntry(asyncRoot, asyncDir, "directory") ? asyncDir : null,
+			resultPath: exactResultPath(resultRoot, id),
+			resolvedId: id,
 		};
+		if (session !== undefined) {
+			let storedSessionId: string | undefined;
+			try {
+				storedSessionId = location.asyncDir ? readStatus(location.asyncDir)?.sessionId : undefined;
+			} catch {
+				// A malformed candidate outside the active session cannot make a valid
+				// current-session prefix ambiguous.
+			}
+			if (storedSessionId === undefined && location.resultPath) {
+				try {
+					storedSessionId = readResultFile(location.resultPath).sessionId;
+				} catch {
+					// Conservatively exclude unreadable or unowned candidates.
+				}
+			}
+			if (
+				typeof session === "string"
+					? storedSessionId !== session
+					: !sessionArtifactMatches(session, storedSessionId, id)
+			)
+				return [];
+		}
+		return [
+			{
+				id,
+				location,
+			},
+		];
 	});
 }
 
@@ -275,6 +349,9 @@ export function resolveAsyncRunLocation(
 	if (params.dir) {
 		const asyncDir = path.resolve(params.dir);
 		assertInsideRoot(asyncRoot, asyncDir, "Async run directory");
+		if (!isSafeDirectEntry(asyncRoot, asyncDir, "directory")) {
+			throw new Error(`Async run directory '${asyncDir}' is not a safe direct child of ${asyncRoot}.`);
+		}
 		const resolvedId = requestedId ?? path.basename(asyncDir);
 		if (requestedId && requestedId !== path.basename(asyncDir)) {
 			throw new Error(`Async run id '${requestedId}' does not match directory '${path.basename(asyncDir)}'.`);
@@ -286,9 +363,10 @@ export function resolveAsyncRunLocation(
 	const directAsyncDir = path.join(asyncRoot, requestedId);
 	assertInsideRoot(asyncRoot, directAsyncDir, "Async run directory");
 	const directResultPath = exactResultPath(resultRoot, requestedId);
-	if (fs.existsSync(directAsyncDir) || directResultPath) {
+	const directAsyncExists = isSafeDirectEntry(asyncRoot, directAsyncDir, "directory");
+	if (directAsyncExists || directResultPath) {
 		return {
-			asyncDir: fs.existsSync(directAsyncDir) ? directAsyncDir : null,
+			asyncDir: directAsyncExists ? directAsyncDir : null,
 			resultPath: directResultPath,
 			resolvedId: requestedId,
 		};
@@ -361,7 +439,7 @@ function validateStatusForResume(status: AsyncStatus | null, source: string): vo
 
 function parseRecoveryJson(descriptorPath: string): unknown {
 	try {
-		return JSON.parse(fs.readFileSync(descriptorPath, "utf-8"));
+		return JSON.parse(readBoundedOwnedFile(descriptorPath, MAX_RECOVERY_DESCRIPTOR_BYTES));
 	} catch (error) {
 		throw new Error(`Failed to parse async recovery descriptor '${descriptorPath}': ${getErrorMessage(error)}`, {
 			cause: error instanceof Error ? error : undefined,
@@ -459,6 +537,11 @@ function validateV2RecoveryDescriptor(value: unknown, descriptorPath: string): B
 				`Invalid async recovery descriptor '${descriptorPath}': ${field} must contain non-empty strings.`,
 			);
 		}
+	}
+	if (Array.isArray(parsed.fallbackModels) && parsed.fallbackModels.length >= MAX_MODEL_CANDIDATES_PER_CHILD) {
+		throw new Error(
+			`Invalid async recovery descriptor '${descriptorPath}': fallbackModels must contain fewer than ${MAX_MODEL_CANDIDATES_PER_CHILD} entries.`,
+		);
 	}
 	if (parsed.systemPrompt !== undefined && typeof parsed.systemPrompt !== "string") {
 		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': systemPrompt must be a string.`);
@@ -711,6 +794,11 @@ export function readAsyncRecoveryDescriptor(
 				`Invalid async recovery descriptor '${descriptorPath}': ${field} must contain non-empty strings.`,
 			);
 	}
+	if (Array.isArray(parsed.fallbackModels) && parsed.fallbackModels.length >= MAX_MODEL_CANDIDATES_PER_CHILD) {
+		throw new Error(
+			`Invalid async recovery descriptor '${descriptorPath}': fallbackModels must contain fewer than ${MAX_MODEL_CANDIDATES_PER_CHILD} entries.`,
+		);
+	}
 	if (parsed.systemPrompt !== undefined && typeof parsed.systemPrompt !== "string")
 		throw new Error(`Invalid async recovery descriptor '${descriptorPath}': systemPrompt must be a string.`);
 	for (const field of [
@@ -802,9 +890,20 @@ export function readAsyncRecoveryDescriptor(
 function validateResumeSessionFile(runId: string, sessionFile: string): string {
 	if (path.extname(sessionFile) !== ".jsonl")
 		throw new Error(`Async run '${runId}' session file must be a .jsonl file: ${sessionFile}`);
-	const resolved = path.resolve(sessionFile);
-	if (!fs.existsSync(resolved)) throw new Error(`Async run '${runId}' session file does not exist: ${sessionFile}`);
-	return resolved;
+	try {
+		return validateOwnedRegularFile(sessionFile);
+	} catch (error) {
+		if (isNotFoundError(error)) {
+			throw new Error(`Async run '${runId}' session file does not exist: ${sessionFile}`, { cause: error });
+		}
+		throw new Error(`Async run '${runId}' session file is not a safe regular file: ${sessionFile}`, {
+			cause: error instanceof Error ? error : undefined,
+		});
+	}
+}
+
+function readResumeStatus(asyncDir: string): AsyncStatus | null {
+	return readStatus(asyncDir);
 }
 
 export function resolveAsyncResumeTarget(
@@ -820,31 +919,51 @@ export function resolveAsyncResumeTarget(
 		throw new Error("Async run not found. Provide id or dir.");
 	}
 
+	// Establish immutable session ownership from safe, read-only records before
+	// stale reconciliation is allowed to signal a process or rewrite status.
+	const storedStatus = location.asyncDir ? readResumeStatus(location.asyncDir) : null;
+	const result = location.resultPath ? readResultFile(location.resultPath) : undefined;
+	const expectedRunId =
+		location.resolvedId ??
+		(location.asyncDir
+			? path.basename(location.asyncDir)
+			: location.resultPath
+				? path.basename(location.resultPath, ".json")
+				: undefined);
+	if (!expectedRunId) throw new Error("Async run identity could not be established from its storage location.");
+	for (const [field, value] of [
+		["status.runId", storedStatus?.runId],
+		["result.runId", result?.runId],
+		["result.id", result?.id],
+	] as const) {
+		if (value !== undefined && value !== expectedRunId) {
+			throw new Error(`Async run '${expectedRunId}' has mismatched ${field} '${value}'.`);
+		}
+	}
+	const storedRunId = storedStatus?.runId ?? result?.runId ?? result?.id ?? expectedRunId;
+	const recordMatchesSession = (sessionId: unknown): boolean =>
+		options.sessionScope
+			? sessionArtifactMatches(options.sessionScope, sessionId, storedRunId)
+			: !options.sessionId || sessionId === options.sessionId;
+	if (
+		(options.sessionId || options.sessionScope) &&
+		((storedStatus && !recordMatchesSession(storedStatus.sessionId)) ||
+			(result && !recordMatchesSession(result.sessionId)) ||
+			(!storedStatus && !result))
+	) {
+		throw new Error(`Async run '${storedRunId}' was not found in the active session.`);
+	}
 	const reconciliation = location.asyncDir
 		? reconcileAsyncRun(location.asyncDir, { resultsDir, kill: deps.kill, now: deps.now })
 		: undefined;
-	const status = reconciliation?.status ?? null;
+	const status = reconciliation?.status ?? storedStatus;
 	validateStatusForResume(status, location.asyncDir ? path.join(location.asyncDir, "status.json") : "status.json");
 	const recoveryDescriptor = readAsyncRecoveryDescriptor(location.asyncDir ?? undefined, params.index);
-	const result = location.resultPath ? readResultFile(location.resultPath) : undefined;
-	const runId =
-		status?.runId ??
-		result?.runId ??
-		result?.id ??
-		location.resolvedId ??
-		(location.asyncDir ? path.basename(location.asyncDir) : "unknown");
-	if (
-		options.sessionId &&
-		((status && status.sessionId !== options.sessionId) || (result && result.sessionId !== options.sessionId))
-	) {
-		throw new Error(`Async run '${runId}' was not found in the active session.`);
-	}
+	const runId = status?.runId ?? storedRunId;
 	if (recoveryDescriptor && recoveryDescriptor.sourceRunId !== runId)
 		throw new Error(`Async run '${runId}' has a recovery descriptor for a different source run.`);
 	const state = status?.state ?? (result ? resultState(result) : undefined);
 	if (!state) throw new Error(`Status file not found for async run '${runId}'.`);
-	if (state === "stopped")
-		throw new Error(`Async run '${runId}' was stopped and cannot be resumed. Start a new run instead.`);
 
 	const statusSteps = status?.steps ?? [];
 	const resultSteps = result?.results ?? [];
@@ -871,7 +990,7 @@ export function resolveAsyncResumeTarget(
 					state,
 					agent: selectedStep.agent,
 					index: requestedIndex,
-					cwd: status?.cwd ?? result?.cwd,
+					cwd: recoveryDescriptor?.cwd ?? status?.cwd ?? result?.cwd,
 					sessionFile: selectedStep.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
 					model: selectedStep.model,
 					thinking: selectedStep.thinking,
@@ -916,7 +1035,7 @@ export function resolveAsyncResumeTarget(
 				state,
 				agent: selected.step.agent,
 				index: selected.index,
-				cwd: status?.cwd ?? result?.cwd,
+				cwd: recoveryDescriptor?.cwd ?? status?.cwd ?? result?.cwd,
 				sessionFile: selected.step.sessionFile ?? status?.sessionFile ?? result?.sessionFile,
 				model: selected.step.model,
 				thinking: selected.step.thinking,
@@ -941,6 +1060,16 @@ export function resolveAsyncResumeTarget(
 	if (!Number.isInteger(index)) throw new Error(`Async run '${runId}' index must be an integer.`);
 	if (index < 0 || index >= stepCount)
 		throw new Error(`Async run '${runId}' has ${stepCount} children. Index ${index} is out of range.`);
+	const selectedStopped =
+		statusSteps[index]?.status === "stopped" ||
+		resultSteps[index]?.state === "stopped" ||
+		resultSteps[index]?.stopped === true ||
+		(stepCount === 1 && state === "stopped");
+	if (selectedStopped) {
+		throw new Error(
+			`Async run '${runId}' child ${index} was stopped and cannot be resumed. Start a new run instead.`,
+		);
+	}
 	const agent = statusSteps[index]?.agent ?? resultSteps[index]?.agent ?? result?.agent;
 	if (!agent) throw new Error(`Could not determine child agent for async run '${runId}'.`);
 	if (recoveryDescriptor && recoveryDescriptor.agent !== agent)
@@ -972,7 +1101,7 @@ export function resolveAsyncResumeTarget(
 		state,
 		agent,
 		index,
-		cwd: status?.cwd ?? result?.cwd,
+		cwd: recoveryDescriptor?.cwd ?? status?.cwd ?? result?.cwd,
 		...(resolvedSessionFile ? { sessionFile: resolvedSessionFile } : {}),
 		...(stepModel ? { model: stepModel } : {}),
 		...(stepThinking ? { thinking: stepThinking } : {}),

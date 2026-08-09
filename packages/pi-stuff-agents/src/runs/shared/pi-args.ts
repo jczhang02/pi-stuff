@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -36,9 +37,18 @@ const FANOUT_CHILD_EXTENSION_PATH = path.join(
 	"extension",
 	"fanout-child.ts",
 );
+const STANDALONE_AGENTS_EXTENSION_PATH = path.resolve(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"..",
+	"..",
+	"..",
+	"index.ts",
+);
+export const PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV = "PI_STUFF_CHILD_BASE_EXTENSION_PATH";
 export const SUBAGENT_CHILD_ENV = "PI_SUBAGENT_CHILD";
 export const SUBAGENT_ORCHESTRATOR_TARGET_ENV = "PI_SUBAGENT_ORCHESTRATOR_TARGET";
 export const SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV = "PI_SUBAGENT_ORCHESTRATOR_SESSION_ID";
+export const SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID_ENV = "PI_SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID";
 export const SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV = "PI_SUBAGENT_SUPERVISOR_CHANNEL_DIR";
 export const SUBAGENT_RUN_ID_ENV = "PI_SUBAGENT_RUN_ID";
 export const SUBAGENT_CHILD_AGENT_ENV = "PI_SUBAGENT_CHILD_AGENT";
@@ -53,6 +63,7 @@ export const SUBAGENT_PARENT_DEPTH_ENV = "PI_SUBAGENT_PARENT_DEPTH";
 export const SUBAGENT_PARENT_PATH_ENV = "PI_SUBAGENT_PARENT_PATH";
 export const SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV = "PI_SUBAGENT_PARENT_CAPABILITY_TOKEN";
 export const SUBAGENT_PARENT_SESSION_ENV = "PI_SUBAGENT_PARENT_SESSION";
+export const SUBAGENT_PARENT_PHYSICAL_SESSION_ENV = "PI_SUBAGENT_PARENT_PHYSICAL_SESSION";
 export const PI_STUFF_AGENT_PATH_ENV = "PI_STUFF_AGENT_PATH";
 export const SUBAGENT_STEER_INBOX_ENV = "PI_SUBAGENT_STEER_INBOX";
 export const SUBAGENT_STEER_CAPABILITY_ENV = "PI_SUBAGENT_STEER_CAPABILITY";
@@ -61,6 +72,10 @@ export const PI_INTERCOM_STABLE_ID_ENV = "PI_INTERCOM_STABLE_ID";
 export const PI_INTERCOM_SESSION_ID_ENV = "PI_INTERCOM_SESSION_ID";
 
 export interface BuildPiArgsInput {
+	/** Ledger namespace. It may temporarily remain v1 during an in-flight upgrade. */
+	governorSessionId?: string;
+	/** Physical v2 session identity written to lifecycle and supervisor artifacts. */
+	physicalSessionId?: string;
 	parentSessionId?: string;
 	baseArgs: string[];
 	task: string;
@@ -72,6 +87,7 @@ export interface BuildPiArgsInput {
 	systemPromptMode?: "append" | "replace";
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
+	childBaseExtensionPath?: string;
 	requireReadTool?: boolean;
 	tools?: string[];
 	extensions?: string[];
@@ -82,7 +98,10 @@ export interface BuildPiArgsInput {
 	promptFileStem?: string;
 	intercomSessionName?: string;
 	orchestratorIntercomTarget?: string;
+	/** Enable the native supervisor channel only when the parent turn is not owner-blocking. */
+	enableNativeSupervisor?: boolean;
 	runId?: string;
+	logicalAgentPathComponent?: string;
 	childAgentName?: string;
 	childIndex?: number;
 	parentEventSink?: string;
@@ -123,11 +142,17 @@ function sanitizeSupervisorChannelSegment(value: string): string {
 	);
 }
 
-function supervisorChannelDir(runId: string, agent: string, childIndex: number): string {
+export function supervisorChannelDir(
+	physicalSessionId: string,
+	runId: string,
+	agent: string,
+	childIndex: number,
+): string {
+	const namespace = createHash("sha256").update(physicalSessionId).digest("hex").slice(0, 16);
 	return path.join(
 		TEMP_ROOT_DIR,
 		"supervisor-channels",
-		`${sanitizeSupervisorChannelSegment(runId)}-${sanitizeSupervisorChannelSegment(agent)}-${childIndex}`,
+		`${namespace}-${sanitizeSupervisorChannelSegment(runId)}-${sanitizeSupervisorChannelSegment(agent)}-${childIndex}`,
 	);
 }
 
@@ -152,8 +177,10 @@ export interface ResolvePiLaunchToolPlanInput {
 	cwd?: string;
 	requireReadTool?: boolean;
 	structuredOutput?: boolean;
+	nativeSupervisor?: boolean;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	inheritedCapabilityCeiling?: ResolvedSubagentCapabilityCeiling;
+	childBaseExtensionPath?: string;
 }
 
 export interface PiLaunchToolPlan {
@@ -173,7 +200,22 @@ export interface PiLaunchToolPlan {
 	configuredExtensions: string[];
 	extensionArgs: string[];
 	disableAmbientExtensions: boolean;
+	baseExtensionPath?: string;
 	capabilityAudit?: SubagentCapabilityAudit;
+}
+
+function childBaseExtensionPath(configured?: string): string {
+	const inherited = configured?.trim() || process.env[PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV]?.trim();
+	if (inherited && path.isAbsolute(inherited)) {
+		try {
+			const resolved = fs.realpathSync(inherited);
+			const stat = fs.lstatSync(resolved);
+			if (stat.isFile() && !stat.isSymbolicLink()) return resolved;
+		} catch {
+			// A stale inherited path must not make every child unlaunchable.
+		}
+	}
+	return STANDALONE_AGENTS_EXTENSION_PATH;
 }
 
 export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): PiLaunchToolPlan {
@@ -195,10 +237,7 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 			? allowedToolSet
 				? [...allowedToolSet]
 				: []
-			: (input.requireReadTool &&
-				requestedBuiltinTools.length > 0 &&
-				!requestedBuiltinTools.includes("read") &&
-				!allowedToolSet
+			: (input.requireReadTool && !requestedBuiltinTools.includes("read")
 					? ["read", ...requestedBuiltinTools]
 					: requestedBuiltinTools
 				).filter((tool) => !allowedToolSet || allowedToolSet.has(tool));
@@ -220,27 +259,44 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 	const effectiveMcpTools = effectiveMcpSelections.map((selection) => selection.name);
 	const explicitToolAllowlist =
 		input.tools !== undefined || (input.mcpDirectTools?.length ?? 0) > 0 || allowedToolSet !== undefined;
-	const internalTools = input.structuredOutput ? ["structured_output"] : [];
+	const internalTools = [
+		...(input.structuredOutput ? ["structured_output"] : []),
+		...(input.nativeSupervisor ? ["contact_supervisor"] : []),
+	];
 	const effectiveToolAllowlist = [...new Set([...declaredBuiltinTools, ...effectiveMcpTools, ...internalTools])];
 	const requiredChildTools = explicitToolAllowlist
 		? [
 				...new Set([
 					...(input.tools !== undefined ? declaredBuiltinTools : []),
 					...(input.mcpDirectTools?.length ? effectiveMcpTools : []),
+					...(input.requireReadTool ? ["read"] : []),
 					...internalTools,
 				]),
 			]
-		: [];
+		: input.requireReadTool
+			? ["read"]
+			: [];
 	const runtimeExtensions = fanoutAuthorized
-		? [PROMPT_RUNTIME_EXTENSION_PATH, FANOUT_CHILD_EXTENSION_PATH]
+		? [FANOUT_CHILD_EXTENSION_PATH, PROMPT_RUNTIME_EXTENSION_PATH]
 		: [PROMPT_RUNTIME_EXTENSION_PATH];
-	const disableAmbientExtensions = capabilityCeiling?.denyExtensions === true || input.extensions !== undefined;
+	// Pi loads temporary CLI extensions before ambient package/project extensions.
+	// A child payload gate passed only through --extension could therefore run too
+	// early. Make the child extension surface deterministic instead: reload the
+	// parent Suite (or the standalone Agents package) explicitly, opt in Agent
+	// extensions, disable ambient discovery, and keep the runtime guard last.
+	const resolvedBaseExtension = childBaseExtensionPath(input.childBaseExtensionPath);
+	const inheritedBaseExtension = input.extensions === undefined ? resolvedBaseExtension : undefined;
+	const runtimeExtensionSet = new Set(runtimeExtensions);
 	const configuredExtensions = capabilityCeiling?.denyExtensions
 		? []
-		: [...toolExtensionPaths, ...(input.extensions ?? []), ...(input.subagentOnlyExtensions ?? [])];
-	const extensionArgs = disableAmbientExtensions
-		? [...new Set([...runtimeExtensions, ...configuredExtensions])]
-		: [...new Set([...runtimeExtensions, ...toolExtensionPaths, ...(input.subagentOnlyExtensions ?? [])])];
+		: [
+				...(inheritedBaseExtension ? [inheritedBaseExtension] : []),
+				...toolExtensionPaths,
+				...(input.extensions ?? []),
+				...(input.subagentOnlyExtensions ?? []),
+			].filter((extension) => !runtimeExtensionSet.has(extension));
+	const extensionArgs = [...new Set(configuredExtensions), ...runtimeExtensions];
+	const disableAmbientExtensions = true;
 	const requestedToolNames =
 		input.tools !== undefined
 			? [...new Set([...requestedBuiltinTools, ...resolvedMcpSelections.map((selection) => selection.name)])]
@@ -281,12 +337,17 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 		configuredExtensions,
 		extensionArgs,
 		disableAmbientExtensions,
+		baseExtensionPath: resolvedBaseExtension,
 		...(capabilityAudit ? { capabilityAudit } : {}),
 	};
 }
 
 export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	const args = [...input.baseArgs];
+	const physicalSessionId = input.physicalSessionId ?? input.governorSessionId;
+	const nativeSupervisor = Boolean(
+		input.enableNativeSupervisor && physicalSessionId && input.parentSessionId && input.runId && input.childAgentName,
+	);
 
 	if (input.sessionFile) {
 		fs.mkdirSync(path.dirname(input.sessionFile), { recursive: true });
@@ -312,8 +373,10 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		subagentOnlyExtensions: input.subagentOnlyExtensions,
 		mcpDirectTools: input.mcpDirectTools,
 		cwd: input.cwd,
+		childBaseExtensionPath: input.childBaseExtensionPath,
 		requireReadTool: input.requireReadTool,
 		structuredOutput: input.structuredOutput !== undefined,
+		nativeSupervisor,
 		capabilityCeiling: input.capabilityCeiling,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 	});
@@ -356,15 +419,15 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	const env: Record<string, string | undefined> = {};
 	const piPackageRoot = process.env[PI_CODING_AGENT_PACKAGE_ROOT_ENV] ?? resolvePiPackageRoot();
 	if (piPackageRoot) env[PI_CODING_AGENT_PACKAGE_ROOT_ENV] = piPackageRoot;
-	let toolDiagnosticPath: string | undefined;
+	if (!tempDir) tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
+	const toolDiagnosticPath = path.join(tempDir, "child-diagnostic.json");
+	env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV] = toolDiagnosticPath;
 	if (toolPlan.requiredChildTools.length > 0) {
-		if (!tempDir) tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
-		toolDiagnosticPath = path.join(tempDir, "tool-diagnostic.json");
 		env[REQUIRED_CHILD_TOOLS_ENV] = JSON.stringify(toolPlan.requiredChildTools);
-		env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV] = toolDiagnosticPath;
 	}
 	env[MCP_DIRECT_CHILD_TOOLS_ENV] =
 		toolPlan.effectiveMcpTools.length > 0 ? JSON.stringify(toolPlan.effectiveMcpTools) : undefined;
+	env[PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV] = toolPlan.baseExtensionPath;
 	env[SUBAGENT_CHILD_ENV] = "1";
 	env[SUBAGENT_FANOUT_CHILD_ENV] = toolPlan.fanoutAuthorized ? "1" : "0";
 	const inheritedNestedRoute = Boolean(
@@ -421,21 +484,18 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	env.PI_SUBAGENT_INHERIT_SKILLS = input.inheritSkills ? "1" : "0";
 	env[PI_INTERCOM_STABLE_ID_ENV] = input.intercomSessionName || undefined;
 	env[PI_INTERCOM_SESSION_ID_ENV] = undefined;
+	env[SUBAGENT_ORCHESTRATOR_TARGET_ENV] = input.orchestratorIntercomTarget || undefined;
+	env[SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV] = input.parentSessionId || undefined;
+	env[SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID_ENV] = undefined;
+	env[SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV] = undefined;
 	if (input.intercomSessionName) {
 		env.PI_SUBAGENT_INTERCOM_SESSION_NAME = input.intercomSessionName;
 	}
-	if (input.orchestratorIntercomTarget) {
-		env[SUBAGENT_ORCHESTRATOR_TARGET_ENV] = input.orchestratorIntercomTarget;
-	}
-	if (input.parentSessionId) {
-		env[SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV] = input.parentSessionId;
-	}
-	if (input.orchestratorIntercomTarget && input.parentSessionId && input.runId && input.childAgentName) {
+	if (nativeSupervisor && physicalSessionId && input.parentSessionId && input.runId && input.childAgentName) {
 		const childIndex = input.childIndex ?? 0;
-		const channelDir = supervisorChannelDir(input.runId, input.childAgentName, childIndex);
-		fs.mkdirSync(path.join(channelDir, "requests"), { recursive: true });
-		fs.mkdirSync(path.join(channelDir, "replies"), { recursive: true });
+		const channelDir = supervisorChannelDir(physicalSessionId, input.runId, input.childAgentName, childIndex);
 		env[SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV] = channelDir;
+		env[SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID_ENV] = physicalSessionId;
 	}
 	if (input.runId) {
 		env[SUBAGENT_RUN_ID_ENV] = input.runId;
@@ -445,7 +505,7 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	}
 	const parentAgentPath = process.env[PI_STUFF_AGENT_PATH_ENV]?.trim();
 	if (input.runId) {
-		const childPathComponent = `${input.runId}:${input.childIndex ?? 0}`;
+		const childPathComponent = input.logicalAgentPathComponent ?? `${input.runId}:${input.childIndex ?? 0}`;
 		env[PI_STUFF_AGENT_PATH_ENV] = parentAgentPath
 			? `${parentAgentPath} › ${childPathComponent}`
 			: childPathComponent;
@@ -480,7 +540,12 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	if (encodedToolBudget) env[TOOL_BUDGET_ENV] = encodedToolBudget;
 	env[TOOL_BUDGET_ZERO_AUTH_ENV] = input.allowZeroToolBudget ? "1" : undefined;
 
-	env[SUBAGENT_PARENT_SESSION_ENV] = process.env[SUBAGENT_PARENT_SESSION_ENV] ?? input.parentSessionId ?? "";
+	// This value is captured when the launch is prepared. Never read the mutable
+	// parent-process environment here: a foreground writer may spawn after the
+	// root Host has already switched sessions.
+	env[SUBAGENT_PARENT_SESSION_ENV] = input.governorSessionId ?? input.parentSessionId ?? "";
+	env[SUBAGENT_PARENT_PHYSICAL_SESSION_ENV] =
+		input.physicalSessionId ?? input.governorSessionId ?? input.parentSessionId ?? "";
 
 	return { args, env, tempDir, toolDiagnosticPath, capabilityAudit: toolPlan.capabilityAudit };
 }

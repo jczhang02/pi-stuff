@@ -55,7 +55,7 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 8_000): Promise<v
 
 async function run(input: Omit<MonitorInput, "toolCallId">): Promise<string> {
 	const state = setup();
-	startMonitor(state.runtime, { ...input, toolCallId: "monitor-call" }, state.context);
+	await startMonitor(state.runtime, { ...input, toolCallId: "monitor-call" }, state.context);
 	await waitUntil(() => state.messages.length === 1);
 	const status = state.messages[0]?.message.details.outcomes[0]?.status;
 	await state.runtime.shutdown();
@@ -85,7 +85,7 @@ describe("file and log Monitor", () => {
 		const state = setup();
 		const path = join(state.root, "service.log");
 		writeFileSync(path, "READY from an old run\n");
-		const started = startMonitor(
+		const started = await startMonitor(
 			state.runtime,
 			{
 				intervalSeconds: 0.1,
@@ -110,7 +110,7 @@ describe("file and log Monitor", () => {
 		const state = setup();
 		const directory = join(state.root, "not-a-file");
 		mkdirSync(directory);
-		startMonitor(
+		await startMonitor(
 			state.runtime,
 			{
 				intervalSeconds: 0.1,
@@ -129,7 +129,7 @@ describe("file and log Monitor", () => {
 
 	test("can be cancelled through the shared runtime", async () => {
 		const state = setup();
-		const started = startMonitor(
+		const started = await startMonitor(
 			state.runtime,
 			{
 				intervalSeconds: 0.1,
@@ -142,8 +142,8 @@ describe("file and log Monitor", () => {
 		);
 		const outcome = await state.runtime.stop(started.id);
 		expect(outcome.status).toBe("stopped");
-		await waitUntil(() => state.messages.length === 1);
-		expect(state.messages[0]?.options.triggerTurn).toBe(true);
+		await Bun.sleep(250);
+		expect(state.messages).toHaveLength(0);
 		await state.runtime.shutdown();
 	});
 });
@@ -157,7 +157,7 @@ describe("HTTP Monitor", () => {
 		});
 		servers.push(server);
 		const state = setup();
-		startMonitor(
+		await startMonitor(
 			state.runtime,
 			{
 				intervalSeconds: 0.1,

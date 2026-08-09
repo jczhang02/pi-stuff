@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { writeAtomicJson, writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { assertPrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
+import { tryAcquireStatusMutationClaim } from "../../shared/status-mutation.ts";
 import {
 	type AsyncStatus,
 	type CanonicalSessionTerminalV1,
@@ -9,7 +11,16 @@ import {
 	type ProcessTerminalV1,
 	SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
 } from "../../shared/types.ts";
+import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../shared/model-fallback.ts";
 import { canonicalSessionId, inspectSessionLease } from "../shared/session-lease.ts";
+import { inspectWriterProcessLiveness } from "./writer-process-registry.ts";
+
+const MAX_PROCESS_TERMINAL_CANDIDATE_BYTES = 8 * 1024 * 1024;
+const MAX_PROCESS_TERMINAL_PROOF_BYTES = 8 * 1024 * 1024;
+const MAX_PROCESS_TERMINAL_STATUS_BYTES = 32 * 1024 * 1024;
+const MAX_PROCESS_TERMINAL_CHILDREN = 20;
+const MAX_WRITER_INSTANCES_PER_CHILD = MAX_MODEL_CANDIDATES_PER_CHILD;
+const MAX_PROCESS_TERMINAL_INSTANCES = 1 + MAX_PROCESS_TERMINAL_CHILDREN * MAX_WRITER_INSTANCES_PER_CHILD;
 
 export interface ProcessTerminalCandidate {
 	version: 1;
@@ -35,11 +46,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function validProcessInstance(value: unknown, kind?: "runner" | "pi-writer"): value is ProcessInstanceExitV1 {
 	if (!isRecord(value)) return false;
-	if (typeof value.processInstanceId !== "string" || value.processInstanceId.length === 0) return false;
+	if (
+		typeof value.processInstanceId !== "string" ||
+		value.processInstanceId.length === 0 ||
+		value.processInstanceId.length > 256
+	)
+		return false;
 	if (kind ? value.kind !== kind : value.kind !== "runner" && value.kind !== "pi-writer") return false;
 	if (typeof value.closeObservedAt !== "number" || !Number.isFinite(value.closeObservedAt)) return false;
 	if (typeof value.exitCode !== "number" && value.exitCode !== null) return false;
-	if (typeof value.signal !== "string" && value.signal !== null) return false;
+	if (
+		(typeof value.signal !== "string" && value.signal !== null) ||
+		(typeof value.signal === "string" && value.signal.length > 32)
+	)
+		return false;
+	if (
+		value.kind === "pi-writer" &&
+		value.terminationOrigin !== undefined &&
+		!["external", "manager-final-drain", "manager-request"].includes(String(value.terminationOrigin))
+	)
+		return false;
 	return value.kind === "runner"
 		? value.attempt === undefined
 		: typeof value.attempt === "number" && Number.isInteger(value.attempt) && value.attempt >= 0;
@@ -63,7 +89,10 @@ function errorMessage(error: unknown): string {
 
 export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalCandidate | undefined {
 	try {
-		const raw = JSON.parse(fs.readFileSync(processTerminalCandidatePath(asyncDir), "utf-8")) as unknown;
+		assertPrivateDirectory(asyncDir);
+		const raw = JSON.parse(
+			readBoundedOwnedFile(processTerminalCandidatePath(asyncDir), MAX_PROCESS_TERMINAL_CANDIDATE_BYTES),
+		) as unknown;
 		if (
 			!isRecord(raw) ||
 			raw.version !== 1 ||
@@ -75,19 +104,36 @@ export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalC
 		}
 		const writers: Record<string, ProcessInstanceExitV1[]> = {};
 		for (const [index, entries] of Object.entries(raw.writers)) {
-			if (!Array.isArray(entries) || !entries.every(validInstance))
+			if (
+				!/^\d+$/u.test(index) ||
+				Number(index) >= MAX_PROCESS_TERMINAL_CHILDREN ||
+				!Array.isArray(entries) ||
+				entries.length > MAX_WRITER_INSTANCES_PER_CHILD ||
+				!entries.every(validInstance)
+			)
 				throw new Error(`Invalid writer process records for child '${index}'.`);
 			writers[index] = entries;
 		}
+		if (Object.keys(writers).length > MAX_PROCESS_TERMINAL_CHILDREN)
+			throw new Error("Process-terminal candidate has too many children.");
 		let expectedWriters: Record<string, number> | undefined;
 		if (raw.expectedWriters !== undefined) {
 			if (!isRecord(raw.expectedWriters)) throw new Error("Invalid expected writer process records.");
 			expectedWriters = {};
 			for (const [index, count] of Object.entries(raw.expectedWriters)) {
-				if (typeof count !== "number" || !Number.isInteger(count) || count < 0)
+				if (
+					!/^\d+$/u.test(index) ||
+					Number(index) >= MAX_PROCESS_TERMINAL_CHILDREN ||
+					typeof count !== "number" ||
+					!Number.isInteger(count) ||
+					count < 0 ||
+					count > MAX_WRITER_INSTANCES_PER_CHILD
+				)
 					throw new Error(`Invalid expected writer count for child '${index}'.`);
 				expectedWriters[index] = count;
 			}
+			if (Object.keys(expectedWriters).length > MAX_PROCESS_TERMINAL_CHILDREN)
+				throw new Error("Process-terminal candidate has too many expected children.");
 		}
 		if (raw.sessionFile !== undefined && typeof raw.sessionFile !== "string")
 			throw new Error("Invalid process-terminal candidate sessionFile.");
@@ -109,11 +155,12 @@ export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalC
 		};
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-		throw error;
+		return undefined;
 	}
 }
 
 export function writeProcessTerminalCandidate(asyncDir: string, candidate: ProcessTerminalCandidate): void {
+	assertPrivateDirectory(asyncDir);
 	writePrivateAtomicJson(processTerminalCandidatePath(asyncDir), candidate);
 }
 
@@ -139,7 +186,7 @@ function unknownProof(
 	};
 }
 
-function resumeDisposition(
+export function processTerminalResumeDisposition(
 	state: string | undefined,
 	sessionFile: string | undefined,
 ): "resumable" | "non-resumable" | "unavailable" {
@@ -188,18 +235,36 @@ function validateProof(
 		);
 	if (
 		raw.instances !== undefined &&
-		(!Array.isArray(raw.instances) || !raw.instances.every((entry) => validProcessInstance(entry)))
+		(!Array.isArray(raw.instances) ||
+			raw.instances.length > MAX_PROCESS_TERMINAL_INSTANCES ||
+			!raw.instances.every((entry) => validProcessInstance(entry)))
 	) {
 		throw new Error(`Invalid process-terminal instances in '${asyncDir}'.`);
+	}
+	const childProof = raw.childIndex !== undefined;
+	if (
+		childProof &&
+		(typeof raw.childIndex !== "number" ||
+			!Number.isInteger(raw.childIndex) ||
+			raw.childIndex < 0 ||
+			raw.childIndex >= MAX_PROCESS_TERMINAL_CHILDREN)
+	) {
+		throw new Error(`Invalid process-terminal childIndex in '${asyncDir}'.`);
 	}
 	if (raw.state === "observed") {
 		if (typeof raw.observedAt !== "number" || !Number.isFinite(raw.observedAt))
 			throw new Error(`Observed process-terminal proof in '${asyncDir}' is missing observedAt.`);
 		if (!Array.isArray(raw.instances))
 			throw new Error(`Observed process-terminal proof in '${asyncDir}' is missing instances.`);
-		const runner = raw.instances.find((entry) => isRecord(entry) && entry.kind === "runner");
-		if (!validProcessInstance(runner, "runner") || runner.processInstanceId !== raw.runnerProcessInstanceId)
-			throw new Error(`Observed process-terminal proof in '${asyncDir}' has no matching runner instance.`);
+		if (childProof) {
+			if (raw.instances.length === 0 || raw.instances.some((entry) => !validProcessInstance(entry, "pi-writer"))) {
+				throw new Error(`Observed child process-terminal proof in '${asyncDir}' has invalid writer instances.`);
+			}
+		} else {
+			const runner = raw.instances.find((entry) => isRecord(entry) && entry.kind === "runner");
+			if (!validProcessInstance(runner, "runner") || runner.processInstanceId !== raw.runnerProcessInstanceId)
+				throw new Error(`Observed process-terminal proof in '${asyncDir}' has no matching runner instance.`);
+		}
 	}
 	if (
 		raw.resumeDisposition !== undefined &&
@@ -232,7 +297,10 @@ export function readProcessTerminal(
 	fallback?: { runId?: string; runnerProcessInstanceId?: string },
 ): ProcessTerminalV1 | undefined {
 	try {
-		const raw = JSON.parse(fs.readFileSync(processTerminalPath(asyncDir), "utf-8")) as unknown;
+		assertPrivateDirectory(asyncDir);
+		const raw = JSON.parse(
+			readBoundedOwnedFile(processTerminalPath(asyncDir), MAX_PROCESS_TERMINAL_PROOF_BYTES),
+		) as unknown;
 		validateProof(raw, asyncDir, fallback);
 		return raw;
 	} catch (error) {
@@ -244,6 +312,54 @@ export function readProcessTerminal(
 			errorMessage(error),
 		);
 	}
+}
+
+/**
+ * Persist the stronger lifecycle fact established by stale-run recovery after
+ * it has proven the exact runner identity gone and every authenticated writer
+ * absent. This is an observation of process absence, not a claim about the
+ * runner's semantic exit code.
+ */
+export function persistRecoveredProcessTerminal(
+	asyncDir: string,
+	status: AsyncStatus,
+	observedAt = Date.now(),
+): ProcessTerminalV1 {
+	const runnerProcessInstanceId =
+		status.processTerminal?.runnerProcessInstanceId ??
+		`recovered:${status.pid ?? "unknown"}:${status.processStartIdentity ?? "unknown"}`.slice(0, 256);
+	const proof: ProcessTerminalV1 = {
+		version: 1,
+		state: "observed",
+		runId: status.runId,
+		runnerProcessInstanceId,
+		observedAt,
+		instances: [
+			{
+				processInstanceId: runnerProcessInstanceId,
+				kind: "runner",
+				closeObservedAt: observedAt,
+				exitCode: null,
+				signal: null,
+			},
+		],
+		resumeDisposition: processTerminalResumeDisposition(status.state, status.sessionFile),
+	};
+	assertPrivateDirectory(asyncDir);
+	writeAtomicJson(processTerminalPath(asyncDir), proof);
+	overlayStatus(asyncDir, proof);
+	fs.appendFileSync(
+		path.join(asyncDir, "events.jsonl"),
+		`${JSON.stringify({
+			type: "subagent.run.process_terminal_recovered",
+			lifecycleArtifactVersion: SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
+			ts: observedAt,
+			runId: status.runId,
+			processTerminal: proof,
+		})}\n`,
+		"utf-8",
+	);
+	return proof;
 }
 
 function stepProcessTerminalProof(
@@ -276,17 +392,31 @@ function stepProcessTerminalProof(
 
 function overlayStatus(asyncDir: string, proof: ProcessTerminalV1, candidate?: ProcessTerminalCandidate): void {
 	const statusPath = path.join(asyncDir, "status.json");
+	let claim: ReturnType<typeof tryAcquireStatusMutationClaim>;
 	try {
-		const status = JSON.parse(fs.readFileSync(statusPath, "utf-8")) as AsyncStatus;
+		assertPrivateDirectory(asyncDir);
+		claim = tryAcquireStatusMutationClaim(asyncDir);
+		if (!claim) return;
+		const status = JSON.parse(readBoundedOwnedFile(statusPath, MAX_PROCESS_TERMINAL_STATUS_BYTES)) as AsyncStatus;
+		if (status.steps && status.steps.length > MAX_PROCESS_TERMINAL_CHILDREN) return;
 		status.processTerminal = proof;
 		if (status.steps) {
 			for (const [index, step] of status.steps.entries()) {
-				const records = candidate?.writers[String(index)] ?? [];
-				const expected = candidate?.expectedWriters?.[String(index)] ?? (records.length > 0 ? records.length : 0);
+				const key = String(index);
+				const hasWriterEvidence = candidate ? Object.hasOwn(candidate.writers, key) : false;
+				const hasExpectedEvidence = candidate?.expectedWriters
+					? Object.hasOwn(candidate.expectedWriters, key)
+					: false;
+				const records = hasWriterEvidence ? (candidate?.writers[key] ?? []) : [];
+				const expected = hasExpectedEvidence
+					? candidate?.expectedWriters?.[key]
+					: hasWriterEvidence
+						? records.length
+						: undefined;
 				const stepState =
-					expected === 0
+					candidate && hasExpectedEvidence && expected === 0 && records.length === 0
 						? "not-started"
-						: proof.state === "observed" && records.length === expected
+						: proof.state === "observed" && expected !== undefined && expected > 0 && records.length === expected
 							? "observed"
 							: proof.state === "pending"
 								? "pending"
@@ -296,13 +426,15 @@ function overlayStatus(asyncDir: string, proof: ProcessTerminalV1, candidate?: P
 					index,
 					stepState,
 					records,
-					resumeDisposition(step.status, step.sessionFile ?? candidate?.sessionFile),
+					processTerminalResumeDisposition(step.status, step.sessionFile ?? candidate?.sessionFile),
 				);
 			}
 		}
 		writeAtomicJson(statusPath, status);
 	} catch {
 		// The proof sidecar remains authoritative when terminal status is unavailable.
+	} finally {
+		claim?.release();
 	}
 }
 
@@ -325,15 +457,18 @@ export function finalizeProcessTerminal(
 	let candidateForOverlay: ProcessTerminalCandidate | undefined;
 	try {
 		const candidate = readProcessTerminalCandidate(asyncDir);
-		candidateForOverlay = candidate;
 		if (!candidate) proof = unknownProof(runId, runnerClose.processInstanceId, "runner-candidate-missing");
 		else if (candidate.runId !== runId || candidate.runnerProcessInstanceId !== runnerClose.processInstanceId)
 			proof = unknownProof(runId, runnerClose.processInstanceId, "runner-instance-mismatch");
 		else {
+			candidateForOverlay = candidate;
 			const allWriters = Object.values(candidate.writers).flat();
 			const status = (() => {
 				try {
-					return JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf-8")) as AsyncStatus;
+					assertPrivateDirectory(asyncDir);
+					return JSON.parse(
+						readBoundedOwnedFile(path.join(asyncDir, "status.json"), MAX_PROCESS_TERMINAL_STATUS_BYTES),
+					) as AsyncStatus;
 				} catch {
 					return undefined;
 				}
@@ -346,11 +481,23 @@ export function finalizeProcessTerminal(
 			const expectedEntries = Object.entries(expectedWriters);
 			const expectedIndexes = new Set(expectedEntries.map(([index]) => index));
 			const writerIndexes = new Set(writerEntries.map(([index]) => index));
+			const writerLiveness = inspectWriterProcessLiveness(asyncDir);
+			const ambiguousLegacyEmptyWriter =
+				candidate.expectedWriters === undefined && writerEntries.some(([, records]) => records.length === 0);
 			const inconsistentWriters =
 				writerEntries.some(
 					([index, records]) => !expectedIndexes.has(index) || records.length !== expectedWriters[index],
 				) || expectedEntries.some(([index, expected]) => !writerIndexes.has(index) && expected !== 0);
-			if (session && session.state !== "free") {
+			if (writerLiveness !== false) {
+				proof = unknownProof(
+					runId,
+					runnerClose.processInstanceId,
+					"writer-close-unverified",
+					writerLiveness === true
+						? "An authenticated Agent writer process group is still alive."
+						: "Agent writer process-group termination could not be verified.",
+				);
+			} else if (session && session.state !== "free") {
 				proof = unknownProof(
 					runId,
 					runnerClose.processInstanceId,
@@ -358,7 +505,11 @@ export function finalizeProcessTerminal(
 				);
 			} else if (candidate.revivalLeaseToken && candidate.revivalLeaseReleaseAcknowledged !== true) {
 				proof = unknownProof(runId, runnerClose.processInstanceId, "canonical-session-release-unverified");
-			} else if (inconsistentWriters || (allWriters.length === 0 && expectedEntries.length === 0)) {
+			} else if (
+				ambiguousLegacyEmptyWriter ||
+				inconsistentWriters ||
+				(allWriters.length === 0 && expectedEntries.length === 0)
+			) {
 				proof = unknownProof(runId, runnerClose.processInstanceId, "writer-close-unverified");
 			} else {
 				const runner: ProcessInstanceExitV1 = { kind: "runner", ...runnerClose };
@@ -370,7 +521,10 @@ export function finalizeProcessTerminal(
 					runnerProcessInstanceId: runnerClose.processInstanceId,
 					observedAt: runnerClose.closeObservedAt,
 					instances: [runner, ...allWriters],
-					resumeDisposition: resumeDisposition(status?.state, candidate.sessionFile ?? status?.sessionFile),
+					resumeDisposition: processTerminalResumeDisposition(
+						status?.state,
+						candidate.sessionFile ?? status?.sessionFile,
+					),
 					...(canonicalSession ? { canonicalSession } : {}),
 				};
 			}

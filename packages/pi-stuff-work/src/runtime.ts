@@ -1,6 +1,16 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { randomInt } from "node:crypto";
-import { accessSync, constants, readFileSync, rmSync } from "node:fs";
+import { randomBytes, randomInt } from "node:crypto";
+import {
+	accessSync,
+	closeSync,
+	constants,
+	existsSync,
+	lstatSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import type {
 	AgentToolResult,
@@ -19,17 +29,29 @@ import {
 import { BoundedOutputFile, DEFAULT_MODEL_OUTPUT_LIMIT, readBoundedTail } from "./output.js";
 import {
 	captureProcessIdentity,
+	captureProcessIdentityWithRetry,
 	identityMatches,
 	type ProcessIdentity,
 	reapOwnedProcessGroup,
-	signalProcessGroup,
-	terminateVerifiedProcessGroup,
 } from "./process.js";
-import { type StoredProcessTask, WorkRunStorage } from "./storage.js";
+import { reconcileStaleRuns, type StoredProcessTask, WorkRunStorage } from "./storage.js";
 
 const DEFAULT_BACKGROUND_AFTER_MS = 120_000;
 const QUICK_COMPLETION_MS = 2_000;
 const MAX_CONCURRENT_ACTIVITIES = 16;
+const MAX_NOTIFICATION_OUTCOMES = 16;
+const MAX_NOTIFICATION_CONTENT_BYTES = 64 * 1024;
+const MAX_NOTIFICATION_INLINE_BYTES = 40 * 1024;
+const MAX_NOTIFICATION_SUMMARY_BYTES = 1_024;
+const MAX_NOTIFICATION_PATH_BYTES = 2_048;
+const NOTIFICATION_TRUNCATION_MARKER = "[earlier output omitted]\n";
+const NOTIFICATION_BATCH_DELAY_MS = 200;
+const NOTIFICATION_RETRY_INITIAL_MS = 250;
+const NOTIFICATION_RETRY_MAX_MS = 5_000;
+const SUPERVISOR_POST_EXIT_DRAIN_MS = 500;
+const STOP_COMPLETION_GRACE_MS = 3_000;
+const DEFAULT_METADATA_HEARTBEAT_MS = 5_000;
+const MAX_COMMAND_AUTHORIZATION_BYTES = 4 * 1024 * 1024;
 const ID_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
 const SUPERVISOR_PATH = fileURLToPath(new URL("./process-supervisor.mjs", import.meta.url));
 
@@ -75,6 +97,7 @@ export interface BashExecutionInput {
 interface SpawnedActivity {
 	backgrounded: boolean;
 	commandIdentity?: ProcessIdentity;
+	commandGroupReaped: boolean;
 	completion: Promise<BackgroundWorkOutcome>;
 	completionResolve: (outcome: BackgroundWorkOutcome) => void;
 	controlBuffer: string;
@@ -83,8 +106,10 @@ interface SpawnedActivity {
 	detachResolve?: (reason: "manual" | "timeout") => void;
 	detachResult: Promise<"manual" | "timeout">;
 	finalized: boolean;
+	finalizing: boolean;
 	id: string;
 	kind: BackgroundWorkKind;
+	launchAuthorized: boolean;
 	monitorFailureText?: string;
 	monitorSuccessText?: string;
 	output: BoundedOutputFile;
@@ -93,12 +118,63 @@ interface SpawnedActivity {
 	status: BackgroundWorkStatus;
 	stopPromise?: Promise<BackgroundWorkOutcome>;
 	stopReason?: "abort" | "output_limit" | "shutdown" | "timeout" | "user";
-	supervisor: ChildProcess;
+	supervisor: SupervisorProcess;
 	supervisorIdentity: ProcessIdentity;
 	timeoutTimer?: ReturnType<typeof setTimeout>;
 	title: string;
 	toolCallId: string;
 	command: string;
+	commandAcknowledgementPath: string;
+	commandAuthorizationPath: string;
+}
+
+interface SupervisorProcess {
+	closeControl(): void;
+	readonly completion: Promise<{
+		readonly code: number | null;
+		readonly error?: Error;
+		readonly signal: NodeJS.Signals | null;
+	}>;
+	readonly control: Readable;
+	readonly pid: number;
+	readonly stderr: Readable;
+	readonly stdout: Readable;
+	kill(signal: NodeJS.Signals): void;
+	unref(): void;
+}
+
+interface SpawnProcessInput {
+	readonly backgrounded: boolean;
+	readonly command: string;
+	readonly description?: string;
+	readonly env: NodeJS.ProcessEnv;
+	readonly kind?: BackgroundWorkKind;
+	readonly monitorFailureText?: string;
+	readonly monitorSuccessText?: string;
+	readonly toolCallId: string;
+}
+
+type SignalVerifiedSupervisor = (
+	supervisor: SupervisorProcess,
+	identity: ProcessIdentity,
+	signal: NodeJS.Signals,
+) => "gone" | "requested" | "unresolved";
+
+function signalVerifiedSupervisor(
+	supervisor: SupervisorProcess,
+	identity: ProcessIdentity,
+	signal: NodeJS.Signals,
+): "gone" | "requested" | "unresolved" {
+	if (!identityMatches(identity)) return "gone";
+	try {
+		// Signal only the still-authenticated supervisor. It remains the process
+		// group leader while it escalates and reaps descendants; a group-wide
+		// SIGKILL here would destroy that sole durable authority first.
+		supervisor.kill(signal);
+		return "requested";
+	} catch {
+		return identityMatches(identity) ? "unresolved" : "gone";
+	}
 }
 
 export interface BackgroundMonitorActivity {
@@ -125,16 +201,40 @@ interface PendingNotification {
 
 interface RuntimeOptions {
 	readonly backgroundAfterMs?: number;
+	/** Test seam for an in-flight supervisor identity observation. */
+	readonly captureSupervisorIdentity?: typeof captureProcessIdentityWithRetry;
 	readonly commandPrefix?: string;
 	readonly cwd: string;
 	readonly pi: ExtensionAPI;
+	readonly outputFactory?: (path: string) => BoundedOutputFile;
+	/** Test seam for transient stale-runtime recovery failure. */
+	readonly reconcileStale?: typeof reconcileStaleRuns;
 	readonly sessionId: string;
+	/** Test seam; production refreshes authenticated recovery ownership every five seconds. */
+	readonly metadataHeartbeatMs?: number;
 	readonly shellPath?: string;
+	readonly storage?: WorkRunStorage;
 	readonly supervisorExecutable?: string;
+	/** Test seam for a supervisor whose process and completion lifecycles can fail independently. */
+	readonly supervisorFactory?: typeof spawnSupervisor;
+	readonly stopCompletionGraceMs?: number;
+	/** Test seam for exact supervisor-signal failures. */
+	readonly signalSupervisor?: SignalVerifiedSupervisor;
 }
 
 function textResult(text: string, details?: BashToolDetails): AgentToolResult<BashToolDetails | undefined> {
 	return { content: [{ type: "text", text }], details };
+}
+
+function emitToolUpdate(
+	onUpdate: AgentToolUpdateCallback<BashToolDetails | undefined> | undefined,
+	result: AgentToolResult<BashToolDetails | undefined>,
+): void {
+	try {
+		onUpdate?.(result);
+	} catch (error) {
+		console.error("[pi-stuff-work] Bash progress observer failed:", error);
+	}
 }
 
 function titleFromCommand(command: string): string {
@@ -181,25 +281,218 @@ function sessionEnvironment(ctx: ExtensionContext): NodeJS.ProcessEnv {
 
 function resolveSupervisorExecutable(override: string | undefined): string {
 	if (override) return override;
-	const executable = Bun.which("bun");
-	if (!executable) throw new Error("Background Work requires Bun on PATH to run its process supervisor");
+	// The supervisor is plain ESM. Prefer Node's mature concurrent child-process
+	// pipe implementation; Bun remains a portable fallback for Bun-only hosts.
+	const executable = Bun.which("node") ?? Bun.which("bun");
+	if (!executable) throw new Error("Background Work requires Node.js or Bun on PATH to run its process supervisor");
 	return executable;
+}
+
+function readableCompletion(stream: Readable): Promise<void> {
+	return new Promise((resolve) => {
+		let settled = false;
+		const finish = () => {
+			if (settled) return;
+			settled = true;
+			resolve();
+		};
+		stream.once("end", finish);
+		stream.once("close", finish);
+		stream.once("error", finish);
+	});
+}
+
+function spawnSupervisor(
+	executable: string,
+	envelope: string,
+	options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv },
+): SupervisorProcess {
+	let resolveExit!: (value: { code: number | null; error?: Error; signal: NodeJS.Signals | null }) => void;
+	const exit = new Promise<{ code: number | null; error?: Error; signal: NodeJS.Signals | null }>((resolve) => {
+		resolveExit = resolve;
+	});
+	const subprocess = Bun.spawn({
+		cmd: [executable, SUPERVISOR_PATH, envelope],
+		cwd: options.cwd,
+		detached: process.platform !== "win32",
+		env: options.env,
+		stdio: ["ignore", "pipe", "pipe", "pipe"],
+		windowsHide: true,
+		onExit(process, code, _signalCode, error) {
+			resolveExit({
+				code,
+				...(error ? { error: new Error(error.message) } : {}),
+				signal: process.signalCode,
+			});
+		},
+	});
+	const controlDescriptor = subprocess.stdio[3];
+	if (typeof controlDescriptor !== "number") {
+		subprocess.kill("SIGKILL");
+		subprocess.unref();
+		throw new Error("Background Work supervisor control pipe was not created");
+	}
+	let controlClosed = false;
+	const closeControl = () => {
+		if (controlClosed) return;
+		controlClosed = true;
+		try {
+			closeSync(controlDescriptor);
+		} catch {
+			// The descriptor is caller-owned. Cleanup is best-effort because a
+			// subprocess construction failure must preserve the original error.
+		}
+	};
+	let stdout: Readable;
+	let stderr: Readable;
+	let control: Readable;
+	try {
+		stdout = Readable.fromWeb(subprocess.stdout);
+		stderr = Readable.fromWeb(subprocess.stderr);
+		control = Readable.fromWeb(Bun.file(controlDescriptor).stream());
+	} catch (error) {
+		closeControl();
+		subprocess.kill("SIGKILL");
+		subprocess.unref();
+		throw error;
+	}
+	const streams = [stdout, stderr, control] as const;
+	const streamCompletion = Promise.all([
+		readableCompletion(stdout),
+		readableCompletion(stderr),
+		readableCompletion(control).finally(closeControl),
+	]);
+	const completion = exit.then(async (result) => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const drained = await Promise.race([
+			streamCompletion.then(() => true),
+			new Promise<false>((resolve) => {
+				timer = setTimeout(() => resolve(false), SUPERVISOR_POST_EXIT_DRAIN_MS);
+			}),
+		]);
+		if (timer) clearTimeout(timer);
+		if (!drained) {
+			// A detached grandchild may inherit the supervisor's stdout/stderr
+			// descriptors after both the command shell and supervisor have exited.
+			// Process exit is authoritative; never let foreign pipe ownership keep a
+			// completed Work task alive forever.
+			for (const stream of streams) stream.destroy();
+			closeControl();
+		}
+		return result;
+	});
+	return {
+		closeControl,
+		completion,
+		control,
+		pid: subprocess.pid,
+		stderr,
+		stdout,
+		kill: (signal) => {
+			subprocess.kill(signal);
+		},
+		unref: () => subprocess.unref(),
+	};
+}
+
+function abandonSupervisor(supervisor: SupervisorProcess): void {
+	try {
+		supervisor.kill("SIGKILL");
+	} catch {
+		// The exact subprocess may already have exited.
+	}
+	supervisor.stdout.destroy();
+	supervisor.stderr.destroy();
+	supervisor.control.destroy();
+	supervisor.closeControl();
+	supervisor.unref();
+}
+
+async function abandonSupervisorAndWait(supervisor: SupervisorProcess): Promise<void> {
+	abandonSupervisor(supervisor);
+	await supervisor.completion;
+}
+
+function publishCommandAuthorization(filePath: string, token: string, command: string): void {
+	const content = `${JSON.stringify({ version: 1, token, command })}\n`;
+	if (Buffer.byteLength(content, "utf-8") > MAX_COMMAND_AUTHORIZATION_BYTES) {
+		throw new Error(
+			`Background Work command exceeds the ${formatSize(MAX_COMMAND_AUTHORIZATION_BYTES)} transport limit`,
+		);
+	}
+	const temporary = `${filePath}.${randomBytes(6).toString("hex")}.tmp`;
+	try {
+		writeFileSync(temporary, content, { encoding: "utf-8", flag: "wx", mode: 0o600 });
+		renameSync(temporary, filePath);
+	} catch (error) {
+		rmSync(temporary, { force: true });
+		throw error;
+	}
+}
+
+function consumeCommandAcknowledgement(filePath: string, token: string, supervisorIdentity: ProcessIdentity): boolean {
+	try {
+		const stat = lstatSync(filePath);
+		const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+		if (
+			stat.isSymbolicLink() ||
+			!stat.isFile() ||
+			stat.size <= 0 ||
+			stat.size > 8 * 1024 ||
+			(stat.mode & 0o077) !== 0 ||
+			(currentUid !== undefined && stat.uid !== currentUid)
+		) {
+			throw new Error("Background Work command acknowledgement is not a private bounded regular file.");
+		}
+		const payload = JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, unknown>;
+		if (
+			payload["version"] !== 1 ||
+			payload["token"] !== token ||
+			payload["supervisorPid"] !== supervisorIdentity.pid ||
+			payload["supervisorStarted"] !== supervisorIdentity.started
+		) {
+			throw new Error("Background Work command acknowledgement does not match its supervisor authority.");
+		}
+		rmSync(filePath, { force: true });
+		return true;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		throw error;
+	}
+}
+
+function discardOutput(output: BoundedOutputFile): void {
+	output.close();
+	rmSync(output.path, { force: true });
 }
 
 export class BackgroundWorkRuntime {
 	private readonly activities = new Map<string, SpawnedActivity>();
 	private readonly backgroundAfterMs: number;
+	private readonly captureSupervisorIdentity: typeof captureProcessIdentityWithRetry;
 	private readonly commandPrefix: string | undefined;
 	private readonly cwd: string;
 	private disposed = false;
+	private launchReservations = 0;
+	private readonly launchSettlements = new Set<Promise<void>>();
 	private readonly listeners = new Set<() => void>();
+	private readonly metadataHeartbeatMs: number;
+	private metadataHeartbeatTimer: ReturnType<typeof setInterval> | undefined;
 	private readonly monitors = new Map<string, BackgroundMonitorActivity>();
 	private readonly notifications: PendingNotification[] = [];
+	private notificationRetryDelayMs = NOTIFICATION_RETRY_INITIAL_MS;
 	private notificationTimer: ReturnType<typeof setTimeout> | undefined;
+	private preparation: Promise<void> | undefined;
+	private readonly outputFactory: (path: string) => BoundedOutputFile;
 	private readonly pi: ExtensionAPI;
+	private readonly reconcileStale: typeof reconcileStaleRuns;
+	private readonly rollbackSettlements = new Set<Promise<void>>();
 	private readonly shellPath: string | undefined;
 	private readonly storage: WorkRunStorage;
 	private readonly supervisorExecutable: string;
+	private readonly supervisorFactory: typeof spawnSupervisor;
+	private readonly stopCompletionGraceMs: number;
+	private readonly signalSupervisor: SignalVerifiedSupervisor;
 
 	constructor(options: RuntimeOptions) {
 		this.backgroundAfterMs = options.backgroundAfterMs ?? DEFAULT_BACKGROUND_AFTER_MS;
@@ -207,20 +500,50 @@ export class BackgroundWorkRuntime {
 			throw new Error("Background Work foreground handoff delay must be positive");
 		}
 		this.commandPrefix = options.commandPrefix;
+		this.captureSupervisorIdentity = options.captureSupervisorIdentity ?? captureProcessIdentityWithRetry;
 		this.cwd = options.cwd;
 		this.pi = options.pi;
+		this.outputFactory = options.outputFactory ?? ((filePath) => new BoundedOutputFile(filePath));
+		this.reconcileStale = options.reconcileStale ?? reconcileStaleRuns;
+		this.metadataHeartbeatMs = options.metadataHeartbeatMs ?? DEFAULT_METADATA_HEARTBEAT_MS;
+		if (!Number.isFinite(this.metadataHeartbeatMs) || this.metadataHeartbeatMs <= 0) {
+			throw new Error("Background Work metadata heartbeat interval must be positive");
+		}
 		this.shellPath = options.shellPath;
-		this.storage = new WorkRunStorage(options.cwd, options.sessionId);
+		this.storage = options.storage ?? new WorkRunStorage(options.cwd, options.sessionId);
 		this.supervisorExecutable = resolveSupervisorExecutable(options.supervisorExecutable);
+		this.supervisorFactory = options.supervisorFactory ?? spawnSupervisor;
+		this.stopCompletionGraceMs = options.stopCompletionGraceMs ?? STOP_COMPLETION_GRACE_MS;
+		this.signalSupervisor = options.signalSupervisor ?? signalVerifiedSupervisor;
 	}
 
 	hasCommandPrefix(): boolean {
 		return Boolean(this.commandPrefix?.trim());
 	}
 
+	/** Perform process-mutating stale recovery only after an explicit Work action. */
+	async prepare(): Promise<void> {
+		if (!this.preparation) {
+			const attempt = this.reconcileStale(this.cwd).then((reconciliation) => {
+				if (reconciliation.unresolvedDirectories > 0) {
+					console.warn(
+						`[pi-stuff-work] left ${String(reconciliation.unresolvedDirectories)} unverified stale runtime director${reconciliation.unresolvedDirectories === 1 ? "y" : "ies"} untouched`,
+					);
+				}
+			});
+			this.preparation = attempt;
+			void attempt.catch(() => {
+				if (this.preparation === attempt) this.preparation = undefined;
+			});
+		}
+		return this.preparation;
+	}
+
 	snapshot(): readonly BackgroundWorkSnapshot[] {
 		return [
-			...Array.from(this.activities.values(), (activity) => this.activitySnapshot(activity)),
+			...Array.from(this.activities.values())
+				.filter((activity) => activity.launchAuthorized)
+				.map((activity) => this.activitySnapshot(activity)),
 			...Array.from(this.monitors.values(), (monitor) => monitor.snapshot()),
 		].sort((left, right) => left.startedAt - right.startedAt || left.id.localeCompare(right.id));
 	}
@@ -236,7 +559,7 @@ export class BackgroundWorkRuntime {
 
 	registerMonitor(activity: BackgroundMonitorActivity): () => void {
 		if (this.disposed) throw new Error("Background Work session is shutting down");
-		if (this.activities.size + this.monitors.size >= MAX_CONCURRENT_ACTIVITIES) {
+		if (this.activities.size + this.monitors.size + this.launchReservations >= MAX_CONCURRENT_ACTIVITIES) {
 			throw new Error(`At most ${String(MAX_CONCURRENT_ACTIVITIES)} Background Work activities may run at once`);
 		}
 		if (this.monitors.has(activity.id) || this.activities.has(activity.id)) {
@@ -248,7 +571,7 @@ export class BackgroundWorkRuntime {
 			if (this.monitors.get(activity.id) !== activity) return;
 			this.monitors.delete(activity.id);
 			this.emit();
-			if (!this.disposed) this.enqueueNotification(outcome, true);
+			if (!this.disposed && outcome.status !== "stopped") this.enqueueNotification(outcome, true);
 		});
 		return () => {
 			if (this.monitors.get(activity.id) !== activity) return;
@@ -261,10 +584,11 @@ export class BackgroundWorkRuntime {
 		input: BashExecutionInput,
 		ctx: ExtensionContext,
 	): Promise<AgentToolResult<BashToolDetails | undefined>> {
+		await this.prepare();
 		if (!input.command.trim()) throw new Error("Command is empty");
 		accessSync(ctx.cwd, constants.F_OK);
 		const resolvedCommand = this.commandPrefix ? `${this.commandPrefix}\n${input.command}` : input.command;
-		const activity = this.spawnProcess({
+		const activity = await this.spawnProcess({
 			backgrounded: input.runInBackground === true,
 			command: resolvedCommand,
 			...(input.description ? { description: input.description } : {}),
@@ -273,7 +597,7 @@ export class BackgroundWorkRuntime {
 		});
 		if (input.timeoutSeconds !== undefined) {
 			activity.timeoutTimer = setTimeout(() => {
-				void this.stopShell(activity, "timeout");
+				this.requestStopInBackground(activity, "timeout", "timeout");
 			}, timeoutMilliseconds(input.timeoutSeconds));
 			activity.timeoutTimer.unref?.();
 		}
@@ -283,7 +607,7 @@ export class BackgroundWorkRuntime {
 		let updateTimer: ReturnType<typeof setInterval> | undefined;
 		let lastUpdate = "";
 		const onAbort = () => {
-			if (!activity.backgrounded) void this.stopShell(activity, "abort");
+			if (!activity.backgrounded) this.requestStopInBackground(activity, "abort", "abort signal");
 		};
 		if (input.signal) {
 			if (input.signal.aborted) onAbort();
@@ -293,9 +617,9 @@ export class BackgroundWorkRuntime {
 			const output = activity.output.recentText(12_000);
 			if (!output || output === lastUpdate) return;
 			lastUpdate = output;
-			input.onUpdate?.({ content: [{ type: "text", text: output }], details: undefined });
+			emitToolUpdate(input.onUpdate, { content: [{ type: "text", text: output }], details: undefined });
 		};
-		input.onUpdate?.({ content: [], details: undefined });
+		emitToolUpdate(input.onUpdate, { content: [], details: undefined });
 		const detachTimer = setTimeout(() => this.detach(activity, "timeout"), this.backgroundAfterMs);
 		detachTimer.unref?.();
 		let quickTimer: ReturnType<typeof setTimeout> | undefined;
@@ -339,22 +663,28 @@ export class BackgroundWorkRuntime {
 
 	detachActiveForeground(): boolean {
 		const active = [...this.activities.values()]
-			.filter((activity) => activity.kind === "shell" && !activity.backgrounded && activity.status === "running")
+			.filter(
+				(activity) =>
+					activity.launchAuthorized &&
+					activity.kind === "shell" &&
+					!activity.backgrounded &&
+					activity.status === "running",
+			)
 			.sort((left, right) => right.startedAt - left.startedAt)[0];
 		return active ? this.detach(active, "manual") : false;
 	}
 
-	startCommandMonitor(
+	async startCommandMonitor(
 		input: CommandMonitorInput,
 		ctx: ExtensionContext,
-	): {
+	): Promise<{
 		readonly id: string;
 		readonly outcome: Promise<BackgroundWorkOutcome>;
-		readonly outputPath: string;
-	} {
+		readonly outputPath?: string;
+	}> {
 		if (!input.command.trim()) throw new Error("Monitor command is empty");
 		const command = this.commandPrefix ? `${this.commandPrefix}\n${input.command}` : input.command;
-		const activity = this.spawnProcess({
+		const activity = await this.spawnProcess({
 			backgrounded: true,
 			command,
 			...(input.description ? { description: input.description } : {}),
@@ -365,15 +695,23 @@ export class BackgroundWorkRuntime {
 			toolCallId: input.toolCallId,
 		});
 		activity.timeoutTimer = setTimeout(() => {
-			void this.stopShell(activity, "timeout");
+			this.requestStopInBackground(activity, "timeout", "monitor timeout");
 		}, timeoutMilliseconds(input.timeoutSeconds));
 		activity.timeoutTimer.unref?.();
-		return { id: activity.id, outcome: activity.completion, outputPath: activity.output.path };
+		return {
+			id: activity.id,
+			outcome: activity.completion,
+			...(activity.output.durable && existsSync(activity.output.path) ? { outputPath: activity.output.path } : {}),
+		};
 	}
 
 	readOutput(id: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
 		const activity = this.activities.get(id);
-		if (activity) return readBoundedTail(activity.output.path, maxBytes);
+		if (activity) {
+			return activity.output.durable && existsSync(activity.output.path)
+				? readBoundedTail(activity.output.path, maxBytes)
+				: activity.output.recentText(maxBytes) || "(no output yet)";
+		}
 		const monitor = this.monitors.get(id);
 		if (monitor) return monitor.readOutput(maxBytes);
 		throw new Error(`No running Background Work activity matches '${id}'`);
@@ -390,46 +728,93 @@ export class BackgroundWorkRuntime {
 	async shutdown(): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.stopMetadataHeartbeat();
 		if (this.notificationTimer) clearTimeout(this.notificationTimer);
+		this.notificationTimer = undefined;
 		this.notifications.length = 0;
 		await Promise.allSettled([
 			...Array.from(this.activities.values(), (activity) => this.stopShell(activity, "shutdown")),
 			...Array.from(this.monitors.values(), (monitor) => monitor.cancel("shutdown")),
+			...this.launchSettlements,
+			...this.rollbackSettlements,
 		]);
+		// A stop can fail only while a verified process group is still alive.
+		// Keep those activities in durable recovery metadata instead of erasing
+		// the only proof a later Pi host can use to reap them.
 		for (const activity of this.activities.values()) activity.output.close();
-		this.activities.clear();
 		this.monitors.clear();
-		this.persistRunningProcesses();
-		this.storage.cleanup();
+		try {
+			this.persistRunningProcesses();
+		} catch (error) {
+			console.error("[pi-stuff-work] failed to persist Background Work shutdown state:", error);
+		}
+		if (this.activities.size === 0) {
+			try {
+				this.storage.cleanup();
+			} catch (error) {
+				console.error("[pi-stuff-work] failed to clean up Background Work shutdown state:", error);
+			}
+		}
 		this.emit();
 	}
 
-	private spawnProcess(input: {
-		readonly backgrounded: boolean;
-		readonly command: string;
-		readonly description?: string;
-		readonly env: NodeJS.ProcessEnv;
-		readonly kind?: BackgroundWorkKind;
-		readonly monitorFailureText?: string;
-		readonly monitorSuccessText?: string;
-		readonly toolCallId: string;
-	}): SpawnedActivity {
+	private async spawnProcess(input: SpawnProcessInput): Promise<SpawnedActivity> {
 		if (this.disposed) throw new Error("Background Work session is shutting down");
-		if (this.activities.size + this.monitors.size >= MAX_CONCURRENT_ACTIVITIES) {
+		if (this.activities.size + this.monitors.size + this.launchReservations >= MAX_CONCURRENT_ACTIVITIES) {
 			throw new Error(`At most ${String(MAX_CONCURRENT_ACTIVITIES)} Background Work activities may run at once`);
 		}
+		this.launchReservations += 1;
+		const reservation = { active: true };
+		let settleLaunch!: () => void;
+		const launchSettlement = new Promise<void>((resolve) => {
+			settleLaunch = resolve;
+		});
+		this.launchSettlements.add(launchSettlement);
+		try {
+			return await this.spawnProcessTransaction(input, reservation);
+		} finally {
+			if (reservation.active) {
+				reservation.active = false;
+				this.launchReservations -= 1;
+			}
+			settleLaunch();
+			this.launchSettlements.delete(launchSettlement);
+		}
+	}
+
+	private async spawnProcessTransaction(
+		input: SpawnProcessInput,
+		reservation: { active: boolean },
+	): Promise<SpawnedActivity> {
+		if (this.disposed) throw new Error("Background Work session is shutting down");
 		const kind = input.kind ?? "shell";
 		const id = this.randomId(kind);
-		const output = new BoundedOutputFile(this.storage.outputPath(id));
-		const shell = getShellConfig(this.shellPath);
+		const outputPath = this.storage.outputPath(id);
+		const commandAuthorizationPath = this.storage.commandAuthorizationPath(id);
+		const commandAcknowledgementPath = `${commandAuthorizationPath}.ack`;
+		const commandAuthorizationToken = randomBytes(24).toString("base64url");
+		// Resolve and validate every launch path before opening the output file.
+		// If the runtime directory disappears between storage operations, no file
+		// descriptor or orphan output artifact has been created yet.
+		const output = this.outputFactory(outputPath);
+		let shell: ReturnType<typeof getShellConfig>;
+		try {
+			shell = getShellConfig(this.shellPath);
+		} catch (error) {
+			discardOutput(output);
+			throw error;
+		}
 		const owner = captureProcessIdentity(process.pid);
 		if (!owner) {
-			output.close();
+			discardOutput(output);
 			throw new Error("Cannot establish Pi process identity for Background Work");
 		}
 		const envelope = Buffer.from(
 			JSON.stringify({
 				commandTransport: shell.commandTransport ?? "argv",
+				commandAcknowledgementPath,
+				commandAuthorizationPath,
+				commandAuthorizationToken,
 				cwd: this.cwd,
 				parentPid: owner.pid,
 				parentStarted: owner.started,
@@ -438,24 +823,26 @@ export class BackgroundWorkRuntime {
 			}),
 			"utf-8",
 		).toString("base64url");
-		const supervisor = spawn(this.supervisorExecutable, [SUPERVISOR_PATH, envelope], {
-			cwd: this.cwd,
-			detached: process.platform !== "win32",
-			env: input.env,
-			stdio: ["pipe", "pipe", "pipe", "pipe"],
-			windowsHide: true,
-		});
-		if (!supervisor.pid) {
-			output.close();
-			rmSync(output.path, { force: true });
-			throw new Error("Failed to launch Background Work supervisor");
+		let supervisor: SupervisorProcess;
+		try {
+			supervisor = this.supervisorFactory(this.supervisorExecutable, envelope, {
+				cwd: this.cwd,
+				env: input.env,
+			});
+		} catch (error) {
+			discardOutput(output);
+			throw error;
 		}
-		const supervisorIdentity = captureProcessIdentity(supervisor.pid);
+		const supervisorIdentity = await this.captureSupervisorIdentity(supervisor.pid);
 		if (!supervisorIdentity) {
-			signalProcessGroup(supervisor.pid, "SIGKILL");
-			output.close();
-			rmSync(output.path, { force: true });
+			await abandonSupervisorAndWait(supervisor);
+			discardOutput(output);
 			throw new Error("Cannot establish Background Work supervisor identity");
+		}
+		if (this.disposed) {
+			await abandonSupervisorAndWait(supervisor);
+			discardOutput(output);
+			throw new Error("Background Work session is shutting down");
 		}
 		let completionResolve!: (outcome: BackgroundWorkOutcome) => void;
 		const completion = new Promise<BackgroundWorkOutcome>((resolve) => {
@@ -468,15 +855,20 @@ export class BackgroundWorkRuntime {
 		const activity: SpawnedActivity = {
 			backgrounded: input.backgrounded,
 			command: input.command,
+			commandAcknowledgementPath,
+			commandAuthorizationPath,
 			completion,
 			completionResolve,
+			commandGroupReaped: false,
 			controlBuffer: "",
 			...(input.description ? { description: input.description } : {}),
 			detachResolve,
 			detachResult,
 			finalized: false,
+			finalizing: false,
 			id,
 			kind,
+			launchAuthorized: false,
 			...(input.monitorFailureText ? { monitorFailureText: input.monitorFailureText } : {}),
 			...(input.monitorSuccessText ? { monitorSuccessText: input.monitorSuccessText } : {}),
 			output,
@@ -489,13 +881,93 @@ export class BackgroundWorkRuntime {
 			toolCallId: input.toolCallId,
 		};
 		this.activities.set(id, activity);
-		this.persistRunningProcesses();
+		reservation.active = false;
+		this.launchReservations -= 1;
 		this.bindSupervisor(activity);
-		supervisor.stdin?.on("error", () => {});
-		supervisor.stdin?.end(input.command);
+		try {
+			this.persistRunningProcesses();
+		} catch (error) {
+			this.rollbackSpawnedActivity(activity);
+			throw error;
+		}
+		let inputFailed = false;
+		const failInput = (error: unknown) => {
+			if (inputFailed) return;
+			inputFailed = true;
+			activity.output.append(
+				Buffer.from(
+					`Background supervisor input failed: ${error instanceof Error ? error.message : String(error)}\n`,
+					"utf-8",
+				),
+			);
+			// The supervisor may already have spawned the command in its own group.
+			// Preserve durable ownership and let its graceful TERM handler reap that
+			// group instead of SIGKILLing the supervisor alone.
+			void this.stopShell(activity, "abort").catch((stopError) => {
+				console.error("[pi-stuff-work] failed to stop after supervisor input failure:", stopError);
+			});
+		};
+		try {
+			publishCommandAuthorization(commandAuthorizationPath, commandAuthorizationToken, input.command);
+		} catch (error) {
+			failInput(error);
+			throw error;
+		}
 		supervisor.unref();
+		await this.waitForCommandAcknowledgement(activity, commandAuthorizationToken);
 		this.emit();
 		return activity;
+	}
+
+	private rollbackSpawnedActivity(activity: SpawnedActivity): void {
+		activity.finalizing = true;
+		// A launch rollback is owned solely by rollbackSettlements from this point.
+		// Keeping it in the ordinary activity map makes shutdown start a competing
+		// stop transaction against the same exact subprocess.
+		this.activities.delete(activity.id);
+		try {
+			// Persist failed before command input was released. Kill the exact Bun
+			// subprocess handle first; ending stdin while it is alive would authorize
+			// the supervisor to launch the command we are trying to roll back.
+			activity.supervisor.kill("SIGKILL");
+		} catch {
+			// Completion below remains the authoritative exact-handle observation.
+		}
+		const settlement = activity.supervisor.completion.then(() => {
+			activity.finalized = true;
+			activity.finalizing = false;
+			this.activities.delete(activity.id);
+			activity.output.close();
+			rmSync(activity.output.path, { force: true });
+			try {
+				this.persistRunningProcesses();
+			} catch (cleanupError) {
+				console.error("[pi-stuff-work] failed to persist Background Work launch rollback:", cleanupError);
+			}
+		});
+		this.rollbackSettlements.add(settlement);
+		void settlement.then(
+			() => this.rollbackSettlements.delete(settlement),
+			(error) => {
+				this.rollbackSettlements.delete(settlement);
+				console.error("[pi-stuff-work] failed to settle Background Work launch rollback:", error);
+			},
+		);
+		this.removeLaunchArtifact(activity.commandAuthorizationPath);
+		this.removeLaunchArtifact(activity.commandAcknowledgementPath);
+		activity.supervisor.stdout.destroy();
+		activity.supervisor.stderr.destroy();
+		activity.supervisor.control.destroy();
+		activity.supervisor.closeControl();
+		activity.supervisor.unref();
+	}
+
+	private removeLaunchArtifact(filePath: string): void {
+		try {
+			rmSync(filePath, { force: true });
+		} catch (error) {
+			console.error(`[pi-stuff-work] failed to remove launch artifact '${filePath}':`, error);
+		}
 	}
 
 	private bindSupervisor(activity: SpawnedActivity): void {
@@ -503,21 +975,84 @@ export class BackgroundWorkRuntime {
 			const accepted = activity.output.append(chunk);
 			if (!accepted && activity.output.overflowed && !activity.outputLimitStopRequested) {
 				activity.outputLimitStopRequested = true;
-				void this.stopShell(activity, "output_limit");
+				this.requestStopInBackground(activity, "output_limit", "output limit");
 			}
 		};
-		activity.supervisor.stdout?.on("data", append);
-		activity.supervisor.stderr?.on("data", append);
-		const control = activity.supervisor.stdio[3];
-		if (control && "on" in control) {
-			control.on("data", (chunk: Buffer) => this.consumeControl(activity, chunk));
+		activity.supervisor.stdout.on("data", append);
+		activity.supervisor.stderr.on("data", append);
+		activity.supervisor.control.on("data", (chunk: Buffer) => this.consumeControl(activity, chunk));
+		void activity.supervisor.completion
+			.then(async ({ code, error, signal }) => {
+				if (error) append(Buffer.from(`Background supervisor failed: ${error.message}\n`, "utf-8"));
+				await this.finalizeShell(activity, code, signal);
+			})
+			.catch((error) => {
+				console.error("[pi-stuff-work] Background Work finalization failed:", error);
+				if (!activity.finalized) {
+					append(Buffer.from(`Background finalization failed: ${String(error)}\n`, "utf-8"));
+					void this.finalizeShell(activity, 1, null).catch((retryError) => {
+						console.error("[pi-stuff-work] Background Work finalization retry failed:", retryError);
+					});
+				}
+			});
+	}
+
+	private requestStopInBackground(
+		activity: SpawnedActivity,
+		reason: "abort" | "output_limit" | "shutdown" | "timeout" | "user",
+		source: string,
+	): void {
+		void this.stopShell(activity, reason).catch((error) => {
+			// Timer/signal/output callbacks have no caller to await a rejection. Keep
+			// durable recovery ownership and report the failure without turning it into
+			// an unhandled rejection that can crash the Host.
+			console.error(`[pi-stuff-work] Background Work stop from ${source} failed:`, error);
+		});
+	}
+
+	private async waitForCommandAcknowledgement(activity: SpawnedActivity, token: string): Promise<void> {
+		let supervisorExit:
+			| { readonly code: number | null; readonly error?: Error; readonly signal: NodeJS.Signals | null }
+			| undefined;
+		void activity.supervisor.completion.then(
+			(result) => {
+				supervisorExit = result;
+			},
+			(error) => {
+				supervisorExit = {
+					code: 1,
+					error: error instanceof Error ? error : new Error(String(error)),
+					signal: null,
+				};
+			},
+		);
+		try {
+			const deadline = Date.now() + 3_000;
+			for (;;) {
+				if (
+					consumeCommandAcknowledgement(activity.commandAcknowledgementPath, token, activity.supervisorIdentity)
+				) {
+					activity.launchAuthorized = true;
+					return;
+				}
+				if (supervisorExit) {
+					throw (
+						supervisorExit.error ?? new Error("Background Work supervisor exited before accepting its command.")
+					);
+				}
+				if (Date.now() >= deadline) {
+					throw new Error("Background Work supervisor did not acknowledge its command within 3 seconds.");
+				}
+				await Bun.sleep(20);
+			}
+		} catch (error) {
+			// Once authorization is published, every acknowledgement failure is a
+			// cancellation path. The asynchronous stop retains this activity and its
+			// authenticated process identity until termination is actually proven.
+			activity.launchAuthorized = true;
+			this.requestStopInBackground(activity, "abort", "command acknowledgement failure");
+			throw error;
 		}
-		activity.supervisor.once("error", (error) => {
-			append(Buffer.from(`Background supervisor failed: ${error.message}\n`, "utf-8"));
-		});
-		activity.supervisor.once("exit", (code, signal) => {
-			void this.finalizeShell(activity, code, signal);
-		});
 	}
 
 	private consumeControl(activity: SpawnedActivity, chunk: Buffer): void {
@@ -527,20 +1062,30 @@ export class BackgroundWorkRuntime {
 			if (newline === -1) return;
 			const line = activity.controlBuffer.slice(0, newline);
 			activity.controlBuffer = activity.controlBuffer.slice(newline + 1);
+			let event: Record<string, unknown>;
 			try {
-				const event = JSON.parse(line) as Record<string, unknown>;
-				if (
-					event["type"] === "started" &&
-					typeof event["pid"] === "number" &&
-					typeof event["started"] === "string"
-				) {
-					activity.commandIdentity = { pid: event["pid"], started: event["started"] };
-					this.persistRunningProcesses();
-				} else if (event["type"] === "spawn-error" && typeof event["message"] === "string") {
-					activity.output.append(Buffer.from(`Command spawn failed: ${event["message"]}\n`, "utf-8"));
-				}
+				event = JSON.parse(line) as Record<string, unknown>;
 			} catch {
 				activity.output.append(Buffer.from("Invalid supervisor control record.\n", "utf-8"));
+				continue;
+			}
+			if (
+				event["type"] === "started" &&
+				event["groupPid"] === activity.supervisorIdentity.pid &&
+				event["groupStarted"] === activity.supervisorIdentity.started
+			) {
+				// The long-lived supervisor is also the command process-group leader.
+				// Persist that anchored identity, never the short-lived user shell PID.
+				activity.commandIdentity = activity.supervisorIdentity;
+				try {
+					this.persistRunningProcesses();
+				} catch (error) {
+					console.error("[pi-stuff-work] failed to persist running command identity:", error);
+				}
+			} else if (event["type"] === "spawn-error" && typeof event["message"] === "string") {
+				activity.output.append(Buffer.from(`Command spawn failed: ${event["message"]}\n`, "utf-8"));
+			} else if (event["type"] === "exit") {
+				activity.commandGroupReaped = event["groupReaped"] === true;
 			}
 		}
 	}
@@ -564,22 +1109,48 @@ export class BackgroundWorkRuntime {
 		activity.stopReason = reason;
 		activity.status = "stopping";
 		this.emit();
-		activity.stopPromise = (async () => {
-			const identities = [activity.commandIdentity, activity.supervisorIdentity].filter(
-				(identity): identity is ProcessIdentity => identity !== undefined,
-			);
-			await Promise.allSettled(identities.map((identity) => terminateVerifiedProcessGroup(identity, 2_000)));
+		const stopAttempt = (async () => {
+			// Ask only the authenticated supervisor to stop. It must remain alive as
+			// the PGID anchor until every descendant has actually disappeared.
+			let signalState: ReturnType<SignalVerifiedSupervisor>;
+			try {
+				signalState = this.signalSupervisor(activity.supervisor, activity.supervisorIdentity, "SIGTERM");
+			} catch (error) {
+				this.persistRunningProcesses();
+				throw error;
+			}
+			if (signalState === "unresolved") {
+				this.persistRunningProcesses();
+				throw new Error(
+					`Background Work '${activity.id}' supervisor could not be proven stopped; recovery ownership was retained.`,
+				);
+			}
 			const terminal = await Promise.race([
 				activity.completion,
-				new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 3_000)),
+				new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), this.stopCompletionGraceMs)),
 			]);
 			if (terminal) return terminal;
-			for (const identity of identities) {
-				if (identityMatches(identity)) signalProcessGroup(identity.pid, "SIGKILL");
+			if (identityMatches(activity.supervisorIdentity)) {
+				this.persistRunningProcesses();
+				throw new Error(
+					`Background Work '${activity.id}' supervisor is still reaping its process group; recovery ownership was retained.`,
+				);
 			}
+			// The supervisor is proven gone but its completion observer may have
+			// failed. Finalization performs one last conservative group check and
+			// retains recovery state if the old PGID is now unverifiable.
+			await this.finalizeShell(activity, null, "SIGTERM");
 			return activity.completion;
 		})();
-		return activity.stopPromise;
+		activity.stopPromise = stopAttempt;
+		try {
+			return await stopAttempt;
+		} finally {
+			// A failed proof of termination intentionally preserves the durable activity,
+			// but it must not permanently cache that rejected attempt. A later explicit
+			// stop or shutdown gets a fresh chance to verify and reap the same identity.
+			if (!activity.finalized && activity.stopPromise === stopAttempt) delete activity.stopPromise;
+		}
 	}
 
 	private async finalizeShell(
@@ -587,13 +1158,39 @@ export class BackgroundWorkRuntime {
 		code: number | null,
 		signal: NodeJS.Signals | null,
 	): Promise<void> {
-		if (activity.finalized) return;
+		if (activity.finalized || activity.finalizing) return;
+		activity.finalizing = true;
+		try {
+			if (activity.commandIdentity && !activity.commandGroupReaped) {
+				await reapOwnedProcessGroup(activity.commandIdentity);
+			}
+		} catch (error) {
+			activity.finalizing = false;
+			try {
+				this.persistRunningProcesses();
+			} catch (persistError) {
+				console.error("[pi-stuff-work] failed to retain unresolved process-group recovery state:", persistError);
+			}
+			throw error;
+		}
 		activity.finalized = true;
+		activity.finalizing = false;
 		if (activity.timeoutTimer) clearTimeout(activity.timeoutTimer);
-		if (activity.commandIdentity) await reapOwnedProcessGroup(activity.commandIdentity.pid);
-		activity.supervisor.stdout?.destroy();
-		activity.supervisor.stderr?.destroy();
+		for (const stream of [activity.supervisor.stdout, activity.supervisor.stderr, activity.supervisor.control]) {
+			try {
+				stream.destroy();
+			} catch {
+				// Stream teardown cannot change the process result.
+			}
+		}
+		try {
+			activity.supervisor.closeControl();
+		} catch {
+			// The control descriptor is already terminal from the supervisor's perspective.
+		}
 		activity.output.close();
+		this.removeLaunchArtifact(activity.commandAuthorizationPath);
+		this.removeLaunchArtifact(activity.commandAcknowledgementPath);
 		const endedAt = Date.now();
 		let status: BackgroundWorkTerminalStatus;
 		if (activity.stopReason === "timeout") status = "timed_out";
@@ -610,7 +1207,7 @@ export class BackgroundWorkRuntime {
 			...(typeof code === "number" ? { exitCode: code } : {}),
 			id: activity.id,
 			kind: activity.kind,
-			outputPath: activity.output.path,
+			...(activity.output.durable && existsSync(activity.output.path) ? { outputPath: activity.output.path } : {}),
 			...(recentOutput ? { recentOutput } : {}),
 			startedAt: activity.startedAt,
 			status,
@@ -618,14 +1215,19 @@ export class BackgroundWorkRuntime {
 			title: activity.title,
 		};
 		this.activities.delete(activity.id);
-		this.persistRunningProcesses();
+		try {
+			this.persistRunningProcesses();
+		} catch (error) {
+			console.error("[pi-stuff-work] failed to persist terminal Background Work state:", error);
+		}
 		activity.completionResolve(outcome);
 		this.emit();
 		if (
 			activity.backgrounded &&
 			!this.disposed &&
 			activity.stopReason !== "shutdown" &&
-			activity.stopReason !== "abort"
+			activity.stopReason !== "abort" &&
+			activity.stopReason !== "user"
 		) {
 			this.enqueueNotification(outcome, activity.kind === "monitor");
 		}
@@ -668,7 +1270,12 @@ export class BackgroundWorkRuntime {
 		readonly text: string;
 	} {
 		if (!outcome.outputPath) return { text: outcome.recentOutput ?? "" };
-		const raw = readFileSync(outcome.outputPath, "utf8");
+		let raw: string;
+		try {
+			raw = readFileSync(outcome.outputPath, "utf8");
+		} catch {
+			return { text: outcome.recentOutput ?? "" };
+		}
 		const truncation = truncateTail(raw, { maxBytes: DEFAULT_MAX_BYTES, maxLines: DEFAULT_MAX_LINES });
 		if (!truncation.truncated) return { text: truncation.content };
 		const startLine = truncation.totalLines - truncation.outputLines + 1;
@@ -692,9 +1299,10 @@ export class BackgroundWorkRuntime {
 		reason?: "manual" | "timeout",
 	): AgentToolResult<BashToolDetails | undefined> {
 		const action = reason === "manual" ? "manually moved" : reason === "timeout" ? "moved" : "started";
+		const outputPath = activity.output.durable && existsSync(activity.output.path) ? activity.output.path : undefined;
 		return textResult(
-			`Command ${action} to background task ${activity.id}.\nOutput: ${activity.output.path}\nThe terminal result will be delivered automatically; continue useful work instead of polling.`,
-			{ fullOutputPath: activity.output.path },
+			`Command ${action} to background task ${activity.id}.${outputPath ? `\nOutput: ${outputPath}` : ""}\nThe terminal result will be delivered automatically; continue useful work instead of polling.`,
+			outputPath ? { fullOutputPath: outputPath } : undefined,
 		);
 	}
 
@@ -705,7 +1313,7 @@ export class BackgroundWorkRuntime {
 			...(activity.description ? { description: activity.description } : {}),
 			id: activity.id,
 			kind: activity.kind,
-			outputPath: activity.output.path,
+			...(activity.output.durable && existsSync(activity.output.path) ? { outputPath: activity.output.path } : {}),
 			...(recentOutput ? { recentOutput } : {}),
 			startedAt: activity.startedAt,
 			status: activity.status,
@@ -714,7 +1322,10 @@ export class BackgroundWorkRuntime {
 	}
 
 	private persistRunningProcesses(): void {
-		if (!this.storage.directory && this.activities.size === 0) return;
+		if (!this.storage.directory && this.activities.size === 0) {
+			this.stopMetadataHeartbeat();
+			return;
+		}
 		const tasks: StoredProcessTask[] = [];
 		for (const activity of this.activities.values()) {
 			tasks.push({
@@ -724,12 +1335,47 @@ export class BackgroundWorkRuntime {
 			});
 		}
 		this.storage.persist(tasks);
+		this.refreshMetadataHeartbeat();
+	}
+
+	private refreshMetadataHeartbeat(): void {
+		if (this.disposed || this.activities.size === 0) {
+			this.stopMetadataHeartbeat();
+			return;
+		}
+		if (this.metadataHeartbeatTimer) return;
+		this.metadataHeartbeatTimer = setInterval(() => {
+			if (this.disposed || this.activities.size === 0) {
+				this.stopMetadataHeartbeat();
+				return;
+			}
+			try {
+				this.persistRunningProcesses();
+			} catch (error) {
+				console.error("[pi-stuff-work] failed to refresh Background Work recovery metadata:", error);
+			}
+		}, this.metadataHeartbeatMs);
+		this.metadataHeartbeatTimer.unref?.();
+	}
+
+	private stopMetadataHeartbeat(): void {
+		if (!this.metadataHeartbeatTimer) return;
+		clearInterval(this.metadataHeartbeatTimer);
+		this.metadataHeartbeatTimer = undefined;
 	}
 
 	private enqueueNotification(outcome: BackgroundWorkOutcome, wake: boolean): void {
 		this.notifications.push({ outcome, wake });
-		if (this.notificationTimer) return;
-		this.notificationTimer = setTimeout(() => this.flushNotifications(), 200);
+		this.scheduleNotificationFlush(NOTIFICATION_BATCH_DELAY_MS);
+	}
+
+	private scheduleNotificationFlush(delayMs: number, replace = false): void {
+		if (this.disposed || this.notifications.length === 0) return;
+		if (this.notificationTimer) {
+			if (!replace) return;
+			clearTimeout(this.notificationTimer);
+		}
+		this.notificationTimer = setTimeout(() => this.flushNotifications(), delayMs);
 		this.notificationTimer.unref?.();
 	}
 
@@ -737,29 +1383,44 @@ export class BackgroundWorkRuntime {
 		this.notificationTimer = undefined;
 		if (this.disposed || this.notifications.length === 0) return;
 		const pending = this.notifications.splice(0);
-		const wake = pending.some((item) => item.wake);
-		const lines = pending.map(({ outcome }) => {
-			const output = outcome.outputPath ? `\n<output_file>${escapeXml(outcome.outputPath)}</output_file>` : "";
-			return `<task id="${escapeXml(outcome.id)}" kind="${outcome.kind}" status="${outcome.status}">\n<summary>${escapeXml(outcome.summary)}</summary>${output}\n</task>`;
-		});
-		const content = `<background-work-notification>\n${lines.join("\n")}\n</background-work-notification>`;
-		try {
-			this.pi.sendMessage(
-				{
-					customType: "pi-stuff-background-work-result",
-					content,
-					details: { outcomes: pending.map((item) => item.outcome) },
-					display: true,
-				},
-				wake ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "followUp", triggerTurn: false },
-			);
-		} catch (error) {
-			console.error("[pi-stuff-work] terminal notification failed:", error);
+		for (let offset = 0; offset < pending.length; offset += MAX_NOTIFICATION_OUTCOMES) {
+			const batch = pending.slice(offset, offset + MAX_NOTIFICATION_OUTCOMES);
+			const wake = batch.some((item) => item.wake);
+			const projected = projectNotificationBatch(batch.map((item) => item.outcome));
+			try {
+				this.pi.sendMessage(
+					{
+						customType: "pi-stuff-background-work-result",
+						content: projected.content,
+						details: { outcomes: projected.outcomes },
+						display: true,
+					},
+					wake ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "followUp", triggerTurn: false },
+				);
+			} catch (error) {
+				console.error("[pi-stuff-work] terminal notification failed:", error);
+				this.notifications.unshift(...pending.slice(offset));
+				const retryDelay = this.notificationRetryDelayMs;
+				this.notificationRetryDelayMs = Math.min(
+					NOTIFICATION_RETRY_MAX_MS,
+					Math.max(NOTIFICATION_RETRY_INITIAL_MS, retryDelay * 2),
+				);
+				this.scheduleNotificationFlush(retryDelay, true);
+				return;
+			}
 		}
+		this.notificationRetryDelayMs = NOTIFICATION_RETRY_INITIAL_MS;
+		if (this.notifications.length > 0) this.scheduleNotificationFlush(NOTIFICATION_BATCH_DELAY_MS);
 	}
 
 	private emit(): void {
-		for (const listener of this.listeners) listener();
+		for (const listener of [...this.listeners]) {
+			try {
+				listener();
+			} catch {
+				// A renderer must not change Background Work process ownership or outcomes.
+			}
+		}
 	}
 
 	private randomId(kind: BackgroundWorkKind): string {
@@ -772,4 +1433,161 @@ export class BackgroundWorkRuntime {
 
 function escapeXml(value: string): string {
 	return value.replace(/&/gu, "&amp;").replace(/</gu, "&lt;").replace(/>/gu, "&gt;").replace(/"/gu, "&quot;");
+}
+
+function escapedBytes(value: string): number {
+	return Buffer.byteLength(escapeXml(value), "utf-8");
+}
+
+function fitEscapedHead(value: string, maxBytes: number): { readonly escaped: string; readonly raw: string } {
+	const escaped = escapeXml(value);
+	if (Buffer.byteLength(escaped, "utf-8") <= maxBytes) return { escaped, raw: value };
+	const points = Array.from(value);
+	const suffix = "…";
+	let low = 0;
+	let high = points.length;
+	while (low < high) {
+		const middle = Math.ceil((low + high) / 2);
+		const candidate = `${points.slice(0, middle).join("")}${suffix}`;
+		if (escapedBytes(candidate) <= maxBytes) low = middle;
+		else high = middle - 1;
+	}
+	const raw = `${points.slice(0, low).join("")}${suffix}`;
+	return escapedBytes(raw) <= maxBytes ? { escaped: escapeXml(raw), raw } : { escaped: "", raw: "" };
+}
+
+function fitEscapedTail(value: string, maxBytes: number): { readonly escaped: string; readonly raw: string } {
+	const escaped = escapeXml(value);
+	if (Buffer.byteLength(escaped, "utf-8") <= maxBytes) return { escaped, raw: value };
+	const markerBytes = escapedBytes(NOTIFICATION_TRUNCATION_MARKER);
+	if (maxBytes <= markerBytes) return { escaped: "", raw: "" };
+	const points = Array.from(value);
+	let low = 0;
+	let high = points.length;
+	while (low < high) {
+		const middle = Math.ceil((low + high) / 2);
+		const candidate = `${NOTIFICATION_TRUNCATION_MARKER}${points.slice(points.length - middle).join("")}`;
+		if (escapedBytes(candidate) <= maxBytes) low = middle;
+		else high = middle - 1;
+	}
+	const raw = `${NOTIFICATION_TRUNCATION_MARKER}${points.slice(points.length - low).join("")}`;
+	return { escaped: escapeXml(raw), raw };
+}
+
+function fairInlineBudgets(values: string[], totalBytes: number): number[] {
+	const budgets = Array(values.length).fill(0) as number[];
+	let remaining = Math.max(0, totalBytes);
+	let unresolved = values.map((_, index) => index);
+	while (unresolved.length > 0 && remaining > 0) {
+		const share = Math.floor(remaining / unresolved.length);
+		if (share <= 0) {
+			for (const index of unresolved.slice(0, remaining)) budgets[index] = 1;
+			break;
+		}
+		const fitting = unresolved.filter((index) => escapedBytes(values[index] ?? "") <= share);
+		if (fitting.length === 0) {
+			for (const [position, index] of unresolved.entries()) {
+				budgets[index] = share + (position < remaining % unresolved.length ? 1 : 0);
+			}
+			break;
+		}
+		const fittingSet = new Set(fitting);
+		for (const index of fitting) {
+			const bytes = escapedBytes(values[index] ?? "");
+			budgets[index] = bytes;
+			remaining -= bytes;
+		}
+		unresolved = unresolved.filter((index) => !fittingSet.has(index));
+	}
+	return budgets;
+}
+
+export function projectNotificationBatch(outcomes: readonly BackgroundWorkOutcome[]): {
+	readonly content: string;
+	readonly outcomes: BackgroundWorkOutcome[];
+} {
+	const rows = outcomes.map((outcome) => {
+		const id = fitEscapedHead(outcome.id, 256);
+		const summary = fitEscapedHead(outcome.summary, MAX_NOTIFICATION_SUMMARY_BYTES);
+		const readableOutputPath = outcome.outputPath && existsSync(outcome.outputPath) ? outcome.outputPath : undefined;
+		const fittedOutputPath = readableOutputPath
+			? fitEscapedHead(readableOutputPath, MAX_NOTIFICATION_PATH_BYTES)
+			: undefined;
+		const outputPath = fittedOutputPath?.raw === readableOutputPath ? fittedOutputPath : undefined;
+		const inline = !outputPath ? outcome.recentOutput : undefined;
+		const outputPrefix = outputPath
+			? `\n<output_file>${outputPath.escaped}</output_file>`
+			: inline
+				? "\n<recent_output>"
+				: "";
+		const outputSuffix = inline ? "</recent_output>" : "";
+		return {
+			outcome,
+			id,
+			summary,
+			outputPath,
+			inline,
+			prefix: `<task id="${id.escaped}" kind="${outcome.kind}" status="${outcome.status}">\n<summary>${summary.escaped}</summary>${outputPrefix}`,
+			suffix: `${outputSuffix}\n</task>`,
+		};
+	});
+	const header = "<background-work-notification>\n";
+	const footer = "\n</background-work-notification>";
+	const baseContent = `${header}${rows.map((row) => `${row.prefix}${row.suffix}`).join("\n")}${footer}`;
+	const inlineRows = rows.filter((row) => typeof row.inline === "string");
+	const remainingBytes = Math.max(
+		0,
+		Math.min(MAX_NOTIFICATION_INLINE_BYTES, MAX_NOTIFICATION_CONTENT_BYTES - Buffer.byteLength(baseContent, "utf-8")),
+	);
+	const budgets = fairInlineBudgets(
+		inlineRows.map((row) => row.inline ?? ""),
+		remainingBytes,
+	);
+	const fittedInline = new Map<(typeof rows)[number], { readonly escaped: string; readonly raw: string }>();
+	for (const [index, row] of inlineRows.entries()) {
+		fittedInline.set(row, fitEscapedTail(row.inline ?? "", budgets[index] ?? 0));
+	}
+	const content = `${header}${rows
+		.map((row) => `${row.prefix}${fittedInline.get(row)?.escaped ?? ""}${row.suffix}`)
+		.join("\n")}${footer}`;
+	const projectedOutcomes = rows.map((row) => {
+		const { outputPath: _outputPath, recentOutput: _recentOutput, ...base } = row.outcome;
+		const title = fitEscapedHead(row.outcome.title, 256).raw;
+		const detailsSummary = fitEscapedHead(row.outcome.summary, 512).raw;
+		const recentOutput = fittedInline.get(row)?.raw;
+		return {
+			...base,
+			id: row.id.raw,
+			summary: detailsSummary,
+			title,
+			...(row.outputPath ? { outputPath: row.outputPath.raw } : {}),
+			...(recentOutput ? { recentOutput } : {}),
+		};
+	});
+	if (Buffer.byteLength(content, "utf-8") <= MAX_NOTIFICATION_CONTENT_BYTES) {
+		return { content, outcomes: projectedOutcomes };
+	}
+	const minimalRows = outcomes.map((outcome) => {
+		const id = fitEscapedHead(outcome.id, 64);
+		const summary = fitEscapedHead(outcome.summary, 256);
+		return `<task id="${id.escaped}" kind="${outcome.kind}" status="${outcome.status}">\n<summary>${summary.escaped}</summary>\n</task>`;
+	});
+	const minimalContent = `${header}${minimalRows.join("\n")}${footer}`;
+	const minimalOutcomes = outcomes.map((outcome) => {
+		const { outputPath: _outputPath, recentOutput: _recentOutput, ...base } = outcome;
+		return {
+			...base,
+			id: fitEscapedHead(outcome.id, 64).raw,
+			summary: fitEscapedHead(outcome.summary, 256).raw,
+			title: fitEscapedHead(outcome.title, 128).raw,
+		};
+	});
+	if (Buffer.byteLength(minimalContent, "utf-8") <= MAX_NOTIFICATION_CONTENT_BYTES) {
+		return { content: minimalContent, outcomes: minimalOutcomes };
+	}
+	const counts = new Map<BackgroundWorkTerminalStatus, number>();
+	for (const outcome of outcomes) counts.set(outcome.status, (counts.get(outcome.status) ?? 0) + 1);
+	const summary = [...counts.entries()].map(([status, count]) => `${status}=${String(count)}`).join(" ");
+	const hardContent = `<background-work-notification count="${String(outcomes.length)}">\n<summary>${escapeXml(summary)}</summary>\n<notice>Per-task results are available in message details.</notice>\n</background-work-notification>`;
+	return { content: hardContent, outcomes: minimalOutcomes };
 }

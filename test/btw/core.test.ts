@@ -199,7 +199,7 @@ describe("BTW context budget", () => {
 });
 
 describe("BTW stream execution", () => {
-	test("adds the bounded Context projection to the side call as reference-only system context", async () => {
+	test("reuses captured Magic memory without re-running stateful projection for a frozen branch", async () => {
 		const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
 		const activeTools: string[] = [];
 		const api = {
@@ -216,6 +216,7 @@ describe("BTW stream execution", () => {
 			},
 		} as never;
 		let captured: Parameters<OpenBtwStream>[0] | undefined;
+		let magicTransforms = 0;
 		try {
 			piStuffContext(api, {
 				loadMagicContext: async () => ({
@@ -224,17 +225,26 @@ describe("BTW stream execution", () => {
 							event: string,
 							handler: (event: unknown) => unknown,
 						) => void;
-						register("context", () => ({
-							messages: [
-								user("<session-history><project-memory>side memory</project-memory></session-history>"),
-							],
-						}));
+						register("context", () => {
+							magicTransforms += 1;
+							return {
+								messages: [
+									user("<session-history><project-memory>side memory</project-memory></session-history>"),
+								],
+							};
+						});
 					},
 				}),
 			});
 			const ctx = extensionContext(() => [messageEntry("main", user("main conversation"))]);
 			for (const handler of handlers.get("session_start") ?? []) {
 				await handler({ type: "session_start", reason: "startup" }, ctx);
+			}
+			for (const handler of handlers.get("before_agent_start") ?? []) {
+				await handler({ type: "before_agent_start", prompt: "main conversation" }, ctx);
+			}
+			for (const handler of handlers.get("context") ?? []) {
+				await handler({ type: "context", messages: [user("main conversation")] }, ctx);
 			}
 			await executeBtw("isolated question", ctx, new AbortController().signal, {}, async (request) => {
 				captured = request;
@@ -244,8 +254,10 @@ describe("BTW stream execution", () => {
 			contextTest.clear();
 		}
 
-		expect(captured?.context.systemPrompt).toContain('<pi-stuff-context audience="btw" trust="reference-only">');
+		expect(magicTransforms).toBe(1);
+		expect(captured?.context.systemPrompt).toContain("pi-stuff-context");
 		expect(captured?.context.systemPrompt).toContain("side memory");
+		expect(JSON.stringify(captured?.context.messages)).toContain("main conversation");
 	});
 
 	test("streams text through the composed transport with no tools and an independent signal", async () => {

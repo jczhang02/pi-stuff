@@ -6,6 +6,7 @@ import {
 	consumeStopRequests,
 	requestAsyncStop,
 	stopRequestPath,
+	watchAsyncControlInbox,
 } from "../../packages/pi-stuff-agents/src/runs/background/control-channel.js";
 
 const roots = new Set<string>();
@@ -47,5 +48,38 @@ describe("Agent stop control channel", () => {
 
 		expect(consumeStopRequests(asyncDir)).toEqual([]);
 		expect(fs.existsSync(stopRequestPath(asyncDir))).toBeFalse();
+	});
+
+	test("replays a stop after a consumer dies between durable claim and callback", () => {
+		const asyncDir = fixture();
+		const requestPath = requestAsyncStop(asyncDir, { targetIndex: 3 }, { now: () => 1_000, randomId: () => "crash" });
+		const received: number[] = [];
+		const disposeCrashed = watchAsyncControlInbox(asyncDir, {
+			onInterrupt: () => {},
+			onStop: (request) => received.push(request.targetIndex ?? -1),
+			afterControlClaim: (kind) => {
+				if (kind === "stop") throw new Error("injected crash after claim");
+			},
+			pollIntervalMs: 60_000,
+		});
+		disposeCrashed();
+
+		expect(received).toEqual([]);
+		expect(fs.existsSync(requestPath)).toBeFalse();
+		expect(
+			fs.readdirSync(path.dirname(requestPath)).some((entry) => entry.includes(".pi-stuff-inflight.")),
+		).toBeTrue();
+
+		const disposeRecovered = watchAsyncControlInbox(asyncDir, {
+			onInterrupt: () => {},
+			onStop: (request) => received.push(request.targetIndex ?? -1),
+			pollIntervalMs: 60_000,
+		});
+		disposeRecovered();
+
+		expect(received).toEqual([3]);
+		expect(
+			fs.readdirSync(path.dirname(requestPath)).some((entry) => entry.includes(".pi-stuff-inflight.")),
+		).toBeFalse();
 	});
 });

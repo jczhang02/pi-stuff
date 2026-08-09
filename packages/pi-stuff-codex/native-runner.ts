@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,60 +64,68 @@ export function parseNativeJson<T>(stdout: string, label: string): T {
 	}
 }
 
-export function runNativeTool(invocation: NativeToolInvocation): Promise<NativeToolResult> {
+export async function runNativeTool(invocation: NativeToolInvocation): Promise<NativeToolResult> {
 	const binary = resolveNativeBinary(invocation.tool);
 	if (!binary) {
-		return Promise.reject(
-			new Error(
-				`${invocation.tool} is unavailable on ${process.platform}-${process.arch}; Pi remains usable without this Tool.`,
-			),
+		throw new Error(
+			`${invocation.tool} is unavailable on ${process.platform}-${process.arch}; Pi remains usable without this Tool.`,
 		);
 	}
-	if (invocation.signal?.aborted) return Promise.reject(new Error(`${invocation.tool} was cancelled.`));
+	if (invocation.signal?.aborted) throw new Error(`${invocation.tool} was cancelled.`);
 
-	return new Promise((resolve, reject) => {
-		let settled = false;
-		let stdout = "";
-		let stderr = "";
-		let outputBytes = 0;
-		const child = spawn(binary, [...(invocation.arguments ?? [])], {
+	let child: ReturnType<typeof Bun.spawn>;
+	try {
+		child = Bun.spawn([binary, ...(invocation.arguments ?? [])], {
 			cwd: invocation.cwd,
 			env: invocation.env ?? process.env,
-			stdio: [invocation.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+			stdin: invocation.input === undefined ? "ignore" : new Blob([invocation.input]),
+			stdout: "pipe",
+			stderr: "pipe",
 		});
+	} catch (error) {
+		throw new Error(`${invocation.tool} could not start: ${error instanceof Error ? error.message : String(error)}`);
+	}
 
-		const cleanup = (): void => invocation.signal?.removeEventListener("abort", abort);
-		const finish = (action: () => void): void => {
-			if (settled) return;
-			settled = true;
-			cleanup();
-			action();
-		};
-		const append = (stream: "stderr" | "stdout", chunk: Buffer | string): void => {
-			const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
-			outputBytes += Buffer.byteLength(text);
-			if (outputBytes > MAX_OUTPUT_BYTES) {
-				child.kill();
-				finish(() => reject(new Error(`${invocation.tool} output exceeded ${String(MAX_OUTPUT_BYTES)} bytes.`)));
-				return;
-			}
-			if (stream === "stdout") stdout += text;
-			else stderr += text;
-		};
-		const abort = (): void => {
+	let outputBytes = 0;
+	let aborted = false;
+	const abort = (): void => {
+		aborted = true;
+		try {
 			child.kill();
-			finish(() => reject(new Error(`${invocation.tool} was cancelled.`)));
-		};
+		} catch {
+			// Process exit racing cancellation is harmless.
+		}
+	};
+	const readOutput = async (stream: ReadableStream<Uint8Array>): Promise<string> => {
+		const reader = stream.getReader();
+		const chunks: Buffer[] = [];
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			outputBytes += value.byteLength;
+			if (outputBytes > MAX_OUTPUT_BYTES) {
+				abort();
+				throw new Error(`${invocation.tool} output exceeded ${String(MAX_OUTPUT_BYTES)} bytes.`);
+			}
+			chunks.push(Buffer.from(value));
+		}
+		return Buffer.concat(chunks).toString("utf8");
+	};
 
-		child.stdout?.setEncoding("utf8");
-		child.stderr?.setEncoding("utf8");
-		child.stdout?.on("data", (chunk) => append("stdout", chunk));
-		child.stderr?.on("data", (chunk) => append("stderr", chunk));
-		child.on("error", (error) => {
-			finish(() => reject(new Error(`${invocation.tool} could not start: ${error.message}`)));
-		});
-		child.on("close", (status) => finish(() => resolve({ status, stderr, stdout })));
-		invocation.signal?.addEventListener("abort", abort, { once: true });
-		if (invocation.input !== undefined) child.stdin?.end(invocation.input);
-	});
+	invocation.signal?.addEventListener("abort", abort, { once: true });
+	try {
+		if (!(child.stdout instanceof ReadableStream) || !(child.stderr instanceof ReadableStream)) {
+			abort();
+			throw new Error(`${invocation.tool} could not open its output pipes.`);
+		}
+		const [status, stdout, stderr] = await Promise.all([
+			child.exited,
+			readOutput(child.stdout),
+			readOutput(child.stderr),
+		]);
+		if (aborted) throw new Error(`${invocation.tool} was cancelled.`);
+		return { status, stderr, stdout };
+	} finally {
+		invocation.signal?.removeEventListener("abort", abort);
+	}
 }

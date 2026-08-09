@@ -190,7 +190,7 @@ export function formatControlNoticeMessage(event: ControlEvent, childIntercomTar
 
 	const nudgeMessage = "What are you blocked on? Reply with the smallest next step or ask for a decision.";
 	const steerCommand = `subagent({ action: "steer", id: "${runTarget}", ${event.index !== undefined ? `index: ${event.index}, ` : ""}message: "${nudgeMessage}" })`;
-	const nestedResumeCommand = `subagent({ action: "resume", id: "${runTarget}", message: "${nudgeMessage}" })`;
+	const stopCommand = `subagent({ action: "stop", id: "${runTarget}"${event.index !== undefined ? `, index: ${event.index}` : ""} })`;
 	if (event.type === "active_long_running") {
 		const facts = formatLongRunningFacts(event);
 		return [
@@ -198,12 +198,11 @@ export function formatControlNoticeMessage(event: ControlEvent, childIntercomTar
 			`Run: ${runTarget}${event.index !== undefined ? ` step ${event.index + 1}` : ""}`,
 			`Signal: ${event.message}`,
 			facts ? `Facts: ${facts}` : undefined,
-			"Hint: Inspect status first. Use steer for a top-level live async child, routed resume for a live nested child, or resume to revive a paused/completed/failed child.",
-			`Top-level live async nudge: ${steerCommand}`,
-			`Routed live nested nudge: ${nestedResumeCommand}`,
+			"Hint: Inspect status first. Use steer for any live Agent, stop to interrupt it, or resume to revive a resumable terminal top-level child.",
+			`Live nudge: ${steerCommand}`,
 			childIntercomTarget ? `Direct intercom target: ${childIntercomTarget}` : undefined,
 			`Status: subagent({ action: "status", id: "${runTarget}" })`,
-			`Interrupt: subagent({ action: "interrupt", id: "${runTarget}" })`,
+			`Stop: ${stopCommand}`,
 		]
 			.filter((line): line is string => Boolean(line))
 			.join("\n");
@@ -219,12 +218,11 @@ export function formatControlNoticeMessage(event: ControlEvent, childIntercomTar
 		`Signal: ${event.message}`,
 		event.recentFailureSummary ? `Recent failures: ${event.recentFailureSummary}` : undefined,
 		supervisorHint,
-		"Hint: Inspect status first unless the run is clearly blocked. Use steer for a top-level live async child, routed resume for a live nested child, or resume to revive a paused/completed/failed child.",
-		`Top-level live async nudge: ${steerCommand}`,
-		`Routed live nested nudge: ${nestedResumeCommand}`,
+		"Hint: Inspect status first unless the run is clearly blocked. Use steer for any live Agent, stop to interrupt it, or resume to revive a resumable terminal top-level child.",
+		`Live nudge: ${steerCommand}`,
 		childIntercomTarget ? `Direct intercom target: ${childIntercomTarget}` : undefined,
 		`Status: subagent({ action: "status", id: "${runTarget}" })`,
-		`Interrupt: subagent({ action: "interrupt", id: "${runTarget}" })`,
+		`Stop: ${stopCommand}`,
 	]
 		.filter((line): line is string => Boolean(line))
 		.join("\n");

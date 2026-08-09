@@ -2,6 +2,8 @@ import type { SubagentRunMode } from "../../shared/types.ts";
 
 /** Persisted background completion projected onto the current Agent product contract. */
 export interface CompletionNotification {
+	/** Stable idempotency key for cross-process delivery and external transports. */
+	deliveryId?: string;
 	id?: string | null;
 	runId?: string;
 	mode?: SubagentRunMode;

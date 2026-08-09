@@ -85,6 +85,16 @@ function currentScenario(context: Context): Scenario | undefined {
 }
 
 function terminalStatus(context: Context, scenario: Scenario): string | undefined {
+	if (scenario === "cancel") {
+		const stopped = toolResult(context, `matrix-stop-${scenario}`);
+		if (stopped && typeof stopped === "object") {
+			const details = Reflect.get(stopped, "details");
+			if (details && typeof details === "object") {
+				const status = Reflect.get(details, "status");
+				if (typeof status === "string") return status;
+			}
+		}
+	}
 	for (const text of userTexts(context).reverse()) {
 		if (!text.includes("<background-work-notification>") || !text.includes(TITLES[scenario])) continue;
 		return /kind="monitor" status="([^"]+)"/u.exec(text)?.[1];

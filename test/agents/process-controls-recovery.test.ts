@@ -157,7 +157,9 @@ async function waitFor<T>(description: string, read: () => T | undefined, timeou
 }
 
 function runnerPid(events: EventLog, runId: string): number {
-	const pid = events.started(runId).pid;
+	const started = events.started(runId);
+	if (typeof started.acknowledgeStart === "function") started.acknowledgeStart();
+	const pid = started.pid;
 	if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
 		throw new Error(`Run ${runId} did not publish a runner PID.`);
 	}
@@ -261,7 +263,7 @@ describe("process-level Agent controls and crash recovery", () => {
 			const sessionId = `session-${runId}`;
 			const config = agent(root);
 			try {
-				const launched = executeAsyncParallel(runId, {
+				const launched = await executeAsyncParallel(runId, {
 					agents: [config],
 					tasks: [
 						{ agent: config.name, task: "PROCESS_CONTROL_HOLD_0" },
@@ -376,7 +378,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					params: { agent: config.name, task: "PROCESS_CRASH_HOLD" },
 				});
 				if (!prepared.ok || !prepared.invocation) throw new Error("Initial Agent reservation failed.");
-				const launched = executeAsyncSingle(sourceRunId, {
+				const launched = await executeAsyncSingle(sourceRunId, {
 					agent: config.name,
 					task: "PROCESS_CRASH_HOLD",
 					agentConfig: config,
@@ -404,25 +406,37 @@ describe("process-level Agent controls and crash recovery", () => {
 					return steps?.[0]?.status === "running" ? status : undefined;
 				});
 
-					const beforeCrash = await new SessionAgentGovernor({ rootDir: governorRoot, sessionId }).snapshot();
-					expect(beforeCrash).toMatchObject({ total: 1, running: 1 });
-					const writerPid = await waitFor("writer process identity", () => {
-						const registryPath = writerProcessRegistryPath(asyncDir);
-						if (!fs.existsSync(registryPath)) return undefined;
-						const registry = readJson(registryPath);
-						const writer = (registry.writers as Record<string, { state?: string; pid?: number }> | undefined)?.["0"];
-						return writer?.state === "running" && typeof writer.pid === "number" ? writer.pid : undefined;
-					});
-					expect(processAlive(writerPid)).toBeTrue();
-					process.kill(pid, "SIGKILL");
-					await waitFor("runner process death", () => (!processAlive(pid) ? true : undefined));
+				const beforeCrash = await new SessionAgentGovernor({ rootDir: governorRoot, sessionId }).snapshot();
+				expect(beforeCrash).toMatchObject({ total: 1, running: 1 });
+				const writerPid = await waitFor("writer process identity", () => {
+					const registryPath = writerProcessRegistryPath(asyncDir);
+					if (!fs.existsSync(registryPath)) return undefined;
+					const registry = readJson(registryPath);
+					const writer = (registry.writers as Record<string, { state?: string; pid?: number }> | undefined)?.["0"];
+					return writer?.state === "running" && typeof writer.pid === "number" ? writer.pid : undefined;
+				});
+				expect(processAlive(writerPid)).toBeTrue();
+				process.kill(pid, "SIGKILL");
+				await waitFor("runner process death", () => (!processAlive(pid) ? true : undefined));
 
-					const repaired = reconcileAsyncRun(asyncDir, { resultsDir: RESULTS_DIR });
-					expect(repaired.repaired).toBeTrue();
-					expect(repaired.status).toMatchObject({ state: "failed" });
-					expect(repaired.message).toContain("exited or disappeared");
-					await waitFor("orphan writer process death", () => (!processAlive(writerPid) ? true : undefined));
-					processGroups.delete(pid);
+				const terminationStarted = reconcileAsyncRun(asyncDir, { resultsDir: RESULTS_DIR });
+				const physicallyRepaired = (result: ReturnType<typeof reconcileAsyncRun>) => {
+					const status = result.status as
+						| { processTerminal?: { state?: string } }
+						| null;
+					return result.repaired && status?.processTerminal?.state === "observed" && !processAlive(writerPid)
+						? result
+						: undefined;
+				};
+				const repaired =
+					physicallyRepaired(terminationStarted) ??
+					(await waitFor("physical orphan repair proof", () =>
+						physicallyRepaired(reconcileAsyncRun(asyncDir, { resultsDir: RESULTS_DIR })),
+					));
+				expect(repaired.repaired).toBeTrue();
+				expect(repaired.status).toMatchObject({ state: "failed" });
+				expect(repaired.message).toContain("exited or disappeared");
+				processGroups.delete(pid);
 
 				const restoredState = stateForSession(sessionId);
 				const tracker = createAsyncJobTracker(extensionApi(new EventLog()), restoredState, ASYNC_DIR, {
@@ -450,7 +464,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					resumeTargetRunId: sourceRunId,
 				});
 				if (!resumeReservation.ok || !resumeReservation.invocation) throw new Error("Resume reservation failed.");
-				const resumed = executeAsyncSingle(resumedRunId, {
+				const resumed = await executeAsyncSingle(resumedRunId, {
 					agent: config.name,
 					task: "PROCESS_RESUME_FINISH",
 					agentConfig: config,
@@ -504,5 +518,93 @@ describe("process-level Agent controls and crash recovery", () => {
 			}
 		},
 		30_000,
+	);
+
+	// biome-ignore format: Keep supervisor-crash acceptance and its process cleanup visibly grouped.
+	test(
+		"authenticates and reaps a surviving Pi child after its writer supervisor is SIGKILLed",
+		async () => {
+			if (process.platform === "win32") return;
+			const root = fixtureRoot("pi-stuff-supervisor-recovery-");
+			const runId = `supervisor-crash-${process.pid}-${Date.now()}`;
+			const sessionId = `session-${runId}`;
+			const governorRoot = path.join(root, "governor");
+			const events = new EventLog();
+			const config = agent(root);
+			cleanupRun(runId);
+			const coordinator = createDurableAgentExecutionCoordinator({ rootDir: governorRoot });
+			try {
+				coordinator.bindSession({ sessionId, ownerAgentPath: [] });
+				const prepared = await coordinator.prepare({
+					launchRunId: runId,
+					params: { agent: config.name, task: "PROCESS_CRASH_HOLD" },
+				});
+				if (!prepared.ok || !prepared.invocation) throw new Error("Supervisor crash reservation failed.");
+				const launched = await executeAsyncSingle(runId, {
+					agent: config.name,
+					task: "PROCESS_CRASH_HOLD",
+					agentConfig: config,
+					ctx: {
+						pi: extensionApi(events),
+						cwd: root,
+						currentSessionId: sessionId,
+						parentSessionId: sessionId,
+					},
+					artifactConfig: artifactConfig(),
+					maxSubagentDepth: 3,
+				});
+				if (launched.isError || !launched.details.asyncDir) throw new Error("Supervisor crash launch failed.");
+				const asyncDir = launched.details.asyncDir;
+				runnerPid(events, runId);
+				await coordinator.observeAsyncStarted(events.started(runId));
+				await coordinator.settle(prepared.invocation, launched);
+
+				const identities = await waitFor("writer survivor proof", () => {
+					const registryPath = writerProcessRegistryPath(asyncDir);
+					if (!fs.existsSync(registryPath)) return undefined;
+					const registry = readJson(registryPath);
+					const writer = (
+						registry.writers as
+							| Record<string, { state?: string; pid?: number; groupMemberProofFile?: string }>
+							| undefined
+					)?.["0"];
+					if (writer?.state !== "running" || !writer.pid || !writer.groupMemberProofFile) return undefined;
+					const proofPath = path.join(asyncDir, writer.groupMemberProofFile);
+					if (!fs.existsSync(proofPath)) return undefined;
+					const proof = readJson(proofPath);
+					return typeof proof.memberPid === "number"
+						? { supervisorPid: writer.pid, memberPid: proof.memberPid }
+						: undefined;
+				});
+				processGroups.add(identities.supervisorPid);
+				expect(processAlive(identities.supervisorPid)).toBeTrue();
+				expect(processAlive(identities.memberPid)).toBeTrue();
+
+				process.kill(identities.supervisorPid, "SIGKILL");
+				await waitFor("writer supervisor death", () =>
+					!processAlive(identities.supervisorPid) ? true : undefined,
+				);
+				await waitFor("authenticated surviving Pi child reap", () =>
+					!processAlive(identities.memberPid) ? true : undefined,
+				);
+				processGroups.delete(identities.supervisorPid);
+				await waitFor("writer registry release", () => {
+					const registry = readJson(writerProcessRegistryPath(asyncDir));
+					const writer = (registry.writers as Record<string, { state?: string }>)["0"];
+					return writer?.state === "none" ? true : undefined;
+				});
+				await waitFor("supervisor-crash runner exit", () => {
+					const pid = events.started(runId).pid;
+					return typeof pid === "number" && !processAlive(pid) ? true : undefined;
+				});
+				await coordinator.reconcileExisting();
+				const snapshot = await new SessionAgentGovernor({ rootDir: governorRoot, sessionId }).snapshot();
+				expect(snapshot).toMatchObject({ total: 1, running: 0 });
+			} finally {
+				coordinator.dispose();
+				cleanupRun(runId);
+			}
+		},
+		25_000,
 	);
 });

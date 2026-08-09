@@ -8,7 +8,6 @@ import { isKeyRelease, Key, matchesKey, Text } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
 import { getCurrentWorkSources } from "./src/current-work.js";
 import { type BackgroundWorkOutcome, BackgroundWorkRuntime } from "./src/runtime.js";
-import { reconcileStaleRuns } from "./src/storage.js";
 import { createTasksDialogView } from "./src/tasks-dialog.js";
 import { registerWorkTools, type WorkToolRuntimeRef } from "./src/tools.js";
 
@@ -58,9 +57,18 @@ function hostSettings(ctx: ExtensionContext): { readonly commandPrefix?: string;
 	};
 }
 
-export default async function piStuffWork(pi: ExtensionAPI): Promise<void> {
+export default async function piStuffWork(
+	pi: ExtensionAPI,
+	options: {
+		createRuntime?: (input: ConstructorParameters<typeof BackgroundWorkRuntime>[0]) => BackgroundWorkRuntime;
+	} = {},
+): Promise<void> {
 	let runtime: BackgroundWorkRuntime | undefined;
 	let removeTerminalInput: (() => void) | undefined;
+	let lifecycleEpoch = 0;
+	let hostActive = false;
+	let transitionTail: Promise<void> = Promise.resolve();
+	const createRuntime = options.createRuntime ?? ((input) => new BackgroundWorkRuntime(input));
 	const runtimeRef: WorkToolRuntimeRef = { current: () => runtime };
 	const sources = getCurrentWorkSources(pi);
 	const dialogs = getCommandDialogCoordinator(pi);
@@ -81,41 +89,63 @@ export default async function piStuffWork(pi: ExtensionAPI): Promise<void> {
 				ctx.ui.notify("Background Work is not available during session transition.", "warning");
 				return;
 			}
+			await runtime.prepare();
 			await dialogs.show(ctx, createTasksDialogView(runtime, sources));
 		},
 	});
 
+	const enqueueTransition = (operation: () => Promise<void>): Promise<void> => {
+		const pending = transitionTail.then(operation, operation);
+		transitionTail = pending.then(
+			() => undefined,
+			() => undefined,
+		);
+		return pending;
+	};
+
 	pi.on("session_start", async (_event, ctx) => {
+		const epoch = ++lifecycleEpoch;
+		hostActive = true;
 		removeTerminalInput?.();
 		removeTerminalInput = undefined;
-		if (runtime) await runtime.shutdown();
-		const reconciliation = await reconcileStaleRuns(ctx.cwd);
-		if (reconciliation.unresolvedDirectories > 0) {
-			console.warn(
-				`[pi-stuff-work] left ${String(reconciliation.unresolvedDirectories)} unverified stale runtime director${reconciliation.unresolvedDirectories === 1 ? "y" : "ies"} untouched`,
-			);
-		}
-		const settings = hostSettings(ctx);
-		runtime = new BackgroundWorkRuntime({
-			...settings,
-			cwd: ctx.cwd,
-			pi,
-			sessionId: ctx.sessionManager.getSessionId(),
-		});
-		registerWorkTools(pi, runtimeRef);
-		if (ctx.mode === "tui") {
-			removeTerminalInput = ctx.ui.onTerminalInput((data) => {
-				if (isKeyRelease(data) || !matchesKey(data, Key.ctrl("b"))) return undefined;
-				return runtime?.detachActiveForeground() ? { consume: true } : undefined;
+		// Detach synchronously so a concurrent shutdown cannot mistake the old
+		// runtime for the new session owner while its asynchronous shutdown waits.
+		const previous = runtime;
+		runtime = undefined;
+		await enqueueTransition(async () => {
+			if (previous) await previous.shutdown();
+			if (!hostActive || lifecycleEpoch !== epoch) return;
+			const settings = hostSettings(ctx);
+			const created = createRuntime({
+				...settings,
+				cwd: ctx.cwd,
+				pi,
+				sessionId: ctx.sessionManager.getSessionId(),
 			});
-		}
+			if (!hostActive || lifecycleEpoch !== epoch) {
+				await created.shutdown();
+				return;
+			}
+			runtime = created;
+			registerWorkTools(pi, runtimeRef);
+			if (ctx.mode === "tui") {
+				removeTerminalInput = ctx.ui.onTerminalInput((data) => {
+					if (isKeyRelease(data) || !matchesKey(data, Key.ctrl("b"))) return undefined;
+					return runtime === created && created.detachActiveForeground() ? { consume: true } : undefined;
+				});
+			}
+		});
 	});
 
 	pi.on("session_shutdown", async () => {
+		lifecycleEpoch += 1;
+		hostActive = false;
 		removeTerminalInput?.();
 		removeTerminalInput = undefined;
 		const active = runtime;
 		runtime = undefined;
-		if (active) await active.shutdown();
+		await enqueueTransition(async () => {
+			if (active) await active.shutdown();
+		});
 	});
 }

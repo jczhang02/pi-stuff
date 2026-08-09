@@ -1,6 +1,17 @@
-import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+	chmodSync,
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
 	captureProcessIdentity,
 	identityMatches,
@@ -10,9 +21,13 @@ import {
 	terminateVerifiedProcessGroup,
 } from "./process.js";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const OWNED_DIRECTORY_PREFIX = "pi-stuff-";
 const METADATA_FILE = "runtime.json";
+const AUTHORITY_KEY_BYTES = 32;
+const AUTHORITY_KEY_FILE = "runtime-auth.key";
+const AUTHORITY_ALGORITHM = "hmac-sha256";
+const MAX_STORED_TASKS = 64;
 
 export interface StoredProcessTask {
 	readonly command?: ProcessIdentity;
@@ -21,9 +36,21 @@ export interface StoredProcessTask {
 }
 
 interface StoredRuntime {
+	readonly auth: { readonly algorithm: typeof AUTHORITY_ALGORITHM; readonly digest: string };
 	readonly owner: ProcessIdentity;
-	readonly schemaVersion: 1;
+	readonly schemaVersion: 2;
 	readonly tasks: readonly StoredProcessTask[];
+}
+
+interface StoredRuntimePayload {
+	readonly owner: ProcessIdentity;
+	readonly schemaVersion: 2;
+	readonly tasks: readonly StoredProcessTask[];
+}
+
+export interface WorkRuntimeAuthorityOptions {
+	/** Test seam. Production callers use the user-private authority key. */
+	readonly authorityKey?: Uint8Array;
 }
 
 function safeToken(value: string): string {
@@ -43,11 +70,18 @@ function parseIdentity(value: unknown): ProcessIdentity | undefined {
 		: undefined;
 }
 
-function parseStoredRuntime(value: unknown): StoredRuntime | undefined {
+function parseStoredRuntime(value: unknown, authorityKey: Uint8Array): StoredRuntime | undefined {
 	if (!value || typeof value !== "object") return undefined;
 	const record = value as Record<string, unknown>;
 	const owner = parseIdentity(record["owner"]);
-	if (record["schemaVersion"] !== SCHEMA_VERSION || !owner || !Array.isArray(record["tasks"])) return undefined;
+	if (
+		record["schemaVersion"] !== SCHEMA_VERSION ||
+		!owner ||
+		!Array.isArray(record["tasks"]) ||
+		record["tasks"].length > MAX_STORED_TASKS
+	) {
+		return undefined;
+	}
 	const tasks: StoredProcessTask[] = [];
 	for (const value of record["tasks"]) {
 		if (!value || typeof value !== "object") return undefined;
@@ -59,14 +93,150 @@ function parseStoredRuntime(value: unknown): StoredRuntime | undefined {
 		}
 		tasks.push({ id: task["id"], supervisor, ...(command ? { command } : {}) });
 	}
-	return { owner, schemaVersion: SCHEMA_VERSION, tasks };
+	const auth = record["auth"];
+	if (!auth || typeof auth !== "object") return undefined;
+	const authRecord = auth as Record<string, unknown>;
+	if (
+		authRecord["algorithm"] !== AUTHORITY_ALGORITHM ||
+		typeof authRecord["digest"] !== "string" ||
+		!/^[a-f0-9]{64}$/u.test(authRecord["digest"])
+	) {
+		return undefined;
+	}
+	const payload: StoredRuntimePayload = { owner, schemaVersion: SCHEMA_VERSION, tasks };
+	const expected = runtimeDigest(payload, authorityKey);
+	const received = Buffer.from(authRecord["digest"], "hex");
+	if (received.length !== expected.length || !timingSafeEqual(received, expected)) return undefined;
+	return {
+		...payload,
+		auth: { algorithm: AUTHORITY_ALGORITHM, digest: authRecord["digest"] },
+	};
 }
 
-function readStoredRuntime(directory: string): StoredRuntime | undefined {
+function readStoredRuntime(directory: string, authorityKey: Uint8Array): StoredRuntime | undefined {
 	try {
-		return parseStoredRuntime(JSON.parse(readFileSync(join(directory, METADATA_FILE), "utf-8")));
+		const metadataPath = join(directory, METADATA_FILE);
+		const stat = lstatSync(metadataPath);
+		if (stat.isSymbolicLink() || !stat.isFile() || stat.size > 1024 * 1024) return undefined;
+		return parseStoredRuntime(JSON.parse(readFileSync(metadataPath, "utf-8")), authorityKey);
 	} catch {
 		return undefined;
+	}
+}
+
+function canonicalRuntimePayload(payload: StoredRuntimePayload): string {
+	return JSON.stringify({
+		owner: { pid: payload.owner.pid, started: payload.owner.started },
+		schemaVersion: SCHEMA_VERSION,
+		tasks: payload.tasks.map((task) => ({
+			id: task.id,
+			...(task.command ? { command: { pid: task.command.pid, started: task.command.started } } : {}),
+			supervisor: { pid: task.supervisor.pid, started: task.supervisor.started },
+		})),
+	});
+}
+
+function runtimeDigest(payload: StoredRuntimePayload, authorityKey: Uint8Array): Buffer {
+	return createHmac("sha256", authorityKey).update(canonicalRuntimePayload(payload)).digest();
+}
+
+/** Build a record accepted by stale-run reconciliation without exposing the production key. */
+export function createAuthenticatedRuntimeRecord(
+	owner: ProcessIdentity,
+	tasks: readonly StoredProcessTask[],
+	authorityKey: Uint8Array,
+): StoredRuntime {
+	const payload: StoredRuntimePayload = { owner, schemaVersion: SCHEMA_VERSION, tasks: [...tasks] };
+	return {
+		...payload,
+		auth: { algorithm: AUTHORITY_ALGORITHM, digest: runtimeDigest(payload, authorityKey).toString("hex") },
+	};
+}
+
+function authorityRoot(): string {
+	const configured = process.env["XDG_STATE_HOME"]?.trim();
+	const stateRoot = configured && isAbsolute(configured) ? configured : join(homedir(), ".local", "state");
+	return join(stateRoot, "pi-stuff", "work");
+}
+
+function loadOrCreateAuthorityKey(injected?: Uint8Array, create = true): Buffer | undefined {
+	if (injected) {
+		if (injected.byteLength < AUTHORITY_KEY_BYTES) throw new Error("Background Work authority key is too short.");
+		return Buffer.from(injected);
+	}
+	const root = authorityRoot();
+	const target = join(root, AUTHORITY_KEY_FILE);
+	if (!create) {
+		try {
+			ensureOwnedDirectory(root, "Background Work authority directory", false);
+			const stat = lstatSync(target);
+			const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+			if (
+				stat.isSymbolicLink() ||
+				!stat.isFile() ||
+				stat.size !== AUTHORITY_KEY_BYTES ||
+				(currentUid !== undefined && stat.uid !== currentUid)
+			) {
+				return undefined;
+			}
+			return readFileSync(target);
+		} catch {
+			return undefined;
+		}
+	}
+	ensureOwnedDirectory(dirname(root), "Pi Stuff state directory");
+	ensureOwnedDirectory(root, "Background Work authority directory");
+	try {
+		const stat = lstatSync(target);
+		const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+		if (
+			stat.isSymbolicLink() ||
+			!stat.isFile() ||
+			stat.size !== AUTHORITY_KEY_BYTES ||
+			(currentUid !== undefined && stat.uid !== currentUid)
+		) {
+			throw new Error(`Background Work authority key '${target}' is not a private regular file.`);
+		}
+		if ((stat.mode & 0o777) !== 0o600) chmodSync(target, 0o600);
+		return readFileSync(target);
+	} catch (error) {
+		if (!isMissingPath(error)) throw error;
+	}
+	const key = randomBytes(AUTHORITY_KEY_BYTES);
+	try {
+		writeFileSync(target, key, { flag: "wx", mode: 0o600 });
+		return key;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		return loadOrCreateAuthorityKey(undefined, true);
+	}
+}
+
+function isMissingPath(error: unknown): boolean {
+	return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+function isDirectory(path: string): boolean {
+	try {
+		const stat = lstatSync(path);
+		const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+		return stat.isDirectory() && !stat.isSymbolicLink() && (currentUid === undefined || stat.uid === currentUid);
+	} catch {
+		return false;
+	}
+}
+
+function ensureOwnedDirectory(directory: string, label: string, create = true): void {
+	if (create) mkdirSync(directory, { mode: 0o700, recursive: true });
+	let stat: ReturnType<typeof lstatSync>;
+	try {
+		stat = lstatSync(directory);
+	} catch (error) {
+		throw new Error(`${label} '${directory}' is unavailable.`, { cause: error });
+	}
+	const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+	if (stat.isSymbolicLink() || !stat.isDirectory() || (currentUid !== undefined && stat.uid !== currentUid)) {
+		throw new Error(`${label} '${directory}' must be a real directory owned by the current user.`);
 	}
 }
 
@@ -76,6 +246,7 @@ function removeOwnedDirectory(root: string, directory: string): void {
 	if (dirname(resolvedDirectory) !== resolvedRoot || !basename(resolvedDirectory).startsWith(OWNED_DIRECTORY_PREFIX)) {
 		throw new Error(`Refusing to remove non-owned Background Work directory: ${resolvedDirectory}`);
 	}
+	ensureOwnedDirectory(resolvedDirectory, "Background Work runtime directory", false);
 	rmSync(resolvedDirectory, { force: true, recursive: true });
 }
 
@@ -85,36 +256,60 @@ export interface ReconciliationResult {
 	readonly unresolvedDirectories: number;
 }
 
-/** Reap process trees left by an abruptly terminated Pi Host. Never creates files. */
-export async function reconcileStaleRuns(cwd: string): Promise<ReconciliationResult> {
+/** Reap authenticated process trees left by an abruptly terminated Pi Host. */
+export async function reconcileStaleRuns(
+	cwd: string,
+	options: WorkRuntimeAuthorityOptions = {},
+): Promise<ReconciliationResult> {
 	const root = join(cwd, ".pi", "tasks");
 	if (!existsSync(root)) return { cleanedDirectories: 0, killedProcesses: 0, unresolvedDirectories: 0 };
+	try {
+		ensureOwnedDirectory(dirname(root), "Project .pi directory", false);
+		ensureOwnedDirectory(root, "Background Work task root", false);
+	} catch {
+		// Never enumerate or mutate a redirected/foreign task root.
+		return { cleanedDirectories: 0, killedProcesses: 0, unresolvedDirectories: 1 };
+	}
+	const candidates = readdirSync(root, { withFileTypes: true }).filter(
+		(entry) => entry.isDirectory() && entry.name.startsWith(OWNED_DIRECTORY_PREFIX),
+	);
+	if (candidates.length === 0) return { cleanedDirectories: 0, killedProcesses: 0, unresolvedDirectories: 0 };
+	const authorityKey = loadOrCreateAuthorityKey(options.authorityKey, false);
+	if (!authorityKey) {
+		return { cleanedDirectories: 0, killedProcesses: 0, unresolvedDirectories: candidates.length };
+	}
 	let cleanedDirectories = 0;
 	let killedProcesses = 0;
 	let unresolvedDirectories = 0;
-	for (const entry of readdirSync(root, { withFileTypes: true })) {
-		if (!entry.isDirectory() || !entry.name.startsWith(OWNED_DIRECTORY_PREFIX)) continue;
+	for (const entry of candidates) {
 		const directory = join(root, entry.name);
-		const stored = readStoredRuntime(directory);
+		const stored = readStoredRuntime(directory, authorityKey);
 		if (!stored) {
 			unresolvedDirectories += 1;
 			continue;
 		}
 		if (identityMatches(stored.owner)) continue;
 		let unresolved = false;
+		const identities = new Map<string, ProcessIdentity>();
 		for (const task of stored.tasks) {
 			for (const identity of [task.command, task.supervisor]) {
 				if (!identity) continue;
-				if (!processExists(identity.pid)) continue;
-				const currentIdentity = processStartIdentity(identity.pid);
-				if (currentIdentity && currentIdentity !== identity.started) continue;
-				if (!currentIdentity) {
-					unresolved = true;
-					continue;
-				}
-				const outcome = await terminateVerifiedProcessGroup(identity, 2_000);
-				if (outcome !== "identity-mismatch") killedProcesses += 1;
+				identities.set(`${String(identity.pid)}:${identity.started}`, identity);
 			}
+		}
+		for (const identity of identities.values()) {
+			const currentIdentity = processStartIdentity(identity.pid);
+			if (currentIdentity && currentIdentity !== identity.started) continue;
+			if (!currentIdentity && processExists(identity.pid)) {
+				unresolved = true;
+				continue;
+			}
+			const outcome = await terminateVerifiedProcessGroup(identity, 2_000);
+			if (outcome === "unresolved") {
+				unresolved = true;
+				continue;
+			}
+			if (outcome !== "identity-mismatch") killedProcesses += 1;
 		}
 		if (unresolved) {
 			unresolvedDirectories += 1;
@@ -129,16 +324,28 @@ export async function reconcileStaleRuns(cwd: string): Promise<ReconciliationRes
 export class WorkRunStorage {
 	private directoryValue: string | undefined;
 	private readonly owner: ProcessIdentity;
+	private authorityKeyValue: Buffer | undefined;
+	private readonly injectedAuthorityKey: Uint8Array | undefined;
 	private readonly root: string;
 	private readonly sessionId: string;
 	private tasks: readonly StoredProcessTask[] = [];
 
-	constructor(cwd: string, sessionId: string) {
+	constructor(cwd: string, sessionId: string, options: WorkRuntimeAuthorityOptions = {}) {
 		const owner = captureProcessIdentity(process.pid);
 		if (!owner) throw new Error("Background Work requires a stable Pi process identity");
 		this.owner = owner;
+		this.injectedAuthorityKey = options.authorityKey;
 		this.root = join(cwd, ".pi", "tasks");
 		this.sessionId = safeToken(sessionId);
+	}
+
+	private authorityKey(): Buffer {
+		if (!this.authorityKeyValue) {
+			const loaded = loadOrCreateAuthorityKey(this.injectedAuthorityKey, true);
+			if (!loaded) throw new Error("Background Work authority key could not be created.");
+			this.authorityKeyValue = loaded;
+		}
+		return this.authorityKeyValue;
 	}
 
 	get directory(): string | undefined {
@@ -146,28 +353,63 @@ export class WorkRunStorage {
 	}
 
 	ensureDirectory(): string {
-		if (this.directoryValue) return this.directoryValue;
-		mkdirSync(this.root, { mode: 0o700, recursive: true });
+		if (this.directoryValue && isDirectory(this.directoryValue)) return this.directoryValue;
+		this.directoryValue = undefined;
+		const projectMetadataDir = dirname(this.root);
+		ensureOwnedDirectory(projectMetadataDir, "Project .pi directory");
+		ensureOwnedDirectory(this.root, "Background Work task root");
 		const token = randomBytes(6).toString("hex");
 		const directory = join(this.root, `${OWNED_DIRECTORY_PREFIX}${this.sessionId}-${String(process.pid)}-${token}`);
 		mkdirSync(directory, { mode: 0o700 });
+		ensureOwnedDirectory(directory, "Background Work runtime directory", false);
 		this.directoryValue = directory;
-		this.persist([]);
 		return directory;
 	}
 
 	outputPath(id: string): string {
-		return join(this.ensureDirectory(), `${safeToken(id)}.output`);
+		this.persist(this.tasks);
+		const directory = this.directoryValue;
+		if (!directory) throw new Error("Background Work runtime directory was not established");
+		return join(directory, `${safeToken(id)}.output`);
+	}
+
+	commandAuthorizationPath(id: string): string {
+		const directory = this.directoryValue;
+		if (!directory || !isDirectory(directory)) {
+			throw new Error("Background Work runtime directory was not established");
+		}
+		return join(directory, `${safeToken(id)}.command`);
 	}
 
 	persist(tasks: readonly StoredProcessTask[]): void {
-		const directory = this.ensureDirectory();
 		this.tasks = [...tasks];
-		const target = join(directory, METADATA_FILE);
-		const temporary = join(directory, `.${METADATA_FILE}.${randomBytes(6).toString("hex")}.tmp`);
-		const content: StoredRuntime = { owner: this.owner, schemaVersion: SCHEMA_VERSION, tasks: this.tasks };
-		writeFileSync(temporary, `${JSON.stringify(content, null, 2)}\n`, { encoding: "utf-8", mode: 0o600, flag: "wx" });
-		renameSync(temporary, target);
+		const content = createAuthenticatedRuntimeRecord(this.owner, this.tasks, this.authorityKey());
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			const directory = this.ensureDirectory();
+			const target = join(directory, METADATA_FILE);
+			const temporary = join(directory, `.${METADATA_FILE}.${randomBytes(6).toString("hex")}.tmp`);
+			try {
+				writeFileSync(temporary, `${JSON.stringify(content, null, 2)}\n`, {
+					encoding: "utf-8",
+					mode: 0o600,
+					flag: "wx",
+				});
+				renameSync(temporary, target);
+				return;
+			} catch (error) {
+				try {
+					rmSync(temporary, { force: true });
+				} catch {
+					// Preserve the persistence failure that determines whether the
+					// operation can be retried; temp cleanup is only best effort.
+				}
+				if (attempt === 0 && isMissingPath(error)) {
+					if (this.directoryValue === directory) this.directoryValue = undefined;
+					continue;
+				}
+				throw error;
+			}
+		}
 	}
 
 	cleanup(): void {

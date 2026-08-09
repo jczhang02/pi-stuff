@@ -34,11 +34,19 @@ function capabilityIdentifier(packageName: string): string {
 }
 
 function renderIndex(capabilities: readonly string[]): string {
+	const agentsPackage = "@jczhang02/pi-stuff-agents";
+	const hasAgents = capabilities.includes(agentsPackage);
 	const imports = [...capabilities]
 		.sort((left, right) => left.localeCompare(right))
 		.map((packageName) => `import ${capabilityIdentifier(packageName)} from "${packageName}";`);
-	const identifiers = capabilities.map(capabilityIdentifier);
-	const importBlock = [`import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`, ...imports].join("\n");
+	const identifiers = capabilities.map((packageName) =>
+		packageName === agentsPackage ? "registerSuiteAgents" : capabilityIdentifier(packageName),
+	);
+	const importBlock = [
+		...(hasAgents ? [`import { fileURLToPath } from "node:url";`] : []),
+		`import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`,
+		...imports,
+	].join("\n");
 	const capabilityPrefix = "const CAPABILITIES: readonly CapabilityFactory[] = ";
 	const inlineCapabilities = `[${identifiers.join(", ")}]`;
 	const capabilityDeclaration =
@@ -49,6 +57,15 @@ function renderIndex(capabilities: readonly string[]): string {
 		GENERATED_HEADER,
 		importBlock,
 		"type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;",
+		...(hasAgents
+			? [
+					`const CHILD_BASE_EXTENSION_PATH = fileURLToPath(import.meta.url);
+
+function registerSuiteAgents(pi: ExtensionAPI): void | Promise<void> {
+	return piStuffAgents(pi, { childBaseExtensionPath: CHILD_BASE_EXTENSION_PATH });
+}`,
+				]
+			: []),
 		capabilityDeclaration,
 		`export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 \tfor (const capability of CAPABILITIES) {

@@ -64,9 +64,30 @@ function resolveGroupedStatus(children: SubagentResultIntercomChild[]): Subagent
 	return "failed";
 }
 
-function compactNestedRun(run: NestedRunSummary | PublicNestedRunSummary, depth = 0): PublicNestedRunSummary {
+const MAX_PUBLIC_NESTED_DEPTH = 3;
+const MAX_PUBLIC_NESTED_RUNS = 200;
+const MAX_PUBLIC_NESTED_STEPS = 200;
+const MAX_PUBLIC_STEPS_PER_RUN = 20;
+
+interface NestedProjectionBudget {
+	runs: number;
+	steps: number;
+	seenRunIds: Set<string>;
+}
+
+function compactNestedRun(
+	run: NestedRunSummary | PublicNestedRunSummary,
+	depth: number,
+	budget: NestedProjectionBudget,
+): PublicNestedRunSummary | undefined {
+	if (depth > MAX_PUBLIC_NESTED_DEPTH || budget.runs <= 0 || budget.seenRunIds.has(run.id)) return undefined;
+	budget.seenRunIds.add(run.id);
+	budget.runs -= 1;
+	const steps = (run.steps ?? []).slice(0, Math.min(MAX_PUBLIC_STEPS_PER_RUN, budget.steps));
+	budget.steps -= steps.length;
 	return {
 		id: run.id,
+		...(run.agentStatus ? { agentStatus: run.agentStatus } : {}),
 		parentRunId: run.parentRunId,
 		...(run.parentStepIndex !== undefined ? { parentStepIndex: run.parentStepIndex } : {}),
 		...(run.parentAgent ? { parentAgent: run.parentAgent } : {}),
@@ -86,9 +107,9 @@ function compactNestedRun(run: NestedRunSummary | PublicNestedRunSummary, depth 
 		...(run.mode ? { mode: run.mode } : {}),
 		state: run.state,
 		...(run.agent ? { agent: run.agent } : {}),
-		...(run.agents?.length ? { agents: run.agents.slice(0, 12) } : {}),
+		...(run.agents?.length ? { agents: run.agents.slice(0, MAX_PUBLIC_STEPS_PER_RUN) } : {}),
 		...(run.currentStep !== undefined ? { currentStep: run.currentStep } : {}),
-		...(run.parallelGroups?.length ? { parallelGroups: run.parallelGroups.slice(0, 8) } : {}),
+		...(run.parallelGroups?.length ? { parallelGroups: run.parallelGroups.slice(0, MAX_PUBLIC_STEPS_PER_RUN) } : {}),
 		...(run.activityState ? { activityState: run.activityState } : {}),
 		...(run.lastActivityAt !== undefined ? { lastActivityAt: run.lastActivityAt } : {}),
 		...(run.currentTool ? { currentTool: run.currentTool } : {}),
@@ -101,12 +122,17 @@ function compactNestedRun(run: NestedRunSummary | PublicNestedRunSummary, depth 
 		...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),
 		...(run.lastUpdate !== undefined ? { lastUpdate: run.lastUpdate } : {}),
 		...(run.error ? { error: run.error } : {}),
-		...(run.steps?.length
+		...(steps.length
 			? {
-					steps: run.steps.slice(0, 12).map((step) => ({
+					steps: steps.map((step) => ({
 						agent: step.agent,
+						...(step.agentStatus ? { agentStatus: step.agentStatus } : {}),
+						...(step.task ? { task: step.task } : {}),
+						...(step.description ? { description: step.description } : {}),
 						status: step.status,
 						...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
+						...(step.transcriptPath ? { transcriptPath: step.transcriptPath } : {}),
+						...(step.transcriptError ? { transcriptError: step.transcriptError } : {}),
 						...(step.activityState ? { activityState: step.activityState } : {}),
 						...(step.lastActivityAt !== undefined ? { lastActivityAt: step.lastActivityAt } : {}),
 						...(step.currentTool ? { currentTool: step.currentTool } : {}),
@@ -116,17 +142,27 @@ function compactNestedRun(run: NestedRunSummary | PublicNestedRunSummary, depth 
 						...(step.currentPath ? { currentPath: step.currentPath } : {}),
 						...(step.turnCount !== undefined ? { turnCount: step.turnCount } : {}),
 						...(step.toolCount !== undefined ? { toolCount: step.toolCount } : {}),
+						...(step.toolBudget ? { toolBudget: step.toolBudget } : {}),
+						...(step.toolBudgetBlocked ? { toolBudgetBlocked: true } : {}),
 						...(step.startedAt !== undefined ? { startedAt: step.startedAt } : {}),
 						...(step.endedAt !== undefined ? { endedAt: step.endedAt } : {}),
 						...(step.error ? { error: step.error } : {}),
-						...(depth < 2 && step.children?.length
-							? { children: step.children.slice(0, 8).map((child) => compactNestedRun(child, depth + 1)) }
+						...(depth < MAX_PUBLIC_NESTED_DEPTH && step.children?.length
+							? {
+									children: step.children
+										.map((child) => compactNestedRun(child, depth + 1, budget))
+										.filter((child): child is PublicNestedRunSummary => Boolean(child)),
+								}
 							: {}),
 					})),
 				}
 			: {}),
-		...(depth < 2 && run.children?.length
-			? { children: run.children.slice(0, 8).map((child) => compactNestedRun(child, depth + 1)) }
+		...(depth < MAX_PUBLIC_NESTED_DEPTH && run.children?.length
+			? {
+					children: run.children
+						.map((child) => compactNestedRun(child, depth + 1, budget))
+						.filter((child): child is PublicNestedRunSummary => Boolean(child)),
+				}
 			: {}),
 	};
 }
@@ -135,7 +171,11 @@ export function compactNestedResultChildren(
 	children: Array<NestedRunSummary | PublicNestedRunSummary> | undefined,
 ): PublicNestedRunSummary[] | undefined {
 	if (!children?.length) return undefined;
-	return children.slice(0, 16).map((child) => compactNestedRun(child));
+	const budget = { runs: MAX_PUBLIC_NESTED_RUNS, steps: MAX_PUBLIC_NESTED_STEPS, seenRunIds: new Set<string>() };
+	const compact = children
+		.map((child) => compactNestedRun(child, 0, budget))
+		.filter((child): child is PublicNestedRunSummary => Boolean(child));
+	return compact.length ? compact : undefined;
 }
 
 export function attachNestedChildrenToResultChildren(

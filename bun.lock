@@ -169,9 +169,8 @@
       "name": "@jczhang02/pi-stuff-agents",
       "version": "1.0.2",
       "dependencies": {
-        "@jczhang02/pi-stuff-tools": "0.1.4",
-        "@jczhang02/pi-stuff-ui": "0.2.3",
-        "jiti": "2.7.0",
+        "@jczhang02/pi-stuff-tools": "0.1.7",
+        "@jczhang02/pi-stuff-ui": "0.2.6",
         "typebox": "1.3.7",
       },
       "devDependencies": {
@@ -185,8 +184,8 @@
         "@earendil-works/pi-ai": "*",
         "@earendil-works/pi-coding-agent": "*",
         "@earendil-works/pi-tui": "*",
-        "@jczhang02/pi-stuff-context": "0.1.4",
-        "@jczhang02/pi-stuff-work": "0.1.0",
+        "@jczhang02/pi-stuff-context": "0.1.7",
+        "@jczhang02/pi-stuff-work": "0.2.2",
       },
     },
     "packages/pi-stuff-btw": {
@@ -373,8 +372,8 @@
       "name": "@jczhang02/pi-stuff-work",
       "version": "0.2.2",
       "dependencies": {
-        "@jczhang02/pi-stuff-tools": "0.1.4",
-        "@jczhang02/pi-stuff-ui": "0.2.3",
+        "@jczhang02/pi-stuff-tools": "0.1.7",
+        "@jczhang02/pi-stuff-ui": "0.2.6",
         "typebox": "1.3.7",
       },
       "devDependencies": {

@@ -11,6 +11,7 @@ export interface ChildToolDiagnostic {
 	available: string[];
 	missing: string[];
 	missingMcpDirectTools?: string[];
+	launchError?: string;
 }
 
 const PI_CORE_CHILD_TOOLS = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
@@ -42,6 +43,18 @@ export function writeChildToolDiagnostic(
 	return diagnostic;
 }
 
+export function writeChildLaunchDiagnostic(filePath: string, launchError: string): ChildToolDiagnostic {
+	const diagnostic: ChildToolDiagnostic = {
+		required: [],
+		available: [],
+		missing: [],
+		launchError: launchError.slice(0, 8_192),
+	};
+	fs.mkdirSync(path.dirname(filePath), { recursive: true });
+	fs.writeFileSync(filePath, JSON.stringify(diagnostic), { mode: 0o600 });
+	return diagnostic;
+}
+
 export function readChildToolDiagnostic(filePath: string | undefined): ChildToolDiagnostic | undefined {
 	if (!filePath || !fs.existsSync(filePath)) return undefined;
 	const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8")) as Partial<ChildToolDiagnostic>;
@@ -52,7 +65,9 @@ export function readChildToolDiagnostic(filePath: string | undefined): ChildTool
 		!stringArray(parsed.available) ||
 		!stringArray(parsed.missing) ||
 		(parsed.agent !== undefined && typeof parsed.agent !== "string") ||
-		(parsed.missingMcpDirectTools !== undefined && !stringArray(parsed.missingMcpDirectTools))
+		(parsed.missingMcpDirectTools !== undefined && !stringArray(parsed.missingMcpDirectTools)) ||
+		(parsed.launchError !== undefined &&
+			(typeof parsed.launchError !== "string" || parsed.launchError.length > 8_192))
 	) {
 		throw new Error(`Malformed child tool diagnostic at '${filePath}'.`);
 	}
@@ -62,10 +77,12 @@ export function readChildToolDiagnostic(filePath: string | undefined): ChildTool
 		available: parsed.available,
 		missing: parsed.missing,
 		...(parsed.missingMcpDirectTools ? { missingMcpDirectTools: parsed.missingMcpDirectTools } : {}),
+		...(parsed.launchError ? { launchError: parsed.launchError } : {}),
 	};
 }
 
 export function formatChildToolDiagnostic(diagnostic: ChildToolDiagnostic): string {
+	if (diagnostic.launchError) return diagnostic.launchError;
 	const subject = diagnostic.agent ? `Agent '${diagnostic.agent}'` : "Subagent";
 	return [
 		`${subject} requested unavailable child tools: ${diagnostic.missing.join(", ")}.`,

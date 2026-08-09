@@ -715,6 +715,137 @@ describe("Context capability lifecycle", () => {
 });
 
 describe("Context projections", () => {
+	test("falls back to bounded native history for forked Agents without giving fresh Agents the whole session", async () => {
+		const entry = {
+			type: "message",
+			id: "message-1",
+			parentId: null,
+			timestamp: "2026-08-09T00:00:00.000Z",
+			message: taggedMessage("parent <instruction>history</instruction>"),
+		} as unknown as SessionEntry;
+		const ctx = context([entry]);
+
+		const fork = await projectCurrentContext("agent-fork", ctx, { maxTokens: 512 });
+		const fresh = await projectCurrentContext("agent-fresh", ctx, { maxTokens: 512 });
+		const btw = await projectCurrentContext("btw", ctx, { maxTokens: 512 });
+
+		expect(fork.source).toBe("native");
+		expect(fork.text).toContain('audience="agent-fork"');
+		expect(fork.text).toContain("parent &lt;instruction&gt;history&lt;/instruction&gt;");
+		expect(fork.text.length).toBeLessThanOrEqual(700);
+		expect(fresh).toEqual({ source: "native", text: "", truncated: false });
+		expect(btw).toEqual({ source: "native", text: "", truncated: false });
+	});
+
+	test("builds native fallback from bounded session ends without materializing a huge middle", async () => {
+		const projection = await projectCurrentContext("agent-fork", context(), {
+			maxTokens: 512,
+			sourceMessages: [taggedMessage(`HEAD-${"中".repeat(2_000_000)}-TAIL`)],
+		});
+
+		expect(projection.source).toBe("native");
+		expect(projection.text).toContain("HEAD-");
+		expect(projection.text).toContain("-TAIL");
+		expect(projection.text).toContain("omitted the middle");
+		expect(__test.estimateProjectionTokens(projection.text)).toBeLessThanOrEqual(512);
+	});
+
+	test("projects a caller-owned frozen snapshot without re-reading a changed session", async () => {
+		let reads = 0;
+		const ctx = context([
+			{
+				type: "message",
+				id: "leaked-message",
+				parentId: null,
+				timestamp: "2026-08-09T00:00:00.000Z",
+				message: taggedMessage("leaked later context"),
+			} as unknown as SessionEntry,
+		]);
+		const original = ctx.sessionManager.buildContextEntries.bind(ctx.sessionManager);
+		ctx.sessionManager.buildContextEntries = () => {
+			reads += 1;
+			return original();
+		};
+		const projection = await projectCurrentContext("agent-fork", ctx, {
+			maxTokens: 512,
+			sourceMessages: [taggedMessage("frozen context")],
+		});
+
+		expect(reads).toBe(0);
+		expect(projection.text).toContain("frozen context");
+		expect(projection.text).not.toContain("leaked later context");
+	});
+
+	test("does not replace an explicit frozen snapshot with an older Magic projection cache", async () => {
+		const handlers: Handlers = new Map();
+		let magicTransforms = 0;
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (pi: ExtensionAPI) => {
+					pi.on("context", (event) => {
+						magicTransforms += 1;
+						const contextEvent = event as { messages: ReturnType<typeof taggedMessage>[] };
+						const input = contextEvent.messages.map((message) => message.content[0]?.text ?? "").join(" ");
+						return {
+							messages: [taggedMessage(`<session-history>${input}</session-history>`)],
+						};
+					});
+				},
+			}),
+		});
+		const ctx = context(
+			[
+				{
+					type: "message",
+					id: "old-message",
+					parentId: null,
+					timestamp: "2026-08-09T00:00:00.000Z",
+					message: taggedMessage("old snapshot"),
+				} as unknown as SessionEntry,
+			],
+			"/workspace/frozen",
+			"frozen-session",
+		);
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		const cached = await projectCurrentContext("agent-fork", ctx);
+		const frozen = await projectCurrentContext("agent-fork", ctx, {
+			sourceMessages: [taggedMessage("new frozen snapshot")],
+		});
+
+		expect(cached.text).toContain("old snapshot");
+		expect(magicTransforms).toBe(1);
+		expect(frozen.source).toBe("native");
+		expect(frozen.text).toContain("new frozen snapshot");
+		expect(frozen.text).not.toContain("old snapshot");
+		expect(magicTransforms).toBe(1);
+	});
+
+	test("invalidates a cached Magic projection when the next prompt is submitted", async () => {
+		const handlers: Handlers = new Map();
+		let current = "first turn";
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (pi: ExtensionAPI) => {
+					pi.on("context", () => ({
+						messages: [taggedMessage(`<session-history>${current}</session-history>`)],
+					}));
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		const first = await projectCurrentContext("agent-fork", ctx);
+		current = "second turn";
+		await emit(handlers, "input", { type: "input", text: "next", source: "rpc" }, ctx);
+		const second = await projectCurrentContext("agent-fork", ctx);
+
+		expect(first.text).toContain("first turn");
+		expect(second.text).toContain("second turn");
+		expect(second.text).not.toContain("first turn");
+	});
+
 	test("does not route an unbound Host through another Host with the same session id", async () => {
 		const handlers: Handlers = new Map();
 		const hostA = context([], "/workspace/shared", "same-session");
@@ -839,13 +970,28 @@ describe("Context projections", () => {
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		const projection = await projectCurrentContext("agent-fork", ctx, { maxTokens: 100 });
+		const projection = await projectCurrentContext("agent-fork", ctx, { maxTokens: 256 });
 
 		expect(projection.source).toBe("magic-context");
 		expect(projection.truncated).toBe(true);
-		expect(projection.text.length).toBeLessThanOrEqual(700);
+		expect(__test.estimateProjectionTokens(projection.text)).toBeLessThanOrEqual(256);
 		expect(projection.text).toContain("Pi Stuff omitted the middle");
 		expect(projection.text).toEndWith("</pi-stuff-context>");
+	});
+
+	test("keeps rare CJK, emoji, and high-entropy projections inside a strict byte upper bound", () => {
+		for (const full of [
+			`<session-history>${"上下文🧭𠮷".repeat(2_000)}TAIL</session-history>`,
+			`<session-history>${"AP6Zz9+/0f3cD7aQ".repeat(2_000)}TAIL</session-history>`,
+		]) {
+			const projection = __test.formatProjection(full, "agent-fork", { maxTokens: 512 });
+
+			expect(projection.truncated).toBeTrue();
+			expect(__test.estimateProjectionTokens(projection.text)).toBeLessThanOrEqual(512);
+			expect(projection.text).toContain("Pi Stuff omitted the middle");
+			expect(projection.text).toContain("L</session-history>");
+			expect(projection.text).toEndWith("</pi-stuff-context>");
+		}
 	});
 });
 

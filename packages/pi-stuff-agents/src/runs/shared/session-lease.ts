@@ -10,10 +10,14 @@ export const SESSION_LEASES_DIR = path.join(TEMP_ROOT_DIR, "session-leases");
 
 export interface SessionLeaseRequest {
 	sessionFile: string;
+	/** Runtime directory containing the authenticated writer-process registry. */
+	asyncDir: string;
 	runId: string;
 	sourceRunId: string;
 	parentSessionId?: string;
 }
+
+export type SessionLeaseIntent = Omit<SessionLeaseRequest, "asyncDir">;
 
 export interface SessionLeaseOwner {
 	version: 1;
@@ -26,8 +30,11 @@ export interface SessionLeaseOwner {
 	hostname: string;
 	processStartIdentity?: string;
 	writerState: "none" | "spawning" | "running";
+	writerStartupGate?: "parent-pipe-v1";
 	writerPid?: number;
 	writerProcessStartIdentity?: string;
+	/** Added compatibly to v1 owners; missing legacy values are never stale-reclaimed. */
+	asyncDir?: string;
 	acquiredAt: string;
 	acquiredAtMs: number;
 	updatedAtMs: number;
@@ -54,6 +61,7 @@ interface SessionLeaseOptions {
 	processStartIdentity?: string;
 	isProcessAlive?: (pid: number) => boolean | undefined;
 	getProcessStartIdentity?: (pid: number) => string | undefined;
+	inspectWriterLiveness?: (asyncDir: string) => boolean | undefined;
 }
 
 export class SessionLeaseConflictError extends Error {
@@ -156,6 +164,9 @@ function parseOwner(value: unknown): SessionLeaseOwner | undefined {
 		return undefined;
 	if (owner.writerProcessStartIdentity !== undefined && typeof owner.writerProcessStartIdentity !== "string")
 		return undefined;
+	if (owner.asyncDir !== undefined && (typeof owner.asyncDir !== "string" || !path.isAbsolute(owner.asyncDir)))
+		return undefined;
+	if (owner.writerStartupGate !== undefined && owner.writerStartupGate !== "parent-pipe-v1") return undefined;
 	if (owner.writerState === "running" && owner.writerPid === undefined) return undefined;
 	if (
 		owner.writerState !== "running" &&
@@ -195,15 +206,21 @@ function processDemonstrablyGone(
 
 function demonstrablyStale(
 	owner: SessionLeaseOwner,
-	options: Required<Pick<SessionLeaseOptions, "hostname" | "isProcessAlive" | "getProcessStartIdentity">>,
+	options: Required<
+		Pick<SessionLeaseOptions, "hostname" | "isProcessAlive" | "getProcessStartIdentity" | "inspectWriterLiveness">
+	>,
 ): boolean {
 	if (owner.hostname !== options.hostname) return false;
 	if (!processDemonstrablyGone(owner.pid, owner.processStartIdentity, options)) return false;
-	if (owner.writerState === "spawning") return false;
-	if (owner.writerState === "none") return true;
-	return (
+	// The writer supervisor is a process-group leader. Its own PID can disappear
+	// while the Pi child remains alive in that group and continues appending to the
+	// canonical session. Only the authenticated writer registry can prove the
+	// entire writer group absent. Legacy owners without that binding are retained.
+	if (!owner.asyncDir || options.inspectWriterLiveness(owner.asyncDir) !== false) return false;
+	if (owner.writerState !== "running") return true;
+	return Boolean(
 		owner.writerPid !== undefined &&
-		processDemonstrablyGone(owner.writerPid, owner.writerProcessStartIdentity, options)
+			processDemonstrablyGone(owner.writerPid, owner.writerProcessStartIdentity, options),
 	);
 }
 
@@ -234,16 +251,14 @@ export function acquireSessionLease(
 	options: SessionLeaseOptions = {},
 ): SessionLeaseHandle {
 	const canonicalSessionFile = canonicalSessionFilePath(request.sessionFile);
+	const canonicalAsyncDir = fs.realpathSync.native(path.resolve(request.asyncDir));
 	const rootDir = options.rootDir ?? SESSION_LEASES_DIR;
 	const leaseDir = sessionLeaseDir(canonicalSessionFile, rootDir);
 	const now = options.now ?? Date.now;
 	const pid = options.pid ?? process.pid;
 	const hostname = options.hostname ?? os.hostname();
 	const getIdentity = options.getProcessStartIdentity ?? getProcessStartIdentity;
-	const processStartIdentity =
-		options.processStartIdentity ??
-		getIdentity(pid) ??
-		(pid === process.pid ? `runtime:${Math.round(Date.now() - process.uptime() * 1000)}` : undefined);
+	const processStartIdentity = options.processStartIdentity ?? getIdentity(pid);
 	const acquiredAtMs = now();
 	const owner: SessionLeaseOwner = {
 		version: 1,
@@ -251,6 +266,7 @@ export function acquireSessionLease(
 		canonicalSessionFile,
 		runId: request.runId,
 		sourceRunId: request.sourceRunId,
+		asyncDir: canonicalAsyncDir,
 		...(request.parentSessionId ? { parentSessionId: request.parentSessionId } : {}),
 		pid,
 		hostname,
@@ -264,6 +280,7 @@ export function acquireSessionLease(
 		hostname,
 		isProcessAlive: options.isProcessAlive ?? processIsAlive,
 		getProcessStartIdentity: getIdentity,
+		inspectWriterLiveness: options.inspectWriterLiveness ?? (() => undefined),
 	};
 
 	for (let attempt = 0; attempt < 4; attempt++) {
@@ -281,6 +298,9 @@ export function acquireSessionLease(
 					const nextOwner: SessionLeaseOwner = {
 						...owner,
 						writerState: writer.state,
+						...(writer.state === "spawning" && process.platform !== "win32"
+							? { writerStartupGate: "parent-pipe-v1" as const }
+							: {}),
 						...(writer.state === "running" ? { writerPid: writer.pid } : {}),
 						...(writerProcessStartIdentity ? { writerProcessStartIdentity } : {}),
 						updatedAtMs: now(),
