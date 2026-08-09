@@ -1,7 +1,7 @@
-import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import {
 	type SettingItem,
 	SettingsList,
+	type SettingsListTheme,
 	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
@@ -56,6 +56,17 @@ function oneLine(value: unknown): string {
 		.trim();
 }
 
+function settingsListTheme(context: CommandDialogViewContext<void>): SettingsListTheme {
+	const theme = context.theme;
+	return {
+		label: (text, selected) => (selected ? theme.fg("accent", text) : text),
+		value: (text, selected) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),
+		description: (text) => theme.fg("dim", text),
+		cursor: theme.fg("accent", "→ "),
+		hint: (text) => theme.fg("dim", text),
+	};
+}
+
 class CodexDialog implements CommandDialogComponent {
 	private readonly context: CommandDialogViewContext<void>;
 	private readonly controls: CodexControls;
@@ -81,7 +92,7 @@ class CodexDialog implements CommandDialogComponent {
 		this.settingsList = new SettingsList(
 			items,
 			1,
-			getSettingsListTheme(),
+			settingsListTheme(context),
 			(_id, value) => this.updateFast(value === "on"),
 			() => context.close(),
 			{ enableSearch: false },

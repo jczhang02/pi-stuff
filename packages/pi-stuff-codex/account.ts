@@ -27,6 +27,22 @@ function bearerToken(headers: Readonly<Record<string, string>> | undefined): str
 		?.trim();
 }
 
+function mergeResolvedHeaders(...sources: unknown[]): Record<string, string> {
+	const headers = new Map<string, { name: string; value: string }>();
+	for (const source of sources) {
+		if (typeof source !== "object" || source === null || Array.isArray(source)) continue;
+		for (const [name, value] of Object.entries(source)) {
+			const key = name.toLowerCase();
+			if (value === null) {
+				headers.delete(key);
+				continue;
+			}
+			if (typeof value === "string") headers.set(key, { name, value });
+		}
+	}
+	return Object.fromEntries([...headers.values()].map(({ name, value }) => [name, value]));
+}
+
 function accountIdFromToken(token: string): string | undefined {
 	try {
 		const encoded = token.split(".")[1];
@@ -57,7 +73,10 @@ export async function resolveCodexAccount(ctx: ExtensionContext): Promise<CodexA
 	}
 	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
 	if (!auth.ok) throw new Error(auth.error);
-	const headers = { ...model.headers, ...auth.headers };
+	// Pi 0.84+ preserves null header-deletion markers. The certified 0.83 type
+	// surface does not expose them yet, so normalize the runtime value here and
+	// never turn a deletion marker into the literal HTTP header value "null".
+	const headers = mergeResolvedHeaders(model.headers, auth.headers);
 	const token = auth.apiKey?.trim() || bearerToken(headers);
 	if (!token) throw new Error("OpenAI Codex is not authenticated; run /login openai-codex.");
 	const accountId = headerValue(headers, "chatgpt-account-id") ?? accountIdFromToken(token);

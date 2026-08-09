@@ -52,13 +52,17 @@ test("builds the authenticated usage request only when explicitly invoked", asyn
 		model: {
 			api: "openai-responses",
 			baseUrl: "https://chatgpt.com/backend-api/codex/responses",
-			headers: {},
+			headers: { "x-placeholder": "remove-me" },
 			id: "gpt-5.2-codex",
 			input: ["text"],
 			provider: "openai-codex",
 		},
 		modelRegistry: {
-			getApiKeyAndHeaders: async () => ({ apiKey: token, headers: {}, ok: true }),
+			getApiKeyAndHeaders: async () => ({
+				apiKey: token,
+				headers: { "X-Placeholder": null } as unknown as Record<string, string>,
+				ok: true,
+			}),
 		},
 	} as unknown as ExtensionContext;
 	let request: Request | undefined;
@@ -72,6 +76,7 @@ test("builds the authenticated usage request only when explicitly invoked", asyn
 	expect(request?.url).toBe("https://chatgpt.com/backend-api/wham/usage");
 	expect(request?.headers.get("authorization")).toBe(`Bearer ${token}`);
 	expect(request?.headers.get("chatgpt-account-id")).toBe("account-42");
+	expect(request?.headers.get("x-placeholder")).toBeNull();
 	expect(weeklyRemainingPercent(usage)).toBe(90);
 	expect(buildCodexUsageUrl("https://example.test/codex/responses")).toBe("https://example.test/wham/usage");
 });
