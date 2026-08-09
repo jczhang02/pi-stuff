@@ -81,13 +81,6 @@ const PARENT_ONLY_CUSTOM_MESSAGE_TYPES = new Set([
 	"subagent-control",
 	"subagent-control-notice",
 ]);
-const SUBAGENT_ORCHESTRATION_SKILL_NAME_PATTERN = /<name>\s*pi-subagents\s*<\/name>/;
-const PROJECT_CONTEXT_HEADER = "\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n";
-const PROJECT_CONTEXT_XML_START = "\n\n<project_context>";
-const PROJECT_CONTEXT_XML_END = "</project_context>";
-const SKILLS_HEADER = "The following skills provide specialized instructions for specific tasks.";
-const DATE_HEADER = "\nCurrent date:";
-const WORKING_DIRECTORY_HEADER = "\nCurrent working directory:";
 const CHILD_FINAL_PAYLOAD_RESERVE_RATIO = 0.25;
 
 function finalProviderPayloadCapacity(ctx: {
@@ -180,97 +173,14 @@ function refreshChildToolDiagnostic(pi: ExtensionAPI): ChildToolDiagnostic | und
 	);
 }
 
-function findSectionEnd(prompt: string, startIndex: number, nextHeaders: string[]): number {
-	let endIndex = prompt.length;
-	for (const header of nextHeaders) {
-		const index = prompt.indexOf(header, startIndex);
-		if (index !== -1 && index < endIndex) {
-			endIndex = index;
-		}
-	}
-	return endIndex;
-}
-
-function removePromptSection(prompt: string, startIndex: number, endIndex: number): string {
-	const before = prompt.slice(0, startIndex).trimEnd();
-	const after = prompt.slice(endIndex).trimStart();
-	if (!before) return after;
-	if (!after) return before;
-	return `${before}\n${after}`;
-}
-
-export function stripProjectContext(prompt: string): string {
-	let rewritten = prompt;
-	const xmlStart = rewritten.lastIndexOf(PROJECT_CONTEXT_XML_START);
-	if (xmlStart !== -1) {
-		// Project instruction files are embedded verbatim and may themselves contain
-		// the closing tag. The Host-owned wrapper is necessarily the final closing
-		// tag because it is appended after every embedded file.
-		const closing = rewritten.lastIndexOf(PROJECT_CONTEXT_XML_END);
-		if (closing !== -1) {
-			let end = closing + PROJECT_CONTEXT_XML_END.length;
-			if (rewritten[end] === "\r") end += 1;
-			if (rewritten[end] === "\n") end += 1;
-			rewritten = removePromptSection(rewritten, xmlStart, end);
-		}
-	}
-	const legacyStart = rewritten.lastIndexOf(PROJECT_CONTEXT_HEADER);
-	if (legacyStart === -1) return rewritten;
-	const legacyEnd = findSectionEnd(rewritten, legacyStart + PROJECT_CONTEXT_HEADER.length, [
-		SKILLS_HEADER,
-		DATE_HEADER,
-		WORKING_DIRECTORY_HEADER,
-	]);
-	return removePromptSection(rewritten, legacyStart, legacyEnd);
-}
-
-export function stripInheritedSkills(prompt: string): string {
-	const availableSkillsEnd = prompt.lastIndexOf("</available_skills>");
-	if (availableSkillsEnd === -1) return prompt;
-	const availableSkillsStart = prompt.lastIndexOf("<available_skills>", availableSkillsEnd);
-	if (availableSkillsStart === -1) return prompt;
-	const headerIndex = prompt.lastIndexOf(SKILLS_HEADER, availableSkillsStart);
-	if (headerIndex === -1) return prompt;
-	let startIndex = headerIndex;
-	while (startIndex > 0 && (prompt[startIndex - 1] === "\n" || prompt[startIndex - 1] === "\r")) startIndex -= 1;
-	let endIndex = availableSkillsEnd + "</available_skills>".length;
-	if (prompt[endIndex] === "\r") endIndex += 1;
-	if (prompt[endIndex] === "\n") endIndex += 1;
-	return removePromptSection(prompt, startIndex, endIndex);
-}
-
-export function stripSubagentOrchestrationSkill(prompt: string): string {
-	return prompt
-		.replace(/\n{0,2}<skill\s+name=["']pi-subagents["'][^>]*>[\s\S]*?<\/skill>\n{0,2}/g, "\n\n")
-		.replace(/[ \t]*<skill>\s*[\s\S]*?<\/skill>\s*/g, (block) =>
-			SUBAGENT_ORCHESTRATION_SKILL_NAME_PATTERN.test(block) ? "" : block,
-		);
-}
-
-function stripChildBoundaryInstructions(prompt: string): string {
-	let rewritten = prompt;
-	for (const boundary of [CHILD_SUBAGENT_BOUNDARY_INSTRUCTIONS, CHILD_FANOUT_BOUNDARY_INSTRUCTIONS]) {
-		rewritten = rewritten.split(boundary).join("");
-	}
-	return rewritten.replace(/^(?:[ \t]*\r?\n)+/, "");
-}
-
-export function rewriteSubagentPrompt(
-	prompt: string,
-	options: { inheritProjectContext: boolean; inheritSkills: boolean; fanoutChild?: boolean },
-): string {
-	let rewritten = prompt;
-	if (!options.inheritProjectContext) {
-		rewritten = stripProjectContext(rewritten);
-	}
-	if (!options.inheritSkills) {
-		rewritten = stripInheritedSkills(rewritten);
-	}
-	rewritten = stripSubagentOrchestrationSkill(rewritten);
-	rewritten = stripChildBoundaryInstructions(rewritten);
+export function rewriteSubagentPrompt(prompt: string, options: { fanoutChild?: boolean }): string {
 	const boundary = options.fanoutChild ? CHILD_FANOUT_BOUNDARY_INSTRUCTIONS : CHILD_SUBAGENT_BOUNDARY_INSTRUCTIONS;
 	const structured = process.env[STRUCTURED_OUTPUT_CAPTURE_ENV] ? `\n\n${STRUCTURED_OUTPUT_INSTRUCTIONS}` : "";
-	return `${boundary}${structured}\n\n${rewritten}`;
+	// Pi concatenates custom prompts and Runtime Resources without an escaped
+	// structural boundary. Treat the resulting prompt as opaque: child capability
+	// ceilings and resolved Skill selection enforce orchestration policy without
+	// deleting user-authored text that happens to resemble a Host resource block.
+	return `${boundary}${structured}\n\n${prompt}`;
 }
 
 function isParentOnlySubagentMessage(message: unknown): boolean {
@@ -666,8 +576,6 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		let rewritten = event.systemPrompt;
 		if (inheritProjectContext !== undefined || inheritSkills !== undefined || fanoutChild !== undefined) {
 			rewritten = rewriteSubagentPrompt(event.systemPrompt, {
-				inheritProjectContext: inheritProjectContext ?? true,
-				inheritSkills: inheritSkills ?? true,
 				fanoutChild: fanoutChild === true,
 			});
 		}

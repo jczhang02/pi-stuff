@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -58,6 +58,10 @@ import type {
 	RunnerAgentTask,
 } from "../../packages/pi-stuff-agents/src/runs/shared/parallel-utils.js";
 import {
+	shardedDurableClaimName,
+	tryAcquireKernelClaim,
+} from "../../packages/pi-stuff-agents/src/shared/durable-claim.js";
+import {
 	projectAgentDefinition,
 	projectLaunchBinding,
 } from "../../packages/pi-stuff-agents/src/shared/launch-contract.js";
@@ -93,6 +97,17 @@ function fixtureRoot(): string {
 	);
 	fs.mkdirSync(path.join(root, "packages", "core"), { recursive: true });
 	return root;
+}
+
+function fallbackSessionKeyForTest(sessionFile: string): string {
+	const resolved = path.resolve(sessionFile);
+	let canonicalSlot = path.join(fs.realpathSync.native(path.dirname(resolved)), path.basename(resolved));
+	if (process.platform === "win32") canonicalSlot = canonicalSlot.toLowerCase();
+	return createHash("sha256").update(canonicalSlot).digest("hex");
+}
+
+function fallbackShardForTest(sessionFile: string): number {
+	return createHash("sha256").update(fallbackSessionKeyForTest(sessionFile)).digest().readUInt32BE(0) % 4_096;
 }
 
 async function waitForFile(filePath: string, timeoutMs = 3_000): Promise<void> {
@@ -2307,6 +2322,359 @@ if (model.endsWith("model-a")) {
 		expect(finalSession).toContain("BASE_SESSION");
 		expect(finalSession).toContain("FALLBACK_SUCCESS");
 		expect(finalSession).not.toContain("PRIMARY_ATTEMPT_POLLUTION");
+	}, 5_000);
+
+	test("restores different fallback sessions concurrently without a shared lock", async () => {
+		const root = fixtureRoot();
+		const readyDirectory = path.join(root, "parallel-fallback-ready");
+		fs.mkdirSync(readyDirectory, { mode: 0o700 });
+		const writer = path.join(root, "parallel-fallback-session.ts");
+		fs.writeFileSync(
+			writer,
+			`#!/usr/bin/env bun
+import * as fs from "node:fs";
+import * as path from "node:path";
+const args = Bun.argv.slice(2);
+const valueAfter = (flag) => {
+  const index = args.indexOf(flag);
+  return index >= 0 ? args[index + 1] : undefined;
+};
+const session = valueAfter("--session");
+const model = valueAfter("--model") ?? "";
+if (!session) throw new Error("missing session");
+const sessionName = path.basename(session);
+const emit = (message) => process.stdout.write(JSON.stringify({
+  type: "message_end",
+  message: { role: "assistant", timestamp: Date.now(), ...message },
+}) + "\\n", () => process.exit(0));
+if (model.endsWith("model-a")) {
+  fs.appendFileSync(session, "PRIMARY_ATTEMPT_POLLUTION\\n");
+  fs.writeFileSync(path.join(${JSON.stringify(readyDirectory)}, sessionName + ".ready"), "ready");
+  const deadline = Date.now() + 2_000;
+  while (fs.readdirSync(${JSON.stringify(readyDirectory)}).filter((name) => name.endsWith(".ready")).length < 2) {
+    if (Date.now() >= deadline) {
+      emit({ content: [], errorMessage: "parallel fallback rendezvous timed out", stopReason: "error" });
+      await new Promise(() => {});
+    }
+    await Bun.sleep(10);
+  }
+  emit({ content: [], errorMessage: "503 Service Unavailable", stopReason: "error" });
+} else {
+  const before = fs.readFileSync(session, "utf8");
+  if (before.includes("PRIMARY_ATTEMPT_POLLUTION")) {
+    emit({ content: [], errorMessage: "fallback inherited a polluted fork session", stopReason: "error" });
+  } else {
+    fs.appendFileSync(session, "FALLBACK_SUCCESS\\n");
+    emit({ content: [{ type: "text", text: "CLEAN_" + sessionName }], stopReason: "stop" });
+  }
+}
+`,
+			{ mode: 0o700 },
+		);
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const sessionByOldLifecycleShard = new Map<number, string>();
+		const sessionFiles: string[] = [];
+		for (let index = 0; index < 10_000 && sessionFiles.length === 0; index += 1) {
+			const candidate = path.join(root, `fork-${index}.jsonl`);
+			const shard = fallbackShardForTest(candidate);
+			const collision = sessionByOldLifecycleShard.get(shard);
+			if (collision) sessionFiles.push(collision, candidate);
+			else sessionByOldLifecycleShard.set(shard, candidate);
+		}
+		expect(sessionFiles).toHaveLength(2);
+		expect(fallbackShardForTest(sessionFiles[0] ?? "")).toBe(fallbackShardForTest(sessionFiles[1] ?? ""));
+		for (const sessionFile of sessionFiles) fs.writeFileSync(sessionFile, "BASE_SESSION\n", { mode: 0o600 });
+		const restoreDirectory = path.join(root, ".pi-stuff-fallback-restores");
+		fs.mkdirSync(restoreDirectory, { mode: 0o700 });
+		for (let index = 0; index < 300; index += 1) {
+			fs.writeFileSync(path.join(restoreDirectory, `unrelated-${String(index).padStart(3, "0")}`), "retained");
+		}
+		const priorRestorePaths = sessionFiles.map((sessionFile) => {
+			const key = fallbackSessionKeyForTest(sessionFile);
+			const prior = path.join(restoreDirectory, `restore-${key}.tmp`);
+			fs.writeFileSync(prior, "CRASH_LEFT_PARTIAL_RESTORE", { mode: 0o600 });
+			return prior;
+		});
+		const asyncDir = path.join(root, "async-parallel-fallback");
+		const resultPath = path.join(asyncDir, "result.json");
+
+		await runConfiguredBackground({
+			version: 2,
+			id: "parallel-fallback",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: {
+				mode: "parallel",
+				group: {
+					tasks: sessionFiles.map((sessionFile, index) => ({
+						...task(index),
+						cwd: root,
+						sessionFile,
+						modelCandidates: ["test/model-a", "test/model-b"],
+					})),
+					concurrency: 2,
+					worktree: false,
+				},
+			},
+		});
+
+		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
+			state: string;
+			results: Array<{ success?: boolean; modelAttempts?: Array<{ model?: string; success?: boolean }> }>;
+		};
+		expect(completion.state).toBe("complete");
+		expect(completion.results).toHaveLength(2);
+		for (const result of completion.results) {
+			expect(result).toMatchObject({
+				success: true,
+				modelAttempts: [
+					{ model: "test/model-a", success: false },
+					{ model: "test/model-b", success: true },
+				],
+			});
+		}
+		expect(fs.readdirSync(readyDirectory).filter((name) => name.endsWith(".ready"))).toHaveLength(2);
+		for (const sessionFile of sessionFiles) {
+			const session = fs.readFileSync(sessionFile, "utf8");
+			expect(session).toContain("BASE_SESSION");
+			expect(session).toContain("FALLBACK_SUCCESS");
+			expect(session).not.toContain("PRIMARY_ATTEMPT_POLLUTION");
+		}
+		expect(fs.existsSync(path.join(restoreDirectory, "restore.lock"))).toBeFalse();
+		expect(priorRestorePaths.every((prior) => !fs.existsSync(prior))).toBeTrue();
+		expect(fs.readdirSync(restoreDirectory).filter((name) => name.startsWith("unrelated-"))).toHaveLength(300);
+	}, 8_000);
+
+	test("rejects a concurrent fallback owner through a parent-directory alias", async () => {
+		if (process.platform === "win32") return;
+		const root = fixtureRoot();
+		const alias = path.join(root, "root-alias");
+		fs.symlinkSync(root, alias, "dir");
+		const sessionFile = path.join(root, "shared-fork.jsonl");
+		fs.writeFileSync(sessionFile, "BASE_SESSION\n", { mode: 0o600 });
+		const writer = path.join(root, "holding-success.ts");
+		fs.writeFileSync(
+			writer,
+			`#!/usr/bin/env bun
+setTimeout(() => process.stdout.write(JSON.stringify({
+  type: "message_end",
+  message: {
+    role: "assistant",
+    content: [{ type: "text", text: "HELD_SESSION_SUCCESS" }],
+    stopReason: "stop",
+    timestamp: Date.now(),
+  },
+}) + "\\n", () => process.exit(0)), 1_200);
+`,
+			{ mode: 0o700 },
+		);
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const asyncDir = path.join(root, "async-same-session");
+		const resultPath = path.join(asyncDir, "result.json");
+
+		await runConfiguredBackground({
+			version: 2,
+			id: "same-session",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: {
+				mode: "parallel",
+				group: {
+					tasks: [sessionFile, path.join(alias, path.basename(sessionFile))].map((aliasedSession, index) => ({
+						...task(index),
+						cwd: root,
+						sessionFile: aliasedSession,
+						modelCandidates: ["test/model-a", "test/model-b"],
+					})),
+					concurrency: 2,
+					worktree: false,
+				},
+			},
+		});
+
+		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
+			state: string;
+			results: Array<{ error?: string; output?: string; success?: boolean }>;
+		};
+		expect(completion.state).toBe("failed");
+		expect(completion.results.filter((result) => result.success)).toHaveLength(1);
+		expect(completion.results.filter((result) => result.output === "HELD_SESSION_SUCCESS")).toHaveLength(1);
+		expect(completion.results.filter((result) => result.error?.includes("already owned"))).toHaveLength(1);
+	}, 6_000);
+
+	test("advances fallback orphan cleanup across pages without deleting an active copy", async () => {
+		const root = fixtureRoot();
+		const restoreDirectory = path.join(root, ".pi-stuff-fallback-restores");
+		fs.mkdirSync(restoreDirectory, { mode: 0o700 });
+		const oldDate = new Date(Date.now() - 2 * 60 * 60 * 1_000);
+		const oldPaths: string[] = [];
+		for (let index = 0; index < 130; index += 1) {
+			const key = createHash("sha256").update(`orphan-${index}`).digest("hex");
+			const candidate = path.join(restoreDirectory, `restore-${key}.tmp`);
+			fs.writeFileSync(candidate, `PRIVATE_ORPHAN_${index}`, { mode: 0o600 });
+			fs.utimesSync(candidate, oldDate, oldDate);
+			oldPaths.push(candidate);
+		}
+		const activeKey = createHash("sha256").update("active-orphan").digest("hex");
+		const activePath = path.join(restoreDirectory, `restore-${activeKey}.tmp`);
+		fs.writeFileSync(activePath, "PRIVATE_ACTIVE_COPY", { mode: 0o600 });
+		fs.utimesSync(activePath, oldDate, oldDate);
+		const recentKey = createHash("sha256").update("recent-orphan").digest("hex");
+		const recentPath = path.join(restoreDirectory, `restore-${recentKey}.tmp`);
+		fs.writeFileSync(recentPath, "PRIVATE_RECENT_COPY", { mode: 0o600 });
+		const activeClaim = tryAcquireKernelClaim(
+			restoreDirectory,
+			shardedDurableClaimName("fallback-restore", activeKey, 4_096),
+		);
+		if (!activeClaim) throw new Error("Failed to establish active fallback-copy fixture claim.");
+
+		const writer = path.join(root, "immediate-success.ts");
+		fs.writeFileSync(
+			writer,
+			`#!/usr/bin/env bun
+process.stdout.write(JSON.stringify({
+  type: "message_end",
+  message: {
+    role: "assistant",
+    content: [{ type: "text", text: "SWEEP_TRIGGERED" }],
+    stopReason: "stop",
+    timestamp: Date.now(),
+  },
+}) + "\\n", () => process.exit(0));
+`,
+			{ mode: 0o700 },
+		);
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const runSweep = async (index: number): Promise<void> => {
+			const sessionFile = path.join(root, `sweep-${index}.jsonl`);
+			fs.writeFileSync(sessionFile, "BASE_SESSION\n", { mode: 0o600 });
+			const asyncDir = path.join(root, `async-sweep-${index}`);
+			await runConfiguredBackground({
+				version: 2,
+				id: `sweep-${index}`,
+				cwd: root,
+				asyncDir,
+				resultPath: path.join(asyncDir, "result.json"),
+				work: {
+					mode: "single",
+					task: {
+						...task(index),
+						cwd: root,
+						sessionFile,
+						modelCandidates: ["test/model-a", "test/model-b"],
+					},
+				},
+			});
+		};
+
+		try {
+			await runSweep(0);
+			await runSweep(1);
+			await runSweep(2);
+			expect(fs.existsSync(activePath)).toBeTrue();
+			expect(fs.existsSync(recentPath)).toBeTrue();
+			expect(oldPaths.some((candidate) => fs.existsSync(candidate))).toBeFalse();
+		} finally {
+			activeClaim.release();
+		}
+		await runSweep(3);
+		expect(fs.existsSync(activePath)).toBeFalse();
+		expect(fs.existsSync(recentPath)).toBeTrue();
+	}, 8_000);
+
+	test("keeps a real runner fallback session anonymous across SIGKILL", async () => {
+		if (process.platform !== "linux") return;
+		const root = fixtureRoot();
+		const isolatedTemp = path.join(root, "isolated-tmp");
+		fs.mkdirSync(isolatedTemp, { mode: 0o700 });
+		const sessionFile = path.join(root, "fork-for-crash.jsonl");
+		fs.writeFileSync(sessionFile, "PRIVATE_SESSION_COPY\n", { mode: 0o600 });
+		const writerReady = path.join(root, "writer-ready.txt");
+		const writer = path.join(root, "holding-writer.ts");
+		fs.writeFileSync(
+			writer,
+			`#!/usr/bin/env bun
+import * as fs from "node:fs";
+fs.writeFileSync(${JSON.stringify(writerReady)}, String(process.pid));
+setTimeout(() => process.exit(0), 2_000);
+`,
+			{ mode: 0o700 },
+		);
+		const moduleUrl = pathToFileURL(
+			path.resolve("packages/pi-stuff-agents/src/runs/background/subagent-runner.ts"),
+		).href;
+		const asyncDir = path.join(root, "async-fallback-crash");
+		const config: BackgroundRunnerConfig = {
+			version: 2,
+			id: "fallback-crash",
+			cwd: root,
+			asyncDir,
+			resultPath: path.join(asyncDir, "result.json"),
+			work: {
+				mode: "single",
+				task: {
+					...task(0),
+					cwd: root,
+					sessionFile,
+					modelCandidates: ["test/model-a", "test/model-b"],
+				},
+			},
+		};
+		const script = `
+const { runConfiguredBackground } = await import(${JSON.stringify(moduleUrl)});
+await runConfiguredBackground(${JSON.stringify(config)});
+`;
+		const child = spawn(process.execPath, ["-e", script], {
+			env: {
+				...process.env,
+				PI_SUBAGENT_PI_BINARY: writer,
+				TMPDIR: isolatedTemp,
+				TMP: isolatedTemp,
+				TEMP: isolatedTemp,
+			},
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		const childClosed = new Promise<void>((resolveClose) => child.once("close", () => resolveClose()));
+		let stderr = "";
+		child.stderr?.on("data", (chunk: Buffer) => {
+			stderr = `${stderr}${chunk.toString("utf8")}`.slice(-8_192);
+		});
+		try {
+			await waitForFile(writerReady);
+			const fallbackEntries = (): string[] => {
+				const found: string[] = [];
+				const pending = [isolatedTemp];
+				while (pending.length > 0) {
+					const directory = pending.pop();
+					if (!directory) break;
+					for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+						const candidate = path.join(directory, entry.name);
+						if (entry.isDirectory()) pending.push(candidate);
+						if (entry.name.startsWith("pi-subagent-fallback-") || entry.name.startsWith("snapshot-")) {
+							found.push(path.relative(isolatedTemp, candidate));
+						}
+					}
+				}
+				return found;
+			};
+			expect(fallbackEntries()).toEqual([]);
+			child.kill("SIGKILL");
+			await childClosed;
+			expect(fallbackEntries()).toEqual([]);
+		} finally {
+			if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+			await childClosed;
+			if (fs.existsSync(writerReady)) {
+				const writerPid = Number(fs.readFileSync(writerReady, "utf8"));
+				if (Number.isSafeInteger(writerPid) && writerPid > 0) {
+					try {
+						process.kill(writerPid, "SIGKILL");
+					} catch {}
+				}
+			}
+		}
 	}, 5_000);
 
 	test("does not retry the whole task after a child has begun Tool execution", async () => {

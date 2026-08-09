@@ -13,7 +13,8 @@ type ScenarioId =
 	| "single-fresh-foreground"
 	| "single-fork-background"
 	| "parallel-fresh-background"
-	| "parallel-fork-foreground";
+	| "parallel-fork-foreground"
+	| "aggregate-fanout-foreground";
 
 interface Scenario {
 	readonly id: ScenarioId;
@@ -26,7 +27,10 @@ interface LogRecord {
 	readonly at?: unknown;
 	readonly kind?: unknown;
 	readonly result?: unknown;
+	readonly baseExtensionMatches?: unknown;
+	readonly childBaseExtension?: unknown;
 	readonly sawRootMarker?: unknown;
+	readonly sawSuiteSurface?: unknown;
 	readonly scenario?: unknown;
 	readonly task?: unknown;
 }
@@ -48,6 +52,7 @@ const SCENARIOS: readonly Scenario[] = [
 	{ id: "single-fork-background", childCount: 1, context: "fork", foreground: false },
 	{ id: "parallel-fresh-background", childCount: 2, context: "fresh", foreground: false },
 	{ id: "parallel-fork-foreground", childCount: 2, context: "fork", foreground: true },
+	{ id: "aggregate-fanout-foreground", childCount: 2, context: "fresh", foreground: true },
 ];
 
 function fail(message: string): never {
@@ -173,6 +178,14 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 				`${scenario.id} ${scenario.context} child observed root marker=${String(start.sawRootMarker)}; expected ${expectedMarker}`,
 			);
 		}
+		if (start.sawSuiteSurface !== true) {
+			fail(`${scenario.id} child did not inherit the Aggregate Suite UI surface`);
+		}
+		if (start.baseExtensionMatches !== true) {
+			fail(
+				`${scenario.id} child base extension was ${String(start.childBaseExtension)}; expected the Aggregate Suite entry`,
+			);
+		}
 	}
 
 	const mainResult = mainResults[0]?.result;
@@ -247,6 +260,7 @@ async function runScenario(input: {
 				PI_CODING_AGENT_DIR: input.configDirectory,
 				PI_SUBAGENT_PI_BINARY: input.piBinary,
 				PI_STUFF_AGENTS_EXECUTION_MATRIX_LOG: input.logPath,
+				PI_STUFF_AGENTS_EXECUTION_MATRIX_EXPECTED_BASE_EXTENSION: join(resolve(input.packagePath), "index.ts"),
 				PI_STUFF_AGENTS_EXECUTION_MATRIX_ROOT_MARKER: marker,
 				PI_STUFF_AGENTS_EXECUTION_MATRIX_SCENARIO: input.scenario.id,
 				TERM: "xterm-256color",
@@ -274,7 +288,8 @@ export async function verifyAgentsExecutionMatrix(options: AgentsExecutionMatrix
 name: matrix-agent
 description: Deterministic real Pi execution-matrix Agent.
 model: pi-stuff-agents-execution-matrix/fixture-model
-extensions: ${providerExtension}
+subagentOnlyExtensions: ${providerExtension}
+maxSubagentDepth: 2
 systemPromptMode: append
 inheritProjectContext: false
 inheritSkills: false

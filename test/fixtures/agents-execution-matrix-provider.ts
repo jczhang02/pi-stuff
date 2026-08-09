@@ -21,7 +21,8 @@ type ScenarioId =
 	| "single-fresh-foreground"
 	| "single-fork-background"
 	| "parallel-fresh-background"
-	| "parallel-fork-foreground";
+	| "parallel-fork-foreground"
+	| "aggregate-fanout-foreground";
 
 function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
 	return {
@@ -48,7 +49,8 @@ function scenarioId(): ScenarioId {
 		value !== "single-fresh-foreground" &&
 		value !== "single-fork-background" &&
 		value !== "parallel-fresh-background" &&
-		value !== "parallel-fork-foreground"
+		value !== "parallel-fork-foreground" &&
+		value !== "aggregate-fanout-foreground"
 	) {
 		throw new Error(`Unknown Agents execution matrix scenario: ${value}`);
 	}
@@ -135,7 +137,7 @@ function toolArguments(scenario: ScenarioId): Record<string, unknown> {
 		context: scenario.includes("-fork-") ? "fork" : "fresh",
 		foreground: scenario.endsWith("-foreground"),
 	};
-	if (scenario.startsWith("single-")) {
+	if (scenario.startsWith("single-") || scenario === "aggregate-fanout-foreground") {
 		return {
 			...common,
 			agent: AGENT,
@@ -149,6 +151,25 @@ function toolArguments(scenario: ScenarioId): Record<string, unknown> {
 			{ agent: AGENT, task: `MATRIX_TASK_${scenario.toUpperCase().replaceAll("-", "_")}_B` },
 		],
 	};
+}
+
+function nestedToolCallStream(scenario: ScenarioId) {
+	const stream = createAssistantMessageEventStream();
+	const pending = message([], "pending");
+	const toolCall = {
+		type: "toolCall" as const,
+		id: `agents-execution-matrix-nested-${scenario}`,
+		name: "subagent",
+		arguments: {
+			agent: AGENT,
+			task: "MATRIX_GRANDCHILD_TASK_AGGREGATE_FANOUT_FOREGROUND",
+		},
+	};
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
+	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
+	return stream;
 }
 
 function toolCallStream(scenario: ScenarioId) {
@@ -167,13 +188,23 @@ function toolCallStream(scenario: ScenarioId) {
 	return stream;
 }
 
-function childStream(context: Context, options?: SimpleStreamOptions) {
+function childStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamOptions) {
 	const scenario = scenarioId();
 	const marker = requiredEnvironment("PI_STUFF_AGENTS_EXECUTION_MATRIX_ROOT_MARKER");
 	const serialized = JSON.stringify(context.messages);
 	const lastUser = lastUserText(context);
-	const task = lastUser.match(/MATRIX_TASK_[A-Z_]+/)?.[0] ?? "MATRIX_TASK_UNKNOWN";
+	const task = lastUser.match(/MATRIX_(?:TASK|GRANDCHILD_TASK)_[A-Z_]+/)?.[0] ?? "MATRIX_TASK_UNKNOWN";
 	const sawRootMarker = serialized.includes(marker);
+	const expectedBaseExtension = requiredEnvironment("PI_STUFF_AGENTS_EXECUTION_MATRIX_EXPECTED_BASE_EXTENSION");
+	// biome-ignore lint/complexity/useLiteralKeys: required by noPropertyAccessFromIndexSignature
+	const childBaseExtension = process.env["PI_STUFF_CHILD_BASE_EXTENSION_PATH"];
+	const nestedResult = latestSubagentResult(context);
+	const isAggregateDirect =
+		scenario === "aggregate-fanout-foreground" && task !== "MATRIX_GRANDCHILD_TASK_AGGREGATE_FANOUT_FOREGROUND";
+	if (isAggregateDirect && nestedResult !== undefined) {
+		record({ kind: "child-finish", scenario, task, text: nestedResult });
+		return textStream(`MATRIX_DIRECT_FANOUT_RESULT:${nestedResult}`);
+	}
 	record({
 		kind: "child-start",
 		scenario,
@@ -181,7 +212,11 @@ function childStream(context: Context, options?: SimpleStreamOptions) {
 		lastUser,
 		messageCount: context.messages.length,
 		sawRootMarker,
+		sawSuiteSurface: pi.getCommands().some((command) => command.name === "ui"),
+		baseExtensionMatches: childBaseExtension === expectedBaseExtension,
+		childBaseExtension,
 	});
+	if (isAggregateDirect) return nestedToolCallStream(scenario);
 	return delayedTextStream(
 		`MATRIX_CHILD_RESULT:${scenario}:${task}:root-marker=${sawRootMarker ? "seen" : "absent"}`,
 		options,
@@ -203,9 +238,9 @@ function mainStream(context: Context) {
 	return textStream(`MATRIX_MAIN_RESULT:${scenario}`);
 }
 
-function fixtureStream(context: Context, options?: SimpleStreamOptions) {
+function fixtureStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamOptions) {
 	// biome-ignore lint/complexity/useLiteralKeys: required by noPropertyAccessFromIndexSignature
-	return process.env["PI_SUBAGENT_CHILD"] === "1" ? childStream(context, options) : mainStream(context);
+	return process.env["PI_SUBAGENT_CHILD"] === "1" ? childStream(pi, context, options) : mainStream(context);
 }
 
 export default function agentsExecutionMatrixProvider(pi: ExtensionAPI): void {
@@ -226,6 +261,6 @@ export default function agentsExecutionMatrixProvider(pi: ExtensionAPI): void {
 			},
 		],
 		streamSimple: (_model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
-			fixtureStream(context, options),
+			fixtureStream(pi, context, options),
 	});
 }
