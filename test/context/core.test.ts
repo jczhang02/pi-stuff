@@ -765,10 +765,12 @@ describe("Context projections", () => {
 
 	test("does not replace an explicit frozen snapshot with an older Magic projection cache", async () => {
 		const handlers: Handlers = new Map();
+		let magicTransforms = 0;
 		piStuffContext(apiFor(handlers), {
 			loadMagicContext: async () => ({
 				default: async (pi: ExtensionAPI) => {
 					pi.on("context", (event) => {
+						magicTransforms += 1;
 						const contextEvent = event as { messages: ReturnType<typeof taggedMessage>[] };
 						const input = contextEvent.messages.map((message) => message.content[0]?.text ?? "").join(" ");
 						return {
@@ -799,8 +801,36 @@ describe("Context projections", () => {
 		});
 
 		expect(cached.text).toContain("old snapshot");
+		expect(magicTransforms).toBe(1);
+		expect(frozen.source).toBe("native");
 		expect(frozen.text).toContain("new frozen snapshot");
 		expect(frozen.text).not.toContain("old snapshot");
+		expect(magicTransforms).toBe(1);
+	});
+
+	test("invalidates a cached Magic projection when the next prompt is submitted", async () => {
+		const handlers: Handlers = new Map();
+		let current = "first turn";
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (pi: ExtensionAPI) => {
+					pi.on("context", () => ({
+						messages: [taggedMessage(`<session-history>${current}</session-history>`)],
+					}));
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		const first = await projectCurrentContext("agent-fork", ctx);
+		current = "second turn";
+		await emit(handlers, "input", { type: "input", text: "next", source: "rpc" }, ctx);
+		const second = await projectCurrentContext("agent-fork", ctx);
+
+		expect(first.text).toContain("first turn");
+		expect(second.text).toContain("second turn");
+		expect(second.text).not.toContain("first turn");
 	});
 
 	test("does not route an unbound Host through another Host with the same session id", async () => {
@@ -933,6 +963,17 @@ describe("Context projections", () => {
 		expect(projection.truncated).toBe(true);
 		expect(projection.text.length).toBeLessThanOrEqual(700);
 		expect(projection.text).toContain("Pi Stuff omitted the middle");
+		expect(projection.text).toEndWith("</pi-stuff-context>");
+	});
+
+	test("keeps CJK and emoji projections inside the same conservative token budget", () => {
+		const full = `<session-history>${"上下文🧭".repeat(2_000)}TAIL</session-history>`;
+		const projection = __test.formatProjection(full, "agent-fork", { maxTokens: 100 });
+
+		expect(projection.truncated).toBeTrue();
+		expect(__test.estimateProjectionTokens(projection.text)).toBeLessThanOrEqual(100);
+		expect(projection.text).toContain("Pi Stuff omitted the middle");
+		expect(projection.text).toContain("L</session-history>");
 		expect(projection.text).toEndWith("</pi-stuff-context>");
 	});
 });

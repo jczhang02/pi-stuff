@@ -199,7 +199,7 @@ describe("BTW context budget", () => {
 });
 
 describe("BTW stream execution", () => {
-	test("adds the bounded Context projection to the side call as reference-only system context", async () => {
+	test("uses the frozen branch directly without invoking stateful Context projection", async () => {
 		const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
 		const activeTools: string[] = [];
 		const api = {
@@ -216,6 +216,7 @@ describe("BTW stream execution", () => {
 			},
 		} as never;
 		let captured: Parameters<OpenBtwStream>[0] | undefined;
+		let magicTransforms = 0;
 		try {
 			piStuffContext(api, {
 				loadMagicContext: async () => ({
@@ -224,11 +225,14 @@ describe("BTW stream execution", () => {
 							event: string,
 							handler: (event: unknown) => unknown,
 						) => void;
-						register("context", () => ({
-							messages: [
-								user("<session-history><project-memory>side memory</project-memory></session-history>"),
-							],
-						}));
+						register("context", () => {
+							magicTransforms += 1;
+							return {
+								messages: [
+									user("<session-history><project-memory>side memory</project-memory></session-history>"),
+								],
+							};
+						});
 					},
 				}),
 			});
@@ -244,8 +248,10 @@ describe("BTW stream execution", () => {
 			contextTest.clear();
 		}
 
-		expect(captured?.context.systemPrompt).toContain('<pi-stuff-context audience="btw" trust="reference-only">');
-		expect(captured?.context.systemPrompt).toContain("side memory");
+		expect(magicTransforms).toBe(0);
+		expect(captured?.context.systemPrompt).not.toContain("pi-stuff-context");
+		expect(captured?.context.systemPrompt).not.toContain("side memory");
+		expect(JSON.stringify(captured?.context.messages)).toContain("main conversation");
 	});
 
 	test("streams text through the composed transport with no tools and an independent signal", async () => {
