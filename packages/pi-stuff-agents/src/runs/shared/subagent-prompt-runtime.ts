@@ -33,6 +33,7 @@ import {
 	type ChildToolDiagnostic,
 	MCP_DIRECT_CHILD_TOOLS_ENV,
 	REQUIRED_CHILD_TOOLS_ENV,
+	writeChildLaunchDiagnostic,
 	writeChildToolDiagnostic,
 } from "./tool-availability.ts";
 import {
@@ -84,6 +85,55 @@ const SUBAGENT_ORCHESTRATION_SKILL_NAME_PATTERN = /<name>\s*pi-subagents\s*<\/na
 const PROJECT_CONTEXT_HEADER = "\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n";
 const SKILLS_HEADER = "\n\nThe following skills provide specialized instructions for specific tasks.";
 const DATE_HEADER = "\nCurrent date:";
+const CHILD_FINAL_PAYLOAD_RESERVE_RATIO = 0.25;
+
+function finalProviderPayloadCapacity(ctx: {
+	model?: { contextWindow?: number; maxTokens?: number };
+}): number | undefined {
+	const contextWindow = ctx.model?.contextWindow;
+	const maxTokens = ctx.model?.maxTokens;
+	if (
+		typeof contextWindow !== "number" ||
+		!Number.isFinite(contextWindow) ||
+		contextWindow <= 0 ||
+		typeof maxTokens !== "number" ||
+		!Number.isFinite(maxTokens) ||
+		maxTokens <= 0
+	)
+		return undefined;
+	return Math.max(0, Math.floor(contextWindow - maxTokens - contextWindow * CHILD_FINAL_PAYLOAD_RESERVE_RATIO));
+}
+
+export function validateFinalProviderPayload(
+	payload: unknown,
+	model: { contextWindow?: number; maxTokens?: number } | undefined,
+): { ok: true } | { ok: false; message: string } {
+	const capacity = finalProviderPayloadCapacity({ model });
+	if (capacity === undefined) return { ok: true };
+	let serialized: string | undefined;
+	try {
+		serialized = JSON.stringify(payload);
+	} catch {
+		// A provider request that cannot be measured must not bypass the final gate.
+	}
+	if (serialized === undefined) {
+		return {
+			ok: false,
+			message:
+				"Agent launch stopped before the provider request because the final child payload could not be measured safely.",
+		};
+	}
+	const bytes = Buffer.byteLength(serialized, "utf8");
+	if (bytes <= capacity) return { ok: true };
+	return {
+		ok: false,
+		message: `Agent launch stopped before the provider request: the final child payload is ${bytes.toLocaleString(
+			"en-US",
+		)} UTF-8 bytes, above the safe ${capacity.toLocaleString(
+			"en-US",
+		)}-byte input bound for this model. Reduce the delegated context, Tools, or child extensions, or choose a model with a larger context window.`,
+	};
+}
 
 function readBooleanEnv(name: string): boolean | undefined {
 	const value = process.env[name];
@@ -515,6 +565,19 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	});
 	pi.on("agent_start", () => {
 		refreshChildToolDiagnostic(pi);
+	});
+	pi.on("before_provider_request", (event, ctx) => {
+		const result = validateFinalProviderPayload(event.payload, ctx.model);
+		if (result.ok) return;
+		const diagnosticPath = process.env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV]?.trim();
+		if (diagnosticPath) {
+			try {
+				writeChildLaunchDiagnostic(diagnosticPath, result.message);
+			} catch (error) {
+				console.error("Failed to persist the child launch budget diagnostic:", error);
+			}
+		}
+		ctx.abort();
 	});
 	const structuredOutputPath = process.env[STRUCTURED_OUTPUT_CAPTURE_ENV];
 	const structuredSchemaPath = process.env[STRUCTURED_OUTPUT_SCHEMA_ENV];

@@ -1679,8 +1679,8 @@ function runChildProcess(input: {
 						const observedSignal = supervisorDisposition ? supervisorDisposition.signal : signal;
 						const semanticError =
 							forcedError ??
-							assistantError ??
 							diagnosticError ??
+							assistantError ??
 							supervisorDisposition?.outputForwardingError ??
 							(writerSpawn.gated && !supervisorDisposition
 								? "Agent writer supervisor terminal disposition was unavailable; termination provenance could not be verified."

@@ -1854,6 +1854,50 @@ const timer = setInterval(() => {
 		expect(status.steps[0]?.endedAt).toBeNumber();
 	});
 
+	test("reports a provider-payload diagnostic ahead of the generic aborted assistant error", async () => {
+		const root = fixtureRoot();
+		const writer = path.join(root, "payload-diagnostic-writer.ts");
+		fs.writeFileSync(
+			writer,
+			`#!/usr/bin/env bun
+import { writeFileSync } from "node:fs";
+const diagnosticPath = process.env.PI_SUBAGENT_TOOL_DIAGNOSTIC_PATH;
+if (!diagnosticPath) throw new Error("missing child diagnostic path");
+writeFileSync(diagnosticPath, JSON.stringify({ required: [], available: [], missing: [], launchError: "FINAL_PAYLOAD_BOUND" }));
+process.stdout.write(JSON.stringify({
+  type: "message_end",
+  message: {
+    role: "assistant",
+    content: [],
+    errorMessage: "Request aborted",
+    stopReason: "error",
+    timestamp: Date.now(),
+  },
+}) + "\\n");
+`,
+			{ mode: 0o700 },
+		);
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const asyncDir = path.join(root, "async-payload-diagnostic");
+		const resultPath = path.join(asyncDir, "result.json");
+
+		await runConfiguredBackground({
+			version: 2,
+			id: "payload-diagnostic",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: { mode: "single", task: { ...task(0), cwd: root } },
+		});
+		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
+			state: string;
+			results: Array<{ error?: string }>;
+		};
+
+		expect(completion.state).toBe("failed");
+		expect(completion.results[0]?.error).toBe("FINAL_PAYLOAD_BOUND");
+	});
+
 	test("records a diagnostic when the Agent process exits nonzero without reporting an error", async () => {
 		const root = fixtureRoot();
 		const writer = path.join(root, "silent-nonzero-writer.ts");

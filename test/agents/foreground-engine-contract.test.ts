@@ -1162,9 +1162,10 @@ describe("reduced foreground Agent engine", () => {
 			getAllTools: () => [
 				{
 					name: "read",
-					description: "d".repeat(20_000),
+					description: "Read a file.",
 					parameters: { type: "object", properties: { path: { type: "string" } } },
-					promptGuidelines: ["g".repeat(2_000)],
+					promptGuidelines: [],
+					promptSnippet: "s".repeat(20_000),
 				},
 			],
 		} as unknown as ExtensionAPI;
@@ -1186,6 +1187,79 @@ describe("reduced foreground Agent engine", () => {
 
 		expect(result.isError).toBeTrue();
 		expect(engineCalls).toBe(0);
+	});
+
+	test("accounts for the read Tool forced into a skill-enabled child", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-skill-read-tool-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		const skillRoot = path.join(cwd, "skills");
+		const skillName = "small-skill";
+		fs.mkdirSync(path.join(skillRoot, skillName), { recursive: true });
+		fs.writeFileSync(path.join(skillRoot, skillName, "SKILL.md"), "---\ndescription: Small skill\n---\nUse it.\n");
+		let engineCalls = 0;
+		const pi = {
+			events: { emit: () => {} },
+			getActiveTools: () => ["write"],
+			getAllTools: () => [
+				{ name: "write", description: "Write.", parameters: {} },
+				{ name: "read", description: "Read.", parameters: {}, promptSnippet: "r".repeat(20_000) },
+			],
+		} as unknown as ExtensionAPI;
+
+		const result = await executor(
+			cwd,
+			state(),
+			() => {
+				engineCalls += 1;
+			},
+			{
+				agent: {
+					...agent(),
+					model: "test/small",
+					tools: ["write"],
+					skills: [skillName],
+					skillPath: [skillRoot],
+				},
+				pi,
+			},
+		).execute(
+			"skill-read-tool-overflow",
+			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
+			new AbortController().signal,
+			undefined,
+			context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 100),
+		);
+
+		expect(result.isError).toBeTrue();
+		expect(engineCalls).toBe(0);
+	});
+
+	test("does not charge the inherited Host prompt when the child replaces it", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-replace-prompt-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 100);
+		(ctx as unknown as { getSystemPrompt: () => string }).getSystemPrompt = () => "parent".repeat(4_000);
+		let engineCalls = 0;
+
+		const result = await executor(
+			cwd,
+			state(),
+			() => {
+				engineCalls += 1;
+			},
+			{ agent: { ...agent(), model: "test/small", systemPromptMode: "replace" } },
+		).execute(
+			"replace-prompt-fits",
+			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
+			new AbortController().signal,
+			undefined,
+			ctx,
+		);
+
+		expect(result.isError).not.toBeTrue();
+		expect(engineCalls).toBe(1);
 	});
 
 	test("supports one native and one projected child in the same parallel fork", async () => {

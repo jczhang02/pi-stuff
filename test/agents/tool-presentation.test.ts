@@ -32,8 +32,13 @@ import {
 import registerSubagentPromptRuntime, {
 	registerSteeringInbox,
 	registerToolBudget,
+	validateFinalProviderPayload,
 } from "../../packages/pi-stuff-agents/src/runs/shared/subagent-prompt-runtime.js";
-import { REQUIRED_CHILD_TOOLS_ENV } from "../../packages/pi-stuff-agents/src/runs/shared/tool-availability.js";
+import {
+	CHILD_TOOL_DIAGNOSTIC_PATH_ENV,
+	REQUIRED_CHILD_TOOLS_ENV,
+	readChildToolDiagnosticError,
+} from "../../packages/pi-stuff-agents/src/runs/shared/tool-availability.js";
 import type { SubagentState } from "../../packages/pi-stuff-agents/src/shared/types.js";
 
 const environment = new Map<string, string | undefined>();
@@ -245,6 +250,27 @@ test("detached root Agents keep native supervisor coordination with an explicit 
 	expect(foreground.env[SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV]).toBeUndefined();
 });
 
+test("places the child payload gate after explicit extensions and always provisions its diagnostic", () => {
+	const configuredExtension = "/tmp/pi-stuff-explicit-child-extension.ts";
+	const built = buildPiArgs({
+		baseArgs: ["--mode", "json", "-p"],
+		task: "Inspect the project.",
+		sessionEnabled: false,
+		inheritProjectContext: true,
+		inheritSkills: true,
+		extensions: [configuredExtension],
+	});
+	if (built.tempDir) temporaryDirectories.push(built.tempDir);
+	const extensionPaths = built.args.flatMap((argument, index) =>
+		argument === "--extension" && built.args[index + 1] ? [built.args[index + 1] as string] : [],
+	);
+
+	expect(extensionPaths[0]).toBe(configuredExtension);
+	expect(extensionPaths.at(-1)?.endsWith("subagent-prompt-runtime.ts")).toBeTrue();
+	expect(built.toolDiagnosticPath).toBeTruthy();
+	expect(built.env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV]).toBe(built.toolDiagnosticPath);
+});
+
 test("a rejected advisory tool-budget nudge cannot escape the child runtime", async () => {
 	const handlers = new Map<string, (event: { toolName?: string }) => unknown>();
 	const pi = {
@@ -258,6 +284,42 @@ test("a rejected advisory tool-budget nudge cannot escape the child runtime", as
 	expect(handlers.get("tool_call")?.({ toolName: "write" })).toEqual({
 		block: true,
 		reason: expect.stringContaining("Tool budget"),
+	});
+});
+
+test("aborts an oversized final child provider payload with a durable diagnostic", async () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-stuff-child-payload-guard-"));
+	temporaryDirectories.push(root);
+	const diagnosticPath = join(root, "child-diagnostic.json");
+	setEnvironment(CHILD_TOOL_DIAGNOSTIC_PATH_ENV, diagnosticPath);
+	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+	const pi = {
+		events: { emit: () => {}, on: () => () => {} },
+		getAllTools: () => [],
+		on: (event: string, handler: (event: never, ctx: never) => unknown) => {
+			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+		},
+		registerTool: () => {},
+		sendMessage: () => {},
+	} as unknown as ExtensionAPI;
+	registerSubagentPromptRuntime(pi);
+	let aborts = 0;
+	for (const handler of handlers.get("before_provider_request") ?? []) {
+		await handler(
+			{ payload: { input: "𠮷".repeat(2_000), tools: [{ description: "x".repeat(10_000) }] } } as never,
+			{
+				model: { contextWindow: 8_000, maxTokens: 2_000 },
+				abort: () => {
+					aborts += 1;
+				},
+			} as never,
+		);
+	}
+
+	expect(aborts).toBe(1);
+	expect(readChildToolDiagnosticError(diagnosticPath)).toContain("final child payload");
+	expect(validateFinalProviderPayload({ input: "small" }, { contextWindow: 8_000, maxTokens: 2_000 })).toEqual({
+		ok: true,
 	});
 });
 

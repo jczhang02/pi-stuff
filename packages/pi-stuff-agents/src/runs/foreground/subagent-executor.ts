@@ -350,6 +350,7 @@ function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): numb
 			subagentOnlyExtensions: task.subagentOnlyExtensions,
 			mcpDirectTools: task.mcpDirectTools,
 			cwd: task.cwd,
+			requireReadTool: Boolean(task.skills?.length),
 			capabilityCeiling: task.capabilityCeiling,
 		});
 		const requestedNames = [
@@ -366,14 +367,9 @@ function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): numb
 				continue;
 			}
 			try {
-				tokens += estimateTextTokens(
-					JSON.stringify({
-						name: tool.name,
-						description: tool.description,
-						parameters: tool.parameters,
-						promptGuidelines: tool.promptGuidelines,
-					}),
-				);
+				// JSON omits executable callbacks while retaining every current and
+				// future serializable prompt/schema field (including prompt snippets).
+				tokens += estimateTextTokens(JSON.stringify(tool));
 			} catch {
 				tokens += CHILD_UNKNOWN_TOOL_SURFACE_TOKENS;
 			}
@@ -532,7 +528,7 @@ function prepareLaunchModelPlan(input: {
 		const taskTokens =
 			estimateTextTokens(built.task.task) +
 			estimateTextTokens(built.task.systemPrompt?.trim() ?? "") +
-			launchPromptTokens +
+			(built.task.systemPromptMode === "replace" ? 0 : launchPromptTokens) +
 			childLaunchSurfaceTokens(input.pi, built.task);
 		fixedInputTokensByIndex[index] = taskTokens;
 		if (input.context !== "fork") {

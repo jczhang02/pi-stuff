@@ -252,15 +252,17 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 			]
 		: [];
 	const runtimeExtensions = fanoutAuthorized
-		? [PROMPT_RUNTIME_EXTENSION_PATH, FANOUT_CHILD_EXTENSION_PATH]
+		? [FANOUT_CHILD_EXTENSION_PATH, PROMPT_RUNTIME_EXTENSION_PATH]
 		: [PROMPT_RUNTIME_EXTENSION_PATH];
 	const disableAmbientExtensions = capabilityCeiling?.denyExtensions === true || input.extensions !== undefined;
 	const configuredExtensions = capabilityCeiling?.denyExtensions
 		? []
 		: [...toolExtensionPaths, ...(input.extensions ?? []), ...(input.subagentOnlyExtensions ?? [])];
+	// Keep the prompt runtime last among every explicitly controlled child
+	// extension so its provider-payload gate observes their final mutations.
 	const extensionArgs = disableAmbientExtensions
-		? [...new Set([...runtimeExtensions, ...configuredExtensions])]
-		: [...new Set([...runtimeExtensions, ...toolExtensionPaths, ...(input.subagentOnlyExtensions ?? [])])];
+		? [...new Set([...configuredExtensions, ...runtimeExtensions])]
+		: [...new Set([...toolExtensionPaths, ...(input.subagentOnlyExtensions ?? []), ...runtimeExtensions])];
 	const requestedToolNames =
 		input.tools !== undefined
 			? [...new Set([...requestedBuiltinTools, ...resolvedMcpSelections.map((selection) => selection.name)])]
@@ -381,12 +383,11 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	const env: Record<string, string | undefined> = {};
 	const piPackageRoot = process.env[PI_CODING_AGENT_PACKAGE_ROOT_ENV] ?? resolvePiPackageRoot();
 	if (piPackageRoot) env[PI_CODING_AGENT_PACKAGE_ROOT_ENV] = piPackageRoot;
-	let toolDiagnosticPath: string | undefined;
+	if (!tempDir) tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
+	const toolDiagnosticPath = path.join(tempDir, "child-diagnostic.json");
+	env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV] = toolDiagnosticPath;
 	if (toolPlan.requiredChildTools.length > 0) {
-		if (!tempDir) tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
-		toolDiagnosticPath = path.join(tempDir, "tool-diagnostic.json");
 		env[REQUIRED_CHILD_TOOLS_ENV] = JSON.stringify(toolPlan.requiredChildTools);
-		env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV] = toolDiagnosticPath;
 	}
 	env[MCP_DIRECT_CHILD_TOOLS_ENV] =
 		toolPlan.effectiveMcpTools.length > 0 ? JSON.stringify(toolPlan.effectiveMcpTools) : undefined;
