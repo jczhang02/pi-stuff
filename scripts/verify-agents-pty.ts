@@ -326,6 +326,7 @@ class TmuxAgentsSession {
 			POWERLINE_NERD_FONTS: "1",
 			TERM: "xterm-256color",
 			TMPDIR: paths.runtime,
+			XDG_STATE_HOME: join(paths.runtime, "state"),
 		};
 		this.workspace = paths.workspace;
 	}
@@ -619,6 +620,7 @@ Return the deterministic fixture result.
 				PI_STUFF_AGENTS_PTY_SESSION_ID: `agents-pty-${options.columns}x${options.rows}`,
 				TERM: "xterm-256color",
 				TMPDIR: runtimeDirectory,
+				XDG_STATE_HOME: join(runtimeDirectory, "state"),
 			},
 			stdout: "pipe",
 			stderr: "pipe",

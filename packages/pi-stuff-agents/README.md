@@ -30,12 +30,16 @@ grammar as Host tools. Full Agent inspection and control remains in `/agents`.
   immediately before a crash prevents its acknowledgement from becoming durable, recovery may replay that request
   instead of silently declaring it delivered.
 - Child Agents automatically reuse the exact standalone Pi Host that launched the session; no separate child-binary
-  setting is required.
+  setting is required. Their extension surface is deterministic: ambient discovery is disabled, the owning Pi Stuff
+  Suite (or standalone Agents Package) is loaded explicitly, Agent-specific extensions remain opt-in, and the final
+  provider-payload guard always runs last.
 - A fork clones the native Pi branch only when the complete child launch fits the selected model. Long, multilingual,
   or high-entropy sessions otherwise receive one bounded snapshot projection; the check includes the child task,
-  inherited prompt, selected Tool schemas, and conservative reserves for child-only extensions. Each child also checks
-  the serialized provider payload after its context, Skills, Tools, and explicit child extensions are assembled; an
-  oversized request stops locally with a durable diagnostic instead of surfacing as an unexplained Agent crash.
+  inherited prompt, replacement-prompt context retained by Pi, selected Tool schemas, and conservative reserves for
+  child-only extensions. Skill-enabled children always receive and verify the `read` Tool. Each child also checks the
+  serialized provider payload after its context, Skills, Tools, and explicit child extensions are assembled; an
+  oversized request retries an eligible larger fallback, or stops locally with a durable diagnostic instead of
+  surfacing as an unexplained Agent crash.
 - Background completion renders a compact `Agent finished/failed/stopped · … · inspect with /agents` session entry.
   The entry survives resume, is excluded from model context, and never triggers an unsolicited main-model turn. Full
   direct and nested reports remain available in `/agents`.
@@ -51,9 +55,10 @@ grammar as Host tools. Full Agent inspection and control remains in `/agents`.
 - Suite-owned Agent input, output, metadata, and transcript artifacts live beside the persisted Pi session under Pi's
   Settings-owned session root by default. Ordinary read-only delegation therefore does not create `.pi-subagents` in
   the project. The engine retains an explicit project-directory policy for embedding compatibility, but Pi Stuff does
-  not select it by default. Cleanup removes only old, terminal-proven owned groups; active evidence is retained. A
-  yielding on-disk snapshot and byte cursor traverse each large directory once, fair per-directory quotas advance
-  later sessions, and temp artifacts receive an independent bounded pass.
+  not select it by default. Cleanup removes only old, terminal-proven owned groups; active evidence is retained.
+  Durable kernel claims, incrementally persisted directory snapshots, identity-bound cursors, and orphan sweeping make
+  interrupted or concurrent maintenance safe. Scan and snapshot-processing budgets are independently bounded, fair
+  per-directory quotas advance later sessions, and temp artifacts receive an independent pass.
 
 Fleetview reserves one help row above `main`. The row is exactly blank while idle. With an empty editor, press Down to
 enter management and replace that same row with `↑/↓ select · Enter view · x stop · Esc return`; at 64 columns and below

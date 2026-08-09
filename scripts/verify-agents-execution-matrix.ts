@@ -251,6 +251,7 @@ async function runScenario(input: {
 				PI_STUFF_AGENTS_EXECUTION_MATRIX_SCENARIO: input.scenario.id,
 				TERM: "xterm-256color",
 				TMPDIR: input.temporaryDirectory,
+				XDG_STATE_HOME: join(input.temporaryDirectory, "state"),
 			},
 		},
 	);
