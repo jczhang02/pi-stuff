@@ -86,6 +86,7 @@ jobs:
       PI_HOST_ATTESTATION: ${{ github.workspace }}/.artifacts/pi-host-attestation.json
       PI_HOST_SOURCE_CHECKOUT: ${{ github.workspace }}/.artifacts/pi-source
       RTK_BIN: ${{ github.workspace }}/.artifacts/rtk/bin/rtk
+      SYSTEM_TOOL_BIN: ${{ github.workspace }}/.artifacts/system-tools/bin
 
     steps:
       - name: Check out repository
@@ -124,7 +125,11 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends expect iproute2 tmux
+          sudo apt-get install --yes --no-install-recommends expect fd-find iproute2 ripgrep tmux
+          mkdir -p "$SYSTEM_TOOL_BIN"
+          ln --symbolic "$(command -v fdfind)" "$SYSTEM_TOOL_BIN/fd"
+          test -x "$SYSTEM_TOOL_BIN/fd"
+          command -v rg >/dev/null
 
       - name: Install certified RTK runtime
         shell: bash
@@ -155,7 +160,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/pi-stuff-ci"
           rtk_directory="$(dirname "$RTK_BIN")"
-          export PATH="$rtk_directory:$PATH"
+          export PATH="$SYSTEM_TOOL_BIN:$rtk_directory:$PATH"
           export PI_STUFF_AGENTS_PTY_ARTIFACT_DIR="$RUNNER_TEMP/pi-stuff-ci/agents"
           export PI_STUFF_UI_PTY_ARTIFACT_DIR="$RUNNER_TEMP/pi-stuff-ci/ui"
           sudo --preserve-env=HOME,PATH,PI_BIN,PI_HOST_ATTESTATION,PI_HOST_SOURCE_CHECKOUT,PI_STUFF_AGENTS_PTY_ARTIFACT_DIR,PI_STUFF_UI_PTY_ARTIFACT_DIR,RTK_BIN,RUNNER_TEMP,CI,GITHUB_ACTIONS,GITHUB_WORKSPACE unshare --net -- \

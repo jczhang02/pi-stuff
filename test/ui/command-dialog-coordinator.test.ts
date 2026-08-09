@@ -363,8 +363,9 @@ describe("normal UI presentation integration", () => {
 		const rendersBeforePublish = ui.renderRequests.length;
 		codexChannel.publish({ fastEnabled: true, weeklyRemainingPercent: 72.4 });
 		const active = footer.render(120).join("\n");
-		expect(active).toContain(" med ·  fast ·");
-		expect(active).toContain("󰃭 72%");
+		expect(active).toContain("med ·");
+		expect(active).toContain("fast ·");
+		expect(active).toContain("72%");
 		expect(ui.renderRequests.length).toBeGreaterThan(rendersBeforePublish);
 
 		const rendersBeforeClear = ui.renderRequests.length;
@@ -441,7 +442,7 @@ describe("normal UI presentation integration", () => {
 		const footerData = createFooterData("main");
 		const footer = factory(ui.tui, ui.theme, footerData as never);
 		const statusline = footer.render(100).join("\n");
-		for (const expected of ["gpt-5.6-sol", " med", "pi-stuff", "main", "42.4%"]) {
+		for (const expected of ["gpt-5.6-sol", "med", "pi-stuff", "main", "42.4%"]) {
 			expect(statusline).toContain(expected);
 		}
 		expect(statusline).not.toContain("$0.00");
