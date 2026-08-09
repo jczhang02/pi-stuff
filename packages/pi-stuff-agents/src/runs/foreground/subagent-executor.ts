@@ -92,8 +92,12 @@ import {
 	updateForegroundNestedProjection,
 	writeNestedEvent,
 } from "../shared/nested-events.ts";
-import type { BackgroundRunnerConfig } from "../shared/parallel-utils.ts";
-import { SUBAGENT_PARENT_PHYSICAL_SESSION_ENV, SUBAGENT_PARENT_SESSION_ENV } from "../shared/pi-args.ts";
+import type { BackgroundRunnerConfig, RunnerAgentTask } from "../shared/parallel-utils.ts";
+import {
+	resolvePiLaunchToolPlan,
+	SUBAGENT_PARENT_PHYSICAL_SESSION_ENV,
+	SUBAGENT_PARENT_SESSION_ENV,
+} from "../shared/pi-args.ts";
 import { validateToolBudgetConfig } from "../shared/tool-budget.ts";
 import { resolveTurnBudgetConfig } from "../shared/turn-budget.ts";
 import { executeForegroundConfig } from "./execution.ts";
@@ -232,6 +236,10 @@ const DEFAULT_ENGINES: ExecutorEngines = {
 };
 
 const CHILD_RUNTIME_RESERVE_RATIO = 0.25;
+const CHILD_TOOL_REQUEST_FRAMING_TOKENS = 512;
+const CHILD_UNKNOWN_TOOL_SURFACE_TOKENS = 32 * 1024;
+const CHILD_EXPLICIT_EXTENSION_SURFACE_TOKENS = 16 * 1024;
+const CHILD_RUNTIME_EXTENSION_SURFACE_TOKENS = 4 * 1024;
 
 function errorResult(mode: Details["mode"], message: string, extras: Partial<Details> = {}): AgentToolResult<Details> {
 	return {
@@ -258,20 +266,11 @@ function availableModels(ctx: ExtensionContext): ModelInfo[] {
 }
 
 function estimateTextTokens(text: string): number {
-	let asciiCodePoints = 0;
-	let nonAsciiTokens = 0;
-	for (const codePoint of text) {
-		if ((codePoint.codePointAt(0) ?? 0) <= 0x7f) {
-			asciiCodePoints += 1;
-			continue;
-		}
-		// CJK and other non-ASCII scripts commonly consume at least one token per
-		// code point. Emoji are often split further, so reserve two. This remains
-		// an estimate, but avoids the severe UTF-16 length/4 undercount that let a
-		// multilingual fork start only to overflow inside the child.
-		nonAsciiTokens += /\p{Extended_Pictographic}/u.test(codePoint) ? 2 : 1;
-	}
-	return Math.ceil(asciiCodePoints / 4) + nonAsciiTokens;
+	// Byte-level BPE and SentencePiece-family tokenizers cannot emit more tokens
+	// than the UTF-8 bytes they consume. Use that strict cross-provider upper bound
+	// instead of Pi's intentionally rough chars/4 estimate; the latter undercounts
+	// astral CJK, emoji, Base64, hashes, and other high-entropy input.
+	return Buffer.byteLength(text, "utf8");
 }
 
 function estimateContextMessageTokens(message: ContextEvent["messages"][number]): number {
@@ -340,6 +339,61 @@ function inheritedLaunchPromptTokens(ctx: ExtensionContext): number {
 		// The proportional runtime reserve still covers the unknown Host surface.
 	}
 	return promptTokens;
+}
+
+function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): number {
+	if (typeof pi.getAllTools !== "function" || typeof pi.getActiveTools !== "function") return 0;
+	try {
+		const plan = resolvePiLaunchToolPlan({
+			tools: task.tools,
+			extensions: task.extensions,
+			subagentOnlyExtensions: task.subagentOnlyExtensions,
+			mcpDirectTools: task.mcpDirectTools,
+			cwd: task.cwd,
+			capabilityCeiling: task.capabilityCeiling,
+		});
+		const requestedNames = [
+			...new Set(
+				plan.explicitToolAllowlist ? plan.effectiveToolAllowlist : [...pi.getActiveTools(), ...plan.internalTools],
+			),
+		];
+		const configured = new Map(pi.getAllTools().map((tool) => [tool.name, tool]));
+		let tokens = CHILD_RUNTIME_EXTENSION_SURFACE_TOKENS;
+		for (const name of requestedNames) {
+			const tool = configured.get(name);
+			if (!tool) {
+				tokens += CHILD_UNKNOWN_TOOL_SURFACE_TOKENS;
+				continue;
+			}
+			try {
+				tokens += estimateTextTokens(
+					JSON.stringify({
+						name: tool.name,
+						description: tool.description,
+						parameters: tool.parameters,
+						promptGuidelines: tool.promptGuidelines,
+					}),
+				);
+			} catch {
+				tokens += CHILD_UNKNOWN_TOOL_SURFACE_TOKENS;
+			}
+			tokens += CHILD_TOOL_REQUEST_FRAMING_TOKENS;
+		}
+		tokens += plan.configuredExtensions.length * CHILD_EXPLICIT_EXTENSION_SURFACE_TOKENS;
+		tokens += estimateTextTokens(
+			JSON.stringify({
+				extensions: plan.extensionArgs,
+				mcpTools: plan.effectiveMcpTools,
+				inheritProjectContext: task.inheritProjectContext,
+				inheritSkills: task.inheritSkills,
+			}),
+		);
+		return tokens;
+	} catch {
+		// If the real Host surface exists but cannot be inspected or resolved, do
+		// not pretend the missing child-only tools are free.
+		return CHILD_UNKNOWN_TOOL_SURFACE_TOKENS;
+	}
 }
 
 function taskModelCandidates(data: PreparedLaunch, task: TaskParam, agent: AgentConfig): string[] {
@@ -478,7 +532,8 @@ function prepareLaunchModelPlan(input: {
 		const taskTokens =
 			estimateTextTokens(built.task.task) +
 			estimateTextTokens(built.task.systemPrompt?.trim() ?? "") +
-			launchPromptTokens;
+			launchPromptTokens +
+			childLaunchSurfaceTokens(input.pi, built.task);
 		fixedInputTokensByIndex[index] = taskTokens;
 		if (input.context !== "fork") {
 			rawForkByIndex[index] = false;

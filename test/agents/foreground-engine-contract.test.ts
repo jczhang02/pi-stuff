@@ -750,11 +750,13 @@ describe("reduced foreground Agent engine", () => {
 		}
 	});
 
-	test("conservatively preflights Chinese, emoji, and mixed fork inputs", async () => {
+	test("conservatively preflights multilingual and high-entropy fork inputs", async () => {
 		const cases = [
 			{ label: "Chinese", task: "界".repeat(4_100) },
+			{ label: "rare-CJK", task: "𠮷".repeat(2_000) },
 			{ label: "emoji", task: "🧭".repeat(2_050) },
 			{ label: "mixed", task: `${"界".repeat(2_000)}${"a".repeat(8_000)}` },
+			{ label: "Base64", task: "AP6Zz9+/0f3cD7aQ".repeat(400) },
 		];
 		for (const { label, task } of cases) {
 			const cwd = fs.mkdtempSync(path.join(os.tmpdir(), `pi-stuff-foreground-${label.toLowerCase()}-`));
@@ -1143,6 +1145,43 @@ describe("reduced foreground Agent engine", () => {
 			new AbortController().signal,
 			undefined,
 			ctx,
+		);
+
+		expect(result.isError).toBeTrue();
+		expect(engineCalls).toBe(0);
+	});
+
+	test("accounts for the selected tool schema before admitting a child launch", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-tool-schema-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		let engineCalls = 0;
+		const pi = {
+			events: { emit: () => {} },
+			getActiveTools: () => ["read"],
+			getAllTools: () => [
+				{
+					name: "read",
+					description: "d".repeat(20_000),
+					parameters: { type: "object", properties: { path: { type: "string" } } },
+					promptGuidelines: ["g".repeat(2_000)],
+				},
+			],
+		} as unknown as ExtensionAPI;
+
+		const result = await executor(
+			cwd,
+			state(),
+			() => {
+				engineCalls += 1;
+			},
+			{ agent: { ...agent(), model: "test/small", tools: ["read"] }, pi },
+		).execute(
+			"tool-schema-overflow",
+			{ agent: "general-purpose", context: "fork", task: "Inspect the parser" },
+			new AbortController().signal,
+			undefined,
+			context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 100),
 		);
 
 		expect(result.isError).toBeTrue();
