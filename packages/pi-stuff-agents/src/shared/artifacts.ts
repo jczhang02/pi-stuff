@@ -140,67 +140,6 @@ function ownedRegularFile(stat: fs.Stats): boolean {
 	return stat.isFile() && !stat.isSymbolicLink() && (currentUid === undefined || stat.uid === currentUid);
 }
 
-function terminalArtifactGroupSync(directory: string, base: string, cutoff: number): boolean {
-	try {
-		const metadataPath = path.join(directory, `${base}_meta.json`);
-		const metadataStat = fs.lstatSync(metadataPath);
-		if (!ownedRegularFile(metadataStat) || metadataStat.mtimeMs >= cutoff || metadataStat.size > 64 * 1024)
-			return false;
-		if (!isTerminalArtifactMetadata(JSON.parse(fs.readFileSync(metadataPath, "utf8")))) return false;
-		for (const name of artifactGroupNames(base)) {
-			const candidate = path.join(directory, name);
-			if (!fs.existsSync(candidate)) continue;
-			const stat = fs.lstatSync(candidate);
-			if (!ownedRegularFile(stat) || stat.mtimeMs >= cutoff) return false;
-		}
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-export function cleanupOldArtifacts(dir: string, maxAgeDays: number): void {
-	if (!fs.existsSync(dir)) return;
-
-	const markerPath = path.join(dir, CLEANUP_MARKER_FILE);
-	const now = Date.now();
-
-	if (fs.existsSync(markerPath)) {
-		const stat = fs.statSync(markerPath);
-		if (now - stat.mtimeMs < 24 * 60 * 60 * 1000) return;
-	}
-
-	const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
-	const cutoff = now - maxAgeMs;
-
-	const removedGroups = new Set<string>();
-	for (const file of fs.readdirSync(dir)) {
-		const base = artifactBaseName(file);
-		if (!base || removedGroups.has(base) || !terminalArtifactGroupSync(dir, base, cutoff)) continue;
-		const names = orderedArtifactGroupNames(base);
-		let safelyRemoved = true;
-		for (const name of names) {
-			try {
-				const candidate = path.join(dir, name);
-				const stat = fs.lstatSync(candidate);
-				if (!ownedRegularFile(stat) || stat.mtimeMs >= cutoff) {
-					safelyRemoved = false;
-					break;
-				}
-				fs.unlinkSync(candidate);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-					safelyRemoved = false;
-					break;
-				}
-			}
-		}
-		if (safelyRemoved) removedGroups.add(base);
-	}
-
-	fs.writeFileSync(markerPath, String(now));
-}
-
 async function ownedDirectory(directory: string): Promise<boolean> {
 	try {
 		const stat = await fs.promises.lstat(directory);
@@ -475,30 +414,4 @@ export async function maintainAgentArtifacts(
 
 function eventLoopTurn(): Promise<void> {
 	return new Promise((resolve) => setImmediate(resolve));
-}
-
-export function cleanupAllArtifactDirs(maxAgeDays: number): void {
-	cleanupOldArtifacts(TEMP_ARTIFACTS_DIR, maxAgeDays);
-
-	const sessionsBase = path.join(getAgentDir(), "sessions");
-	if (!fs.existsSync(sessionsBase)) return;
-
-	let dirs: string[];
-	try {
-		dirs = fs.readdirSync(sessionsBase);
-	} catch {
-		// Session artifact cleanup is best-effort. If the sessions root cannot be read,
-		// skip cleanup instead of failing extension startup.
-		return;
-	}
-
-	for (const dir of dirs) {
-		const artifactsDir = path.join(sessionsBase, dir, "subagent-artifacts");
-		try {
-			cleanupOldArtifacts(artifactsDir, maxAgeDays);
-		} catch {
-			// Session cleanup is best-effort. Keep going so one unreadable session dir
-			// does not block cleanup for the rest.
-		}
-	}
 }
