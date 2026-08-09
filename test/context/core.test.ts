@@ -778,12 +778,22 @@ describe("Context projections", () => {
 				},
 			}),
 		});
-		const ctx = context([], "/workspace/frozen", "frozen-session");
+		const ctx = context(
+			[
+				{
+					type: "message",
+					id: "old-message",
+					parentId: null,
+					timestamp: "2026-08-09T00:00:00.000Z",
+					message: taggedMessage("old snapshot"),
+				} as unknown as SessionEntry,
+			],
+			"/workspace/frozen",
+			"frozen-session",
+		);
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		const cached = await projectCurrentContext("agent-fork", ctx, {
-			sourceMessages: [taggedMessage("old snapshot")],
-		});
+		const cached = await projectCurrentContext("agent-fork", ctx);
 		const frozen = await projectCurrentContext("agent-fork", ctx, {
 			sourceMessages: [taggedMessage("new frozen snapshot")],
 		});
