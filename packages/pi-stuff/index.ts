@@ -19,8 +19,8 @@ type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;
 
 const CHILD_BASE_EXTENSION_PATH = fileURLToPath(import.meta.url);
 
-function registerSuiteAgents(pi: ExtensionAPI): void {
-	piStuffAgents(pi, { childBaseExtensionPath: CHILD_BASE_EXTENSION_PATH });
+function registerSuiteAgents(pi: ExtensionAPI): void | Promise<void> {
+	return piStuffAgents(pi, { childBaseExtensionPath: CHILD_BASE_EXTENSION_PATH });
 }
 
 const CAPABILITIES: readonly CapabilityFactory[] = [
