@@ -992,6 +992,39 @@ describe("BackgroundWorkRuntime", () => {
 		await active.shutdown();
 	});
 
+	test("does not enqueue a second Agent turn for work the user explicitly stopped", async () => {
+		const root = temporaryRoot();
+		const messages: unknown[] = [];
+		const active = runtime(root, messages);
+		try {
+			await active.executeBash(
+				{ command: "sleep 30", runInBackground: true, toolCallId: "tool-user-stopped-shell" },
+				context(root),
+			);
+			const shellId = active.snapshot()[0]?.id;
+			expect(shellId).toBeString();
+			expect((await active.stop(shellId ?? "")).status).toBe("stopped");
+
+			const monitor = await startMonitor(
+				active,
+				{
+					intervalSeconds: 0.1,
+					source: "file",
+					successText: "READY",
+					target: join(root, "never-ready"),
+					timeoutSeconds: 30,
+					toolCallId: "tool-user-stopped-monitor",
+				},
+				context(root),
+			);
+			expect((await active.stop(monitor.id)).status).toBe("stopped");
+			await Bun.sleep(250);
+			expect(messages).toEqual([]);
+		} finally {
+			await active.shutdown();
+		}
+	});
+
 	test("bounds and fairly tails a full batch of missing-file notifications", async () => {
 		const root = temporaryRoot();
 		const messages: unknown[] = [];

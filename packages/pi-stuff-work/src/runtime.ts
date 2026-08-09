@@ -571,7 +571,7 @@ export class BackgroundWorkRuntime {
 			if (this.monitors.get(activity.id) !== activity) return;
 			this.monitors.delete(activity.id);
 			this.emit();
-			if (!this.disposed) this.enqueueNotification(outcome, true);
+			if (!this.disposed && outcome.status !== "stopped") this.enqueueNotification(outcome, true);
 		});
 		return () => {
 			if (this.monitors.get(activity.id) !== activity) return;
@@ -1226,7 +1226,8 @@ export class BackgroundWorkRuntime {
 			activity.backgrounded &&
 			!this.disposed &&
 			activity.stopReason !== "shutdown" &&
-			activity.stopReason !== "abort"
+			activity.stopReason !== "abort" &&
+			activity.stopReason !== "user"
 		) {
 			this.enqueueNotification(outcome, activity.kind === "monitor");
 		}

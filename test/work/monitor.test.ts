@@ -142,8 +142,8 @@ describe("file and log Monitor", () => {
 		);
 		const outcome = await state.runtime.stop(started.id);
 		expect(outcome.status).toBe("stopped");
-		await waitUntil(() => state.messages.length === 1);
-		expect(state.messages[0]?.options.triggerTurn).toBe(true);
+		await Bun.sleep(250);
+		expect(state.messages).toHaveLength(0);
 		await state.runtime.shutdown();
 	});
 });
