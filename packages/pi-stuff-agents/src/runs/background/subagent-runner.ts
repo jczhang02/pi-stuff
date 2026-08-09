@@ -2071,6 +2071,9 @@ async function runResolvedTask(input: {
 				run.timedOut ||
 				run.stopped ||
 				run.turnBudgetExceeded ||
+				// A provider failure after Tool execution is not a clean model attempt:
+				// retrying the whole task could repeat external mutations.
+				run.toolCount > 0 ||
 				!isRetryableModelFailure(error) ||
 				candidateIndex === candidates.length - 1
 			)

@@ -2309,6 +2309,84 @@ if (model.endsWith("model-a")) {
 		expect(finalSession).not.toContain("PRIMARY_ATTEMPT_POLLUTION");
 	}, 5_000);
 
+	test("does not retry the whole task after a child has begun Tool execution", async () => {
+		const root = fixtureRoot();
+		const writer = path.join(root, "no-fallback-after-tool.ts");
+		const attemptsPath = path.join(root, "model-attempts.txt");
+		fs.writeFileSync(
+			writer,
+			`#!/usr/bin/env bun
+import * as fs from "node:fs";
+const args = Bun.argv.slice(2);
+const modelIndex = args.indexOf("--model");
+const model = modelIndex >= 0 ? args[modelIndex + 1] ?? "default" : "default";
+fs.appendFileSync(${JSON.stringify(attemptsPath)}, model + "\\n");
+const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+if (model.endsWith("model-a")) {
+  emit({ type: "tool_execution_start", toolName: "write", args: { path: "changed.txt" } });
+  emit({ type: "tool_execution_end", toolName: "write" });
+  process.stdout.write(JSON.stringify({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [],
+      errorMessage: "network error after a mutating Tool",
+      stopReason: "error",
+      timestamp: Date.now(),
+    },
+  }) + "\\n", () => process.exit(0));
+} else {
+  process.stdout.write(JSON.stringify({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "UNSAFE_SECOND_ATTEMPT" }],
+      stopReason: "stop",
+      timestamp: Date.now(),
+    },
+  }) + "\\n", () => process.exit(0));
+}
+`,
+			{ mode: 0o700 },
+		);
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const asyncDir = path.join(root, "async-no-fallback-after-tool");
+		const resultPath = path.join(asyncDir, "result.json");
+
+		await runConfiguredBackground({
+			version: 2,
+			id: "no-fallback-after-tool",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: {
+				mode: "single",
+				task: {
+					...task(0),
+					cwd: root,
+					modelCandidates: ["test/model-a", "test/model-b"],
+				},
+			},
+		});
+
+		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
+			state: string;
+			results: Array<{ modelAttempts?: Array<{ model?: string; success?: boolean }> }>;
+		};
+		expect(completion).toMatchObject({
+			state: "failed",
+			results: [
+				{
+					modelAttempts: [{ model: "test/model-a", success: false }],
+				},
+			],
+		});
+		expect(JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8"))).toMatchObject({
+			steps: [{ toolCount: 1 }],
+		});
+		expect(fs.readFileSync(attemptsPath, "utf8").trim().split("\n")).toEqual(["test/model-a"]);
+	}, 5_000);
+
 	test("preserves prior writer proof when fallback persistence and the next launch fail", async () => {
 		const root = fixtureRoot();
 		const writer = path.join(root, "retryable-provider-error.ts");
