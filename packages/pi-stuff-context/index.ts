@@ -412,16 +412,11 @@ function projectionLimit(audience: ContextProjectionAudience): number {
  * cannot overflow merely because the parent history is multilingual.
  */
 function estimateProjectionTokens(text: string): number {
-	let asciiCodePoints = 0;
-	let nonAsciiTokens = 0;
-	for (const codePoint of text) {
-		if ((codePoint.codePointAt(0) ?? 0) <= 0x7f) {
-			asciiCodePoints += 1;
-			continue;
-		}
-		nonAsciiTokens += /\p{Extended_Pictographic}/u.test(codePoint) ? 2 : 1;
-	}
-	return Math.ceil(asciiCodePoints / 4) + nonAsciiTokens;
+	// Supported provider tokenizers ultimately encode non-empty byte sequences.
+	// UTF-8 byte length is therefore a strict tokenizer-independent upper bound:
+	// it covers rare astral CJK/emoji (four bytes) and incompressible ASCII/Base64
+	// (one byte each), where Pi's generic chars/4 estimate can undercount badly.
+	return Buffer.byteLength(text, "utf8");
 }
 
 function safePrefix(value: string, length: number): string {
@@ -618,6 +613,8 @@ class ContextCapabilityRuntime implements ContextCapability {
 	private shutdown: { event: SessionShutdownEvent; ctx: ExtensionContext } | undefined;
 	private disposed = false;
 	private readonly projections = new Map<string, CachedProjection>();
+	/** Last valid project-memory snapshot, captured only by the normal Magic context event. */
+	private readonly memories = new Map<string, string>();
 	private readonly registry: ContextCapabilityRegistry;
 	private readonly owner: object;
 	private readonly ownedContexts = new Set<object>();
@@ -685,6 +682,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 	captureSessionStart(event: SessionStartEvent, ctx: ExtensionContext): void {
 		this.sessionStart = { ...event };
 		this.projections.clear();
+		this.memories.clear();
 		this.registry.contexts.set(ctx.sessionManager, this);
 		this.ownedContexts.add(ctx.sessionManager);
 		if (this.magicTools.size > 0) this.activateMagicTools();
@@ -692,6 +690,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 
 	invalidateProjection(): void {
 		this.projections.clear();
+		this.memories.clear();
 	}
 
 	async dispose(event?: SessionShutdownEvent, ctx?: ExtensionContext): Promise<void> {
@@ -701,6 +700,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		this.generation++;
 		if (event && ctx) this.shutdown = { event, ctx };
 		this.projections.clear();
+		this.memories.clear();
 		for (const key of this.ownedContexts) {
 			if (this.registry.contexts.get(key) === this) this.registry.contexts.delete(key);
 		}
@@ -746,10 +746,17 @@ class ContextCapabilityRuntime implements ContextCapability {
 	): Promise<ContextProjection> {
 		// Magic Context's handler is stateful: besides transforming messages it may
 		// consult the live SessionManager and update scheduler/cache/database state.
-		// A caller-owned snapshot is therefore projected natively and read-only. BTW
-		// already sends that snapshot as its request messages; forked Agents receive
-		// the bounded reference envelope built from the exact same snapshot.
-		if (options?.sourceMessages !== undefined) return nativeProjection(audience, ctx, options);
+		// A caller-owned snapshot therefore never invokes it. BTW may safely reuse
+		// only project memory captured by the normal main-turn Context event; its
+		// conversation remains the exact frozen request messages. Forked Agents use
+		// a bounded native reference envelope from that same caller-owned snapshot.
+		if (options?.sourceMessages !== undefined) {
+			if (audience === "btw" && this.state.state === "active") {
+				const memory = this.memories.get(projectionKey(ctx));
+				if (memory) return { source: "magic-context", ...formatProjection(memory, audience, options) };
+			}
+			return nativeProjection(audience, ctx, options);
+		}
 		await this.activate(ctx, "projection");
 		const key = projectionKey(ctx);
 		let cached = this.projections.get(key);
@@ -764,6 +771,9 @@ class ContextCapabilityRuntime implements ContextCapability {
 				if (!full) throw new Error("Magic Context produced no valid history projection.");
 				cached = { full };
 				this.projections.set(key, cached);
+				const memory = projectMemoryOnly(full);
+				if (memory) this.memories.set(key, memory);
+				else this.memories.delete(key);
 				this.state = { state: "active", engine: "magic-context", trigger: "projection" };
 			} catch (error) {
 				this.state = {
@@ -937,7 +947,11 @@ class ContextCapabilityRuntime implements ContextCapability {
 				const result = await contextHandler(contextEvent, quietMagicContext(ctx));
 				const full = extractMagicProjection(result?.messages ?? contextEvent.messages);
 				if (!full) throw new Error("Magic Context produced no valid history projection.");
-				this.projections.set(projectionKey(ctx), { full });
+				const key = projectionKey(ctx);
+				this.projections.set(key, { full });
+				const memory = projectMemoryOnly(full);
+				if (memory) this.memories.set(key, memory);
+				else this.memories.delete(key);
 				this.state = {
 					state: "active",
 					engine: "magic-context",
@@ -945,7 +959,9 @@ class ContextCapabilityRuntime implements ContextCapability {
 				};
 				return result;
 			} catch (error) {
-				this.projections.delete(projectionKey(ctx));
+				const key = projectionKey(ctx);
+				this.projections.delete(key);
+				this.memories.delete(key);
 				this.state = {
 					state: "degraded",
 					engine: "native",

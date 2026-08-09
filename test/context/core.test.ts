@@ -725,9 +725,9 @@ describe("Context projections", () => {
 		} as unknown as SessionEntry;
 		const ctx = context([entry]);
 
-		const fork = await projectCurrentContext("agent-fork", ctx, { maxTokens: 100 });
-		const fresh = await projectCurrentContext("agent-fresh", ctx, { maxTokens: 100 });
-		const btw = await projectCurrentContext("btw", ctx, { maxTokens: 100 });
+		const fork = await projectCurrentContext("agent-fork", ctx, { maxTokens: 512 });
+		const fresh = await projectCurrentContext("agent-fresh", ctx, { maxTokens: 512 });
+		const btw = await projectCurrentContext("btw", ctx, { maxTokens: 512 });
 
 		expect(fork.source).toBe("native");
 		expect(fork.text).toContain('audience="agent-fork"');
@@ -767,7 +767,7 @@ describe("Context projections", () => {
 			return original();
 		};
 		const projection = await projectCurrentContext("agent-fork", ctx, {
-			maxTokens: 100,
+			maxTokens: 512,
 			sourceMessages: [taggedMessage("frozen context")],
 		});
 
@@ -970,24 +970,28 @@ describe("Context projections", () => {
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		const projection = await projectCurrentContext("agent-fork", ctx, { maxTokens: 100 });
+		const projection = await projectCurrentContext("agent-fork", ctx, { maxTokens: 256 });
 
 		expect(projection.source).toBe("magic-context");
 		expect(projection.truncated).toBe(true);
-		expect(projection.text.length).toBeLessThanOrEqual(700);
+		expect(__test.estimateProjectionTokens(projection.text)).toBeLessThanOrEqual(256);
 		expect(projection.text).toContain("Pi Stuff omitted the middle");
 		expect(projection.text).toEndWith("</pi-stuff-context>");
 	});
 
-	test("keeps CJK and emoji projections inside the same conservative token budget", () => {
-		const full = `<session-history>${"上下文🧭".repeat(2_000)}TAIL</session-history>`;
-		const projection = __test.formatProjection(full, "agent-fork", { maxTokens: 100 });
+	test("keeps rare CJK, emoji, and high-entropy projections inside a strict byte upper bound", () => {
+		for (const full of [
+			`<session-history>${"上下文🧭𠮷".repeat(2_000)}TAIL</session-history>`,
+			`<session-history>${"AP6Zz9+/0f3cD7aQ".repeat(2_000)}TAIL</session-history>`,
+		]) {
+			const projection = __test.formatProjection(full, "agent-fork", { maxTokens: 512 });
 
-		expect(projection.truncated).toBeTrue();
-		expect(__test.estimateProjectionTokens(projection.text)).toBeLessThanOrEqual(100);
-		expect(projection.text).toContain("Pi Stuff omitted the middle");
-		expect(projection.text).toContain("L</session-history>");
-		expect(projection.text).toEndWith("</pi-stuff-context>");
+			expect(projection.truncated).toBeTrue();
+			expect(__test.estimateProjectionTokens(projection.text)).toBeLessThanOrEqual(512);
+			expect(projection.text).toContain("Pi Stuff omitted the middle");
+			expect(projection.text).toContain("L</session-history>");
+			expect(projection.text).toEndWith("</pi-stuff-context>");
+		}
 	});
 });
 

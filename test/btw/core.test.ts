@@ -199,7 +199,7 @@ describe("BTW context budget", () => {
 });
 
 describe("BTW stream execution", () => {
-	test("uses the frozen branch directly without invoking stateful Context projection", async () => {
+	test("reuses captured Magic memory without re-running stateful projection for a frozen branch", async () => {
 		const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
 		const activeTools: string[] = [];
 		const api = {
@@ -240,6 +240,12 @@ describe("BTW stream execution", () => {
 			for (const handler of handlers.get("session_start") ?? []) {
 				await handler({ type: "session_start", reason: "startup" }, ctx);
 			}
+			for (const handler of handlers.get("before_agent_start") ?? []) {
+				await handler({ type: "before_agent_start", prompt: "main conversation" }, ctx);
+			}
+			for (const handler of handlers.get("context") ?? []) {
+				await handler({ type: "context", messages: [user("main conversation")] }, ctx);
+			}
 			await executeBtw("isolated question", ctx, new AbortController().signal, {}, async (request) => {
 				captured = request;
 				return completedStream(["answer"], assistant("answer"));
@@ -248,9 +254,9 @@ describe("BTW stream execution", () => {
 			contextTest.clear();
 		}
 
-		expect(magicTransforms).toBe(0);
-		expect(captured?.context.systemPrompt).not.toContain("pi-stuff-context");
-		expect(captured?.context.systemPrompt).not.toContain("side memory");
+		expect(magicTransforms).toBe(1);
+		expect(captured?.context.systemPrompt).toContain("pi-stuff-context");
+		expect(captured?.context.systemPrompt).toContain("side memory");
 		expect(JSON.stringify(captured?.context.messages)).toContain("main conversation");
 	});
 
