@@ -737,6 +737,19 @@ describe("Context projections", () => {
 		expect(btw).toEqual({ source: "native", text: "", truncated: false });
 	});
 
+	test("builds native fallback from bounded session ends without materializing a huge middle", async () => {
+		const projection = await projectCurrentContext("agent-fork", context(), {
+			maxTokens: 512,
+			sourceMessages: [taggedMessage(`HEAD-${"中".repeat(2_000_000)}-TAIL`)],
+		});
+
+		expect(projection.source).toBe("native");
+		expect(projection.text).toContain("HEAD-");
+		expect(projection.text).toContain("-TAIL");
+		expect(projection.text).toContain("omitted the middle");
+		expect(__test.estimateProjectionTokens(projection.text)).toBeLessThanOrEqual(512);
+	});
+
 	test("projects a caller-owned frozen snapshot without re-reading a changed session", async () => {
 		let reads = 0;
 		const ctx = context([

@@ -161,23 +161,9 @@ function nativeProjection(
 	} catch {
 		return { source: "native", text: "", truncated: false };
 	}
-	const escaped = (value: string): string =>
-		value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-	const history = messages
-		.map((message) => {
-			const text = textOfMessage(message).trim();
-			if (!text) return "";
-			const role = typeof message.role === "string" ? message.role : "message";
-			return `<message role="${escaped(role)}">\n${escaped(text)}\n</message>`;
-		})
-		.filter(Boolean)
-		.join("\n");
+	const history = boundedNativeHistory(messages, projectionLimit(audience));
 	if (!history) return { source: "native", text: "", truncated: false };
-	const formatted = formatProjection(
-		`<session-history source="pi-native-fallback">\n${history}\n</session-history>`,
-		audience,
-		options,
-	);
+	const formatted = formatProjection(history, audience, options);
 	return { source: "native", ...formatted };
 }
 
@@ -231,17 +217,171 @@ function projectionKey(ctx: ExtensionContext): string {
 }
 
 function textOfMessage(message: AgentMessage): string {
+	return messageTextParts(message).filter(Boolean).join("\n");
+}
+
+function messageTextParts(message: AgentMessage): string[] {
 	const content = (message as { content?: unknown }).content;
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.map((part) => {
-			if (!part || typeof part !== "object") return "";
+	if (typeof content === "string") return [content];
+	if (!Array.isArray(content)) return [];
+	const parts: string[] = [];
+	for (const part of content) {
+		if (part && typeof part === "object") {
 			const text = (part as { text?: unknown }).text;
-			return typeof text === "string" ? text : "";
-		})
-		.filter(Boolean)
-		.join("\n");
+			if (typeof text === "string") parts.push(text);
+		}
+	}
+	return parts;
+}
+
+function escapedXmlUnit(value: string): string {
+	if (value === "&") return "&amp;";
+	if (value === "<") return "&lt;";
+	if (value === ">") return "&gt;";
+	return value;
+}
+
+function escapedXmlPrefix(parts: readonly string[], limit: number): { text: string; complete: boolean } {
+	const chunks: string[] = [];
+	let used = 0;
+	let started = false;
+	for (let partIndex = 0; partIndex < parts.length; partIndex += 1) {
+		if (partIndex > 0 && started) {
+			if (used + 1 > limit) return { text: chunks.join("").trimEnd(), complete: false };
+			chunks.push("\n");
+			used += 1;
+		}
+		for (const codePoint of parts[partIndex] ?? "") {
+			if (!started && /^\s$/u.test(codePoint)) continue;
+			const escaped = escapedXmlUnit(codePoint);
+			if (used + escaped.length > limit) return { text: chunks.join("").trimEnd(), complete: false };
+			chunks.push(escaped);
+			used += escaped.length;
+			started = true;
+		}
+	}
+	return { text: chunks.join("").trimEnd(), complete: true };
+}
+
+function previousCodePoint(value: string, end: number): { start: number; value: string } {
+	let start = Math.max(0, end - 1);
+	const last = value.charCodeAt(start);
+	if (last >= 0xdc00 && last <= 0xdfff && start > 0) {
+		const previous = value.charCodeAt(start - 1);
+		if (previous >= 0xd800 && previous <= 0xdbff) start -= 1;
+	}
+	return { start, value: value.slice(start, end) };
+}
+
+function escapedXmlSuffix(parts: readonly string[], limit: number): { text: string; complete: boolean } {
+	const reversed: string[] = [];
+	let used = 0;
+	let started = false;
+	for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
+		if (partIndex < parts.length - 1 && started) {
+			if (used + 1 > limit) return { text: reversed.reverse().join("").trimStart(), complete: false };
+			reversed.push("\n");
+			used += 1;
+		}
+		const part = parts[partIndex] ?? "";
+		for (let end = part.length; end > 0; ) {
+			const codePoint = previousCodePoint(part, end);
+			end = codePoint.start;
+			if (!started && /^\s$/u.test(codePoint.value)) continue;
+			const escaped = escapedXmlUnit(codePoint.value);
+			if (used + escaped.length > limit) {
+				return { text: reversed.reverse().join("").trimStart(), complete: false };
+			}
+			reversed.push(escaped);
+			used += escaped.length;
+			started = true;
+		}
+	}
+	return { text: reversed.reverse().join("").trimStart(), complete: true };
+}
+
+interface BoundedMessageFragment {
+	readonly complete: boolean;
+	readonly text: string;
+}
+
+function nativeMessageRole(message: AgentMessage): string {
+	const role = typeof message.role === "string" ? safePrefix(message.role, 64) : "message";
+	return role.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function nativeMessagePrefix(message: AgentMessage, limit: number): BoundedMessageFragment {
+	const parts = messageTextParts(message);
+	const open = `<message role="${nativeMessageRole(message)}">\n`;
+	const close = "\n</message>";
+	if (limit <= open.length) return { text: safePrefix(open, limit), complete: false };
+	const content = escapedXmlPrefix(parts, limit - open.length);
+	if (!content.text && content.complete) return { text: "", complete: true };
+	if (content.complete && open.length + content.text.length + close.length <= limit) {
+		return { text: `${open}${content.text}${close}`, complete: true };
+	}
+	return { text: `${open}${content.text}`, complete: false };
+}
+
+function nativeMessageSuffix(message: AgentMessage, limit: number): BoundedMessageFragment {
+	const parts = messageTextParts(message);
+	const open = `<message role="${nativeMessageRole(message)}">\n`;
+	const close = "\n</message>";
+	if (limit <= close.length) return { text: safeSuffix(close, limit), complete: false };
+	const content = escapedXmlSuffix(parts, limit - close.length);
+	if (!content.text && content.complete) return { text: "", complete: true };
+	if (content.complete && open.length + content.text.length + close.length <= limit) {
+		return { text: `${open}${content.text}${close}`, complete: true };
+	}
+	return { text: `${content.text}${close}`, complete: false };
+}
+
+function nativeHistoryPrefix(messages: readonly AgentMessage[], limit: number): { text: string; complete: boolean } {
+	const chunks: string[] = [];
+	let used = 0;
+	for (const message of messages) {
+		const separator = chunks.length > 0 ? "\n" : "";
+		if (used + separator.length >= limit) return { text: chunks.join(""), complete: false };
+		const fragment = nativeMessagePrefix(message, limit - used - separator.length);
+		if (fragment.text) {
+			chunks.push(separator, fragment.text);
+			used += separator.length + fragment.text.length;
+		}
+		if (!fragment.complete) return { text: chunks.join(""), complete: false };
+	}
+	return { text: chunks.join(""), complete: true };
+}
+
+function nativeHistorySuffix(messages: readonly AgentMessage[], limit: number): string {
+	const reversedMessages: string[] = [];
+	let used = 0;
+	for (let index = messages.length - 1; index >= 0; index -= 1) {
+		const separator = reversedMessages.length > 0 ? "\n" : "";
+		if (used + separator.length >= limit) break;
+		const message = messages[index];
+		if (!message) continue;
+		const fragment = nativeMessageSuffix(message, limit - used - separator.length);
+		if (fragment.text) {
+			reversedMessages.push(fragment.text);
+			used += fragment.text.length + separator.length;
+		}
+		if (!fragment.complete) break;
+	}
+	return reversedMessages.reverse().join("\n");
+}
+
+function boundedNativeHistory(messages: readonly AgentMessage[], limit: number): string {
+	const header = '<session-history source="pi-native-fallback">\n';
+	const footer = "\n</session-history>";
+	const bodyLimit = Math.max(0, limit - header.length - footer.length);
+	if (bodyLimit <= 0) return "";
+	const full = nativeHistoryPrefix(messages, bodyLimit);
+	if (full.complete) return full.text ? `${header}${full.text}${footer}` : "";
+	const available = Math.max(0, bodyLimit - PROJECTION_OMISSION_MARKER.length);
+	const headLimit = Math.ceil(available * 0.7);
+	const head = nativeHistoryPrefix(messages, headLimit).text;
+	const tail = nativeHistorySuffix(messages, available - headLimit);
+	return `${header}${head}${PROJECTION_OMISSION_MARKER}${tail}${footer}`;
 }
 
 function extractMagicProjection(messages: readonly AgentMessage[]): string {
