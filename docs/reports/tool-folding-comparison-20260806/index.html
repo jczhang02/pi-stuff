@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>工具调用折叠机制对比</title>
+<meta name="author" content="Pi Stuff">
+<meta name="description" content="Pi Stuff 当前实现、Claude Code 2.1.220 行为与公开镜像源码">
+<meta name="keywords" content="Pi Stuff, Claude Code, Tool folding, transcript, TUI">
+<meta name="generator" content="Kami">
+<style>
+  @font-face {
+    font-family: "TsangerJinKai02";
+    src: url("../../../../../.agents/skills/kami/assets/fonts/TsangerJinKai02-W04.ttf") format("truetype"),
+         url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W04.ttf") format("truetype");
+    font-weight: 400;
+    font-style: normal;
+  }
+  @font-face {
+    font-family: "TsangerJinKai02";
+    src: url("../../../../../.agents/skills/kami/assets/fonts/TsangerJinKai02-W05.ttf") format("truetype"),
+         url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W05.ttf") format("truetype");
+    font-weight: 500;
+    font-style: normal;
+  }
+
+  @page {
+    size: A4;
+    margin: 18mm 20mm 20mm 20mm;
+    background: #f5f4ed;
+    @top-right {
+      content: string(section-title);
+      font-family: "TsangerJinKai02", "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+      font-size: 8pt;
+      color: #6b6a64;
+    }
+    @bottom-center {
+      content: counter(page) "  ·  工具调用折叠机制对比";
+      font-family: "TsangerJinKai02", "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+      font-size: 8pt;
+      color: #6b6a64;
+    }
+  }
+  @page:first {
+    @top-right { content: ""; }
+    @bottom-center { content: ""; }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --parchment: #f5f4ed;
+    --ivory: #faf9f5;
+    --near-black: #141413;
+    --dark-warm: #3d3d3a;
+    --olive: #504e49;
+    --stone: #6b6a64;
+    --brand: #1B365D;
+    --border: #e8e6dc;
+    --border-soft: #e5e3d8;
+    --tag-bg: #E4ECF5;
+    --brand-tint: #EEF2F7;
+    --serif: "TsangerJinKai02", "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+    --mono: "JetBrains Mono", "SF Mono", Consolas, "Noto Serif CJK SC", monospace;
+  }
+  html, body { background: var(--parchment); }
+  @media screen {
+    body { max-width: 210mm; margin: 0 auto; padding: 18mm 20mm 20mm; }
+  }
+  body {
+    color: var(--near-black);
+    font-family: var(--serif);
+    font-size: 10.2pt;
+    line-height: 1.5;
+    letter-spacing: 0.25pt;
+    widows: 3;
+    orphans: 3;
+  }
+  p { margin: 0 0 8pt; line-height: 1.5; widows: 2; orphans: 2; }
+  strong { font-weight: 500; }
+  .hl { color: var(--brand); font-weight: 500; }
+  .mono { font-family: var(--mono); letter-spacing: 0; }
+  .muted { color: var(--stone); }
+  .small { font-size: 8.4pt; line-height: 1.45; }
+
+  .cover {
+    min-height: 247mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 34mm 0 4mm;
+    break-after: page;
+  }
+  .cover-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8pt;
+    color: var(--brand);
+    font-size: 9pt;
+    font-weight: 500;
+    letter-spacing: 1.8pt;
+    text-transform: uppercase;
+    margin-bottom: 18pt;
+  }
+  .cover-eyebrow::before {
+    content: "";
+    width: 12pt;
+    height: 1.5pt;
+    border-radius: 1pt;
+    background: var(--brand);
+  }
+  .cover-title {
+    max-width: 88%;
+    font-size: 35pt;
+    font-weight: 500;
+    line-height: 1.14;
+    letter-spacing: 0.2pt;
+    margin-bottom: 18pt;
+  }
+  .cover-sub {
+    max-width: 82%;
+    color: var(--olive);
+    font-size: 13pt;
+    line-height: 1.5;
+  }
+  .cover-divider {
+    width: 42mm;
+    height: 1pt;
+    background: var(--brand);
+    margin: 26pt 0 12pt;
+  }
+  .cover-thesis {
+    max-width: 76%;
+    color: var(--dark-warm);
+    font-size: 10.5pt;
+    line-height: 1.5;
+  }
+  .cover-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    color: var(--stone);
+    font-size: 8.8pt;
+    line-height: 1.5;
+  }
+  .cover-meta strong { color: var(--dark-warm); }
+  .cover-version { text-align: right; font-family: var(--mono); }
+
+  .toc { min-height: 247mm; break-after: page; padding-top: 8mm; }
+  .toc h2 {
+    font-size: 22pt;
+    font-weight: 500;
+    margin-bottom: 22pt;
+    border-left: 2.5pt solid var(--brand);
+    border-radius: 1.5pt;
+    padding-left: 8pt;
+  }
+  .toc-intro {
+    max-width: 78%;
+    color: var(--olive);
+    font-size: 11pt;
+    margin-bottom: 24pt;
+  }
+  .toc-item {
+    display: flex;
+    align-items: baseline;
+    padding: 8pt 0;
+    border-bottom: 0.3pt dotted var(--border);
+    font-size: 11pt;
+  }
+  .toc-num { color: var(--brand); font-weight: 500; min-width: 30pt; }
+  .toc-title {
+    flex: 1;
+    display: flex;
+    justify-content: space-between;
+    gap: 12pt;
+    color: var(--near-black);
+    text-decoration: none;
+  }
+  .toc-title[href]::after {
+    content: target-counter(attr(href), page);
+    color: var(--stone);
+    font-variant-numeric: tabular-nums;
+  }
+  .toc-note {
+    margin-top: 28pt;
+    padding-top: 10pt;
+    border-top: 1pt solid var(--brand);
+    color: var(--stone);
+    font-size: 8.8pt;
+    max-width: 68%;
+  }
+
+  .chapter { break-before: page; }
+  .chapter-num {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 8.5pt;
+    letter-spacing: 1.2pt;
+    text-transform: uppercase;
+    margin-bottom: 6pt;
+  }
+  h1 {
+    string-set: section-title content();
+    font-size: 21pt;
+    font-weight: 500;
+    line-height: 1.2;
+    color: var(--near-black);
+    border-left: 2.5pt solid var(--brand);
+    border-radius: 1.5pt;
+    padding-left: 8pt;
+    margin: 0 0 10pt;
+    break-after: avoid;
+  }
+  h2 {
+    font-size: 14.5pt;
+    font-weight: 500;
+    line-height: 1.25;
+    color: var(--near-black);
+    margin: 18pt 0 7pt;
+    break-after: avoid;
+  }
+  h3 {
+    font-size: 11.5pt;
+    font-weight: 500;
+    color: var(--dark-warm);
+    margin: 13pt 0 5pt;
+    break-after: avoid;
+  }
+  .lead {
+    color: var(--dark-warm);
+    font-size: 11.5pt;
+    line-height: 1.5;
+    margin-bottom: 14pt;
+  }
+
+  ul, ol { margin: 5pt 0 10pt; padding-left: 19pt; line-height: 1.5; }
+  li { margin-bottom: 3pt; }
+  li::marker { color: var(--brand); }
+  ol li::marker { font-weight: 500; }
+
+  .exec-summary {
+    background: var(--ivory);
+    border-left: 1.5pt solid var(--brand);
+    border-radius: 6pt;
+    padding: 14pt 18pt;
+    margin: 12pt 0;
+    break-inside: avoid;
+  }
+  .exec-summary h2 { font-size: 12.5pt; margin: 0 0 7pt; }
+  .takeaway {
+    background: var(--ivory);
+    border-radius: 4pt;
+    padding: 10pt 13pt;
+    margin: 12pt 0;
+    break-inside: avoid;
+  }
+  .takeaway-label {
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 7.8pt;
+    letter-spacing: 0.8pt;
+    text-transform: uppercase;
+    margin-bottom: 4pt;
+  }
+  .callout {
+    background: var(--ivory);
+    border-left: 2pt solid var(--brand);
+    border-radius: 3pt;
+    padding: 9pt 13pt;
+    margin: 10pt 0;
+    break-inside: avoid;
+  }
+  .tag {
+    display: inline-block;
+    background: var(--tag-bg);
+    color: var(--brand);
+    font-family: var(--mono);
+    font-size: 7.6pt;
+    padding: 1pt 6pt;
+    border-radius: 3pt;
+    margin-right: 4pt;
+  }
+
+  .metric-strip {
+    display: flex;
+    align-items: stretch;
+    margin: 12pt 0;
+    border-top: 1pt solid var(--brand);
+    border-bottom: 1pt solid var(--border);
+    break-inside: avoid;
+  }
+  .metric {
+    flex: 1;
+    padding: 10pt 10pt 9pt 0;
+  }
+  .metric + .metric { border-left: 0.7pt solid var(--border); padding-left: 12pt; }
+  .metric-value { color: var(--brand); font-size: 19pt; font-weight: 500; line-height: 1.1; }
+  .metric-label { color: var(--stone); font-size: 7.8pt; margin-top: 3pt; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10pt 0;
+    font-size: 8.8pt;
+    break-inside: avoid;
+  }
+  th {
+    color: var(--dark-warm);
+    font-weight: 500;
+    text-align: left;
+    padding: 5pt 6pt;
+    border-bottom: 1pt solid var(--border);
+  }
+  td {
+    vertical-align: top;
+    padding: 4pt 6pt;
+    border-bottom: 0.3pt solid var(--border-soft);
+    line-height: 1.42;
+  }
+  .compact th { font-size: 7.8pt; padding: 3pt 5pt; }
+  .compact td { font-size: 7.8pt; padding: 3pt 5pt; line-height: 1.35; }
+  .matrix td:first-child { width: 16%; color: var(--brand); font-weight: 500; }
+  .matrix td:nth-child(2), .matrix td:nth-child(3) { width: 27%; }
+  .matrix td:nth-child(4) { width: 30%; color: var(--olive); }
+
+  pre {
+    background: var(--ivory);
+    border-radius: 4pt;
+    padding: 9pt 12pt;
+    margin: 9pt 0;
+    font-family: var(--mono);
+    font-size: 8.3pt;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    break-inside: avoid;
+  }
+  code { font-family: var(--mono); font-size: 8.5pt; letter-spacing: 0; }
+
+  .rule-list { margin: 8pt 0 10pt; }
+  .rule-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8pt;
+    padding: 5pt 0;
+    border-bottom: 0.3pt solid var(--border-soft);
+    break-inside: avoid;
+  }
+  .rule-key {
+    flex: 0 0 34mm;
+    color: var(--brand);
+    font-weight: 500;
+  }
+  .rule-value { flex: 1; color: var(--dark-warm); }
+
+  .decision-table td:first-child { width: 15%; color: var(--brand); font-weight: 500; }
+  .decision-table td:nth-child(2) { width: 32%; }
+  .decision-table td:nth-child(3) { color: var(--olive); }
+
+  figure {
+    margin: 11pt 0;
+    break-inside: avoid;
+  }
+  figure svg {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+  }
+  figcaption {
+    color: var(--stone);
+    font-size: 8pt;
+    text-align: center;
+    margin-top: 5pt;
+  }
+
+  .source-note {
+    border-top: 1pt solid var(--border);
+    margin-top: 12pt;
+    padding-top: 7pt;
+    color: var(--stone);
+    font-size: 7.6pt;
+    line-height: 1.4;
+  }
+  .source-note a { color: var(--brand); text-decoration: none; }
+  .references { font-size: 7.3pt; line-height: 1.35; }
+  .references li { margin-bottom: 2pt; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div>
+    <div class="cover-eyebrow">PI STUFF · PRODUCT &amp; ARCHITECTURE REPORT</div>
+    <div class="cover-title">工具调用<br>折叠机制对比</div>
+    <div class="cover-sub">Pi Stuff 当前实现、Claude Code 2.1.220 行为与公开镜像源码</div>
+    <div class="cover-divider"></div>
+    <p class="cover-thesis">官方二进制回答 Claude 实际做了什么；固定源码快照解释它可能如何做到。两类证据分开标注，再与 Pi Stuff 的可审计实现比较。</p>
+  </div>
+  <div class="cover-meta">
+    <div><strong>Pi Stuff</strong><br>内部技术比较报告</div>
+    <div class="cover-version">V1.1<br>2026-08-06</div>
+  </div>
+</section>
+
+<section class="toc">
+  <h2>目录</h2>
+  <p class="toc-intro">本报告比较的是分组状态机，不是几行终端文案。官方二进制行为、非官方源码快照与 Pi Stuff 当前源码分层取证，最后收束为可进入设计评审的演进边界。</p>
+  <div class="toc-item"><span class="toc-num">01 ·</span><a class="toc-title" href="#ch-summary">执行摘要</a></div>
+  <div class="toc-item"><span class="toc-num">02 ·</span><a class="toc-title" href="#ch-evidence">证据与比较口径</a></div>
+  <div class="toc-item"><span class="toc-num">03 ·</span><a class="toc-title" href="#ch-pi">Pi Stuff 当前实现</a></div>
+  <div class="toc-item"><span class="toc-num">04 ·</span><a class="toc-title" href="#ch-claude">Claude Code 2.1.220 行为</a></div>
+  <div class="toc-item"><span class="toc-num">05 ·</span><a class="toc-title" href="#ch-source">公开镜像揭示的实现链路</a></div>
+  <div class="toc-item"><span class="toc-num">06 ·</span><a class="toc-title" href="#ch-diff">差异不是样式，而是风险模型</a></div>
+  <div class="toc-item"><span class="toc-num">07 ·</span><a class="toc-title" href="#ch-roadmap">建议的演进路径</a></div>
+  <div class="toc-note">证据基准：Pi Stuff <span class="mono">cf12251</span>；Claude 官方二进制 <span class="mono">2.1.220</span>；非官方镜像 <span class="mono">6f6f12</span>。镜像的来源、完整性与产品版本均未获 Anthropic 认证。</div>
+</section>
+
+<section class="chapter" id="ch-summary">
+  <div class="chapter-num">01 · Executive Summary</div>
+  <h1>执行摘要</h1>
+  <p class="lead">两套产品都把折叠限定在显示层，但优化目标不同。<span class="hl">Pi Stuff 优先保证错误和副作用可见</span>，Claude Code 优先维持连续而安静的探索投影。公开镜像进一步解释了这种差异如何由分类、归并和渲染三个环节共同形成。</p>
+
+  <div class="metric-strip">
+    <div class="metric"><div class="metric-value">2+</div><div class="metric-label">Pi Stuff 最小分组调用数</div></div>
+    <div class="metric"><div class="metric-value">1</div><div class="metric-label">Claude 最小折叠调用数</div></div>
+    <div class="metric"><div class="metric-value">700 ms</div><div class="metric-label">镜像中的目标最短显示时间</div></div>
+  </div>
+
+  <div class="exec-summary">
+    <h2>五个结论</h2>
+    <ul>
+      <li>Pi Stuff 更保守：至少两个相邻探索调用、同一 assistant message、全部成功后才折叠。</li>
+      <li>Claude Code 2.1.220 更激进：单次调用也折叠，并可跨多个 assistant API message 聚合。</li>
+      <li>公开镜像与黑盒行为在最小门槛、连续窗口、唯一文件计数、失败保留和双态文案上相互印证。</li>
+      <li>源码还揭示了 Tool-owned 分类、显式 MCP 白名单、目标防抖，以及经典终端与全屏路径的差异。</li>
+      <li>推荐借鉴语义摘要和连续探索段，但保留两项门槛、失败展开与完整详情。</li>
+    </ul>
+  </div>
+
+  <h2>建议如何读这份报告</h2>
+  <p>第 3、4 章分别还原两套状态机；第 5 章把差异映射到用户风险；第 6 章给出一条不破坏当前安全边界的迁移顺序。若只做一个决策，应先同意以下原则：</p>
+  <div class="takeaway">
+    <div class="takeaway-label">Decision</div>
+    <strong>借 Claude 的信息架构，不借它的失败隐藏策略。</strong> 扩大连续探索段以前，先把摘要从 Tool 名单改成读、搜、列等语义结果，并保留失败逐项显示。
+  </div>
+</section>
+
+<section class="chapter" id="ch-evidence">
+  <div class="chapter-num">02 · Evidence &amp; Scope</div>
+  <h1>证据与比较口径</h1>
+  <p class="lead">官方 2.1.220 二进制仍是 Claude 当前行为的主证据；非官方公开镜像只用于解释可能的实现机制，并以固定提交引用，不能替代版本化官方源码。</p>
+
+  <h2>三层证据，不混用结论</h2>
+  <table class="compact">
+    <thead><tr><th>证据层</th><th>固定对象</th><th>可回答</th><th>不能回答</th></tr></thead>
+    <tbody>
+      <tr><td>Pi 源码与 PTY</td><td><span class="mono">cf12251</span>、Pi 0.83.0</td><td>当前实现与生命周期</td><td>Claude 内部设计</td></tr>
+      <tr><td>Claude 官方二进制</td><td>Linux x64 <span class="mono">2.1.220</span></td><td>真实默认行为与视觉结果</td><td>内部函数和数据结构</td></tr>
+      <tr><td>非官方公开镜像</td><td><span class="mono">6f6f12</span></td><td>静态实现链路与潜在条件路径</td><td>真实性、完整性及对应产品版本</td></tr>
+    </tbody>
+  </table>
+
+  <h2>镜像来源限制</h2>
+  <p><span class="mono">tanbiralam/claude-code</span> 自称内容来自 2026-03-31 的 source map 暴露。它不是 Anthropic 官方仓库，没有许可证文件，原始快照缺少部分内部模块；后续提交补入 stub 和 <span class="mono">1.0.0-dev</span> 构建值。真正版本由外部 <span class="mono">MACRO.VERSION</span> 注入，因此不能把该快照直接标成 2.1.220。</p>
+
+  <div class="callout"><strong>使用原则：</strong>黑盒与源码一致的规则标为“相互印证”；只在镜像中出现的 MCP、Memory 或全屏分支标为“静态发现”，不冒充 2.1.220 默认行为。</div>
+  <div class="source-note">研究记录：<span class="mono">claude-code-tool-folding-rules-20260806.md</span>；<span class="mono">claude-code-source-tool-folding-tanbiralam-20260806.md</span>。</div>
+</section>
+
+<section class="chapter" id="ch-pi">
+  <div class="chapter-num">03 · Pi Stuff</div>
+  <h1>Pi Stuff 当前实现</h1>
+  <p class="lead">Pi Stuff 把分组当作成功结束后的显示优化，而不是执行中的主视图。它用保守分类器寻找同一 assistant message 内的相邻探索调用，只有整组成功才把后续行降为零高度。</p>
+
+  <div class="rule-list">
+    <div class="rule-row"><div class="rule-key">候选类型</div><div class="rule-value">Read、Grep、Find、List；安全只读 Bash；Web retrieval；只读 Context；MCP 搜索、描述和状态。</div></div>
+    <div class="rule-row"><div class="rule-key">硬边界</div><div class="rule-value">普通文本、非探索 Tool、assistant message 结束；候选少于 2 个不成组。</div></div>
+    <div class="rule-row"><div class="rule-key">结果门槛</div><div class="rule-value">每个成员必须可见、可折叠且为 success；失败、拒绝、取消与后台移交使整组逐项显示。</div></div>
+    <div class="rule-row"><div class="rule-key">重建路径</div><div class="rule-value">session start、reload、resume、tree 与 compaction 后从 Host context 重新计算。</div></div>
+  </div>
+
+  <h2>Bash 为什么最保守</h2>
+  <p><span class="mono">unbash</span> 解析 AST 后才允许进入分组。命令长度上限为 32 KiB；后台 statement、shell command prefix、危险重定向、动态执行、写入式 git/bd/gh、测试和构建均被排除。分类异常时默认 standalone，而不是猜测为只读。</p>
+
+  <h2>折叠后的投影</h2>
+  <pre><code>● Explore 4 operations · Read, Find +2 more</code></pre>
+  <p>第一项成为组首；其余成员保留绑定但渲染为零高度。摘要最多显示两个不同 Tool 标签，重复标签使用 <span class="mono">×N</span>，其余调用使用 <span class="mono">+N more</span>，耗时取成员最大值。</p>
+
+  <figure>
+    <svg viewBox="0 0 1000 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="pi-flow-title pi-flow-desc">
+      <title id="pi-flow-title">Pi Stuff 折叠决策流程</title>
+      <desc id="pi-flow-desc">探索分类、同消息相邻、至少两个和全部成功依次成为折叠门槛。</desc>
+      <defs><pattern id="dots-pi" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#E3E2DC"/></pattern></defs>
+      <rect width="1000" height="256" fill="#f5f4ed"/><rect width="1000" height="256" fill="url(#dots-pi)" opacity="0.55"/>
+      <text x="48" y="28" fill="#1B365D" font-size="14" font-family="monospace" letter-spacing="3">策略流程</text>
+      <line x1="48" y1="42" x2="952" y2="42" stroke="#1B365D" stroke-width="1"/>
+      <g font-family="TsangerJinKai02, Noto Serif CJK SC, serif" text-anchor="middle">
+        <rect x="48" y="88" width="160" height="80" rx="6" fill="#faf9f5" stroke="#141413" stroke-width="1.5"/>
+        <text x="128" y="120" font-size="20" fill="#141413">探索分类</text><text x="128" y="146" font-size="14" fill="#6b6a64">否则独立</text>
+        <rect x="248" y="88" width="160" height="80" rx="6" fill="#faf9f5" stroke="#141413" stroke-width="1.5"/>
+        <text x="328" y="120" font-size="20" fill="#141413">同消息相邻</text><text x="328" y="146" font-size="14" fill="#6b6a64">文本即边界</text>
+        <rect x="448" y="88" width="160" height="80" rx="6" fill="#faf9f5" stroke="#141413" stroke-width="1.5"/>
+        <text x="528" y="120" font-size="20" fill="#141413">至少 2 项</text><text x="528" y="146" font-size="14" fill="#6b6a64">单项保留</text>
+        <rect x="648" y="88" width="160" height="80" rx="6" fill="#EEF2F7" stroke="#1B365D" stroke-width="2"/>
+        <text x="728" y="120" font-size="20" fill="#1B365D">全部成功</text><text x="728" y="146" font-size="14" fill="#504e49">失败即展开</text>
+        <rect x="848" y="88" width="104" height="80" rx="6" fill="#1B365D" stroke="#1B365D" stroke-width="2"/>
+        <text x="900" y="132" font-size="20" fill="#faf9f5">折叠</text>
+      </g>
+      <g fill="none" stroke="#504e49" stroke-width="1.5" stroke-linecap="round">
+        <path d="M208 128 H240"/><path d="M236 123 L244 128 L236 133"/>
+        <path d="M408 128 H440"/><path d="M436 123 L444 128 L436 133"/>
+        <path d="M608 128 H640"/><path d="M636 123 L644 128 L636 133"/>
+        <path d="M808 128 H840" stroke="#1B365D"/><path d="M836 123 L844 128 L836 133" stroke="#1B365D"/>
+      </g>
+      <text x="48" y="214" fill="#504e49" font-size="15" font-family="TsangerJinKai02, Noto Serif CJK SC, serif">每个门槛都 fail closed；展示摘要只在最后一步出现。</text>
+    </svg>
+    <figcaption>Pi Stuff 把折叠放在全部成功之后；任一不确定状态都会回到逐项显示。</figcaption>
+  </figure>
+</section>
+
+<section class="chapter" id="ch-claude">
+  <div class="chapter-num">04 · Claude Code Behavior</div>
+  <h1>Claude Code 2.1.220 行为</h1>
+  <p class="lead">Claude Code 把折叠作为连续探索段的默认投影，从第一个调用开始就聚合。它跨 API message 维护语义计数，并在运行中显示最新目标，完成后只留下过去时统计。</p>
+
+  <div class="rule-list">
+    <div class="rule-row"><div class="rule-key">最小门槛</div><div class="rule-value">1 个 retrieval operation；单次 Read 也折叠。</div></div>
+    <div class="rule-row"><div class="rule-key">连续窗口</div><div class="rule-value">同一用户回合内可跨多个 assistant API message；assistant 正文或非 retrieval Tool 切断。</div></div>
+    <div class="rule-row"><div class="rule-key">语义类别</div><div class="rule-value">Reading、Searching for、Listing；Bash cat、grep、ls 按含义归类。</div></div>
+    <div class="rule-row"><div class="rule-key">详情入口</div><div class="rule-value"><span class="mono">Ctrl+O</span> 切换全局详细 transcript，恢复每一个原始调用。</div></div>
+  </div>
+
+  <h2>同一组的两个生命周期投影</h2>
+  <pre><code>运行中  ● Searching for 2 patterns, reading 3 files…
+          ⎿ src/config.ts
+
+完成后    Searched for 2 patterns, read 3 files</code></pre>
+  <p>运行态用现在时并展示最近目标；结束后改为过去时并移除目标。重复读取同一路径按唯一文件数计数，搜索与列表按相应操作统计。</p>
+
+  <h2>错误仍留在成功口吻中</h2>
+  <p>实测 <span class="mono">Read(a) → Read(missing) → Read(b)</span> 最终显示 <span class="mono">Read 3 files</span>。失败调用仍被计数并隐藏，只有进入详细 transcript 才能看到。这是两套方案最重要的产品分歧。</p>
+
+  <div class="callout"><strong>行为边界：</strong>默认 retrieval folding、单个 Tool 输出截断和可选 Focus view 是不同机制。本页只陈述 2.1.220 默认视图的黑盒结果。</div>
+  <div class="source-note">主证据：官方 Linux x64 2.1.220 隔离 PTY；辅助证据：Interactive mode、Fullscreen mode 与 CHANGELOG。</div>
+</section>
+
+<section class="chapter" id="ch-source">
+  <div class="chapter-num">05 · Source Pipeline</div>
+  <h1>公开镜像揭示的实现链路</h1>
+  <p class="lead">镜像中的折叠不是 Tool 执行器行为，而是一个<span class="hl">纯显示流水线</span>：Tool 声明语义，消息层扫描连续段并生成派生 group，渲染层根据 active 状态选择现在时、目标提示或完成态统计。</p>
+
+  <div class="metric-strip">
+    <div class="metric"><div class="metric-value mono">6f6f12</div><div class="metric-label">固定源码快照</div></div>
+    <div class="metric"><div class="metric-value">489</div><div class="metric-label">MCP 搜索与读取白名单唯一名称</div></div>
+    <div class="metric"><div class="metric-value">700 ms</div><div class="metric-label">最近目标最短显示时间</div></div>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1000 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="source-flow-title source-flow-desc">
+      <title id="source-flow-title">Claude Code 折叠显示流水线</title>
+      <desc id="source-flow-desc">原始消息经过 Tool 语义分类、连续段归并和 active 或 settled 渲染，持久化记录不变。</desc>
+      <defs><pattern id="dots-source" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#E3E2DC"/></pattern></defs>
+      <rect width="1000" height="230" fill="#f5f4ed"/><rect width="1000" height="230" fill="url(#dots-source)" opacity="0.55"/>
+      <text x="48" y="28" fill="#1B365D" font-size="14" font-family="monospace" letter-spacing="3">源码链路</text>
+      <line x1="48" y1="42" x2="952" y2="42" stroke="#1B365D" stroke-width="1"/>
+      <g font-family="TsangerJinKai02, Noto Serif CJK SC, serif" text-anchor="middle">
+        <rect x="48" y="82" width="190" height="82" rx="6" fill="#faf9f5" stroke="#141413" stroke-width="1.5"/>
+        <text x="143" y="114" font-size="19" fill="#141413">规范化消息</text><text x="143" y="140" font-size="13" fill="#6b6a64">canonical history</text>
+        <rect x="286" y="82" width="190" height="82" rx="6" fill="#faf9f5" stroke="#141413" stroke-width="1.5"/>
+        <text x="381" y="114" font-size="19" fill="#141413">Tool 语义分类</text><text x="381" y="140" font-size="13" fill="#6b6a64">read / search / list</text>
+        <rect x="524" y="82" width="190" height="82" rx="6" fill="#EEF2F7" stroke="#1B365D" stroke-width="2"/>
+        <text x="619" y="114" font-size="19" fill="#1B365D">连续段归并</text><text x="619" y="140" font-size="13" fill="#504e49">derived group</text>
+        <rect x="762" y="82" width="190" height="82" rx="6" fill="#1B365D" stroke="#1B365D" stroke-width="2"/>
+        <text x="857" y="114" font-size="19" fill="#faf9f5">双态渲染</text><text x="857" y="140" font-size="13" fill="#faf9f5">active / settled</text>
+      </g>
+      <g fill="none" stroke="#504e49" stroke-width="1.5" stroke-linecap="round">
+        <path d="M238 123 H278"/><path d="M274 118 L282 123 L274 128"/>
+        <path d="M476 123 H516"/><path d="M512 118 L520 123 L512 128"/>
+        <path d="M714 123 H754" stroke="#1B365D"/><path d="M750 118 L758 123 L750 128" stroke="#1B365D"/>
+      </g>
+      <text x="48" y="204" fill="#504e49" font-size="14" font-family="TsangerJinKai02, Noto Serif CJK SC, serif">Messages.tsx 生成显示投影；原始 normalizedMessages 继续用于 lookup 与 transcript。</text>
+    </svg>
+    <figcaption>Tool 分类、连续段归并和双态渲染相互独立；canonical message 与派生 display group 分开。</figcaption>
+  </figure>
+
+  <div class="rule-list">
+    <div class="rule-row"><div class="rule-key">分类归属</div><div class="rule-value">Read、Grep、Glob 直接声明；Bash 与 PowerShell 单独解析；MCP 使用显式 allowlist；未知名称和 WebSearch/WebFetch 默认独立。</div></div>
+    <div class="rule-row"><div class="rule-key">分组边界</div><div class="rule-value">正文、非折叠 Tool、非匹配 user result 切断；thinking、system 与多数 attachment 跳过或延后。</div></div>
+    <div class="rule-row"><div class="rule-key">计数与错误</div><div class="rule-value">文件路径用 Set 去重；搜索、列表按调用；tool result 不检查 <span class="mono">is_error</span>。</div></div>
+    <div class="rule-row"><div class="rule-key">运行稳定性</div><div class="rule-value">计数只增不减；最近目标至少显示 700 ms，避免快速 Tool 只闪一帧。</div></div>
+  </div>
+
+  <p class="small"><strong>Bash 安全差异：</strong>镜像用 <span class="mono">shell-quote</span> 拆词，并跳过重定向操作符及目标；重定向本身不会否决 read/search/list 分类。ToolSearch、Snip 与自动管理的 Memory 另有静默或专用汇总规则。</p>
+  <div class="callout"><strong>条件路径：</strong>经典终端依赖 <span class="mono">Ctrl+O</span> 全局展开；源码中的全屏路径还支持行级点击或 Enter 展开，并可汇总普通 Bash 和 Git 结果。外部用户默认不启用该路径，不能把它写成 2.1.220 默认行为。</div>
+  <div class="source-note">固定引用：<a href="https://github.com/tanbiralam/claude-code/blob/6f6f12b37f529488b10e53928dd5508bb93535c7/src/utils/collapseReadSearch.ts#L143-L956">collapseReadSearch.ts:143–956</a>；<a href="https://github.com/tanbiralam/claude-code/blob/6f6f12b37f529488b10e53928dd5508bb93535c7/src/components/messages/CollapsedReadSearchContent.tsx#L29-L483">CollapsedReadSearchContent.tsx:29–483</a>；<a href="https://github.com/tanbiralam/claude-code/blob/6f6f12b37f529488b10e53928dd5508bb93535c7/src/tools/BashTool/BashTool.tsx#L60-L171">BashTool.tsx:60–171</a>；<a href="https://github.com/tanbiralam/claude-code/blob/6f6f12b37f529488b10e53928dd5508bb93535c7/src/tools/MCPTool/classifyForCollapse.ts#L14-L604">classifyForCollapse.ts:14–604</a>。</div>
+</section>
+
+<section class="chapter" id="ch-diff">
+  <div class="chapter-num">06 · Difference Matrix</div>
+  <h1>差异不是样式，而是风险模型</h1>
+  <p class="lead">两套方案最明显的文字差异只是表层。决定用户是否信任摘要的，是候选窗口有多宽、摘要何时出现、失败是否可见，以及退出摘要后能否迅速恢复原始证据。</p>
+
+  <table class="compact matrix">
+    <thead><tr><th>维度</th><th>Pi Stuff 当前</th><th>Claude 行为与镜像</th><th>用户或工程影响</th></tr></thead>
+    <tbody>
+      <tr><td>最小规模</td><td>至少 2 项</td><td>1 项即折叠</td><td>Pi 保留偶发调用；Claude 密度更高</td></tr>
+      <tr><td>分组窗口</td><td>同一 assistant message</td><td>连续 retrieval segment，可跨 API message</td><td>Pi 容易被协议轮次切碎</td></tr>
+      <tr><td>分类职责</td><td>中央 exploration classifier</td><td>Tool-owned 接口加显示层扫描器</td><td>Claude 更易按 Tool 扩展，Pi 更集中审计</td></tr>
+      <tr><td>摘要与时机</td><td>Explore + Tool 标签；结束后聚合</td><td>语义计数；首项开始聚合</td><td>Claude 更安静，Pi 更容易出现收束跳动</td></tr>
+      <tr><td>运行目标</td><td>各行显示自己的目标</td><td>最近目标，至少稳定 700 ms</td><td>Claude 用一个方向提示替代多行噪声</td></tr>
+      <tr><td>完成目标</td><td>只留 Tool 标签</td><td>默认移除目标</td><td>两者都有回看成本，Claude 更明显</td></tr>
+      <tr><td>失败</td><td>整组逐项显示</td><td>仍折叠并计数</td><td>Pi 强调异常证据；Claude 强调连续性</td></tr>
+      <tr><td>Bash</td><td>unbash AST 与副作用否决</td><td>命令白名单；重定向被跳过；全屏可汇总全部 Bash</td><td>Pi 更保守；Claude 条件路径已超出 retrieval</td></tr>
+      <tr><td>外部 Tool</td><td>Web retrieval 可折叠；真实 MCP 调用独立</td><td>WebSearch/WebFetch 独立；MCP 显式 allowlist</td><td>两者的语义覆盖面并不等价</td></tr>
+      <tr><td>详情</td><td><span class="mono">/tools</span> 局部详情</td><td><span class="mono">Ctrl+O</span> 全局；全屏可行级展开</td><td>局部定位与完整上下文各有优势</td></tr>
+      <tr><td>持久化</td><td>JSONL 与模型结果不变</td><td>派生 group，原始消息保留</td><td>两者都具备可逆显示投影</td></tr>
+    </tbody>
+  </table>
+
+  <h2>各自付出的代价</h2>
+  <p><strong>Pi Stuff</strong> 的误折叠成本较低，但探索链条会被 API message 人为切碎，执行阶段仍出现多行，<span class="mono">Explore + Tool labels</span> 也没有直接说明读了什么。<strong>Claude Code</strong> 的阅读连续性更强，但单次调用也被隐藏，完成后没有路径线索，失败还会被成功口吻吞没。</p>
+  <p>源码说明 Claude 的优势来自职责拆分，而不是一个更宽松的正则。Pi Stuff 可以借 Tool 声明、显示 accumulator 与 active renderer 的分层，不必接受失败计数或普通 Bash 汇总。</p>
+
+  <div class="takeaway">
+    <div class="takeaway-label">Shared invariant</div>
+    两者都把 compact view 视为持久化调用之上的派生投影。后续优化应继续限制在 presentation layer，不合并 Tool result，不删除 session entry，不改变模型上下文。
+  </div>
+</section>
+
+<section class="chapter" id="ch-roadmap">
+  <div class="chapter-num">07 · Recommendation</div>
+  <h1>建议的演进路径</h1>
+  <p class="lead">下一版不应复制 Claude Code，而应组合它的信息架构与 Pi Stuff 的安全边界。优先改分组语义和运行态，再扩大窗口；错误可见性、最小两项门槛与完整详情入口继续作为产品约束。</p>
+
+  <table class="decision-table">
+    <thead><tr><th>决策</th><th>规则</th><th>原因</th></tr></thead>
+    <tbody>
+      <tr><td>借鉴</td><td>read/search/list 语义摘要；单调计数；稳定的最近目标；跨 message 连续探索段</td><td>降低 Tool 名噪声，让摘要匹配用户对调查阶段的理解</td></tr>
+      <tr><td>保留</td><td>至少 2 项；失败整组展开；AST Bash 判定；Web retrieval；<span class="mono">/tools</span> 与 JSONL 不变</td><td>维持异常证据、可逆性、协议稳定性和现有覆盖面</td></tr>
+      <tr><td>拒绝</td><td>单项折叠；完成后删除全部目标；失败写成 Read N files；默认汇总普通 Bash</td><td>密度收益不足以抵消可追溯性与副作用风险</td></tr>
+    </tbody>
+  </table>
+
+  <h2>三阶段实施顺序</h2>
+  <ol>
+    <li><strong>语义与运行态：</strong>改成读、搜、列结果类别；引入单调计数和 500 至 700 ms 目标稳定时间；完成后至少保留短路径或共同根目录。</li>
+    <li><strong>连续探索段：</strong>跨 assistant message 维护 segment；正文、写操作、普通 Bash、后台移交和用户输入仍是硬边界；错误立即取消折叠资格。</li>
+    <li><strong>分类职责：</strong>再评估让各 Suite 声明稳定展示语义；MCP 使用审计过的 allowlist，未知 Tool 一律 standalone，Bash 继续由 AST 判定。</li>
+  </ol>
+
+  <figure>
+    <svg viewBox="0 0 1000 268" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="target-title target-desc">
+      <title id="target-title">建议的目标策略</title>
+      <desc id="target-desc">连续探索段通过两项门槛和成功门槛后生成语义摘要，失败转为逐项显示。</desc>
+      <defs><pattern id="dots-target" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#E3E2DC"/></pattern></defs>
+      <rect width="1000" height="268" fill="#f5f4ed"/><rect width="1000" height="268" fill="url(#dots-target)" opacity="0.55"/>
+      <text x="48" y="28" fill="#1B365D" font-size="14" font-family="monospace" letter-spacing="3">目标策略</text>
+      <line x1="48" y1="42" x2="952" y2="42" stroke="#1B365D" stroke-width="1"/>
+      <g font-family="TsangerJinKai02, Noto Serif CJK SC, serif" text-anchor="middle">
+        <rect x="48" y="80" width="184" height="84" rx="6" fill="#faf9f5" stroke="#141413" stroke-width="1.5"/>
+        <text x="140" y="114" font-size="20" fill="#141413">连续探索段</text><text x="140" y="140" font-size="14" fill="#6b6a64">可跨 API message</text>
+        <rect x="288" y="80" width="160" height="84" rx="6" fill="#faf9f5" stroke="#141413" stroke-width="1.5"/>
+        <text x="368" y="114" font-size="20" fill="#141413">至少 2 项</text><text x="368" y="140" font-size="14" fill="#6b6a64">保留低频证据</text>
+        <rect x="504" y="80" width="160" height="84" rx="6" fill="#EEF2F7" stroke="#1B365D" stroke-width="2"/>
+        <text x="584" y="114" font-size="20" fill="#1B365D">全部成功</text><text x="584" y="140" font-size="14" fill="#504e49">异常走下支</text>
+        <rect x="720" y="80" width="232" height="84" rx="6" fill="#1B365D" stroke="#1B365D" stroke-width="2"/>
+        <text x="836" y="112" font-size="20" fill="#faf9f5">语义摘要</text><text x="836" y="140" font-size="14" fill="#faf9f5">read / search / list + 目标</text>
+        <rect x="504" y="204" width="160" height="44" rx="6" fill="#faf9f5" stroke="#6b6a64" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <text x="584" y="232" font-size="17" fill="#504e49">失败逐项显示</text>
+      </g>
+      <g fill="none" stroke="#504e49" stroke-width="1.5" stroke-linecap="round">
+        <path d="M232 122 H280"/><path d="M276 117 L284 122 L276 127"/>
+        <path d="M448 122 H496"/><path d="M492 117 L500 122 L492 127"/>
+        <path d="M664 122 H712" stroke="#1B365D"/><path d="M708 117 L716 122 L708 127" stroke="#1B365D"/>
+        <path d="M584 164 V196"/><path d="M579 192 L584 200 L589 192"/>
+      </g>
+    </svg>
+    <figcaption>目标策略吸收 Claude 的连续探索段、职责拆分和语义摘要，同时保留 Pi Stuff 的失败展开与两项门槛。</figcaption>
+  </figure>
+
+  <h2>验收条件</h2>
+  <p class="small">真实 PTY 必须继续覆盖 reload、resume、tree、compaction、失败展开、后台边界、目标稳定时间、窄终端、/tools 完整性和 JSONL 无展示摘要。任何一项失败，都不应以更激进的默认折叠换取表面密度。</p>
+
+  <div class="source-note references">
+    <strong>参考资料</strong>
+    <ol>
+      <li>Pi Stuff <span class="mono">cf12251</span>；<span class="mono">contract.ts</span>；<span class="mono">exploration.ts</span>；PTY lifecycle certification</li>
+      <li><span class="mono">docs/research/claude-code-tool-folding-rules-20260806.md</span></li>
+      <li><span class="mono">docs/research/claude-code-source-tool-folding-tanbiralam-20260806.md</span>；mirror <span class="mono">6f6f12</span></li>
+      <li>Claude Code official Interactive mode、Fullscreen mode 与 CHANGELOG</li>
+      <li>Anthropic issue <span class="mono">#21151</span>：完成态折叠的可追溯性反馈</li>
+    </ol>
+  </div>
+</section>
+
+</body>
+</html>
