@@ -2,7 +2,7 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { registerSuiteOwnedTool } from "../../packages/pi-stuff-tools/contract.js";
+import { registerSuiteOwnedTool } from "../../packages/pi-stuff/node_modules/@jczhang02/pi-stuff-tools/index.js";
 
 const PROVIDER = "pi-stuff-tools-grouping-pty";
 const MODEL = "fixture-model";
@@ -25,24 +25,52 @@ const SUCCESS_CALLS: readonly FixtureCall[] = [
 	{ name: "find", arguments: { pattern: "*.txt", path: "." } },
 	{ name: "ls", arguments: { path: "." } },
 	{ name: "bash", arguments: { command: "pwd" } },
+	{
+		name: "TaskCreate",
+		arguments: {
+			subject: "Certify Activity Group",
+			description: "Exercise a Suite-owned non-builtin Tool inside the same display group.",
+		},
+	},
 ];
 const FAILURE_CALLS: readonly FixtureCall[] = [
 	{ name: "read", arguments: { path: "input-工具.txt" } },
-	{ name: "fixture_state", arguments: { state: "error" } },
+	{
+		name: "bash",
+		arguments: { command: "printf FIXTURE_GROUP_ERROR >&2; exit 17" },
+	},
 	{ name: "read", arguments: { path: "input-工具.txt" } },
 ];
 const MUTATION_CALLS: readonly FixtureCall[] = [
 	{ name: "read", arguments: { path: "input-工具.txt" } },
-	{ name: "bash", arguments: { command: "printf mutation > bash-mutation-工具.txt" } },
+	{
+		name: "bash",
+		arguments: { command: "printf mutation > bash-mutation-工具.txt" },
+	},
 	{ name: "read", arguments: { path: "input-工具.txt" } },
 ];
 const BACKGROUND_CALLS: readonly FixtureCall[] = [
 	{ name: "read", arguments: { path: "input-工具.txt" } },
 	{ name: "bash", arguments: { command: "sleep 30" } },
 	{ name: "read", arguments: { path: "input-工具.txt" } },
-	{ name: "bash", arguments: { command: "sleep 31", run_in_background: true } },
+	{
+		name: "bash",
+		arguments: { command: "sleep 31", run_in_background: true },
+	},
 	{ name: "read", arguments: { path: "input-工具.txt" } },
 ];
+const COMPLETION_CALLS: readonly FixtureCall[] = [
+	{
+		name: "bash",
+		arguments: {
+			command: "sleep 0.4; printf FIXTURE_BACKGROUND_COMPLETED",
+			description: "completion fixture",
+			run_in_background: true,
+		},
+	},
+];
+const MEDIA_CALLS: readonly FixtureCall[] = [{ name: "fixture_media", arguments: {} }];
+const AGENT_CALLS: readonly FixtureCall[] = [{ name: "subagent", arguments: { action: "status" } }];
 
 function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
 	return {
@@ -62,13 +90,27 @@ function textStream(text: string) {
 	const pending = message([], "pending");
 	stream.push({ type: "start", partial: pending });
 	stream.push({ type: "text_start", contentIndex: 0, partial: pending });
-	stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: pending });
-	stream.push({ type: "text_end", contentIndex: 0, content: text, partial: pending });
-	stream.push({ type: "done", reason: "stop", message: message([{ type: "text", text }], "stop") });
+	stream.push({
+		type: "text_delta",
+		contentIndex: 0,
+		delta: text,
+		partial: pending,
+	});
+	stream.push({
+		type: "text_end",
+		contentIndex: 0,
+		content: text,
+		partial: pending,
+	});
+	stream.push({
+		type: "done",
+		reason: "stop",
+		message: message([{ type: "text", text }], "stop"),
+	});
 	return stream;
 }
 
-function toolCallsStream(prefix: string, fixtures: readonly FixtureCall[]) {
+function toolCallsStream(prefix: string, fixtures: readonly FixtureCall[], thinking = "") {
 	const stream = createAssistantMessageEventStream();
 	const pending = message([], "pending");
 	const toolCalls = fixtures.map((fixture, index) => ({
@@ -78,11 +120,45 @@ function toolCallsStream(prefix: string, fixtures: readonly FixtureCall[]) {
 		arguments: fixture.arguments,
 	}));
 	stream.push({ type: "start", partial: pending });
-	for (const [index, toolCall] of toolCalls.entries()) {
-		stream.push({ type: "toolcall_start", contentIndex: index, partial: pending });
-		stream.push({ type: "toolcall_end", contentIndex: index, toolCall, partial: pending });
+	const contentOffset = thinking ? 1 : 0;
+	if (thinking) {
+		pending.content = [{ type: "thinking", thinking }];
+		stream.push({
+			type: "thinking_start",
+			contentIndex: 0,
+			partial: pending,
+		});
+		stream.push({
+			type: "thinking_delta",
+			contentIndex: 0,
+			delta: thinking,
+			partial: pending,
+		});
+		stream.push({
+			type: "thinking_end",
+			contentIndex: 0,
+			content: thinking,
+			partial: pending,
+		});
 	}
-	stream.push({ type: "done", reason: "toolUse", message: message(toolCalls, "toolUse") });
+	for (const [index, toolCall] of toolCalls.entries()) {
+		stream.push({
+			type: "toolcall_start",
+			contentIndex: index + contentOffset,
+			partial: pending,
+		});
+		stream.push({
+			type: "toolcall_end",
+			contentIndex: index + contentOffset,
+			toolCall,
+			partial: pending,
+		});
+	}
+	stream.push({
+		type: "done",
+		reason: "toolUse",
+		message: message(thinking ? [{ type: "thinking", thinking }, ...toolCalls] : toolCalls, "toolUse"),
+	});
 	return stream;
 }
 
@@ -105,12 +181,41 @@ function fixtureStream(context: Context) {
 		}
 	}
 	const request = lastUserIndex < 0 ? "" : textContent(context.messages[lastUserIndex] as Context["messages"][number]);
-	const completed = context.messages.slice(lastUserIndex + 1).filter((entry) => entry.role === "toolResult").length;
+	const completed = context.messages.slice(lastUserIndex + 1).reduce((count, entry) => {
+		if (entry.role !== "assistant") return count;
+		return count + entry.content.filter((block) => block.type === "toolCall").length;
+	}, 0);
 	if (request.includes("failure")) {
 		return completed === 0 ? toolCallsStream("group-failure", FAILURE_CALLS) : textStream("GROUP_FAILURE_DONE");
 	}
 	if (request.includes("mutation")) {
 		return completed === 0 ? toolCallsStream("group-mutation", MUTATION_CALLS) : textStream("GROUP_MUTATION_DONE");
+	}
+	if (request.includes("permission")) {
+		return completed === 0
+			? toolCallsStream("group-permission", [{ name: "fixture_confirm", arguments: {} }])
+			: textStream("GROUP_PERMISSION_DONE");
+	}
+	if (request.includes("rejection")) {
+		return completed === 0
+			? toolCallsStream("group-rejection", [{ name: "fixture_confirm", arguments: { reject: true } }])
+			: textStream("GROUP_REJECTION_DONE");
+	}
+	if (request.includes("cancellation")) {
+		return completed === 0
+			? toolCallsStream("group-cancellation", [{ name: "fixture_cancel", arguments: {} }])
+			: textStream("GROUP_CANCELLATION_DONE");
+	}
+	if (request.includes("completion")) {
+		return completed === 0
+			? toolCallsStream("group-completion", COMPLETION_CALLS)
+			: textStream("GROUP_COMPLETION_DONE");
+	}
+	if (request.includes("media")) {
+		return completed === 0 ? toolCallsStream("group-media", MEDIA_CALLS) : textStream("GROUP_MEDIA_DONE");
+	}
+	if (request.includes("agent")) {
+		return completed === 0 ? toolCallsStream("group-agent", AGENT_CALLS) : textStream("GROUP_AGENT_DONE");
 	}
 	if (request.includes("background")) {
 		return completed === 0
@@ -128,23 +233,122 @@ function fixtureStream(context: Context) {
 			: textStream("PADDING_DONE");
 	}
 	if (request.includes("plain")) return textStream("PLAIN_DONE");
-	return completed === 0 ? toolCallsStream("group-success", SUCCESS_CALLS) : textStream("GROUP_SUCCESS_DONE");
+	return completed < SUCCESS_CALLS.length
+		? toolCallsStream(
+				`group-success-${String(completed + 1)}`,
+				[SUCCESS_CALLS[completed] as FixtureCall],
+				`THINKING_STEP_${String(completed + 1)}`,
+			)
+		: textStream("GROUP_SUCCESS_DONE");
 }
 
 export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 	registerSuiteOwnedTool(
 		pi,
 		{
+			description: "Request deterministic interactive confirmation for Tool grouping certification",
+			execute: async (_toolCallId, args, _signal, _onUpdate, context) => {
+				const confirmed = await context.ui.confirm(
+					args.reject ? "Fixture rejection" : "Fixture permission",
+					"Allow the certified fixture operation?",
+				);
+				return {
+					content: [
+						{
+							type: "text",
+							text: confirmed ? "FIXTURE_PERMISSION_ALLOWED" : "Tool execution was blocked by user",
+						},
+					],
+					details: { confirmed },
+				};
+			},
+			label: "Permission",
+			name: "fixture_confirm",
+			parameters: Type.Object({ reject: Type.Optional(Type.Boolean()) }),
+		},
+		{
+			activity: {
+				categories: ["run-command"],
+				classify: () => [{ category: "run-command", count: 1, target: "Waiting for permission…" }],
+			},
+			summarize: (_args, result) =>
+				(result.details as { readonly confirmed?: boolean } | undefined)?.confirmed
+					? "permission allowed"
+					: "permission rejected",
+			target: () => "Waiting for permission…",
+			resultIsError: (_args, result) =>
+				(result.details as { readonly confirmed?: boolean } | undefined)?.confirmed !== true,
+		},
+	);
+	registerSuiteOwnedTool(
+		pi,
+		{
+			description: "Return one deterministic cancellation for Tool grouping certification",
+			execute: async () => ({
+				content: [{ type: "text", text: "Operation aborted" }],
+				details: { cancelled: true },
+			}),
+			label: "Cancel",
+			name: "fixture_cancel",
+			parameters: Type.Object({}),
+		},
+		{
+			activity: {
+				categories: ["run-command"],
+				classify: () => [{ category: "run-command", count: 1 }],
+			},
+			resultIsError: () => true,
+			summarize: () => "Operation aborted",
+			target: () => "Cancelling operation",
+		},
+	);
+	registerSuiteOwnedTool(
+		pi,
+		{
 			description: "Return one deterministic error for Tool grouping certification",
-			execute: async () => ({ content: [{ type: "text", text: "FIXTURE_GROUP_ERROR" }], details: { error: true } }),
+			execute: async () => ({
+				content: [{ type: "text", text: "FIXTURE_GROUP_ERROR" }],
+				details: { error: true },
+			}),
 			label: "State",
 			name: "fixture_state",
 			parameters: Type.Object({ state: Type.Literal("error") }),
 		},
 		{
+			activity: {
+				categories: ["run-command"],
+				classify: () => [{ category: "run-command", count: 1 }],
+			},
 			resultIsError: () => true,
 			summarize: () => "FIXTURE_GROUP_ERROR",
 			target: () => "error",
+		},
+	);
+	registerSuiteOwnedTool(
+		pi,
+		{
+			description: "Return one deterministic visible image for Tool grouping certification",
+			execute: async () => ({
+				content: [
+					{
+						data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
+						mimeType: "image/png" as const,
+						type: "image" as const,
+					},
+				],
+				details: { visible: true },
+			}),
+			label: "Media",
+			name: "fixture_media",
+			parameters: Type.Object({}),
+		},
+		{
+			activity: {
+				categories: ["view-image"],
+				classify: () => [{ category: "view-image", countKeys: ["fixture-media"] }],
+			},
+			summarize: () => "media loaded",
+			target: () => "Visible image",
 		},
 	);
 	registerSuiteOwnedTool(
@@ -163,7 +367,15 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 			name: "padding_tool",
 			parameters: Type.Object({}),
 		},
-		{ detailLines: () => ["deterministic compaction padding"], label: "Padding", summarize: () => "padded" },
+		{
+			activity: {
+				categories: ["read-file"],
+				classify: () => [{ category: "read-file", countKeys: ["padding"] }],
+			},
+			detailLines: () => ["deterministic compaction padding"],
+			label: "Padding",
+			summarize: () => "padded",
+		},
 	);
 	pi.registerProvider(PROVIDER, {
 		name: "Pi Stuff Tool grouping PTY fixture",
@@ -174,7 +386,7 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 			{
 				id: MODEL,
 				name: "Pi Stuff Tool grouping PTY fixture",
-				reasoning: false,
+				reasoning: true,
 				input: ["text"],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: 200_000,

@@ -10,7 +10,14 @@ import type {
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
-import { registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
+import {
+	activityKey,
+	activityTarget,
+	registerSuiteOwnedTool,
+	registerSuiteToolActivityMetadata,
+	type SuiteToolPresentation,
+	singleActivity,
+} from "@jczhang02/pi-stuff-tools";
 import { requestUiRender } from "@jczhang02/pi-stuff-ui";
 import { Type } from "typebox";
 import { prepareMagicContext } from "./config.ts";
@@ -577,22 +584,114 @@ function magicCommandContext(name: string, ctx: ExtensionContext): ExtensionCont
 }
 
 function firstPresentationTarget(args: Readonly<Record<string, unknown>>): string {
-	for (const key of ["query", "memory_id", "id", "range", "content", "note", "reason"]) {
+	for (const key of ["query", "message", "note_id", "memory_id", "id", "range", "content", "note", "reason"]) {
 		const value = args[key];
 		if (typeof value === "string" && value.trim()) return value.trim();
 	}
+	const ids = args["ids"];
+	if (Array.isArray(ids) && ids.length > 0) return ids.map(String).join(", ");
 	const { end, start } = args;
 	return typeof start === "number" && typeof end === "number" ? `${String(start)}-${String(end)}` : "";
 }
 
+function toolResultText(result: { readonly content?: readonly unknown[] } | undefined): string {
+	if (!Array.isArray(result?.content)) return "";
+	return result.content
+		.map((item) =>
+			item && typeof item === "object" && "type" in item && item.type === "text" && "text" in item
+				? String(item.text)
+				: "",
+		)
+		.filter(Boolean)
+		.join("\n");
+}
+
+function resultObjectIds(text: string, kind: "memory" | "note"): readonly string[] {
+	const patterns = kind === "memory" ? [/\[ID:\s*(\d+)\]/giu, /(?:^|\s)#(\d+)\s*:/gmu] : [/(?:note\s+|\*\*)#(\d+)/giu];
+	const ids = new Set<string>();
+	for (const pattern of patterns) {
+		for (const match of text.matchAll(pattern)) {
+			if (match[1]) ids.add(match[1]);
+		}
+	}
+	return [...ids];
+}
+
+function objectActivity(
+	category: "read-memory" | "read-note" | "save-memory" | "save-note" | "update-memory" | "update-note",
+	ids: readonly string[],
+	fallbackKey: string,
+	target: string,
+) {
+	return [
+		{
+			category,
+			countKeys: ids.length > 0 ? ids.map((id) => `${category}:${id}`) : [`${category}:${fallbackKey}`],
+			target: activityTarget(target),
+		},
+	] as const;
+}
+
 function magicToolPresentation(name: string): SuiteToolPresentation<Record<string, unknown>, unknown> {
+	const categories =
+		name === "ctx_expand"
+			? (["review-history-range"] as const)
+			: name === "ctx_search"
+				? (["search-history"] as const)
+				: name === "ctx_memory"
+					? (["read-memory", "save-memory", "update-memory"] as const)
+					: name === "ctx_note"
+						? (["read-note", "save-note", "update-note"] as const)
+						: [];
 	return {
-		grouping: (args) => {
-			if (name === "ctx_expand" || name === "ctx_search") return "exploration";
-			const action = args["action"];
-			if (name === "ctx_memory" && (action === "get" || action === "list")) return "exploration";
-			if (name === "ctx_note" && action === "read") return "exploration";
-			return "standalone";
+		activity: {
+			categories,
+			classify: ({ args, result }) => {
+				const target = firstPresentationTarget(args);
+				const text = toolResultText(result);
+				if (name === "ctx_reduce") return [];
+				if (name === "ctx_expand") {
+					const key = activityKey(args["message"], args["start"], args["end"], args["verbose"]);
+					return singleActivity("review-history-range", { key, target: target || String(args["message"] ?? "") });
+				}
+				if (name === "ctx_search") {
+					return singleActivity("search-history", {
+						key: activityKey(args["query"], args["sources"]),
+						target,
+					});
+				}
+				if (name === "ctx_memory") {
+					const action = String(args["action"] ?? "read");
+					const category =
+						action === "get" || action === "list"
+							? "read-memory"
+							: action === "write"
+								? "save-memory"
+								: "update-memory";
+					const argumentIds = Array.isArray(args["ids"])
+						? args["ids"].filter((item): item is number => typeof item === "number").map(String)
+						: [];
+					const ids = [...new Set([...argumentIds, ...resultObjectIds(text, "memory")])];
+					return objectActivity(
+						category,
+						ids,
+						activityKey(action, args["ids"], args["content"]),
+						target || action,
+					);
+				}
+				const action = String(args["action"] ?? (typeof args["content"] === "string" ? "write" : "read"));
+				const category = action === "read" ? "read-note" : action === "write" ? "save-note" : "update-note";
+				const argumentIds = typeof args["note_id"] === "number" ? [String(args["note_id"])] : [];
+				const ids = [...new Set([...argumentIds, ...resultObjectIds(text, "note")])];
+				return objectActivity(
+					category,
+					ids,
+					activityKey(action, args["note_id"], args["content"]),
+					target || action,
+				);
+			},
+			summarizeIssue: (_args, result, state) => toolResultText(result).trim().split(/\r?\n/u)[0] || state,
+			...(name === "ctx_reduce" ? { silentSuccess: true } : {}),
 		},
 		label: MAGIC_TOOL_LABELS[name] ?? name,
 		runningSummary: name === "ctx_search" ? "searching" : "working",
@@ -1095,6 +1194,9 @@ export default async function piStuffContext(
 	);
 	registry.owners.set(owner, runtime);
 	registry.runtimes.add(runtime);
+	for (const name of MAGIC_TOOL_NAMES) {
+		registerSuiteToolActivityMetadata(pi, name, magicToolPresentation(name).activity);
+	}
 	runtime.registerToolHandoffs();
 
 	pi.on("session_start", (event, ctx) => runtime.captureSessionStart(event, ctx));

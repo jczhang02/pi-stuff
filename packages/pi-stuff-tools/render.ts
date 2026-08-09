@@ -1,5 +1,5 @@
 import type { AgentToolResult, Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { ToolActivityState } from "./activity-store.js";
 
 const DETAIL_MAX_BYTES = 24 * 1024;
@@ -18,12 +18,24 @@ const MIN_LATIN_PARTIAL_UNIT = 3;
 const MIN_COMPACT_PARTIAL_UNIT = 2;
 
 export interface ToolRowModel {
+	readonly kind?: "tool";
 	readonly durationMs: number | undefined;
 	readonly label: string;
 	readonly state: ToolActivityState;
 	readonly summary: string;
 	readonly target: string;
 }
+
+export interface ActivityGroupRowModel {
+	readonly active: boolean;
+	readonly expandable: boolean;
+	readonly hint: string;
+	readonly issueState: "cancelled" | "error" | "rejected" | undefined;
+	readonly kind: "activity";
+	readonly summary: string;
+}
+
+export type ToolTranscriptRowModel = ActivityGroupRowModel | ToolRowModel;
 
 export class EmptyToolComponent implements Component {
 	invalidate(): void {}
@@ -33,7 +45,18 @@ export class EmptyToolComponent implements Component {
 	}
 }
 
-function sameModel(left: ToolRowModel, right: ToolRowModel): boolean {
+function sameModel(left: ToolTranscriptRowModel, right: ToolTranscriptRowModel): boolean {
+	if (left.kind === "activity" || right.kind === "activity") {
+		return (
+			left.kind === "activity" &&
+			right.kind === "activity" &&
+			left.active === right.active &&
+			left.expandable === right.expandable &&
+			left.hint === right.hint &&
+			left.issueState === right.issueState &&
+			left.summary === right.summary
+		);
+	}
 	return (
 		left.durationMs === right.durationMs &&
 		left.label === right.label &&
@@ -48,11 +71,11 @@ export class CachedToolRow implements Component {
 	private readonly cache = new Map<number, string[]>();
 	private computationCountValue = 0;
 	private markerVisible = true;
-	private model: ToolRowModel;
+	private model: ToolTranscriptRowModel;
 	private readonly theme: Theme;
 	private visible = true;
 
-	constructor(theme: Theme, model: ToolRowModel) {
+	constructor(theme: Theme, model: ToolTranscriptRowModel) {
 		this.theme = theme;
 		this.model = model;
 	}
@@ -71,7 +94,10 @@ export class CachedToolRow implements Component {
 		const normalizedWidth = Math.max(1, Math.floor(width));
 		const cached = this.cache.get(normalizedWidth);
 		if (cached) return cached;
-		const rendered = [renderToolRow(this.model, this.theme, normalizedWidth, this.markerVisible)];
+		const rendered =
+			this.model.kind === "activity"
+				? renderActivityGroupRow(this.model, this.theme, normalizedWidth, this.markerVisible)
+				: [renderToolRow(this.model, this.theme, normalizedWidth, this.markerVisible)];
 		this.computationCountValue += 1;
 		this.cache.set(normalizedWidth, rendered);
 		while (this.cache.size > MAX_ROW_CACHE_WIDTHS) {
@@ -82,22 +108,25 @@ export class CachedToolRow implements Component {
 		return rendered;
 	}
 
-	setModel(model: ToolRowModel): void {
-		if (sameModel(this.model, model)) return;
+	setModel(model: ToolTranscriptRowModel): boolean {
+		if (sameModel(this.model, model)) return false;
 		this.model = model;
 		this.cache.clear();
+		return true;
 	}
 
-	setMarkerVisible(visible: boolean): void {
-		if (this.markerVisible === visible) return;
+	setMarkerVisible(visible: boolean): boolean {
+		if (this.markerVisible === visible) return false;
 		this.markerVisible = visible;
 		this.cache.clear();
+		return true;
 	}
 
-	setVisible(visible: boolean): void {
-		if (this.visible === visible) return;
+	setVisible(visible: boolean): boolean {
+		if (this.visible === visible) return false;
 		this.visible = visible;
 		this.cache.clear();
+		return true;
 	}
 }
 
@@ -115,10 +144,44 @@ function styleState(theme: Theme, state: ToolActivityState, text: string): strin
 		case "success":
 			return theme.fg("success", text);
 		case "error":
+			return theme.fg("error", text);
 		case "rejected":
 		case "cancelled":
-			return theme.fg("error", text);
+			return theme.fg("warning", text);
 	}
+}
+
+const ACTIVITY_HINT_MAX_WIDTH = 160;
+
+function activityMarkerColor(model: ActivityGroupRowModel): "error" | "muted" | "warning" {
+	if (model.issueState === "error") return "error";
+	if (model.issueState === "rejected" || model.issueState === "cancelled") return "warning";
+	return "muted";
+}
+
+function renderActivityGroupRow(
+	model: ActivityGroupRowModel,
+	theme: Theme,
+	width: number,
+	markerVisible: boolean,
+): string[] {
+	if (!model.summary) return [];
+	const hasMarker = model.active || model.issueState !== undefined;
+	const marker = hasMarker ? (model.active && !markerVisible ? " " : TOOL_STATE_GLYPH) : " ";
+	const markerSlot = `${hasMarker ? theme.fg(activityMarkerColor(model), marker) : marker} `;
+	const summary = theme.fg(model.active ? "text" : "muted", model.summary);
+	const progress = model.active ? theme.fg("dim", "…") : "";
+	const expandHint = model.expandable ? theme.fg("dim", "  (ctrl+o to expand)") : "";
+	const contentWidth = Math.max(1, width - visibleWidth(markerSlot));
+	const wrapped = wrapTextWithAnsi(`${summary}${progress}${expandHint}`, contentWidth);
+	const lines = wrapped.map((line, index) => `${index === 0 ? markerSlot : "  "}${line}`);
+	const safeHint = truncateToWidth(oneLine(model.hint), ACTIVITY_HINT_MAX_WIDTH, "…");
+	if (!safeHint) return lines;
+	const hintPrefix = "  ⎿ ";
+	const hintWidth = Math.max(1, width - visibleWidth(hintPrefix));
+	const hintLines = wrapTextWithAnsi(theme.fg("dim", safeHint), hintWidth).slice(0, 2);
+	for (const [index, line] of hintLines.entries()) lines.push(`${index === 0 ? hintPrefix : "    "}${line}`);
+	return lines;
 }
 
 function fitIdentity(markerSlot: string, label: string, width: number): string {
@@ -191,13 +254,7 @@ function fitOptionalTarget(targetPart: string, width: number): string {
 }
 
 /** Fit one Tool row with identity first, result second, and optional target last. */
-export function fitToolRowParts(
-	markerSlot: string,
-	label: string,
-	target: string,
-	summary: string,
-	width: number,
-): string {
+function fitToolRowParts(markerSlot: string, label: string, target: string, summary: string, width: number): string {
 	const identity = `${markerSlot}${label}`;
 	if (visibleWidth(identity) >= width) {
 		return summary ? fitIdentityAndSummary(markerSlot, label, summary, width) : fitIdentity(markerSlot, label, width);

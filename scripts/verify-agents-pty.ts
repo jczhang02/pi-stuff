@@ -220,14 +220,13 @@ function verifyTerminalOutput(output: string, columns: number): void {
 		"AGENT_PTY_TASK",
 		"中文长任务",
 		"Agents / general-purpose",
-		" · launched",
+		"Launched 1 background agent",
 		"Agent finished",
 		"inspect with /agents",
 		"CHILD_FINAL_SUMMARY",
-		"● Read agent-tool-target.txt · completed",
 		"AGENT_TOOL_RESULT",
 	]) {
-		if (!visible.includes(required)) fail(`terminal output is missing ${required}`);
+		if (!visible.includes(required)) fail(`terminal output is missing ${required}\n${visible.slice(-8_000)}`);
 	}
 	if (!visible.includes("─".repeat(columns))) fail(`Agent dialog did not render a ${columns}-column divider`);
 	for (const forbidden of [

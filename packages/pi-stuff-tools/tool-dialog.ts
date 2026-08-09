@@ -8,13 +8,14 @@ import {
 	fitCommandDialogRows,
 } from "@jczhang02/pi-stuff-ui";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
-import type { ToolUiRuntime } from "./contract.js";
-import { fitToolRowParts, formatElapsed, oneLine, sanitizeTerminalText, toolStateGlyph } from "./render.js";
+import type { ToolActivityGroupView, ToolUiRuntime } from "./contract.js";
+import { oneLine, sanitizeTerminalText, toolStateGlyph } from "./render.js";
 
 type ToolDialogMode = "detail" | "list";
 
 const GUTTER = "  ";
-const DETAIL_NON_DOCUMENT_ROWS = 9;
+const DETAIL_NON_DOCUMENT_ROWS = 8;
+const DETAIL_MEMBER_PAGE = 3;
 const NARROW_WIDTH = 64;
 const LIST_ROWS = 8;
 const NARROW_LIST_ROWS = 6;
@@ -70,32 +71,58 @@ function wrapDetailLines(lines: readonly string[], width: number): string[] {
 }
 
 interface DetailWrapCache {
-	readonly activityId: string;
 	readonly contentKey: string;
 	readonly document: readonly string[];
-	readonly source: readonly string[];
+	readonly groupId: string;
 	readonly width: number;
+}
+
+function singletonGroup(activity: ToolActivity): ToolActivityGroupView {
+	return {
+		id: activity.id,
+		memberIds: [activity.id],
+		state: activity.state,
+		summary: activity.summary || activity.label,
+	};
 }
 
 class ToolDialogComponent implements CommandDialogComponent {
 	private activities: readonly ToolActivity[];
 	private readonly context: CommandDialogViewContext<void>;
-	private disposed = false;
 	private detailWrapCache: DetailWrapCache | undefined;
+	private disposed = false;
+	private groups: readonly ToolActivityGroupView[];
 	private lastRenderWidth = 64;
+	private detailMemberOffset = 0;
 	private mode: ToolDialogMode;
+	private pendingFocusId: string | undefined;
+	private pinnedGroup: ToolActivityGroupView | undefined;
+	private readonly runtime: ToolUiRuntime;
 	private scrollOffset = 0;
 	private selectedId: string | undefined;
 	private readonly unsubscribe: () => void;
 
 	constructor(runtime: ToolUiRuntime, context: CommandDialogViewContext<void>, initialId?: string) {
+		this.runtime = runtime;
 		this.context = context;
 		this.activities = runtime.activities.list();
-		const initial = initialId ? runtime.activities.resolve(initialId) : undefined;
-		this.selectedId = initial?.id ?? this.activities[0]?.id;
-		this.mode = initial ? "detail" : "list";
+		this.groups = this.currentGroups();
+		const initial = initialId ? runtime.resolveGroup(initialId) : undefined;
+		const initialActivity = initialId ? runtime.activities.resolve(initialId) : undefined;
+		const initialGroup =
+			initial && initial !== "ambiguous"
+				? initial
+				: initialActivity
+					? this.groups.find((group) => group.memberIds.includes(initialActivity.id))
+					: undefined;
+		this.pinnedGroup = initialGroup;
+		this.pendingFocusId = initialActivity?.id;
+		this.groups = this.currentGroups();
+		this.selectedId = initialGroup?.id ?? this.groups[0]?.id;
+		this.mode = initialGroup ? "detail" : "list";
 		this.unsubscribe = runtime.activities.subscribe((activities) => {
 			this.activities = activities;
+			this.groups = this.currentGroups();
 			this.reconcileSelection();
 			this.context.requestRender();
 		});
@@ -114,9 +141,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 				this.mode = "list";
 				this.scrollOffset = 0;
 				this.context.requestRender();
-			} else {
-				this.context.close();
-			}
+			} else this.context.close();
 			return;
 		}
 		if (this.mode === "list") this.handleListInput(data);
@@ -128,27 +153,39 @@ class ToolDialogComponent implements CommandDialogComponent {
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
 		this.lastRenderWidth = renderWidth;
+		this.groups = this.currentGroups();
+		this.reconcileSelection();
 		const lines = this.mode === "list" ? this.renderList(renderWidth) : this.renderDetail(renderWidth);
 		return lines.map((line) => bounded(renderWidth, line));
+	}
+
+	private currentGroups(): readonly ToolActivityGroupView[] {
+		const groups = this.runtime.listGroups();
+		const listed = groups.length > 0 ? groups : this.activities.map(singletonGroup);
+		const resolved = this.pinnedGroup ? this.runtime.resolveGroup(this.pinnedGroup.id) : undefined;
+		const pinned = resolved && resolved !== "ambiguous" ? resolved : this.pinnedGroup;
+		this.pinnedGroup = pinned;
+		return pinned && !listed.some((group) => group.id === pinned.id) ? [pinned, ...listed] : listed;
 	}
 
 	private handleListInput(data: string): void {
 		if (matchesKey(data, Key.enter)) {
 			if (!this.selected()) return;
 			this.mode = "detail";
+			this.detailMemberOffset = 0;
 			this.scrollOffset = 0;
 			this.context.requestRender();
 			return;
 		}
 		if (!matchesKey(data, Key.up) && !matchesKey(data, Key.down)) return;
-		if (this.activities.length === 0) return;
+		if (this.groups.length === 0) return;
 		const current = Math.max(
 			0,
-			this.activities.findIndex((activity) => activity.id === this.selectedId),
+			this.groups.findIndex((group) => group.id === this.selectedId),
 		);
 		const delta = matchesKey(data, Key.up) ? -1 : 1;
-		const next = Math.max(0, Math.min(this.activities.length - 1, current + delta));
-		this.selectedId = this.activities[next]?.id;
+		const next = Math.max(0, Math.min(this.groups.length - 1, current + delta));
+		this.selectedId = this.groups[next]?.id;
 		this.context.requestRender();
 	}
 
@@ -158,20 +195,34 @@ class ToolDialogComponent implements CommandDialogComponent {
 			!matchesKey(data, Key.down) &&
 			!matchesKey(data, "pageUp") &&
 			!matchesKey(data, "pageDown")
-		) {
+		)
+			return;
+		const group = this.selected();
+		if (!group) return;
+		const layout = this.detailLayout(group, this.lastRenderWidth);
+		const page = Math.max(1, layout.viewportRows);
+		if (matchesKey(data, "pageDown")) {
+			if (this.detailMemberOffset + DETAIL_MEMBER_PAGE < group.memberIds.length) {
+				this.detailMemberOffset += DETAIL_MEMBER_PAGE;
+				this.scrollOffset = 0;
+				this.detailWrapCache = undefined;
+			} else {
+				this.scrollOffset = Math.max(0, Math.min(layout.maxOffset, this.scrollOffset + page));
+			}
+			this.context.requestRender();
 			return;
 		}
-		const activity = this.selected();
-		if (!activity) return;
-		const layout = this.detailLayout(activity, this.lastRenderWidth);
-		const page = Math.max(1, layout.viewportRows);
-		const delta = matchesKey(data, Key.up)
-			? -1
-			: matchesKey(data, Key.down)
-				? 1
-				: matchesKey(data, "pageUp")
-					? -page
-					: page;
+		if (matchesKey(data, "pageUp")) {
+			if (this.scrollOffset > 0) {
+				this.scrollOffset = Math.max(0, this.scrollOffset - page);
+			} else {
+				this.detailMemberOffset = Math.max(0, this.detailMemberOffset - DETAIL_MEMBER_PAGE);
+				this.detailWrapCache = undefined;
+			}
+			this.context.requestRender();
+			return;
+		}
+		const delta = matchesKey(data, Key.up) ? -1 : matchesKey(data, Key.down) ? 1 : page;
 		this.scrollOffset = Math.max(0, Math.min(layout.maxOffset, this.scrollOffset + delta));
 		this.context.requestRender();
 	}
@@ -184,40 +235,28 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
 		const selectedIndex = Math.max(
 			0,
-			this.activities.findIndex((activity) => activity.id === this.selectedId),
+			this.groups.findIndex((group) => group.id === this.selectedId),
 		);
 		const start = Math.max(
 			0,
-			Math.min(selectedIndex - Math.floor(viewportRows / 2), this.activities.length - viewportRows),
+			Math.min(selectedIndex - Math.floor(viewportRows / 2), this.groups.length - viewportRows),
 		);
-		const visible = viewportRows > 0 ? this.activities.slice(start, start + viewportRows) : [];
-		const count =
-			width >= 52 ? theme.fg("dim", ` · ${String(this.activities.length)} current-session operations`) : "";
+		const visible = viewportRows > 0 ? this.groups.slice(start, start + viewportRows) : [];
+		const count = width >= 52 ? theme.fg("dim", ` · ${String(this.groups.length)} activity groups`) : "";
 		const header = [theme.fg("border", "─".repeat(width)), `${GUTTER}${theme.bold("Tools")}${count}`];
 		const body = [""];
-		if (visible.length === 0) {
-			if (this.activities.length === 0)
-				body.push(`${GUTTER}${theme.fg("dim", "No tool operations in this session.")}`);
-		} else {
+		if (visible.length === 0) body.push(`${GUTTER}${theme.fg("dim", "No tool activity in this session.")}`);
+		else {
 			if (start > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${String(start)} newer`)}`);
-			for (const activity of visible) {
-				const selected = activity.id === this.selectedId;
+			for (const group of visible) {
+				const selected = group.id === this.selectedId;
 				const cursor = selected ? theme.fg("accent", "›") : " ";
-				const glyph = stateText(theme, activity.state, toolStateGlyph(activity.state));
-				const label = selected ? theme.bold(activity.label) : activity.label;
-				const target = activity.target ? theme.fg("dim", oneLine(activity.target)) : "";
-				const summary = activity.summary ? stateText(theme, activity.state, oneLine(activity.summary)) : "";
-				body.push(
-					`${GUTTER}${fitToolRowParts(
-						`${cursor} ${glyph} `,
-						label,
-						target,
-						summary,
-						Math.max(1, width - visibleWidth(GUTTER)),
-					)}`,
-				);
+				const glyph = stateText(theme, group.state, toolStateGlyph(group.state));
+				const summary = selected ? theme.bold(oneLine(group.summary)) : oneLine(group.summary);
+				const members = theme.fg("dim", ` · ${String(group.memberIds.length)} tools`);
+				body.push(`${GUTTER}${cursor} ${glyph} ${summary}${members}`);
 			}
-			const older = this.activities.length - start - visible.length;
+			const older = this.groups.length - start - visible.length;
 			if (older > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${String(older)} older`)}`);
 		}
 		body.push("");
@@ -227,32 +266,33 @@ class ToolDialogComponent implements CommandDialogComponent {
 
 	private renderDetail(width: number): string[] {
 		const theme = this.context.theme;
-		const activity = this.selected();
-		if (!activity) {
+		const group = this.selected();
+		if (!group) {
 			this.mode = "list";
 			return this.renderList(width);
 		}
-		const layout = this.detailLayout(activity, width);
+		let layout = this.detailLayout(group, width);
+		if (this.pendingFocusId) {
+			const focusIndex = group.memberIds.indexOf(this.pendingFocusId);
+			if (focusIndex >= 0) this.detailMemberOffset = focusIndex;
+			this.pendingFocusId = undefined;
+			this.scrollOffset = 0;
+			this.detailWrapCache = undefined;
+			layout = this.detailLayout(group, width);
+		}
 		this.scrollOffset = Math.min(layout.maxOffset, Math.max(0, this.scrollOffset));
 		const detail = layout.document.slice(this.scrollOffset, this.scrollOffset + layout.viewportRows);
-		const suffix =
-			activity.state === "running"
-				? "running"
-				: activity.durationMs === undefined
-					? "—"
-					: formatElapsed(activity.durationMs);
 		const header = [
 			theme.fg("border", "─".repeat(width)),
-			`${GUTTER}${theme.bold("Tool details")} ${theme.fg("dim", `· ${oneLine(activity.label)}`)}`,
+			`${GUTTER}${theme.bold("Tool activity details")} ${theme.fg("dim", `· ${String(group.memberIds.length)} tools`)}`,
 		];
 		const body = [
 			"",
-			`${GUTTER}${theme.fg("dim", "State")}  ${stateText(theme, activity.state, activity.state)} ${theme.fg("dim", `· ${suffix}`)}`,
-			`${GUTTER}${theme.fg("dim", "Target")} ${oneLine(activity.target) || "—"}`,
-			`${GUTTER}${theme.fg("dim", "Result")} ${oneLine(activity.summary) || "—"}`,
-			`${GUTTER}${theme.fg("dim", "ID")}     ${oneLine(activity.id)}`,
+			`${GUTTER}${theme.fg("dim", "State")}   ${stateText(theme, group.state, group.state)}`,
+			`${GUTTER}${theme.fg("dim", "Summary")} ${oneLine(group.summary) || "—"}`,
+			`${GUTTER}${theme.fg("dim", "ID")}      ${oneLine(group.id)}`,
 			"",
-			...detail.map((line) => `${GUTTER}${activity.detailLines.length === 0 ? theme.fg("dim", line) : line}`),
+			...detail.map((line) => `${GUTTER}${line}`),
 			"",
 		];
 		return fitCommandDialogRows(
@@ -262,7 +302,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	}
 
 	private detailLayout(
-		activity: ToolActivity,
+		group: ToolActivityGroupView,
 		width: number,
 	): {
 		readonly document: readonly string[];
@@ -270,11 +310,12 @@ class ToolDialogComponent implements CommandDialogComponent {
 		readonly maxOffset: number;
 		readonly viewportRows: number;
 	} {
-		const document = this.detailDocument(activity, width);
+		const document = this.detailDocument(group, width);
 		const maximumRows = commandDialogRows(this.context);
 		let viewportRows = Math.max(0, maximumRows - DETAIL_NON_DOCUMENT_ROWS - 1);
 		let footer = hintLines(this.context.theme, width, ["↑/↓ scroll", "Esc back"]);
-
+		const memberEnd = Math.min(group.memberIds.length, this.detailMemberOffset + DETAIL_MEMBER_PAGE);
+		const memberRange = `${String(this.detailMemberOffset + 1)}–${String(memberEnd)}/${String(group.memberIds.length)} tools`;
 		for (let iteration = 0; iteration < 3; iteration += 1) {
 			viewportRows = Math.max(0, maximumRows - DETAIL_NON_DOCUMENT_ROWS - footer.length);
 			const maximumOffset = Math.max(0, document.length - viewportRows);
@@ -284,68 +325,59 @@ class ToolDialogComponent implements CommandDialogComponent {
 				viewportRows > 0 && document.length > viewportRows
 					? ` · ${String(offset + 1)}–${String(rangeEnd)}/${String(document.length)}`
 					: "";
-			const hints = viewportRows > 0 ? [`↑/↓ scroll${range}`, "Esc back"] : ["Esc back"];
-			const nextFooter = hintLines(this.context.theme, width, hints);
+			const nextFooter = hintLines(
+				this.context.theme,
+				width,
+				viewportRows > 0
+					? [`↑/↓ scroll${range}`, `PgUp/PgDn ${memberRange}`, "Esc back"]
+					: [`PgUp/PgDn ${memberRange}`, "Esc back"],
+			);
 			if (nextFooter.length === footer.length) {
 				footer = nextFooter;
 				break;
 			}
 			footer = nextFooter;
 		}
-
 		viewportRows = Math.max(0, maximumRows - DETAIL_NON_DOCUMENT_ROWS - footer.length);
-		return {
-			document,
-			footer,
-			maxOffset: Math.max(0, document.length - viewportRows),
-			viewportRows,
-		};
+		return { document, footer, maxOffset: Math.max(0, document.length - viewportRows), viewportRows };
 	}
 
-	private detailDocument(activity: ToolActivity, width: number): readonly string[] {
+	private detailDocument(group: ToolActivityGroupView, width: number): readonly string[] {
+		const activities = this.runtime.groupActivityPage(group.id, this.detailMemberOffset, DETAIL_MEMBER_PAGE);
+		const source =
+			activities.length > 0
+				? activities
+				: group.memberIds
+						.slice(this.detailMemberOffset, this.detailMemberOffset + DETAIL_MEMBER_PAGE)
+						.map((id) => this.activities.find((activity) => activity.id === id))
+						.filter((activity): activity is ToolActivity => Boolean(activity));
+		const raw = source.flatMap((activity, index) => [
+			`${String(this.detailMemberOffset + index + 1)}. ${activity.label} · ${activity.state} · ${activity.id}`,
+			...(activity.detailLines.length > 0 ? activity.detailLines : ["Details are available after completion."]),
+			"",
+		]);
+		const contentKey = JSON.stringify(raw);
 		const cached = this.detailWrapCache;
-		if (cached?.activityId === activity.id && cached.source === activity.detailLines && cached.width === width) {
+		if (cached?.groupId === group.id && cached.contentKey === contentKey && cached.width === width)
 			return cached.document;
-		}
-
-		const contentKey =
-			cached?.activityId === activity.id && cached.source === activity.detailLines
-				? cached.contentKey
-				: JSON.stringify(activity.detailLines);
-		if (cached?.activityId === activity.id && cached.contentKey === contentKey && cached.width === width) {
-			this.detailWrapCache = { ...cached, source: activity.detailLines };
-			return cached.document;
-		}
-
-		const document =
-			activity.detailLines.length > 0
-				? wrapDetailLines(activity.detailLines, width)
-				: ["Details are available after completion."];
-		this.detailWrapCache = {
-			activityId: activity.id,
-			contentKey,
-			document,
-			source: activity.detailLines,
-			width,
-		};
+		const document = wrapDetailLines(raw, width);
+		this.detailWrapCache = { contentKey, document, groupId: group.id, width };
 		return document;
 	}
 
 	private reconcileSelection(): void {
-		if (this.selectedId && this.activities.some((activity) => activity.id === this.selectedId)) return;
-		this.selectedId = this.activities[0]?.id;
+		if (this.selectedId && this.groups.some((group) => group.id === this.selectedId)) return;
+		this.selectedId = this.groups[0]?.id;
 		if (!this.selectedId) this.mode = "list";
 		this.scrollOffset = 0;
+		this.detailMemberOffset = 0;
 	}
 
-	private selected(): ToolActivity | undefined {
-		return this.activities.find((activity) => activity.id === this.selectedId);
+	private selected(): ToolActivityGroupView | undefined {
+		return this.groups.find((group) => group.id === this.selectedId);
 	}
 }
 
 export function createToolDialogView(runtime: ToolUiRuntime, initialId?: string): CommandDialogView<void> {
-	return {
-		priority: "normal",
-		create: (context) => new ToolDialogComponent(runtime, context, initialId),
-	};
+	return { priority: "normal", create: (context) => new ToolDialogComponent(runtime, context, initialId) };
 }

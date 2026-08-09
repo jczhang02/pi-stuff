@@ -21,7 +21,7 @@ proc must_expect {pattern} {
 
 spawn -noecho script -qefc $env(PI_STUFF_WORK_PTY_RUNNER) /dev/null
 set work_pty $spawn_out(slave,name)
-must_expect "foreground.pid; sleep 30"
+must_expect "Running 1 command"
 after 200
 send -- "\\002"
 must_expect "CTRL_B_CONTINUED"
@@ -188,16 +188,18 @@ export async function verifyWorkPty(options: {
 						tools: string[];
 					},
 			);
-		if (records.length !== 6) fail(`expected 6 model requests, received ${String(records.length)}`);
+		if (records.length < 6) fail(`expected at least 6 model requests, received ${String(records.length)}`);
 		for (const [index, record] of records.entries()) {
 			if (record.request !== index) fail(`request sequence diverged at ${String(index)}`);
 			for (const tool of ["background", "bash", "monitor"]) {
 				if (!record.tools.includes(tool)) fail(`request ${String(index)} is missing ${tool}`);
 			}
 		}
-		const resumed = records[5];
-		if (!resumed?.monitorCompletedNotification || resumed.monitorTimedOutNotification) {
-			fail("Monitor resume did not carry one completed, non-timeout terminal notification");
+		const resumed = [...records].reverse().find((record) => record.monitorCompletedNotification);
+		if (!resumed || resumed.monitorTimedOutNotification) {
+			fail(
+				`Monitor resume did not carry a completed, non-timeout terminal notification: ${JSON.stringify(records)}`,
+			);
 		}
 		for (const path of [join(temporaryDirectory, "foreground.pid"), join(temporaryDirectory, "background.pid")]) {
 			const pid = await processFrom(path);

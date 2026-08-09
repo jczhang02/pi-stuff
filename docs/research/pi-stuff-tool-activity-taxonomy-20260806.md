@@ -1,6 +1,6 @@
 # Pi Stuff Tool Activity Taxonomy
 
-Read-only architecture analysis; no repository files were changed.
+Implementation map for ADR 0002 complete Tool Activity Grouping.
 
 ## Aggregate scope
 
@@ -8,14 +8,9 @@ Read-only architecture analysis; no repository files were changed.
 
 `ui → tools → rtk → codex → goal → context → web → mcp → work → agents → todo → btw`.
 
-The root aggregate registers **28 distinct Tool names**. `ui`, `rtk`, and `btw` register no Tools. Work replaces the aggregate-facing `bash` behavior, so Bash is counted once.
+The root aggregate registers **28 distinct Tool names**. `ui`, `rtk`, and `btw` register no root Tools. Work replaces the aggregate-facing `bash` behavior, so Bash is counted once. The Agent capability can additionally register the conditional parent-channel aliases `subagent_supervisor` and `intercom`.
 
-All 28 registrations pass through `registerSuiteOwnedTool`; no root Tool bypasses the shared presentation contract. The decorator and current interface are at:
-
-- `packages/pi-stuff-tools/contract.ts:19-50`
-- `packages/pi-stuff-tools/contract.ts:649-686`
-
-However, that contract still implements adjacent successful `"exploration"` folding, not ADR 0002’s complete cross-message Tool Activity Group model.
+All required and conditional registrations pass through `registerSuiteOwnedTool`; no owned Tool bypasses the shared presentation contract. The decorator, structured Activity interface, projection planner, and generated coverage gate are implemented in `packages/pi-stuff-tools/contract.ts`, `packages/pi-stuff-tools/activity.ts`, and `packages/pi-stuff/index.ts`. The coverage gate requires all 28 root Tools and validates either conditional alias whenever it registers.
 
 ## Tool matrix
 
@@ -25,7 +20,7 @@ However, that contract still implements adjacent successful `"exploration"` fold
 
 | Exact Tool    | Family                      | Success clause | Recommended present → past · noun                                 | Count/dedup identity                                         | Active target                                              | Fields / notable behavior                                                                                                                                          |
 | ------------- | --------------------------- | -------------: | ----------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `read`        | retrieval/file              |            Yes | Reading → Read · files                                            | Unique normalized path                                       | `path`                                                     | No Suite-stable fields consumed. Read can return image content, but its presentation has no `resultBody`.                                                          |
+| `read`        | retrieval/file              |            Yes | Reading → Read · files                                            | Unique normalized path                                       | `path`                                                     | No Suite-stable fields consumed. Shared result-body projection preserves returned images below the compact Activity row.                                           |
 | `write`       | mutation/file               |            Yes | Writing → Wrote · files                                           | Unique normalized path                                       | `path`                                                     | No stable fields consumed.                                                                                                                                         |
 | `edit`        | mutation/file               |            Yes | Editing → Edited · files                                          | Unique normalized path                                       | `path`                                                     | No stable fields consumed.                                                                                                                                         |
 | `grep`        | retrieval/search            |            Yes | Searching → Searched · text patterns                              | Unique normalized `(pattern, root, glob)`                    | Pattern plus nearest useful root                           | No stable fields consumed.                                                                                                                                         |
@@ -54,7 +49,7 @@ Sources:
 | `ctx_search`    | context retrieval/search           |            Yes | Searching → Searched · context queries                                    | Unique normalized query plus source filter       | `query`                                  | No normalized fields; bounded ranked text result.                                                               |
 | `ctx_memory`    | memory                             |            Yes | Reading/Saving/Updating/Archiving/Merging → corresponding past · memories | Action plus memory IDs; new memory’s returned ID | Action plus first ID/content description | No normalized Suite fields; action-dependent text result.                                                       |
 | `ctx_note`      | note                               |            Yes | Reading/Saving/Updating/Dismissing → corresponding past · notes           | Action plus `note_id`; new note’s returned ID    | Action plus note ID/content description  | No normalized Suite fields; smart-note conditions remain user-meaningful.                                       |
-| `ctx_reduce`    | infrastructure/context maintenance |     **Silent** | No successful clause                                                      | None                                             | None                                     | Failure must still affect Group issue state. Currently rendered as ordinary standalone “working” activity.      |
+| `ctx_reduce`    | infrastructure/context maintenance |     **Silent** | No successful clause                                                      | None                                             | None                                     | Success contributes no compact row; failure still contributes explicit Group issue state.                         |
 
 Sources:
 
@@ -111,24 +106,15 @@ Sources:
 - Todo registrations: `packages/pi-stuff-todo/todo.ts:82-148`
 - Todo `errors-only`: `packages/pi-stuff-todo/todo.ts:42-57`
 
-## Contract participation and architecture gaps
+## Contract participation and implementation status
 
-**Uncontracted root Tools: none.** Every root registration is decorated by `registerSuiteOwnedTool`.
+**Uncontracted owned Tools: none.** Every required root registration and conditional Agent parent-channel alias is decorated by `registerSuiteOwnedTool`; the generated Aggregate gate fails when an owned registration is undeclared, required registration is absent, or a registered Tool lacks Activity metadata.
 
 Not aggregate Tools:
 
 - Web `Source Check` is captured then intentionally discarded.
 - MCP direct per-server Tools are suppressed; only the gateway is exposed.
-- `ui`, `rtk`, and `btw` contribute no Tool definitions.
-- Child-only Agent communication Tools `contact_supervisor` and fallback `intercom` are conditional subprocess surfaces, not root aggregate Tools; they also use `registerSuiteOwnedTool` (`packages/pi-stuff-agents/src/intercom/native-supervisor-channel.ts:343-408`).
+- `ui`, `rtk`, and `btw` contribute no root Tool definitions.
+- Child-only Agent communication surfaces remain subprocess-local. The parent process may conditionally expose `subagent_supervisor` and `intercom`; both use the Agent coordination vocabulary and are declared optional in `suite.json`.
 
-Main gaps relative to ADR 0002:
-
-1. `SuiteToolPresentation` has no structured family/action/noun/count-identity/outcome interface; it exposes ad hoc label/summary strings.
-2. Current grouping is exploration-only, requires adjacent successful calls, and does not model all terminal states across Narrative Boundaries.
-3. `ctx_reduce` lacks a “silent on success, issue-bearing on failure” contract.
-4. `Task*` and `background` suppress successful transcript rows instead of contributing clauses.
-5. Bash background identity is parsed from human text rather than stable fields.
-6. Current Bash target exposes the first raw command line; ADR requires a supplied short description or semantic fallback.
-7. Read and MCP can plausibly carry media, but only Codex image Tools currently preserve media through `resultBody`.
-8. Goal Tools lack short targets, and Context’s generic target extractor does not match several actual schemas.
+ADR 0002 is implemented through structured semantic contributions, cross-round-trip Narrative Boundary planning, silent-success infrastructure handling, mutation-outcome vetoes, bounded semantic targets, real-media projection, full current-branch `/tools` reconstruction, and Host-native `Ctrl+O` expansion. Bash background IDs and conservative Git outcomes are extracted only from bounded, recognized result shapes; arbitrary stdout is never promoted to a success claim.

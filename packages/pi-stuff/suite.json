@@ -14,5 +14,32 @@
 		"@jczhang02/pi-stuff-agents",
 		"@jczhang02/pi-stuff-todo",
 		"@jczhang02/pi-stuff-btw"
-	]
+	],
+	"tools": [
+		"read",
+		"write",
+		"edit",
+		"grep",
+		"find",
+		"ls",
+		"bash",
+		"apply_patch",
+		"view_image",
+		"imagegen",
+		"goal_complete",
+		"goal_blocked",
+		"web_search",
+		"fetch_content",
+		"get_search_content",
+		"mcp",
+		"background",
+		"monitor",
+		"subagent",
+		"TaskCreate",
+		"TaskGet",
+		"TaskList",
+		"TaskUpdate"
+	],
+	"deferredTools": ["ctx_expand", "ctx_search", "ctx_memory", "ctx_note", "ctx_reduce"],
+	"optionalTools": ["subagent_supervisor", "intercom"]
 }

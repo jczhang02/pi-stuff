@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createAgentToolPresentation } from "../../packages/pi-stuff-agents/src/extension/agent-tool-presentation.js";
 import {
 	createNativeSupervisorChannel,
@@ -47,6 +47,10 @@ import type { SubagentState } from "../../packages/pi-stuff-agents/src/shared/ty
 
 const environment = new Map<string, string | undefined>();
 const temporaryDirectories: string[] = [];
+const theme = {
+	bold: (value: string) => value,
+	fg: (_color: string, value: string) => value,
+} as unknown as Theme;
 
 function setEnvironment(name: string, value: string): void {
 	if (!environment.has(name)) environment.set(name, process.env[name]);
@@ -83,6 +87,38 @@ function expectCompactPresentation(tool: ToolDefinition | undefined): void {
 	expect(tool?.renderShell).toBe("self");
 	expect(tool?.renderCall).toBeFunction();
 	expect(tool?.renderResult).toBeFunction();
+}
+
+function renderedSummary(
+	tool: ToolDefinition | undefined,
+	args: Record<string, unknown>,
+	result: AgentToolResult<unknown>,
+	toolCallId: string,
+	isError = false,
+): string {
+	expect(tool).toBeDefined();
+	const state = {};
+	const context = {
+		args,
+		argsComplete: true,
+		cwd: "/project",
+		executionStarted: true,
+		expanded: false,
+		invalidate: () => {},
+		isError,
+		isPartial: false,
+		lastComponent: undefined,
+		showImages: true,
+		state,
+		toolCallId,
+	};
+	const row = tool?.renderCall?.(args, theme, context as never);
+	expect(row).toBeDefined();
+	tool?.renderResult?.(result, { expanded: false, isPartial: false }, theme, {
+		...context,
+		lastComponent: row,
+	} as never);
+	return row?.render(100).join("\n") ?? "";
 }
 
 afterEach(() => {
@@ -138,6 +174,39 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 	expect(presentation.summarize?.({ action: "stop", id: "run-1" }, longReport, "success", 18_000)).toBe("stopped");
 	expect(presentation.summarize?.({ action: "status", id: "run-1" }, longReport, "success", 18_000)).toBe("checked");
 	expect(presentation.summarize?.({}, longReport, "cancelled", 18_000)).toBe("cancelled");
+	const backgroundActivities = presentation.activity?.classify({
+		args: { agent: "reviewer", task: fullTask },
+		result: { content: [], details: { mode: "single", results: [] } },
+		state: "success",
+		toolCallId: "agent-background",
+	} as never);
+	expect(backgroundActivities).toHaveLength(1);
+	expect(backgroundActivities?.[0]).toMatchObject({ category: "launch-agent", count: 1 });
+	const cancelledBeforeLaunch = presentation.activity?.classify({
+		args: { agent: "reviewer", foreground: true, task: fullTask },
+		result: {
+			content: [{ type: "text", text: "Cancelled before launch" }],
+			details: { mode: "single", results: [] },
+		},
+		state: "cancelled",
+		toolCallId: "agent-cancelled-before-launch",
+	} as never);
+	expect(cancelledBeforeLaunch).toHaveLength(1);
+	expect(cancelledBeforeLaunch?.[0]).toMatchObject({ category: "run-agent", count: 0 });
+	for (const [action, category] of [
+		["status", "check-agent"],
+		["steer", "steer-agent"],
+		["stop", "stop-agent"],
+		["resume", "resume-agent"],
+	] as const) {
+		const managedActivities = presentation.activity?.classify({
+			args: { action, id: "run-1" },
+			result: { content: [], details: { mode: "control", results: [] } },
+			state: "success",
+			toolCallId: `agent-${action}`,
+		} as never);
+		expect(managedActivities?.[0]).toMatchObject({ category });
+	}
 });
 
 test("native parent and child communication tools use the shared Tool row", async () => {
@@ -147,6 +216,30 @@ test("native parent and child communication tools use the shared Tool row", asyn
 	expectCompactPresentation(parent.tools.get("subagent_supervisor"));
 	await parent.run("before_agent_start");
 	expectCompactPresentation(parent.tools.get("intercom"));
+	for (const [action, category] of [
+		["status", "check-agent"],
+		["list", "check-agent"],
+		["send", "message-agent"],
+		["reply", "message-agent"],
+		["ask", "message-agent"],
+	] as const) {
+		const summary = renderedSummary(
+			parent.tools.get("subagent_supervisor"),
+			{ action, to: "worker" },
+			{ content: [{ type: "text", text: "done" }], details: {} },
+			`parent-${action}`,
+		);
+		expect(summary).toContain(category === "check-agent" ? "Checked 1 agent" : "Messaged 1 agent");
+	}
+	const failedMessage = renderedSummary(
+		parent.tools.get("subagent_supervisor"),
+		{ action: "send", to: "worker" },
+		{ content: [{ type: "text", text: "delivery failed" }], details: {} },
+		"parent-send-failed",
+		true,
+	);
+	expect(failedMessage).toContain("failed");
+	expect(failedMessage).not.toContain("Messaged");
 	channel.dispose();
 
 	const directory = resolveSupervisorChannelDir("run-1", "worker", 0);

@@ -7,7 +7,7 @@ args=(
 	--no-extensions
 	--no-skills
 	--no-context-files
-	--tools read,bash,find,ls,write,fixture_state,padding_tool
+	--tools read,bash,find,ls,write,subagent,TaskCreate,fixture_state,fixture_confirm,fixture_cancel,fixture_media,padding_tool
 	--extension "$PI_STUFF_TOOLS_GROUPING_PACKAGE"
 	--extension "$PI_STUFF_TOOLS_GROUPING_PROVIDER_EXTENSION"
 	--provider pi-stuff-tools-grouping-pty

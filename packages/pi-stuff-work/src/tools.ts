@@ -1,5 +1,11 @@
 import type { AgentToolResult, BashToolDetails, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { isLowImpactShellCommand, registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools";
+import {
+	activityKey,
+	classifyBashActivity,
+	registerSuiteOwnedTool,
+	type SuiteToolPresentation,
+	singleActivity,
+} from "@jczhang02/pi-stuff-tools";
 import { Type } from "typebox";
 import { startMonitor } from "./monitor.js";
 import { DEFAULT_MODEL_OUTPUT_LIMIT } from "./output.js";
@@ -114,13 +120,24 @@ function listText(runtime: BackgroundWorkRuntime): string {
 }
 
 const backgroundPresentation: SuiteToolPresentation<Record<string, unknown>, WorkToolDetails> = {
+	activity: {
+		categories: ["inspect-background", "read-background", "stop-background"],
+		classify: ({ args }) => {
+			const action = String(args["action"] ?? "list");
+			const taskId = typeof args["task_id"] === "string" ? args["task_id"] : action;
+			if (action === "output")
+				return singleActivity("read-background", { key: activityKey(taskId), target: taskId });
+			if (action === "stop") return singleActivity("stop-background", { key: activityKey(taskId), target: taskId });
+			return singleActivity("inspect-background", { count: 1, target: "background tasks" });
+		},
+		summarizeIssue: (_args, result, state) => result.details.error ?? (firstLine(resultText(result)) || state),
+	},
 	label: "Background",
 	resultIsError: (_args, result) => Boolean(result.details.error),
 	runningSummary: "checking",
 	summarize: (_args, result) =>
 		result.details.error ?? result.details.status ?? (firstLine(resultText(result)) || "done"),
 	target: (args) => (typeof args["task_id"] === "string" ? args["task_id"] : String(args["action"] ?? "")),
-	transcript: "errors-only",
 };
 
 export function registerWorkTools(
@@ -158,15 +175,27 @@ export function registerWorkTools(
 			},
 		};
 		registerSuiteOwnedTool(pi, bash, {
-			canCollapse: (_args, result) => isForegroundBashResult(result),
-			grouping: (args) =>
-				args.run_in_background !== true &&
-				runtimeRef.current()?.hasCommandPrefix() === false &&
-				isLowImpactShellCommand(args.command)
-					? "exploration"
-					: "standalone",
+			activity: {
+				categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
+				classify: (input) => {
+					if (input.result && !isForegroundBashResult(input.result)) {
+						const text = resultText(input.result);
+						const taskId = text.match(/background task ([a-z0-9]+)/u)?.[1];
+						return singleActivity("launch-background", {
+							key: activityKey(taskId ?? input.args.description ?? input.args.command),
+							target: firstLine(input.args.description) || "background command",
+						});
+					}
+					return classifyBashActivity(input);
+				},
+				summarizeIssue: (_args, result, state) => {
+					const line = resultText(result).trim().split(/\r?\n/u).at(-1)?.trim();
+					return line || state;
+				},
+			},
 			label: "Bash",
-			runningSummary: (_args, durationMs) => `running ${String(Math.max(0, Math.floor(durationMs / 1_000)))}s`,
+			runningSummary: (_args, durationMs) =>
+				`running ${String(Math.max(0, Math.floor((durationMs ?? 0) / 1_000)))}s`,
 			summarize: (_args, result, state) => {
 				const text = resultText(result);
 				const id = text.match(/background task ([a-z0-9]+)/u)?.[1];
@@ -175,7 +204,7 @@ export function registerWorkTools(
 				const terminal = text.trim().split(/\r?\n/u).at(-1)?.trim();
 				return terminal || state;
 			},
-			target: (args) => firstLine(args.command),
+			target: (args) => firstLine(args.description) || "command",
 			tracksElapsed: true,
 		});
 	}
@@ -257,6 +286,15 @@ export function registerWorkTools(
 		},
 	};
 	registerSuiteOwnedTool(pi, monitor, {
+		activity: {
+			categories: ["start-monitor"],
+			classify: ({ args, result }) =>
+				singleActivity("start-monitor", {
+					key: activityKey(result?.details.taskId ?? args.target),
+					target: firstLine(args.description) || `${args.source} monitor`,
+				}),
+			summarizeIssue: (_args, result, state) => result.details.error ?? (firstLine(resultText(result)) || state),
+		},
 		label: "Monitor",
 		resultIsError: (_args, result) => Boolean(result.details.error),
 		runningSummary: "starting",

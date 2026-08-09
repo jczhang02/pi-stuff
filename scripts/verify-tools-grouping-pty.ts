@@ -13,7 +13,10 @@ function fail(message: string): never {
 
 function command(
 	args: readonly string[],
-	options: { readonly env?: Record<string, string>; readonly cwd?: string } = {},
+	options: {
+		readonly env?: Record<string, string>;
+		readonly cwd?: string;
+	} = {},
 ) {
 	const result = Bun.spawnSync([...args], {
 		...(options.cwd ? { cwd: options.cwd } : {}),
@@ -33,6 +36,10 @@ function shellQuote(value: string): string {
 
 function capture(session: string): string {
 	return command(["tmux", "capture-pane", "-p", "-t", session]);
+}
+
+function captureHistory(session: string): string {
+	return command(["tmux", "capture-pane", "-p", "-S", "-", "-t", session]);
 }
 
 async function waitForText(session: string, expected: string, timeoutMs = 20_000): Promise<string> {
@@ -59,7 +66,7 @@ async function detachForegroundBash(session: string): Promise<void> {
 	for (let attempt = 0; attempt < 4; attempt += 1) {
 		command(["tmux", "send-keys", "-t", session, "-H", "02"]);
 		await Bun.sleep(250);
-		if (capture(session).includes("● Bash sleep 30 · background")) return;
+		if (capture(session).includes("Launched 2 background tasks")) return;
 	}
 	fail(`Ctrl+B did not detach foreground Bash\nCurrent frame:\n${capture(session)}`);
 }
@@ -73,25 +80,44 @@ async function sendTurn(session: string, text: string): Promise<void> {
 	command(["tmux", "send-keys", "-t", session, "Enter"]);
 }
 
+function normalized(frame: string): string {
+	return frame.replace(/\s+/gu, " ");
+}
+
 function requireGroup(frame: string): void {
-	if (!frame.includes("● Explore 4 operations · Read, Find +2 more")) {
-		fail(`settled exploration batch did not render one bounded summary\n${frame}`);
+	const summary = "Updated 1 task, ran 1 command, searched 1 pattern, read 1 file, listed 1 directory";
+	const compact = normalized(frame);
+	if (!compact.includes(summary)) {
+		fail(`settled cross-round-trip activity did not render one semantic summary\n${frame}`);
 	}
+	if (compact.split(summary).length - 1 !== 1) {
+		fail(`settled activity rendered more than one summary row\n${frame}`);
+	}
+	if (!compact.includes("ctrl+o to expand")) fail(`activity summary omitted its disclosure hint\n${frame}`);
 }
 
 function successGroup(frame: string): void {
 	requireGroup(frame);
+	for (const required of [
+		"THINKING_STEP_1",
+		"THINKING_STEP_2",
+		"THINKING_STEP_3",
+		"THINKING_STEP_4",
+		"THINKING_STEP_5",
+	]) {
+		if (!frame.includes(required)) fail(`visible Thinking was lost while grouping: ${required}\n${frame}`);
+	}
 	for (const forbidden of ["● Read input-工具.txt", "● Find *.txt", "● List .", "● Bash pwd"]) {
-		if (frame.includes(forbidden)) fail(`grouped frame retained individual row ${forbidden}\n${frame}`);
+		if (frame.includes(forbidden)) fail(`compact frame retained individual row ${forbidden}\n${frame}`);
 	}
 }
 
 function backgroundBarrier(frame: string): void {
-	if (!frame.includes("● Bash sleep 30 · background")) fail(`detached Bash result was not visible\n${frame}`);
-	if (!frame.includes("● Bash sleep 31 · background"))
-		fail(`explicit background Bash result was not visible\n${frame}`);
-	if ((frame.match(/● Read input-工具\.txt/g) ?? []).length < 3) {
-		fail(`calls adjacent to background Bash were collapsed\n${frame}`);
+	if (!normalized(frame).includes("Launched 2 background tasks, read 1 file")) {
+		fail(`background calls were not folded into one semantic Activity Group\n${frame}`);
+	}
+	for (const forbidden of ["sleep 30", "sleep 31", "● Read input-工具.txt"]) {
+		if (frame.includes(forbidden)) fail(`background Activity Group leaked raw member ${forbidden}\n${frame}`);
 	}
 }
 
@@ -118,7 +144,9 @@ export async function verifyToolsGroupingPty(options: {
 			{ mode: 0o600 },
 		),
 		writeFile(join(configDirectory, "keybindings.json"), '{"app.session.tree":["ctrl+y"]}\n', { mode: 0o600 }),
-		writeFile(join(temporaryDirectory, "input-工具.txt"), "alpha\nbeta\n", { mode: 0o600 }),
+		writeFile(join(temporaryDirectory, "input-工具.txt"), "alpha\nbeta\n", {
+			mode: 0o600,
+		}),
 	]);
 	const environment = {
 		PI_CODING_AGENT_DIR: configDirectory,
@@ -169,11 +197,35 @@ export async function verifyToolsGroupingPty(options: {
 		else successGroup(await waitForText(tmuxSession, "GROUP_SUCCESS_DONE"));
 
 		if (scenario === "lifecycle") {
+			command(["tmux", "send-keys", "-t", tmuxSession, "C-o"]);
+			await waitForText(tmuxSession, "Tool output: expanded");
+			const expanded = captureHistory(tmuxSession);
+			for (const required of ["input-工具.txt", "*.txt", "command:", "pwd", "Task create", "Result"]) {
+				if (!expanded.includes(required)) fail(`Ctrl+O did not restore ${required}\n${expanded}`);
+			}
+			command(["tmux", "send-keys", "-t", tmuxSession, "C-o"]);
+			await waitForText(tmuxSession, "Tool output: collapsed");
+			successGroup(capture(tmuxSession));
+
 			send(tmuxSession, "/tools");
-			const tools = await waitForText(tmuxSession, "current-session operations");
-			for (const required of ["Tools", "Bash", "Find", "List", "Read", "input-工具.txt", "Esc close"]) {
+			const tools = await waitForText(tmuxSession, "activity groups");
+			for (const required of ["Tools", "Updated 1 task", "5 tools", "Esc close"]) {
 				if (!tools.includes(required)) fail(`/tools lost grouped member ${required}\n${tools}`);
 			}
+			command(["tmux", "send-keys", "-t", tmuxSession, "Enter"]);
+			const details = await waitForText(tmuxSession, "Tool activity details");
+			for (const required of ["Read", "Find", "input-工具.txt"]) {
+				if (!details.includes(required)) fail(`/tools group details lost member ${required}\n${details}`);
+			}
+			command(["tmux", "send-keys", "-t", tmuxSession, "PageDown"]);
+			await Bun.sleep(100);
+			const laterDetails = capture(tmuxSession);
+			for (const required of ["Bash", "pwd", "Task create"]) {
+				if (!laterDetails.includes(required)) fail(`/tools paged details lost member ${required}\n${laterDetails}`);
+			}
+			if (laterDetails.includes("1. Read")) fail(`/tools paged details did not advance lazily\n${laterDetails}`);
+			command(["tmux", "send-keys", "-t", tmuxSession, "Escape"]);
+			await Bun.sleep(100);
 			command(["tmux", "send-keys", "-t", tmuxSession, "Escape"]);
 			await Bun.sleep(100);
 
@@ -183,22 +235,85 @@ export async function verifyToolsGroupingPty(options: {
 
 			await sendTurn(tmuxSession, "failure");
 			const failure = await waitForText(tmuxSession, "GROUP_FAILURE_DONE");
-			if (!failure.includes("● State error · FIXTURE_GROUP_ERROR")) fail(`error was hidden by grouping\n${failure}`);
-			if ((failure.match(/● Read input-工具\.txt/g) ?? []).length !== 2) {
-				fail(`calls adjacent to an error did not ungroup\n${failure}`);
+			if (!normalized(failure).includes("Ran 1 command, read 1 file · 1 failed")) {
+				fail(`failure count was hidden by grouping\n${failure}`);
 			}
+			if (!failure.includes("Command exited with code 17")) fail(`first failure summary was hidden\n${failure}`);
+			if (failure.includes("● Read input-工具.txt")) fail(`failure group leaked successful member rows\n${failure}`);
 
 			await sendTurn(tmuxSession, "mutation");
 			const mutation = await waitForText(tmuxSession, "GROUP_MUTATION_DONE");
-			for (const required of [
-				"● Read input-工具.txt",
-				"● Bash printf mutation > bash-mutation-工具.txt",
-				"GROUP_MUTATION_DONE",
-			]) {
-				if (!mutation.includes(required)) fail(`consequential batch hid ${required}\n${mutation}`);
+			if (!normalized(mutation).includes("Ran 1 command, read 1 file")) {
+				fail(`consequential tools were not summarized in the Activity Group\n${mutation}`);
 			}
+			if (mutation.includes("printf mutation >")) fail(`compact mode leaked a mutation command\n${mutation}`);
 			if ((await readFile(join(temporaryDirectory, "bash-mutation-工具.txt"), "utf8")) !== "mutation") {
 				fail("consequential Bash did not preserve its filesystem effect");
+			}
+
+			send(tmuxSession, "permission");
+			await waitForText(tmuxSession, "Fixture permission");
+			const permission = captureHistory(tmuxSession);
+			if (!normalized(permission).includes("Running 1 command")) {
+				fail(`permission UI hid the active Activity Group\n${permission}`);
+			}
+			if (!permission.includes("Waiting for permission")) {
+				fail(`permission Activity Group omitted its bounded wait hint\n${permission}`);
+			}
+			command(["tmux", "send-keys", "-t", tmuxSession, "Enter"]);
+			const permissionDone = await waitForText(tmuxSession, "GROUP_PERMISSION_DONE");
+			if (!normalized(permissionDone).includes("Ran 1 command")) {
+				fail(`permission Activity Group did not settle semantically\n${permissionDone}`);
+			}
+			if (permissionDone.includes("fixture_confirm")) {
+				fail(`permission Activity Group leaked raw Tool chrome\n${permissionDone}`);
+			}
+
+			send(tmuxSession, "rejection");
+			await waitForText(tmuxSession, "Fixture rejection");
+			command(["tmux", "send-keys", "-t", tmuxSession, "Escape"]);
+			const rejection = await waitForText(tmuxSession, "GROUP_REJECTION_DONE");
+			if (!normalized(rejection).includes("Ran 1 command · 1 rejected")) {
+				fail(`permission rejection was not disclosed by the folded Activity Group\n${rejection}`);
+			}
+			if (!rejection.includes("rejected")) fail(`permission rejection omitted its issue line\n${rejection}`);
+
+			await sendTurn(tmuxSession, "cancellation");
+			const cancellation = await waitForText(tmuxSession, "GROUP_CANCELLATION_DONE");
+			if (!normalized(cancellation).includes("Ran 1 command · 1 cancelled")) {
+				fail(`cancelled activity was not disclosed by the folded Activity Group\n${cancellation}`);
+			}
+			if (!cancellation.includes("cancelled")) fail(`cancelled activity omitted its issue line\n${cancellation}`);
+
+			await sendTurn(tmuxSession, "media");
+			const media = await waitForText(tmuxSession, "GROUP_MEDIA_DONE");
+			if (!normalized(media).includes("Viewed 1 image")) {
+				fail(`media Tool chrome did not fold into a semantic Activity Group\n${media}`);
+			}
+			if (!media.includes("[Image: [image/png] 1x1]")) {
+				fail(`media body disappeared with folded Tool chrome\n${media}`);
+			}
+			if (media.includes("fixture_media") || media.includes("Visible image")) {
+				fail(`media Activity Group leaked raw Tool chrome\n${media}`);
+			}
+
+			await sendTurn(tmuxSession, "agent");
+			const agent = await waitForText(tmuxSession, "GROUP_AGENT_DONE");
+			if (!normalized(agent).includes("Checked 1 agent")) {
+				fail(`Agent activity did not fold into a semantic Activity Group\n${agent}`);
+			}
+			if (agent.includes("Subagent") || agent.includes("action: status")) {
+				fail(`Agent Activity Group leaked raw Tool chrome\n${agent}`);
+			}
+
+			await sendTurn(tmuxSession, "completion");
+			const completionLaunch = await waitForText(tmuxSession, "GROUP_COMPLETION_DONE");
+			if (!normalized(completionLaunch).includes("Launched 1 background task")) {
+				fail(`background launch did not settle in its originating Activity Group\n${completionLaunch}`);
+			}
+			const completion = await waitForText(tmuxSession, 'Background command "completion fixture" completed');
+			if (!normalized(completion).includes("Launched 1 background task")) {
+				fail(`background completion reopened or replaced its historical Activity Group\n${completion}`);
 			}
 		} else if (scenario === "compaction") {
 			await Bun.sleep(250);
@@ -218,15 +333,19 @@ export async function verifyToolsGroupingPty(options: {
 			await waitForText(tmuxSession, "Session Tree");
 			command(["tmux", "send-keys", "-t", tmuxSession, "C-t", "Up", "Up", "Enter"]);
 			await waitForText(tmuxSession, "Navigated to selected point");
-			command(["tmux", "copy-mode", "-u", "-t", tmuxSession]);
+			command(["tmux", "resize-window", "-t", tmuxSession, "-x", String(options.columns), "-y", "60"]);
+			await Bun.sleep(100);
 			const treeHistory = capture(tmuxSession);
-			if (!treeHistory.includes("● Explore 4 operations · Read, Find +2 more")) {
-				fail(`session_tree replay lost the exploration group\n${treeHistory}`);
+			if (
+				!normalized(treeHistory).includes(
+					"Updated 1 task, ran 1 command, searched 1 pattern, read 1 file, listed 1 directory",
+				)
+			) {
+				fail(`session_tree replay lost the Tool Activity Group\n${treeHistory}`);
 			}
-			command(["tmux", "send-keys", "-X", "-t", tmuxSession, "cancel"]);
 		} else if (scenario === "resume") {
 			send(tmuxSession, "background");
-			await waitForText(tmuxSession, "● Bash sleep 30");
+			await waitForText(tmuxSession, "running 1 command");
 			await detachForegroundBash(tmuxSession);
 			backgroundBarrier(await waitForText(tmuxSession, "GROUP_BACKGROUND_DONE"));
 			command(["tmux", "kill-session", "-t", tmuxSession]);
@@ -245,7 +364,8 @@ export async function verifyToolsGroupingPty(options: {
 				temporaryDirectory,
 				launch({ PI_STUFF_TOOLS_GROUPING_RESUME: "1" }),
 			]);
-			const resumed = await waitForText(tmuxSession, "GROUP_BACKGROUND_DONE");
+			await waitForText(tmuxSession, "GROUP_BACKGROUND_DONE");
+			const resumed = captureHistory(tmuxSession);
 			requireGroup(resumed);
 			backgroundBarrier(resumed);
 		}
@@ -256,10 +376,15 @@ export async function verifyToolsGroupingPty(options: {
 		const toolResults = transcript
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as { readonly message?: { readonly role?: string } })
+			.map(
+				(line) =>
+					JSON.parse(line) as {
+						readonly message?: { readonly role?: string };
+					},
+			)
 			.filter((entry) => entry.message?.role === "toolResult");
 		const expectedResults =
-			scenario === "lifecycle" ? 10 : scenario === "compaction" ? 5 : scenario === "resume" ? 9 : 4;
+			scenario === "lifecycle" ? 17 : scenario === "compaction" ? 6 : scenario === "resume" ? 10 : 5;
 		if (toolResults.length !== expectedResults) {
 			fail(
 				`grouping changed model-visible results: expected ${String(expectedResults)}, found ${String(toolResults.length)}`,
@@ -274,14 +399,18 @@ export async function verifyToolsGroupingPty(options: {
 		for (const required of requiredTranscriptText) {
 			if (!transcript.includes(required)) fail(`persisted transcript lost ${required}`);
 		}
-		if (transcript.includes("Explore 4 operations")) {
-			fail("display-only grouping leaked into persisted session data");
+		for (const displayOnly of ["ctrl+o to expand", "Updated 1 task, ran 1 command"]) {
+			if (transcript.includes(displayOnly))
+				fail(`display-only grouping leaked into persisted session data: ${displayOnly}`);
 		}
 		if (scenario === "compaction" && !transcript.includes('"type":"compaction"')) {
 			fail("real session did not persist the exercised compaction boundary");
 		}
 	} finally {
-		Bun.spawnSync(["tmux", "kill-session", "-t", tmuxSession], { stdout: "ignore", stderr: "ignore" });
+		Bun.spawnSync(["tmux", "kill-session", "-t", tmuxSession], {
+			stdout: "ignore",
+			stderr: "ignore",
+		});
 		await rm(temporaryDirectory, { force: true, recursive: true });
 	}
 }
@@ -289,10 +418,39 @@ export async function verifyToolsGroupingPty(options: {
 if (import.meta.main) {
 	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 	const packagePath = join(root, "packages/pi-stuff");
-	await verifyToolsGroupingPty({ columns: 100, rows: 32, packagePath, piBinary: PI_BIN, scenario: "lifecycle" });
-	await verifyToolsGroupingPty({ columns: 100, rows: 32, packagePath, piBinary: PI_BIN, scenario: "compaction" });
-	await verifyToolsGroupingPty({ columns: 100, rows: 32, packagePath, piBinary: PI_BIN, scenario: "resume" });
-	await verifyToolsGroupingPty({ columns: 100, rows: 32, packagePath, piBinary: PI_BIN, scenario: "tree" });
-	await verifyToolsGroupingPty({ columns: 64, rows: 28, packagePath, piBinary: PI_BIN });
-	console.log("Certified semantic Tool grouping in 100x32 and 64x28 PTYs");
+	await verifyToolsGroupingPty({
+		columns: 100,
+		rows: 32,
+		packagePath,
+		piBinary: PI_BIN,
+		scenario: "lifecycle",
+	});
+	await verifyToolsGroupingPty({
+		columns: 100,
+		rows: 32,
+		packagePath,
+		piBinary: PI_BIN,
+		scenario: "compaction",
+	});
+	await verifyToolsGroupingPty({
+		columns: 100,
+		rows: 32,
+		packagePath,
+		piBinary: PI_BIN,
+		scenario: "resume",
+	});
+	await verifyToolsGroupingPty({
+		columns: 100,
+		rows: 32,
+		packagePath,
+		piBinary: PI_BIN,
+		scenario: "tree",
+	});
+	await verifyToolsGroupingPty({
+		columns: 64,
+		rows: 28,
+		packagePath,
+		piBinary: PI_BIN,
+	});
+	console.log("Certified complete Tool Activity Grouping in 100x32 and 64x28 PTYs");
 }

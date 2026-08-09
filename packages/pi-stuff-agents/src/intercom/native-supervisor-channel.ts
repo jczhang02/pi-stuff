@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
+import { activityKey, registerSuiteOwnedTool, singleActivity } from "@jczhang02/pi-stuff-tools";
 import { type TSchema, Type } from "typebox";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
@@ -570,12 +570,25 @@ function communicationTarget(args: Readonly<Record<string, unknown>>): string {
 	return [action, destination].filter(Boolean).join(" · ");
 }
 
+function communicationCategory(args: Readonly<Record<string, unknown>>) {
+	const action = typeof args.action === "string" ? args.action : "";
+	return action === "status" || action === "list" || action === "pending" ? "check-agent" : "message-agent";
+}
+
 function registerCommunicationTool<TParams extends TSchema>(
 	pi: ExtensionAPI,
 	tool: ToolDefinition<TParams, Record<string, unknown>>,
 	runningSummary: string,
 ): void {
 	registerSuiteOwnedTool(pi, tool, {
+		activity: {
+			categories: ["check-agent", "message-agent"],
+			classify: ({ args }) =>
+				singleActivity(communicationCategory(args), {
+					key: activityKey(args.action, args.to, args.replyTo),
+					target: communicationTarget(args),
+				}),
+		},
 		runningSummary,
 		summarize: (_args, result, state) => toolResultText(result) || (state === "success" ? "done" : "failed"),
 		target: communicationTarget,
@@ -911,7 +924,7 @@ function rememberedForegroundChild(request: SupervisorRequest, state: SubagentSt
 
 function markForegroundSupervisorAttention(request: SupervisorRequest, state: SubagentState): void {
 	const remembered = rememberedForegroundChild(request, state);
-	if (!remembered || remembered.child.status !== "detached") return;
+	if (remembered?.child.status !== "detached") return;
 	const updatedAt = Date.now();
 	remembered.run.updatedAt = updatedAt;
 	remembered.child.activityState = "needs_attention";
@@ -937,8 +950,7 @@ function clearForegroundSupervisorAttention(
 	)
 		return;
 	const remembered = rememberedForegroundChild(request, state);
-	if (!remembered || remembered.child.status !== "detached" || remembered.child.currentTool !== "contact_supervisor")
-		return;
+	if (remembered?.child.status !== "detached" || remembered.child.currentTool !== "contact_supervisor") return;
 	const updatedAt = Date.now();
 	remembered.run.updatedAt = updatedAt;
 	remembered.child.activityState = undefined;

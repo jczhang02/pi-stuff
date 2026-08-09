@@ -32,7 +32,7 @@ The group summary must represent consequential work, failures, cancellation, and
 
 ## Semantic taxonomy
 
-The Aggregate Package currently exposes 28 root Tool names, all registered through the shared presentation contract. Their registration paths, inputs, result contracts, count identities, and current gaps are mapped in [the Tool activity taxonomy](../research/pi-stuff-tool-activity-taxonomy-20260806.md). Compact summaries use a smaller semantic vocabulary rather than exposing those implementation names. Within a group, clauses appear in this fixed order:
+The Aggregate Package currently exposes 28 root Tool names plus the conditional `subagent_supervisor` and `intercom` parent-channel aliases, all registered through the shared presentation contract. Their registration paths, inputs, result contracts, count identities, and current gaps are mapped in [the Tool activity taxonomy](../research/pi-stuff-tool-activity-taxonomy-20260806.md). Compact summaries use a smaller semantic vocabulary rather than exposing those implementation names. Within a group, clauses appear in this fixed order:
 
 1. **Explicit outcomes:** completing a goal, reporting a goal blocker, conservative Git commit/push/merge/rebase/PR outcomes, and generated images.
 2. **Content and state changes:** changed files (the unique union of Write, Edit, and Apply Patch targets), updated Tasks, updated Memories, and saved Notes.

@@ -10,8 +10,8 @@ import {
 	getAgentDir,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { activityKey, classifyBashActivity, singleActivity } from "./activity.js";
 import { registerSuiteOwnedTool } from "./contract.js";
-import { isLowImpactShellCommand } from "./exploration.js";
 import { describeBuiltinTarget, formatElapsed, summarizeBuiltin } from "./render.js";
 
 export interface BuiltinHostSettings {
@@ -50,7 +50,10 @@ export function registerBuiltins(
 			autoResizeImages: hostSettings.autoResizeImages,
 		});
 		registerSuiteOwnedTool(pi, read, {
-			grouping: "exploration",
+			activity: {
+				categories: ["read-file"],
+				classify: ({ args }) => singleActivity("read-file", { key: resolve(cwd, args.path), target: args.path }),
+			},
 			label: "Read",
 			runningSummary: "reading",
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("read", args, result, state, durationMs),
@@ -61,6 +64,10 @@ export function registerBuiltins(
 	if (!selectedNames || selectedNames.has("write")) {
 		const write = createWriteToolDefinition(cwd);
 		registerSuiteOwnedTool(pi, write, {
+			activity: {
+				categories: ["change-file"],
+				classify: ({ args }) => singleActivity("change-file", { key: resolve(cwd, args.path), target: args.path }),
+			},
 			label: "Write",
 			runningSummary: "writing",
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("write", args, result, state, durationMs),
@@ -71,6 +78,10 @@ export function registerBuiltins(
 	if (!selectedNames || selectedNames.has("edit")) {
 		const edit = createEditToolDefinition(cwd);
 		registerSuiteOwnedTool(pi, edit, {
+			activity: {
+				categories: ["change-file"],
+				classify: ({ args }) => singleActivity("change-file", { key: resolve(cwd, args.path), target: args.path }),
+			},
 			label: "Edit",
 			runningSummary: "editing",
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("edit", args, result, state, durationMs),
@@ -84,12 +95,12 @@ export function registerBuiltins(
 			...(hostSettings.shellPath !== undefined ? { shellPath: hostSettings.shellPath } : {}),
 		});
 		registerSuiteOwnedTool(pi, bash, {
-			grouping: (args) =>
-				!hostSettings.shellCommandPrefix?.trim() && isLowImpactShellCommand(args.command)
-					? "exploration"
-					: "standalone",
+			activity: {
+				categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
+				classify: classifyBashActivity,
+			},
 			label: "Bash",
-			runningSummary: (_args, durationMs) => `running ${formatElapsed(durationMs)}`,
+			runningSummary: (_args, durationMs) => `running ${formatElapsed(durationMs ?? 0)}`,
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("bash", args, result, state, durationMs),
 			target: (args) => describeBuiltinTarget("bash", args),
 			tracksElapsed: true,
@@ -99,7 +110,14 @@ export function registerBuiltins(
 	if (!selectedNames || selectedNames.has("grep")) {
 		const grep = createGrepToolDefinition(cwd);
 		registerSuiteOwnedTool(pi, grep, {
-			grouping: "exploration",
+			activity: {
+				categories: ["search-pattern"],
+				classify: ({ args }) =>
+					singleActivity("search-pattern", {
+						key: activityKey(args.pattern, resolve(cwd, args.path ?? "."), args.glob ?? ""),
+						target: args.pattern,
+					}),
+			},
 			label: "Grep",
 			runningSummary: "searching",
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("grep", args, result, state, durationMs),
@@ -110,7 +128,14 @@ export function registerBuiltins(
 	if (!selectedNames || selectedNames.has("find")) {
 		const find = createFindToolDefinition(cwd);
 		registerSuiteOwnedTool(pi, find, {
-			grouping: "exploration",
+			activity: {
+				categories: ["search-pattern"],
+				classify: ({ args }) =>
+					singleActivity("search-pattern", {
+						key: activityKey(args.pattern, resolve(cwd, args.path ?? ".")),
+						target: args.pattern,
+					}),
+			},
 			label: "Find",
 			runningSummary: "searching",
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("find", args, result, state, durationMs),
@@ -121,7 +146,13 @@ export function registerBuiltins(
 	if (!selectedNames || selectedNames.has("ls")) {
 		const ls = createLsToolDefinition(cwd);
 		registerSuiteOwnedTool(pi, ls, {
-			grouping: "exploration",
+			activity: {
+				categories: ["list-directory"],
+				classify: ({ args }) => {
+					const path = args.path ?? ".";
+					return singleActivity("list-directory", { key: resolve(cwd, path), target: path });
+				},
+			},
 			label: "List",
 			runningSummary: "listing",
 			summarize: (args, result, state, durationMs) => summarizeBuiltin("ls", args, result, state, durationMs),
@@ -129,3 +160,5 @@ export function registerBuiltins(
 		});
 	}
 }
+
+import { resolve } from "node:path";

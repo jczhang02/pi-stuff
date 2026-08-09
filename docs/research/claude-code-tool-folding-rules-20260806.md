@@ -26,7 +26,7 @@ The last point is an important difference from Pi Stuff's current fail-open pres
 The tested binary was:
 
 ```text
-$HOME/.local/share/claude/versions/2.1.220
+~/.local/share/claude/versions/2.1.220
 2.1.220 (Claude Code)
 SHA-256 674f61f20ff306f3100cf9200e4c36c4b70278b5bef2884549819b942a89c863
 ```

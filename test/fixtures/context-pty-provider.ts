@@ -215,7 +215,15 @@ export default function contextPtyProvider(pi: ExtensionAPI): void {
 				details: undefined,
 			}),
 		},
-		{ label: "Context fixture", runningSummary: "preparing", summarize: () => "ready" },
+		{
+			activity: {
+				categories: ["read-file"],
+				classify: () => [{ category: "read-file", countKeys: ["context-fixture"] }],
+			},
+			label: "Context fixture",
+			runningSummary: "preparing",
+			summarize: () => "ready",
+		},
 	);
 
 	pi.registerProvider(PROVIDER, {

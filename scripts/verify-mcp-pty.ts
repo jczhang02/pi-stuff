@@ -342,7 +342,7 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 			"2 tools",
 			"DRAFT_AFTER_MCP",
 			"MCP_TOOL_CALL_DONE",
-			"MCP local:local_echo",
+			"Invoked 1 MCP tool",
 			"MCP_RESUME_PROBE_DONE",
 		]) {
 			if (!visible.includes(required)) {
@@ -353,8 +353,8 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 		const resumeBoundary = output.indexOf(RESUME_FIRST_FRAME_BOUNDARY);
 		if (resumeBoundary < 0) fail("did not capture the first resumed MCP frame boundary");
 		const firstResumeFrame = stripTerminalControls(output.slice(0, resumeBoundary));
-		if (!firstResumeFrame.includes("● MCP local:local_resume_echo · done")) {
-			fail("first resumed frame did not contain the compact MCP Tool row");
+		if (!firstResumeFrame.includes("Invoked 1 MCP tool  (ctrl+o to expand)")) {
+			fail("first resumed frame did not contain the settled MCP Activity Group");
 		}
 		if (firstResumeFrame.includes(RESUME_RAW_MARKER)) {
 			fail("first resumed frame exposed the raw historical MCP Tool result");

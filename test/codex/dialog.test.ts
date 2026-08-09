@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Theme } from "@earendil-works/pi-coding-agent";
+import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
 import { createCodexDialogView, formatCodexToolLines } from "../../packages/pi-stuff-codex/dialog.js";
@@ -8,6 +8,8 @@ const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
 } as unknown as Theme;
+
+initTheme("dark", false);
 
 test("packs complete Codex Tool labels at wide and narrow widths", () => {
 	expect(formatCodexToolLines(80)).toEqual(["apply_patch · view_image · imagegen · gpt-image-2"]);

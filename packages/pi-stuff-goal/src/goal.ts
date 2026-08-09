@@ -1,5 +1,5 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { activityKey, singleActivity } from "@jczhang02/pi-stuff-tools";
 import { registerSuiteOwnedTool, type SuiteToolPresentation } from "@jczhang02/pi-stuff-tools/contract";
 import { Type } from "typebox";
 import { currentTokenTotal } from "./accounting.js";
@@ -76,6 +76,15 @@ function goalToolText(result: {
 
 function goalCompletePresentation(): SuiteToolPresentation<Record<string, unknown>, GoalCompleteDetails> {
 	return {
+		activity: {
+			categories: ["complete-goal"],
+			classify: ({ args, state }) => {
+				if (state !== "running" && state !== "success") return [];
+				const goalId = typeof args["goal_id"] === "string" ? args["goal_id"] : "goal";
+				const summary = typeof args["summary"] === "string" ? args["summary"] : goalId;
+				return singleActivity("complete-goal", { key: activityKey(goalId), target: summary });
+			},
+		},
 		detailLines: (_params, result) => {
 			if (goalToolText(result).startsWith("Goal completion rejected:")) return [goalToolText(result)];
 			return [
@@ -90,11 +99,6 @@ function goalCompletePresentation(): SuiteToolPresentation<Record<string, unknow
 			];
 		},
 		label: "Goal complete",
-		resultBody: (_params, result, _options, theme) => {
-			if (goalToolText(result).startsWith("Goal completion rejected:")) return undefined;
-			const summary = safeGoalMenuText(result.details.summary, MAX_COMPLETION_EVIDENCE_TEXT_LENGTH);
-			return summary ? new Text(theme.fg("muted", summary), 2, 0) : undefined;
-		},
 		resultIsError: (_params, result) => goalToolText(result).startsWith("Goal completion rejected:"),
 		runningSummary: "checking",
 		summarize: (_params, result, state) =>
@@ -104,6 +108,15 @@ function goalCompletePresentation(): SuiteToolPresentation<Record<string, unknow
 
 function goalBlockedPresentation(): SuiteToolPresentation<Record<string, unknown>, GoalBlockedDetails> {
 	return {
+		activity: {
+			categories: ["block-goal"],
+			classify: ({ args, state }) => {
+				if (state !== "running" && state !== "success") return [];
+				const goalId = typeof args["goal_id"] === "string" ? args["goal_id"] : "goal";
+				const reason = typeof args["reason"] === "string" ? args["reason"] : goalId;
+				return singleActivity("block-goal", { key: activityKey(goalId), target: reason });
+			},
+		},
 		label: "Goal blocked",
 		resultIsError: (_params, result) => goalToolText(result).startsWith("goal_blocked rejected:"),
 		runningSummary: "checking",

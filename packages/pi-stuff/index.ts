@@ -10,7 +10,10 @@ import piStuffGoal from "@jczhang02/pi-stuff-goal";
 import piStuffMcp from "@jczhang02/pi-stuff-mcp";
 import piStuffRtk from "@jczhang02/pi-stuff-rtk";
 import piStuffTodo from "@jczhang02/pi-stuff-todo";
-import piStuffTools from "@jczhang02/pi-stuff-tools";
+import piStuffTools, {
+	assertSuiteToolActivityCoverage,
+	createSuiteToolRegistrationTracker,
+} from "@jczhang02/pi-stuff-tools";
 import piStuffUi from "@jczhang02/pi-stuff-ui";
 import piStuffWeb from "@jczhang02/pi-stuff-web";
 import piStuffWork from "@jczhang02/pi-stuff-work";
@@ -38,8 +41,48 @@ const CAPABILITIES: readonly CapabilityFactory[] = [
 	piStuffBtw,
 ];
 
+const AGGREGATE_TOOL_NAMES = [
+	"read",
+	"write",
+	"edit",
+	"grep",
+	"find",
+	"ls",
+	"bash",
+	"apply_patch",
+	"view_image",
+	"imagegen",
+	"goal_complete",
+	"goal_blocked",
+	"web_search",
+	"fetch_content",
+	"get_search_content",
+	"mcp",
+	"background",
+	"monitor",
+	"subagent",
+	"TaskCreate",
+	"TaskGet",
+	"TaskList",
+	"TaskUpdate",
+] as const;
+
+const DEFERRED_AGGREGATE_TOOL_NAMES = ["ctx_expand", "ctx_search", "ctx_memory", "ctx_note", "ctx_reduce"] as const;
+
+const OPTIONAL_AGGREGATE_TOOL_NAMES = ["subagent_supervisor", "intercom"] as const;
+
 export default async function piStuff(pi: ExtensionAPI): Promise<void> {
+	const registrations = createSuiteToolRegistrationTracker(pi);
 	for (const capability of CAPABILITIES) {
-		await capability(pi);
+		await capability(registrations.api);
 	}
+	pi.on("session_start", () =>
+		assertSuiteToolActivityCoverage(
+			pi,
+			AGGREGATE_TOOL_NAMES,
+			registrations.toolNames,
+			OPTIONAL_AGGREGATE_TOOL_NAMES,
+			DEFERRED_AGGREGATE_TOOL_NAMES,
+		),
+	);
 }

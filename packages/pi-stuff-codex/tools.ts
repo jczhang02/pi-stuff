@@ -1,9 +1,8 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
 import { readFile, stat } from "node:fs/promises";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import { Container, Image, Spacer, Text } from "@earendil-works/pi-tui";
-import { registerSuiteOwnedTool } from "@jczhang02/pi-stuff-tools";
+import { activityKey, registerSuiteOwnedTool, singleActivity } from "@jczhang02/pi-stuff-tools";
 import { Type } from "typebox";
 import { isOpenAICodexResponsesModel, resolveCodexAccount, supportsCodexImages } from "./account.js";
 import { parseNativeJson, runNativeTool } from "./native-runner.js";
@@ -25,9 +24,10 @@ const IMAGE_GENERATION_PARAMETERS = Type.Object({
 	images: Type.Optional(Type.Array(Type.String())),
 });
 
-const CODEX_TOOL_NAMES = ["apply_patch", "view_image", "imagegen"] as const;
 const MAX_INLINE_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_INLINE_IMAGES = 4;
+
+const CODEX_TOOL_NAMES = ["apply_patch", "view_image", "imagegen"] as const;
 
 interface ApplyPatchResult {
 	readonly changedFiles: string[];
@@ -278,32 +278,6 @@ function createImageGenerationTool() {
 	};
 }
 
-function imageResultBody(
-	result: { readonly content: readonly ({ readonly type: string; readonly text?: string } | ImageContent)[] },
-	theme: Theme,
-): Container | undefined {
-	const images = result.content.filter((item): item is ImageContent => item.type === "image" && "data" in item);
-	if (images.length === 0) return undefined;
-	const container = new Container();
-	const textItem = result.content.find(
-		(item): item is { readonly type: string; readonly text?: string } => item.type === "text",
-	);
-	const text = textItem?.text;
-	if (text) container.addChild(new Text(theme.fg("dim", text), 2, 0));
-	for (const image of images) {
-		if (text || images.indexOf(image) > 0) container.addChild(new Spacer(1));
-		container.addChild(
-			new Image(
-				image.data,
-				image.mimeType,
-				{ fallbackColor: (value) => theme.fg("dim", value) },
-				{ maxWidthCells: 60 },
-			),
-		);
-	}
-	return container;
-}
-
 export interface CodexToolController {
 	deactivate(): void;
 	sync(model: ExtensionContext["model"]): void;
@@ -314,6 +288,19 @@ export function registerCodexTools(pi: ExtensionAPI): CodexToolController {
 	const viewImage = createViewImageTool();
 	const imageGeneration = createImageGenerationTool();
 	registerSuiteOwnedTool(pi, applyPatch, {
+		activity: {
+			categories: ["change-file"],
+			classify: ({ args, result }) => {
+				const paths = result?.details.changedFiles ?? patchTargets(args.input);
+				return [
+					{
+						category: "change-file",
+						countKeys: paths.map((path) => activityKey(path)),
+						target: patchTarget(args.input),
+					},
+				];
+			},
+		},
 		detailLines: (_args, result) => result.details.changedFiles,
 		label: "Patch",
 		runningSummary: "applying",
@@ -321,20 +308,38 @@ export function registerCodexTools(pi: ExtensionAPI): CodexToolController {
 		target: (args) => patchTarget(args.input),
 	});
 	registerSuiteOwnedTool(pi, viewImage, {
+		activity: {
+			categories: ["view-image"],
+			classify: ({ args }) => singleActivity("view-image", { key: activityKey(args.path), target: args.path }),
+		},
 		detailLines: (_args, result) => [`${result.details.mimeType} · ${result.details.path}`],
 		label: "View",
-		resultBody: (_args, result, _options, theme) => imageResultBody(result, theme),
 		runningSummary: "loading",
 		summarize: () => "loaded",
 		target: (args) => args.path,
 	});
 	registerSuiteOwnedTool(pi, imageGeneration, {
+		activity: {
+			categories: ["generate-image"],
+			classify: ({ args, result }) => {
+				const paths = [
+					...(result?.details.images ?? []).map((image) => image.absolute_path ?? image.path ?? ""),
+					result?.details.path ?? "",
+				].filter(Boolean);
+				return [
+					{
+						category: "generate-image",
+						...(paths.length > 0 ? { countKeys: paths.map((path) => activityKey(path)) } : { count: 1 }),
+						target: oneLine(args.prompt),
+					},
+				];
+			},
+		},
 		detailLines: (_args, result) => [
 			`${result.details.model} · ${result.details.path}`,
 			...(result.details.latest_path ? [`latest · ${result.details.latest_path}`] : []),
 		],
 		label: "Image",
-		resultBody: (_args, result, _options, theme) => imageResultBody(result, theme),
 		runningSummary: "generating",
 		summarize: () => "generated",
 		target: (args) => oneLine(args.prompt),

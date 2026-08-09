@@ -68,7 +68,7 @@ test("built-in overrides receive Pi's merged image and shell settings exactly", 
 	}
 });
 
-test("shell prefixes keep otherwise read-only Bash calls standalone", () => {
+test("shell prefixes do not leak raw commands or break complete activity grouping", () => {
 	const tools = new Map<string, ToolDefinition>();
 	const pi = {
 		events: {},
@@ -88,6 +88,8 @@ test("shell prefixes keep otherwise read-only Bash calls standalone", () => {
 				{ type: "toolCall", id: "bash-prefix-2", name: "bash", arguments: { command: "pwd" } },
 			],
 		},
+		{ role: "toolResult", toolCallId: "bash-prefix-1", content: [{ type: "text", text: "/project" }] },
+		{ role: "toolResult", toolCallId: "bash-prefix-2", content: [{ type: "text", text: "/project" }] },
 	]);
 	const bash = tools.get("bash");
 	if (!bash?.renderCall || !bash.renderResult) throw new Error("Expected decorated Bash renderers");
@@ -113,7 +115,9 @@ test("shell prefixes keep otherwise read-only Bash calls standalone", () => {
 		);
 		return row?.render(80).join("\n") ?? "";
 	};
-	expect(settle("bash-prefix-1")).toContain("Bash");
-	expect(settle("bash-prefix-2")).toContain("Bash");
+	const first = settle("bash-prefix-1");
+	expect(first).toContain("Ran 2 commands");
+	expect(first).not.toContain("pwd");
+	expect(settle("bash-prefix-2")).toBe("");
 	runtime.clear();
 });

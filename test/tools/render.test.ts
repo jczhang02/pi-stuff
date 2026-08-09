@@ -46,8 +46,8 @@ describe("terminal-safe Tool rendering", () => {
 			["running", "muted"],
 			["success", "success"],
 			["error", "error"],
-			["rejected", "error"],
-			["cancelled", "error"],
+			["rejected", "warning"],
+			["cancelled", "warning"],
 		] as const;
 
 		for (const [state, expectedColor] of states) {
@@ -95,6 +95,49 @@ describe("terminal-safe Tool rendering", () => {
 		});
 		settled.setMarkerVisible(false);
 		expect(settled.render(80)).toEqual(["● Tool · done"]);
+	});
+
+	test("renders compact activity summaries without raw Tool chrome", () => {
+		const active = new CachedToolRow(theme, {
+			active: true,
+			expandable: true,
+			hint: "Running focused checks in packages/pi-stuff-tools",
+			issueState: undefined,
+			kind: "activity",
+			summary: "Changing 2 files, running 3 commands, reading 4 files",
+		});
+		expect(active.render(54)).toEqual([
+			"● Changing 2 files, running 3 commands, reading 4",
+			"  files…  (ctrl+o to expand)",
+			"  ⎿ Running focused checks in packages/pi-stuff-tools",
+		]);
+		active.setMarkerVisible(false);
+		expect(active.render(54)[0]).toStartWith("  Changing");
+
+		const settled = new CachedToolRow(theme, {
+			active: false,
+			expandable: true,
+			hint: "",
+			issueState: undefined,
+			kind: "activity",
+			summary: "Changed 2 files, ran 3 commands",
+		});
+		expect(settled.render(80)).toEqual(["  Changed 2 files, ran 3 commands  (ctrl+o to expand)"]);
+	});
+
+	test("bounds activity hints to two rows and keeps issue markers visible", () => {
+		const row = new CachedToolRow(theme, {
+			active: false,
+			expandable: true,
+			hint: "x".repeat(1_000),
+			issueState: "error",
+			kind: "activity",
+			summary: "Ran 8 commands · 1 failed",
+		});
+		const rendered = row.render(40);
+		expect(rendered[0]).toStartWith("● Ran 8 commands · 1 failed");
+		expect(rendered.filter((line) => line.includes("⎿") || line.startsWith("    x"))).toHaveLength(2);
+		expect(rendered.every((line) => visibleWidth(line) <= 40)).toBe(true);
 	});
 
 	test("removes ANSI, OSC, DCS, C0, and C1 protocols while preserving CJK", () => {
