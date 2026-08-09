@@ -197,6 +197,32 @@ describe("Agent artifact maintenance", () => {
 		expect(existsSync(terminal.metadataPath)).toBeFalse();
 	});
 
+	test("does not let a retained session directory starve terminal temp artifacts", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-temp-fairness-"));
+		temporaryDirectories.push(root);
+		const sessionsRoot = join(root, "sessions");
+		const artifacts = join(sessionsRoot, "a", "subagent-artifacts");
+		const tempArtifacts = join(root, "temp-artifacts");
+		mkdirSync(artifacts, { recursive: true });
+		mkdirSync(tempArtifacts);
+		const now = Date.now();
+		for (let index = 0; index < 12; index += 1) {
+			writeArtifactGroup(artifacts, `running${String(index).padStart(5, "0")}`, "running", now);
+		}
+		const terminal = writeArtifactGroup(tempArtifacts, "terminaltemp", "complete", now);
+
+		await maintainAgentArtifacts(7, {
+			sessionsRoot,
+			tempArtifactsDir: tempArtifacts,
+			now,
+			maxDirectories: 1,
+			maxEntries: 3,
+		});
+
+		expect(existsSync(terminal.inputPath)).toBeFalse();
+		expect(existsSync(terminal.metadataPath)).toBeFalse();
+	});
+
 	test("uses one code-unit ordering for mixed-case cleanup cursors", async () => {
 		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-case-cursor-"));
 		temporaryDirectories.push(root);
