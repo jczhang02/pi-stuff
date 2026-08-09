@@ -1,12 +1,15 @@
+import { dlopen, FFIType, read } from "bun:ffi";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { tryAcquireDurableClaim } from "./durable-claim.ts";
 import { type ArtifactDirPreference, type ArtifactPaths, TEMP_ARTIFACTS_DIR } from "./types.ts";
 import { getAgentDir } from "./utils.ts";
 
 const CLEANUP_MARKER_FILE = ".last-cleanup";
 const CLEANUP_CURSOR_FILE = ".cleanup-cursor";
 const CLEANUP_SNAPSHOT_FILE = ".cleanup-snapshot.jsonl";
+const CLEANUP_CONTROL_DIRECTORY = ".artifact-cleanup-control";
 const DISCOVERY_CURSOR_FILE = ".artifact-cleanup-frontier";
 const DISCOVERY_SNAPSHOT_DIRECTORY = ".artifact-cleanup-snapshots";
 const PROJECT_ARTIFACT_ROOT = ".pi-subagents";
@@ -18,6 +21,11 @@ const SCAN_YIELD_INTERVAL = 32;
 const MAX_DISCOVERY_CURSOR_BYTES = 1024 * 1024;
 const SNAPSHOT_BUFFER_BYTES = 64 * 1024;
 const MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
+const MAX_SNAPSHOT_RECORD_BYTES = 32 * 1024;
+const SNAPSHOT_PARTIAL_SUFFIX = ".partial";
+const SNAPSHOT_BUILD_STATE_SUFFIX = ".build.json";
+const SNAPSHOT_OVERFLOW_SUFFIX = ".overflow.json";
+const SNAPSHOT_ORPHAN_GRACE_MS = 60 * 60 * 1_000;
 const ARTIFACT_SUFFIXES = ["_input.md", "_output.md", "_transcript.jsonl", "_meta.json", ".jsonl"] as const;
 
 export interface ArtifactMaintenanceReport {
@@ -188,6 +196,7 @@ async function writeCleanupMarker(directory: string, now: number): Promise<void>
 
 interface ArtifactCleanupBudget {
 	entries: number;
+	records: number;
 	readonly maxEntries: number;
 }
 
@@ -204,30 +213,269 @@ function safeSnapshotName(value: unknown): value is string {
 	);
 }
 
-async function buildNameSnapshot(
+interface SnapshotBuildState {
+	readonly version: 1;
+	readonly cookie: string;
+	readonly size: number;
+}
+
+interface SnapshotAdvanceResult {
+	readonly complete: boolean;
+	readonly scanned: number;
+}
+
+function snapshotPartialPath(target: string): string {
+	return `${target}${SNAPSHOT_PARTIAL_SUFFIX}`;
+}
+
+function snapshotBuildStatePath(target: string): string {
+	return `${target}${SNAPSHOT_BUILD_STATE_SUFFIX}`;
+}
+
+function snapshotOverflowPath(target: string): string {
+	return `${target}${SNAPSHOT_OVERFLOW_SUFFIX}`;
+}
+
+async function unlinkOwnedRegularFile(filePath: string): Promise<void> {
+	try {
+		const stat = await fs.promises.lstat(filePath);
+		if (ownedRegularFile(stat)) await fs.promises.unlink(filePath);
+	} catch {
+		// Missing or invalid control files fail closed and are retried later.
+	}
+}
+
+async function removeNameSnapshotControl(target: string): Promise<void> {
+	for (const candidate of [
+		target,
+		snapshotPartialPath(target),
+		snapshotBuildStatePath(target),
+		snapshotOverflowPath(target),
+	]) {
+		await unlinkOwnedRegularFile(candidate);
+	}
+}
+
+async function readSnapshotBuildState(target: string): Promise<SnapshotBuildState | undefined> {
+	try {
+		const statePath = snapshotBuildStatePath(target);
+		const stat = await fs.promises.lstat(statePath);
+		if (!ownedRegularFile(stat) || stat.size > 4_096) return undefined;
+		const parsed = JSON.parse(await fs.promises.readFile(statePath, "utf8")) as Partial<SnapshotBuildState>;
+		if (
+			parsed.version !== 1 ||
+			typeof parsed.cookie !== "string" ||
+			!/^\d+$/u.test(parsed.cookie) ||
+			typeof parsed.size !== "number" ||
+			!Number.isSafeInteger(parsed.size) ||
+			parsed.size < 0 ||
+			parsed.size > MAX_SNAPSHOT_BYTES
+		)
+			return undefined;
+		return { version: 1, cookie: parsed.cookie, size: parsed.size };
+	} catch {
+		return undefined;
+	}
+}
+
+async function writeSnapshotBuildState(target: string, state: SnapshotBuildState): Promise<void> {
+	const statePath = snapshotBuildStatePath(target);
+	const temporary = `${statePath}.${randomUUID()}.tmp`;
+	try {
+		await fs.promises.writeFile(temporary, `${JSON.stringify(state)}\n`, {
+			encoding: "utf8",
+			flag: "wx",
+			mode: 0o600,
+		});
+		await fs.promises.rename(temporary, statePath);
+	} finally {
+		await fs.promises.unlink(temporary).catch(() => undefined);
+	}
+}
+
+async function snapshotOverflowIsDeferred(target: string, now: number): Promise<boolean> {
+	try {
+		const overflow = snapshotOverflowPath(target);
+		const stat = await fs.promises.lstat(overflow);
+		if (!ownedRegularFile(stat) || stat.size > 4_096) return true;
+		const parsed = JSON.parse(await fs.promises.readFile(overflow, "utf8")) as { retryAt?: unknown };
+		if (typeof parsed.retryAt === "number" && Number.isFinite(parsed.retryAt) && parsed.retryAt > now) return true;
+		await fs.promises.unlink(overflow);
+		return false;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code !== "ENOENT";
+	}
+}
+
+async function deferOversizedSnapshot(target: string, now: number): Promise<void> {
+	await unlinkOwnedRegularFile(snapshotPartialPath(target));
+	await unlinkOwnedRegularFile(snapshotBuildStatePath(target));
+	const overflow = snapshotOverflowPath(target);
+	const temporary = `${overflow}.${randomUUID()}.tmp`;
+	try {
+		await fs.promises.writeFile(
+			temporary,
+			`${JSON.stringify({ version: 1, retryAt: now + CLEANUP_INTERVAL_MS })}\n`,
+			{ encoding: "utf8", flag: "wx", mode: 0o600 },
+		);
+		await fs.promises.rename(temporary, overflow);
+	} finally {
+		await fs.promises.unlink(temporary).catch(() => undefined);
+	}
+}
+
+function loadLinuxDirectoryLibrary() {
+	return dlopen("libc.so.6", {
+		opendir: { args: [FFIType.cstring], returns: FFIType.ptr },
+		readdir: { args: [FFIType.ptr], returns: FFIType.ptr },
+		telldir: { args: [FFIType.ptr], returns: FFIType.i64 },
+		seekdir: { args: [FFIType.ptr, FFIType.i64], returns: FFIType.void },
+		closedir: { args: [FFIType.ptr], returns: FFIType.i32 },
+	});
+}
+
+let linuxDirectoryLibrary: ReturnType<typeof loadLinuxDirectoryLibrary> | undefined;
+
+async function advanceLinuxNameSnapshot(
 	directory: string,
 	target: string,
-	accept: (entry: fs.Dirent) => boolean,
-): Promise<void> {
+	accept: (name: string, type: number) => boolean,
+	limit: number,
+	now: number,
+): Promise<SnapshotAdvanceResult> {
+	if (await snapshotOverflowIsDeferred(target, now)) return { complete: false, scanned: 0 };
+	try {
+		const finalStat = await fs.promises.lstat(target);
+		if (!ownedRegularFile(finalStat) || finalStat.size > MAX_SNAPSHOT_BYTES) {
+			throw new Error("Invalid artifact maintenance snapshot.");
+		}
+		await unlinkOwnedRegularFile(snapshotPartialPath(target));
+		await unlinkOwnedRegularFile(snapshotBuildStatePath(target));
+		return { complete: true, scanned: 0 };
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+
+	const partial = snapshotPartialPath(target);
+	let state = await readSnapshotBuildState(target);
+	if (!state) {
+		await unlinkOwnedRegularFile(partial);
+		await unlinkOwnedRegularFile(snapshotBuildStatePath(target));
+		const handle = await fs.promises.open(partial, "wx", 0o600);
+		await handle.close();
+		state = { version: 1, cookie: "0", size: 0 };
+		await writeSnapshotBuildState(target, state);
+	}
+	const partialStat = await fs.promises.lstat(partial);
+	if (!ownedRegularFile(partialStat) || partialStat.size < state.size || partialStat.size > MAX_SNAPSHOT_BYTES) {
+		throw new Error("Invalid partial artifact maintenance snapshot.");
+	}
+	if (partialStat.size > state.size) await fs.promises.truncate(partial, state.size);
+	if (limit <= 0) return { complete: false, scanned: 0 };
+
+	linuxDirectoryLibrary ??= loadLinuxDirectoryLibrary();
+	const symbols = linuxDirectoryLibrary.symbols;
+	const directoryPointer = symbols.opendir(Buffer.from(`${directory}\0`));
+	if (!directoryPointer) throw new Error(`Unable to open artifact maintenance directory '${directory}'.`);
+	let scanned = 0;
+	let complete = false;
+	let cookie = BigInt(state.cookie);
+	let buffered = "";
+	try {
+		if (cookie > 0n) symbols.seekdir(directoryPointer, cookie);
+		while (scanned < limit) {
+			const entryPointer = symbols.readdir(directoryPointer);
+			if (!entryPointer) {
+				complete = true;
+				break;
+			}
+			const recordLength = read.u16(entryPointer, 16);
+			if (recordLength < 20 || recordLength > 4_096) {
+				throw new Error("Invalid Linux directory record while building an artifact snapshot.");
+			}
+			const nameBytes: number[] = [];
+			for (let offset = 19; offset < recordLength; offset += 1) {
+				const byte = read.u8(entryPointer, offset);
+				if (byte === 0) break;
+				nameBytes.push(byte);
+			}
+			const name = Buffer.from(nameBytes).toString("utf8");
+			cookie = symbols.telldir(directoryPointer);
+			if (name === "." || name === "..") continue;
+			scanned += 1;
+			if (scanned % SCAN_YIELD_INTERVAL === 0) await eventLoopTurn();
+			if (!safeSnapshotName(name)) continue;
+			const type = read.u8(entryPointer, 18);
+			if (accept(name, type)) {
+				buffered += `${JSON.stringify(name)}\n`;
+			}
+		}
+		// readdir has no separate EOF flag. A single non-accounted look-ahead lets
+		// an exact-limit directory finish now; a real next entry remains reachable
+		// from the persisted cookie when the directory is reopened.
+		if (!complete && scanned >= limit && !symbols.readdir(directoryPointer)) complete = true;
+	} finally {
+		symbols.closedir(directoryPointer);
+	}
+
+	const appended = Buffer.from(buffered, "utf8");
+	const nextSize = state.size + appended.length;
+	if (nextSize > MAX_SNAPSHOT_BYTES) {
+		await deferOversizedSnapshot(target, now);
+		return { complete: false, scanned };
+	}
+	const handle = await fs.promises.open(partial, "r+");
+	try {
+		if (appended.length > 0) await handle.write(appended, 0, appended.length, state.size);
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
+	if (complete) {
+		await fs.promises.rename(partial, target);
+		await unlinkOwnedRegularFile(snapshotBuildStatePath(target));
+	} else {
+		await writeSnapshotBuildState(target, { version: 1, cookie: String(cookie), size: nextSize });
+	}
+	return { complete, scanned };
+}
+
+async function buildPortableNameSnapshot(
+	directory: string,
+	target: string,
+	accept: (name: string, type: number) => boolean,
+	limit: number,
+	now: number,
+): Promise<SnapshotAdvanceResult> {
+	if (await snapshotOverflowIsDeferred(target, now)) return { complete: false, scanned: 0 };
+	if (limit <= 0) return { complete: false, scanned: 0 };
 	const temporary = `${target}.${randomUUID()}.tmp`;
 	let handle: fs.promises.FileHandle | undefined;
+	let entries: fs.Dir | undefined;
+	let scanned = 0;
 	try {
 		handle = await fs.promises.open(temporary, "wx", 0o600);
 		let buffered = "";
 		let bufferedBytes = 0;
 		let snapshotBytes = 0;
-		let scanned = 0;
 		const flush = async (): Promise<void> => {
 			if (!buffered) return;
 			await handle?.write(buffered);
 			buffered = "";
 			bufferedBytes = 0;
 		};
-		const entries = await fs.promises.opendir(directory);
-		for await (const entry of entries) {
+		entries = await fs.promises.opendir(directory);
+		let complete = false;
+		while (scanned < limit) {
+			const entry = await entries.read();
+			if (!entry) {
+				complete = true;
+				break;
+			}
 			scanned += 1;
 			if (scanned % SCAN_YIELD_INTERVAL === 0) await eventLoopTurn();
-			if (!accept(entry)) continue;
+			const type = entry.isDirectory() ? 4 : entry.isSymbolicLink() ? 10 : 0;
+			if (!accept(entry.name, type)) continue;
 			const line = `${JSON.stringify(entry.name)}\n`;
 			const lineBytes = Buffer.byteLength(line, "utf8");
 			snapshotBytes += lineBytes;
@@ -236,14 +484,52 @@ async function buildNameSnapshot(
 			bufferedBytes += lineBytes;
 			if (bufferedBytes >= SNAPSHOT_BUFFER_BYTES) await flush();
 		}
+		if (!complete && scanned >= limit && !(await entries.read())) complete = true;
+		if (!complete) {
+			// Node/Bun does not expose a durable directory cookie on every platform.
+			// Fail closed for an over-budget directory instead of hiding an unbounded
+			// readdir behind the maintenance API; the normal 50k limit handles the
+			// overwhelmingly common case in one pass.
+			await deferOversizedSnapshot(target, now);
+			return { complete: false, scanned };
+		}
 		await flush();
 		await handle.close();
 		handle = undefined;
 		await fs.promises.rename(temporary, target);
+		return { complete: true, scanned };
 	} finally {
+		await entries?.close().catch(() => undefined);
 		await handle?.close().catch(() => undefined);
 		await fs.promises.unlink(temporary).catch(() => undefined);
 	}
+}
+
+async function advanceNameSnapshot(
+	directory: string,
+	target: string,
+	accept: (name: string, type: number) => boolean,
+	limit: number,
+	now: number,
+): Promise<SnapshotAdvanceResult> {
+	if (process.platform === "linux" && (process.arch === "x64" || process.arch === "arm64")) {
+		try {
+			return await advanceLinuxNameSnapshot(directory, target, accept, limit, now);
+		} catch {
+			// Minimal Linux images can lack the expected libc soname. The portable
+			// path remains bounded and fail-closed rather than disabling the Agent.
+			await removeNameSnapshotControl(target);
+		}
+	}
+	try {
+		const stat = await fs.promises.lstat(target);
+		if (!ownedRegularFile(stat) || stat.size > MAX_SNAPSHOT_BYTES)
+			throw new Error("Invalid artifact maintenance snapshot.");
+		return { complete: true, scanned: 0 };
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+	return buildPortableNameSnapshot(directory, target, accept, limit, now);
 }
 
 interface NameSnapshotPage {
@@ -267,30 +553,45 @@ async function readNameSnapshotPage(filePath: string, offset: number, limit: num
 		let readPosition = Math.max(0, offset);
 		let nextOffset = readPosition;
 		let carry = Buffer.alloc(0);
+		let discardingOversizedRecord = false;
 		while (records < limit && readPosition < stat.size) {
 			const chunk = Buffer.allocUnsafe(Math.min(SNAPSHOT_BUFFER_BYTES, stat.size - readPosition));
 			const { bytesRead } = await handle.read(chunk, 0, chunk.length, readPosition);
 			if (bytesRead <= 0) break;
-			const combined = carry.length
-				? Buffer.concat([carry, chunk.subarray(0, bytesRead)])
-				: chunk.subarray(0, bytesRead);
-			const combinedStart = readPosition - carry.length;
+			const combined =
+				carry.length && !discardingOversizedRecord
+					? Buffer.concat([carry, chunk.subarray(0, bytesRead)])
+					: chunk.subarray(0, bytesRead);
+			const combinedStart = readPosition - (discardingOversizedRecord ? 0 : carry.length);
 			let lineStart = 0;
 			for (let index = 0; index < combined.length && records < limit; index += 1) {
 				if (combined[index] !== 0x0a) continue;
-				const raw = combined.subarray(lineStart, index).toString("utf8");
 				records += 1;
 				nextOffset = combinedStart + index + 1;
-				try {
-					const parsed = JSON.parse(raw);
-					if (safeSnapshotName(parsed)) names.push(parsed);
-				} catch {
-					// A malformed owned snapshot record is skipped without broadening deletion.
+				if (!discardingOversizedRecord && index - lineStart <= MAX_SNAPSHOT_RECORD_BYTES) {
+					const raw = combined.subarray(lineStart, index).toString("utf8");
+					try {
+						const parsed = JSON.parse(raw);
+						if (safeSnapshotName(parsed)) names.push(parsed);
+					} catch {
+						// A malformed owned snapshot record is skipped without broadening deletion.
+					}
 				}
+				discardingOversizedRecord = false;
 				lineStart = index + 1;
 			}
 			readPosition += bytesRead;
-			carry = records >= limit ? Buffer.alloc(0) : Buffer.from(combined.subarray(lineStart));
+			if (records >= limit) {
+				carry = Buffer.alloc(0);
+			} else {
+				const tail = combined.subarray(lineStart);
+				if (discardingOversizedRecord || tail.length > MAX_SNAPSHOT_RECORD_BYTES) {
+					carry = Buffer.alloc(0);
+					discardingOversizedRecord = true;
+				} else {
+					carry = Buffer.from(tail);
+				}
+			}
 		}
 		if (records < limit && readPosition >= stat.size) nextOffset = stat.size;
 		return { names, records, nextOffset, complete: nextOffset >= stat.size };
@@ -299,29 +600,77 @@ async function readNameSnapshotPage(filePath: string, offset: number, limit: num
 	}
 }
 
-async function readCleanupCursor(directory: string): Promise<number> {
+interface CleanupSnapshotIdentity {
+	readonly dev: number;
+	readonly ino: number;
+	readonly mtimeMs: number;
+	readonly size: number;
+}
+
+async function cleanupSnapshotIdentity(snapshot: string): Promise<CleanupSnapshotIdentity> {
+	const stat = await fs.promises.lstat(snapshot);
+	if (!ownedRegularFile(stat) || stat.size > MAX_SNAPSHOT_BYTES) {
+		throw new Error("Invalid artifact cleanup snapshot.");
+	}
+	return { dev: stat.dev, ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size };
+}
+
+function sameCleanupSnapshotIdentity(left: unknown, right: CleanupSnapshotIdentity): boolean {
+	if (!left || typeof left !== "object" || Array.isArray(left)) return false;
+	const value = left as Partial<CleanupSnapshotIdentity>;
+	return (
+		value.dev === right.dev && value.ino === right.ino && value.mtimeMs === right.mtimeMs && value.size === right.size
+	);
+}
+
+async function readCleanupCursor(directory: string, snapshot: string): Promise<number> {
 	try {
 		const cursorPath = path.join(directory, CLEANUP_CURSOR_FILE);
 		const stat = await fs.promises.lstat(cursorPath);
 		if (!ownedRegularFile(stat) || stat.size > 4_096) return 0;
-		const value = JSON.parse(await fs.promises.readFile(cursorPath, "utf8")) as { offset?: unknown };
-		return typeof value.offset === "number" && Number.isSafeInteger(value.offset) && value.offset >= 0
-			? value.offset
-			: 0;
+		const value = JSON.parse(await fs.promises.readFile(cursorPath, "utf8")) as {
+			version?: unknown;
+			offset?: unknown;
+			snapshot?: unknown;
+		};
+		const identity = await cleanupSnapshotIdentity(snapshot);
+		if (value.version !== 2 || !sameCleanupSnapshotIdentity(value.snapshot, identity)) return 0;
+		if (
+			typeof value.offset !== "number" ||
+			!Number.isSafeInteger(value.offset) ||
+			value.offset < 0 ||
+			value.offset > identity.size
+		)
+			return 0;
+		if (value.offset > 0) {
+			const handle = await fs.promises.open(snapshot, "r");
+			try {
+				const boundary = Buffer.allocUnsafe(1);
+				const { bytesRead } = await handle.read(boundary, 0, 1, value.offset - 1);
+				if (bytesRead !== 1 || boundary[0] !== 0x0a) return 0;
+			} finally {
+				await handle.close();
+			}
+		}
+		return value.offset;
 	} catch {
 		return 0;
 	}
 }
 
-async function writeCleanupCursor(directory: string, offset: number): Promise<void> {
+async function writeCleanupCursor(directory: string, snapshot: string, offset: number): Promise<void> {
 	const cursor = path.join(directory, CLEANUP_CURSOR_FILE);
 	const temporary = path.join(directory, `.${CLEANUP_CURSOR_FILE}.${randomUUID()}.tmp`);
 	try {
-		await fs.promises.writeFile(temporary, `${JSON.stringify({ version: 1, offset })}\n`, {
-			encoding: "utf8",
-			flag: "wx",
-			mode: 0o600,
-		});
+		await fs.promises.writeFile(
+			temporary,
+			`${JSON.stringify({ version: 2, offset, snapshot: await cleanupSnapshotIdentity(snapshot) })}\n`,
+			{
+				encoding: "utf8",
+				flag: "wx",
+				mode: 0o600,
+			},
+		);
 		await fs.promises.rename(temporary, cursor);
 	} finally {
 		try {
@@ -382,6 +731,44 @@ async function removeTerminalArtifactGroup(
 	return { filesRemoved, bytesReclaimed };
 }
 
+async function ensureArtifactCleanupControlDirectory(directory: string): Promise<string> {
+	const control = path.join(directory, CLEANUP_CONTROL_DIRECTORY);
+	try {
+		await fs.promises.mkdir(control, { mode: 0o700 });
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+	}
+	if (!(await ownedDirectory(control))) throw new Error("Invalid artifact cleanup control directory.");
+	await fs.promises.chmod(control, 0o700);
+	return control;
+}
+
+function legacyCleanupTemporaryName(name: string): boolean {
+	return (
+		name === CLEANUP_CURSOR_FILE ||
+		name === CLEANUP_SNAPSHOT_FILE ||
+		name === `${CLEANUP_SNAPSHOT_FILE}${SNAPSHOT_PARTIAL_SUFFIX}` ||
+		name === `${CLEANUP_SNAPSHOT_FILE}${SNAPSHOT_BUILD_STATE_SUFFIX}` ||
+		name === `${CLEANUP_SNAPSHOT_FILE}${SNAPSHOT_OVERFLOW_SUFFIX}` ||
+		/^\.cleanup-snapshot\.jsonl\.[0-9a-f-]{36}\.tmp$/u.test(name) ||
+		/^\.\.cleanup-cursor\.[0-9a-f-]{36}\.tmp$/u.test(name) ||
+		/^\.\.last-cleanup\.[0-9a-f-]{36}\.tmp$/u.test(name)
+	);
+}
+
+async function removeOldCleanupTemporary(directory: string, name: string, now: number): Promise<boolean> {
+	if (!legacyCleanupTemporaryName(name)) return false;
+	try {
+		const candidate = path.join(directory, name);
+		const stat = await fs.promises.lstat(candidate);
+		if (!ownedRegularFile(stat) || now - stat.mtimeMs < SNAPSHOT_ORPHAN_GRACE_MS) return false;
+		await fs.promises.unlink(candidate);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 async function cleanArtifactDirectory(
 	directory: string,
 	cutoff: number,
@@ -391,30 +778,44 @@ async function cleanArtifactDirectory(
 	if (!(await ownedDirectory(directory)) || (await cleanupMarkerIsFresh(directory, now))) {
 		return { filesRemoved: 0, bytesReclaimed: 0, complete: true };
 	}
+	let controlDirectory: string;
+	let claim: ReturnType<typeof tryAcquireDurableClaim>;
+	try {
+		controlDirectory = await ensureArtifactCleanupControlDirectory(directory);
+		claim = tryAcquireDurableClaim(controlDirectory, "maintenance");
+	} catch {
+		return { filesRemoved: 0, bytesReclaimed: 0, complete: false };
+	}
+	if (!claim) return { filesRemoved: 0, bytesReclaimed: 0, complete: false };
 	let filesRemoved = 0;
 	let bytesReclaimed = 0;
 	let complete = false;
-	const snapshot = path.join(directory, CLEANUP_SNAPSHOT_FILE);
+	const snapshot = path.join(controlDirectory, CLEANUP_SNAPSHOT_FILE);
 	try {
-		try {
-			const stat = await fs.promises.lstat(snapshot);
-			if (!ownedRegularFile(stat)) throw new Error("Invalid artifact cleanup snapshot.");
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-			await buildNameSnapshot(
-				directory,
-				snapshot,
-				(entry) =>
-					entry.name !== CLEANUP_MARKER_FILE &&
-					entry.name !== CLEANUP_CURSOR_FILE &&
-					entry.name !== CLEANUP_SNAPSHOT_FILE &&
-					artifactBaseName(entry.name) !== undefined,
-			);
+		const remaining = Math.max(0, budget.maxEntries - budget.entries);
+		const advanced = await advanceNameSnapshot(
+			directory,
+			snapshot,
+			(name, type) =>
+				type !== 10 &&
+				name !== CLEANUP_CONTROL_DIRECTORY &&
+				name !== CLEANUP_MARKER_FILE &&
+				((name.endsWith("_meta.json") && artifactBaseName(name) !== undefined) || legacyCleanupTemporaryName(name)),
+			remaining,
+			now,
+		);
+		budget.entries += advanced.scanned;
+		if (!advanced.complete) {
+			return { filesRemoved, bytesReclaimed, complete: false };
 		}
-		const cursor = await readCleanupCursor(directory);
-		const page = await readNameSnapshotPage(snapshot, cursor, Math.max(0, budget.maxEntries - budget.entries));
-		budget.entries += page.records;
+		const cursor = await readCleanupCursor(controlDirectory, snapshot);
+		const page = await readNameSnapshotPage(snapshot, cursor, Math.max(0, budget.maxEntries - budget.records));
+		budget.records += page.records;
 		for (const name of page.names) {
+			if (await removeOldCleanupTemporary(directory, name, now)) {
+				filesRemoved += 1;
+				continue;
+			}
 			const base = artifactBaseName(name);
 			if (base) {
 				const removed = await removeTerminalArtifactGroup(directory, base, cutoff);
@@ -423,20 +824,23 @@ async function cleanArtifactDirectory(
 			}
 		}
 		complete = page.complete;
-		if (!complete) await writeCleanupCursor(directory, page.nextOffset);
-	} catch {
-		await fs.promises.unlink(snapshot).catch(() => undefined);
-		await fs.promises.unlink(path.join(directory, CLEANUP_CURSOR_FILE)).catch(() => undefined);
-		return { filesRemoved, bytesReclaimed, complete: false };
-	}
-	if (complete) {
-		try {
-			await fs.promises.unlink(path.join(directory, CLEANUP_CURSOR_FILE)).catch(() => undefined);
-			await fs.promises.unlink(snapshot).catch(() => undefined);
-			await writeCleanupMarker(directory, now);
-		} catch {
-			// A failed throttle marker only makes a later pass repeat safe cleanup.
+		if (!complete) {
+			await writeCleanupCursor(controlDirectory, snapshot, page.nextOffset);
+		} else {
+			try {
+				await fs.promises.unlink(path.join(controlDirectory, CLEANUP_CURSOR_FILE)).catch(() => undefined);
+				await removeNameSnapshotControl(snapshot);
+				await writeCleanupMarker(directory, now);
+			} catch {
+				// A failed throttle marker only makes a later pass repeat safe cleanup.
+			}
 		}
+	} catch {
+		await removeNameSnapshotControl(snapshot);
+		await fs.promises.unlink(path.join(controlDirectory, CLEANUP_CURSOR_FILE)).catch(() => undefined);
+		return { filesRemoved, bytesReclaimed, complete: false };
+	} finally {
+		claim.release();
 	}
 	return { filesRemoved, bytesReclaimed, complete };
 }
@@ -445,11 +849,12 @@ interface DiscoveryFrame {
 	readonly directory: string;
 	readonly snapshot?: string;
 	readonly offset?: number;
+	readonly building?: true;
 	readonly artifact?: true;
 }
 
 interface DiscoveryFrontier {
-	readonly version: 2;
+	readonly version: 3;
 	readonly pending: DiscoveryFrame[];
 }
 
@@ -470,6 +875,7 @@ async function ensureDiscoverySnapshotDirectory(root: string): Promise<string> {
 		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
 	}
 	if (!(await ownedDirectory(directory))) throw new Error("Invalid artifact discovery snapshot directory.");
+	await fs.promises.chmod(directory, 0o700);
 	return directory;
 }
 
@@ -484,11 +890,46 @@ async function removeDiscoverySnapshot(snapshotDirectory: string, snapshot: stri
 	if (!snapshot) return;
 	const candidate = resolveDiscoverySnapshot(snapshotDirectory, snapshot);
 	if (!candidate) return;
-	try {
-		const stat = await fs.promises.lstat(candidate);
-		if (ownedRegularFile(stat)) await fs.promises.unlink(candidate);
-	} catch {
-		// A missing or invalid owned control file is safe to leave for a later pass.
+	await removeNameSnapshotControl(candidate);
+}
+
+function discoverySnapshotControlName(name: string): boolean {
+	return /^[0-9a-f-]{36}\.jsonl(?:\.(?:partial|build\.json|overflow\.json)(?:\.[0-9a-f-]{36}\.tmp)?|\.[0-9a-f-]{36}\.tmp)?$/u.test(
+		name,
+	);
+}
+
+async function sweepDiscoverySnapshots(
+	snapshotDirectory: string,
+	pending: readonly DiscoveryFrame[],
+	now: number,
+	maximum = 256,
+): Promise<void> {
+	const retained = new Set(
+		pending.flatMap((frame) => {
+			if (!frame.snapshot) return [];
+			return [
+				frame.snapshot,
+				`${frame.snapshot}${SNAPSHOT_PARTIAL_SUFFIX}`,
+				`${frame.snapshot}${SNAPSHOT_BUILD_STATE_SUFFIX}`,
+				`${frame.snapshot}${SNAPSHOT_OVERFLOW_SUFFIX}`,
+			];
+		}),
+	);
+	let scanned = 0;
+	const entries = await fs.promises.opendir(snapshotDirectory);
+	for await (const entry of entries) {
+		if (scanned >= maximum) break;
+		scanned += 1;
+		if (retained.has(entry.name) || !discoverySnapshotControlName(entry.name)) continue;
+		const candidate = path.join(snapshotDirectory, entry.name);
+		try {
+			const stat = await fs.promises.lstat(candidate);
+			if (!ownedRegularFile(stat) || now - stat.mtimeMs < SNAPSHOT_ORPHAN_GRACE_MS) continue;
+			await fs.promises.unlink(candidate);
+		} catch {
+			// A concurrent disappearance is already clean; unsafe entries fail closed.
+		}
 	}
 }
 
@@ -499,7 +940,7 @@ async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | u
 		if (!ownedRegularFile(stat) || stat.size > MAX_DISCOVERY_CURSOR_BYTES) return undefined;
 		const parsed = JSON.parse(await fs.promises.readFile(cursorPath, "utf8")) as Partial<DiscoveryFrontier>;
 		if (
-			parsed.version !== 2 ||
+			parsed.version !== 3 ||
 			!Array.isArray(parsed.pending) ||
 			parsed.pending.length > MAX_ARTIFACT_ENTRIES_PER_PASS
 		)
@@ -512,6 +953,7 @@ async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | u
 				snapshot?: unknown;
 				offset?: unknown;
 				artifact?: unknown;
+				building?: unknown;
 			};
 			if (!safeDiscoveryDirectory(candidate.directory)) return undefined;
 			if (candidate.snapshot !== undefined && !safeDiscoverySnapshot(candidate.snapshot)) return undefined;
@@ -521,13 +963,17 @@ async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | u
 			)
 				return undefined;
 			if (candidate.artifact !== undefined && candidate.artifact !== true) return undefined;
+			if (candidate.building !== undefined && candidate.building !== true) return undefined;
 			if (candidate.artifact && (candidate.snapshot !== undefined || candidate.offset !== undefined))
 				return undefined;
 			if (candidate.offset !== undefined && candidate.snapshot === undefined) return undefined;
+			if (candidate.building && candidate.snapshot === undefined) return undefined;
+			if (candidate.building && candidate.offset !== undefined) return undefined;
 			pending.push({
 				directory: candidate.directory,
 				...(typeof candidate.snapshot === "string" ? { snapshot: candidate.snapshot } : {}),
 				...(typeof candidate.offset === "number" ? { offset: candidate.offset } : {}),
+				...(candidate.building === true ? { building: true as const } : {}),
 				...(candidate.artifact === true ? { artifact: true as const } : {}),
 			});
 		}
@@ -541,7 +987,7 @@ async function writeDiscoveryFrontier(root: string, pending: readonly DiscoveryF
 	const cursor = path.join(root, DISCOVERY_CURSOR_FILE);
 	const temporary = path.join(root, `.${DISCOVERY_CURSOR_FILE}.${randomUUID()}.tmp`);
 	try {
-		const serialized = `${JSON.stringify({ version: 2, pending })}\n`;
+		const serialized = `${JSON.stringify({ version: 3, pending })}\n`;
 		if (Buffer.byteLength(serialized, "utf8") > MAX_DISCOVERY_CURSOR_BYTES) {
 			throw new Error("Artifact discovery frontier exceeded its persistence bound.");
 		}
@@ -570,92 +1016,120 @@ async function findSessionArtifactDirectories(
 	budget: ArtifactCleanupBudget,
 ): Promise<{ directories: string[]; complete: boolean }> {
 	if (!(await ownedDirectory(root))) return { directories: [], complete: true };
-	const pending = (await readDiscoveryFrontier(root)) ?? [{ directory: "." }];
-	const directories: string[] = [];
 	let snapshotDirectory: string;
 	try {
 		snapshotDirectory = await ensureDiscoverySnapshotDirectory(root);
 	} catch {
 		return { directories: [], complete: false };
 	}
-	while (pending.length > 0 && directories.length < maximum && budget.entries < budget.maxEntries) {
-		const frame = pending.pop();
-		if (!frame) break;
-		const directory = resolveDiscoveryFrame(root, frame);
-		if (!directory || !(await ownedDirectory(directory))) continue;
-		if (frame.artifact) {
-			if (!(await cleanupMarkerIsFresh(directory, now))) directories.push(directory);
-			continue;
-		}
-		let activeFrame = frame;
-		try {
-			if (!activeFrame.snapshot) {
-				const snapshot = `${randomUUID()}.jsonl`;
-				const target = resolveDiscoverySnapshot(snapshotDirectory, snapshot);
-				if (!target) throw new Error("Invalid artifact discovery snapshot path.");
-				await buildNameSnapshot(
-					directory,
-					target,
-					(entry) => entry.name !== DISCOVERY_SNAPSHOT_DIRECTORY && entry.isDirectory() && !entry.isSymbolicLink(),
-				);
-				activeFrame = { directory: frame.directory, snapshot, offset: 0 };
-			}
-		} catch {
-			pending.push({ directory: frame.directory });
-			break;
-		}
-		if (budget.entries >= budget.maxEntries) {
-			pending.push(activeFrame);
-			break;
-		}
-		const snapshot = activeFrame.snapshot;
-		const snapshotPath = snapshot ? resolveDiscoverySnapshot(snapshotDirectory, snapshot) : undefined;
-		if (!snapshot || !snapshotPath) {
-			pending.push({ directory: frame.directory });
-			break;
-		}
-		let page: NameSnapshotPage;
-		try {
-			page = await readNameSnapshotPage(
-				snapshotPath,
-				activeFrame.offset ?? 0,
-				Math.min(SCAN_YIELD_INTERVAL, Math.max(0, budget.maxEntries - budget.entries)),
-			);
-		} catch {
-			await removeDiscoverySnapshot(snapshotDirectory, snapshot);
-			pending.push({ directory: frame.directory });
-			break;
-		}
-		budget.entries += page.records;
-		const childFrames: DiscoveryFrame[] = [];
-		for (const name of page.names) {
-			const candidate = path.join(directory, name);
-			if (!(await ownedDirectory(candidate))) continue;
-			const relative = path.relative(root, candidate);
-			if (!safeDiscoveryDirectory(relative)) continue;
-			childFrames.push(
-				name === ARTIFACT_DIRECTORY_NAME ? { directory: relative, artifact: true } : { directory: relative },
-			);
-		}
-		if (!page.complete) pending.push({ directory: frame.directory, snapshot, offset: page.nextOffset });
-		else await removeDiscoverySnapshot(snapshotDirectory, snapshot);
-		// The frontier is a depth-first stack. Snapshot pages keep both memory and
-		// persisted state bounded by width × depth without rescanning a directory.
-		for (let index = childFrames.length - 1; index >= 0; index -= 1) {
-			const child = childFrames[index];
-			if (child) pending.push(child);
-		}
-	}
-	const complete = pending.length === 0;
+	const claim = tryAcquireDurableClaim(snapshotDirectory, "discovery-maintenance");
+	if (!claim) return { directories: [], complete: false };
+	const pending = (await readDiscoveryFrontier(root)) ?? [{ directory: "." }];
+	const directories: string[] = [];
+	const retryArtifacts: DiscoveryFrame[] = [];
 	try {
-		if (complete) {
-			await fs.promises.unlink(path.join(root, DISCOVERY_CURSOR_FILE)).catch(() => undefined);
-			await fs.promises.rmdir(snapshotDirectory).catch(() => undefined);
-		} else await writeDiscoveryFrontier(root, pending);
-	} catch {
-		// Losing a best-effort frontier repeats safe discovery but never broadens deletion.
+		await sweepDiscoverySnapshots(snapshotDirectory, pending, now);
+		while (
+			pending.length > 0 &&
+			directories.length < maximum &&
+			(budget.entries < budget.maxEntries || budget.records < budget.maxEntries)
+		) {
+			const frame = pending.pop();
+			if (!frame) break;
+			const directory = resolveDiscoveryFrame(root, frame);
+			if (!directory || !(await ownedDirectory(directory))) {
+				await removeDiscoverySnapshot(snapshotDirectory, frame.snapshot);
+				continue;
+			}
+			if (frame.artifact) {
+				if (!(await cleanupMarkerIsFresh(directory, now))) {
+					directories.push(directory);
+					retryArtifacts.push(frame);
+				}
+				continue;
+			}
+			let activeFrame = frame;
+			let snapshot = activeFrame.snapshot;
+			if (!snapshot) {
+				snapshot = `${randomUUID()}.jsonl`;
+				activeFrame = { directory: frame.directory, snapshot, building: true };
+			}
+			const snapshotPath = resolveDiscoverySnapshot(snapshotDirectory, snapshot);
+			if (!snapshotPath) {
+				pending.push({ directory: frame.directory });
+				break;
+			}
+			try {
+				if (activeFrame.building) {
+					if (budget.entries >= budget.maxEntries) {
+						pending.push(activeFrame);
+						break;
+					}
+					const advanced = await advanceNameSnapshot(
+						directory,
+						snapshotPath,
+						(name, type) => name !== DISCOVERY_SNAPSHOT_DIRECTORY && type !== 10 && (type === 0 || type === 4),
+						Math.max(0, budget.maxEntries - budget.entries),
+						now,
+					);
+					budget.entries += advanced.scanned;
+					if (!advanced.complete) {
+						pending.push(activeFrame);
+						break;
+					}
+					activeFrame = { directory: frame.directory, snapshot, offset: 0 };
+				}
+				if (budget.records >= budget.maxEntries) {
+					pending.push(activeFrame);
+					break;
+				}
+				const page = await readNameSnapshotPage(
+					snapshotPath,
+					activeFrame.offset ?? 0,
+					Math.min(SCAN_YIELD_INTERVAL, Math.max(0, budget.maxEntries - budget.records)),
+				);
+				budget.records += page.records;
+				const childFrames: DiscoveryFrame[] = [];
+				for (const name of page.names) {
+					const candidate = path.join(directory, name);
+					if (!(await ownedDirectory(candidate))) continue;
+					const relative = path.relative(root, candidate);
+					if (!safeDiscoveryDirectory(relative)) continue;
+					childFrames.push(
+						name === ARTIFACT_DIRECTORY_NAME ? { directory: relative, artifact: true } : { directory: relative },
+					);
+				}
+				if (!page.complete) pending.push({ directory: frame.directory, snapshot, offset: page.nextOffset });
+				else await removeDiscoverySnapshot(snapshotDirectory, snapshot);
+				// The frontier is a depth-first stack. Snapshot pages keep both memory and
+				// persisted state bounded by width × depth without rescanning a directory.
+				for (let index = childFrames.length - 1; index >= 0; index -= 1) {
+					const child = childFrames[index];
+					if (child) pending.push(child);
+				}
+			} catch {
+				await removeDiscoverySnapshot(snapshotDirectory, snapshot);
+				pending.push({ directory: frame.directory });
+				break;
+			}
+		}
+		const complete = pending.length === 0;
+		// A stale artifact directory remains at the top of the next frontier until
+		// its cleanup marker is written. Bounded cleanup therefore advances every
+		// turn instead of paying for a fresh session-tree discovery between chunks.
+		pending.push(...retryArtifacts);
+		try {
+			if (pending.length === 0)
+				await fs.promises.unlink(path.join(root, DISCOVERY_CURSOR_FILE)).catch(() => undefined);
+			else await writeDiscoveryFrontier(root, pending);
+		} catch {
+			// Losing a best-effort frontier repeats safe discovery but never broadens deletion.
+		}
+		await sweepDiscoverySnapshots(snapshotDirectory, pending, now);
+		return { directories, complete };
+	} finally {
+		claim.release();
 	}
-	return { directories, complete };
 }
 
 /**
@@ -676,6 +1150,7 @@ export async function maintainAgentArtifacts(
 	);
 	const discoveryBudget: ArtifactCleanupBudget = {
 		entries: 0,
+		records: 0,
 		maxEntries,
 	};
 	const sessionsRoot = options.sessionsRoot ?? path.join(getAgentDir(), "sessions");
@@ -693,9 +1168,12 @@ export async function maintainAgentArtifacts(
 		directoriesInspected += 1;
 		const directoriesRemaining = discovered.directories.length - index;
 		const quota = Math.max(1, Math.floor(sessionEntriesRemaining / directoriesRemaining));
-		const localBudget: ArtifactCleanupBudget = { entries: 0, maxEntries: quota };
+		const localBudget: ArtifactCleanupBudget = { entries: 0, records: 0, maxEntries: quota };
 		const cleaned = await cleanArtifactDirectory(directory, cutoff, now, localBudget);
-		sessionEntriesRemaining = Math.max(0, sessionEntriesRemaining - localBudget.entries);
+		sessionEntriesRemaining = Math.max(
+			0,
+			sessionEntriesRemaining - Math.max(localBudget.entries, localBudget.records),
+		);
 		filesRemoved += cleaned.filesRemoved;
 		bytesReclaimed += cleaned.bytesReclaimed;
 		if (!cleaned.complete) scanComplete = false;
@@ -704,7 +1182,7 @@ export async function maintainAgentArtifacts(
 	// session directory therefore cannot starve terminal temp artifacts forever.
 	if (await ownedDirectory(tempArtifactsDir)) {
 		directoriesInspected += 1;
-		const tempBudget: ArtifactCleanupBudget = { entries: 0, maxEntries };
+		const tempBudget: ArtifactCleanupBudget = { entries: 0, records: 0, maxEntries };
 		const cleaned = await cleanArtifactDirectory(tempArtifactsDir, cutoff, now, tempBudget);
 		filesRemoved += cleaned.filesRemoved;
 		bytesReclaimed += cleaned.bytesReclaimed;
