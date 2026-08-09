@@ -1832,6 +1832,25 @@ async function runResolvedTask(input: {
 		);
 		if (error) console.error(error);
 	}
+	if (transcript.artifactPaths && config.artifactConfig?.includeMetadata !== false) {
+		const error = writeOptionalArtifact(
+			transcript.artifactPaths.metadataPath,
+			JSON.stringify(
+				{
+					state: "running",
+					runId: config.id,
+					index,
+					agent: task.agent,
+					cwd: input.taskCwd,
+					startedAt,
+					transcriptPath: transcript.path,
+				},
+				null,
+				2,
+			),
+		);
+		if (error) console.error(error);
+	}
 	statusStep.transcriptPath = transcript.path;
 	const childSessionDir = task.sessionFile
 		? undefined
@@ -2013,6 +2032,8 @@ async function runResolvedTask(input: {
 			transcript.artifactPaths.metadataPath,
 			JSON.stringify(
 				{
+					state:
+						result.interrupted || result.timedOut || result.stopped ? "stopped" : success ? "complete" : "failed",
 					runId: config.id,
 					index,
 					agent: task.agent,

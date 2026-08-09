@@ -5,12 +5,14 @@ import { type ArtifactDirPreference, type ArtifactPaths, TEMP_ARTIFACTS_DIR } fr
 import { getAgentDir } from "./utils.ts";
 
 const CLEANUP_MARKER_FILE = ".last-cleanup";
+const CLEANUP_CURSOR_FILE = ".cleanup-cursor";
 const PROJECT_ARTIFACT_ROOT = ".pi-subagents";
 const ARTIFACT_DIRECTORY_NAME = "subagent-artifacts";
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 const MAX_ARTIFACT_DIRECTORIES_PER_PASS = 5_000;
 const MAX_ARTIFACT_ENTRIES_PER_PASS = 50_000;
 const SCAN_YIELD_INTERVAL = 32;
+const ARTIFACT_SUFFIXES = ["_input.md", "_output.md", "_transcript.jsonl", "_meta.json", ".jsonl"] as const;
 
 export interface ArtifactMaintenanceReport {
 	readonly directoriesInspected: number;
@@ -105,6 +107,58 @@ export function appendJsonl(filePath: string, line: string): void {
 	fs.appendFileSync(filePath, `${line}\n`);
 }
 
+function artifactBaseName(fileName: string): string | undefined {
+	for (const suffix of ARTIFACT_SUFFIXES) {
+		if (fileName.endsWith(suffix) && fileName.length > suffix.length) return fileName.slice(0, -suffix.length);
+	}
+	return undefined;
+}
+
+function artifactGroupNames(base: string): string[] {
+	return ARTIFACT_SUFFIXES.map((suffix) => `${base}${suffix}`);
+}
+
+function orderedArtifactGroupNames(base: string): string[] {
+	return artifactGroupNames(base).sort((left, right) => {
+		const terminalProofOrder = Number(left.endsWith("_meta.json")) - Number(right.endsWith("_meta.json"));
+		return terminalProofOrder || left.localeCompare(right);
+	});
+}
+
+function isTerminalArtifactMetadata(value: unknown): boolean {
+	if (!value || typeof value !== "object") return false;
+	const metadata = value as { state?: unknown; exitCode?: unknown };
+	if (metadata.state === "running" || metadata.state === "queued") return false;
+	if (["complete", "failed", "stopped"].includes(String(metadata.state))) return true;
+	// Metadata written before lifecycle state was added is terminal because this
+	// file was emitted only after the child process had settled.
+	return typeof metadata.exitCode === "number" && Number.isFinite(metadata.exitCode);
+}
+
+function ownedRegularFile(stat: fs.Stats): boolean {
+	const currentUid = process.getuid?.();
+	return stat.isFile() && !stat.isSymbolicLink() && (currentUid === undefined || stat.uid === currentUid);
+}
+
+function terminalArtifactGroupSync(directory: string, base: string, cutoff: number): boolean {
+	try {
+		const metadataPath = path.join(directory, `${base}_meta.json`);
+		const metadataStat = fs.lstatSync(metadataPath);
+		if (!ownedRegularFile(metadataStat) || metadataStat.mtimeMs >= cutoff || metadataStat.size > 64 * 1024)
+			return false;
+		if (!isTerminalArtifactMetadata(JSON.parse(fs.readFileSync(metadataPath, "utf8")))) return false;
+		for (const name of artifactGroupNames(base)) {
+			const candidate = path.join(directory, name);
+			if (!fs.existsSync(candidate)) continue;
+			const stat = fs.lstatSync(candidate);
+			if (!ownedRegularFile(stat) || stat.mtimeMs >= cutoff) return false;
+		}
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function cleanupOldArtifacts(dir: string, maxAgeDays: number): void {
 	if (!fs.existsSync(dir)) return;
 
@@ -119,24 +173,29 @@ export function cleanupOldArtifacts(dir: string, maxAgeDays: number): void {
 	const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
 	const cutoff = now - maxAgeMs;
 
+	const removedGroups = new Set<string>();
 	for (const file of fs.readdirSync(dir)) {
-		if (file === CLEANUP_MARKER_FILE) continue;
-		const filePath = path.join(dir, file);
-		try {
-			const stat = fs.lstatSync(filePath);
-			const currentUid = process.getuid?.();
-			if (
-				stat.isFile() &&
-				!stat.isSymbolicLink() &&
-				(currentUid === undefined || stat.uid === currentUid) &&
-				stat.mtimeMs < cutoff
-			) {
-				fs.unlinkSync(filePath);
+		const base = artifactBaseName(file);
+		if (!base || removedGroups.has(base) || !terminalArtifactGroupSync(dir, base, cutoff)) continue;
+		const names = orderedArtifactGroupNames(base);
+		let safelyRemoved = true;
+		for (const name of names) {
+			try {
+				const candidate = path.join(dir, name);
+				const stat = fs.lstatSync(candidate);
+				if (!ownedRegularFile(stat) || stat.mtimeMs >= cutoff) {
+					safelyRemoved = false;
+					break;
+				}
+				fs.unlinkSync(candidate);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+					safelyRemoved = false;
+					break;
+				}
 			}
-		} catch {
-			// Artifact cleanup is best-effort housekeeping. Skip files that disappear
-			// or become unreadable while scanning so one bad entry does not block the rest.
 		}
+		if (safelyRemoved) removedGroups.add(base);
 	}
 
 	fs.writeFileSync(markerPath, String(now));
@@ -187,6 +246,87 @@ interface ArtifactCleanupBudget {
 	readonly maxEntries: number;
 }
 
+async function readCleanupCursor(directory: string): Promise<string | undefined> {
+	try {
+		const cursorPath = path.join(directory, CLEANUP_CURSOR_FILE);
+		const stat = await fs.promises.lstat(cursorPath);
+		if (!ownedRegularFile(stat) || stat.size > 4_096) return undefined;
+		const value = JSON.parse(await fs.promises.readFile(cursorPath, "utf8"));
+		return typeof value === "string" && value ? value : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function writeCleanupCursor(directory: string, value: string): Promise<void> {
+	const cursor = path.join(directory, CLEANUP_CURSOR_FILE);
+	const temporary = path.join(directory, `.${CLEANUP_CURSOR_FILE}.${randomUUID()}.tmp`);
+	try {
+		await fs.promises.writeFile(temporary, `${JSON.stringify(value)}\n`, {
+			encoding: "utf8",
+			flag: "wx",
+			mode: 0o600,
+		});
+		await fs.promises.rename(temporary, cursor);
+	} finally {
+		try {
+			await fs.promises.unlink(temporary);
+		} catch {
+			// Atomic rename already consumed the temporary, or best-effort cleanup failed.
+		}
+	}
+}
+
+async function terminalArtifactGroup(directory: string, base: string, cutoff: number): Promise<boolean> {
+	try {
+		const metadataPath = path.join(directory, `${base}_meta.json`);
+		const metadataStat = await fs.promises.lstat(metadataPath);
+		if (!ownedRegularFile(metadataStat) || metadataStat.mtimeMs >= cutoff || metadataStat.size > 64 * 1024)
+			return false;
+		const metadata = JSON.parse(await fs.promises.readFile(metadataPath, "utf8"));
+		if (!isTerminalArtifactMetadata(metadata)) return false;
+		for (const name of artifactGroupNames(base)) {
+			try {
+				const stat = await fs.promises.lstat(path.join(directory, name));
+				if (!ownedRegularFile(stat) || stat.mtimeMs >= cutoff) return false;
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+			}
+		}
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function removeTerminalArtifactGroup(
+	directory: string,
+	base: string,
+	cutoff: number,
+): Promise<{ filesRemoved: number; bytesReclaimed: number }> {
+	if (!(await terminalArtifactGroup(directory, base, cutoff))) return { filesRemoved: 0, bytesReclaimed: 0 };
+	let filesRemoved = 0;
+	let bytesReclaimed = 0;
+	// Metadata is the terminal proof, so remove it last. Every unlink is preceded
+	// by a fresh ownership/age check to fail safe if a resumed writer touched it.
+	const names = orderedArtifactGroupNames(base);
+	for (const name of names) {
+		const candidate = path.join(directory, name);
+		try {
+			const stat = await fs.promises.lstat(candidate);
+			if (!ownedRegularFile(stat) || stat.mtimeMs >= cutoff) return { filesRemoved, bytesReclaimed };
+			await fs.promises.unlink(candidate);
+			filesRemoved += 1;
+			bytesReclaimed += stat.size;
+		} catch (error) {
+			// Missing siblings are valid for disabled artifact kinds; other failures
+			// leave the remaining group intact for a later safe pass.
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") return { filesRemoved, bytesReclaimed };
+		}
+	}
+	return { filesRemoved, bytesReclaimed };
+}
+
 async function cleanArtifactDirectory(
 	directory: string,
 	cutoff: number,
@@ -199,31 +339,28 @@ async function cleanArtifactDirectory(
 	let filesRemoved = 0;
 	let bytesReclaimed = 0;
 	let complete = true;
+	let lastProcessed: string | undefined;
 	try {
-		const entries = await fs.promises.opendir(directory);
-		for await (const entry of entries) {
-			if (entry.name === CLEANUP_MARKER_FILE) continue;
+		const entries = (await fs.promises.readdir(directory, { withFileTypes: true })).sort((left, right) =>
+			left.name.localeCompare(right.name),
+		);
+		const cursor = await readCleanupCursor(directory);
+		let start = cursor ? entries.findIndex((entry) => entry.name > cursor) : 0;
+		if (start < 0) start = entries.length;
+		for (let index = start; index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (!entry || entry.name === CLEANUP_MARKER_FILE || entry.name === CLEANUP_CURSOR_FILE) continue;
 			if (budget.entries >= budget.maxEntries) {
 				complete = false;
 				break;
 			}
 			budget.entries += 1;
-			const candidate = path.join(directory, entry.name);
-			try {
-				const stat = await fs.promises.lstat(candidate);
-				const currentUid = process.getuid?.();
-				if (
-					stat.isFile() &&
-					!stat.isSymbolicLink() &&
-					(currentUid === undefined || stat.uid === currentUid) &&
-					stat.mtimeMs < cutoff
-				) {
-					await fs.promises.unlink(candidate);
-					filesRemoved += 1;
-					bytesReclaimed += stat.size;
-				}
-			} catch {
-				// Files can disappear while a detached runner finishes; continue safely.
+			lastProcessed = entry.name;
+			const base = artifactBaseName(entry.name);
+			if (base) {
+				const removed = await removeTerminalArtifactGroup(directory, base, cutoff);
+				filesRemoved += removed.filesRemoved;
+				bytesReclaimed += removed.bytesReclaimed;
 			}
 			if (budget.entries % SCAN_YIELD_INTERVAL === 0) await eventLoopTurn();
 		}
@@ -232,10 +369,13 @@ async function cleanArtifactDirectory(
 	}
 	if (complete) {
 		try {
+			await fs.promises.unlink(path.join(directory, CLEANUP_CURSOR_FILE)).catch(() => undefined);
 			await writeCleanupMarker(directory, now);
 		} catch {
 			// A failed throttle marker only makes a later pass repeat safe cleanup.
 		}
+	} else {
+		if (lastProcessed) await writeCleanupCursor(directory, lastProcessed).catch(() => undefined);
 	}
 	return { filesRemoved, bytesReclaimed, complete };
 }
@@ -310,7 +450,10 @@ export async function maintainAgentArtifacts(
 	const sessionsRoot = options.sessionsRoot ?? path.join(getAgentDir(), "sessions");
 	const discovered = await findSessionArtifactDirectories(sessionsRoot, maxDirectories, now, discoveryBudget);
 	const tempArtifactsDir = options.tempArtifactsDir ?? TEMP_ARTIFACTS_DIR;
-	const directories = [tempArtifactsDir, ...discovered.directories];
+	// Session directories come first so a large shared temp directory cannot
+	// consume the entire bounded cleanup budget on every interaction. The cursor
+	// in each incomplete directory guarantees eventual progress within a batch.
+	const directories = [...discovered.directories, tempArtifactsDir];
 	let directoriesInspected = 0;
 	let filesRemoved = 0;
 	let bytesReclaimed = 0;

@@ -3387,6 +3387,10 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 		expect(child?.transcriptError).toContain("Failed to write child transcript");
 		expect(child?.artifactPaths && fs.existsSync(child.artifactPaths.outputPath)).toBe(true);
 		expect(child?.artifactPaths && fs.existsSync(child.artifactPaths.metadataPath)).toBe(true);
+		const metadata = JSON.parse(fs.readFileSync(child?.artifactPaths?.metadataPath ?? "", "utf8")) as {
+			state?: string;
+		};
+		expect(metadata.state).toBe("complete");
 	}, 5_000);
 
 	test("bounds aggregate newline-delimited child protocol output and reaps the writer", async () => {

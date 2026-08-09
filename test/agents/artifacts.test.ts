@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	getArtifactPaths,
 	getArtifactsDir,
 	getProjectArtifactsDir,
 	maintainAgentArtifacts,
@@ -10,6 +11,24 @@ import {
 import { DEFAULT_ARTIFACT_CONFIG, TEMP_ARTIFACTS_DIR } from "../../packages/pi-stuff-agents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
+
+function writeArtifactGroup(
+	directory: string,
+	runId: string,
+	state: "complete" | "failed" | "running",
+	now: number,
+): { inputPath: string; metadataPath: string } {
+	const paths = getArtifactPaths(directory, runId, "general-purpose");
+	writeFileSync(paths.inputPath, runId);
+	writeFileSync(
+		paths.metadataPath,
+		JSON.stringify({ state, runId, agent: "general-purpose", ...(state === "running" ? {} : { exitCode: 0 }) }),
+	);
+	const oldDate = new Date(now - 8 * 24 * 60 * 60 * 1_000);
+	utimesSync(paths.inputPath, oldDate, oldDate);
+	utimesSync(paths.metadataPath, oldDate, oldDate);
+	return paths;
+}
 
 afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
@@ -54,24 +73,25 @@ describe("Agent artifact maintenance", () => {
 		const tempArtifacts = join(root, "temp-artifacts");
 		mkdirSync(artifacts, { recursive: true });
 		mkdirSync(tempArtifacts);
-		const old = join(artifacts, "old.jsonl");
+		const oldGroup = writeArtifactGroup(artifacts, "aaaaaaaaaaaa", "complete", Date.now());
+		const old = oldGroup.inputPath;
 		const fresh = join(artifacts, "fresh.jsonl");
 		const outside = join(root, "outside.txt");
 		const linked = join(artifacts, "linked.txt");
-		const tempOld = join(tempArtifacts, "old-output.md");
-		writeFileSync(old, "old");
+		const tempOldGroup = writeArtifactGroup(tempArtifacts, "bbbbbbbbbbbb", "failed", Date.now());
+		const tempOld = tempOldGroup.inputPath;
 		writeFileSync(fresh, "fresh");
 		writeFileSync(outside, "outside");
-		writeFileSync(tempOld, "temp-old");
 		symlinkSync(outside, linked);
 		const now = Date.now();
 		const oldDate = new Date(now - 8 * 24 * 60 * 60 * 1_000);
-		for (const file of [old, tempOld]) utimesSync(file, oldDate, oldDate);
+		for (const file of [old, oldGroup.metadataPath, tempOld, tempOldGroup.metadataPath])
+			utimesSync(file, oldDate, oldDate);
 
 		const report = await maintainAgentArtifacts(7, { sessionsRoot, tempArtifactsDir: tempArtifacts, now });
 
-		expect(report).toMatchObject({ directoriesInspected: 2, filesRemoved: 2, scanComplete: true });
-		expect(report.bytesReclaimed).toBe(11);
+		expect(report).toMatchObject({ directoriesInspected: 2, filesRemoved: 4, scanComplete: true });
+		expect(report.bytesReclaimed).toBeGreaterThan(0);
 		expect(existsSync(old)).toBeFalse();
 		expect(existsSync(tempOld)).toBeFalse();
 		expect(existsSync(fresh)).toBeTrue();
@@ -88,12 +108,8 @@ describe("Agent artifact maintenance", () => {
 		mkdirSync(artifacts, { recursive: true });
 		mkdirSync(tempArtifacts);
 		const now = Date.now();
-		for (let index = 0; index < 4; index += 1) {
-			const file = join(artifacts, `old-${String(index)}.txt`);
-			writeFileSync(file, "x");
-			const oldDate = new Date(now - 8 * 24 * 60 * 60 * 1_000);
-			utimesSync(file, oldDate, oldDate);
-		}
+		for (let index = 0; index < 4; index += 1)
+			writeArtifactGroup(artifacts, `${String(index).repeat(12)}`, "complete", now);
 
 		const bounded = await maintainAgentArtifacts(7, {
 			sessionsRoot,
@@ -121,11 +137,7 @@ describe("Agent artifact maintenance", () => {
 		const files = ["a", "b"].map((name) => {
 			const directory = join(sessionsRoot, name, "subagent-artifacts");
 			mkdirSync(directory, { recursive: true });
-			const file = join(directory, "old.txt");
-			writeFileSync(file, name);
-			const oldDate = new Date(now - 8 * 24 * 60 * 60 * 1_000);
-			utimesSync(file, oldDate, oldDate);
-			return file;
+			return writeArtifactGroup(directory, name.repeat(12), "complete", now).inputPath;
 		});
 
 		const first = await maintainAgentArtifacts(7, {
@@ -141,8 +153,47 @@ describe("Agent artifact maintenance", () => {
 			maxDirectories: 1,
 		});
 
-		expect(first.filesRemoved).toBe(1);
-		expect(second.filesRemoved).toBe(1);
+		expect(first.filesRemoved).toBe(2);
+		expect(second.filesRemoved).toBe(2);
 		expect(files.every((file) => !existsSync(file))).toBeTrue();
+	});
+
+	test("preserves old artifacts for a child whose metadata still says running", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-active-"));
+		temporaryDirectories.push(root);
+		const sessionsRoot = join(root, "sessions");
+		const artifacts = join(sessionsRoot, "project", "subagent-artifacts");
+		const tempArtifacts = join(root, "temp-artifacts");
+		mkdirSync(artifacts, { recursive: true });
+		mkdirSync(tempArtifacts);
+		const now = Date.now();
+		const active = writeArtifactGroup(artifacts, "cccccccccccc", "running", now);
+
+		const report = await maintainAgentArtifacts(7, { sessionsRoot, tempArtifactsDir: tempArtifacts, now });
+
+		expect(report.filesRemoved).toBe(0);
+		expect(existsSync(active.inputPath)).toBeTrue();
+		expect(existsSync(active.metadataPath)).toBeTrue();
+	});
+
+	test("advances past a retained prefix during repeated bounded scans", async () => {
+		const root = mkdtempSync(join(tmpdir(), "pi-stuff-artifacts-cursor-"));
+		temporaryDirectories.push(root);
+		const sessionsRoot = join(root, "sessions");
+		const artifacts = join(sessionsRoot, "project", "subagent-artifacts");
+		const tempArtifacts = join(root, "temp-artifacts");
+		mkdirSync(artifacts, { recursive: true });
+		mkdirSync(tempArtifacts);
+		const now = Date.now();
+		for (const runId of ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"])
+			writeArtifactGroup(artifacts, runId, "running", now);
+		const terminal = writeArtifactGroup(artifacts, "zzzzzzzzzzzz", "complete", now);
+
+		for (let attempt = 0; attempt < 8 && existsSync(terminal.inputPath); attempt += 1) {
+			await maintainAgentArtifacts(7, { sessionsRoot, tempArtifactsDir: tempArtifacts, now, maxEntries: 2 });
+		}
+
+		expect(existsSync(terminal.inputPath)).toBeFalse();
+		expect(existsSync(terminal.metadataPath)).toBeFalse();
 	});
 });
