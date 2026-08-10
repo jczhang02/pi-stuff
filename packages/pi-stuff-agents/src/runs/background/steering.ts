@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { isOwnedFileChangedDuringReadError } from "../../shared/private-directory.ts";
 import type {
 	AsyncStatus,
 	ResolvedToolBudget,
@@ -289,21 +290,40 @@ export function remainingSteeringRecoveryLimits(
 	return limits;
 }
 
-export async function waitForSteeringAction(input: {
-	asyncDir: string;
-	sourceRunId: string;
-	requestId: string;
-	timeoutMs: number;
-	signal?: AbortSignal;
-}): Promise<SteerActionResult | undefined> {
+export async function waitForSteeringAction(
+	input: {
+		asyncDir: string;
+		sourceRunId: string;
+		requestId: string;
+		timeoutMs: number;
+		signal?: AbortSignal;
+	},
+	deps: {
+		readSteeringStatus?: (asyncDir: string) => SteeringStatus | undefined;
+		sleep?: (delayMs: number) => Promise<void>;
+	} = {},
+): Promise<SteerActionResult | undefined> {
+	const read = deps.readSteeringStatus ?? readSteeringStatus;
+	const sleep = deps.sleep ?? ((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+	const readForPoll = (): SteeringStatus | undefined => {
+		try {
+			return read(input.asyncDir);
+		} catch (error) {
+			// Status is replaced concurrently as the writer reports progress. The
+			// snapshot reader still rejects mixed versions; polling simply skips that
+			// one frame and waits for the next complete snapshot.
+			if (isOwnedFileChangedDuringReadError(error)) return undefined;
+			throw error;
+		}
+	};
 	const deadline = Date.now() + input.timeoutMs;
 	while (Date.now() <= deadline) {
 		if (input.signal?.aborted) return undefined;
-		const status = readSteeringStatus(input.asyncDir);
+		const status = readForPoll();
 		const result = status ? actionResultFromSteeringStatus(status, input.sourceRunId, input.requestId) : undefined;
 		if (steeringActionIsTerminal(result)) return result;
-		await new Promise<void>((resolve) => setTimeout(resolve, Math.min(50, Math.max(1, deadline - Date.now()))));
+		await sleep(Math.min(50, Math.max(1, deadline - Date.now())));
 	}
-	const status = readSteeringStatus(input.asyncDir);
+	const status = readForPoll();
 	return status ? actionResultFromSteeringStatus(status, input.sourceRunId, input.requestId) : undefined;
 }

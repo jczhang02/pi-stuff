@@ -113,6 +113,25 @@ export interface OwnedFileSnapshot {
 
 export type OwnedFileRemoval = "removed" | "missing" | "changed";
 
+/** A concurrent writer replaced or mutated a file while one snapshot was open. */
+export class OwnedFileChangedDuringReadError extends Error {
+	constructor(filePath: string) {
+		super(`Agent runtime file '${filePath}' changed while it was being read.`);
+		this.name = "OwnedFileChangedDuringReadError";
+	}
+}
+
+/** Recognize a transient snapshot race through any local error wrappers. */
+export function isOwnedFileChangedDuringReadError(error: unknown): boolean {
+	let current = error;
+	for (let depth = 0; depth < 8; depth += 1) {
+		if (current instanceof OwnedFileChangedDuringReadError) return true;
+		if (typeof current !== "object" || current === null || !("cause" in current)) return false;
+		current = (current as { cause?: unknown }).cause;
+	}
+	return false;
+}
+
 function sameFileVersion(before: fs.Stats, after: fs.Stats): boolean {
 	return (
 		before.dev === after.dev &&
@@ -123,12 +142,12 @@ function sameFileVersion(before: fs.Stats, after: fs.Stats): boolean {
 	);
 }
 
-function readExactFileVersion(fd: number, size: number, position = 0): Buffer {
+function readExactFileVersion(fd: number, size: number, filePath: string, position = 0): Buffer {
 	const buffer = Buffer.alloc(size);
 	let offset = 0;
 	while (offset < size) {
 		const read = fs.readSync(fd, buffer, offset, size - offset, position + offset);
-		if (read === 0) throw new Error("Agent runtime file changed while it was being read.");
+		if (read === 0) throw new OwnedFileChangedDuringReadError(filePath);
 		offset += read;
 	}
 	return buffer;
@@ -140,10 +159,10 @@ export function readBoundedOwnedFileSnapshot(filePath: string, maxBytes: number)
 	const fd = openOwnedRegularFile(filePath, maxBytes);
 	try {
 		const stat = fs.fstatSync(fd);
-		const text = readExactFileVersion(fd, stat.size).toString("utf-8");
+		const text = readExactFileVersion(fd, stat.size, filePath).toString("utf-8");
 		const after = fs.fstatSync(fd);
 		if (!sameFileVersion(stat, after)) {
-			throw new Error(`Agent runtime file '${filePath}' changed while it was being read.`);
+			throw new OwnedFileChangedDuringReadError(filePath);
 		}
 		return {
 			ctimeMs: stat.ctimeMs,
@@ -210,7 +229,7 @@ export function readOwnedFileTail(filePath: string, maxBytes: number): OwnedFile
 		const stat = fs.fstatSync(fd);
 		assertOwnedRegularFile(filePath, stat);
 		const start = Math.max(0, stat.size - Math.max(0, maxBytes));
-		const buffer = readExactFileVersion(fd, stat.size - start, start);
+		const buffer = readExactFileVersion(fd, stat.size - start, filePath, start);
 		let text = buffer.toString("utf-8");
 		if (start > 0) {
 			const preceding = Buffer.alloc(1);
@@ -222,7 +241,7 @@ export function readOwnedFileTail(filePath: string, maxBytes: number): OwnedFile
 		}
 		const after = fs.fstatSync(fd);
 		if (!sameFileVersion(stat, after)) {
-			throw new Error(`Agent runtime file '${filePath}' changed while it was being read.`);
+			throw new OwnedFileChangedDuringReadError(filePath);
 		}
 		return { dev: stat.dev, ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size, text };
 	} finally {
