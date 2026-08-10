@@ -1,0 +1,59 @@
+{
+	"name": "@jczhang02/pi-stuff-code-mode",
+	"version": "0.1.0",
+	"description": "Cloudflare-style Code Mode over Pi Stuff Suite Tools",
+	"type": "module",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"code-mode",
+		"v8"
+	],
+	"license": "MIT",
+	"publishConfig": {
+		"access": "public"
+	},
+	"piStuff": {
+		"aggregateOnly": true
+	},
+	"exports": {
+		".": "./index.ts"
+	},
+	"files": [
+		"index.ts",
+		"extension.ts",
+		"connector.ts",
+		"presentation.ts",
+		"protocol.ts",
+		"proxy-from-env.d.ts",
+		"runtime.ts",
+		"v8-executor.ts",
+		"host/**",
+		"CHANGELOG.md",
+		"README.md",
+		"UPSTREAM.md",
+		"THIRD_PARTY_NOTICES.md",
+		"LICENSE",
+		"LICENSES/**"
+	],
+	"dependencies": {
+		"@jczhang02/pi-stuff-tools": "0.1.7",
+		"proxy-from-env": "1.1.0",
+		"typebox": "1.3.7"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-coding-agent": "0.84.1"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/jczhang02/pi-stuff.git",
+		"directory": "packages/pi-stuff-code-mode"
+	},
+	"homepage": "https://github.com/jczhang02/pi-stuff/tree/main/packages/pi-stuff-code-mode#readme",
+	"bugs": {
+		"url": "https://github.com/jczhang02/pi-stuff/issues"
+	}
+}

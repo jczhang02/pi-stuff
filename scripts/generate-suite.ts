@@ -50,20 +50,29 @@ function renderIndex(
 	deferredToolNames: readonly string[],
 ): string {
 	const agentsPackage = "@jczhang02/pi-stuff-agents";
+	const codeModePackage = "@jczhang02/pi-stuff-code-mode";
 	const hasAgents = capabilities.includes(agentsPackage);
+	const hasCodeMode = capabilities.includes(codeModePackage);
 	if ((toolNames.length > 0 || deferredToolNames.length > 0) && !capabilities.includes("@jczhang02/pi-stuff-tools")) {
 		throw new Error("An Aggregate Tool inventory requires @jczhang02/pi-stuff-tools");
+	}
+	if (hasCodeMode && toolNames.length === 0) {
+		throw new Error("@jczhang02/pi-stuff-code-mode requires an Aggregate Tool inventory");
 	}
 	const imports = [...capabilities]
 		.sort((left, right) => left.localeCompare(right))
 		.map((packageName) =>
 			packageName === "@jczhang02/pi-stuff-tools"
 				? `import ${capabilityIdentifier(packageName)}, {\n\tassertSuiteToolActivityCoverage,\n\tcreateSuiteToolRegistrationTracker,\n} from "${packageName}";`
-				: `import ${capabilityIdentifier(packageName)} from "${packageName}";`,
+				: packageName === codeModePackage
+					? `import ${capabilityIdentifier(packageName)}, { registerCodeModeContextProjection } from "${packageName}";`
+					: `import ${capabilityIdentifier(packageName)} from "${packageName}";`,
 		);
-	const identifiers = capabilities.map((packageName) =>
-		packageName === agentsPackage ? "registerSuiteAgents" : capabilityIdentifier(packageName),
-	);
+	const identifiers = capabilities
+		.filter((packageName) => packageName !== codeModePackage)
+		.map((packageName) =>
+			packageName === agentsPackage ? "registerSuiteAgents" : capabilityIdentifier(packageName),
+		);
 	const importBlock = [
 		...(hasAgents ? [`import { fileURLToPath } from "node:url";`] : []),
 		`import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`,
@@ -111,9 +120,17 @@ function registerSuiteAgents(pi: ExtensionAPI): void | Promise<void> {
 				]
 			: []),
 		`export default async function piStuff(pi: ExtensionAPI): Promise<void> {
-${toolNames.length > 0 ? "\tconst registrations = createSuiteToolRegistrationTracker(pi);\n" : ""}\tfor (const capability of CAPABILITIES) {
+${toolNames.length > 0 ? "\tconst registrations = createSuiteToolRegistrationTracker(pi);\n" : ""}${hasCodeMode ? "\tregisterCodeModeContextProjection(pi);\n" : ""}\tfor (const capability of CAPABILITIES) {
 \t\tawait capability(${toolNames.length > 0 ? "registrations.api" : "pi"});
-\t}${toolNames.length > 0 ? `\n\tpi.on("session_start", () =>\n\t\t${coverageCall},\n\t);` : ""}
+\t}${
+			hasCodeMode
+				? `
+	piStuffCodeMode(registrations.api, {
+		registry: registrations.registry,
+		surface: registrations.surface,
+	});`
+				: ""
+		}${toolNames.length > 0 ? `\n\tpi.on("session_start", () =>\n\t\t${coverageCall},\n\t);` : ""}
 }`,
 	];
 	return `${sections.join("\n\n")}\n`;

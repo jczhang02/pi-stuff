@@ -58,6 +58,13 @@ const codexRuntimeFiles = [
 	"THIRD_PARTY_NOTICES.md",
 	"LICENSES/Apache-2.0.txt",
 ] as const;
+const codeModeRuntimeFiles = [
+	"host/host-assets.ts",
+	"host/install-host.ts",
+	"UPSTREAM.md",
+	"THIRD_PARTY_NOTICES.md",
+	"LICENSES/Apache-2.0.txt",
+] as const;
 const PACKED_AGGREGATE_SMOKE_TIMEOUT_MS = 60_000;
 const codexNativeSha256: Readonly<Record<(typeof codexRuntimeFiles)[number], string>> = {
 	"native/apply-patch/linux-x64/apply_patch": "9ded1c635a4e0e2aae2dd09d7f676b24fc4b377016f74c1a51d8b3b22ed6bb55",
@@ -143,6 +150,7 @@ const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 		"@earendil-works/pi-tui",
 	],
 	"@jczhang02/pi-stuff-btw": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-code-mode": ["@earendil-works/pi-coding-agent"],
 	"@jczhang02/pi-stuff-context": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-rtk": [
 		"@earendil-works/pi-agent-core",
@@ -153,7 +161,7 @@ const expectedPiPeers: Readonly<Record<string, readonly string[]>> = {
 	"@jczhang02/pi-stuff-codex": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-goal": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-todo": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
-	"@jczhang02/pi-stuff-tools": ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
+	"@jczhang02/pi-stuff-tools": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-ui": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-web": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
 	"@jczhang02/pi-stuff-mcp": ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent", "@earendil-works/pi-tui"],
@@ -299,6 +307,17 @@ function verifyCodexRuntimeArchive(archiveFiles: readonly string[]): void {
 	const archiveSet = new Set(archiveFiles);
 	const missing = codexRuntimeFiles.map((path) => `package/${path}`).filter((path) => !archiveSet.has(path));
 	if (missing.length > 0) throw new Error(`Packed Codex Package is missing runtime files:\n${missing.join("\n")}`);
+}
+
+function verifyCodeModeRuntimeArchive(archiveFiles: readonly string[]): void {
+	const archiveSet = new Set(archiveFiles);
+	const missing = codeModeRuntimeFiles.map((path) => `package/${path}`).filter((path) => !archiveSet.has(path));
+	if (missing.length > 0) throw new Error(`Packed Code Mode Package is missing runtime files:\n${missing.join("\n")}`);
+	if (archiveFiles.some((path) => /codex-code-mode-host(?:\.exe)?$/u.test(path))) {
+		throw new Error(
+			"Packed Code Mode Package must install the verified Host lazily instead of bundling a native binary",
+		);
+	}
 }
 
 function verifyWorkRuntimeArchive(archiveFiles: readonly string[]): void {
@@ -476,6 +495,8 @@ async function verifyStandaloneInstalls(
 	const rtkNpmCacheDirectory = join(temporaryDirectory, "npm-cache-rtk");
 	const codexInstallDirectory = join(temporaryDirectory, "standalone-codex");
 	const codexNpmCacheDirectory = join(temporaryDirectory, "npm-cache-codex");
+	const codeModeInstallDirectory = join(temporaryDirectory, "standalone-code-mode");
+	const codeModeNpmCacheDirectory = join(temporaryDirectory, "npm-cache-code-mode");
 	const goalInstallDirectory = join(temporaryDirectory, "standalone-goal");
 	const goalNpmCacheDirectory = join(temporaryDirectory, "npm-cache-goal");
 	const todoInstallDirectory = join(temporaryDirectory, "standalone-todo");
@@ -500,6 +521,8 @@ async function verifyStandaloneInstalls(
 		mkdir(rtkNpmCacheDirectory),
 		mkdir(codexInstallDirectory),
 		mkdir(codexNpmCacheDirectory),
+		mkdir(codeModeInstallDirectory),
+		mkdir(codeModeNpmCacheDirectory),
 		mkdir(goalInstallDirectory),
 		mkdir(goalNpmCacheDirectory),
 		mkdir(todoInstallDirectory),
@@ -520,7 +543,9 @@ async function verifyStandaloneInstalls(
 		return resolveReleaseArchive(releaseDirectory, artifact);
 	};
 	const rootRequire = createRequire(join(root, "package.json"));
+	const codeModeRequire = createRequire(join(root, "packages", "pi-stuff-code-mode", "package.json"));
 	const runtimeDirectories: Record<string, string> = {
+		"proxy-from-env": await resolvePackageDirectory(codeModeRequire, "proxy-from-env"),
 		typebox: await resolvePackageDirectory(rootRequire, "typebox"),
 	};
 	const runtimeArchives = Object.fromEntries(
@@ -655,6 +680,7 @@ async function verifyStandaloneInstalls(
 	installReleaseClosure("@jczhang02/pi-stuff-btw", btwInstallDirectory, btwNpmCacheDirectory);
 	installReleaseClosure("@jczhang02/pi-stuff-rtk", rtkInstallDirectory, rtkNpmCacheDirectory);
 	installReleaseClosure("@jczhang02/pi-stuff-codex", codexInstallDirectory, codexNpmCacheDirectory);
+	installReleaseClosure("@jczhang02/pi-stuff-code-mode", codeModeInstallDirectory, codeModeNpmCacheDirectory);
 	installReleaseClosure("@jczhang02/pi-stuff-goal", goalInstallDirectory, goalNpmCacheDirectory);
 	installReleaseClosure("@jczhang02/pi-stuff-agents", agentsInstallDirectory, agentsNpmCacheDirectory);
 	installReleaseClosure("@jczhang02/pi-stuff-todo", todoInstallDirectory, todoNpmCacheDirectory);
@@ -663,6 +689,7 @@ async function verifyStandaloneInstalls(
 	installReleaseClosure("@jczhang02/pi-stuff-mcp", mcpInstallDirectory, mcpNpmCacheDirectory);
 	installReleaseClosure("@jczhang02/pi-stuff-work", workInstallDirectory, workNpmCacheDirectory);
 	await Promise.all([
+		linkCertifiedHostPeers(codeModeInstallDirectory, "@jczhang02/pi-stuff-code-mode"),
 		linkCertifiedHostPeers(webInstallDirectory, "@jczhang02/pi-stuff-web"),
 		linkCertifiedHostPeers(mcpInstallDirectory, "@jczhang02/pi-stuff-mcp"),
 		linkCertifiedHostPeers(workInstallDirectory, "@jczhang02/pi-stuff-work"),
@@ -710,6 +737,31 @@ async function verifyStandaloneInstalls(
 
 	const todoInstalledRoot = join(todoInstallDirectory, "node_modules");
 	const goalInstalledRoot = join(goalInstallDirectory, "node_modules");
+	const codeModeInstalledRoot = join(codeModeInstallDirectory, "node_modules");
+	const codeModeManifest = JSON.parse(
+		await readFile(join(codeModeInstalledRoot, "@jczhang02/pi-stuff-code-mode/package.json"), "utf8"),
+	) as { dependencies?: Record<string, unknown> };
+	const installedCodeModeToolsManifest = JSON.parse(
+		await readFile(join(codeModeInstalledRoot, "@jczhang02/pi-stuff-tools/package.json"), "utf8"),
+	) as { version?: unknown };
+	const installedCodeModeProxyManifest = JSON.parse(
+		await readFile(join(codeModeInstalledRoot, "proxy-from-env/package.json"), "utf8"),
+	) as { version?: unknown };
+	const installedCodeModeTypeboxManifest = JSON.parse(
+		await readFile(join(codeModeInstalledRoot, "typebox/package.json"), "utf8"),
+	) as { version?: unknown };
+	if (
+		codeModeManifest.dependencies?.["@jczhang02/pi-stuff-tools"] !== installedCodeModeToolsManifest.version ||
+		codeModeManifest.dependencies?.["proxy-from-env"] !== installedCodeModeProxyManifest.version ||
+		codeModeManifest.dependencies?.["typebox"] !== installedCodeModeTypeboxManifest.version ||
+		installedCodeModeProxyManifest.version !== "1.1.0" ||
+		installedCodeModeTypeboxManifest.version !== "1.3.7"
+	) {
+		throw new Error(
+			"Standalone Code Mode must install exact Tools, proxy-from-env, and typebox runtime dependencies",
+		);
+	}
+	await verifyRuntimeDependencyClosure(join(codeModeInstalledRoot, "@jczhang02/pi-stuff-code-mode"));
 	const goalManifest = JSON.parse(
 		await readFile(join(goalInstalledRoot, "@jczhang02/pi-stuff-goal/package.json"), "utf8"),
 	) as { dependencies?: Record<string, unknown> };
@@ -1110,6 +1162,7 @@ async function verifyBundledSuiteMetadata(extractDirectory: string, archiveFiles
 		}
 	}
 	const expectedCapabilities = [
+		"@jczhang02/pi-stuff-code-mode",
 		"@jczhang02/pi-stuff-context",
 		"@jczhang02/pi-stuff-web",
 		"@jczhang02/pi-stuff-mcp",
@@ -1361,6 +1414,7 @@ export async function certifyReleaseArtifacts(
 			verifyPackageArchive(archiveManifest, archiveFiles);
 			if (artifact.name === uiPackageName) verifyUiRuntimeArchive(archiveFiles);
 			if (artifact.name === "@jczhang02/pi-stuff-codex") verifyCodexRuntimeArchive(archiveFiles);
+			if (artifact.name === "@jczhang02/pi-stuff-code-mode") verifyCodeModeRuntimeArchive(archiveFiles);
 			if (artifact.name === "@jczhang02/pi-stuff-work") verifyWorkRuntimeArchive(archiveFiles);
 			run([process.execPath, "publish", "--dry-run", "--ignore-scripts", "--access", "public", archivePath], root, {
 				...bunEnvironment,

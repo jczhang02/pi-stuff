@@ -119,6 +119,40 @@ export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 		expect(generated).toContain("\t\t\tDEFERRED_AGGREGATE_TOOL_NAMES,");
 	});
 
+	test("wires Code Mode after ordinary capabilities with the shared Tool registry", async () => {
+		const root = await createRepository();
+		for (const [directory, name, version] of [
+			["pi-stuff-tools", "@jczhang02/pi-stuff-tools", "1.2.3"],
+			["pi-stuff-code-mode", "@jczhang02/pi-stuff-code-mode", "0.1.0"],
+		] as const) {
+			await mkdir(join(root, "packages", directory), { recursive: true });
+			await writeJson(join(root, "packages", directory, "package.json"), { name, version });
+		}
+		await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
+			schemaVersion: 1,
+			capabilities: ["@jczhang02/pi-stuff-tools", "@jczhang02/pi-stuff-code-mode"],
+			tools: ["read"],
+		});
+
+		await generateSuite(root, "write");
+		const generated = await readFile(join(root, "packages", "pi-stuff", "index.ts"), "utf8");
+		expect(generated).toContain(
+			'import piStuffCodeMode, { registerCodeModeContextProjection } from "@jczhang02/pi-stuff-code-mode";',
+		);
+		expect(generated).toContain("const CAPABILITIES: readonly CapabilityFactory[] = [piStuffTools];");
+		expect(generated).toContain("\tregisterCodeModeContextProjection(pi);");
+		expect(generated).toContain(`\tpiStuffCodeMode(registrations.api, {
+\t\tregistry: registrations.registry,
+\t\tsurface: registrations.surface,
+\t});`);
+		expect(generated.indexOf("await capability(registrations.api)")).toBeLessThan(
+			generated.indexOf("piStuffCodeMode(registrations.api"),
+		);
+		expect(generated.indexOf("registerCodeModeContextProjection(pi)")).toBeLessThan(
+			generated.indexOf("await capability(registrations.api)"),
+		);
+	});
+
 	test("reports generated drift without rewriting the working tree", async () => {
 		const root = await createRepository();
 		const indexPath = join(root, "packages", "pi-stuff", "index.ts");

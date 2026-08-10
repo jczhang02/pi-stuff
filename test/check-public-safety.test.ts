@@ -63,6 +63,19 @@ describe("auditPublicFiles", () => {
 		expect(await auditPublicFiles(root)).toEqual([]);
 	});
 
+	test("accepts an explicitly aggregate-only runtime Package without a false standalone Pi entry point", async () => {
+		const root = await createRepository();
+		await writeCapabilityManifest(root, {
+			name: "@jczhang02/pi-example",
+			version: "0.0.1",
+			files: ["index.ts", "README.md", "LICENSE"],
+			piStuff: { aggregateOnly: true },
+			dependencies: { typebox: "1.1.24" },
+		});
+
+		expect(await auditPublicFiles(root)).toEqual([]);
+	});
+
 	test("accepts an exact official dependency and rejects an unpinned source archive", async () => {
 		const root = await createRepository();
 		await writeCapabilityManifest(root, {

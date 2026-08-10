@@ -1,6 +1,14 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { validateToolArguments } from "@earendil-works/pi-ai";
+import type {
+	AgentToolResult,
+	AgentToolUpdateCallback,
+	ExtensionAPI,
+	ExtensionContext,
+	Theme,
+	ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import {
 	Container,
@@ -45,10 +53,17 @@ const TOOL_RUNTIME_REGISTRY = Symbol.for("@jczhang02/pi-stuff-tools/runtime-regi
 const TOOL_RUNTIME_DISCOVERY_EVENT = "@jczhang02/pi-stuff-tools/runtime-discovery/v1";
 const TOOL_RELOAD_HANDOFF = Symbol.for("@jczhang02/pi-stuff-tools/reload-handoff.v1");
 const SUITE_ACTIVITY_RENDERER = Symbol.for("@jczhang02/pi-stuff-tools/activity-renderer.v1");
+const SUITE_TOOL_ENVELOPE = Symbol.for("@jczhang02/pi-stuff-tools/tool-envelope.v1");
 
 interface SuiteActivityRendererMarker {
 	readonly activity: ToolActivityMetadata<Record<string, unknown>, unknown>;
 	readonly resultIsError?: (args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean;
+}
+
+interface SuiteToolEnvelopeMarker {
+	readonly decode: SuiteToolEnvelopeDecoder;
+	readonly media?: SuiteToolEnvelopeMediaResolver;
+	readonly registry: SuiteToolDefinitionRegistry;
 }
 const DETAIL_LINE_LIMIT = 240;
 const DETAIL_BYTE_LIMIT = 24 * 1_024;
@@ -98,6 +113,64 @@ export interface SuiteToolPresentation<TArgs extends Record<string, unknown>, TD
 	) => string;
 	readonly target?: (args: Readonly<TArgs>) => string;
 	readonly tracksElapsed?: boolean;
+}
+
+export type SuiteToolEnvelopeOperationState = "cancelled" | "error" | "rejected" | "running" | "success";
+
+export interface SuiteToolEnvelopeOperation {
+	readonly args: Readonly<Record<string, unknown>>;
+	readonly id: string;
+	/** Preserve media at the same boundary it occupied in the direct Tool result. */
+	readonly mediaPlacements?: readonly SuiteToolEnvelopeMediaPlacement[];
+	readonly name: string;
+	readonly result?: AgentToolResult<unknown>;
+	readonly state: SuiteToolEnvelopeOperationState;
+}
+
+export interface SuiteToolEnvelopeMediaPlacement {
+	/** Number of non-media content blocks that preceded this media block. */
+	readonly afterContentIndex: number;
+	/** Index into the envelope presentation's normalized media segments. */
+	readonly mediaIndex: number;
+}
+
+export type SuiteToolEnvelopeDecoder = (details: unknown) => readonly SuiteToolEnvelopeOperation[];
+
+export type SuiteToolEnvelopeMediaResolver = (
+	details: unknown,
+) => readonly (readonly AgentToolResult<unknown>["content"][number][])[];
+
+export interface SuiteToolDefinitionRegistry {
+	get(name: string): ToolDefinition | undefined;
+	invoke(invocation: SuiteToolInvocation): Promise<SuiteToolInvocationResult>;
+	isActive(name: string): boolean;
+	list(): readonly ToolDefinition[];
+}
+
+export interface SuiteToolInvocation {
+	readonly context: ExtensionContext;
+	readonly input: unknown;
+	readonly name: string;
+	readonly onUpdate?: AgentToolUpdateCallback<unknown>;
+	readonly signal?: AbortSignal;
+	readonly toolCallId: string;
+}
+
+export interface SuiteToolInvocationResult {
+	readonly isError: boolean;
+	readonly result: AgentToolResult<unknown>;
+}
+
+export interface SuiteToolSurfaceController {
+	disableEnvelope(name: string): void;
+	enableEnvelope(name: string): void;
+	isEnvelopeEnabled(name: string): boolean;
+}
+
+export interface SuiteToolEnvelopePresentation {
+	readonly decode: SuiteToolEnvelopeDecoder;
+	readonly media?: SuiteToolEnvelopeMediaResolver;
+	readonly registry: SuiteToolDefinitionRegistry;
 }
 
 interface RendererState<TArgs extends Record<string, unknown>, TDetails> {
@@ -405,6 +478,8 @@ export class ToolUiRuntime {
 		string,
 		(args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean
 	>();
+	private readonly envelopeCalls = new Map<string, string>();
+	private readonly envelopeDecoders = new Map<string, SuiteToolEnvelopeDecoder>();
 	private readonly groupHints = new Map<string, HintState>();
 	private readonly groupPulses = new Map<string, GroupPulseState>();
 	private groupPulseTimer: unknown | undefined;
@@ -487,6 +562,11 @@ export class ToolUiRuntime {
 			this.errorPolicies.delete(name);
 		}
 		if (this.renderedToolNames.has(name) && this.indexedMessages.length > 0) this.rebuildGroups();
+	}
+
+	registerEnvelope(name: string, decode: SuiteToolEnvelopeDecoder): void {
+		this.envelopeDecoders.set(name, decode);
+		if (this.indexedMessages.length > 0) this.rebuildGroups();
 	}
 
 	hasActivityMetadata(name: string): boolean {
@@ -594,6 +674,7 @@ export class ToolUiRuntime {
 
 	resetProjection(messages: readonly unknown[]): void {
 		this.suspend();
+		this.envelopeCalls.clear();
 		this.groupHints.clear();
 		this.activities.clear();
 		this.pendingResults.clear();
@@ -612,6 +693,7 @@ export class ToolUiRuntime {
 
 	clear(): void {
 		this.suspend();
+		this.envelopeCalls.clear();
 		for (const binding of this.bindings.values()) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 		this.bindings.clear();
 		this.groups.clear();
@@ -811,6 +893,90 @@ export class ToolUiRuntime {
 			.map((member) => this.activities.get(member.id) ?? this.activityFromPlan(member));
 	}
 
+	private decodeEnvelope(name: string, details: unknown): readonly SuiteToolEnvelopeOperation[] {
+		const decode = this.envelopeDecoders.get(name);
+		if (!decode) return [];
+		return decodeEnvelopeOperations(decode, details);
+	}
+
+	private projectedMessages(): readonly unknown[] {
+		if (this.envelopeDecoders.size === 0) return this.indexedMessages;
+		const envelopeNamesById = new Map<string, string>();
+		for (const candidate of this.indexedMessages) {
+			if (!isRecordValue(candidate) || candidate["role"] !== "assistant" || !Array.isArray(candidate["content"])) {
+				continue;
+			}
+			for (const block of candidate["content"]) {
+				if (!isRecordValue(block) || block["type"] !== "toolCall") continue;
+				const id = block["id"];
+				const name = block["name"];
+				if (typeof id === "string" && typeof name === "string" && this.envelopeDecoders.has(name)) {
+					envelopeNamesById.set(id, name);
+				}
+			}
+		}
+		const operationsById = new Map<string, readonly SuiteToolEnvelopeOperation[]>();
+		for (const candidate of this.indexedMessages) {
+			if (!isRecordValue(candidate) || candidate["role"] !== "toolResult") continue;
+			const id = candidate["toolCallId"];
+			if (typeof id !== "string") continue;
+			const name = envelopeNamesById.get(id);
+			if (!name) continue;
+			operationsById.set(id, this.decodeEnvelope(name, candidate["details"]));
+		}
+		const projected: unknown[] = [];
+		for (const candidate of this.indexedMessages) {
+			if (!isRecordValue(candidate)) {
+				projected.push(candidate);
+				continue;
+			}
+			if (candidate["role"] === "assistant" && Array.isArray(candidate["content"])) {
+				const content = candidate["content"].flatMap((block) => {
+					if (!isRecordValue(block) || block["type"] !== "toolCall") return [block];
+					const id = block["id"];
+					const name = block["name"];
+					if (typeof id !== "string" || typeof name !== "string" || !this.envelopeDecoders.has(name)) {
+						return [block];
+					}
+					return (operationsById.get(id) ?? []).map((operation) => ({
+						arguments: operation.args,
+						id: operation.id,
+						name: operation.name,
+						type: "toolCall",
+					}));
+				});
+				projected.push({ ...candidate, content });
+				continue;
+			}
+			if (candidate["role"] === "toolResult") {
+				const id = candidate["toolCallId"];
+				const operations = typeof id === "string" ? operationsById.get(id) : undefined;
+				if (!operations) {
+					projected.push(candidate);
+					continue;
+				}
+				for (const operation of operations) {
+					if (operation.state === "running" && !operation.result) continue;
+					const result = operation.result ?? {
+						content: [{ type: "text" as const, text: `${operation.name} ${operation.state}` }],
+						details: undefined,
+					};
+					projected.push({
+						role: "toolResult",
+						toolCallId: operation.id,
+						toolName: operation.name,
+						content: result.content,
+						details: result.details,
+						...(operation.state === "success" ? {} : { isError: true }),
+					});
+				}
+				continue;
+			}
+			projected.push(candidate);
+		}
+		return projected;
+	}
+
 	private rebuildGroups(): void {
 		for (const binding of this.bindings.values()) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 		this.groups.clear();
@@ -820,7 +986,7 @@ export class ToolUiRuntime {
 		this.memberIndexes.clear();
 		this.openGroupLeaderId = undefined;
 		const closeTail = !this.agentActive || this.tailForcedClosed;
-		const planned = planToolActivityGroups(this.indexedMessages, this.renderedToolNames, closeTail);
+		const planned = planToolActivityGroups(this.projectedMessages(), this.renderedToolNames, closeTail);
 		for (const group of planned) {
 			this.groups.set(group.leaderId, group);
 			this.groupOrder.push(group.leaderId);
@@ -1362,6 +1528,8 @@ export function registerSuiteToolActivityMetadata<TArgs extends Record<string, u
 
 export interface SuiteToolRegistrationTracker {
 	readonly api: ExtensionAPI;
+	readonly registry: SuiteToolDefinitionRegistry;
+	readonly surface: SuiteToolSurfaceController;
 	readonly toolNames: ReadonlySet<string>;
 }
 
@@ -1378,24 +1546,363 @@ function hasSuiteActivityRenderer(tool: unknown): boolean {
 	return suiteActivityRendererMarker(tool) !== undefined;
 }
 
+function suiteToolEnvelopeMarker(tool: unknown): SuiteToolEnvelopeMarker | undefined {
+	if (!isRecordValue(tool)) return undefined;
+	const marker = Reflect.get(tool, SUITE_TOOL_ENVELOPE);
+	if (!isRecordValue(marker) || typeof marker["decode"] !== "function" || !isRecordValue(marker["registry"])) {
+		return undefined;
+	}
+	return marker as unknown as SuiteToolEnvelopeMarker;
+}
+
+const CAPTURED_TOOL_EVENTS = new Set([
+	"tool_call",
+	"tool_result",
+	"tool_execution_start",
+	"tool_execution_update",
+	"tool_execution_end",
+]);
+
+type CapturedToolHandler = (event: Record<string, unknown>, context: ExtensionContext) => unknown | Promise<unknown>;
+
+function uniqueToolNames(names: readonly string[]): string[] {
+	return [...new Set(names)];
+}
+
+function errorToolResult(error: unknown): AgentToolResult<unknown> {
+	return {
+		content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+		details: {},
+	};
+}
+
 /** Observe every Tool registered by Aggregate capabilities without changing the Host API. */
 export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolRegistrationTracker {
+	const capturedHandlers = new Map<string, CapturedToolHandler[]>();
+	const envelopeTools = new Set<string>();
 	const toolNames = new Set<string>();
+	const tools = new Map<string, ToolDefinition>();
+	let enabledEnvelope: string | undefined;
+	let virtualActiveTools: string[] | undefined;
+
+	const projectActiveTools = (names: readonly string[], envelope: string): string[] => {
+		const projected: string[] = [];
+		let inserted = false;
+		for (const name of uniqueToolNames(names)) {
+			if (envelopeTools.has(name)) continue;
+			if (tools.has(name)) {
+				if (!inserted) {
+					projected.push(envelope);
+					inserted = true;
+				}
+				continue;
+			}
+			projected.push(name);
+		}
+		if (!inserted) projected.push(envelope);
+		return projected;
+	};
+	const applyActiveProjection = (): void => {
+		if (!enabledEnvelope || !virtualActiveTools) return;
+		pi.setActiveTools(projectActiveTools(virtualActiveTools, enabledEnvelope));
+	};
+	const getActiveTools: ExtensionAPI["getActiveTools"] = () =>
+		enabledEnvelope && virtualActiveTools ? [...virtualActiveTools] : pi.getActiveTools();
+	const setActiveTools: ExtensionAPI["setActiveTools"] = (names) => {
+		if (!enabledEnvelope) {
+			pi.setActiveTools(names);
+			return;
+		}
+		virtualActiveTools = uniqueToolNames(names.filter((name) => !envelopeTools.has(name)));
+		applyActiveProjection();
+	};
+	const on = ((event: string, handler: CapturedToolHandler) => {
+		if (CAPTURED_TOOL_EVENTS.has(event)) {
+			const handlers = capturedHandlers.get(event) ?? [];
+			handlers.push(handler);
+			capturedHandlers.set(event, handlers);
+		}
+		(pi.on as unknown as (name: string, value: CapturedToolHandler) => void)(event, handler);
+	}) as unknown as ExtensionAPI["on"];
+
+	const dispatchInformational = async (
+		event: "tool_execution_end" | "tool_execution_start" | "tool_execution_update",
+		value: Record<string, unknown>,
+		context: ExtensionContext,
+	): Promise<void> => {
+		for (const handler of capturedHandlers.get(event) ?? []) {
+			try {
+				await handler(value, context);
+			} catch {
+				// Pi reports lifecycle handler failures without changing Tool execution.
+			}
+		}
+	};
+	const invoke = async (invocation: SuiteToolInvocation): Promise<SuiteToolInvocationResult> => {
+		const tool = tools.get(invocation.name);
+		if (!tool) throw new Error(`Unknown Suite Tool: ${invocation.name}`);
+		if (!registry.isActive(invocation.name)) throw new Error(`Suite Tool is inactive: ${invocation.name}`);
+		await dispatchInformational(
+			"tool_execution_start",
+			{
+				args: invocation.input,
+				toolCallId: invocation.toolCallId,
+				toolName: invocation.name,
+				type: "tool_execution_start",
+			},
+			invocation.context,
+		);
+
+		let prepared: unknown;
+		try {
+			prepared = tool.prepareArguments ? tool.prepareArguments(invocation.input) : invocation.input;
+			prepared = validateToolArguments(
+				tool as never,
+				{
+					arguments: prepared,
+					id: invocation.toolCallId,
+					name: invocation.name,
+					type: "toolCall",
+				} as never,
+			);
+			if (!isRecordValue(prepared)) throw new Error(`Suite Tool ${invocation.name} requires object arguments`);
+		} catch (error) {
+			const result = errorToolResult(error);
+			await dispatchInformational(
+				"tool_execution_end",
+				{
+					isError: true,
+					result,
+					toolCallId: invocation.toolCallId,
+					toolName: invocation.name,
+					type: "tool_execution_end",
+				},
+				invocation.context,
+			);
+			return { isError: true, result };
+		}
+
+		const callEvent: Record<string, unknown> = {
+			input: prepared,
+			toolCallId: invocation.toolCallId,
+			toolName: invocation.name,
+			type: "tool_call",
+		};
+		try {
+			for (const handler of capturedHandlers.get("tool_call") ?? []) {
+				const decision = await handler(callEvent, invocation.context);
+				if (!isRecordValue(decision) || decision["block"] !== true) continue;
+				const result = errorToolResult(
+					typeof decision["reason"] === "string" ? decision["reason"] : "Tool execution was blocked",
+				);
+				if (decision["terminate"] === true) Reflect.set(result, "terminate", true);
+				await dispatchInformational(
+					"tool_execution_end",
+					{
+						isError: true,
+						result,
+						toolCallId: invocation.toolCallId,
+						toolName: invocation.name,
+						type: "tool_execution_end",
+					},
+					invocation.context,
+				);
+				return { isError: true, result };
+			}
+		} catch (error) {
+			const result = errorToolResult(error);
+			await dispatchInformational(
+				"tool_execution_end",
+				{
+					isError: true,
+					result,
+					toolCallId: invocation.toolCallId,
+					toolName: invocation.name,
+					type: "tool_execution_end",
+				},
+				invocation.context,
+			);
+			return { isError: true, result };
+		}
+		if (invocation.signal?.aborted) {
+			const result = errorToolResult("Operation aborted");
+			await dispatchInformational(
+				"tool_execution_end",
+				{
+					isError: true,
+					result,
+					toolCallId: invocation.toolCallId,
+					toolName: invocation.name,
+					type: "tool_execution_end",
+				},
+				invocation.context,
+			);
+			return { isError: true, result };
+		}
+
+		const updateEvents: Promise<void>[] = [];
+		let acceptingUpdates = true;
+		let result: AgentToolResult<unknown>;
+		let isError = false;
+		const activeBefore = getActiveTools();
+		try {
+			result = await tool.execute(
+				invocation.toolCallId,
+				prepared as never,
+				invocation.signal,
+				(partialResult) => {
+					if (!acceptingUpdates) return;
+					try {
+						invocation.onUpdate?.(partialResult as AgentToolResult<unknown>);
+					} catch {
+						// Rendering updates do not change nested Tool execution.
+					}
+					updateEvents.push(
+						dispatchInformational(
+							"tool_execution_update",
+							{
+								args: prepared,
+								partialResult,
+								toolCallId: invocation.toolCallId,
+								toolName: invocation.name,
+								type: "tool_execution_update",
+							},
+							invocation.context,
+						),
+					);
+				},
+				invocation.context,
+			);
+			acceptingUpdates = false;
+			const activeAfter = getActiveTools();
+			if (activeBefore.every((name) => activeAfter.includes(name))) {
+				const beforeNames = new Set(activeBefore);
+				const addedToolNames = activeAfter.filter((name) => !beforeNames.has(name));
+				if (addedToolNames.length > 0) {
+					result = {
+						...result,
+						addedToolNames: [...new Set([...(result.addedToolNames ?? []), ...addedToolNames])],
+					};
+				}
+			}
+		} catch (error) {
+			acceptingUpdates = false;
+			result = errorToolResult(error);
+			isError = true;
+		} finally {
+			acceptingUpdates = false;
+		}
+		await Promise.all(updateEvents);
+
+		const resultEvent: Record<string, unknown> = {
+			content: result.content ?? [],
+			details: result.details,
+			input: prepared,
+			isError,
+			toolCallId: invocation.toolCallId,
+			toolName: invocation.name,
+			type: "tool_result",
+			...(result.usage ? { usage: result.usage } : {}),
+		};
+		for (const handler of capturedHandlers.get("tool_result") ?? []) {
+			try {
+				const replacement = await handler(resultEvent, invocation.context);
+				if (!isRecordValue(replacement)) continue;
+				for (const key of ["content", "details", "isError", "usage"] as const) {
+					if (replacement[key] !== undefined) resultEvent[key] = replacement[key];
+				}
+			} catch {
+				// Pi reports result-handler failures and keeps the previous result.
+			}
+		}
+		result = {
+			...result,
+			content: resultEvent["content"] as AgentToolResult<unknown>["content"],
+			details: resultEvent["details"],
+			...(resultEvent["usage"] === undefined ? {} : { usage: resultEvent["usage"] as never }),
+		};
+		isError = resultEvent["isError"] === true;
+		await dispatchInformational(
+			"tool_execution_end",
+			{
+				isError,
+				result,
+				toolCallId: invocation.toolCallId,
+				toolName: invocation.name,
+				type: "tool_execution_end",
+			},
+			invocation.context,
+		);
+		return { isError, result };
+	};
+	const registry: SuiteToolDefinitionRegistry = {
+		get: (name) => tools.get(name),
+		invoke,
+		isActive: (name) =>
+			tools.has(name) &&
+			(enabledEnvelope && virtualActiveTools
+				? virtualActiveTools.includes(name)
+				: pi.getActiveTools().includes(name)),
+		list: () => [...tools.values()],
+	};
+	const surface: SuiteToolSurfaceController = {
+		disableEnvelope(name) {
+			if (enabledEnvelope === name && virtualActiveTools) {
+				const restore = virtualActiveTools;
+				enabledEnvelope = undefined;
+				virtualActiveTools = undefined;
+				pi.setActiveTools(restore);
+				return;
+			}
+			if (!enabledEnvelope && envelopeTools.has(name)) {
+				pi.setActiveTools(pi.getActiveTools().filter((toolName) => toolName !== name));
+			}
+		},
+		enableEnvelope(name) {
+			if (!envelopeTools.has(name)) throw new Error(`Unknown Suite Tool envelope: ${name}`);
+			if (enabledEnvelope && enabledEnvelope !== name) {
+				throw new Error(`Suite Tool envelope ${enabledEnvelope} is already enabled`);
+			}
+			if (!enabledEnvelope) {
+				virtualActiveTools = uniqueToolNames(
+					pi.getActiveTools().filter((toolName) => !envelopeTools.has(toolName)),
+				);
+				enabledEnvelope = name;
+			}
+			applyActiveProjection();
+		},
+		isEnvelopeEnabled: (name) => enabledEnvelope === name,
+	};
 	const registerTool: ExtensionAPI["registerTool"] = (tool) => {
-		toolNames.add(tool.name);
+		const envelope = suiteToolEnvelopeMarker(tool);
 		pi.registerTool(tool);
 		const runtime = getToolUiRuntime(pi);
+		if (envelope) {
+			envelopeTools.add(tool.name);
+			runtime.registerEnvelope(tool.name, envelope.decode);
+			applyActiveProjection();
+			return;
+		}
+		toolNames.add(tool.name);
+		tools.set(tool.name, tool as ToolDefinition);
+		if (enabledEnvelope && virtualActiveTools && pi.getActiveTools().includes(tool.name)) {
+			virtualActiveTools = uniqueToolNames([...virtualActiveTools, tool.name]);
+			applyActiveProjection();
+		}
 		if (hasSuiteActivityRenderer(tool)) runtime.markRendererAttached(tool.name);
 		else runtime.markRendererDetached(tool.name);
 	};
 	const api = new Proxy(pi, {
 		get(target, property) {
+			if (property === "getActiveTools") return getActiveTools;
+			if (property === "on") return on;
 			if (property === "registerTool") return registerTool;
+			if (property === "setActiveTools") return setActiveTools;
 			const value = Reflect.get(target, property, target);
 			return typeof value === "function" ? value.bind(target) : value;
 		},
 	});
-	return { api, toolNames };
+	return { api, registry, surface, toolNames };
 }
 
 /** Fail fast when an Aggregate-owned Tool bypasses or under-declares the required Activity contract. */
@@ -1579,17 +2086,24 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 	return state.component;
 }
 
+const EMBEDDED_TOOL_RESULT = Symbol("pi-stuff-embedded-tool-result");
+const EMBEDDED_HOST_IMAGE_KEYS = Symbol("pi-stuff-embedded-host-image-keys");
+
+type ImageContentIndex = ReadonlyMap<string, ReadonlySet<string>>;
+
 function resultBody<TArgs extends Record<string, unknown>, TDetails>(
 	state: RendererState<TArgs, TDetails>,
 	result: AgentToolResult<TDetails>,
 	expanded: boolean,
 	showImages: boolean,
 	theme: Theme,
+	embedded = false,
+	hostImageKeys?: ImageContentIndex,
 ): Component {
 	const container = new Container();
 	const text = expanded ? (state.detailLines?.join("\n") ?? "") : "";
 	if (text) container.addChild(new Text(theme.fg("toolOutput", text), 2, 0));
-	const hostRendersImages = Boolean(getCapabilities().images && showImages);
+	const hostRendersImages = Boolean(!embedded && getCapabilities().images && showImages);
 	const images = hostRendersImages
 		? []
 		: result.content.filter(
@@ -1599,16 +2113,22 @@ function resultBody<TArgs extends Record<string, unknown>, TDetails>(
 					readonly type: "image";
 					readonly data: string;
 					readonly mimeType: string;
-				} => item.type === "image" && typeof item.data === "string" && typeof item.mimeType === "string",
+				} =>
+					item.type === "image" &&
+					typeof item.data === "string" &&
+					typeof item.mimeType === "string" &&
+					!hostImageKeys?.get(item.mimeType)?.has(item.data),
 			);
 	for (const [index, image] of images.entries()) {
-		if (text || index > 0) container.addChild(new Spacer(1));
+		if ((embedded && Boolean(getCapabilities().images && showImages)) || text || index > 0) {
+			container.addChild(new Spacer(1));
+		}
 		container.addChild(
 			showImages
 				? new Image(
 						image.data,
 						image.mimeType,
-						{ fallbackColor: (value) => theme.fg("dim", value) },
+						{ fallbackColor: (value) => theme.fg("toolOutput", value) },
 						{ maxWidthCells: 60 },
 					)
 				: new Text(
@@ -1654,7 +2174,17 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 			} as unknown as ToolRenderContext<TArgs>;
 			if (renderOptions.isPartial) return new EmptyToolComponent();
 			settleRow(tool, presentation, runtime, state, result, typed, theme);
-			return resultBody(state, result, renderOptions.expanded, typed.showImages, theme);
+			return resultBody(
+				state,
+				result,
+				renderOptions.expanded,
+				typed.showImages,
+				theme,
+				Reflect.get(typed, EMBEDDED_TOOL_RESULT) === true,
+				Reflect.get(typed, EMBEDDED_HOST_IMAGE_KEYS) instanceof Map
+					? (Reflect.get(typed, EMBEDDED_HOST_IMAGE_KEYS) as ImageContentIndex)
+					: undefined,
+			);
 		},
 	};
 	Object.defineProperty(decorated, SUITE_ACTIVITY_RENDERER, {
@@ -1671,6 +2201,208 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 		} satisfies SuiteActivityRendererMarker,
 	});
 	return decorated;
+}
+
+const ENVELOPE_CHILD_RENDERERS = Symbol("pi-stuff-tool-envelope-child-renderers");
+
+interface EnvelopeChildRenderer {
+	component?: Component;
+	readonly state: Record<string, unknown>;
+}
+
+interface EnvelopeRendererState {
+	readonly children: Map<string, EnvelopeChildRenderer>;
+}
+
+class EnvelopeOperationsComponent implements Component {
+	private readonly operations: readonly Component[];
+
+	constructor(operations: readonly Component[]) {
+		this.operations = operations;
+	}
+
+	invalidate(): void {
+		for (const operation of this.operations) operation.invalidate();
+	}
+
+	render(width: number): string[] {
+		const output: string[] = [];
+		for (const operation of this.operations) {
+			const lines = operation.render(width);
+			if (lines.length === 0) continue;
+			if (output.length > 0) output.push("");
+			output.push(...lines);
+		}
+		return output;
+	}
+}
+
+function envelopeRendererState(state: Record<string, unknown>): EnvelopeRendererState {
+	const host = state as Record<PropertyKey, unknown>;
+	const existing = host[ENVELOPE_CHILD_RENDERERS];
+	if (existing instanceof Map) return { children: existing as Map<string, EnvelopeChildRenderer> };
+	const children = new Map<string, EnvelopeChildRenderer>();
+	host[ENVELOPE_CHILD_RENDERERS] = children;
+	return { children };
+}
+
+function decodeEnvelopeOperations(
+	decode: SuiteToolEnvelopeDecoder,
+	details: unknown,
+): readonly SuiteToolEnvelopeOperation[] {
+	try {
+		return decode(details).filter(
+			(operation) =>
+				typeof operation.id === "string" &&
+				operation.id.length > 0 &&
+				typeof operation.name === "string" &&
+				operation.name.length > 0 &&
+				isRecordValue(operation.args),
+		);
+	} catch {
+		return [];
+	}
+}
+
+function resolveEnvelopeMedia(
+	result: AgentToolResult<unknown>,
+	presentation: SuiteToolEnvelopePresentation,
+): readonly (readonly AgentToolResult<unknown>["content"][number][])[] {
+	if (presentation.media) {
+		try {
+			return presentation.media(result.details);
+		} catch {
+			return [];
+		}
+	}
+	return result.content.flatMap((item) => (item.type === "image" ? [[item]] : []));
+}
+
+function projectEnvelopeOperationResult(
+	operation: SuiteToolEnvelopeOperation,
+	media: readonly (readonly AgentToolResult<unknown>["content"][number][])[],
+): AgentToolResult<unknown> | undefined {
+	if (!operation.result || !operation.mediaPlacements || operation.mediaPlacements.length === 0) {
+		return operation.result;
+	}
+	const placements = new Map<number, AgentToolResult<unknown>["content"]>();
+	for (const placement of operation.mediaPlacements) {
+		if (!Number.isInteger(placement.afterContentIndex) || !Number.isInteger(placement.mediaIndex)) continue;
+		if (placement.afterContentIndex < 0 || placement.afterContentIndex > operation.result.content.length) continue;
+		const segment = media[placement.mediaIndex];
+		if (!segment) continue;
+		const atBoundary = placements.get(placement.afterContentIndex) ?? [];
+		atBoundary.push(...segment);
+		placements.set(placement.afterContentIndex, atBoundary);
+	}
+	if (placements.size === 0) return operation.result;
+	const content: AgentToolResult<unknown>["content"] = [];
+	for (let index = 0; index <= operation.result.content.length; index += 1) {
+		content.push(...(placements.get(index) ?? []));
+		const item = operation.result.content[index];
+		if (item) content.push(item);
+	}
+	return { ...operation.result, content };
+}
+
+function renderEnvelopeOperations(
+	result: AgentToolResult<unknown>,
+	options: ToolResultRenderOptions,
+	theme: Theme,
+	context: ToolRenderContext<Record<string, unknown>>,
+	presentation: SuiteToolEnvelopePresentation,
+): Component {
+	const operations = decodeEnvelopeOperations(presentation.decode, result.details);
+	if (operations.length === 0) return new EmptyToolComponent();
+	let hostImageKeys: Map<string, Set<string>> | undefined;
+	if (getCapabilities().images && context.showImages) {
+		for (const item of result.content) {
+			if (item.type !== "image" || typeof item.data !== "string" || typeof item.mimeType !== "string") continue;
+			hostImageKeys ??= new Map();
+			const data = hostImageKeys.get(item.mimeType) ?? new Set<string>();
+			data.add(item.data);
+			hostImageKeys.set(item.mimeType, data);
+		}
+	}
+	const media = resolveEnvelopeMedia(result, presentation);
+	const rendererState = envelopeRendererState(context.state);
+	const renderedOperations: Component[] = [];
+	const retained = new Set<string>();
+	for (const operation of operations) {
+		const tool = presentation.registry.get(operation.name);
+		if (!tool?.renderCall) continue;
+		retained.add(operation.id);
+		const child = rendererState.children.get(operation.id) ?? { state: {} };
+		rendererState.children.set(operation.id, child);
+		const childContext = {
+			...context,
+			...(hostImageKeys ? { [EMBEDDED_HOST_IMAGE_KEYS]: hostImageKeys } : {}),
+			[EMBEDDED_TOOL_RESULT]: true,
+			args: operation.args,
+			argsComplete: true,
+			executionStarted: operation.state === "running" && context.executionStarted !== false,
+			isError: operation.state !== "running" && operation.state !== "success",
+			isPartial: options.isPartial,
+			lastComponent: child.component,
+			state: child.state,
+			toolCallId: operation.id,
+		};
+		const container = new Container();
+		const call = tool.renderCall(operation.args, theme, childContext as never);
+		child.component = call;
+		container.addChild(call);
+		renderedOperations.push(container);
+		if (!operation.result || !tool.renderResult) continue;
+		const operationResult = projectEnvelopeOperationResult(operation, media);
+		if (!operationResult) continue;
+		const childIsPartial = options.isPartial && operation.state === "running";
+		const body = tool.renderResult(
+			operationResult,
+			{ expanded: options.expanded, isPartial: childIsPartial },
+			theme,
+			{ ...childContext, isPartial: childIsPartial, lastComponent: call } as never,
+		);
+		if (body) container.addChild(body);
+	}
+	for (const id of rendererState.children.keys()) {
+		if (!retained.has(id)) rendererState.children.delete(id);
+	}
+	return new EnvelopeOperationsComponent(renderedOperations);
+}
+
+/**
+ * Register an execution envelope whose nested Suite Tools retain their original
+ * Tool Activity renderers. The envelope itself is intentionally visually silent.
+ */
+export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = unknown>(
+	pi: ExtensionAPI,
+	tool: ToolDefinition<TParams, TDetails>,
+	presentation: SuiteToolEnvelopePresentation,
+): void {
+	const runtime = getToolUiRuntime(pi);
+	runtime.registerEnvelope(tool.name, presentation.decode);
+	const decorated: ToolDefinition<TParams, TDetails> = {
+		...tool,
+		renderShell: "self" as const,
+		renderCall: () => new EmptyToolComponent(),
+		renderResult: (result, options, theme, context) =>
+			renderEnvelopeOperations(
+				result as AgentToolResult<unknown>,
+				options as ToolResultRenderOptions,
+				theme,
+				context as unknown as ToolRenderContext<Record<string, unknown>>,
+				presentation,
+			),
+	};
+	Object.defineProperty(decorated, SUITE_TOOL_ENVELOPE, {
+		enumerable: true,
+		value: {
+			decode: presentation.decode,
+			...(presentation.media ? { media: presentation.media } : {}),
+			registry: presentation.registry,
+		} satisfies SuiteToolEnvelopeMarker,
+	});
+	pi.registerTool(decorated);
 }
 
 /** Register a Suite-owned Tool without changing its execute protocol or result. */

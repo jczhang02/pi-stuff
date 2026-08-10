@@ -996,6 +996,62 @@ describe("Context projections", () => {
 });
 
 describe("certified Pi extension ordering contract", () => {
+	test("keeps the provider-facing Magic Context contract compact before upstream injection", async () => {
+		const handlers: Handlers = new Map();
+		let upstreamSawMarker = false;
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.on("before_agent_start", (event) => {
+						const systemPrompt = Reflect.get(event, "systemPrompt");
+						if (typeof systemPrompt !== "string") return;
+						upstreamSawMarker = systemPrompt.includes("## Magic Context");
+						return {
+							systemPrompt: upstreamSawMarker
+								? systemPrompt
+								: `${systemPrompt}\n\n## Magic Context\n\nVERBOSE_UPSTREAM_GUIDANCE`,
+						};
+					});
+				},
+			}),
+		});
+		const extension: Extension = {
+			path: "<inline:context-compact-prompt>",
+			resolvedPath: "<inline:context-compact-prompt>",
+			sourceInfo: createSyntheticSourceInfo("<inline:context-compact-prompt>", {
+				source: "context-compact-prompt",
+			}),
+			handlers: handlers as Extension["handlers"],
+			tools: new Map(),
+			messageRenderers: new Map(),
+			commands: new Map(),
+			flags: new Map(),
+			shortcuts: new Map(),
+		};
+		const runner = new ExtensionRunner(
+			[extension],
+			createExtensionRuntime(),
+			"/workspace/project-a",
+			context().sessionManager as never,
+			{} as never,
+		);
+
+		const result = await runner.emitBeforeAgentStart("prompt", undefined, "base", {
+			cwd: "/workspace/project-a",
+		});
+		if (!result?.systemPrompt) throw new Error("Magic Context did not return a provider-facing system prompt");
+		const systemPrompt = result.systemPrompt;
+
+		expect(upstreamSawMarker).toBe(true);
+		expect(systemPrompt).toStartWith("base\n\n## Magic Context\n");
+		expect(systemPrompt).not.toContain("VERBOSE_UPSTREAM_GUIDANCE");
+		for (const tool of ["ctx_search", "ctx_expand", "ctx_reduce", "ctx_memory", "ctx_note"]) {
+			expect(systemPrompt).toContain(tool);
+		}
+		expect(systemPrompt.length).toBeLessThan(2_000);
+	});
+
 	test("runs a Magic handler appended during before_agent_start in the same host event", async () => {
 		const handlers: Handlers = new Map();
 		let appendedHandlerRan = false;

@@ -29,6 +29,7 @@ Pi remains the host. The Suite is a normal Pi Package: it exports an ordered agg
 | `@jczhang02/pi-stuff` | Aggregate entry point for the full Suite | `0.2.2` |
 | `@jczhang02/pi-stuff-ui` | Responsive Statusline, input presentation, and shared non-floating Command Dialog coordinator | `0.2.2` |
 | `@jczhang02/pi-stuff-tools` | Compact built-in and Suite-owned Tool presentation with focused details | `0.1.3` |
+| `@jczhang02/pi-stuff-code-mode` | One-schema local JavaScript composition for active Suite Tools with unchanged Tool UI | `0.1.0` |
 | `@jczhang02/pi-stuff-context` | Lazy Magic Context continuity with native Pi fail-open behavior | `0.1.3` |
 | `@jczhang02/pi-stuff-rtk` | Certified fail-open RTK rewriting and model-only Tool output projection | `0.2.2` |
 | `@jczhang02/pi-stuff-codex` | Codex Fast and usage controls plus selected patch and image Tools | `0.1.2` |

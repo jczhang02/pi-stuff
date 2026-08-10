@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import piStuffAgents from "@jczhang02/pi-stuff-agents";
 import piStuffBtw from "@jczhang02/pi-stuff-btw";
+import piStuffCodeMode, { registerCodeModeContextProjection } from "@jczhang02/pi-stuff-code-mode";
 import piStuffCodex from "@jczhang02/pi-stuff-codex";
 import piStuffContext from "@jczhang02/pi-stuff-context";
 import piStuffGoal from "@jczhang02/pi-stuff-goal";
@@ -73,9 +74,14 @@ const OPTIONAL_AGGREGATE_TOOL_NAMES = ["subagent_supervisor", "intercom"] as con
 
 export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 	const registrations = createSuiteToolRegistrationTracker(pi);
+	registerCodeModeContextProjection(pi);
 	for (const capability of CAPABILITIES) {
 		await capability(registrations.api);
 	}
+	piStuffCodeMode(registrations.api, {
+		registry: registrations.registry,
+		surface: registrations.surface,
+	});
 	pi.on("session_start", () =>
 		assertSuiteToolActivityCoverage(
 			pi,

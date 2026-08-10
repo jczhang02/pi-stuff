@@ -18,6 +18,8 @@ Version `0.2.2` is the current certified local release candidate.
 - `@jczhang02/pi-stuff-ui`: responsive Statusline and Welcome header, live Thought projection, input highlighting and
   inline slash autocomplete, unified `/ui` settings, and the shared non-floating Command Dialog host.
 - `@jczhang02/pi-stuff-tools`: compact presentation for Pi's seven built-ins and participating Suite tools, with focused `/tools` details.
+- `@jczhang02/pi-stuff-code-mode`: one provider-visible JavaScript Tool that composes all active Suite Tools locally
+  while preserving their original lifecycle, UI, media, and reload behavior.
 - `@jczhang02/pi-stuff-context`: lazy continuity through the owned Magic Context fork, with raw Pi JSONL authority,
   bounded projections, project isolation, and automatic fallback to native Pi context when local derived state fails.
 - `@jczhang02/pi-stuff-rtk`: certified fail-open Bash command rewriting plus Bash/Grep compaction only in model-visible context; raw Tool results remain in the session.

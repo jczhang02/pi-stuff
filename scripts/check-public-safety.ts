@@ -38,6 +38,7 @@ interface PackageManifest {
 	packageManager?: unknown;
 	peerDependencies?: unknown;
 	pi?: unknown;
+	piStuff?: unknown;
 	private?: unknown;
 	scripts?: unknown;
 	trustedDependencies?: unknown;
@@ -152,7 +153,11 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 			findings.push({ path, rule: "package-files-allowlist" });
 		}
 		const expectedPiManifest = JSON.stringify({ extensions: ["./index.ts"] });
-		if (JSON.stringify(manifest.pi) !== expectedPiManifest) {
+		const aggregateOnly = JSON.stringify(manifest.piStuff) === JSON.stringify({ aggregateOnly: true });
+		if (
+			(!aggregateOnly && JSON.stringify(manifest.pi) !== expectedPiManifest) ||
+			(aggregateOnly && manifest.pi !== undefined)
+		) {
 			findings.push({ path, rule: "package-pi-manifest" });
 		}
 		if (

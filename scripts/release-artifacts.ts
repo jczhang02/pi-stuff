@@ -23,6 +23,7 @@ export const RELEASE_PACKAGES = [
 	{ name: "@jczhang02/pi-stuff-agents", path: "packages/pi-stuff-agents" },
 	{ name: "@jczhang02/pi-stuff-todo", path: "packages/pi-stuff-todo" },
 	{ name: "@jczhang02/pi-stuff-btw", path: "packages/pi-stuff-btw" },
+	{ name: "@jczhang02/pi-stuff-code-mode", path: "packages/pi-stuff-code-mode" },
 	{ name: "@jczhang02/pi-stuff", path: "packages/pi-stuff" },
 ] as const;
 

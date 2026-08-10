@@ -25,6 +25,9 @@ interface RecordLine {
 	readonly hasHistory?: unknown;
 	readonly hasSince?: unknown;
 	readonly hasNativeSummary?: unknown;
+	readonly systemPromptChars?: unknown;
+	readonly hasCompactMagicContextPrompt?: unknown;
+	readonly hasVerboseMagicContextPrompt?: unknown;
 	readonly commands?: unknown;
 	readonly tools?: unknown;
 	readonly searchResult?: unknown;
@@ -519,6 +522,17 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		for (const request of requests) {
 			if (request.hasHistory !== true || request.hasSince !== true) {
 				fail(`Magic projection was absent for request ${String(request.lastUser)}`);
+			}
+			if (request.hasCompactMagicContextPrompt !== true) {
+				fail(`compact Magic Context instructions were absent for request ${String(request.lastUser)}`);
+			}
+			if (request.hasVerboseMagicContextPrompt !== false) {
+				fail(`verbose upstream Magic Context instructions leaked into request ${String(request.lastUser)}`);
+			}
+			if (typeof request.systemPromptChars !== "number" || request.systemPromptChars > 8_000) {
+				fail(
+					`provider-visible system prompt exceeded the 8,000-character budget: ${String(request.systemPromptChars)}`,
+				);
 			}
 		}
 		const searchRequest = requests.find((record) => typeof record.searchResult === "string");
