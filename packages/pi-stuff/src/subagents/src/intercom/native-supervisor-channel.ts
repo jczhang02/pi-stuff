@@ -16,6 +16,7 @@ import {
 	supervisorChannelDir,
 } from "../runs/shared/pi-args.ts";
 import { writeAtomicJson } from "../shared/atomic-json.ts";
+import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { type DurableClaim, tryAcquireDurableClaim } from "../shared/durable-claim.ts";
 import {
 	ensurePrivateDirectory,
@@ -458,7 +459,7 @@ async function waitForReply(
 				try {
 					if (!snapshot || removeOwnedFileSnapshot(file, snapshot) !== "removed") continue;
 				} catch (error) {
-					console.error(`Failed to remove consumed supervisor reply '${file}':`, error);
+					reportAgentDiagnostic(`Failed to remove consumed supervisor reply '${file}':`, error);
 				}
 				removeRequestFile(requestPath(channelDir, requestId));
 				return reply;
@@ -1205,7 +1206,7 @@ export function createNativeSupervisorChannel(
 		try {
 			deliveryClaims.get(requestId)?.release();
 		} catch (error) {
-			console.error(`Failed to release supervisor delivery claim '${requestId}':`, error);
+			reportAgentDiagnostic(`Failed to release supervisor delivery claim '${requestId}':`, error);
 		} finally {
 			deliveryClaims.delete(requestId);
 			deliveryClaimFiles.delete(requestId);
@@ -1383,15 +1384,15 @@ export function createNativeSupervisorChannel(
 								childIndex: request.childIndex,
 							});
 						} catch (error) {
-							console.error(`Supervisor detach observer failed for request '${request.id}':`, error);
+							reportAgentDiagnostic(`Supervisor detach observer failed for request '${request.id}':`, error);
 						}
 					}
 				} catch (error) {
-					console.error(`Failed to deliver supervisor request '${file}'; retaining it for retry:`, error);
+					reportAgentDiagnostic(`Failed to deliver supervisor request '${file}'; retaining it for retry:`, error);
 				}
 			}
 		} catch (error) {
-			console.error("Native supervisor channel poll failed; the next interval will retry:", error);
+			reportAgentDiagnostic("Native supervisor channel poll failed; the next interval will retry:", error);
 		}
 	};
 

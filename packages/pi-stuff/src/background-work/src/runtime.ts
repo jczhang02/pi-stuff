@@ -26,6 +26,7 @@ import {
 	getShellConfig,
 	truncateTail,
 } from "@earendil-works/pi-coding-agent";
+import { reportWorkDiagnostic } from "./diagnostics.js";
 import {
 	BoundedOutputFile,
 	boundedTextTail,
@@ -240,7 +241,7 @@ function emitToolUpdate(
 	try {
 		onUpdate?.(result);
 	} catch (error) {
-		console.error("[pi-stuff-work] Bash progress observer failed:", error);
+		reportWorkDiagnostic("Bash progress observer failed", error, { key: "bash-progress-observer" });
 	}
 }
 
@@ -534,8 +535,10 @@ export class BackgroundWorkRuntime {
 		if (!this.preparation) {
 			const attempt = this.reconcileStale(this.cwd).then((reconciliation) => {
 				if (reconciliation.unresolvedDirectories > 0) {
-					console.warn(
-						`[pi-stuff-work] left ${String(reconciliation.unresolvedDirectories)} unverified stale runtime director${reconciliation.unresolvedDirectories === 1 ? "y" : "ies"} untouched`,
+					reportWorkDiagnostic(
+						`${String(reconciliation.unresolvedDirectories)} unverified stale runtime director${reconciliation.unresolvedDirectories === 1 ? "y was" : "ies were"} left untouched`,
+						undefined,
+						{ key: "unverified-stale-runtime", severity: "warning" },
 					);
 				}
 			});
@@ -763,13 +766,13 @@ export class BackgroundWorkRuntime {
 		try {
 			this.persistRunningProcesses();
 		} catch (error) {
-			console.error("[pi-stuff-work] failed to persist Background Work shutdown state:", error);
+			reportWorkDiagnostic("Shutdown state could not be saved", error, { key: "shutdown-persist" });
 		}
 		if (this.activities.size === 0) {
 			try {
 				this.storage.cleanup();
 			} catch (error) {
-				console.error("[pi-stuff-work] failed to clean up Background Work shutdown state:", error);
+				reportWorkDiagnostic("Shutdown state could not be cleaned up", error, { key: "shutdown-cleanup" });
 			}
 		}
 		this.terminalOutcomes.clear();
@@ -922,7 +925,11 @@ export class BackgroundWorkRuntime {
 			// Preserve durable ownership and let its graceful TERM handler reap that
 			// group instead of SIGKILLing the supervisor alone.
 			void this.stopShell(activity, "abort").catch((stopError) => {
-				console.error("[pi-stuff-work] failed to stop after supervisor input failure:", stopError);
+				reportWorkDiagnostic("A task could not stop after its supervisor input failed", stopError, {
+					action: "/tasks",
+					key: "supervisor-input-stop",
+					notice: true,
+				});
 			});
 		};
 		try {
@@ -960,7 +967,9 @@ export class BackgroundWorkRuntime {
 			try {
 				this.persistRunningProcesses();
 			} catch (cleanupError) {
-				console.error("[pi-stuff-work] failed to persist Background Work launch rollback:", cleanupError);
+				reportWorkDiagnostic("Launch rollback state could not be saved", cleanupError, {
+					key: "launch-rollback-persist",
+				});
 			}
 		});
 		this.rollbackSettlements.add(settlement);
@@ -968,7 +977,7 @@ export class BackgroundWorkRuntime {
 			() => this.rollbackSettlements.delete(settlement),
 			(error) => {
 				this.rollbackSettlements.delete(settlement);
-				console.error("[pi-stuff-work] failed to settle Background Work launch rollback:", error);
+				reportWorkDiagnostic("Launch rollback did not settle", error, { key: "launch-rollback-settle" });
 			},
 		);
 		this.removeLaunchArtifact(activity.commandAuthorizationPath);
@@ -984,7 +993,9 @@ export class BackgroundWorkRuntime {
 		try {
 			rmSync(filePath, { force: true });
 		} catch (error) {
-			console.error(`[pi-stuff-work] failed to remove launch artifact '${filePath}':`, error);
+			reportWorkDiagnostic("A launch artifact could not be removed", error, {
+				key: "launch-artifact-remove",
+			});
 		}
 	}
 
@@ -1005,11 +1016,15 @@ export class BackgroundWorkRuntime {
 				await this.finalizeShell(activity, code, signal);
 			})
 			.catch((error) => {
-				console.error("[pi-stuff-work] Background Work finalization failed:", error);
+				reportWorkDiagnostic("Task finalization failed; retrying", error, { key: "finalization-retry" });
 				if (!activity.finalized) {
 					append(Buffer.from(`Background finalization failed: ${String(error)}\n`, "utf-8"));
 					void this.finalizeShell(activity, 1, null).catch((retryError) => {
-						console.error("[pi-stuff-work] Background Work finalization retry failed:", retryError);
+						reportWorkDiagnostic("A task could not be finalized", retryError, {
+							action: "/tasks",
+							key: "finalization-failed",
+							notice: true,
+						});
 					});
 				}
 			});
@@ -1024,7 +1039,11 @@ export class BackgroundWorkRuntime {
 			// Timer/signal/output callbacks have no caller to await a rejection. Keep
 			// durable recovery ownership and report the failure without turning it into
 			// an unhandled rejection that can crash the Host.
-			console.error(`[pi-stuff-work] Background Work stop from ${source} failed:`, error);
+			reportWorkDiagnostic(`A task could not stop after ${source}`, error, {
+				action: "/tasks",
+				key: `stop-${source}`,
+				notice: true,
+			});
 		});
 	}
 
@@ -1098,7 +1117,11 @@ export class BackgroundWorkRuntime {
 				try {
 					this.persistRunningProcesses();
 				} catch (error) {
-					console.error("[pi-stuff-work] failed to persist running command identity:", error);
+					reportWorkDiagnostic("Task recovery metadata could not be saved", error, {
+						action: "/tasks",
+						key: "running-command-identity",
+						notice: true,
+					});
 				}
 			} else if (event["type"] === "spawn-error" && typeof event["message"] === "string") {
 				activity.output.append(Buffer.from(`Command spawn failed: ${event["message"]}\n`, "utf-8"));
@@ -1187,7 +1210,11 @@ export class BackgroundWorkRuntime {
 			try {
 				this.persistRunningProcesses();
 			} catch (persistError) {
-				console.error("[pi-stuff-work] failed to retain unresolved process-group recovery state:", persistError);
+				reportWorkDiagnostic("Unresolved process recovery state could not be saved", persistError, {
+					action: "/tasks",
+					key: "unresolved-process-recovery",
+					notice: true,
+				});
 			}
 			throw error;
 		}
@@ -1237,7 +1264,9 @@ export class BackgroundWorkRuntime {
 		try {
 			this.persistRunningProcesses();
 		} catch (error) {
-			console.error("[pi-stuff-work] failed to persist terminal Background Work state:", error);
+			reportWorkDiagnostic("Completed task state could not be saved", error, {
+				key: "terminal-state-persist",
+			});
 		}
 		activity.completionResolve(outcome);
 		this.emit();
@@ -1371,7 +1400,11 @@ export class BackgroundWorkRuntime {
 			try {
 				this.persistRunningProcesses();
 			} catch (error) {
-				console.error("[pi-stuff-work] failed to refresh Background Work recovery metadata:", error);
+				reportWorkDiagnostic("Task recovery metadata refresh failed", error, {
+					action: "/tasks",
+					key: "recovery-metadata-refresh",
+					notice: true,
+				});
 			}
 		}, this.metadataHeartbeatMs);
 		this.metadataHeartbeatTimer.unref?.();
@@ -1417,7 +1450,9 @@ export class BackgroundWorkRuntime {
 					wake ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "followUp", triggerTurn: false },
 				);
 			} catch (error) {
-				console.error("[pi-stuff-work] terminal notification failed:", error);
+				reportWorkDiagnostic("Task completion delivery failed; retrying", error, {
+					key: "terminal-notification",
+				});
 				this.notifications.unshift(...pending.slice(offset));
 				const retryDelay = this.notificationRetryDelayMs;
 				this.notificationRetryDelayMs = Math.min(

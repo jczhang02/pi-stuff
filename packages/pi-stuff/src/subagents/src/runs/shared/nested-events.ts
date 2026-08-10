@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { type DurableClaim, tryAcquireDurableClaim } from "../../shared/durable-claim.ts";
 import {
 	assertPrivateDirectory,
@@ -212,7 +213,7 @@ export function resolveInheritedNestedRouteFromEnv(env: NodeJS.ProcessEnv = proc
 	try {
 		return resolveNestedRouteFromEnv(env);
 	} catch (error) {
-		console.error("Ignoring invalid nested subagent event route:", error);
+		reportAgentDiagnostic("Ignoring invalid nested subagent event route:", error);
 		return undefined;
 	}
 }

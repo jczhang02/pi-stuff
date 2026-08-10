@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve, extname, basename, join, dirname } from "node:path";
 import { activityMonitor } from "./activity.ts";
+import { reportWebDiagnostic } from "./diagnostics.ts";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
 import { queryGeminiApiWithVideo, getApiKey, fetchGeminiApi, API_BASE, redactGeminiApiResponse } from "./gemini-api.ts";
 import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.ts";
@@ -379,8 +380,9 @@ async function pollFileState(
 
 function deleteGeminiFile(fileName: string, apiKey: string): void {
 	void fetchGeminiApi(`${API_BASE}/${fileName}`, { method: "DELETE" }, apiKey).catch((err) => {
-		const message = err instanceof Error ? err.message : String(err);
-		console.error(`Failed to delete Gemini file ${fileName}: ${message}`);
+		reportWebDiagnostic("A temporary Gemini video file could not be deleted", err, {
+			key: "gemini-video-cleanup",
+		});
 	});
 }
 

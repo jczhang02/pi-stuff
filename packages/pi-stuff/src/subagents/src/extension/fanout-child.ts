@@ -27,6 +27,7 @@ import {
 	parseAgentOwnerPath,
 } from "../runtime/agent-execution-coordinator.ts";
 import { getArtifactsDir } from "../shared/artifacts.ts";
+import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import {
 	type Details,
 	SESSION_GOVERNOR_ROOT,
@@ -256,7 +257,7 @@ export default function registerFanoutChildSubagentExtension(
 					try {
 						await executionGovernor.fail(prepared.invocation);
 					} catch (error) {
-						console.error("Failed to release a cancelled nested Agent launch reservation:", error);
+						reportAgentDiagnostic("Failed to release a cancelled nested Agent launch reservation:", error);
 					}
 				}
 				return projectEngineResult(
@@ -290,7 +291,7 @@ export default function registerFanoutChildSubagentExtension(
 						try {
 							await executionGovernor.settle(prepared.invocation, result);
 						} catch (error) {
-							console.error("Failed to settle a session-ended nested foreground Agent result:", error);
+							reportAgentDiagnostic("Failed to settle a session-ended nested foreground Agent result:", error);
 						}
 					} else {
 						const binding = result.details.lifecycleBinding;
@@ -301,7 +302,7 @@ export default function registerFanoutChildSubagentExtension(
 							} catch (error) {
 								// Failed control transport cannot prove the runner stopped.
 								// Retain the parent session's governor authority fail-closed.
-								console.error("Failed to abort a session-ended nested Agent runtime:", error);
+								reportAgentDiagnostic("Failed to abort a session-ended nested Agent runtime:", error);
 								safeToRelease = false;
 							}
 						}
@@ -309,13 +310,13 @@ export default function registerFanoutChildSubagentExtension(
 							try {
 								await executionGovernor.fail(prepared.invocation);
 							} catch (error) {
-								console.error("Failed to release a session-ended nested Agent reservation:", error);
+								reportAgentDiagnostic("Failed to release a session-ended nested Agent reservation:", error);
 							}
 						} else {
 							try {
 								await executionGovernor.settle(prepared.invocation, result);
 							} catch (error) {
-								console.error("Failed to retain a session-ended nested Agent runtime binding:", error);
+								reportAgentDiagnostic("Failed to retain a session-ended nested Agent runtime binding:", error);
 							}
 						}
 					}
@@ -331,7 +332,7 @@ export default function registerFanoutChildSubagentExtension(
 						if (error instanceof AgentRuntimeBindingRejectedError) {
 							return projectEngineResult(params, governorFailureResult(params, error.message));
 						}
-						console.error(
+						reportAgentDiagnostic(
 							"Failed to persist the launched nested Agent lease binding; retaining it for reconciliation:",
 							error,
 						);
@@ -343,7 +344,7 @@ export default function registerFanoutChildSubagentExtension(
 					try {
 						await executionGovernor.fail(prepared.invocation);
 					} catch (releaseError) {
-						console.error(
+						reportAgentDiagnostic(
 							"Failed to release a nested Agent reservation after engine launch failure:",
 							releaseError,
 						);
@@ -364,20 +365,20 @@ export default function registerFanoutChildSubagentExtension(
 			try {
 				unsubscribe();
 			} catch (error) {
-				console.error("Failed to unsubscribe a nested Agent event handler:", error);
+				reportAgentDiagnostic("Failed to unsubscribe a nested Agent event handler:", error);
 			}
 		}
 		try {
 			executionGovernor.dispose();
 		} catch (error) {
-			console.error("Failed to dispose the nested Agent execution governor:", error);
+			reportAgentDiagnostic("Failed to dispose the nested Agent execution governor:", error);
 		}
 	};
 	try {
 		const complete = (data: unknown): void => {
 			if (!active) return;
 			void executionGovernor.complete(data).catch((error) => {
-				console.error("Failed to release completed nested Agent lease:", error);
+				reportAgentDiagnostic("Failed to release completed nested Agent lease:", error);
 			});
 		};
 		onBus(SUBAGENT_ASYNC_COMPLETE_EVENT, complete);
@@ -385,7 +386,7 @@ export default function registerFanoutChildSubagentExtension(
 		onBus(SUBAGENT_PROCESS_TERMINAL_EVENT, () => {
 			if (!active) return;
 			void executionGovernor.reconcileDead().catch((error) => {
-				console.error("Failed to reconcile nested Agent leases after runner exit:", error);
+				reportAgentDiagnostic("Failed to reconcile nested Agent leases after runner exit:", error);
 			});
 		});
 

@@ -18,6 +18,7 @@ import { formatAuthRequiredMessage, resolveServerUrl, truncateAtWord } from "./u
 import { SessionRecoveryAuthRequiredError, withSessionRecovery } from "./session-recovery.ts";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { ensureToolCallApproved } from "./tool-approval.ts";
+import { logger } from "./logger.ts";
 
 const BUILTIN_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls", "mcp"]);
 const INSTRUCTIONS_SNIPPET_LENGTH = 150;
@@ -149,11 +150,17 @@ export function resolveDirectTools(
       if (!isToolAllowed(tool.name, serverName, effectivePrefix, definition.includeTools, definition.excludeTools)) continue;
       const prefixedName = formatToolName(tool.name, serverName, effectivePrefix);
       if (BUILTIN_NAMES.has(prefixedName)) {
-        console.warn(`MCP: skipping direct tool "${prefixedName}" (collides with builtin)`);
+        logger.warn(`MCP: skipping direct tool "${prefixedName}" because it collides with a built-in Tool`, {
+          server: serverName,
+          tool: prefixedName,
+        });
         continue;
       }
       if (seenNames.has(prefixedName)) {
-        console.warn(`MCP: skipping duplicate direct tool "${prefixedName}" from "${serverName}"`);
+        logger.warn(`MCP: skipping duplicate direct tool "${prefixedName}"`, {
+          server: serverName,
+          tool: prefixedName,
+        });
         continue;
       }
       seenNames.add(prefixedName);
@@ -175,11 +182,17 @@ export function resolveDirectTools(
         if (!isToolAllowed(baseName, serverName, effectivePrefix, definition.includeTools, definition.excludeTools)) continue;
         const prefixedName = formatToolName(baseName, serverName, effectivePrefix);
         if (BUILTIN_NAMES.has(prefixedName)) {
-          console.warn(`MCP: skipping direct resource tool "${prefixedName}" (collides with builtin)`);
+          logger.warn(`MCP: skipping direct resource tool "${prefixedName}" because it collides with a built-in Tool`, {
+            server: serverName,
+            tool: prefixedName,
+          });
           continue;
         }
         if (seenNames.has(prefixedName)) {
-          console.warn(`MCP: skipping duplicate direct resource tool "${prefixedName}" from "${serverName}"`);
+          logger.warn(`MCP: skipping duplicate direct resource tool "${prefixedName}"`, {
+            server: serverName,
+            tool: prefixedName,
+          });
           continue;
         }
         seenNames.add(prefixedName);
@@ -195,7 +208,9 @@ export function resolveDirectTools(
   }
 
   if (specs.length >= DIRECT_TOOLS_ADVISORY_THRESHOLD) {
-    console.warn(`MCP: ${specs.length} direct tools resolved. Each direct tool adds prompt context; README guidance recommends targeted sets of 5-20 tools and using the proxy or an explicit string[] when 75+ direct tools would be registered.`);
+    logger.warn(
+      `MCP: ${specs.length} direct tools resolved; use targeted sets of 5-20 Tools or the proxy to limit prompt context`,
+    );
   }
 
   return specs;

@@ -9,6 +9,7 @@ import {
 	resolveSubagentResultStatus,
 } from "../../intercom/result-intercom.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { type DurableClaim, shardedDurableClaimName, tryAcquireDurableClaim } from "../../shared/durable-claim.ts";
 import { createFileCoalescer } from "../../shared/file-coalescer.ts";
 import {
@@ -191,7 +192,7 @@ function sanitizeNestedResultChildren(
 ): NestedRunSummary[] | undefined {
 	if (value === undefined) return undefined;
 	if (!Array.isArray(value)) {
-		console.error(
+		reportAgentDiagnostic(
 			`Ignoring invalid nested children in subagent result file '${resultPath}' at ${label}: expected an array.`,
 		);
 		return undefined;
@@ -200,7 +201,7 @@ function sanitizeNestedResultChildren(
 		.map((child) => sanitizeSummary(child))
 		.filter((child): child is NestedRunSummary => Boolean(child));
 	if (children.length !== value.length) {
-		console.error(
+		reportAgentDiagnostic(
 			`Ignoring ${value.length - children.length} invalid nested child record(s) in subagent result file '${resultPath}' at ${label}.`,
 		);
 	}
@@ -416,8 +417,8 @@ export function createResultWatcher(
 		const last = statusRepairLastLog.get(file) ?? 0;
 		if (now - last < STATUS_REPAIR_LOG_INTERVAL_MS) return;
 		statusRepairLastLog.set(file, now);
-		if (error === undefined) console.error(message);
-		else console.error(message, error);
+		if (error === undefined) reportAgentDiagnostic(message);
+		else reportAgentDiagnostic(message, error);
 	};
 
 	const scheduleStatusRepair = (file: string, triggerTurn: boolean): void => {
@@ -520,7 +521,7 @@ export function createResultWatcher(
 					try {
 						persistedStatus = readStatus(data.asyncDir);
 					} catch (error) {
-						console.error(
+						reportAgentDiagnostic(
 							`Failed to inspect exact nested route for '${resultPath}'; retaining persisted status children:`,
 							error,
 						);
@@ -538,7 +539,7 @@ export function createResultWatcher(
 						// An exact persisted route is authoritative. A busy projector is
 						// not an empty tree, so retain the result and retry instead of
 						// permanently delivering an incomplete nested summary.
-						console.error(
+						reportAgentDiagnostic(
 							`Failed to project exact nested route for '${resultPath}'; retaining result for retry:`,
 							error,
 						);
@@ -551,7 +552,7 @@ export function createResultWatcher(
 						try {
 							nestedChildren = compactNestedResultChildren((await projectNestedRegistry(runId))?.children);
 						} catch (error) {
-							console.error(
+							reportAgentDiagnostic(
 								`Failed to authoritatively enrich legacy subagent result '${resultPath}'; retaining it for retry:`,
 								error,
 							);
@@ -607,7 +608,10 @@ export function createResultWatcher(
 					statusRepairLastLog.delete(file);
 				} catch (error) {
 					if (!isNotFound(error)) {
-						console.error(`Failed to remove delivered subagent result '${resultPath}'; will retry:`, error);
+						reportAgentDiagnostic(
+							`Failed to remove delivered subagent result '${resultPath}'; will retry:`,
+							error,
+						);
 						scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
 					}
 				}
@@ -712,7 +716,7 @@ export function createResultWatcher(
 					requestId: stableDeliveryId(completionKey),
 				});
 				if (!intercomDelivered)
-					console.error(
+					reportAgentDiagnostic(
 						`Subagent async grouped result intercom delivery was not acknowledged for '${resultPath}'.`,
 					);
 			}
@@ -745,7 +749,7 @@ export function createResultWatcher(
 				try {
 					pi.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, completion);
 				} catch (error) {
-					console.error(`Completion observer failed for '${resultPath}':`, error);
+					reportAgentDiagnostic(`Completion observer failed for '${resultPath}':`, error);
 				}
 				deliveryState = { ...deliveryState, completionEmitted: true, updatedAt: Date.now() };
 				writeDeliveryState(resultsDir, file, deliveryState);
@@ -772,7 +776,7 @@ export function createResultWatcher(
 				statusRepairLastLog.delete(file);
 			} catch (error) {
 				if (!isNotFound(error)) {
-					console.error(`Failed to remove delivered subagent result '${resultPath}'; will retry:`, error);
+					reportAgentDiagnostic(`Failed to remove delivered subagent result '${resultPath}'; will retry:`, error);
 					scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
 				}
 			}
@@ -782,7 +786,7 @@ export function createResultWatcher(
 				const last = processRetryLastLog.get(file) ?? 0;
 				if (now - last >= STATUS_REPAIR_LOG_INTERVAL_MS) {
 					processRetryLastLog.set(file, now);
-					console.error(`Failed to process subagent result file '${resultPath}'; will retry:`, error);
+					reportAgentDiagnostic(`Failed to process subagent result file '${resultPath}'; will retry:`, error);
 				}
 				if (deliveryActive && attemptEpoch === deliveryEpoch && fsApi.existsSync(resultPath)) {
 					const delay = processRetryDelay.get(file) ?? PROCESS_RETRY_INITIAL_MS;
@@ -795,7 +799,7 @@ export function createResultWatcher(
 			try {
 				durableClaim?.release();
 			} catch (releaseError) {
-				console.error(`Failed to release subagent result claim for '${resultPath}':`, releaseError);
+				reportAgentDiagnostic(`Failed to release subagent result claim for '${resultPath}':`, releaseError);
 			}
 			// stop→restart may legitimately begin a new attempt while this old epoch
 			// is still awaiting a notifier. Never release the new attempt's lock.
@@ -819,7 +823,8 @@ export function createResultWatcher(
 					scheduleResult(file, triggerTurn);
 				});
 		} catch (error) {
-			if (!isNotFound(error)) console.error(`Failed to scan subagent result directory '${resultsDir}':`, error);
+			if (!isNotFound(error))
+				reportAgentDiagnostic(`Failed to scan subagent result directory '${resultsDir}':`, error);
 		}
 	};
 
@@ -829,7 +834,7 @@ export function createResultWatcher(
 		if (safetyScanTimer) timers.clearInterval(safetyScanTimer);
 		safetyScanTimer = undefined;
 		if (state.watcherRestartTimer) return true;
-		console.error(
+		reportAgentDiagnostic(
 			`Subagent result watcher for '${resultsDir}' fell back to polling because native fs.watch is unavailable (${errorCode(reason) ?? "unknown error"}).`,
 		);
 		primeExistingResults();
@@ -848,7 +853,7 @@ export function createResultWatcher(
 				else scheduleRestart();
 			} catch (error) {
 				if (shouldPoll(error)) return startPolling(error);
-				console.error(`Failed to restart subagent result watcher for '${resultsDir}':`, error);
+				reportAgentDiagnostic(`Failed to restart subagent result watcher for '${resultsDir}':`, error);
 				scheduleRestart();
 			}
 		}, watcherRestartDelayMs);
@@ -894,7 +899,7 @@ export function createResultWatcher(
 			}
 			state.watcher.on("error", (error) => {
 				if (shouldPoll(error)) return startPolling(error);
-				console.error(`Subagent result watcher failed for '${resultsDir}':`, error);
+				reportAgentDiagnostic(`Subagent result watcher failed for '${resultsDir}':`, error);
 				state.watcher?.close();
 				state.watcher = null;
 				scheduleRestart();
@@ -903,7 +908,7 @@ export function createResultWatcher(
 			return true;
 		} catch (error) {
 			if (shouldPoll(error)) return startPolling(error);
-			console.error(`Failed to start subagent result watcher for '${resultsDir}':`, error);
+			reportAgentDiagnostic(`Failed to start subagent result watcher for '${resultsDir}':`, error);
 			state.watcher = null;
 			scheduleRestart();
 			return false;

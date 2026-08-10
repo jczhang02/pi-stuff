@@ -37,6 +37,7 @@ import { isServerDisabled, type ServerEntry } from "./types.ts"
 import { formatTerminalError, interpolateEnvRecord, interpolateEnvVars } from "./utils.ts"
 import { abortable, throwIfAborted } from "./abort.ts"
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts"
+import { logger } from "./logger.ts"
 
 /** Auth status for a server */
 export type AuthStatus = "authenticated" | "expired" | "not_authenticated"
@@ -429,7 +430,11 @@ async function setPendingAuth(
   state.pendingAuthStates.set(key, oauthState)
   const cleanupTimer = setTimeout(() => {
     void clearPendingAuth(runtime, serverName, oauthState, pendingAuth.authStorageOptions).catch(error => {
-      console.error(`MCP Auth: Timed-out flow cleanup failed: ${formatTerminalError(error)}`)
+      logger.error(
+        "MCP Auth: Timed-out flow cleanup failed",
+        error instanceof Error ? error : new Error(formatTerminalError(error)),
+        { server: serverName },
+      )
     })
   }, MANUAL_AUTH_TIMEOUT_MS)
   cleanupTimer.unref?.()
@@ -685,13 +690,19 @@ export async function authenticate(
       if (options.onAuthorizationUrl) {
         await abortable(Promise.resolve(options.onAuthorizationUrl(authorizationUrl)), signal)
       } else {
-        console.log(`MCP Auth: Open this URL to authenticate ${serverName}:\n${authorizationUrl}`)
+        logger.info(`MCP Auth: Authorization URL is ready for ${serverName}`, {
+          server: serverName,
+          uri: authorizationUrl,
+        })
       }
       try {
         await abortable(open(authorizationUrl), signal)
       } catch (error) {
         if (isAbortError(error, signal)) throw error
-        console.warn(`MCP Auth: Failed to open browser for ${serverName}; waiting for manual callback`, { error })
+        logger.warn(`MCP Auth: Failed to open a browser for ${serverName}; waiting for manual callback`, {
+          error: error instanceof Error ? error.message : String(error),
+          server: serverName,
+        })
       }
 
       // Wait for callback
@@ -755,7 +766,7 @@ export async function getValidToken(
 
   if (expired === true && entry.tokens.refreshToken) {
     // Token is expired, try to refresh
-    console.log(`MCP Auth: Token expired for ${serverName}, attempting refresh`)
+    logger.info(`MCP Auth: Token expired for ${serverName}; attempting refresh`, { server: serverName })
 
     try {
       // Create auth provider for token refresh
@@ -767,7 +778,9 @@ export async function getValidToken(
         const clientInfo = await authProvider.clientInformation()
         throwIfAborted(signal)
         if (!clientInfo) {
-          console.log(`MCP Auth: No client info for refresh for ${serverName}`)
+          logger.info(`MCP Auth: No client information is available to refresh ${serverName}`, {
+            server: serverName,
+          })
           return null
         }
 
@@ -786,7 +799,11 @@ export async function getValidToken(
       }
     } catch (error) {
       if (isAbortError(error, signal)) throw error
-      console.error(`MCP Auth: Token refresh failed for ${serverName}`, { error })
+      logger.error(
+        `MCP Auth: Token refresh failed for ${serverName}`,
+        error instanceof Error ? error : new Error(formatTerminalError(error)),
+        { server: serverName },
+      )
       return null
     }
   }
@@ -831,7 +848,7 @@ export async function removeAuth(serverName: string, options: AuthenticateOption
   clearAllCredentials(serverName, authStorageOptions)
   await clearOAuthState(serverName, authStorageOptions)
   throwIfAborted(signal)
-  console.log(`MCP Auth: Removed credentials for ${serverName}`)
+  logger.info(`MCP Auth: Removed credentials for ${serverName}`, { server: serverName })
 }
 
 /**

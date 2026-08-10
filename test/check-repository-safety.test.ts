@@ -164,6 +164,35 @@ describe("auditRepositoryFiles", () => {
 		]);
 	});
 
+	test("rejects raw console output from Host source but permits browser-owned output", async () => {
+		const root = await createRepository();
+		await mkdir(join(root, "packages", "pi-stuff", "src", "goal"), { recursive: true });
+		await mkdir(join(root, "packages", "pi-stuff", "src", "mcp", "runtime"), { recursive: true });
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "goal", "index.ts"),
+			'console.warn("this would corrupt the Host TUI");\n',
+		);
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "goal", "stream.ts"),
+			'process.stderr.write("this would also corrupt the Host TUI\\n");\n',
+		);
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "mcp", "runtime", "host-html-template.ts"),
+			'export const html = `<script>console.error("browser-only")</script>`;\n',
+		);
+
+		expect(await auditRepositoryFiles(root)).toEqual([
+			{
+				path: "packages/pi-stuff/src/goal/index.ts",
+				rule: "raw-host-console-output",
+			},
+			{
+				path: "packages/pi-stuff/src/goal/stream.ts",
+				rule: "raw-host-stream-output",
+			},
+		]);
+	});
+
 	test("ignores tracked files deleted from the working tree", async () => {
 		const root = await createRepository();
 		const deletedPath = join(root, "README.md");

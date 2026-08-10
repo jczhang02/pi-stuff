@@ -304,7 +304,11 @@ export async function initializeMcp(
       if (ui) {
         ui.notify(`MCP: Failed to connect to ${name}: ${displayError}`, "error");
       }
-      console.error(`MCP: Failed to connect to ${name}: ${displayError}`);
+      logger.error(
+        `MCP: Failed to connect to ${name}`,
+        error instanceof Error ? error : new Error(displayError),
+        { server: name },
+      );
       continue;
     }
 

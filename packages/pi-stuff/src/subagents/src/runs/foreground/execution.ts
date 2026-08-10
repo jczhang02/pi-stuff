@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { tryAcquireStatusMutationClaim } from "../../shared/status-mutation.ts";
 import type { ArtifactPaths, AsyncStatus, Details, NestedRunSummary, SingleResult, Usage } from "../../shared/types.ts";
 import { readStatus } from "../../shared/utils.ts";
@@ -417,7 +418,7 @@ export async function executeForegroundConfig(
 			deps.requestStop(config.asyncDir);
 		} catch (error) {
 			stopRequestError = error;
-			console.error(`Failed to request foreground Agent cancellation for '${config.id}':`, error);
+			reportAgentDiagnostic(`Failed to request foreground Agent cancellation for '${config.id}':`, error);
 		}
 	};
 	signal?.addEventListener("abort", stop, { once: true });
@@ -451,13 +452,13 @@ export async function executeForegroundConfig(
 		try {
 			recordForegroundOwnerExit(config.asyncDir, config.id, ownerFailure);
 		} catch (markerError) {
-			console.error(`Failed to persist foreground owner exit for '${config.id}':`, markerError);
+			reportAgentDiagnostic(`Failed to persist foreground owner exit for '${config.id}':`, markerError);
 		}
 		let remainingWriters = 1;
 		try {
 			remainingWriters = (await deps.reapWriters(config.asyncDir)).remaining;
 		} catch (reapError) {
-			console.error(`Failed to reap foreground writers for '${config.id}':`, reapError);
+			reportAgentDiagnostic(`Failed to reap foreground writers for '${config.id}':`, reapError);
 		}
 		let terminalOverlay: AsyncStatus | undefined;
 		if (status && !terminalStatus(status) && remainingWriters === 0) {
@@ -465,7 +466,7 @@ export async function executeForegroundConfig(
 			try {
 				claim = deps.acquireStatusClaim(config.asyncDir);
 			} catch (claimError) {
-				console.error(`Failed to acquire foreground status claim for '${config.id}':`, claimError);
+				reportAgentDiagnostic(`Failed to acquire foreground status claim for '${config.id}':`, claimError);
 			}
 			if (claim) {
 				try {
@@ -478,12 +479,12 @@ export async function executeForegroundConfig(
 						}
 					}
 				} catch (statusError) {
-					console.error(`Failed to persist foreground owner failure for '${config.id}':`, statusError);
+					reportAgentDiagnostic(`Failed to persist foreground owner failure for '${config.id}':`, statusError);
 				} finally {
 					try {
 						claim.release();
 					} catch (releaseError) {
-						console.error(`Failed to release foreground status claim for '${config.id}':`, releaseError);
+						reportAgentDiagnostic(`Failed to release foreground status claim for '${config.id}':`, releaseError);
 					}
 				}
 			}

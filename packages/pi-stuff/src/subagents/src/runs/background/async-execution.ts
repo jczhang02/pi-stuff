@@ -9,6 +9,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { buildSkillInjection, normalizeSkillInput, resolveSkillsWithFallback } from "../../agents/skills.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
 import { agentDefinitionDigest, launchBindingDigest } from "../../shared/launch-contract.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
@@ -833,7 +834,7 @@ export function removeRunnerStartupMarkerBestEffort(
 	try {
 		rm(startupPath, { force: true });
 	} catch (error) {
-		console.error(`Failed to remove acknowledged Agent runner startup marker '${startupPath}':`, error);
+		reportAgentDiagnostic(`Failed to remove acknowledged Agent runner startup marker '${startupPath}':`, error);
 	}
 }
 
@@ -876,19 +877,22 @@ export function finalizeSpawnedRunnerClose(input: {
 				});
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-					console.error("Failed to emit final nested Agent state:", error);
+					reportAgentDiagnostic("Failed to emit final nested Agent state:", error);
 				}
 			}
 		}
 		try {
 			input.onProcessTerminal?.(persisted);
 		} catch (error) {
-			console.error(`Process-terminal observer failed for '${input.launchConfig.id}':`, error);
+			reportAgentDiagnostic(`Process-terminal observer failed for '${input.launchConfig.id}':`, error);
 		}
 	} catch (error) {
 		// Close listeners execute outside the launch promise. Filesystem failure
 		// must leave evidence for stale reconciliation, never crash the parent Pi.
-		console.error(`Failed to finalize background runner '${input.launchConfig.id}' after process close:`, error);
+		reportAgentDiagnostic(
+			`Failed to finalize background runner '${input.launchConfig.id}' after process close:`,
+			error,
+		);
 	}
 }
 
@@ -984,7 +988,7 @@ async function spawnRunner(
 		closeFd(stdoutFd);
 		closeFd(stderrFd);
 		proc.on("error", (error) => {
-			console.error(`[pi-stuff-agents] background runner spawn failed: ${error.message}`);
+			reportAgentDiagnostic(`[pi-stuff-agents] background runner spawn failed: ${error.message}`);
 		});
 		proc.once("close", (exitCode, signal) => {
 			if (launchAborted) return;
@@ -1473,7 +1477,7 @@ function emitStarted(input: {
 				},
 			});
 		} catch (error) {
-			console.error("Failed to emit nested Agent start:", error);
+			reportAgentDiagnostic("Failed to emit nested Agent start:", error);
 		}
 	}
 	try {
@@ -1503,7 +1507,7 @@ function emitStarted(input: {
 			...(input.abortStart ? { abortStart: input.abortStart } : {}),
 		});
 	} catch (error) {
-		console.error(`Async Agent start observer failed for '${input.id}':`, error);
+		reportAgentDiagnostic(`Async Agent start observer failed for '${input.id}':`, error);
 	}
 }
 

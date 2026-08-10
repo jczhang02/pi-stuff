@@ -26,6 +26,21 @@ const CREDENTIAL_PATTERNS = [
 	/\bsk-ant-[A-Za-z0-9_-]{20,}\b/,
 	/\bsk-[A-Za-z0-9_-]{24,}\b/,
 ];
+const HOST_CONSOLE_CALL_PATTERN = /\bconsole\s*\.\s*(?:debug|error|info|log|warn)\s*\(/u;
+const HOST_STREAM_WRITE_PATTERN = /\bprocess\s*\.\s*(?:stderr|stdout)\s*\.\s*write\s*\(/u;
+const HOST_CONSOLE_ALLOWLIST = new Set([
+	// These run inside browser/sandbox surfaces rather than Pi's Host TUI.
+	"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js",
+	"packages/pi-stuff/src/mcp/runtime/host-html-template.ts",
+	"packages/pi-stuff/src/mcp/runtime/mcp-script-worker.mjs",
+	"packages/pi-stuff/src/web/runtime/curator-page.ts",
+]);
+const HOST_STREAM_WRITE_ALLOWLIST = new Set([
+	// Explicit subprocess protocols and detached-runner logs; none execute in Pi's Host TUI path.
+	"packages/pi-stuff/src/mcp/runtime/mcp-keyring-helper.cjs",
+	"packages/pi-stuff/src/subagents/src/runs/background/writer-process-supervisor.mjs",
+	"packages/pi-stuff/src/subagents/src/shared/detached-runner-diagnostics.ts",
+]);
 const INTERNAL_MODULES = [
 	"conversation-ui",
 	"tool-display",
@@ -170,6 +185,20 @@ async function auditTextFile(root: string, path: string): Promise<SafetyFinding[
 	}
 	if (CREDENTIAL_PATTERNS.some((pattern) => pattern.test(text))) {
 		findings.push({ path, rule: "credential-pattern" });
+	}
+	if (
+		path.startsWith("packages/pi-stuff/src/") &&
+		!HOST_CONSOLE_ALLOWLIST.has(path) &&
+		HOST_CONSOLE_CALL_PATTERN.test(text)
+	) {
+		findings.push({ path, rule: "raw-host-console-output" });
+	}
+	if (
+		path.startsWith("packages/pi-stuff/src/") &&
+		!HOST_STREAM_WRITE_ALLOWLIST.has(path) &&
+		HOST_STREAM_WRITE_PATTERN.test(text)
+	) {
+		findings.push({ path, rule: "raw-host-stream-output" });
 	}
 	return findings;
 }

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-tools.json";
 
@@ -48,7 +49,16 @@ async function readSettings(path: string): Promise<ToolUiSettings> {
 	} catch (error) {
 		// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
 		if (isRecord(error) && error["code"] === "ENOENT") return DEFAULT_SETTINGS;
-		console.warn(`[pi-stuff-tools] ignoring invalid settings at ${path}: ${String(error)}`);
+		reportDiagnostic({
+			action: "/ui",
+			capability: "Tools",
+			details: path,
+			error,
+			key: "invalid-settings",
+			severity: "warning",
+			summary: "Tool display settings were invalid and built-in defaults are active",
+			visibility: "notice",
+		});
 		return DEFAULT_SETTINGS;
 	}
 }

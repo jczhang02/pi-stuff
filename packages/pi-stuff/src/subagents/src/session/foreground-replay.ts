@@ -5,6 +5,7 @@ import { readForegroundOwnerExit } from "../runs/foreground/owner-exit.ts";
 import { parseSubagentCapabilityCeiling } from "../runs/shared/capability-ceiling.ts";
 import { resolvePersistedNestedRoute, sanitizeSummary } from "../runs/shared/nested-events.ts";
 import { writePrivateAtomicJson } from "../shared/atomic-json.ts";
+import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { readBoundedOwnedFile } from "../shared/private-directory.ts";
 import { readProcessStartIdentity } from "../shared/process-identity.ts";
 import { type SessionCompatibilityScope, sessionArtifactMatches } from "../shared/session-identity.ts";
@@ -534,7 +535,7 @@ export function recoverForegroundRuntimeRuns(
 						try {
 							writePrivateAtomicJson(path.join(asyncDir, "status.json"), status);
 						} catch (error) {
-							console.error(
+							reportAgentDiagnostic(
 								`Failed to persist recovered foreground terminal status for '${status.runId}':`,
 								error,
 							);

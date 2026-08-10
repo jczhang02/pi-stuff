@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { refreshForegroundRuntimeRun } from "../../session/foreground-replay.ts";
+import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { sessionArtifactMatches } from "../../shared/session-identity.ts";
 import {
 	type AsyncJobState,
@@ -109,7 +110,7 @@ export function createAsyncJobTracker(
 		try {
 			pi.events.emit(event, payload);
 		} catch (error) {
-			console.error(`Agent lifecycle observer '${event}' failed:`, error);
+			reportAgentDiagnostic(`Agent lifecycle observer '${event}' failed:`, error);
 		}
 	};
 	const restoredControlEventCursor = (asyncDir: string): number | undefined => {
@@ -119,7 +120,7 @@ export function createAsyncJobTracker(
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
 			// Do not replay old side effects after a transient metadata failure. The
 			// first successful observation will initialize this cursor at EOF.
-			console.error(
+			reportAgentDiagnostic(
 				`Failed to inspect restored Agent control events for '${asyncDir}'; deferring cursor initialization:`,
 				error,
 			);
@@ -230,7 +231,7 @@ export function createAsyncJobTracker(
 					return true;
 				}
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-					console.error(`Failed to settle nested route for '${job.asyncId}':`, error);
+					reportAgentDiagnostic(`Failed to settle nested route for '${job.asyncId}':`, error);
 				}
 				return false;
 			})
@@ -328,7 +329,7 @@ export function createAsyncJobTracker(
 			.catch((error) => {
 				if (trackerGeneration !== expectedGeneration || state.foregroundRuns?.get(run.runId) !== run) return false;
 				if (!recoverRetiredForegroundRoute(run, route.capabilityToken, error)) {
-					console.error(`Failed to settle foreground nested route for '${run.runId}':`, error);
+					reportAgentDiagnostic(`Failed to settle foreground nested route for '${run.runId}':`, error);
 				}
 				return false;
 			})
@@ -343,7 +344,7 @@ export function createAsyncJobTracker(
 				try {
 					refreshForegroundRun(run);
 				} catch (error) {
-					console.error(`Failed to advance foreground crash recovery for '${run.runId}':`, error);
+					reportAgentDiagnostic(`Failed to advance foreground crash recovery for '${run.runId}':`, error);
 				}
 			}
 			const route = run.nestedRoute;
@@ -361,7 +362,7 @@ export function createAsyncJobTracker(
 				settleForegroundRoute(run, !live);
 			} catch (error) {
 				if (!recoverRetiredForegroundRoute(run, route.capabilityToken, error)) {
-					console.error(`Failed to refresh foreground nested descendants for '${run.runId}':`, error);
+					reportAgentDiagnostic(`Failed to refresh foreground nested descendants for '${run.runId}':`, error);
 				}
 			}
 		}
@@ -373,7 +374,7 @@ export function createAsyncJobTracker(
 			fd = fs.openSync(eventsPath, "r");
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-			console.error(`Failed to open async control events for '${job.asyncDir}':`, error);
+			reportAgentDiagnostic(`Failed to open async control events for '${job.asyncDir}':`, error);
 			return;
 		}
 		try {
@@ -395,7 +396,7 @@ export function createAsyncJobTracker(
 				try {
 					parsed = JSON.parse(line);
 				} catch (error) {
-					console.error(`Ignoring malformed async control event in '${eventsPath}':`, error);
+					reportAgentDiagnostic(`Ignoring malformed async control event in '${eventsPath}':`, error);
 					return;
 				}
 				if (!parsed || typeof parsed !== "object") return;
@@ -508,7 +509,7 @@ export function createAsyncJobTracker(
 			if (lastCompleteCursor > cursor) job.controlEventCursor = lastCompleteCursor;
 			else if (skippingOversizedLine) job.controlEventCursor = scanEnd;
 		} catch (error) {
-			console.error(`Failed to read async control events for '${job.asyncDir}':`, error);
+			reportAgentDiagnostic(`Failed to read async control events for '${job.asyncDir}':`, error);
 		} finally {
 			fs.closeSync(fd);
 		}
@@ -540,7 +541,7 @@ export function createAsyncJobTracker(
 					} catch (error) {
 						if (recoverRetiredRoute(job, error)) return;
 						nestedRefreshFailed = true;
-						console.error(`Failed to refresh nested async descendants for '${job.asyncDir}':`, error);
+						reportAgentDiagnostic(`Failed to refresh nested async descendants for '${job.asyncDir}':`, error);
 					}
 				};
 				const reconcileNestedDescendants = () => {
@@ -554,7 +555,7 @@ export function createAsyncJobTracker(
 					} catch (error) {
 						if (!recoverRetiredRoute(job, error)) {
 							nestedRefreshFailed = true;
-							console.error(`Failed to refresh nested async descendants for '${job.asyncDir}':`, error);
+							reportAgentDiagnostic(`Failed to refresh nested async descendants for '${job.asyncDir}':`, error);
 						}
 					}
 					refreshNestedProjection();
@@ -681,7 +682,10 @@ export function createAsyncJobTracker(
 					// Reading and reconciliation are observers. A transient EIO or malformed
 					// snapshot is not process/result proof and must never terminalize a live
 					// Agent. Retain the last known state and let the next poll recover.
-					console.error(`Failed to observe async status for '${job.asyncDir}'; retaining prior state:`, error);
+					reportAgentDiagnostic(
+						`Failed to observe async status for '${job.asyncDir}'; retaining prior state:`,
+						error,
+					);
 				}
 			}
 		}, pollIntervalMs);
@@ -759,7 +763,7 @@ export function createAsyncJobTracker(
 					nestedRefreshFailed = false;
 				} else {
 					nestedRefreshFailed = true;
-					console.error(`Failed to refresh nested async descendants for '${job.asyncDir}':`, error);
+					reportAgentDiagnostic(`Failed to refresh nested async descendants for '${job.asyncDir}':`, error);
 				}
 			}
 		}

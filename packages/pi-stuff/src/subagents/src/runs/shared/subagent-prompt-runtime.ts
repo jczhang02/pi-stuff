@@ -4,6 +4,7 @@ import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-age
 import type { TSchema } from "typebox";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../../tool-display/index.js";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
+import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import type { JsonSchemaObject, ResolvedToolBudget } from "../../shared/types.ts";
 import { resolveWatchPath } from "../../shared/utils.ts";
 import {
@@ -321,7 +322,7 @@ export function registerSteeringInbox(
 		if (message === lastRuntimeError && now - lastRuntimeErrorAt < 30_000) return;
 		lastRuntimeError = message;
 		lastRuntimeErrorAt = now;
-		console.error(`[pi-stuff-agents] ${message}`);
+		reportAgentDiagnostic(`[pi-stuff-agents] ${message}`);
 	};
 	const acknowledge = (
 		request: SteerRequest,
@@ -531,7 +532,7 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 			try {
 				writeChildLaunchDiagnostic(diagnosticPath, result.message);
 			} catch (error) {
-				console.error("Failed to persist the child launch budget diagnostic:", error);
+				reportAgentDiagnostic("Failed to persist the child launch budget diagnostic:", error);
 			}
 		}
 		ctx.abort();

@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createLiveThoughtTransformer } from "../packages/pi-stuff/src/conversation-ui/live-thought.js";
 import {
+	DIAGNOSTIC_PTY_SUMMARY,
 	FIXTURE_THINKING,
 	THOUGHT_PHASES,
 	TODO_PTY_PROMPT,
@@ -750,6 +751,80 @@ async function verifyTodoOverlay(
 	);
 }
 
+async function verifyDiagnosticsUi(
+	session: TmuxPiSession,
+	paths: CasePaths,
+	options: UiPtyVerificationOptions,
+	columns: number,
+	rows: number,
+): Promise<void> {
+	const draft = "DIAGNOSTIC_DRAFT_草稿";
+	session.sendKey("C-u");
+	session.sendLiteral(draft);
+	await session.waitForText(draft);
+	session.sendKey("F10");
+	let screen = await session.waitForText("/diagnostics");
+	if (columns >= 80 && !screen.includes(DIAGNOSTIC_PTY_SUMMARY)) {
+		fail("wide diagnostic notice truncated its actionable summary");
+	}
+	if (!screen.includes(draft)) fail("diagnostic notice disturbed the active editor draft");
+	if (!hasStatusline(screen)) fail("diagnostic notice replaced the Statusline instead of sitting above the editor");
+	const noticeRows = screen.split("\n").filter((line) => line.includes("/diagnostics"));
+	if (noticeRows.length !== 1) {
+		fail(`diagnostic burst rendered ${String(noticeRows.length)} notice rows instead of one\n${screen}`);
+	}
+	verifyTerminalWidth(screen, columns, `${String(columns)}-column diagnostic notice`);
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-diagnostics-notice-${String(columns)}x${String(rows)}`,
+		session,
+	);
+
+	session.sendKey("C-u");
+	session.sendLiteral("/diagnostics");
+	session.sendKey("Enter");
+	screen = await session.waitForText("Diagnostics");
+	if (columns >= 80 && !screen.includes(DIAGNOSTIC_PTY_SUMMARY)) {
+		screen = await session.waitForText(DIAGNOSTIC_PTY_SUMMARY);
+	}
+	if (!screen.includes("×2")) screen = await session.waitForText("×2");
+	if (hasStatusline(screen)) fail("Statusline remained visible while /diagnostics owned the input region");
+	verifyNoFloatingFrame(screen, "/diagnostics Command Dialog");
+	verifyFullWidthDivider(screen, columns, "/diagnostics Command Dialog");
+	verifyTerminalWidth(screen, columns, "/diagnostics Command Dialog");
+
+	session.sendKey("Enter");
+	screen = await session.waitForText("Diagnostic details");
+	screen = await session.waitForText("/tasks");
+	if (screen.includes("fixture-secret-token-value")) fail("/diagnostics exposed an unredacted credential");
+	if (!screen.includes("Bearer [redacted]")) screen = await session.waitForText("Bearer [redacted]");
+	verifyTerminalWidth(screen, columns, "/diagnostics detail");
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-diagnostics-detail-${String(columns)}x${String(rows)}`,
+		session,
+	);
+	session.sendKey("Escape");
+	await session.waitForText("Enter details");
+	session.sendLiteral("c");
+	await session.waitForText("No Pi Stuff diagnostics yet.");
+	session.sendKey("Escape");
+	await session.waitForStatusline("closing /diagnostics");
+	screen = await session.waitForAbsence(DIAGNOSTIC_PTY_SUMMARY);
+	if (screen.includes("/diagnostics")) fail("cleared diagnostic notice returned after the dialog closed");
+	await delay(50);
+	for (const sessionFile of (await readdir(paths.sessions)).filter((entry) => entry.endsWith(".jsonl"))) {
+		if ((await readFile(join(paths.sessions, sessionFile), "utf8")).includes(DIAGNOSTIC_PTY_SUMMARY)) {
+			fail("diagnostic presentation leaked into Pi Session history");
+		}
+	}
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-diagnostics-${String(columns)}x${String(rows)}`,
+		session,
+	);
+}
+
 async function verifyWideInteractions(
 	session: TmuxPiSession,
 	paths: CasePaths,
@@ -758,6 +833,7 @@ async function verifyWideInteractions(
 	const settingsPath = join(paths.config, "pi-stuff-ui.json");
 	const toolSettingsPath = join(paths.config, "pi-stuff-tools.json");
 
+	await verifyDiagnosticsUi(session, paths, options, 100, 32);
 	await verifyCodexDialog(session, paths);
 
 	let screen = await openUi(session);
@@ -1006,6 +1082,7 @@ function verifyInventory(records: readonly FixtureRecord[]): boolean {
 	for (const record of inventory) {
 		if (!Array.isArray(record.commands)) fail("session inventory did not contain public command names");
 		if (!record.commands.includes("ui")) fail("Suite did not register /ui");
+		if (!record.commands.includes("diagnostics")) fail("Suite did not register /diagnostics");
 		if (record.commands.includes("tool-settings")) fail("Suite still registered removed /tool-settings");
 	}
 	if (!inventory.every((record) => record.markdownTransformer === true)) {
@@ -1063,6 +1140,10 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						"/ui search, immediate Statusline and Inline changes, Welcome next-launch persistence",
 					);
 				} else {
+					if (columns === 64) {
+						await verifyDiagnosticsUi(session, paths, options, columns, rows);
+						verified.push("diagnostic notice and full-width details at 64x28");
+					}
 					await verifyThoughtLifecycle(session, paths, columns, rows);
 					verified.push(`live and settled Thought ${String(columns)}x${String(rows)}`);
 					if (columns === 64) {

@@ -75,7 +75,10 @@ export class McpLifecycleManager {
       if (this.stopped || signal?.aborted || this.activeHealthCheck) return;
       const check = this.checkConnections(signal)
         .catch(error => {
-          console.error(`MCP: Health check failed: ${formatTerminalError(error)}`);
+          logger.error(
+            "MCP: Health check failed",
+            error instanceof Error ? error : new Error(formatTerminalError(error)),
+          );
         })
         .finally(() => {
           if (this.activeHealthCheck === check) this.activeHealthCheck = undefined;
@@ -104,7 +107,11 @@ export class McpLifecycleManager {
           if (this.stopped || signal?.aborted) return;
           this.onReconnectFailure?.(name, error);
           const message = error instanceof Error ? error.message : String(error);
-          console.error(`MCP: Failed to reconnect to ${name}: ${sanitizeTerminalText(message)}`);
+          logger.error(
+            `MCP: Failed to reconnect to ${name}`,
+            error instanceof Error ? error : new Error(sanitizeTerminalText(message)),
+            { server: name },
+          );
         }
       }
     }

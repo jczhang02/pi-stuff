@@ -3,6 +3,7 @@ import { Box, Text, truncateToWidth, type KeyId } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { StringEnum, complete, type Api, type ImageContent, type Model, type TextContent } from "@earendil-works/pi-ai/compat";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
+import { reportWebDiagnostic } from "./diagnostics.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
 import { findContent, type FindMode } from "./content-find.ts";
 import { answerFromPage } from "./page-query.ts";
@@ -267,8 +268,12 @@ function loadConfigForExtensionInit(): WebSearchConfig {
 	try {
 		return loadConfig();
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		console.error(`[pi-web-access] ${message}`);
+		reportWebDiagnostic("Web settings were invalid and built-in defaults are active", err, {
+			action: "/websearch",
+			key: "invalid-settings",
+			notice: true,
+			severity: "warning",
+		});
 		return {};
 	}
 }
@@ -1109,8 +1114,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 			}
 		} catch (err) {
 			scopeLoaded = false;
-			const message = err instanceof Error ? err.message : String(err);
-			console.error(`Failed to load summary models: ${message}`);
+			reportWebDiagnostic("Summary models could not be loaded", err, { key: "summary-models" });
 		}
 
 		const currentModelValue = summaryContext.model
@@ -1421,8 +1425,11 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 						try {
 							saveConfig({ provider: normalized });
 						} catch (err) {
-							const message = err instanceof Error ? err.message : String(err);
-							console.error(`Failed to persist default provider: ${message}`);
+							reportWebDiagnostic("The default search provider could not be saved", err, {
+								action: "/websearch",
+								key: "default-provider-persist",
+								notice: true,
+							});
 						}
 					},
 					async onAddSearch(query, provider) {
@@ -1507,15 +1514,16 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 					});
 					return;
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					console.error(`Failed to open Glimpse curator window: ${message}`);
+					reportWebDiagnostic("The Glimpse curator window could not open", err, {
+						key: "glimpse-window-open",
+					});
 					glimpseWins.delete(callId);
 				}
 			}
 			await openInBrowser(pi, handle.url);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			console.error(`Failed to open curator UI: ${message}`);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		reportWebDiagnostic("The search curator UI could not open", err, { key: "curator-open" });
 			if (handle && activeCurators.get(callId) === handle && pendingCurates.get(callId) === pc) {
 				pc.browserOpenError = message;
 				sendCuratorFallbackUpdate("Search curator is running, but the browser did not open automatically.");
@@ -2983,8 +2991,11 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 							try {
 								saveConfig({ provider: normalized });
 							} catch (err) {
-								const message = err instanceof Error ? err.message : String(err);
-								console.error(`Failed to persist default provider: ${message}`);
+								reportWebDiagnostic("The default search provider could not be saved", err, {
+									action: "/websearch",
+									key: "default-provider-persist",
+									notice: true,
+								});
 							}
 						},
 						async onAddSearch(query, provider) {
@@ -3035,8 +3046,9 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 								}
 							});
 						} catch (err) {
-							const message = err instanceof Error ? err.message : String(err);
-							console.error(`Failed to open Glimpse curator window: ${message}`);
+							reportWebDiagnostic("The Glimpse curator window could not open", err, {
+								key: "glimpse-window-open",
+							});
 							glimpseWins.delete(commandCallId);
 							try {
 								await openInBrowser(pi, handle.url);
@@ -3052,7 +3064,9 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 						}
 					}
 					if (browserOpenError) {
-						console.error(`Failed to open curator UI: ${browserOpenError}`);
+						reportWebDiagnostic("The search curator browser could not open", browserOpenError, {
+							key: "curator-browser-open",
+						});
 						ctx.ui.notify(`Search curator is running, but the browser did not open automatically. Open manually: ${handle.url}`, "info");
 					}
 				}

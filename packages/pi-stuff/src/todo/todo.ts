@@ -1,4 +1,5 @@
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import {
 	activityKey,
 	registerSuiteOwnedTool,
@@ -115,7 +116,14 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 			try {
 				onMutation({ action: result.op.kind, sessionId, op: result.op });
 			} catch (error) {
-				console.warn(`[pi-stuff-todo] widget refresh failed: ${String(error)}`);
+				reportDiagnostic({
+					action: "/reload",
+					capability: "Todo",
+					error,
+					key: "widget-refresh",
+					summary: "The task changed, but the Todo display could not refresh",
+					visibility: "notice",
+				});
 			}
 		}
 

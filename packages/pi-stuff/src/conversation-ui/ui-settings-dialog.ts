@@ -1,5 +1,6 @@
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { type SettingItem, SettingsList, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { reportDiagnostic } from "./diagnostics.js";
 import { commandDialogRows, fitCommandDialogRows } from "./dialog-layout.js";
 import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "./index.js";
 import type { RegisteredUiSetting, UiSettingRegistry } from "./settings.js";
@@ -64,7 +65,15 @@ class UiSettingsDialog implements CommandDialogComponent {
 			try {
 				return setting.subscribe(() => this.sync(setting));
 			} catch (error) {
-				console.warn(`[pi-stuff-ui] unable to observe /ui setting ${setting.id}: ${String(error)}`);
+				reportDiagnostic({
+					action: "/ui",
+					capability: "UI",
+					error,
+					key: `setting-observer-${setting.id}`,
+					severity: "warning",
+					summary: `The ${setting.label} setting could not refresh live`,
+					visibility: "notice",
+				});
 				return () => {};
 			}
 		});
@@ -77,7 +86,13 @@ class UiSettingsDialog implements CommandDialogComponent {
 			try {
 				unsubscribe();
 			} catch (error) {
-				console.warn(`[pi-stuff-ui] unable to release a /ui setting observer: ${String(error)}`);
+				reportDiagnostic({
+					capability: "UI",
+					error,
+					key: "setting-observer-release",
+					severity: "warning",
+					summary: "A UI setting observer could not be released",
+				});
 			}
 		}
 	}

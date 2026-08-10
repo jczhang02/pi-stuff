@@ -6,11 +6,13 @@ import type {
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { type TSchema, Type } from "typebox";
+import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import { registerSuiteOwnedTool } from "../tool-display/index.js";
 import { createMcpStatusView } from "./mcp-dialog.js";
 import { MCP_PRESENTATION } from "./presentation.js";
 import { createMcpAdapter, MCP_STATUS_EVENT } from "./runtime/index.js";
+import { logger } from "./runtime/logger.js";
 import { McpStatusStore } from "./status-store.js";
 
 type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
@@ -192,6 +194,17 @@ function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: Mc
 
 /** Installation performs local configuration reads only; connection starts on explicit use. */
 export function installMcpCapability(pi: ExtensionAPI): void {
+	const removeDiagnosticHandler = logger.addHandler((entry) => {
+		const context =
+			entry.context && Object.keys(entry.context).length > 0 ? JSON.stringify(entry.context) : undefined;
+		reportDiagnostic({
+			capability: "MCP",
+			...(context ? { details: context } : {}),
+			...(entry.error ? { error: entry.error } : {}),
+			severity: entry.level === "error" ? "error" : entry.level === "warn" ? "warning" : "info",
+			summary: entry.message,
+		});
+	});
 	const commands: CapturedCommands = {};
 	const store = new McpStatusStore();
 	const unsubscribeStatus = pi.events.on(MCP_STATUS_EVENT, (value) => {
@@ -206,6 +219,7 @@ export function installMcpCapability(pi: ExtensionAPI): void {
 	adapter(createMcpAdapterApi(pi, commands));
 	installCommands(pi, commands, store);
 	pi.on("session_shutdown", () => {
+		removeDiagnosticHandler();
 		store.clear();
 		if (typeof unsubscribeStatus === "function") unsubscribeStatus();
 	});

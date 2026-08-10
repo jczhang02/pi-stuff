@@ -1,3 +1,4 @@
+import { reportAgentWarning } from "../../shared/diagnostics.ts";
 import type { ModelInfo as AvailableModelInfo } from "../../shared/model-info.ts";
 import type { Usage } from "../../shared/types.ts";
 import { checkModelScope, type ModelScopeConfig, type ModelScopeViolation, type ModelSource } from "./model-scope.ts";
@@ -167,12 +168,12 @@ export interface ResolveSubagentModelOverrideOptions {
 	scope?: ModelScopeConfig;
 	/** Origin of the requested model: explicit caller-supplied (hard error) vs inherited (warn). Defaults to `"inherited"`. */
 	source?: ModelSource;
-	/** Called for warn-severity violations instead of `console.warn`. */
+	/** Called for warn-severity violations instead of the default warning sink. */
 	onWarn?: (violation: ModelScopeViolation) => void;
 }
 
 function defaultScopeWarn(violation: ModelScopeViolation): void {
-	console.warn(`[pi-subagents] ${violation.message}`);
+	reportAgentWarning(`[pi-subagents] ${violation.message}`);
 }
 
 /**

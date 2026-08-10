@@ -59,6 +59,7 @@ import {
 } from "../session/foreground-replay.ts";
 import { ensureAccessibleDir } from "../shared/accessible-dir.ts";
 import { getArtifactsDir, maintainAgentArtifacts } from "../shared/artifacts.ts";
+import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import {
 	buildSessionCompatibilityScope,
 	buildSessionGovernorCompatibilityScope,
@@ -663,7 +664,7 @@ export default function registerSubagentExtension(
 					},
 					(error) => {
 						nextMaintenanceAt = deps.monotonicNow() + RUNTIME_MAINTENANCE_FAILURE_RETRY_MS;
-						console.error("Failed to maintain completed Agent runtime data:", error);
+						reportAgentDiagnostic("Failed to maintain completed Agent runtime data:", error);
 					},
 				)
 				.finally(() => {
@@ -852,7 +853,7 @@ export default function registerSubagentExtension(
 				try {
 					await executionGovernor.fail(invocation);
 				} catch (error) {
-					console.error("Failed to release a cancelled Agent launch reservation:", error);
+					reportAgentDiagnostic("Failed to release a cancelled Agent launch reservation:", error);
 				}
 			}
 			return projectEngineResult(
@@ -906,7 +907,7 @@ export default function registerSubagentExtension(
 						// though the obsolete UI call now returns a session-ended message.
 						await executionGovernor.settle(invocation, result);
 					} catch (error) {
-						console.error("Failed to settle a session-changed foreground Agent result:", error);
+						reportAgentDiagnostic("Failed to settle a session-changed foreground Agent result:", error);
 					}
 				} else {
 					const binding = result.details.lifecycleBinding;
@@ -917,7 +918,7 @@ export default function registerSubagentExtension(
 						} catch (error) {
 							// A failed abort is not proof that the runner stopped. Keep the
 							// original session's durable governor authority fail-closed.
-							console.error("Failed to abort a session-changed Agent runtime:", error);
+							reportAgentDiagnostic("Failed to abort a session-changed Agent runtime:", error);
 							safeToRelease = false;
 						}
 					}
@@ -925,7 +926,7 @@ export default function registerSubagentExtension(
 						try {
 							await executionGovernor.fail(invocation);
 						} catch (error) {
-							console.error("Failed to release a session-changed Agent reservation:", error);
+							reportAgentDiagnostic("Failed to release a session-changed Agent reservation:", error);
 						}
 					} else {
 						try {
@@ -933,7 +934,7 @@ export default function registerSubagentExtension(
 							// original session ledger so later physical recovery retains authority.
 							await executionGovernor.settle(invocation, result);
 						} catch (error) {
-							console.error("Failed to retain a session-changed Agent runtime binding:", error);
+							reportAgentDiagnostic("Failed to retain a session-changed Agent runtime binding:", error);
 						}
 					}
 				}
@@ -952,7 +953,7 @@ export default function registerSubagentExtension(
 					// The engine result may represent an already-running detached Agent.
 					// Never convert post-launch ledger failure into a start failure or
 					// release its lease; completion/reconciliation remains authoritative.
-					console.error(
+					reportAgentDiagnostic(
 						"Failed to persist the launched Agent lease binding; retaining it for reconciliation:",
 						error,
 					);
@@ -964,7 +965,10 @@ export default function registerSubagentExtension(
 				try {
 					await executionGovernor.fail(invocation);
 				} catch (releaseError) {
-					console.error("Failed to release an Agent reservation after engine launch failure:", releaseError);
+					reportAgentDiagnostic(
+						"Failed to release an Agent reservation after engine launch failure:",
+						releaseError,
+					);
 				}
 			}
 			throw error;
@@ -1030,7 +1034,7 @@ export default function registerSubagentExtension(
 		if (!active || !belongsToCurrentSession(data)) return;
 		const normalized = normalizeCurrentSessionEvent(data);
 		void executionGovernor.observeAsyncStarted(normalized).catch((error) => {
-			console.error("Failed to bind Agent governor runtime identity:", error);
+			reportAgentDiagnostic("Failed to bind Agent governor runtime identity:", error);
 		});
 		tracker.handleStarted(normalized);
 		current.refresh();
@@ -1040,7 +1044,7 @@ export default function registerSubagentExtension(
 		if (!active || !belongsToCurrentSession(data)) return;
 		const normalized = normalizeCurrentSessionEvent(data);
 		void executionGovernor.complete(normalized).catch((error) => {
-			console.error("Failed to release completed background Agent lease:", error);
+			reportAgentDiagnostic("Failed to release completed background Agent lease:", error);
 		});
 		tracker.handleComplete(normalized);
 		current.refresh();
@@ -1050,7 +1054,7 @@ export default function registerSubagentExtension(
 	onBus(SUBAGENT_FOREGROUND_COMPLETE_EVENT, (data) => {
 		if (!active || !belongsToCurrentSession(data)) return;
 		void executionGovernor.complete(normalizeCurrentSessionEvent(data)).catch((error) => {
-			console.error("Failed to release completed foreground Agent lease:", error);
+			reportAgentDiagnostic("Failed to release completed foreground Agent lease:", error);
 		});
 		// Foreground summaries already return through the active tool call. A
 		// completion message here would trigger a duplicate main-model turn.
@@ -1061,7 +1065,7 @@ export default function registerSubagentExtension(
 	onBus(SUBAGENT_PROCESS_TERMINAL_EVENT, () => {
 		if (!active) return;
 		void executionGovernor.reconcileDead().catch((error) => {
-			console.error("Failed to reconcile Agent leases after a runner terminal event:", error);
+			reportAgentDiagnostic("Failed to reconcile Agent leases after a runner terminal event:", error);
 		});
 	});
 

@@ -74,6 +74,23 @@ projection is display-only: the complete original Thinking remains in model cont
 clearly on an older Host that lacks this required rendering API instead of silently presenting a different UI. Keep
 Pi's native **Hide thinking blocks** setting disabled so the transformed live row is rendered.
 
+### Diagnostics
+
+Capability Modules report structured diagnostics through this module instead of writing directly to the Host terminal.
+Ordinary state stays on its owning surface, and maintenance-only cleanup or retry information remains silent. A problem
+that needs the user raises at most one focus-neutral row above the editor, such as
+`● Pi Stuff · Background Work needs attention · /diagnostics`. Repeated failures coalesce rather than stacking rows,
+and multiple active problems collapse to one count.
+
+`/diagnostics` opens the shared full-width Command Dialog with bounded current-process history, occurrence counts,
+details, and the suggested Capability command when one exists. Enter opens one record; `c` clears history; Escape first
+returns to the list and then restores the exact editor draft and Suite chrome. Opening the dialog or starting the next
+prompt acknowledges the one-row notice without deleting history.
+
+Diagnostics never enter Session history, model context, the Statusline, or an independent persistence layer. Details
+are bounded, terminal control characters are removed, and common tokens and API keys are redacted. Restarting Pi clears
+this inspection history; Capability-owned durable state is unaffected.
+
 ## `/ui`
 
 `/ui` opens one searchable Pi-native `SettingsList` inside the shared Command Dialog. It owns presentation settings

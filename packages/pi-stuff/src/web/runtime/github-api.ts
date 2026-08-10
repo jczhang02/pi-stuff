@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import type { ExtractedContent } from "./extract.ts";
 import type { GitHubUrlInfo } from "./github-extract.ts";
+import { reportWebDiagnostic } from "./diagnostics.ts";
 
 const MAX_TREE_ENTRIES = 200;
 const MAX_INLINE_FILE_CHARS = 100_000;
@@ -22,7 +23,12 @@ export async function checkGhAvailable(): Promise<boolean> {
 export function showGhHint(): void {
 	if (!ghHintShown) {
 		ghHintShown = true;
-		console.error("[pi-web-access] Install `gh` CLI for better GitHub repo access including private repos.");
+		reportWebDiagnostic("GitHub CLI is unavailable; private repository access is limited", undefined, {
+			action: "Install gh to access private repositories",
+			key: "missing-gh",
+			notice: true,
+			severity: "warning",
+		});
 	}
 }
 

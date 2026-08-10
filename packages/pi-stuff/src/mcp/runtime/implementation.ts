@@ -83,7 +83,10 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
       }
     } catch (error) {
       if (flushError) {
-        console.error(`MCP: graceful shutdown failed after metadata flush error: ${formatTerminalError(error)}`);
+        logger.error(
+          "MCP: graceful shutdown failed after metadata flush error",
+          error instanceof Error ? error : new Error(formatTerminalError(error)),
+        );
       } else {
         throw error;
       }
@@ -274,7 +277,10 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
         try {
           await shutdownState(nextState, staleReason);
         } catch (error) {
-          console.error(`MCP: failed to clean stale initialization state: ${formatTerminalError(error)}`);
+          logger.error(
+            "MCP: failed to clean stale initialization state",
+            error instanceof Error ? error : new Error(formatTerminalError(error)),
+          );
         }
         return;
       }
@@ -304,7 +310,10 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
       if (initPromise !== promise && initPromise !== null) {
         return;
       }
-      console.error(`MCP initialization failed: ${formatTerminalError(err)}`);
+      logger.error(
+        "MCP initialization failed",
+        err instanceof Error ? err : new Error(formatTerminalError(err)),
+      );
       initPromise = null;
       if (state) return;
 
@@ -314,7 +323,10 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
           shutdownOAuth(oauthRuntime),
         ]);
       } catch (error) {
-        console.error(`MCP: failed to clean rejected initialization: ${formatTerminalError(error)}`);
+        logger.error(
+          "MCP: failed to clean rejected initialization",
+          error instanceof Error ? error : new Error(formatTerminalError(error)),
+        );
       }
     });
   }
@@ -366,7 +378,10 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
         previousOAuthRuntime ? shutdownOAuth(previousOAuthRuntime) : Promise.resolve(),
       ]);
     } catch (error) {
-      console.error(`MCP: failed to shut down previous session state: ${formatTerminalError(error)}`);
+      logger.error(
+        "MCP: failed to shut down previous session state",
+        error instanceof Error ? error : new Error(formatTerminalError(error)),
+      );
     }
 
     if (generation !== lifecycleGeneration || !owner.isActive()) return;
@@ -404,7 +419,10 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
         oauthRuntime ? shutdownOAuth(oauthRuntime) : Promise.resolve(),
       ]);
     } catch (error) {
-      console.error(`MCP: session shutdown cleanup failed: ${formatTerminalError(error)}`);
+      logger.error(
+        "MCP: session shutdown cleanup failed",
+        error instanceof Error ? error : new Error(formatTerminalError(error)),
+      );
     }
   });
 

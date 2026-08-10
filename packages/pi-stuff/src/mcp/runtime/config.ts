@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import stripJsonComments from "strip-json-comments";
 import { getAgentPath } from "./agent-dir.ts";
+import { logger } from "./logger.ts";
 import { isServerDisabled, type HostConfigDiscovery, type McpConfig, type ServerEntry, type McpSettings, type ImportKind, type ServerProvenance } from "./types.ts";
 import { toStringRecord } from "./utils.ts";
 
@@ -560,7 +561,7 @@ function loadImportedConfig(
           highestPrecedencePath = path;
         }
       } catch (error) {
-        console.warn(warningPrefix, error);
+        logger.warn(warningPrefix, { error: error instanceof Error ? error.message : String(error), path });
       }
     }
 
@@ -573,7 +574,7 @@ function loadImportedConfig(
     try {
       return { path, value: readImportedConfig(path) };
     } catch (error) {
-      console.warn(warningPrefix, error);
+      logger.warn(warningPrefix, { error: error instanceof Error ? error.message : String(error), path });
     }
   }
 
@@ -590,7 +591,10 @@ function readValidatedConfig(path: string, label: string): McpConfig | null {
   try {
     return validateConfig(parseJsonConfig(readFileSync(path, "utf-8")));
   } catch (error) {
-    console.warn(`Failed to load ${label}:`, error);
+    logger.warn(`Failed to load ${label}`, {
+      error: error instanceof Error ? error.message : String(error),
+      path,
+    });
     return null;
   }
 }

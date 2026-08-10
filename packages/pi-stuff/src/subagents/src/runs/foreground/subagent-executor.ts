@@ -19,6 +19,7 @@ import type { AgentConfig, AgentScope } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { getArtifactsDir } from "../../shared/artifacts.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
 import { createForkContextResolver, forkedChildRequiresThinkingOff } from "../../shared/fork-context.ts";
 import { findModelInfo, type ModelInfo, toModelInfo } from "../../shared/model-info.ts";
@@ -1485,7 +1486,7 @@ function emitNestedLifecycle(
 			},
 		});
 	} catch (error) {
-		console.error("Failed to record nested foreground Agent lifecycle:", error);
+		reportAgentDiagnostic("Failed to record nested foreground Agent lifecycle:", error);
 	}
 }
 
@@ -1610,7 +1611,7 @@ async function launchForeground(
 		try {
 			onUpdate?.(update);
 		} catch (error) {
-			console.error(`Foreground Agent progress observer failed for '${data.runId}':`, error);
+			reportAgentDiagnostic(`Foreground Agent progress observer failed for '${data.runId}':`, error);
 		}
 	};
 	const control = foregroundControl(data, config);
@@ -1684,7 +1685,7 @@ async function launchForeground(
 				taskIndex: index,
 			});
 		} catch (error) {
-			console.error(`Foreground Agent completion observer failed for '${data.runId}:${index}':`, error);
+			reportAgentDiagnostic(`Foreground Agent completion observer failed for '${data.runId}:${index}':`, error);
 		}
 	}
 	emitUpdate(result);

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import * as nodeFs from "node:fs/promises";
 import * as path from "node:path";
+import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { type DurableClaim, tryAcquireDurableClaim } from "../shared/durable-claim.ts";
 import { readProcessStartIdentity, readSystemBootIdentity } from "../shared/process-identity.ts";
 
@@ -999,7 +1000,7 @@ export class SessionAgentGovernor {
 			try {
 				await this.releaseLock(lock);
 			} catch (error) {
-				console.error(`Failed to release committed session governor lock '${lock.lockDir}':`, error);
+				reportAgentDiagnostic(`Failed to release committed session governor lock '${lock.lockDir}':`, error);
 			}
 		}
 	}
@@ -1076,7 +1077,7 @@ export class SessionAgentGovernor {
 			try {
 				await this.fs.rm(tempPath, { force: true });
 			} catch (error) {
-				console.error(`Failed to remove session governor temporary ledger '${tempPath}':`, error);
+				reportAgentDiagnostic(`Failed to remove session governor temporary ledger '${tempPath}':`, error);
 			}
 		}
 		try {
@@ -1084,7 +1085,10 @@ export class SessionAgentGovernor {
 		} catch (error) {
 			// The temp file already had 0600 before the atomic rename. This is a
 			// post-commit hardening retry, not a reason to report the transaction failed.
-			console.error(`Failed to reassert private mode on committed governor ledger '${this.ledgerPath}':`, error);
+			reportAgentDiagnostic(
+				`Failed to reassert private mode on committed governor ledger '${this.ledgerPath}':`,
+				error,
+			);
 		}
 	}
 

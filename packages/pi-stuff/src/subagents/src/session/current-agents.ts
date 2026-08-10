@@ -1,4 +1,5 @@
 import { readNestedRegistry, resolveNestedAsyncDir, sanitizeSummary } from "../runs/shared/nested-events.ts";
+import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../shared/display-description.ts";
 import { readOwnedFileTail } from "../shared/private-directory.ts";
 import type { SubagentState } from "../shared/types.ts";
@@ -949,7 +950,7 @@ export class CurrentAgents {
 			run.updatedAt = Math.max(run.updatedAt, registry.updatedAt);
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-			console.error(`Failed to refresh foreground nested route for '${run.runId}':`, error);
+			reportAgentDiagnostic(`Failed to refresh foreground nested route for '${run.runId}':`, error);
 		}
 	}
 

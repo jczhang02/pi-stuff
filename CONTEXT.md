@@ -25,6 +25,12 @@ An internal, independently understandable implementation boundary for one Capabi
 version, installation, or publication lifecycle of its own.
 _Avoid_: Capability Package, npm package, plugin fragment
 
+**Diagnostic Record**:
+A bounded, current-process account of a Suite problem for human inspection. It never enters Session history or model
+context. The owning Capability presents ordinary state locally; only a user-relevant problem may raise the shared
+one-row notice, with details available through `/diagnostics`.
+_Avoid_: console warning, transcript message, notification log
+
 **Runtime Resource**:
 An Extension, Skill, Prompt Template, or Theme that the Host discovers through Pi's Package contract.
 _Avoid_: asset, plugin file

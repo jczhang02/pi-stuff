@@ -1,6 +1,8 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, KeybindingsManager, TUI } from "@earendil-works/pi-tui";
 import { suppressDuplicatedLiveCompactionReplay } from "./compaction-presentation.js";
+import { activateDiagnosticChannel, getDiagnosticChannel } from "./diagnostics.js";
+import { createDiagnosticsView } from "./diagnostics-dialog.js";
 import { getHostSharedResource } from "./host-resource.js";
 import { registerLiveThoughtDisplay } from "./live-thought.js";
 import { installUiSessionPresentation, type UiSessionPresentation } from "./session-presentation.js";
@@ -12,6 +14,16 @@ import {
 } from "./settings.js";
 import { createUiSettingsView } from "./ui-settings-dialog.js";
 
+export {
+	activateDiagnosticChannel,
+	DiagnosticChannel,
+	type DiagnosticRecord,
+	type DiagnosticReport,
+	type DiagnosticSeverity,
+	type DiagnosticVisibility,
+	getDiagnosticChannel,
+	reportDiagnostic,
+} from "./diagnostics.js";
 export {
 	type CommandDialogRowSections,
 	commandDialogRows,
@@ -785,7 +797,20 @@ export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 
 async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState, activation: object): Promise<void> {
 	const coordinator = getCommandDialogCoordinator(pi);
+	const diagnostics = getDiagnosticChannel(pi);
+	activateDiagnosticChannel(diagnostics);
 	const registry = ensureUiSettingsCommand(pi);
+	pi.registerCommand("diagnostics", {
+		description: "Inspect Pi Stuff diagnostics",
+		handler: async (_args, ctx) => {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("/diagnostics requires interactive TUI mode.", "warning");
+				return;
+			}
+			diagnostics.acknowledgeNotices();
+			await coordinator.show(ctx, createDiagnosticsView(diagnostics));
+		},
+	});
 	registerLiveThoughtDisplay(pi);
 	const settings = await UiSettingsStore.load();
 	let unregisterOwnedSettings: (() => void) | undefined = registerOwnedUiSettings(registry, settings);
@@ -815,9 +840,11 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 			ctx,
 			settings,
 			coordinator as CommandDialogCoordinatorImplementation,
+			diagnostics,
 		);
 	});
 	pi.on("before_agent_start", (event) => {
+		diagnostics.acknowledgeNotices();
 		presentation?.updateContextFileCount(event.systemPromptOptions.contextFiles?.length);
 	});
 	pi.on("turn_end", () => {

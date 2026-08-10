@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { formatDuration, formatModelThinking, formatTokens, shortenPath } from "../../shared/formatters.ts";
 import { type SessionCompatibilityScope, sessionArtifactMatches } from "../../shared/session-identity.ts";
 import { formatActivityLabel, formatParallelOutcome } from "../../shared/status-format.ts";
@@ -545,7 +546,7 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 			// One transiently unreadable or corrupt run must not hide every healthy
 			// sibling during session restoration. The result watcher remains active
 			// and a later scan can recover this run once its durable state is readable.
-			console.error(`Failed to inspect async run '${asyncDir}'; leaving it untouched for retry:`, error);
+			reportAgentDiagnostic(`Failed to inspect async run '${asyncDir}'; leaving it untouched for retry:`, error);
 		}
 	}
 

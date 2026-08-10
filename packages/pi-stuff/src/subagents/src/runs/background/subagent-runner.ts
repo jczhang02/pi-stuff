@@ -16,6 +16,7 @@ import {
 } from "../../shared/artifacts.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { type ChildTranscriptWriter, createChildTranscriptWriter } from "../../shared/child-transcript.ts";
+import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { type DurableClaim, shardedDurableClaimName, tryAcquireKernelClaim } from "../../shared/durable-claim.ts";
 import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
 import { ensurePrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
@@ -710,7 +711,7 @@ function terminalizeRejectedStep(
 			error: message,
 		});
 	} catch (persistError) {
-		console.error(`Failed to persist rejected Agent step ${String(index)}:`, persistError);
+		reportAgentDiagnostic(`Failed to persist rejected Agent step ${String(index)}:`, persistError);
 	}
 }
 
@@ -975,7 +976,7 @@ function createTranscript(
 			artifactPaths = getArtifactPaths(config.artifactsDir, config.id, task.agent, count > 1 ? index : undefined);
 			if (config.artifactConfig?.includeTranscript !== false) transcriptPath = artifactPaths.transcriptPath;
 		} catch (error) {
-			console.error(`Failed to initialize optional Agent artifacts for '${config.id}:${index}':`, error);
+			reportAgentDiagnostic(`Failed to initialize optional Agent artifacts for '${config.id}:${index}':`, error);
 		}
 	}
 	return {
@@ -1068,7 +1069,7 @@ function openOwnedFallbackSession(filePath: string): number {
 		try {
 			fs.closeSync(descriptor);
 		} catch (cleanupError) {
-			console.error("Failed to close a rejected Agent fallback session descriptor:", cleanupError);
+			reportAgentDiagnostic("Failed to close a rejected Agent fallback session descriptor:", cleanupError);
 		}
 		throw error;
 	}
@@ -1163,7 +1164,7 @@ function readFallbackSweepCursor(directory: string, kind: "restore" | "snapshot"
 		return fallbackTemporaryIdentity(value, kind) ? value : "";
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-			console.error(`Failed to read ${kind} fallback orphan cursor:`, error);
+			reportAgentDiagnostic(`Failed to read ${kind} fallback orphan cursor:`, error);
 		}
 		return "";
 	}
@@ -1256,12 +1257,12 @@ function sweepFallbackOrphans(directory: string, kind: "restore" | "snapshot", n
 			writeFallbackSweepCursor(directory, page.at(-1) ?? "");
 		}
 	} catch (error) {
-		console.error(`Failed to sweep ${kind} fallback crash debris:`, error);
+		reportAgentDiagnostic(`Failed to sweep ${kind} fallback crash debris:`, error);
 	} finally {
 		try {
 			maintenance.release();
 		} catch (error) {
-			console.error(`Failed to release ${kind} fallback maintenance claim:`, error);
+			reportAgentDiagnostic(`Failed to release ${kind} fallback maintenance claim:`, error);
 		}
 	}
 }
@@ -1283,7 +1284,7 @@ function openFallbackSessionStorage(sessionKey: string): FallbackSessionStorage 
 				try {
 					fs.closeSync(descriptor);
 				} catch (cleanupError) {
-					console.error("Failed to close an incomplete anonymous Agent fallback snapshot:", cleanupError);
+					reportAgentDiagnostic("Failed to close an incomplete anonymous Agent fallback snapshot:", cleanupError);
 				}
 				throw error;
 			}
@@ -1378,12 +1379,12 @@ function createAnonymousFallbackSession(sessionFile: string, sessionKey: string)
 		try {
 			if (snapshot !== undefined) disposeFallbackSessionStorage(snapshot);
 		} catch (cleanupError) {
-			console.error("Failed to discard an incomplete Agent fallback snapshot:", cleanupError);
+			reportAgentDiagnostic("Failed to discard an incomplete Agent fallback snapshot:", cleanupError);
 		}
 		try {
 			fs.closeSync(source);
 		} catch (cleanupError) {
-			console.error("Failed to close the source of an incomplete Agent fallback snapshot:", cleanupError);
+			reportAgentDiagnostic("Failed to close the source of an incomplete Agent fallback snapshot:", cleanupError);
 		}
 		throw error;
 	}
@@ -1393,7 +1394,10 @@ function createAnonymousFallbackSession(sessionFile: string, sessionKey: string)
 		try {
 			disposeFallbackSessionStorage(snapshot);
 		} catch (cleanupError) {
-			console.error("Failed to discard an Agent fallback snapshot after source close failure:", cleanupError);
+			reportAgentDiagnostic(
+				"Failed to discard an Agent fallback snapshot after source close failure:",
+				cleanupError,
+			);
 		}
 		throw error;
 	}
@@ -1431,12 +1435,12 @@ function createSessionFallbackSnapshot(
 		try {
 			if (snapshot !== undefined) disposeFallbackSessionStorage(snapshot);
 		} catch (cleanupError) {
-			console.error("Failed to clean up an incomplete Agent fallback snapshot:", cleanupError);
+			reportAgentDiagnostic("Failed to clean up an incomplete Agent fallback snapshot:", cleanupError);
 		}
 		try {
 			lifecycleClaim.release();
 		} catch (cleanupError) {
-			console.error("Failed to release an incomplete Agent fallback lifecycle claim:", cleanupError);
+			reportAgentDiagnostic("Failed to release an incomplete Agent fallback lifecycle claim:", cleanupError);
 		}
 		throw error;
 	}
@@ -1501,7 +1505,7 @@ function createSessionFallbackSnapshot(
 			}
 			if (operationFailed) {
 				for (const cleanupError of cleanupErrors) {
-					console.error("Failed to clean up an unsuccessful Agent fallback restore:", cleanupError);
+					reportAgentDiagnostic("Failed to clean up an unsuccessful Agent fallback restore:", cleanupError);
 				}
 				throw operationError;
 			}
@@ -1513,12 +1517,12 @@ function createSessionFallbackSnapshot(
 			try {
 				if (snapshot !== undefined) disposeFallbackSessionStorage(snapshot);
 			} catch (error) {
-				console.error("Failed to close frozen Agent fallback session:", error);
+				reportAgentDiagnostic("Failed to close frozen Agent fallback session:", error);
 			}
 			try {
 				lifecycleClaim.release();
 			} catch (error) {
-				console.error("Failed to release frozen Agent fallback lifecycle ownership:", error);
+				reportAgentDiagnostic("Failed to release frozen Agent fallback lifecycle ownership:", error);
 			}
 		},
 	};
@@ -1532,7 +1536,7 @@ function rollBackWriterSpawning(
 	try {
 		onWriterProcess?.({ state: "none" });
 	} catch (error) {
-		console.error(`Failed to roll back Agent writer process identity for child ${index}:`, error);
+		reportAgentDiagnostic(`Failed to roll back Agent writer process identity for child ${index}:`, error);
 	}
 	cleanupTempDir(tempDir);
 }
@@ -1938,7 +1942,7 @@ function runChildProcess(input: {
 					} catch (error) {
 						if (streamingStatusPersistenceFailed) return;
 						streamingStatusPersistenceFailed = true;
-						console.error(
+						reportAgentDiagnostic(
 							`Failed to persist live Agent progress for child ${String(input.index)}; execution will continue in memory:`,
 							error,
 						);
@@ -2180,7 +2184,10 @@ function runChildProcess(input: {
 							try {
 								input.onWriterProcess?.({ state: "none" });
 							} catch (error) {
-								console.error(`Failed to clear writer process identity for Agent child ${input.index}:`, error);
+								reportAgentDiagnostic(
+									`Failed to clear writer process identity for Agent child ${input.index}:`,
+									error,
+								);
 							}
 							try {
 								fs.rmSync(groupMemberProofPath, { force: true });
@@ -2201,7 +2208,7 @@ function runChildProcess(input: {
 						try {
 							input.beforeWriterSupervisorDispositionRead?.(supervisorDispositionPath, input.index);
 						} catch (error) {
-							console.error(
+							reportAgentDiagnostic(
 								`Agent writer supervisor disposition test hook failed for child ${input.index}:`,
 								error,
 							);
@@ -2370,7 +2377,7 @@ async function runResolvedTask(input: {
 			`# Task for ${task.agent}\n\n${task.task}`,
 			true,
 		);
-		if (error) console.error(error);
+		if (error) reportAgentDiagnostic(error);
 	}
 	if (transcript.artifactPaths && config.artifactConfig?.includeMetadata !== false) {
 		const error = writeOptionalArtifact(
@@ -2390,7 +2397,7 @@ async function runResolvedTask(input: {
 			),
 			true,
 		);
-		if (error) console.error(error);
+		if (error) reportAgentDiagnostic(error);
 	}
 	statusStep.transcriptPath = transcript.path;
 	const childSessionDir = task.sessionFile
@@ -2520,7 +2527,7 @@ async function runResolvedTask(input: {
 			try {
 				writeStatus(statusPath, status);
 			} catch (error) {
-				console.error(`Failed to persist Agent fallback status for child ${String(index)}:`, error);
+				reportAgentDiagnostic(`Failed to persist Agent fallback status for child ${String(index)}:`, error);
 			}
 		}
 	} finally {
@@ -2582,7 +2589,7 @@ async function runResolvedTask(input: {
 			true,
 		);
 		if (error) {
-			console.error(error);
+			reportAgentDiagnostic(error);
 			delete result.artifactPaths;
 		}
 	}
@@ -2613,7 +2620,7 @@ async function runResolvedTask(input: {
 			true,
 		);
 		if (error) {
-			console.error(error);
+			reportAgentDiagnostic(error);
 			delete result.artifactPaths;
 		}
 	}
@@ -2630,7 +2637,7 @@ async function runResolvedTask(input: {
 			success,
 		});
 	} catch (error) {
-		console.error(`Failed to persist terminal Agent step ${String(index)}:`, error);
+		reportAgentDiagnostic(`Failed to persist terminal Agent step ${String(index)}:`, error);
 	}
 	return result;
 }
@@ -2680,7 +2687,7 @@ async function runConfiguredWork(
 		} catch (error) {
 			if (!steeringStatusPersistenceFailed) {
 				steeringStatusPersistenceFailed = true;
-				console.error(
+				reportAgentDiagnostic(
 					`Failed to persist live steering status for '${config.id}'; retaining the durable control record for retry:`,
 					error,
 				);
@@ -2967,17 +2974,17 @@ async function runConfiguredWork(
 		try {
 			closeSteerInbox(config.asyncDir, completion.state);
 		} catch (error) {
-			console.error(`Failed to close steering inbox for '${config.id}' during finalization:`, error);
+			reportAgentDiagnostic(`Failed to close steering inbox for '${config.id}' during finalization:`, error);
 		}
 		try {
 			processSteerRequestsFromDir(steerRequestsDir(config.asyncDir), onSteer);
 		} catch (error) {
-			console.error(`Failed to scan final steering requests for '${config.id}':`, error);
+			reportAgentDiagnostic(`Failed to scan final steering requests for '${config.id}':`, error);
 		}
 		try {
 			processSteerAcks(config.asyncDir, onSteerAck);
 		} catch (error) {
-			console.error(`Failed to scan final steering acknowledgments for '${config.id}':`, error);
+			reportAgentDiagnostic(`Failed to scan final steering acknowledgments for '${config.id}':`, error);
 		}
 		failUndeliveredSteering(status, eventsPath, completion.state, endedAt);
 		beforeResultPersistence?.();
@@ -3002,7 +3009,7 @@ async function runConfiguredWork(
 			try {
 				writeProcessTerminalCandidate(config.asyncDir, candidate);
 			} catch (error) {
-				console.error(`Failed to write process-terminal candidate for '${config.id}':`, error);
+				reportAgentDiagnostic(`Failed to write process-terminal candidate for '${config.id}':`, error);
 			}
 		}
 		try {
@@ -3015,7 +3022,10 @@ async function runConfiguredWork(
 				success: completion.success,
 			});
 		} catch (error) {
-			console.error(`Failed to persist terminal Agent status for '${config.id}' after result commit:`, error);
+			reportAgentDiagnostic(
+				`Failed to persist terminal Agent status for '${config.id}' after result commit:`,
+				error,
+			);
 		}
 		if (config.nestedRoute && config.nestedSelf) {
 			try {
@@ -3036,7 +3046,7 @@ async function runConfiguredWork(
 				});
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-					console.error(`Failed to settle nested route after '${config.id}' completed:`, error);
+					reportAgentDiagnostic(`Failed to settle nested route after '${config.id}' completed:`, error);
 				}
 			}
 		}
@@ -3176,12 +3186,12 @@ export async function runConfiguredBackground(
 				// the registry positively proves that every writer group is absent.
 				if (inspectWriterProcessLiveness(config.asyncDir) === false) acknowledged = lease.release();
 			} catch (error) {
-				console.error("Failed to release Agent session lease:", error);
+				reportAgentDiagnostic("Failed to release Agent session lease:", error);
 			}
 			try {
 				markProcessTerminalCandidateLeaseRelease(config.asyncDir, lease.owner.token, acknowledged);
 			} catch (error) {
-				console.error("Failed to record Agent session lease release:", error);
+				reportAgentDiagnostic("Failed to record Agent session lease release:", error);
 			}
 		}
 		if (terminalCommitted && config.nestedRoute?.rootRunId === config.id) {
@@ -3189,7 +3199,7 @@ export async function runConfiguredBackground(
 				await finalizeNestedRouteRoot(config.nestedRoute, config.asyncDir);
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-					console.error(`Failed to settle terminal nested route for '${config.id}':`, error);
+					reportAgentDiagnostic(`Failed to settle terminal nested route for '${config.id}':`, error);
 				}
 			}
 		}
@@ -3198,7 +3208,7 @@ export async function runConfiguredBackground(
 
 function startConfiguredBackground(config: BackgroundRunnerConfig): void {
 	runConfiguredBackground(config).catch((error) => {
-		console.error("Background Agent runner error:", error);
+		reportAgentDiagnostic("Background Agent runner error:", error);
 		process.exitCode = 1;
 	});
 }
@@ -3222,7 +3232,7 @@ if (
 	try {
 		startFromConfigPath(runnerConfigPath);
 	} catch (error) {
-		console.error("Background Agent runner error:", error);
+		reportAgentDiagnostic("Background Agent runner error:", error);
 		process.exitCode = 1;
 	}
 }

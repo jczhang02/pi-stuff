@@ -35,6 +35,11 @@ import {
 	WorkRunStorage,
 } from "../../packages/pi-stuff/src/background-work/src/storage.js";
 import { isForegroundBashResult } from "../../packages/pi-stuff/src/background-work/src/tools.js";
+import {
+	activateDiagnosticChannel,
+	DiagnosticChannel,
+	resetDiagnosticProcessState,
+} from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
 
 const roots: string[] = [];
 const children: ChildProcess[] = [];
@@ -42,6 +47,7 @@ const escapedProcessGroups: number[] = [];
 const TEST_WORK_AUTHORITY_KEY = Buffer.alloc(32, 0x5a);
 
 afterEach(() => {
+	resetDiagnosticProcessState();
 	for (const child of children.splice(0)) {
 		if (child.pid && processExists(child.pid)) signalProcessGroup(child.pid, "SIGKILL");
 	}
@@ -249,6 +255,25 @@ describe("bounded background output", () => {
 });
 
 describe("BackgroundWorkRuntime", () => {
+	test("keeps an unverified stale runtime in diagnostics without raising a main-UI notice", async () => {
+		const root = temporaryRoot();
+		const diagnostics = new DiagnosticChannel();
+		activateDiagnosticChannel(diagnostics);
+		const active = new BackgroundWorkRuntime({
+			cwd: root,
+			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			reconcileStale: async () => ({ cleanedDirectories: 0, killedProcesses: 0, unresolvedDirectories: 1 }),
+			sessionId: "work-test-session",
+			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+		});
+
+		await active.prepare();
+		expect(diagnostics.list()).toHaveLength(1);
+		expect(diagnostics.list()[0]?.summary).toContain("unverified stale runtime directory was left untouched");
+		expect(diagnostics.listNotices()).toEqual([]);
+		await active.shutdown();
+	});
+
 	test("retries stale-runtime preparation after a transient failure", async () => {
 		const root = temporaryRoot();
 		let attempts = 0;

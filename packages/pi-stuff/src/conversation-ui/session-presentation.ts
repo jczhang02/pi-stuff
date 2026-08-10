@@ -1,4 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { DiagnosticNoticeController } from "./diagnostic-notice.js";
+import type { DiagnosticChannel } from "./diagnostics.js";
 import type { CommandDialogCoordinator, FooterFactory } from "./index.js";
 import { type InputEnhancementController, installInputEnhancementEditor } from "./input-enhancement.js";
 import type { UiSettingsStore } from "./settings.js";
@@ -84,9 +86,11 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 	private disposed = false;
 	private readonly editor: InputEnhancementController;
 	private readonly git: GitStatusSource;
+	private readonly notice: DiagnosticNoticeController;
 	private readonly pi: ExtensionAPI;
 	private readonly statusline: StatuslineController;
 	private readonly unregisterStatuslineChrome: () => void;
+	private readonly unregisterNoticeChrome: () => void;
 	private readonly welcomeInventory: WelcomeRegistrySource;
 	private readonly cwd: () => string;
 
@@ -95,6 +99,7 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 		ctx: ExtensionContext,
 		store: UiSettingsStore,
 		coordinator: UiSessionPresentationCoordinator,
+		diagnostics: DiagnosticChannel,
 	) {
 		this.pi = pi;
 		this.cwd = () => ctx.sessionManager.getCwd() || ctx.cwd;
@@ -114,6 +119,8 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 			preferences: new StoreStatuslinePreferencesSource(store),
 		});
 		this.unregisterStatuslineChrome = coordinator.registerChrome("statusline", this.statusline);
+		this.notice = new DiagnosticNoticeController(ctx.ui, diagnostics);
+		this.unregisterNoticeChrome = coordinator.registerChrome("diagnostics", this.notice);
 		coordinator.installFooter(ctx, (tui, theme, footerData) =>
 			this.statusline.createFooter(ctx, tui, theme, footerData),
 		);
@@ -132,6 +139,8 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.unregisterStatuslineChrome();
+		this.unregisterNoticeChrome();
+		this.notice.dispose();
 		this.statusline.dispose();
 		this.git.dispose();
 		this.editor.dispose();
@@ -160,7 +169,8 @@ export function installUiSessionPresentation(
 	ctx: ExtensionContext,
 	store: UiSettingsStore,
 	coordinator: UiSessionPresentationCoordinator,
+	diagnostics: DiagnosticChannel,
 ): UiSessionPresentation | undefined {
 	if (ctx.mode !== "tui") return undefined;
-	return new InstalledUiSessionPresentation(pi, ctx, store, coordinator);
+	return new InstalledUiSessionPresentation(pi, ctx, store, coordinator, diagnostics);
 }

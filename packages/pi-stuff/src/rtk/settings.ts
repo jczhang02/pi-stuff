@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-rtk.json";
 
@@ -51,7 +52,16 @@ async function readSettings(path: string): Promise<RtkSettings> {
 		return parseSettings(JSON.parse(await readFile(path, "utf8")) as unknown);
 	} catch (error) {
 		if (isRecord(error) && Reflect.get(error, "code") === "ENOENT") return DEFAULT_SETTINGS;
-		console.warn(`[pi-stuff-rtk] ignoring invalid settings at ${path}: ${String(error)}`);
+		reportDiagnostic({
+			action: "/rtk settings",
+			capability: "RTK",
+			details: path,
+			error,
+			key: "invalid-settings",
+			severity: "warning",
+			summary: "RTK settings were invalid and built-in defaults are active",
+			visibility: "notice",
+		});
 		return DEFAULT_SETTINGS;
 	}
 }

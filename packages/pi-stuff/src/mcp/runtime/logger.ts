@@ -30,16 +30,9 @@ const LEVEL_PRIORITY: Record<LogLevel, number> = {
   error: 3,
 };
 
-const LEVEL_PREFIX: Record<LogLevel, string> = {
-  debug: "[MCP-UI:DEBUG]",
-  info: "[MCP-UI]",
-  warn: "[MCP-UI:WARN]",
-  error: "[MCP-UI:ERROR]",
-};
-
 class Logger {
   private minLevel: LogLevel = "info";
-  private handlers: LogHandler[] = [];
+  private handlers = new Set<LogHandler>();
   private defaultContext: LogContext = {};
 
   setLevel(level: LogLevel): void {
@@ -50,12 +43,13 @@ class Logger {
     this.defaultContext = context;
   }
 
-  addHandler(handler: LogHandler): void {
-    this.handlers.push(handler);
+  addHandler(handler: LogHandler): () => void {
+    this.handlers.add(handler);
+    return () => this.handlers.delete(handler);
   }
 
   clearHandlers(): void {
-    this.handlers = [];
+    this.handlers.clear();
   }
 
   private shouldLog(level: LogLevel): boolean {
@@ -69,26 +63,12 @@ class Logger {
       level,
       message,
       context: { ...this.defaultContext, ...context },
-      error,
+      ...(error ? { error } : {}),
       timestamp: new Date(),
     };
 
-    // Default console output
-    const prefix = LEVEL_PREFIX[level];
-    const contextStr = formatContext(entry.context);
-    const fullMessage = contextStr ? `${prefix} ${message} ${contextStr}` : `${prefix} ${message}`;
-
-    if (level === "error") {
-      console.error(fullMessage, error ?? "");
-    } else if (level === "warn") {
-      console.warn(fullMessage);
-    } else if (level === "debug") {
-      console.debug(fullMessage);
-    } else {
-      console.log(fullMessage);
-    }
-
-    // Custom handlers
+    // The embedding Capability owns presentation. Writing to stdout/stderr here
+    // would bypass Pi's renderer and corrupt the Host TUI.
     for (const handler of this.handlers) {
       try {
         handler(entry);
@@ -123,10 +103,13 @@ class Logger {
 }
 
 class ChildLogger {
-  constructor(
-    private parent: Logger,
-    private context: LogContext
-  ) {}
+  private parent: Logger;
+  private context: LogContext;
+
+  constructor(parent: Logger, context: LogContext) {
+    this.parent = parent;
+    this.context = context;
+  }
 
   debug(message: string, context?: LogContext): void {
     this.parent.debug(message, { ...this.context, ...context });
@@ -149,21 +132,10 @@ class ChildLogger {
   }
 }
 
-function formatContext(context?: LogContext): string {
-  if (!context || Object.keys(context).length === 0) return "";
-  const parts: string[] = [];
-  for (const [key, value] of Object.entries(context)) {
-    if (value !== undefined && value !== null) {
-      parts.push(`${key}=${typeof value === "string" ? value : JSON.stringify(value)}`);
-    }
-  }
-  return parts.length > 0 ? `(${parts.join(", ")})` : "";
-}
-
 // Singleton instance
 export const logger = new Logger();
 
 // Enable debug mode via environment variable
-if (process.env.MCP_UI_DEBUG === "1" || process.env.MCP_UI_DEBUG === "true") {
+if (process.env["MCP_UI_DEBUG"] === "1" || process.env["MCP_UI_DEBUG"] === "true") {
   logger.setLevel("debug");
 }
