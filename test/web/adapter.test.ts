@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { createWebAdapterApi } from "../../packages/pi-stuff-web/adapter.js";
+import { createWebAdapterApi } from "../../packages/pi-stuff/src/web/adapter.js";
 
 const Parameters = Type.Object({}, { additionalProperties: true });
 type Tool = ToolDefinition<typeof Parameters, unknown>;

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { type ContextProjectionAdapter, createRtkProjectionAdapter } from "../../packages/pi-stuff-rtk/projection.js";
+import {
+	type ContextProjectionAdapter,
+	createRtkProjectionAdapter,
+} from "../../packages/pi-stuff/src/rtk/projection.js";
 
 const ZERO_USAGE = {
 	input: 0,

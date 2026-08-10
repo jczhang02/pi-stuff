@@ -3,7 +3,7 @@ import {
 	buildModelCandidates,
 	isRetryableModelFailure,
 	MAX_MODEL_CANDIDATES_PER_CHILD,
-} from "../../packages/pi-stuff-agents/src/runs/shared/model-fallback.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/model-fallback.js";
 
 describe("Agent model fallback proof bounds", () => {
 	test("accepts 64 total candidates and rejects the 65th before any writer can spawn", () => {

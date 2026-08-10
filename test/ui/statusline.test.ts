@@ -18,7 +18,7 @@ import {
 	parseGitStatusPorcelain,
 	StatuslineController,
 	type StatuslinePreferences,
-} from "../../packages/pi-stuff-ui/statusline.js";
+} from "../../packages/pi-stuff/src/conversation-ui/statusline.js";
 
 class ValueSource<Value> {
 	private readonly listeners = new Set<() => void>();

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ToolActivityStore } from "../../packages/pi-stuff-tools/activity-store.js";
+import { ToolActivityStore } from "../../packages/pi-stuff/src/tool-display/activity-store.js";
 
 test("ToolActivityStore exposes immutable snapshots", () => {
 	const store = new ToolActivityStore();

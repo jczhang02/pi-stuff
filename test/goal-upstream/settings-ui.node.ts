@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { GoalCommandController } from "../../packages/pi-stuff-goal/src/commands.js";
-import { createGoal, GoalRuntime } from "../../packages/pi-stuff-goal/src/runtime.js";
-import { DEFAULT_GOAL_SETTINGS, type GoalSettings } from "../../packages/pi-stuff-goal/src/settings.js";
+import { GoalCommandController } from "../../packages/pi-stuff/src/goal/src/commands.js";
+import { createGoal, GoalRuntime } from "../../packages/pi-stuff/src/goal/src/runtime.js";
+import { DEFAULT_GOAL_SETTINGS, type GoalSettings } from "../../packages/pi-stuff/src/goal/src/settings.js";
 import {
 	applyGoalSettings,
 	formatGoalLimit,
 	parseGoalLimit,
 	showGoalSettings,
-} from "../../packages/pi-stuff-goal/src/settings-ui.js";
+} from "../../packages/pi-stuff/src/goal/src/settings-ui.js";
 import { createMockContext, createMockPi } from "./support.js";
 
 initTheme("dark", false);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { validateWebFetchInput } from "../../packages/pi-stuff-web/url-policy.js";
+import { validateWebFetchInput } from "../../packages/pi-stuff/src/web/url-policy.js";
 
 describe("Pi Stuff Web URL boundary", () => {
 	test("accepts bounded public HTTP(S) input", () => {

@@ -9,7 +9,7 @@ import {
 	registerOwnedUiSettings,
 	type UiSettings,
 	UiSettingsStore,
-} from "../../packages/pi-stuff-ui/settings.js";
+} from "../../packages/pi-stuff/src/conversation-ui/settings.js";
 
 const DEFAULTS: UiSettings = {
 	inlineSlashAutocomplete: true,

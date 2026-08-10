@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completeGoalArguments, parseCommand } from "../../packages/pi-stuff-goal/src/command.js";
+import { completeGoalArguments, parseCommand } from "../../packages/pi-stuff/src/goal/src/command.js";
 
 const QUEUE_FEATURE = { experimentalGoals: true } as const;
 

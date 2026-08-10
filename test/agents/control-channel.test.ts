@@ -7,7 +7,7 @@ import {
 	requestAsyncStop,
 	stopRequestPath,
 	watchAsyncControlInbox,
-} from "../../packages/pi-stuff-agents/src/runs/background/control-channel.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
 
 const roots = new Set<string>();
 

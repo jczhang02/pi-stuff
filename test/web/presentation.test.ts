@@ -4,7 +4,7 @@ import {
 	WEB_CONTENT_PRESENTATION,
 	WEB_FETCH_PRESENTATION,
 	WEB_SEARCH_PRESENTATION,
-} from "../../packages/pi-stuff-web/presentation.js";
+} from "../../packages/pi-stuff/src/web/presentation.js";
 
 function result(details: Record<string, unknown>): AgentToolResult<unknown> {
 	return { content: [{ type: "text", text: "fixture" }], details };

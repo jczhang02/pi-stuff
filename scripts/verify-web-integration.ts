@@ -75,8 +75,8 @@ export async function verifyWebIntegration(options: WebIntegrationVerificationOp
 	await mkdir(process.env["PI_CODING_AGENT_DIR"]);
 
 	try {
-		const packageDirectory = resolve(options.packagePath ?? join(root, "packages/pi-stuff-web"));
-		const { installWebCapability } = await import(pathToFileURL(join(packageDirectory, "adapter.ts")).href);
+		const packageDirectory = resolve(options.packagePath ?? join(root, "packages/pi-stuff"));
+		const { installWebCapability } = await import(pathToFileURL(join(packageDirectory, "src/web/adapter.ts")).href);
 		const fixture = harness();
 		installWebCapability(fixture.pi);
 		for (const handler of fixture.handlers.get("session_start") ?? []) await handler({}, fixture.context);

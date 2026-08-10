@@ -21,9 +21,9 @@ import {
 	getProjectArtifactsDir,
 	maintainAgentArtifacts,
 	withArtifactGroupWriteClaim,
-} from "../../packages/pi-stuff-agents/src/shared/artifacts.js";
-import { shardedDurableClaimName } from "../../packages/pi-stuff-agents/src/shared/durable-claim.js";
-import { DEFAULT_ARTIFACT_CONFIG, TEMP_ARTIFACTS_DIR } from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/shared/artifacts.js";
+import { shardedDurableClaimName } from "../../packages/pi-stuff/src/subagents/src/shared/durable-claim.js";
+import { DEFAULT_ARTIFACT_CONFIG, TEMP_ARTIFACTS_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -496,7 +496,7 @@ describe("Agent artifact maintenance", () => {
 		expect(collidingGroups).toBeDefined();
 		if (!collidingGroups) throw new Error("Unable to find an artifact claim collision.");
 
-		const moduleUrl = pathToFileURL(resolve("packages/pi-stuff-agents/src/shared/artifacts.ts")).href;
+		const moduleUrl = pathToFileURL(resolve("packages/pi-stuff/src/subagents/src/shared/artifacts.ts")).href;
 		const holderPath = join(artifacts, `${collidingGroups[0]}_input.md`);
 		const contenderPath = join(artifacts, `${collidingGroups[1]}_input.md`);
 		const holderScript = `

@@ -1,6 +1,9 @@
 # Keep Pi as the Host
 
-Pi Stuff is a normal Pi Package Suite rather than a new coding-agent runtime. The Aggregate Package composes ordered Capability Packages through Pi's Extension interface, while Pi continues to own the CLI, TUI, sessions, settings, package loading, and model interaction. This avoids duplicating Pi internals and lets the Suite follow the certified Pi host contract.
+Pi Stuff is one normal Pi Package rather than a new coding-agent runtime. Its entry point composes ordered internal
+Capability Modules through Pi's Extension interface, while Pi continues to own the CLI, TUI, sessions, settings,
+Package loading, and model interaction. This avoids duplicating Pi internals and lets the Suite follow the certified
+Pi Host contract.
 
 ## Consequences
 

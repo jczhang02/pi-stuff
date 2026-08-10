@@ -199,9 +199,9 @@ function childStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamO
 	// biome-ignore lint/complexity/useLiteralKeys: required by noPropertyAccessFromIndexSignature
 	const childBaseExtension = process.env["PI_STUFF_CHILD_BASE_EXTENSION_PATH"];
 	const nestedResult = latestSubagentResult(context);
-	const isAggregateDirect =
+	const isSuiteDirect =
 		scenario === "aggregate-fanout-foreground" && task !== "MATRIX_GRANDCHILD_TASK_AGGREGATE_FANOUT_FOREGROUND";
-	if (isAggregateDirect && nestedResult !== undefined) {
+	if (isSuiteDirect && nestedResult !== undefined) {
 		record({ kind: "child-finish", scenario, task, text: nestedResult });
 		return textStream(`MATRIX_DIRECT_FANOUT_RESULT:${nestedResult}`);
 	}
@@ -216,7 +216,7 @@ function childStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamO
 		baseExtensionMatches: childBaseExtension === expectedBaseExtension,
 		childBaseExtension,
 	});
-	if (isAggregateDirect) return nestedToolCallStream(scenario);
+	if (isSuiteDirect) return nestedToolCallStream(scenario);
 	return delayedTextStream(
 		`MATRIX_CHILD_RESULT:${scenario}:${task}:root-marker=${sawRootMarker ? "seen" : "absent"}`,
 		options,

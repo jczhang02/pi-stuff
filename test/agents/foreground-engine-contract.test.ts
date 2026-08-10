@@ -3,23 +3,23 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AgentConfig } from "../../packages/pi-stuff-agents/src/agents/agents.js";
-import { createInitialStatus } from "../../packages/pi-stuff-agents/src/runs/background/initial-status.js";
-import { initializeWriterProcessRegistry } from "../../packages/pi-stuff-agents/src/runs/background/writer-process-registry.js";
+import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";
+import { createInitialStatus } from "../../packages/pi-stuff/src/subagents/src/runs/background/initial-status.js";
+import { initializeWriterProcessRegistry } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
 import {
 	executeForegroundConfig,
 	projectForegroundCompletion,
-} from "../../packages/pi-stuff-agents/src/runs/foreground/execution.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/foreground/execution.js";
 import {
 	createSubagentExecutor,
 	deriveLaunchRunId,
-} from "../../packages/pi-stuff-agents/src/runs/foreground/subagent-executor.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/foreground/subagent-executor.js";
 import {
 	createNestedRoute,
 	projectNestedEvents,
 	writeNestedEvent,
-} from "../../packages/pi-stuff-agents/src/runs/shared/nested-events.js";
-import type { BackgroundRunnerConfig } from "../../packages/pi-stuff-agents/src/runs/shared/parallel-utils.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-events.js";
+import type { BackgroundRunnerConfig } from "../../packages/pi-stuff/src/subagents/src/runs/shared/parallel-utils.js";
 import {
 	SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV,
 	SUBAGENT_PARENT_CHILD_INDEX_ENV,
@@ -28,14 +28,14 @@ import {
 	SUBAGENT_PARENT_EVENT_SINK_ENV,
 	SUBAGENT_PARENT_ROOT_RUN_ID_ENV,
 	SUBAGENT_PARENT_RUN_ID_ENV,
-} from "../../packages/pi-stuff-agents/src/runs/shared/pi-args.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/pi-args.js";
 import {
 	observeForegroundRuntimeRuns,
 	recoverForegroundRuntimeRuns,
 	refreshForegroundRuntimeRun,
 	replayForegroundRuns,
-} from "../../packages/pi-stuff-agents/src/session/foreground-replay.js";
-import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/session/foreground-replay.js";
+import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -2204,11 +2204,11 @@ describe("reduced foreground Agent engine", () => {
 	test("the private executor contract contains no removed orchestration fields or legacy branches", () => {
 		const root = path.resolve(import.meta.dir, "../..");
 		const executorSource = fs.readFileSync(
-			path.join(root, "packages/pi-stuff-agents/src/runs/foreground/subagent-executor.ts"),
+			path.join(root, "packages/pi-stuff/src/subagents/src/runs/foreground/subagent-executor.ts"),
 			"utf8",
 		);
 		const executionSource = fs.readFileSync(
-			path.join(root, "packages/pi-stuff-agents/src/runs/foreground/execution.ts"),
+			path.join(root, "packages/pi-stuff/src/subagents/src/runs/foreground/execution.ts"),
 			"utf8",
 		);
 		const params = executorSource.match(/export interface SubagentParamsLike \{([\s\S]*?)\n\}/)?.[1] ?? "";

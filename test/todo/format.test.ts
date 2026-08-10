@@ -8,7 +8,7 @@ import {
 	type OverlayTask,
 	selectOpenBlockers,
 	selectOverlayLayout,
-} from "../../packages/pi-stuff-todo/view/format.js";
+} from "../../packages/pi-stuff/src/todo/view/format.js";
 
 const recordingTheme = {
 	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,

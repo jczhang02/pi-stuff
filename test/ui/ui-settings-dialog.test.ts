@@ -1,9 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import type { CommandDialogViewContext } from "../../packages/pi-stuff-ui/index.js";
-import type { RegisteredUiSetting, UiSettingRegistry } from "../../packages/pi-stuff-ui/settings.js";
-import { createUiSettingsView } from "../../packages/pi-stuff-ui/ui-settings-dialog.js";
+import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import type { RegisteredUiSetting, UiSettingRegistry } from "../../packages/pi-stuff/src/conversation-ui/settings.js";
+import { createUiSettingsView } from "../../packages/pi-stuff/src/conversation-ui/ui-settings-dialog.js";
 
 const theme = {
 	bold: (value: string) => value,

@@ -5,7 +5,7 @@
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
-import piStuffUi, { getCommandDialogCoordinator } from "../../../packages/pi-stuff-ui/index.ts";
+import piStuffUi, { getCommandDialogCoordinator } from "../../../packages/pi-stuff/src/conversation-ui/index.ts";
 
 const PROVIDER = "footer-fixture";
 const MODEL = "compact-footer-fixture";

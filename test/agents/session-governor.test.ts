@@ -10,8 +10,8 @@ import {
 	type SessionGovernorBatchAcquireResult,
 	type SessionGovernorFileSystem,
 	SessionGovernorStateError,
-} from "../../packages/pi-stuff-agents/src/runtime/session-governor.js";
-import { resolveSessionGovernorRoot } from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.js";
+import { resolveSessionGovernorRoot } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const roots: string[] = [];
 

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { createLiveThoughtTransformer } from "../packages/pi-stuff-ui/live-thought.js";
+import { createLiveThoughtTransformer } from "../packages/pi-stuff/src/conversation-ui/live-thought.js";
 import {
 	FIXTURE_THINKING,
 	THOUGHT_PHASES,
@@ -1005,8 +1005,8 @@ function verifyInventory(records: readonly FixtureRecord[]): boolean {
 	if (inventory.length === 0) fail("provider fixture did not observe a real session_start inventory");
 	for (const record of inventory) {
 		if (!Array.isArray(record.commands)) fail("session inventory did not contain public command names");
-		if (!record.commands.includes("ui")) fail("Aggregate did not register /ui");
-		if (record.commands.includes("tool-settings")) fail("Aggregate still registered removed /tool-settings");
+		if (!record.commands.includes("ui")) fail("Suite did not register /ui");
+		if (record.commands.includes("tool-settings")) fail("Suite still registered removed /tool-settings");
 	}
 	if (!inventory.every((record) => record.markdownTransformer === true)) {
 		fail("Pi Host did not expose the required upstream Markdown-transform API");
@@ -1057,7 +1057,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						"native and inline autocomplete suppression and restoration",
 						"long CJK prompt, Welcome scroll-away, live and settled Thought",
 						"metered and API-key subscription Statusline cost behavior",
-						"expanded four-task Todo alignment in a real Aggregate turn",
+						"expanded four-task Todo alignment in a real Suite turn",
 						"responsive /codex controls, Fast persistence, and offline degradation",
 						"eight /ui settings, enum changes, and restart persistence",
 						"/ui search, immediate Statusline and Inline changes, Welcome next-launch persistence",

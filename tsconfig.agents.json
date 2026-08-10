@@ -13,6 +13,6 @@
 		"noPropertyAccessFromIndexSignature": false,
 		"erasableSyntaxOnly": false
 	},
-	"include": ["packages/pi-stuff-agents/**/*.ts"],
+	"include": ["packages/pi-stuff/src/subagents/**/*.ts"],
 	"exclude": ["node_modules"]
 }

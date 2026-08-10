@@ -239,8 +239,7 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 		if (requests.length !== 3) fail(`expected three model requests, received ${requests.length}`);
 		const [main, side, secondSide] = requests;
 		if (main?.lastUser !== "main request") fail("main request was not observed");
-		if (!Array.isArray(main.tools) || !main.tools.includes("TaskCreate"))
-			fail("Aggregate Todo tools were not active");
+		if (!Array.isArray(main.tools) || !main.tools.includes("TaskCreate")) fail("Suite Todo tools were not active");
 		if (side?.lastUser !== "side question") fail("side request was not observed");
 		if (side.messageCount !== 2) fail("side request included the pending main assistant or missed the main user");
 		if (!Array.isArray(side.tools) || side.tools.length !== 0) fail("side request exposed tools");

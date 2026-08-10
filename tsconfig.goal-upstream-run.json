@@ -7,9 +7,9 @@
 		"rootDir": "."
 	},
 	"include": [
-		"packages/pi-stuff-goal/**/*.ts",
-		"packages/pi-stuff-tools/**/*.ts",
-		"packages/pi-stuff-ui/**/*.ts",
+		"packages/pi-stuff/src/goal/**/*.ts",
+		"packages/pi-stuff/src/tool-display/**/*.ts",
+		"packages/pi-stuff/src/conversation-ui/**/*.ts",
 		"test/goal-upstream/**/*.ts"
 	]
 }

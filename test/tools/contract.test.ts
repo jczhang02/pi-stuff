@@ -9,9 +9,9 @@ import {
 	registerSuiteOwnedTool,
 	ToolUiRuntime,
 	type ToolUiTimerScheduler,
-} from "../../packages/pi-stuff-tools/contract.js";
-import { CachedToolRow } from "../../packages/pi-stuff-tools/render.js";
-import { ToolUiSettingsStore } from "../../packages/pi-stuff-tools/settings.js";
+} from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { CachedToolRow } from "../../packages/pi-stuff/src/tool-display/render.js";
+import { ToolUiSettingsStore } from "../../packages/pi-stuff/src/tool-display/settings.js";
 
 const Params = Type.Object({ value: Type.String() });
 type Params = { value: string };
@@ -170,16 +170,16 @@ function renderLines(component: { render(width: number): string[] }, width = 120
 	return component.render(width);
 }
 
-test("Aggregate coverage fails fast when a Tool bypasses Activity metadata", () => {
+test("Suite coverage fails fast when a Tool bypasses Activity metadata", () => {
 	const harness = apiHarness();
 	toolFromHarness(harness, "covered", "read-file");
 	expect(() => assertSuiteToolActivityCoverage(harness.api, ["covered"])).not.toThrow();
 	expect(() => assertSuiteToolActivityCoverage(harness.api, ["covered", "missing"])).toThrow(
-		"Aggregate Tools missing Activity metadata: missing",
+		"Suite Tools missing Activity metadata: missing",
 	);
 });
 
-test("Aggregate coverage checks the Tools actually registered by capabilities", () => {
+test("Suite coverage checks the Tools actually registered by modules", () => {
 	const harness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(harness.api);
 	registrations.api.registerTool({
@@ -193,14 +193,14 @@ test("Aggregate coverage checks the Tools actually registered by capabilities", 
 		parameters: Params,
 	});
 	expect(() => assertSuiteToolActivityCoverage(harness.api, [], registrations.toolNames)).toThrow(
-		"Aggregate registered undeclared Tools: untracked",
+		"Suite registered undeclared Tools: untracked",
 	);
 	expect(() => assertSuiteToolActivityCoverage(harness.api, ["declared"], new Set())).toThrow(
-		"Aggregate declared unregistered Tools: declared",
+		"Suite declared unregistered Tools: declared",
 	);
 });
 
-test("Aggregate coverage rejects metadata-only Tools without the owned Activity renderer", () => {
+test("Suite coverage rejects metadata-only Tools without the owned Activity renderer", () => {
 	const harness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(harness.api);
 	getToolUiRuntime(harness.api).registerActivity("metadata-only", presentation("run-command").activity);
@@ -215,17 +215,17 @@ test("Aggregate coverage rejects metadata-only Tools without the owned Activity 
 		parameters: Params,
 	});
 	expect(() => assertSuiteToolActivityCoverage(harness.api, ["metadata-only"], registrations.toolNames)).toThrow(
-		"Aggregate Tools missing Activity renderer: metadata-only",
+		"Suite Tools missing Activity renderer: metadata-only",
 	);
 });
 
-test("Aggregate coverage accepts an already registered Tool from an idempotent capability", () => {
+test("Suite coverage accepts an already registered Tool from an idempotent module", () => {
 	const harness = apiHarness();
 	toolFromHarness(harness, "existing", "read-file");
 	expect(() => assertSuiteToolActivityCoverage(harness.api, ["existing"], new Set())).not.toThrow();
 });
 
-test("Aggregate coverage permits optional Tools when absent and checks them when registered", () => {
+test("Suite coverage permits optional Tools when absent and checks them when registered", () => {
 	const harness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(harness.api);
 	expect(() => assertSuiteToolActivityCoverage(harness.api, [], registrations.toolNames, ["optional"])).not.toThrow();
@@ -246,11 +246,11 @@ test("Aggregate coverage permits optional Tools when absent and checks them when
 	expect(() => assertSuiteToolActivityCoverage(harness.api, [], registrations.toolNames, ["optional"])).not.toThrow();
 });
 
-test("Aggregate coverage accepts deferred Tools before registration but still requires metadata", () => {
+test("Suite coverage accepts deferred Tools before registration but still requires metadata", () => {
 	const harness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(harness.api);
 	expect(() => assertSuiteToolActivityCoverage(harness.api, [], registrations.toolNames, [], ["deferred"])).toThrow(
-		"Aggregate Tools missing Activity metadata: deferred",
+		"Suite Tools missing Activity metadata: deferred",
 	);
 	getToolUiRuntime(harness.api).registerActivity("deferred", presentation("run-command").activity);
 	expect(() =>

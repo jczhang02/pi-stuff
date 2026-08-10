@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { prepareMagicContext } from "../../packages/pi-stuff-context/config.js";
+import { prepareMagicContext } from "../../packages/pi-stuff/src/context-management/config.js";
 
 const roots: string[] = [];
 const environment = process.env as NodeJS.ProcessEnv & {

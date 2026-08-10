@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import {
 	durableClaimBackendForPlatform,
 	tryAcquireDurableClaim,
-} from "../../packages/pi-stuff-agents/src/shared/durable-claim.js";
+} from "../../packages/pi-stuff/src/subagents/src/shared/durable-claim.js";
 
 const roots: string[] = [];
 
@@ -21,7 +21,7 @@ describe("durable cross-process claims", () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-durable-claim-process-"));
 		roots.push(root);
 		fs.chmodSync(root, 0o700);
-		const moduleUrl = pathToFileURL(path.resolve("packages/pi-stuff-agents/src/shared/durable-claim.ts")).href;
+		const moduleUrl = pathToFileURL(path.resolve("packages/pi-stuff/src/subagents/src/shared/durable-claim.ts")).href;
 		const script = `
 const { tryAcquireDurableClaim } = await import(${JSON.stringify(moduleUrl)});
 const claim = tryAcquireDurableClaim(${JSON.stringify(root)}, "delivery");

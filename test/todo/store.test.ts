@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import { EMPTY_STATE, type TaskState } from "../../packages/pi-stuff-todo/state/state.js";
+import { EMPTY_STATE, type TaskState } from "../../packages/pi-stuff/src/todo/state/state.js";
 import {
 	__resetState,
 	clearActiveRenderSession,
@@ -13,8 +13,8 @@ import {
 	replaceState,
 	setActiveRenderSession,
 	sid,
-} from "../../packages/pi-stuff-todo/state/store.js";
-import type { Task } from "../../packages/pi-stuff-todo/tool/types.js";
+} from "../../packages/pi-stuff/src/todo/state/store.js";
+import type { Task } from "../../packages/pi-stuff/src/todo/tool/types.js";
 
 function task(id: string, subject = `Task ${id}`): Task {
 	return { id, subject, description: `${subject} description`, status: "pending" };

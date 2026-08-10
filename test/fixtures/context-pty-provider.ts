@@ -3,7 +3,7 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { registerSuiteOwnedTool } from "../../packages/pi-stuff-tools/contract.js";
+import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 const PROVIDER = "pi-stuff-context-pty";
 const MODEL = "fixture-model";

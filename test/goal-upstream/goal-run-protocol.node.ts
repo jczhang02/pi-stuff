@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
-import goal from "../../packages/pi-stuff-goal/src/goal.js";
-import type { ActiveGoal } from "../../packages/pi-stuff-goal/src/persistence.js";
-import { recordGoalBlockerAttempt } from "../../packages/pi-stuff-goal/src/safety.js";
+import goal from "../../packages/pi-stuff/src/goal/src/goal.js";
+import type { ActiveGoal } from "../../packages/pi-stuff/src/goal/src/persistence.js";
+import { recordGoalBlockerAttempt } from "../../packages/pi-stuff/src/goal/src/safety.js";
 import { createMockContext, createMockPi, goalStatusSnapshot } from "./support.js";
 
 const START_CHANNEL = "pi-goal:start";

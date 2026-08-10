@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { suppressDuplicatedLiveCompactionReplay } from "../../packages/pi-stuff-ui/compaction-presentation.js";
+import { suppressDuplicatedLiveCompactionReplay } from "../../packages/pi-stuff/src/conversation-ui/compaction-presentation.js";
 
 function compactionEntry(id: string): SessionEntry {
 	return {

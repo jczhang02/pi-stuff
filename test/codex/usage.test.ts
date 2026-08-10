@@ -6,7 +6,7 @@ import {
 	formatCodexUsage,
 	parseCodexUsage,
 	weeklyRemainingPercent,
-} from "../../packages/pi-stuff-codex/usage.js";
+} from "../../packages/pi-stuff/src/codex/usage.js";
 
 function jwt(accountId: string): string {
 	const encode = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString("base64url");

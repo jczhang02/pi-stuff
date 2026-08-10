@@ -10,8 +10,8 @@ import {
 	readBtwHistory,
 	recordBtwExchange,
 	resetBtwHistoryForTests,
-} from "../../packages/pi-stuff-btw/btw-history.js";
-import piStuffBtw from "../../packages/pi-stuff-btw/index.js";
+} from "../../packages/pi-stuff/src/btw/btw-history.js";
+import piStuffBtw from "../../packages/pi-stuff/src/btw/index.js";
 
 beforeEach(() => resetBtwHistoryForTests());
 

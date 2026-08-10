@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { isTransitionValid } from "../../packages/pi-stuff-todo/state/invariants.js";
-import type { TaskState } from "../../packages/pi-stuff-todo/state/state.js";
-import { applyTaskMutation } from "../../packages/pi-stuff-todo/state/state-reducer.js";
-import type { Task } from "../../packages/pi-stuff-todo/tool/types.js";
+import { isTransitionValid } from "../../packages/pi-stuff/src/todo/state/invariants.js";
+import type { TaskState } from "../../packages/pi-stuff/src/todo/state/state.js";
+import { applyTaskMutation } from "../../packages/pi-stuff/src/todo/state/state-reducer.js";
+import type { Task } from "../../packages/pi-stuff/src/todo/tool/types.js";
 
 function emptyState(nextId = 1): TaskState {
 	return { tasks: [], nextId };

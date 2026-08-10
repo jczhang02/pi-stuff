@@ -9,7 +9,7 @@ import type {
 	ExtensionEvent,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import piStuffTools from "../../packages/pi-stuff-tools/index.js";
+import piStuffTools from "../../packages/pi-stuff/src/tool-display/index.js";
 
 type EventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => Promise<unknown> | unknown;
 

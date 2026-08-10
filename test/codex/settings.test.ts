@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CodexSettingsStore } from "../../packages/pi-stuff-codex/settings.js";
+import { CodexSettingsStore } from "../../packages/pi-stuff/src/codex/settings.js";
 
 const temporaryRoots: string[] = [];
 

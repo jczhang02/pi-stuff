@@ -68,12 +68,12 @@ jobs:
           bun run typecheck
           bun run knip
 
-      - name: Check generated and public artifacts
+      - name: Check generated composition and repository safety
         shell: bash
         run: |
           set -euo pipefail
           bun run check:generated
-          bun run check:public
+          bun run check:repository
 
   acceptance:
     name: Acceptance

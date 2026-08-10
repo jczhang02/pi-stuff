@@ -9,7 +9,7 @@ import {
 	WelcomeHeaderController,
 	type WelcomeHeaderInventory,
 	type WelcomeHeaderInventorySource,
-} from "../../../../../packages/pi-stuff-ui/welcome-header.js";
+} from "../../../../../packages/pi-stuff/src/conversation-ui/welcome-header.js";
 
 const FIXTURE_MODEL = "gpt-5.6-sol";
 const inventory: WelcomeHeaderInventorySource = {

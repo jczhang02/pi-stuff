@@ -50,8 +50,8 @@ const OPERATIONS: ToolOperation[] = [
 		target: "packages/pi-stuff/src/index.ts",
 		summary: "46 lines",
 		detailLines: [
-			'1  import registerTodo from "@jczhang02/pi-stuff-todo";',
-			'2  import registerAgents from "@jczhang02/pi-stuff-agents";',
+			'1  import registerTodo from "./src/todo/index.js";',
+			'2  import registerSubagents from "./src/subagents/index.js";',
 			"8  export default function registerSuite(pi: ExtensionAPI): void {",
 			"9    registerTodo(pi);",
 			"10   registerAgents(pi);",
@@ -64,11 +64,11 @@ const OPERATIONS: ToolOperation[] = [
 		target: "registerTool( · packages/",
 		summary: "12 matches in 5 files",
 		detailLines: [
-			"packages/pi-stuff-agents/src/index.ts:42",
-			"packages/pi-stuff-todo/src/index.ts:31",
-			"packages/pi-stuff-tools/src/read.ts:18",
-			"packages/pi-stuff-tools/src/search.ts:22",
-			"packages/pi-stuff-tools/src/test.ts:27",
+			"packages/pi-stuff/src/subagents/index.ts:42",
+			"packages/pi-stuff/src/todo/index.ts:31",
+			"packages/pi-stuff/src/tool-display/builtin-tools.ts:18",
+			"packages/pi-stuff/src/tool-display/builtin-tools.ts:22",
+			"packages/pi-stuff/src/tool-display/builtin-tools.ts:27",
 		],
 	},
 	{

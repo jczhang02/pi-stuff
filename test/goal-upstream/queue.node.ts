@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ActiveGoal } from "../../packages/pi-stuff-goal/src/persistence.js";
+import type { ActiveGoal } from "../../packages/pi-stuff/src/goal/src/persistence.js";
 import {
 	activateQueuedGoal,
 	appendGoal,
@@ -8,7 +8,7 @@ import {
 	dropLastGoal,
 	prioritizeGoal,
 	skipGoal,
-} from "../../packages/pi-stuff-goal/src/queue.js";
+} from "../../packages/pi-stuff/src/goal/src/queue.js";
 
 test("queue structural operations preserve array order", () => {
 	const head = {

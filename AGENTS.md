@@ -12,8 +12,9 @@ These instructions apply only while developing this repository. This file is not
 ## Architecture
 
 - Pi is the Host. Do not create another CLI, runtime, session layer, SDK, or TUI shell.
-- `@jczhang02/pi-stuff` is an Aggregate Package with one default Extension factory.
-- A Capability Package owns one coherent behavior and remains independently versioned.
+- `@jczhang02/pi-stuff` is the one local Pi Package and has one default Extension factory.
+- A Capability Module owns one coherent behavior inside that Package. Modules are not independently versioned,
+  installed, or published.
 - Keep Extension import and startup pure: no network calls, file writes, subprocesses, or host-setting mutations.
 - A future Capability may produce side effects only from an explicit user-triggered command or tool whose contract documents them.
 - The Statusline has one observation-only exception: after a user-driven Agent turn it may run a bounded, no-lock `git status` read to obtain change counts that Pi does not expose. It must never run during import, initialization, or `session_start`, and failure must degrade to branch-only display.
@@ -35,9 +36,10 @@ These instructions apply only while developing this repository. This file is not
 - Ship TypeScript source; do not add a `dist/` build lane.
 - Pi core packages are wildcard peer dependencies and exact `0.84.1` development dependencies. Runtime certification
   uses the upstream source profile in `docs/compatibility.md`; never treat the same version string as sufficient proof.
-- Runtime Capability dependencies of the Aggregate must also be listed in `bundledDependencies`.
-- Only files in each Package's explicit `files` allowlist may enter its tarball.
-- Do not add lifecycle scripts to a publishable Package.
+- Declare external runtime dependencies once in `packages/pi-stuff/package.json`; internal Modules use relative imports
+  and must never depend on a self-owned `@jczhang02/pi-*` package.
+- Only files in the Package's explicit `files` allowlist may enter its local verification archive.
+- Keep the Package private and do not add lifecycle or npm publication scripts.
 - `packages/pi-stuff/suite.json` is the ordered composition source of truth. Run `bun run suite:generate` after changing it; never edit generated composition output alone.
 
 ## Verification seams
@@ -47,7 +49,7 @@ Tests observe behavior at these agreed seams:
 - the Suite generator's result and committed artifacts;
 - repository safety through its audit command;
 - Extension discovery through Pi's public RPC protocol;
-- the extracted npm tarball through Pi's Package loader.
+- the extracted local Package archive through Pi's Package loader.
 
 Use `bun test` and integration-style assertions at these seams. Do not test private helpers or replace Pi with mocks when certifying host compatibility. No test may call an LLM or require credentials.
 

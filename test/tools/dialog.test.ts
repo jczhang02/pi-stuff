@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import type { CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
-import { ToolUiRuntime } from "../../packages/pi-stuff-tools/contract.js";
-import { createToolDialogView } from "../../packages/pi-stuff-tools/tool-dialog.js";
+import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { createToolDialogView } from "../../packages/pi-stuff/src/tool-display/tool-dialog.js";
 
 const theme = {
 	bold: (value: string) => value,

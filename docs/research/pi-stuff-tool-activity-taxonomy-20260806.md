@@ -10,7 +10,7 @@ Implementation map for ADR 0002 complete Tool Activity Grouping.
 
 The root aggregate registers **28 distinct Tool names**. `ui`, `rtk`, and `btw` register no root Tools. Work replaces the aggregate-facing `bash` behavior, so Bash is counted once. The Agent capability can additionally register the conditional parent-channel aliases `subagent_supervisor` and `intercom`.
 
-All required and conditional registrations pass through `registerSuiteOwnedTool`; no owned Tool bypasses the shared presentation contract. The decorator, structured Activity interface, projection planner, and generated coverage gate are implemented in `packages/pi-stuff-tools/contract.ts`, `packages/pi-stuff-tools/activity.ts`, and `packages/pi-stuff/index.ts`. The coverage gate requires all 28 root Tools and validates either conditional alias whenever it registers.
+All required and conditional registrations pass through `registerSuiteOwnedTool`; no owned Tool bypasses the shared presentation contract. The decorator, structured Activity interface, projection planner, and generated coverage gate are implemented in `packages/pi-stuff/src/tool-display/contract.ts`, `packages/pi-stuff/src/tool-display/activity.ts`, and `packages/pi-stuff/index.ts`. The coverage gate requires all 28 root Tools and validates either conditional alias whenever it registers.
 
 ## Tool matrix
 
@@ -33,11 +33,11 @@ All required and conditional registrations pass through `registerSuiteOwnedTool`
 
 Sources:
 
-- Builtins: `packages/pi-stuff-tools/builtin-tools.ts:42-132`
-- Builtin session registration: `packages/pi-stuff-tools/index.ts:64-80`
-- Work Bash: `packages/pi-stuff-work/src/tools.ts:132-181`
-- Codex definitions/results: `packages/pi-stuff-codex/tools.ts:28-68,104-292`
-- Codex registrations/media: `packages/pi-stuff-codex/tools.ts:294-342`
+- Builtins: `packages/pi-stuff/src/tool-display/builtin-tools.ts:42-132`
+- Builtin session registration: `packages/pi-stuff/src/tool-display/index.ts:64-80`
+- Work Bash: `packages/pi-stuff/src/background-work/src/tools.ts:132-181`
+- Codex definitions/results: `packages/pi-stuff/src/codex/tools.ts:28-68,104-292`
+- Codex registrations/media: `packages/pi-stuff/src/codex/tools.ts:294-342`
 
 ### Goal, Context, and memory activity
 
@@ -53,12 +53,12 @@ Sources:
 
 Sources:
 
-- Context names: `packages/pi-stuff-context/index.ts:17-29`
-- Current generic target/grouping: `packages/pi-stuff-context/index.ts:337-363`
-- Lazy handoff registrations: `packages/pi-stuff-context/index.ts:398-423`
-- Activated upstream registrations: `packages/pi-stuff-context/index.ts:602-606`
-- Goal detail contracts/presentation: `packages/pi-stuff-goal/src/goal.ts:42-109`
-- Goal registrations: `packages/pi-stuff-goal/src/goal.ts:593-594`
+- Context names: `packages/pi-stuff/src/context-management/index.ts:17-29`
+- Current generic target/grouping: `packages/pi-stuff/src/context-management/index.ts:337-363`
+- Lazy handoff registrations: `packages/pi-stuff/src/context-management/index.ts:398-423`
+- Activated upstream registrations: `packages/pi-stuff/src/context-management/index.ts:602-606`
+- Goal detail contracts/presentation: `packages/pi-stuff/src/goal/src/goal.ts:42-109`
+- Goal registrations: `packages/pi-stuff/src/goal/src/goal.ts:593-594`
 
 The current Context target extractor checks generic keys such as `query`, `memory_id`, and `id`, but misses important actual arguments including `ids`, `note_id`, `message`, and `drop`.
 
@@ -73,13 +73,13 @@ The current Context target extractor checks generic keys such as `query`, `memor
 
 Sources:
 
-- Web wrapping and registrations: `packages/pi-stuff-web/adapter.ts:67-122`
-- Intentional Source Check exclusion: `packages/pi-stuff-web/adapter.ts:124-145`
-- Web outcome extraction: `packages/pi-stuff-web/presentation.ts:18-126`
-- Upstream definitions: `packages/pi-web-access/index.ts:1574,2138,2232,2550`
-- MCP gateway registration/filter: `packages/pi-stuff-mcp/adapter.ts:69-87,105-128`
-- `proxyOnly` installation: `packages/pi-stuff-mcp/adapter.ts:176-185`
-- MCP semantics/outcomes: `packages/pi-stuff-mcp/presentation.ts:10-52`
+- Web wrapping and registrations: `packages/pi-stuff/src/web/adapter.ts:67-122`
+- Intentional Source Check exclusion: `packages/pi-stuff/src/web/adapter.ts:124-145`
+- Web outcome extraction: `packages/pi-stuff/src/web/presentation.ts:18-126`
+- Upstream definitions: `packages/pi-stuff/src/web/runtime/index.ts:1574,2138,2232,2550`
+- MCP gateway registration/filter: `packages/pi-stuff/src/mcp/adapter.ts:69-87,105-128`
+- `proxyOnly` installation: `packages/pi-stuff/src/mcp/adapter.ts:176-185`
+- MCP semantics/outcomes: `packages/pi-stuff/src/mcp/presentation.ts:10-52`
 
 Only `mcp` is aggregate-visible. Runtime-discovered direct MCP tools are deliberately suppressed by `proxyOnly: true` and the facade that accepts only `tool.name === "mcp"`.
 
@@ -97,14 +97,14 @@ Only `mcp` is aggregate-visible. Runtime-discovered direct MCP tools are deliber
 
 Sources:
 
-- Background and Monitor definitions: `packages/pi-stuff-work/src/tools.ts:184-265`
-- `background` successful-row suppression: `packages/pi-stuff-work/src/tools.ts:115-125`
-- Root Agent definition/registration: `packages/pi-stuff-agents/src/extension/index.ts:620-630`
-- Agent semantics: `packages/pi-stuff-agents/src/extension/agent-tool-presentation.ts:16-60`
-- Todo names: `packages/pi-stuff-todo/tool/types.ts:3-14`
-- Todo structured envelope: `packages/pi-stuff-todo/tool/types.ts:28-43`
-- Todo registrations: `packages/pi-stuff-todo/todo.ts:82-148`
-- Todo `errors-only`: `packages/pi-stuff-todo/todo.ts:42-57`
+- Background and Monitor definitions: `packages/pi-stuff/src/background-work/src/tools.ts:184-265`
+- `background` successful-row suppression: `packages/pi-stuff/src/background-work/src/tools.ts:115-125`
+- Root Agent definition/registration: `packages/pi-stuff/src/subagents/src/extension/index.ts:620-630`
+- Agent semantics: `packages/pi-stuff/src/subagents/src/extension/agent-tool-presentation.ts:16-60`
+- Todo names: `packages/pi-stuff/src/todo/tool/types.ts:3-14`
+- Todo structured envelope: `packages/pi-stuff/src/todo/tool/types.ts:28-43`
+- Todo registrations: `packages/pi-stuff/src/todo/todo.ts:82-148`
+- Todo `errors-only`: `packages/pi-stuff/src/todo/todo.ts:42-57`
 
 ## Contract participation and implementation status
 

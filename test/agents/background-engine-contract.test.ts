@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentConfig } from "../../packages/pi-stuff-agents/src/agents/agents.js";
+import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";
 import {
 	acquireRunnerProcessStartIdentity,
 	buildAsyncParallelRunnerWork,
@@ -20,9 +20,9 @@ import {
 	resolveBackgroundOwnershipFailure,
 	resolveNestedTerminalStatus,
 	terminateRunnerBeforeProceed,
-} from "../../packages/pi-stuff-agents/src/runs/background/async-execution.js";
-import { readAsyncRecoveryDescriptor } from "../../packages/pi-stuff-agents/src/runs/background/async-resume.js";
-import { listAsyncRuns } from "../../packages/pi-stuff-agents/src/runs/background/async-status.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/async-execution.js";
+import { readAsyncRecoveryDescriptor } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-resume.js";
+import { listAsyncRuns } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-status.js";
 import {
 	requestAsyncSteer,
 	requestAsyncStop,
@@ -31,12 +31,12 @@ import {
 	steerRequestsDir,
 	stepSteerInboxDir,
 	writeSteerAck,
-} from "../../packages/pi-stuff-agents/src/runs/background/control-channel.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
 import {
 	finalizeProcessTerminal,
 	writeProcessTerminalCandidate,
-} from "../../packages/pi-stuff-agents/src/runs/background/process-terminal.js";
-import { reconcileAsyncRun } from "../../packages/pi-stuff-agents/src/runs/background/stale-run-reconciler.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/process-terminal.js";
+import { reconcileAsyncRun } from "../../packages/pi-stuff/src/subagents/src/runs/background/stale-run-reconciler.js";
 import {
 	buildWriterProcessEnv,
 	buildWriterSpawnCommand,
@@ -45,27 +45,27 @@ import {
 	createInitialStatus,
 	runBackgroundWork,
 	runConfiguredBackground,
-} from "../../packages/pi-stuff-agents/src/runs/background/subagent-runner.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.js";
 import {
 	initializeWriterProcessRegistry,
 	inspectWriterProcessLiveness,
-} from "../../packages/pi-stuff-agents/src/runs/background/writer-process-registry.js";
-import { projectForegroundCompletion } from "../../packages/pi-stuff-agents/src/runs/foreground/execution.js";
-import { resolveBunRuntimeCommand } from "../../packages/pi-stuff-agents/src/runs/shared/bun-runtime.js";
-import { createNestedRoute } from "../../packages/pi-stuff-agents/src/runs/shared/nested-events.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
+import { projectForegroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/execution.js";
+import { resolveBunRuntimeCommand } from "../../packages/pi-stuff/src/subagents/src/runs/shared/bun-runtime.js";
+import { createNestedRoute } from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-events.js";
 import type {
 	BackgroundRunnerConfig,
 	RunnerAgentTask,
-} from "../../packages/pi-stuff-agents/src/runs/shared/parallel-utils.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/parallel-utils.js";
 import {
 	shardedDurableClaimName,
 	tryAcquireKernelClaim,
-} from "../../packages/pi-stuff-agents/src/shared/durable-claim.js";
+} from "../../packages/pi-stuff/src/subagents/src/shared/durable-claim.js";
 import {
 	projectAgentDefinition,
 	projectLaunchBinding,
-} from "../../packages/pi-stuff-agents/src/shared/launch-contract.js";
-import { ASYNC_DIR } from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/shared/launch-contract.js";
+import { ASYNC_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
 const originalPiBinary = process.env.PI_SUBAGENT_PI_BINARY;
@@ -1495,7 +1495,7 @@ setInterval(() => {}, 1_000);
 		const bunCommand = resolveAsyncRunnerBunCommand();
 		expect(bunCommand).toBeString();
 		const runnerUrl = pathToFileURL(
-			path.resolve(import.meta.dir, "../../packages/pi-stuff-agents/src/runs/background/subagent-runner.ts"),
+			path.resolve(import.meta.dir, "../../packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.ts"),
 		).href;
 		const result = Bun.spawnSync([bunCommand!, "--eval", `await import(${JSON.stringify(runnerUrl)})`], {
 			cwd: path.resolve(import.meta.dir, "../.."),
@@ -2603,7 +2603,7 @@ setTimeout(() => process.exit(0), 2_000);
 			{ mode: 0o700 },
 		);
 		const moduleUrl = pathToFileURL(
-			path.resolve("packages/pi-stuff-agents/src/runs/background/subagent-runner.ts"),
+			path.resolve("packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.ts"),
 		).href;
 		const asyncDir = path.join(root, "async-fallback-crash");
 		const config: BackgroundRunnerConfig = {

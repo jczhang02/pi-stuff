@@ -179,11 +179,11 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 			);
 		}
 		if (start.sawSuiteSurface !== true) {
-			fail(`${scenario.id} child did not inherit the Aggregate Suite UI surface`);
+			fail(`${scenario.id} child did not inherit the Suite UI surface`);
 		}
 		if (start.baseExtensionMatches !== true) {
 			fail(
-				`${scenario.id} child base extension was ${String(start.childBaseExtension)}; expected the Aggregate Suite entry`,
+				`${scenario.id} child base extension was ${String(start.childBaseExtension)}; expected the Suite Package entry`,
 			);
 		}
 	}

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { registerTaskTools } from "../../packages/pi-stuff-todo/todo.js";
+import { registerTaskTools } from "../../packages/pi-stuff/src/todo/todo.js";
 
 const theme = {
 	bold: (value: string) => value,

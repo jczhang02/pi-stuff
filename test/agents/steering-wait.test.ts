@@ -3,8 +3,8 @@ import {
 	createSteeringStatus,
 	recordSteeringRequest,
 	waitForSteeringAction,
-} from "../../packages/pi-stuff-agents/src/runs/background/steering.ts";
-import { OwnedFileChangedDuringReadError } from "../../packages/pi-stuff-agents/src/shared/private-directory.ts";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/steering.ts";
+import { OwnedFileChangedDuringReadError } from "../../packages/pi-stuff/src/subagents/src/shared/private-directory.ts";
 
 describe("steering acknowledgement polling", () => {
 	test("retries a status snapshot that changes during one read", async () => {

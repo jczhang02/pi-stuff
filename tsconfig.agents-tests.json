@@ -1,14 +1,11 @@
 {
 	"extends": "./tsconfig.agents.json",
 	"compilerOptions": {
-		"paths": {
-			"@jczhang02/pi-stuff-ui": ["./packages/pi-stuff-ui/index.ts"]
-		},
 		"types": ["bun"]
 	},
 	"include": [
-		"packages/pi-stuff-agents/**/*.ts",
-		"packages/pi-stuff-ui/**/*.ts",
+		"packages/pi-stuff/src/subagents/**/*.ts",
+		"packages/pi-stuff/src/conversation-ui/**/*.ts",
 		"test/agents-host.test.ts",
 		"test/agents-pty.test.ts",
 		"test/agents/**/*.ts"

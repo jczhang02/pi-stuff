@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MCP_PRESENTATION } from "../../packages/pi-stuff-mcp/presentation.js";
+import { MCP_PRESENTATION } from "../../packages/pi-stuff/src/mcp/presentation.js";
 
 function category(args: Record<string, unknown>): string | undefined {
 	return MCP_PRESENTATION.activity.classify({ args, state: "running" })[0]?.category;

@@ -4,20 +4,22 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type Tool, validateToolArguments } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { CommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
-import type { PiStuffAgentsConfig } from "../../packages/pi-stuff-agents/src/extension/config.js";
-import registerAgents, { type ExtensionRootDependencies } from "../../packages/pi-stuff-agents/src/extension/index.js";
-import type { CompletionNotification } from "../../packages/pi-stuff-agents/src/runs/background/notify.js";
+import type { CommandDialogCoordinator } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import type { PiStuffAgentsConfig } from "../../packages/pi-stuff/src/subagents/src/extension/config.js";
+import registerAgents, {
+	type ExtensionRootDependencies,
+} from "../../packages/pi-stuff/src/subagents/src/extension/index.js";
+import type { CompletionNotification } from "../../packages/pi-stuff/src/subagents/src/runs/background/notify.js";
 import {
 	deriveLaunchRunId,
 	type SubagentParamsLike,
-} from "../../packages/pi-stuff-agents/src/runs/foreground/subagent-executor.js";
-import { SUBAGENT_PARENT_SESSION_ENV } from "../../packages/pi-stuff-agents/src/runs/shared/pi-args.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/foreground/subagent-executor.js";
+import { SUBAGENT_PARENT_SESSION_ENV } from "../../packages/pi-stuff/src/subagents/src/runs/shared/pi-args.js";
 import type {
 	AgentExecutionInvocation,
 	GovernedAgentParams,
-} from "../../packages/pi-stuff-agents/src/runtime/agent-execution-coordinator.js";
-import { CurrentAgents } from "../../packages/pi-stuff-agents/src/session/current-agents.js";
+} from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-coordinator.js";
+import { CurrentAgents } from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
 import {
 	ASYNC_DIR,
 	type Details,
@@ -26,8 +28,8 @@ import {
 	SUBAGENT_ASYNC_STARTED_EVENT,
 	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
 	type SubagentState,
-} from "../../packages/pi-stuff-agents/src/shared/types.js";
-import type { AgentRoster } from "../../packages/pi-stuff-agents/src/ui/agent-roster.js";
+} from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import type { AgentRoster } from "../../packages/pi-stuff/src/subagents/src/ui/agent-roster.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
 type EntryRenderer = (...args: unknown[]) => unknown;

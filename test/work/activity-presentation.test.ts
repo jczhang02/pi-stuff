@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { registerWorkTools } from "../../packages/pi-stuff-work/src/tools.js";
+import { registerWorkTools } from "../../packages/pi-stuff/src/background-work/src/tools.js";
 
 function registeredBash(): ToolDefinition {
 	const tools = new Map<string, ToolDefinition>();

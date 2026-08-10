@@ -8,6 +8,6 @@
 		"exactOptionalPropertyTypes": false,
 		"noUncheckedIndexedAccess": false
 	},
-	"include": ["packages/pi-stuff-rtk/**/*.ts", "test/rtk/**/*.ts"],
+	"include": ["packages/pi-stuff/src/rtk/**/*.ts", "test/rtk/**/*.ts"],
 	"exclude": ["node_modules"]
 }

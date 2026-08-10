@@ -4,7 +4,7 @@ import {
 	MAX_AGENT_DEPTH,
 	MAX_AGENTS_PER_SESSION,
 	MAX_RUNNING_AGENTS,
-} from "../../packages/pi-stuff-agents/src/extension/config.ts";
+} from "../../packages/pi-stuff/src/subagents/src/extension/config.ts";
 
 test("Agent resource limits are fixed product invariants rather than a private settings surface", () => {
 	expect(loadConfig()).toEqual({

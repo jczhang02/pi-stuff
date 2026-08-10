@@ -32,7 +32,7 @@ The group summary must represent consequential work, failures, cancellation, and
 
 ## Semantic taxonomy
 
-The Aggregate Package currently exposes 28 root Tool names plus the conditional `subagent_supervisor` and `intercom` parent-channel aliases, all registered through the shared presentation contract. Their registration paths, inputs, result contracts, count identities, and current gaps are mapped in [the Tool activity taxonomy](../research/pi-stuff-tool-activity-taxonomy-20260806.md). Compact summaries use a smaller semantic vocabulary rather than exposing those implementation names. Within a group, clauses appear in this fixed order:
+The Pi Stuff Package currently exposes 28 root Tool names plus the conditional `subagent_supervisor` and `intercom` parent-channel aliases, all registered through the shared presentation contract. Their registration paths, inputs, result contracts, count identities, and current gaps are mapped in [the Tool activity taxonomy](../research/pi-stuff-tool-activity-taxonomy-20260806.md). Compact summaries use a smaller semantic vocabulary rather than exposing those implementation names. Within a group, clauses appear in this fixed order:
 
 1. **Explicit outcomes:** completing a goal, reporting a goal blocker, conservative Git commit/push/merge/rebase/PR outcomes, and generated images.
 2. **Content and state changes:** changed files (the unique union of Write, Edit, and Apply Patch targets), updated Tasks, updated Memories, and saved Notes.
@@ -55,7 +55,7 @@ Real media returned by Read, MCP, View Image, Image Generation, or a future cont
 
 ## Contract enforcement
 
-Every Tool registered by the Aggregate Package must declare structured Activity metadata: semantic contribution, count identity, bounded active target, terminal-state interpretation, optional structured outcome extraction, silent-success policy, and media projection. A generated or registration-level coverage test enumerates the Aggregate Tool set and fails CI when any owned Tool lacks metadata. There is no generic `Used N tools` or raw-argument fallback for owned Tools.
+Every Tool registered by the Pi Stuff Package must declare structured Activity metadata: semantic contribution, count identity, bounded active target, terminal-state interpretation, optional structured outcome extraction, silent-success policy, and media projection. A generated or registration-level coverage test enumerates the Suite Tool set and fails CI when any owned Tool lacks metadata. There is no generic `Used N tools` or raw-argument fallback for owned Tools.
 
 Unsupported third-party Tools remain standalone compatibility boundaries. Child-only Agent communication surfaces use the same Agent coordination vocabulary when they are present.
 
@@ -64,7 +64,7 @@ Unsupported third-party Tools remain standalone compatibility boundaries. Child-
 Implementation is complete only when all of the following are verified:
 
 1. One Tool and arbitrarily many Tools across multiple Assistant Tool round-trips form one Activity Group until visible Assistant prose, user input, or a visible model-context Custom Message creates a Narrative Boundary. Thinking and hidden branch/compaction state do not split the group.
-2. Every current Aggregate Tool is covered by structured Activity metadata, and CI rejects an uncovered future owned Tool. `ctx_reduce` succeeds silently but contributes issue state on failure.
+2. Every current Suite Tool is covered by structured Activity metadata, and CI rejects an uncovered future owned Tool. `ctx_reduce` succeeds silently but contributes issue state on failure.
 3. Compact mode contains no raw command, full path, Tool name list, trailing `done`, member argument block, or textual member result. Semantic clauses, issue disclosure, interactive permission UI, and real media are preserved.
 4. Running presentation starts with the first Tool, stays active between Tool batches while the Agent is loading, updates monotonically, uses source order for parallel calls, holds targets for at least 700 ms, and caps the active hint at two rows or about 160 display cells. Long Bash progress appears only after two seconds; settled summaries omit duration and target.
 5. Success, failure, rejection, cancellation, permission wait, Agent foreground/background, detached command, Monitor, media, and unsupported-third-party scenarios use the accepted lifecycle and status grammar. The first failure is visible with a remaining-issue count.

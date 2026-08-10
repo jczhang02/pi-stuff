@@ -206,7 +206,7 @@ The capture verifies both permission choices, exact BTW and main-draft restorati
 
 ## Compact footer lifecycle acceptance
 
-[`footer-shell-capture.ts`](./footer-shell-capture.ts) loads the production `@jczhang02/pi-stuff-ui` Extension and adds
+[`footer-shell-capture.ts`](./footer-shell-capture.ts) loads the production `conversation-ui` Capability Module and adds
 one capture-only Command Dialog shortcut. [`footer-shell-fixture.ts`](./footer-shell-fixture.ts) supplies a deterministic
 persisted CJK transcript and offline model metadata. The harness does not call a model or modify user settings.
 

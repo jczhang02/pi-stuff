@@ -11,7 +11,7 @@ import {
 import { runPiRpcSmoke } from "../scripts/smoke-pi.js";
 
 const REPOSITORY_ROOT = resolve(import.meta.dir, "..");
-const TODO_EXTENSION = join(REPOSITORY_ROOT, "packages", "pi-stuff-todo", "index.ts");
+const TODO_EXTENSION = join(REPOSITORY_ROOT, "packages", "pi-stuff", "src", "todo", "index.ts");
 const AGGREGATE_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff");
 const TODO_TOOL_INSPECTOR = join(REPOSITORY_ROOT, "test", "fixtures", "assert-todo-tools.ts");
 const EXPECTED_TOOLS = ["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"];
@@ -63,13 +63,13 @@ async function loadExtension(extensionPath: ExtensionPath): Promise<AgentSession
 	return session;
 }
 
-test("the certified Pi Host loads exactly the Todo tools from the Capability package", async () => {
+test("the certified Pi Host loads exactly the Todo tools from the internal Module", async () => {
 	const session = await loadExtension(TODO_EXTENSION);
 
 	expect([...session.getActiveToolNames()].sort()).toEqual(EXPECTED_TOOLS);
 });
 
-test("the certified Pi Host loads all Todo tools through the Aggregate package", async () => {
+test("the certified Pi Host loads all Todo tools through the single Pi Stuff Package", async () => {
 	const result = await runPiRpcSmoke({
 		extensions: [TODO_TOOL_INSPECTOR],
 		packages: [AGGREGATE_PACKAGE],

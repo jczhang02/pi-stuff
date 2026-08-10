@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BUILTIN_AGENT_NAMES, discoverAgents } from "../../packages/pi-stuff-agents/src/agents/agents.js";
+import { BUILTIN_AGENT_NAMES, discoverAgents } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";
 
 describe("Pi Stuff built-in Agent", () => {
 	test("keeps one immediately usable general Agent instead of an upstream role zoo", () => {

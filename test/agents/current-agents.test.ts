@@ -3,24 +3,24 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createAsyncJobTracker } from "../../packages/pi-stuff-agents/src/runs/background/async-job-tracker.js";
+import { createAsyncJobTracker } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-job-tracker.js";
 import {
 	type AgentControlAcknowledgement,
 	type AgentRow,
 	CurrentAgents,
 	type CurrentAgentsOptions,
-} from "../../packages/pi-stuff-agents/src/session/current-agents.js";
+} from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
 import type {
 	AsyncJobState,
 	ForegroundResumeRun,
 	ForegroundRunControl,
 	ProcessTerminalV1,
 	SubagentState,
-} from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 import {
 	SUBAGENT_CONTROL_EVENT,
 	SUBAGENT_STEERING_NOTICE_EVENT,
-} from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 type StateInput = Pick<
 	SubagentState,

@@ -10,8 +10,11 @@ import {
 	type ReadToolOptions,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { registerBuiltins, resolveBuiltinHostSettings } from "../../packages/pi-stuff-tools/builtin-tools.js";
-import { getToolUiRuntime } from "../../packages/pi-stuff-tools/contract.js";
+import {
+	registerBuiltins,
+	resolveBuiltinHostSettings,
+} from "../../packages/pi-stuff/src/tool-display/builtin-tools.js";
+import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 test("built-in overrides receive Pi's merged image and shell settings exactly", () => {
 	const directory = mkdtempSync(join(tmpdir(), "pi-stuff-builtin-settings-"));

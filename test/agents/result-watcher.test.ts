@@ -2,16 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { CompletionNotification } from "../../packages/pi-stuff-agents/src/runs/background/notify.js";
-import { createResultWatcher } from "../../packages/pi-stuff-agents/src/runs/background/result-watcher.js";
-import { reconcileAsyncRun } from "../../packages/pi-stuff-agents/src/runs/background/stale-run-reconciler.js";
-import { readBoundedOwnedFileSnapshot } from "../../packages/pi-stuff-agents/src/shared/private-directory.js";
+import type { CompletionNotification } from "../../packages/pi-stuff/src/subagents/src/runs/background/notify.js";
+import { createResultWatcher } from "../../packages/pi-stuff/src/subagents/src/runs/background/result-watcher.js";
+import { reconcileAsyncRun } from "../../packages/pi-stuff/src/subagents/src/runs/background/stale-run-reconciler.js";
+import { readBoundedOwnedFileSnapshot } from "../../packages/pi-stuff/src/subagents/src/shared/private-directory.js";
 import {
 	type IntercomEventBus,
 	SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT,
 	SUBAGENT_RESULT_INTERCOM_EVENT,
 	type SubagentState,
-} from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
 

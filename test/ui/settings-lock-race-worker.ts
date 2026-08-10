@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { UiSettings } from "../../packages/pi-stuff-ui/settings.js";
-import { UiSettingsStore } from "../../packages/pi-stuff-ui/settings.js";
+import type { UiSettings } from "../../packages/pi-stuff/src/conversation-ui/settings.js";
+import { UiSettingsStore } from "../../packages/pi-stuff/src/conversation-ui/settings.js";
 
 const [settingsPath, barrierPath, activeWriterPath, overlapPath, workerId] = process.argv.slice(2);
 if (!settingsPath || !barrierPath || !activeWriterPath || !overlapPath || !workerId) {

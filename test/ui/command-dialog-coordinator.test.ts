@@ -14,8 +14,8 @@ import piStuffUi, {
 	getGoalStatusChannel,
 	requestStatuslineGitRefresh,
 	UiSettingsStore,
-} from "../../packages/pi-stuff-ui/index.js";
-import { installUiSessionPresentation } from "../../packages/pi-stuff-ui/session-presentation.js";
+} from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { installUiSessionPresentation } from "../../packages/pi-stuff/src/conversation-ui/session-presentation.js";
 
 type FooterFactory = Parameters<ExtensionUIContext["setFooter"]>[0];
 type HeaderFactory = Parameters<ExtensionUIContext["setHeader"]>[0];

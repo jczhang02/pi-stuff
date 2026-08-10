@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import type { Api, AssistantMessage, Message, Model, UserMessage } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { type ExtensionContext, estimateTokens, type SessionEntry } from "@earendil-works/pi-coding-agent";
-import { executeBtw, type OpenBtwStream, readEffectiveContext } from "../../packages/pi-stuff-btw/btw.js";
-import { fitBranch } from "../../packages/pi-stuff-btw/btw-budget.js";
-import piStuffContext, { __test as contextTest } from "../../packages/pi-stuff-context/index.js";
+import { executeBtw, type OpenBtwStream, readEffectiveContext } from "../../packages/pi-stuff/src/btw/btw.js";
+import { fitBranch } from "../../packages/pi-stuff/src/btw/btw-budget.js";
+import piStuffContext, { __test as contextTest } from "../../packages/pi-stuff/src/context-management/index.js";
 
 const MODEL: Model<Api> = {
 	id: "fixture-model",

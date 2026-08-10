@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentToolResult, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { ToolActivityStore } from "../../packages/pi-stuff-tools/activity-store.js";
+import { ToolActivityStore } from "../../packages/pi-stuff/src/tool-display/activity-store.js";
 import {
 	buildToolDetailLines,
 	CachedToolRow,
@@ -11,7 +11,7 @@ import {
 	oneLine,
 	sanitizeTerminalText,
 	summarizeBuiltin,
-} from "../../packages/pi-stuff-tools/render.js";
+} from "../../packages/pi-stuff/src/tool-display/render.js";
 
 const theme = {
 	bold: (value: string) => value,
@@ -101,7 +101,7 @@ describe("terminal-safe Tool rendering", () => {
 		const active = new CachedToolRow(theme, {
 			active: true,
 			expandable: true,
-			hint: "Running focused checks in packages/pi-stuff-tools",
+			hint: "Running focused checks in packages/pi-stuff/src/tool-display",
 			issueState: undefined,
 			kind: "activity",
 			summary: "Changing 2 files, running 3 commands, reading 4 files",
@@ -109,7 +109,8 @@ describe("terminal-safe Tool rendering", () => {
 		expect(active.render(54)).toEqual([
 			"● Changing 2 files, running 3 commands, reading 4",
 			"  files…  (ctrl+o to expand)",
-			"  ⎿ Running focused checks in packages/pi-stuff-tools",
+			"  ⎿ Running focused checks in",
+			"    packages/pi-stuff/src/tool-display",
 		]);
 		active.setMarkerVisible(false);
 		expect(active.render(54)[0]).toStartWith("  Changing");

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { scanAgentReport } from "../../packages/pi-stuff-agents/src/runtime/final-report-scanner.js";
+import { scanAgentReport } from "../../packages/pi-stuff/src/subagents/src/runtime/final-report-scanner.js";
 
 describe("scanAgentReport", () => {
 	test("leaves ordinary reports byte-for-byte unchanged", () => {

@@ -6,8 +6,8 @@ import { join } from "node:path";
 import {
 	initializeWriterProcessRegistry,
 	writerProcessRegistryPath,
-} from "../../packages/pi-stuff-agents/src/runs/background/writer-process-registry.js";
-import { recordForegroundOwnerExit } from "../../packages/pi-stuff-agents/src/runs/foreground/owner-exit.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
+import { recordForegroundOwnerExit } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/owner-exit.js";
 import {
 	AgentExecutionCoordinator,
 	type AgentExecutionCoordinatorSession,
@@ -15,7 +15,7 @@ import {
 	createDurableAgentExecutionCoordinator,
 	parseAgentOwnerPath,
 	runtimeCompletionAddresses,
-} from "../../packages/pi-stuff-agents/src/runtime/agent-execution-coordinator.js";
+} from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-coordinator.js";
 import type {
 	AgentExecutionReservation,
 	AgentExecutionReservationResult,
@@ -24,13 +24,13 @@ import type {
 	AgentRuntimeCompletionResult,
 	ReserveAgentResumeInput,
 	ReserveAgentSpawnInput,
-} from "../../packages/pi-stuff-agents/src/runtime/agent-execution-governor.js";
+} from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-governor.js";
 import {
 	type AgentGovernorLease,
 	type RebindAgentRuntimeRequest,
 	SessionAgentGovernor,
 	type SessionGovernorRebindResult,
-} from "../../packages/pi-stuff-agents/src/runtime/session-governor.js";
+} from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.js";
 
 interface RebindCall {
 	readonly reservation: AgentExecutionReservation;

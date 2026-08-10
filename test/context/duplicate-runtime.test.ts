@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
-type ContextModule = typeof import("../../packages/pi-stuff-context/index.js");
+type ContextModule = typeof import("../../packages/pi-stuff/src/context-management/index.js");
 
 class EventBusHarness {
 	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
@@ -22,20 +22,20 @@ class EventBusHarness {
 	}
 }
 
-test("physical Context package copies share one Host runtime", async () => {
+test("physical Context Module copies share one Host runtime", async () => {
 	const directory = mkdtempSync(join(process.cwd(), ".pi-stuff-context-duplicates-"));
-	const firstDirectory = join(directory, "first");
-	const secondDirectory = join(directory, "second");
-	mkdirSync(firstDirectory);
-	mkdirSync(secondDirectory);
+	const firstDirectory = join(directory, "first", "src", "context-management");
+	const secondDirectory = join(directory, "second", "src", "context-management");
 	for (const copy of [firstDirectory, secondDirectory]) {
-		copyFileSync(join(process.cwd(), "packages/pi-stuff-context/index.ts"), join(copy, "index.ts"));
-		copyFileSync(join(process.cwd(), "packages/pi-stuff-context/config.ts"), join(copy, "config.ts"));
-	}
-	for (const copy of [firstDirectory, secondDirectory]) {
-		const scope = join(copy, "node_modules/@jczhang02");
-		mkdirSync(scope, { recursive: true });
-		symlinkSync(join(process.cwd(), "packages/pi-stuff-tools"), join(scope, "pi-stuff-tools"), "dir");
+		mkdirSync(copy, { recursive: true });
+		cpSync(join(process.cwd(), "packages/pi-stuff/src/context-management"), copy, { recursive: true });
+		const sourceRoot = join(copy, "..");
+		symlinkSync(join(process.cwd(), "packages/pi-stuff/src/tool-display"), join(sourceRoot, "tool-display"), "dir");
+		symlinkSync(
+			join(process.cwd(), "packages/pi-stuff/src/conversation-ui"),
+			join(sourceRoot, "conversation-ui"),
+			"dir",
+		);
 	}
 
 	let first: ContextModule | undefined;

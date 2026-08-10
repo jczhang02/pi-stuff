@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
@@ -20,8 +21,9 @@ const TODO_SUBJECT = "Preserve Magic-only acceptance state";
 const AUDIT_EXTENSION = join(root, "test/fixtures/magic-context-real-audit.ts");
 
 interface Options {
-	readonly archivePath: string;
+	readonly archivePath?: string;
 	readonly authPath: string;
+	readonly packagePath: string;
 	readonly piBinary: string;
 	readonly reportPath: string;
 }
@@ -120,19 +122,21 @@ function parseOptions(argv: readonly string[]): Options {
 		const value = argv[index + 1];
 		if (!flag?.startsWith("--") || !value) {
 			fail(
-				"Usage: PI_STUFF_REAL_ACCEPTANCE=1 bun scripts/verify-magic-context-real.ts --archive <aggregate.tgz> [--report <path>] [--pi <path>] [--auth <path>]",
+				"Usage: PI_STUFF_REAL_ACCEPTANCE=1 bun scripts/verify-magic-context-real.ts [--package <path> | --archive <package.tgz>] [--report <path>] [--pi <path>] [--auth <path>]",
 			);
 		}
 		values.set(flag, value);
 	}
 	const archive = values.get("--archive");
-	if (!archive) fail("--archive is required; source-directory execution is not accepted");
+	const packagePath = values.get("--package");
+	if (archive && packagePath) fail("--archive and --package are mutually exclusive");
 	for (const key of values.keys()) {
-		if (!["--archive", "--auth", "--pi", "--report"].includes(key)) fail(`unknown option ${key}`);
+		if (!["--archive", "--auth", "--package", "--pi", "--report"].includes(key)) fail(`unknown option ${key}`);
 	}
 	return {
-		archivePath: resolve(archive),
+		...(archive ? { archivePath: resolve(archive) } : {}),
 		authPath: resolve(values.get("--auth") ?? join(homedir(), ".pi/agent/auth.json")),
+		packagePath: resolve(packagePath ?? join(root, "packages/pi-stuff")),
 		piBinary: resolve(values.get("--pi") ?? process.env["PI_BIN"] ?? DEFAULT_PI_BINARY),
 		reportPath: resolve(values.get("--report") ?? join(root, "docs/reports/magic-context-real-acceptance.json")),
 	};
@@ -155,15 +159,37 @@ function command(command_: readonly string[], cwd: string): string {
 }
 
 function assertSafeArchiveEntries(entries: readonly string[]): void {
-	if (entries.length === 0) fail("Aggregate archive is empty");
+	if (entries.length === 0) fail("Suite Package archive is empty");
 	for (const entry of entries) {
 		if (!entry.startsWith("package/") || entry.includes("/../") || entry.startsWith("/") || entry.includes("\\")) {
-			fail(`unsafe Aggregate archive path: ${entry}`);
+			fail(`unsafe Suite Package archive path: ${entry}`);
 		}
 	}
 }
 
-async function extractAggregate(archivePath: string, destination: string): Promise<string> {
+async function verifyLocalPackage(packagePath: string): Promise<string> {
+	const manifest = JSON.parse(await readFile(join(packagePath, "package.json"), "utf8")) as {
+		name?: unknown;
+		private?: unknown;
+		version?: unknown;
+	};
+	if (manifest.name !== "@jczhang02/pi-stuff" || manifest.private !== true || typeof manifest.version !== "string") {
+		fail(`path is not the private local @jczhang02/pi-stuff Package: ${JSON.stringify(manifest)}`);
+	}
+	const resolver = createRequire(join(packagePath, "package.json"));
+	const officialManifest = JSON.parse(
+		await readFile(resolver.resolve("@cortexkit/pi-magic-context/package.json"), "utf8"),
+	) as {
+		name?: unknown;
+		version?: unknown;
+	};
+	if (officialManifest.name !== "@cortexkit/pi-magic-context" || officialManifest.version !== "0.33.1") {
+		fail(`Pi Stuff does not resolve the audited official Magic Context 0.33.1: ${JSON.stringify(officialManifest)}`);
+	}
+	return packagePath;
+}
+
+async function extractPackage(archivePath: string, destination: string): Promise<string> {
 	const entries = command(["tar", "--list", "--gzip", "--file", archivePath], destination)
 		.trim()
 		.split("\n")
@@ -176,20 +202,10 @@ async function extractAggregate(archivePath: string, destination: string): Promi
 		version?: unknown;
 	};
 	if (manifest.name !== "@jczhang02/pi-stuff" || typeof manifest.version !== "string") {
-		fail(`archive is not a versioned @jczhang02/pi-stuff Aggregate: ${JSON.stringify(manifest)}`);
+		fail(`archive is not @jczhang02/pi-stuff: ${JSON.stringify(manifest)}`);
 	}
-	const officialManifestPath = join(
-		packagePath,
-		"node_modules/@jczhang02/pi-stuff-context/node_modules/@cortexkit/pi-magic-context/package.json",
-	);
-	const officialManifest = JSON.parse(await readFile(officialManifestPath, "utf8")) as {
-		name?: unknown;
-		version?: unknown;
-	};
-	if (officialManifest.name !== "@cortexkit/pi-magic-context" || officialManifest.version !== "0.33.1") {
-		fail(`Aggregate does not bundle the audited official Magic Context 0.33.1: ${JSON.stringify(officialManifest)}`);
-	}
-	return packagePath;
+	await symlink(join(root, "packages/pi-stuff/node_modules"), join(packagePath, "node_modules"), "dir");
+	return verifyLocalPackage(packagePath);
 }
 
 function auditRecordContent(record: RpcRecord): string {
@@ -825,7 +841,9 @@ async function main(): Promise<void> {
 	]);
 	await initializeIsolatedProject(paths.projectA, "Magic Context acceptance project A");
 	await initializeIsolatedProject(paths.projectB, "Magic Context acceptance project B");
-	const packagePath = await extractAggregate(options.archivePath, paths.packageRoot);
+	const packagePath = options.archivePath
+		? await extractPackage(options.archivePath, paths.packageRoot)
+		: await verifyLocalPackage(options.packagePath);
 	const pressureFiles = await writePressureFiles(paths.projectA);
 	const env = environment({
 		agent: paths.agent,
@@ -1165,12 +1183,19 @@ async function main(): Promise<void> {
 			session: sessionFile,
 			settings: paths.settings,
 		});
-		const archiveBytes = await readFile(options.archivePath);
+		const artifact = options.archivePath
+			? {
+					archive: basename(options.archivePath),
+					sha256: sha256(await readFile(options.archivePath)),
+				}
+			: {
+					package: relative(root, options.packagePath),
+					sha256: sha256(
+						`${await readFile(join(options.packagePath, "package.json"), "utf8")}\n${await readFile(join(options.packagePath, "index.ts"), "utf8")}`,
+					),
+				};
 		const report = {
-			artifact: {
-				archive: basename(options.archivePath),
-				sha256: sha256(archiveBytes),
-			},
+			artifact,
 			cache: {
 				cacheRead,
 				hitPercentage: Number(((cacheRead / Math.max(1, cacheRead + uncachedInput)) * 100).toFixed(2)),

@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import type { CommandDialogComponent, CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
+import type {
+	CommandDialogComponent,
+	CommandDialogViewContext,
+} from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import type {
 	AgentControlAction,
 	AgentControlResult,
@@ -10,12 +13,12 @@ import type {
 	AgentSessionSnapshot,
 	AgentStatus,
 	CurrentAgents,
-} from "../../packages/pi-stuff-agents/src/session/current-agents.js";
+} from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
 import {
 	type AgentDialogOptions,
 	type AgentTranscriptRequest,
 	createAgentDialogView,
-} from "../../packages/pi-stuff-agents/src/ui/agent-dialog.js";
+} from "../../packages/pi-stuff/src/subagents/src/ui/agent-dialog.js";
 
 const theme = {
 	bg: (_color: string, text: string) => text,

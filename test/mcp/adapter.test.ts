@@ -7,7 +7,7 @@ import type {
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { createMcpAdapterApi } from "../../packages/pi-stuff-mcp/adapter.js";
+import { createMcpAdapterApi } from "../../packages/pi-stuff/src/mcp/adapter.js";
 
 const Parameters = Type.Object({}, { additionalProperties: true });
 type Tool = ToolDefinition<typeof Parameters, unknown>;

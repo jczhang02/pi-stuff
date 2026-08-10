@@ -3,12 +3,12 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import goal from "../../packages/pi-stuff-goal/src/goal.js";
+import goal from "../../packages/pi-stuff/src/goal/src/goal.js";
 import {
 	type ActiveGoal,
 	type GoalStateEntryData,
 	serializeGoalState,
-} from "../../packages/pi-stuff-goal/src/persistence.js";
+} from "../../packages/pi-stuff/src/goal/src/persistence.js";
 import { createMockContext, createMockPi, goalStatusSnapshot } from "./support.js";
 
 const settingsDirectory = mkdtempSync(join(tmpdir(), "pi-goal-queue-settings-"));

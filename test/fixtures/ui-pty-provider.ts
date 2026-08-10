@@ -3,7 +3,7 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
-import { getCommandDialogCoordinator } from "../../packages/pi-stuff-ui/index.js";
+import { getCommandDialogCoordinator } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
 const PROVIDER = "pi-stuff-ui-pty";
 const MODEL = "ui-pty-model";

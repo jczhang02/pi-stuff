@@ -1,19 +1,19 @@
 {
 	"$schema": "../../schemas/suite.schema.json",
-	"schemaVersion": 1,
+	"schemaVersion": 2,
 	"capabilities": [
-		"@jczhang02/pi-stuff-ui",
-		"@jczhang02/pi-stuff-tools",
-		"@jczhang02/pi-stuff-rtk",
-		"@jczhang02/pi-stuff-codex",
-		"@jczhang02/pi-stuff-goal",
-		"@jczhang02/pi-stuff-context",
-		"@jczhang02/pi-stuff-web",
-		"@jczhang02/pi-stuff-mcp",
-		"@jczhang02/pi-stuff-work",
-		"@jczhang02/pi-stuff-agents",
-		"@jczhang02/pi-stuff-todo",
-		"@jczhang02/pi-stuff-btw"
+		"conversation-ui",
+		"tool-display",
+		"rtk",
+		"codex",
+		"goal",
+		"context-management",
+		"web",
+		"mcp",
+		"background-work",
+		"subagents",
+		"todo",
+		"btw"
 	],
 	"tools": [
 		"read",

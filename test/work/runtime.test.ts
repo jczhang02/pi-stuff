@@ -15,26 +15,26 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { startMonitor } from "../../packages/pi-stuff-work/src/monitor.js";
-import { BoundedOutputFile, readBoundedTail } from "../../packages/pi-stuff-work/src/output.js";
+import { startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
+import { BoundedOutputFile, readBoundedTail } from "../../packages/pi-stuff/src/background-work/src/output.js";
 import {
 	captureProcessIdentity,
 	captureProcessIdentityWithRetry,
 	processExists,
 	signalProcessGroup,
-} from "../../packages/pi-stuff-work/src/process.js";
+} from "../../packages/pi-stuff/src/background-work/src/process.js";
 import {
 	type BackgroundMonitorActivity,
 	BackgroundWorkRuntime,
 	projectNotificationBatch,
-} from "../../packages/pi-stuff-work/src/runtime.js";
+} from "../../packages/pi-stuff/src/background-work/src/runtime.js";
 import {
 	createAuthenticatedRuntimeRecord,
 	reconcileStaleRuns,
 	type StoredProcessTask,
 	WorkRunStorage,
-} from "../../packages/pi-stuff-work/src/storage.js";
-import { isForegroundBashResult } from "../../packages/pi-stuff-work/src/tools.js";
+} from "../../packages/pi-stuff/src/background-work/src/storage.js";
+import { isForegroundBashResult } from "../../packages/pi-stuff/src/background-work/src/tools.js";
 
 const roots: string[] = [];
 const children: ChildProcess[] = [];
@@ -1326,7 +1326,10 @@ describe("crash supervisor", () => {
 		const readyPath = join(root, "ready.json");
 		const treePath = join(root, "tree.txt");
 		const fixture = resolve(import.meta.dir, "../fixtures/work-supervisor-parent.mjs");
-		const supervisor = resolve(import.meta.dir, "../../packages/pi-stuff-work/src/process-supervisor.mjs");
+		const supervisor = resolve(
+			import.meta.dir,
+			"../../packages/pi-stuff/src/background-work/src/process-supervisor.mjs",
+		);
 		const parent = spawn(process.execPath, [fixture, supervisor, readyPath, treePath], {
 			cwd: root,
 			stdio: "ignore",

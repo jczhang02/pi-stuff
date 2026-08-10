@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getCurrentWorkSources } from "../../packages/pi-stuff-work/src/current-work.js";
+import { getCurrentWorkSources } from "../../packages/pi-stuff/src/background-work/src/current-work.js";
 
 class EventBusHarness {
 	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();

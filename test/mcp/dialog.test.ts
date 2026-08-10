@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type KeybindingsManager, type TUI, visibleWidth } from "@earendil-works/pi-tui";
-import { createMcpStatusView } from "../../packages/pi-stuff-mcp/mcp-dialog.js";
-import { McpStatusStore } from "../../packages/pi-stuff-mcp/status-store.js";
+import { createMcpStatusView } from "../../packages/pi-stuff/src/mcp/mcp-dialog.js";
+import { McpStatusStore } from "../../packages/pi-stuff/src/mcp/status-store.js";
 
 const theme = {
 	bold: (value: string) => value,
