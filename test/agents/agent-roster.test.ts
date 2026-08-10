@@ -7,12 +7,12 @@ import type {
 	AgentSessionSnapshot,
 	AgentStatus,
 	CurrentAgents,
-} from "../../packages/pi-stuff-agents/src/session/current-agents.js";
+} from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
 import {
 	AgentRoster,
 	type AgentRosterContext,
 	type AgentRosterOptions,
-} from "../../packages/pi-stuff-agents/src/ui/agent-roster.js";
+} from "../../packages/pi-stuff/src/subagents/src/ui/agent-roster.js";
 
 type InputResult = { consume?: boolean; data?: string } | undefined;
 type InputHandler = (data: string) => InputResult;

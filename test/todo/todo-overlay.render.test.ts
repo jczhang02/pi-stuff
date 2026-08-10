@@ -6,9 +6,9 @@ import {
 	getRenderState,
 	replaceState,
 	setActiveRenderSession,
-} from "../../packages/pi-stuff-todo/state/store.js";
-import { TodoOverlay } from "../../packages/pi-stuff-todo/todo-overlay.js";
-import type { Task, TaskStatus } from "../../packages/pi-stuff-todo/tool/types.js";
+} from "../../packages/pi-stuff/src/todo/state/store.js";
+import { TodoOverlay } from "../../packages/pi-stuff/src/todo/todo-overlay.js";
+import type { Task, TaskStatus } from "../../packages/pi-stuff/src/todo/tool/types.js";
 
 const SESSION_ID = "test-session";
 const identityTheme = {

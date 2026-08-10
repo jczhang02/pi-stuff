@@ -1,7 +1,7 @@
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { processExists } from "../packages/pi-stuff-work/src/process.js";
+import { processExists } from "../packages/pi-stuff/src/background-work/src/process.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/work-pty-provider.ts");

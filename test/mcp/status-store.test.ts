@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { McpStatusStore, parseMcpStatusSnapshot } from "../../packages/pi-stuff-mcp/status-store.js";
+import { McpStatusStore, parseMcpStatusSnapshot } from "../../packages/pi-stuff/src/mcp/status-store.js";
 
 const SNAPSHOT = {
 	connectedCount: 1,

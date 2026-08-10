@@ -2,12 +2,7 @@
 	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
 		"exactOptionalPropertyTypes": false,
-		"noPropertyAccessFromIndexSignature": false,
-		"paths": {
-			"@jczhang02/pi-stuff-tools": ["./packages/pi-stuff-tools/index.ts"],
-			"@jczhang02/pi-stuff-tools/contract": ["./packages/pi-stuff-tools/contract.ts"],
-			"@jczhang02/pi-stuff-ui": ["./packages/pi-stuff-ui/index.ts"]
-		}
+		"noPropertyAccessFromIndexSignature": false
 	},
-	"include": ["packages/pi-stuff-goal/**/*.ts"]
+	"include": ["packages/pi-stuff/src/goal/**/*.ts"]
 }

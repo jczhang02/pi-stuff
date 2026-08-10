@@ -22,7 +22,7 @@ const { AuthStorage } = await import(
 );
 const extensionPath = process.env.PI_STUFF_GOAL_RUNTIME_EXTENSION
 	? resolve(process.env.PI_STUFF_GOAL_RUNTIME_EXTENSION)
-	: resolve(import.meta.dirname, "../../packages/pi-stuff-goal/src/goal.ts");
+	: resolve(import.meta.dirname, "../../packages/pi-stuff/src/goal/src/goal.ts");
 const runtimeMode = process.env.PI_STUFF_GOAL_RUNTIME_MODE ?? "source";
 
 async function createHarness(
@@ -1015,7 +1015,7 @@ if (runtimeMode === "packed") {
 		["manual compaction", manualCompactionScenario],
 	]);
 	console.log(
-		"packed Aggregate pi-goal lifecycle: multi-turn completion, active reload recovery, strict three-turn blocking, and compaction passed",
+		"packed Suite pi-goal lifecycle: multi-turn completion, active reload recovery, strict three-turn blocking, and compaction passed",
 	);
 } else {
 	await runScenarios([

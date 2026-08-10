@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { getPiSpawnCommand, PI_CODING_AGENT_PACKAGE } from "../../packages/pi-stuff-agents/src/runs/shared/pi-spawn.ts";
+import {
+	getPiSpawnCommand,
+	PI_CODING_AGENT_PACKAGE,
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/pi-spawn.ts";
 
 describe("Pi child Host inheritance", () => {
 	test("reuses the running standalone Pi executable instead of its package-resolved development Host", () => {

@@ -6,17 +6,17 @@ import type {
 	Theme,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import piStuffTodo, { TODO_TOGGLE_KEY } from "../../packages/pi-stuff-todo/index.js";
-import { isTaskDetails } from "../../packages/pi-stuff-todo/state/replay.js";
-import { __resetState } from "../../packages/pi-stuff-todo/state/store.js";
-import { registerTaskTools } from "../../packages/pi-stuff-todo/todo.js";
+import piStuffTodo, { TODO_TOGGLE_KEY } from "../../packages/pi-stuff/src/todo/index.js";
+import { isTaskDetails } from "../../packages/pi-stuff/src/todo/state/replay.js";
+import { __resetState } from "../../packages/pi-stuff/src/todo/state/store.js";
+import { registerTaskTools } from "../../packages/pi-stuff/src/todo/todo.js";
 import {
 	TASK_CREATE_TOOL_NAME,
 	TASK_GET_TOOL_NAME,
 	TASK_LIST_TOOL_NAME,
 	TASK_UPDATE_TOOL_NAME,
 	type TaskDetails,
-} from "../../packages/pi-stuff-todo/tool/types.js";
+} from "../../packages/pi-stuff/src/todo/tool/types.js";
 
 const TOOL_NAMES = [TASK_CREATE_TOOL_NAME, TASK_GET_TOOL_NAME, TASK_LIST_TOOL_NAME, TASK_UPDATE_TOOL_NAME];
 type TaskMutationEvent = Parameters<NonNullable<Parameters<typeof registerTaskTools>[1]>>[0];

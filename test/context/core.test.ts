@@ -15,7 +15,7 @@ import piStuffContext, {
 	CONTEXT_COMPACTION_BYPASSED_EVENT,
 	getContextCapability,
 	projectCurrentContext,
-} from "../../packages/pi-stuff-context/index.js";
+} from "../../packages/pi-stuff/src/context-management/index.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type Handlers = Map<string, Handler[]>;

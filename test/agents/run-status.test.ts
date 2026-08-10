@@ -3,8 +3,8 @@ import {
 	inspectSubagentStatus,
 	type RunStatusResult,
 	type RunStatusState,
-} from "../../packages/pi-stuff-agents/src/runs/background/run-status.js";
-import type { AsyncJobState } from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/run-status.js";
+import type { AsyncJobState } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 function createState(sessionId: string | null = "root-session"): RunStatusState {
 	return {

@@ -3,22 +3,22 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { AgentConfig } from "../../packages/pi-stuff-agents/src/agents/agents.ts";
+import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.ts";
 import {
 	executeAsyncParallel,
 	executeAsyncSingle,
-} from "../../packages/pi-stuff-agents/src/runs/background/async-execution.ts";
-import { createAsyncJobTracker } from "../../packages/pi-stuff-agents/src/runs/background/async-job-tracker.ts";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/async-execution.ts";
+import { createAsyncJobTracker } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-job-tracker.ts";
 import {
 	deliverStopRequest,
 	requestAsyncSteer,
-} from "../../packages/pi-stuff-agents/src/runs/background/control-channel.ts";
-import { reconcileAsyncRun } from "../../packages/pi-stuff-agents/src/runs/background/stale-run-reconciler.ts";
-import { waitForSteeringAction } from "../../packages/pi-stuff-agents/src/runs/background/steering.ts";
-import { writerProcessRegistryPath } from "../../packages/pi-stuff-agents/src/runs/background/writer-process-registry.ts";
-import { createDurableAgentExecutionCoordinator } from "../../packages/pi-stuff-agents/src/runtime/agent-execution-coordinator.ts";
-import { SessionAgentGovernor } from "../../packages/pi-stuff-agents/src/runtime/session-governor.ts";
-import { CurrentAgents } from "../../packages/pi-stuff-agents/src/session/current-agents.ts";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.ts";
+import { reconcileAsyncRun } from "../../packages/pi-stuff/src/subagents/src/runs/background/stale-run-reconciler.ts";
+import { waitForSteeringAction } from "../../packages/pi-stuff/src/subagents/src/runs/background/steering.ts";
+import { writerProcessRegistryPath } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.ts";
+import { createDurableAgentExecutionCoordinator } from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-coordinator.ts";
+import { SessionAgentGovernor } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.ts";
+import { CurrentAgents } from "../../packages/pi-stuff/src/subagents/src/session/current-agents.ts";
 import {
 	ASYNC_DIR,
 	DEFAULT_ARTIFACT_CONFIG,
@@ -26,7 +26,7 @@ import {
 	RESULTS_DIR,
 	SUBAGENT_ASYNC_STARTED_EVENT,
 	type SubagentState,
-} from "../../packages/pi-stuff-agents/src/shared/types.ts";
+} from "../../packages/pi-stuff/src/subagents/src/shared/types.ts";
 import { CERTIFIED_PI_VERSION } from "../../scripts/pi-host-contract.ts";
 import { PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH } from "./fixtures/process-controls-provider.ts";
 

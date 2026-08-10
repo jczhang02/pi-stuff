@@ -24,8 +24,8 @@ import goal, {
 	parseCommand,
 	parseTokenBudget,
 	validateObjective,
-} from "../../packages/pi-stuff-goal/src/goal.js";
-import type { ActiveGoal } from "../../packages/pi-stuff-goal/src/persistence.js";
+} from "../../packages/pi-stuff/src/goal/src/goal.js";
+import type { ActiveGoal } from "../../packages/pi-stuff/src/goal/src/persistence.js";
 import {
 	completionEvidenceRejectionReason,
 	fingerprintVisibleAssistantOutput,
@@ -33,7 +33,7 @@ import {
 	nextToolFreeRepeatState,
 	normalizeVisibleAssistantOutput,
 	recordGoalBlockerAttempt,
-} from "../../packages/pi-stuff-goal/src/safety.js";
+} from "../../packages/pi-stuff/src/goal/src/safety.js";
 import { createMockContext, createMockPi, goalStatusSnapshot } from "./support.js";
 
 // This suite stays in one file because it exercises one module-scoped extension

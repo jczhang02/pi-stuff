@@ -3,17 +3,17 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { createAgentToolPresentation } from "../../packages/pi-stuff-agents/src/extension/agent-tool-presentation.js";
+import { createAgentToolPresentation } from "../../packages/pi-stuff/src/subagents/src/extension/agent-tool-presentation.js";
 import {
 	createNativeSupervisorChannel,
 	registerNativeSupervisorClient,
 	resolveSupervisorChannelDir,
-} from "../../packages/pi-stuff-agents/src/intercom/native-supervisor-channel.js";
+} from "../../packages/pi-stuff/src/subagents/src/intercom/native-supervisor-channel.js";
 import {
 	steerAckPathFromDir,
 	writeSteerAckAt,
 	writeSteerRequestToDir,
-} from "../../packages/pi-stuff-agents/src/runs/background/control-channel.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
 import {
 	buildPiArgs,
 	PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV,
@@ -26,24 +26,24 @@ import {
 	SUBAGENT_STEER_ACK_DIR_ENV,
 	SUBAGENT_STEER_INBOX_ENV,
 	SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV,
-} from "../../packages/pi-stuff-agents/src/runs/shared/pi-args.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/pi-args.js";
 import {
 	STRUCTURED_OUTPUT_CAPTURE_ENV,
 	STRUCTURED_OUTPUT_SCHEMA_ENV,
-} from "../../packages/pi-stuff-agents/src/runs/shared/structured-output.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/structured-output.js";
 import registerSubagentPromptRuntime, {
 	CHILD_SUBAGENT_BOUNDARY_INSTRUCTIONS,
 	registerSteeringInbox,
 	registerToolBudget,
 	rewriteSubagentPrompt,
 	validateFinalProviderPayload,
-} from "../../packages/pi-stuff-agents/src/runs/shared/subagent-prompt-runtime.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/subagent-prompt-runtime.js";
 import {
 	CHILD_TOOL_DIAGNOSTIC_PATH_ENV,
 	REQUIRED_CHILD_TOOLS_ENV,
 	readChildToolDiagnosticError,
-} from "../../packages/pi-stuff-agents/src/runs/shared/tool-availability.js";
-import type { SubagentState } from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/tool-availability.js";
+import type { SubagentState } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const environment = new Map<string, string | undefined>();
 const temporaryDirectories: string[] = [];
@@ -392,7 +392,7 @@ test("replaces ambient child discovery with a controlled Suite surface and a ter
 	expect(built.env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV]).toBe(built.toolDiagnosticPath);
 });
 
-test("passes the Aggregate child surface through the child environment without mutating the parent", () => {
+test("passes the Suite child surface through the child environment without mutating the parent", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-stuff-explicit-child-base-"));
 	temporaryDirectories.push(root);
 	const baseExtension = join(root, "suite.ts");

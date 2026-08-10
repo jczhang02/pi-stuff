@@ -9,8 +9,8 @@ import type {
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
-import piStuffWork from "../../packages/pi-stuff-work/index.js";
-import type { BackgroundWorkRuntime } from "../../packages/pi-stuff-work/src/runtime.js";
+import piStuffWork from "../../packages/pi-stuff/src/background-work/index.js";
+import type { BackgroundWorkRuntime } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
 
 type Handler = (event: unknown, context: ExtensionContext) => unknown | Promise<unknown>;
 

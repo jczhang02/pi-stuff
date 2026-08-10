@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import type { CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
-import { CurrentWorkSources } from "../../packages/pi-stuff-work/src/current-work.js";
+import { CurrentWorkSources } from "../../packages/pi-stuff/src/background-work/src/current-work.js";
 import type {
 	BackgroundWorkOutcome,
 	BackgroundWorkRuntime,
 	BackgroundWorkSnapshot,
-} from "../../packages/pi-stuff-work/src/runtime.js";
-import { createTasksDialogView } from "../../packages/pi-stuff-work/src/tasks-dialog.js";
+} from "../../packages/pi-stuff/src/background-work/src/runtime.js";
+import { createTasksDialogView } from "../../packages/pi-stuff/src/background-work/src/tasks-dialog.js";
+import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
 const theme = {
 	bold: (value: string) => value,

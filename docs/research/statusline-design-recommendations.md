@@ -82,7 +82,7 @@ Oh My Posh 明确记录了 Powerline glyph 在 Git Bash 等环境中会因为宽
 
 ## 2. 当前 Pi Stuff Statusline 的实际状态
 
-当前生产实现及其说明见 [statusline.ts](../../packages/pi-stuff-ui/statusline.ts) 和 [Pi Stuff UI README](../../packages/pi-stuff-ui/README.md)。真实 PTY 对照见 [parity report](../prototypes/tui/final-ui-review/statusline/parity-report.html)。
+The production implementation and its documentation live in [statusline.ts](../../packages/pi-stuff/src/conversation-ui/statusline.ts) and the [Conversation UI README](../../packages/pi-stuff/src/conversation-ui/README.md). See the [parity report](../prototypes/tui/final-ui-review/statusline/parity-report.html) for the real PTY comparison.
 
 现有行为包括：
 

@@ -1,0 +1,16 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"strict": false,
+		"noUnusedLocals": false,
+		"noUnusedParameters": false,
+		"noUncheckedIndexedAccess": false,
+		"exactOptionalPropertyTypes": false,
+		"noImplicitOverride": false,
+		"noPropertyAccessFromIndexSignature": false,
+		"erasableSyntaxOnly": false
+	},
+	"include": ["packages/pi-stuff/src/web/runtime/**/*.ts", "packages/pi-stuff/src/mcp/runtime/**/*.ts"],
+	"exclude": ["node_modules"]
+}

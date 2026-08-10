@@ -1,5 +1,16 @@
 # @jczhang02/pi-stuff
 
+## Unreleased
+
+- Consolidate the Suite into one private local Pi Package with twelve named internal Modules. Remove the former
+  per-Capability manifests, self-owned runtime dependencies, version synchronization, Changesets, and npm publication
+  workflow while preserving the accepted installation order and Pi 0.84.1 behavior.
+- Absorb the adapted Web and MCP implementations into their owning Modules. Retain their pinned upstream revisions,
+  license texts, security notes, original documentation, and Pi Stuff delta records beside the source.
+- Replace multi-archive release certification with one extracted-Package verification that checks the complete runtime
+  resource set and exercises the real Pi Host, resume paths, wide/narrow TUI, Magic Context, RTK, Web, MCP, Goal,
+  Subagents, Todo, BTW, Tool presentation, and Background Work.
+
 ## 0.3.3
 
 ### Patch Changes

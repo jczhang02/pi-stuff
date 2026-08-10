@@ -3,11 +3,11 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { initializeWriterProcessRegistry } from "../../packages/pi-stuff-agents/src/runs/background/writer-process-registry.ts";
-import { SessionAgentGovernor } from "../../packages/pi-stuff-agents/src/runtime/session-governor.ts";
-import { prepareSessionGovernorCompatibility } from "../../packages/pi-stuff-agents/src/runtime/session-governor-compatibility.ts";
-import type { SessionGovernorCompatibilityScope } from "../../packages/pi-stuff-agents/src/shared/session-identity.ts";
-import { TEMP_ROOT_DIR } from "../../packages/pi-stuff-agents/src/shared/types.ts";
+import { initializeWriterProcessRegistry } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.ts";
+import { SessionAgentGovernor } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.ts";
+import { prepareSessionGovernorCompatibility } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor-compatibility.ts";
+import type { SessionGovernorCompatibilityScope } from "../../packages/pi-stuff/src/subagents/src/shared/session-identity.ts";
+import { TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.ts";
 
 const limits = { maxDepth: 3, maxRunning: 20, maxTotal: 200 };
 const roots = new Set<string>();

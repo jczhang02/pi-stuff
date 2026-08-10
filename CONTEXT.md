@@ -16,13 +16,20 @@ _Avoid_: agent, framework, platform
 One coherent, independently understandable behavior contributed to the Suite.
 _Avoid_: feature bundle, miscellaneous extension
 
-**Capability Package**:
-A distributable Package that owns one Capability and can be selected independently of the full Suite.
-_Avoid_: module, plugin fragment
+**Pi Stuff Package**:
+The single local Pi Package that presents the ordered Suite to the Host.
+_Avoid_: aggregate, launcher, wrapper CLI
 
-**Aggregate Package**:
-The distributable Package that presents the ordered Suite as one installable Pi Package.
-_Avoid_: runtime, launcher, wrapper CLI
+**Capability Module**:
+An internal, independently understandable implementation boundary for one Capability. It has no package manifest,
+version, installation, or publication lifecycle of its own.
+_Avoid_: Capability Package, npm package, plugin fragment
+
+**Diagnostic Record**:
+A bounded, current-process account of a Suite problem for human inspection. It never enters Session history or model
+context. The owning Capability presents ordinary state locally; only a user-relevant problem may raise the shared
+one-row notice, with details available through `/diagnostics`.
+_Avoid_: console warning, transcript message, notification log
 
 **Runtime Resource**:
 An Extension, Skill, Prompt Template, or Theme that the Host discovers through Pi's Package contract.

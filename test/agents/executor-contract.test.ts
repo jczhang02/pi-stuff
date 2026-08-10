@@ -3,9 +3,12 @@ import { Check } from "typebox/value";
 import {
 	normalizePublicAgentParams,
 	toEngineParams,
-} from "../../packages/pi-stuff-agents/src/extension/product-executor.js";
-import { FanoutChildSubagentParams, SubagentParams } from "../../packages/pi-stuff-agents/src/extension/schemas.js";
-import { deriveLaunchRunId } from "../../packages/pi-stuff-agents/src/runs/foreground/subagent-executor.js";
+} from "../../packages/pi-stuff/src/subagents/src/extension/product-executor.js";
+import {
+	FanoutChildSubagentParams,
+	SubagentParams,
+} from "../../packages/pi-stuff/src/subagents/src/extension/schemas.js";
+import { deriveLaunchRunId } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/subagent-executor.js";
 
 describe("Agent product contract", () => {
 	test("accepts only single, parallel, and four current-session controls", () => {

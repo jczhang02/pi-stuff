@@ -4,7 +4,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { CERTIFIED_RTK_VERSION, RtkRuntime } from "../../packages/pi-stuff-rtk/runtime.js";
+import { CERTIFIED_RTK_VERSION, RtkRuntime } from "../../packages/pi-stuff/src/rtk/runtime.js";
 
 const temporaryDirectories: string[] = [];
 

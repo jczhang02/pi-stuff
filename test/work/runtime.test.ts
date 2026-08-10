@@ -15,26 +15,32 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { startMonitor } from "../../packages/pi-stuff-work/src/monitor.js";
-import { BoundedOutputFile, readBoundedTail } from "../../packages/pi-stuff-work/src/output.js";
+import { startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
+import { BoundedOutputFile, readBoundedTail } from "../../packages/pi-stuff/src/background-work/src/output.js";
 import {
 	captureProcessIdentity,
 	captureProcessIdentityWithRetry,
 	processExists,
 	signalProcessGroup,
-} from "../../packages/pi-stuff-work/src/process.js";
+} from "../../packages/pi-stuff/src/background-work/src/process.js";
 import {
 	type BackgroundMonitorActivity,
+	type BackgroundWorkOutcome,
 	BackgroundWorkRuntime,
 	projectNotificationBatch,
-} from "../../packages/pi-stuff-work/src/runtime.js";
+} from "../../packages/pi-stuff/src/background-work/src/runtime.js";
 import {
 	createAuthenticatedRuntimeRecord,
 	reconcileStaleRuns,
 	type StoredProcessTask,
 	WorkRunStorage,
-} from "../../packages/pi-stuff-work/src/storage.js";
-import { isForegroundBashResult } from "../../packages/pi-stuff-work/src/tools.js";
+} from "../../packages/pi-stuff/src/background-work/src/storage.js";
+import { isForegroundBashResult } from "../../packages/pi-stuff/src/background-work/src/tools.js";
+import {
+	activateDiagnosticChannel,
+	DiagnosticChannel,
+	resetDiagnosticProcessState,
+} from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
 
 const roots: string[] = [];
 const children: ChildProcess[] = [];
@@ -42,6 +48,7 @@ const escapedProcessGroups: number[] = [];
 const TEST_WORK_AUTHORITY_KEY = Buffer.alloc(32, 0x5a);
 
 afterEach(() => {
+	resetDiagnosticProcessState();
 	for (const child of children.splice(0)) {
 		if (child.pid && processExists(child.pid)) signalProcessGroup(child.pid, "SIGKILL");
 	}
@@ -249,6 +256,25 @@ describe("bounded background output", () => {
 });
 
 describe("BackgroundWorkRuntime", () => {
+	test("keeps an unverified stale runtime in diagnostics without raising a main-UI notice", async () => {
+		const root = temporaryRoot();
+		const diagnostics = new DiagnosticChannel();
+		activateDiagnosticChannel(diagnostics);
+		const active = new BackgroundWorkRuntime({
+			cwd: root,
+			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			reconcileStale: async () => ({ cleanedDirectories: 0, killedProcesses: 0, unresolvedDirectories: 1 }),
+			sessionId: "work-test-session",
+			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+		});
+
+		await active.prepare();
+		expect(diagnostics.list()).toHaveLength(1);
+		expect(diagnostics.list()[0]?.summary).toContain("unverified stale runtime directory was left untouched");
+		expect(diagnostics.listNotices()).toEqual([]);
+		await active.shutdown();
+	});
+
 	test("retries stale-runtime preparation after a transient failure", async () => {
 		const root = temporaryRoot();
 		let attempts = 0;
@@ -294,6 +320,7 @@ describe("BackgroundWorkRuntime", () => {
 		await expect(
 			active.executeBash({ command: "printf 'must-not-start\\n'", toolCallId: "tool-path-failure" }, context(root)),
 		).rejects.toThrow("injected command path EIO");
+		expect(active.detachActiveForeground()).toBeFalse();
 		expect(outputFactoryCalls).toBe(0);
 		expect(
 			readdirSync(resolve(root, ".pi", "tasks"), { recursive: true }).some((entry) =>
@@ -352,7 +379,7 @@ describe("BackgroundWorkRuntime", () => {
 		expect(runtimeFiles.some((entry) => entry.endsWith(".command") || entry.endsWith(".ack"))).toBeFalse();
 	});
 
-	test("reserves the sixteen activity slots before concurrent supervisor identity capture", async () => {
+	test("reserves the sixteenth activity slot before supervisor identity capture completes", async () => {
 		const root = temporaryRoot();
 		let releaseCaptures!: () => void;
 		const captureGate = new Promise<void>((resolve) => {
@@ -370,19 +397,81 @@ describe("BackgroundWorkRuntime", () => {
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		});
+		for (let index = 0; index < 15; index += 1) {
+			const id = `m-reserved-slot-${String(index)}`;
+			const outcome: BackgroundWorkOutcome = {
+				endedAt: 2,
+				id,
+				kind: "monitor",
+				startedAt: 1,
+				status: "stopped",
+				summary: "Monitor stopped",
+				title: "Capacity fixture",
+			};
+			active.registerMonitor({
+				cancel: async () => outcome,
+				id,
+				outcome: new Promise<BackgroundWorkOutcome>(() => {}),
+				readOutput: () => "Waiting for the condition.",
+				snapshot: () => ({
+					id,
+					kind: "monitor",
+					startedAt: 1,
+					status: "running",
+					title: "Capacity fixture",
+				}),
+			});
+		}
 
-		const launches = Array.from({ length: 17 }, (_, index) =>
+		const launches = Array.from({ length: 2 }, (_, index) =>
 			active.executeBash({ command: ":", toolCallId: `tool-reserved-slot-${String(index)}` }, context(root)),
 		);
 		const outcomesPromise = Promise.allSettled(launches);
-		await waitUntil(() => captureCalls === 16);
+		await waitUntil(() => captureCalls === 1);
 		releaseCaptures();
 		const outcomes = await outcomesPromise;
-		expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(16);
+		expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
 		const rejected = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
 		expect(rejected).toHaveLength(1);
 		expect(String(rejected[0]?.reason)).toContain("At most 16 Background Work activities");
-		expect(captureCalls).toBe(16);
+		expect(captureCalls).toBe(1);
+		await active.shutdown();
+	});
+
+	test("queues a manual foreground detach while supervisor identity is still being captured", async () => {
+		const root = temporaryRoot();
+		let releaseCapture!: () => void;
+		const captureGate = new Promise<void>((resolve) => {
+			releaseCapture = resolve;
+		});
+		let captureStarted!: () => void;
+		const started = new Promise<void>((resolve) => {
+			captureStarted = resolve;
+		});
+		const active = new BackgroundWorkRuntime({
+			captureSupervisorIdentity: async (pid) => {
+				captureStarted();
+				await captureGate;
+				return captureProcessIdentityWithRetry(pid);
+			},
+			cwd: root,
+			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			sessionId: "work-test-session",
+			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+		});
+
+		const execution = active.executeBash(
+			{ command: "sleep 30", toolCallId: "tool-pending-manual-detach" },
+			context(root),
+		);
+		await started;
+		expect(active.detachActiveForeground()).toBeTrue();
+		expect(active.detachActiveForeground()).toBeFalse();
+		releaseCapture();
+		const result = await execution;
+		const text = result.content.find((item) => item.type === "text");
+		expect(text?.type === "text" ? text.text : "").toContain("manually moved to background task");
+		expect(active.snapshot()).toHaveLength(1);
 		await active.shutdown();
 	});
 
@@ -642,8 +731,9 @@ describe("BackgroundWorkRuntime", () => {
 					pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
 					sessionId: "work-test-session",
 					storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
-					signalSupervisor: () => {
+					signalSupervisor: (supervisor, _identity, signal) => {
 						terminationAttempts += 1;
+						supervisor.kill(signal);
 						throw new Error(`injected ${trigger} stop failure`);
 					},
 				});
@@ -652,8 +742,8 @@ describe("BackgroundWorkRuntime", () => {
 					{
 						command:
 							trigger === "output-limit"
-								? `printf '${"x".repeat(512)}'; sleep 0.1`
-								: "sleep 0.1; printf 'TERMINAL\\n'",
+								? `printf '${"x".repeat(512)}'; sleep 30`
+								: "sleep 30; printf 'TERMINAL\\n'",
 						...(trigger === "abort" ? { signal: controller.signal } : {}),
 						...(trigger === "timeout" ? { timeoutSeconds: 0.01 } : {}),
 						toolCallId: `tool-${trigger}-stop-rejection`,
@@ -1326,7 +1416,10 @@ describe("crash supervisor", () => {
 		const readyPath = join(root, "ready.json");
 		const treePath = join(root, "tree.txt");
 		const fixture = resolve(import.meta.dir, "../fixtures/work-supervisor-parent.mjs");
-		const supervisor = resolve(import.meta.dir, "../../packages/pi-stuff-work/src/process-supervisor.mjs");
+		const supervisor = resolve(
+			import.meta.dir,
+			"../../packages/pi-stuff/src/background-work/src/process-supervisor.mjs",
+		);
 		const parent = spawn(process.execPath, [fixture, supervisor, readyPath, treePath], {
 			cwd: root,
 			stdio: "ignore",

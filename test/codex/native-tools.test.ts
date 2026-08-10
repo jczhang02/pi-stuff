@@ -2,8 +2,12 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseNativeJson, resolveNativeBinary, runNativeTool } from "../../packages/pi-stuff-codex/native-runner.js";
-import { IMAGE_GENERATION_MODEL } from "../../packages/pi-stuff-codex/tools.js";
+import {
+	parseNativeJson,
+	resolveNativeBinary,
+	runNativeTool,
+} from "../../packages/pi-stuff/src/codex/native-runner.js";
+import { IMAGE_GENERATION_MODEL } from "../../packages/pi-stuff/src/codex/tools.js";
 
 const temporaryRoots: string[] = [];
 const nativeTest = process.platform === "linux" && process.arch === "x64" ? test : test.skip;

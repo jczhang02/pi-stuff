@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks";
-import { planToolActivityGroups } from "../packages/pi-stuff-tools/activity.js";
-import { ToolUiRuntime } from "../packages/pi-stuff-tools/contract.js";
+import { planToolActivityGroups } from "../packages/pi-stuff/src/tool-display/activity.js";
+import { ToolUiRuntime } from "../packages/pi-stuff/src/tool-display/contract.js";
 
 const CALLS = 20_000;
 const CALLS_PER_ROUND = 10;

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getHostSharedResource } from "../../packages/pi-stuff-ui/host-resource.js";
+import { getHostSharedResource } from "../../packages/pi-stuff/src/conversation-ui/host-resource.js";
 
 type Events = ExtensionAPI["events"];
 

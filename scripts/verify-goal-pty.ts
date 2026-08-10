@@ -1,7 +1,8 @@
-import { existsSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 const root = resolve(import.meta.dir, "..");
@@ -288,17 +289,15 @@ export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promis
 		}
 
 		const exportPath = join(temporaryDirectory, "goal-session.html");
-		const certifiedExporter = join(root, ".artifacts/pi-host/linux-x64/pi");
-		const requestedExporterAssets = join(resolve(options.piBinary, ".."), "export-html/template.css");
-		const exporter = existsSync(requestedExporterAssets) ? options.piBinary : certifiedExporter;
-		if (!existsSync(exporter)) fail("no export-capable certified Pi binary is available");
-		const exported = Bun.spawnSync([exporter, "--export", sessionFiles[0] as string, exportPath], {
-			env: { ...process.env, PI_TELEMETRY: "0" },
-			stderr: "pipe",
-			stdout: "pipe",
-		});
-		if (exported.exitCode !== 0) {
-			fail(`Pi HTML export failed: ${exported.stderr.toString().trim() || exported.stdout.toString().trim()}`);
+		const piEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
+		const exportModuleUrl = pathToFileURL(join(dirname(piEntry), "core/export-html/index.js")).href;
+		const { exportFromFile } = (await import(exportModuleUrl)) as {
+			exportFromFile(inputPath: string, options: { outputPath: string }): Promise<string>;
+		};
+		try {
+			await exportFromFile(sessionFiles[0] as string, { outputPath: exportPath });
+		} catch (error) {
+			fail(`Pi HTML export failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
 		const exportedHtml = await readFile(exportPath, "utf8");
 		for (const forbidden of ["<goal_objective>", "Goal-mode rules:", "pi-goal-prompt:"]) {

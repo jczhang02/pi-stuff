@@ -1,4 +1,4 @@
-import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const repositoryRoot = join(import.meta.dirname, "..");
@@ -7,25 +7,10 @@ const outputDirectory = join(repositoryRoot, ".artifacts", "goal-upstream-tests"
 await rm(outputDirectory, { recursive: true, force: true });
 await run("bunx", ["tsc", "-p", "tsconfig.goal-upstream-run.json"], repositoryRoot);
 
-const compiledWorkspaceScope = join(outputDirectory, "packages", "pi-stuff-goal", "node_modules", "@jczhang02");
-await mkdir(compiledWorkspaceScope, { recursive: true });
-const compiledToolsPackage = join(outputDirectory, "packages", "pi-stuff-tools");
 await writeFile(
-	join(compiledToolsPackage, "package.json"),
-	`${JSON.stringify({ name: "@jczhang02/pi-stuff-tools", type: "module", exports: { ".": "./index.js", "./contract": "./contract.js" } })}\n`,
-	"utf8",
+	join(outputDirectory, "packages/pi-stuff/src/conversation-ui/index.js"),
+	`export * from "../../../../test/goal-upstream/ui-node-shim.js";\n`,
 );
-await symlink(compiledToolsPackage, join(compiledWorkspaceScope, "pi-stuff-tools"), "dir");
-const compiledUiPackage = join(outputDirectory, "test", "goal-upstream");
-await writeFile(
-	join(compiledUiPackage, "package.json"),
-	`${JSON.stringify({ name: "@jczhang02/pi-stuff-ui", type: "module", exports: "./ui-node-shim.js" })}\n`,
-	"utf8",
-);
-await symlink(compiledUiPackage, join(compiledWorkspaceScope, "pi-stuff-ui"), "dir");
-const compiledToolsWorkspaceScope = join(compiledToolsPackage, "node_modules", "@jczhang02");
-await mkdir(compiledToolsWorkspaceScope, { recursive: true });
-await symlink(compiledUiPackage, join(compiledToolsWorkspaceScope, "pi-stuff-ui"), "dir");
 
 const compiledTests = [...new Bun.Glob("test/goal-upstream/*.node.js").scanSync(outputDirectory)].sort();
 if (compiledTests.length === 0) throw new Error("Goal upstream test compilation produced no Node test files");

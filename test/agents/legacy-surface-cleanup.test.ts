@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { readAsyncRecoveryDescriptor } from "../../packages/pi-stuff-agents/src/runs/background/async-resume.js";
-import { sanitizeSummary } from "../../packages/pi-stuff-agents/src/runs/shared/nested-events.js";
+import { readAsyncRecoveryDescriptor } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-resume.js";
+import { sanitizeSummary } from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-events.js";
 
 const temporaryDirectories: string[] = [];
 

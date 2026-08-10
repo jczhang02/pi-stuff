@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { initializeWriterProcessRegistry } from "../../packages/pi-stuff-agents/src/runs/background/writer-process-registry.js";
-import { maintainAgentRuntime } from "../../packages/pi-stuff-agents/src/runtime/runtime-maintenance.js";
-import { readProcessStartIdentity } from "../../packages/pi-stuff-agents/src/shared/process-identity.js";
+import { initializeWriterProcessRegistry } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
+import { maintainAgentRuntime } from "../../packages/pi-stuff/src/subagents/src/runtime/runtime-maintenance.js";
+import { readProcessStartIdentity } from "../../packages/pi-stuff/src/subagents/src/shared/process-identity.js";
 
 const roots = new Set<string>();
 

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import type { CommandDialogViewContext } from "@jczhang02/pi-stuff-ui";
-import { createCodexDialogView, formatCodexToolLines } from "../../packages/pi-stuff-codex/dialog.js";
+import { createCodexDialogView, formatCodexToolLines } from "../../packages/pi-stuff/src/codex/dialog.js";
+import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
 const theme = {
 	bold: (value: string) => value,

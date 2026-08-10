@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { commandDialogRows, fitCommandDialogRows } from "../../packages/pi-stuff-ui/dialog-layout.js";
-import type { CommandDialogViewContext } from "../../packages/pi-stuff-ui/index.js";
+import { commandDialogRows, fitCommandDialogRows } from "../../packages/pi-stuff/src/conversation-ui/dialog-layout.js";
+import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
 function context(rows: number): Pick<CommandDialogViewContext<unknown>, "tui"> {
 	return { tui: { terminal: { rows } } } as unknown as Pick<CommandDialogViewContext<unknown>, "tui">;

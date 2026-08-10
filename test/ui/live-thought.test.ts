@@ -6,7 +6,7 @@ import {
 	registerLiveThoughtDisplay,
 	type ThoughtMarkdownTransformContext,
 	type ThoughtMarkdownTransformer,
-} from "../../packages/pi-stuff-ui/live-thought.js";
+} from "../../packages/pi-stuff/src/conversation-ui/live-thought.js";
 
 const CONTEXT: ThoughtMarkdownTransformContext = {
 	availableWidth: 80,

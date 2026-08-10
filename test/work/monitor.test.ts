@@ -3,8 +3,8 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type MonitorInput, startMonitor } from "../../packages/pi-stuff-work/src/monitor.js";
-import { BackgroundWorkRuntime } from "../../packages/pi-stuff-work/src/runtime.js";
+import { type MonitorInput, startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
+import { BackgroundWorkRuntime } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
 
 const roots: string[] = [];
 const servers: Bun.Server<unknown>[] = [];

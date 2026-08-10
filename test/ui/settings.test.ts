@@ -1,15 +1,20 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+	activateDiagnosticChannel,
+	DiagnosticChannel,
+	resetDiagnosticProcessState,
+} from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
 import {
 	beginUiSettingsGeneration,
 	getUiSettingRegistry,
 	registerOwnedUiSettings,
 	type UiSettings,
 	UiSettingsStore,
-} from "../../packages/pi-stuff-ui/settings.js";
+} from "../../packages/pi-stuff/src/conversation-ui/settings.js";
 
 const DEFAULTS: UiSettings = {
 	inlineSlashAutocomplete: true,
@@ -21,6 +26,8 @@ const DEFAULTS: UiSettings = {
 	statuslineLatestPrompt: true,
 	welcomeHeader: true,
 };
+
+afterEach(() => resetDiagnosticProcessState());
 
 async function withTemporarySettings(run: (path: string) => Promise<void>): Promise<void> {
 	const directory = await mkdtemp(join(tmpdir(), "pi-stuff-ui-settings-"));
@@ -157,15 +164,12 @@ test("concurrent stale-lock recovery admits only one settings writer", async () 
 test("invalid persisted UI settings fail quiet to the complete default", async () => {
 	await withTemporarySettings(async (path) => {
 		await writeFile(path, '{"schemaVersion":1,"statusline":false}\n');
-		const warnings: string[] = [];
-		const original = console.warn;
-		console.warn = (message?: unknown) => warnings.push(String(message));
-		try {
-			expect((await UiSettingsStore.load(path)).get()).toEqual(DEFAULTS);
-		} finally {
-			console.warn = original;
-		}
-		expect(warnings).toHaveLength(1);
+		const diagnostics = new DiagnosticChannel();
+		activateDiagnosticChannel(diagnostics);
+		expect((await UiSettingsStore.load(path)).get()).toEqual(DEFAULTS);
+		expect(diagnostics.list()).toHaveLength(1);
+		expect(diagnostics.list()[0]?.summary).toBe("UI settings were invalid and built-in defaults are active");
+		expect(diagnostics.listNotices()).toHaveLength(1);
 	});
 });
 

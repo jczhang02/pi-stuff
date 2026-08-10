@@ -13,9 +13,9 @@
 			"!**/.beads",
 			"!**/.pi-subagents",
 			"!vendor/pi-host-model-data",
-			"!packages/pi-stuff-rtk/upstream",
-			"!packages/pi-web-access",
-			"!packages/pi-mcp-adapter",
+			"!packages/pi-stuff/src/rtk/upstream",
+			"!packages/pi-stuff/src/web/runtime",
+			"!packages/pi-stuff/src/mcp/runtime",
 			"!bun.lock"
 		]
 	},
@@ -37,6 +37,9 @@
 		"enabled": true,
 		"rules": {
 			"preset": "recommended",
+			"complexity": {
+				"useLiteralKeys": "off"
+			},
 			"correctness": {
 				"noUnusedFunctionParameters": "error",
 				"noUnusedImports": "error",

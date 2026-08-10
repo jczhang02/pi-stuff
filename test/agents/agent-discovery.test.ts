@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { discoverAgents, EXTRA_AGENT_DIRS_ENV } from "../../packages/pi-stuff-agents/src/agents/agents.ts";
+import { discoverAgents, EXTRA_AGENT_DIRS_ENV } from "../../packages/pi-stuff/src/subagents/src/agents/agents.ts";
 
 const roots: string[] = [];
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;

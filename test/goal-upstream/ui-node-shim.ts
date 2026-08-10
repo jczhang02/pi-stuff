@@ -1,9 +1,10 @@
 import { type ExtensionAPI, type ExtensionCommandContext, initTheme } from "@earendil-works/pi-coding-agent";
 import { setKeybindings } from "@earendil-works/pi-tui";
 
-export { commandDialogRows, fitCommandDialogRows } from "../../packages/pi-stuff-ui/dialog-layout.js";
-export { getHostSharedResource } from "../../packages/pi-stuff-ui/host-resource.js";
-export { getGoalStatusChannel } from "../../packages/pi-stuff-ui/statusline.js";
+export { reportDiagnostic } from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
+export { commandDialogRows, fitCommandDialogRows } from "../../packages/pi-stuff/src/conversation-ui/dialog-layout.js";
+export { getHostSharedResource } from "../../packages/pi-stuff/src/conversation-ui/host-resource.js";
+export { getGoalStatusChannel } from "../../packages/pi-stuff/src/conversation-ui/statusline.js";
 
 interface DialogComponent {
 	dispose?(): void;

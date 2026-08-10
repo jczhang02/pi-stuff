@@ -5,7 +5,7 @@ import {
 	CERTIFIED_RTK_LINUX_X64_SHA256S,
 	CERTIFIED_RTK_VERSION,
 	RtkRuntime,
-} from "../../packages/pi-stuff-rtk/runtime.js";
+} from "../../packages/pi-stuff/src/rtk/runtime.js";
 
 const localRtk = process.env["RTK_BIN"]?.trim() || Bun.which("rtk") || "";
 

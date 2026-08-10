@@ -1,14 +1,21 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import type { CommandDialogViewContext } from "../../packages/pi-stuff-ui/index.js";
-import type { RegisteredUiSetting, UiSettingRegistry } from "../../packages/pi-stuff-ui/settings.js";
-import { createUiSettingsView } from "../../packages/pi-stuff-ui/ui-settings-dialog.js";
+import {
+	activateDiagnosticChannel,
+	DiagnosticChannel,
+	resetDiagnosticProcessState,
+} from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
+import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import type { RegisteredUiSetting, UiSettingRegistry } from "../../packages/pi-stuff/src/conversation-ui/settings.js";
+import { createUiSettingsView } from "../../packages/pi-stuff/src/conversation-ui/ui-settings-dialog.js";
 
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
 } as unknown as Theme;
+
+afterEach(() => resetDiagnosticProcessState());
 
 interface Deferred {
 	readonly promise: Promise<void>;
@@ -252,7 +259,8 @@ test("/ui reports a failed write through its host adapter after immediate close"
 
 test("/ui isolates Capability observer setup and cleanup failures", () => {
 	initTheme("dark", false);
-	const warning = spyOn(console, "warn").mockImplementation(() => {});
+	const diagnostics = new DiagnosticChannel();
+	activateDiagnosticChannel(diagnostics);
 	let healthyReleased = false;
 	const brokenSubscribe = setting("brokenSubscribe", "Broken subscribe", 10);
 	brokenSubscribe.subscribe = () => {
@@ -271,13 +279,14 @@ test("/ui isolates Capability observer setup and cleanup failures", () => {
 		register: () => () => {},
 	} as UiSettingRegistry;
 
-	try {
-		const component = createUiSettingsView(registry).create(harness().context);
-		expect(component.render(64).join("\n")).toContain("Healthy");
-		component.dispose?.();
-		expect(healthyReleased).toBe(true);
-		expect(warning).toHaveBeenCalledTimes(2);
-	} finally {
-		warning.mockRestore();
-	}
+	const component = createUiSettingsView(registry).create(harness().context);
+	expect(component.render(64).join("\n")).toContain("Healthy");
+	component.dispose?.();
+	expect(healthyReleased).toBe(true);
+	expect(diagnostics.list()).toHaveLength(2);
+	expect(diagnostics.list().map((record) => record.summary)).toEqual([
+		"A UI setting observer could not be released",
+		"The Broken subscribe setting could not refresh live",
+	]);
+	expect(diagnostics.listNotices()).toHaveLength(1);
 });

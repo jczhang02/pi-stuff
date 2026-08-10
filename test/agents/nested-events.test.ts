@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { routeLiveNestedAgentControl } from "../../packages/pi-stuff-agents/src/extension/nested-control-router.js";
-import { listAsyncRuns } from "../../packages/pi-stuff-agents/src/runs/background/async-status.js";
-import { stopRequestsDir } from "../../packages/pi-stuff-agents/src/runs/background/control-channel.js";
+import { routeLiveNestedAgentControl } from "../../packages/pi-stuff/src/subagents/src/extension/nested-control-router.js";
+import { listAsyncRuns } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-status.js";
+import { stopRequestsDir } from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
 import {
 	buildNestedRouteIndex,
 	createNestedRoute,
@@ -16,13 +16,13 @@ import {
 	retireCompletedNestedRoute,
 	retireUnusedNestedRoute,
 	writeNestedEvent,
-} from "../../packages/pi-stuff-agents/src/runs/shared/nested-events.js";
-import { tryAcquireDurableClaim } from "../../packages/pi-stuff-agents/src/shared/durable-claim.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-events.js";
+import { tryAcquireDurableClaim } from "../../packages/pi-stuff/src/subagents/src/shared/durable-claim.js";
 import {
 	type NestedRouteInfo,
 	type SubagentState,
 	TEMP_ROOT_DIR,
-} from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const routeRoots: string[] = [];
 const nestedRunRoots: string[] = [];

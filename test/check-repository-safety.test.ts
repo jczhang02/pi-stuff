@@ -1,0 +1,205 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { auditRepositoryFiles } from "../scripts/check-repository-safety.ts";
+
+const TEMPORARY_ROOTS: string[] = [];
+
+async function createRepository(): Promise<string> {
+	const root = await mkdtemp(join(tmpdir(), "pi-stuff-safety-"));
+	TEMPORARY_ROOTS.push(root);
+	await Bun.$`git init --quiet ${root}`;
+	await mkdir(join(root, "packages", "pi-stuff"), { recursive: true });
+	await writeFile(join(root, "README.md"), "Repository documentation.\n");
+	await writeFile(
+		join(root, "package.json"),
+		`${JSON.stringify(
+			{
+				name: "fixture-root",
+				private: true,
+				packageManager: "bun@1.3.14",
+				devDependencies: { typescript: "5.9.3" },
+				trustedDependencies: [],
+				workspaces: ["packages/pi-stuff"],
+			},
+			null,
+			"\t",
+		)}\n`,
+	);
+	await writeLocalPackage(root, {
+		name: "@jczhang02/pi-stuff",
+		private: true,
+		files: ["index.ts", "src", "README.md", "LICENSE"],
+		pi: { extensions: ["./index.ts"] },
+	});
+	return root;
+}
+
+async function writeLocalPackage(root: string, manifest: Record<string, unknown>): Promise<void> {
+	await writeFile(join(root, "packages", "pi-stuff", "package.json"), `${JSON.stringify(manifest, null, "\t")}\n`);
+}
+
+afterEach(async () => {
+	await Promise.all(TEMPORARY_ROOTS.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe("auditRepositoryFiles", () => {
+	test("accepts one private local Pi Package with exact dependencies", async () => {
+		const root = await createRepository();
+		await writeLocalPackage(root, {
+			name: "@jczhang02/pi-stuff",
+			private: true,
+			files: ["index.ts", "src", "README.md", "LICENSE"],
+			pi: { extensions: ["./index.ts"] },
+			dependencies: { "@cortexkit/pi-magic-context": "0.33.1", typebox: "1.3.10" },
+		});
+
+		expect(await auditRepositoryFiles(root)).toEqual([]);
+	});
+
+	test("rejects an unpinned source dependency", async () => {
+		const root = await createRepository();
+		await writeLocalPackage(root, {
+			name: "@jczhang02/pi-stuff",
+			private: true,
+			files: ["index.ts", "src", "README.md", "LICENSE"],
+			pi: { extensions: ["./index.ts"] },
+			dependencies: {
+				"@cortexkit/pi-magic-context": "https://github.com/cortexkit/magic-context/archive/refs/heads/main.tgz",
+			},
+		});
+
+		expect(await auditRepositoryFiles(root)).toContainEqual({
+			path: "packages/pi-stuff/package.json",
+			rule: "direct-dependency-must-be-exact",
+		});
+	});
+
+	test("rejects host state, private paths, and Package lifecycle side effects", async () => {
+		const root = await createRepository();
+		await writeFile(join(root, "auth.json"), "{}\n");
+		await writeFile(
+			join(root, "README.md"),
+			`Local checkout: ${["", "home", "example", "private-suite"].join("/")}\n`,
+		);
+		await writeLocalPackage(root, {
+			name: "@jczhang02/pi-stuff",
+			private: true,
+			files: ["index.ts", "src", "README.md", "LICENSE", "AGENTS.md"],
+			pi: { extensions: ["./index.ts"] },
+			scripts: { postinstall: "modify-host" },
+		});
+
+		expect(await auditRepositoryFiles(root)).toEqual([
+			{ path: "README.md", rule: "private-absolute-path" },
+			{ path: "auth.json", rule: "forbidden-host-state" },
+			{ path: "packages/pi-stuff/package.json", rule: "package-files-allowlist" },
+			{ path: "packages/pi-stuff/package.json", rule: "package-lifecycle-script" },
+		]);
+	});
+
+	test("enforces the single private Package boundary", async () => {
+		const root = await createRepository();
+		await writeLocalPackage(root, {
+			name: "@jczhang02/pi-stuff",
+			files: ["index.ts", "../private.txt"],
+			pi: { extensions: ["./extension.ts"] },
+		});
+		await mkdir(join(root, "packages", "pi-stuff", "src", "nested"), { recursive: true });
+		await writeFile(join(root, "packages", "pi-stuff", "src", "nested", "package.json"), "{}\n");
+
+		expect(await auditRepositoryFiles(root)).toEqual([
+			{ path: "packages/pi-stuff/package.json", rule: "local-package-must-be-private" },
+			{ path: "packages/pi-stuff/package.json", rule: "package-files-allowlist" },
+			{ path: "packages/pi-stuff/package.json", rule: "package-pi-manifest" },
+			{ path: "packages/pi-stuff/src/nested/package.json", rule: "unexpected-package-manifest" },
+		]);
+	});
+
+	test("rejects ranged development dependencies and extra workspaces", async () => {
+		const root = await createRepository();
+		await writeFile(
+			join(root, "package.json"),
+			`${JSON.stringify(
+				{
+					name: "fixture-root",
+					private: true,
+					packageManager: "bun@1.3.14",
+					devDependencies: { typescript: "^5.9.3" },
+					trustedDependencies: ["typescript"],
+					workspaces: ["packages/*"],
+				},
+				null,
+				"\t",
+			)}\n`,
+		);
+
+		expect(await auditRepositoryFiles(root)).toEqual([
+			{ path: "package.json", rule: "direct-dependency-must-be-exact" },
+			{ path: "package.json", rule: "trusted-dependencies-must-be-empty" },
+			{ path: "package.json", rule: "single-package-workspace" },
+		]);
+	});
+
+	test("enforces the documented internal Module dependency direction", async () => {
+		const root = await createRepository();
+		await mkdir(join(root, "packages", "pi-stuff", "src", "conversation-ui"), { recursive: true });
+		await mkdir(join(root, "packages", "pi-stuff", "src", "goal"), { recursive: true });
+		await mkdir(join(root, "packages", "pi-stuff", "src", "subagents"), { recursive: true });
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "conversation-ui", "index.ts"),
+			'import goal from "../goal/index.js";\nexport default goal;\n',
+		);
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "subagents", "index.ts"),
+			'import context from "../context-management/index.js";\nexport default context;\n',
+		);
+
+		expect(await auditRepositoryFiles(root)).toEqual([
+			{
+				path: "packages/pi-stuff/src/conversation-ui/index.ts",
+				rule: "forbidden-internal-module-dependency:conversation-ui->goal",
+			},
+		]);
+	});
+
+	test("rejects raw console output from Host source but permits browser-owned output", async () => {
+		const root = await createRepository();
+		await mkdir(join(root, "packages", "pi-stuff", "src", "goal"), { recursive: true });
+		await mkdir(join(root, "packages", "pi-stuff", "src", "mcp", "runtime"), { recursive: true });
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "goal", "index.ts"),
+			'console.warn("this would corrupt the Host TUI");\n',
+		);
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "goal", "stream.ts"),
+			'process.stderr.write("this would also corrupt the Host TUI\\n");\n',
+		);
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "mcp", "runtime", "host-html-template.ts"),
+			'export const html = `<script>console.error("browser-only")</script>`;\n',
+		);
+
+		expect(await auditRepositoryFiles(root)).toEqual([
+			{
+				path: "packages/pi-stuff/src/goal/index.ts",
+				rule: "raw-host-console-output",
+			},
+			{
+				path: "packages/pi-stuff/src/goal/stream.ts",
+				rule: "raw-host-stream-output",
+			},
+		]);
+	});
+
+	test("ignores tracked files deleted from the working tree", async () => {
+		const root = await createRepository();
+		const deletedPath = join(root, "README.md");
+		await writeFile(deletedPath, `private path: ${["", "home", "example", "secret"].join("/")}\n`);
+		Bun.spawnSync(["git", "add", "README.md"], { cwd: root });
+		await rm(deletedPath);
+
+		expect(await auditRepositoryFiles(root)).toEqual([]);
+	});
+});

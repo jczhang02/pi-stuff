@@ -6,9 +6,9 @@ import {
 	createNativeSupervisorChannel,
 	garbageCollectSupervisorChannel,
 	resolveSupervisorChannelDir,
-} from "../../packages/pi-stuff-agents/src/intercom/native-supervisor-channel.js";
-import { shardedDurableClaimName } from "../../packages/pi-stuff-agents/src/shared/durable-claim.js";
-import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/intercom/native-supervisor-channel.js";
+import { shardedDurableClaimName } from "../../packages/pi-stuff/src/subagents/src/shared/durable-claim.js";
+import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const directories: string[] = [];
 

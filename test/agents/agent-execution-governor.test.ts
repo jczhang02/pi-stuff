@@ -5,11 +5,11 @@ import { join } from "node:path";
 import {
 	AgentExecutionGovernor,
 	agentExecutionLogicalId,
-} from "../../packages/pi-stuff-agents/src/runtime/agent-execution-governor.js";
+} from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-governor.js";
 import {
 	DEFAULT_SESSION_GOVERNOR_LIMITS,
 	SessionAgentGovernor,
-} from "../../packages/pi-stuff-agents/src/runtime/session-governor.js";
+} from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.js";
 
 const roots: string[] = [];
 

@@ -8,14 +8,15 @@ import piStuffUi, {
 	type CommandDialogPriority,
 	type CommandDialogView,
 	type CommandDialogViewContext,
+	DiagnosticChannel,
 	ensureUiSettingsCommand,
 	getCodexStatusChannel,
 	getCommandDialogCoordinator,
 	getGoalStatusChannel,
 	requestStatuslineGitRefresh,
 	UiSettingsStore,
-} from "../../packages/pi-stuff-ui/index.js";
-import { installUiSessionPresentation } from "../../packages/pi-stuff-ui/session-presentation.js";
+} from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { installUiSessionPresentation } from "../../packages/pi-stuff/src/conversation-ui/session-presentation.js";
 
 type FooterFactory = Parameters<ExtensionUIContext["setFooter"]>[0];
 type HeaderFactory = Parameters<ExtensionUIContext["setHeader"]>[0];
@@ -331,7 +332,7 @@ describe("normal UI presentation integration", () => {
 		await piStuffUi(first.api);
 		await piStuffUi(duplicate.api);
 
-		expect(first.registeredCommands).toEqual(["ui"]);
+		expect(first.registeredCommands).toEqual(["ui", "diagnostics"]);
 		expect(first.sessionHandlers).toHaveLength(1);
 		expect(duplicate.registeredCommands).toEqual([]);
 		expect(duplicate.sessionHandlers).toHaveLength(0);
@@ -492,7 +493,13 @@ describe("normal UI presentation integration", () => {
 			show: async () => undefined,
 			whenIdle: async () => {},
 		};
-		const presentation = installUiSessionPresentation(api.api, ctx, settings, coordinator as never);
+		const presentation = installUiSessionPresentation(
+			api.api,
+			ctx,
+			settings,
+			coordinator as never,
+			new DiagnosticChannel(),
+		);
 		if (!presentation) throw new Error("Expected a TUI presentation");
 
 		await settings.set("statusline", false);

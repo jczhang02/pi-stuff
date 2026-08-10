@@ -1,5 +1,5 @@
 import { Key, type KeyId, matchesKey } from "@earendil-works/pi-tui";
-import { getGoalStatusChannel } from "../../packages/pi-stuff-ui/statusline.js";
+import { getGoalStatusChannel } from "../../packages/pi-stuff/src/conversation-ui/statusline.js";
 
 type MockHandler = (...args: unknown[]) => unknown;
 

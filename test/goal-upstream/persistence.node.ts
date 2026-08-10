@@ -4,7 +4,7 @@ import {
 	type ActiveGoal,
 	loadGoalStateFromSession,
 	serializeGoalState,
-} from "../../packages/pi-stuff-goal/src/persistence.js";
+} from "../../packages/pi-stuff/src/goal/src/persistence.js";
 
 const active = storedGoal("active", "active");
 const queued = storedGoal("queued", "queued");

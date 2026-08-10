@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Api, Context, Model, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { openBtwStream } from "../../packages/pi-stuff-btw/pi-compat.js";
+import { openBtwStream } from "../../packages/pi-stuff/src/btw/pi-compat.js";
 
 const model: Model<Api> = {
 	id: "custom-model",

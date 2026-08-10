@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type DnsLookup, FakeIpCompatibility } from "../../packages/pi-stuff-web/fake-ip.js";
+import { type DnsLookup, FakeIpCompatibility } from "../../packages/pi-stuff/src/web/fake-ip.js";
 
 function resolver(records: Record<string, readonly string[]>): {
 	readonly calls: string[];

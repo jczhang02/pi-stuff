@@ -9,7 +9,7 @@ import {
 	type WelcomeHeaderInventory,
 	type WelcomeHeaderInventorySource,
 	WelcomeRegistrySource,
-} from "../../packages/pi-stuff-ui/welcome-header.js";
+} from "../../packages/pi-stuff/src/conversation-ui/welcome-header.js";
 
 class InventorySource implements WelcomeHeaderInventorySource {
 	private readonly listeners = new Set<() => void>();

@@ -5,10 +5,10 @@ import {
 	GOAL_MENU_ACTIONS,
 	safeGoalMenuText,
 	showGoalManager,
-} from "../../packages/pi-stuff-goal/src/menu.js";
-import type { ActiveGoal, PendingQueueAction } from "../../packages/pi-stuff-goal/src/persistence.js";
-import { createGoal, transitionGoal } from "../../packages/pi-stuff-goal/src/runtime.js";
-import { DEFAULT_GOAL_SETTINGS } from "../../packages/pi-stuff-goal/src/settings.js";
+} from "../../packages/pi-stuff/src/goal/src/menu.js";
+import type { ActiveGoal, PendingQueueAction } from "../../packages/pi-stuff/src/goal/src/persistence.js";
+import { createGoal, transitionGoal } from "../../packages/pi-stuff/src/goal/src/runtime.js";
+import { DEFAULT_GOAL_SETTINGS } from "../../packages/pi-stuff/src/goal/src/settings.js";
 import { createMockContext, createMockPi } from "./support.js";
 
 function runtime(goal?: ActiveGoal) {

@@ -9,7 +9,7 @@ import {
 	terminateOrphanWriterProcesses,
 	updateWriterProcessRegistry,
 	writerProcessRegistryPath,
-} from "../../packages/pi-stuff-agents/src/runs/background/writer-process-registry.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
 
 const roots = new Set<string>();
 

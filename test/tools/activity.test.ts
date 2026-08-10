@@ -5,7 +5,7 @@ import {
 	classifyBashActivity,
 	planToolActivityGroups,
 	summarizeToolActivityGroup,
-} from "../../packages/pi-stuff-tools/activity.js";
+} from "../../packages/pi-stuff/src/tool-display/activity.js";
 
 const owned = new Set(["read", "edit", "bash"]);
 
@@ -19,10 +19,10 @@ const call = (id: string, name: string, value: string) => ({
 const assistant = (...content: unknown[]) => ({ role: "assistant", content });
 
 test("active path targets preserve only the nearest useful directory and basename", () => {
-	expect(activityTarget("/workspace/pi-stuff/packages/pi-stuff-tools/contract.ts")).toBe(
-		"…/pi-stuff-tools/contract.ts",
+	expect(activityTarget("/workspace/pi-stuff/packages/pi-stuff/src/tool-display/contract.ts")).toBe(
+		"…/tool-display/contract.ts",
 	);
-	expect(activityTarget("packages/pi-stuff-tools/contract.ts")).toBe("…/pi-stuff-tools/contract.ts");
+	expect(activityTarget("packages/pi-stuff/src/tool-display/contract.ts")).toBe("…/tool-display/contract.ts");
 	expect(activityTarget("Running repository checks")).toBe("Running repository checks");
 });
 

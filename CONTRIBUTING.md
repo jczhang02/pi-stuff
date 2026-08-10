@@ -21,9 +21,13 @@ Tests must exercise the agreed public seams, remain offline during verification,
 
 ## Package changes
 
-Publishable behavior or interface changes require a Changeset. Documentation, tests, and internal engineering changes do not. Capability Packages are independently versioned; do not hand-edit generated Aggregate composition or dependency metadata.
+Pi Stuff has one private local Package. Capability Modules are not independently versioned or published. Update the
+Package changelog when a behavior change needs a durable user-facing record; Git history retains removed per-Module
+release history.
 
-Changesets is used for `status` and `version`, never `publish`. Run `bun run release:version`, review and commit its version, generated-suite, and lockfile changes, then run `bun run release:pack`. Packing rejects pending Changesets and unreleased versions, runs the full disconnected certification against the exact final artifacts, and creates immutable Bun tarballs plus hash-bound manifest and verification records. Registry publication is the separate, explicit `bun run release:publish -- --confirm-publish` step; it rechecks each artifact while copying the exact bytes into a private read-only snapshot, then passes only that snapshot to the pinned Bun publisher without repacking a workspace directory.
+Do not hand-edit generated composition output alone. Change `packages/pi-stuff/suite.json`, run
+`bun run suite:generate`, and verify the extracted local Package with `bun run pack:verify`. There is no registry
+publication or Changesets workflow.
 
 ## Commits
 

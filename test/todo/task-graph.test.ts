@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { deriveBlocks, detectCycle, hasCycle } from "../../packages/pi-stuff-todo/state/task-graph.js";
-import type { Task } from "../../packages/pi-stuff-todo/tool/types.js";
+import { deriveBlocks, detectCycle, hasCycle } from "../../packages/pi-stuff/src/todo/state/task-graph.js";
+import type { Task } from "../../packages/pi-stuff/src/todo/tool/types.js";
 
 function task(id: string, blockedBy?: string[]): Task {
 	return {

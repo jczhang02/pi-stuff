@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { TaskState } from "../../packages/pi-stuff-todo/state/state.js";
-import type { Op } from "../../packages/pi-stuff-todo/state/state-reducer.js";
-import { summarizeTaskList } from "../../packages/pi-stuff-todo/todo.js";
-import { buildToolResult, formatContent } from "../../packages/pi-stuff-todo/tool/response-envelope.js";
-import type { Task } from "../../packages/pi-stuff-todo/tool/types.js";
+import type { TaskState } from "../../packages/pi-stuff/src/todo/state/state.js";
+import type { Op } from "../../packages/pi-stuff/src/todo/state/state-reducer.js";
+import { summarizeTaskList } from "../../packages/pi-stuff/src/todo/todo.js";
+import { buildToolResult, formatContent } from "../../packages/pi-stuff/src/todo/tool/response-envelope.js";
+import type { Task } from "../../packages/pi-stuff/src/todo/tool/types.js";
 
 function task(id: string, subject: string, overrides: Partial<Task> = {}): Task {
 	return { id, subject, description: `${subject} details`, status: "pending", ...overrides };

@@ -2,46 +2,46 @@
 
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import piStuffAgents from "@jczhang02/pi-stuff-agents";
-import piStuffBtw from "@jczhang02/pi-stuff-btw";
-import piStuffCodex from "@jczhang02/pi-stuff-codex";
-import piStuffContext from "@jczhang02/pi-stuff-context";
-import piStuffGoal from "@jczhang02/pi-stuff-goal";
-import piStuffMcp from "@jczhang02/pi-stuff-mcp";
-import piStuffRtk from "@jczhang02/pi-stuff-rtk";
-import piStuffTodo from "@jczhang02/pi-stuff-todo";
-import piStuffTools, {
+import backgroundWork from "./src/background-work/index.js";
+import btw from "./src/btw/index.js";
+import codex from "./src/codex/index.js";
+import contextManagement from "./src/context-management/index.js";
+import conversationUi from "./src/conversation-ui/index.js";
+import goal from "./src/goal/index.js";
+import mcp from "./src/mcp/index.js";
+import rtk from "./src/rtk/index.js";
+import subagents from "./src/subagents/index.js";
+import todo from "./src/todo/index.js";
+import toolDisplay, {
 	assertSuiteToolActivityCoverage,
 	createSuiteToolRegistrationTracker,
-} from "@jczhang02/pi-stuff-tools";
-import piStuffUi from "@jczhang02/pi-stuff-ui";
-import piStuffWeb from "@jczhang02/pi-stuff-web";
-import piStuffWork from "@jczhang02/pi-stuff-work";
+} from "./src/tool-display/index.js";
+import web from "./src/web/index.js";
 
 type CapabilityFactory = (pi: ExtensionAPI) => void | Promise<void>;
 
 const CHILD_BASE_EXTENSION_PATH = fileURLToPath(import.meta.url);
 
-function registerSuiteAgents(pi: ExtensionAPI): void | Promise<void> {
-	return piStuffAgents(pi, { childBaseExtensionPath: CHILD_BASE_EXTENSION_PATH });
+function registerSuiteSubagents(pi: ExtensionAPI): void | Promise<void> {
+	return subagents(pi, { childBaseExtensionPath: CHILD_BASE_EXTENSION_PATH });
 }
 
 const CAPABILITIES: readonly CapabilityFactory[] = [
-	piStuffUi,
-	piStuffTools,
-	piStuffRtk,
-	piStuffCodex,
-	piStuffGoal,
-	piStuffContext,
-	piStuffWeb,
-	piStuffMcp,
-	piStuffWork,
-	registerSuiteAgents,
-	piStuffTodo,
-	piStuffBtw,
+	conversationUi,
+	toolDisplay,
+	rtk,
+	codex,
+	goal,
+	contextManagement,
+	web,
+	mcp,
+	backgroundWork,
+	registerSuiteSubagents,
+	todo,
+	btw,
 ];
 
-const AGGREGATE_TOOL_NAMES = [
+const SUITE_TOOL_NAMES = [
 	"read",
 	"write",
 	"edit",
@@ -67,9 +67,9 @@ const AGGREGATE_TOOL_NAMES = [
 	"TaskUpdate",
 ] as const;
 
-const DEFERRED_AGGREGATE_TOOL_NAMES = ["ctx_expand", "ctx_search", "ctx_memory", "ctx_note", "ctx_reduce"] as const;
+const DEFERRED_SUITE_TOOL_NAMES = ["ctx_expand", "ctx_search", "ctx_memory", "ctx_note", "ctx_reduce"] as const;
 
-const OPTIONAL_AGGREGATE_TOOL_NAMES = ["subagent_supervisor", "intercom"] as const;
+const OPTIONAL_SUITE_TOOL_NAMES = ["subagent_supervisor", "intercom"] as const;
 
 export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 	const registrations = createSuiteToolRegistrationTracker(pi);
@@ -79,10 +79,10 @@ export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 	pi.on("session_start", () =>
 		assertSuiteToolActivityCoverage(
 			pi,
-			AGGREGATE_TOOL_NAMES,
+			SUITE_TOOL_NAMES,
 			registrations.toolNames,
-			OPTIONAL_AGGREGATE_TOOL_NAMES,
-			DEFERRED_AGGREGATE_TOOL_NAMES,
+			OPTIONAL_SUITE_TOOL_NAMES,
+			DEFERRED_SUITE_TOOL_NAMES,
 		),
 	);
 }

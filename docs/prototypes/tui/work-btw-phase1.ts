@@ -17,7 +17,10 @@ import {
 	type TUI,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
-import { type CommandDialogView, getCommandDialogCoordinator } from "@jczhang02/pi-stuff-ui";
+import {
+	type CommandDialogView,
+	getCommandDialogCoordinator,
+} from "../../../packages/pi-stuff/src/conversation-ui/index.ts";
 
 const QUESTION = "Why should this remain outside the main transcript?";
 const ANSWER = [

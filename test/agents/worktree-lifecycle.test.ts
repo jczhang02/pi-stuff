@@ -7,7 +7,7 @@ import {
 	cleanupWorktrees,
 	createWorktrees,
 	diffWorktrees,
-} from "../../packages/pi-stuff-agents/src/runs/shared/worktree.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/worktree.js";
 
 interface TestRepository {
 	root: string;

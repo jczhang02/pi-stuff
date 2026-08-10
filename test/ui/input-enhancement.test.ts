@@ -19,7 +19,7 @@ import {
 	createInputEnhancementEditorFactory,
 	type InputEnhancementSettings,
 	installInputEnhancementEditor,
-} from "../../packages/pi-stuff-ui/input-enhancement.js";
+} from "../../packages/pi-stuff/src/conversation-ui/input-enhancement.js";
 
 const ACCENT_OPEN = "\u001b[35m";
 const ACCENT_CLOSE = "\u001b[39m";

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentRow } from "../../packages/pi-stuff-agents/src/session/current-agents.js";
-import { readAgentTranscript } from "../../packages/pi-stuff-agents/src/ui/agent-transcript.js";
+import type { AgentRow } from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
+import { readAgentTranscript } from "../../packages/pi-stuff/src/subagents/src/ui/agent-transcript.js";
 
 const temporaryDirectories: string[] = [];
 

@@ -8,7 +8,7 @@ import {
 	buildSessionGovernorCompatibilityScope,
 	resolveCurrentSessionIdentity,
 	sessionArtifactMatches,
-} from "../../packages/pi-stuff-agents/src/shared/session-identity.js";
+} from "../../packages/pi-stuff/src/subagents/src/shared/session-identity.js";
 
 const roots = new Set<string>();
 

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ToolUiSettings, ToolUiSettingsStore } from "../../packages/pi-stuff-tools/settings.js";
+import { type ToolUiSettings, ToolUiSettingsStore } from "../../packages/pi-stuff/src/tool-display/settings.js";
 
 interface Deferred {
 	readonly promise: Promise<void>;

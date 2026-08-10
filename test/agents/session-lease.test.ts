@@ -6,7 +6,7 @@ import {
 	acquireSessionLease,
 	SessionLeaseConflictError,
 	sessionLeaseDir,
-} from "../../packages/pi-stuff-agents/src/runs/shared/session-lease.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/session-lease.js";
 
 const roots = new Set<string>();
 

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { isTaskDetails, replayFromBranch } from "../../packages/pi-stuff-todo/state/replay.js";
+import { isTaskDetails, replayFromBranch } from "../../packages/pi-stuff/src/todo/state/replay.js";
 import {
 	TASK_CREATE_TOOL_NAME,
 	TASK_SNAPSHOT_CAPABILITY,
 	TASK_SNAPSHOT_SCHEMA_VERSION,
 	type Task,
 	type TaskDetails,
-} from "../../packages/pi-stuff-todo/tool/types.js";
+} from "../../packages/pi-stuff/src/todo/tool/types.js";
 
 function task(id: string, subject: string, overrides: Partial<Task> = {}): Task {
 	return {

@@ -3,23 +3,23 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { PiStuffAgentsConfig } from "../../packages/pi-stuff-agents/src/extension/config.js";
+import type { PiStuffAgentsConfig } from "../../packages/pi-stuff/src/subagents/src/extension/config.js";
 import registerFanoutChild, {
 	type FanoutChildDependencies,
-} from "../../packages/pi-stuff-agents/src/extension/fanout-child.js";
+} from "../../packages/pi-stuff/src/subagents/src/extension/fanout-child.js";
 import {
 	deriveLaunchRunId,
 	type SubagentParamsLike,
-} from "../../packages/pi-stuff-agents/src/runs/foreground/subagent-executor.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/foreground/subagent-executor.js";
 import {
 	PI_STUFF_AGENT_PATH_ENV,
 	SUBAGENT_CHILD_ENV,
 	SUBAGENT_FANOUT_CHILD_ENV,
 	SUBAGENT_PARENT_PHYSICAL_SESSION_ENV,
 	SUBAGENT_PARENT_SESSION_ENV,
-} from "../../packages/pi-stuff-agents/src/runs/shared/pi-args.js";
-import type { AgentExecutionInvocation } from "../../packages/pi-stuff-agents/src/runtime/agent-execution-coordinator.js";
-import { SUBAGENT_ASYNC_COMPLETE_EVENT } from "../../packages/pi-stuff-agents/src/shared/types.js";
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/pi-args.js";
+import type { AgentExecutionInvocation } from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-coordinator.js";
+import { SUBAGENT_ASYNC_COMPLETE_EVENT } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
 

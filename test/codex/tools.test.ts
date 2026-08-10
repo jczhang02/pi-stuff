@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { registerCodexTools } from "../../packages/pi-stuff-codex/tools.js";
+import { registerCodexTools } from "../../packages/pi-stuff/src/codex/tools.js";
 
 function harness(initial = ["read"]): {
 	readonly active: () => readonly string[];

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import type { BtwExchange } from "../../packages/pi-stuff-btw/btw-history.js";
-import { BtwDialogController } from "../../packages/pi-stuff-btw/btw-ui.js";
+import type { BtwExchange } from "../../packages/pi-stuff/src/btw/btw-history.js";
+import { BtwDialogController } from "../../packages/pi-stuff/src/btw/btw-ui.js";
 
 const theme = {
 	fg: (_color: string, text: string) => text,

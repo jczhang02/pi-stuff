@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { RtkProjectionAdapter } from "../../packages/pi-stuff-rtk/projection.js";
-import { compactRtkBinaryPath, createRtkDialogView } from "../../packages/pi-stuff-rtk/rtk-dialog.js";
-import { createRtkSettingsView } from "../../packages/pi-stuff-rtk/rtk-settings-dialog.js";
-import { RtkRuntime } from "../../packages/pi-stuff-rtk/runtime.js";
-import { RtkSettingsStore } from "../../packages/pi-stuff-rtk/settings.js";
-import type { CommandDialogViewContext } from "../../packages/pi-stuff-ui/index.js";
+import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { RtkProjectionAdapter } from "../../packages/pi-stuff/src/rtk/projection.js";
+import { compactRtkBinaryPath, createRtkDialogView } from "../../packages/pi-stuff/src/rtk/rtk-dialog.js";
+import { createRtkSettingsView } from "../../packages/pi-stuff/src/rtk/rtk-settings-dialog.js";
+import { RtkRuntime } from "../../packages/pi-stuff/src/rtk/runtime.js";
+import { RtkSettingsStore } from "../../packages/pi-stuff/src/rtk/settings.js";
 
 const theme = {
 	bold: (value: string) => value,

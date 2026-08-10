@@ -3,7 +3,7 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
-import { getCommandDialogCoordinator } from "../../packages/pi-stuff-ui/index.js";
+import { getCommandDialogCoordinator, reportDiagnostic } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
 const PROVIDER = "pi-stuff-ui-pty";
 const MODEL = "ui-pty-model";
@@ -26,6 +26,7 @@ const RESPONSE = [
 export const TODO_PTY_PROMPT = "请建立四项执行清单";
 export const TODO_PTY_READY = "任务清单已建立。";
 export const TODO_PTY_SUBJECTS = ["梳理需求", "设计实现方案", "完成核心实现", "测试与验收"] as const;
+export const DIAGNOSTIC_PTY_SUMMARY = "Recovery metadata needs review 中文";
 
 const ZERO_USAGE = {
 	input: 0,
@@ -338,6 +339,26 @@ export default function uiPtyProvider(pi: ExtensionAPI): void {
 				selected ? "SUBSCRIPTION_MODEL_READY" : "SUBSCRIPTION_MODEL_FAILED",
 				selected ? "info" : "error",
 			);
+		},
+	});
+
+	pi.registerShortcut(Key.f10, {
+		description: "Raise the UI PTY diagnostic fixture",
+		handler: async () => {
+			for (const detail of [
+				"Initial recovery check failed",
+				"Latest retry failed with Bearer fixture-secret-token-value",
+			]) {
+				reportDiagnostic({
+					action: "/tasks",
+					capability: "Background Work",
+					details: detail,
+					key: "ui-pty-recovery-metadata",
+					severity: "warning",
+					summary: DIAGNOSTIC_PTY_SUMMARY,
+					visibility: "notice",
+				});
+			}
 		},
 	});
 

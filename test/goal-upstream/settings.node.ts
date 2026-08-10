@@ -9,7 +9,7 @@ import {
 	normalizeGoalSettings,
 	readGoalSettings,
 	saveGoalSettings,
-} from "../../packages/pi-stuff-goal/src/settings.js";
+} from "../../packages/pi-stuff/src/goal/src/settings.js";
 
 const DEFAULT_GOAL_SETTINGS_DOCUMENT = `${JSON.stringify(DEFAULT_GOAL_SETTINGS, null, 2)}\n`;
 

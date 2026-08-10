@@ -1,42 +1,39 @@
 # `@jczhang02/pi-stuff`
 
-The ordered Aggregate Package for the Pi Stuff Suite.
-
-Version `0.2.2` is the current certified local release candidate.
+The single local Pi Package for the complete Pi Stuff Suite.
 
 ## Contract
 
-- Loads through the native Pi Package system.
-- Requires the released Pi 0.84.1 Host profile documented in the repository compatibility contract.
-- Exports one default Extension factory.
-- Invokes Capability factories in the explicit registry order.
-- Fails fast when a Capability cannot initialize.
-- Does not install itself or mutate Host settings.
+- Loads through Pi's native Package system and exports one default Extension factory.
+- Installs the internal modules listed in `suite.json` in one explicit order.
+- Targets the certified Pi 0.84.1 Host profile documented by the repository.
+- Fails fast when a required module cannot initialize.
+- Performs no network access, file writes, subprocess launch, or Host-settings mutation during import.
+- Is private and local-only; it has no npm publication contract.
 
-## Included capabilities
+## Included modules
 
-- `@jczhang02/pi-stuff-ui`: responsive Statusline and Welcome header, live Thought projection, input highlighting and
-  inline slash autocomplete, unified `/ui` settings, and the shared non-floating Command Dialog host.
-- `@jczhang02/pi-stuff-tools`: compact presentation for Pi's seven built-ins and participating Suite tools, with focused `/tools` details.
-- `@jczhang02/pi-stuff-context`: lazy continuity through the owned Magic Context fork, with raw Pi JSONL authority,
-  bounded projections, project isolation, and automatic fallback to native Pi context when local derived state fails.
-- `@jczhang02/pi-stuff-rtk`: certified fail-open Bash command rewriting plus Bash/Grep compaction only in model-visible context; raw Tool results remain in the session.
-- `@jczhang02/pi-stuff-codex`: one `/codex` surface for Fast mode and subscription usage, plus shared-rendered
-  `apply_patch`, `view_image`, and confirmed `gpt-image-2` generation Tools.
-- `@jczhang02/pi-stuff-goal`: one session-persistent objective with settled-boundary continuation, explicit pause/resume/edit/clear, token budgets, and strict evidence-gated completion/blocking.
-- `@jczhang02/pi-stuff-web`: bounded search plus public HTTP(S) page/PDF reading and continuation retrieval, with no browser UI.
-- `@jczhang02/pi-stuff-mcp`: one lazy proxy gateway, explicit authentication, stdio/HTTP transports, and a non-floating `/mcp` status view.
-- `@jczhang02/pi-stuff-agents`: current-session foreground and background Agents with a compact roster and full-width control view.
-- `@jczhang02/pi-stuff-todo`: four model-facing Task tools and a compact task widget above Pi's editor.
-- `@jczhang02/pi-stuff-btw`: one-shot side questions that use the effective conversation context without changing the main transcript.
+- `conversation-ui`: Statusline, Welcome, live Thought, input presentation, `/ui`, and Command Dialog lifecycle.
+- `tool-display`: compact presentation for Pi built-ins and participating Suite Tools.
+- `context-management`: lazy official Magic Context integration with Pi JSONL as raw session authority.
+- `rtk`: fail-open Bash rewriting and model-only Bash/Grep output projection.
+- `codex`: `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen`.
+- `goal`: persistent objective, continuation, accounting, and evidence-gated completion/blocking.
+- `web`: bounded search, public HTTP(S)/PDF reading, and continuation retrieval.
+- `mcp`: lazy proxy gateway, explicit authentication, stdio/HTTP transports, and `/mcp` status.
+- `background-work`: current-session Background Shell, Monitor, and `/tasks` management.
+- `subagents`: current-session foreground/background Agents and their shared roster.
+- `todo`: branch-replayable Task Tools and the compact checklist above Pi's editor.
+- `btw`: one-shot side questions using effective conversation context without changing the main transcript.
 
-`/ui` is the single settings entry point. It contains Statusline visibility, density, latest-prompt and icon preferences;
-Welcome header; input highlighting; inline slash autocomplete; the Tool running timer; and RTK rewriting/projection.
-The boolean settings are enabled by default, density and icons default to automatic, and `/tool-settings` is no longer
-registered. `/rtk` opens the shared Command Dialog for runtime identity and savings diagnostics.
+These names are internal maintenance boundaries, not npm dependencies or independently installable Packages.
 
-Published releases install through Pi's Package system:
+## Local installation
+
+From the repository root:
 
 ```bash
-pi install npm:@jczhang02/pi-stuff
+pi install ./packages/pi-stuff
 ```
+
+The Package never edits Pi settings itself.

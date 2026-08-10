@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { projectEngineResult, toEngineParams } from "../../packages/pi-stuff-agents/src/extension/product-executor.js";
-import type { Details } from "../../packages/pi-stuff-agents/src/shared/types.js";
+import {
+	projectEngineResult,
+	toEngineParams,
+} from "../../packages/pi-stuff/src/subagents/src/extension/product-executor.js";
+import type { Details } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 function details(overrides: Partial<Details> = {}): Details {
 	return { mode: "single", results: [], ...overrides };
