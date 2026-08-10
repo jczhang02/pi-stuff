@@ -207,6 +207,10 @@ interface PendingNotification {
 	readonly wake: boolean;
 }
 
+interface PendingForegroundLaunch {
+	manualDetachRequested: boolean;
+}
+
 interface RuntimeOptions {
 	readonly backgroundAfterMs?: number;
 	/** Test seam for an in-flight supervisor identity observation. */
@@ -488,6 +492,7 @@ export class BackgroundWorkRuntime {
 	private metadataHeartbeatTimer: ReturnType<typeof setInterval> | undefined;
 	private readonly monitors = new Map<string, BackgroundMonitorActivity>();
 	private readonly notifications: PendingNotification[] = [];
+	private readonly pendingForegroundLaunches = new Set<PendingForegroundLaunch>();
 	private notificationRetryDelayMs = NOTIFICATION_RETRY_INITIAL_MS;
 	private notificationTimer: ReturnType<typeof setTimeout> | undefined;
 	private preparation: Promise<void> | undefined;
@@ -596,17 +601,25 @@ export class BackgroundWorkRuntime {
 		input: BashExecutionInput,
 		ctx: ExtensionContext,
 	): Promise<AgentToolResult<BashToolDetails | undefined>> {
-		await this.prepare();
-		if (!input.command.trim()) throw new Error("Command is empty");
-		accessSync(ctx.cwd, constants.F_OK);
-		const resolvedCommand = this.commandPrefix ? `${this.commandPrefix}\n${input.command}` : input.command;
-		const activity = await this.spawnProcess({
-			backgrounded: input.runInBackground === true,
-			command: resolvedCommand,
-			...(input.description ? { description: input.description } : {}),
-			env: sessionEnvironment(ctx),
-			toolCallId: input.toolCallId,
-		});
+		const pendingForegroundLaunch = input.runInBackground ? undefined : { manualDetachRequested: false };
+		if (pendingForegroundLaunch) this.pendingForegroundLaunches.add(pendingForegroundLaunch);
+		let activity: SpawnedActivity;
+		try {
+			await this.prepare();
+			if (!input.command.trim()) throw new Error("Command is empty");
+			accessSync(ctx.cwd, constants.F_OK);
+			const resolvedCommand = this.commandPrefix ? `${this.commandPrefix}\n${input.command}` : input.command;
+			activity = await this.spawnProcess({
+				backgrounded: input.runInBackground === true,
+				command: resolvedCommand,
+				...(input.description ? { description: input.description } : {}),
+				env: sessionEnvironment(ctx),
+				toolCallId: input.toolCallId,
+			});
+			if (pendingForegroundLaunch?.manualDetachRequested) this.detach(activity, "manual");
+		} finally {
+			if (pendingForegroundLaunch) this.pendingForegroundLaunches.delete(pendingForegroundLaunch);
+		}
 		if (input.timeoutSeconds !== undefined) {
 			activity.timeoutTimer = setTimeout(() => {
 				this.requestStopInBackground(activity, "timeout", "timeout");
@@ -683,7 +696,11 @@ export class BackgroundWorkRuntime {
 					activity.status === "running",
 			)
 			.sort((left, right) => right.startedAt - left.startedAt)[0];
-		return active ? this.detach(active, "manual") : false;
+		if (active) return this.detach(active, "manual");
+		const pending = [...this.pendingForegroundLaunches].at(-1);
+		if (!pending || pending.manualDetachRequested) return false;
+		pending.manualDetachRequested = true;
+		return true;
 	}
 
 	async startCommandMonitor(

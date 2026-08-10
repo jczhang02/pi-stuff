@@ -25,6 +25,7 @@ import {
 } from "../../packages/pi-stuff/src/background-work/src/process.js";
 import {
 	type BackgroundMonitorActivity,
+	type BackgroundWorkOutcome,
 	BackgroundWorkRuntime,
 	projectNotificationBatch,
 } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
@@ -319,6 +320,7 @@ describe("BackgroundWorkRuntime", () => {
 		await expect(
 			active.executeBash({ command: "printf 'must-not-start\\n'", toolCallId: "tool-path-failure" }, context(root)),
 		).rejects.toThrow("injected command path EIO");
+		expect(active.detachActiveForeground()).toBeFalse();
 		expect(outputFactoryCalls).toBe(0);
 		expect(
 			readdirSync(resolve(root, ".pi", "tasks"), { recursive: true }).some((entry) =>
@@ -377,7 +379,7 @@ describe("BackgroundWorkRuntime", () => {
 		expect(runtimeFiles.some((entry) => entry.endsWith(".command") || entry.endsWith(".ack"))).toBeFalse();
 	});
 
-	test("reserves the sixteen activity slots before concurrent supervisor identity capture", async () => {
+	test("reserves the sixteenth activity slot before supervisor identity capture completes", async () => {
 		const root = temporaryRoot();
 		let releaseCaptures!: () => void;
 		const captureGate = new Promise<void>((resolve) => {
@@ -395,19 +397,81 @@ describe("BackgroundWorkRuntime", () => {
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		});
+		for (let index = 0; index < 15; index += 1) {
+			const id = `m-reserved-slot-${String(index)}`;
+			const outcome: BackgroundWorkOutcome = {
+				endedAt: 2,
+				id,
+				kind: "monitor",
+				startedAt: 1,
+				status: "stopped",
+				summary: "Monitor stopped",
+				title: "Capacity fixture",
+			};
+			active.registerMonitor({
+				cancel: async () => outcome,
+				id,
+				outcome: new Promise<BackgroundWorkOutcome>(() => {}),
+				readOutput: () => "Waiting for the condition.",
+				snapshot: () => ({
+					id,
+					kind: "monitor",
+					startedAt: 1,
+					status: "running",
+					title: "Capacity fixture",
+				}),
+			});
+		}
 
-		const launches = Array.from({ length: 17 }, (_, index) =>
+		const launches = Array.from({ length: 2 }, (_, index) =>
 			active.executeBash({ command: ":", toolCallId: `tool-reserved-slot-${String(index)}` }, context(root)),
 		);
 		const outcomesPromise = Promise.allSettled(launches);
-		await waitUntil(() => captureCalls === 16);
+		await waitUntil(() => captureCalls === 1);
 		releaseCaptures();
 		const outcomes = await outcomesPromise;
-		expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(16);
+		expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
 		const rejected = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
 		expect(rejected).toHaveLength(1);
 		expect(String(rejected[0]?.reason)).toContain("At most 16 Background Work activities");
-		expect(captureCalls).toBe(16);
+		expect(captureCalls).toBe(1);
+		await active.shutdown();
+	});
+
+	test("queues a manual foreground detach while supervisor identity is still being captured", async () => {
+		const root = temporaryRoot();
+		let releaseCapture!: () => void;
+		const captureGate = new Promise<void>((resolve) => {
+			releaseCapture = resolve;
+		});
+		let captureStarted!: () => void;
+		const started = new Promise<void>((resolve) => {
+			captureStarted = resolve;
+		});
+		const active = new BackgroundWorkRuntime({
+			captureSupervisorIdentity: async (pid) => {
+				captureStarted();
+				await captureGate;
+				return captureProcessIdentityWithRetry(pid);
+			},
+			cwd: root,
+			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			sessionId: "work-test-session",
+			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+		});
+
+		const execution = active.executeBash(
+			{ command: "sleep 30", toolCallId: "tool-pending-manual-detach" },
+			context(root),
+		);
+		await started;
+		expect(active.detachActiveForeground()).toBeTrue();
+		expect(active.detachActiveForeground()).toBeFalse();
+		releaseCapture();
+		const result = await execution;
+		const text = result.content.find((item) => item.type === "text");
+		expect(text?.type === "text" ? text.text : "").toContain("manually moved to background task");
+		expect(active.snapshot()).toHaveLength(1);
 		await active.shutdown();
 	});
 
