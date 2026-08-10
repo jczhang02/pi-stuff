@@ -391,6 +391,13 @@ class TmuxAgentsSession {
 		return this.waitFor((screen) => !screen.includes(text), `absence of ${JSON.stringify(text)}`);
 	}
 
+	async waitForFleetviewFrame(active: boolean): Promise<string> {
+		return this.waitFor(
+			(screen) => hasOrderedFleetviewFrame(screen, this.options.columns, active),
+			`${String(this.options.columns)}-column ${active ? "active" : "idle"} Fleetview frame`,
+		);
+	}
+
 	stop(): void {
 		if (this.stopped) return;
 		this.stopped = true;
@@ -438,18 +445,26 @@ function fleetviewLineIndices(
 	};
 }
 
-function verifyFleetviewFrame(screen: string, columns: number, active: boolean): void {
+function hasOrderedFleetviewFrame(screen: string, columns: number, active: boolean): boolean {
 	const help = active ? fleetviewHelp(columns) : undefined;
 	const indices = fleetviewLineIndices(screen, help);
 	const lines = screen.split("\n").map((line) => line.trimEnd());
 	const expectedHelpIndex = indices.status + 2;
-	if (
-		indices.status < 0 ||
-		indices.prompt !== indices.status + 1 ||
-		indices.help !== expectedHelpIndex ||
-		indices.main !== expectedHelpIndex + 1 ||
-		indices.agent !== indices.main + 1
-	) {
+	return (
+		indices.status >= 0 &&
+		indices.prompt === indices.status + 1 &&
+		indices.help === expectedHelpIndex &&
+		(active || lines[indices.help] === "") &&
+		indices.main === expectedHelpIndex + 1 &&
+		indices.agent === indices.main + 1
+	);
+}
+
+function verifyFleetviewFrame(screen: string, columns: number, active: boolean): void {
+	const help = active ? fleetviewHelp(columns) : undefined;
+	const indices = fleetviewLineIndices(screen, help);
+	const lines = screen.split("\n").map((line) => line.trimEnd());
+	if (!hasOrderedFleetviewFrame(screen, columns, active)) {
 		fail(
 			`${String(columns)}-column shared Footer order is not Statusline → Prompt → Fleetview help slot → main → Agent\n${screen}`,
 		);
@@ -523,7 +538,7 @@ async function verifyFleetviewFooterLayout(
 		await session.waitForText("↑/↓ select");
 		session.sendKey("Escape");
 		await session.waitForAbsence("Tasks · 1 current");
-		let screen = await session.waitForText("general-purpose");
+		let screen = await session.waitForFleetviewFrame(false);
 		verifyFleetviewFrame(screen, options.columns, false);
 		if (options.artifactDirectory) {
 			await mkdir(options.artifactDirectory, { recursive: true });
@@ -539,7 +554,7 @@ async function verifyFleetviewFooterLayout(
 		}
 
 		session.sendKey("Down");
-		screen = await session.waitForText(fleetviewHelp(options.columns));
+		screen = await session.waitForFleetviewFrame(true);
 		verifyFleetviewFrame(screen, options.columns, true);
 		if (options.artifactDirectory) {
 			const name = `pi-${CERTIFIED_PI_VERSION}-footer-fleetview-active-${String(options.columns)}x${String(options.rows)}`;
@@ -554,7 +569,7 @@ async function verifyFleetviewFooterLayout(
 		}
 
 		session.sendKey("Escape");
-		screen = await session.waitForAbsence(fleetviewHelp(options.columns));
+		screen = await session.waitForFleetviewFrame(false);
 		verifyFleetviewFrame(screen, options.columns, false);
 		session.sendKey("C-d");
 		await Bun.sleep(250);

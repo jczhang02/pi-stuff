@@ -731,8 +731,9 @@ describe("BackgroundWorkRuntime", () => {
 					pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
 					sessionId: "work-test-session",
 					storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
-					signalSupervisor: () => {
+					signalSupervisor: (supervisor, _identity, signal) => {
 						terminationAttempts += 1;
+						supervisor.kill(signal);
 						throw new Error(`injected ${trigger} stop failure`);
 					},
 				});
@@ -741,8 +742,8 @@ describe("BackgroundWorkRuntime", () => {
 					{
 						command:
 							trigger === "output-limit"
-								? `printf '${"x".repeat(512)}'; sleep 0.1`
-								: "sleep 0.1; printf 'TERMINAL\\n'",
+								? `printf '${"x".repeat(512)}'; sleep 30`
+								: "sleep 30; printf 'TERMINAL\\n'",
 						...(trigger === "abort" ? { signal: controller.signal } : {}),
 						...(trigger === "timeout" ? { timeoutSeconds: 0.01 } : {}),
 						toolCallId: `tool-${trigger}-stop-rejection`,
