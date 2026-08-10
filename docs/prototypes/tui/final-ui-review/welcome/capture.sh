@@ -8,6 +8,7 @@ set -euo pipefail
 prototype_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd "$prototype_dir/../../../../.." && pwd)
 pi_bin=${PI_BIN:-/opt/bin/pi}
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
 freeze_bin=${FREEZE_BIN:-/tmp/pi-proto-bin/freeze}
 extension="$prototype_dir/welcome-header-prototype.ts"
 artifact_dir="$prototype_dir/artifacts"
@@ -32,8 +33,8 @@ for executable in bun rg tmux "$pi_bin" "$freeze_bin"; do
 	fi
 done
 
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "Welcome capture requires the local Pi Host reporting 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "Welcome capture requires the local Pi Host reporting $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -104,10 +105,10 @@ capture_geometry() {
 	local command
 
 	mkdir -p "$agent_dir"
-	printf '%s\n' '{"theme":"dark","quietStartup":true,"enableInstallTelemetry":false,"outputPad":1,"uiMode":"fullscreen"}' \
+	printf '%s\n' '{"theme":"dark","quietStartup":true,"enableInstallTelemetry":false,"outputPad":1,"tuiMode":"fullscreen"}' \
 		> "$agent_dir/settings.json"
 	printf -v command \
-		'env PI_CODING_AGENT_DIR=%q PI_OFFLINE=1 PI_TELEMETRY=0 %q --no-session --model welcome-fixture/gpt-5.6-sol --no-extensions -e %q --no-skills --no-prompt-templates --no-context-files --no-tools --no-themes --offline --approve --ui-mode fullscreen' \
+		'env PI_CODING_AGENT_DIR=%q PI_OFFLINE=1 PI_TELEMETRY=0 %q --no-session --model welcome-fixture/gpt-5.6-sol --no-extensions -e %q --no-skills --no-prompt-templates --no-context-files --no-tools --no-themes --offline --approve --tui-mode fullscreen' \
 		"$agent_dir" \
 		"$pi_bin" \
 		"$extension"
@@ -160,4 +161,4 @@ if rg -F --quiet -- "Welcome back!" "$artifact_dir/real-pi-welcome-scrolled-64x2
 	exit 1
 fi
 
-echo "Captured three Welcome widths plus a real 64x28 scroll-away proof in Pi 0.83.0."
+echo "Captured three Welcome widths plus a real 64x28 scroll-away proof in Pi $certified_pi_version."

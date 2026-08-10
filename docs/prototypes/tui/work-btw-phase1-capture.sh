@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
-# PROTOTYPE — capture current and proposed BTW surfaces in real Pi 0.83 PTYs.
+# PROTOTYPE — capture current and proposed BTW surfaces in certified Pi PTYs.
 
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 pi_bin="$repo_root/node_modules/.bin/pi"
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 provider="$repo_root/docs/prototypes/tui/work-btw-phase1-provider.ts"
 prototype="$repo_root/docs/prototypes/tui/work-btw-phase1.ts"
 artifact_dir="$repo_root/docs/prototypes/tui/artifacts"
@@ -28,8 +30,8 @@ for executable in bun rg tmux "$freeze_bin"; do
 	fi
 done
 
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "BTW Phase 1 capture requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "BTW Phase 1 capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -141,9 +143,9 @@ run_current() {
 	tmux send-keys -t "$tmux_session" Enter
 	wait_for_text "Answering…"
 	wait_for_text "Question"
-	capture_frame "pi-0.83-btw-phase1-current-answering-$suffix"
+	capture_frame "${artifact_prefix}-btw-phase1-current-answering-$suffix"
 	wait_for_text "The side answer stays outside the main transcript."
-	capture_frame "pi-0.83-btw-phase1-current-answered-$suffix"
+	capture_frame "${artifact_prefix}-btw-phase1-current-answered-$suffix"
 
 	tmux send-keys -t "$tmux_session" Escape
 	wait_for_absence "The side answer stays outside the main transcript."
@@ -151,7 +153,7 @@ run_current() {
 	tmux send-keys -t "$tmux_session" Enter
 	wait_for_text "The first answer emphasized transcript isolation"
 	wait_for_text "←/→ history"
-	capture_frame "pi-0.83-btw-phase1-current-history-$suffix"
+	capture_frame "${artifact_prefix}-btw-phase1-current-history-$suffix"
 
 	stop_pi
 }
@@ -166,9 +168,9 @@ run_proposed() {
 	tmux send-keys -t "$tmux_session" Enter
 	wait_for_text "Answering…"
 	wait_for_text "/btw Why should this remain outside the main transcript?"
-	capture_frame "pi-0.83-btw-phase1-proposed-answering-$suffix"
+	capture_frame "${artifact_prefix}-btw-phase1-proposed-answering-$suffix"
 	wait_for_text "Markdown stays compact and uses the active Pi theme."
-	capture_frame "pi-0.83-btw-phase1-proposed-answered-$suffix"
+	capture_frame "${artifact_prefix}-btw-phase1-proposed-answered-$suffix"
 
 	tmux send-keys -t "$tmux_session" Escape
 	wait_for_absence "Markdown stays compact and uses the active Pi theme."
@@ -176,7 +178,7 @@ run_proposed() {
 	tmux send-keys -t "$tmux_session" Enter
 	wait_for_text "Which context does BTW receive?"
 	wait_for_text "←/→ history"
-	capture_frame "pi-0.83-btw-phase1-proposed-history-$suffix"
+	capture_frame "${artifact_prefix}-btw-phase1-proposed-history-$suffix"
 
 	# Interaction smoke: selection, copy, promotion feedback, clear, and the
 	# Claude-observed Space/Enter/Esc dismissal paths all remain focus-local.
@@ -211,7 +213,7 @@ done
 for variant in current proposed; do
 	for state in answering answered history; do
 		for geometry in 100x32 64x28; do
-			artifact="$artifact_dir/pi-0.83-btw-phase1-$variant-$state-$geometry.png"
+			artifact="$artifact_dir/${artifact_prefix}-btw-phase1-$variant-$state-$geometry.png"
 			if [[ ! -s $artifact ]]; then
 				echo "Missing capture: $artifact" >&2
 				exit 1

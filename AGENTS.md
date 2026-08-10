@@ -16,7 +16,7 @@ These instructions apply only while developing this repository. This file is not
 - A Capability Package owns one coherent behavior and remains independently versioned.
 - Keep Extension import and startup pure: no network calls, file writes, subprocesses, or host-setting mutations.
 - A future Capability may produce side effects only from an explicit user-triggered command or tool whose contract documents them.
-- The Statusline has one observation-only exception: after a user-driven Agent turn it may run a bounded, no-lock `git status` read to obtain change counts that Pi 0.83 does not expose. It must never run during import, initialization, or `session_start`, and failure must degrade to branch-only display.
+- The Statusline has one observation-only exception: after a user-driven Agent turn it may run a bounded, no-lock `git status` read to obtain change counts that Pi does not expose. It must never run during import, initialization, or `session_start`, and failure must degrade to branch-only display.
 - Let initialization errors propagate. A partially loaded Suite is not a supported state.
 
 ## UI contract
@@ -33,7 +33,7 @@ These instructions apply only while developing this repository. This file is not
 ## Package contract
 
 - Ship TypeScript source; do not add a `dist/` build lane.
-- Pi core packages are wildcard peer dependencies and exact `0.83.0` development dependencies. Runtime certification
+- Pi core packages are wildcard peer dependencies and exact `0.84.1` development dependencies. Runtime certification
   uses the upstream source profile in `docs/compatibility.md`; never treat the same version string as sufficient proof.
 - Runtime Capability dependencies of the Aggregate must also be listed in `bundledDependencies`.
 - Only files in each Package's explicit `files` allowlist may enter its tarball.

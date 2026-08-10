@@ -24,12 +24,14 @@ for executable in bun rg tmux "$freeze_bin"; do
 done
 
 pi_bin="$repo_root/node_modules/.bin/pi"
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 if [[ ! -x $pi_bin ]]; then
 	echo "Repository-pinned Pi executable not found: $pi_bin" >&2
 	exit 1
 fi
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "Agent roster capture requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "Agent roster capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -171,7 +173,7 @@ capture_running() {
 		wait_for_text "↓ to manage"
 	fi
 
-	capture_frame "pi-0.83-agent-roster-$variant-running"
+	capture_frame "${artifact_prefix}-agent-roster-$variant-running"
 	tmux send-keys -t "$tmux_session" Down
 	wait_for_text "to select · Enter to view"
 	if [[ $variant == "rail" ]]; then
@@ -180,12 +182,12 @@ capture_running() {
 		tmux send-keys -t "$tmux_session" Down
 	fi
 	wait_for_pattern '●[[:space:]]*explorer'
-	capture_frame "pi-0.83-agent-roster-$variant-selected"
+	capture_frame "${artifact_prefix}-agent-roster-$variant-selected"
 
 	if [[ $variant == "vertical" ]]; then
 		tmux send-keys -t "$tmux_session" Enter
 		wait_for_text "Agents / explorer"
-		capture_frame "pi-0.83-agent-roster-detail"
+		capture_frame "${artifact_prefix}-agent-roster-detail"
 		tmux send-keys -t "$tmux_session" Escape
 		wait_for_text "to select · Enter to view"
 		wait_for_text "agent-roster-fixture"
@@ -206,7 +208,7 @@ capture_completed() {
 	wait_for_text "completed just now · ↓ to review"
 	reject_text "Extension issues"
 	reject_text "shortcut conflict"
-	capture_frame "pi-0.83-agent-roster-$variant-completed"
+	capture_frame "${artifact_prefix}-agent-roster-$variant-completed"
 	stop_pi
 }
 
@@ -226,5 +228,5 @@ wait_for_pattern '●[[:space:]]*explorer'
 wait_for_text "queued #1"
 reject_text "Extension issues"
 reject_text "shortcut conflict"
-capture_frame "pi-0.83-agent-roster-vertical-narrow"
+capture_frame "${artifact_prefix}-agent-roster-vertical-narrow"
 stop_pi

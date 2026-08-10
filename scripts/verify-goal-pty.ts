@@ -185,7 +185,7 @@ export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promis
 	await Promise.all([mkdir(configDirectory), mkdir(sessionDirectory)]);
 	await writeFile(
 		join(configDirectory, "settings.json"),
-		`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, theme: "dark", uiMode: "fullscreen" }, null, "\t")}\n`,
+		`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, theme: "dark", tuiMode: "fullscreen" }, null, "\t")}\n`,
 		{ mode: 0o600 },
 	);
 

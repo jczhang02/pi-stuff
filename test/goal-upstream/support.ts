@@ -177,6 +177,9 @@ export function createMockPi(
 		},
 		events: eventBus,
 	};
+	const emitHostEvent = (name: string, ...args: unknown[]): void => {
+		for (const handler of [...(events.get(name) ?? [])]) handler(...args);
+	};
 
 	return {
 		pi: rawPi as never,
@@ -185,6 +188,7 @@ export function createMockPi(
 		entryRenderers,
 		flags,
 		events,
+		emitHostEvent,
 		eventBus,
 		tools,
 		providers,

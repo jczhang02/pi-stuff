@@ -3,6 +3,7 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { CERTIFIED_PI_VERSION } from "../../../scripts/pi-host-contract.js";
 
 type FixtureState = "error" | "success";
 
@@ -73,7 +74,7 @@ session.appendMessage({
 			type: "text",
 			text:
 				state === "success"
-					? "Pi standalone host: 0.83.0\nBun toolchain: 1.3.14\nTypeScript: 5.9.3"
+					? `Pi standalone host: ${CERTIFIED_PI_VERSION}\nBun toolchain: 1.3.14\nTypeScript: 5.9.3`
 					: "File not found: packages/missing.json",
 		},
 	],
@@ -81,7 +82,7 @@ session.appendMessage({
 		state === "success"
 			? {
 					summary: "3 项兼容性约束已确认",
-					detailLines: ["Pi host       0.83.0", "Bun           1.3.14", "TypeScript    5.9.3"],
+					detailLines: [`Pi host       ${CERTIFIED_PI_VERSION}`, "Bun           1.3.14", "TypeScript    5.9.3"],
 				}
 			: {
 					summary: "File not found",
@@ -99,7 +100,7 @@ session.appendMessage({
 			type: "text",
 			text:
 				state === "success"
-					? "已确认：Pi 0.83.0、Bun 1.3.14、TypeScript 5.9.3。"
+					? `已确认：Pi ${CERTIFIED_PI_VERSION}、Bun 1.3.14、TypeScript 5.9.3。`
 					: "没有继续执行。请确认配置路径。",
 		},
 	],

@@ -2,11 +2,11 @@ import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/agents-pty-provider.ts");
 const runner = join(root, "test/fixtures/agents-pty-runner.sh");
-const CERTIFIED_PI_VERSION = "0.83.0";
 
 export interface AgentsPtyVerificationOptions {
 	readonly artifactDirectory?: string;
@@ -500,7 +500,7 @@ async function verifyFleetviewFooterLayout(
 		writeFile(log, "", { mode: 0o600 }),
 		writeFile(
 			join(config, "settings.json"),
-			`${JSON.stringify({ enableInstallTelemetry: false, outputPad: 1, quietStartup: true, uiMode: "fullscreen" })}\n`,
+			`${JSON.stringify({ enableInstallTelemetry: false, outputPad: 1, quietStartup: true, tuiMode: "fullscreen" })}\n`,
 			{ mode: 0o600 },
 		),
 	]);
@@ -527,7 +527,7 @@ async function verifyFleetviewFooterLayout(
 		verifyFleetviewFrame(screen, options.columns, false);
 		if (options.artifactDirectory) {
 			await mkdir(options.artifactDirectory, { recursive: true });
-			const name = `pi-0.83-footer-fleetview-idle-${String(options.columns)}x${String(options.rows)}`;
+			const name = `pi-${CERTIFIED_PI_VERSION}-footer-fleetview-idle-${String(options.columns)}x${String(options.rows)}`;
 			await Promise.all([
 				writeFile(join(options.artifactDirectory, `${name}.txt`), sanitizeFleetviewEvidence(screen), "utf8"),
 				writeFile(
@@ -542,7 +542,7 @@ async function verifyFleetviewFooterLayout(
 		screen = await session.waitForText(fleetviewHelp(options.columns));
 		verifyFleetviewFrame(screen, options.columns, true);
 		if (options.artifactDirectory) {
-			const name = `pi-0.83-footer-fleetview-active-${String(options.columns)}x${String(options.rows)}`;
+			const name = `pi-${CERTIFIED_PI_VERSION}-footer-fleetview-active-${String(options.columns)}x${String(options.rows)}`;
 			await Promise.all([
 				writeFile(join(options.artifactDirectory, `${name}.txt`), sanitizeFleetviewEvidence(screen), "utf8"),
 				writeFile(

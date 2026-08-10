@@ -315,7 +315,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		writeFile(startupLog, ""),
 		writeFile(
 			join(configDirectory, "settings.json"),
-			`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, uiMode: "fullscreen" })}\n`,
+			`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, tuiMode: "fullscreen" })}\n`,
 		),
 		writeFile(
 			join(cortexConfigDirectory, "magic-context.jsonc"),

@@ -14,10 +14,10 @@ before the owned-fork baseline commit.
 ## Pi Stuff changes
 
 - Replaced the floating overlay with the shared non-overlay Command Dialog.
-- Replaced cached raw-branch snapshots with Pi 0.83's effective, compaction-aware
+- Replaced cached raw-branch snapshots with Pi's effective, compaction-aware
   context at invocation time.
 - Stream answer text in place through the active model's registered provider and
-  Model Registry auth resolution. Pi 0.83 exposes no public transcript-free
+  Model Registry auth resolution. Pi exposes no public transcript-free
   Host-call seam, so BTW calls do not participate in provider lifecycle/context
   hooks or Host retry and transport settings; adopt that seam when Pi exposes it.
 - Keep successful history as session-owned invisible custom entries. It is

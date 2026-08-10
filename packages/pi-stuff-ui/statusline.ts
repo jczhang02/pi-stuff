@@ -10,6 +10,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { getHostSharedResource } from "./host-resource.js";
 
 const DEFAULT_EXTENSION_STATUS_KEYS: readonly string[] = [];
 const GIT_STATUS_TIMEOUT_MS = 2_000;
@@ -101,6 +102,13 @@ export interface GoalStatusChannel {
 
 const CODEX_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/codex-status-channels/v1");
 const GOAL_STATUS_CHANNELS = Symbol.for("@jczhang02/pi-stuff-ui/goal-status-channels/v1");
+const CODEX_STATUS_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/codex-status-discovery/v1";
+const GOAL_STATUS_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/goal-status-discovery/v1";
+
+function registerStatusChannelCleanup(pi: Pick<ExtensionAPI, "events">, cleanup: () => void): void {
+	const on = Reflect.get(pi as object, "on");
+	if (typeof on === "function") on.call(pi, "session_shutdown", cleanup);
+}
 
 class SharedCodexStatusChannel implements CodexStatusChannel, CodexStatusSource {
 	private readonly listeners = new Set<() => void>();
@@ -153,11 +161,13 @@ function codexStatusChannels(): WeakMap<ExtensionAPI["events"], CodexStatusChann
 /** Share one late-bindable Codex presentation channel across Capability copies. */
 export function getCodexStatusChannel(pi: Pick<ExtensionAPI, "events">): CodexStatusChannel {
 	const channels = codexStatusChannels();
-	const existing = channels.get(pi.events);
-	if (existing) return existing;
-	const channel = new SharedCodexStatusChannel();
-	channels.set(pi.events, channel);
-	return channel;
+	return getHostSharedResource(
+		pi.events,
+		channels as WeakMap<object, CodexStatusChannel>,
+		CODEX_STATUS_DISCOVERY_EVENT,
+		() => new SharedCodexStatusChannel(),
+		{ registerOwnerCleanup: (cleanup) => registerStatusChannelCleanup(pi, cleanup) },
+	);
 }
 
 class SharedGoalStatusChannel implements GoalStatusChannel, GoalStatusSource {
@@ -213,11 +223,13 @@ function goalStatusChannels(): WeakMap<ExtensionAPI["events"], GoalStatusChannel
 /** Share one observation-only Goal presentation channel across Capability copies. */
 export function getGoalStatusChannel(pi: Pick<ExtensionAPI, "events">): GoalStatusChannel {
 	const channels = goalStatusChannels();
-	const existing = channels.get(pi.events);
-	if (existing) return existing;
-	const channel = new SharedGoalStatusChannel();
-	channels.set(pi.events, channel);
-	return channel;
+	return getHostSharedResource(
+		pi.events,
+		channels as WeakMap<object, GoalStatusChannel>,
+		GOAL_STATUS_DISCOVERY_EVENT,
+		() => new SharedGoalStatusChannel(),
+		{ registerOwnerCleanup: (cleanup) => registerStatusChannelCleanup(pi, cleanup) },
+	);
 }
 
 export type StatuslineDensity = "auto" | "full" | "compact";

@@ -8,7 +8,7 @@ const AGGREGATE_PACKAGE = join(REPOSITORY_ROOT, "packages", "pi-stuff");
 const INSPECTOR = join(REPOSITORY_ROOT, "test", "fixtures", "assert-work-tools.ts");
 const { PI_BIN: PI_BINARY = "/opt/pi-coding-agent/pi" } = process.env;
 
-test("Pi 0.83 loads Background Work without reviving a disabled Bash", async () => {
+test("the certified Pi Host loads Background Work without reviving a disabled Bash", async () => {
 	const result = await runPiRpcSmoke({
 		extensions: [INSPECTOR],
 		packages: [WORK_PACKAGE],

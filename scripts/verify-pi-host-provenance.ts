@@ -4,35 +4,18 @@ import { lstat, readdir, readFile, readlink, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import {
 	CERTIFIED_PI_BUN_VERSION,
+	CERTIFIED_PI_CHANGELOG_SHA256,
 	CERTIFIED_PI_HOST_PROFILE,
+	CERTIFIED_PI_INSTALLED_BINARY_SHA256,
 	CERTIFIED_PI_MODEL_DATA_SHA256,
 	CERTIFIED_PI_NODE_VERSION,
 	CERTIFIED_PI_NPM_VERSION,
 	CERTIFIED_PI_SOURCE_COMMIT,
+	CERTIFIED_PI_SOURCE_FINGERPRINTS,
 	CERTIFIED_PI_SOURCE_REPOSITORY,
 } from "./pi-host-contract.ts";
 import { verifyCertifiedPiModelData } from "./pi-host-model-data.ts";
 
-const LOCAL_SOURCE_FINGERPRINTS = [
-	{
-		path: "cli/args.js.map",
-		sha256: "03a751ceb289d4d1ab6c1050664c7f5e2c482bc6035b4a5ead3a2b037cfe0930",
-	},
-	{
-		path: "modes/interactive/interactive-mode.js.map",
-		sha256: "69bc0657d0a5807407635083433926887eadfff2c1af5f3262d0ae5036705de5",
-	},
-	{
-		path: "core/settings-manager.js.map",
-		sha256: "86bcebd25d0288f70401102e1235eac89fd84101fb26d6f6b4d7385ef17a00d8",
-	},
-	{
-		path: "modes/interactive/components/settings-selector.js.map",
-		sha256: "0539e0039b25e9c7aae13d097fa05ff55b979c3e27500d5334bcc7931d464f38",
-	},
-] as const;
-const LOCAL_CHANGELOG_SHA256 = "da796b1fc466bf37625df047bafb21262f805dba54be80316f80e74716cefd43";
-const LOCAL_BINARY_SHA256 = "a7f35a005b01e5f833ffef5fb254b37c876a36802732b3ba4f9c209e4bdf18b9";
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const REPOSITORY_ROOT = resolve(import.meta.dir, "..");
 const FACADE_BINARY_TARGET = "../current/linux-x64/pi";
@@ -204,10 +187,10 @@ async function verifySourceMaps(piBinary: string): Promise<void> {
 	const resolvedBinary = await realpath(piBinary);
 	const hostDirectory = dirname(resolvedBinary);
 	const changelogSha256 = sha256(await readFile(join(hostDirectory, "CHANGELOG.md")));
-	if (changelogSha256 !== LOCAL_CHANGELOG_SHA256) {
+	if (changelogSha256 !== CERTIFIED_PI_CHANGELOG_SHA256) {
 		throw new Error("Pi Host CHANGELOG does not match the certified upstream source state");
 	}
-	for (const fingerprint of LOCAL_SOURCE_FINGERPRINTS) {
+	for (const fingerprint of CERTIFIED_PI_SOURCE_FINGERPRINTS) {
 		const value: unknown = JSON.parse(await readFile(join(hostDirectory, fingerprint.path), "utf8"));
 		if (typeof value !== "object" || value === null)
 			throw new Error(`Invalid Pi Host source map: ${fingerprint.path}`);
@@ -224,7 +207,7 @@ async function verifySourceMaps(piBinary: string): Promise<void> {
 async function verifyInstalledSourceMaps(piBinary: string): Promise<void> {
 	const resolvedBinary = await realpath(piBinary);
 	const binarySha256 = sha256(await readFile(resolvedBinary));
-	if (binarySha256 !== LOCAL_BINARY_SHA256) {
+	if (binarySha256 !== CERTIFIED_PI_INSTALLED_BINARY_SHA256) {
 		throw new Error("Pi Host executable is not the certified installed binary");
 	}
 	await verifySourceMaps(resolvedBinary);
@@ -267,7 +250,7 @@ async function verifyLocalSourceBuild(piBinary: string, paths: LocalSourceBuildP
 	await verifyPiHostBuildRecord(piBinary, paths.attestation, paths.source);
 }
 
-/** Proves source identity instead of inferring it from the unchanged 0.83.0 string and compatible APIs. */
+/** Proves source identity instead of inferring it from a release string and compatible APIs. */
 export async function verifyPiHostProvenance(
 	piBinary: string,
 	environment: ProvenanceEnvironment = process.env,

@@ -309,6 +309,7 @@ export function registerSteeringInbox(
 	let disposed = false;
 	let flushing = false;
 	let started = false;
+	let ready = false;
 	const canSteer = typeof sendUserMessage === "function";
 	let watcher: fs.FSWatcher | undefined;
 	let interval: NodeJS.Timeout | undefined;
@@ -372,7 +373,7 @@ export function registerSteeringInbox(
 		});
 	};
 	const flush = (): void => {
-		if (disposed || flushing) return;
+		if (disposed || flushing || !ready) return;
 		flushing = true;
 		try {
 			retryAcknowledgements();
@@ -441,7 +442,6 @@ export function registerSteeringInbox(
 		if (started || disposed) return;
 		try {
 			fs.mkdirSync(steerInbox, { recursive: true });
-			publishCapability();
 		} catch {
 			return;
 		}
@@ -460,11 +460,21 @@ export function registerSteeringInbox(
 		safeFlush();
 		return undefined;
 	};
+	const markReady = (): undefined => {
+		start();
+		if (!ready) {
+			ready = true;
+			publishCapability();
+		}
+		safeFlush();
+		return undefined;
+	};
 
 	const onRuntimeEvent = pi.on as unknown as (event: string, handler: (event: unknown) => unknown) => void;
 	// Register input before the watcher so an accepted extension input cannot race request dispatch.
 	onRuntimeEvent("input", onInput);
 	onRuntimeEvent("session_start", activate);
+	onRuntimeEvent("agent_start", markReady);
 	for (const eventName of [
 		"message_start",
 		"message_update",

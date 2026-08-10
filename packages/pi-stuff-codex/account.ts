@@ -73,8 +73,8 @@ export async function resolveCodexAccount(ctx: ExtensionContext): Promise<CodexA
 	}
 	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
 	if (!auth.ok) throw new Error(auth.error);
-	// Pi 0.84+ preserves null header-deletion markers. The certified 0.83 type
-	// surface does not expose them yet, so normalize the runtime value here and
+	// Pi preserves null header-deletion markers at runtime, while the public
+	// type surface narrows header values to strings. Normalize the runtime value and
 	// never turn a deletion marker into the literal HTTP header value "null".
 	const headers = mergeResolvedHeaders(model.headers, auth.headers);
 	const token = auth.apiKey?.trim() || bearerToken(headers);

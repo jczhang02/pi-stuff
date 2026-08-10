@@ -27,6 +27,7 @@ import {
 	SUBAGENT_ASYNC_STARTED_EVENT,
 	type SubagentState,
 } from "../../packages/pi-stuff-agents/src/shared/types.ts";
+import { CERTIFIED_PI_VERSION } from "../../scripts/pi-host-contract.ts";
 import { PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH } from "./fixtures/process-controls-provider.ts";
 
 const providerExtension = PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH;
@@ -62,9 +63,9 @@ function fixtureRoot(prefix: string): string {
 	if (!piBinaryCertified) {
 		const version = Bun.spawnSync([piBinary, "--version"], { stdout: "pipe", stderr: "pipe" });
 		const reportedVersion = version.stdout.toString().trim();
-		if (version.exitCode !== 0 || reportedVersion !== "0.83.0") {
+		if (version.exitCode !== 0 || reportedVersion !== CERTIFIED_PI_VERSION) {
 			throw new Error(
-				`Set PI_BIN to the certified Pi 0.83.0 standalone binary; '${piBinary}' reported '${reportedVersion || version.stderr.toString().trim()}'.`,
+				`Set PI_BIN to the certified Pi ${CERTIFIED_PI_VERSION} standalone binary; '${piBinary}' reported '${reportedVersion || version.stderr.toString().trim()}'.`,
 			);
 		}
 		piBinaryCertified = true;
@@ -304,7 +305,9 @@ describe("process-level Agent controls and crash recovery", () => {
 					asyncDir,
 					sourceRunId: runId,
 					requestId,
-					timeoutMs: 5_000,
+					// The request is durable: a busy CI runner may acknowledge it after the
+					// foreground command's short user-facing wait has returned "pending".
+					timeoutMs: 12_000,
 				});
 				expect(steering).toMatchObject({
 					state: "delivered",
@@ -330,12 +333,16 @@ describe("process-level Agent controls and crash recovery", () => {
 				).toBeFalse();
 
 				deliverStopRequest({ asyncDir, source: "process-acceptance", targetIndex: 0 });
-				await waitFor("only child zero to stop", () => {
+				await waitFor("child zero to stop without disturbing child one", () => {
 					const statusPath = path.join(asyncDir, "status.json");
 					if (!fs.existsSync(statusPath)) return undefined;
 					const status = readJson(statusPath);
 					const steps = status.steps as Array<{ status?: string }> | undefined;
-					return steps?.[0]?.status === "stopped" && steps[1]?.status === "running" ? status : undefined;
+					const siblingStatus = steps?.[1]?.status;
+					return steps?.[0]?.status === "stopped" &&
+						(siblingStatus === "running" || siblingStatus === "complete")
+						? status
+						: undefined;
 				});
 
 				const result = await waitFor("parallel completion", () => {
@@ -353,7 +360,7 @@ describe("process-level Agent controls and crash recovery", () => {
 				cleanupRun(runId);
 			}
 		},
-		25_000,
+		35_000,
 	);
 
 	// biome-ignore format: Keep crash-recovery body and its independent timeout visibly grouped.

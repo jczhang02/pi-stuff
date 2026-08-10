@@ -58,6 +58,7 @@ const codexRuntimeFiles = [
 	"THIRD_PARTY_NOTICES.md",
 	"LICENSES/Apache-2.0.txt",
 ] as const;
+const PACKED_AGGREGATE_SMOKE_TIMEOUT_MS = 60_000;
 const codexNativeSha256: Readonly<Record<(typeof codexRuntimeFiles)[number], string>> = {
 	"native/apply-patch/linux-x64/apply_patch": "9ded1c635a4e0e2aae2dd09d7f676b24fc4b377016f74c1a51d8b3b22ed6bb55",
 	"native/imagegen/linux-x64/imagegen": "7822c5d5eced5b0f6ef4763e7d85209ff87be6342d793c1ef308a0908c1122a5",
@@ -1406,6 +1407,7 @@ export async function certifyReleaseArtifacts(
 			piBinary,
 			extensions: [goalToolInspector, webToolInspector, mcpToolInspector, workToolInspector],
 			packages: [extractedPackage],
+			timeoutMs: PACKED_AGGREGATE_SMOKE_TIMEOUT_MS,
 		});
 		if (
 			!extractedSmoke.commandNames.includes("ui") ||

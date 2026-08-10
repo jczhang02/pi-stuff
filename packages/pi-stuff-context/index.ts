@@ -18,11 +18,12 @@ import {
 	type SuiteToolPresentation,
 	singleActivity,
 } from "@jczhang02/pi-stuff-tools";
-import { requestUiRender } from "@jczhang02/pi-stuff-ui";
+import { getHostSharedResource, requestUiRender } from "@jczhang02/pi-stuff-ui";
 import { Type } from "typebox";
 import { prepareMagicContext } from "./config.ts";
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
+const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
 export const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
 const MAGIC_CONTEXT_MODULE = "@cortexkit/pi-magic-context";
 const MAGIC_SUBAGENT_ENV = "MAGIC_CONTEXT_PI_SUBAGENT";
@@ -1174,25 +1175,31 @@ export default async function piStuffContext(
 	dependencies: ContextCapabilityDependencies = {},
 ): Promise<void> {
 	const registry = capabilityRegistry();
-	const owner = ownerKey(pi);
-	const existing = registry.owners.get(owner);
-	if (existing) return;
 	const magicSubagent = dependencies.magicSubagent ?? (() => process.env[MAGIC_SUBAGENT_ENV] === "1");
 	const magicModules = createMagicModuleSource(dependencies.loadMagicContext ?? defaultLoadMagicContext);
-	const preloading = magicSubagent() ? Promise.resolve() : magicModules.preload();
-	const runtime = new ContextCapabilityRuntime(
-		pi,
-		{
-			magicModules,
-			magicSubagent,
-			prepareMagicContext:
-				dependencies.prepareMagicContext ??
-				(dependencies.loadMagicContext ? async () => undefined : prepareMagicContext),
-			yieldToUiFrame: dependencies.yieldToUiFrame ?? yieldToUiFrame,
+	let created = false;
+	const runtime = getHostSharedResource(
+		pi.events,
+		registry.owners,
+		CONTEXT_CAPABILITY_DISCOVERY_EVENT,
+		() => {
+			created = true;
+			return new ContextCapabilityRuntime(
+				pi,
+				{
+					magicModules,
+					magicSubagent,
+					prepareMagicContext:
+						dependencies.prepareMagicContext ??
+						(dependencies.loadMagicContext ? async () => undefined : prepareMagicContext),
+					yieldToUiFrame: dependencies.yieldToUiFrame ?? yieldToUiFrame,
+				},
+				registry,
+			);
 		},
-		registry,
+		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
 	);
-	registry.owners.set(owner, runtime);
+	if (!created) return;
 	registry.runtimes.add(runtime);
 	for (const name of MAGIC_TOOL_NAMES) {
 		registerSuiteToolActivityMetadata(pi, name, magicToolPresentation(name).activity);
@@ -1210,7 +1217,7 @@ export default async function piStuffContext(
 		await runtime.activate(ctx, "automatic-turn");
 	});
 	pi.on("session_shutdown", (event, ctx) => runtime.dispose(event, ctx));
-	await preloading;
+	if (!magicSubagent()) await magicModules.preload();
 }
 
 export const __test = {

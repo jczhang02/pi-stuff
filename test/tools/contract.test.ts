@@ -47,13 +47,40 @@ class ManualTimerScheduler implements ToolUiTimerScheduler {
 	}
 }
 
-function apiHarness(): {
+interface EventBusLike {
+	emit(event: string, data: unknown): void;
+	on(event: string, listener: (data: unknown) => void): () => void;
+}
+
+class EventBusHarness implements EventBusLike {
+	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
+
+	emit(event: string, data: unknown): void {
+		for (const listener of [...(this.listeners.get(event) ?? [])]) listener(data);
+	}
+
+	on(event: string, listener: (data: unknown) => void): () => void {
+		const listeners = this.listeners.get(event) ?? new Set();
+		listeners.add(listener);
+		this.listeners.set(event, listeners);
+		return () => listeners.delete(listener);
+	}
+}
+
+function eventBusView(bus: EventBusHarness): EventBusLike {
+	return {
+		emit: (event, data) => bus.emit(event, data),
+		on: (event, listener) => bus.on(event, listener),
+	};
+}
+
+function apiHarness(events: object = {}): {
 	readonly api: ExtensionAPI;
 	readonly tools: Map<string, ToolDefinition>;
 } {
 	const tools = new Map<string, ToolDefinition>();
 	const api = {
-		events: {},
+		events,
 		getAllTools: () => [...tools.values()],
 		on: () => {},
 		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
@@ -837,14 +864,17 @@ test("active groups share one fallback pulse ticker", () => {
 	expect(scheduler.activeCount).toBe(0);
 });
 
-test("runtime registry is shared per Pi event bus and settings remain configurable", () => {
-	const first = apiHarness();
-	const second = apiHarness();
+test("runtime registry follows the Pi Host bus across per-extension event facades", () => {
+	const bus = new EventBusHarness();
+	const first = apiHarness(eventBusView(bus));
+	const second = apiHarness(eventBusView(bus));
+	const isolated = apiHarness(eventBusView(new EventBusHarness()));
 	const settings = ToolUiSettingsStore.memory({
 		liveElapsed: false,
 		schemaVersion: 1,
 	});
 	expect(installToolUiRuntime(first.api, settings)).toBe(getToolUiRuntime(first.api));
-	expect(getToolUiRuntime(first.api)).not.toBe(getToolUiRuntime(second.api));
+	expect(getToolUiRuntime(first.api)).toBe(getToolUiRuntime(second.api));
+	expect(getToolUiRuntime(first.api)).not.toBe(getToolUiRuntime(isolated.api));
 	expect(getToolUiRuntime(first.api).showLiveElapsed()).toBe(false);
 });

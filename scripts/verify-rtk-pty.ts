@@ -3,11 +3,11 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { CERTIFIED_RTK_LINUX_X64_SHA256S, CERTIFIED_RTK_VERSION } from "../packages/pi-stuff-rtk/runtime.js";
+import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/rtk-pty-provider.ts");
 const runner = join(root, "test/fixtures/rtk-pty-runner.sh");
-const CERTIFIED_PI_VERSION = "0.83.0";
 const LONG_RESULT_ID = "rtk-pty-long-output";
 
 interface ContextRecord {

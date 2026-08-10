@@ -24,12 +24,14 @@ for executable in bun rg tmux "$freeze_bin"; do
 done
 
 pi_bin="$repo_root/node_modules/.bin/pi"
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 if [[ ! -x $pi_bin ]]; then
 	echo "Repository-pinned Pi executable not found: $pi_bin" >&2
 	exit 1
 fi
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "Agent activity capture requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "Agent activity capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -123,7 +125,7 @@ capture_variant() {
 	local variant=$1
 	local state=$2
 	local expected=$3
-	local artifact_name="pi-0.83-agent-activity-$variant-$state"
+	local artifact_name="${artifact_prefix}-agent-activity-$variant-$state"
 	start_pi "${session_files["$variant-$state"]}"
 	wait_for_text "$expected"
 	reject_text "Extension issues"

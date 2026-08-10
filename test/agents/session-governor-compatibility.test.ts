@@ -222,19 +222,19 @@ describe("session governor v1 compatibility", () => {
 			}
 			process.exit(75);
 		`;
-		const blocked = Bun.spawn([process.execPath, "-e", legacyWriter, sessionDir], {
-			stdout: "pipe",
-			stderr: "pipe",
+		const blocked = Bun.spawnSync([process.execPath, "-e", legacyWriter, sessionDir], {
+			stdout: "ignore",
+			stderr: "ignore",
 		});
-		expect(await blocked.exited).toBe(75);
+		expect(blocked.exitCode).toBe(75);
 		expect(fs.existsSync(path.join(sessionDir, "ledger.json"))).toBe(false);
 
 		result.releaseLegacyBarrier();
-		const admitted = Bun.spawn([process.execPath, "-e", legacyWriter, sessionDir], {
-			stdout: "pipe",
-			stderr: "pipe",
+		const admitted = Bun.spawnSync([process.execPath, "-e", legacyWriter, sessionDir], {
+			stdout: "ignore",
+			stderr: "ignore",
 		});
-		expect(await admitted.exited).toBe(0);
+		expect(admitted.exitCode).toBe(0);
 		expect(fs.existsSync(path.join(sessionDir, "ledger.json"))).toBe(true);
 	});
 

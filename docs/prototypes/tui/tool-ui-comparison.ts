@@ -6,7 +6,7 @@
  * C a bounded exploration summary with two representative child rows?
  *
  * The Tool Details surface is shared by all three variants. It uses only
- * Pi 0.83 public APIs, replaces the editor region, and never opens an overlay.
+ * certified Pi public APIs, replaces the editor region, and never opens an overlay.
  * All data is deterministic; the registered tool performs no I/O.
  *
  * Run from the repository root with a generated fixture session, then enter:
@@ -16,6 +16,7 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { CERTIFIED_PI_VERSION } from "../../../scripts/pi-host-contract.js";
 
 type TranscriptVariant = "individual" | "grouped" | "bounded";
 type ToolAction = "read" | "search" | "test";
@@ -68,7 +69,7 @@ const FALLBACK_ITEMS: PrototypeToolDetails[] = [
 		action: "read",
 		target: "packages/pi-stuff/package.json",
 		summary: "84 lines",
-		detailLines: ["name: @jczhang02/pi-stuff", "host: Pi 0.83.0", "entry: src/index.ts"],
+		detailLines: ["name: @jczhang02/pi-stuff", `host: Pi ${CERTIFIED_PI_VERSION}`, "entry: src/index.ts"],
 		groupId: "tool-ui-exploration",
 		groupLabel: "Explored tool UI · 3 operations",
 		groupChildren: [

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# PROTOTYPE — capture deterministic Pi 0.83 BTW layout fixtures only.
+# PROTOTYPE — capture deterministic certified-Pi BTW layout fixtures only.
 # No command below starts a model, background Agent, or persistent mailbox.
 
 set -euo pipefail
@@ -28,12 +28,14 @@ for executable in bun rg tmux "$freeze_bin"; do
 done
 
 pi_bin="$repo_root/node_modules/.bin/pi"
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 if [[ ! -x $pi_bin ]]; then
 	echo "Repository-pinned Pi executable not found: $pi_bin" >&2
 	exit 1
 fi
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "Work BTW capture requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "Work BTW capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -220,16 +222,16 @@ capture_claude_variant() {
 	wait_for_text "single exchange"
 	assert_dialog_screen 100
 	reject_text "Follow-up"
-	capture_frame "pi-0.83-work-btw-claude-exchange"
+	capture_frame "${artifact_prefix}-work-btw-claude-exchange"
 
 	tmux send-keys -t "$tmux_session" h
 	wait_for_text "session-local history"
-	capture_frame "pi-0.83-work-btw-claude-history"
+	capture_frame "${artifact_prefix}-work-btw-claude-history"
 
 	tmux send-keys -t "$tmux_session" Escape
 	wait_for_absence "session-local history"
 	assert_normal_screen 100
-	capture_frame "pi-0.83-work-btw-claude-restored"
+	capture_frame "${artifact_prefix}-work-btw-claude-restored"
 	stop_pi
 
 	start_pi "${session_files[claude]}" 64 28
@@ -238,7 +240,7 @@ capture_claude_variant() {
 	wait_for_text "single exchange"
 	assert_dialog_screen 64
 	reject_text "Follow-up"
-	capture_frame "pi-0.83-work-btw-claude-narrow"
+	capture_frame "${artifact_prefix}-work-btw-claude-narrow"
 	stop_pi
 }
 
@@ -251,16 +253,16 @@ capture_ephemeral_variant() {
 	assert_dialog_screen 100
 	tmux send-keys -t "$tmux_session" -l "show a concrete failure path"
 	wait_for_text "show a concrete failure path"
-	capture_frame "pi-0.83-work-btw-ephemeral-thread"
+	capture_frame "${artifact_prefix}-work-btw-ephemeral-thread"
 
 	tmux send-keys -t "$tmux_session" Tab
 	wait_for_pattern "› Bring answer into main draft"
-	capture_frame "pi-0.83-work-btw-ephemeral-bring"
+	capture_frame "${artifact_prefix}-work-btw-ephemeral-bring"
 
 	tmux send-keys -t "$tmux_session" Escape
 	wait_for_absence "BTW side thread"
 	assert_normal_screen 100
-	capture_frame "pi-0.83-work-btw-ephemeral-restored"
+	capture_frame "${artifact_prefix}-work-btw-ephemeral-restored"
 	stop_pi
 
 	# The optional action moves only a reference into the restored main draft;
@@ -285,7 +287,7 @@ capture_ephemeral_variant() {
 	assert_dialog_screen 64
 	tmux send-keys -t "$tmux_session" -l "narrow follow-up"
 	wait_for_text "narrow follow-up"
-	capture_frame "pi-0.83-work-btw-ephemeral-narrow"
+	capture_frame "${artifact_prefix}-work-btw-ephemeral-narrow"
 	stop_pi
 }
 
@@ -304,13 +306,13 @@ capture_mailbox_variant() {
 	assert_normal_screen 100
 	submit_mailbox_question
 	assert_normal_screen 100
-	capture_frame "pi-0.83-work-btw-mailbox-returned"
+	capture_frame "${artifact_prefix}-work-btw-mailbox-returned"
 
 	open_dialog
 	wait_for_text "BTW mailbox"
 	wait_for_text "No fork, model call"
 	assert_dialog_screen 100
-	capture_frame "pi-0.83-work-btw-mailbox-answer"
+	capture_frame "${artifact_prefix}-work-btw-mailbox-answer"
 
 	tmux send-keys -t "$tmux_session" Escape
 	wait_for_absence "BTW mailbox"
@@ -325,7 +327,7 @@ capture_mailbox_variant() {
 	wait_for_text "BTW mailbox"
 	wait_for_text "No fork, model call"
 	assert_dialog_screen 64
-	capture_frame "pi-0.83-work-btw-mailbox-narrow"
+	capture_frame "${artifact_prefix}-work-btw-mailbox-narrow"
 	stop_pi
 }
 

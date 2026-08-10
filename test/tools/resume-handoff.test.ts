@@ -14,14 +14,27 @@ import piStuffTools from "../../packages/pi-stuff-tools/index.js";
 type EventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => Promise<unknown> | unknown;
 
 class EventBusHarness {
-	on(): () => void {
-		return () => {};
-	}
+	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
 
-	emit(): void {}
+	view(): ExtensionAPI["events"] {
+		return {
+			emit: (event, data) => {
+				for (const listener of [...(this.listeners.get(event) ?? [])]) listener(data);
+			},
+			on: (event, listener) => {
+				const listeners = this.listeners.get(event) ?? new Set();
+				listeners.add(listener);
+				this.listeners.set(event, listeners);
+				return () => listeners.delete(listener);
+			},
+		};
+	}
 }
 
-function apiHarness(initialActiveTools: readonly string[]): {
+function apiHarness(
+	initialActiveTools: readonly string[],
+	eventBus = new EventBusHarness(),
+): {
 	readonly api: ExtensionAPI;
 	readonly tools: Map<string, ToolDefinition>;
 	emit(type: ExtensionEvent["type"], event: ExtensionEvent, ctx: ExtensionContext): Promise<void>;
@@ -33,7 +46,7 @@ function apiHarness(initialActiveTools: readonly string[]): {
 	const tools = new Map<string, ToolDefinition>();
 	let activeTools = [...initialActiveTools];
 	const api = {
-		events: new EventBusHarness(),
+		events: eventBus.view(),
 		getActiveTools: () => [...activeTools],
 		on: (type: string, handler: EventHandler) => {
 			handlers.set(type, [...(handlers.get(type) ?? []), handler]);
@@ -66,16 +79,18 @@ function context(cwd: string): ExtensionContext {
 	} as unknown as ExtensionContext;
 }
 
-test("Tool lifecycle installation deduplicates Aggregate proxies that share one Host event bus", async () => {
-	const harness = apiHarness(["read"]);
-	await piStuffTools(new Proxy(harness.api, {}));
-	const sessionStartHandlers = harness.handlerCount("session_start");
-	const sessionShutdownHandlers = harness.handlerCount("session_shutdown");
-	await piStuffTools(new Proxy(harness.api, {}));
+test("Tool lifecycle installation deduplicates per-extension facades on one Host event bus", async () => {
+	const eventBus = new EventBusHarness();
+	const owner = apiHarness(["read"], eventBus);
+	const duplicate = apiHarness(["read"], eventBus);
+	await piStuffTools(owner.api);
+	await piStuffTools(duplicate.api);
 
-	expect(harness.handlerCount("session_start")).toBe(sessionStartHandlers);
-	expect(harness.handlerCount("session_shutdown")).toBe(sessionShutdownHandlers);
-	await harness.emit("session_shutdown", { reason: "quit", type: "session_shutdown" }, context("/project"));
+	expect(owner.handlerCount("session_start")).toBe(1);
+	expect(owner.handlerCount("session_shutdown")).toBeGreaterThan(0);
+	expect(duplicate.handlerCount("session_start")).toBe(0);
+	expect(duplicate.handlerCount("session_shutdown")).toBe(0);
+	await owner.emit("session_shutdown", { reason: "quit", type: "session_shutdown" }, context("/project"));
 });
 
 test("resume pre-binds only active built-in renderers before historical rows are reconstructed", async () => {

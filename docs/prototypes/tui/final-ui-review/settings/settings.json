@@ -3,5 +3,5 @@
 	"outputPad": 1,
 	"quietStartup": true,
 	"theme": "dark",
-	"uiMode": "fullscreen"
+	"tuiMode": "fullscreen"
 }

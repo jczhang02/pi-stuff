@@ -915,8 +915,8 @@ test("independent goal instances keep distinct concurrent active goals", async (
 	assert.equal(goalStatusSnapshot(root.pi)?.status, "active");
 	assert.equal(goalStatusSnapshot(child.pi)?.status, "active");
 
-	root.events.get("session_shutdown")?.[0]?.({}, rootContext.ctx);
-	child.events.get("session_shutdown")?.[0]?.({}, childContext.ctx);
+	root.emitHostEvent("session_shutdown", {}, rootContext.ctx);
+	child.emitHostEvent("session_shutdown", {}, childContext.ctx);
 });
 
 test("independent goal instances keep completion local", async () => {
@@ -968,8 +968,8 @@ test("independent goal instances keep completion local", async () => {
 	assert.equal(lastGoalStatus(child), "active");
 	assert.equal(requireLastGoal(child).id, childGoal.id);
 	assert.equal(requireLastGoal(child).text, childGoal.text);
-	root.events.get("session_shutdown")?.[0]?.({}, rootContext.ctx);
-	child.events.get("session_shutdown")?.[0]?.({}, childContext.ctx);
+	root.emitHostEvent("session_shutdown", {}, rootContext.ctx);
+	child.emitHostEvent("session_shutdown", {}, childContext.ctx);
 });
 
 test("tool lifecycle persistence stays on the owning goal instance", async () => {
@@ -1015,8 +1015,8 @@ test("tool lifecycle persistence stays on the owning goal instance", async () =>
 	assert.equal(childUpdated.status, "active");
 	assert.equal(requireLastGoal(root).id, rootGoal.id);
 	assert.equal(requireLastGoal(root).text, "root objective");
-	root.events.get("session_shutdown")?.[0]?.({}, rootContext.ctx);
-	child.events.get("session_shutdown")?.[0]?.({}, childContext.ctx);
+	root.emitHostEvent("session_shutdown", {}, rootContext.ctx);
+	child.emitHostEvent("session_shutdown", {}, childContext.ctx);
 });
 
 test("goal_blocked ownership stays on the root instance after child start", async () => {
@@ -1063,8 +1063,8 @@ test("goal_blocked ownership stays on the root instance after child start", asyn
 	assert.ok(root.entries.length > rootEntriesBeforeChild);
 	assert.equal(child.entries.filter((entry) => entry.customType === "goal-state").length, 0);
 	assert.equal(lastGoalStatus(child), null);
-	root.events.get("session_shutdown")?.[0]?.({}, rootContext.ctx);
-	child.events.get("session_shutdown")?.[0]?.({}, childContext.ctx);
+	root.emitHostEvent("session_shutdown", {}, rootContext.ctx);
+	child.emitHostEvent("session_shutdown", {}, childContext.ctx);
 });
 
 test("pending continuation and budget state survive later child startup", async () => {
@@ -1129,9 +1129,9 @@ test("pending continuation and budget state survive later child startup", async 
 		undefined,
 	);
 
-	root.events.get("session_shutdown")?.[0]?.({}, rootContext.ctx);
-	child.events.get("session_shutdown")?.[0]?.({}, childContext.ctx);
-	laterChild.events.get("session_shutdown")?.[0]?.({}, laterChildContext.ctx);
+	root.emitHostEvent("session_shutdown", {}, rootContext.ctx);
+	child.emitHostEvent("session_shutdown", {}, childContext.ctx);
+	laterChild.emitHostEvent("session_shutdown", {}, laterChildContext.ctx);
 });
 
 test("stale tool guard survives later child startup", async () => {
@@ -1159,14 +1159,14 @@ test("stale tool guard survives later child startup", async () => {
 		undefined,
 	);
 
-	child.events.get("session_shutdown")?.[0]?.({}, childContext.ctx);
+	child.emitHostEvent("session_shutdown", {}, childContext.ctx);
 	assert.deepEqual(
 		rootToolCall?.({ toolName: "bash", toolCallId: "root-stale-after-shutdown", input: {} }, rootContext.ctx),
 		{ block: true, reason: STALE_GOAL_TOOL_REASON },
 	);
 	assert.equal(lastGoalStatus(root), "paused");
 	assert.equal(lastGoalStatus(child), null);
-	root.events.get("session_shutdown")?.[0]?.({}, rootContext.ctx);
+	root.emitHostEvent("session_shutdown", {}, rootContext.ctx);
 });
 
 test("pending compaction recovery survives later child startup", async () => {
@@ -1208,8 +1208,8 @@ test("pending compaction recovery survives later child startup", async () => {
 	assert.equal(lastGoalStatus(root), "active");
 	assert.equal(lastGoalStatus(child), null);
 
-	root.events.get("session_shutdown")?.[0]?.({}, rootContext.ctx);
-	child.events.get("session_shutdown")?.[0]?.({}, childContext.ctx);
+	root.emitHostEvent("session_shutdown", {}, rootContext.ctx);
+	child.emitHostEvent("session_shutdown", {}, childContext.ctx);
 });
 
 test("completion status timer survives later child startup", async (t) => {
@@ -1237,8 +1237,8 @@ test("completion status timer survives later child startup", async (t) => {
 	assert.equal(goalStatusSnapshot(root.pi), undefined);
 	assert.equal(goalStatusSnapshot(child.pi), undefined);
 
-	root.events.get("session_shutdown")?.[0]?.({}, rootContext.ctx);
-	child.events.get("session_shutdown")?.[0]?.({}, childContext.ctx);
+	root.emitHostEvent("session_shutdown", {}, rootContext.ctx);
+	child.emitHostEvent("session_shutdown", {}, childContext.ctx);
 });
 
 test("child shutdown does not clear the parent goal", async () => {
@@ -1254,7 +1254,7 @@ test("child shutdown does not clear the parent goal", async () => {
 	registerGoal(child.pi);
 	const childContext = createMockContext();
 	child.events.get("session_start")?.[0]?.({}, childContext.ctx);
-	child.events.get("session_shutdown")?.[0]?.({}, childContext.ctx);
+	child.emitHostEvent("session_shutdown", {}, childContext.ctx);
 
 	assert.equal(requireLastGoal(root).id, rootGoal.id);
 	assert.equal(lastGoalStatus(root), "active");
@@ -1283,7 +1283,7 @@ test("child shutdown does not clear the parent goal", async () => {
 	assert.deepEqual(rootGoalStates[1], { goal: null });
 	assert.equal(lastGoalStatus(root), null);
 	assert.equal(child.entries.length, 0);
-	root.events.get("session_shutdown")?.[0]?.({}, rootContext.ctx);
+	root.emitHostEvent("session_shutdown", {}, rootContext.ctx);
 });
 
 test("completeGoalArguments suggests /goal subcommands and token options", () => {
@@ -1604,7 +1604,7 @@ test("legacy active-time state migrates without counting offline or reload time"
 	assert.equal(requireLastGoal(legacy.mock).activeStartedAt, now);
 
 	now += 3_000;
-	legacy.mock.events.get("session_shutdown")?.[0]?.({}, legacy.ctx);
+	legacy.mock.emitHostEvent("session_shutdown", {}, legacy.ctx);
 	const suspended = requireLastGoal(legacy.mock);
 	assert.equal(suspended.timeUsedSeconds, 9);
 	assert.equal(suspended.activeStartedAt, undefined);
@@ -1824,7 +1824,7 @@ test("goal_complete requires current goal_id before validating summary", async (
 		assert.equal(requireLastGoal(mock).id, currentGoal.id);
 		assert.equal(lastGoalStatus(mock), "active");
 	} finally {
-		mock.events.get("session_shutdown")?.[0]?.({}, ctx);
+		mock.emitHostEvent("session_shutdown", {}, ctx);
 	}
 });
 
@@ -1915,7 +1915,7 @@ test("goal_complete rejects contradictory summaries and accepts verified complet
 	assert.equal(noActiveRejected.terminate, undefined);
 	assert.match(noActiveRejected.content?.[0]?.text ?? "", /no active goal/i);
 	assert.equal(lastGoalStatus(mock), null);
-	mock.events.get("session_shutdown")?.[0]?.({}, ctx);
+	mock.emitHostEvent("session_shutdown", {}, ctx);
 });
 
 test("completion evidence accepts concrete Chinese observations without source inspection", () => {
@@ -2488,7 +2488,7 @@ test("resume rejects active goals and exhausted budgets without rotating goal_id
 		const exhausted = restoreGoalForTest(status, { tokensUsed: 10 });
 		await exhausted.mock.commands.get("goal")?.handler("resume", exhausted.ctx);
 		assert.match(exhausted.notifications.at(-1)?.message ?? "", /still reached/i);
-		exhausted.mock.events.get("session_shutdown")?.[0]?.({}, exhausted.ctx);
+		exhausted.mock.emitHostEvent("session_shutdown", {}, exhausted.ctx);
 		assert.equal(lastGoalStatus(exhausted.mock), status);
 		assert.equal(requireLastGoal(exhausted.mock).id, exhausted.sessionGoal.id);
 		assert.equal(exhausted.mock.sentUserMessages.length, 0);

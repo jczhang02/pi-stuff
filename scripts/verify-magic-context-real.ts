@@ -796,7 +796,7 @@ async function main(): Promise<void> {
 				defaultProjectTrust: "always",
 				quietStartup: true,
 				retry: { enabled: true, maxRetries: 3 },
-				uiMode: "fullscreen",
+				tuiMode: "fullscreen",
 			})}\n`,
 			{ mode: 0o600 },
 		),

@@ -7,8 +7,7 @@ Version `0.2.2` is the current certified local release candidate.
 ## Contract
 
 - Loads through the native Pi Package system.
-- Requires the upstream Host profile documented in the repository compatibility contract; tagged `v0.83.0` lacks the
-  public Markdown rendering API needed by Live Thoughts.
+- Requires the released Pi 0.84.1 Host profile documented in the repository compatibility contract.
 - Exports one default Extension factory.
 - Invokes Capability factories in the explicit registry order.
 - Fails fast when a Capability cannot initialize.

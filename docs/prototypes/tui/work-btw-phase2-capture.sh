@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
-# Capture the implemented production BTW surface in real Pi 0.83 PTYs.
+# Capture the implemented production BTW surface in certified Pi PTYs.
 
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 pi_bin="$repo_root/node_modules/.bin/pi"
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 provider="$repo_root/docs/prototypes/tui/work-btw-phase1-provider.ts"
 artifact_dir="$repo_root/docs/prototypes/tui/artifacts"
 freeze_bin=${FREEZE_BIN:-freeze}
@@ -27,8 +29,8 @@ for executable in bun rg tmux "$freeze_bin"; do
 	fi
 done
 
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "BTW Phase 2 capture requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "BTW Phase 2 capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -132,10 +134,10 @@ run_geometry() {
 	tmux send-keys -t "$tmux_session" Enter
 	wait_for_text "Answering…"
 	wait_for_text "/btw"
-	capture_frame "pi-0.83-btw-phase2-production-answering-$suffix"
+	capture_frame "${artifact_prefix}-btw-phase2-production-answering-$suffix"
 	wait_for_text "The side answer stays outside the main transcript."
 	wait_for_text "f fork"
-	capture_frame "pi-0.83-btw-phase2-production-answered-$suffix"
+	capture_frame "${artifact_prefix}-btw-phase2-production-answered-$suffix"
 
 	tmux send-keys -t "$tmux_session" Escape
 	wait_for_absence "The side answer stays outside the main transcript."
@@ -143,7 +145,7 @@ run_geometry() {
 	tmux send-keys -t "$tmux_session" Enter
 	wait_for_text "The first answer emphasized transcript isolation"
 	wait_for_text "←/→ history"
-	capture_frame "pi-0.83-btw-phase2-production-history-$suffix"
+	capture_frame "${artifact_prefix}-btw-phase2-production-history-$suffix"
 
 	stop_pi
 }
@@ -153,7 +155,7 @@ run_geometry 64 28
 
 for state in answering answered history; do
 	for geometry in 100x32 64x28; do
-		artifact="$artifact_dir/pi-0.83-btw-phase2-production-$state-$geometry.png"
+		artifact="$artifact_dir/${artifact_prefix}-btw-phase2-production-$state-$geometry.png"
 		if [[ ! -s $artifact ]]; then
 			echo "Missing capture: $artifact" >&2
 			exit 1

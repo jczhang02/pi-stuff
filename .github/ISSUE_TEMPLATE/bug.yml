@@ -11,7 +11,7 @@ body:
     id: pi-version
     attributes:
       label: Pi version
-      placeholder: 0.83.0
+      placeholder: 0.84.1
     validations:
       required: true
   - type: input

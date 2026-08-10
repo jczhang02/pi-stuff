@@ -48,7 +48,7 @@ The additional empty-state frame is [Claude Code 2.1.197 Running](./artifacts/cl
 
 ## Native Pi translation
 
-[`agents-hub-reference.ts`](./agents-hub-reference.ts) translates only the observable interaction contract into a real Pi `0.83.0` Extension. It uses non-overlay `ctx.ui.custom()`, so the Host continues to own the transcript, theme, terminal lifecycle, footer, and restored editor.
+[`agents-hub-reference.ts`](./agents-hub-reference.ts) translates only the observable interaction contract into a real Extension for the repository-certified Pi Host. It uses non-overlay `ctx.ui.custom()`, so the Host continues to own the transcript, theme, terminal lifecycle, footer, and restored editor.
 
 Run it from the repository root:
 
@@ -107,7 +107,7 @@ FREEZE_BIN=/tmp/pi-proto-bin/freeze \
   ./docs/prototypes/tui/tool-ui-comparison-capture.sh
 ```
 
-The capture runs against the repository-pinned Pi `0.83.0` in an isolated temporary Agent directory. It does not modify the maintainer's Pi settings. That temporary settings layer unbinds both `app.tools.expand` and `app.tree.filter.cycleForward` before the prototype registers `Ctrl+O`; the final Pi Stuff shortcut remains a product decision.
+The capture resolves the certified Pi version through [`scripts/pi-host-contract.ts`](../../../scripts/pi-host-contract.ts) and runs in an isolated temporary Agent directory. It does not modify the maintainer's Pi settings. That temporary settings layer unbinds both `app.tools.expand` and `app.tree.filter.cycleForward` before the prototype registers `Ctrl+O`; the final Pi Stuff shortcut remains a product decision.
 
 The generated frames are [individual rows](./artifacts/pi-0.83-tool-ui-individual.png), [one semantic summary](./artifacts/pi-0.83-tool-ui-grouped.png), [bounded group](./artifacts/pi-0.83-tool-ui-bounded.png), and the shared [Tool Details Command Dialog](./artifacts/pi-0.83-tool-details-dialog.png).
 

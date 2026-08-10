@@ -7,6 +7,21 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type ContextModule = typeof import("../../packages/pi-stuff-context/index.js");
 
+class EventBusHarness {
+	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
+
+	emit(event: string, data: unknown): void {
+		for (const listener of [...(this.listeners.get(event) ?? [])]) listener(data);
+	}
+
+	on(event: string, listener: (data: unknown) => void): () => void {
+		const listeners = this.listeners.get(event) ?? new Set();
+		listeners.add(listener);
+		this.listeners.set(event, listeners);
+		return () => listeners.delete(listener);
+	}
+}
+
 test("physical Context package copies share one Host runtime", async () => {
 	const directory = mkdtempSync(join(process.cwd(), ".pi-stuff-context-duplicates-"));
 	const firstDirectory = join(directory, "first");
@@ -27,24 +42,33 @@ test("physical Context package copies share one Host runtime", async () => {
 	try {
 		first = (await import(pathToFileURL(join(firstDirectory, "index.ts")).href)) as ContextModule;
 		const second = (await import(pathToFileURL(join(secondDirectory, "index.ts")).href)) as ContextModule;
-		const handlers = new Map<string, Handler[]>();
+		const bus = new EventBusHarness();
 		let activeTools: string[] = [];
-		const api = {
-			events: {},
-			on(event: string, handler: Handler) {
-				handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-			},
-			registerTool(tool: { name: string }) {
-				if (!activeTools.includes(tool.name)) activeTools.push(tool.name);
-			},
-			getActiveTools: () => [...activeTools],
-			setActiveTools(names: string[]) {
-				activeTools = [...names];
-			},
-		} as unknown as ExtensionAPI;
+		const createApi = () => {
+			const handlers = new Map<string, Handler[]>();
+			const api = {
+				events: {
+					emit: (event: string, data: unknown) => bus.emit(event, data),
+					on: (event: string, listener: (data: unknown) => void) => bus.on(event, listener),
+				},
+				on(event: string, handler: Handler) {
+					handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+				},
+				registerTool(tool: { name: string }) {
+					if (!activeTools.includes(tool.name)) activeTools.push(tool.name);
+				},
+				getActiveTools: () => [...activeTools],
+				setActiveTools(names: string[]) {
+					activeTools = [...names];
+				},
+			} as unknown as ExtensionAPI;
+			return { api, handlers };
+		};
+		const firstApi = createApi();
+		const secondApi = createApi();
 		let firstLoads = 0;
 		let secondLoads = 0;
-		first.default(api, {
+		await first.default(firstApi.api, {
 			loadMagicContext: async () => {
 				firstLoads++;
 				return {
@@ -62,12 +86,12 @@ test("physical Context package copies share one Host runtime", async () => {
 				getSessionId: () => "duplicate",
 			},
 		} as unknown as ExtensionContext;
-		for (const handler of handlers.get("session_start") ?? []) {
+		for (const handler of firstApi.handlers.get("session_start") ?? []) {
 			await handler({ type: "session_start", reason: "startup" }, ctx);
 		}
-		for (const handler of handlers.get("before_agent_start") ?? []) await handler({}, ctx);
+		for (const handler of firstApi.handlers.get("before_agent_start") ?? []) await handler({}, ctx);
 
-		second.default(api, {
+		await second.default(secondApi.api, {
 			loadMagicContext: async () => {
 				secondLoads++;
 				return { default: async () => undefined };
@@ -75,7 +99,8 @@ test("physical Context package copies share one Host runtime", async () => {
 		});
 		expect(firstLoads).toBe(1);
 		expect(secondLoads).toBe(0);
-		expect(handlers.get("context")).toHaveLength(1);
+		expect(firstApi.handlers.get("context")).toHaveLength(1);
+		expect(secondApi.handlers.get("context") ?? []).toHaveLength(0);
 		expect(second.getContextCapability(ctx).status().state).toBe("active");
 	} finally {
 		first?.__test.clear();

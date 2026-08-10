@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 
 # ACCEPTANCE — capture the production compact footer and Command Dialog
-# lifecycle in real Pi 0.83 PTYs. The fixture is deterministic and offline.
+# lifecycle in certified Pi PTYs. The fixture is deterministic and offline.
 # Ctrl+B is a capture-only entry point that preserves a pre-existing draft.
 
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 pi_bin="$repo_root/node_modules/.bin/pi"
+certified_pi_version=$(bun "$repo_root/scripts/pi-host-contract.ts")
+artifact_prefix="pi-$certified_pi_version"
 extension="$repo_root/docs/prototypes/tui/footer-shell-capture.ts"
 fixture="$repo_root/docs/prototypes/tui/footer-shell-fixture.ts"
 artifact_dir="$repo_root/docs/prototypes/tui/artifacts"
@@ -30,8 +32,8 @@ for executable in bun rg tmux "$freeze_bin"; do
 		exit 1
 	fi
 done
-if [[ $($pi_bin --version) != "0.83.0" ]]; then
-	echo "Footer shell capture requires Pi 0.83.0" >&2
+if [[ $("$pi_bin" --version) != "$certified_pi_version" ]]; then
+	echo "Footer shell capture requires Pi $certified_pi_version" >&2
 	exit 1
 fi
 if [[ $(bun --version) != "1.3.14" ]]; then
@@ -176,15 +178,15 @@ capture_fixed_geometry() {
 	start_pi "$width" "$height" "fixed-$suffix"
 	tmux send-keys -t "$tmux_session" -l "$cjk_draft"
 	assert_normal_surface
-	capture_frame "pi-0.83-footer-normal-$suffix"
+	capture_frame "${artifact_prefix}-footer-normal-$suffix"
 
 	tmux send-keys -t "$tmux_session" C-b
 	assert_dialog_surface
-	capture_frame "pi-0.83-footer-dialog-$suffix"
+	capture_frame "${artifact_prefix}-footer-dialog-$suffix"
 
 	tmux send-keys -t "$tmux_session" Escape
 	assert_normal_surface
-	capture_frame "pi-0.83-footer-restored-$suffix"
+	capture_frame "${artifact_prefix}-footer-restored-$suffix"
 	stop_pi
 }
 
@@ -198,15 +200,15 @@ capture_resize_cycle() {
 	tmux resize-window -t "$tmux_session" -x 64 -y 28
 	wait_for_text "CJK width: 项目 / 上下文 / 分支"
 	assert_dialog_surface
-	capture_frame "pi-0.83-footer-resize-dialog-64x28"
+	capture_frame "${artifact_prefix}-footer-resize-dialog-64x28"
 
 	tmux send-keys -t "$tmux_session" Escape
 	assert_normal_surface
-	capture_frame "pi-0.83-footer-resize-restored-cjk-64x28"
+	capture_frame "${artifact_prefix}-footer-resize-restored-cjk-64x28"
 
 	tmux resize-window -t "$tmux_session" -x 100 -y 32
 	assert_normal_surface
-	capture_frame "pi-0.83-footer-resize-restored-cjk-100x32"
+	capture_frame "${artifact_prefix}-footer-resize-restored-cjk-100x32"
 	stop_pi
 }
 
@@ -215,19 +217,19 @@ capture_fixed_geometry 64 28
 capture_resize_cycle
 
 for artifact in \
-	pi-0.83-footer-normal-100x32 \
-	pi-0.83-footer-dialog-100x32 \
-	pi-0.83-footer-restored-100x32 \
-	pi-0.83-footer-normal-64x28 \
-	pi-0.83-footer-dialog-64x28 \
-	pi-0.83-footer-restored-64x28 \
-	pi-0.83-footer-resize-dialog-64x28 \
-	pi-0.83-footer-resize-restored-cjk-64x28 \
-	pi-0.83-footer-resize-restored-cjk-100x32; do
+	${artifact_prefix}-footer-normal-100x32 \
+	${artifact_prefix}-footer-dialog-100x32 \
+	${artifact_prefix}-footer-restored-100x32 \
+	${artifact_prefix}-footer-normal-64x28 \
+	${artifact_prefix}-footer-dialog-64x28 \
+	${artifact_prefix}-footer-restored-64x28 \
+	${artifact_prefix}-footer-resize-dialog-64x28 \
+	${artifact_prefix}-footer-resize-restored-cjk-64x28 \
+	${artifact_prefix}-footer-resize-restored-cjk-100x32; do
 	if [[ ! -s "$artifact_dir/$artifact.png" ]]; then
 		echo "Missing capture: $artifact.png" >&2
 		exit 1
 	fi
 done
 
-echo "Captured 9 real Pi 0.83 footer lifecycle frames."
+echo "Captured 9 real Pi $certified_pi_version footer lifecycle frames."

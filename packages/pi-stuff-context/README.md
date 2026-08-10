@@ -24,13 +24,13 @@ recorded in [UPSTREAM.md](./UPSTREAM.md).
 
 The first-use profile selects Magic Context's official lexical search path and
 does not load its local embedding runtime. This avoids a published 0.33.1
-dynamic-import incompatibility in the certified single-file Pi 0.83 Host while
+dynamic-import incompatibility in the certified single-file Pi Host while
 keeping history and memory recall available. An existing user or project
 embedding configuration remains authoritative and is never rewritten.
 
-## Pi 0.83 host constraints
+## Pi Host constraints
 
-This boundary deliberately works within Pi 0.83's extension interface:
+This boundary deliberately works within Pi's extension interface:
 
 - Event, command, renderer, and tool registrations cannot be unregistered. Magic
   registrations are therefore staged until activation succeeds, and committed

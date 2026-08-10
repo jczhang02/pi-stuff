@@ -3,6 +3,7 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { CERTIFIED_PI_VERSION } from "../../../scripts/pi-host-contract.js";
 
 type FixtureVariant = "bounded" | "grouped" | "individual";
 type ToolAction = "read" | "search" | "test";
@@ -99,7 +100,7 @@ const OPERATIONS: ToolOperation[] = [
 			"  ✓ rejects private absolute paths",
 			"  ✓ excludes local session state",
 			"test/host-rpc.test.ts:",
-			"  ✓ starts Pi 0.83.0 without a model",
+			`  ✓ starts Pi ${CERTIFIED_PI_VERSION} without a model`,
 			"  ✓ discovers all default capabilities",
 			"test/tool-renderer.test.ts:",
 			"  ✓ renders running state in place",

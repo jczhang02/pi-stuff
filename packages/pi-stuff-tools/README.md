@@ -2,7 +2,7 @@
 
 Compact, presentation-only Tool UI for the Pi Stuff Suite.
 
-The Capability re-registers Pi 0.83's seven built-in tools with their original definitions and replaces only their
+The Capability re-registers Pi 0.84.1's seven built-in tools with their original definitions and replaces only their
 render slots. Tool schemas, prompt metadata, execution, result content, lifecycle events, and permission checks stay
 unchanged. Every Suite-owned Tool must declare Activity metadata through `registerSuiteOwnedTool`; unknown third-party
 Tools keep their native renderer and form a display boundary.

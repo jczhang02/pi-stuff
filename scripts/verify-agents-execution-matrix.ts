@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/agents-execution-matrix-provider.ts");
-const CERTIFIED_PI_VERSION = "0.83.0";
 const PROCESS_TIMEOUT_MS = 30_000;
 const BACKGROUND_SETTLE_TIMEOUT_MS = 20_000;
 

@@ -1,11 +1,11 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/tools-grouping-pty-provider.ts");
 const runner = join(root, "test/fixtures/tools-grouping-pty-runner.sh");
-const CERTIFIED_PI_VERSION = "0.83.0";
 
 function fail(message: string): never {
 	throw new Error(`Tool grouping PTY verification failed: ${message}`);

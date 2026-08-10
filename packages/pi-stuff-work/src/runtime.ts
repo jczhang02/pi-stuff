@@ -26,7 +26,13 @@ import {
 	getShellConfig,
 	truncateTail,
 } from "@earendil-works/pi-coding-agent";
-import { BoundedOutputFile, DEFAULT_MODEL_OUTPUT_LIMIT, readBoundedTail } from "./output.js";
+import {
+	BoundedOutputFile,
+	boundedTextTail,
+	DEFAULT_MODEL_OUTPUT_LIMIT,
+	readBoundedTail,
+	tryReadBoundedTail,
+} from "./output.js";
 import {
 	captureProcessIdentity,
 	captureProcessIdentityWithRetry,
@@ -39,6 +45,7 @@ import { reconcileStaleRuns, type StoredProcessTask, WorkRunStorage } from "./st
 const DEFAULT_BACKGROUND_AFTER_MS = 120_000;
 const QUICK_COMPLETION_MS = 2_000;
 const MAX_CONCURRENT_ACTIVITIES = 16;
+const MAX_TERMINAL_RECEIPTS = 64;
 const MAX_NOTIFICATION_OUTCOMES = 16;
 const MAX_NOTIFICATION_CONTENT_BYTES = 64 * 1024;
 const MAX_NOTIFICATION_INLINE_BYTES = 40 * 1024;
@@ -493,6 +500,7 @@ export class BackgroundWorkRuntime {
 	private readonly supervisorFactory: typeof spawnSupervisor;
 	private readonly stopCompletionGraceMs: number;
 	private readonly signalSupervisor: SignalVerifiedSupervisor;
+	private readonly terminalOutcomes = new Map<string, BackgroundWorkOutcome>();
 
 	constructor(options: RuntimeOptions) {
 		this.backgroundAfterMs = options.backgroundAfterMs ?? DEFAULT_BACKGROUND_AFTER_MS;
@@ -570,6 +578,7 @@ export class BackgroundWorkRuntime {
 		void activity.outcome.then((outcome) => {
 			if (this.monitors.get(activity.id) !== activity) return;
 			this.monitors.delete(activity.id);
+			this.rememberTerminalOutcome(outcome);
 			this.emit();
 			if (!this.disposed && outcome.status !== "stopped") this.enqueueNotification(outcome, true);
 		});
@@ -714,7 +723,13 @@ export class BackgroundWorkRuntime {
 		}
 		const monitor = this.monitors.get(id);
 		if (monitor) return monitor.readOutput(maxBytes);
-		throw new Error(`No running Background Work activity matches '${id}'`);
+		const terminal = this.terminalOutcomes.get(id);
+		if (terminal) {
+			const durable = terminal.outputPath ? tryReadBoundedTail(terminal.outputPath, maxBytes) : undefined;
+			const output = durable ?? boundedTextTail(terminal.recentOutput ?? "", maxBytes);
+			return output ? `${terminal.summary}\n\n${output}` : terminal.summary;
+		}
+		throw new Error(`No current or recently finished Background Work activity matches '${id}'`);
 	}
 
 	async stop(id: string): Promise<BackgroundWorkOutcome> {
@@ -722,7 +737,9 @@ export class BackgroundWorkRuntime {
 		if (shell) return this.stopShell(shell, "user");
 		const monitor = this.monitors.get(id);
 		if (monitor) return monitor.cancel("user");
-		throw new Error(`No running Background Work activity matches '${id}'`);
+		const terminal = this.terminalOutcomes.get(id);
+		if (terminal) return terminal;
+		throw new Error(`No current or recently finished Background Work activity matches '${id}'`);
 	}
 
 	async shutdown(): Promise<void> {
@@ -755,6 +772,7 @@ export class BackgroundWorkRuntime {
 				console.error("[pi-stuff-work] failed to clean up Background Work shutdown state:", error);
 			}
 		}
+		this.terminalOutcomes.clear();
 		this.emit();
 	}
 
@@ -1215,6 +1233,7 @@ export class BackgroundWorkRuntime {
 			title: activity.title,
 		};
 		this.activities.delete(activity.id);
+		if (activity.backgrounded) this.rememberTerminalOutcome(outcome);
 		try {
 			this.persistRunningProcesses();
 		} catch (error) {
@@ -1423,10 +1442,21 @@ export class BackgroundWorkRuntime {
 		}
 	}
 
+	private rememberTerminalOutcome(outcome: BackgroundWorkOutcome): void {
+		this.terminalOutcomes.delete(outcome.id);
+		this.terminalOutcomes.set(outcome.id, outcome);
+		while (this.terminalOutcomes.size > MAX_TERMINAL_RECEIPTS) {
+			const oldest = this.terminalOutcomes.keys().next().value;
+			if (oldest === undefined) break;
+			this.terminalOutcomes.delete(oldest);
+		}
+	}
+
 	private randomId(kind: BackgroundWorkKind): string {
 		const ids = new Map<string, true>();
 		for (const id of this.activities.keys()) ids.set(id, true);
 		for (const id of this.monitors.keys()) ids.set(id, true);
+		for (const id of this.terminalOutcomes.keys()) ids.set(id, true);
 		return randomActivityId(kind, ids);
 	}
 }

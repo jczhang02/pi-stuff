@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, KeybindingsManager, TUI } from "@earendil-works/pi-tui";
 import { suppressDuplicatedLiveCompactionReplay } from "./compaction-presentation.js";
+import { getHostSharedResource } from "./host-resource.js";
 import { registerLiveThoughtDisplay } from "./live-thought.js";
 import { installUiSessionPresentation, type UiSessionPresentation } from "./session-presentation.js";
 import {
@@ -75,6 +76,7 @@ export interface CommandDialogCoordinator {
 }
 
 export type FooterFactory = NonNullable<Parameters<ExtensionUIContext["setFooter"]>[0]>;
+export { getHostSharedResource } from "./host-resource.js";
 export type FooterTailFactory = (tui: TUI, theme: Theme) => Component;
 
 type DialogRequestState = "mounted" | "mounting" | "queued" | "settled";
@@ -576,6 +578,7 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 }
 
 const COORDINATOR_REGISTRY = Symbol.for("@jczhang02/pi-stuff-ui/coordinators/v1");
+const COORDINATOR_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/coordinator-discovery/v1";
 
 function coordinatorRegistry(): WeakMap<ExtensionAPI["events"], CommandDialogCoordinatorImplementation> {
 	const root = globalThis as unknown as {
@@ -592,18 +595,41 @@ export function getCommandDialogCoordinator(pi: ExtensionAPI): CommandDialogCoor
 		existing.ensureGeneration(pi);
 		return existing;
 	}
-	const coordinator = new CommandDialogCoordinatorImplementation();
+
+	const coordinator = getHostSharedResource(
+		pi.events,
+		registry as WeakMap<object, CommandDialogCoordinatorImplementation>,
+		COORDINATOR_DISCOVERY_EVENT,
+		() => new CommandDialogCoordinatorImplementation(),
+		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
+	);
 	coordinator.ensureGeneration(pi);
-	registry.set(pi.events, coordinator);
 	return coordinator;
 }
 
 interface UiSettingsCommandState {
 	active: boolean;
-	readonly registry: UiSettingRegistry;
+	activation?: object;
+	registry?: UiSettingRegistry;
 }
 
 const UI_SETTINGS_COMMAND_STATES = Symbol.for("@jczhang02/pi-stuff-ui/settings-command-states/v1");
+const UI_SETTINGS_COMMAND_STATE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/settings-command-state-discovery/v1";
+const UI_LIFECYCLE_STATES = Symbol.for("@jczhang02/pi-stuff-ui/lifecycle-states/v1");
+const UI_LIFECYCLE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/lifecycle-discovery/v1";
+
+interface UiLifecycleState {
+	active: boolean;
+	activation?: object;
+}
+
+function uiLifecycleStates(): WeakMap<ExtensionAPI["events"], UiLifecycleState> {
+	const root = globalThis as unknown as {
+		[key: symbol]: WeakMap<ExtensionAPI["events"], UiLifecycleState> | undefined;
+	};
+	root[UI_LIFECYCLE_STATES] ??= new WeakMap();
+	return root[UI_LIFECYCLE_STATES];
+}
 
 const STATUSLINE_GIT_REFRESH_REQUEST = "@jczhang02/pi-stuff-ui/statusline-git-refresh-request/v1";
 const STATUSLINE_GIT_REFRESH_LISTENERS = Symbol.for("@jczhang02/pi-stuff-ui/statusline-git-refresh-listeners/v1");
@@ -697,13 +723,24 @@ function uiSettingsCommandStates(): WeakMap<ExtensionAPI["events"], UiSettingsCo
 export function ensureUiSettingsCommand(pi: ExtensionAPI): UiSettingRegistry {
 	const coordinator = getCommandDialogCoordinator(pi);
 	const commandStates = uiSettingsCommandStates();
-	const current = commandStates.get(pi.events);
-	if (current?.active) return current.registry;
+	const state = getHostSharedResource<UiSettingsCommandState>(
+		pi.events,
+		commandStates as WeakMap<object, UiSettingsCommandState>,
+		UI_SETTINGS_COMMAND_STATE_DISCOVERY_EVENT,
+		() => ({ active: false }),
+		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
+	);
+	if (state.active && state.registry) return state.registry;
 	const registry = beginUiSettingsGeneration(pi);
-	const state: UiSettingsCommandState = { active: true, registry };
-	commandStates.set(pi.events, state);
+	const activation = {};
+	state.active = true;
+	state.activation = activation;
+	state.registry = registry;
 	pi.on("session_shutdown", () => {
-		if (commandStates.get(pi.events) === state) state.active = false;
+		if (state.activation !== activation) return;
+		state.active = false;
+		delete state.activation;
+		delete state.registry;
 	});
 	pi.registerCommand("ui", {
 		description: "Configure Pi Stuff UI",
@@ -724,6 +761,29 @@ export function ensureUiSettingsCommand(pi: ExtensionAPI): UiSettingRegistry {
 }
 
 export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
+	const lifecycle = getHostSharedResource<UiLifecycleState>(
+		pi.events,
+		uiLifecycleStates() as WeakMap<object, UiLifecycleState>,
+		UI_LIFECYCLE_DISCOVERY_EVENT,
+		() => ({ active: false }),
+		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
+	);
+	if (lifecycle.active) return;
+	const activation = {};
+	lifecycle.active = true;
+	lifecycle.activation = activation;
+	try {
+		await installUiCapability(pi, lifecycle, activation);
+	} catch (error) {
+		if (lifecycle.activation === activation) {
+			lifecycle.active = false;
+			delete lifecycle.activation;
+		}
+		throw error;
+	}
+}
+
+async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState, activation: object): Promise<void> {
 	const coordinator = getCommandDialogCoordinator(pi);
 	const registry = ensureUiSettingsCommand(pi);
 	registerLiveThoughtDisplay(pi);
@@ -773,6 +833,10 @@ export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 		await settings.whenIdle();
 		unregisterOwnedSettings?.();
 		unregisterOwnedSettings = undefined;
+		if (lifecycle.activation === activation) {
+			lifecycle.active = false;
+			delete lifecycle.activation;
+		}
 	});
 }
 

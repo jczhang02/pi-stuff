@@ -30,6 +30,13 @@ export function utf8SafePrefix(buffer: Buffer): Buffer {
 	return buffer.subarray(0, completeUtf8End(buffer));
 }
 
+export function boundedTextTail(value: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
+	const buffer = Buffer.from(value, "utf-8");
+	const selected = utf8SafeTail(buffer, maxBytes);
+	const prefix = buffer.length > selected.length ? "…[earlier output omitted]\n" : "";
+	return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
+}
+
 export function sanitizeTerminalText(value: string): string {
 	let text = "";
 	let index = 0;
@@ -205,7 +212,7 @@ export class BoundedOutputFile {
 	}
 }
 
-export function readBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
+export function tryReadBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string | undefined {
 	let fd: number | undefined;
 	try {
 		fd = openSync(path, "r");
@@ -217,7 +224,7 @@ export function readBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT_LI
 		const prefix = size > bytes ? "…[earlier output omitted]\n" : "";
 		return sanitizeTerminalText(`${prefix}${selected.toString("utf-8")}`).trimEnd();
 	} catch {
-		return "(no output yet)";
+		return undefined;
 	} finally {
 		if (fd !== undefined) {
 			try {
@@ -228,4 +235,8 @@ export function readBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT_LI
 			}
 		}
 	}
+}
+
+export function readBoundedTail(path: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
+	return tryReadBoundedTail(path, maxBytes) ?? "(no output yet)";
 }

@@ -5,13 +5,14 @@
  * the main task, Todo, editor draft, and vertical Agent roster remain intact?
  *
  * All content is deterministic and model-free. This prototype performs no real
- * concurrency or persistence; it proves only Pi 0.83 layout, focus, and draft
+ * concurrency or persistence; it proves only certified Pi layout, focus, and draft
  * restoration. BTW never renders a normal-screen widget or transcript entry.
  */
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { CERTIFIED_PI_VERSION } from "../../../scripts/pi-host-contract.js";
 
 type BtwVariant = "claude" | "ephemeral" | "mailbox";
 
@@ -404,7 +405,7 @@ class EphemeralThreadSurface implements Component {
 			if (this.actionFocused) {
 				this.done({
 					kind: "bring",
-					answer: "The fixture uses only public Pi 0.83 extension UI APIs.",
+					answer: `The fixture uses only public Pi ${CERTIFIED_PI_VERSION} extension UI APIs.`,
 				});
 				return;
 			}
@@ -526,7 +527,7 @@ class DetachedMailboxSurface implements Component {
 				`  ${this.theme.fg("dim", "○")} ${this.theme.fg("muted", "Does this fixture call a model?")} ${this.theme.fg("dim", "· earlier")}`,
 				"",
 				`  ${this.theme.fg("muted", "Answer")}`,
-				`  ${this.theme.fg("text", "The layout uses only public Pi 0.83 extension APIs.")}`,
+				`  ${this.theme.fg("text", `The layout uses only public Pi ${CERTIFIED_PI_VERSION} extension APIs.`)}`,
 				`  ${this.theme.fg("text", "No fork, model call, normal row, or transcript entry.")}`,
 				"",
 				`  ${this.theme.fg("dim", "Esc return to the unchanged main draft")}`,

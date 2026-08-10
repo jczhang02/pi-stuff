@@ -995,7 +995,7 @@ describe("Context projections", () => {
 	});
 });
 
-describe("Pi 0.83 extension ordering contract", () => {
+describe("certified Pi extension ordering contract", () => {
 	test("runs a Magic handler appended during before_agent_start in the same host event", async () => {
 		const handlers: Handlers = new Map();
 		let appendedHandlerRan = false;

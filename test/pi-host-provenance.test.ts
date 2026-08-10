@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
 	CERTIFIED_PI_BUN_VERSION,
+	CERTIFIED_PI_HOST_PROFILE,
 	CERTIFIED_PI_MODEL_DATA_SHA256,
 	CERTIFIED_PI_NODE_VERSION,
 	CERTIFIED_PI_NPM_VERSION,
@@ -242,7 +243,7 @@ describe("Pi Host source provenance", () => {
 		const host = await createAttestedHost();
 		expect(await verifyPiHostProvenance(host.binary, host.environment)).toEqual({
 			kind: "ci-workflow-attestation",
-			profile: "0.83.0+source.bf4a90d81985.models.676b91ad1382.node.24.16.0.npm.11.13.0.bun.1.3.14",
+			profile: CERTIFIED_PI_HOST_PROFILE,
 		});
 	});
 
