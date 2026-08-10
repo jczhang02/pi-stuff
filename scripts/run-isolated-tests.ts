@@ -28,7 +28,7 @@ function main(): void {
 
 	for (const [index, testFile] of testFiles.entries()) {
 		const title = `[${index + 1}/${testFiles.length}] ${testFile}`;
-		const githubGroup = process.env.GITHUB_ACTIONS === "true";
+		const githubGroup = process.env["GITHUB_ACTIONS"] === "true";
 		if (githubGroup) console.log(`::group::${title}`);
 		else console.log(`\n${title}`);
 
