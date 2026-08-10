@@ -38,6 +38,7 @@
 		"linkedom": "0.16.11",
 		"open": "10.2.0",
 		"p-limit": "6.2.0",
+		"proxy-from-env": "1.1.0",
 		"promise.try": "2.0.1",
 		"smol-toml": "1.6.1",
 		"strip-json-comments": "5.0.3",

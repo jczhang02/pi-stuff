@@ -91,6 +91,33 @@ describe("generateSuite", () => {
 		await expect(generateSuite(root, "write")).rejects.toThrow("Suite Tool inventories overlap at read");
 	});
 
+	test("wires Code Mode after ordinary capabilities with the shared Tool registry", async () => {
+		const root = await createRepository();
+		await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
+			schemaVersion: 2,
+			capabilities: ["tool-display", "code-mode"],
+			tools: ["read"],
+		});
+
+		await generateSuite(root, "write");
+		const generated = await readFile(join(root, "packages", "pi-stuff", "index.ts"), "utf8");
+		expect(generated).toContain(
+			'import codeMode, { registerCodeModeContextProjection } from "./src/code-mode/index.js";',
+		);
+		expect(generated).toContain("const CAPABILITIES: readonly CapabilityFactory[] = [toolDisplay];");
+		expect(generated).toContain("\tregisterCodeModeContextProjection(pi);");
+		expect(generated).toContain(`\tcodeMode(registrations.api, {
+\t\tregistry: registrations.registry,
+\t\tsurface: registrations.surface,
+\t});`);
+		expect(generated.indexOf("await capability(registrations.api)")).toBeLessThan(
+			generated.indexOf("codeMode(registrations.api"),
+		);
+		expect(generated.indexOf("registerCodeModeContextProjection(pi)")).toBeLessThan(
+			generated.indexOf("await capability(registrations.api)"),
+		);
+	});
+
 	test("reports generated drift without rewriting the working tree", async () => {
 		const root = await createRepository();
 		const indexPath = join(root, "packages", "pi-stuff", "index.ts");

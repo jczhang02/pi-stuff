@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import backgroundWork from "./src/background-work/index.js";
 import btw from "./src/btw/index.js";
+import codeMode, { registerCodeModeContextProjection } from "./src/code-mode/index.js";
 import codex from "./src/codex/index.js";
 import contextManagement from "./src/context-management/index.js";
 import conversationUi from "./src/conversation-ui/index.js";
@@ -73,9 +74,14 @@ const OPTIONAL_SUITE_TOOL_NAMES = ["subagent_supervisor", "intercom"] as const;
 
 export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 	const registrations = createSuiteToolRegistrationTracker(pi);
+	registerCodeModeContextProjection(pi);
 	for (const capability of CAPABILITIES) {
 		await capability(registrations.api);
 	}
+	codeMode(registrations.api, {
+		registry: registrations.registry,
+		surface: registrations.surface,
+	});
 	pi.on("session_start", () =>
 		assertSuiteToolActivityCoverage(
 			pi,
