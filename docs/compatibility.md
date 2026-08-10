@@ -24,8 +24,9 @@ is the trust root.
 
 CI exposes two stable checks. `Fast` always validates the frozen dependency graph, repository formatting, type surfaces,
 unused-code analysis, generated composition, and public-release safety. `Acceptance` then builds the certified Host and
-RTK runtime before running all tests, real TUI verification, the Tool Activity benchmark, and package verification in a
-network-isolated namespace. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip `Acceptance`;
+RTK runtime before running every test file in a fresh Bun process, real TUI verification, the Tool Activity benchmark,
+and package verification in a network-isolated namespace. Per-file process isolation prevents one process- or PTY-heavy
+test from contaminating the native resources used by a later test. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip `Acceptance`;
 executable documentation remains fully certified. Manual dispatch always runs both checks. A separate weekly upstream
 watch reports when the npm `latest` tag moves beyond the certified Host, but never changes certification automatically.
 

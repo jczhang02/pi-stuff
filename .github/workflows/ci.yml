@@ -173,7 +173,7 @@ jobs:
                 echo "network namespace is not isolated" >&2
                 exit 1
               fi
-              bun run test
+              bun run test:ci
               bun run benchmark:tool-activity
               bun run pack:verify
             ' 2>&1 | tee "$RUNNER_TEMP/pi-stuff-ci/acceptance.log"
