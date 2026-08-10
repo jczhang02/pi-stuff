@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 const RPC_REQUEST_ID = "pi-stuff-smoke";
 const DEFAULT_TIMEOUT_MS = 20_000;
+const DIAGNOSTIC_TAIL_CHARACTERS = 4_096;
 
 export interface PiRpcSmokeOptions {
 	piBinary: string;
@@ -58,6 +59,13 @@ function commandNames(response: RpcObject): string[] {
 		}
 		return command.name;
 	});
+}
+
+function diagnosticTail(value: string): string {
+	const trimmed = value.trim();
+	if (trimmed.length === 0) return "<empty>";
+	const tail = trimmed.slice(-DIAGNOSTIC_TAIL_CHARACTERS);
+	return JSON.stringify(tail.length === trimmed.length ? tail : `…${tail}`);
 }
 
 function isolatedEnvironment(temporaryDirectory: string): Record<string, string> {
@@ -146,7 +154,10 @@ export async function runPiRpcSmoke(options: PiRpcSmokeOptions): Promise<PiRpcSm
 		clearTimeout(timeout);
 
 		if (timedOut) {
-			throw new Error(`Pi RPC smoke timed out after ${options.timeoutMs ?? DEFAULT_TIMEOUT_MS} ms`);
+			throw new Error(
+				`Pi RPC smoke timed out after ${options.timeoutMs ?? DEFAULT_TIMEOUT_MS} ms; ` +
+					`stdout tail=${diagnosticTail(stdout)}; stderr tail=${diagnosticTail(stderr)}`,
+			);
 		}
 		if (exitCode !== 0) {
 			throw new Error(`Pi RPC smoke exited with ${exitCode}: ${stderr.trim() || stdout.trim()}`);
