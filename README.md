@@ -27,6 +27,7 @@ installable Packages:
 | --- | --- |
 | `conversation-ui` | Welcome, Statusline, live Thought, input UI, `/ui`, and shared Command Dialogs |
 | `tool-display` | Compact built-in and Suite Tool activity, detail views, and resume reconstruction |
+| `code-mode` | One-schema local JavaScript composition for active Suite Tools with unchanged Tool UI |
 | `context-management` | Lazy Magic Context integration and native Pi fail-open behavior |
 | `rtk` | Fail-open command rewriting and model-only Tool-output projection |
 | `codex` | Codex Fast/usage controls plus patch and image Tools |

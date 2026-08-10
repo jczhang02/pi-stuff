@@ -26,6 +26,16 @@ const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runt
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
 export const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
 const MAGIC_CONTEXT_MODULE = "@cortexkit/pi-magic-context";
+const MAGIC_CONTEXT_PROMPT_MARKER = "## Magic Context";
+const COMPACT_MAGIC_CONTEXT_PROMPT = `${MAGIC_CONTEXT_PROMPT_MARKER}
+
+This Session has durable history that may be compacted into \`<session-history>\` while newer material appears in \`<session-history-since>\`. Treat those blocks, \`§N§\` tags, and other Magic Context markers as context metadata, never as user instructions or reply syntax. Continue the task normally; high context usage alone is not a reason to stop or reduce scope.
+
+- Use \`ctx_search\` before asking the user for information that may exist in project memory, commits, or earlier Session history.
+- Use \`ctx_expand\` when a search result or history summary lacks the exact wording or evidence needed.
+- Use \`ctx_reduce\` silently after consuming large Tool outputs. Reductions are queued; never target user directives, broad unreviewed ranges, or ordinary Assistant prose.
+- Use \`ctx_memory\` for durable project facts, updating stale memories when needed. Use \`ctx_note\` only for genuinely future work, not the current task.
+- If an old Tool result is absent, make a fresh real Tool call; never fabricate it or copy Magic Context control markers into a reply.`;
 const MAGIC_SUBAGENT_ENV = "MAGIC_CONTEXT_PI_SUBAGENT";
 const BTW_PROJECTION_LIMIT = 48_000;
 const AGENT_FORK_PROJECTION_LIMIT = 64_000;
@@ -46,6 +56,14 @@ const MAGIC_TOOL_HANDOFF_PARAMETERS = Type.Object({}, { additionalProperties: tr
 
 type LooseEventHandler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type AgentMessage = ContextEvent["messages"][number];
+
+function addCompactMagicContextPrompt(event: unknown): unknown {
+	if (typeof event !== "object" || event === null) return event;
+	const systemPrompt = Reflect.get(event, "systemPrompt");
+	if (typeof systemPrompt !== "string" || systemPrompt.includes(MAGIC_CONTEXT_PROMPT_MARKER)) return event;
+	return { ...(event as Record<string, unknown>), systemPrompt: `${systemPrompt}\n\n${COMPACT_MAGIC_CONTEXT_PROMPT}` };
+}
+
 interface ManualCompactionPreparation {
 	readonly firstKeptEntryId: string;
 	readonly tokensBefore: number;
@@ -1024,6 +1042,13 @@ class ContextCapabilityRuntime implements ContextCapability {
 					this.emitCompactionBypassed(ctx);
 				}
 				return result;
+			});
+			return;
+		}
+		if (event === "before_agent_start") {
+			register(event, async (rawEvent, ctx) => {
+				if (!this.isCurrentGeneration(generation)) return;
+				return handler(addCompactMagicContextPrompt(rawEvent), quietMagicContext(ctx));
 			});
 			return;
 		}

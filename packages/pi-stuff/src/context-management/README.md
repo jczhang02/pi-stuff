@@ -17,6 +17,11 @@ Historian process is not represented as a Pi Stuff Agent.
 The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.33.1`. The
 adapter suppresses the upstream Todo, statusline, announcement, and auxiliary
 UI surfaces while retaining the five Context tools and focused diagnostics.
+It also supplies a compact provider-facing behavior contract before the
+official engine handles `before_agent_start`. The engine therefore keeps its
+own prompt-cache processing while skipping its much longer default guidance;
+history semantics, retrieval, reduction, memory, notes, and fail-open behavior
+remain unchanged.
 On first lazy activation it writes a conservative user configuration only when
 neither the current CortexKit path nor a legacy Pi path exists; it never
 overwrites user configuration. Exact source and artifact provenance are
@@ -64,3 +69,7 @@ This boundary deliberately works within Pi's extension interface:
 - The official engine owns its durable message index. Context activation
   replays the already-observed `session_start` exactly once so fresh and resumed
   sessions enter that indexing lifecycle even though the engine loads lazily.
+- Real Pi acceptance observes the final Provider request, requires the compact
+  contract, rejects the upstream verbose guidance, and caps the direct-mode
+  system prompt at 8,000 characters. This catches prompt regressions across
+  dependency upgrades without coupling the adapter to private engine helpers.

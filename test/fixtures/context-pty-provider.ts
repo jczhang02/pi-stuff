@@ -158,12 +158,16 @@ function fixtureStream(context: Context) {
 	const bulkResult = context.messages.find(
 		(entry) => entry.role === "toolResult" && entry.toolName === "context_bulk",
 	);
+	const systemPrompt = context.systemPrompt ?? "";
 	record({
 		type: "request",
 		lastUser,
 		hasHistory: text.includes("<session-history>"),
 		hasSince: text.includes("<session-history-since>"),
 		hasNativeSummary: text.includes("NATIVE_COMPACTION_SUMMARY_MARKER"),
+		systemPromptChars: systemPrompt.length,
+		hasCompactMagicContextPrompt: systemPrompt.includes("## Magic Context"),
+		hasVerboseMagicContextPrompt: systemPrompt.includes("Most AI sessions are disposable"),
 		tools: (context.tools ?? []).map((tool) => tool.name),
 		searchResult: searchResult ? contentText(searchResult.content) : undefined,
 	});

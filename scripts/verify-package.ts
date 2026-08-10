@@ -47,6 +47,15 @@ const REQUIRED_ARCHIVE_FILES = [
 	"package/src/conversation-ui/index.ts",
 	"package/src/conversation-ui/statusline.ts",
 	"package/src/tool-display/index.ts",
+	"package/src/code-mode/index.ts",
+	"package/src/code-mode/extension.ts",
+	"package/src/code-mode/connector.ts",
+	"package/src/code-mode/runtime.ts",
+	"package/src/code-mode/v8-executor.ts",
+	"package/src/code-mode/host/host-client.ts",
+	"package/src/code-mode/host/host-assets.ts",
+	"package/src/code-mode/LICENSES/Apache-2.0.txt",
+	"package/src/code-mode/THIRD_PARTY_NOTICES.md",
 	"package/src/context-management/index.ts",
 	"package/src/rtk/index.ts",
 	"package/src/codex/index.ts",
@@ -86,6 +95,7 @@ const REQUIRED_ARCHIVE_FILES = [
 const PROVENANCE_REQUIREMENTS: Readonly<Record<string, readonly string[]>> = {
 	"background-work": ["pi-background-tasks", "Pi Stuff delta"],
 	btw: ["@juicesharp/rpiv-btw", "Pi Stuff delta"],
+	"code-mode": ["@howaboua/pi-codex-conversion", "Cloudflare Code Mode", "Pi Stuff delta"],
 	codex: ["@howaboua/pi-codex-conversion", "Pi Stuff delta"],
 	"context-management": ["cortexkit/magic-context", "Pi Stuff adapter policy"],
 	goal: ["@narumitw/pi-goal", "Pi Stuff delta"],
@@ -160,6 +170,7 @@ export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFi
 	const forbidden = archiveFiles.filter(
 		(path) =>
 			path.startsWith("package/node_modules/") ||
+			/codex-code-mode-host(?:\.exe)?$/u.test(path) ||
 			path.includes("/.changeset/") ||
 			path.includes("/node_modules/") ||
 			(path !== "package/package.json" && path.endsWith("/package.json")) ||
@@ -230,6 +241,8 @@ async function verifyProvenanceAndLicenses(baseDirectory: string): Promise<void>
 	await access(join(baseDirectory, "src", "mcp", "runtime", "banner.png"));
 	await access(join(baseDirectory, "src", "codex", "LICENSES", "Apache-2.0.txt"));
 	await access(join(baseDirectory, "src", "codex", "THIRD_PARTY_NOTICES.md"));
+	await access(join(baseDirectory, "src", "code-mode", "LICENSES", "Apache-2.0.txt"));
+	await access(join(baseDirectory, "src", "code-mode", "THIRD_PARTY_NOTICES.md"));
 	for (const technique of RTK_TECHNIQUE_FILES) {
 		await access(join(baseDirectory, "src", "rtk", "upstream", "techniques", technique));
 	}
@@ -283,6 +296,7 @@ async function verifySuiteSurface(piBinary: string, packagePath: string): Promis
 	});
 	const requiredCommands = [
 		"ui",
+		"codemode",
 		"goal",
 		"goal-tools-certified",
 		"web-tools-certified",

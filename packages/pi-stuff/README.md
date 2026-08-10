@@ -15,6 +15,7 @@ The single local Pi Package for the complete Pi Stuff Suite.
 
 - `conversation-ui`: Statusline, Welcome, live Thought, input presentation, `/ui`, and Command Dialog lifecycle.
 - `tool-display`: compact presentation for Pi built-ins and participating Suite Tools.
+- `code-mode`: one provider-visible JavaScript Tool that composes active Suite Tools locally without changing Tool UI.
 - `context-management`: lazy official Magic Context integration with Pi JSONL as raw session authority.
 - `rtk`: fail-open Bash rewriting and model-only Bash/Grep output projection.
 - `codex`: `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen`.
