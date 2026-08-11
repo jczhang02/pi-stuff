@@ -1104,6 +1104,7 @@ export interface AsyncJobState {
 	/** Parent-resolved launch directory retained for trusted live artifact lookup. */
 	cwd?: string;
 	status: "queued" | "running" | "complete" | "failed" | "paused" | "stopped";
+	error?: string;
 	/** Short caller-facing task/goal shown in Agent surfaces when available. */
 	description?: string;
 	/** Short per-child UI descriptions available before the first status poll. */

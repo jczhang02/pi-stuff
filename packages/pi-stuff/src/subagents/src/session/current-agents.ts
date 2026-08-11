@@ -1,6 +1,6 @@
 import { readNestedRegistry, resolveNestedAsyncDir, sanitizeSummary } from "../runs/shared/nested-events.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
-import { resolveDisplayDescription } from "../shared/display-description.ts";
+import { boundedTerminalLine, isTaskOnlyAgentText, resolveDisplayDescription } from "../shared/display-description.ts";
 import { readOwnedFileTail } from "../shared/private-directory.ts";
 import type { SubagentState } from "../shared/types.ts";
 
@@ -18,6 +18,8 @@ export type AgentStatus =
 
 export interface AgentTranscriptTarget {
 	readonly key: string;
+	readonly error: string | null;
+	readonly task: string;
 	/** Trusted deterministic nested run directory used only as a locator fallback. */
 	readonly asyncDir?: string | null;
 	readonly childIndex?: number;
@@ -119,6 +121,7 @@ interface RowDraft {
 	description: string;
 	task: string;
 	status: AgentStatus;
+	error: string | null;
 	startedAt: number | null;
 	endedAt: number | null;
 	partialResult: string | null;
@@ -151,6 +154,7 @@ const STATUS_ORDER: Record<AgentStatus, number> = {
 	completed: 9,
 };
 const MAX_PARTIAL_RESULT_CHARS = 4_000;
+const MAX_TERMINAL_ERROR_CHARS = 1_000;
 const MAX_TASK_CHARS = 500;
 const MAX_DYNAMIC_SOURCE_CODE_UNITS = 4_096;
 const MAX_LEGACY_TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
@@ -197,6 +201,18 @@ function boundedText(value: unknown, limit: number): string | null {
 	const text = optionalString(value)?.trim();
 	if (!text) return null;
 	return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
+}
+
+function terminalError(status: AgentStatus, ...values: unknown[]): string | null {
+	if (status !== "failed" && status !== "crashed") return null;
+	for (const value of values) {
+		const record = asRecord(value);
+		for (const candidate of [record["error"], asRecord(record["execution"])["error"]]) {
+			const safe = boundedTerminalLine(candidate);
+			if (safe) return boundedText(safe, MAX_TERMINAL_ERROR_CHARS);
+		}
+	}
+	return null;
 }
 
 function firstString(...values: unknown[]): string | null {
@@ -413,6 +429,7 @@ function projectNestedAgents(value: unknown): AgentNestedDetail[] {
 				sanitizedRun?.path[0]?.runId ?? (sanitizedRun?.depth === 1 ? sanitizedRun.parentRunId : undefined);
 			const asyncDir = rootRunId && sanitizedRun ? (resolveNestedAsyncDir(rootRunId, sanitizedRun) ?? null) : null;
 			if (steps.length === 0) {
+				const status = deriveStatus(run, runStatus);
 				details.push(
 					Object.freeze({
 						key: `nested:${runId}:0`,
@@ -424,7 +441,8 @@ function projectNestedAgents(value: unknown): AgentNestedDetail[] {
 						name: firstString(run["agent"], runId) ?? "agent",
 						description: resolveDisplayDescription(undefined, firstString(run["task"]) ?? ""),
 						task: boundedText(run["task"], MAX_TASK_CHARS) ?? "",
-						status: deriveStatus(run, runStatus),
+						status,
+						error: terminalError(status, run),
 						nestedCount: countNestedRuns(runChildren),
 						sessionFile: firstLocator(run["sessionFile"]),
 						transcriptPath: firstLocator(run["transcriptPath"]),
@@ -452,6 +470,7 @@ function projectNestedAgents(value: unknown): AgentNestedDetail[] {
 				});
 				const task = boundedText(step["task"], MAX_TASK_CHARS) ?? "";
 				const description = resolveDisplayDescription(firstString(step["description"]), task);
+				const status = deriveStatus(step, sourceStatus(step["status"] ?? runStatus));
 				details.push(
 					Object.freeze({
 						key: `nested:${runId}:${index}`,
@@ -463,7 +482,8 @@ function projectNestedAgents(value: unknown): AgentNestedDetail[] {
 						name: firstString(step["agent"], run["agent"], runId) ?? "agent",
 						description,
 						task,
-						status: deriveStatus(step, sourceStatus(step["status"] ?? runStatus)),
+						status,
+						error: terminalError(status, step, run),
 						nestedCount: countNestedRuns(stepChildren),
 						sessionFile: firstLocator(step["sessionFile"], run["sessionFile"]),
 						transcriptPath: firstLocator(step["transcriptPath"]),
@@ -547,6 +567,7 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 			...stepRecord,
 			status: effectiveStatus,
 		};
+		const status = deriveStatus(statusRecord, effectiveStatus);
 		const nested =
 			Array.isArray(stepRecord["children"]) && stepRecord["children"].length > 0
 				? stepRecord["children"]
@@ -559,7 +580,8 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 			name: firstString(stepRecord["agent"], job.agents?.[childIndex]) ?? "agent",
 			description: resolveDisplayDescription(explicitDescription, taskSource),
 			task: boundedText(taskSource, MAX_TASK_CHARS) ?? "",
-			status: deriveStatus(statusRecord, effectiveStatus),
+			status,
+			error: terminalError(status, stepRecord, job),
 			startedAt: finiteNumber(stepRecord["startedAt"] ?? job.startedAt),
 			endedAt: finiteNumber(
 				stepRecord["endedAt"] ?? (TERMINAL_SOURCE_STATUSES.has(jobStatus) ? job.updatedAt : null),
@@ -627,6 +649,7 @@ function projectForegroundControl(
 			activityState: childRecord["currentActivityState"] ?? control.currentActivityState,
 			currentTool: childRecord["currentTool"] ?? control.currentTool,
 		};
+		const status = deriveStatus(statusRecord, "running");
 		const nested = nestedForChild(control.nestedChildren, childIndex, directCount);
 		return {
 			key: rowKey(control.runId, childIndex),
@@ -639,7 +662,8 @@ function projectForegroundControl(
 				taskSource,
 			),
 			task: boundedText(taskSource, MAX_TASK_CHARS) ?? "",
-			status: deriveStatus(statusRecord, "running"),
+			status,
+			error: terminalError(status, rememberedChild, childRecord, control),
 			startedAt: finiteNumber(childRecord["startedAt"] ?? control.startedAt),
 			endedAt: null,
 			partialResult: partialResult(rememberedChild, childRecord),
@@ -663,6 +687,7 @@ function projectForegroundRun(run: ForegroundRun, sessionId: string): RowDraft[]
 		const nested = Array.isArray(childRecord["children"]) ? childRecord["children"] : [];
 		const persistedTask = firstString(childRecord["task"]);
 		const taskSource = persistedTask ?? firstString(childRecord["description"]) ?? "";
+		const status = deriveStatus(childRecord, child.status);
 		return [
 			{
 				key: rowKey(run.runId, child.index),
@@ -672,7 +697,8 @@ function projectForegroundRun(run: ForegroundRun, sessionId: string): RowDraft[]
 				name: child.agent || "agent",
 				description: resolveDisplayDescription(persistedTask ? childRecord["description"] : undefined, taskSource),
 				task: boundedText(taskSource, MAX_TASK_CHARS) ?? "",
-				status: deriveStatus(childRecord, child.status),
+				status,
+				error: terminalError(status, childRecord),
 				startedAt: finiteNumber(childRecord["startedAt"]),
 				endedAt: finiteNumber(child.updatedAt ?? run.updatedAt),
 				partialResult: partialResult(childRecord),
@@ -690,6 +716,12 @@ function freezeRow(draft: RowDraft, now: number): AgentRow {
 	const terminal = TERMINAL_STATUSES.has(draft.status);
 	const end = terminal ? draft.endedAt : now;
 	const elapsedMs = draft.startedAt === null || end === null ? null : Math.max(0, end - draft.startedAt);
+	const partialResult =
+		draft.partialResult &&
+		!isTaskOnlyAgentText(draft.partialResult, draft.task) &&
+		boundedTerminalLine(draft.partialResult) !== draft.error
+			? draft.partialResult
+			: null;
 	return Object.freeze({
 		key: draft.key,
 		runId: draft.runId,
@@ -699,10 +731,11 @@ function freezeRow(draft: RowDraft, now: number): AgentRow {
 		description: draft.description,
 		task: draft.task,
 		status: draft.status,
+		error: draft.error,
 		startedAt: draft.startedAt,
 		endedAt: draft.endedAt,
 		elapsedMs,
-		partialResult: draft.partialResult,
+		partialResult,
 		nestedCount: draft.nestedCount,
 		nestedAgents: Object.freeze([...draft.nestedAgents]),
 		sessionFile: draft.sessionFile,

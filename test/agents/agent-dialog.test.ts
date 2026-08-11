@@ -121,6 +121,7 @@ function row(key: string, status: AgentStatus, overrides: Partial<Omit<AgentRow,
 		childIndex: 0,
 		description: `work assigned to ${key}`,
 		endedAt: ["agent_stopped", "completed", "crashed", "failed", "user_cancelled"].includes(status) ? 12_001 : null,
+		error: null,
 		elapsedMs: 12_000,
 		key,
 		name: key,
@@ -260,6 +261,34 @@ describe("Agent Command Dialog", () => {
 		expect(detail.join("\n")).toContain("transcript disk unavailable");
 		expect(detail.at(-1)).toContain("Esc back");
 		component.dispose?.();
+	});
+
+	test("shows a terminal error once and removes repeated task wrappers", async () => {
+		const task = "Inspect the Agent detail without changing files.";
+		const { component, context } = setup(
+			[
+				row("failed", "failed", {
+					error: "Provider rejected the child payload\u001b]0;hidden\u0007 after validation.\u202e",
+					partialResult: `Task: ${task}`,
+					task,
+				}),
+			],
+			{ initialKey: "failed", readTranscript: () => `User\nTask: ${task}` },
+		);
+		await flush();
+		const detail = text(component, 100);
+		expect(detail).toContain("State  failed · 12s\n  Error  Provider rejected the child payload after validation.");
+		expect(detail.split("Provider rejected the child payload")).toHaveLength(2);
+		expect(detail.split(task)).toHaveLength(2);
+		expect(detail).not.toContain("Partial result");
+		expect(detail).not.toContain("User");
+		expect(detail).not.toContain("hidden");
+		expect(detail).not.toContain("\u202e");
+
+		(context.tui.terminal as { rows: number }).rows = 6;
+		const low = text(component, 64);
+		expect(low).toContain("Provider rejected the child payload");
+		expect(low).toContain("Esc back");
 	});
 
 	test("navigates without wrapping and uses Escape as back then close", async () => {
