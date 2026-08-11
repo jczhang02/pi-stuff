@@ -42,6 +42,26 @@ function captureHistory(session: string): string {
 	return command(["tmux", "capture-pane", "-p", "-S", "-", "-t", session]);
 }
 
+function captureAnsiHistory(session: string): string {
+	return command(["tmux", "capture-pane", "-p", "-e", "-S", "-", "-t", session]);
+}
+
+function markerColor(frame: string, summary: string): string {
+	const line = frame
+		.split("\n")
+		.reverse()
+		.find((candidate) => candidate.includes(summary) && candidate.includes("•"));
+	if (!line) fail(`could not find colored Activity marker for ${summary}\n${frame}`);
+	const marker = line.indexOf("•");
+	const colors = line.slice(0, marker).match(new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;:]*m`, "gu")) ?? [];
+	const color = colors.reverse().find((code) => {
+		const parameter = Number.parseInt(code.slice(2), 10);
+		return parameter === 38 || (parameter >= 30 && parameter <= 37) || (parameter >= 90 && parameter <= 97);
+	});
+	if (!color) fail(`Activity marker for ${summary} had no terminal color\n${line}`);
+	return color;
+}
+
 async function waitForText(session: string, expected: string, timeoutMs = 20_000): Promise<string> {
 	const deadline = Date.now() + timeoutMs;
 	let frame = "";
@@ -107,7 +127,7 @@ function successGroup(frame: string): void {
 	]) {
 		if (!frame.includes(required)) fail(`visible Thinking was lost while grouping: ${required}\n${frame}`);
 	}
-	for (const forbidden of ["● Read input-工具.txt", "● Find *.txt", "● List .", "● Bash pwd"]) {
+	for (const forbidden of ["• Read input-工具.txt", "• Find *.txt", "• List .", "• Bash pwd"]) {
 		if (frame.includes(forbidden)) fail(`compact frame retained individual row ${forbidden}\n${frame}`);
 	}
 }
@@ -116,7 +136,7 @@ function backgroundBarrier(frame: string): void {
 	if (!normalized(frame).includes("Launched 2 background tasks, read 1 file")) {
 		fail(`background calls were not folded into one semantic Activity Group\n${frame}`);
 	}
-	for (const forbidden of ["sleep 30", "sleep 31", "● Read input-工具.txt"]) {
+	for (const forbidden of ["sleep 30", "sleep 31", "• Read input-工具.txt"]) {
 		if (frame.includes(forbidden)) fail(`background Activity Group leaked raw member ${forbidden}\n${frame}`);
 	}
 }
@@ -168,6 +188,7 @@ export async function verifyToolsGroupingPty(options: {
 			),
 			shellQuote(runner),
 		].join(" ");
+	let successfulMarkerColor = "";
 
 	try {
 		command([
@@ -194,7 +215,12 @@ export async function verifyToolsGroupingPty(options: {
 		]).trim();
 		if (geometry !== `${String(options.columns)}x${String(options.rows)}`) fail(`unexpected geometry ${geometry}`);
 		if (scenario === "compaction") await waitForText(tmuxSession, "PADDING_DONE");
-		else successGroup(await waitForText(tmuxSession, "GROUP_SUCCESS_DONE"));
+		else {
+			successGroup(await waitForText(tmuxSession, "GROUP_SUCCESS_DONE"));
+			if (scenario === "lifecycle") {
+				successfulMarkerColor = markerColor(captureAnsiHistory(tmuxSession), "Updated 1 task");
+			}
+		}
 
 		if (scenario === "lifecycle") {
 			command(["tmux", "send-keys", "-t", tmuxSession, "C-o"]);
@@ -239,7 +265,23 @@ export async function verifyToolsGroupingPty(options: {
 				fail(`failure count was hidden by grouping\n${failure}`);
 			}
 			if (!failure.includes("Command exited with code 17")) fail(`first failure summary was hidden\n${failure}`);
-			if (failure.includes("● Read input-工具.txt")) fail(`failure group leaked successful member rows\n${failure}`);
+			if (failure.includes("• Read input-工具.txt")) fail(`failure group leaked successful member rows\n${failure}`);
+			const unresolvedMarkerColor = markerColor(captureAnsiHistory(tmuxSession), "Ran 1 command, read 1 file");
+			if (unresolvedMarkerColor === successfulMarkerColor) {
+				fail("mixed unresolved Activity Group retained the success color");
+			}
+
+			await sendTurn(tmuxSession, "recovery");
+			const recovery = await waitForText(tmuxSession, "GROUP_RECOVERY_DONE");
+			if (!normalized(recovery).includes("Ran 2 commands · 1 failed")) {
+				fail(`deterministically recovered retry hid its failure count\n${recovery}`);
+			}
+			const recoveredMarkerColor = markerColor(captureAnsiHistory(tmuxSession), "Ran 2 commands · 1 failed");
+			if (recoveredMarkerColor !== successfulMarkerColor) {
+				fail(
+					`deterministically recovered Activity Group did not use the success color: expected ${JSON.stringify(successfulMarkerColor)}, received ${JSON.stringify(recoveredMarkerColor)}`,
+				);
+			}
 
 			await sendTurn(tmuxSession, "mutation");
 			const mutation = await waitForText(tmuxSession, "GROUP_MUTATION_DONE");
@@ -277,6 +319,9 @@ export async function verifyToolsGroupingPty(options: {
 				fail(`permission rejection was not disclosed by the folded Activity Group\n${rejection}`);
 			}
 			if (!rejection.includes("rejected")) fail(`permission rejection omitted its issue line\n${rejection}`);
+			if (markerColor(captureAnsiHistory(tmuxSession), "Ran 1 command · 1 rejected") !== unresolvedMarkerColor) {
+				fail("rejected-only Activity Group did not retain warning color");
+			}
 
 			await sendTurn(tmuxSession, "cancellation");
 			const cancellation = await waitForText(tmuxSession, "GROUP_CANCELLATION_DONE");
@@ -284,6 +329,9 @@ export async function verifyToolsGroupingPty(options: {
 				fail(`cancelled activity was not disclosed by the folded Activity Group\n${cancellation}`);
 			}
 			if (!cancellation.includes("cancelled")) fail(`cancelled activity omitted its issue line\n${cancellation}`);
+			if (markerColor(captureAnsiHistory(tmuxSession), "Ran 1 command · 1 cancelled") !== unresolvedMarkerColor) {
+				fail("cancelled-only Activity Group did not retain warning color");
+			}
 
 			await sendTurn(tmuxSession, "media");
 			const media = await waitForText(tmuxSession, "GROUP_MEDIA_DONE");
@@ -384,7 +432,7 @@ export async function verifyToolsGroupingPty(options: {
 			)
 			.filter((entry) => entry.message?.role === "toolResult");
 		const expectedResults =
-			scenario === "lifecycle" ? 17 : scenario === "compaction" ? 6 : scenario === "resume" ? 10 : 5;
+			scenario === "lifecycle" ? 19 : scenario === "compaction" ? 6 : scenario === "resume" ? 10 : 5;
 		if (toolResults.length !== expectedResults) {
 			fail(
 				`grouping changed model-visible results: expected ${String(expectedResults)}, found ${String(toolResults.length)}`,

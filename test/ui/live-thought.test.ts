@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { Markdown, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	getMarkdownTheme,
+	initTheme,
+} from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
 import {
 	createLiveThoughtTransformer,
 	registerLiveThoughtDisplay,
@@ -30,10 +34,38 @@ function visibleMarkdown(markdown: string): string {
 }
 
 describe("live Thought display", () => {
-	test("leaves user and assistant Markdown byte-for-byte unchanged", () => {
+	test("leaves user and structured Markdown unchanged and marks assistant prose", () => {
 		const markdown = "# Keep **all** model content\n\nincluding CJK 内容";
 		expect(transform(markdown, { messageType: "user" })).toBe(markdown);
 		expect(transform(markdown, { messageType: "assistant" })).toBe(markdown);
+		const assistant = transform("Keep **all** model content including CJK 内容", { messageType: "assistant" });
+		expect(assistant).toStartWith("• ");
+		expect(assistant).not.toContain("●");
+		expect(assistant).toContain("including CJK 内容");
+	});
+
+	test("aligns assistant prose wraps after one marker cell and one space", () => {
+		initTheme("dark");
+		const transformer = createLiveThoughtTransformer();
+		const markdown = new Markdown("检查中文工具结果 and continue", 0, 0, getMarkdownTheme(), undefined, {
+			transform: (value, width) =>
+				transformer(value, {
+					availableWidth: width,
+					isStreaming: true,
+					messageType: "assistant",
+				}),
+		});
+		const lines = markdown.render(12).map((line) => stripTerminalSequences(line).trimEnd());
+		expect(lines[0]).toStartWith("• ");
+		expect(lines.slice(1).every((line) => line.startsWith("  "))).toBe(true);
+		expect(lines.every((line) => visibleWidth(line) <= 12)).toBe(true);
+		expect(transform("streaming CJK 内容", { availableWidth: 12, messageType: "assistant" })).toBe(
+			transform("streaming CJK 内容", {
+				availableWidth: 12,
+				isStreaming: false,
+				messageType: "assistant",
+			}),
+		);
 	});
 
 	test("advances through the screenshot's bold blocks one visible frame at a time", () => {

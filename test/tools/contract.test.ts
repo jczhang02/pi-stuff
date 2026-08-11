@@ -1351,7 +1351,7 @@ test("an aborted final assistant message settles an unexecuted streamed Tool cal
 	runtime.endTurn();
 	const group = runtime.resolveGroup("r1");
 	if (!group || group === "ambiguous") throw new Error("aborted group missing");
-	expect(group.state).toBe("cancelled");
+	expect(group.state).toBe("warning");
 	expect(group.summary).toContain("cancelled");
 	expect(group.summary).not.toContain("Reading");
 	expect(renderLines(component).join("\n")).toContain("cancelled");
@@ -1469,6 +1469,85 @@ test("failed mutations never produce successful change clauses", () => {
 	const output = settle(mutation, "e1", "broken.ts", true).callLines.join("\n");
 	expect(output).toContain("EDIT FAILED");
 	expect(output).not.toContain("Changed");
+});
+
+test("effective group outcomes recover only exact retries or canonical effect keys", () => {
+	const project = (
+		category: "change-file" | "run-command",
+		firstValue: string,
+		secondValue: string,
+		secondError = false,
+	) => {
+		const harness = apiHarness();
+		const tool = toolFromHarness(harness, category === "run-command" ? "bash" : "edit", category);
+		const runtime = getToolUiRuntime(harness.api);
+		const messages = [
+			assistant(call("first", tool.name, firstValue), call("second", tool.name, secondValue)),
+			result("first", "FIRST FAILED", true),
+			result("second", secondError ? "SECOND FAILED" : "MODEL_VISIBLE", secondError),
+		];
+		runtime.indexMessages(messages, true);
+		settle(tool, "first", firstValue, true, false, "FIRST FAILED");
+		settle(tool, "second", secondValue, secondError, false, secondError ? "SECOND FAILED" : "MODEL_VISIBLE");
+		return { messages, runtime, tool };
+	};
+
+	const retry = project("run-command", "bun test", "bun test");
+	expect(retry.runtime.resolveGroup("first")).toMatchObject({
+		state: "success",
+		summary: expect.stringContaining("1 failed"),
+	});
+	retry.runtime.resetProjection(retry.messages);
+	settle(retry.tool, "first", "bun test", true, false, "FIRST FAILED");
+	settle(retry.tool, "second", "bun test");
+	expect(retry.runtime.resolveGroup("first")).toMatchObject({
+		state: "success",
+		summary: expect.stringContaining("1 failed"),
+	});
+
+	const normalizedHarness = apiHarness();
+	toolFromHarness(normalizedHarness, "bash", "run-command");
+	const normalizedRuntime = getToolUiRuntime(normalizedHarness.api);
+	normalizedRuntime.indexMessages(
+		[
+			assistant(
+				{
+					type: "toolCall",
+					id: "ordered-1",
+					name: "bash",
+					arguments: { value: "bun test", options: { b: 2, a: 1 } },
+				},
+				{
+					type: "toolCall",
+					id: "ordered-2",
+					name: "bash",
+					arguments: { options: { a: 1, b: 2 }, value: "bun test" },
+				},
+			),
+			result("ordered-1", "FIRST FAILED", true),
+			result("ordered-2"),
+		],
+		true,
+	);
+	expect(normalizedRuntime.resolveGroup("ordered-1")).toMatchObject({ state: "success" });
+
+	const effect = project("change-file", "./a.ts", "/project/a.ts");
+	expect(effect.runtime.resolveGroup("first")).toMatchObject({
+		state: "success",
+		summary: expect.stringContaining("1 failed"),
+	});
+
+	const unknown = project("run-command", "bun test:a", "bun test:b");
+	expect(unknown.runtime.resolveGroup("first")).toMatchObject({
+		state: "warning",
+		summary: expect.stringContaining("1 failed"),
+	});
+
+	const failed = project("run-command", "bun test:a", "bun test:b", true);
+	expect(failed.runtime.resolveGroup("first")).toMatchObject({
+		state: "error",
+		summary: expect.stringContaining("2 failed"),
+	});
 });
 
 test("successful infrastructure-only groups disappear but expand normally", () => {
@@ -1644,7 +1723,7 @@ test("the next running member keeps the folded group marker animated", () => {
 	runtime.stopTimer("r1");
 
 	scheduler.tick();
-	expect(leader.render(100)[0]).not.toStartWith("●");
+	expect(leader.render(100)[0]).not.toStartWith("•");
 	runtime.clear();
 });
 

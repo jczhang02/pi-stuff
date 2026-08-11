@@ -7,6 +7,7 @@ import {
 	commandDialogRows,
 	fitCommandDialogRows,
 } from "../conversation-ui/index.js";
+import { type ToolActivityOutcome, toolActivityOutcome } from "./activity.js";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
 import type { ToolActivityGroupView, ToolUiRuntime } from "./contract.js";
 import { oneLine, sanitizeTerminalText, toolStateGlyph } from "./render.js";
@@ -20,16 +21,18 @@ const NARROW_WIDTH = 64;
 const LIST_ROWS = 8;
 const NARROW_LIST_ROWS = 6;
 
-function stateText(theme: Theme, state: ToolActivityState, value: string): string {
+function stateText(theme: Theme, state: ToolActivityOutcome | ToolActivityState, value: string): string {
 	switch (state) {
 		case "running":
 			return theme.fg("muted", value);
 		case "success":
 			return theme.fg("success", value);
 		case "error":
+			return theme.fg("error", value);
+		case "warning":
 		case "rejected":
 		case "cancelled":
-			return theme.fg("error", value);
+			return theme.fg("warning", value);
 	}
 }
 
@@ -81,7 +84,7 @@ function singletonGroup(activity: ToolActivity): ToolActivityGroupView {
 	return {
 		id: activity.id,
 		memberIds: [activity.id],
-		state: activity.state,
+		state: toolActivityOutcome(activity.state),
 		summary: activity.summary || activity.label,
 	};
 }

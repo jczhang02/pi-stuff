@@ -1,5 +1,7 @@
 import type { AgentToolResult, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { TRANSCRIPT_CONTINUATION, TRANSCRIPT_MARKER } from "../conversation-ui/transcript.js";
+import type { ToolActivityOutcome } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
 import { graphemePrefix, graphemeSuffix, sanitizeTerminalText, truncateUtf8Graphemes } from "./terminal.js";
 
@@ -33,8 +35,8 @@ export interface ActivityGroupRowModel {
 	readonly active: boolean;
 	readonly expandable: boolean;
 	readonly hint: string;
-	readonly issueState: "cancelled" | "error" | "rejected" | undefined;
 	readonly kind: "activity";
+	readonly outcome: ToolActivityOutcome;
 	readonly summary: string;
 }
 
@@ -56,7 +58,7 @@ function sameModel(left: ToolTranscriptRowModel, right: ToolTranscriptRowModel):
 			left.active === right.active &&
 			left.expandable === right.expandable &&
 			left.hint === right.hint &&
-			left.issueState === right.issueState &&
+			left.outcome === right.outcome &&
 			left.summary === right.summary
 		);
 	}
@@ -133,11 +135,11 @@ export class CachedToolRow implements Component {
 	}
 }
 
-const TOOL_STATE_GLYPH = "●";
+const CONTROL_STATE_GLYPH = "●";
 
-/** One portable marker shape keeps every lifecycle transition in the same cell. */
-export function toolStateGlyph(_state: ToolActivityState): string {
-	return TOOL_STATE_GLYPH;
+/** Non-transcript controls retain their larger state glyph. */
+export function toolStateGlyph(_state: ToolActivityOutcome | ToolActivityState): string {
+	return CONTROL_STATE_GLYPH;
 }
 
 function styleState(theme: Theme, state: ToolActivityState, text: string): string {
@@ -156,9 +158,10 @@ function styleState(theme: Theme, state: ToolActivityState, text: string): strin
 
 const ACTIVITY_HINT_MAX_WIDTH = 160;
 
-function activityMarkerColor(model: ActivityGroupRowModel): "error" | "muted" | "warning" {
-	if (model.issueState === "error") return "error";
-	if (model.issueState === "rejected" || model.issueState === "cancelled") return "warning";
+function activityMarkerColor(outcome: ToolActivityOutcome): "error" | "muted" | "success" | "warning" {
+	if (outcome === "error") return "error";
+	if (outcome === "success") return "success";
+	if (outcome === "warning") return "warning";
 	return "muted";
 }
 
@@ -169,21 +172,22 @@ function renderActivityGroupRow(
 	markerVisible: boolean,
 ): string[] {
 	if (!model.summary) return [];
-	const hasMarker = model.active || model.issueState !== undefined;
-	const marker = hasMarker ? (model.active && !markerVisible ? " " : TOOL_STATE_GLYPH) : " ";
-	const markerSlot = `${hasMarker ? theme.fg(activityMarkerColor(model), marker) : marker} `;
+	const marker = model.active && !markerVisible ? " " : TRANSCRIPT_MARKER;
+	const markerSlot = `${theme.fg(activityMarkerColor(model.outcome), marker)} `;
 	const summary = theme.fg(model.active ? "text" : "muted", model.summary);
 	const progress = model.active ? theme.fg("dim", "…") : "";
 	const expandHint = model.expandable ? theme.fg("dim", "  (ctrl+o to expand)") : "";
 	const contentWidth = Math.max(1, width - visibleWidth(markerSlot));
 	const wrapped = wrapTextWithAnsi(`${summary}${progress}${expandHint}`, contentWidth);
-	const lines = wrapped.map((line, index) => `${index === 0 ? markerSlot : "  "}${line}`);
+	const lines = wrapped.map((line, index) => `${index === 0 ? markerSlot : TRANSCRIPT_CONTINUATION}${line}`);
 	const safeHint = truncateToWidth(oneLine(model.hint), ACTIVITY_HINT_MAX_WIDTH, "…");
 	if (!safeHint) return lines;
-	const hintPrefix = "  ⎿ ";
+	const hintPrefix = `${TRANSCRIPT_CONTINUATION}⎿ `;
 	const hintWidth = Math.max(1, width - visibleWidth(hintPrefix));
 	const hintLines = wrapTextWithAnsi(theme.fg("dim", safeHint), hintWidth).slice(0, 2);
-	for (const [index, line] of hintLines.entries()) lines.push(`${index === 0 ? hintPrefix : "    "}${line}`);
+	for (const [index, line] of hintLines.entries()) {
+		lines.push(`${index === 0 ? hintPrefix : TRANSCRIPT_CONTINUATION.repeat(2)}${line}`);
+	}
 	return lines;
 }
 
@@ -287,7 +291,7 @@ function fitToolRowParts(markerSlot: string, label: string, target: string, summ
 }
 
 function renderToolRow(model: ToolRowModel, theme: Theme, width: number, markerVisible: boolean): string {
-	const marker = model.state === "running" && !markerVisible ? " " : toolStateGlyph(model.state);
+	const marker = model.state === "running" && !markerVisible ? " " : TRANSCRIPT_MARKER;
 	const markerSlot = `${styleState(theme, model.state, marker)} `;
 	const safeLabel = oneLine(model.label);
 	const safeTarget = oneLine(model.target);

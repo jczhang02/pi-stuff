@@ -194,10 +194,11 @@ function verifyOutput(output: string, columns: number): void {
 	verifyLifecycleFrames(visible);
 	for (const required of [
 		"TOOLS_DONE",
-		"● List",
-		"● Bash",
-		"● Changing 1 file, running 3 commands",
-		"● Changed 1 file, ran 5 commands",
+		"• TOOLS_DONE",
+		"• List",
+		"• Bash",
+		"• Changing 1 file, running 3 commands",
+		"• Changed 1 file, ran 5 commands",
 		"2 failed, 1",
 		"rejected, 1 cancelled",
 		"Tools",
@@ -221,7 +222,7 @@ function verifyOutput(output: string, columns: number): void {
 	for (const forbidden of ["OWNED_TITLE"]) {
 		if (visible.includes(forbidden)) fail(`terminal output exposed forbidden UI or control payload: ${forbidden}`);
 	}
-	if (!/● Read pi-max-tools-[^\n]* · 1 lines/u.test(visible)) {
+	if (!/• Read pi-max-tools-[^\n]* · 1 lines/u.test(visible)) {
 		fail("long Tool target did not retain a semantic boundary before its settled result");
 	}
 	if (/pi-max-tools-[^\n]*…[ \t]+1 lines/u.test(visible)) {
@@ -230,8 +231,8 @@ function verifyOutput(output: string, columns: number): void {
 }
 
 function verifyLifecycleFrames(visible: string): void {
-	const running = "● Changing 1 file, running 3 commands";
-	const settled = "● Changed 1 file, ran 5 commands";
+	const running = "• Changing 1 file, running 3 commands";
+	const settled = "• Changed 1 file, ran 5 commands";
 	const runningFrame = visible.indexOf(running);
 	const settledFrame = visible.indexOf(settled, runningFrame + running.length);
 	if (runningFrame < 0 || settledFrame < 0) {
