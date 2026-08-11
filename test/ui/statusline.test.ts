@@ -533,6 +533,23 @@ describe("StatuslineController", () => {
 		});
 	});
 
+	test("falls back to the complete model marker instead of clipping a field fragment", () => {
+		withNerdFontPreference(false, () => {
+			const controller = new StatuslineController(api(), {
+				preferences: preferences({ latestPrompt: false }),
+			});
+			const component = controller.createFooter(
+				context({ modelId: "an-extraordinarily-long-model-identity", reasoning: false }),
+				tuiHarness().tui,
+				theme,
+				footerData(""),
+			);
+
+			expect(component.render(3)).toEqual(["◆"]);
+			expect(component.render(1)).toEqual(["◆"]);
+		});
+	});
+
 	test("renders an explicit unknown Context while hiding zero-value optional segments", () => {
 		withNerdFontPreference(false, () => {
 			const controller = new StatuslineController(api("off"), { enabled: new ValueSource(true) });

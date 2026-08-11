@@ -726,6 +726,7 @@ interface StatusSegment {
 	readonly compact: string;
 	readonly full: string;
 	readonly id: StatusSegmentId;
+	readonly minimum?: string;
 	readonly priority: number;
 }
 
@@ -753,7 +754,8 @@ function renderStatusline(
 	const modelName = displayModelIdentity(ctx);
 	const model = theme.fg("accent", withIcon(icons.model, modelName));
 	const compactModel = theme.fg("accent", withIcon(icons.model, displayCompactModelName(ctx)));
-	segments.push(statusSegment("model", 100, model, compactModel));
+	const minimumModel = theme.fg("accent", icons.model);
+	segments.push(statusSegment("model", 100, model, compactModel, minimumModel));
 	if (ctx.model?.reasoning !== false) {
 		const thinkingLevel = readThinkingLevel(pi, ctx);
 		const thinking = `${theme.fg(thinkingColor(thinkingLevel), icons.thinking)} ${theme.fg(
@@ -805,8 +807,14 @@ function renderStatusline(
 	return [status, prompt].filter((line): line is string => line !== undefined && line.length > 0);
 }
 
-function statusSegment(id: StatusSegmentId, priority: number, full: string, compact = full): StatusSegment {
-	return { compact, full, id, priority };
+function statusSegment(
+	id: StatusSegmentId,
+	priority: number,
+	full: string,
+	compact = full,
+	minimum?: string,
+): StatusSegment {
+	return { compact, full, id, ...(minimum ? { minimum } : {}), priority };
 }
 
 function renderGitSegments(
@@ -940,7 +948,10 @@ function renderStatusRow(
 		}
 		selected.splice(removalIndex, 1);
 	}
-	return truncateToWidth(render(), width, theme.fg("dim", "…"));
+	const rendered = render();
+	if (visibleWidth(rendered) <= width) return rendered;
+	const minimum = selected[0]?.minimum;
+	return minimum && visibleWidth(minimum) <= width ? minimum : "";
 }
 
 function renderPromptRow(
