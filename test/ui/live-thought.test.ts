@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Markdown, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	getMarkdownTheme,
@@ -11,6 +11,8 @@ import {
 	type ThoughtMarkdownTransformContext,
 	type ThoughtMarkdownTransformer,
 } from "../../packages/pi-stuff/src/conversation-ui/live-thought.js";
+import { SELF_RENDERED_TRANSCRIPT_PADDING } from "../../packages/pi-stuff/src/conversation-ui/transcript.js";
+import { CachedToolRow } from "../../packages/pi-stuff/src/tool-display/render.js";
 
 const CONTEXT: ThoughtMarkdownTransformContext = {
 	availableWidth: 80,
@@ -66,6 +68,45 @@ describe("live Thought display", () => {
 				messageType: "assistant",
 			}),
 		);
+	});
+
+	test("aligns Tool Activity and assistant markers under Host outputPad", () => {
+		initTheme("dark");
+		const transformer = createLiveThoughtTransformer();
+		const assistant = new Markdown(
+			"ALL_FAILED_DONE",
+			SELF_RENDERED_TRANSCRIPT_PADDING,
+			0,
+			getMarkdownTheme(),
+			undefined,
+			{
+				transform: (value, width) =>
+					transformer(value, {
+						availableWidth: width,
+						isStreaming: false,
+						messageType: "assistant",
+					}),
+			},
+		);
+		const toolTheme = {
+			bold: (value: string) => value,
+			fg: (_color: string, value: string) => value,
+		} as unknown as Theme;
+		const activity = new CachedToolRow(toolTheme, {
+			active: false,
+			expandable: true,
+			hint: "",
+			kind: "activity",
+			outcome: "error",
+			summary: "Ran 1 command · 1 failed",
+		});
+		const assistantLine = stripTerminalSequences(assistant.render(80)[0] ?? "");
+		const activityLine = activity.render(80)[0] ?? "";
+
+		expect([activityLine.indexOf("•"), assistantLine.indexOf("•")]).toEqual([
+			SELF_RENDERED_TRANSCRIPT_PADDING,
+			SELF_RENDERED_TRANSCRIPT_PADDING,
+		]);
 	});
 
 	test("advances through the screenshot's bold blocks one visible frame at a time", () => {

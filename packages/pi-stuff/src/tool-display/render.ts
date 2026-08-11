@@ -1,6 +1,10 @@
 import type { AgentToolResult, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { TRANSCRIPT_CONTINUATION, TRANSCRIPT_MARKER } from "../conversation-ui/transcript.js";
+import {
+	SELF_RENDERED_TRANSCRIPT_PADDING,
+	TRANSCRIPT_CONTINUATION,
+	TRANSCRIPT_MARKER,
+} from "../conversation-ui/transcript.js";
 import type { ToolActivityOutcome } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
 import { graphemePrefix, graphemeSuffix, sanitizeTerminalText, truncateUtf8Graphemes } from "./terminal.js";
@@ -21,6 +25,7 @@ const MIN_TRUNCATED_SUMMARY_WIDTH = 6;
 const MIN_TRUNCATED_TARGET_WIDTH = 8;
 const MIN_LATIN_PARTIAL_UNIT = 3;
 const MIN_COMPACT_PARTIAL_UNIT = 2;
+const SELF_RENDERED_TRANSCRIPT_GUTTER = " ".repeat(SELF_RENDERED_TRANSCRIPT_PADDING);
 
 export interface ToolRowModel {
 	readonly kind?: "tool";
@@ -173,16 +178,17 @@ function renderActivityGroupRow(
 ): string[] {
 	if (!model.summary) return [];
 	const marker = model.active && !markerVisible ? " " : TRANSCRIPT_MARKER;
-	const markerSlot = `${theme.fg(activityMarkerColor(model.outcome), marker)} `;
+	const markerSlot = `${SELF_RENDERED_TRANSCRIPT_GUTTER}${theme.fg(activityMarkerColor(model.outcome), marker)} `;
 	const summary = theme.fg(model.active ? "text" : "muted", model.summary);
 	const progress = model.active ? theme.fg("dim", "…") : "";
 	const expandHint = model.expandable ? theme.fg("dim", "  (ctrl+o to expand)") : "";
 	const contentWidth = Math.max(1, width - visibleWidth(markerSlot));
 	const wrapped = wrapTextWithAnsi(`${summary}${progress}${expandHint}`, contentWidth);
-	const lines = wrapped.map((line, index) => `${index === 0 ? markerSlot : TRANSCRIPT_CONTINUATION}${line}`);
+	const continuationPrefix = `${SELF_RENDERED_TRANSCRIPT_GUTTER}${TRANSCRIPT_CONTINUATION}`;
+	const lines = wrapped.map((line, index) => `${index === 0 ? markerSlot : continuationPrefix}${line}`);
 	const safeHint = truncateToWidth(oneLine(model.hint), ACTIVITY_HINT_MAX_WIDTH, "…");
 	if (!safeHint) return lines;
-	const hintPrefix = `${TRANSCRIPT_CONTINUATION}⎿  `;
+	const hintPrefix = `${continuationPrefix}⎿  `;
 	const hintWidth = Math.max(1, width - visibleWidth(hintPrefix));
 	const hintLines = wrapTextWithAnsi(theme.fg("dim", safeHint), hintWidth).slice(0, 2);
 	const hintContinuation = " ".repeat(visibleWidth(hintPrefix));
@@ -293,7 +299,7 @@ function fitToolRowParts(markerSlot: string, label: string, target: string, summ
 
 function renderToolRow(model: ToolRowModel, theme: Theme, width: number, markerVisible: boolean): string {
 	const marker = model.state === "running" && !markerVisible ? " " : TRANSCRIPT_MARKER;
-	const markerSlot = `${styleState(theme, model.state, marker)} `;
+	const markerSlot = `${SELF_RENDERED_TRANSCRIPT_GUTTER}${styleState(theme, model.state, marker)} `;
 	const safeLabel = oneLine(model.label);
 	const safeTarget = oneLine(model.target);
 	const safeSummary = oneLine(model.summary);

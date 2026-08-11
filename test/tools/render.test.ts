@@ -38,7 +38,7 @@ function isWellFormed(value: string): boolean {
 }
 
 function hasRecognizableTruncatedTarget(line: string): boolean {
-	const marker = "• Bash ";
+	const marker = " • Bash ";
 	const outcome = " · done";
 	if (!line.startsWith(marker) || !line.endsWith(outcome)) return true;
 	const target = line.slice(marker.length, -outcome.length);
@@ -78,7 +78,7 @@ describe("terminal-safe Tool rendering", () => {
 				summary: "status",
 				target: "",
 			});
-			expect(row.render(80)).toEqual(["• Tool · status"]);
+			expect(row.render(80)).toEqual([" • Tool · status"]);
 			expect(markerColors).toEqual([expectedColor]);
 			expect([..."•"]).toHaveLength(1);
 			expect(visibleWidth("•")).toBe(1);
@@ -94,8 +94,8 @@ describe("terminal-safe Tool rendering", () => {
 		const visible = running.render(80)[0] ?? "";
 		running.setMarkerVisible(false);
 		const blank = running.render(80)[0] ?? "";
-		expect(visible).toBe("• Tool · status");
-		expect(blank).toBe("  Tool · status");
+		expect(visible).toBe(" • Tool · status");
+		expect(blank).toBe("   Tool · status");
 		expect(visible.indexOf("Tool")).toBe(blank.indexOf("Tool"));
 
 		const settled = new CachedToolRow(theme, {
@@ -106,7 +106,7 @@ describe("terminal-safe Tool rendering", () => {
 			target: "",
 		});
 		settled.setMarkerVisible(false);
-		expect(settled.render(80)).toEqual(["• Tool · done"]);
+		expect(settled.render(80)).toEqual([" • Tool · done"]);
 	});
 
 	test("renders compact activity summaries without raw Tool chrome", () => {
@@ -119,13 +119,13 @@ describe("terminal-safe Tool rendering", () => {
 			summary: "Changing 2 files, running 3 commands, reading 4 files",
 		});
 		expect(active.render(54)).toEqual([
-			"• Changing 2 files, running 3 commands, reading 4",
-			"  files…  (ctrl+o to expand)",
-			"  ⎿  Running focused checks in",
-			"     packages/pi-stuff/src/tool-display",
+			" • Changing 2 files, running 3 commands, reading 4",
+			"   files…  (ctrl+o to expand)",
+			"   ⎿  Running focused checks in",
+			"      packages/pi-stuff/src/tool-display",
 		]);
 		active.setMarkerVisible(false);
-		expect(active.render(54)[0]).toStartWith("  Changing");
+		expect(active.render(54)[0]).toStartWith("   Changing");
 
 		const settled = new CachedToolRow(theme, {
 			active: false,
@@ -135,7 +135,7 @@ describe("terminal-safe Tool rendering", () => {
 			outcome: "success",
 			summary: "Changed 2 files, ran 3 commands",
 		});
-		expect(settled.render(80)).toEqual(["• Changed 2 files, ran 3 commands  (ctrl+o to expand)"]);
+		expect(settled.render(80)).toEqual([" • Changed 2 files, ran 3 commands  (ctrl+o to expand)"]);
 	});
 
 	test("colors Activity Group markers by effective outcome", () => {
@@ -161,7 +161,7 @@ describe("terminal-safe Tool rendering", () => {
 				outcome,
 				summary: "Activity result",
 			});
-			expect(row.render(80)[0]).toStartWith("• ");
+			expect(row.render(80)[0]).toStartWith(" • ");
 			expect(colors).toEqual([expectedColor]);
 		}
 	});
@@ -176,8 +176,8 @@ describe("terminal-safe Tool rendering", () => {
 			summary: "Ran 8 commands · 1 failed",
 		});
 		const rendered = row.render(40);
-		expect(rendered[0]).toStartWith("• Ran 8 commands · 1 failed");
-		expect(rendered.filter((line) => line.includes("⎿") || line.startsWith("     x"))).toHaveLength(2);
+		expect(rendered[0]).toStartWith(" • Ran 8 commands · 1 failed");
+		expect(rendered.filter((line) => line.includes("⎿") || line.startsWith("      x"))).toHaveLength(2);
 		expect(rendered.every((line) => visibleWidth(line) <= 40)).toBe(true);
 	});
 
@@ -244,12 +244,12 @@ describe("terminal-safe Tool rendering", () => {
 			row.setMarkerVisible(true);
 		}
 
-		expect(row.render(8)[0]).toStartWith("• Read");
+		expect(row.render(8)[0]).toStartWith(" • Read");
 		row.setMarkerVisible(false);
-		expect(row.render(8)[0]).toStartWith("  Read");
-		expect(row.render(8)[0]?.indexOf("Read")).toBe(2);
+		expect(row.render(8)[0]).toStartWith("   Read");
+		expect(row.render(8)[0]?.indexOf("Read")).toBe(3);
 		row.setMarkerVisible(true);
-		expect(row.render(4)[0]).toStartWith("• ");
+		expect(row.render(4)[0]).toStartWith(" • ");
 	});
 
 	test("omits useless target fragments and keeps result metadata on a semantic boundary", () => {
@@ -281,7 +281,7 @@ describe("terminal-safe Tool rendering", () => {
 			}
 		}
 
-		expect(rows[0]?.render(24)).toEqual(["• Read · done in 18s"]);
+		expect(rows[0]?.render(24)).toEqual([" • Read · done in 18s"]);
 		expect(Bun.stripANSI(rows[0]?.render(32)[0] ?? "")).toContain("… · done in 18s");
 	});
 
