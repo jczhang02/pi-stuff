@@ -32,6 +32,7 @@ import {
 	withAgentWorkOrigin,
 } from "../../conversation-ui/agent-run-origin.js";
 import { requestStatuslineGitRefreshAfterUserWork, sendSuiteAgentMessage } from "../../conversation-ui/index.js";
+import { boundTerminalLine } from "../../tool-display/index.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
 import {
 	BoundedOutputFile,
@@ -265,7 +266,7 @@ function titleFromCommand(command: string): string {
 			.trim()
 			.split(/\r?\n|&&|\|\||;/u)[0]
 			?.trim() ?? "";
-	return first.slice(0, 80) || "background command";
+	return boundTerminalLine(first, 80) || "background command";
 }
 
 function timeoutMilliseconds(seconds: number): number {

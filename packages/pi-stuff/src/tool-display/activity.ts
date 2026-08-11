@@ -1,6 +1,9 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { ToolActivityState } from "./activity-store.js";
 import { oneLine } from "./render.js";
+import { boundTerminalLine, compactTerminalPath } from "./terminal.js";
+
+const ACTIVITY_TARGET_MAX_WIDTH = 160;
 
 export type ToolActivityCategory =
 	| "block-goal"
@@ -90,14 +93,12 @@ export function activityKey(...parts: readonly unknown[]): string {
 
 /** Keep live targets glanceable without exposing a complete deep path. */
 export function activityTarget(value: string): string {
-	const safe = oneLine(value);
+	const safe = boundTerminalLine(value, ACTIVITY_TARGET_MAX_WIDTH);
 	const pathLike =
 		/^(?:~?[\\/]|\.{1,2}[\\/]|[A-Za-z]:[\\/])/u.test(safe) ||
 		(!/^[a-z][a-z\d+.-]*:\/\//iu.test(safe) && /[\\/]/u.test(safe));
 	if (!pathLike) return safe;
-	const segments = safe.split(/[\\/]+/u).filter(Boolean);
-	if (segments.length <= 2) return safe;
-	return `…/${segments.slice(-2).join("/")}`;
+	return compactTerminalPath(safe, ACTIVITY_TARGET_MAX_WIDTH, true);
 }
 
 export function singleActivity(
@@ -228,13 +229,22 @@ export interface ActivitySummaryMember {
 	/** Bounded root-cause detail shown on the indented issue row. */
 	readonly issueDetail?: string;
 	readonly items: readonly ToolActivityItem[];
+	/** Exact display-only identities that a later successful member may recover. */
+	readonly recoveryKeys?: readonly string[];
 	readonly state: ToolActivityState;
+}
+
+export type ToolActivityOutcome = "error" | "running" | "success" | "warning";
+
+export function toolActivityOutcome(state: ToolActivityState): ToolActivityOutcome {
+	return state === "rejected" || state === "cancelled" ? "warning" : state;
 }
 
 export interface ToolActivitySummary {
 	readonly active: boolean;
 	readonly issueState: "cancelled" | "error" | "rejected" | undefined;
 	readonly issueText: string;
+	readonly outcome: ToolActivityOutcome;
 	readonly summary: string;
 	readonly target: string;
 }
@@ -380,6 +390,7 @@ export interface ActivityCategoryAggregate {
 export interface ToolActivityAggregate {
 	readonly categories: readonly ActivityCategoryAggregate[];
 	readonly firstIssueLabel?: string;
+	readonly outcome: ToolActivityOutcome;
 	readonly stateCounts: Readonly<Partial<Record<ToolActivityState, number>>>;
 	readonly target?: string;
 }
@@ -528,6 +539,51 @@ function issueSummaryFromCounts(
 	};
 }
 
+function meaningfulActivity(items: readonly ToolActivityItem[]): boolean {
+	return items.some(
+		(item) =>
+			(item.countKeys?.some((key) => oneLine(key).length > 0) ?? false) ||
+			(Number.isFinite(item.count ?? 1) && Math.floor(item.count ?? 1) > 0),
+	);
+}
+
+function recoveredByLaterSuccess(member: ActivitySummaryMember, laterSuccessKeys: ReadonlySet<string>): boolean {
+	const keys = member.recoveryKeys ?? [];
+	if (keys.some((key) => key.startsWith("retry\u0000") && laterSuccessKeys.has(key))) return true;
+	const effects = keys.filter((key) => key.startsWith("effect\u0000"));
+	return effects.length > 0 && effects.every((key) => laterSuccessKeys.has(key));
+}
+
+/** Resolve settled group color semantics without guessing whether two operations are equivalent. */
+export function effectiveToolActivityOutcome(members: readonly ActivitySummaryMember[]): ToolActivityOutcome {
+	if (members.some((member) => member.state === "running")) return "running";
+
+	const laterSuccessKeys = new Set<string>();
+	let meaningfulSuccess = false;
+	let recoveredErrors = 0;
+	let unresolvedErrors = 0;
+	let warnings = 0;
+	for (let index = members.length - 1; index >= 0; index -= 1) {
+		const member = members[index];
+		if (!member) continue;
+		if (member.state === "success") {
+			meaningfulSuccess ||= meaningfulActivity(member.items);
+			for (const key of member.recoveryKeys ?? []) laterSuccessKeys.add(key);
+			continue;
+		}
+		if (member.state === "error") {
+			if (recoveredByLaterSuccess(member, laterSuccessKeys)) recoveredErrors += 1;
+			else unresolvedErrors += 1;
+			continue;
+		}
+		if (member.state === "rejected" || member.state === "cancelled") warnings += 1;
+	}
+
+	if (unresolvedErrors > 0) return meaningfulSuccess || recoveredErrors > 0 ? "warning" : "error";
+	if (warnings > 0) return "warning";
+	return "success";
+}
+
 /** Format a pre-aggregated Activity Group without rescanning every member. */
 export function summarizeToolActivityAggregate(aggregate: ToolActivityAggregate, closed: boolean): ToolActivitySummary {
 	const active = !closed || (aggregate.stateCounts.running ?? 0) > 0;
@@ -553,6 +609,7 @@ export function summarizeToolActivityAggregate(aggregate: ToolActivityAggregate,
 		active,
 		issueState: issues.issueState,
 		issueText: issues.text,
+		outcome: active ? "running" : aggregate.outcome,
 		summary,
 		target: active ? activityTarget(aggregate.target ?? "") : "",
 	};
@@ -600,6 +657,7 @@ export function summarizeToolActivityGroup(
 				details: [...accumulator.details],
 			})),
 			firstIssueLabel,
+			outcome: effectiveToolActivityOutcome(members),
 			stateCounts,
 			target,
 		},

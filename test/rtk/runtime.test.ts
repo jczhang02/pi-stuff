@@ -4,6 +4,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { CERTIFIED_RTK_VERSION, RtkRuntime } from "../../packages/pi-stuff/src/rtk/runtime.js";
 
 const temporaryDirectories: string[] = [];
@@ -34,6 +35,18 @@ function result(stdout = "", code = 0, options: { killed?: boolean; stderr?: str
 }
 
 describe("RTK runtime certification", () => {
+	test("bounds runtime errors by terminal cells", async () => {
+		const runtime = new RtkRuntime({ expectedSha256: "unused" });
+		await runtime.verify({
+			exec: async () => {
+				throw new Error(`\u001b[31m${"失败😀".repeat(100)}\u001b[0m`);
+			},
+		} as Pick<ExtensionAPI, "exec">);
+		const error = runtime.snapshot().lastError ?? "";
+		expect(visibleWidth(error)).toBeLessThanOrEqual(220 + visibleWidth("RTK verification failed: "));
+		expect(error).not.toContain("\u001b");
+	});
+
 	test("verifies one exact executable and rewrites through its absolute path", async () => {
 		const binary = await fakeBinary();
 		const calls: Array<{ args: string[]; command: string }> = [];

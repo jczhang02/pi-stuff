@@ -1,3 +1,5 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { boundTerminalLine, boundTerminalText } from "../../../tool-display/index.js";
 import { readNestedRegistry, resolveNestedAsyncDir, sanitizeSummary } from "../runs/shared/nested-events.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { boundedTerminalLine, isTaskOnlyAgentText, resolveDisplayDescription } from "../shared/display-description.ts";
@@ -198,9 +200,9 @@ function firstLocator(...values: unknown[]): string | null {
 }
 
 function boundedText(value: unknown, limit: number): string | null {
-	const text = optionalString(value)?.trim();
+	const text = boundTerminalLine(value, limit);
 	if (!text) return null;
-	return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
+	return text;
 }
 
 function terminalError(status: AgentStatus, ...values: unknown[]): string | null {
@@ -508,16 +510,19 @@ function projectNestedAgents(value: unknown): AgentNestedDetail[] {
 
 function boundedRecentOutput(value: unknown): string | null {
 	if (!Array.isArray(value)) return null;
-	let combined = "";
-	for (const line of value) {
+	const lines: string[] = [];
+	let usedWidth = 0;
+	for (let index = 0; index < value.length; index += 1) {
+		const line = value[index];
 		if (typeof line !== "string") continue;
-		const separator = combined ? "\n" : "";
-		const remaining = MAX_PARTIAL_RESULT_CHARS + 1 - combined.length;
+		const remaining = MAX_PARTIAL_RESULT_CHARS - usedWidth;
 		if (remaining <= 0) break;
-		combined += `${separator}${line.slice(0, Math.max(0, remaining - separator.length))}`;
-		if (combined.length > MAX_PARTIAL_RESULT_CHARS) break;
+		const bounded = boundTerminalText(line, remaining);
+		lines.push(bounded);
+		usedWidth += visibleWidth(bounded);
+		if (line.length >= remaining || visibleWidth(line) > remaining) break;
 	}
-	return boundedText(combined, MAX_PARTIAL_RESULT_CHARS);
+	return lines.join("\n") || null;
 }
 
 function partialResult(...values: unknown[]): string | null {

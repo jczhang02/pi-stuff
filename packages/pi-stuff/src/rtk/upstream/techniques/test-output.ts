@@ -155,10 +155,10 @@ export function aggregateTestOutput(output: string, command: string | undefined 
 		for (const failure of summary.failures.slice(0, 5)) {
 			const failureLines = failure.split("\n");
 			const firstLine = failureLines[0] ?? "";
-			result.push(`   - ${firstLine.slice(0, 70)}${firstLine.length > 70 ? "..." : ""}`);
+			result.push(`   - ${boundTerminalLine(firstLine, 70, "...")}`);
 			for (const detailLine of failureLines.slice(1, 4)) {
 				if (detailLine.trim()) {
-					result.push(`     ${detailLine.slice(0, 65)}${detailLine.length > 65 ? "..." : ""}`);
+					result.push(`     ${boundTerminalLine(detailLine, 65, "...")}`);
 				}
 			}
 			if (failureLines.length > 4) {
@@ -172,3 +172,4 @@ export function aggregateTestOutput(output: string, command: string | undefined 
 
 	return result.join("\n");
 }
+import { boundTerminalLine } from "../../../tool-display/index.js";

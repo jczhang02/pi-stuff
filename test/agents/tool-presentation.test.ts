@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { createAgentToolPresentation } from "../../packages/pi-stuff/src/subagents/src/extension/agent-tool-presentation.js";
 import {
 	createNativeSupervisorChannel,
@@ -44,6 +45,10 @@ import {
 	readChildToolDiagnosticError,
 } from "../../packages/pi-stuff/src/subagents/src/runs/shared/tool-availability.js";
 import type { SubagentState } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import {
+	boundStreamedRecentOutput,
+	extractToolArgsPreview,
+} from "../../packages/pi-stuff/src/subagents/src/shared/utils.js";
 
 const environment = new Map<string, string | undefined>();
 const temporaryDirectories: string[] = [];
@@ -51,6 +56,18 @@ const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
 } as unknown as Theme;
+
+function isWellFormed(value: string): boolean {
+	for (let index = 0; index < value.length; index += 1) {
+		const code = value.charCodeAt(index);
+		if (code >= 0xd800 && code <= 0xdbff) {
+			const next = value.charCodeAt(index + 1);
+			if (next < 0xdc00 || next > 0xdfff) return false;
+			index += 1;
+		} else if (code >= 0xdc00 && code <= 0xdfff) return false;
+	}
+	return true;
+}
 
 function setEnvironment(name: string, value: string): void {
 	if (!environment.has(name)) environment.set(name, process.env[name]);
@@ -287,6 +304,31 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 		} as never);
 		expect(managedActivities?.[0]).toMatchObject({ category });
 	}
+});
+
+test("bounds live Agent arguments and streamed text by grapheme and terminal cells", () => {
+	const args = extractToolArgsPreview({ query: "😀".repeat(31) });
+	const output = boundStreamedRecentOutput([`\u001b[31m${"界".repeat(1_100)}\u001b[0m`])[0] ?? "";
+	for (const [value, width] of [
+		[args, 60],
+		[output, 2_000],
+	] as const) {
+		expect(visibleWidth(value)).toBeLessThanOrEqual(width);
+		expect(isWellFormed(value)).toBeTrue();
+		expect(value).not.toContain("\u001b");
+	}
+	expect(args).toEndWith("...");
+	expect(output).toEndWith("… [truncated]");
+
+	const presentation = createAgentToolPresentation();
+	const issue = presentation.summarize?.(
+		{ agent: "reviewer", foreground: true, task: "Inspect" },
+		{ content: [{ type: "text", text: `\u001b[31m${"失败".repeat(100)}\u001b[0m` }], details: {} as never },
+		"error",
+		1,
+	);
+	expect(visibleWidth(issue ?? "")).toBeLessThanOrEqual(160);
+	expect(issue).not.toContain("\u001b");
 });
 
 test("native parent and child communication tools use the shared Tool row", async () => {

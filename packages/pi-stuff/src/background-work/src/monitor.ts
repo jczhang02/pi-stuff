@@ -1,5 +1,6 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { boundTerminalLine } from "../../tool-display/index.js";
 import { sanitizeTerminalText, utf8SafePrefix, utf8SafeTail } from "./output.js";
 import type {
 	BackgroundMonitorActivity,
@@ -46,10 +47,9 @@ function boundedSeconds(value: number | undefined, fallback: number, name: strin
 }
 
 function titleFor(input: MonitorInput): string {
-	const explicit = input.description?.trim();
-	if (explicit) return explicit.slice(0, 80);
-	const target = input.target.trim().replace(/\s+/gu, " ");
-	return `${input.source} ${target}`.slice(0, 80);
+	const explicit = boundTerminalLine(input.description, 80);
+	if (explicit) return explicit;
+	return boundTerminalLine(`${input.source} ${input.target}`, 80);
 }
 
 function wait(milliseconds: number, signal: AbortSignal): Promise<void> {

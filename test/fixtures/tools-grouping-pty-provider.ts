@@ -71,6 +71,10 @@ const COMPLETION_CALLS: readonly FixtureCall[] = [
 ];
 const MEDIA_CALLS: readonly FixtureCall[] = [{ name: "fixture_media", arguments: {} }];
 const AGENT_CALLS: readonly FixtureCall[] = [{ name: "subagent", arguments: { action: "status" } }];
+const RECOVERY_CALLS: readonly FixtureCall[] = [
+	{ name: "fixture_retry", arguments: { value: "same exact retry" } },
+	{ name: "fixture_retry", arguments: { value: "same exact retry" } },
+];
 
 function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
 	return {
@@ -217,6 +221,9 @@ function fixtureStream(context: Context) {
 	if (request.includes("agent")) {
 		return completed === 0 ? toolCallsStream("group-agent", AGENT_CALLS) : textStream("GROUP_AGENT_DONE");
 	}
+	if (request.includes("recovery")) {
+		return completed === 0 ? toolCallsStream("group-recovery", RECOVERY_CALLS) : textStream("GROUP_RECOVERY_DONE");
+	}
 	if (request.includes("background")) {
 		return completed === 0
 			? toolCallsStream("group-background", BACKGROUND_CALLS)
@@ -322,6 +329,32 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 			resultIsError: () => true,
 			summarize: () => "FIXTURE_GROUP_ERROR",
 			target: () => "error",
+		},
+	);
+	registerSuiteOwnedTool(
+		pi,
+		{
+			description: "Fail once, then complete the same exact operation for recovery certification",
+			execute: async (toolCallId) => {
+				const failed = toolCallId.endsWith("-1");
+				return {
+					content: [{ type: "text", text: failed ? "FIXTURE_RETRY_FAILED" : "FIXTURE_RETRY_RECOVERED" }],
+					details: { failed },
+				};
+			},
+			label: "Retry",
+			name: "fixture_retry",
+			parameters: Type.Object({ value: Type.String() }),
+		},
+		{
+			activity: {
+				categories: ["run-command"],
+				classify: () => [{ category: "run-command", count: 1 }],
+			},
+			resultIsError: (_args, result) =>
+				(result.details as { readonly failed?: boolean } | undefined)?.failed === true,
+			summarize: (_args, _result, state) => (state === "success" ? "recovered" : "retry failed"),
+			target: (args) => args.value,
 		},
 	);
 	registerSuiteOwnedTool(

@@ -25,8 +25,20 @@ function result(text: string, details?: unknown): AgentToolResult<unknown> {
 	};
 }
 
+function isWellFormed(value: string): boolean {
+	for (let index = 0; index < value.length; index += 1) {
+		const code = value.charCodeAt(index);
+		if (code >= 0xd800 && code <= 0xdbff) {
+			const next = value.charCodeAt(index + 1);
+			if (next < 0xdc00 || next > 0xdfff) return false;
+			index += 1;
+		} else if (code >= 0xdc00 && code <= 0xdfff) return false;
+	}
+	return true;
+}
+
 function hasRecognizableTruncatedTarget(line: string): boolean {
-	const marker = "● Bash ";
+	const marker = " • Bash ";
 	const outcome = " · done";
 	if (!line.startsWith(marker) || !line.endsWith(outcome)) return true;
 	const target = line.slice(marker.length, -outcome.length);
@@ -55,7 +67,7 @@ describe("terminal-safe Tool rendering", () => {
 			const recordingTheme = {
 				bold: (value: string) => value,
 				fg: (color: string, value: string) => {
-					if (value === "●") markerColors.push(color);
+					if (value === "•") markerColors.push(color);
 					return value;
 				},
 			} as unknown as Theme;
@@ -66,10 +78,10 @@ describe("terminal-safe Tool rendering", () => {
 				summary: "status",
 				target: "",
 			});
-			expect(row.render(80)).toEqual(["● Tool · status"]);
+			expect(row.render(80)).toEqual([" • Tool · status"]);
 			expect(markerColors).toEqual([expectedColor]);
-			expect([..."●"]).toHaveLength(1);
-			expect(visibleWidth("●")).toBe(1);
+			expect([..."•"]).toHaveLength(1);
+			expect(visibleWidth("•")).toBe(1);
 		}
 
 		const running = new CachedToolRow(theme, {
@@ -82,8 +94,8 @@ describe("terminal-safe Tool rendering", () => {
 		const visible = running.render(80)[0] ?? "";
 		running.setMarkerVisible(false);
 		const blank = running.render(80)[0] ?? "";
-		expect(visible).toBe("● Tool · status");
-		expect(blank).toBe("  Tool · status");
+		expect(visible).toBe(" • Tool · status");
+		expect(blank).toBe("   Tool · status");
 		expect(visible.indexOf("Tool")).toBe(blank.indexOf("Tool"));
 
 		const settled = new CachedToolRow(theme, {
@@ -94,7 +106,7 @@ describe("terminal-safe Tool rendering", () => {
 			target: "",
 		});
 		settled.setMarkerVisible(false);
-		expect(settled.render(80)).toEqual(["● Tool · done"]);
+		expect(settled.render(80)).toEqual([" • Tool · done"]);
 	});
 
 	test("renders compact activity summaries without raw Tool chrome", () => {
@@ -102,28 +114,56 @@ describe("terminal-safe Tool rendering", () => {
 			active: true,
 			expandable: true,
 			hint: "Running focused checks in packages/pi-stuff/src/tool-display",
-			issueState: undefined,
 			kind: "activity",
+			outcome: "running",
 			summary: "Changing 2 files, running 3 commands, reading 4 files",
 		});
 		expect(active.render(54)).toEqual([
-			"● Changing 2 files, running 3 commands, reading 4",
-			"  files…  (ctrl+o to expand)",
-			"  ⎿ Running focused checks in",
-			"    packages/pi-stuff/src/tool-display",
+			" • Changing 2 files, running 3 commands, reading 4",
+			"   files…  (ctrl+o to expand)",
+			"   └ Running focused checks in",
+			"     packages/pi-stuff/src/tool-display",
 		]);
 		active.setMarkerVisible(false);
-		expect(active.render(54)[0]).toStartWith("  Changing");
+		expect(active.render(54)[0]).toStartWith("   Changing");
 
 		const settled = new CachedToolRow(theme, {
 			active: false,
 			expandable: true,
 			hint: "",
-			issueState: undefined,
 			kind: "activity",
+			outcome: "success",
 			summary: "Changed 2 files, ran 3 commands",
 		});
-		expect(settled.render(80)).toEqual(["  Changed 2 files, ran 3 commands  (ctrl+o to expand)"]);
+		expect(settled.render(80)).toEqual([" • Changed 2 files, ran 3 commands  (ctrl+o to expand)"]);
+	});
+
+	test("colors Activity Group markers by effective outcome", () => {
+		for (const [outcome, expectedColor] of [
+			["running", "muted"],
+			["success", "success"],
+			["warning", "warning"],
+			["error", "error"],
+		] as const) {
+			const colors: string[] = [];
+			const recordingTheme = {
+				bold: (value: string) => value,
+				fg: (color: string, value: string) => {
+					if (value === "•") colors.push(color);
+					return value;
+				},
+			} as unknown as Theme;
+			const row = new CachedToolRow(recordingTheme, {
+				active: outcome === "running",
+				expandable: true,
+				hint: "",
+				kind: "activity",
+				outcome,
+				summary: "Activity result",
+			});
+			expect(row.render(80)[0]).toStartWith(" • ");
+			expect(colors).toEqual([expectedColor]);
+		}
 	});
 
 	test("bounds activity hints to two rows and keeps issue markers visible", () => {
@@ -131,13 +171,13 @@ describe("terminal-safe Tool rendering", () => {
 			active: false,
 			expandable: true,
 			hint: "x".repeat(1_000),
-			issueState: "error",
 			kind: "activity",
+			outcome: "error",
 			summary: "Ran 8 commands · 1 failed",
 		});
 		const rendered = row.render(40);
-		expect(rendered[0]).toStartWith("● Ran 8 commands · 1 failed");
-		expect(rendered.filter((line) => line.includes("⎿") || line.startsWith("    x"))).toHaveLength(2);
+		expect(rendered[0]).toStartWith(" • Ran 8 commands · 1 failed");
+		expect(rendered.filter((line) => line.includes("└") || line.startsWith("     x"))).toHaveLength(2);
 		expect(rendered.every((line) => visibleWidth(line) <= 40)).toBe(true);
 	});
 
@@ -146,7 +186,7 @@ describe("terminal-safe Tool rendering", () => {
 			"前\u001b[31m红\u001b[0m\u001b]0;OWNED_TITLE\u0007后\u001bPpayload\u001b\\\u009b32m绿\u0000\u009dC1_TITLE\u009c终\u202eABC\u2066DEF\u2069";
 		const safe = sanitizeTerminalText(unsafe);
 
-		expect(safe).toBe("前红后绿 终 ABC DEF ");
+		expect(safe).toBe("前红后绿 终ABCDEF");
 		expect(safe).not.toContain("\u001b");
 		expect(safe).not.toContain("OWNED_TITLE");
 		expect(safe).not.toContain("C1_TITLE");
@@ -204,12 +244,12 @@ describe("terminal-safe Tool rendering", () => {
 			row.setMarkerVisible(true);
 		}
 
-		expect(row.render(8)[0]).toStartWith("● Read");
+		expect(row.render(8)[0]).toStartWith(" • Read");
 		row.setMarkerVisible(false);
-		expect(row.render(8)[0]).toStartWith("  Read");
-		expect(row.render(8)[0]?.indexOf("Read")).toBe(2);
+		expect(row.render(8)[0]).toStartWith("   Read");
+		expect(row.render(8)[0]?.indexOf("Read")).toBe(3);
 		row.setMarkerVisible(true);
-		expect(row.render(4)[0]).toStartWith("● ");
+		expect(row.render(4)[0]).toStartWith(" • ");
 	});
 
 	test("omits useless target fragments and keeps result metadata on a semantic boundary", () => {
@@ -241,7 +281,7 @@ describe("terminal-safe Tool rendering", () => {
 			}
 		}
 
-		expect(rows[0]?.render(24)).toEqual(["● Read · done in 18s"]);
+		expect(rows[0]?.render(24)).toEqual([" • Read · done in 18s"]);
 		expect(Bun.stripANSI(rows[0]?.render(32)[0] ?? "")).toContain("… · done in 18s");
 	});
 
@@ -352,11 +392,13 @@ describe("terminal-safe Tool rendering", () => {
 		});
 		const argumentDetails = buildToolDetailLines(hugeArguments, result("ok"));
 		const resultDetails = buildToolDetailLines({}, result("y".repeat(8 * 1024 * 1024)));
+		const unicodeDetails = buildToolDetailLines({ value: "👩‍💻".repeat(10_000) }, result("ok"));
 
-		for (const details of [argumentDetails, resultDetails]) {
+		for (const details of [argumentDetails, resultDetails, unicodeDetails]) {
 			expect(details.length).toBeLessThanOrEqual(240);
 			expect(Buffer.byteLength(details.join("\n"))).toBeLessThanOrEqual(24 * 1024);
 			expect(details.at(-1)).toContain("detail capped");
+			expect(details.every(isWellFormed)).toBeTrue();
 		}
 		expect(lateGetterReads).toBe(0);
 		expect(Buffer.byteLength(describeBuiltinTarget("bash", hugeArguments))).toBeLessThanOrEqual(4 * 1024);

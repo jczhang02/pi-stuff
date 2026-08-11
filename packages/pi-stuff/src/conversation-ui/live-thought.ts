@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { TRANSCRIPT_CONTINUATION, TRANSCRIPT_MARKER } from "./transcript.js";
 
 export interface ThoughtMarkdownTransformContext {
 	readonly availableWidth: number;
@@ -15,6 +16,7 @@ interface MarkdownTransformerExtensionAPI {
 
 const FULL_PREFIX = "✻ thoughts: ";
 const COMPACT_PREFIX = "✻ ";
+const TRANSCRIPT_PREFIX = `${TRANSCRIPT_MARKER} `;
 const LABEL = "✻ thoughts:";
 const ELLIPSIS = "…";
 const MIDDLE_ELLIPSIS = " … ";
@@ -26,6 +28,7 @@ const MARKDOWN_PUNCTUATION = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/gu;
 const HEADING = /^(#{1,6})[ \t]+(.*)$/u;
 const TRAILING_HEADING_MARKER = /[ \t]+#+[ \t]*$/u;
 const LIST_ITEM = /^(?:[-+*]|\d{1,9}[.)])[ \t]+(.*)$/u;
+const STRUCTURED_ASSISTANT_MARKDOWN = /(?:\r|\n)|^(?: {0,3}(?:#{1,6}|[-+*>]|\d{1,9}[.)]|`{3,}|~{3,})[ \t])/u;
 const EMPHASIS_MARKERS = ["***", "___", "**", "__", "*", "_"] as const;
 
 /** Register the display-only Thought projection through Pi's public Host seam. */
@@ -39,12 +42,25 @@ export function registerLiveThoughtDisplay(pi: ExtensionAPI): void {
 /** Build the pure projection separately so width and safety behavior can be certified. */
 export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 	return (markdown, context) => {
+		if (context.messageType === "assistant") return renderAssistantTranscript(markdown, context.availableWidth);
 		if (context.messageType !== "assistant-thinking") return markdown;
 
 		const fragment = latestMeaningfulMarkdownFragment(markdown);
 		if (!fragment) return "";
 		return renderThought(fragment, context.availableWidth);
 	};
+}
+
+function renderAssistantTranscript(markdown: string, availableWidth: number): string {
+	if (STRUCTURED_ASSISTANT_MARKDOWN.test(markdown)) return markdown;
+	const text = sanitizeMarkdown(markdown).trim();
+	const width = normalizeWidth(availableWidth);
+	if (!text || width === 0) return "";
+	if (width <= visibleWidth(TRANSCRIPT_PREFIX)) return fitHead(`${TRANSCRIPT_PREFIX}${text}`, width);
+	const lines = wrapTextWithAnsi(text, width - visibleWidth(TRANSCRIPT_PREFIX));
+	return lines
+		.map((line, index) => `${index === 0 ? TRANSCRIPT_PREFIX : TRANSCRIPT_CONTINUATION}${line}`)
+		.join("  \n");
 }
 
 function hasMarkdownTransformer(pi: ExtensionAPI): pi is ExtensionAPI & MarkdownTransformerExtensionAPI {

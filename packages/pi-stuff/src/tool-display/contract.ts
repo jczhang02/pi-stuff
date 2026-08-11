@@ -1,3 +1,4 @@
+import { createHash, type Hash } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { validateToolArguments } from "@earendil-works/pi-ai";
@@ -24,6 +25,7 @@ import { getHostSharedResource } from "../conversation-ui/host-resource.js";
 import {
 	type ActivityCategoryAggregate,
 	type ActivitySummaryMember,
+	effectiveToolActivityOutcome,
 	type PlannedToolActivityGroup,
 	type PlannedToolActivityMember,
 	planToolActivityGroups,
@@ -33,6 +35,8 @@ import {
 	type ToolActivityCategory,
 	type ToolActivityItem,
 	type ToolActivityMetadata,
+	type ToolActivityOutcome,
+	toolActivityOutcome,
 } from "./activity.js";
 import { type ToolActivity, type ToolActivityState, ToolActivityStore } from "./activity-store.js";
 import {
@@ -268,6 +272,7 @@ class GroupSummaryIndex {
 			member.issueLabel ?? "",
 			member.issueDetail ?? "",
 			member.items,
+			member.recoveryKeys ?? [],
 			target,
 		]);
 		const previous = this.members.get(id);
@@ -314,6 +319,9 @@ class GroupSummaryIndex {
 		return {
 			categories,
 			...(firstIssueLabel ? { firstIssueLabel } : {}),
+			outcome: effectiveToolActivityOutcome(
+				[...this.members.values()].sort((left, right) => left.order - right.order),
+			),
 			stateCounts: { ...this.stateCounts },
 			target,
 		};
@@ -380,7 +388,7 @@ class GroupSummaryIndex {
 export interface ToolActivityGroupView {
 	readonly id: string;
 	readonly memberIds: readonly string[];
-	readonly state: ToolActivityState;
+	readonly state: ToolActivityOutcome;
 	readonly summary: string;
 }
 
@@ -453,6 +461,74 @@ const SUCCESS_ONLY_ACTIVITY_CATEGORIES = new Set<ToolActivityCategory>([
 	"update-note",
 	"update-task",
 ]);
+
+function visibleActivityItems(
+	items: readonly ToolActivityItem[],
+	state: ToolActivityState,
+): readonly ToolActivityItem[] {
+	return isIssueState(state) ? items.filter((item) => !SUCCESS_ONLY_ACTIVITY_CATEGORIES.has(item.category)) : items;
+}
+
+function hashRetryText(hash: Hash, value: string): void {
+	hash.update(`${String(value.length)}:`);
+	hash.update(value);
+}
+
+function hashRetryValue(hash: Hash, value: unknown, seen = new WeakSet<object>()): void {
+	if (value === null) {
+		hash.update("n");
+		return;
+	}
+	if (typeof value === "string") {
+		hash.update("s");
+		hashRetryText(hash, value);
+		return;
+	}
+	if (typeof value === "number") {
+		if (!Number.isFinite(value)) throw new TypeError("non-JSON Tool arguments");
+		hash.update(`d${JSON.stringify(value)};`);
+		return;
+	}
+	if (typeof value === "boolean") {
+		hash.update(value ? "t" : "f");
+		return;
+	}
+	if (typeof value !== "object") throw new TypeError("non-JSON Tool arguments");
+	if (seen.has(value)) throw new TypeError("circular Tool arguments");
+	seen.add(value);
+	if (Array.isArray(value)) {
+		hash.update(`a${String(value.length)}:`);
+		for (const entry of value) hashRetryValue(hash, entry, seen);
+	} else {
+		if (!isRecordValue(value)) throw new TypeError("non-JSON Tool arguments");
+		const keys = Object.keys(value).sort();
+		hash.update(`o${String(keys.length)}:`);
+		for (const key of keys) {
+			hashRetryText(hash, key);
+			hashRetryValue(hash, value[key], seen);
+		}
+	}
+	seen.delete(value);
+}
+
+function activityRecoveryKeys(
+	name: string,
+	args: Readonly<Record<string, unknown>>,
+	items: readonly ToolActivityItem[],
+): readonly string[] {
+	const keys = new Set<string>();
+	try {
+		const hash = createHash("sha256");
+		hashRetryValue(hash, args);
+		keys.add(`retry\u0000${name}\u0000${hash.digest("base64url")}`);
+	} catch {
+		// Invalid non-JSON arguments simply cannot prove an exact retry.
+	}
+	for (const item of items) {
+		for (const key of item.countKeys ?? []) keys.add(`effect\u0000${item.category}\u0000${key}`);
+	}
+	return [...keys];
+}
 
 function terminalStateFromResult(
 	member: PlannedToolActivityMember,
@@ -856,7 +932,7 @@ export class ToolUiRuntime {
 				id: activity.id,
 				memberIds: [activity.id],
 				order: this.groupOrder.length + activity.sequence,
-				state: activity.state,
+				state: toolActivityOutcome(activity.state),
 				summary: activity.label,
 			}));
 		return [...grouped, ...standalone];
@@ -1191,8 +1267,8 @@ export class ToolUiRuntime {
 			active: summary.active,
 			expandable: true,
 			hint,
-			issueState: summary.issueState,
 			kind: "activity",
+			outcome: summary.outcome,
 			summary: summary.summary,
 		};
 		const leaderModelChanged = leader.row.setModel(model);
@@ -1237,7 +1313,8 @@ export class ToolUiRuntime {
 			name: member.name,
 			...(member.result ? { result: member.result } : {}),
 		};
-		const items = forcedTerminal ? [] : this.classify(metadata, state);
+		const classifiedItems = forcedTerminal ? [] : this.classify(metadata, state);
+		const items = visibleActivityItems(classifiedItems, state);
 		const infrastructureIssue =
 			isIssueState(state) && items.length === 0 && this.activityPolicies.get(member.name)?.silentSuccess === true;
 		const issueLabel =
@@ -1258,6 +1335,7 @@ export class ToolUiRuntime {
 			...(issueDetail ? { issueDetail } : {}),
 			...(issueLabel ? { issueLabel } : {}),
 			items,
+			recoveryKeys: activityRecoveryKeys(member.name, metadata.args, classifiedItems),
 			state,
 		};
 	}
@@ -1303,9 +1381,7 @@ export class ToolUiRuntime {
 						}
 					: item,
 			);
-			return isIssueState(state)
-				? items.filter((item) => !SUCCESS_ONLY_ACTIVITY_CATEGORIES.has(item.category))
-				: items;
+			return items;
 		} catch {
 			return [];
 		}
@@ -1442,14 +1518,14 @@ export class ToolUiRuntime {
 		return {
 			id: group.leaderId,
 			memberIds: group.members.map((member) => member.id),
-			state: summary.issueState ?? (summary.active ? "running" : "success"),
+			state: summary.outcome,
 			summary: summary.summary,
 		};
 	}
 
 	private activityFromPlan(member: PlannedToolActivityMember): ToolActivity {
 		const state = terminalStateFromResult(member, this.errorPolicies.get(member.name));
-		const items =
+		const classifiedItems =
 			member.terminalState && !member.result
 				? []
 				: this.classify(
@@ -1460,6 +1536,7 @@ export class ToolUiRuntime {
 						},
 						state,
 					);
+		const items = visibleActivityItems(classifiedItems, state);
 		const summary = summarizeToolActivityGroup([{ items, state }], state !== "running");
 		const fallback: AgentToolResult<unknown> = {
 			content: [

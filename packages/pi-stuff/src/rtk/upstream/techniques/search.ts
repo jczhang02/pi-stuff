@@ -1,3 +1,4 @@
+import { boundTerminalLine } from "../../../tool-display/index.js";
 import { compactPath } from "./path-utils.js";
 
 interface SearchResult {
@@ -47,9 +48,7 @@ export function groupSearchResults(output: string, maxResults = 50): string | nu
 		outputText += `> ${compactPath(file, 50)} (${matches.length} matches):\n`;
 		for (const match of matches.slice(0, 10)) {
 			let cleaned = match.content.trim();
-			if (cleaned.length > 70) {
-				cleaned = `${cleaned.slice(0, 67)}...`;
-			}
+			cleaned = boundTerminalLine(cleaned, 70, "...");
 			outputText += `    ${match.lineNumber}: ${cleaned}\n`;
 			shown++;
 		}

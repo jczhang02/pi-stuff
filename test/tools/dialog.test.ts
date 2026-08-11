@@ -147,8 +147,8 @@ test("/tools wraps and paginates long member details without exceeding terminal 
 	component.dispose?.();
 });
 
-test("/tools keeps error groups explicit and semantically colored", () => {
-	const colorCodes: Record<string, number> = { error: 31, muted: 90, success: 32 };
+test("/tools colors mixed groups amber and no-success failures red", () => {
+	const colorCodes: Record<string, number> = { error: 31, muted: 90, success: 32, warning: 33 };
 	const semanticTheme = {
 		bold: (value: string) => value,
 		fg: (color: string, value: string) => {
@@ -156,13 +156,19 @@ test("/tools keeps error groups explicit and semantically colored", () => {
 			return code === undefined ? value : `\u001b[${String(code)}m${value}\u001b[0m`;
 		},
 	} as unknown as Theme;
-	const runtime = groupedRuntime(["a.ts", "missing.ts"], 1);
-	const harness = contextHarness(28, semanticTheme);
-	const component = createToolDialogView(runtime).create(harness.context);
-	const output = component.render(100).join("\n");
-	expect(Bun.stripANSI(output)).toContain("Read 2 files · 1 failed");
-	expect(output).toContain("\u001b[31m●\u001b[0m");
-	component.dispose?.();
+	const mixed = createToolDialogView(groupedRuntime(["a.ts", "missing.ts"], 1)).create(
+		contextHarness(28, semanticTheme).context,
+	);
+	const mixedOutput = mixed.render(100).join("\n");
+	expect(Bun.stripANSI(mixedOutput)).toContain("Read 2 files · 1 failed");
+	expect(mixedOutput).toContain("\u001b[33m●\u001b[0m");
+	mixed.dispose?.();
+
+	const failed = createToolDialogView(groupedRuntime(["missing.ts"], 0)).create(
+		contextHarness(28, semanticTheme).context,
+	);
+	expect(failed.render(100).join("\n")).toContain("\u001b[31m●\u001b[0m");
+	failed.dispose?.();
 });
 
 test("/tools respects narrow widths and terminal row budgets", () => {

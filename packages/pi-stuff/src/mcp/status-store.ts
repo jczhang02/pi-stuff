@@ -1,4 +1,4 @@
-import { sanitizeTerminalText } from "../tool-display/index.js";
+import { boundTerminalLine } from "../tool-display/index.js";
 import type { McpServerRuntimeStatus, McpServerStatusSnapshot, McpStatusSnapshot } from "./runtime/index.js";
 
 type Listener = (snapshot: McpStatusSnapshot | undefined) => void;
@@ -25,8 +25,7 @@ function count(value: unknown): number {
 }
 
 function serverName(value: unknown): string {
-	if (typeof value !== "string") return "";
-	return sanitizeTerminalText(value).replace(/\s+/gu, " ").trim().slice(0, MAX_SERVER_NAME);
+	return boundTerminalLine(value, MAX_SERVER_NAME);
 }
 
 function serverSnapshot(value: unknown): McpServerStatusSnapshot | undefined {

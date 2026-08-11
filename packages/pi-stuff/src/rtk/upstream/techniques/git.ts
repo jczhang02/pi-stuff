@@ -193,11 +193,7 @@ export function compactLog(output: string, limit = 20): string {
 	const result: string[] = [];
 
 	for (const line of lines.slice(0, limit)) {
-		if (line.length > 80) {
-			result.push(`${line.slice(0, 77)}...`);
-		} else {
-			result.push(line);
-		}
+		result.push(boundTerminalLine(line, 80, "..."));
 	}
 
 	if (lines.length > limit) {
@@ -229,3 +225,4 @@ export function compactGitOutput(output: string, command: string | undefined | n
 
 	return null;
 }
+import { boundTerminalLine } from "../../../tool-display/index.js";

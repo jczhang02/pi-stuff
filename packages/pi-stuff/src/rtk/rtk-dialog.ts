@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { isKeyRelease, Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
 	type CommandDialogView,
@@ -7,6 +7,7 @@ import {
 	commandDialogRows,
 	fitCommandDialogRows,
 } from "../conversation-ui/index.js";
+import { boundTerminalLine, compactTerminalPath } from "../tool-display/index.js";
 import type { RtkProjectionAdapter } from "./projection.js";
 import type { RtkRuntime } from "./runtime.js";
 import type { RtkSettingsStore } from "./settings.js";
@@ -24,32 +25,13 @@ function percent(saved: number, original: number): string {
 	return original > 0 ? `${String(Math.round((saved / original) * 100))}%` : "0%";
 }
 
-function oneLine(value: string): string {
-	return value
-		.replaceAll(/[\p{Cc}\p{Cf}]+/gu, " ")
-		.replaceAll(/\s+/gu, " ")
-		.trim();
-}
-
 /** Keep the executable identity useful without letting a package-manager path consume the dialog. */
 export function compactRtkBinaryPath(value: string, maximumWidth: number): string {
 	const width = Math.max(1, Math.floor(maximumWidth));
-	const clean = oneLine(value);
-	const home = oneLine(homedir());
+	const clean = boundTerminalLine(value, Number.MAX_SAFE_INTEGER);
+	const home = boundTerminalLine(homedir(), Number.MAX_SAFE_INTEGER);
 	const display = home && (clean === home || clean.startsWith(`${home}/`)) ? `~${clean.slice(home.length)}` : clean;
-	if (visibleWidth(display) <= width) return display;
-
-	const root = display.startsWith("~/") ? "~/" : display.startsWith("/") ? "/" : "";
-	const remainder = root === "~/" ? display.slice(2) : root === "/" ? display.slice(1) : display;
-	const pieces = remainder.split("/").filter(Boolean);
-	if (pieces.length >= 3) {
-		const tail = pieces.slice(-2).join("/");
-		const withOrigin = `${root}${pieces[0]}/…/${tail}`;
-		if (visibleWidth(withOrigin) <= width) return withOrigin;
-		const tailOnly = `…/${tail}`;
-		if (visibleWidth(tailOnly) <= width) return tailOnly;
-	}
-	return truncateToWidth(display, width, "…");
+	return compactTerminalPath(display, width);
 }
 
 class RtkDialogComponent implements CommandDialogComponent {
@@ -83,7 +65,7 @@ class RtkDialogComponent implements CommandDialogComponent {
 			.join(" · ");
 		const runtimeLine = `${GUTTER}${theme.fg(runtimeColor, runtime.state)}${runtime.version ? theme.fg("dim", ` · ${runtime.version}`) : ""}`;
 		const errorLines = runtime.lastError
-			? this.wrapped(renderWidth, theme.fg("error", oneLine(runtime.lastError)))
+			? this.wrapped(renderWidth, theme.fg("error", boundTerminalLine(runtime.lastError, 220)))
 			: [];
 		const body = [
 			"",
