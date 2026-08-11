@@ -1,4 +1,5 @@
 import { abortable } from "./abort.ts";
+import { boundTerminalLine, boundTerminalText } from "../../tool-display/index.js";
 import { combineAbortSignals } from "./runtime-owner.ts";
 import type { McpExtensionState } from "./state.ts";
 import {
@@ -8,7 +9,6 @@ import {
   type McpConfig,
   type ToolMetadata,
 } from "./types.ts";
-import { sanitizeTerminalText } from "./utils.ts";
 
 export type ToolCallApprovalResult =
   | { ok: true }
@@ -55,9 +55,8 @@ export async function ensureToolCallApproved(
   }
 
   const json = JSON.stringify(args ?? {}, null, 2);
-  const sanitized = sanitizeTerminalText(json);
-  const preview = sanitized.length > 500 ? `${sanitized.slice(0, 500)}...` : sanitized;
-  const title = `MCP: ${sanitizeTerminalText(serverName)} wants to run ${sanitizeTerminalText(toolMeta.originalName)}`;
+  const preview = boundTerminalText(json, 500, "...");
+  const title = `MCP: ${boundTerminalLine(serverName, 200)} wants to run ${boundTerminalLine(toolMeta.originalName, 200)}`;
   const ownedSignal = combineAbortSignals(state.owner?.signal, signal);
   const decision = await abortable(
     state.ui.select(

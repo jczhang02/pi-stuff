@@ -1,11 +1,16 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { activityKey, type SuiteToolPresentation, singleActivity } from "../../../tool-display/index.js";
+import {
+	activityKey,
+	boundTerminalLine,
+	type SuiteToolPresentation,
+	singleActivity,
+} from "../../../tool-display/index.js";
 import { resolveDisplayDescription } from "../shared/display-description.ts";
 import type { Details } from "../shared/types.ts";
 import type { PublicAgentParams } from "./product-executor.ts";
 
 type PresentationParams = Record<string, unknown>;
-const PRESENTATION_PREVIEW_CODE_UNITS = 8 * 1024;
+const PRESENTATION_PREVIEW_WIDTH = 160;
 const AGENT_ACTION_PRESENTATION = {
 	resume: { category: "resume-agent", summary: "resumed" },
 	status: { category: "check-agent", summary: "checked" },
@@ -16,7 +21,7 @@ const AGENT_ACTION_PRESENTATION = {
 function firstText(result: AgentToolResult<Details>): string {
 	for (const entry of result.content) {
 		if (entry.type !== "text") continue;
-		const preview = entry.text.slice(0, PRESENTATION_PREVIEW_CODE_UNITS).trim();
+		const preview = boundTerminalLine(entry.text, PRESENTATION_PREVIEW_WIDTH);
 		if (preview) return preview;
 	}
 	return "";

@@ -2,6 +2,7 @@ import type { AgentToolResult, BashToolDetails, ExtensionAPI, ToolDefinition } f
 import { Type } from "typebox";
 import {
 	activityKey,
+	boundTerminalLine,
 	classifyBashActivity,
 	registerSuiteOwnedTool,
 	type SuiteToolPresentation,
@@ -84,7 +85,7 @@ function textResult<T>(text: string, details: T, isError = false): AgentToolResu
 }
 
 function firstLine(value: unknown): string {
-	return typeof value === "string" ? (value.trim().split(/\r?\n/u)[0]?.trim().slice(0, 180) ?? "") : "";
+	return typeof value === "string" ? boundTerminalLine(value.split(/\r?\n/u)[0] ?? "", 180) : "";
 }
 
 function resultText<T>(result: AgentToolResult<T>): string {

@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { type MonitorInput, startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
 import { BackgroundWorkRuntime } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
 
@@ -81,6 +82,25 @@ describe("command Monitor", () => {
 });
 
 describe("file and log Monitor", () => {
+	test("bounds a user-visible description by terminal cells", async () => {
+		const state = setup();
+		const started = await startMonitor(
+			state.runtime,
+			{
+				description: `\u001b[31m${"监控😀".repeat(40)}\u001b[0m`,
+				source: "file",
+				target: join(state.root, "never"),
+				timeoutSeconds: 3,
+				toolCallId: "monitor-description",
+			},
+			state.context,
+		);
+		expect(visibleWidth(started.title)).toBeLessThanOrEqual(80);
+		expect(started.title).not.toContain("\u001b");
+		await state.runtime.stop(started.id);
+		await state.runtime.shutdown();
+	});
+
 	test("ignores pre-existing log text by default", async () => {
 		const state = setup();
 		const path = join(state.root, "service.log");

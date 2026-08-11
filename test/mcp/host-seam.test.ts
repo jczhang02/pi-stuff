@@ -15,6 +15,7 @@ import {
 	sessionEntryToContextMessages,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import piStuffContext, { getContextCapability } from "../../packages/pi-stuff/src/context-management/index.js";
 import { readAgentWorkOrigin } from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
@@ -23,6 +24,10 @@ import {
 	MCP_USER_PROMPT_MESSAGE_TYPE,
 	registerMcpPromptMessageRenderer,
 } from "../../packages/pi-stuff/src/mcp/runtime/prompts.js";
+import {
+	formatMcpDirectToolCallLines,
+	formatMcpToolResultLines,
+} from "../../packages/pi-stuff/src/mcp/runtime/tool-result-renderer.js";
 
 const sessions: AgentSession[] = [];
 const temporaryRoots: string[] = [];
@@ -51,6 +56,21 @@ function messageText(message: unknown): string {
 		.map((part) => String(Reflect.get(part, "text") ?? ""))
 		.join("\n");
 }
+
+test("MCP call and result previews are terminal-cell-safe", () => {
+	const call = formatMcpDirectToolCallLines("server/tool", { query: "😀".repeat(31) }, 60);
+	const result = formatMcpToolResultLines(
+		{ content: [{ type: "text", text: `\u001b[31m${"界".repeat(100)}\u001b[0m` }] },
+		false,
+		3,
+		60,
+	);
+	for (const line of [...call.slice(1), ...result.lines]) {
+		expect(visibleWidth(line)).toBeLessThanOrEqual(60);
+		expect(line).not.toContain("\u001b");
+	}
+	expect(result.truncated).toBeTrue();
+});
 
 test("real Pi 0.84.1 preserves MCP prompt provenance, Context, persistence, and reload rendering", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-host-"));

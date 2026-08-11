@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { boundTerminalLine } from "../tool-display/index.js";
 
 const RESOLVE_TIMEOUT_MS = 600;
 const VERSION_TIMEOUT_MS = 1_000;
@@ -49,8 +50,7 @@ interface VerifyOptions {
 
 function cleanOneLine(value: unknown): string {
 	const text = value instanceof Error ? value.message : String(value);
-	const clean = text.replaceAll(/\s+/gu, " ").trim();
-	return clean.length <= 220 ? clean : `${clean.slice(0, 219)}…`;
+	return boundTerminalLine(text, 220);
 }
 
 function firstNonEmptyLine(value: string): string | undefined {

@@ -68,7 +68,13 @@ export {
 	type ToolActivityGroupView,
 	ToolUiRuntime,
 } from "./contract.js";
-export { sanitizeTerminalText } from "./render.js";
+export {
+	boundTerminalLine,
+	boundTerminalText,
+	compactTerminalPath,
+	graphemePrefix,
+	sanitizeTerminalText,
+} from "./terminal.js";
 
 export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 	const lifecycle = getHostSharedResource<ToolLifecycleState>(

@@ -1,6 +1,9 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { ToolActivityState } from "./activity-store.js";
 import { oneLine } from "./render.js";
+import { boundTerminalLine, compactTerminalPath } from "./terminal.js";
+
+const ACTIVITY_TARGET_MAX_WIDTH = 160;
 
 export type ToolActivityCategory =
 	| "block-goal"
@@ -90,14 +93,12 @@ export function activityKey(...parts: readonly unknown[]): string {
 
 /** Keep live targets glanceable without exposing a complete deep path. */
 export function activityTarget(value: string): string {
-	const safe = oneLine(value);
+	const safe = boundTerminalLine(value, ACTIVITY_TARGET_MAX_WIDTH);
 	const pathLike =
 		/^(?:~?[\\/]|\.{1,2}[\\/]|[A-Za-z]:[\\/])/u.test(safe) ||
 		(!/^[a-z][a-z\d+.-]*:\/\//iu.test(safe) && /[\\/]/u.test(safe));
 	if (!pathLike) return safe;
-	const segments = safe.split(/[\\/]+/u).filter(Boolean);
-	if (segments.length <= 2) return safe;
-	return `…/${segments.slice(-2).join("/")}`;
+	return compactTerminalPath(safe, ACTIVITY_TARGET_MAX_WIDTH, true);
 }
 
 export function singleActivity(

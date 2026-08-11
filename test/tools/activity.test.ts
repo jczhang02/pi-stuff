@@ -20,9 +20,9 @@ const assistant = (...content: unknown[]) => ({ role: "assistant", content });
 
 test("active path targets preserve only the nearest useful directory and basename", () => {
 	expect(activityTarget("/workspace/pi-stuff/packages/pi-stuff/src/tool-display/contract.ts")).toBe(
-		"…/tool-display/contract.ts",
+		"/⋯/tool-display/contract.ts",
 	);
-	expect(activityTarget("packages/pi-stuff/src/tool-display/contract.ts")).toBe("…/tool-display/contract.ts");
+	expect(activityTarget("packages/pi-stuff/src/tool-display/contract.ts")).toBe("⋯/tool-display/contract.ts");
 	expect(activityTarget("Running repository checks")).toBe("Running repository checks");
 });
 

@@ -1,5 +1,7 @@
+import { boundTerminalLine } from "../../tool-display/index.js";
+
 /**
- * Pure, dependency-free renderer for web_search error / cancel results.
+ * Pure renderer for web_search error / cancel results.
  *
  * WHY THIS EXISTS: the upstream web_search `renderResult` (index.ts) early-returns
  * a SINGLE line on the error/cancel path, before the collapsed/expanded branch.
@@ -54,7 +56,7 @@ export interface SearchErrorPlan {
 }
 
 function truncate(text: string, max: number): string {
-	return text.length > max ? text.slice(0, max - 1) + "\u2026" : text;
+	return boundTerminalLine(text, max);
 }
 
 /**
@@ -66,7 +68,7 @@ export function buildSearchErrorPlan(details: SearchErrorDetails | undefined | n
 		return null;
 	}
 
-	const headline = details.error ?? "Search cancelled.";
+	const headline = boundTerminalLine(details.error ?? "Search cancelled.", 300);
 	const queries = details.cancelledQueries ?? [];
 	const queryCount = typeof details.queryCount === "number" && details.queryCount > 0
 		? details.queryCount
@@ -79,7 +81,7 @@ export function buildSearchErrorPlan(details: SearchErrorDetails | undefined | n
 	// extra detail (urls/response-id for fetch_content, the failed query for
 	// get_search_content). A bare argument error (e.g. "No URL
 	// provided") stays a clean single line -- no noise.
-	const extras = details.extraLines ?? [];
+	const extras = (details.extraLines ?? []).map((line) => boundTerminalLine(line, 300));
 	const rich = details.cancelled === true || queries.length > 0 || extras.length > 0;
 	if (!rich) {
 		return { expanded: [headline], collapsed: [], expandHint: null };

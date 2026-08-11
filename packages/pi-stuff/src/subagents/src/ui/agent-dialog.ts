@@ -16,6 +16,7 @@ import type {
 	CommandDialogViewContext,
 } from "../../../conversation-ui/index.js";
 import { commandDialogRows, fitCommandDialogRows } from "../../../conversation-ui/index.js";
+import { boundTerminalText as boundTerminalPreview } from "../../../tool-display/index.js";
 import type {
 	AgentControlAction,
 	AgentControlResult,
@@ -918,10 +919,7 @@ function oneLine(value: string): string {
 }
 
 function boundedTerminalText(value: string, limit: number): string {
-	const scanLimit = Math.min(value.length, Math.max(limit, limit * 4));
-	const sanitized = stripTerminalControls(value.slice(0, scanLimit));
-	if (sanitized.length <= limit && scanLimit >= value.length) return sanitized;
-	return `${sanitized.slice(0, Math.max(0, limit - 1))}…`;
+	return boundTerminalPreview(value, limit);
 }
 
 function stripTerminalControls(value: string): string {

@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
+import { boundTerminalLine } from "../../../tool-display/index.js";
 import { formatToolCall } from "./formatters.ts";
 import { assertPrivateDirectory, readBoundedOwnedFileSnapshot } from "./private-directory.ts";
 import type {
@@ -424,11 +425,7 @@ export function boundStreamedRecentTools(recentTools: AgentProgress["recentTools
 
 /** Cap per-line length of recent output so one long line can't inflate a snapshot. */
 export function boundStreamedRecentOutput(recentOutput: string[]): string[] {
-	return recentOutput.map((line) =>
-		line.length > MAX_STREAMED_OUTPUT_LINE_CHARS
-			? `${line.slice(0, MAX_STREAMED_OUTPUT_LINE_CHARS)}… [truncated]`
-			: line,
-	);
+	return recentOutput.map((line) => boundTerminalLine(line, MAX_STREAMED_OUTPUT_LINE_CHARS, "… [truncated]"));
 }
 
 /**
@@ -513,8 +510,8 @@ export function detectSubagentError(messages: Message[]): ErrorInfo {
  * Extract a preview of tool arguments for display
  */
 export function extractToolArgsPreview(args: Record<string, unknown>): string {
-	const truncatePreview = (value: string, maxLength: number): string =>
-		value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+	const truncatePreview = (value: string, maximumWidth: number): string =>
+		boundTerminalLine(value, maximumWidth, "...");
 
 	const stringifyPreviewValue = (value: unknown): string | undefined => {
 		if (typeof value === "string" && value.trim().length > 0) return value;
@@ -533,7 +530,7 @@ export function extractToolArgsPreview(args: Record<string, unknown>): string {
 	// Handle MCP tool calls - show server/tool info
 	if (args.tool && typeof args.tool === "string") {
 		const server = args.server && typeof args.server === "string" ? `${args.server}/` : "";
-		const toolArgs = args.args && typeof args.args === "string" ? ` ${args.args.slice(0, 40)}` : "";
+		const toolArgs = args.args && typeof args.args === "string" ? ` ${truncatePreview(args.args, 40)}` : "";
 		return `${server}${args.tool}${toolArgs}`;
 	}
 

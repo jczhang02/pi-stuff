@@ -1,6 +1,9 @@
 import type { AgentToolResult, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { ToolActivityState } from "./activity-store.js";
+import { graphemePrefix, graphemeSuffix, sanitizeTerminalText, truncateUtf8Graphemes } from "./terminal.js";
+
+export { sanitizeTerminalText } from "./terminal.js";
 
 const DETAIL_MAX_BYTES = 24 * 1024;
 const DETAIL_MAX_LINES = 240;
@@ -307,96 +310,12 @@ export function formatElapsed(milliseconds: number): string {
 	return `${String(hours)}h ${String(minutes % 60).padStart(2, "0")}m`;
 }
 
-/** Strip terminal control protocols while retaining printable Unicode text. */
-export function sanitizeTerminalText(value: string): string {
-	let output = "";
-	for (let index = 0; index < value.length; index += 1) {
-		const code = value.charCodeAt(index);
-		if (code === 0x1b) {
-			const introducer = value.charCodeAt(index + 1);
-			if (introducer === 0x5b) {
-				index += 2;
-				while (index < value.length) {
-					const candidate = value.charCodeAt(index);
-					if (candidate >= 0x40 && candidate <= 0x7e) break;
-					index += 1;
-				}
-				continue;
-			}
-			if (
-				introducer === 0x5d ||
-				introducer === 0x50 ||
-				introducer === 0x58 ||
-				introducer === 0x5e ||
-				introducer === 0x5f
-			) {
-				index += 2;
-				while (index < value.length) {
-					const candidate = value.charCodeAt(index);
-					if (candidate === 0x07) break;
-					if (candidate === 0x1b && value.charCodeAt(index + 1) === 0x5c) {
-						index += 1;
-						break;
-					}
-					index += 1;
-				}
-				continue;
-			}
-			if (Number.isNaN(introducer)) continue;
-			index += 1;
-			while (index + 1 < value.length) {
-				const candidate = value.charCodeAt(index);
-				if (candidate < 0x20 || candidate > 0x2f) break;
-				index += 1;
-			}
-			continue;
-		}
-		if (code === 0x9b) {
-			index += 1;
-			while (index < value.length) {
-				const candidate = value.charCodeAt(index);
-				if (candidate >= 0x40 && candidate <= 0x7e) break;
-				index += 1;
-			}
-			continue;
-		}
-		if (code === 0x9d || code === 0x90 || code === 0x98 || code === 0x9e || code === 0x9f) {
-			index += 1;
-			while (index < value.length) {
-				const candidate = value.charCodeAt(index);
-				if (candidate === 0x07 || candidate === 0x9c) break;
-				if (candidate === 0x1b && value.charCodeAt(index + 1) === 0x5c) {
-					index += 1;
-					break;
-				}
-				index += 1;
-			}
-			continue;
-		}
-		if (
-			code === 0x061c ||
-			(code >= 0x200b && code <= 0x200f) ||
-			(code >= 0x202a && code <= 0x202e) ||
-			(code >= 0x2066 && code <= 0x2069)
-		) {
-			output += " ";
-			continue;
-		}
-		if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) {
-			output += " ";
-			continue;
-		}
-		output += value[index];
-	}
-	return output;
-}
-
 export function oneLine(value: string): string {
-	const raw = value.slice(0, ROW_PREVIEW_MAX_CODE_UNITS);
-	const clipped = raw.length < value.length;
-	const normalized = sanitizeTerminalText(raw).replace(/\s+/gu, " ").trim();
+	const normalized = sanitizeTerminalText(value).replace(/\s+/gu, " ").trim();
+	const raw = graphemePrefix(normalized, ROW_PREVIEW_MAX_CODE_UNITS);
+	const clipped = raw.length < normalized.length;
 	const suffix = clipped ? "…" : "";
-	return truncateUtf8(`${normalized}${suffix}`, ROW_PREVIEW_MAX_BYTES);
+	return truncateUtf8Graphemes(`${raw}${suffix}`, ROW_PREVIEW_MAX_BYTES);
 }
 
 function stringArgument(args: Readonly<Record<string, unknown>>, key: string): string {
@@ -429,8 +348,8 @@ function textFromResult(result: AgentToolResult<unknown>): string {
 		const contentBudget = Math.max(0, remaining - marker.length);
 		const headLength = Math.ceil(contentBudget / 2);
 		const tailLength = Math.floor(contentBudget / 2);
-		const tail = tailLength > 0 ? entry.text.slice(-tailLength) : "";
-		output += `${separator}${entry.text.slice(0, headLength)}${marker}${tail}`;
+		const tail = tailLength > 0 ? graphemeSuffix(entry.text, tailLength) : "";
+		output += `${separator}${graphemePrefix(entry.text, headLength)}${marker}${tail}`;
 		break;
 	}
 	return output.trim();
@@ -547,18 +466,6 @@ export function summarizeBuiltin(
 	return oneLine(firstNonEmptyLine(text || "done"));
 }
 
-function truncateUtf8(value: string, maxBytes: number): string {
-	let output = "";
-	let bytes = 0;
-	for (const character of value) {
-		const characterBytes = Buffer.byteLength(character);
-		if (bytes + characterBytes > maxBytes) break;
-		output += character;
-		bytes += characterBytes;
-	}
-	return output;
-}
-
 function boundedJson(value: unknown, maxCodeUnits: number): string {
 	const parts: string[] = [];
 	let remaining = Math.max(1, Math.floor(maxCodeUnits));
@@ -569,7 +476,7 @@ function boundedJson(value: unknown, maxCodeUnits: number): string {
 			truncated = true;
 			return false;
 		}
-		const next = text.slice(0, remaining);
+		const next = graphemePrefix(text, remaining);
 		parts.push(next);
 		remaining -= next.length;
 		if (next.length < text.length) truncated = true;
@@ -582,7 +489,7 @@ function boundedJson(value: unknown, maxCodeUnits: number): string {
 			return;
 		}
 		if (typeof candidate === "string") {
-			const slice = candidate.slice(0, Math.max(0, remaining - 2));
+			const slice = graphemePrefix(candidate, Math.max(0, remaining - 2));
 			append(JSON.stringify(slice));
 			if (slice.length < candidate.length) truncated = true;
 			return;
@@ -648,7 +555,7 @@ function boundedJson(value: unknown, maxCodeUnits: number): string {
 		append('"[unavailable]"');
 	}
 	const output = parts.join("");
-	return truncated ? `${output.slice(0, Math.max(0, maxCodeUnits - 1))}…` : output;
+	return truncated ? `${graphemePrefix(output, Math.max(0, maxCodeUnits - 1))}…` : output;
 }
 
 class DetailCollector {
@@ -676,12 +583,12 @@ class DetailCollector {
 			return false;
 		}
 		const scanLimit = Math.max(1_024, available * DETAIL_RAW_SCAN_FACTOR);
-		const rawSlice = rawLine.slice(0, scanLimit);
-		const safe = sanitizeTerminalText(rawSlice);
-		const bounded = truncateUtf8(safe, available);
+		const safe = sanitizeTerminalText(rawLine);
+		const rawSlice = graphemePrefix(safe, scanLimit);
+		const bounded = truncateUtf8Graphemes(rawSlice, available);
 		this.lines.push(bounded);
 		this.bytes += separatorBytes + Buffer.byteLength(bounded);
-		if (rawSlice.length < rawLine.length || bounded.length < safe.length) {
+		if (rawSlice.length < safe.length || bounded.length < rawSlice.length) {
 			this.capped = true;
 			return false;
 		}
@@ -691,7 +598,7 @@ class DetailCollector {
 	finish(): string[] {
 		if (!this.capped) return this.lines;
 		const fullMarker = `… detail capped at ${String(this.lineLimit)} lines / ${String(this.byteLimit)} bytes`;
-		const marker = truncateUtf8(fullMarker, this.byteLimit);
+		const marker = truncateUtf8Graphemes(fullMarker, this.byteLimit);
 		if (!marker) return [];
 		const markerBytes = Buffer.byteLength(marker);
 		while (this.lines.length > 0) {
@@ -718,18 +625,15 @@ function addMultiline(collector: DetailCollector, value: string, prefix = ""): v
 	let offset = 0;
 	const rawChunkLimit = Math.max(1_024, DETAIL_MAX_BYTES * DETAIL_RAW_SCAN_FACTOR);
 	while (!collector.isCapped()) {
-		const chunkEnd = Math.min(value.length, offset + rawChunkLimit);
-		const chunk = value.slice(offset, chunkEnd);
-		const relativeNewline = chunk.indexOf("\n");
-		if (relativeNewline >= 0) {
-			const newline = offset + relativeNewline;
+		const newline = value.indexOf("\n", offset);
+		if (newline >= 0 && newline - offset <= rawChunkLimit) {
 			if (!collector.add(`${prefix}${value.slice(offset, newline)}`)) return;
 			offset = newline + 1;
 			if (offset === value.length) collector.add(prefix);
 			continue;
 		}
-		if (chunkEnd < value.length) {
-			collector.add(`${prefix}${value.slice(offset, chunkEnd)}`);
+		if (value.length - offset > rawChunkLimit) {
+			collector.add(`${prefix}${graphemePrefix(value.slice(offset), rawChunkLimit)}`);
 			collector.markCapped();
 			return;
 		}

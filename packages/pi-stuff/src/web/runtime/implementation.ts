@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { StringEnum, complete, type Api, type ImageContent, type Model, type TextContent } from "@earendil-works/pi-ai/compat";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
+import { boundTerminalLine, boundTerminalText } from "../../tool-display/index.js";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { reportWebDiagnostic } from "./diagnostics.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
@@ -1916,12 +1917,12 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 			}
 			if (queryList.length === 1) {
 				const q = queryList[0];
-				const display = q.length > 60 ? q.slice(0, 57) + "..." : q;
+				const display = boundTerminalLine(q, 60, "...");
 				return new Text(theme.fg("toolTitle", theme.bold("search ")) + theme.fg("accent", `"${display}"`), 0, 0);
 			}
 			const lines = [theme.fg("toolTitle", theme.bold("search ")) + theme.fg("accent", `${queryList.length} queries`)];
 			for (const q of queryList.slice(0, 5)) {
-				const display = q.length > 50 ? q.slice(0, 47) + "..." : q;
+				const display = boundTerminalLine(q, 50, "...");
 				lines.push(theme.fg("muted", `  "${display}"`));
 			}
 			if (queryList.length > 5) {
@@ -2006,7 +2007,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 					const progress = details?.progress ?? 0;
 					const bar = "\u2588".repeat(Math.floor(progress * 10)) + "\u2591".repeat(10 - Math.floor(progress * 10));
 					const query = details?.currentQuery || "";
-					const display = query.length > 40 ? query.slice(0, 37) + "..." : query;
+					const display = boundTerminalLine(query, 40, "...");
 					return new Text(theme.fg("accent", `[${bar}] ${display}`), 0, 0);
 				}
 				const progress = details?.progress ?? 0;
@@ -2067,7 +2068,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 
 				for (const cq of queryDetails) {
 					lines.push("");
-					const dq = cq.query.length > 65 ? cq.query.slice(0, 62) + "..." : cq.query;
+					const dq = boundTerminalLine(cq.query, 65, "...");
 					const providerLabel = cq.provider ? ` (${cq.provider})` : "";
 					lines.push(theme.fg("accent", `  "${dq}"${providerLabel}`));
 
@@ -2084,7 +2085,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 						lines.push("");
 						for (const s of cq.sources) {
 							const domain = s.url.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-							const title = s.title.length > 50 ? s.title.slice(0, 47) + "..." : s.title;
+							const title = boundTerminalLine(s.title, 50, "...");
 							lines.push(theme.fg("muted", `  \u25b8 ${title}`) + theme.fg("dim", ` \u00b7 ${domain}`));
 						}
 					}
@@ -2092,7 +2093,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				lines.push("");
 			} else {
 				const textContent = result.content.find((c) => c.type === "text")?.text || "";
-				const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
+				const preview = boundTerminalText(textContent, 500, "...");
 				for (const line of preview.split("\n")) {
 					lines.push(theme.fg("dim", line));
 				}
@@ -2104,7 +2105,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				} else {
 					lines.push(theme.fg("muted", "Fetching:"));
 					for (const u of details.fetchUrls.slice(0, 5)) {
-						const display = u.length > 60 ? u.slice(0, 57) + "..." : u;
+						const display = boundTerminalLine(u, 60, "...");
 						lines.push(theme.fg("dim", "  " + display));
 					}
 					if (details.fetchUrls.length > 5) {
@@ -2122,12 +2123,12 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				let collapsedLines = 1; // statusLine
 				const summaryPreview = details?.summary?.text?.trim() || "";
 				if (summaryPreview) {
-					const preview = summaryPreview.length > 120 ? summaryPreview.slice(0, 117) + "..." : summaryPreview;
+					const preview = boundTerminalLine(summaryPreview, 120, "...");
 					box.addChild(new Text(theme.fg("dim", preview), 0, 0));
 					collapsedLines++;
 				} else if (details?.curatedQueries?.length) {
 					for (const cq of details.curatedQueries.slice(0, 3)) {
-						const dq = cq.query.length > 55 ? cq.query.slice(0, 52) + "..." : cq.query;
+						const dq = boundTerminalLine(cq.query, 55, "...");
 						const srcCount = cq.sources?.length ?? 0;
 						const suffix = cq.error ? theme.fg("error", " (error)") : theme.fg("dim", ` · ${srcCount} sources`);
 						box.addChild(new Text(theme.fg("accent", `  "${dq}"`) + suffix, 0, 0));
@@ -2145,7 +2146,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 					});
 					const fallbackLine = (firstContentLine?.trim() || "").replace(/\*\*/g, "");
 					if (fallbackLine) {
-						const preview = fallbackLine.length > 120 ? fallbackLine.slice(0, 117) + "..." : fallbackLine;
+						const preview = boundTerminalLine(fallbackLine, 120, "...");
 						box.addChild(new Text(theme.fg("dim", preview), 0, 0));
 						collapsedLines++;
 					}
@@ -2451,12 +2452,12 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 			}
 			const lines: string[] = [];
 			if (urlList.length === 1) {
-				const display = urlList[0].length > 60 ? urlList[0].slice(0, 57) + "..." : urlList[0];
+				const display = boundTerminalLine(urlList[0], 60, "...");
 				lines.push(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", display));
 			} else {
 				lines.push(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", `${urlList.length} URLs`));
 				for (const u of urlList.slice(0, 5)) {
-					const display = u.length > 60 ? u.slice(0, 57) + "..." : u;
+					const display = boundTerminalLine(u, 60, "...");
 					lines.push(theme.fg("muted", "  " + display));
 				}
 				if (urlList.length > 5) {
@@ -2473,7 +2474,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				lines.push(theme.fg("dim", "  frames: ") + theme.fg("warning", String(frames)));
 			}
 			if (prompt) {
-				const display = prompt.length > 250 ? prompt.slice(0, 247) + "..." : prompt;
+				const display = boundTerminalLine(prompt, 250, "...");
 				lines.push(theme.fg("dim", "  prompt: ") + theme.fg("muted", `"${display}"`));
 			}
 			if (model) {
@@ -2543,12 +2544,12 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				}
 				const textContent = result.content.find((c) => c.type === "text")?.text || "";
 				if (!expanded) {
-					const brief = textContent.length > 200 ? textContent.slice(0, 200) + "..." : textContent;
+					const brief = boundTerminalText(textContent, 200, "...");
 					return new Text(statusLine + "\n" + theme.fg("dim", brief), 0, 0);
 				}
 				const lines = [statusLine];
 				if (details?.prompt) {
-					const display = details.prompt.length > 250 ? details.prompt.slice(0, 247) + "..." : details.prompt;
+					const display = boundTerminalLine(details.prompt, 250, "...");
 					lines.push(theme.fg("dim", `  prompt: "${display}"`));
 				}
 				if (details?.timestamp) {
@@ -2557,7 +2558,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				if (typeof details?.frames === "number") {
 					lines.push(theme.fg("dim", `  frames: ${details.frames}`));
 				}
-				const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
+				const preview = boundTerminalText(textContent, 500, "...");
 				lines.push(theme.fg("dim", preview));
 				return new Text(lines.join("\n"), 0, 0);
 			}
@@ -2568,7 +2569,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				return new Text(statusLine, 0, 0);
 			}
 			const textContent = result.content.find((c) => c.type === "text")?.text || "";
-			const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
+			const preview = boundTerminalText(textContent, 500, "...");
 			return new Text(statusLine + "\n" + theme.fg("dim", preview), 0, 0);
 		},
 	});
@@ -2812,7 +2813,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 			let target = "";
 			if (query) target = `query="${query}"`;
 			else if (queryIndex !== undefined) target = `queryIndex=${queryIndex}`;
-			else if (url) target = url.length > 30 ? url.slice(0, 27) + "..." : url;
+			else if (url) target = boundTerminalLine(url, 30, "...");
 			else if (urlIndex !== undefined) target = `urlIndex=${urlIndex}`;
 			if (offset !== undefined) target += target ? ` @ ${offset}` : `offset=${offset}`;
 			if (findText !== undefined) {
@@ -2867,7 +2868,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 			}
 
 			const textContent = result.content.find((c) => c.type === "text")?.text || "";
-			const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
+			const preview = boundTerminalText(textContent, 500, "...");
 			return new Text(statusLine + "\n" + theme.fg("dim", preview), 0, 0);
 		},
 	});
@@ -3311,7 +3312,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 					info += "URLs:\n";
 					const urls = selected.urls.slice(0, 10);
 					for (const u of urls) {
-						const urlDisplay = u.url.length > 50 ? u.url.slice(0, 47) + "..." : u.url;
+						const urlDisplay = boundTerminalLine(u.url, 50, "...");
 						info += `- ${urlDisplay} (${u.error || `${u.content.length} chars`})\n`;
 					}
 					if (selected.urls.length > 10) {

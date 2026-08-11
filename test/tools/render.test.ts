@@ -25,6 +25,18 @@ function result(text: string, details?: unknown): AgentToolResult<unknown> {
 	};
 }
 
+function isWellFormed(value: string): boolean {
+	for (let index = 0; index < value.length; index += 1) {
+		const code = value.charCodeAt(index);
+		if (code >= 0xd800 && code <= 0xdbff) {
+			const next = value.charCodeAt(index + 1);
+			if (next < 0xdc00 || next > 0xdfff) return false;
+			index += 1;
+		} else if (code >= 0xdc00 && code <= 0xdfff) return false;
+	}
+	return true;
+}
+
 function hasRecognizableTruncatedTarget(line: string): boolean {
 	const marker = "● Bash ";
 	const outcome = " · done";
@@ -146,7 +158,7 @@ describe("terminal-safe Tool rendering", () => {
 			"前\u001b[31m红\u001b[0m\u001b]0;OWNED_TITLE\u0007后\u001bPpayload\u001b\\\u009b32m绿\u0000\u009dC1_TITLE\u009c终\u202eABC\u2066DEF\u2069";
 		const safe = sanitizeTerminalText(unsafe);
 
-		expect(safe).toBe("前红后绿 终 ABC DEF ");
+		expect(safe).toBe("前红后绿 终ABCDEF");
 		expect(safe).not.toContain("\u001b");
 		expect(safe).not.toContain("OWNED_TITLE");
 		expect(safe).not.toContain("C1_TITLE");
@@ -352,11 +364,13 @@ describe("terminal-safe Tool rendering", () => {
 		});
 		const argumentDetails = buildToolDetailLines(hugeArguments, result("ok"));
 		const resultDetails = buildToolDetailLines({}, result("y".repeat(8 * 1024 * 1024)));
+		const unicodeDetails = buildToolDetailLines({ value: "👩‍💻".repeat(10_000) }, result("ok"));
 
-		for (const details of [argumentDetails, resultDetails]) {
+		for (const details of [argumentDetails, resultDetails, unicodeDetails]) {
 			expect(details.length).toBeLessThanOrEqual(240);
 			expect(Buffer.byteLength(details.join("\n"))).toBeLessThanOrEqual(24 * 1024);
 			expect(details.at(-1)).toContain("detail capped");
+			expect(details.every(isWellFormed)).toBeTrue();
 		}
 		expect(lateGetterReads).toBe(0);
 		expect(Buffer.byteLength(describeBuiltinTarget("bash", hugeArguments))).toBeLessThanOrEqual(4 * 1024);

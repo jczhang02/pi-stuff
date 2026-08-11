@@ -1,5 +1,10 @@
 import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
-import { type Component, Text } from "@earendil-works/pi-tui";
+import { type Component, Text, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  boundTerminalLine,
+  boundTerminalText,
+  graphemePrefix,
+} from "../../tool-display/index.js";
 
 type McpToolResultDetails = Record<string, unknown> & { error?: unknown };
 type McpToolContentBlock = AgentToolResult<McpToolResultDetails>["content"][number];
@@ -62,9 +67,7 @@ class CollapsibleText implements Component {
     const safeWidth = Math.max(1, Math.floor(width));
     const charBudget = safeWidth * (this.maxCollapsedLines + 1) * COLLAPSED_RENDER_CHAR_SLACK;
     if (!this.collapsedText || this.collapsedText.charBudget !== charBudget) {
-      const prefix = this.text.length > charBudget
-        ? this.text.slice(0, charBudget)
-        : this.text;
+      const prefix = graphemePrefix(this.text, charBudget);
       this.collapsedText = {
         charBudget,
         fullyIncluded: prefix === this.text,
@@ -85,8 +88,7 @@ class CollapsibleText implements Component {
 }
 
 function truncateText(value: string, maxChars: number): string {
-  if (value.length <= maxChars) return value;
-  return `${value.slice(0, Math.max(0, maxChars - 1))}…`;
+  return boundTerminalText(value, maxChars);
 }
 
 function formatJsonish(value: unknown, maxChars: number): string {
@@ -150,9 +152,10 @@ export function formatMcpDirectToolCallLines(
 
 function renderToolCallLines(lines: string[], theme?: RenderTheme) {
   const activeTheme = theme ?? plainTheme;
-  const [title = "mcp", ...rest] = lines;
+  const [rawTitle = "mcp", ...rest] = lines;
+  const title = boundTerminalLine(rawTitle, DEFAULT_MAX_CALL_INPUT_CHARS);
   const styledTitle = activeTheme.fg("toolTitle", activeTheme.bold ? activeTheme.bold(title) : title);
-  const styledRest = rest.map(line => activeTheme.fg("muted", line));
+  const styledRest = rest.map(line => activeTheme.fg("muted", boundTerminalText(line, DEFAULT_MAX_CALL_INPUT_CHARS)));
   return new Text([styledTitle, ...styledRest].join("\n"), 0, 0);
 }
 
@@ -168,7 +171,7 @@ export function createMcpDirectToolCallRenderer(displayName: string) {
 
 function blockToLines(block: McpToolContentBlock): string[] {
   if (block.type === "text") {
-    return block.text.split("\n");
+    return block.text.split("\n").map(line => boundTerminalLine(line, Number.MAX_SAFE_INTEGER));
   }
   return [`[image: ${block.mimeType}]`];
 }
@@ -181,24 +184,25 @@ function collectCollapsedResultLines(
   if (content.length === 0) return { lines: ["(empty result)"], truncated: false };
 
   const lines: string[] = [];
-  let remainingChars = maxChars;
+  let remainingCells = maxChars;
   let truncated = false;
 
   const appendLine = (line: string) => {
-    if (lines.length >= maxLines || remainingChars <= 0) {
+    if (lines.length >= maxLines || remainingCells <= 0) {
       truncated = true;
       return false;
     }
 
-    if (line.length > remainingChars) {
-      lines.push(line.slice(0, remainingChars));
+    const safe = boundTerminalLine(line, Number.MAX_SAFE_INTEGER);
+    if (visibleWidth(safe) > remainingCells) {
+      lines.push(boundTerminalLine(safe, remainingCells, ""));
       truncated = true;
-      remainingChars = 0;
+      remainingCells = 0;
       return false;
     }
 
-    lines.push(line);
-    remainingChars -= line.length + 1;
+    lines.push(safe);
+    remainingCells -= visibleWidth(safe) + 1;
     return true;
   };
 
