@@ -182,11 +182,12 @@ function renderActivityGroupRow(
 	const lines = wrapped.map((line, index) => `${index === 0 ? markerSlot : TRANSCRIPT_CONTINUATION}${line}`);
 	const safeHint = truncateToWidth(oneLine(model.hint), ACTIVITY_HINT_MAX_WIDTH, "…");
 	if (!safeHint) return lines;
-	const hintPrefix = `${TRANSCRIPT_CONTINUATION}⎿ `;
+	const hintPrefix = `${TRANSCRIPT_CONTINUATION}⎿  `;
 	const hintWidth = Math.max(1, width - visibleWidth(hintPrefix));
 	const hintLines = wrapTextWithAnsi(theme.fg("dim", safeHint), hintWidth).slice(0, 2);
+	const hintContinuation = " ".repeat(visibleWidth(hintPrefix));
 	for (const [index, line] of hintLines.entries()) {
-		lines.push(`${index === 0 ? hintPrefix : TRANSCRIPT_CONTINUATION.repeat(2)}${line}`);
+		lines.push(`${index === 0 ? hintPrefix : hintContinuation}${line}`);
 	}
 	return lines;
 }
