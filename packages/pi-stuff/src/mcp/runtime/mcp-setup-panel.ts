@@ -1,36 +1,39 @@
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { createPanelKeys, type PanelKeybindings, type PanelKeys } from "./panel-keys.ts";
 import type { ImportKind } from "./types.ts";
 import { KNOWN_SERVER_PRESETS, type ConfigWritePreview, type KnownServerPreset, type McpDiscoverySummary } from "./config.ts";
 import type { McpOnboardingState } from "./onboarding-state.ts";
 
 interface SetupTheme {
-  border: string;
-  title: string;
-  selected: string;
-  hint: string;
-  success: string;
-  warning: string;
-  muted: string;
+	border: (text: string) => string;
+	title: (text: string) => string;
+	selected: (text: string) => string;
+	hint: (text: string) => string;
+	success: (text: string) => string;
+	warning: (text: string) => string;
+	muted: (text: string) => string;
 }
 
-const DEFAULT_THEME: SetupTheme = {
-  border: "2",
-  title: "36",
-  selected: "32",
-  hint: "2",
-  success: "32",
-  warning: "33",
-  muted: "2;3",
-};
+function createSetupTheme(theme: Theme): SetupTheme {
+	return {
+		border: text => theme.fg("border", text),
+		title: text => theme.fg("accent", text),
+		selected: text => theme.fg("accent", text),
+		hint: text => theme.fg("dim", text),
+		success: text => theme.fg("success", text),
+		warning: text => theme.fg("warning", text),
+		muted: text => theme.fg("muted", text),
+	};
+}
 
 const MIN_PANEL_WIDTH = 24;
 const COMPACT_WIDTH = 60;
 const COMPACT_ACTION_ROWS = 7;
 const DESKTOP_PREVIEW_WIDTH = 74;
 
-function fg(code: string, text: string): string {
-  return code ? `\x1b[${code}m${text}\x1b[0m` : text;
+function fg(style: (text: string) => string, text: string): string {
+	return style(text);
 }
 
 function wrapText(text: string, width: number): string[] {
@@ -99,19 +102,21 @@ export class McpSetupPanel {
   private busy = false;
   private notice: { text: string; tone: "success" | "warning" | "muted" } | null = null;
   private tui: { requestRender(): void };
-  private t = DEFAULT_THEME;
+	private readonly t: SetupTheme;
   private keys: PanelKeys;
   private inactivityTimeout: ReturnType<typeof setTimeout> | null = null;
   private static readonly INACTIVITY_MS = 60_000;
 
   constructor(
     private discovery: McpDiscoverySummary,
-    private callbacks: SetupPanelCallbacks,
-    private options: SetupPanelOptions,
-    tui: { requestRender(): void },
-    private done: () => void,
-  ) {
-    this.tui = tui;
+		private callbacks: SetupPanelCallbacks,
+		private options: SetupPanelOptions,
+		tui: { requestRender(): void },
+		theme: Theme,
+		private done: () => void,
+	) {
+		this.tui = tui;
+		this.t = createSetupTheme(theme);
     this.keys = createPanelKeys(options.keybindings);
     this.screen = options.mode;
     for (const entry of discovery.imports) {
@@ -655,9 +660,10 @@ export class McpSetupPanel {
 export function createMcpSetupPanel(
   discovery: McpDiscoverySummary,
   callbacks: SetupPanelCallbacks,
-  options: SetupPanelOptions,
-  tui: { requestRender(): void },
-  done: () => void,
+	options: SetupPanelOptions,
+	tui: { requestRender(): void },
+	theme: Theme,
+	done: () => void,
 ): McpSetupPanel & { dispose(): void } {
-  return new McpSetupPanel(discovery, callbacks, options, tui, done);
+	return new McpSetupPanel(discovery, callbacks, options, tui, theme, done);
 }

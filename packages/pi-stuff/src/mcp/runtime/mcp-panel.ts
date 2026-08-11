@@ -1,5 +1,5 @@
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { copyToClipboard } from "@earendil-works/pi-coding-agent";
+import { copyToClipboard, type Theme } from "@earendil-works/pi-coding-agent";
 import { createPanelKeys, type PanelKeybindings, type PanelKeys } from "./panel-keys.ts";
 import { isServerDisabled, isToolAllowed } from "./types.ts";
 import type { McpConfig, McpPanelCallbacks, McpPanelResult, ServerProvenance, ToolPrefix } from "./types.ts";
@@ -8,51 +8,41 @@ import { sanitizeTerminalText, stripOscSequences } from "./utils.ts";
 import type { MetadataCache, ServerCacheEntry, CachedTool } from "./metadata-cache.ts";
 
 interface PanelTheme {
-  border: string;
-  title: string;
-  selected: string;
-  direct: string;
-  needsAuth: string;
-  placeholder: string;
-  description: string;
-  hint: string;
-  confirm: string;
-  cancel: string;
+  border: (text: string) => string;
+  title: (text: string) => string;
+  selected: (text: string) => string;
+  direct: (text: string) => string;
+  needsAuth: (text: string) => string;
+  placeholder: (text: string) => string;
+  description: (text: string) => string;
+  hint: (text: string) => string;
+  confirm: (text: string) => string;
+  cancel: (text: string) => string;
 }
 
-const DEFAULT_THEME: PanelTheme = {
-  border: "2",
-  title: "2",
-  selected: "36",
-  direct: "32",
-  needsAuth: "33",
-  placeholder: "2;3",
-  description: "2",
-  hint: "2",
-  confirm: "32",
-  cancel: "31",
-};
-
-function fg(code: string, text: string): string {
-  if (!code) return text;
-  return `\x1b[${code}m${text}\x1b[0m`;
+function createPanelTheme(theme: Theme): PanelTheme {
+  return {
+    border: text => theme.fg("border", text),
+    title: text => theme.fg("accent", text),
+    selected: text => theme.fg("accent", text),
+    direct: text => theme.fg("success", text),
+    needsAuth: text => theme.fg("warning", text),
+    placeholder: text => theme.fg("dim", text),
+    description: text => theme.fg("muted", text),
+    hint: text => theme.fg("dim", text),
+    confirm: text => theme.fg("success", text),
+    cancel: text => theme.fg("error", text),
+  };
 }
 
-const RAINBOW_COLORS = [
-  "38;2;178;129;214",
-  "38;2;215;135;175",
-  "38;2;254;188;56",
-  "38;2;228;192;15",
-  "38;2;137;210;129",
-  "38;2;0;175;175",
-  "38;2;23;143;185",
-];
+function fg(style: (text: string) => string, text: string): string {
+  return style(text);
+}
 
-function rainbowProgress(filled: number, total: number): string {
+function progress(theme: PanelTheme, filled: number, total: number): string {
   const dots: string[] = [];
   for (let i = 0; i < total; i++) {
-    const color = RAINBOW_COLORS[i % RAINBOW_COLORS.length];
-    dots.push(fg(color, i < filled ? "●" : "○"));
+    dots.push(fg(i < filled ? theme.direct : theme.description, i < filled ? "●" : "○"));
   }
   return dots.join(" ");
 }
@@ -161,7 +151,7 @@ class McpPanel {
   private inactivityTimeout: ReturnType<typeof setTimeout> | null = null;
   private visibleItems: VisibleItem[] = [];
   private tui: { requestRender(): void };
-  private t = DEFAULT_THEME;
+  private readonly t: PanelTheme;
   private authOnly: boolean;
   private keys: PanelKeys;
 
@@ -174,10 +164,12 @@ class McpPanel {
     provenance: Map<string, ServerProvenance>,
     private callbacks: McpPanelCallbacks,
     tui: { requestRender(): void },
+    theme: Theme,
     private done: (result: McpPanelResult) => void,
     options: { noticeLines?: string[]; authOnly?: boolean; keybindings?: PanelKeybindings } = {},
   ) {
     this.tui = tui;
+    this.t = createPanelTheme(theme);
     this.noticeLines = options.noticeLines ?? [];
     this.authOnly = options.authOnly === true;
     this.keys = createPanelKeys(options.keybindings);
@@ -743,7 +735,7 @@ class McpPanel {
 
       if (total > maxVis) {
         const prog = Math.round(((this.cursorIndex + 1) / total) * 10);
-        lines.push(row(`${rainbowProgress(prog, 10)}  ${fg(t.hint, `${this.cursorIndex + 1}/${total}`)}`));
+        lines.push(row(`${progress(t, prog, 10)}  ${fg(t.hint, `${this.cursorIndex + 1}/${total}`)}`));
         lines.push(emptyRow());
       }
 
@@ -953,8 +945,9 @@ export function createMcpPanel(
   provenance: Map<string, ServerProvenance>,
   callbacks: McpPanelCallbacks,
   tui: { requestRender(): void },
+  theme: Theme,
   done: (result: McpPanelResult) => void,
   options?: { noticeLines?: string[]; authOnly?: boolean; keybindings?: PanelKeybindings },
 ): McpPanel & { dispose(): void } {
-  return new McpPanel(config, cache, provenance, callbacks, tui, done, options ?? {});
+  return new McpPanel(config, cache, provenance, callbacks, tui, theme, done, options ?? {});
 }

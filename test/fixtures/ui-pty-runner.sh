@@ -2,6 +2,7 @@
 set -eu
 
 stty rows "$PI_STUFF_UI_PTY_ROWS" columns "$PI_STUFF_UI_PTY_COLUMNS"
+export COLORTERM="$PI_STUFF_UI_PTY_COLORTERM"
 
 exec "$PI_STUFF_UI_PTY_BIN" \
 	--offline \
@@ -11,7 +12,6 @@ exec "$PI_STUFF_UI_PTY_BIN" \
 	--no-skills \
 	--no-prompt-templates \
 	--no-context-files \
-	--no-themes \
 	--no-builtin-tools \
 	--extension "$PI_STUFF_UI_PTY_PACKAGE" \
 	--extension "$PI_STUFF_UI_PTY_PROVIDER_EXTENSION" \

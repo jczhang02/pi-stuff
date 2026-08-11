@@ -93,6 +93,12 @@ const REQUIRED_ARCHIVE_FILES = [
 	"package/src/todo/index.ts",
 	"package/src/btw/index.ts",
 	"package/src/btw/prompts/btw-system.txt",
+	"package/themes/catppuccin-frappe.json",
+	"package/themes/catppuccin-latte.json",
+	"package/themes/catppuccin-macchiato.json",
+	"package/themes/catppuccin-mocha.json",
+	"package/themes/LICENSE",
+	"package/themes/README.md",
 ] as const;
 
 const PROVENANCE_REQUIREMENTS: Readonly<Record<string, readonly string[]>> = {
@@ -145,8 +151,8 @@ function normalizedFilesEntry(entry: string): string {
 export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFiles: readonly string[]): void {
 	if (manifest.name !== "@jczhang02/pi-stuff") throw new Error("Archive has the wrong Package identity");
 	if (manifest.private !== true) throw new Error("Pi Stuff must remain a private local Package");
-	if (JSON.stringify(manifest.pi) !== JSON.stringify({ extensions: ["./index.ts"] })) {
-		throw new Error("Archive has an invalid Pi extension manifest");
+	if (JSON.stringify(manifest.pi) !== JSON.stringify({ extensions: ["./index.ts"], themes: ["./themes/*.json"] })) {
+		throw new Error("Archive has an invalid Pi resource manifest");
 	}
 	if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
 		throw new Error("Package manifest files must be a non-empty array");

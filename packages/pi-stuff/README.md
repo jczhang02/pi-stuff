@@ -29,6 +29,12 @@ The single local Pi Package for the complete Pi Stuff Suite.
 
 These names are internal maintenance boundaries, not npm dependencies or independently installable Packages.
 
+## Themes
+
+The Package includes `catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato`, and `catppuccin-mocha`.
+Select one in Pi's `/settings` theme menu or set `"theme"` to its name in `settings.json`. Pi renders truecolor when
+available and performs its native lower-color fallback; the Package does not override terminal or user theme settings.
+
 ## Local installation
 
 From the repository root:

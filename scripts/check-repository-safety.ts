@@ -28,6 +28,9 @@ const CREDENTIAL_PATTERNS = [
 ];
 const HOST_CONSOLE_CALL_PATTERN = /\bconsole\s*\.\s*(?:debug|error|info|log|warn)\s*\(/u;
 const HOST_STREAM_WRITE_PATTERN = /\bprocess\s*\.\s*(?:stderr|stdout)\s*\.\s*write\s*\(/u;
+const HOST_LITERAL_COLOR_PATTERN = /(?:#[0-9a-f]{6}\b|(?:38|48);(?:2|5);|\\x1b\[(?:3[0-7]|4[0-7]|9[0-7]|10[0-7])m)/iu;
+const HOST_DYNAMIC_SGR_PATTERN = /\\x1b\[\$\{[^}\r\n]+\}m/u;
+const HOST_SHORT_COLOR_LITERAL_PATTERN = /["'`](?:3[0-7]|4[0-7]|9[0-7]|10[0-7])["'`]/u;
 const HOST_CONSOLE_ALLOWLIST = new Set([
 	// These run inside browser/sandbox surfaces rather than Pi's Host TUI.
 	"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js",
@@ -40,6 +43,15 @@ const HOST_STREAM_WRITE_ALLOWLIST = new Set([
 	"packages/pi-stuff/src/mcp/runtime/mcp-keyring-helper.cjs",
 	"packages/pi-stuff/src/subagents/src/runs/background/writer-process-supervisor.mjs",
 	"packages/pi-stuff/src/subagents/src/shared/detached-runner-diagnostics.ts",
+]);
+const HOST_LITERAL_COLOR_ALLOWLIST = new Set([
+	// Browser documents cannot consume Pi's terminal Theme API.
+	"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js",
+	"packages/pi-stuff/src/mcp/runtime/host-html-template.ts",
+	"packages/pi-stuff/src/mcp/runtime/implementation.ts",
+	"packages/pi-stuff/src/mcp/runtime/mcp-callback-server.ts",
+	"packages/pi-stuff/src/web/runtime/curator-page.ts",
+	"packages/pi-stuff/src/web/runtime/implementation.ts",
 ]);
 const INTERNAL_MODULES = [
 	"conversation-ui",
@@ -227,6 +239,14 @@ async function auditTextFile(root: string, path: string): Promise<SafetyFinding[
 	) {
 		findings.push({ path, rule: "raw-host-stream-output" });
 	}
+	if (
+		path.startsWith("packages/pi-stuff/src/") &&
+		!HOST_LITERAL_COLOR_ALLOWLIST.has(path) &&
+		(HOST_LITERAL_COLOR_PATTERN.test(text) ||
+			(HOST_DYNAMIC_SGR_PATTERN.test(text) && HOST_SHORT_COLOR_LITERAL_PATTERN.test(text)))
+	) {
+		findings.push({ path, rule: "hard-coded-host-color" });
+	}
 	return findings;
 }
 
@@ -280,7 +300,10 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 		if (!hasExplicitFilesAllowlist(manifest.files)) {
 			findings.push({ path, rule: "package-files-allowlist" });
 		}
-		const expectedPiManifest = JSON.stringify({ extensions: ["./index.ts"] });
+		const expectedPiManifest = JSON.stringify({
+			extensions: ["./index.ts"],
+			themes: ["./themes/*.json"],
+		});
 		if (JSON.stringify(manifest.pi) !== expectedPiManifest) {
 			findings.push({ path, rule: "package-pi-manifest" });
 		}
