@@ -40,11 +40,19 @@ const theme = {
 } as unknown as Theme;
 
 class TestTui {
+	followingEnd = false;
 	readonly terminal = { rows: 32 };
 	renderRequests = 0;
+	scrollToBottomCalls = 0;
 
 	requestRender(): void {
 		this.renderRequests += 1;
+	}
+
+	scrollToBottom(): void {
+		this.followingEnd = true;
+		this.scrollToBottomCalls += 1;
+		this.requestRender();
 	}
 }
 
@@ -349,17 +357,23 @@ describe("editor composition", () => {
 		expect(result.getText()).toBe("保留");
 	});
 
-	test("hands ordinary submissions to the Host synchronously without requesting a render", () => {
+	test("restores tail-following only when the native editor submits", () => {
 		const { editor, tui } = createEditor({ inlineSlashAutocomplete: true, inputHighlighting: true }, [
 			{ value: "review", label: "review" },
 		]);
 		const submissions: string[] = [];
 		editor.onSubmit = (text) => submissions.push(text);
 		editor.setText("普通输入");
+		editor.handleInput("\u001b[D");
+		expect(tui.followingEnd).toBeFalse();
+		expect(tui.scrollToBottomCalls).toBe(0);
 		editor.handleInput("\r");
+		expect(tui.followingEnd).toBeTrue();
+		expect(tui.scrollToBottomCalls).toBe(1);
 		editor.setText("/ui");
 		editor.handleInput("\r");
 		expect(submissions).toEqual(["普通输入", "/ui"]);
-		expect(tui.renderRequests).toBe(0);
+		expect(tui.scrollToBottomCalls).toBe(2);
+		expect(tui.renderRequests).toBe(2);
 	});
 });

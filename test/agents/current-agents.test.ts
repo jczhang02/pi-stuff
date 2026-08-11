@@ -718,6 +718,65 @@ describe("CurrentAgents snapshot", () => {
 		expect(lateOutputReads).toBe(0);
 	});
 
+	test("projects bounded terminal failures and drops task-only partial results across cold restore", () => {
+		const task = "Inspect the Agent detail without changing files.";
+		const error = "Provider rejected the child payload\u001b]0;hidden\u0007 after validation.\u202e";
+		const state = createState();
+		state.recentAgentJobs?.set(
+			"failed-detail",
+			asyncJob("failed-detail", "failed", {
+				tasks: [task],
+				steps: [
+					{
+						agent: "reviewer",
+						error,
+						recentOutput: [`Task: ${task}`],
+						status: "failed",
+						task,
+					},
+				],
+			}),
+		);
+
+		const projected = row(new CurrentAgents(state, acknowledgedOptions()).snapshot(), "failed-detail:0");
+		expect(projected.error).toBe("Provider rejected the child payload after validation.");
+		expect(projected.partialResult).toBeNull();
+		expect(projected.task).toBe(task);
+
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-failed-agent-restore-"));
+		const runDir = path.join(root, "failed-detail");
+		fs.mkdirSync(runDir);
+		fs.writeFileSync(
+			path.join(runDir, "status.json"),
+			JSON.stringify({
+				error,
+				lastUpdate: 2_000,
+				mode: "single",
+				runId: "failed-detail",
+				sessionId: "root-session",
+				startedAt: 1_000,
+				state: "failed",
+				steps: [{ agent: "reviewer", recentOutput: [`Task: ${task}`], status: "failed", task }],
+			}),
+		);
+		const restoredState = createFullState("root-session");
+		const tracker = createAsyncJobTracker(
+			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
+			restoredState,
+			root,
+			{ now: () => 3_000, resultsDir: path.join(root, "results") },
+		);
+		try {
+			tracker.restoreActiveJobs();
+			const restored = row(new CurrentAgents(restoredState, acknowledgedOptions()).snapshot(), "failed-detail:0");
+			expect(restored.error).toBe("Provider rejected the child payload after validation.");
+			expect(restored.partialResult).toBeNull();
+		} finally {
+			tracker.resetJobs();
+			fs.rmSync(root, { force: true, recursive: true });
+		}
+	});
+
 	test("represents every explicit lifecycle state without inventing nested rows", () => {
 		const state = createState();
 		const active = [

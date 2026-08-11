@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isTaskOnlyAgentText } from "../shared/display-description.ts";
 import { readStatus } from "../shared/utils.ts";
 import type { AgentTranscriptReader, AgentTranscriptRequest } from "./agent-dialog.ts";
 
@@ -276,7 +277,7 @@ function resolveTool(
 	return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-function jsonlTranscript(source: string, sourceTruncated: boolean): string {
+function jsonlTranscript(source: string, sourceTruncated: boolean, task: string): string {
 	let lines = source.split(/\r?\n/);
 	if (sourceTruncated && lines.length > 0) lines = lines.slice(1);
 	const items: TranscriptItem[] = [];
@@ -337,7 +338,11 @@ function jsonlTranscript(source: string, sourceTruncated: boolean): string {
 		}
 		const block = messageBlock(entry);
 		const previous = items.at(-1);
-		if (block && !(previous?.kind === "message" && previous.text === block)) {
+		if (
+			block &&
+			!(role === "user" && isTaskOnlyAgentText(block, task)) &&
+			!(previous?.kind === "message" && previous.text === block)
+		) {
 			items.push({ kind: "message", text: block });
 		}
 	}
@@ -361,13 +366,15 @@ function transcriptCandidate(request: AgentTranscriptRequest): string | null {
 /** Bounded, no-follow transcript reader for the shared Agent Command Dialog. */
 export const readAgentTranscript: AgentTranscriptReader = (request) => {
 	if (request.signal.aborted) return null;
+	const partial = isTaskOnlyAgentText(request.row.partialResult, request.row.task) ? null : request.row.partialResult;
 	const candidate = transcriptCandidate(request);
-	if (!candidate || !path.isAbsolute(candidate)) return request.row.partialResult;
+	if (!candidate || !path.isAbsolute(candidate)) return partial;
 	const tail = readTail(candidate, request.maxChars);
 	if (request.signal.aborted) return null;
-	if (!tail) return request.row.partialResult;
+	if (!tail) return partial;
 	const parsed = candidate.endsWith(".jsonl")
-		? jsonlTranscript(tail.text, tail.truncated)
+		? jsonlTranscript(tail.text, tail.truncated, request.row.task)
 		: `${tail.truncated ? "… earlier transcript omitted\n\n" : ""}${tail.text}`;
-	return boundedTail(parsed || request.row.partialResult || "", request.maxChars) || null;
+	const bounded = boundedTail(parsed || partial || "", request.maxChars) || null;
+	return isTaskOnlyAgentText(bounded, request.row.task) ? null : bounded;
 };

@@ -464,7 +464,10 @@ class InputEnhancementEditor implements EditorComponent {
 	}
 
 	set onSubmit(value: (text: string) => void) {
-		this.editor.onSubmit = value;
+		this.editor.onSubmit = (text) => {
+			(this.tui as TUI & { scrollToBottom?(): void }).scrollToBottom?.();
+			value(text);
+		};
 	}
 
 	get wantsKeyRelease(): boolean {

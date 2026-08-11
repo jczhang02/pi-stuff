@@ -358,7 +358,7 @@ describe("StatuslineController", () => {
 
 			expect(component.render(160)).toEqual([
 				"◆ anthropic/sonnet-4.5 · ◉ med · ▣ pi-stuff · ⎇ main · Δ +12 ~3 ?1 · ◔ 42.4% · ↻ 99.9% · ¤ $0.42",
-				"• Implement the accepted Pi Stuff statusline.",
+				"› Implement the accepted Pi Stuff statusline.",
 			]);
 		});
 	});
@@ -383,7 +383,7 @@ describe("StatuslineController", () => {
 
 			expect(component.render(160)).toEqual([
 				"󰚩 anthropic/sonnet-4.5 ·  med · 󰉋 pi-stuff ·  main ·  +12 ~3 ?1 · 󰍛 42.4% · 󰆼 99.9% ·  $0.42",
-				" Implement the accepted Pi Stuff statusline.",
+				"› Implement the accepted Pi Stuff statusline.",
 			]);
 		});
 	});
@@ -413,11 +413,11 @@ describe("StatuslineController", () => {
 			);
 
 			expect(latin.render(120)[0]).toStartWith("󰚩 ");
-			expect(latin.render(120)[1]).toStartWith(" Implement");
-			expect(cjk.render(120)[1]).toStartWith(" 中文");
-			expect(emoji.render(120)[1]).toStartWith(" 🚀 Ship");
-			expect(visibleWidth(" ")).toBe(2);
-			expect(visibleWidth(" 中")).toBe(4);
+			expect(latin.render(120)[1]).toStartWith("› Implement");
+			expect(cjk.render(120)[1]).toStartWith("› 中文");
+			expect(emoji.render(120)[1]).toStartWith("› 🚀 Ship");
+			expect(visibleWidth("› ")).toBe(2);
+			expect(visibleWidth("› 中")).toBe(4);
 		});
 	});
 
@@ -443,7 +443,7 @@ describe("StatuslineController", () => {
 			preferenceSource.set({ density: "full", enabled: true, iconMode: "ascii", latestPrompt: true });
 			const full = component.render(160).join("\n");
 			expect(full).toContain("▣ pi-stuff");
-			expect(full).toContain("• Implement the accepted Pi Stuff statusline.");
+			expect(full).toContain("› Implement the accepted Pi Stuff statusline.");
 			expect(full).toContain("↻ 99.9%");
 			expect(full).not.toContain("goal:UI");
 			expect(harness.requests.length).toBeGreaterThan(0);
@@ -491,12 +491,13 @@ describe("StatuslineController", () => {
 
 			component.render(160);
 			expect(colored.get("accent")).toEqual(expect.arrayContaining(["◆ anthropic/sonnet-4.5", "▣"]));
+			expect(colored.get("accent")).not.toContain("›");
 			expect(colored.get("thinkingMedium")).toContain("◉");
 			expect(colored.get("warning")).toEqual(expect.arrayContaining(["⎇", "~3", "¤"]));
 			expect(colored.get("success")).toContain("+12");
 			expect(colored.get("dim")).toEqual(expect.arrayContaining(["◔", " · "]));
 			expect(colored.get("muted")).toEqual(
-				expect.arrayContaining(["med", "Δ", "?1", "↻", "Implement the accepted Pi Stuff statusline."]),
+				expect.arrayContaining(["›", "med", "Δ", "?1", "↻", "Implement the accepted Pi Stuff statusline."]),
 			);
 			expect([...colored.values()].flat()).not.toContain("goal:UI");
 			expect(colored.get("text")).toEqual(expect.arrayContaining(["pi-stuff", "main", "42.4%", "99.9%", "$0.42"]));
@@ -595,7 +596,7 @@ describe("StatuslineController", () => {
 				expect(rendered).toContain("sonnet");
 				expect(rendered).toMatch(/42(?:\.4)?%/u);
 				expect(lines).toHaveLength(2);
-				expect(lines[1]?.startsWith("•")).toBe(true);
+				expect(lines[1]?.startsWith("›")).toBe(true);
 				for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 			}
 			expect(component.render(48).join("\n")).toContain("Implement the accepted");
@@ -720,7 +721,7 @@ describe("StatuslineController", () => {
 		const lines = withNerdFontPreference(false, () => component.render(120));
 		expect(lines).toEqual([
 			"◆ anthropic/sonnet-4.5 · ◉ med · ▣ pi-stuff · ⎇ main · Δ +12 ~3 ?1 · ◔ 42.4% · ↻ 99.9% · ¤ $0.42",
-			"• Implement the accepted Pi Stuff statusline.",
+			"› Implement the accepted Pi Stuff statusline.",
 		]);
 		expect(lines.join("\n")).not.toMatch(/agents:3|goal:UI|mcp:2|load:full/u);
 
