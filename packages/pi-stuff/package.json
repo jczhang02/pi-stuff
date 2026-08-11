@@ -16,6 +16,7 @@
 	"files": [
 		"index.ts",
 		"src",
+		"themes",
 		"CHANGELOG.md",
 		"README.md",
 		"LICENSE"
@@ -23,6 +24,9 @@
 	"pi": {
 		"extensions": [
 			"./index.ts"
+		],
+		"themes": [
+			"./themes/*.json"
 		]
 	},
 	"dependencies": {

@@ -9,6 +9,12 @@ const PROVIDER = "pi-stuff-ui-pty";
 const MODEL = "ui-pty-model";
 const SUBSCRIPTION_PROVIDER = "kimi-coding";
 const SUBSCRIPTION_MODEL = "ui-pty-subscription";
+const CATPPUCCIN_THEMES = [
+	"catppuccin-latte",
+	"catppuccin-frappe",
+	"catppuccin-macchiato",
+	"catppuccin-mocha",
+] as const;
 export const THOUGHT_PHASES = [
 	"Creating diagnostic script for false failure",
 	"Drafting failure detection logic in script",
@@ -399,6 +405,23 @@ export default function uiPtyProvider(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.registerShortcut(Key.f9, {
+		description: "Switch to the next Catppuccin theme fixture",
+		handler: async (ctx) => {
+			const current = CATPPUCCIN_THEMES.indexOf(ctx.ui.theme.name as (typeof CATPPUCCIN_THEMES)[number]);
+			const theme = CATPPUCCIN_THEMES[(current + 1) % CATPPUCCIN_THEMES.length] ?? CATPPUCCIN_THEMES[0];
+			const result = ctx.ui.setTheme(theme);
+			appendRecord({
+				type: "theme-switch",
+				success: result.success,
+				theme: ctx.ui.theme.name,
+				themeAccent: ctx.ui.theme.getFgAnsi("accent"),
+				themeMode: ctx.ui.theme.getColorMode(),
+				themes: ctx.ui.getAllThemes().map((available) => available.name),
+			});
+		},
+	});
+
 	pi.on("session_start", (_event, ctx) => {
 		ctx.ui.setStatus("goal", "goal:UI");
 		ctx.ui.setStatus("mcp", "mcp:2");
@@ -407,6 +430,10 @@ export default function uiPtyProvider(pi: ExtensionAPI): void {
 			type: "inventory",
 			commands: pi.getCommands().map((command) => command.name),
 			markdownTransformer: typeof Reflect.get(pi, "registerMarkdownTransformer") === "function",
+			theme: ctx.ui.theme.name,
+			themeAccent: ctx.ui.theme.getFgAnsi("accent"),
+			themeMode: ctx.ui.theme.getColorMode(),
+			themes: ctx.ui.getAllThemes().map((theme) => theme.name),
 		});
 	});
 }

@@ -432,8 +432,8 @@ export async function openMcpSetup(
 
   return new Promise<PanelFlowResult>((resolve) => {
     ctx.ui.custom(
-      (tui, _theme, keybindings, done) => {
-        return createMcpSetupPanel(discovery, callbacks, { mode, onboardingState, keybindings }, tui, () => {
+		(tui, theme, keybindings, done) => {
+			return createMcpSetupPanel(discovery, callbacks, { mode, onboardingState, keybindings }, tui, theme, () => {
           done(undefined);
           resolve({ configChanged });
         });
@@ -530,8 +530,8 @@ export async function openMcpPanel(
 
   await new Promise<void>((resolve) => {
     ctx.ui.custom(
-      (tui, _theme, keybindings, done) => {
-        return createMcpPanel(config, cache, provenanceMap, callbacks, tui, (result: McpPanelResult) => {
+      (tui, theme, keybindings, done) => {
+        return createMcpPanel(config, cache, provenanceMap, callbacks, tui, theme, (result: McpPanelResult) => {
           void (async () => {
             if (!result.cancelled && result.changes.size > 0) {
               writeDirectToolsConfig(result.changes, provenanceMap, config);
@@ -589,8 +589,8 @@ export async function openMcpAuthPanel(
 
   await new Promise<void>((resolve) => {
     ctx.ui.custom(
-      (tui, _theme, keybindings, done) => {
-        return createMcpPanel(config, cache, provenanceMap, callbacks, tui, () => {
+      (tui, theme, keybindings, done) => {
+        return createMcpPanel(config, cache, provenanceMap, callbacks, tui, theme, () => {
           done(undefined);
           resolve();
         }, {
