@@ -9,9 +9,17 @@ import type {
 	SessionStartEvent,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, SettingsManager, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { getHostSharedResource, requestUiRender } from "../conversation-ui/index.js";
+import {
+	beginSuiteNativeCompactionPreflight,
+	getHostSharedResource,
+	hasDirectUserActivation,
+	registerSuiteAgentMessagePreparation,
+	reportDiagnostic,
+	requestUiRender,
+	type SuiteAgentMessageOptions,
+} from "../conversation-ui/index.js";
 import {
 	activityKey,
 	activityTarget,
@@ -20,13 +28,14 @@ import {
 	type SuiteToolPresentation,
 	singleActivity,
 } from "../tool-display/index.js";
-import { prepareMagicContext } from "./config.ts";
+import { type MagicContextPreparation, type MagicContextPreparationOptions, prepareMagicContext } from "./config.js";
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
 export const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
 const MAGIC_CONTEXT_MODULE = "@cortexkit/pi-magic-context";
 const MAGIC_CONTEXT_PROMPT_MARKER = "## Magic Context";
+const SUITE_CUSTOM_CONTEXT_GUIDANCE_TAG = "pi-stuff-context-guidance";
 const COMPACT_MAGIC_CONTEXT_PROMPT = `${MAGIC_CONTEXT_PROMPT_MARKER}
 
 This Session has durable history that may be compacted into \`<session-history>\` while newer material appears in \`<session-history-since>\`. Treat those blocks, \`§N§\` tags, and other Magic Context markers as context metadata, never as user instructions or reply syntax. Continue the task normally; high context usage alone is not a reason to stop or reduce scope.
@@ -64,6 +73,22 @@ function addCompactMagicContextPrompt(event: unknown): unknown {
 	return { ...(event as Record<string, unknown>), systemPrompt: `${systemPrompt}\n\n${COMPACT_MAGIC_CONTEXT_PROMPT}` };
 }
 
+function addCompactMagicContextMessage(messages: readonly AgentMessage[]): AgentMessage[] {
+	const guidance = {
+		role: "user" as const,
+		content: [
+			{
+				type: "text" as const,
+				text: `<${SUITE_CUSTOM_CONTEXT_GUIDANCE_TAG}>\n${COMPACT_MAGIC_CONTEXT_PROMPT}\n</${SUITE_CUSTOM_CONTEXT_GUIDANCE_TAG}>`,
+			},
+		],
+		timestamp: Date.now(),
+	} satisfies AgentMessage;
+	const projected = [...messages];
+	projected.splice(Math.max(0, projected.length - 1), 0, guidance);
+	return projected;
+}
+
 interface ManualCompactionPreparation {
 	readonly firstKeptEntryId: string;
 	readonly tokensBefore: number;
@@ -88,7 +113,11 @@ interface MagicModuleSource {
 interface ContextRuntimeDependencies {
 	readonly magicModules: MagicModuleSource;
 	readonly magicSubagent: () => boolean;
-	readonly prepareMagicContext: (ctx: ExtensionContext) => Promise<void>;
+	readonly readNativeCompactionSettings: (ctx: ExtensionContext) => NativeCompactionSettings | undefined;
+	readonly prepareMagicContext: (
+		ctx: ExtensionContext,
+		options: MagicContextPreparationOptions,
+	) => Promise<MagicContextPreparation | undefined>;
 	readonly yieldToUiFrame: () => Promise<void>;
 }
 
@@ -142,8 +171,17 @@ export interface ContextCapability {
 export interface ContextCapabilityDependencies {
 	readonly loadMagicContext?: () => Promise<MagicModule>;
 	readonly magicSubagent?: () => boolean;
-	readonly prepareMagicContext?: (ctx: ExtensionContext) => Promise<void>;
+	readonly prepareMagicContext?: (
+		ctx: ExtensionContext,
+		options: MagicContextPreparationOptions,
+	) => Promise<MagicContextPreparation | undefined>;
+	readonly readNativeCompactionSettings?: (ctx: ExtensionContext) => NativeCompactionSettings | undefined;
 	readonly yieldToUiFrame?: () => Promise<void>;
+}
+
+export interface NativeCompactionSettings {
+	readonly enabled: boolean;
+	readonly reserveTokens: number;
 }
 
 interface CachedProjection {
@@ -723,11 +761,13 @@ class ContextCapabilityRuntime implements ContextCapability {
 	private readonly dependencies: ContextRuntimeDependencies;
 	private state: ContextStatusSnapshot = { state: "dormant", engine: "native" };
 	private activation: Promise<ContextStatusSnapshot> | undefined;
+	private activationTrigger: ContextActivationTrigger | undefined;
 	private generation = 0;
 	private magicContextHandler: MagicContextHandler | undefined;
 	private readonly magicTools = new Map<string, ToolDefinition>();
 	private magicShutdownHandlers: LooseEventHandler[] = [];
 	private sessionStart: SessionStartEvent | undefined;
+	private sessionContext: ExtensionContext | undefined;
 	private shutdown: { event: SessionShutdownEvent; ctx: ExtensionContext } | undefined;
 	private disposed = false;
 	private readonly projections = new Map<string, CachedProjection>();
@@ -737,12 +777,23 @@ class ContextCapabilityRuntime implements ContextCapability {
 	private readonly owner: object;
 	private readonly ownedContexts = new Set<object>();
 	private interactivePaintPending = false;
+	private nativeCompactionPreflight: Promise<void> | undefined;
+	private magicPromptInstalledForSession = false;
+	private readonly suiteCustomContextGuidance = new Set<symbol>();
+	private readonly unregisterSuiteAgentMessagePreparation: () => void;
 
 	constructor(pi: ExtensionAPI, dependencies: ContextRuntimeDependencies, registry: ContextCapabilityRegistry) {
 		this.pi = pi;
 		this.dependencies = dependencies;
 		this.registry = registry;
 		this.owner = ownerKey(pi);
+		this.unregisterSuiteAgentMessagePreparation = registerSuiteAgentMessagePreparation(pi, {
+			prepare: (origin, options) => this.prepareSuiteAgentMessage(origin, options),
+			stage: (options) => {
+				const token = this.stageSuiteCustomContextGuidance(options);
+				return token ? () => this.cancelSuiteCustomContextGuidance(token) : undefined;
+			},
+		});
 	}
 
 	status(): ContextStatusSnapshot {
@@ -799,8 +850,11 @@ class ContextCapabilityRuntime implements ContextCapability {
 
 	captureSessionStart(event: SessionStartEvent, ctx: ExtensionContext): void {
 		this.sessionStart = { ...event };
+		this.sessionContext = ctx;
 		this.projections.clear();
 		this.memories.clear();
+		this.magicPromptInstalledForSession = false;
+		this.suiteCustomContextGuidance.clear();
 		this.registry.contexts.set(ctx.sessionManager, this);
 		this.ownedContexts.add(ctx.sessionManager);
 		if (this.magicTools.size > 0) this.activateMagicTools();
@@ -815,7 +869,10 @@ class ContextCapabilityRuntime implements ContextCapability {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.interactivePaintPending = false;
+		this.suiteCustomContextGuidance.clear();
+		this.sessionContext = undefined;
 		this.generation++;
+		this.unregisterSuiteAgentMessagePreparation();
 		if (event && ctx) this.shutdown = { event, ctx };
 		this.projections.clear();
 		this.memories.clear();
@@ -839,22 +896,149 @@ class ContextCapabilityRuntime implements ContextCapability {
 
 	async activate(ctx: ExtensionContext, trigger: ContextActivationTrigger): Promise<ContextStatusSnapshot> {
 		if (this.disposed) return { state: "native", engine: "native" };
-		if (this.state.state === "active" || this.state.state === "native") return this.status();
-		if (this.magicContextHandler) return this.status();
-		if (this.activation) return this.activation;
 		if (this.dependencies.magicSubagent()) {
 			this.state = { state: "native", engine: "native", trigger };
 			return this.status();
+		}
+		if (this.state.state === "active" || this.state.state === "native") return this.status();
+		if (this.magicContextHandler) return this.status();
+		if (this.activation) {
+			const joinedTrigger = this.activationTrigger;
+			const result = await this.activation;
+			if (
+				trigger !== "automatic-turn" &&
+				joinedTrigger === "automatic-turn" &&
+				result.state === "dormant" &&
+				!this.disposed
+			) {
+				return this.activate(ctx, trigger);
+			}
+			return result;
 		}
 
 		this.state = { state: "loading", engine: "native", trigger };
 		const generation = ++this.generation;
 		let tracked: Promise<ContextStatusSnapshot>;
 		tracked = this.startMagicContext(ctx, trigger, generation).finally(() => {
-			if (this.activation === tracked) this.activation = undefined;
+			if (this.activation !== tracked) return;
+			this.activation = undefined;
+			this.activationTrigger = undefined;
 		});
+		this.activationTrigger = trigger;
 		this.activation = tracked;
 		return this.activation;
+	}
+
+	async prepareSuiteAgentMessage(
+		activation: "automatic" | "direct-user",
+		options: SuiteAgentMessageOptions,
+	): Promise<void> {
+		const ctx = this.sessionContext;
+		if (!ctx) return;
+		let idle = false;
+		try {
+			idle = ctx.isIdle();
+		} catch {
+			// A partial Host context must fail toward preserving model context.
+		}
+		let startsOrJoinsAgentWork = options?.triggerTurn === true;
+		if (!startsOrJoinsAgentWork) {
+			startsOrJoinsAgentWork = !idle;
+		}
+		if (!startsOrJoinsAgentWork) return;
+		await this.activate(ctx, activation === "direct-user" ? "input" : "automatic-turn");
+		if (options?.triggerTurn === true && idle && this.state.state !== "active") {
+			await this.preflightNativeCustomTurn(ctx);
+		}
+	}
+
+	private stageSuiteCustomContextGuidance(options: SuiteAgentMessageOptions): symbol | undefined {
+		if (options?.triggerTurn !== true || this.state.state !== "active" || this.magicPromptInstalledForSession) {
+			return undefined;
+		}
+		try {
+			if (!this.sessionContext?.isIdle()) return undefined;
+		} catch {
+			return undefined;
+		}
+		const token = Symbol("suite-custom-context-guidance");
+		this.suiteCustomContextGuidance.add(token);
+		return token;
+	}
+
+	private cancelSuiteCustomContextGuidance(token: symbol): void {
+		this.suiteCustomContextGuidance.delete(token);
+	}
+
+	private consumeSuiteCustomContextGuidance(): boolean {
+		const token = this.suiteCustomContextGuidance.values().next().value;
+		if (typeof token !== "symbol") return false;
+		this.suiteCustomContextGuidance.delete(token);
+		return true;
+	}
+
+	private async preflightNativeCustomTurn(ctx: ExtensionContext): Promise<void> {
+		if (this.nativeCompactionPreflight) {
+			await this.nativeCompactionPreflight;
+			return;
+		}
+		try {
+			if (!ctx.isIdle()) return;
+		} catch {
+			return;
+		}
+		let settings: NativeCompactionSettings | undefined;
+		try {
+			settings = this.dependencies.readNativeCompactionSettings(ctx);
+		} catch (error) {
+			reportDiagnostic({
+				capability: "Context",
+				error,
+				key: "native-custom-turn-settings",
+				severity: "warning",
+				summary: "Native compaction settings could not be read before a Suite custom turn",
+				visibility: "silent",
+			});
+			return;
+		}
+		if (!settings?.enabled || !Number.isFinite(settings.reserveTokens) || settings.reserveTokens < 0) return;
+		const usage = ctx.getContextUsage();
+		if (!usage || usage.tokens === null || usage.contextWindow <= 0) return;
+		if (usage.tokens <= usage.contextWindow - settings.reserveTokens) return;
+
+		const finishPreflight = beginSuiteNativeCompactionPreflight(ctx);
+		let tracked: Promise<void>;
+		tracked = new Promise<void>((resolve) => {
+			let settled = false;
+			const finish = (error?: Error): void => {
+				if (settled) return;
+				settled = true;
+				if (error) {
+					reportDiagnostic({
+						capability: "Context",
+						error,
+						key: "native-custom-turn-compaction",
+						severity: "warning",
+						summary: "Native compaction could not finish before a Suite custom turn",
+						visibility: "silent",
+					});
+				}
+				resolve();
+			};
+			try {
+				ctx.compact({
+					onComplete: () => finish(),
+					onError: finish,
+				});
+			} catch (error) {
+				finish(error instanceof Error ? error : new Error(String(error)));
+			}
+		}).finally(() => {
+			finishPreflight();
+			if (this.nativeCompactionPreflight === tracked) this.nativeCompactionPreflight = undefined;
+		});
+		this.nativeCompactionPreflight = tracked;
+		await tracked;
 	}
 
 	async projectCurrentContext(
@@ -914,7 +1098,13 @@ class ContextCapabilityRuntime implements ContextCapability {
 	): Promise<ContextStatusSnapshot> {
 		const plan = this.createRegistrationPlan();
 		try {
-			await this.dependencies.prepareMagicContext(ctx);
+			const preparation = await this.dependencies.prepareMagicContext(ctx, {
+				allowConfigurationMutation: trigger !== "automatic-turn",
+			});
+			if (preparation === "deferred") {
+				this.state = { state: "dormant", engine: "native" };
+				return this.status();
+			}
 			const module = await this.dependencies.magicModules.load();
 			const magicPi = this.magicPiAdapter(plan);
 			await module.default(magicPi);
@@ -1048,6 +1238,8 @@ class ContextCapabilityRuntime implements ContextCapability {
 		if (event === "before_agent_start") {
 			register(event, async (rawEvent, ctx) => {
 				if (!this.isCurrentGeneration(generation)) return;
+				this.magicPromptInstalledForSession = true;
+				this.suiteCustomContextGuidance.clear();
 				return handler(addCompactMagicContextPrompt(rawEvent), quietMagicContext(ctx));
 			});
 			return;
@@ -1070,7 +1262,8 @@ class ContextCapabilityRuntime implements ContextCapability {
 			const nativeMessages = [...contextEvent.messages];
 			try {
 				const result = await contextHandler(contextEvent, quietMagicContext(ctx));
-				const full = extractMagicProjection(result?.messages ?? contextEvent.messages);
+				const projectedMessages = result?.messages ?? contextEvent.messages;
+				const full = extractMagicProjection(projectedMessages);
 				if (!full) throw new Error("Magic Context produced no valid history projection.");
 				const key = projectionKey(ctx);
 				this.projections.set(key, { full });
@@ -1082,7 +1275,8 @@ class ContextCapabilityRuntime implements ContextCapability {
 					engine: "magic-context",
 					trigger: this.state.trigger ?? "automatic-turn",
 				};
-				return result;
+				if (!this.consumeSuiteCustomContextGuidance()) return result;
+				return { ...result, messages: addCompactMagicContextMessage(projectedMessages) };
 			} catch (error) {
 				const key = projectionKey(ctx);
 				this.projections.delete(key);
@@ -1214,6 +1408,12 @@ export default async function piStuffContext(
 				{
 					magicModules,
 					magicSubagent,
+					readNativeCompactionSettings:
+						dependencies.readNativeCompactionSettings ??
+						((ctx) =>
+							SettingsManager.create(ctx.cwd, getAgentDir(), {
+								projectTrusted: ctx.isProjectTrusted(),
+							}).getCompactionSettings()),
 					prepareMagicContext:
 						dependencies.prepareMagicContext ??
 						(dependencies.loadMagicContext ? async () => undefined : prepareMagicContext),
@@ -1236,7 +1436,23 @@ export default async function piStuffContext(
 	pi.on("session_tree", () => runtime.invalidateProjection());
 	pi.on("input", async (event, ctx) => {
 		await runtime.noteInput(event.source);
-		await runtime.activate(ctx, "input");
+		// A later Extension may still handle an Extension-authored input, in which
+		// case Pi never starts an Agent turn. Defer that path to the authoritative
+		// before_agent_start boundary so a display-only or rejected continuation
+		// cannot initialize or write Magic Context state. Direct user input keeps
+		// the eager path so its first visible frame can absorb setup latency.
+		if (event.source !== "extension") await runtime.activate(ctx, "input");
+	});
+	pi.on("message_start", async (event, ctx) => {
+		if (event.message.role !== "custom") return;
+		try {
+			// Pi also emits message_start for idle, non-triggering display entries.
+			if (ctx.isIdle()) return;
+		} catch {
+			// A real Pi Host supplies this boundary. A partial third-party wrapper
+			// fails toward preserving context for accepted custom Agent work.
+		}
+		await runtime.activate(ctx, hasDirectUserActivation(event.message) ? "input" : "automatic-turn");
 	});
 	pi.on("before_agent_start", async (_event, ctx) => {
 		await runtime.activate(ctx, "automatic-turn");

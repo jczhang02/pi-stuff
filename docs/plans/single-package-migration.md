@@ -1,7 +1,8 @@
 # Single-Package migration inventory
 
-This record freezes the source topology at the start of `ps-7lq`. The migration is structural: every listed Runtime
-Resource, behavior, prompt, native helper, provenance record, and verification seam must have an explicit destination.
+This record maps the source topology frozen at the start of `ps-7lq` to the completed single-Package layout, including
+the Code Mode integration that landed immediately afterward. Every listed Runtime Resource, behavior, prompt, native
+helper, provenance record, and verification seam has an explicit destination.
 
 ## Source-to-Module map
 
@@ -22,6 +23,7 @@ Resource, behavior, prompt, native helper, provenance record, and verification s
 | `packages/pi-stuff-agents` | `packages/pi-stuff/src/subagents` | Agent discovery, execution, steering, session ownership, roster and dialog |
 | `packages/pi-stuff-todo` | `packages/pi-stuff/src/todo` | Todo state, task graph, Task Tools and checklist UI |
 | `packages/pi-stuff-btw` | `packages/pi-stuff/src/btw` | One-shot side question, isolated model request, history and Command Dialog |
+| concurrent `feat/code-mode` implementation | `packages/pi-stuff/src/code-mode` | Opt-in one-schema Tool envelope, isolated V8 execution, Host acquisition and unchanged nested Tool presentation |
 
 The destination directory name is the internal Module name. No destination other than `packages/pi-stuff` receives a
 `package.json`, version, npm export, or Pi `extensions` declaration.
@@ -40,6 +42,7 @@ The following resources must move with their owning Module and remain in the Pac
 - `mcp/runtime/mcp-script-worker.mjs`
 - `mcp/runtime/mcp-keyring-helper.cjs`
 - `mcp/runtime/banner.png`
+- `code-mode/LICENSES/Apache-2.0.txt`, `code-mode/THIRD_PARTY_NOTICES.md`, and `code-mode/UPSTREAM.md`
 - every retained `UPSTREAM.md`, `SECURITY.md`, and third-party license text
 
 Historical per-Package changelogs remain available through Git history. One Package changelog is maintained after the
@@ -63,6 +66,7 @@ the former fully bundled transitive manifests:
 - `linkedom`
 - `open`
 - `p-limit`
+- `proxy-from-env`
 - `promise.try`
 - `smol-toml`
 - `strip-json-comments`
@@ -90,6 +94,7 @@ The installation order remains:
 10. Subagents
 11. Todo
 12. BTW
+13. Code Mode, installed after the complete Tool catalog has registered
 
 Every Module retains one installation interface accepting Pi's `ExtensionAPI`. Subagents additionally receives the
 single Package entry path used to launch children. The Suite Tool registration tracker and required, deferred, and
@@ -105,16 +110,18 @@ web -> web/runtime
 mcp -> mcp/runtime
 btw -> context-management
 subagents -> context-management + background-work
+code-mode -> tool-display
 ```
 
 `conversation-ui` and `tool-display` must not import a Capability Module. Cross-Module coordination continues through
-the existing shared event bus, registry, and explicit imported interfaces; this migration does not add a second
-runtime or global coordinator.
+the existing shared event bus, module-owned registries, and explicit imported interfaces. Suite startup readiness is
+owned by `conversation-ui`, uses a module-local Host registry, and does not add a second runtime or package-global
+coordinator.
 
 ## Verification destinations
 
 Existing tests retain their behavioral families (`ui`, `tools`, `context`, `rtk`, `codex`, `goal`, `web`, `mcp`,
-`work`, `agents`, `todo`, and `btw`) while imports change to internal Module paths. Specialized Agent, Goal, and RTK
+`work`, `agents`, `todo`, `btw`, and `code-mode`) while imports change to internal Module paths. Specialized Agent, Goal, and RTK
 TypeScript profiles remain until their upstream-derived source can satisfy one common strict profile without behavior
 changes.
 
@@ -127,26 +134,28 @@ The final required seams are:
 - real PTY coverage at 100x32 and 64x28;
 - reload/resume, compaction, long-session reconstruction and background finalization;
 - MCP stdio/HTTP fixtures, Web integration, Magic Context, RTK and native Codex Tool checks;
+- Code Mode direct/enveloped equivalence, nested media, cancellation, resume, schema reduction, and wide/narrow real
+  Pi TUI checks;
 - network-isolated acceptance with no model request or credential requirement.
 
 ## Removed maintenance surfaces
 
 After the one Package passes equivalent verification, remove:
 
-- twelve Capability manifests and two private implementation manifests;
+- the twelve former Capability manifests and two private implementation manifests (Code Mode entered directly as an
+  internal Module and never added another manifest);
 - self-owned dependency and `bundledDependencies` version synchronization;
 - Changesets and per-Package changelogs as active release inputs;
 - registry publication and multi-archive release scripts;
 - Package-name-based Suite generation and schema validation;
 - type declarations that existed only to bridge workspace Package imports.
 
-Single-Package packing and local installation verification remain. The concurrent Code Mode branch must be integrated
-after it reaches a stable commit; its Tool registration and tests are then moved through the same internal interface
-rather than reintroduced as another Package.
+Single-Package packing and local installation verification remain. Code Mode is integrated through the same internal
+Tool registration interface and does not restore another Package boundary.
 
-## Completion evidence — 2026-08-10
+## Completion evidence — updated 2026-08-11
 
-- `packages/pi-stuff/package.json` is the only manifest below `packages/`; its twelve Modules have no manifests,
+- `packages/pi-stuff/package.json` is the only manifest below `packages/`; its thirteen Modules have no manifests,
   versions, npm exports, lifecycle scripts, or self-owned Package dependencies.
 - Web and MCP implementation source now lives in `src/web/runtime` and `src/mcp/runtime`. The extracted-Package audit
   requires their licenses, provenance, original documentation, Web security policy, MCP banner and runtime helpers,
@@ -158,10 +167,11 @@ rather than reintroduced as another Package.
 - Repository safety now rejects a Package added below `packages/`, a nested manifest, publication lifecycle state, or
   an internal Module import that violates the accepted shared-to-Capability dependency direction.
 - `bun run typecheck`, `bun run knip`, generated composition, repository safety, formatting, and Tool Activity
-  benchmarks pass. All 118 test files pass in separate Bun processes, followed by the complete Goal upstream suite.
-- `bun run pack:verify` certifies one 359-file local archive with the source-attested Pi 0.84.1 Host. It covers Package
+  benchmarks pass. The complete isolated test matrix passes in separate Bun processes, followed by the Goal upstream
+  suite.
+- `bun run pack:verify` certifies one local archive with the source-attested Pi 0.84.1 Host. It covers Package
   loading, commands and Tools, resume, Magic Context, Goal, Web, MCP, RTK, Subagents, Background Work, BTW, and the
   accepted wide/narrow TUI surfaces.
-- Code Mode remains isolated under Bead `ps-1jj`. When that branch is ready, it must enter as another internal Module
-  through `suite.json`, the Suite Tool registration tracker, and this same verification matrix; it must not restore a
-  second Package boundary.
+- Code Mode is the thirteenth internal Module. It enters through `suite.json` and the Suite Tool registration tracker,
+  preserves direct Tool UI/session/media behavior, and is covered by the same Package and real-Host verification
+  matrix.

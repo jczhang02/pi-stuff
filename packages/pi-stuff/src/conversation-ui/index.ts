@@ -1,5 +1,10 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import {
+	AgentRunOriginTracker,
+	listenForActiveAgentWorkUserPromotions,
+	listenForAgentWorkOriginQueries,
+} from "./agent-run-origin.js";
 import { suppressDuplicatedLiveCompactionReplay } from "./compaction-presentation.js";
 import { activateDiagnosticChannel, getDiagnosticChannel } from "./diagnostics.js";
 import { createDiagnosticsView } from "./diagnostics-dialog.js";
@@ -14,6 +19,15 @@ import {
 } from "./settings.js";
 import { createUiSettingsView } from "./ui-settings-dialog.js";
 
+export {
+	type AgentWorkOrigin,
+	hasDirectUserActivation,
+	promoteActiveAgentWorkToUser,
+	readAgentWorkOrigin,
+	readCurrentAgentWorkOrigin,
+	withAgentWorkOrigin,
+	withDirectUserActivation,
+} from "./agent-run-origin.js";
 export {
 	activateDiagnosticChannel,
 	DiagnosticChannel,
@@ -51,6 +65,20 @@ export {
 	getCodexStatusChannel,
 	getGoalStatusChannel,
 } from "./statusline.js";
+export {
+	beginSuiteNativeCompactionPreflight,
+	isSuiteNativeCompactionPreflight,
+	registerSuiteAgentMessagePreparation,
+	type SuiteAgentMessageOptions,
+	type SuiteAgentMessagePreparation,
+	sendSuiteAgentMessage,
+} from "./suite-agent-message.js";
+export {
+	installSuiteSessionReadiness,
+	markSuiteSessionReady,
+	rejectSuiteSessionReadiness,
+	whenSuiteSessionReady,
+} from "./suite-lifecycle.js";
 
 export type CommandDialogPriority = "blocking" | "normal";
 
@@ -643,7 +671,8 @@ function uiLifecycleStates(): WeakMap<ExtensionAPI["events"], UiLifecycleState> 
 	return root[UI_LIFECYCLE_STATES];
 }
 
-const STATUSLINE_GIT_REFRESH_REQUEST = "@jczhang02/pi-stuff-ui/statusline-git-refresh-request/v1";
+const STATUSLINE_GIT_REFRESH_AFTER_USER_WORK_REQUEST =
+	"@jczhang02/pi-stuff-ui/statusline-git-refresh-after-user-work-request/v1";
 const STATUSLINE_GIT_REFRESH_LISTENERS = Symbol.for("@jczhang02/pi-stuff-ui/statusline-git-refresh-listeners/v1");
 export const UI_RENDER_REQUEST_EVENT = "@jczhang02/pi-stuff-ui/render-request/v1";
 const UI_RENDER_REQUEST_LISTENERS = Symbol.for("@jczhang02/pi-stuff-ui/render-request-listeners/v1");
@@ -656,12 +685,12 @@ function statuslineGitRefreshListeners(): WeakMap<ExtensionAPI["events"], () => 
 	return root[STATUSLINE_GIT_REFRESH_LISTENERS];
 }
 
-function listenForStatuslineGitRefreshRequests(pi: ExtensionAPI, refresh: () => void): () => void {
+function listenForStatuslineGitRefreshAfterUserWorkRequests(pi: ExtensionAPI, refresh: () => void): () => void {
 	const listeners = statuslineGitRefreshListeners();
 	listeners.get(pi.events)?.();
 
 	let active = true;
-	const unsubscribe = pi.events.on(STATUSLINE_GIT_REFRESH_REQUEST, () => {
+	const unsubscribe = pi.events.on(STATUSLINE_GIT_REFRESH_AFTER_USER_WORK_REQUEST, () => {
 		if (active) refresh();
 	});
 	const cleanup = (): void => {
@@ -674,10 +703,10 @@ function listenForStatuslineGitRefreshRequests(pi: ExtensionAPI, refresh: () => 
 	return cleanup;
 }
 
-/** Ask the active UI presentation to refresh its Git snapshot, if one exists. */
-export function requestStatuslineGitRefresh(pi: Pick<ExtensionAPI, "events">): void {
+/** Report completed user-initiated work whose Git observation may need to wait for Host idle. */
+export function requestStatuslineGitRefreshAfterUserWork(pi: Pick<ExtensionAPI, "events">): void {
 	try {
-		pi.events.emit(STATUSLINE_GIT_REFRESH_REQUEST, undefined);
+		pi.events.emit(STATUSLINE_GIT_REFRESH_AFTER_USER_WORK_REQUEST, undefined);
 	} catch {
 		// A cosmetic refresh request cannot be allowed to break the caller's lifecycle.
 	}
@@ -815,15 +844,81 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 	const settings = await UiSettingsStore.load();
 	let unregisterOwnedSettings: (() => void) | undefined = registerOwnedUiSettings(registry, settings);
 	let presentation: UiSessionPresentation | undefined;
+	let sessionContext: ExtensionContext | undefined;
+	const agentRunOrigin = new AgentRunOriginTracker();
+	let agentSettlementPending = false;
+	let userWorkGitRefreshPending = false;
+	let gitRefreshDrainToken: object | undefined;
+	let sessionGeneration = 0;
+	let agentSettledObserverRegistered = false;
+	let inputObserverRegistered = false;
 	let compactionReplayDeduperRegistered = false;
-	let stopListeningForGitRefresh = listenForStatuslineGitRefreshRequests(pi, () => {
-		presentation?.refreshGit();
+	const scheduleGitRefreshAtQuietBoundary = (): void => {
+		userWorkGitRefreshPending = true;
+		if (!sessionContext || agentSettlementPending || gitRefreshDrainToken) return;
+		const token = {};
+		const generation = sessionGeneration;
+		gitRefreshDrainToken = token;
+		queueMicrotask(() => {
+			if (gitRefreshDrainToken === token) gitRefreshDrainToken = undefined;
+			if (generation !== sessionGeneration || !sessionContext || !userWorkGitRefreshPending) return;
+			try {
+				// Let every listener in the event that requested this refresh run first.
+				// A later Extension may synchronously enqueue more Agent work.
+				if (agentSettlementPending || !sessionContext.isIdle() || sessionContext.hasPendingMessages()) return;
+			} catch {
+				return;
+			}
+			userWorkGitRefreshPending = false;
+			void presentation?.refreshGit();
+		});
+	};
+	let stopListeningForGitRefresh = listenForStatuslineGitRefreshAfterUserWorkRequests(
+		pi,
+		scheduleGitRefreshAtQuietBoundary,
+	);
+	let stopListeningForUserSteers = listenForActiveAgentWorkUserPromotions(pi, () => {
+		agentRunOrigin.promoteActiveWorkToUser();
 	});
+	let stopListeningForAgentWorkOriginQueries = listenForAgentWorkOriginQueries(pi, () => agentRunOrigin.current());
 	let stopListeningForUiRender = listenForUiRenderRequests(pi, (force) => {
 		presentation?.requestRender(force);
 	});
-
 	pi.on("session_start", (_event, ctx) => {
+		// Observe input after every Package Capability has registered its handler.
+		// Pi stops dispatch after a handler returns `handled`, so rejected command or
+		// policy input never enters the delivery-attribution queue.
+		if (!inputObserverRegistered) {
+			inputObserverRegistered = true;
+			pi.on("input", (event) => {
+				agentRunOrigin.noteInput(event);
+			});
+		}
+		// Register after every Suite Capability factory has initialized. Goal may
+		// start an automatic continuation from agent_settled; this observer must
+		// run after that decision and re-check the Host's live idle boundary.
+		if (!agentSettledObserverRegistered) {
+			agentSettledObserverRegistered = true;
+			pi.on("agent_settled", async () => {
+				if (!sessionContext) return;
+				try {
+					if (!sessionContext.isIdle() || sessionContext.hasPendingMessages()) {
+						userWorkGitRefreshPending ||= agentRunOrigin.hasUserWork();
+						return;
+					}
+				} catch {
+					userWorkGitRefreshPending ||= agentRunOrigin.hasUserWork();
+					return;
+				}
+				agentSettlementPending = false;
+				const shouldRefreshGit = agentRunOrigin.consumeRunIncludesUserWork() || userWorkGitRefreshPending;
+				userWorkGitRefreshPending = false;
+				// Pi awaits Extension handlers sequentially. Awaiting this bounded Git
+				// read prevents a later-loaded Extension from starting its continuation
+				// while the status probe is still running.
+				if (shouldRefreshGit) await presentation?.refreshGit();
+			});
+		}
 		// Register after all Capability factories have initialized so this runs
 		// after their session_compact bookkeeping and immediately before Pi's
 		// live chat rebuild.
@@ -835,6 +930,12 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 			});
 		}
 		presentation?.dispose();
+		sessionGeneration += 1;
+		gitRefreshDrainToken = undefined;
+		sessionContext = ctx;
+		agentRunOrigin.reset();
+		agentSettlementPending = false;
+		userWorkGitRefreshPending = false;
 		presentation = installUiSessionPresentation(
 			pi,
 			ctx,
@@ -847,16 +948,34 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 		diagnostics.acknowledgeNotices();
 		presentation?.updateContextFileCount(event.systemPromptOptions.contextFiles?.length);
 	});
+	pi.on("agent_start", () => {
+		agentSettlementPending = true;
+	});
+	pi.on("turn_start", () => {
+		agentRunOrigin.noteTurnStart();
+	});
 	pi.on("turn_end", () => {
-		presentation?.refreshGit();
+		agentRunOrigin.noteTurnEnd();
+	});
+	pi.on("message_start", (event) => {
+		agentRunOrigin.noteMessageStart(event.message);
 	});
 	pi.on("session_shutdown", async () => {
 		stopListeningForGitRefresh();
 		stopListeningForGitRefresh = () => {};
+		stopListeningForUserSteers();
+		stopListeningForUserSteers = () => {};
+		stopListeningForAgentWorkOriginQueries();
+		stopListeningForAgentWorkOriginQueries = () => {};
 		stopListeningForUiRender();
 		stopListeningForUiRender = () => {};
 		presentation?.dispose();
 		presentation = undefined;
+		sessionGeneration += 1;
+		gitRefreshDrainToken = undefined;
+		sessionContext = undefined;
+		agentSettlementPending = false;
+		userWorkGitRefreshPending = false;
 		await settings.whenIdle();
 		unregisterOwnedSettings?.();
 		unregisterOwnedSettings = undefined;

@@ -272,8 +272,12 @@ function parseSelections(selections: string[]): { servers: Set<string>; tools: M
 		if (item.includes("/")) {
 			const [server, tool] = item.split("/", 2);
 			if (server && tool) {
-				if (!tools.has(server)) tools.set(server, new Set());
-				tools.get(server)!.add(tool);
+				let serverTools = tools.get(server);
+				if (!serverTools) {
+					serverTools = new Set();
+					tools.set(server, serverTools);
+				}
+				serverTools.add(tool);
 			} else if (server) {
 				servers.add(server);
 			}

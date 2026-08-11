@@ -476,11 +476,9 @@ test("pending prioritize preserves Pi-owned retry turns", async () => {
 		harness.ctx,
 	);
 
-	const retryStart = await beforeStart?.({ prompt: "automatic provider retry", systemPrompt: "base" }, harness.ctx);
-	assert.match(
-		String((retryStart as { message?: { content?: string } } | undefined)?.message?.content),
-		/recovering goal/,
-	);
+	// Certified Pi 0.84.1 provider retries continue the existing Agent directly:
+	// they emit agent_start, not a new before_agent_start prompt boundary.
+	await harness.mock.events.get("agent_start")?.[0]?.({}, harness.ctx);
 	const completed = await completionTool(harness.mock).execute(
 		"retry-completion",
 		completionReport(recovering.id, "Recovering goal completed and verified."),

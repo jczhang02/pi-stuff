@@ -4,6 +4,8 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type TSchema, Type } from "typebox";
+import { withAgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
+import { sendSuiteAgentMessage } from "../../../conversation-ui/index.js";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../tool-display/index.js";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
@@ -200,8 +202,9 @@ function readSupervisorChannelMetadata(channelDir: string): SupervisorChannelMet
 			!value.runId ||
 			typeof value.agent !== "string" ||
 			!value.agent ||
+			typeof value.childIndex !== "number" ||
 			!Number.isSafeInteger(value.childIndex) ||
-			(value.childIndex ?? -1) < 0 ||
+			value.childIndex < 0 ||
 			!Number.isSafeInteger(value.ownerPid) ||
 			(value.ownerPid ?? -1) <= 0 ||
 			typeof value.updatedAt !== "number" ||
@@ -215,12 +218,7 @@ function readSupervisorChannelMetadata(channelDir: string): SupervisorChannelMet
 		) {
 			return undefined;
 		}
-		const expected = resolveSupervisorChannelDir(
-			value.runId,
-			value.agent,
-			value.childIndex!,
-			value.physicalSessionId,
-		);
+		const expected = resolveSupervisorChannelDir(value.runId, value.agent, value.childIndex, value.physicalSessionId);
 		if (path.resolve(expected) !== path.resolve(channelDir)) return undefined;
 		return value as SupervisorChannelMetadata;
 	} catch {
@@ -671,7 +669,11 @@ function parseRequestFile(file: string, channelDir: string): SupervisorRequestFi
 			parsed.reason !== "progress_update"
 		)
 			return { snapshot };
-		const protocolVersion = typeof parsed.physicalSessionId === "string" && parsed.physicalSessionId.trim() ? 2 : 1;
+		const physicalSessionId =
+			typeof parsed.physicalSessionId === "string" && parsed.physicalSessionId.trim()
+				? parsed.physicalSessionId
+				: undefined;
+		const protocolVersion = physicalSessionId ? 2 : 1;
 		if (
 			typeof parsed.message !== "string" ||
 			!parsed.message ||
@@ -701,10 +703,9 @@ function parseRequestFile(file: string, channelDir: string): SupervisorRequestFi
 		)
 			return { snapshot };
 		if (path.basename(file) !== `${safeSegment(parsed.id)}.json`) return { snapshot };
-		const expectedChannel =
-			protocolVersion === 2
-				? resolveSupervisorChannelDir(parsed.runId, parsed.agent, parsed.childIndex, parsed.physicalSessionId!)
-				: resolveLegacySupervisorChannelDir(parsed.runId, parsed.agent, parsed.childIndex);
+		const expectedChannel = physicalSessionId
+			? resolveSupervisorChannelDir(parsed.runId, parsed.agent, parsed.childIndex, physicalSessionId)
+			: resolveLegacySupervisorChannelDir(parsed.runId, parsed.agent, parsed.childIndex);
 		if (path.resolve(channelDir) !== path.resolve(expectedChannel)) {
 			return { snapshot };
 		}
@@ -1118,11 +1119,13 @@ function resolvePendingRequest(
 				request.agent.toLowerCase() === normalizedTo ||
 				request.childTarget?.toLowerCase() === normalizedTo,
 		);
-		if (matches.length === 1) return matches[0]!;
+		const match = matches.at(0);
+		if (matches.length === 1 && match) return match;
 		if (matches.length > 1)
 			throw new Error(`Multiple pending supervisor requests match '${params.to}'. Use replyTo.`);
 	}
-	if (requests.length === 1) return requests[0]!;
+	const request = requests.at(0);
+	if (requests.length === 1 && request) return request;
 	if (requests.length === 0) throw new Error("No pending supervisor requests need a reply.");
 	throw new Error("Multiple pending supervisor requests need replies. Use replyTo.");
 }
@@ -1199,8 +1202,10 @@ export function createNativeSupervisorChannel(
 	const pending = new Map<string, PendingSupervisorRequest>();
 	let poller: ReturnType<typeof setInterval> | undefined;
 	let channelScanner: fs.Dir | undefined;
+	let lifecycleGeneration = 0;
 	const deliveryClaims = new Map<string, DurableClaim>();
 	const deliveryClaimFiles = new Map<string, string>();
+	const deliveryDispatches = new Map<string, object>();
 	const acquireDeliveryClaim = options.acquireDeliveryClaim ?? tryAcquireDurableClaim;
 	const releaseDeliveryClaim = (requestId: string): void => {
 		try {
@@ -1290,6 +1295,7 @@ export function createNativeSupervisorChannel(
 						continue;
 					}
 					const requestId = request.id;
+					if (deliveryDispatches.has(requestId)) continue;
 					let claim = deliveryClaims.get(requestId);
 					if (!claim) {
 						claim = acquireDeliveryClaim(path.dirname(file), requestDeliveryClaimName(requestId));
@@ -1349,7 +1355,8 @@ export function createNativeSupervisorChannel(
 						}
 						continue;
 					}
-					// sendMessage is fire-and-forget. The attempt is not accepted until
+					// Context preparation introduces an async gap, so hold one in-memory
+					// dispatch per durable request. The attempt is still not accepted until
 					// the request id appears in the canonical session file or active
 					// SessionManager; a Host crash before append therefore remains retryable.
 					writeRequestDeliveryState(request.requestFile, {
@@ -1357,36 +1364,61 @@ export function createNativeSupervisorChannel(
 						requestId: request.id,
 						lastAttemptAt: now,
 					});
-					pi.sendMessage(
-						{
-							customType: "subagent_supervisor_request",
-							content: requestVisibleText(request),
-							display: true,
-							details: {
-								id: request.id,
-								reason: request.reason,
-								expectsReply: request.expectsReply,
-								runId: request.runId,
-								agent: request.agent,
-								childIndex: request.childIndex,
-							},
-						},
-						{ triggerTurn: true },
-					);
-					if (request.expectsReply) {
-						pending.set(request.id, request);
-						markForegroundSupervisorAttention(request, state);
+					const dispatchGeneration = lifecycleGeneration;
+					const deliveredRequest = request;
+					const dispatchToken = {};
+					deliveryDispatches.set(request.id, dispatchToken);
+					const acceptDelivery = (): void => {
+						if (!deliveredRequest.expectsReply) return;
+						pending.set(deliveredRequest.id, deliveredRequest);
+						markForegroundSupervisorAttention(deliveredRequest, state);
 						try {
 							(pi as { events?: IntercomEventBus }).events?.emit(INTERCOM_DETACH_REQUEST_EVENT, {
-								requestId: request.id,
-								runId: request.runId,
-								agent: request.agent,
-								childIndex: request.childIndex,
+								requestId: deliveredRequest.id,
+								runId: deliveredRequest.runId,
+								agent: deliveredRequest.agent,
+								childIndex: deliveredRequest.childIndex,
 							});
 						} catch (error) {
-							reportAgentDiagnostic(`Supervisor detach observer failed for request '${request.id}':`, error);
+							reportAgentDiagnostic(
+								`Supervisor detach observer failed for request '${deliveredRequest.id}':`,
+								error,
+							);
 						}
-					}
+					};
+					void sendSuiteAgentMessage(
+						pi,
+						withAgentWorkOrigin(
+							{
+								customType: "subagent_supervisor_request",
+								content: requestVisibleText(request),
+								display: true,
+								details: {
+									id: request.id,
+									reason: request.reason,
+									expectsReply: request.expectsReply,
+									runId: request.runId,
+									agent: request.agent,
+									childIndex: request.childIndex,
+								},
+							},
+							"automatic",
+						),
+						{ triggerTurn: true },
+						() => lifecycleGeneration === dispatchGeneration && state.lastUiContext === ctx,
+						acceptDelivery,
+					)
+						.catch((error) => {
+							reportAgentDiagnostic(
+								`Failed to deliver supervisor request '${file}'; retaining it for retry:`,
+								error,
+							);
+						})
+						.finally(() => {
+							if (deliveryDispatches.get(deliveredRequest.id) === dispatchToken) {
+								deliveryDispatches.delete(deliveredRequest.id);
+							}
+						});
 				} catch (error) {
 					reportAgentDiagnostic(`Failed to deliver supervisor request '${file}'; retaining it for retry:`, error);
 				}
@@ -1399,14 +1431,17 @@ export function createNativeSupervisorChannel(
 	return {
 		start: () => {
 			if (poller) return;
+			lifecycleGeneration += 1;
 			registerPrimaryParentTool();
 			poll();
 			poller = setInterval(poll, CHANNEL_POLL_MS);
 			poller.unref?.();
 		},
 		pause: () => {
+			lifecycleGeneration += 1;
 			if (poller) clearInterval(poller);
 			poller = undefined;
+			deliveryDispatches.clear();
 			closeChannelScanner();
 			pending.clear();
 			// A paused channel no longer represents the active physical session.
@@ -1415,8 +1450,10 @@ export function createNativeSupervisorChannel(
 			releaseAllDeliveryClaims();
 		},
 		dispose: () => {
+			lifecycleGeneration += 1;
 			if (poller) clearInterval(poller);
 			poller = undefined;
+			deliveryDispatches.clear();
 			closeChannelScanner();
 			pending.clear();
 			releaseAllDeliveryClaims();

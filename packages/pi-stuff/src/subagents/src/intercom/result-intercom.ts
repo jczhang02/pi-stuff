@@ -103,6 +103,7 @@ function compactNestedRun(
 		...(run.intercomTarget ? { intercomTarget: run.intercomTarget } : {}),
 		...(run.ownerIntercomTarget ? { ownerIntercomTarget: run.ownerIntercomTarget } : {}),
 		...(run.leafIntercomTarget ? { leafIntercomTarget: run.leafIntercomTarget } : {}),
+		...(run.parentRunOrigin ? { parentRunOrigin: run.parentRunOrigin } : {}),
 		...(run.ownerState ? { ownerState: run.ownerState } : {}),
 		...(run.mode ? { mode: run.mode } : {}),
 		state: run.state,

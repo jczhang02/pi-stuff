@@ -2,6 +2,8 @@ import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-
 import { Box, Text, truncateToWidth, type KeyId } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { StringEnum, complete, type Api, type ImageContent, type Model, type TextContent } from "@earendil-works/pi-ai/compat";
+import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
+import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { reportWebDiagnostic } from "./diagnostics.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
@@ -492,6 +494,7 @@ function resolveProvider(
 
 const pendingFetches = new Map<string, AbortController>();
 let sessionActive = false;
+let sessionGeneration = 0;
 let widgetVisible = false;
 let widgetUnsubscribe: (() => void) | null = null;
 const pendingCurates = new Map<string, PendingCurate>();
@@ -851,6 +854,7 @@ function formatEntryLine(
 }
 
 function handleSessionChange(ctx: ExtensionContext): void {
+	sessionGeneration += 1;
 	abortPendingFetches();
 	closeCurator();
 	clearCloneCache();
@@ -885,6 +889,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 
 	function startBackgroundFetch(urls: string[]): string | null {
 		if (urls.length === 0) return null;
+		const deliveryGeneration = sessionGeneration;
 		const fetchId = generateId();
 		const controller = new AbortController();
 		pendingFetches.set(fetchId, controller);
@@ -900,28 +905,40 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				storeResult(fetchId, data);
 				pi.appendEntry("web-search-results", data);
 				const ok = fetched.filter(f => !f.error).length;
-				pi.sendMessage(
-					{
+				void sendSuiteAgentMessage(
+					pi,
+					withAgentWorkOrigin({
 						customType: "web-search-content-ready",
 						content: `Content fetched for ${ok}/${fetched.length} URLs [${fetchId}]. Full page content now available.`,
 						display: true,
-					},
+					}, "automatic"),
 					{ triggerTurn: true },
-				);
+					() => sessionActive && sessionGeneration === deliveryGeneration,
+				).catch((error) => {
+					reportWebDiagnostic("Fetched content could not be delivered to the Agent", error, {
+						key: "background-fetch-delivery",
+					});
+				});
 			})
 			.catch((err) => {
 				if (!sessionActive || !pendingFetches.has(fetchId)) return;
 				const message = err instanceof Error ? err.message : String(err);
 				const isAbort = (err instanceof Error && err.name === "AbortError") || message.toLowerCase().includes("abort");
 				if (!isAbort) {
-					pi.sendMessage(
-						{
+					void sendSuiteAgentMessage(
+						pi,
+						withAgentWorkOrigin({
 							customType: "web-search-error",
 							content: `Content fetch failed [${fetchId}]: ${message}`,
 							display: true,
-						},
+						}, "automatic"),
 						{ triggerTurn: false },
-					);
+						() => sessionActive && sessionGeneration === deliveryGeneration,
+					).catch((deliveryError) => {
+						reportWebDiagnostic("A background fetch error could not be shown", deliveryError, {
+							key: "background-fetch-error-delivery",
+						});
+					});
 				}
 			})
 			.finally(() => { pendingFetches.delete(fetchId); });
@@ -1567,6 +1584,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 	pi.on("session_tree", async (_event, ctx) => handleSessionChange(ctx));
 
 	pi.on("session_shutdown", () => {
+		sessionGeneration += 1;
 		sessionActive = false;
 		abortPendingFetches();
 		closeCurator();
@@ -2857,6 +2875,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 	pi.registerCommand("websearch", {
 		description: "Open web search curator",
 		handler: async (args, ctx) => {
+			const deliveryGeneration = sessionGeneration;
 			const sessionToken = randomUUID();
 			const commandCallId = `cmd:${sessionToken}`;
 			closeCurator(commandCallId);
@@ -2902,13 +2921,24 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 			let commandHandle: CuratorServerHandle | null = null;
 			const isCommandActive = () => commandHandle !== null && activeCurators.get(commandCallId) === commandHandle;
 
-			function sendFollowUpFromReturn(payload: ReturnType<typeof buildSearchReturn>) {
-				pi.sendMessage({
+			function sendFollowUpFromReturn(payload: ReturnType<typeof buildSearchReturn>, directUserAction: boolean) {
+				const message = withAgentWorkOrigin({
 					customType: "web-search-results",
 					content: payload.content,
 					display: true,
 					details: payload.details,
-				}, { triggerTurn: true, deliverAs: "followUp" });
+				}, "user");
+				void sendSuiteAgentMessage(
+					pi,
+					directUserAction ? withDirectUserActivation(message) : message,
+					{ triggerTurn: true, deliverAs: "followUp" },
+					() => sessionActive && sessionGeneration === deliveryGeneration,
+				).catch((error) => {
+					reportWebDiagnostic("Curated search results could not be delivered to the Agent", error, {
+						key: "curator-result-delivery",
+						notice: true,
+					});
+				});
 			}
 
 			try {
@@ -2958,7 +2988,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 								base.approvedSummary = resolvedSummary.approvedSummary;
 								base.summaryMeta = resolvedSummary.summaryMeta;
 							}
-							sendFollowUpFromReturn(buildSearchReturn(base));
+							sendFollowUpFromReturn(buildSearchReturn(base), true);
 							closeCurator(commandCallId);
 						},
 						onCancel(reason) {
@@ -2978,7 +3008,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 									workflow: "summary-review",
 									approvedSummary: resolvedSummary.approvedSummary,
 									summaryMeta: resolvedSummary.summaryMeta,
-								}));
+								}), false);
 							}
 							closeCurator(commandCallId);
 						},
@@ -3124,6 +3154,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 	pi.registerCommand("curator", {
 		description: "Toggle or configure the search curator workflow",
 		handler: async (args, ctx) => {
+			const deliveryGeneration = sessionGeneration;
 			const arg = args.trim().toLowerCase();
 
 			let newWorkflow: WebSearchWorkflow;
@@ -3154,25 +3185,36 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				: newWorkflow === "auto-summary"
 					? `Auto-summary enabled — ${toolNames.webSearch} will generate a summary without opening the curator`
 					: `Curator enabled — ${toolNames.webSearch} will open curator and auto-generate a summary draft`;
-			pi.sendMessage({
-				customType: "curator-config",
-				content: [{ type: "text", text: label }],
-				display: true,
-				details: { workflow: newWorkflow },
-			}, { triggerTurn: false, deliverAs: "followUp" });
+			await sendSuiteAgentMessage(
+				pi,
+				withDirectUserActivation(withAgentWorkOrigin({
+					customType: "curator-config",
+					content: [{ type: "text", text: label }],
+					display: true,
+					details: { workflow: newWorkflow },
+				}, "user")),
+				{ triggerTurn: false, deliverAs: "followUp" },
+				() => sessionActive && sessionGeneration === deliveryGeneration,
+			);
 		},
 	});
 
 	pi.registerCommand("google-account", {
 		description: "Show the active Google account for Gemini Web",
 		handler: async () => {
+			const deliveryGeneration = sessionGeneration;
 			if (!isBrowserCookieAccessAllowed()) {
-				pi.sendMessage({
-					customType: "google-account",
-					content: [{ type: "text", text: `Gemini Web browser cookie access is disabled. Set allowBrowserCookies: true in ${WEB_SEARCH_CONFIG_PATH} to enable it.` }],
-					display: true,
-					details: { available: false, cookieAccessAllowed: false },
-				}, { triggerTurn: true, deliverAs: "followUp" });
+				await sendSuiteAgentMessage(
+					pi,
+					withDirectUserActivation(withAgentWorkOrigin({
+						customType: "google-account",
+						content: [{ type: "text", text: `Gemini Web browser cookie access is disabled. Set allowBrowserCookies: true in ${WEB_SEARCH_CONFIG_PATH} to enable it.` }],
+						display: true,
+						details: { available: false, cookieAccessAllowed: false },
+					}, "user")),
+					{ triggerTurn: true, deliverAs: "followUp" },
+					() => sessionActive && sessionGeneration === deliveryGeneration,
+				);
 				return;
 			}
 
@@ -3182,12 +3224,17 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				const text = diagnostic
 					? `Gemini Web is unavailable: ${diagnostic}`
 					: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser.";
-				pi.sendMessage({
-					customType: "google-account",
-					content: [{ type: "text", text }],
-					display: true,
-					details: { available: false, cookieAccessAllowed: true, diagnostic },
-				}, { triggerTurn: true, deliverAs: "followUp" });
+				await sendSuiteAgentMessage(
+					pi,
+					withDirectUserActivation(withAgentWorkOrigin({
+						customType: "google-account",
+						content: [{ type: "text", text }],
+						display: true,
+						details: { available: false, cookieAccessAllowed: true, diagnostic },
+					}, "user")),
+					{ triggerTurn: true, deliverAs: "followUp" },
+					() => sessionActive && sessionGeneration === deliveryGeneration,
+				);
 				return;
 			}
 
@@ -3196,12 +3243,17 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 				? `Active Google account: ${email}`
 				: "Gemini Web is available, but the active Google account could not be determined.";
 
-			pi.sendMessage({
-				customType: "google-account",
-				content: [{ type: "text", text }],
-				display: true,
-				details: { available: true, email: email ?? null },
-			}, { triggerTurn: true, deliverAs: "followUp" });
+			await sendSuiteAgentMessage(
+				pi,
+				withDirectUserActivation(withAgentWorkOrigin({
+					customType: "google-account",
+					content: [{ type: "text", text }],
+					display: true,
+					details: { available: true, email: email ?? null },
+				}, "user")),
+				{ triggerTurn: true, deliverAs: "followUp" },
+				() => sessionActive && sessionGeneration === deliveryGeneration,
+			);
 		},
 	});
 

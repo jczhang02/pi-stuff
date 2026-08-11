@@ -37,6 +37,8 @@ const ZERO_USAGE = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
+const deferredGoalCompletions = new Set<string>();
+
 const FINAL_USAGE = {
 	input: 64_000,
 	output: 2_000,
@@ -87,11 +89,18 @@ function lastOwnedGoalPrompt(context: Context): string | undefined {
 		};
 		if (
 			message.role === "custom" &&
-			message.customType === "pi-stuff-goal-prompt" &&
+			(message.customType === "pi-stuff-goal-prompt" || message.customType === "pi-stuff-goal-context") &&
 			typeof message.content === "string"
 		) {
 			return message.content;
 		}
+	}
+	if (
+		typeof context.systemPrompt === "string" &&
+		context.systemPrompt.includes("<goal_id>") &&
+		context.systemPrompt.includes("<goal_objective>")
+	) {
+		return context.systemPrompt;
 	}
 	return undefined;
 }
@@ -199,7 +208,10 @@ function hasGoalCompletionResult(context: Context): boolean {
 function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
 	const lastUser = lastUserText(context);
 	const ownedGoalPrompt =
-		lastOwnedGoalPrompt(context) ?? (lastUser.includes("<!-- pi-goal-prompt:") ? lastUser : undefined);
+		lastOwnedGoalPrompt(context) ??
+		(lastUser.includes("<!-- pi-goal-prompt:") || lastUser.includes("<!-- pi-goal-continuation:")
+			? lastUser
+			: undefined);
 	const priorThinkingPreserved = preservesFixtureThinking(context);
 	appendRecord({
 		type: "request",
@@ -209,6 +221,15 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 		tools: (context.tools ?? []).map((tool) => tool.name),
 	});
 	if (ownedGoalPrompt) {
+		const goalId = /<goal_id>\s*([^<\s]+)\s*<\/goal_id>/u.exec(ownedGoalPrompt)?.[1];
+		if (
+			goalId &&
+			ownedGoalPrompt.includes("<goal_objective>\nverify hidden Goal protocol\n</goal_objective>") &&
+			!deferredGoalCompletions.has(goalId)
+		) {
+			deferredGoalCompletions.add(goalId);
+			return textOnlyStream(model, "Initial Goal pass is incomplete; continue automatically.");
+		}
 		return hasGoalCompletionResult(context)
 			? textOnlyStream(model, "GOAL_PROMPT_RECEIVED")
 			: goalCompletionStream(model, ownedGoalPrompt);

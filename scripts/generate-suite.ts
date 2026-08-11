@@ -74,7 +74,19 @@ function renderIndex(
 
 	// Import order is presentation-only. Keep it deterministic for Biome while the
 	// CAPABILITIES array below preserves the installation order from suite.json.
-	const imports = [...capabilities].sort().map(renderCapabilityImport);
+	const imports = [
+		...capabilities.map((capability) => ({ key: capability, source: renderCapabilityImport(capability) })),
+		{
+			key: "conversation-ui/suite-lifecycle",
+			source: `import {
+	installSuiteSessionReadiness,
+	markSuiteSessionReady,
+	rejectSuiteSessionReadiness,
+} from "./src/conversation-ui/suite-lifecycle.js";`,
+		},
+	]
+		.sort((left, right) => left.key.localeCompare(right.key))
+		.map(({ source }) => source);
 	const identifiers = capabilities
 		.filter((capability) => capability !== "code-mode")
 		.map((capability) => (capability === "subagents" ? "registerSuiteSubagents" : CAPABILITY_MODULES[capability]));
@@ -99,8 +111,8 @@ function renderIndex(
 		...(deferredToolNames.length > 0 ? ["DEFERRED_SUITE_TOOL_NAMES"] : []),
 	];
 	const coverageCall = `assertSuiteToolActivityCoverage(\n${coverageArguments
-		.map((argument) => `\t\t\t${argument},`)
-		.join("\n")}\n\t\t)`;
+		.map((argument) => `\t\t\t\t${argument},`)
+		.join("\n")}\n\t\t\t)`;
 	const sections = [
 		GENERATED_HEADER,
 		importBlock,
@@ -127,9 +139,10 @@ function registerSuiteSubagents(pi: ExtensionAPI): void | Promise<void> {
 				]
 			: []),
 		`export default async function piStuff(pi: ExtensionAPI): Promise<void> {
-${toolNames.length > 0 ? "\tconst registrations = createSuiteToolRegistrationTracker(pi);\n" : ""}${hasCodeMode ? "\tregisterCodeModeContextProjection(pi);\n" : ""}\tfor (const capability of CAPABILITIES) {
-\t\tawait capability(${toolNames.length > 0 ? "registrations.api" : "pi"});
-\t}${hasCodeMode ? `\n\tcodeMode(registrations.api, {\n\t\tregistry: registrations.registry,\n\t\tsurface: registrations.surface,\n\t});` : ""}${toolNames.length > 0 ? `\n\tpi.on("session_start", () =>\n\t\t${coverageCall},\n\t);` : ""}
+\tconst suiteApi = installSuiteSessionReadiness(pi);
+${toolNames.length > 0 ? "\tconst registrations = createSuiteToolRegistrationTracker(suiteApi);\n" : ""}${hasCodeMode ? "\tregisterCodeModeContextProjection(suiteApi);\n" : ""}\tfor (const capability of CAPABILITIES) {
+\t\tawait capability(${toolNames.length > 0 ? "registrations.api" : "suiteApi"});
+\t}${hasCodeMode ? `\n\tcodeMode(registrations.api, {\n\t\tregistry: registrations.registry,\n\t\tsurface: registrations.surface,\n\t});` : ""}\n\tpi.on("session_start", (_event, ctx) => {\n${toolNames.length > 0 ? `\t\ttry {\n\t\t\t${coverageCall};\n\t\t} catch (error) {\n\t\t\trejectSuiteSessionReadiness(pi, ctx);\n\t\t\tthrow error;\n\t\t}\n\t\tmarkSuiteSessionReady(pi, ctx);` : "\t\tmarkSuiteSessionReady(pi, ctx);"}\n\t});
 }`,
 	];
 	return `${sections.join("\n\n")}\n`;

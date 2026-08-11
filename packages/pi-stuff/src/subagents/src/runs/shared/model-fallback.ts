@@ -60,10 +60,14 @@ function isPlausibleDateStamp(year: string, month: string, day: string): boolean
 
 /** Drop a trailing date stamp (`-20251001` or `-2025-10-01`) so dated and undated ids match. Pure. */
 function stripTrailingDateStamp(segment: string): string {
-	const dashed = /^(.*)-(\d{4})-(\d{2})-(\d{2})$/.exec(segment);
-	if (dashed && isPlausibleDateStamp(dashed[2]!, dashed[3]!, dashed[4]!)) return dashed[1]!;
-	const compact = /^(.*)-(\d{4})(\d{2})(\d{2})$/.exec(segment);
-	if (compact && isPlausibleDateStamp(compact[2]!, compact[3]!, compact[4]!)) return compact[1]!;
+	for (const pattern of [/^(.*)-(\d{4})-(\d{2})-(\d{2})$/, /^(.*)-(\d{4})(\d{2})(\d{2})$/]) {
+		const match = pattern.exec(segment);
+		if (!match) continue;
+		const [, base, year, month, day] = match;
+		if (base !== undefined && year !== undefined && month !== undefined && day !== undefined) {
+			if (isPlausibleDateStamp(year, month, day)) return base;
+		}
+	}
 	return segment;
 }
 
@@ -81,7 +85,7 @@ function resolveBaseModelCandidate(
 			const preferredMatch = exactMatches.find((entry) => entry.provider === preferredProvider);
 			if (preferredMatch) return preferredMatch.fullId;
 		}
-		if (exactMatches.length === 1) return exactMatches[0]!.fullId;
+		if (exactMatches.length === 1) return exactMatches.at(0)?.fullId;
 	}
 
 	return fuzzyResolveModel(baseModel, availableModels, preferredProvider);
@@ -134,7 +138,7 @@ export function fuzzyResolveModel(
 		const preferred = candidates.find((entry) => normalizeModelSegment(entry.provider) === preferredProviderNorm);
 		if (preferred) return preferred.fullId;
 	}
-	if (candidates.length === 1) return candidates[0]!.fullId;
+	if (candidates.length === 1) return candidates.at(0)?.fullId;
 	return undefined;
 }
 

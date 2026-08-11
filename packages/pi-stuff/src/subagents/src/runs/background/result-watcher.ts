@@ -31,6 +31,7 @@ import {
 } from "../../shared/types.ts";
 import { readStatus, resolveWatchPath } from "../../shared/utils.ts";
 import {
+	nestedWorkIncludesUser,
 	projectNestedEventsAuthoritatively,
 	projectNestedRegistryForRootAuthoritatively,
 	sanitizeSummary,
@@ -117,6 +118,7 @@ type ResultFileData = CompletionNotification & {
 
 const COMPLETION_FIELDS = [
 	"source",
+	"parentRunOrigin",
 	"agent",
 	"success",
 	"summary",
@@ -515,21 +517,18 @@ export function createResultWatcher(
 			let nestedChildren = compactNestedResultChildren(
 				sanitizeNestedResultChildren(data.nestedChildren, resultPath, "nestedChildren"),
 			);
-			if (!nestedChildren?.length && !hasExplicitNestedChildren) {
-				let persistedStatus: AsyncStatus | null = null;
-				if (typeof data.asyncDir === "string" && data.asyncDir) {
-					try {
-						persistedStatus = readStatus(data.asyncDir);
-					} catch (error) {
-						reportAgentDiagnostic(
-							`Failed to inspect exact nested route for '${resultPath}'; retaining persisted status children:`,
-							error,
-						);
-					}
+			let persistedStatus: AsyncStatus | null = null;
+			if (typeof data.asyncDir === "string" && data.asyncDir) {
+				try {
+					persistedStatus = readStatus(data.asyncDir);
+				} catch (error) {
+					reportAgentDiagnostic(`Failed to inspect exact nested status for '${resultPath}':`, error);
 				}
-				const statusChildren = compactNestedResultChildren(
-					persistedStatus?.steps?.flatMap((step) => step.children ?? []),
-				);
+			}
+			const statusChildren = compactNestedResultChildren(
+				persistedStatus?.steps?.flatMap((step) => step.children ?? []),
+			);
+			if (!nestedChildren?.length && !hasExplicitNestedChildren) {
 				if (persistedStatus?.nestedRoute) {
 					try {
 						nestedChildren = compactNestedResultChildren(
@@ -683,6 +682,11 @@ export function createResultWatcher(
 				: undefined;
 			const completion: CompletionNotification = {
 				...pickFields(data, COMPLETION_FIELDS),
+				...(persistedStatus?.parentRunOrigin === "user" ||
+				nestedWorkIncludesUser(statusChildren) ||
+				nestedWorkIncludesUser(nestedChildren)
+					? { parentRunOrigin: "user" as const }
+					: {}),
 				id: data.id ?? runId,
 				runId,
 				...(activeSessionId ? { sessionId: activeSessionId } : {}),

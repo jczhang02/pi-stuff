@@ -202,7 +202,7 @@ describe("session governor v1 compatibility", () => {
 		if (!result.ok || !result.releaseLegacyBarrier) throw new Error("Expected a retained no-ledger v1 barrier.");
 
 		const sessionDir = path.join(legacyRoot, createHash("sha256").update("logical-session").digest("hex"));
-		const legacyWriter = String.raw`
+		const legacyWriter = `
 			import * as fs from "node:fs";
 			import * as path from "node:path";
 			const sessionDir = process.argv[1];

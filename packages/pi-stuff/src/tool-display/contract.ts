@@ -1321,7 +1321,7 @@ export class ToolUiRuntime {
 	private elapsedHint(group: PlannedToolActivityGroup): string {
 		for (let index = group.members.length - 1; index >= 0; index -= 1) {
 			const binding = this.bindings.get(group.members[index]?.id ?? "");
-			if (!binding || binding.baseModel.state !== "running") continue;
+			if (binding?.baseModel.state !== "running") continue;
 			if ((binding.baseModel.durationMs ?? 0) < 2_000) return "";
 			return oneLine(binding.baseModel.summary);
 		}

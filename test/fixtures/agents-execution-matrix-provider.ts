@@ -196,7 +196,6 @@ function childStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamO
 	const task = lastUser.match(/MATRIX_(?:TASK|GRANDCHILD_TASK)_[A-Z_]+/)?.[0] ?? "MATRIX_TASK_UNKNOWN";
 	const sawRootMarker = serialized.includes(marker);
 	const expectedBaseExtension = requiredEnvironment("PI_STUFF_AGENTS_EXECUTION_MATRIX_EXPECTED_BASE_EXTENSION");
-	// biome-ignore lint/complexity/useLiteralKeys: required by noPropertyAccessFromIndexSignature
 	const childBaseExtension = process.env["PI_STUFF_CHILD_BASE_EXTENSION_PATH"];
 	const nestedResult = latestSubagentResult(context);
 	const isSuiteDirect =
@@ -239,7 +238,6 @@ function mainStream(context: Context) {
 }
 
 function fixtureStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamOptions) {
-	// biome-ignore lint/complexity/useLiteralKeys: required by noPropertyAccessFromIndexSignature
 	return process.env["PI_SUBAGENT_CHILD"] === "1" ? childStream(pi, context, options) : mainStream(context);
 }
 

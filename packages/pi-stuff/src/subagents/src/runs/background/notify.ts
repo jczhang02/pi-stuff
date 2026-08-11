@@ -1,3 +1,4 @@
+import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import type { SubagentRunMode } from "../../shared/types.ts";
 
 /** Persisted background completion projected onto the current Agent product contract. */
@@ -6,6 +7,8 @@ export interface CompletionNotification {
 	deliveryId?: string;
 	id?: string | null;
 	runId?: string;
+	/** Effective parent origin, monotonically promoted by accepted direct user steering. */
+	parentRunOrigin?: AgentWorkOrigin;
 	mode?: SubagentRunMode;
 	source?: "async" | "foreground";
 	agent?: string | null;

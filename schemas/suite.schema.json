@@ -24,7 +24,8 @@
 					"background-work",
 					"subagents",
 					"todo",
-					"btw"
+					"btw",
+					"code-mode"
 				]
 			},
 			"uniqueItems": true

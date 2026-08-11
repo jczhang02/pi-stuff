@@ -5,12 +5,36 @@ import { join } from "node:path";
 import { auditRepositoryFiles } from "../scripts/check-repository-safety.ts";
 
 const TEMPORARY_ROOTS: string[] = [];
+const SUITE_CAPABILITIES = [
+	"conversation-ui",
+	"tool-display",
+	"context-management",
+	"rtk",
+	"codex",
+	"goal",
+	"web",
+	"mcp",
+	"background-work",
+	"subagents",
+	"todo",
+	"btw",
+	"code-mode",
+];
 
 async function createRepository(): Promise<string> {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-safety-"));
 	TEMPORARY_ROOTS.push(root);
 	await Bun.$`git init --quiet ${root}`;
 	await mkdir(join(root, "packages", "pi-stuff"), { recursive: true });
+	await writeFile(
+		join(root, "packages", "pi-stuff", "suite.json"),
+		`${JSON.stringify({ capabilities: SUITE_CAPABILITIES }, null, "\t")}\n`,
+	);
+	await mkdir(join(root, "schemas"), { recursive: true });
+	await writeFile(
+		join(root, "schemas", "suite.schema.json"),
+		`${JSON.stringify({ properties: { capabilities: { items: { enum: SUITE_CAPABILITIES } } } }, null, "\t")}\n`,
+	);
 	await writeFile(join(root, "README.md"), "Repository documentation.\n");
 	await writeFile(
 		join(root, "package.json"),
@@ -147,6 +171,7 @@ describe("auditRepositoryFiles", () => {
 		await mkdir(join(root, "packages", "pi-stuff", "src", "conversation-ui"), { recursive: true });
 		await mkdir(join(root, "packages", "pi-stuff", "src", "goal"), { recursive: true });
 		await mkdir(join(root, "packages", "pi-stuff", "src", "subagents"), { recursive: true });
+		await mkdir(join(root, "packages", "pi-stuff", "src", "code-mode"), { recursive: true });
 		await writeFile(
 			join(root, "packages", "pi-stuff", "src", "conversation-ui", "index.ts"),
 			'import goal from "../goal/index.js";\nexport default goal;\n',
@@ -155,11 +180,77 @@ describe("auditRepositoryFiles", () => {
 			join(root, "packages", "pi-stuff", "src", "subagents", "index.ts"),
 			'import context from "../context-management/index.js";\nexport default context;\n',
 		);
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "code-mode", "index.ts"),
+			'import type { Contract } from "../tool-display/contract.js";\nexport type Mode = Contract;\n',
+		);
 
 		expect(await auditRepositoryFiles(root)).toEqual([
 			{
 				path: "packages/pi-stuff/src/conversation-ui/index.ts",
 				rule: "forbidden-internal-module-dependency:conversation-ui->goal",
+			},
+		]);
+	});
+
+	test("rejects runtime source that bypasses every owned internal Module", async () => {
+		const root = await createRepository();
+		await mkdir(join(root, "packages", "pi-stuff", "src"), { recursive: true });
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "global-coordinator.ts"),
+			"export const coordinator = new Map();\n",
+		);
+
+		expect(await auditRepositoryFiles(root)).toContainEqual({
+			path: "packages/pi-stuff/src/global-coordinator.ts",
+			rule: "unowned-internal-source-module",
+		});
+	});
+
+	test("keeps Suite composition and internal import policy in lockstep", async () => {
+		const root = await createRepository();
+		await writeFile(
+			join(root, "packages", "pi-stuff", "suite.json"),
+			`${JSON.stringify({ capabilities: [...SUITE_CAPABILITIES.filter((name) => name !== "code-mode"), "new-mode"] }, null, "\t")}\n`,
+		);
+
+		expect(await auditRepositoryFiles(root)).toEqual([
+			{
+				path: "packages/pi-stuff/suite.json",
+				rule: "suite-capability-without-import-policy:new-mode",
+			},
+			{
+				path: "packages/pi-stuff/suite.json",
+				rule: "import-policy-module-missing-from-suite:code-mode",
+			},
+		]);
+	});
+
+	test("keeps the Suite schema and internal import policy in lockstep", async () => {
+		const root = await createRepository();
+		await writeFile(
+			join(root, "schemas", "suite.schema.json"),
+			`${JSON.stringify(
+				{
+					properties: {
+						capabilities: {
+							items: { enum: [...SUITE_CAPABILITIES.filter((name) => name !== "code-mode"), "new-mode"] },
+						},
+					},
+				},
+				null,
+				"\t",
+			)}\n`,
+		);
+
+		expect(await auditRepositoryFiles(root)).toEqual([
+			{
+				path: "schemas/suite.schema.json",
+				rule: "suite-schema-capability-without-import-policy:new-mode",
+			},
+			{
+				path: "schemas/suite.schema.json",
+				rule: "import-policy-module-missing-from-suite-schema:code-mode",
 			},
 		]);
 	});

@@ -7,6 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Message } from "@earendil-works/pi-ai";
+import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import {
 	appendArtifactJsonl,
 	appendJsonl,
@@ -56,6 +57,7 @@ import {
 	attachRootChildrenToSteps,
 	finalizeNestedRouteRoot,
 	nestedSummaryFromAsyncStatus,
+	nestedWorkIncludesUser,
 	projectNestedEvents,
 	projectNestedEventsAuthoritatively,
 	resolveNestedAsyncDir,
@@ -337,6 +339,7 @@ interface RunBackgroundWorkOptions {
 interface BackgroundCompletion {
 	id: string;
 	runId: string;
+	parentRunOrigin?: AgentWorkOrigin;
 	sessionId?: string | null;
 	mode: "single" | "parallel";
 	state: "complete" | "failed" | "stopped" | "paused";
@@ -866,6 +869,7 @@ export function createBackgroundCompletion(
 	return {
 		id: config.id,
 		runId: config.id,
+		...(config.parentRunOrigin ? { parentRunOrigin: config.parentRunOrigin } : {}),
 		...(config.sessionId !== undefined ? { sessionId: config.sessionId } : {}),
 		mode: config.work.mode,
 		state,
@@ -2728,7 +2732,15 @@ async function runConfiguredWork(
 	};
 	const onSteer = (request: SteerRequest) => {
 		const projection = steeringStatus(status);
-		if (findSteeringRequest(projection, request.id)) {
+		const existing = findSteeringRequest(projection, request.id);
+		if (existing) {
+			if (
+				request.parentRunOrigin === "user" &&
+				existing.targets.some((target) => target.state !== "failed" && target.state !== "late")
+			) {
+				config.parentRunOrigin = "user";
+				status.parentRunOrigin = "user";
+			}
 			// A prior pass may have queued the child request durably but failed the
 			// authoritative status write. Do not retire the source claim until that
 			// write itself succeeds.
@@ -2775,6 +2787,16 @@ async function runConfiguredWork(
 		});
 		for (const target of targets) {
 			if (target.state === "routed") routeSteering(request, target.index);
+		}
+		const recorded = findSteeringRequest(projection, request.id);
+		if (
+			request.parentRunOrigin === "user" &&
+			recorded?.targets.some((target) => target.state !== "failed" && target.state !== "late")
+		) {
+			// User takeover is monotonic. Persist it with live status and copy it into
+			// the terminal result so a reloaded parent keeps the same attribution.
+			config.parentRunOrigin = "user";
+			status.parentRunOrigin = "user";
 		}
 		persistSteering();
 	};
@@ -2947,6 +2969,10 @@ async function runConfiguredWork(
 			try {
 				const registry = await projectNestedEventsAuthoritatively(config.nestedRoute);
 				nestedChildren = registry.children.filter((child) => child.parentRunId === config.id);
+				if (nestedWorkIncludesUser(nestedChildren)) {
+					config.parentRunOrigin = "user";
+					status.parentRunOrigin = "user";
+				}
 				attachRootChildrenToSteps(config.id, status.steps, nestedChildren);
 				nestedProjectionCommitted = true;
 			} catch {
@@ -2977,10 +3003,14 @@ async function runConfiguredWork(
 			reportAgentDiagnostic(`Failed to close steering inbox for '${config.id}' during finalization:`, error);
 		}
 		try {
-			processSteerRequestsFromDir(steerRequestsDir(config.asyncDir), onSteer);
+			processSteerRequestsFromDir(steerRequestsDir(config.asyncDir), (request) => {
+				onSteer(request);
+				return undefined;
+			});
 		} catch (error) {
 			reportAgentDiagnostic(`Failed to scan final steering requests for '${config.id}':`, error);
 		}
+		if (status.parentRunOrigin === "user") completion.parentRunOrigin = "user";
 		try {
 			processSteerAcks(config.asyncDir, onSteerAck);
 		} catch (error) {

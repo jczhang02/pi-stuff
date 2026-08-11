@@ -52,7 +52,10 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
 import { projectForegroundCompletion } from "../../packages/pi-stuff/src/subagents/src/runs/foreground/execution.js";
 import { resolveBunRuntimeCommand } from "../../packages/pi-stuff/src/subagents/src/runs/shared/bun-runtime.js";
-import { createNestedRoute } from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-events.js";
+import {
+	createNestedRoute,
+	writeNestedEvent,
+} from "../../packages/pi-stuff/src/subagents/src/runs/shared/nested-events.js";
 import type {
 	BackgroundRunnerConfig,
 	RunnerAgentTask,
@@ -72,6 +75,9 @@ const originalPiBinary = process.env.PI_SUBAGENT_PI_BINARY;
 const originalChildProtocolMaxBytes = process.env.PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES;
 const originalTaskResultMaxBytes = process.env.PI_SUBAGENT_TASK_RESULT_MAX_BYTES;
 const originalRunResultMaxBytes = process.env.PI_SUBAGENT_RUN_RESULT_MAX_BYTES;
+const originalTmpDir = process.env.TMPDIR;
+const originalTmp = process.env.TMP;
+const originalTemp = process.env.TEMP;
 
 afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) {
@@ -85,6 +91,12 @@ afterEach(() => {
 	else process.env.PI_SUBAGENT_TASK_RESULT_MAX_BYTES = originalTaskResultMaxBytes;
 	if (originalRunResultMaxBytes === undefined) delete process.env.PI_SUBAGENT_RUN_RESULT_MAX_BYTES;
 	else process.env.PI_SUBAGENT_RUN_RESULT_MAX_BYTES = originalRunResultMaxBytes;
+	if (originalTmpDir === undefined) delete process.env.TMPDIR;
+	else process.env.TMPDIR = originalTmpDir;
+	if (originalTmp === undefined) delete process.env.TMP;
+	else process.env.TMP = originalTmp;
+	if (originalTemp === undefined) delete process.env.TEMP;
+	else process.env.TEMP = originalTemp;
 });
 
 function fixtureRoot(): string {
@@ -96,6 +108,15 @@ function fixtureRoot(): string {
 		"---\nname: review\ndescription: Review a change\n---\nReview the implementation carefully.\n",
 	);
 	fs.mkdirSync(path.join(root, "packages", "core"), { recursive: true });
+	return root;
+}
+
+function isolatedSystemTempRoot(): string {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-owned-tmp-"));
+	temporaryDirectories.push(root);
+	process.env.TMPDIR = root;
+	process.env.TMP = root;
+	process.env.TEMP = root;
 	return root;
 }
 
@@ -590,6 +611,7 @@ describe("background runner configuration", () => {
 			JSON.stringify({
 				lifecycleArtifactVersion: 3,
 				runId,
+				parentRunOrigin: "user",
 				mode: "single",
 				state: "running",
 				pid: 2_147_483_647,
@@ -622,6 +644,8 @@ describe("background runner configuration", () => {
 				processTerminal: { state: "observed", resumeDisposition: "resumable" },
 			},
 		});
+		if (!repaired.resultPath) throw new Error("Expected repaired result path");
+		expect(JSON.parse(fs.readFileSync(repaired.resultPath, "utf8"))).toMatchObject({ parentRunOrigin: "user" });
 		const proofPath = path.join(asyncDir, "process-terminal.json");
 		expect(JSON.parse(fs.readFileSync(proofPath, "utf8"))).toMatchObject({
 			state: "observed",
@@ -1001,6 +1025,7 @@ describe("background runner configuration", () => {
 		const config: BackgroundRunnerConfig = {
 			version: 2,
 			id: "runtime-status",
+			parentRunOrigin: "user",
 			cwd: root,
 			asyncDir: path.join(root, "async"),
 			resultPath: path.join(root, "result.json"),
@@ -1011,6 +1036,7 @@ describe("background runner configuration", () => {
 
 		expect(status.lifecycleArtifactVersion).toBe(3);
 		expect(status.runId).toBe("runtime-status");
+		expect(status.parentRunOrigin).toBe("user");
 		expect(status.state).toBe("running");
 		expect(status.steps).toHaveLength(1);
 		expect(status.steps[0]).toMatchObject({
@@ -1280,6 +1306,24 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 		const asyncDir = path.join(ASYNC_DIR, id);
 		temporaryDirectories.push(asyncDir);
 		const resultPath = path.join(asyncDir, "result.json");
+		writeNestedEvent(nestedRoute, {
+			type: "subagent.nested.completed",
+			ts: 2,
+			parentRunId: id,
+			parentStepIndex: 0,
+			child: {
+				id: `${id}-child`,
+				parentRunId: id,
+				parentStepIndex: 0,
+				parentRunOrigin: "user",
+				depth: 1,
+				path: [{ runId: id, stepIndex: 0 }],
+				state: "complete",
+				startedAt: 1,
+				endedAt: 2,
+				lastUpdate: 2,
+			},
+		});
 
 		await runConfiguredBackground({
 			version: 2,
@@ -1292,8 +1336,14 @@ printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{
 		});
 
 		expect(JSON.parse(fs.readFileSync(resultPath, "utf8"))).toMatchObject({
+			parentRunOrigin: "user",
 			state: "complete",
 			results: [{ output: "ROUTE_RETIRED" }],
+			nestedChildren: [{ id: `${id}-child`, parentRunOrigin: "user" }],
+		});
+		expect(JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8"))).toMatchObject({
+			parentRunOrigin: "user",
+			steps: [{ children: [{ id: `${id}-child`, parentRunOrigin: "user" }] }],
 		});
 		expect(fs.existsSync(routeRoot)).toBe(false);
 	});
@@ -1494,10 +1544,11 @@ setInterval(() => {}, 1_000);
 	test("loads the detached runner import graph with the certified Bun command", () => {
 		const bunCommand = resolveAsyncRunnerBunCommand();
 		expect(bunCommand).toBeString();
+		if (!bunCommand) throw new Error("Expected a certified Bun command");
 		const runnerUrl = pathToFileURL(
 			path.resolve(import.meta.dir, "../../packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.ts"),
 		).href;
-		const result = Bun.spawnSync([bunCommand!, "--eval", `await import(${JSON.stringify(runnerUrl)})`], {
+		const result = Bun.spawnSync([bunCommand, "--eval", `await import(${JSON.stringify(runnerUrl)})`], {
 			cwd: path.resolve(import.meta.dir, "../.."),
 			stdout: "pipe",
 			stderr: "pipe",
@@ -1535,6 +1586,7 @@ setInterval(() => {}, 1_000);
 		const config = {
 			version: 2,
 			id: "run-parallel",
+			parentRunOrigin: "user",
 			work,
 			resultPath: "/tmp/result.json",
 			cwd: "/tmp",
@@ -1545,6 +1597,7 @@ setInterval(() => {}, 1_000);
 		expect(completion).toMatchObject({
 			id: "run-parallel",
 			runId: "run-parallel",
+			parentRunOrigin: "user",
 			mode: "parallel",
 			state: "complete",
 			success: true,
@@ -2184,7 +2237,7 @@ setInterval(() => {}, 1_000);
 		const asyncDir = path.join(root, "async-supervisor-build-error");
 		const resultPath = path.join(asyncDir, "result.json");
 		const observedStates: string[] = [];
-		const before = new Set(fs.readdirSync(os.tmpdir()).filter((entry) => entry.startsWith("pi-subagent-")));
+		const tempRoot = isolatedSystemTempRoot();
 
 		await runConfiguredBackground(
 			{
@@ -2211,9 +2264,7 @@ setInterval(() => {}, 1_000);
 		const registry = JSON.parse(fs.readFileSync(path.join(asyncDir, "writer-processes-live.json"), "utf8")) as {
 			writers?: Record<string, { state?: string }>;
 		};
-		const leaked = fs
-			.readdirSync(os.tmpdir())
-			.filter((entry) => entry.startsWith("pi-subagent-") && !before.has(entry));
+		const leaked = fs.readdirSync(tempRoot).filter((entry) => entry.startsWith("pi-subagent-"));
 
 		expect(completion).toMatchObject({
 			state: "failed",
@@ -3356,7 +3407,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 		process.env.PI_SUBAGENT_PI_BINARY = writer;
 		const asyncDir = path.join(root, "async-close-recovery-rejection");
 		const resultPath = path.join(asyncDir, "result.json");
-		const before = new Set(fs.readdirSync(os.tmpdir()).filter((entry) => entry.startsWith("pi-subagent-")));
+		const tempRoot = isolatedSystemTempRoot();
 
 		await runConfiguredBackground(
 			{
@@ -3377,9 +3428,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 			state: string;
 			results: Array<{ error?: string; success: boolean }>;
 		};
-		const leaked = fs
-			.readdirSync(os.tmpdir())
-			.filter((entry) => entry.startsWith("pi-subagent-") && !before.has(entry));
+		const leaked = fs.readdirSync(tempRoot).filter((entry) => entry.startsWith("pi-subagent-"));
 
 		expect(completion).toMatchObject({
 			state: "failed",
@@ -4417,6 +4466,7 @@ setInterval(() => {}, 1_000);
 		const config: BackgroundRunnerConfig = {
 			version: 2,
 			id: "real-steering-revokes-final-drain",
+			parentRunOrigin: "automatic",
 			cwd: root,
 			asyncDir,
 			resultPath,
@@ -4428,11 +4478,13 @@ setInterval(() => {}, 1_000);
 		requestAsyncSteer(asyncDir, {
 			id: "late-real-steer",
 			message: "Continue with the routed follow-up.",
+			parentRunOrigin: "user",
 			source: "test",
 			targetIndex: 0,
 		});
 		await running;
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
+			parentRunOrigin?: string;
 			state: string;
 			success: boolean;
 			results: Array<{
@@ -4443,6 +4495,7 @@ setInterval(() => {}, 1_000);
 		};
 
 		expect(completion).toMatchObject({
+			parentRunOrigin: "user",
 			state: "complete",
 			success: true,
 			results: [
@@ -4452,6 +4505,9 @@ setInterval(() => {}, 1_000);
 					writerProcesses: [{ exitCode: 0, signal: null }],
 				},
 			],
+		});
+		expect(JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8"))).toMatchObject({
+			parentRunOrigin: "user",
 		});
 	}, 7_000);
 

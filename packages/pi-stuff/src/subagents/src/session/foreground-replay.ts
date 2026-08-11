@@ -161,11 +161,13 @@ export function replayForegroundRuns(entries: Iterable<unknown>, sessionId: stri
 }
 
 function ownerLiveness(status: AsyncStatus): "alive" | "dead" | "unknown" {
-	if (!Number.isSafeInteger(status.pid) || (status.pid ?? 0) <= 0 || !status.processStartIdentity) return "unknown";
-	const current = readProcessStartIdentity(status.pid!);
+	const pid = status.pid;
+	if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0 || !status.processStartIdentity)
+		return "unknown";
+	const current = readProcessStartIdentity(pid);
 	if (current) return current === status.processStartIdentity ? "alive" : "dead";
 	try {
-		process.kill(status.pid!, 0);
+		process.kill(pid, 0);
 		return "unknown";
 	} catch (error) {
 		return (error as NodeJS.ErrnoException).code === "ESRCH" ? "dead" : "unknown";
@@ -351,6 +353,8 @@ function applyCompletionToStatus(status: AsyncStatus, completionPath: string): A
 		typeof completion.endedAt === "number" && Number.isFinite(completion.endedAt) ? completion.endedAt : Date.now();
 	const steps = (status.steps ?? []).map((step, index) => {
 		const result = record(completionResults[index]);
+		const displayOutput =
+			typeof result.output === "string" && result.output ? displayString(result.output, 32 * 1024) : undefined;
 		const childState =
 			result.stopped === true
 				? ("stopped" as const)
@@ -373,10 +377,7 @@ function applyCompletionToStatus(status: AsyncStatus, completionPath: string): A
 			sessionFile: exactString(result.sessionFile, 4_096) ?? step.sessionFile,
 			transcriptPath: exactString(result.transcriptPath, 4_096) ?? step.transcriptPath,
 			transcriptError: displayString(result.transcriptError, 8 * 1024) ?? step.transcriptError,
-			recentOutput:
-				typeof result.output === "string" && result.output
-					? [displayString(result.output, 32 * 1024)!]
-					: step.recentOutput,
+			recentOutput: displayOutput ? [displayOutput] : step.recentOutput,
 			children,
 			activityState: undefined,
 			currentTool: undefined,

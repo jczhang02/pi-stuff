@@ -1,3 +1,4 @@
+import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import type {
 	ArtifactConfig,
 	CostSummary,
@@ -71,6 +72,8 @@ export type BackgroundRunnerWork =
 export interface BackgroundRunnerConfig {
 	version: 2;
 	id: string;
+	/** Persisted parent attribution used by observation-only completion UI. */
+	parentRunOrigin?: AgentWorkOrigin;
 	work: BackgroundRunnerWork;
 	resultPath: string;
 	cwd: string;

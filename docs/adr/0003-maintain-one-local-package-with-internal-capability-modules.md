@@ -27,11 +27,14 @@ The internal Modules are:
 - `subagents`
 - `todo`
 - `btw`
+- `code-mode`
 
-The ordered Suite entry installs these Modules through Pi's existing Extension interface. `conversation-ui` and
-`tool-display` provide shared presentation interfaces. Capability Modules may depend on those interfaces. Shared
-Modules must not import a Capability Module. The few necessary Capability-to-Capability dependencies remain explicit:
-BTW and Subagents use Context projection, and Subagents contribute a source to Background Work.
+The ordered Suite entry installs these Modules through Pi's existing Extension interface. `conversation-ui` provides
+shared presentation and Host-lifecycle coordination interfaces; `tool-display` provides the shared Tool presentation
+contract. Capability Modules may depend on those interfaces. Shared Modules must not import a Capability Module. The
+few necessary Capability-to-Capability dependencies remain explicit:
+BTW and Subagents use Context projection, Subagents contribute a source to Background Work, and Code Mode consumes
+the Tool Display registry so nested calls retain the same presentation contract.
 
 The adapted MCP and Web implementations become private implementation directories inside their owning Modules. They
 are not separate workspace Packages or user-visible dependencies. Their original projects, pinned revisions, license

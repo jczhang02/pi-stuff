@@ -29,7 +29,6 @@ function message(content: AssistantMessage["content"], stopReason: AssistantMess
 }
 
 function fixtureStream(context: Context) {
-	// biome-ignore lint/complexity/useLiteralKeys: the test suite enables noPropertyAccessFromIndexSignature
 	const logPath = process.env["PI_STUFF_TOOLS_RESUME_PTY_LOG"];
 	if (logPath)
 		appendFileSync(logPath, `${JSON.stringify({ tools: context.tools?.map((tool) => tool.name) ?? [] })}\n`);
@@ -66,7 +65,6 @@ export default function toolsResumePtyProvider(pi: ExtensionAPI): void {
 	pi.registerCommand("fixture-resume", {
 		description: "Resume the isolated Tool UI fixture session",
 		handler: async (_args, ctx) => {
-			// biome-ignore lint/complexity/useLiteralKeys: the test suite enables noPropertyAccessFromIndexSignature
 			const target = process.env["PI_STUFF_TOOLS_RESUME_PTY_TARGET"];
 			if (!target) throw new Error("PI_STUFF_TOOLS_RESUME_PTY_TARGET is required");
 			await ctx.switchSession(target);

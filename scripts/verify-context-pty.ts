@@ -117,6 +117,38 @@ expect { eof {} timeout { puts stderr "Startup-only Pi did not exit"; exit 4 } }
 `;
 }
 
+function automaticActivationProgram(): string {
+	return `
+set timeout 30
+spawn -noecho script -qefc $env(PI_STUFF_CONTEXT_PTY_RUNNER) /dev/null
+expect {
+    -exact "CONTEXT_FIRST_DONE" {}
+    timeout { puts stderr "Timed out waiting for automatic Context turn"; exit 2 }
+    eof { puts stderr "Automatic Context Pi exited early"; exit 3 }
+}
+send -- "\\003"
+after 150
+send -- "\\004"
+expect { eof {} timeout { puts stderr "Automatic Context Pi did not exit"; exit 4 } }
+`;
+}
+
+function directActivationProgram(): string {
+	return `
+set timeout 30
+spawn -noecho script -qefc $env(PI_STUFF_CONTEXT_PTY_RUNNER) /dev/null
+expect {
+    -exact "CONTEXT_FIRST_DONE" {}
+    timeout { puts stderr "Timed out waiting for direct Context turn"; exit 2 }
+    eof { puts stderr "Direct Context Pi exited early"; exit 3 }
+}
+send -- "\\003"
+after 150
+send -- "\\004"
+expect { eof {} timeout { puts stderr "Direct Context Pi did not exit"; exit 4 } }
+`;
+}
+
 function resumeProgram(): string {
 	return `
 set timeout 40
@@ -295,6 +327,21 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 	const startupSessionDirectory = join(temporaryDirectory, "startup-only-sessions");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
 	const startupLog = join(temporaryDirectory, "startup-only-requests.jsonl");
+	const activationHome = join(temporaryDirectory, "activation-home");
+	const activationAgentDirectory = join(temporaryDirectory, "activation-agent");
+	const activationConfigDirectory = join(temporaryDirectory, "activation-config");
+	const activationDataDirectory = join(temporaryDirectory, "activation-data");
+	const activationCacheDirectory = join(temporaryDirectory, "activation-cache");
+	const activationProjectDirectory = join(temporaryDirectory, "activation-project");
+	const activationSessionDirectory = join(temporaryDirectory, "activation-sessions");
+	const directActivationSessionDirectory = join(temporaryDirectory, "direct-activation-sessions");
+	const activationLog = join(temporaryDirectory, "activation-requests.jsonl");
+	const directActivationLog = join(temporaryDirectory, "direct-activation-requests.jsonl");
+	const activationMagicLog = join(temporaryDirectory, "activation-magic-context.log");
+	const activationLegacyDirectory = join(activationHome, ".pi", "agent");
+	const activationLegacyConfig = join(activationLegacyDirectory, "magic-context.jsonc");
+	const activationCanonicalConfig = join(activationConfigDirectory, "cortexkit", "magic-context.jsonc");
+	const activationDatabase = join(activationDataDirectory, "cortexkit", "magic-context", "context.db");
 	const magicLog = join(temporaryDirectory, "magic-context.log");
 	const historianMarker = join(temporaryDirectory, "historian-ready");
 	const databasePath = join(dataDirectory, "cortexkit", "magic-context", "context.db");
@@ -311,11 +358,37 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			nativeCompactedProjectDirectory,
 			sessionDirectory,
 			startupSessionDirectory,
+			activationHome,
+			activationAgentDirectory,
+			activationConfigDirectory,
+			activationDataDirectory,
+			activationCacheDirectory,
+			activationProjectDirectory,
+			activationSessionDirectory,
+			directActivationSessionDirectory,
+			activationLegacyDirectory,
 		].map((path) => mkdir(path, { recursive: true })),
 	);
+	const activationConfig = `${JSON.stringify({
+		dreamer: { disable: true },
+		embedding: { provider: "off" },
+		fail_closed_blocking: false,
+		historian: { model: "pi-stuff-context-pty/fixture-model", thinking_level: "off" },
+		pi: { subagent_extensions: [providerExtension] },
+		sidekick: { disable: true },
+		toast_duration_ms: 0,
+		todowrite: { enabled: false, overlay: false },
+	})}\n`;
 	await Promise.all([
 		writeFile(requestLog, ""),
 		writeFile(startupLog, ""),
+		writeFile(activationLog, ""),
+		writeFile(directActivationLog, ""),
+		writeFile(activationLegacyConfig, activationConfig),
+		writeFile(
+			join(activationAgentDirectory, "settings.json"),
+			`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, tuiMode: "fullscreen" })}\n`,
+		),
 		writeFile(
 			join(configDirectory, "settings.json"),
 			`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, tuiMode: "fullscreen" })}\n`,
@@ -342,6 +415,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 	try {
 		const baseEnvironment = {
 			...process.env,
+			HOME: temporaryDirectory,
 			HF_HOME: cacheDirectory,
 			HF_HUB_OFFLINE: "1",
 			MAGIC_CONTEXT_LOG_PATH: magicLog,
@@ -364,6 +438,96 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			XDG_CONFIG_HOME: xdgConfigDirectory,
 			XDG_DATA_HOME: dataDirectory,
 		};
+		const activationEnvironment = {
+			...baseEnvironment,
+			HOME: activationHome,
+			MAGIC_CONTEXT_LOG_PATH: activationMagicLog,
+			PI_CODING_AGENT_DIR: activationAgentDirectory,
+			PI_STUFF_CONTEXT_PTY_AUTOMATIC_ONLY: "1",
+			PI_STUFF_CONTEXT_PTY_INITIAL_PROMPT: undefined,
+			PI_STUFF_CONTEXT_PTY_LOG: activationLog,
+			PI_STUFF_CONTEXT_PTY_SESSIONS: activationSessionDirectory,
+			PI_STUFF_CONTEXT_PTY_SESSION_ID: "context-automatic-activation",
+			PI_STUFF_CONTEXT_PTY_STARTUP_ONLY: "1",
+			XDG_CACHE_HOME: activationCacheDirectory,
+			XDG_CONFIG_HOME: activationConfigDirectory,
+			XDG_DATA_HOME: activationDataDirectory,
+		};
+		const legacyEntriesBefore = await readdir(activationLegacyDirectory);
+		const legacyContentBefore = await readFile(activationLegacyConfig, "utf8");
+		const automaticOutput = runExpect(
+			automaticActivationProgram(),
+			activationEnvironment,
+			"automatic activation purity",
+			activationProjectDirectory,
+		);
+		if (!automaticOutput.includes("CONTEXT_FIRST_DONE")) fail("automatic fixture turn did not reach the model");
+		if (
+			await access(activationCanonicalConfig).then(
+				() => true,
+				() => false,
+			)
+		) {
+			fail("automatic Extension turn migrated the legacy Magic Context config");
+		}
+		if (
+			await access(activationDatabase).then(
+				() => true,
+				() => false,
+			)
+		) {
+			fail("deferred automatic Extension turn created Magic Context derived state");
+		}
+		if (JSON.stringify(await readdir(activationLegacyDirectory)) !== JSON.stringify(legacyEntriesBefore)) {
+			fail("automatic Extension turn changed the legacy Magic Context config directory");
+		}
+		if ((await readFile(activationLegacyConfig, "utf8")) !== legacyContentBefore) {
+			fail("automatic Extension turn changed the legacy Magic Context config contents");
+		}
+		const automaticRequests = (await readRecords(activationLog)).filter((record) => record.type === "request");
+		if (automaticRequests.length !== 1 || automaticRequests[0]?.hasCompactMagicContextPrompt !== false) {
+			fail("deferred automatic Extension turn did not use the native Context path");
+		}
+
+		runExpect(
+			directActivationProgram(),
+			{
+				...activationEnvironment,
+				PI_STUFF_CONTEXT_PTY_AUTOMATIC_ONLY: undefined,
+				PI_STUFF_CONTEXT_PTY_INITIAL_PROMPT: "CONTEXT_DIRECT",
+				PI_STUFF_CONTEXT_PTY_LOG: directActivationLog,
+				PI_STUFF_CONTEXT_PTY_SESSIONS: directActivationSessionDirectory,
+				PI_STUFF_CONTEXT_PTY_SESSION_ID: "context-direct-activation",
+				PI_STUFF_CONTEXT_PTY_STARTUP_ONLY: undefined,
+			},
+			"direct activation migration",
+			activationProjectDirectory,
+		);
+		if ((await readFile(activationCanonicalConfig, "utf8")) !== legacyContentBefore) {
+			fail("direct activation did not migrate the exact legacy Magic Context config");
+		}
+		if (
+			await access(activationLegacyConfig).then(
+				() => true,
+				() => false,
+			)
+		) {
+			fail("direct activation left the migrated legacy Magic Context config active");
+		}
+		if (
+			!(await access(`${activationLegacyConfig}.MOVED_READPLEASE`).then(
+				() => true,
+				() => false,
+			))
+		) {
+			fail("direct activation did not preserve the migrated legacy config marker");
+		}
+		const directActivationRequests = (await readRecords(directActivationLog)).filter(
+			(record) => record.type === "request",
+		);
+		if (directActivationRequests.length !== 1 || directActivationRequests[0]?.hasCompactMagicContextPrompt !== true) {
+			fail("direct input did not activate the official Magic Context package");
+		}
 		runExpect(
 			startupOnlyProgram(),
 			{

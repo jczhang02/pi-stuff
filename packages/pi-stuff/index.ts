@@ -8,6 +8,11 @@ import codeMode, { registerCodeModeContextProjection } from "./src/code-mode/ind
 import codex from "./src/codex/index.js";
 import contextManagement from "./src/context-management/index.js";
 import conversationUi from "./src/conversation-ui/index.js";
+import {
+	installSuiteSessionReadiness,
+	markSuiteSessionReady,
+	rejectSuiteSessionReadiness,
+} from "./src/conversation-ui/suite-lifecycle.js";
 import goal from "./src/goal/index.js";
 import mcp from "./src/mcp/index.js";
 import rtk from "./src/rtk/index.js";
@@ -73,8 +78,9 @@ const DEFERRED_SUITE_TOOL_NAMES = ["ctx_expand", "ctx_search", "ctx_memory", "ct
 const OPTIONAL_SUITE_TOOL_NAMES = ["subagent_supervisor", "intercom"] as const;
 
 export default async function piStuff(pi: ExtensionAPI): Promise<void> {
-	const registrations = createSuiteToolRegistrationTracker(pi);
-	registerCodeModeContextProjection(pi);
+	const suiteApi = installSuiteSessionReadiness(pi);
+	const registrations = createSuiteToolRegistrationTracker(suiteApi);
+	registerCodeModeContextProjection(suiteApi);
 	for (const capability of CAPABILITIES) {
 		await capability(registrations.api);
 	}
@@ -82,13 +88,19 @@ export default async function piStuff(pi: ExtensionAPI): Promise<void> {
 		registry: registrations.registry,
 		surface: registrations.surface,
 	});
-	pi.on("session_start", () =>
-		assertSuiteToolActivityCoverage(
-			pi,
-			SUITE_TOOL_NAMES,
-			registrations.toolNames,
-			OPTIONAL_SUITE_TOOL_NAMES,
-			DEFERRED_SUITE_TOOL_NAMES,
-		),
-	);
+	pi.on("session_start", (_event, ctx) => {
+		try {
+			assertSuiteToolActivityCoverage(
+				pi,
+				SUITE_TOOL_NAMES,
+				registrations.toolNames,
+				OPTIONAL_SUITE_TOOL_NAMES,
+				DEFERRED_SUITE_TOOL_NAMES,
+			);
+		} catch (error) {
+			rejectSuiteSessionReadiness(pi, ctx);
+			throw error;
+		}
+		markSuiteSessionReady(pi, ctx);
+	});
 }

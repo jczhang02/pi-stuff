@@ -8,7 +8,7 @@ import { cloneMcpConfig, loadMcpConfig, writeProjectServerDisabledOverride } fro
 import { buildProxyDescription, createDirectToolExecutor, getMissingConfiguredDirectToolServers, resolveDirectTools } from "./direct-tools.ts";
 import { flushMetadataCache, initializeMcp, updateStatusBar } from "./init.ts";
 import { loadMetadataCache, type MetadataCache } from "./metadata-cache.ts";
-import { createPromptCommand, resolveCachedPrompts } from "./prompts.ts";
+import { createPromptCommand, registerMcpPromptMessageRenderer, resolveCachedPrompts } from "./prompts.ts";
 import { logger } from "./logger.ts";
 import { executeAuthComplete, executeAuthStart, executeCall, executeConnect, executeDescribe, executeInstructions, executeList, executeSearch, executeStatus, executeUiMessages } from "./proxy-modes.ts";
 import { formatTerminalError, getConfigPathFromArgv, normalizeDirectToolInputSchema, truncateAtWord } from "./utils.ts";
@@ -47,7 +47,8 @@ async function awaitWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Prom
 }
 
 function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
-  const sessionConfig = options.config !== undefined ? cloneMcpConfig(options.config) : undefined;
+  registerMcpPromptMessageRenderer(pi);
+	const sessionConfig = options.config !== undefined ? cloneMcpConfig(options.config) : undefined;
   const programmaticConfig = sessionConfig !== undefined;
   let state: McpExtensionState | null = null;
   let initPromise: Promise<McpExtensionState> | null = null;

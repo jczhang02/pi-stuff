@@ -47,8 +47,10 @@ compact grammar as Host Tools. Full Agent inspection and control remains in `/ag
 - The Agent detail transcript associates each child Tool call with its persisted call identity and renders a compact
   `● Tool … · outcome` row beside that Tool's bounded result. Mixed or out-of-order results remain attributable;
   identity-free legacy records are paired only when ownership is unambiguous.
-- A background Agent completion asks the UI Capability to refresh its bounded Git snapshot. The Agents Capability does
-  not render or own the Statusline.
+- A user-attributed background Agent completion asks the UI Capability to refresh its bounded Git snapshot. Direct
+  user steering permanently promotes an automatically launched Agent to user-attributed work, including after reload;
+  otherwise automatic Extension work does not request a refresh. The Agents Capability does not render or own the
+  Statusline.
 - Per-Agent Git worktree isolation is optional. Changed or uncertain worktrees are preserved; only clean worktrees may
   be removed automatically.
 - Suite-owned Agent input, output, metadata, and transcript artifacts live beside the persisted Pi session under Pi's

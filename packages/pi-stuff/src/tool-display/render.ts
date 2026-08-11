@@ -523,7 +523,6 @@ export function summarizeBuiltin(
 		return `${lines.truncated ? "≥" : ""}${String(lines.count)} ${lines.count === 1 ? "line" : "lines"}`;
 	}
 	if (name === "edit") {
-		// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
 		const diff = detailsRecord(result)["diff"];
 		if (typeof diff !== "string" || !diff) return "applied";
 		const counts = diffCounts(diff);
@@ -601,6 +600,10 @@ function boundedJson(value: unknown, maxCodeUnits: number): string {
 			return;
 		}
 		if (typeof candidate === "symbol" || typeof candidate === "function") {
+			append(JSON.stringify(String(candidate)));
+			return;
+		}
+		if (typeof candidate !== "object") {
 			append(JSON.stringify(String(candidate)));
 			return;
 		}

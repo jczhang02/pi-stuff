@@ -116,7 +116,6 @@ function verifyHostVersion(piBinary: string): void {
 }
 
 async function resolveCertifiedRtk(): Promise<string> {
-	// biome-ignore lint/complexity/useLiteralKeys: the test suite enables noPropertyAccessFromIndexSignature
 	let path = process.env["RTK_BIN"]?.trim();
 	if (!path) {
 		for (const discovery of [
@@ -285,7 +284,6 @@ export async function verifyRtkPty(options: {
 }): Promise<void> {
 	verifyHostVersion(options.piBinary);
 	const rtkBinary = await resolveCertifiedRtk();
-	// biome-ignore lint/complexity/useLiteralKeys: the test suite enables noPropertyAccessFromIndexSignature
 	const inheritedPath = process.env["PATH"];
 	if (!inheritedPath) fail("PATH is required to run the RTK PTY verification");
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-rtk-pty-"));

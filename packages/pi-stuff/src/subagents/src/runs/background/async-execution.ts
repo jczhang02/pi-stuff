@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { buildSkillInjection, normalizeSkillInput, resolveSkillsWithFallback } from "../../agents/skills.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
@@ -205,6 +206,8 @@ export interface AsyncParallelTaskInput {
 
 export interface CommonBuildParams {
 	ctx: AsyncExecutionContext;
+	/** Parent Agent attribution captured before asynchronous launch begins. */
+	parentRunOrigin?: AgentWorkOrigin;
 	availableModels?: AvailableModelInfo[];
 	cwd?: string;
 	maxSubagentDepth: number;
@@ -1169,13 +1172,13 @@ async function spawnRunner(
 		}
 		const message = error instanceof Error ? error.message : String(error);
 		if (!safeToCleanup && proc?.pid && runnerProcessStartIdentity) {
-			const retainedRunner = proc;
+			const retainedRunnerPid = proc.pid;
 			const retainedRunnerProcessStartIdentity = runnerProcessStartIdentity;
 			try {
 				const failedStatus = createInitialStatus(
 					launchConfig,
 					launchConfig.startedAt ?? Date.now(),
-					retainedRunner.pid,
+					retainedRunnerPid,
 					retainedRunnerProcessStartIdentity,
 				);
 				const endedAt = Date.now();
@@ -1197,7 +1200,7 @@ async function spawnRunner(
 			let aborted = false;
 			const abortStart = () => {
 				if (aborted) return true;
-				if (!terminateRunnerBeforeProceed(retainedRunner.pid!, retainedRunnerProcessStartIdentity)) {
+				if (!terminateRunnerBeforeProceed(retainedRunnerPid, retainedRunnerProcessStartIdentity)) {
 					return false;
 				}
 				terminateOrphanWriterProcesses(launchConfig.asyncDir);
@@ -1209,7 +1212,7 @@ async function spawnRunner(
 			return {
 				error: message,
 				safeToCleanup: false,
-				pid: retainedRunner.pid,
+				pid: retainedRunnerPid,
 				processStartIdentity: retainedRunnerProcessStartIdentity,
 				abortStart,
 			};
@@ -1560,6 +1563,7 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 	const config: BackgroundRunnerConfig = {
 		version: 2,
 		id,
+		parentRunOrigin: params.parentRunOrigin === "user" ? "user" : "automatic",
 		work: parallelWork,
 		resultPath: location.inheritedNestedRoute
 			? nestedResultsPath(location.inheritedNestedRoute.rootRunId, id)
@@ -1789,6 +1793,7 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 	const config: BackgroundRunnerConfig = {
 		version: 2,
 		id,
+		parentRunOrigin: params.parentRunOrigin === "user" ? "user" : "automatic",
 		work: built.work,
 		resultPath: location.inheritedNestedRoute
 			? nestedResultsPath(location.inheritedNestedRoute.rootRunId, id)

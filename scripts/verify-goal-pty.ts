@@ -74,14 +74,18 @@ class GoalPtySession {
 	}
 
 	start(): void {
+		const path = process.env["PATH"];
+		if (!path) fail("PATH is required to start the Goal PTY fixture");
 		const environment = {
 			...process.env,
+			PATH: `${join(this.directory, "bin")}:${path}`,
 			PI_CODING_AGENT_DIR: this.configDirectory,
 			PI_OFFLINE: "1",
 			PI_STUFF_GOAL_PTY_BIN: this.options.piBinary,
 			PI_STUFF_GOAL_PTY_COLUMNS: String(this.options.columns),
 			PI_STUFF_GOAL_PTY_PACKAGE: resolve(this.options.packagePath),
 			PI_STUFF_GOAL_PTY_PROVIDER_EXTENSION: providerExtension,
+			PI_STUFF_GOAL_PTY_GIT_PROBE: join(this.directory, "git-probe.jsonl"),
 			PI_STUFF_GOAL_PTY_ROWS: String(this.options.rows),
 			PI_STUFF_GOAL_PTY_SESSIONS: this.sessionDirectory,
 			PI_STUFF_GOAL_PTY_SESSION_ID: `goal-pty-${String(this.options.columns)}x${String(this.options.rows)}`,
@@ -182,8 +186,24 @@ class GoalPtySession {
 export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-goal-pty-"));
 	const configDirectory = join(temporaryDirectory, "agent");
+	const binDirectory = join(temporaryDirectory, "bin");
 	const sessionDirectory = join(temporaryDirectory, "sessions");
-	await Promise.all([mkdir(configDirectory), mkdir(sessionDirectory)]);
+	const gitProbePath = join(temporaryDirectory, "git-probe.jsonl");
+	await Promise.all([mkdir(configDirectory), mkdir(binDirectory), mkdir(sessionDirectory)]);
+	await writeFile(
+		join(binDirectory, "git"),
+		`#!/bin/sh
+if [ "$1" = "--no-optional-locks" ] && [ "$2" = "status" ]; then
+  requests=$(grep -c '"type":"request"' "$PI_STUFF_UI_PTY_LOG" 2>/dev/null || true)
+  requests=$(printf '%s' "$requests" | tr -d ' ')
+  printf '{"providerRequests":%s}\n' "$requests" >> "$PI_STUFF_GOAL_PTY_GIT_PROBE"
+  printf '## main\\0'
+  exit 0
+fi
+exec /usr/bin/git "$@"
+`,
+		{ mode: 0o700 },
+	);
 	await writeFile(
 		join(configDirectory, "settings.json"),
 		`${JSON.stringify({ defaultProjectTrust: "always", quietStartup: true, theme: "dark", tuiMode: "fullscreen" }, null, "\t")}\n`,
@@ -214,6 +234,9 @@ export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promis
 		session.sendKey("Escape");
 		const restored = await session.waitForMissing(["Pi Goal Settings", "No goal is currently set"]);
 		verifyScreen(restored, options.columns, "restored conversation", true);
+		if (await readFile(gitProbePath, "utf8").catch(() => "")) {
+			fail("handled Goal dialogs triggered a Statusline Git refresh without an Agent turn");
+		}
 
 		const objective = "verify hidden Goal protocol";
 		session.sendLiteral(`/goal ${objective}`);
@@ -243,7 +266,27 @@ export async function verifyGoalPty(options: GoalPtyVerificationOptions): Promis
 		const requests = requestLog
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as { ownedGoalPrompt?: string });
+			.map((line) => JSON.parse(line) as { ownedGoalPrompt?: string; type?: string })
+			.filter((record) => record.type === "request");
+		if (requests.length !== 2) {
+			fail(`two-turn Goal fixture produced ${String(requests.length)} provider requests instead of two`);
+		}
+		const gitProbeDeadline = Date.now() + WAIT_TIMEOUT_MS;
+		let gitProbe = "";
+		while (!gitProbe && Date.now() < gitProbeDeadline) {
+			gitProbe = await readFile(gitProbePath, "utf8").catch(() => "");
+			if (!gitProbe) await delay(20);
+		}
+		const gitRefreshes = gitProbe
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as { providerRequests?: unknown });
+		if (gitRefreshes.length !== 1 || gitRefreshes[0]?.providerRequests !== requests.length) {
+			fail(
+				`Statusline Git refresh did not wait for the complete user-driven Goal run: ${JSON.stringify(gitRefreshes)}`,
+			);
+		}
 		const deliveredPrompt = requests.find((request) => request.ownedGoalPrompt)?.ownedGoalPrompt ?? "";
 		for (const required of [
 			`<goal_objective>\n${objective}\n</goal_objective>`,

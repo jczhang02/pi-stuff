@@ -190,8 +190,10 @@ describe("fanout child Agent composition", () => {
 				return {
 					execute: async (_id, params, _signal, _onUpdate, _ctx, hooks) => {
 						engineParams.push(params);
+						const launchRunId = params.launchRunId;
+						if (!launchRunId) throw new Error("Expected a nested foreground launch run id");
 						await hooks?.beforeForegroundStart?.({
-							runId: params.launchRunId!,
+							runId: launchRunId,
 							asyncDir: runtimeDir,
 							writerCount: 1,
 							abortStart: () => true,
@@ -598,8 +600,10 @@ describe("fanout child Agent composition", () => {
 			loadConfiguration: config,
 			createExecutor: () => ({
 				execute: async (_id, params, _signal, _onUpdate, _ctx, hooks) => {
+					const launchRunId = params.launchRunId;
+					if (!launchRunId) throw new Error("Expected a nested foreground launch run id");
 					await hooks?.beforeForegroundStart?.({
-						runId: params.launchRunId!,
+						runId: launchRunId,
 						asyncDir: runtimeDir,
 						writerCount: 2,
 						abortStart: () => true,

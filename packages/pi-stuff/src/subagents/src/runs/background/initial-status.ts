@@ -36,6 +36,7 @@ export function createInitialStatus(
 		lifecycleArtifactVersion: SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
 		runId: config.id,
 		...(config.sessionId ? { sessionId: config.sessionId } : {}),
+		...(config.parentRunOrigin ? { parentRunOrigin: config.parentRunOrigin } : {}),
 		mode: config.work.mode,
 		isNested: Boolean(config.nestedSelf),
 		...(config.nestedRoute ? { nestedRoute: config.nestedRoute } : {}),

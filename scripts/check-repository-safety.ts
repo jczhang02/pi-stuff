@@ -54,6 +54,7 @@ const INTERNAL_MODULES = [
 	"subagents",
 	"todo",
 	"btw",
+	"code-mode",
 ] as const;
 type InternalModule = (typeof INTERNAL_MODULES)[number];
 const INTERNAL_MODULE_SET = new Set<string>(INTERNAL_MODULES);
@@ -71,6 +72,7 @@ const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<InternalModule, ReadonlySet
 	subagents: new Set([...SHARED_MODULE_DEPENDENCIES, "context-management", "background-work"]),
 	todo: new Set(SHARED_MODULE_DEPENDENCIES),
 	btw: new Set([...SHARED_MODULE_DEPENDENCIES, "context-management"]),
+	"code-mode": new Set(["tool-display"]),
 };
 export interface SafetyFinding {
 	path: string;
@@ -89,6 +91,20 @@ interface PackageManifest {
 	scripts?: unknown;
 	trustedDependencies?: unknown;
 	workspaces?: unknown;
+}
+
+interface SuiteManifest {
+	capabilities?: unknown;
+}
+
+interface SuiteSchema {
+	properties?: {
+		capabilities?: {
+			items?: {
+				enum?: unknown;
+			};
+		};
+	};
 }
 
 function isLocalPiPackageManifest(path: string): boolean {
@@ -147,6 +163,12 @@ function internalModuleFromPath(path: string): InternalModule | undefined {
 	if (!path.startsWith(prefix)) return undefined;
 	const module = path.slice(prefix.length).split("/", 1)[0];
 	return module && INTERNAL_MODULE_SET.has(module) ? (module as InternalModule) : undefined;
+}
+
+function isUnownedInternalSource(path: string): boolean {
+	const prefix = "packages/pi-stuff/src/";
+	if (!path.startsWith(prefix) || !/\.[cm]?[jt]sx?$/u.test(path)) return false;
+	return !path.slice(prefix.length).includes("/");
 }
 
 async function auditInternalModuleImports(root: string, path: string): Promise<SafetyFinding[]> {
@@ -268,10 +290,61 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 	return findings;
 }
 
+async function auditSuiteManifest(root: string, path: string): Promise<SafetyFinding[]> {
+	const manifest = JSON.parse(await readFile(join(root, path), "utf8")) as SuiteManifest;
+	if (!Array.isArray(manifest.capabilities) || manifest.capabilities.some((name) => typeof name !== "string")) {
+		return [{ path, rule: "suite-capabilities-must-be-string-array" }];
+	}
+	const capabilities = new Set(manifest.capabilities as string[]);
+	const findings: SafetyFinding[] = [];
+	for (const capability of capabilities) {
+		if (!INTERNAL_MODULE_SET.has(capability)) {
+			findings.push({ path, rule: `suite-capability-without-import-policy:${capability}` });
+		}
+	}
+	for (const module of INTERNAL_MODULES) {
+		if (!capabilities.has(module)) findings.push({ path, rule: `import-policy-module-missing-from-suite:${module}` });
+	}
+	return findings;
+}
+
+async function auditSuiteSchema(root: string, path: string): Promise<SafetyFinding[]> {
+	const schema = JSON.parse(await readFile(join(root, path), "utf8")) as SuiteSchema;
+	const declared = schema.properties?.capabilities?.items?.enum;
+	if (
+		!Array.isArray(declared) ||
+		declared.some((name) => typeof name !== "string") ||
+		new Set(declared).size !== declared.length
+	) {
+		return [{ path, rule: "suite-schema-capabilities-must-be-unique-string-array" }];
+	}
+	const capabilities = new Set(declared as string[]);
+	const findings: SafetyFinding[] = [];
+	for (const capability of capabilities) {
+		if (!INTERNAL_MODULE_SET.has(capability)) {
+			findings.push({ path, rule: `suite-schema-capability-without-import-policy:${capability}` });
+		}
+	}
+	for (const module of INTERNAL_MODULES) {
+		if (!capabilities.has(module)) {
+			findings.push({ path, rule: `import-policy-module-missing-from-suite-schema:${module}` });
+		}
+	}
+	return findings;
+}
+
 export async function auditRepositoryFiles(rootDirectory: string): Promise<SafetyFinding[]> {
 	const root = resolve(rootDirectory);
 	const paths = await listPublicFiles(root);
 	const findings: SafetyFinding[] = [];
+	const suiteSchemaPath = "schemas/suite.schema.json";
+	if (paths.includes(suiteSchemaPath)) {
+		findings.push(...(await auditSuiteSchema(root, suiteSchemaPath)));
+	}
+	const suiteManifestPath = "packages/pi-stuff/suite.json";
+	if (paths.includes(suiteManifestPath)) {
+		findings.push(...(await auditSuiteManifest(root, suiteManifestPath)));
+	}
 	for (const path of paths) {
 		try {
 			await access(join(root, path));
@@ -283,6 +356,9 @@ export async function auditRepositoryFiles(rootDirectory: string): Promise<Safet
 		if (isForbiddenHostState(path)) {
 			findings.push({ path, rule: "forbidden-host-state" });
 			continue;
+		}
+		if (isUnownedInternalSource(path)) {
+			findings.push({ path, rule: "unowned-internal-source-module" });
 		}
 		findings.push(...(await auditInternalModuleImports(root, path)));
 		findings.push(...(await auditTextFile(root, path)));

@@ -1,4 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { promoteActiveAgentWorkToUser } from "../../conversation-ui/agent-run-origin.js";
+import { sendSuiteAgentMessage } from "../../conversation-ui/index.js";
 import type { McpExtensionState } from "./state.ts";
 import { isServerDisabled, type McpAdapterOptions, type PromptMetadata, type ToolMetadata } from "./types.ts";
 import { existsSync } from "node:fs";
@@ -184,8 +186,15 @@ export async function initializeMcp(
     ui,
     sendMessage: (message, options) => {
       if (!owner.isActive()) return;
-      pi.sendMessage(message as unknown as Parameters<typeof pi.sendMessage>[0], options);
+      return sendSuiteAgentMessage(
+        pi,
+        message as unknown as Parameters<typeof pi.sendMessage>[0],
+        options,
+        () => owner.isActive(),
+      );
     },
+    isAgentIdle: () => ctx.isIdle(),
+    promoteActiveAgentWorkToUser: () => promoteActiveAgentWorkToUser(pi),
     statusEvents: options.statusEvents,
   };
   if (ownsOAuthRuntime) owner.addCleanup(() => shutdownOAuth(oauthRuntime));
