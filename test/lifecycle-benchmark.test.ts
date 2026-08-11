@@ -108,11 +108,12 @@ describe("lifecycle benchmark statistics", () => {
 
 	test("reports bypassed coverage and the exact over-budget cell", () => {
 		const cells = acceptanceCells().map((candidate) =>
-			candidate.variant === "suite" &&
-			candidate.scenario === "resume-long" &&
-			candidate.action === "reload" &&
-			candidate.columns === 64
-				? { ...candidate, reload: metric(551) }
+			candidate.variant === "suite" && candidate.scenario === "resume-long" && candidate.columns === 64
+				? candidate.action === "reload"
+					? { ...candidate, reload: metric(551) }
+					: candidate.action === "background-exit"
+						? { ...candidate, shutdown: metric(376) }
+						: candidate
 				: candidate,
 		);
 		const findings = lifecycleAcceptanceFindings(
@@ -122,6 +123,7 @@ describe("lifecycle benchmark statistics", () => {
 		expect(findings).toContain("coverage requires Host and Suite lifecycle tracing");
 		expect(findings).toContain("coverage is missing action agent-exit");
 		expect(findings).toContain("suite/resume-long/reload/64x28 reload p95 551.00ms exceeds 550ms");
+		expect(findings).toContain("suite/resume-long/background-exit/64x28 shutdown p95 376.00ms exceeds 375ms");
 	});
 
 	test("requires durable resumed history and matching Background Tool receipts", () => {

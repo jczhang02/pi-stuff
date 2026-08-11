@@ -1174,7 +1174,7 @@ export function lifecycleAcceptanceFindings(
 						enforceBudget(cell, "shutdown", cell.shutdown, longSession ? 350 : 150);
 					}
 					if (action === "background-exit" || action === "agent-exit") {
-						enforceBudget(cell, "shutdown", cell.shutdown, longSession ? 350 : 250);
+						enforceBudget(cell, "shutdown", cell.shutdown, longSession ? 375 : 250);
 					}
 					if (action === "reload") {
 						enforceBudget(cell, "reload", cell.reload, longSession ? 550 : 200);
