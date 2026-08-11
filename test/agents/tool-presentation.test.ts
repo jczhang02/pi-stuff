@@ -144,11 +144,21 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 			],
 		}),
 	).toBe("reviewer · 复核样本 🧪, writer · Update fixture docs");
+	expect(
+		presentation.target?.({
+			tasks: [
+				{} as never,
+				{ agent: undefined, description: undefined, task: undefined } as never,
+				{ agent: "reviewer", task: "Inspect the partial payload." },
+			],
+		}),
+	).toBe("reviewer · Inspect the partial payload.");
+	expect(presentation.target?.({ agent: undefined, task: undefined })).toBe("");
 	const longReport = {
 		content: [
 			{ type: "text" as const, text: "Agent general-purpose returned a deliberately long final report.".repeat(20) },
 		],
-		details: {} as never,
+		details: { asyncId: "run-1", mode: "parallel", results: [] } as never,
 	};
 	expect(presentation.summarize?.({ agent: "reviewer", task: fullTask }, longReport, "success", 18_000)).toBe(
 		"launched",
@@ -176,12 +186,83 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 	expect(presentation.summarize?.({}, longReport, "cancelled", 18_000)).toBe("cancelled");
 	const backgroundActivities = presentation.activity?.classify({
 		args: { agent: "reviewer", task: fullTask },
-		result: { content: [], details: { mode: "single", results: [] } },
+		result: { content: [], details: { asyncId: "run-1", mode: "single", results: [] } },
 		state: "success",
 		toolCallId: "agent-background",
 	} as never);
 	expect(backgroundActivities).toHaveLength(1);
 	expect(backgroundActivities?.[0]).toMatchObject({ category: "launch-agent", count: 1 });
+	const parallelArgs = {
+		tasks: [
+			{ agent: "reviewer", task: "Review the change." },
+			{ agent: "tester", task: "Run the tests." },
+			{ agent: "writer", task: "Check the docs." },
+		],
+	};
+	expect(typeof presentation.label === "function" ? presentation.label(parallelArgs) : presentation.label).toBe(
+		"Agents",
+	);
+	expect(
+		presentation.activity?.classify({
+			args: parallelArgs,
+			state: "running",
+			toolCallId: "agent-streaming",
+		} as never),
+	).toEqual([]);
+	const refused = {
+		content: [{ type: "text" as const, text: "Fork preflight refused before any Agent launched." }],
+		details: { mode: "parallel" as const, results: [] },
+		isError: true,
+	};
+	expect(presentation.resultIsError?.(parallelArgs, refused)).toBeTrue();
+	expect(
+		presentation.activity?.classify({
+			args: parallelArgs,
+			result: refused,
+			state: "error",
+			toolCallId: "agent-refused",
+		} as never),
+	).toEqual([]);
+	const launched = {
+		content: [{ type: "text" as const, text: "3 Agents started in the background (run-2)." }],
+		details: { asyncId: "run-2", mode: "parallel" as const, results: [] },
+	};
+	expect(presentation.resultIsError?.(parallelArgs, launched)).toBeFalse();
+	expect(
+		presentation.activity?.classify({
+			args: parallelArgs,
+			result: launched,
+			state: "success",
+			toolCallId: "agent-launched",
+		} as never),
+	).toEqual([
+		{
+			category: "launch-agent",
+			count: 3,
+			target: "reviewer · Review the change., tester · Run the tests., writer · Check the docs.",
+		},
+	]);
+	expect(presentation.summarize?.(parallelArgs, launched, "success", 18_000)).toBe("3 launched");
+	const foregroundActivities = presentation.activity?.classify({
+		args: { ...parallelArgs, foreground: true },
+		result: { content: [], details: { mode: "parallel", results: [{}, {}] } },
+		state: "success",
+		toolCallId: "agent-foreground",
+	} as never);
+	expect(foregroundActivities).toEqual([
+		{
+			category: "run-agent",
+			count: 2,
+			target: "reviewer · Review the change., tester · Run the tests., writer · Check the docs.",
+		},
+	]);
+	expect(
+		presentation.activity?.classify({
+			args: { tasks: [{} as never] },
+			state: "running",
+			toolCallId: "agent-partial",
+		} as never),
+	).toEqual([]);
 	const cancelledBeforeLaunch = presentation.activity?.classify({
 		args: { agent: "reviewer", foreground: true, task: fullTask },
 		result: {
@@ -191,8 +272,7 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 		state: "cancelled",
 		toolCallId: "agent-cancelled-before-launch",
 	} as never);
-	expect(cancelledBeforeLaunch).toHaveLength(1);
-	expect(cancelledBeforeLaunch?.[0]).toMatchObject({ category: "run-agent", count: 0 });
+	expect(cancelledBeforeLaunch).toEqual([]);
 	for (const [action, category] of [
 		["status", "check-agent"],
 		["steer", "steer-agent"],
