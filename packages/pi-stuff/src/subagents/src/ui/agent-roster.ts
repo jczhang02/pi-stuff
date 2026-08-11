@@ -1,6 +1,5 @@
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
-	type Component,
 	decodeKittyPrintable,
 	type EditorComponent,
 	isKeyRelease,
@@ -11,6 +10,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
+import type { FooterTailComponent } from "../../../conversation-ui/index.js";
 import type { AgentRow, AgentSessionSnapshot, CurrentAgents } from "../session/current-agents.js";
 import { boundedTerminalLine } from "../shared/display-description.js";
 
@@ -119,11 +119,15 @@ export class AgentRoster {
 	}
 
 	/** Create the Fleetview tail rendered after the shared Statusline. */
-	createFooterTail(tui: TUI, theme: Theme): Component & { dispose(): void } {
+	createFooterTail(tui: TUI, theme: Theme): FooterTailComponent & { dispose(): void } {
 		const attachment = { tui };
+		const roster = this;
 		this.footerAttachment = attachment;
 		this.syncRegistration();
 		return {
+			get replacesBaseRow2() {
+				return roster.navigationActive;
+			},
 			dispose: () => {
 				if (this.footerAttachment === attachment) this.footerAttachment = undefined;
 			},
@@ -374,40 +378,39 @@ export class AgentRoster {
 		const limit = renderWidth <= NARROW_WIDTH ? NARROW_CHILD_LIMIT : NORMAL_CHILD_LIMIT;
 		const visible = visibleRows(ordered, limit, this.navigationActive ? this.selectedKey : "main");
 		const hidden = ordered.length - visible.length;
-		const lines = [
-			this.renderHint(theme, renderWidth),
+		const lines = this.navigationActive ? [this.renderHint(theme, renderWidth)] : [];
+		lines.push(
 			this.renderMain(theme, renderWidth),
 			...visible.map((row) => renderAgentRow(row, this.rowMarker(row, theme), theme, renderWidth, this.now())),
-		];
-		if (hidden > 0) lines.push(truncateToWidth(`  ${theme.fg("dim", `… +${hidden} more`)}`, renderWidth, ""));
+		);
+		if (hidden > 0) lines.push(truncateToWidth(theme.fg("dim", `… +${hidden} more`), renderWidth, ""));
 		return lines;
 	}
 
 	private renderHint(theme: Theme, width: number): string {
-		if (!this.navigationActive) return "";
+		const selected = this.rows().find((row) => row.key === this.selectedKey);
+		const action = selected ? (isTerminal(selected) ? "dismiss" : "stop") : undefined;
 		const hint =
-			width <= NARROW_WIDTH ? "↑/↓ select · Enter · x stop · Esc" : "↑/↓ select · Enter view · x stop · Esc return";
-		return truncateToWidth(`  ${theme.fg("dim", hint)}`, width, "");
+			width <= NARROW_WIDTH
+				? `↑/↓ · Enter${action ? ` · x ${action}` : ""} · Esc`
+				: `↑/↓ select · Enter view${action ? ` · x ${action}` : ""} · Esc return`;
+		return truncateToWidth(theme.fg("dim", hint), width, "");
 	}
 
 	private renderMain(theme: Theme, width: number): string {
 		const marker = this.selectedMarker("main", theme);
-		return truncateToWidth(`  ${marker} ${theme.fg("text", "main")}`, width, "");
+		return truncateToWidth(`${marker} ${theme.fg("text", "main")}`, width, "");
 	}
 
 	private selectedMarker(key: string, theme: Theme): string {
-		const selected = this.navigationActive ? this.selectedKey === key : key === "main";
-		return selected ? theme.fg("accent", "●") : theme.fg("muted", "○");
+		if (this.navigationActive) {
+			return this.selectedKey === key ? theme.fg("accent", "●") : theme.fg("muted", "○");
+		}
+		return key === "main" ? theme.fg("text", "●") : theme.fg("muted", "○");
 	}
 
 	private rowMarker(row: AgentRow, theme: Theme): string {
-		if (this.navigationActive && this.selectedKey === row.key) return theme.fg("accent", "●");
-		if (row.status === "completed") return theme.fg("success", "○");
-		if (row.status === "failed" || row.status === "crashed") return theme.fg("error", "○");
-		if (row.status === "waiting_supervisor") {
-			return theme.fg("warning", "○");
-		}
-		return theme.fg("muted", "○");
+		return this.selectedMarker(row.key, theme);
 	}
 }
 
@@ -458,7 +461,7 @@ function renderAgentRow(row: AgentRow, marker: string, theme: Theme, width: numb
 	const name = boundedTerminalLine(row.name) || "agent";
 	const description = boundedTerminalLine(row.description ?? row.task);
 	const right = styledState(row, theme, now);
-	const markerPrefix = `  ${marker} `;
+	const markerPrefix = `${marker} `;
 	const rightWidth = visibleWidth(right);
 	const leftWidth = Math.max(1, width - (rightWidth > 0 ? rightWidth + 2 : 0));
 	const plainPrefixWidth = visibleWidth(markerPrefix);
@@ -481,15 +484,15 @@ function styledState(row: AgentRow, theme: Theme, now: number): string {
 	const elapsed = elapsedText(row, now);
 	switch (row.status) {
 		case "queued":
-			return theme.fg("warning", "queued");
+			return theme.fg("muted", "queued");
 		case "waiting_supervisor":
 			return theme.fg("warning", "waiting");
 		case "stopping":
-			return theme.fg("warning", "stopping");
+			return theme.fg("muted", "stopping");
 		case "resuming":
-			return theme.fg("warning", "resuming");
+			return theme.fg("muted", "resuming");
 		case "completed":
-			return theme.fg("success", elapsed || "✓");
+			return theme.fg("muted", elapsed || "done");
 		case "failed":
 			return theme.fg("error", elapsed ? `failed · ${elapsed}` : "failed");
 		case "crashed":

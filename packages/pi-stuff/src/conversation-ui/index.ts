@@ -117,7 +117,11 @@ export interface CommandDialogCoordinator {
 
 export type FooterFactory = NonNullable<Parameters<ExtensionUIContext["setFooter"]>[0]>;
 export { getHostSharedResource } from "./host-resource.js";
-export type FooterTailFactory = (tui: TUI, theme: Theme) => Component;
+export type FooterTailComponent = Component & {
+	/** Replace the primary Footer's second row while this tail renders its controls. */
+	readonly replacesBaseRow2?: boolean;
+};
+export type FooterTailFactory = (tui: TUI, theme: Theme) => FooterTailComponent;
 
 type DialogRequestState = "mounted" | "mounting" | "queued" | "settled";
 type HostRunState = "closed" | "closing" | "open" | "opening";
@@ -207,8 +211,23 @@ class FooterStackComponent implements Component {
 	render(width: number): string[] {
 		if (this.disposed) return [];
 		const lines: string[] = [];
-		for (const component of this.components) {
-			callComponent(() => lines.push(...component.render(width)));
+		let baseRow2Available = false;
+		for (const [index, component] of this.components.entries()) {
+			const section: string[] = [];
+			let rendered = false;
+			let replacesBaseRow2 = false;
+			callComponent(() => {
+				replacesBaseRow2 = (component as FooterTailComponent).replacesBaseRow2 === true;
+				section.push(...component.render(width));
+				rendered = true;
+			});
+			if (!rendered) continue;
+			if (index === 0) baseRow2Available = section.length > 1;
+			else if (replacesBaseRow2 && baseRow2Available) {
+				lines.splice(1, 1);
+				baseRow2Available = false;
+			}
+			lines.push(...section);
 		}
 		return lines;
 	}
