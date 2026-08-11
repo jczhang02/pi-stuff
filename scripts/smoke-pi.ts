@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { waitForDetachedProcess } from "./detached-process.js";
 
 const RPC_REQUEST_ID = "pi-stuff-smoke";
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -135,23 +136,18 @@ export async function runPiRpcSmoke(options: PiRpcSmokeOptions): Promise<PiRpcSm
 		}
 		const child = Bun.spawn(arguments_, {
 			cwd: options.cwd ?? resolve(import.meta.dir, ".."),
+			detached: true,
 			env: isolatedEnvironment(temporaryDirectory),
 			stdin: new Blob([`${JSON.stringify({ id: RPC_REQUEST_ID, type: "get_commands" })}\n`]),
 			stdout: "pipe",
 			stderr: "pipe",
 		});
 
-		let timedOut = false;
-		const timeout = setTimeout(() => {
-			timedOut = true;
-			child.kill(9);
-		}, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-		const [exitCode, stdout, stderr] = await Promise.all([
-			child.exited,
+		const [{ exitCode, timedOut }, stdout, stderr] = await Promise.all([
+			waitForDetachedProcess(child, options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
 			new Response(child.stdout).text(),
 			new Response(child.stderr).text(),
 		]);
-		clearTimeout(timeout);
 
 		if (timedOut) {
 			throw new Error(

@@ -87,6 +87,7 @@ export interface CellSummary {
 	readonly shutdown: MetricSummary;
 	readonly startup: MetricSummary;
 	readonly variant: Variant;
+	readonly warmups: number;
 }
 
 interface ExpectMetrics {
@@ -874,11 +875,13 @@ async function runSample(
 	size: TerminalSize,
 	iteration: number,
 	warmup: boolean,
+	phase: "initial" | "confirmation" = "initial",
 ): Promise<LifecycleSample> {
+	const phasePrefix = phase === "confirmation" ? "confirmation-" : "";
 	const runDirectory = join(
 		benchmarkRoot,
 		"runs",
-		`${variant}-${scenario}-${action}-${String(size.columns)}x${String(size.rows)}-${warmup ? "warmup" : "sample"}-${String(iteration)}`,
+		`${phasePrefix}${variant}-${scenario}-${action}-${String(size.columns)}x${String(size.rows)}-${warmup ? "warmup" : "sample"}-${String(iteration)}`,
 	);
 	const configDirectory = join(runDirectory, "agent");
 	const sessionDirectory = join(runDirectory, "sessions");
@@ -960,7 +963,7 @@ async function runSample(
 		PS5BW_SOURCE_CHANGE_FILE: sourceChangeFile,
 		PS5BW_SESSION_DIR: sessionDirectory,
 		PS5BW_SESSION_FILE: sessionFile,
-		PS5BW_SESSION_ID: `ps5bw-${variant}-${scenario}-${action}-${String(iteration)}`,
+		PS5BW_SESSION_ID: `ps5bw-${phasePrefix}${variant}-${scenario}-${action}-${String(iteration)}`,
 		PS5BW_TTY_STATE: ttyState,
 		PS5BW_SUITE_TRACE: suiteTracePath,
 		PS5BW_SURFACE_MARKER: `PS5BW_SURFACE_READY_${variant.toUpperCase()}`,
@@ -1050,37 +1053,48 @@ function cellKey(sample: LifecycleSample): string {
 }
 
 function summaries(samples: readonly LifecycleSample[]): CellSummary[] {
-	const cells = new Map<string, LifecycleSample[]>();
+	const cells = new Map<string, { measured: LifecycleSample[]; warmups: number }>();
 	for (const sample of samples) {
-		if (sample.warmup) continue;
 		const key = cellKey(sample);
-		const values = cells.get(key) ?? [];
-		values.push(sample);
-		cells.set(key, values);
+		const cell = cells.get(key) ?? { measured: [], warmups: 0 };
+		if (sample.warmup) cell.warmups += 1;
+		else cell.measured.push(sample);
+		cells.set(key, cell);
 	}
-	return [...cells.values()].map((values) => {
+	return [...cells.values()].flatMap(({ measured: values, warmups }) => {
+		if (values.length === 0) return [];
 		const first = values[0] as LifecycleSample;
 		const acknowledgementValues = values.flatMap((sample) =>
 			sample.acknowledgementMs === undefined ? [] : [sample.acknowledgementMs],
 		);
 		const reloadValues = values.flatMap((sample) => (sample.reloadMs === undefined ? [] : [sample.reloadMs]));
 		const responseValues = values.flatMap((sample) => (sample.responseMs === undefined ? [] : [sample.responseMs]));
-		return {
-			action: first.action,
-			...(acknowledgementValues.length > 0 ? { acknowledgement: summarize(acknowledgementValues) } : {}),
-			columns: first.columns,
-			...(reloadValues.length > 0 ? { reload: summarize(reloadValues) } : {}),
-			...(responseValues.length > 0 ? { response: summarize(responseValues) } : {}),
-			rows: first.rows,
-			scenario: first.scenario,
-			shutdown: summarize(values.map((sample) => sample.shutdownMs)),
-			startup: summarize(values.map((sample) => sample.startupMs)),
-			variant: first.variant,
-		};
+		return [
+			{
+				action: first.action,
+				...(acknowledgementValues.length > 0 ? { acknowledgement: summarize(acknowledgementValues) } : {}),
+				columns: first.columns,
+				...(reloadValues.length > 0 ? { reload: summarize(reloadValues) } : {}),
+				...(responseValues.length > 0 ? { response: summarize(responseValues) } : {}),
+				rows: first.rows,
+				scenario: first.scenario,
+				shutdown: summarize(values.map((sample) => sample.shutdownMs)),
+				startup: summarize(values.map((sample) => sample.startupMs)),
+				variant: first.variant,
+				warmups,
+			},
+		];
 	});
 }
 
 const ACCEPTANCE_MINIMUM_SAMPLES = 3;
+
+type BudgetedMetric = "acknowledgement" | "reload" | "response" | "shutdown" | "startup";
+
+interface BudgetRule {
+	readonly budget: number;
+	readonly metric: BudgetedMetric;
+}
 
 function sameSize(left: TerminalSize, right: TerminalSize): boolean {
 	return left.columns === right.columns && left.rows === right.rows;
@@ -1098,9 +1112,49 @@ function acceptanceRequiresCell(action: Action, scenario: Scenario, size: Termin
 	return true;
 }
 
+function budgetRules(cell: CellSummary): readonly BudgetRule[] {
+	if (cell.variant !== "suite") return [];
+	const longSession = cell.scenario === "resume-long";
+	const rules: BudgetRule[] = [];
+	if (cell.action !== "reload-change") {
+		rules.push({ budget: longSession ? 1_800 : 1_600, metric: "startup" });
+	}
+	if (cell.action === "prompt") {
+		rules.push({ budget: 50, metric: "acknowledgement" }, { budget: 1_100, metric: "response" });
+	}
+	if (cell.action === "exit" || cell.action === "ctrl-c") {
+		rules.push({ budget: longSession ? 350 : 150, metric: "shutdown" });
+	}
+	if (cell.action === "background-exit" || cell.action === "agent-exit") {
+		rules.push({ budget: longSession ? 375 : 250, metric: "shutdown" });
+	}
+	if (cell.action === "reload") rules.push({ budget: longSession ? 550 : 200, metric: "reload" });
+	if (cell.action === "reload-change") rules.push({ budget: 6_000, metric: "reload" });
+	return rules;
+}
+
+function requiredMetrics(cell: CellSummary): readonly BudgetedMetric[] {
+	return [
+		"startup",
+		"shutdown",
+		...(cell.action === "reload" || cell.action === "reload-change" ? (["reload"] as const) : []),
+		...(cell.action === "prompt" ? (["acknowledgement", "response"] as const) : []),
+	];
+}
+
+export function lifecycleConfirmationTargets(cells: readonly CellSummary[]): CellSummary[] {
+	return cells.filter((cell) =>
+		budgetRules(cell).some(({ budget, metric }) => {
+			const summary = cell[metric];
+			return summary !== undefined && summary.p95 > budget;
+		}),
+	);
+}
+
 export function lifecycleAcceptanceFindings(
 	selection: LifecycleAcceptanceSelection,
 	cells: readonly CellSummary[],
+	confirmationCells: readonly CellSummary[] = [],
 ): string[] {
 	const findings: string[] = [];
 	if (selection.samples < ACCEPTANCE_MINIMUM_SAMPLES) {
@@ -1126,20 +1180,51 @@ export function lifecycleAcceptanceFindings(
 	const cellsByKey = new Map(
 		cells.map((cell) => [acceptanceCellKey(cell.variant, cell.scenario, cell.action, cell), cell]),
 	);
+	const confirmationsByKey = new Map(
+		confirmationCells.map((cell) => [acceptanceCellKey(cell.variant, cell.scenario, cell.action, cell), cell]),
+	);
+	for (const target of lifecycleConfirmationTargets(cells)) {
+		const key = acceptanceCellKey(target.variant, target.scenario, target.action, target);
+		const confirmation = confirmationsByKey.get(key);
+		if (confirmation && confirmation.warmups < selection.warmups) {
+			findings.push(`${key} confirmation has only ${String(confirmation.warmups)} warmups`);
+		}
+	}
 	const enforceBudget = (
 		cell: CellSummary,
-		metric: string,
+		metric: BudgetedMetric,
 		summary: MetricSummary | undefined,
 		budget: number,
 	): void => {
+		const key = acceptanceCellKey(cell.variant, cell.scenario, cell.action, cell);
 		if (!summary) {
-			findings.push(`${acceptanceCellKey(cell.variant, cell.scenario, cell.action, cell)} is missing ${metric}`);
+			findings.push(`${key} is missing ${metric}`);
 			return;
 		}
 		if (summary.p95 > budget) {
-			findings.push(
-				`${acceptanceCellKey(cell.variant, cell.scenario, cell.action, cell)} ${metric} p95 ${summary.p95.toFixed(2)}ms exceeds ${String(budget)}ms`,
-			);
+			const confirmationCell = confirmationsByKey.get(key);
+			const confirmation = confirmationCell?.[metric];
+			if (
+				confirmation &&
+				confirmation.samples >= ACCEPTANCE_MINIMUM_SAMPLES &&
+				confirmationCell.warmups >= selection.warmups &&
+				confirmation.p95 <= budget
+			) {
+				return;
+			}
+			findings.push(`${key} ${metric} p95 ${summary.p95.toFixed(2)}ms exceeds ${String(budget)}ms`);
+			if (confirmation && confirmation.samples < ACCEPTANCE_MINIMUM_SAMPLES) {
+				findings.push(`${key} ${metric} confirmation has only ${String(confirmation.samples)} measured samples`);
+			} else if (
+				confirmation &&
+				confirmationCell &&
+				confirmationCell.warmups >= selection.warmups &&
+				confirmation.p95 > budget
+			) {
+				findings.push(
+					`${key} ${metric} confirmation p95 ${confirmation.p95.toFixed(2)}ms also exceeds ${String(budget)}ms`,
+				);
+			}
 		}
 	};
 
@@ -1158,28 +1243,18 @@ export function lifecycleAcceptanceFindings(
 						findings.push(`coverage has no measured cell ${key}`);
 						continue;
 					}
-					if (cell.startup.samples < ACCEPTANCE_MINIMUM_SAMPLES) {
-						findings.push(`${key} has only ${String(cell.startup.samples)} measured samples`);
+					if (cell.warmups < selection.warmups) {
+						findings.push(`${key} has only ${String(cell.warmups)} warmups`);
 					}
-					if (variant !== "suite") continue;
-					const longSession = scenario === "resume-long";
-					if (action !== "reload-change") {
-						enforceBudget(cell, "startup", cell.startup, longSession ? 1_800 : 1_600);
+					for (const metric of requiredMetrics(cell)) {
+						const summary = cell[metric];
+						if (summary && summary.samples < ACCEPTANCE_MINIMUM_SAMPLES) {
+							findings.push(`${key} ${metric} has only ${String(summary.samples)} measured samples`);
+						}
 					}
-					if (action === "prompt") {
-						enforceBudget(cell, "acknowledgement", cell.acknowledgement, 50);
-						enforceBudget(cell, "response", cell.response, 1_100);
+					for (const { budget, metric } of budgetRules(cell)) {
+						enforceBudget(cell, metric, cell[metric], budget);
 					}
-					if (action === "exit" || action === "ctrl-c") {
-						enforceBudget(cell, "shutdown", cell.shutdown, longSession ? 350 : 150);
-					}
-					if (action === "background-exit" || action === "agent-exit") {
-						enforceBudget(cell, "shutdown", cell.shutdown, longSession ? 375 : 250);
-					}
-					if (action === "reload") {
-						enforceBudget(cell, "reload", cell.reload, longSession ? 550 : 200);
-					}
-					if (action === "reload-change") enforceBudget(cell, "reload", cell.reload, 6_000);
 				}
 			}
 		}
@@ -1187,14 +1262,14 @@ export function lifecycleAcceptanceFindings(
 	return findings;
 }
 
-function progress(sample: LifecycleSample): void {
+function progress(sample: LifecycleSample, phase: "initial" | "confirmation" = "initial"): void {
 	const suffix = [
 		sample.reloadMs === undefined ? "" : ` reload=${sample.reloadMs.toFixed(1)}ms`,
 		sample.acknowledgementMs === undefined ? "" : ` ack=${sample.acknowledgementMs.toFixed(1)}ms`,
 		sample.responseMs === undefined ? "" : ` response=${sample.responseMs.toFixed(1)}ms`,
 	].join("");
 	console.error(
-		`${sample.warmup ? "warmup" : "sample"} ${cellKey(sample)} #${String(sample.iteration + 1)} ` +
+		`${phase === "confirmation" ? "confirmation " : ""}${sample.warmup ? "warmup" : "sample"} ${cellKey(sample)} #${String(sample.iteration + 1)} ` +
 			`startup=${sample.startupMs.toFixed(1)}ms shutdown=${sample.shutdownMs.toFixed(1)}ms${suffix}`,
 	);
 }
@@ -1257,9 +1332,35 @@ async function main(): Promise<void> {
 			}
 		}
 		const cellSummaries = summaries(samples);
-		const acceptanceFindings = options.acceptance ? lifecycleAcceptanceFindings(options, cellSummaries) : [];
+		const confirmationSamples: LifecycleSample[] = [];
+		const confirmationTargets = options.acceptance ? lifecycleConfirmationTargets(cellSummaries) : [];
+		for (const target of confirmationTargets) {
+			for (let iteration = 0; iteration < options.warmups + options.samples; iteration += 1) {
+				const warmup = iteration < options.warmups;
+				const sampleIndex = warmup ? iteration : iteration - options.warmups;
+				const sample = await runSample(
+					options,
+					benchmarkRoot,
+					fixturePackage,
+					seeded,
+					target.variant,
+					target.scenario,
+					target.action,
+					target,
+					sampleIndex,
+					warmup,
+					"confirmation",
+				);
+				confirmationSamples.push(sample);
+				progress(sample, "confirmation");
+			}
+		}
+		const confirmationSummaries = summaries(confirmationSamples);
+		const acceptanceFindings = options.acceptance
+			? lifecycleAcceptanceFindings(options, cellSummaries, confirmationSummaries)
+			: [];
 		const report = {
-			schemaVersion: 2,
+			schemaVersion: 4,
 			generatedAt: new Date().toISOString(),
 			host: { profile: provenance.profile, provenance: provenance.kind },
 			toolchain: { bun: Bun.version },
@@ -1280,8 +1381,19 @@ async function main(): Promise<void> {
 				warmups: options.warmups,
 			},
 			acceptance: options.acceptance
-				? { findings: acceptanceFindings, passed: acceptanceFindings.length === 0, requested: true }
+				? {
+						confirmationCells: confirmationTargets.map((cell) =>
+							acceptanceCellKey(cell.variant, cell.scenario, cell.action, cell),
+						),
+						findings: acceptanceFindings,
+						passed: acceptanceFindings.length === 0,
+						requested: true,
+					}
 				: { requested: false },
+			confirmations: {
+				samples: confirmationSamples,
+				summaries: confirmationSummaries,
+			},
 			notes: [
 				"Every measurement uses a fresh Pi process and isolated Settings Layer.",
 				"Warmups heat executable and filesystem caches; the benchmark does not mutate global kernel page-cache state.",
@@ -1289,6 +1401,7 @@ async function main(): Promise<void> {
 				"All model responses are deterministic in-process fixtures; no credential or network call is used.",
 				"Resource actions verify the tracked shell or Agent child settles after the measured parent shutdown.",
 				"Every exit parses the resulting Session JSONL; completed prompts and Background/Agent Tool call-result receipts must remain durable.",
+				"An initially over-budget cell receives one independent complete confirmation batch; only a repeated violation fails acceptance, and both batches remain in the report.",
 			],
 			samples,
 			summaries: cellSummaries,

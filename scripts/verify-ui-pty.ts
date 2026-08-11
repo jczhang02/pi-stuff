@@ -13,6 +13,7 @@ import {
 	TODO_PTY_SUBJECTS,
 } from "../test/fixtures/ui-pty-provider.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
+import { armUiPtyOwnerWatchdog, disarmUiPtyOwnerWatchdog, type UiPtyOwnerWatchdog } from "./ui-pty-owner-watchdog.js";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
 
 const root = resolve(import.meta.dir, "..");
@@ -142,6 +143,7 @@ class TmuxPiSession {
 	private readonly socket: string;
 	private stopped = false;
 	private readonly target = "pi";
+	private watchdog: UiPtyOwnerWatchdog | undefined;
 
 	constructor(paths: CasePaths, options: UiPtyVerificationOptions, columns: number, rows: number) {
 		sessionCounter += 1;
@@ -172,7 +174,8 @@ class TmuxPiSession {
 		};
 	}
 
-	start(): void {
+	async start(): Promise<void> {
+		this.watchdog = await armUiPtyOwnerWatchdog(this.socket);
 		const result = Bun.spawnSync(
 			[
 				"tmux",
@@ -205,6 +208,8 @@ class TmuxPiSession {
 			{ env: this.environment, stderr: "pipe", stdout: "pipe" },
 		);
 		if (result.exitCode !== 0) {
+			disarmUiPtyOwnerWatchdog(this.watchdog);
+			this.watchdog = undefined;
 			fail(`tmux could not start Pi: ${result.stderr.toString().trim() || result.stdout.toString().trim()}`);
 		}
 		const serverOptions = this.tmux(["show-options", "-s"]);
@@ -265,6 +270,13 @@ class TmuxPiSession {
 		return this.waitFor((screen) => !hasStatusline(screen), "absence of the shared Statusline Footer");
 	}
 
+	async waitForDialogFrame(text: string, columns: number): Promise<string> {
+		return this.waitFor(
+			(screen) => screen.includes(text) && hasFullWidthDivider(screen, columns) && !hasStatusline(screen),
+			`${String(columns)}-column Command Dialog frame containing ${JSON.stringify(text)}`,
+		);
+	}
+
 	async waitForDivider(columns: number): Promise<string> {
 		const modelMarker = columns < 32 ? "ui-pt" : "ui-pty-model";
 		return this.waitFor(
@@ -295,6 +307,8 @@ class TmuxPiSession {
 			stdout: "pipe",
 		});
 		if (probe.exitCode === 0) fail(`isolated tmux server ${this.label} survived cleanup`);
+		disarmUiPtyOwnerWatchdog(this.watchdog);
+		this.watchdog = undefined;
 		rmSync(this.socket, { force: true });
 	}
 
@@ -402,7 +416,9 @@ function verifyNoFloatingFrame(screen: string, label: string): void {
 	}
 	const surface = lines.slice(surfaceStart).join("\n");
 	for (const forbidden of ["╭", "╮", "╰", "╯"]) {
-		if (surface.includes(forbidden)) fail(`${label} exposed floating-frame glyph ${forbidden}`);
+		if (surface.includes(forbidden)) {
+			fail(`${label} exposed floating-frame glyph ${forbidden}\n${screen}`);
+		}
 	}
 }
 
@@ -697,13 +713,18 @@ async function verifyLiveResize(session: TmuxPiSession): Promise<void> {
 }
 
 function verifyFullWidthDivider(screen: string, columns: number, label: string): void {
-	const divider = screen
+	if (!hasFullWidthDivider(screen, columns)) {
+		fail(`${label} did not expose a ${String(columns)}-column divider\n${screen}`);
+	}
+}
+
+function hasFullWidthDivider(screen: string, columns: number): boolean {
+	return screen
 		.split("\n")
-		.find(
+		.some(
 			(line) =>
 				line.length > 0 && [...line].every((character) => character === "─") && visibleWidth(line) === columns,
 		);
-	if (!divider) fail(`${label} did not expose a ${String(columns)}-column divider\n${screen}`);
 }
 
 async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Promise<void> {
@@ -720,12 +741,12 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	verifyTerminalWidth(screen, 100, "/codex Command Dialog");
 
 	session.resize(64, 28);
-	screen = await session.waitForText("gpt-image-2");
+	screen = await session.waitForDialogFrame("gpt-image-2", 64);
 	verifyNoFloatingFrame(screen, "narrow /codex Command Dialog");
 	verifyFullWidthDivider(screen, 64, "narrow /codex Command Dialog");
 	verifyTerminalWidth(screen, 64, "narrow /codex Command Dialog");
 	session.resize(100, 32);
-	await session.waitForText("gpt-image-2");
+	await session.waitForDialogFrame("gpt-image-2", 100);
 	session.sendKey("Escape");
 	await session.waitForStatusline("closing the first /codex dialog");
 
@@ -866,17 +887,18 @@ async function verifyWideInteractions(
 	await verifyCodexDialog(session, paths);
 
 	let screen = await openUi(session);
+	screen = await session.waitForDialogFrame("Tool running timer", 100);
 	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-ui-parity-open-100x32`, session);
 	session.resize(64, 28);
-	screen = await session.waitForText("Tool running timer");
+	screen = await session.waitForDialogFrame("Tool running timer", 64);
 	verifyNoFloatingFrame(screen, "narrow /ui Command Dialog");
 	verifyFullWidthDivider(screen, 64, "narrow /ui Command Dialog");
 	verifyTerminalWidth(screen, 64, "narrow /ui Command Dialog");
 	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-ui-parity-open-64x28`, session);
 	session.resize(100, 32);
-	await session.waitForText("Tool running timer");
+	await session.waitForDialogFrame("Tool running timer", 100);
 	session.sendLiteral("welcome");
-	screen = await session.waitForText("→ Welcome header");
+	screen = await session.waitForDialogFrame("→ Welcome header", 100);
 	if (hasStatusline(screen)) fail("Statusline remained visible while /ui owned the input region");
 	if (screen.includes("/tool-settings")) fail("removed /tool-settings appeared in /ui");
 	verifyNoFloatingFrame(screen, "/ui Command Dialog");
@@ -1068,7 +1090,7 @@ async function verifyWideInteractions(
 
 	const restarted = new TmuxPiSession(paths, options, 100, 32);
 	try {
-		restarted.start();
+		await restarted.start();
 		await waitForFixtureRecords(paths.log, "inventory", 2);
 		await delay(150);
 		screen = restarted.capture();
@@ -1177,7 +1199,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 			);
 			const session = new TmuxPiSession(paths, options, columns, rows);
 			try {
-				session.start();
+				await session.start();
 				await session.waitForText("Welcome back!");
 				const fresh = await session.waitForStatusline();
 				verifyFreshScreen(fresh, columns, rows);

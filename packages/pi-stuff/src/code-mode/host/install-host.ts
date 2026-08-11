@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	chmodSync,
 	copyFileSync,
@@ -7,21 +7,41 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	readFileSync,
 	renameSync,
 	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { getProxyForUrl } from "proxy-from-env";
 import { codeModeHostBinaryName, hostAssetUrl, resolveCodeModeHostAsset } from "./host-assets.js";
+import { readProcessStartIdentity } from "./process-start-identity.js";
 
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 const INSTALL_LOCK_POLL_MS = 200;
 const INSTALL_LOCK_TIMEOUT_MS = 125_000;
 const INSTALL_LOCK_STALE_MS = 180_000;
+const INSTALL_LOCK_OWNER_FILE = "owner.json";
+
+interface InstallLockOwner {
+	readonly pid: number;
+	readonly processIdentity?: string;
+	readonly token: string;
+}
+
+interface InstallLock {
+	readonly path: string;
+	readonly token: string;
+}
+
+interface InstallLockSnapshot {
+	readonly identity: string;
+	readonly mtimeMs: number;
+	readonly owner?: InstallLockOwner;
+}
 
 export interface InstallCodeModeHostOptions {
 	readonly arch: string;
@@ -46,31 +66,150 @@ async function acquireInstallLock(
 	lockPath: string,
 	destination: string,
 	signal: AbortSignal | undefined,
-): Promise<boolean> {
+): Promise<InstallLock | undefined> {
+	cleanupAbandonedInstallCandidates(lockPath);
 	const deadline = Date.now() + INSTALL_LOCK_TIMEOUT_MS;
 	while (Date.now() < deadline) {
 		signal?.throwIfAborted();
-		if (existsSync(destination)) return false;
+		if (existsSync(destination)) return undefined;
+		const token = randomUUID();
+		const candidate = `${lockPath}.candidate-${token}`;
 		try {
-			mkdirSync(lockPath);
-			return true;
-		} catch (error) {
-			if (!error || typeof error !== "object" || !("code" in error) || error.code !== "EEXIST") throw error;
+			mkdirSync(candidate);
 			try {
-				if (Date.now() - statSync(lockPath).mtimeMs > INSTALL_LOCK_STALE_MS) {
-					rmSync(lockPath, { force: true, recursive: true });
-					continue;
-				}
-			} catch (statError) {
-				if (!statError || typeof statError !== "object" || !("code" in statError) || statError.code !== "ENOENT") {
-					throw statError;
-				}
+				const processIdentity = readProcessStartIdentity(process.pid);
+				if (!processIdentity) throw new Error("Cannot identify the Code Mode host installer process generation");
+				const owner: InstallLockOwner = {
+					pid: process.pid,
+					processIdentity,
+					token,
+				};
+				writeFileSync(join(candidate, INSTALL_LOCK_OWNER_FILE), `${JSON.stringify(owner)}\n`, {
+					encoding: "utf8",
+					flag: "wx",
+					mode: 0o600,
+				});
+			} catch (error) {
+				rmSync(candidate, { force: true, recursive: true });
+				throw error;
 			}
-			await delay(INSTALL_LOCK_POLL_MS, undefined, signal ? { signal } : undefined);
+			try {
+				renameSync(candidate, lockPath);
+				return { path: lockPath, token };
+			} catch (error) {
+				rmSync(candidate, { force: true, recursive: true });
+				if (!isErrno(error, "EEXIST") && !isErrno(error, "ENOTEMPTY")) throw error;
+			}
+		} catch (error) {
+			if (!isErrno(error, "EEXIST")) throw error;
+		}
+		try {
+			const snapshot = readLockSnapshot(lockPath);
+			if (lockSnapshotIsStale(snapshot) && reclaimStaleLock(lockPath, snapshot)) continue;
+		} catch (error) {
+			if (!isErrno(error, "ENOENT")) throw error;
+		}
+		await delay(INSTALL_LOCK_POLL_MS, undefined, signal ? { signal } : undefined);
+	}
+	if (existsSync(destination)) return undefined;
+	throw new Error(`Timed out waiting for Code Mode host install lock: ${lockPath}`);
+}
+
+function isErrno(error: unknown, code: string): boolean {
+	return error instanceof Error && "code" in error && error.code === code;
+}
+
+function cleanupAbandonedInstallCandidates(lockPath: string): void {
+	const parent = dirname(lockPath);
+	const prefix = `${basename(lockPath)}.candidate-`;
+	for (const entry of readdirSync(parent, { withFileTypes: true })) {
+		if (!entry.isDirectory() || !entry.name.startsWith(prefix)) continue;
+		const candidate = join(parent, entry.name);
+		try {
+			if (Date.now() - statSync(candidate).mtimeMs <= INSTALL_LOCK_STALE_MS) continue;
+			const owner = readLockOwner(candidate);
+			if (owner && lockOwnerIsAlive(owner)) continue;
+			rmSync(candidate, { force: true, recursive: true });
+		} catch (error) {
+			if (!isErrno(error, "ENOENT")) throw error;
 		}
 	}
-	if (existsSync(destination)) return false;
-	throw new Error(`Timed out waiting for Code Mode host install lock: ${lockPath}`);
+}
+
+function readLockOwner(lockPath: string): InstallLockOwner | undefined {
+	try {
+		const value: unknown = JSON.parse(readFileSync(join(lockPath, INSTALL_LOCK_OWNER_FILE), "utf8"));
+		if (typeof value !== "object" || value === null) return undefined;
+		const pid = Reflect.get(value, "pid");
+		const processIdentity = Reflect.get(value, "processIdentity");
+		const token = Reflect.get(value, "token");
+		if (!Number.isSafeInteger(pid) || (pid as number) <= 0 || typeof token !== "string" || token.length === 0) {
+			return undefined;
+		}
+		if (processIdentity !== undefined && (typeof processIdentity !== "string" || processIdentity.length === 0)) {
+			return undefined;
+		}
+		return { pid: pid as number, ...(processIdentity ? { processIdentity } : {}), token };
+	} catch {
+		return undefined;
+	}
+}
+
+function lockOwnerIsAlive(owner: InstallLockOwner): boolean {
+	try {
+		process.kill(owner.pid, 0);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+		return true;
+	}
+	const currentIdentity = readProcessStartIdentity(owner.pid);
+	return !owner.processIdentity || !currentIdentity || owner.processIdentity === currentIdentity;
+}
+
+function readLockSnapshot(lockPath: string): InstallLockSnapshot {
+	const metadata = statSync(lockPath);
+	const owner = readLockOwner(lockPath);
+	return {
+		identity: owner?.token ?? `${String(metadata.dev)}:${String(metadata.ino)}`,
+		mtimeMs: metadata.mtimeMs,
+		...(owner ? { owner } : {}),
+	};
+}
+
+function lockSnapshotIsStale(snapshot: InstallLockSnapshot): boolean {
+	return (
+		Date.now() - snapshot.mtimeMs > INSTALL_LOCK_STALE_MS && (!snapshot.owner || !lockOwnerIsAlive(snapshot.owner))
+	);
+}
+
+function reclaimStaleLock(lockPath: string, expected: InstallLockSnapshot): boolean {
+	const reclaimKey = createHash("sha256").update(expected.identity).digest("hex").slice(0, 20);
+	const reclaimPath = `${lockPath}.reclaim-${reclaimKey}`;
+	try {
+		mkdirSync(reclaimPath);
+	} catch (error) {
+		if (isErrno(error, "EEXIST")) return false;
+		throw error;
+	}
+	try {
+		const current = readLockSnapshot(lockPath);
+		if (current.identity !== expected.identity || !lockSnapshotIsStale(current)) return false;
+		rmSync(lockPath, { force: true, recursive: true });
+		return true;
+	} catch (error) {
+		if (isErrno(error, "ENOENT")) return false;
+		throw error;
+	} finally {
+		rmSync(reclaimPath, { force: true, recursive: true });
+	}
+}
+
+function releaseInstallLock(lock: InstallLock): void {
+	if (readLockOwner(lock.path)?.token !== lock.token) return;
+	// A live owner is never reclaimable, and every stale reclaimer revalidates
+	// under the identity-keyed mutex. No conforming contender can replace this
+	// path between the ownership read and removal while this process is alive.
+	rmSync(lock.path, { force: true, recursive: true });
 }
 
 export async function installCodeModeHost(options: InstallCodeModeHostOptions): Promise<void> {
@@ -83,7 +222,8 @@ export async function installCodeModeHost(options: InstallCodeModeHostOptions): 
 	if (existsSync(destination)) return;
 	mkdirSync(resolve(destination, ".."), { recursive: true });
 	const lockPath = `${destination}.lock`;
-	if (!(await acquireInstallLock(lockPath, destination, options.signal))) return;
+	const lock = await acquireInstallLock(lockPath, destination, options.signal);
+	if (!lock) return;
 
 	let temporary: string | undefined;
 	const staged = `${destination}.${String(process.pid)}.tmp`;
@@ -133,6 +273,6 @@ export async function installCodeModeHost(options: InstallCodeModeHostOptions): 
 	} finally {
 		rmSync(staged, { force: true });
 		if (temporary) rmSync(temporary, { force: true, recursive: true });
-		rmSync(lockPath, { force: true, recursive: true });
+		releaseInstallLock(lock);
 	}
 }

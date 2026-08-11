@@ -4,6 +4,7 @@ import {
 	type CellSummary,
 	type LifecycleAcceptanceSelection,
 	lifecycleAcceptanceFindings,
+	lifecycleConfirmationTargets,
 	lifecycleSessionFindings,
 	percentile,
 	type Scenario,
@@ -48,6 +49,7 @@ function cell(variant: Variant, scenario: Scenario, action: Action, size: Termin
 		shutdown: metric(),
 		startup: metric(),
 		variant,
+		warmups: 1,
 	};
 }
 
@@ -124,6 +126,74 @@ describe("lifecycle benchmark statistics", () => {
 		expect(findings).toContain("coverage is missing action agent-exit");
 		expect(findings).toContain("suite/resume-long/reload/64x28 reload p95 551.00ms exceeds 550ms");
 		expect(findings).toContain("suite/resume-long/background-exit/64x28 shutdown p95 376.00ms exceeds 375ms");
+	});
+
+	test("accepts a one-batch scheduler outlier only after an independent confirmation passes", () => {
+		const cells = acceptanceCells().map((candidate) =>
+			candidate.variant === "suite" &&
+			candidate.scenario === "fresh" &&
+			candidate.action === "exit" &&
+			candidate.columns === 64
+				? { ...candidate, startup: metric(1_601) }
+				: candidate,
+		);
+		const target = cells.find(
+			(candidate) =>
+				candidate.variant === "suite" &&
+				candidate.scenario === "fresh" &&
+				candidate.action === "exit" &&
+				candidate.columns === 64,
+		);
+		if (!target) throw new Error("missing lifecycle test target");
+		expect(lifecycleConfirmationTargets(cells)).toEqual([target]);
+		expect(lifecycleAcceptanceFindings(selection(), cells, [cell("suite", "fresh", "exit", SIZES[1])])).toEqual([]);
+	});
+
+	test("still fails a performance regression repeated by the confirmation batch", () => {
+		const cells = acceptanceCells().map((candidate) =>
+			candidate.variant === "suite" &&
+			candidate.scenario === "fresh" &&
+			candidate.action === "exit" &&
+			candidate.columns === 64
+				? { ...candidate, startup: metric(1_601) }
+				: candidate,
+		);
+		const confirmation = { ...cell("suite", "fresh", "exit", SIZES[1]), startup: metric(1_602) };
+		const findings = lifecycleAcceptanceFindings(selection(), cells, [confirmation]);
+		expect(findings).toContain("suite/fresh/exit/64x28 startup p95 1601.00ms exceeds 1600ms");
+		expect(findings).toContain("suite/fresh/exit/64x28 startup confirmation p95 1602.00ms also exceeds 1600ms");
+	});
+
+	test("requires complete samples and warmups for every action metric and its confirmation", () => {
+		const cells = acceptanceCells().map((candidate) =>
+			candidate.variant === "suite" && candidate.scenario === "fresh" && candidate.action === "prompt"
+				? { ...candidate, response: { ...metric(), samples: 2 }, warmups: 0 }
+				: candidate,
+		);
+		expect(lifecycleAcceptanceFindings(selection(), cells)).toContain(
+			"suite/fresh/prompt/100x32 response has only 2 measured samples",
+		);
+		expect(lifecycleAcceptanceFindings(selection(), cells)).toContain("suite/fresh/prompt/100x32 has only 0 warmups");
+
+		const overBudget = acceptanceCells().map((candidate) =>
+			candidate.variant === "suite" &&
+			candidate.scenario === "fresh" &&
+			candidate.action === "exit" &&
+			candidate.columns === 64
+				? { ...candidate, startup: metric(1_601) }
+				: candidate,
+		);
+		const shortConfirmation = {
+			...cell("suite", "fresh", "exit", SIZES[1]),
+			startup: { ...metric(1_500), samples: 2 },
+		};
+		expect(lifecycleAcceptanceFindings(selection(), overBudget, [shortConfirmation])).toContain(
+			"suite/fresh/exit/64x28 startup confirmation has only 2 measured samples",
+		);
+		const coldConfirmation = { ...cell("suite", "fresh", "exit", SIZES[1]), warmups: 0 };
+		expect(lifecycleAcceptanceFindings(selection(), overBudget, [coldConfirmation])).toContain(
+			"suite/fresh/exit/64x28 confirmation has only 0 warmups",
+		);
 	});
 
 	test("requires durable resumed history and matching Background Tool receipts", () => {
