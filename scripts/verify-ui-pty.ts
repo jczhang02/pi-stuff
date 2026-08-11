@@ -1295,7 +1295,7 @@ export async function verifyThemeLifecyclePty(
 				verifyTerminalWidth(screen, columns, `${theme} at ${String(columns)}x${String(rows)}`);
 			}
 		};
-		session.start();
+		await session.start();
 		await session.waitForText("Welcome back!");
 		await session.waitForStatusline();
 		let records = await waitForFixtureRecords(paths.log, "inventory", 1);
@@ -1334,7 +1334,7 @@ export async function verifyThemeLifecyclePty(
 		session.stop();
 
 		session = new TmuxPiSession(paths, lifecycleOptions, 100, 32);
-		session.start();
+		await session.start();
 		records = await waitForFixtureRecords(paths.log, "inventory", 3);
 		verifyCatppuccinRecord(
 			records.filter((record) => record.type === "inventory").at(-1) ?? {},
