@@ -188,7 +188,8 @@ function renderActivityGroupRow(
 	const lines = wrapped.map((line, index) => `${index === 0 ? markerSlot : continuationPrefix}${line}`);
 	const safeHint = truncateToWidth(oneLine(model.hint), ACTIVITY_HINT_MAX_WIDTH, "…");
 	if (!safeHint) return lines;
-	const hintPrefix = `${continuationPrefix}⎿ `;
+	// U+2514 centers its horizontal stroke; U+23BF draws the corner at the cell bottom.
+	const hintPrefix = `${continuationPrefix}└ `;
 	const hintWidth = Math.max(1, width - visibleWidth(hintPrefix));
 	const hintLines = wrapTextWithAnsi(theme.fg("dim", safeHint), hintWidth).slice(0, 2);
 	const hintContinuation = " ".repeat(visibleWidth(hintPrefix));

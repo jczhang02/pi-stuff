@@ -121,7 +121,7 @@ describe("terminal-safe Tool rendering", () => {
 		expect(active.render(54)).toEqual([
 			" • Changing 2 files, running 3 commands, reading 4",
 			"   files…  (ctrl+o to expand)",
-			"   ⎿ Running focused checks in",
+			"   └ Running focused checks in",
 			"     packages/pi-stuff/src/tool-display",
 		]);
 		active.setMarkerVisible(false);
@@ -177,7 +177,7 @@ describe("terminal-safe Tool rendering", () => {
 		});
 		const rendered = row.render(40);
 		expect(rendered[0]).toStartWith(" • Ran 8 commands · 1 failed");
-		expect(rendered.filter((line) => line.includes("⎿") || line.startsWith("     x"))).toHaveLength(2);
+		expect(rendered.filter((line) => line.includes("└") || line.startsWith("     x"))).toHaveLength(2);
 		expect(rendered.every((line) => visibleWidth(line) <= 40)).toBe(true);
 	});
 

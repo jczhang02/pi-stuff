@@ -1,7 +1,8 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-const PATH_FOLD = "⋯";
+// Keep fold ink inside its terminal cells instead of relying on a font's ellipsis bearing.
+const PATH_FOLD = "...";
 
 function wellFormedText(value: string): string {
 	let output = "";
@@ -211,7 +212,10 @@ function pathParts(value: string): {
 /** Collapse a path with one shared, cell-aware grammar while retaining its nearest directory and basename. */
 export function compactTerminalPath(value: string, maximumWidth: number, collapseDirectories = false): string {
 	const width = Math.max(0, Math.floor(maximumWidth));
-	const clean = boundTerminalLine(value, Number.MAX_SAFE_INTEGER).replace(/(?:…(?=[\\/])|(?<=[\\/])…)/gu, PATH_FOLD);
+	const clean = boundTerminalLine(value, Number.MAX_SAFE_INTEGER).replace(
+		/(?:[⋯…](?=[\\/])|(?<=[\\/])[⋯…])/gu,
+		PATH_FOLD,
+	);
 	if (!clean || width === 0) return "";
 	const { origin, segments, separator } = pathParts(clean);
 	const needsCollapse = collapseDirectories && segments.length > 2;
@@ -222,7 +226,13 @@ export function compactTerminalPath(value: string, maximumWidth: number, collaps
 	const suffix = nearest ? `${nearest}${separator}${basename}` : basename;
 	const foldedSuffix = `${PATH_FOLD}${separator}${suffix}`;
 	const foldedBasename = `${PATH_FOLD}${separator}${basename}`;
-	const candidates = [`${origin}${foldedSuffix}`, foldedSuffix, `${origin}${foldedBasename}`, foldedBasename];
+	const candidates = [`${origin}${foldedSuffix}`, foldedSuffix];
+	if (nearest) {
+		const prefix = `${PATH_FOLD}${separator}${nearest}${separator}`;
+		const fittedBasename = boundTerminalLine(basename, width - visibleWidth(prefix), "…");
+		if (fittedBasename) candidates.push(`${prefix}${fittedBasename}`);
+	}
+	candidates.push(`${origin}${foldedBasename}`, foldedBasename);
 	for (const candidate of candidates) {
 		if (visibleWidth(candidate) <= width) return candidate;
 	}

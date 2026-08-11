@@ -264,7 +264,10 @@ export async function verifyToolsGroupingPty(options: {
 			if (!normalized(failure).includes("Ran 1 command, read 1 file · 1 failed")) {
 				fail(`failure count was hidden by grouping\n${failure}`);
 			}
-			if (!failure.includes("Command exited with code 17")) fail(`first failure summary was hidden\n${failure}`);
+			if (!failure.includes("└ Command exited with code 17")) {
+				fail(`first failure summary did not use the centered branch marker\n${failure}`);
+			}
+			if (failure.includes("⎿")) fail(`failure summary retained the bottom-aligned branch glyph\n${failure}`);
 			if (failure.includes("• Read input-工具.txt")) fail(`failure group leaked successful member rows\n${failure}`);
 			const unresolvedMarkerColor = markerColor(captureAnsiHistory(tmuxSession), "Ran 1 command, read 1 file");
 			if (unresolvedMarkerColor === successfulMarkerColor) {

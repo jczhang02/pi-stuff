@@ -19,7 +19,7 @@ describe("RTK dialog path presentation", () => {
 	test("keeps a long managed binary path on one meaningful narrow line", () => {
 		const path = `${homedir()}/.local/share/mise/installs/cargo-https-github-com-rtk-ai-rtk/ref-8a7dd7e5570d7744d4b6508479a3674fe8c49286/bin/rtk`;
 		const rendered = compactRtkBinaryPath(path, 38);
-		expect(rendered).toBe("~/⋯/bin/rtk");
+		expect(rendered).toBe("~/.../bin/rtk");
 		expect(visibleWidth(rendered)).toBeLessThanOrEqual(38);
 	});
 
@@ -29,9 +29,9 @@ describe("RTK dialog path presentation", () => {
 
 	test("keeps RTK search and linter paths inside a terminal-cell budget", () => {
 		const rendered = compactPath("/workspace/packages/深层/file.ts", 14);
-		expect(rendered).toBe("⋯/深层/file.ts");
+		expect(rendered).toBe(".../深层/file…");
 		expect(visibleWidth(rendered)).toBeLessThanOrEqual(14);
-		expect(rendered).not.toMatch(/(?:…[\\/]|[\\/]…)/u);
+		expect(rendered).not.toMatch(/(?:[⋯…][\\/]|[\\/][⋯…])/u);
 	});
 });
 

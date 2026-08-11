@@ -48,20 +48,21 @@ describe("terminal presentation bounds", () => {
 
 	test("uses one cell-aware fold grammar for every path shape", () => {
 		const cases = [
-			["/workspace/.pi/agent", 14, "/⋯/.pi/agent"],
-			["packages/pi-stuff/src/tool-display/contract.ts", 30, "⋯/tool-display/contract.ts"],
-			["~/.local/share/mise/shims/rtk", 24, "~/⋯/shims/rtk"],
-			["/workspace/project/.cache/state.json", 24, "/⋯/.cache/state.json"],
-			["C:\\Users\\me\\project\\src\\index.ts", 24, "C:\\⋯\\src\\index.ts"],
-			["/very/long/path/深层/file.ts", 14, "⋯/深层/file.ts"],
-			["/workspace/🚀project/src/📄.ts", 16, "/⋯/src/📄.ts"],
+			["/workspace/.pi/agent", 14, "/.../.pi/agent"],
+			["packages/pi-stuff/src/tool-display/contract.ts", 30, ".../tool-display/contract.ts"],
+			["~/.local/share/mise/shims/rtk", 24, "~/.../shims/rtk"],
+			["/workspace/project/.cache/state.json", 24, "/.../.cache/state.json"],
+			["C:\\Users\\me\\project\\src\\index.ts", 24, "C:\\...\\src\\index.ts"],
+			["/very/long/path/深层/file.ts", 14, ".../深层/file…"],
+			["/workspace/🚀project/src/📄.ts", 16, "/.../src/📄.ts"],
 		] as const;
 
 		for (const [input, width, expected] of cases) {
 			const result = compactTerminalPath(input, width, true);
 			expect(result).toBe(expected);
 			expect(visibleWidth(result)).toBeLessThanOrEqual(width);
-			expect(result).not.toMatch(/(?:…[\\/]|[\\/]…)/u);
+			expect(result).not.toMatch(/(?:[⋯…][\\/]|[\\/][⋯…])/u);
+			expect(result).toContain("...");
 			expect(isWellFormed(result)).toBeTrue();
 		}
 	});
