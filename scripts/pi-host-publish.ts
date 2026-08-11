@@ -16,10 +16,13 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { readProcessStartIdentity } from "../packages/pi-stuff/src/code-mode/host/process-start-identity.js";
 
 const EMBEDDED_ATTESTATION = "pi-host-attestation.json";
 const FACADE_BINARY_TARGET = "../current/linux-x64/pi";
 const FACADE_ATTESTATION_TARGET = "pi-host/current/pi-host-attestation.json";
+const PUBLISH_LOCK_ARTIFACT_STALE_MS = 10 * 60_000;
 
 interface PublishPiHostOptions {
 	readonly attestationPath: string;
@@ -46,6 +49,25 @@ interface LockOwner {
 	readonly pid: number;
 	readonly startTime: string;
 	readonly token: string;
+}
+
+function parseLockOwner(value: unknown): LockOwner | undefined {
+	if (typeof value !== "object" || value === null) return undefined;
+	const bootId = Reflect.get(value, "bootId");
+	const pid = Reflect.get(value, "pid");
+	const startTime = Reflect.get(value, "startTime");
+	const token = Reflect.get(value, "token");
+	if (
+		typeof bootId !== "string" ||
+		!Number.isSafeInteger(pid) ||
+		(pid as number) <= 0 ||
+		typeof startTime !== "string" ||
+		typeof token !== "string" ||
+		token.length === 0
+	) {
+		return undefined;
+	}
+	return { bootId, pid: pid as number, startTime, token };
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -98,21 +120,53 @@ async function currentBootId(): Promise<string> {
 	}
 }
 
-async function processStartTime(pid: number): Promise<string | undefined> {
+function processExists(pid: number): boolean {
 	try {
-		const stat = await readFile(`/proc/${String(pid)}/stat`, "utf8");
-		const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-		return fields[19];
-	} catch {
-		return undefined;
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
+async function lockOwnerIsActive(owner: LockOwner, bootId: string): Promise<boolean> {
+	if (owner.bootId !== bootId || !processExists(owner.pid)) return false;
+	const currentStartTime = readProcessStartIdentity(owner.pid);
+	return (
+		currentStartTime === undefined ||
+		currentStartTime === owner.startTime ||
+		currentStartTime === `${owner.bootId}:${owner.startTime}`
+	);
+}
+
+async function cleanupAbandonedPublishLockArtifacts(directory: string, bootId: string): Promise<void> {
+	const parent = dirname(directory);
+	const prefix = `${basename(directory)}.`;
+	for (const entry of await readdir(parent, { withFileTypes: true })) {
+		if (!entry.isDirectory() || !entry.name.startsWith(prefix)) continue;
+		const path = join(parent, entry.name);
+		const metadata = await lstat(path).catch((error: unknown) => {
+			if (isErrno(error, "ENOENT")) return undefined;
+			throw error;
+		});
+		if (!metadata || Date.now() - metadata.mtimeMs <= PUBLISH_LOCK_ARTIFACT_STALE_MS) continue;
+		let owner: LockOwner | undefined;
+		try {
+			owner = parseLockOwner(JSON.parse(await readFile(join(path, "owner.json"), "utf8")));
+		} catch {
+			// An old incomplete artifact has no active owner to preserve.
+		}
+		if (owner && (await lockOwnerIsActive(owner, bootId))) continue;
+		await rm(path, { force: true, recursive: true });
 	}
 }
 
 async function acquirePublishLock(artifactsDirectory: string): Promise<PublishLock> {
 	const directory = join(artifactsDirectory, ".pi-host-publish.lock");
 	const bootId = await currentBootId();
-	const startTime = await processStartTime(process.pid);
+	const startTime = readProcessStartIdentity(process.pid);
 	if (!startTime) throw new Error("Cannot identify the Pi Host publisher process start time");
+	await cleanupAbandonedPublishLockArtifacts(directory, bootId);
 	for (;;) {
 		const token = randomUUID();
 		const candidate = `${directory}.candidate-${token}`;
@@ -131,20 +185,63 @@ async function acquirePublishLock(artifactsDirectory: string): Promise<PublishLo
 
 		let existing: LockOwner | undefined;
 		try {
-			existing = JSON.parse(await readFile(join(directory, "owner.json"), "utf8")) as LockOwner;
+			existing = parseLockOwner(JSON.parse(await readFile(join(directory, "owner.json"), "utf8")));
 		} catch {
-			// An invalid owner can only be reclaimed through the atomic rename below.
+			// An invalid owner is identified by the locked directory inode below.
 		}
-		if (existing?.bootId === bootId && existing.startTime === (await processStartTime(existing.pid))) {
+		if (existing && (await lockOwnerIsActive(existing, bootId))) {
 			throw new Error(`Another Pi Host publication is active in process ${String(existing.pid)}`);
 		}
-		const stale = `${directory}.stale-${randomUUID()}`;
+		const metadata = await lstat(directory).catch((error: unknown) => {
+			if (isErrno(error, "ENOENT")) return undefined;
+			throw error;
+		});
+		if (!metadata) continue;
+		const staleIdentity = existing?.token ?? `${String(metadata.dev)}:${String(metadata.ino)}`;
+		const reclaimKey = createHash("sha256").update(staleIdentity).digest("hex").slice(0, 20);
+		const reclaim = `${directory}.reclaim-${reclaimKey}`;
+		const reclaimToken = randomUUID();
+		const reclaimCandidate = `${reclaim}.candidate-${reclaimToken}`;
+		const reclaimOwner: LockOwner = { bootId, pid: process.pid, startTime, token: reclaimToken };
 		try {
-			await rename(directory, stale);
+			await mkdir(reclaimCandidate);
+			await writeFile(join(reclaimCandidate, "owner.json"), `${JSON.stringify(reclaimOwner)}\n`, { mode: 0o600 });
+			await syncTree(reclaimCandidate);
+			await rename(reclaimCandidate, reclaim);
+		} catch (error) {
+			await rm(reclaimCandidate, { force: true, recursive: true });
+			if (!isErrno(error, "EEXIST") && !isErrno(error, "ENOTEMPTY")) throw error;
+			await delay(25);
+			continue;
+		}
+		try {
+			const currentMetadata = await lstat(directory).catch((error: unknown) => {
+				if (isErrno(error, "ENOENT")) return undefined;
+				throw error;
+			});
+			if (!currentMetadata) continue;
+			let currentOwner: LockOwner | undefined;
+			try {
+				currentOwner = parseLockOwner(JSON.parse(await readFile(join(directory, "owner.json"), "utf8")));
+			} catch {
+				// The inode remains the identity for a malformed owner.
+			}
+			const currentIdentity = currentOwner?.token ?? `${String(currentMetadata.dev)}:${String(currentMetadata.ino)}`;
+			if (currentIdentity !== staleIdentity) continue;
+			if (currentOwner && (await lockOwnerIsActive(currentOwner, bootId))) {
+				throw new Error(`Another Pi Host publication is active in process ${String(currentOwner.pid)}`);
+			}
+			const stale = `${directory}.stale-${randomUUID()}`;
+			try {
+				await rename(directory, stale);
+			} catch (error) {
+				if (isErrno(error, "ENOENT")) continue;
+				throw error;
+			}
 			await syncPath(artifactsDirectory);
 			await rm(stale, { force: true, recursive: true });
-		} catch (error) {
-			if (!isErrno(error, "ENOENT")) throw error;
+		} finally {
+			await rm(reclaim, { force: true, recursive: true });
 		}
 	}
 }

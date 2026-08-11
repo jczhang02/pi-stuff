@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { waitForDetachedProcess } from "./detached-process.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -78,21 +79,16 @@ async function runProcess(
 	command: readonly string[],
 	options: { readonly cwd: string; readonly env: Record<string, string | undefined> },
 ): Promise<ProcessResult> {
-	const process = Bun.spawn([...command], {
+	const child = Bun.spawn([...command], {
 		cwd: options.cwd,
+		detached: true,
 		env: options.env,
 		stdout: "pipe",
 		stderr: "pipe",
 	});
-	const stdout = new Response(process.stdout).text();
-	const stderr = new Response(process.stderr).text();
-	let timedOut = false;
-	const timer = setTimeout(() => {
-		timedOut = true;
-		process.kill("SIGTERM");
-	}, PROCESS_TIMEOUT_MS);
-	const exitCode = await process.exited;
-	clearTimeout(timer);
+	const stdout = new Response(child.stdout).text();
+	const stderr = new Response(child.stderr).text();
+	const { exitCode, timedOut } = await waitForDetachedProcess(child, PROCESS_TIMEOUT_MS);
 	return { exitCode, stdout: await stdout, stderr: await stderr, timedOut };
 }
 

@@ -55,7 +55,7 @@ async function createRepository(): Promise<string> {
 		name: "@jczhang02/pi-stuff",
 		private: true,
 		files: ["index.ts", "src", "README.md", "LICENSE"],
-		pi: { extensions: ["./index.ts"] },
+		pi: { extensions: ["./index.ts"], themes: ["./themes/*.json"] },
 	});
 	return root;
 }
@@ -75,7 +75,7 @@ describe("auditRepositoryFiles", () => {
 			name: "@jczhang02/pi-stuff",
 			private: true,
 			files: ["index.ts", "src", "README.md", "LICENSE"],
-			pi: { extensions: ["./index.ts"] },
+			pi: { extensions: ["./index.ts"], themes: ["./themes/*.json"] },
 			dependencies: { "@cortexkit/pi-magic-context": "0.33.1", typebox: "1.3.10" },
 		});
 
@@ -88,7 +88,7 @@ describe("auditRepositoryFiles", () => {
 			name: "@jczhang02/pi-stuff",
 			private: true,
 			files: ["index.ts", "src", "README.md", "LICENSE"],
-			pi: { extensions: ["./index.ts"] },
+			pi: { extensions: ["./index.ts"], themes: ["./themes/*.json"] },
 			dependencies: {
 				"@cortexkit/pi-magic-context": "https://github.com/cortexkit/magic-context/archive/refs/heads/main.tgz",
 			},
@@ -111,7 +111,7 @@ describe("auditRepositoryFiles", () => {
 			name: "@jczhang02/pi-stuff",
 			private: true,
 			files: ["index.ts", "src", "README.md", "LICENSE", "AGENTS.md"],
-			pi: { extensions: ["./index.ts"] },
+			pi: { extensions: ["./index.ts"], themes: ["./themes/*.json"] },
 			scripts: { postinstall: "modify-host" },
 		});
 
@@ -284,6 +284,33 @@ describe("auditRepositoryFiles", () => {
 				path: "packages/pi-stuff/src/goal/stream.ts",
 				rule: "raw-host-stream-output",
 			},
+		]);
+	});
+
+	test("rejects literal Host colors but permits browser-owned palettes", async () => {
+		const root = await createRepository();
+		await mkdir(join(root, "packages", "pi-stuff", "src", "goal"), { recursive: true });
+		await mkdir(join(root, "packages", "pi-stuff", "src", "web", "runtime"), { recursive: true });
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "goal", "index.ts"),
+			'export const color = "38;2;203;166;247";\n',
+		);
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "goal", "ansi.ts"),
+			`const code = "36";\nexport const fg = (text: string) => \`\\x1b[\${code}m\${text}\\x1b[0m\`;\n`,
+		);
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "goal", "style.ts"),
+			`export const style = (code: "1" | "3" | "7", text: string) => \`\\x1b[\${code}m\${text}\\x1b[0m\`;\n`,
+		);
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "web", "runtime", "curator-page.ts"),
+			'export const page = "body { color: #cba6f7; }";\n',
+		);
+
+		expect(await auditRepositoryFiles(root)).toEqual([
+			{ path: "packages/pi-stuff/src/goal/ansi.ts", rule: "hard-coded-host-color" },
+			{ path: "packages/pi-stuff/src/goal/index.ts", rule: "hard-coded-host-color" },
 		]);
 	});
 

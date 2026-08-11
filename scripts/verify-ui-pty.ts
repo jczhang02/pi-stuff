@@ -13,6 +13,7 @@ import {
 	TODO_PTY_SUBJECTS,
 } from "../test/fixtures/ui-pty-provider.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
+import { armUiPtyOwnerWatchdog, disarmUiPtyOwnerWatchdog, type UiPtyOwnerWatchdog } from "./ui-pty-owner-watchdog.js";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
 
 const root = resolve(import.meta.dir, "..");
@@ -49,17 +50,32 @@ const SUBSCRIPTION_MODEL = "ui-pty-subscription";
 const POLL_INTERVAL_MS = 50;
 const WAIT_TIMEOUT_MS = 20_000;
 const thoughtTransformer = createLiveThoughtTransformer();
+const CATPPUCCIN_ACCENTS: Readonly<Record<string, string>> = {
+	"catppuccin-frappe": "#ca9ee6",
+	"catppuccin-latte": "#8839ef",
+	"catppuccin-macchiato": "#c6a0f6",
+	"catppuccin-mocha": "#cba6f7",
+};
 
 export interface UiPtyVerificationOptions {
 	readonly artifactDirectory?: string;
+	readonly colorMode?: "truecolor" | "256";
 	readonly packagePath: string;
 	readonly piBinary: string;
-	readonly theme?: "dark" | "light";
+	readonly sessionId?: string;
+	readonly theme?: string;
 }
 
 export interface UiPtyEvidence {
 	readonly markdownTransformer: boolean;
 	readonly sizes: readonly string[];
+	readonly verified: readonly string[];
+}
+
+export interface ThemeLifecycleEvidence {
+	readonly colorMode: "truecolor" | "256";
+	readonly sizes: readonly string[];
+	readonly themes: readonly string[];
 	readonly verified: readonly string[];
 }
 
@@ -71,6 +87,11 @@ interface FixtureRecord {
 	readonly provider?: unknown;
 	readonly priorThinkingPreserved?: unknown;
 	readonly selected?: unknown;
+	readonly success?: unknown;
+	readonly theme?: unknown;
+	readonly themeAccent?: unknown;
+	readonly themeMode?: unknown;
+	readonly themes?: unknown;
 	readonly type?: unknown;
 	readonly usingOAuth?: unknown;
 }
@@ -122,6 +143,7 @@ class TmuxPiSession {
 	private readonly socket: string;
 	private stopped = false;
 	private readonly target = "pi";
+	private watchdog: UiPtyOwnerWatchdog | undefined;
 
 	constructor(paths: CasePaths, options: UiPtyVerificationOptions, columns: number, rows: number) {
 		sessionCounter += 1;
@@ -132,24 +154,28 @@ class TmuxPiSession {
 		this.socket = join(paths.config, `${this.label}.sock`);
 		this.environment = {
 			...process.env,
+			COLORTERM: options.colorMode === "256" ? "ansi" : "truecolor",
 			MAGIC_CONTEXT_PI_SUBAGENT: "1",
 			PI_CODING_AGENT_DIR: paths.config,
 			PI_OFFLINE: "1",
 			POWERLINE_NERD_FONTS: "1",
 			PI_STUFF_UI_PTY_BIN: options.piBinary,
 			PI_STUFF_UI_PTY_COLUMNS: String(columns),
+			PI_STUFF_UI_PTY_COLORTERM: options.colorMode === "256" ? "ansi" : "truecolor",
 			PI_STUFF_UI_PTY_LOG: paths.log,
 			PI_STUFF_UI_PTY_PACKAGE: resolve(options.packagePath),
 			PI_STUFF_UI_PTY_PROVIDER_EXTENSION: providerExtension,
 			PI_STUFF_UI_PTY_ROWS: String(rows),
 			PI_STUFF_UI_PTY_SESSIONS: paths.sessions,
-			PI_STUFF_UI_PTY_SESSION_ID: `ui-pty-${String(columns)}x${String(rows)}-${String(sessionCounter)}`,
+			PI_STUFF_UI_PTY_SESSION_ID:
+				options.sessionId ?? `ui-pty-${String(columns)}x${String(rows)}-${String(sessionCounter)}`,
 			PI_TELEMETRY: "0",
 			TERM: "xterm-256color",
 		};
 	}
 
-	start(): void {
+	async start(): Promise<void> {
+		this.watchdog = await armUiPtyOwnerWatchdog(this.socket);
 		const result = Bun.spawnSync(
 			[
 				"tmux",
@@ -182,6 +208,8 @@ class TmuxPiSession {
 			{ env: this.environment, stderr: "pipe", stdout: "pipe" },
 		);
 		if (result.exitCode !== 0) {
+			disarmUiPtyOwnerWatchdog(this.watchdog);
+			this.watchdog = undefined;
 			fail(`tmux could not start Pi: ${result.stderr.toString().trim() || result.stdout.toString().trim()}`);
 		}
 		const serverOptions = this.tmux(["show-options", "-s"]);
@@ -242,6 +270,13 @@ class TmuxPiSession {
 		return this.waitFor((screen) => !hasStatusline(screen), "absence of the shared Statusline Footer");
 	}
 
+	async waitForDialogFrame(text: string, columns: number): Promise<string> {
+		return this.waitFor(
+			(screen) => screen.includes(text) && hasFullWidthDivider(screen, columns) && !hasStatusline(screen),
+			`${String(columns)}-column Command Dialog frame containing ${JSON.stringify(text)}`,
+		);
+	}
+
 	async waitForDivider(columns: number): Promise<string> {
 		const modelMarker = columns < 32 ? "ui-pt" : "ui-pty-model";
 		return this.waitFor(
@@ -272,6 +307,8 @@ class TmuxPiSession {
 			stdout: "pipe",
 		});
 		if (probe.exitCode === 0) fail(`isolated tmux server ${this.label} survived cleanup`);
+		disarmUiPtyOwnerWatchdog(this.watchdog);
+		this.watchdog = undefined;
 		rmSync(this.socket, { force: true });
 	}
 
@@ -302,7 +339,12 @@ class TmuxPiSession {
 	}
 }
 
-async function createCase(rootDirectory: string, label: string, theme: "dark" | "light"): Promise<CasePaths> {
+async function createCase(
+	rootDirectory: string,
+	label: string,
+	theme: string,
+	packagePath: string,
+): Promise<CasePaths> {
 	const caseDirectory = join(rootDirectory, label);
 	const config = join(caseDirectory, "agent");
 	const sessions = join(caseDirectory, "sessions");
@@ -323,6 +365,7 @@ async function createCase(rootDirectory: string, label: string, theme: "dark" | 
 					hideThinkingBlock: false,
 					images: { autoResize: false },
 					outputPad: 1,
+					packages: [resolve(packagePath)],
 					quietStartup: true,
 					theme,
 					tuiMode: "fullscreen",
@@ -373,7 +416,9 @@ function verifyNoFloatingFrame(screen: string, label: string): void {
 	}
 	const surface = lines.slice(surfaceStart).join("\n");
 	for (const forbidden of ["╭", "╮", "╰", "╯"]) {
-		if (surface.includes(forbidden)) fail(`${label} exposed floating-frame glyph ${forbidden}`);
+		if (surface.includes(forbidden)) {
+			fail(`${label} exposed floating-frame glyph ${forbidden}\n${screen}`);
+		}
 	}
 }
 
@@ -668,13 +713,18 @@ async function verifyLiveResize(session: TmuxPiSession): Promise<void> {
 }
 
 function verifyFullWidthDivider(screen: string, columns: number, label: string): void {
-	const divider = screen
+	if (!hasFullWidthDivider(screen, columns)) {
+		fail(`${label} did not expose a ${String(columns)}-column divider\n${screen}`);
+	}
+}
+
+function hasFullWidthDivider(screen: string, columns: number): boolean {
+	return screen
 		.split("\n")
-		.find(
+		.some(
 			(line) =>
 				line.length > 0 && [...line].every((character) => character === "─") && visibleWidth(line) === columns,
 		);
-	if (!divider) fail(`${label} did not expose a ${String(columns)}-column divider\n${screen}`);
 }
 
 async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Promise<void> {
@@ -691,12 +741,12 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	verifyTerminalWidth(screen, 100, "/codex Command Dialog");
 
 	session.resize(64, 28);
-	screen = await session.waitForText("gpt-image-2");
+	screen = await session.waitForDialogFrame("gpt-image-2", 64);
 	verifyNoFloatingFrame(screen, "narrow /codex Command Dialog");
 	verifyFullWidthDivider(screen, 64, "narrow /codex Command Dialog");
 	verifyTerminalWidth(screen, 64, "narrow /codex Command Dialog");
 	session.resize(100, 32);
-	await session.waitForText("gpt-image-2");
+	await session.waitForDialogFrame("gpt-image-2", 100);
 	session.sendKey("Escape");
 	await session.waitForStatusline("closing the first /codex dialog");
 
@@ -837,17 +887,18 @@ async function verifyWideInteractions(
 	await verifyCodexDialog(session, paths);
 
 	let screen = await openUi(session);
+	screen = await session.waitForDialogFrame("Tool running timer", 100);
 	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-ui-parity-open-100x32`, session);
 	session.resize(64, 28);
-	screen = await session.waitForText("Tool running timer");
+	screen = await session.waitForDialogFrame("Tool running timer", 64);
 	verifyNoFloatingFrame(screen, "narrow /ui Command Dialog");
 	verifyFullWidthDivider(screen, 64, "narrow /ui Command Dialog");
 	verifyTerminalWidth(screen, 64, "narrow /ui Command Dialog");
 	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-ui-parity-open-64x28`, session);
 	session.resize(100, 32);
-	await session.waitForText("Tool running timer");
+	await session.waitForDialogFrame("Tool running timer", 100);
 	session.sendLiteral("welcome");
-	screen = await session.waitForText("→ Welcome header");
+	screen = await session.waitForDialogFrame("→ Welcome header", 100);
 	if (hasStatusline(screen)) fail("Statusline remained visible while /ui owned the input region");
 	if (screen.includes("/tool-settings")) fail("removed /tool-settings appeared in /ui");
 	verifyNoFloatingFrame(screen, "/ui Command Dialog");
@@ -1039,7 +1090,7 @@ async function verifyWideInteractions(
 
 	const restarted = new TmuxPiSession(paths, options, 100, 32);
 	try {
-		restarted.start();
+		await restarted.start();
 		await waitForFixtureRecords(paths.log, "inventory", 2);
 		await delay(150);
 		screen = restarted.capture();
@@ -1076,7 +1127,43 @@ async function readFixtureRecords(path: string): Promise<readonly FixtureRecord[
 		.map((line) => JSON.parse(line) as FixtureRecord);
 }
 
-function verifyInventory(records: readonly FixtureRecord[]): boolean {
+function verifyCatppuccinRecord(
+	record: FixtureRecord,
+	selectedTheme: string,
+	colorMode: "truecolor" | "256" = "truecolor",
+): void {
+	const accent = CATPPUCCIN_ACCENTS[selectedTheme];
+	if (!accent) fail(`unknown Catppuccin theme ${selectedTheme}`);
+	const [red, green, blue] = [accent.slice(1, 3), accent.slice(3, 5), accent.slice(5, 7)].map((value) =>
+		Number.parseInt(value, 16),
+	);
+	const expectedAccent = `\x1b[38;2;${String(red)};${String(green)};${String(blue)}m`;
+	const expectedHostMode = colorMode === "256" ? "256color" : "truecolor";
+	const accentMatches =
+		colorMode === "truecolor"
+			? record.themeAccent === expectedAccent
+			: typeof record.themeAccent === "string" &&
+				record.themeAccent.startsWith("\u001b[38;5;") &&
+				record.themeAccent.endsWith("m");
+	if (record.theme !== selectedTheme || record.themeMode !== expectedHostMode || !accentMatches) {
+		fail(
+			`Pi selected ${String(record.theme)} in ${String(record.themeMode)} with ${String(record.themeAccent)}, expected ${selectedTheme} in ${expectedHostMode}`,
+		);
+	}
+	const availableThemes = record.themes;
+	if (
+		!Array.isArray(availableThemes) ||
+		["dark", "light", ...Object.keys(CATPPUCCIN_ACCENTS)].some((theme) => !availableThemes.includes(theme))
+	) {
+		fail("Pi did not retain its built-in themes beside all four Catppuccin Package themes");
+	}
+}
+
+function verifyInventory(
+	records: readonly FixtureRecord[],
+	selectedTheme?: string,
+	colorMode: "truecolor" | "256" = "truecolor",
+): boolean {
 	const inventory = records.filter((record) => record.type === "inventory");
 	if (inventory.length === 0) fail("provider fixture did not observe a real session_start inventory");
 	for (const record of inventory) {
@@ -1087,6 +1174,9 @@ function verifyInventory(records: readonly FixtureRecord[]): boolean {
 	}
 	if (!inventory.every((record) => record.markdownTransformer === true)) {
 		fail("Pi Host did not expose the required upstream Markdown-transform API");
+	}
+	if (CATPPUCCIN_ACCENTS[selectedTheme ?? ""] && selectedTheme) {
+		for (const record of inventory) verifyCatppuccinRecord(record, selectedTheme, colorMode);
 	}
 	return true;
 }
@@ -1105,10 +1195,11 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 				temporaryDirectory,
 				`${String(columns)}x${String(rows)}`,
 				options.theme ?? "dark",
+				options.packagePath,
 			);
 			const session = new TmuxPiSession(paths, options, columns, rows);
 			try {
-				session.start();
+				await session.start();
 				await session.waitForText("Welcome back!");
 				const fresh = await session.waitForStatusline();
 				verifyFreshScreen(fresh, columns, rows);
@@ -1118,7 +1209,11 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 					session,
 				);
 				const initialRecords = await readFixtureRecords(paths.log);
-				const caseMarkdownTransformer = verifyInventory(initialRecords);
+				const caseMarkdownTransformer = verifyInventory(
+					initialRecords,
+					options.theme,
+					options.colorMode ?? "truecolor",
+				);
 				markdownTransformer = caseMarkdownTransformer || markdownTransformer;
 				verified.push(`fresh Welcome and Statusline ${String(columns)}x${String(rows)}`);
 				if (columns === 100) {
@@ -1155,7 +1250,8 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 				session.stop();
 			}
 			const records = await readFixtureRecords(paths.log);
-			markdownTransformer = verifyInventory(records) || markdownTransformer;
+			markdownTransformer =
+				verifyInventory(records, options.theme, options.colorMode ?? "truecolor") || markdownTransformer;
 		}
 		if (!markdownTransformer || !liveThought) fail("upstream Host live Thought projection was not verified");
 		return {
@@ -1168,9 +1264,105 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 	}
 }
 
+export async function verifyThemeLifecyclePty(
+	options: Omit<UiPtyVerificationOptions, "sessionId" | "theme">,
+): Promise<ThemeLifecycleEvidence> {
+	verifyHostVersion(options.piBinary);
+	await verifyPiHostProvenance(options.piBinary);
+	commandOutput("tmux", ["-V"]);
+	const themes = ["catppuccin-latte", "catppuccin-frappe", "catppuccin-macchiato", "catppuccin-mocha"] as const;
+	const sizes = [
+		{ columns: 64, rows: 28 },
+		{ columns: 100, rows: 32 },
+	] as const;
+	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-theme-pty-"));
+	const paths = await createCase(temporaryDirectory, "lifecycle", themes[0], options.packagePath);
+	const settingsPath = join(paths.config, "settings.json");
+	const lifecycleOptions: UiPtyVerificationOptions = {
+		...options,
+		sessionId: "catppuccin-theme-lifecycle",
+		theme: themes[0],
+	};
+	const colorMode = options.colorMode ?? "truecolor";
+	let session = new TmuxPiSession(paths, lifecycleOptions, 100, 32);
+	try {
+		const verifyThemeSizes = async (theme: string, marker: string): Promise<void> => {
+			for (const { columns, rows } of sizes) {
+				session.resize(columns, rows);
+				const screen = await session.waitForText(marker);
+				if (screen.includes("38;2;"))
+					fail(`${theme} leaked a raw color escape at ${String(columns)}x${String(rows)}`);
+				verifyTerminalWidth(screen, columns, `${theme} at ${String(columns)}x${String(rows)}`);
+			}
+		};
+		await session.start();
+		await session.waitForText("Welcome back!");
+		await session.waitForStatusline();
+		let records = await waitForFixtureRecords(paths.log, "inventory", 1);
+		verifyCatppuccinRecord(
+			records.filter((record) => record.type === "inventory").at(-1) ?? {},
+			themes[0],
+			colorMode,
+		);
+		await verifyThemeSizes(themes[0], "Welcome back!");
+
+		const draft = "CATPPUCCIN_THEME_DRAFT_中文";
+		session.sendLiteral(draft);
+		await session.waitForText(draft);
+		for (const [index, theme] of themes.slice(1).entries()) {
+			session.sendKey("F9");
+			records = await waitForFixtureRecords(paths.log, "theme-switch", index + 1);
+			const switched = records.filter((record) => record.type === "theme-switch").at(-1) ?? {};
+			if (switched.success !== true) fail(`Pi rejected live theme switch to ${theme}`);
+			verifyCatppuccinRecord(switched, theme, colorMode);
+			await waitForPersistedSetting(settingsPath, "theme", theme);
+			await verifyThemeSizes(theme, draft);
+		}
+
+		session.sendKey("C-u");
+		session.sendLiteral("THEME_RESUME_MARKER");
+		session.sendKey("Enter");
+		await session.waitForText("UI_PTY_DONE");
+		session.sendLiteral("/reload");
+		session.sendKey("Enter");
+		records = await waitForFixtureRecords(paths.log, "inventory", 2);
+		verifyCatppuccinRecord(
+			records.filter((record) => record.type === "inventory").at(-1) ?? {},
+			themes.at(-1) ?? "",
+			colorMode,
+		);
+		session.stop();
+
+		session = new TmuxPiSession(paths, lifecycleOptions, 100, 32);
+		await session.start();
+		records = await waitForFixtureRecords(paths.log, "inventory", 3);
+		verifyCatppuccinRecord(
+			records.filter((record) => record.type === "inventory").at(-1) ?? {},
+			themes.at(-1) ?? "",
+			colorMode,
+		);
+		await session.waitForText("THEME_RESUME_MARKER", true);
+		await session.waitForStatusline();
+		return {
+			colorMode,
+			sizes: sizes.map(({ columns, rows }) => `${String(columns)}x${String(rows)}`),
+			themes,
+			verified: [
+				`all four Package themes discovered and rendered at 100x32 and 64x28 with ${colorMode === "truecolor" ? "exact truecolor accents" : "native 256-color fallback"}`,
+				"live switching preserved the editor draft",
+				"Extension reload retained the selected theme",
+				"resumed Session retained the selected theme",
+			],
+		};
+	} finally {
+		session.stop();
+		await rm(temporaryDirectory, { force: true, recursive: true });
+	}
+}
+
 if (import.meta.main) {
 	const { PI_BIN = "/opt/bin/pi", PI_STUFF_UI_PTY_ARTIFACT_DIR, PI_STUFF_UI_PTY_THEME } = process.env;
-	const theme = PI_STUFF_UI_PTY_THEME === "light" ? "light" : "dark";
+	const theme = PI_STUFF_UI_PTY_THEME?.trim() || "dark";
 	const evidence = await verifyUiPty({
 		...(PI_STUFF_UI_PTY_ARTIFACT_DIR ? { artifactDirectory: PI_STUFF_UI_PTY_ARTIFACT_DIR } : {}),
 		piBinary: PI_BIN,

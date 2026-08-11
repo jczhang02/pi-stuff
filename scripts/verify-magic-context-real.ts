@@ -4,6 +4,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { terminateDetachedProcessGroup } from "./detached-process.js";
 
 const root = resolve(import.meta.dir, "..");
 const DEFAULT_PI_BINARY = "/opt/pi-coding-agent/pi";
@@ -237,6 +238,7 @@ async function createRpcTransport(
 ): Promise<RpcTransport> {
 	const child = Bun.spawn([...commandLine], {
 		cwd,
+		detached: true,
 		env: environment,
 		stdin: "pipe",
 		stdout: "pipe",
@@ -373,10 +375,7 @@ async function createRpcTransport(
 		},
 		send,
 		async stop() {
-			child.kill("SIGTERM");
-			await Promise.race([child.exited, Bun.sleep(10_000)]);
-			if (child.exitCode === null) child.kill("SIGKILL");
-			await child.exited;
+			await terminateDetachedProcessGroup(child, 10_000);
 			await reading;
 			await stderrReading;
 		},

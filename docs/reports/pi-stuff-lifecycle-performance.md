@@ -35,6 +35,13 @@ This acceptance command requires both variants, all scenarios and actions, both 
 samples, one warmup, and lifecycle tracing. It writes any coverage or p95 budget violation into the JSON report and
 exits unsuccessfully. Direct script invocations remain available for explicitly non-certifying experiments.
 
+An initially over-budget cell receives one independent confirmation batch with the same sample and warmup counts. Each
+cell summary records both counts, so acceptance cannot rely on an unconditioned confirmation batch.
+Acceptance fails only when the same absolute budget is exceeded again. The benchmark does not normalize Suite timing
+against Host timing, raise a budget, or discard either batch: initial and confirmation samples remain in the JSON
+report. This distinguishes a repeatable Pi Stuff regression from one scheduler outlier while preserving the original
+wall-clock evidence.
+
 The final enforced run is recorded locally at `.artifacts/lifecycle-benchmark/acceptance-post-rebase-final.json`. It
 started 292 isolated Pi processes and completed with `acceptance.passed: true` and no findings. The worst Suite p95
 values were 1,488.08 ms normal startup, 1,660.97 ms 240-turn startup, 25.60 ms first-input acknowledgement, 811.88 ms

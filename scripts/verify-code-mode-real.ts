@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
+import { waitForDetachedProcess } from "./detached-process.js";
 
 const PI_BINARY = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 const TIMEOUT_MS = 30_000;
@@ -56,6 +57,7 @@ async function runPi(
 	];
 	const child = Bun.spawn(arguments_, {
 		cwd: join(temporary, "project"),
+		detached: true,
 		env: {
 			...process.env,
 			PI_CODING_AGENT_DIR: join(temporary, "agent"),
@@ -72,17 +74,11 @@ async function runPi(
 		stderr: "pipe",
 		stdout: "pipe",
 	});
-	let timedOut = false;
-	const timeout = setTimeout(() => {
-		timedOut = true;
-		child.kill(9);
-	}, TIMEOUT_MS);
-	const [exitCode, stdout, stderr] = await Promise.all([
-		child.exited,
+	const [{ exitCode, timedOut }, stdout, stderr] = await Promise.all([
+		waitForDetachedProcess(child, TIMEOUT_MS),
 		new Response(child.stdout).text(),
 		new Response(child.stderr).text(),
 	]);
-	clearTimeout(timeout);
 	if (timedOut) throw new Error(`Real Code Mode Pi run timed out after ${String(TIMEOUT_MS)} ms`);
 	if (exitCode !== 0) throw new Error(`Real Code Mode Pi run exited ${String(exitCode)}: ${stderr || stdout}`);
 	return { stderr, stdout };

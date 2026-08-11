@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add native Catppuccin Latte, Frappé, Macchiato, and Mocha themes and route the remaining MCP TUI colors through Pi's
+  semantic theme tokens.
 - Consolidate the Suite into one private local Pi Package with thirteen named internal Modules. Remove the former
   per-Capability manifests, self-owned runtime dependencies, version synchronization, Changesets, and npm publication
   workflow while preserving the accepted installation order and Pi 0.84.1 behavior.
