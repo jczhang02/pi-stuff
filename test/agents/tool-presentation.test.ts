@@ -523,6 +523,54 @@ test("aborts an oversized final child provider payload with a durable diagnostic
 	});
 });
 
+test("measures final OpenAI child payloads in tokens instead of UTF-8 bytes", () => {
+	const model = {
+		provider: "openai-codex",
+		id: "gpt-5.6-sol",
+		contextWindow: 272_000,
+		maxTokens: 128_000,
+	};
+	const payload = (input: string) => ({
+		input,
+		tools: [
+			{
+				name: "read",
+				description: "Read a file safely. ".repeat(100),
+				parameters: { type: "object", properties: { path: { type: "string" } } },
+			},
+		],
+		skills: [{ name: "review", instructions: "Inspect the complete change." }],
+		extensions: ["child-runtime"],
+	});
+
+	for (const input of [
+		"Bounded child prompt. ".repeat(4_100),
+		"上下文".repeat(10_000),
+		"AP6Zz9+/0f3cD7aQ".repeat(5_200),
+	]) {
+		const request = payload(input);
+		expect(Buffer.byteLength(JSON.stringify(request), "utf8")).toBeGreaterThan(76_000);
+		expect(validateFinalProviderPayload(request, model)).toEqual({ ok: true });
+	}
+
+	const nearLimit = payload("AP6Zz9+/0f3cD7aQ".repeat(5_200));
+	expect(
+		validateFinalProviderPayload(nearLimit, {
+			...model,
+			contextWindow: 160_000,
+			maxTokens: 80_000,
+		}).ok,
+	).toBe(false);
+	expect(validateFinalProviderPayload(nearLimit, model)).toEqual({ ok: true });
+
+	const oversized = validateFinalProviderPayload(payload("AP6Zz9+/0f3cD7aQ".repeat(6_000)), model);
+	expect(oversized.ok).toBe(false);
+	if (!oversized.ok) {
+		expect(oversized.message).toContain("input tokens");
+		expect(oversized.message).not.toContain("byte input bound");
+	}
+});
+
 test("native supervisor channels are created lazily on the first child request", async () => {
 	const runId = `lazy-channel-${Date.now().toString(36)}`;
 	const physicalSessionId = `lazy-physical-${Date.now().toString(36)}`;
