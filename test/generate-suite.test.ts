@@ -38,18 +38,29 @@ describe("generateSuite", () => {
 		const originalManifest = await readFile(manifestPath, "utf8");
 
 		const result = await generateSuite(root, "write");
-		const generated = await readFile(join(root, "packages", "pi-stuff", "index.ts"), "utf8");
+		const generatedIndex = await readFile(join(root, "packages", "pi-stuff", "index.ts"), "utf8");
+		const generatedRuntime = await readFile(join(root, "packages", "pi-stuff", "src", "suite-runtime.ts"), "utf8");
 
-		expect(result.changedFiles).toEqual(["packages/pi-stuff/index.ts"]);
-		expect(generated).toContain('import conversationUi from "./src/conversation-ui/index.js";');
-		expect(generated).toContain('import subagents from "./src/subagents/index.js";');
-		expect(generated).toContain('import btw from "./src/btw/index.js";');
-		expect(generated).toContain("return subagents(pi, { childBaseExtensionPath: CHILD_BASE_EXTENSION_PATH });");
-		expect(generated).toContain(
-			"const CAPABILITIES: readonly CapabilityFactory[] = [conversationUi, registerSuiteSubagents, btw];",
+		expect(result.changedFiles).toEqual(["packages/pi-stuff/index.ts", "packages/pi-stuff/src/suite-runtime.ts"]);
+		expect(generatedIndex).toContain(
+			'import { importFreshSuiteRuntime, loadSuiteRuntime } from "./src/suite-loader.js";',
 		);
-		expect(generated).toContain("const suiteApi = installSuiteSessionReadiness(pi);");
-		expect(generated).toContain("await capability(suiteApi);");
+		expect(generatedIndex).toContain('const RUNTIME_PATH = join(SOURCE_ROOT, "suite-runtime.ts");');
+		expect(generatedIndex).toContain('mode === "initial"');
+		expect(generatedIndex).toContain("importFreshSuiteRuntime(RUNTIME_PATH)");
+		expect(generatedRuntime).toContain('import conversationUi from "./conversation-ui/index.js";');
+		expect(generatedRuntime).toContain('import subagents from "./subagents/index.js";');
+		expect(generatedRuntime).toContain('import btw from "./btw/index.js";');
+		expect(generatedRuntime).toContain(
+			"return subagents(pi, { childBaseExtensionPath: options.childBaseExtensionPath });",
+		);
+		expect(generatedRuntime).toContain('{ id: "conversation-ui", install: conversationUi },');
+		expect(generatedRuntime).toContain('{ id: "subagents", install: (pi) => registerSuiteSubagents(pi, options) },');
+		expect(generatedRuntime).toContain('{ id: "btw", install: btw },');
+		expect(generatedRuntime).toContain("const suiteApi = installSuiteSessionReadiness(pi);");
+		expect(generatedRuntime).toContain("await capability.install(suiteApi);");
+		expect(generatedRuntime).toContain("markSuiteSessionReady(pi, ctx);");
+		expect(generatedRuntime).toContain('markLifecyclePhase("suite.factory.end");');
 		expect(await readFile(manifestPath, "utf8")).toBe(originalManifest);
 	});
 
@@ -64,7 +75,7 @@ describe("generateSuite", () => {
 		});
 
 		await generateSuite(root, "write");
-		const generated = await readFile(join(root, "packages", "pi-stuff", "index.ts"), "utf8");
+		const generated = await readFile(join(root, "packages", "pi-stuff", "src", "suite-runtime.ts"), "utf8");
 		expect(generated).toContain("import toolDisplay, {");
 		expect(generated).toContain("\tassertSuiteToolActivityCoverage,");
 		expect(generated).toContain("\tcreateSuiteToolRegistrationTracker,");
@@ -72,8 +83,10 @@ describe("generateSuite", () => {
 		expect(generated).toContain('const DEFERRED_SUITE_TOOL_NAMES = ["ctx_search"] as const;');
 		expect(generated).toContain('const OPTIONAL_SUITE_TOOL_NAMES = ["intercom"] as const;');
 		expect(generated).toContain("createSuiteToolRegistrationTracker(suiteApi)");
-		expect(generated).toContain("await capability(registrations.api);");
+		expect(generated).toContain("await capability.install(registrations.api);");
 		expect(generated).toContain("assertSuiteToolActivityCoverage(");
+		expect(generated).toContain("rejectSuiteSessionReadiness(pi, ctx);");
+		expect(generated).toContain("markSuiteSessionReady(pi, ctx);");
 	});
 
 	test("rejects unknown Modules and overlapping Tool inventories", async () => {
@@ -103,21 +116,21 @@ describe("generateSuite", () => {
 		});
 
 		await generateSuite(root, "write");
-		const generated = await readFile(join(root, "packages", "pi-stuff", "index.ts"), "utf8");
+		const generated = await readFile(join(root, "packages", "pi-stuff", "src", "suite-runtime.ts"), "utf8");
 		expect(generated).toContain(
-			'import codeMode, { registerCodeModeContextProjection } from "./src/code-mode/index.js";',
+			'import codeMode, { registerCodeModeContextProjection } from "./code-mode/index.js";',
 		);
-		expect(generated).toContain("const CAPABILITIES: readonly CapabilityFactory[] = [toolDisplay];");
+		expect(generated).toContain('{ id: "tool-display", install: toolDisplay },');
 		expect(generated).toContain("\tregisterCodeModeContextProjection(suiteApi);");
 		expect(generated).toContain(`\tcodeMode(registrations.api, {
 \t\tregistry: registrations.registry,
 \t\tsurface: registrations.surface,
 \t});`);
-		expect(generated.indexOf("await capability(registrations.api)")).toBeLessThan(
+		expect(generated.indexOf("await capability.install(registrations.api)")).toBeLessThan(
 			generated.indexOf("codeMode(registrations.api"),
 		);
 		expect(generated.indexOf("registerCodeModeContextProjection(suiteApi)")).toBeLessThan(
-			generated.indexOf("await capability(registrations.api)"),
+			generated.indexOf("await capability.install(registrations.api)"),
 		);
 	});
 

@@ -44,6 +44,9 @@ const RTK_TECHNIQUE_FILES = [
 
 const REQUIRED_ARCHIVE_FILES = [
 	"package/index.ts",
+	"package/src/lifecycle-performance.ts",
+	"package/src/suite-loader.ts",
+	"package/src/suite-runtime.ts",
 	"package/src/conversation-ui/index.ts",
 	"package/src/conversation-ui/statusline.ts",
 	"package/src/tool-display/index.ts",

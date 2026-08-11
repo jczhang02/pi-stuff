@@ -1441,7 +1441,7 @@ export default async function piStuffContext(
 		// before_agent_start boundary so a display-only or rejected continuation
 		// cannot initialize or write Magic Context state. Direct user input keeps
 		// the eager path so its first visible frame can absorb setup latency.
-		if (event.source !== "extension") await runtime.activate(ctx, "input");
+		if (event.source !== "extension") void runtime.activate(ctx, "input");
 	});
 	pi.on("message_start", async (event, ctx) => {
 		if (event.message.role !== "custom") return;
@@ -1454,11 +1454,17 @@ export default async function piStuffContext(
 		}
 		await runtime.activate(ctx, hasDirectUserActivation(event.message) ? "input" : "automatic-turn");
 	});
+	// Pi checks compaction after input interception but before before_agent_start.
+	// This lightweight gate joins the activation already started by input, so an
+	// immediate first submission can paint without allowing native compaction to
+	// race ahead of Magic Context.
+	pi.on("session_before_compact", async (_event, ctx) => {
+		await runtime.activate(ctx, "input");
+	});
 	pi.on("before_agent_start", async (_event, ctx) => {
 		await runtime.activate(ctx, "automatic-turn");
 	});
 	pi.on("session_shutdown", (event, ctx) => runtime.dispose(event, ctx));
-	if (!magicSubagent()) await magicModules.preload();
 }
 
 export const __test = {

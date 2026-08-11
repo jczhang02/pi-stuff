@@ -222,7 +222,7 @@ describe("Context capability lifecycle", () => {
 		expect(order).toEqual(["send"]);
 	});
 
-	test("preloads Magic code while keeping session initialization user-triggered", async () => {
+	test("keeps Magic code lazy until the first activation", async () => {
 		const handlers: Handlers = new Map();
 		const tools: ToolDefinition[] = [];
 		const api = apiFor(handlers, tools);
@@ -242,10 +242,10 @@ describe("Context capability lifecycle", () => {
 		});
 		const ctx = context();
 
-		expect(loads).toBe(1);
+		expect(loads).toBe(0);
 		expect(factories).toBe(0);
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		expect(loads).toBe(1);
+		expect(loads).toBe(0);
 		expect(factories).toBe(0);
 		expect(getContextCapability(ctx).status()).toEqual({ state: "dormant", engine: "native" });
 		expect(tools.map((tool) => tool.name).sort()).toEqual([
@@ -258,11 +258,12 @@ describe("Context capability lifecycle", () => {
 		expect(api.getActiveTools()).toEqual(["ctx_expand", "ctx_memory", "ctx_note", "ctx_reduce", "ctx_search"]);
 
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
-		expect(loads).toBe(1);
+		expect(loads).toBe(0);
 		expect(factories).toBe(0);
 		expect(getContextCapability(ctx).status()).toEqual({ state: "dormant", engine: "native" });
 
 		await emit(handlers, "input", { type: "input", text: "first", source: "interactive" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(factories).toBe(1);
 		expect(getContextCapability(ctx).status()).toEqual({
 			state: "active",
@@ -304,6 +305,7 @@ describe("Context capability lifecycle", () => {
 		expect(getContextCapability(ctx).status()).toEqual({ state: "dormant", engine: "native" });
 
 		await emit(handlers, "input", { type: "input", text: "direct request", source: "rpc" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(preparations).toEqual([false, true]);
 		expect(factories).toBe(1);
 		expect(getContextCapability(ctx).status()).toEqual({
@@ -438,6 +440,7 @@ describe("Context capability lifecycle", () => {
 		const direct = emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		releaseAutomatic?.();
 		await Promise.all([automatic, direct]);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 
 		expect(preparations).toEqual([false, true]);
 		expect(factories).toBe(1);
@@ -478,6 +481,7 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
 		await emit(handlers, "input", { type: "input", text: "first", source: "interactive" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		await emit(handlers, "context", { type: "context", messages: [taggedMessage("first")] }, ctx);
 		await emit(handlers, "context", { type: "context", messages: [taggedMessage("tool result")] }, ctx);
 		expect(sequence).toEqual(["paint", "frame", "prepare", "activate", "paint", "frame", "transform", "transform"]);
@@ -501,6 +505,7 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
 		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(getContextCapability(ctx).status().state).toBe("degraded");
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(loads).toBe(2);
@@ -539,6 +544,7 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
 		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(handlers.get("context")).toBeUndefined();
 		expect(handlers.get("message_end")).toBeUndefined();
 		expect(registrations).toEqual({ commands: [], entryRenderers: [] });
@@ -774,13 +780,13 @@ describe("Context capability lifecycle", () => {
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		const input = emit(handlers, "input", { type: "input" }, ctx);
-		await Promise.resolve();
+		await emit(handlers, "input", { type: "input" }, ctx);
 		expect(getContextCapability(ctx).status().state).toBe("loading");
 		expect(sequence).toEqual(["loading"]);
+		const compaction = emit(handlers, "session_before_compact", { type: "session_before_compact" }, ctx);
+		await Promise.resolve();
 		releaseLoad?.();
-		await input;
-		await emit(handlers, "session_before_compact", { type: "session_before_compact" }, ctx);
+		await compaction;
 		expect(sequence).toEqual(["loading", "magic-compaction"]);
 	});
 
@@ -805,7 +811,8 @@ describe("Context capability lifecycle", () => {
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		const activating = emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
+		const activating = getContextCapability(ctx).activate(ctx, "input");
 		await Promise.resolve();
 		await emit(handlers, "session_shutdown", { type: "session_shutdown", reason: "reload" }, ctx);
 		releaseFactory?.();
@@ -830,6 +837,7 @@ describe("Context capability lifecycle", () => {
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		piStuffContext(api, {
 			loadMagicContext: async () => {
 				secondLoads++;
@@ -866,8 +874,8 @@ describe("Context capability lifecycle", () => {
 		});
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
-		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([{ cancel: true }]);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([undefined, { cancel: true }]);
 		expect(bypasses).toEqual([{ schemaVersion: 1, sessionManager: ctx.sessionManager, source: "magic-context" }]);
 
 		shouldFail = true;
@@ -881,7 +889,7 @@ describe("Context capability lifecycle", () => {
 		const recovered = await emitResults(handlers, "context", original, ctx);
 		expect(JSON.stringify(recovered)).toContain("healthy");
 		expect(getContextCapability(ctx).status().state).toBe("active");
-		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([{ cancel: true }]);
+		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([undefined, { cancel: true }]);
 		expect(bypasses).toHaveLength(2);
 	});
 
@@ -916,6 +924,7 @@ describe("Context capability lifecycle", () => {
 		);
 
 		expect(result).toEqual([
+			undefined,
 			{
 				compaction: {
 					details: { engine: "magic-context", mode: "managed-history", source: "magic-context" },
@@ -963,7 +972,7 @@ describe("Context capability lifecycle", () => {
 				},
 				ctx,
 			),
-		).toEqual([{ cancel: true }]);
+		).toEqual([undefined, { cancel: true }]);
 		expect(getContextCapability(ctx).status()).toMatchObject({
 			engine: "native",
 			error: "context store unavailable",
