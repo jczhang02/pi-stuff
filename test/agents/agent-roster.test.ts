@@ -265,13 +265,30 @@ describe("AgentRoster", () => {
 		const tail = result.roster.createFooterTail(result.ui.tui, theme);
 
 		expect(result.ui.widgetWrites.at(-1)).toBeUndefined();
-		expect(tail.render(80)[0]).toBe("");
+		expect(tail.render(80)[0]).toBe("● main");
 		expect(tail.render(80).join("\n")).toContain("research");
+		expect(tail.replacesBaseRow2).toBeFalse();
 		expect(result.ui.hasInputListener()).toBe(true);
 
 		result.ui.emit("\u001b[B");
-		expect(tail.render(80)[0]).toContain("↑/↓ select · Enter view · x stop · Esc return");
+		expect(tail.replacesBaseRow2).toBeTrue();
+		expect(tail.render(80)[0]).toBe("↑/↓ select · Enter view · Esc return");
 		tail.dispose();
+		result.roster.dispose();
+	});
+
+	test("starts every Fleetview marker, management hint, and overflow indicator at cell one", () => {
+		const result = setup(Array.from({ length: 6 }, (_, index) => row(`scout-${index + 1}`, "running")));
+		const idle = result.ui.render(100);
+
+		expect(idle[0]).toBe("● main");
+		expect(lineFor(idle, "scout-1")).toMatch(/^○ scout-1(?:\s|$)/u);
+		expect(idle.at(-1)).toBe("… +1 more");
+		expect(idle.every((line) => !line.startsWith(" "))).toBeTrue();
+
+		result.ui.emit("\u001b[B");
+		expect(result.ui.render(100)[0]).toBe("↑/↓ select · Enter view · Esc return");
+		expect(result.ui.render(64)[0]).toBe("↑/↓ · Enter · Esc");
 		result.roster.dispose();
 	});
 
@@ -393,7 +410,7 @@ describe("AgentRoster", () => {
 		result.roster.dispose();
 	});
 
-	test("uses the completed marker and elapsed time without a literal completion word", () => {
+	test("uses elapsed time for completed rows and a muted done fallback", () => {
 		const clock = new FakeClock();
 		const result = setup(
 			[
@@ -418,25 +435,96 @@ describe("AgentRoster", () => {
 
 		const legacy = setup([row("legacy", "completed", { description: "Review legacy output" })]);
 		const legacyLine = lineFor(legacy.ui.render(48), "legacy");
-		expect(legacyLine).toContain("✓");
-		expect(legacyLine).not.toMatch(/\b(?:done|completed)\b/i);
+		expect(legacyLine).toMatch(/\s{2,}done$/u);
+		expect(legacyLine).not.toMatch(/completed/i);
 		legacy.roster.dispose();
+	});
+
+	test("uses marker color only for selection and confines state color to the right text", () => {
+		const colors: Array<{ color: string; text: string }> = [];
+		const recordingTheme = {
+			...theme,
+			fg: (color: string, text: string) => {
+				colors.push({ color, text });
+				return text;
+			},
+		} as unknown as Theme;
+		const result = setup([row("scout", "waiting_supervisor")]);
+		result.roster.setFooterHosted(true);
+		const tail = result.roster.createFooterTail(result.ui.tui, recordingTheme);
+
+		tail.render(100);
+		expect(colors).toContainEqual({ color: "text", text: "●" });
+		expect(colors).toContainEqual({ color: "muted", text: "○" });
+		expect(colors).toContainEqual({ color: "warning", text: "waiting" });
+		expect(colors).not.toContainEqual({ color: "warning", text: "○" });
+
+		colors.length = 0;
+		result.ui.emit("\u001b[B");
+		tail.render(100);
+		expect(colors.filter(({ color, text }) => color === "accent" && text === "●")).toHaveLength(1);
+		expect(colors).toContainEqual({ color: "muted", text: "○" });
+
+		colors.length = 0;
+		result.ui.emit("\u001b[B");
+		tail.render(100);
+		expect(colors.filter(({ color, text }) => color === "accent" && text === "●")).toHaveLength(1);
+		expect(colors).toContainEqual({ color: "muted", text: "○" });
+		tail.dispose();
+		result.roster.dispose();
+	});
+
+	test("styles every routine, waiting, and error state with the Revision 2 semantic token", () => {
+		const cases: ReadonlyArray<{
+			readonly color: string;
+			readonly status: AgentStatus;
+			readonly text: string;
+		}> = [
+			{ color: "muted", status: "queued", text: "queued" },
+			{ color: "muted", status: "running", text: "running" },
+			{ color: "muted", status: "resuming", text: "resuming" },
+			{ color: "muted", status: "stopping", text: "stopping" },
+			{ color: "muted", status: "completed", text: "done" },
+			{ color: "muted", status: "agent_stopped", text: "stopped" },
+			{ color: "muted", status: "user_cancelled", text: "cancelled" },
+			{ color: "warning", status: "waiting_supervisor", text: "waiting" },
+			{ color: "error", status: "failed", text: "failed" },
+			{ color: "error", status: "crashed", text: "crashed" },
+		];
+
+		for (const expected of cases) {
+			const colors: Array<{ color: string; text: string }> = [];
+			const recordingTheme = {
+				...theme,
+				fg: (color: string, text: string) => {
+					colors.push({ color, text });
+					return text;
+				},
+			} as unknown as Theme;
+			const result = setup([row("worker", expected.status)]);
+			result.roster.setFooterHosted(true);
+			const tail = result.roster.createFooterTail(result.ui.tui, recordingTheme);
+			tail.render(100);
+			expect(colors).toContainEqual({ color: expected.color, text: expected.text });
+			tail.dispose();
+			result.roster.dispose();
+		}
 	});
 
 	test("only enters keyboard navigation from an empty, truly focused editor", () => {
 		const result = setup([row("child", "running")]);
 		result.ui.editorText = "draft";
 		expect(result.ui.emit("\u001b[B")).toBeUndefined();
-		expect(result.ui.render(80)[0]).toBe("");
+		expect(result.ui.render(80).join("\n")).not.toContain("↑/↓");
 
 		result.ui.editorText = "";
 		result.ui.focusedComponent = { render: () => [] };
 		expect(result.ui.emit("\u001b[B")).toBeUndefined();
-		expect(result.ui.render(80)[0]).toBe("");
+		expect(result.ui.render(80).join("\n")).not.toContain("↑/↓");
 
 		result.ui.focusedComponent = editor;
 		expect(result.ui.emit("\u001b[B")).toEqual({ consume: true });
-		expect(result.ui.render(80)[0]).toContain("↑/↓ select · Enter view · x stop · Esc return");
+		expect(result.ui.render(80)[0]).toBe("↑/↓ select · Enter view · Esc return");
 		result.roster.dispose();
 	});
 
@@ -458,29 +546,28 @@ describe("AgentRoster", () => {
 		expect(lineFor(result.ui.render(80), "second")).toContain("●");
 
 		expect(result.ui.emit("\u001b")).toEqual({ consume: true });
-		expect(result.ui.render(80)[0]).toBe("");
+		expect(result.ui.render(80)[0]).toBe("● main");
 		expect(result.ui.emit("\u001b[B")).toEqual({ consume: true });
 		expect(result.ui.emit("\r")).toEqual({ consume: true });
-		expect(result.ui.render(80)[0]).toBe("");
+		expect(result.ui.render(80)[0]).toBe("● main");
 		result.roster.dispose();
 	});
 
-	test("keeps one stable management help line for every selection", () => {
+	test("uses contextual main, live-child, and terminal-child management hints", () => {
 		const live = setup([row("live", "running")]);
 		live.ui.emit("\u001b[B");
-		expect(live.ui.render(80)[0]).toContain("x stop");
+		expect(live.ui.render(80)[0]).toBe("↑/↓ select · Enter view · Esc return");
+		expect(live.ui.render(64)[0]).toBe("↑/↓ · Enter · Esc");
 		live.ui.emit("\u001b[B");
-		expect(live.ui.render(80)[0]).toContain("x stop");
-		expect(live.ui.render(80)[0]).not.toContain("dismiss");
-		expect(live.ui.render(64)[0]).toContain("Enter · x stop · Esc");
+		expect(live.ui.render(80)[0]).toBe("↑/↓ select · Enter view · x stop · Esc return");
+		expect(live.ui.render(64)[0]).toBe("↑/↓ · Enter · x stop · Esc");
 		live.roster.dispose();
 
 		const terminal = setup([row("done", "completed")]);
 		terminal.ui.emit("\u001b[B");
 		terminal.ui.emit("\u001b[B");
-		expect(terminal.ui.render(80)[0]).toContain("x stop");
-		expect(terminal.ui.render(80)[0]).not.toContain("dismiss");
-		expect(terminal.ui.render(64)[0]).toContain("Enter · x stop · Esc");
+		expect(terminal.ui.render(80)[0]).toBe("↑/↓ select · Enter view · x dismiss · Esc return");
+		expect(terminal.ui.render(64)[0]).toBe("↑/↓ · Enter · x dismiss · Esc");
 		terminal.roster.dispose();
 	});
 
@@ -491,7 +578,7 @@ describe("AgentRoster", () => {
 		expect(live.ui.emit("x")).toEqual({ consume: true });
 		expect(live.current.actions).toEqual([{ key: "live", type: "stop" }]);
 		expect(live.ui.emit("q")).toBeUndefined();
-		expect(live.ui.render(80)[0]).toBe("");
+		expect(live.ui.render(80)[0]).toBe("● main");
 		live.roster.dispose();
 
 		const terminal = setup([row("finished", "completed")]);

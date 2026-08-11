@@ -484,7 +484,7 @@ describe("normal UI presentation integration", () => {
 		expect(ui.getEditorComponent()).toBeTypeOf("function");
 	});
 
-	test("composes registered Footer tails after Statusline and preserves an intentional blank Fleetview slot", async () => {
+	test("lets Fleetview replace Footer row 2 in place and restores the exact prompt row", async () => {
 		const api = createApiHarness();
 		await piStuffUi(api.api);
 		const coordinator = getCommandDialogCoordinator(api.api);
@@ -493,25 +493,94 @@ describe("normal UI presentation integration", () => {
 		await api.start(ctx);
 		expect(coordinator.hasInstalledFooter?.(ctx)).toBe(true);
 
-		const unregister = coordinator.registerFooterTail?.("fleetview-fixture", () => ({
+		let managing = false;
+		const hint = "↑/↓ select · Enter view · Esc return";
+		const main = "● main";
+		const prompt = "prompt";
+		const reviewer = "○ reviewer  3s";
+		(
+			coordinator as typeof coordinator & {
+				installFooter(context: ExtensionContext, factory: NonNullable<FooterFactory>): void;
+			}
+		).installFooter(ctx, () => ({
 			invalidate: () => {},
-			render: () => ["", "  ● main", "  ○ reviewer  3s"],
+			render: () => ["status", prompt],
+		}));
+		const initialFactory = ui.footerWrites.at(-1);
+		if (!initialFactory) throw new Error("Expected the primary Suite Footer");
+		const initialLines = initialFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100);
+		expect(initialLines).toEqual(["status", prompt]);
+		const unregister = coordinator.registerFooterTail?.("fleetview-fixture", () => ({
+			get replacesBaseRow2() {
+				return managing;
+			},
+			invalidate: () => {},
+			render: () => [...(managing ? [hint] : []), main, reviewer],
 		}));
 		const stackedFactory = ui.footerWrites.at(-1);
 		if (!stackedFactory) throw new Error("Expected the stacked Suite Footer");
-		const lines = stackedFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100);
+		const idle = stackedFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100);
 
-		expect(lines[0]).toContain("gpt-5.6-sol");
-		expect(lines.at(-3)).toBe("");
-		expect(lines.at(-2)).toBe("  ● main");
-		expect(lines.at(-1)).toBe("  ○ reviewer  3s");
+		expect(idle[0]).toBe("status");
+		expect(idle[1]).toBe(prompt);
+		expect(idle.at(-2)).toBe(main);
+		expect(idle.at(-1)).toBe(reviewer);
+		const idleMainIndex = idle.indexOf(main);
+
+		managing = true;
+		const active = stackedFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100);
+		expect(active[0]).toBe("status");
+		expect(active[1]).toBe(hint);
+		expect(active).not.toContain(prompt);
+		expect(active.indexOf(main)).toBe(idleMainIndex);
+
+		managing = false;
+		const restored = stackedFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100);
+		expect(restored[1]).toBe(prompt);
+		expect(restored).not.toContain(hint);
 
 		unregister?.();
 		const statusOnlyFactory = ui.footerWrites.at(-1);
 		if (!statusOnlyFactory) throw new Error("Expected the restored primary Footer");
-		expect(statusOnlyFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100)).not.toContain(
-			"  ● main",
-		);
+		expect(statusOnlyFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100)).not.toContain(main);
+	});
+
+	test("uses the logical Footer row-2 slot with Statusline and latest Prompt independently disabled", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const coordinator = getCommandDialogCoordinator(api.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui);
+		await api.start(ctx);
+		const installFooter = (
+			coordinator as typeof coordinator & {
+				installFooter(context: ExtensionContext, factory: NonNullable<FooterFactory>): void;
+			}
+		).installFooter.bind(coordinator);
+		let managing = false;
+		const unregister = coordinator.registerFooterTail?.("fleetview-fixture", () => ({
+			get replacesBaseRow2() {
+				return managing;
+			},
+			invalidate: () => {},
+			render: () => [...(managing ? ["controls"] : []), "● main"],
+		}));
+
+		for (const baseRows of [["status", "prompt"], ["status"], []] as const) {
+			installFooter(ctx, () => ({
+				invalidate: () => {},
+				render: () => [...baseRows],
+			}));
+			const factory = ui.footerWrites.at(-1);
+			if (!factory) throw new Error("Expected a composed Footer");
+			const component = factory(ui.tui, ui.theme, {} as never);
+
+			managing = false;
+			expect(component.render(80)).toEqual([...baseRows, "● main"]);
+			managing = true;
+			expect(component.render(80)).toEqual([...baseRows.slice(0, 1), "controls", "● main"]);
+		}
+		unregister?.();
 	});
 
 	test("does not probe Git while Statusline is disabled", async () => {

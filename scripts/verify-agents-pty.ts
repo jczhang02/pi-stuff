@@ -61,7 +61,7 @@ proc must_expect {pattern} {
 spawn -noecho script -qefc $env(PI_STUFF_AGENTS_PTY_RUNNER) /dev/null
 must_expect "MAIN_NOT_BLOCKED"
 send -- "\\033\\[B"
-must_expect $env(PI_STUFF_AGENTS_PTY_HELP)
+must_expect $env(PI_STUFF_AGENTS_PTY_MAIN_HELP)
 send -- "\\033"
 must_expect "inspect with /agents"
 after 200
@@ -207,15 +207,18 @@ function stripTerminalControls(output: string): string {
 	return visible;
 }
 
-function fleetviewHelp(columns: number): string {
-	return columns <= 64 ? "↑/↓ select · Enter · x stop · Esc" : "↑/↓ select · Enter view · x stop · Esc return";
+type FleetviewSelection = "idle" | "live" | "main" | "terminal";
+
+function fleetviewHelp(columns: number, selection: Exclude<FleetviewSelection, "idle">): string {
+	const action = selection === "main" ? "" : ` · x ${selection === "terminal" ? "dismiss" : "stop"}`;
+	return columns <= 64 ? `↑/↓ · Enter${action} · Esc` : `↑/↓ select · Enter view${action} · Esc return`;
 }
 
 function verifyTerminalOutput(output: string, columns: number): void {
 	const visible = stripTerminalControls(output);
 	for (const required of [
 		"MAIN_NOT_BLOCKED",
-		fleetviewHelp(columns),
+		fleetviewHelp(columns, "main"),
 		"复核工具结果 🧪",
 		"AGENT_PTY_TASK",
 		"中文长任务",
@@ -391,11 +394,15 @@ class TmuxAgentsSession {
 		return this.waitFor((screen) => !screen.includes(text), `absence of ${JSON.stringify(text)}`);
 	}
 
-	async waitForFleetviewFrame(active: boolean): Promise<string> {
+	async waitForFleetviewFrame(selection: FleetviewSelection, columns = this.options.columns): Promise<string> {
 		return this.waitFor(
-			(screen) => hasOrderedFleetviewFrame(screen, this.options.columns, active),
-			`${String(this.options.columns)}-column ${active ? "active" : "idle"} Fleetview frame`,
+			(screen) => hasOrderedFleetviewFrame(screen, columns, selection),
+			`${String(columns)}-column ${selection} Fleetview frame`,
 		);
+	}
+
+	resize(columns: number, rows: number): void {
+		this.tmux(["resize-window", "-t", this.target, "-x", String(columns), "-y", String(rows)]);
 	}
 
 	stop(): void {
@@ -437,40 +444,42 @@ function fleetviewLineIndices(
 	const lines = screen.split("\n").map((line) => line.trimEnd());
 	const status = lines.findIndex((line) => line.startsWith("\u{F06A9} "));
 	return {
-		agent: lines.findIndex((line) => /^ {2}[●○] general-purpose(?:\s|$)/u.test(line)),
-		help: help === undefined ? status + 2 : lines.indexOf(`  ${help}`),
-		main: lines.findIndex((line) => /^ {2}[●○] main$/u.test(line)),
-		prompt: lines.findIndex((line) => line.startsWith("\uF111 ")),
+		agent: lines.findIndex((line) => /^[●○] general-purpose(?:\s|$)/u.test(line)),
+		help: help === undefined ? -1 : lines.indexOf(help),
+		main: lines.findIndex((line) => /^[●○] main$/u.test(line)),
+		prompt: lines.findIndex((line) => line.startsWith("› ")),
 		status,
 	};
 }
 
-function hasOrderedFleetviewFrame(screen: string, columns: number, active: boolean): boolean {
-	const help = active ? fleetviewHelp(columns) : undefined;
+function hasOrderedFleetviewFrame(screen: string, columns: number, selection: FleetviewSelection): boolean {
+	const active = selection !== "idle";
+	const help = active ? fleetviewHelp(columns, selection) : undefined;
 	const indices = fleetviewLineIndices(screen, help);
-	const lines = screen.split("\n").map((line) => line.trimEnd());
-	const expectedHelpIndex = indices.status + 2;
 	return (
 		indices.status >= 0 &&
-		indices.prompt === indices.status + 1 &&
-		indices.help === expectedHelpIndex &&
-		(active || lines[indices.help] === "") &&
-		indices.main === expectedHelpIndex + 1 &&
+		(active
+			? indices.prompt === -1 && indices.help === indices.status + 1 && indices.main === indices.help + 1
+			: indices.prompt === indices.status + 1 && indices.help === -1 && indices.main === indices.status + 2) &&
 		indices.agent === indices.main + 1
 	);
 }
 
-function verifyFleetviewFrame(screen: string, columns: number, active: boolean): void {
-	const help = active ? fleetviewHelp(columns) : undefined;
+function verifyFleetviewFrame(screen: string, columns: number, selection: FleetviewSelection): void {
+	const help = selection === "idle" ? undefined : fleetviewHelp(columns, selection);
 	const indices = fleetviewLineIndices(screen, help);
 	const lines = screen.split("\n").map((line) => line.trimEnd());
-	if (!hasOrderedFleetviewFrame(screen, columns, active)) {
+	if (!hasOrderedFleetviewFrame(screen, columns, selection)) {
 		fail(
-			`${String(columns)}-column shared Footer order is not Statusline → Prompt → Fleetview help slot → main → Agent\n${screen}`,
+			`${String(columns)}-column shared Footer order does not replace Prompt with contextual controls in place\n${screen}`,
 		);
 	}
-	if (!active && lines[indices.help] !== "") {
-		fail(`${String(columns)}-column idle Fleetview help slot is not an exact blank row\n${screen}`);
+	const selectedChild = selection === "live" || selection === "terminal";
+	if (
+		lines[indices.main] !== `${selectedChild ? "○" : "●"} main` ||
+		!lines[indices.agent]?.startsWith(`${selectedChild ? "●" : "○"} general-purpose`)
+	) {
+		fail(`${String(columns)}-column Fleetview selection markers are not aligned at terminal cell 1\n${screen}`);
 	}
 	let lastVisible = -1;
 	for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -524,22 +533,11 @@ async function verifyFleetviewFooterLayout(
 	try {
 		session.start();
 		await session.waitForText("MAIN_NOT_BLOCKED");
-		session.sendLiteral("/tasks");
-		session.sendKey("Enter");
-		await session.waitForText("Tasks");
-		await session.waitForText("Agent");
-		await session.waitForText("复核工具结果 🧪");
-		session.sendKey("Enter");
-		await session.waitForText("Task details");
-		await session.waitForText("Use /agents for the live transcript and controls.");
-		session.sendKey("x");
-		await session.waitForText("Open /agents to control an Agent.");
-		session.sendKey("Escape");
-		await session.waitForText("↑/↓ select");
-		session.sendKey("Escape");
-		await session.waitForAbsence("Tasks · 1 current");
-		let screen = await session.waitForFleetviewFrame(false);
-		verifyFleetviewFrame(screen, options.columns, false);
+		let screen = await session.waitForFleetviewFrame("idle");
+		verifyFleetviewFrame(screen, options.columns, "idle");
+		const idleIndices = fleetviewLineIndices(screen, undefined);
+		const prompt = screen.split("\n").map((line) => line.trimEnd())[idleIndices.prompt];
+		if (!prompt) fail(`${String(options.columns)}-column idle Fleetview has no latest Prompt row\n${screen}`);
 		if (options.artifactDirectory) {
 			await mkdir(options.artifactDirectory, { recursive: true });
 			const name = `pi-${CERTIFIED_PI_VERSION}-footer-fleetview-idle-${String(options.columns)}x${String(options.rows)}`;
@@ -554,8 +552,8 @@ async function verifyFleetviewFooterLayout(
 		}
 
 		session.sendKey("Down");
-		screen = await session.waitForFleetviewFrame(true);
-		verifyFleetviewFrame(screen, options.columns, true);
+		screen = await session.waitForFleetviewFrame("main");
+		verifyFleetviewFrame(screen, options.columns, "main");
 		if (options.artifactDirectory) {
 			const name = `pi-${CERTIFIED_PI_VERSION}-footer-fleetview-active-${String(options.columns)}x${String(options.rows)}`;
 			await Promise.all([
@@ -568,9 +566,56 @@ async function verifyFleetviewFooterLayout(
 			]);
 		}
 
+		session.sendKey("Down");
+		screen = await session.waitForFleetviewFrame("live");
+		verifyFleetviewFrame(screen, options.columns, "live");
+		if (options.columns > 64) {
+			session.resize(64, 28);
+			screen = await session.waitForFleetviewFrame("live", 64);
+			verifyFleetviewFrame(screen, 64, "live");
+			session.resize(options.columns, options.rows);
+			screen = await session.waitForFleetviewFrame("live");
+			verifyFleetviewFrame(screen, options.columns, "live");
+		}
+
 		session.sendKey("Escape");
-		screen = await session.waitForFleetviewFrame(false);
-		verifyFleetviewFrame(screen, options.columns, false);
+		screen = await session.waitForFleetviewFrame("idle");
+		verifyFleetviewFrame(screen, options.columns, "idle");
+		if (
+			!screen
+				.split("\n")
+				.map((line) => line.trimEnd())
+				.includes(prompt)
+		) {
+			fail(`${String(options.columns)}-column Fleetview did not restore the exact latest Prompt row\n${screen}`);
+		}
+
+		session.sendLiteral("/tasks");
+		session.sendKey("Enter");
+		await session.waitForText("Tasks");
+		await session.waitForText("Agent");
+		await session.waitForText("复核工具结果 🧪");
+		session.sendKey("Enter");
+		await session.waitForText("Task details");
+		await session.waitForText("Use /agents for the live transcript and controls.");
+		session.sendKey("x");
+		await session.waitForText("Open /agents to control an Agent.");
+		session.sendKey("Escape");
+		await session.waitForText("↑/↓ select");
+		session.sendKey("Escape");
+		await session.waitForAbsence("Tasks · 1 current");
+		screen = await session.waitForFleetviewFrame("idle");
+		verifyFleetviewFrame(screen, options.columns, "idle");
+		await session.waitForText("inspect with /agents");
+		session.sendKey("Down");
+		screen = await session.waitForFleetviewFrame("main");
+		verifyFleetviewFrame(screen, options.columns, "main");
+		session.sendKey("Down");
+		screen = await session.waitForFleetviewFrame("terminal");
+		verifyFleetviewFrame(screen, options.columns, "terminal");
+		session.sendKey("Escape");
+		screen = await session.waitForFleetviewFrame("idle");
+		verifyFleetviewFrame(screen, options.columns, "idle");
 		session.sendKey("C-d");
 		await Bun.sleep(250);
 	} finally {
@@ -624,8 +669,8 @@ Return the deterministic fixture result.
 				PI_SUBAGENT_PI_BINARY: options.piBinary,
 				PI_STUFF_AGENTS_PTY_BIN: options.piBinary,
 				PI_STUFF_AGENTS_PTY_COLUMNS: String(options.columns),
-				PI_STUFF_AGENTS_PTY_HELP: fleetviewHelp(options.columns),
 				PI_STUFF_AGENTS_PTY_LOG: requestLog,
+				PI_STUFF_AGENTS_PTY_MAIN_HELP: fleetviewHelp(options.columns, "main"),
 				PI_STUFF_AGENTS_PTY_PACKAGE: resolve(options.packagePath),
 				PI_STUFF_AGENTS_PTY_PROVIDER_EXTENSION: providerExtension,
 				PI_STUFF_AGENTS_PTY_ROWS: String(options.rows),

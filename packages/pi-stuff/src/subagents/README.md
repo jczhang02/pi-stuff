@@ -4,8 +4,9 @@ Current-session foreground and background Agents for Pi Stuff.
 
 The Capability lets the main Pi Agent delegate isolated work and continue while background work runs. Background
 completion adds one durable, compact TUI outcome without adding child reports to model context or starting another main
-turn. In the full Suite, its Fleetview roster is the tail of Pi Stuff's shared Footer: it always follows both Statusline
-rows and is therefore the bottommost visible region. Agent details open in Pi Stuff's shared full-width Command Dialog.
+turn. In the full Suite, its Fleetview roster is the bottommost tail of Pi Stuff's shared Footer. While managing, its
+controls replace the latest-Prompt row in place instead of moving the roster. Agent details open in Pi Stuff's shared
+full-width Command Dialog.
 
 The public `subagent` Tool uses the internal Tool Display contract, so its running and terminal row follows the same
 compact grammar as Host Tools. Full Agent inspection and control remains in `/agents`.
@@ -61,18 +62,19 @@ compact grammar as Host Tools. Full Agent inspection and control remains in `/ag
   interrupted or concurrent maintenance safe. Scan and snapshot-processing budgets are independently bounded, fair
   per-directory quotas advance later sessions, and temp artifacts receive an independent pass.
 
-Fleetview reserves one help row above `main`. The row is exactly blank while idle. With an empty editor, press Down to
-enter management and replace that same row with `↑/↓ select · Enter view · x stop · Esc return`; at 64 columns and below
-it becomes `↑/↓ select · Enter · x stop · Esc`. Use Up or Down to select an Agent, Enter to inspect it, `x` to stop or
-dismiss the selected row, and Escape to return. The `/agents` command opens the full current-session view. The
-Capability creates no statusline, divider, permanent management hint, floating window, or extra gap between Statusline
-and Fleetview.
+Fleetview renders no rows without a child Agent and reserves no blank help row while idle. With an empty editor, press
+Down to enter management: the contextual controls replace Footer row 2 when present, then restore the exact latest
+Prompt on exit. `main` has no `x` action; a selected live child says `x stop`, and a terminal child says `x dismiss`.
+At 64 columns and below the hint drops the `select`, `view`, and `return` words. Markers, controls, and overflow begin at
+terminal cell 1; one space follows each marker, so Agent text begins at cell 3. Use Up or Down to select, Enter to
+inspect, `x` to control the selected child, and Escape to return. The `/agents` command opens the full current-session
+view. The Capability creates no statusline, divider, permanent management hint, floating window, or extra gap.
 
 The below-editor roster keeps terminal rows for 30 seconds, then hides them automatically. Live rows never expire and
 `x` may dismiss a terminal row early. Hiding a row from the roster does not remove its bounded Task preview, result, or
-transcript from `/agents`. Normal completion uses the semantic marker color and elapsed time without a redundant `done` label;
-exceptional states remain explicit. At narrow widths, an unreadable description is omitted as a unit instead of being
-joined to the state as an ellipsis fragment.
+transcript from `/agents`. Only the selected marker uses accent; routine states and completion are muted, while waiting
+and errors color only their explicit right-state text. At narrow widths, an unreadable description is omitted as a unit
+instead of being joined to the state as an ellipsis fragment.
 
 The Agent Command Dialog uses the Suite's divider and two-cell gutter, with `›` marking the focused custom row.
 Action hints wrap instead of dropping the close or back key: Escape closes the Agent list and returns one level from
