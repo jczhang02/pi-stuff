@@ -144,6 +144,7 @@ export function createAsyncJobTracker(
 			asyncId: run.id,
 			asyncDir: run.asyncDir,
 			status: run.state,
+			error: run.error,
 			sessionId: run.sessionId,
 			activityState: run.activityState,
 			lastActivityAt: run.lastActivityAt,
@@ -586,6 +587,7 @@ export function createAsyncJobTracker(
 							isTerminalJobStatus(previousStatus) && !isTerminalJobStatus(status.state);
 						job.processTerminal = status.processTerminal ?? job.processTerminal;
 						if (!preserveTerminalState) job.status = status.state;
+						job.error = status.error;
 						if (!isTerminalJobStatus(job.status)) cancelCleanup(job.asyncId);
 						if (preserveTerminalState) {
 							rememberRecentAgentJob(state, job);

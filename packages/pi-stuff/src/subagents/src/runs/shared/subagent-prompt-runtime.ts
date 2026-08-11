@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import Tokenizer from "ai-tokenizer";
+import * as o200kBase from "ai-tokenizer/encoding/o200k_base";
 import type { TSchema } from "typebox";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../../tool-display/index.js";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
@@ -83,10 +85,15 @@ const PARENT_ONLY_CUSTOM_MESSAGE_TYPES = new Set([
 	"subagent-control-notice",
 ]);
 const CHILD_FINAL_PAYLOAD_RESERVE_RATIO = 0.25;
+const OPENAI_PAYLOAD_TOKENIZER = new Tokenizer(o200kBase);
 
-function finalProviderPayloadCapacity(ctx: {
-	model?: { contextWindow?: number; maxTokens?: number };
-}): number | undefined {
+type ProviderPayloadModel = {
+	provider?: string;
+	contextWindow?: number;
+	maxTokens?: number;
+};
+
+function finalProviderPayloadCapacity(ctx: { model?: ProviderPayloadModel }): number | undefined {
 	const contextWindow = ctx.model?.contextWindow;
 	const maxTokens = ctx.model?.maxTokens;
 	if (
@@ -101,9 +108,24 @@ function finalProviderPayloadCapacity(ctx: {
 	return Math.max(0, Math.floor(contextWindow - maxTokens - contextWindow * CHILD_FINAL_PAYLOAD_RESERVE_RATIO));
 }
 
+function estimateFinalProviderPayloadTokens(serialized: string, model: ProviderPayloadModel | undefined): number {
+	if (
+		model?.provider === "openai-codex" ||
+		model?.provider === "openai" ||
+		model?.provider === "azure-openai-responses"
+	) {
+		try {
+			return OPENAI_PAYLOAD_TOKENIZER.count(serialized);
+		} catch {
+			// The byte-level upper bound below remains safe if tokenization fails.
+		}
+	}
+	return Buffer.byteLength(serialized, "utf8");
+}
+
 export function validateFinalProviderPayload(
 	payload: unknown,
-	model: { contextWindow?: number; maxTokens?: number } | undefined,
+	model: ProviderPayloadModel | undefined,
 ): { ok: true } | { ok: false; message: string } {
 	const capacity = finalProviderPayloadCapacity({ model });
 	if (capacity === undefined) return { ok: true };
@@ -120,15 +142,16 @@ export function validateFinalProviderPayload(
 				"Agent launch stopped before the provider request because the final child payload could not be measured safely.",
 		};
 	}
+	const estimatedTokens = estimateFinalProviderPayloadTokens(serialized, model);
+	if (estimatedTokens <= capacity) return { ok: true };
 	const bytes = Buffer.byteLength(serialized, "utf8");
-	if (bytes <= capacity) return { ok: true };
 	return {
 		ok: false,
-		message: `Agent launch stopped before the provider request: the final child payload is ${bytes.toLocaleString(
+		message: `Agent launch stopped before the provider request: the final child payload is estimated at ${estimatedTokens.toLocaleString(
 			"en-US",
-		)} UTF-8 bytes, above the safe ${capacity.toLocaleString(
+		)} input tokens (${bytes.toLocaleString("en-US")} UTF-8 bytes), above the safe ${capacity.toLocaleString(
 			"en-US",
-		)}-byte input bound for this model. Reduce the delegated context, Tools, or child extensions, or choose a model with a larger context window.`,
+		)}-token input bound for this model. Reduce the delegated context, Tools, or child extensions, or choose a model with a larger context window.`,
 	};
 }
 

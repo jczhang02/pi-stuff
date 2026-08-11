@@ -22,7 +22,7 @@ describe("Agent model fallback proof bounds", () => {
 	test("retries a larger fallback after the terminal child-payload gate rejects a small model", () => {
 		expect(
 			isRetryableModelFailure(
-				"Agent launch stopped before the provider request: the final child payload is 5,012 UTF-8 bytes, above the safe 4,000-byte input bound for this model.",
+				"Agent launch stopped before the provider request: the final child payload is estimated at 5,012 input tokens (20,048 UTF-8 bytes), above the safe 4,000-token input bound for this model.",
 			),
 		).toBeTrue();
 	});

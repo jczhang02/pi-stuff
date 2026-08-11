@@ -96,6 +96,16 @@ export function boundedTerminalLine(value: unknown): string {
 	return typeof value === "string" ? oneLine(value.slice(0, MAX_DISPLAY_SOURCE_CODE_UNITS)) : "";
 }
 
+/** Match only exact task text or the deterministic wrappers emitted by Agent runtimes. */
+export function isTaskOnlyAgentText(value: unknown, task: unknown): boolean {
+	const expected = boundedTerminalLine(task);
+	if (!expected) return false;
+	let candidate = boundedTerminalLine(value);
+	candidate = candidate.replace(/^User(?:\s*:)?\s+/iu, "").replace(/^Task\s*:\s*/iu, "");
+	const xml = candidate.match(/^<task>\s*(.*?)\s*<\/task>$/iu)?.[1];
+	return (xml ?? candidate) === expected;
+}
+
 /** Resolve one terminal-safe, bounded label without asking another model. */
 export function resolveDisplayDescription(description: unknown, task: unknown): string {
 	const explicit = boundedTerminalLine(description);
