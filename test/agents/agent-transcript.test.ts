@@ -22,6 +22,7 @@ function row(overrides: Partial<AgentRow>): AgentRow {
 		childIndex: 0,
 		description: "work",
 		endedAt: null,
+		error: null,
 		elapsedMs: 100,
 		key: "run:0",
 		name: "worker",
@@ -96,6 +97,20 @@ describe("readAgentTranscript", () => {
 		);
 		const output = await readAgentTranscript(request(row({ sessionFile: file })));
 		expect(output).toBe("User\nInvestigate\n\n● Read src/a.ts · completed\n112 lines\n\nAgent\nFound it");
+	});
+
+	test("omits a transcript User message that only repeats the delegated task", async () => {
+		const task = "Inspect the Agent detail without changing files.";
+		const file = join(tempDirectory(), "session.jsonl");
+		writeFileSync(
+			file,
+			[
+				JSON.stringify({ recordType: "message", message: { role: "user", content: `Task: ${task}` } }),
+				JSON.stringify({ recordType: "message", message: { role: "assistant", content: "Actual result" } }),
+			].join("\n"),
+		);
+		const output = await readAgentTranscript(request(row({ sessionFile: file, task })));
+		expect(output).toBe("Agent\nActual result");
 	});
 
 	test("keeps mixed and out-of-order child Tool outcomes attributable", async () => {

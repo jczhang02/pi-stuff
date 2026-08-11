@@ -26,7 +26,7 @@ import type {
 	AgentTranscriptTarget,
 	CurrentAgents,
 } from "../session/current-agents.js";
-import { boundedTerminalLine } from "../shared/display-description.js";
+import { boundedTerminalLine, isTaskOnlyAgentText } from "../shared/display-description.js";
 import { fitAgentDescription } from "./agent-roster.js";
 
 const GUTTER = "  ";
@@ -491,9 +491,13 @@ class AgentDialogComponent implements CommandDialogComponent {
 			)
 			.then((value) => {
 				if (!this.canFinishTranscript(generation, selectionKey)) return;
-				const text = typeof value === "string" ? boundedTerminalText(value, this.options.maxTranscriptChars) : "";
+				const rawText =
+					typeof value === "string" ? boundedTerminalText(value, this.options.maxTranscriptChars) : "";
+				const text = isTaskOnlyAgentText(rawText, row.task) ? "" : rawText;
 				const partial = row.partialResult
-					? boundedTerminalText(row.partialResult, Math.min(this.options.maxTranscriptChars, 4_000))
+					? isTaskOnlyAgentText(row.partialResult, row.task)
+						? ""
+						: boundedTerminalText(row.partialResult, Math.min(this.options.maxTranscriptChars, 4_000))
 					: "";
 				this.transcript =
 					text && text.trim() !== partial.trim() ? { state: "ready", text } : { state: "unavailable", text: "" };
@@ -648,6 +652,8 @@ class AgentDialogComponent implements CommandDialogComponent {
 			row.nestedCount > 0 ? theme.fg("dim", ` · ${row.nestedCount} nested`) : ""
 		}`;
 		body.push(stateLine);
+		const errorLine = renderTerminalError(row, theme, width);
+		if (errorLine) body.push(errorLine);
 		const feedbackLine = this.feedback ? renderFeedback(theme, this.feedback, width) : undefined;
 		if (feedbackLine) body.push(feedbackLine);
 		body.push("", `${GUTTER}${theme.fg("muted", "Transcript")}`);
@@ -659,7 +665,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 				header,
 				body,
 				footer: this.renderDetailFooter(row, width),
-				priority: [feedbackLine ?? transcriptError ?? stateLine],
+				priority: [feedbackLine ?? errorLine ?? transcriptError ?? stateLine],
 			},
 			commandDialogRows(this.context),
 		);
@@ -678,10 +684,12 @@ class AgentDialogComponent implements CommandDialogComponent {
 			"dim",
 			` · depth ${row.depth}${row.nestedCount > 0 ? ` · ${row.nestedCount} nested` : ""}`,
 		)}`;
+		const errorLine = renderTerminalError(row, theme, width);
 		const body = ["", `${GUTTER}${theme.fg("muted", "Task")}`];
 		body.push(
 			`${GUTTER}${truncateToWidth(oneLine(row.task) || "(no task)", Math.max(1, width - GUTTER.length), "…")}`,
 			stateLine,
+			...(errorLine ? [errorLine] : []),
 			"",
 			`${GUTTER}${theme.fg("muted", "Transcript")}`,
 		);
@@ -693,7 +701,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 				header,
 				body,
 				footer: hintLines(theme, width, ["↑/↓ scroll", "Esc back"]),
-				priority: [transcriptError ?? stateLine],
+				priority: [errorLine ?? transcriptError ?? stateLine],
 			},
 			commandDialogRows(this.context),
 		);
@@ -717,7 +725,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 				allLines.push(...transcriptLines(this.transcript.text, contentWidth));
 				break;
 		}
-		if (row.partialResult) {
+		if (row.partialResult && !isTaskOnlyAgentText(row.partialResult, row.task)) {
 			const partial = boundedTerminalText(row.partialResult, Math.min(this.options.maxTranscriptChars, 4_000));
 			allLines.push("", theme.fg("muted", "Partial result"), ...transcriptLines(partial, contentWidth));
 		}
@@ -809,6 +817,12 @@ function title(theme: Theme, value: string): string {
 function renderFeedback(theme: Theme, feedback: Feedback, width: number): string {
 	const color = feedback.kind === "error" ? "error" : feedback.kind === "success" ? "success" : "warning";
 	return truncateToWidth(`${GUTTER}${theme.fg(color, feedback.message)}`, width, "…");
+}
+
+function renderTerminalError(row: AgentTranscriptTarget, theme: Theme, width: number): string | undefined {
+	if (!row.error) return undefined;
+	const text = truncateToWidth(`Error  ${boundedTerminalLine(row.error)}`, Math.max(1, width - GUTTER.length), "…");
+	return `${GUTTER}${theme.fg("error", text)}`;
 }
 
 function hintLines(theme: Theme, width: number, hints: readonly string[]): string[] {
