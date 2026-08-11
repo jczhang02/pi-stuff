@@ -19,14 +19,15 @@ never wraps the status row or leaves clipped field fragments. Model and Context 
 Thinking, allowance, file state, `fast`, and cache according to their accepted priorities. A constrained dirty Git state
 aggregates file changes as `ΔN`; branch tracking remains attributable through `⇡` and `⇣` markers.
 
-The previous prompt is always bounded to one row when enabled. Its filled marker occupies the same first visual column
+The previous prompt is always bounded to one row when enabled. Its muted `›` cue occupies the same first visual column
 as the model icon. Both rows reserve one marker cell followed by one stable gap, so Latin, CJK, and emoji text begin in
 the same terminal column. The prompt text uses the readable secondary `muted` token rather than the decorative `dim`
 token. Persisted skill expansion and recognized inline or multiple `/skill:*` commands are reduced
 back to the submitted task plus compact skill badges; Skill XML, instructions, and local paths never enter the preview.
 
 Nerd Font terminals receive the compact model, Thinking, `fast`, folder, branch, file-state, Context, cache, allowance,
-cost, and prompt icon family. Other terminals receive one-cell width-safe fallbacks. Set `POWERLINE_NERD_FONTS=1` or `0`
+and cost icon family; the Prompt uses the same one-cell `›` in every mode. Other terminals receive one-cell width-safe
+fallbacks. Set `POWERLINE_NERD_FONTS=1` or `0`
 to override automatic detection, or choose a fixed mode in `/ui`. Colors come only from Pi semantic theme tokens.
 
 The cache value is the active branch's cumulative hit rate across successful assistant messages:

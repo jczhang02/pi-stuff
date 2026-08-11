@@ -447,7 +447,7 @@ function fleetviewLineIndices(
 		agent: lines.findIndex((line) => /^[●○] general-purpose(?:\s|$)/u.test(line)),
 		help: help === undefined ? -1 : lines.indexOf(help),
 		main: lines.findIndex((line) => /^[●○] main$/u.test(line)),
-		prompt: lines.findIndex((line) => line.startsWith("\uF111 ")),
+		prompt: lines.findIndex((line) => line.startsWith("› ")),
 		status,
 	};
 }

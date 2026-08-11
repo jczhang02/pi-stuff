@@ -41,7 +41,7 @@ const ASCII_STATUSLINE_ICONS: StatuslineIcons = {
 	fast: "⚡",
 	folder: "▣",
 	model: "◆",
-	prompt: "•",
+	prompt: "›",
 	thinking: "◉",
 	weekly: "◷",
 };
@@ -55,7 +55,7 @@ const NERD_STATUSLINE_ICONS: StatuslineIcons = {
 	fast: "\uF0E7",
 	folder: "\u{F024B}",
 	model: "\u{F06A9}",
-	prompt: "\uF111",
+	prompt: "›",
 	thinking: "\uF441",
 	weekly: "\u{F00ED}",
 };
@@ -964,7 +964,7 @@ function renderPromptRow(
 	const promptText = prompt.text ?? "";
 	const fullBadge = formatSkillBadge(prompt.skills, false);
 	const compactBadge = formatSkillBadge(prompt.skills, true);
-	const prefix = `${theme.fg("accent", icons.prompt)} `;
+	const prefix = `${theme.fg("muted", icons.prompt)} `;
 	const contentWidth = width - visibleWidth(prefix);
 	if (contentWidth < 1) return truncateToWidth(prefix, width, "");
 	const badge =
