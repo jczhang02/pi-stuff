@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { terminateDetachedProcessGroup } from "./detached-process.js";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
@@ -62,7 +63,7 @@ function parseRecords(stdout: string): RpcRecord[] {
 }
 
 async function createRpcTransport(command: string[], cwd: string, env: Record<string, string>): Promise<RpcTransport> {
-	const child = Bun.spawn(command, { cwd, env, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+	const child = Bun.spawn(command, { cwd, detached: true, env, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
 	const records: RpcRecord[] = [];
 	const pending = new Map<
 		string,
@@ -133,9 +134,7 @@ async function createRpcTransport(command: string[], cwd: string, env: Record<st
 			return record;
 		},
 		async stop() {
-			child.kill("SIGTERM");
-			await Promise.race([child.exited, new Promise((resolve) => setTimeout(resolve, 1_000))]);
-			if (child.exitCode === null) child.kill("SIGKILL");
+			await terminateDetachedProcessGroup(child);
 			await reading;
 		},
 	};

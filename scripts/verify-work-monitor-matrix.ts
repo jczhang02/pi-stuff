@@ -1,6 +1,7 @@
 import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { terminateDetachedProcessGroup } from "./detached-process.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/work-monitor-matrix-provider.ts");
@@ -101,6 +102,7 @@ export async function verifyWorkMonitorMatrix(options: {
 			],
 			{
 				cwd: temporaryDirectory,
+				detached: true,
 				env: {
 					...process.env,
 					PI_CODING_AGENT_DIR: agentDirectory,
@@ -169,9 +171,7 @@ export async function verifyWorkMonitorMatrix(options: {
 			await Bun.sleep(100);
 		}
 
-		spawned.kill("SIGTERM");
-		await Promise.race([spawned.exited, Bun.sleep(1_000)]);
-		if (spawned.exitCode === null) spawned.kill("SIGKILL");
+		await terminateDetachedProcessGroup(spawned);
 		await reading;
 		const extensionError = responses.find((record) => record.type === "extension_error");
 		if (extensionError) fail(`Pi reported an Extension error: ${JSON.stringify(extensionError)}`);
@@ -181,7 +181,7 @@ export async function verifyWorkMonitorMatrix(options: {
 		);
 		if (runtimeDirectories.length > 0) fail(`Pi exit left runtime directories: ${runtimeDirectories.join(", ")}`);
 	} finally {
-		if (child?.exitCode === null) child.kill("SIGKILL");
+		if (child) await terminateDetachedProcessGroup(child);
 		server.stop(true);
 		await rm(temporaryDirectory, { force: true, recursive: true });
 	}

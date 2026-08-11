@@ -1,6 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	readlink,
+	realpath,
+	rm,
+	symlink,
+	utimes,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
@@ -152,6 +163,17 @@ describe("Pi Host source provenance", () => {
 		await writeFile(join(stagedHostDirectory, "linux-x64", "pi"), "new-host");
 		await writeFile(attestationPath, "last-good-record");
 		await writeFile(join(stagedHostDirectory, "pi-host-attestation.json"), "new-record");
+		const staleLock = join(directory, ".pi-host-publish.lock");
+		await mkdir(staleLock);
+		await writeFile(
+			join(staleLock, "owner.json"),
+			`${JSON.stringify({ bootId: "former-boot", pid: process.pid, startTime: "1", token: "stale-owner" })}\n`,
+		);
+		const abandonedCandidate = join(directory, ".pi-host-publish.lock.candidate-abandoned");
+		await mkdir(abandonedCandidate);
+		await writeFile(join(abandonedCandidate, "owner.json"), "not-json\n");
+		const old = new Date(Date.now() - 20 * 60_000);
+		await utimes(abandonedCandidate, old, old);
 
 		const prepared = await prepareVerifiedPiHostGeneration({
 			attestationPath,
@@ -160,6 +182,13 @@ describe("Pi Host source provenance", () => {
 			stagedHostDirectory,
 			verify: () => {},
 		});
+		expect(
+			(await readdir(directory)).some(
+				(name) =>
+					name.startsWith(".pi-host-publish.lock.stale-") || name.startsWith(".pi-host-publish.lock.reclaim-"),
+			),
+		).toBe(false);
+		expect(await Bun.file(abandonedCandidate).exists()).toBe(false);
 		expect(await readFile(join(hostDirectory, "linux-x64", "pi"), "utf8")).toBe("last-good-host");
 		expect(await readFile(attestationPath, "utf8")).toBe("last-good-record");
 		expect(await readlink(join(hostDirectory, "linux-x64", "pi"))).toBe("../current/linux-x64/pi");
@@ -180,9 +209,39 @@ describe("Pi Host source provenance", () => {
 		).rejects.toThrow("publication is active");
 
 		await activatePreparedPiHostGeneration(prepared);
+		expect((await readdir(directory)).includes(".pi-host-publish.lock")).toBe(false);
 		expect(await readFile(join(hostDirectory, "linux-x64", "pi"), "utf8")).toBe("new-host");
 		expect(await readFile(attestationPath, "utf8")).toBe("new-record");
 		expect(await realpath(join(hostDirectory, "current"))).not.toBe(oldGeneration);
+	});
+
+	test("preserves a publish lock whose ownership changes before release", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "pi-host-lock-ownership-test-"));
+		temporaryDirectories.push(directory);
+		const hostDirectory = join(directory, "pi-host");
+		const stagedHostDirectory = join(directory, "pi-host-stage");
+		const attestationPath = join(directory, "pi-host-attestation.json");
+		await mkdir(join(stagedHostDirectory, "linux-x64"), { recursive: true });
+		await writeFile(join(stagedHostDirectory, "linux-x64", "pi"), "new-host");
+		await writeFile(join(stagedHostDirectory, "pi-host-attestation.json"), "new-record");
+
+		const prepared = await prepareVerifiedPiHostGeneration({
+			attestationPath,
+			generationsDirectory: join(directory, "pi-host-generations"),
+			hostDirectory,
+			stagedHostDirectory,
+			verify: () => {},
+		});
+		const lockDirectory = join(directory, ".pi-host-publish.lock");
+		const ownerPath = join(lockDirectory, "owner.json");
+		const owner = JSON.parse(await readFile(ownerPath, "utf8")) as Record<string, unknown>;
+		await writeFile(ownerPath, `${JSON.stringify({ ...owner, token: "replacement-owner" })}\n`);
+
+		await expect(activatePreparedPiHostGeneration(prepared)).rejects.toThrow(
+			"Pi Host publish lock ownership changed unexpectedly",
+		);
+		expect((await readdir(directory)).includes(".pi-host-publish.lock")).toBe(true);
+		expect(JSON.parse(await readFile(ownerPath, "utf8"))).toMatchObject({ token: "replacement-owner" });
 	});
 
 	test("content-addresses every model-data byte, including the immutable manifest", async () => {
