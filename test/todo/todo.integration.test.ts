@@ -158,7 +158,7 @@ describe("registered Task tools", () => {
 			details: undefined,
 		} as unknown as AgentToolResult<unknown>;
 		expect(renderedLines(harness.tool(TASK_UPDATE_TOOL_NAME), validationFailure, true).join("\n").trim()).toBe(
-			"• Task update failed  (ctrl+o to expand)\n   ⎿  Invalid TaskUpdate input",
+			"• Task update failed  (ctrl+o to expand)\n   ⎿ Invalid TaskUpdate input",
 		);
 		expect(mutations.map(({ action }) => action)).toEqual(["create", "create", "update"]);
 	});
