@@ -37,6 +37,10 @@ import {
 } from "../../packages/pi-stuff/src/background-work/src/storage.js";
 import { isForegroundBashResult } from "../../packages/pi-stuff/src/background-work/src/tools.js";
 import {
+	listenForAgentWorkOriginQueries,
+	readAgentWorkOrigin,
+} from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
+import {
 	activateDiagnosticChannel,
 	DiagnosticChannel,
 	resetDiagnosticProcessState,
@@ -95,9 +99,10 @@ async function leaderGoneProcessGroup(
 	);
 	children.push(leader);
 	if (!leader.pid) throw new Error("leader-gone process fixture did not start");
-	escapedProcessGroups.push(leader.pid);
-	await waitUntil(() => existsSync(childPath) && captureProcessIdentity(leader.pid!) !== undefined);
-	const leaderIdentity = captureProcessIdentity(leader.pid);
+	const leaderPid = leader.pid;
+	escapedProcessGroups.push(leaderPid);
+	await waitUntil(() => existsSync(childPath) && captureProcessIdentity(leaderPid) !== undefined);
+	const leaderIdentity = captureProcessIdentity(leaderPid);
 	if (!leaderIdentity) throw new Error("leader-gone process fixture has no leader identity");
 	const childPid = Number(readFileSync(childPath, "utf-8").trim());
 	writeFileSync(releasePath, "release\n");
@@ -128,6 +133,46 @@ function runtime(cwd: string, messages: unknown[] = [], backgroundAfterMs?: numb
 		sessionId: "work-test-session",
 		storage: new WorkRunStorage(cwd, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 	});
+}
+
+function attributedRuntime(
+	cwd: string,
+	readOrigin: () => "automatic" | "user",
+	messages: unknown[] = [],
+	sendMessage: (message: unknown, options: unknown) => void = (message, options) =>
+		messages.push({ message, options }),
+): { readonly active: BackgroundWorkRuntime; readRefreshRequests(): number } {
+	let refreshRequests = 0;
+	const listeners = new Map<string, Set<(data: unknown) => void>>();
+	const events = {
+		emit(event: string, data: unknown) {
+			if (event.includes("statusline-git-refresh-after-user-work-request")) refreshRequests += 1;
+			for (const listener of [...(listeners.get(event) ?? [])]) listener(data);
+		},
+		on(event: string, listener: (data: unknown) => void) {
+			let registered = listeners.get(event);
+			if (!registered) {
+				registered = new Set();
+				listeners.set(event, registered);
+			}
+			registered.add(listener);
+			return () => registered?.delete(listener);
+		},
+	};
+	const pi = {
+		events,
+		sendMessage,
+	} as unknown as ExtensionAPI;
+	listenForAgentWorkOriginQueries(pi, readOrigin);
+	return {
+		active: new BackgroundWorkRuntime({
+			cwd,
+			pi,
+			sessionId: "work-test-session",
+			storage: new WorkRunStorage(cwd, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+		}),
+		readRefreshRequests: () => refreshRequests,
+	};
 }
 
 class SecondPersistFailsStorage extends WorkRunStorage {
@@ -1033,6 +1078,73 @@ describe("BackgroundWorkRuntime", () => {
 		expect(isForegroundBashResult(result)).toBe(false);
 		expect(active.snapshot()).toHaveLength(1);
 		await active.shutdown();
+	});
+
+	test("refreshes Git after a user-attributed Background Shell finishes after its parent settles", async () => {
+		const root = temporaryRoot();
+		const marker = join(root, "user-background-edit");
+		const messages: unknown[] = [];
+		let deliveryAttempts = 0;
+		let origin: "automatic" | "user" = "user";
+		const { active, readRefreshRequests } = attributedRuntime(
+			root,
+			() => origin,
+			messages,
+			(message, options) => {
+				deliveryAttempts += 1;
+				if (deliveryAttempts === 1) throw new Error("injected delivery failure");
+				messages.push({ message, options });
+			},
+		);
+		try {
+			await active.executeBash(
+				{
+					command: `sleep 0.2; printf 'edited\n' > ${JSON.stringify(marker)}`,
+					runInBackground: true,
+					toolCallId: "tool-user-origin-background-edit",
+				},
+				context(root),
+			);
+			expect(existsSync(marker)).toBeFalse();
+			origin = "automatic";
+
+			await waitUntil(() => existsSync(marker) && messages.length === 1);
+			expect(readRefreshRequests()).toBe(1);
+			expect(deliveryAttempts).toBe(2);
+			const delivered = messages[0] as {
+				message: { details: { outcomes: Array<Record<string, unknown>> } };
+				options: { triggerTurn: boolean };
+			};
+			expect(readAgentWorkOrigin(delivered.message)).toBe("user");
+			expect(delivered.message.details.outcomes[0]?.["parentRunOrigin"]).toBeUndefined();
+			expect(delivered.options.triggerTurn).toBeFalse();
+		} finally {
+			await active.shutdown();
+		}
+	});
+
+	test("does not refresh Git or wake the Agent after an automatic Background Shell finishes", async () => {
+		const root = temporaryRoot();
+		const marker = join(root, "automatic-background-edit");
+		const messages: unknown[] = [];
+		const { active, readRefreshRequests } = attributedRuntime(root, () => "automatic", messages);
+		try {
+			await active.executeBash(
+				{
+					command: `sleep 0.1; printf 'edited\n' > ${JSON.stringify(marker)}`,
+					runInBackground: true,
+					toolCallId: "tool-automatic-background-edit",
+				},
+				context(root),
+			);
+			await waitUntil(() => existsSync(marker) && messages.length === 1);
+			expect(readRefreshRequests()).toBe(0);
+			const delivered = messages[0] as { message: object; options: { triggerTurn: boolean } };
+			expect(readAgentWorkOrigin(delivered.message)).toBe("automatic");
+			expect(delivered.options.triggerTurn).toBeFalse();
+		} finally {
+			await active.shutdown();
+		}
 	});
 
 	test("kills TERM-ignoring descendants during session shutdown", async () => {

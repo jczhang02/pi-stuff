@@ -8,9 +8,11 @@ import { Text } from "@earendil-works/pi-tui";
 import { registerCurrentWorkSource } from "../../../background-work/index.js";
 import { projectCurrentContext } from "../../../context-management/index.js";
 import {
+	type AgentWorkOrigin,
 	type CommandDialogCoordinator,
 	getCommandDialogCoordinator,
-	requestStatuslineGitRefresh,
+	readCurrentAgentWorkOrigin,
+	requestStatuslineGitRefreshAfterUserWork,
 } from "../../../conversation-ui/index.js";
 import { registerSuiteOwnedTool } from "../../../tool-display/index.js";
 import { discoverAgents } from "../agents/agents.ts";
@@ -534,6 +536,7 @@ export default function registerSubagentExtension(
 		signal: AbortSignal,
 		onUpdate: ((result: AgentToolResult<Details>) => void) | undefined,
 		ctx: ExtensionContext,
+		parentRunOrigin: AgentWorkOrigin,
 	) => Promise<AgentToolResult<Details>>;
 	let activateCurrentSessionRuntime!: (ctx: ExtensionContext) => Promise<void>;
 
@@ -561,7 +564,14 @@ export default function registerSubagentExtension(
 			index: row.childIndex,
 			...(message ? { message } : {}),
 		};
-		const result = await executePublicAgent(deps.randomId(), params, new AbortController().signal, undefined, ctx);
+		const result = await executePublicAgent(
+			deps.randomId(),
+			params,
+			new AbortController().signal,
+			undefined,
+			ctx,
+			"user",
+		);
 		current.refresh();
 		return {
 			acknowledged: !resultIsError(result),
@@ -788,7 +798,7 @@ export default function registerSubagentExtension(
 			},
 		}) as AgentToolResult<Details>;
 
-	executePublicAgent = async (id, params, signal, onUpdate, ctx) => {
+	executePublicAgent = async (id, params, signal, onUpdate, ctx, parentRunOrigin) => {
 		const requestedEpoch = sessionEpoch;
 		const requestedSessionId = state.currentSessionId;
 		await activateCurrentSessionRuntime(ctx);
@@ -830,7 +840,7 @@ export default function registerSubagentExtension(
 		const launchRunId = deriveLaunchRunId(id, launchIdentity);
 		const invocationEpoch = sessionEpoch;
 		const invocationSessionId = state.currentSessionId;
-		const nestedControl = await routeLiveNestedAgentControl(params, state, signal);
+		const nestedControl = await routeLiveNestedAgentControl(params, state, signal, { parentRunOrigin });
 		if (nestedControl) return projectEngineResult(params, nestedControl);
 		let resumeTargetRunId: string | undefined;
 		try {
@@ -882,19 +892,22 @@ export default function registerSubagentExtension(
 						}
 					: undefined,
 				ctx,
-				invocation && params.foreground === true
-					? {
-							beforeForegroundStart: async ({ runId, asyncDir, abortStart }) => {
-								await executionGovernor.observeAsyncStarted({
-									id: runId,
-									pid: process.pid,
-									asyncDir,
-									abortStart,
-								});
-								foregroundStarted = true;
-							},
-						}
-					: undefined,
+				{
+					parentRunOrigin,
+					...(invocation && params.foreground === true
+						? {
+								beforeForegroundStart: async ({ runId, asyncDir, abortStart }) => {
+									await executionGovernor.observeAsyncStarted({
+										id: runId,
+										pid: process.pid,
+										asyncDir,
+										abortStart,
+									});
+									foregroundStarted = true;
+								},
+							}
+						: {}),
+				},
 			);
 			if (
 				invocation &&
@@ -996,7 +1009,14 @@ export default function registerSubagentExtension(
 					governorFailureResult(supplied, error instanceof Error ? error.message : String(error)),
 				);
 			}
-			return executePublicAgent(id, params, signal ?? new AbortController().signal, onUpdate, ctx);
+			return executePublicAgent(
+				id,
+				params,
+				signal ?? new AbortController().signal,
+				onUpdate,
+				ctx,
+				readCurrentAgentWorkOrigin(pi),
+			);
 		},
 	};
 
@@ -1049,7 +1069,9 @@ export default function registerSubagentExtension(
 		tracker.handleComplete(normalized);
 		current.refresh();
 		ensureRosterRefresh();
-		requestStatuslineGitRefresh(pi);
+		if ((normalized as CompletionNotification).parentRunOrigin === "user") {
+			requestStatuslineGitRefreshAfterUserWork(pi);
+		}
 	});
 	onBus(SUBAGENT_FOREGROUND_COMPLETE_EVENT, (data) => {
 		if (!active || !belongsToCurrentSession(data)) return;

@@ -26,6 +26,12 @@ import {
 	getShellConfig,
 	truncateTail,
 } from "@earendil-works/pi-coding-agent";
+import {
+	type AgentWorkOrigin,
+	readCurrentAgentWorkOrigin,
+	withAgentWorkOrigin,
+} from "../../conversation-ui/agent-run-origin.js";
+import { requestStatuslineGitRefreshAfterUserWork, sendSuiteAgentMessage } from "../../conversation-ui/index.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
 import {
 	BoundedOutputFile,
@@ -85,6 +91,8 @@ export interface BackgroundWorkOutcome {
 	readonly id: string;
 	readonly kind: BackgroundWorkKind;
 	readonly outputPath?: string;
+	/** Parent Agent attribution captured before asynchronous shell launch. */
+	readonly parentRunOrigin?: AgentWorkOrigin;
 	readonly recentOutput?: string;
 	readonly startedAt: number;
 	readonly status: BackgroundWorkTerminalStatus;
@@ -122,6 +130,7 @@ interface SpawnedActivity {
 	monitorSuccessText?: string;
 	output: BoundedOutputFile;
 	outputLimitStopRequested: boolean;
+	parentRunOrigin: AgentWorkOrigin;
 	startedAt: number;
 	status: BackgroundWorkStatus;
 	stopPromise?: Promise<BackgroundWorkOutcome>;
@@ -159,6 +168,7 @@ interface SpawnProcessInput {
 	readonly kind?: BackgroundWorkKind;
 	readonly monitorFailureText?: string;
 	readonly monitorSuccessText?: string;
+	readonly parentRunOrigin?: AgentWorkOrigin;
 	readonly toolCallId: string;
 }
 
@@ -493,7 +503,9 @@ export class BackgroundWorkRuntime {
 	private readonly monitors = new Map<string, BackgroundMonitorActivity>();
 	private readonly notifications: PendingNotification[] = [];
 	private readonly pendingForegroundLaunches = new Set<PendingForegroundLaunch>();
+	private notificationDeferredDelayMs: number | undefined;
 	private notificationRetryDelayMs = NOTIFICATION_RETRY_INITIAL_MS;
+	private notificationFlush: Promise<void> | undefined;
 	private notificationTimer: ReturnType<typeof setTimeout> | undefined;
 	private preparation: Promise<void> | undefined;
 	private readonly outputFactory: (path: string) => BoundedOutputFile;
@@ -601,6 +613,7 @@ export class BackgroundWorkRuntime {
 		input: BashExecutionInput,
 		ctx: ExtensionContext,
 	): Promise<AgentToolResult<BashToolDetails | undefined>> {
+		const parentRunOrigin = readCurrentAgentWorkOrigin(this.pi);
 		const pendingForegroundLaunch = input.runInBackground ? undefined : { manualDetachRequested: false };
 		if (pendingForegroundLaunch) this.pendingForegroundLaunches.add(pendingForegroundLaunch);
 		let activity: SpawnedActivity;
@@ -614,6 +627,7 @@ export class BackgroundWorkRuntime {
 				command: resolvedCommand,
 				...(input.description ? { description: input.description } : {}),
 				env: sessionEnvironment(ctx),
+				parentRunOrigin,
 				toolCallId: input.toolCallId,
 			});
 			if (pendingForegroundLaunch?.manualDetachRequested) this.detach(activity, "manual");
@@ -768,6 +782,7 @@ export class BackgroundWorkRuntime {
 		this.stopMetadataHeartbeat();
 		if (this.notificationTimer) clearTimeout(this.notificationTimer);
 		this.notificationTimer = undefined;
+		this.notificationDeferredDelayMs = undefined;
 		this.notifications.length = 0;
 		await Promise.allSettled([
 			...Array.from(this.activities.values(), (activity) => this.stopShell(activity, "shutdown")),
@@ -911,6 +926,7 @@ export class BackgroundWorkRuntime {
 			...(input.monitorSuccessText ? { monitorSuccessText: input.monitorSuccessText } : {}),
 			output,
 			outputLimitStopRequested: false,
+			parentRunOrigin: input.parentRunOrigin ?? "automatic",
 			startedAt: Date.now(),
 			status: "running",
 			supervisor,
@@ -1270,6 +1286,7 @@ export class BackgroundWorkRuntime {
 			id: activity.id,
 			kind: activity.kind,
 			...(activity.output.durable && existsSync(activity.output.path) ? { outputPath: activity.output.path } : {}),
+			parentRunOrigin: activity.parentRunOrigin,
 			...(recentOutput ? { recentOutput } : {}),
 			startedAt: activity.startedAt,
 			status,
@@ -1287,13 +1304,14 @@ export class BackgroundWorkRuntime {
 		}
 		activity.completionResolve(outcome);
 		this.emit();
-		if (
+		const shouldDeliverTerminalCompletion =
 			activity.backgrounded &&
 			!this.disposed &&
 			activity.stopReason !== "shutdown" &&
 			activity.stopReason !== "abort" &&
-			activity.stopReason !== "user"
-		) {
+			activity.stopReason !== "user";
+		if (shouldDeliverTerminalCompletion) {
+			if (activity.parentRunOrigin === "user") requestStatuslineGitRefreshAfterUserWork(this.pi);
 			this.enqueueNotification(outcome, activity.kind === "monitor");
 		}
 	}
@@ -1440,33 +1458,56 @@ export class BackgroundWorkRuntime {
 
 	private scheduleNotificationFlush(delayMs: number, replace = false): void {
 		if (this.disposed || this.notifications.length === 0) return;
+		if (this.notificationFlush) {
+			if (replace || this.notificationDeferredDelayMs === undefined) this.notificationDeferredDelayMs = delayMs;
+			return;
+		}
 		if (this.notificationTimer) {
 			if (!replace) return;
 			clearTimeout(this.notificationTimer);
 		}
-		this.notificationTimer = setTimeout(() => this.flushNotifications(), delayMs);
+		this.notificationTimer = setTimeout(() => {
+			this.notificationTimer = undefined;
+			let tracked: Promise<void>;
+			tracked = this.flushNotifications().finally(() => {
+				if (this.notificationFlush === tracked) this.notificationFlush = undefined;
+				if (this.notifications.length > 0 && !this.notificationTimer) {
+					const deferredDelay = this.notificationDeferredDelayMs ?? NOTIFICATION_BATCH_DELAY_MS;
+					this.notificationDeferredDelayMs = undefined;
+					this.scheduleNotificationFlush(deferredDelay, true);
+				}
+			});
+			this.notificationFlush = tracked;
+		}, delayMs);
 		this.notificationTimer.unref?.();
 	}
 
-	private flushNotifications(): void {
-		this.notificationTimer = undefined;
+	private async flushNotifications(): Promise<void> {
 		if (this.disposed || this.notifications.length === 0) return;
 		const pending = this.notifications.splice(0);
 		for (let offset = 0; offset < pending.length; offset += MAX_NOTIFICATION_OUTCOMES) {
 			const batch = pending.slice(offset, offset + MAX_NOTIFICATION_OUTCOMES);
 			const wake = batch.some((item) => item.wake);
+			const parentRunOrigin = batch.some((item) => item.outcome.parentRunOrigin === "user") ? "user" : "automatic";
 			const projected = projectNotificationBatch(batch.map((item) => item.outcome));
 			try {
-				this.pi.sendMessage(
-					{
-						customType: "pi-stuff-background-work-result",
-						content: projected.content,
-						details: { outcomes: projected.outcomes },
-						display: true,
-					},
+				const accepted = await sendSuiteAgentMessage(
+					this.pi,
+					withAgentWorkOrigin(
+						{
+							customType: "pi-stuff-background-work-result",
+							content: projected.content,
+							details: { outcomes: projected.outcomes },
+							display: true,
+						},
+						parentRunOrigin,
+					),
 					wake ? { deliverAs: "steer", triggerTurn: true } : { deliverAs: "followUp", triggerTurn: false },
+					() => !this.disposed,
 				);
+				if (!accepted && !this.disposed) throw new Error("Background Work session changed before delivery.");
 			} catch (error) {
+				if (this.disposed) return;
 				reportWorkDiagnostic("Task completion delivery failed; retrying", error, {
 					key: "terminal-notification",
 				});
@@ -1481,7 +1522,6 @@ export class BackgroundWorkRuntime {
 			}
 		}
 		this.notificationRetryDelayMs = NOTIFICATION_RETRY_INITIAL_MS;
-		if (this.notifications.length > 0) this.scheduleNotificationFlush(NOTIFICATION_BATCH_DELAY_MS);
 	}
 
 	private emit(): void {
@@ -1633,7 +1673,12 @@ export function projectNotificationBatch(outcomes: readonly BackgroundWorkOutcom
 		.map((row) => `${row.prefix}${fittedInline.get(row)?.escaped ?? ""}${row.suffix}`)
 		.join("\n")}${footer}`;
 	const projectedOutcomes = rows.map((row) => {
-		const { outputPath: _outputPath, recentOutput: _recentOutput, ...base } = row.outcome;
+		const {
+			outputPath: _outputPath,
+			parentRunOrigin: _parentRunOrigin,
+			recentOutput: _recentOutput,
+			...base
+		} = row.outcome;
 		const title = fitEscapedHead(row.outcome.title, 256).raw;
 		const detailsSummary = fitEscapedHead(row.outcome.summary, 512).raw;
 		const recentOutput = fittedInline.get(row)?.raw;
@@ -1656,7 +1701,12 @@ export function projectNotificationBatch(outcomes: readonly BackgroundWorkOutcom
 	});
 	const minimalContent = `${header}${minimalRows.join("\n")}${footer}`;
 	const minimalOutcomes = outcomes.map((outcome) => {
-		const { outputPath: _outputPath, recentOutput: _recentOutput, ...base } = outcome;
+		const {
+			outputPath: _outputPath,
+			parentRunOrigin: _parentRunOrigin,
+			recentOutput: _recentOutput,
+			...base
+		} = outcome;
 		return {
 			...base,
 			id: fitEscapedHead(outcome.id, 64).raw,

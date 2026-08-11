@@ -4,12 +4,17 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { routeLiveNestedAgentControl } from "../../packages/pi-stuff/src/subagents/src/extension/nested-control-router.js";
 import { listAsyncRuns } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-status.js";
-import { stopRequestsDir } from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
+import {
+	consumeSteerRequestsFromDir,
+	steerRequestsDir,
+	stopRequestsDir,
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
 import {
 	buildNestedRouteIndex,
 	createNestedRoute,
 	finalizeNestedRouteRoot,
 	NESTED_EVENTS_DIR,
+	nestedSummaryFromAsyncStatus,
 	projectNestedEvents,
 	projectNestedEventsAuthoritatively,
 	readNestedRegistry,
@@ -205,12 +210,21 @@ describe("nested event projection ownership", () => {
 			ts: Date.now() + 1,
 			parentRunId: routeInfo.rootRunId,
 			parentStepIndex: 0,
-			child: { ...runningChild(routeInfo.rootRunId, "nested-route-evidence-child"), state: "complete" },
+			child: {
+				...runningChild(routeInfo.rootRunId, "nested-route-evidence-child"),
+				parentRunOrigin: "user",
+				state: "complete",
+			},
 		});
 		expect(await retireCompletedNestedRoute(routeInfo)).toBe(true);
 		expect(fs.existsSync(routeRoot)).toBe(false);
 		expect(JSON.parse(fs.readFileSync(path.join(rootAsyncDir, "status.json"), "utf8"))).toMatchObject({
-			steps: [{ children: [{ id: "nested-route-evidence-child", state: "complete" }] }],
+			parentRunOrigin: "user",
+			steps: [
+				{
+					children: [{ id: "nested-route-evidence-child", parentRunOrigin: "user", state: "complete" }],
+				},
+			],
 		});
 	});
 
@@ -370,12 +384,81 @@ describe("nested event projection ownership", () => {
 			{ action: "stop", id: childId },
 			stateWithRoute(routeInfo),
 			new AbortController().signal,
-			{ timeoutMs: 1_000 },
+			{ parentRunOrigin: "automatic", timeoutMs: 1_000 },
 		);
 
 		expect(result?.isError).not.toBe(true);
 		expect(result?.content[0]).toMatchObject({ type: "text", text: expect.stringContaining("Interrupt requested") });
 		expect(fs.readdirSync(stopRequestsDir(asyncDir))).toHaveLength(1);
+	});
+
+	test("nested user steering remains user-attributed through completion and registry reload", async () => {
+		const routeInfo = route("nested-user-steer");
+		const childId = "nested-user-steer-child";
+		const runRoot = path.join(TEMP_ROOT_DIR, "nested-subagent-runs", routeInfo.rootRunId);
+		nestedRunRoots.push(runRoot);
+		const asyncDir = path.join(runRoot, childId);
+		fs.mkdirSync(asyncDir, { recursive: true, mode: 0o700 });
+		writeRunningChild(routeInfo, childId);
+
+		const result = await routeLiveNestedAgentControl(
+			{ action: "steer", id: childId, message: "Apply the user's correction." },
+			stateWithRoute(routeInfo),
+			new AbortController().signal,
+			{ parentRunOrigin: "user", timeoutMs: 0 },
+		);
+
+		expect(result?.isError).not.toBe(true);
+		expect(consumeSteerRequestsFromDir(steerRequestsDir(asyncDir))).toEqual([
+			expect.objectContaining({
+				message: "Apply the user's correction.",
+				parentRunOrigin: "user",
+				type: "steer",
+			}),
+		]);
+
+		const completed = nestedSummaryFromAsyncStatus(
+			{
+				runId: childId,
+				parentRunOrigin: "user",
+				mode: "single",
+				state: "complete",
+				startedAt: 1,
+				endedAt: 2,
+				lastUpdate: 2,
+				steps: [{ agent: "reviewer", status: "complete" }],
+			},
+			asyncDir,
+			{
+				id: childId,
+				parentRunId: routeInfo.rootRunId,
+				parentStepIndex: 0,
+				depth: 1,
+				ts: 2,
+			},
+		);
+		writeNestedEvent(routeInfo, {
+			type: "subagent.nested.completed",
+			ts: 2,
+			parentRunId: routeInfo.rootRunId,
+			parentStepIndex: 0,
+			child: completed,
+		});
+		expect(projectNestedEvents(routeInfo).children[0]?.parentRunOrigin).toBe("user");
+
+		// A later automatic projection must not downgrade a direct user takeover.
+		writeNestedEvent(routeInfo, {
+			type: "subagent.nested.completed",
+			ts: 3,
+			parentRunId: routeInfo.rootRunId,
+			parentStepIndex: 0,
+			child: { ...completed, parentRunOrigin: "automatic", lastUpdate: 3 },
+		});
+		projectNestedEvents(routeInfo);
+		const persisted = JSON.parse(
+			fs.readFileSync(path.join(path.dirname(routeInfo.eventSink), "registry.json"), "utf8"),
+		) as { children: Array<{ parentRunOrigin?: string }> };
+		expect(persisted.children[0]?.parentRunOrigin).toBe("user");
 	});
 
 	test("nested control reports a busy registry instead of falling through as not found", async () => {
@@ -389,7 +472,7 @@ describe("nested event projection ownership", () => {
 				{ action: "stop", id: childId },
 				stateWithRoute(routeInfo),
 				new AbortController().signal,
-				{ timeoutMs: 30 },
+				{ parentRunOrigin: "automatic", timeoutMs: 30 },
 			);
 			expect(result?.isError).toBe(true);
 			expect(result?.content[0]).toMatchObject({
@@ -412,7 +495,7 @@ describe("nested event projection ownership", () => {
 				{ action: "stop", id: routeInfo.rootRunId },
 				stateWithRoute(routeInfo),
 				new AbortController().signal,
-				{ timeoutMs: 500 },
+				{ parentRunOrigin: "automatic", timeoutMs: 500 },
 			);
 
 			expect(result).toBeUndefined();

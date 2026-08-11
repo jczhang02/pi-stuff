@@ -17,6 +17,7 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import {
 	assertPrivateDirectory,
@@ -77,6 +78,8 @@ export interface SteerRequest {
 	id: string;
 	ts: number;
 	message: string;
+	/** Monotonic user takeover attribution for the owning background run. */
+	parentRunOrigin?: AgentWorkOrigin;
 	targetIndex?: number;
 	targetIndexes?: number[];
 	source?: string;
@@ -209,6 +212,9 @@ function validSteerRequest(request: Partial<SteerRequest>): request is SteerRequ
 				request.targetIndexes.length <= MAX_BACKGROUND_TASKS &&
 				request.targetIndexes.every((index) => Number.isInteger(index) && index >= 0 && index <= 1_000_000) &&
 				new Set(request.targetIndexes).size === request.targetIndexes.length)) &&
+		(request.parentRunOrigin === undefined ||
+			request.parentRunOrigin === "automatic" ||
+			request.parentRunOrigin === "user") &&
 		(request.source === undefined ||
 			(typeof request.source === "string" && Boolean(request.source.trim()) && request.source.length <= 256))
 	);
@@ -326,6 +332,7 @@ export function requestAsyncSteer(
 	asyncDir: string,
 	payload: {
 		message: string;
+		parentRunOrigin?: AgentWorkOrigin;
 		targetIndex?: number;
 		targetIndexes?: number[];
 		source?: string;
@@ -365,6 +372,7 @@ export function requestAsyncSteer(
 		id: payload.id ?? deps.randomId?.() ?? randomUUID(),
 		ts: payload.ts ?? deps.now?.() ?? Date.now(),
 		message,
+		...(payload.parentRunOrigin ? { parentRunOrigin: payload.parentRunOrigin } : {}),
 		...(payload.targetIndex !== undefined ? { targetIndex: payload.targetIndex } : {}),
 		...(payload.targetIndexes !== undefined ? { targetIndexes: [...payload.targetIndexes] } : {}),
 		...(payload.source ? { source: payload.source } : {}),
@@ -582,7 +590,7 @@ function claimControlRecord(target: string, consumerId: string): ClaimedControlR
 function processDurableControlRecords<T>(input: {
 	readonly directories: Array<{ readonly path: string; readonly accepts: (name: string) => boolean }>;
 	readonly parse: (raw: unknown) => T | undefined;
-	readonly callback: (value: T, complete: () => boolean) => void | "retain";
+	readonly callback: (value: T, complete: () => boolean) => undefined | "retain";
 	readonly kind: "interrupt" | "timeout" | "stop" | "steer" | "steer-ack";
 	readonly afterClaim?: (kind: string, claimedPath: string) => void;
 }): void {
@@ -659,7 +667,7 @@ function parseTimeoutRequest(raw: unknown): TimeoutRequest | undefined {
 
 export function processSteerRequestsFromDir(
 	dir: string,
-	callback: (request: SteerRequest, complete: () => boolean) => void | "retain",
+	callback: (request: SteerRequest, complete: () => boolean) => undefined | "retain",
 	afterClaim?: (kind: string, claimedPath: string) => void,
 ): void {
 	processDurableControlRecords({
@@ -673,7 +681,7 @@ export function processSteerRequestsFromDir(
 
 export function processSteerAcks(
 	asyncDir: string,
-	callback: (ack: SteerAck) => void | "retain",
+	callback: (ack: SteerAck) => undefined | "retain",
 	afterClaim?: (kind: string, claimedPath: string) => void,
 ): void {
 	const root = path.join(controlInboxDir(asyncDir), STEER_ACKS_DIR);
@@ -737,6 +745,7 @@ function parseSteerRequest(raw: unknown): SteerRequest | undefined {
 		id: input.id.trim(),
 		ts: input.ts,
 		message: input.message.trim(),
+		...(input.parentRunOrigin ? { parentRunOrigin: input.parentRunOrigin } : {}),
 		...(input.targetIndex !== undefined ? { targetIndex: input.targetIndex } : {}),
 		...(input.targetIndexes !== undefined ? { targetIndexes: [...input.targetIndexes] } : {}),
 		...(typeof input.source === "string" && input.source.trim() ? { source: input.source } : {}),
@@ -879,7 +888,10 @@ function processStopRequests(
 			{ path: controlInboxDir(asyncDir), accepts: (name) => name === path.basename(stopRequestPath(asyncDir)) },
 		],
 		parse: parseStopRequest,
-		callback,
+		callback: (request) => {
+			callback(request);
+			return undefined;
+		},
 		kind: "stop",
 		afterClaim,
 	});
@@ -896,7 +908,10 @@ function processSingletonRequest<T>(input: {
 	processDurableControlRecords({
 		directories: [{ path: path.dirname(input.target), accepts: (entry) => entry === name }],
 		parse: input.parse,
-		callback: input.callback,
+		callback: (request) => {
+			input.callback(request);
+			return undefined;
+		},
 		kind: input.kind,
 		afterClaim: input.afterClaim,
 	});
@@ -982,7 +997,7 @@ export function watchAsyncControlInbox(
 		onStop?: (request: StopRequest) => void;
 		onSteer?: (request: SteerRequest) => void;
 		onSteerCapability?: (capability: SteerCapability) => void;
-		onSteerAck?: (ack: SteerAck) => void | "retain";
+		onSteerAck?: (ack: SteerAck) => undefined | "retain";
 		pollIntervalMs?: number;
 		fs?: ControlChannelFs;
 		timers?: ControlChannelTimers;
@@ -1035,7 +1050,10 @@ export function watchAsyncControlInbox(
 				});
 				processSteerRequestsFromDir(
 					steerRequestsDir(asyncDir),
-					(request) => opts.onSteer?.(request),
+					(request) => {
+						opts.onSteer?.(request);
+						return undefined;
+					},
 					opts.afterControlClaim,
 				);
 			} else {

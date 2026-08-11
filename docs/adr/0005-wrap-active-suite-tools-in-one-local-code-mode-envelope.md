@@ -4,7 +4,7 @@ status: accepted
 
 # Wrap active Suite Tools in one local Code Mode envelope
 
-When enabled, Pi Stuff will expose one model-facing `codemode({ code })` Tool and move the full active Aggregate Tool
+When enabled, Pi Stuff exposes one model-facing `codemode({ code })` Tool and moves the full active Aggregate Tool
 catalog into an isolated local V8 Connector. This solves repeated schema cost rather than merely deferring schemas for
 one turn: future provider requests continue to carry only the small envelope while locally activated Tools remain
 available through `suite.*` on the next Code Mode execution. The initial rollout is disabled by default so installing

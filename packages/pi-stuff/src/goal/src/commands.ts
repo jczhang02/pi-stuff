@@ -108,13 +108,10 @@ export class GoalCommandController {
 			return;
 		}
 		this.runtime.updateStatus(ctx, startedGoal);
-		const sent = await this.runtime.sendOwnedGoalPrompt(
-			ctx,
-			startedGoal.id,
-			buildGoalPrompt(startedGoal),
-			true,
-			() => isActivationCurrent?.(startedGoal) ?? true,
-		);
+		const sent = await this.runtime.sendOwnedGoalPrompt(ctx, startedGoal.id, buildGoalPrompt(startedGoal), {
+			isCurrent: () => isActivationCurrent?.(startedGoal) ?? true,
+			userDriven: true,
+		});
 		if (isActivationCurrent && !isActivationCurrent(startedGoal)) return;
 		if (!sent) {
 			let rolledBackStartedGoal = false;
@@ -327,12 +324,10 @@ export class GoalCommandController {
 			return false;
 		}
 		const activatedGoal = this.runtime.activeGoal;
-		const sent = await this.runtime.sendOwnedGoalPrompt(
-			ctx,
-			activatedGoal.id,
-			buildGoalPrompt(activatedGoal),
-			false, // Queue reactivation preserves its persisted safety epoch.
-		);
+		const sent = await this.runtime.sendOwnedGoalPrompt(ctx, activatedGoal.id, buildGoalPrompt(activatedGoal), {
+			resetSafetyEpoch: false, // Queue reactivation preserves its persisted safety epoch.
+			userDriven: reason === "skip",
+		});
 		if (!sent && this.runtime.activeGoal?.id === activatedGoal.id) {
 			this.runtime.activeGoal = transitionGoal(activatedGoal, "paused");
 			this.runtime.blockStaleGoalToolCalls();
@@ -421,6 +416,7 @@ export class GoalCommandController {
 			ctx,
 			resumedGoal.id,
 			buildResumePrompt(resumedGoal, stoppedStatus),
+			{ userDriven: true },
 		);
 		if (!sent) {
 			if (this.runtime.activeGoal?.id === resumedGoal.id && this.runtime.activeGoal.status === "active") {
@@ -505,6 +501,7 @@ export class GoalCommandController {
 				ctx,
 				editedGoal.id,
 				buildObjectiveUpdatedPrompt(editedGoal),
+				{ userDriven: true },
 			);
 			if (!sent) {
 				if (this.runtime.activeGoal?.id === editedGoal.id) {
@@ -632,6 +629,7 @@ export class GoalCommandController {
 			ctx,
 			this.runtime.activeGoal.id,
 			buildGoalPrompt(this.runtime.activeGoal),
+			{ userDriven: true },
 		);
 		if (!sent && this.runtime.activeGoal.id === prioritized.id) {
 			this.runtime.queuedGoals = previousQueue;

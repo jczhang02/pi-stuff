@@ -26,8 +26,8 @@ export type SendMessageFn = (
     display?: string;
     details?: unknown;
   },
-  options?: { triggerTurn?: boolean }
-) => void;
+  options?: { deliverAs?: "steer" | "followUp" | "nextTurn"; triggerTurn?: boolean }
+) => void | Promise<boolean>;
 
 export interface McpExtensionState {
   owner: McpRuntimeOwner;
@@ -57,6 +57,10 @@ export interface McpExtensionState {
   openBrowser: (url: string) => Promise<void>;
   ui?: ExtensionContext["ui"];
   sendMessage?: SendMessageFn;
+  /** Read the live Host delivery mode immediately before an MCP UI action. */
+  isAgentIdle?: () => boolean;
+  /** Promote an explicit MCP UI steer after its Host message is accepted. */
+  promoteActiveAgentWorkToUser?: () => void;
   onToolMetadataUpdated?: (serverName: string, reason: string) => void | Promise<void>;
   statusEvents?: McpStatusEventBus;
 }

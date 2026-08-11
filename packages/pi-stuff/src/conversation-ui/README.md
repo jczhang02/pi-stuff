@@ -36,16 +36,40 @@ models omit both cost and the former `(sub)` label.
 
 For `openai-codex`, cost is always replaced by observed weekly remaining percentage. When Fast mode is active, `fast`
 occupies its former-footer position between Thinking and the working directory; weekly allowance remains after cache. The
-the internal Codex module publishes that snapshot through `getCodexStatusChannel(pi)`; the Statusline
+internal Codex module publishes that snapshot through `getCodexStatusChannel(pi)`; the Statusline
 performs no authentication or network work.
 Weekly allowance stays hidden until real data arrives, and `fast` appears only while Fast mode is enabled. The shared
 channel is keyed by Pi's Extension event bus, so late-loaded and physically separate Capability copies still converge
 on one observer identity.
 
-Session import and startup do not probe Git. A user-driven Agent turn or background Agent completion requests one
-bounded, read-only, no-lock status refresh that binds counts to the measured working directory and branch. Stale counts
-disappear across branch or cwd changes, and disabling Statusline stops future probes. Requests arriving during an
-active probe collapse into one trailing measurement, so the newest state is not lost and bursts remain bounded.
+Session import and startup do not probe Git. A user-driven Agent turn, including its attributed background Agent
+completion, requests one bounded, read-only, no-lock status refresh that binds counts to the measured working directory
+and branch. Automatic Extension work never requests one. Stale counts disappear across branch or cwd changes, and
+disabling Statusline stops future probes. Requests arriving during an active probe collapse into one trailing
+measurement, so the newest state is not lost and bursts remain bounded. Pi exposes itself as idle while asynchronous
+`agent_settled` handlers are still deciding whether to continue; the Suite therefore holds refresh requests until the
+last observed settlement reaches a genuinely idle boundary, preventing a probe from overlapping Goal continuation.
+
+Attribution follows Pi's actual message delivery rather than queue acceptance. A user follow-up therefore remains
+pending without relabeling the Agent work already in flight; it becomes user work at its `message_start` boundary.
+Direct interactive and RPC steers promote the active work only when Pi delivers their message, so a later input handler
+can still reject them without changing attribution. A Suite-owned UI steer promotes immediately after its Host send is
+accepted. Suite-authored Goal, Web, MCP, Background Work, and supervisor messages carry an in-memory user/automatic
+marker, so Agents launched from those turns inherit the correct origin while the marker stays out of persisted session
+JSON. A separate non-persisted marker identifies a direct command, prompt, or UI/RPC action. Historical user
+attribution can therefore survive an asynchronous Background Work or curator completion without granting that later
+automatic wake-up first-use configuration authority. Explicit Suite UI work uses marked custom messages through Pi's
+public `sendMessage` seam instead of trying to annotate fire-and-forget `sendUserMessage` input dispatches. Pending delivery
+attribution follows Pi's own queue without an arbitrary item cap, so a large accepted steer/follow-up backlog remains
+lossless until delivery or the Agent-run boundary clears it. Pi has no post-input hook across separately loaded Extensions;
+if a later Extension leaves mixed user/automatic records that cannot be correlated after transformation, the whole
+ambiguous delivery class is discarded and attributed as automatic. This deliberately loses a cosmetic user-only Git
+refresh rather than allowing automatic work to trigger it.
+
+The same shared Host seam prepares Context before Suite custom Agent work is accepted and rechecks the originating
+Session or Goal after every asynchronous preparation boundary. Aggregate Suite startup uses a `conversation-ui`-owned,
+module-local readiness gate: all Capability `session_start` handlers are observed, any failure rejects the generation,
+and restored Goal work is released only after the complete Suite has settled successfully.
 
 It reduces lower-priority information at narrow widths and disappears while autocomplete or a Command Dialog owns the
 input area. It does not duplicate Agent, Todo, BTW, Goal, MCP, or Tool activity.

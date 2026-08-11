@@ -76,9 +76,7 @@ function contextRecord(context: Context, phase: string): object {
 }
 
 function fixtureStream(context: Context) {
-	// biome-ignore lint/complexity/useLiteralKeys: the test suite enables noPropertyAccessFromIndexSignature
 	const phase = process.env["PI_STUFF_RTK_PTY_PHASE"] ?? "fresh";
-	// biome-ignore lint/complexity/useLiteralKeys: the test suite enables noPropertyAccessFromIndexSignature
 	const logPath = process.env["PI_STUFF_RTK_PTY_LOG"];
 	if (logPath) appendFileSync(logPath, `${JSON.stringify(contextRecord(context, phase))}\n`);
 	if (phase === "resume") return textStream("RTK_RESUME_DONE");

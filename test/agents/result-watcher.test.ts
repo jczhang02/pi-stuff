@@ -8,6 +8,7 @@ import { reconcileAsyncRun } from "../../packages/pi-stuff/src/subagents/src/run
 import { readBoundedOwnedFileSnapshot } from "../../packages/pi-stuff/src/subagents/src/shared/private-directory.js";
 import {
 	type IntercomEventBus,
+	SUBAGENT_ASYNC_COMPLETE_EVENT,
 	SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT,
 	SUBAGENT_RESULT_INTERCOM_EVENT,
 	type SubagentState,
@@ -122,7 +123,13 @@ describe("background result watcher", () => {
 		const replacement = path.join(resultsDir, ".shared-name.replacement");
 		fs.writeFileSync(
 			replacement,
-			JSON.stringify({ id: "shared-name", sessionId: "root-session", success: true, summary: "now local" }),
+			JSON.stringify({
+				id: "shared-name",
+				parentRunOrigin: "user",
+				sessionId: "root-session",
+				success: true,
+				summary: "now local",
+			}),
 		);
 		fs.renameSync(replacement, resultPath);
 		watcher.primeExistingResults();
@@ -130,6 +137,7 @@ describe("background result watcher", () => {
 
 		expect(reads).toBe(2);
 		expect(delivered).toHaveLength(1);
+		expect(delivered[0]?.parentRunOrigin).toBe("user");
 		expect(fs.existsSync(resultPath)).toBe(false);
 		watcher.stopResultWatcher();
 	});
@@ -353,6 +361,7 @@ describe("background result watcher", () => {
 				id: "reload-safe-result",
 				runId: "reload-safe-result",
 				sessionId: "root-session",
+				parentRunOrigin: "user",
 				asyncDir,
 				mode: "single",
 				state: "complete",
@@ -385,8 +394,10 @@ describe("background result watcher", () => {
 		watcher.primeExistingResults();
 		for (let attempt = 0; attempt < 100 && fs.existsSync(resultPath); attempt++) await Bun.sleep(10);
 		expect(delivered).toHaveLength(1);
+		expect(delivered[0]?.parentRunOrigin).toBe("user");
 		expect(fs.existsSync(resultPath)).toBe(false);
 		expect(JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8"))).toMatchObject({
+			parentRunOrigin: "user",
 			state: "complete",
 			steps: [{ status: "complete" }],
 		});
@@ -715,6 +726,109 @@ describe("background result watcher", () => {
 		deliveries[1]?.resolve(true);
 		for (let attempt = 0; attempt < 100 && fs.existsSync(resultPath); attempt += 1) await Bun.sleep(5);
 		expect(fs.existsSync(resultPath)).toBe(false);
+		watcher.stopResultWatcher();
+	});
+
+	test("restores nested user takeover attribution before emitting a cold completion", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-result-nested-origin-"));
+		temporaryDirectories.push(root);
+		const resultsDir = path.join(root, "results");
+		const asyncDirRoot = path.join(root, "async");
+		const runId = "nested-origin";
+		const asyncDir = path.join(asyncDirRoot, runId);
+		fs.mkdirSync(resultsDir, { recursive: true });
+		fs.mkdirSync(asyncDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(asyncDir, "status.json"),
+			JSON.stringify({
+				runId,
+				sessionId: "root-session",
+				parentRunOrigin: "automatic",
+				mode: "single",
+				state: "complete",
+				startedAt: 1,
+				endedAt: 2,
+				lastUpdate: 2,
+				steps: [{ agent: "worker", status: "complete" }],
+				nestedRoute: {
+					rootRunId: runId,
+					eventSink: path.join(root, "nested", "events"),
+					controlInbox: path.join(root, "nested", "control"),
+					capabilityToken: "b".repeat(32),
+				},
+			}),
+		);
+		const resultPath = path.join(resultsDir, `${runId}.json`);
+		fs.writeFileSync(
+			resultPath,
+			JSON.stringify({
+				id: runId,
+				runId,
+				sessionId: "root-session",
+				parentRunOrigin: "automatic",
+				asyncDir,
+				mode: "single",
+				state: "complete",
+				success: true,
+				summary: "done",
+				results: [{ agent: "worker", output: "done", success: true }],
+			}),
+		);
+
+		const emitted: CompletionNotification[] = [];
+		const notifications: CompletionNotification[] = [];
+		const state = {
+			completionSeen: new Map<string, number>(),
+			currentSessionId: "root-session",
+			resultFileCoalescer: { clear: () => {}, schedule: () => false },
+			watcher: null,
+			watcherRestartTimer: null,
+		} as unknown as SubagentState;
+		const watcher = createResultWatcher(
+			{
+				events: {
+					emit: (channel: string, data: unknown) => {
+						if (channel === SUBAGENT_ASYNC_COMPLETE_EVENT) emitted.push(data as CompletionNotification);
+					},
+				},
+			} as never,
+			state,
+			resultsDir,
+			60_000,
+			{
+				asyncDirRoot,
+				notifier: {
+					deliver: async (notification) => {
+						notifications.push(notification);
+						return true;
+					},
+				},
+				projectNestedEvents: async () =>
+					({
+						version: 3,
+						rootRunId: runId,
+						updatedAt: 3,
+						children: [
+							{
+								id: "nested-child",
+								parentRunId: runId,
+								parentRunOrigin: "user",
+								depth: 1,
+								path: [{ runId }],
+								state: "complete",
+							},
+						],
+					}) as never,
+			},
+		);
+
+		watcher.startResultWatcher();
+		watcher.primeExistingResults({ triggerTurn: false });
+		for (let attempt = 0; attempt < 100 && emitted.length === 0; attempt += 1) await Bun.sleep(10);
+
+		expect(notifications[0]?.parentRunOrigin).toBe("user");
+		expect(emitted[0]?.parentRunOrigin).toBe("user");
+		expect(notifications[0]).toMatchObject({ nestedChildren: [{ parentRunOrigin: "user" }] });
 		watcher.stopResultWatcher();
 	});
 

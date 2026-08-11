@@ -17,7 +17,7 @@ import { WelcomeHeaderController, WelcomeRegistrySource } from "./welcome-header
 /** Session-local presentation adapters installed by the Pi Stuff UI Capability. */
 export interface UiSessionPresentation {
 	dispose(): void;
-	refreshGit(): void;
+	refreshGit(): Promise<void>;
 	requestRender(force?: boolean): void;
 	updateContextFileCount(count: number | undefined): void;
 }
@@ -146,9 +146,9 @@ class InstalledUiSessionPresentation implements UiSessionPresentation {
 		this.editor.dispose();
 	}
 
-	refreshGit(): void {
-		if (this.disposed || !this.statusline.isEnabled()) return;
-		void this.git.refresh(this.pi, this.cwd());
+	refreshGit(): Promise<void> {
+		if (this.disposed || !this.statusline.isEnabled()) return Promise.resolve();
+		return this.git.refresh(this.pi, this.cwd());
 	}
 
 	requestRender(force?: boolean): void {

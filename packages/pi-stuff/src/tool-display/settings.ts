@@ -35,11 +35,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function parseSettings(value: unknown): ToolUiSettings {
-	// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
 	if (!isRecord(value) || value["schemaVersion"] !== 1 || typeof value["liveElapsed"] !== "boolean") {
 		throw new Error("expected schemaVersion 1 and a boolean liveElapsed value");
 	}
-	// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
 	return { liveElapsed: value["liveElapsed"], schemaVersion: 1 };
 }
 
@@ -47,7 +45,6 @@ async function readSettings(path: string): Promise<ToolUiSettings> {
 	try {
 		return parseSettings(JSON.parse(await readFile(path, "utf8")) as unknown);
 	} catch (error) {
-		// biome-ignore lint/complexity/useLiteralKeys: this record is deliberately index-signature-only under noPropertyAccessFromIndexSignature
 		if (isRecord(error) && error["code"] === "ENOENT") return DEFAULT_SETTINGS;
 		reportDiagnostic({
 			action: "/ui",

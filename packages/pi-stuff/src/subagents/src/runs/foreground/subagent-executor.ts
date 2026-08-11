@@ -15,6 +15,7 @@ import {
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import type { projectCurrentContext } from "../../../../context-management/index.js";
+import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import type { AgentConfig, AgentScope } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { getArtifactsDir } from "../../shared/artifacts.ts";
@@ -195,6 +196,8 @@ export interface ForegroundStartBinding {
 export interface SubagentExecutionHooks {
 	/** Called after every fallible launch preflight but before any child writer starts. */
 	readonly beforeForegroundStart?: (binding: ForegroundStartBinding) => void | Promise<void>;
+	/** Parent Agent attribution captured by the root Capability before launch. */
+	readonly parentRunOrigin?: AgentWorkOrigin;
 }
 
 interface PreparedLaunch {
@@ -995,6 +998,7 @@ async function launchBackground(
 	ctx: ExtensionContext,
 	deps: ExecutorDeps,
 	engines: ExecutorEngines,
+	hooks?: SubagentExecutionHooks,
 ): Promise<AgentToolResult<Details>> {
 	if (!isAsyncAvailable()) {
 		return errorResult(
@@ -1007,6 +1011,7 @@ async function launchBackground(
 		const tasks = parallelInputs(data);
 		return await engines.backgroundParallel(data.runId, {
 			...common,
+			parentRunOrigin: hooks?.parentRunOrigin,
 			agents: data.agents,
 			tasks,
 			goal: data.params.tasks?.[0]?.description ?? data.params.tasks?.[0]?.task ?? "",
@@ -1034,6 +1039,7 @@ async function launchBackground(
 	const skills = normalizeSkillInput(data.params.skill);
 	return await engines.backgroundSingle(data.runId, {
 		...common,
+		parentRunOrigin: hooks?.parentRunOrigin,
 		agent: agent.name,
 		description: data.params.description,
 		task: childTask(data, { agent: agent.name, task }, 0),
@@ -1845,6 +1851,7 @@ async function resumeRun(input: {
 	engines: ExecutorEngines;
 	parentModel?: ParentModel;
 	absoluteDeadlineAt?: number;
+	parentRunOrigin?: AgentWorkOrigin;
 }): Promise<AgentToolResult<Details>> {
 	if (!input.params.id) return errorResult("management", "action='resume' requires id.");
 	const followUp = input.params.message?.trim() || "Continue the previous task and report the current result.";
@@ -1936,6 +1943,7 @@ async function resumeRun(input: {
 				modelScope: discovered.modelScope,
 				interactive: input.ctx.hasUI,
 			},
+			parentRunOrigin: input.parentRunOrigin,
 			cwd: effectiveCwd,
 			childBaseExtensionPath: input.deps.childBaseExtensionPath,
 			artifactsDir: getArtifactsDir(parentSessionFile, effectiveCwd, artifactConfig.dir),
@@ -1993,6 +2001,7 @@ async function controlAction(
 	deps: ExecutorDeps,
 	engines: ExecutorEngines,
 	signal: AbortSignal,
+	hooks?: SubagentExecutionHooks,
 ): Promise<AgentToolResult<Details>> {
 	const validationError = validateControlInput(params);
 	if (validationError) return errorResult("management", validationError);
@@ -2010,7 +2019,8 @@ async function controlAction(
 		return inspectSubagentStatus({ action: "status", id: params.id, index: params.index }, { state: deps.state });
 	}
 	if (params.action === "stop") return stopRun(params, deps);
-	if (params.action === "resume") return resumeRun({ params, ctx, deps, engines, parentModel });
+	if (params.action === "resume")
+		return resumeRun({ params, ctx, deps, engines, parentModel, parentRunOrigin: hooks?.parentRunOrigin });
 	if (params.action === "steer") {
 		if (!params.id || !params.message) return errorResult("management", "action='steer' requires id and message.");
 		let job: ReturnType<typeof resolveCurrentAsyncJob>;
@@ -2020,7 +2030,7 @@ async function controlAction(
 			return errorResult("management", error instanceof Error ? error.message : String(error));
 		}
 		if (!job) return errorResult("management", `Agent '${params.id}' is not running in the current session.`);
-		return steerRun(job, params.message.trim(), params.index, deps, signal);
+		return steerRun(job, params.message.trim(), params.index, deps, signal, hooks?.parentRunOrigin);
 	}
 	return errorResult("management", "Unknown Agent action. Valid actions: status, steer, stop, resume.");
 }
@@ -2031,6 +2041,7 @@ async function steerRun(
 	index: number | undefined,
 	deps: ExecutorDeps,
 	signal: AbortSignal,
+	parentRunOrigin?: AgentWorkOrigin,
 ): Promise<AgentToolResult<Details>> {
 	const status = reconcileAsyncRun(job.asyncDir, { kill: deps.kill }).status;
 	if (!status || (status.state !== "running" && status.state !== "queued")) {
@@ -2066,6 +2077,7 @@ async function steerRun(
 		requestAsyncSteer(job.asyncDir, {
 			id: requestId,
 			message,
+			...(parentRunOrigin ? { parentRunOrigin } : {}),
 			...(index !== undefined ? { targetIndex: index } : { targetIndexes }),
 			source: "agent-steer",
 		});
@@ -2143,7 +2155,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 		if (params.action && deps.allowMutatingManagementActions === false) {
 			return errorResult("management", "Agent management actions are unavailable inside a nested Agent owner.");
 		}
-		if (params.action) return controlAction(params, ctx, deps, engines, signal);
+		if (params.action) return controlAction(params, ctx, deps, engines, signal, hooks);
 
 		const foreground = (params.async ?? deps.asyncByDefault) !== true;
 		if (foreground && deps.state.subagentInProgress) return duplicateForegroundResult(params);
@@ -2166,7 +2178,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 				// runtime remains authoritative until the tracker terminalizes it.
 				foregroundLifecycleOwnsRoute = result.details.results.some((child) => child.detached === true);
 			} else {
-				result = await launchBackground(prepared, ctx, deps, engines);
+				result = await launchBackground(prepared, ctx, deps, engines, hooks);
 			}
 			backgroundOwnsRoute = !foreground && Boolean(result.details.asyncId);
 			return result;

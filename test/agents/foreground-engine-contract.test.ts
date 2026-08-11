@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";
+import { steerRequestsDir } from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
 import { createInitialStatus } from "../../packages/pi-stuff/src/subagents/src/runs/background/initial-status.js";
 import { initializeWriterProcessRegistry } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.js";
 import {
@@ -35,6 +36,7 @@ import {
 	refreshForegroundRuntimeRun,
 	replayForegroundRuns,
 } from "../../packages/pi-stuff/src/subagents/src/session/foreground-replay.js";
+import { resolveCurrentSessionId } from "../../packages/pi-stuff/src/subagents/src/shared/session-identity.js";
 import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
@@ -112,6 +114,7 @@ function executor(
 			controlInbox: string;
 			capabilityToken: string;
 		};
+		parentRunOrigin?: "automatic" | "user";
 		sessionFile?: string;
 		task: string;
 	}) => void,
@@ -204,6 +207,115 @@ function executor(
 }
 
 describe("reduced foreground Agent engine", () => {
+	test("persists parent run attribution in a background launch", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-background-origin-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		let observedOrigin: "automatic" | "user" | undefined;
+		await executor(cwd, state(), (launch) => {
+			observedOrigin = launch.parentRunOrigin;
+		}).execute(
+			"background-origin",
+			{ agent: "general-purpose", task: "Inspect the parser", context: "fresh" },
+			new AbortController().signal,
+			undefined,
+			context(cwd),
+			{ parentRunOrigin: "user" },
+		);
+		expect(observedOrigin).toBe("user");
+	});
+
+	test("carries direct user takeover attribution into the durable steer request", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-background-user-steer-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		const runId = "user-steer";
+		const asyncDir = path.join(cwd, runId);
+		const ctx = context(cwd);
+		const parentSessionId = resolveCurrentSessionId(ctx.sessionManager, cwd);
+		fs.mkdirSync(asyncDir, { mode: 0o700 });
+		const config: BackgroundRunnerConfig = {
+			version: 2,
+			id: runId,
+			parentRunOrigin: "automatic",
+			cwd,
+			asyncDir,
+			resultPath: path.join(cwd, "result.json"),
+			sessionId: parentSessionId,
+			work: {
+				mode: "single",
+				task: {
+					agent: "general-purpose",
+					task: "Wait for steering",
+					cwd,
+					inheritProjectContext: true,
+					inheritSkills: false,
+				},
+			},
+		};
+		const status = createInitialStatus(config, Date.now());
+		const [step] = status.steps;
+		if (!step) throw new Error("Expected one background status step");
+		step.status = "running";
+		const statusPath = path.join(asyncDir, "status.json");
+		fs.writeFileSync(statusPath, JSON.stringify(status), { mode: 0o600 });
+		const runState = state();
+		runState.asyncJobs.set(runId, { asyncId: runId, asyncDir, sessionId: parentSessionId, status: "running" });
+
+		const observeRequest = (async () => {
+			const deadline = Date.now() + 2_000;
+			let requestPath: string | undefined;
+			while (!requestPath) {
+				if (Date.now() >= deadline) throw new Error("Timed out waiting for the durable steer request");
+				const directory = steerRequestsDir(asyncDir);
+				const entry = fs.existsSync(directory)
+					? fs.readdirSync(directory).find((candidate) => candidate.endsWith(".json"))
+					: undefined;
+				if (entry) requestPath = path.join(directory, entry);
+				else await Bun.sleep(10);
+			}
+			const request = JSON.parse(fs.readFileSync(requestPath, "utf8")) as {
+				id: string;
+				message: string;
+				parentRunOrigin?: string;
+				ts: number;
+			};
+			const deliveredAt = Date.now();
+			status.steering = {
+				requested: 1,
+				scheduled: 0,
+				pending: 0,
+				delivered: 1,
+				failed: 0,
+				recovered: 0,
+				lastRequestedAt: request.ts,
+				lastDeliveredAt: deliveredAt,
+				recent: [
+					{
+						id: request.id,
+						requestedAt: request.ts,
+						messagePreview: request.message,
+						targets: [{ index: 0, state: "delivered", deliveredAt }],
+					},
+				],
+			};
+			fs.writeFileSync(statusPath, JSON.stringify(status), { mode: 0o600 });
+			return request;
+		})();
+		const controlled = executor(cwd, runState).execute(
+			"control-call",
+			{ action: "steer", id: runId, message: "Apply the user's correction." },
+			new AbortController().signal,
+			undefined,
+			ctx,
+			{ parentRunOrigin: "user" },
+		);
+
+		const [result, request] = await Promise.all([controlled, observeRequest]);
+		expect(result.isError).not.toBe(true);
+		expect(request.parentRunOrigin).toBe("user");
+	});
+
 	test("single foreground execution completes through the shared v2 runner shape", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-single-"));
 		temporaryDirectories.push(cwd);
@@ -393,7 +505,9 @@ describe("reduced foreground Agent engine", () => {
 			};
 			fs.mkdirSync(config.asyncDir, { recursive: true, mode: 0o700 });
 			const status = createInitialStatus(config, Date.now());
-			status.steps[0]!.status = "running";
+			const firstStep = status.steps.at(0);
+			if (!firstStep) throw new Error("Expected an initial foreground step");
+			firstStep.status = "running";
 			fs.writeFileSync(path.join(config.asyncDir, "status.json"), JSON.stringify(status), { mode: 0o600 });
 			let releaseCalls = 0;
 

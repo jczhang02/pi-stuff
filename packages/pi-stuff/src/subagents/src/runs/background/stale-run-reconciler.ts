@@ -17,6 +17,7 @@ import {
 	attachRootChildrenToSteps,
 	type NestedRoute,
 	nestedSummaryFromAsyncStatus,
+	nestedWorkIncludesUser,
 	projectNestedEvents,
 	resolveNestedAsyncDir,
 	sanitizeSummary,
@@ -197,6 +198,7 @@ interface ResultChildOutcome {
 }
 
 interface ResultRepairData {
+	parentRunOrigin?: AsyncStatus["parentRunOrigin"];
 	state: "complete" | "failed" | "paused" | "stopped";
 	startedAt?: number;
 	endedAt?: number;
@@ -224,6 +226,7 @@ function readResultRepairData(
 			startedAt?: number;
 			endedAt?: number;
 			timedOut?: boolean;
+			parentRunOrigin?: unknown;
 			results?: unknown;
 			nestedChildren?: unknown;
 		};
@@ -266,6 +269,9 @@ function readResultRepairData(
 					.filter((child): child is NestedRunSummary => Boolean(child))
 			: undefined;
 		return {
+			...(data.parentRunOrigin === "automatic" || data.parentRunOrigin === "user"
+				? { parentRunOrigin: data.parentRunOrigin }
+				: {}),
 			state,
 			...(finiteTimestamp(data.startedAt) !== undefined ? { startedAt: finiteTimestamp(data.startedAt) } : {}),
 			...(finiteTimestamp(data.endedAt) !== undefined ? { endedAt: finiteTimestamp(data.endedAt) } : {}),
@@ -351,8 +357,15 @@ function terminalStatusFromResult(
 					? repair.results?.find((child) => child.interrupted)
 					: undefined;
 	const error = stateDrivingFailure?.error ?? repair.results?.find((child) => child.error)?.error;
+	const parentRunOrigin =
+		status.parentRunOrigin === "user" ||
+		repair.parentRunOrigin === "user" ||
+		nestedWorkIncludesUser(repair.nestedChildren)
+			? "user"
+			: (status.parentRunOrigin ?? repair.parentRunOrigin);
 	return {
 		...status,
+		...(parentRunOrigin ? { parentRunOrigin } : {}),
 		startedAt: repair.startedAt ?? status.startedAt,
 		state: repair.state,
 		...(status.lifecycleArtifactVersion === 3 &&
@@ -522,6 +535,7 @@ function buildFailedRepair(
 		message,
 		result: {
 			id: runId,
+			...(status.parentRunOrigin ? { parentRunOrigin: status.parentRunOrigin } : {}),
 			agent: resultAgent,
 			mode: status.mode,
 			success: false,

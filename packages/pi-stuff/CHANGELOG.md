@@ -2,14 +2,23 @@
 
 ## Unreleased
 
-- Consolidate the Suite into one private local Pi Package with twelve named internal Modules. Remove the former
+- Consolidate the Suite into one private local Pi Package with thirteen named internal Modules. Remove the former
   per-Capability manifests, self-owned runtime dependencies, version synchronization, Changesets, and npm publication
   workflow while preserving the accepted installation order and Pi 0.84.1 behavior.
+- Add the opt-in Code Mode Module, which replaces the active Suite Tool schemas with one local JavaScript envelope while
+  preserving the original Tool execution, session, media, and UI behavior.
 - Absorb the adapted Web and MCP implementations into their owning Modules. Retain their pinned upstream revisions,
   license texts, security notes, original documentation, and Pi Stuff delta records beside the source.
 - Replace multi-archive release certification with one extracted-Package verification that checks the complete runtime
   resource set and exercises the real Pi Host, resume paths, wide/narrow TUI, Magic Context, RTK, Web, MCP, Goal,
   Subagents, Todo, BTW, Tool presentation, and Background Work.
+- Harden Suite lifecycle boundaries: keep Magic Context configuration migration behind direct use, isolate Subagent
+  cleanup and recovery state, and refresh Statusline Git observations once after complete interactive, RPC, or
+  command-driven Agent work while leaving Extension-authored automatic runs free of Git probes. Attribute queued
+  follow-ups only when Pi actually delivers them, and propagate ephemeral user/automatic provenance through Suite
+  Goal, Web, MCP, Background Work, supervisor, and Subagent boundaries. Keep historical user attribution separate from
+  direct-use configuration authority, fence asynchronous custom-message delivery to its owning Session or Goal, and
+  release restored Goal work only after every Suite startup handler has settled successfully.
 
 ## 0.3.3
 

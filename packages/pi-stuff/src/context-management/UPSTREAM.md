@@ -19,7 +19,8 @@ against the pinned Pi 0.84.1 source profile.
 
 ## Pi Stuff adapter policy
 
-- lazy first-input activation with automatic-turn fallback;
+- lazy direct-input activation, with automatic-turn activation only when a recognized CortexKit config exists and no
+  legacy user/project configuration is awaiting the official factory's migration;
 - native Pi fail-open behavior;
 - one bounded status/projection seam for BTW and Agents;
 - exact official Package behind a replaceable Capability seam;
@@ -29,8 +30,9 @@ against the pinned Pi 0.84.1 source profile.
 - one explicit compaction authority: native fallback is allowed before Magic
   takeover, never stacked after an active Magic attempt;
 - bounded reference-only projections for BTW and Agents;
-- a first-use configuration bootstrap that never overwrites either the shared
-  CortexKit config or a legacy Pi config;
+- a first-use configuration bootstrap that mirrors upstream's absolute-XDG and JSON/JSONC path rules, ignores custom
+  Pi agent directories that upstream does not read, and creates a user config only when no recognized user or project
+  config exists;
 - a lexical-only first-use search profile. The official 0.33.1 local embedding
   loader cannot resolve its Transformers dynamic import from the certified
   single-file Host; disabling that optional path prevents repeated load errors

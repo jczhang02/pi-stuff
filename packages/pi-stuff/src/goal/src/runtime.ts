@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
+import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
 import { getGoalStatusChannel } from "../../conversation-ui/statusline.js";
 import { checkpointGoalActiveTime, formatDuration, formatTokenCount, updateGoalUsage } from "./accounting.js";
 import { formatError, truncateNotification } from "./errors.js";
@@ -68,6 +70,12 @@ export interface GoalToolVisibilitySnapshot {
 	goalToolsHiddenByPolicy: string[];
 }
 
+export interface GoalPromptDeliveryOptions {
+	readonly isCurrent?: () => boolean;
+	readonly resetSafetyEpoch?: boolean;
+	readonly userDriven?: boolean;
+}
+
 const GOAL_STATE_ENTRY_TYPE = "goal-state";
 export const GOAL_COMPLETE_TOOL = "goal_complete";
 export const GOAL_BLOCKED_TOOL = "goal_blocked";
@@ -126,18 +134,17 @@ export interface GoalSettingsRuntimeSnapshot {
 
 interface PendingGoalPrompt {
 	goalId: string;
+	origin: GoalRunOrigin;
 	resetSafetyEpoch: boolean;
 }
 
 interface PendingNonGoalInput {
-	behavior: "steer" | "followUp";
+	behavior: "idle" | "steer" | "followUp";
 	fingerprint: string;
+	origin: GoalRunOrigin;
 	resetSafetyEpoch: boolean;
 }
 
-const MAX_CANCELLED_CONTINUATION_PROMPTS = 20;
-const MAX_PENDING_GOAL_PROMPTS = 20;
-const MAX_PENDING_NON_GOAL_INPUTS = 20;
 const BUDGET_WRAP_UP_MESSAGE_TYPE = "goal-budget-wrap-up";
 export const GOAL_PROMPT_MESSAGE_TYPE = "pi-stuff-goal-prompt";
 export const GOAL_CONTEXT_MESSAGE_TYPE = "pi-stuff-goal-context";
@@ -183,8 +190,11 @@ export class GoalRuntime {
 	goalToolsUnlocked = false;
 	/** Exact lazy goal tools this runtime removed and may restore on a mode change. */
 	goalToolsHiddenByPolicy = new Set<string>();
+	// Pi's delivery queues are not capped. These mirrors must retain every
+	// unresolved marker until delivery or an explicit lifecycle clear; evicting an
+	// older entry can silently transfer Goal ownership or safety policy.
 	pendingGoalPromptMarkers = new Map<string, PendingGoalPrompt>();
-	claimedGoalPromptMarkers = new Set<string>();
+	claimedGoalPromptMarkers = new Map<string, PendingGoalPrompt>();
 	cancelledContinuationMarkers = new Set<string>();
 	claimedContinuationMarkers = new Set<string>();
 	pendingNonGoalInputs: PendingNonGoalInput[] = [];
@@ -315,7 +325,7 @@ export class GoalRuntime {
 		return true;
 	}
 
-	dispatchContinuationIfSettled(ctx: StatusContext) {
+	async dispatchContinuationIfSettled(ctx: StatusContext): Promise<boolean> {
 		const intent = this.continuationIntent;
 		if (!intent) return false;
 		if (this.activeGoal?.status === "active" && !this.goalToolsAvailable()) {
@@ -334,7 +344,7 @@ export class GoalRuntime {
 		this.continuationIntent = undefined;
 		this.continuationDelivery = intent;
 		try {
-			sendHiddenGoalPrompt(this.pi, intent.prompt);
+			await sendHiddenGoalPrompt(this.pi, intent.prompt);
 			return true;
 		} catch (error) {
 			if (this.continuationDelivery?.marker === intent.marker) {
@@ -431,23 +441,36 @@ export class GoalRuntime {
 			this.budgetWrapUp = { goalId: goal.id, delivered: false };
 		}
 		if (this.budgetWrapUp.delivered) return true;
-		this.budgetWrapUp.delivered = true;
-		try {
-			this.pi.sendMessage(
+		const pendingWrapUp = this.budgetWrapUp;
+		pendingWrapUp.delivered = true;
+		const isCurrent = () =>
+			this.budgetWrapUp === pendingWrapUp &&
+			this.activeGoal?.id === goal.id &&
+			this.activeGoal.status === "budget_limited";
+		void sendSuiteAgentMessage(
+			this.pi,
+			withAgentWorkOrigin(
 				{
 					customType: BUDGET_WRAP_UP_MESSAGE_TYPE,
 					content: BUDGET_WRAP_UP_PROMPT,
 					display: true,
 					details: { goalId: goal.id },
 				},
-				{ deliverAs: "steer" },
-			);
-			return true;
-		} catch (error) {
-			this.budgetWrapUp.delivered = false;
-			ctx.ui.notify(`Goal budget wrap-up failed: ${formatError(error)}`, "error");
-			return false;
-		}
+				"automatic",
+			),
+			{ deliverAs: "steer" },
+			isCurrent,
+		).then(
+			(accepted) => {
+				if (!accepted && this.budgetWrapUp === pendingWrapUp) pendingWrapUp.delivered = false;
+			},
+			(error) => {
+				if (!isCurrent()) return;
+				pendingWrapUp.delivered = false;
+				ctx.ui.notify(`Goal budget wrap-up failed: ${formatError(error)}`, "error");
+			},
+		);
+		return true;
 	}
 
 	limitActiveGoalForBudget(ctx: StatusContext, sendWrapUp: boolean) {
@@ -624,12 +647,19 @@ export class GoalRuntime {
 		ctx: StatusContext,
 		goalId: string,
 		prompt: string,
-		resetSafetyEpoch = true,
-		isCurrent?: () => boolean,
+		options: GoalPromptDeliveryOptions = {},
 	) {
-		const pending = this.rememberPendingGoalPrompt(goalId, prompt, resetSafetyEpoch);
-		const sent = await sendPrompt(this.pi, ctx, pending.prompt, isCurrent);
-		if (!sent || (isCurrent && !isCurrent())) {
+		const { isCurrent, resetSafetyEpoch = true, userDriven = false } = options;
+		const ownsPrompt = () =>
+			this.activeGoal?.id === goalId && this.activeGoal.status === "active" && (isCurrent?.() ?? true);
+		const pending = this.rememberPendingGoalPrompt(
+			goalId,
+			prompt,
+			resetSafetyEpoch,
+			userDriven ? "manual" : "automatic",
+		);
+		const sent = await sendPrompt(this.pi, ctx, pending.prompt, userDriven, ownsPrompt);
+		if (!sent || !ownsPrompt()) {
 			this.pendingGoalPromptMarkers.delete(pending.marker);
 			return false;
 		}
@@ -687,54 +717,65 @@ export class GoalRuntime {
 		return true;
 	}
 
-	noteQueuedNonGoalInput(prompt: string, behavior: "steer" | "followUp", resetSafetyEpoch = false) {
+	noteQueuedNonGoalInput(
+		prompt: string,
+		behavior: "idle" | "steer" | "followUp",
+		origin: GoalRunOrigin,
+		resetSafetyEpoch = origin === "manual",
+	) {
+		// A new idle prompt starts a new Host run. Any older mirror belongs to an
+		// input attempt that was handled or rejected before delivery.
+		if (behavior === "idle") this.pendingNonGoalInputs = [];
 		this.pendingNonGoalInputs.push({
 			behavior,
 			fingerprint: inputFingerprint(prompt),
+			origin,
 			resetSafetyEpoch,
 		});
-		if (this.pendingNonGoalInputs.length > MAX_PENDING_NON_GOAL_INPUTS) {
-			this.pendingNonGoalInputs.shift();
-		}
 	}
 
-	consumeQueuedNonGoalInput(prompt: string, allowDeliveryFallback = true) {
+	discardQueuedNonGoalInputs(behaviors: readonly ("idle" | "steer" | "followUp")[]) {
+		this.pendingNonGoalInputs = this.pendingNonGoalInputs.filter((pending) => !behaviors.includes(pending.behavior));
+	}
+
+	consumeQueuedNonGoalInput(
+		prompt: string,
+		allowDeliveryFallback = true,
+		behaviors: readonly ("idle" | "steer" | "followUp")[] = ["steer", "followUp"],
+	) {
 		if (typeof prompt !== "string") return undefined;
 		const fingerprint = inputFingerprint(prompt);
-		// Pi delivers steers before follow-ups. Prefer a matching steer even when an
-		// identical follow-up was queued first so it cannot steal follow-up ownership.
-		const steerIndex = this.pendingNonGoalInputs.findIndex(
-			(pending) => pending.behavior === "steer" && pending.fingerprint === fingerprint,
-		);
-		const exactIndex =
-			steerIndex >= 0
-				? steerIndex
-				: this.pendingNonGoalInputs.findIndex(
-						(pending) => pending.behavior === "followUp" && pending.fingerprint === fingerprint,
-					);
-		if (exactIndex >= 0) return this.pendingNonGoalInputs.splice(exactIndex, 1)[0];
-		if (!allowDeliveryFallback) return undefined;
-
-		// Skills, templates, and later input handlers can transform the raw text after
-		// pi-goal records it. Fall back to Pi's delivery priority as a bounded marker:
-		// steers drain before follow-ups, and settlement clears stale entries.
-		const fallbackSteerIndex = this.pendingNonGoalInputs.findIndex((pending) => pending.behavior === "steer");
-		const fallbackIndex =
-			fallbackSteerIndex >= 0
-				? fallbackSteerIndex
-				: this.pendingNonGoalInputs.findIndex((pending) => pending.behavior === "followUp");
-		if (fallbackIndex < 0) return undefined;
-		return this.pendingNonGoalInputs.splice(fallbackIndex, 1)[0];
-	}
-
-	consumeQueuedNonGoalFollowUpForAgentStart() {
-		// A pending steer owns the next intra-run boundary. Do not let a later
-		// follow-up suppress cleanup until all earlier-priority steers have started.
-		if (this.pendingNonGoalInputs.some((pending) => pending.behavior === "steer")) return false;
-		const index = this.pendingNonGoalInputs.findIndex((pending) => pending.behavior === "followUp");
-		if (index < 0) return false;
-		this.pendingNonGoalInputs.splice(index, 1);
-		return true;
+		const candidates = this.pendingNonGoalInputs.filter((pending) => behaviors.includes(pending.behavior));
+		if (
+			new Set(candidates.map((pending) => pending.origin)).size > 1 ||
+			new Set(candidates.map((pending) => pending.resetSafetyEpoch)).size > 1
+		) {
+			// A separately loaded Extension can handle or transform after this Package's
+			// input handler. Mixed user/automatic mirrors cannot be correlated safely,
+			// even across steer/follow-up classes or an exact-text collision.
+			const behavior = (["steer", "followUp", "idle"] as const).find((candidate) =>
+				candidates.some((pending) => pending.behavior === candidate),
+			);
+			this.pendingNonGoalInputs = [];
+			return behavior ? { behavior, fingerprint, origin: "automatic" as const, resetSafetyEpoch: false } : undefined;
+		}
+		// Pi drains steers before follow-ups. Select that delivery class before
+		// comparing text: a Skill may expand one queued prompt into text that happens
+		// to equal a later prompt in the other class.
+		for (const behavior of ["steer", "followUp", "idle"] as const) {
+			if (!behaviors.includes(behavior)) continue;
+			const firstIndex = this.pendingNonGoalInputs.findIndex((pending) => pending.behavior === behavior);
+			if (firstIndex < 0) continue;
+			const exactIndex = this.pendingNonGoalInputs.findIndex(
+				(pending) => pending.behavior === behavior && pending.fingerprint === fingerprint,
+			);
+			if (exactIndex >= 0) return this.pendingNonGoalInputs.splice(exactIndex, 1)[0];
+			// An owned Goal/recovery boundary must not consume a transformed non-Goal
+			// input. It also must not skip a higher-priority steer to claim a follow-up.
+			if (!allowDeliveryFallback) return undefined;
+			return this.pendingNonGoalInputs.splice(firstIndex, 1)[0];
+		}
+		return undefined;
 	}
 
 	markContinuationStarted(prompt: string) {
@@ -747,10 +788,17 @@ export class GoalRuntime {
 			return undefined;
 		}
 		if (this.continuationDelivery?.marker === marker) {
+			const goalId = this.continuationDelivery.goalId;
 			this.continuationDelivery = undefined;
 			this.rememberClaimedContinuationMarker(marker);
+			return goalId;
 		}
-		return marker.split(":", 1)[0];
+		if (this.claimedContinuationMarkers.has(marker)) return marker.split(":", 1)[0];
+		// Marker syntax is not authority. User text or another Extension may contain
+		// a lookalike comment; only an exact outstanding or already-claimed ticket
+		// belongs to this Goal runtime.
+		this.cancelContinuationWork();
+		return undefined;
 	}
 
 	persistGoal(goal: ActiveGoal) {
@@ -978,13 +1026,9 @@ export class GoalRuntime {
 		this.completionStatusTimer = undefined;
 	}
 
-	private rememberPendingGoalPrompt(goalId: string, prompt: string, resetSafetyEpoch: boolean) {
+	private rememberPendingGoalPrompt(goalId: string, prompt: string, resetSafetyEpoch: boolean, origin: GoalRunOrigin) {
 		const marker = randomUUID();
-		this.pendingGoalPromptMarkers.set(marker, { goalId, resetSafetyEpoch });
-		if (this.pendingGoalPromptMarkers.size > MAX_PENDING_GOAL_PROMPTS) {
-			const oldest = this.pendingGoalPromptMarkers.keys().next().value;
-			if (oldest) this.pendingGoalPromptMarkers.delete(oldest);
-		}
+		this.pendingGoalPromptMarkers.set(marker, { goalId, origin, resetSafetyEpoch });
 		return { marker, prompt: appendGoalPromptMarker(prompt, marker) };
 	}
 
@@ -993,22 +1037,19 @@ export class GoalRuntime {
 		if (!marker) return undefined;
 		const pending = this.pendingGoalPromptMarkers.get(marker);
 		this.pendingGoalPromptMarkers.delete(marker);
-		if (pending) this.rememberClaimedGoalPromptMarker(marker);
-		return pending;
+		if (pending) {
+			this.rememberClaimedGoalPromptMarker(marker, pending);
+			return pending;
+		}
+		return this.claimedGoalPromptMarkers.get(marker);
 	}
 
-	private rememberClaimedGoalPromptMarker(marker: string) {
-		this.claimedGoalPromptMarkers.add(marker);
-		if (this.claimedGoalPromptMarkers.size <= MAX_PENDING_GOAL_PROMPTS) return;
-		const oldest = this.claimedGoalPromptMarkers.values().next().value;
-		if (oldest) this.claimedGoalPromptMarkers.delete(oldest);
+	private rememberClaimedGoalPromptMarker(marker: string, pending: PendingGoalPrompt) {
+		this.claimedGoalPromptMarkers.set(marker, pending);
 	}
 
 	private rememberClaimedContinuationMarker(marker: string) {
 		this.claimedContinuationMarkers.add(marker);
-		if (this.claimedContinuationMarkers.size <= MAX_CANCELLED_CONTINUATION_PROMPTS) return;
-		const oldest = this.claimedContinuationMarkers.values().next().value;
-		if (oldest) this.claimedContinuationMarkers.delete(oldest);
 	}
 
 	consumeOwnedGoalPrompt(prompt: string) {
@@ -1017,9 +1058,6 @@ export class GoalRuntime {
 
 	private rememberCancelledContinuationMarker(marker: string) {
 		this.cancelledContinuationMarkers.add(marker);
-		if (this.cancelledContinuationMarkers.size <= MAX_CANCELLED_CONTINUATION_PROMPTS) return;
-		const oldest = this.cancelledContinuationMarkers.values().next().value;
-		if (oldest) this.cancelledContinuationMarkers.delete(oldest);
 	}
 }
 
@@ -1169,10 +1207,15 @@ function inputFingerprint(prompt: string) {
 	return createHash("sha256").update(prompt, "utf8").digest("hex");
 }
 
-async function sendPrompt(pi: ExtensionAPI, ctx: StatusContext, prompt: string, isCurrent?: () => boolean) {
+async function sendPrompt(
+	pi: ExtensionAPI,
+	ctx: StatusContext,
+	prompt: string,
+	userDriven: boolean,
+	isCurrent?: () => boolean,
+) {
 	try {
-		await sendHiddenGoalPrompt(pi, prompt);
-		return true;
+		return await sendHiddenGoalPrompt(pi, prompt, userDriven, isCurrent);
 	} catch (error) {
 		if (!isCurrent || isCurrent()) {
 			ctx.ui.notify(`Goal prompt failed: ${formatError(error)}`, "error");
@@ -1181,14 +1224,25 @@ async function sendPrompt(pi: ExtensionAPI, ctx: StatusContext, prompt: string, 
 	}
 }
 
-function sendHiddenGoalPrompt(pi: ExtensionAPI, prompt: string) {
-	return pi.sendMessage(
+function sendHiddenGoalPrompt(
+	pi: ExtensionAPI,
+	prompt: string,
+	userDriven = false,
+	isCurrent: () => boolean = () => true,
+) {
+	const message = withAgentWorkOrigin(
 		{
 			customType: GOAL_PROMPT_MESSAGE_TYPE,
 			content: prompt,
 			display: false,
 		},
+		userDriven ? "user" : "automatic",
+	);
+	return sendSuiteAgentMessage(
+		pi,
+		userDriven ? withDirectUserActivation(message) : message,
 		{ deliverAs: "followUp", triggerTurn: true },
+		isCurrent,
 	);
 }
 

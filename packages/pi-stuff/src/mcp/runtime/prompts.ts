@@ -1,8 +1,15 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import {
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  UserMessageComponent,
+} from "@earendil-works/pi-coding-agent";
 import type {
   GetPromptResult,
   PromptMessage,
 } from "@modelcontextprotocol/sdk/types.js";
+import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
+import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
+import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import type { McpExtensionState } from "./state.ts";
 import { isServerDisabled, type McpConfig, type PromptMetadata } from "./types.ts";
 import { formatPromptCommandName } from "./types.ts";
@@ -10,6 +17,8 @@ import { lazyConnect } from "./init.ts";
 import { isServerCacheValid, loadMetadataCache, reconstructPromptMetadata } from "./metadata-cache.ts";
 import { logger } from "./logger.ts";
 import { truncateAtWord } from "./utils.ts";
+
+export const MCP_USER_PROMPT_MESSAGE_TYPE = "pi-stuff-mcp-user-prompt";
 
 /**
  * Resolve prompt metadata for slash-command registration at extension load
@@ -176,8 +185,8 @@ function buildUsageMessage(metadata: PromptMetadata, missing: PromptMetadata["ar
 }
 
 /**
- * Flatten a `GetPromptResult` into a single string suitable for
- * `pi.sendUserMessage`. MCP prompts can contain multiple messages with
+ * Flatten a `GetPromptResult` into a single string suitable for the Suite's
+ * marked custom prompt delivery. MCP prompts can contain multiple messages with
  * mixed roles; we preserve role attribution as inline markers so the model
  * still sees the intended conversational shape without needing a
  * multi-message replay API on the pi side.
@@ -194,6 +203,50 @@ export function formatPromptResult(result: GetPromptResult): string {
     }
   }
   return lines.join("\n\n").trim();
+}
+
+/** Deliver a slash-command prompt while preserving its explicit user origin. */
+export function dispatchMcpPromptToAgent(
+  pi: ExtensionAPI,
+  text: string,
+  isCurrent: () => boolean = () => true,
+): Promise<boolean> {
+  return sendSuiteAgentMessage(
+    pi,
+    withDirectUserActivation(
+      withAgentWorkOrigin(
+        {
+          customType: MCP_USER_PROMPT_MESSAGE_TYPE,
+          content: text,
+          display: true,
+        },
+        "user",
+      ),
+    ),
+    { deliverAs: "followUp", triggerTurn: true },
+    isCurrent,
+  );
+}
+
+/** Render generated MCP prompt content with Pi's public native user-message component. */
+export function registerMcpPromptMessageRenderer(pi: ExtensionAPI): void {
+  pi.registerMessageRenderer(MCP_USER_PROMPT_MESSAGE_TYPE, (message, { outputPad }) => {
+    const content = typeof message.content === "string" ? message.content : formatMessageContent(message.content);
+    return new UserMessageComponent(content, undefined, outputPad);
+  });
+}
+
+function formatMessageContent(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((part): part is object => Boolean(part) && typeof part === "object")
+    .map(part => {
+      if (Reflect.get(part, "type") === "text") return String(Reflect.get(part, "text") ?? "");
+      if (Reflect.get(part, "type") === "image") return "[image]";
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 function extractMessageText(message: PromptMessage): string {
@@ -241,6 +294,7 @@ export function createPromptCommand(
         if (ctx.hasUI) ctx.ui.notify("MCP not initialized", "error");
         return;
       }
+      const isCurrent = () => state.owner.isActive() && getState() === state;
 
       const liveMetadata = findLivePromptMetadata(state, metadata.serverName, metadata.originalName);
       if (state.promptMetadataLive?.has(metadata.serverName) && !liveMetadata) {
@@ -271,7 +325,14 @@ export function createPromptCommand(
         return;
       }
 
-      const connected = await lazyConnect(state, metadata.serverName, ctx.signal);
+      let connected: boolean;
+      try {
+        connected = await lazyConnect(state, metadata.serverName, ctx.signal);
+      } catch (error) {
+        if (!isCurrent() || isAbortError(error, state.owner.signal)) return;
+        throw error;
+      }
+      if (!isCurrent()) return;
       if (!connected) {
         if (ctx.hasUI) {
           const conn = state.manager.getConnection(metadata.serverName);
@@ -300,9 +361,10 @@ export function createPromptCommand(
           metadata.serverName,
           dispatchMetadata.originalName,
           Object.keys(promptArgs).length > 0 ? promptArgs : undefined,
-          ctx.signal,
+          combineAbortSignals(ctx.signal, state.owner.signal),
         );
       } catch (error) {
+        if (!isCurrent() || isAbortError(error, state.owner.signal)) return;
         const message = error instanceof Error ? error.message : String(error);
         logger.debug(`MCP prompt "${live.originalName}" on ${metadata.serverName} failed: ${message}`);
         if (ctx.hasUI) {
@@ -310,6 +372,7 @@ export function createPromptCommand(
         }
         return;
       }
+      if (!isCurrent()) return;
 
       const text = formatPromptResult(result);
       if (!text) {
@@ -319,7 +382,7 @@ export function createPromptCommand(
         return;
       }
 
-      pi.sendUserMessage(text);
+      await dispatchMcpPromptToAgent(pi, text, isCurrent);
     },
   };
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { type DurableClaim, tryAcquireDurableClaim } from "../../shared/durable-claim.ts";
@@ -593,6 +594,9 @@ export function sanitizeSummary(input: unknown, depth = 0): NestedRunSummary | u
 	return {
 		id: raw.id,
 		...(raw.agentStatus === "crashed" ? { agentStatus: "crashed" as const } : {}),
+		...(raw.parentRunOrigin === "automatic" || raw.parentRunOrigin === "user"
+			? { parentRunOrigin: raw.parentRunOrigin }
+			: {}),
 		parentRunId: raw.parentRunId,
 		...(clampNumber(raw.parentStepIndex) !== undefined ? { parentStepIndex: clampNumber(raw.parentStepIndex) } : {}),
 		...(stringValue(raw.parentAgent, 128) ? { parentAgent: stringValue(raw.parentAgent, 128) } : {}),
@@ -808,6 +812,7 @@ function compactSummaryForRegistry(summary: NestedRunSummary, remainingDepth: nu
 function skeletonSummary(summary: NestedRunSummary): NestedRunSummary {
 	const skeleton: NestedRunSummary = {
 		id: summary.id,
+		...(summary.parentRunOrigin ? { parentRunOrigin: summary.parentRunOrigin } : {}),
 		parentRunId: summary.parentRunId,
 		...(summary.parentStepIndex !== undefined ? { parentStepIndex: summary.parentStepIndex } : {}),
 		...(summary.parentAgent ? { parentAgent: summary.parentAgent } : {}),
@@ -918,6 +923,23 @@ function terminal(state: NestedRunState): boolean {
 	return state === "complete" || state === "failed" || state === "paused" || state === "stopped";
 }
 
+function mergedParentRunOrigin(
+	existing: NestedRunSummary["parentRunOrigin"],
+	incoming: NestedRunSummary["parentRunOrigin"],
+): NestedRunSummary["parentRunOrigin"] {
+	if (existing === "user" || incoming === "user") return "user";
+	return existing ?? incoming;
+}
+
+function withMergedParentRunOrigin(
+	summary: NestedRunSummary,
+	existing: NestedRunSummary["parentRunOrigin"],
+	incoming: NestedRunSummary["parentRunOrigin"],
+): NestedRunSummary {
+	const parentRunOrigin = mergedParentRunOrigin(existing, incoming);
+	return parentRunOrigin && summary.parentRunOrigin !== parentRunOrigin ? { ...summary, parentRunOrigin } : summary;
+}
+
 function mergeSummary(existing: NestedRunSummary | undefined, event: NestedEventRecord): NestedRunSummary {
 	const incomingState =
 		event.type === "subagent.nested.completed" && event.child.state === "running" ? "complete" : event.child.state;
@@ -925,19 +947,32 @@ function mergeSummary(existing: NestedRunSummary | undefined, event: NestedEvent
 	if (!existing) return incoming;
 	const existingUpdate = existing.lastUpdate ?? 0;
 	const incomingUpdate = incoming.lastUpdate ?? event.ts;
-	if (incomingUpdate < existingUpdate) return existing;
-	if (terminal(existing.state) && !terminal(incoming.state)) return existing;
-	if (terminal(existing.state) && terminal(incoming.state) && incomingUpdate === existingUpdate) return existing;
-	return { ...existing, ...incoming, state: incoming.state, lastUpdate: Math.max(existingUpdate, incomingUpdate) };
+	if (incomingUpdate < existingUpdate)
+		return withMergedParentRunOrigin(existing, existing.parentRunOrigin, incoming.parentRunOrigin);
+	if (terminal(existing.state) && !terminal(incoming.state))
+		return withMergedParentRunOrigin(existing, existing.parentRunOrigin, incoming.parentRunOrigin);
+	if (terminal(existing.state) && terminal(incoming.state) && incomingUpdate === existingUpdate)
+		return withMergedParentRunOrigin(existing, existing.parentRunOrigin, incoming.parentRunOrigin);
+	return withMergedParentRunOrigin(
+		{ ...existing, ...incoming, state: incoming.state, lastUpdate: Math.max(existingUpdate, incomingUpdate) },
+		existing.parentRunOrigin,
+		incoming.parentRunOrigin,
+	);
 }
 
 function mergeStoredSummary(existing: NestedRunSummary | undefined, incoming: NestedRunSummary): NestedRunSummary {
 	if (!existing) return incoming;
 	const existingUpdate = existing.lastUpdate ?? 0;
 	const incomingUpdate = incoming.lastUpdate ?? 0;
-	if (incomingUpdate < existingUpdate) return existing;
-	if (terminal(existing.state) && !terminal(incoming.state)) return existing;
-	return { ...existing, ...incoming, lastUpdate: Math.max(existingUpdate, incomingUpdate) };
+	if (incomingUpdate < existingUpdate)
+		return withMergedParentRunOrigin(existing, existing.parentRunOrigin, incoming.parentRunOrigin);
+	if (terminal(existing.state) && !terminal(incoming.state))
+		return withMergedParentRunOrigin(existing, existing.parentRunOrigin, incoming.parentRunOrigin);
+	return withMergedParentRunOrigin(
+		{ ...existing, ...incoming, lastUpdate: Math.max(existingUpdate, incomingUpdate) },
+		existing.parentRunOrigin,
+		incoming.parentRunOrigin,
+	);
 }
 
 function canonicalNestedForest(
@@ -1608,8 +1643,13 @@ function persistTerminalRootProjection(
 		});
 		const steps = status.steps ?? [];
 		attachRootChildrenToSteps(route.rootRunId, steps, registry.children);
+		const parentRunOrigin =
+			status.parentRunOrigin === "user" || nestedWorkIncludesUser(registry.children)
+				? "user"
+				: status.parentRunOrigin;
 		writePrivateAtomicJson(path.join(marker.rootAsyncDir, "status.json"), {
 			...status,
+			...(parentRunOrigin ? { parentRunOrigin } : {}),
 			steps,
 			nestedRoute: retiring ? undefined : route,
 			...(processTerminal ? { processTerminal } : {}),
@@ -1824,6 +1864,22 @@ export function hasLiveNestedDescendants(children: NestedRunSummary[] | undefine
 	return false;
 }
 
+interface NestedOriginProjection {
+	readonly parentRunOrigin?: AgentWorkOrigin;
+	readonly children?: readonly NestedOriginProjection[];
+	readonly steps?: readonly { readonly children?: readonly NestedOriginProjection[] }[];
+}
+
+/** Whether any descendant was directly taken over by user-attributed work. */
+export function nestedWorkIncludesUser(children: readonly NestedOriginProjection[] | undefined): boolean {
+	for (const child of children ?? []) {
+		if (child.parentRunOrigin === "user") return true;
+		if (nestedWorkIncludesUser(child.children)) return true;
+		if (nestedWorkIncludesUser(child.steps?.flatMap((step) => step.children ?? []))) return true;
+	}
+	return false;
+}
+
 export function nestedSummaryFromAsyncStatus(
 	status: AsyncStatus,
 	asyncDir: string,
@@ -1839,6 +1895,7 @@ export function nestedSummaryFromAsyncStatus(
 ): NestedRunSummary {
 	return {
 		id: status.runId || fallback.id,
+		...(status.parentRunOrigin ? { parentRunOrigin: status.parentRunOrigin } : {}),
 		parentRunId: fallback.parentRunId,
 		...(fallback.parentStepIndex !== undefined ? { parentStepIndex: fallback.parentStepIndex } : {}),
 		depth: fallback.depth,

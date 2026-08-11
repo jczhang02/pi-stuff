@@ -12,7 +12,8 @@ export function isContextSummary(value: unknown): value is ContextSummary {
 export function summarizeContextModes(modes: Array<ContextMode | undefined>): ContextSummary | undefined {
 	const resolved = modes.filter(isContextMode);
 	if (resolved.length === 0) return undefined;
-	const first = resolved[0]!;
+	const first = resolved.at(0);
+	if (first === undefined) return undefined;
 	return resolved.every((mode) => mode === first) ? first : "mixed";
 }
 

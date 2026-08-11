@@ -47,7 +47,6 @@ function lastUserText(context: Context): string {
 }
 
 function record(value: Record<string, unknown>): void {
-	// biome-ignore lint/complexity/useLiteralKeys: required by noPropertyAccessFromIndexSignature
 	const path = process.env["PI_STUFF_AGENTS_PTY_LOG"];
 	if (!path) return;
 	appendFileSync(path, `${JSON.stringify({ at: Date.now(), ...value })}\n`);
@@ -111,7 +110,6 @@ function toolCallStream(id: string, name: string, argumentsValue: Record<string,
 }
 
 function fixtureStream(context: Context, options?: SimpleStreamOptions) {
-	// biome-ignore lint/complexity/useLiteralKeys: required by noPropertyAccessFromIndexSignature
 	const child = process.env["PI_SUBAGENT_CHILD"] === "1";
 	const serialized = JSON.stringify(context.messages);
 	const completion = serialized.includes("CHILD_FINAL_SUMMARY");

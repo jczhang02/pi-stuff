@@ -4,6 +4,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type Tool, validateToolArguments } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	type AgentWorkOrigin,
+	listenForAgentWorkOriginQueries,
+} from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
 import type { CommandDialogCoordinator } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import type { PiStuffAgentsConfig } from "../../packages/pi-stuff/src/subagents/src/extension/config.js";
 import registerAgents, {
@@ -144,6 +148,7 @@ interface RootHarness {
 	readonly directories: string[];
 	readonly dialogs: Array<{ initialKey?: string; hasReader: boolean }>;
 	readonly engineParams: SubagentParamsLike[];
+	readonly engineOrigins: AgentWorkOrigin[];
 	readonly governor: {
 		binds: Array<{ sessionId: string; ownerAgentPath: readonly string[] }>;
 		completions: unknown[];
@@ -213,6 +218,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 	const directories: string[] = [];
 	const dialogs: Array<{ initialKey?: string; hasReader: boolean }> = [];
 	const engineParams: SubagentParamsLike[] = [];
+	const engineOrigins: AgentWorkOrigin[] = [];
 	const governor = {
 		binds: [] as Array<{ sessionId: string; ownerAgentPath: readonly string[] }>,
 		completions: [] as unknown[],
@@ -301,12 +307,16 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		createExecutor: ({ projectContext, state: rootState }) => {
 			state.value = rootState;
 			projectionOwnership.delegated = typeof projectContext === "function";
+			const backgroundLifecycleAbort = options.backgroundLifecycleAbort;
 			return {
 				execute: async (_id, params, _signal, _onUpdate, _ctx, hooks) => {
 					engineParams.push(params);
+					engineOrigins.push(hooks?.parentRunOrigin ?? "automatic");
 					if (params.async === false && options.foregroundAsyncDir) {
+						const launchRunId = params.launchRunId;
+						if (!launchRunId) throw new Error("Expected a foreground launch run id");
 						await hooks?.beforeForegroundStart?.({
-							runId: params.launchRunId!,
+							runId: launchRunId,
 							asyncDir: options.foregroundAsyncDir,
 							writerCount: options.foregroundDetails?.results.length ?? 1,
 							abortStart: () => true,
@@ -330,15 +340,15 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 							mode: "single",
 							results: [],
 							asyncId: "run-1",
-							...(options.backgroundLifecycleAbort === undefined
+							...(backgroundLifecycleAbort === undefined
 								? {}
 								: {
 										lifecycleBinding: {
 											abortStart: () => {
-												if (options.backgroundLifecycleAbort === "throw") {
+												if (backgroundLifecycleAbort === "throw") {
 													throw Object.assign(new Error("injected abort EIO"), { code: "EIO" });
 												}
-												return options.backgroundLifecycleAbort!;
+												return backgroundLifecycleAbort;
 											},
 										},
 									}),
@@ -473,6 +483,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		directories,
 		dialogs,
 		engineParams,
+		engineOrigins,
 		governor,
 		notifier,
 		projectionOwnership,
@@ -681,6 +692,7 @@ describe("Agents extension composition root", () => {
 			launchRunId,
 			task: "Find the cause",
 		});
+		expect(root.engineOrigins).toEqual(["automatic"]);
 		expect(root.governor.prepares).toEqual([
 			{
 				launchRunId,
@@ -700,6 +712,26 @@ describe("Agents extension composition root", () => {
 			},
 		]);
 		expect(JSON.stringify(result?.content)).not.toContain("/private");
+	});
+
+	test("captures user attribution before launching a background Agent", async () => {
+		const root = createHarness();
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
+		const stop = listenForAgentWorkOriginQueries(root.api.api, () => "user");
+		try {
+			await root.api.tools
+				.get("subagent")
+				?.execute(
+					"user-launch",
+					{ agent: "researcher", task: "Inspect user work" },
+					new AbortController().signal,
+					undefined,
+					context(),
+				);
+		} finally {
+			stop();
+		}
+		expect(root.engineOrigins).toEqual(["user"]);
 	});
 
 	test("releases the governor invocation when post-prepare runtime startup fails", async () => {
@@ -1177,10 +1209,19 @@ describe("Agents extension composition root", () => {
 		root.api.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, {
 			id: "live",
 			sessionId: currentSessionId(root),
+			parentRunOrigin: "automatic",
 		});
 		expect(root.tracker.completed).toBe(1);
-		// The accepted completion emits one additional, UI-owned Git refresh request.
-		expect(root.api.events.emissions).toHaveLength(beforeBackgroundCompletion + 2);
+		expect(root.api.events.emissions).toHaveLength(beforeBackgroundCompletion + 1);
+		const beforeUserCompletion = root.api.events.emissions.length;
+		root.api.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, {
+			id: "live-user",
+			sessionId: currentSessionId(root),
+			parentRunOrigin: "user",
+		});
+		expect(root.tracker.completed).toBe(2);
+		// Only explicitly user-attributed completion emits the UI-owned Git refresh request.
+		expect(root.api.events.emissions).toHaveLength(beforeUserCompletion + 2);
 
 		const notifier = root.notifier.value;
 		if (!notifier) throw new Error("Expected completion notifier");

@@ -207,6 +207,19 @@ function fixtureStream(context: Context) {
 }
 
 export default function contextPtyProvider(pi: ExtensionAPI): void {
+	if (process.env["PI_STUFF_CONTEXT_PTY_AUTOMATIC_ONLY"] === "1") {
+		pi.on("session_start", () => {
+			pi.sendMessage(
+				{
+					customType: "context-automatic-fixture",
+					content: "CONTEXT_AUTOMATIC",
+					display: false,
+				},
+				{ triggerTurn: true, deliverAs: "followUp" },
+			);
+		});
+	}
+
 	registerSuiteOwnedTool(
 		pi,
 		{

@@ -7,6 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import type { AgentConfig } from "../agents/agents.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../runs/shared/capability-ceiling.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
@@ -405,6 +406,7 @@ export type PublicNestedRunSummary = Pick<
 	| "intercomTarget"
 	| "ownerIntercomTarget"
 	| "leafIntercomTarget"
+	| "parentRunOrigin"
 	| "ownerState"
 	| "mode"
 	| "state"
@@ -896,6 +898,8 @@ export interface NestedStepSummary {
 
 export interface NestedRunSummary extends NestedRunAddress {
 	agentStatus?: "crashed";
+	/** User takeover is monotonic across nested lifecycle projections. */
+	parentRunOrigin?: AgentWorkOrigin;
 	asyncDir?: string;
 	pid?: number;
 	sessionId?: string;
@@ -983,6 +987,8 @@ export interface AsyncStatus {
 	lifecycleArtifactVersion?: SubagentLifecycleArtifactVersion;
 	runId: string;
 	sessionId?: string;
+	/** Origin of the parent Agent run; absent only on legacy lifecycle artifacts. */
+	parentRunOrigin?: AgentWorkOrigin;
 	mode: SubagentRunMode;
 	isNested?: boolean;
 	/** Exact nested event route selected at launch; legacy statuses may omit it. */

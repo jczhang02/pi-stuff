@@ -15,9 +15,9 @@ These instructions apply only while developing this repository. This file is not
 - `@jczhang02/pi-stuff` is the one local Pi Package and has one default Extension factory.
 - A Capability Module owns one coherent behavior inside that Package. Modules are not independently versioned,
   installed, or published.
-- Keep Extension import and startup pure: no network calls, file writes, subprocesses, or host-setting mutations.
-- A future Capability may produce side effects only from an explicit user-triggered command or tool whose contract documents them.
-- The Statusline has one observation-only exception: after a user-driven Agent turn it may run a bounded, no-lock `git status` read to obtain change counts that Pi does not expose. It must never run during import, initialization, or `session_start`, and failure must degrade to branch-only display.
+- Keep Extension import and session startup pure: no network calls, file writes, subprocesses, or host-setting mutations.
+- During user-started work, a Capability may update its own documented derived local state across automatic continuations. First-use configuration creation must wait for direct interactive/RPC input or an explicit command or Tool; external, destructive, or unrelated effects still require an explicit user-triggered contract.
+- The Statusline has one observation-only exception: after a complete user-driven Agent run settles it may run a bounded, no-lock `git status` read to obtain change counts that Pi does not expose. It must never run during import, initialization, `session_start`, individual model/Tool turns, or Extension-authored automatic runs, and failure must degrade to branch-only display.
 - Let initialization errors propagate. A partially loaded Suite is not a supported state.
 
 ## UI contract
@@ -51,14 +51,14 @@ Tests observe behavior at these agreed seams:
 - Extension discovery through Pi's public RPC protocol;
 - the extracted local Package archive through Pi's Package loader.
 
-Use `bun test` and integration-style assertions at these seams. Do not test private helpers or replace Pi with mocks when certifying host compatibility. No test may call an LLM or require credentials.
+Use `bun test` and integration-style assertions at these seams. Host and Package certification must use the public seams and may not be claimed from mocks or private helpers. Focused regression tests may exercise Module-internal pure logic and state, but supplement rather than replace seam-level certification. No test may call an LLM or require credentials.
 
 ## Tooling
 
 - Use Bun 1.3.14 for dependency management, scripts, and tests.
 - Keep all direct dependencies exact and keep `trustedDependencies` empty.
 - Run `bun run check` before committing.
-- Engineering text is English.
+- Current source, ADRs, maintainer instructions, and executable documentation are English. Deliberately localized historical reports and CJK/UI fixtures may retain their language.
 - Use Conventional Commits and preserve GPG signing.
 
 ## Generated and local state

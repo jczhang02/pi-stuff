@@ -22,14 +22,12 @@ let goalCalls = 0;
 let compactionRequested = false;
 
 function scenario(): Scenario {
-	// biome-ignore lint/complexity/useLiteralKeys: certification runs with noPropertyAccessFromIndexSignature
 	const value = process.env["PI_STUFF_GOAL_LIFECYCLE_SCENARIO"];
 	if (value === "blocker" || value === "compaction" || value === "normal" || value === "reload") return value;
 	throw new Error(`Unknown Goal lifecycle scenario: ${value ?? "missing"}`);
 }
 
 function log(record: Record<string, unknown>): void {
-	// biome-ignore lint/complexity/useLiteralKeys: certification runs with noPropertyAccessFromIndexSignature
 	const path = process.env["PI_STUFF_GOAL_LIFECYCLE_LOG"];
 	if (path) appendFileSync(path, `${JSON.stringify(record)}\n`);
 }

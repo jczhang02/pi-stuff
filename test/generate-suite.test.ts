@@ -48,6 +48,8 @@ describe("generateSuite", () => {
 		expect(generated).toContain(
 			"const CAPABILITIES: readonly CapabilityFactory[] = [conversationUi, registerSuiteSubagents, btw];",
 		);
+		expect(generated).toContain("const suiteApi = installSuiteSessionReadiness(pi);");
+		expect(generated).toContain("await capability(suiteApi);");
 		expect(await readFile(manifestPath, "utf8")).toBe(originalManifest);
 	});
 
@@ -69,6 +71,7 @@ describe("generateSuite", () => {
 		expect(generated).toContain('const SUITE_TOOL_NAMES = ["read", "write"] as const;');
 		expect(generated).toContain('const DEFERRED_SUITE_TOOL_NAMES = ["ctx_search"] as const;');
 		expect(generated).toContain('const OPTIONAL_SUITE_TOOL_NAMES = ["intercom"] as const;');
+		expect(generated).toContain("createSuiteToolRegistrationTracker(suiteApi)");
 		expect(generated).toContain("await capability(registrations.api);");
 		expect(generated).toContain("assertSuiteToolActivityCoverage(");
 	});
@@ -105,7 +108,7 @@ describe("generateSuite", () => {
 			'import codeMode, { registerCodeModeContextProjection } from "./src/code-mode/index.js";',
 		);
 		expect(generated).toContain("const CAPABILITIES: readonly CapabilityFactory[] = [toolDisplay];");
-		expect(generated).toContain("\tregisterCodeModeContextProjection(pi);");
+		expect(generated).toContain("\tregisterCodeModeContextProjection(suiteApi);");
 		expect(generated).toContain(`\tcodeMode(registrations.api, {
 \t\tregistry: registrations.registry,
 \t\tsurface: registrations.surface,
@@ -113,7 +116,7 @@ describe("generateSuite", () => {
 		expect(generated.indexOf("await capability(registrations.api)")).toBeLessThan(
 			generated.indexOf("codeMode(registrations.api"),
 		);
-		expect(generated.indexOf("registerCodeModeContextProjection(pi)")).toBeLessThan(
+		expect(generated.indexOf("registerCodeModeContextProjection(suiteApi)")).toBeLessThan(
 			generated.indexOf("await capability(registrations.api)"),
 		);
 	});

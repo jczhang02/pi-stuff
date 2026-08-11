@@ -4,10 +4,10 @@
 
 | Version | Supported |
 | --- | --- |
-| `0.1.x` | Yes |
-| `< 0.1.0` | No |
+| `0.3.x` | Yes |
+| `< 0.3.0` | No |
 
-Security fixes are provided for the latest published `0.1.x` release.
+Security fixes are provided for the current private local `0.3.x` Package line.
 
 ## Reporting a vulnerability
 

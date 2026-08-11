@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import { deliverStopRequest, requestAsyncSteer } from "../runs/background/control-channel.ts";
 import { waitForSteeringAction } from "../runs/background/steering.ts";
 import { findNestedRunMatchesByIdAuthoritatively, resolveNestedAsyncDir } from "../runs/shared/nested-events.ts";
@@ -16,6 +17,7 @@ interface NestedControlParams {
 
 interface NestedControlRouterOptions {
 	readonly now?: () => number;
+	readonly parentRunOrigin: AgentWorkOrigin;
 	readonly timeoutMs?: number;
 	readonly requestId?: () => string;
 }
@@ -77,7 +79,7 @@ export async function routeLiveNestedAgentControl(
 	params: NestedControlParams,
 	state: SubagentState,
 	signal: AbortSignal,
-	options: NestedControlRouterOptions = {},
+	options: NestedControlRouterOptions,
 ): Promise<(AgentToolResult<Details> & { isError?: boolean }) | undefined> {
 	if ((params.action !== "steer" && params.action !== "stop") || !params.id?.trim()) return undefined;
 	const requested = params.id.trim();
@@ -175,6 +177,7 @@ export async function routeLiveNestedAgentControl(
 		requestAsyncSteer(asyncDir, {
 			id: requestId,
 			message: params.message?.trim() ?? "",
+			parentRunOrigin: options.parentRunOrigin,
 			source: "nested-agent-steer",
 			...(params.index !== undefined
 				? { targetIndex: params.index }

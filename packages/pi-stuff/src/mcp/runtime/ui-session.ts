@@ -20,6 +20,8 @@ import { isGlimpseAvailable, openGlimpseWindow } from "./glimpse-ui.ts";
 import type { SessionRecoveryDeps } from "./session-recovery.ts";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { throwIfAborted } from "./abort.ts";
+import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
+import { withDirectUserActivation } from "../../conversation-ui/index.js";
 
 let activeGlimpseWindow: { close(): void } | null = null;
 
@@ -89,6 +91,34 @@ export function summarizeUiSessionResult(uiSession: UiSessionRuntime | null): Ui
 }
 
 const MAX_COMPLETED_SESSIONS = 10;
+
+type UiAgentMessage = Parameters<NonNullable<McpExtensionState["sendMessage"]>>[0];
+
+/** Send one explicit MCP UI action and preserve its user-driven Agent attribution. */
+export function sendUserDrivenUiAgentMessage(state: McpExtensionState, message: UiAgentMessage): boolean {
+  if (!state.sendMessage || !state.owner.isActive()) return false;
+  let wasIdle = false;
+  try {
+    wasIdle = state.isAgentIdle?.() === true;
+  } catch {
+    // A stale observation cannot block an already-authorized UI action.
+  }
+  const delivery = state.sendMessage(withDirectUserActivation(withAgentWorkOrigin(message, "user")), {
+    deliverAs: "steer",
+    triggerTurn: true,
+  });
+  const promoteAfterAcceptance = (accepted = true) => {
+    if (accepted && !wasIdle && state.owner.isActive()) state.promoteActiveAgentWorkToUser?.();
+  };
+  if (delivery instanceof Promise) {
+    void delivery.then(promoteAfterAcceptance).catch((error) => {
+      logger.error("Failed to deliver MCP UI action to the Agent", error instanceof Error ? error : undefined);
+    });
+  } else {
+    promoteAfterAcceptance();
+  }
+  return true;
+}
 
 function withStreamEnvelope(
   result: CallToolResult,
@@ -335,14 +365,14 @@ export async function maybeStartUiSession(
         const prompt = extractUiPromptText(params);
         if (prompt) {
           if (state.sendMessage) {
-            state.sendMessage(
+            sendUserDrivenUiAgentMessage(
+              state,
               {
                 customType: "mcp-ui-prompt",
                 content: [{ type: "text", text: `User sent prompt from ${request.serverName} UI: "${prompt}"` }],
                 display: `💬 UI Prompt: ${prompt}`,
                 details: { server: request.serverName, tool: request.toolName, prompt },
               },
-              { triggerTurn: true },
             );
             log.debug("Triggered agent turn for UI prompt", { prompt: prompt.slice(0, 50) });
           }
@@ -351,14 +381,14 @@ export async function maybeStartUiSession(
           const intentParams = params.params;
           if (intent && state.sendMessage) {
             const paramsStr = intentParams ? ` ${JSON.stringify(intentParams)}` : "";
-            state.sendMessage(
+            sendUserDrivenUiAgentMessage(
+              state,
               {
                 customType: "mcp-ui-intent",
                 content: [{ type: "text", text: `User triggered intent from ${request.serverName} UI: ${intent}${paramsStr}` }],
                 display: `🎯 UI Intent: ${intent}`,
                 details: { server: request.serverName, tool: request.toolName, intent, params: intentParams },
               },
-              { triggerTurn: true },
             );
             log.debug("Triggered agent turn for UI intent", { intent });
           }
@@ -378,14 +408,14 @@ export async function maybeStartUiSession(
           hasUpdate: !!update,
         });
         if (update && state.sendMessage) {
-          state.sendMessage(
+          sendUserDrivenUiAgentMessage(
+            state,
             {
               customType: "mcp-ui-context",
               content: [{ type: "text", text: `User submitted model context from ${request.serverName} UI:\n${update.summary}` }],
               display: "UI Context submitted",
               details: { server: request.serverName, tool: request.toolName, context: update },
             },
-            { triggerTurn: true },
           );
         }
       },

@@ -13,15 +13,18 @@ import piStuffUi, {
 	getCodexStatusChannel,
 	getCommandDialogCoordinator,
 	getGoalStatusChannel,
-	requestStatuslineGitRefresh,
+	promoteActiveAgentWorkToUser,
+	readCurrentAgentWorkOrigin,
+	requestStatuslineGitRefreshAfterUserWork,
 	UiSettingsStore,
+	withAgentWorkOrigin,
 } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { installUiSessionPresentation } from "../../packages/pi-stuff/src/conversation-ui/session-presentation.js";
 
 type FooterFactory = Parameters<ExtensionUIContext["setFooter"]>[0];
 type HeaderFactory = Parameters<ExtensionUIContext["setHeader"]>[0];
 type EditorFactory = NonNullable<ReturnType<ExtensionUIContext["getEditorComponent"]>>;
-type SessionHandler = (event: unknown, ctx: ExtensionContext) => Promise<void> | void;
+type SessionHandler = (event: unknown, ctx: ExtensionContext) => Promise<unknown> | unknown;
 type ShutdownHandler = (event: unknown, ctx: ExtensionContext) => Promise<void> | void;
 
 interface TestDeferred<Value> {
@@ -210,8 +213,14 @@ class UiHarness {
 	}
 }
 
-function createApiHarness(events: EventBusLike = new EventBusHarness()) {
+type ExecResult = { code: number; killed: boolean; stderr: string; stdout: string };
+
+function createApiHarness(
+	events: EventBusLike = new EventBusHarness(),
+	execute?: (...args: unknown[]) => Promise<ExecResult>,
+) {
 	const execCalls: unknown[][] = [];
+	const eventHandlers = new Map<string, SessionHandler[]>();
 	const registeredCommands: string[] = [];
 	const sessionHandlers: SessionHandler[] = [];
 	const shutdownHandlers: ShutdownHandler[] = [];
@@ -219,12 +228,15 @@ function createApiHarness(events: EventBusLike = new EventBusHarness()) {
 		events,
 		exec: async (...args: unknown[]) => {
 			execCalls.push(args);
-			return { code: 1, killed: false, stderr: "", stdout: "" };
+			return execute ? execute(...args) : { code: 1, killed: false, stderr: "", stdout: "" };
 		},
 		getAllTools: () => [],
 		getCommands: () => [],
 		getThinkingLevel: () => "medium",
 		on: (event: string, handler: ShutdownHandler) => {
+			const handlers = eventHandlers.get(event) ?? [];
+			handlers.push(handler);
+			eventHandlers.set(event, handlers);
 			if (event === "session_start") sessionHandlers.push(handler);
 			if (event === "session_shutdown") shutdownHandlers.push(handler);
 		},
@@ -238,6 +250,23 @@ function createApiHarness(events: EventBusLike = new EventBusHarness()) {
 		registeredCommands,
 		sessionHandlers,
 		shutdownHandlers,
+		async emit(event: string, data: unknown, ctx: ExtensionContext): Promise<void> {
+			// Pi 0.84.1 creates one context per input dispatch and shares it across
+			// that dispatch's handlers. Other lifecycle events receive the supplied
+			// session context directly.
+			const handlerContext = event === "input" ? Object.create(ctx) : ctx;
+			for (const handler of eventHandlers.get(event) ?? []) {
+				const result = await handler(data, handlerContext);
+				if (
+					event === "input" &&
+					result &&
+					typeof result === "object" &&
+					Reflect.get(result, "action") === "handled"
+				) {
+					return;
+				}
+			}
+		},
 		async start(ctx: ExtensionContext): Promise<void> {
 			for (const handler of sessionHandlers) {
 				await handler({ type: "session_start" }, ctx);
@@ -258,6 +287,8 @@ interface ContextOptions {
 		readonly tokens: number | null;
 	};
 	readonly cwd?: string;
+	readonly hasPendingMessages?: () => boolean;
+	readonly isIdle?: () => boolean;
 	readonly modelId?: string;
 	readonly provider?: string;
 }
@@ -271,6 +302,8 @@ function createContext(
 	return {
 		cwd,
 		getContextUsage: () => options.contextUsage,
+		hasPendingMessages: options.hasPendingMessages ?? (() => false),
+		isIdle: options.isIdle ?? (() => true),
 		mode,
 		model: options.modelId ? { id: options.modelId, provider: options.provider } : undefined,
 		sessionManager: { getBranch: () => [], getCwd: () => cwd },
@@ -512,31 +545,386 @@ describe("normal UI presentation integration", () => {
 		presentation.dispose();
 	});
 
-	test("refreshes Git through the generic UI request only while its generation is active", async () => {
+	test("refreshes Git once after a direct-user Agent run, not after automatic Extension runs", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const ctx = createContext(new UiHarness());
+		await api.start(ctx);
+
+		await api.emit("input", { type: "input", text: "automatic", source: "extension" }, ctx);
+		expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
+		await api.emit(
+			"message_start",
+			{ type: "message_start", message: { role: "user", content: [{ type: "text", text: "automatic" }] } },
+			ctx,
+		);
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		expect(api.execCalls).toHaveLength(0);
+
+		await api.emit("input", { type: "input", text: "direct", source: "interactive" }, ctx);
+		expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 2 }, ctx);
+		await api.emit(
+			"message_start",
+			{ type: "message_start", message: { role: "user", content: [{ type: "text", text: "direct" }] } },
+			ctx,
+		);
+		await api.emit(
+			"input",
+			{ type: "input", text: "queued automatic", source: "extension", streamingBehavior: "followUp" },
+			ctx,
+		);
+		expect(readCurrentAgentWorkOrigin(api.api)).toBe("user");
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 3 }, ctx);
+		await api.emit(
+			"message_start",
+			{
+				type: "message_start",
+				message: { role: "user", content: [{ type: "text", text: "queued automatic" }] },
+			},
+			ctx,
+		);
+		expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		expect(api.execCalls).toHaveLength(1);
+		expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
+
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		expect(api.execCalls).toHaveLength(1);
+
+		await api.emit("input", { type: "input", text: "automatic", source: "extension" }, ctx);
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 4 }, ctx);
+		await api.emit(
+			"message_start",
+			{ type: "message_start", message: { role: "user", content: [{ type: "text", text: "automatic" }] } },
+			ctx,
+		);
+		await api.emit(
+			"input",
+			{ type: "input", text: "user follow-up", source: "rpc", streamingBehavior: "followUp" },
+			ctx,
+		);
+		// Merely accepting a follow-up must not change the work currently executing.
+		expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 5 }, ctx);
+		await api.emit(
+			"message_start",
+			{
+				type: "message_start",
+				message: { role: "user", content: [{ type: "text", text: "user follow-up" }] },
+			},
+			ctx,
+		);
+		expect(readCurrentAgentWorkOrigin(api.api)).toBe("user");
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		expect(api.execCalls).toHaveLength(2);
+	});
+
+	test("waits for a Goal continuation started by an earlier settlement handler before refreshing Git", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		let idle = true;
+		let pendingMessages = false;
+		let settlements = 0;
+		api.api.on("agent_settled", () => {
+			settlements += 1;
+			if (settlements !== 1) return;
+			// Goal is initialized after Conversation UI, but its listener exists before
+			// session_start. It schedules an automatic continuation at this boundary.
+			idle = false;
+			pendingMessages = true;
+		});
+		const ctx = createContext(new UiHarness(), "tui", {
+			hasPendingMessages: () => pendingMessages,
+			isIdle: () => idle,
+		});
+		await api.start(ctx);
+
+		await api.emit("input", { type: "input", text: "direct", source: "interactive" }, ctx);
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
+		await api.emit(
+			"message_start",
+			{ type: "message_start", message: { role: "user", content: [{ type: "text", text: "direct" }] } },
+			ctx,
+		);
+		await api.emit("turn_end", { type: "turn_end", turnIndex: 0 }, ctx);
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		expect(api.execCalls).toHaveLength(0);
+
+		pendingMessages = false;
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 }, ctx);
+		await api.emit(
+			"message_start",
+			{
+				type: "message_start",
+				message: withAgentWorkOrigin(
+					{ role: "custom", customType: "goal-continuation", content: "continue" },
+					"automatic",
+				),
+			},
+			ctx,
+		);
+		await api.emit("turn_end", { type: "turn_end", turnIndex: 1 }, ctx);
+		idle = true;
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		expect(api.execCalls).toHaveLength(1);
+	});
+
+	test("holds background refresh requests while earlier settlement handlers are still running", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const settlementEntered = createDeferred<void>();
+		const releaseSettlement = createDeferred<void>();
+		api.api.on("agent_settled", async () => {
+			settlementEntered.resolve();
+			await releaseSettlement.promise;
+		});
+		// Pi marks itself idle before it awaits Extension settlement handlers.
+		const ctx = createContext(new UiHarness(), "tui", {
+			hasPendingMessages: () => false,
+			isIdle: () => true,
+		});
+		await api.start(ctx);
+
+		await api.emit("agent_start", { type: "agent_start" }, ctx);
+		const settlement = api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		await settlementEntered.promise;
+		requestStatuslineGitRefreshAfterUserWork(api.api);
+		expect(api.execCalls).toHaveLength(0);
+
+		releaseSettlement.resolve();
+		await settlement;
+		expect(api.execCalls).toHaveLength(1);
+	});
+
+	test("finishes Git observation before a later settlement handler can start Agent work", async () => {
+		const gitEntered = createDeferred<void>();
+		const releaseGit = createDeferred<void>();
+		const order: string[] = [];
+		let gitRunning = false;
+		let overlap = false;
+		const api = createApiHarness(new EventBusHarness(), async () => {
+			gitRunning = true;
+			order.push("git-start");
+			gitEntered.resolve();
+			await releaseGit.promise;
+			order.push("git-complete");
+			gitRunning = false;
+			return { code: 1, killed: false, stderr: "", stdout: "" };
+		});
+		await piStuffUi(api.api);
+		const ctx = createContext(new UiHarness());
+		await api.start(ctx);
+		// A separately loaded Extension can register after Pi Stuff's dynamic
+		// observer. Pi 0.84.1 awaits these handlers in registration order.
+		api.api.on("agent_settled", () => {
+			overlap = gitRunning;
+			order.push("later-extension");
+		});
+
+		await api.emit("input", { type: "input", text: "direct", source: "interactive" }, ctx);
+		await api.emit("agent_start", { type: "agent_start" }, ctx);
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
+		await api.emit(
+			"message_start",
+			{ type: "message_start", message: { role: "user", content: [{ type: "text", text: "direct" }] } },
+			ctx,
+		);
+		await api.emit("turn_end", { type: "turn_end", turnIndex: 0 }, ctx);
+		const settlement = api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		await gitEntered.promise;
+		expect(order).toEqual(["git-start"]);
+
+		releaseGit.resolve();
+		await settlement;
+		expect(overlap).toBe(false);
+		expect(order).toEqual(["git-start", "git-complete", "later-extension"]);
+	});
+
+	test("does not refresh Git for a direct input handled before Pi starts a turn", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const ctx = createContext(new UiHarness());
+		await api.start(ctx);
+
+		await api.emit("input", { type: "input", text: "/handled", source: "interactive" }, ctx);
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
+		await api.emit(
+			"message_start",
+			{
+				type: "message_start",
+				message: withAgentWorkOrigin(
+					{ role: "custom", customType: "automatic-work", content: "continue" },
+					"automatic",
+				),
+			},
+			ctx,
+		);
+		await api.emit("turn_end", { type: "turn_end", turnIndex: 0 }, ctx);
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		expect(api.execCalls).toHaveLength(0);
+	});
+
+	test("does not refresh Git for a steer handled before Pi delivers it", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		api.api.on("input", (event) =>
+			Reflect.get(event, "text") === "handled correction" && Reflect.get(event, "source") === "interactive"
+				? { action: "handled" as const }
+				: undefined,
+		);
+		const ctx = createContext(new UiHarness());
+		await api.start(ctx);
+
+		await api.emit("input", { type: "input", text: "automatic", source: "extension" }, ctx);
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
+		await api.emit(
+			"message_start",
+			{
+				type: "message_start",
+				message: withAgentWorkOrigin(
+					{ role: "custom", customType: "automatic-work", content: "continue" },
+					"automatic",
+				),
+			},
+			ctx,
+		);
+		await api.emit(
+			"input",
+			{ type: "input", text: "handled correction", source: "interactive", streamingBehavior: "steer" },
+			ctx,
+		);
+		await api.emit(
+			"input",
+			{ type: "input", text: "handled correction", source: "extension", streamingBehavior: "steer" },
+			ctx,
+		);
+		await api.emit(
+			"message_start",
+			{ type: "message_start", message: { role: "user", content: "handled correction" } },
+			ctx,
+		);
+		await api.emit("turn_end", { type: "turn_end", turnIndex: 0 }, ctx);
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		expect(api.execCalls).toHaveLength(0);
+	});
+
+	test("fails closed when a later Extension makes steer attribution ambiguous", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const ctx = createContext(new UiHarness());
+		await api.start(ctx);
+		// Registered after session_start, this simulates a separately loaded
+		// Extension that Pi visits after Pi Stuff's Package-local late observer.
+		api.api.on("input", (event) => {
+			const text = Reflect.get(event, "text");
+			if (text === "handled user correction") return { action: "handled" as const };
+			if (text === "raw automatic correction") {
+				return { action: "transform" as const, text: "transformed automatic correction" };
+			}
+			return undefined;
+		});
+
+		await api.emit("input", { type: "input", text: "automatic run", source: "extension" }, ctx);
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
+		await api.emit(
+			"message_start",
+			{
+				type: "message_start",
+				message: withAgentWorkOrigin(
+					{ role: "custom", customType: "automatic-work", content: "continue" },
+					"automatic",
+				),
+			},
+			ctx,
+		);
+		await api.emit(
+			"input",
+			{ type: "input", text: "handled user correction", source: "interactive", streamingBehavior: "steer" },
+			ctx,
+		);
+		await api.emit(
+			"input",
+			{ type: "input", text: "raw automatic correction", source: "extension", streamingBehavior: "steer" },
+			ctx,
+		);
+		await api.emit(
+			"message_start",
+			{ type: "message_start", message: { role: "user", content: "transformed automatic correction" } },
+			ctx,
+		);
+		await api.emit("turn_end", { type: "turn_end", turnIndex: 0 }, ctx);
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+
+		expect(api.execCalls).toHaveLength(0);
+	});
+
+	test("attributes marked custom work at delivery and accepted Suite steers immediately", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const ctx = createContext(new UiHarness());
+		await api.start(ctx);
+
+		const queued = withAgentWorkOrigin(
+			{ role: "custom", customType: "explicit-user-action", content: "continue" },
+			"user",
+		);
+		expect(readCurrentAgentWorkOrigin(api.api)).toBe("automatic");
+		await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
+		await api.emit("message_start", { type: "message_start", message: queued }, ctx);
+		expect(readCurrentAgentWorkOrigin(api.api)).toBe("user");
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		expect(api.execCalls).toHaveLength(1);
+
+		await api.emit("input", { type: "input", text: "automatic", source: "extension" }, ctx);
+		promoteActiveAgentWorkToUser(api.api);
+		expect(readCurrentAgentWorkOrigin(api.api)).toBe("user");
+		await api.emit("agent_settled", { type: "agent_settled" }, ctx);
+		expect(api.execCalls).toHaveLength(2);
+	});
+
+	test("refreshes Git for completed user work only at an idle boundary in the active generation", async () => {
 		const events = new EventBusHarness();
 		const first = createApiHarness(events);
 		await piStuffUi(first.api);
-		requestStatuslineGitRefresh(first.api);
+		requestStatuslineGitRefreshAfterUserWork(first.api);
 		expect(first.execCalls).toEqual([]);
 
-		const firstContext = createContext(new UiHarness());
+		let idle = false;
+		let pendingMessages = false;
+		const firstContext = createContext(new UiHarness(), "tui", {
+			hasPendingMessages: () => pendingMessages,
+			isIdle: () => idle,
+		});
 		await first.start(firstContext);
-		requestStatuslineGitRefresh(first.api);
+		requestStatuslineGitRefreshAfterUserWork(first.api);
+		idle = true;
+		pendingMessages = true;
+		requestStatuslineGitRefreshAfterUserWork(first.api);
+		expect(first.execCalls).toHaveLength(0);
+		pendingMessages = false;
+		await first.emit("agent_settled", { type: "agent_settled" }, firstContext);
 		expect(first.execCalls).toHaveLength(1);
+		await drainMicrotasks();
+		requestStatuslineGitRefreshAfterUserWork(first.api);
+		await drainMicrotasks();
+		expect(first.execCalls).toHaveLength(2);
 
 		await first.shutdown(firstContext);
-		requestStatuslineGitRefresh(first.api);
-		expect(first.execCalls).toHaveLength(1);
+		requestStatuslineGitRefreshAfterUserWork(first.api);
+		expect(first.execCalls).toHaveLength(2);
 
 		const reloaded = createApiHarness(events);
 		await piStuffUi(reloaded.api);
 		await reloaded.start(createContext(new UiHarness()));
-		requestStatuslineGitRefresh(reloaded.api);
-		expect(first.execCalls).toHaveLength(1);
+		requestStatuslineGitRefreshAfterUserWork(reloaded.api);
+		await drainMicrotasks();
+		expect(first.execCalls).toHaveLength(2);
 		expect(reloaded.execCalls).toHaveLength(1);
 
 		await reloaded.shutdown(createContext(new UiHarness()));
-		requestStatuslineGitRefresh(reloaded.api);
+		requestStatuslineGitRefreshAfterUserWork(reloaded.api);
 		expect(reloaded.execCalls).toHaveLength(1);
 	});
 });

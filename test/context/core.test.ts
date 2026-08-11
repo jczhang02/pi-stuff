@@ -16,6 +16,13 @@ import piStuffContext, {
 	getContextCapability,
 	projectCurrentContext,
 } from "../../packages/pi-stuff/src/context-management/index.js";
+import {
+	hasDirectUserActivation,
+	isSuiteNativeCompactionPreflight,
+	sendSuiteAgentMessage,
+	withAgentWorkOrigin,
+	withDirectUserActivation,
+} from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type Handlers = Map<string, Handler[]>;
@@ -98,6 +105,13 @@ async function emit(handlers: Handlers, name: string, event: unknown, ctx = cont
 	for (const handler of handlers.get(name) ?? []) await handler(event, ctx);
 }
 
+async function emitUntilHandled(handlers: Handlers, name: string, event: unknown, ctx = context()): Promise<void> {
+	for (const handler of handlers.get(name) ?? []) {
+		const result = await handler(event, ctx);
+		if (result && typeof result === "object" && Reflect.get(result, "action") === "handled") return;
+	}
+}
+
 async function emitResults(handlers: Handlers, name: string, event: unknown, ctx = context()): Promise<unknown[]> {
 	const results: unknown[] = [];
 	for (const handler of handlers.get(name) ?? []) results.push(await handler(event, ctx));
@@ -149,6 +163,65 @@ function magicModule(options: { registerBeforeStart?: () => void; registerTool?:
 afterEach(() => __test.clear());
 
 describe("Context capability lifecycle", () => {
+	test("precompacts a near-limit native fallback before an idle Suite custom turn", async () => {
+		const handlers: Handlers = new Map();
+		const api = apiFor(handlers);
+		const order: string[] = [];
+		Reflect.set(api, "sendMessage", () => order.push("send"));
+		const ctx = context();
+		Object.assign(ctx, {
+			compact: (options: { onComplete?: (result: unknown) => void }) => {
+				expect(isSuiteNativeCompactionPreflight(ctx)).toBe(true);
+				order.push("compact");
+				options.onComplete?.({});
+			},
+			getContextUsage: () => ({ contextWindow: 100, percent: 90, tokens: 90 }),
+			isIdle: () => true,
+		});
+		await piStuffContext(api, {
+			loadMagicContext: async () => magicModule(),
+			prepareMagicContext: async () => "deferred",
+			readNativeCompactionSettings: () => ({ enabled: true, reserveTokens: 20 }),
+		});
+		await emit(handlers, "session_start", { reason: "startup", type: "session_start" }, ctx);
+
+		await sendSuiteAgentMessage(
+			api,
+			{ content: "continue", customType: "suite-test", display: false },
+			{ triggerTurn: true },
+		);
+
+		expect(order).toEqual(["compact", "send"]);
+		expect(isSuiteNativeCompactionPreflight(ctx)).toBe(false);
+	});
+
+	test("respects disabled native compaction for an idle Suite custom turn", async () => {
+		const handlers: Handlers = new Map();
+		const api = apiFor(handlers);
+		const order: string[] = [];
+		Reflect.set(api, "sendMessage", () => order.push("send"));
+		const ctx = context();
+		Object.assign(ctx, {
+			compact: () => order.push("compact"),
+			getContextUsage: () => ({ contextWindow: 100, percent: 90, tokens: 90 }),
+			isIdle: () => true,
+		});
+		await piStuffContext(api, {
+			loadMagicContext: async () => magicModule(),
+			prepareMagicContext: async () => "deferred",
+			readNativeCompactionSettings: () => ({ enabled: false, reserveTokens: 20 }),
+		});
+		await emit(handlers, "session_start", { reason: "startup", type: "session_start" }, ctx);
+
+		await sendSuiteAgentMessage(
+			api,
+			{ content: "continue", customType: "suite-test", display: false },
+			{ triggerTurn: true },
+		);
+
+		expect(order).toEqual(["send"]);
+	});
+
 	test("preloads Magic code while keeping session initialization user-triggered", async () => {
 		const handlers: Handlers = new Map();
 		const tools: ToolDefinition[] = [];
@@ -165,6 +238,7 @@ describe("Context capability lifecycle", () => {
 					},
 				};
 			},
+			prepareMagicContext: async (_ctx, options) => (options.allowConfigurationMutation ? "ready" : "deferred"),
 		});
 		const ctx = context();
 
@@ -185,13 +259,193 @@ describe("Context capability lifecycle", () => {
 
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(loads).toBe(1);
+		expect(factories).toBe(0);
+		expect(getContextCapability(ctx).status()).toEqual({ state: "dormant", engine: "native" });
+
+		await emit(handlers, "input", { type: "input", text: "first", source: "interactive" }, ctx);
 		expect(factories).toBe(1);
 		expect(getContextCapability(ctx).status()).toEqual({
 			state: "active",
 			engine: "magic-context",
-			trigger: "automatic-turn",
+			trigger: "input",
 		});
 		expect(api.getActiveTools()).toEqual([]);
+	});
+
+	test("does not bootstrap Magic Context from an Extension-authored automatic turn", async () => {
+		const handlers: Handlers = new Map();
+		let factories = 0;
+		const preparations: boolean[] = [];
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					factories++;
+					magicApi.on("context", (event) => event);
+				},
+			}),
+			prepareMagicContext: async (_ctx, options) => {
+				preparations.push(options.allowConfigurationMutation);
+				return options.allowConfigurationMutation ? "ready" : "deferred";
+			},
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		await emit(
+			handlers,
+			"input",
+			{ type: "input", text: "automatic continuation", source: "extension", streamingBehavior: "followUp" },
+			ctx,
+		);
+		expect(preparations).toEqual([]);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		expect(preparations).toEqual([false]);
+		expect(factories).toBe(0);
+		expect(getContextCapability(ctx).status()).toEqual({ state: "dormant", engine: "native" });
+
+		await emit(handlers, "input", { type: "input", text: "direct request", source: "rpc" }, ctx);
+		expect(preparations).toEqual([false, true]);
+		expect(factories).toBe(1);
+		expect(getContextCapability(ctx).status()).toEqual({
+			state: "active",
+			engine: "magic-context",
+			trigger: "input",
+		});
+	});
+
+	test("historical user attribution cannot authorize first-use Context mutation", async () => {
+		const handlers: Handlers = new Map();
+		const preparations: boolean[] = [];
+		let factories = 0;
+		let delivered: object | undefined;
+		const api = apiFor(handlers);
+		Reflect.set(api, "sendMessage", (message: object) => {
+			delivered = message;
+		});
+		piStuffContext(api, {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					factories++;
+					magicApi.on("context", (event) => event);
+				},
+			}),
+			prepareMagicContext: async (_ctx, options) => {
+				preparations.push(options.allowConfigurationMutation);
+				return options.allowConfigurationMutation ? "ready" : "deferred";
+			},
+		});
+		let idle = true;
+		const ctx = context();
+		Object.assign(ctx, { isIdle: () => idle });
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		const backgroundCompletion = withAgentWorkOrigin(
+			{ content: "background complete", customType: "background-result", display: true },
+			"user",
+		);
+		expect(hasDirectUserActivation(backgroundCompletion)).toBe(false);
+		await sendSuiteAgentMessage(api, backgroundCompletion, { triggerTurn: true });
+		idle = false;
+		await emit(handlers, "message_start", { message: { role: "custom", ...delivered } }, ctx);
+
+		expect(preparations).toEqual([false, false]);
+		expect(factories).toBe(0);
+		expect(getContextCapability(ctx).status()).toEqual({ state: "dormant", engine: "native" });
+
+		idle = true;
+		await sendSuiteAgentMessage(
+			api,
+			withDirectUserActivation(
+				withAgentWorkOrigin({ content: "explicit command", customType: "command-result", display: true }, "user"),
+			),
+			{ triggerTurn: true },
+		);
+		expect(preparations).toEqual([false, false, true]);
+		expect(factories).toBe(1);
+		expect(getContextCapability(ctx).status()).toEqual({
+			state: "active",
+			engine: "magic-context",
+			trigger: "input",
+		});
+	});
+
+	test("does not bootstrap Magic Context when a later Extension handles automatic input", async () => {
+		const handlers: Handlers = new Map();
+		let factories = 0;
+		let preparations = 0;
+		const api = apiFor(handlers);
+		piStuffContext(api, {
+			loadMagicContext: async () => ({
+				default: async () => {
+					factories++;
+				},
+			}),
+			prepareMagicContext: async () => {
+				preparations++;
+				return "ready";
+			},
+		});
+		(api.on as unknown as (event: string, handler: Handler) => void)("input", () => ({ action: "handled" }));
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		await emitUntilHandled(
+			handlers,
+			"input",
+			{ type: "input", text: "display-only automatic message", source: "extension" },
+			ctx,
+		);
+
+		expect(preparations).toBe(0);
+		expect(factories).toBe(0);
+		expect(getContextCapability(ctx).status()).toEqual({ state: "dormant", engine: "native" });
+	});
+
+	test("retries a deferred automatic activation when direct input arrives concurrently", async () => {
+		const handlers: Handlers = new Map();
+		const preparations: boolean[] = [];
+		let factories = 0;
+		let releaseAutomatic: (() => void) | undefined;
+		let markAutomaticEntered: (() => void) | undefined;
+		const automaticGate = new Promise<void>((resolve) => {
+			releaseAutomatic = resolve;
+		});
+		const automaticEntered = new Promise<void>((resolve) => {
+			markAutomaticEntered = resolve;
+		});
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					factories++;
+					magicApi.on("context", (event) => event);
+				},
+			}),
+			prepareMagicContext: async (_ctx, options) => {
+				preparations.push(options.allowConfigurationMutation);
+				if (!options.allowConfigurationMutation) {
+					markAutomaticEntered?.();
+					await automaticGate;
+					return "deferred";
+				}
+				return "ready";
+			},
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		const automatic = emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await automaticEntered;
+		const direct = emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
+		releaseAutomatic?.();
+		await Promise.all([automatic, direct]);
+
+		expect(preparations).toEqual([false, true]);
+		expect(factories).toBe(1);
+		expect(getContextCapability(ctx).status()).toEqual({
+			state: "active",
+			engine: "magic-context",
+			trigger: "input",
+		});
 	});
 
 	test("paints before interactive activation and again before its first Context transform", async () => {
@@ -214,6 +468,7 @@ describe("Context capability lifecycle", () => {
 			}),
 			prepareMagicContext: async () => {
 				sequence.push("prepare");
+				return "ready";
 			},
 			yieldToUiFrame: async () => {
 				sequence.push("frame");
@@ -245,7 +500,7 @@ describe("Context capability lifecycle", () => {
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		expect(getContextCapability(ctx).status().state).toBe("degraded");
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(loads).toBe(2);
@@ -283,7 +538,7 @@ describe("Context capability lifecycle", () => {
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		expect(handlers.get("context")).toBeUndefined();
 		expect(handlers.get("message_end")).toBeUndefined();
 		expect(registrations).toEqual({ commands: [], entryRenderers: [] });
@@ -316,6 +571,7 @@ describe("Context capability lifecycle", () => {
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "resume" }, ctx);
 
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 
@@ -390,6 +646,7 @@ describe("Context capability lifecycle", () => {
 		} as unknown as ExtensionContext;
 
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 
 		expect(uiCalls).toEqual([]);
@@ -433,9 +690,11 @@ describe("Context capability lifecycle", () => {
 		piStuffContext(api, {
 			loadMagicContext: async () => magicModule({ registerTool: true }),
 		});
+		const ctx = context();
 
-		await emit(handlers, "session_start", { type: "session_start", resumed: false });
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" });
+		await emit(handlers, "session_start", { type: "session_start", resumed: false }, ctx);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 		expect(tools).toHaveLength(5);
 		const search = tools.find((tool) => tool.name === "ctx_search");
 		expect(search?.renderShell).toBe("self");
@@ -455,6 +714,7 @@ describe("Context capability lifecycle", () => {
 
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		api.setActiveTools(["read"]);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 
 		expect(api.getActiveTools()).toEqual(["read"]);
@@ -481,6 +741,7 @@ describe("Context capability lifecycle", () => {
 		const ctx = context();
 
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
 
 		expect(api.getActiveTools()).not.toContain("todowrite");
@@ -544,7 +805,7 @@ describe("Context capability lifecycle", () => {
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		const activating = emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		const activating = emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		await Promise.resolve();
 		await emit(handlers, "session_shutdown", { type: "session_shutdown", reason: "reload" }, ctx);
 		releaseFactory?.();
@@ -568,7 +829,7 @@ describe("Context capability lifecycle", () => {
 		});
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		piStuffContext(api, {
 			loadMagicContext: async () => {
 				secondLoads++;
@@ -605,7 +866,7 @@ describe("Context capability lifecycle", () => {
 		});
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		expect(await emitResults(handlers, "session_before_compact", {}, ctx)).toEqual([{ cancel: true }]);
 		expect(bypasses).toEqual([{ schemaVersion: 1, sessionManager: ctx.sessionManager, source: "magic-context" }]);
 
@@ -641,7 +902,7 @@ describe("Context capability lifecycle", () => {
 		});
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 
 		const result = await emitResults(
 			handlers,
@@ -690,7 +951,7 @@ describe("Context capability lifecycle", () => {
 			ui: { notify: (message: string) => notifications.push(message) },
 		} as unknown as ExtensionContext;
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 
 		expect(
 			await emitResults(
@@ -1037,6 +1298,7 @@ describe("certified Pi extension ordering contract", () => {
 			{} as never,
 		);
 
+		await runner.emitInput("prompt", undefined, "rpc");
 		const result = await runner.emitBeforeAgentStart("prompt", undefined, "base", {
 			cwd: "/workspace/project-a",
 		});
@@ -1077,6 +1339,7 @@ describe("certified Pi extension ordering contract", () => {
 			{} as never,
 		);
 
+		await runner.emitInput("prompt", undefined, "rpc");
 		await runner.emitBeforeAgentStart("prompt", undefined, "system", { cwd: "/workspace/project-a" });
 		expect(appendedHandlerRan).toBe(true);
 	});
