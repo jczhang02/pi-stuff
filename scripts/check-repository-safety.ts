@@ -58,6 +58,11 @@ const INTERNAL_MODULES = [
 ] as const;
 type InternalModule = (typeof INTERNAL_MODULES)[number];
 const INTERNAL_MODULE_SET = new Set<string>(INTERNAL_MODULES);
+const SUITE_COMPOSITION_SOURCE_FILES = new Set([
+	"packages/pi-stuff/src/lifecycle-performance.ts",
+	"packages/pi-stuff/src/suite-loader.ts",
+	"packages/pi-stuff/src/suite-runtime.ts",
+]);
 const SHARED_MODULE_DEPENDENCIES = ["conversation-ui", "tool-display"] as const;
 const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<InternalModule, ReadonlySet<InternalModule>>> = {
 	"conversation-ui": new Set(),
@@ -168,7 +173,7 @@ function internalModuleFromPath(path: string): InternalModule | undefined {
 function isUnownedInternalSource(path: string): boolean {
 	const prefix = "packages/pi-stuff/src/";
 	if (!path.startsWith(prefix) || !/\.[cm]?[jt]sx?$/u.test(path)) return false;
-	return !path.slice(prefix.length).includes("/");
+	return !SUITE_COMPOSITION_SOURCE_FILES.has(path) && !path.slice(prefix.length).includes("/");
 }
 
 async function auditInternalModuleImports(root: string, path: string): Promise<SafetyFinding[]> {

@@ -1,0 +1,137 @@
+import { createHash } from "node:crypto";
+import { lstatSync, readdirSync, readlinkSync, realpathSync } from "node:fs";
+import { join, relative } from "node:path";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { markLifecyclePhase } from "./lifecycle-performance.js";
+
+const SUITE_RUNTIME_CACHE_KEY = Symbol.for("@jczhang02/pi-stuff/suite-runtime-cache/v2");
+
+export interface SuiteInstallationOptions {
+	readonly childBaseExtensionPath: string;
+}
+
+export interface SuiteRuntimeModule {
+	installPiStuff(pi: ExtensionAPI, options: SuiteInstallationOptions): void | Promise<void>;
+}
+
+interface SuiteRuntimeLoadBase {
+	readonly sourceRoot: string;
+}
+
+export type SuiteRuntimeLoadRequest = SuiteRuntimeLoadBase &
+	Readonly<{
+		load: (fingerprint: string, mode: "initial" | "refresh") => Promise<SuiteRuntimeModule>;
+	}>;
+
+interface SuiteRuntimeCacheEntry {
+	readonly fingerprint: string;
+	readonly modulePromise: Promise<SuiteRuntimeModule>;
+}
+
+interface SuiteRuntimeCache {
+	readonly attemptedRoots: Set<string>;
+	readonly entries: Map<string, SuiteRuntimeCacheEntry>;
+}
+
+function runtimeCache(): SuiteRuntimeCache {
+	const root = globalThis as Record<symbol, unknown>;
+	const existing = root[SUITE_RUNTIME_CACHE_KEY];
+	if (typeof existing === "object" && existing !== null && "entries" in existing) {
+		const state = existing as Partial<SuiteRuntimeCache>;
+		if (state.entries instanceof Map && state.attemptedRoots instanceof Set) return existing as SuiteRuntimeCache;
+	}
+	const created: SuiteRuntimeCache = { attemptedRoots: new Set(), entries: new Map() };
+	root[SUITE_RUNTIME_CACHE_KEY] = created;
+	return created;
+}
+
+function updateFingerprint(hash: ReturnType<typeof createHash>, sourceRoot: string, path: string): void {
+	const metadata = lstatSync(path);
+	const relativePath = relative(sourceRoot, path);
+	hash.update(relativePath);
+	hash.update("\0");
+	hash.update(String(metadata.mode));
+	hash.update("\0");
+	hash.update(String(metadata.size));
+	hash.update("\0");
+	hash.update(String(metadata.mtimeMs));
+	hash.update("\0");
+	hash.update(String(metadata.ctimeMs));
+	hash.update("\0");
+	if (metadata.isSymbolicLink()) hash.update(readlinkSync(path));
+	hash.update("\0");
+}
+
+function fingerprintSourceTree(sourceRoot: string): string {
+	const hash = createHash("sha256");
+	const visit = (directory: string): void => {
+		for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+			left.name.localeCompare(right.name),
+		)) {
+			const path = join(directory, entry.name);
+			updateFingerprint(hash, sourceRoot, path);
+			if (entry.isDirectory()) visit(path);
+		}
+	};
+	visit(sourceRoot);
+	return hash.digest("hex");
+}
+
+export async function importFreshSuiteRuntime(runtimePath: string): Promise<SuiteRuntimeModule> {
+	const [{ createJiti }, piAgentCore, piAi, piAiCompat, piCodingAgent, piTui] = await Promise.all([
+		import("jiti"),
+		import("@earendil-works/pi-agent-core"),
+		import("@earendil-works/pi-ai"),
+		import("@earendil-works/pi-ai/compat"),
+		import("@earendil-works/pi-coding-agent"),
+		import("@earendil-works/pi-tui"),
+	]);
+	const jiti = createJiti(import.meta.url, {
+		fsCache: false,
+		moduleCache: false,
+		tryNative: false,
+		virtualModules: {
+			"@earendil-works/pi-agent-core": piAgentCore,
+			"@earendil-works/pi-ai": piAi,
+			"@earendil-works/pi-ai/compat": piAiCompat,
+			"@earendil-works/pi-coding-agent": piCodingAgent,
+			"@earendil-works/pi-tui": piTui,
+		},
+	});
+	return jiti.import<SuiteRuntimeModule>(runtimePath);
+}
+
+/**
+ * Reuse an unchanged TypeScript Suite module graph across Host reloads while
+ * leaving the Extension factory and every Capability installer fresh.
+ */
+export async function loadSuiteRuntime(request: SuiteRuntimeLoadRequest): Promise<SuiteRuntimeModule> {
+	const sourceRoot = realpathSync(request.sourceRoot);
+	markLifecyclePhase("suite.loader.fingerprint.start");
+	const fingerprint = fingerprintSourceTree(sourceRoot);
+	markLifecyclePhase("suite.loader.fingerprint.end");
+
+	const cache = runtimeCache();
+	const cached = cache.entries.get(sourceRoot);
+	if (cached?.fingerprint === fingerprint) {
+		markLifecyclePhase("suite.loader.cache.hit");
+		return cached.modulePromise;
+	}
+
+	markLifecyclePhase("suite.loader.cache.miss");
+	const mode = cache.attemptedRoots.has(sourceRoot) ? "refresh" : "initial";
+	cache.attemptedRoots.add(sourceRoot);
+	const entry: SuiteRuntimeCacheEntry = {
+		fingerprint,
+		modulePromise: Promise.resolve().then(() => request.load(fingerprint, mode)),
+	};
+	cache.entries.set(sourceRoot, entry);
+	try {
+		const runtime = await entry.modulePromise;
+		markLifecyclePhase("suite.loader.runtime.loaded");
+		return runtime;
+	} catch (error) {
+		if (cache.entries.get(sourceRoot) === entry) cache.entries.delete(sourceRoot);
+		throw error;
+	}
+}

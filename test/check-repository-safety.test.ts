@@ -196,6 +196,9 @@ describe("auditRepositoryFiles", () => {
 	test("rejects runtime source that bypasses every owned internal Module", async () => {
 		const root = await createRepository();
 		await mkdir(join(root, "packages", "pi-stuff", "src"), { recursive: true });
+		for (const name of ["lifecycle-performance.ts", "suite-loader.ts", "suite-runtime.ts"]) {
+			await writeFile(join(root, "packages", "pi-stuff", "src", name), "export {};\n");
+		}
 		await writeFile(
 			join(root, "packages", "pi-stuff", "src", "global-coordinator.ts"),
 			"export const coordinator = new Map();\n",

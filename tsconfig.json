@@ -4,6 +4,7 @@
 	"exclude": [
 		"node_modules",
 		".artifacts",
+		"packages/pi-stuff/src/suite-runtime.ts",
 		"packages/pi-stuff/src/subagents/**",
 		"packages/pi-stuff/src/rtk/**",
 		"packages/pi-stuff/src/goal/**",

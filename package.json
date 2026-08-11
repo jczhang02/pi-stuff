@@ -12,6 +12,7 @@
 		"acceptance:code-mode:tui": "bun scripts/verify-code-mode-tui.ts",
 		"acceptance:magic-context:real": "bun scripts/verify-magic-context-real.ts",
 		"beads:publish": "bun scripts/publish-beads.ts",
+		"benchmark:lifecycle": "bun scripts/benchmark-lifecycle.ts --acceptance --trace",
 		"benchmark:tool-activity": "bun scripts/benchmark-tool-activity.ts",
 		"ci:acceptance-scope": "bun scripts/ci-acceptance-scope.ts",
 		"check": "bun run format:check && bun run typecheck && bun run test && bun run knip && bun run check:generated && bun run check:repository && bun run benchmark:tool-activity && bun run pack:verify",
