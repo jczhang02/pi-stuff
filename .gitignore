@@ -10,6 +10,8 @@ dist/
 !.env.example
 .pi/
 .pi-subagents/
+.agents/
+skills-lock.json
 .DS_Store
 
 # Beads / Dolt runtime state

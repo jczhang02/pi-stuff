@@ -29,7 +29,7 @@
 		"test:ci": "bun run test:isolated && bun run test:goal",
 		"test:goal": "bun scripts/test-goal-upstream.ts",
 		"test:isolated": "bun scripts/run-isolated-tests.ts",
-		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.integrations.json && tsc --noEmit -p tsconfig.rtk.json && tsc --noEmit -p tsconfig.agents.json && tsc --noEmit -p tsconfig.agents-tests.json && tsc --noEmit -p tsconfig.goal.json && tsc --noEmit -p tsconfig.goal-tests.json"
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p config/typescript/integrations.json && tsc --noEmit -p config/typescript/rtk.json && tsc --noEmit -p config/typescript/agents.json && tsc --noEmit -p config/typescript/agents-tests.json && tsc --noEmit -p config/typescript/goal.json && tsc --noEmit -p config/typescript/goal-tests.json"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.6",
@@ -45,5 +45,41 @@
 	"trustedDependencies": [],
 	"engines": {
 		"bun": "1.3.14"
+	},
+	"knip": {
+		"workspaces": {
+			".": {
+				"entry": [
+					"scripts/*.ts",
+					"test/**/*.test.ts",
+					"test/goal-upstream/**/*.node.ts",
+					"test/goal-upstream/ui-node-shim.ts",
+					"test/ui/settings-lock-race-worker.ts",
+					"test/fixtures/**/*.ts",
+					"test/agents/fixtures/**/*.ts"
+				],
+				"project": [
+					"scripts/**/*.ts",
+					"test/**/*.ts"
+				]
+			},
+			"packages/pi-stuff": {
+				"entry": [
+					"src/subagents/src/runs/background/writer-process-supervisor.mjs"
+				],
+				"project": [
+					"src/**/*.{ts,js,mjs,cjs}"
+				],
+				"ignore": [
+					"src/web/runtime/**",
+					"src/mcp/runtime/**"
+				],
+				"ignoreDependencies": [
+					"@cortexkit/pi-magic-context",
+					"@napi-rs/keyring",
+					"@napi-rs/keyring-linux-x64-gnu"
+				]
+			}
+		}
 	}
 }

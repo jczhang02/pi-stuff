@@ -1,89 +1,172 @@
 <div align="center">
 
-# pi-stuff
+# Pi Stuff
 
-A personal, local package for the native [Pi coding agent](https://github.com/earendil-works/pi).
+**A conversation-first capability suite for the native [Pi coding agent](https://github.com/earendil-works/pi).**
+
+One local Pi Package for compact Tool activity, durable work, focused side flows, and lazy integrations—without
+replacing Pi.
+
+English · [简体中文](docs/README.zh-CN.md)
 
 [![CI](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml/badge.svg)](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2f2f2f.svg)](LICENSE)
 
 </div>
 
-## Shape
+## Interface
 
-```text
-Pi Host + one local @jczhang02/pi-stuff Package + user-owned settings
-```
+Real captures from Ghostty `1.3.1` running Pi `0.84.1`. Click an image for the full-resolution view.
 
-Pi remains the Host. Pi Stuff contributes one normal Pi Package and does not provide another CLI, runtime, session
-layer, or TUI shell. The Package is private and maintained for local use; it is not published to npm.
+**Welcome and shared Statusline**
 
-## Internal modules
+[![Pi Stuff Welcome card and shared Statusline](docs/assets/readme/pi-stuff-welcome.png)](docs/assets/readme/pi-stuff-welcome.png)
 
-The Package keeps coherent behavior in named internal modules. These are maintenance boundaries, not separately
-installable Packages:
+| Native `/ui` settings | Compact Tool activity and Todo |
+| :---: | :---: |
+| [![Pi Stuff native UI settings](docs/assets/readme/pi-stuff-ui-settings.png)](docs/assets/readme/pi-stuff-ui-settings.png) | [![Pi Stuff compact Tool activity and Todo](docs/assets/readme/pi-stuff-tool-activity.png)](docs/assets/readme/pi-stuff-tool-activity.png) |
 
-| Module | Responsibility |
-| --- | --- |
-| `conversation-ui` | Welcome, Statusline, live Thought, input UI, `/ui`, and shared Command Dialogs |
-| `tool-display` | Compact built-in and Suite Tool activity, detail views, and resume reconstruction |
-| `code-mode` | One-schema local JavaScript composition for active Suite Tools with unchanged Tool UI |
-| `context-management` | Lazy Magic Context integration and native Pi fail-open behavior |
-| `rtk` | Fail-open command rewriting and model-only Tool-output projection |
-| `codex` | Codex Fast/usage controls plus patch and image Tools |
-| `goal` | Persistent, evidence-gated work toward one session objective |
-| `web` | Bounded Web search and public page/PDF reading |
-| `mcp` | Lazy proxy-only MCP gateway and status UI |
-| `background-work` | Current-session Background Shell, Monitor, and `/tasks` management |
-| `subagents` | Current-session foreground and background Agents |
-| `todo` | Recoverable session Todo state and compact checklist UI |
-| `btw` | One-shot side questions outside the main transcript |
+## What is Pi Stuff?
 
-The adapted Web and MCP implementations live inside their owning modules. Their pinned origins, licenses, and local
-changes remain recorded next to the source; they have no independent Package lifecycle.
+Pi Stuff assembles a personal set of capabilities into one ordinary Pi Package. Pi remains the **Host** and continues
+to own the CLI, TUI, sessions, settings, Package loading, and model interaction. Pi Stuff adds one ordered **Suite**
+through Pi's native Extension interface.
 
-## Installation
+The result is a denser, quieter coding workflow:
 
-Install the Package from this checkout through Pi:
+- **Conversation-first UI** — a responsive Welcome card, one bounded Statusline, live Thought projection, input
+  highlighting, and full-width Pi-native Command Dialogs.
+- **Compact Tool activity** — continuous Tool work becomes one semantic Activity Group; `Ctrl+O` and `/tools` restore
+  the underlying detail.
+- **Durable objectives and plans** — Goal can continue one evidence-gated objective, while Todo keeps recoverable
+  session tasks in a bounded checklist.
+- **Current-session parallel work** — Background Shells, one-shot Monitors, and foreground or background Agents stay
+  inspectable without becoming a second scheduler or runtime.
+- **Side questions without transcript noise** — `/btw` answers a focused question outside the main conversation and
+  restores the original editor draft when closed.
+- **Lazy integrations** — Context, Web, MCP, RTK, Codex controls, and optional Code Mode activate only when needed and
+  fail in bounded ways when an optional dependency is unavailable.
+
+Pi Stuff is maintained as a private, local-only Package. It is not published to npm, and its Capability Modules are
+not independently installable products.
+
+## Quick start
+
+For the certified path, use the Pi `0.84.1` Linux x64 Host built from upstream
+`53fa77ccd8a279eb87e92294ef3687b03ff80112`. A matching version string alone does not establish certification.
 
 ```bash
+git clone https://github.com/jczhang02/pi-stuff.git
+cd pi-stuff
 pi install ./packages/pi-stuff
+pi
 ```
 
-Pi owns the resulting settings entry. Pi Stuff never installs itself or edits `settings.json`.
+`pi install` lets Pi add the Package to the user-owned Settings Layer. Pi Stuff does not install itself or mutate Pi
+settings during import or startup.
+
+Once Pi starts, these are useful entry points:
+
+| Command | Purpose |
+| --- | --- |
+| `/ui` | Configure the Statusline, Welcome card, input presentation, and Tool timer |
+| `/goal <objective>` | Start persistent, evidence-gated work toward one session objective |
+| `/btw <question>` | Ask a no-Tool side question without changing the main transcript |
+| `/tasks` | Inspect and control Background Shells and Monitors |
+| `/agents` | Inspect and control current-session Agents |
+| `/tools` | Inspect the members and bounded results of a Tool Activity Group |
+| `/diagnostics` | Review bounded, redacted Suite problems from the current process |
+| `/codex` | Inspect Codex usage and Fast mode when using a supported Codex model |
+| `/mcp` | Inspect lazily configured MCP servers |
+| `/rtk` | Verify or configure optional RTK command rewriting |
+| `/codemode status` | Inspect the optional, disabled-by-default Code Mode envelope |
+
+External services, authentication, MCP declarations, Magic Context configuration, and the RTK executable remain
+optional and user-owned. Their absence does not prevent ordinary Pi turns.
+
+## Architecture
+
+[![Animated Pi Stuff architecture: user-owned settings and input flow through the Pi Host into one local Pi Stuff Package and its ordered Capability Modules](docs/assets/readme/pi-stuff-architecture.gif)](docs/assets/readme/pi-stuff-architecture.png)
+
+The architecture has three deliberate layers:
+
+1. **Pi Host** owns the CLI, TUI, sessions, settings, Package loader, and model loop.
+2. **`@jczhang02/pi-stuff`** exports one default Extension factory. Its generated entry follows the order declared in
+   [`packages/pi-stuff/suite.json`](packages/pi-stuff/suite.json).
+3. **Capability Modules** each own one coherent behavior inside the Package. `conversation-ui` provides shared
+   presentation and Host-lifecycle coordination; `tool-display` provides the shared Tool presentation contract.
+
+Import and session startup stay pure: no network access, file writes, subprocess launch, or Host-setting mutation.
+Required initialization failures propagate instead of leaving a silently partial Suite. User-started work may then
+activate a Capability's documented local state or external integration.
+
+### Capability map
+
+The ordered Suite currently contains:
+
+| Capability Module | What it contributes |
+| --- | --- |
+| `conversation-ui` | Welcome, Statusline, live Thoughts, input presentation, `/ui`, diagnostics, and shared Command Dialog lifecycle |
+| `tool-display` | Compact Tool Activity Groups, native expansion, `/tools`, and deterministic resume reconstruction |
+| `rtk` | Optional fail-open Bash rewriting and model-only Bash/Grep output projection |
+| `codex` | `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen` |
+| `goal` | One persistent session objective with automatic continuation and evidence-gated completion or blocking |
+| `context-management` | Lazy Magic Context integration while Pi JSONL remains the raw session authority |
+| `web` | Bounded Web search, public HTTP(S) reading, PDF extraction, and continuation retrieval |
+| `mcp` | One lazy MCP gateway with explicit authentication and stdio/HTTP transports |
+| `background-work` | Current-session Background Shells, one-shot Monitors, and `/tasks` management |
+| `subagents` | Foreground and background Agents, a compact roster, and `/agents` inspection |
+| `todo` | Branch-replayable Task Tools and a bounded checklist above Pi's editor |
+| `btw` | One-shot side questions that do not enter the main transcript or model context |
+| `code-mode` | An opt-in JavaScript envelope that exposes active Suite Tools through one provider-visible schema |
+
+These names are internal maintenance boundaries. They have no separate manifest, version, installation, or publication
+lifecycle.
+
+## Themes
+
+The Package includes `catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato`, and `catppuccin-mocha`. Select a
+theme in Pi's `/settings` menu or set its name in Pi's `settings.json`. Pi retains control of terminal-color fallback and
+the user's theme choice.
+
+## Compatibility and status
+
+| Contract | Certified profile |
+| --- | --- |
+| Pi Host | `0.84.1`, upstream `53fa77ccd8a279eb87e92294ef3687b03ff80112` |
+| Platform | Linux x64; Ubuntu 24.04 is the CI system-utility baseline |
+| Bun | `1.3.14` |
+| Node.js / npm | `24.16.0` / `11.13.0` for the certified Host build |
+| TypeScript | `5.9.3` |
+| Optional RTK runtime | `0.42.4`, certified Linux x64 builds only |
+
+Compatibility with other Pi builds is not claimed. A Pi upgrade is a coordinated repository change that updates the
+pinned Host source profile, development types, and public-seam acceptance checks together. See the full
+[`compatibility contract`](docs/compatibility.md).
 
 ## Development
 
-Requirements:
-
-- Bun 1.3.14
-- Node.js 24.16.0 and npm 11.13.0 for the certified Host build
-- Git, Bash, tar, gzip, Expect, tmux, and standard Unix utilities
-- Linux x64 for the certified Host build
-- Pi `0.84.1` at upstream `53fa77ccd8a279eb87e92294ef3687b03ff80112`
-- Optional RTK `0.42.4` for Bash rewriting
-- Beads 1.1.0 for issue maintenance
-
-Install dependencies and run the complete repository check:
+Install the frozen dependency graph and run the complete repository check:
 
 ```bash
 bun install --frozen-lockfile --ignore-scripts
 bun run check
 ```
 
-`bun run host:build` creates the pinned Pi Host under ignored `.artifacts/` and prints the `PI_BIN`,
-`PI_HOST_ATTESTATION`, and `PI_HOST_SOURCE_CHECKOUT` variables used by full acceptance. See
-[`docs/compatibility.md`](docs/compatibility.md) for the exact Host contract.
+The check covers formatting, type surfaces, tests, unused code, generated Suite composition, repository safety, Tool
+Activity performance, and verification of the extracted local Package. `bun run host:build` builds the pinned Pi Host
+under ignored `.artifacts/` for full acceptance work.
 
-Engineering work is tracked in Beads and mirrored to [GitHub Issues](https://github.com/jczhang02/pi-stuff/issues).
-Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before changing behavior.
+Before changing behavior, read [`CONTRIBUTING.md`](.github/CONTRIBUTING.md), the canonical language in
+[`CONTEXT.md`](CONTEXT.md), and the relevant records under [`docs/adr/`](docs/adr/). Engineering work is tracked in
+Beads and mirrored to [GitHub Issues](https://github.com/jczhang02/pi-stuff/issues).
 
 ## Security
 
-Pi Extensions execute with the user's operating-system permissions. Pi Stuff does not add a permission or
-command-interception layer. Review source before installation and report vulnerabilities according to
-[`SECURITY.md`](SECURITY.md).
+Pi Extensions execute with the user's operating-system permissions. Pi Stuff does not add a permission or command-
+interception layer. Review the source before installation and use [private vulnerability reporting](.github/SECURITY.md) for
+security issues.
 
 ## License
 
-[MIT](LICENSE) © 2026 JC Zhang. Absorbed third-party source retains its own adjacent license and provenance records.
+[MIT](LICENSE) © 2026 JC Zhang. Absorbed third-party source retains its adjacent license and provenance records.

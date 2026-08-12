@@ -1,0 +1,7 @@
+{
+	"extends": "./goal.json",
+	"compilerOptions": {
+		"types": ["bun"]
+	},
+	"include": ["../../packages/pi-stuff/src/goal/**/*.ts", "../../test/goal-upstream/**/*.ts"]
+}

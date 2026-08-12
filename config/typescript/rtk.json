@@ -1,5 +1,5 @@
 {
-	"extends": "./tsconfig.base.json",
+	"extends": "./base.json",
 	"compilerOptions": {
 		"target": "ES2023",
 		"lib": ["ES2023"],
@@ -8,6 +8,6 @@
 		"exactOptionalPropertyTypes": false,
 		"noUncheckedIndexedAccess": false
 	},
-	"include": ["packages/pi-stuff/src/rtk/**/*.ts", "test/rtk/**/*.ts"],
-	"exclude": ["node_modules"]
+	"include": ["../../packages/pi-stuff/src/rtk/**/*.ts", "../../test/rtk/**/*.ts"],
+	"exclude": ["../../node_modules"]
 }
