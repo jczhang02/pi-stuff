@@ -5,7 +5,7 @@ const repositoryRoot = join(import.meta.dirname, "..");
 const outputDirectory = join(repositoryRoot, ".artifacts", "goal-upstream-tests");
 
 await rm(outputDirectory, { recursive: true, force: true });
-await run("bunx", ["tsc", "-p", "tsconfig.goal-upstream-run.json"], repositoryRoot);
+await run("bunx", ["tsc", "-p", "config/typescript/goal-upstream-run.json"], repositoryRoot);
 
 await writeFile(
 	join(outputDirectory, "packages/pi-stuff/src/conversation-ui/index.js"),

@@ -1,5 +1,5 @@
 {
-	"extends": "./tsconfig.base.json",
+	"extends": "./base.json",
 	"compilerOptions": {
 		"lib": ["ES2022", "DOM", "DOM.Iterable"],
 		"strict": false,
@@ -12,10 +12,11 @@
 		"erasableSyntaxOnly": false
 	},
 	"include": [
-		"packages/pi-stuff/src/web/runtime/**/*.ts",
-		"packages/pi-stuff/src/mcp/runtime/**/*.ts",
-		"test/mcp/agent-run-origin.test.ts",
-		"test/mcp/host-seam.test.ts"
+		"../../packages/pi-stuff/src/web/runtime/**/*.ts",
+		"../../packages/pi-stuff/src/mcp/runtime/**/*.ts",
+		"../../test/mcp/agent-run-origin.test.ts",
+		"../../test/mcp/host-seam.test.ts",
+		"../../test/mcp/xdg-paths.test.ts"
 	],
-	"exclude": ["node_modules"]
+	"exclude": ["../../node_modules"]
 }

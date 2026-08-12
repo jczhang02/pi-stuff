@@ -205,6 +205,7 @@ function runPty(
 			PI_STUFF_RTK_PTY_RUNNER: runner,
 			PI_STUFF_RTK_PTY_SESSIONS: options.sessionDirectory,
 			PI_STUFF_RTK_PTY_SESSION: options.sessionFile ?? "",
+			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
 		},
 		stdout: "pipe",

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { piStuffCachePath } from "../../xdg/index.js";
 import { codeModeHostBinaryName, HOST_RELEASE } from "./host-assets.js";
 import { installCodeModeHost } from "./install-host.js";
 
@@ -9,22 +9,11 @@ function packageRoot(): string {
 	return dirname(dirname(fileURLToPath(import.meta.url)));
 }
 
-function cachedBinaryPath(platform: string, arch: string, agentDir = getAgentDir()): string {
-	return join(
-		agentDir,
-		"cache",
-		"pi-stuff-code-mode",
-		HOST_RELEASE,
-		`${platform}-${arch}`,
-		codeModeHostBinaryName(platform),
-	);
+export function getCodeModeHostCachePath(platform: string, arch: string): string {
+	return piStuffCachePath("code-mode", HOST_RELEASE, `${platform}-${arch}`, codeModeHostBinaryName(platform));
 }
 
-export function codeModeHostBinaryPath(
-	platform = process.platform,
-	arch = process.arch,
-	agentDir = getAgentDir(),
-): string {
+export function codeModeHostBinaryPath(platform = process.platform, arch = process.arch): string {
 	const override = process.env["PI_STUFF_CODE_MODE_HOST"];
 	if (override) {
 		if (!isAbsolute(override) || !existsSync(override)) {
@@ -35,7 +24,7 @@ export function codeModeHostBinaryPath(
 	const name = codeModeHostBinaryName(platform);
 	const bundled = join(packageRoot(), "bin", `${platform}-${arch}`, name);
 	if (existsSync(bundled)) return bundled;
-	const cached = cachedBinaryPath(platform, arch, agentDir);
+	const cached = getCodeModeHostCachePath(platform, arch);
 	if (existsSync(cached)) return cached;
 	throw new Error(`No Code Mode host binary for ${platform}-${arch}`);
 }
@@ -45,7 +34,7 @@ export async function ensureCodeModeHostBinary(signal?: AbortSignal): Promise<st
 		return codeModeHostBinaryPath();
 	} catch (error) {
 		if (process.env["PI_STUFF_CODE_MODE_HOST"]) throw error;
-		const destination = cachedBinaryPath(process.platform, process.arch);
+		const destination = getCodeModeHostCachePath(process.platform, process.arch);
 		await installCodeModeHost({
 			arch: process.arch,
 			destination,

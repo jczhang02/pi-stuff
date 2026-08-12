@@ -217,6 +217,7 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 			PI_STUFF_PTY_RUNNER: runner,
 			PI_STUFF_PTY_SESSIONS: sessionDirectory,
 			PI_STUFF_PTY_SESSION_ID: `btw-pty-${options.columns}x${options.rows}`,
+			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
 		};
 		const result = Bun.spawnSync(["expect", "-c", expectProgram()], {

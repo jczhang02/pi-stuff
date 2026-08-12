@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
+import { piStuffStatePath } from "../../xdg/index.ts";
 import { getAgentPath } from "./agent-dir.ts";
 
 export interface McpOnboardingState {
@@ -16,11 +17,12 @@ const DEFAULT_STATE: McpOnboardingState = {
 };
 
 export function getOnboardingStatePath(): string {
-  return getAgentPath("mcp-onboarding.json");
+	return piStuffStatePath("mcp", "mcp-onboarding.json");
 }
 
 export function loadOnboardingState(): McpOnboardingState {
-  const path = getOnboardingStatePath();
+	const currentPath = getOnboardingStatePath();
+	const path = existsSync(currentPath) ? currentPath : getAgentPath("mcp-onboarding.json");
   if (!existsSync(path)) return { ...DEFAULT_STATE };
 
   try {

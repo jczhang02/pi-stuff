@@ -1,5 +1,5 @@
 {
-	"extends": "./tsconfig.base.json",
+	"extends": "./config/typescript/base.json",
 	"include": ["scripts/**/*.ts", "test/**/*.ts", "packages/pi-stuff/src/**/*.ts"],
 	"exclude": [
 		"node_modules",
@@ -12,6 +12,7 @@
 		"packages/pi-stuff/src/mcp/runtime/**",
 		"test/mcp/agent-run-origin.test.ts",
 		"test/mcp/host-seam.test.ts",
+		"test/mcp/xdg-paths.test.ts",
 		"test/agents-host.test.ts",
 		"test/agents-pty.test.ts",
 		"test/agents",

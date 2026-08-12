@@ -326,6 +326,7 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 				PI_STUFF_MCP_PTY_SESSIONS: sessions,
 				PI_STUFF_MCP_PTY_SESSION_ID: "mcp-source-session",
 				PI_TELEMETRY: "0",
+				SHELL: "/bin/sh",
 				TERM: "xterm-256color",
 			},
 			stderr: "pipe",

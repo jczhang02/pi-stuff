@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
+import { getAgentDir as getPiAgentDir } from "@earendil-works/pi-coding-agent";
 import { boundTerminalLine } from "../../../tool-display/index.js";
 import { formatToolCall } from "./formatters.ts";
 import { assertPrivateDirectory, readBoundedOwnedFileSnapshot } from "./private-directory.ts";
@@ -96,10 +97,15 @@ export function getProjectConfigDir(projectRoot: string): string {
 }
 
 export function getAgentDir(): string {
-	const configured = process.env.PI_CODING_AGENT_DIR;
-	if (configured === "~") return os.homedir();
-	if (configured?.startsWith("~/")) return path.join(os.homedir(), configured.slice(2));
-	return configured || path.join(os.homedir(), getConfigDirName(), "agent");
+	return getPiAgentDir();
+}
+
+export function getAgentSessionsDir(environment: NodeJS.ProcessEnv = process.env): string {
+	const configured = environment.PI_CODING_AGENT_SESSION_DIR;
+	const home = environment.HOME ?? os.homedir();
+	if (configured === "~") return home;
+	if (configured?.startsWith("~/")) return path.join(home, configured.slice(2));
+	return configured || path.join(getAgentDir(), "sessions");
 }
 
 const statusCache = new Map<

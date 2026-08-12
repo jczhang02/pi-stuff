@@ -257,6 +257,7 @@ export async function verifyToolsResumePty(options: {
 					PI_STUFF_TOOLS_RESUME_PTY_RUNNER: runner,
 					PI_STUFF_TOOLS_RESUME_PTY_SESSIONS: sessionDirectory,
 					PI_STUFF_TOOLS_RESUME_PTY_TARGET: targetSession,
+					SHELL: "/bin/sh",
 					TERM: "xterm-256color",
 				},
 				stdout: "pipe",
