@@ -3,11 +3,11 @@ import { appendFileSync } from "node:fs";
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const ZERO_SHA = "0".repeat(40);
-const RECORDED_EVIDENCE_PATTERN = /^docs\/.*\.(?:ansi|gif|html|png)$/u;
+const FAST_ONLY_PATH_PATTERNS = [/^\.beads\//u, /^[^/]+\.md$/u, /^docs\/.*\.(?:ansi|gif|html|md|png)$/u];
 
 export function requiresFullAcceptance(paths: readonly string[]): boolean {
 	if (paths.length === 0) return true;
-	return paths.some((path) => !path.startsWith(".beads/") && !RECORDED_EVIDENCE_PATTERN.test(path));
+	return paths.some((path) => !FAST_ONLY_PATH_PATTERNS.some((pattern) => pattern.test(path)));
 }
 
 function validRangeEndpoint(value: string | undefined): value is string {

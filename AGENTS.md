@@ -57,7 +57,8 @@ Use `bun test` and integration-style assertions at these seams. Host and Package
 
 - Use Bun 1.3.14 for dependency management, scripts, and tests.
 - Keep all direct dependencies exact and keep `trustedDependencies` empty.
-- Run `bun run check` before committing.
+- During development, run focused tests and `bun run check:fast`.
+- Before marking a pull request ready or merging, run `bun run check` once against the final changes.
 - Current source, ADRs, maintainer instructions, and executable documentation are English. Deliberately localized historical reports and CJK/UI fixtures may retain their language.
 - Use Conventional Commits and preserve GPG signing.
 

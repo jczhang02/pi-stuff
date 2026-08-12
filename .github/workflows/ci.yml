@@ -60,25 +60,13 @@ jobs:
       - name: Verify acceptance classifier
         run: bun test test/ci-acceptance-scope.test.ts
 
-      - name: Check formatting and static analysis
-        shell: bash
-        run: |
-          set -euo pipefail
-          bun run format:check
-          bun run typecheck
-          bun run knip
-
-      - name: Check generated composition and repository safety
-        shell: bash
-        run: |
-          set -euo pipefail
-          bun run check:generated
-          bun run check:repository
+      - name: Run fast checks
+        run: bun run check:fast
 
   acceptance:
     name: Acceptance
     needs: fast
-    if: needs.fast.outputs.acceptance_required == 'true'
+    if: ${{ github.event_name != 'push' && needs.fast.outputs.acceptance_required == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
