@@ -1394,33 +1394,38 @@ test("Ctrl+O restores every member and bounded result detail", () => {
 });
 
 test("compact projection hides text bodies while preserving real media fallback", () => {
-	const harness = apiHarness();
-	const tool = toolFromHarness(harness, "view", "read-file");
-	const runtime = getToolUiRuntime(harness.api);
-	runtime.indexMessages([assistant(call("v1", "view", "pixel.png"))], true);
-	const state = {};
-	const args = { value: "pixel.png" };
-	const context = renderContext(state, args, { toolCallId: "v1" });
-	const component = tool.renderCall?.(args, theme, context);
-	if (!component) throw new Error("missing media call component");
-	const body = tool.renderResult?.(
-		{
-			content: [
-				{ type: "text", text: "hidden text" },
-				{
-					type: "image",
-					data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
-					mimeType: "image/png",
-				},
-			],
-			details: { source: "pixel.png" },
-		},
-		{ expanded: false, isPartial: false },
-		theme,
-		{ ...context, lastComponent: component },
-	);
-	expect(body?.render(80).length).toBeGreaterThan(0);
-	expect(body?.render(80).join("\n")).not.toContain("hidden text");
+	setCapabilities({ hyperlinks: false, images: null, trueColor: false });
+	try {
+		const harness = apiHarness();
+		const tool = toolFromHarness(harness, "view", "read-file");
+		const runtime = getToolUiRuntime(harness.api);
+		runtime.indexMessages([assistant(call("v1", "view", "pixel.png"))], true);
+		const state = {};
+		const args = { value: "pixel.png" };
+		const context = renderContext(state, args, { toolCallId: "v1" });
+		const component = tool.renderCall?.(args, theme, context);
+		if (!component) throw new Error("missing media call component");
+		const body = tool.renderResult?.(
+			{
+				content: [
+					{ type: "text", text: "hidden text" },
+					{
+						type: "image",
+						data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
+						mimeType: "image/png",
+					},
+				],
+				details: { source: "pixel.png" },
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			{ ...context, lastComponent: component },
+		);
+		expect(body?.render(80).length).toBeGreaterThan(0);
+		expect(body?.render(80).join("\n")).not.toContain("hidden text");
+	} finally {
+		resetCapabilitiesCache();
+	}
 });
 
 test("issues stay folded but expose the first failure and remaining count", () => {
