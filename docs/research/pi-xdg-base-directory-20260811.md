@@ -1,6 +1,6 @@
 # Pi / Pi Stuff XDG 化报告
 
-日期：2026-08-11
+日期：2026-08-11（2026-08-12 已按实现更新）
 核查版本：[Pi 0.84.1](https://github.com/earendil-works/pi/releases/tag/v0.84.1)
 
 ## 总结
@@ -8,7 +8,7 @@
 | 对象 | 当前能否严格 XDG 化 | 现在应该怎么做 |
 | --- | --- | --- |
 | Pi 本体 | 不能。Pi 只有一个全局 Agent 目录，未按 config/data/state/cache 分类 | 用 `PI_CODING_AGENT_DIR` 把整个目录搬到 `$XDG_CONFIG_HOME/pi`，再用 `PI_CODING_AGENT_SESSION_DIR` 把 Session 搬到 `$XDG_STATE_HOME/pi/sessions` |
-| Pi Stuff | 尚未统一。多数配置跟随 Pi Agent 目录，少数模块自行解析路径 | 所有 Pi 范围配置统一复用 Pi 的 `getAgentDir()`；Pi Stuff 自有状态和缓存分别放入 `XDG_STATE_HOME`、`XDG_CACHE_HOME` |
+| Pi Stuff | 已统一。Pi 范围配置跟随 Host，自有 state/cache/runtime 按 XDG 分类 | 设置 Pi 的两个官方目录变量；Pi Stuff 不需要额外的 config-root 变量 |
 
 这里区分两个目标：
 
@@ -112,16 +112,16 @@ cp -a "$HOME/.pi/agent/sessions/." "$pi_state_dir/sessions/"
 
 ### 2.1 当前是否统一
 
-**没有完全统一。**
+**已经统一。**
 
-多数 Pi Stuff 设置文件已经通过 Pi 导出的 `getAgentDir()` 定位，因此会跟随 `PI_CODING_AGENT_DIR`。但仍有这些例外：
+Pi Stuff 的路径规则现在是：
 
-- Web 自己实现了 `PI_CODING_AGENT_DIR > XDG_CONFIG_HOME/pi > ~/.pi` 的路径规则；
-- Goal state 自己解析 `PI_CODING_AGENT_DIR`，未复用 Pi helper；
-- MCP 和 Subagents 各自复制了一套 Agent 目录解析函数；
-- MCP 的共享全局配置目前硬编码 `~/.config/mcp/mcp.json`，没有真正读取自定义 `XDG_CONFIG_HOME`；
-- Code Mode cache 目前放在 `AgentDir/cache`；
-- Magic Context 和 Background Work 已经分别使用 XDG config/state，它们不是问题。
+- Pi 范围配置统一调用 Pi 导出的 `getAgentDir()`，因此跟随 `PI_CODING_AGENT_DIR`；
+- Pi Stuff 自有持久状态进入 `$XDG_STATE_HOME/pi-stuff`；
+- 可重建缓存进入 `$XDG_CACHE_HOME/pi-stuff`；
+- 锁和 Subagent 临时运行文件优先进入 `$XDG_RUNTIME_DIR/pi-stuff`；
+- Pi Session 和项目文件继续由 Host、Session 或项目拥有，不搬入 Pi Stuff 目录；
+- XDG 变量只有在值为绝对路径时才生效。
 
 相关实现：
 
@@ -175,7 +175,7 @@ PI_AGENT_DIR = $PI_CODING_AGENT_DIR
 | --- | --- |
 | `$XDG_CONFIG_HOME/cortexkit/magic-context.jsonc` | Magic Context 用户配置；首次显式启用时可创建 |
 | `<project>/.cortexkit/magic-context.jsonc` | Magic Context 项目配置 |
-| `~/.config/mcp/mcp.json` | 当前 MCP 共享全局配置路径 |
+| `$XDG_CONFIG_HOME/mcp/mcp.json` | MCP 共享全局配置；未设置时使用 `~/.config/mcp/mcp.json` |
 | `<project>/.mcp.json` | 推荐的共享项目 MCP 配置 |
 | `<project>/.pi/mcp.json` | Pi 专属项目 MCP 覆盖 |
 
@@ -187,12 +187,12 @@ Magic Context 路径依据：[`context-management/config.ts`](../../packages/pi-
 
 | 文件或目录 | 类型 | 迁移处理 |
 | --- | --- | --- |
-| `pi-goal-state.json` | Goal 运行状态 | 保留并迁移到 state |
-| `mcp-cache.json` | MCP metadata cache | 可删除并重建 |
-| `mcp-npx-cache.json` | MCP npx 解析缓存 | 可删除并重建 |
-| `mcp-onboarding.json` | MCP onboarding 状态 | 可以保留 |
-| `cache/pi-stuff-code-mode/` | Code Mode 可重建二进制缓存 | 可删除并重建 |
-| `pi-stuff-ui.json.lock` | UI 设置写锁 | 不迁移 |
+| `$PI_AGENT_DIR/pi-goal-state.json` | 旧版 Goal cleanup 兼容文件；当前 Goal 状态在 Pi Session JSONL 中 | 不迁移，只有兼容清理会读取 |
+| `$XDG_CACHE_HOME/pi-stuff/mcp/mcp-cache.json` | MCP metadata cache | 旧 cache 不迁移，按需重建 |
+| `$XDG_CACHE_HOME/pi-stuff/mcp/mcp-npx-cache.json` | MCP npx 解析缓存 | 旧 cache 不迁移，按需重建 |
+| `$XDG_STATE_HOME/pi-stuff/mcp/mcp-onboarding.json` | MCP onboarding 状态 | 新路径缺失时回读旧文件；写入只使用新路径 |
+| `$XDG_CACHE_HOME/pi-stuff/code-mode/` | Code Mode 可重建二进制缓存 | 旧 cache 不迁移，按需重新下载 |
+| `$XDG_RUNTIME_DIR/pi-stuff/pi-stuff-ui.json.lock` | UI 设置写锁 | 不迁移；无 runtime dir 时沿用相邻锁文件 |
 | `$XDG_STATE_HOME/pi-stuff/work/` | Background Work authority state | 必须保留 |
 | `$XDG_STATE_HOME/pi-stuff/agents/session-governor/` | Subagent governor state | 保留 |
 | `<project>/.pi/tasks/` | 项目级 Background Work 运行记录 | 留在项目内 |
@@ -222,7 +222,6 @@ $XDG_CONFIG_HOME/
 $XDG_STATE_HOME/
 ├── pi/sessions/
 └── pi-stuff/
-    ├── goal/
     ├── mcp/
     ├── work/
     └── agents/session-governor/
@@ -231,29 +230,34 @@ $XDG_CACHE_HOME/
 └── pi-stuff/
     ├── code-mode/
     └── mcp/
+
+$XDG_RUNTIME_DIR/
+└── pi-stuff/
+    ├── pi-stuff-ui.json.lock
+    └── agents-<user-scope>/
 ```
 
 项目内 `.pi/`、`.mcp.json` 和 `.cortexkit/` 保持项目级，不搬入用户 XDG 目录。
 
-### 2.5 最小改造方案
+### 2.5 已实现的改造
 
 | 当前问题 | 修改 |
 | --- | --- |
 | MCP、Subagents、Web、Goal 各自解析 Agent 目录 | 删除重复解析，统一调用 `@earendil-works/pi-coding-agent` 的 `getAgentDir()` |
 | `web-search.json` fallback 为 `~/.pi` | 改为 `join(getAgentDir(), "web-search.json")` |
-| Goal state 写在 Agent config 目录 | 移到 `$XDG_STATE_HOME/pi-stuff/goal/` |
+| Goal 旧 cleanup 文件自行解析 Agent 目录 | 跟随 Host `getAgentDir()`；当前 Goal 状态继续由 Pi Session JSONL 持有 |
 | MCP cache/onboarding 混在 Agent config 目录 | cache 放 `$XDG_CACHE_HOME/pi-stuff/mcp/`，onboarding state 放 `$XDG_STATE_HOME/pi-stuff/mcp/` |
 | Code Mode cache 位于 `AgentDir/cache` | 移到 `$XDG_CACHE_HOME/pi-stuff/code-mode/` |
 | MCP 共享配置硬编码 `~/.config` | 使用绝对的 `XDG_CONFIG_HOME`，未设置时 fallback 到 `~/.config` |
 | UI lock 与配置文件同目录 | 严格模式下放 `$XDG_RUNTIME_DIR/pi-stuff/`；未设置时使用安全 fallback |
 
-迁移兼容原则：
+兼容原则：
 
 1. 新路径优先。
-2. 旧路径只作为一次性迁移来源。
-3. 不在 Extension import、初始化或普通 Session 启动时自动搬文件。
-4. 只有直接用户操作或明确命令才执行迁移。
-5. 发现新旧文件冲突时停止，不静默覆盖。
+2. MCP onboarding 的旧路径只在新文件不存在时回读，写入不删除或覆盖旧文件。
+3. cache 和 runtime 文件不迁移，缺失时按需重建。
+4. 不在 Extension import、初始化或普通 Session 启动时自动搬文件。
+5. Pi Session 和项目文件不改归属。
 
 ### 2.6 现在设置 Pi 环境变量后会发生什么
 
@@ -269,12 +273,13 @@ export PI_CODING_AGENT_SESSION_DIR="$XDG_STATE_HOME/pi/sessions"
 - Pi 本体的全局目录和 Session 会搬走；
 - Pi Stuff 的 UI、Tool、RTK、Codex、Goal settings、MCP override、Agent definitions 和 Web config 会跟随；
 - Magic Context、Background Work 和 Subagent governor 已经使用各自的 XDG config/state；
-- Goal state、MCP cache/onboarding、Code Mode cache 等仍需代码修改，才能达到严格分类；
+- MCP state/cache、Code Mode cache、UI lock 和 Subagent runtime 已按 XDG 分类；
+- Goal 的当前状态仍在 Pi Session JSONL 中，不另造一份 Pi Stuff state；
 - 项目内 `.pi/` 不变。
 
 ## 最终建议
 
-1. **现在先做实用 XDG 化**：设置两个 Pi 官方变量并迁移现有目录。
+1. **Pi 本体做实用 XDG 化**：设置两个 Pi 官方变量并迁移现有目录。
 2. **Pi Stuff 不新增自己的 config-root 环境变量**：配置始终跟随 Pi `getAgentDir()`。
-3. **只为 Pi Stuff 自有 state/cache 使用 XDG_STATE_HOME/XDG_CACHE_HOME**。
+3. **Pi Stuff 自有 state/cache/runtime 分别使用 XDG_STATE_HOME/XDG_CACHE_HOME/XDG_RUNTIME_DIR**。
 4. **上游 Pi 未拆分之前，不宣称 Pi 本体已严格 XDG 合规**。

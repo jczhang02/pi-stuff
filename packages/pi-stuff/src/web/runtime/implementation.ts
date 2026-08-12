@@ -37,7 +37,7 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { platform } from "node:os";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.ts";
 import { isExaAvailable } from "./exa.ts";
@@ -210,7 +210,8 @@ function saveConfig(updates: Partial<WebSearchConfig>): void {
 	Object.assign(config, updates);
 	const dir = getWebSearchConfigDir();
 	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-	writeFileSync(WEB_SEARCH_CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
+	writeFileSync(WEB_SEARCH_CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+	chmodSync(WEB_SEARCH_CONFIG_PATH, 0o600);
 }
 
 type ToolNames = {

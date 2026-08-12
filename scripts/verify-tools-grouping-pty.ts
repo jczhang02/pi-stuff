@@ -178,6 +178,7 @@ export async function verifyToolsGroupingPty(options: {
 		PI_STUFF_TOOLS_GROUPING_ROWS: String(options.rows),
 		PI_STUFF_TOOLS_GROUPING_SESSIONS: sessionDirectory,
 		PI_STUFF_TOOLS_GROUPING_SESSION_ID: `tools-grouping-${String(options.columns)}x${String(options.rows)}`,
+		SHELL: "/bin/sh",
 		TERM: "xterm-256color",
 	};
 	const launch = (extraEnvironment: Readonly<Record<string, string>> = {}) =>

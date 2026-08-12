@@ -29,6 +29,24 @@ The single local Pi Package for the complete Pi Stuff Suite.
 
 These names are internal maintenance boundaries, not npm dependencies or independently installable Packages.
 
+## Storage
+
+Pi Stuff follows the Host for Pi-owned configuration and uses XDG directories only for data it owns:
+
+| Data | Location |
+| --- | --- |
+| Pi-owned configuration (`settings.json`, `mcp.json`, `web-search.json`, UI and Goal settings) | Pi `getAgentDir()` / `PI_CODING_AGENT_DIR` |
+| Shared standard MCP configuration | `$XDG_CONFIG_HOME/mcp/mcp.json` |
+| Pi Stuff state | `$XDG_STATE_HOME/pi-stuff` |
+| Pi Stuff cache | `$XDG_CACHE_HOME/pi-stuff` |
+| Ephemeral locks and Agent runtime files | `$XDG_RUNTIME_DIR/pi-stuff` |
+| Session and project artifacts | Pi's Session directory or the owning project |
+
+Only absolute XDG environment paths are accepted. Config, state, and cache fall back to `~/.config`,
+`~/.local/state`, and `~/.cache`; when `XDG_RUNTIME_DIR` is unavailable, existing lock/temp fallbacks remain active.
+Legacy MCP onboarding state is read from the Pi Agent directory only when the XDG state file is absent; subsequent
+writes use XDG state without deleting the legacy file.
+
 ## Themes
 
 The Package includes `catppuccin-latte`, `catppuccin-frappe`, `catppuccin-macchiato`, and `catppuccin-mocha`.

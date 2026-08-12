@@ -553,7 +553,7 @@ export class McpSetupPanel {
         return this.formatPreview([
           "Read order (later entries win):",
           "0. detected host configs (opt-in lowest-precedence fallback)",
-          "1. ~/.config/mcp/mcp.json",
+          `1. ${this.discovery.sources.find((source) => source.id === "shared-global")?.path ?? "$XDG_CONFIG_HOME/mcp/mcp.json"}`,
           "2. ~/.agents/mcp.json",
           "3. ~/.agents/mcp/mcp.json",
           "4. <Pi agent dir>/mcp.json",

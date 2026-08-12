@@ -8,6 +8,7 @@ import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
+import { xdgRuntimeHome, xdgStateHome } from "../../../xdg/index.js";
 import type { AgentConfig } from "../agents/agents.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../runs/shared/capability-ceiling.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
@@ -1492,12 +1493,23 @@ export function resolveTempScopeId(options?: {
 
 const MAX_PARALLEL = 8;
 export const MAX_CONCURRENCY = 4;
-export const TEMP_ROOT_DIR = path.join(os.tmpdir(), `pi-stuff-agents-${resolveTempScopeId()}`);
+export function resolveTempRootDir(options?: {
+	env?: NodeJS.ProcessEnv;
+	getuid?: (() => number) | undefined;
+	userInfo?: (() => { username?: string | null }) | undefined;
+	homedir?: (() => string) | undefined;
+	tmpdir?: (() => string) | undefined;
+}): string {
+	const scope = resolveTempScopeId(options);
+	const runtimeHome = xdgRuntimeHome(options?.env ?? process.env);
+	return runtimeHome
+		? path.join(runtimeHome, "pi-stuff", `agents-${scope}`)
+		: path.join((options?.tmpdir ?? os.tmpdir)(), `pi-stuff-agents-${scope}`);
+}
+
+export const TEMP_ROOT_DIR = resolveTempRootDir();
 export function resolveSessionGovernorRoot(env: NodeJS.ProcessEnv = process.env, homeDirectory = os.homedir()): string {
-	const configured = env.XDG_STATE_HOME?.trim();
-	const stateRoot =
-		configured && path.isAbsolute(configured) ? configured : path.join(homeDirectory, ".local", "state");
-	return path.join(stateRoot, "pi-stuff", "agents", "session-governor");
+	return path.join(xdgStateHome(env, homeDirectory), "pi-stuff", "agents", "session-governor");
 }
 
 export const SESSION_GOVERNOR_ROOT = resolveSessionGovernorRoot();

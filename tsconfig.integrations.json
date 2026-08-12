@@ -15,7 +15,8 @@
 		"packages/pi-stuff/src/web/runtime/**/*.ts",
 		"packages/pi-stuff/src/mcp/runtime/**/*.ts",
 		"test/mcp/agent-run-origin.test.ts",
-		"test/mcp/host-seam.test.ts"
+		"test/mcp/host-seam.test.ts",
+		"test/mcp/xdg-paths.test.ts"
 	],
 	"exclude": ["node_modules"]
 }

@@ -91,6 +91,7 @@ class GoalPtySession {
 			PI_STUFF_GOAL_PTY_SESSION_ID: `goal-pty-${String(this.options.columns)}x${String(this.options.rows)}`,
 			PI_STUFF_UI_PTY_LOG: join(this.directory, "provider.jsonl"),
 			PI_TELEMETRY: "0",
+			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
 		};
 		const result = Bun.spawnSync(

@@ -432,6 +432,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			PI_STUFF_CONTEXT_PTY_SESSIONS: sessionDirectory,
 			PI_STUFF_CONTEXT_PTY_SESSION_ID: `context-pty-${String(columns)}x${String(rows)}`,
 			PI_TELEMETRY: "0",
+			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
 			TRANSFORMERS_OFFLINE: "1",
 			XDG_CACHE_HOME: cacheDirectory,

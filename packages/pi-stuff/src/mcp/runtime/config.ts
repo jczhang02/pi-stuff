@@ -4,12 +4,12 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import stripJsonComments from "strip-json-comments";
+import { xdgConfigHome } from "../../xdg/index.ts";
 import { getAgentPath } from "./agent-dir.ts";
 import { logger } from "./logger.ts";
 import { isServerDisabled, type HostConfigDiscovery, type McpConfig, type ServerEntry, type McpSettings, type ImportKind, type ServerProvenance } from "./types.ts";
 import { toStringRecord } from "./utils.ts";
 
-const GENERIC_GLOBAL_CONFIG_PATH = join(homedir(), ".config", "mcp", "mcp.json");
 const AGENTS_GLOBAL_CONFIG_PATHS = [
   join(homedir(), ".agents", "mcp.json"),
   join(homedir(), ".agents", "mcp", "mcp.json"),
@@ -74,7 +74,7 @@ const IMPORT_PATHS: Record<ImportKind, string[]> = {
     join(homedir(), ".codex", "config.json"),
   ],
   opencode: [
-    join(homedir(), ".config", "opencode", "opencode.json"),
+    join(xdgConfigHome(), "opencode", "opencode.json"),
     "./opencode.json",
   ],
   windsurf: [join(homedir(), ".windsurf", "mcp.json")],
@@ -162,7 +162,7 @@ export function getPiGlobalConfigPath(overridePath?: string): string {
 }
 
 export function getGenericGlobalConfigPath(): string {
-  return GENERIC_GLOBAL_CONFIG_PATH;
+	return join(xdgConfigHome(), "mcp", "mcp.json");
 }
 
 export function getProjectConfigPath(cwd = process.cwd()): string {
@@ -349,15 +349,16 @@ function getConfigConflicts(
 
 function getConfigSources(overridePath?: string, cwd = process.cwd()): ConfigSourceSpec[] {
   const userPath = getPiGlobalConfigPath(overridePath);
+  const genericGlobalConfigPath = getGenericGlobalConfigPath();
   const projectPath = getProjectConfigPath(cwd);
   const projectPiPath = getProjectPiConfigPath(cwd);
   const sources: ConfigSourceSpec[] = [];
 
-  if (GENERIC_GLOBAL_CONFIG_PATH !== userPath) {
+  if (genericGlobalConfigPath !== userPath) {
     sources.push({
       id: "shared-global",
       label: "user-global standard MCP",
-      readPath: GENERIC_GLOBAL_CONFIG_PATH,
+      readPath: genericGlobalConfigPath,
       writePath: userPath,
       kind: "import",
       importKind: "global MCP config",
@@ -367,7 +368,7 @@ function getConfigSources(overridePath?: string, cwd = process.cwd()): ConfigSou
   }
 
   for (const [index, agentsPath] of AGENTS_GLOBAL_CONFIG_PATHS.entries()) {
-    if (agentsPath === userPath || agentsPath === GENERIC_GLOBAL_CONFIG_PATH) continue;
+    if (agentsPath === userPath || agentsPath === genericGlobalConfigPath) continue;
     sources.push({
       id: index === 0 ? "agents-global" : "agents-nested-global",
       label: index === 0 ? "user-global .agents MCP" : "user-global .agents nested MCP",
@@ -852,7 +853,7 @@ function readRawConfigObject(filePath: string): Record<string, unknown> {
 function writeRawConfigObject(filePath: string, raw: Record<string, unknown>): void {
   mkdirSync(dirname(filePath), { recursive: true });
   const tmpPath = `${filePath}.${process.pid}.tmp`;
-  writeFileSync(tmpPath, `${JSON.stringify(raw, null, 2)}\n`, "utf-8");
+  writeFileSync(tmpPath, `${JSON.stringify(raw, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
   renameSync(tmpPath, filePath);
 }
 
@@ -1000,7 +1001,7 @@ function detectRepoPrompt(summary: Omit<McpDiscoverySummary, "fingerprint" | "re
   }
 
   const projectRoot = findProjectRoot(cwd);
-  const targetPath = projectRoot ? join(projectRoot, PROJECT_CONFIG_NAME) : GENERIC_GLOBAL_CONFIG_PATH;
+  const targetPath = projectRoot ? join(projectRoot, PROJECT_CONFIG_NAME) : getGenericGlobalConfigPath();
   return {
     configured: false,
     executablePath,
