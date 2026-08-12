@@ -1,11 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir, hostname } from "node:os";
+import { hostname } from "node:os";
 import { join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export function getWebSearchConfigDir(): string {
-	if (process.env.PI_CODING_AGENT_DIR) return process.env.PI_CODING_AGENT_DIR;
-	if (process.env.XDG_CONFIG_HOME) return join(process.env.XDG_CONFIG_HOME, "pi");
-	return join(homedir(), ".pi");
+	return getAgentDir();
 }
 
 export function getWebSearchConfigPath(): string {

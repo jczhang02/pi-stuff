@@ -151,6 +151,7 @@ export async function verifyWorkPty(options: {
 				PI_STUFF_WORK_PTY_RUNNER: runner,
 				PI_STUFF_WORK_PTY_SESSIONS: sessionDirectory,
 				PI_STUFF_WORK_PTY_SESSION_ID: "work-pty-session",
+				SHELL: "/bin/sh",
 				TERM: "xterm-256color",
 			},
 			stderr: "pipe",

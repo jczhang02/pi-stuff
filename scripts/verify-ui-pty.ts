@@ -170,6 +170,7 @@ class TmuxPiSession {
 			PI_STUFF_UI_PTY_SESSION_ID:
 				options.sessionId ?? `ui-pty-${String(columns)}x${String(rows)}-${String(sessionCounter)}`,
 			PI_TELEMETRY: "0",
+			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
 		};
 	}

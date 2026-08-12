@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { shardedDurableClaimName, tryAcquireDurableClaim, tryAcquireKernelClaim } from "./durable-claim.ts";
 import { type ArtifactDirPreference, type ArtifactPaths, TEMP_ARTIFACTS_DIR } from "./types.ts";
-import { getAgentDir } from "./utils.ts";
+import { getAgentSessionsDir } from "./utils.ts";
 
 const CLEANUP_MARKER_FILE = ".last-cleanup";
 const CLEANUP_CURSOR_FILE = ".cleanup-cursor";
@@ -1350,7 +1350,7 @@ export async function maintainAgentArtifacts(
 		records: 0,
 		maxEntries,
 	};
-	const sessionsRoot = options.sessionsRoot ?? path.join(getAgentDir(), "sessions");
+	const sessionsRoot = options.sessionsRoot ?? getAgentSessionsDir();
 	const discovered = await findSessionArtifactDirectories(sessionsRoot, maxDirectories, now, discoveryBudget);
 	const tempArtifactsDir = options.tempArtifactsDir ?? TEMP_ARTIFACTS_DIR;
 	let directoriesInspected = 0;

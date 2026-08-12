@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
 
@@ -41,10 +41,6 @@ export function findModelWithProviderRouting<T extends ModelLike>(
 	// select a specific route when that distinction matters.
 	const routed = available.find(model => model.id === routedId);
 	return routed ?? registry.find(provider, id);
-}
-
-function getAgentDir(): string {
-	return process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 }
 
 function readSettings(path: string): Record<string, unknown> {

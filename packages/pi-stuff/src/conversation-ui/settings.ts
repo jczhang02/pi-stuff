@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { xdgRuntimeHome } from "../xdg/index.js";
 import { reportDiagnostic } from "./diagnostics.js";
 import { getHostSharedResource } from "./host-resource.js";
 import type { StatuslineDensity, StatuslineIconMode } from "./statusline.js";
@@ -80,6 +81,17 @@ interface PendingSettingsWrite {
 }
 
 type SettingsChanges = { -readonly [Id in UiSettingId]?: UiSettings[Id] };
+
+export function resolveUiSettingsLockPath(
+	settingsPath: string,
+	environment: NodeJS.ProcessEnv = process.env,
+	agentDir = getAgentDir(),
+): string {
+	const runtimeHome = xdgRuntimeHome(environment);
+	return settingsPath === join(agentDir, SETTINGS_FILE_NAME) && runtimeHome
+		? join(runtimeHome, "pi-stuff", `${SETTINGS_FILE_NAME}.lock`)
+		: `${settingsPath}.lock`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -190,9 +202,8 @@ function tryAcquireFileLock(fileDescriptor: number): boolean {
 	return flockLibrary.symbols.flock(fileDescriptor, FLOCK_EXCLUSIVE_NONBLOCKING) === 0;
 }
 
-async function acquireSettingsLock(path: string): Promise<() => Promise<void>> {
-	await mkdir(dirname(path), { recursive: true });
-	const lockPath = `${path}.lock`;
+async function acquireSettingsLock(lockPath: string): Promise<() => Promise<void>> {
+	await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
 	const startedAt = Date.now();
 	const handle = await open(lockPath, "a+", 0o600);
 	try {
@@ -233,10 +244,11 @@ function applySettingsChanges(settings: UiSettings, changes: SettingsChanges | u
 
 async function persistSettingsChanges(
 	path: string,
+	lockPath: string,
 	changes: SettingsChanges,
 	writer: SettingsWriter,
 ): Promise<UiSettings> {
-	const release = await acquireSettingsLock(path);
+	const release = await acquireSettingsLock(lockPath);
 	try {
 		const current = await readSettings(path);
 		const next = applySettingsChanges(current, changes);
@@ -251,14 +263,16 @@ async function persistSettingsChanges(
 export class UiSettingsStore {
 	private drainPromise: Promise<void> | undefined;
 	private readonly listeners = new Set<SettingsListener>();
+	private readonly lockPath: string;
 	private readonly path: string;
 	private pendingWrite: PendingSettingsWrite | undefined;
 	private persistedValue: UiSettings;
 	private value: UiSettings;
 	private readonly writer: SettingsWriter;
 
-	private constructor(path: string, value: UiSettings, writer: SettingsWriter) {
+	private constructor(path: string, lockPath: string, value: UiSettings, writer: SettingsWriter) {
 		this.path = path;
+		this.lockPath = lockPath;
 		this.persistedValue = value;
 		this.value = value;
 		this.writer = writer;
@@ -268,11 +282,11 @@ export class UiSettingsStore {
 		path = join(getAgentDir(), SETTINGS_FILE_NAME),
 		writer: SettingsWriter = writeSettings,
 	): Promise<UiSettingsStore> {
-		return new UiSettingsStore(path, await readSettings(path), writer);
+		return new UiSettingsStore(path, resolveUiSettingsLockPath(path), await readSettings(path), writer);
 	}
 
 	static memory(value: UiSettings = DEFAULT_SETTINGS): UiSettingsStore {
-		return new UiSettingsStore("", value, writeSettings);
+		return new UiSettingsStore("", "", value, writeSettings);
 	}
 
 	get(): UiSettings {
@@ -306,7 +320,7 @@ export class UiSettingsStore {
 			const pending = this.pendingWrite;
 			this.pendingWrite = undefined;
 			try {
-				this.persistedValue = await persistSettingsChanges(this.path, pending.changes, this.writer);
+				this.persistedValue = await persistSettingsChanges(this.path, this.lockPath, pending.changes, this.writer);
 				this.reconcileValueWithPersisted();
 				for (const waiter of pending.waiters) waiter.resolve();
 			} catch (error) {

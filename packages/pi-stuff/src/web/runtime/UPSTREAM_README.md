@@ -57,7 +57,7 @@ it.
 pi install npm:pi-web-access
 ```
 
-Works immediately with no API keys — Exa MCP provides zero-config search. If Pi has Codex auth from `/login`, OpenAI search can also work without a separate key. For more providers or direct API access, add keys to `~/.pi/web-search.json`:
+Works immediately with no API keys — Exa MCP provides zero-config search. If Pi has Codex auth from `/login`, OpenAI search can also work without a separate key. For more providers or direct API access, add keys to `<Pi agent dir>/web-search.json`:
 
 ```json
 {
@@ -287,7 +287,7 @@ Toggle or configure the curator workflow at runtime.
 /curator summary-review     # explicit workflow
 ```
 
-Persists to `~/.pi/web-search.json` and takes effect on the next `web_search` call. When disabled, `web_search` returns raw results without opening the curator window.
+Persists to `<Pi agent dir>/web-search.json` and takes effect on the next `web_search` call. When disabled, `web_search` returns raw results without opening the curator window.
 
 ### /search
 
@@ -311,7 +311,7 @@ Toggle with **Ctrl+Shift+W** to see live request/response activity:
 
 ## Configuration
 
-Config defaults to `~/.pi/web-search.json`, or `web-search.json` under `PI_CODING_AGENT_DIR` / `XDG_CONFIG_HOME/pi` when set. Every field is optional.
+Config is `web-search.json` in Pi's Agent directory (`getAgentDir()` / `PI_CODING_AGENT_DIR`). Every field is optional.
 
 ```json
 {
@@ -731,7 +731,7 @@ When `false`, the extension never tries to open a Glimpse window or a browser an
 
 ### Shortcuts
 
-Both shortcuts are configurable via `~/.pi/web-search.json`:
+Both shortcuts are configurable via `<Pi agent dir>/web-search.json`:
 
 ```json
 {

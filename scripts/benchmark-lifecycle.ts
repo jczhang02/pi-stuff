@@ -823,6 +823,7 @@ function isolatedEnvironment(root: string): Record<string, string> {
 		PATH: path,
 		PI_OFFLINE: "1",
 		PI_TELEMETRY: "0",
+		SHELL: "/bin/sh",
 		TERM: "xterm-256color",
 		XDG_CACHE_HOME: join(root, "cache"),
 		XDG_CONFIG_HOME: join(root, "xdg-config"),

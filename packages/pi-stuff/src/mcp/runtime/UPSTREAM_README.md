@@ -30,7 +30,7 @@ The adapter reads standard MCP files automatically. No extra setup needed if you
 
 | You already have... | What happens |
 |---------------------|--------------|
-| `.mcp.json` or `~/.config/mcp/mcp.json` | Pi uses it immediately. The first time you open `/mcp`, you'll see a short heads-up explaining which file Pi detected and that Pi only writes adapter-specific overrides to its own files. |
+| `.mcp.json` or `$XDG_CONFIG_HOME/mcp/mcp.json` | Pi uses it immediately. The first time you open `/mcp`, you'll see a short heads-up explaining which file Pi detected and that Pi only writes adapter-specific overrides to its own files. |
 | Host-specific configs (Cursor, Claude Code, Codex, etc.) but no standard MCP files | Run `/mcp setup` to adopt those host configs into Pi. The setup flow shows exactly what it found, lets you pick which ones to import, and previews the exact file changes before writing. |
 | Nothing configured yet | Run `/mcp setup` to scaffold a minimal `.mcp.json`, add a curated known server, quick-add RepoPrompt, or inspect what the adapter discovered on your machine. |
 
@@ -51,7 +51,7 @@ Preferred project config: `.mcp.json`
 }
 ```
 
-Preferred user-global shared config: `~/.config/mcp/mcp.json`. Pi also reads the tool-agnostic global paths `~/.agents/mcp.json` and `~/.agents/mcp/mcp.json`.
+Preferred user-global shared config: `$XDG_CONFIG_HOME/mcp/mcp.json` (default `~/.config/mcp/mcp.json`). Pi also reads the tool-agnostic global paths `~/.agents/mcp.json` and `~/.agents/mcp/mcp.json`.
 
 Pi also reads Pi-owned override files for settings and host-specific compatibility:
 
@@ -62,7 +62,7 @@ Host-specific configs are detected and shown by `/mcp setup` and `pi-mcp-adapter
 
 Precedence is:
 
-1. `~/.config/mcp/mcp.json`
+1. `$XDG_CONFIG_HOME/mcp/mcp.json` (default `~/.config/mcp/mcp.json`)
 2. `~/.agents/mcp.json`
 3. `~/.agents/mcp/mcp.json`
 4. `<Pi agent dir>/mcp.json`
@@ -100,7 +100,7 @@ Use the shared MCP files when you want one setup to work across hosts, and Pi-ow
 
 | File | Purpose |
 |------|---------|
-| `~/.config/mcp/mcp.json` | User-global shared MCP config |
+| `$XDG_CONFIG_HOME/mcp/mcp.json` | User-global shared MCP config (default `~/.config/mcp/mcp.json`) |
 | `~/.agents/mcp.json` | User-global tool-agnostic MCP config |
 | `~/.agents/mcp/mcp.json` | User-global tool-agnostic MCP config |
 | `.mcp.json` | Project-local shared MCP config |
@@ -475,7 +475,7 @@ To hide specific tools while still using `directTools: true`, add `excludeTools`
 
 Each direct tool costs ~150-300 tokens in the system prompt (name + description + schema). Good for targeted sets of 5-20 tools. For servers with 75+ tools, stick with the proxy or pick specific tools with a `string[]`. If 75+ direct tools resolve, the adapter prints a warning but still registers the tools you configured.
 
-Direct tools register from the metadata cache in the Pi agent dir (`~/.pi/agent/mcp-cache.json` by default, or `$PI_CODING_AGENT_DIR/mcp-cache.json` when set), so no server connections are needed at startup. On the first session after adding `directTools` to a new server, the cache won't exist yet — tools fall back to proxy-only while the cache populates, then the extension hot-loads the refreshed direct tools into the current session. Servers that advertise MCP list-change notifications refresh the current session when their tool or resource list changes. On Pi versions that expose `pi.unregisterTool()`, stale direct tools are removed from the registry during refresh; older Pi versions still deactivate them from the active tool set. To force a refresh: `/mcp reconnect <server>`.
+Direct tools register from `$XDG_CACHE_HOME/pi-stuff/mcp/mcp-cache.json` (falling back to `~/.cache/pi-stuff/mcp/mcp-cache.json`), so no server connections are needed at startup. On the first session after adding `directTools` to a new server, the cache won't exist yet — tools fall back to proxy-only while the cache populates, then the extension hot-loads the refreshed direct tools into the current session. Servers that advertise MCP list-change notifications refresh the current session when their tool or resource list changes. On Pi versions that expose `pi.unregisterTool()`, stale direct tools are removed from the registry during refresh; older Pi versions still deactivate them from the active tool set. To force a refresh: `/mcp reconnect <server>`.
 
 If prompt-cache stability matters more than automatic direct-tool hot-loading, set `settings.freezeDirectTools` to `true`. The initial direct-tool sync still runs, but later automatic reconnects, lazy-connects, and list-change notifications keep the registered tool surface unchanged. Deliberate refreshes through `mcp({ connect: "server" })` or `/mcp reconnect <server>` still update direct tools.
 
@@ -550,7 +550,7 @@ Restart pi, then ask the agent to show a chart — it calls `show_chart` and ope
 
 ### Import Existing Configs
 
-Shared MCP files are loaded automatically. Use `imports` only for host-specific config formats that are not already covered by `.mcp.json` or `~/.config/mcp/mcp.json`.
+Shared MCP files are loaded automatically. Use `imports` only for host-specific config formats that are not already covered by `.mcp.json` or `$XDG_CONFIG_HOME/mcp/mcp.json`.
 
 ```json
 {
@@ -561,7 +561,7 @@ Shared MCP files are loaded automatically. Use `imports` only for host-specific 
 
 Supported compatibility imports: `cursor`, `claude-code`, `claude-desktop`, `opencode`, `vscode`, `windsurf`, `codex`
 
-`pi-mcp-adapter init` detects these host-specific configs and adds missing imports to the Pi agent dir config for you. The `opencode` import reads OpenCode V1 `mcp` entries from both `~/.config/opencode/opencode.json` and the project `opencode.json`, with project fields taking precedence. It is explicit-import only; OpenCode V2, inline content, managed configs, and remote discovery are not supported.
+`pi-mcp-adapter init` detects these host-specific configs and adds missing imports to the Pi agent dir config for you. The `opencode` import reads OpenCode V1 `mcp` entries from both `$XDG_CONFIG_HOME/opencode/opencode.json` (default `~/.config/opencode/opencode.json`) and the project `opencode.json`, with project fields taking precedence. It is explicit-import only; OpenCode V2, inline content, managed configs, and remote discovery are not supported.
 
 ### Project Config
 

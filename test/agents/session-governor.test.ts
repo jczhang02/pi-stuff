@@ -11,7 +11,11 @@ import {
 	type SessionGovernorFileSystem,
 	SessionGovernorStateError,
 } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.js";
-import { resolveSessionGovernorRoot } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import {
+	resolveSessionGovernorRoot,
+	resolveTempRootDir,
+} from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import { getAgentSessionsDir } from "../../packages/pi-stuff/src/subagents/src/shared/utils.js";
 
 const roots: string[] = [];
 
@@ -57,6 +61,19 @@ describe("session-wide Agent resource governor", () => {
 		);
 		expect(resolveSessionGovernorRoot({ XDG_STATE_HOME: "/var/lib/test-state" }, "/workspace/example-user")).toBe(
 			"/var/lib/test-state/pi-stuff/agents/session-governor",
+		);
+		expect(resolveTempRootDir({ env: { XDG_RUNTIME_DIR: "/run/user/1000" }, getuid: () => 1000 })).toBe(
+			"/run/user/1000/pi-stuff/agents-uid-1000",
+		);
+		expect(
+			resolveTempRootDir({
+				env: { XDG_RUNTIME_DIR: "relative/runtime" },
+				getuid: () => 1000,
+				tmpdir: () => "/tmp",
+			}),
+		).toBe("/tmp/pi-stuff-agents-uid-1000");
+		expect(getAgentSessionsDir({ HOME: "/users/example", PI_CODING_AGENT_SESSION_DIR: "~/pi-sessions" })).toBe(
+			"/users/example/pi-sessions",
 		);
 	});
 
