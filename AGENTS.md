@@ -55,6 +55,7 @@ Use `bun test` and integration-style assertions at these seams. Host and Package
 
 ## Tooling
 
+- Create every Pi Stuff Git worktree under the repository-local `.worktrees/` directory; do not place worktrees elsewhere.
 - Use Bun 1.3.14 for dependency management, scripts, and tests.
 - Keep all direct dependencies exact and keep `trustedDependencies` empty.
 - During development, run focused tests and `bun run check:fast`.
