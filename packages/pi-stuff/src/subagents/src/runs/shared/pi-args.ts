@@ -53,6 +53,7 @@ export const SUBAGENT_SUPERVISOR_CHANNEL_DIR_ENV = "PI_SUBAGENT_SUPERVISOR_CHANN
 export const SUBAGENT_RUN_ID_ENV = "PI_SUBAGENT_RUN_ID";
 export const SUBAGENT_CHILD_AGENT_ENV = "PI_SUBAGENT_CHILD_AGENT";
 export const SUBAGENT_CHILD_INDEX_ENV = "PI_SUBAGENT_CHILD_INDEX";
+export const SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV = "PI_SUBAGENT_DELEGATED_TASK_FINGERPRINT";
 export const SUBAGENT_FANOUT_CHILD_ENV = "PI_SUBAGENT_FANOUT_CHILD";
 export const SUBAGENT_PARENT_EVENT_SINK_ENV = "PI_SUBAGENT_PARENT_EVENT_SINK";
 export const SUBAGENT_PARENT_CONTROL_INBOX_ENV = "PI_SUBAGENT_PARENT_CONTROL_INBOX";
@@ -285,12 +286,13 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 	// parent Suite (or the standalone Agents package) explicitly, opt in Agent
 	// extensions, disable ambient discovery, and keep the runtime guard last.
 	const resolvedBaseExtension = childBaseExtensionPath(input.childBaseExtensionPath);
-	const inheritedBaseExtension = input.extensions === undefined ? resolvedBaseExtension : undefined;
 	const runtimeExtensionSet = new Set(runtimeExtensions);
 	const configuredExtensions = capabilityCeiling?.denyExtensions
 		? []
 		: [
-				...(inheritedBaseExtension ? [inheritedBaseExtension] : []),
+				// Agent-specific extensions are additive. Even an explicit empty list
+				// must not silently turn off the owning Suite and its Context runtime.
+				...(resolvedBaseExtension ? [resolvedBaseExtension] : []),
 				...toolExtensionPaths,
 				...(input.extensions ?? []),
 				...(input.subagentOnlyExtensions ?? []),
@@ -429,6 +431,7 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		toolPlan.effectiveMcpTools.length > 0 ? JSON.stringify(toolPlan.effectiveMcpTools) : undefined;
 	env[PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV] = toolPlan.baseExtensionPath;
 	env[SUBAGENT_CHILD_ENV] = "1";
+	env[SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV] = createHash("sha256").update(input.task.trim()).digest("hex");
 	env[SUBAGENT_FANOUT_CHILD_ENV] = toolPlan.fanoutAuthorized ? "1" : "0";
 	const inheritedNestedRoute = Boolean(
 		process.env[SUBAGENT_PARENT_EVENT_SINK_ENV] &&

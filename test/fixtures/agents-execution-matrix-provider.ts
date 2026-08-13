@@ -2,11 +2,20 @@ import { appendFileSync } from "node:fs";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 const PROVIDER = "pi-stuff-agents-execution-matrix";
 const MODEL = "fixture-model";
 const AGENT = "matrix-agent";
 const CHILD_DELAY_MS = 1_200;
+const LONG_TOOL_ROUNDS = 8;
+const LONG_TOOL_RESULT = [
+	"MATRIX_LONG_TOOL_RESULT_START",
+	"alpha-0123456789/+=上下文稳定性𠮷".repeat(1_250),
+	"MATRIX_LONG_TOOL_RESULT_END",
+].join("\n");
+const LONG_STEERING_AUTHORITY =
+	"MATRIX_LONG_STEERING_AUTHORITY: continue through every remaining Tool round and finish with the exact round count.";
 
 const ZERO_USAGE = {
 	input: 0,
@@ -22,7 +31,9 @@ type ScenarioId =
 	| "single-fork-background"
 	| "parallel-fresh-background"
 	| "parallel-fork-foreground"
-	| "aggregate-fanout-foreground";
+	| "aggregate-fanout-foreground"
+	| "long-fresh-foreground"
+	| "long-fork-foreground";
 
 function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
 	return {
@@ -50,7 +61,9 @@ function scenarioId(): ScenarioId {
 		value !== "single-fork-background" &&
 		value !== "parallel-fresh-background" &&
 		value !== "parallel-fork-foreground" &&
-		value !== "aggregate-fanout-foreground"
+		value !== "aggregate-fanout-foreground" &&
+		value !== "long-fresh-foreground" &&
+		value !== "long-fork-foreground"
 	) {
 		throw new Error(`Unknown Agents execution matrix scenario: ${value}`);
 	}
@@ -85,6 +98,10 @@ function latestSubagentResult(context: Context): string | undefined {
 			.join("\n");
 	}
 	return undefined;
+}
+
+function toolResultCount(context: Context, toolName: string): number {
+	return context.messages.filter((entry) => entry.role === "toolResult" && entry.toolName === toolName).length;
 }
 
 function textStream(text: string) {
@@ -137,7 +154,7 @@ function toolArguments(scenario: ScenarioId): Record<string, unknown> {
 		context: scenario.includes("-fork-") ? "fork" : "fresh",
 		foreground: scenario.endsWith("-foreground"),
 	};
-	if (scenario.startsWith("single-") || scenario === "aggregate-fanout-foreground") {
+	if (scenario.startsWith("single-") || scenario === "aggregate-fanout-foreground" || scenario.startsWith("long-")) {
 		return {
 			...common,
 			agent: AGENT,
@@ -188,6 +205,22 @@ function toolCallStream(scenario: ScenarioId) {
 	return stream;
 }
 
+function longToolCallStream(round: number) {
+	const stream = createAssistantMessageEventStream();
+	const pending = message([], "pending");
+	const toolCall = {
+		type: "toolCall" as const,
+		id: `agents-execution-matrix-long-${round}`,
+		name: "matrix_blob",
+		arguments: { round },
+	};
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
+	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
+	return stream;
+}
+
 function childStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamOptions) {
 	const scenario = scenarioId();
 	const marker = requiredEnvironment("PI_STUFF_AGENTS_EXECUTION_MATRIX_ROOT_MARKER");
@@ -198,6 +231,37 @@ function childStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamO
 	const expectedBaseExtension = requiredEnvironment("PI_STUFF_AGENTS_EXECUTION_MATRIX_EXPECTED_BASE_EXTENSION");
 	const childBaseExtension = process.env["PI_STUFF_CHILD_BASE_EXTENSION_PATH"];
 	const nestedResult = latestSubagentResult(context);
+	if (scenario.startsWith("long-")) {
+		const round = toolResultCount(context, "matrix_blob");
+		const sawProjection = serialized.includes("compacted for child continuation safety");
+		const sawSteering = serialized.includes(LONG_STEERING_AUTHORITY);
+		record({
+			kind: "child-long-turn",
+			scenario,
+			round,
+			messageCount: context.messages.length,
+			payloadBytes: Buffer.byteLength(serialized, "utf8"),
+			sawProjection,
+			sawSteering,
+		});
+		if (round === 0) {
+			record({
+				kind: "child-start",
+				scenario,
+				task,
+				lastUser,
+				messageCount: context.messages.length,
+				sawRootMarker,
+				sawSuiteSurface: pi.getCommands().some((command) => command.name === "ui"),
+				baseExtensionMatches: childBaseExtension === expectedBaseExtension,
+				childBaseExtension,
+			});
+		}
+		if (round < LONG_TOOL_ROUNDS) return longToolCallStream(round + 1);
+		const text = `MATRIX_LONG_CHILD_RESULT:rounds=${round}:projection=${sawProjection}:steering=${sawSteering}`;
+		record({ kind: "child-finish", scenario, task, text });
+		return textStream(text);
+	}
 	const isSuiteDirect =
 		scenario === "aggregate-fanout-foreground" && task !== "MATRIX_GRANDCHILD_TASK_AGGREGATE_FANOUT_FOREGROUND";
 	if (isSuiteDirect && nestedResult !== undefined) {
@@ -242,6 +306,31 @@ function fixtureStream(pi: ExtensionAPI, context: Context, options?: SimpleStrea
 }
 
 export default function agentsExecutionMatrixProvider(pi: ExtensionAPI): void {
+	pi.registerTool({
+		name: "matrix_blob",
+		label: "Matrix Blob",
+		description: "Return deterministic large Tool output for the certified child-continuation matrix.",
+		parameters: Type.Object({ round: Type.Integer({ minimum: 1, maximum: LONG_TOOL_ROUNDS }) }),
+		execute: async (_toolCallId, parameters) => {
+			const round = parameters.round;
+			if (process.env["PI_SUBAGENT_CHILD"] === "1" && scenarioId().startsWith("long-")) {
+				record({
+					kind: "child-long-tool",
+					scenario: scenarioId(),
+					round,
+					bytes: Buffer.byteLength(LONG_TOOL_RESULT),
+				});
+				if (round === 4) {
+					await pi.sendUserMessage(LONG_STEERING_AUTHORITY, { deliverAs: "steer" });
+					record({ kind: "child-long-steer", scenario: scenarioId(), round });
+				}
+			}
+			return {
+				content: [{ type: "text" as const, text: `${LONG_TOOL_RESULT}\nround=${round}` }],
+				details: { round },
+			};
+		},
+	});
 	pi.registerProvider(PROVIDER, {
 		name: "Pi Stuff Agents execution matrix fixture",
 		baseUrl: "https://fixture.invalid",

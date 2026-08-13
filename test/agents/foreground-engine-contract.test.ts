@@ -43,6 +43,12 @@ import { resolveCurrentSessionId } from "../../packages/pi-stuff/src/subagents/s
 import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
+const environment = new Map<string, string | undefined>();
+
+function clearEnvironment(name: string): void {
+	if (!environment.has(name)) environment.set(name, process.env[name]);
+	delete process.env[name];
+}
 
 const MOCK_PARENT_SESSION_ENVIRONMENT_KEYS = [
 	SUBAGENT_PARENT_EVENT_SINK_ENV,
@@ -66,6 +72,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	for (const [name, value] of environment) {
+		if (value === undefined) delete process.env[name];
+		else process.env[name] = value;
+	}
+	environment.clear();
 	for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
 	for (const [key, value] of parentSessionEnvironment) {
 		if (value === undefined) delete process.env[key];
@@ -254,6 +265,8 @@ describe("reduced foreground Agent engine", () => {
 	});
 
 	test("carries direct user takeover attribution into the durable steer request", async () => {
+		clearEnvironment(SUBAGENT_PARENT_SESSION_ENV);
+		clearEnvironment(SUBAGENT_PARENT_PHYSICAL_SESSION_ENV);
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-background-user-steer-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");

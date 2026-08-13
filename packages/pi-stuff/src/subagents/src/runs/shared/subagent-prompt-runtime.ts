@@ -1,8 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import Tokenizer from "ai-tokenizer";
-import * as o200kBase from "ai-tokenizer/encoding/o200k_base";
 import type { TSchema } from "typebox";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../../tool-display/index.js";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
@@ -17,6 +15,12 @@ import {
 	writeSteerAckAt,
 	writeSteerCapabilityAt,
 } from "../background/control-channel.ts";
+import {
+	childContextHasOwnContinuation,
+	type ProviderPayloadModel,
+	projectChildContinuationContext,
+	validateChildProviderPayload,
+} from "./continuation-context.ts";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
 	SUBAGENT_CHILD_INDEX_ENV,
@@ -84,75 +88,12 @@ const PARENT_ONLY_CUSTOM_MESSAGE_TYPES = new Set([
 	"subagent-control",
 	"subagent-control-notice",
 ]);
-const CHILD_FINAL_PAYLOAD_RESERVE_RATIO = 0.25;
-const OPENAI_PAYLOAD_TOKENIZER = new Tokenizer(o200kBase);
-
-type ProviderPayloadModel = {
-	provider?: string;
-	contextWindow?: number;
-	maxTokens?: number;
-};
-
-function finalProviderPayloadCapacity(ctx: { model?: ProviderPayloadModel }): number | undefined {
-	const contextWindow = ctx.model?.contextWindow;
-	const maxTokens = ctx.model?.maxTokens;
-	if (
-		typeof contextWindow !== "number" ||
-		!Number.isFinite(contextWindow) ||
-		contextWindow <= 0 ||
-		typeof maxTokens !== "number" ||
-		!Number.isFinite(maxTokens) ||
-		maxTokens <= 0
-	)
-		return undefined;
-	return Math.max(0, Math.floor(contextWindow - maxTokens - contextWindow * CHILD_FINAL_PAYLOAD_RESERVE_RATIO));
-}
-
-function estimateFinalProviderPayloadTokens(serialized: string, model: ProviderPayloadModel | undefined): number {
-	if (
-		model?.provider === "openai-codex" ||
-		model?.provider === "openai" ||
-		model?.provider === "azure-openai-responses"
-	) {
-		try {
-			return OPENAI_PAYLOAD_TOKENIZER.count(serialized);
-		} catch {
-			// The byte-level upper bound below remains safe if tokenization fails.
-		}
-	}
-	return Buffer.byteLength(serialized, "utf8");
-}
 
 export function validateFinalProviderPayload(
 	payload: unknown,
 	model: ProviderPayloadModel | undefined,
 ): { ok: true } | { ok: false; message: string } {
-	const capacity = finalProviderPayloadCapacity({ model });
-	if (capacity === undefined) return { ok: true };
-	let serialized: string | undefined;
-	try {
-		serialized = JSON.stringify(payload);
-	} catch {
-		// A provider request that cannot be measured must not bypass the final gate.
-	}
-	if (serialized === undefined) {
-		return {
-			ok: false,
-			message:
-				"Agent launch stopped before the provider request because the final child payload could not be measured safely.",
-		};
-	}
-	const estimatedTokens = estimateFinalProviderPayloadTokens(serialized, model);
-	if (estimatedTokens <= capacity) return { ok: true };
-	const bytes = Buffer.byteLength(serialized, "utf8");
-	return {
-		ok: false,
-		message: `Agent launch stopped before the provider request: the final child payload is estimated at ${estimatedTokens.toLocaleString(
-			"en-US",
-		)} input tokens (${bytes.toLocaleString("en-US")} UTF-8 bytes), above the safe ${capacity.toLocaleString(
-			"en-US",
-		)}-token input bound for this model. Reduce the delegated context, Tools, or child extensions, or choose a model with a larger context window.`,
-	};
+	return validateChildProviderPayload(payload, model);
 }
 
 function readBooleanEnv(name: string): boolean | undefined {
@@ -530,6 +471,9 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	);
 	let nativeSupervisorClientRegistered = false;
 	let nativeSupervisorFallbackRegistered = false;
+	let completedTurns = 0;
+	let resumedSession = false;
+	let continuationHistoryObserved = false;
 	const registerNativeSupervisorClientOnce = (): void => {
 		if (nativeSupervisorClientRegistered) return;
 		nativeSupervisorClientRegistered = true;
@@ -541,14 +485,22 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		nativeSupervisorFallbackRegistered = true;
 		registerNativeSupervisorClient(pi);
 	};
-	pi.on("session_start", () => {
+	pi.on("session_start", (event) => {
+		resumedSession = event.reason === "resume" || event.reason === "reload";
 		registerNativeSupervisorClientOnce();
 	});
 	pi.on("agent_start", () => {
 		refreshChildToolDiagnostic(pi);
 	});
+	pi.on("turn_end", () => {
+		completedTurns += 1;
+	});
 	pi.on("before_provider_request", (event, ctx) => {
-		const result = validateFinalProviderPayload(event.payload, ctx.model);
+		const result = validateChildProviderPayload(
+			event.payload,
+			ctx.model,
+			completedTurns > 0 || resumedSession || continuationHistoryObserved ? "continuation" : "launch",
+		);
 		if (result.ok) return;
 		const diagnosticPath = process.env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV]?.trim();
 		if (diagnosticPath) {
@@ -599,10 +551,12 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 		});
 	}
 
-	pi.on("context", (event) => {
+	pi.on("context", (event, ctx) => {
 		const messages = stripParentOnlySubagentMessages(event.messages);
-		if (messages === event.messages) return undefined;
-		return { messages: messages as typeof event.messages };
+		continuationHistoryObserved ||= childContextHasOwnContinuation(messages as typeof event.messages);
+		const projected = projectChildContinuationContext(messages as typeof event.messages, pi, ctx);
+		if (messages === event.messages && !projected.changed) return undefined;
+		return { messages: projected.messages as typeof event.messages };
 	});
 
 	pi.on("before_agent_start", async (event) => {

@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +22,7 @@ import {
 	resolvePiLaunchToolPlan,
 	SUBAGENT_CHILD_AGENT_ENV,
 	SUBAGENT_CHILD_INDEX_ENV,
+	SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV,
 	SUBAGENT_ORCHESTRATOR_PHYSICAL_SESSION_ID_ENV,
 	SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV,
 	SUBAGENT_RUN_ID_ENV,
@@ -506,12 +508,37 @@ test("replaces ambient child discovery with a controlled Suite surface and a ter
 		argument === "--extension" && built.args[index + 1] ? [built.args[index + 1] as string] : [],
 	);
 
-	expect(extensionPaths[0]).toBe(configuredExtension);
+	expect(extensionPaths[0]).toBe(baseExtension);
+	expect(extensionPaths[1]).toBe(configuredExtension);
 	expect(extensionPaths.at(-1)?.endsWith("subagent-prompt-runtime.ts")).toBeTrue();
-	expect(extensionPaths).not.toContain(baseExtension);
 	expect(built.args).toContain("--no-extensions");
 	expect(built.toolDiagnosticPath).toBeTruthy();
 	expect(built.env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV]).toBe(built.toolDiagnosticPath);
+
+	const explicitlyEmpty = buildPiArgs({
+		baseArgs: ["--mode", "json", "-p"],
+		task: "Inspect the project.",
+		sessionEnabled: false,
+		inheritProjectContext: true,
+		inheritSkills: true,
+		extensions: [],
+	});
+	if (explicitlyEmpty.tempDir) temporaryDirectories.push(explicitlyEmpty.tempDir);
+	expect(explicitlyEmpty.args).toContain(baseExtension);
+
+	const denied = resolvePiLaunchToolPlan({
+		extensions: [configuredExtension],
+		childBaseExtensionPath: baseExtension,
+		capabilityCeiling: {
+			version: 1,
+			denyExtensions: true,
+			sources: ["test"],
+		},
+	});
+	expect(denied.configuredExtensions).toEqual([]);
+	expect(denied.extensionArgs).not.toContain(baseExtension);
+	expect(denied.extensionArgs).not.toContain(configuredExtension);
+	expect(denied.extensionArgs.at(-1)?.endsWith("subagent-prompt-runtime.ts")).toBeTrue();
 });
 
 test("passes the Suite child surface through the child environment without mutating the parent", () => {
@@ -533,6 +560,9 @@ test("passes the Suite child surface through the child environment without mutat
 
 	expect(process.env[PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV]).toBe(parentValue);
 	expect(built.env[PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV]).toBe(baseExtension);
+	expect(built.env[SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV]).toBe(
+		createHash("sha256").update("Inspect the project.").digest("hex"),
+	);
 	expect(built.args).toContain(baseExtension);
 });
 
@@ -645,6 +675,320 @@ test("aborts an oversized final child provider payload with a durable diagnostic
 	});
 });
 
+test("projects long child Tool history before a continuation request while preserving task and steering authority", async () => {
+	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+	const activeTool = {
+		name: "read",
+		description: "Read bounded project files.",
+		parameters: { type: "object", properties: { path: { type: "string" } } },
+	};
+	const pi = {
+		events: { emit: () => {}, on: () => () => {} },
+		getActiveTools: () => ["read"],
+		getAllTools: () => [activeTool],
+		on: (event: string, handler: (event: never, ctx: never) => unknown) => {
+			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+		},
+		registerTool: () => {},
+		sendMessage: () => {},
+	} as unknown as ExtensionAPI;
+	registerSubagentPromptRuntime(pi);
+
+	const delegatedTask = "DELEGATED_TASK_AUTHORITY: inspect every fixture and finish the requested audit.";
+	setEnvironment(SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV, createHash("sha256").update(delegatedTask).digest("hex"));
+	const latestSteering = [
+		'<pi-stuff-steer request="c3RlZXItYXV0aG9yaXR5">',
+		"LATEST_STEERING_AUTHORITY: keep the regression test and report the exact final count.",
+		"</pi-stuff-steer>",
+	].join("\n");
+	const messages: Array<Record<string, unknown>> = [
+		{ role: "user", content: [{ type: "text", text: `§1§ Task: ${delegatedTask}` }], timestamp: 1 },
+	];
+	for (const [index, output] of [
+		`ASCII_RESULT_START\n${"alpha-0123456789/+= ".repeat(2_500)}\nASCII_RESULT_END`,
+		`CJK_RESULT_START\n${"上下文稳定性验证𠮷".repeat(3_000)}\nCJK_RESULT_END`,
+		`ENTROPY_RESULT_START\n${"AP6Zz9+/0f3cD7aQ".repeat(3_000)}\nENTROPY_RESULT_END`,
+	].entries()) {
+		messages.push({
+			role: "assistant",
+			content: [
+				{ type: "thinking", thinking: `Inspecting fixture ${index}. `.repeat(800) },
+				{
+					type: "toolCall",
+					id: `call-${index}`,
+					name: "read",
+					arguments: { path: `/fixture/${index}.txt`, note: "argument-data-".repeat(800) },
+				},
+			],
+			stopReason: "toolUse",
+			timestamp: index * 2 + 2,
+		});
+		messages.push({
+			role: "toolResult",
+			toolCallId: `call-${index}`,
+			toolName: "read",
+			content: [{ type: "text", text: output }],
+			isError: false,
+			timestamp: index * 2 + 3,
+		});
+	}
+	messages.push({ role: "user", content: [{ type: "text", text: latestSteering }], timestamp: 20 });
+	const original = structuredClone(messages);
+	const model = {
+		provider: "openai-codex",
+		id: "fixture-model",
+		contextWindow: 120_000,
+		maxTokens: 48_000,
+	};
+	const ctx = {
+		model,
+		getSystemPrompt: () => "Child system prompt. ".repeat(300),
+	} as never;
+	let projected = messages;
+	for (const handler of handlers.get("context") ?? []) {
+		const result = (await handler({ messages: projected } as never, ctx)) as
+			| { messages?: Array<Record<string, unknown>> }
+			| undefined;
+		projected = result?.messages ?? projected;
+	}
+
+	expect(messages).toEqual(original);
+	const projectedTexts = projected.flatMap((message) => {
+		const content = message.content;
+		return Array.isArray(content)
+			? content.flatMap((part) =>
+					part && typeof part === "object" && "text" in part && typeof part.text === "string" ? [part.text] : [],
+				)
+			: typeof content === "string"
+				? [content]
+				: [];
+	});
+	expect(projectedTexts.some((text) => text.includes(delegatedTask))).toBeTrue();
+	expect(projectedTexts).toContain(latestSteering);
+	expect(projectedTexts.some((text) => text.includes("compacted for child continuation safety"))).toBeTrue();
+	expect(JSON.stringify(projected)).toContain('"id":"call-2"');
+	expect(JSON.stringify(projected)).toContain('"toolCallId":"call-2"');
+	expect(JSON.stringify(projected)).not.toContain('"id":"call-0"');
+	const recentAssistantIndex = projected.findIndex(
+		(message) =>
+			Array.isArray(message.content) &&
+			message.content.some((part) => part && typeof part === "object" && "id" in part && part.id === "call-2"),
+	);
+	const recentResultIndex = projected.findIndex((message) => message.toolCallId === "call-2");
+	expect(recentResultIndex).toBe(recentAssistantIndex + 1);
+	const providerPayload = {
+		instructions: "Child system prompt. ".repeat(300),
+		tools: [activeTool],
+		input: projected,
+	};
+	expect(validateFinalProviderPayload(providerPayload, model)).toEqual({ ok: true });
+
+	let aborts = 0;
+	for (const handler of handlers.get("before_provider_request") ?? []) {
+		await handler({ payload: providerPayload } as never, { model, abort: () => (aborts += 1) } as never);
+	}
+	expect(aborts).toBe(0);
+});
+
+test("falls back to a bounded authority-and-recent-Tool continuation when old outputs are extreme", async () => {
+	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+	const activeTool = {
+		name: "bash",
+		description: "Execute a bounded command.",
+		parameters: { type: "object", properties: { command: { type: "string" } } },
+	};
+	const pi = {
+		events: { emit: () => {}, on: () => () => {} },
+		getActiveTools: () => ["bash"],
+		getAllTools: () => [activeTool],
+		on: (event: string, handler: (event: never, ctx: never) => unknown) => {
+			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+		},
+		registerTool: () => {},
+		sendMessage: () => {},
+	} as unknown as ExtensionAPI;
+	registerSubagentPromptRuntime(pi);
+	const task = "EXTREME_TASK_AUTHORITY: complete the long audit.";
+	const steering = "EXTREME_STEERING_AUTHORITY: finish with a verification count.";
+	setEnvironment(SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV, createHash("sha256").update(task).digest("hex"));
+	const messages: Array<Record<string, unknown>> = [
+		{
+			role: "user",
+			content: [{ type: "text", text: "PARENT_FORK_HISTORY: unrelated earlier user authority." }],
+			timestamp: 0,
+		},
+		{
+			role: "assistant",
+			content: [{ type: "text", text: "Earlier parent answer." }],
+			stopReason: "stop",
+			timestamp: 0,
+		},
+		{ role: "user", content: [{ type: "text", text: `§3§ Task: ${task}` }], timestamp: 1 },
+	];
+	for (let index = 0; index < 12; index += 1) {
+		messages.push({
+			role: "assistant",
+			content: [
+				{
+					type: "thinking",
+					thinking: "reasoning ".repeat(1_000),
+					thinkingSignature: `SIGNED_REASONING_${index}`,
+				},
+				{ type: "toolCall", id: `extreme-${index}`, name: "bash", arguments: { command: `step-${index}` } },
+			],
+			stopReason: "toolUse",
+			timestamp: index * 2 + 2,
+		});
+		messages.push({
+			role: "toolResult",
+			toolCallId: `extreme-${index}`,
+			toolName: "bash",
+			content: [{ type: "text", text: `RESULT_${index}\n${"AP6Zz9+/0f3cD7aQ".repeat(7_000)}` }],
+			isError: false,
+			timestamp: index * 2 + 3,
+		});
+	}
+	messages.push({ role: "user", content: [{ type: "text", text: steering }], timestamp: 50 });
+	const original = structuredClone(messages);
+	const latestAssistant = original.find(
+		(message) =>
+			message.role === "assistant" &&
+			Array.isArray(message.content) &&
+			message.content.some((part) => part && typeof part === "object" && "id" in part && part.id === "extreme-11"),
+	);
+	const model = { provider: "openai-codex", contextWindow: 100_000, maxTokens: 40_000 };
+	let projected = messages;
+	for (const handler of handlers.get("context") ?? []) {
+		const result = (await handler(
+			{ messages: projected } as never,
+			{ model, getSystemPrompt: () => "Child prompt. ".repeat(200) } as never,
+		)) as { messages?: Array<Record<string, unknown>> } | undefined;
+		projected = result?.messages ?? projected;
+	}
+	const serialized = JSON.stringify(projected);
+	expect(messages).toEqual(original);
+	expect(serialized).toContain(task);
+	expect(serialized).toContain(steering);
+	expect(serialized).not.toContain("PARENT_FORK_HISTORY");
+	expect(serialized).toContain("omitted");
+	expect(serialized).toContain('"id":"extreme-11"');
+	expect(serialized).toContain('"toolCallId":"extreme-11"');
+	const projectedLatestAssistant = projected.find(
+		(message) =>
+			message.role === "assistant" &&
+			Array.isArray(message.content) &&
+			message.content.some((part) => part && typeof part === "object" && "id" in part && part.id === "extreme-11"),
+	);
+	expect(projectedLatestAssistant).toEqual(latestAssistant);
+	const latestAssistantIndex = projectedLatestAssistant ? projected.indexOf(projectedLatestAssistant) : -1;
+	const latestResultIndex = projected.findIndex((message) => message.toolCallId === "extreme-11");
+	expect(latestAssistantIndex).toBeGreaterThanOrEqual(0);
+	expect(latestResultIndex).toBe(latestAssistantIndex + 1);
+	expect(
+		validateFinalProviderPayload(
+			{ instructions: "Child prompt. ".repeat(200), tools: [activeTool], input: projected },
+			model,
+		),
+	).toEqual({ ok: true });
+});
+
+test("projects oversized non-text Tool evidence without breaking the signed recent Tool exchange", async () => {
+	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+	const activeTool = {
+		name: "screenshot",
+		description: "Capture the current screen.",
+		parameters: { type: "object", properties: {} },
+	};
+	const pi = {
+		events: { emit: () => {}, on: () => () => {} },
+		getActiveTools: () => ["screenshot"],
+		getAllTools: () => [activeTool],
+		on: (event: string, handler: (event: never, ctx: never) => unknown) => {
+			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+		},
+		registerTool: () => {},
+		sendMessage: () => {},
+	} as unknown as ExtensionAPI;
+	registerSubagentPromptRuntime(pi);
+	const task = "Inspect the captured screen and continue.";
+	setEnvironment(SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV, createHash("sha256").update(task).digest("hex"));
+	const signedAssistant = {
+		role: "assistant",
+		content: [
+			{ type: "thinking", thinking: "Inspect visually.", thinkingSignature: "SIGNED_SCREEN_REASONING" },
+			{ type: "toolCall", id: "screenshot-call", name: "screenshot", arguments: {} },
+		],
+		stopReason: "toolUse",
+		timestamp: 2,
+	};
+	const messages: Array<Record<string, unknown>> = [
+		{ role: "user", content: [{ type: "text", text: `§1§ Task: ${task}` }], timestamp: 1 },
+		signedAssistant,
+		{
+			role: "toolResult",
+			toolCallId: "screenshot-call",
+			toolName: "screenshot",
+			content: [{ type: "image", mimeType: "image/png", data: "AP6Zz9+/0f3cD7aQ".repeat(4_000) }],
+			isError: false,
+			timestamp: 3,
+		},
+	];
+	const model = { provider: "openai", id: "unknown-azure-deployment", contextWindow: 100_000, maxTokens: 40_000 };
+	let projected = messages;
+	for (const handler of handlers.get("context") ?? []) {
+		const result = (await handler(
+			{ messages: projected } as never,
+			{ model, getSystemPrompt: () => "Child prompt." } as never,
+		)) as { messages?: Array<Record<string, unknown>> } | undefined;
+		projected = result?.messages ?? projected;
+	}
+
+	expect(projected).not.toBe(messages);
+	expect(projected[1]).toEqual(signedAssistant);
+	expect(JSON.stringify(projected[2])).toContain("image Tool content omitted");
+	expect(projected[2]?.toolCallId).toBe("screenshot-call");
+	expect(
+		validateFinalProviderPayload({ instructions: "Child prompt.", tools: [activeTool], input: projected }, model),
+	).toEqual({ ok: true });
+});
+
+test("labels an irreducible oversized request as a continuation after a resumed child session", async () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-stuff-child-continuation-guard-"));
+	temporaryDirectories.push(root);
+	const diagnosticPath = join(root, "child-diagnostic.json");
+	setEnvironment(CHILD_TOOL_DIAGNOSTIC_PATH_ENV, diagnosticPath);
+	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+	const pi = {
+		events: { emit: () => {}, on: () => () => {} },
+		getActiveTools: () => [],
+		getAllTools: () => [],
+		on: (event: string, handler: (event: never, ctx: never) => unknown) => {
+			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+		},
+		registerTool: () => {},
+		sendMessage: () => {},
+	} as unknown as ExtensionAPI;
+	registerSubagentPromptRuntime(pi);
+	for (const handler of handlers.get("session_start") ?? []) {
+		await handler({ type: "session_start", reason: "resume" } as never, {} as never);
+	}
+	let aborts = 0;
+	for (const handler of handlers.get("before_provider_request") ?? []) {
+		await handler(
+			{ payload: { input: "AP6Zz9+/0f3cD7aQ".repeat(4_000) } } as never,
+			{
+				model: { provider: "openai-codex", contextWindow: 80_000, maxTokens: 32_000 },
+				abort: () => (aborts += 1),
+			} as never,
+		);
+	}
+
+	expect(aborts).toBe(1);
+	const diagnostic = readChildToolDiagnosticError(diagnosticPath) ?? "";
+	expect(diagnostic).toContain("Agent continuation stopped");
+	expect(diagnostic).not.toContain("Agent launch stopped");
+});
+
 test("measures final OpenAI child payloads in tokens instead of UTF-8 bytes", () => {
 	const model = {
 		provider: "openai-codex",
@@ -691,6 +1035,12 @@ test("measures final OpenAI child payloads in tokens instead of UTF-8 bytes", ()
 		expect(oversized.message).toContain("input tokens");
 		expect(oversized.message).not.toContain("byte input bound");
 	}
+
+	const unknownEncoding = validateFinalProviderPayload(
+		{ input: "A".repeat(30_000) },
+		{ provider: "openai", id: "unknown-deployment", contextWindow: 80_000, maxTokens: 32_000 },
+	);
+	expect(unknownEncoding.ok).toBeFalse();
 });
 
 test("native supervisor channels are created lazily on the first child request", async () => {

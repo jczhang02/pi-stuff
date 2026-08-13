@@ -31,15 +31,20 @@ compact grammar as Host Tools. Full Agent inspection and control remains in `/ag
   instead of silently declaring it delivered.
 - Child Agents automatically reuse the exact standalone Pi Host that launched the session; no separate child-binary
   setting is required. Their extension surface is deterministic: ambient discovery is disabled, the owning Pi Stuff
-  Package is loaded explicitly, Agent-specific extensions remain opt-in, and the final
-  provider-payload guard always runs last.
+  Package is loaded explicitly unless an inherited capability ceiling forbids extensions, Agent-specific extensions
+  are additive (including an explicit empty list), and the final provider-payload guard always runs last even under
+  that ceiling.
 - A fork clones the native Pi branch only when the complete child launch fits the selected model. Long, multilingual,
   or high-entropy sessions otherwise receive one bounded snapshot projection; the check includes the child task,
   inherited prompt, replacement-prompt context retained by Pi, selected Tool schemas, and conservative reserves for
-  child-only extensions. Skill-enabled children always receive and verify the `read` Tool. Each child also checks the
-  serialized provider payload after its context, Skills, Tools, and explicit child extensions are assembled; an
-  oversized request retries an eligible larger fallback, or stops locally with a durable diagnostic instead of
-  surfacing as an unexplained Agent crash.
+  child-only extensions. During either fresh or fork execution, every continuation uses the same safe model-input
+  budget. Before the final guard can stop a growing child, the runtime bounds old Tool results and assistant working
+  text while preserving the delegated task, latest user steering, Tool call/result identity, and the most recent Tool
+  batch. Extreme histories fall back to those protected authority and recent-evidence messages; the complete original
+  transcript remains durable for inspection. Skill-enabled children always receive and verify the `read` Tool. Each
+  child also checks the serialized provider payload after its context, Skills, Tools, and explicit child extensions
+  are assembled; an oversized launch retries an eligible larger fallback, while an irreducible launch or continuation
+  stops locally with a phase-specific durable diagnostic instead of surfacing as an unexplained Agent crash.
 - Background completion renders a compact `Agent finished/failed/stopped · … · inspect with /agents` session entry.
   The entry survives resume, is excluded from model context, and never triggers an unsolicited main-model turn. Full
   direct and nested reports remain available in `/agents`.

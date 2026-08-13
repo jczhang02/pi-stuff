@@ -15,7 +15,9 @@ type ScenarioId =
 	| "single-fork-background"
 	| "parallel-fresh-background"
 	| "parallel-fork-foreground"
-	| "aggregate-fanout-foreground";
+	| "aggregate-fanout-foreground"
+	| "long-fresh-foreground"
+	| "long-fork-foreground";
 
 interface Scenario {
 	readonly id: ScenarioId;
@@ -34,6 +36,10 @@ interface LogRecord {
 	readonly sawSuiteSurface?: unknown;
 	readonly scenario?: unknown;
 	readonly task?: unknown;
+	readonly round?: unknown;
+	readonly payloadBytes?: unknown;
+	readonly sawProjection?: unknown;
+	readonly sawSteering?: unknown;
 }
 
 interface ProcessResult {
@@ -54,6 +60,8 @@ const SCENARIOS: readonly Scenario[] = [
 	{ id: "parallel-fresh-background", childCount: 2, context: "fresh", foreground: false },
 	{ id: "parallel-fork-foreground", childCount: 2, context: "fork", foreground: true },
 	{ id: "aggregate-fanout-foreground", childCount: 2, context: "fresh", foreground: true },
+	{ id: "long-fresh-foreground", childCount: 1, context: "fresh", foreground: true },
+	{ id: "long-fork-foreground", childCount: 1, context: "fork", foreground: true },
 ];
 
 function fail(message: string): never {
@@ -212,6 +220,39 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 		fail(
 			`${scenario.id} parallel provider peak concurrency was ${peakChildConcurrency(records)}, expected at least 2`,
 		);
+	}
+	if (scenario.id.startsWith("long-")) {
+		const longTurns = records.filter((record) => record.kind === "child-long-turn");
+		const longTools = records.filter((record) => record.kind === "child-long-tool");
+		const steers = records.filter((record) => record.kind === "child-long-steer");
+		if (longTools.length !== 8 || longTurns.length !== 9) {
+			fail(
+				`long child expected 8 Tool rounds and 9 provider turns, received ${longTools.length}/${longTurns.length}`,
+			);
+		}
+		if (steers.length !== 1 || steers[0]?.round !== 4) {
+			fail(`long child expected one steering delivery after round 4, received ${JSON.stringify(steers)}`);
+		}
+		const projectedContinuation = longTurns.find(
+			(record) => typeof record.round === "number" && record.round >= 5 && record.sawProjection === true,
+		);
+		const steeredContinuation = longTurns.find(
+			(record) =>
+				typeof record.round === "number" &&
+				record.round >= 5 &&
+				record.sawProjection === true &&
+				record.sawSteering === true,
+		);
+		if (!projectedContinuation || !steeredContinuation) {
+			fail("long child did not continue after both bounded history projection and mid-run steering");
+		}
+		const finalTurn = longTurns.find((record) => record.round === 8);
+		if (finalTurn?.sawProjection !== true || finalTurn.sawSteering !== true) {
+			fail(`long child final turn lost projection or steering authority: ${JSON.stringify(finalTurn)}`);
+		}
+		if (typeof mainResult !== "string" || !mainResult.includes("rounds=8:projection=true:steering=true")) {
+			fail(`long child did not return its stable completion evidence: ${String(mainResult)}`);
+		}
 	}
 }
 
