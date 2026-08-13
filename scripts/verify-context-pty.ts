@@ -109,7 +109,12 @@ expect {
     timeout { puts stderr "Timed out waiting for startup editor"; exit 2 }
     eof { puts stderr "Startup-only Pi exited early"; exit 3 }
 }
-after 300
+send -- "/context-startup-ready\\r"
+expect {
+    -exact "CONTEXT_STARTUP_READY" {}
+    timeout { puts stderr "Timed out waiting for post-session_start readiness"; exit 5 }
+    eof { puts stderr "Startup-only Pi exited before the readiness command"; exit 6 }
+}
 send -- "\\003"
 after 150
 send -- "\\004"
@@ -319,6 +324,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 	const xdgConfigDirectory = join(temporaryDirectory, "config");
 	const cortexConfigDirectory = join(xdgConfigDirectory, "cortexkit");
 	const dataDirectory = join(temporaryDirectory, "data");
+	const startupDataDirectory = join(temporaryDirectory, "startup-only-data");
 	const cacheDirectory = join(temporaryDirectory, "cache");
 	const projectDirectory = join(temporaryDirectory, "项目隔离", "context");
 	const isolatedProjectDirectory = join(temporaryDirectory, "项目隔离", "other-context");
@@ -345,6 +351,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 	const magicLog = join(temporaryDirectory, "magic-context.log");
 	const historianMarker = join(temporaryDirectory, "historian-ready");
 	const databasePath = join(dataDirectory, "cortexkit", "magic-context", "context.db");
+	const startupDatabasePath = join(startupDataDirectory, "cortexkit", "magic-context", "context.db");
 	const columns = options.columns ?? 64;
 	const rows = options.rows ?? 28;
 	await Promise.all(
@@ -352,6 +359,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			configDirectory,
 			cortexConfigDirectory,
 			dataDirectory,
+			startupDataDirectory,
 			cacheDirectory,
 			projectDirectory,
 			isolatedProjectDirectory,
@@ -529,6 +537,8 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		if (directActivationRequests.length !== 1 || directActivationRequests[0]?.hasCompactMagicContextPrompt !== true) {
 			fail("direct input did not activate the official Magic Context package");
 		}
+		const startupConfigPath = join(cortexConfigDirectory, "magic-context.jsonc");
+		const startupConfigBefore = await readFile(startupConfigPath, "utf8");
 		runExpect(
 			startupOnlyProgram(),
 			{
@@ -537,15 +547,22 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 				PI_STUFF_CONTEXT_PTY_SESSIONS: startupSessionDirectory,
 				PI_STUFF_CONTEXT_PTY_SESSION_ID: "context-startup-only",
 				PI_STUFF_CONTEXT_PTY_STARTUP_ONLY: "1",
+				XDG_DATA_HOME: startupDataDirectory,
 			},
-			"startup purity",
+			"startup readiness",
 			projectDirectory,
 		);
-		const databaseCreatedAtStartup = await access(databasePath).then(
+		const databaseCreatedAtStartup = await access(startupDatabasePath).then(
 			() => true,
 			() => false,
 		);
-		if (databaseCreatedAtStartup) fail("extension load or session_start created Magic Context state");
+		if (!databaseCreatedAtStartup) fail("session_start did not finish Magic Context derived-state initialization");
+		if ((await readFile(startupConfigPath, "utf8")) !== startupConfigBefore) {
+			fail("startup activation mutated the recognized canonical Magic Context config");
+		}
+		if ((await readRecords(startupLog)).some((record) => record.type === "request")) {
+			fail("startup activation unexpectedly reached the model");
+		}
 		const freshOutput = runExpect(expectProgram(), baseEnvironment, "fresh session", projectDirectory);
 		for (const forbidden of ["Magic Context", "ctx-aug", "ctx-doctor"]) {
 			if (freshOutput.includes(forbidden)) fail(`fresh TUI exposed forbidden UI text ${forbidden}`);

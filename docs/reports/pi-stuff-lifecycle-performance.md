@@ -49,7 +49,30 @@ first response, 154.25 ms ordinary reload, 501.30 ms 240-turn reload, 97.29 ms o
 exit/Ctrl-C, 141.14 ms fresh active-resource shutdown, 333.28 ms 240-turn active-resource shutdown, and 4,284.66 ms
 changed-source reload.
 
-## Diagnosis and changes
+## Message-submission follow-up
+
+Bead `ps-nxm` later found that the lazy Context adapter imposed two synthetic 17 ms UI-frame waits on every interactive
+prompt and left official Magic Context module, factory, database, and Session initialization on the first provider-turn
+path. The upstream Extension does neither during message submission. For a recognized migration-free configuration,
+Pi Stuff now finishes that work during `session_start` and removes both frame waits. A missing or legacy configuration
+still remains dormant until direct use authorizes creation or migration; startup may initialize rebuildable derived
+state but does not mutate user configuration.
+
+Lifecycle benchmark schema 5 sends two prompts through the same real Pi process. It records first-turn acknowledgment
+and response separately from steady-state acknowledgment and response, requires both prompts in the durable Session,
+and enforces dedicated steady-state budgets. In a five-sample 100×32 fresh-Session differential, the unfixed Suite had
+24.00 ms steady-state acknowledgment and 68.90 ms steady-state response p95. The final matrix covered configured fresh,
+six-turn, and 240-turn Sessions plus a malformed-config degraded fail-open control at both terminal sizes. Across the
+initial matrix, Suite p95 was 2.28–4.05 ms for steady-state acknowledgment and 21.01–50.36 ms for steady-state response.
+The sole over-budget cell, the 100×32 240-turn response at 50.36 ms, passed an independent five-sample confirmation at
+38.84 ms p95; its confirmed acknowledgment was 2.92 ms p95. First-input acknowledgment was 3.00–4.58 ms and first
+deterministic response was 53.29–114.85 ms. Configured startup moved to 2,022.24–2,388.15 ms; degraded native fail-open
+startup was 2,068.33–2,088.97 ms. Host steady-state response was 19.55–21.16 ms in the same matrix.
+
+The sections below preserve the original `ps-5bw` diagnosis and evidence. Its startup and prompt budgets are superseded
+by the current table at the end of this report.
+
+## Historical ps-5bw diagnosis and changes
 
 The original Suite had two material delays:
 
@@ -66,7 +89,7 @@ rejected loads are evicted and can recover.
 
 No compiled `dist/` lane, startup network request, Package installation, subprocess, or startup file write was added.
 
-## Results
+### Historical results
 
 The values below are p95 wall-clock measurements in milliseconds. Ranges combine both certified terminal sizes.
 
@@ -93,10 +116,10 @@ Additional lifecycle evidence:
   invalidation. That correctness path took about 4.1 seconds because its fresh Jiti loader deliberately disables the
   filesystem cache and performs no write.
 
-## Regression budgets
+### Superseded ps-5bw regression budgets
 
-The following p95 budgets apply to the certified local profile. A regression investigation should compare Host and
-Suite cells before changing a Capability.
+The following p95 budgets applied to the original `ps-5bw` acceptance run. A regression investigation should compare
+Host and Suite cells before changing a Capability.
 
 | Measurement | Budget |
 | --- | ---: |
@@ -118,4 +141,28 @@ benchmark enforces every budget in this table rather than treating it as narrati
 
 The 240-turn active-resource shutdown ceiling includes a 25 ms scheduler margin added after the Suite lifecycle
 hardening merge. A ten-sample confirmation measured a 342.63 ms median and 359.45 ms maximum while retaining durable
-Background Tool receipts and proven child-process cleanup; every other ceiling remains unchanged.
+Background Tool receipts and proven child-process cleanup; every other ceiling remained unchanged in that run.
+
+## Current regression budgets
+
+The schema 5 acceptance benchmark enforces these p95 ceilings for the certified local profile:
+
+| Measurement | Budget |
+| --- | ---: |
+| Fresh or short configured Suite startup, or degraded native fail-open startup | ≤ 2,700 ms |
+| 240-turn Suite startup with configured Context initialization | ≤ 3,000 ms |
+| First-input acknowledgment | ≤ 50 ms |
+| First deterministic response after startup readiness | ≤ 1,100 ms |
+| Same-process steady-state input acknowledgment | ≤ 15 ms |
+| Same-process steady-state deterministic response | ≤ 50 ms |
+| Fresh, short, or degraded normal exit / Ctrl-C | ≤ 150 ms |
+| 240-turn normal exit / Ctrl-C | ≤ 350 ms |
+| Fresh, short, or degraded unchanged reload | ≤ 200 ms |
+| 240-turn unchanged reload | ≤ 550 ms |
+| Active Background Shell or Agent parent shutdown, fresh Session | ≤ 250 ms |
+| Active Background Shell or Agent parent shutdown, 240-turn Session | ≤ 375 ms |
+| Cold source-changing reload with nested-code proof | ≤ 6,000 ms |
+
+The higher startup ceiling makes the trade explicit: configured module, factory, database, and Session initialization
+occur before the editor is accepted as ready, not after Enter. It does not authorize configuration creation or
+migration. An initially over-budget cell still requires an independent confirmation batch before acceptance fails.

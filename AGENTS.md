@@ -15,7 +15,7 @@ These instructions apply only while developing this repository. This file is not
 - `@jczhang02/pi-stuff` is the one local Pi Package and has one default Extension factory.
 - A Capability Module owns one coherent behavior inside that Package. Modules are not independently versioned,
   installed, or published.
-- Keep Extension import and session startup pure: no network calls, file writes, subprocesses, or host-setting mutations.
+- Keep Extension import pure: no network calls, file writes, subprocesses, or host-setting mutations. Session startup must not perform network calls, spawn subprocesses, mutate Host settings, or create, rewrite, or migrate user configuration. A documented Capability may initialize rebuildable derived local state before editor readiness when an accepted ADR requires that work off the message-submission path.
 - During user-started work, a Capability may update its own documented derived local state across automatic continuations. First-use configuration creation must wait for direct interactive/RPC input or an explicit command or Tool; external, destructive, or unrelated effects still require an explicit user-triggered contract.
 - The Statusline has one observation-only exception: after a complete user-driven Agent run settles it may run a bounded, no-lock `git status` read to obtain change counts that Pi does not expose. It must never run during import, initialization, `session_start`, individual model/Tool turns, or Extension-authored automatic runs, and failure must degrade to branch-only display.
 - Let initialization errors propagate. A partially loaded Suite is not a supported state.

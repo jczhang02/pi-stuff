@@ -81,7 +81,7 @@ describe.serial("Magic Context first-use configuration", () => {
 		expect(await Bun.file(paths.canonical).exists()).toBeTrue();
 	});
 
-	test("creates one private canonical config on lazy activation", async () => {
+	test("creates one private canonical config on direct activation", async () => {
 		const paths = await isolatedEnvironment();
 
 		await prepareMagicContext(extensionContext(paths.root));
@@ -126,13 +126,15 @@ describe.serial("Magic Context first-use configuration", () => {
 		expect(await Bun.file(paths.canonical).exists()).toBeTrue();
 	});
 
-	test("preserves a canonical project config without creating a global user config", async () => {
+	test("allows mutation-free startup with an existing canonical project config", async () => {
 		const paths = await isolatedEnvironment();
 		const projectConfig = join(paths.root, ".cortexkit", "magic-context.json");
 		await mkdir(join(paths.root, ".cortexkit"), { recursive: true });
 		await writeFile(projectConfig, '{"historian":{"model":"project/model"}}\n', "utf8");
 
-		expect(await prepareMagicContext(extensionContext(paths.root))).toBe("ready");
+		expect(await prepareMagicContext(extensionContext(paths.root), { allowConfigurationMutation: false })).toBe(
+			"ready",
+		);
 		expect(await Bun.file(paths.canonical).exists()).toBeFalse();
 		expect(await readFile(projectConfig, "utf8")).toBe('{"historian":{"model":"project/model"}}\n');
 	});

@@ -41,7 +41,14 @@ function selection(overrides: Partial<LifecycleAcceptanceSelection> = {}): Lifec
 function cell(variant: Variant, scenario: Scenario, action: Action, size: TerminalSize): CellSummary {
 	return {
 		action,
-		...(action === "prompt" ? { acknowledgement: metric(), response: metric() } : {}),
+		...(action === "prompt"
+			? {
+					acknowledgement: metric(),
+					response: metric(),
+					steadyAcknowledgement: metric(),
+					steadyResponse: metric(),
+				}
+			: {}),
 		columns: size.columns,
 		...(action === "reload" || action === "reload-change" ? { reload: metric() } : {}),
 		rows: size.rows,
@@ -134,7 +141,7 @@ describe("lifecycle benchmark statistics", () => {
 			candidate.scenario === "fresh" &&
 			candidate.action === "exit" &&
 			candidate.columns === 64
-				? { ...candidate, startup: metric(1_601) }
+				? { ...candidate, startup: metric(2_701) }
 				: candidate,
 		);
 		const target = cells.find(
@@ -155,13 +162,13 @@ describe("lifecycle benchmark statistics", () => {
 			candidate.scenario === "fresh" &&
 			candidate.action === "exit" &&
 			candidate.columns === 64
-				? { ...candidate, startup: metric(1_601) }
+				? { ...candidate, startup: metric(2_701) }
 				: candidate,
 		);
-		const confirmation = { ...cell("suite", "fresh", "exit", SIZES[1]), startup: metric(1_602) };
+		const confirmation = { ...cell("suite", "fresh", "exit", SIZES[1]), startup: metric(2_702) };
 		const findings = lifecycleAcceptanceFindings(selection(), cells, [confirmation]);
-		expect(findings).toContain("suite/fresh/exit/64x28 startup p95 1601.00ms exceeds 1600ms");
-		expect(findings).toContain("suite/fresh/exit/64x28 startup confirmation p95 1602.00ms also exceeds 1600ms");
+		expect(findings).toContain("suite/fresh/exit/64x28 startup p95 2701.00ms exceeds 2700ms");
+		expect(findings).toContain("suite/fresh/exit/64x28 startup confirmation p95 2702.00ms also exceeds 2700ms");
 	});
 
 	test("requires complete samples and warmups for every action metric and its confirmation", () => {
@@ -180,12 +187,12 @@ describe("lifecycle benchmark statistics", () => {
 			candidate.scenario === "fresh" &&
 			candidate.action === "exit" &&
 			candidate.columns === 64
-				? { ...candidate, startup: metric(1_601) }
+				? { ...candidate, startup: metric(2_701) }
 				: candidate,
 		);
 		const shortConfirmation = {
 			...cell("suite", "fresh", "exit", SIZES[1]),
-			startup: { ...metric(1_500), samples: 2 },
+			startup: { ...metric(2_600), samples: 2 },
 		};
 		expect(lifecycleAcceptanceFindings(selection(), overBudget, [shortConfirmation])).toContain(
 			"suite/fresh/exit/64x28 startup confirmation has only 2 measured samples",
@@ -194,6 +201,38 @@ describe("lifecycle benchmark statistics", () => {
 		expect(lifecycleAcceptanceFindings(selection(), overBudget, [coldConfirmation])).toContain(
 			"suite/fresh/exit/64x28 confirmation has only 0 warmups",
 		);
+	});
+
+	test("requires every Host and Suite action metric", () => {
+		const cells = acceptanceCells().map((candidate) => {
+			if (
+				candidate.variant !== "host" ||
+				candidate.scenario !== "fresh" ||
+				candidate.action !== "prompt" ||
+				candidate.columns !== 100
+			) {
+				return candidate;
+			}
+			const { steadyResponse: _steadyResponse, ...withoutSteadyResponse } = candidate;
+			return withoutSteadyResponse;
+		});
+		expect(lifecycleAcceptanceFindings(selection(), cells)).toContain(
+			"host/fresh/prompt/100x32 is missing steadyResponse",
+		);
+	});
+
+	test("enforces steady-state prompt latency budgets", () => {
+		const cells = acceptanceCells().map((candidate) =>
+			candidate.variant === "suite" &&
+			candidate.scenario === "fresh" &&
+			candidate.action === "prompt" &&
+			candidate.columns === 100
+				? { ...candidate, steadyAcknowledgement: metric(16), steadyResponse: metric(51) }
+				: candidate,
+		);
+		const findings = lifecycleAcceptanceFindings(selection(), cells);
+		expect(findings).toContain("suite/fresh/prompt/100x32 steadyAcknowledgement p95 16.00ms exceeds 15ms");
+		expect(findings).toContain("suite/fresh/prompt/100x32 steadyResponse p95 51.00ms exceeds 50ms");
 	});
 
 	test("requires durable resumed history and matching Background Tool receipts", () => {
@@ -215,6 +254,19 @@ describe("lifecycle benchmark statistics", () => {
 				"resume-long",
 			),
 		).toContain("Session JSONL lost Tool result receipt ps5bw-background-launch");
+	});
+
+	test("requires both measured prompt submissions to remain durable", () => {
+		const findings = lifecycleSessionFindings(
+			sessionEntries([
+				{ role: "user", content: "PS5BW_FIRST_PROMPT" },
+				{ role: "assistant", content: [{ type: "text", text: "PS5BW_FIRST_PROMPT_DONE" }] },
+			]),
+			"prompt",
+			"fresh",
+		);
+		expect(findings).toContain("Session JSONL lost marker PS5BW_SECOND_PROMPT");
+		expect(findings).toContain("Session JSONL lost marker PS5BW_SECOND_PROMPT_DONE");
 	});
 
 	test("requires completed prompt markers after reload", () => {

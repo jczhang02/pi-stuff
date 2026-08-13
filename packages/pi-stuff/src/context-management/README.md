@@ -1,11 +1,15 @@
 # Context Management module
 
-The Pi Stuff continuity boundary. It preloads the exact official Magic Context
-module code during pure Capability installation, then defers factory
-initialization, configuration, and derived state until a user input or a
-migration-free automatic Agent turn actually needs context. Pi's JSONL session
-remains the raw authority, and the Module falls back to Pi's native context path
-when the derived local store is unavailable before Magic takes ownership.
+The Pi Stuff continuity boundary. When a Session already has a recognized
+Magic Context configuration with no pending migration, it finishes the exact
+official module, factory, database, and Session initialization before editor
+readiness. Missing or legacy configuration remains dormant until direct use can
+authorize creation or migration. Input interception only invalidates stale
+projections and can start a fallback retry; it never waits for a synthetic UI
+frame. Provider and compaction boundaries defensively join any pending retry
+before they consume context. Pi's JSONL session remains the raw authority, and
+the Module falls back to Pi's native context path when the derived local store
+is unavailable before Magic takes ownership.
 
 The Capability exposes no floating UI, statusline entry, migration prompt, or
 second Todo authority. Magic Context's history, memory, search, notes, and
@@ -91,9 +95,11 @@ This boundary deliberately works within Pi's extension interface:
   available. If an active Magic compaction hook itself fails, the adapter
   cancels that attempt, reports the failure, and leaves the full JSONL intact
   rather than stacking a native summary after a partial Magic attempt.
-- The official engine owns its durable message index. Context activation
-  replays the already-observed `session_start` exactly once so fresh and resumed
-  sessions enter that indexing lifecycle even though the engine loads lazily.
+- The official engine owns its durable message index. Context activation replays
+  the captured `session_start` exactly once so fresh and resumed sessions enter
+  that indexing lifecycle. Recognized migration-free configurations do that
+  before editor readiness; dormant or degraded retries do it transactionally
+  before a replacement runtime commits.
 - Real Pi acceptance observes the final Provider request, requires the compact
   contract, rejects the upstream verbose guidance, and caps the direct-mode
   system prompt at 8,000 characters. This catches prompt regressions across

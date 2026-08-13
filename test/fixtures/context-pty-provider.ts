@@ -207,6 +207,12 @@ function fixtureStream(context: Context) {
 }
 
 export default function contextPtyProvider(pi: ExtensionAPI): void {
+	pi.registerCommand("context-startup-ready", {
+		handler: async (_args, ctx) => {
+			ctx.ui.setEditorText("CONTEXT_STARTUP_READY");
+		},
+	});
+
 	if (process.env["PI_STUFF_CONTEXT_PTY_AUTOMATIC_ONLY"] === "1") {
 		pi.on("session_start", () => {
 			pi.sendMessage(
