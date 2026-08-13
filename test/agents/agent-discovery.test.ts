@@ -31,28 +31,32 @@ async function writeAgent(directory: string, name: string, description: string, 
 }
 
 describe("Claude-style Agent definition discovery", () => {
-	test("uses built-in < package < user < project precedence without a settings override layer", async () => {
+	test("uses package < user < project precedence without a settings override layer", async () => {
 		const root = await temporaryRoot();
 		const user = join(root, "user");
 		const project = join(root, "project");
 		const nested = join(project, "src", "feature");
 		const projectAgents = join(project, ".pi", "agents");
-		const projectPackage = join(project, ".pi", "npm", "node_modules", "sample-agents");
+		const installedPackage = join(root, "sample-agents");
 		process.env.PI_CODING_AGENT_DIR = user;
 
 		await Promise.all([
 			mkdir(nested, { recursive: true }),
 			writeAgent(join(user, "agents"), "shared", "user definition"),
 			writeAgent(projectAgents, "shared", "project definition"),
-			writeAgent(join(projectPackage, "agent-definitions"), "package-only", "package definition"),
+			writeAgent(join(installedPackage, "agent-definitions"), "shared", "package definition"),
+			writeAgent(join(installedPackage, "agent-definitions"), "package-only", "package-only definition"),
 		]);
 		await writeFile(
-			join(projectPackage, "package.json"),
+			join(installedPackage, "package.json"),
 			`${JSON.stringify({ name: "sample-agents", pi: { agents: ["./agent-definitions"] } })}\n`,
 		);
 		await writeFile(
 			join(user, "settings.json"),
-			`${JSON.stringify({ subagents: { defaultModel: "ignored/model", disableBuiltins: true } })}\n`,
+			`${JSON.stringify({
+				packages: [`file:${installedPackage}`],
+				subagents: { defaultModel: "ignored/model", disableBuiltins: true },
+			})}\n`,
 		);
 
 		const both = discoverAgents(nested, "both").agents;
@@ -61,11 +65,11 @@ describe("Claude-style Agent definition discovery", () => {
 			source: "project",
 		});
 		expect(both.find(({ name }) => name === "package-only")?.source).toBe("package");
-		expect(both.find(({ name }) => name === "general-purpose")?.source).toBe("builtin");
+		expect(new Set(both.map(({ source }) => source))).toEqual(new Set(["package", "project"]));
 
 		const userOnly = discoverAgents(nested, "user").agents;
 		expect(userOnly.find(({ name }) => name === "shared")?.description).toBe("user definition");
-		expect(userOnly.some(({ name }) => name === "package-only")).toBeFalse();
+		expect(userOnly.find(({ name }) => name === "package-only")?.source).toBe("package");
 	});
 
 	test("parses only current execution controls and skips one malformed definition locally", async () => {

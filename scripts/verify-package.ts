@@ -89,7 +89,6 @@ const REQUIRED_ARCHIVE_FILES = [
 	"package/src/background-work/index.ts",
 	"package/src/background-work/src/process-supervisor.mjs",
 	"package/src/subagents/index.ts",
-	"package/src/subagents/agents/general-purpose.md",
 	"package/src/todo/index.ts",
 	"package/src/btw/index.ts",
 	"package/src/btw/prompts/btw-system.txt",
@@ -179,6 +178,7 @@ export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFi
 	const forbidden = archiveFiles.filter(
 		(path) =>
 			path.startsWith("package/node_modules/") ||
+			path.startsWith("package/src/subagents/agents/") ||
 			/codex-code-mode-host(?:\.exe)?$/u.test(path) ||
 			path.includes("/.changeset/") ||
 			path.includes("/node_modules/") ||

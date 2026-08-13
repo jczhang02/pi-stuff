@@ -11,6 +11,10 @@ full-width Command Dialog.
 The public `subagent` Tool uses the internal Tool Display contract, so its running and terminal row follows the same
 compact grammar as Host Tools. Full Agent inspection and control remains in `/agents`.
 
+Pi Stuff ships no Agent definitions. Launches select an Agent supplied by an installed Pi Package, the user's
+`agents` directory, or the current project's `.pi/agents` directory. When names collide, project definitions override
+user definitions, and user definitions override Package definitions.
+
 ## Everyday behavior
 
 - The public tool has three mutually exclusive call shapes: `agent` plus `task` for one launch, `tasks` for parallel

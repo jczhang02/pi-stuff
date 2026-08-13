@@ -237,6 +237,8 @@ describe("fanout child Agent composition", () => {
 		expect(projectorProvided).toBeTrue();
 		expect(api.tool?.label).toBe("Agent");
 		expect(api.tool?.description).not.toContain("Allowed management/control actions");
+		expect(api.tool?.description).toContain("Pi Stuff does not provide built-in Agent definitions");
+		expect(api.tool?.description).toContain("Package, user, or project Agent");
 		expect(api.tool?.description).toContain("always owner-blocking");
 		if (!api.tool) throw new Error("Expected nested Agent tool");
 		expect((api.tool.parameters as { properties?: Record<string, unknown> }).properties?.foreground).toBeUndefined();

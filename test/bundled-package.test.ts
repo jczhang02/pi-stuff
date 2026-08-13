@@ -41,6 +41,7 @@ test("Bun packs the complete local Pi Package without nested Packages", async ()
 	verifyPackageArchive(archive.manifest, archive.files);
 	expect(archive.files.some((path) => path.startsWith("package/node_modules/"))).toBe(false);
 	expect(archive.files.filter((path) => path.endsWith("/package.json"))).toEqual(["package/package.json"]);
+	expect(archive.files.some((path) => path.startsWith("package/src/subagents/agents/"))).toBe(false);
 });
 
 test("every exact runtime dependency is installed at its declared identity", async () => {
@@ -60,9 +61,12 @@ test("Package archive verification rejects publication and nested Package bounda
 	);
 });
 
-test("Package archive verification rejects development files", async () => {
+test("Package archive verification rejects development files and bundled Agent definitions", async () => {
 	const archive = await realArchive();
 	expect(() => verifyPackageArchive(archive.manifest, [...archive.files, "package/src/example.test.ts"])).toThrow(
 		"Archive contains forbidden files",
 	);
+	expect(() =>
+		verifyPackageArchive(archive.manifest, [...archive.files, "package/src/subagents/agents/general-purpose.md"]),
+	).toThrow("Archive contains forbidden files");
 });

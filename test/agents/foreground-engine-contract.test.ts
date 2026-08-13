@@ -92,8 +92,8 @@ function agent(): AgentConfig {
 		systemPromptMode: "append",
 		inheritProjectContext: true,
 		inheritSkills: true,
-		source: "builtin",
-		filePath: "/agents/general-purpose.md",
+		source: "user",
+		filePath: "/user-agents/general-purpose.md",
 	};
 }
 
@@ -945,7 +945,7 @@ describe("reduced foreground Agent engine", () => {
 		const callId = `unknown-${Date.now()}-${Math.random()}`;
 		const runId = deriveLaunchRunId(callId, { sessionId: cwd, ownerAgentPath: [] });
 		let binds = 0;
-		const result = await executor(cwd, state()).execute(
+		const result = await executor(cwd, state(), undefined, { agents: [] }).execute(
 			callId,
 			{ agent: "missing", task: "Never launch", async: false },
 			new AbortController().signal,
@@ -959,6 +959,7 @@ describe("reduced foreground Agent engine", () => {
 		);
 
 		expect(result.isError).toBe(true);
+		expect(result.content[0]).toEqual({ type: "text", text: "Unknown Agent: missing" });
 		expect(binds).toBe(0);
 		expect(fs.existsSync(path.join(TEMP_ROOT_DIR, "foreground-runs", runId))).toBeFalse();
 		expect(fs.existsSync(path.join(cwd, "sessions", runId))).toBeFalse();

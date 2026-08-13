@@ -602,6 +602,8 @@ describe("Agents extension composition root", () => {
 		expect(tool.description).toContain("Background completion never starts another main turn");
 		expect(tool.description).toContain('action="status", "steer", "stop", or "resume"');
 		expect(tool.description).toContain("Omit turnBudget and toolBudget for ordinary tasks");
+		expect(tool.description).toContain("Pi Stuff does not provide built-in Agent definitions");
+		expect(tool.description).toContain("Package, user, or project Agent");
 
 		for (const args of [
 			{ agent: "general-purpose", task: "Inspect the parser" },
