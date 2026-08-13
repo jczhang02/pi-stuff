@@ -41,6 +41,7 @@ import {
 import { type ToolActivity, type ToolActivityState, ToolActivityStore } from "./activity-store.js";
 import {
 	type ActivityGroupRowModel,
+	type BashOperationRowModel,
 	buildToolDetailLines,
 	CachedToolRow,
 	capDetailLines,
@@ -1171,6 +1172,7 @@ export class ToolUiRuntime {
 			if (terminalState) this.stopTimer(member.id);
 			return;
 		}
+		if (member.name === "bash") this.closeOpenGroup();
 		let group = this.openGroupLeaderId ? this.groups.get(this.openGroupLeaderId) : undefined;
 		const result = member.result ?? this.pendingResults.get(member.id);
 		const terminalState = result ? undefined : member.terminalState;
@@ -1183,7 +1185,11 @@ export class ToolUiRuntime {
 		};
 		this.pendingResults.delete(member.id);
 		if (!group || group.closed) {
-			group = { closed: !this.agentActive, leaderId: member.id, members: [completeMember] };
+			group = {
+				closed: member.name === "bash" || !this.agentActive,
+				leaderId: member.id,
+				members: [completeMember],
+			};
 			this.groups.set(group.leaderId, group);
 			this.groupOrder.push(group.leaderId);
 			if (!group.closed) this.openGroupLeaderId = group.leaderId;
@@ -1256,6 +1262,34 @@ export class ToolUiRuntime {
 				const binding = this.bindings.get(member.id);
 				if (binding) this.applyBinding(binding, binding.baseModel, true);
 			}
+			return;
+		}
+		if (group.members.length === 1 && group.members[0]?.name === "bash") {
+			const member = group.members[0];
+			const binding = this.bindings.get(member.id);
+			if (!binding) return;
+			const summaryMember = this.summaryMember(member);
+			const model: BashOperationRowModel = {
+				active: summaryMember.state === "running",
+				command:
+					typeof member.args["command"] === "string" ? member.args["command"] : String(member.args["value"] ?? ""),
+				expandable: true,
+				kind: "bash-operation",
+				output: member.result
+					? member.result.content
+							.filter((item): item is { readonly type: "text"; readonly text: string } => item.type === "text")
+							.map((item) => item.text)
+							.join("\n")
+					: (binding.metadata.result?.content
+							.filter((item): item is { readonly type: "text"; readonly text: string } => item.type === "text")
+							.map((item) => item.text)
+							.join("\n") ?? ""),
+				state: summaryMember.state,
+			};
+			this.stopGroupPulse(group.leaderId);
+			const modelChanged = binding.row.setModel(model);
+			const visibilityChanged = binding.row.setVisible(true);
+			if (modelChanged || visibilityChanged) this.scheduleInvalidation(binding.invalidate);
 			return;
 		}
 		const summary = summarizeToolActivityAggregate(index.aggregate(), group.closed);
@@ -2249,7 +2283,27 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 				expanded: renderOptions.expanded,
 				isPartial: renderOptions.isPartial,
 			} as unknown as ToolRenderContext<TArgs>;
-			if (renderOptions.isPartial) return new EmptyToolComponent();
+			if (renderOptions.isPartial) {
+				const row = updateRunningRow(tool, presentation, runtime, state, typed, theme);
+				const runningModel: ToolRowModel = {
+					durationMs: state.startedAt === undefined ? undefined : Math.max(0, Date.now() - state.startedAt),
+					label: labelFor(tool, presentation, state.args ?? typed.args),
+					state: "running",
+					summary: oneLine(
+						typeof presentation.runningSummary === "function"
+							? presentation.runningSummary(state.args ?? typed.args, undefined)
+							: (presentation.runningSummary ?? "working"),
+					),
+					target: oneLine(presentation.target?.(state.args ?? typed.args) ?? ""),
+				};
+				runtime.presentRow(context.toolCallId, row, runningModel, true, context.invalidate, typed.expanded, {
+					args: state.args ?? typed.args,
+					cwd: typed.cwd,
+					name: tool.name,
+					result: result as AgentToolResult<unknown>,
+				});
+				return new EmptyToolComponent();
+			}
 			settleRow(tool, presentation, runtime, state, result, typed, theme);
 			return resultBody(
 				state,

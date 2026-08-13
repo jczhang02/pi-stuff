@@ -27,7 +27,7 @@ test("active path targets preserve only the nearest useful directory and basenam
 	expect(activityTarget("Running repository checks")).toBe("Running repository checks");
 });
 
-test("plans one complete group across Tool round-trips and visible Thinking", () => {
+test("plans non-Bash groups across Tool round-trips and keeps Bash standalone", () => {
 	const groups = planToolActivityGroups(
 		[
 			{ role: "user", content: [{ type: "text", text: "work" }] },
@@ -41,11 +41,33 @@ test("plans one complete group across Tool round-trips and visible Thinking", ()
 		false,
 	);
 
-	expect(groups).toHaveLength(1);
+	expect(groups).toHaveLength(2);
 	expect(groups[0]?.leaderId).toBe("r1");
-	expect(groups[0]?.closed).toBe(false);
-	expect(groups[0]?.members.map((member) => member.id)).toEqual(["r1", "e1", "b1"]);
+	expect(groups[0]?.closed).toBe(true);
+	expect(groups[0]?.members.map((member) => member.id)).toEqual(["r1", "e1"]);
 	expect(groups[0]?.members[0]?.result?.content).toEqual([{ type: "text", text: "A" }]);
+	expect(groups[1]?.members.map((member) => member.id)).toEqual(["b1"]);
+	expect(groups[1]?.closed).toBe(true);
+});
+
+test("Bash calls are standalone boundaries while neighboring non-Bash Tools keep grouping", () => {
+	const groups = planToolActivityGroups(
+		[
+			assistant(call("r1", "read", "a"), call("r2", "read", "b"), call("b1", "bash", "first")),
+			{ role: "toolResult", toolCallId: "b1", content: [{ type: "text", text: "one" }], details: {} },
+			assistant(call("b2", "bash", "second && third | cat"), call("e1", "edit", "a")),
+		],
+		owned,
+		false,
+	);
+
+	expect(groups.map((group) => group.members.map((entry) => entry.id))).toEqual([
+		["r1", "r2"],
+		["b1"],
+		["b2"],
+		["e1"],
+	]);
+	expect(groups.map((group) => group.closed)).toEqual([true, true, true, false]);
 });
 
 test("branch and compaction metadata stay transparent to Activity Groups", () => {
@@ -80,7 +102,8 @@ test("prose, visible context, user input, and unknown Tools are boundaries", () 
 	expect(groups.map((group) => group.members.map((member) => member.id))).toEqual([
 		["r1"],
 		["e1"],
-		["b1", "r2"],
+		["b1"],
+		["r2"],
 		["r3"],
 	]);
 	expect(groups.every((group) => group.closed)).toBe(true);

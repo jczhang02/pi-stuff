@@ -197,10 +197,13 @@ function verifyOutput(output: string, columns: number): void {
 		"• TOOLS_DONE",
 		"• List",
 		"• Bash",
-		"• Changing 1 file, running 3 commands",
-		"• Changed 1 file, ran 5 commands",
-		"2 failed, 1",
-		"rejected, 1 cancelled",
+		"• Changing 1 file",
+		"• Changed 1 file",
+		"• Ran printf '",
+		"⎿ PREFIX_CJK_工具",
+		"⎿ Error: Exit code 7",
+		"BUILTIN_FAILURE_工具",
+		"1 failed, 1 rejected, 1 cancelled",
 		"Tools",
 		"Tool activity details",
 		"PREFIX_CJK_工具",
@@ -231,8 +234,8 @@ function verifyOutput(output: string, columns: number): void {
 }
 
 function verifyLifecycleFrames(visible: string): void {
-	const running = "• Changing 1 file, running 3 commands";
-	const settled = "• Changed 1 file, ran 5 commands";
+	const running = "• Changing 1 file";
+	const settled = "• Changed 1 file";
 	const runningFrame = visible.indexOf(running);
 	const settledFrame = visible.indexOf(settled, runningFrame + running.length);
 	if (runningFrame < 0 || settledFrame < 0) {
@@ -241,6 +244,11 @@ function verifyLifecycleFrames(visible: string): void {
 			.filter((line) => line.includes("Running") || line.includes("Ran"))
 			.slice(-40);
 		fail(`running Activity Group did not settle semantically: ${JSON.stringify(observed)}`);
+	}
+	const firstBash = visible.indexOf("⎿ PREFIX_CJK_工具");
+	const failedBash = visible.indexOf("⎿ Error: Exit code 7", firstBash + 1);
+	if (firstBash < 0 || failedBash < 0 || firstBash >= failedBash) {
+		fail("standalone Bash operation blocks did not retain source order or child output");
 	}
 }
 
@@ -259,7 +267,10 @@ function verifyRequests(records: readonly RequestRecord[]): void {
 }
 
 function verifyHostVersion(piBinary: string): void {
-	const result = Bun.spawnSync([piBinary, "--version"], { stdout: "pipe", stderr: "pipe" });
+	const result = Bun.spawnSync([piBinary, "--version"], {
+		stdout: "pipe",
+		stderr: "pipe",
+	});
 	const version = result.stdout.toString().trim();
 	if (result.exitCode !== 0 || version !== CERTIFIED_PI_VERSION) {
 		fail(`expected Pi ${CERTIFIED_PI_VERSION}, received ${version || `exit ${String(result.exitCode)}`}`);
@@ -272,9 +283,21 @@ export async function verifyActiveToolParity(options: {
 }): Promise<void> {
 	verifyHostVersion(options.piBinary);
 	for (const fixture of [
-		{ args: [] as string[], expected: ["bash", "edit", "read", "write"], name: "Host defaults" },
-		{ args: ["--no-builtin-tools"], expected: [], name: "--no-builtin-tools" },
-		{ args: ["--tools", "grep,find,ls"], expected: ["find", "grep", "ls"], name: "explicit allowlist" },
+		{
+			args: [] as string[],
+			expected: ["bash", "edit", "read", "write"],
+			name: "Host defaults",
+		},
+		{
+			args: ["--no-builtin-tools"],
+			expected: [],
+			name: "--no-builtin-tools",
+		},
+		{
+			args: ["--tools", "grep,find,ls"],
+			expected: ["find", "grep", "ls"],
+			name: "explicit allowlist",
+		},
 	]) {
 		const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-tools-active-"));
 		const configDirectory = join(temporaryDirectory, "config");
@@ -411,7 +434,9 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 			verifyOutput(output, options.columns);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(`${message}\nPTY tail:\n${output.slice(-12_000)}`, { cause: error });
+			throw new Error(`${message}\nPTY tail:\n${output.slice(-12_000)}`, {
+				cause: error,
+			});
 		}
 		const records = (await readFile(requestLog, "utf8"))
 			.trim()
@@ -448,12 +473,20 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 
 if (import.meta.main) {
 	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
-	await verifyActiveToolParity({ piBinary: PI_BIN, packagePath: join(root, "packages/pi-stuff") });
+	await verifyActiveToolParity({
+		piBinary: PI_BIN,
+		packagePath: join(root, "packages/pi-stuff"),
+	});
 	for (const [columns, rows] of [
 		[100, 32],
 		[64, 28],
 	] as const) {
-		await verifyToolsPty({ piBinary: PI_BIN, packagePath: join(root, "packages/pi-stuff"), columns, rows });
+		await verifyToolsPty({
+			piBinary: PI_BIN,
+			packagePath: join(root, "packages/pi-stuff"),
+			columns,
+			rows,
+		});
 	}
 	console.log("Certified Tool UI in 100x32 and 64x28 PTYs");
 }

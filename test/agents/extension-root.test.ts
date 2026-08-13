@@ -1260,7 +1260,7 @@ describe("Agents extension composition root", () => {
 			{ fg: (_color: string, text: string) => text },
 		) as { render(width: number): string[] };
 		expect(component.render(100).map((line) => line.trimEnd())).toEqual([
-			"● Agent finished · 18s · inspect with /agents",
+			"• Agent finished · 18s · inspect with /agents",
 		]);
 
 		await notifier.deliver({

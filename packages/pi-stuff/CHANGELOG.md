@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Unify Conversation Transcript hierarchy with a one-cell `*` Thought marker, small bullets for Suite-owned outcome
+  records, and one outer bullet for every Assistant Markdown message. Show each Bash call as its own Claude-style
+  `Running`/`Ran` operation block with bounded `⎿` output while retaining non-Bash Tool Activity grouping.
 - Add native Catppuccin Latte, Frappé, Macchiato, and Mocha themes and route the remaining MCP TUI colors through Pi's
   semantic theme tokens.
 - Consolidate the Suite into one private local Pi Package with thirteen named internal Modules. Remove the former

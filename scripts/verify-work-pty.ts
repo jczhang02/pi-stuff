@@ -21,7 +21,7 @@ proc must_expect {pattern} {
 
 spawn -noecho script -qefc $env(PI_STUFF_WORK_PTY_RUNNER) /dev/null
 set work_pty $spawn_out(slave,name)
-must_expect "Running 1 command"
+must_expect "foreground.pid; sleep 30"
 after 200
 send -- "\\002"
 must_expect "CTRL_B_CONTINUED"

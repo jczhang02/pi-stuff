@@ -9,13 +9,18 @@ Tools keep their native renderer and form a display boundary.
 
 ## Daily use
 
-- Every continuous phase of controlled Tool work is represented by one **Tool Activity Group**. The group begins with
-  its first Tool and can span Assistant Tool round-trips and visible Thinking. Assistant prose, user input, and visible
-  model-context Custom Messages close it.
+- Every continuous phase of controlled non-Bash Tool work is represented by one **Tool Activity Group**. The group
+  begins with its first Tool and can span Assistant Tool round-trips and visible Thinking. Assistant prose, user input,
+  visible model-context Custom Messages, and Bash calls close it.
+- Every Bash call is one standalone operation block in native order: `Running <command>` while active, `Ran <command>`
+  when settled, and a bounded `⎿` child preview underneath. Multiple calls remain separate; shell composition inside
+  one call remains one block. The command title follows Claude Code's two-line/160-code-unit cap, while output shows
+  three lines, admits a fourth instead of a `+1` hint, and otherwise reports hidden lines. Streaming output, no output,
+  stderr, exit status, cancellation, rejection, and failure remain explicit.
 - A group appears immediately, even for one Tool. Running summaries use present-tense semantic language and one short,
   width-safe target hint; settled summaries use past tense and remove raw commands, paths, result text, elapsed time,
   and redundant `done` labels. Files and other domain objects are deduplicated while executions are counted.
-- All controlled Tool kinds participate: reads and searches, file changes, commands, MCP calls, Agents, Tasks, Goals,
+- All controlled non-Bash Tool kinds participate: reads and searches, file changes, MCP calls, Agents, Tasks, Goals,
   background handoffs, and failures. Pure infrastructure operations may stay silent when successful. Errors,
   permission rejection, and cancellation remain folded but are called out with counts and the first issue summary.
 - The compact transcript hides Tool arguments and textual results. Real media remains visible. Pi's global `Ctrl+O`

@@ -75,6 +75,18 @@ const RECOVERY_CALLS: readonly FixtureCall[] = [
 	{ name: "fixture_retry", arguments: { value: "same exact retry" } },
 	{ name: "fixture_retry", arguments: { value: "same exact retry" } },
 ];
+const BASH_UI_CALLS: readonly FixtureCall[] = [
+	{
+		name: "bash",
+		arguments: {
+			command: "printf 'BASH_UI_ONE\\nBASH_UI_TWO\\nBASH_UI_THREE\\nBASH_UI_FOUR\\nBASH_UI_FIVE\\nBASH_UI_SIX\\n'",
+		},
+	},
+	{
+		name: "bash",
+		arguments: { command: "printf BASH_UI_SECOND && printf '_DONE\\n'" },
+	},
+];
 
 function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
 	return {
@@ -223,6 +235,25 @@ function fixtureStream(context: Context) {
 	}
 	if (request.includes("recovery")) {
 		return completed === 0 ? toolCallsStream("group-recovery", RECOVERY_CALLS) : textStream("GROUP_RECOVERY_DONE");
+	}
+	if (request.includes("bashui")) {
+		return completed === 0 ? toolCallsStream("group-bash-ui", BASH_UI_CALLS) : textStream("GROUP_BASH_UI_DONE");
+	}
+	if (request.includes("structured")) {
+		return textStream(
+			[
+				"## Structured result",
+				"",
+				"STRUCTURED_PARAGRAPH 中文",
+				"",
+				"- STRUCTURED_ITEM_ONE",
+				"- STRUCTURED_ITEM_TWO",
+				"",
+				"```text",
+				"STRUCTURED_CODE_LINE",
+				"```",
+			].join("\n"),
+		);
 	}
 	if (request.includes("background")) {
 		return completed === 0

@@ -6,6 +6,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 	TerminalInputHandler,
+	Theme,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
@@ -19,7 +20,7 @@ class HostHarness {
 	readonly commands = new Map<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }>();
 	readonly handlers = new Map<string, Handler[]>();
 	readonly messages: Array<{ readonly message: unknown; readonly options: unknown }> = [];
-	readonly renderers: string[] = [];
+	readonly renderers = new Map<string, (message: unknown, options: unknown, theme: Theme) => unknown>();
 	readonly tools = new Map<string, ToolDefinition<TSchema, unknown>>();
 	terminalInput: TerminalInputHandler | undefined;
 
@@ -37,7 +38,10 @@ class HostHarness {
 		) => {
 			this.commands.set(name, command);
 		},
-		registerMessageRenderer: (name: string) => this.renderers.push(name),
+		registerMessageRenderer: (
+			name: string,
+			renderer: (message: unknown, options: unknown, theme: Theme) => unknown,
+		) => this.renderers.set(name, renderer),
 		registerTool: (tool: ToolDefinition<TSchema, unknown>) => {
 			this.tools.set(tool.name, tool);
 			this.activeTools.add(tool.name);
@@ -100,7 +104,24 @@ describe("Pi Stuff Work host composition", () => {
 		await piStuffWork(host.api);
 		expect([...host.tools.keys()].sort()).toEqual(["background", "monitor"]);
 		expect(host.commands.has("tasks")).toBe(true);
-		expect(host.renderers).toContain("pi-stuff-background-work-result");
+		expect(host.renderers.has("pi-stuff-background-work-result")).toBe(true);
+		const renderer = host.renderers.get("pi-stuff-background-work-result");
+		const component = renderer?.(
+			{
+				details: {
+					outcomes: [
+						{ status: "completed", summary: "Background Shell finished" },
+						{ status: "failed", summary: "Monitor failed" },
+					],
+				},
+			},
+			{},
+			{ fg: (_color: string, value: string) => value } as unknown as Theme,
+		) as { render(width: number): string[] } | undefined;
+		expect(component?.render(80).map((line) => line.trimEnd())).toEqual([
+			"• Background Shell finished",
+			"• Monitor failed",
+		]);
 
 		const ctx = host.context(root);
 		await host.emit("session_start", ctx);

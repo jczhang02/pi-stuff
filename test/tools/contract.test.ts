@@ -147,6 +147,10 @@ function result(id: string, text = "ok", isError = false): unknown {
 	};
 }
 
+function bashCall(id: string, command: string): unknown {
+	return { type: "toolCall", id, name: "bash", arguments: { command, value: command } };
+}
+
 function presentation(category: "change-file" | "fetch-page" | "read-file" | "run-command" | "view-image") {
 	return {
 		activity: {
@@ -1216,6 +1220,113 @@ test("one group spans Tool round-trips and Thinking, then closes on prose", () =
 	expect(renderLines(first.callComponent).join("\n")).toContain("Changed 1 file, read 1 file");
 });
 
+test("multiple Bash calls render as separate operation blocks in native order", () => {
+	const harness = apiHarness();
+	const bash = toolFromHarness(harness, "bash", "run-command");
+	const read = toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	const messages = [
+		assistant(call("r1", "read", "before.ts"), bashCall("b1", "printf 'one\\ntwo\\n'")),
+		result("r1", "READ"),
+		result("b1", "one\ntwo"),
+		assistant(bashCall("b2", "printf 'three\\n' && printf 'four\\n'"), call("r2", "read", "after.ts")),
+		result("b2", "three\nfour"),
+		result("r2", "READ"),
+	];
+	runtime.indexMessages(messages, true);
+
+	const before = settle(read, "r1", "before.ts");
+	const first = settle(bash, "b1", "printf 'one\\ntwo\\n'", false, false, "one\ntwo");
+	const second = settle(bash, "b2", "printf 'three\\n' && printf 'four\\n'", false, false, "three\nfour");
+	const after = settle(read, "r2", "after.ts");
+
+	expect(before.callLines.join("\n")).toContain("Read 1 file");
+	expect(first.callLines).toEqual([" • Ran printf 'one\\ntwo\\n'", "   ⎿ one", "     two"]);
+	expect(second.callLines).toEqual([" • Ran printf 'three\\n' && printf 'four\\n'", "   ⎿ three", "     four"]);
+	expect(after.callLines.join("\n")).toContain("Read 1 file");
+	expect([before, first, second, after].flatMap((entry) => entry.callLines).join("\n")).not.toContain("commands");
+	expect(runtime.listGroups().map((group) => group.memberIds)).toEqual([["r2"], ["b2"], ["b1"], ["r1"]]);
+
+	runtime.resetProjection(messages);
+	expect(settle(bash, "b1", "printf 'one\\ntwo\\n'", false, false, "one\ntwo").callLines).toEqual(first.callLines);
+});
+
+test("Bash partial results update the running operation output in place", () => {
+	const harness = apiHarness();
+	const bash = toolFromHarness(harness, "bash", "run-command");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages([assistant(bashCall("stream-bash", "printf 'first\\nsecond\\n'"))], false);
+	const context = renderContext(
+		{},
+		{ value: "printf 'first\\nsecond\\n'" },
+		{
+			toolCallId: "stream-bash",
+		},
+	);
+	const callComponent = bash.renderCall?.({ value: "printf 'first\\nsecond\\n'" }, theme, context as never);
+	if (!callComponent) throw new Error("missing running Bash component");
+	expect(renderLines(callComponent)).toEqual([" • Running printf 'first\\nsecond\\n'", "   ⎿ (No output)"]);
+
+	bash.renderResult?.(
+		{ content: [{ type: "text", text: "first\nsecond" }], details: { source: "bash" } },
+		{ expanded: false, isPartial: true },
+		theme,
+		{ ...context, lastComponent: callComponent } as never,
+	);
+	expect(renderLines(callComponent)).toEqual([" • Running printf 'first\\nsecond\\n'", "   ⎿ first", "     second"]);
+});
+
+test("Code Mode preserves standalone Bash operation blocks", () => {
+	const directHarness = apiHarness();
+	const directBash = toolFromHarness(directHarness, "bash", "run-command");
+	getToolUiRuntime(directHarness.api).indexMessages(
+		[assistant(bashCall("direct-bash", "printf 'ok\\n'")), result("direct-bash", "ok")],
+		true,
+	);
+	const direct = settle(directBash, "direct-bash", "printf 'ok\\n'", false, false, "ok").callLines;
+
+	const envelopeHarness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(envelopeHarness.api);
+	toolFromHarness({ ...envelopeHarness, api: registrations.api }, "bash", "run-command");
+	const operation: SuiteToolEnvelopeOperation = {
+		args: { value: "printf 'ok\\n'" },
+		id: "nested-bash",
+		name: "bash",
+		result: { content: [{ type: "text", text: "ok" }], details: {} },
+		state: "success",
+	};
+	registerSuiteToolEnvelope(
+		registrations.api,
+		{
+			description: "Code Mode",
+			execute: async () => ({ content: [], details: { operations: [operation] } }),
+			label: "Code Mode",
+			name: "codemode",
+			parameters: Type.Object({ code: Type.String() }),
+		},
+		{ decode: () => [operation], registry: registrations.registry },
+	);
+	const envelope = envelopeHarness.tools.get("codemode");
+	if (!envelope) throw new Error("missing Code Mode envelope");
+	getToolUiRuntime(envelopeHarness.api).indexMessages(
+		[
+			assistant({ type: "toolCall", id: "outer", name: "codemode", arguments: { code: "bash" } }),
+			{ role: "toolResult", toolCallId: "outer", content: [], details: { operations: [operation] } },
+		],
+		true,
+	);
+	const context = renderContext({}, { value: "unused" }, { toolCallId: "outer" });
+	const callComponent = envelope.renderCall?.({ code: "bash" }, theme, context as never);
+	const body = envelope.renderResult?.(
+		{ content: [], details: { operations: [operation] } },
+		{ expanded: false, isPartial: false },
+		theme,
+		{ ...context, lastComponent: callComponent } as never,
+	);
+	if (!body) throw new Error("missing Code Mode Bash body");
+	expect(body.render(120)).toEqual(direct);
+});
+
 test("Activity Groups deduplicate canonical image paths and fetched URLs", () => {
 	const harness = apiHarness();
 	const view = toolFromHarness(harness, "view", "view-image");
@@ -1428,7 +1539,7 @@ test("compact projection hides text bodies while preserving real media fallback"
 	}
 });
 
-test("issues stay folded but expose the first failure and remaining count", () => {
+test("standalone Bash failures retain their own command and root cause", () => {
 	const harness = apiHarness();
 	const command = toolFromHarness(harness, "bash", "run-command");
 	const runtime = getToolUiRuntime(harness.api);
@@ -1441,13 +1552,15 @@ test("issues stay folded but expose the first failure and remaining count", () =
 		true,
 	);
 	const first = settle(command, "b1", "typecheck", true);
-	settle(command, "b2", "tests", true);
+	const second = settle(command, "b2", "tests", true);
 	const output = renderLines(first.callComponent).join("\n");
-	expect(output).toContain("Ran 2 commands · 2 failed");
-	expect(output).toContain("FIRST FAILED · +1 issues");
+	expect(output).toContain("Ran typecheck");
+	expect(output).toContain("FIRST FAILED");
+	expect(second.callLines.join("\n")).toContain("Ran tests");
+	expect(second.callLines.join("\n")).toContain("SECOND FAILED");
 });
 
-test("issue hints preserve chronological root-cause order across issue kinds", () => {
+test("standalone Bash issue rows preserve chronological order across issue kinds", () => {
 	const harness = apiHarness();
 	const command = toolFromHarness(harness, "bash", "run-command");
 	const runtime = getToolUiRuntime(harness.api);
@@ -1460,10 +1573,12 @@ test("issue hints preserve chronological root-cause order across issue kinds", (
 		true,
 	);
 	const first = settle(command, "b1", "cancelled", true, false, "command was cancelled");
-	settle(command, "b2", "failed", true, false, "LATER FAILED");
+	const second = settle(command, "b2", "failed", true, false, "LATER FAILED");
 	const output = renderLines(first.callComponent).join("\n");
-	expect(output).toContain("Ran 2 commands · 1 failed, 1 cancelled");
-	expect(output).toContain("command was cancelled · +1 issues");
+	expect(output).toContain("Ran cancelled");
+	expect(output).toContain("command was cancelled");
+	expect(second.callLines.join("\n")).toContain("Ran failed");
+	expect(second.callLines.join("\n")).toContain("LATER FAILED");
 });
 
 test("failed mutations never produce successful change clauses", () => {
@@ -1476,15 +1591,10 @@ test("failed mutations never produce successful change clauses", () => {
 	expect(output).not.toContain("Changed");
 });
 
-test("effective group outcomes recover only exact retries or canonical effect keys", () => {
-	const project = (
-		category: "change-file" | "run-command",
-		firstValue: string,
-		secondValue: string,
-		secondError = false,
-	) => {
+test("effective non-Bash group outcomes recover only exact retries or canonical effect keys", () => {
+	const project = (category: "change-file", firstValue: string, secondValue: string, secondError = false) => {
 		const harness = apiHarness();
-		const tool = toolFromHarness(harness, category === "run-command" ? "bash" : "edit", category);
+		const tool = toolFromHarness(harness, "edit", category);
 		const runtime = getToolUiRuntime(harness.api);
 		const messages = [
 			assistant(call("first", tool.name, firstValue), call("second", tool.name, secondValue)),
@@ -1497,7 +1607,7 @@ test("effective group outcomes recover only exact retries or canonical effect ke
 		return { messages, runtime, tool };
 	};
 
-	const retry = project("run-command", "bun test", "bun test");
+	const retry = project("change-file", "same.ts", "same.ts");
 	expect(retry.runtime.resolveGroup("first")).toMatchObject({
 		state: "success",
 		summary: expect.stringContaining("1 failed"),
@@ -1510,45 +1620,19 @@ test("effective group outcomes recover only exact retries or canonical effect ke
 		summary: expect.stringContaining("1 failed"),
 	});
 
-	const normalizedHarness = apiHarness();
-	toolFromHarness(normalizedHarness, "bash", "run-command");
-	const normalizedRuntime = getToolUiRuntime(normalizedHarness.api);
-	normalizedRuntime.indexMessages(
-		[
-			assistant(
-				{
-					type: "toolCall",
-					id: "ordered-1",
-					name: "bash",
-					arguments: { value: "bun test", options: { b: 2, a: 1 } },
-				},
-				{
-					type: "toolCall",
-					id: "ordered-2",
-					name: "bash",
-					arguments: { options: { a: 1, b: 2 }, value: "bun test" },
-				},
-			),
-			result("ordered-1", "FIRST FAILED", true),
-			result("ordered-2"),
-		],
-		true,
-	);
-	expect(normalizedRuntime.resolveGroup("ordered-1")).toMatchObject({ state: "success" });
-
 	const effect = project("change-file", "./a.ts", "/project/a.ts");
 	expect(effect.runtime.resolveGroup("first")).toMatchObject({
 		state: "success",
 		summary: expect.stringContaining("1 failed"),
 	});
 
-	const unknown = project("run-command", "bun test:a", "bun test:b");
+	const unknown = project("change-file", "a.ts", "b.ts");
 	expect(unknown.runtime.resolveGroup("first")).toMatchObject({
 		state: "warning",
 		summary: expect.stringContaining("1 failed"),
 	});
 
-	const failed = project("run-command", "bun test:a", "bun test:b", true);
+	const failed = project("change-file", "a.ts", "b.ts", true);
 	expect(failed.runtime.resolveGroup("first")).toMatchObject({
 		state: "error",
 		summary: expect.stringContaining("2 failed"),

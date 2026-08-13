@@ -50,7 +50,7 @@ function markerColor(frame: string, summary: string): string {
 	const line = frame
 		.split("\n")
 		.reverse()
-		.find((candidate) => candidate.includes(summary) && candidate.includes("•"));
+		.find((candidate) => Bun.stripANSI(candidate).includes(summary) && candidate.includes("•"));
 	if (!line) fail(`could not find colored Activity marker for ${summary}\n${frame}`);
 	const marker = line.indexOf("•");
 	const colors = line.slice(0, marker).match(new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;:]*m`, "gu")) ?? [];
@@ -86,7 +86,9 @@ async function detachForegroundBash(session: string): Promise<void> {
 	for (let attempt = 0; attempt < 4; attempt += 1) {
 		command(["tmux", "send-keys", "-t", session, "-H", "02"]);
 		await Bun.sleep(250);
-		if (capture(session).includes("Launched 2 background tasks")) return;
+		const frame = capture(session);
+		if (frame.includes("Command manually moved to background task") || frame.includes("GROUP_BACKGROUND_DONE"))
+			return;
 	}
 	fail(`Ctrl+B did not detach foreground Bash\nCurrent frame:\n${capture(session)}`);
 }
@@ -105,13 +107,17 @@ function normalized(frame: string): string {
 }
 
 function requireGroup(frame: string): void {
-	const summary = "Updated 1 task, ran 1 command, searched 1 pattern, read 1 file, listed 1 directory";
+	const summaries = ["Searched 1 pattern, read 1 file, listed 1 directory", "Updated 1 task"];
 	const compact = normalized(frame);
-	if (!compact.includes(summary)) {
-		fail(`settled cross-round-trip activity did not render one semantic summary\n${frame}`);
+	for (const summary of summaries) {
+		if (!compact.includes(summary)) fail(`settled non-Bash activity omitted ${summary}\n${frame}`);
+		if (compact.split(summary).length - 1 !== 1) {
+			fail(`settled non-Bash activity rendered ${summary} more than once\n${frame}`);
+		}
 	}
-	if (compact.split(summary).length - 1 !== 1) {
-		fail(`settled activity rendered more than one summary row\n${frame}`);
+	if (!frame.includes("• Ran pwd") || !frame.includes("⎿ ")) fail(`standalone Bash operation was lost\n${frame}`);
+	if (compact.includes("ran 1 command") || compact.includes("Ran 1 command")) {
+		fail(`Bash leaked back into an aggregate command count\n${frame}`);
 	}
 	if (!compact.includes("ctrl+o to expand")) fail(`activity summary omitted its disclosure hint\n${frame}`);
 }
@@ -133,10 +139,13 @@ function successGroup(frame: string): void {
 }
 
 function backgroundBarrier(frame: string): void {
-	if (!normalized(frame).includes("Launched 2 background tasks, read 1 file")) {
-		fail(`background calls were not folded into one semantic Activity Group\n${frame}`);
+	if (!normalized(frame).includes("Read 1 file")) {
+		fail(`neighboring reads were not retained around standalone Bash operations\n${frame}`);
 	}
-	for (const forbidden of ["sleep 30", "sleep 31", "• Read input-工具.txt"]) {
+	for (const required of ["Ran sleep 30", "Ran sleep 31"]) {
+		if (!frame.includes(required)) fail(`background Bash operation omitted ${required}\n${frame}`);
+	}
+	for (const forbidden of ["Launched 2 background tasks", "• Read input-工具.txt"]) {
 		if (frame.includes(forbidden)) fail(`background Activity Group leaked raw member ${forbidden}\n${frame}`);
 	}
 }
@@ -190,6 +199,7 @@ export async function verifyToolsGroupingPty(options: {
 			shellQuote(runner),
 		].join(" ");
 	let successfulMarkerColor = "";
+	let warningMarkerColor = "";
 
 	try {
 		command([
@@ -224,6 +234,40 @@ export async function verifyToolsGroupingPty(options: {
 		}
 
 		if (scenario === "lifecycle") {
+			await sendTurn(tmuxSession, "structured");
+			const structured = await waitForText(tmuxSession, "STRUCTURED_CODE_LINE");
+			const structuredLines = structured.split("\n");
+			const headingLine = structuredLines.find((line) => line.includes("Structured result"));
+			if (!headingLine || !/^\s*•\s/u.test(headingLine)) {
+				fail(`structured Assistant message omitted its outer transcript bullet\n${structured}`);
+			}
+			for (const required of [
+				"STRUCTURED_PARAGRAPH 中文",
+				"STRUCTURED_ITEM_ONE",
+				"STRUCTURED_ITEM_TWO",
+				"STRUCTURED_CODE_LINE",
+			]) {
+				if (!structured.includes(required)) fail(`structured Assistant Markdown lost ${required}\n${structured}`);
+			}
+			if (structuredLines.filter((line) => /^ •\s/u.test(line) && line.includes("Structured result")).length !== 1) {
+				fail(`structured Assistant message rendered more than one outer transcript bullet\n${structured}`);
+			}
+
+			await sendTurn(tmuxSession, "bashui");
+			const bashUi = await waitForText(tmuxSession, "GROUP_BASH_UI_DONE");
+			const bashUiText = normalized(bashUi);
+			for (const required of [
+				"Ran printf 'BASH_UI_ONE\\nBASH_UI_TWO",
+				"⎿ BASH_UI_ONE",
+				"BASH_UI_FOUR",
+				"… +2 lines (ctrl+o to expand)",
+				"Ran printf BASH_UI_SECOND && printf '_DONE\\n'",
+				"⎿ BASH_UI_SECOND_DONE",
+			]) {
+				if (!bashUiText.includes(required)) fail(`Claude-style Bash UI omitted ${required}\n${bashUi}`);
+			}
+			if (bashUiText.includes("Ran 2 commands")) fail(`multiple Bash calls collapsed into one aggregate\n${bashUi}`);
+
 			command(["tmux", "send-keys", "-t", tmuxSession, "C-o"]);
 			await waitForText(tmuxSession, "Tool output: expanded");
 			const expanded = captureHistory(tmuxSession);
@@ -232,25 +276,22 @@ export async function verifyToolsGroupingPty(options: {
 			}
 			command(["tmux", "send-keys", "-t", tmuxSession, "C-o"]);
 			await waitForText(tmuxSession, "Tool output: collapsed");
-			successGroup(capture(tmuxSession));
+			const collapsedHistory = captureHistory(tmuxSession);
+			successGroup(collapsedHistory);
+			for (const required of ["Ran printf 'BASH_UI_ONE", "Ran printf BASH_UI_SECOND"]) {
+				if (!collapsedHistory.includes(required)) fail(`Ctrl+O collapse lost ${required}\n${collapsedHistory}`);
+			}
 
 			send(tmuxSession, "/tools");
 			const tools = await waitForText(tmuxSession, "activity groups");
-			for (const required of ["Tools", "Updated 1 task", "5 tools", "Esc close"]) {
+			for (const required of ["Tools", "Ran printf BASH_UI_SECOND", "Esc close"]) {
 				if (!tools.includes(required)) fail(`/tools lost grouped member ${required}\n${tools}`);
 			}
 			command(["tmux", "send-keys", "-t", tmuxSession, "Enter"]);
 			const details = await waitForText(tmuxSession, "Tool activity details");
-			for (const required of ["Read", "Find", "input-工具.txt"]) {
+			for (const required of ["Bash", "printf BASH_UI_SECOND", "BASH_UI_SECOND_DONE"]) {
 				if (!details.includes(required)) fail(`/tools group details lost member ${required}\n${details}`);
 			}
-			command(["tmux", "send-keys", "-t", tmuxSession, "PageDown"]);
-			await Bun.sleep(100);
-			const laterDetails = capture(tmuxSession);
-			for (const required of ["Bash", "pwd", "Task create"]) {
-				if (!laterDetails.includes(required)) fail(`/tools paged details lost member ${required}\n${laterDetails}`);
-			}
-			if (laterDetails.includes("1. Read")) fail(`/tools paged details did not advance lazily\n${laterDetails}`);
 			command(["tmux", "send-keys", "-t", tmuxSession, "Escape"]);
 			await Bun.sleep(100);
 			command(["tmux", "send-keys", "-t", tmuxSession, "Escape"]);
@@ -258,23 +299,25 @@ export async function verifyToolsGroupingPty(options: {
 
 			send(tmuxSession, "/reload");
 			await waitForText(tmuxSession, "Reloaded keybindings, extensions");
-			successGroup(capture(tmuxSession));
+			const reloadedHistory = captureHistory(tmuxSession);
+			successGroup(reloadedHistory);
+			for (const required of ["Ran printf 'BASH_UI_ONE", "Ran printf BASH_UI_SECOND"]) {
+				if (!reloadedHistory.includes(required)) fail(`/reload lost ${required}\n${reloadedHistory}`);
+			}
 
 			await sendTurn(tmuxSession, "failure");
 			const failure = await waitForText(tmuxSession, "GROUP_FAILURE_DONE");
-			if (!normalized(failure).includes("Ran 1 command, read 1 file · 1 failed")) {
-				fail(`failure count was hidden by grouping\n${failure}`);
+			if (!normalized(failure).includes("Read 1 file") || !failure.includes("Ran printf FIXTURE_GROUP_ERROR")) {
+				fail(`standalone failure or neighboring read group was hidden\n${failure}`);
 			}
-			if (!failure.includes("└ Command exited with code 17")) {
-				fail(`first failure summary did not use the centered branch marker\n${failure}`);
+			if (!failure.includes("⎿ Error: Exit code 17")) {
+				fail(`Bash failure did not retain its explicit child outcome\n${failure}`);
 			}
-			if (failure.includes("⎿")) fail(`failure summary retained the bottom-aligned branch glyph\n${failure}`);
 			if (failure.includes("• Read input-工具.txt")) fail(`failure group leaked successful member rows\n${failure}`);
-			const unresolvedMarkerColor = markerColor(captureAnsiHistory(tmuxSession), "Ran 1 command, read 1 file");
+			const unresolvedMarkerColor = markerColor(captureAnsiHistory(tmuxSession), "Ran printf FIXTURE_GROUP_ERROR");
 			if (unresolvedMarkerColor === successfulMarkerColor) {
-				fail("mixed unresolved Activity Group retained the success color");
+				fail("failed Bash operation retained the success color");
 			}
-
 			await sendTurn(tmuxSession, "recovery");
 			const recovery = await waitForText(tmuxSession, "GROUP_RECOVERY_DONE");
 			if (!normalized(recovery).includes("Ran 2 commands · 1 failed")) {
@@ -286,13 +329,11 @@ export async function verifyToolsGroupingPty(options: {
 					`deterministically recovered Activity Group did not use the success color: expected ${JSON.stringify(successfulMarkerColor)}, received ${JSON.stringify(recoveredMarkerColor)}`,
 				);
 			}
-
 			await sendTurn(tmuxSession, "mutation");
 			const mutation = await waitForText(tmuxSession, "GROUP_MUTATION_DONE");
-			if (!normalized(mutation).includes("Ran 1 command, read 1 file")) {
-				fail(`consequential tools were not summarized in the Activity Group\n${mutation}`);
+			if (!normalized(mutation).includes("Read 1 file") || !mutation.includes("Ran printf mutation >")) {
+				fail(`consequential standalone Bash and neighboring reads were not rendered\n${mutation}`);
 			}
-			if (mutation.includes("printf mutation >")) fail(`compact mode leaked a mutation command\n${mutation}`);
 			if ((await readFile(join(temporaryDirectory, "bash-mutation-工具.txt"), "utf8")) !== "mutation") {
 				fail("consequential Bash did not preserve its filesystem effect");
 			}
@@ -323,8 +364,9 @@ export async function verifyToolsGroupingPty(options: {
 				fail(`permission rejection was not disclosed by the folded Activity Group\n${rejection}`);
 			}
 			if (!rejection.includes("rejected")) fail(`permission rejection omitted its issue line\n${rejection}`);
-			if (markerColor(captureAnsiHistory(tmuxSession), "Ran 1 command · 1 rejected") !== unresolvedMarkerColor) {
-				fail("rejected-only Activity Group did not retain warning color");
+			warningMarkerColor = markerColor(captureAnsiHistory(tmuxSession), "Ran 1 command · 1 rejected");
+			if (warningMarkerColor === successfulMarkerColor || warningMarkerColor === unresolvedMarkerColor) {
+				fail("rejected-only Activity Group did not use its warning color");
 			}
 
 			await sendTurn(tmuxSession, "cancellation");
@@ -333,7 +375,7 @@ export async function verifyToolsGroupingPty(options: {
 				fail(`cancelled activity was not disclosed by the folded Activity Group\n${cancellation}`);
 			}
 			if (!cancellation.includes("cancelled")) fail(`cancelled activity omitted its issue line\n${cancellation}`);
-			if (markerColor(captureAnsiHistory(tmuxSession), "Ran 1 command · 1 cancelled") !== unresolvedMarkerColor) {
+			if (markerColor(captureAnsiHistory(tmuxSession), "Ran 1 command · 1 cancelled") !== warningMarkerColor) {
 				fail("cancelled-only Activity Group did not retain warning color");
 			}
 
@@ -360,12 +402,12 @@ export async function verifyToolsGroupingPty(options: {
 
 			await sendTurn(tmuxSession, "completion");
 			const completionLaunch = await waitForText(tmuxSession, "GROUP_COMPLETION_DONE");
-			if (!normalized(completionLaunch).includes("Launched 1 background task")) {
-				fail(`background launch did not settle in its originating Activity Group\n${completionLaunch}`);
+			if (!completionLaunch.includes("Ran sleep 0.4; printf FIXTURE_BACKGROUND_COMPLETED")) {
+				fail(`background Bash launch did not retain its operation block\n${completionLaunch}`);
 			}
 			const completion = await waitForText(tmuxSession, 'Background command "completion fixture" completed');
-			if (!normalized(completion).includes("Launched 1 background task")) {
-				fail(`background completion reopened or replaced its historical Activity Group\n${completion}`);
+			if (!captureHistory(tmuxSession).includes("Ran sleep 0.4; printf FIXTURE_BACKGROUND_COMPLETED")) {
+				fail(`background completion removed its historical Bash operation block\n${completion}`);
 			}
 		} else if (scenario === "compaction") {
 			await Bun.sleep(250);
@@ -388,16 +430,13 @@ export async function verifyToolsGroupingPty(options: {
 			command(["tmux", "resize-window", "-t", tmuxSession, "-x", String(options.columns), "-y", "60"]);
 			await Bun.sleep(100);
 			const treeHistory = capture(tmuxSession);
-			if (
-				!normalized(treeHistory).includes(
-					"Updated 1 task, ran 1 command, searched 1 pattern, read 1 file, listed 1 directory",
-				)
-			) {
-				fail(`session_tree replay lost the Tool Activity Group\n${treeHistory}`);
+			const treeText = normalized(treeHistory);
+			for (const required of ["Searched 1 pattern, read 1 file, listed 1 directory", "Ran pwd", "Updated 1 task"]) {
+				if (!treeText.includes(required)) fail(`session_tree replay lost ${required}\n${treeHistory}`);
 			}
 		} else if (scenario === "resume") {
 			send(tmuxSession, "background");
-			await waitForText(tmuxSession, "running 1 command");
+			await waitForText(tmuxSession, "Running sleep 30");
 			await detachForegroundBash(tmuxSession);
 			backgroundBarrier(await waitForText(tmuxSession, "GROUP_BACKGROUND_DONE"));
 			command(["tmux", "kill-session", "-t", tmuxSession]);
@@ -436,7 +475,7 @@ export async function verifyToolsGroupingPty(options: {
 			)
 			.filter((entry) => entry.message?.role === "toolResult");
 		const expectedResults =
-			scenario === "lifecycle" ? 19 : scenario === "compaction" ? 6 : scenario === "resume" ? 10 : 5;
+			scenario === "lifecycle" ? 21 : scenario === "compaction" ? 6 : scenario === "resume" ? 10 : 5;
 		if (toolResults.length !== expectedResults) {
 			fail(
 				`grouping changed model-visible results: expected ${String(expectedResults)}, found ${String(toolResults.length)}`,
@@ -448,10 +487,13 @@ export async function verifyToolsGroupingPty(options: {
 				: scenario === "resume"
 					? ["input-工具.txt", "GROUP_SUCCESS_DONE", "GROUP_BACKGROUND_DONE"]
 					: ["input-工具.txt", "GROUP_SUCCESS_DONE"];
+		if (scenario === "lifecycle" && !transcript.includes("STRUCTURED_CODE_LINE")) {
+			fail("persisted transcript lost the structured Assistant fixture");
+		}
 		for (const required of requiredTranscriptText) {
 			if (!transcript.includes(required)) fail(`persisted transcript lost ${required}`);
 		}
-		for (const displayOnly of ["ctrl+o to expand", "Updated 1 task, ran 1 command"]) {
+		for (const displayOnly of ["ctrl+o to expand", "Searched 1 pattern, read 1 file", "• Ran pwd"]) {
 			if (transcript.includes(displayOnly))
 				fail(`display-only grouping leaked into persisted session data: ${displayOnly}`);
 		}

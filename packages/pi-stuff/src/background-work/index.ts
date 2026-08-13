@@ -6,6 +6,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, Key, matchesKey, Text } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
+import { TRANSCRIPT_MARKER } from "../conversation-ui/transcript.js";
 import { getCurrentWorkSources } from "./src/current-work.js";
 import { type BackgroundWorkOutcome, BackgroundWorkRuntime } from "./src/runtime.js";
 import { createTasksDialogView } from "./src/tasks-dialog.js";
@@ -41,7 +42,7 @@ function registerCompletionRenderer(pi: ExtensionAPI): void {
 		if (outcomes.length === 0) return new Text(theme.fg("dim", "Background work updated."), 0, 0);
 		const lines = outcomes.map((outcome) => {
 			const color = outcome.status === "completed" ? "success" : outcome.status === "stopped" ? "dim" : "error";
-			return `${theme.fg(color, "●")} ${theme.fg("muted", outcome.summary)}`;
+			return `${theme.fg(color, TRANSCRIPT_MARKER)} ${theme.fg("muted", outcome.summary)}`;
 		});
 		return new Text(lines.join("\n"), 0, 0);
 	});

@@ -92,12 +92,21 @@ works after slash text elsewhere in the input, while preserving Pi's native edit
 ### Live Thoughts
 
 Through Pi's public Markdown-transform hook, streaming and settled thinking are projected as one bounded row beginning
-with `✻ thoughts:`. Blank paragraphs, headings, list items, and standalone emphasis start a new semantic block; only
+with `\\* thoughts:`. Blank paragraphs, headings, list items, and standalone emphasis start a new semantic block; only
 the current block remains visible, so consecutive model thoughts replace the same row instead of accumulating on one
 line. Narrow rows preserve a readable action word and the newest tail without cutting into the middle of a word. The
 projection is display-only: the complete original Thinking remains in model context and session data. Pi Stuff fails
 clearly on an older Host that lacks this required rendering API instead of silently presenting a different UI. Keep
 Pi's native **Hide thinking blocks** setting disabled so the transformed live row is rendered.
+
+### Transcript markers
+
+Ordinary Suite-owned Conversation Transcript records use one small U+2022 `•` marker. This includes Assistant prose,
+Tool Activity, Agent outcomes, and Background Work outcomes; larger state dots remain reserved for interactive controls
+such as Fleetview, dialogs, Todo, MCP, diagnostics, and selection state. Every Assistant text message receives exactly
+one outer marker, including structured Markdown. Continuation paragraphs, headings, lists, quotes, tables, and fenced
+code stay inside that message-level body and retain their Markdown hierarchy. This projection is display-only and does
+not rewrite Assistant text, Session records, copy/export source, or provider context.
 
 ### Diagnostics
 

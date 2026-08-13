@@ -14,6 +14,7 @@ import {
 	readCurrentAgentWorkOrigin,
 	requestStatuslineGitRefreshAfterUserWork,
 } from "../../../conversation-ui/index.js";
+import { TRANSCRIPT_MARKER } from "../../../conversation-ui/transcript.js";
 import { registerSuiteOwnedTool } from "../../../tool-display/index.js";
 import { discoverAgents } from "../agents/agents.ts";
 import { createNativeSupervisorChannel } from "../intercom/native-supervisor-channel.ts";
@@ -1033,7 +1034,7 @@ export default function registerSubagentExtension(
 		const data = entry.data;
 		if (data?.version !== 1) return undefined;
 		const color = data.status === "completed" ? "success" : data.status === "failed" ? "error" : "muted";
-		return new Text(`${theme.fg(color, "●")} ${theme.fg("muted", completionOutcomeText(data))}`, 0, 0);
+		return new Text(`${theme.fg(color, TRANSCRIPT_MARKER)} ${theme.fg("muted", completionOutcomeText(data))}`, 0, 0);
 	});
 
 	const eventUnsubscribes: Array<() => void> = [];
