@@ -11,18 +11,21 @@ before they consume context. Pi's JSONL session remains the raw authority, and
 the Module falls back to Pi's native context path when the derived local store
 is unavailable before Magic takes ownership.
 
-The Capability exposes no floating UI, statusline entry, migration prompt, or
-second Todo authority. Magic Context's history, memory, search, notes, and
-Historian remain available behind this boundary. BTW receives the exact frozen
+The Capability exposes no upstream floating UI, statusline entry, migration
+prompt, or second Todo authority. Magic Context's history, memory, search,
+notes, and Historian remain available behind this boundary. Pi Stuff owns one
+`/ctx` command surface: its status and actions use the shared Command Dialog,
+and maintenance progress persists as model-invisible Context Activity. BTW
+receives the exact frozen
 Pi branch plus a bounded reference-only copy of project memory captured by the
 normal Magic turn; fresh Agents receive project memory only, while
 forked Agents may receive bounded parent history. Magic's own internal
 Historian process is not represented as a Pi Stuff Agent.
 
 The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.33.1`. The
-adapter suppresses the upstream Todo, statusline, announcement, and auxiliary
-UI surfaces while retaining the five Context tools and focused diagnostics.
-It also supplies a compact provider-facing behavior contract before the
+adapter suppresses the upstream Todo, statusline, announcement, command, and
+auxiliary UI surfaces while retaining the five maintenance handlers behind the
+Suite-owned `/ctx` dispatcher. It also supplies a compact provider-facing behavior contract before the
 official engine handles `before_agent_start`. The engine therefore keeps its
 own prompt-cache processing while skipping its much longer default guidance;
 history semantics, retrieval, reduction, memory, notes, and fail-open behavior

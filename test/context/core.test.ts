@@ -28,9 +28,19 @@ type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unkn
 type Handlers = Map<string, Handler[]>;
 const UI_RENDER_REQUEST_EVENT = "@jczhang02/pi-stuff-ui/render-request/v1";
 
+interface TestCommandDefinition {
+	readonly argumentHint?: string;
+	readonly description?: string;
+	readonly getArgumentCompletions?: (
+		prefix: string,
+	) => readonly { readonly description?: string; readonly label: string; readonly value: string }[] | null;
+	readonly handler?: (args: string, ctx: ExtensionContext) => unknown;
+}
+
 interface HostRegistrations {
 	commands: string[];
-	commandDefinitions?: Map<string, { readonly handler?: (args: string, ctx: ExtensionContext) => unknown }>;
+	commandDefinitions?: Map<string, TestCommandDefinition>;
+	entries?: Array<{ customType: string; data: unknown }>;
 	entryRenderers: string[];
 }
 
@@ -42,6 +52,9 @@ function apiFor(
 	let activeTools: string[] = [];
 	const eventBus = new Map<string, Array<(value: unknown) => void>>();
 	return {
+		appendEntry(customType: string, data: unknown): void {
+			registrations.entries?.push({ customType, data });
+		},
 		events: {
 			emit(name: string, value: unknown): void {
 				for (const listener of eventBus.get(name) ?? []) listener(value);
@@ -69,10 +82,7 @@ function apiFor(
 				if (!activeTools.includes(tool.name)) activeTools.push(tool.name);
 			} else tools[existing] = tool;
 		},
-		registerCommand(
-			name: string,
-			definition: { readonly handler?: (args: string, ctx: ExtensionContext) => unknown },
-		): void {
+		registerCommand(name: string, definition: TestCommandDefinition): void {
 			if (!registrations.commands.includes(name)) registrations.commands.push(name);
 			registrations.commandDefinitions?.set(name, definition);
 		},
@@ -577,7 +587,7 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		expect(handlers.get("context")).toBeUndefined();
 		expect(handlers.get("message_end")).toBeUndefined();
-		expect(registrations).toEqual({ commands: [], entryRenderers: [] });
+		expect(registrations).toEqual({ commands: ["ctx"], entryRenderers: ["pi-stuff-context-activity"] });
 		expect(tools.find((tool) => tool.name === "ctx_search")?.description).toContain("provider boundary");
 
 		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
@@ -585,7 +595,7 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "message_end", { type: "message_end" }, ctx);
 		expect(handlers.get("context")).toHaveLength(1);
 		expect(handlers.get("message_end")).toHaveLength(1);
-		expect(registrations).toEqual({ commands: [], entryRenderers: [] });
+		expect(registrations).toEqual({ commands: ["ctx"], entryRenderers: ["pi-stuff-context-activity"] });
 		expect(tools.find((tool) => tool.name === "ctx_search")?.description).toBe("Committed Magic search");
 		expect(staleMessageEnds).toBe(1);
 	});
@@ -612,16 +622,13 @@ describe("Context capability lifecycle", () => {
 		expect(reason).toBe("resume");
 	});
 
-	test("keeps only focused diagnostics and suppresses Magic's duplicate UI surfaces", async () => {
+	test("exposes one Context command, completes its subcommands, and suppresses upstream UI", async () => {
 		const handlers: Handlers = new Map();
 		const tools: ToolDefinition[] = [];
-		const commandDefinitions = new Map<
-			string,
-			{ readonly handler?: (args: string, ctx: ExtensionContext) => unknown }
-		>();
+		const commandDefinitions = new Map<string, TestCommandDefinition>();
 		const registrations: HostRegistrations = { commands: [], commandDefinitions, entryRenderers: [] };
 		const uiCalls: string[] = [];
-		let statusHasUi: unknown;
+		const commandCalls: string[] = [];
 		piStuffContext(apiFor(handlers, tools, registrations), {
 			loadMagicContext: async () => ({
 				default: async (magicApi: ExtensionAPI) => {
@@ -645,12 +652,11 @@ describe("Context capability lifecycle", () => {
 						"ctx-dream",
 					]) {
 						magicApi.registerCommand(name, {
-							handler: async (_args, ctx) => {
-								if (name === "ctx-status") {
-									statusHasUi = ctx.hasUI;
-									ctx.ui.setStatus("magic", "duplicate");
-									ctx.ui.notify("diagnostic");
-								}
+							handler: async (args, ctx) => {
+								commandCalls.push(`${name}:${args}`);
+								ctx.ui.setStatus("magic", "duplicate");
+								ctx.ui.notify("diagnostic");
+								await ctx.ui.custom(async () => ({ invalidate: () => {}, render: () => [] }));
 							},
 						});
 					}
@@ -669,7 +675,12 @@ describe("Context capability lifecycle", () => {
 		const ctx = {
 			...context(),
 			hasUI: true,
+			mode: "tui",
 			ui: {
+				custom: () => {
+					uiCalls.push("custom");
+					return Promise.resolve(undefined);
+				},
 				notify: (message: string) => uiCalls.push(`notify:${message}`),
 				setFooter: () => uiCalls.push("footer"),
 				setHeader: () => uiCalls.push("header"),
@@ -678,24 +689,168 @@ describe("Context capability lifecycle", () => {
 			},
 		} as unknown as ExtensionContext;
 
+		expect(registrations.commands).toEqual(["ctx"]);
+		const command = commandDefinitions.get("ctx");
+		expect(command?.description).toBe(
+			"Inspect and maintain Context · status | flush | wrapup [N] | recomp [start-end] | upgrade",
+		);
+		expect(command?.getArgumentCompletions?.("")).toEqual([
+			{ description: "Open Context status and actions", label: "status", value: "status" },
+			{ description: "Apply queued drops on the next message", label: "flush", value: "flush" },
+			{ description: "Compact older history; keep 20 messages by default", label: "wrapup", value: "wrapup" },
+			{ description: "Rebuild compartments from raw history", label: "recomp", value: "recomp" },
+			{ description: "Upgrade legacy session history and memories", label: "upgrade", value: "upgrade" },
+		]);
+		expect(command?.getArgumentCompletions?.("wr")).toEqual([
+			{ description: "Compact older history; keep 20 messages by default", label: "wrapup", value: "wrapup" },
+		]);
+		await command?.handler?.("constructor", ctx);
+		expect(uiCalls).toEqual(["notify:Usage: /ctx [status|flush|wrapup [N]|recomp [start-end]|upgrade]"]);
+		uiCalls.length = 0;
+
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		await command?.handler?.("wrapup 30", ctx);
 
+		expect(commandCalls).toEqual(["ctx-wrapup:30"]);
 		expect(uiCalls).toEqual([]);
-		expect(registrations.commands).toEqual([
-			"ctx-status",
-			"ctx-flush",
-			"ctx-recomp",
-			"ctx-wrapup",
-			"ctx-session-upgrade",
-		]);
-		expect(registrations.entryRenderers).toEqual(["ctx-status"]);
+		expect(registrations.commands).toEqual(["ctx"]);
+		expect(registrations.entryRenderers).toEqual(["pi-stuff-context-activity"]);
 		expect(tools.some((tool) => tool.name === "todowrite")).toBeFalse();
+	});
 
-		await commandDefinitions.get("ctx-status")?.handler?.("", ctx);
-		expect(statusHasUi).toBeFalse();
-		expect(uiCalls).toEqual(["notify:diagnostic"]);
+	test("reports unavailable maintenance through a Pi Stuff activity", async () => {
+		const handlers: Handlers = new Map();
+		const commandDefinitions = new Map<string, TestCommandDefinition>();
+		const entries: Array<{ customType: string; data: unknown }> = [];
+		const registrations: HostRegistrations = {
+			commands: [],
+			commandDefinitions,
+			entries,
+			entryRenderers: [],
+		};
+		piStuffContext(apiFor(handlers, [], registrations), {
+			loadMagicContext: async () => {
+				throw new Error("Magic module unavailable");
+			},
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await commandDefinitions.get("ctx")?.handler?.("flush", ctx);
+
+		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+			"applying queued drops",
+			"unavailable",
+		]);
+		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("error");
+		expect(Reflect.get(entries.at(-1)?.data as object, "detail")).toBe("Magic module unavailable");
+	});
+
+	test("executes a rebuild confirmed in the Context dialog without asking the user to repeat the command", async () => {
+		const handlers: Handlers = new Map();
+		const commandDefinitions = new Map<string, TestCommandDefinition>();
+		const entries: Array<{ customType: string; data: unknown }> = [];
+		const registrations: HostRegistrations = {
+			commands: [],
+			commandDefinitions,
+			entries,
+			entryRenderers: [],
+		};
+		let recompCalls = 0;
+		const api = apiFor(handlers, [], registrations);
+		await piStuffContext(api, {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.registerCommand("ctx-status", {
+						handler: async () => {
+							magicApi.appendEntry("ctx-status", {
+								details: {
+									activeTags: 0,
+									compartmentCount: 0,
+									droppedTags: 0,
+									historian: { inProgress: false },
+									memoryCount: 0,
+									noteCount: 0,
+									pendingOps: 0,
+								},
+								level: "info",
+								text: "## Magic Status\n\n### Cache TTL\n- Remaining: 5m",
+								title: "/ctx-status",
+							});
+						},
+					});
+					magicApi.registerCommand("ctx-recomp", {
+						handler: async (args) => {
+							recompCalls++;
+							magicApi.appendEntry("ctx-status", {
+								level: recompCalls === 1 ? "warning" : "info",
+								text:
+									recompCalls === 1
+										? "## Recomp Confirmation Required\n\nRun the same command again within 60 seconds."
+										: `## Magic Recomp\n\nPartial recomp started for range ${args}.`,
+								title: "/ctx-recomp",
+							});
+						},
+					});
+				},
+			}),
+		});
+		const theme = {
+			bold: (value: string) => value,
+			fg: (_color: string, value: string) => value,
+		};
+		const ctx = {
+			...context(),
+			getContextUsage: () => ({ contextWindow: 200_000, percent: 5, tokens: 10_000 }),
+			hasUI: true,
+			mode: "tui",
+			ui: {
+				custom: <Result>(
+					factory: (
+						tui: unknown,
+						themeValue: unknown,
+						keybindings: unknown,
+						done: (result: Result) => void,
+					) => { handleInput?: (data: string) => void },
+				) =>
+					new Promise<Result>((resolve) => {
+						const component = factory(
+							{ requestRender: () => undefined, terminal: { rows: 28 } },
+							theme,
+							{},
+							(result) => resolve(result),
+						);
+						queueMicrotask(() => {
+							component.handleInput?.("\u001b[B");
+							component.handleInput?.("\u001b[B");
+							component.handleInput?.("\r");
+							component.handleInput?.("\u001b[B");
+							component.handleInput?.("\r");
+							component.handleInput?.("1-500");
+							component.handleInput?.("\r");
+							component.handleInput?.("\u001b[B");
+							component.handleInput?.("\r");
+						});
+					}),
+				getEditorText: () => "saved draft",
+				notify: () => undefined,
+				setEditorText: () => undefined,
+				setFooter: () => undefined,
+				setWorkingVisible: () => undefined,
+			},
+		} as unknown as ExtensionContext;
+
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await commandDefinitions.get("ctx")?.handler?.("", ctx);
+
+		expect(recompCalls).toBe(2);
+		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+			"rebuilding range 1-500",
+			"confirmation required",
+			"rebuilding range 1-500",
+		]);
 	});
 
 	test("keeps Magic's internal Historian agent native and recursion-free", async () => {
@@ -734,6 +889,254 @@ describe("Context capability lifecycle", () => {
 		expect(search?.renderCall).toBeFunction();
 		expect(search?.renderResult).toBeFunction();
 		expect(api.getActiveTools()).toContain("ctx_search");
+	});
+
+	test("adapts command progress into one model-hidden Pi Stuff activity", async () => {
+		const handlers: Handlers = new Map();
+		const commandDefinitions = new Map<string, TestCommandDefinition>();
+		const entries: Array<{ customType: string; data: unknown }> = [];
+		const registrations: HostRegistrations = {
+			commands: [],
+			commandDefinitions,
+			entries,
+			entryRenderers: [],
+		};
+		piStuffContext(apiFor(handlers, [], registrations), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.registerCommand("ctx-wrapup", {
+						handler: async () => {
+							for (const details of [
+								{
+									level: "info",
+									text: "## Magic Wrapup\n\nEligible history is about 12,000 tokens.",
+									title: "/ctx-wrapup",
+								},
+								{
+									level: "success",
+									text: "## Magic Wrapup\n\nWrapped up 84 messages into 3 compartments.",
+									title: "/ctx-wrapup",
+								},
+							]) {
+								magicApi.appendEntry("ctx-status", details);
+							}
+						},
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await commandDefinitions.get("ctx")?.handler?.("wrapup 20", ctx);
+
+		expect(registrations.entryRenderers).toEqual(["pi-stuff-context-activity"]);
+		expect(entries).toHaveLength(3);
+		expect(entries.every((entry) => entry.customType === "pi-stuff-context-activity")).toBeTrue();
+		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+			"keeping 20 recent messages",
+			"planning history compaction",
+			"wrapped up 84 messages into 3 compartments",
+		]);
+		expect(entries.map((entry) => Reflect.get(entry.data as object, "kind"))).toEqual(["anchor", "update", "update"]);
+	});
+
+	test("routes detached maintenance completion back to its running activity", async () => {
+		const handlers: Handlers = new Map();
+		const commandDefinitions = new Map<string, TestCommandDefinition>();
+		const entries: Array<{ customType: string; data: unknown }> = [];
+		const registrations: HostRegistrations = {
+			commands: [],
+			commandDefinitions,
+			entries,
+			entryRenderers: [],
+		};
+		let finishRecomp: (() => void) | undefined;
+		piStuffContext(apiFor(handlers, [], registrations), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.registerCommand("ctx-recomp", {
+						handler: async () => {
+							magicApi.appendEntry("ctx-status", {
+								level: "info",
+								text: "## Magic Recomp\n\nHistorian recomp started.",
+								title: "/ctx-recomp",
+							});
+							finishRecomp = () =>
+								magicApi.appendEntry("ctx-status", {
+									level: "success",
+									text: "## Magic Recomp — Complete\n\nPersisted 4 compartments from 2 successful passes.",
+									title: "/ctx-recomp",
+								});
+						},
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await commandDefinitions.get("ctx")?.handler?.("recomp", ctx);
+
+		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+			"preparing full rebuild",
+			"rebuilding compartments",
+		]);
+		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("running");
+
+		finishRecomp?.();
+		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+			"preparing full rebuild",
+			"rebuilding compartments",
+			"rebuilt 4 compartments",
+		]);
+		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("success");
+	});
+
+	test("does not route detached maintenance updates into a different Session", async () => {
+		const handlers: Handlers = new Map();
+		const commandDefinitions = new Map<string, TestCommandDefinition>();
+		const entries: Array<{ customType: string; data: unknown }> = [];
+		const registrations: HostRegistrations = {
+			commands: [],
+			commandDefinitions,
+			entries,
+			entryRenderers: [],
+		};
+		let recompCalls = 0;
+		let finishRecomp: (() => void) | undefined;
+		piStuffContext(apiFor(handlers, [], registrations), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.registerCommand("ctx-recomp", {
+						handler: async () => {
+							recompCalls++;
+							magicApi.appendEntry("ctx-status", {
+								level: "info",
+								text: "## Magic Recomp\n\nHistorian recomp started.",
+								title: "/ctx-recomp",
+							});
+							finishRecomp = () =>
+								magicApi.appendEntry("ctx-status", {
+									level: "success",
+									text: "## Magic Recomp — Complete\n\nPersisted 4 compartments from 2 successful passes.",
+									title: "/ctx-recomp",
+								});
+						},
+					});
+				},
+			}),
+		});
+		const firstCtx = context([], "/workspace/first", "session-first");
+		const secondCtx = context([], "/workspace/second", "session-second");
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, firstCtx);
+		await commandDefinitions.get("ctx")?.handler?.("recomp", firstCtx);
+		expect(recompCalls).toBe(1);
+
+		await emit(handlers, "session_before_switch", { type: "session_before_switch", reason: "resume" }, firstCtx);
+		await emit(handlers, "session_start", { type: "session_start", reason: "resume" }, secondCtx);
+		await commandDefinitions.get("ctx")?.handler?.("recomp", secondCtx);
+		expect(recompCalls).toBe(1);
+		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+			"preparing full rebuild",
+			"rebuilding compartments",
+			"continuing after Session switch",
+			"preparing full rebuild",
+			"already running in another session",
+		]);
+
+		finishRecomp?.();
+		expect(entries).toHaveLength(5);
+		await commandDefinitions.get("ctx")?.handler?.("recomp", secondCtx);
+		expect(recompCalls).toBe(2);
+	});
+
+	test("releases detached maintenance ownership when its handler rejects", async () => {
+		const handlers: Handlers = new Map();
+		const commandDefinitions = new Map<string, TestCommandDefinition>();
+		const entries: Array<{ customType: string; data: unknown }> = [];
+		const registrations: HostRegistrations = {
+			commands: [],
+			commandDefinitions,
+			entries,
+			entryRenderers: [],
+		};
+		let recompCalls = 0;
+		let rejectRecomp: ((error: Error) => void) | undefined;
+		piStuffContext(apiFor(handlers, [], registrations), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.registerCommand("ctx-recomp", {
+						handler: async () => {
+							recompCalls++;
+							if (recompCalls > 1) return;
+							magicApi.appendEntry("ctx-status", {
+								level: "info",
+								text: "## Magic Recomp\n\nHistorian recomp started.",
+								title: "/ctx-recomp",
+							});
+							await new Promise<void>((_resolve, reject) => {
+								rejectRecomp = reject;
+							});
+						},
+					});
+				},
+			}),
+		});
+		const firstCtx = context([], "/workspace/first", "session-first");
+		const secondCtx = context([], "/workspace/second", "session-second");
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, firstCtx);
+		const firstCommand = commandDefinitions.get("ctx")?.handler?.("recomp", firstCtx);
+		await Bun.sleep(0);
+		await emit(handlers, "session_before_switch", { type: "session_before_switch", reason: "resume" }, firstCtx);
+		await emit(handlers, "session_start", { type: "session_start", reason: "resume" }, secondCtx);
+		rejectRecomp?.(new Error("historian unavailable"));
+		await firstCommand;
+
+		await commandDefinitions.get("ctx")?.handler?.("recomp", secondCtx);
+		expect(recompCalls).toBe(2);
+		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+			"preparing full rebuild",
+			"rebuilding compartments",
+			"continuing after Session switch",
+			"preparing full rebuild",
+		]);
+	});
+
+	test("settles an unexpected maintenance failure into the same activity", async () => {
+		const handlers: Handlers = new Map();
+		const commandDefinitions = new Map<string, TestCommandDefinition>();
+		const entries: Array<{ customType: string; data: unknown }> = [];
+		const registrations: HostRegistrations = {
+			commands: [],
+			commandDefinitions,
+			entries,
+			entryRenderers: [],
+		};
+		piStuffContext(apiFor(handlers, [], registrations), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.registerCommand("ctx-flush", {
+						handler: async () => {
+							throw new Error("database unavailable");
+						},
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		await commandDefinitions.get("ctx")?.handler?.("flush", ctx);
+
+		expect(entries).toHaveLength(2);
+		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+			"applying queued drops",
+			"failed",
+		]);
+		expect(Reflect.get(entries[1]?.data as object, "detail")).toBe("database unavailable");
 	});
 
 	test("does not widen a tool policy changed after session start", async () => {

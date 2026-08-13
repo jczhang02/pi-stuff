@@ -25,6 +25,9 @@
   keep configuration creation and migration user-triggered, acknowledge direct input without synthetic frame waits,
   cache an unchanged generated Suite runtime across `/reload`, and certify startup, reload, exit, first-turn,
   steady-state prompt, and resource ceilings with isolated real-Pi benchmarks.
+- Unify Magic Context maintenance behind one discoverable `/ctx` command. Add a Suite-owned status and action dialog,
+  nested argument and confirmation flows, and model-invisible Session-backed Context Activity while keeping upstream
+  global UI isolated.
 
 ## 0.3.3
 

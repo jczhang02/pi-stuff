@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import type { Component, KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import { type Component, type Focusable, isFocusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
 import {
 	AgentRunOriginTracker,
 	listenForActiveAgentWorkUserPromotions,
@@ -104,6 +104,11 @@ export interface CommandDialogView<Result = void> {
 	create(context: CommandDialogViewContext<Result>): CommandDialogComponent;
 }
 
+export interface CommandDialogShowOptions {
+	/** Restore the editor text captured before the dialog opened. Defaults to true. */
+	readonly restoreDraft?: boolean;
+}
+
 export interface CommandDialogCoordinator {
 	registerChrome(id: string, chrome: CommandDialogChrome): () => void;
 	/** Add a Suite-owned region after the primary Statusline Footer. */
@@ -111,7 +116,11 @@ export interface CommandDialogCoordinator {
 	/** Report whether this TUI context is currently hosted by the shared Footer. */
 	hasInstalledFooter?(ctx: ExtensionContext): boolean;
 	setWorkingVisible(ctx: ExtensionContext, visible: boolean): void;
-	show<Result = void>(ctx: ExtensionContext, view: CommandDialogView<Result>): Promise<Result | undefined>;
+	show<Result = void>(
+		ctx: ExtensionContext,
+		view: CommandDialogView<Result>,
+		options?: CommandDialogShowOptions,
+	): Promise<Result | undefined>;
 	whenIdle(): Promise<void>;
 }
 
@@ -161,6 +170,7 @@ interface HostRun {
 	readonly finished: Deferred<void>;
 	readonly normal: DialogRequest[];
 	readonly pendingSettlements: Array<{ readonly outcome: RequestOutcome; readonly request: DialogRequest }>;
+	readonly restoreDraft: boolean;
 	readonly suppressedChrome: Set<ChromeRecord>;
 	closeHost: (() => void) | undefined;
 	closeHostCalled: boolean;
@@ -233,8 +243,9 @@ class FooterStackComponent implements Component {
 	}
 }
 
-class CommandDialogHost implements Component {
+class CommandDialogHost implements Component, Focusable {
 	private readonly coordinator: CommandDialogCoordinatorImplementation;
+	private _focused = false;
 	private readonly keybindings: KeybindingsManager;
 	private readonly run: HostRun;
 	private readonly theme: Theme;
@@ -256,6 +267,16 @@ class CommandDialogHost implements Component {
 
 	get wantsKeyRelease(): boolean {
 		return this.activeComponent().wantsKeyRelease ?? false;
+	}
+
+	get focused(): boolean {
+		return this._focused;
+	}
+
+	set focused(value: boolean) {
+		this._focused = value;
+		const component = this.activeComponent();
+		if (isFocusable(component)) component.focused = value;
 	}
 
 	activate(): void {
@@ -284,7 +305,9 @@ class CommandDialogHost implements Component {
 	}
 
 	private activeComponent(): CommandDialogComponent {
-		return this.coordinator.mountActiveRequest(this.run, this, this.tui, this.theme, this.keybindings);
+		const component = this.coordinator.mountActiveRequest(this.run, this, this.tui, this.theme, this.keybindings);
+		if (isFocusable(component)) component.focused = this._focused;
+		return component;
 	}
 }
 
@@ -383,7 +406,11 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		if (!this.runOwnsUi()) ctx.ui.setWorkingVisible(visible);
 	}
 
-	show<Result = void>(ctx: ExtensionContext, view: CommandDialogView<Result>): Promise<Result | undefined> {
+	show<Result = void>(
+		ctx: ExtensionContext,
+		view: CommandDialogView<Result>,
+		options: CommandDialogShowOptions = {},
+	): Promise<Result | undefined> {
 		if (ctx.mode !== "tui") return Promise.resolve(undefined);
 		if (!this.accepting) return Promise.resolve(undefined);
 		if (view.priority !== "normal" && view.priority !== "blocking") {
@@ -395,7 +422,7 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		if (activeRun && (activeRun.state === "closing" || activeRun.state === "closed" || activeRun.ctx.ui !== ctx.ui)) {
 			return activeRun.finished.promise.then(() => {
 				if (!this.accepting || this.generation !== generation) return undefined;
-				return this.show(ctx, view);
+				return this.show(ctx, view, options);
 			});
 		}
 
@@ -406,7 +433,7 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 			return promise;
 		}
 
-		const run = createHostRun(ctx);
+		const run = createHostRun(ctx, options);
 		this.activeRun = run;
 		this.enqueue(run, request);
 		void this.openRun(run);
@@ -529,8 +556,10 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 
 	private async openRun(run: HostRun): Promise<void> {
 		try {
-			run.draft = run.ctx.ui.getEditorText();
-			run.draftCaptured = true;
+			if (run.restoreDraft) {
+				run.draft = run.ctx.ui.getEditorText();
+				run.draftCaptured = true;
+			}
 			run.ctx.ui.setEditorText("");
 			run.ctx.ui.setFooter(() => new EmptyComponent());
 			run.ctx.ui.setWorkingVisible(false);
@@ -1041,7 +1070,7 @@ function createDialogRequest<Result>(view: CommandDialogView<Result>): {
 	return { promise: completion.promise, request };
 }
 
-function createHostRun(ctx: ExtensionContext): HostRun {
+function createHostRun(ctx: ExtensionContext, options: CommandDialogShowOptions): HostRun {
 	return {
 		blocking: [],
 		closeHost: undefined,
@@ -1053,6 +1082,7 @@ function createHostRun(ctx: ExtensionContext): HostRun {
 		host: undefined,
 		normal: [],
 		pendingSettlements: [],
+		restoreDraft: options.restoreDraft !== false,
 		state: "opening",
 		suppressedChrome: new Set(),
 	};

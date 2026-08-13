@@ -12,6 +12,7 @@ import { getAgentDir, SettingsManager, sessionEntryToContextMessages } from "@ea
 import { Type } from "typebox";
 import {
 	beginSuiteNativeCompactionPreflight,
+	getCommandDialogCoordinator,
 	getHostSharedResource,
 	hasDirectUserActivation,
 	registerSuiteAgentMessagePreparation,
@@ -26,7 +27,24 @@ import {
 	type SuiteToolPresentation,
 	singleActivity,
 } from "../tool-display/index.js";
+import {
+	CONTEXT_ACTIVITY_ENTRY_TYPE,
+	ContextActivityRegistry,
+	type ContextOperation,
+	contextActivityUpdateFromMagic,
+	failedContextActivity,
+	initialContextActivitySummary,
+	isContextActivityRunning,
+	isContextActivitySettled,
+} from "./activity.js";
 import { type MagicContextPreparation, type MagicContextPreparationOptions, prepareMagicContext } from "./config.js";
+import {
+	type ContextDialogCommand,
+	type ContextDialogSnapshot,
+	createContextDialogView,
+	type MagicStatusMessage,
+	statusSnapshotFromMagic,
+} from "./dialog.js";
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
@@ -58,7 +76,37 @@ const MAGIC_TOOL_LABELS: Readonly<Record<string, string>> = {
 const MAGIC_TOOL_NAMES = Object.keys(MAGIC_TOOL_LABELS);
 const MAGIC_TOOL_NAME_SET = new Set(MAGIC_TOOL_NAMES);
 const MAGIC_COMMAND_NAMES = new Set(["ctx-flush", "ctx-recomp", "ctx-session-upgrade", "ctx-status", "ctx-wrapup"]);
-const MAGIC_QUIET_UI_METHODS = new Set(["setFooter", "setHeader", "setStatus", "setWidget"]);
+const MAGIC_QUIET_UI_METHODS = new Set(["custom", "setFooter", "setHeader", "setStatus", "setWidget"]);
+const CONTEXT_COMMAND_USAGE = "/ctx [status|flush|wrapup [N]|recomp [start-end]|upgrade]";
+const CONTEXT_SUBCOMMANDS = [
+	{ description: "Open Context status and actions", label: "status", value: "status" },
+	{ description: "Apply queued drops on the next message", label: "flush", value: "flush" },
+	{
+		description: "Compact older history; keep 20 messages by default",
+		label: "wrapup",
+		value: "wrapup",
+	},
+	{ description: "Rebuild compartments from raw history", label: "recomp", value: "recomp" },
+	{
+		description: "Upgrade legacy session history and memories",
+		label: "upgrade",
+		value: "upgrade",
+	},
+] as const;
+const CONTEXT_COMMAND_NAMES = {
+	flush: "ctx-flush",
+	recomp: "ctx-recomp",
+	status: "ctx-status",
+	upgrade: "ctx-session-upgrade",
+	wrapup: "ctx-wrapup",
+} as const;
+const CONTEXT_BACKGROUND_OPERATIONS = new Set<ContextOperation>(["recomp", "upgrade"]);
+const CONTEXT_OPERATION_BY_MAGIC_TITLE: Readonly<Record<string, ContextOperation>> = {
+	"/ctx-flush": "flush",
+	"/ctx-recomp": "recomp",
+	"/ctx-session-upgrade": "upgrade",
+	"/ctx-wrapup": "wrapup",
+};
 const MAGIC_TOOL_HANDOFF_PARAMETERS = Type.Object({}, { additionalProperties: true });
 
 type LooseEventHandler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
@@ -100,7 +148,16 @@ type MagicContextHandler = (
 ) => ContextEventResult | undefined | Promise<ContextEventResult | undefined>;
 type MagicFactory = (pi: ExtensionAPI) => unknown | Promise<unknown>;
 type MagicModule = { default: MagicFactory };
-type DeferredRegistration = () => void;
+interface MagicCommandDefinition {
+	readonly handler?: (args: string, ctx: ExtensionContext) => unknown | Promise<unknown>;
+	readonly [key: string]: unknown;
+}
+
+interface ContextActivityTarget {
+	readonly id: string;
+	readonly operation: ContextOperation;
+	readonly sessionId: string;
+}
 
 interface MagicModuleSource {
 	invalidate(): void;
@@ -123,8 +180,8 @@ interface StagedMagicHandler {
 }
 
 interface MagicRegistrationPlan {
+	readonly commands: Map<string, MagicCommandDefinition>;
 	readonly handlers: StagedMagicHandler[];
-	readonly registrations: DeferredRegistration[];
 	readonly tools: ToolDefinition[];
 	contextHandler?: MagicContextHandler;
 	shutdownComplete: boolean;
@@ -613,12 +670,13 @@ function quietMagicContext(ctx: ExtensionContext, notifications = false): Extens
 }
 
 function magicCommandContext(name: string, ctx: ExtensionContext): ExtensionContext {
-	const quiet = quietMagicContext(ctx, true);
+	const quiet = quietMagicContext(ctx);
 	if (name !== "ctx-status") return quiet;
 	return new Proxy(quiet, {
 		get(target, property, receiver) {
-			// The official status command otherwise opens a centered overlay. Pi
-			// Stuff selects its model-invisible inline renderer instead.
+			// The official status command otherwise owns its own centered overlay.
+			// Pi Stuff asks for the non-UI status payload and renders it in the
+			// shared Command Dialog instead.
 			if (property === "hasUI") return false;
 			const value = Reflect.get(target, property, receiver) as unknown;
 			return typeof value === "function" ? value.bind(target) : value;
@@ -751,6 +809,13 @@ class ContextCapabilityRuntime implements ContextCapability {
 	private cleanup: Promise<void> | undefined;
 	private sessionStartQueue: Promise<void> | undefined;
 	private generation = 0;
+	private activeCommandActivity: ContextActivityTarget | undefined;
+	private readonly backgroundCommandActivities = new Map<ContextOperation, ContextActivityTarget>();
+	private readonly detachedCommandActivities = new Set<string>();
+	private readonly activities: ContextActivityRegistry;
+	private capturedStatusMessage: MagicStatusMessage | undefined;
+	private capturingStatus = false;
+	private readonly magicCommands = new Map<string, MagicCommandDefinition>();
 	private magicContextHandler: MagicContextHandler | undefined;
 	private readonly magicTools = new Map<string, ToolDefinition>();
 	private magicSessionStartHandlers: LooseEventHandler[] = [];
@@ -772,6 +837,13 @@ class ContextCapabilityRuntime implements ContextCapability {
 
 	constructor(pi: ExtensionAPI, dependencies: ContextRuntimeDependencies, registry: ContextCapabilityRegistry) {
 		this.pi = pi;
+		this.activities = new ContextActivityRegistry(() => {
+			try {
+				pi.events.emit("@jczhang02/pi-stuff-ui/render-request/v1", undefined);
+			} catch {
+				// Activity persistence must not depend on an interactive renderer.
+			}
+		});
 		this.dependencies = dependencies;
 		this.registry = registry;
 		this.owner = ownerKey(pi);
@@ -793,6 +865,189 @@ class ContextCapabilityRuntime implements ContextCapability {
 		// event will repopulate this cache before tools run; retaining the previous
 		// turn's projection could otherwise omit the user's newest decision.
 		this.projections.clear();
+	}
+
+	async dispatchCommand(raw: string, ctx: ExtensionContext): Promise<void> {
+		const input = raw.trim();
+		const separator = input.search(/\s/u);
+		const requested = (separator < 0 ? input : input.slice(0, separator)).toLowerCase() || "status";
+		const args = separator < 0 ? "" : input.slice(separator).trim();
+		if (!Object.hasOwn(CONTEXT_COMMAND_NAMES, requested)) {
+			ctx.ui.notify(`Usage: ${CONTEXT_COMMAND_USAGE}`, "warning");
+			return;
+		}
+		await this.activate(ctx, "input");
+		const operation = requested as keyof typeof CONTEXT_COMMAND_NAMES;
+		if (operation === "status") {
+			await this.showStatusDialog(ctx);
+			return;
+		}
+		await this.runMaintenanceCommand(operation, args, ctx);
+	}
+
+	private async runMaintenanceCommand(
+		operation: ContextOperation,
+		args: string,
+		ctx: ExtensionContext,
+		options: { readonly confirmed?: boolean } = {},
+	): Promise<void> {
+		const name = CONTEXT_COMMAND_NAMES[operation];
+		const sessionId = ctx.sessionManager.getSessionId();
+		const handler = this.magicCommands.get(name)?.handler;
+		if (!handler) {
+			const activity = this.activities.create(operation, initialContextActivitySummary(operation, args));
+			const target = { id: activity.id, operation, sessionId };
+			this.appendContextActivity(target, activity);
+			const update = this.activities.update(activity.id, {
+				detail: this.state.error ?? "Magic Context is unavailable; Pi native context remains active.",
+				state: "error",
+				summary: "unavailable",
+			});
+			this.appendContextActivity(target, update);
+			return;
+		}
+		const running = this.backgroundCommandActivities.get(operation);
+		if (running) {
+			const activity = this.activities.create(operation, initialContextActivitySummary(operation, args));
+			const target = { id: activity.id, operation, sessionId };
+			this.appendContextActivity(target, activity);
+			const elsewhere = running.sessionId === sessionId ? "" : " in another Session";
+			const update = this.activities.update(activity.id, {
+				detail: `A Context ${operation} operation is already running${elsewhere}. Wait for it to finish before starting another.`,
+				state: "warning",
+				summary: `already running${elsewhere.toLowerCase()}`,
+			});
+			this.appendContextActivity(target, update);
+			return;
+		}
+		const activity = this.activities.create(operation, initialContextActivitySummary(operation, args));
+		const target = { id: activity.id, operation, sessionId };
+		this.activeCommandActivity = target;
+		if (CONTEXT_BACKGROUND_OPERATIONS.has(operation)) this.backgroundCommandActivities.set(operation, target);
+		this.appendContextActivity(target, activity);
+		try {
+			await handler(args, magicCommandContext(name, ctx));
+			const firstResult = this.activities.get(activity.id);
+			if (
+				operation === "recomp" &&
+				options.confirmed === true &&
+				firstResult?.state === "warning" &&
+				firstResult.summary === "confirmation required"
+			) {
+				await handler(args, magicCommandContext(name, ctx));
+			}
+			const current = this.activities.get(activity.id);
+			if (current && isContextActivityRunning(current) && !CONTEXT_BACKGROUND_OPERATIONS.has(operation)) {
+				const update = this.activities.update(activity.id, {
+					detail: current.detail,
+					state: "success",
+					summary: "complete",
+				});
+				this.appendContextActivity(target, update);
+			}
+		} catch (error) {
+			const update = this.activities.update(activity.id, failedContextActivity(error));
+			this.appendContextActivity(target, update);
+			if (this.backgroundCommandActivities.get(operation)?.id === activity.id) {
+				this.backgroundCommandActivities.delete(operation);
+				this.detachedCommandActivities.delete(activity.id);
+			}
+		} finally {
+			if (this.activeCommandActivity?.id === activity.id) this.activeCommandActivity = undefined;
+			if (
+				CONTEXT_BACKGROUND_OPERATIONS.has(operation) &&
+				isContextActivitySettled(this.activities.get(activity.id)) &&
+				!this.detachedCommandActivities.has(activity.id) &&
+				this.backgroundCommandActivities.get(operation)?.id === activity.id
+			) {
+				this.backgroundCommandActivities.delete(operation);
+			}
+		}
+	}
+
+	private appendContextActivity(target: ContextActivityTarget, data: unknown): void {
+		let currentSessionId: string | undefined;
+		try {
+			currentSessionId = this.sessionContext?.sessionManager.getSessionId();
+		} catch {
+			// A stale Host context must not route an Activity into an unknown Session.
+		}
+		if (currentSessionId === target.sessionId) this.pi.appendEntry(CONTEXT_ACTIVITY_ENTRY_TYPE, data);
+	}
+
+	detachBackgroundActivities(ctx: ExtensionContext): void {
+		let sessionId: string;
+		try {
+			sessionId = ctx.sessionManager.getSessionId();
+		} catch {
+			return;
+		}
+		for (const target of this.backgroundCommandActivities.values()) {
+			if (target.sessionId !== sessionId || this.detachedCommandActivities.has(target.id)) continue;
+			const current = this.activities.get(target.id);
+			if (!current || isContextActivitySettled(current)) continue;
+			this.detachedCommandActivities.add(target.id);
+			const update = this.activities.update(target.id, {
+				detail:
+					"The operation continues in the background, but Pi Stuff cannot attach later display updates after leaving this Session. Open /ctx when you return to inspect the current state.",
+				state: "warning",
+				summary: "continuing after Session switch",
+			});
+			this.pi.appendEntry(CONTEXT_ACTIVITY_ENTRY_TYPE, update);
+		}
+	}
+
+	private async showStatusDialog(ctx: ExtensionContext): Promise<void> {
+		if (ctx.mode !== "tui" || !ctx.hasUI) {
+			ctx.ui.notify("The Context dialog is available in interactive TUI sessions.", "warning");
+			return;
+		}
+		const snapshot = await this.readStatusSnapshot(ctx);
+		const command = await getCommandDialogCoordinator(this.pi).show<ContextDialogCommand>(
+			ctx,
+			createContextDialogView(snapshot, { refresh: () => this.readStatusSnapshot(ctx) }),
+			{ restoreDraft: false },
+		);
+		if (command) {
+			await this.runMaintenanceCommand(command.operation, command.args, ctx, {
+				confirmed: command.confirmed === true,
+			});
+		}
+	}
+
+	private async readStatusSnapshot(ctx: ExtensionContext): Promise<ContextDialogSnapshot> {
+		const handler = this.magicCommands.get(CONTEXT_COMMAND_NAMES.status)?.handler;
+		const usage = this.contextUsage(ctx);
+		if (!handler) {
+			return statusSnapshotFromMagic(
+				undefined,
+				usage,
+				this.state.error ?? "Magic Context is unavailable; Pi native context remains active.",
+			);
+		}
+		this.capturedStatusMessage = undefined;
+		this.capturingStatus = true;
+		try {
+			await handler("", magicCommandContext(CONTEXT_COMMAND_NAMES.status, ctx));
+			return statusSnapshotFromMagic(this.capturedStatusMessage, usage);
+		} catch (error) {
+			return statusSnapshotFromMagic(
+				this.capturedStatusMessage,
+				usage,
+				error instanceof Error ? error.message : String(error),
+			);
+		} finally {
+			this.capturingStatus = false;
+			this.capturedStatusMessage = undefined;
+		}
+	}
+
+	private contextUsage(ctx: ExtensionContext) {
+		try {
+			return ctx.getContextUsage?.();
+		} catch {
+			return undefined;
+		}
 	}
 
 	registerToolHandoffs(): void {
@@ -1203,6 +1458,8 @@ class ContextCapabilityRuntime implements ContextCapability {
 
 	private async degradeCommittedMagic(error: unknown, ctx: ExtensionContext): Promise<void> {
 		const generation = ++this.generation;
+		this.activeCommandActivity = undefined;
+		this.magicCommands.clear();
 		this.magicContextHandler = undefined;
 		this.magicSessionStartHandlers = [];
 		this.magicTools.clear();
@@ -1240,7 +1497,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 	}
 
 	private createRegistrationPlan(): MagicRegistrationPlan {
-		return { handlers: [], registrations: [], tools: [], shutdownComplete: false };
+		return { commands: new Map(), handlers: [], tools: [], shutdownComplete: false };
 	}
 
 	private async rollbackRegistrationPlan(plan: MagicRegistrationPlan, ctx: ExtensionContext): Promise<void> {
@@ -1260,11 +1517,11 @@ class ContextCapabilityRuntime implements ContextCapability {
 	private commitRegistrationPlan(plan: MagicRegistrationPlan, generation: number): void {
 		const activeBefore = this.pi.getActiveTools();
 		this.magicContextHandler = plan.contextHandler;
+		for (const [name, definition] of plan.commands) this.magicCommands.set(name, definition);
 		for (const tool of plan.tools) {
 			this.magicTools.set(tool.name, tool);
 			registerSuiteOwnedTool(this.pi, tool, magicToolPresentation(tool.name));
 		}
-		for (const register of plan.registrations) register();
 		for (const { event, handler } of plan.handlers) {
 			if (event === "session_start") {
 				this.magicSessionStartHandlers.push(handler);
@@ -1399,40 +1656,57 @@ class ContextCapabilityRuntime implements ContextCapability {
 		}
 	}
 
+	private captureMagicCommandStatus(data: unknown): void {
+		if (!data || typeof data !== "object") return;
+		if (this.capturingStatus && Reflect.get(data, "title") === "/ctx-status") {
+			this.capturedStatusMessage = data as MagicStatusMessage;
+			return;
+		}
+		const message = data as { level?: string; text?: string; title?: string };
+		const operation = message.title ? CONTEXT_OPERATION_BY_MAGIC_TITLE[message.title] : undefined;
+		if (!operation) return;
+		const activity =
+			this.activeCommandActivity?.operation === operation
+				? this.activeCommandActivity
+				: this.backgroundCommandActivities.get(operation);
+		if (!activity) return;
+		const update = this.activities.update(activity.id, contextActivityUpdateFromMagic(activity.operation, message));
+		if (CONTEXT_BACKGROUND_OPERATIONS.has(operation)) {
+			if (!isContextActivitySettled(update)) this.backgroundCommandActivities.set(operation, activity);
+			else if (this.backgroundCommandActivities.get(operation)?.id === activity.id) {
+				this.backgroundCommandActivities.delete(operation);
+				this.detachedCommandActivities.delete(activity.id);
+			}
+		}
+		this.appendContextActivity(activity, update);
+	}
+
+	activityRenderer() {
+		return this.activities.render;
+	}
+
 	private magicPiAdapter(plan: MagicRegistrationPlan): ExtensionAPI {
 		const runtime = this;
 		const suppressedMethods = new Set<PropertyKey>(["registerFlag", "registerMessageRenderer", "registerShortcut"]);
 		return new Proxy(this.pi, {
 			get(target, property, receiver) {
+				if (property === "appendEntry") {
+					return (customType: string, data: unknown): void => {
+						if (customType === "ctx-status") runtime.captureMagicCommandStatus(data);
+						else target.appendEntry(customType, data);
+					};
+				}
 				if (property === "registerTool") {
 					return (tool: ToolDefinition): void => {
 						if (MAGIC_TOOL_NAME_SET.has(tool.name)) plan.tools.push(tool);
 					};
 				}
 				if (property === "registerCommand") {
-					return (
-						name: string,
-						definition: { readonly handler?: unknown; readonly [key: string]: unknown },
-					): void => {
-						if (!MAGIC_COMMAND_NAMES.has(name)) return;
-						const handler = definition.handler;
-						const wrapped =
-							typeof handler === "function"
-								? {
-										...definition,
-										handler: (args: string, ctx: ExtensionContext) =>
-											handler(args, magicCommandContext(name, ctx)),
-									}
-								: definition;
-						plan.registrations.push(() => target.registerCommand(name, wrapped as never));
+					return (name: string, definition: MagicCommandDefinition): void => {
+						if (MAGIC_COMMAND_NAMES.has(name)) plan.commands.set(name, definition);
 					};
 				}
-				if (property === "registerEntryRenderer") {
-					return (name: string, renderer: unknown): void => {
-						if (name !== "ctx-status") return;
-						plan.registrations.push(() => target.registerEntryRenderer(name, renderer as never));
-					};
-				}
+				if (property === "registerEntryRenderer") return () => undefined;
 				if (property === "on") {
 					return (event: string, handler: LooseEventHandler): void => {
 						plan.handlers.push({ event, handler });
@@ -1520,12 +1794,24 @@ export default async function piStuffContext(
 	);
 	if (!created) return;
 	registry.runtimes.add(runtime);
+	pi.registerEntryRenderer(CONTEXT_ACTIVITY_ENTRY_TYPE, runtime.activityRenderer());
+	pi.registerCommand("ctx", {
+		description: "Inspect and maintain Context · status | flush | wrapup [N] | recomp [start-end] | upgrade",
+		getArgumentCompletions: (prefix) => {
+			const normalized = prefix.trim().toLowerCase();
+			if (normalized.includes(" ")) return null;
+			return CONTEXT_SUBCOMMANDS.filter((item) => item.value.startsWith(normalized)).map((item) => ({ ...item }));
+		},
+		handler: (args, ctx) => runtime.dispatchCommand(args, ctx),
+	});
 	for (const name of MAGIC_TOOL_NAMES) {
 		registerSuiteToolActivityMetadata(pi, name, magicToolPresentation(name).activity);
 	}
 	runtime.registerToolHandoffs();
 
 	pi.on("session_start", (event, ctx) => runtime.startSession(event, ctx));
+	pi.on("session_before_switch", (_event, ctx) => runtime.detachBackgroundActivities(ctx));
+	pi.on("session_before_fork", (_event, ctx) => runtime.detachBackgroundActivities(ctx));
 	pi.on("session_compact", () => runtime.invalidateProjection());
 	pi.on("session_tree", () => runtime.invalidateProjection());
 	pi.on("input", (event, ctx) => {

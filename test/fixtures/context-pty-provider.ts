@@ -162,6 +162,7 @@ function fixtureStream(context: Context) {
 	record({
 		type: "request",
 		lastUser,
+		hasContextActivityText: text.includes("Context flush") || text.includes("nothing queued"),
 		hasHistory: text.includes("<session-history>"),
 		hasSince: text.includes("<session-history-since>"),
 		hasNativeSummary: text.includes("NATIVE_COMPACTION_SUMMARY_MARKER"),
