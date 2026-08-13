@@ -17,7 +17,7 @@ test("real Pi renders and restores the integrated production UI at all accepted 
 		"long CJK prompt, Welcome scroll-away, live and settled Thought",
 		"metered and API-key subscription Statusline cost behavior",
 		"responsive /codex controls, Fast persistence, and offline degradation",
-		"eight /ui settings, enum changes, and restart persistence",
+		"native /ui settings, Notification exclusion, enum changes, and restart persistence",
 		"/ui search, immediate Statusline and Inline changes, Welcome next-launch persistence",
 	]) {
 		expect(evidence.verified).toContain(required);

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { waitForDetachedProcess } from "./detached-process.js";
 
 const RPC_REQUEST_ID = "pi-stuff-smoke";
+const RPC_PROBE_ID = "pi-stuff-smoke-probe";
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DIAGNOSTIC_TAIL_CHARACTERS = 4_096;
 
@@ -11,6 +12,7 @@ export interface PiRpcSmokeOptions {
 	piBinary: string;
 	extensions?: readonly string[];
 	packages?: readonly string[];
+	probeCommand?: string;
 	cwd?: string;
 	timeoutMs?: number;
 }
@@ -134,11 +136,15 @@ export async function runPiRpcSmoke(options: PiRpcSmokeOptions): Promise<PiRpcSm
 				`${JSON.stringify({ packages: options.packages }, null, "\t")}\n`,
 			);
 		}
+		const requests = [
+			{ id: RPC_REQUEST_ID, type: "get_commands" },
+			...(options.probeCommand ? [{ id: RPC_PROBE_ID, message: options.probeCommand, type: "prompt" }] : []),
+		];
 		const child = Bun.spawn(arguments_, {
 			cwd: options.cwd ?? resolve(import.meta.dir, ".."),
 			detached: true,
 			env: isolatedEnvironment(temporaryDirectory),
-			stdin: new Blob([`${JSON.stringify({ id: RPC_REQUEST_ID, type: "get_commands" })}\n`]),
+			stdin: new Blob([`${requests.map((request) => JSON.stringify(request)).join("\n")}\n`]),
 			stdout: "pipe",
 			stderr: "pipe",
 		});
@@ -158,6 +164,9 @@ export async function runPiRpcSmoke(options: PiRpcSmokeOptions): Promise<PiRpcSm
 		if (exitCode !== 0) {
 			throw new Error(`Pi RPC smoke exited with ${exitCode}: ${stderr.trim() || stdout.trim()}`);
 		}
+		if (stdout.includes("\x1b") || stdout.includes("\x07")) {
+			throw new Error("Pi RPC output contained terminal notification control bytes");
+		}
 		const records = parseJsonLines(stdout);
 		const extensionError = records.find((record) => record.type === "extension_error");
 		if (extensionError) {
@@ -166,6 +175,12 @@ export async function runPiRpcSmoke(options: PiRpcSmokeOptions): Promise<PiRpcSm
 		const response = records.find((record) => record.id === RPC_REQUEST_ID && record.command === "get_commands");
 		if (response?.success !== true) {
 			throw new Error(`Pi did not return a successful get_commands response: ${stdout.trim()}`);
+		}
+		if (options.probeCommand) {
+			const probe = records.find((record) => record.id === RPC_PROBE_ID && record.command === "prompt");
+			if (probe?.success !== true) {
+				throw new Error(`Pi did not execute the RPC command probe: ${stdout.trim()}`);
+			}
 		}
 		return { commandNames: commandNames(response), createdFiles: await listFiles(temporaryDirectory), stderr };
 	} finally {

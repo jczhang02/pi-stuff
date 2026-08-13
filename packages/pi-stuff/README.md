@@ -27,6 +27,7 @@ The single local Pi Package for the complete Pi Stuff Suite.
 - `subagents`: current-session foreground/background Agents and their shared roster.
 - `todo`: branch-replayable Task Tools and the compact checklist above Pi's editor.
 - `btw`: one-shot side questions using effective conversation context without changing the main transcript.
+- `notification`: delayed terminal-native completion and failure alerts, with owned `/notifications` settings and test.
 
 These names are internal maintenance boundaries, not npm dependencies or independently installable Packages.
 
@@ -42,7 +43,7 @@ Pi Stuff follows the Host for Pi-owned configuration and uses XDG directories on
 
 | Data | Location |
 | --- | --- |
-| Pi-owned configuration (`settings.json`, `mcp.json`, `web-search.json`, UI and Goal settings) | Pi `getAgentDir()` / `PI_CODING_AGENT_DIR` |
+| Pi-owned configuration (`settings.json`, `mcp.json`, `web-search.json`, UI, Goal, and Notification settings) | Pi `getAgentDir()` / `PI_CODING_AGENT_DIR` |
 | Shared standard MCP configuration | `$XDG_CONFIG_HOME/mcp/mcp.json` |
 | Pi Stuff state | `$XDG_STATE_HOME/pi-stuff` |
 | Pi Stuff cache | `$XDG_CACHE_HOME/pi-stuff` |

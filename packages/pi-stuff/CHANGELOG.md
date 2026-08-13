@@ -13,7 +13,10 @@
   installed Pi Packages, the user, or the current project.
 - Add native Catppuccin Latte, Frappé, Macchiato, and Mocha themes and route the remaining MCP TUI colors through Pi's
   semantic theme tokens.
-- Consolidate the Suite into one private local Pi Package with thirteen named internal Modules. Remove the former
+- Add the Notification Module with settled-work completion/failure alerts, recent-activity suppression, semantic
+  title/body copy, opt-in response previews, terminal-native delivery including Ghostty OSC 777 and tmux passthrough,
+  owned `/notifications` settings with an in-dialog test action, and an accurately named terminal-BEL control.
+- Consolidate the Suite into one private local Pi Package with fourteen named internal Modules. Remove the former
   per-Capability manifests, self-owned runtime dependencies, version synchronization, Changesets, and npm publication
   workflow while preserving the accepted installation order and Pi 0.84.1 behavior.
 - Add the opt-in Code Mode Module, which replaces the active Suite Tool schemas with one local JavaScript envelope while

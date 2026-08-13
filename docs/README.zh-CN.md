@@ -41,6 +41,7 @@ Package 加载和模型交互；Pi Stuff 只通过 Pi 原生 Extension 接口加
 - **当前会话内的并行工作**——Background Shell、一次性 Monitor，以及前台或后台 Agent 都可检查、可控制，
   但不会演变成第二套调度器或运行时。
 - **不打扰主对话的临时问题**——`/btw` 在主对话之外回答一个专注问题，关闭后恢复原来的编辑器草稿。
+- **工作完成提醒**——仅当用户发起的 Agent 工作真正 settled 后发送终端原生提醒，并在短暂宽限期内因用户活动自动取消。
 - **有界集成**——已配置的 Context 会在编辑器就绪前完成初始化；未配置的 Context、Web、MCP、RTK、Codex
   控制和可选 Code Mode 只在需要时激活，并在不可用时安全降级。
 
@@ -67,6 +68,7 @@ Pi 启动后，可以从这些命令开始：
 | --- | --- |
 | `/ui` | 配置 Statusline、Welcome 卡片、输入呈现和 Tool 计时器 |
 | `/ctx` | 查看 Context 状态并通过引导执行历史维护 |
+| `/notifications` | 配置并测试完成与失败通知 |
 | `/goal <目标>` | 开始持续推进一个需要证据才能结束的会话目标 |
 | `/btw <问题>` | 提出一个不改变主对话记录、且不调用 Tool 的临时问题 |
 | `/tasks` | 检查和控制 Background Shell 与 Monitor |
@@ -77,6 +79,13 @@ Pi 启动后，可以从这些命令开始：
 | `/mcp` | 查看按需配置的 MCP 服务器 |
 | `/rtk` | 验证或配置可选的 RTK 命令改写 |
 | `/codemode status` | 查看默认关闭的可选 Code Mode 封装 |
+
+在 tmux 中使用终端原生通知时，需要配置 `set -g allow-passthrough on`。Pi Stuff 会为 tmux 封装通知协议，
+但不会修改用户拥有的 tmux 设置。
+
+通知的 `auto` 方式会为 Kitty 选择 OSC 99、为 Ghostty 选择 OSC 777，并为 iTerm2 和 WezTerm 选择 OSC 9。
+响应预览默认关闭，因为桌面通知历史可能在 Pi 之外可见。可选的 terminal bell 设置发送 BEL；BEL 最终发出
+声音还是视觉提示，由终端决定，而不是由 Pi Stuff 决定。
 
 外部服务、身份认证、MCP 声明、Magic Context 配置和 RTK 可执行文件都保持可选，并由用户管理。缺少它们不会
 阻止普通 Pi 对话。
@@ -115,6 +124,7 @@ Pi 启动后，可以从这些命令开始：
 | `subagents` | 前台与后台 Agent、紧凑 roster，以及 `/agents` 检查界面 |
 | `todo` | 可按分支重放的 Task Tool，以及 Pi 编辑器上方的有界清单 |
 | `btw` | 不进入主对话记录和模型上下文的一次性临时问题 |
+| `notification` | 用户发起的 Agent 工作 settled 后，延迟发送终端原生完成或失败提醒 |
 | `code-mode` | 可选 JavaScript 封装，通过一个模型可见的 schema 暴露当前 Suite Tool |
 
 这些名称只是内部维护边界，没有各自独立的 manifest、版本、安装或发布生命周期。

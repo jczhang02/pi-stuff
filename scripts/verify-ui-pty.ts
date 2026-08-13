@@ -1106,6 +1106,9 @@ async function verifyWideInteractions(
 		verifySettingValue(screen, "Input highlighting", true);
 		verifySettingValue(screen, "Inline slash autocomplete", false);
 		verifySettingValue(screen, "Tool running timer", false);
+		restarted.sendLiteral("notification delivery");
+		screen = await restarted.waitForText("No matching settings");
+		if (screen.includes("→ Notification delivery")) fail("Notification settings still appeared under /ui");
 		restarted.sendKey("Escape");
 		await restarted.waitForAbsence("Type to search");
 	} finally {
@@ -1171,6 +1174,8 @@ function verifyInventory(
 		if (!Array.isArray(record.commands)) fail("session inventory did not contain public command names");
 		if (!record.commands.includes("ui")) fail("Suite did not register /ui");
 		if (!record.commands.includes("diagnostics")) fail("Suite did not register /diagnostics");
+		if (!record.commands.includes("notifications")) fail("Suite did not register /notifications");
+		if (record.commands.includes("notify-test")) fail("Suite still registered removed /notify-test");
 		if (record.commands.includes("tool-settings")) fail("Suite still registered removed /tool-settings");
 	}
 	if (!inventory.every((record) => record.markdownTransformer === true)) {
@@ -1232,7 +1237,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						"metered and API-key subscription Statusline cost behavior",
 						"expanded four-task Todo alignment in a real Suite turn",
 						"responsive /codex controls, Fast persistence, and offline degradation",
-						"eight /ui settings, enum changes, and restart persistence",
+						"native /ui settings, Notification exclusion, enum changes, and restart persistence",
 						"/ui search, immediate Statusline and Inline changes, Welcome next-launch persistence",
 					);
 				} else {

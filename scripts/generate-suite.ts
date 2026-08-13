@@ -17,6 +17,7 @@ const CAPABILITY_MODULES = {
 	subagents: "subagents",
 	todo: "todo",
 	btw: "btw",
+	notification: "notification",
 } as const;
 
 export type CapabilityModule = keyof typeof CAPABILITY_MODULES;

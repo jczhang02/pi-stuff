@@ -43,6 +43,8 @@ const HOST_STREAM_WRITE_ALLOWLIST = new Set([
 	"packages/pi-stuff/src/mcp/runtime/mcp-keyring-helper.cjs",
 	"packages/pi-stuff/src/subagents/src/runs/background/writer-process-supervisor.mjs",
 	"packages/pi-stuff/src/subagents/src/shared/detached-runner-diagnostics.ts",
+	// Terminal-native notifications are guarded by both TUI mode and Host UI availability.
+	"packages/pi-stuff/src/notification/transport.ts",
 ]);
 const HOST_LITERAL_COLOR_ALLOWLIST = new Set([
 	// Browser documents cannot consume Pi's terminal Theme API.
@@ -66,6 +68,7 @@ const INTERNAL_MODULES = [
 	"subagents",
 	"todo",
 	"btw",
+	"notification",
 	"code-mode",
 ] as const;
 type InternalModule = (typeof INTERNAL_MODULES)[number];
@@ -89,6 +92,7 @@ const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<InternalModule, ReadonlySet
 	subagents: new Set([...SHARED_MODULE_DEPENDENCIES, "context-management", "background-work"]),
 	todo: new Set(SHARED_MODULE_DEPENDENCIES),
 	btw: new Set([...SHARED_MODULE_DEPENDENCIES, "context-management"]),
+	notification: new Set(SHARED_MODULE_DEPENDENCIES),
 	"code-mode": new Set(["tool-display"]),
 };
 export interface SafetyFinding {

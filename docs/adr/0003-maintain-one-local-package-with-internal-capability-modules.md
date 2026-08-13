@@ -27,6 +27,7 @@ The internal Modules are:
 - `subagents`
 - `todo`
 - `btw`
+- `notification`
 - `code-mode`
 
 The ordered Suite entry installs these Modules through Pi's existing Extension interface. `conversation-ui` provides

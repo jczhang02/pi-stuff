@@ -10,6 +10,7 @@ import { verifyContextPty } from "./verify-context-pty.ts";
 import { verifyGoalLifecycle } from "./verify-goal-lifecycle.ts";
 import { verifyGoalPty } from "./verify-goal-pty.ts";
 import { verifyMcpPty } from "./verify-mcp-pty.ts";
+import { verifyNotificationPty } from "./verify-notification-pty.ts";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.ts";
 import { verifyRtkPty } from "./verify-rtk-pty.ts";
 import { verifyToolsPty } from "./verify-tools-pty.ts";
@@ -92,6 +93,12 @@ const REQUIRED_ARCHIVE_FILES = [
 	"package/src/todo/index.ts",
 	"package/src/btw/index.ts",
 	"package/src/btw/prompts/btw-system.txt",
+	"package/src/notification/index.ts",
+	"package/src/notification/format.ts",
+	"package/src/notification/notification-settings-dialog.ts",
+	"package/src/notification/runtime.ts",
+	"package/src/notification/settings.ts",
+	"package/src/notification/transport.ts",
 	"package/themes/catppuccin-frappe.json",
 	"package/themes/catppuccin-latte.json",
 	"package/themes/catppuccin-macchiato.json",
@@ -301,6 +308,7 @@ async function verifySuiteSurface(piBinary: string, packagePath: string): Promis
 		piBinary,
 		extensions: [goalToolInspector, webToolInspector, mcpToolInspector, workToolInspector],
 		packages: [packagePath],
+		probeCommand: "/notifications",
 		timeoutMs: 60_000,
 	});
 	const requiredCommands = [
@@ -313,10 +321,14 @@ async function verifySuiteSurface(piBinary: string, packagePath: string): Promis
 		"mcp",
 		"mcp-auth",
 		"tasks",
+		"notifications",
 		"work-tools-certified",
 	];
 	const missing = requiredCommands.filter((command) => !smoke.commandNames.includes(command));
 	if (missing.length > 0) throw new Error(`Pi Stuff is missing commands: ${missing.join(", ")}`);
+	if (smoke.createdFiles.includes("agent/pi-stuff-notification.json")) {
+		throw new Error("/notifications created Notification settings during the RPC purity probe");
+	}
 	if (smoke.commandNames.includes("tool-settings")) throw new Error("Legacy /tool-settings must remain removed");
 }
 
@@ -332,6 +344,7 @@ async function verifyRealPi(piBinary: string, packagePath: string): Promise<void
 	await verifyContextPty({ piBinary, packagePath, columns: 64, rows: 28 });
 	await verifyRtkPty({ piBinary, packagePath });
 	await verifyMcpPty({ piBinary, packagePath, columns: 64, rows: 28 });
+	await verifyNotificationPty({ piBinary, packagePath, columns: 64, rows: 28 });
 	await verifyToolsPty({ piBinary, packagePath, columns: 64, rows: 28 });
 	await verifyToolsResumePty({ piBinary, packagePath });
 	await verifyWorkMonitorMatrix({ piBinary, packagePath });

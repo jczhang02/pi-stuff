@@ -1,0 +1,52 @@
+import { expect, test } from "bun:test";
+import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { createNotificationSettingsView } from "../../packages/pi-stuff/src/notification/notification-settings-dialog.ts";
+import { NotificationSettingsStore } from "../../packages/pi-stuff/src/notification/settings.ts";
+
+const theme = {
+	bold: (value: string) => value,
+	fg: (_color: string, value: string) => value,
+} as unknown as Theme;
+
+test("Notification settings use one owned native Command Dialog", async () => {
+	initTheme("dark", false);
+	let closed = 0;
+	let tests = 0;
+	const settings = NotificationSettingsStore.memory();
+	const terminal = { rows: 30 };
+	const context = {
+		close: () => {
+			closed += 1;
+		},
+		keybindings: {},
+		requestRender: () => {},
+		signal: new AbortController().signal,
+		theme,
+		tui: { terminal },
+	} as unknown as CommandDialogViewContext<void>;
+	const component = createNotificationSettingsView(settings, { onTest: () => (tests += 1) }).create(context);
+
+	const initial = component.render(72).join("\n");
+	expect(initial).toContain("Notifications");
+	expect(initial).toContain("Response preview");
+	expect(initial).toContain("Also ring terminal bell");
+	expect(initial).not.toContain("Notification sound");
+	expect(initial).not.toMatch(/[╭╮╰╯]/u);
+	component.handleInput?.("t");
+	expect(tests).toBe(1);
+
+	component.handleInput?.("\r");
+	await Promise.resolve();
+	expect(settings.get().enabled).toBe(false);
+
+	terminal.rows = 6;
+	const low = component.render(48);
+	expect(low).toHaveLength(3);
+	expect(low.join("\n")).toContain("Notifications");
+	expect(low.at(-1)).toMatch(/Esc(?: to)? close/);
+
+	component.handleInput?.("\u001b");
+	expect(closed).toBe(1);
+	component.dispose?.();
+});

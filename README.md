@@ -44,6 +44,8 @@ The result is a denser, quieter coding workflow:
   inspectable without becoming a second scheduler or runtime.
 - **Side questions without transcript noise** — `/btw` answers a focused question outside the main conversation and
   restores the original editor draft when closed.
+- **Settled-work attention** — terminal-native alerts arrive only after user-started Agent work genuinely settles,
+  with a short activity-cancellation grace period.
 - **Bounded integrations** — configured Context initializes before editor readiness; unconfigured Context, Web, MCP,
   RTK, Codex controls, and optional Code Mode activate only when needed and fail safely when unavailable.
 
@@ -71,6 +73,7 @@ Once Pi starts, these are useful entry points:
 | --- | --- |
 | `/ui` | Configure the Statusline, Welcome card, input presentation, and Tool timer |
 | `/ctx` | Inspect Context status and run guided history maintenance |
+| `/notifications` | Configure and test completion and failure notifications |
 | `/goal <objective>` | Start persistent, evidence-gated work toward one session objective |
 | `/btw <question>` | Ask a no-Tool side question without changing the main transcript |
 | `/tasks` | Inspect and control Background Shells and Monitors |
@@ -81,6 +84,13 @@ Once Pi starts, these are useful entry points:
 | `/mcp` | Inspect lazily configured MCP servers |
 | `/rtk` | Verify or configure optional RTK command rewriting |
 | `/codemode status` | Inspect the optional, disabled-by-default Code Mode envelope |
+
+Inside tmux, terminal-native notifications require `set -g allow-passthrough on`. Pi Stuff wraps notification
+protocols for tmux but does not mutate user-owned tmux settings.
+
+Notification `auto` delivery selects Kitty OSC 99, Ghostty OSC 777, or OSC 9 for iTerm2 and WezTerm. Response previews
+are off by default because desktop notification history may be visible outside Pi. The optional terminal-bell setting
+sends BEL; the terminal, not Pi Stuff, decides how BEL sounds or appears.
 
 External services, authentication, MCP declarations, Magic Context configuration, and the RTK executable remain
 optional and user-owned. Their absence does not prevent ordinary Pi turns.
@@ -120,6 +130,7 @@ The ordered Suite currently contains:
 | `subagents` | Foreground and background Agents, a compact roster, and `/agents` inspection |
 | `todo` | Branch-replayable Task Tools and a bounded checklist above Pi's editor |
 | `btw` | One-shot side questions that do not enter the main transcript or model context |
+| `notification` | Delayed terminal-native completion and failure alerts for settled user-started Agent work |
 | `code-mode` | An opt-in JavaScript envelope that exposes active Suite Tools through one provider-visible schema |
 
 These names are internal maintenance boundaries. They have no separate manifest, version, installation, or publication

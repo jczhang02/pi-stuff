@@ -68,6 +68,7 @@ export {
 	type ToolActivityGroupView,
 	ToolUiRuntime,
 } from "./contract.js";
+export { formatElapsed } from "./render.js";
 export {
 	boundTerminalLine,
 	boundTerminalText,

@@ -18,6 +18,7 @@ const SUITE_CAPABILITIES = [
 	"subagents",
 	"todo",
 	"btw",
+	"notification",
 	"code-mode",
 ];
 
@@ -262,6 +263,7 @@ describe("auditRepositoryFiles", () => {
 		const root = await createRepository();
 		await mkdir(join(root, "packages", "pi-stuff", "src", "goal"), { recursive: true });
 		await mkdir(join(root, "packages", "pi-stuff", "src", "mcp", "runtime"), { recursive: true });
+		await mkdir(join(root, "packages", "pi-stuff", "src", "notification"), { recursive: true });
 		await writeFile(
 			join(root, "packages", "pi-stuff", "src", "goal", "index.ts"),
 			'console.warn("this would corrupt the Host TUI");\n',
@@ -273,6 +275,10 @@ describe("auditRepositoryFiles", () => {
 		await writeFile(
 			join(root, "packages", "pi-stuff", "src", "mcp", "runtime", "host-html-template.ts"),
 			'export const html = `<script>console.error("browser-only")</script>`;\n',
+		);
+		await writeFile(
+			join(root, "packages", "pi-stuff", "src", "notification", "transport.ts"),
+			"export const notify = (bytes: string) => process.stdout.write(bytes);\n",
 		);
 
 		expect(await auditRepositoryFiles(root)).toEqual([

@@ -15,6 +15,7 @@ import {
 import goal from "./goal/index.js";
 import { markLifecyclePhase } from "./lifecycle-performance.js";
 import mcp from "./mcp/index.js";
+import notification from "./notification/index.js";
 import rtk from "./rtk/index.js";
 import subagents from "./subagents/index.js";
 import { SUBAGENT_CHILD_ENV, SUBAGENT_FANOUT_CHILD_ENV } from "./subagents/src/runs/shared/pi-args.js";
@@ -53,6 +54,7 @@ function createCapabilities(options: SuiteInstallationOptions): readonly Capabil
 		{ id: "subagents", install: (pi) => registerSuiteSubagents(pi, options) },
 		{ id: "todo", install: todo },
 		{ id: "btw", install: btw },
+		{ id: "notification", install: notification },
 	];
 }
 
