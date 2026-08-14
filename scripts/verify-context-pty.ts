@@ -150,11 +150,17 @@ function startupOnlyProgram(): string {
 	return `
 set timeout 30
 spawn -noecho script -qefc $env(PI_STUFF_CONTEXT_PTY_RUNNER) /dev/null
-expect {
-    -exact "fixture-model" {}
-    timeout { puts stderr "Timed out waiting for startup editor"; exit 2 }
-    eof { puts stderr "Startup-only Pi exited early"; exit 3 }
+set session_ready 0
+for {set attempt 0} {$attempt < 120} {incr attempt} {
+    if {[file exists $env(PI_STUFF_CONTEXT_PTY_LOG)]} {
+        set handle [open $env(PI_STUFF_CONTEXT_PTY_LOG) r]
+        set contents [read $handle]
+        close $handle
+        if {[string first {"type":"session"} $contents] >= 0} { set session_ready 1; break }
+    }
+    after 250
 }
+if {!$session_ready} { puts stderr "Timed out waiting for startup session event"; exit 2 }
 send -- "/context-startup-ready\\r"
 expect {
     -exact "CONTEXT_STARTUP_READY" {}

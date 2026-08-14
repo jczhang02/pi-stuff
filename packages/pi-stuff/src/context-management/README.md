@@ -49,7 +49,7 @@ own prompt-cache processing while skipping its much longer default guidance;
 history semantics, retrieval, reduction, memory, notes, and fail-open behavior
 remain unchanged.
 Suite-owned custom Agent messages use one shared delivery seam. That seam waits
-for Context activation before the Host freezes the first request. Pi 0.84.1
+for Context activation before the Host freezes the first request. Pi 0.84.2
 does not emit `before_agent_start` for an idle `sendMessage` turn, so when such a
 custom message is the first Agent turn, the normal Magic `context` transform
 adds the same compact guidance to that provider request only. It is not written
@@ -101,7 +101,7 @@ This boundary deliberately works within Pi's extension interface:
   UTF-8 byte length as a tokenizer-independent upper bound, together with the
   resolved child and fallback model windows and conservative launch reserves;
   exact provider tokenization remains the provider's responsibility.
-- Pi 0.84.1 also skips its pre-turn native compaction threshold check for an
+- Pi 0.84.2 also skips its pre-turn native compaction threshold check for an
   idle custom `sendMessage` turn. If Magic remains dormant or unavailable,
   Context reads Pi's exact current compaction settings and runs the public
   `ctx.compact` callback boundary before delivery only when the same threshold

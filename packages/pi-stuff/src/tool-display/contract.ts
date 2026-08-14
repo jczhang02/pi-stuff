@@ -808,6 +808,8 @@ export class ToolUiRuntime {
 		metadata: PresentedToolMetadata,
 	): void {
 		let binding = this.bindings.get(toolCallId);
+		const preferPresentedResult =
+			metadata.result !== undefined && (model.state === "running" || binding?.metadata.result !== undefined);
 		if (!binding) {
 			binding = {
 				baseModel: model,
@@ -828,12 +830,15 @@ export class ToolUiRuntime {
 		this.bindings.delete(toolCallId);
 		this.bindings.set(toolCallId, binding);
 		if (this.renderedToolNames.has(metadata.name)) {
-			this.appendToolCall({
-				args: metadata.args,
-				id: toolCallId,
-				name: metadata.name,
-				...(metadata.result ? { result: metadata.result } : {}),
-			});
+			this.appendToolCall(
+				{
+					args: metadata.args,
+					id: toolCallId,
+					name: metadata.name,
+					...(metadata.result ? { result: metadata.result } : {}),
+				},
+				preferPresentedResult,
+			);
 		} else this.reconcileGroupForTool(toolCallId);
 		this.trimBindings(toolCallId);
 	}
@@ -1150,14 +1155,16 @@ export class ToolUiRuntime {
 		}
 	}
 
-	private appendToolCall(member: PlannedToolActivityMember): void {
+	private appendToolCall(member: PlannedToolActivityMember, preferMemberResult = false): void {
 		const existingLeaderId = this.membership.get(member.id);
 		if (existingLeaderId) {
 			const group = this.groups.get(existingLeaderId);
 			const memberIndex = this.memberIndexes.get(member.id);
 			if (!group || memberIndex === undefined) return;
 			const previous = group.members[memberIndex];
-			const result = previous?.result ?? member.result ?? this.pendingResults.get(member.id);
+			const result = preferMemberResult
+				? (member.result ?? previous?.result ?? this.pendingResults.get(member.id))
+				: (previous?.result ?? member.result ?? this.pendingResults.get(member.id));
 			const terminalState = result ? undefined : (member.terminalState ?? previous?.terminalState);
 			const completeMember: PlannedToolActivityMember = {
 				args: member.args,

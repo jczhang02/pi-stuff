@@ -52,8 +52,8 @@ not independently installable products.
 
 ## Quick start
 
-For the certified path, use the Pi `0.84.1` Linux x64 Host built from upstream
-`53fa77ccd8a279eb87e92294ef3687b03ff80112`. A matching version string alone does not establish certification.
+For the certified path, use the Pi `0.84.2` Linux x64 Host built from upstream
+`914cf1472e715297caa30db4b9535d534a9eb718`. A matching version string alone does not establish certification.
 
 ```bash
 git clone https://github.com/jczhang02/pi-stuff.git
@@ -152,7 +152,7 @@ the user's theme choice.
 
 | Contract | Certified profile |
 | --- | --- |
-| Pi Host | `0.84.1`, upstream `53fa77ccd8a279eb87e92294ef3687b03ff80112` |
+| Pi Host | `0.84.2`, upstream `914cf1472e715297caa30db4b9535d534a9eb718` |
 | Platform | Linux x64; Ubuntu 24.04 is the CI system-utility baseline |
 | Bun | `1.3.14` |
 | Node.js / npm | `24.16.0` / `11.13.0` for the certified Host build |

@@ -72,7 +72,7 @@ test("MCP call and result previews are terminal-cell-safe", () => {
 	expect(result.truncated).toBeTrue();
 });
 
-test("real Pi 0.84.1 preserves MCP prompt provenance, Context, persistence, and reload rendering", async () => {
+test("real Pi 0.84.2 preserves MCP prompt provenance, Context, persistence, and reload rendering", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-host-"));
 	temporaryRoots.push(root);
 	const agentDir = join(root, "agent");

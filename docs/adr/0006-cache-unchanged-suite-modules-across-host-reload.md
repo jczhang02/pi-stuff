@@ -4,7 +4,7 @@ status: accepted
 
 # Cache unchanged Suite modules across Host reload
 
-Pi 0.84.1 creates a new Jiti loader with its runtime module cache disabled for every `/reload`. That preserves source
+Pi 0.84.2 creates a new Jiti loader with its runtime module cache disabled for every `/reload`. That preserves source
 editing semantics, but the Pi Stuff Package has a large TypeScript module graph: evaluating it again dominated an
 otherwise short Host reload even though the Suite source had not changed. Shipping compiled JavaScript would reduce
 that cost, but it would create the forbidden second `dist/` lane and make source and runtime artifacts diverge.

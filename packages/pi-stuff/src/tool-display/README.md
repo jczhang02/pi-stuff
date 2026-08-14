@@ -2,7 +2,7 @@
 
 Compact, presentation-only Tool UI for the Pi Stuff Suite.
 
-The Capability re-registers Pi 0.84.1's seven built-in tools with their original definitions and replaces only their
+The Capability re-registers Pi 0.84.2's seven built-in tools with their original definitions and replaces only their
 render slots. Tool schemas, prompt metadata, execution, result content, lifecycle events, and permission checks stay
 unchanged. Every Suite-owned Tool must declare Activity metadata through `registerSuiteOwnedTool`; unknown third-party
 Tools keep their native renderer and form a display boundary.
@@ -19,7 +19,7 @@ Tools keep their native renderer and form a display boundary.
   exit status, cancellation, rejection, and failure remain explicit. `Ctrl+O` retains the operation block and expands
   its bounded command and output in place, without Pi's generic `Call` / `Result` chrome. Apart from Pi Stuff's accepted
   small transcript bullet and semantic colors supplied by the active Host theme, the operation wording, row count,
-  spacing, and child hierarchy are matched against real Claude Code 2.1.220 and Pi Host 0.84.1 captures.
+  spacing, and child hierarchy are matched against real Claude Code 2.1.220 and Pi Host 0.84.2 captures.
 - A group appears immediately, even for one Tool. Running summaries use present-tense semantic language and one short,
   width-safe target hint; settled summaries use past tense and remove raw commands, paths, result text, elapsed time,
   and redundant `done` labels. Files and other domain objects are deduplicated while executions are counted.

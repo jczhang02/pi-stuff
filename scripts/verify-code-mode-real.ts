@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { waitForDetachedProcess } from "./detached-process.js";
+import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 
 const PI_BINARY = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 const TIMEOUT_MS = 30_000;
@@ -12,7 +13,8 @@ const execFileAsync = promisify(execFile);
 
 async function assertCertifiedPi(): Promise<void> {
 	const version = (await execFileAsync(PI_BINARY, ["--version"])).stdout.trim();
-	if (version !== "0.84.1") throw new Error(`Code Mode acceptance requires Pi 0.84.1, got ${version || "unknown"}`);
+	if (version !== CERTIFIED_PI_VERSION)
+		throw new Error(`Code Mode acceptance requires Pi ${CERTIFIED_PI_VERSION}, got ${version || "unknown"}`);
 }
 
 async function files(directory: string): Promise<string[]> {
@@ -136,7 +138,7 @@ try {
 		throw new Error("Session did not persist the nested Background Work operation");
 	if (!sessionText.includes('"name":"subagent"'))
 		throw new Error("Session did not persist the nested Agent operation");
-	console.log("Real Pi 0.84.1 Code Mode execution and session reload passed");
+	console.log(`Real Pi ${CERTIFIED_PI_VERSION} Code Mode execution and session reload passed`);
 } finally {
 	await rm(temporary, { force: true, recursive: true });
 }

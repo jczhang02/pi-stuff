@@ -1,8 +1,8 @@
 /** Released type surface used for development dependencies and version checks. */
-export const CERTIFIED_PI_VERSION = "0.84.1";
+export const CERTIFIED_PI_VERSION = "0.84.2";
 
 /** Verified upstream Host release source that satisfies the complete Suite contract. */
-export const CERTIFIED_PI_SOURCE_COMMIT = "53fa77ccd8a279eb87e92294ef3687b03ff80112";
+export const CERTIFIED_PI_SOURCE_COMMIT = "914cf1472e715297caa30db4b9535d534a9eb718";
 
 export const CERTIFIED_PI_SOURCE_REPOSITORY = "https://github.com/earendil-works/pi";
 
@@ -10,26 +10,26 @@ export const CERTIFIED_PI_SOURCE_REPOSITORY = "https://github.com/earendil-works
 export const CERTIFIED_PI_MODEL_DATA_SHA256 = "299c882258d4714113aab6531eb1d00ec4c7d2e95a303951715bd182799475ef";
 
 /** Audited installed Linux x64 binary accepted without a local build record. */
-export const CERTIFIED_PI_INSTALLED_BINARY_SHA256 = "ddb904494b83da17f7d34448a218a7ed0df9f513e7b929a981bf417f5db62fc7";
+export const CERTIFIED_PI_INSTALLED_BINARY_SHA256 = "014493e5c8b079db2e5aa8b1aaea020ce7782bbd6f890c83680cc8d3b34e04fc";
 
 /** Release assets that bind an installed binary to the reviewed upstream source. */
-export const CERTIFIED_PI_CHANGELOG_SHA256 = "890d61c16f30a2f1235546edbd8630cad82be16e400b1a35ca42aa364114b579";
+export const CERTIFIED_PI_CHANGELOG_SHA256 = "7e9e91204ee1f002052070a90332d24a166e0cbc433095cebe4136651e8d91c8";
 export const CERTIFIED_PI_SOURCE_FINGERPRINTS = [
 	{
 		path: "cli/args.js.map",
-		sha256: "feb423762f6e5e64e1df1d46b661c23c5709b976c8e0ccf50002dc304df517fb",
+		sha256: "d8907d9c2a039d571664009f7eac69789ae585b7f675bcd88d30781c854ad951",
 	},
 	{
 		path: "modes/interactive/interactive-mode.js.map",
-		sha256: "18cf8a7a34f1b9476f2db1e9a322dd428f5d71f070f4ad01ee0d07c385476f59",
+		sha256: "ccc403e24d005b47632460c249cf154cdc576448ab32f7001fb6a9d562014b37",
 	},
 	{
 		path: "core/settings-manager.js.map",
-		sha256: "2bd534db40d6fd002876b6a3622f584915b42117a0bc3c6c8ad538e2d300e3ea",
+		sha256: "2a1a01cbbc6c04b7593611a8ae71e8d182444417ac50d31d63a86294673c2a31",
 	},
 	{
 		path: "modes/interactive/components/settings-selector.js.map",
-		sha256: "3e172ef9158a8b8904c23a899d38fe08e898bb197379b4dd6448dc29ef1b1d59",
+		sha256: "b803beca2d660ee1abe8b28f0d3c5a43a84b366862e0bff3b88e65ead64de06c",
 	},
 ] as const;
 

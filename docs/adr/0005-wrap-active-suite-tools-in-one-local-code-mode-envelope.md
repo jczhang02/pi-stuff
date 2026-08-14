@@ -25,7 +25,7 @@ model name, introduce a second CLI, or add Code Mode-specific transcript chrome.
   original Suite Tool.
 - Nested execution must preserve Pi argument preparation and validation, Tool call/result hooks, lifecycle events,
   streaming updates, cancellation, errors, usage, dynamic Tool activation, and termination hints.
-- "Tool hooks" here means handlers registered through the Aggregate boundary. Pi 0.84.1 has no public API for an
+- "Tool hooks" here means handlers registered through the Aggregate boundary. Pi 0.84.2 has no public API for an
   Extension to redispatch a nested call through unrelated Extensions; their Tools and private interception remain
   top-level compatibility boundaries rather than relying on a private Host seam.
 - The outer envelope is visually silent. Nested calls reuse the original Tool renderer and Activity Group state in
@@ -50,15 +50,15 @@ model name, introduce a second CLI, or add Code Mode-specific transcript chrome.
 
 ## Acceptance
 
-The change is accepted only if real Pi 0.84.1 tests prove that Code Mode on/off produces the same Tool Activity pixels
+The change is accepted only if real Pi 0.84.2 tests prove that Code Mode on/off produces the same Tool Activity pixels
 and full ANSI screen at 100×32 and 64×28 before and after session resume. The comparison normalizes only the truthful
 context-usage number, which Code Mode is specifically intended to change; statusline structure and styling remain
 exact. The real fixture includes mixed Read, Bash, Background Work, and Agent-management calls plus failure, a
 deterministic cancellation-classified result, and interleaved real PNG/text/PNG reads through Pi's media normalization
 and terminal fallback path. That fixture also verifies that normalized nested images are restored in provider context.
 Unit tests cover outer cancellation independently of process-exit timing, as well as compact, expanded, rejection,
-streaming settlement, and lifecycle equivalence. A Pi 0.84.1 `ToolExecutionComponent` test forces Kitty capabilities
+streaming settlement, and lifecycle equivalence. A Pi 0.84.2 `ToolExecutionComponent` test forces Kitty capabilities
 and compares expanded multi-image output on/off after normalizing only random image IDs. The provider sees only
 `codemode`; Magic Context remains in the active local catalog; and the live serialized schema is materially smaller
-than the direct active Tool set. The initial certified fixture measures 31,188 characters across 22 direct Tools versus
+than the direct active Tool set. The initial certified fixture measures 31,208 characters across 22 direct Tools versus
 1,251 characters for Code Mode, a 96.0% reduction.

@@ -255,7 +255,7 @@ function createApiHarness(
 		sessionHandlers,
 		shutdownHandlers,
 		async emit(event: string, data: unknown, ctx: ExtensionContext): Promise<void> {
-			// Pi 0.84.1 creates one context per input dispatch and shares it across
+			// Pi 0.84.2 creates one context per input dispatch and shares it across
 			// that dispatch's handlers. Other lifecycle events receive the supplied
 			// session context directly.
 			const handlerContext = event === "input" ? Object.create(ctx) : ctx;
@@ -790,7 +790,7 @@ describe("normal UI presentation integration", () => {
 		const ctx = createContext(new UiHarness());
 		await api.start(ctx);
 		// A separately loaded Extension can register after Pi Stuff's dynamic
-		// observer. Pi 0.84.1 awaits these handlers in registration order.
+		// observer. Pi 0.84.2 awaits these handlers in registration order.
 		api.api.on("agent_settled", () => {
 			overlap = gitRunning;
 			order.push("later-extension");

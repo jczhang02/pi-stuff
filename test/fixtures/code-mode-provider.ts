@@ -52,7 +52,7 @@ function codeModeStream() {
 					? 'await suite.read({ path: "pi-stuff-code-mode-missing-file" });'
 					: process.env[SCENARIO_ENV] === "cancel"
 						? `const cancelled = await suite.bash({
-  command: "printf 'Operation aborted\\n' >&2; exit 1",
+  command: "printf 'Operation aborted\\\\n' >&2; exit 1",
   description: "Cancellation fixture"
 });
 text(cancelled.content.find((part) => part.type === "text")?.text ?? "Operation aborted");`

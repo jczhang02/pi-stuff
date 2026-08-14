@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
+import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 
 const execFileAsync = promisify(execFile);
 const PI_BINARY = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
@@ -56,8 +57,8 @@ function normalizeRuntimeMetrics(screen: string): string {
 
 async function assertCertifiedPi(): Promise<void> {
 	const version = (await execFileAsync(PI_BINARY, ["--version"])).stdout.trim();
-	if (version !== "0.84.1")
-		throw new Error(`Code Mode TUI acceptance requires Pi 0.84.1, got ${version || "unknown"}`);
+	if (version !== CERTIFIED_PI_VERSION)
+		throw new Error(`Code Mode TUI acceptance requires Pi ${CERTIFIED_PI_VERSION}, got ${version || "unknown"}`);
 }
 
 async function runArm(
@@ -159,8 +160,7 @@ async function runArm(
 	try {
 		await waitFor(tmux, session, "Pi Stuff Code Mode fixture");
 		await Bun.sleep(750);
-		const activityMarker =
-			scenario === "cancel" ? "ran 1 command" : scenario === "media" ? "read 3 files" : "read 1 file";
+		const activityMarker = scenario === "cancel" ? "bash(" : scenario === "media" ? "read 3 files" : "read 1 file";
 		if (launchMode === "resume") {
 			await waitFor(tmux, session, activityMarker);
 			const plain = await capture(tmux, session);

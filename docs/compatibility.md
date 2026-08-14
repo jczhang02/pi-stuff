@@ -4,7 +4,7 @@
 
 | Contract | Certified version |
 | --- | --- |
-| Pi standalone host | `0.84.1`, upstream `53fa77ccd8a279eb87e92294ef3687b03ff80112`, Linux x64 |
+| Pi standalone host | `0.84.2`, upstream `914cf1472e715297caa30db4b9535d534a9eb718`, Linux x64 |
 | Bun toolchain | 1.3.14 |
 | Node.js toolchain | 24.16.0 |
 | npm toolchain | 11.13.0 |
@@ -13,7 +13,7 @@
 | PTY verification tools | Ubuntu 24.04 packages for Expect and tmux |
 | TypeScript checker | 5.9.3 |
 
-The certified upstream Host is the released `v0.84.1` source and reports `0.84.1`. It is verified against the complete
+The certified upstream Host is the released `v0.84.2` source and reports `0.84.2`. It is verified against the complete
 Suite contract, including public `registerMarkdownTransformer()`, regular and fullscreen UI behavior, and
 space-preserving native settings search. The pinned CI workflow builds the release commit and binds its binary hash to a build record; the
 local installed Host must match the audited executable SHA-256 allowlist and embedded source-map fingerprints, so a
@@ -55,7 +55,7 @@ This local record has the same deliberately operational threat model: it detects
 prove integrity against a user who controls and forges the entire local environment.
 
 Pi core imports remain wildcard peer dependencies because the Host supplies them. Development dependencies stay pinned
-to the released `0.84.1` type surface. Version-sensitive verification scripts read the shared certified Host contract
+to the released `0.84.2` type surface. Version-sensitive verification scripts read the shared certified Host contract
 instead of maintaining independent Pi version constants.
 
 Pi 0.84 gives independently loaded extensions distinct `ExtensionAPI.events` facade objects over one Host event bus.

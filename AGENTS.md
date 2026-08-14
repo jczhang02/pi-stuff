@@ -34,7 +34,7 @@ These instructions apply only while developing this repository. This file is not
 ## Package contract
 
 - Ship TypeScript source; do not add a `dist/` build lane.
-- Pi core packages are wildcard peer dependencies and exact `0.84.1` development dependencies. Runtime certification
+- Pi core packages are wildcard peer dependencies and exact `0.84.2` development dependencies. Runtime certification
   uses the upstream source profile in `docs/compatibility.md`; never treat the same version string as sufficient proof.
 - Declare external runtime dependencies once in `packages/pi-stuff/package.json`; internal Modules use relative imports
   and must never depend on a self-owned `@jczhang02/pi-*` package.

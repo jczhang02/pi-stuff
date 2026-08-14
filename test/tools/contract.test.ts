@@ -683,7 +683,7 @@ test("Code Mode keeps multiple Kitty images inside their original expanded Tool 
 	}
 });
 
-test("Pi 0.84.1 Host renders expanded multi-image Tools identically through Code Mode", () => {
+test("Pi 0.84.2 Host renders expanded multi-image Tools identically through Code Mode", () => {
 	const image = {
 		data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
 		mimeType: "image/png",
@@ -1251,7 +1251,7 @@ test("multiple Bash calls render as separate operation blocks in native order", 
 	expect(settle(bash, "b1", "printf 'one\\ntwo\\n'", false, false, "one\ntwo").callLines).toEqual(first.callLines);
 });
 
-test("Bash partial results update the running operation output in place", () => {
+test("Bash partial results update in place and the final output wins", () => {
 	const harness = apiHarness();
 	const bash = toolFromHarness(harness, "bash", "run-command");
 	const runtime = getToolUiRuntime(harness.api);
@@ -1274,6 +1274,18 @@ test("Bash partial results update the running operation output in place", () => 
 		{ ...context, lastComponent: callComponent } as never,
 	);
 	expect(renderLines(callComponent)).toEqual([" • Bash(printf 'first\\nsecond\\n')", "  ⎿  first", "     second"]);
+
+	bash.renderResult?.(
+		{ content: [{ type: "text", text: "failed\n\nCommand exited with code 7" }], details: { source: "bash" } },
+		{ expanded: false, isPartial: false },
+		theme,
+		{ ...context, isError: true, lastComponent: callComponent } as never,
+	);
+	expect(renderLines(callComponent)).toEqual([
+		" • Bash(printf 'first\\nsecond\\n')",
+		"  ⎿  Error: Exit code 7",
+		"     failed",
+	]);
 });
 
 test("Ctrl+O expands Bash command and output inside the same operation block", () => {

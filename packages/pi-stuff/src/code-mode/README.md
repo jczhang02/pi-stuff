@@ -46,18 +46,18 @@ again at its exact text/media boundary; a public context hook restores the same 
 request. Session JSONL therefore stores each nested image payload once, reloads the same UI, and never trades visual
 equivalence for model visibility.
 
-The real Pi 0.84.1 acceptance gate compares the full ANSI screen and exact Tool Activity block with Code Mode on and
+The real Pi 0.84.2 acceptance gate compares the full ANSI screen and exact Tool Activity block with Code Mode on and
 off at 100×32 and 64×28, both before and after session resume. Only the truthful context-usage number is normalized:
 Code Mode exists to change that value, while its icons, placement, colors, and surrounding layout must remain equal.
 The gate exercises a mixed Activity containing Read, Bash, Background Work, and Agent management, plus a failed Tool
 call, a cancellation-classified Tool result, and interleaved real PNG/text/PNG reads through Pi's media normalization
 and terminal fallback path. The media gate also proves that both images reach the next provider request after the UI
-projection. An additional test runs Pi 0.84.1's real `ToolExecutionComponent` with Kitty capabilities and proves that
+projection. An additional test runs Pi 0.84.2's real `ToolExecutionComponent` with Kitty capabilities and proves that
 expanded multi-image output stays interleaved with its original Tool rows. Outer execution cancellation is covered
 separately so the gate does not inherit process-exit timing races from Pi's native Bash path. The current certified
-fixture measures 22 direct schemas / 31,188 serialized characters against one Code Mode schema / 1,251 characters, a
-96.0% reduction in the provider-visible Tool contract. Including the system prompt and first user message, Pi 0.84.1's
-public estimator reports 9,453 input tokens in direct mode and 1,024 with Code Mode. These figures vary with the active
+fixture measures 22 direct schemas / 31,208 serialized characters against one Code Mode schema / 1,251 characters, a
+96.0% reduction in the provider-visible Tool contract. Including the system prompt and first user message, Pi 0.84.2's
+public estimator reports 9,656 input tokens in direct mode and 1,222 with Code Mode. These figures vary with the active
 Tool set; the gate measures the live Aggregate rather than a hard-coded inventory.
 
 Nested execution preserves Pi's argument preparation, validation, call/result hooks, lifecycle events, cancellation,
@@ -84,7 +84,7 @@ starting Pi does not download, write, or spawn anything for Code Mode.
 
 ## Compatibility
 
-- Pi Host: `0.84.1`
+- Pi Host: `0.84.2`
 - Bun: `1.3.14`
 - Host assets: Linux/macOS x64 and arm64, Windows x64 and arm64
 - Non-Windows archive installation requires `tar`
