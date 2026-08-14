@@ -69,6 +69,10 @@ class TestComponent implements CommandDialogComponent {
 	}
 }
 
+class FocusableTestComponent extends TestComponent {
+	focused = false;
+}
+
 interface EventBusLike {
 	emit(event: string, data: unknown): void;
 	on(event: string, listener: (data: unknown) => void): (() => void) | undefined;
@@ -1186,6 +1190,63 @@ describe("Command Dialog coordinator", () => {
 		mountedContext.close("late");
 		expect(ui.hostCalls[0]?.doneCalls).toBe(1);
 		unregister();
+	});
+
+	test("does not restore an already submitted slash command when the caller opts out", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const coordinator = getCommandDialogCoordinator(api.api);
+		const ui = new UiHarness();
+		ui.editorText = "/ctx";
+		const ctx = createContext(ui);
+		await api.start(ctx);
+		let viewContext: CommandDialogViewContext | undefined;
+
+		const shown = coordinator.show(
+			ctx,
+			{
+				priority: "normal",
+				create: (context) => {
+					viewContext = context;
+					return new TestComponent("command dialog");
+				},
+			},
+			{ restoreDraft: false },
+		);
+		if (!viewContext) throw new Error("Expected the command dialog to mount");
+		viewContext.close();
+		await shown;
+
+		expect(ui.editorText).toBe("");
+		expect(ui.editorWrites).toEqual([""]);
+	});
+
+	test("forwards host focus to the active dialog component", async () => {
+		const api = createApiHarness();
+		await piStuffUi(api.api);
+		const coordinator = getCommandDialogCoordinator(api.api);
+		const ui = new UiHarness();
+		const ctx = createContext(ui);
+		await api.start(ctx);
+		let viewContext: CommandDialogViewContext | undefined;
+		const component = new FocusableTestComponent("input dialog");
+
+		const shown = coordinator.show(ctx, {
+			priority: "normal",
+			create: (context) => {
+				viewContext = context;
+				return component;
+			},
+		});
+		const host = ui.currentHost as CommandDialogComponent & { focused: boolean };
+		host.focused = true;
+		expect(component.focused).toBeTrue();
+		host.focused = false;
+		expect(component.focused).toBeFalse();
+
+		if (!viewContext) throw new Error("Expected the dialog to mount");
+		viewContext.close();
+		await shown;
 	});
 
 	test("restores the Suite-owned working visibility that preceded the dialog", async () => {

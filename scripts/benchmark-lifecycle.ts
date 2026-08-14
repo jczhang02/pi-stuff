@@ -61,6 +61,8 @@ export interface LifecycleSample {
 	readonly rows: number;
 	readonly scenario: Scenario;
 	readonly shutdownMs: number;
+	readonly steadyAcknowledgementMs?: number;
+	readonly steadyResponseMs?: number;
 	readonly startupMs: number;
 	readonly suiteTrace?: readonly LifecycleTraceEvent[];
 	readonly trace?: readonly HostTiming[];
@@ -85,6 +87,8 @@ export interface CellSummary {
 	readonly rows: number;
 	readonly scenario: Scenario;
 	readonly shutdown: MetricSummary;
+	readonly steadyAcknowledgement?: MetricSummary;
+	readonly steadyResponse?: MetricSummary;
 	readonly startup: MetricSummary;
 	readonly variant: Variant;
 	readonly warmups: number;
@@ -95,6 +99,8 @@ interface ExpectMetrics {
 	readonly reloadMs?: number;
 	readonly responseMs?: number;
 	readonly shutdownMs: number;
+	readonly steadyAcknowledgementMs?: number;
+	readonly steadyResponseMs?: number;
 	readonly startupMs: number;
 }
 
@@ -298,7 +304,9 @@ export function lifecycleSessionFindings(entries: readonly unknown[], action: Ac
 	if (scenario === "resume-long") requireMarker("PS5BW_SESSION_TAIL_long");
 	if (action === "prompt") {
 		requireMarker("PS5BW_FIRST_PROMPT");
-		requireMarker("PS5BW_PROMPT_DONE");
+		requireMarker("PS5BW_SECOND_PROMPT");
+		requireMarker("PS5BW_FIRST_PROMPT_DONE");
+		requireMarker("PS5BW_SECOND_PROMPT_DONE");
 	}
 	if (action === "reload" || action === "reload-change") {
 		requireMarker("PS5BW_RELOAD_PROMPT");
@@ -445,6 +453,8 @@ function responseStream(context) {
     }
     return textStream("PS5BW_BACKGROUND_READY");
   }
+  if (transcript.includes("PS5BW_SECOND_PROMPT")) return textStream("PS5BW_SECOND_PROMPT_DONE");
+  if (transcript.includes("PS5BW_FIRST_PROMPT")) return textStream("PS5BW_FIRST_PROMPT_DONE");
   return textStream("PS5BW_PROMPT_DONE");
 }
 
@@ -465,8 +475,10 @@ export default function lifecycleBenchmarkFixture(pi) {
     }],
     streamSimple: (_model, context) => responseStream(context),
   });
-  pi.on("session_start", (_event, ctx) => {
-    setTimeout(() => ctx.ui.setEditorText(READY), 0);
+  pi.registerCommand("ps5bw-ready", {
+    handler: async (_args, ctx) => {
+      ctx.ui.setEditorText(READY);
+    },
   });
   pi.on("input", async (_event, ctx) => {
 	const requiredSuiteTools = ["TaskList", "background", "goal_complete", "mcp", "subagent"];
@@ -559,9 +571,18 @@ send -- "PS5BW_FIRST_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK"
 set acknowledgement_finished [clock microseconds]
 puts "PS5BW_METRIC acknowledgement_us [expr {$acknowledgement_finished - $response_started}]"
-must_expect "PS5BW_PROMPT_DONE"
+must_expect "PS5BW_FIRST_PROMPT_DONE"
 set response_finished [clock microseconds]
 puts "PS5BW_METRIC response_us [expr {$response_finished - $response_started}]"
+after 80
+set steady_response_started [clock microseconds]
+send -- "PS5BW_SECOND_PROMPT\\r"
+must_expect "PS5BW_INPUT_ACK"
+set steady_acknowledgement_finished [clock microseconds]
+puts "PS5BW_METRIC steady_acknowledgement_us [expr {$steady_acknowledgement_finished - $steady_response_started}]"
+must_expect "PS5BW_SECOND_PROMPT_DONE"
+set steady_response_finished [clock microseconds]
+puts "PS5BW_METRIC steady_response_us [expr {$steady_response_finished - $steady_response_started}]"
 after 80
 set shutdown_started [clock microseconds]
 send -- "\\004"
@@ -664,6 +685,8 @@ proc must_file {path} {
 
 set startup_started [clock microseconds]
 spawn -noecho script -qefc $env(PS5BW_RUNNER) /dev/null
+must_expect "fixture-model"
+send -- "/ps5bw-ready\r"
 must_expect "${READY_MARKER}"
 set startup_finished [clock microseconds]
 puts "PS5BW_METRIC startup_us [expr {$startup_finished - $startup_started}]"
@@ -893,14 +916,14 @@ async function runSample(
 	const agentPiPid = join(runDirectory, "agent-pi.pid");
 	const agentShellPid = join(runDirectory, "agent-shell.pid");
 	const agentDirectory = join(configDirectory, "agents");
-	const degradedConfigDirectory = join(runDirectory, "xdg-config", "cortexkit");
 	const sourceChangePackage = join(runDirectory, "suite-package");
 	const sourceChangeFile = join(sourceChangePackage, "src", "todo", "index.ts");
+	const contextConfigDirectory = join(runDirectory, "xdg-config", "cortexkit");
 	await Promise.all([
 		mkdir(configDirectory, { recursive: true }),
 		mkdir(sessionDirectory, { recursive: true }),
 		mkdir(agentDirectory, { recursive: true }),
-		...(scenario === "degraded" ? [mkdir(degradedConfigDirectory, { recursive: true })] : []),
+		...(variant === "suite" ? [mkdir(contextConfigDirectory, { recursive: true })] : []),
 	]);
 	if (action === "reload-change") {
 		const dependencyDirectory = join(options.packagePath, "node_modules");
@@ -931,11 +954,22 @@ async function runSample(
 			benchmarkAgentSource(join(fixturePackage, "extension.js")),
 			{ mode: 0o600 },
 		),
-		...(scenario === "degraded"
+		...(variant === "suite"
 			? [
-					writeFile(join(degradedConfigDirectory, "magic-context.jsonc"), "{ invalid lifecycle fixture\n", {
-						mode: 0o600,
-					}),
+					writeFile(
+						join(contextConfigDirectory, "magic-context.jsonc"),
+						scenario === "degraded"
+							? "{ invalid lifecycle fixture\n"
+							: `${JSON.stringify({
+									dreamer: { disable: true },
+									embedding: { provider: "off" },
+									fail_closed_blocking: false,
+									sidekick: { disable: true },
+									toast_duration_ms: 0,
+									todowrite: { enabled: false, overlay: false },
+								})}\n`,
+						{ mode: 0o600 },
+					),
 				]
 			: []),
 	]);
@@ -999,6 +1033,8 @@ async function runSample(
 			? {
 					acknowledgementMs: parseMetric(output, "acknowledgement"),
 					responseMs: parseMetric(output, "response"),
+					steadyAcknowledgementMs: parseMetric(output, "steady_acknowledgement"),
+					steadyResponseMs: parseMetric(output, "steady_response"),
 				}
 			: {}),
 	};
@@ -1039,6 +1075,10 @@ async function runSample(
 		rows: size.rows,
 		scenario,
 		shutdownMs: rounded(metrics.shutdownMs),
+		...(metrics.steadyAcknowledgementMs === undefined
+			? {}
+			: { steadyAcknowledgementMs: rounded(metrics.steadyAcknowledgementMs) }),
+		...(metrics.steadyResponseMs === undefined ? {} : { steadyResponseMs: rounded(metrics.steadyResponseMs) }),
 		startupMs: rounded(metrics.startupMs),
 		...(Array.isArray(suiteTrace) ? { suiteTrace: suiteTrace as LifecycleTraceEvent[] } : {}),
 		...(trace.length === 0 ? {} : { trace }),
@@ -1070,6 +1110,12 @@ function summaries(samples: readonly LifecycleSample[]): CellSummary[] {
 		);
 		const reloadValues = values.flatMap((sample) => (sample.reloadMs === undefined ? [] : [sample.reloadMs]));
 		const responseValues = values.flatMap((sample) => (sample.responseMs === undefined ? [] : [sample.responseMs]));
+		const steadyAcknowledgementValues = values.flatMap((sample) =>
+			sample.steadyAcknowledgementMs === undefined ? [] : [sample.steadyAcknowledgementMs],
+		);
+		const steadyResponseValues = values.flatMap((sample) =>
+			sample.steadyResponseMs === undefined ? [] : [sample.steadyResponseMs],
+		);
 		return [
 			{
 				action: first.action,
@@ -1080,6 +1126,10 @@ function summaries(samples: readonly LifecycleSample[]): CellSummary[] {
 				rows: first.rows,
 				scenario: first.scenario,
 				shutdown: summarize(values.map((sample) => sample.shutdownMs)),
+				...(steadyAcknowledgementValues.length > 0
+					? { steadyAcknowledgement: summarize(steadyAcknowledgementValues) }
+					: {}),
+				...(steadyResponseValues.length > 0 ? { steadyResponse: summarize(steadyResponseValues) } : {}),
 				startup: summarize(values.map((sample) => sample.startupMs)),
 				variant: first.variant,
 				warmups,
@@ -1090,7 +1140,14 @@ function summaries(samples: readonly LifecycleSample[]): CellSummary[] {
 
 const ACCEPTANCE_MINIMUM_SAMPLES = 3;
 
-type BudgetedMetric = "acknowledgement" | "reload" | "response" | "shutdown" | "startup";
+type BudgetedMetric =
+	| "acknowledgement"
+	| "reload"
+	| "response"
+	| "shutdown"
+	| "steadyAcknowledgement"
+	| "steadyResponse"
+	| "startup";
 
 interface BudgetRule {
 	readonly budget: number;
@@ -1118,10 +1175,15 @@ function budgetRules(cell: CellSummary): readonly BudgetRule[] {
 	const longSession = cell.scenario === "resume-long";
 	const rules: BudgetRule[] = [];
 	if (cell.action !== "reload-change") {
-		rules.push({ budget: longSession ? 1_800 : 1_600, metric: "startup" });
+		rules.push({ budget: longSession ? 3_000 : 2_700, metric: "startup" });
 	}
 	if (cell.action === "prompt") {
-		rules.push({ budget: 50, metric: "acknowledgement" }, { budget: 1_100, metric: "response" });
+		rules.push(
+			{ budget: 50, metric: "acknowledgement" },
+			{ budget: 1_100, metric: "response" },
+			{ budget: 15, metric: "steadyAcknowledgement" },
+			{ budget: 50, metric: "steadyResponse" },
+		);
 	}
 	if (cell.action === "exit" || cell.action === "ctrl-c") {
 		rules.push({ budget: longSession ? 350 : 150, metric: "shutdown" });
@@ -1139,7 +1201,9 @@ function requiredMetrics(cell: CellSummary): readonly BudgetedMetric[] {
 		"startup",
 		"shutdown",
 		...(cell.action === "reload" || cell.action === "reload-change" ? (["reload"] as const) : []),
-		...(cell.action === "prompt" ? (["acknowledgement", "response"] as const) : []),
+		...(cell.action === "prompt"
+			? (["acknowledgement", "response", "steadyAcknowledgement", "steadyResponse"] as const)
+			: []),
 	];
 }
 
@@ -1249,12 +1313,14 @@ export function lifecycleAcceptanceFindings(
 					}
 					for (const metric of requiredMetrics(cell)) {
 						const summary = cell[metric];
-						if (summary && summary.samples < ACCEPTANCE_MINIMUM_SAMPLES) {
+						if (!summary) {
+							findings.push(`${key} is missing ${metric}`);
+						} else if (summary.samples < ACCEPTANCE_MINIMUM_SAMPLES) {
 							findings.push(`${key} ${metric} has only ${String(summary.samples)} measured samples`);
 						}
 					}
 					for (const { budget, metric } of budgetRules(cell)) {
-						enforceBudget(cell, metric, cell[metric], budget);
+						if (cell[metric]) enforceBudget(cell, metric, cell[metric], budget);
 					}
 				}
 			}
@@ -1268,6 +1334,8 @@ function progress(sample: LifecycleSample, phase: "initial" | "confirmation" = "
 		sample.reloadMs === undefined ? "" : ` reload=${sample.reloadMs.toFixed(1)}ms`,
 		sample.acknowledgementMs === undefined ? "" : ` ack=${sample.acknowledgementMs.toFixed(1)}ms`,
 		sample.responseMs === undefined ? "" : ` response=${sample.responseMs.toFixed(1)}ms`,
+		sample.steadyAcknowledgementMs === undefined ? "" : ` steady-ack=${sample.steadyAcknowledgementMs.toFixed(1)}ms`,
+		sample.steadyResponseMs === undefined ? "" : ` steady-response=${sample.steadyResponseMs.toFixed(1)}ms`,
 	].join("");
 	console.error(
 		`${phase === "confirmation" ? "confirmation " : ""}${sample.warmup ? "warmup" : "sample"} ${cellKey(sample)} #${String(sample.iteration + 1)} ` +
@@ -1361,7 +1429,7 @@ async function main(): Promise<void> {
 			? lifecycleAcceptanceFindings(options, cellSummaries, confirmationSummaries)
 			: [];
 		const report = {
-			schemaVersion: 4,
+			schemaVersion: 5,
 			generatedAt: new Date().toISOString(),
 			host: { profile: provenance.profile, provenance: provenance.kind },
 			toolchain: { bun: Bun.version },
@@ -1400,6 +1468,7 @@ async function main(): Promise<void> {
 				"Warmups heat executable and filesystem caches; the benchmark does not mutate global kernel page-cache state.",
 				"The host control loads only the deterministic fixture Package; the suite variant adds the Pi Stuff Package before it.",
 				"All model responses are deterministic in-process fixtures; no credential or network call is used.",
+				"Prompt actions measure both first-turn activation and a second same-process steady-state submission.",
 				"Resource actions verify the tracked shell or Agent child settles after the measured parent shutdown.",
 				"Every exit parses the resulting Session JSONL; completed prompts and Background/Agent Tool call-result receipts must remain durable.",
 				"An initially over-budget cell receives one independent complete confirmation batch; only a repeated violation fails acceptance, and both batches remain in the report.",

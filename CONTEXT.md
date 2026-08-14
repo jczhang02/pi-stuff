@@ -51,6 +51,11 @@ _Avoid_: Exploration group, Tool batch, merged Tool call
 A display-only projection of one Bash Tool call at its native transcript position, with one bounded command title and child output preview. Shell composition inside the call remains one operation, and the underlying Tool result and Session records are unchanged.
 _Avoid_: Command group, parsed subcommand, Tool Activity Group
 
+**Context Activity**:
+A model-invisible, persisted Session record for one user-started Context maintenance operation. One visible Pi Stuff row
+projects its anchor and later updates after resume. It is not a Tool call, Diagnostic Record, or Statusline item.
+_Avoid_: Context Tool Activity, Context notification, Context status
+
 **Todo Task**:
 A planned unit of work maintained by the Suite's Task tools and checklist. It describes intent; it is not an executing process, wait, or Agent.
 _Avoid_: Background task, job

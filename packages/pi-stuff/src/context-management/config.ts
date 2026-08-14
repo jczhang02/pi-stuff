@@ -111,11 +111,10 @@ export interface MagicContextPreparationOptions {
 /**
  * Give a first-time Pi Stuff installation a usable official Magic Context
  * configuration without overwriting an existing user or project file.
- * This runs only on lazy activation, never during Pi startup discovery. An
- * automatic Extension turn cannot even hand an existing legacy config to the
- * upstream factory because that factory migrates files during initialization.
- * First-use creation or migration waits for direct interactive/RPC input or an
- * explicit Context projection.
+ * Mutation-free startup may use an existing canonical config, but cannot hand
+ * an existing legacy config to the upstream factory because that factory
+ * migrates files during initialization. First-use creation or migration waits
+ * for direct interactive/RPC input or an explicit Context projection.
  */
 export async function prepareMagicContext(
 	ctx: ExtensionContext,
