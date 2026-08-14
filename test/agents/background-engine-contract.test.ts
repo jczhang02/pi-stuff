@@ -4201,6 +4201,65 @@ setInterval(() => {}, 1_000);
 		);
 	}, 5_000);
 
+	test("compacts redundant Pi lifecycle payloads before applying the aggregate protocol limit", async () => {
+		const root = fixtureRoot();
+		process.env.PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES = "4096";
+		const writer = path.join(root, "redundant-protocol-payloads.ts");
+		fs.writeFileSync(
+			writer,
+			`#!/usr/bin/env bun
+const toolResult = {
+  role: "toolResult",
+  toolCallId: "call-1",
+  toolName: "read",
+  content: [{ type: "text", text: "x".repeat(1700) }],
+  isError: false,
+  timestamp: Date.now(),
+};
+const assistant = {
+  role: "assistant",
+  content: [{ type: "text", text: "PROTOCOL_COMPACTED" }],
+  stopReason: "stop",
+  timestamp: Date.now(),
+};
+const events = [
+  { type: "tool_execution_start", toolCallId: "call-1", toolName: "read", args: { path: "fixture" } },
+  { type: "message_start", message: toolResult },
+  { type: "tool_execution_end", toolCallId: "call-1", toolName: "read", result: { content: toolResult.content }, isError: false },
+  { type: "message_end", message: toolResult },
+  { type: "turn_end", message: assistant, toolResults: [toolResult] },
+  { type: "message_end", message: assistant },
+];
+process.stdout.write(events.map((event) => JSON.stringify(event)).join("\\n") + "\\n");
+`,
+			{ mode: 0o700 },
+		);
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const asyncDir = path.join(root, "async-redundant-protocol");
+		const resultPath = path.join(asyncDir, "result.json");
+
+		await runConfiguredBackground({
+			version: 2,
+			id: "redundant-protocol",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: { mode: "single", task: { ...task(0), cwd: root } },
+		});
+		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
+			state: string;
+			success: boolean;
+			results: Array<{ output?: string; protocolError?: unknown; success: boolean }>;
+		};
+
+		expect(completion).toMatchObject({
+			state: "complete",
+			success: true,
+			results: [{ output: "PROTOCOL_COMPACTED", success: true }],
+		});
+		expect(completion.results[0]?.protocolError).toBeUndefined();
+	}, 5_000);
+
 	test("enforces aggregate protocol and turn budgets on a final record without a newline", async () => {
 		const root = fixtureRoot();
 		const cases = [
