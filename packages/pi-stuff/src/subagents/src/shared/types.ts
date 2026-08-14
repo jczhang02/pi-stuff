@@ -702,6 +702,7 @@ export interface SingleResult {
 	turnBudget?: TurnBudgetState;
 	turnBudgetExceeded?: boolean;
 	wrapUpRequested?: boolean;
+	contextNudgeObserved?: boolean;
 	toolBudget?: ToolBudgetState;
 	toolBudgetBlocked?: boolean;
 	messages?: Message[];

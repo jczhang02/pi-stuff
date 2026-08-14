@@ -157,6 +157,7 @@ interface ChildProcessResult {
 	stopped?: boolean;
 	turnBudget?: TurnBudgetState;
 	turnBudgetExceeded?: boolean;
+	contextNudgeObserved?: boolean;
 	process?: WriterProcess;
 }
 
@@ -1556,6 +1557,7 @@ function runChildProcess(input: {
 				let timedOut = false;
 				let stopped = false;
 				let turnBudgetExceeded = false;
+				let contextNudgeObserved = false;
 				let turnBudget = input.task.turnBudget ? initialTurnBudgetState(input.task.turnBudget) : undefined;
 				let terminalCause: "pause" | "timeout" | "stop" | "turn-budget" | "protocol" | "setup" | undefined;
 				let settled = false;
@@ -1927,6 +1929,13 @@ function runChildProcess(input: {
 						return;
 					}
 					const event = parsedEvent.event;
+					if (
+						event.type === "message_end" &&
+						event.message?.role === "custom" &&
+						event.message.customType === "magic-context:ceiling-nudge"
+					) {
+						contextNudgeObserved = true;
+					}
 					appendRawEvent(line, event);
 					input.transcript.writeChildEvent(event);
 					const terminalStop =
@@ -2216,6 +2225,7 @@ function runChildProcess(input: {
 							stopped: stopped || undefined,
 							turnBudget,
 							turnBudgetExceeded: turnBudgetExceeded || undefined,
+							contextNudgeObserved: contextNudgeObserved || undefined,
 							process: {
 								processInstanceId,
 								kind: "pi-writer",
@@ -2488,6 +2498,7 @@ async function runResolvedTask(input: {
 		...(final?.stopped ? { stopped: true } : {}),
 		...(final?.turnBudget ? { turnBudget: final.turnBudget } : {}),
 		...(final?.turnBudgetExceeded ? { turnBudgetExceeded: true, wrapUpRequested: true } : {}),
+		...(final?.contextNudgeObserved ? { contextNudgeObserved: true } : {}),
 		...(toolBudget ? { toolBudget } : {}),
 		...(sessionFile ? { sessionFile } : {}),
 		...(config.childIntercomTargets?.[index] ? { intercomTarget: config.childIntercomTargets[index] } : {}),

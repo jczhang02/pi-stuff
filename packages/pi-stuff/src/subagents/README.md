@@ -51,8 +51,9 @@ user definitions, and user definitions override Package definitions.
   are assembled; an oversized launch retries an eligible larger fallback, while an irreducible launch or continuation
   stops locally with a phase-specific durable diagnostic instead of surfacing as an unexplained Agent crash.
 - Pi-legal hidden custom messages, including Magic Context housekeeping nudges, are accepted as bounded child
-  transcript evidence. They never become the Agent's final report; malformed or unsupported protocol envelopes still
-  fail closed with a durable diagnostic.
+  transcript evidence. An observed ceiling nudge is also surfaced to the parent as one bounded lifecycle fact. Custom
+  messages never become the Agent's final report; malformed or unsupported protocol envelopes still fail closed with
+  a durable diagnostic.
 - Background completion renders a compact `Agent finished/failed/stopped · … · inspect with /agents` session entry.
   The entry survives resume, is excluded from model context, and never triggers an unsolicited main-model turn. Full
   direct and nested reports remain available in `/agents`. Model-visible status for a failed direct child presents a

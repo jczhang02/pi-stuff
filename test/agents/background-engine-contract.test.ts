@@ -3119,20 +3119,24 @@ process.exit(0);
 		process.env.PI_SUBAGENT_PI_BINARY = writer;
 		const asyncDir = path.join(root, "async-custom-message");
 		const resultPath = path.join(asyncDir, "result.json");
-
-		await runConfiguredBackground({
+		const config: BackgroundRunnerConfig = {
 			version: 2,
 			id: "custom-message",
 			cwd: root,
 			asyncDir,
 			resultPath,
 			work: { mode: "single", task: { ...task(0), cwd: root } },
-		});
+		};
 
-		expect(JSON.parse(fs.readFileSync(resultPath, "utf8"))).toMatchObject({
+		await runConfiguredBackground(config);
+
+		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+		expect(completion).toMatchObject({
 			state: "complete",
-			results: [{ output: "CUSTOM_MESSAGE_SURVIVED", success: true }],
+			results: [{ output: "CUSTOM_MESSAGE_SURVIVED", success: true, contextNudgeObserved: true }],
 		});
+		const projected = projectForegroundCompletion(config, completion);
+		expect(projected.content[0]).toMatchObject({ text: expect.stringContaining("Context housekeeping observed") });
 		const transcriptPath = path.join(asyncDir, "transcripts", "0-agent-0.jsonl");
 		const transcript = fs
 			.readFileSync(transcriptPath, "utf8")
