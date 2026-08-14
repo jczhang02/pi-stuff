@@ -18,11 +18,11 @@ All accepted-work creation, updates, dependencies, claiming, and closure begin i
 
 Issue IDs use the `ps` prefix.
 
-## Repository export
+## Local storage
 
-The local Dolt database is authoritative for Beads commands. It is configured as local-only.
+The local Dolt database is authoritative for Beads commands. The entire `.beads/` workspace is local-only and excluded from Git.
 
-`.beads/issues.jsonl` is an automatically refreshed, version-controlled public export for audit and issue-level recovery. It is not a full Dolt backup. Beads must not stage, commit, push, or otherwise operate Git, and repository Git hooks are not installed by Beads.
+The publish command may refresh a scrubbed local `.beads/issues.jsonl` after syncing accepted work to GitHub Issues. That export is not version-controlled or a full Dolt backup. Beads must not stage, commit, push, or otherwise operate Git, and repository Git hooks are not installed by Beads.
 
 ## GitHub mirror
 
