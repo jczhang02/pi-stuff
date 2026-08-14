@@ -15,8 +15,12 @@ dist/
 skills-lock.json
 .DS_Store
 
-# Beads / Dolt runtime state
+# Local workspaces
+.beads/
+.beads.gate.lock
+.obsidian/
+
+# Dolt runtime state
 .dolt/
 *.db
 .beads-credential-key
-.beads/proxieddb/

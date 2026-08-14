@@ -50,7 +50,7 @@
 
 Session 时间戳是 UTC；本文日期按 Asia/Shanghai。Session 文件不属于仓库，因此这些行号是本地溯源定位，不是可移植的仓库链接。
 
-当前 Beads 状态以本地数据库为权威，并已刷新到 [`.beads/issues.jsonl`](../../.beads/issues.jsonl)。S3:L140-L141 记录了“`ps-4xm` 暂不处理，其他一起处理”的维护者决策；S3:L213-L214 记录了 P0/P4 调整、两个 canonical scope 更新和 duplicate 关闭结果。
+当前 Beads 状态以本地数据库为权威，并通过 push-only 同步发布到 GitHub Issues；`.beads/` 不进入仓库。S3:L140-L141 记录了“`ps-4xm` 暂不处理，其他一起处理”的维护者决策；S3:L213-L214 记录了 P0/P4 调整、两个 canonical scope 更新和 duplicate 关闭结果。
 
 ## 3. `ps-imw`：修正 child payload 的 byte/token 单位错配
 
