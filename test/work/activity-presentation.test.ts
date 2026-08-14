@@ -58,7 +58,7 @@ test("standalone Bash preserves an automatic foreground-to-background handoff in
 	);
 
 	const rendered = row?.render(100).join("\n") ?? "";
-	expect(rendered).toContain("• Ran sleep 300");
-	expect(rendered).toContain("⎿ Command still running after 120s; moved to background task abc123.");
+	expect(rendered).toContain("• Bash(sleep 300)");
+	expect(rendered).toContain("⎿  Command still running after 120s; moved to background task abc123.");
 	expect(rendered).not.toContain("Launched 1 background task");
 });

@@ -143,6 +143,7 @@ describe("terminal-safe Tool rendering", () => {
 			active: false,
 			command: "rg -n 'durationMs' packages/pi-stuff/src",
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: [
 				"contract.ts:2131: durationMs",
@@ -155,29 +156,29 @@ describe("terminal-safe Tool rendering", () => {
 			state: "success",
 		});
 		expect(settled.render(100)).toEqual([
-			" • Ran rg -n 'durationMs' packages/pi-stuff/src",
-			"   ⎿ contract.ts:2131: durationMs",
+			" • Bash(rg -n 'durationMs' packages/pi-stuff/src)",
+			"  ⎿  contract.ts:2131: durationMs",
 			"     contract.ts:2159: durationMs",
 			"     third",
-			"     fourth",
-			"     … +2 lines  (ctrl+o to expand)",
+			"     … +3 lines (ctrl+o to expand)",
 		]);
 
 		const running = new CachedToolRow(theme, {
 			active: true,
 			command: "printf 'first\\nsecond\\n' && sleep 1",
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: "first\nsecond",
 			state: "running",
 		});
 		expect(running.render(80)).toEqual([
-			" • Running printf 'first\\nsecond\\n' && sleep 1",
-			"   ⎿ first",
+			" • Bash(printf 'first\\nsecond\\n' && sleep 1)",
+			"  ⎿  first",
 			"     second",
 		]);
 		running.setMarkerVisible(false);
-		expect(running.render(80)[0]).toStartWith("   Running");
+		expect(running.render(80)[0]).toStartWith("   Bash(");
 	});
 
 	test("renders Claude-style Bash no-output and explicit failure states", () => {
@@ -185,23 +186,36 @@ describe("terminal-safe Tool rendering", () => {
 			active: false,
 			command: "true",
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: "(no output)",
 			state: "success",
 		});
-		expect(noOutput.render(80)).toEqual([" • Ran true", "   ⎿ (No output)"]);
+		expect(noOutput.render(80)).toEqual([" • Bash(true)", "  ⎿  (No output)"]);
+
+		const running = new CachedToolRow(theme, {
+			active: true,
+			command: "sleep 30",
+			expandable: true,
+			expanded: false,
+			kind: "bash-operation",
+			output: "",
+			state: "running",
+		});
+		expect(running.render(80)).toEqual([" • Bash(sleep 30)", "  ⎿  Running…"]);
 
 		const failed = new CachedToolRow(theme, {
 			active: false,
 			command: "printf 'boom\\n' >&2; exit 7",
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: "boom\n\nCommand exited with code 7",
 			state: "error",
 		});
 		expect(failed.render(80)).toEqual([
-			" • Ran printf 'boom\\n' >&2; exit 7",
-			"   ⎿ Error: Exit code 7",
+			" • Bash(printf 'boom\\n' >&2; exit 7)",
+			"  ⎿  Error: Exit code 7",
 			"     boom",
 		]);
 
@@ -209,13 +223,14 @@ describe("terminal-safe Tool rendering", () => {
 			active: false,
 			command: "rm -rf generated",
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: "Tool execution was blocked by policy",
 			state: "rejected",
 		});
 		expect(rejected.render(80)).toEqual([
-			" • Ran rm -rf generated",
-			"   ⎿ Rejected",
+			" • Bash(rm -rf generated)",
+			"  ⎿  Rejected",
 			"     Tool execution was blocked by policy",
 		]);
 
@@ -223,23 +238,25 @@ describe("terminal-safe Tool rendering", () => {
 			active: false,
 			command: "sleep 30",
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: "Command aborted",
 			state: "cancelled",
 		});
-		expect(cancelled.render(80)).toEqual([" • Ran sleep 30", "   ⎿ Interrupted"]);
+		expect(cancelled.render(80)).toEqual([" • Bash(sleep 30)", "  ⎿  Interrupted"]);
 
 		const timedOut = new CachedToolRow(theme, {
 			active: false,
 			command: "curl https://example.invalid",
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: "partial stderr\nCommand timed out after 10 seconds",
 			state: "error",
 		});
 		expect(timedOut.render(80)).toEqual([
-			" • Ran curl https://example.invalid",
-			"   ⎿ Error: Command timed out after 10 seconds",
+			" • Bash(curl https://example.invalid)",
+			"  ⎿  Error: Command timed out after 10 seconds",
 			"     partial stderr",
 		]);
 
@@ -247,11 +264,57 @@ describe("terminal-safe Tool rendering", () => {
 			active: false,
 			command: "dangerous-command",
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: ["policy", "scope", "owner", "reason", "remediation"].join("\n"),
 			state: "rejected",
 		});
-		expect(longRejection.render(80).at(-1)).toBe("     … +2 lines  (ctrl+o to expand)");
+		expect(longRejection.render(80).at(-1)).toBe("     … +3 lines (ctrl+o to expand)");
+		longRejection.setModel({
+			active: false,
+			command: "rm -rf generated",
+			expandable: true,
+			expanded: true,
+			kind: "bash-operation",
+			output: ["policy", "scope", "owner", "reason", "remediation"].join("\n"),
+			state: "rejected",
+		});
+		expect(longRejection.render(80)).toEqual([
+			" • Bash(rm -rf generated)",
+			"  ⎿  Rejected",
+			"     policy",
+			"     scope",
+			"     owner",
+			"     reason",
+			"     remediation",
+		]);
+	});
+
+	test("uses Claude-style semantic roles across a settled Bash operation", () => {
+		const calls: Array<[string, string]> = [];
+		const recordingTheme = {
+			bold: (value: string) => value,
+			fg: (color: string, value: string) => {
+				calls.push([color, value]);
+				return value;
+			},
+		} as unknown as Theme;
+		const row = new CachedToolRow(recordingTheme, {
+			active: false,
+			command: "seq 1 5",
+			expandable: true,
+			expanded: false,
+			kind: "bash-operation",
+			output: "1\n2\n3\n4\n5",
+			state: "success",
+		});
+
+		row.render(80);
+		expect(calls).toContainEqual(["muted", "  ⎿  "]);
+		expect(calls).toContainEqual(["text", "1"]);
+		expect(calls).toContainEqual(["text", "2"]);
+		expect(calls).toContainEqual(["text", "3"]);
+		expect(calls).toContainEqual(["dim", "… +2 lines (ctrl+o to expand)"]);
 	});
 
 	test("caps Bash commands to Claude's two-line and 160-character call preview", () => {
@@ -259,14 +322,58 @@ describe("terminal-safe Tool rendering", () => {
 			active: false,
 			command: `first line\nsecond line\n${"x".repeat(200)}`,
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: "ok",
 			state: "success",
 		});
 		const rendered = row.render(48);
-		expect(rendered.slice(0, 2)).toEqual([" • Ran first line", "       second line…"]);
-		expect(rendered.at(2)).toBe("   ⎿ ok");
+		expect(rendered.slice(0, 2)).toEqual([" • Bash(first line", "      second line…)"]);
+		expect(rendered.at(2)).toBe("  ⎿  ok");
 		expect(rendered.every((line) => visibleWidth(line) <= 48)).toBe(true);
+	});
+
+	test("restores the bounded full Bash command and output when expanded", () => {
+		const row = new CachedToolRow(theme, {
+			active: false,
+			command: "printf 'first\nsecond\nthird\n'",
+			expandable: true,
+			expanded: true,
+			kind: "bash-operation",
+			output: "1\n2\n3\n4\n5",
+			state: "success",
+		});
+
+		expect(row.render(80)).toEqual([
+			" • Bash(printf 'first",
+			"      second",
+			"      third",
+			"      ')",
+			"  ⎿  1",
+			"     2",
+			"     3",
+			"     4",
+			"     5",
+		]);
+	});
+
+	test("wraps long Bash titles and output at their Claude child origins", () => {
+		const row = new CachedToolRow(theme, {
+			active: false,
+			command: "printf_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+			expandable: true,
+			expanded: false,
+			kind: "bash-operation",
+			output: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+			state: "success",
+		});
+
+		expect(row.render(64)).toEqual([
+			" • Bash(printf_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW",
+			"      XYZ0123456789)",
+			"  ⎿  abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456",
+			"     789",
+		]);
 	});
 
 	test("bounds retained Bash output before deriving its compact preview", () => {
@@ -274,13 +381,14 @@ describe("terminal-safe Tool rendering", () => {
 			active: false,
 			command: "printf huge-output",
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: `${"输出".repeat(32 * 1024)}\nSHOULD_NOT_BE_RETAINED`,
 			state: "success",
 		});
 		const rendered = row.render(64);
 
-		expect(rendered[0]).toBe(" • Ran printf huge-output");
+		expect(rendered[0]).toBe(" • Bash(printf huge-output)");
 		expect(rendered.join("\n")).not.toContain("SHOULD_NOT_BE_RETAINED");
 		expect(rendered.every((line) => visibleWidth(line) <= 64)).toBe(true);
 	});
@@ -290,13 +398,14 @@ describe("terminal-safe Tool rendering", () => {
 			active: false,
 			command: `${"echo x; ".repeat(32 * 1024)}SHOULD_NOT_BE_SCANNED`,
 			expandable: true,
+			expanded: false,
 			kind: "bash-operation",
 			output: "ok",
 			state: "success",
 		});
 		const rendered = row.render(64);
 
-		expect(rendered[0]).toStartWith(" • Ran echo x;");
+		expect(rendered[0]).toStartWith(" • Bash(echo x;");
 		expect(rendered.join("\n")).not.toContain("SHOULD_NOT_BE_SCANNED");
 		expect(rendered.every((line) => visibleWidth(line) <= 64)).toBe(true);
 	});

@@ -199,9 +199,9 @@ function verifyOutput(output: string, columns: number): void {
 		"• Bash",
 		"• Changing 1 file",
 		"• Changed 1 file",
-		"• Ran printf '",
-		"⎿ PREFIX_CJK_工具",
-		"⎿ Error: Exit code 7",
+		"• Bash(printf '",
+		"⎿  PREFIX_CJK_工具",
+		"⎿  Error: Exit code 7",
 		"BUILTIN_FAILURE_工具",
 		"1 failed, 1 rejected, 1 cancelled",
 		"Tools",
@@ -245,8 +245,8 @@ function verifyLifecycleFrames(visible: string): void {
 			.slice(-40);
 		fail(`running Activity Group did not settle semantically: ${JSON.stringify(observed)}`);
 	}
-	const firstBash = visible.indexOf("⎿ PREFIX_CJK_工具");
-	const failedBash = visible.indexOf("⎿ Error: Exit code 7", firstBash + 1);
+	const firstBash = visible.indexOf("⎿  PREFIX_CJK_工具");
+	const failedBash = visible.indexOf("⎿  Error: Exit code 7", firstBash + 1);
 	if (firstBash < 0 || failedBash < 0 || firstBash >= failedBash) {
 		fail("standalone Bash operation blocks did not retain source order or child output");
 	}

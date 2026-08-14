@@ -96,6 +96,32 @@ FREEZE_BIN=/tmp/pi-proto-bin/freeze \
 
 The generated frames are [compact success](./artifacts/pi-0.83-transcript-compact-success.png), [expanded detail](./artifacts/pi-0.83-transcript-expanded-detail.png), and [compact error](./artifacts/pi-0.83-transcript-compact-error.png).
 
+## Bash Operation Block parity
+
+Pi Stuff's standalone Bash renderer was checked against the genuine released Claude Code `2.1.220` binary with the
+same deterministic local Bash calls, `xterm-256color` grid, Iosevka Nerd Font Mono Freeze renderer, and no external
+model request. The comparison crops only the Bash Operation Blocks; Claude/Pi welcome cards, editor/footer chrome,
+final prose, and the separately approved outer `●` / `•` marker are not parity targets.
+
+At the terminal-cell layer, the matched `100 × 38` running and settled crops contain the same two and seventeen rows,
+respectively. Repainting both normalized crops with one font and color produces zero changed pixels. The `64 × 28`
+settled crop and sequential multi-command compact crop have the same normalized structure. The `Ctrl+O` expanded crop
+likewise matches all 25 Operation Block rows with zero normalized changed pixels. Raw themed Operation Block crops are
+not identical: the changed-pixel ratios are 5.09% running, 2.92% settled, 1.96% expanded, and 4.53% narrow because the
+two Hosts retain their own transcript marker and semantic palettes. Pi Stuff therefore maps
+success, running, error, connector, no-output, and truncation roles through the active Pi theme instead of hard-coding
+Claude's ANSI palette.
+
+`Ctrl+O` keeps every Bash call as one `Bash(<command>)` block and expands its bounded command/output in place. It does
+not expose Pi's generic `Call` / `Result` headings. This is the released-Claude behavior recorded by the expanded pair.
+
+| State | Claude Code 2.1.220 | Pi Host 0.84.1 |
+| --- | --- | --- |
+| Running, `100 × 38` | [reference](./artifacts/claude-2.1.220-bash-operation-running-100x38.png) | [Pi Stuff](./artifacts/pi-0.84.1-bash-operation-running-100x38.png) |
+| Settled, `100 × 38` | [reference](./artifacts/claude-2.1.220-bash-operation-settled-100x38.png) | [Pi Stuff](./artifacts/pi-0.84.1-bash-operation-settled-100x38.png) |
+| Expanded, `100 × 38` | [reference](./artifacts/claude-2.1.220-bash-operation-expanded-100x38.png) | [Pi Stuff](./artifacts/pi-0.84.1-bash-operation-expanded-100x38.png) |
+| Settled, `64 × 28` | [reference](./artifacts/claude-2.1.220-bash-operation-narrow-64x28.png) | [Pi Stuff](./artifacts/pi-0.84.1-bash-operation-narrow-64x28.png) |
+
 ## Tool UI density comparison
 
 [`tool-ui-comparison-fixture.ts`](./tool-ui-comparison-fixture.ts) generates three sessions with identical tool calls and results. [`tool-ui-comparison.ts`](./tool-ui-comparison.ts) changes only their transcript projection and provides the shared Tool Details surface. The registered prototype tool is inert: it performs no model, network, file, or shell I/O.

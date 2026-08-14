@@ -1256,7 +1256,8 @@ export class ToolUiRuntime {
 		const leader = this.bindings.get(group.leaderId);
 		const index = this.summaryIndex(group, changedMemberId);
 		if (!leader) return;
-		if (leader.expanded) {
+		const standaloneBash = group.members.length === 1 && group.members[0]?.name === "bash";
+		if (leader.expanded && !standaloneBash) {
 			this.stopGroupPulse(group.leaderId);
 			for (const member of group.members) {
 				const binding = this.bindings.get(member.id);
@@ -1264,8 +1265,9 @@ export class ToolUiRuntime {
 			}
 			return;
 		}
-		if (group.members.length === 1 && group.members[0]?.name === "bash") {
+		if (standaloneBash) {
 			const member = group.members[0];
+			if (!member) return;
 			const binding = this.bindings.get(member.id);
 			if (!binding) return;
 			const summaryMember = this.summaryMember(member);
@@ -1274,6 +1276,7 @@ export class ToolUiRuntime {
 				command:
 					typeof member.args["command"] === "string" ? member.args["command"] : String(member.args["value"] ?? ""),
 				expandable: true,
+				expanded: binding.expanded,
 				kind: "bash-operation",
 				output: member.result
 					? member.result.content
@@ -2208,11 +2211,12 @@ function resultBody<TArgs extends Record<string, unknown>, TDetails>(
 	expanded: boolean,
 	showImages: boolean,
 	theme: Theme,
+	hideExpandedText = false,
 	embedded = false,
 	hostImageKeys?: ImageContentIndex,
 ): Component {
 	const container = new Container();
-	const text = expanded ? (state.detailLines?.join("\n") ?? "") : "";
+	const text = expanded && !hideExpandedText ? (state.detailLines?.join("\n") ?? "") : "";
 	if (text) container.addChild(new Text(theme.fg("toolOutput", text), 2, 0));
 	const hostRendersImages = Boolean(!embedded && getCapabilities().images && showImages);
 	const images = hostRendersImages
@@ -2311,6 +2315,7 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 				renderOptions.expanded,
 				typed.showImages,
 				theme,
+				tool.name === "bash",
 				Reflect.get(typed, EMBEDDED_TOOL_RESULT) === true,
 				Reflect.get(typed, EMBEDDED_HOST_IMAGE_KEYS) instanceof Map
 					? (Reflect.get(typed, EMBEDDED_HOST_IMAGE_KEYS) as ImageContentIndex)

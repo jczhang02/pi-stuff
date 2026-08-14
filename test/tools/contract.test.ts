@@ -1241,8 +1241,8 @@ test("multiple Bash calls render as separate operation blocks in native order", 
 	const after = settle(read, "r2", "after.ts");
 
 	expect(before.callLines.join("\n")).toContain("Read 1 file");
-	expect(first.callLines).toEqual([" • Ran printf 'one\\ntwo\\n'", "   ⎿ one", "     two"]);
-	expect(second.callLines).toEqual([" • Ran printf 'three\\n' && printf 'four\\n'", "   ⎿ three", "     four"]);
+	expect(first.callLines).toEqual([" • Bash(printf 'one\\ntwo\\n')", "  ⎿  one", "     two"]);
+	expect(second.callLines).toEqual([" • Bash(printf 'three\\n' && printf 'four\\n')", "  ⎿  three", "     four"]);
 	expect(after.callLines.join("\n")).toContain("Read 1 file");
 	expect([before, first, second, after].flatMap((entry) => entry.callLines).join("\n")).not.toContain("commands");
 	expect(runtime.listGroups().map((group) => group.memberIds)).toEqual([["r2"], ["b2"], ["b1"], ["r1"]]);
@@ -1265,7 +1265,7 @@ test("Bash partial results update the running operation output in place", () => 
 	);
 	const callComponent = bash.renderCall?.({ value: "printf 'first\\nsecond\\n'" }, theme, context as never);
 	if (!callComponent) throw new Error("missing running Bash component");
-	expect(renderLines(callComponent)).toEqual([" • Running printf 'first\\nsecond\\n'", "   ⎿ (No output)"]);
+	expect(renderLines(callComponent)).toEqual([" • Bash(printf 'first\\nsecond\\n')", "  ⎿  Running…"]);
 
 	bash.renderResult?.(
 		{ content: [{ type: "text", text: "first\nsecond" }], details: { source: "bash" } },
@@ -1273,17 +1273,42 @@ test("Bash partial results update the running operation output in place", () => 
 		theme,
 		{ ...context, lastComponent: callComponent } as never,
 	);
-	expect(renderLines(callComponent)).toEqual([" • Running printf 'first\\nsecond\\n'", "   ⎿ first", "     second"]);
+	expect(renderLines(callComponent)).toEqual([" • Bash(printf 'first\\nsecond\\n')", "  ⎿  first", "     second"]);
 });
 
-test("Code Mode preserves standalone Bash operation blocks", () => {
+test("Ctrl+O expands Bash command and output inside the same operation block", () => {
+	const harness = apiHarness();
+	const bash = toolFromHarness(harness, "bash", "run-command");
+	const runtime = getToolUiRuntime(harness.api);
+	const command = "printf 'first\\nsecond\\nthird\\n'";
+	runtime.indexMessages(
+		[assistant(bashCall("expanded-bash", command)), result("expanded-bash", "1\n2\n3\n4\n5")],
+		true,
+	);
+	const expanded = settle(bash, "expanded-bash", command, false, true, "1\n2\n3\n4\n5");
+
+	expect(expanded.callLines).toEqual([
+		" • Bash(printf 'first\\nsecond\\nthird\\n')",
+		"  ⎿  1",
+		"     2",
+		"     3",
+		"     4",
+		"     5",
+	]);
+	expect(expanded.resultLines).toEqual([]);
+	expect(expanded.callLines.join("\n")).not.toContain("Call\n");
+	expect(expanded.callLines.join("\n")).not.toContain("Result\n");
+});
+
+test("Code Mode preserves standalone Bash operation blocks in compact and expanded views", () => {
 	const directHarness = apiHarness();
 	const directBash = toolFromHarness(directHarness, "bash", "run-command");
 	getToolUiRuntime(directHarness.api).indexMessages(
-		[assistant(bashCall("direct-bash", "printf 'ok\\n'")), result("direct-bash", "ok")],
+		[assistant(bashCall("direct-bash", "printf 'ok\\n'")), result("direct-bash", "1\n2\n3\n4\n5")],
 		true,
 	);
-	const direct = settle(directBash, "direct-bash", "printf 'ok\\n'", false, false, "ok").callLines;
+	const directCompact = settle(directBash, "direct-bash", "printf 'ok\\n'", false, false, "1\n2\n3\n4\n5").callLines;
+	const directExpanded = settle(directBash, "direct-bash", "printf 'ok\\n'", false, true, "1\n2\n3\n4\n5").callLines;
 
 	const envelopeHarness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(envelopeHarness.api);
@@ -1292,7 +1317,7 @@ test("Code Mode preserves standalone Bash operation blocks", () => {
 		args: { value: "printf 'ok\\n'" },
 		id: "nested-bash",
 		name: "bash",
-		result: { content: [{ type: "text", text: "ok" }], details: {} },
+		result: { content: [{ type: "text", text: "1\n2\n3\n4\n5" }], details: {} },
 		state: "success",
 	};
 	registerSuiteToolEnvelope(
@@ -1315,16 +1340,23 @@ test("Code Mode preserves standalone Bash operation blocks", () => {
 		],
 		true,
 	);
-	const context = renderContext({}, { value: "unused" }, { toolCallId: "outer" });
-	const callComponent = envelope.renderCall?.({ code: "bash" }, theme, context as never);
-	const body = envelope.renderResult?.(
-		{ content: [], details: { operations: [operation] } },
-		{ expanded: false, isPartial: false },
-		theme,
-		{ ...context, lastComponent: callComponent } as never,
-	);
-	if (!body) throw new Error("missing Code Mode Bash body");
-	expect(body.render(120)).toEqual(direct);
+	for (const [expanded, expected] of [
+		[false, directCompact],
+		[true, directExpanded],
+	] as const) {
+		const context = renderContext({}, { value: "unused" }, { expanded, toolCallId: "outer" });
+		const callComponent = envelope.renderCall?.({ code: "bash" }, theme, context as never);
+		const body = envelope.renderResult?.(
+			{ content: [], details: { operations: [operation] } },
+			{ expanded, isPartial: false },
+			theme,
+			{ ...context, lastComponent: callComponent } as never,
+		);
+		if (!body) throw new Error("missing Code Mode Bash body");
+		expect(body.render(120)).toEqual(expected);
+		expect(body.render(120).join("\n")).not.toContain("Call\n");
+		expect(body.render(120).join("\n")).not.toContain("Result\n");
+	}
 });
 
 test("Activity Groups deduplicate canonical image paths and fetched URLs", () => {
@@ -1554,9 +1586,9 @@ test("standalone Bash failures retain their own command and root cause", () => {
 	const first = settle(command, "b1", "typecheck", true);
 	const second = settle(command, "b2", "tests", true);
 	const output = renderLines(first.callComponent).join("\n");
-	expect(output).toContain("Ran typecheck");
+	expect(output).toContain("Bash(typecheck)");
 	expect(output).toContain("FIRST FAILED");
-	expect(second.callLines.join("\n")).toContain("Ran tests");
+	expect(second.callLines.join("\n")).toContain("Bash(tests)");
 	expect(second.callLines.join("\n")).toContain("SECOND FAILED");
 });
 
@@ -1575,9 +1607,9 @@ test("standalone Bash issue rows preserve chronological order across issue kinds
 	const first = settle(command, "b1", "cancelled", true, false, "command was cancelled");
 	const second = settle(command, "b2", "failed", true, false, "LATER FAILED");
 	const output = renderLines(first.callComponent).join("\n");
-	expect(output).toContain("Ran cancelled");
+	expect(output).toContain("Bash(cancelled)");
 	expect(output).toContain("command was cancelled");
-	expect(second.callLines.join("\n")).toContain("Ran failed");
+	expect(second.callLines.join("\n")).toContain("Bash(failed)");
 	expect(second.callLines.join("\n")).toContain("LATER FAILED");
 });
 
