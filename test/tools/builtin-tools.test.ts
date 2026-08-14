@@ -71,7 +71,7 @@ test("built-in overrides receive Pi's merged image and shell settings exactly", 
 	}
 });
 
-test("shell prefixes do not leak raw commands or break complete activity grouping", () => {
+test("shell prefixes do not leak into standalone Bash operation titles", () => {
 	const tools = new Map<string, ToolDefinition>();
 	const pi = {
 		events: {},
@@ -119,8 +119,10 @@ test("shell prefixes do not leak raw commands or break complete activity groupin
 		return row?.render(80).join("\n") ?? "";
 	};
 	const first = settle("bash-prefix-1");
-	expect(first).toContain("Ran 2 commands");
-	expect(first).not.toContain("pwd");
-	expect(settle("bash-prefix-2")).toBe("");
+	expect(first).toContain("Bash(pwd)");
+	expect(first).not.toContain("printf prefix");
+	const second = settle("bash-prefix-2");
+	expect(second).toContain("Bash(pwd)");
+	expect(second).not.toContain("printf prefix");
 	runtime.clear();
 });

@@ -465,6 +465,14 @@ export function planToolActivityGroups(
 		if (leader) groups.push({ closed, leaderId: leader.id, members });
 		members = [];
 	};
+	const append = (
+		member: PlannedToolActivityMember,
+		options: { readonly closeAfter?: boolean; readonly closeBefore?: boolean } = {},
+	) => {
+		if (options.closeBefore) flush(true);
+		members.push(member);
+		if (options.closeAfter) flush(true);
+	};
 
 	for (const candidate of messages) {
 		if (!isRecord(candidate)) continue;
@@ -486,7 +494,10 @@ export function planToolActivityGroups(
 				continue;
 			}
 			const result = results.get(call.id);
-			members.push({ ...call, ...(result ? { result } : terminalState ? { terminalState } : {}) });
+			append(
+				{ ...call, ...(result ? { result } : terminalState ? { terminalState } : {}) },
+				call.name === "bash" ? { closeAfter: true, closeBefore: true } : {},
+			);
 		}
 	}
 	flush(closeTail);

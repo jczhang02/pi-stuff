@@ -245,6 +245,12 @@ function verifyTerminalOutput(output: string, columns: number): void {
 	if (/● Agent[^\n]* · done(?:\s|$)/u.test(visible)) {
 		fail("a live background Agent launch was presented as completed");
 	}
+	if (!/(?:^|[\r\n])[ \t]*• Agent finished ·/u.test(visible)) {
+		fail(`the Conversation Transcript Agent outcome did not use the small bullet\n${visible.slice(-8_000)}`);
+	}
+	if (/(?:^|[\r\n])[ \t]*● Agent finished ·/u.test(visible)) {
+		fail("the Conversation Transcript Agent outcome retained the large state dot");
+	}
 	if (
 		/sample\.tx…[ \t]*(?:done|completed|queued|running|waiting|permission|failed|crashed|stopped|cancelled|\d+[smh])/i.test(
 			visible,

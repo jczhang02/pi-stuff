@@ -44,8 +44,12 @@ Visible Assistant prose, user input, or any visible model-context Custom Message
 _Avoid_: Assistant message boundary, API turn, Thinking block
 
 **Tool Activity Group**:
-A derived display-only summary of every participating Tool call and result between adjacent Narrative Boundaries, including calls separated by Thinking. It preserves the individual protocol events and session history; an unsupported third-party Tool remains standalone and acts as a compatibility boundary.
+A derived display-only summary of participating non-Bash Tool calls and results between adjacent Narrative Boundaries or standalone Bash operations, including calls separated by Thinking. It preserves the individual protocol events and session history; Bash and unsupported third-party Tools remain standalone and act as display boundaries.
 _Avoid_: Exploration group, Tool batch, merged Tool call
+
+**Bash Operation Block**:
+A display-only projection of one Bash Tool call at its native transcript position, with one bounded command title and child output preview. Shell composition inside the call remains one operation, and the underlying Tool result and Session records are unchanged.
+_Avoid_: Command group, parsed subcommand, Tool Activity Group
 
 **Context Activity**:
 A model-invisible, persisted Session record for one user-started Context maintenance operation. One visible Pi Stuff row

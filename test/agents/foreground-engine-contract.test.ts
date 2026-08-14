@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -27,8 +27,11 @@ import {
 	SUBAGENT_PARENT_CONTROL_INBOX_ENV,
 	SUBAGENT_PARENT_DEPTH_ENV,
 	SUBAGENT_PARENT_EVENT_SINK_ENV,
+	SUBAGENT_PARENT_PATH_ENV,
+	SUBAGENT_PARENT_PHYSICAL_SESSION_ENV,
 	SUBAGENT_PARENT_ROOT_RUN_ID_ENV,
 	SUBAGENT_PARENT_RUN_ID_ENV,
+	SUBAGENT_PARENT_SESSION_ENV,
 } from "../../packages/pi-stuff/src/subagents/src/runs/shared/pi-args.js";
 import {
 	observeForegroundRuntimeRuns,
@@ -41,8 +44,33 @@ import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/s
 
 const temporaryDirectories: string[] = [];
 
+const MOCK_PARENT_SESSION_ENVIRONMENT_KEYS = [
+	SUBAGENT_PARENT_EVENT_SINK_ENV,
+	SUBAGENT_PARENT_CONTROL_INBOX_ENV,
+	SUBAGENT_PARENT_ROOT_RUN_ID_ENV,
+	SUBAGENT_PARENT_RUN_ID_ENV,
+	SUBAGENT_PARENT_CHILD_INDEX_ENV,
+	SUBAGENT_PARENT_DEPTH_ENV,
+	SUBAGENT_PARENT_PATH_ENV,
+	SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV,
+	SUBAGENT_PARENT_SESSION_ENV,
+	SUBAGENT_PARENT_PHYSICAL_SESSION_ENV,
+] as const;
+let parentSessionEnvironment: Map<(typeof MOCK_PARENT_SESSION_ENVIRONMENT_KEYS)[number], string | undefined>;
+
+beforeEach(() => {
+	parentSessionEnvironment = new Map(
+		MOCK_PARENT_SESSION_ENVIRONMENT_KEYS.map((key) => [key, process.env[key]] as const),
+	);
+	for (const key of MOCK_PARENT_SESSION_ENVIRONMENT_KEYS) delete process.env[key];
+});
+
 afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
+	for (const [key, value] of parentSessionEnvironment) {
+		if (value === undefined) delete process.env[key];
+		else process.env[key] = value;
+	}
 });
 
 function agent(): AgentConfig {

@@ -1,6 +1,6 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { TRANSCRIPT_CONTINUATION, TRANSCRIPT_MARKER } from "./transcript.js";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { TRANSCRIPT_MARKER } from "./transcript.js";
 
 export interface ThoughtMarkdownTransformContext {
 	readonly availableWidth: number;
@@ -14,10 +14,16 @@ interface MarkdownTransformerExtensionAPI {
 	registerMarkdownTransformer(transformer: ThoughtMarkdownTransformer): void;
 }
 
-const FULL_PREFIX = "✻ thoughts: ";
-const COMPACT_PREFIX = "✻ ";
-const TRANSCRIPT_PREFIX = `${TRANSCRIPT_MARKER} `;
-const LABEL = "✻ thoughts:";
+// U+2217 keeps the asterisk's light visual weight while centering it on the
+// text axis; unlike ASCII `*`, it is not Markdown list punctuation.
+const THOUGHT_MARKER = "∗";
+const FULL_PREFIX = `${THOUGHT_MARKER} thoughts: `;
+const COMPACT_PREFIX = `${THOUGHT_MARKER} `;
+// Markdown normalizes the source '-' to the transcript's visible U+2022 while
+// preserving all nested block structure inside one message-level list item.
+const ASSISTANT_LIST_PREFIX = "- ";
+const ASSISTANT_LIST_CONTINUATION = "  ";
+const LABEL = `${THOUGHT_MARKER} thoughts:`;
 const ELLIPSIS = "…";
 const MIDDLE_ELLIPSIS = " … ";
 const GRAPHEME_SEGMENTER = new Intl.Segmenter("und", { granularity: "grapheme" });
@@ -28,7 +34,6 @@ const MARKDOWN_PUNCTUATION = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/gu;
 const HEADING = /^(#{1,6})[ \t]+(.*)$/u;
 const TRAILING_HEADING_MARKER = /[ \t]+#+[ \t]*$/u;
 const LIST_ITEM = /^(?:[-+*]|\d{1,9}[.)])[ \t]+(.*)$/u;
-const STRUCTURED_ASSISTANT_MARKDOWN = /(?:\r|\n)|^(?: {0,3}(?:#{1,6}|[-+*>]|\d{1,9}[.)]|`{3,}|~{3,})[ \t])/u;
 const EMPHASIS_MARKERS = ["***", "___", "**", "__", "*", "_"] as const;
 
 /** Register the display-only Thought projection through Pi's public Host seam. */
@@ -37,6 +42,45 @@ export function registerLiveThoughtDisplay(pi: ExtensionAPI): void {
 		throw new Error("Pi Stuff Live Thoughts require an upstream Pi Host with registerMarkdownTransformer() support");
 	}
 	pi.registerMarkdownTransformer(createLiveThoughtTransformer());
+}
+
+const HOST_THEME_KEY = Symbol.for("@earendil-works/pi-coding-agent:theme");
+const PENDING_ASSISTANT_MARKER = Symbol.for("@jczhang02/pi-stuff:pending-assistant-marker");
+
+type PendingAssistantMarkerTheme = Theme & {
+	[PENDING_ASSISTANT_MARKER]?: { restore(): void };
+};
+
+/**
+ * Host Markdown normalizes every unordered-list source marker to `-`. Arm only
+ * the next list-marker paint, which is the synthetic outer item returned by
+ * renderAssistantTranscript(). The wrapper restores itself before nested
+ * Markdown markers render; the microtask is a safety fallback for malformed or
+ * extremely narrow projections that never reach a list marker.
+ */
+function armAssistantTranscriptMarker(): void {
+	const themed = (globalThis as Record<symbol, unknown>)[HOST_THEME_KEY] as PendingAssistantMarkerTheme | undefined;
+	if (!themed || typeof themed.fg !== "function" || themed[PENDING_ASSISTANT_MARKER]) return;
+	const originalFg = themed.fg;
+	let restored = false;
+	const restore = () => {
+		if (restored) return;
+		restored = true;
+		themed.fg = originalFg;
+		delete themed[PENDING_ASSISTANT_MARKER];
+	};
+	Object.defineProperty(themed, PENDING_ASSISTANT_MARKER, {
+		configurable: true,
+		value: { restore },
+	});
+	themed.fg = ((color, text) => {
+		if (color !== "mdListBullet" || text !== ASSISTANT_LIST_PREFIX) {
+			return originalFg.call(themed, color, text);
+		}
+		restore();
+		return originalFg.call(themed, color, `${TRANSCRIPT_MARKER} `);
+	}) as Theme["fg"];
+	queueMicrotask(restore);
 }
 
 /** Build the pure projection separately so width and safety behavior can be certified. */
@@ -52,15 +96,12 @@ export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 }
 
 function renderAssistantTranscript(markdown: string, availableWidth: number): string {
-	if (STRUCTURED_ASSISTANT_MARKDOWN.test(markdown)) return markdown;
 	const text = sanitizeMarkdown(markdown).trim();
 	const width = normalizeWidth(availableWidth);
 	if (!text || width === 0) return "";
-	if (width <= visibleWidth(TRANSCRIPT_PREFIX)) return fitHead(`${TRANSCRIPT_PREFIX}${text}`, width);
-	const lines = wrapTextWithAnsi(text, width - visibleWidth(TRANSCRIPT_PREFIX));
-	return lines
-		.map((line, index) => `${index === 0 ? TRANSCRIPT_PREFIX : TRANSCRIPT_CONTINUATION}${line}`)
-		.join("  \n");
+	if (width <= visibleWidth(ASSISTANT_LIST_PREFIX)) return fitHead(`${ASSISTANT_LIST_PREFIX}${text}`, width);
+	armAssistantTranscriptMarker();
+	return `${ASSISTANT_LIST_PREFIX}${text.replaceAll("\n", `\n${ASSISTANT_LIST_CONTINUATION}`)}`;
 }
 
 function hasMarkdownTransformer(pi: ExtensionAPI): pi is ExtensionAPI & MarkdownTransformerExtensionAPI {

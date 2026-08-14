@@ -18,7 +18,7 @@ function registeredBash(): ToolDefinition {
 	return bash as ToolDefinition;
 }
 
-test("Bash classifies an automatic foreground-to-background handoff as a launch", () => {
+test("standalone Bash preserves an automatic foreground-to-background handoff in its child output", () => {
 	const bash = registeredBash();
 	const args = { command: "sleep 300", description: "Wait for service" };
 	const theme = {
@@ -57,5 +57,8 @@ test("Bash classifies an automatic foreground-to-background handoff as a launch"
 		{ ...context, lastComponent: row } as never,
 	);
 
-	expect(row?.render(100).join("\n")).toContain("Launched 1 background task");
+	const rendered = row?.render(100).join("\n") ?? "";
+	expect(rendered).toContain("• Bash(sleep 300)");
+	expect(rendered).toContain("⎿  Command still running after 120s; moved to background task abc123.");
+	expect(rendered).not.toContain("Launched 1 background task");
 });

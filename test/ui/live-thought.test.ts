@@ -35,18 +35,77 @@ function visibleMarkdown(markdown: string): string {
 	return markdown.replaceAll(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/gu, "$1");
 }
 
+async function renderAssistant(markdown: string, width = 80): Promise<string[]> {
+	initTheme("dark");
+	const transformer = createLiveThoughtTransformer();
+	const rendered = new Markdown(markdown, 0, 0, getMarkdownTheme(), undefined, {
+		transform: (value, availableWidth) =>
+			transformer(value, {
+				availableWidth,
+				isStreaming: false,
+				messageType: "assistant",
+			}),
+	})
+		.render(width)
+		.map((line) => stripTerminalSequences(line).trimEnd());
+	await Promise.resolve();
+	return rendered;
+}
+
 describe("live Thought display", () => {
-	test("leaves user and structured Markdown unchanged and marks assistant prose", () => {
+	test("uses a one-cell asterisk operator centered on the text axis", () => {
+		const visible = visibleMarkdown(transform("Checking alignment"));
+
+		expect([...visible][0]).toBe("∗");
+		expect(visible).toBe("∗ thoughts: Checking alignment");
+		expect(visibleWidth("∗")).toBe(1);
+	});
+
+	test("leaves user Markdown unchanged and gives every Assistant message one outer marker", () => {
 		const markdown = "# Keep **all** model content\n\nincluding CJK 内容";
 		expect(transform(markdown, { messageType: "user" })).toBe(markdown);
-		expect(transform(markdown, { messageType: "assistant" })).toBe(markdown);
+		const structured = transform(markdown, { messageType: "assistant" });
+		expect(structured).toStartWith("- # Keep **all** model content");
+		expect(structured).toContain("\n  including CJK 内容");
+		expect(structured.match(/^- /gmu)).toHaveLength(1);
 		const assistant = transform("Keep **all** model content including CJK 内容", { messageType: "assistant" });
-		expect(assistant).toStartWith("• ");
+		expect(assistant).toStartWith("- ");
 		expect(assistant).not.toContain("●");
 		expect(assistant).toContain("including CJK 内容");
 	});
 
-	test("aligns assistant prose wraps after one marker cell and one space", () => {
+	test("keeps structured Assistant Markdown inside one message-level bullet", async () => {
+		const source = [
+			"## Result",
+			"",
+			"Paragraph with **bold** and [link](https://example.com).",
+			"",
+			"> quoted",
+			"",
+			"- first",
+			"- second",
+			"",
+			"```ts",
+			"const value = 1;",
+			"```",
+		].join("\n");
+		const projected = transform(source, { messageType: "assistant" });
+
+		expect(projected).toStartWith("- ## Result");
+		expect(projected).toContain("\n  > quoted");
+		expect(projected).toContain("\n  - first\n  - second");
+		expect(projected).toContain("\n  ```ts\n  const value = 1;\n  ```");
+		expect(projected.match(/^- /gmu)).toHaveLength(1);
+
+		const rendered = await renderAssistant(source, 44);
+		expect(rendered[0]).toStartWith("• ");
+		expect(rendered.filter((line) => line.startsWith("• "))).toHaveLength(1);
+		expect(rendered.find((line) => line.includes("first"))?.startsWith("    - ")).toBe(true);
+		expect(rendered.find((line) => line.includes("const value"))?.startsWith("    ")).toBe(true);
+		expect(rendered.every((line) => visibleWidth(line) <= 44)).toBe(true);
+	});
+
+	test("aligns assistant prose wraps after one marker cell and one space", async () => {
 		initTheme("dark");
 		const transformer = createLiveThoughtTransformer();
 		const markdown = new Markdown("检查中文工具结果 and continue", 0, 0, getMarkdownTheme(), undefined, {
@@ -58,6 +117,7 @@ describe("live Thought display", () => {
 				}),
 		});
 		const lines = markdown.render(12).map((line) => stripTerminalSequences(line).trimEnd());
+		await Promise.resolve();
 		expect(lines[0]).toStartWith("• ");
 		expect(lines.slice(1).every((line) => line.startsWith("  "))).toBe(true);
 		expect(lines.every((line) => visibleWidth(line) <= 12)).toBe(true);
@@ -70,7 +130,7 @@ describe("live Thought display", () => {
 		);
 	});
 
-	test("aligns Tool Activity and assistant markers under Host outputPad", () => {
+	test("aligns Tool Activity and assistant markers under Host outputPad", async () => {
 		initTheme("dark");
 		const transformer = createLiveThoughtTransformer();
 		const assistant = new Markdown(
@@ -101,6 +161,7 @@ describe("live Thought display", () => {
 			summary: "Ran 1 command · 1 failed",
 		});
 		const assistantLine = stripTerminalSequences(assistant.render(80)[0] ?? "");
+		await Promise.resolve();
 		const activityLine = activity.render(80)[0] ?? "";
 
 		expect([activityLine.indexOf("•"), assistantLine.indexOf("•")]).toEqual([
@@ -119,7 +180,7 @@ describe("live Thought display", () => {
 			const rendered = transformer(markdown, CONTEXT);
 			const visible = visibleMarkdown(rendered);
 
-			expect(visible).toBe(`✻ thoughts: ${phase}`);
+			expect(visible).toBe(`∗ thoughts: ${phase}`);
 			expect(visible).not.toContain("**");
 			expect(visible).not.toContain("\n");
 			expect(visible).not.toMatch(/…\p{L}/u);
@@ -140,20 +201,20 @@ describe("live Thought display", () => {
 		] as const;
 
 		for (const [markdown, current] of snapshots) {
-			expect(visibleMarkdown(transformer(markdown, CONTEXT))).toBe(`✻ thoughts: ${current}`);
+			expect(visibleMarkdown(transformer(markdown, CONTEXT))).toBe(`∗ thoughts: ${current}`);
 		}
 	});
 
 	test("recognizes paragraph, heading, list-item, and standalone-emphasis boundaries", () => {
 		expect(
 			visibleMarkdown(transform("First paragraph without punctuation\n\nNewest paragraph without punctuation")),
-		).toBe("✻ thoughts: Newest paragraph without punctuation");
-		expect(visibleMarkdown(transform("Earlier paragraph\n## Current heading"))).toBe("✻ thoughts: Current heading");
+		).toBe("∗ thoughts: Newest paragraph without punctuation");
+		expect(visibleMarkdown(transform("Earlier paragraph\n## Current heading"))).toBe("∗ thoughts: Current heading");
 		expect(visibleMarkdown(transform("- First list action\n- Current list action"))).toBe(
-			"✻ thoughts: Current list action",
+			"∗ thoughts: Current list action",
 		);
 		expect(visibleMarkdown(transform("**First emphasized action**\n_Current emphasized action_"))).toBe(
-			"✻ thoughts: Current emphasized action",
+			"∗ thoughts: Current emphasized action",
 		);
 	});
 
@@ -162,8 +223,8 @@ describe("live Thought display", () => {
 		const first = transformer("Inspecting the repository", CONTEXT);
 		const next = transformer("Inspecting the repository. 正在运行真实测试", CONTEXT);
 
-		expect(visibleMarkdown(first)).toBe("✻ thoughts: Inspecting the repository");
-		expect(visibleMarkdown(next)).toBe("✻ thoughts: Inspecting the repository. 正在运行真实测试");
+		expect(visibleMarkdown(first)).toBe("∗ thoughts: Inspecting the repository");
+		expect(visibleMarkdown(next)).toBe("∗ thoughts: Inspecting the repository. 正在运行真实测试");
 	});
 
 	test("retains the final block after settlement, resize, restored replay, and resume", () => {
@@ -178,7 +239,7 @@ describe("live Thought display", () => {
 		});
 		const resumed = createLiveThoughtTransformer()(markdown, { ...CONTEXT, isStreaming: false });
 
-		expect(visibleMarkdown(settled)).toBe("✻ thoughts: 最后选择公开 Host seam。");
+		expect(visibleMarkdown(settled)).toBe("∗ thoughts: 最后选择公开 Host seam。");
 		expect(settled).toBe(live);
 		expect(restored).toBe(resized);
 		expect(visibleMarkdown(resized)).not.toContain("First possibility");
@@ -191,7 +252,7 @@ describe("live Thought display", () => {
 		const visible = visibleMarkdown(rendered);
 
 		expect(visibleWidth(visible)).toBeLessThanOrEqual(24);
-		expect(visible).toStartWith("✻ thoughts: 旧");
+		expect(visible).toStartWith("∗ thoughts: 旧");
 		expect(visible).toEndWith("结果");
 		expect(visible).not.toMatch(/…\p{L}/u);
 	});
@@ -206,7 +267,7 @@ describe("live Thought display", () => {
 		const visible = visibleMarkdown(rendered);
 
 		expect(visibleWidth(visible)).toBeLessThanOrEqual(42);
-		expect(visible).toStartWith("✻ thoughts: Creating");
+		expect(visible).toStartWith("∗ thoughts: Creating");
 		expect(visible).toEndWith("hypothesis");
 		expect(visible).not.toContain("…reating");
 	});
@@ -215,7 +276,7 @@ describe("live Thought display", () => {
 		const rendered = transform("Adding failure hypotheses commentary", { availableWidth: 30 });
 		const visible = visibleMarkdown(rendered);
 
-		expect(visible).toBe("✻ Adding … commentary");
+		expect(visible).toBe("∗ Adding … commentary");
 		expect(visibleWidth(visible)).toBeLessThanOrEqual(30);
 	});
 
@@ -224,7 +285,7 @@ describe("live Thought display", () => {
 			const visible = visibleMarkdown(transform("检查完成", { availableWidth: width }));
 			expect(visible).not.toContain("\n");
 			expect(visibleWidth(visible)).toBeLessThanOrEqual(width);
-			expect(visible).toStartWith("✻");
+			expect(visible).toStartWith("∗");
 			if (width >= 4) expect(visible).toMatch(/[检查完成]/u);
 		}
 		expect(transform("检查完成", { availableWidth: 0 })).toBe("");
@@ -235,7 +296,7 @@ describe("live Thought display", () => {
 		const rendered = transform("Old.\n\n\u001b]0;forged title\u0007最新\u001b[31m红色\u001b[0m\u202efragment");
 		const visible = visibleMarkdown(rendered);
 
-		expect(visible).toBe("✻ thoughts: 最新红色 fragment");
+		expect(visible).toBe("∗ thoughts: 最新红色 fragment");
 		expect(rendered).not.toContain(String.fromCharCode(0x1b));
 		expect(rendered).not.toContain(String.fromCharCode(0x07));
 		expect(rendered).not.toContain(String.fromCodePoint(0x202e));
@@ -245,7 +306,7 @@ describe("live Thought display", () => {
 	test("strips outer display emphasis while keeping inner model text literal and one-line", () => {
 		const rendered = transform("Old.\n\n**Use [x](url), <tag> & `code`**");
 
-		expect(visibleMarkdown(rendered)).toBe("✻ thoughts: Use [x](url), <tag> & `code`");
+		expect(visibleMarkdown(rendered)).toBe("∗ thoughts: Use [x](url), <tag> & `code`");
 		expect(rendered).not.toContain("\\*\\*Use");
 		expect(rendered).toContain("\\[x\\]");
 		expect(rendered).not.toContain("\n");
@@ -258,6 +319,35 @@ describe("live Thought display", () => {
 });
 
 describe("live Thought Host adapter", () => {
+	test("maps only the next synthetic outer Assistant list marker and restores the Theme", async () => {
+		const calls: Array<readonly [string, string]> = [];
+		const theme = {
+			fg: (color: string, value: string) => {
+				calls.push([color, value]);
+				return value;
+			},
+			getColorMode: () => "truecolor",
+		} as unknown as import("@earendil-works/pi-coding-agent").Theme;
+		const original = theme.fg;
+		const key = Symbol.for("@earendil-works/pi-coding-agent:theme");
+		const previous = (globalThis as Record<symbol, unknown>)[key];
+		(globalThis as Record<symbol, unknown>)[key] = theme;
+		transform("Outer\n\n- nested", { messageType: "assistant" });
+		expect(theme.fg("mdListBullet", "- ")).toBe("• ");
+		expect(theme.fg).toBe(original);
+		expect(theme.fg("mdListBullet", "- ")).toBe("- ");
+		expect(theme.fg("text", "- ")).toBe("- ");
+		expect(calls).toEqual([
+			["mdListBullet", "• "],
+			["mdListBullet", "- "],
+			["text", "- "],
+		]);
+		await Promise.resolve();
+		expect(theme.fg).toBe(original);
+		if (previous === undefined) delete (globalThis as Record<symbol, unknown>)[key];
+		else (globalThis as Record<symbol, unknown>)[key] = previous;
+	});
+
 	test("registers through the upstream public seam", () => {
 		let registered: ThoughtMarkdownTransformer | undefined;
 		const api = {
@@ -268,7 +358,7 @@ describe("live Thought Host adapter", () => {
 
 		registerLiveThoughtDisplay(api);
 		expect(registered).toBeDefined();
-		expect(visibleMarkdown(registered?.("Checking. Ready", CONTEXT) ?? "")).toBe("✻ thoughts: Checking. Ready");
+		expect(visibleMarkdown(registered?.("Checking. Ready", CONTEXT) ?? "")).toBe("∗ thoughts: Checking. Ready");
 	});
 
 	test("fails clearly when the Host cannot provide the accepted projection", () => {

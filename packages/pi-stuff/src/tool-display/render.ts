@@ -7,7 +7,13 @@ import {
 } from "../conversation-ui/transcript.js";
 import type { ToolActivityOutcome } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
-import { graphemePrefix, graphemeSuffix, sanitizeTerminalText, truncateUtf8Graphemes } from "./terminal.js";
+import {
+	boundTerminalText,
+	graphemePrefix,
+	graphemeSuffix,
+	sanitizeTerminalText,
+	truncateUtf8Graphemes,
+} from "./terminal.js";
 
 export { sanitizeTerminalText } from "./terminal.js";
 
@@ -45,7 +51,17 @@ export interface ActivityGroupRowModel {
 	readonly summary: string;
 }
 
-export type ToolTranscriptRowModel = ActivityGroupRowModel | ToolRowModel;
+export interface BashOperationRowModel {
+	readonly active: boolean;
+	readonly command: string;
+	readonly expandable: boolean;
+	readonly expanded: boolean;
+	readonly kind: "bash-operation";
+	readonly output: string;
+	readonly state: ToolActivityState;
+}
+
+export type ToolTranscriptRowModel = ActivityGroupRowModel | BashOperationRowModel | ToolRowModel;
 
 export class EmptyToolComponent implements Component {
 	invalidate(): void {}
@@ -56,6 +72,18 @@ export class EmptyToolComponent implements Component {
 }
 
 function sameModel(left: ToolTranscriptRowModel, right: ToolTranscriptRowModel): boolean {
+	if (left.kind === "bash-operation" || right.kind === "bash-operation") {
+		return (
+			left.kind === "bash-operation" &&
+			right.kind === "bash-operation" &&
+			left.active === right.active &&
+			left.command === right.command &&
+			left.expandable === right.expandable &&
+			left.expanded === right.expanded &&
+			left.output === right.output &&
+			left.state === right.state
+		);
+	}
 	if (left.kind === "activity" || right.kind === "activity") {
 		return (
 			left.kind === "activity" &&
@@ -107,7 +135,9 @@ export class CachedToolRow implements Component {
 		const rendered =
 			this.model.kind === "activity"
 				? renderActivityGroupRow(this.model, this.theme, normalizedWidth, this.markerVisible)
-				: [renderToolRow(this.model, this.theme, normalizedWidth, this.markerVisible)];
+				: this.model.kind === "bash-operation"
+					? renderBashOperationRow(this.model, this.theme, normalizedWidth, this.markerVisible)
+					: [renderToolRow(this.model, this.theme, normalizedWidth, this.markerVisible)];
 		this.computationCountValue += 1;
 		this.cache.set(normalizedWidth, rendered);
 		while (this.cache.size > MAX_ROW_CACHE_WIDTHS) {
@@ -162,6 +192,9 @@ function styleState(theme: Theme, state: ToolActivityState, text: string): strin
 }
 
 const ACTIVITY_HINT_MAX_WIDTH = 160;
+const BASH_COMMAND_MAX_CODE_UNITS = 160;
+const BASH_COMMAND_MAX_LINES = 2;
+const BASH_OUTPUT_PREVIEW_LINES = 3;
 
 function activityMarkerColor(outcome: ToolActivityOutcome): "error" | "muted" | "success" | "warning" {
 	if (outcome === "error") return "error";
@@ -188,8 +221,7 @@ function renderActivityGroupRow(
 	const lines = wrapped.map((line, index) => `${index === 0 ? markerSlot : continuationPrefix}${line}`);
 	const safeHint = truncateToWidth(oneLine(model.hint), ACTIVITY_HINT_MAX_WIDTH, "…");
 	if (!safeHint) return lines;
-	// U+2514 centers its horizontal stroke; U+23BF draws the corner at the cell bottom.
-	const hintPrefix = `${continuationPrefix}└ `;
+	const hintPrefix = `${continuationPrefix}⎿ `;
 	const hintWidth = Math.max(1, width - visibleWidth(hintPrefix));
 	const hintLines = wrapTextWithAnsi(theme.fg("dim", safeHint), hintWidth).slice(0, 2);
 	const hintContinuation = " ".repeat(visibleWidth(hintPrefix));
@@ -197,6 +229,115 @@ function renderActivityGroupRow(
 		lines.push(`${index === 0 ? hintPrefix : hintContinuation}${line}`);
 	}
 	return lines;
+}
+
+function bashCommandLines(command: string, expanded: boolean): string[] {
+	const maximumCodeUnits = expanded ? ROW_PREVIEW_MAX_CODE_UNITS : BASH_COMMAND_MAX_CODE_UNITS;
+	const maximumLines = expanded ? DETAIL_MAX_LINES : BASH_COMMAND_MAX_LINES;
+	const safe = boundTerminalText(command, maximumCodeUnits + 1, "").trim();
+	const clipped = graphemePrefix(safe, maximumCodeUnits);
+	const truncatedByCodeUnits = clipped.length < safe.length;
+	const sourceLines = clipped.split("\n");
+	const truncatedByLines = sourceLines.length > maximumLines;
+	const lines = sourceLines.slice(0, maximumLines);
+	if (lines.length === 0) lines.push("");
+	if (truncatedByCodeUnits || truncatedByLines) {
+		const last = lines.length - 1;
+		lines[last] = `${lines[last]?.trimEnd() ?? ""}…`;
+	}
+	const last = lines.length - 1;
+	lines[last] = `${lines[last] ?? ""})`;
+	return lines;
+}
+
+function bashOutputLines(model: BashOperationRowModel): { readonly hidden: number; readonly lines: string[] } {
+	const normalized = boundTerminalText(model.output, ROW_PREVIEW_MAX_CODE_UNITS, "")
+		.replaceAll("\r", "")
+		.split("\n", DETAIL_MAX_LINES + 1)
+		.slice(0, DETAIL_MAX_LINES)
+		.join("\n")
+		.trim();
+	if (!normalized || normalized === "(no output)") {
+		return { hidden: 0, lines: [model.active ? "Running…" : "(No output)"] };
+	}
+	let lines = normalized.split("\n");
+	if (model.state === "rejected") {
+		lines = ["Rejected", ...lines];
+		const visible = model.expanded ? lines : lines.slice(0, BASH_OUTPUT_PREVIEW_LINES);
+		return {
+			hidden: model.expanded ? 0 : Math.max(0, lines.length - visible.length),
+			lines: visible,
+		};
+	}
+	if (model.state === "cancelled" && !lines.some((line) => /\b(?:interrupt|abort|cancel)/iu.test(line))) {
+		lines.unshift("Interrupted");
+	}
+	const terminal = lines.at(-1)?.trim() ?? "";
+	const exit = /^Command exited with code (\d+)$/u.exec(terminal);
+	if (exit) {
+		lines = lines.slice(0, -1);
+		while (lines.at(-1)?.trim() === "") lines.pop();
+		lines.unshift(`Error: Exit code ${exit[1] ?? "?"}`);
+	} else if (terminal === "Command aborted" || /^Command timed out/u.test(terminal)) {
+		lines = lines.slice(0, -1);
+		while (lines.at(-1)?.trim() === "") lines.pop();
+		lines.unshift(terminal === "Command aborted" ? "Interrupted" : `Error: ${terminal}`);
+	}
+	const hidden = model.expanded ? 0 : Math.max(0, lines.length - BASH_OUTPUT_PREVIEW_LINES);
+	return { hidden, lines: model.expanded ? lines : lines.slice(0, BASH_OUTPUT_PREVIEW_LINES) };
+}
+
+function renderBashOperationRow(
+	model: BashOperationRowModel,
+	theme: Theme,
+	width: number,
+	markerVisible: boolean,
+): string[] {
+	const marker = model.active && !markerVisible ? " " : TRANSCRIPT_MARKER;
+	const markerSlot = `${SELF_RENDERED_TRANSCRIPT_GUTTER}${styleState(theme, model.state, marker)} `;
+	const label = "Bash";
+	const headerPrefix = `${markerSlot}${theme.bold(label)}(`;
+	const continuationPrefix = `${SELF_RENDERED_TRANSCRIPT_GUTTER}${" ".repeat(visibleWidth(label) + 1)}`;
+	const commandLines = bashCommandLines(model.command, model.expanded);
+	const rendered: string[] = [];
+	for (const [index, sourceLine] of commandLines.entries()) {
+		const prefix = index === 0 ? headerPrefix : continuationPrefix;
+		const available = Math.max(1, width - visibleWidth(prefix));
+		const wrapped = wrapTextWithAnsi(theme.fg("text", sourceLine), available);
+		for (const [wrapIndex, line] of wrapped.entries()) {
+			rendered.push(`${wrapIndex === 0 ? prefix : continuationPrefix}${line}`);
+		}
+	}
+	const preview = bashOutputLines(model);
+	// Pi's self-rendered Tool row already follows the one-cell Host outputPad. Bash
+	// child rows use Claude's own two-cell operation gutter so their connector and
+	// text origins match the reference even though Pi Stuff keeps its accepted `•`.
+	const outputPrefix = theme.fg("muted", `${TRANSCRIPT_CONTINUATION}⎿  `);
+	const outputContinuation = `${SELF_RENDERED_TRANSCRIPT_GUTTER}${TRANSCRIPT_CONTINUATION}${" ".repeat(visibleWidth("⎿ "))}`;
+	const outputWidth = Math.max(1, width - visibleWidth(outputPrefix));
+	for (const [index, outputLine] of preview.lines.entries()) {
+		const colored = theme.fg(
+			model.state !== "success" && model.state !== "running"
+				? model.state === "error"
+					? "error"
+					: "warning"
+				: model.active
+					? "muted"
+					: outputLine === "(No output)"
+						? "muted"
+						: "text",
+			outputLine,
+		);
+		const wrapped = wrapTextWithAnsi(colored, outputWidth);
+		for (const [wrapIndex, line] of wrapped.entries()) {
+			rendered.push(`${index === 0 && wrapIndex === 0 ? outputPrefix : outputContinuation}${line}`);
+		}
+	}
+	if (preview.hidden > 0) {
+		const hint = model.expandable ? " (ctrl+o to expand)" : "";
+		rendered.push(`${outputContinuation}${theme.fg("dim", `… +${String(preview.hidden)} lines${hint}`)}`);
+	}
+	return rendered.map((line) => truncateToWidth(line, width, "…"));
 }
 
 function fitIdentity(markerSlot: string, label: string, width: number): string {

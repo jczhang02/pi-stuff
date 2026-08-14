@@ -9,18 +9,27 @@ Tools keep their native renderer and form a display boundary.
 
 ## Daily use
 
-- Every continuous phase of controlled Tool work is represented by one **Tool Activity Group**. The group begins with
-  its first Tool and can span Assistant Tool round-trips and visible Thinking. Assistant prose, user input, and visible
-  model-context Custom Messages close it.
+- Every continuous phase of controlled non-Bash Tool work is represented by one **Tool Activity Group**. The group
+  begins with its first Tool and can span Assistant Tool round-trips and visible Thinking. Assistant prose, user input,
+  visible model-context Custom Messages, and Bash calls close it.
+- Every Bash call is one standalone `Bash(<command>)` operation block in native order with a bounded `⎿` child preview.
+  Multiple calls remain separate; shell composition inside one call remains one block. The command title follows
+  Claude Code's two-line/160-code-unit cap. Output shows three lines and then `… +N lines (ctrl+o to expand)`; an active
+  call without output shows `Running…`, while a settled empty result shows `(No output)`. Streaming output, stderr,
+  exit status, cancellation, rejection, and failure remain explicit. `Ctrl+O` retains the operation block and expands
+  its bounded command and output in place, without Pi's generic `Call` / `Result` chrome. Apart from Pi Stuff's accepted
+  small transcript bullet and semantic colors supplied by the active Host theme, the operation wording, row count,
+  spacing, and child hierarchy are matched against real Claude Code 2.1.220 and Pi Host 0.84.1 captures.
 - A group appears immediately, even for one Tool. Running summaries use present-tense semantic language and one short,
   width-safe target hint; settled summaries use past tense and remove raw commands, paths, result text, elapsed time,
   and redundant `done` labels. Files and other domain objects are deduplicated while executions are counted.
-- All controlled Tool kinds participate: reads and searches, file changes, commands, MCP calls, Agents, Tasks, Goals,
+- All controlled non-Bash Tool kinds participate: reads and searches, file changes, MCP calls, Agents, Tasks, Goals,
   background handoffs, and failures. Pure infrastructure operations may stay silent when successful. Errors,
   permission rejection, and cancellation remain folded but are called out with counts and the first issue summary.
 - The compact transcript hides Tool arguments and textual results. Real media remains visible. Pi's global `Ctrl+O`
-  restores every controlled Tool row in native transcript order; `/tools [group-or-member-id]` opens one Activity Group
-  and paginates its complete member list with bounded per-member detail.
+  restores every controlled non-Bash Tool row in native transcript order and expands standalone Bash blocks in place;
+  `/tools [group-or-member-id]` opens one Activity Group and paginates its complete member list with bounded per-member
+  detail.
 - `/ui` contains the default-on **Tool running timer** setting. It controls whether long-running standalone/expanded
   Tool rows show live elapsed time. Activity Group completion summaries never retain elapsed time.
 - Detail text is capped at 240 lines and 24 KiB. The model-visible Tool result is never truncated or rewritten by this
