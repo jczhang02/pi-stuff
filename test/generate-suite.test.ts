@@ -89,6 +89,25 @@ describe("generateSuite", () => {
 		expect(generated).toContain("markSuiteSessionReady(pi, ctx);");
 	});
 
+	test("makes subagent conditionally absent only for a non-fanout child Suite", async () => {
+		const root = await createRepository();
+		await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
+			schemaVersion: 2,
+			capabilities: ["conversation-ui", "tool-display", "subagents"],
+			tools: ["read", "subagent"],
+		});
+
+		await generateSuite(root, "write");
+		const generated = await readFile(join(root, "packages", "pi-stuff", "src", "suite-runtime.ts"), "utf8");
+		expect(generated).toContain(
+			'import { SUBAGENT_CHILD_ENV, SUBAGENT_FANOUT_CHILD_ENV } from "./subagents/src/runs/shared/pi-args.js";',
+		);
+		expect(generated).toContain('process.env[SUBAGENT_CHILD_ENV] === "1"');
+		expect(generated).toContain('process.env[SUBAGENT_FANOUT_CHILD_ENV] !== "1"');
+		expect(generated).toContain('SUITE_TOOL_NAMES.filter((name) => name !== "subagent")');
+		expect(generated).toContain("REQUIRED_SUITE_TOOL_NAMES,");
+	});
+
 	test("rejects unknown Modules and overlapping Tool inventories", async () => {
 		const root = await createRepository();
 		await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {

@@ -17,6 +17,7 @@ import { markLifecyclePhase } from "./lifecycle-performance.js";
 import mcp from "./mcp/index.js";
 import rtk from "./rtk/index.js";
 import subagents from "./subagents/index.js";
+import { SUBAGENT_CHILD_ENV, SUBAGENT_FANOUT_CHILD_ENV } from "./subagents/src/runs/shared/pi-args.js";
 import type { SuiteInstallationOptions } from "./suite-loader.js";
 import todo from "./todo/index.js";
 import toolDisplay, {
@@ -81,6 +82,11 @@ const SUITE_TOOL_NAMES = [
 	"TaskUpdate",
 ] as const;
 
+const REQUIRED_SUITE_TOOL_NAMES =
+	process.env[SUBAGENT_CHILD_ENV] === "1" && process.env[SUBAGENT_FANOUT_CHILD_ENV] !== "1"
+		? SUITE_TOOL_NAMES.filter((name) => name !== "subagent")
+		: SUITE_TOOL_NAMES;
+
 const DEFERRED_SUITE_TOOL_NAMES = ["ctx_expand", "ctx_search", "ctx_memory", "ctx_note", "ctx_reduce"] as const;
 
 const OPTIONAL_SUITE_TOOL_NAMES = ["subagent_supervisor", "intercom"] as const;
@@ -105,7 +111,7 @@ export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallatio
 		try {
 			assertSuiteToolActivityCoverage(
 				pi,
-				SUITE_TOOL_NAMES,
+				REQUIRED_SUITE_TOOL_NAMES,
 				registrations.toolNames,
 				OPTIONAL_SUITE_TOOL_NAMES,
 				DEFERRED_SUITE_TOOL_NAMES,

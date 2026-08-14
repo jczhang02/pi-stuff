@@ -8,6 +8,7 @@ import {
 } from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
 import {
 	beginSuiteNativeCompactionPreflight,
+	deliverSuiteAgentMessage,
 	isSuiteNativeCompactionPreflight,
 	registerSuiteAgentMessagePreparation,
 	sendSuiteAgentMessage,
@@ -162,4 +163,45 @@ test("native custom-turn preflight markers are reference-counted by session", ()
 	finishFirst();
 	finishSecond();
 	expect(isSuiteNativeCompactionPreflight(ctx)).toBe(false);
+});
+
+test("convergence-blocked automatic turns are persisted without starting another model turn", async () => {
+	const deliveries: Array<{ triggerTurn?: boolean }> = [];
+	const [owner, sender] = hostApis(((_message, options) => {
+		deliveries.push(options ?? {});
+	}) as ExtensionAPI["sendMessage"]);
+	let staged = false;
+	let accepted = 0;
+	registerSuiteAgentMessagePreparation(owner, {
+		prepare: async () => ({
+			status: "convergence-blocked",
+			reason: "aggregate hard boundary reached",
+		}),
+		stage: () => {
+			staged = true;
+			return undefined;
+		},
+	});
+
+	const result = await deliverSuiteAgentMessage(
+		sender,
+		{ customType: "fixture", content: "continue", display: false },
+		{ triggerTurn: true },
+		() => true,
+		() => {
+			accepted += 1;
+		},
+	);
+
+	expect(result).toBe("convergence-blocked");
+	expect(deliveries).toEqual([{ triggerTurn: false }]);
+	expect(staged).toBe(false);
+	expect(accepted).toBe(0);
+	expect(
+		await sendSuiteAgentMessage(
+			sender,
+			{ customType: "fixture", content: "continue", display: false },
+			{ triggerTurn: true },
+		),
+	).toBe(true);
 });

@@ -22,6 +22,24 @@ normal Magic turn; fresh Agents receive project memory only, while
 forked Agents may receive bounded parent history. Magic's own internal
 Historian process is not represented as a Pi Stuff Agent.
 
+User-started work also carries one bounded provider-only task anchor across
+normal turns and managed-history compaction. The anchor retains the current
+request, latest authoritative correction, requested deliverable, material
+constraints, and completion criteria without changing Pi's durable transcript.
+It precedes the canonical projected conversation so Pi's Provider conversion
+cannot replace the latest real user message with the anchor. An aggregate
+convergence governor tracks provider turns, Tool calls, Agent
+delegations, compactions, repeated child-failure categories, and distinct
+evidence. It asks the model to synthesize before fixed aggregate limits and then
+blocks further expansion with an actionable result. Non-mutating Tools count as
+progress only when they return non-empty, distinct result content; changing
+arguments or merely succeeding does not reset the boundary. Distinct evidence
+receives a bounded allowance per provider turn, while task-wide fingerprints
+prevent repeated output from resetting the no-progress boundary indefinitely.
+At a hard provider-turn or compaction boundary, Suite-authored automatic
+messages are still persisted for inspection but cannot trigger another model
+request; direct user input remains available.
+
 The external engine dependency is pinned to `@cortexkit/pi-magic-context@0.33.1`. The
 adapter suppresses the upstream Todo, statusline, announcement, command, and
 auxiliary UI surfaces while retaining the five maintenance handlers behind the
@@ -63,7 +81,9 @@ This boundary deliberately works within Pi's extension interface:
 
 - Event, command, renderer, and tool registrations cannot be unregistered. Magic
   registrations are therefore staged until activation succeeds, and committed
-  event handlers are guarded by the owning runtime generation.
+  event handlers are guarded by the owning runtime generation. The continuity
+  settlement observer is registered once even when reload or resume emits
+  `session_start` again on the same runtime.
 - Pi exposes no active-tool policy change event or mutation provenance. Context
   never adds a name to the current active set during activation; it may only
   preserve the set or remove an unavailable handoff. A handoff disabled after a

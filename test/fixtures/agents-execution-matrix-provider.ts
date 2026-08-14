@@ -7,6 +7,7 @@ import { Type } from "typebox";
 const PROVIDER = "pi-stuff-agents-execution-matrix";
 const MODEL = "fixture-model";
 const AGENT = "matrix-agent";
+const FANOUT_AGENT = "matrix-fanout-agent";
 const CHILD_DELAY_MS = 1_200;
 const LONG_TOOL_ROUNDS = 8;
 const LONG_TOOL_RESULT = [
@@ -157,7 +158,7 @@ function toolArguments(scenario: ScenarioId): Record<string, unknown> {
 	if (scenario.startsWith("single-") || scenario === "aggregate-fanout-foreground" || scenario.startsWith("long-")) {
 		return {
 			...common,
-			agent: AGENT,
+			agent: scenario === "aggregate-fanout-foreground" ? FANOUT_AGENT : AGENT,
 			task: `MATRIX_TASK_${scenario.toUpperCase().replaceAll("-", "_")}`,
 		};
 	}
@@ -255,6 +256,7 @@ function childStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamO
 				sawSuiteSurface: pi.getCommands().some((command) => command.name === "ui"),
 				baseExtensionMatches: childBaseExtension === expectedBaseExtension,
 				childBaseExtension,
+				activeTools: (context.tools ?? []).map((tool) => tool.name),
 			});
 		}
 		if (round < LONG_TOOL_ROUNDS) return longToolCallStream(round + 1);
@@ -278,6 +280,7 @@ function childStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamO
 		sawSuiteSurface: pi.getCommands().some((command) => command.name === "ui"),
 		baseExtensionMatches: childBaseExtension === expectedBaseExtension,
 		childBaseExtension,
+		activeTools: (context.tools ?? []).map((tool) => tool.name),
 	});
 	if (isSuiteDirect) return nestedToolCallStream(scenario);
 	return delayedTextStream(

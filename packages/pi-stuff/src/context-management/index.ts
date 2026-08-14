@@ -15,10 +15,12 @@ import {
 	getCommandDialogCoordinator,
 	getHostSharedResource,
 	hasDirectUserActivation,
+	readCurrentAgentWorkOrigin,
 	registerSuiteAgentMessagePreparation,
 	reportDiagnostic,
 	requestUiRender,
 	type SuiteAgentMessageOptions,
+	type SuiteAgentMessagePreparationDecision,
 } from "../conversation-ui/index.js";
 import {
 	activityKey,
@@ -46,9 +48,12 @@ import {
 	type MagicStatusMessage,
 	statusSnapshotFromMagic,
 } from "./dialog.js";
+import { WorkContinuityGovernor, type WorkContinuityLimits } from "./work-continuity.js";
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
+const WORK_CONTINUITY_SOURCE_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/work-continuity-sources/v1");
+const WORK_CONTINUITY_SOURCE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/work-continuity-sources-discovery/v1";
 export const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
 const MAGIC_CONTEXT_MODULE = "@cortexkit/pi-magic-context";
 const MAGIC_CONTEXT_PROMPT_MARKER = "## Magic Context";
@@ -173,6 +178,7 @@ interface ContextRuntimeDependencies {
 		ctx: ExtensionContext,
 		options: MagicContextPreparationOptions,
 	) => Promise<MagicContextPreparation | undefined>;
+	readonly automaticContinuationBlockReason: () => string | undefined;
 }
 
 interface StagedMagicHandler {
@@ -230,6 +236,65 @@ export interface ContextCapabilityDependencies {
 		options: MagicContextPreparationOptions,
 	) => Promise<MagicContextPreparation | undefined>;
 	readonly readNativeCompactionSettings?: (ctx: ExtensionContext) => NativeCompactionSettings | undefined;
+	/** Focused-test seam. Production uses the certified aggregate work limits. */
+	readonly workContinuityLimits?: Partial<WorkContinuityLimits>;
+}
+
+export interface WorkContinuitySource {
+	readonly id: string;
+	hasActiveWork(): boolean;
+}
+
+class WorkContinuitySources {
+	private readonly sources = new Map<string, WorkContinuitySource>();
+
+	register(source: WorkContinuitySource): () => void {
+		const id = source.id.trim();
+		if (!id) throw new Error("Work continuity source id must not be empty");
+		if (this.sources.has(id)) throw new Error(`Work continuity source '${id}' is already registered`);
+		this.sources.set(id, source);
+		let active = true;
+		return () => {
+			if (!active) return;
+			active = false;
+			if (this.sources.get(id) === source) this.sources.delete(id);
+		};
+	}
+
+	hasActiveWork(): boolean {
+		for (const source of this.sources.values()) {
+			try {
+				if (source.hasActiveWork()) return true;
+			} catch {
+				// A broken observer cannot prove that work settled, so retain the anchor.
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+function continuitySourceRegistry(): WeakMap<ExtensionAPI["events"], WorkContinuitySources> {
+	const root = globalThis as unknown as {
+		[key: symbol]: WeakMap<ExtensionAPI["events"], WorkContinuitySources> | undefined;
+	};
+	root[WORK_CONTINUITY_SOURCE_REGISTRY] ??= new WeakMap();
+	return root[WORK_CONTINUITY_SOURCE_REGISTRY];
+}
+
+function getWorkContinuitySources(pi: ExtensionAPI): WorkContinuitySources {
+	const registry = continuitySourceRegistry();
+	return getHostSharedResource(
+		pi.events,
+		registry as WeakMap<object, WorkContinuitySources>,
+		WORK_CONTINUITY_SOURCE_DISCOVERY_EVENT,
+		() => new WorkContinuitySources(),
+		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
+	);
+}
+
+export function registerWorkContinuitySource(pi: ExtensionAPI, source: WorkContinuitySource): () => void {
+	return getWorkContinuitySources(pi).register(source);
 }
 
 export interface NativeCompactionSettings {
@@ -1212,7 +1277,11 @@ class ContextCapabilityRuntime implements ContextCapability {
 	async prepareSuiteAgentMessage(
 		activation: "automatic" | "direct-user",
 		options: SuiteAgentMessageOptions,
-	): Promise<void> {
+	): Promise<SuiteAgentMessagePreparationDecision | undefined> {
+		if (activation === "automatic" && options?.triggerTurn === true) {
+			const reason = this.dependencies.automaticContinuationBlockReason();
+			if (reason) return { status: "convergence-blocked", reason };
+		}
 		const ctx = this.sessionContext;
 		if (!ctx) return;
 		let idle = false;
@@ -1528,11 +1597,50 @@ class ContextCapabilityRuntime implements ContextCapability {
 				this.magicShutdownHandlers.push(handler);
 				continue;
 			}
+			if (event === "context") continue;
 			this.registerMagicHandler(event, handler, generation);
 		}
 		this.pi.setActiveTools(
 			activeBefore.filter((name) => !MAGIC_TOOL_NAME_SET.has(name) || this.magicTools.has(name)),
 		);
+	}
+
+	async projectMagicContext(event: ContextEvent, ctx: ExtensionContext): Promise<ContextEventResult | undefined> {
+		const contextHandler = this.magicContextHandler;
+		if (!contextHandler) return;
+		const generation = this.generation;
+		const nativeMessages = [...event.messages];
+		try {
+			const result = await contextHandler(event, quietMagicContext(ctx));
+			if (!this.isCurrentGeneration(generation)) return { messages: nativeMessages };
+			const projectedMessages = result?.messages ?? event.messages;
+			const full = extractMagicProjection(projectedMessages);
+			if (!full) throw new Error("Magic Context produced no valid history projection.");
+			const key = projectionKey(ctx);
+			this.projections.set(key, { full });
+			const memory = projectMemoryOnly(full);
+			if (memory) this.memories.set(key, memory);
+			else this.memories.delete(key);
+			this.state = {
+				state: "active",
+				engine: "magic-context",
+				trigger: this.state.trigger ?? "automatic-turn",
+			};
+			if (!this.consumeSuiteCustomContextGuidance()) return result;
+			return { ...result, messages: addCompactMagicContextMessage(projectedMessages) };
+		} catch (error) {
+			if (!this.isCurrentGeneration(generation)) return { messages: nativeMessages };
+			const key = projectionKey(ctx);
+			this.projections.delete(key);
+			this.memories.delete(key);
+			this.state = {
+				state: "degraded",
+				engine: "native",
+				trigger: "automatic-turn",
+				error: error instanceof Error ? error.message : String(error),
+			};
+			return { messages: nativeMessages };
+		}
 	}
 
 	private registerMagicHandler(event: string, handler: LooseEventHandler, generation: number): void {
@@ -1602,43 +1710,8 @@ class ContextCapabilityRuntime implements ContextCapability {
 			});
 			return;
 		}
-		const contextHandler = handler as MagicContextHandler;
-		register("context", async (rawEvent, ctx) => {
-			if (!this.isCurrentGeneration(generation)) return;
-			const contextEvent = rawEvent as ContextEvent;
-			const nativeMessages = [...contextEvent.messages];
-			try {
-				const result = await contextHandler(contextEvent, quietMagicContext(ctx));
-				if (!this.isCurrentGeneration(generation)) return { messages: nativeMessages };
-				const projectedMessages = result?.messages ?? contextEvent.messages;
-				const full = extractMagicProjection(projectedMessages);
-				if (!full) throw new Error("Magic Context produced no valid history projection.");
-				const key = projectionKey(ctx);
-				this.projections.set(key, { full });
-				const memory = projectMemoryOnly(full);
-				if (memory) this.memories.set(key, memory);
-				else this.memories.delete(key);
-				this.state = {
-					state: "active",
-					engine: "magic-context",
-					trigger: this.state.trigger ?? "automatic-turn",
-				};
-				if (!this.consumeSuiteCustomContextGuidance()) return result;
-				return { ...result, messages: addCompactMagicContextMessage(projectedMessages) };
-			} catch (error) {
-				if (!this.isCurrentGeneration(generation)) return { messages: nativeMessages };
-				const key = projectionKey(ctx);
-				this.projections.delete(key);
-				this.memories.delete(key);
-				this.state = {
-					state: "degraded",
-					engine: "native",
-					trigger: "automatic-turn",
-					error: error instanceof Error ? error.message : String(error),
-				};
-				return { messages: nativeMessages };
-			}
-		});
+		// Context projection is composed by the owning Context Capability's one
+		// stable handler so task anchoring always runs after Magic projection.
 	}
 
 	private emitCompactionBypassed(ctx: ExtensionContext): void {
@@ -1762,6 +1835,7 @@ export default async function piStuffContext(
 	const registry = capabilityRegistry();
 	const magicSubagent = dependencies.magicSubagent ?? (() => process.env[MAGIC_SUBAGENT_ENV] === "1");
 	const magicModules = createMagicModuleSource(dependencies.loadMagicContext ?? defaultLoadMagicContext);
+	const workContinuity = new WorkContinuityGovernor(dependencies.workContinuityLimits);
 	let created = false;
 	const runtime = getHostSharedResource(
 		pi.events,
@@ -1783,6 +1857,7 @@ export default async function piStuffContext(
 					prepareMagicContext:
 						dependencies.prepareMagicContext ??
 						(dependencies.loadMagicContext ? async () => undefined : prepareMagicContext),
+					automaticContinuationBlockReason: () => workContinuity.automaticContinuationBlockReason(),
 				},
 				registry,
 			);
@@ -1791,6 +1866,14 @@ export default async function piStuffContext(
 	);
 	if (!created) return;
 	registry.runtimes.add(runtime);
+	let workContinuitySessionKey: string | undefined;
+	let workContinuitySettlementObserverRegistered = false;
+	pi.on("session_shutdown", (event, ctx) => {
+		workContinuitySessionKey = undefined;
+		workContinuity.reset();
+		return runtime.dispose(event, ctx);
+	});
+	const continuitySources = getWorkContinuitySources(pi);
 	pi.registerEntryRenderer(CONTEXT_ACTIVITY_ENTRY_TYPE, runtime.activityRenderer());
 	pi.registerCommand("ctx", {
 		description: "Inspect and maintain Context · status | flush | wrapup [N] | recomp [start-end] | upgrade",
@@ -1806,12 +1889,69 @@ export default async function piStuffContext(
 	}
 	runtime.registerToolHandoffs();
 
-	pi.on("session_start", (event, ctx) => runtime.startSession(event, ctx));
+	pi.on("session_start", async (event, ctx) => {
+		await runtime.startSession(event, ctx);
+		let entries: readonly SessionEntry[] = [];
+		try {
+			entries = ctx.sessionManager.getEntries();
+		} catch {
+			// A partial wrapper cannot provide a durable compaction baseline.
+		}
+		const nextSessionKey = sessionOwnerKey(ctx);
+		if (workContinuitySessionKey !== nextSessionKey) {
+			workContinuitySessionKey = nextSessionKey;
+			workContinuity.resetForSession(entries);
+		} else {
+			workContinuity.observeCompactions(entries);
+		}
+		// Register at the first session_start so this observer runs after every
+		// Capability's startup-registered settlement handler. Goal may queue a
+		// continuation from agent_settled, and Context must inspect the final live
+		// Host boundary. Reload/resume can emit session_start again on this runtime.
+		if (!workContinuitySettlementObserverRegistered) {
+			workContinuitySettlementObserverRegistered = true;
+			pi.on("agent_settled", (_settledEvent, settledCtx) => {
+				let isIdle = false;
+				let hasPendingMessages = true;
+				try {
+					isIdle = settledCtx.isIdle();
+					hasPendingMessages = settledCtx.hasPendingMessages();
+				} catch {
+					// Fail toward retaining the anchor rather than leaking it only after a
+					// partial Host reports a boundary it cannot prove is quiet.
+				}
+				workContinuity.settleIfQuiet(isIdle, hasPendingMessages, continuitySources.hasActiveWork());
+			});
+		}
+	});
 	pi.on("session_before_switch", (_event, ctx) => runtime.detachBackgroundActivities(ctx));
 	pi.on("session_before_fork", (_event, ctx) => runtime.detachBackgroundActivities(ctx));
-	pi.on("session_compact", () => runtime.invalidateProjection());
+	pi.on("context", async (event, ctx) => {
+		const observeSessionCompactions = (): void => {
+			try {
+				workContinuity.observeCompactions(ctx.sessionManager.getEntries());
+			} catch {
+				// session_compact still covers native Host compaction for partial wrappers.
+			}
+		};
+		observeSessionCompactions();
+		const magic = await runtime.projectMagicContext(event, ctx);
+		// Magic Context may append its managed-history marker directly while
+		// projecting this request, without emitting Pi's session_compact event.
+		observeSessionCompactions();
+		const messages = magic?.messages ?? event.messages;
+		const continuity = workContinuity.project({ ...event, messages });
+		if (continuity) return continuity;
+		if (magic) return magic;
+		if (workContinuity.hasActiveWork()) return { messages };
+	});
+	pi.on("session_compact", (event) => {
+		runtime.invalidateProjection();
+		workContinuity.observeCompactions([event.compactionEntry]);
+	});
 	pi.on("session_tree", () => runtime.invalidateProjection());
 	pi.on("input", (event, ctx) => {
+		workContinuity.noteInput(event);
 		runtime.noteInput();
 		// A later Extension may still handle an Extension-authored input, in which
 		// case Pi never starts an Agent turn. Defer that path to the authoritative
@@ -1821,6 +1961,10 @@ export default async function piStuffContext(
 		if (event.source !== "extension") void runtime.activate(ctx, "input");
 	});
 	pi.on("message_start", async (event, ctx) => {
+		const directUserInstruction =
+			(event.message.role === "user" && readCurrentAgentWorkOrigin(pi) === "user") ||
+			(event.message.role === "custom" && hasDirectUserActivation(event.message));
+		workContinuity.noteMessageStart(event.message, directUserInstruction);
 		if (event.message.role !== "custom") return;
 		try {
 			// Pi also emits message_start for idle, non-triggering display entries.
@@ -1841,7 +1985,17 @@ export default async function piStuffContext(
 	pi.on("before_agent_start", async (_event, ctx) => {
 		await runtime.activate(ctx, "automatic-turn");
 	});
-	pi.on("session_shutdown", (event, ctx) => runtime.dispose(event, ctx));
+	pi.on("turn_end", (event) => workContinuity.noteTurnEnd(event));
+	pi.on("tool_call", (event) => {
+		const decision = workContinuity.noteToolCall(event);
+		if (!decision) return;
+		return {
+			block: true as const,
+			reason: decision.reason,
+			...(decision.terminate ? { terminate: true as const } : {}),
+		};
+	});
+	pi.on("tool_result", (event) => workContinuity.noteToolResult(event));
 }
 
 export const __test = {
@@ -1854,4 +2008,5 @@ export const __test = {
 	extractMagicProjection,
 	estimateProjectionTokens,
 	formatProjection,
+	WorkContinuityGovernor,
 };

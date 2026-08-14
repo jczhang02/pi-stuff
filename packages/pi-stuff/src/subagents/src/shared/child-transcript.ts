@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import { withArtifactGroupWriteClaim } from "./artifacts.ts";
 import { extractTextFromContent, extractToolArgsPreview } from "./utils.ts";
@@ -38,7 +39,9 @@ const DEFAULT_MAX_CHILD_TRANSCRIPT_BYTES = 50 * 1024 * 1024;
 type ChildTranscriptSource = "foreground" | "async";
 type ChildTranscriptRecordType = "message" | "tool_start" | "tool_end" | "stdout" | "stderr" | "truncated";
 
-type ChildTranscriptMessage = Message & {
+type PiCustomMessage = Extract<AgentMessage, { role: "custom" }>;
+
+type ChildTranscriptMessage = (Message | PiCustomMessage) & {
 	model?: string;
 	errorMessage?: string;
 	stopReason?: string;
@@ -211,6 +214,7 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 			...baseRecord("message"),
 			sourceEventType,
 			role: message.role,
+			...(message.role === "custom" ? { customType: message.customType, display: message.display } : {}),
 			...(text ? { text } : {}),
 			...(message.model ? { model: message.model } : {}),
 			...(message.stopReason ? { stopReason: message.stopReason } : {}),

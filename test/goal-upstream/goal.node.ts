@@ -3544,6 +3544,29 @@ test("agent_settled dispatches one idle continuation after agent_end records int
 	assert.equal(settled.mock.sentUserMessages.length, 2);
 });
 
+test("a convergence-blocked continuation pauses without retrying another model turn", async () => {
+	const blocked = await startGoalForTest();
+	const unregister = registerSuiteAgentMessagePreparation(blocked.mock.pi, {
+		prepare: async () => ({ status: "convergence-blocked", reason: "hard-turns" }),
+	});
+
+	await blocked.mock.events.get("agent_end")?.[0]?.(
+		{ messages: [{ role: "assistant", stopReason: "stop" }] },
+		blocked.ctx,
+	);
+	await blocked.mock.events.get("agent_settled")?.[0]?.({}, blocked.ctx);
+
+	const goal = requireLastGoal(blocked.mock);
+	assert.equal(goal.status, "paused");
+	assert.equal(goal.safetyPauseCause, "runaway_backstop");
+	assert.equal(blocked.mock.sentUserMessages.length, 1);
+	assert.equal(
+		(blocked.mock.sentHiddenGoalMessages.at(-1)?.options as { triggerTurn?: boolean } | undefined)?.triggerTurn,
+		false,
+	);
+	unregister();
+});
+
 test("agent_settled retains intent until idle and pending-message gates allow dispatch", async () => {
 	let idle = false;
 	let pending = true;
@@ -3990,6 +4013,7 @@ test("failed budget wrap-up delivery retries once without duplicate accepted mes
 
 	const toolEnd = budgeted.mock.events.get("tool_execution_end")?.[0];
 	await toolEnd?.({ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false }, budgeted.ctx);
+	await Promise.resolve();
 	assert.equal(lastGoalStatus(budgeted.mock), "budget_limited");
 	assert.equal(budgeted.mock.sentMessages.length, 0);
 	assert.match(budgeted.notifications.at(-1)?.message ?? "", /queue unavailable/i);

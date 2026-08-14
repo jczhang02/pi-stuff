@@ -37,7 +37,8 @@ user definitions, and user definitions override Package definitions.
   setting is required. Their extension surface is deterministic: ambient discovery is disabled, the owning Pi Stuff
   Package is loaded explicitly unless an inherited capability ceiling forbids extensions, Agent-specific extensions
   are additive (including an explicit empty list), and the final provider-payload guard always runs last even under
-  that ceiling.
+  that ceiling. A non-fanout child omits `subagent` from the Suite-required Tool inventory as well as its active Tool
+  set, so initialization stays warning-free without granting nested-delegation authority.
 - A fork clones the native Pi branch only when the complete child launch fits the selected model. Long, multilingual,
   or high-entropy sessions otherwise receive one bounded snapshot projection; the check includes the child task,
   inherited prompt, replacement-prompt context retained by Pi, selected Tool schemas, and conservative reserves for
@@ -49,9 +50,13 @@ user definitions, and user definitions override Package definitions.
   child also checks the serialized provider payload after its context, Skills, Tools, and explicit child extensions
   are assembled; an oversized launch retries an eligible larger fallback, while an irreducible launch or continuation
   stops locally with a phase-specific durable diagnostic instead of surfacing as an unexplained Agent crash.
+- Pi-legal hidden custom messages, including Magic Context housekeeping nudges, are accepted as bounded child
+  transcript evidence. They never become the Agent's final report; malformed or unsupported protocol envelopes still
+  fail closed with a durable diagnostic.
 - Background completion renders a compact `Agent finished/failed/stopped · … · inspect with /agents` session entry.
   The entry survives resume, is excluded from model context, and never triggers an unsolicited main-model turn. Full
-  direct and nested reports remain available in `/agents`.
+  direct and nested reports remain available in `/agents`. Model-visible status for a failed direct child presents a
+  bounded failure category and path-scrubbed terminal reason before any stale progress text.
 - Foreground work returns bounded direct-child reports through the active Tool call so the main Agent can synthesize
   them once in the current answer.
 - The Agent detail transcript associates each child Tool call with its persisted call identity and renders a compact

@@ -3076,6 +3076,79 @@ setInterval(() => {}, 1_000);
 		if (settledWriterPid !== undefined) expect(() => process.kill(settledWriterPid, 0)).toThrow();
 	});
 
+	test("accepts Pi CustomMessage lifecycle events without selecting them as the child report", async () => {
+		const root = fixtureRoot();
+		const writer = path.join(root, "custom-message-writer.ts");
+		fs.writeFileSync(
+			writer,
+			`#!/usr/bin/env bun
+const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+emit({
+  type: "message_end",
+  message: {
+    role: "assistant",
+    content: [{ type: "text", text: "WORK_IN_PROGRESS" }],
+    stopReason: "toolUse",
+    timestamp: Date.now(),
+  },
+});
+emit({
+  type: "message_end",
+  message: {
+    role: "custom",
+    customType: "magic-context:ceiling-nudge",
+    content: "HOUSEKEEPING_NOT_A_REPORT",
+    display: false,
+    details: { source: "fixture" },
+    timestamp: Date.now(),
+  },
+});
+emit({
+  type: "message_end",
+  message: {
+    role: "assistant",
+    content: [{ type: "text", text: "CUSTOM_MESSAGE_SURVIVED" }],
+    stopReason: "stop",
+    timestamp: Date.now(),
+  },
+});
+process.exit(0);
+`,
+			{ mode: 0o700 },
+		);
+		process.env.PI_SUBAGENT_PI_BINARY = writer;
+		const asyncDir = path.join(root, "async-custom-message");
+		const resultPath = path.join(asyncDir, "result.json");
+
+		await runConfiguredBackground({
+			version: 2,
+			id: "custom-message",
+			cwd: root,
+			asyncDir,
+			resultPath,
+			work: { mode: "single", task: { ...task(0), cwd: root } },
+		});
+
+		expect(JSON.parse(fs.readFileSync(resultPath, "utf8"))).toMatchObject({
+			state: "complete",
+			results: [{ output: "CUSTOM_MESSAGE_SURVIVED", success: true }],
+		});
+		const transcriptPath = path.join(asyncDir, "transcripts", "0-agent-0.jsonl");
+		const transcript = fs
+			.readFileSync(transcriptPath, "utf8")
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as Record<string, unknown>);
+		expect(transcript).toContainEqual(
+			expect.objectContaining({
+				recordType: "message",
+				role: "custom",
+				customType: "magic-context:ceiling-nudge",
+				text: "HOUSEKEEPING_NOT_A_REPORT",
+			}),
+		);
+	});
+
 	test("retains writer proof when a malformed tool-result record is rejected", async () => {
 		const root = fixtureRoot();
 		const writer = path.join(root, "malformed-tool-result-writer.ts");

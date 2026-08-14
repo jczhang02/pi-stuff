@@ -125,6 +125,35 @@ describe("compact Agent status", () => {
 		expect(resultText(exact)).toContain("parallel:0 · scout · running · 4s");
 	});
 
+	test("shows bounded path-safe child text with terminal failure before stale progress", () => {
+		const state = createState();
+		state.recentAgentJobs?.set(
+			"failed-review",
+			asyncJob("failed-review", "failed", {
+				steps: [
+					{
+						index: 0,
+						agent: "reviewer",
+						status: "failed",
+						label: "Review /workspace/private/project/implementation.ts",
+						error: "protocol_invalid_event: message_end message.role is invalid at /workspace/private/project/session.jsonl",
+						recentOutput: ["Still reading /workspace/private/project/earlier-file.ts."],
+					},
+				],
+			}),
+		);
+
+		const result = inspectSubagentStatus({ action: "status", id: "failed-review" }, { state, now: () => 5_000 });
+		const text = resultText(result);
+
+		expect(text).toContain("Task: Review implementation.ts");
+		expect(text).toContain("Failure [protocol]: protocol_invalid_event: message_end message.role is invalid");
+		expect(text).toContain("Progress: Still reading earlier-file.ts.");
+		expect(text.indexOf("Failure [protocol]")).toBeLessThan(text.indexOf("Progress:"));
+		expect(text).not.toContain("/workspace/private");
+		expect(text.length).toBeLessThan(1_100);
+	});
+
 	test("keeps a multi-Agent run compact when no child index is given", () => {
 		const state = createState();
 		state.asyncJobs.set(

@@ -31,6 +31,7 @@ interface LogRecord {
 	readonly kind?: unknown;
 	readonly result?: unknown;
 	readonly baseExtensionMatches?: unknown;
+	readonly activeTools?: unknown;
 	readonly childBaseExtension?: unknown;
 	readonly sawRootMarker?: unknown;
 	readonly sawSuiteSurface?: unknown;
@@ -155,6 +156,9 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 			`${scenario.id} exited ${processResult.exitCode}\nstdout:\n${processResult.stdout}\nstderr:\n${processResult.stderr}`,
 		);
 	}
+	if (`${processResult.stdout}\n${processResult.stderr}`.includes("Suite declared unregistered Tools")) {
+		fail(`${scenario.id} emitted an unregistered Suite Tool diagnostic`);
+	}
 	if (!processResult.stdout.includes(`MATRIX_MAIN_RESULT:${scenario.id}`)) {
 		fail(`${scenario.id} did not complete the real main Pi turn\nstdout:\n${processResult.stdout}`);
 	}
@@ -188,6 +192,15 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 		if (start.baseExtensionMatches !== true) {
 			fail(
 				`${scenario.id} child base extension was ${String(start.childBaseExtension)}; expected the Suite Package entry`,
+			);
+		}
+		const activeTools = Array.isArray(start.activeTools) ? start.activeTools : [];
+		const fanoutAuthorized =
+			scenario.id === "aggregate-fanout-foreground" &&
+			start.task !== "MATRIX_GRANDCHILD_TASK_AGGREGATE_FANOUT_FOREGROUND";
+		if (fanoutAuthorized !== activeTools.includes("subagent")) {
+			fail(
+				`${scenario.id} child subagent authority was ${activeTools.includes("subagent")}; expected ${fanoutAuthorized}`,
 			);
 		}
 	}
@@ -319,12 +332,14 @@ export async function verifyAgentsExecutionMatrix(options: AgentsExecutionMatrix
 	const sessionsDirectory = join(temporaryDirectory, "sessions");
 	const logPath = join(temporaryDirectory, "provider.jsonl");
 	await Promise.all([mkdir(agentsDirectory, { recursive: true }), mkdir(projectDirectory), mkdir(sessionsDirectory)]);
-	await writeFile(
-		join(agentsDirectory, "matrix-agent.md"),
-		`---
+	await Promise.all([
+		writeFile(
+			join(agentsDirectory, "matrix-agent.md"),
+			`---
 name: matrix-agent
-description: Deterministic real Pi execution-matrix Agent.
+description: Deterministic restricted execution-matrix Agent.
 model: pi-stuff-agents-execution-matrix/fixture-model
+tools: matrix_blob
 subagentOnlyExtensions: ${providerExtension}
 maxSubagentDepth: 2
 systemPromptMode: append
@@ -333,8 +348,26 @@ inheritSkills: false
 ---
 Return the deterministic matrix result without calling tools.
 `,
-		{ mode: 0o600 },
-	);
+			{ mode: 0o600 },
+		),
+		writeFile(
+			join(agentsDirectory, "matrix-fanout-agent.md"),
+			`---
+name: matrix-fanout-agent
+description: Deterministic fanout execution-matrix Agent.
+model: pi-stuff-agents-execution-matrix/fixture-model
+tools: matrix_blob, subagent
+subagentOnlyExtensions: ${providerExtension}
+maxSubagentDepth: 2
+systemPromptMode: append
+inheritProjectContext: false
+inheritSkills: false
+---
+Return the deterministic matrix result without calling tools.
+`,
+			{ mode: 0o600 },
+		),
+	]);
 
 	try {
 		for (const scenario of SCENARIOS) {

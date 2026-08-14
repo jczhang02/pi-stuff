@@ -1,7 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
-import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
+import {
+	deliverSuiteAgentMessage,
+	type SuiteAgentMessageDeliveryResult,
+	sendSuiteAgentMessage,
+	withDirectUserActivation,
+} from "../../conversation-ui/index.js";
 import { getGoalStatusChannel } from "../../conversation-ui/statusline.js";
 import { checkpointGoalActiveTime, formatDuration, formatTokenCount, updateGoalUsage } from "./accounting.js";
 import { formatError, truncateNotification } from "./errors.js";
@@ -344,8 +349,16 @@ export class GoalRuntime {
 		this.continuationIntent = undefined;
 		this.continuationDelivery = intent;
 		try {
-			await sendHiddenGoalPrompt(this.pi, intent.prompt);
-			return true;
+			const delivery = await sendHiddenGoalPrompt(this.pi, intent.prompt);
+			if (delivery === "accepted") return true;
+			if (this.continuationDelivery?.marker === intent.marker) {
+				this.continuationDelivery = undefined;
+			}
+			if (delivery === "convergence-blocked") {
+				this.pauseGoalForSafety(ctx, "runaway_backstop", false);
+				return false;
+			}
+			return false;
 		} catch (error) {
 			if (this.continuationDelivery?.marker === intent.marker) {
 				this.continuationDelivery = undefined;
@@ -1215,7 +1228,7 @@ async function sendPrompt(
 	isCurrent?: () => boolean,
 ) {
 	try {
-		return await sendHiddenGoalPrompt(pi, prompt, userDriven, isCurrent);
+		return (await sendHiddenGoalPrompt(pi, prompt, userDriven, isCurrent)) === "accepted";
 	} catch (error) {
 		if (!isCurrent || isCurrent()) {
 			ctx.ui.notify(`Goal prompt failed: ${formatError(error)}`, "error");
@@ -1229,7 +1242,7 @@ function sendHiddenGoalPrompt(
 	prompt: string,
 	userDriven = false,
 	isCurrent: () => boolean = () => true,
-) {
+): Promise<SuiteAgentMessageDeliveryResult> {
 	const message = withAgentWorkOrigin(
 		{
 			customType: GOAL_PROMPT_MESSAGE_TYPE,
@@ -1238,7 +1251,7 @@ function sendHiddenGoalPrompt(
 		},
 		userDriven ? "user" : "automatic",
 	);
-	return sendSuiteAgentMessage(
+	return deliverSuiteAgentMessage(
 		pi,
 		userDriven ? withDirectUserActivation(message) : message,
 		{ deliverAs: "followUp", triggerTurn: true },

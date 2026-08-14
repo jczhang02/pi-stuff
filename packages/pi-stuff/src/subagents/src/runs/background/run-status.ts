@@ -4,7 +4,9 @@ import type { Details, SubagentState } from "../../shared/types.ts";
 
 const MAX_LIST_TASK_CHARS = 160;
 const MAX_DETAIL_TASK_CHARS = 300;
+const MAX_FAILURE_CHARS = 800;
 const MAX_PROGRESS_CHARS = 800;
+const ABSOLUTE_PATH = /(?:[A-Za-z]:[\\/]|\/)(?:[^\s:;,]+[\\/])*[^\s:;,]*/gu;
 
 export interface RunStatusParams {
 	readonly action?: "status";
@@ -38,6 +40,26 @@ function compactText(value: string, limit: number): string {
 	return `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
+type FailureCategory = "context" | "protocol" | "timeout" | "provider" | "process" | "budget" | "unknown";
+
+function failureCategory(error: string): FailureCategory {
+	if (/payload input bound|context(?:[_\s-]*(?:length|window|overflow))|too many tokens/i.test(error))
+		return "context";
+	if (/protocol[_\s-]|message(?:\.|_).*invalid|malformed event/i.test(error)) return "protocol";
+	if (/timed?\s*out|deadline/i.test(error)) return "timeout";
+	if (/\b(?:401|403|429|5\d\d)\b|auth(?:entication|orization)?|quota|rate limit|provider/i.test(error)) {
+		return "provider";
+	}
+	if (/turn budget|tool budget|budget/i.test(error)) return "budget";
+	if (/signal|exit(?:ed| code)|process|crash|disappear/i.test(error)) return "process";
+	return "unknown";
+}
+
+function compactChildText(value: string, limit: number): string {
+	const withoutPaths = value.replace(ABSOLUTE_PATH, (path) => path.split(/[\\/]/u).filter(Boolean).at(-1) ?? "path");
+	return compactText(withoutPaths, limit);
+}
+
 function formatElapsed(elapsedMs: number | null): string | undefined {
 	if (elapsedMs === null) return undefined;
 	const seconds = Math.max(0, Math.floor(elapsedMs / 1_000));
@@ -51,7 +73,7 @@ function formatElapsed(elapsedMs: number | null): string | undefined {
 function rowSummary(row: AgentRow): string {
 	const elapsed = formatElapsed(row.elapsedMs);
 	const heading = [row.key, row.name, row.status, elapsed].filter(Boolean).join(" · ");
-	const task = compactText(row.task, MAX_LIST_TASK_CHARS);
+	const task = compactChildText(row.task, MAX_LIST_TASK_CHARS);
 	return task ? `- ${heading}\n  ${task}` : `- ${heading}`;
 }
 
@@ -62,9 +84,11 @@ function rowsSummary(rows: readonly AgentRow[], heading: string): string {
 function rowDetail(row: AgentRow): string {
 	const elapsed = formatElapsed(row.elapsedMs);
 	const lines = [[row.key, row.name, row.status, elapsed].filter(Boolean).join(" · ")];
-	const task = compactText(row.task, MAX_DETAIL_TASK_CHARS);
+	const task = compactChildText(row.task, MAX_DETAIL_TASK_CHARS);
 	if (task) lines.push(`Task: ${task}`);
-	if (row.partialResult) lines.push(`Progress: ${compactText(row.partialResult, MAX_PROGRESS_CHARS)}`);
+	if (row.error)
+		lines.push(`Failure [${failureCategory(row.error)}]: ${compactChildText(row.error, MAX_FAILURE_CHARS)}`);
+	if (row.partialResult) lines.push(`Progress: ${compactChildText(row.partialResult, MAX_PROGRESS_CHARS)}`);
 	return lines.join("\n");
 }
 

@@ -232,7 +232,7 @@ export function findLatestSessionFile(sessionDir: string): string | null {
 /**
  * Get the final text output from a list of messages
  */
-export function getFinalOutput(messages: Message[]): string {
+export function getFinalOutput(messages: readonly { role?: string; content?: unknown }[]): string {
 	const validTextParts: string[] = [];
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];

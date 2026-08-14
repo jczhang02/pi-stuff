@@ -92,6 +92,15 @@ function renderSuiteRuntime(
 			id: "suite-loader",
 			source: 'import type { SuiteInstallationOptions } from "./suite-loader.js";',
 		},
+		...(hasSubagents
+			? [
+					{
+						id: "subagents/pi-args",
+						source:
+							'import { SUBAGENT_CHILD_ENV, SUBAGENT_FANOUT_CHILD_ENV } from "./subagents/src/runs/shared/pi-args.js";',
+					},
+				]
+			: []),
 	]
 		.sort((left, right) => left.id.localeCompare(right.id))
 		.map((entry) => entry.source);
@@ -110,7 +119,7 @@ function renderSuiteRuntime(
 }`;
 	const coverageArguments = [
 		"pi",
-		"SUITE_TOOL_NAMES",
+		"REQUIRED_SUITE_TOOL_NAMES",
 		"registrations.toolNames",
 		...(optionalToolNames.length > 0 || deferredToolNames.length > 0
 			? [optionalToolNames.length > 0 ? "OPTIONAL_SUITE_TOOL_NAMES" : "[]"]
@@ -120,6 +129,13 @@ function renderSuiteRuntime(
 	const coverageCall = `assertSuiteToolActivityCoverage(\n${coverageArguments
 		.map((argument) => `\t\t\t\t${argument},`)
 		.join("\n")}\n\t\t\t)`;
+	const requiredToolNames =
+		hasSubagents && toolNames.includes("subagent")
+			? `const REQUIRED_SUITE_TOOL_NAMES =
+	process.env[SUBAGENT_CHILD_ENV] === "1" && process.env[SUBAGENT_FANOUT_CHILD_ENV] !== "1"
+		? SUITE_TOOL_NAMES.filter((name) => name !== "subagent")
+		: SUITE_TOOL_NAMES;`
+			: "const REQUIRED_SUITE_TOOL_NAMES = SUITE_TOOL_NAMES;";
 	const sections = [
 		GENERATED_HEADER,
 		importBlock,
@@ -141,6 +157,7 @@ interface CapabilityInstallation {
 		...(toolNames.length > 0
 			? [
 					renderToolNamesConstant("SUITE_TOOL_NAMES", toolNames),
+					requiredToolNames,
 					...(deferredToolNames.length > 0
 						? [renderToolNamesConstant("DEFERRED_SUITE_TOOL_NAMES", deferredToolNames)]
 						: []),

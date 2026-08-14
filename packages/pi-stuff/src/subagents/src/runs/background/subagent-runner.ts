@@ -42,10 +42,13 @@ import {
 } from "../../shared/utils.ts";
 import { resolveBunRuntimeCommand } from "../shared/bun-runtime.ts";
 import {
+	type ChildProtocolEvent,
+	type ChildProtocolMessage,
 	createBoundedByteTail,
 	createBoundedLineReader,
 	formatProtocolOutputLimit,
 	MAX_CHILD_STDERR_BYTES,
+	parseChildProtocolEvent,
 	projectChildLifecycle,
 } from "../shared/child-protocol.ts";
 import {
@@ -133,34 +136,15 @@ import {
 
 export { createInitialStatus } from "./initial-status.ts";
 
-type ChildMessage = Message & {
-	model?: string;
-	errorMessage?: string;
-	stopReason?: string;
-	usage?: {
-		input?: number;
-		inputTokens?: number;
-		output?: number;
-		outputTokens?: number;
-		cacheRead?: number;
-		cacheWrite?: number;
-		cost?: { total?: number };
-	};
-};
+type ChildMessage = ChildProtocolMessage;
 
-interface ChildEvent {
-	type?: string;
-	message?: ChildMessage;
-	toolName?: string;
-	args?: Record<string, unknown>;
-	willRetry?: unknown;
-}
+type ChildEvent = ChildProtocolEvent;
 
 interface ChildProcessResult {
 	exitCode: number | null;
 	signal: string | null;
 	stderr: string;
-	messages: Message[];
+	messages: ChildMessage[];
 	output: string;
 	error?: string;
 	protocolError?: ProtocolOutputLimit;
@@ -568,67 +552,6 @@ function assistantStartsToolCall(message: Message): boolean {
 
 function terminalAssistantStop(message: Message): boolean {
 	return (message as { stopReason?: string }).stopReason === "stop" && !assistantStartsToolCall(message);
-}
-
-function childMessageProtocolError(value: unknown): string | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return "message must be an object";
-	const message = value as Record<string, unknown>;
-	if (message.role !== "assistant" && message.role !== "user" && message.role !== "toolResult") {
-		return "message.role is invalid";
-	}
-	if (message.role === "user" && typeof message.content === "string") return undefined;
-	if (!Array.isArray(message.content)) return `message.content for role '${message.role}' must be an array`;
-	for (const part of message.content) {
-		if (!part || typeof part !== "object" || Array.isArray(part)) return "message.content contains a non-object part";
-		const content = part as Record<string, unknown>;
-		if (typeof content.type !== "string") return "message.content part type must be a string";
-		if (content.type === "text" && typeof content.text !== "string") {
-			return "message.content text must be a string";
-		}
-		if (content.type === "thinking" && typeof content.thinking !== "string") {
-			return "message.content thinking must be a string";
-		}
-		if (content.type === "image" && (typeof content.data !== "string" || typeof content.mimeType !== "string")) {
-			return "message.content image fields must be strings";
-		}
-		if (
-			content.type === "toolCall" &&
-			(typeof content.id !== "string" ||
-				typeof content.name !== "string" ||
-				!content.arguments ||
-				typeof content.arguments !== "object" ||
-				Array.isArray(content.arguments))
-		) {
-			return "message.content toolCall fields are invalid";
-		}
-		const allowedTypes =
-			message.role === "assistant"
-				? ["text", "thinking", "toolCall"]
-				: message.role === "user" || message.role === "toolResult"
-					? ["text", "image"]
-					: [];
-		if (!allowedTypes.includes(content.type)) {
-			return `message.content type '${content.type}' is invalid for role '${message.role}'`;
-		}
-	}
-	for (const field of ["model", "errorMessage", "stopReason"] as const) {
-		if (message[field] !== undefined && typeof message[field] !== "string")
-			return `message.${field} must be a string`;
-	}
-	return undefined;
-}
-
-function parsedChildEvent(value: unknown): { event?: ChildEvent; error?: string } {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return { error: "event must be an object" };
-	}
-	const event = value as Record<string, unknown>;
-	if (event.type !== undefined && typeof event.type !== "string") return { error: "event.type must be a string" };
-	if (event.type === "message_end" || event.type === "tool_result_end") {
-		const error = childMessageProtocolError(event.message);
-		if (error) return { error: `${event.type} ${error}` };
-	}
-	return { event: event as ChildEvent };
 }
 
 function findLatestSessionFile(sessionDir: string | undefined): string | undefined {
@@ -1617,7 +1540,7 @@ function runChildProcess(input: {
 					...(input.config.piExecutable ? { execPath: input.config.piExecutable } : {}),
 				});
 				const usage = emptyUsage();
-				const messages: Message[] = [];
+				const messages: ChildMessage[] = [];
 				const stderrTail = createBoundedByteTail();
 				const rawOutputTail = createBoundedByteTail();
 				let toolCount = 0;
@@ -1998,7 +1921,7 @@ function runChildProcess(input: {
 						persistStreamingStatus();
 						return;
 					}
-					const parsedEvent = parsedChildEvent(parsed);
+					const parsedEvent = parseChildProtocolEvent(parsed);
 					if (!parsedEvent.event) {
 						rejectProtocolEvent(line, parsedEvent.error ?? "event is malformed");
 						return;
@@ -2471,7 +2394,9 @@ async function runResolvedTask(input: {
 				break;
 			}
 			if (run.process) writerProcesses.push({ ...run.process, attempt: candidateIndex });
-			const detected = !run.error ? detectSubagentError(run.messages) : undefined;
+			const detected = !run.error
+				? detectSubagentError(run.messages.filter((message): message is Message => message.role !== "custom"))
+				: undefined;
 			const emptyOutput =
 				!run.error && run.exitCode === 0 && !run.output.trim() ? "Agent produced no output." : undefined;
 			const expectedManagerSignal =
