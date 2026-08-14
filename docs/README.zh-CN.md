@@ -41,8 +41,8 @@ Package 加载和模型交互；Pi Stuff 只通过 Pi 原生 Extension 接口加
 - **当前会话内的并行工作**——Background Shell、一次性 Monitor，以及前台或后台 Agent 都可检查、可控制，
   但不会演变成第二套调度器或运行时。
 - **不打扰主对话的临时问题**——`/btw` 在主对话之外回答一个专注问题，关闭后恢复原来的编辑器草稿。
-- **按需启用的集成**——Context、Web、MCP、RTK、Codex 控制和可选 Code Mode 只在需要时激活；可选依赖不可用
-  时会以有界方式失败，不拖垮普通 Pi 工作。
+- **有界集成**——已配置的 Context 会在编辑器就绪前完成初始化；未配置的 Context、Web、MCP、RTK、Codex
+  控制和可选 Code Mode 只在需要时激活，并在不可用时安全降级。
 
 Pi Stuff 是一个私有、本地使用的 Package，不发布到 npm；其中的 Capability Module 也不是可独立安装的产品。
 
@@ -66,6 +66,7 @@ Pi 启动后，可以从这些命令开始：
 | 命令 | 用途 |
 | --- | --- |
 | `/ui` | 配置 Statusline、Welcome 卡片、输入呈现和 Tool 计时器 |
+| `/ctx` | 查看 Context 状态并通过引导执行历史维护 |
 | `/goal <目标>` | 开始持续推进一个需要证据才能结束的会话目标 |
 | `/btw <问题>` | 提出一个不改变主对话记录、且不调用 Tool 的临时问题 |
 | `/tasks` | 检查和控制 Background Shell 与 Monitor |
@@ -92,9 +93,9 @@ Pi 启动后，可以从这些命令开始：
 3. **Capability Module** 在 Package 内分别拥有一种职责清晰的行为。`conversation-ui` 提供共享呈现与 Host
    生命周期协调；`tool-display` 提供共享 Tool 呈现契约。
 
-导入和会话启动保持纯净：不访问网络、不写文件、不启动子进程，也不修改 Host 设置。必要模块初始化失败时会
-直接暴露错误，不会留下一个悄悄缺失功能的 Suite。只有用户发起工作后，Capability 才能激活其已记录的本地状态
-或外部集成。
+导入过程保持纯净。会话启动不会访问网络、启动子进程、修改 Host 设置，也不会创建、重写或迁移用户配置。
+对于已经识别且无需迁移的 Context 配置，可以在编辑器就绪前初始化可重建的派生 SQLite 状态。必要模块初始化
+失败时会直接暴露错误，不会留下一个悄悄缺失功能的 Suite。
 
 ### Capability 一览
 
@@ -107,7 +108,7 @@ Pi 启动后，可以从这些命令开始：
 | `rtk` | 可选且 fail-open 的 Bash 命令改写，以及仅面向模型的 Bash/Grep 输出投影 |
 | `codex` | `/codex`、Fast mode、订阅用量、`apply_patch`、`view_image` 与 `imagegen` |
 | `goal` | 一个持久会话目标、自动延续，以及基于证据的完成或阻塞判定 |
-| `context-management` | 按需集成 Magic Context，同时保留 Pi JSONL 作为原始会话权威 |
+| `context-management` | 集成已配置的 Magic Context，提供 `/ctx` 控制中心，并保留 Pi JSONL 作为原始会话权威 |
 | `web` | 有界 Web 搜索、公开 HTTP(S) 内容读取、PDF 提取与后续片段检索 |
 | `mcp` | 一个按需配置的 MCP gateway，支持显式认证与 stdio/HTTP transport |
 | `background-work` | 当前会话中的 Background Shell、一次性 Monitor 和 `/tasks` 管理 |
@@ -117,6 +118,23 @@ Pi 启动后，可以从这些命令开始：
 | `code-mode` | 可选 JavaScript 封装，通过一个模型可见的 schema 暴露当前 Suite Tool |
 
 这些名称只是内部维护边界，没有各自独立的 manifest、版本、安装或发布生命周期。
+
+### Context 控制
+
+`/ctx` 会打开 Pi Stuff 自有的全宽 Context Dialog，显示当前用量、compartments、memories、notes、Historian
+状态、待处理 drops 和可用维护操作。同一组操作也可以通过子命令执行：
+
+```text
+/ctx status
+/ctx flush
+/ctx wrapup [保留的消息数]
+/ctx recomp [起始消息-结束消息]
+/ctx upgrade
+```
+
+维护进度和结果会以 Pi Stuff Activity 的形式写入 Session，可在恢复会话后查看，但不会进入模型上下文。
+Magic Context 仍负责数据和实际执行；它自己的 Header、Footer、Widget、Statusline 和 Dialog 不会与 Pi Stuff
+界面争夺控制权。
 
 ## 主题
 

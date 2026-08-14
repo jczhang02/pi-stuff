@@ -21,9 +21,13 @@
   Goal, Web, MCP, Background Work, supervisor, and Subagent boundaries. Keep historical user attribution separate from
   direct-use configuration authority, fence asynchronous custom-message delivery to its owning Session or Goal, and
   release restored Goal work only after every Suite startup handler has settled successfully.
-- Remove avoidable Suite lifecycle stalls: keep Magic Context code dormant until accepted work needs it, let direct input
-  paint before activation completes, cache an unchanged generated Suite runtime across `/reload`, and certify startup,
-  reload, exit, input acknowledgment, first response, and resource ceilings with isolated real-Pi benchmarks.
+- Remove avoidable Suite lifecycle stalls: finish configured Magic Context initialization before editor readiness,
+  keep configuration creation and migration user-triggered, acknowledge direct input without synthetic frame waits,
+  cache an unchanged generated Suite runtime across `/reload`, and certify startup, reload, exit, first-turn,
+  steady-state prompt, and resource ceilings with isolated real-Pi benchmarks.
+- Unify Magic Context maintenance behind one discoverable `/ctx` command. Add a Suite-owned status and action dialog,
+  nested argument and confirmation flows, and model-invisible Session-backed Context Activity while keeping upstream
+  global UI isolated.
 
 ## 0.3.3
 

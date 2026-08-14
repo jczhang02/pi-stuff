@@ -22,6 +22,7 @@ interface RecordLine {
 	readonly cwd?: unknown;
 	readonly sessionId?: unknown;
 	readonly lastUser?: unknown;
+	readonly hasContextActivityText?: unknown;
 	readonly hasHistory?: unknown;
 	readonly hasSince?: unknown;
 	readonly hasNativeSummary?: unknown;
@@ -44,6 +45,8 @@ const ZERO_USAGE = {
 };
 
 interface SessionLine {
+	readonly customType?: unknown;
+	readonly data?: unknown;
 	readonly type?: unknown;
 	readonly message?: unknown;
 	readonly details?: unknown;
@@ -65,9 +68,52 @@ proc must_expect {pattern} {
     }
 }
 
+proc must_log {pattern} {
+    global env
+    for {set attempt 0} {$attempt < 200} {incr attempt} {
+        if {[file exists $env(PI_STUFF_CONTEXT_PTY_LOG)]} {
+            set handle [open $env(PI_STUFF_CONTEXT_PTY_LOG) r]
+            set contents [read $handle]
+            close $handle
+            foreach line [split $contents "\n"] {
+                if {[string first {"type":"request"} $line] >= 0 && [string first $pattern $line] >= 0} { return }
+            }
+        }
+        after 25
+    }
+    puts stderr "Timed out waiting for provider request: $pattern"
+    puts stderr "Provider log: $contents"
+    exit 6
+}
+
 spawn -noecho script -qefc $env(PI_STUFF_CONTEXT_PTY_RUNNER) /dev/null
 must_expect "CONTEXT_FIRST_DONE"
+send -- "/ctx "
+must_expect "Open Context status"
+send -- [binary format c 27]
+after 100
+send -- [binary format c 21]
+after 100
+send -- "/ctx\r"
+must_expect "Wrap up history"
+must_expect "Flush pending drops"
+send -- "\r"
+must_expect "Keep 20 recent messages"
+send -- [binary format c 27]
+must_expect "Rebuild compartments"
+send -- [binary format c 27]
+after 100
+send -- "CONTEXT_DIALOG_FOCUS"
+must_expect "CONTEXT_DIALOG_FOCUS"
+send -- [binary format c 21]
+send -- "/ctx\r"
+must_expect "Wrap up history"
+send -- [binary format c* {27 91 66}]
+send -- "\r"
+must_expect "Context flush"
+must_expect "nothing queued"
 send -- "CONTEXT_SECOND\r"
+must_log "CONTEXT_SECOND"
 must_expect "CONTEXT_SECOND_DONE"
 send -- "CONTEXT_MEMORY\r"
 must_expect "CONTEXT_MEMORY_DONE"
@@ -109,7 +155,12 @@ expect {
     timeout { puts stderr "Timed out waiting for startup editor"; exit 2 }
     eof { puts stderr "Startup-only Pi exited early"; exit 3 }
 }
-after 300
+send -- "/context-startup-ready\\r"
+expect {
+    -exact "CONTEXT_STARTUP_READY" {}
+    timeout { puts stderr "Timed out waiting for post-session_start readiness"; exit 5 }
+    eof { puts stderr "Startup-only Pi exited before the readiness command"; exit 6 }
+}
 send -- "\\003"
 after 150
 send -- "\\004"
@@ -244,9 +295,22 @@ function runExpect(
 	label: string,
 	cwd: string = root,
 ): string {
-	const result = Bun.spawnSync(["expect", "-c", program], {
+	const driver = `
+set evaluation [catch {eval $env(PI_STUFF_CONTEXT_EXPECT_PROGRAM)} message options]
+if {$evaluation != 0} {
+    puts stderr $message
+    if {[dict exists $options -errorinfo]} { puts stderr [dict get $options -errorinfo] }
+    exit 1
+}
+set waited [catch {wait} child]
+if {!$waited && [llength $child] >= 4} {
+    set child_status [lindex $child 3]
+    if {$child_status != 0} { exit $child_status }
+}
+`;
+	const result = Bun.spawnSync(["expect", "-c", driver], {
 		cwd,
-		env: environment,
+		env: { ...environment, PI_STUFF_CONTEXT_EXPECT_PROGRAM: program },
 		stdout: "pipe",
 		stderr: "pipe",
 	});
@@ -319,6 +383,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 	const xdgConfigDirectory = join(temporaryDirectory, "config");
 	const cortexConfigDirectory = join(xdgConfigDirectory, "cortexkit");
 	const dataDirectory = join(temporaryDirectory, "data");
+	const startupDataDirectory = join(temporaryDirectory, "startup-only-data");
 	const cacheDirectory = join(temporaryDirectory, "cache");
 	const projectDirectory = join(temporaryDirectory, "项目隔离", "context");
 	const isolatedProjectDirectory = join(temporaryDirectory, "项目隔离", "other-context");
@@ -345,6 +410,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 	const magicLog = join(temporaryDirectory, "magic-context.log");
 	const historianMarker = join(temporaryDirectory, "historian-ready");
 	const databasePath = join(dataDirectory, "cortexkit", "magic-context", "context.db");
+	const startupDatabasePath = join(startupDataDirectory, "cortexkit", "magic-context", "context.db");
 	const columns = options.columns ?? 64;
 	const rows = options.rows ?? 28;
 	await Promise.all(
@@ -352,6 +418,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			configDirectory,
 			cortexConfigDirectory,
 			dataDirectory,
+			startupDataDirectory,
 			cacheDirectory,
 			projectDirectory,
 			isolatedProjectDirectory,
@@ -529,6 +596,8 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		if (directActivationRequests.length !== 1 || directActivationRequests[0]?.hasCompactMagicContextPrompt !== true) {
 			fail("direct input did not activate the official Magic Context package");
 		}
+		const startupConfigPath = join(cortexConfigDirectory, "magic-context.jsonc");
+		const startupConfigBefore = await readFile(startupConfigPath, "utf8");
 		runExpect(
 			startupOnlyProgram(),
 			{
@@ -537,17 +606,24 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 				PI_STUFF_CONTEXT_PTY_SESSIONS: startupSessionDirectory,
 				PI_STUFF_CONTEXT_PTY_SESSION_ID: "context-startup-only",
 				PI_STUFF_CONTEXT_PTY_STARTUP_ONLY: "1",
+				XDG_DATA_HOME: startupDataDirectory,
 			},
-			"startup purity",
+			"startup readiness",
 			projectDirectory,
 		);
-		const databaseCreatedAtStartup = await access(databasePath).then(
+		const databaseCreatedAtStartup = await access(startupDatabasePath).then(
 			() => true,
 			() => false,
 		);
-		if (databaseCreatedAtStartup) fail("extension load or session_start created Magic Context state");
+		if (!databaseCreatedAtStartup) fail("session_start did not finish Magic Context derived-state initialization");
+		if ((await readFile(startupConfigPath, "utf8")) !== startupConfigBefore) {
+			fail("startup activation mutated the recognized canonical Magic Context config");
+		}
+		if ((await readRecords(startupLog)).some((record) => record.type === "request")) {
+			fail("startup activation unexpectedly reached the model");
+		}
 		const freshOutput = runExpect(expectProgram(), baseEnvironment, "fresh session", projectDirectory);
-		for (const forbidden of ["Magic Context", "ctx-aug", "ctx-doctor"]) {
+		for (const forbidden of ["Magic Context", "Magic Status", "ctx-aug", "ctx-doctor", "mc:"]) {
 			if (freshOutput.includes(forbidden)) fail(`fresh TUI exposed forbidden UI text ${forbidden}`);
 		}
 
@@ -561,6 +637,18 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			.split("\n")
 			.map((line) => JSON.parse(line) as SessionLine);
 		const persisted = sessionText(rawLines);
+		const contextActivities = rawLines.filter(
+			(line) => line.type === "custom" && line.customType === "pi-stuff-context-activity",
+		);
+		if (contextActivities.length < 2) {
+			fail(`Context command activity was not durably recorded: ${JSON.stringify(contextActivities)}`);
+		}
+		const activitySummaries = contextActivities.map((line) =>
+			typeof line.data === "object" && line.data !== null ? Reflect.get(line.data, "summary") : undefined,
+		);
+		if (!activitySummaries.includes("applying queued drops") || !activitySummaries.includes("nothing queued")) {
+			fail(`Context command activity lost its anchor or result: ${JSON.stringify(activitySummaries)}`);
+		}
 		for (const required of [
 			"CONTEXT_FIRST",
 			"CONTEXT_SECOND",
@@ -571,7 +659,15 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			"CONTEXT_SETTLE",
 			"CONTEXT_SEARCH_AGAIN",
 		]) {
-			if (!persisted.includes(required)) fail(`raw Pi transcript lost ${required}`);
+			if (!persisted.includes(required)) {
+				const recentRequests = (await readRecords(requestLog))
+					.filter((record) => record.type === "request")
+					.slice(-12)
+					.map((record) => record.lastUser);
+				fail(
+					`raw Pi transcript lost ${required}; recent lastUser=${JSON.stringify(recentRequests)}; session tail=${JSON.stringify(rawLines.slice(-20))}`,
+				);
+			}
 		}
 		for (const forbidden of ["<session-history>", "<session-history-since>"]) {
 			if (persisted.includes(forbidden)) fail(`derived Magic projection leaked into Pi JSONL: ${forbidden}`);
@@ -666,12 +762,15 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		}
 		const inventories = records.filter((record) => record.type === "inventory" && record.subagent !== true);
 		if (inventories.length === 0) fail("provider never observed the post-activation command/tool inventory");
-		const expectedCommands = ["ctx-flush", "ctx-recomp", "ctx-session-upgrade", "ctx-status", "ctx-wrapup"];
+		const expectedCommands = ["ctx"];
 		for (const inventory of inventories) {
 			const commands = Array.isArray(inventory.commands) ? inventory.commands : [];
 			const tools = Array.isArray(inventory.tools) ? inventory.tools : [];
 			const contextCommands = commands
-				.filter((command): command is string => typeof command === "string" && command.startsWith("ctx-"))
+				.filter(
+					(command): command is string =>
+						typeof command === "string" && (command === "ctx" || command.startsWith("ctx-")),
+				)
 				.sort();
 			if (JSON.stringify(contextCommands) !== JSON.stringify(expectedCommands)) {
 				fail(`focused Magic diagnostics differ: ${JSON.stringify(contextCommands)}`);
@@ -685,6 +784,9 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		if (requests.length < 8)
 			fail(`expected the full fresh/resume request sequence, received ${String(requests.length)}`);
 		for (const request of requests) {
+			if (request.hasContextActivityText !== false) {
+				fail(`model request received Context activity text for ${String(request.lastUser)}`);
+			}
 			if (request.hasHistory !== true || request.hasSince !== true) {
 				fail(`Magic projection was absent for request ${String(request.lastUser)}`);
 			}

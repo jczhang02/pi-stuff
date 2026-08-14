@@ -44,8 +44,8 @@ The result is a denser, quieter coding workflow:
   inspectable without becoming a second scheduler or runtime.
 - **Side questions without transcript noise** — `/btw` answers a focused question outside the main conversation and
   restores the original editor draft when closed.
-- **Lazy integrations** — Context, Web, MCP, RTK, Codex controls, and optional Code Mode activate only when needed and
-  fail in bounded ways when an optional dependency is unavailable.
+- **Bounded integrations** — configured Context initializes before editor readiness; unconfigured Context, Web, MCP,
+  RTK, Codex controls, and optional Code Mode activate only when needed and fail safely when unavailable.
 
 Pi Stuff is maintained as a private, local-only Package. It is not published to npm, and its Capability Modules are
 not independently installable products.
@@ -70,6 +70,7 @@ Once Pi starts, these are useful entry points:
 | Command | Purpose |
 | --- | --- |
 | `/ui` | Configure the Statusline, Welcome card, input presentation, and Tool timer |
+| `/ctx` | Inspect Context status and run guided history maintenance |
 | `/goal <objective>` | Start persistent, evidence-gated work toward one session objective |
 | `/btw <question>` | Ask a no-Tool side question without changing the main transcript |
 | `/tasks` | Inspect and control Background Shells and Monitors |
@@ -96,9 +97,10 @@ The architecture has three deliberate layers:
 3. **Capability Modules** each own one coherent behavior inside the Package. `conversation-ui` provides shared
    presentation and Host-lifecycle coordination; `tool-display` provides the shared Tool presentation contract.
 
-Import and session startup stay pure: no network access, file writes, subprocess launch, or Host-setting mutation.
-Required initialization failures propagate instead of leaving a silently partial Suite. User-started work may then
-activate a Capability's documented local state or external integration.
+Import stays pure. Session startup does not access the network, launch subprocesses, mutate Host settings, or create,
+rewrite, or migrate user configuration. A recognized, migration-free Context configuration may initialize rebuildable
+derived SQLite state before editor readiness. Required initialization failures propagate instead of leaving a silently
+partial Suite.
 
 ### Capability map
 
@@ -111,7 +113,7 @@ The ordered Suite currently contains:
 | `rtk` | Optional fail-open Bash rewriting and model-only Bash/Grep output projection |
 | `codex` | `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen` |
 | `goal` | One persistent session objective with automatic continuation and evidence-gated completion or blocking |
-| `context-management` | Lazy Magic Context integration while Pi JSONL remains the raw session authority |
+| `context-management` | Configured Magic Context integration, the `/ctx` control center, and Pi JSONL as the raw session authority |
 | `web` | Bounded Web search, public HTTP(S) reading, PDF extraction, and continuation retrieval |
 | `mcp` | One lazy MCP gateway with explicit authentication and stdio/HTTP transports |
 | `background-work` | Current-session Background Shells, one-shot Monitors, and `/tasks` management |
@@ -122,6 +124,23 @@ The ordered Suite currently contains:
 
 These names are internal maintenance boundaries. They have no separate manifest, version, installation, or publication
 lifecycle.
+
+### Context controls
+
+`/ctx` opens Pi Stuff's full-width Context dialog. It shows current usage, compartments, memories, notes, Historian
+state, pending drops, and available maintenance actions. The same actions are available as typed subcommands:
+
+```text
+/ctx status
+/ctx flush
+/ctx wrapup [messages-to-keep]
+/ctx recomp [start-end]
+/ctx upgrade
+```
+
+Maintenance progress and results use Pi Stuff Activity rows in the Session transcript. They remain available after
+resume but never enter model context. Magic Context remains the data and execution authority; its Header, Footer,
+Widget, Statusline, and dialog surfaces do not compete with Pi Stuff's UI.
 
 ## Themes
 

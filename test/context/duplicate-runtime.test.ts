@@ -51,6 +51,8 @@ test("physical Context Module copies share one Host runtime", async () => {
 					emit: (event: string, data: unknown) => bus.emit(event, data),
 					on: (event: string, listener: (data: unknown) => void) => bus.on(event, listener),
 				},
+				registerCommand() {},
+				registerEntryRenderer() {},
 				on(event: string, handler: Handler) {
 					handlers.set(event, [...(handlers.get(event) ?? []), handler]);
 				},

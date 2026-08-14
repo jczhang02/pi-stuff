@@ -16,7 +16,8 @@ The single local Pi Package for the complete Pi Stuff Suite.
 - `conversation-ui`: Statusline, Welcome, live Thought, input presentation, `/ui`, and Command Dialog lifecycle.
 - `tool-display`: compact presentation for Pi built-ins and participating Suite Tools.
 - `code-mode`: one provider-visible JavaScript Tool that composes active Suite Tools locally without changing Tool UI.
-- `context-management`: lazy official Magic Context integration with Pi JSONL as raw session authority.
+- `context-management`: configured official Magic Context integration, the `/ctx` control center, and Pi JSONL as raw
+  session authority.
 - `rtk`: fail-open Bash rewriting and model-only Bash/Grep output projection.
 - `codex`: `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen`.
 - `goal`: persistent objective, continuation, accounting, and evidence-gated completion/blocking.
@@ -28,6 +29,12 @@ The single local Pi Package for the complete Pi Stuff Suite.
 - `btw`: one-shot side questions using effective conversation context without changing the main transcript.
 
 These names are internal maintenance boundaries, not npm dependencies or independently installable Packages.
+
+## Context controls
+
+Use `/ctx` to open the Pi Stuff Context dialog. Its actions share one dispatcher with `/ctx flush`, `/ctx wrapup [N]`,
+`/ctx recomp [start-end]`, and `/ctx upgrade`. Operation progress is stored as model-invisible Pi Stuff Activity entries;
+Magic Context's own global UI remains suppressed.
 
 ## Storage
 

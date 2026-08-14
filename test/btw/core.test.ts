@@ -214,6 +214,8 @@ describe("BTW stream execution", () => {
 			setActiveTools: (names: string[]) => {
 				activeTools.splice(0, activeTools.length, ...names);
 			},
+			registerCommand: () => undefined,
+			registerEntryRenderer: () => undefined,
 		} as never;
 		let captured: Parameters<OpenBtwStream>[0] | undefined;
 		let magicTransforms = 0;

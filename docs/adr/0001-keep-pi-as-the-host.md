@@ -7,4 +7,4 @@ Pi Host contract.
 
 ## Consequences
 
-The Suite has no installer or configuration mutation behavior, import and startup stay pure, and failures are exposed instead of producing a silently partial Suite. Installation and Settings Layer changes remain explicit Host or maintainer actions.
+The Suite has no installer or implicit Settings Layer mutation behavior, import stays pure, and failures are exposed instead of producing a silently partial Suite. Installation and Settings Layer changes remain explicit Host or maintainer actions. ADR 0007 permits configured Context startup to initialize rebuildable derived state before editor readiness while preserving the no-configuration-mutation boundary.
