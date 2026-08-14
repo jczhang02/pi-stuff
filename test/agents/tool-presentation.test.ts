@@ -590,6 +590,12 @@ test("forces and verifies read for every skill-enabled explicit Tool shape", () 
 	expect(implicit.requiredChildTools).toContain("read");
 });
 
+test("keeps the certified Host grep hang outside explicit child Tool allowlists", () => {
+	const plan = resolvePiLaunchToolPlan({ tools: ["read", "grep", "find", "ls", "bash"] });
+	expect(plan.effectiveToolAllowlist).toEqual(["read", "find", "ls", "bash"]);
+	expect(plan.requiredChildTools).toEqual(["read", "find", "ls", "bash"]);
+});
+
 test("leaves Host-like delimiter examples intact because resource isolation belongs to Pi CLI flags", () => {
 	const prompt = [
 		"Replacement instructions.",

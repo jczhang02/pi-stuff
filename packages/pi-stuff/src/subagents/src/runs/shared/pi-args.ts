@@ -241,7 +241,10 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 			: (input.requireReadTool && !requestedBuiltinTools.includes("read")
 					? ["read", ...requestedBuiltinTools]
 					: requestedBuiltinTools
-				).filter((tool) => !allowedToolSet || allowedToolSet.has(tool));
+				)
+					.filter((tool) => !allowedToolSet || allowedToolSet.has(tool))
+					// Host 0.84.1 can leave limit-killed rg children unreaped and freeze a parallel child Tool batch.
+					.filter((tool) => tool !== "grep");
 	const fanoutAuthorized =
 		(input.tools === undefined && allowedToolSet === undefined) || declaredBuiltinTools.includes("subagent");
 	const toolExtensionPaths: string[] = capabilityCeiling?.denyExtensions
