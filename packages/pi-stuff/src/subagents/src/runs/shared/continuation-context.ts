@@ -236,7 +236,7 @@ function projectedToolResult(message: ChildMessage, maxBytes: number): ChildMess
 	const toolName = typeof source.toolName === "string" ? source.toolName : "tool";
 	const header = `[Pi Stuff compacted this earlier ${toolName} result for child continuation safety: ${originalBytes.toLocaleString(
 		"en-US",
-	)} serialized UTF-8 bytes. The exact result remains in the child transcript; rerun the Tool if exact omitted content is needed.]\n`;
+	)} serialized UTF-8 bytes. The exact result remains in the child transcript. Do not rerun completed verification recorded by the retained task anchor; rerun only if other exact omitted content is required.]\n`;
 	const marker = "\n[...compacted for child continuation safety...]\n";
 	const bodyBudget = Math.max(0, maxBytes - Buffer.byteLength(header, "utf8"));
 	const text = `${header}${boundedHeadTail(fullText, bodyBudget, marker)}`;
@@ -422,7 +422,7 @@ function emergencyProjection(messages: readonly ChildMessage[]): ChildMessage[] 
 			content: [
 				{
 					type: "text",
-					text: `[Pi Stuff omitted ${omitted.toLocaleString("en-US")} older child-history messages because bounded Tool-result projection alone could not fit the continuation budget. Preserve the delegated task and latest steering retained below; rerun Tools when omitted evidence is needed.]`,
+					text: `[Pi Stuff omitted ${omitted.toLocaleString("en-US")} older child-history messages because bounded Tool-result projection alone could not fit the continuation budget. Preserve the delegated task, latest steering, and completed-verification authority retained below. Do not rerun completed verification solely because older evidence was omitted.]`,
 				},
 			],
 			timestamp: Date.now(),

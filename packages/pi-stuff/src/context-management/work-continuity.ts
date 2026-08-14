@@ -15,6 +15,7 @@ const MAX_FIELD_BYTES = 1_600;
 const MAX_RESULT_FINGERPRINT_BYTES = 64 * 1024;
 const MAX_COMPLETED_VERIFICATIONS = 4;
 const MAX_COMPLETED_VERIFICATION_BYTES = 256;
+const MAX_COMPLETED_VERIFICATION_COMMAND_BYTES = 160;
 const SYNTHESIS_REASON =
 	"The aggregate work boundary was reached. Stop expanding the investigation and return the best supported result now. If the requested deliverable cannot be completed from current evidence, return an actionable incompleteness report that states what is verified, what remains, and why.";
 
@@ -247,14 +248,21 @@ function fingerprint(toolName: string, content: string): string {
 		.digest("hex");
 }
 
-function completedVerification(toolName: string, text: string): string | undefined {
+function completedVerification(toolName: string, text: string, input: Record<string, unknown>): string | undefined {
 	if (toolName !== "bash") return undefined;
 	const lines = text.split(/\r?\n/u).map((line) => line.trim());
 	const passed = lines.find((line) => /^\d+\s+pass\b/iu.test(line));
 	const failed = lines.find((line) => /^0\s+fail\b/iu.test(line));
 	if (!passed || !failed) return undefined;
 	const ran = lines.find((line) => /^Ran\s+\d+\s+tests?\b/iu.test(line))?.replace(/\s*\[[^\]]+\]\s*$/u, "");
-	return boundUtf8([passed, failed, ran].filter(Boolean).join("; "), MAX_COMPLETED_VERIFICATION_BYTES);
+	const command =
+		typeof input["command"] === "string"
+			? boundUtf8(input["command"].replace(/\s+/gu, " "), MAX_COMPLETED_VERIFICATION_COMMAND_BYTES)
+			: undefined;
+	return boundUtf8(
+		[command ? `command: ${command}` : undefined, passed, failed, ran].filter(Boolean).join("; "),
+		MAX_COMPLETED_VERIFICATION_BYTES,
+	);
 }
 
 function failureCategory(text: string): string {
@@ -390,7 +398,7 @@ export class WorkContinuityGovernor {
 		}
 		const evidenceText = messageText(event.content).trim();
 		if (!evidenceText) return;
-		const verification = completedVerification(event.toolName, evidenceText);
+		const verification = completedVerification(event.toolName, evidenceText, event.input);
 		if (verification && !work.completedVerifications.includes(verification)) {
 			work.completedVerifications.push(verification);
 			if (work.completedVerifications.length > MAX_COMPLETED_VERIFICATIONS) work.completedVerifications.shift();

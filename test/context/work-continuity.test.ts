@@ -220,9 +220,9 @@ describe("user-work continuity governor", () => {
 		);
 		const verified = anchorContent(verifiedProjection);
 		expect(verified).toContain("Completed verification (do not rerun unless later work changed):");
+		expect(verified).toContain("command: bun test requested-files");
 		expect(verified).toContain("158 pass; 0 fail; Ran 158 tests across 3 files.");
 		expect(verified).not.toContain("50.11s");
-		expect(verified).not.toContain("requested-files");
 		expect(verifiedProjection?.messages.at(-1)).toMatchObject({
 			role: "custom",
 			customType: __workContinuityTest.TASK_ANCHOR_TYPE,

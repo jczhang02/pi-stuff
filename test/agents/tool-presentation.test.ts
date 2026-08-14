@@ -887,6 +887,7 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 	expect(serialized).toContain(completedVerification);
 	expect(serialized).not.toContain("PARENT_FORK_HISTORY");
 	expect(serialized).toContain("omitted");
+	expect(serialized).toContain("Do not rerun completed verification solely because older evidence was omitted.");
 	expect(serialized).toContain('"id":"extreme-11"');
 	expect(serialized).toContain('"toolCallId":"extreme-11"');
 	const projectedLatestAssistant = projected.find(
