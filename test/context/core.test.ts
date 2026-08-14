@@ -771,13 +771,14 @@ describe("Context capability lifecycle", () => {
 		});
 	});
 
-	test("never delays interactive input or Context transforms for synthetic UI frames", async () => {
+	test("gives only interactive input one Host paint turn before Context without requesting another render", async () => {
 		const handlers: Handlers = new Map();
 		const sequence: string[] = [];
+		let renderRequests = 0;
 		const api = apiFor(handlers);
 		api.events.on(UI_RENDER_REQUEST_EVENT, (value) => {
+			renderRequests++;
 			(value as { handled: boolean }).handled = true;
-			sequence.push("paint");
 		});
 		piStuffContext(api, {
 			loadMagicContext: async () => ({
@@ -796,17 +797,46 @@ describe("Context capability lifecycle", () => {
 		});
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		sequence.length = 0;
 
 		await emit(handlers, "input", { type: "input", text: "first", source: "interactive" }, ctx);
+		await emit(handlers, "input", { type: "input", text: "latest", source: "interactive" }, ctx);
 		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
-		await emit(handlers, "context", { type: "context", messages: [taggedMessage("first")] }, ctx);
+		const hostTurn = new Promise<void>((resolveTurn) => {
+			setImmediate(() => {
+				sequence.push("host-turn");
+				resolveTurn();
+			});
+		});
+		const firstContext = emit(handlers, "context", { type: "context", messages: [taggedMessage("first")] }, ctx);
+		expect(sequence).toEqual([]);
+		expect(renderRequests).toBe(0);
+		await Promise.all([hostTurn, firstContext]);
 		await emit(handlers, "context", { type: "context", messages: [taggedMessage("tool result")] }, ctx);
-		expect(sequence).toEqual(["prepare", "activate", "transform", "transform"]);
+		expect(sequence).toEqual(["host-turn", "transform", "transform"]);
 
-		sequence.length = 0;
-		await emit(handlers, "input", { type: "input", text: "rpc", source: "rpc" }, ctx);
-		await emit(handlers, "context", { type: "context", messages: [taggedMessage("rpc")] }, ctx);
-		expect(sequence).toEqual(["transform"]);
+		for (const source of ["rpc", "extension"] as const) {
+			sequence.length = 0;
+			await emit(handlers, "input", { type: "input", text: "handled", source: "interactive" }, ctx);
+			await emit(handlers, "input", { type: "input", text: source, source }, ctx);
+			let hostTurnReached = false;
+			const hostTurn = new Promise<void>((resolveTurn) => {
+				setImmediate(() => {
+					hostTurnReached = true;
+					resolveTurn();
+				});
+			});
+			const contextTransform = emit(
+				handlers,
+				"context",
+				{ type: "context", messages: [taggedMessage(source)] },
+				ctx,
+			);
+			expect(sequence).toEqual(["transform"]);
+			expect(hostTurnReached).toBe(false);
+			await Promise.all([hostTurn, contextTransform]);
+		}
+		expect(renderRequests).toBe(0);
 	});
 
 	test("fails open and retries when Magic session startup throws", async () => {

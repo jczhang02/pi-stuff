@@ -3,6 +3,7 @@ import type {
 	ContextEvent,
 	ExtensionAPI,
 	ExtensionContext,
+	InputEvent,
 	SessionEntry,
 	SessionShutdownEvent,
 	SessionStartEvent,
@@ -897,6 +898,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 	private readonly owner: object;
 	private readonly ownedContexts = new Set<object>();
 	private nativeCompactionPreflight: Promise<void> | undefined;
+	private interactivePaintPending = false;
 	private magicPromptInstalledForSession = false;
 	private readonly suiteCustomContextGuidance = new Set<symbol>();
 	private readonly unregisterSuiteAgentMessagePreparation: () => void;
@@ -922,11 +924,21 @@ class ContextCapabilityRuntime implements ContextCapability {
 		return { ...this.state };
 	}
 
-	noteInput(): void {
+	noteInput(source: InputEvent["source"]): void {
 		// Every submitted prompt starts a new branch snapshot. The automatic Context
 		// event will repopulate this cache before tools run; retaining the previous
 		// turn's projection could otherwise omit the user's newest decision.
 		this.projections.clear();
+		this.interactivePaintPending = source === "interactive";
+	}
+
+	yieldForInteractivePaint(): Promise<boolean> | undefined {
+		if (!this.interactivePaintPending) return;
+		this.interactivePaintPending = false;
+		const generation = this.generation;
+		return new Promise((resolveTurn) => {
+			setImmediate(() => resolveTurn(this.isCurrentGeneration(generation)));
+		});
 	}
 
 	async dispatchCommand(raw: string, ctx: ExtensionContext): Promise<void> {
@@ -1155,6 +1167,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		this.sessionContext = ctx;
 		this.projections.clear();
 		this.memories.clear();
+		this.interactivePaintPending = false;
 		this.magicPromptInstalledForSession = false;
 		this.suiteCustomContextGuidance.clear();
 		this.registry.contexts.set(ctx.sessionManager, this);
@@ -1927,6 +1940,8 @@ export default async function piStuffContext(
 	pi.on("session_before_switch", (_event, ctx) => runtime.detachBackgroundActivities(ctx));
 	pi.on("session_before_fork", (_event, ctx) => runtime.detachBackgroundActivities(ctx));
 	pi.on("context", async (event, ctx) => {
+		const interactivePaint = runtime.yieldForInteractivePaint();
+		if (interactivePaint && !(await interactivePaint)) return;
 		const observeSessionCompactions = (): void => {
 			try {
 				workContinuity.observeCompactions(ctx.sessionManager.getEntries());
@@ -1952,7 +1967,7 @@ export default async function piStuffContext(
 	pi.on("session_tree", () => runtime.invalidateProjection());
 	pi.on("input", (event, ctx) => {
 		workContinuity.noteInput(event);
-		runtime.noteInput();
+		runtime.noteInput(event.source);
 		// A later Extension may still handle an Extension-authored input, in which
 		// case Pi never starts an Agent turn. Defer that path to the authoritative
 		// before_agent_start boundary so a display-only or rejected continuation
