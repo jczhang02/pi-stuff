@@ -544,6 +544,7 @@ test("Code Mode preserves the original Tool media projection without envelope ch
 	);
 	if (!directCall || !directBody) throw new Error("missing direct media renderer");
 	const direct = [...directCall.render(80), ...directBody.render(80)];
+	expect(direct.join("\n")).toContain("Image preview hidden · PNG · 1×1");
 
 	const envelopeHarness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(envelopeHarness.api);
@@ -1548,7 +1549,7 @@ test("Ctrl+O restores every member and bounded result detail", () => {
 	expect(expandedRead.resultLines.join("\n")).toContain("MODEL_VISIBLE");
 });
 
-test("compact projection hides text bodies while preserving real media fallback", () => {
+test("compact projection hides text bodies and explains unavailable image previews", () => {
 	setCapabilities({ hyperlinks: false, images: null, trueColor: false });
 	try {
 		const harness = apiHarness();
@@ -1576,8 +1577,84 @@ test("compact projection hides text bodies while preserving real media fallback"
 			theme,
 			{ ...context, lastComponent: component },
 		);
-		expect(body?.render(80).length).toBeGreaterThan(0);
-		expect(body?.render(80).join("\n")).not.toContain("hidden text");
+		const wide = body?.render(80) ?? [];
+		const narrow = body?.render(24) ?? [];
+		expect(wide).toHaveLength(1);
+		expect(wide[0]?.trimEnd()).toBe("   Image preview unavailable · PNG · 1×1");
+		expect(wide.join("\n")).not.toContain("[Image:");
+		expect(wide.join("\n")).not.toContain("hidden text");
+		expect(narrow.length).toBeGreaterThan(1);
+		expect(narrow.every((line) => line.startsWith("   "))).toBe(true);
+	} finally {
+		resetCapabilitiesCache();
+	}
+});
+
+test("compact projection distinguishes user-hidden image previews", () => {
+	setCapabilities({ hyperlinks: false, images: null, trueColor: false });
+	try {
+		const harness = apiHarness();
+		const tool = toolFromHarness(harness, "view", "view-image");
+		getToolUiRuntime(harness.api).indexMessages([assistant(call("v1", "view", "pixel.png"))], true);
+		const state = {};
+		const args = { value: "pixel.png" };
+		const context = renderContext(state, args, { showImages: false, toolCallId: "v1" });
+		const component = tool.renderCall?.(args, theme, context);
+		if (!component) throw new Error("missing hidden media call component");
+		const body = tool.renderResult?.(
+			{
+				content: [
+					{
+						type: "image",
+						data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
+						mimeType: "image/png",
+					},
+				],
+				details: { source: "pixel.png" },
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			{ ...context, lastComponent: component },
+		);
+		expect(body?.render(80)[0]?.trimEnd()).toBe("   Image preview hidden · PNG · 1×1");
+	} finally {
+		resetCapabilitiesCache();
+	}
+});
+
+test("unavailable image fallbacks retain media order", () => {
+	setCapabilities({ hyperlinks: false, images: null, trueColor: false });
+	try {
+		const harness = apiHarness();
+		const tool = toolFromHarness(harness, "view", "view-image");
+		getToolUiRuntime(harness.api).indexMessages([assistant(call("v1", "view", "media"))], true);
+		const state = {};
+		const args = { value: "media" };
+		const context = renderContext(state, args, { toolCallId: "v1" });
+		const component = tool.renderCall?.(args, theme, context);
+		if (!component) throw new Error("missing multi-media call component");
+		const body = tool.renderResult?.(
+			{
+				content: [
+					{
+						type: "image",
+						data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
+						mimeType: "image/png",
+					},
+					{
+						type: "image",
+						data: "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
+						mimeType: "image/gif",
+					},
+				],
+				details: { source: "media" },
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			{ ...context, lastComponent: component },
+		);
+		const visible = (body?.render(80) ?? []).map((line) => line.trimEnd()).filter(Boolean);
+		expect(visible).toEqual(["   Image preview unavailable · PNG · 1×1", "   Image preview unavailable · GIF · 1×1"]);
 	} finally {
 		resetCapabilitiesCache();
 	}

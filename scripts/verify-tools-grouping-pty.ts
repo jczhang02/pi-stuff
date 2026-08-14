@@ -390,8 +390,14 @@ export async function verifyToolsGroupingPty(options: {
 			if (!normalized(media).includes("Viewed 1 image")) {
 				fail(`media Tool chrome did not fold into a semantic Activity Group\n${media}`);
 			}
-			if (!media.includes("[Image: [image/png] 1x1]")) {
+			const mediaLines = media.split("\n");
+			const activityLine = mediaLines.find((line) => line.includes("Viewed 1 image"));
+			const previewLine = mediaLines.find((line) => line.includes("Image preview unavailable · PNG · 1×1"));
+			if (!previewLine) {
 				fail(`media body disappeared with folded Tool chrome\n${media}`);
+			}
+			if (!activityLine || activityLine.indexOf("Viewed") !== previewLine.indexOf("Image")) {
+				fail(`media fallback did not align with the Activity body column\n${media}`);
 			}
 			if (media.includes("fixture_media") || media.includes("Visible image")) {
 				fail(`media Activity Group leaked raw Tool chrome\n${media}`);

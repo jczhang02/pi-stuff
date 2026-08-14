@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Replace raw image MIME placeholders in terminals without inline-image support with a dim, transcript-aligned preview
+  explanation that preserves format, dimensions, and media order.
 - Unify Conversation Transcript hierarchy with a one-cell, text-axis-centered `∗` Thought marker, small bullets for
   Suite-owned outcome records, and one outer bullet for every Assistant Markdown message. Show each Bash call as its own
   screenshot-verified Claude-style `Bash(<command>)` operation block with bounded `⎿` output while retaining non-Bash

@@ -16,12 +16,13 @@ import {
 	getCapabilities,
 	getImageDimensions,
 	Image,
-	imageFallback,
 	Spacer,
 	Text,
+	visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { Static, TSchema } from "typebox";
 import { getHostSharedResource } from "../conversation-ui/host-resource.js";
+import { SELF_RENDERED_TRANSCRIPT_PADDING, TRANSCRIPT_CONTINUATION } from "../conversation-ui/transcript.js";
 import {
 	type ActivityCategoryAggregate,
 	type ActivitySummaryMember,
@@ -2209,8 +2210,22 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 
 const EMBEDDED_TOOL_RESULT = Symbol("pi-stuff-embedded-tool-result");
 const EMBEDDED_HOST_IMAGE_KEYS = Symbol("pi-stuff-embedded-host-image-keys");
+const MEDIA_FALLBACK_PADDING = SELF_RENDERED_TRANSCRIPT_PADDING + visibleWidth(TRANSCRIPT_CONTINUATION);
 
 type ImageContentIndex = ReadonlyMap<string, ReadonlySet<string>>;
+
+function imagePreviewFallback(mimeType: string, data: string, showImages: boolean): string {
+	const subtype = mimeType.slice(mimeType.indexOf("/") + 1).split("+", 1)[0];
+	const format = subtype ? subtype.toUpperCase() : "IMAGE";
+	const dimensions = getImageDimensions(data, mimeType);
+	return [
+		showImages ? "Image preview unavailable" : "Image preview hidden",
+		format,
+		dimensions ? `${String(dimensions.widthPx)}×${String(dimensions.heightPx)}` : undefined,
+	]
+		.filter((part): part is string => part !== undefined)
+		.join(" · ");
+}
 
 function resultBody<TArgs extends Record<string, unknown>, TDetails>(
 	state: RendererState<TArgs, TDetails>,
@@ -2225,7 +2240,8 @@ function resultBody<TArgs extends Record<string, unknown>, TDetails>(
 	const container = new Container();
 	const text = expanded && !hideExpandedText ? (state.detailLines?.join("\n") ?? "") : "";
 	if (text) container.addChild(new Text(theme.fg("toolOutput", text), 2, 0));
-	const hostRendersImages = Boolean(!embedded && getCapabilities().images && showImages);
+	const inlineImageProtocol = getCapabilities().images;
+	const hostRendersImages = Boolean(!embedded && inlineImageProtocol && showImages);
 	const images = hostRendersImages
 		? []
 		: result.content.filter(
@@ -2242,11 +2258,11 @@ function resultBody<TArgs extends Record<string, unknown>, TDetails>(
 					!hostImageKeys?.get(item.mimeType)?.has(item.data),
 			);
 	for (const [index, image] of images.entries()) {
-		if ((embedded && Boolean(getCapabilities().images && showImages)) || text || index > 0) {
+		if ((embedded && Boolean(inlineImageProtocol && showImages)) || text || index > 0) {
 			container.addChild(new Spacer(1));
 		}
 		container.addChild(
-			showImages
+			showImages && inlineImageProtocol
 				? new Image(
 						image.data,
 						image.mimeType,
@@ -2254,11 +2270,8 @@ function resultBody<TArgs extends Record<string, unknown>, TDetails>(
 						{ maxWidthCells: 60 },
 					)
 				: new Text(
-						theme.fg(
-							"dim",
-							imageFallback(image.mimeType, getImageDimensions(image.data, image.mimeType) ?? undefined),
-						),
-						2,
+						theme.fg("dim", imagePreviewFallback(image.mimeType, image.data, showImages)),
+						MEDIA_FALLBACK_PADDING,
 						0,
 					),
 		);
