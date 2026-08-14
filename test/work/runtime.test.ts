@@ -1046,7 +1046,12 @@ describe("BackgroundWorkRuntime", () => {
 					context(root),
 				),
 			);
-			await Promise.all(concurrent);
+			const results = await Promise.all(concurrent);
+			for (const result of results) {
+				expect(result.content).not.toContainEqual(
+					expect.objectContaining({ text: expect.stringContaining("Background output storage failed") }),
+				);
+			}
 		} finally {
 			await active.shutdown();
 		}
