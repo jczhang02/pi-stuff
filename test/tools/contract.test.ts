@@ -335,6 +335,83 @@ test("decoration preserves execution and projects one Tool immediately", async (
 	expect(renderLines(rendered.callComponent).join("\n")).toContain("Read 1 file");
 });
 
+test("settled Host redraws build detail only while globally expanded", () => {
+	const harness = apiHarness();
+	let detailBuilds = 0;
+	registerSuiteOwnedTool(
+		harness.api,
+		{
+			description: "lazy detail fixture",
+			execute: async () => ({ content: [{ type: "text", text: "MODEL_VISIBLE" }], details: { source: "read" } }),
+			label: "Read",
+			name: "read",
+			parameters: Params,
+		},
+		{
+			...presentation("read-file"),
+			detailLines: () => {
+				detailBuilds += 1;
+				return ["PRESENTATION_DETAIL"];
+			},
+		},
+	);
+	const tool = harness.tools.get("read") as ToolDefinition<typeof Params, { source: string }>;
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages([assistant(call("lazy-read", "read", "a.ts")), result("lazy-read", "MODEL_VISIBLE")], true);
+	const state = {};
+	const args = { value: "a.ts" };
+	const base = renderContext(state, args, { executionStarted: false, toolCallId: "lazy-read" });
+	const component = tool.renderCall?.(args, theme, base);
+	if (!component) throw new Error("missing lazy detail component");
+	const finalResult = {
+		content: [{ type: "text" as const, text: "MODEL_VISIBLE" }],
+		details: { source: "read" },
+	};
+	const redraw = (expanded: boolean): string[] => {
+		const context = { ...base, expanded, lastComponent: component };
+		tool.renderCall?.(args, theme, context);
+		const body = tool.renderResult?.(finalResult, { expanded, isPartial: false }, theme, context);
+		return body ? renderLines(body) : [];
+	};
+
+	redraw(false);
+	redraw(false);
+	expect(detailBuilds).toBe(0);
+	expect(runtime.groupActivities("lazy-read")[0]?.detailLines.join("\n")).toContain("MODEL_VISIBLE");
+	expect(redraw(true).join("\n")).toContain("PRESENTATION_DETAIL");
+	expect(detailBuilds).toBe(1);
+	redraw(true);
+	expect(detailBuilds).toBe(1);
+	redraw(false);
+	expect(redraw(true).join("\n")).toContain("PRESENTATION_DETAIL");
+	expect(detailBuilds).toBe(2);
+});
+
+test("renderer binding does not aggregate Tools before the Session event", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn();
+	const first = settle(read, "event-owned-read-1", "a.ts");
+	settle(read, "event-owned-read-2", "b.ts");
+
+	expect(runtime.listGroups().map((group) => group.memberIds)).toEqual([
+		["event-owned-read-2"],
+		["event-owned-read-1"],
+	]);
+	runtime.indexMessage(
+		assistant(call("event-owned-read-1", "read", "a.ts"), call("event-owned-read-2", "read", "b.ts")),
+	);
+	runtime.indexMessage(result("event-owned-read-1", "MODEL_VISIBLE"));
+	runtime.indexMessage(result("event-owned-read-2", "MODEL_VISIBLE"));
+	runtime.endTurn();
+	expect(runtime.resolveGroup("event-owned-read-1")).toMatchObject({
+		memberIds: ["event-owned-read-1", "event-owned-read-2"],
+		state: "success",
+	});
+	expect(renderLines(first.callComponent).join("\n")).toContain("Read 2 files");
+});
+
 test("a Code Mode envelope renders the same compact Tool Activity as a direct Tool call", () => {
 	const directHarness = apiHarness();
 	const directRead = toolFromHarness(directHarness, "read", "read-file");
@@ -833,9 +910,11 @@ test("a completed nested Tool settles in place while the outer Code Mode result 
 	);
 	const envelope = harness.tools.get("codemode");
 	if (!envelope) throw new Error("missing Code Mode envelope");
+	const runtime = getToolUiRuntime(harness.api);
 	const state = {};
 	const context = renderContext(state, { value: "unused" }, { toolCallId: "outer-live" });
 	const callComponent = envelope.renderCall?.({ code: "read" }, theme, context as never);
+	runtime.observeEnvelopeResult("codemode", "outer-live", { operations });
 	const running = envelope.renderResult?.(
 		{ content: [], details: { operations } },
 		{ expanded: false, isPartial: true },
@@ -854,6 +933,7 @@ test("a completed nested Tool settles in place while the outer Code Mode result 
 			state: "success",
 		},
 	];
+	runtime.observeEnvelopeResult("codemode", "outer-live", { operations });
 	const settled = envelope.renderResult?.(
 		{ content: [], details: { operations } },
 		{ expanded: false, isPartial: true },
@@ -863,6 +943,21 @@ test("a completed nested Tool settles in place while the outer Code Mode result 
 	if (!settled) throw new Error("missing settled envelope result");
 	expect(settled.render(120).join("\n")).toContain("Read 1 file");
 	expect(settled.render(120).join("\n")).not.toContain("Reading 1 file");
+});
+
+test("envelope terminal operations without results keep their explicit outcome", () => {
+	const harness = apiHarness();
+	toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	const operations: readonly SuiteToolEnvelopeOperation[] = [
+		{ args: { value: "done.ts" }, id: "nested-success", name: "read", state: "success" },
+		{ args: { value: "blocked.ts" }, id: "nested-rejected", name: "read", state: "rejected" },
+	];
+	runtime.registerEnvelope("codemode", () => operations);
+	runtime.observeEnvelopeResult("codemode", "outer", { operations });
+
+	expect(runtime.resolveGroup("nested-success")).toMatchObject({ state: "success" });
+	expect(runtime.resolveGroup("nested-rejected")).toMatchObject({ state: "warning" });
 });
 
 test("the Code Mode surface hides Suite schemas without changing the virtual active Tool set", () => {
@@ -1411,6 +1506,48 @@ test("projection rebuild rebinds grouped models to fresh Host row components", (
 	expect(renderLines(rebuiltFollower.callComponent)).toEqual([]);
 });
 
+test("projection replacement isolates reused IDs from stale rows, callbacks, and timers", async () => {
+	const scheduler = new ManualTimerScheduler();
+	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);
+	runtime.registerActivity("read", presentation("read-file").activity);
+	runtime.registerActivity("edit", presentation("change-file").activity);
+	runtime.markRendererAttached("read");
+	runtime.markRendererAttached("edit");
+	runtime.indexMessages([assistant(call("same", "read", "old.ts")), result("same")], true);
+	const oldModel = {
+		durationMs: undefined,
+		label: "read",
+		state: "success" as const,
+		summary: "done",
+		target: "old.ts",
+	};
+	const oldRow = new CachedToolRow(theme, oldModel);
+	let oldInvalidations = 0;
+	runtime.presentRow("same", oldRow, oldModel, true, () => oldInvalidations++, false, {
+		args: { value: "old.ts" },
+		name: "read",
+	});
+	runtime.startTimer("same", () => oldInvalidations++);
+	runtime.setRowExpanded("same", true);
+	runtime.suspend();
+
+	const newModel = { ...oldModel, label: "edit", target: "new.ts" };
+	const newRow = new CachedToolRow(theme, newModel);
+	let newInvalidations = 0;
+	runtime.presentRow("same", newRow, newModel, true, () => newInvalidations++, false, {
+		args: { value: "new.ts" },
+		name: "edit",
+	});
+	runtime.resetProjection([assistant(call("same", "edit", "new.ts")), result("same")]);
+	await Promise.resolve();
+
+	expect(oldInvalidations).toBe(0);
+	expect(newInvalidations).toBe(1);
+	expect(scheduler.activeCount).toBe(0);
+	expect(renderLines(oldRow).join("\n")).not.toContain("Changed");
+	expect(renderLines(newRow).join("\n")).toContain("Changed 1 file");
+});
+
 test("a user input boundary prevents the next turn from reusing the previous group", () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");
@@ -1426,6 +1563,22 @@ test("a user input boundary prevents the next turn from reusing the previous gro
 	expect(renderLines(first.callComponent).join("\n")).toContain("Read 1 file");
 	expect(renderLines(first.callComponent).join("\n")).not.toContain("Changed");
 	expect(renderLines(second.callComponent).join("\n")).toContain("Changing 1 file");
+});
+
+test("an automatic continuation reuses the previous non-Bash tail", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const edit = toolFromHarness(harness, "edit", "change-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
+	const leader = settle(read, "r1", "a.ts");
+	runtime.endTurn();
+
+	runtime.startTurn();
+	runtime.indexMessage(assistant(call("e1", "edit", "b.ts")));
+	settle(edit, "e1", "b.ts");
+	expect(runtime.resolveGroup("r1")).toMatchObject({ memberIds: ["r1", "e1"] });
+	expect(renderLines(leader.callComponent).join("\n")).toContain("Changing 1 file, reading 1 file");
 });
 
 test("Tool results, Thinking, and hidden Custom Messages keep the live group open", () => {

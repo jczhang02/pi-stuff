@@ -115,10 +115,20 @@ export class ToolActivityStore {
 	settle(id: string, input: SettleToolActivity): ToolActivity | undefined {
 		const existing = this.activities.get(id);
 		if (!existing) return undefined;
+		const durationMs = input.durationMs === undefined ? undefined : Math.max(0, Math.floor(input.durationMs));
+		if (
+			existing.durationMs === durationMs &&
+			existing.state === input.state &&
+			existing.summary === input.summary &&
+			existing.detailLines.length === input.detailLines.length &&
+			existing.detailLines.every((line, index) => line === input.detailLines[index])
+		) {
+			return existing;
+		}
 		const activity = immutableActivity({
 			...existing,
 			detailLines: input.detailLines,
-			durationMs: input.durationMs === undefined ? undefined : Math.max(0, Math.floor(input.durationMs)),
+			durationMs,
 			state: input.state,
 			summary: input.summary,
 		});
@@ -133,6 +143,7 @@ export class ToolActivityStore {
 	}
 
 	private notify(): void {
+		if (this.listeners.size === 0) return;
 		const snapshot = this.list();
 		for (const listener of this.listeners) {
 			try {

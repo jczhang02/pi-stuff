@@ -52,6 +52,7 @@ import {
 	boundStreamedRecentOutput,
 	extractToolArgsPreview,
 } from "../../packages/pi-stuff/src/subagents/src/shared/utils.js";
+import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 const environment = new Map<string, string | undefined>();
 const temporaryDirectories: string[] = [];
@@ -110,6 +111,7 @@ function expectCompactPresentation(tool: ToolDefinition | undefined): void {
 }
 
 function renderedSummary(
+	api: ExtensionAPI,
 	tool: ToolDefinition | undefined,
 	args: Record<string, unknown>,
 	result: AgentToolResult<unknown>,
@@ -117,6 +119,19 @@ function renderedSummary(
 	isError = false,
 ): string {
 	expect(tool).toBeDefined();
+	getToolUiRuntime(api).indexMessages(
+		[
+			{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: tool?.name, arguments: args }] },
+			{
+				role: "toolResult",
+				toolCallId,
+				content: result.content,
+				details: result.details,
+				...(isError ? { isError: true } : {}),
+			},
+		],
+		true,
+	);
 	const state = {};
 	const context = {
 		args,
@@ -349,6 +364,7 @@ test("native parent and child communication tools use the shared Tool row", asyn
 		["ask", "message-agent"],
 	] as const) {
 		const summary = renderedSummary(
+			parent.api,
 			parent.tools.get("subagent_supervisor"),
 			{ action, to: "worker" },
 			{ content: [{ type: "text", text: "done" }], details: {} },
@@ -357,6 +373,7 @@ test("native parent and child communication tools use the shared Tool row", asyn
 		expect(summary).toContain(category === "check-agent" ? "Checked 1 agent" : "Messaged 1 agent");
 	}
 	const failedMessage = renderedSummary(
+		parent.api,
 		parent.tools.get("subagent_supervisor"),
 		{ action: "send", to: "worker" },
 		{ content: [{ type: "text", text: "delivery failed" }], details: {} },

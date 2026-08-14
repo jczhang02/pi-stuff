@@ -29,3 +29,17 @@ test("ToolActivityStore exposes immutable snapshots", () => {
 	}).toThrow();
 	expect(store.get("call-1")?.summary).toBe("Read 1 file");
 });
+
+test("ToolActivityStore ignores an identical terminal transition", () => {
+	const store = new ToolActivityStore();
+	store.begin({ id: "call-1", label: "Read", name: "read", target: "README.md" });
+	const terminal = { detailLines: ["line one"], durationMs: 12, state: "success" as const, summary: "done" };
+	const settled = store.settle("call-1", terminal);
+	let notifications = 0;
+	store.subscribe(() => {
+		notifications += 1;
+	});
+
+	expect(store.settle("call-1", terminal)).toBe(settled);
+	expect(notifications).toBe(0);
+});

@@ -1,7 +1,7 @@
 import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { CERTIFIED_PI_BUN_VERSION } from "./pi-host-contract.js";
 import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
@@ -46,6 +46,7 @@ export interface LifecycleAcceptanceSelection {
 
 interface BenchmarkOptions extends LifecycleAcceptanceSelection {
 	readonly acceptance: boolean;
+	readonly longSessionTools: number;
 	readonly output: string;
 	readonly packagePath: string;
 	readonly piBinary: string;
@@ -173,6 +174,7 @@ function terminalSizes(value: string | undefined): readonly TerminalSize[] {
 function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 	let acceptance = false;
 	let actions: readonly Action[] = DEFAULT_ACTIONS;
+	let longSessionTools = 0;
 	let output = DEFAULT_OUTPUT;
 	let packagePath = DEFAULT_PACKAGE;
 	let piBinary = process.env["PI_BIN"] ?? DEFAULT_PI_BINARY;
@@ -192,6 +194,10 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 				break;
 			case "--actions":
 				actions = listValue(value, flag, ACTIONS);
+				index += 1;
+				break;
+			case "--long-tools":
+				longSessionTools = boundedInteger(value, flag, 0, 20_000);
 				index += 1;
 				break;
 			case "--output":
@@ -236,7 +242,20 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 				fail(`unknown argument: ${String(flag)}`);
 		}
 	}
-	return { acceptance, actions, output, packagePath, piBinary, samples, scenarios, sizes, trace, variants, warmups };
+	return {
+		acceptance,
+		actions,
+		longSessionTools,
+		output,
+		packagePath,
+		piBinary,
+		samples,
+		scenarios,
+		sizes,
+		trace,
+		variants,
+		warmups,
+	};
 }
 
 export function percentile(values: readonly number[], fraction: number): number {
@@ -782,7 +801,7 @@ function assistantMessage(text: string): AssistantMessage {
 	};
 }
 
-function seedSession(directory: string, cwd: string, id: string, turns: number): string {
+function seedSession(directory: string, cwd: string, id: string, turns: number, toolCount = 0): string {
 	const manager = SessionManager.create(cwd, directory, { id });
 	manager.appendModelChange("pi-stuff-lifecycle-benchmark", "fixture-model");
 	for (let index = 0; index < turns; index += 1) {
@@ -799,12 +818,48 @@ function seedSession(directory: string, cwd: string, id: string, turns: number):
 			),
 		);
 	}
+	for (let index = 0; index < toolCount; index += 1) {
+		const bash = index % 10 === 9;
+		const toolCallId = `ps5bw-history-tool-${String(index)}`;
+		const toolName = bash ? "bash" : "read";
+		manager.appendMessage({
+			...assistantMessage(""),
+			content: [
+				bash
+					? {
+							type: "toolCall",
+							id: toolCallId,
+							name: toolName,
+							arguments: { command: `printf tool-${String(index)}` },
+						}
+					: {
+							type: "toolCall",
+							id: toolCallId,
+							name: toolName,
+							arguments: { path: `history-${String(index)}.txt` },
+						},
+			],
+			stopReason: "toolUse",
+		} satisfies AssistantMessage);
+		manager.appendMessage({
+			role: "toolResult",
+			toolCallId,
+			toolName,
+			content: [{ type: "text", text: bash ? `tool-${String(index)}` : `history line ${String(index)}` }],
+			isError: false,
+			timestamp: Date.now(),
+		} satisfies ToolResultMessage);
+	}
 	const path = manager.getSessionFile();
 	if (!path) fail(`failed to seed ${id}`);
 	return path;
 }
 
-async function prepareFixture(root: string, projectDirectory: string): Promise<SeededSessions> {
+async function prepareFixture(
+	root: string,
+	projectDirectory: string,
+	longSessionTools: number,
+): Promise<SeededSessions> {
 	const packageDirectory = join(root, "fixture-package");
 	const seedDirectory = join(root, "seed-sessions");
 	const runner = join(root, "runner.sh");
@@ -830,7 +885,7 @@ async function prepareFixture(root: string, projectDirectory: string): Promise<S
 	]);
 	await chmod(runner, 0o755);
 	return {
-		long: seedSession(seedDirectory, projectDirectory, "long", LONG_SESSION_TURNS),
+		long: seedSession(seedDirectory, projectDirectory, "long", LONG_SESSION_TURNS, longSessionTools),
 		short: seedSession(seedDirectory, projectDirectory, "short", SHORT_SESSION_TURNS),
 		traceExtension,
 	};
@@ -1364,7 +1419,7 @@ async function main(): Promise<void> {
 		mkdir(projectDirectory, { recursive: true }),
 		mkdir(join(benchmarkRoot, "home"), { recursive: true }),
 	]);
-	const seeded = await prepareFixture(benchmarkRoot, projectDirectory);
+	const seeded = await prepareFixture(benchmarkRoot, projectDirectory, options.longSessionTools);
 	const samples: LifecycleSample[] = [];
 
 	try {
@@ -1441,6 +1496,7 @@ async function main(): Promise<void> {
 			options: {
 				acceptance: options.acceptance,
 				actions: options.actions,
+				longSessionTools: options.longSessionTools,
 				packagePath: options.packagePath,
 				samples: options.samples,
 				scenarios: options.scenarios,

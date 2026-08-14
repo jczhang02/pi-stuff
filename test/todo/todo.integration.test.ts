@@ -17,6 +17,7 @@ import {
 	TASK_UPDATE_TOOL_NAME,
 	type TaskDetails,
 } from "../../packages/pi-stuff/src/todo/tool/types.js";
+import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 const TOOL_NAMES = [TASK_CREATE_TOOL_NAME, TASK_GET_TOOL_NAME, TASK_LIST_TOOL_NAME, TASK_UPDATE_TOOL_NAME];
 type TaskMutationEvent = Parameters<NonNullable<Parameters<typeof registerTaskTools>[1]>>[0];
@@ -45,7 +46,7 @@ function createToolHarness(onMutation: (event: TaskMutationEvent) => void) {
 		return tool(name).execute(`call-${name}`, params, undefined, undefined, context);
 	}
 
-	return { definitions, execute, tool };
+	return { api, definitions, execute, tool };
 }
 
 function details(result: AgentToolResult<unknown>): TaskDetails {
@@ -62,6 +63,7 @@ function text(result: AgentToolResult<unknown>): string {
 let renderedCallSequence = 0;
 
 function renderedLines(
+	api: ExtensionAPI,
 	tool: ToolDefinition,
 	result: AgentToolResult<unknown>,
 	isError: boolean,
@@ -76,6 +78,20 @@ function renderedLines(
 	} as unknown as Theme;
 	const state = {};
 	renderedCallSequence += 1;
+	const toolCallId = `render-${tool.name}-${String(renderedCallSequence)}`;
+	getToolUiRuntime(api).indexMessages(
+		[
+			{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: tool.name, arguments: args }] },
+			{
+				role: "toolResult",
+				toolCallId,
+				content: result.content,
+				details: result.details,
+				...(isError ? { isError: true } : {}),
+			},
+		],
+		true,
+	);
 	const context = {
 		args,
 		argsComplete: true,
@@ -88,7 +104,7 @@ function renderedLines(
 		lastComponent: undefined,
 		showImages: true,
 		state,
-		toolCallId: `render-${tool.name}-${String(renderedCallSequence)}`,
+		toolCallId,
 	} as Parameters<typeof renderer>[3];
 	const row = callRenderer(args, theme, context);
 	renderer(result, { expanded: false, isPartial: false }, theme, context);
@@ -141,7 +157,7 @@ describe("registered Task tools", () => {
 
 		expect(mutations.map(({ action }) => action)).toEqual(["create", "create", "update"]);
 		expect(mutations.every(({ sessionId }) => sessionId === "integration-session")).toBe(true);
-		expect(renderedLines(harness.tool(TASK_GET_TOOL_NAME), fetched, false, { taskId: "2" })).toEqual([
+		expect(renderedLines(harness.api, harness.tool(TASK_GET_TOOL_NAME), fetched, false, { taskId: "2" })).toEqual([
 			" • Checked 1 task  (ctrl+o to expand)",
 		]);
 
@@ -151,15 +167,17 @@ describe("registered Task tools", () => {
 		});
 		expect(details(failed).error).toBe("#missing not found");
 		expect(
-			renderedLines(harness.tool(TASK_UPDATE_TOOL_NAME), failed, false, { taskId: "missing" }).join("\n"),
+			renderedLines(harness.api, harness.tool(TASK_UPDATE_TOOL_NAME), failed, false, { taskId: "missing" }).join(
+				"\n",
+			),
 		).toContain("#missing not found");
 		const validationFailure = {
 			content: [{ type: "text", text: "Invalid TaskUpdate input" }],
 			details: undefined,
 		} as unknown as AgentToolResult<unknown>;
-		expect(renderedLines(harness.tool(TASK_UPDATE_TOOL_NAME), validationFailure, true).join("\n").trim()).toBe(
-			"• Task update failed  (ctrl+o to expand)\n   ⎿ Invalid TaskUpdate input",
-		);
+		expect(
+			renderedLines(harness.api, harness.tool(TASK_UPDATE_TOOL_NAME), validationFailure, true).join("\n").trim(),
+		).toBe("• Task update failed  (ctrl+o to expand)\n   ⎿ Invalid TaskUpdate input");
 		expect(mutations.map(({ action }) => action)).toEqual(["create", "create", "update"]);
 	});
 });

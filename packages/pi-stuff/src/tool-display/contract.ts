@@ -78,6 +78,7 @@ const GROUP_LIST_LIMIT = 768;
 const PENDING_RESULT_LIMIT = 768;
 const BINDING_LIMIT = 768;
 const TIMER_STATE_LIMIT = 768;
+const BASH_OUTPUT_SOURCE_LIMIT = 32 * 1_024;
 
 function isRecordValue(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -183,8 +184,10 @@ interface RendererState<TArgs extends Record<string, unknown>, TDetails> {
 	args?: Readonly<TArgs>;
 	component?: CachedToolRow;
 	detailLines?: readonly string[];
+	detailMaterialized?: boolean;
 	lastResult?: AgentToolResult<TDetails>;
 	startedAt?: number;
+	terminalState?: Exclude<ToolActivityState, "running">;
 	wasLiveExecution?: boolean;
 }
 
@@ -215,6 +218,8 @@ interface PresentedToolMetadata {
 }
 
 interface GroupedRowBinding {
+	bashOutput?: string;
+	bashOutputResult?: AgentToolResult<unknown>;
 	baseModel: ToolRowModel;
 	baseVisible: boolean;
 	expanded: boolean;
@@ -575,6 +580,7 @@ export class ToolUiRuntime {
 	private reloadActiveToolNames: readonly string[] | undefined;
 	private indexedMessages: unknown[] = [];
 	private readonly renderedToolNames = new Set<string>();
+	private continuationLeaderId: string | undefined;
 	private streamActive = false;
 	private readonly streamedProseIndexes = new Set<number>();
 	private readonly streamedToolCallSignatures = new Map<string, string>();
@@ -696,23 +702,41 @@ export class ToolUiRuntime {
 	startTurn(messages?: readonly unknown[]): void {
 		this.agentActive = true;
 		this.tailForcedClosed = false;
-		if (messages) this.indexedMessages = [...messages];
-		this.rebuildGroups();
+		if (messages) {
+			this.continuationLeaderId = undefined;
+			this.indexedMessages = [...messages];
+			this.rebuildGroups();
+			return;
+		}
+		const leaderId = this.continuationLeaderId;
+		this.continuationLeaderId = undefined;
+		const group = leaderId ? this.groups.get(leaderId) : undefined;
+		if (!leaderId || !group?.closed || group.members.some((member) => member.name === "bash")) return;
+		const open = { ...group, closed: false };
+		this.groups.set(leaderId, open);
+		this.openGroupLeaderId = leaderId;
+		this.reconcileGroup(open);
 	}
 
 	observeUserBoundary(): void {
 		this.indexedMessages.push({ role: "user", content: [] });
+		this.continuationLeaderId = undefined;
 		this.tailForcedClosed = true;
 		this.closeOpenGroup();
 	}
 
 	endTurn(): void {
+		const group = this.openGroupLeaderId ? this.groups.get(this.openGroupLeaderId) : undefined;
+		this.continuationLeaderId = group?.members.some((member) => member.name === "bash")
+			? undefined
+			: this.openGroupLeaderId;
 		this.agentActive = false;
 		this.tailForcedClosed = true;
 		this.closeOpenGroup();
 	}
 
 	observeAssistantProse(): void {
+		this.continuationLeaderId = undefined;
 		this.tailForcedClosed = true;
 		this.closeOpenGroup();
 	}
@@ -731,6 +755,7 @@ export class ToolUiRuntime {
 
 	indexMessages(messages: readonly unknown[], closeTail = !this.agentActive): void {
 		this.pendingResults.clear();
+		this.continuationLeaderId = undefined;
 		this.indexedMessages = [...messages];
 		this.tailForcedClosed = closeTail;
 		this.rebuildGroups();
@@ -750,9 +775,32 @@ export class ToolUiRuntime {
 		}
 	}
 
+	observeEnvelopeResult(envelopeName: string, envelopeId: string, details: unknown): void {
+		for (const operation of this.decodeEnvelope(envelopeName, details)) {
+			const owner = this.envelopeCalls.get(operation.id);
+			if (owner && owner !== envelopeId) continue;
+			if (!owner) this.envelopeCalls.set(operation.id, envelopeId);
+			if (!this.renderedToolNames.has(operation.name)) {
+				if (!owner) {
+					this.tailForcedClosed = true;
+					this.closeOpenGroup();
+				}
+				continue;
+			}
+			const result = envelopeOperationResult(operation);
+			this.appendToolCall({
+				args: operation.args,
+				id: operation.id,
+				name: operation.name,
+				...(result ? { result } : {}),
+			});
+		}
+	}
+
 	resetProjection(messages: readonly unknown[]): void {
 		this.suspend();
 		this.envelopeCalls.clear();
+		this.continuationLeaderId = undefined;
 		this.groupHints.clear();
 		this.activities.clear();
 		this.pendingResults.clear();
@@ -783,6 +831,7 @@ export class ToolUiRuntime {
 		this.groupHints.clear();
 		this.indexedMessages = [];
 		this.openGroupLeaderId = undefined;
+		this.continuationLeaderId = undefined;
 		this.streamActive = false;
 		this.streamedProseIndexes.clear();
 		this.streamedToolCallSignatures.clear();
@@ -809,14 +858,13 @@ export class ToolUiRuntime {
 		metadata: PresentedToolMetadata,
 	): void {
 		let binding = this.bindings.get(toolCallId);
-		const preferPresentedResult =
-			metadata.result !== undefined && (model.state === "running" || binding?.metadata.result !== undefined);
+		const firstBinding = !binding;
 		if (!binding) {
 			binding = {
 				baseModel: model,
 				baseVisible: visible,
 				expanded,
-				invalidate,
+				invalidate: () => {},
 				metadata,
 				row,
 			};
@@ -830,18 +878,16 @@ export class ToolUiRuntime {
 		}
 		this.bindings.delete(toolCallId);
 		this.bindings.set(toolCallId, binding);
-		if (this.renderedToolNames.has(metadata.name)) {
-			this.appendToolCall(
-				{
-					args: metadata.args,
-					id: toolCallId,
-					name: metadata.name,
-					...(metadata.result ? { result: metadata.result } : {}),
-				},
-				preferPresentedResult,
-			);
-		} else this.reconcileGroupForTool(toolCallId);
+		this.reconcileGroupForTool(toolCallId);
+		if (firstBinding) binding.invalidate = invalidate;
 		this.trimBindings(toolCallId);
+	}
+
+	setRowExpanded(toolCallId: string, expanded: boolean): void {
+		const binding = this.bindings.get(toolCallId);
+		if (!binding || binding.expanded === expanded) return;
+		binding.expanded = expanded;
+		this.reconcileGroupForTool(toolCallId);
 	}
 
 	startTimer(
@@ -872,10 +918,7 @@ export class ToolUiRuntime {
 
 	stopTimer(toolCallId: string): void {
 		const state = this.timerStates.get(toolCallId);
-		if (!state) {
-			this.reconcileGroupForTool(toolCallId);
-			return;
-		}
+		if (!state) return;
 		this.timerStates.delete(toolCallId);
 		state.setMarkerVisible(true);
 		if (this.timerStates.size === 0 && this.timer !== undefined) {
@@ -971,9 +1014,12 @@ export class ToolUiRuntime {
 			const standalone = this.activities.get(groupId);
 			return standalone && start === 0 && requested > 0 ? [standalone] : [];
 		}
-		return group.members
-			.slice(start, start + requested)
-			.map((member) => this.activities.get(member.id) ?? this.activityFromPlan(member));
+		return group.members.slice(start, start + requested).map((member) => {
+			const activity = this.activities.get(member.id);
+			return activity && (activity.state === "running" || activity.detailLines.length || !member.result)
+				? activity
+				: this.activityFromPlan(member);
+		});
 	}
 
 	private decodeEnvelope(name: string, details: unknown): readonly SuiteToolEnvelopeOperation[] {
@@ -1039,18 +1085,15 @@ export class ToolUiRuntime {
 					continue;
 				}
 				for (const operation of operations) {
-					if (operation.state === "running" && !operation.result) continue;
-					const result = operation.result ?? {
-						content: [{ type: "text" as const, text: `${operation.name} ${operation.state}` }],
-						details: undefined,
-					};
+					const result = envelopeOperationResult(operation);
+					if (!result) continue;
 					projected.push({
 						role: "toolResult",
 						toolCallId: operation.id,
 						toolName: operation.name,
 						content: result.content,
 						details: result.details,
-						...(operation.state === "success" ? {} : { isError: true }),
+						...(result.isError === true ? { isError: true } : {}),
 					});
 				}
 				continue;
@@ -1061,7 +1104,6 @@ export class ToolUiRuntime {
 	}
 
 	private rebuildGroups(): void {
-		for (const binding of this.bindings.values()) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 		this.groups.clear();
 		this.groupSummaries.clear();
 		this.groupOrder.splice(0);
@@ -1080,6 +1122,9 @@ export class ToolUiRuntime {
 			if (!group.closed) this.openGroupLeaderId = group.leaderId;
 		}
 		for (const group of planned) this.reconcileGroup(group);
+		for (const [toolCallId, binding] of this.bindings) {
+			if (!this.membership.has(toolCallId)) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
+		}
 		for (const key of [...this.groupHints.keys()]) {
 			if (!this.groups.has(key)) this.groupHints.delete(key);
 		}
@@ -1108,6 +1153,7 @@ export class ToolUiRuntime {
 			return;
 		}
 		if (role === "user" || role === "bashExecution" || (role === "custom" && value["display"] === true)) {
+			this.continuationLeaderId = undefined;
 			this.tailForcedClosed = true;
 			this.closeOpenGroup();
 		}
@@ -1131,6 +1177,7 @@ export class ToolUiRuntime {
 					continue;
 				}
 				this.streamedProseIndexes.add(index);
+				this.continuationLeaderId = undefined;
 				this.tailForcedClosed = true;
 				this.closeOpenGroup();
 				continue;
@@ -1147,6 +1194,7 @@ export class ToolUiRuntime {
 			if (trackedSnapshot) this.streamedToolCallSignatures.set(id, signature);
 			if (!this.renderedToolNames.has(name)) {
 				if (previousSignature === undefined) {
+					this.continuationLeaderId = undefined;
 					this.tailForcedClosed = true;
 					this.closeOpenGroup();
 				}
@@ -1263,7 +1311,15 @@ export class ToolUiRuntime {
 		if (!group) return;
 		const leader = this.bindings.get(group.leaderId);
 		const index = this.summaryIndex(group, changedMemberId);
-		if (!leader) return;
+		if (!leader) {
+			for (const member of group.members.slice(1)) {
+				const binding = this.bindings.get(member.id);
+				if (!binding) continue;
+				if (binding.expanded) this.applyBinding(binding, binding.baseModel, true);
+				else if (binding.row.setVisible(false)) this.scheduleInvalidation(binding.invalidate);
+			}
+			return;
+		}
 		const standaloneBash = group.members.length === 1 && group.members[0]?.name === "bash";
 		if (leader.expanded && !standaloneBash) {
 			this.stopGroupPulse(group.leaderId);
@@ -1286,15 +1342,7 @@ export class ToolUiRuntime {
 				expandable: true,
 				expanded: binding.expanded,
 				kind: "bash-operation",
-				output: member.result
-					? member.result.content
-							.filter((item): item is { readonly type: "text"; readonly text: string } => item.type === "text")
-							.map((item) => item.text)
-							.join("\n")
-					: (binding.metadata.result?.content
-							.filter((item): item is { readonly type: "text"; readonly text: string } => item.type === "text")
-							.map((item) => item.text)
-							.join("\n") ?? ""),
+				output: this.bashOutput(binding, member.result ?? binding.metadata.result),
 				state: summaryMember.state,
 			};
 			this.stopGroupPulse(group.leaderId);
@@ -1327,6 +1375,22 @@ export class ToolUiRuntime {
 		}
 	}
 
+	private bashOutput(binding: GroupedRowBinding, result: AgentToolResult<unknown> | undefined): string {
+		if (binding.bashOutputResult === result) return binding.bashOutput ?? "";
+		let output = "";
+		for (const item of result?.content ?? []) {
+			if (item.type !== "text") continue;
+			const separator = output ? "\n" : "";
+			const remaining = BASH_OUTPUT_SOURCE_LIMIT - output.length - separator.length;
+			if (remaining <= 0) break;
+			output += `${separator}${item.text.slice(0, remaining)}`;
+		}
+		if (result) binding.bashOutputResult = result;
+		else delete binding.bashOutputResult;
+		binding.bashOutput = output;
+		return output;
+	}
+
 	private summaryIndex(group: PlannedToolActivityGroup, changedMemberId?: string): GroupSummaryIndex {
 		let index = this.groupSummaries.get(group.leaderId);
 		if (!index) {
@@ -1350,8 +1414,9 @@ export class ToolUiRuntime {
 		const forcedTerminal = !member.result ? member.terminalState : undefined;
 		const state =
 			forcedTerminal ??
-			binding?.baseModel.state ??
-			terminalStateFromResult(member, this.errorPolicies.get(member.name));
+			(member.result
+				? terminalStateFromResult(member, this.errorPolicies.get(member.name))
+				: (binding?.baseModel.state ?? "running"));
 		const metadata: PresentedToolMetadata = {
 			...(binding?.metadata ?? {}),
 			args: binding?.metadata.args ?? member.args,
@@ -2129,13 +2194,15 @@ function updateRunningRow<TArgs extends Record<string, unknown>, TDetails>(
 		target: oneLine(presentation.target?.(args) ?? ""),
 	};
 	if (!state.component) state.component = new CachedToolRow(theme, model);
-	runtime.activities.begin({
-		id: context.toolCallId,
-		label: model.label,
-		name: tool.name,
-		...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
-		target: model.target,
-	});
+	if (state.wasLiveExecution) {
+		runtime.activities.begin({
+			id: context.toolCallId,
+			label: model.label,
+			name: tool.name,
+			...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
+			target: model.target,
+		});
+	}
 	const metadata: PresentedToolMetadata = { args, cwd: context.cwd, name: tool.name };
 	runtime.presentRow(context.toolCallId, state.component, model, true, context.invalidate, context.expanded, metadata);
 	if (state.wasLiveExecution) {
@@ -2157,6 +2224,20 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 ): CachedToolRow {
 	const args = state.args ?? context.args;
 	state.args = args;
+	runtime.setRowExpanded(context.toolCallId, context.expanded);
+	if (state.lastResult && state.component && state.terminalState) {
+		if (!context.expanded || tool.name === "bash") {
+			delete state.detailLines;
+			state.detailMaterialized = false;
+		} else if (!state.detailMaterialized) {
+			state.detailLines = capPresentationDetails(
+				buildToolDetailLines(args, state.lastResult as AgentToolResult<unknown>),
+				presentation.detailLines?.(args, state.lastResult, state.terminalState),
+			);
+			state.detailMaterialized = true;
+		}
+		return state.component;
+	}
 	let domainError = context.isError;
 	if (!domainError && presentation.resultIsError) {
 		try {
@@ -2181,10 +2262,17 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 	};
 	if (!state.component) state.component = new CachedToolRow(theme, model);
 	state.lastResult = result;
-	state.detailLines = capPresentationDetails(
-		buildToolDetailLines(args, result as AgentToolResult<unknown>),
-		presentation.detailLines?.(args, result, activityState),
-	);
+	state.terminalState = activityState;
+	if (context.expanded && tool.name !== "bash") {
+		state.detailLines = capPresentationDetails(
+			buildToolDetailLines(args, result as AgentToolResult<unknown>),
+			presentation.detailLines?.(args, result, activityState),
+		);
+		state.detailMaterialized = true;
+	} else {
+		delete state.detailLines;
+		state.detailMaterialized = false;
+	}
 	runtime.stopTimer(context.toolCallId);
 	runtime.presentRow(context.toolCallId, state.component, model, true, context.invalidate, context.expanded, {
 		args,
@@ -2192,19 +2280,21 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 		name: tool.name,
 		result: result as AgentToolResult<unknown>,
 	});
-	runtime.activities.begin({
-		id: context.toolCallId,
-		label: model.label,
-		name: tool.name,
-		...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
-		target: model.target,
-	});
-	runtime.activities.settle(context.toolCallId, {
-		detailLines: state.detailLines,
-		durationMs,
-		state: activityState,
-		summary,
-	});
+	if (state.wasLiveExecution) {
+		runtime.activities.begin({
+			id: context.toolCallId,
+			label: model.label,
+			name: tool.name,
+			...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
+			target: model.target,
+		});
+		runtime.activities.settle(context.toolCallId, {
+			detailLines: state.detailLines ?? [],
+			durationMs,
+			state: activityState,
+			summary,
+		});
+	}
 	return state.component;
 }
 
@@ -2293,8 +2383,13 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 				args,
 			} as unknown as ToolRenderContext<TArgs>;
 			const state = typed.state as RendererState<TArgs, TDetails>;
-			if (state.lastResult) {
-				return settleRow(tool, presentation, runtime, state, state.lastResult, typed, theme);
+			if (state.lastResult && state.component) {
+				runtime.setRowExpanded(context.toolCallId, typed.expanded);
+				if (!typed.expanded) {
+					delete state.detailLines;
+					state.detailMaterialized = false;
+				}
+				return state.component;
 			}
 			return updateRunningRow(tool, presentation, runtime, state, typed, theme);
 		},
@@ -2420,6 +2515,23 @@ function decodeEnvelopeOperations(
 	}
 }
 
+function envelopeOperationResult(
+	operation: SuiteToolEnvelopeOperation,
+): (AgentToolResult<unknown> & { readonly isError?: true }) | undefined {
+	if (operation.state === "running") return undefined;
+	const result = operation.result ?? {
+		content: [
+			{
+				type: "text" as const,
+				text:
+					operation.state === "rejected" ? "Tool execution was blocked" : `${operation.name} ${operation.state}`,
+			},
+		],
+		details: undefined,
+	};
+	return operation.state === "success" ? result : { ...result, isError: true };
+}
+
 function resolveEnvelopeMedia(
 	result: AgentToolResult<unknown>,
 	presentation: SuiteToolEnvelopePresentation,
@@ -2539,6 +2651,23 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 	runtime.registerEnvelope(tool.name, presentation.decode);
 	const decorated: ToolDefinition<TParams, TDetails> = {
 		...tool,
+		execute: async (toolCallId, input, signal, onUpdate, context) => {
+			const observe = (result: AgentToolResult<TDetails>): void => {
+				runtime.observeEnvelopeResult(tool.name, toolCallId, result.details);
+			};
+			const result = await tool.execute(
+				toolCallId,
+				input,
+				signal,
+				(partial) => {
+					observe(partial);
+					onUpdate?.(partial);
+				},
+				context,
+			);
+			observe(result);
+			return result;
+		},
 		renderShell: "self" as const,
 		renderCall: () => new EmptyToolComponent(),
 		renderResult: (result, options, theme, context) =>

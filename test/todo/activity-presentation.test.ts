@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
 import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerTaskTools } from "../../packages/pi-stuff/src/todo/todo.js";
+import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
 } as unknown as Theme;
 
-function registeredTools(): Map<string, ToolDefinition> {
+function registeredTools(): { readonly api: ExtensionAPI; readonly tools: Map<string, ToolDefinition> } {
 	const tools = new Map<string, ToolDefinition>();
 	const api = {
 		events: { emit: () => {}, on: () => () => {} },
@@ -16,16 +17,24 @@ function registeredTools(): Map<string, ToolDefinition> {
 		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
 	} as unknown as ExtensionAPI;
 	registerTaskTools(api);
-	return tools;
+	return { api, tools };
 }
 
 function renderedSummary(
+	api: ExtensionAPI,
 	tool: ToolDefinition | undefined,
 	args: Record<string, unknown>,
 	result: AgentToolResult<unknown>,
 	toolCallId: string,
 ): string {
 	expect(tool).toBeDefined();
+	getToolUiRuntime(api).indexMessages(
+		[
+			{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: tool?.name, arguments: args }] },
+			{ role: "toolResult", toolCallId, content: result.content, details: result.details },
+		],
+		true,
+	);
 	const state = {};
 	const context = {
 		args,
@@ -51,9 +60,11 @@ function renderedSummary(
 }
 
 test("TaskUpdate reports a no-op as a check instead of a mutation", () => {
-	const tool = registeredTools().get("TaskUpdate");
+	const { api, tools } = registeredTools();
+	const tool = tools.get("TaskUpdate");
 	const args = { status: "completed", taskId: "task-1" };
 	const noOp = renderedSummary(
+		api,
 		tool,
 		args,
 		{
@@ -63,6 +74,7 @@ test("TaskUpdate reports a no-op as a check instead of a mutation", () => {
 		"call-no-op",
 	);
 	const updated = renderedSummary(
+		api,
 		tool,
 		args,
 		{
@@ -77,8 +89,10 @@ test("TaskUpdate reports a no-op as a check instead of a mutation", () => {
 });
 
 test("an empty TaskList reports zero returned tasks", () => {
+	const { api, tools } = registeredTools();
 	const empty = renderedSummary(
-		registeredTools().get("TaskList"),
+		api,
+		tools.get("TaskList"),
 		{},
 		{
 			content: [{ text: "No tasks found", type: "text" }],

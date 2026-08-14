@@ -180,6 +180,7 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 		pi.on("message_end", (event) => {
 			if (
 				event.message.role === "assistant" ||
+				event.message.role === "bashExecution" ||
 				event.message.role === "toolResult" ||
 				event.message.role === "custom"
 			) {

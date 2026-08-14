@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerWorkTools } from "../../packages/pi-stuff/src/background-work/src/tools.js";
+import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
-function registeredBash(): ToolDefinition {
+function registeredBash(): { readonly api: ExtensionAPI; readonly bash: ToolDefinition } {
 	const tools = new Map<string, ToolDefinition>();
 	const api = {
 		events: { emit: () => {}, on: () => () => {} },
@@ -15,12 +16,31 @@ function registeredBash(): ToolDefinition {
 	registerWorkTools(api, { current: () => undefined });
 	const bash = tools.get("bash");
 	expect(bash).toBeDefined();
-	return bash as ToolDefinition;
+	return { api, bash: bash as ToolDefinition };
 }
 
 test("standalone Bash preserves an automatic foreground-to-background handoff in its child output", () => {
-	const bash = registeredBash();
+	const { api, bash } = registeredBash();
 	const args = { command: "sleep 300", description: "Wait for service" };
+	const result = {
+		content: [
+			{
+				text: "Command still running after 120s; moved to background task abc123. Continue useful work.",
+				type: "text" as const,
+			},
+		],
+		details: {},
+	};
+	getToolUiRuntime(api).indexMessages(
+		[
+			{
+				role: "assistant",
+				content: [{ type: "toolCall", id: "bash-auto-background", name: "bash", arguments: args }],
+			},
+			{ role: "toolResult", toolCallId: "bash-auto-background", content: result.content, details: result.details },
+		],
+		true,
+	);
 	const theme = {
 		bold: (value: string) => value,
 		fg: (_color: string, value: string) => value,
@@ -42,20 +62,10 @@ test("standalone Bash preserves an automatic foreground-to-background handoff in
 	};
 	const row = bash.renderCall?.(args, theme, context as never);
 	expect(row).toBeDefined();
-	bash.renderResult?.(
-		{
-			content: [
-				{
-					text: "Command still running after 120s; moved to background task abc123. Continue useful work.",
-					type: "text",
-				},
-			],
-			details: {},
-		},
-		{ expanded: false, isPartial: false },
-		theme,
-		{ ...context, lastComponent: row } as never,
-	);
+	bash.renderResult?.(result, { expanded: false, isPartial: false }, theme, {
+		...context,
+		lastComponent: row,
+	} as never);
 
 	const rendered = row?.render(100).join("\n") ?? "";
 	expect(rendered).toContain("• Bash(sleep 300)");
