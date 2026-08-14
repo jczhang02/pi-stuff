@@ -17,6 +17,7 @@ import {
 	hasDirectUserActivation,
 	registerSuiteAgentMessagePreparation,
 	reportDiagnostic,
+	requestUiRender,
 	type SuiteAgentMessageOptions,
 } from "../conversation-ui/index.js";
 import {
@@ -838,11 +839,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 	constructor(pi: ExtensionAPI, dependencies: ContextRuntimeDependencies, registry: ContextCapabilityRegistry) {
 		this.pi = pi;
 		this.activities = new ContextActivityRegistry(() => {
-			try {
-				pi.events.emit("@jczhang02/pi-stuff-ui/render-request/v1", undefined);
-			} catch {
-				// Activity persistence must not depend on an interactive renderer.
-			}
+			requestUiRender(pi);
 		});
 		this.dependencies = dependencies;
 		this.registry = registry;
@@ -1798,8 +1795,8 @@ export default async function piStuffContext(
 	pi.registerCommand("ctx", {
 		description: "Inspect and maintain Context · status | flush | wrapup [N] | recomp [start-end] | upgrade",
 		getArgumentCompletions: (prefix) => {
-			const normalized = prefix.trim().toLowerCase();
-			if (normalized.includes(" ")) return null;
+			const normalized = prefix.trimStart().toLowerCase();
+			if (/\s/u.test(normalized)) return null;
 			return CONTEXT_SUBCOMMANDS.filter((item) => item.value.startsWith(normalized)).map((item) => ({ ...item }));
 		},
 		handler: (args, ctx) => runtime.dispatchCommand(args, ctx),

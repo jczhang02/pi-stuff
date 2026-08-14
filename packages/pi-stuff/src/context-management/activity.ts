@@ -140,8 +140,7 @@ function stateFor(message: MagicStatusMessage): ContextActivityState {
 	if (message.level === "success") return "success";
 	const lower = cleanDetail(message.text ?? message.title ?? "").toLowerCase();
 	if (lower.includes("failed") || lower.includes("invalid arguments") || lower.includes("unavailable")) return "error";
-	if (lower.includes("confirmation required") || lower.includes("skipped") || lower.includes("partial"))
-		return "warning";
+	if (lower.includes("confirmation required") || lower.includes("skipped")) return "warning";
 	if (
 		lower.includes("complete") ||
 		lower.includes("already up to date") ||
@@ -159,6 +158,7 @@ function stateFor(message: MagicStatusMessage): ContextActivityState {
 		/\bchunk\s+\d+/u.test(lower)
 	)
 		return "running";
+	if (lower.includes("partial")) return "warning";
 	return "info";
 }
 

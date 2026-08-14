@@ -704,6 +704,9 @@ describe("Context capability lifecycle", () => {
 		expect(command?.getArgumentCompletions?.("wr")).toEqual([
 			{ description: "Compact older history; keep 20 messages by default", label: "wrapup", value: "wrapup" },
 		]);
+		expect(command?.getArgumentCompletions?.("wrapup ")).toBeNull();
+		expect(command?.getArgumentCompletions?.("recomp ")).toBeNull();
+		expect(command?.getArgumentCompletions?.("wrapup\t")).toBeNull();
 		await command?.handler?.("constructor", ctx);
 		expect(uiCalls).toEqual(["notify:Usage: /ctx [status|flush|wrapup [N]|recomp [start-end]|upgrade]"]);
 		uiCalls.length = 0;
@@ -730,7 +733,15 @@ describe("Context capability lifecycle", () => {
 			entries,
 			entryRenderers: [],
 		};
-		piStuffContext(apiFor(handlers, [], registrations), {
+		const api = apiFor(handlers, [], registrations);
+		const renderRequests: Array<{ force?: unknown; handled?: unknown }> = [];
+		api.events.on(UI_RENDER_REQUEST_EVENT, (value) => {
+			if (typeof value !== "object" || value === null) return;
+			const request = value as { force?: unknown; handled?: unknown };
+			request.handled = true;
+			renderRequests.push(request);
+		});
+		piStuffContext(api, {
 			loadMagicContext: async () => {
 				throw new Error("Magic module unavailable");
 			},
@@ -745,6 +756,7 @@ describe("Context capability lifecycle", () => {
 		]);
 		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("error");
 		expect(Reflect.get(entries.at(-1)?.data as object, "detail")).toBe("Magic module unavailable");
+		expect(renderRequests).toEqual([{ force: false, handled: true }]);
 	});
 
 	test("executes a rebuild confirmed in the Context dialog without asking the user to repeat the command", async () => {
@@ -758,10 +770,18 @@ describe("Context capability lifecycle", () => {
 			entryRenderers: [],
 		};
 		let recompCalls = 0;
+		let publishRecompComplete: (() => void) | undefined;
 		const api = apiFor(handlers, [], registrations);
 		await piStuffContext(api, {
 			loadMagicContext: async () => ({
 				default: async (magicApi: ExtensionAPI) => {
+					publishRecompComplete = () => {
+						magicApi.appendEntry("ctx-status", {
+							level: "success",
+							text: "## Magic Recomp — Complete\n\nPersisted 4 compartments.",
+							title: "/ctx-recomp",
+						});
+					};
 					magicApi.on("context", (event) => event);
 					magicApi.registerCommand("ctx-status", {
 						handler: async () => {
@@ -851,6 +871,16 @@ describe("Context capability lifecycle", () => {
 			"confirmation required",
 			"rebuilding range 1-500",
 		]);
+		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("running");
+		if (!publishRecompComplete) throw new Error("Expected deferred recomp completion callback");
+		publishRecompComplete();
+		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+			"rebuilding range 1-500",
+			"confirmation required",
+			"rebuilding range 1-500",
+			"rebuilt 4 compartments",
+		]);
+		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("success");
 	});
 
 	test("keeps Magic's internal Historian agent native and recursion-free", async () => {

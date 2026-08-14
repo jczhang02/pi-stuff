@@ -1,5 +1,12 @@
 import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
-import { type Focusable, Input, type SelectItem, SelectList, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+	type Focusable,
+	Input,
+	type SelectItem,
+	SelectList,
+	truncateToWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
 	type CommandDialogView,
@@ -7,6 +14,7 @@ import {
 	commandDialogRows,
 	fitCommandDialogRows,
 } from "../conversation-ui/index.js";
+import { boundTerminalText } from "../tool-display/index.js";
 
 export type ContextDialogAction = "flush" | "recomp" | "upgrade" | "wrapup";
 
@@ -60,6 +68,7 @@ type ContextDialogScreen =
 	| { readonly kind: "wrapup-input" };
 
 const GUTTER = "  ";
+const ERROR_MAX_CELLS = 2_000;
 const REFRESH_INTERVAL_MS = 1_000;
 
 function record(value: unknown): Readonly<Record<string, unknown>> {
@@ -83,6 +92,12 @@ function count(details: Readonly<Record<string, unknown>>, text: string, key: st
 
 function usageValue(value: number | null | undefined): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function safeDialogError(value: string | undefined): string | undefined {
+	if (value === undefined) return undefined;
+	const safe = boundTerminalText(value, ERROR_MAX_CELLS).trim();
+	return safe.length > 0 ? safe : undefined;
 }
 
 function cacheStatus(text: string): string {
@@ -110,7 +125,7 @@ export function statusSnapshotFromMagic(
 			: undefined);
 	const messageError = message?.level === "error" ? text.replace(/^#{1,6}\s+.*$/mu, "").trim() : undefined;
 	const historianError = typeof historian["lastError"] === "string" ? historian["lastError"] : undefined;
-	const error = fallbackError ?? messageError ?? historianError;
+	const error = safeDialogError(fallbackError) ?? safeDialogError(messageError) ?? safeDialogError(historianError);
 	const historyTokens = textNumber(text, /History block:\s*~?([\d,]+)\s+tokens/iu);
 	const upgradeNeeded = textNumber(text, /([\d,]+)\s+compartments?\s+need upgrade/iu);
 	return {
@@ -329,8 +344,17 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 			: [];
 		const selected = selectedLines.find((line) => line.includes("→") || line.includes("›")) ?? selectedLines[0];
 		const error = this.error ?? (this.screen.kind === "overview" ? this.snapshot.error : undefined);
-		const errorLine = error ? `${GUTTER}${this.context.theme.fg("error", error)}` : undefined;
-		const sections = this.renderScreen(selectedLines, inputLines, errorLine);
+		const safeError = safeDialogError(error);
+		const errorLines = safeError
+			? safeError.split("\n").flatMap((paragraph) => {
+					const line = paragraph.trim();
+					if (line.length === 0) return [];
+					return wrapTextWithAnsi(line, Math.max(1, renderWidth - GUTTER.length)).map(
+						(wrapped) => `${GUTTER}${this.context.theme.fg("error", wrapped)}`,
+					);
+				})
+			: [];
+		const sections = this.renderScreen(selectedLines, inputLines, errorLines);
 		const lines = fitCommandDialogRows(
 			{
 				body: sections.body,
@@ -339,7 +363,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 					this.context.theme.fg("border", "─".repeat(renderWidth)),
 					`${GUTTER}${this.context.theme.bold(sections.title)}`,
 				],
-				priority: [errorLine ?? selected ?? inputLines[0] ?? `${GUTTER}${sections.title}`],
+				priority: [errorLines[0] ?? selected ?? inputLines[0] ?? `${GUTTER}${sections.title}`],
 			},
 			commandDialogRows(this.context),
 		);
@@ -383,7 +407,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 	private renderScreen(
 		selectedLines: readonly string[],
 		inputLines: readonly string[],
-		errorLine: string | undefined,
+		errorLines: readonly string[],
 	): { readonly body: string[]; readonly footer: string; readonly title: string } {
 		if (this.screen.kind === "overview") {
 			const counts = `${plural(this.snapshot.compartmentCount, "compartment")} · ${plural(this.snapshot.memoryCount, "memory", "memories")} · ${plural(this.snapshot.noteCount, "note")}`;
@@ -394,7 +418,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 					`${GUTTER}${this.context.theme.fg("muted", counts)}`,
 					`${GUTTER}${this.context.theme.fg("muted", runtime)}`,
 					`${GUTTER}${this.context.theme.fg("muted", history)}`,
-					...(errorLine ? [errorLine] : []),
+					...errorLines,
 					"",
 					`${GUTTER}${this.context.theme.bold("Actions")}`,
 					...selectedLines,
@@ -421,7 +445,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 					`${GUTTER}${this.context.theme.fg("dim", "Enter a positive whole number, for example 40.")}`,
 					"",
 					...inputLines,
-					...(errorLine ? [errorLine] : []),
+					...errorLines,
 				],
 				footer: "Enter continue · Esc back",
 				title: "Context · Messages to keep",
@@ -445,7 +469,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 					`${GUTTER}${this.context.theme.fg("dim", "Use start-end, for example 1-500.")}`,
 					"",
 					...inputLines,
-					...(errorLine ? [errorLine] : []),
+					...errorLines,
 				],
 				footer: "Enter continue · Esc back",
 				title: "Context · Message range",
@@ -530,9 +554,11 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 			this.context.requestRender();
 		} catch (error) {
 			if (this.disposed) return;
+			const detail =
+				safeDialogError(error instanceof Error ? error.message : String(error)) ?? "Context status refresh failed.";
 			this.snapshot = {
 				...this.snapshot,
-				error: error instanceof Error ? error.message : String(error),
+				error: detail,
 			};
 			this.context.requestRender();
 		} finally {

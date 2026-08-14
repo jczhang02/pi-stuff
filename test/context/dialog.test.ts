@@ -114,6 +114,27 @@ describe("Context Command Dialog", () => {
 		});
 	});
 
+	test("sanitizes and wraps multiline status errors into terminal-safe rows", () => {
+		const snapshot = statusSnapshotFromMagic(
+			{
+				level: "error",
+				text: "## Magic Status — Failed\n\nfirst\u001b[2J\nsecond",
+				title: "/ctx-status",
+			},
+			undefined,
+		);
+		expect(snapshot.error).toBe("first\nsecond");
+		const bounded = statusSnapshotFromMagic(undefined, undefined, `bad${"x".repeat(3_000)}`);
+		expect(visibleWidth(bounded.error ?? "")).toBeLessThanOrEqual(2_000);
+		const { context } = harness();
+		const component = createContextDialogView(snapshot).create(context);
+		const lines = component.render(42);
+		expect(lines.join("\n")).toContain("first\n  second");
+		expect(lines.every((line) => !line.includes("\n") && !line.includes("\u001b[2J"))).toBeTrue();
+		expect(lines.every((line) => visibleWidth(line) <= 42)).toBeTrue();
+		component.dispose?.();
+	});
+
 	test("lets a first-time user understand status and choose an action without knowing syntax", () => {
 		const snapshot = statusSnapshotFromMagic(
 			{ details: MAGIC_DETAILS, level: "info", text: MAGIC_STATUS, title: "/ctx-status" },

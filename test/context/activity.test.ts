@@ -7,6 +7,7 @@ import {
 	ContextActivityRegistry,
 	contextActivityUpdateFromMagic,
 	failedContextActivity,
+	isContextActivitySettled,
 } from "../../packages/pi-stuff/src/context-management/activity.js";
 
 const theme = {
@@ -96,6 +97,28 @@ test("keeps adapted command detail bounded, expandable, and terminal-width safe"
 	expect(lines.join("\n")).toContain("/ctx recomp");
 	expect(lines.join("\n")).not.toContain("/ctx-recomp");
 	expect(lines.every((line) => visibleWidth(line) <= 46)).toBeTrue();
+});
+
+test("keeps a partial recomp start running until its terminal result arrives", () => {
+	const update = contextActivityUpdateFromMagic("recomp", {
+		level: "info",
+		text: "## Magic Recomp\n\nPartial recomp started for range 1-500.",
+		title: "/ctx-recomp",
+	});
+	expect(update).toEqual({
+		detail: "Magic Recomp\n\nPartial recomp started for range 1-500.",
+		state: "running",
+		summary: "rebuilding range 1-500",
+	});
+	expect(
+		isContextActivitySettled({
+			...update,
+			id: "context-00000000-0000-0000-0000-000000000000",
+			kind: "update",
+			operation: "recomp",
+			version: 1,
+		}),
+	).toBeFalse();
 });
 
 test("bounds unexpected failure detail before persisting it", () => {
