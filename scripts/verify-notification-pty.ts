@@ -28,6 +28,20 @@ function delay(milliseconds: number): Promise<void> {
 	return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
+function editorContains(frame: string, text: string): boolean {
+	const lines = frame.split("\n");
+	for (let index = 0; index + 2 < lines.length; index += 1) {
+		if (
+			/^─+$/u.test(lines[index] ?? "") &&
+			(lines[index + 1] ?? "").includes(text) &&
+			/^─+$/u.test(lines[index + 2] ?? "")
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
 interface NotificationFrame {
 	readonly body: string;
 	readonly title: string;
@@ -122,9 +136,15 @@ class NotificationPtySession {
 		this.tmux(["send-keys", "-t", this.target, ...keys]);
 	}
 
-	sendPrompt(prompt: string): void {
+	async sendPrompt(prompt: string): Promise<void> {
 		this.tmux(["send-keys", "-t", this.target, "-l", prompt]);
-		this.sendKey("Enter");
+		const deadline = Date.now() + TIMEOUT_MS;
+		do {
+			this.sendKey("Enter");
+			await delay(150);
+			if (!editorContains(this.capture(), prompt)) return;
+		} while (Date.now() < deadline);
+		fail(`timed out submitting ${JSON.stringify(prompt)}\n${this.capture()}`);
 	}
 
 	async waitForText(text: string): Promise<string> {
@@ -251,7 +271,7 @@ export async function verifyNotificationPty(options: NotificationPtyVerification
 	try {
 		await session.start(columns, rows);
 		await session.waitForText("notification-pty-model");
-		session.sendPrompt("/notifications");
+		await session.sendPrompt("/notifications");
 		const settingsScreen = await session.waitForText("Response preview");
 		for (const label of ["Completion alerts", "Failure alerts", "Delivery", "Also ring terminal bell"]) {
 			if (!settingsScreen.includes(label)) fail(`Notification settings omitted ${JSON.stringify(label)}`);
@@ -266,21 +286,21 @@ export async function verifyNotificationPty(options: NotificationPtyVerification
 		session.sendKey("Escape");
 		await delay(100);
 
-		session.sendPrompt("NOTIFY_SUCCESS");
+		await session.sendPrompt("NOTIFY_SUCCESS");
 		await session.waitForText("NOTIFICATION_SUCCESS_DONE");
 		frames = await session.waitForFrameCount(2);
 		if (frames[1]?.title !== "Pi · project — Ready" || frames[1]?.body !== "NOTIFICATION_SUCCESS_DONE") {
 			fail(`unexpected completion frame: ${JSON.stringify(frames[1])}`);
 		}
 
-		session.sendPrompt("NOTIFY_FAILURE");
+		await session.sendPrompt("NOTIFY_FAILURE");
 		await session.waitForText("NOTIFICATION_FAILURE_DONE");
 		frames = await session.waitForFrameCount(3);
 		if (frames[2]?.title !== "Pi · project — Needs attention" || frames[2]?.body !== "The run ended with an error.") {
 			fail(`unexpected failure frame: ${JSON.stringify(frames[2])}`);
 		}
 
-		session.sendPrompt("NOTIFY_CHAOS_CANCEL");
+		await session.sendPrompt("NOTIFY_CHAOS_CANCEL");
 		await session.waitForText("NOTIFICATION_CHAOS_DONE");
 		await delay(100);
 		session.sendKey("x", "Escape");
@@ -289,16 +309,16 @@ export async function verifyNotificationPty(options: NotificationPtyVerification
 			fail("random terminal input did not cancel grace");
 		session.sendKey("C-c");
 
-		session.sendPrompt("NOTIFY_RELOAD_CANCEL");
+		await session.sendPrompt("NOTIFY_RELOAD_CANCEL");
 		await session.waitForText("NOTIFICATION_RELOAD_DONE");
 		await delay(100);
-		session.sendPrompt("/reload");
+		await session.sendPrompt("/reload");
 		await session.waitForText("Reloaded keybindings, extensions");
 		await delay(GRACE_MS + 300);
 		if (notificationFrames(await readFile(rawLog, "utf8")).length !== 3) fail("reload did not cancel grace");
 
 		session.resize(48, 24);
-		session.sendPrompt("NOTIFY_SUCCESS_NARROW");
+		await session.sendPrompt("NOTIFY_SUCCESS_NARROW");
 		await session.waitForText("NOTIFICATION_NARROW_DONE");
 		frames = await session.waitForFrameCount(4);
 		const narrowScreen = session.capture();
@@ -307,13 +327,13 @@ export async function verifyNotificationPty(options: NotificationPtyVerification
 		}
 		if (narrowScreen.split("\n").some((line) => visibleWidth(line) > 48)) fail("notification broke narrow layout");
 
-		session.sendPrompt("NOTIFY_ABORT");
+		await session.sendPrompt("NOTIFY_ABORT");
 		await delay(250);
 		session.sendKey("C-c");
 		await delay(GRACE_MS + 500);
 		if (notificationFrames(await readFile(rawLog, "utf8")).length !== 4) fail("aborted work emitted a notification");
 
-		session.sendPrompt("NOTIFY_SHUTDOWN_CANCEL");
+		await session.sendPrompt("NOTIFY_SHUTDOWN_CANCEL");
 		await session.waitForText("NOTIFICATION_SHUTDOWN_DONE");
 		await delay(100);
 		session.sendKey("C-d");
