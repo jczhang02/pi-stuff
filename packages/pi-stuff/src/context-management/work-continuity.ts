@@ -7,7 +7,7 @@ import type {
 	TurnEndEvent,
 } from "@earendil-works/pi-coding-agent";
 
-const TASK_ANCHOR_TYPE = "pi-stuff:task-anchor";
+export const WORK_CONTINUITY_TASK_ANCHOR_TYPE = "pi-stuff:task-anchor";
 const MAX_PENDING_INPUTS = 64;
 const MAX_REQUEST_BYTES = 6_000;
 const MAX_CORRECTION_BYTES = 3_000;
@@ -238,7 +238,7 @@ function anchorText(anchor: TaskAnchor, work: ActiveWork): string {
 }
 
 function isTaskAnchor(message: ContextEvent["messages"][number]): boolean {
-	return message.role === "custom" && message.customType === TASK_ANCHOR_TYPE;
+	return message.role === "custom" && message.customType === WORK_CONTINUITY_TASK_ANCHOR_TYPE;
 }
 
 function fingerprint(toolName: string, content: string): string {
@@ -445,7 +445,7 @@ export class WorkContinuityGovernor {
 		if (!work) return withoutOldAnchor.length === event.messages.length ? undefined : { messages: withoutOldAnchor };
 		const anchor = {
 			role: "custom" as const,
-			customType: TASK_ANCHOR_TYPE,
+			customType: WORK_CONTINUITY_TASK_ANCHOR_TYPE,
 			content: anchorText(work.anchor, work),
 			display: false,
 			details: {
@@ -456,7 +456,10 @@ export class WorkContinuityGovernor {
 			timestamp: Date.now(),
 		} satisfies ContextEvent["messages"][number];
 		if (work.synthesisCause) work.synthesisPromptDelivered = true;
-		return { messages: [anchor, ...withoutOldAnchor] };
+		return {
+			messages:
+				work.completedVerifications.length > 0 ? [...withoutOldAnchor, anchor] : [anchor, ...withoutOldAnchor],
+		};
 	}
 
 	hasActiveWork(): boolean {
@@ -529,4 +532,4 @@ export class WorkContinuityGovernor {
 	}
 }
 
-export const __workContinuityTest = { TASK_ANCHOR_TYPE, messageText };
+export const __workContinuityTest = { TASK_ANCHOR_TYPE: WORK_CONTINUITY_TASK_ANCHOR_TYPE, messageText };

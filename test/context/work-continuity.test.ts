@@ -209,11 +209,24 @@ describe("user-work continuity governor", () => {
 			isError: false,
 		});
 
-		const verified = anchorContent(governor.project(context()));
+		const verifiedProjection = governor.project(
+			context([
+				{
+					role: "user",
+					content: [{ type: "text", text: "Review the diff and run the requested Bun tests once." }],
+					timestamp: 1,
+				},
+			]),
+		);
+		const verified = anchorContent(verifiedProjection);
 		expect(verified).toContain("Completed verification (do not rerun unless later work changed):");
 		expect(verified).toContain("158 pass; 0 fail; Ran 158 tests across 3 files.");
 		expect(verified).not.toContain("50.11s");
 		expect(verified).not.toContain("requested-files");
+		expect(verifiedProjection?.messages.at(-1)).toMatchObject({
+			role: "custom",
+			customType: __workContinuityTest.TASK_ANCHOR_TYPE,
+		});
 		governor.noteTurnEnd({ turnIndex: 0 });
 
 		for (const [index, duration] of ["50.12s", "50.13s"].entries()) {
