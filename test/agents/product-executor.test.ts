@@ -222,6 +222,29 @@ describe("projectEngineResult", () => {
 		expect(result.content[0]).toMatchObject({ text: expect.stringContaining("worker failed") });
 	});
 
+	test("does not hide a runner error behind the child's final report", () => {
+		const result = projectEngineResult(
+			{ agent: "reviewer", foreground: true, task: "Review" },
+			{
+				content: [{ type: "text", text: "engine receipt" }],
+				details: details({
+					results: [
+						{
+							agent: "reviewer",
+							error: "protocol_output_limit: child stdout exceeded the aggregate protocol limit",
+							exitCode: 1,
+							finalOutput: "REVIEWER_COMPLETE: no\nRUNTIME_ERRORS: none",
+							task: "Review",
+							usage: { cacheRead: 0, cacheWrite: 0, cost: 0, input: 0, output: 0, turns: 98 },
+						},
+					],
+				}),
+			},
+		);
+
+		expect(result.content[0]).toMatchObject({ text: expect.stringContaining("protocol_output_limit") });
+	});
+
 	test("does not turn a successful status inspection into a tool failure because a child failed", () => {
 		const result = projectEngineResult(
 			{ action: "status", id: "run-1" },

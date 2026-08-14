@@ -13,6 +13,8 @@ const MAX_REQUEST_BYTES = 6_000;
 const MAX_CORRECTION_BYTES = 3_000;
 const MAX_FIELD_BYTES = 1_600;
 const MAX_RESULT_FINGERPRINT_BYTES = 64 * 1024;
+const MAX_COMPLETED_VERIFICATIONS = 4;
+const MAX_COMPLETED_VERIFICATION_BYTES = 256;
 const SYNTHESIS_REASON =
 	"The aggregate work boundary was reached. Stop expanding the investigation and return the best supported result now. If the requested deliverable cannot be completed from current evidence, return an actionable incompleteness report that states what is verified, what remains, and why.";
 
@@ -72,6 +74,7 @@ interface ActiveWork {
 	evidenceCreditsThisTurn: number;
 	materialProgressThisTurn: boolean;
 	seenEvidence: Set<string>;
+	completedVerifications: string[];
 	failureCounts: Map<string, number>;
 	synthesisCause?: SynthesisCause;
 	synthesisPromptDelivered: boolean;
@@ -201,6 +204,13 @@ function anchorText(anchor: TaskAnchor, work: ActiveWork): string {
 				SYNTHESIS_REASON,
 			].join("\n")
 		: "";
+	const completedVerification = work.completedVerifications.length
+		? [
+				"",
+				"Completed verification (do not rerun unless later work changed):",
+				...work.completedVerifications.map((summary) => `- Bash: ${summary}`),
+			].join("\n")
+		: "";
 	return [
 		'<pi-stuff-task-anchor version="1" authority="latest-user-request">',
 		"Current request:",
@@ -221,6 +231,7 @@ function anchorText(anchor: TaskAnchor, work: ActiveWork): string {
 		"",
 		"Done when:",
 		doneWhen,
+		completedVerification,
 		synthesis,
 		"</pi-stuff-task-anchor>",
 	].join("\n");
@@ -234,6 +245,16 @@ function fingerprint(toolName: string, content: string): string {
 	return createHash("sha256")
 		.update(boundUtf8(`${toolName}:${content}`, MAX_RESULT_FINGERPRINT_BYTES), "utf8")
 		.digest("hex");
+}
+
+function completedVerification(toolName: string, text: string): string | undefined {
+	if (toolName !== "bash") return undefined;
+	const lines = text.split(/\r?\n/u).map((line) => line.trim());
+	const passed = lines.find((line) => /^\d+\s+pass\b/iu.test(line));
+	const failed = lines.find((line) => /^0\s+fail\b/iu.test(line));
+	if (!passed || !failed) return undefined;
+	const ran = lines.find((line) => /^Ran\s+\d+\s+tests?\b/iu.test(line))?.replace(/\s*\[[^\]]+\]\s*$/u, "");
+	return boundUtf8([passed, failed, ran].filter(Boolean).join("; "), MAX_COMPLETED_VERIFICATION_BYTES);
 }
 
 function failureCategory(text: string): string {
@@ -307,6 +328,7 @@ export class WorkContinuityGovernor {
 				evidenceCreditsThisTurn: 0,
 				materialProgressThisTurn: false,
 				seenEvidence: new Set(),
+				completedVerifications: [],
 				failureCounts: new Map(),
 				synthesisPromptDelivered: false,
 				blockedToolAttempts: 0,
@@ -314,6 +336,7 @@ export class WorkContinuityGovernor {
 			return;
 		}
 		this.active.anchor.latestCorrection = text;
+		this.active.completedVerifications.length = 0;
 	}
 
 	noteToolCall(
@@ -361,12 +384,18 @@ export class WorkContinuityGovernor {
 		}
 		if (event.isError) return;
 		if (isMutationTool(event.toolName)) {
+			work.completedVerifications.length = 0;
 			work.materialProgressThisTurn = true;
 			return;
 		}
 		const evidenceText = messageText(event.content).trim();
 		if (!evidenceText) return;
-		const evidence = fingerprint(event.toolName, evidenceText);
+		const verification = completedVerification(event.toolName, evidenceText);
+		if (verification && !work.completedVerifications.includes(verification)) {
+			work.completedVerifications.push(verification);
+			if (work.completedVerifications.length > MAX_COMPLETED_VERIFICATIONS) work.completedVerifications.shift();
+		}
+		const evidence = fingerprint(event.toolName, verification ?? evidenceText);
 		if (work.seenEvidence.has(evidence)) return;
 		work.seenEvidence.add(evidence);
 		if (work.evidenceCreditsThisTurn < this.limits.evidenceProgressCredits) {

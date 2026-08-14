@@ -214,7 +214,11 @@ function resultStatus(result: SingleResult): "completed" | "failed" | "stopped" 
 }
 
 function childSummary(result: SingleResult): string {
-	const raw = getSingleResultOutput(result).trim() || result.error?.trim() || "(no report)";
+	const output = getSingleResultOutput(result).trim();
+	const error = result.error?.trim();
+	const raw = error
+		? `Runtime error: ${error}${output ? `\nPartial child report:\n${output}` : ""}`
+		: output || "(no report)";
 	return bounded(scanAgentReport(raw).text, MAX_CHILD_SUMMARY_CHARS);
 }
 

@@ -193,6 +193,49 @@ describe("user-work continuity governor", () => {
 		expect(governor.snapshot().synthesisCause).toBe("no-progress");
 	});
 
+	test("keeps successful Bun verification visible until later work changes", () => {
+		const governor = new WorkContinuityGovernor({
+			softTurns: 100,
+			softTools: 100,
+			noProgressTurns: 2,
+		});
+		input(governor, "Review the diff, run the requested Bun tests once, and return the verified result.");
+		governor.noteToolResult({
+			toolName: "bash",
+			input: { command: "bun test requested-files" },
+			content: [
+				{ type: "text", text: "158 pass\n0 fail\n594 expect() calls\nRan 158 tests across 3 files. [50.11s]" },
+			],
+			isError: false,
+		});
+
+		const verified = anchorContent(governor.project(context()));
+		expect(verified).toContain("Completed verification (do not rerun unless later work changed):");
+		expect(verified).toContain("158 pass; 0 fail; Ran 158 tests across 3 files.");
+		expect(verified).not.toContain("50.11s");
+		expect(verified).not.toContain("requested-files");
+		governor.noteTurnEnd({ turnIndex: 0 });
+
+		for (const [index, duration] of ["50.12s", "50.13s"].entries()) {
+			governor.noteToolResult({
+				toolName: "bash",
+				input: { command: "bun test requested-files" },
+				content: [
+					{
+						type: "text",
+						text: `158 pass\n0 fail\n594 expect() calls\nRan 158 tests across 3 files. [${duration}]`,
+					},
+				],
+				isError: false,
+			});
+			governor.noteTurnEnd({ turnIndex: index + 1 });
+		}
+		expect(governor.snapshot().synthesisCause).toBe("no-progress");
+
+		toolResult(governor, "edit", "changed source");
+		expect(anchorContent(governor.project(context()))).not.toContain("Completed verification");
+	});
+
 	test("blocks the next automatic continuation at hard turn or compaction boundaries", () => {
 		const turnGovernor = new WorkContinuityGovernor({ softTurns: 1, hardTurns: 2 });
 		input(turnGovernor, "Finish the task and return one final report.");
