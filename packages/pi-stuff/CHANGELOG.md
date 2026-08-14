@@ -2,10 +2,11 @@
 
 ## Unreleased
 
-- Unify Conversation Transcript hierarchy with a one-cell `*` Thought marker, small bullets for Suite-owned outcome
-  records, and one outer bullet for every Assistant Markdown message. Show each Bash call as its own screenshot-verified
-  Claude-style `Bash(<command>)` operation block with bounded `⎿` output while retaining non-Bash Tool Activity grouping;
-  `Ctrl+O` expands the bounded Bash command and output inside that same block instead of restoring generic Pi Tool chrome.
+- Unify Conversation Transcript hierarchy with a one-cell, text-axis-centered `∗` Thought marker, small bullets for
+  Suite-owned outcome records, and one outer bullet for every Assistant Markdown message. Show each Bash call as its own
+  screenshot-verified Claude-style `Bash(<command>)` operation block with bounded `⎿` output while retaining non-Bash
+  Tool Activity grouping; `Ctrl+O` expands the bounded Bash command and output inside that same block instead of restoring
+  generic Pi Tool chrome.
 - Add native Catppuccin Latte, Frappé, Macchiato, and Mocha themes and route the remaining MCP TUI colors through Pi's
   semantic theme tokens.
 - Consolidate the Suite into one private local Pi Package with thirteen named internal Modules. Remove the former

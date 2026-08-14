@@ -53,6 +53,14 @@ async function renderAssistant(markdown: string, width = 80): Promise<string[]> 
 }
 
 describe("live Thought display", () => {
+	test("uses a one-cell asterisk operator centered on the text axis", () => {
+		const visible = visibleMarkdown(transform("Checking alignment"));
+
+		expect([...visible][0]).toBe("∗");
+		expect(visible).toBe("∗ thoughts: Checking alignment");
+		expect(visibleWidth("∗")).toBe(1);
+	});
+
 	test("leaves user Markdown unchanged and gives every Assistant message one outer marker", () => {
 		const markdown = "# Keep **all** model content\n\nincluding CJK 内容";
 		expect(transform(markdown, { messageType: "user" })).toBe(markdown);
@@ -172,7 +180,7 @@ describe("live Thought display", () => {
 			const rendered = transformer(markdown, CONTEXT);
 			const visible = visibleMarkdown(rendered);
 
-			expect(visible).toBe(`* thoughts: ${phase}`);
+			expect(visible).toBe(`∗ thoughts: ${phase}`);
 			expect(visible).not.toContain("**");
 			expect(visible).not.toContain("\n");
 			expect(visible).not.toMatch(/…\p{L}/u);
@@ -193,20 +201,20 @@ describe("live Thought display", () => {
 		] as const;
 
 		for (const [markdown, current] of snapshots) {
-			expect(visibleMarkdown(transformer(markdown, CONTEXT))).toBe(`* thoughts: ${current}`);
+			expect(visibleMarkdown(transformer(markdown, CONTEXT))).toBe(`∗ thoughts: ${current}`);
 		}
 	});
 
 	test("recognizes paragraph, heading, list-item, and standalone-emphasis boundaries", () => {
 		expect(
 			visibleMarkdown(transform("First paragraph without punctuation\n\nNewest paragraph without punctuation")),
-		).toBe("* thoughts: Newest paragraph without punctuation");
-		expect(visibleMarkdown(transform("Earlier paragraph\n## Current heading"))).toBe("* thoughts: Current heading");
+		).toBe("∗ thoughts: Newest paragraph without punctuation");
+		expect(visibleMarkdown(transform("Earlier paragraph\n## Current heading"))).toBe("∗ thoughts: Current heading");
 		expect(visibleMarkdown(transform("- First list action\n- Current list action"))).toBe(
-			"* thoughts: Current list action",
+			"∗ thoughts: Current list action",
 		);
 		expect(visibleMarkdown(transform("**First emphasized action**\n_Current emphasized action_"))).toBe(
-			"* thoughts: Current emphasized action",
+			"∗ thoughts: Current emphasized action",
 		);
 	});
 
@@ -215,8 +223,8 @@ describe("live Thought display", () => {
 		const first = transformer("Inspecting the repository", CONTEXT);
 		const next = transformer("Inspecting the repository. 正在运行真实测试", CONTEXT);
 
-		expect(visibleMarkdown(first)).toBe("* thoughts: Inspecting the repository");
-		expect(visibleMarkdown(next)).toBe("* thoughts: Inspecting the repository. 正在运行真实测试");
+		expect(visibleMarkdown(first)).toBe("∗ thoughts: Inspecting the repository");
+		expect(visibleMarkdown(next)).toBe("∗ thoughts: Inspecting the repository. 正在运行真实测试");
 	});
 
 	test("retains the final block after settlement, resize, restored replay, and resume", () => {
@@ -231,7 +239,7 @@ describe("live Thought display", () => {
 		});
 		const resumed = createLiveThoughtTransformer()(markdown, { ...CONTEXT, isStreaming: false });
 
-		expect(visibleMarkdown(settled)).toBe("* thoughts: 最后选择公开 Host seam。");
+		expect(visibleMarkdown(settled)).toBe("∗ thoughts: 最后选择公开 Host seam。");
 		expect(settled).toBe(live);
 		expect(restored).toBe(resized);
 		expect(visibleMarkdown(resized)).not.toContain("First possibility");
@@ -244,7 +252,7 @@ describe("live Thought display", () => {
 		const visible = visibleMarkdown(rendered);
 
 		expect(visibleWidth(visible)).toBeLessThanOrEqual(24);
-		expect(visible).toStartWith("* thoughts: 旧");
+		expect(visible).toStartWith("∗ thoughts: 旧");
 		expect(visible).toEndWith("结果");
 		expect(visible).not.toMatch(/…\p{L}/u);
 	});
@@ -259,7 +267,7 @@ describe("live Thought display", () => {
 		const visible = visibleMarkdown(rendered);
 
 		expect(visibleWidth(visible)).toBeLessThanOrEqual(42);
-		expect(visible).toStartWith("* thoughts: Creating");
+		expect(visible).toStartWith("∗ thoughts: Creating");
 		expect(visible).toEndWith("hypothesis");
 		expect(visible).not.toContain("…reating");
 	});
@@ -268,7 +276,7 @@ describe("live Thought display", () => {
 		const rendered = transform("Adding failure hypotheses commentary", { availableWidth: 30 });
 		const visible = visibleMarkdown(rendered);
 
-		expect(visible).toBe("* Adding … commentary");
+		expect(visible).toBe("∗ Adding … commentary");
 		expect(visibleWidth(visible)).toBeLessThanOrEqual(30);
 	});
 
@@ -277,7 +285,7 @@ describe("live Thought display", () => {
 			const visible = visibleMarkdown(transform("检查完成", { availableWidth: width }));
 			expect(visible).not.toContain("\n");
 			expect(visibleWidth(visible)).toBeLessThanOrEqual(width);
-			expect(visible).toStartWith("*");
+			expect(visible).toStartWith("∗");
 			if (width >= 4) expect(visible).toMatch(/[检查完成]/u);
 		}
 		expect(transform("检查完成", { availableWidth: 0 })).toBe("");
@@ -288,7 +296,7 @@ describe("live Thought display", () => {
 		const rendered = transform("Old.\n\n\u001b]0;forged title\u0007最新\u001b[31m红色\u001b[0m\u202efragment");
 		const visible = visibleMarkdown(rendered);
 
-		expect(visible).toBe("* thoughts: 最新红色 fragment");
+		expect(visible).toBe("∗ thoughts: 最新红色 fragment");
 		expect(rendered).not.toContain(String.fromCharCode(0x1b));
 		expect(rendered).not.toContain(String.fromCharCode(0x07));
 		expect(rendered).not.toContain(String.fromCodePoint(0x202e));
@@ -298,7 +306,7 @@ describe("live Thought display", () => {
 	test("strips outer display emphasis while keeping inner model text literal and one-line", () => {
 		const rendered = transform("Old.\n\n**Use [x](url), <tag> & `code`**");
 
-		expect(visibleMarkdown(rendered)).toBe("* thoughts: Use [x](url), <tag> & `code`");
+		expect(visibleMarkdown(rendered)).toBe("∗ thoughts: Use [x](url), <tag> & `code`");
 		expect(rendered).not.toContain("\\*\\*Use");
 		expect(rendered).toContain("\\[x\\]");
 		expect(rendered).not.toContain("\n");
@@ -350,7 +358,7 @@ describe("live Thought Host adapter", () => {
 
 		registerLiveThoughtDisplay(api);
 		expect(registered).toBeDefined();
-		expect(visibleMarkdown(registered?.("Checking. Ready", CONTEXT) ?? "")).toBe("* thoughts: Checking. Ready");
+		expect(visibleMarkdown(registered?.("Checking. Ready", CONTEXT) ?? "")).toBe("∗ thoughts: Checking. Ready");
 	});
 
 	test("fails clearly when the Host cannot provide the accepted projection", () => {

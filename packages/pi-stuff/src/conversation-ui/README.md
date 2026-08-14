@@ -92,9 +92,10 @@ works after slash text elsewhere in the input, while preserving Pi's native edit
 ### Live Thoughts
 
 Through Pi's public Markdown-transform hook, streaming and settled thinking are projected as one bounded row beginning
-with `\\* thoughts:`. Blank paragraphs, headings, list items, and standalone emphasis start a new semantic block; only
-the current block remains visible, so consecutive model thoughts replace the same row instead of accumulating on one
-line. Narrow rows preserve a readable action word and the newest tail without cutting into the middle of a word. The
+with U+2217 `∗ thoughts:`. The one-cell asterisk operator stays visually centered on the text axis without regaining the
+oversized weight of U+273B. Blank paragraphs, headings, list items, and standalone emphasis start a new semantic block;
+only the current block remains visible, so consecutive model thoughts replace the same row instead of accumulating on
+one line. Narrow rows preserve a readable action word and the newest tail without cutting into the middle of a word. The
 projection is display-only: the complete original Thinking remains in model context and session data. Pi Stuff fails
 clearly on an older Host that lacks this required rendering API instead of silently presenting a different UI. Keep
 Pi's native **Hide thinking blocks** setting disabled so the transformed live row is rendered.

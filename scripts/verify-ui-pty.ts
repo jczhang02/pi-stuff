@@ -625,7 +625,7 @@ function expectedThoughtProjection(phaseIndex: number, columns: number): string 
 }
 
 function thoughtRows(screen: string): string[] {
-	return screen.split("\n").filter((line) => /(?:^|\s)\*(?: thoughts:)?\s/u.test(line));
+	return screen.split("\n").filter((line) => /(?:^|\s)∗(?: thoughts:)?\s/u.test(line));
 }
 
 function verifySingleThoughtRow(screen: string, expected: string, columns: number, phase: string): void {

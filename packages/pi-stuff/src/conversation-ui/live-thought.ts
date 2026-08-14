@@ -14,16 +14,16 @@ interface MarkdownTransformerExtensionAPI {
 	registerMarkdownTransformer(transformer: ThoughtMarkdownTransformer): void;
 }
 
-// Escape the ASCII asterisk so Markdown renders the intended one-cell marker
-// instead of interpreting it as an unordered-list bullet.
-const FULL_PREFIX = "\\* thoughts: ";
-const COMPACT_PREFIX = "\\* ";
+// U+2217 keeps the asterisk's light visual weight while centering it on the
+// text axis; unlike ASCII `*`, it is not Markdown list punctuation.
+const THOUGHT_MARKER = "∗";
+const FULL_PREFIX = `${THOUGHT_MARKER} thoughts: `;
+const COMPACT_PREFIX = `${THOUGHT_MARKER} `;
 // Markdown normalizes the source '-' to the transcript's visible U+2022 while
 // preserving all nested block structure inside one message-level list item.
 const ASSISTANT_LIST_PREFIX = "- ";
 const ASSISTANT_LIST_CONTINUATION = "  ";
-const LABEL = "\\* thoughts:";
-const MARKDOWN_ESCAPE_WIDTH = 1;
+const LABEL = `${THOUGHT_MARKER} thoughts:`;
 const ELLIPSIS = "…";
 const MIDDLE_ELLIPSIS = " … ";
 const GRAPHEME_SEGMENTER = new Intl.Segmenter("und", { granularity: "grapheme" });
@@ -204,13 +204,13 @@ function renderThought(fragment: string, availableWidth: number): string {
 	const width = normalizeWidth(availableWidth);
 	if (width === 0) return "";
 
-	const fullPrefixWidth = visibleWidth(FULL_PREFIX) - MARKDOWN_ESCAPE_WIDTH;
+	const fullPrefixWidth = visibleWidth(FULL_PREFIX);
 	if (width > fullPrefixWidth) {
 		const content = fitFragment(fragment, width - fullPrefixWidth, true);
 		if (content) return `${FULL_PREFIX}${escapeMarkdown(content)}`;
 	}
 
-	const compactPrefixWidth = visibleWidth(COMPACT_PREFIX) - MARKDOWN_ESCAPE_WIDTH;
+	const compactPrefixWidth = visibleWidth(COMPACT_PREFIX);
 	if (width > compactPrefixWidth) {
 		const content = fitFragment(fragment, width - compactPrefixWidth, true);
 		if (content) return `${COMPACT_PREFIX}${escapeMarkdown(content)}`;
@@ -224,7 +224,7 @@ function renderThought(fragment: string, availableWidth: number): string {
 		if (content) return `${COMPACT_PREFIX}${escapeMarkdown(content)}`;
 	}
 
-	return `\\${fitHead(LABEL.slice(MARKDOWN_ESCAPE_WIDTH), width)}`;
+	return fitHead(LABEL, width);
 }
 
 function normalizeWidth(width: number): number {
