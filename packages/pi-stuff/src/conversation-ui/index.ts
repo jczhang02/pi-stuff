@@ -708,6 +708,7 @@ const UI_SETTINGS_COMMAND_STATES = Symbol.for("@jczhang02/pi-stuff-ui/settings-c
 const UI_SETTINGS_COMMAND_STATE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/settings-command-state-discovery/v1";
 const UI_LIFECYCLE_STATES = Symbol.for("@jczhang02/pi-stuff-ui/lifecycle-states/v1");
 const UI_LIFECYCLE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/lifecycle-discovery/v1";
+const USER_AGENT_RUN_SETTLED_EVENT = "@jczhang02/pi-stuff-ui/user-agent-run-settled/v1";
 
 interface UiLifecycleState {
 	active: boolean;
@@ -720,6 +721,32 @@ function uiLifecycleStates(): WeakMap<ExtensionAPI["events"], UiLifecycleState> 
 	};
 	root[UI_LIFECYCLE_STATES] ??= new WeakMap();
 	return root[UI_LIFECYCLE_STATES];
+}
+
+/** Observe a completed direct-user Agent run after the Host reaches a genuinely idle boundary. */
+export function listenForUserAgentRunSettled(
+	pi: Pick<ExtensionAPI, "events">,
+	listener: (ctx: ExtensionContext) => void,
+): () => void {
+	const unsubscribe = pi.events.on(USER_AGENT_RUN_SETTLED_EVENT, (value) => {
+		if (typeof value !== "object" || value === null) return;
+		const ctx = Reflect.get(value, "ctx");
+		if (typeof ctx !== "object" || ctx === null) return;
+		try {
+			listener(ctx as ExtensionContext);
+		} catch {
+			// A derived usage refresh cannot be allowed to break Agent settlement.
+		}
+	});
+	return typeof unsubscribe === "function" ? unsubscribe : () => {};
+}
+
+function publishUserAgentRunSettled(pi: Pick<ExtensionAPI, "events">, ctx: ExtensionContext): void {
+	try {
+		pi.events.emit(USER_AGENT_RUN_SETTLED_EVENT, { ctx });
+	} catch {
+		// A derived usage refresh cannot be allowed to break Agent settlement.
+	}
 }
 
 const STATUSLINE_GIT_REFRESH_AFTER_USER_WORK_REQUEST =
@@ -962,12 +989,14 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 					return;
 				}
 				agentSettlementPending = false;
-				const shouldRefreshGit = agentRunOrigin.consumeRunIncludesUserWork() || userWorkGitRefreshPending;
+				const completedUserAgentRun = agentRunOrigin.consumeRunIncludesUserWork();
+				const shouldRefreshGit = completedUserAgentRun || userWorkGitRefreshPending;
 				userWorkGitRefreshPending = false;
 				// Pi awaits Extension handlers sequentially. Awaiting this bounded Git
 				// read prevents a later-loaded Extension from starting its continuation
 				// while the status probe is still running.
 				if (shouldRefreshGit) await presentation?.refreshGit();
+				if (completedUserAgentRun) publishUserAgentRunSettled(pi, sessionContext);
 			});
 		}
 		// Register after all Capability factories have initialized so this runs

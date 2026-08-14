@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import piStuffCodex from "../../packages/pi-stuff/src/codex/index.js";
 import piStuffUi, {
 	type CommandDialogComponent,
 	type CommandDialogPriority,
@@ -235,6 +236,7 @@ function createApiHarness(
 			return execute ? execute(...args) : { code: 1, killed: false, stderr: "", stdout: "" };
 		},
 		getAllTools: () => [],
+		getActiveTools: () => [],
 		getCommands: () => [],
 		getThinkingLevel: () => "medium",
 		on: (event: string, handler: ShutdownHandler) => {
@@ -246,6 +248,8 @@ function createApiHarness(
 		},
 		registerCommand: (name: string) => registeredCommands.push(name),
 		registerMarkdownTransformer: () => {},
+		registerTool: () => {},
+		setActiveTools: () => {},
 	} as unknown as ExtensionAPI;
 
 	return {
@@ -293,8 +297,11 @@ interface ContextOptions {
 	readonly cwd?: string;
 	readonly hasPendingMessages?: () => boolean;
 	readonly isIdle?: () => boolean;
+	readonly model?: ExtensionContext["model"];
 	readonly modelId?: string;
+	readonly modelRegistry?: ExtensionContext["modelRegistry"];
 	readonly provider?: string;
+	readonly signal?: AbortSignal;
 }
 
 function createContext(
@@ -306,11 +313,14 @@ function createContext(
 	return {
 		cwd,
 		getContextUsage: () => options.contextUsage,
+		hasUI: mode !== "rpc",
 		hasPendingMessages: options.hasPendingMessages ?? (() => false),
 		isIdle: options.isIdle ?? (() => true),
 		mode,
-		model: options.modelId ? { id: options.modelId, provider: options.provider } : undefined,
+		model: options.model ?? (options.modelId ? { id: options.modelId, provider: options.provider } : undefined),
+		modelRegistry: options.modelRegistry,
 		sessionManager: { getBranch: () => [], getCwd: () => cwd },
+		signal: options.signal,
 		ui: ui as unknown as ExtensionUIContext,
 	} as unknown as ExtensionContext;
 }
@@ -348,6 +358,32 @@ function createView<Result>(
 async function drainMicrotasks(): Promise<void> {
 	await Promise.resolve();
 	await Promise.resolve();
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		if (predicate()) return;
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+	}
+	throw new Error("Timed out waiting for test condition");
+}
+
+async function settleAgentRun(
+	api: ReturnType<typeof createApiHarness>,
+	ctx: ExtensionContext,
+	source: "extension" | "interactive",
+	text: string,
+): Promise<void> {
+	await api.emit("input", { type: "input", source, text }, ctx);
+	await api.emit("agent_start", { type: "agent_start" }, ctx);
+	await api.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 }, ctx);
+	await api.emit(
+		"message_start",
+		{ type: "message_start", message: { role: "user", content: [{ type: "text", text }] } },
+		ctx,
+	);
+	await api.emit("turn_end", { type: "turn_end", turnIndex: 0 }, ctx);
+	await api.emit("agent_settled", { type: "agent_settled" }, ctx);
 }
 
 function createDeferred<Value>(): TestDeferred<Value> {
@@ -417,6 +453,118 @@ describe("normal UI presentation integration", () => {
 		const rendersAfterDispose = ui.renderRequests.length;
 		codexChannel.publish({ fastEnabled: true, weeklyRemainingPercent: 71 });
 		expect(ui.renderRequests).toHaveLength(rendersAfterDispose);
+	});
+
+	test("refreshes Codex weekly usage after completed direct-user work without opening /codex", async () => {
+		const events = new EventBusHarness();
+		const uiApi = createApiHarness(eventBusView(events));
+		const codexApi = createApiHarness(eventBusView(events));
+		await piStuffUi(uiApi.api);
+		await piStuffCodex(codexApi.api);
+		const controller = new AbortController();
+		const ctx = createContext(new UiHarness(), "tui", {
+			model: {
+				api: "openai-responses",
+				baseUrl: "https://chatgpt.com/backend-api",
+				id: "gpt-5.6-sol",
+				input: ["text"],
+				provider: "openai-codex",
+			} as unknown as ExtensionContext["model"],
+			modelRegistry: {
+				getApiKeyAndHeaders: async () => ({
+					apiKey: "test-token",
+					headers: { "chatgpt-account-id": "account-42" },
+					ok: true,
+				}),
+			} as unknown as ExtensionContext["modelRegistry"],
+			signal: controller.signal,
+		});
+		let fetchCalls = 0;
+		let usedPercent = 18;
+		let deferredFetch: Promise<Response> | undefined;
+		let failNextFetch = false;
+		let codexShutdown = false;
+		const usageResponse = (used: number): Response =>
+			new Response(JSON.stringify({ rate_limit: { secondary: { used_percent: used, window_minutes: 10_080 } } }), {
+				status: 200,
+			});
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = (async () => {
+			fetchCalls += 1;
+			if (deferredFetch) {
+				const pending = deferredFetch;
+				deferredFetch = undefined;
+				return pending;
+			}
+			if (failNextFetch) {
+				failNextFetch = false;
+				throw new Error("usage unavailable");
+			}
+			return usageResponse(usedPercent);
+		}) as unknown as typeof globalThis.fetch;
+
+		try {
+			await uiApi.start(ctx);
+			await codexApi.start(ctx);
+			const status = getCodexStatusChannel(uiApi.api).source;
+			expect(status.getSnapshot().weeklyRemainingPercent).toBeUndefined();
+			expect(fetchCalls).toBe(0);
+
+			await settleAgentRun(uiApi, ctx, "extension", "automatic");
+			expect(fetchCalls).toBe(0);
+			const codexModel = ctx.model;
+			Object.assign(ctx, { model: { id: "claude", provider: "anthropic" } });
+			await settleAgentRun(uiApi, ctx, "interactive", "non-Codex request");
+			expect(fetchCalls).toBe(0);
+			Object.assign(ctx, { hasUI: false, model: codexModel });
+			await settleAgentRun(uiApi, ctx, "interactive", "non-UI request");
+			expect(fetchCalls).toBe(0);
+			Object.assign(ctx, { hasUI: true });
+
+			await settleAgentRun(uiApi, ctx, "interactive", "first direct request");
+			await waitUntil(() => status.getSnapshot().weeklyRemainingPercent === 82);
+			expect(fetchCalls).toBe(1);
+
+			const heldFetch = createDeferred<Response>();
+			deferredFetch = heldFetch.promise;
+			await settleAgentRun(uiApi, ctx, "interactive", "second direct request");
+			await waitUntil(() => fetchCalls === 2);
+			usedPercent = 45;
+			await settleAgentRun(uiApi, ctx, "interactive", "queued direct request");
+			await settleAgentRun(uiApi, ctx, "interactive", "newest queued direct request");
+			expect(fetchCalls).toBe(2);
+			heldFetch.resolve(usageResponse(31));
+			await waitUntil(() => status.getSnapshot().weeklyRemainingPercent === 55);
+			expect(fetchCalls).toBe(3);
+
+			failNextFetch = true;
+			await settleAgentRun(uiApi, ctx, "interactive", "failed refresh");
+			await waitUntil(() => fetchCalls === 4);
+			await drainMicrotasks();
+			expect(status.getSnapshot().weeklyRemainingPercent).toBe(55);
+
+			usedPercent = 50;
+			await settleAgentRun(uiApi, ctx, "interactive", "recovered refresh");
+			await waitUntil(() => status.getSnapshot().weeklyRemainingPercent === 50);
+			expect(fetchCalls).toBe(5);
+
+			const lateFetch = createDeferred<Response>();
+			deferredFetch = lateFetch.promise;
+			await settleAgentRun(uiApi, ctx, "interactive", "shutdown refresh");
+			await waitUntil(() => fetchCalls === 6);
+			await codexApi.shutdown(ctx);
+			codexShutdown = true;
+			lateFetch.resolve(usageResponse(60));
+			await drainMicrotasks();
+			expect(status.getSnapshot().weeklyRemainingPercent).toBeUndefined();
+			await settleAgentRun(uiApi, ctx, "interactive", "after shutdown");
+			expect(fetchCalls).toBe(6);
+		} finally {
+			controller.abort();
+			globalThis.fetch = originalFetch;
+			await uiApi.shutdown(ctx);
+			if (!codexShutdown) await codexApi.shutdown(ctx);
+		}
 	});
 
 	test("keeps Goal state out of the ordinary Statusline", async () => {

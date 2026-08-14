@@ -21,7 +21,8 @@ Pi Stuff Codex contains source derived from the pinned `@howaboua/pi-codex-conve
 - Route every retained Tool through the internal Tool Display contract and every focused surface through the shared,
   non-floating Command Dialog.
 - Keep import and startup free of network calls, file writes, subprocesses, and settings mutation.
-- Persist Fast only after an explicit `/codex` action; fetch usage only from an explicit `/codex` action.
+- Persist Fast only after an explicit `/codex` action; fetch usage only from that action or after a user-driven
+  interactive Codex Agent run reaches an idle settlement. Never poll or fetch during import or startup.
 - Execute native helpers directly without a shell wrapper, including patches that contain shell `case`/`esac` text.
 - Bundle only the certified Linux x64 helper binaries; unsupported platforms fail as Tool errors without disabling Pi.
 

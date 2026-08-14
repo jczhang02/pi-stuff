@@ -41,7 +41,9 @@ internal Codex module publishes that snapshot through `getCodexStatusChannel(pi)
 performs no authentication or network work.
 Weekly allowance stays hidden until real data arrives, and `fast` appears only while Fast mode is enabled. The shared
 channel is keyed by Pi's Extension event bus, so late-loaded and physically separate Capability copies still converge
-on one observer identity.
+on one observer identity. After a user-driven interactive Codex Agent run reaches the same genuinely idle boundary used
+for post-run observation, the Codex Capability refreshes the snapshot once without a timer. Automatic work, non-Codex
+runs, import, and startup do not request usage; overlapping post-run refreshes collapse into one trailing request.
 
 Session import and startup do not probe Git. A user-driven Agent turn, including its attributed background Agent
 completion, requests one bounded, read-only, no-lock status refresh that binds counts to the measured working directory

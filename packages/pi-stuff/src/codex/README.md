@@ -4,9 +4,11 @@ The Codex module contributes one `/codex` Command Dialog, Fast mode, Codex subsc
 selected `apply_patch`, `view_image`, and `imagegen` Tools to Pi Stuff. It does not replace Pi's provider, shell,
 compaction, session, or TUI.
 
-The Capability stays cold during import and startup. Usage performs network I/O only after `/codex` is opened, and
-native helpers start only for an actual Tool call. Missing authentication, an unsupported model, or an unavailable
-native helper becomes a bounded command or Tool error; ordinary Pi work remains available.
+The Capability stays cold during import and startup. Usage performs network I/O only after `/codex` is opened or a
+user-driven interactive Codex Agent run reaches a genuinely idle settlement. Automatic work and non-Codex runs do not
+refresh usage, overlapping post-run requests collapse into one trailing refresh, and failures retain the last observed
+snapshot. Native helpers start only for an actual Tool call. Missing authentication, an unsupported model, or an
+unavailable native helper becomes a bounded command or Tool error; ordinary Pi work remains available.
 
 `imagegen` is enabled only for image-capable OpenAI Codex Responses models and always requests `gpt-image-2`.
 The current certified native-helper target is Linux x64.

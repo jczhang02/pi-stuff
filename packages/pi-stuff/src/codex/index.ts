@@ -1,5 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getCodexStatusChannel, getCommandDialogCoordinator } from "../conversation-ui/index.js";
+import {
+	getCodexStatusChannel,
+	getCommandDialogCoordinator,
+	listenForUserAgentRunSettled,
+} from "../conversation-ui/index.js";
+import { isOpenAICodexResponsesModel } from "./account.js";
 import { type CodexControls, createCodexDialogView } from "./dialog.js";
 import { CodexSettingsStore } from "./settings.js";
 import { registerCodexTools } from "./tools.js";
@@ -14,9 +19,11 @@ export default async function piStuffCodex(pi: ExtensionAPI): Promise<void> {
 	const settings = await CodexSettingsStore.load();
 	const status = getCodexStatusChannel(pi);
 	const tools = registerCodexTools(pi);
+	let active = true;
 	let usage: CodexUsageSnapshot | undefined;
 
 	const publishStatus = (): void => {
+		if (!active) return;
 		const weekly = weeklyRemainingPercent(usage);
 		status.publish({
 			fastEnabled: settings.get().fast,
@@ -36,6 +43,31 @@ export default async function piStuffCodex(pi: ExtensionAPI): Promise<void> {
 			publishStatus();
 		},
 	});
+	let automaticRefreshContext: ExtensionContext | undefined;
+	let automaticRefreshRunning = false;
+	const refreshUsageAfterUserWork = (ctx: ExtensionContext): void => {
+		if (!active || !ctx.hasUI || !isOpenAICodexResponsesModel(ctx.model)) return;
+		automaticRefreshContext = ctx;
+		if (automaticRefreshRunning) return;
+		automaticRefreshRunning = true;
+		void (async () => {
+			try {
+				while (active && automaticRefreshContext) {
+					const refreshContext = automaticRefreshContext;
+					automaticRefreshContext = undefined;
+					try {
+						await controls(refreshContext).refreshUsage(refreshContext.signal);
+					} catch {
+						// Manual /codex refresh remains the visible recovery path.
+					}
+				}
+			} finally {
+				automaticRefreshRunning = false;
+				if (active && automaticRefreshContext) refreshUsageAfterUserWork(automaticRefreshContext);
+			}
+		})();
+	};
+	const stopListeningForUserAgentRunSettled = listenForUserAgentRunSettled(pi, refreshUsageAfterUserWork);
 
 	publishStatus();
 	pi.registerCommand("codex", {
@@ -81,6 +113,9 @@ export default async function piStuffCodex(pi: ExtensionAPI): Promise<void> {
 	});
 	pi.on("model_select", (_event, ctx) => tools.sync(ctx.model));
 	pi.on("session_shutdown", () => {
+		active = false;
+		automaticRefreshContext = undefined;
+		stopListeningForUserAgentRunSettled();
 		tools.deactivate();
 		status.clear();
 	});
