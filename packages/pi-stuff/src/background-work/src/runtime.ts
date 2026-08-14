@@ -1,15 +1,6 @@
+import { spawn as spawnChildProcess } from "node:child_process";
 import { randomBytes, randomInt } from "node:crypto";
-import {
-	accessSync,
-	closeSync,
-	constants,
-	existsSync,
-	lstatSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { accessSync, constants, existsSync, lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import type {
@@ -330,60 +321,33 @@ function spawnSupervisor(
 	envelope: string,
 	options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv },
 ): SupervisorProcess {
-	let resolveExit!: (value: { code: number | null; error?: Error; signal: NodeJS.Signals | null }) => void;
-	const exit = new Promise<{ code: number | null; error?: Error; signal: NodeJS.Signals | null }>((resolve) => {
-		resolveExit = resolve;
-	});
-	const subprocess = Bun.spawn({
-		cmd: [executable, SUPERVISOR_PATH, envelope],
+	const subprocess = spawnChildProcess(executable, [SUPERVISOR_PATH, envelope], {
 		cwd: options.cwd,
 		detached: process.platform !== "win32",
 		env: options.env,
 		stdio: ["ignore", "pipe", "pipe", "pipe"],
 		windowsHide: true,
-		onExit(process, code, _signalCode, error) {
-			resolveExit({
-				code,
-				...(error ? { error: new Error(error.message) } : {}),
-				signal: process.signalCode,
-			});
-		},
 	});
-	const controlDescriptor = subprocess.stdio[3];
-	if (typeof controlDescriptor !== "number") {
+	let resolveExit!: (value: { code: number | null; error?: Error; signal: NodeJS.Signals | null }) => void;
+	const exit = new Promise<{ code: number | null; error?: Error; signal: NodeJS.Signals | null }>((resolve) => {
+		resolveExit = resolve;
+	});
+	subprocess.once("error", (error) => resolveExit({ code: null, error, signal: null }));
+	subprocess.once("exit", (code, signal) => resolveExit({ code, signal }));
+	const control = subprocess.stdio[3];
+	if (!subprocess.pid || !subprocess.stdout || !subprocess.stderr || !(control instanceof Readable)) {
 		subprocess.kill("SIGKILL");
 		subprocess.unref();
-		throw new Error("Background Work supervisor control pipe was not created");
+		throw new Error("Background Work supervisor pipes were not created");
 	}
-	let controlClosed = false;
 	const closeControl = () => {
-		if (controlClosed) return;
-		controlClosed = true;
-		try {
-			closeSync(controlDescriptor);
-		} catch {
-			// The descriptor is caller-owned. Cleanup is best-effort because a
-			// subprocess construction failure must preserve the original error.
-		}
+		control.destroy();
 	};
-	let stdout: Readable;
-	let stderr: Readable;
-	let control: Readable;
-	try {
-		stdout = Readable.fromWeb(subprocess.stdout);
-		stderr = Readable.fromWeb(subprocess.stderr);
-		control = Readable.fromWeb(Bun.file(controlDescriptor).stream());
-	} catch (error) {
-		closeControl();
-		subprocess.kill("SIGKILL");
-		subprocess.unref();
-		throw error;
-	}
-	const streams = [stdout, stderr, control] as const;
+	const streams = [subprocess.stdout, subprocess.stderr, control] as const;
 	const streamCompletion = Promise.all([
-		readableCompletion(stdout),
-		readableCompletion(stderr),
-		readableCompletion(control).finally(closeControl),
+		readableCompletion(subprocess.stdout),
+		readableCompletion(subprocess.stderr),
+		readableCompletion(control),
 	]);
 	const completion = exit.then(async (result) => {
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -409,8 +373,8 @@ function spawnSupervisor(
 		completion,
 		control,
 		pid: subprocess.pid,
-		stderr,
-		stdout,
+		stderr: subprocess.stderr,
+		stdout: subprocess.stdout,
 		kill: (signal) => {
 			subprocess.kill(signal);
 		},

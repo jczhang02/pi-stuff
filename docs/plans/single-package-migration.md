@@ -30,9 +30,9 @@ The destination directory name is the internal Module name. No destination other
 
 ## Non-TypeScript Runtime Resources
 
-The following resources must move with their owning Module and remain in the Package file allowlist:
+The following resources moved with their owning Module and remain in the Package file allowlist unless later product
+decisions explicitly removed them:
 
-- `subagents/agents/general-purpose.md`
 - `btw/prompts/btw-system.txt`
 - `codex/native/{apply-patch,imagegen,view-image}/linux-x64/*`
 - `codex/LICENSES/Apache-2.0.txt` and `codex/THIRD_PARTY_NOTICES.md`
@@ -44,6 +44,9 @@ The following resources must move with their owning Module and remain in the Pac
 - `mcp/runtime/banner.png`
 - `code-mode/LICENSES/Apache-2.0.txt`, `code-mode/THIRD_PARTY_NOTICES.md`, and `code-mode/UPSTREAM.md`
 - every retained `UPSTREAM.md`, `SECURITY.md`, and third-party license text
+
+The temporary bundled `subagents/agents/general-purpose.md` resource was subsequently removed; Pi Stuff now ships no
+Agent definitions.
 
 Historical per-Package changelogs remain available through Git history. One Package changelog is maintained after the
 migration.

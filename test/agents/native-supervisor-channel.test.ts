@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { registerSuiteAgentMessagePreparation } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import {
 	createNativeSupervisorChannel,
 	garbageCollectSupervisorChannel,
@@ -588,6 +589,48 @@ describe("native supervisor protocol compatibility", () => {
 		});
 		first.dispose();
 		second.dispose();
+	});
+
+	test("answers a blocked parent-attention request with an independent-synthesis instruction", async () => {
+		const now = Date.now();
+		const runId = `convergence-blocked-${now}`;
+		const request = {
+			...baseRequest(`convergence-blocked-request-${now}`, runId, now),
+			reason: "need_decision",
+			expectsReply: true,
+		};
+		const channelDir = legacyChannel(runId);
+		const requestFile = writeRequest(channelDir, request);
+		const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
+		directories.push(root);
+		const sessionFile = path.join(root, "parent.jsonl");
+		fs.writeFileSync(sessionFile, "");
+		const test = harness({
+			primary: "ps2-convergence-blocked",
+			legacyFile: sessionFile,
+			legacyRunIds: new Set([runId]),
+			startedAtMs: now - 1_000,
+		});
+		const unregister = registerSuiteAgentMessagePreparation(test.api, {
+			prepare: async () => ({ status: "convergence-blocked", reason: "hard provider-turn boundary reached" }),
+		});
+		const channel = createNativeSupervisorChannel(test.api, test.state);
+		const replyFile = path.join(channelDir, "replies", `${request.id}.json`);
+
+		try {
+			channel.start();
+			const deadline = Date.now() + 2_000;
+			while (!fs.existsSync(replyFile) && Date.now() < deadline) await Bun.sleep(25);
+
+			const reply = JSON.parse(fs.readFileSync(replyFile, "utf8")) as { message?: string };
+			expect(reply.message).toContain("whole-work convergence boundary");
+			expect(reply.message).toContain("return your best supported result now");
+			expect(fs.existsSync(requestFile)).toBeFalse();
+			expect(channel.pending.has(request.id)).toBeFalse();
+		} finally {
+			channel.dispose();
+			unregister();
+		}
 	});
 
 	test("indexes one bounded session tail once for a full page of persisted requests", () => {

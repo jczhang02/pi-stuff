@@ -10,7 +10,9 @@ export { commandDialogRows, fitCommandDialogRows } from "../../packages/pi-stuff
 export { getHostSharedResource } from "../../packages/pi-stuff/src/conversation-ui/host-resource.js";
 export { getGoalStatusChannel } from "../../packages/pi-stuff/src/conversation-ui/statusline.js";
 export {
+	deliverSuiteAgentMessage,
 	isSuiteNativeCompactionPreflight,
+	type SuiteAgentMessageDeliveryResult,
 	sendSuiteAgentMessage,
 } from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
 export { whenSuiteSessionReady } from "../../packages/pi-stuff/src/conversation-ui/suite-lifecycle.js";

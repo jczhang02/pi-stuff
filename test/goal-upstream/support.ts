@@ -163,6 +163,7 @@ export function createMockPi(
 				typeof message.content === "string"
 			) {
 				sentHiddenGoalMessages.push({ message, options: messageOptions });
+				if (isRecord(messageOptions) && messageOptions.triggerTurn === false) return;
 				const deliverAs = isRecord(messageOptions) ? messageOptions.deliverAs : undefined;
 				return rawPi.sendUserMessage(
 					message.content,

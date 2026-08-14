@@ -15,7 +15,9 @@ type ScenarioId =
 	| "single-fork-background"
 	| "parallel-fresh-background"
 	| "parallel-fork-foreground"
-	| "aggregate-fanout-foreground";
+	| "aggregate-fanout-foreground"
+	| "long-fresh-foreground"
+	| "long-fork-foreground";
 
 interface Scenario {
 	readonly id: ScenarioId;
@@ -29,11 +31,16 @@ interface LogRecord {
 	readonly kind?: unknown;
 	readonly result?: unknown;
 	readonly baseExtensionMatches?: unknown;
+	readonly activeTools?: unknown;
 	readonly childBaseExtension?: unknown;
 	readonly sawRootMarker?: unknown;
 	readonly sawSuiteSurface?: unknown;
 	readonly scenario?: unknown;
 	readonly task?: unknown;
+	readonly round?: unknown;
+	readonly payloadBytes?: unknown;
+	readonly sawProjection?: unknown;
+	readonly sawSteering?: unknown;
 }
 
 interface ProcessResult {
@@ -54,6 +61,8 @@ const SCENARIOS: readonly Scenario[] = [
 	{ id: "parallel-fresh-background", childCount: 2, context: "fresh", foreground: false },
 	{ id: "parallel-fork-foreground", childCount: 2, context: "fork", foreground: true },
 	{ id: "aggregate-fanout-foreground", childCount: 2, context: "fresh", foreground: true },
+	{ id: "long-fresh-foreground", childCount: 1, context: "fresh", foreground: true },
+	{ id: "long-fork-foreground", childCount: 1, context: "fork", foreground: true },
 ];
 
 function fail(message: string): never {
@@ -147,6 +156,9 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 			`${scenario.id} exited ${processResult.exitCode}\nstdout:\n${processResult.stdout}\nstderr:\n${processResult.stderr}`,
 		);
 	}
+	if (`${processResult.stdout}\n${processResult.stderr}`.includes("Suite declared unregistered Tools")) {
+		fail(`${scenario.id} emitted an unregistered Suite Tool diagnostic`);
+	}
 	if (!processResult.stdout.includes(`MATRIX_MAIN_RESULT:${scenario.id}`)) {
 		fail(`${scenario.id} did not complete the real main Pi turn\nstdout:\n${processResult.stdout}`);
 	}
@@ -182,6 +194,15 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 				`${scenario.id} child base extension was ${String(start.childBaseExtension)}; expected the Suite Package entry`,
 			);
 		}
+		const activeTools = Array.isArray(start.activeTools) ? start.activeTools : [];
+		const fanoutAuthorized =
+			scenario.id === "aggregate-fanout-foreground" &&
+			start.task !== "MATRIX_GRANDCHILD_TASK_AGGREGATE_FANOUT_FOREGROUND";
+		if (fanoutAuthorized !== activeTools.includes("subagent")) {
+			fail(
+				`${scenario.id} child subagent authority was ${activeTools.includes("subagent")}; expected ${fanoutAuthorized}`,
+			);
+		}
 	}
 
 	const mainResult = mainResults[0]?.result;
@@ -212,6 +233,39 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 		fail(
 			`${scenario.id} parallel provider peak concurrency was ${peakChildConcurrency(records)}, expected at least 2`,
 		);
+	}
+	if (scenario.id.startsWith("long-")) {
+		const longTurns = records.filter((record) => record.kind === "child-long-turn");
+		const longTools = records.filter((record) => record.kind === "child-long-tool");
+		const steers = records.filter((record) => record.kind === "child-long-steer");
+		if (longTools.length !== 8 || longTurns.length !== 9) {
+			fail(
+				`long child expected 8 Tool rounds and 9 provider turns, received ${longTools.length}/${longTurns.length}`,
+			);
+		}
+		if (steers.length !== 1 || steers[0]?.round !== 4) {
+			fail(`long child expected one steering delivery after round 4, received ${JSON.stringify(steers)}`);
+		}
+		const projectedContinuation = longTurns.find(
+			(record) => typeof record.round === "number" && record.round >= 5 && record.sawProjection === true,
+		);
+		const steeredContinuation = longTurns.find(
+			(record) =>
+				typeof record.round === "number" &&
+				record.round >= 5 &&
+				record.sawProjection === true &&
+				record.sawSteering === true,
+		);
+		if (!projectedContinuation || !steeredContinuation) {
+			fail("long child did not continue after both bounded history projection and mid-run steering");
+		}
+		const finalTurn = longTurns.find((record) => record.round === 8);
+		if (finalTurn?.sawProjection !== true || finalTurn.sawSteering !== true) {
+			fail(`long child final turn lost projection or steering authority: ${JSON.stringify(finalTurn)}`);
+		}
+		if (typeof mainResult !== "string" || !mainResult.includes("rounds=8:projection=true:steering=true")) {
+			fail(`long child did not return its stable completion evidence: ${String(mainResult)}`);
+		}
 	}
 }
 
@@ -278,12 +332,14 @@ export async function verifyAgentsExecutionMatrix(options: AgentsExecutionMatrix
 	const sessionsDirectory = join(temporaryDirectory, "sessions");
 	const logPath = join(temporaryDirectory, "provider.jsonl");
 	await Promise.all([mkdir(agentsDirectory, { recursive: true }), mkdir(projectDirectory), mkdir(sessionsDirectory)]);
-	await writeFile(
-		join(agentsDirectory, "matrix-agent.md"),
-		`---
+	await Promise.all([
+		writeFile(
+			join(agentsDirectory, "matrix-agent.md"),
+			`---
 name: matrix-agent
-description: Deterministic real Pi execution-matrix Agent.
+description: Deterministic restricted execution-matrix Agent.
 model: pi-stuff-agents-execution-matrix/fixture-model
+tools: matrix_blob
 subagentOnlyExtensions: ${providerExtension}
 maxSubagentDepth: 2
 systemPromptMode: append
@@ -292,8 +348,26 @@ inheritSkills: false
 ---
 Return the deterministic matrix result without calling tools.
 `,
-		{ mode: 0o600 },
-	);
+			{ mode: 0o600 },
+		),
+		writeFile(
+			join(agentsDirectory, "matrix-fanout-agent.md"),
+			`---
+name: matrix-fanout-agent
+description: Deterministic fanout execution-matrix Agent.
+model: pi-stuff-agents-execution-matrix/fixture-model
+tools: matrix_blob, subagent
+subagentOnlyExtensions: ${providerExtension}
+maxSubagentDepth: 2
+systemPromptMode: append
+inheritProjectContext: false
+inheritSkills: false
+---
+Return the deterministic matrix result without calling tools.
+`,
+			{ mode: 0o600 },
+		),
+	]);
 
 	try {
 		for (const scenario of SCENARIOS) {

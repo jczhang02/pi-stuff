@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../runs/shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
 import { validateToolBudgetConfig } from "../runs/shared/tool-budget.ts";
@@ -15,7 +14,7 @@ import { buildRuntimeName, parsePackageName } from "./identity.ts";
 export { buildRuntimeName, frontmatterNameForConfig, parsePackageName } from "./identity.ts";
 
 export type AgentScope = "user" | "project" | "both";
-export type AgentSource = "builtin" | "package" | "user" | "project";
+export type AgentSource = "package" | "user" | "project";
 export type SystemPromptMode = "append" | "replace";
 
 /** Runtime shape consumed by the owned child-process engine. */
@@ -50,11 +49,9 @@ export interface AgentDiscoveryResult {
 	readonly modelScope?: ModelScopeConfig;
 }
 
-export const BUILTIN_AGENT_NAMES = ["general-purpose"] as const;
 export const EXTRA_AGENT_DIRS_ENV = "PI_SUBAGENT_EXTRA_AGENT_DIRS";
 
 const AGENT_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const BUILTIN_AGENTS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "agents");
 const PRUNED_DIRECTORY_NAMES = new Set([".git", "node_modules"]);
 
 export function defaultSystemPromptMode(): SystemPromptMode {
@@ -87,7 +84,6 @@ export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryRe
 	const includeUser = scope !== "project";
 	const includeProject = scope !== "user";
 
-	const builtin = loadAgentsFromDir(BUILTIN_AGENTS_DIR, "builtin");
 	const packagePaths = collectPackageAgentPaths(cwd, projectRoot, { includeProject, includeUser });
 	const packageAgents = loadUniqueAgents(packagePaths, "package", false);
 	const userPaths = includeUser ? [...extraUserAgentDirs(), path.join(getAgentDir(), "agents")] : [];
@@ -95,7 +91,7 @@ export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryRe
 	const projectAgents =
 		includeProject && projectAgentsDir ? loadUniqueAgents([projectAgentsDir], "project", true) : [];
 
-	const agents = mergeAgentsForScope(scope, userAgents, projectAgents, builtin, packageAgents);
+	const agents = mergeAgentsForScope(scope, userAgents, projectAgents, packageAgents);
 	return { agents, projectAgentsDir };
 }
 

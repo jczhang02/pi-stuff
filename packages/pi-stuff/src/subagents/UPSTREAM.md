@@ -29,7 +29,8 @@ Major removed upstream areas include:
 - Fleet panes, the Agent token statusline, and upstream settings UI;
 - watchdog/review automation and LSP diagnostics;
 - memory, share, and Teams integrations; and
-- the upstream prompt library, bundled skills, admin/doctor commands, and profile-management surfaces.
+- the upstream prompt library, all bundled Agent definitions and skills, admin/doctor commands, and profile-management
+  surfaces.
 
 `tanbiralam/claude-code`, released Claude Code binaries, and `tintinweb/pi-subagents` were observed only to understand
 user-visible behavior. No code from those sources was copied into this module. The maintainer's previous `jczhang02/pi-agent`

@@ -5,6 +5,7 @@ import { constants as osConstants } from "node:os";
 
 const DEFAULT_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const MAX_OUTPUT_BYTES_ENV = "PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES";
+const MAX_PROTOCOL_LINE_BYTES = 16 * 1024 * 1024;
 const POST_EXIT_OUTPUT_IDLE_MS = 2_000;
 const POST_EXIT_OUTPUT_HARD_MS = 8_000;
 
@@ -117,36 +118,114 @@ function maxOutputBytes() {
 		: DEFAULT_MAX_OUTPUT_BYTES;
 }
 
-function createBoundedPipeForwarder(source, destination, onLimit) {
+function projectProtocolLine(line) {
+	let event;
+	try {
+		event = JSON.parse(line.toString("utf8"));
+	} catch {
+		return line;
+	}
+	if (!event || typeof event !== "object" || Array.isArray(event) || typeof event.type !== "string") return line;
+	if (event.type === "message_start" || event.type === "message_update" || event.type === "turn_end") {
+		return Buffer.from(JSON.stringify({ type: event.type }));
+	}
+	if (event.type === "agent_end") {
+		return Buffer.from(JSON.stringify({ type: event.type, ...(event.willRetry === true ? { willRetry: true } : {}) }));
+	}
+	if (event.type === "tool_execution_update" || event.type === "tool_execution_end") {
+		return Buffer.from(
+			JSON.stringify({
+				type: event.type,
+				...(typeof event.toolCallId === "string" ? { toolCallId: event.toolCallId } : {}),
+				...(typeof event.toolName === "string" ? { toolName: event.toolName } : {}),
+				...(typeof event.isError === "boolean" ? { isError: event.isError } : {}),
+			}),
+		);
+	}
+	return line;
+}
+
+function createBoundedPipeForwarder(source, destination, onLimit, projectProtocol = false) {
 	const limitBytes = maxOutputBytes();
+	const lineLimitBytes = Math.min(MAX_PROTOCOL_LINE_BYTES, limitBytes);
 	let observedBytes = 0;
 	let forwardedBytes = 0;
 	let limitReported = false;
 	let lastReadAt = Date.now();
+	const forward = async (chunk) => {
+		observedBytes += chunk.length;
+		if (observedBytes > limitBytes && !limitReported) {
+			limitReported = true;
+			onLimit(observedBytes);
+		}
+		// Forward one byte beyond the configured bound so the runner's own
+		// protocol authority deterministically observes overflow. Continue
+		// draining and discarding after that point so neither memory nor disk is
+		// an unbounded buffer while the process group is being reaped.
+		const remaining = Math.max(0, limitBytes + 1 - forwardedBytes);
+		if (remaining === 0) return;
+		const forwarded = chunk.subarray(0, Math.min(chunk.length, remaining));
+		forwardedBytes += forwarded.length;
+		await new Promise((resolve, reject) => {
+			destination.write(forwarded, (error) => {
+				if (error) reject(error);
+				else resolve();
+			});
+		});
+	};
 	const done = (async () => {
+		if (!projectProtocol) {
+			for await (const value of source) {
+				lastReadAt = Date.now();
+				await forward(Buffer.isBuffer(value) ? value : Buffer.from(value));
+			}
+			return;
+		}
+
+		let pending = [];
+		let pendingBytes = 0;
+		const flushLine = async (terminated) => {
+			const line = pendingBytes > 0 ? Buffer.concat(pending, pendingBytes) : Buffer.alloc(0);
+			pending = [];
+			pendingBytes = 0;
+			const projected = projectProtocolLine(line);
+			await forward(terminated ? Buffer.concat([projected, Buffer.from("\n")], projected.length + 1) : projected);
+		};
+		const append = async (segment) => {
+			if (segment.length === 0) return true;
+			const nextBytes = pendingBytes + segment.length;
+			if (nextBytes <= lineLimitBytes) {
+				pending.push(segment);
+				pendingBytes = nextBytes;
+				return true;
+			}
+			const accepted = Math.max(0, lineLimitBytes + 1 - pendingBytes);
+			if (accepted > 0) {
+				pending.push(segment.subarray(0, accepted));
+				pendingBytes += accepted;
+			}
+			limitReported = true;
+			onLimit(nextBytes);
+			await forward(Buffer.concat(pending, pendingBytes));
+			pending = [];
+			pendingBytes = 0;
+			return false;
+		};
+
 		for await (const value of source) {
 			lastReadAt = Date.now();
+			if (limitReported) continue;
 			const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
-			observedBytes += chunk.length;
-			if (observedBytes > limitBytes && !limitReported) {
-				limitReported = true;
-				onLimit(observedBytes);
+			let start = 0;
+			for (let index = 0; index < chunk.length; index++) {
+				if (chunk[index] !== 0x0a) continue;
+				if (!(await append(chunk.subarray(start, index)))) break;
+				await flushLine(true);
+				start = index + 1;
 			}
-			// Forward one byte beyond the configured bound so the runner's own
-			// protocol authority deterministically observes overflow. Continue
-			// draining and discarding after that point so neither memory nor disk is
-			// an unbounded buffer while the process group is being reaped.
-			const remaining = Math.max(0, limitBytes + 1 - forwardedBytes);
-			if (remaining === 0) continue;
-			const forwarded = chunk.subarray(0, Math.min(chunk.length, remaining));
-			forwardedBytes += forwarded.length;
-			await new Promise((resolve, reject) => {
-				destination.write(forwarded, (error) => {
-					if (error) reject(error);
-					else resolve();
-				});
-			});
+			if (!limitReported) await append(chunk.subarray(start));
 		}
+		if (!limitReported && pendingBytes > 0) await flushLine(false);
 	})();
 	return {
 		close() {
@@ -635,8 +714,11 @@ try {
 			resolve(childExitTuple ?? { code, signal });
 		});
 	});
-	const stdoutForwarder = createBoundedPipeForwarder(child.stdout, process.stdout, () =>
-		requestStop("SIGTERM", "termination"),
+	const stdoutForwarder = createBoundedPipeForwarder(
+		child.stdout,
+		process.stdout,
+		() => requestStop("SIGTERM", "termination"),
+		true,
 	);
 	const stderrForwarder = createBoundedPipeForwarder(child.stderr, process.stderr, () =>
 		requestStop("SIGTERM", "termination"),

@@ -162,6 +162,7 @@ function toSingleResult(
 		...(result.turnBudget ? { turnBudget: result.turnBudget } : {}),
 		...(result.turnBudgetExceeded ? { turnBudgetExceeded: true } : {}),
 		...(result.wrapUpRequested ? { wrapUpRequested: true } : {}),
+		...(result.contextNudgeObserved ? { contextNudgeObserved: true } : {}),
 		...(result.toolBudget ? { toolBudget: result.toolBudget } : {}),
 		...(result.toolBudgetBlocked ? { toolBudgetBlocked: true } : {}),
 		usage: resultUsage(result),
@@ -219,7 +220,10 @@ function formatResult(results: readonly SingleResult[]): string {
 								: "failed";
 			const heading =
 				results.length === 1 ? `Agent ${result.agent} ${state}.` : `${index + 1}. ${result.agent} — ${state}`;
-			return `${heading}\n${result.finalOutput || result.error || "(no report)"}`;
+			const contextNudge = result.contextNudgeObserved
+				? "\nContext housekeeping observed: magic-context:ceiling-nudge."
+				: "";
+			return `${heading}${contextNudge}\n${result.finalOutput || result.error || "(no report)"}`;
 		})
 		.join("\n\n");
 }

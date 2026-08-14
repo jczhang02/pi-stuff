@@ -43,6 +43,12 @@ import { resolveCurrentSessionId } from "../../packages/pi-stuff/src/subagents/s
 import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
+const environment = new Map<string, string | undefined>();
+
+function clearEnvironment(name: string): void {
+	if (!environment.has(name)) environment.set(name, process.env[name]);
+	delete process.env[name];
+}
 
 const MOCK_PARENT_SESSION_ENVIRONMENT_KEYS = [
 	SUBAGENT_PARENT_EVENT_SINK_ENV,
@@ -66,6 +72,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	for (const [name, value] of environment) {
+		if (value === undefined) delete process.env[name];
+		else process.env[name] = value;
+	}
+	environment.clear();
 	for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
 	for (const [key, value] of parentSessionEnvironment) {
 		if (value === undefined) delete process.env[key];
@@ -81,8 +92,8 @@ function agent(): AgentConfig {
 		systemPromptMode: "append",
 		inheritProjectContext: true,
 		inheritSkills: true,
-		source: "builtin",
-		filePath: "/agents/general-purpose.md",
+		source: "user",
+		filePath: "/user-agents/general-purpose.md",
 	};
 }
 
@@ -254,6 +265,8 @@ describe("reduced foreground Agent engine", () => {
 	});
 
 	test("carries direct user takeover attribution into the durable steer request", async () => {
+		clearEnvironment(SUBAGENT_PARENT_SESSION_ENV);
+		clearEnvironment(SUBAGENT_PARENT_PHYSICAL_SESSION_ENV);
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-background-user-steer-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
@@ -932,7 +945,7 @@ describe("reduced foreground Agent engine", () => {
 		const callId = `unknown-${Date.now()}-${Math.random()}`;
 		const runId = deriveLaunchRunId(callId, { sessionId: cwd, ownerAgentPath: [] });
 		let binds = 0;
-		const result = await executor(cwd, state()).execute(
+		const result = await executor(cwd, state(), undefined, { agents: [] }).execute(
 			callId,
 			{ agent: "missing", task: "Never launch", async: false },
 			new AbortController().signal,
@@ -946,6 +959,7 @@ describe("reduced foreground Agent engine", () => {
 		);
 
 		expect(result.isError).toBe(true);
+		expect(result.content[0]).toEqual({ type: "text", text: "Unknown Agent: missing" });
 		expect(binds).toBe(0);
 		expect(fs.existsSync(path.join(TEMP_ROOT_DIR, "foreground-runs", runId))).toBeFalse();
 		expect(fs.existsSync(path.join(cwd, "sessions", runId))).toBeFalse();

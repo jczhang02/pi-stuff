@@ -67,10 +67,13 @@ export {
 } from "./statusline.js";
 export {
 	beginSuiteNativeCompactionPreflight,
+	deliverSuiteAgentMessage,
 	isSuiteNativeCompactionPreflight,
 	registerSuiteAgentMessagePreparation,
+	type SuiteAgentMessageDeliveryResult,
 	type SuiteAgentMessageOptions,
 	type SuiteAgentMessagePreparation,
+	type SuiteAgentMessagePreparationDecision,
 	sendSuiteAgentMessage,
 } from "./suite-agent-message.js";
 export {
