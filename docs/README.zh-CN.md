@@ -78,7 +78,7 @@ Pi 启动后，可以从这些命令开始：
 | `/codex` | 使用受支持的 Codex 模型时，查看用量和 Fast mode |
 | `/mcp` | 查看按需配置的 MCP 服务器 |
 | `/rtk` | 验证或配置可选的 RTK 命令改写 |
-| `/codemode status` | 查看默认关闭的可选 Code Mode 封装 |
+| `/codemode` | 打开可选 Code Mode 控制面板，并把选择持久化到受信任项目 |
 
 在 tmux 中使用终端原生通知时，需要配置 `set -g allow-passthrough on`。Pi Stuff 会为 tmux 封装通知协议，
 但不会修改用户拥有的 tmux 设置。

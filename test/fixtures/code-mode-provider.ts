@@ -7,7 +7,9 @@ const PROVIDER = "pi-stuff-code-mode-fixture";
 const MODEL = "fixture";
 const LOG_ENV = "PI_STUFF_CODE_MODE_FIXTURE_LOG";
 const DIRECT_ENV = "PI_STUFF_CODE_MODE_FIXTURE_DIRECT";
+const BENCHMARK_ENV = "PI_STUFF_CODE_MODE_FIXTURE_BENCHMARK";
 const HIDE_RESULT_ENV = "PI_STUFF_CODE_MODE_FIXTURE_HIDE_RESULT";
+const LEGACY_SURFACE_ENV = "PI_STUFF_CODE_MODE_FIXTURE_LEGACY_SURFACE";
 const SCENARIO_ENV = "PI_STUFF_CODE_MODE_FIXTURE_SCENARIO";
 const ZERO_USAGE = {
 	cacheRead: 0,
@@ -45,43 +47,44 @@ function textStream(value: string) {
 function codeModeStream() {
 	const stream = createAssistantMessageEventStream();
 	const pending = assistant([], "pending");
-	const toolCall = {
+	const codeModeCall = {
 		arguments: {
 			code:
 				process.env[SCENARIO_ENV] === "failure"
-					? 'await suite.read({ path: "pi-stuff-code-mode-missing-file" });'
+					? 'await tools.read({ path: "pi-stuff-code-mode-missing-file" });'
 					: process.env[SCENARIO_ENV] === "cancel"
-						? `const cancelled = await suite.bash({
+						? `const cancelled = await tools.bash({
   command: "printf 'Operation aborted\\\\n' >&2; exit 1",
   description: "Cancellation fixture"
 });
-text(cancelled.content.find((part) => part.type === "text")?.text ?? "Operation aborted");`
+text(String(cancelled));`
 						: process.env[SCENARIO_ENV] === "media"
-							? 'await Promise.all([suite.read({ path: "pixel.png" }), suite.read({ path: "README.md", limit: 1 }), suite.read({ path: "pixel-copy.png" })]); text("MEDIA_OK");'
-							: `const matches = codemode.search("read file");
+							? 'await Promise.all([tools.read({ path: "pixel.png" }), tools.read({ path: "README.md", limit: 1 }), tools.read({ path: "pixel-copy.png" })]); text("MEDIA_OK");'
+							: `const matches = await codemode.search("read file");
 const selected = matches.results.find((entry) => entry.method === "read");
 if (!selected) throw new Error("read not found");
-const docs = codemode.describe(selected.path);
-const contextDocs = codemode.describe("suite.ctx_search");
-const result = await suite[selected.method]({ path: "README.md", limit: 1 });
-await suite.bash({ command: "printf CODE_MODE_GROUP_OK", description: "Check Tool grouping" });
-await suite.background({ action: "list" });
-await suite.subagent({ action: "status" });
-const firstLine = result.content.find((part) => part.type === "text")?.text.split("\\n")[0];
+const docs = await codemode.describe(selected.path);
+const result = await tools[selected.method]({ path: "README.md", limit: 1 });
+await tools.bash({ command: "printf CODE_MODE_GROUP_OK", description: "Check Tool grouping" });
+await tools.background({ action: "list" });
+await tools.subagent({ action: "status" });
+const firstLine = String(result).split("\\n")[0];
 text(JSON.stringify({
-  context: contextDocs.inputSchema.type === "object",
   firstLine,
-  typed: docs.inputSchema.properties.path.type === "string"
+  typed: docs.types.includes("path")
 }));`,
 		},
 		id: "pi-stuff-code-mode-fixture-1",
 		name: "codemode",
 		type: "toolCall" as const,
 	};
+	const toolCalls = [codeModeCall];
 	stream.push({ partial: pending, type: "start" });
-	stream.push({ contentIndex: 0, partial: pending, type: "toolcall_start" });
-	stream.push({ contentIndex: 0, partial: pending, toolCall, type: "toolcall_end" });
-	stream.push({ message: assistant([toolCall], "toolUse"), reason: "toolUse", type: "done" });
+	for (const [contentIndex, toolCall] of toolCalls.entries()) {
+		stream.push({ contentIndex, partial: pending, type: "toolcall_start" });
+		stream.push({ contentIndex, partial: pending, toolCall, type: "toolcall_end" });
+	}
+	stream.push({ message: assistant(toolCalls, "toolUse"), reason: "toolUse", type: "done" });
 	return stream;
 }
 
@@ -196,6 +199,7 @@ function fixtureStream(context: Context) {
 			})}\n`,
 		);
 	}
+	if (process.env[BENCHMARK_ENV] === "1") return textStream("BENCHMARK_COMPLETE");
 	if (!result) return direct ? directToolStream() : codeModeStream();
 	const resultText =
 		result?.role === "toolResult" && Array.isArray(result.content)
@@ -212,6 +216,10 @@ function fixtureStream(context: Context) {
 }
 
 export default function codeModeFixtureProvider(pi: ExtensionAPI): void {
+	if (process.env[LEGACY_SURFACE_ENV] === "1") {
+		pi.on("session_start", () => pi.setActiveTools(["codemode"]));
+		pi.on("before_agent_start", () => pi.setActiveTools(["codemode"]));
+	}
 	pi.registerProvider(PROVIDER, {
 		api: "openai-completions",
 		apiKey: "offline-fixture",

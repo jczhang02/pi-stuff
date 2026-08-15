@@ -45,6 +45,7 @@ export type ToolActivityCategory =
 	| "search-history"
 	| "search-mcp"
 	| "search-pattern"
+	| "search-tool"
 	| "search-web"
 	| "start-monitor"
 	| "steer-agent"
@@ -357,6 +358,13 @@ const PHRASES: Readonly<Record<ToolActivityCategory, PhraseSpec>> = {
 		priority: 43,
 	},
 	"search-pattern": { past: "Searched", present: "Searching", singular: "pattern", plural: "patterns", priority: 50 },
+	"search-tool": {
+		past: "Searched",
+		present: "Searching",
+		singular: "Tool catalog",
+		plural: "Tool catalogs",
+		priority: 50,
+	},
 	"search-web": { past: "Searched", present: "Searching", singular: "web query", plural: "web queries", priority: 51 },
 	"fetch-page": { past: "Fetched", present: "Fetching", singular: "page", plural: "pages", priority: 52 },
 	"retrieve-passage": {

@@ -1,6 +1,13 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { parseForStorage, stringifyForStorage } from "../cloudflare/codec.js";
 import { SuiteToolInvocationError } from "../connector.js";
-import type { ExecutorContext, RuntimeResponse, RuntimeToolTrace, SuiteSandboxTool } from "../protocol.js";
+import type {
+	ExecutorContext,
+	RuntimeResponse,
+	RuntimeToolCallPlan,
+	RuntimeToolTrace,
+	SuiteSandboxTool,
+} from "../protocol.js";
 import type { DelegateRequestMessage } from "./host-protocol.js";
 import { CodeModeTraceStore } from "./trace-store.js";
 
@@ -32,6 +39,22 @@ function resultFromValue(value: unknown): AgentToolResult<unknown> {
 		content: [{ type: "text", text }],
 		details: {},
 	};
+}
+
+function decodeTransportValue(value: unknown): unknown {
+	const serialized = JSON.stringify(value);
+	return serialized === undefined ? undefined : parseForStorage(serialized);
+}
+
+function encodeTransportValue(value: unknown): unknown {
+	try {
+		const serialized = stringifyForStorage(value);
+		return serialized === undefined ? undefined : JSON.parse(serialized);
+	} catch (error) {
+		throw new Error(
+			`Failed to serialize nested Tool result: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
 }
 
 export class CodeModeDelegateRuntime {
@@ -123,6 +146,7 @@ export class CodeModeDelegateRuntime {
 		const invocation = request.invocation;
 		const cellId = invocation.cell_id;
 		const name = invocation.tool_name.name;
+		const input = decodeTransportValue(invocation.input);
 		const context = this.cellContexts.get(cellId);
 		const tool = this.cellTools.get(cellId)?.get(name);
 		if (!context || !tool) {
@@ -133,9 +157,14 @@ export class CodeModeDelegateRuntime {
 			this.controllers.delete(message.id);
 			return;
 		}
+		let plan: RuntimeToolCallPlan | undefined;
 		let trace: RuntimeToolTrace;
+		const hidden = tool.presentation === "hidden";
 		try {
-			trace = this.traces.start(cellId, invocation.runtime_tool_call_id, name, invocation.input);
+			plan = tool.ledger === "bypass" ? undefined : context.beginToolCall?.(name, input);
+			trace = hidden
+				? { id: plan?.id ?? invocation.runtime_tool_call_id, input, name, status: "running" }
+				: this.traces.start(cellId, plan?.id ?? invocation.runtime_tool_call_id, name, input, plan);
 		} catch (error) {
 			this.respond(message.id, {
 				message: error instanceof Error ? error.message : String(error),
@@ -148,35 +177,76 @@ export class CodeModeDelegateRuntime {
 			...context,
 			captureResult: (result) => {
 				trace.result = result;
-				this.traces.emit(cellId, trace, context);
+				if (!hidden) this.traces.emit(cellId, trace, context);
 			},
 			onUpdate: (result) => {
 				trace.result = result;
-				this.traces.emit(cellId, trace, context);
+				if (!hidden) this.traces.emit(cellId, trace, context);
 			},
 			toolCallId: trace.id,
 		};
-		this.traces.emit(cellId, trace, context);
+		if (!hidden) this.traces.emit(cellId, trace, context);
+		if (plan?.pause) {
+			trace.result = resultFromValue(plan.pause.message);
+			trace.status = "pending";
+			if (!hidden) this.traces.emit(cellId, trace, context);
+			this.respond(message.id, { message: plan.pause.message, status: "error" });
+			this.controllers.delete(message.id);
+			return;
+		}
+		if (plan?.replay) {
+			trace.result =
+				plan.replay.result ??
+				resultFromValue(plan.replay.kind === "result" ? plan.replay.value : plan.replay.message);
+			trace.status = plan.replay.kind === "result" ? "done" : "error";
+			if (plan.replay.kind === "error") trace.error = plan.replay.message;
+			if (!hidden) this.traces.emit(cellId, trace, context);
+			this.respond(
+				message.id,
+				plan.replay.kind === "result"
+					? { status: "ok", value: { result: encodeTransportValue(plan.replay.value), type: "tool/result" } }
+					: { message: plan.replay.message, status: "error" },
+			);
+			this.controllers.delete(message.id);
+			return;
+		}
+		let settlementAttempted = false;
 		try {
-			const value = await tool.invoke(invocation.input, nestedContext, controller.signal);
+			const value = await tool.invoke(input, nestedContext, controller.signal);
 			trace.result ??= resultFromValue(value);
 			trace.status = "done";
-			this.traces.emit(cellId, trace, context);
+			if (plan) {
+				context.completeToolCall?.(plan, { result: trace.result, status: "success", value });
+				settlementAttempted = true;
+			}
+			if (!hidden) this.traces.emit(cellId, trace, context);
 			const serializationError = this.respond(message.id, {
 				status: "ok",
-				value: { result: value, type: "tool/result" },
+				value: { result: encodeTransportValue(value), type: "tool/result" },
 			});
 			if (serializationError) {
 				trace.status = "error";
 				trace.error = serializationError.message;
-				this.traces.emit(cellId, trace, context);
+				if (!hidden) this.traces.emit(cellId, trace, context);
 			}
 		} catch (error) {
 			if (error instanceof SuiteToolInvocationError) trace.result = error.result;
 			trace.result ??= resultFromValue(error instanceof Error ? error.message : String(error));
 			trace.status = controller.signal.aborted ? "cancelled" : "error";
 			trace.error = error instanceof Error ? error.message : String(error);
-			this.traces.emit(cellId, trace, context);
+			if (plan && !settlementAttempted) {
+				settlementAttempted = true;
+				try {
+					context.completeToolCall?.(plan, {
+						message: trace.error,
+						result: trace.result,
+						status: "error",
+					});
+				} catch (ledgerError) {
+					trace.error = `${trace.error}; ledger update failed: ${ledgerError instanceof Error ? ledgerError.message : String(ledgerError)}`;
+				}
+			}
+			if (!hidden) this.traces.emit(cellId, trace, context);
 			this.respond(message.id, { message: trace.error, status: "error" });
 		} finally {
 			this.controllers.delete(message.id);

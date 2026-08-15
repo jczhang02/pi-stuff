@@ -1,0 +1,46 @@
+import { afterEach, expect, test } from "bun:test";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import {
+	codeModeProjectSettingsPath,
+	readCodeModeProjectEnabled,
+	writeCodeModeProjectEnabled,
+} from "../../packages/pi-stuff/src/code-mode/settings.js";
+
+const roots: string[] = [];
+
+async function project(): Promise<string> {
+	const root = await mkdtemp(join(tmpdir(), "pi-stuff-code-mode-settings-"));
+	roots.push(root);
+	return root;
+}
+
+afterEach(async () => {
+	await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
+});
+
+test("Code Mode project settings are read-only until an explicit update", async () => {
+	const cwd = await project();
+	const path = codeModeProjectSettingsPath(cwd);
+	expect(await readCodeModeProjectEnabled(cwd)).toBeUndefined();
+	expect(await Bun.file(path).exists()).toBe(false);
+
+	await writeCodeModeProjectEnabled(cwd, true);
+	expect(await readCodeModeProjectEnabled(cwd)).toBe(true);
+	expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ enabled: true });
+	expect((await stat(path)).mode & 0o777).toBe(0o600);
+});
+
+test("Code Mode project updates preserve owned-file extensions and reject malformed values", async () => {
+	const cwd = await project();
+	const path = codeModeProjectSettingsPath(cwd);
+	await mkdir(dirname(path), { recursive: true });
+	await writeFile(path, '{"note":"keep","enabled":false}\n');
+	await writeCodeModeProjectEnabled(cwd, true);
+	expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ enabled: true, note: "keep" });
+
+	await writeFile(path, '{"enabled":"yes"}\n');
+	await expect(readCodeModeProjectEnabled(cwd)).rejects.toThrow('"enabled" must be a boolean');
+	await expect(writeCodeModeProjectEnabled(cwd, false)).rejects.toThrow('"enabled" must be a boolean');
+});

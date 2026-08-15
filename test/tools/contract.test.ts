@@ -11,6 +11,8 @@ import {
 	installToolUiRuntime,
 	registerSuiteOwnedTool,
 	registerSuiteToolEnvelope,
+	registerSuiteToolEnvelopeCompanion,
+	type SuiteToolCodeModeContract,
 	type SuiteToolEnvelopeOperation,
 	ToolUiRuntime,
 	type ToolUiTimerScheduler,
@@ -172,6 +174,7 @@ function toolFromHarness(
 	harness: Pick<ReturnType<typeof apiHarness>, "api" | "tools">,
 	name: string,
 	category: "change-file" | "fetch-page" | "read-file" | "run-command" | "view-image",
+	codeMode?: SuiteToolCodeModeContract,
 ): ToolDefinition<typeof Params, { source: string }> {
 	const original: ToolDefinition<typeof Params, { source: string }> = {
 		description: `${name} fixture`,
@@ -183,7 +186,7 @@ function toolFromHarness(
 		name,
 		parameters: Params,
 	};
-	registerSuiteOwnedTool(harness.api, original, presentation(category));
+	registerSuiteOwnedTool(harness.api, original, presentation(category), codeMode);
 	const decorated = harness.tools.get(name);
 	if (!decorated) throw new Error(`missing ${name}`);
 	return decorated as ToolDefinition<typeof Params, { source: string }>;
@@ -1008,12 +1011,53 @@ test("envelope terminal operations without results keep their explicit outcome",
 	expect(runtime.resolveGroup("nested-rejected")).toMatchObject({ state: "warning" });
 });
 
-test("the Code Mode surface hides Suite schemas without changing the virtual active Tool set", () => {
+test("a settled envelope restores nested Tools to the outer call's source order", () => {
+	const harness = apiHarness();
+	toolFromHarness(harness, "read", "read-file");
+	toolFromHarness(harness, "bash", "run-command");
+	toolFromHarness(harness, "background", "fetch-page");
+	toolFromHarness(harness, "subagent", "fetch-page");
+	const runtime = getToolUiRuntime(harness.api);
+	const operations: readonly SuiteToolEnvelopeOperation[] = [
+		{ args: { value: "a.ts" }, id: "nested-read", name: "read", state: "success" },
+		{ args: { value: "printf ok" }, id: "nested-bash", name: "bash", state: "success" },
+	];
+	runtime.registerEnvelope("codemode", () => operations);
+	runtime.startTurn();
+	runtime.indexMessage(
+		assistant(
+			{ arguments: { code: "read then bash" }, id: "outer", name: "codemode", type: "toolCall" },
+			call("direct-background", "background", "list"),
+			call("direct-subagent", "subagent", "status"),
+		),
+	);
+	runtime.observeEnvelopeResult("codemode", "outer", { operations });
+	runtime.indexMessage({
+		content: [],
+		details: { operations },
+		role: "toolResult",
+		toolCallId: "outer",
+		toolName: "codemode",
+	});
+
+	expect(runtime.listGroups().map((group) => group.memberIds)).toEqual([
+		["direct-background", "direct-subagent"],
+		["nested-bash"],
+		["nested-read"],
+	]);
+});
+
+test("the Code Mode surface hides every active Suite Tool without changing the virtual active Tool set", () => {
 	const harness = apiHarness();
 	const registrations = createSuiteToolRegistrationTracker(harness.api);
-	toolFromHarness({ ...harness, api: registrations.api }, "read", "read-file");
-	toolFromHarness({ ...harness, api: registrations.api }, "bash", "run-command");
-	harness.api.setActiveTools(["read", "outside", "bash"]);
+	toolFromHarness({ ...harness, api: registrations.api }, "read", "read-file", {
+		replay: "record",
+	});
+	toolFromHarness({ ...harness, api: registrations.api }, "bash", "run-command", {
+		replay: "never",
+	});
+	toolFromHarness({ ...harness, api: registrations.api }, "write", "change-file");
+	harness.api.setActiveTools(["read", "outside", "bash", "write"]);
 	registerSuiteToolEnvelope(
 		registrations.api,
 		{
@@ -1025,17 +1069,67 @@ test("the Code Mode surface hides Suite schemas without changing the virtual act
 		},
 		{ decode: () => [], registry: registrations.registry },
 	);
+	registerSuiteToolEnvelopeCompanion(
+		registrations.api,
+		"codemode",
+		{
+			description: "Search Code Mode Tools",
+			execute: async () => ({ content: [], details: {} }),
+			label: "Tool Search",
+			name: "tool_search",
+			parameters: Type.Object({ query: Type.String() }),
+		},
+		{
+			activity: {
+				categories: ["search-tool"],
+				classify: ({ args }) => [{ category: "search-tool", countKeys: [args.query], target: args.query }],
+			},
+		},
+	);
+	expect(harness.tools.get("tool_search")?.renderShell).toBe("self");
+	expect(typeof harness.tools.get("tool_search")?.renderCall).toBe("function");
+	expect(typeof harness.tools.get("tool_search")?.renderResult).toBe("function");
+	const searchTool = harness.tools.get("tool_search");
+	if (!searchTool) throw new Error("missing tool_search companion");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn([
+		assistant({ type: "toolCall", id: "search-1", name: "tool_search", arguments: { query: "read file" } }),
+	]);
+	const state = {};
+	const args = { query: "read file" };
+	const context = renderContext(state, { value: "" }, { toolCallId: "search-1" });
+	const callComponent = searchTool.renderCall?.(args, theme, context);
+	if (!callComponent) throw new Error("missing tool_search call component");
+	const resultComponent = searchTool.renderResult?.(
+		{
+			content: [{ type: "text", text: '{"results":[{"path":"tools.read"}],"definitions":["LARGE"]}' }],
+			details: {},
+		},
+		{ expanded: false, isPartial: false },
+		theme,
+		{ ...context, lastComponent: callComponent } as never,
+	);
+	expect(renderLines(callComponent).join("\n")).toContain("Searching 1 Tool catalog");
+	expect(resultComponent ? renderLines(resultComponent) : []).toEqual([]);
+	runtime.endTurn();
+	const compact = renderLines(callComponent).join("\n");
+	expect(compact).toContain("Searched 1 Tool catalog");
+	expect(compact).not.toContain("definitions");
 
 	registrations.surface.enableEnvelope("codemode");
-	expect(harness.api.getActiveTools()).toEqual(["codemode", "outside"]);
-	expect(registrations.api.getActiveTools()).toEqual(["read", "outside", "bash"]);
+	expect(harness.api.getActiveTools()).toEqual(["codemode", "tool_search", "outside"]);
+	expect(registrations.api.getActiveTools()).toEqual(["read", "outside", "bash", "write"]);
+	expect(registrations.registry.catalog().map(({ definition }) => definition.name)).toEqual(["read", "bash", "write"]);
 
-	registrations.api.setActiveTools(["outside", "bash"]);
-	expect(harness.api.getActiveTools()).toEqual(["outside", "codemode"]);
-	expect(registrations.api.getActiveTools()).toEqual(["outside", "bash"]);
+	registrations.api.setActiveTools(["outside", "bash", "write"]);
+	expect(harness.api.getActiveTools()).toEqual(["outside", "codemode", "tool_search"]);
+	expect(registrations.api.getActiveTools()).toEqual(["outside", "bash", "write"]);
+	toolFromHarness({ ...harness, api: registrations.api }, "late", "read-file");
+	expect(harness.api.getActiveTools()).toEqual(["outside", "codemode", "tool_search"]);
+	expect(registrations.api.getActiveTools()).toEqual(["outside", "bash", "write", "late"]);
 
 	registrations.surface.disableEnvelope("codemode");
-	expect(harness.api.getActiveTools()).toEqual(["outside", "bash"]);
+	expect(harness.api.getActiveTools()).toEqual(["outside", "bash", "write", "late"]);
 });
 
 test("a disabled-by-default Code Mode surface removes only its envelope Tool", () => {
@@ -1059,6 +1153,61 @@ test("a disabled-by-default Code Mode surface removes only its envelope Tool", (
 	registrations.surface.disableEnvelope("codemode");
 	expect(harness.api.getActiveTools()).toEqual(["outside", "read"]);
 	expect(registrations.api.getActiveTools()).toEqual(["outside", "read"]);
+});
+
+test("an active Suite Tool needs no per-Tool caller policy to run through Code Mode", async () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	toolFromHarness({ ...harness, api: registrations.api }, "write", "change-file");
+	harness.api.setActiveTools(["write"]);
+
+	expect(registrations.registry.catalog()).toMatchObject([{ definition: { name: "write" } }]);
+	const result = await registrations.registry.invoke({
+		context: { cwd: "/project" } as never,
+		input: { value: "file.ts" },
+		name: "write",
+		toolCallId: "nested-write",
+	});
+	expect(result.isError).toBe(false);
+});
+
+test("Code Mode compensation runs only an explicitly declared inverse operation", async () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	const compensated: unknown[] = [];
+	toolFromHarness({ ...harness, api: registrations.api }, "reversible", "change-file", {
+		compensate: (invocation) => {
+			compensated.push(invocation);
+		},
+		replay: "never",
+	});
+	toolFromHarness({ ...harness, api: registrations.api }, "read", "read-file", {
+		replay: "record",
+	});
+	const context = { cwd: "/project" } as never;
+	expect(
+		await registrations.registry.compensate({
+			context,
+			executionId: "cm-1",
+			input: { value: "before" },
+			name: "reversible",
+			result: { version: 2 },
+			sequence: 3,
+		}),
+	).toBe(true);
+	expect(
+		await registrations.registry.compensate({
+			context,
+			executionId: "cm-1",
+			input: { value: "read" },
+			name: "read",
+			result: "data",
+			sequence: 2,
+		}),
+	).toBe(false);
+	expect(compensated).toMatchObject([
+		{ executionId: "cm-1", input: { value: "before" }, name: "reversible", result: { version: 2 }, sequence: 3 },
+	]);
 });
 
 test("nested invocation preserves Pi preparation, lifecycle hooks, updates, and result hooks", async () => {
@@ -1116,6 +1265,38 @@ test("nested invocation preserves Pi preparation, lifecycle hooks, updates, and 
 	expect(invocation.result.content).toEqual([{ type: "text", text: "value-hook-hooked" }]);
 	expect(updates).toEqual(["partial"]);
 	expect(order).toEqual(["start", "call", "execute:value-hook", "update", "result", "end"]);
+});
+
+test("a Code Mode Bash call still reaches RTK's normal tool_call rewrite seam", async () => {
+	const harness = apiHarness();
+	const registrations = createSuiteToolRegistrationTracker(harness.api);
+	let executed = "";
+	registrations.api.on("tool_call", (event) => {
+		if (event.toolName === "bash") (event.input as { command: string }).command = "rtk git status";
+	});
+	registerSuiteOwnedTool(
+		registrations.api,
+		{
+			description: "Bash fixture",
+			execute: async (_id, args) => {
+				executed = args.command;
+				return { content: [{ type: "text", text: executed }], details: {} };
+			},
+			label: "Bash",
+			name: "bash",
+			parameters: Type.Object({ command: Type.String() }),
+		},
+		presentation("run-command") as never,
+		{ replay: "never" },
+	);
+	harness.api.setActiveTools(["bash"]);
+	await registrations.registry.invoke({
+		context: { cwd: "/project" } as never,
+		input: { command: "git status" },
+		name: "bash",
+		toolCallId: "nested-bash-rtk",
+	});
+	expect(executed).toBe("rtk git status");
 });
 
 test("a failing nested tool_call hook still emits Pi's terminal lifecycle event", async () => {

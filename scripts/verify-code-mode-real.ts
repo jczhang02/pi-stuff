@@ -66,6 +66,7 @@ async function runPi(
 			PI_OFFLINE: "1",
 			PI_STUFF_CODE_MODE_DEFAULT: "on",
 			PI_STUFF_CODE_MODE_FIXTURE_LOG: join(temporary, "provider.jsonl"),
+			PI_STUFF_CODE_MODE_FIXTURE_SCENARIO: "group",
 			PI_STUFF_CODE_MODE_HOST: codeModeHostBinaryPath(),
 			PI_TELEMETRY: "0",
 			XDG_CACHE_HOME: join(temporary, "cache"),
@@ -112,8 +113,6 @@ try {
 	}
 	if (!started.stdout.includes('"typed":true'))
 		throw new Error(`Code Mode describe contract failed: ${started.stdout}`);
-	if (!started.stdout.includes('"context":true'))
-		throw new Error(`Code Mode did not compose with the active Magic Context Tools: ${started.stdout}`);
 	if (unexpectedStderr(started.stderr)) throw new Error(`Code Mode emitted stderr: ${started.stderr}`);
 
 	const resumed = await runPi(root, temporary, sessionId, "resume");
@@ -124,14 +123,24 @@ try {
 	const providerLog = await readFile(join(temporary, "provider.jsonl"), "utf8");
 	for (const line of providerLog.trim().split("\n")) {
 		const record = JSON.parse(line) as { toolNames?: unknown };
-		if (JSON.stringify(record.toolNames) !== '["codemode"]') {
-			throw new Error(`Provider saw a non-Code-Mode Tool surface: ${line}`);
+		if (!Array.isArray(record.toolNames)) throw new Error(`Provider capture omitted its Tool surface: ${line}`);
+		if (
+			record.toolNames.length !== 2 ||
+			!record.toolNames.includes("codemode") ||
+			!record.toolNames.includes("tool_search") ||
+			record.toolNames.includes("read") ||
+			record.toolNames.includes("background") ||
+			record.toolNames.includes("subagent")
+		) {
+			throw new Error(`Provider saw an invalid full-envelope Code Mode surface: ${line}`);
 		}
 	}
 	const sessionFiles = await files(join(temporary, "sessions"));
 	const sessionText = (await Promise.all(sessionFiles.map((path) => readFile(path, "utf8")))).join("\n");
 	if (!sessionText.includes('"kind":"pi-stuff-code-mode"'))
 		throw new Error("Session did not persist Code Mode details");
+	if (!sessionText.includes('"customType":"pi-stuff-code-mode-ledger"'))
+		throw new Error("Session did not persist the Code Mode recovery ledger");
 	if (!sessionText.includes('"name":"read"')) throw new Error("Session did not persist the nested read operation");
 	if (!sessionText.includes('"name":"bash"')) throw new Error("Session did not persist the nested Bash operation");
 	if (!sessionText.includes('"name":"background"'))

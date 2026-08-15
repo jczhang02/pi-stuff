@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
+import { waitForDetachedProcess } from "./detached-process.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 
 const execFileAsync = promisify(execFile);
@@ -24,6 +25,16 @@ type Tmux = (args: readonly string[]) => Promise<{ stdout: string }>;
 interface ArmCapture {
 	readonly activity: string;
 	readonly screen: string;
+}
+
+interface ProviderRequestMetrics {
+	readonly estimatedInputTokens: number;
+	readonly hasResult?: boolean;
+	readonly messageTokens: number;
+	readonly resultImageCount?: number;
+	readonly schemaChars: number;
+	readonly systemPromptChars: number;
+	readonly toolNames: string[];
 }
 
 async function capture(tmux: Tmux, session: string, styled = false): Promise<string> {
@@ -59,6 +70,64 @@ async function assertCertifiedPi(): Promise<void> {
 	const version = (await execFileAsync(PI_BINARY, ["--version"])).stdout.trim();
 	if (version !== CERTIFIED_PI_VERSION)
 		throw new Error(`Code Mode TUI acceptance requires Pi ${CERTIFIED_PI_VERSION}, got ${version || "unknown"}`);
+}
+
+async function runOldEnvelopeBenchmark(root: string, temporary: string): Promise<ProviderRequestMetrics> {
+	const logPath = join(temporary, "provider-group-old-envelope.jsonl");
+	const child = Bun.spawn(
+		[
+			PI_BINARY,
+			"--session-dir",
+			join(temporary, "sessions"),
+			"--session-id",
+			"019fdc00-0000-7000-8000-300000000100",
+			"--model",
+			"pi-stuff-code-mode-fixture/fixture",
+			"--no-extensions",
+			"--extension",
+			join(root, "packages", "pi-stuff", "index.ts"),
+			"--extension",
+			join(root, "test", "fixtures", "code-mode-provider.ts"),
+			"--no-skills",
+			"--no-prompt-templates",
+			"--no-context-files",
+			"--no-themes",
+			"--offline",
+			"--approve",
+			"--print",
+			"VERIFY_TOOL_UI",
+		],
+		{
+			cwd: join(temporary, "project"),
+			detached: true,
+			env: {
+				...process.env,
+				PI_CODING_AGENT_DIR: join(temporary, "agent"),
+				PI_OFFLINE: "1",
+				PI_STUFF_CODE_MODE_DEFAULT: "on",
+				PI_STUFF_CODE_MODE_FIXTURE_BENCHMARK: "1",
+				PI_STUFF_CODE_MODE_FIXTURE_LEGACY_SURFACE: "1",
+				PI_STUFF_CODE_MODE_FIXTURE_LOG: logPath,
+				PI_TELEMETRY: "0",
+				XDG_CACHE_HOME: join(temporary, "cache"),
+				XDG_CONFIG_HOME: join(temporary, "config"),
+				XDG_DATA_HOME: join(temporary, "data"),
+				XDG_STATE_HOME: join(temporary, "state"),
+			},
+			stderr: "pipe",
+			stdout: "pipe",
+		},
+	);
+	const [{ exitCode, timedOut }, stdout, stderr] = await Promise.all([
+		waitForDetachedProcess(child, TIMEOUT_MS),
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+	]);
+	if (timedOut) throw new Error(`Old Code Mode benchmark timed out after ${String(TIMEOUT_MS)} ms`);
+	if (exitCode !== 0) throw new Error(`Old Code Mode benchmark exited ${String(exitCode)}: ${stderr || stdout}`);
+	const line = (await readFile(logPath, "utf8")).trim().split("\n")[0];
+	if (!line) throw new Error("Missing old Code Mode provider capture");
+	return JSON.parse(line) as ProviderRequestMetrics;
 }
 
 async function runArm(
@@ -197,6 +266,7 @@ try {
 	await writeFile(join(temporary, "project", "README.md"), '<div align="center">\nCode Mode fixture\n');
 	await writeFile(join(temporary, "project", "pixel.png"), Buffer.from(MEDIA_FIXTURE_PNG, "base64"));
 	await writeFile(join(temporary, "project", "pixel-copy.png"), Buffer.from(MEDIA_FIXTURE_PNG, "base64"));
+	const oldEnvelopeRequest = await runOldEnvelopeBenchmark(root, temporary);
 	const scenarios = ["group", "failure", "media", "cancel"] as const;
 	if (SCENARIO_FILTER && !scenarios.includes(SCENARIO_FILTER as (typeof scenarios)[number])) {
 		throw new Error(`Unknown Code Mode TUI scenario: ${SCENARIO_FILTER}`);
@@ -261,31 +331,56 @@ try {
 	const reportScenario = selectedScenarios.includes("group") ? "group" : selectedScenarios[0];
 	if (!reportScenario) throw new Error("Code Mode TUI acceptance selected no scenarios");
 	const firstRequest = async (mode: "code" | "direct") => {
-		const line = (await readFile(join(temporary, `provider-${reportScenario}-${mode}-100.jsonl`), "utf8"))
+		const requests = (await readFile(join(temporary, `provider-${reportScenario}-${mode}-100.jsonl`), "utf8"))
 			.trim()
-			.split("\n")[0];
-		if (!line) throw new Error(`Missing ${mode} provider capture`);
-		return JSON.parse(line) as {
-			estimatedInputTokens: number;
-			messageTokens: number;
-			schemaChars: number;
-			systemPromptChars: number;
-			toolNames: string[];
+			.split("\n")
+			.map((line) => JSON.parse(line) as ProviderRequestMetrics);
+		const first = requests[0];
+		if (!first) throw new Error(`Missing ${mode} provider capture`);
+		return {
+			cumulativeEstimatedInputTokens: requests.reduce((total, request) => total + request.estimatedInputTokens, 0),
+			first,
+			settled: requests.find((candidate) => candidate.hasResult === true),
 		};
 	};
-	const codeRequest = await firstRequest("code");
-	const directRequest = await firstRequest("direct");
-	if (codeRequest.toolNames.length !== 1 || codeRequest.toolNames[0] !== "codemode") {
+	const codeRequests = await firstRequest("code");
+	const directRequests = await firstRequest("direct");
+	const codeRequest = codeRequests.first;
+	const directRequest = directRequests.first;
+	if (
+		codeRequest.toolNames.length !== 2 ||
+		!codeRequest.toolNames.includes("codemode") ||
+		!codeRequest.toolNames.includes("tool_search") ||
+		codeRequest.toolNames.includes("read") ||
+		codeRequest.toolNames.includes("grep") ||
+		codeRequest.toolNames.includes("find") ||
+		codeRequest.toolNames.includes("ls") ||
+		codeRequest.toolNames.includes("background") ||
+		codeRequest.toolNames.includes("subagent")
+	) {
 		throw new Error(`Code Mode exposed an unexpected provider surface: ${JSON.stringify(codeRequest.toolNames)}`);
 	}
-	if (codeRequest.schemaChars >= directRequest.schemaChars) {
+	if (JSON.stringify(oldEnvelopeRequest.toolNames) !== '["codemode"]') {
 		throw new Error(
-			`Code Mode did not reduce provider Tool schema: ${String(codeRequest.schemaChars)} >= ${String(directRequest.schemaChars)}`,
+			`Old Code Mode benchmark exposed an unexpected surface: ${JSON.stringify(oldEnvelopeRequest.toolNames)}`,
 		);
 	}
-	if (codeRequest.estimatedInputTokens >= directRequest.estimatedInputTokens) {
+	if (codeRequest.schemaChars > directRequest.schemaChars * 0.2) {
 		throw new Error(
-			`Code Mode did not reduce estimated first-request input: ${String(codeRequest.estimatedInputTokens)} >= ${String(directRequest.estimatedInputTokens)}`,
+			`Code Mode Tool schema exceeds 20% of direct mode: ${String(codeRequest.schemaChars)} > ${String(directRequest.schemaChars * 0.2)}`,
+		);
+	}
+	if (codeRequest.estimatedInputTokens > directRequest.estimatedInputTokens * 0.2) {
+		throw new Error(
+			`Code Mode first-request input exceeds 20% of direct mode: ${String(codeRequest.estimatedInputTokens)} > ${String(directRequest.estimatedInputTokens * 0.2)}`,
+		);
+	}
+	if (!directRequests.settled || !codeRequests.settled) {
+		throw new Error("Code Mode token acceptance did not capture the representative post-Tool request");
+	}
+	if (codeRequests.cumulativeEstimatedInputTokens >= directRequests.cumulativeEstimatedInputTokens) {
+		throw new Error(
+			`Code Mode cumulative input did not beat direct mode: ${String(codeRequests.cumulativeEstimatedInputTokens)} >= ${String(directRequests.cumulativeEstimatedInputTokens)}`,
 		);
 	}
 	if (selectedScenarios.includes("media")) {
@@ -301,16 +396,38 @@ try {
 	}
 	const reportPath = process.env["PI_STUFF_CODE_MODE_TUI_REPORT"];
 	if (reportPath) {
-		await writeFile(reportPath, `${JSON.stringify({ code: codeRequest, direct: directRequest }, null, "\t")}\n`);
+		await writeFile(
+			reportPath,
+			`${JSON.stringify(
+				{
+					direct: {
+						cumulativeEstimatedInputTokens: directRequests.cumulativeEstimatedInputTokens,
+						first: directRequest,
+						settled: directRequests.settled,
+					},
+					fullEnvelope: {
+						cumulativeEstimatedInputTokens: codeRequests.cumulativeEstimatedInputTokens,
+						first: codeRequest,
+						settled: codeRequests.settled,
+					},
+					oldEnvelope: oldEnvelopeRequest,
+				},
+				null,
+				"\t",
+			)}\n`,
+		);
 	}
 	console.log(
 		`Real Pi TUI ${selectedScenarios.join("/")} layout and Tool Activity are identical with Code Mode on and off, before and after resume, at 100 and 64 columns (excluding the truthful context-usage value)`,
 	);
 	console.log(
-		`Provider Tool schema: ${String(directRequest.toolNames.length)} Tools / ${String(directRequest.schemaChars)} chars direct -> 1 Tool / ${String(codeRequest.schemaChars)} chars with Code Mode`,
+		`Provider Tool schema: ${String(directRequest.toolNames.length)} Tools / ${String(directRequest.schemaChars)} chars direct; ${String(oldEnvelopeRequest.toolNames.length)} Tool / ${String(oldEnvelopeRequest.schemaChars)} chars old envelope; ${String(codeRequest.toolNames.length)} Tools / ${String(codeRequest.schemaChars)} chars full envelope`,
 	);
 	console.log(
-		`Estimated first-request input: ${String(directRequest.estimatedInputTokens)} tokens direct -> ${String(codeRequest.estimatedInputTokens)} tokens with Code Mode`,
+		`Estimated first-request input: ${String(directRequest.estimatedInputTokens)} tokens direct; ${String(oldEnvelopeRequest.estimatedInputTokens)} old envelope; ${String(codeRequest.estimatedInputTokens)} full envelope`,
+	);
+	console.log(
+		`Estimated post-Tool input: ${String(directRequests.settled.estimatedInputTokens)} tokens direct; ${String(codeRequests.settled.estimatedInputTokens)} full envelope; cumulative ${String(directRequests.cumulativeEstimatedInputTokens)} direct vs ${String(codeRequests.cumulativeEstimatedInputTokens)} full envelope`,
 	);
 } finally {
 	if (process.env["PI_STUFF_CODE_MODE_TUI_KEEP_TEMP"] === "1") console.error(`Kept TUI fixture at ${temporary}`);

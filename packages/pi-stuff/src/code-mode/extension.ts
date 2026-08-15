@@ -1,12 +1,21 @@
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import {
+	deliverSuiteAgentMessage,
 	registerSuiteToolEnvelope,
+	registerSuiteToolEnvelopeCompanion,
 	type SuiteToolDefinitionRegistry,
 	type SuiteToolEnvelopeOperation,
+	type SuiteToolPresentation,
 	type SuiteToolSurfaceController,
+	withAgentWorkOrigin,
+	withDirectUserActivation,
 } from "../tool-display/contract.js";
+import { stringifyForStorage } from "./cloudflare/codec.js";
 import { SuiteCodeModeConnector } from "./connector.js";
+import { createCodeModeDialogView } from "./dialog.js";
+import { CodeModeSessionLedger } from "./ledger.js";
 import {
 	captureCodeModeModelContent,
 	decodeCodeModeMediaSegments,
@@ -14,9 +23,13 @@ import {
 	separateCodeModeMediaForUi,
 } from "./presentation.js";
 import { CodeModeRuntime, type PiStuffCodeModeDetails } from "./runtime.js";
+import { readCodeModeProjectEnabled, writeCodeModeProjectEnabled } from "./settings.js";
 import { V8CodeModeExecutor } from "./v8-executor.js";
 
 export const CODE_MODE_TOOL_NAME = "codemode";
+export const CODE_MODE_SEARCH_TOOL_NAME = "tool_search";
+const CODE_MODE_DECISION_MESSAGE_TYPE = "pi-stuff-code-mode-decision";
+const CODE_MODE_FROZEN_ENV = "PI_STUFF_CODE_MODE_FROZEN";
 
 const CODE_MODE_PARAMETERS = Type.Object(
 	{
@@ -25,18 +38,59 @@ const CODE_MODE_PARAMETERS = Type.Object(
 	{ additionalProperties: false },
 );
 
-const CODE_MODE_DESCRIPTION = `Run JavaScript in isolated V8 and compose Pi Stuff Tools through the suite Connector.
-Common calls:
-- const value = await suite.read({ path: string, offset?: number, limit?: number })
-- const value = await suite.bash({ command: string, description?: string, run_in_background?: boolean, timeout?: number }) // timeout is seconds, max 86400
-- const value = await suite.edit({ path: string, edits: { oldText: string, newText: string }[] })
-- const value = await suite.write({ path: string, content: string })
-Use codemode.search(query) and codemode.describe("suite.name") for unfamiliar Tools. At top level, await work and call text(value); console is unavailable and top-level return is invalid. Emit only needed output. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through suite. Helpers include text, image, generatedImage, store, load, notify, exit, setTimeout, clearTimeout, and yield_control.`;
+const CODE_MODE_SEARCH_PARAMETERS = Type.Object(
+	{ query: Type.String({ description: "Short intent phrase for programmatic Tool or snippet discovery" }) },
+	{ additionalProperties: false },
+);
+
+const CODE_MODE_DESCRIPTION = `Run JavaScript in isolated V8 and compose eligible Pi Stuff Tools through tools.*.
+Rules:
+- Write plain JavaScript with top-level await and await every tools.* call.
+- Tool results are unwrapped to structured JSON when available, parsed JSON when valid, or text.
+- Emit only the evidence needed with text(...), image(...), or another supported output helper.
+Example: const data = JSON.parse(await tools.read({ path: "package.json" })); text(data.packageManager);
+Other common calls:
+- const value = await tools.bash({ command: string, description?: string, run_in_background?: boolean, timeout?: number }) // timeout is seconds, max 86400
+Await codemode.search(query) and codemode.describe("tools.name") for unfamiliar Tools. Cloudflare-style async arrow functions with return and the legacy suite.* alias are accepted, but tools.* plus explicit output helpers are canonical. console is unavailable. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through tools.*. Other helpers include generatedImage, store, load, notify, exit, setTimeout, clearTimeout, and yield_control.`;
 
 export interface PiStuffCodeModeOptions {
 	readonly registry: SuiteToolDefinitionRegistry;
 	readonly surface: SuiteToolSurfaceController;
 }
+
+export interface CodeModeSearchDetails {
+	readonly paths: readonly string[];
+	readonly query: string;
+	readonly total: number;
+	readonly truncated: boolean;
+}
+
+function environmentMode(name: string): boolean | undefined {
+	const value = process.env[name]?.trim().toLowerCase();
+	if (value === "on") return true;
+	if (value === "off") return false;
+	return undefined;
+}
+
+function matchSummary(total: number): string {
+	return total === 1 ? "1 match" : `${String(total)} matches`;
+}
+
+export const CODE_MODE_SEARCH_PRESENTATION: SuiteToolPresentation<{ readonly query: string }, CodeModeSearchDetails> = {
+	activity: {
+		categories: ["search-tool"],
+		classify: ({ args }) => [{ category: "search-tool", countKeys: [args.query], target: args.query }],
+	},
+	detailLines: (_args, result) => {
+		const paths = result.details.paths;
+		const omitted = Math.max(0, result.details.total - paths.length);
+		return [matchSummary(result.details.total), ...paths, ...(omitted > 0 ? [`… ${String(omitted)} more`] : [])];
+	},
+	label: "Tool search",
+	runningSummary: "searching",
+	summarize: (_args, result) => matchSummary(result.details.total),
+	target: (args) => args.query,
+};
 
 export function decodeCodeModeOperations(details: unknown): readonly SuiteToolEnvelopeOperation[] {
 	if (
@@ -68,6 +122,101 @@ export function createCodeModeDefinition(
 	};
 }
 
+export function createCodeModeSearchDefinition(
+	connector: SuiteCodeModeConnector,
+	ledger?: CodeModeSessionLedger,
+): ToolDefinition<typeof CODE_MODE_SEARCH_PARAMETERS, CodeModeSearchDetails> {
+	return {
+		description:
+			"Search Code Mode's active programmatic Tool catalog. Returns ranked matches and TypeScript signatures from the same catalog used by codemode.search/describe.",
+		executionMode: "sequential",
+		async execute(_toolCallId, input, _signal, _onUpdate, context) {
+			const snippets = ledger?.snippets(context) ?? [];
+			const search = connector.search(input.query, snippets);
+			const paths = search.results.slice(0, 5).map((result) => result.path);
+			return {
+				content: [
+					{
+						text: JSON.stringify({
+							...search,
+							definitions: search.results.slice(0, 5).map((result) => connector.describe(result.path, snippets)),
+						}),
+						type: "text",
+					},
+				],
+				details: {
+					paths,
+					query: input.query,
+					total: search.total,
+					truncated: search.truncated,
+				},
+			};
+		},
+		label: "Tool Search",
+		name: CODE_MODE_SEARCH_TOOL_NAME,
+		parameters: CODE_MODE_SEARCH_PARAMETERS,
+		promptSnippet: "Use tool_search for Code Mode Tool discovery; call returned methods through codemode",
+	};
+}
+
+export async function compensateCodeModeExecution(
+	registry: SuiteToolDefinitionRegistry,
+	ledger: CodeModeSessionLedger,
+	context: Parameters<CodeModeSessionLedger["history"]>[0],
+	executionId: string,
+	signal?: AbortSignal,
+): Promise<{ readonly compensated: number; readonly failures: readonly string[] }> {
+	let compensated = 0;
+	const failures: string[] = [];
+	for (const target of ledger.compensationTargets(context, executionId)) {
+		try {
+			const didCompensate = await registry.compensate({
+				context,
+				executionId,
+				input: target.input,
+				name: target.name,
+				result: target.value,
+				sequence: target.sequence,
+				...(signal ? { signal } : {}),
+			});
+			if (!didCompensate) continue;
+			ledger.markCompensated(context, executionId, target.callId);
+			compensated += 1;
+		} catch (error) {
+			failures.push(`${target.name}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+	if (compensated > 0) ledger.markCompensationComplete(context, executionId);
+	return { compensated, failures };
+}
+
+async function deliverCodeModeDecision(
+	pi: ExtensionAPI,
+	action: "approved" | "rejected",
+	executionId: string,
+	result?: AgentToolResult<PiStuffCodeModeDetails>,
+): Promise<void> {
+	const status = result?.details.status ?? "rejected";
+	const message = withDirectUserActivation(
+		withAgentWorkOrigin(
+			{
+				content: [
+					{
+						text: `Code Mode execution ${executionId} was ${action}; current status: ${status}.`,
+						type: "text" as const,
+					},
+					...(result?.content ?? []),
+				],
+				customType: CODE_MODE_DECISION_MESSAGE_TYPE,
+				details: result?.details ?? { executionId, status },
+				display: true,
+			},
+			"user",
+		),
+	);
+	await deliverSuiteAgentMessage(pi, message, { deliverAs: "followUp", triggerTurn: true });
+}
+
 /** Register before context managers so they receive the provider-visible result, not the TUI projection. */
 export function registerCodeModeContextProjection(pi: ExtensionAPI): void {
 	pi.on("context", (event) => {
@@ -77,44 +226,285 @@ export function registerCodeModeContextProjection(pi: ExtensionAPI): void {
 }
 
 export default function piStuffCodeMode(pi: ExtensionAPI, options: PiStuffCodeModeOptions): void {
-	const runtime = new CodeModeRuntime(new SuiteCodeModeConnector(options.registry), new V8CodeModeExecutor());
-	let enabled = process.env["PI_STUFF_CODE_MODE_DEFAULT"]?.trim().toLowerCase() === "on";
+	const connector = new SuiteCodeModeConnector(options.registry);
+	const ledger = new CodeModeSessionLedger(pi);
+	const runtime = new CodeModeRuntime(connector, new V8CodeModeExecutor(), ledger);
+	const defaultEnabled = environmentMode("PI_STUFF_CODE_MODE_DEFAULT") ?? false;
+	const frozenEnabled = environmentMode(CODE_MODE_FROZEN_ENV);
+	let enabled = defaultEnabled;
+	let projectBinding: string | undefined;
+	let projectBindingGeneration = 0;
 	registerSuiteToolEnvelope(pi, createCodeModeDefinition(runtime), {
 		decode: decodeCodeModeOperations,
 		media: decodeCodeModeMediaSegments,
 		registry: options.registry,
 	});
+	registerSuiteToolEnvelopeCompanion(
+		pi,
+		CODE_MODE_TOOL_NAME,
+		createCodeModeSearchDefinition(connector, ledger),
+		CODE_MODE_SEARCH_PRESENTATION,
+	);
 
 	const apply = (): void => {
 		if (enabled) options.surface.enableEnvelope(CODE_MODE_TOOL_NAME);
 		else options.surface.disableEnvelope(CODE_MODE_TOOL_NAME);
 	};
+	const bindingKey = (context: ExtensionContext): string =>
+		`${context.isProjectTrusted() ? "trusted" : "untrusted"}\0${context.cwd}`;
+	const bindProject = async (context: ExtensionContext, force = false): Promise<void> => {
+		const key = bindingKey(context);
+		if (!force && projectBinding === key) return;
+		const generation = ++projectBindingGeneration;
+		try {
+			const projectEnabled =
+				frozenEnabled === undefined && context.isProjectTrusted()
+					? await readCodeModeProjectEnabled(context.cwd)
+					: undefined;
+			if (generation !== projectBindingGeneration) return;
+			projectBinding = key;
+			enabled = frozenEnabled ?? projectEnabled ?? defaultEnabled;
+			apply();
+		} catch (error) {
+			if (generation === projectBindingGeneration) {
+				projectBinding = undefined;
+				enabled = defaultEnabled;
+				apply();
+			}
+			throw error;
+		}
+	};
+	const persistProjectEnabled = async (context: ExtensionContext, value: boolean): Promise<void> => {
+		if (!context.isProjectTrusted()) throw new Error("Code Mode cannot persist settings for an untrusted project.");
+		const generation = ++projectBindingGeneration;
+		await writeCodeModeProjectEnabled(context.cwd, value);
+		if (generation !== projectBindingGeneration) return;
+		projectBinding = bindingKey(context);
+		enabled = value;
+		apply();
+	};
 	pi.registerCommand("codemode", {
-		description: "Enable, disable, or inspect Code Mode",
-		getArgumentCompletions: (prefix) =>
-			["on", "off", "status"]
+		description: "Open Code Mode controls or manage its Session ledger",
+		getArgumentCompletions: (prefix) => {
+			if (/\s/u.test(prefix.trim())) return null;
+			return [
+				"on",
+				"off",
+				"history",
+				"pending",
+				"approve",
+				"reject",
+				"snippets",
+				"save",
+				"delete",
+				"abandon",
+				"rollback",
+				"compensate",
+				"expire",
+			]
 				.filter((value) => value.startsWith(prefix.trim().toLowerCase()))
-				.map((value) => ({ label: value, value })),
+				.map((value) => ({ label: value, value }));
+		},
 		handler: async (args, context) => {
-			const action = args.trim().toLowerCase() || "status";
-			if (action === "on") enabled = true;
-			else if (action === "off") enabled = false;
-			else if (action !== "status") {
-				context.ui.notify("Usage: /codemode [on|off|status]", "warning");
+			const parts = args.trim().split(/\s+/u).filter(Boolean);
+			if (parts.length === 0) {
+				if (!context.hasUI) {
+					context.ui.notify(
+						"/codemode requires interactive TUI mode; use /codemode on or /codemode off.",
+						"warning",
+					);
+					return;
+				}
+				try {
+					await bindProject(context);
+					await getCommandDialogCoordinator(pi).show(
+						context,
+						createCodeModeDialogView({
+							getSnapshot: () => ({
+								enabled,
+								executionCount: ledger.history(context).length,
+								pendingCount: runtime.pending(context).length,
+								snippetCount: ledger.snippets(context).length,
+								toolCount: connector.catalog().length,
+							}),
+							setEnabled: (value) => persistProjectEnabled(context, value),
+						}),
+					);
+				} catch (error) {
+					context.ui.notify(error instanceof Error ? error.message : String(error), "error");
+				}
 				return;
 			}
-			apply();
-			context.ui.notify(`Code Mode ${enabled ? "on" : "off"}`, "info");
+			const [rawAction = "", ...rest] = parts;
+			const action = rawAction.toLowerCase();
+			try {
+				if (action === "on" || action === "off") {
+					await persistProjectEnabled(context, action === "on");
+					context.ui.notify(`Code Mode ${enabled ? "on" : "off"}`, "info");
+					return;
+				}
+				if (action === "history") {
+					const history = ledger.history(context);
+					context.ui.notify(
+						history.length === 0
+							? "No Code Mode executions in this Session."
+							: history
+									.map(
+										(item) => `${item.executionId} · ${item.status} · ${String(item.toolCalls)} Tool call(s)`,
+									)
+									.join("\n"),
+						"info",
+					);
+					return;
+				}
+				if (action === "pending") {
+					const pending = runtime.pending(context);
+					context.ui.notify(
+						pending.length === 0
+							? "No Code Mode action is awaiting approval."
+							: pending
+									.map(
+										(action) =>
+											`${action.executionId} · ${String(action.seq)} · tools.${action.method} · ${stringifyForStorage(action.args) ?? "undefined"}`,
+									)
+									.join("\n"),
+						"info",
+					);
+					return;
+				}
+				if (action === "approve" && rest[0]) {
+					await context.waitForIdle();
+					const result = await runtime.approve(rest[0], context, context.signal);
+					if (
+						result.details.status === "error" &&
+						result.details.operations.length === 0 &&
+						result.details.error?.includes("is not paused")
+					) {
+						context.ui.notify(result.details.error, "warning");
+						return;
+					}
+					await deliverCodeModeDecision(pi, "approved", rest[0], result);
+					context.ui.notify(`Code Mode execution ${rest[0]} resumed: ${result.details.status}.`, "info");
+					return;
+				}
+				if (action === "reject" && rest[0] && rest[1]) {
+					const sequence = Number(rest[1]);
+					if (!Number.isSafeInteger(sequence) || sequence < 0) {
+						throw new Error("Code Mode rejection sequence must be a non-negative integer");
+					}
+					await context.waitForIdle();
+					if (!(await runtime.reject(rest[0], sequence, context))) {
+						context.ui.notify(
+							"That Code Mode action is no longer pending; refresh the approval list.",
+							"warning",
+						);
+						return;
+					}
+					await deliverCodeModeDecision(pi, "rejected", rest[0]);
+					context.ui.notify(`Rejected Code Mode execution ${rest[0]} at step ${String(sequence)}.`, "info");
+					return;
+				}
+				if (action === "snippets") {
+					const snippets = ledger.snippets(context);
+					context.ui.notify(
+						snippets.length === 0
+							? "No saved Code Mode snippets."
+							: snippets
+									.map(
+										(snippet) =>
+											`${JSON.stringify(snippet.name)}${snippet.description ? ` · ${snippet.description}` : ""}`,
+									)
+									.join("\n"),
+						"info",
+					);
+					return;
+				}
+				if (action === "save" && rest[0] && rest[1]) {
+					const snippet = ledger.saveSnippet(context, rest[0], rest[1], rest.slice(2).join(" "));
+					context.ui.notify(`Saved Code Mode snippet ${JSON.stringify(snippet.name)}.`, "info");
+					return;
+				}
+				if (action === "delete" && rest[0]) {
+					context.ui.notify(
+						ledger.deleteSnippet(context, rest[0])
+							? `Deleted Code Mode snippet ${JSON.stringify(rest[0])}.`
+							: `No Code Mode snippet ${JSON.stringify(rest[0])} exists.`,
+						"info",
+					);
+					return;
+				}
+				if (action === "abandon" && rest[0]) {
+					context.ui.notify(
+						ledger.abandon(context, rest[0])
+							? `Abandoned Code Mode execution ${rest[0]}. No Tool was repeated.`
+							: `Execution ${rest[0]} is missing or no longer incomplete.`,
+						"info",
+					);
+					return;
+				}
+				if (action === "expire") {
+					const expired = ledger.expire(context);
+					for (const executionId of expired) {
+						const status = ledger.history(context, 100).find((item) => item.executionId === executionId)?.status;
+						await connector.disposeExecution(executionId, status === "rejected" ? "rejected" : "error");
+					}
+					context.ui.notify(
+						expired.length > 0
+							? `Expired ${String(expired.length)} stale Code Mode execution(s).`
+							: "No Code Mode execution is old enough to expire.",
+						"info",
+					);
+					return;
+				}
+				if ((action === "rollback" || action === "compensate") && rest[0]) {
+					const outcome = await compensateCodeModeExecution(
+						options.registry,
+						ledger,
+						context,
+						rest[0],
+						context.signal,
+					);
+					if (outcome.failures.length > 0) {
+						context.ui.notify(
+							`Compensated ${String(outcome.compensated)} call(s); ${String(outcome.failures.length)} failed: ${outcome.failures.join("; ")}`,
+							"error",
+						);
+					} else {
+						if (outcome.compensated > 0) await connector.disposeExecution(rest[0], "rolled_back");
+						context.ui.notify(
+							outcome.compensated > 0
+								? `Compensated ${String(outcome.compensated)} call(s) in reverse order.`
+								: "No applied Tool in that execution declares a compensating operation.",
+							"info",
+						);
+					}
+					return;
+				}
+				context.ui.notify(
+					"Usage: /codemode [on|off|history|pending|approve <execution-id>|reject <execution-id> <seq>|snippets|save <execution-id> <name> [description]|delete <name>|abandon <execution-id>|rollback <execution-id>|expire]",
+					"warning",
+				);
+			} catch (error) {
+				context.ui.notify(error instanceof Error ? error.message : String(error), "error");
+			}
 		},
 	});
-	pi.on("session_start", apply);
+	pi.on("session_start", async (_event, context) => {
+		await bindProject(context, true);
+	});
 	pi.on("model_select", apply);
-	pi.on("before_agent_start", apply);
+	pi.on("before_agent_start", async (_event, context) => {
+		await bindProject(context);
+		apply();
+	});
 	pi.on("tool_result", (event) => {
 		if (event.toolName !== CODE_MODE_TOOL_NAME) return undefined;
 		const details = event.details as PiStuffCodeModeDetails | undefined;
 		if (details?.kind === "pi-stuff-code-mode") captureCodeModeModelContent(details, event.content);
-		if (details?.kind === "pi-stuff-code-mode" && (details.status === "error" || details.status === "cancelled")) {
+		if (
+			details?.kind === "pi-stuff-code-mode" &&
+			(details.status === "error" || details.status === "cancelled" || details.status === "incomplete")
+		) {
 			return { isError: true };
 		}
 		return undefined;

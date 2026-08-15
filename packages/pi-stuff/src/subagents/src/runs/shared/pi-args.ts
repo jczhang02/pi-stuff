@@ -45,6 +45,7 @@ const STANDALONE_AGENTS_EXTENSION_PATH = path.resolve(
 	"index.ts",
 );
 export const PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV = "PI_STUFF_CHILD_BASE_EXTENSION_PATH";
+export const PI_STUFF_CODE_MODE_FROZEN_ENV = "PI_STUFF_CODE_MODE_FROZEN";
 export const SUBAGENT_CHILD_ENV = "PI_SUBAGENT_CHILD";
 export const SUBAGENT_ORCHESTRATOR_TARGET_ENV = "PI_SUBAGENT_ORCHESTRATOR_TARGET";
 export const SUBAGENT_ORCHESTRATOR_SESSION_ID_ENV = "PI_SUBAGENT_ORCHESTRATOR_SESSION_ID";
@@ -88,6 +89,7 @@ export interface BuildPiArgsInput {
 	systemPromptMode?: "append" | "replace";
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
+	codeModeEnabled?: boolean;
 	childBaseExtensionPath?: string;
 	requireReadTool?: boolean;
 	tools?: string[];
@@ -422,6 +424,9 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	}
 
 	const env: Record<string, string | undefined> = {};
+	if (input.codeModeEnabled !== undefined) {
+		env[PI_STUFF_CODE_MODE_FROZEN_ENV] = input.codeModeEnabled ? "on" : "off";
+	}
 	const piPackageRoot = process.env[PI_CODING_AGENT_PACKAGE_ROOT_ENV] ?? resolvePiPackageRoot();
 	if (piPackageRoot) env[PI_CODING_AGENT_PACKAGE_ROOT_ENV] = piPackageRoot;
 	if (!tempDir) tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));

@@ -53,6 +53,7 @@ export {
 	type ToolActivityItem,
 	type ToolActivityMetadata,
 } from "./activity.js";
+export { BASH_CODE_MODE_CONTRACT } from "./builtin-tools.js";
 export {
 	assertSuiteToolActivityCoverage,
 	createSuiteToolRegistrationTracker,
@@ -60,6 +61,12 @@ export {
 	registerSuiteOwnedTool,
 	registerSuiteToolActivityMetadata,
 	registerSuiteToolEnvelope,
+	registerSuiteToolEnvelopeCompanion,
+	type SuiteToolCatalogEntry,
+	type SuiteToolCodeModeContract,
+	type SuiteToolCodeModeExecutionEndStatus,
+	type SuiteToolCodeModeLifecycle,
+	type SuiteToolCodeModePassEndStatus,
 	type SuiteToolDefinitionRegistry,
 	type SuiteToolEnvelopeOperation,
 	type SuiteToolInvocation,

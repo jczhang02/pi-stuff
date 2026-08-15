@@ -94,7 +94,7 @@ const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<InternalModule, ReadonlySet
 	todo: new Set(SHARED_MODULE_DEPENDENCIES),
 	btw: new Set([...SHARED_MODULE_DEPENDENCIES, "context-management"]),
 	notification: new Set(SHARED_MODULE_DEPENDENCIES),
-	"code-mode": new Set(["tool-display"]),
+	"code-mode": new Set(SHARED_MODULE_DEPENDENCIES),
 };
 export interface SafetyFinding {
 	path: string;

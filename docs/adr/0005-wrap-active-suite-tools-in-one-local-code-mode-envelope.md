@@ -1,10 +1,11 @@
 ---
-status: accepted
+status: superseded
+superseded_by: 0009-align-code-mode-with-openai-and-cloudflare
 ---
 
 # Wrap active Suite Tools in one local Code Mode envelope
 
-When enabled, Pi Stuff exposes one model-facing `codemode({ code })` Tool and moves the full active Aggregate Tool
+When enabled, Pi Stuff exposes one model-facing `codemode({ code })` Tool and moves the full active Package Tool
 catalog into an isolated local V8 Connector. This solves repeated schema cost rather than merely deferring schemas for
 one turn: future provider requests continue to carry only the small envelope while locally activated Tools remain
 available through `suite.*` on the next Code Mode execution. The initial rollout is disabled by default so installing
@@ -16,16 +17,16 @@ model name, introduce a second CLI, or add Code Mode-specific transcript chrome.
 
 ## Consequences
 
-- `suite` contains every currently active Tool registered through the Aggregate. Deferred Tools appear when active;
+- `suite` contains every currently active Tool registered through the Package boundary. Deferred Tools appear when active;
   inactive Tools are rejected; separately installed third-party Tools remain top-level because their private execute
-  callbacks are not owned by the Aggregate.
+  callbacks are not owned by the Package.
 - Full schemas and local search/describe data enter the V8 source only. The provider sees the outer Tool description
   and `{ code: string }` schema.
 - The V8 sandbox has no direct filesystem, network, process, module, or credential access. All I/O re-enters the
   original Suite Tool.
 - Nested execution must preserve Pi argument preparation and validation, Tool call/result hooks, lifecycle events,
   streaming updates, cancellation, errors, usage, dynamic Tool activation, and termination hints.
-- "Tool hooks" here means handlers registered through the Aggregate boundary. Pi 0.84.2 has no public API for an
+- "Tool hooks" here means handlers registered through the Package boundary. Pi 0.84.2 has no public API for an
   Extension to redispatch a nested call through unrelated Extensions; their Tools and private interception remain
   top-level compatibility boundaries rather than relying on a private Host seam.
 - The outer envelope is visually silent. Nested calls reuse the original Tool renderer and Activity Group state in

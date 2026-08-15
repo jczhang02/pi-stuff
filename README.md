@@ -83,7 +83,7 @@ Once Pi starts, these are useful entry points:
 | `/codex` | Inspect Codex usage and Fast mode when using a supported Codex model |
 | `/mcp` | Inspect lazily configured MCP servers |
 | `/rtk` | Verify or configure optional RTK command rewriting |
-| `/codemode status` | Inspect the optional, disabled-by-default Code Mode envelope |
+| `/codemode` | Open the optional Code Mode controls and persist the choice in the trusted project |
 
 Inside tmux, terminal-native notifications require `set -g allow-passthrough on`. Pi Stuff wraps notification
 protocols for tmux but does not mutate user-owned tmux settings.

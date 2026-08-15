@@ -182,6 +182,7 @@ interface ExecutorDeps {
 		| Promise<{ agents: AgentConfig[]; modelScope?: import("../shared/model-scope.ts").ModelScopeConfig }>;
 	projectContext?: typeof projectCurrentContext;
 	childBaseExtensionPath?: string;
+	resolveCodeModeEnabled?: () => boolean;
 	allowMutatingManagementActions?: boolean;
 	kill?: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 	engines?: Partial<ExecutorEngines>;
@@ -979,9 +980,14 @@ function maxDepthFor(data: PreparedLaunch, agent?: AgentConfig): number {
 	return resolveChildMaxSubagentDepth(data.maxSubagentDepth, agent?.maxSubagentDepth);
 }
 
+function effectiveCodeModeEnabled(deps: ExecutorDeps): boolean {
+	return deps.resolveCodeModeEnabled?.() ?? process.env.PI_STUFF_CODE_MODE_DEFAULT?.trim().toLowerCase() === "on";
+}
+
 function commonBuild(data: PreparedLaunch, ctx: ExtensionContext, deps: ExecutorDeps) {
 	return {
 		ctx: asyncContext(data, ctx, deps.pi),
+		codeModeEnabled: effectiveCodeModeEnabled(deps),
 		availableModels: data.availableModels,
 		cwd: data.effectiveCwd,
 		artifactsDir: data.artifactConfig.enabled ? data.artifactsDir : undefined,
@@ -1142,6 +1148,7 @@ function buildForegroundConfig(
 	const config: BackgroundRunnerConfig = {
 		version: 2,
 		id: data.runId,
+		codeModeEnabled: common.codeModeEnabled,
 		work: built.work,
 		resultPath,
 		cwd: built.runnerCwd,
@@ -1946,6 +1953,7 @@ async function resumeRun(input: {
 				interactive: input.ctx.hasUI,
 			},
 			parentRunOrigin: input.parentRunOrigin,
+			codeModeEnabled: effectiveCodeModeEnabled(input.deps),
 			cwd: effectiveCwd,
 			childBaseExtensionPath: input.deps.childBaseExtensionPath,
 			artifactsDir: getArtifactsDir(parentSessionFile, effectiveCwd, artifactConfig.dir),

@@ -159,6 +159,7 @@ interface RootExecutorInput {
 	readonly config: PiStuffAgentsConfig;
 	readonly pi: ExtensionAPI;
 	readonly projectContext: typeof projectCurrentContext;
+	readonly resolveCodeModeEnabled?: () => boolean;
 	readonly state: SubagentState;
 	readonly childBaseExtensionPath?: string;
 }
@@ -172,6 +173,7 @@ interface RootWatcherInput {
 /** Narrow seams keep the production root auditable and the host contract testable. */
 export interface ExtensionRootDependencies {
 	readonly childBaseExtensionPath?: string;
+	readonly resolveCodeModeEnabled?: () => boolean;
 	readonly createCurrentAgents: (state: SubagentState, options: CurrentAgentsOptions) => CurrentAgents;
 	readonly createExecutor: (input: RootExecutorInput) => RootExecutor;
 	readonly createGovernorCoordinator: (config: PiStuffAgentsConfig) => AgentExecutionCoordinatorPort;
@@ -211,7 +213,7 @@ function expandTilde(value: string): string {
 
 const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	createCurrentAgents: (state, options) => new CurrentAgents(state, options),
-	createExecutor: ({ childBaseExtensionPath, config, pi, projectContext, state }) =>
+	createExecutor: ({ childBaseExtensionPath, config, pi, projectContext, resolveCodeModeEnabled, state }) =>
 		createSubagentExecutor({
 			pi,
 			state,
@@ -223,6 +225,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 			discoverAgents,
 			projectContext,
 			childBaseExtensionPath,
+			resolveCodeModeEnabled,
 		}),
 	createGovernorCoordinator: (config) =>
 		createDurableAgentExecutionCoordinator({
@@ -503,6 +506,7 @@ export default function registerSubagentExtension(
 		config,
 		pi,
 		projectContext: deps.projectContext,
+		resolveCodeModeEnabled: deps.resolveCodeModeEnabled,
 		state,
 		childBaseExtensionPath: deps.childBaseExtensionPath,
 	});

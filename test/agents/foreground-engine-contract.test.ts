@@ -50,6 +50,11 @@ function clearEnvironment(name: string): void {
 	delete process.env[name];
 }
 
+function setEnvironment(name: string, value: string): void {
+	if (!environment.has(name)) environment.set(name, process.env[name]);
+	process.env[name] = value;
+}
+
 const MOCK_PARENT_SESSION_ENVIRONMENT_KEYS = [
 	SUBAGENT_PARENT_EVENT_SINK_ENV,
 	SUBAGENT_PARENT_CONTROL_INBOX_ENV,
@@ -143,6 +148,7 @@ function executor(
 	onBackgroundSingle?: (launch: {
 		agentConfig?: AgentConfig;
 		capabilityCeiling?: { allowedTools?: "*" | string[] };
+		codeModeEnabled?: boolean;
 		cwd?: string;
 		description?: string;
 		modelCandidates?: string[];
@@ -163,6 +169,7 @@ function executor(
 		foregroundDelayMs?: number;
 		foregroundError?: Error;
 		onForegroundConfig?: (config: BackgroundRunnerConfig) => void;
+		codeModeEnabled?: boolean;
 		pi?: ExtensionAPI;
 		projectContext?: Parameters<typeof createSubagentExecutor>[0]["projectContext"];
 	} = {},
@@ -178,6 +185,8 @@ function executor(
 		expandTilde: (value) => value,
 		discoverAgents: () => ({ agents: options.agents ?? [options.agent ?? agent()] }),
 		projectContext: options.projectContext,
+		resolveCodeModeEnabled:
+			options.codeModeEnabled === undefined ? undefined : () => options.codeModeEnabled === true,
 		engines: {
 			backgroundSingle: async (id, launch) => {
 				onBackgroundSingle?.(launch);
@@ -261,6 +270,75 @@ describe("reduced foreground Agent engine", () => {
 			{ parentRunOrigin: "user" },
 		);
 		expect(observedOrigin).toBe("user");
+	});
+
+	test("freezes the parent session's effective Code Mode state into child launches", async () => {
+		const cases = [
+			{ defaultValue: "off", expected: true },
+			{ defaultValue: "on", expected: false },
+		] as const;
+		for (const [index, testCase] of cases.entries()) {
+			setEnvironment("PI_STUFF_CODE_MODE_DEFAULT", testCase.defaultValue);
+			const cwd = fs.mkdtempSync(path.join(os.tmpdir(), `pi-stuff-code-mode-child-${index}-`));
+			temporaryDirectories.push(cwd);
+			fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+			let observed: boolean | undefined;
+			const pi = {
+				events: { emit: () => {} },
+				// Suite capabilities see the unwrapped virtual Tool set even when the
+				// outer Host surface contains the Code Mode envelope.
+				getActiveTools: () => ["read"],
+			} as unknown as ExtensionAPI;
+			await executor(
+				cwd,
+				state(),
+				(launch) => {
+					observed = launch.codeModeEnabled;
+				},
+				{ codeModeEnabled: testCase.expected, pi },
+			).execute(
+				`code-mode-child-${index}`,
+				{ agent: "general-purpose", task: "Inspect the parser", context: "fresh" },
+				new AbortController().signal,
+				undefined,
+				context(cwd),
+			);
+
+			expect(observed).toBe(testCase.expected);
+		}
+	});
+
+	test("carries the frozen Code Mode state through foreground and parallel runner configs", async () => {
+		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-code-mode-foreground-"));
+		temporaryDirectories.push(cwd);
+		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
+		const observed: Array<boolean | undefined> = [];
+		const delegate = executor(cwd, state(), undefined, {
+			codeModeEnabled: true,
+			onForegroundConfig: (config) => observed.push(config.codeModeEnabled),
+		});
+		await delegate.execute(
+			"code-mode-foreground",
+			{ agent: "general-purpose", task: "Inspect", async: false, context: "fresh" },
+			new AbortController().signal,
+			undefined,
+			context(cwd),
+		);
+		await delegate.execute(
+			"code-mode-parallel",
+			{
+				async: false,
+				context: "fresh",
+				tasks: [
+					{ agent: "general-purpose", task: "Inspect" },
+					{ agent: "general-purpose", task: "Verify" },
+				],
+			},
+			new AbortController().signal,
+			undefined,
+			context(cwd),
+		);
+		expect(observed).toEqual([true, true]);
 	});
 
 	test("carries direct user takeover attribution into the durable steer request", async () => {
@@ -1665,14 +1743,20 @@ describe("reduced foreground Agent engine", () => {
 		});
 		let captured:
 			| {
+					codeModeEnabled?: boolean;
 					description?: string;
 					nestedRoute?: { rootRunId: string; eventSink: string; controlInbox: string; capabilityToken: string };
 					task: string;
 			  }
 			| undefined;
-		const result = await executor(cwd, runState, (launch) => {
-			captured = launch;
-		}).execute(
+		const result = await executor(
+			cwd,
+			runState,
+			(launch) => {
+				captured = launch;
+			},
+			{ codeModeEnabled: false },
+		).execute(
 			"resume-call",
 			{ action: "resume", id: "source-run", message: "复核恢复结果 🧪" },
 			new AbortController().signal,
@@ -1684,6 +1768,7 @@ describe("reduced foreground Agent engine", () => {
 			throw new Error(result.content.map((part) => ("text" in part ? part.text : "")).join("\n"));
 		}
 		expect(captured?.description).toBe("复核恢复结果 🧪");
+		expect(captured?.codeModeEnabled).toBe(false);
 		expect(captured?.task).toContain("复核恢复结果 🧪");
 		expect(captured?.task).toContain("source-run");
 		expect(captured?.nestedRoute?.rootRunId).toBe(result.details.asyncId);

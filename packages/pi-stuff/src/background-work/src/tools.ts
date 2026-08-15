@@ -2,6 +2,7 @@ import type { AgentToolResult, BashToolDetails, ExtensionAPI, ToolDefinition } f
 import { Type } from "typebox";
 import {
 	activityKey,
+	BASH_CODE_MODE_CONTRACT,
 	bashResultMovedToBackground,
 	boundTerminalLine,
 	classifyBashActivity,
@@ -176,39 +177,44 @@ export function registerWorkTools(
 				);
 			},
 		};
-		registerSuiteOwnedTool(pi, bash, {
-			activity: {
-				categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
-				classify: (input) => {
-					if (input.result && !isForegroundBashResult(input.result)) {
-						const text = resultText(input.result);
-						const taskId = text.match(/background task ([a-z0-9]+)/u)?.[1];
-						return singleActivity("launch-background", {
-							key: activityKey(taskId ?? input.args.description ?? input.args.command),
-							target: firstLine(input.args.description) || "background command",
-						});
-					}
-					return classifyBashActivity(input);
+		registerSuiteOwnedTool(
+			pi,
+			bash,
+			{
+				activity: {
+					categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
+					classify: (input) => {
+						if (input.result && !isForegroundBashResult(input.result)) {
+							const text = resultText(input.result);
+							const taskId = text.match(/background task ([a-z0-9]+)/u)?.[1];
+							return singleActivity("launch-background", {
+								key: activityKey(taskId ?? input.args.description ?? input.args.command),
+								target: firstLine(input.args.description) || "background command",
+							});
+						}
+						return classifyBashActivity(input);
+					},
+					summarizeIssue: (_args, result, state) => {
+						const line = resultText(result).trim().split(/\r?\n/u).at(-1)?.trim();
+						return line || state;
+					},
 				},
-				summarizeIssue: (_args, result, state) => {
-					const line = resultText(result).trim().split(/\r?\n/u).at(-1)?.trim();
-					return line || state;
+				label: "Bash",
+				runningSummary: (_args, durationMs) =>
+					`running ${String(Math.max(0, Math.floor((durationMs ?? 0) / 1_000)))}s`,
+				summarize: (_args, result, state) => {
+					const text = resultText(result);
+					const id = text.match(/background task ([a-z0-9]+)/u)?.[1];
+					if (id) return `background · ${id}`;
+					if (state === "success") return "done";
+					const terminal = text.trim().split(/\r?\n/u).at(-1)?.trim();
+					return terminal || state;
 				},
+				target: (args) => firstLine(args.description) || "command",
+				tracksElapsed: true,
 			},
-			label: "Bash",
-			runningSummary: (_args, durationMs) =>
-				`running ${String(Math.max(0, Math.floor((durationMs ?? 0) / 1_000)))}s`,
-			summarize: (_args, result, state) => {
-				const text = resultText(result);
-				const id = text.match(/background task ([a-z0-9]+)/u)?.[1];
-				if (id) return `background · ${id}`;
-				if (state === "success") return "done";
-				const terminal = text.trim().split(/\r?\n/u).at(-1)?.trim();
-				return terminal || state;
-			},
-			target: (args) => firstLine(args.description) || "command",
-			tracksElapsed: true,
-		});
+			BASH_CODE_MODE_CONTRACT,
+		);
 	}
 
 	const background: ToolDefinition<typeof BACKGROUND_PARAMETERS, WorkToolDetails> = {

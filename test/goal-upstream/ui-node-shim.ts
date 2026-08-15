@@ -3,6 +3,7 @@ import { setKeybindings } from "@earendil-works/pi-tui";
 
 export {
 	readAgentWorkOrigin,
+	withAgentWorkOrigin,
 	withDirectUserActivation,
 } from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
 export { reportDiagnostic } from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
