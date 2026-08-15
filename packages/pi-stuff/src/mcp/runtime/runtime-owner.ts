@@ -1,4 +1,5 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../../lifecycle-deadline.js";
 import { logger } from "./logger.ts";
 import { formatTerminalError } from "./utils.ts";
 
@@ -10,7 +11,7 @@ export interface McpRuntimeOwner {
   throwIfInactive(): void;
 }
 
-export function createMcpRuntimeOwner(): McpRuntimeOwner {
+export function createMcpRuntimeOwner(shutdownGraceMs = HOST_SHUTDOWN_GRACE_MS): McpRuntimeOwner {
   const controller = new AbortController();
   const cleanups: Array<() => void | Promise<void>> = [];
   let stopPromise: Promise<void> | undefined;
@@ -38,7 +39,7 @@ export function createMcpRuntimeOwner(): McpRuntimeOwner {
       const pendingCleanups = cleanups.splice(0).reverse().map(cleanup =>
         Promise.resolve().then(cleanup),
       );
-      stopPromise = Promise.allSettled(pendingCleanups).then(results => {
+      const cleanup = Promise.allSettled(pendingCleanups).then(results => {
         const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
         if (failures.length > 0) {
           const aggregate = new AggregateError(failures, "MCP runtime cleanup failed");
@@ -46,6 +47,7 @@ export function createMcpRuntimeOwner(): McpRuntimeOwner {
           throw aggregate;
         }
       });
+      stopPromise = settleWithin(cleanup, shutdownGraceMs).then(() => undefined);
       return stopPromise;
     },
     throwIfInactive: () => controller.signal.throwIfAborted(),

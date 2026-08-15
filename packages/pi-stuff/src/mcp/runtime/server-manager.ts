@@ -357,7 +357,7 @@ export class McpServerManager {
       const stdioTransport = new StdioClientTransport({
         command,
         args,
-        env: resolveEnv(definition.env, name),
+        env: await resolveEnv(definition.env, name, signal),
         cwd: resolveConfigPath(definition.cwd) ?? this.defaultCwd,
         stderr: definition.debug ? "inherit" : "pipe",
       });
@@ -675,9 +675,10 @@ export class McpServerManager {
     // Resolve secret commands only for this connection attempt, without mutating config.
     const hasCommandHeader = Object.values(definition.headers ?? {})
       .some(value => value.startsWith("!") && !value.startsWith("!!"));
-    const headers = resolveCommandSecretsRecord(
+    const headers = await resolveCommandSecretsRecord(
       definition.headers,
       key => `MCP server "${serverName}" HTTP header "${key}"`,
+      signal,
     ) ?? {};
 
     // For bearer auth, add the token to headers BEFORE creating requestInit
@@ -686,7 +687,7 @@ export class McpServerManager {
       : undefined;
     if (definition.auth === "bearer") {
       const token = commandBearer
-        ? resolveCommandSecret(commandBearer, `MCP server "${serverName}" HTTP bearer token`)
+        ? await resolveCommandSecret(commandBearer, `MCP server "${serverName}" HTTP bearer token`, signal)
         : resolveBearerToken(definition);
       if (token) headers["Authorization"] = `Bearer ${token}`;
     }
@@ -1044,14 +1045,19 @@ export class McpServerManager {
 /**
  * Resolve environment variables with interpolation.
  */
-function resolveEnv(env: Record<string, string> | undefined, serverName: string): Record<string, string> {
+async function resolveEnv(
+  env: Record<string, string> | undefined,
+  serverName: string,
+  signal?: AbortSignal,
+): Promise<Record<string, string>> {
   const resolved: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) resolved[key] = value;
   }
-  const overrides = resolveCommandSecretsRecord(
+  const overrides = await resolveCommandSecretsRecord(
     env,
     key => `MCP server "${serverName}" stdio env "${key}"`,
+    signal,
   );
   return overrides ? { ...resolved, ...overrides } : resolved;
 }

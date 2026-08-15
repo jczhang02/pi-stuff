@@ -102,7 +102,6 @@ export { loadConfig } from "./config.ts";
 // Retained only so sessions written by older Pi Stuff releases still render.
 const COMPLETION_MESSAGE_TYPE = "pi-stuff-agent-complete";
 const COMPLETION_ENTRY_TYPE = "pi-stuff-agent-outcome";
-const ROSTER_REFRESH_MS = 250;
 const RUNTIME_MAINTENANCE_SUCCESS_INTERVAL_MS = 60 * 60 * 1_000;
 const RUNTIME_MAINTENANCE_FAILURE_RETRY_MS = 60 * 1_000;
 const RUNTIME_CLEANUP_KEY = "__piStuffAgentsRootCleanup";
@@ -178,7 +177,7 @@ export interface ExtensionRootDependencies {
 	) => Promise<SessionGovernorCompatibilityResult>;
 	readonly createRoster: (current: CurrentAgents, options: AgentRosterOptions) => AgentRoster;
 	readonly createSupervisor: (pi: ExtensionAPI, state: SubagentState) => RootSupervisor;
-	readonly createTracker: (pi: ExtensionAPI, state: SubagentState) => RootTracker;
+	readonly createTracker: (pi: ExtensionAPI, state: SubagentState, onRefresh: () => void) => RootTracker;
 	readonly createWatcher: (input: RootWatcherInput) => RootWatcher;
 	readonly ensureDirectory: (directory: string) => void;
 	readonly getCoordinator: (pi: ExtensionAPI) => CommandDialogCoordinator;
@@ -194,10 +193,6 @@ export interface ExtensionRootDependencies {
 	) => Promise<void>;
 	readonly projectContext: typeof projectCurrentContext;
 	readonly randomId: () => string;
-	readonly timers: {
-		clearInterval(handle: ReturnType<typeof setInterval>): void;
-		setInterval(handler: () => void, delayMs: number): ReturnType<typeof setInterval>;
-	};
 }
 
 function getSubagentSessionRoot(parentSessionFile: string | null): string {
@@ -238,8 +233,8 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	prepareGovernorCompatibility: prepareSessionGovernorCompatibility,
 	createRoster: (current, options) => new AgentRoster(current, options),
 	createSupervisor: (pi, state) => createNativeSupervisorChannel(pi, state),
-	createTracker: (pi, state) => {
-		const tracker = createAsyncJobTracker(pi, state, ASYNC_DIR);
+	createTracker: (pi, state, onRefresh) => {
+		const tracker = createAsyncJobTracker(pi, state, ASYNC_DIR, { onRefresh });
 		return {
 			ensurePoller: tracker.ensurePoller,
 			handleComplete: tracker.handleComplete,
@@ -265,10 +260,6 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	openDialog: openAgentDialog,
 	projectContext: projectCurrentContext,
 	randomId: randomUUID,
-	timers: {
-		clearInterval,
-		setInterval,
-	},
 };
 
 function createState(config: PiStuffAgentsConfig): SubagentState {
@@ -512,13 +503,12 @@ export default function registerSubagentExtension(
 		childBaseExtensionPath: deps.childBaseExtensionPath,
 	});
 	const executionGovernor = deps.createGovernorCoordinator(config);
-	const tracker = deps.createTracker(pi, state);
+	let current!: CurrentAgents;
+	const tracker = deps.createTracker(pi, state, () => current.refresh());
 	const supervisor = deps.createSupervisor(pi, state);
 	const notifier = createCompactCompletionNotifier(pi, state, coordinator);
 	const watcher = deps.createWatcher({ notifier, pi, state });
 	let active = true;
-	let launchCallsInFlight = 0;
-	let rosterRefreshTimer: ReturnType<typeof setInterval> | undefined;
 	let watcherStarted = false;
 	let sessionEpoch = 0;
 	let runtimeActivatedEpoch = -1;
@@ -541,7 +531,6 @@ export default function registerSubagentExtension(
 	) => Promise<AgentToolResult<Details>>;
 	let activateCurrentSessionRuntime!: (ctx: ExtensionContext) => Promise<void>;
 
-	let current!: CurrentAgents;
 	const showAgents = async (ctx: ExtensionContext, initialKey?: string): Promise<void> => {
 		if (!ctx.hasUI) return Promise.resolve();
 		await activateCurrentSessionRuntime(ctx);
@@ -663,12 +652,6 @@ export default function registerSubagentExtension(
 		roster.setContext(ctx);
 	};
 
-	const stopRosterRefresh = (): void => {
-		if (!rosterRefreshTimer) return;
-		deps.timers.clearInterval(rosterRefreshTimer);
-		rosterRefreshTimer = undefined;
-	};
-
 	const scheduleRuntimeMaintenance = (): void => {
 		if (maintenanceTimer || maintenanceInFlight || !active) return;
 		if (deps.monotonicNow() < nextMaintenanceAt) return;
@@ -692,16 +675,6 @@ export default function registerSubagentExtension(
 				});
 		}, 0);
 		maintenanceTimer.unref?.();
-	};
-
-	const ensureRosterRefresh = (): void => {
-		if (rosterRefreshTimer || (!hasLiveWork(state) && launchCallsInFlight === 0)) return;
-		rosterRefreshTimer = deps.timers.setInterval(() => {
-			if (!active) return stopRosterRefresh();
-			current.refresh();
-			if (!hasLiveWork(state) && launchCallsInFlight === 0) stopRosterRefresh();
-		}, ROSTER_REFRESH_MS);
-		rosterRefreshTimer.unref?.();
 	};
 
 	const startRunRuntime = (options: { createDirectories: boolean; primeExisting: boolean }): void => {
@@ -785,7 +758,6 @@ export default function registerSubagentExtension(
 				startRunRuntime({ createDirectories: false, primeExisting: true });
 				if (hasLiveWork(state)) {
 					tracker.ensurePoller();
-					ensureRosterRefresh();
 				}
 				current.refresh();
 				supervisor.start();
@@ -881,14 +853,10 @@ export default function registerSubagentExtension(
 				governorFailureResult(params, "Agent launch cancelled because the parent session ended or changed."),
 			);
 		}
-		let countedInFlight = false;
 		let foregroundStarted = false;
 		try {
 			if (invocation) {
 				startRunRuntime({ createDirectories: true, primeExisting: true });
-				launchCallsInFlight += 1;
-				countedInFlight = true;
-				ensureRosterRefresh();
 			}
 			const engineParams = { ...toEngineParams(params), launchRunId };
 			const result = await executor.execute(
@@ -996,10 +964,8 @@ export default function registerSubagentExtension(
 			}
 			throw error;
 		} finally {
-			if (countedInFlight) launchCallsInFlight = Math.max(0, launchCallsInFlight - 1);
 			scheduleRuntimeMaintenance();
 			current.refresh();
-			ensureRosterRefresh();
 		}
 	};
 
@@ -1068,7 +1034,6 @@ export default function registerSubagentExtension(
 		});
 		tracker.handleStarted(normalized);
 		current.refresh();
-		ensureRosterRefresh();
 	});
 	onBus(SUBAGENT_ASYNC_COMPLETE_EVENT, (data) => {
 		if (!active || !belongsToCurrentSession(data)) return;
@@ -1078,7 +1043,6 @@ export default function registerSubagentExtension(
 		});
 		tracker.handleComplete(normalized);
 		current.refresh();
-		ensureRosterRefresh();
 		if ((normalized as CompletionNotification).parentRunOrigin === "user") {
 			requestStatuslineGitRefreshAfterUserWork(pi);
 		}
@@ -1092,7 +1056,6 @@ export default function registerSubagentExtension(
 		// completion message here would trigger a duplicate main-model turn.
 		current.refresh();
 		tracker.ensurePoller();
-		ensureRosterRefresh();
 	});
 	onBus(SUBAGENT_PROCESS_TERMINAL_EVENT, () => {
 		if (!active) return;
@@ -1105,7 +1068,6 @@ export default function registerSubagentExtension(
 		if (!active || event.toolName !== "subagent") return;
 		bindContext(ctx);
 		current.refresh();
-		ensureRosterRefresh();
 	};
 	pi.on("tool_execution_start", refreshFromTool);
 	pi.on("tool_execution_update", refreshFromTool);
@@ -1122,7 +1084,6 @@ export default function registerSubagentExtension(
 		releaseLegacyGovernorBarrier = undefined;
 		runtimeActivatedEpoch = -1;
 		runtimeActivation = undefined;
-		stopRosterRefresh();
 		watcher.stopResultWatcher();
 		watcherStarted = false;
 		supervisor.pause?.();
@@ -1164,7 +1125,6 @@ export default function registerSubagentExtension(
 		sessionEpoch += 1;
 		if (maintenanceTimer) clearTimeout(maintenanceTimer);
 		maintenanceTimer = undefined;
-		stopRosterRefresh();
 		watcher.stopResultWatcher();
 		watcherStarted = false;
 		for (const unsubscribe of eventUnsubscribes.splice(0)) {

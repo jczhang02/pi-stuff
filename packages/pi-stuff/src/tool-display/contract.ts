@@ -1,7 +1,7 @@
 import { createHash, type Hash } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { validateToolArguments } from "@earendil-works/pi-ai";
+import { type AssistantMessageEvent, validateToolArguments } from "@earendil-works/pi-ai";
 import type {
 	AgentToolResult,
 	AgentToolUpdateCallback,
@@ -186,6 +186,7 @@ interface RendererState<TArgs extends Record<string, unknown>, TDetails> {
 	detailLines?: readonly string[];
 	detailMaterialized?: boolean;
 	lastResult?: AgentToolResult<TDetails>;
+	liveEffectsStarted?: boolean;
 	startedAt?: number;
 	terminalState?: Exclude<ToolActivityState, "running">;
 	wasLiveExecution?: boolean;
@@ -573,6 +574,7 @@ export class ToolUiRuntime {
 	private invalidationScheduled = false;
 	private readonly membership = new Map<string, string>();
 	private readonly memberIndexes = new Map<string, number>();
+	private readonly liveResults = new Map<string, AgentToolResult<unknown>>();
 	private readonly now: () => number;
 	private openGroupLeaderId: string | undefined;
 	private readonly pendingInvalidations = new Set<() => void>();
@@ -753,6 +755,30 @@ export class ToolUiRuntime {
 		this.applyAssistantContent(value["content"], true, assistantTerminalState(value["stopReason"]));
 	}
 
+	observeAssistantEvent(event: AssistantMessageEvent): void {
+		if (!this.streamActive) {
+			this.streamActive = true;
+			this.streamedProseIndexes.clear();
+			this.streamedToolCallSignatures.clear();
+		}
+		if (event.type === "text_delta" || event.type === "text_end") {
+			const text = event.type === "text_delta" ? event.delta : event.content;
+			if (!text.trim() || this.streamedProseIndexes.has(event.contentIndex)) return;
+			this.streamedProseIndexes.add(event.contentIndex);
+			this.observeAssistantProse();
+			return;
+		}
+		if (event.type !== "toolcall_end") return;
+		const { id, name, arguments: args } = event.toolCall;
+		if (!id || !name || !isRecordValue(args) || this.streamedToolCallSignatures.has(id)) return;
+		this.streamedToolCallSignatures.set(id, "complete");
+		if (!this.renderedToolNames.has(name)) {
+			this.observeAssistantProse();
+			return;
+		}
+		this.appendToolCall({ args, id, name });
+	}
+
 	indexMessages(messages: readonly unknown[], closeTail = !this.agentActive): void {
 		this.pendingResults.clear();
 		this.continuationLeaderId = undefined;
@@ -787,6 +813,9 @@ export class ToolUiRuntime {
 				}
 				continue;
 			}
+			if (operation.state === "running" && operation.result) {
+				this.observeToolExecutionUpdate(operation.id, operation.result);
+			}
 			const result = envelopeOperationResult(operation);
 			this.appendToolCall({
 				args: operation.args,
@@ -795,6 +824,33 @@ export class ToolUiRuntime {
 				...(result ? { result } : {}),
 			});
 		}
+	}
+
+	observeToolExecutionStart(toolCallId: string): void {
+		this.liveResults.delete(toolCallId);
+		this.pendingResults.delete(toolCallId);
+		const binding = this.bindings.get(toolCallId);
+		if (!binding?.metadata.result) return;
+		const { result: _result, ...metadata } = binding.metadata;
+		binding.metadata = metadata;
+		delete binding.bashOutput;
+		delete binding.bashOutputResult;
+	}
+
+	observeToolExecutionUpdate(toolCallId: string, result: AgentToolResult<unknown>): void {
+		if (this.liveResults.get(toolCallId) === result) return;
+		this.liveResults.set(toolCallId, result);
+		const binding = this.bindings.get(toolCallId);
+		if (!binding) return;
+		binding.metadata = { ...binding.metadata, result };
+		this.reconcileGroupForTool(toolCallId);
+	}
+
+	observeToolExecutionEnd(toolCallId: string, result: AgentToolResult<unknown>): void {
+		this.liveResults.delete(toolCallId);
+		const binding = this.bindings.get(toolCallId);
+		if (binding) binding.metadata = { ...binding.metadata, result };
+		this.updateToolResult(toolCallId, result);
 	}
 
 	resetProjection(messages: readonly unknown[]): void {
@@ -827,6 +883,7 @@ export class ToolUiRuntime {
 		this.groupOrder.splice(0);
 		this.membership.clear();
 		this.memberIndexes.clear();
+		this.liveResults.clear();
 		this.pendingResults.clear();
 		this.groupHints.clear();
 		this.indexedMessages = [];
@@ -846,6 +903,7 @@ export class ToolUiRuntime {
 		this.invalidationGeneration += 1;
 		this.invalidationScheduled = false;
 		this.pendingInvalidations.clear();
+		this.liveResults.clear();
 	}
 
 	presentRow(
@@ -858,6 +916,8 @@ export class ToolUiRuntime {
 		metadata: PresentedToolMetadata,
 	): void {
 		let binding = this.bindings.get(toolCallId);
+		const projectedResult = metadata.result ?? this.liveResults.get(toolCallId) ?? binding?.metadata.result;
+		const projectedMetadata = projectedResult === undefined ? metadata : { ...metadata, result: projectedResult };
 		const firstBinding = !binding;
 		if (!binding) {
 			binding = {
@@ -865,7 +925,7 @@ export class ToolUiRuntime {
 				baseVisible: visible,
 				expanded,
 				invalidate: () => {},
-				metadata,
+				metadata: projectedMetadata,
 				row,
 			};
 		} else {
@@ -874,7 +934,7 @@ export class ToolUiRuntime {
 			binding.baseVisible = visible;
 			binding.expanded = expanded;
 			binding.invalidate = invalidate;
-			binding.metadata = metadata;
+			binding.metadata = projectedMetadata;
 		}
 		this.bindings.delete(toolCallId);
 		this.bindings.set(toolCallId, binding);
@@ -2194,7 +2254,8 @@ function updateRunningRow<TArgs extends Record<string, unknown>, TDetails>(
 		target: oneLine(presentation.target?.(args) ?? ""),
 	};
 	if (!state.component) state.component = new CachedToolRow(theme, model);
-	if (state.wasLiveExecution) {
+	const startLiveEffects = state.wasLiveExecution && !state.liveEffectsStarted;
+	if (startLiveEffects) {
 		runtime.activities.begin({
 			id: context.toolCallId,
 			label: model.label,
@@ -2205,7 +2266,8 @@ function updateRunningRow<TArgs extends Record<string, unknown>, TDetails>(
 	}
 	const metadata: PresentedToolMetadata = { args, cwd: context.cwd, name: tool.name };
 	runtime.presentRow(context.toolCallId, state.component, model, true, context.invalidate, context.expanded, metadata);
-	if (state.wasLiveExecution) {
+	if (startLiveEffects) {
+		state.liveEffectsStarted = true;
 		runtime.startTimer(context.toolCallId, context.invalidate, (visible) =>
 			state.component?.setMarkerVisible(visible),
 		);
@@ -2403,24 +2465,7 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 				isPartial: renderOptions.isPartial,
 			} as unknown as ToolRenderContext<TArgs>;
 			if (renderOptions.isPartial) {
-				const row = updateRunningRow(tool, presentation, runtime, state, typed, theme);
-				const runningModel: ToolRowModel = {
-					durationMs: state.startedAt === undefined ? undefined : Math.max(0, Date.now() - state.startedAt),
-					label: labelFor(tool, presentation, state.args ?? typed.args),
-					state: "running",
-					summary: oneLine(
-						typeof presentation.runningSummary === "function"
-							? presentation.runningSummary(state.args ?? typed.args, undefined)
-							: (presentation.runningSummary ?? "working"),
-					),
-					target: oneLine(presentation.target?.(state.args ?? typed.args) ?? ""),
-				};
-				runtime.presentRow(context.toolCallId, row, runningModel, true, context.invalidate, typed.expanded, {
-					args: state.args ?? typed.args,
-					cwd: typed.cwd,
-					name: tool.name,
-					result: result as AgentToolResult<unknown>,
-				});
+				updateRunningRow(tool, presentation, runtime, state, typed, theme);
 				return new EmptyToolComponent();
 			}
 			settleRow(tool, presentation, runtime, state, result, typed, theme);

@@ -88,6 +88,9 @@ test("Tool lifecycle installation deduplicates per-extension facades on one Host
 
 	expect(owner.handlerCount("session_start")).toBe(1);
 	expect(owner.handlerCount("session_shutdown")).toBeGreaterThan(0);
+	expect(owner.handlerCount("tool_execution_start")).toBe(1);
+	expect(owner.handlerCount("tool_execution_update")).toBe(1);
+	expect(owner.handlerCount("tool_execution_end")).toBe(1);
 	expect(duplicate.handlerCount("session_start")).toBe(0);
 	expect(duplicate.handlerCount("session_shutdown")).toBe(0);
 	await owner.emit("session_shutdown", { reason: "quit", type: "session_shutdown" }, context("/project"));

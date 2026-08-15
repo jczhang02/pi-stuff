@@ -170,33 +170,47 @@ function trimBranch(entries: SessionEntry[], keepRecentTokens: number): { messag
 }
 
 /** Phase 1 of {@link stubToFit}: oldest-first toolResult stubbing. Operates in-place
- *  on `result` (does NOT copy) — re-estimates before each slot via the termination guard
- *  and replaces over-budget `msg.role === "toolResult"` slots with the placeholder,
+ *  on `result` (does NOT copy), updates the total from only the replaced message, and
+ *  replaces over-budget `msg.role === "toolResult"` slots with the placeholder,
  *  preserving toolCallId/toolName/isError via spread (the paired ToolCall in the prior
  *  assistant stays). Returns `true` iff at least one slot was stubbed. */
-function stubToolResultsToFit(result: Message[], budget: number): boolean {
+interface FitProgress {
+	estimate: number;
+	stubbed: boolean;
+}
+
+function replaceMessage(result: Message[], index: number, replacement: Message, estimate: number): number {
+	const previous = result[index];
+	if (!previous) return estimate;
+	result[index] = replacement;
+	return estimate - estimateTokens(previous) + estimateTokens(replacement);
+}
+
+function stubToolResultsToFit(result: Message[], budget: number, initialEstimate: number): FitProgress {
 	let stubbed = false;
+	let estimate = initialEstimate;
 	// Stub toolResult content oldest-first with the placeholder (preserves
 	// toolCallId/toolName/isError via spread; the paired ToolCall in the prior assistant stays).
 	for (let i = 0; i < result.length; i++) {
-		if (estimateMessagesTokens(result) <= budget) break;
+		if (estimate <= budget) break;
 		const msg = result[i];
 		if (!msg) continue;
 		if (msg.role === "toolResult") {
-			result[i] = { ...msg, content: [{ type: "text", text: BTW_STUB_TEXT }] };
+			estimate = replaceMessage(result, i, { ...msg, content: [{ type: "text", text: BTW_STUB_TEXT }] }, estimate);
 			stubbed = true;
 		}
 	}
-	return stubbed;
+	return { estimate, stubbed };
 }
 
 /** Replace high-cost non-text payloads before character truncation. Historical
  * tool arguments are no longer executable, and image/thinking payloads can be
  * reduced without changing the visible answer request. */
-function stubStructuredContentToFit(result: Message[], budget: number): boolean {
+function stubStructuredContentToFit(result: Message[], budget: number, initialEstimate: number): FitProgress {
 	let stubbed = false;
+	let estimate = initialEstimate;
 	for (let index = 0; index < result.length; index++) {
-		if (estimateMessagesTokens(result) <= budget) break;
+		if (estimate <= budget) break;
 		const message = result[index];
 		if (!message) continue;
 
@@ -208,7 +222,7 @@ function stubStructuredContentToFit(result: Message[], budget: number): boolean 
 				return { type: "text" as const, text: BTW_IMAGE_STUB_TEXT };
 			});
 			if (changed) {
-				result[index] = { ...message, content };
+				estimate = replaceMessage(result, index, { ...message, content }, estimate);
 				stubbed = true;
 			}
 			continue;
@@ -228,75 +242,69 @@ function stubStructuredContentToFit(result: Message[], budget: number): boolean 
 				return [part];
 			});
 			if (changed) {
-				result[index] = { ...message, content };
+				estimate = replaceMessage(result, index, { ...message, content }, estimate);
 				stubbed = true;
 			}
 		}
 	}
-	return stubbed;
+	return { estimate, stubbed };
 }
 
-/** Phase 2 of {@link stubToFit}: terminal truncation toward the token gap. Operates in-place
- *  on `result` (does NOT copy). One block per iteration, re-estimated each pass; a pass that
- *  fails to shrink the estimate breaks the loop — the truncation marker keeps every rewritten
- *  block at a floor length, so a budget below that floor (e.g. negative) would otherwise
- *  rewrite the same block forever; `priorEstimate` is seeded at +∞ so the first pass always
- *  proceeds. Returns `true` iff at least one block was truncated. */
-function truncateToFit(result: Message[], budget: number): boolean {
+/** Phase 2 of {@link stubToFit}: terminal truncation toward the token gap. Text blocks are
+ *  ranked once, and each replacement updates the total from only its containing message. */
+function truncateToFit(result: Message[], budget: number, initialEstimate: number): FitProgress {
 	let stubbed = false;
-	// Terminal fallback: truncate the largest text block toward the token gap
-	// (chars ≈ tokens×4, the inverse of estimateTokens' chars/4) with a marker. One block per
-	// iteration; re-estimate each pass. A pass that fails to shrink the estimate breaks the
-	// loop: the truncation marker keeps every rewritten block at a floor length, so a budget
-	// below that floor (e.g. negative) would otherwise rewrite the same block forever.
-	let priorEstimate = Number.POSITIVE_INFINITY;
-	while (estimateMessagesTokens(result) > budget) {
-		const estimate = estimateMessagesTokens(result);
-		if (estimate >= priorEstimate) break; // no progress — budget below the marker floor
-		priorEstimate = estimate;
+	let estimate = initialEstimate;
+	const targets: Array<{ ci: number; isString: boolean; len: number; mi: number }> = [];
+	for (let mi = 0; mi < result.length; mi++) {
+		const content = result[mi]?.content;
+		if (typeof content === "string") {
+			targets.push({ ci: -1, isString: true, len: content.length, mi });
+			continue;
+		}
+		if (!Array.isArray(content)) continue;
+		for (let ci = 0; ci < content.length; ci++) {
+			const part = content[ci];
+			if (part?.type === "text") targets.push({ ci, isString: false, len: part.text.length, mi });
+		}
+	}
+	targets.sort((left, right) => right.len - left.len);
+
+	for (const target of targets) {
+		if (estimate <= budget) break;
+		const msg = result[target.mi];
+		if (!msg) continue;
+		const content = msg.content;
+		const part = Array.isArray(content) ? content[target.ci] : undefined;
+		const text =
+			target.isString && typeof content === "string" ? content : part?.type === "text" ? part.text : undefined;
+		if (!text) continue;
 		const overTokens = estimate - budget;
 		const removeChars = Math.max(1, Math.ceil(overTokens * 4));
-
-		// Locate the largest text content block (string content OR a {type:"text"} part).
-		let target = { mi: -1, ci: -1, len: 0, isString: false };
-		for (let i = 0; i < result.length; i++) {
-			const content = result[i]?.content;
-			if (typeof content === "string") {
-				if (content.length > target.len) target = { mi: i, ci: -1, len: content.length, isString: true };
-				continue;
-			}
-			if (Array.isArray(content)) {
-				for (let j = 0; j < content.length; j++) {
-					const part = content[j];
-					if (part && part.type === "text" && part.text.length > target.len) {
-						target = { mi: i, ci: j, len: part.text.length, isString: false };
-					}
-				}
-			}
-		}
-		if (target.mi < 0 || target.len === 0) break; // nothing left to truncate — minimal result
-
 		// Reserve room for the marker itself so the rewritten block lands at ~(len - removeChars)
 		// chars total; without this the marker's own length leaks back into the estimate.
 		const markerReserve = BTW_TRUNCATE_MARKER_FMT(removeChars).length;
-		const keepChars = Math.max(0, target.len - removeChars - markerReserve);
-		const truncatedChars = target.len - keepChars;
+		const keepChars = Math.max(0, text.length - removeChars - markerReserve);
+		const truncatedChars = text.length - keepChars;
 		const marker = BTW_TRUNCATE_MARKER_FMT(truncatedChars);
-		const msg = result[target.mi];
-		if (!msg) break;
 		// Rebuild with role narrowing so each spread yields a valid Message variant
 		// (Message is a discriminated union — spreading the union and overriding `content`
 		// directly does not typecheck). Top-level branches are pure msg.role checks so
 		// narrowing flows into each arm; the user arm narrows string-vs-array content.
 		if (msg.role === "user") {
 			if (typeof msg.content === "string") {
-				result[target.mi] = { ...msg, content: `${msg.content.slice(0, keepChars)}${marker}` };
+				estimate = replaceMessage(
+					result,
+					target.mi,
+					{ ...msg, content: `${msg.content.slice(0, keepChars)}${marker}` },
+					estimate,
+				);
 			} else {
 				const content = [...msg.content];
 				const part = content[target.ci];
 				if (part?.type === "text") {
 					content[target.ci] = { ...part, text: `${part.text.slice(0, keepChars)}${marker}` };
-					result[target.mi] = { ...msg, content };
+					estimate = replaceMessage(result, target.mi, { ...msg, content }, estimate);
 				}
 			}
 		} else if (msg.role === "assistant") {
@@ -304,7 +312,7 @@ function truncateToFit(result: Message[], budget: number): boolean {
 			const part = content[target.ci];
 			if (part?.type === "text") {
 				content[target.ci] = { ...part, text: `${part.text.slice(0, keepChars)}${marker}` };
-				result[target.mi] = { ...msg, content };
+				estimate = replaceMessage(result, target.mi, { ...msg, content }, estimate);
 			}
 		} else {
 			// toolResult (msg narrowed to ToolResultMessage)
@@ -312,12 +320,12 @@ function truncateToFit(result: Message[], budget: number): boolean {
 			const part = content[target.ci];
 			if (part?.type === "text") {
 				content[target.ci] = { ...part, text: `${part.text.slice(0, keepChars)}${marker}` };
-				result[target.mi] = { ...msg, content };
+				estimate = replaceMessage(result, target.mi, { ...msg, content }, estimate);
 			}
 		}
 		stubbed = true;
 	}
-	return stubbed;
+	return { estimate, stubbed };
 }
 
 /** Oversized-turn stubbing + terminal truncation. Operates on a SHALLOW copy
@@ -328,13 +336,14 @@ function truncateToFit(result: Message[], budget: number): boolean {
  *  the token gap. Signature and return shape are unchanged. */
 function stubToFit(messages: Message[], budget: number): { messages: Message[]; stubbed: boolean } {
 	const result = messages.slice(); // shallow: new array, shared message objects — one place, guards both phases
-	const stubbedTool = stubToolResultsToFit(result, budget);
-	const stubbedStructured = stubStructuredContentToFit(result, budget);
-	const stubbedTruncated = truncateToFit(result, budget);
-	if (estimateMessagesTokens(result) > Math.max(0, budget)) {
+	const initialEstimate = estimateMessagesTokens(result);
+	const toolResults = stubToolResultsToFit(result, budget, initialEstimate);
+	const structured = stubStructuredContentToFit(result, budget, toolResults.estimate);
+	const truncated = truncateToFit(result, budget, structured.estimate);
+	if (truncated.estimate > Math.max(0, budget)) {
 		return { messages: [], stubbed: true };
 	}
-	return { messages: result, stubbed: stubbedTool || stubbedStructured || stubbedTruncated };
+	return { messages: result, stubbed: toolResults.stubbed || structured.stubbed || truncated.stubbed };
 }
 
 /** Orchestrating pure branch-fit. Fast path returns the cached `messages` by reference

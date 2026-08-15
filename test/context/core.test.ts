@@ -175,6 +175,24 @@ function magicModule(options: { registerBeforeStart?: () => void; registerTool?:
 afterEach(() => __test.clear());
 
 describe("Context capability lifecycle", () => {
+	test("work continuity inspects only new Session entries after its baseline", () => {
+		const governor = new __test.WorkContinuityGovernor();
+		let inspected = 0;
+		const entries = Array.from({ length: 10_000 }, (_value, index) => {
+			const entry = { id: `entry-${String(index)}` } as { id: string; type?: string };
+			Object.defineProperty(entry, "type", {
+				get: () => {
+					inspected += 1;
+					return "message";
+				},
+			});
+			return entry;
+		});
+
+		governor.observeCompactions(entries, entries.length - 1);
+		expect(inspected).toBe(1);
+	});
+
 	test("carries aggregate work continuity through the public Host event lifecycle", async () => {
 		const handlers: Handlers = new Map();
 		const api = apiFor(handlers);
@@ -1671,6 +1689,36 @@ describe("Context capability lifecycle", () => {
 		await Promise.all([activating, shutdown]);
 
 		expect(capability.status()).toEqual({ state: "native", engine: "native", trigger: "startup" });
+	});
+
+	test("does not let a non-cooperative Magic cleanup own Host shutdown", async () => {
+		const handlers: Handlers = new Map();
+		let cleanupStarted = false;
+		let siblingCleanupStarted = false;
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					magicApi.on("context", (event) => event);
+					magicApi.on("session_shutdown", async () => {
+						cleanupStarted = true;
+						await new Promise(() => undefined);
+					});
+					magicApi.on("session_shutdown", () => {
+						siblingCleanupStarted = true;
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		const startedAt = performance.now();
+		await emit(handlers, "session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+
+		expect(cleanupStarted).toBeTrue();
+		expect(siblingCleanupStarted).toBeTrue();
+		expect(performance.now() - startedAt).toBeLessThan(1_000);
+		expect(getContextCapability(ctx).status()).toEqual({ state: "native", engine: "native" });
 	});
 
 	test("does not mix concurrent session starts across activation contexts", async () => {

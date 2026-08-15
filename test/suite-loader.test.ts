@@ -47,6 +47,22 @@ describe("loadSuiteRuntime", () => {
 		expect(loadCount).toBe(1);
 	});
 
+	test("does not block the Host event loop while fingerprinting Suite source", async () => {
+		const sourceRoot = await createSourceRoot();
+		let yielded = false;
+		setImmediate(() => {
+			yielded = true;
+		});
+
+		await loadSuiteRuntime({
+			sourceRoot,
+			load: async () => {
+				expect(yielded).toBeTrue();
+				return FIRST_RUNTIME;
+			},
+		});
+	});
+
 	test("invalidates the namespace when any nested Suite source changes", async () => {
 		const sourceRoot = await createSourceRoot();
 		let loadCount = 0;

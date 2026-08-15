@@ -51,12 +51,10 @@ test("delegate serialization failures reject the V8 call instead of leaving the 
 	expect(message).toStartWith("Failed to serialize nested Tool result:");
 	expect(message).toContain("BigInt");
 	expect(updates.at(-1)).toMatchObject({
-		traces: [
-			{
-				error: message,
-				status: "error",
-			},
-		],
+		trace: {
+			error: message,
+			status: "error",
+		},
 	});
 	runtime.clear();
 });
@@ -102,7 +100,7 @@ test("non-Error thrown values still settle the trace and V8 request", async () =
 
 	expect(responses).toEqual([{ id: 8, result: { message: "1", status: "error" }, type: "delegate/response" }]);
 	expect(updates.at(-1)).toMatchObject({
-		traces: [{ error: "1", result: { content: [{ text: "1", type: "text" }] }, status: "error" }],
+		trace: { error: "1", result: { content: [{ text: "1", type: "text" }] }, status: "error" },
 	});
 	runtime.clear();
 });

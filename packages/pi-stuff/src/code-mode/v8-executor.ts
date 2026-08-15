@@ -1,3 +1,4 @@
+import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { ensureCodeModeHostBinary } from "./host/binary.js";
 import { CodeModeHostClient } from "./host/host-client.js";
 import type { CodeModeExecuteOptions, CodeModeWaitOptions, RuntimeResponse } from "./protocol.js";
@@ -24,11 +25,8 @@ export class V8CodeModeExecutor implements CodeModeExecutor {
 		this.startupAbort?.abort();
 		this.startupAbort = undefined;
 		if (!pending) return;
-		try {
-			await (await pending).shutdown();
-		} catch {
-			// Startup failure already reached the caller.
-		}
+		const shutdown = pending.then((client) => client.shutdown());
+		await settleWithin(shutdown, HOST_SHUTDOWN_GRACE_MS);
 	}
 
 	private client(signal?: AbortSignal): Promise<CodeModeHostClient> {

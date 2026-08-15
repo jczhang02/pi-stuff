@@ -499,7 +499,7 @@ export default function lifecycleBenchmarkFixture(pi) {
       ctx.ui.setEditorText(READY);
     },
   });
-  pi.on("input", async (_event, ctx) => {
+	pi.on("input", (event, ctx) => {
 	const requiredSuiteTools = ["TaskList", "background", "goal_complete", "mcp", "subagent"];
 	const registered = new Set(pi.getAllTools().map((tool) => tool.name));
 	const missing = process.env.PS5BW_EXPECT_SUITE === "1"
@@ -513,8 +513,7 @@ export default function lifecycleBenchmarkFixture(pi) {
     // The Suite owns the Footer and Pi hides the Editor while a turn is active,
     // so neither surface is a reliable observation point. This benchmark-only
     // PTY marker proves the Host reached the input handler without network I/O.
-    process.stderr.write("PS5BW_INPUT_ACK\\n");
-    await new Promise((resolve) => setTimeout(resolve, 0));
+	process.stderr.write("PS5BW_INPUT_ACK_" + encodeURIComponent(event.text) + "\\n");
   });
 }
 `;
@@ -578,56 +577,52 @@ export default function lifecycleTraceFixture(pi) {
 `;
 }
 
-function expectProgram(action: Action, trace: boolean): string {
+export function lifecycleExpectProgram(action: Action, trace: boolean): string {
 	let actionProgram: string;
 	switch (action) {
 		case "prompt":
 			actionProgram = `
-send -- "\\003"
-after 60
 set response_started [clock microseconds]
 send -- "PS5BW_FIRST_PROMPT\\r"
-must_expect "PS5BW_INPUT_ACK"
+must_expect "PS5BW_INPUT_ACK_PS5BW_FIRST_PROMPT"
 set acknowledgement_finished [clock microseconds]
 puts "PS5BW_METRIC acknowledgement_us [expr {$acknowledgement_finished - $response_started}]"
 must_expect "PS5BW_FIRST_PROMPT_DONE"
 set response_finished [clock microseconds]
 puts "PS5BW_METRIC response_us [expr {$response_finished - $response_started}]"
-after 80
+must_editor_ready "PS5BW_STEADY_EDITOR_READY"
 set steady_response_started [clock microseconds]
 send -- "PS5BW_SECOND_PROMPT\\r"
-must_expect "PS5BW_INPUT_ACK"
+must_expect "PS5BW_INPUT_ACK_PS5BW_SECOND_PROMPT"
 set steady_acknowledgement_finished [clock microseconds]
 puts "PS5BW_METRIC steady_acknowledgement_us [expr {$steady_acknowledgement_finished - $steady_response_started}]"
 must_expect "PS5BW_SECOND_PROMPT_DONE"
 set steady_response_finished [clock microseconds]
 puts "PS5BW_METRIC steady_response_us [expr {$steady_response_finished - $steady_response_started}]"
-after 80
+must_editor_ready "PS5BW_SHUTDOWN_EDITOR_READY"
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
 			break;
 		case "background-exit":
 			actionProgram = `
-send -- "\\003"
-after 60
 send -- "PS5BW_BACKGROUND_PROMPT\\r"
+must_expect "PS5BW_INPUT_ACK_PS5BW_BACKGROUND_PROMPT"
 must_expect "PS5BW_BACKGROUND_READY"
 must_file $env(PS5BW_BACKGROUND_SHELL_PID)
-after 80
+must_editor_ready "PS5BW_BACKGROUND_EXIT_EDITOR_READY"
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
 			break;
 		case "agent-exit":
 			actionProgram = `
-send -- "\\003"
-after 60
 send -- "PS5BW_AGENT_PROMPT\\r"
+must_expect "PS5BW_INPUT_ACK_PS5BW_AGENT_PROMPT"
 must_expect "PS5BW_AGENT_READY"
 must_file $env(PS5BW_AGENT_PI_PID)
 must_file $env(PS5BW_AGENT_SHELL_PID)
-after 80
+must_editor_ready "PS5BW_AGENT_EXIT_EDITOR_READY"
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
@@ -635,8 +630,6 @@ send -- "\\004"
 		case "reload":
 		case "reload-change":
 			actionProgram = `
-send -- "\\003"
-after 60
 ${
 	action === "reload-change"
 		? `set source_file [open $env(PS5BW_SOURCE_CHANGE_FILE) "a"]
@@ -650,29 +643,24 @@ send -- "/reload\\r"
 must_expect "Reloaded keybindings, extensions"
 set action_finished [clock microseconds]
 puts "PS5BW_METRIC reload_us [expr {$action_finished - $action_started}]"
-after 60
+must_editor_ready "PS5BW_RELOAD_EDITOR_READY"
 send -- "PS5BW_RELOAD_PROMPT\\r"
 must_expect $env(PS5BW_SURFACE_MARKER)
-must_expect "PS5BW_INPUT_ACK"
+must_expect "PS5BW_INPUT_ACK_PS5BW_RELOAD_PROMPT"
 must_expect "PS5BW_PROMPT_DONE"
-send -- "\\003"
-after 60
+must_editor_ready "PS5BW_RELOAD_EXIT_EDITOR_READY"
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
 			break;
 		case "ctrl-c":
 			actionProgram = `
-send -- "\\003"
-after 60
 set shutdown_started [clock microseconds]
 send -- "\\003"
 `;
 			break;
 		case "exit":
 			actionProgram = `
-send -- "\\003"
-after 60
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
@@ -702,11 +690,51 @@ proc must_file {path} {
     exit 5
 }
 
+proc must_editor_ready {marker} {
+    set deadline [expr {[clock milliseconds] + ${String(DEFAULT_TIMEOUT_SECONDS * 1_000)}}]
+    while {[clock milliseconds] < $deadline} {
+        send -- "\\025"
+        send -- $marker
+        set timeout 1
+        expect {
+            -exact $marker {
+                send -- "\\025"
+                return
+            }
+            eof { puts stderr "Reached EOF while waiting for Editor input: $marker"; exit 3 }
+            timeout {}
+        }
+        after 20
+    }
+    puts stderr "Timed out waiting for Editor input: $marker"
+    exit 7
+}
+
+proc wait_for_initial_editor {} {
+    set deadline [expr {[clock milliseconds] + ${String(DEFAULT_TIMEOUT_SECONDS * 1_000)}}]
+    while {[clock milliseconds] < $deadline} {
+        send -- "\\025"
+        send -- "/ps5bw-ready\\r"
+        set timeout 1
+        expect {
+            -exact "${READY_MARKER}" {
+                must_editor_ready "PS5BW_INITIAL_EDITOR_ACCEPTS_INPUT"
+                return
+            }
+            -exact "Startup is still in progress" {}
+            eof { puts stderr "Reached EOF while waiting for the initial Editor"; exit 3 }
+            timeout {}
+        }
+        after 20
+    }
+    puts stderr "Timed out waiting for the initial Editor"
+    exit 6
+}
+
 set startup_started [clock microseconds]
 spawn -noecho script -qefc $env(PS5BW_RUNNER) /dev/null
 must_expect "fixture-model"
-send -- "/ps5bw-ready\r"
-must_expect "${READY_MARKER}"
+wait_for_initial_editor
 set startup_finished [clock microseconds]
 puts "PS5BW_METRIC startup_us [expr {$startup_finished - $startup_started}]"
 ${actionProgram}
@@ -1061,7 +1089,7 @@ async function runSample(
 		...(options.trace ? { PI_TIMING: "1" } : {}),
 		TRANSFORMERS_OFFLINE: "1",
 	};
-	const result = Bun.spawnSync(["expect", "-c", expectProgram(action, options.trace)], {
+	const result = Bun.spawnSync(["expect", "-c", lifecycleExpectProgram(action, options.trace)], {
 		cwd: join(benchmarkRoot, "project"),
 		env: environment,
 		stdout: "pipe",

@@ -103,8 +103,28 @@ function projectFinalMedia(
 	return { content: output, operations };
 }
 
-function mergeTraces(target: Map<string, RuntimeToolTrace>, traces: readonly RuntimeToolTrace[] | undefined): void {
-	for (const trace of traces ?? []) target.set(trace.id, trace);
+function mergeTrace(
+	target: Map<string, RuntimeToolTrace>,
+	operationIndexes: Map<string, number>,
+	operations: SuiteToolEnvelopeOperation[],
+	trace: RuntimeToolTrace,
+): void {
+	target.set(trace.id, trace);
+	let index = operationIndexes.get(trace.id);
+	if (index === undefined) {
+		index = operations.length;
+		operationIndexes.set(trace.id, index);
+	}
+	operations[index] = operation(trace);
+}
+
+function mergeTraces(
+	target: Map<string, RuntimeToolTrace>,
+	operationIndexes: Map<string, number>,
+	operations: SuiteToolEnvelopeOperation[],
+	traces: readonly RuntimeToolTrace[] | undefined,
+): void {
+	for (const trace of traces ?? []) mergeTrace(target, operationIndexes, operations, trace);
 }
 
 function settleRunningTraces(
@@ -210,18 +230,20 @@ export class CodeModeRuntime {
 		onUpdate?: AgentToolUpdateCallback<PiStuffCodeModeDetails>,
 	): Promise<AgentToolResult<PiStuffCodeModeDetails>> {
 		const traces = new Map<string, RuntimeToolTrace>();
+		const operationIndexes = new Map<string, number>();
+		const operations: SuiteToolEnvelopeOperation[] = [];
 		let droppedOperationCount = 0;
 		let cellId: string | undefined;
 		const details = (
 			status: PiStuffCodeModeDetails["status"],
 			error?: string,
-			operations: readonly SuiteToolEnvelopeOperation[] = [...traces.values()].map(operation),
+			projectedOperations: readonly SuiteToolEnvelopeOperation[] = [...operations],
 		): PiStuffCodeModeDetails => ({
 			...(cellId ? { cellId } : {}),
 			...(droppedOperationCount > 0 ? { droppedOperationCount } : {}),
 			...(error ? { error } : {}),
 			kind: "pi-stuff-code-mode",
-			operations,
+			operations: projectedOperations,
 			status,
 		});
 		const publish = (): void => {
@@ -230,14 +252,10 @@ export class CodeModeRuntime {
 		const executorContext = {
 			cwd: context.cwd,
 			extensionContext: context,
-			onTraceUpdate: (update: {
-				cellId: string;
-				droppedTraceCount?: number;
-				traces: readonly RuntimeToolTrace[];
-			}) => {
+			onTraceUpdate: (update: { cellId: string; droppedTraceCount?: number; trace: RuntimeToolTrace }) => {
 				cellId = update.cellId;
 				droppedOperationCount = Math.max(droppedOperationCount, update.droppedTraceCount ?? 0);
-				mergeTraces(traces, update.traces);
+				mergeTrace(traces, operationIndexes, operations, update.trace);
 				publish();
 			},
 			toolCallId: outerToolCallId,
@@ -252,7 +270,7 @@ export class CodeModeRuntime {
 			});
 			cellId = response.cellId;
 			droppedOperationCount = Math.max(droppedOperationCount, response.droppedTraceCount ?? 0);
-			mergeTraces(traces, response.traces);
+			mergeTraces(traces, operationIndexes, operations, response.traces);
 			publish();
 			while (response.kind === "yielded") {
 				response = await this.executor.wait(response.cellId, {
@@ -262,7 +280,7 @@ export class CodeModeRuntime {
 				});
 				cellId = response.cellId;
 				droppedOperationCount = Math.max(droppedOperationCount, response.droppedTraceCount ?? 0);
-				mergeTraces(traces, response.traces);
+				mergeTraces(traces, operationIndexes, operations, response.traces);
 				publish();
 			}
 			const error = response.kind === "result" ? response.errorText : undefined;

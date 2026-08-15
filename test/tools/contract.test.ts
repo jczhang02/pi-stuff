@@ -1352,6 +1352,7 @@ test("Bash partial results update in place and the final output wins", () => {
 	const bash = toolFromHarness(harness, "bash", "run-command");
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.indexMessages([assistant(bashCall("stream-bash", "printf 'first\\nsecond\\n'"))], false);
+	runtime.observeToolExecutionStart("stream-bash");
 	const context = renderContext(
 		{},
 		{ value: "printf 'first\\nsecond\\n'" },
@@ -1363,25 +1364,71 @@ test("Bash partial results update in place and the final output wins", () => {
 	if (!callComponent) throw new Error("missing running Bash component");
 	expect(renderLines(callComponent)).toEqual([" • Bash(printf 'first\\nsecond\\n')", "  ⎿  Running…"]);
 
-	bash.renderResult?.(
-		{ content: [{ type: "text", text: "first\nsecond" }], details: { source: "bash" } },
-		{ expanded: false, isPartial: true },
-		theme,
-		{ ...context, lastComponent: callComponent } as never,
-	);
+	const partial = { content: [{ type: "text" as const, text: "first\nsecond" }], details: { source: "bash" } };
+	runtime.observeToolExecutionUpdate("stream-bash", partial);
+	bash.renderCall?.({ value: "printf 'first\\nsecond\\n'" }, theme, context as never);
+	bash.renderResult?.(partial, { expanded: false, isPartial: true }, theme, {
+		...context,
+		lastComponent: callComponent,
+	} as never);
 	expect(renderLines(callComponent)).toEqual([" • Bash(printf 'first\\nsecond\\n')", "  ⎿  first", "     second"]);
 
-	bash.renderResult?.(
-		{ content: [{ type: "text", text: "failed\n\nCommand exited with code 7" }], details: { source: "bash" } },
-		{ expanded: false, isPartial: false },
-		theme,
-		{ ...context, isError: true, lastComponent: callComponent } as never,
-	);
+	const finalResult = {
+		content: [{ type: "text" as const, text: "failed\n\nCommand exited with code 7" }],
+		details: { source: "bash" },
+		isError: true,
+	};
+	runtime.observeToolExecutionEnd("stream-bash", finalResult);
+	bash.renderCall?.({ value: "printf 'first\\nsecond\\n'" }, theme, context as never);
+	bash.renderResult?.(finalResult, { expanded: false, isPartial: false }, theme, {
+		...context,
+		isError: true,
+		lastComponent: callComponent,
+	} as never);
 	expect(renderLines(callComponent)).toEqual([
 		" • Bash(printf 'first\\nsecond\\n')",
 		"  ⎿  Error: Exit code 7",
 		"     failed",
 	]);
+});
+
+test("replaying Pi's Bash partial renderer pass settles after one invalidation", async () => {
+	const harness = apiHarness();
+	const bash = toolFromHarness(harness, "bash", "run-command");
+	const runtime = getToolUiRuntime(harness.api);
+	const toolCallId = "stable-partial";
+	const args = { value: "sleep 2; printf done" };
+	const state = {};
+	const partial = { content: [{ type: "text" as const, text: "still working" }], details: { source: "bash" } };
+	let invalidations = 0;
+	let renderPass = (): void => {};
+	const context = renderContext(state, args, {
+		invalidate: () => {
+			invalidations += 1;
+			if (invalidations <= 10) renderPass();
+		},
+		toolCallId,
+	});
+
+	runtime.indexMessages([assistant(bashCall(toolCallId, args.value))], false);
+	runtime.observeToolExecutionStart(toolCallId);
+	const component = bash.renderCall?.(args, theme, context as never);
+	if (!component) throw new Error("missing running Bash component");
+	renderPass = () => {
+		bash.renderCall?.(args, theme, context as never);
+		bash.renderResult?.(partial, { expanded: false, isPartial: true }, theme, {
+			...context,
+			lastComponent: component,
+		} as never);
+	};
+
+	runtime.observeToolExecutionUpdate(toolCallId, partial);
+	renderPass();
+	for (let turn = 0; turn < 12; turn += 1) await Promise.resolve();
+
+	expect(invalidations).toBe(1);
+	expect(renderLines(component)).toEqual([" • Bash(sleep 2; printf done)", "  ⎿  still working"]);
+	runtime.suspend();
 });
 
 test("Ctrl+O expands Bash command and output inside the same operation block", () => {
@@ -1632,6 +1679,32 @@ test("streaming Tool snapshots replace partial arguments and the final message w
 	if (!group || group === "ambiguous") throw new Error("streamed group missing");
 	expect(group.summary).toContain("Reading 2 files");
 	runtime.clear();
+});
+
+test("streaming Tool argument deltas do not rescan the accumulated argument", () => {
+	const harness = apiHarness();
+	toolFromHarness(harness, "write", "change-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.startTurn();
+	const pending = assistant();
+	const started = performance.now();
+	for (let index = 0; index < 800; index += 1) {
+		runtime.observeAssistantEvent({
+			type: "toolcall_delta",
+			contentIndex: 0,
+			delta: "x".repeat(10_000),
+			partial: pending as never,
+		});
+	}
+	runtime.observeAssistantEvent({
+		type: "toolcall_end",
+		contentIndex: 0,
+		toolCall: { type: "toolCall", id: "large-write", name: "write", arguments: { value: "large.ts" } },
+		partial: pending as never,
+	});
+
+	expect(performance.now() - started).toBeLessThan(100);
+	expect(runtime.resolveGroup("large-write")).toMatchObject({ memberIds: ["large-write"] });
 });
 
 test("an aborted final assistant message settles an unexecuted streamed Tool call", () => {

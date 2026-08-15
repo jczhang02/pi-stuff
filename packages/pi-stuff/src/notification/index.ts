@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getCommandDialogCoordinator, readCurrentAgentWorkOrigin, reportDiagnostic } from "../conversation-ui/index.js";
+import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { extractNotificationPreview, formatNotificationContent } from "./format.js";
 import { createNotificationSettingsView } from "./notification-settings-dialog.js";
 import { type NotificationClock, NotificationRuntime } from "./runtime.js";
@@ -132,7 +133,7 @@ export async function installNotificationCapability(
 		removeTerminalInput = undefined;
 		active?.dispose();
 		active = undefined;
-		await settings.whenIdle();
+		await settleWithin(settings.whenIdle(), HOST_SHUTDOWN_GRACE_MS);
 	});
 }
 

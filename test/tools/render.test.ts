@@ -498,6 +498,29 @@ describe("terminal-safe Tool rendering", () => {
 		expect(row.computationCount).toBe(8);
 	});
 
+	test("does not repaint a Tool row for invisible duration changes", () => {
+		const row = new CachedToolRow(theme, {
+			durationMs: 1,
+			label: "Read",
+			state: "running",
+			summary: "reading",
+			target: "sample.txt",
+		});
+		const initial = row.render(80);
+
+		expect(
+			row.setModel({
+				durationMs: 2,
+				label: "Read",
+				state: "running",
+				summary: "reading",
+				target: "sample.txt",
+			}),
+		).toBe(false);
+		expect(row.render(80)).toBe(initial);
+		expect(row.computationCount).toBe(1);
+	});
+
 	test("keeps marker and label ahead of CJK target and summary at narrow widths", () => {
 		const row = new CachedToolRow(theme, {
 			durationMs: 1,

@@ -243,9 +243,10 @@ export class McpOAuthProvider implements OAuthClientProvider {
         )
       }
       const clientSecret = this.config.clientSecret?.startsWith("!")
-        ? resolveCommandSecret(
+        ? await resolveCommandSecret(
           this.config.clientSecret,
           `MCP server "${this.serverName}" OAuth clientSecret`,
+          this.runtimeSignal,
         )
         : this.config.clientSecret
       return {

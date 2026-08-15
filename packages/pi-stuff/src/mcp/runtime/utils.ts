@@ -1,8 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { spawnSync } from "node:child_process";
+import { exec } from "node:child_process";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { McpConfig, ServerEntry } from "./types.ts";
+
+const execAsync = promisify(exec);
 
 async function execOpen(pi: ExtensionAPI, target: string, browser?: string, signal?: AbortSignal) {
   const os = platform();
@@ -106,48 +109,56 @@ const COMMAND_SECRET_TIMEOUT_MS = 10_000;
 const COMMAND_SECRET_MAX_OUTPUT_BYTES = 1024 * 1024;
 
 /** Resolve a secret value, executing only a single leading `!` command marker. */
-export function resolveCommandSecret(value: string | undefined, context: string): string | undefined {
+export async function resolveCommandSecret(
+  value: string | undefined,
+  context: string,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
   if (value === undefined) return undefined;
   if (value.startsWith("!!")) return interpolateEnvVars(value.slice(1));
   if (!value.startsWith("!")) return interpolateEnvVars(value);
 
-  const result = spawnSync(value.slice(1), {
-    shell: true,
-    encoding: "utf8",
-    timeout: COMMAND_SECRET_TIMEOUT_MS,
-    maxBuffer: COMMAND_SECRET_MAX_OUTPUT_BYTES,
-    stdio: ["ignore", "pipe", "ignore"],
-    windowsHide: true,
-  });
-  if (result.error) {
-    const code = (result.error as NodeJS.ErrnoException).code;
-    const reason = code === "ETIMEDOUT"
-      ? "command timed out after 10 seconds"
-      : code === "ENOBUFS"
-        ? "command output exceeded 1 MiB"
-        : "command failed to start";
+  signal?.throwIfAborted();
+  let stdout: string;
+  try {
+    ({ stdout } = await execAsync(value.slice(1), {
+      encoding: "utf8",
+      timeout: COMMAND_SECRET_TIMEOUT_MS,
+      maxBuffer: COMMAND_SECRET_MAX_OUTPUT_BYTES,
+      windowsHide: true,
+      signal,
+    }));
+  } catch (error) {
+    signal?.throwIfAborted();
+    const commandError = error as NodeJS.ErrnoException & { killed?: boolean; signal?: string };
+    const reason = commandError.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+      ? "command output exceeded 1 MiB"
+      : commandError.killed && commandError.signal === "SIGTERM"
+        ? "command timed out after 10 seconds"
+        : typeof commandError.code === "number"
+          ? `command exited with code ${commandError.code}`
+          : "command failed to start";
     throw new Error(`Failed to resolve ${context}: ${reason}`);
   }
-  if (result.status !== 0) {
-    throw new Error(`Failed to resolve ${context}: command exited with code ${result.status ?? "unknown"}`);
-  }
 
-  const resolved = result.stdout.trim();
+  const resolved = stdout.trim();
   if (!resolved) throw new Error(`Failed to resolve ${context}: command returned empty output`);
   return resolved;
 }
 
 /** Resolve command markers in a configured record without mutating the input. */
-export function resolveCommandSecretsRecord(
+export async function resolveCommandSecretsRecord(
   values: Record<string, string> | undefined,
   context: (key: string) => string,
-): Record<string, string> | undefined {
+  signal?: AbortSignal,
+): Promise<Record<string, string> | undefined> {
   if (!values) return undefined;
 
-  return Object.fromEntries(Object.entries(values).map(([key, value]) => [
-    key,
-    resolveCommandSecret(value, context(key)),
-  ]));
+  const resolved: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values)) {
+    resolved[key] = (await resolveCommandSecret(value, context(key), signal))!;
+  }
+  return resolved;
 }
 
 export function resolveServerUrl(definition: Pick<ServerEntry, "url">): string | undefined {

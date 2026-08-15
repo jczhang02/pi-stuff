@@ -424,6 +424,36 @@ describe("BackgroundWorkRuntime", () => {
 		expect(runtimeFiles.some((entry) => entry.endsWith(".command") || entry.endsWith(".ack"))).toBeFalse();
 	});
 
+	test("bounds shutdown when an external monitor ignores cancellation", async () => {
+		const root = temporaryRoot();
+		const active = new BackgroundWorkRuntime({
+			cwd: root,
+			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			sessionId: "work-test-session",
+			shutdownGraceMs: 10,
+			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
+		});
+		active.registerMonitor({
+			cancel: async () => new Promise<BackgroundWorkOutcome>(() => undefined),
+			id: "m-stalled-cleanup",
+			outcome: new Promise<BackgroundWorkOutcome>(() => undefined),
+			readOutput: () => "still running",
+			snapshot: () => ({
+				id: "m-stalled-cleanup",
+				kind: "monitor",
+				startedAt: 1,
+				status: "running",
+				title: "Stalled cleanup",
+			}),
+		});
+
+		const startedAt = performance.now();
+		await active.shutdown();
+
+		expect(performance.now() - startedAt).toBeLessThan(100);
+		expect(active.snapshot()).toHaveLength(0);
+	});
+
 	test("reserves the sixteenth activity slot before supervisor identity capture completes", async () => {
 		const root = temporaryRoot();
 		let releaseCaptures!: () => void;

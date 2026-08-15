@@ -11,12 +11,15 @@
 		"packages/pi-stuff/src/web/runtime/**",
 		"packages/pi-stuff/src/mcp/runtime/**",
 		"test/mcp/agent-run-origin.test.ts",
+		"test/mcp/command-secret.test.ts",
 		"test/mcp/host-seam.test.ts",
+		"test/mcp/runtime-owner.test.ts",
 		"test/mcp/xdg-paths.test.ts",
 		"test/agents-host.test.ts",
 		"test/agents-pty.test.ts",
 		"test/agents",
 		"test/rtk",
-		"test/goal-upstream"
+		"test/goal-upstream",
+		"test/web/extraction-process.test.ts"
 	]
 }

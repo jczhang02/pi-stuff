@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, type Focusable, isFocusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
+import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import {
 	AgentRunOriginTracker,
 	listenForActiveAgentWorkUserPromotions,
@@ -333,7 +334,7 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		if (this.boundApis.has(pi)) return;
 		this.boundApis.add(pi);
 		pi.on("session_shutdown", async () => {
-			await this.shutdown();
+			await settleWithin(this.shutdown(), HOST_SHUTDOWN_GRACE_MS);
 		});
 	}
 
@@ -1056,7 +1057,7 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 		sessionContext = undefined;
 		agentSettlementPending = false;
 		userWorkGitRefreshPending = false;
-		await settings.whenIdle();
+		await settleWithin(settings.whenIdle(), HOST_SHUTDOWN_GRACE_MS);
 		unregisterOwnedSettings?.();
 		unregisterOwnedSettings = undefined;
 		if (lifecycle.activation === activation) {

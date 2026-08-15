@@ -33,6 +33,7 @@ import { reconcileAsyncRun, reconcileNestedAsyncDescendants } from "./stale-run-
 interface AsyncJobTrackerOptions {
 	completionRetentionMs?: number;
 	pollIntervalMs?: number;
+	onRefresh?: () => void;
 	resultsDir?: string;
 	kill?: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 	now?: () => number;
@@ -690,6 +691,7 @@ export function createAsyncJobTracker(
 					);
 				}
 			}
+			options.onRefresh?.();
 		}, pollIntervalMs);
 		state.poller.unref?.();
 	};

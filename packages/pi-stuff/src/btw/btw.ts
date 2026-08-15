@@ -6,8 +6,6 @@
  * stream, and returns a value. Display history never crosses this boundary.
  */
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import type { Api, AssistantMessage, Message, Model, StopReason, UserMessage } from "@earendil-works/pi-ai";
 import { isContextOverflow } from "@earendil-works/pi-ai";
 import {
@@ -21,6 +19,7 @@ import { projectCurrentContext } from "../context-management/index.js";
 import { fitBranch } from "./btw-budget.js";
 import { assistantMessageText } from "./btw-messages.js";
 import { openBtwStream } from "./pi-compat.js";
+import btwSystemPrompt from "./prompts/btw-system.txt" with { type: "text" };
 
 export const BTW_COMMAND_NAME = "btw";
 
@@ -29,10 +28,7 @@ const ERR_PROVIDER_ABORT = "/btw was aborted by the model provider.";
 const ERR_TOOL_ATTEMPT = "/btw attempted to call a tool even though tools are disabled.";
 const ERR_NO_MODEL = "/btw requires an active model.";
 
-const BTW_SYSTEM_PROMPT = readFileSync(
-	fileURLToPath(new URL("./prompts/btw-system.txt", import.meta.url)),
-	"utf8",
-).trimEnd();
+const BTW_SYSTEM_PROMPT = btwSystemPrompt.trimEnd();
 
 interface BtwBuiltContext {
 	readonly messages: Message[];

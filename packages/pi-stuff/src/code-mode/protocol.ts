@@ -48,7 +48,7 @@ export type RuntimeResponse = (
 export interface RuntimeTraceUpdate {
 	readonly cellId: string;
 	readonly droppedTraceCount?: number;
-	readonly traces: readonly RuntimeToolTrace[];
+	readonly trace: RuntimeToolTrace;
 }
 
 export interface ExecutorContext extends SandboxToolExecutionContext {

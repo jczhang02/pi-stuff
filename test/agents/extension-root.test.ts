@@ -166,7 +166,6 @@ interface RootHarness {
 	readonly roster: { contexts: number; disposed: number; suppressed: boolean[] };
 	readonly state: { value?: SubagentState };
 	readonly supervisor: { disposed: number; started: number };
-	readonly timers: { cleared: number; callbacks: Array<() => void> };
 	readonly tracker: {
 		completed: number;
 		pollers: number;
@@ -236,7 +235,6 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 	const roster = { contexts: 0, disposed: 0, suppressed: [] as boolean[] };
 	const state = { value: undefined as SubagentState | undefined };
 	const supervisor = { disposed: 0, started: 0 };
-	const timers = { cleared: 0, callbacks: [] as Array<() => void> };
 	const tracker = { completed: 0, pollers: 0, reset: 0, restored: 0, started: 0 };
 	const watcher = { primes: 0, starts: 0, stops: 0 };
 
@@ -464,15 +462,6 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 				truncated: false,
 			};
 		},
-		timers: {
-			setInterval: (callback) => {
-				timers.callbacks.push(callback);
-				return { unref: () => {} } as ReturnType<typeof setInterval>;
-			},
-			clearInterval: () => {
-				timers.cleared += 1;
-			},
-		},
 	};
 
 	registerAgents(api.api, dependencies);
@@ -491,7 +480,6 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		roster,
 		state,
 		supervisor,
-		timers,
 		tracker,
 		watcher,
 	};
@@ -754,7 +742,6 @@ describe("Agents extension composition root", () => {
 		expect(root.governor.failures).toBe(1);
 		expect(root.governor.settlements).toBe(0);
 		expect(root.engineParams).toEqual([]);
-		expect(root.timers.callbacks).toHaveLength(0);
 	});
 
 	test("retains a launched background Agent lease when post-launch settlement persistence fails", async () => {
@@ -1206,7 +1193,6 @@ describe("Agents extension composition root", () => {
 		expect(root.tracker.started).toBe(1);
 		expect(root.governor.starts).toHaveLength(1);
 		expect(root.current.refreshes).toBeGreaterThan(before);
-		expect(root.timers.callbacks).toHaveLength(1);
 		const beforeBackgroundCompletion = root.api.events.emissions.length;
 		root.api.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, {
 			id: "live",

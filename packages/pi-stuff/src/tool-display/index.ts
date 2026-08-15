@@ -8,6 +8,7 @@ import {
 	getCommandDialogCoordinator,
 	getHostSharedResource,
 } from "../conversation-ui/index.js";
+import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { registerBuiltins, resolveBuiltinHostSettings } from "./builtin-tools.js";
 import { installToolUiRuntime } from "./contract.js";
 import { consumeResumeToolHandoff, prepareResumeToolHandoff, restoreResumeActiveToolOrder } from "./session-handoff.js";
@@ -172,11 +173,29 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 		pi.on("input", () => {
 			runtime.observeUserBoundary();
 		});
+		pi.on("tool_execution_start", (event) => {
+			if (runtime.hasActivityRenderer(event.toolName)) {
+				runtime.observeToolExecutionStart(event.toolCallId);
+			}
+		});
+		pi.on("tool_execution_update", (event) => {
+			if (runtime.hasActivityRenderer(event.toolName)) {
+				runtime.observeToolExecutionUpdate(event.toolCallId, event.partialResult);
+			}
+		});
+		pi.on("tool_execution_end", (event) => {
+			if (runtime.hasActivityRenderer(event.toolName)) {
+				runtime.observeToolExecutionEnd(
+					event.toolCallId,
+					event.isError ? { ...event.result, isError: true } : event.result,
+				);
+			}
+		});
 		pi.on("agent_start", () => {
 			runtime.startTurn();
 		});
 		pi.on("message_update", (event) => {
-			runtime.observeAssistantUpdate(event.message);
+			runtime.observeAssistantEvent(event.assistantMessageEvent);
 		});
 		pi.on("message_end", (event) => {
 			if (
@@ -192,7 +211,6 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 			runtime.endTurn();
 		});
 		pi.on("session_shutdown", async (event) => {
-			await settings.whenIdle();
 			unsubscribeSettings();
 			unregisterUiSetting();
 			if (event.reason === "reload") {
@@ -207,6 +225,7 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 				runtime.suspend();
 			}
 			releaseToolLifecycle(lifecycle, activation);
+			await settleWithin(settings.whenIdle(), HOST_SHUTDOWN_GRACE_MS);
 		});
 	} catch (error) {
 		releaseToolLifecycle(lifecycle, activation);

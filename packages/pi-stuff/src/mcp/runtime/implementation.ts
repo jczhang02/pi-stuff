@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
+import { HOST_SHUTDOWN_GRACE_MS } from "../../lifecycle-deadline.js";
 import type { McpExtensionState } from "./state.ts";
 import type { DirectToolSpec, McpAdapterOptions, McpConfig, PromptMetadata } from "./types.ts";
 import type { McpOAuthRuntime } from "./mcp-auth-flow.ts";
@@ -373,11 +374,14 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
     // work cannot resume into a stale ExtensionContext.
     const stopPrevious = previousOwner?.stop("MCP extension session restarted") ?? Promise.resolve();
     try {
-      await Promise.all([
+      const cleanup = await awaitWithTimeout(Promise.all([
         stopPrevious,
         shutdownState(previousState, "session_restart"),
         previousOAuthRuntime ? shutdownOAuth(previousOAuthRuntime) : Promise.resolve(),
-      ]);
+      ]), HOST_SHUTDOWN_GRACE_MS);
+      if (cleanup === INIT_WAIT_TIMED_OUT) {
+        logger.error("MCP: previous session cleanup exceeded its shutdown deadline", new Error("cleanup timed out"));
+      }
     } catch (error) {
       logger.error(
         "MCP: failed to shut down previous session state",
@@ -414,11 +418,14 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
     // Pi context after session shutdown.
     const stopOwner = owner?.stop("MCP extension session shutdown") ?? Promise.resolve();
     try {
-      await Promise.all([
+      const cleanup = await awaitWithTimeout(Promise.all([
         stopOwner,
         shutdownState(currentState, "session_shutdown"),
         oauthRuntime ? shutdownOAuth(oauthRuntime) : Promise.resolve(),
-      ]);
+      ]), HOST_SHUTDOWN_GRACE_MS);
+      if (cleanup === INIT_WAIT_TIMED_OUT) {
+        logger.error("MCP: session cleanup exceeded its shutdown deadline", new Error("cleanup timed out"));
+      }
     } catch (error) {
       logger.error(
         "MCP: session shutdown cleanup failed",

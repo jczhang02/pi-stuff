@@ -96,7 +96,6 @@ function sameModel(left: ToolTranscriptRowModel, right: ToolTranscriptRowModel):
 		);
 	}
 	return (
-		left.durationMs === right.durationMs &&
 		left.label === right.label &&
 		left.state === right.state &&
 		left.summary === right.summary &&

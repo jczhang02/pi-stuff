@@ -1,24 +1,16 @@
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import {
-	chmodSync,
-	copyFileSync,
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	statSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmod, copyFile, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
 import { getProxyForUrl } from "proxy-from-env";
 import { codeModeHostBinaryName, hostAssetUrl, resolveCodeModeHostAsset } from "./host-assets.js";
 import { readProcessStartIdentity } from "./process-start-identity.js";
+
+const execFileAsync = promisify(execFile);
 
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 const INSTALL_LOCK_POLL_MS = 200;
@@ -220,7 +212,7 @@ export async function installCodeModeHost(options: InstallCodeModeHostOptions): 
 		throw new Error(`Code Mode host destination must end with ${binaryName}`);
 	}
 	if (existsSync(destination)) return;
-	mkdirSync(resolve(destination, ".."), { recursive: true });
+	await mkdir(resolve(destination, ".."), { recursive: true });
 	const lockPath = `${destination}.lock`;
 	const lock = await acquireInstallLock(lockPath, destination, options.signal);
 	if (!lock) return;
@@ -228,7 +220,7 @@ export async function installCodeModeHost(options: InstallCodeModeHostOptions): 
 	let temporary: string | undefined;
 	const staged = `${destination}.${String(process.pid)}.tmp`;
 	try {
-		temporary = mkdtempSync(join(options.temporaryDirectory ?? tmpdir(), "pi-stuff-code-mode-"));
+		temporary = await mkdtemp(join(options.temporaryDirectory ?? tmpdir(), "pi-stuff-code-mode-"));
 		const assetUrl = hostAssetUrl(assetName);
 		let bytes: Buffer;
 		try {
@@ -251,28 +243,30 @@ export async function installCodeModeHost(options: InstallCodeModeHostOptions): 
 		if (actualSha256 !== expectedSha256) throw new Error(`Code Mode host checksum mismatch for ${assetName}`);
 
 		if (options.platform === "win32") {
-			writeFileSync(staged, bytes);
+			await writeFile(staged, bytes);
 		} else {
 			const archive = join(temporary, basename(assetName));
 			const extracted = join(temporary, "extracted");
-			writeFileSync(archive, bytes);
-			mkdirSync(extracted);
-			const extraction = spawnSync("tar", ["-xzf", archive, "-C", extracted], { stdio: "pipe" });
-			options.signal?.throwIfAborted();
-			if (extraction.status !== 0) {
-				throw new Error(`Code Mode host archive extraction failed: ${extraction.stderr.toString().trim()}`);
+			await writeFile(archive, bytes);
+			await mkdir(extracted);
+			try {
+				await execFileAsync("tar", ["-xzf", archive, "-C", extracted], { signal: options.signal });
+			} catch (error) {
+				options.signal?.throwIfAborted();
+				const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr).trim() : "";
+				throw new Error(`Code Mode host archive extraction failed${stderr ? `: ${stderr}` : ""}`, { cause: error });
 			}
 			const candidates = walk(extracted).filter((path) => basename(path).startsWith("codex-code-mode-host"));
 			if (candidates.length !== 1) {
 				throw new Error(`Expected one Code Mode host binary, found ${String(candidates.length)}`);
 			}
-			copyFileSync(candidates[0] ?? "", staged);
-			chmodSync(staged, 0o755);
+			await copyFile(candidates[0] ?? "", staged);
+			await chmod(staged, 0o755);
 		}
-		renameSync(staged, destination);
+		await rename(staged, destination);
 	} finally {
-		rmSync(staged, { force: true });
-		if (temporary) rmSync(temporary, { force: true, recursive: true });
+		await rm(staged, { force: true });
+		if (temporary) await rm(temporary, { force: true, recursive: true });
 		releaseInstallLock(lock);
 	}
 }

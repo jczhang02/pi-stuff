@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readlinkSync, realpathSync } from "node:fs";
+import { lstat, readdir, readlink, realpath } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { markLifecyclePhase } from "./lifecycle-performance.js";
@@ -45,8 +45,8 @@ function runtimeCache(): SuiteRuntimeCache {
 	return created;
 }
 
-function updateFingerprint(hash: ReturnType<typeof createHash>, sourceRoot: string, path: string): void {
-	const metadata = lstatSync(path);
+async function updateFingerprint(hash: ReturnType<typeof createHash>, sourceRoot: string, path: string): Promise<void> {
+	const metadata = await lstat(path);
 	const relativePath = relative(sourceRoot, path);
 	hash.update(relativePath);
 	hash.update("\0");
@@ -58,22 +58,22 @@ function updateFingerprint(hash: ReturnType<typeof createHash>, sourceRoot: stri
 	hash.update("\0");
 	hash.update(String(metadata.ctimeMs));
 	hash.update("\0");
-	if (metadata.isSymbolicLink()) hash.update(readlinkSync(path));
+	if (metadata.isSymbolicLink()) hash.update(await readlink(path));
 	hash.update("\0");
 }
 
-function fingerprintSourceTree(sourceRoot: string): string {
+async function fingerprintSourceTree(sourceRoot: string): Promise<string> {
 	const hash = createHash("sha256");
-	const visit = (directory: string): void => {
-		for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+	const visit = async (directory: string): Promise<void> => {
+		for (const entry of (await readdir(directory, { withFileTypes: true })).sort((left, right) =>
 			left.name.localeCompare(right.name),
 		)) {
 			const path = join(directory, entry.name);
-			updateFingerprint(hash, sourceRoot, path);
-			if (entry.isDirectory()) visit(path);
+			await updateFingerprint(hash, sourceRoot, path);
+			if (entry.isDirectory()) await visit(path);
 		}
 	};
-	visit(sourceRoot);
+	await visit(sourceRoot);
 	return hash.digest("hex");
 }
 
@@ -106,9 +106,9 @@ export async function importFreshSuiteRuntime(runtimePath: string): Promise<Suit
  * leaving the Extension factory and every Capability installer fresh.
  */
 export async function loadSuiteRuntime(request: SuiteRuntimeLoadRequest): Promise<SuiteRuntimeModule> {
-	const sourceRoot = realpathSync(request.sourceRoot);
+	const sourceRoot = await realpath(request.sourceRoot);
 	markLifecyclePhase("suite.loader.fingerprint.start");
-	const fingerprint = fingerprintSourceTree(sourceRoot);
+	const fingerprint = await fingerprintSourceTree(sourceRoot);
 	markLifecyclePhase("suite.loader.fingerprint.end");
 
 	const cache = runtimeCache();

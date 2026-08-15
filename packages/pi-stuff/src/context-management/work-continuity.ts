@@ -438,8 +438,10 @@ export class WorkContinuityGovernor {
 		}
 	}
 
-	observeCompactions(entries: readonly SessionEntryLike[]): void {
-		for (const entry of entries) {
+	observeCompactions(entries: readonly SessionEntryLike[], fromIndex = 0): void {
+		for (let index = Math.max(0, fromIndex); index < entries.length; index += 1) {
+			const entry = entries[index];
+			if (!entry) continue;
 			if (entry.type !== "compaction" || typeof entry.id !== "string" || !entry.id) continue;
 			if (this.observedCompactionIds.has(entry.id)) continue;
 			this.observedCompactionIds.add(entry.id);

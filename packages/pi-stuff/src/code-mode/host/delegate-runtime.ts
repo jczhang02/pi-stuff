@@ -148,20 +148,20 @@ export class CodeModeDelegateRuntime {
 			...context,
 			captureResult: (result) => {
 				trace.result = result;
-				this.traces.emit(cellId, context);
+				this.traces.emit(cellId, trace, context);
 			},
 			onUpdate: (result) => {
 				trace.result = result;
-				this.traces.emit(cellId, context);
+				this.traces.emit(cellId, trace, context);
 			},
 			toolCallId: trace.id,
 		};
-		this.traces.emit(cellId, context);
+		this.traces.emit(cellId, trace, context);
 		try {
 			const value = await tool.invoke(invocation.input, nestedContext, controller.signal);
 			trace.result ??= resultFromValue(value);
 			trace.status = "done";
-			this.traces.emit(cellId, context);
+			this.traces.emit(cellId, trace, context);
 			const serializationError = this.respond(message.id, {
 				status: "ok",
 				value: { result: value, type: "tool/result" },
@@ -169,14 +169,14 @@ export class CodeModeDelegateRuntime {
 			if (serializationError) {
 				trace.status = "error";
 				trace.error = serializationError.message;
-				this.traces.emit(cellId, context);
+				this.traces.emit(cellId, trace, context);
 			}
 		} catch (error) {
 			if (error instanceof SuiteToolInvocationError) trace.result = error.result;
 			trace.result ??= resultFromValue(error instanceof Error ? error.message : String(error));
 			trace.status = controller.signal.aborted ? "cancelled" : "error";
 			trace.error = error instanceof Error ? error.message : String(error);
-			this.traces.emit(cellId, context);
+			this.traces.emit(cellId, trace, context);
 			this.respond(message.id, { message: trace.error, status: "error" });
 		} finally {
 			this.controllers.delete(message.id);

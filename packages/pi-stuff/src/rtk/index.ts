@@ -1,5 +1,6 @@
 import { type ExtensionAPI, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
+import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { createRtkProjectionAdapter } from "./projection.js";
 import { createRtkDialogView } from "./rtk-dialog.js";
 import { createRtkSettingsView } from "./rtk-settings-dialog.js";
@@ -79,6 +80,6 @@ export default async function piStuffRtk(pi: ExtensionAPI): Promise<void> {
 	});
 	pi.on("session_tree", () => projection.reset());
 	pi.on("session_shutdown", async () => {
-		await settings.whenIdle();
+		await settleWithin(settings.whenIdle(), HOST_SHUTDOWN_GRACE_MS);
 	});
 }

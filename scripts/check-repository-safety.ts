@@ -74,6 +74,7 @@ const INTERNAL_MODULES = [
 type InternalModule = (typeof INTERNAL_MODULES)[number];
 const INTERNAL_MODULE_SET = new Set<string>(INTERNAL_MODULES);
 const SUITE_COMPOSITION_SOURCE_FILES = new Set([
+	"packages/pi-stuff/src/lifecycle-deadline.ts",
 	"packages/pi-stuff/src/lifecycle-performance.ts",
 	"packages/pi-stuff/src/suite-loader.ts",
 	"packages/pi-stuff/src/suite-runtime.ts",

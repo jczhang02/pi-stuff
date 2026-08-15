@@ -23,6 +23,7 @@ import {
 	withAgentWorkOrigin,
 } from "../../conversation-ui/agent-run-origin.js";
 import { requestStatuslineGitRefreshAfterUserWork, sendSuiteAgentMessage } from "../../conversation-ui/index.js";
+import { settleWithin } from "../../lifecycle-deadline.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
 import {
@@ -56,6 +57,7 @@ const NOTIFICATION_RETRY_INITIAL_MS = 250;
 const NOTIFICATION_RETRY_MAX_MS = 5_000;
 const SUPERVISOR_POST_EXIT_DRAIN_MS = 500;
 const STOP_COMPLETION_GRACE_MS = 3_000;
+const SHUTDOWN_GRACE_MS = 1_000;
 const DEFAULT_METADATA_HEARTBEAT_MS = 5_000;
 const MAX_COMMAND_AUTHORIZATION_BYTES = 4 * 1024 * 1024;
 const ID_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
@@ -224,6 +226,8 @@ interface RuntimeOptions {
 	/** Test seam for transient stale-runtime recovery failure. */
 	readonly reconcileStale?: typeof reconcileStaleRuns;
 	readonly sessionId: string;
+	/** Test seam; shutdown retains durable recovery ownership after this deadline. */
+	readonly shutdownGraceMs?: number;
 	/** Test seam; production refreshes authenticated recovery ownership every five seconds. */
 	readonly metadataHeartbeatMs?: number;
 	readonly shellPath?: string;
@@ -478,6 +482,7 @@ export class BackgroundWorkRuntime {
 	private readonly reconcileStale: typeof reconcileStaleRuns;
 	private readonly rollbackSettlements = new Set<Promise<void>>();
 	private readonly shellPath: string | undefined;
+	private readonly shutdownGraceMs: number;
 	private readonly storage: WorkRunStorage;
 	private readonly supervisorExecutable: string;
 	private readonly supervisorFactory: typeof spawnSupervisor;
@@ -501,6 +506,7 @@ export class BackgroundWorkRuntime {
 			throw new Error("Background Work metadata heartbeat interval must be positive");
 		}
 		this.shellPath = options.shellPath;
+		this.shutdownGraceMs = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
 		this.storage = options.storage ?? new WorkRunStorage(options.cwd, options.sessionId);
 		this.supervisorExecutable = resolveSupervisorExecutable(options.supervisorExecutable);
 		this.supervisorFactory = options.supervisorFactory ?? spawnSupervisor;
@@ -749,12 +755,13 @@ export class BackgroundWorkRuntime {
 		this.notificationTimer = undefined;
 		this.notificationDeferredDelayMs = undefined;
 		this.notifications.length = 0;
-		await Promise.allSettled([
+		const cleanup = Promise.allSettled([
 			...Array.from(this.activities.values(), (activity) => this.stopShell(activity, "shutdown")),
 			...Array.from(this.monitors.values(), (monitor) => monitor.cancel("shutdown")),
 			...this.launchSettlements,
 			...this.rollbackSettlements,
 		]);
+		await settleWithin(cleanup, this.shutdownGraceMs);
 		// A stop can fail only while a verified process group is still alive.
 		// Keep those activities in durable recovery metadata instead of erasing
 		// the only proof a later Pi host can use to reap them.

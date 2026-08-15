@@ -5,6 +5,7 @@ import {
 	type LifecycleAcceptanceSelection,
 	lifecycleAcceptanceFindings,
 	lifecycleConfirmationTargets,
+	lifecycleExpectProgram,
 	lifecycleSessionFindings,
 	percentile,
 	type Scenario,
@@ -95,6 +96,19 @@ function sessionEntries(messages: readonly Record<string, unknown>[] = []): unkn
 }
 
 describe("lifecycle benchmark statistics", () => {
+	test("waits for real Editor input instead of sleeping after visible markers", () => {
+		for (const action of ACTIONS) {
+			const program = lifecycleExpectProgram(action, false);
+			expect(program).toContain("wait_for_initial_editor");
+			expect(program).toContain("must_editor_ready");
+			expect(program).not.toMatch(/after (?:60|80)\\b/u);
+		}
+		const prompt = lifecycleExpectProgram("prompt", false);
+		expect(prompt).toContain('must_expect "PS5BW_INPUT_ACK_PS5BW_FIRST_PROMPT"');
+		expect(prompt).toContain('must_editor_ready "PS5BW_STEADY_EDITOR_READY"');
+		expect(prompt).toContain('must_editor_ready "PS5BW_SHUTDOWN_EDITOR_READY"');
+	});
+
 	test("uses nearest-rank percentiles", () => {
 		const values = Array.from({ length: 20 }, (_value, index) => index + 1);
 		expect(percentile(values, 0.5)).toBe(10);

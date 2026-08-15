@@ -34,11 +34,12 @@ import {
 	type SummaryMeta,
 } from "./summary-review.ts";
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { platform } from "node:os";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { isPerplexityAvailable } from "./perplexity.ts";
 import { isExaAvailable } from "./exa.ts";
 import { isGeminiApiAvailable } from "./gemini-api.ts";
@@ -58,6 +59,8 @@ import { isOllamaAvailable } from "./ollama.ts";
 import { isSearXNGAvailable } from "./searxng.ts";
 import { isAnySearchAvailable } from "./anysearch.ts";
 import { isXaiSearchAvailable } from "./xai-search.ts";
+
+const execFileAsync = promisify(execFile);
 import { isBrightDataAvailable } from "./brightdata.ts";
 import { isSerpBaseAvailable } from "./serpbase.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
@@ -689,7 +692,7 @@ interface GlimpseWindow {
 
 let glimpseOpen: ((html: string, opts: Record<string, unknown>) => GlimpseWindow) | null | undefined;
 
-function findGlimpseMjs(): string | null {
+async function findGlimpseMjs(): Promise<string | null> {
 	try {
 		const req = createRequire(import.meta.url);
 		return req.resolve("glimpseui");
@@ -697,7 +700,8 @@ function findGlimpseMjs(): string | null {
 		// Optional dependency.
 	}
 	try {
-		const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf-8" }).trim();
+		const { stdout } = await execFileAsync("npm", ["root", "-g"], { encoding: "utf-8" });
+		const globalRoot = stdout.trim();
 		const entry = join(globalRoot, "glimpseui", "src", "glimpse.mjs");
 		if (existsSync(entry)) return entry;
 	} catch {
@@ -708,7 +712,7 @@ function findGlimpseMjs(): string | null {
 
 async function getGlimpseOpen() {
 	if (glimpseOpen !== undefined) return glimpseOpen;
-	const resolved = findGlimpseMjs();
+	const resolved = await findGlimpseMjs();
 	if (resolved) {
 		try {
 			glimpseOpen = (await import(resolved)).open;

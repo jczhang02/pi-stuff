@@ -41,11 +41,11 @@ export class CodeModeTraceStore {
 		return trace;
 	}
 
-	emit(cellId: string, context: ExecutorContext): void {
+	emit(cellId: string, trace: RuntimeToolTrace, context: ExecutorContext): void {
 		try {
 			const update: RuntimeTraceUpdate = {
 				cellId,
-				traces: (this.traces.get(cellId) ?? []).map(cloneTrace),
+				trace: cloneTrace(trace),
 			};
 			context.onTraceUpdate?.(update);
 		} catch {

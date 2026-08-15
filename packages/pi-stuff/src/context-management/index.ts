@@ -23,6 +23,7 @@ import {
 	type SuiteAgentMessageOptions,
 	type SuiteAgentMessagePreparationDecision,
 } from "../conversation-ui/index.js";
+import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import {
 	activityKey,
 	activityTarget,
@@ -1231,19 +1232,17 @@ class ContextCapabilityRuntime implements ContextCapability {
 		this.ownedContexts.clear();
 		if (this.registry.owners.get(this.owner) === this) this.registry.owners.delete(this.owner);
 		this.registry.runtimes.delete(this);
-		await this.activation;
-		await this.sessionStartQueue;
-		if (event && ctx) {
-			const handlers = this.magicShutdownHandlers.splice(0);
-			for (const handler of handlers) {
-				try {
-					await handler(event, quietMagicContext(ctx));
-				} catch {
-					// Pi native shutdown must continue even if Magic cleanup fails.
-				}
-			}
-		}
-		await this.cleanup;
+		const handlers = this.magicShutdownHandlers.splice(0);
+		const shutdownHandlers =
+			event && ctx
+				? Promise.allSettled(
+						handlers.map((handler) => Promise.resolve().then(() => handler(event, quietMagicContext(ctx)))),
+					)
+				: undefined;
+		const pending = [this.activation, this.sessionStartQueue, shutdownHandlers, this.cleanup].filter(
+			(operation) => operation !== undefined,
+		);
+		await settleWithin(Promise.allSettled(pending), HOST_SHUTDOWN_GRACE_MS);
 	}
 
 	async activate(ctx: ExtensionContext, trigger: ContextActivationTrigger): Promise<ContextStatusSnapshot> {
@@ -1880,9 +1879,11 @@ export default async function piStuffContext(
 	if (!created) return;
 	registry.runtimes.add(runtime);
 	let workContinuitySessionKey: string | undefined;
+	let workContinuityEntryCount = 0;
 	let workContinuitySettlementObserverRegistered = false;
 	pi.on("session_shutdown", (event, ctx) => {
 		workContinuitySessionKey = undefined;
+		workContinuityEntryCount = 0;
 		workContinuity.reset();
 		return runtime.dispose(event, ctx);
 	});
@@ -1917,6 +1918,7 @@ export default async function piStuffContext(
 		} else {
 			workContinuity.observeCompactions(entries);
 		}
+		workContinuityEntryCount = entries.length;
 		// Register at the first session_start so this observer runs after every
 		// Capability's startup-registered settlement handler. Goal may queue a
 		// continuation from agent_settled, and Context must inspect the final live
@@ -1944,7 +1946,10 @@ export default async function piStuffContext(
 		if (interactivePaint && !(await interactivePaint)) return;
 		const observeSessionCompactions = (): void => {
 			try {
-				workContinuity.observeCompactions(ctx.sessionManager.getEntries());
+				const entries = ctx.sessionManager.getEntries();
+				const fromIndex = entries.length < workContinuityEntryCount ? 0 : workContinuityEntryCount;
+				workContinuity.observeCompactions(entries, fromIndex);
+				workContinuityEntryCount = entries.length;
 			} catch {
 				// session_compact still covers native Host compaction for partial wrappers.
 			}
@@ -1964,7 +1969,10 @@ export default async function piStuffContext(
 		runtime.invalidateProjection();
 		workContinuity.observeCompactions([event.compactionEntry]);
 	});
-	pi.on("session_tree", () => runtime.invalidateProjection());
+	pi.on("session_tree", () => {
+		workContinuityEntryCount = 0;
+		runtime.invalidateProjection();
+	});
 	pi.on("input", (event, ctx) => {
 		workContinuity.noteInput(event);
 		runtime.noteInput(event.source);

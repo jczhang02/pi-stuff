@@ -1353,6 +1353,34 @@ describe("CurrentAgents lifecycle", () => {
 		expect(tasks).toEqual(["first", "changed"]);
 	});
 
+	test("uses the status poller itself to refresh consumers", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-refresh-"));
+		const state = createFullState("root-session");
+		let refreshes = 0;
+		const tracker = createAsyncJobTracker(
+			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
+			state,
+			root,
+			{
+				onRefresh: () => {
+					refreshes += 1;
+				},
+				pollIntervalMs: 10,
+				reconcileRun: () => ({ repaired: false, status: null }),
+			},
+		);
+
+		try {
+			tracker.handleStarted({ id: "live", asyncDir: root, sessionId: "root-session" });
+			await waitUntil(() => refreshes > 0);
+			expect(refreshes).toBe(1);
+		} finally {
+			tracker.resetJobs();
+			await Bun.sleep(20);
+			fs.rmSync(root, { force: true, recursive: true });
+		}
+	});
+
 	test("keeps terminal rows in the detail authority across elapsed time", () => {
 		const state = createState();
 		const stateSignal = signalChannel();

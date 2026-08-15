@@ -237,6 +237,14 @@ export async function verifyToolsGroupingPty(options: {
 		}
 
 		if (scenario === "lifecycle") {
+			const partialStarted = performance.now();
+			await sendTurn(tmux, tmuxSession, "partial-bash");
+			await waitForText(tmux, tmuxSession, "PARTIAL_BASH_VISIBLE", 6_000);
+			await waitForText(tmux, tmuxSession, "GROUP_PARTIAL_BASH_DONE", 6_000);
+			if (performance.now() - partialStarted > 6_000) fail("foreground Bash partial update stalled the TUI");
+			await sendTurn(tmux, tmuxSession, "plain");
+			await waitForText(tmux, tmuxSession, "PLAIN_DONE", 2_000);
+
 			await sendTurn(tmux, tmuxSession, "structured");
 			const structured = await waitForText(tmux, tmuxSession, "STRUCTURED_CODE_LINE");
 			const structuredLines = structured.split("\n");
@@ -490,7 +498,7 @@ export async function verifyToolsGroupingPty(options: {
 			)
 			.filter((entry) => entry.message?.role === "toolResult");
 		const expectedResults =
-			scenario === "lifecycle" ? 21 : scenario === "compaction" ? 6 : scenario === "resume" ? 10 : 5;
+			scenario === "lifecycle" ? 22 : scenario === "compaction" ? 6 : scenario === "resume" ? 10 : 5;
 		if (toolResults.length !== expectedResults) {
 			fail(
 				`grouping changed model-visible results: expected ${String(expectedResults)}, found ${String(toolResults.length)}`,

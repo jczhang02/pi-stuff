@@ -87,6 +87,12 @@ const BASH_UI_CALLS: readonly FixtureCall[] = [
 		arguments: { command: "printf BASH_UI_SECOND && printf '_DONE\\n'" },
 	},
 ];
+const PARTIAL_BASH_CALLS: readonly FixtureCall[] = [
+	{
+		name: "bash",
+		arguments: { command: "sleep 2.1; printf PARTIAL_BASH_VISIBLE; sleep 0.6" },
+	},
+];
 
 function message(content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage {
 	return {
@@ -238,6 +244,11 @@ function fixtureStream(context: Context) {
 	}
 	if (request.includes("bashui")) {
 		return completed === 0 ? toolCallsStream("group-bash-ui", BASH_UI_CALLS) : textStream("GROUP_BASH_UI_DONE");
+	}
+	if (request.includes("partial-bash")) {
+		return completed === 0
+			? toolCallsStream("group-partial-bash", PARTIAL_BASH_CALLS)
+			: textStream("GROUP_PARTIAL_BASH_DONE");
 	}
 	if (request.includes("structured")) {
 		return textStream(

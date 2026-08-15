@@ -196,6 +196,33 @@ describe("BTW context budget", () => {
 		expect(JSON.stringify(result.messages)).not.toContain("payloadpayloadpayload");
 		expect(result.stubbed).toBe(true);
 	});
+
+	test("fits ten thousand unanchored Tool results without rescanning the branch per replacement", () => {
+		const messages: Message[] = Array.from({ length: 10_000 }, (_, index) => ({
+			role: "toolResult" as const,
+			toolCallId: `tool-${String(index)}`,
+			toolName: "read",
+			content: [{ type: "text" as const, text: "x".repeat(100) }],
+			isError: false,
+			timestamp: index,
+		}));
+		const entries = messages.map((message, index) =>
+			messageEntry(`entry-${String(index)}`, message, index === 0 ? null : `entry-${String(index - 1)}`),
+		);
+		const started = performance.now();
+		const result = fitBranch({
+			entries,
+			messages,
+			model: MODEL,
+			systemPrompt: "side system",
+			question: user("side question"),
+			keepBudget: 0,
+		});
+
+		expect(performance.now() - started).toBeLessThan(1_000);
+		expect(result.messages).toEqual([]);
+		expect(result.stubbed).toBe(true);
+	});
 });
 
 describe("BTW stream execution", () => {

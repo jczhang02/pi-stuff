@@ -275,7 +275,7 @@ test("runtime settles every still-running nested row when the outer execution is
 		async execute(options) {
 			options.context.onTraceUpdate?.({
 				cellId: "cell-cancelled",
-				traces: [{ id: "nested-bash", input: { command: "sleep 30" }, name: "bash", status: "running" }],
+				trace: { id: "nested-bash", input: { command: "sleep 30" }, name: "bash", status: "running" },
 			});
 			controller.abort();
 			throw Object.assign(new Error("Code Mode operation aborted"), { name: "AbortError" });
@@ -308,7 +308,7 @@ test("runtime recognizes an executor AbortError even without an outer AbortSigna
 		async execute(options) {
 			options.context.onTraceUpdate?.({
 				cellId: "cell-abort-error",
-				traces: [{ id: "nested-bash", input: { command: "sleep 30" }, name: "bash", status: "running" }],
+				trace: { id: "nested-bash", input: { command: "sleep 30" }, name: "bash", status: "running" },
 			});
 			throw Object.assign(new Error("The V8 operation was aborted"), { name: "AbortError" });
 		},
