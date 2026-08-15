@@ -157,6 +157,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	const runtime = new GoalRuntime(pi);
 	const commands = new GoalCommandController(runtime);
 	const runController = new GoalRunController(runtime, commands);
+	let goalProjectionNeeded = false;
 	let turnActive = false;
 	runController.register(pi);
 
@@ -649,42 +650,49 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 				return;
 			}
 
-			switch (result.kind) {
-				case "show":
-					commands.showGoal(ctx);
-					return;
-				case "pause":
-					commands.pauseGoal(ctx);
-					return;
-				case "resume":
-					await commands.resumeGoal(ctx);
-					return;
-				case "clear":
-					commands.clearGoal(ctx);
-					return;
-				case "edit":
-					await commands.editGoal(result.objective ?? "", result.tokenBudget, ctx);
-					return;
-				case "add":
-					await commands.addGoal(result.objective ?? "", result.tokenBudget, ctx);
-					return;
-				case "prioritize":
-					await commands.prioritizeGoal(result.objective ?? "", result.tokenBudget, ctx);
-					return;
-				case "drop-last":
-					commands.dropLastGoal(ctx);
-					return;
-				case "skip":
-					await commands.skipGoal(ctx);
-					return;
-				case "start":
-					await commands.startGoal(result.objective ?? "", result.tokenBudget, ctx);
-					return;
+			try {
+				switch (result.kind) {
+					case "show":
+						commands.showGoal(ctx);
+						return;
+					case "pause":
+						commands.pauseGoal(ctx);
+						return;
+					case "resume":
+						await commands.resumeGoal(ctx);
+						return;
+					case "clear":
+						commands.clearGoal(ctx);
+						return;
+					case "edit":
+						await commands.editGoal(result.objective ?? "", result.tokenBudget, ctx);
+						return;
+					case "add":
+						await commands.addGoal(result.objective ?? "", result.tokenBudget, ctx);
+						return;
+					case "prioritize":
+						await commands.prioritizeGoal(result.objective ?? "", result.tokenBudget, ctx);
+						return;
+					case "drop-last":
+						commands.dropLastGoal(ctx);
+						return;
+					case "skip":
+						await commands.skipGoal(ctx);
+						return;
+					case "start":
+						await commands.startGoal(result.objective ?? "", result.tokenBudget, ctx);
+						return;
+				}
+			} finally {
+				if (runtime.activeGoal || runtime.queuedGoals.length > 0 || runtime.pendingQueueAction) {
+					goalProjectionNeeded = true;
+				}
 			}
 		},
 	});
 
 	pi.on("session_start", async (event, ctx) => {
+		goalProjectionNeeded = false;
 		turnActive = false;
 		runtime.beginReadOnlySessionStart();
 		let dispatchAfterSuiteReady: (() => Promise<void>) | undefined;
@@ -728,6 +736,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			}
 
 			const loaded = loadGoalStateFromSession(ctx);
+			goalProjectionNeeded = loaded.source !== "none";
 			runtime.activeGoal = loaded.goal;
 			runtime.queuedGoals = loaded.queue;
 			runtime.pendingQueueAction = loaded.pendingAction;
@@ -828,6 +837,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		goalProjectionNeeded = false;
 		turnActive = false;
 		clearPendingOwnedCompaction();
 		if (typeof unsubscribeOwnedCompaction === "function") unsubscribeOwnedCompaction();
@@ -1007,6 +1017,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("context", (event, ctx) => {
+		if (!goalProjectionNeeded) return;
 		const latestGoalContextIndex = findLatestGoalContextIndex(event.messages);
 		const messages = event.messages.filter(
 			(message, index) =>
@@ -1086,6 +1097,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		runtime.flushDeferredSessionStartState();
 		const activeGoal = beginPromptRun(event.prompt, ctx);
 		if (!activeGoal) return;
+		goalProjectionNeeded = true;
 		return {
 			message: {
 				customType: GOAL_CONTEXT_MESSAGE_TYPE,

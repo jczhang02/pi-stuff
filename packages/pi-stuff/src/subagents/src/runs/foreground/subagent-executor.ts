@@ -177,7 +177,9 @@ interface ExecutorDeps {
 	discoverAgents: (
 		cwd: string,
 		scope: AgentScope,
-	) => { agents: AgentConfig[]; modelScope?: import("../shared/model-scope.ts").ModelScopeConfig };
+	) =>
+		| { agents: AgentConfig[]; modelScope?: import("../shared/model-scope.ts").ModelScopeConfig }
+		| Promise<{ agents: AgentConfig[]; modelScope?: import("../shared/model-scope.ts").ModelScopeConfig }>;
 	projectContext?: typeof projectCurrentContext;
 	childBaseExtensionPath?: string;
 	allowMutatingManagementActions?: boolean;
@@ -781,12 +783,12 @@ function prepareForkSessions(input: {
 	return { sessionFiles, thinkingOverrides };
 }
 
-function prepareLaunch(
+async function prepareLaunch(
 	id: string,
 	params: SubagentParamsLike,
 	ctx: ExtensionContext,
 	deps: ExecutorDeps,
-): PreparedLaunch | AgentToolResult<Details> {
+): Promise<PreparedLaunch | AgentToolResult<Details>> {
 	const mode = requestedMode(params);
 	const depth = checkSubagentDepth(deps.config.maxSubagentDepth);
 	if (depth.blocked) {
@@ -807,7 +809,7 @@ function prepareLaunch(
 	}
 	const parentModel = rememberParentModel(deps.state, currentSessionId, ctx.model);
 	const effectiveCwd = path.resolve(ctx.cwd, params.cwd ?? ".");
-	const discovered = deps.discoverAgents(effectiveCwd, "both");
+	const discovered = await deps.discoverAgents(effectiveCwd, "both");
 	const validationError = validateLaunchInput(params, discovered.agents);
 	if (validationError) return errorResult(mode, validationError);
 
@@ -1884,7 +1886,7 @@ async function resumeRun(input: {
 	if (depth.blocked)
 		return errorResult("management", `Agent resume blocked at maximum nesting depth ${depth.maxDepth}.`);
 	const effectiveCwd = target.cwd ?? input.ctx.cwd;
-	const discovered = input.deps.discoverAgents(effectiveCwd, "both");
+	const discovered = await input.deps.discoverAgents(effectiveCwd, "both");
 	const descriptor = "recoveryDescriptor" in target ? target.recoveryDescriptor : undefined;
 	const discoveredAgent = discovered.agents.find((agent) => agent.name === target.agent);
 	const baseAgent =
@@ -2164,7 +2166,7 @@ export function createSubagentExecutor(deps: ExecutorDeps): {
 		let backgroundOwnsRoute = false;
 		let foregroundLifecycleOwnsRoute = false;
 		try {
-			const prepared = prepareLaunch(id, params, ctx, deps);
+			const prepared = await prepareLaunch(id, params, ctx, deps);
 			if ("content" in prepared) return prepared;
 			if (!prepared.inheritedNestedRoute) ownedNestedRoute = prepared.nestedRoute;
 			await attachContextProjection(prepared, ctx, deps.projectContext);

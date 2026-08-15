@@ -4,6 +4,11 @@ import { oneLine } from "./render.js";
 import { boundTerminalLine, compactTerminalPath } from "./terminal.js";
 
 const ACTIVITY_TARGET_MAX_WIDTH = 160;
+const BASH_EVIDENCE_TEXT_LIMIT = 64 * 1024;
+// ponytail: Background Work emits its handoff marker at a result boundary;
+// widen this head/tail window only if that protocol changes.
+const BACKGROUND_MARKER_SCAN_LIMIT = 1024;
+const BACKGROUND_MARKER = /\b(?:started|moved|manually moved) to background task\b/iu;
 
 export type ToolActivityCategory =
 	| "block-goal"
@@ -116,10 +121,28 @@ export function singleActivity(
 
 function resultText(result: AgentToolResult<unknown> | undefined): string {
 	if (!result) return "";
-	return result.content
+	const text = result.content
 		.filter((item): item is { readonly type: "text"; readonly text: string } => item.type === "text")
 		.map((item) => item.text)
 		.join("\n");
+	if (text.length <= BASH_EVIDENCE_TEXT_LIMIT) return text;
+	const half = Math.floor(BASH_EVIDENCE_TEXT_LIMIT / 2);
+	return `${text.slice(0, half)}\n…\n${text.slice(-half)}`;
+}
+
+export function bashResultMovedToBackground(result: AgentToolResult<unknown> | undefined): boolean {
+	for (const item of result?.content ?? []) {
+		if (item.type !== "text") continue;
+		const head = item.text.slice(0, BACKGROUND_MARKER_SCAN_LIMIT);
+		if (BACKGROUND_MARKER.test(head)) return true;
+		if (
+			item.text.length > BACKGROUND_MARKER_SCAN_LIMIT &&
+			BACKGROUND_MARKER.test(item.text.slice(-BACKGROUND_MARKER_SCAN_LIMIT))
+		) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function conservativeGitCommand(command: string): boolean {
@@ -158,24 +181,30 @@ export function classifyBashActivity(
 ): readonly ToolActivityItem[] {
 	const command = typeof input.args["command"] === "string" ? input.args["command"] : "";
 	const description = typeof input.args["description"] === "string" ? oneLine(input.args["description"]) : "";
-	const text = resultText(input.result);
 	const target = activityTarget(description || "Running command");
-	const background =
-		input.args["run_in_background"] === true ||
-		/\b(?:started|moved|manually moved) to background task\b/iu.test(text);
+	const background = input.args["run_in_background"] === true || bashResultMovedToBackground(input.result);
 	const outcomeEligible = input.state === "running" || input.state === "success";
 	if (background && outcomeEligible) return singleActivity("launch-background", { target });
 	if (!outcomeEligible) return singleActivity("run-command", { target });
 
-	const outcomes: ToolActivityItem[] = [];
 	const running = input.state === "running";
 	const dryRun = /(?:^|\s)--dry-run(?:\s|$)/u.test(command);
 	const conservative = conservativeGitCommand(command);
-	if (!dryRun && conservative && /(?:^|&&\s*)git\s+commit\b/iu.test(command)) {
+	const commitCommand = !dryRun && conservative && /(?:^|&&\s*)git\s+commit\b/iu.test(command);
+	const pushCommand = !dryRun && conservative && /(?:^|&&\s*)git\s+push\b/iu.test(command);
+	const mergeBranch = !dryRun ? gitOperand(command, "merge") : undefined;
+	const rebaseBranch = !dryRun ? gitOperand(command, "rebase") : undefined;
+	const createPrCommand = !dryRun && conservative && /(?:^|&&\s*)gh\s+pr\s+create\b/iu.test(command);
+	if (!commitCommand && !pushCommand && !mergeBranch && !rebaseBranch && !createPrCommand) {
+		return singleActivity("run-command", { target });
+	}
+	const text = resultText(input.result);
+	const outcomes: ToolActivityItem[] = [];
+	if (commitCommand) {
 		const sha = text.match(/\[[^\]\r\n]+\s([0-9a-f]{7,40})\]/iu)?.[1];
 		if (running || sha) outcomes.push({ category: "commit", count: 1, ...(sha ? { detail: sha } : {}), target });
 	}
-	if (!dryRun && conservative && /(?:^|&&\s*)git\s+push\b/iu.test(command)) {
+	if (pushCommand) {
 		const branchFromCommand = command.match(/\bgit\s+push(?:\s+\S+)?\s+([^\s;&|]+)/iu)?.[1];
 		const branchFromResult = text.match(/\s->\s([^\s]+)\s*$/mu)?.[1];
 		const branch = oneLine(branchFromResult ?? (running ? branchFromCommand : "") ?? "").replace(
@@ -191,15 +220,13 @@ export function classifyBashActivity(
 			});
 		}
 	}
-	const mergeBranch = !dryRun ? gitOperand(command, "merge") : undefined;
 	if (mergeBranch && (running || hasMergeEvidence(text))) {
 		outcomes.push({ category: "merge", count: 1, detail: mergeBranch, target });
 	}
-	const rebaseBranch = !dryRun ? gitOperand(command, "rebase") : undefined;
 	if (rebaseBranch && (running || hasRebaseEvidence(text))) {
 		outcomes.push({ category: "rebase", count: 1, detail: rebaseBranch, target });
 	}
-	if (!dryRun && conservative && /(?:^|&&\s*)gh\s+pr\s+create\b/iu.test(command)) {
+	if (createPrCommand) {
 		const number = text.match(/https:\/\/github\.com\/[^\s]+\/pull\/(\d+)/u)?.[1];
 		if (running || number) {
 			outcomes.push({ category: "create-pr", count: 1, ...(number ? { detail: `#${number}` } : {}), target });

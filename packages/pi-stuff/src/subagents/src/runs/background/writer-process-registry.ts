@@ -1,11 +1,16 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
-import { assertPrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
+import {
+	assertPrivateDirectory,
+	readBoundedOwnedFile,
+	readBoundedOwnedFileSnapshotAsync,
+} from "../../shared/private-directory.ts";
 import {
 	type ProcessIdentityGroupSnapshot,
 	readProcessIdentityGroupSnapshot,
 	readProcessStartIdentity,
+	readProcessStartIdentityAsync,
 } from "../../shared/process-identity.ts";
 
 export { readProcessStartIdentity } from "../../shared/process-identity.ts";
@@ -129,6 +134,37 @@ export function inspectWriterProcessLiveness(asyncDir: string, kill: KillFn = pr
 			if (!writer.processStartIdentity || !identity) unknown = true;
 			else return true;
 		}
+	}
+	return unknown ? undefined : false;
+}
+
+/** Host-side liveness inspection without synchronous runtime-file or process-identity reads. */
+export async function inspectWriterProcessLivenessAsync(
+	asyncDir: string,
+	kill: KillFn = process.kill,
+): Promise<boolean | undefined> {
+	const registry = await readWriterProcessRegistryAsync(asyncDir);
+	if (!registry) return undefined;
+	let unknown = false;
+	for (const writer of Object.values(registry.writers)) {
+		if (writer.state === "spawning") {
+			if (registry.writerStartupGate !== "parent-pipe-v1") return true;
+			continue;
+		}
+		if (writer.state !== "running" || writer.pid === undefined) continue;
+		const alive =
+			registry.writerProcessGroup === "writer-pid-v1"
+				? processGroupLiveness(writer.pid, kill)
+				: processLiveness(writer.pid, kill);
+		if (alive === false) continue;
+		if (alive === undefined || !writer.processStartIdentity) {
+			unknown = true;
+			continue;
+		}
+		const identity = await readProcessStartIdentityAsync(writer.pid);
+		if (identity && identity !== writer.processStartIdentity) continue;
+		if (!identity) unknown = true;
+		else return true;
 	}
 	return unknown ? undefined : false;
 }
@@ -306,44 +342,70 @@ function readWriterProcessRegistry(asyncDir: string): WriterProcessRegistry | un
 		assertPrivateDirectory(resolvedDir);
 		if (fs.realpathSync(resolvedDir) !== resolvedDir) return undefined;
 		const registryPath = writerProcessRegistryPath(resolvedDir);
-		const value = JSON.parse(readBoundedOwnedFile(registryPath, MAX_WRITER_PROCESS_REGISTRY_BYTES)) as unknown;
-		if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-		const candidate = value as Partial<WriterProcessRegistry>;
-		if (
-			candidate.version !== 1 ||
-			typeof candidate.runId !== "string" ||
-			!positiveInteger(candidate.runnerPid) ||
-			(candidate.runnerProcessStartIdentity !== undefined &&
-				typeof candidate.runnerProcessStartIdentity !== "string") ||
-			(candidate.writerStartupGate !== undefined && candidate.writerStartupGate !== "parent-pipe-v1") ||
-			(candidate.writerProcessGroup !== undefined && candidate.writerProcessGroup !== "writer-pid-v1") ||
-			typeof candidate.updatedAt !== "number" ||
-			!candidate.writers ||
-			typeof candidate.writers !== "object" ||
-			Array.isArray(candidate.writers)
-		) {
-			return undefined;
-		}
-		const writers: Record<string, PersistedWriterState> = {};
-		for (const [index, writer] of Object.entries(candidate.writers)) {
-			if (!/^\d+$/.test(index) || !validWriterState(writer)) return undefined;
-			writers[index] = { ...writer };
-		}
-		return {
-			version: 1,
-			runId: candidate.runId,
-			runnerPid: candidate.runnerPid,
-			...(candidate.runnerProcessStartIdentity
-				? { runnerProcessStartIdentity: candidate.runnerProcessStartIdentity }
-				: {}),
-			...(candidate.writerStartupGate ? { writerStartupGate: candidate.writerStartupGate } : {}),
-			...(candidate.writerProcessGroup ? { writerProcessGroup: candidate.writerProcessGroup } : {}),
-			updatedAt: candidate.updatedAt,
-			writers,
-		};
+		return parseWriterProcessRegistry(
+			JSON.parse(readBoundedOwnedFile(registryPath, MAX_WRITER_PROCESS_REGISTRY_BYTES)),
+		);
 	} catch {
 		return undefined;
 	}
+}
+
+async function readWriterProcessRegistryAsync(asyncDir: string): Promise<WriterProcessRegistry | undefined> {
+	try {
+		const resolvedDir = path.resolve(asyncDir);
+		const stat = await fs.promises.lstat(resolvedDir);
+		const currentUid = process.getuid?.();
+		if (
+			!stat.isDirectory() ||
+			stat.isSymbolicLink() ||
+			(currentUid !== undefined && stat.uid !== currentUid) ||
+			(await fs.promises.realpath(resolvedDir)) !== resolvedDir
+		)
+			return undefined;
+		const snapshot = await readBoundedOwnedFileSnapshotAsync(
+			writerProcessRegistryPath(resolvedDir),
+			MAX_WRITER_PROCESS_REGISTRY_BYTES,
+		);
+		return parseWriterProcessRegistry(JSON.parse(snapshot.text));
+	} catch {
+		return undefined;
+	}
+}
+
+function parseWriterProcessRegistry(value: unknown): WriterProcessRegistry | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const candidate = value as Partial<WriterProcessRegistry>;
+	if (
+		candidate.version !== 1 ||
+		typeof candidate.runId !== "string" ||
+		!positiveInteger(candidate.runnerPid) ||
+		(candidate.runnerProcessStartIdentity !== undefined &&
+			typeof candidate.runnerProcessStartIdentity !== "string") ||
+		(candidate.writerStartupGate !== undefined && candidate.writerStartupGate !== "parent-pipe-v1") ||
+		(candidate.writerProcessGroup !== undefined && candidate.writerProcessGroup !== "writer-pid-v1") ||
+		typeof candidate.updatedAt !== "number" ||
+		!candidate.writers ||
+		typeof candidate.writers !== "object" ||
+		Array.isArray(candidate.writers)
+	)
+		return undefined;
+	const writers: Record<string, PersistedWriterState> = {};
+	for (const [index, writer] of Object.entries(candidate.writers)) {
+		if (!/^\d+$/.test(index) || !validWriterState(writer)) return undefined;
+		writers[index] = { ...writer };
+	}
+	return {
+		version: 1,
+		runId: candidate.runId,
+		runnerPid: candidate.runnerPid,
+		...(candidate.runnerProcessStartIdentity
+			? { runnerProcessStartIdentity: candidate.runnerProcessStartIdentity }
+			: {}),
+		...(candidate.writerStartupGate ? { writerStartupGate: candidate.writerStartupGate } : {}),
+		...(candidate.writerProcessGroup ? { writerProcessGroup: candidate.writerProcessGroup } : {}),
+		updatedAt: candidate.updatedAt,
+		writers,
+	};
 }
 
 function validWriterState(value: unknown): value is PersistedWriterState {

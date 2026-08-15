@@ -1,17 +1,18 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { terminateOrphanWriterProcesses } from "../runs/background/writer-process-registry.ts";
-import { readForegroundOwnerExit } from "../runs/foreground/owner-exit.ts";
+import { readForegroundOwnerExit, readForegroundOwnerExitAsync } from "../runs/foreground/owner-exit.ts";
 import { parseSubagentCapabilityCeiling } from "../runs/shared/capability-ceiling.ts";
 import { resolvePersistedNestedRoute, sanitizeSummary } from "../runs/shared/nested-events.ts";
-import { writePrivateAtomicJson } from "../shared/atomic-json.ts";
+import { mapConcurrent } from "../runs/shared/parallel-utils.ts";
+import { writePrivateAtomicJson, writePrivateAtomicJsonAsync } from "../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
-import { readBoundedOwnedFile } from "../shared/private-directory.ts";
-import { readProcessStartIdentity } from "../shared/process-identity.ts";
+import { readBoundedOwnedFile, readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
+import { readProcessStartIdentity, readProcessStartIdentityAsync } from "../shared/process-identity.ts";
 import { type SessionCompatibilityScope, sessionArtifactMatches } from "../shared/session-identity.ts";
-import { tryAcquireStatusMutationClaim } from "../shared/status-mutation.ts";
+import { tryAcquireStatusMutationClaim, tryAcquireStatusMutationClaimAsync } from "../shared/status-mutation.ts";
 import type { AsyncStatus, ForegroundResumeChild, ForegroundResumeRun } from "../shared/types.ts";
-import { readStatus } from "../shared/utils.ts";
+import { readStatus, readStatusAsync } from "../shared/utils.ts";
 
 const MAX_REPLAYED_FOREGROUND_RUNS = 200;
 const MAX_REPLAYED_CHILDREN = 20;
@@ -174,6 +175,20 @@ function ownerLiveness(status: AsyncStatus): "alive" | "dead" | "unknown" {
 	}
 }
 
+async function ownerLivenessAsync(status: AsyncStatus): Promise<"alive" | "dead" | "unknown"> {
+	const pid = status.pid;
+	if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0 || !status.processStartIdentity)
+		return "unknown";
+	const current = await readProcessStartIdentityAsync(pid);
+	if (current) return current === status.processStartIdentity ? "alive" : "dead";
+	try {
+		process.kill(pid, 0);
+		return "unknown";
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "ESRCH" ? "dead" : "unknown";
+	}
+}
+
 function foregroundChildStatus(status: unknown): ForegroundResumeChild["status"] | undefined {
 	if (status === "complete" || status === "completed") return "completed";
 	if (status === "paused") return "paused";
@@ -324,6 +339,26 @@ function applyCompletionToStatus(status: AsyncStatus, completionPath: string): A
 	} catch {
 		return undefined;
 	}
+	return applyCompletionValue(status, completion, completionPath);
+}
+
+async function applyCompletionToStatusAsync(
+	status: AsyncStatus,
+	completionPath: string,
+): Promise<AsyncStatus | undefined> {
+	try {
+		const snapshot = await readBoundedOwnedFileSnapshotAsync(completionPath, MAX_FOREGROUND_COMPLETION_BYTES);
+		return applyCompletionValue(status, JSON.parse(snapshot.text) as Record<string, unknown>, completionPath);
+	} catch {
+		return undefined;
+	}
+}
+
+function applyCompletionValue(
+	status: AsyncStatus,
+	completion: Record<string, unknown>,
+	completionPath: string,
+): AsyncStatus | undefined {
 	const identities = [completion.runId, completion.id].filter((value) => value !== undefined);
 	if (
 		identities.length === 0 ||
@@ -439,6 +474,49 @@ function recoverCrashedForegroundStatus(
 	return recovered;
 }
 
+async function recoverCrashedForegroundStatusAsync(
+	asyncDir: string,
+	status: AsyncStatus,
+	terminateWriters: typeof terminateOrphanWriterProcesses = terminateOrphanWriterProcesses,
+): Promise<AsyncStatus> {
+	if (status.state !== "running" && status.state !== "queued") return status;
+	const semanticOwnerExit = await readForegroundOwnerExitAsync(asyncDir, status.runId);
+	if (!semanticOwnerExit && (await ownerLivenessAsync(status)) !== "dead") return status;
+	const writers = terminateWriters(asyncDir);
+	if (writers.remaining !== 0) return status;
+	const endedAt = Date.now();
+	const failure = semanticOwnerExit?.error ?? FOREGROUND_OWNER_CRASH;
+	const recovered: AsyncStatus = {
+		...status,
+		state: "failed",
+		error: failure,
+		endedAt,
+		lastUpdate: endedAt,
+		activityState: undefined,
+		currentTool: undefined,
+		currentToolStartedAt: undefined,
+		currentPath: undefined,
+		steps: status.steps?.map((step) =>
+			step.status === "running" || step.status === "pending"
+				? {
+						...step,
+						status: "failed" as const,
+						agentStatus: "crashed" as const,
+						exitCode: 1,
+						error: failure,
+						endedAt,
+						activityState: undefined,
+						currentTool: undefined,
+						currentToolStartedAt: undefined,
+						currentPath: undefined,
+					}
+				: step,
+		),
+	};
+	await writePrivateAtomicJsonAsync(path.join(asyncDir, "status.json"), recovered);
+	return recovered;
+}
+
 /**
  * Advance one cold foreground recovery by one nonblocking TERM/KILL/absence
  * step. The tracker calls this repeatedly so an orphan that ignores TERM does
@@ -475,6 +553,36 @@ export function refreshForegroundRuntimeRun(
 		return previousState !== status.state;
 	} finally {
 		claim.release();
+	}
+}
+
+async function refreshForegroundRuntimeRunAsync(run: ForegroundResumeRun): Promise<boolean> {
+	if (!run.asyncDir || path.basename(run.asyncDir) !== run.runId) return false;
+	const claim = await tryAcquireStatusMutationClaimAsync(run.asyncDir);
+	if (!claim) return false;
+	try {
+		let status = await readStatusAsync(run.asyncDir);
+		if (!status || status.runId !== run.runId || !runFromStatus(status, run.asyncDir)) return false;
+		const previousState = status.state;
+		const completed = await applyCompletionToStatusAsync(status, path.join(run.asyncDir, "completion.json"));
+		if (completed) {
+			status = completed;
+			if (
+				(previousState === "running" || previousState === "queued") &&
+				status.state !== "running" &&
+				status.state !== "queued"
+			)
+				await writePrivateAtomicJsonAsync(path.join(run.asyncDir, "status.json"), status);
+		} else {
+			status = await recoverCrashedForegroundStatusAsync(run.asyncDir, status);
+		}
+		const refreshed = runFromStatus(status, run.asyncDir);
+		if (!refreshed) return false;
+		const normalizedSessionId = run.sessionId;
+		Object.assign(run, refreshed, normalizedSessionId ? { sessionId: normalizedSessionId } : {});
+		return previousState !== status.state;
+	} finally {
+		await claim.release();
 	}
 }
 
@@ -619,6 +727,77 @@ export function observeForegroundRuntimeRuns(
 		}
 		if (runs.size >= MAX_REPLAYED_FOREGROUND_RUNS) break;
 	}
+	return runs;
+}
+
+/** Async startup projection; disk remains recovery state and never blocks the Host event loop. */
+export async function observeForegroundRuntimeRunsAsync(
+	rootDirectory: string,
+	sessionScope: SessionCompatibilityScope,
+	runtimeDirectories?: readonly string[],
+): Promise<Map<string, ForegroundResumeRun>> {
+	let directories: string[];
+	if (runtimeDirectories !== undefined) {
+		const root = path.resolve(rootDirectory);
+		directories = [...new Set(runtimeDirectories.map((directory) => path.resolve(directory)))].filter(
+			(directory) => path.dirname(directory) === root && /^[a-f0-9]{12}$/u.test(path.basename(directory)),
+		);
+	} else {
+		let entries: fs.Dirent[];
+		try {
+			entries = await fs.promises.readdir(rootDirectory, { withFileTypes: true });
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Map();
+			throw error;
+		}
+		directories = entries
+			.filter((entry) => entry.isDirectory() && /^[a-f0-9]{12}$/u.test(entry.name))
+			.map((entry) => path.join(rootDirectory, entry.name));
+	}
+	const candidates = (
+		await mapConcurrent(directories, 16, async (asyncDir) => {
+			try {
+				const stat = await fs.promises.lstat(asyncDir);
+				return stat.isDirectory() && !stat.isSymbolicLink() ? { asyncDir, mtimeMs: stat.mtimeMs } : undefined;
+			} catch {
+				return undefined;
+			}
+		})
+	)
+		.filter((entry): entry is { asyncDir: string; mtimeMs: number } => Boolean(entry))
+		.sort((left, right) => right.mtimeMs - left.mtimeMs);
+	const runs = new Map<string, ForegroundResumeRun>();
+	for (let offset = 0; offset < candidates.length && runs.size < MAX_REPLAYED_FOREGROUND_RUNS; offset += 32) {
+		const batch = await mapConcurrent(candidates.slice(offset, offset + 32), 8, async ({ asyncDir }) => {
+			try {
+				const status = await readStatusAsync(asyncDir);
+				if (
+					!status ||
+					!sessionArtifactMatches(sessionScope, status.sessionId, status.runId) ||
+					status.runId !== path.basename(asyncDir)
+				)
+					return undefined;
+				const run = runFromStatus(status, asyncDir);
+				return run ? ({ ...run, sessionId: sessionScope.sessionId } satisfies ForegroundResumeRun) : undefined;
+			} catch {
+				return undefined;
+			}
+		});
+		for (const run of batch) {
+			if (run) runs.set(run.runId, run);
+			if (runs.size >= MAX_REPLAYED_FOREGROUND_RUNS) break;
+		}
+	}
+	return runs;
+}
+
+export async function recoverForegroundRuntimeRunsAsync(
+	rootDirectory: string,
+	sessionScope: SessionCompatibilityScope,
+	runtimeDirectories?: readonly string[],
+): Promise<Map<string, ForegroundResumeRun>> {
+	const runs = await observeForegroundRuntimeRunsAsync(rootDirectory, sessionScope, runtimeDirectories);
+	for (const run of runs.values()) await refreshForegroundRuntimeRunAsync(run);
 	return runs;
 }
 

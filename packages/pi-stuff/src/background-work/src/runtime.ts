@@ -750,6 +750,7 @@ export class BackgroundWorkRuntime {
 	async shutdown(): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.listeners.clear();
 		this.stopMetadataHeartbeat();
 		if (this.notificationTimer) clearTimeout(this.notificationTimer);
 		this.notificationTimer = undefined;

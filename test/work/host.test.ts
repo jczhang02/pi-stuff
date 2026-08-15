@@ -189,7 +189,7 @@ describe("Pi Stuff Work host composition", () => {
 		await host.emit("session_shutdown", ctx);
 	});
 
-	test("does not recreate a runtime after shutdown wins during a pending session transition", async () => {
+	test("does not make a replacement Session wait for the previous runtime shutdown", async () => {
 		const root = mkdtempSync(join(tmpdir(), "pi-stuff-work-host-race-"));
 		roots.push(root);
 		const host = new HostHarness();
@@ -217,8 +217,9 @@ describe("Pi Stuff Work host composition", () => {
 		releaseShutdown();
 		await Promise.all([restarting, shuttingDown]);
 
-		expect(created).toHaveLength(1);
+		expect(created).toHaveLength(2);
 		expect(created[0]?.shutdownCalls).toBe(1);
+		expect(created[1]?.shutdownCalls).toBe(1);
 		expect(host.terminalInput).toBeUndefined();
 	});
 
@@ -250,10 +251,11 @@ describe("Pi Stuff Work host composition", () => {
 		releaseShutdown();
 		await Promise.all([first, second]);
 
-		expect(created).toHaveLength(2);
+		expect(created).toHaveLength(3);
 		expect(created[0]?.shutdownCalls).toBe(1);
-		expect(created[1]?.shutdownCalls).toBe(0);
-		await host.emit("session_shutdown", ctx);
 		expect(created[1]?.shutdownCalls).toBe(1);
+		expect(created[2]?.shutdownCalls).toBe(0);
+		await host.emit("session_shutdown", ctx);
+		expect(created[2]?.shutdownCalls).toBe(1);
 	});
 });

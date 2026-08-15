@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { registerCurrentWorkSource } from "../../../background-work/index.js";
 import { projectCurrentContext, registerWorkContinuitySource } from "../../../context-management/index.js";
@@ -56,8 +56,7 @@ import {
 } from "../session/current-agents.ts";
 import {
 	mergeForegroundRuns,
-	observeForegroundRuntimeRuns,
-	recoverForegroundRuntimeRuns,
+	recoverForegroundRuntimeRunsAsync,
 	replayForegroundRuns,
 } from "../session/foreground-replay.ts";
 import { ensureAccessibleDir } from "../shared/accessible-dir.ts";
@@ -77,6 +76,7 @@ import {
 	SESSION_GOVERNOR_ROOT,
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
 	SUBAGENT_ASYNC_STARTED_EVENT,
+	SUBAGENT_ASYNC_STATUS_EVENT,
 	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
 	SUBAGENT_PROCESS_TERMINAL_EVENT,
 	type SubagentState,
@@ -128,11 +128,13 @@ interface RootExecutor {
 }
 
 interface RootTracker {
-	ensurePoller(): void;
+	ensureObserver(): void;
 	handleComplete(data: unknown): void;
+	handleProcessTerminal(data: unknown): void;
 	handleStarted(data: unknown): void;
+	handleStatus(data: unknown): void;
 	resetJobs(): void;
-	restoreActiveJobs(): void;
+	restoreActiveJobs(asyncDirectories?: readonly string[]): Promise<void>;
 }
 
 interface RootWatcher {
@@ -144,11 +146,12 @@ interface RootWatcher {
 interface RootSupervisor {
 	dispose(): void;
 	pause?(): void;
-	start(): void;
+	start(): void | Promise<void>;
 }
 
 interface CompactCompletionNotifier {
 	deliver(result: CompletionNotification, signal?: AbortSignal): Promise<boolean>;
+	reset(entries: readonly SessionEntry[]): void;
 	dispose(): void;
 }
 
@@ -236,9 +239,11 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	createTracker: (pi, state, onRefresh) => {
 		const tracker = createAsyncJobTracker(pi, state, ASYNC_DIR, { onRefresh });
 		return {
-			ensurePoller: tracker.ensurePoller,
+			ensureObserver: tracker.ensureObserver,
 			handleComplete: tracker.handleComplete,
+			handleProcessTerminal: tracker.handleProcessTerminal,
 			handleStarted: tracker.handleStarted,
+			handleStatus: tracker.handleStatus,
 			resetJobs: () => tracker.resetJobs(),
 			restoreActiveJobs: () => tracker.restoreActiveJobs(),
 		};
@@ -285,7 +290,6 @@ function createState(config: PiStuffAgentsConfig): SubagentState {
 		pendingForegroundControlNotices: new Map(),
 		cleanupTimers: new Map(),
 		lastUiContext: null,
-		poller: null,
 		completionSeen: new Map(),
 		watcher: null,
 		watcherRestartTimer: null,
@@ -354,15 +358,6 @@ function completionOutcome(result: CompletionNotification, key: string): Complet
 	};
 }
 
-function isPersistedCompletion(state: Pick<SubagentState, "lastUiContext">, key: string): boolean {
-	const entries = state.lastUiContext?.sessionManager.getEntries() ?? [];
-	return entries.some((entry) => {
-		if (entry.type !== "custom" || entry.customType !== COMPLETION_ENTRY_TYPE) return false;
-		const data = record(entry.data);
-		return data.version === 1 && data.key === key;
-	});
-}
-
 function formatDuration(durationMs: number | undefined): string | undefined {
 	if (durationMs === undefined) return undefined;
 	const seconds = Math.max(1, Math.round(durationMs / 1_000));
@@ -380,7 +375,7 @@ function completionOutcomeText(data: CompletionOutcomeEntry): string {
 
 function createCompactCompletionNotifier(
 	pi: Pick<ExtensionAPI, "appendEntry">,
-	state: Pick<SubagentState, "currentSessionId" | "currentSessionScope" | "lastUiContext">,
+	state: Pick<SubagentState, "currentSessionId" | "currentSessionScope">,
 	coordinator: Pick<CommandDialogCoordinator, "whenIdle">,
 ): CompactCompletionNotifier {
 	const delivered = new Set<string>();
@@ -396,7 +391,7 @@ function createCompactCompletionNotifier(
 				return result.intercomDelivered === true;
 			}
 			const key = completionKey(result);
-			if (delivered.has(key) || isPersistedCompletion(state, key)) return true;
+			if (delivered.has(key)) return true;
 			try {
 				await Promise.race([
 					coordinator.whenIdle(),
@@ -409,7 +404,7 @@ function createCompactCompletionNotifier(
 						);
 					}),
 				]);
-				const alreadyDelivered = delivered.has(key) || isPersistedCompletion(state, key);
+				const alreadyDelivered = delivered.has(key);
 				if (
 					signal?.aborted ||
 					disposed ||
@@ -424,6 +419,14 @@ function createCompactCompletionNotifier(
 				return true;
 			} catch {
 				return false;
+			}
+		},
+		reset(entries) {
+			delivered.clear();
+			for (const entry of entries) {
+				if (entry.type !== "custom" || entry.customType !== COMPLETION_ENTRY_TYPE) continue;
+				const data = record(entry.data);
+				if (data.version === 1 && typeof data.key === "string") delivered.add(data.key);
 			}
 		},
 		dispose() {
@@ -484,9 +487,10 @@ export default function registerSubagentExtension(
 
 	const globalStore = globalThis as Record<string, unknown>;
 	const previousCleanup = globalStore[RUNTIME_CLEANUP_KEY];
+	let previousCleanupPromise = Promise.resolve();
 	if (typeof previousCleanup === "function") {
 		try {
-			previousCleanup();
+			previousCleanupPromise = Promise.resolve(previousCleanup()).catch(() => undefined);
 		} catch {
 			// A stale reload must not prevent the replacement root from registering.
 		}
@@ -513,10 +517,13 @@ export default function registerSubagentExtension(
 	let sessionEpoch = 0;
 	let runtimeActivatedEpoch = -1;
 	let runtimeActivation: { epoch: number; promise: Promise<void> } | undefined;
+	let historyRecoveredEpoch = -1;
+	let historyRecovery: { epoch: number; promise: Promise<void> } | undefined;
 	let governorCompatibilityReady = false;
 	let governorCompatibilityError: string | undefined;
 	let governorCompatibilityCheck: { epoch: number; promise: Promise<void> } | undefined;
-	let releaseLegacyGovernorBarrier: (() => void) | undefined;
+	let governorCompatibilityScope: ReturnType<typeof buildSessionGovernorCompatibilityScope> | undefined;
+	let releaseLegacyGovernorBarrier: (() => Promise<void>) | undefined;
 	let maintenanceTimer: ReturnType<typeof setTimeout> | undefined;
 	let maintenanceInFlight = false;
 	let nextMaintenanceAt = 0;
@@ -530,10 +537,12 @@ export default function registerSubagentExtension(
 		parentRunOrigin: AgentWorkOrigin,
 	) => Promise<AgentToolResult<Details>>;
 	let activateCurrentSessionRuntime!: (ctx: ExtensionContext) => Promise<void>;
+	let recoverCurrentSessionHistory!: (ctx: ExtensionContext) => Promise<void>;
 
 	const showAgents = async (ctx: ExtensionContext, initialKey?: string): Promise<void> => {
 		if (!ctx.hasUI) return Promise.resolve();
 		await activateCurrentSessionRuntime(ctx);
+		await recoverCurrentSessionHistory(ctx);
 		return deps.openDialog(ctx, coordinator, current, {
 			...(initialKey ? { initialKey } : {}),
 			readTranscript: readAgentTranscript,
@@ -696,18 +705,16 @@ export default function registerSubagentExtension(
 		executionGovernor.bindSession({ sessionId: ledgerSessionId, ownerAgentPath });
 	};
 
-	const refreshGovernorCompatibility = async (ctx: ExtensionContext): Promise<void> => {
+	const refreshGovernorCompatibility = async (_ctx: ExtensionContext): Promise<void> => {
 		const epoch = sessionEpoch;
 		if (governorCompatibilityCheck?.epoch === epoch) return governorCompatibilityCheck.promise;
 		const check = { epoch, promise: Promise.resolve() };
 		check.promise = (async () => {
 			try {
-				const identity =
-					state.currentSessionScope ??
-					resolveCurrentSessionIdentity(ctx.sessionManager, ctx.cwd, ephemeralSessionNonce);
-				const entries = ctx.sessionManager.getEntries();
+				const scope = governorCompatibilityScope;
+				if (!scope) throw new Error("Agent governor compatibility has no current Session snapshot.");
 				const result = await deps.prepareGovernorCompatibility({
-					scope: buildSessionGovernorCompatibilityScope(identity, entries),
+					scope,
 					limits: {
 						maxDepth: config.maxSubagentDepth,
 						maxRunning: config.maxRunningAgents,
@@ -716,12 +723,12 @@ export default function registerSubagentExtension(
 				});
 				if (active && epoch === sessionEpoch) {
 					if (result.ok && result.releaseLegacyBarrier) {
-						releaseLegacyGovernorBarrier?.();
+						await releaseLegacyGovernorBarrier?.();
 						releaseLegacyGovernorBarrier = result.releaseLegacyBarrier;
 					}
 					governorCompatibilityReady = result.ok;
 					governorCompatibilityError = result.ok ? undefined : result.message;
-				} else if (result.ok) result.releaseLegacyBarrier?.();
+				} else if (result.ok) await result.releaseLegacyBarrier?.();
 			} catch (error) {
 				if (active && epoch === sessionEpoch) {
 					governorCompatibilityReady = false;
@@ -741,26 +748,20 @@ export default function registerSubagentExtension(
 		bindContext(ctx);
 		if (!state.currentSessionId || !state.currentSessionScope) return;
 		const epoch = sessionEpoch;
-		const sessionScope = state.currentSessionScope;
 		if (runtimeActivatedEpoch === epoch) return;
 		if (runtimeActivation?.epoch === epoch) return runtimeActivation.promise;
 		const activation = { epoch, promise: Promise.resolve() };
 		activation.promise = (async () => {
 			try {
 				bindExecutionGovernor(ctx);
-				state.foregroundRuns = mergeForegroundRuns(
-					state.foregroundRuns ?? new Map(),
-					recoverForegroundRuntimeRuns(path.join(TEMP_ROOT_DIR, "foreground-runs"), sessionScope),
-				);
-				tracker.restoreActiveJobs();
 				await executionGovernor.reconcileExisting();
 				if (!active || epoch !== sessionEpoch) return;
 				startRunRuntime({ createDirectories: false, primeExisting: true });
 				if (hasLiveWork(state)) {
-					tracker.ensurePoller();
+					tracker.ensureObserver();
 				}
 				current.refresh();
-				supervisor.start();
+				await supervisor.start();
 				runtimeActivatedEpoch = epoch;
 			} finally {
 				if (runtimeActivation === activation) runtimeActivation = undefined;
@@ -768,6 +769,35 @@ export default function registerSubagentExtension(
 		})();
 		runtimeActivation = activation;
 		return activation.promise;
+	};
+
+	// Full artifact discovery belongs to the explicit /agents inspection surface,
+	// never to an Agent Tool call on the model-submission path.
+	recoverCurrentSessionHistory = async (ctx: ExtensionContext): Promise<void> => {
+		bindContext(ctx);
+		if (!state.currentSessionId || !state.currentSessionScope) return;
+		const epoch = sessionEpoch;
+		const sessionScope = state.currentSessionScope;
+		if (historyRecoveredEpoch === epoch) return;
+		if (historyRecovery?.epoch === epoch) return historyRecovery.promise;
+		const recovery = { epoch, promise: Promise.resolve() };
+		recovery.promise = (async () => {
+			try {
+				const recoveredForeground = await recoverForegroundRuntimeRunsAsync(
+					path.join(TEMP_ROOT_DIR, "foreground-runs"),
+					sessionScope,
+				);
+				await tracker.restoreActiveJobs();
+				if (!active || epoch !== sessionEpoch) return;
+				state.foregroundRuns = mergeForegroundRuns(state.foregroundRuns ?? new Map(), recoveredForeground);
+				current.refresh();
+				historyRecoveredEpoch = epoch;
+			} finally {
+				if (historyRecovery === recovery) historyRecovery = undefined;
+			}
+		})();
+		historyRecovery = recovery;
+		return recovery.promise;
 	};
 
 	const governorFailureResult = (params: PublicAgentParams, message: string): AgentToolResult<Details> =>
@@ -1035,6 +1065,10 @@ export default function registerSubagentExtension(
 		tracker.handleStarted(normalized);
 		current.refresh();
 	});
+	onBus(SUBAGENT_ASYNC_STATUS_EVENT, (data) => {
+		if (!active || !belongsToCurrentSession(data)) return;
+		tracker.handleStatus(normalizeCurrentSessionEvent(data));
+	});
 	onBus(SUBAGENT_ASYNC_COMPLETE_EVENT, (data) => {
 		if (!active || !belongsToCurrentSession(data)) return;
 		const normalized = normalizeCurrentSessionEvent(data);
@@ -1055,10 +1089,10 @@ export default function registerSubagentExtension(
 		// Foreground summaries already return through the active tool call. A
 		// completion message here would trigger a duplicate main-model turn.
 		current.refresh();
-		tracker.ensurePoller();
 	});
-	onBus(SUBAGENT_PROCESS_TERMINAL_EVENT, () => {
-		if (!active) return;
+	onBus(SUBAGENT_PROCESS_TERMINAL_EVENT, (data) => {
+		if (!active || !belongsToCurrentSession(data)) return;
+		tracker.handleProcessTerminal(normalizeCurrentSessionEvent(data));
 		void executionGovernor.reconcileDead().catch((error) => {
 			reportAgentDiagnostic("Failed to reconcile Agent leases after a runner terminal event:", error);
 		});
@@ -1076,14 +1110,17 @@ export default function registerSubagentExtension(
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (!active) return;
+		await previousCleanupPromise;
 		sessionEpoch += 1;
 		// A legacy compatibility barrier belongs to exactly one parent session.
 		// Release it before rebinding state so A→B→A cannot deadlock against this
 		// extension instance's own stale A lock.
-		releaseLegacyGovernorBarrier?.();
+		await releaseLegacyGovernorBarrier?.();
 		releaseLegacyGovernorBarrier = undefined;
 		runtimeActivatedEpoch = -1;
 		runtimeActivation = undefined;
+		historyRecoveredEpoch = -1;
+		historyRecovery = undefined;
 		watcher.stopResultWatcher();
 		watcherStarted = false;
 		supervisor.pause?.();
@@ -1099,12 +1136,11 @@ export default function registerSubagentExtension(
 			typeof ctx.sessionManager.getBranch === "function"
 				? ctx.sessionManager.getBranch()
 				: ctx.sessionManager.getEntries();
+		notifier.reset(sessionEntries);
 		state.currentSessionScope = buildSessionCompatibilityScope(identity, sessionEntries);
+		governorCompatibilityScope = buildSessionGovernorCompatibilityScope(identity, sessionEntries);
 		state.foregroundRuns = state.currentSessionId
-			? mergeForegroundRuns(
-					replayForegroundRuns(sessionEntries, state.currentSessionId),
-					observeForegroundRuntimeRuns(path.join(TEMP_ROOT_DIR, "foreground-runs"), state.currentSessionScope),
-				)
+			? replayForegroundRuns(sessionEntries, state.currentSessionId)
 			: new Map();
 		state.parentSessionFile = ctx.sessionManager.getSessionFile() ?? null;
 		state.subagentSpawns = {
@@ -1115,11 +1151,33 @@ export default function registerSubagentExtension(
 			grantHistory: [],
 		};
 		bindContext(ctx);
-		tracker.restoreActiveJobs();
+		bindExecutionGovernor(ctx);
+		const leases = (await executionGovernor.inspectExistingRuntimeLeases?.()) ?? [];
+		const foregroundRoot = path.resolve(path.join(TEMP_ROOT_DIR, "foreground-runs"));
+		const backgroundRoot = path.resolve(ASYNC_DIR);
+		const foregroundDirectories: string[] = [];
+		const backgroundDirectories: string[] = [];
+		for (const lease of leases) {
+			if (!lease.asyncDir) continue;
+			const directory = path.resolve(lease.asyncDir);
+			if (path.dirname(directory) === foregroundRoot) foregroundDirectories.push(directory);
+			else if (path.dirname(directory) === backgroundRoot) backgroundDirectories.push(directory);
+		}
+		if (state.currentSessionScope) {
+			state.foregroundRuns = mergeForegroundRuns(
+				state.foregroundRuns ?? new Map(),
+				await recoverForegroundRuntimeRunsAsync(
+					path.join(TEMP_ROOT_DIR, "foreground-runs"),
+					state.currentSessionScope,
+					foregroundDirectories,
+				),
+			);
+		}
+		await tracker.restoreActiveJobs(backgroundDirectories);
 		current.refresh();
 	});
 
-	const cleanup = (): void => {
+	const cleanup = async (): Promise<void> => {
 		if (!active) return;
 		active = false;
 		sessionEpoch += 1;
@@ -1134,8 +1192,7 @@ export default function registerSubagentExtension(
 				// Event-bus teardown is best effort after the host has begun shutdown.
 			}
 		}
-		if (state.poller) clearInterval(state.poller);
-		state.poller = null;
+		tracker.resetJobs();
 		clearTimerMap(state);
 		state.resultFileCoalescer.clear();
 		state.asyncJobs.clear();
@@ -1147,7 +1204,8 @@ export default function registerSubagentExtension(
 		state.currentGovernorSessionId = null;
 		governorCompatibilityReady = false;
 		governorCompatibilityError = undefined;
-		releaseLegacyGovernorBarrier?.();
+		governorCompatibilityScope = undefined;
+		const releaseBarrier = releaseLegacyGovernorBarrier;
 		releaseLegacyGovernorBarrier = undefined;
 		state.parentSessionFile = null;
 		state.lastUiContext = null;
@@ -1163,6 +1221,7 @@ export default function registerSubagentExtension(
 		delete process.env[SUBAGENT_PARENT_SESSION_ENV];
 		delete process.env[SUBAGENT_PARENT_PHYSICAL_SESSION_ENV];
 		if (globalStore[RUNTIME_CLEANUP_KEY] === cleanup) delete globalStore[RUNTIME_CLEANUP_KEY];
+		await releaseBarrier?.();
 	};
 
 	globalStore[RUNTIME_CLEANUP_KEY] = cleanup;

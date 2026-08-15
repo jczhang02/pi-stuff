@@ -25,6 +25,7 @@ import {
 	getAsyncConfigPath,
 	RESULTS_DIR,
 	SUBAGENT_ASYNC_STARTED_EVENT,
+	SUBAGENT_ASYNC_STATUS_EVENT,
 	type SubagentState,
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.ts";
 import { CERTIFIED_PI_VERSION } from "../../scripts/pi-host-contract.ts";
@@ -116,6 +117,17 @@ class EventLog {
 		);
 		if (!match) throw new Error(`No start event recorded for ${runId}.`);
 		return match.data as Record<string, unknown>;
+	}
+
+	status(runId: string): Record<string, unknown> | undefined {
+		const match = this.records.find(
+			(record) =>
+				record.name === SUBAGENT_ASYNC_STATUS_EVENT &&
+				typeof record.data === "object" &&
+				record.data !== null &&
+				(record.data as { id?: unknown }).id === runId,
+		);
+		return match?.data as Record<string, unknown> | undefined;
 	}
 }
 
@@ -211,7 +223,6 @@ function stateForSession(sessionId: string): SubagentState {
 		pendingForegroundControlNotices: new Map(),
 		cleanupTimers: new Map(),
 		lastUiContext: null,
-		poller: null,
 		completionSeen: new Map(),
 		watcher: null,
 		watcherRestartTimer: null,
@@ -412,6 +423,8 @@ describe("process-level Agent controls and crash recovery", () => {
 					const steps = status.steps as Array<{ status?: string }> | undefined;
 					return steps?.[0]?.status === "running" ? status : undefined;
 				});
+				const liveProjection = await waitFor("runner IPC status projection", () => events.status(sourceRunId));
+				expect(liveProjection).toMatchObject({ id: sourceRunId, asyncDir });
 
 				const beforeCrash = await new SessionAgentGovernor({ rootDir: governorRoot, sessionId }).snapshot();
 				expect(beforeCrash).toMatchObject({ total: 1, running: 1 });
@@ -446,10 +459,8 @@ describe("process-level Agent controls and crash recovery", () => {
 				processGroups.delete(pid);
 
 				const restoredState = stateForSession(sessionId);
-				const tracker = createAsyncJobTracker(extensionApi(new EventLog()), restoredState, ASYNC_DIR, {
-					resultsDir: RESULTS_DIR,
-				});
-				tracker.restoreActiveJobs();
+				const tracker = createAsyncJobTracker(extensionApi(new EventLog()), restoredState, ASYNC_DIR);
+				await tracker.restoreActiveJobs();
 				const rows = new CurrentAgents(restoredState, {
 					inspect: () => true,
 					steer: () => true,

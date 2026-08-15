@@ -11,7 +11,8 @@ import {
 } from "./upstream/techniques/index.js";
 
 const DEFAULT_MAX_CHARS = 12_000;
-const MAX_CACHE_ENTRIES = 512;
+const MAX_CACHE_BYTES = 64 * 1024 * 1024;
+const MAX_CACHE_ENTRIES = 10_000;
 const MAX_RECORDED_RESULTS = 10_000;
 const PROJECTION_MARK = Symbol.for("@jczhang02/pi-stuff-rtk/projected/v1");
 
@@ -34,10 +35,10 @@ export interface RtkProjectionStatsSnapshot {
 }
 
 interface CachedProjection {
+	readonly cacheBytes: number;
 	readonly content: ToolResultMessage["content"];
 	readonly originalChars: number;
 	readonly projectedChars: number;
-	readonly rawKey: string;
 	readonly techniques: readonly string[];
 }
 
@@ -116,23 +117,21 @@ function projectGrepText(text: string, maxChars: number): TextProjection {
 	return { techniques, text: current };
 }
 
-function contentKey(message: ToolResultMessage, command: string | undefined): string {
-	return JSON.stringify([
-		message.toolName,
-		command,
-		message.content.map((part) =>
-			part.type === "text" ? ["text", part.text] : ["image", part.mimeType, part.data.length],
-		),
-	]);
-}
-
 function cloneContent(content: ToolResultMessage["content"]): ToolResultMessage["content"] {
 	return content.map((part) => ({ ...part }));
+}
+
+function projectionBytes(content: ToolResultMessage["content"]): number {
+	return content.reduce(
+		(total, part) => total + (part.type === "text" ? Buffer.byteLength(part.text, "utf8") : part.data.length),
+		0,
+	);
 }
 
 export class RtkProjectionAdapter implements ContextProjectionAdapter {
 	readonly id = "./index.js";
 	private readonly cache = new Map<string, CachedProjection>();
+	private cacheBytes = 0;
 	private readonly enabled: () => boolean;
 	private readonly maxChars: number;
 	private originalChars = 0;
@@ -168,6 +167,7 @@ export class RtkProjectionAdapter implements ContextProjectionAdapter {
 
 	reset(): void {
 		this.cache.clear();
+		this.cacheBytes = 0;
 		this.originalChars = 0;
 		this.projectedChars = 0;
 		this.recordedResults.clear();
@@ -186,9 +186,12 @@ export class RtkProjectionAdapter implements ContextProjectionAdapter {
 	}
 
 	private projectResult(message: ToolResultMessage, command: string | undefined): CachedProjection | undefined {
-		const rawKey = contentKey(message, command);
 		const cached = this.cache.get(message.toolCallId);
-		if (cached?.rawKey === rawKey) return cached.projectedChars === cached.originalChars ? undefined : cached;
+		if (cached) {
+			this.cache.delete(message.toolCallId);
+			this.cache.set(message.toolCallId, cached);
+			return cached.projectedChars === cached.originalChars ? undefined : cached;
+		}
 
 		let changed = false;
 		let originalChars = 0;
@@ -208,10 +211,10 @@ export class RtkProjectionAdapter implements ContextProjectionAdapter {
 			return { ...part, text: projection.text };
 		});
 		const result = {
-			content,
+			cacheBytes: changed ? projectionBytes(content) : 0,
+			content: changed ? content : [],
 			originalChars,
 			projectedChars,
-			rawKey,
 			techniques: [...techniques],
 		};
 		this.cacheResult(message.toolCallId, result);
@@ -220,11 +223,16 @@ export class RtkProjectionAdapter implements ContextProjectionAdapter {
 	}
 
 	private cacheResult(toolCallId: string, result: CachedProjection): void {
+		const previous = this.cache.get(toolCallId);
+		if (previous) this.cacheBytes -= previous.cacheBytes;
 		this.cache.delete(toolCallId);
+		if (result.cacheBytes > MAX_CACHE_BYTES) return;
 		this.cache.set(toolCallId, result);
-		while (this.cache.size > MAX_CACHE_ENTRIES) {
+		this.cacheBytes += result.cacheBytes;
+		while (this.cache.size > MAX_CACHE_ENTRIES || this.cacheBytes > MAX_CACHE_BYTES) {
 			const oldest = this.cache.keys().next().value;
 			if (typeof oldest !== "string") break;
+			this.cacheBytes -= this.cache.get(oldest)?.cacheBytes ?? 0;
 			this.cache.delete(oldest);
 		}
 	}

@@ -471,6 +471,7 @@ describe("Agent execution lifecycle coordinator", () => {
 		try {
 			const empty = createDurableAgentExecutionCoordinator({ rootDir, isPidAlive: () => false });
 			empty.bindSession({ sessionId: "empty-session", ownerAgentPath: [] });
+			expect(await empty.inspectExistingRuntimeLeases()).toEqual([]);
 			await empty.reconcileExisting();
 			expect(existsSync(rootDir)).toBe(false);
 
@@ -481,6 +482,9 @@ describe("Agent execution lifecycle coordinator", () => {
 
 			const restored = createDurableAgentExecutionCoordinator({ rootDir, isPidAlive: () => false });
 			restored.bindSession({ sessionId: "restored-session", ownerAgentPath: [] });
+			expect(await restored.inspectExistingRuntimeLeases()).toEqual([
+				expect.objectContaining({ logicalAgentId: "restored-run:0", pid: 54_321 }),
+			]);
 			await restored.reconcileExisting();
 			expect(await seed.snapshot()).toMatchObject({ total: 1, running: 0, leases: [] });
 		} finally {

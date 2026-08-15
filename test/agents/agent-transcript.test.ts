@@ -239,7 +239,7 @@ describe("readAgentTranscript", () => {
 		expect(
 			await readAgentTranscript(request(row({ partialResult: "fallback", transcriptPath: "relative.md" }))),
 		).toBe("fallback");
-		expect(() => readAgentTranscript(request(row({ transcriptPath: link })))).toThrow();
+		await expect(readAgentTranscript(request(row({ transcriptPath: link })))).rejects.toThrow();
 	});
 
 	test("returns quietly when its dialog signal is already aborted", async () => {

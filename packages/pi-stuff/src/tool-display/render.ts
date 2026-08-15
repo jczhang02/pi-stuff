@@ -58,6 +58,7 @@ export interface BashOperationRowModel {
 	readonly expanded: boolean;
 	readonly kind: "bash-operation";
 	readonly output: string;
+	readonly outputTruncated?: boolean;
 	readonly state: ToolActivityState;
 }
 
@@ -81,6 +82,7 @@ function sameModel(left: ToolTranscriptRowModel, right: ToolTranscriptRowModel):
 			left.expandable === right.expandable &&
 			left.expanded === right.expanded &&
 			left.output === right.output &&
+			left.outputTruncated === right.outputTruncated &&
 			left.state === right.state
 		);
 	}
@@ -249,7 +251,11 @@ function bashCommandLines(command: string, expanded: boolean): string[] {
 	return lines;
 }
 
-function bashOutputLines(model: BashOperationRowModel): { readonly hidden: number; readonly lines: string[] } {
+function bashOutputLines(model: BashOperationRowModel): {
+	readonly hidden: number;
+	readonly lines: string[];
+	readonly truncated: boolean;
+} {
 	const normalized = boundTerminalText(model.output, ROW_PREVIEW_MAX_CODE_UNITS, "")
 		.replaceAll("\r", "")
 		.split("\n", DETAIL_MAX_LINES + 1)
@@ -257,7 +263,7 @@ function bashOutputLines(model: BashOperationRowModel): { readonly hidden: numbe
 		.join("\n")
 		.trim();
 	if (!normalized || normalized === "(no output)") {
-		return { hidden: 0, lines: [model.active ? "Running…" : "(No output)"] };
+		return { hidden: 0, lines: [model.active ? "Running…" : "(No output)"], truncated: false };
 	}
 	let lines = normalized.split("\n");
 	if (model.state === "rejected") {
@@ -266,6 +272,7 @@ function bashOutputLines(model: BashOperationRowModel): { readonly hidden: numbe
 		return {
 			hidden: model.expanded ? 0 : Math.max(0, lines.length - visible.length),
 			lines: visible,
+			truncated: model.outputTruncated === true,
 		};
 	}
 	if (model.state === "cancelled" && !lines.some((line) => /\b(?:interrupt|abort|cancel)/iu.test(line))) {
@@ -283,7 +290,11 @@ function bashOutputLines(model: BashOperationRowModel): { readonly hidden: numbe
 		lines.unshift(terminal === "Command aborted" ? "Interrupted" : `Error: ${terminal}`);
 	}
 	const hidden = model.expanded ? 0 : Math.max(0, lines.length - BASH_OUTPUT_PREVIEW_LINES);
-	return { hidden, lines: model.expanded ? lines : lines.slice(0, BASH_OUTPUT_PREVIEW_LINES) };
+	return {
+		hidden,
+		lines: model.expanded ? lines : lines.slice(0, BASH_OUTPUT_PREVIEW_LINES),
+		truncated: model.outputTruncated === true,
+	};
 }
 
 function renderBashOperationRow(
@@ -332,9 +343,10 @@ function renderBashOperationRow(
 			rendered.push(`${index === 0 && wrapIndex === 0 ? outputPrefix : outputContinuation}${line}`);
 		}
 	}
-	if (preview.hidden > 0) {
-		const hint = model.expandable ? " (ctrl+o to expand)" : "";
-		rendered.push(`${outputContinuation}${theme.fg("dim", `… +${String(preview.hidden)} lines${hint}`)}`);
+	if (preview.hidden > 0 || preview.truncated) {
+		const detail = preview.truncated ? "more output" : `+${String(preview.hidden)} lines`;
+		const hint = model.expanded ? " (output capped)" : model.expandable ? " (ctrl+o to expand)" : "";
+		rendered.push(`${outputContinuation}${theme.fg("dim", `… ${detail}${hint}`)}`);
 	}
 	return rendered.map((line) => truncateToWidth(line, width, "…"));
 }
@@ -582,12 +594,13 @@ export function summarizeBuiltin(
 	state: Exclude<ToolActivityState, "running">,
 	durationMs: number | undefined,
 ): string {
-	const text = textFromResult(result);
 	if (state === "rejected") return "rejected";
 	if (state === "cancelled") return "cancelled";
-	if (state === "error") return oneLine(name === "bash" ? lastNonEmptyLine(text) : firstNonEmptyLine(text));
+	if (state === "error") {
+		const text = textFromResult(result);
+		return oneLine(name === "bash" ? lastNonEmptyLine(text) : firstNonEmptyLine(text));
+	}
 	if (result.content.some((entry) => entry.type === "image")) return "image loaded";
-	if (name === "read") return `${String(lineCount(text))} lines`;
 	if (name === "write") {
 		const content = stringArgument(args, "content");
 		const lines = writeLineCount(content);
@@ -600,6 +613,8 @@ export function summarizeBuiltin(
 		return `+${String(counts.additions)}/-${String(counts.deletions)}`;
 	}
 	if (name === "bash") return durationMs === undefined ? "done" : `done in ${formatElapsed(durationMs)}`;
+	const text = textFromResult(result);
+	if (name === "read") return `${String(lineCount(text))} lines`;
 	if (name === "grep") {
 		if (/^No matches found/iu.test(text)) return "0 matches";
 		const matches = text

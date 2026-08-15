@@ -1214,7 +1214,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 					`pi-${CERTIFIED_PI_VERSION}-statusline-parity-fresh-${String(columns)}x${String(rows)}`,
 					session,
 				);
-				const initialRecords = await readFixtureRecords(paths.log);
+				const initialRecords = await waitForFixtureRecords(paths.log, "inventory", 1);
 				const caseMarkdownTransformer = verifyInventory(
 					initialRecords,
 					options.theme,

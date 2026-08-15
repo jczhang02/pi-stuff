@@ -30,6 +30,7 @@ import {
 	type ResolvedTurnBudget,
 	resolveChildMaxSubagentDepth,
 	SUBAGENT_ASYNC_STARTED_EVENT,
+	SUBAGENT_ASYNC_STATUS_EVENT,
 	SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
 	SUBAGENT_PROCESS_TERMINAL_EVENT,
 	TEMP_ROOT_DIR,
@@ -885,7 +886,11 @@ export function finalizeSpawnedRunnerClose(input: {
 			}
 		}
 		try {
-			input.onProcessTerminal?.(persisted);
+			input.onProcessTerminal?.({
+				...persisted,
+				asyncDir: input.launchConfig.asyncDir,
+				sessionId: input.launchConfig.sessionId,
+			});
 		} catch (error) {
 			reportAgentDiagnostic(`Process-terminal observer failed for '${input.launchConfig.id}':`, error);
 		}
@@ -916,6 +921,7 @@ async function spawnRunner(
 	suffix: string,
 	cwd: string,
 	onProcessTerminal?: (proof: unknown) => void,
+	onStatus?: (status: unknown) => void,
 ): Promise<{
 	pid?: number;
 	processStartIdentity?: string;
@@ -979,7 +985,7 @@ async function spawnRunner(
 		proc = spawn(bunCommand, [runner, configPath], {
 			cwd,
 			detached: true,
-			stdio: ["ignore", stdoutFd ?? "ignore", stderrFd ?? "ignore"],
+			stdio: ["ignore", stdoutFd ?? "ignore", stderrFd ?? "ignore", "ipc"],
 			windowsHide: true,
 			env: {
 				...process.env,
@@ -1003,6 +1009,28 @@ async function spawnRunner(
 				onProcessTerminal,
 			});
 		});
+		proc.on("message", (message: unknown) => {
+			if (!message || typeof message !== "object") return;
+			const update = message as { type?: unknown; asyncDir?: unknown; status?: unknown };
+			if (
+				update.type !== SUBAGENT_ASYNC_STATUS_EVENT ||
+				update.asyncDir !== launchConfig.asyncDir ||
+				!update.status ||
+				typeof update.status !== "object" ||
+				(update.status as { runId?: unknown }).runId !== launchConfig.id
+			)
+				return;
+			try {
+				onStatus?.({
+					id: launchConfig.id,
+					asyncDir: launchConfig.asyncDir,
+					sessionId: launchConfig.sessionId,
+					status: update.status,
+				});
+			} catch (error) {
+				reportAgentDiagnostic(`Agent status observer failed for '${launchConfig.id}':`, error);
+			}
+		});
 		if (typeof proc.pid !== "number") {
 			launchAborted = true;
 			throw new Error(`background runner has no pid for cwd: ${cwd}`);
@@ -1014,6 +1042,7 @@ async function spawnRunner(
 			throw new Error(`background runner ${proc.pid} has no stable process-start identity`);
 		}
 		proc.unref();
+		proc.channel?.unref?.();
 
 		if (startupGateToken && startupGatePath) {
 			try {
@@ -1592,8 +1621,12 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		deadlineAt,
 		...(capabilityCeiling ? { capabilityCeiling } : {}),
 	};
-	const spawned = await spawnRunner(config, id, built.runnerCwd, (proof) =>
-		params.ctx.pi.events.emit(SUBAGENT_PROCESS_TERMINAL_EVENT, proof),
+	const spawned = await spawnRunner(
+		config,
+		id,
+		built.runnerCwd,
+		(proof) => params.ctx.pi.events.emit(SUBAGENT_PROCESS_TERMINAL_EVENT, proof),
+		(status) => params.ctx.pi.events.emit(SUBAGENT_ASYNC_STATUS_EVENT, status),
 	);
 	if (spawned.error) {
 		if (spawned.safeToCleanup !== false) {
@@ -1824,8 +1857,12 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		...(capabilityCeiling ? { capabilityCeiling } : {}),
 		launchContractDigest: built.work.task.launchContractDigest,
 	};
-	const spawned = await spawnRunner(config, id, built.runnerCwd, (proof) =>
-		params.ctx.pi.events.emit(SUBAGENT_PROCESS_TERMINAL_EVENT, proof),
+	const spawned = await spawnRunner(
+		config,
+		id,
+		built.runnerCwd,
+		(proof) => params.ctx.pi.events.emit(SUBAGENT_PROCESS_TERMINAL_EVENT, proof),
+		(status) => params.ctx.pi.events.emit(SUBAGENT_ASYNC_STATUS_EVENT, status),
 	);
 	if (spawned.error) {
 		if (spawned.safeToCleanup !== false) {

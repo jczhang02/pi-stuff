@@ -29,6 +29,9 @@ function metric(p95 = 1) {
 function selection(overrides: Partial<LifecycleAcceptanceSelection> = {}): LifecycleAcceptanceSelection {
 	return {
 		actions: ACTIONS,
+		contextEnabled: true,
+		longSessionToolBytes: 8_192,
+		longSessionTools: 6_500,
 		samples: 3,
 		scenarios: SCENARIOS,
 		sizes: SIZES,
@@ -45,12 +48,15 @@ function cell(variant: Variant, scenario: Scenario, action: Action, size: Termin
 		...(action === "prompt"
 			? {
 					acknowledgement: metric(),
+					providerStart: metric(),
 					response: metric(),
 					steadyAcknowledgement: metric(),
+					steadyProviderStart: metric(),
 					steadyResponse: metric(),
 				}
 			: {}),
 		columns: size.columns,
+		...(action === "agent-exit" ? { interrupt: metric() } : {}),
 		...(action === "reload" || action === "reload-change" ? { reload: metric() } : {}),
 		rows: size.rows,
 		scenario,
@@ -105,8 +111,21 @@ describe("lifecycle benchmark statistics", () => {
 		}
 		const prompt = lifecycleExpectProgram("prompt", false);
 		expect(prompt).toContain('must_expect "PS5BW_INPUT_ACK_PS5BW_FIRST_PROMPT"');
+		expect(prompt).toContain(
+			'must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_FIRST_PROMPT" "PS5BW_PROVIDER_START_FIRST"',
+		);
+		expect(prompt).toContain('puts "PS5BW_METRIC provider_start_us');
+		expect(prompt).toContain('puts "PS5BW_METRIC steady_provider_start_us');
 		expect(prompt).toContain('must_editor_ready "PS5BW_STEADY_EDITOR_READY"');
 		expect(prompt).toContain('must_editor_ready "PS5BW_SHUTDOWN_EDITOR_READY"');
+		const ctrlC = lifecycleExpectProgram("ctrl-c", false);
+		expect(ctrlC.split('send -- "\\003"')).toHaveLength(3);
+		const agentExit = lifecycleExpectProgram("agent-exit", false);
+		expect(agentExit).toContain("must_file $env(PS5BW_AGENT_SHELL_PID)");
+		expect(agentExit).toContain("must_file $env(PS5BW_AGENT_DESCENDANT_PID)");
+		expect(agentExit).toContain('send -- "\\003"');
+		expect(agentExit).toContain('must_editor_ready "PS5BW_AGENT_EXIT_EDITOR_READY"');
+		expect(agentExit).toContain('puts "PS5BW_METRIC interrupt_us');
 	});
 
 	test("uses nearest-rank percentiles", () => {
@@ -140,10 +159,19 @@ describe("lifecycle benchmark statistics", () => {
 				: candidate,
 		);
 		const findings = lifecycleAcceptanceFindings(
-			selection({ actions: ACTIONS.filter((action) => action !== "agent-exit"), trace: false }),
+			selection({
+				actions: ACTIONS.filter((action) => action !== "agent-exit"),
+				contextEnabled: false,
+				longSessionToolBytes: 0,
+				longSessionTools: 0,
+				trace: false,
+			}),
 			cells,
 		);
 		expect(findings).toContain("coverage requires Host and Suite lifecycle tracing");
+		expect(findings).toContain("coverage requires the shipped Context capability to remain enabled");
+		expect(findings).toContain("coverage requires at least 6000 historical Tool results");
+		expect(findings).toContain("coverage requires at least 8192 bytes per historical Tool result");
 		expect(findings).toContain("coverage is missing action agent-exit");
 		expect(findings).toContain("suite/resume-long/reload/64x28 reload p95 551.00ms exceeds 550ms");
 		expect(findings).toContain("suite/resume-long/background-exit/64x28 shutdown p95 376.00ms exceeds 375ms");
@@ -183,6 +211,18 @@ describe("lifecycle benchmark statistics", () => {
 		const findings = lifecycleAcceptanceFindings(selection(), cells, [confirmation]);
 		expect(findings).toContain("suite/fresh/exit/64x28 startup p95 2701.00ms exceeds 2700ms");
 		expect(findings).toContain("suite/fresh/exit/64x28 startup confirmation p95 2702.00ms also exceeds 2700ms");
+	});
+
+	test("bounds long-session Suite startup against the paired Host baseline", () => {
+		const cells = acceptanceCells().map((candidate) => {
+			if (candidate.scenario !== "resume-long" || candidate.action !== "exit" || candidate.columns !== 100) {
+				return candidate;
+			}
+			return { ...candidate, startup: metric(candidate.variant === "host" ? 5_000 : 6_001) };
+		});
+		expect(lifecycleAcceptanceFindings(selection(), cells)).toContain(
+			"suite/resume-long/exit/100x32 startup overhead 1001.00ms exceeds Host by 1000ms",
+		);
 	});
 
 	test("requires complete samples and warmups for every action metric and its confirmation", () => {
@@ -241,12 +281,34 @@ describe("lifecycle benchmark statistics", () => {
 			candidate.scenario === "fresh" &&
 			candidate.action === "prompt" &&
 			candidate.columns === 100
-				? { ...candidate, steadyAcknowledgement: metric(16), steadyResponse: metric(51) }
+				? {
+						...candidate,
+						providerStart: metric(801),
+						steadyAcknowledgement: metric(16),
+						steadyProviderStart: metric(101),
+						steadyResponse: metric(151),
+					}
 				: candidate,
 		);
 		const findings = lifecycleAcceptanceFindings(selection(), cells);
 		expect(findings).toContain("suite/fresh/prompt/100x32 steadyAcknowledgement p95 16.00ms exceeds 15ms");
-		expect(findings).toContain("suite/fresh/prompt/100x32 steadyResponse p95 51.00ms exceeds 50ms");
+		expect(findings).toContain("suite/fresh/prompt/100x32 providerStart p95 801.00ms exceeds 800ms");
+		expect(findings).toContain("suite/fresh/prompt/100x32 steadyProviderStart p95 101.00ms exceeds 100ms");
+		expect(findings).toContain("suite/fresh/prompt/100x32 steadyResponse p95 151.00ms exceeds 150ms");
+	});
+
+	test("enforces foreground Agent interrupt latency", () => {
+		const cells = acceptanceCells().map((candidate) =>
+			candidate.variant === "suite" &&
+			candidate.scenario === "fresh" &&
+			candidate.action === "agent-exit" &&
+			candidate.columns === 100
+				? { ...candidate, interrupt: metric(1_001) }
+				: candidate,
+		);
+		expect(lifecycleAcceptanceFindings(selection(), cells)).toContain(
+			"suite/fresh/agent-exit/100x32 interrupt p95 1001.00ms exceeds 1000ms",
+		);
 	});
 
 	test("requires durable resumed history and matching Background Tool receipts", () => {
@@ -268,6 +330,55 @@ describe("lifecycle benchmark statistics", () => {
 				"resume-long",
 			),
 		).toContain("Session JSONL lost Tool result receipt ps5bw-background-launch");
+	});
+
+	test("requires the real-shape long Session to retain every seeded Tool result", () => {
+		const findings = lifecycleSessionFindings(
+			sessionEntries([
+				{ role: "assistant", content: [{ type: "text", text: "PS5BW_SESSION_TAIL_long" }] },
+				{ role: "toolResult", toolCallId: "ps5bw-history-tool-0", content: [] },
+			]),
+			"exit",
+			"resume-long",
+			6_500,
+		);
+		expect(findings).toContain("Session JSONL retained only 1 of 6500 historical Tool results");
+	});
+
+	test("requires representative long Tool payloads to retain exact content and size", () => {
+		const toolResult = (index: number, text: string) => ({
+			role: "toolResult",
+			toolCallId: `ps5bw-history-tool-${String(index)}`,
+			content: [{ type: "text", text }],
+		});
+		const payload = (index: number) => `PS5BW_HISTORY_PAYLOAD_${String(index)}\n${"x".repeat(8_192)}`.slice(0, 8_192);
+		const findings = lifecycleSessionFindings(
+			sessionEntries([
+				{ role: "assistant", content: [{ type: "text", text: "PS5BW_SESSION_TAIL_long" }] },
+				toolResult(0, payload(0)),
+				toolResult(3_250, payload(3_250)),
+				toolResult(6_499, "PS5BW_HISTORY_PAYLOAD_6499\nshort"),
+			]),
+			"exit",
+			"resume-long",
+			6_500,
+			8_192,
+		);
+		expect(findings).toContain("Session JSONL retained only 3 of 6500 historical Tool results");
+		expect(findings).toContain("Session JSONL historical Tool 6499 has 32 bytes instead of 8192");
+		expect(findings).not.toContain("Session JSONL lost historical Tool payload marker 0");
+		expect(findings).not.toContain("Session JSONL lost historical Tool payload marker 3250");
+	});
+
+	test("accepts a cancelled foreground Agent without an invented Tool result", () => {
+		const entries = sessionEntries([
+			{ role: "user", content: "PS5BW_AGENT_PROMPT" },
+			{
+				role: "assistant",
+				content: [{ type: "toolCall", id: "ps5bw-agent-launch", name: "subagent", arguments: {} }],
+			},
+		]);
+		expect(lifecycleSessionFindings(entries, "agent-exit", "fresh")).toEqual([]);
 	});
 
 	test("requires both measured prompt submissions to remain durable", () => {

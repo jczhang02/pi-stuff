@@ -16,6 +16,12 @@ export interface DurableClaim {
 	release(): void;
 }
 
+export interface AsyncDurableClaim {
+	readonly directory: string;
+	readonly token: string;
+	release(): Promise<void>;
+}
+
 function safeClaimName(name: string): string {
 	if (!/^[A-Za-z0-9._-]{1,240}$/u.test(name) || name === "." || name === "..") {
 		throw new Error("Durable claim name must be one safe path component.");
@@ -180,4 +186,54 @@ export function tryAcquireDurableClaim(parentDirectory: string, name: string): D
  */
 export function tryAcquireKernelClaim(parentDirectory: string, name: string): DurableClaim | undefined {
 	return tryAcquireClaim(parentDirectory, name, false);
+}
+
+/** Async Host-side kernel claim; only the in-memory flock operation is synchronous. */
+export async function tryAcquireKernelClaimAsync(
+	parentDirectory: string,
+	name: string,
+): Promise<AsyncDurableClaim | undefined> {
+	const parentStat = await fs.promises.lstat(parentDirectory);
+	assertPrivateDirectory(parentDirectory, parentStat);
+	const lockPath = path.join(parentDirectory, `${safeClaimName(name)}.lock`);
+	if (path.dirname(lockPath) !== path.resolve(parentDirectory)) {
+		throw new Error("Durable claim path escaped its private parent directory.");
+	}
+	const flags = fs.constants.O_CREAT | fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0);
+	let handle: fs.promises.FileHandle;
+	try {
+		handle = await fs.promises.open(lockPath, flags, 0o600);
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === "EISDIR" || code === "ELOOP") {
+			throw new Error(`Durable claim '${lockPath}' must be a regular file.`, {
+				cause: error instanceof Error ? error : undefined,
+			});
+		}
+		throw error;
+	}
+	let keepOpen = false;
+	try {
+		const stat = await handle.stat();
+		const currentUid = process.getuid?.();
+		if (!stat.isFile() || (currentUid !== undefined && stat.uid !== currentUid)) {
+			throw new Error(`Durable claim '${lockPath}' must be a regular file owned by the current user.`);
+		}
+		if ((stat.mode & 0o777) !== 0o600) await handle.chmod(0o600);
+		if (!tryLock(handle.fd)) return undefined;
+		const token = randomUUID();
+		let released = false;
+		keepOpen = true;
+		return {
+			directory: lockPath,
+			token,
+			release: async () => {
+				if (released) return;
+				released = true;
+				await handle.close();
+			},
+		};
+	} finally {
+		if (!keepOpen) await handle.close();
+	}
 }

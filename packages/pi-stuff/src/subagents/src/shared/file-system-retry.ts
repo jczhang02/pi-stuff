@@ -45,3 +45,20 @@ export function runFileSystemOperationWithRetry<T>(operation: () => T, options: 
 		}
 	}
 }
+
+/** Async retry lane for Host-side filesystem work that must not block input/rendering. */
+export async function runFileSystemOperationWithRetryAsync<T>(
+	operation: () => Promise<T>,
+	options: Pick<FileSystemRetryOptions, "retryDelaysMs"> = {},
+): Promise<T> {
+	const retryDelaysMs = options.retryDelaysMs ?? DEFAULT_FILE_SYSTEM_RETRY_DELAYS_MS;
+	for (let attempt = 0; ; attempt += 1) {
+		try {
+			return await operation();
+		} catch (error) {
+			const delayMs = retryDelaysMs[attempt];
+			if (delayMs === undefined || !isRetryableFileSystemError(error)) throw error;
+			await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+		}
+	}
+}

@@ -177,6 +177,47 @@ export function readBoundedOwnedFileSnapshot(filePath: string, maxBytes: number)
 	}
 }
 
+/** Async counterpart for Host-side observers that must never block the TUI thread. */
+export async function readBoundedOwnedFileSnapshotAsync(
+	filePath: string,
+	maxBytes: number,
+): Promise<OwnedFileSnapshot> {
+	if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new Error("Owned file byte limit must be non-negative.");
+	const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+	let handle: fs.promises.FileHandle;
+	try {
+		handle = await fs.promises.open(filePath, fs.constants.O_RDONLY | noFollow);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+			throw new Error(`Agent runtime file '${filePath}' must not be a symbolic link.`, { cause: error });
+		}
+		throw error;
+	}
+	try {
+		const stat = await handle.stat();
+		assertOwnedRegularFile(filePath, stat, maxBytes);
+		const buffer = Buffer.alloc(stat.size);
+		let offset = 0;
+		while (offset < buffer.length) {
+			const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
+			if (bytesRead === 0) throw new OwnedFileChangedDuringReadError(filePath);
+			offset += bytesRead;
+		}
+		const after = await handle.stat();
+		if (!sameFileVersion(stat, after)) throw new OwnedFileChangedDuringReadError(filePath);
+		return {
+			ctimeMs: stat.ctimeMs,
+			dev: stat.dev,
+			ino: stat.ino,
+			mtimeMs: stat.mtimeMs,
+			size: stat.size,
+			text: buffer.toString("utf-8"),
+		};
+	} finally {
+		await handle.close();
+	}
+}
+
 /** Atomically remove only the exact regular-file snapshot previously read. */
 export function removeOwnedFileSnapshot(filePath: string, snapshot: OwnedFileSnapshot): OwnedFileRemoval {
 	const quarantinePath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.consumed-${randomUUID()}`);
@@ -205,6 +246,38 @@ export function removeOwnedFileSnapshot(filePath: string, snapshot: OwnedFileSna
 		return "changed";
 	}
 	fs.unlinkSync(quarantinePath);
+	return "removed";
+}
+
+/** Async counterpart for Host-side result consumption. */
+export async function removeOwnedFileSnapshotAsync(
+	filePath: string,
+	snapshot: OwnedFileSnapshot,
+): Promise<OwnedFileRemoval> {
+	const quarantinePath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.consumed-${randomUUID()}`);
+	try {
+		await fs.promises.rename(filePath, quarantinePath);
+	} catch (error) {
+		if (notFound(error)) return "missing";
+		throw error;
+	}
+	const moved = await fs.promises.lstat(quarantinePath);
+	const unchanged =
+		moved.isFile() &&
+		moved.dev === snapshot.dev &&
+		moved.ino === snapshot.ino &&
+		moved.size === snapshot.size &&
+		moved.mtimeMs === snapshot.mtimeMs;
+	if (!unchanged) {
+		try {
+			await fs.promises.link(quarantinePath, filePath);
+			await fs.promises.unlink(quarantinePath);
+		} catch {
+			// Preserve the unproven replacement for diagnostics and later recovery.
+		}
+		return "changed";
+	}
+	await fs.promises.unlink(quarantinePath);
 	return "removed";
 }
 
@@ -246,6 +319,39 @@ export function readOwnedFileTail(filePath: string, maxBytes: number): OwnedFile
 		return { dev: stat.dev, ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size, text };
 	} finally {
 		fs.closeSync(fd);
+	}
+}
+
+/** Async counterpart for Host-side recovery and detail readers. */
+export async function readOwnedFileTailAsync(filePath: string, maxBytes: number): Promise<OwnedFileTail> {
+	if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new Error("Owned file tail limit must be non-negative.");
+	const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+	const handle = await fs.promises.open(filePath, fs.constants.O_RDONLY | noFollow);
+	try {
+		const stat = await handle.stat();
+		assertOwnedRegularFile(filePath, stat);
+		const start = Math.max(0, stat.size - Math.max(0, maxBytes));
+		const buffer = Buffer.alloc(stat.size - start);
+		let offset = 0;
+		while (offset < buffer.length) {
+			const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, start + offset);
+			if (bytesRead === 0) throw new OwnedFileChangedDuringReadError(filePath);
+			offset += bytesRead;
+		}
+		let text = buffer.toString("utf-8");
+		if (start > 0) {
+			const preceding = Buffer.alloc(1);
+			await handle.read(preceding, 0, 1, start - 1);
+			if (preceding[0] !== 0x0a) {
+				const newline = text.indexOf("\n");
+				text = newline === -1 ? "" : text.slice(newline + 1);
+			}
+		}
+		const after = await handle.stat();
+		if (!sameFileVersion(stat, after)) throw new OwnedFileChangedDuringReadError(filePath);
+		return { dev: stat.dev, ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size, text };
+	} finally {
+		await handle.close();
 	}
 }
 

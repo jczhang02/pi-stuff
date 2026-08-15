@@ -1,4 +1,9 @@
-import { type DurableClaim, tryAcquireDurableClaim } from "./durable-claim.ts";
+import {
+	type AsyncDurableClaim,
+	type DurableClaim,
+	tryAcquireDurableClaim,
+	tryAcquireKernelClaimAsync,
+} from "./durable-claim.ts";
 import { assertPrivateDirectory } from "./private-directory.ts";
 
 const STATUS_MUTATION_CLAIM = "status-mutation";
@@ -11,4 +16,8 @@ const STATUS_MUTATION_CLAIM = "status-mutation";
 export function tryAcquireStatusMutationClaim(asyncDir: string): DurableClaim | undefined {
 	assertPrivateDirectory(asyncDir);
 	return tryAcquireDurableClaim(asyncDir, STATUS_MUTATION_CLAIM);
+}
+
+export function tryAcquireStatusMutationClaimAsync(asyncDir: string): Promise<AsyncDurableClaim | undefined> {
+	return tryAcquireKernelClaimAsync(asyncDir, STATUS_MUTATION_CLAIM);
 }

@@ -109,6 +109,7 @@ export async function deliverSuiteAgentMessage(
 		rollback?.();
 		throw error;
 	}
+	if (!isCurrent()) return "stale";
 	if (!blocked) onAccepted?.();
 	return blocked ? "convergence-blocked" : "accepted";
 }

@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { inspectWriterProcessLiveness } from "../runs/background/writer-process-registry.ts";
-import { readBoundedOwnedFile } from "../shared/private-directory.ts";
-import { readProcessStartIdentity } from "../shared/process-identity.ts";
+import { inspectWriterProcessLivenessAsync } from "../runs/background/writer-process-registry.ts";
+import { readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
+import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
 import { type AsyncStatus, TEMP_ROOT_DIR } from "../shared/types.ts";
-import { readStatus } from "../shared/utils.ts";
+import { readStatusAsync } from "../shared/utils.ts";
 
 const DIAGNOSTIC_TAIL_BYTES = 256 * 1024;
 const MAX_RUN_DIRECTORIES_PER_PASS = 5_000;
@@ -123,7 +123,7 @@ async function runDirectories(root: string, depth: 1 | 2, kind: RuntimeRunKind):
 	return [...byPath.values()];
 }
 
-function safeToTrim(directory: string, status: AsyncStatus, kind: RuntimeRunKind): boolean {
+async function safeToTrim(directory: string, status: AsyncStatus, kind: RuntimeRunKind): Promise<boolean> {
 	if (!terminal(status)) return false;
 	// Foreground work executes in the Host and has no detached runner process to
 	// observe. Async and nested v3 runs must retain diagnostics until the
@@ -131,7 +131,7 @@ function safeToTrim(directory: string, status: AsyncStatus, kind: RuntimeRunKind
 	if (kind !== "foreground" && status.lifecycleArtifactVersion === 3 && status.processTerminal?.state !== "observed") {
 		return false;
 	}
-	return inspectWriterProcessLiveness(directory) === false;
+	return (await inspectWriterProcessLivenessAsync(directory)) === false;
 }
 
 function interleave(groups: readonly RuntimeRunDirectory[][], maximum: number): RuntimeRunDirectory[] {
@@ -169,19 +169,18 @@ function candidateDirectories(groups: readonly RuntimeRunDirectory[][]): Runtime
 	return [...selected, ...interleave(oldest, MAX_RUN_DIRECTORIES_PER_PASS - selected.length)];
 }
 
-function trimDiagnosticTail(filePath: string): number {
-	let descriptor: number | undefined;
+async function trimDiagnosticTail(filePath: string): Promise<number> {
+	let handle: fs.promises.FileHandle | undefined;
 	let temporary: string | undefined;
 	try {
 		const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
-		descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | noFollow);
-		const stat = fs.fstatSync(descriptor);
+		handle = await fs.promises.open(filePath, fs.constants.O_RDONLY | noFollow);
+		const stat = await handle.stat();
 		const currentUid = process.getuid?.();
 		if (!stat.isFile() || (currentUid !== undefined && stat.uid !== currentUid) || stat.size <= DIAGNOSTIC_TAIL_BYTES)
 			return 0;
 		const buffer = Buffer.allocUnsafe(DIAGNOSTIC_TAIL_BYTES);
-		const bytesRead = fs.readSync(
-			descriptor,
+		const { bytesRead } = await handle.read(
 			buffer,
 			0,
 			DIAGNOSTIC_TAIL_BYTES,
@@ -191,17 +190,17 @@ function trimDiagnosticTail(filePath: string): number {
 		const newline = tail.indexOf("\n");
 		if (newline >= 0) tail = tail.slice(newline + 1);
 		temporary = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${randomUUID()}.trim`);
-		fs.writeFileSync(temporary, tail, { mode: 0o600, flag: "wx" });
-		fs.renameSync(temporary, filePath);
+		await fs.promises.writeFile(temporary, tail, { mode: 0o600, flag: "wx" });
+		await fs.promises.rename(temporary, filePath);
 		temporary = undefined;
 		return Math.max(0, stat.size - Buffer.byteLength(tail, "utf-8"));
 	} catch {
 		return 0;
 	} finally {
-		if (descriptor !== undefined) fs.closeSync(descriptor);
+		await handle?.close();
 		if (temporary) {
 			try {
-				fs.unlinkSync(temporary);
+				await fs.promises.unlink(temporary);
 			} catch {
 				// A failed optional trim must not leave another cleanup obligation.
 			}
@@ -209,12 +208,12 @@ function trimDiagnosticTail(filePath: string): number {
 	}
 }
 
-function readPreparationMarker(directory: string, kind: RuntimeRunKind): PreparationMarker | undefined {
+async function readPreparationMarker(directory: string, kind: RuntimeRunKind): Promise<PreparationMarker | undefined> {
 	const markerName =
 		kind === "foreground" ? ".foreground-preparation-owner.json" : ".background-preparation-owner.json";
 	try {
 		const value = JSON.parse(
-			readBoundedOwnedFile(path.join(directory, markerName), 4 * 1024),
+			(await readBoundedOwnedFileSnapshotAsync(path.join(directory, markerName), 4 * 1024)).text,
 		) as Partial<PreparationMarker>;
 		if (
 			value.version !== 2 ||
@@ -239,8 +238,8 @@ function readPreparationMarker(directory: string, kind: RuntimeRunKind): Prepara
 	}
 }
 
-function preparationOwnerIsDead(marker: PreparationMarker): boolean {
-	const currentIdentity = readProcessStartIdentity(marker.pid);
+async function preparationOwnerIsDead(marker: PreparationMarker): Promise<boolean> {
+	const currentIdentity = await readProcessStartIdentityAsync(marker.pid);
 	if (currentIdentity) return currentIdentity !== marker.processStartIdentity;
 	try {
 		process.kill(marker.pid, 0);
@@ -250,16 +249,21 @@ function preparationOwnerIsDead(marker: PreparationMarker): boolean {
 	}
 }
 
-function reclaimAbandonedPreparation(directory: string, kind: RuntimeRunKind): boolean {
-	const marker = readPreparationMarker(directory, kind);
-	if (!marker || !preparationOwnerIsDead(marker)) return false;
-	if (fs.existsSync(path.join(directory, "status.json")) || fs.existsSync(path.join(directory, "completion.json"))) {
-		return false;
+async function reclaimAbandonedPreparation(directory: string, kind: RuntimeRunKind): Promise<boolean> {
+	const marker = await readPreparationMarker(directory, kind);
+	if (!marker || !(await preparationOwnerIsDead(marker))) return false;
+	for (const file of ["status.json", "completion.json"]) {
+		try {
+			await fs.promises.access(path.join(directory, file));
+			return false;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+		}
 	}
-	if (inspectWriterProcessLiveness(directory) === true) return false;
+	if ((await inspectWriterProcessLivenessAsync(directory)) === true) return false;
 	let current: fs.Stats;
 	try {
-		current = fs.lstatSync(directory);
+		current = await fs.promises.lstat(directory);
 	} catch {
 		return false;
 	}
@@ -273,10 +277,10 @@ function reclaimAbandonedPreparation(directory: string, kind: RuntimeRunKind): b
 	}
 	const abandoned = `${directory}.abandoned-${marker.token}`;
 	try {
-		fs.renameSync(directory, abandoned);
-		const moved = fs.lstatSync(abandoned);
+		await fs.promises.rename(directory, abandoned);
+		const moved = await fs.promises.lstat(abandoned);
 		if (!moved.isDirectory() || moved.dev !== marker.device || moved.ino !== marker.inode) return false;
-		fs.rmSync(abandoned, { recursive: true });
+		await fs.promises.rm(abandoned, { recursive: true });
 		return true;
 	} catch {
 		return false;
@@ -296,7 +300,7 @@ export async function maintainAgentRuntime(rootDirectory = TEMP_ROOT_DIR): Promi
 	let bytesReclaimed = 0;
 	let abandonedPreparationsReclaimed = 0;
 	for (const candidate of directories) {
-		if (reclaimAbandonedPreparation(candidate.directory, candidate.kind)) {
+		if (await reclaimAbandonedPreparation(candidate.directory, candidate.kind)) {
 			abandonedPreparationsReclaimed += 1;
 			continue;
 		}
@@ -304,14 +308,14 @@ export async function maintainAgentRuntime(rootDirectory = TEMP_ROOT_DIR): Promi
 		const { directory } = candidate;
 		let status: AsyncStatus | null;
 		try {
-			status = readStatus(directory);
+			status = await readStatusAsync(directory);
 		} catch {
 			continue;
 		}
 		if (!status || status.runId !== path.basename(directory)) continue;
 		inspected += 1;
-		if (safeToTrim(directory, status, candidate.kind)) {
-			const reclaimed = trimDiagnosticTail(path.join(directory, "events.jsonl"));
+		if (await safeToTrim(directory, status, candidate.kind)) {
+			const reclaimed = await trimDiagnosticTail(path.join(directory, "events.jsonl"));
 			if (reclaimed > 0) {
 				trimmed += 1;
 				bytesReclaimed += reclaimed;

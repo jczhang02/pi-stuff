@@ -8,6 +8,7 @@ import { isKeyRelease, Key, matchesKey, Text } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import { TRANSCRIPT_MARKER } from "../conversation-ui/transcript.js";
 import { getCurrentWorkSources } from "./src/current-work.js";
+import { reportWorkDiagnostic } from "./src/diagnostics.js";
 import { type BackgroundWorkOutcome, BackgroundWorkRuntime } from "./src/runtime.js";
 import { createTasksDialogView } from "./src/tasks-dialog.js";
 import { registerWorkTools, type WorkToolRuntimeRef } from "./src/tools.js";
@@ -66,9 +67,7 @@ export default async function piStuffWork(
 ): Promise<void> {
 	let runtime: BackgroundWorkRuntime | undefined;
 	let removeTerminalInput: (() => void) | undefined;
-	let lifecycleEpoch = 0;
-	let hostActive = false;
-	let transitionTail: Promise<void> = Promise.resolve();
+	const shutdowns = new Set<Promise<void>>();
 	const createRuntime = options.createRuntime ?? ((input) => new BackgroundWorkRuntime(input));
 	const runtimeRef: WorkToolRuntimeRef = { current: () => runtime };
 	const sources = getCurrentWorkSources(pi);
@@ -95,58 +94,44 @@ export default async function piStuffWork(
 		},
 	});
 
-	const enqueueTransition = (operation: () => Promise<void>): Promise<void> => {
-		const pending = transitionTail.then(operation, operation);
-		transitionTail = pending.then(
-			() => undefined,
-			() => undefined,
-		);
-		return pending;
+	const releaseRuntime = (owned: BackgroundWorkRuntime): Promise<void> => {
+		const shutdown = owned
+			.shutdown()
+			.catch((error) => reportWorkDiagnostic("Background Work runtime shutdown failed", error))
+			.finally(() => shutdowns.delete(shutdown));
+		shutdowns.add(shutdown);
+		return shutdown;
 	};
 
-	pi.on("session_start", async (_event, ctx) => {
-		const epoch = ++lifecycleEpoch;
-		hostActive = true;
+	pi.on("session_start", (_event, ctx) => {
 		removeTerminalInput?.();
 		removeTerminalInput = undefined;
-		// Detach synchronously so a concurrent shutdown cannot mistake the old
-		// runtime for the new session owner while its asynchronous shutdown waits.
 		const previous = runtime;
 		runtime = undefined;
-		await enqueueTransition(async () => {
-			if (previous) await previous.shutdown();
-			if (!hostActive || lifecycleEpoch !== epoch) return;
-			const settings = hostSettings(ctx);
-			const created = createRuntime({
-				...settings,
-				cwd: ctx.cwd,
-				pi,
-				sessionId: ctx.sessionManager.getSessionId(),
-			});
-			if (!hostActive || lifecycleEpoch !== epoch) {
-				await created.shutdown();
-				return;
-			}
-			runtime = created;
-			registerWorkTools(pi, runtimeRef);
-			if (ctx.mode === "tui") {
-				removeTerminalInput = ctx.ui.onTerminalInput((data) => {
-					if (isKeyRelease(data) || !matchesKey(data, Key.ctrl("b"))) return undefined;
-					return runtime === created && created.detachActiveForeground() ? { consume: true } : undefined;
-				});
-			}
+		if (previous) void releaseRuntime(previous);
+		const settings = hostSettings(ctx);
+		const created = createRuntime({
+			...settings,
+			cwd: ctx.cwd,
+			pi,
+			sessionId: ctx.sessionManager.getSessionId(),
 		});
+		runtime = created;
+		registerWorkTools(pi, runtimeRef);
+		if (ctx.mode === "tui") {
+			removeTerminalInput = ctx.ui.onTerminalInput((data) => {
+				if (isKeyRelease(data) || !matchesKey(data, Key.ctrl("b"))) return undefined;
+				return runtime === created && created.detachActiveForeground() ? { consume: true } : undefined;
+			});
+		}
 	});
 
 	pi.on("session_shutdown", async () => {
-		lifecycleEpoch += 1;
-		hostActive = false;
 		removeTerminalInput?.();
 		removeTerminalInput = undefined;
 		const active = runtime;
 		runtime = undefined;
-		await enqueueTransition(async () => {
-			if (active) await active.shutdown();
-		});
+		if (active) void releaseRuntime(active);
+		await Promise.allSettled([...shutdowns]);
 	});
 }

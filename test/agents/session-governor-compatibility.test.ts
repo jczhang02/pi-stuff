@@ -172,7 +172,7 @@ describe("session governor v1 compatibility", () => {
 			now: () => 10,
 		});
 		if (!first.ok || !first.releaseLegacyBarrier) throw new Error("Expected a no-ledger v1 barrier.");
-		first.releaseLegacyBarrier();
+		await first.releaseLegacyBarrier();
 		const second = await prepareSessionGovernorCompatibility({
 			scope: scope({ declared: ["started:0", "preflight-only:0"], started: ["started:0"] }),
 			limits,
@@ -181,7 +181,7 @@ describe("session governor v1 compatibility", () => {
 			now: () => 10,
 		});
 		if (!second.ok || !second.releaseLegacyBarrier) throw new Error("Expected an idempotent v1 barrier.");
-		second.releaseLegacyBarrier();
+		await second.releaseLegacyBarrier();
 		const snapshot = await governor(currentRoot, "ps2-current").inspectExistingSnapshot();
 
 		expect(first).toMatchObject({ ok: true, importedLogicalAgentIds: ["started:0"] });
@@ -229,7 +229,7 @@ describe("session governor v1 compatibility", () => {
 		expect(blocked.exitCode).toBe(75);
 		expect(fs.existsSync(path.join(sessionDir, "ledger.json"))).toBe(false);
 
-		result.releaseLegacyBarrier();
+		await result.releaseLegacyBarrier();
 		const admitted = Bun.spawnSync([process.execPath, "-e", legacyWriter, sessionDir], {
 			stdout: "ignore",
 			stderr: "ignore",
@@ -266,7 +266,7 @@ describe("session governor v1 compatibility", () => {
 			"ledger.lock",
 		);
 		expect(() => fs.mkdirSync(legacyLock)).toThrow();
-		result.releaseLegacyBarrier();
+		await result.releaseLegacyBarrier();
 		expect(() => fs.mkdirSync(legacyLock)).not.toThrow();
 		fs.rmSync(legacyLock, { recursive: true, force: true });
 	});

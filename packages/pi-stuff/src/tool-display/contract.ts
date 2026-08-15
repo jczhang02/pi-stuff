@@ -79,6 +79,7 @@ const PENDING_RESULT_LIMIT = 768;
 const BINDING_LIMIT = 768;
 const TIMER_STATE_LIMIT = 768;
 const BASH_OUTPUT_SOURCE_LIMIT = 32 * 1_024;
+const BASH_OUTPUT_COLLAPSED_SOURCE_LIMIT = 2 * 1_024;
 
 function isRecordValue(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -187,7 +188,9 @@ interface RendererState<TArgs extends Record<string, unknown>, TDetails> {
 	detailMaterialized?: boolean;
 	lastResult?: AgentToolResult<TDetails>;
 	liveEffectsStarted?: boolean;
+	projectedReplay?: boolean;
 	startedAt?: number;
+	terminalModelMaterialized?: boolean;
 	terminalState?: Exclude<ToolActivityState, "running">;
 	wasLiveExecution?: boolean;
 }
@@ -220,7 +223,9 @@ interface PresentedToolMetadata {
 
 interface GroupedRowBinding {
 	bashOutput?: string;
+	bashOutputExpanded?: boolean;
 	bashOutputResult?: AgentToolResult<unknown>;
+	bashOutputTruncated?: boolean;
 	baseModel: ToolRowModel;
 	baseVisible: boolean;
 	expanded: boolean;
@@ -258,6 +263,7 @@ interface IndexedSummaryMember extends ActivitySummaryMember {
 }
 
 class GroupSummaryIndex {
+	private cachedAggregate: ToolActivityAggregate | undefined;
 	private readonly categories = new Map<ToolActivityCategory, IndexedCategory>();
 	private firstIssueId: string | undefined;
 	private readonly members = new Map<string, IndexedSummaryMember>();
@@ -285,6 +291,7 @@ class GroupSummaryIndex {
 		]);
 		const previous = this.members.get(id);
 		if (previous?.signature === signature && previous.order === order) return false;
+		this.cachedAggregate = undefined;
 		if (previous) this.remove(id, previous);
 		const indexed: IndexedSummaryMember = { ...member, order, signature, target };
 		this.members.set(id, indexed);
@@ -312,6 +319,7 @@ class GroupSummaryIndex {
 	}
 
 	aggregate(): ToolActivityAggregate {
+		if (this.cachedAggregate) return this.cachedAggregate;
 		const target = this.targetsByOrder[this.latestTargetOrder] ?? "";
 		const categories: ActivityCategoryAggregate[] = [];
 		for (const [category, indexed] of this.categories) {
@@ -324,7 +332,7 @@ class GroupSummaryIndex {
 			});
 		}
 		const firstIssueLabel = this.firstIssueId ? this.members.get(this.firstIssueId)?.issueLabel : undefined;
-		return {
+		this.cachedAggregate = {
 			categories,
 			...(firstIssueLabel ? { firstIssueLabel } : {}),
 			outcome: effectiveToolActivityOutcome(
@@ -333,6 +341,7 @@ class GroupSummaryIndex {
 			stateCounts: { ...this.stateCounts },
 			target,
 		};
+		return this.cachedAggregate;
 	}
 
 	private addItem(id: string, order: number, itemIndex: number, item: ToolActivityItem): void {
@@ -938,9 +947,32 @@ export class ToolUiRuntime {
 		}
 		this.bindings.delete(toolCallId);
 		this.bindings.set(toolCallId, binding);
-		this.reconcileGroupForTool(toolCallId);
+		this.reconcileGroupForTool(toolCallId, projectedMetadata.result !== this.projectedResult(toolCallId));
 		if (firstBinding) binding.invalidate = invalidate;
 		this.trimBindings(toolCallId);
+	}
+
+	updateProjectedRow(
+		toolCallId: string,
+		row: CachedToolRow,
+		model: ToolRowModel,
+		visible: boolean,
+		invalidate: () => void,
+		expanded: boolean,
+		metadata: PresentedToolMetadata,
+	): boolean {
+		const binding = this.bindings.get(toolCallId);
+		if (!binding) return false;
+		binding.row = row;
+		binding.baseModel = model;
+		binding.baseVisible = visible;
+		binding.expanded = expanded;
+		binding.invalidate = invalidate;
+		binding.metadata = metadata;
+		this.bindings.delete(toolCallId);
+		this.bindings.set(toolCallId, binding);
+		if (expanded) this.reconcileGroupForTool(toolCallId, false);
+		return true;
 	}
 
 	setRowExpanded(toolCallId: string, expanded: boolean): void {
@@ -1064,6 +1096,14 @@ export class ToolUiRuntime {
 
 	groupActivities(groupId: string): readonly ToolActivity[] {
 		return this.groupActivityPage(groupId, 0, Number.POSITIVE_INFINITY);
+	}
+
+	projectedResult(toolCallId: string): AgentToolResult<unknown> | undefined {
+		const leaderId = this.membership.get(toolCallId);
+		const memberIndex = this.memberIndexes.get(toolCallId);
+		return leaderId === undefined || memberIndex === undefined
+			? undefined
+			: this.groups.get(leaderId)?.members[memberIndex]?.result;
 	}
 
 	groupActivityPage(groupId: string, offset: number, limit: number): readonly ToolActivity[] {
@@ -1357,14 +1397,14 @@ export class ToolUiRuntime {
 		return group.members as PlannedToolActivityMember[];
 	}
 
-	private reconcileGroupForTool(toolCallId: string): void {
+	private reconcileGroupForTool(toolCallId: string, semanticChange = true): void {
 		const leaderId = this.membership.get(toolCallId);
 		if (!leaderId) {
 			const binding = this.bindings.get(toolCallId);
 			if (binding) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 			return;
 		}
-		this.reconcileGroup(this.groups.get(leaderId), toolCallId);
+		this.reconcileGroup(this.groups.get(leaderId), semanticChange ? toolCallId : undefined);
 	}
 
 	private reconcileGroup(group: PlannedToolActivityGroup | undefined, changedMemberId?: string): void {
@@ -1395,6 +1435,7 @@ export class ToolUiRuntime {
 			const binding = this.bindings.get(member.id);
 			if (!binding) return;
 			const summaryMember = this.summaryMember(member);
+			const output = this.bashOutput(binding, member.result ?? binding.metadata.result, binding.expanded);
 			const model: BashOperationRowModel = {
 				active: summaryMember.state === "running",
 				command:
@@ -1402,7 +1443,8 @@ export class ToolUiRuntime {
 				expandable: true,
 				expanded: binding.expanded,
 				kind: "bash-operation",
-				output: this.bashOutput(binding, member.result ?? binding.metadata.result),
+				output: output.text,
+				outputTruncated: output.truncated,
 				state: summaryMember.state,
 			};
 			this.stopGroupPulse(group.leaderId);
@@ -1435,20 +1477,42 @@ export class ToolUiRuntime {
 		}
 	}
 
-	private bashOutput(binding: GroupedRowBinding, result: AgentToolResult<unknown> | undefined): string {
-		if (binding.bashOutputResult === result) return binding.bashOutput ?? "";
+	private bashOutput(
+		binding: GroupedRowBinding,
+		result: AgentToolResult<unknown> | undefined,
+		expanded: boolean,
+	): { readonly text: string; readonly truncated: boolean } {
+		if (binding.bashOutputResult === result && binding.bashOutputExpanded === expanded) {
+			return { text: binding.bashOutput ?? "", truncated: binding.bashOutputTruncated === true };
+		}
+		const limit = expanded ? BASH_OUTPUT_SOURCE_LIMIT : BASH_OUTPUT_COLLAPSED_SOURCE_LIMIT;
 		let output = "";
+		let truncated = false;
 		for (const item of result?.content ?? []) {
 			if (item.type !== "text") continue;
 			const separator = output ? "\n" : "";
-			const remaining = BASH_OUTPUT_SOURCE_LIMIT - output.length - separator.length;
-			if (remaining <= 0) break;
-			output += `${separator}${item.text.slice(0, remaining)}`;
+			const remaining = limit - output.length - separator.length;
+			if (remaining <= 0) {
+				truncated = true;
+				break;
+			}
+			const text = item.text.slice(0, remaining);
+			output += `${separator}${text}`;
+			if (text.length < item.text.length) {
+				truncated = true;
+				break;
+			}
 		}
-		if (result) binding.bashOutputResult = result;
-		else delete binding.bashOutputResult;
+		if (result) {
+			binding.bashOutputResult = result;
+			binding.bashOutputExpanded = expanded;
+		} else {
+			delete binding.bashOutputResult;
+			delete binding.bashOutputExpanded;
+		}
 		binding.bashOutput = output;
-		return output;
+		binding.bashOutputTruncated = truncated;
+		return { text: output, truncated };
 	}
 
 	private summaryIndex(group: PlannedToolActivityGroup, changedMemberId?: string): GroupSummaryIndex {
@@ -2286,8 +2350,15 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 ): CachedToolRow {
 	const args = state.args ?? context.args;
 	state.args = args;
+	state.wasLiveExecution ??= context.executionStarted !== false;
+	const lightweightHistoricalReplay = state.wasLiveExecution === false && !context.expanded;
 	runtime.setRowExpanded(context.toolCallId, context.expanded);
-	if (state.lastResult && state.component && state.terminalState) {
+	if (
+		state.lastResult &&
+		state.component &&
+		state.terminalState &&
+		(state.terminalModelMaterialized !== false || lightweightHistoricalReplay)
+	) {
 		if (!context.expanded || tool.name === "bash") {
 			delete state.detailLines;
 			state.detailMaterialized = false;
@@ -2300,31 +2371,44 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 		}
 		return state.component;
 	}
-	let domainError = context.isError;
-	if (!domainError && presentation.resultIsError) {
-		try {
-			domainError = presentation.resultIsError(args, result);
-		} catch {
-			domainError = true;
+	let activityState: Exclude<ToolActivityState, "running">;
+	let model: ToolRowModel;
+	if (lightweightHistoricalReplay) {
+		activityState = context.isError ? classifyTerminalState(result, true) : "success";
+		model = {
+			durationMs: undefined,
+			label: tool.name,
+			state: activityState,
+			summary: "",
+			target: "",
+		};
+	} else {
+		let domainError = context.isError;
+		if (!domainError && presentation.resultIsError) {
+			try {
+				domainError = presentation.resultIsError(args, result);
+			} catch {
+				domainError = true;
+			}
 		}
+		activityState = classifyTerminalState(result, domainError);
+		const finishedAt = Date.now();
+		const durationMs = state.startedAt === undefined ? undefined : Math.max(0, finishedAt - state.startedAt);
+		model = {
+			durationMs,
+			label: labelFor(tool, presentation, args),
+			state: activityState,
+			summary: oneLine(
+				presentation.summarize?.(args, result, activityState, durationMs) ??
+					(activityState === "success" ? "done" : activityState),
+			),
+			target: oneLine(presentation.target?.(args) ?? ""),
+		};
 	}
-	const activityState = classifyTerminalState(result, domainError);
-	const finishedAt = Date.now();
-	const durationMs = state.startedAt === undefined ? undefined : Math.max(0, finishedAt - state.startedAt);
-	const summary = oneLine(
-		presentation.summarize?.(args, result, activityState, durationMs) ??
-			(activityState === "success" ? "done" : activityState),
-	);
-	const model: ToolRowModel = {
-		durationMs,
-		label: labelFor(tool, presentation, args),
-		state: activityState,
-		summary,
-		target: oneLine(presentation.target?.(args) ?? ""),
-	};
 	if (!state.component) state.component = new CachedToolRow(theme, model);
 	state.lastResult = result;
 	state.terminalState = activityState;
+	state.terminalModelMaterialized = !lightweightHistoricalReplay || tool.name === "bash";
 	if (context.expanded && tool.name !== "bash") {
 		state.detailLines = capPresentationDetails(
 			buildToolDetailLines(args, result as AgentToolResult<unknown>),
@@ -2336,12 +2420,35 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 		state.detailMaterialized = false;
 	}
 	runtime.stopTimer(context.toolCallId);
-	runtime.presentRow(context.toolCallId, state.component, model, true, context.invalidate, context.expanded, {
+	const metadata: PresentedToolMetadata = {
 		args,
 		cwd: context.cwd,
 		name: tool.name,
 		result: result as AgentToolResult<unknown>,
-	});
+	};
+	if (
+		!state.projectedReplay ||
+		!runtime.updateProjectedRow(
+			context.toolCallId,
+			state.component,
+			model,
+			true,
+			context.invalidate,
+			context.expanded,
+			metadata,
+		)
+	) {
+		runtime.presentRow(
+			context.toolCallId,
+			state.component,
+			model,
+			true,
+			context.invalidate,
+			context.expanded,
+			metadata,
+		);
+	}
+	state.projectedReplay = false;
 	if (state.wasLiveExecution) {
 		runtime.activities.begin({
 			id: context.toolCallId,
@@ -2352,9 +2459,9 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 		});
 		runtime.activities.settle(context.toolCallId, {
 			detailLines: state.detailLines ?? [],
-			durationMs,
+			durationMs: model.durationMs,
 			state: activityState,
-			summary,
+			summary: model.summary,
 		});
 	}
 	return state.component;
@@ -2451,6 +2558,29 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 					delete state.detailLines;
 					state.detailMaterialized = false;
 				}
+				return state.component;
+			}
+			const replayResult =
+				context.executionStarted === false ? runtime.projectedResult(context.toolCallId) : undefined;
+			if (replayResult) {
+				const replayArgs = args as unknown as TArgs;
+				state.args = replayArgs;
+				state.wasLiveExecution = false;
+				const model: ToolRowModel = {
+					durationMs: undefined,
+					label: tool.name,
+					state: "success",
+					summary: "",
+					target: "",
+				};
+				state.component ??= new CachedToolRow(theme, model);
+				runtime.presentRow(context.toolCallId, state.component, model, true, context.invalidate, false, {
+					args: replayArgs,
+					cwd: typed.cwd,
+					name: tool.name,
+					result: replayResult,
+				});
+				state.projectedReplay = true;
 				return state.component;
 			}
 			return updateRunningRow(tool, presentation, runtime, state, typed, theme);

@@ -79,6 +79,8 @@ describe("user-work continuity governor", () => {
 				timestamp: 1,
 			},
 		];
+		const canonical = original[0];
+		if (!canonical) throw new Error("missing canonical fixture message");
 
 		const projected = governor.project(context(original));
 
@@ -86,7 +88,28 @@ describe("user-work continuity governor", () => {
 			role: "custom",
 			customType: __workContinuityTest.TASK_ANCHOR_TYPE,
 		});
-		expect(projected?.messages.slice(1)).toEqual(original);
+		expect(projected?.messages.slice(1)).toEqual([canonical]);
+	});
+
+	test("reuses the Host-owned projection buffer instead of copying long history", () => {
+		const governor = new WorkContinuityGovernor();
+		input(governor, "Review the implementation and report the verified result.");
+		const messages: ContextEvent["messages"] = Array.from({ length: 10_000 }, (_, index) => ({
+			role: "user" as const,
+			content: [{ type: "text" as const, text: `history-${index}` }],
+			timestamp: index,
+		}));
+		const tail = messages.at(-1);
+		if (!tail) throw new Error("missing long-history fixture tail");
+
+		const projected = governor.project(context(messages));
+
+		expect(projected?.messages).toBe(messages);
+		expect(projected?.messages[0]).toMatchObject({
+			role: "custom",
+			customType: __workContinuityTest.TASK_ANCHOR_TYPE,
+		});
+		expect(projected?.messages.at(-1)).toBe(tail);
 	});
 
 	test("preserves the latest user correction as authoritative across repeated managed compactions", () => {

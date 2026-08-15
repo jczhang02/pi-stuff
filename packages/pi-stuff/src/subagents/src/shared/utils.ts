@@ -9,7 +9,11 @@ import type { Message } from "@earendil-works/pi-ai";
 import { getAgentDir as getPiAgentDir } from "@earendil-works/pi-coding-agent";
 import { boundTerminalLine } from "../../../tool-display/index.js";
 import { formatToolCall } from "./formatters.ts";
-import { assertPrivateDirectory, readBoundedOwnedFileSnapshot } from "./private-directory.ts";
+import {
+	assertPrivateDirectory,
+	readBoundedOwnedFileSnapshot,
+	readBoundedOwnedFileSnapshotAsync,
+} from "./private-directory.ts";
 import type {
 	AgentProgress,
 	AsyncStatus,
@@ -174,6 +178,61 @@ export function readStatus(asyncDir: string): AsyncStatus | null {
 		throw new Error(`Async status file '${statusPath}' runId must exactly match its run directory.`);
 	}
 
+	statusCache.set(statusPath, {
+		mtime: snapshot.mtimeMs,
+		ctime: snapshot.ctimeMs,
+		size: snapshot.size,
+		ino: snapshot.ino,
+		dev: snapshot.dev,
+		status,
+	});
+	if (statusCache.size > 50) {
+		const firstKey = statusCache.keys().next().value;
+		if (firstKey) statusCache.delete(firstKey);
+	}
+	return status;
+}
+
+/** Read one persisted Agent status without performing filesystem work on the Host event-loop thread. */
+export async function readStatusAsync(asyncDir: string): Promise<AsyncStatus | null> {
+	const statusPath = path.join(asyncDir, "status.json");
+	let snapshot: Awaited<ReturnType<typeof readBoundedOwnedFileSnapshotAsync>>;
+	try {
+		const directoryStat = await fs.promises.lstat(asyncDir);
+		assertPrivateDirectory(asyncDir, directoryStat);
+		if ((await fs.promises.realpath(asyncDir)) !== path.resolve(asyncDir)) {
+			throw new Error(`Async run directory '${asyncDir}' contains a redirected path component.`);
+		}
+		snapshot = await readBoundedOwnedFileSnapshotAsync(statusPath, MAX_ASYNC_STATUS_FILE_BYTES);
+	} catch (error) {
+		if (isNotFoundError(error)) return null;
+		throw new Error(`Failed to inspect async status file '${statusPath}': ${getErrorMessage(error)}`, {
+			cause: error instanceof Error ? error : undefined,
+		});
+	}
+	const cached = statusCache.get(statusPath);
+	if (
+		cached &&
+		cached.mtime === snapshot.mtimeMs &&
+		cached.ctime === snapshot.ctimeMs &&
+		cached.size === snapshot.size &&
+		cached.ino === snapshot.ino &&
+		cached.dev === snapshot.dev
+	) {
+		return cached.status;
+	}
+
+	let status: AsyncStatus;
+	try {
+		status = JSON.parse(snapshot.text) as AsyncStatus;
+	} catch (error) {
+		throw new Error(`Failed to parse async status file '${statusPath}': ${getErrorMessage(error)}`, {
+			cause: error instanceof Error ? error : undefined,
+		});
+	}
+	if (!status || typeof status !== "object" || Array.isArray(status) || status.runId !== path.basename(asyncDir)) {
+		throw new Error(`Async status file '${statusPath}' runId must exactly match its run directory.`);
+	}
 	statusCache.set(statusPath, {
 		mtime: snapshot.mtimeMs,
 		ctime: snapshot.ctimeMs,

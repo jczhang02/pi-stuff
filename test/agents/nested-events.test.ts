@@ -106,7 +106,6 @@ function stateWithRoute(routeInfo: NestedRouteInfo): SubagentState {
 		lastForegroundControlId: null,
 		cleanupTimers: new Map(),
 		lastUiContext: null,
-		poller: null,
 		completionSeen: new Map(),
 		watcher: null,
 		watcherRestartTimer: null,

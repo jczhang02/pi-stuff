@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
-import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
+import { readBoundedOwnedFile, readBoundedOwnedFileSnapshotAsync } from "../../shared/private-directory.ts";
 
 const FOREGROUND_OWNER_EXIT_FILE = ".foreground-owner-ended.json";
 const MAX_FOREGROUND_OWNER_EXIT_BYTES = 16 * 1024;
@@ -50,6 +50,32 @@ export function readForegroundOwnerExit(asyncDir: string, runId: string): Foregr
 		) {
 			return undefined;
 		}
+		return value as ForegroundOwnerExit;
+	} catch {
+		return undefined;
+	}
+}
+
+export async function readForegroundOwnerExitAsync(
+	asyncDir: string,
+	runId: string,
+): Promise<ForegroundOwnerExit | undefined> {
+	try {
+		const value = JSON.parse(
+			(await readBoundedOwnedFileSnapshotAsync(foregroundOwnerExitPath(asyncDir), MAX_FOREGROUND_OWNER_EXIT_BYTES))
+				.text,
+		) as Partial<ForegroundOwnerExit>;
+		if (
+			value.version !== 1 ||
+			value.runId !== runId ||
+			typeof value.endedAt !== "number" ||
+			!Number.isFinite(value.endedAt) ||
+			value.endedAt < 0 ||
+			typeof value.error !== "string" ||
+			value.error.length === 0 ||
+			value.error.length > MAX_FOREGROUND_OWNER_ERROR_CHARS
+		)
+			return undefined;
 		return value as ForegroundOwnerExit;
 	} catch {
 		return undefined;

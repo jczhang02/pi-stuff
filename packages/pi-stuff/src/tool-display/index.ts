@@ -45,6 +45,7 @@ function currentTranscriptMessages(ctx: ExtensionContext): unknown[] {
 export {
 	activityKey,
 	activityTarget,
+	bashResultMovedToBackground,
 	classifyBashActivity,
 	singleActivity,
 	type ToolActivityCategory,

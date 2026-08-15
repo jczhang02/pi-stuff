@@ -3,6 +3,7 @@ import * as path from "node:path";
 import {
 	DEFAULT_FILE_SYSTEM_RETRY_DELAYS_MS,
 	runFileSystemOperationWithRetry,
+	runFileSystemOperationWithRetryAsync,
 	waitForFileSystemRetry,
 } from "./file-system-retry.ts";
 
@@ -75,3 +76,22 @@ export function createAtomicJsonWriter(
 
 export const writeAtomicJson = createAtomicJsonWriter();
 export const writePrivateAtomicJson = createAtomicJsonWriter({ mode: 0o600 });
+
+/** Host-side atomic writer; unlike the runner writer, retries never sleep the TUI thread. */
+export async function writePrivateAtomicJsonAsync(filePath: string, payload: object): Promise<void> {
+	const retryDelaysMs = process.platform === "win32" ? DEFAULT_FILE_SYSTEM_RETRY_DELAYS_MS : [];
+	await runFileSystemOperationWithRetryAsync(
+		() => fs.promises.mkdir(path.dirname(filePath), { recursive: true }).then(() => undefined),
+		{ retryDelaysMs },
+	);
+	const tempPath = path.join(
+		path.dirname(filePath),
+		`.${path.basename(filePath)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
+	);
+	try {
+		await fs.promises.writeFile(tempPath, JSON.stringify(payload, null, 2), { encoding: "utf-8", mode: 0o600 });
+		await runFileSystemOperationWithRetryAsync(() => fs.promises.rename(tempPath, filePath), { retryDelaysMs });
+	} finally {
+		await fs.promises.rm(tempPath, { force: true });
+	}
+}

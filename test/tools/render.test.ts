@@ -727,6 +727,19 @@ describe("Tool semantics", () => {
 		expect(describeBuiltinTarget("bash", { command: "echo 工具" })).toBe("echo 工具");
 	});
 
+	test("does not read successful Bash output just to produce its terminal summary", () => {
+		let reads = 0;
+		const content = {
+			type: "text" as const,
+			get text() {
+				reads += 1;
+				return "large output";
+			},
+		};
+		expect(summarizeBuiltin("bash", {}, { content: [content], details: {} }, "success", undefined)).toBe("done");
+		expect(reads).toBe(0);
+	});
+
 	test("bounds the current-session activity projection in long sessions", () => {
 		const store = new ToolActivityStore(3);
 		for (let index = 0; index < 1_000; index += 1) {

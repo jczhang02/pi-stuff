@@ -1879,11 +1879,9 @@ export default async function piStuffContext(
 	if (!created) return;
 	registry.runtimes.add(runtime);
 	let workContinuitySessionKey: string | undefined;
-	let workContinuityEntryCount = 0;
 	let workContinuitySettlementObserverRegistered = false;
 	pi.on("session_shutdown", (event, ctx) => {
 		workContinuitySessionKey = undefined;
-		workContinuityEntryCount = 0;
 		workContinuity.reset();
 		return runtime.dispose(event, ctx);
 	});
@@ -1918,7 +1916,6 @@ export default async function piStuffContext(
 		} else {
 			workContinuity.observeCompactions(entries);
 		}
-		workContinuityEntryCount = entries.length;
 		// Register at the first session_start so this observer runs after every
 		// Capability's startup-registered settlement handler. Goal may queue a
 		// continuation from agent_settled, and Context must inspect the final live
@@ -1944,21 +1941,30 @@ export default async function piStuffContext(
 	pi.on("context", async (event, ctx) => {
 		const interactivePaint = runtime.yieldForInteractivePaint();
 		if (interactivePaint && !(await interactivePaint)) return;
-		const observeSessionCompactions = (): void => {
-			try {
-				const entries = ctx.sessionManager.getEntries();
-				const fromIndex = entries.length < workContinuityEntryCount ? 0 : workContinuityEntryCount;
-				workContinuity.observeCompactions(entries, fromIndex);
-				workContinuityEntryCount = entries.length;
-			} catch {
-				// session_compact still covers native Host compaction for partial wrappers.
-			}
-		};
-		observeSessionCompactions();
+		let previousLeafId: string | null | undefined;
+		try {
+			previousLeafId = ctx.sessionManager.getLeafId();
+		} catch {
+			// Partial wrappers still report native compaction through session_compact.
+		}
 		const magic = await runtime.projectMagicContext(event, ctx);
 		// Magic Context may append its managed-history marker directly while
 		// projecting this request, without emitting Pi's session_compact event.
-		observeSessionCompactions();
+		// Walk only entries appended during this projection; getEntries() would copy
+		// and rescan the entire Session twice on every provider request.
+		if (previousLeafId !== undefined) {
+			try {
+				let entryId = ctx.sessionManager.getLeafId();
+				while (entryId && entryId !== previousLeafId) {
+					const entry = ctx.sessionManager.getEntry(entryId);
+					if (!entry) break;
+					workContinuity.observeCompactions([entry]);
+					entryId = entry.parentId;
+				}
+			} catch {
+				// session_compact remains the fallback for partial wrappers.
+			}
+		}
 		const messages = magic?.messages ?? event.messages;
 		const continuity = workContinuity.project({ ...event, messages });
 		if (continuity) return continuity;
@@ -1970,7 +1976,6 @@ export default async function piStuffContext(
 		workContinuity.observeCompactions([event.compactionEntry]);
 	});
 	pi.on("session_tree", () => {
-		workContinuityEntryCount = 0;
 		runtime.invalidateProjection();
 	});
 	pi.on("input", (event, ctx) => {

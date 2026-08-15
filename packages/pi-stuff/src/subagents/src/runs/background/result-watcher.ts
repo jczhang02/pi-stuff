@@ -8,15 +8,14 @@ import {
 	deliverSubagentResultIntercomEvent,
 	resolveSubagentResultStatus,
 } from "../../intercom/result-intercom.ts";
-import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
+import { writePrivateAtomicJsonAsync } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import { type DurableClaim, shardedDurableClaimName, tryAcquireDurableClaim } from "../../shared/durable-claim.ts";
+import { type DurableClaim, shardedDurableClaimName, tryAcquireKernelClaim } from "../../shared/durable-claim.ts";
 import { createFileCoalescer } from "../../shared/file-coalescer.ts";
 import {
 	type OwnedFileSnapshot,
-	readBoundedOwnedFile,
-	readBoundedOwnedFileSnapshot,
-	removeOwnedFileSnapshot,
+	readBoundedOwnedFileSnapshotAsync,
+	removeOwnedFileSnapshotAsync,
 } from "../../shared/private-directory.ts";
 import { sessionArtifactMatches } from "../../shared/session-identity.ts";
 import {
@@ -29,7 +28,7 @@ import {
 	type SubagentResultIntercomChild,
 	type SubagentState,
 } from "../../shared/types.ts";
-import { readStatus, resolveWatchPath } from "../../shared/utils.ts";
+import { readStatusAsync, resolveWatchPath } from "../../shared/utils.ts";
 import {
 	nestedWorkIncludesUser,
 	projectNestedEventsAuthoritatively,
@@ -78,7 +77,7 @@ type ResultWatcherTimers = {
 };
 
 type ResultWatcherDeps = {
-	acquireClaim?: typeof tryAcquireDurableClaim;
+	acquireClaim?: typeof tryAcquireKernelClaim;
 	fs?: ResultWatcherFs;
 	timers?: ResultWatcherTimers;
 	notifier?: { deliver(notification: CompletionNotification, signal?: AbortSignal): Promise<boolean> };
@@ -88,7 +87,7 @@ type ResultWatcherDeps = {
 	pollIntervalMs?: number;
 	safetyScanIntervalMs?: number;
 	asyncDirRoot?: string;
-	readResultSnapshot?: (resultPath: string, maxBytes: number) => OwnedFileSnapshot;
+	readResultSnapshot?: (resultPath: string, maxBytes: number) => Promise<OwnedFileSnapshot> | OwnedFileSnapshot;
 	projectNestedEvents?: typeof projectNestedEventsAuthoritatively;
 	projectNestedRegistry?: typeof projectNestedRegistryForRootAuthoritatively;
 };
@@ -241,16 +240,16 @@ function resultDigest(raw: string): string {
 	return createHash("sha256").update(raw).digest("hex");
 }
 
-function readDeliveryState(
+async function readDeliveryState(
 	resultsDir: string,
 	file: string,
 	completionKey: string,
 	digest: string,
-): ResultDeliveryState | undefined {
+): Promise<ResultDeliveryState | undefined> {
 	try {
-		const value = JSON.parse(readBoundedOwnedFile(deliveryStatePath(resultsDir, file), MAX_DELIVERY_STATE_BYTES)) as
-			| Partial<ResultDeliveryState>
-			| undefined;
+		const value = JSON.parse(
+			(await readBoundedOwnedFileSnapshotAsync(deliveryStatePath(resultsDir, file), MAX_DELIVERY_STATE_BYTES)).text,
+		) as Partial<ResultDeliveryState> | undefined;
 		if (
 			value?.version !== 1 ||
 			value.completionKey !== completionKey ||
@@ -270,13 +269,13 @@ function readDeliveryState(
 	}
 }
 
-function writeDeliveryState(resultsDir: string, file: string, state: ResultDeliveryState): void {
-	writePrivateAtomicJson(deliveryStatePath(resultsDir, file), state);
+async function writeDeliveryState(resultsDir: string, file: string, state: ResultDeliveryState): Promise<void> {
+	await writePrivateAtomicJsonAsync(deliveryStatePath(resultsDir, file), state);
 }
 
-function removeDeliveryArtifacts(resultsDir: string, file: string): void {
+async function removeDeliveryArtifacts(resultsDir: string, file: string): Promise<void> {
 	try {
-		fs.unlinkSync(deliveryStatePath(resultsDir, file));
+		await fs.promises.unlink(deliveryStatePath(resultsDir, file));
 	} catch (error) {
 		if (!isNotFound(error)) throw error;
 	}
@@ -322,8 +321,8 @@ export function createResultWatcher(
 	const watcherRestartDelayMs = deps.watcherRestartDelayMs ?? WATCHER_RESTART_DELAY_MS;
 	const pollIntervalMs = deps.pollIntervalMs ?? POLL_INTERVAL_MS;
 	const safetyScanIntervalMs = deps.safetyScanIntervalMs ?? POLL_INTERVAL_MS;
-	const readResultSnapshot = deps.readResultSnapshot ?? readBoundedOwnedFileSnapshot;
-	const acquireClaim = deps.acquireClaim ?? tryAcquireDurableClaim;
+	const readResultSnapshot = deps.readResultSnapshot ?? readBoundedOwnedFileSnapshotAsync;
+	const acquireClaim = deps.acquireClaim ?? tryAcquireKernelClaim;
 	const projectNestedEvents = deps.projectNestedEvents ?? projectNestedEventsAuthoritatively;
 	const projectNestedRegistry = deps.projectNestedRegistry ?? projectNestedRegistryForRootAuthoritatively;
 	const pendingTriggerTurn = new Map<string, boolean>();
@@ -349,9 +348,9 @@ export function createResultWatcher(
 		left.ctimeMs === right.ctimeMs &&
 		left.mtimeMs === right.mtimeMs;
 
-	const currentFingerprint = (resultPath: string): ResultFingerprint | undefined => {
+	const currentFingerprint = async (resultPath: string): Promise<ResultFingerprint | undefined> => {
 		try {
-			const stat = fsApi.lstatSync(resultPath);
+			const stat = await fs.promises.lstat(resultPath);
 			return {
 				ctimeMs: stat.ctimeMs,
 				dev: stat.dev,
@@ -375,7 +374,7 @@ export function createResultWatcher(
 		}
 	};
 
-	const validAsyncBinding = (data: ResultFileData, file: string): "valid" | "pending" | "invalid" => {
+	const validAsyncBinding = async (data: ResultFileData, file: string): Promise<"valid" | "pending" | "invalid"> => {
 		const fileRunId = file.replace(/\.json$/iu, "");
 		if ((data.runId !== undefined && data.runId !== fileRunId) || (data.id !== undefined && data.id !== fileRunId)) {
 			return "invalid";
@@ -388,14 +387,14 @@ export function createResultWatcher(
 		}
 		let entry: fs.Stats;
 		try {
-			entry = fsApi.lstatSync(expectedDir);
+			entry = await fs.promises.lstat(expectedDir);
 		} catch (error) {
 			if (isNotFound(error)) return "pending";
 			throw error;
 		}
 		if (!entry.isDirectory() || entry.isSymbolicLink()) return "invalid";
-		const canonicalRoot = fsApi.realpathSync(asyncDirRoot);
-		const canonicalDir = fsApi.realpathSync(expectedDir);
+		const canonicalRoot = await fs.promises.realpath(asyncDirRoot);
+		const canonicalDir = await fs.promises.realpath(expectedDir);
 		return path.dirname(canonicalDir) === canonicalRoot ? "valid" : "invalid";
 	};
 
@@ -406,6 +405,16 @@ export function createResultWatcher(
 			? sessionArtifactMatches(state.currentSessionScope, sessionId, runId)
 			: sessionId === state.currentSessionId;
 		return activeSessionId === state.currentSessionId && artifactMatches;
+	};
+
+	const fileExists = async (filePath: string): Promise<boolean> => {
+		try {
+			await fs.promises.access(filePath);
+			return true;
+		} catch (error) {
+			if (isNotFound(error)) return false;
+			throw error;
+		}
 	};
 
 	const scheduleResult = (file: string, triggerTurn: boolean, delayMs = 0) => {
@@ -468,10 +477,11 @@ export function createResultWatcher(
 			return;
 		}
 		const resultPath = path.join(resultsDir, file);
-		if (processing.has(file) || !fsApi.existsSync(resultPath)) return;
+		if (processing.has(file)) return;
+		if (!(await fileExists(resultPath))) return;
 		const ignoredFingerprint = ignoredResultFingerprints.get(file);
 		if (ignoredFingerprint) {
-			const fingerprint = currentFingerprint(resultPath);
+			const fingerprint = await currentFingerprint(resultPath);
 			if (fingerprint && sameFingerprint(ignoredFingerprint, fingerprint)) return;
 			ignoredResultFingerprints.delete(file);
 		}
@@ -487,7 +497,7 @@ export function createResultWatcher(
 				scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
 				return;
 			}
-			const resultSnapshot = readResultSnapshot(resultPath, MAX_RESULT_FILE_BYTES);
+			const resultSnapshot = await readResultSnapshot(resultPath, MAX_RESULT_FILE_BYTES);
 			const rawResult = resultSnapshot.text;
 			const data = JSON.parse(rawResult) as ResultFileData;
 			processRetryDelay.delete(file);
@@ -502,7 +512,7 @@ export function createResultWatcher(
 				rememberIgnoredResult(file, resultSnapshot, epoch);
 				return;
 			}
-			const asyncBinding = validAsyncBinding(data, file);
+			const asyncBinding = await validAsyncBinding(data, file);
 			if (asyncBinding === "invalid") {
 				rememberIgnoredResult(file, resultSnapshot, attemptEpoch);
 				reportStatusRepair(file, `Ignoring subagent result '${resultPath}' with an unsafe asyncDir binding.`);
@@ -520,7 +530,7 @@ export function createResultWatcher(
 			let persistedStatus: AsyncStatus | null = null;
 			if (typeof data.asyncDir === "string" && data.asyncDir) {
 				try {
-					persistedStatus = readStatus(data.asyncDir);
+					persistedStatus = await readStatusAsync(data.asyncDir);
 				} catch (error) {
 					reportAgentDiagnostic(`Failed to inspect exact nested status for '${resultPath}':`, error);
 				}
@@ -564,7 +574,7 @@ export function createResultWatcher(
 
 			const completionKey = buildCompletionKey(data, `result:${file}`);
 			const digest = resultDigest(rawResult);
-			const restoredDeliveryState = readDeliveryState(resultsDir, file, completionKey, digest);
+			const restoredDeliveryState = await readDeliveryState(resultsDir, file, completionKey, digest);
 			let deliveryState =
 				restoredDeliveryState ??
 				({
@@ -591,17 +601,17 @@ export function createResultWatcher(
 						restoredDeliveryState.notificationAccepted &&
 						restoredDeliveryState.completionEmitted))
 			) {
-				if (!ownsSession(data.sessionId, runId, epoch) || !fsApi.existsSync(resultPath)) return;
+				if (!ownsSession(data.sessionId, runId, epoch) || !(await fileExists(resultPath))) return;
 				if (!terminalStatusReady) {
 					scheduleStatusRepair(file, triggerTurn);
 					return;
 				}
 				try {
-					if (removeOwnedFileSnapshot(resultPath, resultSnapshot) === "changed") {
+					if ((await removeOwnedFileSnapshotAsync(resultPath, resultSnapshot)) === "changed") {
 						scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
 						return;
 					}
-					removeDeliveryArtifacts(resultsDir, file);
+					await removeDeliveryArtifacts(resultsDir, file);
 					deliveredPendingStatus.delete(completionKey);
 					statusRepairRetryDelay.delete(file);
 					statusRepairLastLog.delete(file);
@@ -622,6 +632,12 @@ export function createResultWatcher(
 			const resultChildren: ResultFileChild[] = persistedResults ?? [
 				{ agent: data.agent ?? undefined, output: data.summary, success: data.success },
 			];
+			const sessionPaths = await Promise.all(
+				resultChildren.map(async (result) => {
+					const sessionPath = result.sessionFile ?? (resultChildren.length === 1 ? data.sessionFile : undefined);
+					return typeof sessionPath === "string" && (await fileExists(sessionPath)) ? sessionPath : undefined;
+				}),
+			);
 			const normalizedChildren = attachNestedChildrenToResultChildren(
 				runId,
 				resultChildren.map((result = {}, index): SubagentResultIntercomChild => {
@@ -632,7 +648,7 @@ export function createResultWatcher(
 						result.success === false && result.error
 							? `${result.error}${hasRealOutput ? `\n\nOutput:\n${baseOutput}` : ""}`
 							: output;
-					const sessionPath = result.sessionFile ?? (resultChildren.length === 1 ? data.sessionFile : undefined);
+					const sessionPath = sessionPaths[index];
 					const childNestedChildren = sanitizeNestedResultChildren(
 						result.children,
 						resultPath,
@@ -657,7 +673,7 @@ export function createResultWatcher(
 						summary,
 						index,
 						artifactPath: result.artifactPaths?.outputPath,
-						...(typeof sessionPath === "string" && fsApi.existsSync(sessionPath) ? { sessionPath } : {}),
+						...(sessionPath ? { sessionPath } : {}),
 						...(result.intercomTarget ? { intercomTarget: result.intercomTarget } : {}),
 						...(childNestedChildren ? { children: childNestedChildren } : {}),
 					};
@@ -732,7 +748,7 @@ export function createResultWatcher(
 					intercomDelivered,
 					updatedAt: Date.now(),
 				};
-				writeDeliveryState(resultsDir, file, deliveryState);
+				await writeDeliveryState(resultsDir, file, deliveryState);
 			}
 			if (!ownsSession(data.sessionId, runId, epoch)) return;
 
@@ -744,7 +760,7 @@ export function createResultWatcher(
 					return;
 				}
 				deliveryState = { ...deliveryState, notificationAccepted: true, updatedAt: Date.now() };
-				writeDeliveryState(resultsDir, file, deliveryState);
+				await writeDeliveryState(resultsDir, file, deliveryState);
 			}
 			if (!ownsSession(data.sessionId, runId, epoch)) return;
 			markSeenWithTtl(state.completionSeen, completionKey, Date.now(), completionTtlMs);
@@ -756,9 +772,9 @@ export function createResultWatcher(
 					reportAgentDiagnostic(`Completion observer failed for '${resultPath}':`, error);
 				}
 				deliveryState = { ...deliveryState, completionEmitted: true, updatedAt: Date.now() };
-				writeDeliveryState(resultsDir, file, deliveryState);
+				await writeDeliveryState(resultsDir, file, deliveryState);
 			}
-			if (!ownsSession(data.sessionId, runId, epoch) || !fsApi.existsSync(resultPath)) return;
+			if (!ownsSession(data.sessionId, runId, epoch) || !(await fileExists(resultPath))) return;
 			if (!deliveryState.intercomComplete) {
 				// Local completion may already be durable, but an explicitly addressed
 				// grouped result is not disposable until its stable-id delivery is acked.
@@ -770,11 +786,11 @@ export function createResultWatcher(
 				return;
 			}
 			try {
-				if (removeOwnedFileSnapshot(resultPath, resultSnapshot) === "changed") {
+				if ((await removeOwnedFileSnapshotAsync(resultPath, resultSnapshot)) === "changed") {
 					scheduleResult(file, triggerTurn, RETRY_DELAY_MS);
 					return;
 				}
-				removeDeliveryArtifacts(resultsDir, file);
+				await removeDeliveryArtifacts(resultsDir, file);
 				deliveredPendingStatus.delete(completionKey);
 				statusRepairRetryDelay.delete(file);
 				statusRepairLastLog.delete(file);
@@ -792,7 +808,7 @@ export function createResultWatcher(
 					processRetryLastLog.set(file, now);
 					reportAgentDiagnostic(`Failed to process subagent result file '${resultPath}'; will retry:`, error);
 				}
-				if (deliveryActive && attemptEpoch === deliveryEpoch && fsApi.existsSync(resultPath)) {
+				if (deliveryActive && attemptEpoch === deliveryEpoch && (await fileExists(resultPath))) {
 					const delay = processRetryDelay.get(file) ?? PROCESS_RETRY_INITIAL_MS;
 					processRetryDelay.set(file, Math.min(PROCESS_RETRY_MAX_MS, delay * 2));
 					scheduleResult(file, triggerTurn, delay);
@@ -818,18 +834,19 @@ export function createResultWatcher(
 	}, 50);
 
 	const primeExistingResults = (options: { triggerTurn?: boolean } = {}) => {
-		try {
-			const triggerTurn = options.triggerTurn !== false;
-			fsApi
-				.readdirSync(resultsDir)
-				.filter((f) => f.endsWith(".json"))
-				.forEach((file) => {
-					scheduleResult(file, triggerTurn);
-				});
-		} catch (error) {
-			if (!isNotFound(error))
-				reportAgentDiagnostic(`Failed to scan subagent result directory '${resultsDir}':`, error);
-		}
+		void (async () => {
+			try {
+				const triggerTurn = options.triggerTurn !== false;
+				(await fs.promises.readdir(resultsDir))
+					.filter((f) => f.endsWith(".json"))
+					.forEach((file) => {
+						scheduleResult(file, triggerTurn);
+					});
+			} catch (error) {
+				if (!isNotFound(error))
+					reportAgentDiagnostic(`Failed to scan subagent result directory '${resultsDir}':`, error);
+			}
+		})();
 	};
 
 	const startPolling = (reason: unknown): boolean => {

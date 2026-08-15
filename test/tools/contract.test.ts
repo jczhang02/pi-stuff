@@ -387,6 +387,54 @@ test("settled Host redraws build detail only while globally expanded", () => {
 	expect(detailBuilds).toBe(2);
 });
 
+test("collapsed and expanded historical replay skip the synthetic running pass", () => {
+	const harness = apiHarness();
+	let runningSummaries = 0;
+	let terminalSummaries = 0;
+	registerSuiteOwnedTool(
+		harness.api,
+		{
+			description: "historical replay fixture",
+			execute: async () => ({ content: [{ type: "text", text: "done" }], details: {} }),
+			label: "Read",
+			name: "read",
+			parameters: Params,
+		},
+		{
+			...presentation("read-file"),
+			runningSummary: () => {
+				runningSummaries += 1;
+				return "reading";
+			},
+			summarize: () => {
+				terminalSummaries += 1;
+				return "done";
+			},
+		},
+	);
+	const tool = harness.tools.get("read") as ToolDefinition<typeof Params, { source: string }>;
+	const runtime = getToolUiRuntime(harness.api);
+	for (const expanded of [false, true]) {
+		const toolCallId = expanded ? "replay-read-expanded" : "replay-read";
+		runtime.indexMessages([assistant(call(toolCallId, "read", "a.ts")), result(toolCallId, "done")], true);
+		const args = { value: "a.ts" };
+		const context = renderContext({}, args, { executionStarted: false, expanded, toolCallId });
+		const component = tool.renderCall?.(args, theme, context);
+		if (!component) throw new Error("missing historical replay component");
+		tool.renderResult?.(
+			{ content: [{ type: "text", text: "done" }], details: { source: "a.ts" } },
+			{ expanded, isPartial: false },
+			theme,
+			{ ...context, lastComponent: component },
+		);
+	}
+
+	expect(runningSummaries).toBe(0);
+	// The collapsed replay is represented by the already-built Group projection.
+	// Its per-row terminal summary is materialized only when the user expands it.
+	expect(terminalSummaries).toBe(1);
+});
+
 test("renderer binding does not aggregate Tools before the Session event", () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");

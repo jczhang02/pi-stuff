@@ -1,56 +1,101 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { refreshForegroundRuntimeRun } from "../../session/foreground-replay.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
+import { readOwnedFileTailAsync } from "../../shared/private-directory.ts";
 import { sessionArtifactMatches } from "../../shared/session-identity.ts";
 import {
 	type AsyncJobState,
 	type AsyncStartedEvent,
+	type AsyncStatus,
 	type ControlEvent,
 	POLL_INTERVAL_MS,
-	RESULTS_DIR,
+	type ProcessTerminalV1,
 	type SteeringNotice,
 	SUBAGENT_CONTROL_EVENT,
 	SUBAGENT_CONTROL_INTERCOM_EVENT,
 	SUBAGENT_STEERING_NOTICE_EVENT,
 	type SubagentState,
 } from "../../shared/types.ts";
-import { readStatus } from "../../shared/utils.ts";
-import {
-	finalizeNestedRouteRoot,
-	hasLiveNestedDescendants,
-	projectNestedEvents,
-	recoverRetiredNestedRouteStatus,
-	retireCompletedNestedRoute,
-	updateAsyncJobNestedProjection,
-} from "../shared/nested-events.ts";
+import { readStatusAsync } from "../../shared/utils.ts";
+import { hasLiveNestedDescendants } from "../shared/nested-events.ts";
+import { mapConcurrent } from "../shared/parallel-utils.ts";
 import { formatControlNoticeMessage } from "../shared/subagent-control.ts";
-import { type AsyncRunSummary, listAsyncRuns } from "./async-status.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
-import { reconcileAsyncRun, reconcileNestedAsyncDescendants } from "./stale-run-reconciler.ts";
 
 interface AsyncJobTrackerOptions {
 	completionRetentionMs?: number;
+	/** Used only when native file observation is unavailable. */
 	pollIntervalMs?: number;
 	onRefresh?: () => void;
-	resultsDir?: string;
-	kill?: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
-	now?: () => number;
-	reconcileRun?: typeof reconcileAsyncRun;
-	readRunStatus?: typeof readStatus;
-	listRuns?: typeof listAsyncRuns;
-	statControlEvents?: (filePath: string) => { size: number };
-	refreshForegroundRun?: typeof refreshForegroundRuntimeRun;
+	readRunStatus?: (asyncDir: string) => Promise<AsyncStatus | null> | AsyncStatus | null;
+	watchRun?: typeof fs.watch;
 }
 
 const CONTROL_EVENT_READ_CHUNK_BYTES = 64 * 1024;
 const MAX_CONTROL_EVENT_LINE_BYTES = 1024 * 1024;
 const CONTROL_EVENT_SCAN_WINDOW_BYTES = 2 * 1024 * 1024;
-// A session may launch up to 200 Agents. The roster can hide quiet terminal
-// rows, but `/agents` remains the complete current-session inspection surface.
+const STATUS_WATCH_FALLBACK_DELAY_MS = 150;
 const MAX_RECENT_AGENT_JOBS = 200;
-type ForegroundRun = NonNullable<SubagentState["foregroundRuns"]> extends Map<string, infer Run> ? Run : never;
+const RESTORE_READ_CONCURRENCY = 8;
+const MAX_LEGACY_TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
+
+function record(value: unknown): Record<string, unknown> {
+	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+function ambiguousLegacyFinalDrain(step: NonNullable<AsyncStatus["steps"]>[number]): boolean {
+	const terminal = step.processTerminal;
+	if (step.error || step.status !== "failed" || terminal?.state !== "observed") return false;
+	const writers = terminal.instances.filter(
+		(instance): instance is Extract<(typeof terminal.instances)[number], { kind: "pi-writer" }> =>
+			instance.kind === "pi-writer" && Number.isInteger(instance.attempt),
+	);
+	const finalAttempt = writers.reduce(
+		(latest, instance) => Math.max(latest, instance.attempt),
+		Number.NEGATIVE_INFINITY,
+	);
+	return writers.some(
+		(instance) =>
+			instance.attempt === finalAttempt &&
+			instance.terminationOrigin === undefined &&
+			(instance.signal === "SIGTERM" || (instance.signal === null && instance.exitCode === 143)),
+	);
+}
+
+async function recoverLegacyFinalReports(status: AsyncStatus): Promise<AsyncStatus> {
+	if (status.state !== "failed" || !status.steps?.some(ambiguousLegacyFinalDrain)) return status;
+	let changed = false;
+	const steps = await mapConcurrent(status.steps, 4, async (step) => {
+		if (!ambiguousLegacyFinalDrain(step) || !step.transcriptPath || !path.isAbsolute(step.transcriptPath))
+			return step;
+		try {
+			const tail = await readOwnedFileTailAsync(step.transcriptPath, MAX_LEGACY_TRANSCRIPT_TAIL_BYTES);
+			const lastLine = tail.text.trimEnd().split("\n").at(-1);
+			if (!lastLine) return step;
+			const entry = record(JSON.parse(lastLine));
+			const message = record(entry.message);
+			if (
+				entry.recordType !== "message" ||
+				entry.sourceEventType !== "message_end" ||
+				entry.role !== "assistant" ||
+				entry.stopReason !== "stop" ||
+				entry.isError === true ||
+				typeof entry.text !== "string" ||
+				!entry.text.trim() ||
+				typeof entry.error === "string" ||
+				typeof entry.errorMessage === "string" ||
+				typeof message.errorMessage === "string"
+			)
+				return step;
+			changed = true;
+			return { ...step, legacyFinalReportComplete: true as const };
+		} catch {
+			return step;
+		}
+	});
+	return changed ? { ...status, steps } : status;
+}
 
 function isTerminalJobStatus(status: AsyncJobState["status"]): boolean {
 	return status === "complete" || status === "failed" || status === "paused" || status === "stopped";
@@ -64,15 +109,15 @@ function rememberRecentAgentJob(state: SubagentState, job: AsyncJobState): void 
 	state.recentAgentJobs ??= new Map();
 	state.recentAgentJobs.set(job.asyncId, job);
 	const terminal = [...state.recentAgentJobs.values()]
-		.filter(
-			(candidate) =>
-				candidate.status === "complete" ||
-				candidate.status === "failed" ||
-				candidate.status === "paused" ||
-				candidate.status === "stopped",
-		)
+		.filter((candidate) => isTerminalJobStatus(candidate.status))
 		.sort((left, right) => (right.updatedAt ?? right.startedAt ?? 0) - (left.updatedAt ?? left.startedAt ?? 0));
 	for (const stale of terminal.slice(MAX_RECENT_AGENT_JOBS)) state.recentAgentJobs.delete(stale.asyncId);
+}
+
+function contextSummary(steps: NonNullable<AsyncStatus["steps"]>): AsyncJobState["context"] {
+	const contexts = new Set(steps.map((step) => step.context).filter((value) => value !== undefined));
+	if (contexts.size > 1) return "mixed";
+	return contexts.values().next().value;
 }
 
 export function createAsyncJobTracker(
@@ -81,25 +126,34 @@ export function createAsyncJobTracker(
 	asyncDirRoot: string,
 	options: AsyncJobTrackerOptions = {},
 ): {
-	ensurePoller: () => void;
-	handleStarted: (data: unknown) => void;
+	ensureObserver: () => void;
 	handleComplete: (data: unknown) => void;
+	handleProcessTerminal: (data: unknown) => void;
+	handleStarted: (data: unknown) => void;
+	handleStatus: (data: unknown) => void;
 	resetJobs: () => void;
-	restoreActiveJobs: () => void;
+	restoreActiveJobs: (asyncDirectories?: readonly string[]) => Promise<void>;
 } {
-	const completionRetentionMs = options.completionRetentionMs ?? 10000;
-	const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
-	const resultsDir = options.resultsDir ?? RESULTS_DIR;
-	const reconcileRun = options.reconcileRun ?? reconcileAsyncRun;
-	const readRunStatus = options.readRunStatus ?? readStatus;
-	const listRuns = options.listRuns ?? listAsyncRuns;
-	const statControlEvents = options.statControlEvents ?? fs.statSync;
-	const refreshForegroundRun = options.refreshForegroundRun ?? refreshForegroundRuntimeRun;
+	const completionRetentionMs = options.completionRetentionMs ?? 10_000;
+	const fallbackIntervalMs = options.pollIntervalMs ?? Math.max(3_000, POLL_INTERVAL_MS);
+	const readRunStatus = options.readRunStatus ?? readStatusAsync;
+	const watchRun = options.watchRun ?? fs.watch;
 	const steeringNoticeSeen = new Map<string, number>();
-	const routeSettlements = new Map<string, Promise<boolean>>();
-	const foregroundSettlementAttempts = new Map<string, number>();
+	const watchers = new Map<string, fs.FSWatcher>();
+	const fallbackTimers = new Map<string, ReturnType<typeof setInterval>>();
+	const statusFallbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	const observations = new Map<
+		string,
+		{ running: boolean; status: boolean; control: boolean; retryTimer?: ReturnType<typeof setTimeout> }
+	>();
+	const lastIpcStatusAt = new Map<string, number>();
 	let trackerGeneration = 0;
-	let settlementAbortController = new AbortController();
+	let refreshScheduled = false;
+	let restoreInFlight:
+		| { readonly controller: AbortController; readonly generation: number; promise: Promise<void> }
+		| undefined;
+	let restoredGeneration = -1;
+
 	const normalizeAcceptedSessionId = (sessionId: unknown, runId: unknown): string | undefined => {
 		if (!state.currentSessionId || typeof sessionId !== "string") return undefined;
 		if (sessionId === state.currentSessionId) return state.currentSessionId;
@@ -114,589 +168,405 @@ export function createAsyncJobTracker(
 			reportAgentDiagnostic(`Agent lifecycle observer '${event}' failed:`, error);
 		}
 	};
-	const restoredControlEventCursor = (asyncDir: string): number | undefined => {
-		try {
-			return statControlEvents(path.join(asyncDir, "events.jsonl")).size;
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
-			// Do not replay old side effects after a transient metadata failure. The
-			// first successful observation will initialize this cursor at EOF.
-			reportAgentDiagnostic(
-				`Failed to inspect restored Agent control events for '${asyncDir}'; deferring cursor initialization:`,
-				error,
-			);
-			return undefined;
-		}
+	const scheduleRefresh = (): void => {
+		if (refreshScheduled) return;
+		refreshScheduled = true;
+		queueMicrotask(() => {
+			refreshScheduled = false;
+			options.onRefresh?.();
+		});
 	};
-	const summaryToJob = (run: AsyncRunSummary): AsyncJobState => {
-		const restoredCursor = restoredControlEventCursor(run.asyncDir);
-		const groups = normalizeParallelGroups(run.parallelGroups, run.steps.length);
-		const currentStep = run.currentStep;
-		const activeGroup =
-			currentStep !== undefined
-				? groups.find((group) => currentStep >= group.start && currentStep < group.start + group.count)
-				: undefined;
-		const visibleSteps = activeGroup
-			? run.steps
-					.slice(activeGroup.start, activeGroup.start + activeGroup.count)
-					.map((step, index) => ({ ...step, index: activeGroup.start + index }))
-			: run.steps.map((step, index) => ({ ...step, index }));
-		return {
-			asyncId: run.id,
-			asyncDir: run.asyncDir,
-			status: run.state,
-			error: run.error,
-			sessionId: run.sessionId,
-			activityState: run.activityState,
-			lastActivityAt: run.lastActivityAt,
-			currentTool: run.currentTool,
-			currentToolStartedAt: run.currentToolStartedAt,
-			currentPath: run.currentPath,
-			turnCount: run.turnCount,
-			toolCount: run.toolCount,
-			steering: run.steering,
-			mode: run.mode,
-			context: run.context,
-			cwd: run.cwd,
-			agents: visibleSteps.map((step) => step.agent),
-			currentStep: run.currentStep,
-			parallelGroups: groups,
-			steps: visibleSteps,
-			stepsTotal: visibleSteps.length,
-			runningSteps: visibleSteps.filter((step) => step.status === "running").length,
-			completedSteps: visibleSteps.filter((step) => step.status === "complete" || step.status === "completed")
-				.length,
-			hasParallelGroups: groups.length > 0,
-			activeParallelGroup: Boolean(activeGroup),
-			startedAt: run.startedAt,
-			updatedAt: run.lastUpdate ?? run.startedAt,
-			timeoutMs: run.timeoutMs,
-			deadlineAt: run.deadlineAt,
-			timedOut: run.timedOut,
-			stopped: run.stopped,
-			processTerminal: run.processTerminal,
-			turnBudget: run.turnBudget,
-			turnBudgetExceeded: run.turnBudgetExceeded,
-			wrapUpRequested: run.wrapUpRequested,
-			sessionDir: run.sessionDir,
-			outputFile: run.outputFile,
-			totalTokens: run.totalTokens,
-			sessionFile: run.sessionFile,
-			...(restoredCursor === undefined
-				? { controlEventCursorPending: true }
-				: { controlEventCursor: restoredCursor }),
-			nestedRoute: run.nestedRoute,
-			nestedChildren: run.nestedChildren,
-		};
-	};
-	const cancelCleanup = (asyncId: string) => {
-		const existingTimer = state.cleanupTimers.get(asyncId);
-		if (!existingTimer) return;
-		clearTimeout(existingTimer);
+	const cancelCleanup = (asyncId: string): void => {
+		const timer = state.cleanupTimers.get(asyncId);
+		if (!timer) return;
+		clearTimeout(timer);
 		state.cleanupTimers.delete(asyncId);
 	};
-	const scheduleCleanup = (asyncId: string, expectedJob?: AsyncJobState) => {
-		cancelCleanup(asyncId);
+	const stopObservation = (asyncId: string): void => {
+		watchers.get(asyncId)?.close();
+		watchers.delete(asyncId);
+		const fallback = fallbackTimers.get(asyncId);
+		if (fallback) clearInterval(fallback);
+		fallbackTimers.delete(asyncId);
+		const statusFallback = statusFallbackTimers.get(asyncId);
+		if (statusFallback) clearTimeout(statusFallback);
+		statusFallbackTimers.delete(asyncId);
+		const observation = observations.get(asyncId);
+		if (observation?.retryTimer) clearTimeout(observation.retryTimer);
+		observations.delete(asyncId);
+		lastIpcStatusAt.delete(asyncId);
+	};
+	const scheduleCleanup = (job: AsyncJobState): void => {
+		cancelCleanup(job.asyncId);
 		const expectedGeneration = trackerGeneration;
 		const timer = setTimeout(() => {
-			if (state.cleanupTimers.get(asyncId) !== timer) return;
-			state.cleanupTimers.delete(asyncId);
-			if (trackerGeneration !== expectedGeneration) return;
-			if (expectedJob && state.asyncJobs.get(asyncId) !== expectedJob) return;
-			state.asyncJobs.delete(asyncId);
+			if (state.cleanupTimers.get(job.asyncId) !== timer) return;
+			state.cleanupTimers.delete(job.asyncId);
+			if (trackerGeneration !== expectedGeneration || state.asyncJobs.get(job.asyncId) !== job) return;
+			stopObservation(job.asyncId);
+			state.asyncJobs.delete(job.asyncId);
+			scheduleRefresh();
 		}, completionRetentionMs);
-		state.cleanupTimers.set(asyncId, timer);
+		timer.unref?.();
+		state.cleanupTimers.set(job.asyncId, timer);
 	};
-	const settleTerminalRoute = (job: AsyncJobState): void => {
-		if (!job.nestedRoute || job.nestedRoute.rootRunId !== job.asyncId || routeSettlements.has(job.asyncId)) return;
-		const expectedGeneration = trackerGeneration;
-		let settlement: Promise<boolean>;
-		settlement = finalizeNestedRouteRoot(job.nestedRoute, job.asyncDir, {
-			signal: settlementAbortController.signal,
-		})
-			.then((retired) => {
-				if (trackerGeneration !== expectedGeneration || state.asyncJobs.get(job.asyncId) !== job) return retired;
-				if (retired) {
-					job.nestedRoute = undefined;
-					if (!physicalTerminalPending(job) && !hasLiveNestedDescendants(job.nestedChildren)) {
-						scheduleCleanup(job.asyncId, job);
-					}
-				}
-				return retired;
-			})
-			.catch((error) => {
-				if (trackerGeneration !== expectedGeneration || state.asyncJobs.get(job.asyncId) !== job) return false;
-				if (recoverRetiredRoute(job, error)) {
-					if (!physicalTerminalPending(job) && !hasLiveNestedDescendants(job.nestedChildren)) {
-						scheduleCleanup(job.asyncId, job);
-					}
-					return true;
-				}
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-					reportAgentDiagnostic(`Failed to settle nested route for '${job.asyncId}':`, error);
-				}
-				return false;
-			})
-			.finally(() => {
-				if (routeSettlements.get(job.asyncId) === settlement) routeSettlements.delete(job.asyncId);
-			});
-		routeSettlements.set(job.asyncId, settlement);
-	};
-	const recoverRetiredRoute = (job: AsyncJobState, error: unknown): boolean => {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !job.nestedRoute) return false;
-		try {
-			const status = recoverRetiredNestedRouteStatus(job.nestedRoute, job.asyncDir);
-			if (!status) return false;
-			job.nestedRoute = undefined;
-			job.nestedChildren = status.steps?.flatMap((step) => step.children ?? []);
-			return true;
-		} catch {
-			return false;
-		}
-	};
-	const synchronizePersistedRoute = (job: AsyncJobState, status: ReturnType<typeof readStatus>): boolean => {
-		if (!status) return false;
-		if (status.nestedRoute) {
-			job.nestedRoute = status.nestedRoute;
-			return false;
-		}
+	const maybeScheduleCleanup = (job: AsyncJobState): void => {
 		if (
-			!job.nestedRoute ||
-			(status.state !== "complete" &&
-				status.state !== "failed" &&
-				status.state !== "paused" &&
-				status.state !== "stopped")
+			!isTerminalJobStatus(job.status) ||
+			physicalTerminalPending(job) ||
+			hasLiveNestedDescendants(job.nestedChildren)
 		)
-			return false;
-		try {
-			fs.lstatSync(path.dirname(job.nestedRoute.eventSink));
-			return false;
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
-			job.nestedRoute = undefined;
-			job.nestedChildren = status.steps?.flatMap((step) => step.children ?? []);
-			return true;
-		}
-	};
-	const attachForegroundChildren = (
-		run: ForegroundRun,
-		children: ReturnType<typeof projectNestedEvents>["children"],
-	): void => {
-		const direct = children.filter((child) => child.parentRunId === run.runId);
-		for (const child of run.children) {
-			const exact = direct.filter((nested) => nested.parentStepIndex === child.index);
-			child.children = exact.length > 0 ? exact : run.children.length === 1 ? direct : [];
-		}
-	};
-	const recoverRetiredForegroundRoute = (run: ForegroundRun, routeToken: string, error: unknown): boolean => {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !run.asyncDir || !run.nestedRoute) return false;
-		try {
-			if (run.nestedRoute?.capabilityToken !== routeToken) return false;
-			const status = recoverRetiredNestedRouteStatus(run.nestedRoute, run.asyncDir);
-			if (!status) return false;
-			for (const child of run.children) {
-				const step = status.steps?.[child.index];
-				child.children = step?.children ?? [];
-			}
-			run.nestedRoute = undefined;
-			run.updatedAt = Math.max(run.updatedAt, status.lastUpdate ?? status.endedAt ?? 0);
-			return true;
-		} catch {
-			return false;
-		}
-	};
-	const settleForegroundRoute = (run: ForegroundRun, force = false): void => {
-		const route = run.nestedRoute;
-		if (!route || route.rootRunId !== run.runId) return;
-		const key = `foreground:${run.runId}:${route.capabilityToken}`;
-		if (routeSettlements.has(key)) return;
-		const now = options.now?.() ?? Date.now();
-		if (!force && now - (foregroundSettlementAttempts.get(key) ?? 0) < 1_000) return;
-		foregroundSettlementAttempts.set(key, now);
-		const expectedGeneration = trackerGeneration;
-		let settlement: Promise<boolean>;
-		settlement = (
-			run.asyncDir
-				? finalizeNestedRouteRoot(route, run.asyncDir, { signal: settlementAbortController.signal })
-				: retireCompletedNestedRoute(route, { signal: settlementAbortController.signal })
-		)
-			.then((retired) => {
-				if (trackerGeneration !== expectedGeneration || state.foregroundRuns?.get(run.runId) !== run)
-					return retired;
-				if (retired && run.nestedRoute?.capabilityToken === route.capabilityToken) {
-					run.nestedRoute = undefined;
-				}
-				return retired;
-			})
-			.catch((error) => {
-				if (trackerGeneration !== expectedGeneration || state.foregroundRuns?.get(run.runId) !== run) return false;
-				if (!recoverRetiredForegroundRoute(run, route.capabilityToken, error)) {
-					reportAgentDiagnostic(`Failed to settle foreground nested route for '${run.runId}':`, error);
-				}
-				return false;
-			})
-			.finally(() => {
-				if (routeSettlements.get(key) === settlement) routeSettlements.delete(key);
-			});
-		routeSettlements.set(key, settlement);
-	};
-	const refreshForegroundNestedRoutes = (): void => {
-		for (const run of state.foregroundRuns?.values() ?? []) {
-			if (run.asyncDir && run.children.some((child) => child.status === "detached")) {
-				try {
-					refreshForegroundRun(run);
-				} catch (error) {
-					reportAgentDiagnostic(`Failed to advance foreground crash recovery for '${run.runId}':`, error);
-				}
-			}
-			const route = run.nestedRoute;
-			if (!route) continue;
-			try {
-				reconcileNestedAsyncDescendants(route, {
-					resultsDir,
-					kill: options.kill,
-					now: options.now,
-				});
-				const registry = projectNestedEvents(route);
-				attachForegroundChildren(run, registry.children);
-				run.updatedAt = Math.max(run.updatedAt, registry.updatedAt);
-				const live = hasLiveNestedDescendants([...registry.children, ...registry.pendingChildren]);
-				settleForegroundRoute(run, !live);
-			} catch (error) {
-				if (!recoverRetiredForegroundRoute(run, route.capabilityToken, error)) {
-					reportAgentDiagnostic(`Failed to refresh foreground nested descendants for '${run.runId}':`, error);
-				}
-			}
-		}
-	};
-	const emitNewControlEvents = (job: AsyncJobState) => {
-		const eventsPath = path.join(job.asyncDir, "events.jsonl");
-		let fd: number;
-		try {
-			fd = fs.openSync(eventsPath, "r");
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-			reportAgentDiagnostic(`Failed to open async control events for '${job.asyncDir}':`, error);
 			return;
+		if (!state.cleanupTimers.has(job.asyncId)) scheduleCleanup(job);
+	};
+
+	const applyStatus = (job: AsyncJobState, status: AsyncStatus): void => {
+		const previousStatus = job.status;
+		const preserveTerminalState = isTerminalJobStatus(previousStatus) && !isTerminalJobStatus(status.state);
+		if (!preserveTerminalState) job.status = status.state;
+		job.error = status.error;
+		job.pid = status.pid ?? job.pid;
+		if (job.processTerminal?.state !== "observed" || status.processTerminal?.state === "observed") {
+			job.processTerminal = status.processTerminal ?? job.processTerminal;
 		}
+		job.activityState = status.activityState;
+		job.lastActivityAt = status.lastActivityAt ?? job.lastActivityAt;
+		job.currentTool = status.currentTool;
+		job.currentToolStartedAt = status.currentToolStartedAt;
+		job.currentPath = status.currentPath;
+		job.turnCount = status.turnCount ?? job.turnCount;
+		job.toolCount = status.toolCount ?? job.toolCount;
+		job.steering = status.steering ?? job.steering;
+		job.mode = status.mode;
+		job.cwd = status.cwd ?? job.cwd;
+		job.currentStep = status.currentStep ?? job.currentStep;
+		job.startedAt = status.startedAt ?? job.startedAt;
+		job.updatedAt = status.lastUpdate ?? job.updatedAt;
+		if (status.nestedRoute) job.nestedRoute = status.nestedRoute;
+		else if (isTerminalJobStatus(status.state)) job.nestedRoute = undefined;
+		if (status.steps?.length) {
+			const groups = normalizeParallelGroups(status.parallelGroups, status.steps.length);
+			const currentStep = status.currentStep;
+			const activeGroup =
+				currentStep !== undefined
+					? groups.find((group) => currentStep >= group.start && currentStep < group.start + group.count)
+					: undefined;
+			const visibleSteps = activeGroup
+				? status.steps
+						.slice(activeGroup.start, activeGroup.start + activeGroup.count)
+						.map((step, index) => ({ ...step, index: activeGroup.start + index }))
+				: status.steps.map((step, index) => ({ ...step, index }));
+			job.parallelGroups = groups;
+			job.hasParallelGroups = groups.length > 0;
+			job.activeParallelGroup = Boolean(activeGroup);
+			job.agents = visibleSteps.map((step) => step.agent);
+			job.steps = visibleSteps;
+			job.stepsTotal = visibleSteps.length;
+			job.runningSteps = visibleSteps.filter((step) => step.status === "running").length;
+			job.completedSteps = visibleSteps.filter(
+				(step) => step.status === "complete" || step.status === "completed",
+			).length;
+			if (status.state === "complete") job.completedSteps = visibleSteps.length;
+			job.context = contextSummary(status.steps);
+			job.nestedChildren = status.steps.flatMap((step) => step.children ?? []);
+		}
+		job.sessionDir = status.sessionDir ?? job.sessionDir;
+		job.outputFile = status.outputFile ?? job.outputFile;
+		job.totalTokens = status.totalTokens ?? job.totalTokens;
+		job.timeoutMs = status.timeoutMs ?? job.timeoutMs;
+		job.deadlineAt = status.deadlineAt ?? job.deadlineAt;
+		job.timedOut = status.timedOut ?? job.timedOut;
+		job.stopped = status.stopped ?? job.stopped;
+		job.turnBudget = status.turnBudget ?? job.turnBudget;
+		job.turnBudgetExceeded = status.turnBudgetExceeded ?? job.turnBudgetExceeded;
+		job.wrapUpRequested = status.wrapUpRequested ?? job.wrapUpRequested;
+		job.toolBudget = status.toolBudget ?? job.toolBudget;
+		job.toolBudgetBlocked = status.toolBudgetBlocked ?? job.toolBudgetBlocked;
+		job.sessionFile = status.sessionFile ?? job.sessionFile;
+		if (isTerminalJobStatus(job.status)) {
+			rememberRecentAgentJob(state, job);
+			maybeScheduleCleanup(job);
+		} else {
+			cancelCleanup(job.asyncId);
+		}
+	};
+
+	const jobFromStatus = (
+		asyncDir: string,
+		status: AsyncStatus,
+		sessionId: string | undefined,
+		restored: boolean,
+	): AsyncJobState => {
+		const job: AsyncJobState = {
+			asyncId: status.runId,
+			asyncDir,
+			status: status.state,
+			mode: status.mode,
+			...(sessionId ? { sessionId } : {}),
+			startedAt: status.startedAt,
+			updatedAt: status.lastUpdate ?? status.startedAt,
+			...(restored ? { controlEventCursorPending: true } : { controlEventCursor: 0 }),
+		};
+		applyStatus(job, status);
+		return job;
+	};
+
+	const handleControlLine = (job: AsyncJobState, line: string): boolean => {
+		if (!line.trim()) return false;
+		let parsed: unknown;
 		try {
-			const stat = fs.fstatSync(fd);
+			parsed = JSON.parse(line);
+		} catch (error) {
+			reportAgentDiagnostic(`Ignoring malformed async control event in '${job.asyncDir}':`, error);
+			return false;
+		}
+		if (!parsed || typeof parsed !== "object") return false;
+		if ((parsed as { type?: unknown }).type === "subagent.steering.notice") {
+			const notice = parsed as Partial<SteeringNotice>;
+			if (
+				typeof notice.requestId !== "string" ||
+				typeof notice.runId !== "string" ||
+				(notice.state !== "failed" && notice.state !== "partial" && notice.state !== "recovered") ||
+				typeof notice.message !== "string"
+			)
+				return false;
+			const normalizedSessionId = normalizeAcceptedSessionId(notice.currentSessionId, notice.runId);
+			if (state.currentSessionId && !normalizedSessionId) return false;
+			const key = `${notice.runId}:${notice.requestId}:${notice.state}`;
+			if (steeringNoticeSeen.has(key)) return false;
+			const now = Date.now();
+			steeringNoticeSeen.set(key, now);
+			if (steeringNoticeSeen.size > 200) {
+				for (const [seenKey, seenAt] of steeringNoticeSeen) {
+					if (now - seenAt > 10 * 60 * 1_000 || steeringNoticeSeen.size > 200) steeringNoticeSeen.delete(seenKey);
+				}
+			}
+			emitLifecycleEvent(SUBAGENT_STEERING_NOTICE_EVENT, {
+				...notice,
+				...(normalizedSessionId ? { currentSessionId: normalizedSessionId } : {}),
+				source: "async",
+				asyncDir: job.asyncDir,
+				noticeText: notice.message,
+			});
+			return true;
+		}
+		if ((parsed as { type?: unknown }).type !== "subagent.control") return false;
+		const record = parsed as {
+			event?: ControlEvent;
+			channels?: string[];
+			childIntercomTarget?: string;
+			noticeText?: string;
+			intercom?: { to?: string; message?: string };
+		};
+		if (!record.event || !Array.isArray(record.channels)) return false;
+		const payload = {
+			event: record.event,
+			source: "async" as const,
+			asyncDir: job.asyncDir,
+			childIntercomTarget: record.childIntercomTarget,
+			noticeText: record.noticeText ?? formatControlNoticeMessage(record.event, record.childIntercomTarget),
+		};
+		if (record.channels.includes("event")) emitLifecycleEvent(SUBAGENT_CONTROL_EVENT, payload);
+		if (
+			record.event.type !== "active_long_running" &&
+			record.channels.includes("intercom") &&
+			record.intercom?.to &&
+			record.intercom.message
+		) {
+			emitLifecycleEvent(SUBAGENT_CONTROL_INTERCOM_EVENT, {
+				...payload,
+				to: record.intercom.to,
+				message: record.intercom.message,
+			});
+		}
+		return true;
+	};
+
+	const emitNewControlEvents = async (job: AsyncJobState): Promise<{ changed: boolean; more: boolean }> => {
+		const eventsPath = path.join(job.asyncDir, "events.jsonl");
+		const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+		let handle: fs.promises.FileHandle;
+		try {
+			handle = await fs.promises.open(eventsPath, fs.constants.O_RDONLY | noFollow);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+				if (job.controlEventCursorPending) {
+					job.controlEventCursor = 0;
+					job.controlEventCursorPending = false;
+				}
+				return { changed: false, more: false };
+			}
+			reportAgentDiagnostic(`Failed to open async control events for '${job.asyncDir}':`, error);
+			return { changed: false, more: false };
+		}
+		let changed = false;
+		let more = false;
+		try {
+			const stat = await handle.stat();
+			const currentUid = process.getuid?.();
+			if (!stat.isFile() || (currentUid !== undefined && stat.uid !== currentUid))
+				return { changed: false, more: false };
 			if (job.controlEventCursorPending) {
 				job.controlEventCursor = stat.size;
 				job.controlEventCursorPending = false;
-				return;
+				return { changed: false, more: false };
 			}
 			const savedCursor = job.controlEventCursor;
 			let cursor = stat.size < (savedCursor ?? 0) ? 0 : (savedCursor ?? 0);
 			const startedFromTail = savedCursor === undefined && stat.size > CONTROL_EVENT_SCAN_WINDOW_BYTES;
 			if (startedFromTail) cursor = stat.size - CONTROL_EVENT_SCAN_WINDOW_BYTES;
-			if (stat.size <= cursor) return;
+			if (stat.size <= cursor) return { changed: false, more: false };
 			const scanEnd = Math.min(stat.size, cursor + CONTROL_EVENT_SCAN_WINDOW_BYTES);
-			const handleLine = (line: string) => {
-				if (!line.trim()) return;
-				let parsed: unknown;
-				try {
-					parsed = JSON.parse(line);
-				} catch (error) {
-					reportAgentDiagnostic(`Ignoring malformed async control event in '${eventsPath}':`, error);
-					return;
-				}
-				if (!parsed || typeof parsed !== "object") return;
-				if ((parsed as { type?: unknown }).type === "subagent.steering.notice") {
-					const notice = parsed as Partial<SteeringNotice>;
-					if (
-						typeof notice.requestId !== "string" ||
-						typeof notice.runId !== "string" ||
-						(notice.state !== "failed" && notice.state !== "partial" && notice.state !== "recovered") ||
-						typeof notice.message !== "string"
-					)
-						return;
-					const normalizedSessionId = normalizeAcceptedSessionId(notice.currentSessionId, notice.runId);
-					if (state.currentSessionId && !normalizedSessionId) return;
-					const key = `${notice.runId}:${notice.requestId}:${notice.state}`;
-					if (steeringNoticeSeen.has(key)) return;
-					const now = Date.now();
-					steeringNoticeSeen.set(key, now);
-					if (steeringNoticeSeen.size > 200) {
-						for (const [seenKey, seenAt] of steeringNoticeSeen) {
-							if (now - seenAt > 10 * 60 * 1000 || steeringNoticeSeen.size > 200)
-								steeringNoticeSeen.delete(seenKey);
-						}
-					}
-					emitLifecycleEvent(SUBAGENT_STEERING_NOTICE_EVENT, {
-						...notice,
-						...(normalizedSessionId ? { currentSessionId: normalizedSessionId } : {}),
-						source: "async",
-						asyncDir: job.asyncDir,
-						noticeText: notice.message,
-					});
-					return;
-				}
-				if ((parsed as { type?: unknown }).type !== "subagent.control") return;
-				const record = parsed as {
-					event?: ControlEvent;
-					channels?: string[];
-					childIntercomTarget?: string;
-					noticeText?: string;
-					intercom?: { to?: string; message?: string };
-				};
-				if (!record.event || !Array.isArray(record.channels)) return;
-				const payload = {
-					event: record.event,
-					source: "async" as const,
-					asyncDir: job.asyncDir,
-					childIntercomTarget: record.childIntercomTarget,
-					noticeText: record.noticeText ?? formatControlNoticeMessage(record.event, record.childIntercomTarget),
-				};
-				if (record.channels.includes("event")) {
-					emitLifecycleEvent(SUBAGENT_CONTROL_EVENT, payload);
-				}
-				if (
-					record.event.type !== "active_long_running" &&
-					record.channels.includes("intercom") &&
-					record.intercom?.to &&
-					record.intercom.message
-				) {
-					emitLifecycleEvent(SUBAGENT_CONTROL_INTERCOM_EVENT, {
-						...payload,
-						to: record.intercom.to,
-						message: record.intercom.message,
-					});
-				}
-			};
-			let readCursor = cursor;
-			let lastCompleteCursor = cursor;
-			let lineParts: Buffer[] = [];
-			let lineBytes = 0;
-			let skippingOversizedLine = startedFromTail;
-			const appendLineSegment = (segment: Buffer) => {
-				if (segment.length === 0 || skippingOversizedLine) return;
-				if (lineBytes + segment.length > MAX_CONTROL_EVENT_LINE_BYTES) {
-					lineParts = [];
-					lineBytes = 0;
-					skippingOversizedLine = true;
-					return;
-				}
-				lineParts.push(segment);
-				lineBytes += segment.length;
-			};
-			while (readCursor < scanEnd) {
-				const toRead = Math.min(CONTROL_EVENT_READ_CHUNK_BYTES, scanEnd - readCursor);
-				const buffer = Buffer.alloc(toRead);
-				const bytesRead = fs.readSync(fd, buffer, 0, toRead, readCursor);
-				if (bytesRead <= 0) break;
-				const chunk = bytesRead === buffer.length ? buffer : buffer.subarray(0, bytesRead);
-				let lineStart = 0;
-				for (let index = 0; index < chunk.length; index++) {
-					if (chunk[index] !== 0x0a) continue;
-					appendLineSegment(chunk.subarray(lineStart, index));
-					const completeCursor = readCursor + index + 1;
-					if (!skippingOversizedLine && lineBytes > 0) {
-						handleLine(Buffer.concat(lineParts, lineBytes).toString("utf-8"));
-					}
-					// Commit each complete record as soon as its callbacks return. If a
-					// later read in this same scan fails, the next poll must not replay
-					// records that were already delivered.
-					job.controlEventCursor = completeCursor;
-					lineParts = [];
-					lineBytes = 0;
-					skippingOversizedLine = false;
-					lastCompleteCursor = completeCursor;
-					lineStart = index + 1;
-				}
-				appendLineSegment(chunk.subarray(lineStart));
-				readCursor += bytesRead;
-				if (skippingOversizedLine) job.controlEventCursor = readCursor;
+			const buffer = Buffer.alloc(scanEnd - cursor);
+			let offset = 0;
+			while (offset < buffer.length) {
+				const toRead = Math.min(CONTROL_EVENT_READ_CHUNK_BYTES, buffer.length - offset);
+				const { bytesRead } = await handle.read(buffer, offset, toRead, cursor + offset);
+				if (bytesRead === 0) break;
+				offset += bytesRead;
 			}
-			if (lastCompleteCursor > cursor) job.controlEventCursor = lastCompleteCursor;
-			else if (skippingOversizedLine) job.controlEventCursor = scanEnd;
+			const observed = offset === buffer.length ? buffer : buffer.subarray(0, offset);
+			let lineStart = 0;
+			let committedCursor = cursor;
+			if (startedFromTail) {
+				const newline = observed.indexOf(0x0a);
+				if (newline === -1) {
+					job.controlEventCursor = cursor + observed.length;
+					return { changed: false, more: job.controlEventCursor < stat.size };
+				}
+				lineStart = newline + 1;
+				committedCursor = cursor + lineStart;
+			}
+			for (let index = lineStart; index < observed.length; index += 1) {
+				if (observed[index] !== 0x0a) continue;
+				const line = observed.subarray(lineStart, index);
+				if (line.length <= MAX_CONTROL_EVENT_LINE_BYTES) {
+					changed = handleControlLine(job, line.toString("utf-8")) || changed;
+				}
+				lineStart = index + 1;
+				committedCursor = cursor + lineStart;
+				job.controlEventCursor = committedCursor;
+			}
+			if (observed.length - lineStart > MAX_CONTROL_EVENT_LINE_BYTES) {
+				job.controlEventCursor = cursor + observed.length;
+			} else if (committedCursor > cursor) {
+				job.controlEventCursor = committedCursor;
+			}
+			more = (job.controlEventCursor ?? 0) < stat.size;
 		} catch (error) {
 			reportAgentDiagnostic(`Failed to read async control events for '${job.asyncDir}':`, error);
 		} finally {
-			fs.closeSync(fd);
+			await handle.close();
+		}
+		return { changed, more };
+	};
+
+	type ObservationKind = { status?: boolean; control?: boolean };
+	const observeJob = async (job: AsyncJobState, kind: ObservationKind): Promise<void> => {
+		const observation = observations.get(job.asyncId) ?? { running: false, status: false, control: false };
+		observation.status ||= kind.status === true;
+		observation.control ||= kind.control === true;
+		observations.set(job.asyncId, observation);
+		if (observation.running) return;
+		observation.running = true;
+		const expectedGeneration = trackerGeneration;
+		let changed = false;
+		try {
+			do {
+				const readStatus = observation.status;
+				const readControl = observation.control;
+				observation.status = false;
+				observation.control = false;
+				if (readControl) {
+					const control = await emitNewControlEvents(job);
+					changed ||= control.changed;
+					observation.control ||= control.more;
+				}
+				if (readStatus) {
+					const observedStatus = await readRunStatus(job.asyncDir);
+					const status = observedStatus ? await recoverLegacyFinalReports(observedStatus) : null;
+					if (
+						status &&
+						status.runId === job.asyncId &&
+						trackerGeneration === expectedGeneration &&
+						state.asyncJobs.get(job.asyncId) === job
+					) {
+						applyStatus(job, status);
+						changed = true;
+					}
+				}
+			} while (
+				trackerGeneration === expectedGeneration &&
+				state.asyncJobs.get(job.asyncId) === job &&
+				(observation.status || observation.control)
+			);
+		} catch (error) {
+			if (trackerGeneration === expectedGeneration && state.asyncJobs.get(job.asyncId) === job) {
+				reportAgentDiagnostic(
+					`Failed to observe async status for '${job.asyncDir}'; retaining prior state:`,
+					error,
+				);
+				if (!observation.retryTimer) {
+					observation.retryTimer = setTimeout(() => {
+						observation.retryTimer = undefined;
+						void observeJob(job, { status: true, control: true });
+					}, fallbackIntervalMs);
+					observation.retryTimer.unref?.();
+				}
+			}
+		} finally {
+			observation.running = false;
+			if (changed && trackerGeneration === expectedGeneration && state.asyncJobs.get(job.asyncId) === job) {
+				scheduleRefresh();
+			}
 		}
 	};
 
-	const ensurePoller = () => {
-		if (state.poller) return;
-		state.poller = setInterval(() => {
-			const foregroundRuns = [...(state.foregroundRuns?.values() ?? [])];
-			const hasForegroundWork = foregroundRuns.some(
-				(run) =>
-					Boolean(run.nestedRoute) ||
-					(Boolean(run.asyncDir) && run.children.some((child) => child.status === "detached")),
-			);
-			if (state.asyncJobs.size === 0 && !hasForegroundWork) {
-				if (state.poller) {
-					clearInterval(state.poller);
-					state.poller = null;
+	const startFallbackObserver = (job: AsyncJobState, reason: unknown): void => {
+		watchers.get(job.asyncId)?.close();
+		watchers.delete(job.asyncId);
+		if (fallbackTimers.has(job.asyncId)) return;
+		reportAgentDiagnostic(
+			`Agent status observation for '${job.asyncId}' fell back to asynchronous reconciliation:`,
+			reason,
+		);
+		const timer = setInterval(() => void observeJob(job, { status: true, control: true }), fallbackIntervalMs);
+		timer.unref?.();
+		fallbackTimers.set(job.asyncId, timer);
+	};
+	const scheduleStatusWatchFallback = (job: AsyncJobState): void => {
+		if (statusFallbackTimers.has(job.asyncId)) return;
+		const timer = setTimeout(() => {
+			statusFallbackTimers.delete(job.asyncId);
+			if (Date.now() - (lastIpcStatusAt.get(job.asyncId) ?? 0) < STATUS_WATCH_FALLBACK_DELAY_MS * 2) return;
+			void observeJob(job, { status: true });
+		}, STATUS_WATCH_FALLBACK_DELAY_MS);
+		timer.unref?.();
+		statusFallbackTimers.set(job.asyncId, timer);
+	};
+	const ensureJobObserver = (job: AsyncJobState): void => {
+		if (watchers.has(job.asyncId) || fallbackTimers.has(job.asyncId)) return;
+		try {
+			const watcher = watchRun(job.asyncDir, (_event, filename) => {
+				if (state.asyncJobs.get(job.asyncId) !== job) return;
+				const name = filename?.toString();
+				if (!name || name === "events.jsonl") void observeJob(job, { control: true });
+				if (!name || name === "status.json" || name === "process-terminal.json") {
+					scheduleStatusWatchFallback(job);
 				}
-				return;
-			}
-			refreshForegroundNestedRoutes();
-
-			for (const job of state.asyncJobs.values()) {
-				let nestedRefreshFailed = false;
-				const refreshNestedProjection = () => {
-					try {
-						updateAsyncJobNestedProjection(job);
-					} catch (error) {
-						if (recoverRetiredRoute(job, error)) return;
-						nestedRefreshFailed = true;
-						reportAgentDiagnostic(`Failed to refresh nested async descendants for '${job.asyncDir}':`, error);
-					}
-				};
-				const reconcileNestedDescendants = () => {
-					try {
-						if (job.nestedRoute)
-							reconcileNestedAsyncDescendants(job.nestedRoute, {
-								resultsDir,
-								kill: options.kill,
-								now: options.now,
-							});
-					} catch (error) {
-						if (!recoverRetiredRoute(job, error)) {
-							nestedRefreshFailed = true;
-							reportAgentDiagnostic(`Failed to refresh nested async descendants for '${job.asyncDir}':`, error);
-						}
-					}
-					refreshNestedProjection();
-				};
-				try {
-					emitNewControlEvents(job);
-					reconcileNestedDescendants();
-					const reconciliation = reconcileRun(job.asyncDir, {
-						resultsDir,
-						kill: options.kill,
-						now: options.now,
-						startedRun: {
-							runId: job.asyncId,
-							pid: job.pid,
-							sessionId: job.sessionId,
-							mode: job.mode,
-							agents: job.agents,
-							parallelGroups: job.parallelGroups,
-							startedAt: job.startedAt,
-							sessionFile: job.sessionFile,
-						},
-					});
-					const status = reconciliation.status ?? readRunStatus(job.asyncDir);
-					if (status) {
-						synchronizePersistedRoute(job, status);
-						const previousStatus = job.status;
-						const preserveTerminalState =
-							isTerminalJobStatus(previousStatus) && !isTerminalJobStatus(status.state);
-						job.processTerminal = status.processTerminal ?? job.processTerminal;
-						if (!preserveTerminalState) job.status = status.state;
-						job.error = status.error;
-						if (!isTerminalJobStatus(job.status)) cancelCleanup(job.asyncId);
-						if (preserveTerminalState) {
-							rememberRecentAgentJob(state, job);
-							if (!nestedRefreshFailed && job.nestedRoute) settleTerminalRoute(job);
-							if (
-								!physicalTerminalPending(job) &&
-								!nestedRefreshFailed &&
-								!hasLiveNestedDescendants(job.nestedChildren) &&
-								!job.nestedRoute &&
-								!state.cleanupTimers.has(job.asyncId)
-							) {
-								scheduleCleanup(job.asyncId, job);
-							}
-							continue;
-						}
-						// `listAsyncRuns` and lifecycle boundaries normalize accepted v1
-						// artifacts to the active ps2 identity. Never regress the in-memory
-						// projection to a raw legacy session id on a later status poll.
-						job.activityState = status.activityState;
-						job.lastActivityAt = status.lastActivityAt ?? job.lastActivityAt;
-						job.currentTool = status.currentTool;
-						job.currentToolStartedAt = status.currentToolStartedAt;
-						job.currentPath = status.currentPath;
-						job.turnCount = status.turnCount ?? job.turnCount;
-						job.toolCount = status.toolCount ?? job.toolCount;
-						job.steering = status.steering ?? job.steering;
-						job.mode = status.mode;
-						job.currentStep = status.currentStep ?? job.currentStep;
-						job.startedAt = status.startedAt ?? job.startedAt;
-						if (status.lastUpdate !== undefined) job.updatedAt = status.lastUpdate;
-						if (status.steps?.length) {
-							const groups = normalizeParallelGroups(status.parallelGroups, status.steps.length);
-							job.parallelGroups = groups.length ? groups : job.parallelGroups;
-							job.hasParallelGroups = groups.length > 0 || job.hasParallelGroups;
-							const currentStep = status.currentStep;
-							const activeGroup =
-								currentStep !== undefined
-									? groups.find(
-											(group) => currentStep >= group.start && currentStep < group.start + group.count,
-										)
-									: undefined;
-							const visibleSteps = activeGroup
-								? status.steps
-										.slice(activeGroup.start, activeGroup.start + activeGroup.count)
-										.map((step, index) => ({ ...step, index: activeGroup.start + index }))
-								: status.steps.map((step, index) => ({ ...step, index }));
-							job.activeParallelGroup = Boolean(activeGroup);
-							job.agents = visibleSteps.map((step) => step.agent);
-							job.steps = visibleSteps;
-							refreshNestedProjection();
-							job.stepsTotal = visibleSteps.length;
-							job.runningSteps = visibleSteps.filter((step) => step.status === "running").length;
-							job.completedSteps = visibleSteps.filter(
-								(step) => step.status === "complete" || step.status === "completed",
-							).length;
-							if (status.state === "complete") job.completedSteps = visibleSteps.length;
-						}
-						job.sessionDir = status.sessionDir ?? job.sessionDir;
-						job.outputFile = status.outputFile ?? job.outputFile;
-						job.totalTokens = status.totalTokens ?? job.totalTokens;
-						job.timeoutMs = status.timeoutMs ?? job.timeoutMs;
-						job.deadlineAt = status.deadlineAt ?? job.deadlineAt;
-						job.timedOut = status.timedOut ?? job.timedOut;
-						job.stopped = status.stopped ?? job.stopped;
-						job.turnBudget = status.turnBudget ?? job.turnBudget;
-						job.turnBudgetExceeded = status.turnBudgetExceeded ?? job.turnBudgetExceeded;
-						job.wrapUpRequested = status.wrapUpRequested ?? job.wrapUpRequested;
-						job.sessionFile = status.sessionFile ?? job.sessionFile;
-						if (
-							job.status === "complete" ||
-							job.status === "failed" ||
-							job.status === "paused" ||
-							job.status === "stopped"
-						) {
-							rememberRecentAgentJob(state, job);
-							if (!nestedRefreshFailed && job.nestedRoute) settleTerminalRoute(job);
-							if (
-								!physicalTerminalPending(job) &&
-								!nestedRefreshFailed &&
-								!hasLiveNestedDescendants(job.nestedChildren) &&
-								!job.nestedRoute &&
-								(previousStatus !== job.status || !state.cleanupTimers.has(job.asyncId))
-							) {
-								scheduleCleanup(job.asyncId, job);
-							}
-						}
-						continue;
-					}
-					if (job.status === "queued") {
-						job.status = "running";
-						job.updatedAt = Date.now();
-					}
-				} catch (error) {
-					// Reading and reconciliation are observers. A transient EIO or malformed
-					// snapshot is not process/result proof and must never terminalize a live
-					// Agent. Retain the last known state and let the next poll recover.
-					reportAgentDiagnostic(
-						`Failed to observe async status for '${job.asyncDir}'; retaining prior state:`,
-						error,
-					);
-				}
-			}
-			options.onRefresh?.();
-		}, pollIntervalMs);
-		state.poller.unref?.();
+			});
+			watcher.on("error", (error) => startFallbackObserver(job, error));
+			watcher.unref?.();
+			watchers.set(job.asyncId, watcher);
+		} catch (error) {
+			startFallbackObserver(job, error);
+		}
+	};
+	const ensureObserver = (): void => {
+		for (const job of state.asyncJobs.values()) ensureJobObserver(job);
 	};
 
-	const handleStarted = (data: unknown) => {
+	const handleStarted = (data: unknown): void => {
 		const info = data as AsyncStartedEvent;
 		if (!info.id) return;
 		const normalizedSessionId = normalizeAcceptedSessionId(info.sessionId, info.id);
@@ -709,39 +579,71 @@ export function createAsyncJobTracker(
 		const firstGroup = validParallelGroups.find((group) => group.start === 0);
 		const firstGroupCount = firstGroup?.count;
 		const agents = firstGroupCount && firstGroupCount > 0 ? rawAgents?.slice(0, firstGroupCount) : rawAgents;
-		state.asyncJobs.set(info.id, {
+		const existing = state.asyncJobs.get(info.id);
+		const job: AsyncJobState = existing ?? {
 			asyncId: info.id,
 			asyncDir,
-			...(typeof info.cwd === "string" ? { cwd: path.resolve(info.cwd) } : {}),
 			status: "queued",
-			pid: typeof info.pid === "number" ? info.pid : undefined,
-			...(normalizedSessionId ? { sessionId: normalizedSessionId } : {}),
 			mode:
 				info.mode === "parallel" || (info.mode !== "single" && (rawAgents?.length ?? 0) > 1)
 					? "parallel"
 					: "single",
-			description: info.description ?? info.goal ?? info.task,
-			descriptions: info.descriptions,
-			tasks: info.tasks,
-			agents,
-			parallelGroups: validParallelGroups,
-			nestedRoute: info.nestedRoute,
-			stepsTotal: firstGroupCount ?? agents?.length,
-			hasParallelGroups: validParallelGroups.length > 0,
-			activeParallelGroup: Boolean(firstGroupCount && firstGroupCount > 0),
 			startedAt: now,
 			updatedAt: now,
-			timeoutMs: info.timeoutMs,
-			deadlineAt: info.deadlineAt,
-			turnBudget: info.turnBudget,
 			controlEventCursor: 0,
-		});
-		const startedJob = state.asyncJobs.get(info.id);
-		if (startedJob) rememberRecentAgentJob(state, startedJob);
-		ensurePoller();
+		};
+		job.asyncDir = asyncDir;
+		job.cwd = typeof info.cwd === "string" ? path.resolve(info.cwd) : job.cwd;
+		job.pid = typeof info.pid === "number" ? info.pid : job.pid;
+		job.sessionId = normalizedSessionId ?? job.sessionId;
+		job.description = info.description ?? info.goal ?? info.task ?? job.description;
+		job.descriptions = info.descriptions ?? job.descriptions;
+		job.tasks = info.tasks ?? job.tasks;
+		job.agents = agents ?? job.agents;
+		job.parallelGroups = validParallelGroups.length > 0 ? validParallelGroups : job.parallelGroups;
+		job.nestedRoute = info.nestedRoute ?? job.nestedRoute;
+		job.stepsTotal = firstGroupCount ?? agents?.length ?? job.stepsTotal;
+		job.hasParallelGroups = validParallelGroups.length > 0 || job.hasParallelGroups;
+		job.activeParallelGroup = Boolean(firstGroupCount && firstGroupCount > 0) || job.activeParallelGroup;
+		job.timeoutMs = info.timeoutMs ?? job.timeoutMs;
+		job.deadlineAt = info.deadlineAt ?? job.deadlineAt;
+		job.turnBudget = info.turnBudget ?? job.turnBudget;
+		state.asyncJobs.set(info.id, job);
+		rememberRecentAgentJob(state, job);
+		ensureJobObserver(job);
+		void observeJob(job, { status: true, control: true });
+		scheduleRefresh();
 	};
 
-	const handleComplete = (data: unknown) => {
+	const handleStatus = (data: unknown): void => {
+		if (!data || typeof data !== "object") return;
+		const update = data as { id?: unknown; asyncDir?: unknown; sessionId?: unknown; status?: unknown };
+		if (
+			typeof update.id !== "string" ||
+			typeof update.asyncDir !== "string" ||
+			!update.status ||
+			typeof update.status !== "object"
+		)
+			return;
+		const status = update.status as AsyncStatus;
+		if (status.runId !== update.id || path.basename(update.asyncDir) !== update.id) return;
+		const normalizedSessionId = normalizeAcceptedSessionId(update.sessionId ?? status.sessionId, update.id);
+		if (state.currentSessionId && !normalizedSessionId) return;
+		let job = state.asyncJobs.get(update.id);
+		if (!job) {
+			job = jobFromStatus(update.asyncDir, status, normalizedSessionId, false);
+			state.asyncJobs.set(update.id, job);
+		} else {
+			if (path.resolve(update.asyncDir) !== path.resolve(job.asyncDir)) return;
+			applyStatus(job, status);
+		}
+		lastIpcStatusAt.set(update.id, Date.now());
+		rememberRecentAgentJob(state, job);
+		ensureJobObserver(job);
+		scheduleRefresh();
+	};
+
+	const handleComplete = (data: unknown): void => {
 		const result = data as {
 			id?: string;
 			success?: boolean;
@@ -750,80 +652,160 @@ export function createAsyncJobTracker(
 			sessionId?: string;
 			stopped?: boolean;
 		};
-		const asyncId = result.id;
-		if (!asyncId) return;
-		if (state.currentSessionId && !normalizeAcceptedSessionId(result.sessionId, asyncId)) return;
-		const job = state.asyncJobs.get(asyncId);
-		let nestedRefreshFailed = false;
-		if (job) {
-			job.status = result.state ?? (result.success ? "complete" : "failed");
-			job.stopped = result.stopped ?? job.stopped;
-			job.updatedAt = Date.now();
-			if (result.asyncDir) job.asyncDir = result.asyncDir;
-			try {
-				updateAsyncJobNestedProjection(job);
-			} catch (error) {
-				if (recoverRetiredRoute(job, error)) {
-					nestedRefreshFailed = false;
-				} else {
-					nestedRefreshFailed = true;
-					reportAgentDiagnostic(`Failed to refresh nested async descendants for '${job.asyncDir}':`, error);
-				}
-			}
+		if (!result.id) return;
+		if (state.currentSessionId && !normalizeAcceptedSessionId(result.sessionId, result.id)) return;
+		const job = state.asyncJobs.get(result.id);
+		if (!job) return;
+		job.status = result.state ?? (result.success ? "complete" : "failed");
+		job.stopped = result.stopped ?? job.stopped;
+		job.updatedAt = Date.now();
+		if (result.asyncDir && result.asyncDir !== job.asyncDir) {
+			stopObservation(job.asyncId);
+			job.asyncDir = result.asyncDir;
+			ensureJobObserver(job);
 		}
-		if (job) rememberRecentAgentJob(state, job);
-		if (!nestedRefreshFailed && job?.nestedRoute) settleTerminalRoute(job);
-		// A result is semantic completion, not physical runner/writer proof. Keep
-		// polling until status reconciliation observes the terminal process tuple.
-		if (job) ensurePoller();
+		rememberRecentAgentJob(state, job);
+		maybeScheduleCleanup(job);
+		void observeJob(job, { status: true, control: true });
+		scheduleRefresh();
 	};
 
-	const resetJobs = () => {
+	const handleProcessTerminal = (data: unknown): void => {
+		if (!data || typeof data !== "object") return;
+		const proof = data as Partial<ProcessTerminalV1> & { asyncDir?: unknown };
+		if (
+			typeof proof.runId !== "string" ||
+			proof.state !== "observed" ||
+			typeof proof.observedAt !== "number" ||
+			!Number.isFinite(proof.observedAt) ||
+			typeof proof.runnerProcessInstanceId !== "string" ||
+			!proof.runnerProcessInstanceId
+		)
+			return;
+		const job = state.asyncJobs.get(proof.runId);
+		if (!job) return;
+		if (typeof proof.asyncDir === "string" && path.resolve(proof.asyncDir) !== path.resolve(job.asyncDir)) return;
+		if (
+			job.processTerminal?.runnerProcessInstanceId &&
+			job.processTerminal.runnerProcessInstanceId !== proof.runnerProcessInstanceId
+		)
+			return;
+		job.processTerminal = proof as ProcessTerminalV1;
+		job.updatedAt = Math.max(job.updatedAt ?? 0, proof.observedAt);
+		maybeScheduleCleanup(job);
+		void observeJob(job, { status: true, control: true });
+		scheduleRefresh();
+	};
+
+	const resetJobs = (): void => {
 		trackerGeneration += 1;
-		settlementAbortController.abort(new Error("Agent tracker session changed."));
-		settlementAbortController = new AbortController();
-		for (const timer of state.cleanupTimers.values()) {
-			clearTimeout(timer);
+		for (const asyncId of new Set([...watchers.keys(), ...fallbackTimers.keys(), ...observations.keys()])) {
+			stopObservation(asyncId);
 		}
+		for (const timer of state.cleanupTimers.values()) clearTimeout(timer);
 		state.cleanupTimers.clear();
 		state.asyncJobs.clear();
 		state.recentAgentJobs?.clear();
 		state.foregroundControls?.clear();
-		foregroundSettlementAttempts.clear();
-		routeSettlements.clear();
 		state.lastForegroundControlId = null;
 		state.resultFileCoalescer.clear();
+		restoreInFlight?.controller.abort();
+		restoreInFlight = undefined;
+		restoredGeneration = -1;
 	};
 
-	const restoreActiveJobs = () => {
-		if (!state.currentSessionId) return;
-		const observedRuns = listRuns(asyncDirRoot, {
-			sessionScope: state.currentSessionScope ?? undefined,
-			...(state.currentSessionScope ? {} : { sessionId: state.currentSessionId }),
-			resultsDir,
-			kill: options.kill,
-			now: options.now,
-			preselectRecent: true,
-			reconcile: false,
-		});
-		const activeRuns = observedRuns.filter((run) => run.state === "queued" || run.state === "running");
-		const recentTerminalRuns = observedRuns
-			.filter((run) => run.state !== "queued" && run.state !== "running")
-			.slice(0, MAX_RECENT_AGENT_JOBS);
-		const runs: AsyncRunSummary[] = [...activeRuns, ...recentTerminalRuns];
-		for (const run of runs) {
-			const job = summaryToJob(run);
-			rememberRecentAgentJob(state, job);
-			if (
-				run.state === "queued" ||
-				run.state === "running" ||
-				run.nestedRoute ||
-				(run.processTerminal !== undefined && run.processTerminal.state !== "observed")
-			) {
-				state.asyncJobs.set(run.id, job);
+	const restoreActiveJobs = (asyncDirectories?: readonly string[]): Promise<void> => {
+		const targeted = asyncDirectories !== undefined;
+		if (!targeted && restoredGeneration === trackerGeneration) return Promise.resolve();
+		if (restoreInFlight?.generation === trackerGeneration) return restoreInFlight.promise;
+		const generation = trackerGeneration;
+		const sessionId = state.currentSessionId;
+		if (!sessionId) return Promise.resolve();
+		const controller = new AbortController();
+		const restore = { controller, generation, promise: Promise.resolve() };
+		restore.promise = (async () => {
+			let directories: string[];
+			if (targeted) {
+				const root = path.resolve(asyncDirRoot);
+				directories = [...new Set(asyncDirectories.map((directory) => path.resolve(directory)))].filter(
+					(directory) => path.dirname(directory) === root,
+				);
+			} else {
+				let entries: fs.Dirent[];
+				try {
+					entries = await fs.promises.readdir(asyncDirRoot, { withFileTypes: true });
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+						if (trackerGeneration === generation && state.currentSessionId === sessionId) {
+							restoredGeneration = generation;
+						}
+						return;
+					}
+					throw error;
+				}
+				directories = entries
+					.filter((entry) => entry.isDirectory() && entry.name !== "." && entry.name !== "..")
+					.map((entry) => path.join(asyncDirRoot, entry.name));
 			}
-		}
+			const statuses = await mapConcurrent(directories, RESTORE_READ_CONCURRENCY, async (asyncDir) => {
+				if (controller.signal.aborted) return undefined;
+				try {
+					const observedStatus = await readRunStatus(asyncDir);
+					if (!observedStatus || controller.signal.aborted) return undefined;
+					const status = await recoverLegacyFinalReports(observedStatus);
+					const normalized = normalizeAcceptedSessionId(status.sessionId, status.runId);
+					return normalized ? { asyncDir, status, sessionId: normalized } : undefined;
+				} catch (error) {
+					reportAgentDiagnostic(
+						`Failed to inspect async run '${asyncDir}'; leaving it untouched for retry:`,
+						error,
+					);
+					return undefined;
+				}
+			});
+			if (controller.signal.aborted || trackerGeneration !== generation || state.currentSessionId !== sessionId)
+				return;
+			const observed = statuses.filter((value) => value !== undefined);
+			const active = observed.filter(({ status }) => status.state === "queued" || status.state === "running");
+			const terminal = observed
+				.filter(({ status }) => status.state !== "queued" && status.state !== "running")
+				.sort(
+					(left, right) =>
+						(right.status.lastUpdate ?? right.status.endedAt ?? right.status.startedAt) -
+						(left.status.lastUpdate ?? left.status.endedAt ?? left.status.startedAt),
+				)
+				.slice(0, MAX_RECENT_AGENT_JOBS);
+			for (const { asyncDir, status, sessionId: normalized } of [...active, ...terminal]) {
+				const existing = state.asyncJobs.get(status.runId);
+				const job = existing ?? jobFromStatus(asyncDir, status, normalized, true);
+				if (existing) applyStatus(existing, status);
+				rememberRecentAgentJob(state, job);
+				if (
+					status.state === "queued" ||
+					status.state === "running" ||
+					(status.processTerminal !== undefined && status.processTerminal.state !== "observed")
+				) {
+					state.asyncJobs.set(status.runId, job);
+					ensureJobObserver(job);
+					void observeJob(job, { control: true });
+				}
+			}
+			scheduleRefresh();
+			if (!targeted) restoredGeneration = generation;
+		})().finally(() => {
+			if (restoreInFlight === restore) restoreInFlight = undefined;
+		});
+		restoreInFlight = restore;
+		return restore.promise;
 	};
 
-	return { ensurePoller, handleStarted, handleComplete, resetJobs, restoreActiveJobs };
+	return {
+		ensureObserver,
+		handleComplete,
+		handleProcessTerminal,
+		handleStarted,
+		handleStatus,
+		resetJobs,
+		restoreActiveJobs,
+	};
 }

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
 	type ActivitySummaryMember,
 	activityTarget,
+	bashResultMovedToBackground,
 	classifyBashActivity,
 	planToolActivityGroups,
 	summarizeToolActivityGroup,
@@ -213,6 +214,17 @@ test("Bash outcomes are success-gated and expose bounded Git identities", () => 
 		state: "success",
 	});
 	expect(commitWithoutEvidence.map((item) => item.category)).toEqual(["run-command"]);
+});
+
+test("detects Background Work handoff markers only at bounded result edges", () => {
+	const result = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
+	expect(bashResultMovedToBackground(result(`moved to background task abc\n${"x".repeat(8_000)}`))).toBe(true);
+	expect(bashResultMovedToBackground(result(`${"x".repeat(8_000)}\nmanually moved to background task abc`))).toBe(
+		true,
+	);
+	expect(
+		bashResultMovedToBackground(result(`${"x".repeat(2_000)}\nmoved to background task abc\n${"x".repeat(2_000)}`)),
+	).toBe(false);
 });
 
 test("uses present tense, latest bounded target, structured outcomes, and honest issues", () => {

@@ -59,7 +59,7 @@ describe("Claude-style Agent definition discovery", () => {
 			})}\n`,
 		);
 
-		const both = discoverAgents(nested, "both").agents;
+		const both = (await discoverAgents(nested, "both")).agents;
 		expect(both.find(({ name }) => name === "shared")).toMatchObject({
 			description: "project definition",
 			source: "project",
@@ -67,7 +67,7 @@ describe("Claude-style Agent definition discovery", () => {
 		expect(both.find(({ name }) => name === "package-only")?.source).toBe("package");
 		expect(new Set(both.map(({ source }) => source))).toEqual(new Set(["package", "project"]));
 
-		const userOnly = discoverAgents(nested, "user").agents;
+		const userOnly = (await discoverAgents(nested, "user")).agents;
 		expect(userOnly.find(({ name }) => name === "shared")?.description).toBe("user definition");
 		expect(userOnly.find(({ name }) => name === "package-only")?.source).toBe("package");
 	});
@@ -102,7 +102,7 @@ describe("Claude-style Agent definition discovery", () => {
 		);
 		await writeAgent(join(user, "agents"), "broken", "broken Agent", "inheritSkills: maybe\n");
 
-		const agents = discoverAgents(root, "user").agents;
+		const agents = (await discoverAgents(root, "user")).agents;
 		expect(agents.some(({ name }) => name === "broken")).toBeFalse();
 		const configured = agents.find(({ name }) => name === "configured");
 		expect(configured).toMatchObject({
@@ -147,7 +147,7 @@ describe("Claude-style Agent definition discovery", () => {
 		);
 		await writeFile(join(user, "settings.json"), `${JSON.stringify({ packages: [`file:${installed}`] })}\n`);
 
-		const agents = discoverAgents(project, "both").agents;
+		const agents = (await discoverAgents(project, "both")).agents;
 		expect(agents.find(({ name }) => name === "installed")?.source).toBe("package");
 		expect(agents.some(({ name }) => name === "legacy")).toBeFalse();
 		expect(agents.some(({ name }) => name === "retired-chain")).toBeFalse();

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isTaskOnlyAgentText } from "../shared/display-description.ts";
-import { readStatus } from "../shared/utils.ts";
+import { readStatusAsync } from "../shared/utils.ts";
 import type { AgentTranscriptReader, AgentTranscriptRequest } from "./agent-dialog.ts";
 
 const READ_BYTE_MULTIPLIER = 4;
@@ -105,24 +105,27 @@ function boundedTail(value: string, maxChars: number): string {
 	return `… earlier transcript omitted\n\n${clean.slice(-maxChars).replace(/^\S*\n?/, "")}`.trim();
 }
 
-function readTail(filePath: string, maxChars: number): { readonly text: string; readonly truncated: boolean } | null {
-	let file: number | undefined;
+async function readTail(
+	filePath: string,
+	maxChars: number,
+): Promise<{ readonly text: string; readonly truncated: boolean } | null> {
+	let file: fs.promises.FileHandle | undefined;
 	try {
 		const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
-		file = fs.openSync(filePath, fs.constants.O_RDONLY | noFollow);
-		const stat = fs.fstatSync(file);
+		file = await fs.promises.open(filePath, fs.constants.O_RDONLY | noFollow);
+		const stat = await file.stat();
 		if (!stat.isFile() || stat.size === 0) return null;
 		const maximumBytes = Math.min(MAX_READ_BYTES, Math.max(MIN_READ_BYTES, maxChars * READ_BYTE_MULTIPLIER));
 		const bytes = Math.min(stat.size, maximumBytes);
 		const start = stat.size - bytes;
 		const buffer = Buffer.alloc(bytes);
-		const read = fs.readSync(file, buffer, 0, bytes, start);
-		return { text: buffer.subarray(0, read).toString("utf8"), truncated: start > 0 };
+		const { bytesRead } = await file.read(buffer, 0, bytes, start);
+		return { text: buffer.subarray(0, bytesRead).toString("utf8"), truncated: start > 0 };
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
 		throw error;
 	} finally {
-		if (file !== undefined) fs.closeSync(file);
+		await file?.close();
 	}
 }
 
@@ -350,12 +353,12 @@ function jsonlTranscript(source: string, sourceTruncated: boolean, task: string)
 	return `${sourceTruncated ? "… earlier transcript omitted\n\n" : ""}${blocks.join("\n\n")}`.trim();
 }
 
-function transcriptCandidate(request: AgentTranscriptRequest): string | null {
+async function transcriptCandidate(request: AgentTranscriptRequest): Promise<string | null> {
 	const direct = request.row.transcriptPath ?? request.row.savedOutputPath ?? request.row.sessionFile;
 	if (direct) return direct;
 	if (!request.row.asyncDir || request.row.childIndex === undefined) return null;
 	try {
-		const status = readStatus(request.row.asyncDir);
+		const status = await readStatusAsync(request.row.asyncDir);
 		const step = status?.steps?.[request.row.childIndex];
 		return step?.transcriptPath ?? step?.sessionFile ?? null;
 	} catch {
@@ -364,12 +367,12 @@ function transcriptCandidate(request: AgentTranscriptRequest): string | null {
 }
 
 /** Bounded, no-follow transcript reader for the shared Agent Command Dialog. */
-export const readAgentTranscript: AgentTranscriptReader = (request) => {
+export const readAgentTranscript: AgentTranscriptReader = async (request) => {
 	if (request.signal.aborted) return null;
 	const partial = isTaskOnlyAgentText(request.row.partialResult, request.row.task) ? null : request.row.partialResult;
-	const candidate = transcriptCandidate(request);
+	const candidate = await transcriptCandidate(request);
 	if (!candidate || !path.isAbsolute(candidate)) return partial;
-	const tail = readTail(candidate, request.maxChars);
+	const tail = await readTail(candidate, request.maxChars);
 	if (request.signal.aborted) return null;
 	if (!tail) return partial;
 	const parsed = candidate.endsWith(".jsonl")

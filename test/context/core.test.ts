@@ -138,11 +138,18 @@ function taggedMessage(text: string) {
 	};
 }
 
-function magicModule(options: { registerBeforeStart?: () => void; registerTool?: boolean } = {}) {
+function magicModule(
+	options: {
+		onContext?: (ctx: ExtensionContext) => void;
+		registerBeforeStart?: () => void;
+		registerTool?: boolean;
+	} = {},
+) {
 	return {
 		default: async (pi: ExtensionAPI) => {
 			const register = pi.on.bind(pi) as unknown as (event: string, handler: Handler) => void;
-			register("context", (event) => {
+			register("context", (event, ctx) => {
+				options.onContext?.(ctx);
 				const contextEvent = event as { messages: unknown[] };
 				return {
 					messages: [
@@ -191,6 +198,66 @@ describe("Context capability lifecycle", () => {
 
 		governor.observeCompactions(entries, entries.length - 1);
 		expect(inspected).toBe(1);
+	});
+
+	test("normal Context projection observes direct compactions without rescanning Session history", async () => {
+		const handlers: Handlers = new Map();
+		const api = apiFor(handlers);
+		let entryReads = 0;
+		let entryLookups = 0;
+		let leafId = "baseline";
+		const entries = new Map<string, SessionEntry>();
+		entries.set("baseline", {
+			type: "custom",
+			id: "baseline",
+			parentId: null,
+			timestamp: new Date(0).toISOString(),
+			customType: "fixture",
+			data: {},
+		});
+		const ctx = {
+			cwd: "/workspace/project-a",
+			sessionManager: {
+				buildContextEntries: () => [],
+				getEntries: () => {
+					entryReads += 1;
+					return [...entries.values()];
+				},
+				getEntry: (id: string) => {
+					entryLookups += 1;
+					return entries.get(id);
+				},
+				getLeafId: () => leafId,
+				getSessionFile: () => "/sessions/session-a.jsonl",
+				getSessionId: () => "session-a",
+			},
+		} as unknown as ExtensionContext;
+		await piStuffContext(api, {
+			loadMagicContext: async () =>
+				magicModule({
+					onContext: () => {
+						const compaction: SessionEntry = {
+							type: "compaction",
+							id: "managed-compaction",
+							parentId: leafId,
+							timestamp: new Date(1).toISOString(),
+							summary: "managed",
+							firstKeptEntryId: "baseline",
+							tokensBefore: 1,
+						};
+						entries.set(compaction.id, compaction);
+						leafId = compaction.id;
+					},
+				}),
+			prepareMagicContext: async () => "ready",
+		});
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+		const readsAfterStart = entryReads;
+
+		await emitResults(handlers, "context", { type: "context", messages: [] }, ctx);
+
+		expect(entryReads).toBe(readsAfterStart);
+		expect(entryLookups).toBe(1);
 	});
 
 	test("carries aggregate work continuity through the public Host event lifecycle", async () => {

@@ -38,6 +38,7 @@ function harness(input: {
 	legacyRunIds: ReadonlySet<string>;
 	logicalSessionId?: string;
 	startedAtMs: number;
+	sendMessage?: ExtensionAPI["sendMessage"];
 }) {
 	const messages: Array<{ customType?: string; details?: unknown }> = [];
 	const tools = new Map<string, ToolDefinition>();
@@ -85,7 +86,8 @@ function harness(input: {
 		on: (event: string, handler: (...args: never[]) => unknown) => {
 			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
 		},
-		sendMessage: (message: { customType?: string; details?: unknown }) => messages.push(message),
+		sendMessage:
+			input.sendMessage ?? ((message: { customType?: string; details?: unknown }) => messages.push(message)),
 	} as unknown as ExtensionAPI;
 	return {
 		api,
@@ -116,7 +118,7 @@ function baseRequest(id: string, runId: string, createdAt: number) {
 }
 
 describe("native supervisor protocol compatibility", () => {
-	test("reclaims an old metadata-less channel left by a crash during first initialization", () => {
+	test("reclaims an old metadata-less channel left by a crash during first initialization", async () => {
 		const now = Date.now();
 		const channelDir = resolveSupervisorChannelDir(`partial-${now}`, "worker", 0, `partial-session-${now}`);
 		directories.push(channelDir);
@@ -133,11 +135,11 @@ describe("native supervisor protocol compatibility", () => {
 			startedAtMs: now,
 		});
 
-		expect(garbageCollectSupervisorChannel(channelDir, test.state, now)).toBe(true);
+		expect(await garbageCollectSupervisorChannel(channelDir, test.state, now)).toBe(true);
 		expect(fs.existsSync(channelDir)).toBe(false);
 	});
 
-	test("retains a fresh or non-empty metadata-less channel", () => {
+	test("retains a fresh or non-empty metadata-less channel", async () => {
 		const now = Date.now();
 		for (const [suffix, old, nonEmpty] of [
 			["fresh", false, false],
@@ -161,12 +163,12 @@ describe("native supervisor protocol compatibility", () => {
 				startedAtMs: now,
 			});
 
-			expect(garbageCollectSupervisorChannel(channelDir, test.state, now)).toBe(false);
+			expect(await garbageCollectSupervisorChannel(channelDir, test.state, now)).toBe(false);
 			expect(fs.existsSync(channelDir)).toBe(true);
 		}
 	});
 
-	test("garbage-collects a dead child channel including orphan replies and durable claim files", () => {
+	test("garbage-collects a dead child channel including orphan replies and durable claim files", async () => {
 		const now = Date.now();
 		const runId = `gc-${now}`;
 		const physicalSessionId = `gc-physical-${now}`;
@@ -199,7 +201,7 @@ describe("native supervisor protocol compatibility", () => {
 			startedAtMs: now,
 		});
 
-		expect(garbageCollectSupervisorChannel(channelDir, test.state)).toBe(true);
+		expect(await garbageCollectSupervisorChannel(channelDir, test.state)).toBe(true);
 		expect(fs.existsSync(channelDir)).toBe(false);
 	});
 
@@ -217,7 +219,7 @@ describe("native supervisor protocol compatibility", () => {
 		});
 		const channel = createNativeSupervisorChannel(test.api, test.state);
 
-		channel.start();
+		await channel.start();
 		expect(test.tools.has("subagent_supervisor")).toBe(true);
 		expect(test.tools.has("intercom")).toBe(false);
 		const external = {
@@ -264,7 +266,7 @@ describe("native supervisor protocol compatibility", () => {
 		const first = createNativeSupervisorChannel(firstHost.api, firstHost.state);
 		const second = createNativeSupervisorChannel(secondHost.api, secondHost.state);
 
-		first.start();
+		await first.start();
 		expect(first.pending.has(request.id)).toBeTrue();
 		fs.appendFileSync(
 			sessionFile,
@@ -275,7 +277,7 @@ describe("native supervisor protocol compatibility", () => {
 			})}\n`,
 		);
 		await Bun.sleep(600);
-		second.start();
+		await second.start();
 
 		expect(firstHost.messages).toHaveLength(1);
 		expect(secondHost.messages).toHaveLength(0);
@@ -300,7 +302,7 @@ describe("native supervisor protocol compatibility", () => {
 		second.dispose();
 	});
 
-	test("accepts simultaneous same-channel asks even when their legacy delivery shards collide", () => {
+	test("accepts simultaneous same-channel asks even when their legacy delivery shards collide", async () => {
 		const now = Date.now();
 		const runId = `same-channel-collision-${now}`;
 		const idsByShard = new Map<string, string>();
@@ -335,14 +337,14 @@ describe("native supervisor protocol compatibility", () => {
 		});
 		const channel = createNativeSupervisorChannel(test.api, test.state);
 
-		channel.start();
+		await channel.start();
 
 		expect([...channel.pending.keys()].sort()).toEqual([...ids].sort());
 		expect(test.messages).toHaveLength(2);
 		channel.dispose();
 	});
 
-	test("releases a durable reply owner on pause so the next session Host can take over", () => {
+	test("releases a durable reply owner on pause so the next session Host can take over", async () => {
 		const now = Date.now();
 		const runId = `paused-ask-${now}`;
 		const request = {
@@ -378,12 +380,12 @@ describe("native supervisor protocol compatibility", () => {
 		const first = createNativeSupervisorChannel(firstHost.api, firstHost.state);
 		const second = createNativeSupervisorChannel(secondHost.api, secondHost.state);
 
-		first.start();
+		await first.start();
 		expect(first.pending.has(request.id)).toBeTrue();
 		first.pause();
 		expect(first.pending.has(request.id)).toBeFalse();
 
-		second.start();
+		await second.start();
 		expect(second.pending.has(request.id)).toBeTrue();
 		expect(secondHost.messages).toHaveLength(0);
 
@@ -391,7 +393,68 @@ describe("native supervisor protocol compatibility", () => {
 		second.dispose();
 	});
 
-	test("releases every delivery claim when one claim close fails", () => {
+	test("keeps an in-flight delivery claimed until the replaced session becomes stale", async () => {
+		const now = Date.now();
+		const runId = `in-flight-pause-${now}`;
+		const request = {
+			...baseRequest(`in-flight-pause-request-${now}`, runId, now),
+			reason: "need_decision",
+			message: "Do not deliver this request concurrently across a session switch",
+			expectsReply: true,
+			expiresAt: now + 60_000,
+		};
+		const requestFile = writeRequest(legacyChannel(runId), request);
+		const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
+		directories.push(root);
+		const sessionFile = path.join(root, "parent.jsonl");
+		fs.writeFileSync(sessionFile, "");
+		let finishFirstDelivery = (): void => {};
+		const firstDelivery = new Promise<void>((resolve) => {
+			finishFirstDelivery = resolve;
+		});
+		let firstDeliveries = 0;
+		const common = {
+			primary: "ps2-in-flight-pause",
+			legacyFile: sessionFile,
+			legacyRunIds: new Set([runId]),
+			startedAtMs: now - 1_000,
+		};
+		const firstHost = harness({
+			...common,
+			sendMessage: (() => {
+				firstDeliveries += 1;
+				return firstDelivery;
+			}) as ExtensionAPI["sendMessage"],
+		});
+		const secondHost = harness(common);
+		const first = createNativeSupervisorChannel(firstHost.api, firstHost.state);
+		const second = createNativeSupervisorChannel(secondHost.api, secondHost.state);
+
+		await first.start();
+		expect(firstDeliveries).toBe(1);
+		first.pause();
+		fs.writeFileSync(
+			path.join(path.dirname(requestFile), `.${path.basename(requestFile)}.delivery-state`),
+			JSON.stringify({ version: 2, requestId: request.id, lastAttemptAt: now - 60_000 }),
+			{ mode: 0o600 },
+		);
+		await second.start();
+		expect(secondHost.messages).toHaveLength(0);
+
+		finishFirstDelivery();
+		await Bun.sleep(0);
+		expect(first.pending.has(request.id)).toBeFalse();
+
+		second.pause();
+		await second.start();
+		expect(secondHost.messages).toHaveLength(1);
+		expect(second.pending.has(request.id)).toBeTrue();
+
+		first.dispose();
+		second.dispose();
+	});
+
+	test("releases every delivery claim when one claim close fails", async () => {
 		const now = Date.now();
 		const runId = `release-failure-${now}`;
 		for (const suffix of ["first", "second"]) {
@@ -429,7 +492,8 @@ describe("native supervisor protocol compatibility", () => {
 			},
 		});
 
-		channel.start();
+		await channel.start();
+		await Bun.sleep(0);
 		expect(channel.pending.size).toBe(2);
 		expect(() => channel.pause()).not.toThrow();
 		expect(released).toBe(2);
@@ -437,7 +501,7 @@ describe("native supervisor protocol compatibility", () => {
 		channel.dispose();
 	});
 
-	test("does not rescan the session for an already accepted request awaiting a reply", () => {
+	test("does not rescan the session for an already accepted request awaiting a reply", async () => {
 		const now = Date.now();
 		const runId = `accepted-ask-${now}`;
 		const request = {
@@ -470,7 +534,7 @@ describe("native supervisor protocol compatibility", () => {
 		});
 		const channel = createNativeSupervisorChannel(test.api, test.state);
 
-		channel.start();
+		await channel.start();
 
 		expect(channel.pending.has(request.id)).toBeTrue();
 		expect(test.sessionCalls).toEqual({ getEntries: 0, getSessionFile: 0 });
@@ -505,11 +569,41 @@ describe("native supervisor protocol compatibility", () => {
 		});
 		const channel = createNativeSupervisorChannel(test.api, test.state);
 
-		channel.start();
+		await channel.start();
 		await Bun.sleep(1_100);
 
 		expect(test.messages).toHaveLength(0);
 		expect(test.sessionCalls).toEqual({ getEntries: 0, getSessionFile: 0 });
+		channel.dispose();
+	});
+
+	test("indexes the session once and records accepted delivery without another history scan", async () => {
+		const now = Date.now();
+		const runId = `accepted-index-${now}`;
+		const request = {
+			...baseRequest(`accepted-index-request-${now}`, runId, now),
+			reason: "need_decision",
+			expectsReply: true,
+			expiresAt: now + 60_000,
+		};
+		writeRequest(legacyChannel(runId), request);
+		const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
+		directories.push(root);
+		const sessionFile = path.join(root, "parent.jsonl");
+		fs.writeFileSync(sessionFile, "");
+		const test = harness({
+			primary: "ps2-accepted-index",
+			legacyFile: sessionFile,
+			legacyRunIds: new Set([runId]),
+			startedAtMs: now - 1_000,
+		});
+		const channel = createNativeSupervisorChannel(test.api, test.state);
+
+		await channel.start();
+		expect(test.sessionCalls).toEqual({ getEntries: 1, getSessionFile: 1 });
+		await Bun.sleep(600);
+		expect(test.sessionCalls).toEqual({ getEntries: 1, getSessionFile: 1 });
+		expect(channel.pending.has(request.id)).toBeTrue();
 		channel.dispose();
 	});
 
@@ -543,7 +637,7 @@ describe("native supervisor protocol compatibility", () => {
 				fs.unlinkSync(requestFile);
 			},
 		});
-		channel.start();
+		await channel.start();
 		const replyTool = test.tools.get("subagent_supervisor");
 		if (!replyTool) throw new Error("Expected the native supervisor reply tool.");
 
@@ -561,7 +655,7 @@ describe("native supervisor protocol compatibility", () => {
 		channel.dispose();
 	});
 
-	test("delivers a branch-proven v1 progress update without expiresAt exactly once across two hosts", () => {
+	test("delivers a branch-proven v1 progress update without expiresAt exactly once across two hosts", async () => {
 		const now = Date.now();
 		const runId = `legacy-${now}`;
 		const request = baseRequest(`v1-${now}`, runId, now);
@@ -579,8 +673,8 @@ describe("native supervisor protocol compatibility", () => {
 		const first = createNativeSupervisorChannel(test.api, test.state);
 		const second = createNativeSupervisorChannel(test.api, test.state);
 
-		first.start();
-		second.start();
+		await first.start();
+		await second.start();
 
 		expect(test.messages).toHaveLength(1);
 		expect(test.messages[0]).toMatchObject({
@@ -618,7 +712,7 @@ describe("native supervisor protocol compatibility", () => {
 		const replyFile = path.join(channelDir, "replies", `${request.id}.json`);
 
 		try {
-			channel.start();
+			await channel.start();
 			const deadline = Date.now() + 2_000;
 			while (!fs.existsSync(replyFile) && Date.now() < deadline) await Bun.sleep(25);
 
@@ -633,7 +727,51 @@ describe("native supervisor protocol compatibility", () => {
 		}
 	});
 
-	test("indexes one bounded session tail once for a full page of persisted requests", () => {
+	test("does not publish a convergence reply after the owning session pauses", async () => {
+		const now = Date.now();
+		const runId = `stale-convergence-${now}`;
+		const request = {
+			...baseRequest(`stale-convergence-request-${now}`, runId, now),
+			reason: "need_decision",
+			expectsReply: true,
+		};
+		const channelDir = legacyChannel(runId);
+		const requestFile = writeRequest(channelDir, request);
+		const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
+		directories.push(root);
+		const sessionFile = path.join(root, "parent.jsonl");
+		fs.writeFileSync(sessionFile, "");
+		const test = harness({
+			primary: "ps2-stale-convergence",
+			legacyFile: sessionFile,
+			legacyRunIds: new Set([runId]),
+			startedAtMs: now - 1_000,
+		});
+		let resolvePreparation!: (result: { status: "convergence-blocked"; reason: string }) => void;
+		const preparation = new Promise<{ status: "convergence-blocked"; reason: string }>((resolve) => {
+			resolvePreparation = resolve;
+		});
+		const unregister = registerSuiteAgentMessagePreparation(test.api, {
+			prepare: async () => preparation,
+		});
+		const channel = createNativeSupervisorChannel(test.api, test.state);
+		const replyFile = path.join(channelDir, "replies", `${request.id}.json`);
+
+		try {
+			await channel.start();
+			channel.pause();
+			resolvePreparation({ status: "convergence-blocked", reason: "session replaced" });
+			await Bun.sleep(0);
+			expect(fs.existsSync(replyFile)).toBeFalse();
+			expect(fs.existsSync(requestFile)).toBeTrue();
+			expect(channel.pending.has(request.id)).toBeFalse();
+		} finally {
+			channel.dispose();
+			unregister();
+		}
+	});
+
+	test("indexes one bounded session tail once for a full page of persisted requests", async () => {
 		const now = Date.now();
 		const runId = `indexed-page-${now}`;
 		const channelDir = legacyChannel(runId);
@@ -664,7 +802,7 @@ describe("native supervisor protocol compatibility", () => {
 		});
 		const channel = createNativeSupervisorChannel(test.api, test.state);
 
-		channel.start();
+		await channel.start();
 
 		expect(test.messages).toHaveLength(0);
 		expect(test.sessionCalls).toEqual({ getEntries: 1, getSessionFile: 1 });
@@ -699,7 +837,7 @@ describe("native supervisor protocol compatibility", () => {
 		});
 		const channel = createNativeSupervisorChannel(test.api, test.state);
 
-		channel.start();
+		await channel.start();
 		const deadline = Date.now() + 2_000;
 		while (test.messages.length === 0 && Date.now() < deadline) await Bun.sleep(25);
 
@@ -711,7 +849,7 @@ describe("native supervisor protocol compatibility", () => {
 		channel.dispose();
 	});
 
-	test("retains but never delivers a v1 request that the active branch cannot prove", () => {
+	test("retains but never delivers a v1 request that the active branch cannot prove", async () => {
 		const now = Date.now();
 		const runId = `foreign-${now}`;
 		const request = baseRequest(`foreign-request-${now}`, runId, now);
@@ -728,14 +866,14 @@ describe("native supervisor protocol compatibility", () => {
 		});
 		const channel = createNativeSupervisorChannel(test.api, test.state);
 
-		channel.start();
+		await channel.start();
 
 		expect(test.messages).toHaveLength(0);
 		expect(fs.existsSync(file)).toBeTrue();
 		channel.dispose();
 	});
 
-	test("continues to deliver a v2 request addressed to the primary physical session", () => {
+	test("continues to deliver a v2 request addressed to the primary physical session", async () => {
 		const now = Date.now();
 		const primary = "ps2-current";
 		const runId = `v2-run-${now}`;
@@ -757,7 +895,7 @@ describe("native supervisor protocol compatibility", () => {
 		});
 		const channel = createNativeSupervisorChannel(test.api, test.state);
 
-		channel.start();
+		await channel.start();
 
 		expect(test.messages).toHaveLength(1);
 		expect(test.messages[0]).toMatchObject({ details: { id: request.id, runId } });

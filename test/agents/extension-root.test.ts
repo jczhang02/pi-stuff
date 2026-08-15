@@ -131,6 +131,7 @@ interface HarnessOptions {
 	governorLedgerExists?: boolean;
 	governorReject?: boolean;
 	restoreActive?: boolean;
+	restoreGate?: Promise<void>;
 	restoreFailure?: boolean;
 	runtimeStartFailure?: boolean;
 	settleFailure?: boolean;
@@ -263,6 +264,10 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		randomId: () => "control-id",
 		createGovernorCoordinator: () => ({
 			bindSession: (identity) => governor.binds.push(identity),
+			inspectExistingRuntimeLeases: async () =>
+				options.restoreActive || options.restoreFailure || options.restoreGate
+					? ([{ asyncDir: path.join(ASYNC_DIR, "restored") }] as never)
+					: [],
 			prepare: async (input) => {
 				governor.prepares.push({ launchRunId: input.launchRunId, params: input.params });
 				await options.prepareGate;
@@ -356,9 +361,11 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			};
 		},
 		createTracker: (_pi, rootState) => ({
-			ensurePoller: () => {
+			ensureObserver: () => {
 				tracker.pollers += 1;
 			},
+			handleProcessTerminal: () => {},
+			handleStatus: () => {},
 			handleStarted: (data) => {
 				tracker.started += 1;
 				const event = data as { id?: string; sessionId?: string };
@@ -381,8 +388,10 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 				rootState.asyncJobs.clear();
 				rootState.recentAgentJobs?.clear();
 			},
-			restoreActiveJobs: () => {
+			restoreActiveJobs: async (asyncDirectories?: readonly string[]) => {
+				if (asyncDirectories !== undefined && asyncDirectories.length === 0) return;
 				tracker.restored += 1;
+				await options.restoreGate;
 				if (options.restoreFailure) throw Object.assign(new Error("injected restore EIO"), { code: "EIO" });
 				if (!options.restoreActive) return;
 				rootState.asyncJobs.set("restored", {
@@ -649,11 +658,11 @@ describe("Agents extension composition root", () => {
 		expect(Object.hasOwn(tool.parameters as object, "oneOf")).toBeFalse();
 	});
 
-	test("keeps session startup observation-only and activates recovery on the first Agent launch", async () => {
+	test("keeps session and Agent submission free of full artifact discovery", async () => {
 		const root = createHarness();
 		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
 
-		expect(root.tracker.restored).toBe(1);
+		expect(root.tracker.restored).toBe(0);
 		expect(root.directories).toEqual([]);
 		expect(root.watcher.starts).toBe(0);
 		expect(root.watcher.primes).toBe(0);
@@ -693,6 +702,7 @@ describe("Agents extension composition root", () => {
 		expect(root.directories).toEqual([RESULTS_DIR, ASYNC_DIR]);
 		expect(root.watcher.starts).toBe(1);
 		expect(root.watcher.primes).toBe(2);
+		expect(root.tracker.restored).toBe(0);
 		expect(root.supervisor.started).toBe(1);
 		expect(root.governor.reconcileChecks).toBe(1);
 		expect(result?.content).toEqual([
@@ -921,7 +931,15 @@ describe("Agents extension composition root", () => {
 
 	test("defers existing-ledger reconciliation until an explicit Agent interaction", async () => {
 		const root = createHarness({ governorLedgerExists: true });
-		await root.api.fire("session_start", { reason: "startup", type: "session_start" });
+		let entryReads = 0;
+		const ctx = context();
+		const getEntries = ctx.sessionManager.getEntries.bind(ctx.sessionManager);
+		ctx.sessionManager.getEntries = () => {
+			entryReads += 1;
+			return getEntries();
+		};
+		await root.api.fire("session_start", { reason: "startup", type: "session_start" }, ctx);
+		const readsAfterStart = entryReads;
 
 		expect(root.governor.reconcileChecks).toBe(0);
 		expect(root.governor.reconciles).toBe(0);
@@ -929,12 +947,14 @@ describe("Agents extension composition root", () => {
 		expect(root.watcher.starts).toBe(0);
 		expect(root.watcher.primes).toBe(0);
 
-		await root.api.commands.get("agents")?.handler("", context());
+		await root.api.commands.get("agents")?.handler("", ctx);
 
 		expect(root.governor.reconcileChecks).toBe(1);
 		expect(root.governor.reconciles).toBe(1);
+		expect(root.tracker.restored).toBe(1);
 		expect(root.watcher.starts).toBe(1);
 		expect(root.watcher.primes).toBe(1);
+		expect(entryReads).toBe(readsAfterStart);
 	});
 
 	test("restores an existing active run before starting its watcher", async () => {
@@ -956,7 +976,7 @@ describe("Agents extension composition root", () => {
 		expect(root.governor.reconciles).toBe(1);
 	});
 
-	test("propagates roster restoration failure instead of loading a partial Agent capability", async () => {
+	test("propagates targeted active-run recovery failure instead of loading a partial roster", async () => {
 		const root = createHarness({ restoreFailure: true });
 		await expect(root.api.fire("session_start", { reason: "resume", type: "session_start" })).rejects.toThrow(
 			"injected restore EIO",
@@ -965,6 +985,23 @@ describe("Agents extension composition root", () => {
 		expect(root.watcher.starts).toBe(0);
 		expect(root.watcher.primes).toBe(0);
 		expect(root.supervisor.started).toBe(0);
+	});
+
+	test("finishes bounded active-run recovery before exposing the roster", async () => {
+		let releaseRestore = (): void => {};
+		const restoreGate = new Promise<void>((resolve) => {
+			releaseRestore = resolve;
+		});
+		const root = createHarness({ restoreGate });
+
+		const startup = root.api
+			.fire("session_start", { reason: "resume", type: "session_start" })
+			.then(() => "ready" as const);
+		expect(await Promise.race([startup, Bun.sleep(50).then(() => "blocked" as const)])).toBe("blocked");
+		expect(root.tracker.restored).toBe(1);
+
+		releaseRestore();
+		expect(await startup).toBe("ready");
 	});
 
 	test("isolates reused session paths by header identity while preserving ordinary reload continuity", async () => {
@@ -1049,7 +1086,7 @@ describe("Agents extension composition root", () => {
 					ok: true,
 					importedLogicalAgentIds: [],
 					legacyLedgerObserved: false,
-					releaseLegacyBarrier: () => {
+					releaseLegacyBarrier: async () => {
 						if (released) return;
 						released = true;
 						barrierHeld = false;
@@ -1332,14 +1369,19 @@ describe("Agents extension composition root", () => {
 		if (!persisted) throw new Error("Expected persisted completion outcome");
 
 		const resumed = createHarness();
-		await resumed.api.fire(
-			"session_start",
-			{ reason: "resume", type: "session_start" },
-			context([{ type: "custom", customType: persisted.customType, data: persisted.data }]),
-		);
+		let entryReads = 0;
+		const resumedContext = context([{ type: "custom", customType: persisted.customType, data: persisted.data }]);
+		const getEntries = resumedContext.sessionManager.getEntries.bind(resumedContext.sessionManager);
+		resumedContext.sessionManager.getEntries = () => {
+			entryReads += 1;
+			return getEntries();
+		};
+		await resumed.api.fire("session_start", { reason: "resume", type: "session_start" }, resumedContext);
+		const readsAfterStart = entryReads;
 		expect(await resumed.notifier.value?.deliver(completion)).toBe(true);
 		expect(resumed.api.entries).toEqual([]);
 		expect(resumed.api.messages).toEqual([]);
+		expect(entryReads).toBe(readsAfterStart);
 	});
 
 	test("projects parallel failure and stopped outcomes without child details", async () => {

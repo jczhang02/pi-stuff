@@ -9,10 +9,10 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/extension/tool-description.js";
 
 describe("Pi Stuff Agent bundle boundary", () => {
-	test("ships no built-in Agent definitions", () => {
+	test("ships no built-in Agent definitions", async () => {
 		const cwd = mkdtempSync(join(tmpdir(), "pi-stuff-agent-discovery-"));
 		try {
-			expect(discoverAgents(cwd, "project").agents).toEqual([]);
+			expect((await discoverAgents(cwd, "project")).agents).toEqual([]);
 		} finally {
 			rmSync(cwd, { force: true, recursive: true });
 		}

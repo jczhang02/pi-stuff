@@ -19,15 +19,21 @@ import {
 } from "../runs/shared/pi-args.ts";
 import { writeAtomicJson } from "../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
-import { type DurableClaim, tryAcquireDurableClaim } from "../shared/durable-claim.ts";
+import {
+	type DurableClaim,
+	tryAcquireDurableClaim,
+	tryAcquireKernelClaim,
+	tryAcquireKernelClaimAsync,
+} from "../shared/durable-claim.ts";
 import {
 	ensurePrivateDirectory,
 	type OwnedFileSnapshot,
 	readBoundedOwnedFile,
 	readBoundedOwnedFileSnapshot,
+	readBoundedOwnedFileSnapshotAsync,
 	removeOwnedFileSnapshot,
 } from "../shared/private-directory.ts";
-import { readProcessStartIdentity } from "../shared/process-identity.ts";
+import { readProcessStartIdentity, readProcessStartIdentityAsync } from "../shared/process-identity.ts";
 import { sessionArtifactMatches } from "../shared/session-identity.ts";
 import {
 	INTERCOM_DETACH_REQUEST_EVENT,
@@ -187,43 +193,6 @@ function writeSupervisorChannelMetadata(
 		...(ownerProcessStartIdentity ? { ownerProcessStartIdentity } : {}),
 		updatedAt: Date.now(),
 	} satisfies SupervisorChannelMetadata);
-}
-
-function readSupervisorChannelMetadata(channelDir: string): SupervisorChannelMetadata | undefined {
-	try {
-		const value = JSON.parse(
-			readBoundedOwnedFile(path.join(channelDir, CHANNEL_METADATA_FILE), MAX_CHANNEL_METADATA_BYTES),
-		) as Partial<SupervisorChannelMetadata>;
-		if (
-			value.version !== 1 ||
-			typeof value.physicalSessionId !== "string" ||
-			!value.physicalSessionId ||
-			typeof value.runId !== "string" ||
-			!value.runId ||
-			typeof value.agent !== "string" ||
-			!value.agent ||
-			typeof value.childIndex !== "number" ||
-			!Number.isSafeInteger(value.childIndex) ||
-			value.childIndex < 0 ||
-			!Number.isSafeInteger(value.ownerPid) ||
-			(value.ownerPid ?? -1) <= 0 ||
-			typeof value.updatedAt !== "number" ||
-			!Number.isFinite(value.updatedAt)
-		) {
-			return undefined;
-		}
-		if (
-			value.ownerProcessStartIdentity !== undefined &&
-			(typeof value.ownerProcessStartIdentity !== "string" || !value.ownerProcessStartIdentity)
-		) {
-			return undefined;
-		}
-		const expected = resolveSupervisorChannelDir(value.runId, value.agent, value.childIndex, value.physicalSessionId);
-		if (path.resolve(expected) !== path.resolve(channelDir)) return undefined;
-		return value as SupervisorChannelMetadata;
-	} catch {
-		return undefined;
-	}
 }
 
 function requestPath(channelDir: string, requestId: string): string {
@@ -724,10 +693,9 @@ function parseRequestFile(file: string, channelDir: string): SupervisorRequestFi
 	}
 }
 
-function requestFilesInChannel(channelDir: string, limit: number): string[] {
+async function requestFilesInChannelAsync(channelDir: string, limit: number): Promise<string[]> {
 	try {
-		return fs
-			.readdirSync(path.join(channelDir, REQUESTS_DIR), { withFileTypes: true })
+		return (await fs.promises.readdir(path.join(channelDir, REQUESTS_DIR), { withFileTypes: true }))
 			.filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
 			.sort((left, right) => left.name.localeCompare(right.name))
 			.slice(0, limit)
@@ -737,9 +705,9 @@ function requestFilesInChannel(channelDir: string, limit: number): string[] {
 	}
 }
 
-function channelOwnerAlive(metadata: SupervisorChannelMetadata): boolean | undefined {
+async function channelOwnerAlive(metadata: SupervisorChannelMetadata): Promise<boolean | undefined> {
 	if (metadata.ownerProcessStartIdentity) {
-		const current = readProcessStartIdentity(metadata.ownerPid);
+		const current = await readProcessStartIdentityAsync(metadata.ownerPid);
 		if (current) return current === metadata.ownerProcessStartIdentity;
 	}
 	try {
@@ -768,30 +736,35 @@ function channelRunInactive(metadata: SupervisorChannelMetadata, state: Subagent
 	);
 }
 
-function metadataLessChannelSafeToCollect(channelDir: string, now: number): boolean {
+async function metadataLessChannelSafeToCollect(channelDir: string, now: number): Promise<boolean> {
 	const resolved = path.resolve(channelDir);
 	if (path.dirname(resolved) !== path.resolve(SUPERVISOR_CHANNEL_ROOT)) return false;
 	try {
-		const stat = fs.lstatSync(resolved);
+		const stat = await fs.promises.lstat(resolved);
 		const currentUid = process.getuid?.();
 		if (
 			!stat.isDirectory() ||
 			stat.isSymbolicLink() ||
 			(currentUid !== undefined && stat.uid !== currentUid) ||
-			now - stat.mtimeMs < METADATALESS_CHANNEL_GRACE_MS ||
-			fs.existsSync(path.join(resolved, CHANNEL_METADATA_FILE))
+			now - stat.mtimeMs < METADATALESS_CHANNEL_GRACE_MS
 		) {
 			return false;
 		}
-		for (const entry of fs.readdirSync(resolved, { withFileTypes: true })) {
+		try {
+			await fs.promises.lstat(path.join(resolved, CHANNEL_METADATA_FILE));
+			return false;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+		}
+		for (const entry of await fs.promises.readdir(resolved, { withFileTypes: true })) {
 			if (entry.name !== REQUESTS_DIR && entry.name !== REPLIES_DIR) return false;
 			const child = path.join(resolved, entry.name);
-			const childStat = fs.lstatSync(child);
+			const childStat = await fs.promises.lstat(child);
 			if (
 				!entry.isDirectory() ||
 				entry.isSymbolicLink() ||
 				(currentUid !== undefined && childStat.uid !== currentUid) ||
-				fs.readdirSync(child).length > 0
+				(await fs.promises.readdir(child)).length > 0
 			) {
 				return false;
 			}
@@ -802,32 +775,73 @@ function metadataLessChannelSafeToCollect(channelDir: string, now: number): bool
 	}
 }
 
-export function garbageCollectSupervisorChannel(channelDir: string, state: SubagentState, now = Date.now()): boolean {
-	const metadata = readSupervisorChannelMetadata(channelDir);
-	if (metadata) {
-		if (requestFilesInChannel(channelDir, 1).length > 0) return false;
-		if (channelOwnerAlive(metadata) !== false && !channelRunInactive(metadata, state)) return false;
+async function readSupervisorChannelMetadataAsync(channelDir: string): Promise<SupervisorChannelMetadata | undefined> {
+	try {
+		const value = JSON.parse(
+			(
+				await readBoundedOwnedFileSnapshotAsync(
+					path.join(channelDir, CHANNEL_METADATA_FILE),
+					MAX_CHANNEL_METADATA_BYTES,
+				)
+			).text,
+		) as Partial<SupervisorChannelMetadata>;
+		if (
+			value.version !== 1 ||
+			typeof value.physicalSessionId !== "string" ||
+			!value.physicalSessionId ||
+			typeof value.runId !== "string" ||
+			!value.runId ||
+			typeof value.agent !== "string" ||
+			!value.agent ||
+			typeof value.childIndex !== "number" ||
+			!Number.isSafeInteger(value.childIndex) ||
+			value.childIndex < 0 ||
+			!Number.isSafeInteger(value.ownerPid) ||
+			(value.ownerPid ?? -1) <= 0 ||
+			typeof value.updatedAt !== "number" ||
+			!Number.isFinite(value.updatedAt) ||
+			(value.ownerProcessStartIdentity !== undefined &&
+				(typeof value.ownerProcessStartIdentity !== "string" || !value.ownerProcessStartIdentity))
+		) {
+			return undefined;
+		}
+		const expected = resolveSupervisorChannelDir(value.runId, value.agent, value.childIndex, value.physicalSessionId);
+		return path.resolve(expected) === path.resolve(channelDir) ? (value as SupervisorChannelMetadata) : undefined;
+	} catch {
+		return undefined;
 	}
-	const claim = tryAcquireDurableClaim(SUPERVISOR_CHANNEL_ROOT, CHANNEL_LIFECYCLE_CLAIM);
+}
+
+export async function garbageCollectSupervisorChannel(
+	channelDir: string,
+	state: SubagentState,
+	now = Date.now(),
+): Promise<boolean> {
+	const metadata = await readSupervisorChannelMetadataAsync(channelDir);
+	if (metadata) {
+		if ((await requestFilesInChannelAsync(channelDir, 1)).length > 0) return false;
+		if ((await channelOwnerAlive(metadata)) !== false && !channelRunInactive(metadata, state)) return false;
+	}
+	const claim = await tryAcquireKernelClaimAsync(SUPERVISOR_CHANNEL_ROOT, CHANNEL_LIFECYCLE_CLAIM);
 	if (!claim) return false;
 	try {
-		const current = readSupervisorChannelMetadata(channelDir);
+		const current = await readSupervisorChannelMetadataAsync(channelDir);
 		if (!current) {
-			if (!metadataLessChannelSafeToCollect(channelDir, now)) return false;
+			if (!(await metadataLessChannelSafeToCollect(channelDir, now))) return false;
 		} else {
-			if (requestFilesInChannel(channelDir, 1).length > 0) return false;
-			if (channelOwnerAlive(current) !== false && !channelRunInactive(current, state)) return false;
+			if ((await requestFilesInChannelAsync(channelDir, 1)).length > 0) return false;
+			if ((await channelOwnerAlive(current)) !== false && !channelRunInactive(current, state)) return false;
 		}
 		const resolved = path.resolve(channelDir);
 		if (path.dirname(resolved) !== path.resolve(SUPERVISOR_CHANNEL_ROOT)) return false;
-		const stat = fs.lstatSync(resolved);
+		const stat = await fs.promises.lstat(resolved);
 		if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
-		fs.rmSync(resolved, { recursive: true });
+		await fs.promises.rm(resolved, { recursive: true });
 		return true;
 	} catch {
 		return false;
 	} finally {
-		claim.release();
+		await claim.release();
 	}
 }
 
@@ -872,12 +886,12 @@ function addPersistedSupervisorRequestId(entry: unknown, requestIds: Set<string>
 }
 
 /** Build one delivery index for the whole poll instead of rescanning the session per request. */
-function persistedSupervisorRequestIds(ctx: ExtensionContext): ReadonlySet<string> {
+async function persistedSupervisorRequestIds(ctx: ExtensionContext): Promise<ReadonlySet<string>> {
 	const requestIds = new Set<string>();
 	try {
 		for (const entry of ctx.sessionManager.getEntries()) addPersistedSupervisorRequestId(entry, requestIds);
 	} catch {
-		// The canonical JSONL tail below remains an independent crash-safe source.
+		// The canonical JSONL tail below remains available after SessionManager failures.
 	}
 
 	let sessionFile: string | null | undefined;
@@ -887,17 +901,17 @@ function persistedSupervisorRequestIds(ctx: ExtensionContext): ReadonlySet<strin
 		return requestIds;
 	}
 	if (!sessionFile || !path.isAbsolute(sessionFile)) return requestIds;
-	let descriptor: number | undefined;
+	let handle: fs.promises.FileHandle | undefined;
 	try {
 		const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
-		descriptor = fs.openSync(sessionFile, fs.constants.O_RDONLY | noFollow);
-		const stat = fs.fstatSync(descriptor);
+		handle = await fs.promises.open(sessionFile, fs.constants.O_RDONLY | noFollow);
+		const stat = await handle.stat();
 		const currentUid = process.getuid?.();
 		if (!stat.isFile() || (currentUid !== undefined && stat.uid !== currentUid)) return requestIds;
 		const length = Math.min(stat.size, MAX_SESSION_DELIVERY_SCAN_BYTES);
 		if (length <= 0) return requestIds;
 		const buffer = Buffer.allocUnsafe(length);
-		const bytesRead = fs.readSync(descriptor, buffer, 0, length, Math.max(0, stat.size - length));
+		const { bytesRead } = await handle.read(buffer, 0, length, Math.max(0, stat.size - length));
 		let text = buffer.subarray(0, bytesRead).toString("utf-8");
 		if (stat.size > length) text = text.slice(Math.max(0, text.indexOf("\n") + 1));
 		for (const line of text.split("\n")) {
@@ -912,7 +926,7 @@ function persistedSupervisorRequestIds(ctx: ExtensionContext): ReadonlySet<strin
 	} catch {
 		return requestIds;
 	} finally {
-		if (descriptor !== undefined) fs.closeSync(descriptor);
+		await handle?.close();
 	}
 }
 
@@ -1198,15 +1212,24 @@ export function createNativeSupervisorChannel(
 		acquireDeliveryClaim?: typeof tryAcquireDurableClaim;
 		afterReplyPublish?: (replyPath: string) => void;
 	} = {},
-): { start: () => void; pause: () => void; dispose: () => void; pending: Map<string, PendingSupervisorRequest> } {
+): {
+	start: () => Promise<void>;
+	pause: () => void;
+	dispose: () => void;
+	pending: Map<string, PendingSupervisorRequest>;
+} {
 	const pending = new Map<string, PendingSupervisorRequest>();
 	let poller: ReturnType<typeof setInterval> | undefined;
-	let channelScanner: fs.Dir | undefined;
+	let pollInFlight = false;
+	let channelScanEntries: fs.Dirent[] = [];
+	let channelScanOffset = 0;
 	let lifecycleGeneration = 0;
+	let persistedIndexGeneration = -1;
+	const persistedRequestIds = new Set<string>();
 	const deliveryClaims = new Map<string, DurableClaim>();
 	const deliveryClaimFiles = new Map<string, string>();
 	const deliveryDispatches = new Map<string, object>();
-	const acquireDeliveryClaim = options.acquireDeliveryClaim ?? tryAcquireDurableClaim;
+	const acquireDeliveryClaim = options.acquireDeliveryClaim ?? tryAcquireKernelClaim;
 	const releaseDeliveryClaim = (requestId: string): void => {
 		try {
 			deliveryClaims.get(requestId)?.release();
@@ -1217,8 +1240,10 @@ export function createNativeSupervisorChannel(
 			deliveryClaimFiles.delete(requestId);
 		}
 	};
-	const releaseAllDeliveryClaims = (): void => {
-		for (const requestId of [...deliveryClaims.keys()]) releaseDeliveryClaim(requestId);
+	const releaseIdleDeliveryClaims = (): void => {
+		for (const requestId of [...deliveryClaims.keys()]) {
+			if (!deliveryDispatches.has(requestId)) releaseDeliveryClaim(requestId);
+		}
 	};
 
 	const registerPrimaryParentTool = (): void => {
@@ -1241,41 +1266,49 @@ export function createNativeSupervisorChannel(
 		if (poller) registerParentIntercomFallback();
 	});
 
-	const closeChannelScanner = (): void => {
-		try {
-			channelScanner?.closeSync();
-		} catch {}
-		channelScanner = undefined;
+	const resetChannelScan = (): void => {
+		channelScanEntries = [];
+		channelScanOffset = 0;
 	};
-	const scanRequestFiles = (): Array<{ channelDir: string; file: string }> => {
+	const scanRequestFiles = async (): Promise<Array<{ channelDir: string; file: string }>> => {
 		const files: Array<{ channelDir: string; file: string }> = [];
 		let scannedChannels = 0;
 		try {
-			channelScanner ??= fs.opendirSync(SUPERVISOR_CHANNEL_ROOT);
+			if (channelScanOffset >= channelScanEntries.length) {
+				channelScanEntries = (await fs.promises.readdir(SUPERVISOR_CHANNEL_ROOT, { withFileTypes: true }))
+					.filter((entry) => entry.isDirectory())
+					.sort((left, right) => left.name.localeCompare(right.name));
+				channelScanOffset = 0;
+			}
 			while (scannedChannels < MAX_CHANNEL_DIRS_PER_POLL && files.length < MAX_REQUEST_FILES_PER_POLL) {
-				const entry = channelScanner.readSync();
-				if (!entry) {
-					closeChannelScanner();
-					break;
-				}
+				const entry = channelScanEntries[channelScanOffset++];
+				if (!entry) break;
 				scannedChannels += 1;
-				if (!entry.isDirectory()) continue;
 				const channelDir = path.join(SUPERVISOR_CHANNEL_ROOT, entry.name);
-				const requestFiles = requestFilesInChannel(channelDir, MAX_REQUEST_FILES_PER_POLL - files.length);
-				if (requestFiles.length === 0) garbageCollectSupervisorChannel(channelDir, state);
+				const requestFiles = await requestFilesInChannelAsync(
+					channelDir,
+					MAX_REQUEST_FILES_PER_POLL - files.length,
+				);
+				if (requestFiles.length === 0) await garbageCollectSupervisorChannel(channelDir, state);
 				else files.push(...requestFiles.map((file) => ({ channelDir, file })));
 			}
+			if (channelScanOffset >= channelScanEntries.length) resetChannelScan();
 		} catch (error) {
-			closeChannelScanner();
+			resetChannelScan();
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 		}
 		return files;
 	};
 
-	const poll = (): void => {
+	const poll = async (): Promise<void> => {
+		if (pollInFlight) return;
+		pollInFlight = true;
 		try {
 			const ctx = state.lastUiContext;
 			if (!ctx) return;
+			const pollGeneration = lifecycleGeneration;
+			const isPollCurrent = (): boolean =>
+				poller !== undefined && lifecycleGeneration === pollGeneration && state.lastUiContext === ctx;
 			refreshPendingRequests(pending, state, ctx);
 			for (const requestId of deliveryClaims.keys()) {
 				const requestFile = deliveryClaimFiles.get(requestId);
@@ -1283,9 +1316,13 @@ export function createNativeSupervisorChannel(
 				releaseDeliveryClaim(requestId);
 			}
 			const now = Date.now();
-			const requestFiles = scanRequestFiles();
-			let persistedRequestIds: ReadonlySet<string> | undefined;
+			const requestFiles = await scanRequestFiles();
+			if (!isPollCurrent()) {
+				resetChannelScan();
+				return;
+			}
 			for (const { channelDir, file } of requestFiles) {
+				if (!isPollCurrent()) return;
 				try {
 					let parsedRequest = parseRequestFile(file, channelDir);
 					if (!parsedRequest) continue;
@@ -1330,10 +1367,14 @@ export function createNativeSupervisorChannel(
 					) {
 						continue;
 					}
-					if (deliveryState?.acceptedAt === undefined) {
-						persistedRequestIds ??= persistedSupervisorRequestIds(ctx);
+					if (deliveryState?.acceptedAt === undefined && persistedIndexGeneration !== pollGeneration) {
+						const restored = await persistedSupervisorRequestIds(ctx);
+						if (!isPollCurrent()) return;
+						persistedRequestIds.clear();
+						for (const requestId of restored) persistedRequestIds.add(requestId);
+						persistedIndexGeneration = pollGeneration;
 					}
-					if (persistedRequestIds?.has(request.id) && deliveryState?.acceptedAt === undefined) {
+					if (persistedRequestIds.has(request.id) && deliveryState?.acceptedAt === undefined) {
 						deliveryState = {
 							version: 2,
 							requestId: request.id,
@@ -1368,7 +1409,20 @@ export function createNativeSupervisorChannel(
 					const deliveredRequest = request;
 					const dispatchToken = {};
 					deliveryDispatches.set(request.id, dispatchToken);
+					const dispatchIsCurrent = (): boolean =>
+						lifecycleGeneration === dispatchGeneration &&
+						state.lastUiContext === ctx &&
+						deliveryDispatches.get(deliveredRequest.id) === dispatchToken &&
+						deliveryClaims.has(deliveredRequest.id);
 					const acceptDelivery = (): void => {
+						if (!dispatchIsCurrent()) return;
+						persistedRequestIds.add(deliveredRequest.id);
+						writeRequestDeliveryState(deliveredRequest.requestFile, {
+							version: 2,
+							requestId: deliveredRequest.id,
+							lastAttemptAt: now,
+							acceptedAt: Date.now(),
+						});
 						if (!deliveredRequest.expectsReply) return;
 						pending.set(deliveredRequest.id, deliveredRequest);
 						markForegroundSupervisorAttention(deliveredRequest, state);
@@ -1405,11 +1459,11 @@ export function createNativeSupervisorChannel(
 							"automatic",
 						),
 						{ triggerTurn: true },
-						() => lifecycleGeneration === dispatchGeneration && state.lastUiContext === ctx,
+						dispatchIsCurrent,
 						acceptDelivery,
 					)
 						.then((delivery) => {
-							if (delivery !== "convergence-blocked") return;
+							if (!dispatchIsCurrent() || delivery !== "convergence-blocked") return;
 							if (deliveredRequest.expectsReply) {
 								writeReply(
 									deliveredRequest,
@@ -1428,6 +1482,7 @@ export function createNativeSupervisorChannel(
 						.finally(() => {
 							if (deliveryDispatches.get(deliveredRequest.id) === dispatchToken) {
 								deliveryDispatches.delete(deliveredRequest.id);
+								if (lifecycleGeneration !== dispatchGeneration) releaseDeliveryClaim(deliveredRequest.id);
 							}
 						});
 				} catch (error) {
@@ -1436,38 +1491,42 @@ export function createNativeSupervisorChannel(
 			}
 		} catch (error) {
 			reportAgentDiagnostic("Native supervisor channel poll failed; the next interval will retry:", error);
+		} finally {
+			pollInFlight = false;
 		}
 	};
 
 	return {
-		start: () => {
+		start: async () => {
 			if (poller) return;
 			lifecycleGeneration += 1;
 			registerPrimaryParentTool();
-			poll();
-			poller = setInterval(poll, CHANNEL_POLL_MS);
+			poller = setInterval(() => void poll(), CHANNEL_POLL_MS);
 			poller.unref?.();
+			await poll();
 		},
 		pause: () => {
 			lifecycleGeneration += 1;
+			persistedIndexGeneration = -1;
+			persistedRequestIds.clear();
 			if (poller) clearInterval(poller);
 			poller = undefined;
-			deliveryDispatches.clear();
-			closeChannelScanner();
+			resetChannelScan();
 			pending.clear();
 			// A paused channel no longer represents the active physical session.
 			// Retaining reply-owner claims here would strand the child request until
 			// this Host exits, preventing another live Host from taking ownership.
-			releaseAllDeliveryClaims();
+			releaseIdleDeliveryClaims();
 		},
 		dispose: () => {
 			lifecycleGeneration += 1;
+			persistedIndexGeneration = -1;
+			persistedRequestIds.clear();
 			if (poller) clearInterval(poller);
 			poller = undefined;
-			deliveryDispatches.clear();
-			closeChannelScanner();
+			resetChannelScan();
 			pending.clear();
-			releaseAllDeliveryClaims();
+			releaseIdleDeliveryClaims();
 		},
 		pending,
 	};

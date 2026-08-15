@@ -1,9 +1,7 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { boundTerminalLine, boundTerminalText } from "../../../tool-display/index.js";
-import { readNestedRegistry, resolveNestedAsyncDir, sanitizeSummary } from "../runs/shared/nested-events.ts";
-import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
+import { resolveNestedAsyncDir, sanitizeSummary } from "../runs/shared/nested-events.ts";
 import { boundedTerminalLine, isTaskOnlyAgentText, resolveDisplayDescription } from "../shared/display-description.ts";
-import { readOwnedFileTail } from "../shared/private-directory.ts";
 import type { SubagentState } from "../shared/types.ts";
 
 export type AgentStatus =
@@ -159,18 +157,6 @@ const MAX_PARTIAL_RESULT_CHARS = 4_000;
 const MAX_TERMINAL_ERROR_CHARS = 1_000;
 const MAX_TASK_CHARS = 500;
 const MAX_DYNAMIC_SOURCE_CODE_UNITS = 4_096;
-const MAX_LEGACY_TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
-const MAX_LEGACY_TRANSCRIPT_CACHE_ENTRIES = 128;
-const legacyTranscriptCache = new Map<
-	string,
-	{
-		readonly dev: number;
-		readonly ino: number;
-		readonly mtimeMs: number;
-		readonly size: number;
-		readonly complete: boolean;
-	}
->();
 
 function asRecord(value: unknown): Record<string, unknown> {
 	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
@@ -258,79 +244,8 @@ function processHasExternalSignal(record: Record<string, unknown>): boolean {
 	);
 }
 
-function processHasAmbiguousLegacyFinalDrain(record: Record<string, unknown>): boolean {
-	const terminal = asRecord(record["processTerminal"]);
-	if (terminal["state"] !== "observed") return false;
-	const instances = Array.isArray(terminal["instances"])
-		? terminal["instances"]
-				.map(asRecord)
-				.filter((instance) => instance["kind"] === "pi-writer" && Number.isInteger(instance["attempt"]))
-		: [];
-	const finalAttempt = instances.reduce(
-		(latest, instance) => Math.max(latest, instance["attempt"] as number),
-		Number.NEGATIVE_INFINITY,
-	);
-	return (
-		instances.length > 0 &&
-		instances.some(
-			(instance) =>
-				instance["attempt"] === finalAttempt &&
-				instance["terminationOrigin"] === undefined &&
-				(instance["signal"] === "SIGTERM" || (instance["signal"] === null && instance["exitCode"] === 143)),
-		)
-	);
-}
-
-function transcriptEndsWithCompleteAssistantReport(filePath: string): boolean {
-	try {
-		const tail = readOwnedFileTail(filePath, MAX_LEGACY_TRANSCRIPT_TAIL_BYTES);
-		if (tail.size <= 0) return false;
-		const cached = legacyTranscriptCache.get(filePath);
-		if (
-			cached?.size === tail.size &&
-			cached.mtimeMs === tail.mtimeMs &&
-			cached.dev === tail.dev &&
-			cached.ino === tail.ino
-		)
-			return cached.complete;
-
-		const lastLine = tail.text.trimEnd().split("\n").at(-1);
-		let complete = false;
-		if (lastLine) {
-			const record = asRecord(JSON.parse(lastLine));
-			const message = asRecord(record["message"]);
-			complete =
-				record["recordType"] === "message" &&
-				record["sourceEventType"] === "message_end" &&
-				record["role"] === "assistant" &&
-				record["stopReason"] === "stop" &&
-				record["isError"] !== true &&
-				!optionalString(record["error"]) &&
-				!optionalString(record["errorMessage"]) &&
-				!optionalString(message["errorMessage"]) &&
-				Boolean(optionalString(record["text"]));
-		}
-		legacyTranscriptCache.set(filePath, {
-			dev: tail.dev,
-			ino: tail.ino,
-			size: tail.size,
-			mtimeMs: tail.mtimeMs,
-			complete,
-		});
-		if (legacyTranscriptCache.size > MAX_LEGACY_TRANSCRIPT_CACHE_ENTRIES) {
-			const oldest = legacyTranscriptCache.keys().next().value;
-			if (oldest !== undefined) legacyTranscriptCache.delete(oldest);
-		}
-		return complete;
-	} catch {
-		return false;
-	}
-}
-
 function legacyFinalDrainHasCompleteReport(record: Record<string, unknown>): boolean {
-	if (optionalString(record["error"]) || !processHasAmbiguousLegacyFinalDrain(record)) return false;
-	const transcriptPath = firstString(record["transcriptPath"], asRecord(record["artifactPaths"])["transcriptPath"]);
-	return transcriptPath ? transcriptEndsWithCompleteAssistantReport(transcriptPath) : false;
+	return record["legacyFinalReportComplete"] === true;
 }
 
 function processTerminalIsStaleRepair(record: Record<string, unknown>): boolean {
@@ -795,7 +710,6 @@ export class CurrentAgents {
 	}
 
 	snapshot(): AgentSessionSnapshot {
-		if (!this.disposed) this.rebuild(false);
 		return this.snapshotValue;
 	}
 
@@ -961,35 +875,12 @@ export class CurrentAgents {
 			for (const row of projectAsyncJob(job, sessionId, false)) if (!rows.has(row.key)) rows.set(row.key, row);
 		}
 		for (const run of this.state.foregroundRuns?.values() ?? []) {
-			this.refreshForegroundNestedProjection(run);
 			for (const row of projectForegroundRun(run, sessionId)) if (!rows.has(row.key)) rows.set(row.key, row);
 		}
 		for (const job of this.state.recentAgentJobs?.values() ?? []) {
 			for (const row of projectAsyncJob(job, sessionId, true)) if (!rows.has(row.key)) rows.set(row.key, row);
 		}
 		return [...rows.values()];
-	}
-
-	private refreshForegroundNestedProjection(run: ForegroundRun): void {
-		const route = run.nestedRoute;
-		if (!route) return;
-		try {
-			// UI projection is observation-only. The active runtime poller owns event
-			// projection and cleanup; merely opening or refreshing `/agents` must never
-			// claim, write, or unlink nested runtime records.
-			const registry = readNestedRegistry(route);
-			const directChildren = registry.children.filter((child) => child.parentRunId === run.runId);
-			for (const child of run.children) {
-				const projected = nestedForChild(directChildren, child.index, run.children.length)
-					.map((nested) => sanitizeSummary(nested))
-					.filter((nested): nested is NonNullable<typeof nested> => Boolean(nested));
-				child.children = projected;
-			}
-			run.updatedAt = Math.max(run.updatedAt, registry.updatedAt);
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-			reportAgentDiagnostic(`Failed to refresh foreground nested route for '${run.runId}':`, error);
-		}
 	}
 
 	private callListener(listener: (snapshot: AgentSessionSnapshot) => void, snapshot: AgentSessionSnapshot): void {

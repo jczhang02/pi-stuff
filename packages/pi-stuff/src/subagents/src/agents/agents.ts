@@ -66,58 +66,62 @@ export function defaultInheritSkills(): boolean {
 	return true;
 }
 
-export function findNearestProjectRoot(cwd: string): string | null {
+export async function findNearestProjectRoot(cwd: string): Promise<string | null> {
 	let current = path.resolve(cwd);
 	let gitRoot: string | null = null;
 	while (true) {
-		if (isDirectory(path.join(getProjectConfigDir(current), "agents"))) return current;
-		if (!gitRoot && fs.existsSync(path.join(current, ".git"))) gitRoot = current;
+		if (await isDirectory(path.join(getProjectConfigDir(current), "agents"))) return current;
+		if (!gitRoot && (await pathExists(path.join(current, ".git")))) gitRoot = current;
 		const parent = path.dirname(current);
 		if (parent === current) return gitRoot;
 		current = parent;
 	}
 }
 
-export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryResult {
-	const projectRoot = findNearestProjectRoot(cwd);
+export async function discoverAgents(cwd: string, scope: AgentScope): Promise<AgentDiscoveryResult> {
+	const projectRoot = await findNearestProjectRoot(cwd);
 	const projectAgentsDir = projectRoot ? path.join(getProjectConfigDir(projectRoot), "agents") : null;
 	const includeUser = scope !== "project";
 	const includeProject = scope !== "user";
 
-	const packagePaths = collectPackageAgentPaths(cwd, projectRoot, { includeProject, includeUser });
-	const packageAgents = loadUniqueAgents(packagePaths, "package", false);
+	const packagePaths = await collectPackageAgentPaths(cwd, projectRoot, { includeProject, includeUser });
+	const packageAgents = await loadUniqueAgents(packagePaths, "package", false);
 	const userPaths = includeUser ? [...extraUserAgentDirs(), path.join(getAgentDir(), "agents")] : [];
-	const userAgents = loadUniqueAgents(userPaths, "user", true);
+	const userAgents = await loadUniqueAgents(userPaths, "user", true);
 	const projectAgents =
-		includeProject && projectAgentsDir ? loadUniqueAgents([projectAgentsDir], "project", true) : [];
+		includeProject && projectAgentsDir ? await loadUniqueAgents([projectAgentsDir], "project", true) : [];
 
 	const agents = mergeAgentsForScope(scope, userAgents, projectAgents, packageAgents);
 	return { agents, projectAgentsDir };
 }
 
-function loadUniqueAgents(directories: readonly string[], source: AgentSource, laterWins: boolean): AgentConfig[] {
+async function loadUniqueAgents(
+	directories: readonly string[],
+	source: AgentSource,
+	laterWins: boolean,
+): Promise<AgentConfig[]> {
 	const byName = new Map<string, AgentConfig>();
 	for (const directory of uniquePaths(directories)) {
-		for (const agent of loadAgentsFromDir(directory, source)) {
+		for (const agent of await loadAgentsFromDir(directory, source)) {
 			if (laterWins || !byName.has(agent.name)) byName.set(agent.name, agent);
 		}
 	}
 	return [...byName.values()];
 }
 
-function loadAgentsFromDir(directory: string, source: AgentSource): AgentConfig[] {
+async function loadAgentsFromDir(directory: string, source: AgentSource): Promise<AgentConfig[]> {
 	const agents: AgentConfig[] = [];
-	for (const filePath of listAgentFiles(directory)) {
-		const agent = loadAgent(filePath, source);
+	for (const filePath of await listAgentFiles(directory)) {
+		const agent = await loadAgent(filePath, source);
 		if (agent) agents.push(agent);
 	}
 	return agents;
 }
 
-function loadAgent(filePath: string, source: AgentSource): AgentConfig | undefined {
+async function loadAgent(filePath: string, source: AgentSource): Promise<AgentConfig | undefined> {
 	let content: string;
 	try {
-		content = fs.readFileSync(filePath, "utf8");
+		content = await fs.promises.readFile(filePath, "utf8");
 	} catch {
 		return undefined;
 	}
@@ -213,14 +217,13 @@ function parseToolBudget(value: string | undefined, name: string): ToolBudgetCon
 	return result.budget;
 }
 
-function listAgentFiles(directory: string): string[] {
-	if (!isDirectory(directory)) return [];
+async function listAgentFiles(directory: string): Promise<string[]> {
 	const files: string[] = [];
 	let entries: fs.Dirent[];
 	try {
-		entries = fs
-			.readdirSync(directory, { withFileTypes: true })
-			.sort((left, right) => left.name.localeCompare(right.name));
+		entries = (await fs.promises.readdir(directory, { withFileTypes: true })).sort((left, right) =>
+			left.name.localeCompare(right.name),
+		);
 	} catch {
 		return files;
 	}
@@ -228,7 +231,7 @@ function listAgentFiles(directory: string): string[] {
 		if (PRUNED_DIRECTORY_NAMES.has(entry.name)) continue;
 		const candidate = path.join(directory, entry.name);
 		if (entry.isDirectory()) {
-			files.push(...listAgentFiles(candidate));
+			files.push(...(await listAgentFiles(candidate)));
 			continue;
 		}
 		if (
@@ -247,26 +250,32 @@ interface PackageSearchScope {
 	readonly includeUser: boolean;
 }
 
-function collectPackageAgentPaths(cwd: string, projectRoot: string | null, scope: PackageSearchScope): string[] {
+async function collectPackageAgentPaths(
+	cwd: string,
+	projectRoot: string | null,
+	scope: PackageSearchScope,
+): Promise<string[]> {
 	const roots: string[] = [];
 	if (scope.includeProject && projectRoot) {
 		const configDir = getProjectConfigDir(projectRoot);
 		roots.push(projectRoot);
-		roots.push(...packageRootsInNodeModules(path.join(configDir, "npm", "node_modules")));
-		roots.push(...packageRootsFromSettings(path.join(configDir, "settings.json"), configDir));
+		roots.push(...(await packageRootsInNodeModules(path.join(configDir, "npm", "node_modules"))));
+		roots.push(...(await packageRootsFromSettings(path.join(configDir, "settings.json"), configDir)));
 	}
 	if (scope.includeUser) {
 		const agentDir = getAgentDir();
-		roots.push(...packageRootsInNodeModules(path.join(agentDir, "npm", "node_modules")));
-		roots.push(...packageRootsFromSettings(path.join(agentDir, "settings.json"), agentDir));
+		roots.push(...(await packageRootsInNodeModules(path.join(agentDir, "npm", "node_modules"))));
+		roots.push(...(await packageRootsFromSettings(path.join(agentDir, "settings.json"), agentDir)));
 	}
 	if (!projectRoot && scope.includeProject) roots.push(path.resolve(cwd));
 
-	return uniquePaths(roots).flatMap(packageAgentPaths);
+	const paths: string[] = [];
+	for (const root of uniquePaths(roots)) paths.push(...(await packageAgentPaths(root)));
+	return paths;
 }
 
-function packageAgentPaths(packageRoot: string): string[] {
-	const manifest = readJson(path.join(packageRoot, "package.json"));
+async function packageAgentPaths(packageRoot: string): Promise<string[]> {
+	const manifest = await readJson(path.join(packageRoot, "package.json"));
 	if (!isRecord(manifest)) return [];
 	const pi = isRecord(manifest.pi) ? manifest.pi : undefined;
 	const piSubagents = isRecord(pi?.subagents) ? pi.subagents : undefined;
@@ -276,22 +285,21 @@ function packageAgentPaths(packageRoot: string): string[] {
 	return entries.map((entry) => path.resolve(root, entry)).filter((candidate) => isWithin(candidate, root));
 }
 
-function packageRootsInNodeModules(nodeModules: string): string[] {
-	if (!isDirectory(nodeModules)) return [];
+async function packageRootsInNodeModules(nodeModules: string): Promise<string[]> {
 	const roots: string[] = [];
-	for (const entry of readDirectories(nodeModules)) {
+	for (const entry of await readDirectories(nodeModules)) {
 		const candidate = path.join(nodeModules, entry);
 		if (!entry.startsWith("@")) {
 			roots.push(candidate);
 			continue;
 		}
-		for (const child of readDirectories(candidate)) roots.push(path.join(candidate, child));
+		for (const child of await readDirectories(candidate)) roots.push(path.join(candidate, child));
 	}
 	return roots;
 }
 
-function packageRootsFromSettings(settingsPath: string, baseDir: string): string[] {
-	const settings = readJson(settingsPath);
+async function packageRootsFromSettings(settingsPath: string, baseDir: string): Promise<string[]> {
+	const settings = await readJson(settingsPath);
 	if (!isRecord(settings) || !Array.isArray(settings.packages)) return [];
 	const roots: string[] = [];
 	for (const entry of settings.packages) {
@@ -396,10 +404,9 @@ function nonEmpty(values: string[] | undefined): string[] | undefined {
 	return values && values.length > 0 ? values : undefined;
 }
 
-function readDirectories(directory: string): string[] {
+async function readDirectories(directory: string): Promise<string[]> {
 	try {
-		return fs
-			.readdirSync(directory, { withFileTypes: true })
+		return (await fs.promises.readdir(directory, { withFileTypes: true }))
 			.filter((entry) => !entry.name.startsWith(".") && (entry.isDirectory() || entry.isSymbolicLink()))
 			.map((entry) => entry.name)
 			.sort();
@@ -408,9 +415,9 @@ function readDirectories(directory: string): string[] {
 	}
 }
 
-function readJson(filePath: string): unknown {
+async function readJson(filePath: string): Promise<unknown> {
 	try {
-		return JSON.parse(fs.readFileSync(filePath, "utf8"));
+		return JSON.parse(await fs.promises.readFile(filePath, "utf8"));
 	} catch {
 		return undefined;
 	}
@@ -439,9 +446,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isDirectory(candidate: string): boolean {
+async function isDirectory(candidate: string): Promise<boolean> {
 	try {
-		return fs.statSync(candidate).isDirectory();
+		return (await fs.promises.stat(candidate)).isDirectory();
+	} catch {
+		return false;
+	}
+}
+
+async function pathExists(candidate: string): Promise<boolean> {
+	try {
+		await fs.promises.lstat(candidate);
+		return true;
 	} catch {
 		return false;
 	}

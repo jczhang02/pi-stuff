@@ -70,7 +70,6 @@ function createFullState(sessionId: string): SubagentState {
 		foregroundRuns: new Map(),
 		lastForegroundControlId: null,
 		lastUiContext: null,
-		poller: null,
 		recentAgentJobs: new Map(),
 		resultFileCoalescer: { clear: () => {}, schedule: () => false },
 		watcher: null,
@@ -349,7 +348,7 @@ describe("CurrentAgents snapshot", () => {
 		}
 	});
 
-	test("reconstructs a task-only legacy background label from persisted status", () => {
+	test("reconstructs a task-only legacy background label from persisted status", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-legacy-agent-restore-"));
 		const runDir = path.join(root, "legacy-run");
 		const sessionId = "legacy-session";
@@ -382,17 +381,93 @@ describe("CurrentAgents snapshot", () => {
 			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
 			state,
 			root,
-			{ now: () => 4_000, resultsDir: path.join(root, "results") },
 		);
 
 		try {
-			tracker.restoreActiveJobs();
+			await tracker.restoreActiveJobs();
 			const restored = row(new CurrentAgents(state, acknowledgedOptions()).snapshot(), "legacy-run:0");
 			expect(restored.description).toBe("独立只读复核 sample.txt 并检查状态");
 			expect(restored.task).toBe(legacyTask);
 		} finally {
 			tracker.resetJobs();
 			fs.rmSync(root, { force: true, recursive: true });
+		}
+	});
+
+	test("cold startup restores only governor-indexed active runtime directories", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-targeted-agent-restore-"));
+		const target = path.join(root, "target-run");
+		const unrelated = path.join(root, "unrelated-run");
+		fs.mkdirSync(target);
+		fs.mkdirSync(unrelated);
+		const reads: string[] = [];
+		const state = createFullState("root-session");
+		const tracker = createAsyncJobTracker(
+			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
+			state,
+			root,
+			{
+				readRunStatus: async (asyncDir) => {
+					reads.push(asyncDir);
+					return {
+						runId: path.basename(asyncDir),
+						sessionId: "root-session",
+						state: "running",
+						mode: "single",
+						startedAt: 1_000,
+						lastUpdate: 2_000,
+						steps: [{ agent: "reviewer", status: "running" }],
+					};
+				},
+			},
+		);
+
+		try {
+			await tracker.restoreActiveJobs([target]);
+			expect(reads).toEqual([target]);
+			expect([...state.asyncJobs.keys()]).toEqual(["target-run"]);
+		} finally {
+			tracker.resetJobs();
+			fs.rmSync(root, { force: true, recursive: true });
+		}
+	});
+
+	test("treats a missing runtime root as one completed restore generation", async () => {
+		const base = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-missing-agent-root-"));
+		const root = path.join(base, "async-runs");
+		const runDir = path.join(root, "late-run");
+		const state = createFullState("root-session");
+		const tracker = createAsyncJobTracker(
+			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
+			state,
+			root,
+		);
+
+		try {
+			await tracker.restoreActiveJobs();
+			fs.mkdirSync(runDir, { recursive: true });
+			fs.writeFileSync(
+				path.join(runDir, "status.json"),
+				JSON.stringify({
+					runId: "late-run",
+					sessionId: "root-session",
+					state: "running",
+					mode: "single",
+					startedAt: 1_000,
+					lastUpdate: 2_000,
+					steps: [{ agent: "reviewer", status: "running" }],
+				}),
+			);
+			await tracker.restoreActiveJobs();
+			expect(state.asyncJobs.has("late-run")).toBeFalse();
+
+			tracker.resetJobs();
+			state.currentSessionId = "root-session";
+			await tracker.restoreActiveJobs();
+			expect(state.asyncJobs.has("late-run")).toBeTrue();
+		} finally {
+			tracker.resetJobs();
+			fs.rmSync(base, { force: true, recursive: true });
 		}
 	});
 
@@ -408,22 +483,18 @@ describe("CurrentAgents snapshot", () => {
 			root,
 			{
 				pollIntervalMs: 10,
-				resultsDir: path.join(root, "results"),
-				reconcileRun: () => {
+				readRunStatus: async () => {
 					attempts += 1;
 					if (attempts === 1) throw Object.assign(new Error("transient observer EIO"), { code: "EIO" });
 					return {
-						repaired: false,
-						status: {
-							runId: "observer-retry",
-							sessionId: "root-session",
-							mode: "single",
-							state: "running",
-							pid: process.pid,
-							startedAt: 1_000,
-							lastUpdate: 2_000,
-							steps: [{ agent: "reviewer", status: "running" }],
-						},
+						runId: "observer-retry",
+						sessionId: "root-session",
+						mode: "single",
+						state: "running",
+						pid: process.pid,
+						startedAt: 1_000,
+						lastUpdate: 2_000,
+						steps: [{ agent: "reviewer", status: "running" }],
 					};
 				},
 			},
@@ -444,7 +515,6 @@ describe("CurrentAgents snapshot", () => {
 			expect(state.asyncJobs.get("observer-retry")?.status).toBe("running");
 		} finally {
 			tracker.resetJobs();
-			if (state.poller) clearInterval(state.poller);
 			fs.rmSync(root, { force: true, recursive: true });
 		}
 	});
@@ -454,37 +524,19 @@ describe("CurrentAgents snapshot", () => {
 		const asyncDir = path.join(root, "terminal-monotonic");
 		fs.mkdirSync(asyncDir);
 		const state = createFullState("root-session");
-		let processTerminal: ProcessTerminalV1 = {
+		const pending: ProcessTerminalV1 = {
 			version: 1,
 			state: "pending",
 			runId: "terminal-monotonic",
 			runnerProcessInstanceId: "terminal-monotonic-runner",
 		};
-		let polls = 0;
 		const tracker = createAsyncJobTracker(
 			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
 			state,
 			root,
 			{
 				completionRetentionMs: 25,
-				pollIntervalMs: 5,
-				resultsDir: path.join(root, "results"),
-				reconcileRun: () => {
-					polls += 1;
-					return {
-						repaired: false,
-						status: {
-							runId: "terminal-monotonic",
-							sessionId: "root-session",
-							mode: "single",
-							state: "running",
-							startedAt: 1_000,
-							lastUpdate: 2_000,
-							processTerminal,
-							steps: [{ agent: "reviewer", status: "running" }],
-						},
-					};
-				},
+				readRunStatus: async () => null,
 			},
 		);
 
@@ -496,20 +548,58 @@ describe("CurrentAgents snapshot", () => {
 				mode: "single",
 				agents: ["reviewer"],
 			});
+			tracker.handleStatus({
+				id: "terminal-monotonic",
+				asyncDir,
+				sessionId: "root-session",
+				status: {
+					runId: "terminal-monotonic",
+					sessionId: "root-session",
+					mode: "single",
+					state: "running",
+					startedAt: 1_000,
+					lastUpdate: 2_000,
+					processTerminal: pending,
+					steps: [{ agent: "reviewer", status: "running" }],
+				},
+			});
 			await waitUntil(() => state.asyncJobs.get("terminal-monotonic")?.processTerminal?.state === "pending");
 			tracker.handleComplete({ id: "terminal-monotonic", sessionId: "root-session", state: "complete" });
-			await waitUntil(() => polls >= 3);
+			tracker.handleStatus({
+				id: "terminal-monotonic",
+				asyncDir,
+				sessionId: "root-session",
+				status: {
+					runId: "terminal-monotonic",
+					sessionId: "root-session",
+					mode: "single",
+					state: "running",
+					startedAt: 1_000,
+					lastUpdate: 2_000,
+					processTerminal: pending,
+					steps: [{ agent: "reviewer", status: "running" }],
+				},
+			});
 			expect(state.asyncJobs.get("terminal-monotonic")?.status).toBe("complete");
 			expect(state.cleanupTimers.has("terminal-monotonic")).toBeFalse();
+			tracker.handleProcessTerminal({
+				version: 1,
+				state: "observed",
+				runId: "terminal-monotonic",
+				runnerProcessInstanceId: "foreign-runner",
+				observedAt: 2_500,
+				instances: [],
+			});
+			expect(state.asyncJobs.get("terminal-monotonic")?.processTerminal).toEqual(pending);
 
-			processTerminal = {
+			tracker.handleProcessTerminal({
 				version: 1,
 				state: "observed",
 				runId: "terminal-monotonic",
 				runnerProcessInstanceId: "terminal-monotonic-runner",
 				observedAt: 3_000,
 				instances: [],
-			};
+			});
 			await waitUntil(() => !state.asyncJobs.has("terminal-monotonic"));
 		} finally {
 			tracker.resetJobs();
@@ -517,7 +607,7 @@ describe("CurrentAgents snapshot", () => {
 		}
 	});
 
-	test("keeps cold terminal runs polled until physical process proof is observed", async () => {
+	test("keeps a restored terminal run until an explicit physical process event is observed", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-terminal-physical-recovery-"));
 		const asyncDir = path.join(root, "cold-terminal");
 		fs.mkdirSync(asyncDir);
@@ -528,71 +618,47 @@ describe("CurrentAgents snapshot", () => {
 			runId: "cold-terminal",
 			runnerProcessInstanceId: "cold-terminal-runner",
 		};
-		const observed: ProcessTerminalV1 = {
-			version: 1,
-			state: "observed",
-			runId: "cold-terminal",
-			runnerProcessInstanceId: "cold-terminal-runner",
-			observedAt: 4_000,
-			instances: [],
-		};
-		let listCalls = 0;
-		let recoveryPasses = 0;
-		const summary = {
-			id: "cold-terminal",
-			asyncDir,
-			sessionId: "root-session",
-			state: "failed" as const,
-			mode: "single" as const,
-			startedAt: 1_000,
-			processTerminal: pending,
-			steps: [{ index: 0, agent: "reviewer", status: "failed" as const }],
-		};
+		fs.writeFileSync(
+			path.join(asyncDir, "status.json"),
+			JSON.stringify({
+				runId: "cold-terminal",
+				sessionId: "root-session",
+				state: "failed",
+				mode: "single",
+				startedAt: 1_000,
+				lastUpdate: 2_000,
+				processTerminal: pending,
+				steps: [{ agent: "reviewer", status: "failed" }],
+			}),
+		);
 		const tracker = createAsyncJobTracker(
 			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
 			state,
 			root,
-			{
-				completionRetentionMs: 20,
-				pollIntervalMs: 5,
-				listRuns: () => {
-					listCalls += 1;
-					return [summary];
-				},
-				reconcileRun: () => {
-					recoveryPasses += 1;
-					return {
-						repaired: recoveryPasses >= 3,
-						status: {
-							runId: "cold-terminal",
-							sessionId: "root-session",
-							mode: "single",
-							state: "failed",
-							startedAt: 1_000,
-							endedAt: 2_000,
-							lastUpdate: 2_000,
-							processTerminal: recoveryPasses >= 3 ? observed : pending,
-							steps: [{ agent: "reviewer", status: "failed" }],
-						},
-					};
-				},
-			},
+			{ completionRetentionMs: 20 },
 		);
 
 		try {
-			tracker.restoreActiveJobs();
-			tracker.ensurePoller();
-			expect(listCalls).toBe(1);
+			await tracker.restoreActiveJobs();
 			expect(state.asyncJobs.has("cold-terminal")).toBeTrue();
-			await waitUntil(() => recoveryPasses >= 3 && !state.asyncJobs.has("cold-terminal"));
-			expect(recoveryPasses).toBeGreaterThanOrEqual(3);
+			await Bun.sleep(40);
+			expect(state.asyncJobs.has("cold-terminal")).toBeTrue();
+			tracker.handleProcessTerminal({
+				version: 1,
+				state: "observed",
+				runId: "cold-terminal",
+				runnerProcessInstanceId: "cold-terminal-runner",
+				observedAt: 4_000,
+				instances: [],
+			});
+			await waitUntil(() => !state.asyncJobs.has("cold-terminal"));
 		} finally {
 			tracker.resetJobs();
 			fs.rmSync(root, { force: true, recursive: true });
 		}
 	});
 
-	test("keeps polling a cold detached foreground run until orphan recovery reaches terminal proof", async () => {
+	test("does not poll foreground recovery state from the Agent status observer", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-recovery-poll-"));
 		const state = createFullState("root-session");
 		const run = foregroundRun({
@@ -609,75 +675,63 @@ describe("CurrentAgents snapshot", () => {
 			],
 		});
 		state.foregroundRuns?.set(run.runId, run);
-		let attempts = 0;
+		let watchCalls = 0;
 		const tracker = createAsyncJobTracker(
 			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
 			state,
 			root,
 			{
-				pollIntervalMs: 10,
-				refreshForegroundRun: (candidate) => {
-					attempts += 1;
-					if (attempts >= 3 && candidate.children[0]) candidate.children[0].status = "failed";
-					return attempts >= 3;
-				},
+				watchRun: ((...args: unknown[]) => {
+					watchCalls += 1;
+					return (fs.watch as (...watchArgs: unknown[]) => fs.FSWatcher)(...args);
+				}) as typeof fs.watch,
 			},
 		);
 
 		try {
-			tracker.ensurePoller();
-			const deadline = Date.now() + 1_000;
-			while ((attempts < 3 || state.poller) && Date.now() < deadline) await Bun.sleep(5);
-
-			expect(attempts).toBeGreaterThanOrEqual(3);
-			expect(run.children[0]?.status).toBe("failed");
-			expect(state.poller).toBeNull();
+			tracker.ensureObserver();
+			await Bun.sleep(40);
+			expect(watchCalls).toBe(0);
+			expect(run.children[0]?.status).toBe("detached");
 		} finally {
 			tracker.resetJobs();
-			if (state.poller) clearInterval(state.poller);
 			fs.rmSync(root, { force: true, recursive: true });
 		}
 	});
 
-	test("restores sibling runs when optional control-event metadata cannot be inspected", () => {
+	test("restores sibling runs when optional control-event files are absent", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-restore-cursor-"));
 		const firstDir = path.join(root, "first");
 		const secondDir = path.join(root, "second");
 		fs.mkdirSync(firstDir);
 		fs.mkdirSync(secondDir);
-		const summary = (id: string, asyncDir: string) => ({
-			id,
-			asyncDir,
-			sessionId: "root-session",
-			state: "running" as const,
-			mode: "single" as const,
-			startedAt: 1_000,
-			steps: [{ index: 0, agent: "reviewer", status: "running" as const }],
-		});
+		for (const id of ["first", "second"]) {
+			fs.writeFileSync(
+				path.join(root, id, "status.json"),
+				JSON.stringify({
+					runId: id,
+					sessionId: "root-session",
+					state: "running",
+					mode: "single",
+					startedAt: 1_000,
+					steps: [{ agent: "reviewer", status: "running" }],
+				}),
+			);
+		}
 		const state = createFullState("root-session");
 		const tracker = createAsyncJobTracker(
 			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
 			state,
 			root,
-			{
-				listRuns: () => [summary("first", firstDir), summary("second", secondDir)],
-				pollIntervalMs: 60_000,
-				statControlEvents: (filePath) => {
-					if (String(filePath).includes("first"))
-						throw Object.assign(new Error("injected cursor EIO"), { code: "EIO" });
-					return { size: 12 } as fs.Stats;
-				},
-			},
 		);
 		try {
-			tracker.restoreActiveJobs();
+			await tracker.restoreActiveJobs();
 			expect([...state.asyncJobs.keys()].sort()).toEqual(["first", "second"]);
-			expect(state.asyncJobs.get("first")?.controlEventCursor).toBeUndefined();
-			expect(state.asyncJobs.get("first")?.controlEventCursorPending).toBe(true);
-			expect(state.asyncJobs.get("second")?.controlEventCursor).toBe(12);
+			await waitUntil(() => state.asyncJobs.get("first")?.controlEventCursorPending !== true);
+			expect(state.asyncJobs.get("first")?.controlEventCursor).toBe(0);
+			expect(state.asyncJobs.get("second")?.controlEventCursor).toBe(0);
 		} finally {
 			tracker.resetJobs();
-			if (state.poller) clearInterval(state.poller);
 			fs.rmSync(root, { force: true, recursive: true });
 		}
 	});
@@ -718,7 +772,7 @@ describe("CurrentAgents snapshot", () => {
 		expect(lateOutputReads).toBe(0);
 	});
 
-	test("projects bounded terminal failures and drops task-only partial results across cold restore", () => {
+	test("projects bounded terminal failures and drops task-only partial results across cold restore", async () => {
 		const task = "Inspect the Agent detail without changing files.";
 		const error = "Provider rejected the child payload\u001b]0;hidden\u0007 after validation.\u202e";
 		const state = createState();
@@ -764,10 +818,9 @@ describe("CurrentAgents snapshot", () => {
 			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
 			restoredState,
 			root,
-			{ now: () => 3_000, resultsDir: path.join(root, "results") },
 		);
 		try {
-			tracker.restoreActiveJobs();
+			await tracker.restoreActiveJobs();
 			const restored = row(new CurrentAgents(restoredState, acknowledgedOptions()).snapshot(), "failed-detail:0");
 			expect(restored.error).toBe("Provider rejected the child payload after validation.");
 			expect(restored.partialResult).toBeNull();
@@ -1009,8 +1062,13 @@ describe("CurrentAgents snapshot", () => {
 			);
 		};
 		try {
-			addLegacy("legacy-complete", transcript("complete", [finalReport]));
-			addLegacy("legacy-wrapper-complete", transcript("wrapper", [finalReport]), {}, 143);
+			addLegacy("legacy-complete", transcript("complete", [finalReport]), { legacyFinalReportComplete: true });
+			addLegacy(
+				"legacy-wrapper-complete",
+				transcript("wrapper", [finalReport]),
+				{ legacyFinalReportComplete: true },
+				143,
+			);
 			addLegacy("legacy-tool-use", transcript("tool-use", [{ ...finalReport, stopReason: "toolUse" }]));
 			addLegacy("legacy-explicit-error", transcript("explicit-error", [finalReport]), {
 				error: "Provider failed after output.",
@@ -1045,6 +1103,65 @@ describe("CurrentAgents snapshot", () => {
 		}
 	});
 
+	test("recovers legacy final-drain proof asynchronously before UI projection", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-legacy-final-drain-recovery-"));
+		const runId = "legacy-recovered";
+		const asyncDir = path.join(root, runId);
+		const transcriptPath = path.join(asyncDir, "transcript.jsonl");
+		fs.mkdirSync(asyncDir);
+		fs.writeFileSync(transcriptPath, Buffer.alloc(1024 * 1024, 0x20));
+		fs.appendFileSync(
+			transcriptPath,
+			`\n${JSON.stringify({
+				recordType: "message",
+				sourceEventType: "message_end",
+				role: "assistant",
+				stopReason: "stop",
+				text: "Recovered final report.",
+			})}\n`,
+		);
+		fs.writeFileSync(
+			path.join(asyncDir, "status.json"),
+			JSON.stringify({
+				runId,
+				sessionId: "root-session",
+				mode: "single",
+				state: "failed",
+				startedAt: 1_000,
+				lastUpdate: 2_000,
+				steps: [
+					{
+						agent: "reviewer",
+						status: "failed",
+						transcriptPath,
+						processTerminal: signalledProcessTerminal(runId, "SIGTERM"),
+					},
+				],
+			}),
+		);
+		const state = createFullState("root-session");
+		const tracker = createAsyncJobTracker(
+			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
+			state,
+			root,
+		);
+		let hostTicked = false;
+		const hostTick = new Promise<void>((resolve) =>
+			setTimeout(() => {
+				hostTicked = true;
+				resolve();
+			}, 0),
+		);
+		try {
+			await Promise.all([tracker.restoreActiveJobs(), hostTick]);
+			expect(hostTicked).toBeTrue();
+			expect(row(new CurrentAgents(state, acknowledgedOptions()).snapshot(), `${runId}:0`).status).toBe("completed");
+		} finally {
+			tracker.resetJobs();
+			fs.rmSync(root, { force: true, recursive: true });
+		}
+	});
+
 	test("returns deeply frozen copies rather than mutable Map values", () => {
 		const state = createState();
 		const job = asyncJob("copy", "running", { description: "original" });
@@ -1059,6 +1176,8 @@ describe("CurrentAgents snapshot", () => {
 		job.description = "mutated upstream";
 		job.agents = ["changed"];
 		expect(before.rows[0]).toMatchObject({ name: "copy", task: "original" });
+		expect(current.snapshot()).toBe(before);
+		current.refresh();
 		expect(current.snapshot().rows[0]).toMatchObject({ name: "changed", task: "mutated upstream" });
 	});
 });
@@ -1103,6 +1222,7 @@ describe("CurrentAgents controls", () => {
 		expect(resume).toMatchObject({ acknowledged: false, status: "user_cancelled" });
 
 		state.recentAgentJobs?.set("resumable", asyncJob("resumable", "paused"));
+		current.refresh();
 		const resumed = await current.control({ type: "resume", key: "resumable:0", message: " retry " });
 		expect(resumed).toMatchObject({ acknowledged: true, status: "resuming" });
 		expect(calls).toContain("resume:resumable:0:retry");
@@ -1147,6 +1267,19 @@ describe("CurrentAgents lifecycle", () => {
 				currentSessionId: "/sessions/legacy.jsonl",
 			})}\n`,
 		);
+		fs.writeFileSync(
+			path.join(asyncDir, "status.json"),
+			JSON.stringify({
+				runId,
+				sessionId: "/sessions/legacy.jsonl",
+				mode: "single",
+				state: "running",
+				pid: process.pid,
+				startedAt: 1_000,
+				lastUpdate: 2_000,
+				steps: [{ agent: "reviewer", status: "running" }],
+			}),
+		);
 		const state = createFullState("ps2-current");
 		state.currentSessionScope = {
 			sessionId: "ps2-current",
@@ -1165,23 +1298,7 @@ describe("CurrentAgents lifecycle", () => {
 			} as unknown as Pick<ExtensionAPI, "events">,
 			state,
 			root,
-			{
-				pollIntervalMs: 10,
-				resultsDir: path.join(root, "results"),
-				reconcileRun: () => ({
-					repaired: false,
-					status: {
-						runId,
-						sessionId: "/sessions/legacy.jsonl",
-						mode: "single",
-						state: "running",
-						pid: process.pid,
-						startedAt: 1_000,
-						lastUpdate: 2_000,
-						steps: [{ agent: "reviewer", status: "running" }],
-					},
-				}),
-			},
+			{ pollIntervalMs: 10 },
 		);
 
 		try {
@@ -1241,7 +1358,7 @@ describe("CurrentAgents lifecycle", () => {
 			} as unknown as Pick<ExtensionAPI, "events">,
 			state,
 			root,
-			{ pollIntervalMs: 10, resultsDir: path.join(root, "results") },
+			{ pollIntervalMs: 10 },
 		);
 
 		try {
@@ -1316,7 +1433,7 @@ describe("CurrentAgents lifecycle", () => {
 			} as unknown as Pick<ExtensionAPI, "events">,
 			state,
 			root,
-			{ pollIntervalMs: 10, resultsDir: path.join(root, "results") },
+			{ pollIntervalMs: 10 },
 		);
 		try {
 			tracker.handleStarted({
@@ -1338,7 +1455,7 @@ describe("CurrentAgents lifecycle", () => {
 		}
 	});
 
-	test("refreshes poll-driven consumers and notifies only on semantic changes", () => {
+	test("refreshes state-driven consumers and notifies only on semantic changes", () => {
 		const state = createState();
 		const live = asyncJob("live", "running", { description: "first" });
 		state.asyncJobs.set(live.asyncId, live);
@@ -1353,8 +1470,10 @@ describe("CurrentAgents lifecycle", () => {
 		expect(tasks).toEqual(["first", "changed"]);
 	});
 
-	test("uses the status poller itself to refresh consumers", async () => {
+	test("refreshes consumers from status events without a foreground poll loop", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-refresh-"));
+		const asyncDir = path.join(root, "live");
+		fs.mkdirSync(asyncDir);
 		const state = createFullState("root-session");
 		let refreshes = 0;
 		const tracker = createAsyncJobTracker(
@@ -1365,15 +1484,33 @@ describe("CurrentAgents lifecycle", () => {
 				onRefresh: () => {
 					refreshes += 1;
 				},
-				pollIntervalMs: 10,
-				reconcileRun: () => ({ repaired: false, status: null }),
+				readRunStatus: async () => null,
 			},
 		);
 
 		try {
-			tracker.handleStarted({ id: "live", asyncDir: root, sessionId: "root-session" });
-			await waitUntil(() => refreshes > 0);
-			expect(refreshes).toBe(1);
+			tracker.handleStarted({ id: "live", asyncDir, sessionId: "root-session" });
+			await waitUntil(() => refreshes === 1);
+			tracker.handleStatus({
+				id: "live",
+				asyncDir,
+				sessionId: "root-session",
+				status: {
+					runId: "live",
+					sessionId: "root-session",
+					mode: "single",
+					state: "running",
+					startedAt: 1_000,
+					lastUpdate: 2_000,
+					currentTool: "read",
+					steps: [{ agent: "reviewer", status: "running", currentTool: "read" }],
+				},
+			});
+			await waitUntil(() => refreshes >= 2);
+			const settledRefreshes = refreshes;
+			await Bun.sleep(40);
+			expect(state.asyncJobs.get("live")?.currentTool).toBe("read");
+			expect(refreshes).toBe(settledRefreshes);
 		} finally {
 			tracker.resetJobs();
 			await Bun.sleep(20);

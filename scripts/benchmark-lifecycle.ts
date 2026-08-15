@@ -15,6 +15,8 @@ const LONG_SESSION_TURNS = 240;
 const DEFAULT_SAMPLES = 3;
 const DEFAULT_WARMUPS = 1;
 const DEFAULT_TIMEOUT_SECONDS = 30;
+const ACCEPTANCE_MINIMUM_LONG_SESSION_TOOLS = 6_000;
+const ACCEPTANCE_MINIMUM_LONG_TOOL_BYTES = 8 * 1024;
 const DEFAULT_OUTPUT = join(ROOT, ".artifacts/lifecycle-benchmark/latest.json");
 const VARIANTS = ["host", "suite"] as const;
 const SCENARIOS = ["fresh", "resume-short", "resume-long", "degraded"] as const;
@@ -36,6 +38,9 @@ export interface TerminalSize {
 
 export interface LifecycleAcceptanceSelection {
 	readonly actions: readonly Action[];
+	readonly contextEnabled: boolean;
+	readonly longSessionToolBytes: number;
+	readonly longSessionTools: number;
 	readonly samples: number;
 	readonly scenarios: readonly Scenario[];
 	readonly sizes: readonly TerminalSize[];
@@ -46,7 +51,6 @@ export interface LifecycleAcceptanceSelection {
 
 interface BenchmarkOptions extends LifecycleAcceptanceSelection {
 	readonly acceptance: boolean;
-	readonly longSessionTools: number;
 	readonly output: string;
 	readonly packagePath: string;
 	readonly piBinary: string;
@@ -56,13 +60,16 @@ export interface LifecycleSample {
 	readonly action: Action;
 	readonly acknowledgementMs?: number;
 	readonly columns: number;
+	readonly interruptMs?: number;
 	readonly iteration: number;
+	readonly providerStartMs?: number;
 	readonly reloadMs?: number;
 	readonly responseMs?: number;
 	readonly rows: number;
 	readonly scenario: Scenario;
 	readonly shutdownMs: number;
 	readonly steadyAcknowledgementMs?: number;
+	readonly steadyProviderStartMs?: number;
 	readonly steadyResponseMs?: number;
 	readonly startupMs: number;
 	readonly suiteTrace?: readonly LifecycleTraceEvent[];
@@ -83,12 +90,15 @@ export interface CellSummary {
 	readonly acknowledgement?: MetricSummary;
 	readonly action: Action;
 	readonly columns: number;
+	readonly interrupt?: MetricSummary;
+	readonly providerStart?: MetricSummary;
 	readonly reload?: MetricSummary;
 	readonly response?: MetricSummary;
 	readonly rows: number;
 	readonly scenario: Scenario;
 	readonly shutdown: MetricSummary;
 	readonly steadyAcknowledgement?: MetricSummary;
+	readonly steadyProviderStart?: MetricSummary;
 	readonly steadyResponse?: MetricSummary;
 	readonly startup: MetricSummary;
 	readonly variant: Variant;
@@ -97,10 +107,13 @@ export interface CellSummary {
 
 interface ExpectMetrics {
 	readonly acknowledgementMs?: number;
+	readonly interruptMs?: number;
+	readonly providerStartMs?: number;
 	readonly reloadMs?: number;
 	readonly responseMs?: number;
 	readonly shutdownMs: number;
 	readonly steadyAcknowledgementMs?: number;
+	readonly steadyProviderStartMs?: number;
 	readonly steadyResponseMs?: number;
 	readonly startupMs: number;
 }
@@ -174,6 +187,8 @@ function terminalSizes(value: string | undefined): readonly TerminalSize[] {
 function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 	let acceptance = false;
 	let actions: readonly Action[] = DEFAULT_ACTIONS;
+	let contextEnabled = true;
+	let longSessionToolBytes = 0;
 	let longSessionTools = 0;
 	let output = DEFAULT_OUTPUT;
 	let packagePath = DEFAULT_PACKAGE;
@@ -192,12 +207,22 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 			case "--acceptance":
 				acceptance = true;
 				break;
+			case "--disable-context":
+				contextEnabled = false;
+				break;
 			case "--actions":
 				actions = listValue(value, flag, ACTIONS);
 				index += 1;
 				break;
 			case "--long-tools":
 				longSessionTools = boundedInteger(value, flag, 0, 20_000);
+				index += 1;
+				break;
+			case "--long-tool-bytes":
+				longSessionToolBytes = boundedInteger(value, flag, 0, 1024 * 1024);
+				if (longSessionToolBytes > 0 && longSessionToolBytes < 128) {
+					fail("--long-tool-bytes must be 0 or at least 128");
+				}
 				index += 1;
 				break;
 			case "--output":
@@ -245,6 +270,8 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 	return {
 		acceptance,
 		actions,
+		contextEnabled,
+		longSessionToolBytes,
 		longSessionTools,
 		output,
 		packagePath,
@@ -292,7 +319,13 @@ function serializedIncludes(value: unknown, marker: string): boolean {
 	}
 }
 
-export function lifecycleSessionFindings(entries: readonly unknown[], action: Action, scenario: Scenario): string[] {
+export function lifecycleSessionFindings(
+	entries: readonly unknown[],
+	action: Action,
+	scenario: Scenario,
+	expectedLongSessionTools = 0,
+	expectedLongToolBytes = 0,
+): string[] {
 	const findings: string[] = [];
 	const header = objectValue(entries[0]);
 	if (header?.["type"] !== "session" || header["version"] !== 3) {
@@ -320,7 +353,40 @@ export function lifecycleSessionFindings(entries: readonly unknown[], action: Ac
 		}
 	};
 	if (scenario === "resume-short") requireMarker("PS5BW_SESSION_TAIL_short");
-	if (scenario === "resume-long") requireMarker("PS5BW_SESSION_TAIL_long");
+	if (scenario === "resume-long") {
+		requireMarker("PS5BW_SESSION_TAIL_long");
+		const historicalToolResults = messages.filter(
+			(message) =>
+				message["role"] === "toolResult" &&
+				typeof message["toolCallId"] === "string" &&
+				message["toolCallId"].startsWith("ps5bw-history-tool-"),
+		).length;
+		if (historicalToolResults < expectedLongSessionTools) {
+			findings.push(
+				`Session JSONL retained only ${String(historicalToolResults)} of ${String(expectedLongSessionTools)} historical Tool results`,
+			);
+		}
+		if (expectedLongSessionTools > 0 && expectedLongToolBytes > 0) {
+			for (const index of [0, Math.floor(expectedLongSessionTools / 2), expectedLongSessionTools - 1]) {
+				const toolCallId = `ps5bw-history-tool-${String(index)}`;
+				const result = messages.find(
+					(message) => message["role"] === "toolResult" && message["toolCallId"] === toolCallId,
+				);
+				const content = Array.isArray(result?.["content"]) ? result["content"] : [];
+				const text = content
+					.map((part) => objectValue(part)?.["text"])
+					.filter((value): value is string => typeof value === "string")
+					.join("");
+				if (!text.includes(`PS5BW_HISTORY_PAYLOAD_${String(index)}`)) {
+					findings.push(`Session JSONL lost historical Tool payload marker ${String(index)}`);
+				} else if (Buffer.byteLength(text, "utf8") !== expectedLongToolBytes) {
+					findings.push(
+						`Session JSONL historical Tool ${String(index)} has ${String(Buffer.byteLength(text, "utf8"))} bytes instead of ${String(expectedLongToolBytes)}`,
+					);
+				}
+			}
+		}
+	}
 	if (action === "prompt") {
 		requireMarker("PS5BW_FIRST_PROMPT");
 		requireMarker("PS5BW_SECOND_PROMPT");
@@ -335,20 +401,22 @@ export function lifecycleSessionFindings(entries: readonly unknown[], action: Ac
 		action === "background-exit"
 			? { prompt: "PS5BW_BACKGROUND_PROMPT", ready: "PS5BW_BACKGROUND_READY", toolCallId: "ps5bw-background-launch" }
 			: action === "agent-exit"
-				? { prompt: "PS5BW_AGENT_PROMPT", ready: "PS5BW_AGENT_READY", toolCallId: "ps5bw-agent-launch" }
+				? { prompt: "PS5BW_AGENT_PROMPT", toolCallId: "ps5bw-agent-launch" }
 				: undefined;
 	if (receipt) {
 		requireMarker(receipt.prompt);
-		requireMarker(receipt.ready);
+		if ("ready" in receipt) requireMarker(receipt.ready);
 		const hasToolCall = messages.some((message) => {
 			if (message["role"] !== "assistant" || !Array.isArray(message["content"])) return false;
 			return message["content"].some((part) => objectValue(part)?.["id"] === receipt.toolCallId);
 		});
 		if (!hasToolCall) findings.push(`Session JSONL lost Tool call receipt ${receipt.toolCallId}`);
-		const hasToolResult = messages.some(
-			(message) => message["role"] === "toolResult" && message["toolCallId"] === receipt.toolCallId,
-		);
-		if (!hasToolResult) findings.push(`Session JSONL lost Tool result receipt ${receipt.toolCallId}`);
+		if (action !== "agent-exit") {
+			const hasToolResult = messages.some(
+				(message) => message["role"] === "toolResult" && message["toolCallId"] === receipt.toolCallId,
+			);
+			if (!hasToolResult) findings.push(`Session JSONL lost Tool result receipt ${receipt.toolCallId}`);
+		}
 	}
 	return findings;
 }
@@ -358,6 +426,8 @@ async function verifySessionDurability(
 	knownSessionFile: string,
 	action: Action,
 	scenario: Scenario,
+	expectedLongSessionTools: number,
+	expectedLongToolBytes: number,
 ): Promise<void> {
 	const paths = knownSessionFile
 		? [knownSessionFile]
@@ -380,7 +450,13 @@ async function verifySessionDurability(
 			);
 		}
 	}
-	const findings = lifecycleSessionFindings(entries, action, scenario);
+	const findings = lifecycleSessionFindings(
+		entries,
+		action,
+		scenario,
+		expectedLongSessionTools,
+		expectedLongToolBytes,
+	);
 	if (findings.length > 0) fail(`${action}/${scenario} durability failed:\n- ${findings.join("\n- ")}`);
 }
 
@@ -400,6 +476,16 @@ const ZERO_USAGE = {
   totalTokens: 0,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
+
+function providerPromptMarker(context) {
+	const messages = context.messages ?? [];
+	for (let index = messages.length - 1; index >= Math.max(0, messages.length - 32); index -= 1) {
+		const text = JSON.stringify(messages[index]);
+		if (text.includes("PS5BW_SECOND_PROMPT")) return "SECOND";
+		if (text.includes("PS5BW_FIRST_PROMPT")) return "FIRST";
+	}
+	return "OTHER";
+}
 
 function message(content, stopReason) {
   return {
@@ -447,7 +533,7 @@ function responseStream(context) {
     if (pidPath) writeFileSync(pidPath, String(process.pid));
     if (!hasToolResult(context, "ps5bw-agent-child-sleep")) {
       return toolStream("bash", "ps5bw-agent-child-sleep", {
-        command: "echo $$ > $PS5BW_AGENT_SHELL_PID; sleep 3",
+        command: "echo $$ > $PS5BW_AGENT_SHELL_PID; sleep 30 & child=$!; echo $child > $PS5BW_AGENT_DESCENDANT_PID; wait $child",
         description: "Lifecycle Agent child",
       });
     }
@@ -457,6 +543,7 @@ function responseStream(context) {
     if (!hasToolResult(context, "ps5bw-agent-launch")) {
       return toolStream("subagent", "ps5bw-agent-launch", {
         agent: "general-purpose",
+        foreground: true,
         task: "PS5BW_AGENT_CHILD_PROMPT",
       });
     }
@@ -492,7 +579,10 @@ export default function lifecycleBenchmarkFixture(pi) {
       contextWindow: 200000,
       maxTokens: 4096,
     }],
-    streamSimple: (_model, context) => responseStream(context),
+	streamSimple: (_model, context) => {
+		process.stderr.write("PS5BW_PROVIDER_START_" + providerPromptMarker(context) + "\\n");
+		return responseStream(context);
+	},
   });
   pi.registerCommand("ps5bw-ready", {
     handler: async (_args, ctx) => {
@@ -514,6 +604,10 @@ export default function lifecycleBenchmarkFixture(pi) {
     // so neither surface is a reliable observation point. This benchmark-only
     // PTY marker proves the Host reached the input handler without network I/O.
 	process.stderr.write("PS5BW_INPUT_ACK_" + encodeURIComponent(event.text) + "\\n");
+	queueMicrotask(() => {
+	  const state = ctx.ui.getEditorText() === "" ? "CLEARED" : "STALE";
+	  process.stderr.write("PS5BW_EDITOR_" + state + "_" + encodeURIComponent(event.text) + "\\n");
+	});
   });
 }
 `;
@@ -585,8 +679,11 @@ export function lifecycleExpectProgram(action: Action, trace: boolean): string {
 set response_started [clock microseconds]
 send -- "PS5BW_FIRST_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_FIRST_PROMPT"
-set acknowledgement_finished [clock microseconds]
+set first_ready [must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_FIRST_PROMPT" "PS5BW_PROVIDER_START_FIRST"]
+set acknowledgement_finished [lindex $first_ready 0]
+set provider_started [lindex $first_ready 1]
 puts "PS5BW_METRIC acknowledgement_us [expr {$acknowledgement_finished - $response_started}]"
+puts "PS5BW_METRIC provider_start_us [expr {$provider_started - $response_started}]"
 must_expect "PS5BW_FIRST_PROMPT_DONE"
 set response_finished [clock microseconds]
 puts "PS5BW_METRIC response_us [expr {$response_finished - $response_started}]"
@@ -594,8 +691,11 @@ must_editor_ready "PS5BW_STEADY_EDITOR_READY"
 set steady_response_started [clock microseconds]
 send -- "PS5BW_SECOND_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_SECOND_PROMPT"
-set steady_acknowledgement_finished [clock microseconds]
+set second_ready [must_expect_prompt_ready "PS5BW_EDITOR_CLEARED_PS5BW_SECOND_PROMPT" "PS5BW_PROVIDER_START_SECOND"]
+set steady_acknowledgement_finished [lindex $second_ready 0]
+set steady_provider_started [lindex $second_ready 1]
 puts "PS5BW_METRIC steady_acknowledgement_us [expr {$steady_acknowledgement_finished - $steady_response_started}]"
+puts "PS5BW_METRIC steady_provider_start_us [expr {$steady_provider_started - $steady_response_started}]"
 must_expect "PS5BW_SECOND_PROMPT_DONE"
 set steady_response_finished [clock microseconds]
 puts "PS5BW_METRIC steady_response_us [expr {$steady_response_finished - $steady_response_started}]"
@@ -608,6 +708,7 @@ send -- "\\004"
 			actionProgram = `
 send -- "PS5BW_BACKGROUND_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_BACKGROUND_PROMPT"
+must_expect "PS5BW_EDITOR_CLEARED_PS5BW_BACKGROUND_PROMPT"
 must_expect "PS5BW_BACKGROUND_READY"
 must_file $env(PS5BW_BACKGROUND_SHELL_PID)
 must_editor_ready "PS5BW_BACKGROUND_EXIT_EDITOR_READY"
@@ -619,10 +720,15 @@ send -- "\\004"
 			actionProgram = `
 send -- "PS5BW_AGENT_PROMPT\\r"
 must_expect "PS5BW_INPUT_ACK_PS5BW_AGENT_PROMPT"
-must_expect "PS5BW_AGENT_READY"
+must_expect "PS5BW_EDITOR_CLEARED_PS5BW_AGENT_PROMPT"
 must_file $env(PS5BW_AGENT_PI_PID)
 must_file $env(PS5BW_AGENT_SHELL_PID)
+must_file $env(PS5BW_AGENT_DESCENDANT_PID)
+set interrupt_started [clock microseconds]
+send -- "\\003"
 must_editor_ready "PS5BW_AGENT_EXIT_EDITOR_READY"
+set interrupt_finished [clock microseconds]
+puts "PS5BW_METRIC interrupt_us [expr {$interrupt_finished - $interrupt_started}]"
 set shutdown_started [clock microseconds]
 send -- "\\004"
 `;
@@ -647,6 +753,7 @@ must_editor_ready "PS5BW_RELOAD_EDITOR_READY"
 send -- "PS5BW_RELOAD_PROMPT\\r"
 must_expect $env(PS5BW_SURFACE_MARKER)
 must_expect "PS5BW_INPUT_ACK_PS5BW_RELOAD_PROMPT"
+must_expect "PS5BW_EDITOR_CLEARED_PS5BW_RELOAD_PROMPT"
 must_expect "PS5BW_PROMPT_DONE"
 must_editor_ready "PS5BW_RELOAD_EXIT_EDITOR_READY"
 set shutdown_started [clock microseconds]
@@ -656,6 +763,8 @@ send -- "\\004"
 		case "ctrl-c":
 			actionProgram = `
 set shutdown_started [clock microseconds]
+send -- "\\003"
+after 100
 send -- "\\003"
 `;
 			break;
@@ -678,6 +787,26 @@ proc must_expect {pattern} {
         timeout { puts stderr "Timed out waiting for: $pattern"; exit 2 }
         eof { puts stderr "Reached EOF while waiting for: $pattern"; exit 3 }
     }
+}
+
+proc must_expect_prompt_ready {editor_pattern provider_pattern} {
+	set deadline [expr {[clock milliseconds] + ${String(DEFAULT_TIMEOUT_SECONDS * 1_000)}}]
+    set editor_at 0
+    set provider_at 0
+    while {[clock milliseconds] < $deadline && ($editor_at == 0 || $provider_at == 0)} {
+        set timeout 1
+        expect {
+            -exact $editor_pattern { if {$editor_at == 0} { set editor_at [clock microseconds] } }
+            -exact $provider_pattern { if {$provider_at == 0} { set provider_at [clock microseconds] } }
+            eof { puts stderr "Reached EOF while waiting for prompt readiness"; exit 3 }
+            timeout {}
+        }
+    }
+    if {$editor_at == 0 || $provider_at == 0} {
+        puts stderr "Timed out waiting for prompt readiness"
+        exit 8
+    }
+    return [list $editor_at $provider_at]
 }
 
 proc must_file {path} {
@@ -829,7 +958,17 @@ function assistantMessage(text: string): AssistantMessage {
 	};
 }
 
-function seedSession(directory: string, cwd: string, id: string, turns: number, toolCount = 0): string {
+function historicalToolText(index: number, toolName: "bash" | "read", bytes: number): string {
+	if (bytes <= 0) return toolName === "bash" ? `tool-${String(index)}` : `history line ${String(index)}`;
+	const marker = `PS5BW_HISTORY_PAYLOAD_${String(index)}\n`;
+	const line = `${toolName} history ${String(index)} ${"evidence ".repeat(12)}\n`;
+	const repeats = Math.ceil((bytes - marker.length) / line.length);
+	const text = (marker + line.repeat(Math.max(0, repeats))).slice(0, bytes);
+	if (Buffer.byteLength(text, "utf8") !== bytes) fail("historical Tool payload must use exact ASCII byte sizing");
+	return text;
+}
+
+function seedSession(directory: string, cwd: string, id: string, turns: number, toolCount = 0, toolBytes = 0): string {
 	const manager = SessionManager.create(cwd, directory, { id });
 	manager.appendModelChange("pi-stuff-lifecycle-benchmark", "fixture-model");
 	for (let index = 0; index < turns; index += 1) {
@@ -847,7 +986,7 @@ function seedSession(directory: string, cwd: string, id: string, turns: number, 
 		);
 	}
 	for (let index = 0; index < toolCount; index += 1) {
-		const bash = index % 10 === 9;
+		const bash = index % 13 < 6;
 		const toolCallId = `ps5bw-history-tool-${String(index)}`;
 		const toolName = bash ? "bash" : "read";
 		manager.appendMessage({
@@ -873,7 +1012,7 @@ function seedSession(directory: string, cwd: string, id: string, turns: number, 
 			role: "toolResult",
 			toolCallId,
 			toolName,
-			content: [{ type: "text", text: bash ? `tool-${String(index)}` : `history line ${String(index)}` }],
+			content: [{ type: "text", text: historicalToolText(index, toolName, toolBytes) }],
 			isError: false,
 			timestamp: Date.now(),
 		} satisfies ToolResultMessage);
@@ -887,6 +1026,7 @@ async function prepareFixture(
 	root: string,
 	projectDirectory: string,
 	longSessionTools: number,
+	longSessionToolBytes: number,
 ): Promise<SeededSessions> {
 	const packageDirectory = join(root, "fixture-package");
 	const seedDirectory = join(root, "seed-sessions");
@@ -913,7 +1053,14 @@ async function prepareFixture(
 	]);
 	await chmod(runner, 0o755);
 	return {
-		long: seedSession(seedDirectory, projectDirectory, "long", LONG_SESSION_TURNS, longSessionTools),
+		long: seedSession(
+			seedDirectory,
+			projectDirectory,
+			"long",
+			LONG_SESSION_TURNS,
+			longSessionTools,
+			longSessionToolBytes,
+		),
 		short: seedSession(seedDirectory, projectDirectory, "short", SHORT_SESSION_TURNS),
 		traceExtension,
 	};
@@ -968,7 +1115,7 @@ async function assertProcessSettles(path: string, timeoutMs: number): Promise<vo
 	const deadline = performance.now() + timeoutMs;
 	while (processIsAlive(pid) && performance.now() < deadline) await Bun.sleep(25);
 	if (processIsAlive(pid))
-		fail(`lifecycle resource process ${String(pid)} remained alive after ${String(timeoutMs)}ms`);
+		fail(`lifecycle resource ${path} process ${String(pid)} remained alive after ${String(timeoutMs)}ms`);
 }
 
 async function runSample(
@@ -998,6 +1145,7 @@ async function runSample(
 	const backgroundShellPid = join(runDirectory, "background-shell.pid");
 	const agentPiPid = join(runDirectory, "agent-pi.pid");
 	const agentShellPid = join(runDirectory, "agent-shell.pid");
+	const agentDescendantPid = join(runDirectory, "agent-descendant.pid");
 	const agentDirectory = join(configDirectory, "agents");
 	const sourceChangePackage = join(runDirectory, "suite-package");
 	const sourceChangeFile = join(sourceChangePackage, "src", "todo", "index.ts");
@@ -1044,6 +1192,7 @@ async function runSample(
 						scenario === "degraded"
 							? "{ invalid lifecycle fixture\n"
 							: `${JSON.stringify({
+									enabled: options.contextEnabled,
 									dreamer: { disable: true },
 									embedding: { provider: "off" },
 									fail_closed_blocking: false,
@@ -1065,6 +1214,7 @@ async function runSample(
 	const traceSuite = options.trace || action === "reload-change";
 	const environment = {
 		...isolatedEnvironment(runDirectory),
+		...(process.env["PS5BW_CHILD_BUN_OPTIONS"] ? { BUN_OPTIONS: process.env["PS5BW_CHILD_BUN_OPTIONS"] } : {}),
 		HF_HOME: join(runDirectory, "cache"),
 		HF_HUB_OFFLINE: "1",
 		PI_CODING_AGENT_DIR: configDirectory,
@@ -1073,6 +1223,7 @@ async function runSample(
 		PS5BW_BACKGROUND_SHELL_PID: backgroundShellPid,
 		PS5BW_AGENT_PI_PID: agentPiPid,
 		PS5BW_AGENT_SHELL_PID: agentShellPid,
+		PS5BW_AGENT_DESCENDANT_PID: agentDescendantPid,
 		PS5BW_PI_BIN: options.piBinary,
 		PS5BW_PTY_LOG: ptyLog,
 		PS5BW_ROWS: String(size.rows),
@@ -1105,18 +1256,32 @@ async function runSample(
 	verifyTerminalState(await readFile(ttyState, "utf8"), size);
 	if (action === "background-exit") await assertProcessSettles(backgroundShellPid, 2_000);
 	if (action === "agent-exit") {
-		await Promise.all([assertProcessSettles(agentPiPid, 8_000), assertProcessSettles(agentShellPid, 8_000)]);
+		await Promise.all([
+			assertProcessSettles(agentPiPid, 8_000),
+			assertProcessSettles(agentShellPid, 8_000),
+			assertProcessSettles(agentDescendantPid, 8_000),
+		]);
 	}
-	await verifySessionDurability(sessionDirectory, sessionFile, action, scenario);
+	await verifySessionDurability(
+		sessionDirectory,
+		sessionFile,
+		action,
+		scenario,
+		options.longSessionTools,
+		options.longSessionToolBytes,
+	);
 	const metrics: ExpectMetrics = {
+		...(action === "agent-exit" ? { interruptMs: parseMetric(output, "interrupt") } : {}),
 		startupMs: parseMetric(output, "startup"),
 		shutdownMs: parseMetric(output, "shutdown"),
 		...(action === "reload" || action === "reload-change" ? { reloadMs: parseMetric(output, "reload") } : {}),
 		...(action === "prompt"
 			? {
 					acknowledgementMs: parseMetric(output, "acknowledgement"),
+					providerStartMs: parseMetric(output, "provider_start"),
 					responseMs: parseMetric(output, "response"),
 					steadyAcknowledgementMs: parseMetric(output, "steady_acknowledgement"),
+					steadyProviderStartMs: parseMetric(output, "steady_provider_start"),
 					steadyResponseMs: parseMetric(output, "steady_response"),
 				}
 			: {}),
@@ -1152,7 +1317,9 @@ async function runSample(
 		action,
 		...(metrics.acknowledgementMs === undefined ? {} : { acknowledgementMs: rounded(metrics.acknowledgementMs) }),
 		columns: size.columns,
+		...(metrics.interruptMs === undefined ? {} : { interruptMs: rounded(metrics.interruptMs) }),
 		iteration,
+		...(metrics.providerStartMs === undefined ? {} : { providerStartMs: rounded(metrics.providerStartMs) }),
 		...(metrics.reloadMs === undefined ? {} : { reloadMs: metrics.reloadMs }),
 		...(metrics.responseMs === undefined ? {} : { responseMs: rounded(metrics.responseMs) }),
 		rows: size.rows,
@@ -1161,6 +1328,9 @@ async function runSample(
 		...(metrics.steadyAcknowledgementMs === undefined
 			? {}
 			: { steadyAcknowledgementMs: rounded(metrics.steadyAcknowledgementMs) }),
+		...(metrics.steadyProviderStartMs === undefined
+			? {}
+			: { steadyProviderStartMs: rounded(metrics.steadyProviderStartMs) }),
 		...(metrics.steadyResponseMs === undefined ? {} : { steadyResponseMs: rounded(metrics.steadyResponseMs) }),
 		startupMs: rounded(metrics.startupMs),
 		...(Array.isArray(suiteTrace) ? { suiteTrace: suiteTrace as LifecycleTraceEvent[] } : {}),
@@ -1191,10 +1361,19 @@ function summaries(samples: readonly LifecycleSample[]): CellSummary[] {
 		const acknowledgementValues = values.flatMap((sample) =>
 			sample.acknowledgementMs === undefined ? [] : [sample.acknowledgementMs],
 		);
+		const interruptValues = values.flatMap((sample) =>
+			sample.interruptMs === undefined ? [] : [sample.interruptMs],
+		);
 		const reloadValues = values.flatMap((sample) => (sample.reloadMs === undefined ? [] : [sample.reloadMs]));
+		const providerStartValues = values.flatMap((sample) =>
+			sample.providerStartMs === undefined ? [] : [sample.providerStartMs],
+		);
 		const responseValues = values.flatMap((sample) => (sample.responseMs === undefined ? [] : [sample.responseMs]));
 		const steadyAcknowledgementValues = values.flatMap((sample) =>
 			sample.steadyAcknowledgementMs === undefined ? [] : [sample.steadyAcknowledgementMs],
+		);
+		const steadyProviderStartValues = values.flatMap((sample) =>
+			sample.steadyProviderStartMs === undefined ? [] : [sample.steadyProviderStartMs],
 		);
 		const steadyResponseValues = values.flatMap((sample) =>
 			sample.steadyResponseMs === undefined ? [] : [sample.steadyResponseMs],
@@ -1204,6 +1383,8 @@ function summaries(samples: readonly LifecycleSample[]): CellSummary[] {
 				action: first.action,
 				...(acknowledgementValues.length > 0 ? { acknowledgement: summarize(acknowledgementValues) } : {}),
 				columns: first.columns,
+				...(interruptValues.length > 0 ? { interrupt: summarize(interruptValues) } : {}),
+				...(providerStartValues.length > 0 ? { providerStart: summarize(providerStartValues) } : {}),
 				...(reloadValues.length > 0 ? { reload: summarize(reloadValues) } : {}),
 				...(responseValues.length > 0 ? { response: summarize(responseValues) } : {}),
 				rows: first.rows,
@@ -1211,6 +1392,9 @@ function summaries(samples: readonly LifecycleSample[]): CellSummary[] {
 				shutdown: summarize(values.map((sample) => sample.shutdownMs)),
 				...(steadyAcknowledgementValues.length > 0
 					? { steadyAcknowledgement: summarize(steadyAcknowledgementValues) }
+					: {}),
+				...(steadyProviderStartValues.length > 0
+					? { steadyProviderStart: summarize(steadyProviderStartValues) }
 					: {}),
 				...(steadyResponseValues.length > 0 ? { steadyResponse: summarize(steadyResponseValues) } : {}),
 				startup: summarize(values.map((sample) => sample.startupMs)),
@@ -1225,10 +1409,13 @@ const ACCEPTANCE_MINIMUM_SAMPLES = 3;
 
 type BudgetedMetric =
 	| "acknowledgement"
+	| "interrupt"
+	| "providerStart"
 	| "reload"
 	| "response"
 	| "shutdown"
 	| "steadyAcknowledgement"
+	| "steadyProviderStart"
 	| "steadyResponse"
 	| "startup";
 
@@ -1258,22 +1445,27 @@ function budgetRules(cell: CellSummary): readonly BudgetRule[] {
 	const longSession = cell.scenario === "resume-long";
 	const rules: BudgetRule[] = [];
 	if (cell.action !== "reload-change") {
-		rules.push({ budget: longSession ? 3_000 : 2_700, metric: "startup" });
+		// Long-history startup is also constrained against the paired Host cell
+		// below; its absolute time is dominated by Host transcript rendering.
+		rules.push({ budget: longSession ? 12_000 : 2_700, metric: "startup" });
 	}
 	if (cell.action === "prompt") {
 		rules.push(
 			{ budget: 50, metric: "acknowledgement" },
-			{ budget: 1_100, metric: "response" },
+			{ budget: longSession ? 2_300 : 800, metric: "providerStart" },
+			{ budget: longSession ? 2_600 : 1_100, metric: "response" },
 			{ budget: 15, metric: "steadyAcknowledgement" },
-			{ budget: 50, metric: "steadyResponse" },
+			{ budget: longSession ? 350 : 100, metric: "steadyProviderStart" },
+			{ budget: longSession ? 550 : 150, metric: "steadyResponse" },
 		);
 	}
 	if (cell.action === "exit" || cell.action === "ctrl-c") {
-		rules.push({ budget: longSession ? 350 : 150, metric: "shutdown" });
+		rules.push({ budget: longSession ? 550 : 150, metric: "shutdown" });
 	}
 	if (cell.action === "background-exit" || cell.action === "agent-exit") {
 		rules.push({ budget: longSession ? 375 : 250, metric: "shutdown" });
 	}
+	if (cell.action === "agent-exit") rules.push({ budget: 1_000, metric: "interrupt" });
 	if (cell.action === "reload") rules.push({ budget: longSession ? 550 : 200, metric: "reload" });
 	if (cell.action === "reload-change") rules.push({ budget: 6_000, metric: "reload" });
 	return rules;
@@ -1285,8 +1477,16 @@ function requiredMetrics(cell: CellSummary): readonly BudgetedMetric[] {
 		"shutdown",
 		...(cell.action === "reload" || cell.action === "reload-change" ? (["reload"] as const) : []),
 		...(cell.action === "prompt"
-			? (["acknowledgement", "response", "steadyAcknowledgement", "steadyResponse"] as const)
+			? ([
+					"acknowledgement",
+					"providerStart",
+					"response",
+					"steadyAcknowledgement",
+					"steadyProviderStart",
+					"steadyResponse",
+				] as const)
 			: []),
+		...(cell.action === "agent-exit" ? (["interrupt"] as const) : []),
 	];
 }
 
@@ -1307,6 +1507,17 @@ export function lifecycleAcceptanceFindings(
 	const findings: string[] = [];
 	if (selection.samples < ACCEPTANCE_MINIMUM_SAMPLES) {
 		findings.push(`coverage requires at least ${String(ACCEPTANCE_MINIMUM_SAMPLES)} measured samples per cell`);
+	}
+	if (!selection.contextEnabled) findings.push("coverage requires the shipped Context capability to remain enabled");
+	if (selection.longSessionTools < ACCEPTANCE_MINIMUM_LONG_SESSION_TOOLS) {
+		findings.push(
+			`coverage requires at least ${String(ACCEPTANCE_MINIMUM_LONG_SESSION_TOOLS)} historical Tool results`,
+		);
+	}
+	if (selection.longSessionToolBytes < ACCEPTANCE_MINIMUM_LONG_TOOL_BYTES) {
+		findings.push(
+			`coverage requires at least ${String(ACCEPTANCE_MINIMUM_LONG_TOOL_BYTES)} bytes per historical Tool result`,
+		);
 	}
 	if (selection.warmups < 1) findings.push("coverage requires at least one warmup per cell");
 	if (!selection.trace) findings.push("coverage requires Host and Suite lifecycle tracing");
@@ -1405,6 +1616,24 @@ export function lifecycleAcceptanceFindings(
 					for (const { budget, metric } of budgetRules(cell)) {
 						if (cell[metric]) enforceBudget(cell, metric, cell[metric], budget);
 					}
+					if (variant === "suite" && action !== "background-exit" && action !== "agent-exit") {
+						const host = cellsByKey.get(acceptanceCellKey("host", scenario, action, size));
+						if (host) {
+							const budget = scenario === "resume-long" ? 1_000 : 750;
+							const overhead = cell.startup.p95 - host.startup.p95;
+							const confirmation = confirmationsByKey.get(key);
+							const confirmationPasses =
+								confirmation !== undefined &&
+								confirmation.startup.samples >= ACCEPTANCE_MINIMUM_SAMPLES &&
+								confirmation.warmups >= selection.warmups &&
+								confirmation.startup.p95 - host.startup.p95 <= budget;
+							if (overhead > budget && !confirmationPasses) {
+								findings.push(
+									`${key} startup overhead ${overhead.toFixed(2)}ms exceeds Host by ${String(budget)}ms`,
+								);
+							}
+						}
+					}
 				}
 			}
 		}
@@ -1415,9 +1644,12 @@ export function lifecycleAcceptanceFindings(
 function progress(sample: LifecycleSample, phase: "initial" | "confirmation" = "initial"): void {
 	const suffix = [
 		sample.reloadMs === undefined ? "" : ` reload=${sample.reloadMs.toFixed(1)}ms`,
+		sample.interruptMs === undefined ? "" : ` interrupt=${sample.interruptMs.toFixed(1)}ms`,
 		sample.acknowledgementMs === undefined ? "" : ` ack=${sample.acknowledgementMs.toFixed(1)}ms`,
+		sample.providerStartMs === undefined ? "" : ` provider=${sample.providerStartMs.toFixed(1)}ms`,
 		sample.responseMs === undefined ? "" : ` response=${sample.responseMs.toFixed(1)}ms`,
 		sample.steadyAcknowledgementMs === undefined ? "" : ` steady-ack=${sample.steadyAcknowledgementMs.toFixed(1)}ms`,
+		sample.steadyProviderStartMs === undefined ? "" : ` steady-provider=${sample.steadyProviderStartMs.toFixed(1)}ms`,
 		sample.steadyResponseMs === undefined ? "" : ` steady-response=${sample.steadyResponseMs.toFixed(1)}ms`,
 	].join("");
 	console.error(
@@ -1447,7 +1679,12 @@ async function main(): Promise<void> {
 		mkdir(projectDirectory, { recursive: true }),
 		mkdir(join(benchmarkRoot, "home"), { recursive: true }),
 	]);
-	const seeded = await prepareFixture(benchmarkRoot, projectDirectory, options.longSessionTools);
+	const seeded = await prepareFixture(
+		benchmarkRoot,
+		projectDirectory,
+		options.longSessionTools,
+		options.longSessionToolBytes,
+	);
 	const samples: LifecycleSample[] = [];
 
 	try {
@@ -1512,7 +1749,7 @@ async function main(): Promise<void> {
 			? lifecycleAcceptanceFindings(options, cellSummaries, confirmationSummaries)
 			: [];
 		const report = {
-			schemaVersion: 5,
+			schemaVersion: 6,
 			generatedAt: new Date().toISOString(),
 			host: { profile: provenance.profile, provenance: provenance.kind },
 			toolchain: { bun: Bun.version },
@@ -1524,6 +1761,8 @@ async function main(): Promise<void> {
 			options: {
 				acceptance: options.acceptance,
 				actions: options.actions,
+				contextEnabled: options.contextEnabled,
+				longSessionToolBytes: options.longSessionToolBytes,
 				longSessionTools: options.longSessionTools,
 				packagePath: options.packagePath,
 				samples: options.samples,
@@ -1553,8 +1792,10 @@ async function main(): Promise<void> {
 				"The host control loads only the deterministic fixture Package; the suite variant adds the Pi Stuff Package before it.",
 				"All model responses are deterministic in-process fixtures; no credential or network call is used.",
 				"Prompt actions measure both first-turn activation and a second same-process steady-state submission.",
+				"Provider-start metrics are emitted before the deterministic Provider reads or serializes Context messages.",
+				"Acceptance long Sessions retain exact 8 KiB representative Tool payloads instead of count-only placeholder results.",
 				"Resource actions verify the tracked shell or Agent child settles after the measured parent shutdown.",
-				"Every exit parses the resulting Session JSONL; completed prompts and Background/Agent Tool call-result receipts must remain durable.",
+				"Every exit parses the resulting Session JSONL; completed work remains durable and cancelled foreground Agents retain their Tool call receipt.",
 				"An initially over-budget cell receives one independent complete confirmation batch; only a repeated violation fails acceptance, and both batches remain in the report.",
 			],
 			samples,

@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 
 export interface ProcessIdentityGroupSnapshot {
@@ -29,17 +29,7 @@ export function readSystemBootIdentity(): string | undefined {
 export function readProcessIdentityGroupSnapshot(pid: number): ProcessIdentityGroupSnapshot | undefined {
 	if (process.platform === "linux") {
 		try {
-			const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf-8");
-			const commandEnd = stat.lastIndexOf(")");
-			if (commandEnd === -1) return undefined;
-			const fields = stat
-				.slice(commandEnd + 1)
-				.trim()
-				.split(/\s+/u);
-			const processGroupId = Number(fields[2]);
-			const startTicks = fields[19];
-			if (!Number.isSafeInteger(processGroupId) || processGroupId <= 0 || !startTicks) return undefined;
-			return { processStartIdentity: `linux:${startTicks}`, processGroupId };
+			return parseLinuxProcessIdentity(fs.readFileSync(`/proc/${pid}/stat`, "utf-8"));
 		} catch {
 			return undefined;
 		}
@@ -60,6 +50,44 @@ export function readProcessIdentityGroupSnapshot(pid: number): ProcessIdentityGr
 /** Stable OS process-birth identity used together with a PID to reject PID reuse. */
 export function readProcessStartIdentity(pid: number): string | undefined {
 	return readProcessIdentityGroupSnapshot(pid)?.processStartIdentity;
+}
+
+/** Host-side process identity lookup that never blocks input/rendering on procfs or `ps`. */
+export async function readProcessStartIdentityAsync(pid: number): Promise<string | undefined> {
+	if (process.platform === "linux") {
+		try {
+			const stat = await fs.promises.readFile(`/proc/${pid}/stat`, "utf-8");
+			return parseLinuxProcessIdentity(stat)?.processStartIdentity;
+		} catch {
+			return undefined;
+		}
+	}
+	if (process.platform !== "darwin" && process.platform !== "freebsd") return undefined;
+	return new Promise((resolve) => {
+		execFile(
+			"/bin/ps",
+			["-o", "lstart=", "-p", String(pid)],
+			{ encoding: "utf-8", maxBuffer: 64 * 1024, timeout: 2_000 },
+			(error, stdout) => {
+				if (error) return resolve(undefined);
+				const identity = stdout.trim();
+				resolve(identity ? `${process.platform}:${identity}` : undefined);
+			},
+		);
+	});
+}
+
+function parseLinuxProcessIdentity(stat: string): ProcessIdentityGroupSnapshot | undefined {
+	const commandEnd = stat.lastIndexOf(")");
+	if (commandEnd === -1) return undefined;
+	const fields = stat
+		.slice(commandEnd + 1)
+		.trim()
+		.split(/\s+/u);
+	const processGroupId = Number(fields[2]);
+	const startTicks = fields[19];
+	if (!Number.isSafeInteger(processGroupId) || processGroupId <= 0 || !startTicks) return undefined;
+	return { processStartIdentity: `linux:${startTicks}`, processGroupId };
 }
 
 function normalizedBootIdentity(platform: string, value: string): string | undefined {

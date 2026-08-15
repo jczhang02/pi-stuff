@@ -123,7 +123,6 @@ function createChildSafeState(): SubagentState {
 		pendingForegroundControlNotices: new Map(),
 		cleanupTimers: new Map(),
 		lastUiContext: null,
-		poller: null,
 		completionSeen: new Map(),
 		watcher: null,
 		watcherRestartTimer: null,

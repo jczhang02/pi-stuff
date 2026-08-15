@@ -138,4 +138,35 @@ describe("RTK context projection", () => {
 		enabled = false;
 		expect(adapter.project(messages)).toBe(messages);
 	});
+
+	test("does not reread retained Tool output on later long-session projections", () => {
+		const messages = Array.from({ length: 600 }, (_, index) =>
+			toolExchange("bash", "placeholder", {
+				command: "printf colored",
+				toolCallId: `call-${String(index)}`,
+			}),
+		).flat();
+		let textReads = 0;
+		for (const message of messages) {
+			if (message.role !== "toolResult") continue;
+			const part = message.content[0];
+			if (part?.type !== "text") continue;
+			Object.defineProperty(part, "text", {
+				configurable: true,
+				enumerable: true,
+				get: () => {
+					textReads += 1;
+					return "\u001b[31mcolored\u001b[0m";
+				},
+			});
+		}
+		const adapter = createRtkProjectionAdapter();
+
+		adapter.project(messages);
+		expect(textReads).toBeGreaterThan(0);
+		textReads = 0;
+		adapter.project(messages);
+
+		expect(textReads).toBe(0);
+	});
 });

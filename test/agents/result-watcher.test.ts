@@ -67,6 +67,55 @@ afterEach(() => {
 });
 
 describe("background result watcher", () => {
+	test("awaits result snapshots without blocking the host event loop", async () => {
+		const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-result-async-read-"));
+		temporaryDirectories.push(resultsDir);
+		const resultPath = path.join(resultsDir, "async-read.json");
+		fs.writeFileSync(
+			resultPath,
+			JSON.stringify({ id: "async-read", sessionId: "root-session", success: true, summary: "done" }),
+		);
+		const readStarted = Promise.withResolvers<void>();
+		const releaseRead = Promise.withResolvers<void>();
+		const delivered: CompletionNotification[] = [];
+		const state = {
+			completionSeen: new Map<string, number>(),
+			currentSessionId: "root-session",
+			resultFileCoalescer: { clear: () => {}, schedule: () => false },
+			watcher: null,
+			watcherRestartTimer: null,
+		} as unknown as SubagentState;
+		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
+			readResultSnapshot: async (target, maxBytes) => {
+				readStarted.resolve();
+				await releaseRead.promise;
+				return readBoundedOwnedFileSnapshot(target, maxBytes);
+			},
+			notifier: {
+				deliver: async (notification) => {
+					delivered.push(notification);
+					return true;
+				},
+			},
+		});
+
+		watcher.startResultWatcher();
+		watcher.primeExistingResults();
+		await readStarted.promise;
+		let hostTimerFired = false;
+		setTimeout(() => {
+			hostTimerFired = true;
+		}, 0);
+		await Bun.sleep(10);
+		expect(hostTimerFired).toBeTrue();
+		releaseRead.resolve();
+		for (let attempt = 0; attempt < 100 && delivered.length === 0; attempt += 1) await Bun.sleep(10);
+
+		expect(delivered).toHaveLength(1);
+		expect(fs.existsSync(resultPath)).toBeFalse();
+		watcher.stopResultWatcher();
+	});
+
 	test("reads an unchanged foreign-session result once and revisits an atomic replacement", async () => {
 		const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-result-foreign-cache-"));
 		temporaryDirectories.push(resultsDir);
@@ -536,7 +585,9 @@ describe("background result watcher", () => {
 		watcher.startResultWatcher();
 		if (!watchListener) throw new Error("Expected fs.watch listener");
 		watchListener("rename", `.${resultFile}.321.123456.abc123.tmp`);
-		for (let attempt = 0; attempt < 50 && delivered.length === 0; attempt++) await Bun.sleep(10);
+		for (let attempt = 0; attempt < 50 && (delivered.length === 0 || fs.existsSync(resultPath)); attempt += 1) {
+			await Bun.sleep(10);
+		}
 
 		expect(delivered).toHaveLength(1);
 		expect(delivered[0]).toMatchObject({ id: "atomic-result", sessionId: "root-session", triggerTurn: true });

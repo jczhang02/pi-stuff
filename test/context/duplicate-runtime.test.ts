@@ -36,6 +36,11 @@ test("physical Context Module copies share one Host runtime", async () => {
 			join(sourceRoot, "conversation-ui"),
 			"dir",
 		);
+		symlinkSync(
+			join(process.cwd(), "packages/pi-stuff/src/lifecycle-deadline.ts"),
+			join(sourceRoot, "lifecycle-deadline.ts"),
+			"file",
+		);
 	}
 
 	let first: ContextModule | undefined;

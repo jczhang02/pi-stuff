@@ -1,4 +1,4 @@
-import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { open, stat } from "node:fs/promises";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { boundTerminalLine } from "../../tool-display/index.js";
 import { sanitizeTerminalText, utf8SafePrefix, utf8SafeTail } from "./output.js";
@@ -76,27 +76,19 @@ function textCondition(evidence: string, successText?: string, failureText?: str
 	return { evidence, state: "pending" };
 }
 
-function readSlice(path: string, fromByte: number): string {
-	let fd: number | undefined;
+async function readSlice(path: string, fromByte: number): Promise<string> {
+	const handle = await open(path, "r");
 	try {
-		fd = openSync(path, "r");
-		const size = statSync(path).size;
+		const size = (await handle.stat()).size;
 		const start = Math.max(fromByte, size - MAX_EVIDENCE_BYTES);
 		const length = Math.max(0, Math.min(MAX_EVIDENCE_BYTES, size - start));
 		if (length === 0) return "";
 		const buffer = Buffer.alloc(length);
-		readSync(fd, buffer, 0, length, start);
+		const { bytesRead } = await handle.read(buffer, 0, length, start);
 		const prefix = start > fromByte ? "…[earlier monitored content omitted]\n" : "";
-		return sanitizeTerminalText(`${prefix}${utf8SafeTail(buffer, length).toString("utf-8")}`).trimEnd();
+		return sanitizeTerminalText(`${prefix}${utf8SafeTail(buffer, bytesRead).toString("utf-8")}`).trimEnd();
 	} finally {
-		if (fd !== undefined) {
-			try {
-				closeSync(fd);
-			} catch {
-				// Closing an observation descriptor is best effort after the slice
-				// has already been read; it must not change Monitor evidence.
-			}
-		}
+		await handle.close().catch(() => {});
 	}
 }
 
@@ -134,7 +126,7 @@ class PollingMonitor implements BackgroundMonitorActivity {
 	private readonly controller = new AbortController();
 	private evidence = "Waiting for the condition.";
 	private finalized = false;
-	private readonly initialOffset: number;
+	private initialOffset = 0;
 	private readonly input: MonitorInput;
 	private readonly intervalMs: number;
 	private outcomeResolve!: (outcome: BackgroundWorkOutcome) => void;
@@ -149,7 +141,6 @@ class PollingMonitor implements BackgroundMonitorActivity {
 		this.intervalMs = intervalMs;
 		this.timeoutMs = timeoutMs;
 		this.title = titleFor(input);
-		this.initialOffset = this.resolveInitialOffset();
 		this.outcome = new Promise((resolve) => {
 			this.outcomeResolve = resolve;
 		});
@@ -185,6 +176,13 @@ class PollingMonitor implements BackgroundMonitorActivity {
 	}
 
 	private async run(): Promise<void> {
+		if (this.input.source === "log" && this.input.startAtEnd !== false) {
+			try {
+				this.initialOffset = (await stat(this.input.target)).size;
+			} catch {
+				this.initialOffset = 0;
+			}
+		}
 		const deadline = this.startedAt + this.timeoutMs;
 		while (!this.finalized && !this.controller.signal.aborted) {
 			if (Date.now() >= deadline) {
@@ -222,7 +220,7 @@ class PollingMonitor implements BackgroundMonitorActivity {
 
 	private async probe(): Promise<ProbeResult> {
 		if (this.input.source === "http") return this.probeHttp();
-		const evidence = readSlice(this.input.target, this.initialOffset);
+		const evidence = await readSlice(this.input.target, this.initialOffset);
 		if (!this.input.successText && !this.input.failureText) {
 			return { evidence: evidence || `Found ${this.input.target}`, state: "satisfied" };
 		}
@@ -247,15 +245,6 @@ class PollingMonitor implements BackgroundMonitorActivity {
 		} finally {
 			clearTimeout(timeout);
 			this.controller.signal.removeEventListener("abort", parentAbort);
-		}
-	}
-
-	private resolveInitialOffset(): number {
-		if (this.input.source !== "log" || this.input.startAtEnd === false) return 0;
-		try {
-			return statSync(this.input.target).size;
-		} catch {
-			return 0;
 		}
 	}
 

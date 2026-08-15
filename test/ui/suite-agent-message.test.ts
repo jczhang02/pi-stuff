@@ -141,6 +141,31 @@ test("Suite Agent message delivery rechecks session ownership after asynchronous
 	expect(deliveries).toBe(0);
 });
 
+test("Suite Agent message delivery cannot accept into a session replaced during Host delivery", async () => {
+	let finishDelivery = (): void => {};
+	const delivery = new Promise<void>((resolve) => {
+		finishDelivery = resolve;
+	});
+	let current = true;
+	let accepted = 0;
+	const [, sender] = hostApis((() => delivery) as ExtensionAPI["sendMessage"]);
+
+	const pending = deliverSuiteAgentMessage(
+		sender,
+		{ customType: "test", content: "continue", display: false },
+		{ triggerTurn: true },
+		() => current,
+		() => {
+			accepted += 1;
+		},
+	);
+	current = false;
+	finishDelivery();
+
+	await expect(pending).resolves.toBe("stale");
+	expect(accepted).toBe(0);
+});
+
 test("Suite Agent messages fail open through a partial standalone API without an event bus", async () => {
 	let delivered = false;
 	const api = {

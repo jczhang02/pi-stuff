@@ -1033,6 +1033,8 @@ export interface AsyncStatus {
 		agent: string;
 		/** Small explicit UI projection when recovery proves an unexpected owner crash. */
 		agentStatus?: "crashed";
+		/** In-memory compatibility proof recovered asynchronously from a legacy transcript. */
+		legacyFinalReportComplete?: true;
 		/** Resolved launch context for this child step. */
 		context?: "fresh" | "fork";
 		phase?: string;
@@ -1301,7 +1303,6 @@ export interface SubagentState {
 	pendingForegroundControlNotices?: Map<string, ReturnType<typeof setTimeout>>;
 	cleanupTimers: Map<string, ReturnType<typeof setTimeout>>;
 	lastUiContext: ExtensionContext | null;
-	poller: NodeJS.Timeout | null;
 	completionSeen: Map<string, number>;
 	watcher: FSWatcher | null;
 	watcherRestartTimer: ReturnType<typeof setTimeout> | null;
@@ -1338,6 +1339,7 @@ export interface IntercomEventBus {
 export const INTERCOM_DETACH_REQUEST_EVENT = "pi-intercom:detach-request";
 export const INTERCOM_DETACH_RESPONSE_EVENT = "pi-intercom:detach-response";
 export const SUBAGENT_ASYNC_STARTED_EVENT = "subagent:async-started";
+export const SUBAGENT_ASYNC_STATUS_EVENT = "subagent:async-status";
 export const SUBAGENT_ASYNC_COMPLETE_EVENT = "subagent:async-complete";
 export const SUBAGENT_PROCESS_TERMINAL_EVENT = "subagent:process-terminal";
 export const SUBAGENT_FOREGROUND_COMPLETE_EVENT = "subagent:foreground-complete";

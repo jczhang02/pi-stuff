@@ -242,6 +242,13 @@ function isTaskAnchor(message: ContextEvent["messages"][number]): boolean {
 	return message.role === "custom" && message.customType === WORK_CONTINUITY_TASK_ANCHOR_TYPE;
 }
 
+function projectedTaskAnchorIndex(messages: ContextEvent["messages"]): number {
+	const first = messages[0];
+	if (first && isTaskAnchor(first)) return 0;
+	const tail = messages.at(-1);
+	return tail && isTaskAnchor(tail) ? messages.length - 1 : -1;
+}
+
 function fingerprint(toolName: string, content: string): string {
 	return createHash("sha256")
 		.update(boundUtf8(`${toolName}:${content}`, MAX_RESULT_FINGERPRINT_BYTES), "utf8")
@@ -450,9 +457,14 @@ export class WorkContinuityGovernor {
 	}
 
 	project(event: ContextEvent): { readonly messages: ContextEvent["messages"] } | undefined {
-		const withoutOldAnchor = event.messages.filter((message) => !isTaskAnchor(message));
+		const messages = event.messages;
+		const previousAnchorIndex = projectedTaskAnchorIndex(messages);
 		const work = this.active;
-		if (!work) return withoutOldAnchor.length === event.messages.length ? undefined : { messages: withoutOldAnchor };
+		if (!work) {
+			if (previousAnchorIndex < 0) return undefined;
+			messages.splice(previousAnchorIndex, 1);
+			return { messages };
+		}
 		const anchor = {
 			role: "custom" as const,
 			customType: WORK_CONTINUITY_TASK_ANCHOR_TYPE,
@@ -466,10 +478,16 @@ export class WorkContinuityGovernor {
 			timestamp: Date.now(),
 		} satisfies ContextEvent["messages"][number];
 		if (work.synthesisCause) work.synthesisPromptDelivered = true;
-		return {
-			messages:
-				work.completedVerifications.length > 0 ? [...withoutOldAnchor, anchor] : [anchor, ...withoutOldAnchor],
-		};
+		const trailsConversation = work.completedVerifications.length > 0;
+		const expectedIndex = trailsConversation ? messages.length - 1 : 0;
+		if (previousAnchorIndex === expectedIndex) {
+			messages[previousAnchorIndex] = anchor;
+		} else {
+			if (previousAnchorIndex >= 0) messages.splice(previousAnchorIndex, 1);
+			if (trailsConversation) messages.push(anchor);
+			else messages.unshift(anchor);
+		}
+		return { messages };
 	}
 
 	hasActiveWork(): boolean {

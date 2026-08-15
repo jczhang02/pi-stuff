@@ -22,18 +22,19 @@ import { type DurableClaim, shardedDurableClaimName, tryAcquireKernelClaim } fro
 import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
 import { ensurePrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { readProcessStartIdentity } from "../../shared/process-identity.ts";
-import type {
-	ArtifactPaths,
-	CostSummary,
-	ModelAttempt,
-	ProtocolOutputLimit,
-	SteeringTargetState,
-	TokenUsage,
-	ToolBudgetState,
-	TurnBudgetState,
-	Usage,
+import {
+	type ArtifactPaths,
+	type CostSummary,
+	getSubagentDepthEnv,
+	type ModelAttempt,
+	type ProtocolOutputLimit,
+	type SteeringTargetState,
+	SUBAGENT_ASYNC_STATUS_EVENT,
+	type TokenUsage,
+	type ToolBudgetState,
+	type TurnBudgetState,
+	type Usage,
 } from "../../shared/types.ts";
-import { getSubagentDepthEnv } from "../../shared/types.ts";
 import {
 	detectSubagentError,
 	extractTextFromContent,
@@ -838,9 +839,50 @@ function updateRunProjection(status: RunnerStatus): void {
 	status.lastUpdate = Date.now();
 }
 
+const STATUS_PUBLISH_INTERVAL_MS = 100;
+let pendingPublishedStatus: { statusPath: string; status: RunnerStatus } | undefined;
+let statusPublishTimer: ReturnType<typeof setTimeout> | undefined;
+
+function sendPublishedStatus(): void {
+	const pending = pendingPublishedStatus;
+	pendingPublishedStatus = undefined;
+	statusPublishTimer = undefined;
+	if (!pending || typeof process.send !== "function" || process.connected === false) return;
+	try {
+		process.send(
+			{
+				type: SUBAGENT_ASYNC_STATUS_EVENT,
+				asyncDir: path.dirname(pending.statusPath),
+				status: pending.status,
+			},
+			() => {},
+		);
+	} catch {
+		// The detached run remains authoritative on disk after its parent disconnects.
+	}
+}
+
+function publishStatus(statusPath: string, status: RunnerStatus): void {
+	pendingPublishedStatus = { statusPath, status };
+	if (
+		status.state === "complete" ||
+		status.state === "failed" ||
+		status.state === "paused" ||
+		status.state === "stopped"
+	) {
+		if (statusPublishTimer) clearTimeout(statusPublishTimer);
+		sendPublishedStatus();
+		return;
+	}
+	if (statusPublishTimer) return;
+	statusPublishTimer = setTimeout(sendPublishedStatus, STATUS_PUBLISH_INTERVAL_MS);
+	statusPublishTimer.unref?.();
+}
+
 function writeStatus(statusPath: string, status: RunnerStatus): void {
 	updateRunProjection(status);
 	writePrivateAtomicJson(statusPath, status);
+	publishStatus(statusPath, status);
 }
 
 function appendRecentOutput(step: RunnerStatusStep, text: string): void {

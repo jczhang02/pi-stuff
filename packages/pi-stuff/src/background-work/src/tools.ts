@@ -2,6 +2,7 @@ import type { AgentToolResult, BashToolDetails, ExtensionAPI, ToolDefinition } f
 import { Type } from "typebox";
 import {
 	activityKey,
+	bashResultMovedToBackground,
 	boundTerminalLine,
 	classifyBashActivity,
 	registerSuiteOwnedTool,
@@ -94,7 +95,7 @@ function resultText<T>(result: AgentToolResult<T>): string {
 }
 
 export function isForegroundBashResult(result: AgentToolResult<BashToolDetails | undefined>): boolean {
-	return !/\b(?:started|moved|manually moved) to background task\b/u.test(resultText(result));
+	return !bashResultMovedToBackground(result);
 }
 
 function requireRuntime(ref: WorkToolRuntimeRef): BackgroundWorkRuntime {

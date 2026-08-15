@@ -23,6 +23,7 @@ import {
 	SessionAgentGovernor,
 	type SessionGovernorLimitInput,
 	type SessionGovernorRebindResult,
+	type SessionGovernorSnapshot,
 } from "./session-governor.ts";
 
 export interface AgentExecutionGovernorPort {
@@ -44,6 +45,7 @@ export interface AgentExecutionGovernorPort {
 export interface AgentExecutionCoordinatorSession {
 	readonly governor: AgentExecutionGovernorPort;
 	hasLedger?(): Promise<boolean>;
+	inspectExistingSnapshot?(): Promise<SessionGovernorSnapshot | undefined>;
 	reconcile(isPidAlive: (pid: number, lease: AgentGovernorLease) => boolean | undefined): Promise<void>;
 }
 
@@ -99,6 +101,7 @@ export interface AgentExecutionCoordinatorPort {
 	complete(event: unknown): Promise<void>;
 	reconcileDead(): Promise<void>;
 	reconcileExisting(): Promise<void>;
+	inspectExistingRuntimeLeases?(): Promise<readonly AgentGovernorLease[]>;
 	dispose(): void;
 }
 
@@ -436,6 +439,11 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		const session = this.session();
 		if (session.hasLedger && !(await session.hasLedger())) return;
 		await session.reconcile((pid, lease) => this.runtimeProcessState(pid, lease));
+	}
+
+	async inspectExistingRuntimeLeases(): Promise<readonly AgentGovernorLease[]> {
+		if (!this.boundIdentity) return [];
+		return (await this.session().inspectExistingSnapshot?.())?.leases ?? [];
 	}
 
 	dispose(): void {
@@ -804,6 +812,7 @@ export function createDurableAgentExecutionCoordinator(
 			return {
 				governor: new AgentExecutionGovernor(sessionGovernor),
 				hasLedger: () => sessionGovernor.hasLedger(),
+				inspectExistingSnapshot: () => sessionGovernor.inspectExistingSnapshot(),
 				reconcile: async (isPidAlive) => {
 					await sessionGovernor.reconcile(isPidAlive);
 				},
