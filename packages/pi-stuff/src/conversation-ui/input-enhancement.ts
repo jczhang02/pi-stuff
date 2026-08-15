@@ -20,6 +20,7 @@ import {
 } from "@earendil-works/pi-tui";
 
 const COMMAND_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/u;
+const BACKSPACE_INPUT = "\u007f";
 const MAX_COMMANDS = 256;
 const MAX_DESCRIPTION_CODE_UNITS = 320;
 
@@ -147,6 +148,21 @@ function commandNames(options: InputEnhancementOptions, providerNames: ReadonlyS
 	return names;
 }
 
+function skillCommandNames(options: InputEnhancementOptions): Set<string> {
+	const names = new Set<string>();
+	try {
+		for (const command of options.getCommands()) {
+			if (command.source !== "skill") continue;
+			const name = safeCommandName(command.name);
+			if (name) names.add(name);
+			if (names.size >= MAX_COMMANDS) break;
+		}
+	} catch {
+		// A transient registry failure must not expose non-Skill inline candidates.
+	}
+	return names;
+}
+
 function sanitizeTerminalText(value: string): string {
 	let output = "";
 	const bounded = value.slice(0, MAX_DESCRIPTION_CODE_UNITS);
@@ -207,12 +223,12 @@ function sanitizeTerminalText(value: string): string {
 	return output.replace(/\s+/gu, " ").trim();
 }
 
-function safeAutocompleteItems(items: readonly AutocompleteItem[], query: string): SelectItem[] {
+function safeAutocompleteItems(items: readonly AutocompleteItem[], allowedNames: ReadonlySet<string>): SelectItem[] {
 	const result: SelectItem[] = [];
 	const seen = new Set<string>();
 	for (const item of items) {
 		const name = safeCommandName(item.value);
-		if (!name?.startsWith(query) || seen.has(name)) continue;
+		if (!name || !allowedNames.has(name) || seen.has(name)) continue;
 		seen.add(name);
 		const description = item.description ? sanitizeTerminalText(item.description) : "";
 		result.push({
@@ -575,12 +591,13 @@ class InputEnhancementEditor implements EditorComponent {
 			this.clearInlineAutocomplete();
 			return;
 		}
-		if (!selected.value.startsWith(current.query)) {
+		if (current.query.length > 0 && !this.keybindings.matches(BACKSPACE_INPUT, "tui.editor.deleteCharBackward")) {
 			this.clearInlineAutocomplete();
 			return;
 		}
-		const insertion = `${selected.value.slice(current.query.length)} `;
 		this.clearInlineAutocomplete();
+		for (let index = 0; index < current.query.length; index += 1) this.editor.handleInput(BACKSPACE_INPUT);
+		const insertion = `${selected.value} `;
 		if (this.editor.insertTextAtCursor) {
 			this.editor.insertTextAtCursor(insertion);
 		} else {
@@ -657,7 +674,7 @@ class InputEnhancementEditor implements EditorComponent {
 				this.inlineAbort = undefined;
 				const current = findInlineSlashContext(this.editor);
 				if (!current || current.signature !== context.signature || !suggestions) return;
-				const items = safeAutocompleteItems(suggestions.items, context.query);
+				const items = safeAutocompleteItems(suggestions.items, skillCommandNames(this.options));
 				for (const item of suggestions.items) {
 					const name = safeCommandName(item.value);
 					if (name && this.providerCommandNames.size < MAX_COMMANDS) this.providerCommandNames.add(name);

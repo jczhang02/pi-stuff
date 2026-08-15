@@ -88,8 +88,9 @@ guidance and inventory instead of wrapping them. It is part of Pi's normal scrol
 
 ### Input enhancements
 
-Recognized commands and skills are highlighted without changing the editor's text or width. Slash autocomplete also
-works after slash text elsewhere in the input, while preserving Pi's native editor, completion provider, and keybindings.
+Recognized commands and skills are highlighted without changing the editor's text or width. Inline Slash autocomplete
+reuses Pi's native fuzzy results after slash text elsewhere, keeps only Skills, and inserts their canonical
+`/skill:<name>` form while preserving Pi's native editor, completion provider, and keybindings.
 
 ### Live Thoughts
 
@@ -141,7 +142,7 @@ only; behavior settings stay with the Capability they affect. In the full Suite 
 | Statusline icons | Detect icons automatically or force Nerd Font or ASCII icons | Immediately |
 | Welcome header | Show startup orientation and inventory | Next launch |
 | Input highlighting | Style recognized commands and skills while typing | Immediately |
-| Inline slash autocomplete | Suggest real commands and skills after slash text | Immediately |
+| Inline slash autocomplete | Suggest Host-ranked Skills after slash text | Immediately |
 | Tool running timer | Show elapsed time for long-running Tool operations | Immediately |
 
 The Tools Capability contributes the timer through the shared settings registry. The former `/tool-settings` command is

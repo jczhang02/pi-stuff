@@ -99,7 +99,11 @@ interface ObservableEditor extends EditorComponent {
 }
 
 function commands(...names: string[]): SlashCommandInfo[] {
-	return names.map((name) => ({ name }) as SlashCommandInfo);
+	return names.map((name) => command(name, name.startsWith("skill:") ? "skill" : "extension"));
+}
+
+function command(name: string, source: SlashCommandInfo["source"]): SlashCommandInfo {
+	return { name, source } as SlashCommandInfo;
 }
 
 function createEditor(
@@ -182,50 +186,84 @@ describe("Pi Stuff input highlighting", () => {
 });
 
 describe("Pi Stuff inline slash autocomplete", () => {
+	test("keeps Host fuzzy Skill results while excluding other inline commands", async () => {
+		const { editor, provider } = createEditor(
+			{ inlineSlashAutocomplete: true, inputHighlighting: false },
+			[
+				{ value: "hzh-command", label: "hzh-command", description: "Extension command" },
+				{ value: "hzh-prompt", label: "hzh-prompt", description: "Prompt command" },
+				{ value: "skill:humanizer-zh", label: "skill:humanizer-zh", description: "Humanize Chinese text" },
+			],
+			[command("hzh-command", "extension"), command("hzh-prompt", "prompt"), command("skill:humanizer-zh", "skill")],
+		);
+		editor.setText("请使用 /hzh尾");
+		editor.handleInput("\u001b[D");
+		await settleAutocomplete();
+
+		expect(provider.requests).toContain("/hzh");
+		const suggestions = editor.render(64).join("\n");
+		expect(suggestions).toContain("/skill:humanizer-zh");
+		expect(suggestions).not.toContain("/hzh-command");
+		expect(suggestions).not.toContain("/hzh-prompt");
+
+		editor.handleInput("\t");
+		expect(editor.getText()).toBe("请使用 /skill:humanizer-zh 尾");
+		editor.handleInput("新");
+		expect(editor.getText()).toBe("请使用 /skill:humanizer-zh 新尾");
+	});
+
 	test("uses the Host provider inside a CJK sentence and preserves text after the cursor", async () => {
-		const { editor, provider } = createEditor({ inlineSlashAutocomplete: true, inputHighlighting: true }, [
-			{ value: "review", label: "review", description: "Review changes" },
-			{ value: "reload", label: "reload", description: "Reload resources" },
-		]);
+		const { editor, provider } = createEditor(
+			{ inlineSlashAutocomplete: true, inputHighlighting: true },
+			[
+				{ value: "skill:review", label: "skill:review", description: "Review changes" },
+				{ value: "skill:reload", label: "skill:reload", description: "Reload resources" },
+			],
+			commands("skill:review", "skill:reload"),
+		);
 		let submitted = false;
 		editor.onSubmit = () => {
 			submitted = true;
 		};
-		editor.setText("请执行 /re尾");
+		editor.setText("请执行 /skill:re尾");
 		editor.handleInput("\u001b[D");
 		await settleAutocomplete();
 
-		expect(provider.requests).toContain("/re");
+		expect(provider.requests).toContain("/skill:re");
 		expect(editor.isShowingAutocomplete()).toBeTrue();
 		const suggestions = editor.render(64).join("\n");
-		expect(suggestions).toContain("/review");
-		expect(suggestions).toContain("/reload");
+		expect(suggestions).toContain("/skill:review");
+		expect(suggestions).toContain("/skill:reload");
 
 		editor.handleInput("\u001b[B");
 		editor.handleInput("\t");
-		expect(editor.getText()).toBe("请执行 /reload 尾");
+		expect(editor.getText()).toBe("请执行 /skill:reload 尾");
 		expect(submitted).toBeFalse();
 		expect(editor.isShowingAutocomplete()).toBeFalse();
-		expect(editor.render(64).join("\n")).toContain(`${ACCENT_OPEN}/reload${ACCENT_CLOSE}`);
+		expect(editor.render(64).join("\n")).toContain(`${ACCENT_OPEN}/skill:reload${ACCENT_CLOSE}`);
 	});
 
 	test("works at the start of later lines while leaving first-line native completion to Pi", async () => {
-		const { editor, provider } = createEditor({ inlineSlashAutocomplete: true, inputHighlighting: false }, [
-			{ value: "review", label: "review" },
-		]);
-		editor.setText("first line\n/re");
+		const { editor, provider } = createEditor(
+			{ inlineSlashAutocomplete: true, inputHighlighting: false },
+			[{ value: "skill:review", label: "skill:review" }],
+			commands("skill:review"),
+		);
+		editor.setText("first line\n/rev");
 		await settleAutocomplete();
 
-		expect(provider.requests).toContain("/re");
+		expect(provider.requests).toContain("/rev");
 		expect(editor.isShowingAutocomplete()).toBeTrue();
 		editor.handleInput("\t");
-		expect(editor.getText()).toBe("first line\n/review ");
+		expect(editor.getText()).toBe("first line\n/skill:review ");
 	});
 
 	test("removes the list immediately when `/ui` disables it and emits no blank row", async () => {
-		const created = createEditor({ inlineSlashAutocomplete: true, inputHighlighting: false }, [
-			{ value: "review", label: "review" },
-		]);
+		const created = createEditor(
+			{ inlineSlashAutocomplete: true, inputHighlighting: false },
+			[{ value: "skill:review", label: "skill:review" }],
+			commands("skill:review"),
+		);
 		created.editor.setText("ask /re");
 		await settleAutocomplete();
 		expect(created.editor.render(64).length).toBeGreaterThan(3);
@@ -237,19 +275,23 @@ describe("Pi Stuff inline slash autocomplete", () => {
 	});
 
 	test("filters unsafe registry data before it reaches the terminal", async () => {
-		const { editor } = createEditor({ inlineSlashAutocomplete: true, inputHighlighting: false }, [
-			{
-				value: "review",
-				label: "review",
-				description: "安全\u001b]0;OWNED\u0007说明\u009dC1_TITLE\u009c结束",
-			},
-			{ value: "bad\u001b[31m", label: "bad" },
-		]);
+		const { editor } = createEditor(
+			{ inlineSlashAutocomplete: true, inputHighlighting: false },
+			[
+				{
+					value: "skill:review",
+					label: "skill:review",
+					description: "安全\u001b]0;OWNED\u0007说明\u009dC1_TITLE\u009c结束",
+				},
+				{ value: "skill:bad\u001b[31m", label: "skill:bad" },
+			],
+			[command("skill:review", "skill"), command("skill:bad\u001b[31m", "skill")],
+		);
 		editor.setText("请 /r");
 		await settleAutocomplete();
 
 		const output = editor.render(64).join("\n");
-		expect(output).toContain("/review");
+		expect(output).toContain("/skill:review");
 		expect(output).not.toContain("OWNED");
 		expect(output).not.toContain("C1_TITLE");
 		expect(output).not.toContain("bad");
@@ -270,7 +312,7 @@ describe("editor composition", () => {
 		} as unknown as ExtensionContext;
 		const settings = { inlineSlashAutocomplete: true, inputHighlighting: false };
 		const controller = installInputEnhancementEditor(context, {
-			getCommands: () => commands("review"),
+			getCommands: () => commands("skill:review"),
 			getSettings: () => settings,
 			getTheme: () => theme,
 		});
@@ -279,7 +321,7 @@ describe("editor composition", () => {
 		const tui = new TestTui();
 		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS) as unknown as AgentKeybindingsManager;
 		const editor = installedFactory?.(tui as unknown as TUI, editorTheme, keybindings) as ObservableEditor;
-		editor.setAutocompleteProvider?.(new CommandProvider([{ value: "review", label: "review" }]));
+		editor.setAutocompleteProvider?.(new CommandProvider([{ value: "skill:review", label: "skill:review" }]));
 		editor.setText("ask /re");
 		await settleAutocomplete();
 

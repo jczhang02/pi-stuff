@@ -15,6 +15,7 @@ exec "$PI_STUFF_UI_PTY_BIN" \
 	--no-builtin-tools \
 	--extension "$PI_STUFF_UI_PTY_PACKAGE" \
 	--extension "$PI_STUFF_UI_PTY_PROVIDER_EXTENSION" \
+	--skill "$PI_STUFF_UI_PTY_SKILL" \
 	--provider pi-stuff-ui-pty \
 	--model ui-pty-model \
 	--thinking medium \

@@ -169,6 +169,7 @@ class TmuxPiSession {
 			PI_STUFF_UI_PTY_SESSIONS: paths.sessions,
 			PI_STUFF_UI_PTY_SESSION_ID:
 				options.sessionId ?? `ui-pty-${String(columns)}x${String(rows)}-${String(sessionCounter)}`,
+			PI_STUFF_UI_PTY_SKILL: join(paths.config, "skills", "humanizer-zh", "SKILL.md"),
 			PI_TELEMETRY: "0",
 			SHELL: "/bin/sh",
 			TERM: "xterm-256color",
@@ -350,11 +351,13 @@ async function createCase(
 	const config = join(caseDirectory, "agent");
 	const sessions = join(caseDirectory, "sessions");
 	const project = join(caseDirectory, "项目", "长路径", "验证");
+	const skill = join(config, "skills", "humanizer-zh");
 	const log = join(caseDirectory, "ui-pty.jsonl");
 	await Promise.all([
 		mkdir(config, { recursive: true }),
 		mkdir(sessions, { recursive: true }),
 		mkdir(project, { recursive: true }),
+		mkdir(skill, { recursive: true }),
 	]);
 	await Promise.all([
 		writeFile(
@@ -377,6 +380,11 @@ async function createCase(
 			{ mode: 0o600 },
 		),
 		writeFile(log, "", { mode: 0o600 }),
+		writeFile(
+			join(skill, "SKILL.md"),
+			"---\nname: humanizer-zh\ndescription: Humanize Chinese fixture text\n---\n\nFixture instructions.\n",
+			{ mode: 0o600 },
+		),
 		writeFile(join(project, "tracked-工具.txt"), "committed\n", {
 			mode: 0o600,
 		}),
@@ -931,11 +939,11 @@ async function verifyWideInteractions(
 	if (!session.capture().includes("/u")) fail("native autocomplete Escape did not preserve the editor draft");
 
 	session.sendKey("C-u");
-	session.sendLiteral("prefix /u");
-	screen = await session.waitForText("Configure Pi Stuff UI");
+	session.sendLiteral("prefix /hzh");
+	screen = await session.waitForText("Humanize Chinese fixture text");
 	if (hasStatusline(screen)) fail("Statusline remained visible while inline slash autocomplete was open");
 	session.sendKey("Escape");
-	await session.waitForText("prefix /u");
+	await session.waitForText("prefix /hzh");
 	await session.waitForStatusline("closing inline slash autocomplete");
 	session.sendKey("C-u");
 
@@ -1058,11 +1066,11 @@ async function verifyWideInteractions(
 	await session.waitForAbsence("Type to search");
 	await session.waitForStatusline();
 	session.sendKey("C-u");
-	session.sendLiteral("prefix /u");
+	session.sendLiteral("prefix /hzh");
 	await delay(500);
 	screen = session.capture();
-	if (screen.includes("Configure Pi Stuff UI")) fail("disabled inline autocomplete still opened suggestions");
-	if (!screen.includes("prefix /u") || !hasStatusline(screen)) {
+	if (screen.includes("Humanize Chinese fixture text")) fail("disabled inline autocomplete still opened suggestions");
+	if (!screen.includes("prefix /hzh") || !hasStatusline(screen)) {
 		fail("disabled inline autocomplete did not preserve the editor and Statusline");
 	}
 

@@ -566,7 +566,7 @@ export function registerOwnedUiSettings(registry: UiSettingRegistry, store: UiSe
 			registry,
 			store,
 			{
-				description: "Suggest real commands and skills after slash text anywhere in the input",
+				description: "Suggest Host-ranked Skills after slash text anywhere in the input",
 				id: "inlineSlashAutocomplete",
 				label: "Inline slash autocomplete",
 				order: 40,
