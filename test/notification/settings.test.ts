@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { NotificationSettingsStore } from "../../packages/pi-stuff/src/notification/settings.ts";
+import {
+	DEFAULT_NOTIFICATION_SETTINGS,
+	NotificationSettingsStore,
+} from "../../packages/pi-stuff/src/notification/settings.ts";
 
 const roots: string[] = [];
 
@@ -32,6 +35,70 @@ describe("NotificationSettingsStore", () => {
 
 		await store.update({ enabled: false });
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ ...store.get(), enabled: false });
+		expect((await stat(path)).mode & 0o777).toBe(0o600);
+		expect((await stat(`${path}.lock`)).mode & 0o777).toBe(0o600);
+	});
+
+	test("two failed queued updates restore the last durable settings", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-stuff-notification-settings-"));
+		roots.push(root);
+		const path = join(root, "notification.json");
+		let writes = 0;
+		let releaseFirstWrite: (() => void) | undefined;
+		let reportFirstWriteStarted: (() => void) | undefined;
+		const firstWriteStarted = new Promise<void>((resolve) => {
+			reportFirstWriteStarted = resolve;
+		});
+		const firstWriteRelease = new Promise<void>((resolve) => {
+			releaseFirstWrite = resolve;
+		});
+		const store = await NotificationSettingsStore.load(path, async () => {
+			writes += 1;
+			if (writes === 1) {
+				reportFirstWriteStarted?.();
+				await firstWriteRelease;
+			}
+			throw new Error(`settings write ${String(writes)} failed`);
+		});
+
+		const first = store.update({ enabled: false });
+		await firstWriteStarted;
+		const second = store.update({ terminalBell: true });
+		releaseFirstWrite?.();
+		const results = await Promise.allSettled([first, second]);
+
+		expect(results.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+		expect(writes).toBe(2);
+		expect(store.get()).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
+		await expect(readFile(path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	test("independent stores apply patches to the latest durable settings", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-stuff-notification-settings-"));
+		roots.push(root);
+		const path = join(root, "notification.json");
+		const first = await NotificationSettingsStore.load(path);
+		const second = await NotificationSettingsStore.load(path);
+
+		await Promise.all([first.update({ enabled: false }), second.update({ terminalBell: true })]);
+
+		expect((await NotificationSettingsStore.load(path)).get()).toEqual({
+			...DEFAULT_NOTIFICATION_SETTINGS,
+			enabled: false,
+			terminalBell: true,
+		});
+	});
+
+	test("overlapping updates to one field retain the latest requested value", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-stuff-notification-settings-"));
+		roots.push(root);
+		const path = join(root, "notification.json");
+		const store = await NotificationSettingsStore.load(path);
+
+		await Promise.all([store.update({ enabled: false }), store.update({ enabled: true })]);
+
+		expect(store.get()).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
+		expect((await NotificationSettingsStore.load(path)).get()).toEqual(DEFAULT_NOTIFICATION_SETTINGS);
 	});
 
 	test("legacy sound settings migrate in memory and persist only after direct input", async () => {

@@ -4,7 +4,7 @@ import { isAbsolute, join } from "node:path";
 type XdgEnvironment = Readonly<Record<string, string | undefined>>;
 
 function absoluteEnvironmentPath(name: keyof XdgEnvironment, environment: XdgEnvironment): string | undefined {
-	const value = environment[name]?.trim();
+	const value = environment[name];
 	return value && isAbsolute(value) ? value : undefined;
 }
 

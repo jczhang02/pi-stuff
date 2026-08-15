@@ -188,7 +188,7 @@ async function writeSettings(path: string, settings: UiSettings): Promise<void> 
  */
 function loadFlockLibrary() {
 	if (process.platform !== "linux") {
-		throw new Error(`UI settings locking is not supported on ${process.platform}`);
+		throw new Error(`Settings locking is not supported on ${process.platform}`);
 	}
 	return dlopen("libc.so.6", {
 		flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
@@ -202,14 +202,14 @@ function tryAcquireFileLock(fileDescriptor: number): boolean {
 	return flockLibrary.symbols.flock(fileDescriptor, FLOCK_EXCLUSIVE_NONBLOCKING) === 0;
 }
 
-async function acquireSettingsLock(lockPath: string): Promise<() => Promise<void>> {
+export async function acquireSettingsLock(lockPath: string, owner = "UI"): Promise<() => Promise<void>> {
 	await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
 	const startedAt = Date.now();
 	const handle = await open(lockPath, "a+", 0o600);
 	try {
 		while (!tryAcquireFileLock(handle.fd)) {
 			if (Date.now() - startedAt >= SETTINGS_LOCK_TIMEOUT_MS) {
-				throw new Error(`timed out waiting for the UI settings lock at ${lockPath}`);
+				throw new Error(`timed out waiting for the ${owner} settings lock at ${lockPath}`);
 			}
 			await new Promise<void>((resolve) => setTimeout(resolve, SETTINGS_LOCK_POLL_MS));
 		}

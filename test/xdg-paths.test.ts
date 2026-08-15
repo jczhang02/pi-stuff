@@ -20,18 +20,47 @@ function restoreEnvironment(): void {
 afterEach(restoreEnvironment);
 
 describe.serial("Pi Stuff XDG paths", () => {
-	test("XDG roots accept only absolute environment paths", () => {
-		const environment = {
+	test("unset and empty XDG roots use their documented fallbacks", () => {
+		const empty = {
 			XDG_CACHE_HOME: "",
-			XDG_CONFIG_HOME: "relative/config",
-			XDG_RUNTIME_DIR: "relative/runtime",
-			XDG_STATE_HOME: " /srv/pi-state ",
+			XDG_CONFIG_HOME: "",
+			XDG_RUNTIME_DIR: "",
+			XDG_STATE_HOME: "",
+		};
+		for (const environment of [{}, empty]) {
+			expect(xdgConfigHome(environment, "/users/example")).toBe("/users/example/.config");
+			expect(xdgStateHome(environment, "/users/example")).toBe("/users/example/.local/state");
+			expect(xdgCacheHome(environment, "/users/example")).toBe("/users/example/.cache");
+			expect(xdgRuntimeHome(environment)).toBeUndefined();
+		}
+	});
+
+	test("leading whitespace does not turn a relative XDG value into an absolute path", () => {
+		const environment = {
+			XDG_CACHE_HOME: " /srv/pi-cache",
+			XDG_CONFIG_HOME: " /srv/pi-config",
+			XDG_RUNTIME_DIR: " /srv/pi-runtime",
+			XDG_STATE_HOME: " /srv/pi-state",
 		};
 
 		expect(xdgConfigHome(environment, "/users/example")).toBe("/users/example/.config");
-		expect(xdgStateHome(environment, "/users/example")).toBe("/srv/pi-state");
+		expect(xdgStateHome(environment, "/users/example")).toBe("/users/example/.local/state");
 		expect(xdgCacheHome(environment, "/users/example")).toBe("/users/example/.cache");
 		expect(xdgRuntimeHome(environment)).toBeUndefined();
+	});
+
+	test("absolute XDG values retain trailing whitespace byte-for-byte", () => {
+		const environment = {
+			XDG_CACHE_HOME: "/srv/pi-cache ",
+			XDG_CONFIG_HOME: "/srv/pi-config ",
+			XDG_RUNTIME_DIR: "/srv/pi-runtime ",
+			XDG_STATE_HOME: "/srv/pi-state ",
+		};
+
+		expect(xdgConfigHome(environment, "/users/example")).toBe(environment.XDG_CONFIG_HOME);
+		expect(xdgStateHome(environment, "/users/example")).toBe(environment.XDG_STATE_HOME);
+		expect(xdgCacheHome(environment, "/users/example")).toBe(environment.XDG_CACHE_HOME);
+		expect(xdgRuntimeHome(environment)).toBe(environment.XDG_RUNTIME_DIR);
 	});
 
 	test("Code Mode cache uses the Pi Stuff XDG namespace", () => {

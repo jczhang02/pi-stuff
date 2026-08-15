@@ -3,6 +3,8 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
+import { acquireSettingsLock } from "../conversation-ui/settings.js";
+import { xdgRuntimeHome } from "../xdg/index.js";
 import type { TerminalDeliveryMode } from "./transport.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-notification.json";
@@ -33,6 +35,9 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 };
 
 type SettingsWriter = (path: string, settings: NotificationSettings) => Promise<void>;
+type SettingsChanges = {
+	-readonly [Id in Exclude<keyof NotificationSettings, "schemaVersion">]?: NotificationSettings[Id];
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -106,16 +111,57 @@ async function writeSettings(path: string, settings: NotificationSettings): Prom
 	}
 }
 
+function resolveSettingsLockPath(
+	settingsPath: string,
+	environment: NodeJS.ProcessEnv = process.env,
+	agentDir = getAgentDir(),
+): string {
+	const runtimeHome = xdgRuntimeHome(environment);
+	return settingsPath === join(agentDir, SETTINGS_FILE_NAME) && runtimeHome
+		? join(runtimeHome, "pi-stuff", `${SETTINGS_FILE_NAME}.lock`)
+		: `${settingsPath}.lock`;
+}
+
+function applySettingsChanges(
+	settings: NotificationSettings,
+	changes: SettingsChanges | undefined,
+): NotificationSettings {
+	return parseSettings({ ...settings, ...changes });
+}
+
+function sameSettings(left: NotificationSettings, right: NotificationSettings): boolean {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function persistSettingsChanges(
+	path: string,
+	lockPath: string,
+	changes: SettingsChanges,
+	writer: SettingsWriter,
+): Promise<NotificationSettings> {
+	const release = await acquireSettingsLock(lockPath, "Notification");
+	try {
+		const current = await readSettings(path);
+		const next = applySettingsChanges(current, changes);
+		if (!sameSettings(current, next)) await writer(path, next);
+		return next;
+	} finally {
+		await release();
+	}
+}
+
 /** Loading is read-only; only direct user updates create the settings file. */
 export class NotificationSettingsStore {
 	private readonly listeners = new Set<(settings: NotificationSettings) => void>();
+	private readonly lockPath: string;
 	private readonly path: string;
 	private pending = Promise.resolve();
 	private value: NotificationSettings;
 	private readonly writer: SettingsWriter;
 
-	private constructor(path: string, value: NotificationSettings, writer: SettingsWriter) {
+	private constructor(path: string, lockPath: string, value: NotificationSettings, writer: SettingsWriter) {
 		this.path = path;
+		this.lockPath = lockPath;
 		this.value = value;
 		this.writer = writer;
 	}
@@ -124,11 +170,11 @@ export class NotificationSettingsStore {
 		path = join(getAgentDir(), SETTINGS_FILE_NAME),
 		writer: SettingsWriter = writeSettings,
 	): Promise<NotificationSettingsStore> {
-		return new NotificationSettingsStore(path, await readSettings(path), writer);
+		return new NotificationSettingsStore(path, resolveSettingsLockPath(path), await readSettings(path), writer);
 	}
 
 	static memory(value: NotificationSettings = DEFAULT_NOTIFICATION_SETTINGS): NotificationSettingsStore {
-		return new NotificationSettingsStore("", value, writeSettings);
+		return new NotificationSettingsStore("", "", value, writeSettings);
 	}
 
 	get(): NotificationSettings {
@@ -140,24 +186,16 @@ export class NotificationSettingsStore {
 		return () => this.listeners.delete(listener);
 	}
 
-	async update(patch: Partial<Omit<NotificationSettings, "schemaVersion">>): Promise<void> {
-		const previous = this.value;
-		const next = parseSettings({ ...previous, ...patch });
-		if (JSON.stringify(next) === JSON.stringify(previous)) return;
-		this.value = next;
-		this.notify();
-		if (!this.path) return;
-		const write = this.pending.then(() => this.writer(this.path, next));
-		this.pending = write.catch(() => undefined);
-		try {
-			await write;
-		} catch (error) {
-			if (this.value === next) {
-				this.value = previous;
-				this.notify();
-			}
-			throw error;
+	async update(patch: SettingsChanges): Promise<void> {
+		if (!this.path) {
+			this.replaceValue(applySettingsChanges(this.value, patch));
+			return;
 		}
+		const write = this.pending.then(async () => {
+			this.replaceValue(await persistSettingsChanges(this.path, this.lockPath, patch, this.writer));
+		});
+		this.pending = write.catch(() => undefined);
+		await write;
 	}
 
 	async whenIdle(): Promise<void> {
@@ -166,5 +204,11 @@ export class NotificationSettingsStore {
 
 	private notify(): void {
 		for (const listener of this.listeners) listener(this.value);
+	}
+
+	private replaceValue(next: NotificationSettings): void {
+		if (sameSettings(this.value, next)) return;
+		this.value = next;
+		this.notify();
 	}
 }
