@@ -153,6 +153,23 @@ describe("generateSuite", () => {
 		);
 	});
 
+	test("injects effective Code Mode state into Subagents at the Suite composition root", async () => {
+		const root = await createRepository();
+		await writeJson(join(root, "packages", "pi-stuff", "suite.json"), {
+			schemaVersion: 2,
+			capabilities: ["tool-display", "subagents", "code-mode"],
+			tools: ["read", "subagent"],
+		});
+
+		await generateSuite(root, "write");
+		const generated = await readFile(join(root, "packages", "pi-stuff", "src", "suite-runtime.ts"), "utf8");
+		expect(generated).toContain(
+			'const resolveCodeModeEnabled = () => registrations.surface.isEnvelopeEnabled("codemode");',
+		);
+		expect(generated).toContain("registerSuiteSubagents(pi, options, resolveCodeModeEnabled)");
+		expect(generated).toContain("childBaseExtensionPath: options.childBaseExtensionPath, resolveCodeModeEnabled");
+	});
+
 	test("reports generated drift without rewriting the working tree", async () => {
 		const root = await createRepository();
 		const indexPath = join(root, "packages", "pi-stuff", "index.ts");

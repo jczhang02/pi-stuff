@@ -31,6 +31,13 @@ interface Pending {
 	readonly tools?: Map<string, SuiteSandboxTool>;
 }
 
+export class CodeModeHostLostError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "CodeModeHostLostError";
+	}
+}
+
 export class CodeModeHostClient {
 	private readonly binary: string;
 	private buffer = Buffer.alloc(0);
@@ -184,12 +191,13 @@ export class CodeModeHostClient {
 			if (this.child === child) this.stderr = (this.stderr + chunk.toString()).slice(-16_384);
 		});
 		child.on("error", (error) => {
-			if (this.child === child) this.failAll(error);
+			if (this.child === child)
+				this.failAll(new CodeModeHostLostError(`Code Mode host failed: ${error.message}`, { cause: error }));
 		});
 		child.on("close", (code) => {
 			if (this.child !== child) return;
 			this.failAll(
-				new Error(
+				new CodeModeHostLostError(
 					`Code Mode host exited with code ${code ?? "unknown"}${this.stderr.trim() ? `: ${this.stderr.trim()}` : ""}`,
 				),
 			);
@@ -256,7 +264,9 @@ export class CodeModeHostClient {
 		this.queuedWriteBytes += frame.length;
 		child.stdin.write(frame, (error) => {
 			this.queuedWriteBytes = Math.max(0, this.queuedWriteBytes - frame.length);
-			if (error && this.child === child) this.failAll(error);
+			if (error && this.child === child) {
+				this.failAll(new CodeModeHostLostError(`Code Mode host write failed: ${error.message}`, { cause: error }));
+			}
 		});
 	}
 

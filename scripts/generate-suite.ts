@@ -66,6 +66,7 @@ function renderSuiteRuntime(
 ): string {
 	const hasSubagents = capabilities.includes("subagents");
 	const hasCodeMode = capabilities.includes("code-mode");
+	const sharesCodeModeState = hasSubagents && hasCodeMode;
 	if ((toolNames.length > 0 || deferredToolNames.length > 0) && !capabilities.includes("tool-display")) {
 		throw new Error("A Suite Tool inventory requires the tool-display module");
 	}
@@ -110,10 +111,20 @@ function renderSuiteRuntime(
 		.map((capability) => ({
 			id: capability,
 			install:
-				capability === "subagents" ? "(pi) => registerSuiteSubagents(pi, options)" : CAPABILITY_MODULES[capability],
+				capability === "subagents"
+					? sharesCodeModeState
+						? "(pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled)"
+						: "(pi) => registerSuiteSubagents(pi, options)"
+					: CAPABILITY_MODULES[capability],
 		}));
 	const importBlock = ['import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";', ...imports].join("\n");
-	const capabilityDeclaration = `function createCapabilities(options: SuiteInstallationOptions): readonly CapabilityInstallation[] {
+	const capabilityFunction = sharesCodeModeState
+		? `function createCapabilities(
+	options: SuiteInstallationOptions,
+	resolveCodeModeEnabled: () => boolean,
+): readonly CapabilityInstallation[] {`
+		: "function createCapabilities(options: SuiteInstallationOptions): readonly CapabilityInstallation[] {";
+	const capabilityDeclaration = `${capabilityFunction}
 	return [\n${capabilityEntries
 		.map((entry) => `\t\t{ id: ${JSON.stringify(entry.id)}, install: ${entry.install} },`)
 		.join("\n")}\n\t];
@@ -149,7 +160,15 @@ interface CapabilityInstallation {
 }`,
 		...(hasSubagents
 			? [
-					`function registerSuiteSubagents(pi: ExtensionAPI, options: SuiteInstallationOptions): void | Promise<void> {
+					sharesCodeModeState
+						? `function registerSuiteSubagents(
+	pi: ExtensionAPI,
+	options: SuiteInstallationOptions,
+	resolveCodeModeEnabled: () => boolean,
+): void | Promise<void> {
+	return subagents(pi, { childBaseExtensionPath: options.childBaseExtensionPath, resolveCodeModeEnabled });
+}`
+						: `function registerSuiteSubagents(pi: ExtensionAPI, options: SuiteInstallationOptions): void | Promise<void> {
 	return subagents(pi, { childBaseExtensionPath: options.childBaseExtensionPath });
 }`,
 				]
@@ -170,7 +189,7 @@ interface CapabilityInstallation {
 		`export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallationOptions): Promise<void> {
 \tmarkLifecyclePhase("suite.factory.start");
 \tconst suiteApi = installSuiteSessionReadiness(pi);
-${toolNames.length > 0 ? "\tconst registrations = createSuiteToolRegistrationTracker(suiteApi);\n" : ""}${hasCodeMode ? "\tregisterCodeModeContextProjection(suiteApi);\n" : ""}\tfor (const capability of createCapabilities(options)) {
+${toolNames.length > 0 ? "\tconst registrations = createSuiteToolRegistrationTracker(suiteApi);\n" : ""}${hasCodeMode ? "\tregisterCodeModeContextProjection(suiteApi);\n" : ""}${sharesCodeModeState ? '\tconst resolveCodeModeEnabled = () => registrations.surface.isEnvelopeEnabled("codemode");\n' : ""}\tfor (const capability of createCapabilities(options${sharesCodeModeState ? ", resolveCodeModeEnabled" : ""})) {
 \t\tmarkLifecyclePhase(\`capability.\${capability.id}.start\`);
 \t\tawait capability.install(${toolNames.length > 0 ? "registrations.api" : "suiteApi"});
 \t\tmarkLifecyclePhase(\`capability.\${capability.id}.end\`);

@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerWorkTools } from "../../packages/pi-stuff/src/background-work/src/tools.js";
-import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import {
+	createSuiteToolRegistrationTracker,
+	getToolUiRuntime,
+} from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 function registeredBash(): { readonly api: ExtensionAPI; readonly bash: ToolDefinition } {
 	const tools = new Map<string, ToolDefinition>();
@@ -18,6 +21,24 @@ function registeredBash(): { readonly api: ExtensionAPI; readonly bash: ToolDefi
 	expect(bash).toBeDefined();
 	return { api, bash: bash as ToolDefinition };
 }
+
+test("the live Background Work Bash keeps its Code Mode contract", () => {
+	const tools = new Map<string, ToolDefinition>();
+	const api = {
+		events: { emit: () => {}, on: () => () => {} },
+		getActiveTools: () => ["bash"],
+		getAllTools: () => [...tools.values()].map((tool) => ({ name: tool.name })),
+		on: () => {},
+		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
+		setActiveTools: () => {},
+	} as unknown as ExtensionAPI;
+	const registrations = createSuiteToolRegistrationTracker(api);
+	registerWorkTools(registrations.api, { current: () => undefined });
+
+	expect(registrations.registry.catalog().find((entry) => entry.definition.name === "bash")).toMatchObject({
+		codeMode: { replay: "never" },
+	});
+});
 
 test("standalone Bash preserves an automatic foreground-to-background handoff in its child output", () => {
 	const { api, bash } = registeredBash();

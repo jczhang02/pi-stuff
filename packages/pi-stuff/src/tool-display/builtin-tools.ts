@@ -14,6 +14,9 @@ import { activityKey, classifyBashActivity, singleActivity } from "./activity.js
 import { registerSuiteOwnedTool } from "./contract.js";
 import { describeBuiltinTarget, formatElapsed, summarizeBuiltin } from "./render.js";
 
+const PROGRAMMATIC_READ = { replay: "record" } as const;
+export const BASH_CODE_MODE_CONTRACT = { replay: "never" } as const;
+
 export interface BuiltinHostSettings {
 	readonly autoResizeImages: boolean;
 	readonly shellCommandPrefix: string | undefined;
@@ -49,16 +52,21 @@ export function registerBuiltins(
 		const read = (factories.read ?? createReadToolDefinition)(cwd, {
 			autoResizeImages: hostSettings.autoResizeImages,
 		});
-		registerSuiteOwnedTool(pi, read, {
-			activity: {
-				categories: ["read-file"],
-				classify: ({ args }) => singleActivity("read-file", { key: resolve(cwd, args.path), target: args.path }),
+		registerSuiteOwnedTool(
+			pi,
+			read,
+			{
+				activity: {
+					categories: ["read-file"],
+					classify: ({ args }) => singleActivity("read-file", { key: resolve(cwd, args.path), target: args.path }),
+				},
+				label: "Read",
+				runningSummary: "reading",
+				summarize: (args, result, state, durationMs) => summarizeBuiltin("read", args, result, state, durationMs),
+				target: (args) => describeBuiltinTarget("read", args),
 			},
-			label: "Read",
-			runningSummary: "reading",
-			summarize: (args, result, state, durationMs) => summarizeBuiltin("read", args, result, state, durationMs),
-			target: (args) => describeBuiltinTarget("read", args),
-		});
+			PROGRAMMATIC_READ,
+		);
 	}
 
 	if (!selectedNames || selectedNames.has("write")) {
@@ -94,70 +102,90 @@ export function registerBuiltins(
 			...(hostSettings.shellCommandPrefix !== undefined ? { commandPrefix: hostSettings.shellCommandPrefix } : {}),
 			...(hostSettings.shellPath !== undefined ? { shellPath: hostSettings.shellPath } : {}),
 		});
-		registerSuiteOwnedTool(pi, bash, {
-			activity: {
-				categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
-				classify: classifyBashActivity,
+		registerSuiteOwnedTool(
+			pi,
+			bash,
+			{
+				activity: {
+					categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
+					classify: classifyBashActivity,
+				},
+				label: "Bash",
+				runningSummary: (_args, durationMs) => `running ${formatElapsed(durationMs ?? 0)}`,
+				summarize: (args, result, state, durationMs) => summarizeBuiltin("bash", args, result, state, durationMs),
+				target: (args) => describeBuiltinTarget("bash", args),
+				tracksElapsed: true,
 			},
-			label: "Bash",
-			runningSummary: (_args, durationMs) => `running ${formatElapsed(durationMs ?? 0)}`,
-			summarize: (args, result, state, durationMs) => summarizeBuiltin("bash", args, result, state, durationMs),
-			target: (args) => describeBuiltinTarget("bash", args),
-			tracksElapsed: true,
-		});
+			BASH_CODE_MODE_CONTRACT,
+		);
 	}
 
 	if (!selectedNames || selectedNames.has("grep")) {
 		const grep = createGrepToolDefinition(cwd);
-		registerSuiteOwnedTool(pi, grep, {
-			activity: {
-				categories: ["search-pattern"],
-				classify: ({ args }) =>
-					singleActivity("search-pattern", {
-						key: activityKey(args.pattern, resolve(cwd, args.path ?? "."), args.glob ?? ""),
-						target: args.pattern,
-					}),
+		registerSuiteOwnedTool(
+			pi,
+			grep,
+			{
+				activity: {
+					categories: ["search-pattern"],
+					classify: ({ args }) =>
+						singleActivity("search-pattern", {
+							key: activityKey(args.pattern, resolve(cwd, args.path ?? "."), args.glob ?? ""),
+							target: args.pattern,
+						}),
+				},
+				label: "Grep",
+				runningSummary: "searching",
+				summarize: (args, result, state, durationMs) => summarizeBuiltin("grep", args, result, state, durationMs),
+				target: (args) => describeBuiltinTarget("grep", args),
 			},
-			label: "Grep",
-			runningSummary: "searching",
-			summarize: (args, result, state, durationMs) => summarizeBuiltin("grep", args, result, state, durationMs),
-			target: (args) => describeBuiltinTarget("grep", args),
-		});
+			PROGRAMMATIC_READ,
+		);
 	}
 
 	if (!selectedNames || selectedNames.has("find")) {
 		const find = createFindToolDefinition(cwd);
-		registerSuiteOwnedTool(pi, find, {
-			activity: {
-				categories: ["search-pattern"],
-				classify: ({ args }) =>
-					singleActivity("search-pattern", {
-						key: activityKey(args.pattern, resolve(cwd, args.path ?? ".")),
-						target: args.pattern,
-					}),
+		registerSuiteOwnedTool(
+			pi,
+			find,
+			{
+				activity: {
+					categories: ["search-pattern"],
+					classify: ({ args }) =>
+						singleActivity("search-pattern", {
+							key: activityKey(args.pattern, resolve(cwd, args.path ?? ".")),
+							target: args.pattern,
+						}),
+				},
+				label: "Find",
+				runningSummary: "searching",
+				summarize: (args, result, state, durationMs) => summarizeBuiltin("find", args, result, state, durationMs),
+				target: (args) => describeBuiltinTarget("find", args),
 			},
-			label: "Find",
-			runningSummary: "searching",
-			summarize: (args, result, state, durationMs) => summarizeBuiltin("find", args, result, state, durationMs),
-			target: (args) => describeBuiltinTarget("find", args),
-		});
+			PROGRAMMATIC_READ,
+		);
 	}
 
 	if (!selectedNames || selectedNames.has("ls")) {
 		const ls = createLsToolDefinition(cwd);
-		registerSuiteOwnedTool(pi, ls, {
-			activity: {
-				categories: ["list-directory"],
-				classify: ({ args }) => {
-					const path = args.path ?? ".";
-					return singleActivity("list-directory", { key: resolve(cwd, path), target: path });
+		registerSuiteOwnedTool(
+			pi,
+			ls,
+			{
+				activity: {
+					categories: ["list-directory"],
+					classify: ({ args }) => {
+						const path = args.path ?? ".";
+						return singleActivity("list-directory", { key: resolve(cwd, path), target: path });
+					},
 				},
+				label: "List",
+				runningSummary: "listing",
+				summarize: (args, result, state, durationMs) => summarizeBuiltin("ls", args, result, state, durationMs),
+				target: (args) => describeBuiltinTarget("ls", args),
 			},
-			label: "List",
-			runningSummary: "listing",
-			summarize: (args, result, state, durationMs) => summarizeBuiltin("ls", args, result, state, durationMs),
-			target: (args) => describeBuiltinTarget("ls", args),
-		});
+			PROGRAMMATIC_READ,
+		);
 	}
 }
 

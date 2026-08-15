@@ -55,11 +55,15 @@ const REQUIRED_ARCHIVE_FILES = [
 	"package/src/code-mode/index.ts",
 	"package/src/code-mode/extension.ts",
 	"package/src/code-mode/connector.ts",
+	"package/src/code-mode/ledger.ts",
 	"package/src/code-mode/runtime.ts",
 	"package/src/code-mode/v8-executor.ts",
+	"package/src/code-mode/cloudflare/codec.ts",
+	"package/src/code-mode/cloudflare/normalize.ts",
 	"package/src/code-mode/host/host-client.ts",
 	"package/src/code-mode/host/host-assets.ts",
 	"package/src/code-mode/LICENSES/Apache-2.0.txt",
+	"package/src/code-mode/LICENSES/Cloudflare-MIT.txt",
 	"package/src/code-mode/THIRD_PARTY_NOTICES.md",
 	"package/src/context-management/index.ts",
 	"package/src/rtk/index.ts",
@@ -259,6 +263,7 @@ async function verifyProvenanceAndLicenses(baseDirectory: string): Promise<void>
 	await access(join(baseDirectory, "src", "codex", "LICENSES", "Apache-2.0.txt"));
 	await access(join(baseDirectory, "src", "codex", "THIRD_PARTY_NOTICES.md"));
 	await access(join(baseDirectory, "src", "code-mode", "LICENSES", "Apache-2.0.txt"));
+	await access(join(baseDirectory, "src", "code-mode", "LICENSES", "Cloudflare-MIT.txt"));
 	await access(join(baseDirectory, "src", "code-mode", "THIRD_PARTY_NOTICES.md"));
 	for (const technique of RTK_TECHNIQUE_FILES) {
 		await access(join(baseDirectory, "src", "rtk", "upstream", "techniques", technique));

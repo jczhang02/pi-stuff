@@ -55,11 +55,15 @@ import {
 } from "./render.js";
 import { ToolUiSettingsStore } from "./settings.js";
 
+export { deliverSuiteAgentMessage, withAgentWorkOrigin, withDirectUserActivation } from "../conversation-ui/index.js";
+
 const TOOL_RUNTIME_REGISTRY = Symbol.for("@jczhang02/pi-stuff-tools/runtime-registry.v1");
 const TOOL_RUNTIME_DISCOVERY_EVENT = "@jczhang02/pi-stuff-tools/runtime-discovery/v1";
 const TOOL_RELOAD_HANDOFF = Symbol.for("@jczhang02/pi-stuff-tools/reload-handoff.v1");
 const SUITE_ACTIVITY_RENDERER = Symbol.for("@jczhang02/pi-stuff-tools/activity-renderer.v1");
 const SUITE_TOOL_ENVELOPE = Symbol.for("@jczhang02/pi-stuff-tools/tool-envelope.v1");
+const SUITE_TOOL_ENVELOPE_COMPANION = Symbol.for("@jczhang02/pi-stuff-tools/tool-envelope-companion.v1");
+const SUITE_TOOL_CODE_MODE = Symbol.for("@jczhang02/pi-stuff-tools/code-mode.v1");
 
 interface SuiteActivityRendererMarker {
 	readonly activity: ToolActivityMetadata<Record<string, unknown>, unknown>;
@@ -70,6 +74,10 @@ interface SuiteToolEnvelopeMarker {
 	readonly decode: SuiteToolEnvelopeDecoder;
 	readonly media?: SuiteToolEnvelopeMediaResolver;
 	readonly registry: SuiteToolDefinitionRegistry;
+}
+
+interface SuiteToolEnvelopeCompanionMarker {
+	readonly owner: string;
 }
 const DETAIL_LINE_LIMIT = 240;
 const DETAIL_BYTE_LIMIT = 24 * 1_024;
@@ -127,11 +135,15 @@ export type SuiteToolEnvelopeOperationState = "cancelled" | "error" | "rejected"
 
 export interface SuiteToolEnvelopeOperation {
 	readonly args: Readonly<Record<string, unknown>>;
+	readonly attempt?: number;
+	readonly executionId?: string;
 	readonly id: string;
 	/** Preserve media at the same boundary it occupied in the direct Tool result. */
 	readonly mediaPlacements?: readonly SuiteToolEnvelopeMediaPlacement[];
 	readonly name: string;
+	readonly replayed?: boolean;
 	readonly result?: AgentToolResult<unknown>;
+	readonly sequence?: number;
 	readonly state: SuiteToolEnvelopeOperationState;
 }
 
@@ -149,10 +161,43 @@ export type SuiteToolEnvelopeMediaResolver = (
 ) => readonly (readonly AgentToolResult<unknown>["content"][number][])[];
 
 export interface SuiteToolDefinitionRegistry {
+	catalog(): readonly SuiteToolCatalogEntry[];
+	compensate(invocation: SuiteToolCompensationInvocation): Promise<boolean>;
 	get(name: string): ToolDefinition | undefined;
 	invoke(invocation: SuiteToolInvocation): Promise<SuiteToolInvocationResult>;
 	isActive(name: string): boolean;
 	list(): readonly ToolDefinition[];
+}
+
+export interface SuiteToolCodeModeContract {
+	/** Explicit inverse operation. It runs only from a user-requested compensation pass. */
+	readonly compensate?: (invocation: SuiteToolCompensationInvocation) => Promise<void> | void;
+	readonly lifecycle?: SuiteToolCodeModeLifecycle;
+	readonly replay: "never" | "record" | "reexecute";
+	readonly requiresApproval?: boolean;
+}
+
+export type SuiteToolCodeModeExecutionEndStatus = "completed" | "error" | "rejected" | "rolled_back";
+export type SuiteToolCodeModePassEndStatus = SuiteToolCodeModeExecutionEndStatus | "paused";
+
+export interface SuiteToolCodeModeLifecycle {
+	disposeExecution?(executionId: string, status: SuiteToolCodeModeExecutionEndStatus): Promise<void> | void;
+	onPassEnd?(executionId: string, status: SuiteToolCodeModePassEndStatus): Promise<void> | void;
+}
+
+export interface SuiteToolCompensationInvocation {
+	readonly context: ExtensionContext;
+	readonly executionId: string;
+	readonly input: unknown;
+	readonly name: string;
+	readonly result: unknown;
+	readonly sequence: number;
+	readonly signal?: AbortSignal;
+}
+
+export interface SuiteToolCatalogEntry {
+	readonly codeMode?: SuiteToolCodeModeContract;
+	readonly definition: ToolDefinition;
 }
 
 export interface SuiteToolInvocation {
@@ -1245,6 +1290,11 @@ export class ToolUiRuntime {
 			const id = value["toolCallId"];
 			const content = value["content"];
 			if (typeof id !== "string" || !Array.isArray(content)) return;
+			const name = value["toolName"];
+			if (typeof name === "string" && this.envelopeDecoders.has(name)) {
+				this.rebuildGroups();
+				return;
+			}
 			this.updateToolResult(id, {
 				content: content as AgentToolResult<unknown>["content"],
 				...(value["details"] !== undefined ? { details: value["details"] } : { details: undefined }),
@@ -1857,6 +1907,29 @@ function hasSuiteActivityRenderer(tool: unknown): boolean {
 	return suiteActivityRendererMarker(tool) !== undefined;
 }
 
+function suiteToolCodeModeContract(tool: unknown): SuiteToolCodeModeContract | undefined {
+	if (!isRecordValue(tool)) return undefined;
+	const value = Reflect.get(tool, SUITE_TOOL_CODE_MODE);
+	if (!isRecordValue(value)) return undefined;
+	if (value["replay"] !== "never" && value["replay"] !== "record" && value["replay"] !== "reexecute") {
+		return undefined;
+	}
+	if (value["compensate"] !== undefined && typeof value["compensate"] !== "function") return undefined;
+	if (value["lifecycle"] !== undefined) {
+		if (!isRecordValue(value["lifecycle"])) return undefined;
+		if (
+			value["lifecycle"]["disposeExecution"] !== undefined &&
+			typeof value["lifecycle"]["disposeExecution"] !== "function"
+		) {
+			return undefined;
+		}
+		if (value["lifecycle"]["onPassEnd"] !== undefined && typeof value["lifecycle"]["onPassEnd"] !== "function") {
+			return undefined;
+		}
+	}
+	return value as unknown as SuiteToolCodeModeContract;
+}
+
 function suiteToolEnvelopeMarker(tool: unknown): SuiteToolEnvelopeMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	const marker = Reflect.get(tool, SUITE_TOOL_ENVELOPE);
@@ -1864,6 +1937,14 @@ function suiteToolEnvelopeMarker(tool: unknown): SuiteToolEnvelopeMarker | undef
 		return undefined;
 	}
 	return marker as unknown as SuiteToolEnvelopeMarker;
+}
+
+function suiteToolEnvelopeCompanionMarker(tool: unknown): SuiteToolEnvelopeCompanionMarker | undefined {
+	if (!isRecordValue(tool)) return undefined;
+	const marker = Reflect.get(tool, SUITE_TOOL_ENVELOPE_COMPANION);
+	return isRecordValue(marker) && typeof marker["owner"] === "string"
+		? (marker as unknown as SuiteToolEnvelopeCompanionMarker)
+		: undefined;
 }
 
 const CAPTURED_TOOL_EVENTS = new Set([
@@ -1890,6 +1971,7 @@ function errorToolResult(error: unknown): AgentToolResult<unknown> {
 /** Observe every Tool registered by Suite modules without changing the Host API. */
 export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolRegistrationTracker {
 	const capturedHandlers = new Map<string, CapturedToolHandler[]>();
+	const envelopeCompanions = new Map<string, Set<string>>();
 	const envelopeTools = new Set<string>();
 	const toolNames = new Set<string>();
 	const tools = new Map<string, ToolDefinition>();
@@ -1899,18 +1981,20 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 	const projectActiveTools = (names: readonly string[], envelope: string): string[] => {
 		const projected: string[] = [];
 		let inserted = false;
+		const insertEnvelope = (): void => {
+			if (inserted) return;
+			projected.push(envelope, ...(envelopeCompanions.get(envelope) ?? []));
+			inserted = true;
+		};
 		for (const name of uniqueToolNames(names)) {
 			if (envelopeTools.has(name)) continue;
 			if (tools.has(name)) {
-				if (!inserted) {
-					projected.push(envelope);
-					inserted = true;
-				}
+				insertEnvelope();
 				continue;
 			}
 			projected.push(name);
 		}
-		if (!inserted) projected.push(envelope);
+		insertEnvelope();
 		return projected;
 	};
 	const applyActiveProjection = (): void => {
@@ -2147,6 +2231,20 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 		return { isError, result };
 	};
 	const registry: SuiteToolDefinitionRegistry = {
+		catalog: () =>
+			[...tools.values()].map((definition) => {
+				const codeMode = suiteToolCodeModeContract(definition);
+				return {
+					...(codeMode ? { codeMode } : {}),
+					definition,
+				};
+			}),
+		async compensate(invocation) {
+			const contract = suiteToolCodeModeContract(tools.get(invocation.name));
+			if (!contract?.compensate) return false;
+			await contract.compensate(invocation);
+			return true;
+		},
 		get: (name) => tools.get(name),
 		invoke,
 		isActive: (name) =>
@@ -2166,7 +2264,8 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 				return;
 			}
 			if (!enabledEnvelope && envelopeTools.has(name)) {
-				pi.setActiveTools(pi.getActiveTools().filter((toolName) => toolName !== name));
+				const hidden = new Set([name, ...(envelopeCompanions.get(name) ?? [])]);
+				pi.setActiveTools(pi.getActiveTools().filter((toolName) => !hidden.has(toolName)));
 			}
 		},
 		enableEnvelope(name) {
@@ -2186,11 +2285,20 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 	};
 	const registerTool: ExtensionAPI["registerTool"] = (tool) => {
 		const envelope = suiteToolEnvelopeMarker(tool);
+		const companion = suiteToolEnvelopeCompanionMarker(tool);
 		pi.registerTool(tool);
 		const runtime = getToolUiRuntime(pi);
 		if (envelope) {
 			envelopeTools.add(tool.name);
 			runtime.registerEnvelope(tool.name, envelope.decode);
+			applyActiveProjection();
+			return;
+		}
+		if (companion) {
+			envelopeTools.add(tool.name);
+			const names = envelopeCompanions.get(companion.owner) ?? new Set<string>();
+			names.add(tool.name);
+			envelopeCompanions.set(companion.owner, names);
 			applyActiveProjection();
 			return;
 		}
@@ -2865,19 +2973,43 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 	pi.registerTool(decorated);
 }
 
-/** Register a Suite-owned Tool without changing its execute protocol or result. */
-export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unknown>(
+/** Register a Tool that is visible only while its owning execution envelope is enabled. */
+export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDetails = unknown>(
 	pi: ExtensionAPI,
+	owner: string,
 	tool: ToolDefinition<TParams, TDetails>,
 	presentation: SuiteToolPresentation<Static<TParams> & Record<string, unknown>, TDetails>,
 ): void {
 	const runtime = getToolUiRuntime(pi);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
-	pi.registerTool(
-		attachRenderer(tool as unknown as ToolDefinition<TSchema, TDetails>, presentation, runtime) as ToolDefinition<
-			TParams,
-			TDetails
-		>,
-	);
+	const decorated = attachRenderer(
+		tool as unknown as ToolDefinition<TSchema, TDetails>,
+		presentation,
+		runtime,
+	) as ToolDefinition<TParams, TDetails>;
+	Object.defineProperty(decorated, SUITE_TOOL_ENVELOPE_COMPANION, {
+		enumerable: true,
+		value: { owner } satisfies SuiteToolEnvelopeCompanionMarker,
+	});
+	pi.registerTool(decorated);
+	runtime.markRendererAttached(tool.name);
+}
+
+/** Register a Suite-owned Tool without changing its execute protocol or result. */
+export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unknown>(
+	pi: ExtensionAPI,
+	tool: ToolDefinition<TParams, TDetails>,
+	presentation: SuiteToolPresentation<Static<TParams> & Record<string, unknown>, TDetails>,
+	codeMode?: SuiteToolCodeModeContract,
+): void {
+	const runtime = getToolUiRuntime(pi);
+	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
+	const decorated = attachRenderer(
+		tool as unknown as ToolDefinition<TSchema, TDetails>,
+		presentation,
+		runtime,
+	) as ToolDefinition<TParams, TDetails>;
+	if (codeMode) Object.defineProperty(decorated, SUITE_TOOL_CODE_MODE, { enumerable: true, value: codeMode });
+	pi.registerTool(decorated);
 	runtime.markRendererAttached(tool.name);
 }

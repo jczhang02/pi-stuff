@@ -1,4 +1,10 @@
-import type { ExecutorContext, RuntimeResponse, RuntimeToolTrace, RuntimeTraceUpdate } from "../protocol.js";
+import type {
+	ExecutorContext,
+	RuntimeResponse,
+	RuntimeToolCallPlan,
+	RuntimeToolTrace,
+	RuntimeTraceUpdate,
+} from "../protocol.js";
 
 const MAX_OPERATION_COUNT = 768;
 
@@ -27,7 +33,7 @@ export class CodeModeTraceStore {
 		this.traces.delete(cellId);
 	}
 
-	start(cellId: string, id: string, name: string, input: unknown): RuntimeToolTrace {
+	start(cellId: string, id: string, name: string, input: unknown, plan?: RuntimeToolCallPlan): RuntimeToolTrace {
 		const traces = this.traces.get(cellId) ?? [];
 		if (traces.length >= MAX_OPERATION_COUNT) {
 			throw new Error(`Code Mode supports at most ${String(MAX_OPERATION_COUNT)} nested Tool calls per execution`);
@@ -35,7 +41,20 @@ export class CodeModeTraceStore {
 		if (traces.some((trace) => trace.id === id)) {
 			throw new Error(`Duplicate Code Mode nested Tool call ID: ${id}`);
 		}
-		const trace: RuntimeToolTrace = { id, input, name, status: "running" };
+		const trace: RuntimeToolTrace = {
+			...(plan
+				? {
+						attempt: plan.attempt,
+						executionId: plan.executionId,
+						replayed: plan.replay !== undefined,
+						sequence: plan.sequence,
+					}
+				: {}),
+			id,
+			input,
+			name,
+			status: "running",
+		};
 		traces.push(trace);
 		this.traces.set(cellId, traces);
 		return trace;

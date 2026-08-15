@@ -1,45 +1,58 @@
 # `code-mode`
 
-Code Mode is the Pi Stuff Suite's model-facing Tool envelope. It replaces the active Suite Tool schemas with one
-`codemode({ code })` schema, executes the JavaScript in OpenAI's isolated V8 Code Mode host, and delegates every
-`suite.*` call back to the original Pi Tool.
+Code Mode is the Pi Stuff Package's model-facing Tool envelope. It moves every active Package-owned Tool schema behind
+`codemode({ code })`, executes JavaScript in OpenAI's isolated V8 Code Mode host, and delegates `tools.*` calls back to
+the original Pi Tool. Separately installed Tools remain top-level because the Package does not own their private
+implementation.
 
-It is disabled by default for a compatibility-first rollout. Use `/codemode on`, `/codemode off`, or
-`/codemode status` to change or inspect the current runtime mode. The setting is deliberately session-runtime state
-rather than a new settings file. Headless acceptance environments can start it enabled with
-`PI_STUFF_CODE_MODE_DEFAULT=on`.
+It is disabled by default for a compatibility-first rollout. Use `/codemode` to open the Pi Stuff Command Dialog, or
+`/codemode on` and `/codemode off` for direct control. The dialog shows the current mode, provider surface, active
+local catalog size, and Session ledger counts. An explicit toggle is stored in the trusted project's
+`.pi/code-mode.json` and is reloaded after Pi restarts or changes projects. Loading remains read-only, and an absent
+project value falls back to `PI_STUFF_CODE_MODE_DEFAULT` (`off` when unset).
+
+Launching an Agent freezes the parent session's effective Code Mode state into that child run. The child receives an
+explicit `on` or `off` value without mutating the parent process environment; a later parent toggle does not change an
+already running Agent. That frozen child value takes precedence over the project's persisted preference. The child's
+existing Tool allowlist and capability ceiling still bound what its Code Mode catalog can invoke.
 
 ## What the model uses
 
 ```js
-const matches = codemode.search("read file");
-const contract = codemode.describe(matches.results[0].path);
-const result = await suite.read({ path: "README.md", limit: 20 });
-text(result.content[0].text);
+const pkg = JSON.parse(await tools.read({ path: "package.json" }));
+text(pkg.packageManager);
 ```
 
-- `suite` contains every currently active Tool registered by the Pi Stuff Aggregate, not a fixed allowlist.
-- `codemode.search(query)` and `codemode.describe(path)` inspect the local catalog without adding that catalog to
+- `tools` contains every currently active Pi Stuff Package-owned Tool, including Tools activated after Code Mode was
+  enabled.
+- Await every `tools.*` call. Stable structured content is returned directly; textual JSON is parsed; other text is
+  returned as a string.
+- `await codemode.search(query)` and `await codemode.describe(path)` inspect the local catalog without adding that catalog to
   model history.
 - JavaScript has no direct Node, Bun, filesystem, process, network, module, or credential access. I/O is available
-  only through Suite Tools.
-- `text(...)`, `image(...)`, `generatedImage(...)`, `store(...)`, `load(...)`, `notify(...)`, and the other host
-  helpers control explicit output. `console` is unavailable and a top-level `return` is invalid; finish with an
-  explicit output helper such as `text(value)`.
-- Yielded cells are waited internally. The provider sees one `codemode` Tool, not a second continuation schema.
+  only through Package-owned Tools.
+- `text(...)`, `image(...)`, `generatedImage(...)`, `store(...)`, `load(...)`, `notify(...)`, and the other Host
+  helpers remain available. `console` is unavailable.
+- Cloudflare's `async () => { return value; }` form is accepted. A returned value is emitted only when the program did
+  not already call an output helper, so explicit output is never duplicated. The older `suite.*` namespace remains a
+  compatibility alias, not prompt vocabulary.
+- The top-level `tool_search({ query })` Tool and `codemode.search/describe` read the same Cloudflare-ranked catalog and
+  return the same paths and generated TypeScript input types.
+- Yielded cells are waited internally. Continuation does not add another provider Tool schema.
 
-The envelope covers active Aggregate-owned Tools. A separately installed third-party Tool that did not register
-through the Aggregate remains a normal top-level Pi Tool; Code Mode does not reach into another extension's private
-`execute` callback. For the same reason, lifecycle handlers registered by unrelated Extensions continue to observe
-the outer `codemode` call rather than pretending Pi exposes a supported nested-dispatch API. Pi Stuff's own Tool
-handlers are replayed through the Aggregate registration boundary.
+There is no per-Tool caller-routing policy. Visibility and effect safety are separate: all Package-owned Tools enter
+the V8 catalog, while each Tool may independently declare replay, durable approval, compensation, and lifecycle
+behavior. The safe default is non-replayable. Bash remains non-replayable and still traverses RTK's normal `tool_call`
+hook. Separately installed third-party Tools stay top-level because Pi Stuff cannot safely redispatch their private
+callbacks.
 
 ## UI and session contract
 
 Code Mode has no visible Tool row of its own. Each nested call uses the exact renderer, Activity Group metadata,
 streaming state, failure state, expansion behavior, and media behavior of the original Tool. The outer result stores
-the nested calls in normal Pi session JSONL details, so reload and resume rebuild the same projection without a
-separate database. Nested images are carried through the outer Host result so Pi performs its normal image
+the nested calls in normal Pi session JSONL details, so reload and resume rebuild the same projection. Final
+settlement reprojects nested and direct calls in the model's source order, including standalone Bash rows. Nested
+images are carried through the outer Host result so Pi performs its normal image
 normalization once. Before TUI rendering, normalized nested media moves into persistent presentation details and is
 removed from the outer image list, so Pi cannot append it below the whole envelope. The original renderer receives it
 again at its exact text/media boundary; a public context hook restores the same normalized content for every provider
@@ -54,11 +67,12 @@ call, a cancellation-classified Tool result, and interleaved real PNG/text/PNG r
 and terminal fallback path. The media gate also proves that both images reach the next provider request after the UI
 projection. An additional test runs Pi 0.84.2's real `ToolExecutionComponent` with Kitty capabilities and proves that
 expanded multi-image output stays interleaved with its original Tool rows. Outer execution cancellation is covered
-separately so the gate does not inherit process-exit timing races from Pi's native Bash path. The current certified
-fixture measures 22 direct schemas / 31,208 serialized characters against one Code Mode schema / 1,251 characters, a
-96.0% reduction in the provider-visible Tool contract. Including the system prompt and first user message, Pi 0.84.2's
-public estimator reports 9,656 input tokens in direct mode and 1,222 with Code Mode. These figures vary with the active
-Tool set; the gate measures the live Aggregate rather than a hard-coded inventory.
+separately so the gate does not inherit process-exit timing races from Pi's native Bash path. The gate enforces token
+savings. The direct surface is 22 Tools / 31,208 schema characters / 9,573 estimated first-request tokens. The full
+envelope is 2 Tools / 1,880 characters / 1,321 tokens: 6.0% of the direct schema and 13.8% of the direct first request.
+After one representative Tool round-trip, the two-request total is 19,361 tokens direct versus 2,824 through Code
+Mode. CI requires both schema and first-request input to stay at or below 20% of direct mode, and requires cumulative
+input to remain lower.
 
 Nested execution preserves Pi's argument preparation, validation, call/result hooks, lifecycle events, cancellation,
 streaming updates, Tool usage, newly activated Tool names, and termination hints. A serialization failure becomes a
@@ -66,6 +80,29 @@ normal failed Tool result instead of leaving a V8 cell hung.
 
 One Code Mode execution may issue at most 768 nested Tool calls. Crossing the safety bound fails explicitly; calls
 are never silently dropped, and separate Code Mode calls can still contribute to the same unbounded Activity Group.
+
+## Recovery and reusable programs
+
+Each execution and nested call receives a stable ID in an append-only Pi Session ledger. Completed calls can be
+reused after one typed V8 Host-loss retry. The default `never` policy refuses to repeat an ambiguous unfinished
+effect; `record` reuses only a settled result, and `reexecute` deliberately runs an operation again. Any unfinished
+`never` or `record` call becomes `incomplete` and is never guessed or repeated.
+
+A Tool marked `requiresApproval` pauses durably before its effect. `/codemode pending` shows the exact action;
+`/codemode approve <execution-id>` resumes it once, and `/codemode reject <execution-id> <seq>` terminates it without
+execution. Approval cannot be combined with `reexecute`. Resume requires the original working directory and an active
+pending Tool; stale decisions change nothing. A swallowed pause cannot reach later effects in the same program.
+
+`/codemode history`, `/codemode abandon <execution-id>`, `/codemode expire`, and
+`/codemode rollback <execution-id>` expose recovery decisions. The older `compensate` command remains an alias.
+Rollback runs only explicitly declared inverse operations, in reverse order; it never erases history or assumes an
+external effect disappeared. Connector cleanup runs after every pass and once at terminal completion, rejection, or
+rollback without masking the original result.
+
+`codemode.step(name, fn)` gives a long program a durable named checkpoint. `/codemode save <execution-id> <name>` saves
+a successful program as a Session snippet; `codemode.run(name, input)`, `/codemode snippets`, and
+`/codemode delete <name>` reuse or curate it. The ledger retains bounded terminal history and expires stale unfinished
+work; it is Session data, not a second database.
 
 ## Native host
 

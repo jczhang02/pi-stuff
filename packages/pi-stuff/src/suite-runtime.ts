@@ -36,11 +36,18 @@ interface CapabilityInstallation {
 	readonly install: CapabilityFactory;
 }
 
-function registerSuiteSubagents(pi: ExtensionAPI, options: SuiteInstallationOptions): void | Promise<void> {
-	return subagents(pi, { childBaseExtensionPath: options.childBaseExtensionPath });
+function registerSuiteSubagents(
+	pi: ExtensionAPI,
+	options: SuiteInstallationOptions,
+	resolveCodeModeEnabled: () => boolean,
+): void | Promise<void> {
+	return subagents(pi, { childBaseExtensionPath: options.childBaseExtensionPath, resolveCodeModeEnabled });
 }
 
-function createCapabilities(options: SuiteInstallationOptions): readonly CapabilityInstallation[] {
+function createCapabilities(
+	options: SuiteInstallationOptions,
+	resolveCodeModeEnabled: () => boolean,
+): readonly CapabilityInstallation[] {
 	return [
 		{ id: "conversation-ui", install: conversationUi },
 		{ id: "tool-display", install: toolDisplay },
@@ -51,7 +58,7 @@ function createCapabilities(options: SuiteInstallationOptions): readonly Capabil
 		{ id: "web", install: web },
 		{ id: "mcp", install: mcp },
 		{ id: "background-work", install: backgroundWork },
-		{ id: "subagents", install: (pi) => registerSuiteSubagents(pi, options) },
+		{ id: "subagents", install: (pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled) },
 		{ id: "todo", install: todo },
 		{ id: "btw", install: btw },
 		{ id: "notification", install: notification },
@@ -98,7 +105,8 @@ export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallatio
 	const suiteApi = installSuiteSessionReadiness(pi);
 	const registrations = createSuiteToolRegistrationTracker(suiteApi);
 	registerCodeModeContextProjection(suiteApi);
-	for (const capability of createCapabilities(options)) {
+	const resolveCodeModeEnabled = () => registrations.surface.isEnvelopeEnabled("codemode");
+	for (const capability of createCapabilities(options, resolveCodeModeEnabled)) {
 		markLifecyclePhase(`capability.${capability.id}.start`);
 		await capability.install(registrations.api);
 		markLifecyclePhase(`capability.${capability.id}.end`);

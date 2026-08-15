@@ -74,6 +74,8 @@ export interface BackgroundRunnerConfig {
 	id: string;
 	/** Persisted parent attribution used by observation-only completion UI. */
 	parentRunOrigin?: AgentWorkOrigin;
+	/** Effective parent Code Mode state frozen when this Agent run launches. */
+	codeModeEnabled?: boolean;
 	work: BackgroundRunnerWork;
 	resultPath: string;
 	cwd: string;

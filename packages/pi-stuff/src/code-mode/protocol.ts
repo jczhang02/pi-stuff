@@ -10,8 +10,14 @@ export interface SandboxToolExecutionContext {
 
 export interface SuiteSandboxTool {
 	readonly description: string;
+	/** Platform plumbing may manage its own durable step instead of creating a second ledger entry. */
+	readonly ledger?: "bypass";
 	readonly inputSchema: unknown;
 	readonly name: string;
+	/** Platform plumbing is not a user Tool row. */
+	readonly presentation?: "hidden";
+	readonly replay?: "never" | "record" | "reexecute";
+	readonly requiresApproval?: boolean;
 	readonly usage: string;
 	invoke(input: unknown, context: SandboxToolExecutionContext, signal: AbortSignal): Promise<unknown>;
 }
@@ -23,15 +29,47 @@ export interface RuntimeContentItem {
 	readonly type: "input_image" | "input_text";
 }
 
-type RuntimeToolTraceStatus = "cancelled" | "done" | "error" | "running";
+type RuntimeToolTraceStatus = "cancelled" | "done" | "error" | "pending" | "running";
 
 export interface RuntimeToolTrace {
+	readonly attempt?: number;
 	error?: string;
+	readonly executionId?: string;
 	readonly id: string;
 	readonly input: unknown;
 	readonly name: string;
+	readonly replayed?: boolean;
 	result?: AgentToolResult<unknown>;
+	readonly sequence?: number;
 	status: RuntimeToolTraceStatus;
+}
+
+export type RuntimeToolReplay =
+	| {
+			readonly kind: "error";
+			readonly message: string;
+			readonly result?: AgentToolResult<unknown>;
+	  }
+	| {
+			readonly kind: "result";
+			readonly result?: AgentToolResult<unknown>;
+			readonly value: unknown;
+	  };
+
+export interface RuntimeToolCallPlan {
+	readonly attempt: number;
+	readonly executionId: string;
+	readonly id: string;
+	readonly pause?: { readonly message: string };
+	readonly replay?: RuntimeToolReplay;
+	readonly sequence: number;
+}
+
+export interface RuntimeToolCallSettlement {
+	readonly message?: string;
+	readonly result?: AgentToolResult<unknown>;
+	readonly status: "error" | "success";
+	readonly value?: unknown;
 }
 
 export type RuntimeResponse = (
@@ -52,6 +90,8 @@ export interface RuntimeTraceUpdate {
 }
 
 export interface ExecutorContext extends SandboxToolExecutionContext {
+	readonly beginToolCall?: (name: string, input: unknown) => RuntimeToolCallPlan;
+	readonly completeToolCall?: (plan: RuntimeToolCallPlan, settlement: RuntimeToolCallSettlement) => void;
 	readonly onTraceUpdate?: (update: RuntimeTraceUpdate) => void;
 }
 

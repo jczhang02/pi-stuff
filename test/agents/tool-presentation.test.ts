@@ -20,6 +20,7 @@ import {
 import {
 	buildPiArgs,
 	PI_STUFF_CHILD_BASE_EXTENSION_PATH_ENV,
+	PI_STUFF_CODE_MODE_FROZEN_ENV,
 	resolvePiLaunchToolPlan,
 	SUBAGENT_CHILD_AGENT_ENV,
 	SUBAGENT_CHILD_INDEX_ENV,
@@ -582,6 +583,26 @@ test("passes the Suite child surface through the child environment without mutat
 		createHash("sha256").update("Inspect the project.").digest("hex"),
 	);
 	expect(built.args).toContain(baseExtension);
+});
+
+test("passes the frozen Code Mode state through a distinct child environment override", () => {
+	const parentValue = process.env[PI_STUFF_CODE_MODE_FROZEN_ENV];
+	for (const [codeModeEnabled, expected] of [
+		[true, "on"],
+		[false, "off"],
+	] as const) {
+		const built = buildPiArgs({
+			baseArgs: ["--mode", "json", "-p"],
+			task: "Inspect the project.",
+			sessionEnabled: false,
+			inheritProjectContext: true,
+			inheritSkills: true,
+			codeModeEnabled,
+		});
+		if (built.tempDir) temporaryDirectories.push(built.tempDir);
+		expect(built.env[PI_STUFF_CODE_MODE_FROZEN_ENV]).toBe(expected);
+	}
+	expect(process.env[PI_STUFF_CODE_MODE_FROZEN_ENV]).toBe(parentValue);
 });
 
 test("forces and verifies read for every skill-enabled explicit Tool shape", () => {

@@ -2,15 +2,16 @@ import { expect, test } from "bun:test";
 import { Type } from "typebox";
 import { CodeModeDelegateRuntime } from "../../packages/pi-stuff/src/code-mode/host/delegate-runtime.js";
 
-test("delegate serialization failures reject the V8 call instead of leaving the cell hung", async () => {
+test("delegate transport preserves binary and bigint values across the JSON host boundary", async () => {
 	const responses: unknown[] = [];
 	const updates: unknown[] = [];
+	let received: unknown;
 	const runtime = new CodeModeDelegateRuntime((message) => {
 		JSON.stringify(message);
 		responses.push(message);
 	});
 	runtime.bindCell(
-		"cell-serialization",
+		"cell-codec",
 		{
 			cwd: "/project",
 			onTraceUpdate: (update) => updates.push(update),
@@ -20,9 +21,10 @@ test("delegate serialization failures reject the V8 call instead of leaving the 
 				"fixture",
 				{
 					description: "serialization fixture",
-					inputSchema: Type.Object({}),
-					async invoke() {
-						return { content: [], details: { unsupported: 1n } };
+					inputSchema: Type.Object({ payload: Type.Unknown() }),
+					async invoke(input) {
+						received = input;
+						return { count: 1n, payload: (input as { payload: unknown }).payload };
 					},
 					name: "fixture",
 					usage: "suite.fixture({})",
@@ -35,9 +37,11 @@ test("delegate serialization failures reject the V8 call instead of leaving the 
 		id: 7,
 		request: {
 			invocation: {
-				cell_id: "cell-serialization",
-				input: {},
-				runtime_tool_call_id: "nested-serialization",
+				cell_id: "cell-codec",
+				input: {
+					payload: { __codemode_binary_v1__: "Uint8Array", data: "AQID" },
+				},
+				runtime_tool_call_id: "nested-codec",
 				tool_name: { name: "fixture" },
 			},
 			type: "tool/invoke",
@@ -46,14 +50,24 @@ test("delegate serialization failures reject the V8 call instead of leaving the 
 	for (let attempt = 0; attempt < 20 && responses.length === 0; attempt += 1) await Bun.sleep(1);
 
 	expect(responses).toHaveLength(1);
-	expect(responses[0]).toMatchObject({ id: 7, result: { status: "error" }, type: "delegate/response" });
-	const message = (responses[0] as { result: { message: string } }).result.message;
-	expect(message).toStartWith("Failed to serialize nested Tool result:");
-	expect(message).toContain("BigInt");
+	expect(received).toMatchObject({ payload: new Uint8Array([1, 2, 3]) });
+	expect(responses[0]).toMatchObject({
+		id: 7,
+		result: {
+			status: "ok",
+			value: {
+				result: {
+					count: { __codemode_bigint_v1__: "1" },
+					payload: { __codemode_binary_v1__: "Uint8Array", data: "AQID" },
+				},
+				type: "tool/result",
+			},
+		},
+		type: "delegate/response",
+	});
 	expect(updates.at(-1)).toMatchObject({
 		trace: {
-			error: message,
-			status: "error",
+			status: "done",
 		},
 	});
 	runtime.clear();
@@ -102,5 +116,114 @@ test("non-Error thrown values still settle the trace and V8 request", async () =
 	expect(updates.at(-1)).toMatchObject({
 		trace: { error: "1", result: { content: [{ text: "1", type: "text" }] }, status: "error" },
 	});
+	runtime.clear();
+});
+
+test("a durable approval decision pauses before the nested Tool can execute", async () => {
+	const responses: unknown[] = [];
+	const updates: unknown[] = [];
+	let effects = 0;
+	const runtime = new CodeModeDelegateRuntime((message) => responses.push(message));
+	runtime.bindCell(
+		"cell-approval",
+		{
+			beginToolCall: () => ({
+				attempt: 0,
+				executionId: "cm-approval",
+				id: "cm-approval:0",
+				pause: { message: "approval required" },
+				sequence: 0,
+			}),
+			cwd: "/project",
+			onTraceUpdate: (update) => updates.push(update),
+		},
+		new Map([
+			[
+				"write",
+				{
+					description: "write fixture",
+					inputSchema: Type.Object({}),
+					async invoke() {
+						effects += 1;
+						return true;
+					},
+					name: "write",
+					usage: "tools.write({})",
+				},
+			],
+		]),
+	);
+	runtime.handleRequest({
+		id: 9,
+		request: {
+			invocation: {
+				cell_id: "cell-approval",
+				input: {},
+				runtime_tool_call_id: "nested-write",
+				tool_name: { name: "write" },
+			},
+			type: "tool/invoke",
+		},
+	});
+	for (let attempt = 0; attempt < 20 && responses.length === 0; attempt += 1) await Bun.sleep(1);
+
+	expect(effects).toBe(0);
+	expect(responses).toEqual([
+		{ id: 9, result: { message: "approval required", status: "error" }, type: "delegate/response" },
+	]);
+	expect(updates.at(-1)).toMatchObject({ trace: { id: "cm-approval:0", status: "pending" } });
+	runtime.clear();
+});
+
+test("a failed durable success record is settled as an error instead of staying in flight", async () => {
+	const responses: unknown[] = [];
+	const settlements: string[] = [];
+	const runtime = new CodeModeDelegateRuntime((message) => responses.push(message));
+	runtime.bindCell(
+		"cell-ledger-failure",
+		{
+			beginToolCall: () => ({
+				attempt: 0,
+				executionId: "cm-ledger-failure",
+				id: "cm-ledger-failure:0",
+				sequence: 0,
+			}),
+			completeToolCall: (_plan, settlement) => {
+				settlements.push(settlement.status);
+				if (settlement.status === "success") throw new Error("ledger full");
+			},
+			cwd: "/project",
+		},
+		new Map([
+			[
+				"fixture",
+				{
+					description: "ledger failure fixture",
+					inputSchema: Type.Object({}),
+					invoke: async () => true,
+					name: "fixture",
+					usage: "tools.fixture({})",
+				},
+			],
+		]),
+	);
+	runtime.handleRequest({
+		id: 10,
+		request: {
+			invocation: {
+				cell_id: "cell-ledger-failure",
+				input: {},
+				runtime_tool_call_id: "nested-ledger-failure",
+				tool_name: { name: "fixture" },
+			},
+			type: "tool/invoke",
+		},
+	});
+	for (let attempt = 0; attempt < 20 && responses.length === 0; attempt += 1) await Bun.sleep(1);
+
+	expect(settlements).toEqual(["success", "error"]);
+	expect(responses).toEqual([
+		{ id: 10, result: { message: "ledger full", status: "error" }, type: "delegate/response" },
+	]);
 	runtime.clear();
 });
