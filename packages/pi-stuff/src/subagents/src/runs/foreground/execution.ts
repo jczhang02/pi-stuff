@@ -29,7 +29,8 @@ export interface ForegroundCompletion {
 
 export interface ForegroundExecutionDependencies {
 	acquireStatusClaim(asyncDir: string): { release(): void } | undefined;
-	runConfigured(config: BackgroundRunnerConfig): Promise<void>;
+	onStatus(status: AsyncStatus): void;
+	runConfigured(config: BackgroundRunnerConfig, onStatus: (status: AsyncStatus) => void): Promise<void>;
 	readCompletion(filePath: string): ForegroundCompletion;
 	readNestedChildren(asyncDir: string, runId: string): NestedRunSummary[] | undefined;
 	requestStop(asyncDir: string): void;
@@ -39,7 +40,10 @@ export interface ForegroundExecutionDependencies {
 
 const DEFAULT_DEPENDENCIES: ForegroundExecutionDependencies = {
 	acquireStatusClaim: tryAcquireStatusMutationClaim,
-	runConfigured: runConfiguredBackground,
+	onStatus() {},
+	runConfigured(config, onStatus) {
+		return runConfiguredBackground(config, { afterStatusUpdate: onStatus });
+	},
 	readCompletion(filePath) {
 		const value = JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
 		return validateCompletion(value, filePath);
@@ -408,6 +412,13 @@ export async function executeForegroundConfig(
 	dependencies: Partial<ForegroundExecutionDependencies> = {},
 ): Promise<AgentToolResult<Details> & { isError?: boolean }> {
 	const deps = { ...DEFAULT_DEPENDENCIES, ...dependencies };
+	const notifyStatus = (status: AsyncStatus) => {
+		try {
+			deps.onStatus(status);
+		} catch (error) {
+			reportAgentDiagnostic(`Foreground Agent status observer failed for '${config.id}':`, error);
+		}
+	};
 	if (signal?.aborted) {
 		return {
 			content: [{ type: "text", text: "Foreground Agent cancelled before launch." }],
@@ -427,7 +438,7 @@ export async function executeForegroundConfig(
 	};
 	signal?.addEventListener("abort", stop, { once: true });
 	try {
-		await deps.runConfigured(config);
+		await deps.runConfigured(config, notifyStatus);
 		const completion = deps.readCompletion(config.resultPath);
 		const nestedChildren = deps.readNestedChildren(config.asyncDir, config.id);
 		const projected = projectForegroundCompletion(
@@ -480,6 +491,7 @@ export async function executeForegroundConfig(
 						terminalOverlay = status;
 						if (!terminalStatus(current)) {
 							deps.writeStatus(path.join(config.asyncDir, "status.json"), status);
+							notifyStatus(status);
 						}
 					}
 				} catch (statusError) {

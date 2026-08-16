@@ -160,6 +160,7 @@ interface RootExecutorInput {
 	readonly pi: ExtensionAPI;
 	readonly projectContext: typeof projectCurrentContext;
 	readonly resolveCodeModeEnabled?: () => boolean;
+	readonly onForegroundStatus?: () => void;
 	readonly state: SubagentState;
 	readonly childBaseExtensionPath?: string;
 }
@@ -213,7 +214,15 @@ function expandTilde(value: string): string {
 
 const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	createCurrentAgents: (state, options) => new CurrentAgents(state, options),
-	createExecutor: ({ childBaseExtensionPath, config, pi, projectContext, resolveCodeModeEnabled, state }) =>
+	createExecutor: ({
+		childBaseExtensionPath,
+		config,
+		onForegroundStatus,
+		pi,
+		projectContext,
+		resolveCodeModeEnabled,
+		state,
+	}) =>
 		createSubagentExecutor({
 			pi,
 			state,
@@ -226,6 +235,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 			projectContext,
 			childBaseExtensionPath,
 			resolveCodeModeEnabled,
+			onForegroundStatus,
 		}),
 	createGovernorCoordinator: (config) =>
 		createDurableAgentExecutionCoordinator({
@@ -502,8 +512,10 @@ export default function registerSubagentExtension(
 	const config = deps.loadConfiguration();
 	const state = createState(config);
 	const coordinator = deps.getCoordinator(pi);
+	let current!: CurrentAgents;
 	const executor = deps.createExecutor({
 		config,
+		onForegroundStatus: () => current.refresh(),
 		pi,
 		projectContext: deps.projectContext,
 		resolveCodeModeEnabled: deps.resolveCodeModeEnabled,
@@ -511,7 +523,6 @@ export default function registerSubagentExtension(
 		childBaseExtensionPath: deps.childBaseExtensionPath,
 	});
 	const executionGovernor = deps.createGovernorCoordinator(config);
-	let current!: CurrentAgents;
 	const tracker = deps.createTracker(pi, state, () => current.refresh());
 	const supervisor = deps.createSupervisor(pi, state);
 	const notifier = createCompactCompletionNotifier(pi, state, coordinator);

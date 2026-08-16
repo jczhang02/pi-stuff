@@ -169,6 +169,7 @@ function executor(
 		foregroundDelayMs?: number;
 		foregroundError?: Error;
 		onForegroundConfig?: (config: BackgroundRunnerConfig) => void;
+		onForegroundStatus?: () => void;
 		codeModeEnabled?: boolean;
 		pi?: ExtensionAPI;
 		projectContext?: Parameters<typeof createSubagentExecutor>[0]["projectContext"];
@@ -185,6 +186,7 @@ function executor(
 		expandTilde: (value) => value,
 		discoverAgents: () => ({ agents: options.agents ?? [options.agent ?? agent()] }),
 		projectContext: options.projectContext,
+		onForegroundStatus: options.onForegroundStatus,
 		resolveCodeModeEnabled:
 			options.codeModeEnabled === undefined ? undefined : () => options.codeModeEnabled === true,
 		engines: {
@@ -195,8 +197,16 @@ function executor(
 					details: { asyncId: id, mode: "single", results: [], runId: id },
 				};
 			},
-			foreground: async (config) => {
+			foreground: async (config, _signal, dependencies) => {
 				temporaryDirectories.push(config.asyncDir);
+				const status = createInitialStatus(config, config.startedAt ?? Date.now());
+				const child = status.steps[0];
+				if (child) {
+					child.status = "running";
+					child.currentTool = "read";
+					child.turnCount = 2;
+				}
+				dependencies?.onStatus?.(status);
 				options.onForegroundConfig?.(config);
 				if (options.foregroundError) throw options.foregroundError;
 				if (options.foregroundDelayMs) await Bun.sleep(options.foregroundDelayMs);
@@ -705,13 +715,20 @@ describe("reduced foreground Agent engine", () => {
 		});
 	}
 
-	test("does not let a failing progress observer change or leak a foreground Agent run", async () => {
+	test("projects live status without letting a failing progress observer change the run", async () => {
 		const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-foreground-update-observer-"));
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 		const runState = state();
 		let updateCalls = 0;
-		const result = await executor(cwd, runState).execute(
+		let observedTool: string | undefined;
+		let statusNotifications = 0;
+		const result = await executor(cwd, runState, undefined, {
+			onForegroundStatus: () => statusNotifications++,
+			onForegroundConfig(config) {
+				observedTool = runState.foregroundControls.get(config.id)?.activeChildren?.get(0)?.currentTool;
+			},
+		}).execute(
 			"update-observer-call",
 			{ agent: "general-purpose", task: "Inspect the parser", async: false, context: "fresh" },
 			new AbortController().signal,
@@ -723,6 +740,8 @@ describe("reduced foreground Agent engine", () => {
 		);
 
 		expect(updateCalls).toBe(2);
+		expect(observedTool).toBe("read");
+		expect(statusNotifications).toBe(1);
 		expect(result.details.results[0]?.finalOutput).toBe("result-1");
 		expect(result.isError).not.toBe(true);
 		expect(runState.foregroundControls.size).toBe(0);

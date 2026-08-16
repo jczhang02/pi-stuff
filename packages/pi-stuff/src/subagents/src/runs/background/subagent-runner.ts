@@ -842,6 +842,7 @@ function updateRunProjection(status: RunnerStatus): void {
 const STATUS_PUBLISH_INTERVAL_MS = 100;
 let pendingPublishedStatus: { statusPath: string; status: RunnerStatus } | undefined;
 let statusPublishTimer: ReturnType<typeof setTimeout> | undefined;
+const statusUpdateObservers = new Map<string, (status: RunnerStatus) => void>();
 
 function sendPublishedStatus(): void {
 	const pending = pendingPublishedStatus;
@@ -883,6 +884,11 @@ function writeStatus(statusPath: string, status: RunnerStatus): void {
 	updateRunProjection(status);
 	writePrivateAtomicJson(statusPath, status);
 	publishStatus(statusPath, status);
+	try {
+		statusUpdateObservers.get(statusPath)?.(status);
+	} catch (error) {
+		reportAgentDiagnostic(`Foreground Agent status observer failed for '${status.runId}':`, error);
+	}
 }
 
 function appendRecentOutput(step: RunnerStatusStep, text: string): void {
@@ -3094,6 +3100,7 @@ async function waitForStartupControl(
 export async function runConfiguredBackground(
 	config: BackgroundRunnerConfig,
 	hooks: {
+		afterStatusUpdate?: (status: RunnerStatus) => void;
 		afterWriterProcessUpdate?: (index: number, writer: WriterRuntimeState) => void;
 		afterWriterSpawnBeforeBinding?: (index: number, pid: number) => void;
 		beforeWriterCloseRecovery?: (index: number) => void | Promise<void>;
@@ -3116,6 +3123,8 @@ export async function runConfiguredBackground(
 	const ackPath = path.join(config.asyncDir, "runner-startup-ack.json");
 	const proceedPath = path.join(config.asyncDir, "runner-startup-proceed.json");
 	const gatePath = path.join(config.asyncDir, "runner-startup-gate.json");
+	const statusPath = path.join(config.asyncDir, "status.json");
+	if (hooks.afterStatusUpdate) statusUpdateObservers.set(statusPath, hooks.afterStatusUpdate);
 	const releaseOnExit = () => {
 		try {
 			if (lease && inspectWriterProcessLiveness(config.asyncDir) === false) lease.release();
@@ -3186,6 +3195,7 @@ export async function runConfiguredBackground(
 		}
 		throw error;
 	} finally {
+		statusUpdateObservers.delete(statusPath);
 		process.off("exit", releaseOnExit);
 		if (lease) {
 			let acknowledged = false;

@@ -183,6 +183,7 @@ interface ExecutorDeps {
 	projectContext?: typeof projectCurrentContext;
 	childBaseExtensionPath?: string;
 	resolveCodeModeEnabled?: () => boolean;
+	onForegroundStatus?: () => void;
 	allowMutatingManagementActions?: boolean;
 	kill?: (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 	engines?: Partial<ExecutorEngines>;
@@ -1356,27 +1357,28 @@ function foregroundControl(data: PreparedLaunch, config: BackgroundRunnerConfig)
 	};
 }
 
-function refreshForegroundControl(control: ForegroundRunControl, config: BackgroundRunnerConfig): void {
+function updateForegroundControl(control: ForegroundRunControl, status: AsyncStatus): void {
+	control.updatedAt = status.lastUpdate ?? Date.now();
+	for (const [index, step] of (status.steps ?? []).entries()) {
+		const child = control.activeChildren?.get(index);
+		if (!child) continue;
+		child.status = step.status;
+		child.updatedAt = step.endedAt ?? status.lastUpdate ?? Date.now();
+		child.currentActivityState = step.activityState;
+		child.lastActivityAt = step.lastActivityAt;
+		child.currentTool = step.currentTool;
+		child.currentToolStartedAt = step.currentToolStartedAt;
+		child.currentPath = step.currentPath;
+		child.turnCount = step.turnCount;
+		child.toolCount = step.toolCount;
+	}
+}
+
+function refreshForegroundNestedProjection(control: ForegroundRunControl): void {
 	try {
-		const status = readStatus(config.asyncDir);
-		if (!status) return;
-		control.updatedAt = status.lastUpdate ?? Date.now();
-		for (const [index, step] of (status.steps ?? []).entries()) {
-			const child = control.activeChildren?.get(index);
-			if (!child) continue;
-			child.status = step.status;
-			child.updatedAt = step.endedAt ?? status.lastUpdate ?? Date.now();
-			child.currentActivityState = step.activityState;
-			child.lastActivityAt = step.lastActivityAt;
-			child.currentTool = step.currentTool;
-			child.currentToolStartedAt = step.currentToolStartedAt;
-			child.currentPath = step.currentPath;
-			child.turnCount = step.turnCount;
-			child.toolCount = step.toolCount;
-		}
 		updateForegroundNestedProjection(control);
 	} catch {
-		// A live status write can race this projection. The next refresh retries.
+		// A nested route can retire while its final event is being projected.
 	}
 }
 
@@ -1395,20 +1397,13 @@ function emitNestedLifecycle(
 	startedAt: number,
 	result?: AgentToolResult<Details>,
 	updated = false,
+	liveStatus?: AsyncStatus,
 ): void {
 	if (!data.inheritedNestedRoute || !data.nestedParentAddress) return;
 	const now = Date.now();
 	const state = nestedState(result);
 	const terminalResult = result && state !== "running" ? result : undefined;
 	const directTasks = taskInputs(data.params);
-	let liveStatus: AsyncStatus | null = null;
-	if (!result) {
-		try {
-			liveStatus = readStatus(config.asyncDir);
-		} catch {
-			// The activeChildren projection below is the bounded fallback.
-		}
-	}
 	const liveSteps = liveStatus?.steps?.map((step) => ({
 		agent: step.agent,
 		...(step.task ? { task: step.task } : {}),
@@ -1632,15 +1627,15 @@ async function launchForeground(
 	const control = foregroundControl(data, config);
 	deps.state.foregroundControls.set(data.runId, control);
 	deps.state.lastForegroundControlId = data.runId;
-	const controlRefreshTimer = setInterval(() => refreshForegroundControl(control, config), 100);
-	controlRefreshTimer.unref?.();
-	const nestedProjectionTimer = data.inheritedNestedRoute
-		? setInterval(() => {
-				refreshForegroundControl(control, config);
-				emitNestedLifecycle(data, config, control, control.startedAt, undefined, true);
-			}, 500)
-		: undefined;
-	nestedProjectionTimer?.unref?.();
+	let liveStatus: AsyncStatus | undefined;
+	const nestedProjectionTimer = setInterval(() => {
+		refreshForegroundNestedProjection(control);
+		if (data.inheritedNestedRoute) {
+			emitNestedLifecycle(data, config, control, control.startedAt, undefined, true, liveStatus);
+		}
+		deps.onForegroundStatus?.();
+	}, 500);
+	nestedProjectionTimer.unref?.();
 	emitNestedLifecycle(data, config, control, control.startedAt);
 	emitUpdate({
 		content: [{ type: "text", text: `${data.mode === "parallel" ? "Agents" : "Agent"} running in foreground.` }],
@@ -1649,7 +1644,13 @@ async function launchForeground(
 	let result: AgentToolResult<Details>;
 	let abortedBeforeStart = false;
 	try {
-		result = await engines.foreground(config, signal);
+		result = await engines.foreground(config, signal, {
+			onStatus(status) {
+				liveStatus = status;
+				updateForegroundControl(control, status);
+				deps.onForegroundStatus?.();
+			},
+		});
 		if (result.details.results.length === 0 && directoryClaim.abortIfUnstarted()) {
 			abortedBeforeStart = true;
 		}
@@ -1661,9 +1662,8 @@ async function launchForeground(
 			cwd: data.effectiveCwd,
 		});
 	} finally {
-		clearInterval(controlRefreshTimer);
-		if (nestedProjectionTimer) clearInterval(nestedProjectionTimer);
-		refreshForegroundControl(control, config);
+		clearInterval(nestedProjectionTimer);
+		refreshForegroundNestedProjection(control);
 		deps.state.foregroundControls.delete(data.runId);
 		if (deps.state.lastForegroundControlId === data.runId) deps.state.lastForegroundControlId = null;
 	}
