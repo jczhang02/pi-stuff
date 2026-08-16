@@ -1991,6 +1991,53 @@ describe("Context capability lifecycle", () => {
 		expect(bypasses).toHaveLength(2);
 	});
 
+	test("yields extreme overflow to native compaction before Magic scans the Session", async () => {
+		const handlers: Handlers = new Map();
+		let compactionResults: unknown[] = [];
+		let compactions = 0;
+		let projections = 0;
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (magicApi: ExtensionAPI) => {
+					const register = magicApi.on.bind(magicApi) as unknown as (event: string, handler: Handler) => void;
+					register("context", (event) => {
+						projections++;
+						const contextEvent = event as { messages: unknown[] };
+						return {
+							messages: [taggedMessage("<session-history>managed</session-history>"), ...contextEvent.messages],
+						};
+					});
+					register("session_before_compact", () => ({ cancel: true }));
+				},
+			}),
+			prepareMagicContext: async () => "ready",
+			readNativeCompactionSettings: () => ({ enabled: true, reserveTokens: 20_000 }),
+		});
+		let tokens = 400_001;
+		const ctx = Object.assign(context(), {
+			compact: (options: { onComplete?: (result: unknown) => void }) => {
+				compactions++;
+				void emitResults(handlers, "session_before_compact", {}, ctx).then((results) => {
+					compactionResults = results;
+					tokens = 1_000;
+					options.onComplete?.({});
+				});
+			},
+			getContextUsage: () => ({ contextWindow: 200_000, percent: (tokens / 200_000) * 100, tokens }),
+		});
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		await emit(handlers, "before_agent_start", { type: "before_agent_start" }, ctx);
+		expect(compactions).toBe(1);
+		expect(compactionResults).toEqual([undefined, undefined]);
+		expect(getContextCapability(ctx).status().state).toBe("degraded");
+		expect(projections).toBe(0);
+
+		await emitResults(handlers, "context", { type: "context", messages: [taggedMessage("native")] }, ctx);
+		expect(getContextCapability(ctx).status().state).toBe("active");
+		expect(projections).toBe(1);
+	});
+
 	test("fails open when a live Magic turn handler throws", async () => {
 		const handlers: Handlers = new Map();
 		let attempts = 0;
@@ -2276,6 +2323,76 @@ describe("Context projections", () => {
 		expect(first.text).toContain("first turn");
 		expect(second.text).toContain("second turn");
 		expect(second.text).not.toContain("first turn");
+	});
+
+	test("coalesces concurrent projections and rejects an invalidated in-flight result", async () => {
+		const handlers: Handlers = new Map();
+		let transforms = 0;
+		let releaseFirst: (() => void) | undefined;
+		let releaseSecond: (() => void) | undefined;
+		let markFirstEntered: (() => void) | undefined;
+		let markSecondEntered: (() => void) | undefined;
+		const firstGate = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		const secondGate = new Promise<void>((resolve) => {
+			releaseSecond = resolve;
+		});
+		const firstEntered = new Promise<void>((resolve) => {
+			markFirstEntered = resolve;
+		});
+		const secondEntered = new Promise<void>((resolve) => {
+			markSecondEntered = resolve;
+		});
+		piStuffContext(apiFor(handlers), {
+			loadMagicContext: async () => ({
+				default: async (pi: ExtensionAPI) => {
+					pi.on("context", async () => {
+						transforms += 1;
+						const turn = transforms;
+						if (turn === 1) {
+							markFirstEntered?.();
+							await firstGate;
+						} else {
+							markSecondEntered?.();
+							await secondGate;
+						}
+						return {
+							messages: [
+								taggedMessage(
+									`<session-history><project-memory>turn-${turn}</project-memory></session-history>`,
+								),
+							],
+						};
+					});
+				},
+			}),
+		});
+		const ctx = context();
+		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		const first = projectCurrentContext("agent-fresh", ctx);
+		const joined = projectCurrentContext("agent-fresh", ctx);
+		await firstEntered;
+		expect(transforms).toBe(1);
+
+		await emit(handlers, "input", { type: "input", text: "next", source: "rpc" }, ctx);
+		const fresh = projectCurrentContext("agent-fresh", ctx);
+		await secondEntered;
+		expect(transforms).toBe(2);
+
+		releaseFirst?.();
+		expect(await Promise.all([first, joined])).toEqual([
+			{ source: "native", text: "", truncated: false },
+			{ source: "native", text: "", truncated: false },
+		]);
+		releaseSecond?.();
+		expect(await fresh).toMatchObject({ source: "magic-context", text: expect.stringContaining("turn-2") });
+		expect(await projectCurrentContext("agent-fresh", ctx)).toMatchObject({
+			source: "magic-context",
+			text: expect.stringContaining("turn-2"),
+		});
+		expect(transforms).toBe(2);
 	});
 
 	test("does not route an unbound Host through another Host with the same session id", async () => {

@@ -15,6 +15,7 @@ export interface BtwPtyVerificationOptions {
 
 interface RequestRecord {
 	readonly lastUser?: unknown;
+	readonly messageChars?: unknown;
 	readonly messageCount?: unknown;
 	readonly tools?: unknown;
 }
@@ -192,6 +193,50 @@ expect {
 `;
 }
 
+function largeFitExpectProgram(): string {
+	return `
+set timeout 30
+
+proc must_expect {pattern} {
+    expect {
+        -exact $pattern {}
+        timeout {
+            puts stderr "Timed out waiting for: $pattern"
+            exit 2
+        }
+        eof {
+            puts stderr "Reached EOF while waiting for: $pattern"
+            exit 3
+        }
+    }
+}
+
+spawn -noecho script -qefc $env(PI_STUFF_PTY_RUNNER) /dev/null
+must_expect "MAIN_DONE"
+after 200
+send -- "/fixture-btw-large\r"
+must_expect "BTW_LARGE_CONTEXT_READY"
+set fit_started [clock milliseconds]
+send -- "/btw large fit question\r"
+must_expect "BTW_STREAM"
+must_expect "BTW_DONE"
+set fit_finished [clock milliseconds]
+puts "BTW_LARGE_FIT_MS [expr {$fit_finished - $fit_started}]"
+send -- "\\x1b"
+after 150
+send -- "\\x03"
+after 200
+send -- "\\x04"
+expect {
+    eof {}
+    timeout {
+        puts stderr "Timed out waiting for large-fit Pi to exit"
+        exit 4
+    }
+}
+`;
+}
+
 function fail(message: string): never {
 	throw new Error(`BTW PTY verification failed: ${message}`);
 }
@@ -199,9 +244,11 @@ function fail(message: string): never {
 export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-btw-pty-"));
 	const configDirectory = join(temporaryDirectory, "config");
+	const largeRequestLog = join(temporaryDirectory, "large-requests.jsonl");
+	const largeSessionDirectory = join(temporaryDirectory, "large-sessions");
 	const sessionDirectory = join(temporaryDirectory, "sessions");
 	const requestLog = join(temporaryDirectory, "requests.jsonl");
-	await Promise.all([mkdir(configDirectory), mkdir(sessionDirectory)]);
+	await Promise.all([mkdir(configDirectory), mkdir(largeSessionDirectory), mkdir(sessionDirectory)]);
 
 	try {
 		const baseEnvironment = {
@@ -307,6 +354,53 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 		}
 		const requestsAfterResume = (await readFile(requestLog, "utf8")).trim().split("\n");
 		if (requestsAfterResume.length !== 3) fail("reopening durable BTW history made an unexpected model request");
+
+		const largeFit = Bun.spawnSync(["expect", "-c", largeFitExpectProgram()], {
+			cwd: root,
+			env: {
+				...baseEnvironment,
+				PI_STUFF_PTY_LOG: largeRequestLog,
+				PI_STUFF_PTY_SESSIONS: largeSessionDirectory,
+				PI_STUFF_PTY_SESSION_ID: `btw-large-pty-${options.columns}x${options.rows}`,
+			},
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		if (largeFit.exitCode !== 0) {
+			fail(
+				largeFit.stderr.toString().trim() ||
+					largeFit.stdout.toString().trim() ||
+					`large-fit expect exited ${largeFit.exitCode}`,
+			);
+		}
+		const fitDuration = /BTW_LARGE_FIT_MS (\d+)/u.exec(largeFit.stdout.toString())?.[1];
+		if (!fitDuration || Number(fitDuration) > 2_000) {
+			fail(`large BTW fit took ${fitDuration ?? "an unknown number of"} ms`);
+		}
+		const largeRequests = (await readFile(largeRequestLog, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as RequestRecord);
+		if (largeRequests.length !== 2) fail(`expected main and large BTW requests, received ${largeRequests.length}`);
+		const largeRequest = largeRequests[1];
+		if (largeRequest?.lastUser !== "large fit question") fail("large BTW question was not observed");
+		if (typeof largeRequest.messageChars !== "number" || largeRequest.messageChars > 750_000) {
+			fail(`large BTW request was not fitted to the model window: ${String(largeRequest.messageChars)}`);
+		}
+		if (!Array.isArray(largeRequest.tools) || largeRequest.tools.length !== 0) {
+			fail("large BTW request exposed tools");
+		}
+		const largeSessionFiles = (await readdir(largeSessionDirectory))
+			.filter((entry) => entry.endsWith(".jsonl"))
+			.map((entry) => join(largeSessionDirectory, entry));
+		if (largeSessionFiles.length !== 1) fail(`expected one large-fit session, received ${largeSessionFiles.length}`);
+		const largeSession = await readSession(largeSessionFiles[0] as string);
+		const largeHistory = largeSession.lines.filter(
+			(line) => line.type === "custom" && line.customType === "@jczhang02/pi-stuff-btw/history/v1",
+		);
+		if (!JSON.stringify(largeHistory).includes('"contextTrimmed":true')) {
+			fail("large BTW fit was not recorded as trimmed");
+		}
 	} finally {
 		await rm(temporaryDirectory, { recursive: true, force: true });
 	}

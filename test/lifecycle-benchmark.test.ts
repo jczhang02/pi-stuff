@@ -107,6 +107,7 @@ describe("lifecycle benchmark statistics", () => {
 			const program = lifecycleExpectProgram(action, false);
 			expect(program).toContain("wait_for_initial_editor");
 			expect(program).toContain("must_editor_ready");
+			expect(program.match(/set timeout 0/gu)).toHaveLength(2);
 			expect(program).not.toMatch(/after (?:60|80)\\b/u);
 		}
 		const prompt = lifecycleExpectProgram("prompt", false);
@@ -149,15 +150,18 @@ describe("lifecycle benchmark statistics", () => {
 	});
 
 	test("reports bypassed coverage and the exact over-budget cell", () => {
-		const cells = acceptanceCells().map((candidate) =>
-			candidate.variant === "suite" && candidate.scenario === "resume-long" && candidate.columns === 64
-				? candidate.action === "reload"
-					? { ...candidate, reload: metric(551) }
-					: candidate.action === "background-exit"
-						? { ...candidate, shutdown: metric(376) }
-						: candidate
-				: candidate,
-		);
+		const cells = acceptanceCells().map((candidate) => {
+			if (candidate.variant !== "suite") return candidate;
+			if (candidate.scenario === "resume-long" && candidate.columns === 64) {
+				if (candidate.action === "reload") return { ...candidate, reload: metric(2_501) };
+				if (candidate.action === "background-exit") return { ...candidate, shutdown: metric(376) };
+			}
+			if (candidate.scenario === "fresh" && candidate.columns === 100) {
+				if (candidate.action === "ctrl-c") return { ...candidate, shutdown: metric(251) };
+				if (candidate.action === "reload-change") return { ...candidate, reload: metric(8_001) };
+			}
+			return candidate;
+		});
 		const findings = lifecycleAcceptanceFindings(
 			selection({
 				actions: ACTIONS.filter((action) => action !== "agent-exit"),
@@ -173,7 +177,9 @@ describe("lifecycle benchmark statistics", () => {
 		expect(findings).toContain("coverage requires at least 6000 historical Tool results");
 		expect(findings).toContain("coverage requires at least 8192 bytes per historical Tool result");
 		expect(findings).toContain("coverage is missing action agent-exit");
-		expect(findings).toContain("suite/resume-long/reload/64x28 reload p95 551.00ms exceeds 550ms");
+		expect(findings).toContain("suite/fresh/ctrl-c/100x32 shutdown p95 251.00ms exceeds 250ms");
+		expect(findings).toContain("suite/fresh/reload-change/100x32 reload p95 8001.00ms exceeds 8000ms");
+		expect(findings).toContain("suite/resume-long/reload/64x28 reload p95 2501.00ms exceeds 2500ms");
 		expect(findings).toContain("suite/resume-long/background-exit/64x28 shutdown p95 376.00ms exceeds 375ms");
 	});
 
@@ -213,15 +219,34 @@ describe("lifecycle benchmark statistics", () => {
 		expect(findings).toContain("suite/fresh/exit/64x28 startup confirmation p95 2702.00ms also exceeds 2700ms");
 	});
 
-	test("bounds long-session Suite startup against the paired Host baseline", () => {
+	test("bounds Suite startup against the paired Host baseline", () => {
+		const freshCells = acceptanceCells().map((candidate) => {
+			if (candidate.scenario !== "fresh" || candidate.action !== "exit" || candidate.columns !== 100) {
+				return candidate;
+			}
+			return { ...candidate, startup: metric(candidate.variant === "host" ? 439 : 2_690) };
+		});
+		const freshTarget = freshCells.find(
+			(candidate) =>
+				candidate.variant === "suite" &&
+				candidate.scenario === "fresh" &&
+				candidate.action === "exit" &&
+				candidate.columns === 100,
+		);
+		if (!freshTarget) throw new Error("missing paired lifecycle test target");
+		expect(lifecycleConfirmationTargets(freshCells)).toEqual([freshTarget]);
+		expect(lifecycleAcceptanceFindings(selection(), freshCells)).toContain(
+			"suite/fresh/exit/100x32 startup overhead 2251.00ms exceeds Host by 2250ms",
+		);
+
 		const cells = acceptanceCells().map((candidate) => {
 			if (candidate.scenario !== "resume-long" || candidate.action !== "exit" || candidate.columns !== 100) {
 				return candidate;
 			}
-			return { ...candidate, startup: metric(candidate.variant === "host" ? 5_000 : 6_001) };
+			return { ...candidate, startup: metric(candidate.variant === "host" ? 5_000 : 7_251) };
 		});
 		expect(lifecycleAcceptanceFindings(selection(), cells)).toContain(
-			"suite/resume-long/exit/100x32 startup overhead 1001.00ms exceeds Host by 1000ms",
+			"suite/resume-long/exit/100x32 startup overhead 2251.00ms exceeds Host by 2250ms",
 		);
 	});
 

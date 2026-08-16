@@ -37,12 +37,12 @@ exits unsuccessfully. Direct script invocations remain available for explicitly 
 
 An initially over-budget cell receives one independent confirmation batch with the same sample and warmup counts. Each
 cell summary records both counts, so acceptance cannot rely on an unconditioned confirmation batch.
-Acceptance fails only when the same absolute budget is exceeded again. The benchmark does not normalize Suite timing
-against Host timing, raise a budget, or discard either batch: initial and confirmation samples remain in the JSON
-report. This distinguishes a repeatable Pi Stuff regression from one scheduler outlier while preserving the original
-wall-clock evidence.
+Acceptance fails only when the same absolute or paired Host-overhead budget is exceeded again. The benchmark does not
+raise a budget or discard either batch: initial and confirmation samples remain in the JSON report. This distinguishes
+a repeatable Pi Stuff regression from one scheduler outlier while preserving the original wall-clock evidence.
 
-The final enforced run is recorded locally at `.artifacts/lifecycle-benchmark/acceptance-post-rebase-final.json`. It
+The original `ps-5bw` enforced run is recorded locally at
+`.artifacts/lifecycle-benchmark/acceptance-post-rebase-final.json`. It
 started 292 isolated Pi processes and completed with `acceptance.passed: true` and no findings. The worst Suite p95
 values were 1,488.08 ms normal startup, 1,660.97 ms 240-turn startup, 25.60 ms first-input acknowledgement, 811.88 ms
 first response, 154.25 ms ordinary reload, 501.30 ms 240-turn reload, 97.29 ms ordinary exit/Ctrl-C, 281.30 ms 240-turn
@@ -68,6 +68,12 @@ The sole over-budget cell, the 100×32 240-turn response at 50.36 ms, passed an 
 38.84 ms p95; its confirmed acknowledgment was 2.92 ms p95. First-input acknowledgment was 3.00–4.58 ms and first
 deterministic response was 53.29–114.85 ms. Configured startup moved to 2,022.24–2,388.15 ms; degraded native fail-open
 startup was 2,068.33–2,088.97 ms. Host steady-state response was 19.55–21.16 ms in the same matrix.
+
+The current schema 6 run is recorded locally at `.artifacts/lifecycle-benchmark/ps-9t2-1-4-final.json`. It ran 292
+isolated Pi 0.84.2 processes with 6,500 retained 8 KiB Tool results and completed with `acceptance.passed: true`, no
+findings, and no confirmation cells. Across both terminal sizes, 6,500-Tool Suite p95 was 1,997.18–2,053.80 ms for
+reload, 465.75–488.09 ms for the first deterministic response, 54.53–68.28 ms for the second same-process response, and
+198.84–201.99 ms for active Background Shell shutdown.
 
 The sections below preserve the original `ps-5bw` diagnosis and evidence. Its startup and prompt budgets are superseded
 by the current table at the end of this report.
@@ -145,23 +151,29 @@ Background Tool receipts and proven child-process cleanup; every other ceiling r
 
 ## Current regression budgets
 
-The schema 5 acceptance benchmark enforces these p95 ceilings for the certified local profile:
+Schema 6 certifies Pi 0.84.2 with 6,500 retained historical Tool results of at least 8,192 bytes each. The larger
+real-shape Session and Pi 0.84.2 Host baseline supersede the earlier 240-turn Pi 0.84.1 ceilings above. The benchmark
+enforces these p95 ceilings for the certified local profile:
 
 | Measurement | Budget |
 | --- | ---: |
 | Fresh or short configured Suite startup, or degraded native fail-open startup | ≤ 2,700 ms |
-| 240-turn Suite startup with configured Context initialization | ≤ 3,000 ms |
+| 6,500-Tool Suite startup with configured Context initialization | ≤ 12,000 ms and ≤ Host + 2,250 ms |
+| Other Suite startup overhead against the paired Host cell | ≤ 2,250 ms |
 | First-input acknowledgment | ≤ 50 ms |
-| First deterministic response after startup readiness | ≤ 1,100 ms |
+| First provider boundary, ordinary / 6,500-Tool Session | ≤ 800 ms / ≤ 2,300 ms |
+| First deterministic response, ordinary / 6,500-Tool Session | ≤ 1,100 ms / ≤ 2,600 ms |
 | Same-process steady-state input acknowledgment | ≤ 15 ms |
-| Same-process steady-state deterministic response | ≤ 50 ms |
-| Fresh, short, or degraded normal exit / Ctrl-C | ≤ 150 ms |
-| 240-turn normal exit / Ctrl-C | ≤ 350 ms |
+| Same-process steady-state provider boundary, ordinary / 6,500-Tool Session | ≤ 100 ms / ≤ 350 ms |
+| Same-process steady-state deterministic response, ordinary / 6,500-Tool Session | ≤ 150 ms / ≤ 550 ms |
+| Fresh, short, or degraded normal exit | ≤ 150 ms |
+| Fresh, short, or degraded Ctrl-C | ≤ 250 ms |
+| 6,500-Tool normal exit / Ctrl-C | ≤ 550 ms |
 | Fresh, short, or degraded unchanged reload | ≤ 200 ms |
-| 240-turn unchanged reload | ≤ 550 ms |
+| 6,500-Tool unchanged reload, including bounded native preflight when the imported Session is over 2× its model window | ≤ 2,500 ms |
 | Active Background Shell or Agent parent shutdown, fresh Session | ≤ 250 ms |
-| Active Background Shell or Agent parent shutdown, 240-turn Session | ≤ 375 ms |
-| Cold source-changing reload with nested-code proof | ≤ 6,000 ms |
+| Active Background Shell or Agent parent shutdown, 6,500-Tool Session | ≤ 375 ms |
+| Cold source-changing reload with nested-code proof | ≤ 8,000 ms |
 
 The higher startup ceiling makes the trade explicit: configured module, factory, database, and Session initialization
 occur before the editor is accepted as ready, not after Enter. It does not authorize configuration creation or

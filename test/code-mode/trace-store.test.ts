@@ -10,17 +10,18 @@ test("duplicate nested Tool IDs fail instead of corrupting the UI projection", (
 	);
 });
 
-test("trace updates carry only the changed nested Tool", () => {
+test("650 trace fan-out updates each carry only the changed nested Tool", () => {
 	const traces = new CodeModeTraceStore();
 	const updates: RuntimeTraceUpdate[] = [];
 	const context = { cwd: "/project", onTraceUpdate: (update: RuntimeTraceUpdate) => updates.push(update) };
-	const first = traces.start("cell", "nested-1", "read", { path: "a.ts" });
-	traces.emit("cell", first, context);
-	first.status = "done";
-	const second = traces.start("cell", "nested-2", "write", { path: "b.ts" });
-	traces.emit("cell", second, context);
+	for (let index = 0; index < 650; index += 1) {
+		const trace = traces.start("cell", `nested-${String(index)}`, "read", { path: `${String(index)}.ts` });
+		traces.emit("cell", trace, context);
+	}
 
-	expect(updates.map((update) => update.trace.id)).toEqual(["nested-1", "nested-2"]);
-	expect(updates[0]?.trace.status).toBe("running");
+	expect(updates).toHaveLength(650);
+	expect(updates[0]?.trace.id).toBe("nested-0");
+	expect(updates[649]?.trace.id).toBe("nested-649");
+	expect(updates.every((update) => update.trace.status === "running")).toBe(true);
 	expect(updates.every((update) => !("traces" in update))).toBe(true);
 });

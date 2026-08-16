@@ -1,12 +1,13 @@
 import { appendFileSync } from "node:fs";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, SessionManager } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
 const PROVIDER = "pi-stuff-pty";
 const MODEL = "fixture-model";
+const LARGE_CONTEXT_CHARS = 2_000_000;
 
 const ZERO_USAGE = {
 	input: 0,
@@ -30,20 +31,20 @@ function message(text: string, stopReason: AssistantMessage["stopReason"]): Assi
 	};
 }
 
-function lastUserText(context: Context): string {
-	let user: Context["messages"][number] | undefined;
-	for (let index = context.messages.length - 1; index >= 0; index--) {
-		const message = context.messages[index];
-		if (message?.role !== "user") continue;
-		user = message;
-		break;
-	}
-	if (!user) return "";
-	if (typeof user.content === "string") return user.content;
-	return user.content
+function contextMessageText(message: Context["messages"][number]): string {
+	if (typeof message.content === "string") return message.content;
+	return message.content
 		.filter((part): part is { type: "text"; text: string } => part.type === "text")
 		.map((part) => part.text)
 		.join("\n");
+}
+
+function lastUserText(context: Context): string {
+	for (let index = context.messages.length - 1; index >= 0; index--) {
+		const message = context.messages[index];
+		if (message?.role === "user") return contextMessageText(message);
+	}
+	return "";
 }
 
 function recordRequest(context: Context): void {
@@ -53,6 +54,7 @@ function recordRequest(context: Context): void {
 		path,
 		`${JSON.stringify({
 			lastUser: lastUserText(context),
+			messageChars: context.messages.reduce((total, message) => total + contextMessageText(message).length, 0),
 			messageCount: context.messages.length,
 			tools: (context.tools ?? []).map((tool) => tool.name),
 		})}\n`,
@@ -91,6 +93,22 @@ function fixtureStream(context: Context, options?: SimpleStreamOptions) {
 }
 
 export default function btwPtyProvider(pi: ExtensionAPI): void {
+	pi.registerCommand("fixture-btw-large", {
+		description: "Seed an oversized branch for the BTW PTY acceptance fixture",
+		handler: async (_args, ctx) => {
+			const sessionManager = ctx.sessionManager as SessionManager;
+			sessionManager.appendMessage({
+				role: "user",
+				content: "BTW_LARGE_CONTEXT_USER",
+				timestamp: Date.now(),
+			});
+			sessionManager.appendMessage(
+				message(`BTW_LARGE_HEAD\n${"x".repeat(LARGE_CONTEXT_CHARS)}\nBTW_LARGE_TAIL`, "stop"),
+			);
+			ctx.ui.notify("BTW_LARGE_CONTEXT_READY", "info");
+		},
+	});
+
 	pi.registerProvider(PROVIDER, {
 		name: "Pi Stuff PTY fixture",
 		baseUrl: "https://fixture.invalid",

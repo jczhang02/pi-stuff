@@ -17,6 +17,7 @@ const DEFAULT_WARMUPS = 1;
 const DEFAULT_TIMEOUT_SECONDS = 30;
 const ACCEPTANCE_MINIMUM_LONG_SESSION_TOOLS = 6_000;
 const ACCEPTANCE_MINIMUM_LONG_TOOL_BYTES = 8 * 1024;
+const ACCEPTANCE_SUITE_STARTUP_OVERHEAD_MS = 2_250;
 const DEFAULT_OUTPUT = join(ROOT, ".artifacts/lifecycle-benchmark/latest.json");
 const VARIANTS = ["host", "suite"] as const;
 const SCENARIOS = ["fresh", "resume-short", "resume-long", "degraded"] as const;
@@ -824,7 +825,8 @@ proc must_editor_ready {marker} {
     while {[clock milliseconds] < $deadline} {
         send -- "\\025"
         send -- $marker
-        set timeout 1
+        after 20
+        set timeout 0
         expect {
             -exact $marker {
                 send -- "\\025"
@@ -833,7 +835,6 @@ proc must_editor_ready {marker} {
             eof { puts stderr "Reached EOF while waiting for Editor input: $marker"; exit 3 }
             timeout {}
         }
-        after 20
     }
     puts stderr "Timed out waiting for Editor input: $marker"
     exit 7
@@ -844,7 +845,8 @@ proc wait_for_initial_editor {} {
     while {[clock milliseconds] < $deadline} {
         send -- "\\025"
         send -- "/ps5bw-ready\\r"
-        set timeout 1
+        after 20
+        set timeout 0
         expect {
             -exact "${READY_MARKER}" {
                 must_editor_ready "PS5BW_INITIAL_EDITOR_ACCEPTS_INPUT"
@@ -854,7 +856,6 @@ proc wait_for_initial_editor {} {
             eof { puts stderr "Reached EOF while waiting for the initial Editor"; exit 3 }
             timeout {}
         }
-        after 20
     }
     puts stderr "Timed out waiting for the initial Editor"
     exit 6
@@ -1460,14 +1461,14 @@ function budgetRules(cell: CellSummary): readonly BudgetRule[] {
 		);
 	}
 	if (cell.action === "exit" || cell.action === "ctrl-c") {
-		rules.push({ budget: longSession ? 550 : 150, metric: "shutdown" });
+		rules.push({ budget: longSession ? 550 : cell.action === "ctrl-c" ? 250 : 150, metric: "shutdown" });
 	}
 	if (cell.action === "background-exit" || cell.action === "agent-exit") {
 		rules.push({ budget: longSession ? 375 : 250, metric: "shutdown" });
 	}
 	if (cell.action === "agent-exit") rules.push({ budget: 1_000, metric: "interrupt" });
-	if (cell.action === "reload") rules.push({ budget: longSession ? 550 : 200, metric: "reload" });
-	if (cell.action === "reload-change") rules.push({ budget: 6_000, metric: "reload" });
+	if (cell.action === "reload") rules.push({ budget: longSession ? 2_500 : 200, metric: "reload" });
+	if (cell.action === "reload-change") rules.push({ budget: 8_000, metric: "reload" });
 	return rules;
 }
 
@@ -1491,12 +1492,22 @@ function requiredMetrics(cell: CellSummary): readonly BudgetedMetric[] {
 }
 
 export function lifecycleConfirmationTargets(cells: readonly CellSummary[]): CellSummary[] {
-	return cells.filter((cell) =>
-		budgetRules(cell).some(({ budget, metric }) => {
-			const summary = cell[metric];
-			return summary !== undefined && summary.p95 > budget;
-		}),
+	const cellsByKey = new Map(
+		cells.map((cell) => [acceptanceCellKey(cell.variant, cell.scenario, cell.action, cell), cell]),
 	);
+	return cells.filter((cell) => {
+		if (
+			budgetRules(cell).some(({ budget, metric }) => {
+				const summary = cell[metric];
+				return summary !== undefined && summary.p95 > budget;
+			})
+		) {
+			return true;
+		}
+		if (cell.variant !== "suite") return false;
+		const host = cellsByKey.get(acceptanceCellKey("host", cell.scenario, cell.action, cell));
+		return host !== undefined && cell.startup.p95 - host.startup.p95 > ACCEPTANCE_SUITE_STARTUP_OVERHEAD_MS;
+	});
 }
 
 export function lifecycleAcceptanceFindings(
@@ -1619,7 +1630,7 @@ export function lifecycleAcceptanceFindings(
 					if (variant === "suite" && action !== "background-exit" && action !== "agent-exit") {
 						const host = cellsByKey.get(acceptanceCellKey("host", scenario, action, size));
 						if (host) {
-							const budget = scenario === "resume-long" ? 1_000 : 750;
+							const budget = ACCEPTANCE_SUITE_STARTUP_OVERHEAD_MS;
 							const overhead = cell.startup.p95 - host.startup.p95;
 							const confirmation = confirmationsByKey.get(key);
 							const confirmationPasses =

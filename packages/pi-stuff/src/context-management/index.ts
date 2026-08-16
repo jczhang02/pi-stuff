@@ -59,6 +59,7 @@ const WORK_CONTINUITY_SOURCE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/work
 export const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
 const MAGIC_CONTEXT_MODULE = "@cortexkit/pi-magic-context";
 const MAGIC_CONTEXT_PROMPT_MARKER = "## Magic Context";
+const MAGIC_CONTEXT_NATIVE_COMPACTION_MULTIPLIER = 2;
 const SUITE_CUSTOM_CONTEXT_GUIDANCE_TAG = "pi-stuff-context-guidance";
 const COMPACT_MAGIC_CONTEXT_PROMPT = `${MAGIC_CONTEXT_PROMPT_MARKER}
 
@@ -892,7 +893,12 @@ class ContextCapabilityRuntime implements ContextCapability {
 	private sessionContext: ExtensionContext | undefined;
 	private shutdown: { event: SessionShutdownEvent; ctx: ExtensionContext } | undefined;
 	private disposed = false;
+	private projectionGeneration = 0;
 	private readonly projections = new Map<string, CachedProjection>();
+	private readonly projectionFlights = new Map<
+		string,
+		{ generation: number; promise: Promise<CachedProjection | undefined> }
+	>();
 	/** Last valid project-memory snapshot, captured only by the normal Magic context event. */
 	private readonly memories = new Map<string, string>();
 	private readonly registry: ContextCapabilityRegistry;
@@ -929,7 +935,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		// Every submitted prompt starts a new branch snapshot. The automatic Context
 		// event will repopulate this cache before tools run; retaining the previous
 		// turn's projection could otherwise omit the user's newest decision.
-		this.projections.clear();
+		this.resetProjectionState(false);
 		this.interactivePaintPending = source === "interactive";
 	}
 
@@ -1166,8 +1172,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 	captureSessionStart(event: SessionStartEvent, ctx: ExtensionContext): void {
 		this.sessionStart = { ...event };
 		this.sessionContext = ctx;
-		this.projections.clear();
-		this.memories.clear();
+		this.resetProjectionState(true);
 		this.interactivePaintPending = false;
 		this.magicPromptInstalledForSession = false;
 		this.suiteCustomContextGuidance.clear();
@@ -1209,8 +1214,38 @@ class ContextCapabilityRuntime implements ContextCapability {
 	}
 
 	invalidateProjection(): void {
-		this.projections.clear();
-		this.memories.clear();
+		this.resetProjectionState(true);
+	}
+
+	yieldExtremeOverflowToNative(ctx: ExtensionContext): boolean {
+		if (this.state.state !== "active" || !this.magicContextHandler) return false;
+		let usage: ReturnType<ExtensionContext["getContextUsage"]>;
+		try {
+			usage = ctx.getContextUsage();
+		} catch {
+			return false;
+		}
+		if (
+			!usage ||
+			usage.tokens === null ||
+			usage.contextWindow <= 0 ||
+			usage.tokens <= usage.contextWindow * MAGIC_CONTEXT_NATIVE_COMPACTION_MULTIPLIER
+		)
+			return false;
+		this.resetProjectionState(true);
+		const trigger = this.state.trigger;
+		this.state = {
+			state: "degraded",
+			engine: "native",
+			...(trigger === undefined ? {} : { trigger }),
+			error: "Magic Context yielded an extreme-overflow turn to Pi native compaction.",
+		};
+		return true;
+	}
+
+	async preflightExtremeOverflow(ctx: ExtensionContext): Promise<void> {
+		if (!this.yieldExtremeOverflowToNative(ctx)) return;
+		await this.preflightNativeCustomTurn(ctx, false);
 	}
 
 	async dispose(event?: SessionShutdownEvent, ctx?: ExtensionContext): Promise<void> {
@@ -1224,8 +1259,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		this.magicSessionStartHandlers = [];
 		this.unregisterSuiteAgentMessagePreparation();
 		if (event && ctx) this.shutdown = { event, ctx };
-		this.projections.clear();
-		this.memories.clear();
+		this.resetProjectionState(true);
 		for (const key of this.ownedContexts) {
 			if (this.registry.contexts.get(key) === this) this.registry.contexts.delete(key);
 		}
@@ -1338,15 +1372,17 @@ class ContextCapabilityRuntime implements ContextCapability {
 		return true;
 	}
 
-	private async preflightNativeCustomTurn(ctx: ExtensionContext): Promise<void> {
+	private async preflightNativeCustomTurn(ctx: ExtensionContext, requireIdle = true): Promise<void> {
 		if (this.nativeCompactionPreflight) {
 			await this.nativeCompactionPreflight;
 			return;
 		}
-		try {
-			if (!ctx.isIdle()) return;
-		} catch {
-			return;
+		if (requireIdle) {
+			try {
+				if (!ctx.isIdle()) return;
+			} catch {
+				return;
+			}
 		}
 		let settings: NativeCompactionSettings | undefined;
 		try {
@@ -1424,32 +1460,47 @@ class ContextCapabilityRuntime implements ContextCapability {
 		const key = projectionKey(ctx);
 		let cached = this.projections.get(key);
 		const generation = this.generation;
+		const projectionGeneration = this.projectionGeneration;
 		const handler = this.magicContextHandler;
 		if (!cached && handler && this.isCurrentGeneration(generation)) {
-			try {
-				const event: ContextEvent = {
-					type: "context",
-					messages: currentAgentMessages(ctx),
-				};
-				const result = await handler(event, quietMagicContext(ctx));
-				if (!this.isCurrentGeneration(generation)) return nativeProjection(audience, ctx, options);
-				const full = extractMagicProjection(result?.messages ?? event.messages);
-				if (!full) throw new Error("Magic Context produced no valid history projection.");
-				cached = { full };
-				this.projections.set(key, cached);
-				const memory = projectMemoryOnly(full);
-				if (memory) this.memories.set(key, memory);
-				else this.memories.delete(key);
-				this.state = { state: "active", engine: "magic-context", trigger: "projection" };
-			} catch (error) {
-				if (!this.isCurrentGeneration(generation)) return nativeProjection(audience, ctx, options);
-				this.state = {
-					state: "degraded",
-					engine: "native",
-					trigger: "projection",
-					error: error instanceof Error ? error.message : String(error),
-				};
+			let flight = this.projectionFlights.get(key);
+			if (!flight || flight.generation !== projectionGeneration) {
+				let created!: { generation: number; promise: Promise<CachedProjection | undefined> };
+				const promise = (async (): Promise<CachedProjection | undefined> => {
+					try {
+						const event: ContextEvent = {
+							type: "context",
+							messages: currentAgentMessages(ctx),
+						};
+						const result = await handler(event, quietMagicContext(ctx));
+						if (!this.isCurrentProjection(generation, projectionGeneration)) return;
+						const full = extractMagicProjection(result?.messages ?? event.messages);
+						if (!full) throw new Error("Magic Context produced no valid history projection.");
+						const projection = { full };
+						this.projections.set(key, projection);
+						const memory = projectMemoryOnly(full);
+						if (memory) this.memories.set(key, memory);
+						else this.memories.delete(key);
+						this.state = { state: "active", engine: "magic-context", trigger: "projection" };
+						return projection;
+					} catch (error) {
+						if (!this.isCurrentProjection(generation, projectionGeneration)) return;
+						this.state = {
+							state: "degraded",
+							engine: "native",
+							trigger: "projection",
+							error: error instanceof Error ? error.message : String(error),
+						};
+					}
+				})();
+				created = { generation: projectionGeneration, promise };
+				this.projectionFlights.set(key, created);
+				void promise.finally(() => {
+					if (this.projectionFlights.get(key) === created) this.projectionFlights.delete(key);
+				});
+				flight = created;
 			}
+			cached = (await flight.promise) ?? this.projections.get(key);
 		}
 		if (!cached?.full) return nativeProjection(audience, ctx, options);
 		const formatted = formatProjection(cached.full, audience, options);
@@ -1574,6 +1625,17 @@ class ContextCapabilityRuntime implements ContextCapability {
 		return !this.disposed && this.generation === generation;
 	}
 
+	private isCurrentProjection(generation: number, projectionGeneration: number): boolean {
+		return this.isCurrentGeneration(generation) && this.projectionGeneration === projectionGeneration;
+	}
+
+	private resetProjectionState(clearMemories: boolean): void {
+		this.projectionGeneration++;
+		this.projectionFlights.clear();
+		this.projections.clear();
+		if (clearMemories) this.memories.clear();
+	}
+
 	private createRegistrationPlan(): MagicRegistrationPlan {
 		return { commands: new Map(), handlers: [], tools: [], shutdownComplete: false };
 	}
@@ -1621,10 +1683,12 @@ class ContextCapabilityRuntime implements ContextCapability {
 		const contextHandler = this.magicContextHandler;
 		if (!contextHandler) return;
 		const generation = this.generation;
+		this.resetProjectionState(false);
+		const projectionGeneration = this.projectionGeneration;
 		const nativeMessages = [...event.messages];
 		try {
 			const result = await contextHandler(event, quietMagicContext(ctx));
-			if (!this.isCurrentGeneration(generation)) return { messages: nativeMessages };
+			if (!this.isCurrentProjection(generation, projectionGeneration)) return { messages: nativeMessages };
 			const projectedMessages = result?.messages ?? event.messages;
 			const full = extractMagicProjection(projectedMessages);
 			if (!full) throw new Error("Magic Context produced no valid history projection.");
@@ -1641,7 +1705,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 			if (!this.consumeSuiteCustomContextGuidance()) return result;
 			return { ...result, messages: addCompactMagicContextMessage(projectedMessages) };
 		} catch (error) {
-			if (!this.isCurrentGeneration(generation)) return { messages: nativeMessages };
+			if (!this.isCurrentProjection(generation, projectionGeneration)) return { messages: nativeMessages };
 			const key = projectionKey(ctx);
 			this.projections.delete(key);
 			this.memories.delete(key);
@@ -2009,9 +2073,11 @@ export default async function piStuffContext(
 	// race ahead of Magic Context.
 	pi.on("session_before_compact", async (_event, ctx) => {
 		await runtime.activate(ctx, "input");
+		runtime.yieldExtremeOverflowToNative(ctx);
 	});
 	pi.on("before_agent_start", async (_event, ctx) => {
 		await runtime.activate(ctx, "automatic-turn");
+		await runtime.preflightExtremeOverflow(ctx);
 	});
 	pi.on("turn_end", (event) => workContinuity.noteTurnEnd(event));
 	pi.on("tool_call", (event) => {
