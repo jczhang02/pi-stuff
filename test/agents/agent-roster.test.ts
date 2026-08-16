@@ -410,27 +410,37 @@ describe("AgentRoster", () => {
 		result.roster.dispose();
 	});
 
-	test("uses elapsed time for completed rows and a muted done fallback", () => {
+	test("settles a running row to an unmistakable completed state and freezes elapsed time", () => {
 		const clock = new FakeClock();
-		const result = setup(
-			[
-				row("reviewer", "completed", {
-					description: "Review sample output",
-					elapsedMs: 18_000,
-					endedAt: clock.now,
-				}),
-			],
-			{ clearTimeout: clock.clearTimeout, now: () => clock.now, setTimeout: clock.setTimeout },
-		);
+		const running = row("reviewer", "running", {
+			description: "Review sample output",
+			startedAt: clock.now - 18_000,
+		});
+		const result = setup([running], {
+			clearTimeout: clock.clearTimeout,
+			now: () => clock.now,
+			setTimeout: clock.setTimeout,
+		});
+		expect(lineFor(result.ui.render(100), "reviewer")).toMatch(/\s{2,}18s$/u);
+
+		result.current.update([
+			row("reviewer", "completed", {
+				description: "Review sample output",
+				elapsedMs: 18_000,
+				endedAt: clock.now,
+				startedAt: running.startedAt ?? undefined,
+			}),
+		]);
 		for (const width of [100, 64, 48, 32, 24]) {
-			const agentLine = result.ui.render(width).find((line) => line.trimEnd().endsWith("18s"));
+			const agentLine = result.ui.render(width).find((line) => line.trimEnd().endsWith("done · 18s"));
 			expect(agentLine).toBeDefined();
 			if (!agentLine) continue;
-			expect(agentLine).not.toMatch(/\b(?:done|completed)\b/i);
-			expect(agentLine).not.toContain("…18s");
-			expect(agentLine).toMatch(/\S\s{2,}18s$/);
+			expect(agentLine).not.toContain("…done");
+			expect(agentLine).toMatch(/\S\s{2,}done · 18s$/);
 			expect(visibleWidth(agentLine)).toBeLessThanOrEqual(width);
 		}
+		clock.advance(5_000);
+		expect(lineFor(result.ui.render(100), "reviewer")).toEndWith("done · 18s");
 		result.roster.dispose();
 
 		const legacy = setup([row("legacy", "completed", { description: "Review legacy output" })]);

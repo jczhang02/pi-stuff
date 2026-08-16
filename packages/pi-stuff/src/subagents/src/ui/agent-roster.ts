@@ -492,7 +492,7 @@ function styledState(row: AgentRow, theme: Theme, now: number): string {
 		case "resuming":
 			return theme.fg("muted", "resuming");
 		case "completed":
-			return theme.fg("muted", elapsed || "done");
+			return theme.fg("muted", elapsed ? `done · ${elapsed}` : "done");
 		case "failed":
 			return theme.fg("error", elapsed ? `failed · ${elapsed}` : "failed");
 		case "crashed":
