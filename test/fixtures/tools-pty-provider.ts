@@ -27,6 +27,7 @@ const TOOL_SEQUENCE = [
 	{ name: "find", arguments: { pattern: "*.txt", path: "." } },
 	{ name: "ls", arguments: { path: "." } },
 	{ name: "bash", arguments: { command: "printf 'BUILTIN_FAILURE_工具\\n' >&2; exit 7" } },
+	{ name: "fixture_search", arguments: {} },
 	{ name: "fixture_state", arguments: { state: "error" } },
 	{ name: "fixture_state", arguments: { state: "rejected" } },
 	{ name: "fixture_state", arguments: { state: "cancelled" } },
@@ -84,6 +85,28 @@ function fixtureStream(context: Context) {
 }
 
 export default function toolsPtyProvider(pi: ExtensionAPI): void {
+	registerSuiteOwnedTool(
+		pi,
+		{
+			description: "Delay one retrieval for active Tool UI certification",
+			execute: async () => {
+				await new Promise((resolve) => setTimeout(resolve, 1_900));
+				return { content: [{ type: "text", text: "FIXTURE_SEARCH" }], details: undefined };
+			},
+			label: "Search",
+			name: "fixture_search",
+			parameters: Type.Object({}),
+		},
+		{
+			activity: {
+				categories: ["search-pattern"],
+				classify: () => [{ category: "search-pattern", count: 1, target: "fixture" }],
+			},
+			runningSummary: "searching",
+			summarize: () => "searched",
+			target: () => "fixture",
+		},
+	);
 	registerSuiteOwnedTool(
 		pi,
 		{

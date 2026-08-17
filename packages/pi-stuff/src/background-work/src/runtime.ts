@@ -1,4 +1,3 @@
-import { spawn as spawnChildProcess } from "node:child_process";
 import { randomBytes, randomInt } from "node:crypto";
 import { accessSync, constants, existsSync, lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { Readable } from "node:stream";
@@ -147,9 +146,8 @@ interface SupervisorProcess {
 		readonly signal: NodeJS.Signals | null;
 	}>;
 	readonly control: Readable;
+	readonly output: Readable;
 	readonly pid: number;
-	readonly stderr: Readable;
-	readonly stdout: Readable;
 	kill(signal: NodeJS.Signals): void;
 	unref(): void;
 }
@@ -325,35 +323,26 @@ function spawnSupervisor(
 	envelope: string,
 	options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv },
 ): SupervisorProcess {
-	const subprocess = spawnChildProcess(executable, [SUPERVISOR_PATH, envelope], {
+	const subprocess = Bun.spawn({
+		cmd: [executable, SUPERVISOR_PATH, envelope],
 		cwd: options.cwd,
 		detached: process.platform !== "win32",
 		env: options.env,
-		stdio: ["ignore", "pipe", "pipe", "pipe"],
-		windowsHide: true,
+		stdio: ["ignore", "pipe", "pipe"],
 	});
-	let resolveExit!: (value: { code: number | null; error?: Error; signal: NodeJS.Signals | null }) => void;
-	const exit = new Promise<{ code: number | null; error?: Error; signal: NodeJS.Signals | null }>((resolve) => {
-		resolveExit = resolve;
-	});
-	subprocess.once("error", (error) => resolveExit({ code: null, error, signal: null }));
-	subprocess.once("exit", (code, signal) => resolveExit({ code, signal }));
-	const control = subprocess.stdio[3];
-	if (!subprocess.pid || !subprocess.stdout || !subprocess.stderr || !(control instanceof Readable)) {
+	if (!subprocess.pid) {
 		subprocess.kill("SIGKILL");
 		subprocess.unref();
 		throw new Error("Background Work supervisor pipes were not created");
 	}
+	const control = Readable.fromWeb(subprocess.stdout);
+	// The supervisor reserves stdout for control and merges command output onto stderr.
+	const output = Readable.fromWeb(subprocess.stderr);
 	const closeControl = () => {
-		control.destroy();
+		if (!control.destroyed) control.destroy();
 	};
-	const streams = [subprocess.stdout, subprocess.stderr, control] as const;
-	const streamCompletion = Promise.all([
-		readableCompletion(subprocess.stdout),
-		readableCompletion(subprocess.stderr),
-		readableCompletion(control),
-	]);
-	const completion = exit.then(async (result) => {
+	const streamCompletion = Promise.all([readableCompletion(output), readableCompletion(control)]);
+	const completion = subprocess.exited.then(async () => {
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const drained = await Promise.race([
 			streamCompletion.then(() => true),
@@ -363,22 +352,21 @@ function spawnSupervisor(
 		]);
 		if (timer) clearTimeout(timer);
 		if (!drained) {
-			// A detached grandchild may inherit the supervisor's stdout/stderr
-			// descriptors after both the command shell and supervisor have exited.
+			// A detached grandchild may inherit the supervisor's output descriptor
+			// after both the command shell and supervisor have exited.
 			// Process exit is authoritative; never let foreign pipe ownership keep a
 			// completed Work task alive forever.
-			for (const stream of streams) stream.destroy();
+			output.destroy();
 			closeControl();
 		}
-		return result;
+		return { code: subprocess.exitCode, signal: subprocess.signalCode };
 	});
 	return {
 		closeControl,
 		completion,
 		control,
+		output,
 		pid: subprocess.pid,
-		stderr: subprocess.stderr,
-		stdout: subprocess.stdout,
 		kill: (signal) => {
 			subprocess.kill(signal);
 		},
@@ -392,9 +380,7 @@ function abandonSupervisor(supervisor: SupervisorProcess): void {
 	} catch {
 		// The exact subprocess may already have exited.
 	}
-	supervisor.stdout.destroy();
-	supervisor.stderr.destroy();
-	supervisor.control.destroy();
+	supervisor.output.destroy();
 	supervisor.closeControl();
 	supervisor.unref();
 }
@@ -988,9 +974,7 @@ export class BackgroundWorkRuntime {
 		);
 		this.removeLaunchArtifact(activity.commandAuthorizationPath);
 		this.removeLaunchArtifact(activity.commandAcknowledgementPath);
-		activity.supervisor.stdout.destroy();
-		activity.supervisor.stderr.destroy();
-		activity.supervisor.control.destroy();
+		activity.supervisor.output.destroy();
 		activity.supervisor.closeControl();
 		activity.supervisor.unref();
 	}
@@ -1013,8 +997,7 @@ export class BackgroundWorkRuntime {
 				this.requestStopInBackground(activity, "output_limit", "output limit");
 			}
 		};
-		activity.supervisor.stdout.on("data", append);
-		activity.supervisor.stderr.on("data", append);
+		activity.supervisor.output.on("data", append);
 		activity.supervisor.control.on("data", (chunk: Buffer) => this.consumeControl(activity, chunk));
 		void activity.supervisor.completion
 			.then(async ({ code, error, signal }) => {
@@ -1227,12 +1210,10 @@ export class BackgroundWorkRuntime {
 		activity.finalized = true;
 		activity.finalizing = false;
 		if (activity.timeoutTimer) clearTimeout(activity.timeoutTimer);
-		for (const stream of [activity.supervisor.stdout, activity.supervisor.stderr, activity.supervisor.control]) {
-			try {
-				stream.destroy();
-			} catch {
-				// Stream teardown cannot change the process result.
-			}
+		try {
+			activity.supervisor.output.destroy();
+		} catch {
+			// Stream teardown cannot change the process result.
 		}
 		try {
 			activity.supervisor.closeControl();
