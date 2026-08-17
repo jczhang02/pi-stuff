@@ -3546,7 +3546,7 @@ test("three blank automatic runs pause for no progress without a fourth continua
 	assert.match(stalled.notifications.at(-1)?.message ?? "", /no progress.*3 automatic runs/i);
 });
 
-test("agent_settled dispatches one idle continuation after agent_end records intent", async () => {
+test("agent_settled dispatches one idle continuation without entering a Context-owned safety pause", async () => {
 	const settled = await startGoalForTest();
 
 	await settled.mock.events.get("agent_end")?.[0]?.(
@@ -3561,32 +3561,10 @@ test("agent_settled dispatches one idle continuation after agent_end records int
 		deliverAs: "followUp",
 	});
 	assert.match(settled.mock.sentUserMessages.at(-1)?.text ?? "", /automatic continuation #1/i);
+	assert.equal(requireLastGoal(settled.mock).status, "active");
 
 	await settled.mock.events.get("agent_settled")?.[0]?.({}, settled.ctx);
 	assert.equal(settled.mock.sentUserMessages.length, 2);
-});
-
-test("a convergence-blocked continuation pauses without retrying another model turn", async () => {
-	const blocked = await startGoalForTest();
-	const unregister = registerSuiteAgentMessagePreparation(blocked.mock.pi, {
-		prepare: async () => ({ status: "convergence-blocked", reason: "hard-turns" }),
-	});
-
-	await blocked.mock.events.get("agent_end")?.[0]?.(
-		{ messages: [{ role: "assistant", stopReason: "stop" }] },
-		blocked.ctx,
-	);
-	await blocked.mock.events.get("agent_settled")?.[0]?.({}, blocked.ctx);
-
-	const goal = requireLastGoal(blocked.mock);
-	assert.equal(goal.status, "paused");
-	assert.equal(goal.safetyPauseCause, "runaway_backstop");
-	assert.equal(blocked.mock.sentUserMessages.length, 1);
-	assert.equal(
-		(blocked.mock.sentHiddenGoalMessages.at(-1)?.options as { triggerTurn?: boolean } | undefined)?.triggerTurn,
-		false,
-	);
-	unregister();
 });
 
 test("agent_settled retains intent until idle and pending-message gates allow dispatch", async () => {

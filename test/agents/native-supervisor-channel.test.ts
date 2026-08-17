@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { registerSuiteAgentMessagePreparation } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import {
 	createNativeSupervisorChannel,
 	garbageCollectSupervisorChannel,
@@ -685,92 +684,6 @@ describe("native supervisor protocol compatibility", () => {
 		second.dispose();
 	});
 
-	test("answers a blocked parent-attention request with an independent-synthesis instruction", async () => {
-		const now = Date.now();
-		const runId = `convergence-blocked-${now}`;
-		const request = {
-			...baseRequest(`convergence-blocked-request-${now}`, runId, now),
-			reason: "need_decision",
-			expectsReply: true,
-		};
-		const channelDir = legacyChannel(runId);
-		const requestFile = writeRequest(channelDir, request);
-		const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-		directories.push(root);
-		const sessionFile = path.join(root, "parent.jsonl");
-		fs.writeFileSync(sessionFile, "");
-		const test = harness({
-			primary: "ps2-convergence-blocked",
-			legacyFile: sessionFile,
-			legacyRunIds: new Set([runId]),
-			startedAtMs: now - 1_000,
-		});
-		const unregister = registerSuiteAgentMessagePreparation(test.api, {
-			prepare: async () => ({ status: "convergence-blocked", reason: "hard provider-turn boundary reached" }),
-		});
-		const channel = createNativeSupervisorChannel(test.api, test.state);
-		const replyFile = path.join(channelDir, "replies", `${request.id}.json`);
-
-		try {
-			await channel.start();
-			const deadline = Date.now() + 2_000;
-			while (!fs.existsSync(replyFile) && Date.now() < deadline) await Bun.sleep(25);
-
-			const reply = JSON.parse(fs.readFileSync(replyFile, "utf8")) as { message?: string };
-			expect(reply.message).toContain("whole-work convergence boundary");
-			expect(reply.message).toContain("return your best supported result now");
-			expect(fs.existsSync(requestFile)).toBeFalse();
-			expect(channel.pending.has(request.id)).toBeFalse();
-		} finally {
-			channel.dispose();
-			unregister();
-		}
-	});
-
-	test("does not publish a convergence reply after the owning session pauses", async () => {
-		const now = Date.now();
-		const runId = `stale-convergence-${now}`;
-		const request = {
-			...baseRequest(`stale-convergence-request-${now}`, runId, now),
-			reason: "need_decision",
-			expectsReply: true,
-		};
-		const channelDir = legacyChannel(runId);
-		const requestFile = writeRequest(channelDir, request);
-		const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
-		directories.push(root);
-		const sessionFile = path.join(root, "parent.jsonl");
-		fs.writeFileSync(sessionFile, "");
-		const test = harness({
-			primary: "ps2-stale-convergence",
-			legacyFile: sessionFile,
-			legacyRunIds: new Set([runId]),
-			startedAtMs: now - 1_000,
-		});
-		let resolvePreparation!: (result: { status: "convergence-blocked"; reason: string }) => void;
-		const preparation = new Promise<{ status: "convergence-blocked"; reason: string }>((resolve) => {
-			resolvePreparation = resolve;
-		});
-		const unregister = registerSuiteAgentMessagePreparation(test.api, {
-			prepare: async () => preparation,
-		});
-		const channel = createNativeSupervisorChannel(test.api, test.state);
-		const replyFile = path.join(channelDir, "replies", `${request.id}.json`);
-
-		try {
-			await channel.start();
-			channel.pause();
-			resolvePreparation({ status: "convergence-blocked", reason: "session replaced" });
-			await Bun.sleep(0);
-			expect(fs.existsSync(replyFile)).toBeFalse();
-			expect(fs.existsSync(requestFile)).toBeTrue();
-			expect(channel.pending.has(request.id)).toBeFalse();
-		} finally {
-			channel.dispose();
-			unregister();
-		}
-	});
-
 	test("indexes one bounded session tail once for a full page of persisted requests", async () => {
 		const now = Date.now();
 		const runId = `indexed-page-${now}`;
@@ -805,8 +718,13 @@ describe("native supervisor protocol compatibility", () => {
 		await channel.start();
 
 		expect(test.messages).toHaveLength(0);
+		let requestEntries = fs.readdirSync(path.join(channelDir, "requests"));
+		const deadline = Date.now() + 2_000;
+		while (requestEntries.some((entry) => entry.endsWith(".json")) && Date.now() < deadline) {
+			await Bun.sleep(25);
+			requestEntries = fs.readdirSync(path.join(channelDir, "requests"));
+		}
 		expect(test.sessionCalls).toEqual({ getEntries: 1, getSessionFile: 1 });
-		const requestEntries = fs.readdirSync(path.join(channelDir, "requests"));
 		expect(requestEntries.filter((entry) => entry.endsWith(".json"))).toHaveLength(0);
 		expect(requestEntries.filter((entry) => entry.endsWith(".delivery-state"))).toHaveLength(0);
 		expect(requestEntries.filter((entry) => entry.endsWith(".lock")).length).toBeLessThanOrEqual(256);

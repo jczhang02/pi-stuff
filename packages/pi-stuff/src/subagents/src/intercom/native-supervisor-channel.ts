@@ -5,7 +5,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type TSchema, Type } from "typebox";
 import { withAgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
-import { deliverSuiteAgentMessage } from "../../../conversation-ui/index.js";
+import { sendSuiteAgentMessage } from "../../../conversation-ui/index.js";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../tool-display/index.js";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
@@ -1440,7 +1440,7 @@ export function createNativeSupervisorChannel(
 							);
 						}
 					};
-					void deliverSuiteAgentMessage(
+					void sendSuiteAgentMessage(
 						pi,
 						withAgentWorkOrigin(
 							{
@@ -1462,17 +1462,6 @@ export function createNativeSupervisorChannel(
 						dispatchIsCurrent,
 						acceptDelivery,
 					)
-						.then((delivery) => {
-							if (!dispatchIsCurrent() || delivery !== "convergence-blocked") return;
-							if (deliveredRequest.expectsReply) {
-								writeReply(
-									deliveredRequest,
-									"The parent reached its whole-work convergence boundary. Continue independently, avoid further parent requests, and return your best supported result now.",
-								);
-							} else {
-								cleanupRequestLifecycle(deliveredRequest, "resolved");
-							}
-						})
 						.catch((error) => {
 							reportAgentDiagnostic(
 								`Failed to deliver supervisor request '${file}'; retaining it for retry:`,

@@ -2,13 +2,13 @@ import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolDefinition } 
 import { Type } from "typebox";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import {
-	deliverSuiteAgentMessage,
 	registerSuiteToolEnvelope,
 	registerSuiteToolEnvelopeCompanion,
 	type SuiteToolDefinitionRegistry,
 	type SuiteToolEnvelopeOperation,
 	type SuiteToolPresentation,
 	type SuiteToolSurfaceController,
+	sendSuiteAgentMessage,
 	withAgentWorkOrigin,
 	withDirectUserActivation,
 } from "../tool-display/contract.js";
@@ -214,7 +214,7 @@ async function deliverCodeModeDecision(
 			"user",
 		),
 	);
-	await deliverSuiteAgentMessage(pi, message, { deliverAs: "followUp", triggerTurn: true });
+	await sendSuiteAgentMessage(pi, message, { deliverAs: "followUp", triggerTurn: true });
 }
 
 /** Register before context managers so they receive the provider-visible result, not the TUI projection. */

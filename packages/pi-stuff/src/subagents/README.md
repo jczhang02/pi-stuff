@@ -29,6 +29,9 @@ user definitions, and user definitions override Package definitions.
   made to name legacy work.
 - Independent tasks may run concurrently. The session-wide defaults are 20 running Agents, 200 total launches, and a
   maximum nesting depth of three.
+- `turnBudget`, `toolBudget`, and `timeoutMs` are optional per-Agent limits. When neither the launch nor its Agent
+  definition supplies a limit, that dimension remains unbounded. Agents owns enforcement, stop, resume, and terminal
+  state; Context Management does not impose a second aggregate limit.
 - Each Agent has a stable identity, its own transcript, durable acknowledged steering, independent stop, and safe
   resume when its terminal state permits it. Steering recovery is deliberately at-least-once: if a child accepts input
   immediately before a crash prevents its acknowledgement from becoming durable, recovery may replay that request

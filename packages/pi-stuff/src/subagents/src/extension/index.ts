@@ -6,7 +6,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { registerCurrentWorkSource } from "../../../background-work/index.js";
-import { projectCurrentContext, registerWorkContinuitySource } from "../../../context-management/index.js";
+import { projectCurrentContext } from "../../../context-management/index.js";
 import {
 	type AgentWorkOrigin,
 	type CommandDialogCoordinator,
@@ -649,16 +649,6 @@ export default function registerSubagentExtension(
 				})),
 		subscribe: (listener) => current.subscribe(() => listener()),
 	});
-	const unregisterWorkContinuitySource = registerWorkContinuitySource(pi, {
-		id: "agents",
-		hasActiveWork: () =>
-			current
-				.snapshot()
-				.rows.some((row) =>
-					["queued", "running", "waiting_supervisor", "stopping", "resuming"].includes(row.status),
-				),
-	});
-
 	const roster = deps.createRoster(current, {
 		onOpen: (key) => {
 			const ctx = state.lastUiContext;
@@ -1230,7 +1220,6 @@ export default function registerSubagentExtension(
 		unregisterRosterFooterTail();
 		unregisterRosterChrome();
 		unregisterCurrentWorkSource();
-		unregisterWorkContinuitySource();
 		roster.dispose();
 		current.dispose();
 		delete process.env[SUBAGENT_PARENT_SESSION_ENV];

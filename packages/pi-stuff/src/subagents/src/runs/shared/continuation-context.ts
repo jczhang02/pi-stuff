@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import type { ContextEvent, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import Tokenizer from "ai-tokenizer";
 import * as o200kBase from "ai-tokenizer/encoding/o200k_base";
-import { WORK_CONTINUITY_TASK_ANCHOR_TYPE } from "../../../../context-management/work-continuity.ts";
 import { SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV } from "./pi-args.ts";
 
 const CHILD_INPUT_RESERVE_RATIO = 0.25;
@@ -236,7 +235,7 @@ function projectedToolResult(message: ChildMessage, maxBytes: number): ChildMess
 	const toolName = typeof source.toolName === "string" ? source.toolName : "tool";
 	const header = `[Pi Stuff compacted this earlier ${toolName} result for child continuation safety: ${originalBytes.toLocaleString(
 		"en-US",
-	)} serialized UTF-8 bytes. The exact result remains in the child transcript. Do not rerun completed verification recorded by the retained task anchor; rerun only if other exact omitted content is required.]\n`;
+	)} serialized UTF-8 bytes. The exact result remains in the child transcript. Do not rerun completed verification already represented by retained child history; rerun only if other exact omitted content is required.]\n`;
 	const marker = "\n[...compacted for child continuation safety...]\n";
 	const bodyBudget = Math.max(0, maxBytes - Buffer.byteLength(header, "utf8"));
 	const text = `${header}${boundedHeadTail(fullText, bodyBudget, marker)}`;
@@ -381,10 +380,6 @@ function emergencyProjection(messages: readonly ChildMessage[]): ChildMessage[] 
 	const taskIndex = delegatedTaskIndex(messages);
 	const latestUser = latestUserIndex(messages);
 	const latestSteering = latestSteeringIndex(messages);
-	const latestWorkContinuityTaskAnchor = messages.findLastIndex((message) => {
-		const record = message as unknown as JsonRecord;
-		return record.role === "custom" && record.customType === WORK_CONTINUITY_TASK_ANCHOR_TYPE;
-	});
 	const authorityIndices = new Set<number>();
 	if (taskIndex === undefined) {
 		// Never guess which inherited user message owns the child task. Retain all
@@ -397,7 +392,6 @@ function emergencyProjection(messages: readonly ChildMessage[]): ChildMessage[] 
 	}
 	if (latestUser !== undefined) authorityIndices.add(latestUser);
 	if (latestSteering !== undefined) authorityIndices.add(latestSteering);
-	if (latestWorkContinuityTaskAnchor >= 0) authorityIndices.add(latestWorkContinuityTaskAnchor);
 
 	const batch = latestCompletedToolBatch(messages);
 	const beforeBatch: ChildMessage[] = [];

@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { WORK_CONTINUITY_TASK_ANCHOR_TYPE } from "../../packages/pi-stuff/src/context-management/work-continuity.js";
 import { createAgentToolPresentation } from "../../packages/pi-stuff/src/subagents/src/extension/agent-tool-presentation.js";
 import {
 	createNativeSupervisorChannel,
@@ -888,14 +887,6 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 		});
 	}
 	messages.push({ role: "user", content: [{ type: "text", text: steering }], timestamp: 50 });
-	const completedVerification = "COMPLETED_VERIFICATION_AUTHORITY: requested Bun tests already passed; do not rerun.";
-	messages.push({
-		role: "custom",
-		customType: WORK_CONTINUITY_TASK_ANCHOR_TYPE,
-		content: completedVerification,
-		display: false,
-		timestamp: 51,
-	});
 	const original = structuredClone(messages);
 	const latestAssistant = original.find(
 		(message) =>
@@ -916,7 +907,6 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 	expect(messages).toEqual(original);
 	expect(serialized).toContain(task);
 	expect(serialized).toContain(steering);
-	expect(serialized).toContain(completedVerification);
 	expect(serialized).not.toContain("PARENT_FORK_HISTORY");
 	expect(serialized).toContain("omitted");
 	expect(serialized).toContain("Do not rerun completed verification solely because older evidence was omitted.");

@@ -15,10 +15,8 @@ import piStuffContext, {
 	CONTEXT_COMPACTION_BYPASSED_EVENT,
 	getContextCapability,
 	projectCurrentContext,
-	registerWorkContinuitySource,
 } from "../../packages/pi-stuff/src/context-management/index.js";
 import {
-	deliverSuiteAgentMessage,
 	hasDirectUserActivation,
 	isSuiteNativeCompactionPreflight,
 	sendSuiteAgentMessage,
@@ -182,392 +180,59 @@ function magicModule(
 afterEach(() => __test.clear());
 
 describe("Context capability lifecycle", () => {
-	test("work continuity inspects only new Session entries after its baseline", () => {
-		const governor = new __test.WorkContinuityGovernor();
-		let inspected = 0;
-		const entries = Array.from({ length: 10_000 }, (_value, index) => {
-			const entry = { id: `entry-${String(index)}` } as { id: string; type?: string };
-			Object.defineProperty(entry, "type", {
-				get: () => {
-					inspected += 1;
-					return "message";
-				},
-			});
-			return entry;
-		});
-
-		governor.observeCompactions(entries, entries.length - 1);
-		expect(inspected).toBe(1);
-	});
-
-	test("normal Context projection observes direct compactions without rescanning Session history", async () => {
+	test("keeps automatic messages and Tools outside Context lifecycle policy", async () => {
 		const handlers: Handlers = new Map();
 		const api = apiFor(handlers);
-		let entryReads = 0;
-		let entryLookups = 0;
-		let leafId = "baseline";
-		const entries = new Map<string, SessionEntry>();
-		entries.set("baseline", {
-			type: "custom",
-			id: "baseline",
-			parentId: null,
-			timestamp: new Date(0).toISOString(),
-			customType: "fixture",
-			data: {},
+		const deliveries: Array<{ triggerTurn?: boolean }> = [];
+		Reflect.set(api, "sendMessage", (_message: unknown, options?: { triggerTurn?: boolean }) => {
+			deliveries.push(options ?? {});
 		});
-		const ctx = {
-			cwd: "/workspace/project-a",
-			sessionManager: {
-				buildContextEntries: () => [],
-				getEntries: () => {
-					entryReads += 1;
-					return [...entries.values()];
-				},
-				getEntry: (id: string) => {
-					entryLookups += 1;
-					return entries.get(id);
-				},
-				getLeafId: () => leafId,
-				getSessionFile: () => "/sessions/session-a.jsonl",
-				getSessionId: () => "session-a",
-			},
-		} as unknown as ExtensionContext;
-		await piStuffContext(api, {
-			loadMagicContext: async () =>
-				magicModule({
-					onContext: () => {
-						const compaction: SessionEntry = {
-							type: "compaction",
-							id: "managed-compaction",
-							parentId: leafId,
-							timestamp: new Date(1).toISOString(),
-							summary: "managed",
-							firstKeptEntryId: "baseline",
-							tokensBefore: 1,
-						};
-						entries.set(compaction.id, compaction);
-						leafId = compaction.id;
-					},
-				}),
-			prepareMagicContext: async () => "ready",
+		let releaseActivation = (): void => {};
+		const activationGate = new Promise<void>((resolve) => {
+			releaseActivation = resolve;
 		});
-		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		const readsAfterStart = entryReads;
-
-		await emitResults(handlers, "context", { type: "context", messages: [] }, ctx);
-
-		expect(entryReads).toBe(readsAfterStart);
-		expect(entryLookups).toBe(1);
-	});
-
-	test("carries aggregate work continuity through the public Host event lifecycle", async () => {
-		const handlers: Handlers = new Map();
-		const api = apiFor(handlers);
-		let idle = false;
-		api.events.on("@jczhang02/pi-stuff-ui/agent-work-origin-query/v1", (value) => {
-			Object.assign(value as object, { handled: true, origin: "user" });
+		let markActivationStarted = (): void => {};
+		const activationStarted = new Promise<void>((resolve) => {
+			markActivationStarted = resolve;
 		});
-		const ctx = context();
-		Object.assign(ctx, { hasPendingMessages: () => false, isIdle: () => idle });
+		let preparations = 0;
 		await piStuffContext(api, {
 			loadMagicContext: async () => magicModule(),
-			prepareMagicContext: async () => "deferred",
-			workContinuityLimits: { softTools: 1, hardTools: 2, softTurns: 20, hardTurns: 30 },
-		});
-		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-
-		await emit(
-			handlers,
-			"input",
-			{
-				type: "input",
-				text: "Review the branch. You must return findings and a merge recommendation.",
-				source: "interactive",
+			prepareMagicContext: async () => {
+				preparations++;
+				if (preparations === 1) return "deferred";
+				markActivationStarted();
+				await activationGate;
+				return "ready";
 			},
-			ctx,
-		);
-		await emit(
-			handlers,
-			"message_start",
-			{
-				type: "message_start",
-				message: taggedMessage("Review the branch. You must return findings and a merge recommendation."),
-			},
-			ctx,
-		);
-		await emit(handlers, "tool_call", { type: "tool_call", toolCallId: "read-1", toolName: "read", input: {} }, ctx);
-
-		const projected = await emitResults(handlers, "context", { type: "context", messages: [] }, ctx);
-		const continuity = projected.find(
-			(result) => result && typeof result === "object" && Array.isArray(Reflect.get(result, "messages")),
-		) as { messages: Array<{ role?: string; customType?: string; content?: unknown }> } | undefined;
-		const anchor = continuity?.messages.find((message) => message.customType === "pi-stuff:task-anchor");
-		expect(anchor?.role).toBe("custom");
-		expect(anchor?.content).toContain("Convergence state: SYNTHESIS REQUIRED");
-
-		const firstBlock = await emitResults(
-			handlers,
-			"tool_call",
-			{ type: "tool_call", toolCallId: "read-2", toolName: "read", input: {} },
-			ctx,
-		);
-		expect(firstBlock).toContainEqual(expect.objectContaining({ block: true }));
-		expect(firstBlock).not.toContainEqual(expect.objectContaining({ terminate: true }));
-		const hardBlock = await emitResults(
-			handlers,
-			"tool_call",
-			{ type: "tool_call", toolCallId: "read-3", toolName: "read", input: {} },
-			ctx,
-		);
-		expect(hardBlock).toContainEqual(expect.objectContaining({ block: true, terminate: true }));
-
-		idle = true;
-		await emit(handlers, "agent_settled", { type: "agent_settled" }, ctx);
-		const afterSettle = await emitResults(handlers, "context", { type: "context", messages: [] }, ctx);
-		expect(
-			afterSettle.some(
-				(result) =>
-					result &&
-					typeof result === "object" &&
-					JSON.stringify(Reflect.get(result, "messages")).includes("pi-stuff:task-anchor"),
-			),
-		).toBe(false);
-	});
-
-	test("blocks Suite automatic turns at hard continuity boundaries while preserving direct user activation", async () => {
-		const handlers: Handlers = new Map();
-		const api = apiFor(handlers);
-		const deliveries: Array<{ options?: { triggerTurn?: boolean } }> = [];
-		Object.assign(api, {
-			sendMessage: (_message: unknown, options?: { triggerTurn?: boolean }) => {
-				deliveries.push(options ? { options } : {});
-			},
-		});
-		api.events.on("@jczhang02/pi-stuff-ui/agent-work-origin-query/v1", (value) => {
-			Object.assign(value as object, { handled: true, origin: "user" });
 		});
 		const ctx = context();
-		await piStuffContext(api, {
-			loadMagicContext: async () => magicModule(),
-			prepareMagicContext: async () => "deferred",
-			workContinuityLimits: { softTurns: 1, hardTurns: 2, softTools: 20, hardTools: 30 },
-		});
+		Object.assign(ctx, { isIdle: () => true });
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		await emit(handlers, "input", { type: "input", text: "Finish the review.", source: "interactive" }, ctx);
-		await emit(
-			handlers,
-			"message_start",
-			{ type: "message_start", message: taggedMessage("Finish the review.") },
-			ctx,
-		);
-		await emit(handlers, "turn_end", { type: "turn_end" }, ctx);
-		await emit(handlers, "turn_end", { type: "turn_end" }, ctx);
 
-		const automatic = await deliverSuiteAgentMessage(
+		const pending = sendSuiteAgentMessage(
 			api,
 			{ customType: "test:auto", content: "continue", display: false },
 			{ triggerTurn: true },
 		);
-		expect(automatic).toBe("convergence-blocked");
-		expect(deliveries.at(-1)?.options?.triggerTurn).toBe(false);
+		await activationStarted;
+		expect(deliveries).toEqual([]);
+		releaseActivation();
+		await expect(pending).resolves.toBe(true);
+		expect(deliveries).toEqual([{ triggerTurn: true }]);
+		expect(handlers.has("turn_end")).toBe(false);
+		expect(handlers.has("tool_call")).toBe(false);
+		expect(handlers.has("tool_result")).toBe(false);
 
-		const direct = await deliverSuiteAgentMessage(
-			api,
-			withDirectUserActivation({ customType: "test:user", content: "continue", display: false }),
-			{ triggerTurn: true },
-		);
-		expect(direct).toBe("accepted");
-		expect(deliveries.at(-1)?.options?.triggerTurn).toBe(true);
-	});
-
-	test("settles continuity only after later Capability continuation handlers", async () => {
-		const handlers: Handlers = new Map();
-		const api = apiFor(handlers);
-		let idle = false;
-		let pending = false;
-		let queueContinuation = true;
-		api.events.on("@jczhang02/pi-stuff-ui/agent-work-origin-query/v1", (value) => {
-			Object.assign(value as object, { handled: true, origin: "user" });
-		});
-		const ctx = context();
-		Object.assign(ctx, { isIdle: () => idle, hasPendingMessages: () => pending });
-		await piStuffContext(api, {
-			loadMagicContext: async () => magicModule(),
-			prepareMagicContext: async () => "deferred",
-		});
-		api.on("agent_settled", () => {
-			if (queueContinuation) pending = true;
-		});
-		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-
-		await emit(handlers, "input", { type: "input", text: "Review and report.", source: "interactive" }, ctx);
-		await emit(
+		const projected = await emitResults(
 			handlers,
-			"message_start",
-			{ type: "message_start", message: taggedMessage("Review and report.") },
+			"context",
+			{ type: "context", messages: [taggedMessage("current request")] },
 			ctx,
 		);
-		await emit(handlers, "agent_settled", { type: "agent_settled" }, ctx);
-		const whileContinuationQueued = await emitResults(handlers, "context", { type: "context", messages: [] }, ctx);
-		expect(JSON.stringify(whileContinuationQueued)).toContain("pi-stuff:task-anchor");
-
-		queueContinuation = false;
-		pending = false;
-		idle = true;
-		await emit(handlers, "agent_settled", { type: "agent_settled" }, ctx);
-		const afterQuietBoundary = await emitResults(handlers, "context", { type: "context", messages: [] }, ctx);
-		expect(JSON.stringify(afterQuietBoundary)).not.toContain("pi-stuff:task-anchor");
-	});
-
-	test("registers one continuity settlement observer across repeated session_start events", async () => {
-		const handlers: Handlers = new Map();
-		const api = apiFor(handlers);
-		const ctx = context();
-		Object.assign(ctx, { isIdle: () => true, hasPendingMessages: () => false });
-		await piStuffContext(api, {
-			loadMagicContext: async () => magicModule(),
-			prepareMagicContext: async () => "deferred",
-		});
-
-		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		expect(handlers.get("agent_settled")).toHaveLength(1);
-		await emit(handlers, "session_start", { type: "session_start", reason: "reload" }, ctx);
-		expect(handlers.get("agent_settled")).toHaveLength(1);
-	});
-
-	test("preserves active continuity across same-session reloads and resets it for a replacement session", async () => {
-		const handlers: Handlers = new Map();
-		const api = apiFor(handlers);
-		api.events.on("@jczhang02/pi-stuff-ui/agent-work-origin-query/v1", (value) => {
-			Object.assign(value as object, { handled: true, origin: "user" });
-		});
-		const original = context([], "/workspace/project-a", "session-a");
-		Object.assign(original, { isIdle: () => false, hasPendingMessages: () => false });
-		await piStuffContext(api, {
-			loadMagicContext: async () => magicModule(),
-			prepareMagicContext: async () => "deferred",
-		});
-
-		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, original);
-		await emit(
-			handlers,
-			"input",
-			{ type: "input", text: "Review and return findings.", source: "interactive" },
-			original,
-		);
-		await emit(
-			handlers,
-			"message_start",
-			{ type: "message_start", message: taggedMessage("Review and return findings.") },
-			original,
-		);
-
-		await emit(handlers, "session_start", { type: "session_start", reason: "reload" }, original);
-		const afterReload = await emitResults(handlers, "context", { type: "context", messages: [] }, original);
-		expect(JSON.stringify(afterReload)).toContain("Review and return findings.");
-
-		const replacement = context([], "/workspace/project-b", "session-b");
-		Object.assign(replacement, { isIdle: () => false, hasPendingMessages: () => false });
-		await emit(
-			handlers,
-			"session_start",
-			{ type: "session_start", reason: "resume", previousSessionFile: "/sessions/session-a.jsonl" },
-			replacement,
-		);
-		const afterReplacement = await emitResults(handlers, "context", { type: "context", messages: [] }, replacement);
-		expect(JSON.stringify(afterReplacement)).not.toContain("pi-stuff:task-anchor");
-	});
-
-	test("retains continuity while a current-session background Agent remains live", async () => {
-		const handlers: Handlers = new Map();
-		const api = apiFor(handlers);
-		let active = true;
-		const unregister = registerWorkContinuitySource(api, {
-			id: "agents",
-			hasActiveWork: () => active,
-		});
-		api.events.on("@jczhang02/pi-stuff-ui/agent-work-origin-query/v1", (value) => {
-			Object.assign(value as object, { handled: true, origin: "user" });
-		});
-		const ctx = context();
-		Object.assign(ctx, { isIdle: () => true, hasPendingMessages: () => false });
-		await piStuffContext(api, {
-			loadMagicContext: async () => magicModule(),
-			prepareMagicContext: async () => "deferred",
-		});
-		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		await emit(
-			handlers,
-			"input",
-			{ type: "input", text: "Delegate the review and return one supported report.", source: "interactive" },
-			ctx,
-		);
-		await emit(
-			handlers,
-			"message_start",
-			{ type: "message_start", message: taggedMessage("Delegate the review and return one supported report.") },
-			ctx,
-		);
-
-		await emit(handlers, "agent_settled", { type: "agent_settled" }, ctx);
-		const whileChildRuns = await emitResults(handlers, "context", { type: "context", messages: [] }, ctx);
-		expect(JSON.stringify(whileChildRuns)).toContain("pi-stuff:task-anchor");
-
-		active = false;
-		await emit(handlers, "agent_settled", { type: "agent_settled" }, ctx);
-		const afterChildSettles = await emitResults(handlers, "context", { type: "context", messages: [] }, ctx);
-		expect(JSON.stringify(afterChildSettles)).not.toContain("pi-stuff:task-anchor");
-		unregister();
-	});
-
-	test("does not replace the task anchor with a user-attributed background result", async () => {
-		const handlers: Handlers = new Map();
-		const api = apiFor(handlers);
-		api.events.on("@jczhang02/pi-stuff-ui/agent-work-origin-query/v1", (value) => {
-			Object.assign(value as object, { handled: true, origin: "user" });
-		});
-		const ctx = context();
-		Object.assign(ctx, { isIdle: () => false, hasPendingMessages: () => false });
-		await piStuffContext(api, {
-			loadMagicContext: async () => magicModule(),
-			prepareMagicContext: async () => "deferred",
-		});
-		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
-		await emit(
-			handlers,
-			"input",
-			{ type: "input", text: "Review the branch and return findings.", source: "interactive" },
-			ctx,
-		);
-		await emit(
-			handlers,
-			"message_start",
-			{ type: "message_start", message: taggedMessage("Review the branch and return findings.") },
-			ctx,
-		);
-
-		await emit(
-			handlers,
-			"message_start",
-			{
-				type: "message_start",
-				message: withAgentWorkOrigin(
-					{
-						role: "custom",
-						customType: "pi-stuff-background-work-result",
-						content: "Child completed with findings that must not become the task.",
-						display: true,
-					},
-					"user",
-				),
-			},
-			ctx,
-		);
-
-		const projected = await emitResults(handlers, "context", { type: "context", messages: [] }, ctx);
 		const serialized = JSON.stringify(projected);
-		expect(serialized).toContain("Review the branch and return findings.");
-		expect(serialized).not.toContain("Child completed with findings that must not become the task.");
+		expect(serialized).toContain("session-history");
+		expect(serialized).not.toContain("pi-stuff:task-anchor");
 	});
 
 	test("precompacts a near-limit native fallback before an idle Suite custom turn", async () => {

@@ -15,6 +15,14 @@ These instructions apply only while developing this repository. This file is not
 - `@jczhang02/pi-stuff` is the one local Pi Package and has one default Extension factory.
 - A Capability Module owns one coherent behavior inside that Package. Modules are not independently versioned,
   installed, or published.
+- Lifecycle authority stays with its owner. Pi owns the ordinary foreground Agent run; Goal owns Goal continuation,
+  budgets, convergence, pause, completion, and terminal state; Agents owns delegated Agent execution, limits, and
+  termination. Another Module may expose observations or pressure signals through a narrow interface, but it must not
+  enforce that lifecycle's policy or hard-code its commands, Tools, statuses, or terminal protocol.
+- Context Management is the Magic Context Adapter. It owns provider context projection, retrieval, compaction, and
+  context-pressure handling. It owns no task anchor or general work-convergence policy, must not impose generic turn,
+  Tool, or delegation limits on Goal, Agents, or ordinary Pi work, and must not decide when those lifecycles pause,
+  stop, complete, or fail.
 - Keep Extension import pure: no network calls, file writes, subprocesses, or host-setting mutations. Session startup must not perform network calls, spawn subprocesses, mutate Host settings, or create, rewrite, or migrate user configuration. A documented Capability may initialize rebuildable derived local state before editor readiness when an accepted ADR requires that work off the message-submission path.
 - During user-started work, a Capability may update its own documented derived local state across automatic continuations. First-use configuration creation must wait for direct interactive/RPC input or an explicit command or Tool; external, destructive, or unrelated effects still require an explicit user-triggered contract.
 - The Statusline has one observation-only exception: after a complete user-driven Agent run settles it may run a bounded, no-lock `git status` read to obtain change counts that Pi does not expose. It must never run during import, initialization, `session_start`, individual model/Tool turns, or Extension-authored automatic runs, and failure must degrade to branch-only display.

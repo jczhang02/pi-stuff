@@ -58,7 +58,7 @@ import {
 } from "./render.js";
 import { ToolUiSettingsStore } from "./settings.js";
 
-export { deliverSuiteAgentMessage, withAgentWorkOrigin, withDirectUserActivation } from "../conversation-ui/index.js";
+export { sendSuiteAgentMessage, withAgentWorkOrigin, withDirectUserActivation } from "../conversation-ui/index.js";
 
 const TOOL_RUNTIME_REGISTRY = Symbol.for("@jczhang02/pi-stuff-tools/runtime-registry.v1");
 const TOOL_RUNTIME_DISCOVERY_EVENT = "@jczhang02/pi-stuff-tools/runtime-discovery/v1";

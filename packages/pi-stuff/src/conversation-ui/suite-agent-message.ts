@@ -9,18 +9,8 @@ const NATIVE_COMPACTION_PREFLIGHTS = Symbol.for("@jczhang02/pi-stuff-ui/native-c
 type SuiteAgentMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
 export type SuiteAgentMessageOptions = Parameters<ExtensionAPI["sendMessage"]>[1];
 
-export interface SuiteAgentMessagePreparationDecision {
-	readonly status: "convergence-blocked";
-	readonly reason: string;
-}
-
-export type SuiteAgentMessageDeliveryResult = "accepted" | "stale" | "convergence-blocked";
-
 export interface SuiteAgentMessagePreparation {
-	prepare(
-		activation: "automatic" | "direct-user",
-		options: SuiteAgentMessageOptions,
-	): Promise<SuiteAgentMessagePreparationDecision | undefined> | Promise<void>;
+	prepare(activation: "automatic" | "direct-user", options: SuiteAgentMessageOptions): Promise<void>;
 	/** Stage provider-only state immediately before the Host accepts the message. */
 	stage?(options: SuiteAgentMessageOptions): (() => void) | undefined;
 }
@@ -80,24 +70,22 @@ export function registerSuiteAgentMessagePreparation(
  * hook has settled. The seam stays in the shared layer so Capability Modules do
  * not depend on Context; Context contributes behavior by registration instead.
  */
-export async function deliverSuiteAgentMessage(
+export async function sendSuiteAgentMessage(
 	pi: ExtensionAPI,
 	message: SuiteAgentMessage,
 	options?: SuiteAgentMessageOptions,
 	isCurrent: () => boolean = () => true,
 	onAccepted?: () => void,
-): Promise<SuiteAgentMessageDeliveryResult> {
-	if (!isCurrent()) return "stale";
+): Promise<boolean> {
+	if (!isCurrent()) return false;
 	const preparation = brokerFor(pi).preparation;
-	const decision = preparation
-		? await preparation.prepare(hasDirectUserActivation(message) ? "direct-user" : "automatic", options)
-		: undefined;
-	if (!isCurrent()) return "stale";
-	const blocked = typeof decision === "object" && decision?.status === "convergence-blocked";
-	const deliveryOptions = blocked ? { ...options, triggerTurn: false } : options;
-	const rollback = blocked ? undefined : preparation?.stage?.(deliveryOptions);
+	if (preparation) {
+		await preparation.prepare(hasDirectUserActivation(message) ? "direct-user" : "automatic", options);
+	}
+	if (!isCurrent()) return false;
+	const rollback = preparation?.stage?.(options);
 	try {
-		const delivered = pi.sendMessage(message, deliveryOptions) as unknown;
+		const delivered = pi.sendMessage(message, options) as unknown;
 		if (
 			delivered !== null &&
 			(typeof delivered === "object" || typeof delivered === "function") &&
@@ -109,19 +97,9 @@ export async function deliverSuiteAgentMessage(
 		rollback?.();
 		throw error;
 	}
-	if (!isCurrent()) return "stale";
-	if (!blocked) onAccepted?.();
-	return blocked ? "convergence-blocked" : "accepted";
-}
-
-export async function sendSuiteAgentMessage(
-	pi: ExtensionAPI,
-	message: SuiteAgentMessage,
-	options?: SuiteAgentMessageOptions,
-	isCurrent: () => boolean = () => true,
-	onAccepted?: () => void,
-): Promise<boolean> {
-	return (await deliverSuiteAgentMessage(pi, message, options, isCurrent, onAccepted)) !== "stale";
+	if (!isCurrent()) return false;
+	onAccepted?.();
+	return true;
 }
 
 function nativeCompactionPreflights(): WeakMap<object, number> {
