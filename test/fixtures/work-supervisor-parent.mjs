@@ -33,7 +33,7 @@ const envelope = Buffer.from(
 ).toString("base64url");
 const supervisor = spawn(process.execPath, [supervisorPath, envelope], {
 	detached: true,
-	stdio: ["ignore", "ignore", "ignore", "pipe"],
+	stdio: ["ignore", "pipe", "ignore"],
 });
 const command = `trap '' TERM HUP INT; sh -c 'trap "" TERM HUP INT; while :; do sleep 1; done' & echo "$$ $!" > ${JSON.stringify(treePath)}; wait`;
 const temporary = `${commandAuthorizationPath}.tmp`;
@@ -42,7 +42,7 @@ writeFileSync(temporary, `${JSON.stringify({ version: 1, token: commandAuthoriza
 });
 renameSync(temporary, commandAuthorizationPath);
 let buffer = "";
-supervisor.stdio[3].on("data", (chunk) => {
+supervisor.stdout.on("data", (chunk) => {
 	buffer += chunk.toString("utf-8");
 	for (;;) {
 		const newline = buffer.indexOf("\n");

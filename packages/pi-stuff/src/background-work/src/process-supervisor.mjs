@@ -1,13 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import {
-	createWriteStream,
-	lstatSync,
-	readFileSync,
-	readdirSync,
-	renameSync,
-	unlinkSync,
-	writeFileSync,
-} from "node:fs";
+import { lstatSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 
 const MAX_COMMAND_AUTHORIZATION_BYTES = 4 * 1024 * 1024;
 
@@ -134,7 +126,7 @@ async function stdinText() {
 const [, , encoded] = process.argv;
 if (!encoded) throw new Error("Pi Stuff Work supervisor requires a launch envelope");
 const envelope = JSON.parse(Buffer.from(encoded, "base64url").toString("utf-8"));
-const control = createWriteStream(null, { fd: 3 });
+const control = process.stdout;
 let controlAvailable = true;
 
 control.on("error", () => {
@@ -239,7 +231,7 @@ const child = spawn(envelope.shell, args, {
 	// never be reused while this supervisor is alive.
 	detached: false,
 	env: process.env,
-	stdio: [envelope.commandTransport === "stdin" ? "pipe" : "ignore", "inherit", "inherit"],
+	stdio: [envelope.commandTransport === "stdin" ? "pipe" : "ignore", 2, 2],
 	windowsHide: true,
 });
 

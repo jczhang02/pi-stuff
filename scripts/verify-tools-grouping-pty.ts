@@ -442,6 +442,14 @@ export async function verifyToolsGroupingPty(options: {
 				fail(`background Bash launch did not retain its operation block\n${completionLaunch}`);
 			}
 			const completion = await waitForText(tmux, tmuxSession, 'Background command "completion fixture" completed');
+			const taskRoot = join(temporaryDirectory, ".pi", "tasks");
+			const outputFiles = (await readdir(taskRoot, { recursive: true })).filter((entry) =>
+				entry.endsWith(".output"),
+			);
+			const outputs = await Promise.all(outputFiles.map((entry) => readFile(join(taskRoot, entry), "utf8")));
+			if (!outputs.some((output) => output.includes("FIXTURE_BACKGROUND_COMPLETED"))) {
+				fail(`background completion lost its output\n${completion}`);
+			}
 			if (!captureHistory(tmux, tmuxSession).includes("Bash(sleep 0.4; printf FIXTURE_BACKGROUND_COMPLETED")) {
 				fail(`background completion removed its historical Bash operation block\n${completion}`);
 			}

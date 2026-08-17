@@ -9,7 +9,7 @@ exec "$PI_STUFF_TOOLS_PTY_BIN" \
 	--no-extensions \
 	--no-skills \
 	--no-context-files \
-	--tools read,bash,edit,write,grep,find,ls,fixture_state \
+	--tools read,bash,edit,write,grep,find,ls,fixture_search,fixture_state \
 	--extension "$PI_STUFF_TOOLS_PTY_PACKAGE" \
 	--extension "$PI_STUFF_TOOLS_PTY_PROVIDER_EXTENSION" \
 	--provider pi-stuff-tools-pty \

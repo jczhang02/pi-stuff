@@ -208,8 +208,9 @@ function verifyOutput(output: string, columns: number): void {
 		"• Searched 2 patterns, listed 1 directory",
 		"• List",
 		"• Bash",
-		"• Edit written.txt · editing",
 		"• Edit written.txt · +1/-1",
+		"• State error · working",
+		"• State error · error",
 		"• Bash(printf '",
 		"⎿  PREFIX_CJK_工具",
 		"⎿  Error: Exit code 7",
@@ -248,16 +249,12 @@ function verifyOutput(output: string, columns: number): void {
 }
 
 function verifyLifecycleFrames(visible: string): void {
-	const running = "• Edit written.txt · editing";
-	const settled = "• Edit written.txt · +1/-1";
+	const running = "• State error · working";
+	const settled = "• State error · error";
 	const runningFrame = visible.indexOf(running);
 	const settledFrame = visible.indexOf(settled, runningFrame + running.length);
 	if (runningFrame < 0 || settledFrame < 0) {
-		const observed = visible
-			.split("\n")
-			.filter((line) => line.includes("Running") || line.includes("Ran"))
-			.slice(-40);
-		fail(`independent Edit row did not settle semantically: ${JSON.stringify(observed)}`);
+		fail("independent Tool row did not expose its active and settled states");
 	}
 	const firstRetrieval = visible.indexOf("• Read 1 file");
 	const modification = visible.indexOf("• Write written.txt", firstRetrieval + 1);
@@ -265,8 +262,9 @@ function verifyLifecycleFrames(visible: string): void {
 	if (firstRetrieval < 0 || modification < 0 || secondRetrieval < 0) {
 		fail("retrieval groups and their independent modification boundary lost source order");
 	}
-	const activeRetrieval = visible.indexOf("• Searching 1 pattern");
-	if (activeRetrieval < 0 || activeRetrieval >= secondRetrieval) {
+	const activeRetrieval = visible.indexOf("• Searching 1 pattern", secondRetrieval + 1);
+	const settledRetrieval = visible.indexOf("• Searched 1 pattern", activeRetrieval + 1);
+	if (activeRetrieval < 0 || settledRetrieval < 0) {
 		fail("retrieval group did not expose its active and settled states");
 	}
 	const firstBash = visible.indexOf("⎿  PREFIX_CJK_工具");
@@ -277,7 +275,7 @@ function verifyLifecycleFrames(visible: string): void {
 }
 
 function verifyRequests(records: readonly RequestRecord[]): void {
-	const requestCount = 12;
+	const requestCount = 13;
 	if (records.length !== requestCount) {
 		fail(`expected ${String(requestCount)} model requests, received ${String(records.length)}`);
 	}
@@ -482,6 +480,7 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 			"PREFIX_CJK_工具",
 			"BASH_CJK_工具",
 			"BUILTIN_FAILURE_工具",
+			"FIXTURE_SEARCH",
 			"FIXTURE_ERROR",
 			"FIXTURE_REJECTED",
 			"FIXTURE_CANCELLED",
