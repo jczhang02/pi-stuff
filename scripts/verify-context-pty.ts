@@ -824,8 +824,8 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 				`${error instanceof Error ? error.message : String(error)}\nContext request records:\n${diagnosticRecords}\nMagic Context log:\n${diagnosticMagicLog}`,
 			);
 		}
-		if (!resumeOutput.includes("Searched 1 history query")) {
-			fail("resumed ctx_search history did not retain the Tool Activity summary");
+		if (!resumeOutput.includes("Context search 中文检索标记 · done")) {
+			fail("resumed ctx_search history did not retain the standalone Tool row");
 		}
 		if (resumeOutput.includes("category=PROJECT_RULES")) {
 			fail("resumed ctx_search history exposed the raw Magic Context result block");

@@ -13,10 +13,11 @@ import type { ToolActivityGroupView, ToolUiRuntime } from "./contract.js";
 import { oneLine, sanitizeTerminalText, toolStateGlyph } from "./render.js";
 
 type ToolDialogMode = "detail" | "list";
+type ToolDetailRepresentation = "formatted" | "raw";
 
 const GUTTER = "  ";
 const DETAIL_NON_DOCUMENT_ROWS = 8;
-const DETAIL_MEMBER_PAGE = 3;
+const DETAIL_MEMBER_WINDOW = 5;
 const NARROW_WIDTH = 64;
 const LIST_ROWS = 8;
 const NARROW_LIST_ROWS = 6;
@@ -74,9 +75,10 @@ function wrapDetailLines(lines: readonly string[], width: number): string[] {
 }
 
 interface DetailWrapCache {
+	readonly activityId: string;
 	readonly contentKey: string;
 	readonly document: readonly string[];
-	readonly groupId: string;
+	readonly representation: ToolDetailRepresentation;
 	readonly width: number;
 }
 
@@ -93,10 +95,11 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private activities: readonly ToolActivity[];
 	private readonly context: CommandDialogViewContext<void>;
 	private detailWrapCache: DetailWrapCache | undefined;
+	private detailRepresentation: ToolDetailRepresentation = "formatted";
 	private disposed = false;
 	private groups: readonly ToolActivityGroupView[];
 	private lastRenderWidth = 64;
-	private detailMemberOffset = 0;
+	private detailMemberIndex = 0;
 	private mode: ToolDialogMode;
 	private pendingFocusId: string | undefined;
 	private pinnedGroup: ToolActivityGroupView | undefined;
@@ -141,8 +144,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 		if (this.disposed || isKeyRelease(data)) return;
 		if (matchesKey(data, Key.escape)) {
 			if (this.mode === "detail") {
-				this.mode = "list";
+				if (this.detailRepresentation === "raw") this.detailRepresentation = "formatted";
+				else this.mode = "list";
 				this.scrollOffset = 0;
+				this.detailWrapCache = undefined;
 				this.context.requestRender();
 			} else this.context.close();
 			return;
@@ -175,7 +180,8 @@ class ToolDialogComponent implements CommandDialogComponent {
 		if (matchesKey(data, Key.enter)) {
 			if (!this.selected()) return;
 			this.mode = "detail";
-			this.detailMemberOffset = 0;
+			this.detailMemberIndex = 0;
+			this.detailRepresentation = "formatted";
 			this.scrollOffset = 0;
 			this.context.requestRender();
 			return;
@@ -193,40 +199,43 @@ class ToolDialogComponent implements CommandDialogComponent {
 	}
 
 	private handleDetailInput(data: string): void {
-		if (
-			!matchesKey(data, Key.up) &&
-			!matchesKey(data, Key.down) &&
-			!matchesKey(data, "pageUp") &&
-			!matchesKey(data, "pageDown")
-		)
-			return;
 		const group = this.selected();
 		if (!group) return;
+		if (data === "r" || data === "R") {
+			this.detailRepresentation = this.detailRepresentation === "formatted" ? "raw" : "formatted";
+			this.scrollOffset = 0;
+			this.detailWrapCache = undefined;
+			this.context.requestRender();
+			return;
+		}
+		if (matchesKey(data, Key.up) || matchesKey(data, Key.down)) {
+			const delta = matchesKey(data, Key.up) ? -1 : 1;
+			this.detailMemberIndex = Math.max(0, Math.min(group.memberIds.length - 1, this.detailMemberIndex + delta));
+			this.scrollOffset = 0;
+			this.detailWrapCache = undefined;
+			this.context.requestRender();
+			return;
+		}
+		if (
+			!matchesKey(data, "pageUp") &&
+			!matchesKey(data, "pageDown") &&
+			!matchesKey(data, "home") &&
+			!matchesKey(data, "end")
+		)
+			return;
 		const layout = this.detailLayout(group, this.lastRenderWidth);
 		const page = Math.max(1, layout.viewportRows);
 		if (matchesKey(data, "pageDown")) {
-			if (this.detailMemberOffset + DETAIL_MEMBER_PAGE < group.memberIds.length) {
-				this.detailMemberOffset += DETAIL_MEMBER_PAGE;
-				this.scrollOffset = 0;
-				this.detailWrapCache = undefined;
-			} else {
-				this.scrollOffset = Math.max(0, Math.min(layout.maxOffset, this.scrollOffset + page));
-			}
+			this.scrollOffset = Math.max(0, Math.min(layout.maxOffset, this.scrollOffset + page));
 			this.context.requestRender();
 			return;
 		}
 		if (matchesKey(data, "pageUp")) {
-			if (this.scrollOffset > 0) {
-				this.scrollOffset = Math.max(0, this.scrollOffset - page);
-			} else {
-				this.detailMemberOffset = Math.max(0, this.detailMemberOffset - DETAIL_MEMBER_PAGE);
-				this.detailWrapCache = undefined;
-			}
+			this.scrollOffset = Math.max(0, this.scrollOffset - page);
 			this.context.requestRender();
 			return;
 		}
-		const delta = matchesKey(data, Key.up) ? -1 : matchesKey(data, Key.down) ? 1 : page;
-		this.scrollOffset = Math.max(0, Math.min(layout.maxOffset, this.scrollOffset + delta));
+		this.scrollOffset = matchesKey(data, "home") ? 0 : layout.maxOffset;
 		this.context.requestRender();
 	}
 
@@ -245,7 +254,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 			Math.min(selectedIndex - Math.floor(viewportRows / 2), this.groups.length - viewportRows),
 		);
 		const visible = viewportRows > 0 ? this.groups.slice(start, start + viewportRows) : [];
-		const count = width >= 52 ? theme.fg("dim", ` · ${String(this.groups.length)} activity groups`) : "";
+		const count = width >= 52 ? theme.fg("dim", ` · ${String(this.groups.length)} items`) : "";
 		const header = [theme.fg("border", "─".repeat(width)), `${GUTTER}${theme.bold("Tools")}${count}`];
 		const body = [""];
 		if (visible.length === 0) body.push(`${GUTTER}${theme.fg("dim", "No tool activity in this session.")}`);
@@ -256,7 +265,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 				const cursor = selected ? theme.fg("accent", "›") : " ";
 				const glyph = stateText(theme, group.state, toolStateGlyph(group.state));
 				const summary = selected ? theme.bold(oneLine(group.summary)) : oneLine(group.summary);
-				const members = theme.fg("dim", ` · ${String(group.memberIds.length)} tools`);
+				const members = theme.fg(
+					"dim",
+					` · ${String(group.memberIds.length)} ${group.memberIds.length === 1 ? "tool" : "tools"}`,
+				);
 				body.push(`${GUTTER}${cursor} ${glyph} ${summary}${members}`);
 			}
 			const older = this.groups.length - start - visible.length;
@@ -274,32 +286,43 @@ class ToolDialogComponent implements CommandDialogComponent {
 			this.mode = "list";
 			return this.renderList(width);
 		}
-		let layout = this.detailLayout(group, width);
 		if (this.pendingFocusId) {
 			const focusIndex = group.memberIds.indexOf(this.pendingFocusId);
-			if (focusIndex >= 0) this.detailMemberOffset = focusIndex;
+			if (focusIndex >= 0) this.detailMemberIndex = focusIndex;
 			this.pendingFocusId = undefined;
 			this.scrollOffset = 0;
 			this.detailWrapCache = undefined;
-			layout = this.detailLayout(group, width);
 		}
+		const layout = this.detailLayout(group, width);
 		this.scrollOffset = Math.min(layout.maxOffset, Math.max(0, this.scrollOffset));
 		const detail = layout.document.slice(this.scrollOffset, this.scrollOffset + layout.viewportRows);
 		const header = [
 			theme.fg("border", "─".repeat(width)),
-			`${GUTTER}${theme.bold("Tool activity details")} ${theme.fg("dim", `· ${String(group.memberIds.length)} tools`)}`,
+			`${GUTTER}${theme.bold("Tool activity details")} ${theme.fg(
+				"dim",
+				`· ${String(group.memberIds.length)} ${group.memberIds.length === 1 ? "tool" : "tools"}`,
+			)}`,
 		];
 		const body = [
 			"",
 			`${GUTTER}${theme.fg("dim", "State")}   ${stateText(theme, group.state, group.state)}`,
 			`${GUTTER}${theme.fg("dim", "Summary")} ${oneLine(group.summary) || "—"}`,
-			`${GUTTER}${theme.fg("dim", "ID")}      ${oneLine(group.id)}`,
+			"",
+			...layout.members.map((activity, index) => {
+				const memberIndex = layout.memberStart + index;
+				const selected = memberIndex === this.detailMemberIndex;
+				const cursor = selected ? theme.fg("accent", "›") : " ";
+				const glyph = stateText(theme, activity.state, toolStateGlyph(activity.state));
+				const title = `${String(memberIndex + 1)}. ${activity.label}${activity.target ? ` · ${activity.target}` : ""}`;
+				return `${GUTTER}${cursor} ${glyph} ${selected ? theme.bold(title) : title}`;
+			}),
 			"",
 			...detail.map((line) => `${GUTTER}${line}`),
 			"",
 		];
+		const priority = body.find((line) => line.includes("›")) ?? body[1];
 		return fitCommandDialogRows(
-			{ header, body, footer: layout.footer, priority: body[1] ? [body[1]] : [] },
+			{ header, body, footer: layout.footer, ...(priority ? { priority: [priority] } : {}) },
 			commandDialogRows(this.context),
 		);
 	}
@@ -311,16 +334,25 @@ class ToolDialogComponent implements CommandDialogComponent {
 		readonly document: readonly string[];
 		readonly footer: readonly string[];
 		readonly maxOffset: number;
+		readonly members: readonly ToolActivity[];
+		readonly memberStart: number;
 		readonly viewportRows: number;
 	} {
+		const memberStart = Math.max(
+			0,
+			Math.min(
+				this.detailMemberIndex - Math.floor(DETAIL_MEMBER_WINDOW / 2),
+				group.memberIds.length - DETAIL_MEMBER_WINDOW,
+			),
+		);
+		const members = this.runtime.groupActivityPage(group.id, memberStart, DETAIL_MEMBER_WINDOW);
 		const document = this.detailDocument(group, width);
 		const maximumRows = commandDialogRows(this.context);
-		let viewportRows = Math.max(0, maximumRows - DETAIL_NON_DOCUMENT_ROWS - 1);
-		let footer = hintLines(this.context.theme, width, ["↑/↓ scroll", "Esc back"]);
-		const memberEnd = Math.min(group.memberIds.length, this.detailMemberOffset + DETAIL_MEMBER_PAGE);
-		const memberRange = `${String(this.detailMemberOffset + 1)}–${String(memberEnd)}/${String(group.memberIds.length)} tools`;
+		const fixedRows = DETAIL_NON_DOCUMENT_ROWS + members.length;
+		let viewportRows = Math.max(0, maximumRows - fixedRows - 1);
+		let footer = hintLines(this.context.theme, width, ["↑/↓ member", "Esc back"]);
 		for (let iteration = 0; iteration < 3; iteration += 1) {
-			viewportRows = Math.max(0, maximumRows - DETAIL_NON_DOCUMENT_ROWS - footer.length);
+			viewportRows = Math.max(0, maximumRows - fixedRows - footer.length);
 			const maximumOffset = Math.max(0, document.length - viewportRows);
 			const offset = Math.min(maximumOffset, Math.max(0, this.scrollOffset));
 			const rangeEnd = Math.min(document.length, offset + viewportRows);
@@ -328,43 +360,63 @@ class ToolDialogComponent implements CommandDialogComponent {
 				viewportRows > 0 && document.length > viewportRows
 					? ` · ${String(offset + 1)}–${String(rangeEnd)}/${String(document.length)}`
 					: "";
-			const nextFooter = hintLines(
-				this.context.theme,
-				width,
-				viewportRows > 0
-					? [`↑/↓ scroll${range}`, `PgUp/PgDn ${memberRange}`, "Esc back"]
-					: [`PgUp/PgDn ${memberRange}`, "Esc back"],
-			);
+			const nextFooter = hintLines(this.context.theme, width, [
+				`↑/↓ member ${String(this.detailMemberIndex + 1)}/${String(group.memberIds.length)}`,
+				...(viewportRows > 0 ? [`PgUp/PgDn scroll${range}`, "Home/End"] : []),
+				this.detailRepresentation === "formatted" ? "r raw" : "r formatted",
+				this.detailRepresentation === "raw" ? "Esc formatted" : "Esc back",
+			]);
 			if (nextFooter.length === footer.length) {
 				footer = nextFooter;
 				break;
 			}
 			footer = nextFooter;
 		}
-		viewportRows = Math.max(0, maximumRows - DETAIL_NON_DOCUMENT_ROWS - footer.length);
-		return { document, footer, maxOffset: Math.max(0, document.length - viewportRows), viewportRows };
+		viewportRows = Math.max(0, maximumRows - fixedRows - footer.length);
+		return {
+			document,
+			footer,
+			maxOffset: Math.max(0, document.length - viewportRows),
+			members,
+			memberStart,
+			viewportRows,
+		};
 	}
 
 	private detailDocument(group: ToolActivityGroupView, width: number): readonly string[] {
-		const activities = this.runtime.groupActivityPage(group.id, this.detailMemberOffset, DETAIL_MEMBER_PAGE);
-		const source =
-			activities.length > 0
-				? activities
-				: group.memberIds
-						.slice(this.detailMemberOffset, this.detailMemberOffset + DETAIL_MEMBER_PAGE)
-						.map((id) => this.activities.find((activity) => activity.id === id))
-						.filter((activity): activity is ToolActivity => Boolean(activity));
-		const raw = source.flatMap((activity, index) => [
-			`${String(this.detailMemberOffset + index + 1)}. ${activity.label} · ${activity.state} · ${activity.id}`,
-			...(activity.detailLines.length > 0 ? activity.detailLines : ["Details are available after completion."]),
-			"",
-		]);
+		const activityId = group.memberIds[this.detailMemberIndex];
+		if (!activityId) return [];
+		const detail = this.runtime.toolActivityDetail(activityId, this.detailRepresentation);
+		if (!detail) return [];
+		const activity = detail.activity;
+		const raw =
+			this.detailRepresentation === "raw"
+				? ["Raw protocol", "", ...detail.lines]
+				: [
+						activity.label,
+						...(activity.target ? [`Target: ${activity.target}`] : []),
+						`Status: ${activity.state}`,
+						...(activity.summary ? [`Summary: ${activity.summary}`] : []),
+						"",
+						...detail.lines,
+					];
 		const contentKey = JSON.stringify(raw);
 		const cached = this.detailWrapCache;
-		if (cached?.groupId === group.id && cached.contentKey === contentKey && cached.width === width)
+		if (
+			cached?.activityId === activityId &&
+			cached.representation === this.detailRepresentation &&
+			cached.contentKey === contentKey &&
+			cached.width === width
+		)
 			return cached.document;
 		const document = wrapDetailLines(raw, width);
-		this.detailWrapCache = { contentKey, document, groupId: group.id, width };
+		this.detailWrapCache = {
+			activityId,
+			contentKey,
+			document,
+			representation: this.detailRepresentation,
+			width,
+		};
 		return document;
 	}
 
@@ -373,7 +425,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		this.selectedId = this.groups[0]?.id;
 		if (!this.selectedId) this.mode = "list";
 		this.scrollOffset = 0;
-		this.detailMemberOffset = 0;
+		this.detailMemberIndex = 0;
 	}
 
 	private selected(): ToolActivityGroupView | undefined {

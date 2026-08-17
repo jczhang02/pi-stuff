@@ -1,13 +1,15 @@
 import { performance } from "node:perf_hooks";
 import { planToolActivityGroups } from "../packages/pi-stuff/src/tool-display/activity.js";
 import { ToolUiRuntime } from "../packages/pi-stuff/src/tool-display/contract.js";
+import { buildToolResultLines } from "../packages/pi-stuff/src/tool-display/render.js";
 
 const CALLS = 20_000;
 const CALLS_PER_ROUND = 10;
 const ITERATIONS = 15;
 const MAX_BASELINE_REGRESSION_MS = 25;
 const STREAMING_UPDATES = 200;
-const owned = new Set(["read"]);
+const FORMATTED_RESULTS = 1_000;
+const classify = (name: string) => (name === "read" ? ("retrieval" as const) : ("boundary" as const));
 
 const messages: unknown[] = [{ role: "user", content: [{ type: "text", text: "benchmark" }] }];
 for (let start = 0; start < CALLS; start += CALLS_PER_ROUND) {
@@ -85,7 +87,7 @@ function benchmark(run: () => unknown): number {
 }
 
 const baselineMs = benchmark(() => shippedExplorationProjection(messages));
-const activityMs = benchmark(() => planToolActivityGroups(messages, owned, true));
+const activityMs = benchmark(() => planToolActivityGroups(messages, classify, true));
 const streamingSamples: number[] = [];
 for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
 	const runtime = new ToolUiRuntime();
@@ -133,7 +135,13 @@ for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
 	}
 }
 const streamingMs = median(streamingSamples);
-const groups = planToolActivityGroups(messages, owned, true);
+const groups = planToolActivityGroups(messages, classify, true);
+const shortResults = Array.from({ length: FORMATTED_RESULTS }, (_, index) => ({
+	content: [{ type: "text" as const, text: `result ${String(index)}` }],
+	details: { index },
+}));
+const formattedExpansionMs = benchmark(() => shortResults.map((result) => buildToolResultLines(result)));
+const formattedLines = shortResults.flatMap((result) => buildToolResultLines(result));
 const baselineGroups = shippedExplorationProjection(messages);
 if (baselineGroups !== CALLS / CALLS_PER_ROUND) {
 	throw new Error(`Shipped Exploration benchmark copy produced ${String(baselineGroups)} groups`);
@@ -154,12 +162,22 @@ if (streamingMs > 250) {
 		`Incremental Activity projection exceeded 250 ms for ${String(STREAMING_UPDATES)} updates after a ${String(CALLS)}-call history: ${streamingMs.toFixed(2)} ms`,
 	);
 }
+if (formattedExpansionMs > 250) {
+	throw new Error(
+		`Formatted expansion exceeded 250 ms for ${String(FORMATTED_RESULTS)} short results: ${formattedExpansionMs.toFixed(2)} ms`,
+	);
+}
+if (formattedLines.some((line) => /^(?:Call ID|Arguments|Result content|Details)$/u.test(line))) {
+	throw new Error("Formatted expansion constructed Raw protocol output");
+}
 
 console.log(
 	JSON.stringify(
 		{
 			activityMedianMs: Number(activityMs.toFixed(2)),
 			calls: CALLS,
+			formattedExpansionMedianMs: Number(formattedExpansionMs.toFixed(2)),
+			formattedResults: FORMATTED_RESULTS,
 			iterations: ITERATIONS,
 			shippedExplorationMedianMs: Number(baselineMs.toFixed(2)),
 			ratio: Number((activityMs / baselineMs).toFixed(2)),

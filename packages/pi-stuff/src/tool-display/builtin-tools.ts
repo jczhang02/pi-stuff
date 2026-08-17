@@ -10,7 +10,7 @@ import {
 	getAgentDir,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { activityKey, classifyBashActivity, singleActivity } from "./activity.js";
+import { classifyBashActivity, singleActivity } from "./activity.js";
 import { registerSuiteOwnedTool } from "./contract.js";
 import { describeBuiltinTarget, formatElapsed, summarizeBuiltin } from "./render.js";
 
@@ -107,7 +107,18 @@ export function registerBuiltins(
 			bash,
 			{
 				activity: {
-					categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
+					categories: [
+						"commit",
+						"push",
+						"merge",
+						"rebase",
+						"create-pr",
+						"launch-background",
+						"run-command",
+						"read-file",
+						"search-pattern",
+						"list-directory",
+					],
 					classify: classifyBashActivity,
 				},
 				label: "Bash",
@@ -130,7 +141,6 @@ export function registerBuiltins(
 					categories: ["search-pattern"],
 					classify: ({ args }) =>
 						singleActivity("search-pattern", {
-							key: activityKey(args.pattern, resolve(cwd, args.path ?? "."), args.glob ?? ""),
 							target: args.pattern,
 						}),
 				},
@@ -153,7 +163,6 @@ export function registerBuiltins(
 					categories: ["search-pattern"],
 					classify: ({ args }) =>
 						singleActivity("search-pattern", {
-							key: activityKey(args.pattern, resolve(cwd, args.path ?? ".")),
 							target: args.pattern,
 						}),
 				},
@@ -176,7 +185,7 @@ export function registerBuiltins(
 					categories: ["list-directory"],
 					classify: ({ args }) => {
 						const path = args.path ?? ".";
-						return singleActivity("list-directory", { key: resolve(cwd, path), target: path });
+						return singleActivity("list-directory", { target: path });
 					},
 				},
 				label: "List",

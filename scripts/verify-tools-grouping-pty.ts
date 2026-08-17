@@ -109,7 +109,7 @@ function normalized(frame: string): string {
 }
 
 function requireGroup(frame: string): void {
-	const summaries = ["Searched 1 pattern, read 1 file, listed 1 directory", "Updated 1 task"];
+	const summaries = ["Searched 1 pattern, read 1 file, listed 1 directory"];
 	const compact = normalized(frame);
 	for (const summary of summaries) {
 		if (!compact.includes(summary)) fail(`settled non-Bash activity omitted ${summary}\n${frame}`);
@@ -118,6 +118,9 @@ function requireGroup(frame: string): void {
 		}
 	}
 	if (!frame.includes("• Bash(pwd)") || !frame.includes("⎿ ")) fail(`standalone Bash operation was lost\n${frame}`);
+	if (!compact.includes("• Task create")) {
+		fail(`standalone Task operation was lost\n${frame}`);
+	}
 	if (compact.includes("ran 1 command") || compact.includes("Ran 1 command")) {
 		fail(`Bash leaked back into an aggregate command count\n${frame}`);
 	}
@@ -232,7 +235,10 @@ export async function verifyToolsGroupingPty(options: {
 		else {
 			successGroup(await waitForText(tmux, tmuxSession, "GROUP_SUCCESS_DONE"));
 			if (scenario === "lifecycle") {
-				successfulMarkerColor = markerColor(captureAnsiHistory(tmux, tmuxSession), "Updated 1 task");
+				successfulMarkerColor = markerColor(
+					captureAnsiHistory(tmux, tmuxSession),
+					"Searched 1 pattern, read 1 file, listed 1 directory",
+				);
 			}
 		}
 
@@ -282,8 +288,11 @@ export async function verifyToolsGroupingPty(options: {
 			tmux(["send-keys", "-t", tmuxSession, "C-o"]);
 			await waitForText(tmux, tmuxSession, "Tool output: expanded");
 			const expanded = captureHistory(tmux, tmuxSession);
-			for (const required of ["input-工具.txt", "*.txt", "Bash(pwd)", "Task create", "Result"]) {
+			for (const required of ["input-工具.txt", "*.txt", "Bash(pwd)", "Task create"]) {
 				if (!expanded.includes(required)) fail(`Ctrl+O did not restore ${required}\n${expanded}`);
+			}
+			if (/^\s*(?:Call|Result|Details|Arguments)\s*$/mu.test(expanded)) {
+				fail(`Ctrl+O exposed raw protocol headings\n${expanded}`);
 			}
 			tmux(["send-keys", "-t", tmuxSession, "C-o"]);
 			await waitForText(tmux, tmuxSession, "Tool output: collapsed");
@@ -294,7 +303,7 @@ export async function verifyToolsGroupingPty(options: {
 			}
 
 			send(tmux, tmuxSession, "/tools");
-			const tools = await waitForText(tmux, tmuxSession, "activity groups");
+			const tools = await waitForText(tmux, tmuxSession, "items");
 			for (const required of ["Tools", "Bash(printf BASH_UI_SECOND", "Esc close"]) {
 				if (!tools.includes(required)) fail(`/tools lost grouped member ${required}\n${tools}`);
 			}
@@ -334,13 +343,17 @@ export async function verifyToolsGroupingPty(options: {
 			}
 			await sendTurn(tmux, tmuxSession, "recovery");
 			const recovery = await waitForText(tmux, tmuxSession, "GROUP_RECOVERY_DONE");
-			if (!normalized(recovery).includes("Ran 2 commands · 1 failed")) {
-				fail(`deterministically recovered retry hid its failure count\n${recovery}`);
+			const recoveryText = normalized(recovery);
+			for (const required of ["Retry same exact retry · retry failed", "Retry same exact retry · recovered"]) {
+				if (!recoveryText.includes(required)) fail(`standalone retry omitted ${required}\n${recovery}`);
 			}
-			const recoveredMarkerColor = markerColor(captureAnsiHistory(tmux, tmuxSession), "Ran 2 commands · 1 failed");
+			const recoveryAnsi = captureAnsiHistory(tmux, tmuxSession);
+			const failedRetryColor = markerColor(recoveryAnsi, "Retry same exact retry · retry failed");
+			if (failedRetryColor === successfulMarkerColor) fail("failed retry retained the success color");
+			const recoveredMarkerColor = markerColor(recoveryAnsi, "Retry same exact retry · recovered");
 			if (recoveredMarkerColor !== successfulMarkerColor) {
 				fail(
-					`deterministically recovered Activity Group did not use the success color: expected ${JSON.stringify(successfulMarkerColor)}, received ${JSON.stringify(recoveredMarkerColor)}`,
+					`recovered standalone Tool did not use the success color: expected ${JSON.stringify(successfulMarkerColor)}, received ${JSON.stringify(recoveredMarkerColor)}`,
 				);
 			}
 			await sendTurn(tmux, tmuxSession, "mutation");
@@ -355,69 +368,72 @@ export async function verifyToolsGroupingPty(options: {
 			send(tmux, tmuxSession, "permission");
 			await waitForText(tmux, tmuxSession, "Fixture permission");
 			const permission = captureHistory(tmux, tmuxSession);
-			if (!normalized(permission).includes("Running 1 command")) {
-				fail(`permission UI hid the active Activity Group\n${permission}`);
+			if (!normalized(permission).includes("Permission Waiting for permission… · working")) {
+				fail(`permission UI hid the active standalone Tool\n${permission}`);
 			}
 			if (!permission.includes("Waiting for permission")) {
-				fail(`permission Activity Group omitted its bounded wait hint\n${permission}`);
+				fail(`permission Tool omitted its bounded wait hint\n${permission}`);
 			}
 			tmux(["send-keys", "-t", tmuxSession, "Enter"]);
 			const permissionDone = await waitForText(tmux, tmuxSession, "GROUP_PERMISSION_DONE");
-			if (!normalized(permissionDone).includes("Ran 1 command")) {
-				fail(`permission Activity Group did not settle semantically\n${permissionDone}`);
+			if (!normalized(permissionDone).includes("Permission Waiting for permission… · permission allowed")) {
+				fail(`permission Tool did not settle semantically\n${permissionDone}`);
 			}
 			if (permissionDone.includes("fixture_confirm")) {
-				fail(`permission Activity Group leaked raw Tool chrome\n${permissionDone}`);
+				fail(`permission Tool leaked raw protocol chrome\n${permissionDone}`);
 			}
 
 			send(tmux, tmuxSession, "rejection");
 			await waitForText(tmux, tmuxSession, "Fixture rejection");
 			tmux(["send-keys", "-t", tmuxSession, "Escape"]);
 			const rejection = await waitForText(tmux, tmuxSession, "GROUP_REJECTION_DONE");
-			if (!normalized(rejection).includes("Ran 1 command · 1 rejected")) {
-				fail(`permission rejection was not disclosed by the folded Activity Group\n${rejection}`);
+			const rejectionSummary = "Permission Waiting for permission… · permission rejected";
+			if (!normalized(rejection).includes(rejectionSummary)) {
+				fail(`permission rejection was not disclosed by the standalone Tool\n${rejection}`);
 			}
 			if (!rejection.includes("rejected")) fail(`permission rejection omitted its issue line\n${rejection}`);
-			warningMarkerColor = markerColor(captureAnsiHistory(tmux, tmuxSession), "Ran 1 command · 1 rejected");
+			warningMarkerColor = markerColor(captureAnsiHistory(tmux, tmuxSession), rejectionSummary);
 			if (warningMarkerColor === successfulMarkerColor || warningMarkerColor === unresolvedMarkerColor) {
-				fail("rejected-only Activity Group did not use its warning color");
+				fail("rejected standalone Tool did not use its warning color");
 			}
 
 			await sendTurn(tmux, tmuxSession, "cancellation");
 			const cancellation = await waitForText(tmux, tmuxSession, "GROUP_CANCELLATION_DONE");
-			if (!normalized(cancellation).includes("Ran 1 command · 1 cancelled")) {
-				fail(`cancelled activity was not disclosed by the folded Activity Group\n${cancellation}`);
+			const cancellationSummary = "Cancel Cancelling operation · Operation aborted";
+			if (!normalized(cancellation).includes(cancellationSummary)) {
+				fail(`cancelled activity was not disclosed by the standalone Tool\n${cancellation}`);
 			}
-			if (!cancellation.includes("cancelled")) fail(`cancelled activity omitted its issue line\n${cancellation}`);
-			if (markerColor(captureAnsiHistory(tmux, tmuxSession), "Ran 1 command · 1 cancelled") !== warningMarkerColor) {
-				fail("cancelled-only Activity Group did not retain warning color");
+			if (!cancellation.includes("Operation aborted"))
+				fail(`cancelled activity omitted its issue line\n${cancellation}`);
+			if (markerColor(captureAnsiHistory(tmux, tmuxSession), cancellationSummary) !== warningMarkerColor) {
+				fail("cancelled standalone Tool did not retain warning color");
 			}
 
 			await sendTurn(tmux, tmuxSession, "media");
 			const media = await waitForText(tmux, tmuxSession, "GROUP_MEDIA_DONE");
-			if (!normalized(media).includes("Viewed 1 image")) {
-				fail(`media Tool chrome did not fold into a semantic Activity Group\n${media}`);
+			if (!normalized(media).includes("Media Visible image · media loaded")) {
+				fail(`standalone media Tool lost its formatted row\n${media}`);
 			}
 			const mediaLines = media.split("\n");
-			const activityLine = mediaLines.find((line) => line.includes("Viewed 1 image"));
+			const activityLine = mediaLines.find((line) => line.includes("Media Visible image"));
 			const previewLine = mediaLines.find((line) => line.includes("Image preview unavailable · PNG · 1×1"));
 			if (!previewLine) {
-				fail(`media body disappeared with folded Tool chrome\n${media}`);
+				fail(`media body disappeared with standalone Tool chrome\n${media}`);
 			}
-			if (!activityLine || activityLine.indexOf("Viewed") !== previewLine.indexOf("Image")) {
-				fail(`media fallback did not align with the Activity body column\n${media}`);
+			if (!activityLine || activityLine.indexOf("Media") !== previewLine.indexOf("Image")) {
+				fail(`media fallback did not align with the Tool body column\n${media}`);
 			}
-			if (media.includes("fixture_media") || media.includes("Visible image")) {
-				fail(`media Activity Group leaked raw Tool chrome\n${media}`);
+			if (media.includes("fixture_media")) {
+				fail(`media Tool leaked raw protocol chrome\n${media}`);
 			}
 
 			await sendTurn(tmux, tmuxSession, "agent");
 			const agent = await waitForText(tmux, tmuxSession, "GROUP_AGENT_DONE");
-			if (!normalized(agent).includes("Checked 1 agent")) {
-				fail(`Agent activity did not fold into a semantic Activity Group\n${agent}`);
+			if (!normalized(agent).includes("Agent status · checked")) {
+				fail(`standalone Agent Tool lost its formatted row\n${agent}`);
 			}
 			if (agent.includes("Subagent") || agent.includes("action: status")) {
-				fail(`Agent Activity Group leaked raw Tool chrome\n${agent}`);
+				fail(`Agent Tool leaked raw protocol chrome\n${agent}`);
 			}
 
 			await sendTurn(tmux, tmuxSession, "completion");
@@ -454,7 +470,7 @@ export async function verifyToolsGroupingPty(options: {
 			for (const required of [
 				"Searched 1 pattern, read 1 file, listed 1 directory",
 				"Bash(pwd)",
-				"Updated 1 task",
+				"Task create Certify Activity Group",
 			]) {
 				if (!treeText.includes(required)) fail(`session_tree replay lost ${required}\n${treeHistory}`);
 			}

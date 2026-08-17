@@ -223,7 +223,6 @@ function verifyTerminalOutput(output: string, columns: number): void {
 		"AGENT_PTY_TASK",
 		"中文长任务",
 		"Agents / general-purpose",
-		"Launched 1 background agent",
 		"Agent finished",
 		"inspect with /agents",
 		"CHILD_FINAL_SUMMARY",
@@ -231,6 +230,11 @@ function verifyTerminalOutput(output: string, columns: number): void {
 	]) {
 		if (!visible.includes(required)) fail(`terminal output is missing ${required}\n${visible.slice(-8_000)}`);
 	}
+	const compact = visible.replace(/\s+/gu, " ");
+	if (!/• Agent general-purpose\b.*?· launched/u.test(compact)) {
+		fail(`terminal output is missing the standalone Agent launch row\n${visible.slice(-8_000)}`);
+	}
+	if (compact.includes("Launched 1 background agent")) fail("Agent launch leaked into an aggregate summary");
 	if (!visible.includes("─".repeat(columns))) fail(`Agent dialog did not render a ${columns}-column divider`);
 	for (const forbidden of [
 		"↓ to manage",

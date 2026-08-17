@@ -243,9 +243,9 @@ exec /usr/bin/git "$@"
 		session.sendLiteral(`/goal ${objective}`);
 		session.sendKey("Enter");
 		const completionSummary = "Hidden Goal prompt delivery completed and verified.";
-		const active = await session.waitForText("Completed goal");
+		const active = await session.waitForText("Goal complete · done");
 		if (active.includes(completionSummary)) {
-			fail(`compact Goal Activity leaked its text result\n${active}`);
+			fail(`compact Goal Tool leaked its text result\n${active}`);
 		}
 		for (const forbidden of ["<goal_objective>", "Goal-mode rules", "pi-goal-prompt:", "Continuation behavior:"]) {
 			if (active.includes(forbidden)) fail(`hidden Goal protocol leaked into the TUI: ${forbidden}\n${active}`);

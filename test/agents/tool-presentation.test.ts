@@ -357,13 +357,7 @@ test("native parent and child communication tools use the shared Tool row", asyn
 	expectCompactPresentation(parent.tools.get("subagent_supervisor"));
 	await parent.run("before_agent_start");
 	expectCompactPresentation(parent.tools.get("intercom"));
-	for (const [action, category] of [
-		["status", "check-agent"],
-		["list", "check-agent"],
-		["send", "message-agent"],
-		["reply", "message-agent"],
-		["ask", "message-agent"],
-	] as const) {
+	for (const action of ["status", "list", "send", "reply", "ask"] as const) {
 		const summary = renderedSummary(
 			parent.api,
 			parent.tools.get("subagent_supervisor"),
@@ -371,7 +365,7 @@ test("native parent and child communication tools use the shared Tool row", asyn
 			{ content: [{ type: "text", text: "done" }], details: {} },
 			`parent-${action}`,
 		);
-		expect(summary).toContain(category === "check-agent" ? "Checked 1 agent" : "Messaged 1 agent");
+		expect(summary).toContain(`Subagent Supervisor ${action} · worker · done`);
 	}
 	const failedMessage = renderedSummary(
 		parent.api,

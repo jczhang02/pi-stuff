@@ -126,3 +126,42 @@ test("shell prefixes do not leak into standalone Bash operation titles", () => {
 	expect(second).not.toContain("printf prefix");
 	runtime.clear();
 });
+
+test("built-in retrieval metadata deduplicates Read paths but counts Search and List calls", () => {
+	const tools = new Map<string, ToolDefinition>();
+	const pi = {
+		events: {},
+		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
+	} as unknown as ExtensionAPI;
+	registerBuiltins(pi, "/project", {
+		autoResizeImages: true,
+		shellCommandPrefix: undefined,
+		shellPath: undefined,
+	});
+	const runtime = getToolUiRuntime(pi);
+	const calls = [
+		{ type: "toolCall", id: "r1", name: "read", arguments: { path: "./a.ts" } },
+		{ type: "toolCall", id: "r2", name: "read", arguments: { path: "/project/a.ts" } },
+		{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "needle", path: "." } },
+		{ type: "toolCall", id: "g2", name: "grep", arguments: { pattern: "needle", path: "." } },
+		{ type: "toolCall", id: "l1", name: "ls", arguments: { path: "." } },
+		{ type: "toolCall", id: "l2", name: "ls", arguments: { path: "." } },
+	];
+	runtime.indexMessages(
+		[
+			{ role: "assistant", content: calls },
+			...calls.map((call) => ({
+				role: "toolResult",
+				toolCallId: call.id,
+				content: [{ type: "text", text: "ok" }],
+				details: {},
+			})),
+		],
+		true,
+	);
+	expect(runtime.resolveGroup("r1")).toMatchObject({
+		memberIds: ["r1", "r2", "g1", "g2", "l1", "l2"],
+		summary: "Searched 2 patterns, read 1 file, listed 2 directories",
+	});
+	runtime.clear();
+});
