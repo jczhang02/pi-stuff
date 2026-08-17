@@ -43,7 +43,7 @@ function toolResult(id: string, isError = false) {
 	};
 }
 
-function groupedRuntime(paths: readonly string[], errorIndex = -1): ToolUiRuntime {
+function groupedRuntime(paths: readonly string[], errorIndex = -1, separate = false): ToolUiRuntime {
 	const runtime = new ToolUiRuntime();
 	runtime.registerActivity("read", {
 		categories: ["read-file"],
@@ -61,7 +61,12 @@ function groupedRuntime(paths: readonly string[], errorIndex = -1): ToolUiRuntim
 	runtime.markRendererAttached("read");
 	const calls = paths.map((path, index) => toolCall(`read-${String(index + 1)}`, path));
 	const results = paths.map((_path, index) => toolResult(`read-${String(index + 1)}`, index === errorIndex));
-	runtime.indexMessages([{ role: "assistant", content: calls }, ...results], true);
+	const content = separate
+		? calls.flatMap((call, index) =>
+				index === calls.length - 1 ? [call] : [call, { type: "text", text: `boundary ${String(index + 1)}` }],
+			)
+		: calls;
+	runtime.indexMessages([{ role: "assistant", content }, ...results], true);
 	for (const [index, path] of paths.entries()) {
 		const id = `read-${String(index + 1)}`;
 		runtime.activities.begin({ id, label: "Read", name: "read", target: path });
@@ -286,14 +291,37 @@ test("/tools respects narrow widths and terminal row budgets", () => {
 });
 
 test("prototype split pane keeps list and detail visible on wide terminals", () => {
-	const component = createToolDialogView(groupedRuntime(["a.ts", "b.ts"])).create(contextHarness(32).context);
-	const output = component.render(100).join("\n");
-	expect(output).toContain("Tools");
-	expect(output).toContain("Tool activity details");
-	expect(output).toContain("│");
-	component.handleInput?.("\r");
-	component.handleInput?.("\u001b");
+	const harness = contextHarness(32);
+	const component = createToolDialogView(groupedRuntime(["a.ts", "b.ts"], -1, true)).create(harness.context);
+	let lines = component.render(100);
+	let output = lines.join("\n");
+	expect(lines.every((line) => visibleWidth(line) <= 100)).toBe(true);
+	expect(lines.every((line) => line[36] === "│")).toBe(true);
+	expect(lines.find((line) => line.includes("Tool activity details"))?.startsWith("│ ")).toBe(true);
+	expect(output).toContain("Path: b.ts");
+
+	component.handleInput?.("\u001b[B");
+	output = component.render(100).join("\n");
 	expect(output).toContain("Path: a.ts");
+	expect(output).not.toContain("Path: b.ts");
+
+	component.handleInput?.("\r");
+	lines = component.render(100);
+	expect(lines.find((line) => line.includes("Tool activity details"))?.[37]).toBe("│");
+	expect(component.render(64).join("\n")).toContain("Tool activity details");
+	lines = component.render(100);
+	expect(lines.find((line) => line.includes("Tool activity details"))?.[37]).toBe("│");
+
+	component.handleInput?.("\u001b");
+	expect(
+		component
+			.render(100)
+			.find((line) => line.includes("Tool activity details"))
+			?.startsWith("│ "),
+	).toBe(true);
+	component.handleInput?.("\u001b");
+	expect(harness.closed()).toBe(1);
+	component.dispose?.();
 });
 
 test("prototype split pane keeps narrow terminals single-column", () => {
@@ -301,4 +329,5 @@ test("prototype split pane keeps narrow terminals single-column", () => {
 	const output = component.render(64).join("\n");
 	expect(output).toContain("Tools");
 	expect(output).not.toContain("Tool activity details");
+	component.dispose?.();
 });
