@@ -21,6 +21,8 @@ const DETAIL_MEMBER_WINDOW = 5;
 const NARROW_WIDTH = 64;
 const LIST_ROWS = 8;
 const NARROW_LIST_ROWS = 6;
+const SPLIT_MIN_WIDTH = 96;
+const SPLIT_LEFT_WIDTH = 36;
 
 function stateText(theme: Theme, state: ToolActivityOutcome | ToolActivityState, value: string): string {
 	switch (state) {
@@ -101,6 +103,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private lastRenderWidth = 64;
 	private detailMemberIndex = 0;
 	private mode: ToolDialogMode;
+	private splitFocus: "left" | "right" = "left";
 	private pendingFocusId: string | undefined;
 	private pinnedGroup: ToolActivityGroupView | undefined;
 	private readonly runtime: ToolUiRuntime;
@@ -126,6 +129,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		this.groups = this.currentGroups();
 		this.selectedId = initialGroup?.id ?? this.groups[0]?.id;
 		this.mode = initialGroup ? "detail" : "list";
+		if (initialGroup) this.splitFocus = "right";
 		this.unsubscribe = runtime.activities.subscribe((activities) => {
 			this.activities = activities;
 			this.groups = this.currentGroups();
@@ -143,6 +147,15 @@ class ToolDialogComponent implements CommandDialogComponent {
 	handleInput(data: string): void {
 		if (this.disposed || isKeyRelease(data)) return;
 		if (matchesKey(data, Key.escape)) {
+			if (this.lastRenderWidth >= SPLIT_MIN_WIDTH) {
+				if (this.detailRepresentation === "raw") this.detailRepresentation = "formatted";
+				else if (this.splitFocus === "right") this.splitFocus = "left";
+				else this.context.close();
+				this.scrollOffset = 0;
+				this.detailWrapCache = undefined;
+				this.context.requestRender();
+				return;
+			}
 			if (this.mode === "detail") {
 				if (this.detailRepresentation === "raw") this.detailRepresentation = "formatted";
 				else this.mode = "list";
@@ -152,7 +165,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 			} else this.context.close();
 			return;
 		}
-		if (this.mode === "list") this.handleListInput(data);
+		if (this.lastRenderWidth >= SPLIT_MIN_WIDTH) {
+			if (this.splitFocus === "left") this.handleListInput(data);
+			else this.handleDetailInput(data);
+		} else if (this.mode === "list") this.handleListInput(data);
 		else this.handleDetailInput(data);
 	}
 
@@ -163,8 +179,28 @@ class ToolDialogComponent implements CommandDialogComponent {
 		this.lastRenderWidth = renderWidth;
 		this.groups = this.currentGroups();
 		this.reconcileSelection();
-		const lines = this.mode === "list" ? this.renderList(renderWidth) : this.renderDetail(renderWidth);
+		// prototype: split-pane exploration; formal adoption should rewrite and consolidate this path.
+		const lines =
+			renderWidth >= SPLIT_MIN_WIDTH
+				? this.renderSplit(renderWidth)
+				: this.mode === "list"
+					? this.renderList(renderWidth)
+					: this.renderDetail(renderWidth);
 		return lines.map((line) => bounded(renderWidth, line));
+	}
+
+	private renderSplit(width: number): string[] {
+		const leftWidth = Math.min(SPLIT_LEFT_WIDTH, Math.max(30, Math.floor(width * 0.38)));
+		const rightWidth = Math.max(1, width - leftWidth - 1);
+		const left = this.renderList(leftWidth);
+		const right = this.renderDetail(rightWidth);
+		const rows = Math.max(left.length, right.length);
+		const divider = this.context.theme.fg("border", "│");
+		return Array.from({ length: rows }, (_, index) => {
+			const l = bounded(leftWidth, left[index] ?? "").padEnd(leftWidth, " ");
+			const r = bounded(rightWidth, right[index] ?? "");
+			return `${l}${divider}${r}`;
+		});
 	}
 
 	private currentGroups(): readonly ToolActivityGroupView[] {
@@ -179,6 +215,14 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private handleListInput(data: string): void {
 		if (matchesKey(data, Key.enter)) {
 			if (!this.selected()) return;
+			if (this.lastRenderWidth >= SPLIT_MIN_WIDTH) {
+				this.splitFocus = "right";
+				this.detailMemberIndex = 0;
+				this.detailRepresentation = "formatted";
+				this.scrollOffset = 0;
+				this.context.requestRender();
+				return;
+			}
 			this.mode = "detail";
 			this.detailMemberIndex = 0;
 			this.detailRepresentation = "formatted";

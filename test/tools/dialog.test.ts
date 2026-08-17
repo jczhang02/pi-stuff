@@ -284,3 +284,21 @@ test("/tools respects narrow widths and terminal row budgets", () => {
 	expect(component.render(64)).toEqual([]);
 	component.dispose?.();
 });
+
+test("prototype split pane keeps list and detail visible on wide terminals", () => {
+	const component = createToolDialogView(groupedRuntime(["a.ts", "b.ts"])).create(contextHarness(32).context);
+	const output = component.render(100).join("\n");
+	expect(output).toContain("Tools");
+	expect(output).toContain("Tool activity details");
+	expect(output).toContain("│");
+	component.handleInput?.("\r");
+	component.handleInput?.("\u001b");
+	expect(output).toContain("Path: a.ts");
+});
+
+test("prototype split pane keeps narrow terminals single-column", () => {
+	const component = createToolDialogView(groupedRuntime(["a.ts"])).create(contextHarness().context);
+	const output = component.render(64).join("\n");
+	expect(output).toContain("Tools");
+	expect(output).not.toContain("Tool activity details");
+});
