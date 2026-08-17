@@ -24,7 +24,7 @@ const LIST_ROWS = 8;
 const NARROW_LIST_ROWS = 6;
 const SPLIT_MIN_WIDTH = 96;
 const SPLIT_LEFT_WIDTH = 36;
-const SPLIT_GAP = 3;
+const TOOL_DIALOG_ROWS = 18;
 
 function stateText(theme: Theme, state: ToolActivityOutcome | ToolActivityState, value: string): string {
 	switch (state) {
@@ -211,13 +211,13 @@ class ToolDialogComponent implements CommandDialogComponent {
 
 	private renderSplit(width: number): string[] {
 		const leftWidth = Math.min(SPLIT_LEFT_WIDTH, Math.max(30, Math.floor(width * 0.38)));
-		const rightWidth = Math.max(1, width - leftWidth - SPLIT_GAP);
+		const rightWidth = Math.max(1, width - leftWidth - 1);
 		const left = this.renderList(leftWidth);
 		const right = this.renderDetail(rightWidth);
 		const rows = Math.max(left.length, right.length);
-		const gap = " ".repeat(SPLIT_GAP);
+		const divider = this.context.theme.fg("border", "┃");
 		return Array.from({ length: rows }, (_, index) => {
-			if (index === 0) return this.context.theme.fg("border", "─".repeat(width));
+			if (index === 0) return this.context.theme.fg("border", "━".repeat(width));
 			let l = bounded(leftWidth, left[index] ?? "");
 			const r = bounded(rightWidth, right[index] ?? "");
 			if (index === 1) {
@@ -227,9 +227,9 @@ class ToolDialogComponent implements CommandDialogComponent {
 			if (index === 1 && r) {
 				const rail = this.context.theme.fg(this.splitFocus === "right" ? "accent" : "border", "│");
 				const detail = `${rail}${r.slice(1)}`;
-				return `${this.padVisible(l, leftWidth)}${gap}${detail}`;
+				return `${this.padVisible(l, leftWidth)}${divider}${detail}`;
 			}
-			return `${this.padVisible(l, leftWidth)}${gap}${r}`;
+			return `${this.padVisible(l, leftWidth)}${divider}${r}`;
 		});
 	}
 
@@ -325,7 +325,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private renderList(width: number): string[] {
 		const theme = this.context.theme;
 		const footer = hintLines(theme, width, ["↑/↓ select", "Enter details", "Esc close"]);
-		const maximumRows = commandDialogRows(this.context);
+		const maximumRows = Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context));
 		const preferredRows = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
 		const viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
 		const selectedIndex = Math.max(
@@ -338,7 +338,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		);
 		const visible = viewportRows > 0 ? this.groups.slice(start, start + viewportRows) : [];
 		const count = width >= 30 ? theme.fg("dim", ` · ${String(this.groups.length)} items`) : "";
-		const header = [theme.fg("border", "─".repeat(width)), `${GUTTER}${theme.bold("Tools")}${count}`];
+		const header = [theme.fg("border", "━".repeat(width)), `${GUTTER}${theme.bold("Tools")}${count}`];
 		const body = [""];
 		if (visible.length === 0) body.push(`${GUTTER}${theme.fg("dim", "No tool activity in this session.")}`);
 		else {
@@ -383,7 +383,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		this.scrollOffset = Math.min(layout.maxOffset, Math.max(0, this.scrollOffset));
 		const detail = layout.document.slice(this.scrollOffset, this.scrollOffset + layout.viewportRows);
 		const header = [
-			theme.fg("border", "─".repeat(width)),
+			theme.fg("border", "━".repeat(width)),
 			`${GUTTER}${theme.bold("Tool activity details")} ${theme.fg(
 				"dim",
 				`· ${String(group.memberIds.length)} ${group.memberIds.length === 1 ? "tool" : "tools"}`,
@@ -409,7 +409,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const priority = body.find((line) => line.includes("›")) ?? body[1];
 		return fixedCommandDialogRows(
 			{ header, body, footer: layout.footer, ...(priority ? { priority: [priority] } : {}) },
-			commandDialogRows(this.context),
+			Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context)),
 		);
 	}
 
@@ -433,7 +433,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		);
 		const members = this.runtime.groupActivityPage(group.id, memberStart, DETAIL_MEMBER_WINDOW);
 		const document = this.detailDocument(group, width);
-		const maximumRows = commandDialogRows(this.context);
+		const maximumRows = Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context));
 		const fixedRows = DETAIL_NON_DOCUMENT_ROWS + members.length;
 		let viewportRows = Math.max(0, maximumRows - fixedRows - 1);
 		let footer = hintLines(this.context.theme, width, ["↑/↓ member", "Esc back"]);
