@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
+	type CommandDialogRowSections,
 	type CommandDialogView,
 	type CommandDialogViewContext,
 	commandDialogRows,
@@ -23,6 +24,7 @@ const LIST_ROWS = 8;
 const NARROW_LIST_ROWS = 6;
 const SPLIT_MIN_WIDTH = 96;
 const SPLIT_LEFT_WIDTH = 36;
+const SPLIT_GAP = 3;
 
 function stateText(theme: Theme, state: ToolActivityOutcome | ToolActivityState, value: string): string {
 	switch (state) {
@@ -74,6 +76,18 @@ function wrapDetailLines(lines: readonly string[], width: number): string[] {
 		const safeLine = sanitizeTerminalText(line);
 		return safeLine ? wrapTextWithAnsi(safeLine, contentWidth) : [""];
 	});
+}
+
+function fixedCommandDialogRows(sections: CommandDialogRowSections, maximumRows: number): string[] {
+	const fitted = fitCommandDialogRows(sections, maximumRows);
+	const missingRows = Math.max(0, maximumRows - fitted.length);
+	if (missingRows === 0) return fitted;
+	const footerStart = Math.max(0, fitted.length - sections.footer.length);
+	return [
+		...fitted.slice(0, footerStart),
+		...Array.from({ length: missingRows }, () => ""),
+		...fitted.slice(footerStart),
+	];
 }
 
 interface DetailWrapCache {
@@ -197,24 +211,25 @@ class ToolDialogComponent implements CommandDialogComponent {
 
 	private renderSplit(width: number): string[] {
 		const leftWidth = Math.min(SPLIT_LEFT_WIDTH, Math.max(30, Math.floor(width * 0.38)));
-		const rightWidth = Math.max(1, width - leftWidth - 1);
+		const rightWidth = Math.max(1, width - leftWidth - SPLIT_GAP);
 		const left = this.renderList(leftWidth);
 		const right = this.renderDetail(rightWidth);
 		const rows = Math.max(left.length, right.length);
-		const divider = this.context.theme.fg("border", "│");
+		const gap = " ".repeat(SPLIT_GAP);
 		return Array.from({ length: rows }, (_, index) => {
+			if (index === 0) return this.context.theme.fg("border", "─".repeat(width));
 			let l = bounded(leftWidth, left[index] ?? "");
 			const r = bounded(rightWidth, right[index] ?? "");
 			if (index === 1) {
-				const rail = this.splitFocus === "left" ? this.context.theme.fg("accent", "│") : " ";
+				const rail = this.context.theme.fg(this.splitFocus === "left" ? "accent" : "border", "│");
 				l = `${rail}${l.slice(1)}`;
 			}
 			if (index === 1 && r) {
-				const rail = this.splitFocus === "right" ? this.context.theme.fg("accent", "│") : " ";
+				const rail = this.context.theme.fg(this.splitFocus === "right" ? "accent" : "border", "│");
 				const detail = `${rail}${r.slice(1)}`;
-				return `${this.padVisible(l, leftWidth)}${divider}${detail}`;
+				return `${this.padVisible(l, leftWidth)}${gap}${detail}`;
 			}
-			return `${this.padVisible(l, leftWidth)}${divider}${r}`;
+			return `${this.padVisible(l, leftWidth)}${gap}${r}`;
 		});
 	}
 
@@ -322,7 +337,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 			Math.min(selectedIndex - Math.floor(viewportRows / 2), this.groups.length - viewportRows),
 		);
 		const visible = viewportRows > 0 ? this.groups.slice(start, start + viewportRows) : [];
-		const count = width >= 52 ? theme.fg("dim", ` · ${String(this.groups.length)} items`) : "";
+		const count = width >= 30 ? theme.fg("dim", ` · ${String(this.groups.length)} items`) : "";
 		const header = [theme.fg("border", "─".repeat(width)), `${GUTTER}${theme.bold("Tools")}${count}`];
 		const body = [""];
 		if (visible.length === 0) body.push(`${GUTTER}${theme.fg("dim", "No tool activity in this session.")}`);
@@ -344,7 +359,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 		}
 		body.push("");
 		const priority = body.find((line) => line.includes("›")) ?? body.find((line) => line.trim().length > 0);
-		return fitCommandDialogRows({ header, body, footer, ...(priority ? { priority: [priority] } : {}) }, maximumRows);
+		return fixedCommandDialogRows(
+			{ header, body, footer, ...(priority ? { priority: [priority] } : {}) },
+			maximumRows,
+		);
 	}
 
 	private renderDetail(width: number): string[] {
@@ -389,7 +407,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 			"",
 		];
 		const priority = body.find((line) => line.includes("›")) ?? body[1];
-		return fitCommandDialogRows(
+		return fixedCommandDialogRows(
 			{ header, body, footer: layout.footer, ...(priority ? { priority: [priority] } : {}) },
 			commandDialogRows(this.context),
 		);

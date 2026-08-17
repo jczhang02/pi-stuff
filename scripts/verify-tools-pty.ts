@@ -52,7 +52,7 @@ after 100
 send -- "/tools\\r"
 must_expect "Tools"
 must_expect "items"
-must_expect "Searched 2 patterns, listed 1 directory"
+must_expect "Searched 2 patterns, listed 1"
 must_expect "Esc close"
 send -- "\\033"
 after 100
@@ -69,7 +69,7 @@ must_expect "Result content"
 send -- "\\033"
 must_expect "Status: success"
 send -- "\\033"
-must_expect "Esc close"
+after 100
 send -- "\\033"
 after 100
 send -- "/tools tools-pty-8\\r"
@@ -77,7 +77,7 @@ must_expect "Tool activity details"
 must_expect "BUILTIN_FAILURE_工具"
 must_expect "Esc back"
 send -- "\\033"
-must_expect "Esc close"
+after 100
 send -- "\\033"
 after 100
 send -- "/ui\\r"

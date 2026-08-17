@@ -296,28 +296,41 @@ test("prototype split pane keeps list and detail visible on wide terminals", () 
 	let lines = component.render(100);
 	let output = lines.join("\n");
 	expect(lines.every((line) => visibleWidth(line) <= 100)).toBe(true);
-	expect(lines.every((line) => line[36] === "│")).toBe(true);
-	expect(lines.find((line) => line.includes("Tool activity details"))?.startsWith("│ ")).toBe(true);
+	expect(lines).toHaveLength(29);
+	expect(lines[0]).toBe("─".repeat(100));
+	expect(lines.slice(1).every((line) => line.slice(36, 39) === "   ")).toBe(true);
+	expect(lines.find((line) => line.includes("Tools"))?.startsWith("│ ")).toBe(true);
+	expect(
+		lines
+			.find((line) => line.includes("Tool activity details"))
+			?.slice(39)
+			.startsWith("│ "),
+	).toBe(true);
 	expect(output).toContain("Path: b.ts");
 
 	component.handleInput?.("\u001b[B");
-	output = component.render(100).join("\n");
+	lines = component.render(100);
+	output = lines.join("\n");
+	expect(lines).toHaveLength(29);
 	expect(output).toContain("Path: a.ts");
 	expect(output).not.toContain("Path: b.ts");
 
 	component.handleInput?.("\r");
 	lines = component.render(100);
-	expect(lines.find((line) => line.includes("Tool activity details"))?.[37]).toBe("│");
+	expect(lines).toHaveLength(29);
+	expect(lines.find((line) => line.includes("Tool activity details"))?.[39]).toBe("│");
 	expect(component.render(64).join("\n")).toContain("Tool activity details");
 	lines = component.render(100);
-	expect(lines.find((line) => line.includes("Tool activity details"))?.[37]).toBe("│");
+	expect(lines).toHaveLength(29);
+	expect(lines.find((line) => line.includes("Tool activity details"))?.[39]).toBe("│");
 
 	component.handleInput?.("\u001b");
 	expect(
 		component
 			.render(100)
 			.find((line) => line.includes("Tool activity details"))
-			?.startsWith("│ "),
+			?.slice(39)
+			.startsWith("│ "),
 	).toBe(true);
 	component.handleInput?.("\u001b");
 	expect(harness.closed()).toBe(1);
