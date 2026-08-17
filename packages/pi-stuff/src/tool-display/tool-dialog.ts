@@ -176,6 +176,12 @@ class ToolDialogComponent implements CommandDialogComponent {
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
+		const wasWide = this.lastRenderWidth >= SPLIT_MIN_WIDTH;
+		const isWide = renderWidth >= SPLIT_MIN_WIDTH;
+		if (wasWide !== isWide) {
+			if (isWide) this.splitFocus = this.mode === "detail" ? "right" : "left";
+			else this.mode = this.splitFocus === "right" ? "detail" : "list";
+		}
 		this.lastRenderWidth = renderWidth;
 		this.groups = this.currentGroups();
 		this.reconcileSelection();
@@ -197,10 +203,23 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const rows = Math.max(left.length, right.length);
 		const divider = this.context.theme.fg("border", "│");
 		return Array.from({ length: rows }, (_, index) => {
-			const l = bounded(leftWidth, left[index] ?? "").padEnd(leftWidth, " ");
+			let l = bounded(leftWidth, left[index] ?? "");
 			const r = bounded(rightWidth, right[index] ?? "");
-			return `${l}${divider}${r}`;
+			if (index === 1) {
+				const rail = this.splitFocus === "left" ? this.context.theme.fg("accent", "│") : " ";
+				l = `${rail}${l.slice(1)}`;
+			}
+			if (index === 1 && r) {
+				const rail = this.splitFocus === "right" ? this.context.theme.fg("accent", "│") : " ";
+				const detail = `${rail}${r.slice(1)}`;
+				return `${this.padVisible(l, leftWidth)}${divider}${detail}`;
+			}
+			return `${this.padVisible(l, leftWidth)}${divider}${r}`;
 		});
+	}
+
+	private padVisible(line: string, width: number): string {
+		return `${line}${" ".repeat(Math.max(0, width - visibleWidth(line)))}`;
 	}
 
 	private currentGroups(): readonly ToolActivityGroupView[] {
@@ -220,6 +239,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 				this.detailMemberIndex = 0;
 				this.detailRepresentation = "formatted";
 				this.scrollOffset = 0;
+				this.detailWrapCache = undefined;
 				this.context.requestRender();
 				return;
 			}
@@ -239,6 +259,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const delta = matchesKey(data, Key.up) ? -1 : 1;
 		const next = Math.max(0, Math.min(this.groups.length - 1, current + delta));
 		this.selectedId = this.groups[next]?.id;
+		this.detailMemberIndex = 0;
+		this.detailRepresentation = "formatted";
+		this.scrollOffset = 0;
+		this.detailWrapCache = undefined;
 		this.context.requestRender();
 	}
 
