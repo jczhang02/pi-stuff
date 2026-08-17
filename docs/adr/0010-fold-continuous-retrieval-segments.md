@@ -52,6 +52,60 @@ Raw, detail, list, then the dialog. Formatted detail hides protocol IDs. Raw det
 arguments, result content, and details. Both representations are capped at 240 logical lines and 24 KiB per selected
 invocation.
 
+### Accepted `/tools` readability update
+
+**Decision update:** 2026-08-17
+**Status:** Accepted; implementation pending.
+
+This update applies only to the `/tools` Command Dialog. It does not change the compact Conversation Transcript, its
+small `•` marker, global `Ctrl+O` expansion, Tool-owned result renderers, model-visible results, or persisted protocol
+data.
+
+The list is an activity inspector, so the human-readable Activity summary is its primary label. A row is the `›`
+selection marker, summary, then a right-aligned lifecycle icon with an optional invocation count. Use `●` running, `✓`
+success, `×` error, `!` rejected, and `■` cancelled. `›` remains selection only. Say `N calls`, not `N tools`, because
+the number counts invocations. Drop the count before the summary or lifecycle icon at narrow widths.
+
+Keep the newest Activity first and retain each Activity's position while it changes state. Up and Down select one row;
+PageUp/PageDown and Shift+Up/Down move one visible page. Use the existing `… N newer` and `… N older` window instead of
+a scrollbar or a second pagination mode. The Footer advertises page movement only when the list overflows.
+
+The detail Header uses the selected Activity summary as its visual anchor and retains the full lifecycle word and call
+count. A grouped Activity has two sections:
+
+```text
+Tools / Read 4 files and searched 2 patterns
+✓ success · 6 calls
+
+│ Calls
+› ✓ Read · packages/pi-stuff/src/tool-display/tool-dialog.ts
+  ✓ Search · toolStateGlyph
+
+│ Detail · formatted
+Read
+Target: packages/pi-stuff/src/tool-display/tool-dialog.ts
+Summary: 58 lines returned
+```
+
+`Calls` uses Up and Down to select an invocation. A singleton Activity omits that section and opens its Detail
+directly. The short vertical mark exists only on a section heading; member rows keep the native `›` selection grammar,
+and Tool-owned formatted content keeps its own meaningful hierarchy rather than being forced into a generic table.
+
+Formatted Detail uses the selected Tool's existing title, target, summary, and bounded Tool-owned detail lines. Bash,
+Read, Search, media, and other Tool families therefore remain visibly different where their content differs. Raw mode
+is explicitly titled `Raw protocol` and retains the accepted call ID, Tool name, arguments, result, and details. `r`
+toggles formatted and Raw; Escape from Raw returns to formatted before the next Escape returns to the list.
+
+PageUp/PageDown and Shift+Up/Down scroll selected-call content; Home and End remain supported without requiring Footer
+space. A running Detail follows appended content only while its viewport is at the bottom. Upward movement freezes the
+reading position, displays a bounded newer-content notice, and resumes following when the viewport returns to the
+bottom.
+
+The current implementation already has the correct Activity grouping, lazy five-member window, formatted/Raw data
+boundary, caps, and Escape chain. Its remaining visual deltas are the generic `Tool activity details` Header, duplicate
+State and Summary rows, one large color-only circle for every lifecycle state, `items`/`tools` count wording, a retained
+one-member Calls list, and missing Shift+Arrow page aliases.
+
 The runtime stores only the derived group plan and small presentation callbacks. It does not cache a global Raw
 transcript or duplicate large formatted and Raw bodies in `ToolActivityStore`. No Tool schema, dependency, setting,
 compatibility mode, or persistent datum is added.

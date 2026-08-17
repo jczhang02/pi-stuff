@@ -5,6 +5,8 @@ These instructions apply only while developing this repository. This file is not
 ## Before changing code
 
 - Read `CONTEXT.md` and the relevant records under `docs/adr/`.
+- Read `DESIGN.md` before changing a visible surface. It owns the shared visual language; Capability ADRs own
+  surface-specific content and behavior.
 - Use the canonical terms from the glossary in code, tests, issues, and documentation.
 - Read `docs/agents/issue-tracker.md` before creating or changing work items.
 - Target the certified host and toolchain versions documented in `docs/compatibility.md`.

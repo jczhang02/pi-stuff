@@ -99,6 +99,12 @@ Action hints wrap instead of dropping the close or back key: Escape closes the A
 details or a steer/resume composer. At low terminal heights, the selected Agent or attached error and that Escape path
 take priority over surrounding transcript rows.
 
+The accepted Agent Command Dialog redesign is recorded in the
+[Agent activity UI reference](../../../docs/research/agent-activity-ui-reference.md#f-accepted-agent-command-dialog-redesign).
+Its status is implementation pending. The current source still renders `Task`, `State`, and `Transcript` and retains
+the current projected child-Tool marker; do not treat the target sketch as shipped behavior until the implementation
+and its PTY verification land.
+
 ## Scope
 
 This module owns ordinary subagents inside the current Pi session. It does not provide a cross-session Fleet or
