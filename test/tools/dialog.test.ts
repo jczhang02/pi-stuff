@@ -49,6 +49,15 @@ function groupedRuntime(paths: readonly string[], errorIndex = -1): ToolUiRuntim
 		categories: ["read-file"],
 		classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["path"])] }],
 	});
+	runtime.registerDetailPresentation("read", {
+		detailLines: (args, result) => [
+			`Path: ${String(args["path"] ?? "")}`,
+			...result.content.flatMap((item) => (item.type === "text" ? [item.text] : [])),
+		],
+		label: () => "Read",
+		summary: (_args, _result, state) => (state === "success" ? "safe" : state),
+		target: (args) => String(args["path"] ?? ""),
+	});
 	runtime.markRendererAttached("read");
 	const calls = paths.map((path, index) => toolCall(`read-${String(index + 1)}`, path));
 	const results = paths.map((_path, index) => toolResult(`read-${String(index + 1)}`, index === errorIndex));
@@ -57,7 +66,7 @@ function groupedRuntime(paths: readonly string[], errorIndex = -1): ToolUiRuntim
 		const id = `read-${String(index + 1)}`;
 		runtime.activities.begin({ id, label: "Read", name: "read", target: path });
 		runtime.activities.settle(id, {
-			detailLines: ["Call", `path: ${path}`, "", "Result", index === errorIndex ? "missing" : "safe"],
+			detailLines: [],
 			durationMs: undefined,
 			state: index === errorIndex ? "error" : "success",
 			summary: index === errorIndex ? "missing" : "safe",
@@ -66,7 +75,7 @@ function groupedRuntime(paths: readonly string[], errorIndex = -1): ToolUiRuntim
 	return runtime;
 }
 
-test("/tools lists Activity Groups and one detail view restores every member", () => {
+test("/tools lists groups and formats only the selected member", () => {
 	const runtime = groupedRuntime(["工具.txt", "src/config.ts"]);
 	const harness = contextHarness();
 	const component = createToolDialogView(runtime).create(harness.context);
@@ -78,8 +87,12 @@ test("/tools lists Activity Groups and one detail view restores every member", (
 	component.handleInput?.("\r");
 	const detail = component.render(42).join("\n");
 	expect(detail).toContain("Tool activity details");
-	expect(detail).toContain("path: 工具.txt");
-	expect(detail).toContain("path: src/config.ts");
+	expect(detail).toContain("Path: 工具.txt");
+	expect(detail).not.toContain("Path: src/config.ts");
+	component.handleInput?.("\u001b[B");
+	const second = component.render(42).join("\n");
+	expect(second).toContain("Path: src/config.ts");
+	expect(second).not.toContain("Path: 工具.txt");
 	component.handleInput?.("\u001b");
 	expect(component.render(42).join("\n")).toContain("Tools");
 	component.handleInput?.("\u001b");
@@ -93,24 +106,47 @@ test("/tools <member-id> focuses the requested member within its complete group"
 	const component = createToolDialogView(runtime, "read-2").create(harness.context);
 	const detail = component.render(60).join("\n");
 	expect(detail).toContain("3 tools");
-	expect(detail).not.toContain("path: a.ts");
-	expect(detail).toContain("path: b.ts");
-	expect(detail).toContain("path: c.ts");
-	expect(detail).toContain("2–3/3 tools");
+	expect(detail).not.toContain("Path: a.ts");
+	expect(detail).toContain("Path: b.ts");
+	expect(detail).not.toContain("Path: c.ts");
+	expect(detail).toContain("member 2/3");
+	component.dispose?.();
+});
+
+test("/tools keeps a five-member selection window while arrows traverse the whole group", () => {
+	const runtime = groupedRuntime(Array.from({ length: 8 }, (_, index) => `${String(index + 1)}.ts`));
+	const harness = contextHarness(28);
+	const component = createToolDialogView(runtime, "read-1").create(harness.context);
+	expect(component.render(64).filter((line) => /\d+\. Read/u.test(line))).toHaveLength(5);
+	for (let index = 0; index < 7; index += 1) component.handleInput?.("\u001b[B");
+	const last = component.render(64);
+	expect(last.filter((line) => /\d+\. Read/u.test(line))).toHaveLength(5);
+	expect(last.join("\n")).toContain("Path: 8.ts");
 	component.dispose?.();
 });
 
 test("/tools <member-id> opens an infrastructure-only group hidden from the compact transcript", () => {
 	const runtime = new ToolUiRuntime();
-	runtime.registerActivity("internal", { categories: [], classify: () => [], silentSuccess: true });
+	runtime.registerActivity("ctx_reduce", { categories: [], classify: () => [], silentSuccess: true });
+	runtime.registerDetailPresentation("ctx_reduce", {
+		label: () => "Context reduction",
+		summary: () => "done",
+		target: () => "context",
+	});
+	runtime.markRendererAttached("ctx_reduce");
 	runtime.indexMessages(
 		[
-			{ role: "assistant", content: [{ type: "toolCall", id: "internal-1", name: "internal", arguments: {} }] },
+			{ role: "assistant", content: [{ type: "toolCall", id: "internal-1", name: "ctx_reduce", arguments: {} }] },
 			{ role: "toolResult", toolCallId: "internal-1", content: [{ type: "text", text: "done" }], details: {} },
 		],
 		true,
 	);
-	runtime.activities.begin({ id: "internal-1", label: "Internal", name: "internal", target: "internal" });
+	runtime.activities.begin({
+		id: "internal-1",
+		label: "Context reduction",
+		name: "ctx_reduce",
+		target: "context",
+	});
 	runtime.activities.settle("internal-1", {
 		detailLines: ["Call", "internal", "", "Result", "done"],
 		durationMs: undefined,
@@ -121,30 +157,92 @@ test("/tools <member-id> opens an infrastructure-only group hidden from the comp
 	const component = createToolDialogView(runtime, "internal-1").create(harness.context);
 	const detail = component.render(60).join("\n");
 	expect(detail).toContain("Tool activity details");
-	expect(detail).toContain("internal-1");
-	expect(detail).toContain("Result");
+	expect(detail).toContain("Context reduction");
+	expect(detail).not.toContain("internal-1");
+	expect(detail).not.toContain("Arguments");
+	expect(detail).not.toContain("Result content");
+	component.handleInput?.("r");
+	const raw = component.render(60).join("\n");
+	expect(raw).toContain("Raw protocol");
+	expect(raw).toContain("Call ID: internal-1");
+	expect(raw).toContain("Tool name: ctx_reduce");
+	expect(raw).toContain("Arguments");
+	expect(raw).toContain("Result content");
+	expect(raw).toContain("Details");
+	component.handleInput?.("\u001b");
+	expect(component.render(60).join("\n")).not.toContain("Raw protocol");
+	component.handleInput?.("\u001b");
+	expect(component.render(60).join("\n")).toContain("Tools");
+	component.handleInput?.("\u001b");
+	expect(harness.closed()).toBe(1);
 	component.dispose?.();
 });
 
 test("/tools wraps and paginates long member details without exceeding terminal width", () => {
 	const runtime = groupedRuntime(["long.txt"]);
 	const longDetail = ["输出内容".repeat(200), "TAIL-END"].join(" ");
-	runtime.activities.settle("read-1", {
-		detailLines: [longDetail],
-		durationMs: undefined,
-		state: "success",
-		summary: "safe",
+	runtime.registerDetailPresentation("read", {
+		detailLines: () => [longDetail],
+		label: () => "Read",
+		summary: () => "safe",
+		target: () => "long.txt",
 	});
 	const harness = contextHarness(28);
 	const component = createToolDialogView(runtime, "read-1").create(harness.context);
 	const first = component.render(28);
 	expect(first.every((line) => visibleWidth(line) <= 28)).toBe(true);
 	expect(first.join("\n")).not.toContain("TAIL-END");
-	for (let page = 0; page < 12; page++) component.handleInput?.("\u001b[6~");
+	component.handleInput?.("\u001b[F");
 	const last = component.render(28);
 	expect(last.every((line) => visibleWidth(line) <= 28)).toBe(true);
 	expect(last.join("\n")).toContain("TAIL-END");
+	component.handleInput?.("\u001b[H");
+	expect(component.render(28).join("\n")).not.toContain("TAIL-END");
+	component.handleInput?.("\u001b[6~");
+	component.handleInput?.("\u001b[5~");
+	expect(component.render(28).join("\n")).not.toContain("TAIL-END");
 	component.dispose?.();
+});
+
+test("/tools caps formatted and Raw protocol content per selected call", () => {
+	const runtime = new ToolUiRuntime();
+	runtime.registerActivity("read", {
+		categories: ["read-file"],
+		classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["path"])] }],
+	});
+	runtime.markRendererAttached("read");
+	runtime.indexMessages(
+		[
+			{
+				role: "assistant",
+				content: [
+					{
+						type: "toolCall",
+						id: "large",
+						name: "read",
+						arguments: { path: "large.txt", payload: "参".repeat(30_000) },
+					},
+				],
+			},
+			{
+				role: "toolResult",
+				toolCallId: "large",
+				content: [
+					{ type: "text", text: Array.from({ length: 400 }, (_, index) => `line ${String(index)}`).join("\n") },
+				],
+				details: { payload: "详".repeat(30_000) },
+			},
+		],
+		true,
+	);
+	for (const mode of ["formatted", "raw"] as const) {
+		const detail = runtime.toolActivityDetail("large", mode);
+		expect(detail).toBeDefined();
+		const lines = detail?.lines ?? [];
+		expect(lines.length).toBeLessThanOrEqual(240);
+		expect(Buffer.byteLength(lines.join("\n"))).toBeLessThanOrEqual(24 * 1_024);
+		expect(lines.at(-1)).toContain("detail capped");
+	}
 });
 
 test("/tools colors mixed groups amber and no-success failures red", () => {

@@ -176,6 +176,174 @@ function hasRebaseEvidence(text: string): boolean {
 	return /(?:Successfully rebased|Current branch .* is up to date|Current branch .* is up-to-date)/iu.test(text);
 }
 
+const BASH_RETRIEVAL_COMMANDS = new Map<string, ToolActivityCategory>([
+	["cat", "read-file"],
+	["head", "read-file"],
+	["tail", "read-file"],
+	["wc", "read-file"],
+	["jq", "read-file"],
+	["grep", "search-pattern"],
+	["rg", "search-pattern"],
+	["find", "search-pattern"],
+	["ls", "list-directory"],
+	["tree", "list-directory"],
+	["du", "list-directory"],
+]);
+const BASH_RETRIEVAL_NEUTRAL_COMMANDS = new Set(["echo", "printf", "true", "false", ":"]);
+const FIND_CONSEQUENTIAL_OPTIONS = /^(?:-delete|-exec(?:dir)?|-fprint0?|-fprintf|-fls|-ok(?:dir)?)$/u;
+
+function splitBashRetrievalSegments(command: string): readonly string[] | undefined {
+	const segments: string[] = [];
+	let current = "";
+	let quote: "'" | '"' | undefined;
+	let escaped = false;
+	let trailingTerminator = false;
+	const flush = () => {
+		const segment = current.trim();
+		if (!segment) return false;
+		segments.push(segment);
+		current = "";
+		return true;
+	};
+	for (let index = 0; index < command.length; index += 1) {
+		const character = command[index] ?? "";
+		if (escaped) {
+			current += character;
+			escaped = false;
+			continue;
+		}
+		if (character === "\\") {
+			current += character;
+			escaped = true;
+			continue;
+		}
+		if (quote) {
+			current += character;
+			if (character === quote) quote = undefined;
+			else if (character === "`" || (character === "$" && command[index + 1] === "(")) return undefined;
+			continue;
+		}
+		if (character === "'" || character === '"') {
+			quote = character;
+			current += character;
+			continue;
+		}
+		if (
+			character === "`" ||
+			(character === "$" && command[index + 1] === "(") ||
+			character === "<" ||
+			character === ">" ||
+			character === "(" ||
+			character === ")" ||
+			character === "{" ||
+			character === "}" ||
+			character === "#"
+		) {
+			return undefined;
+		}
+		if (character === "&") {
+			if (command[index + 1] !== "&" || !flush()) return undefined;
+			index += 1;
+			trailingTerminator = false;
+			continue;
+		}
+		if (character === "|" || character === ";" || character === "\n") {
+			const conditional = character === "|";
+			if (conditional && command[index + 1] === "|") index += 1;
+			if (!flush()) {
+				if (character === "\n" && trailingTerminator) continue;
+				return undefined;
+			}
+			trailingTerminator = !conditional;
+			continue;
+		}
+		current += character;
+		if (!/\s/u.test(character)) trailingTerminator = false;
+	}
+	if (escaped || quote) return undefined;
+	if (!flush() && !trailingTerminator) return undefined;
+	return segments;
+}
+
+function bashSegmentWords(segment: string): readonly string[] | undefined {
+	const words: string[] = [];
+	let current = "";
+	let quote: "'" | '"' | undefined;
+	let escaped = false;
+	let started = false;
+	const flush = () => {
+		if (!started) return;
+		words.push(current);
+		current = "";
+		started = false;
+	};
+	for (const character of segment) {
+		if (escaped) {
+			current += character;
+			started = true;
+			escaped = false;
+			continue;
+		}
+		if (character === "\\" && quote !== "'") {
+			escaped = true;
+			started = true;
+			continue;
+		}
+		if (quote) {
+			if (character === quote) quote = undefined;
+			else current += character;
+			started = true;
+			continue;
+		}
+		if (character === "'" || character === '"') {
+			quote = character;
+			started = true;
+			continue;
+		}
+		if (/\s/u.test(character)) flush();
+		else {
+			current += character;
+			started = true;
+		}
+	}
+	if (escaped || quote) return undefined;
+	flush();
+	return words;
+}
+
+/** Classify only clearly read-only shell retrieval; ambiguity stays standalone. */
+export function classifyBashRetrievalActivity(args: Readonly<Record<string, unknown>>): readonly ToolActivityItem[] {
+	if (args["run_in_background"] === true) return [];
+	const command = typeof args["command"] === "string" ? args["command"] : "";
+	const segments = splitBashRetrievalSegments(command);
+	if (!segments) return [];
+	const categories = new Set<ToolActivityCategory>();
+	for (const segment of segments) {
+		const words = bashSegmentWords(segment);
+		if (!words) return [];
+		let commandIndex = 0;
+		while (/^[A-Za-z_][A-Za-z\d_]*=/u.test(words[commandIndex] ?? "")) commandIndex += 1;
+		const base = words[commandIndex];
+		if (!base) return [];
+		if (BASH_RETRIEVAL_NEUTRAL_COMMANDS.has(base)) continue;
+		const category = BASH_RETRIEVAL_COMMANDS.get(base);
+		if (!category) return [];
+		if (base === "find" && words.slice(commandIndex + 1).some((word) => FIND_CONSEQUENTIAL_OPTIONS.test(word))) {
+			return [];
+		}
+		categories.add(category);
+	}
+	if (categories.size === 0) return [];
+	const description = typeof args["description"] === "string" ? oneLine(args["description"]) : "";
+	const fallback = categories.has("search-pattern")
+		? "Searching files"
+		: categories.has("read-file")
+			? "Reading files"
+			: "Listing directories";
+	const target = activityTarget(description || fallback);
+	return [...categories].map((category) => ({ category, count: 1, target }));
+}
+
 /** Conservative Bash semantics shared by Host Bash and Background Work Bash. */
 export function classifyBashActivity(
 	input: ToolActivityClassifierInput<Record<string, unknown>, unknown>,
@@ -186,6 +354,8 @@ export function classifyBashActivity(
 	const background = input.args["run_in_background"] === true || bashResultMovedToBackground(input.result);
 	const outcomeEligible = input.state === "running" || input.state === "success";
 	if (background && outcomeEligible) return singleActivity("launch-background", { target });
+	const retrieval = classifyBashRetrievalActivity(input.args);
+	if (retrieval.length > 0) return retrieval;
 	if (!outcomeEligible) return singleActivity("run-command", { target });
 
 	const running = input.state === "running";
@@ -249,6 +419,41 @@ export interface PlannedToolActivityGroup {
 	readonly closed: boolean;
 	readonly leaderId: string;
 	readonly members: readonly PlannedToolActivityMember[];
+	/** Standalone Tools remain visually independent while sharing detail reconstruction. */
+	readonly standalone?: boolean;
+}
+
+export type ToolActivityGroupDisposition = "boundary" | "retrieval" | "transparent";
+export type ToolActivityGroupClassifier = (
+	name: string,
+	args: Readonly<Record<string, unknown>>,
+) => ToolActivityGroupDisposition;
+
+const RETRIEVAL_ACTIVITY_CATEGORIES = new Set<ToolActivityCategory>(["read-file", "search-pattern", "list-directory"]);
+const TRANSPARENT_ACTIVITY_TOOL_NAMES = new Set(["ctx_reduce", "tool_search"]);
+
+/** One invocation-level policy shared by streaming, replay, and envelope projection. */
+export function classifyToolActivityGroupInvocation(
+	name: string,
+	args: Readonly<Record<string, unknown>>,
+	metadata: ToolActivityMetadata<Record<string, unknown>, unknown> | undefined,
+): ToolActivityGroupDisposition {
+	if (TRANSPARENT_ACTIVITY_TOOL_NAMES.has(name)) return "transparent";
+	if (!metadata) return "boundary";
+	if (name !== "bash") {
+		return metadata.categories.length > 0 &&
+			metadata.categories.every((category) => RETRIEVAL_ACTIVITY_CATEGORIES.has(category))
+			? "retrieval"
+			: "boundary";
+	}
+	try {
+		const items = metadata.classify({ args, state: "running" });
+		return items.length > 0 && items.every((item) => RETRIEVAL_ACTIVITY_CATEGORIES.has(item.category))
+			? "retrieval"
+			: "boundary";
+	} catch {
+		return "boundary";
+	}
 }
 
 export interface ActivitySummaryMember {
@@ -484,7 +689,7 @@ function assistantTerminalState(message: Record<string, unknown>): "cancelled" |
  */
 export function planToolActivityGroups(
 	messages: readonly unknown[],
-	ownedToolNames: ReadonlySet<string>,
+	classifyInvocation: ToolActivityGroupClassifier,
 	closeTail: boolean,
 ): readonly PlannedToolActivityGroup[] {
 	const results = new Map<string, AgentToolResult<unknown>>();
@@ -500,13 +705,12 @@ export function planToolActivityGroups(
 		if (leader) groups.push({ closed, leaderId: leader.id, members });
 		members = [];
 	};
-	const append = (
-		member: PlannedToolActivityMember,
-		options: { readonly closeAfter?: boolean; readonly closeBefore?: boolean } = {},
-	) => {
-		if (options.closeBefore) flush(true);
+	const append = (member: PlannedToolActivityMember) => {
 		members.push(member);
-		if (options.closeAfter) flush(true);
+	};
+	const appendStandalone = (member: PlannedToolActivityMember) => {
+		flush(true);
+		groups.push({ closed: true, leaderId: member.id, members: [member], standalone: true });
 	};
 
 	for (const candidate of messages) {
@@ -524,15 +728,14 @@ export function planToolActivityGroups(
 			}
 			const call = toolCall(block);
 			if (!call) continue;
-			if (!ownedToolNames.has(call.name)) {
-				flush(true);
+			const result = results.get(call.id);
+			const member = { ...call, ...(result ? { result } : terminalState ? { terminalState } : {}) };
+			const disposition = classifyInvocation(call.name, call.args);
+			if (disposition === "boundary") {
+				appendStandalone(member);
 				continue;
 			}
-			const result = results.get(call.id);
-			append(
-				{ ...call, ...(result ? { result } : terminalState ? { terminalState } : {}) },
-				call.name === "bash" ? { closeAfter: true, closeBefore: true } : {},
-			);
+			append(member);
 		}
 	}
 	flush(closeTail);

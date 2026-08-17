@@ -821,6 +821,40 @@ export function capDetailLines(
 	return collector.finish();
 }
 
+/** Bounded formatted result text without protocol headings or argument dumps. */
+export function buildToolResultLines(result: AgentToolResult<unknown>): string[] {
+	const collector = new DetailCollector(DETAIL_MAX_LINES, DETAIL_MAX_BYTES);
+	for (const entry of result.content) {
+		if (collector.isCapped()) break;
+		if (entry.type === "text") addMultiline(collector, entry.text);
+		else collector.add(`[image ${oneLine(entry.mimeType)}]`);
+	}
+	if (result.content.length === 0) collector.add("(no result content)");
+	return collector.finish();
+}
+
+/** Bounded raw protocol projection built only for the selected Tool call. */
+export function buildRawToolDetailLines(
+	id: string,
+	name: string,
+	args: Readonly<Record<string, unknown>>,
+	result: AgentToolResult<unknown> | undefined,
+): string[] {
+	return capDetailLines([
+		`Call ID: ${oneLine(id)}`,
+		`Tool name: ${oneLine(name)}`,
+		"",
+		"Arguments",
+		boundedJson(args, DETAIL_MAX_BYTES),
+		"",
+		"Result content",
+		...(result ? buildToolResultLines(result) : ["(pending)"]),
+		"",
+		"Details",
+		result?.details === undefined ? "(none)" : boundedJson(result.details, DETAIL_MAX_BYTES),
+	]);
+}
+
 export function buildToolDetailLines(
 	args: Readonly<Record<string, unknown>>,
 	result: AgentToolResult<unknown>,

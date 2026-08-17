@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Replace complete non-Bash Tool grouping with Claude-style continuous retrieval segments. Read, Grep/Find, List, and
+  conservatively read-only Bash now fold across Tool rounds and Thinking; consequential and unknown Tools remain
+  independent boundaries, while failed, rejected, and cancelled retrieval stays explicit. `Ctrl+O` restores formatted
+  Tool details and Bash Operation Blocks without protocol dumps, and `/tools` adds lazy per-call formatted/Raw views,
+  a five-member selector, and content scrolling without caching a global Raw transcript.
 - Replace raw image MIME placeholders in terminals without inline-image support with a dim, transcript-aligned preview
   explanation that preserves format, dimensions, and media order.
 - Unify Conversation Transcript hierarchy with a one-cell, text-axis-centered `∗` Thought marker, small bullets for

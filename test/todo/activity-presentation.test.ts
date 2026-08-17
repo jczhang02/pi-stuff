@@ -59,7 +59,7 @@ function renderedSummary(
 	return row?.render(100).join("\n") ?? "";
 }
 
-test("TaskUpdate reports a no-op as a check instead of a mutation", () => {
+test("TaskUpdate keeps no-op and mutation results in standalone rows", () => {
 	const { api, tools } = registeredTools();
 	const tool = tools.get("TaskUpdate");
 	const args = { status: "completed", taskId: "task-1" };
@@ -84,8 +84,8 @@ test("TaskUpdate reports a no-op as a check instead of a mutation", () => {
 		"call-update",
 	);
 
-	expect(noOp).toContain("Checked 1 task");
-	expect(updated).toContain("Updated 1 task");
+	expect(noOp).toContain("Task update #task-1 · Task #task-1 already matches the requested values");
+	expect(updated).toContain("Task update #task-1 · Task task-1 updated: status");
 });
 
 test("an empty TaskList reports zero returned tasks", () => {
@@ -101,5 +101,5 @@ test("an empty TaskList reports zero returned tasks", () => {
 		"call-empty-list",
 	);
 
-	expect(empty).toContain("Checked 0 tasks");
+	expect(empty).toContain("Task list · 0 tasks (0 done, 0 open)");
 });

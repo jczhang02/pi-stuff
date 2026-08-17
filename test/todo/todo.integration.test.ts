@@ -157,9 +157,11 @@ describe("registered Task tools", () => {
 
 		expect(mutations.map(({ action }) => action)).toEqual(["create", "create", "update"]);
 		expect(mutations.every(({ sessionId }) => sessionId === "integration-session")).toBe(true);
-		expect(renderedLines(harness.api, harness.tool(TASK_GET_TOOL_NAME), fetched, false, { taskId: "2" })).toEqual([
-			" • Checked 1 task  (ctrl+o to expand)",
-		]);
+		expect(
+			Bun.stripANSI(
+				renderedLines(harness.api, harness.tool(TASK_GET_TOOL_NAME), fetched, false, { taskId: "2" }).join("\n"),
+			),
+		).toContain(" • Task get · Task #2: Im");
 
 		const failed = await harness.execute(TASK_UPDATE_TOOL_NAME, {
 			taskId: "missing",
@@ -177,7 +179,7 @@ describe("registered Task tools", () => {
 		} as unknown as AgentToolResult<unknown>;
 		expect(
 			renderedLines(harness.api, harness.tool(TASK_UPDATE_TOOL_NAME), validationFailure, true).join("\n").trim(),
-		).toBe("• Task update failed  (ctrl+o to expand)\n   ⎿ Invalid TaskUpdate input");
+		).toBe("• Task update · Invalid TaskUpdate input");
 		expect(mutations.map(({ action }) => action)).toEqual(["create", "create", "update"]);
 	});
 });

@@ -47,9 +47,12 @@ export {
 	activityTarget,
 	bashResultMovedToBackground,
 	classifyBashActivity,
+	classifyBashRetrievalActivity,
+	classifyToolActivityGroupInvocation,
 	singleActivity,
 	type ToolActivityCategory,
 	type ToolActivityClassifierInput,
+	type ToolActivityGroupDisposition,
 	type ToolActivityItem,
 	type ToolActivityMetadata,
 } from "./activity.js";
@@ -74,6 +77,8 @@ export {
 	type SuiteToolPresentation,
 	type SuiteToolRegistrationTracker,
 	type SuiteToolSurfaceController,
+	type ToolActivityDetailMode,
+	type ToolActivityDetailView,
 	type ToolActivityGroupView,
 	ToolUiRuntime,
 } from "./contract.js";

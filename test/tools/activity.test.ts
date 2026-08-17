@@ -4,11 +4,42 @@ import {
 	activityTarget,
 	bashResultMovedToBackground,
 	classifyBashActivity,
+	classifyBashRetrievalActivity,
+	classifyToolActivityGroupInvocation,
 	planToolActivityGroups,
+	singleActivity,
 	summarizeToolActivityGroup,
+	type ToolActivityCategory,
+	type ToolActivityMetadata,
 } from "../../packages/pi-stuff/src/tool-display/activity.js";
 
-const owned = new Set(["read", "edit", "bash"]);
+const retrieval = (category: "list-directory" | "read-file" | "search-pattern") =>
+	({
+		categories: [category],
+		classify: ({ args }) => singleActivity(category, { target: String(args["value"] ?? "") }),
+	}) satisfies ToolActivityMetadata<Record<string, unknown>, unknown>;
+const policies = new Map<string, ToolActivityMetadata<Record<string, unknown>, unknown>>([
+	["read", retrieval("read-file")],
+	["grep", retrieval("search-pattern")],
+	["find", retrieval("search-pattern")],
+	["ls", retrieval("list-directory")],
+	[
+		"edit",
+		{
+			categories: ["change-file"],
+			classify: ({ args }) => singleActivity("change-file", { target: String(args["value"] ?? "") }),
+		},
+	],
+	[
+		"bash",
+		{
+			categories: ["run-command", "read-file", "search-pattern", "list-directory"],
+			classify: classifyBashActivity,
+		},
+	],
+]);
+const classify = (name: string, args: Readonly<Record<string, unknown>>) =>
+	classifyToolActivityGroupInvocation(name, args, policies.get(name));
 
 const call = (id: string, name: string, value: string) => ({
 	type: "toolCall",
@@ -28,7 +59,7 @@ test("active path targets preserve only the nearest useful directory and basenam
 	expect(activityTarget("Running repository checks")).toBe("Running repository checks");
 });
 
-test("plans non-Bash groups across Tool round-trips and keeps Bash standalone", () => {
+test("plans retrieval segments across Tool round-trips and keeps boundaries standalone", () => {
 	const groups = planToolActivityGroups(
 		[
 			{ role: "user", content: [{ type: "text", text: "work" }] },
@@ -38,27 +69,27 @@ test("plans non-Bash groups across Tool round-trips and keeps Bash standalone", 
 			{ role: "toolResult", toolCallId: "e1", content: [{ type: "text", text: "ok" }], details: {} },
 			assistant({ type: "thinking", thinking: "verify" }, call("b1", "bash", "test")),
 		],
-		owned,
+		classify,
 		false,
 	);
 
-	expect(groups).toHaveLength(2);
+	expect(groups).toHaveLength(3);
 	expect(groups[0]?.leaderId).toBe("r1");
 	expect(groups[0]?.closed).toBe(true);
-	expect(groups[0]?.members.map((member) => member.id)).toEqual(["r1", "e1"]);
+	expect(groups[0]?.members.map((member) => member.id)).toEqual(["r1"]);
 	expect(groups[0]?.members[0]?.result?.content).toEqual([{ type: "text", text: "A" }]);
-	expect(groups[1]?.members.map((member) => member.id)).toEqual(["b1"]);
-	expect(groups[1]?.closed).toBe(true);
+	expect(groups.slice(1).map((group) => group.members.map((member) => member.id))).toEqual([["e1"], ["b1"]]);
+	expect(groups.slice(1).every((group) => group.closed && group.standalone)).toBe(true);
 });
 
-test("Bash calls are standalone boundaries while neighboring non-Bash Tools keep grouping", () => {
+test("ordinary Bash calls are standalone boundaries between retrieval segments", () => {
 	const groups = planToolActivityGroups(
 		[
 			assistant(call("r1", "read", "a"), call("r2", "read", "b"), call("b1", "bash", "first")),
 			{ role: "toolResult", toolCallId: "b1", content: [{ type: "text", text: "one" }], details: {} },
 			assistant(call("b2", "bash", "second && third | cat"), call("e1", "edit", "a")),
 		],
-		owned,
+		classify,
 		false,
 	);
 
@@ -68,7 +99,8 @@ test("Bash calls are standalone boundaries while neighboring non-Bash Tools keep
 		["b2"],
 		["e1"],
 	]);
-	expect(groups.map((group) => group.closed)).toEqual([true, true, true, false]);
+	expect(groups.map((group) => group.closed)).toEqual([true, true, true, true]);
+	expect(groups.map((group) => group.standalone === true)).toEqual([false, true, true, true]);
 });
 
 test("branch and compaction metadata stay transparent to Activity Groups", () => {
@@ -77,12 +109,12 @@ test("branch and compaction metadata stay transparent to Activity Groups", () =>
 			assistant(call("r1", "read", "a")),
 			{ role: "branchSummary", summary: "branch metadata" },
 			{ role: "compactionSummary", summary: "compaction metadata" },
-			assistant(call("e1", "edit", "a")),
+			assistant(call("r2", "read", "a")),
 		],
-		owned,
+		classify,
 		true,
 	);
-	expect(groups.map((group) => group.members.map((entry) => entry.id))).toEqual([["r1", "e1"]]);
+	expect(groups.map((group) => group.members.map((entry) => entry.id))).toEqual([["r1", "r2"]]);
 });
 
 test("prose, visible context, user input, and unknown Tools are boundaries", () => {
@@ -96,13 +128,14 @@ test("prose, visible context, user input, and unknown Tools are boundaries", () 
 			assistant(call("r3", "read", "c")),
 			{ role: "user", content: [{ type: "text", text: "next" }] },
 		],
-		owned,
+		classify,
 		false,
 	);
 
 	expect(groups.map((group) => group.members.map((member) => member.id))).toEqual([
 		["r1"],
 		["e1"],
+		["x1"],
 		["b1"],
 		["r2"],
 		["r3"],
@@ -111,7 +144,7 @@ test("prose, visible context, user input, and unknown Tools are boundaries", () 
 });
 
 test("a singleton forms a group and historical tails close deterministically", () => {
-	const [group] = planToolActivityGroups([assistant(call("r1", "read", "a"))], owned, true);
+	const [group] = planToolActivityGroups([assistant(call("r1", "read", "a"))], classify, true);
 	expect(group?.members).toHaveLength(1);
 	expect(group?.closed).toBe(true);
 });
@@ -124,7 +157,7 @@ test("assistant lifecycle failures settle calls that never received Tool results
 			{ ...assistant(call("completed", "read", "c")), stopReason: "aborted" },
 			{ role: "toolResult", toolCallId: "completed", content: [{ type: "text", text: "done" }], details: {} },
 		],
-		owned,
+		classify,
 		true,
 	);
 
@@ -132,6 +165,103 @@ test("assistant lifecycle failures settle calls that never received Tool results
 	expect(groups[0]?.members[1]?.terminalState).toBe("error");
 	expect(groups[0]?.members[2]?.terminalState).toBeUndefined();
 	expect(groups[0]?.members[2]?.result).toBeDefined();
+});
+
+test("classifies only explicit retrieval metadata and the two transparent infrastructure Tools", () => {
+	expect(classify("read", { value: "a.ts" })).toBe("retrieval");
+	expect(classify("grep", { value: "needle" })).toBe("retrieval");
+	expect(classify("find", { value: "*.ts" })).toBe("retrieval");
+	expect(classify("ls", { value: "." })).toBe("retrieval");
+	expect(classify("edit", { value: "a.ts" })).toBe("boundary");
+	expect(classify("third_party_read", { value: "a.ts" })).toBe("boundary");
+	expect(classify("tool_search", { query: "read" })).toBe("transparent");
+	expect(classify("ctx_reduce", {})).toBe("transparent");
+});
+
+test("consequential Suite categories and unknown MCP calls are group boundaries", () => {
+	const cases: ReadonlyArray<readonly [string, ToolActivityCategory]> = [
+		["edit", "change-file"],
+		["write", "change-file"],
+		["apply_patch", "change-file"],
+		["web_search", "search-web"],
+		["history", "search-history"],
+		["memory", "read-memory"],
+		["task", "update-task"],
+		["agent", "run-agent"],
+		["background", "inspect-background"],
+		["goal", "complete-goal"],
+		["image", "view-image"],
+	];
+	for (const [name, category] of cases) {
+		expect(
+			classifyToolActivityGroupInvocation(
+				name,
+				{},
+				{
+					categories: [category],
+					classify: () => [{ category, count: 1 }],
+				},
+			),
+		).toBe("boundary");
+	}
+	expect(classifyToolActivityGroupInvocation("mcp__unknown__read", {}, undefined)).toBe("boundary");
+});
+
+test("transparent infrastructure stays recoverable without splitting retrieval", () => {
+	const groups = planToolActivityGroups(
+		[
+			assistant(call("r1", "read", "a")),
+			assistant(call("s1", "tool_search", "catalog")),
+			assistant(call("r2", "read", "b")),
+		],
+		classify,
+		true,
+	);
+	expect(groups.map((group) => group.members.map((entry) => entry.id))).toEqual([["r1", "s1", "r2"]]);
+});
+
+test("folds only conservatively parsed read-only Bash operations", () => {
+	for (const command of [
+		"cat a.ts",
+		"head -n 5 a.ts",
+		"tail a.ts",
+		"wc -l a.ts",
+		"jq '.name' package.json",
+		"grep -n needle a.ts",
+		"rg needle src",
+		"find src -name '*.ts'",
+		"ls -la src",
+		"tree src",
+		"du -sh src",
+		"printf 'scan\\n' && rg needle src | head",
+		"cat a.ts;\n",
+	]) {
+		expect(classify("bash", { command })).toBe("retrieval");
+	}
+
+	for (const command of [
+		"echo done",
+		"cat a.ts && git status",
+		"rg needle | xargs rm",
+		"find src -delete",
+		"find src -exec cat {} \\;",
+		"cat a.ts > copy.ts",
+		"cat $(generate-path)",
+		"cat 'unterminated",
+		"cat a.ts &",
+	]) {
+		expect(classify("bash", { command })).toBe("boundary");
+	}
+	expect(classify("bash", { command: "cat a.ts", run_in_background: true })).toBe("boundary");
+});
+
+test("counts each Bash retrieval invocation once per semantic category", () => {
+	expect(classifyBashRetrievalActivity({ command: "cat a && head b" })).toEqual([
+		expect.objectContaining({ category: "read-file", count: 1 }),
+	]);
+	expect(
+		classifyBashRetrievalActivity({ command: "cat a | rg needle && ls src" }).map((item) => item.category),
+	).toEqual(["read-file", "search-pattern", "list-directory"]);
 });
 
 function member(state: ActivitySummaryMember["state"], items: ActivitySummaryMember["items"]): ActivitySummaryMember {

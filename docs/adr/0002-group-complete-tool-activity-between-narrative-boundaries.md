@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded_by: 0010-fold-continuous-retrieval-segments
 ---
 
 # Group complete Tool activity between Narrative Boundaries

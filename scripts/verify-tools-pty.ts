@@ -51,8 +51,8 @@ send -- "\\017"
 after 100
 send -- "/tools\\r"
 must_expect "Tools"
-must_expect "activity groups"
-must_expect "Changed 1 file"
+must_expect "items"
+must_expect "Searched 2 patterns, listed 1 directory"
 must_expect "Esc close"
 send -- "\\033"
 after 100
@@ -61,6 +61,13 @@ must_expect "Tool activity details"
 must_expect "PREFIX_CJK_工具"
 must_expect "BASH_CJK_工具"
 must_expect "Esc back"
+send -- "r"
+must_expect "Raw protocol"
+must_expect "Call ID: tools-pty-4"
+must_expect "Arguments"
+must_expect "Result content"
+send -- "\\033"
+must_expect "Status: success"
 send -- "\\033"
 must_expect "Esc close"
 send -- "\\033"
@@ -87,12 +94,12 @@ must_expect "Reloaded keybindings, extensions"
 must_expect "context files"
 set resized_columns [expr {$env(PI_STUFF_TOOLS_PTY_COLUMNS) + 1}]
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $resized_columns < $tool_pty
-must_expect "Changed 1 file"
+must_expect "Searched 2 patterns, listed 1 directory"
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $env(PI_STUFF_TOOLS_PTY_COLUMNS) < $tool_pty
 after 150
 send -- "/tools\\r"
 must_expect "Tools"
-must_expect "activity groups"
+must_expect "items"
 send -- "\\033"
 after 150
 send -- "DRAFT_AFTER_TOOLS"
@@ -195,17 +202,27 @@ function verifyOutput(output: string, columns: number): void {
 	for (const required of [
 		"TOOLS_DONE",
 		"• TOOLS_DONE",
+		"• Read 1 file",
+		"• Write written.txt",
+		"• Edit written.txt",
+		"• Searched 2 patterns, listed 1 directory",
 		"• List",
 		"• Bash",
-		"• Changing 1 file",
-		"• Changed 1 file",
+		"• Edit written.txt · editing",
+		"• Edit written.txt · +1/-1",
 		"• Bash(printf '",
 		"⎿  PREFIX_CJK_工具",
 		"⎿  Error: Exit code 7",
 		"BUILTIN_FAILURE_工具",
-		"1 failed, 1 rejected, 1 cancelled",
+		"State error",
+		"State rejected",
+		"State cancelled",
 		"Tools",
 		"Tool activity details",
+		"Raw protocol",
+		"Call ID: tools-pty-4",
+		"Arguments",
+		"Result content",
 		"PREFIX_CJK_工具",
 		"BASH_CJK_工具",
 		"BUILTIN_FAILURE_工具",
@@ -222,9 +239,6 @@ function verifyOutput(output: string, columns: number): void {
 		if (!visible.includes(required)) fail(`terminal output is missing ${required}`);
 	}
 	if (!visible.includes("─".repeat(columns))) fail(`Tool dialog did not render a ${String(columns)}-column divider`);
-	for (const forbidden of ["OWNED_TITLE"]) {
-		if (visible.includes(forbidden)) fail(`terminal output exposed forbidden UI or control payload: ${forbidden}`);
-	}
 	if (!/• Read pi-max-tools-[^\n]* · 1 lines/u.test(visible)) {
 		fail("long Tool target did not retain a semantic boundary before its settled result");
 	}
@@ -234,8 +248,8 @@ function verifyOutput(output: string, columns: number): void {
 }
 
 function verifyLifecycleFrames(visible: string): void {
-	const running = "• Changing 1 file";
-	const settled = "• Changed 1 file";
+	const running = "• Edit written.txt · editing";
+	const settled = "• Edit written.txt · +1/-1";
 	const runningFrame = visible.indexOf(running);
 	const settledFrame = visible.indexOf(settled, runningFrame + running.length);
 	if (runningFrame < 0 || settledFrame < 0) {
@@ -243,7 +257,17 @@ function verifyLifecycleFrames(visible: string): void {
 			.split("\n")
 			.filter((line) => line.includes("Running") || line.includes("Ran"))
 			.slice(-40);
-		fail(`running Activity Group did not settle semantically: ${JSON.stringify(observed)}`);
+		fail(`independent Edit row did not settle semantically: ${JSON.stringify(observed)}`);
+	}
+	const firstRetrieval = visible.indexOf("• Read 1 file");
+	const modification = visible.indexOf("• Write written.txt", firstRetrieval + 1);
+	const secondRetrieval = visible.indexOf("• Searched 2 patterns, listed 1 directory", modification + 1);
+	if (firstRetrieval < 0 || modification < 0 || secondRetrieval < 0) {
+		fail("retrieval groups and their independent modification boundary lost source order");
+	}
+	const activeRetrieval = visible.indexOf("• Searching 1 pattern");
+	if (activeRetrieval < 0 || activeRetrieval >= secondRetrieval) {
+		fail("retrieval group did not expose its active and settled states");
 	}
 	const firstBash = visible.indexOf("⎿  PREFIX_CJK_工具");
 	const failedBash = visible.indexOf("⎿  Error: Exit code 7", firstBash + 1);

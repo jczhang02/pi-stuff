@@ -4,6 +4,7 @@ import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui"
 import { Type } from "typebox";
 import { ToolExecutionComponent } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js";
 import { initTheme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import { classifyBashActivity } from "../../packages/pi-stuff/src/tool-display/activity.js";
 import {
 	assertSuiteToolActivityCoverage,
 	createSuiteToolRegistrationTracker,
@@ -153,12 +154,21 @@ function bashCall(id: string, command: string): unknown {
 	return { type: "toolCall", id, name: "bash", arguments: { command, value: command } };
 }
 
-function presentation(category: "change-file" | "fetch-page" | "read-file" | "run-command" | "view-image") {
+type FixtureCategory =
+	| "change-file"
+	| "fetch-page"
+	| "list-directory"
+	| "read-file"
+	| "run-command"
+	| "search-pattern"
+	| "view-image";
+
+function presentation(category: FixtureCategory) {
 	return {
 		activity: {
 			categories: [category],
 			classify: ({ args }: { args: Readonly<Params> }) => [
-				category === "run-command"
+				category === "run-command" || category === "search-pattern" || category === "list-directory"
 					? { category, count: 1, target: args.value }
 					: { category, countKeys: [args.value], target: args.value },
 			],
@@ -173,7 +183,7 @@ function presentation(category: "change-file" | "fetch-page" | "read-file" | "ru
 function toolFromHarness(
 	harness: Pick<ReturnType<typeof apiHarness>, "api" | "tools">,
 	name: string,
-	category: "change-file" | "fetch-page" | "read-file" | "run-command" | "view-image",
+	category: FixtureCategory,
 	codeMode?: SuiteToolCodeModeContract,
 ): ToolDefinition<typeof Params, { source: string }> {
 	const original: ToolDefinition<typeof Params, { source: string }> = {
@@ -186,7 +196,25 @@ function toolFromHarness(
 		name,
 		parameters: Params,
 	};
-	registerSuiteOwnedTool(harness.api, original, presentation(category), codeMode);
+	const fixturePresentation = presentation(category);
+	registerSuiteOwnedTool(
+		harness.api,
+		original,
+		name === "bash"
+			? {
+					...fixturePresentation,
+					activity: {
+						categories: ["run-command", "read-file", "search-pattern", "list-directory"],
+						classify: (input) =>
+							classifyBashActivity({
+								...input,
+								args: { ...input.args, command: input.args["command"] ?? input.args["value"] },
+							}),
+					},
+				}
+			: fixturePresentation,
+		codeMode,
+	);
 	const decorated = harness.tools.get(name);
 	if (!decorated) throw new Error(`missing ${name}`);
 	return decorated as ToolDefinition<typeof Params, { source: string }>;
@@ -380,7 +408,7 @@ test("settled Host redraws build detail only while globally expanded", () => {
 	redraw(false);
 	redraw(false);
 	expect(detailBuilds).toBe(0);
-	expect(runtime.groupActivities("lazy-read")[0]?.detailLines.join("\n")).toContain("MODEL_VISIBLE");
+	expect(runtime.groupActivities("lazy-read")[0]?.detailLines).toEqual([]);
 	expect(redraw(true).join("\n")).toContain("PRESENTATION_DETAIL");
 	expect(detailBuilds).toBe(1);
 	redraw(true);
@@ -698,6 +726,7 @@ test("Code Mode preserves the original Tool media projection without envelope ch
 	);
 	const envelope = envelopeHarness.tools.get("codemode");
 	if (!envelope) throw new Error("missing media envelope");
+	expect(getToolUiRuntime(registrations.api).isStandaloneInvocation("view_image", { value: "pixel.png" })).toBe(true);
 	getToolUiRuntime(envelopeHarness.api).indexMessages(
 		[
 			assistant({ type: "toolCall", id: "outer-media", name: "codemode", arguments: { code: "view" } }),
@@ -1041,10 +1070,81 @@ test("a settled envelope restores nested Tools to the outer call's source order"
 	});
 
 	expect(runtime.listGroups().map((group) => group.memberIds)).toEqual([
-		["direct-background", "direct-subagent"],
+		["direct-subagent"],
+		["direct-background"],
 		["nested-bash"],
 		["nested-read"],
 	]);
+});
+
+test("streaming, rebuild, and Code Mode share retrieval eligibility", () => {
+	const configure = (runtime: ToolUiRuntime) => {
+		runtime.registerActivity("read", {
+			categories: ["read-file"],
+			classify: ({ args }) => [{ category: "read-file", countKeys: [String(args["value"])] }],
+		});
+		runtime.registerActivity("edit", {
+			categories: ["change-file"],
+			classify: ({ args }) => [{ category: "change-file", countKeys: [String(args["value"])] }],
+		});
+		runtime.registerActivity("bash", {
+			categories: ["run-command", "read-file", "search-pattern", "list-directory"],
+			classify: classifyBashActivity,
+		});
+		for (const name of ["read", "edit", "bash"]) runtime.markRendererAttached(name);
+	};
+	const calls = [
+		{ id: "read-before", name: "read", arguments: { value: "a.ts" } },
+		{ id: "bash-read", name: "bash", arguments: { command: "cat a.ts", value: "cat a.ts" } },
+		{ id: "edit", name: "edit", arguments: { value: "a.ts" } },
+		{ id: "read-after", name: "read", arguments: { value: "b.ts" } },
+	] as const;
+	const persisted = [
+		assistant(...calls.map((entry) => ({ ...entry, type: "toolCall" }))),
+		...calls.map((entry) => result(entry.id)),
+	];
+	const rebuilt = new ToolUiRuntime();
+	configure(rebuilt);
+	rebuilt.indexMessages(persisted, true);
+
+	const streaming = new ToolUiRuntime();
+	configure(streaming);
+	streaming.startTurn();
+	for (const entry of calls) {
+		streaming.observeAssistantEvent({
+			contentIndex: 0,
+			partial: assistant() as never,
+			toolCall: { ...entry, type: "toolCall" },
+			type: "toolcall_end",
+		});
+		streaming.indexMessage(result(entry.id));
+	}
+	streaming.endTurn();
+
+	const operations: readonly SuiteToolEnvelopeOperation[] = calls.map((entry) => ({
+		args: entry.arguments,
+		id: entry.id,
+		name: entry.name,
+		result: { content: [{ type: "text", text: "ok" }], details: {} },
+		state: "success",
+	}));
+	const codeMode = new ToolUiRuntime();
+	configure(codeMode);
+	codeMode.registerEnvelope("codemode", () => operations);
+	codeMode.indexMessages(
+		[
+			assistant({ type: "toolCall", id: "outer", name: "codemode", arguments: { code: "inspect" } }),
+			{ role: "toolResult", toolCallId: "outer", content: [], details: { operations } },
+		],
+		true,
+	);
+
+	const shape = (runtime: ToolUiRuntime) =>
+		runtime.listGroups().map((group) => runtime.groupActivities(group.id).map((activity) => activity.name));
+	const expected = [["read"], ["edit"], ["read", "bash"]];
+	expect(shape(rebuilt)).toEqual(expected);
+	expect(shape(streaming)).toEqual(expected);
+	expect(shape(codeMode)).toEqual(expected);
 });
 
 test("the Code Mode surface hides every active Suite Tool without changing the virtual active Tool set", () => {
@@ -1109,12 +1209,13 @@ test("the Code Mode surface hides every active Suite Tool without changing the v
 		theme,
 		{ ...context, lastComponent: callComponent } as never,
 	);
-	expect(renderLines(callComponent).join("\n")).toContain("Searching 1 Tool catalog");
+	expect(renderLines(callComponent)).toEqual([]);
 	expect(resultComponent ? renderLines(resultComponent) : []).toEqual([]);
 	runtime.endTurn();
 	const compact = renderLines(callComponent).join("\n");
-	expect(compact).toContain("Searched 1 Tool catalog");
+	expect(compact).toBe("");
 	expect(compact).not.toContain("definitions");
+	expect(runtime.resolveGroup("search-1")).toMatchObject({ memberIds: ["search-1"] });
 
 	registrations.surface.enableEnvelope("codemode");
 	expect(harness.api.getActiveTools()).toEqual(["codemode", "tool_search", "outside"]);
@@ -1525,24 +1626,24 @@ test("settling an earlier group member preserves the latest source-order target"
 	runtime.clear();
 });
 
-test("one group spans Tool round-trips and Thinking, then closes on prose", () => {
+test("one retrieval group spans Tool round-trips and Thinking, then closes on prose", () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");
-	const edit = toolFromHarness(harness, "edit", "change-file");
+	const grep = toolFromHarness(harness, "grep", "search-pattern");
 	const runtime = getToolUiRuntime(harness.api);
 	const messages = [
 		assistant({ type: "thinking", thinking: "inspect" }, call("r1", "read", "a.ts")),
 		result("r1"),
-		assistant({ type: "thinking", thinking: "change" }, call("e1", "edit", "a.ts")),
+		assistant({ type: "thinking", thinking: "search" }, call("g1", "grep", "needle")),
 	];
 	runtime.startTurn(messages);
 	const first = settle(read, "r1", "a.ts");
-	const second = settle(edit, "e1", "a.ts");
-	expect(first.callLines.join("\n")).toContain("Changing 1 file, reading 1 file");
+	const second = settle(grep, "g1", "needle");
+	expect(first.callLines.join("\n")).toContain("Searching 1 pattern, reading 1 file");
 	expect(second.callLines).toEqual([]);
 
 	runtime.indexMessage(assistant({ type: "text", text: "Done." }));
-	expect(renderLines(first.callComponent).join("\n")).toContain("Changed 1 file, read 1 file");
+	expect(renderLines(first.callComponent).join("\n")).toContain("Searched 1 pattern, read 1 file");
 });
 
 test("multiple Bash calls render as separate operation blocks in native order", () => {
@@ -1743,7 +1844,7 @@ test("Code Mode preserves standalone Bash operation blocks in compact and expand
 	}
 });
 
-test("Activity Groups deduplicate canonical image paths and fetched URLs", () => {
+test("non-retrieval image and web Tools stay independent boundaries", () => {
 	const harness = apiHarness();
 	const view = toolFromHarness(harness, "view", "view-image");
 	const fetch = toolFromHarness(harness, "fetch", "fetch-page");
@@ -1756,29 +1857,30 @@ test("Activity Groups deduplicate canonical image paths and fetched URLs", () =>
 			call("f2", "fetch", "https://example.com/page#second"),
 		),
 	]);
-	const leader = settle(view, "v1", "./images/sample.png");
+	const first = settle(view, "v1", "./images/sample.png");
 	settle(view, "v2", "/project/images/sample.png");
 	settle(fetch, "f1", "HTTPS://EXAMPLE.COM:443/a/../page#first");
 	settle(fetch, "f2", "https://example.com/page#second");
 	runtime.endTurn();
 
-	expect(renderLines(leader.callComponent).join("\n")).toContain("Fetched 1 page, viewed 1 image");
+	expect(renderLines(first.callComponent).join("\n")).toContain("view-image");
+	expect(runtime.listGroups().map((group) => group.memberIds)).toEqual([["f2"], ["f1"], ["v2"], ["v1"]]);
 });
 
 test("projection rebuild rebinds grouped models to fresh Host row components", () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");
-	const edit = toolFromHarness(harness, "edit", "change-file");
+	const grep = toolFromHarness(harness, "grep", "search-pattern");
 	const runtime = getToolUiRuntime(harness.api);
-	const messages = [assistant(call("r1", "read", "a.ts"), call("e1", "edit", "b.ts")), result("r1"), result("e1")];
+	const messages = [assistant(call("r1", "read", "a.ts"), call("g1", "grep", "needle")), result("r1"), result("g1")];
 	runtime.indexMessages(messages, true);
 	settle(read, "r1", "a.ts");
-	settle(edit, "e1", "b.ts");
+	settle(grep, "g1", "needle");
 
 	runtime.resetProjection(messages);
 	const rebuiltLeader = settle(read, "r1", "a.ts");
-	const rebuiltFollower = settle(edit, "e1", "b.ts");
-	expect(renderLines(rebuiltLeader.callComponent).join("\n")).toContain("Changed 1 file, read 1 file");
+	const rebuiltFollower = settle(grep, "g1", "needle");
+	expect(renderLines(rebuiltLeader.callComponent).join("\n")).toContain("Searched 1 pattern, read 1 file");
 	expect(renderLines(rebuiltFollower.callComponent)).toEqual([]);
 });
 
@@ -1821,40 +1923,40 @@ test("projection replacement isolates reused IDs from stale rows, callbacks, and
 	expect(newInvalidations).toBe(1);
 	expect(scheduler.activeCount).toBe(0);
 	expect(renderLines(oldRow).join("\n")).not.toContain("Changed");
-	expect(renderLines(newRow).join("\n")).toContain("Changed 1 file");
+	expect(renderLines(newRow).join("\n")).toContain("edit new.ts · done");
 });
 
 test("a user input boundary prevents the next turn from reusing the previous group", () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");
-	const edit = toolFromHarness(harness, "edit", "change-file");
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
 	const first = settle(read, "r1", "a.ts");
 
 	runtime.observeUserBoundary();
 	runtime.startTurn();
-	runtime.indexMessage(assistant(call("e1", "edit", "b.ts")));
-	const second = settle(edit, "e1", "b.ts");
+	runtime.indexMessage(assistant(call("r2", "read", "b.ts")));
+	const second = settle(read, "r2", "b.ts");
 	expect(renderLines(first.callComponent).join("\n")).toContain("Read 1 file");
-	expect(renderLines(first.callComponent).join("\n")).not.toContain("Changed");
-	expect(renderLines(second.callComponent).join("\n")).toContain("Changing 1 file");
+	expect(renderLines(second.callComponent).join("\n")).toContain("Reading 1 file");
+	expect(runtime.resolveGroup("r1")).toMatchObject({ memberIds: ["r1"] });
+	expect(runtime.resolveGroup("r2")).toMatchObject({ memberIds: ["r2"] });
 });
 
-test("an automatic continuation reuses the previous non-Bash tail", () => {
+test("turn end closes retrieval before an automatic continuation", () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");
-	const edit = toolFromHarness(harness, "edit", "change-file");
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
 	const leader = settle(read, "r1", "a.ts");
 	runtime.endTurn();
 
 	runtime.startTurn();
-	runtime.indexMessage(assistant(call("e1", "edit", "b.ts")));
-	settle(edit, "e1", "b.ts");
-	expect(runtime.resolveGroup("r1")).toMatchObject({ memberIds: ["r1", "e1"] });
-	expect(renderLines(leader.callComponent).join("\n")).toContain("Changing 1 file, reading 1 file");
+	runtime.indexMessage(assistant(call("r2", "read", "b.ts")));
+	settle(read, "r2", "b.ts");
+	expect(runtime.resolveGroup("r1")).toMatchObject({ memberIds: ["r1"] });
+	expect(runtime.resolveGroup("r2")).toMatchObject({ memberIds: ["r2"] });
+	expect(renderLines(leader.callComponent).join("\n")).toContain("Read 1 file");
 });
 
 test("Tool results, Thinking, and hidden Custom Messages keep the live group open", () => {
@@ -1985,23 +2087,81 @@ test("unsupported Tool results never enter the owned pending-result cache or lea
 test("Ctrl+O restores every member and bounded result detail", () => {
 	const harness = apiHarness();
 	const read = toolFromHarness(harness, "read", "read-file");
-	const edit = toolFromHarness(harness, "edit", "change-file");
+	const grep = toolFromHarness(harness, "grep", "search-pattern");
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.indexMessages(
-		[assistant(call("r1", "read", "a.ts"), call("e1", "edit", "b.ts")), result("r1"), result("e1")],
+		[assistant(call("r1", "read", "a.ts"), call("g1", "grep", "needle")), result("r1"), result("g1")],
 		true,
 	);
 
 	const compactRead = settle(read, "r1", "a.ts");
-	const compactEdit = settle(edit, "e1", "b.ts");
-	expect(compactRead.callLines.join("\n")).toContain("Changed 1 file, read 1 file");
-	expect(compactEdit.callLines).toEqual([]);
+	const compactGrep = settle(grep, "g1", "needle");
+	expect(compactRead.callLines.join("\n")).toContain("Searched 1 pattern, read 1 file");
+	expect(compactGrep.callLines).toEqual([]);
 
 	const expandedRead = settle(read, "r1", "a.ts", false, true);
-	const expandedEdit = settle(edit, "e1", "b.ts", false, true);
+	const expandedGrep = settle(grep, "g1", "needle", false, true);
 	expect(expandedRead.callLines.join("\n")).toContain("read-file");
-	expect(expandedEdit.callLines.join("\n")).toContain("change-file");
+	expect(expandedGrep.callLines.join("\n")).toContain("search-pattern");
 	expect(expandedRead.resultLines.join("\n")).toContain("MODEL_VISIBLE");
+	const formatted = [...expandedRead.resultLines, ...expandedGrep.resultLines].join("\n");
+	expect(formatted).not.toContain("Call ID:");
+	expect(formatted).not.toContain("Arguments");
+	expect(formatted).not.toContain("Result content");
+	expect(formatted).not.toContain("Details");
+});
+
+test("Ctrl+O restores retrieval Bash as an Operation Block in source order", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const bash = toolFromHarness(harness, "bash", "run-command");
+	const runtime = getToolUiRuntime(harness.api);
+	const command = "cat a.ts";
+	runtime.indexMessages(
+		[assistant(call("r1", "read", "a.ts"), bashCall("b1", command)), result("r1"), result("b1", "contents")],
+		true,
+	);
+
+	const compactRead = settle(read, "r1", "a.ts");
+	const compactBash = settle(bash, "b1", command, false, false, "contents");
+	expect(compactRead.callLines.join("\n")).toContain("Read 2 files");
+	expect(compactBash.callLines).toEqual([]);
+
+	const expandedRead = settle(read, "r1", "a.ts", false, true);
+	const expandedBash = settle(bash, "b1", command, false, true, "contents");
+	expect(expandedRead.callLines.join("\n")).toContain("read-file");
+	expect(expandedBash.callLines).toEqual([" • Bash(cat a.ts)", "  ⎿  contents"]);
+});
+
+test("native Read deduplicates paths while Search and List count invocations", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const grep = toolFromHarness(harness, "grep", "search-pattern");
+	const list = toolFromHarness(harness, "ls", "list-directory");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages(
+		[
+			assistant(
+				call("r1", "read", "./a.ts"),
+				call("r2", "read", "/project/a.ts"),
+				call("g1", "grep", "needle"),
+				call("g2", "grep", "needle"),
+				call("l1", "ls", "."),
+				call("l2", "ls", "."),
+			),
+			...["r1", "r2", "g1", "g2", "l1", "l2"].map((id) => result(id)),
+		],
+		true,
+	);
+	const leader = settle(read, "r1", "./a.ts");
+	settle(read, "r2", "/project/a.ts");
+	settle(grep, "g1", "needle");
+	settle(grep, "g2", "needle");
+	settle(list, "l1", ".");
+	settle(list, "l2", ".");
+	expect(renderLines(leader.callComponent).join("\n")).toContain(
+		"Searched 2 patterns, read 1 file, listed 2 directories",
+	);
 });
 
 test("compact projection hides text bodies and explains unavailable image previews", () => {
@@ -2163,14 +2323,14 @@ test("failed mutations never produce successful change clauses", () => {
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.indexMessages([assistant(call("e1", "edit", "broken.ts")), result("e1", "EDIT FAILED", true)], true);
 	const output = settle(mutation, "e1", "broken.ts", true).callLines.join("\n");
-	expect(output).toContain("EDIT FAILED");
+	expect(output).toContain("error");
 	expect(output).not.toContain("Changed");
 });
 
-test("effective non-Bash group outcomes recover only exact retries or canonical effect keys", () => {
-	const project = (category: "change-file", firstValue: string, secondValue: string, secondError = false) => {
+test("retrieval group outcomes keep failures visible after exact retries", () => {
+	const project = (category: "read-file", firstValue: string, secondValue: string, secondError = false) => {
 		const harness = apiHarness();
-		const tool = toolFromHarness(harness, "edit", category);
+		const tool = toolFromHarness(harness, "read", category);
 		const runtime = getToolUiRuntime(harness.api);
 		const messages = [
 			assistant(call("first", tool.name, firstValue), call("second", tool.name, secondValue)),
@@ -2183,7 +2343,7 @@ test("effective non-Bash group outcomes recover only exact retries or canonical 
 		return { messages, runtime, tool };
 	};
 
-	const retry = project("change-file", "same.ts", "same.ts");
+	const retry = project("read-file", "same.ts", "same.ts");
 	expect(retry.runtime.resolveGroup("first")).toMatchObject({
 		state: "success",
 		summary: expect.stringContaining("1 failed"),
@@ -2196,23 +2356,52 @@ test("effective non-Bash group outcomes recover only exact retries or canonical 
 		summary: expect.stringContaining("1 failed"),
 	});
 
-	const effect = project("change-file", "./a.ts", "/project/a.ts");
+	const effect = project("read-file", "./a.ts", "/project/a.ts");
 	expect(effect.runtime.resolveGroup("first")).toMatchObject({
 		state: "success",
 		summary: expect.stringContaining("1 failed"),
 	});
 
-	const unknown = project("change-file", "a.ts", "b.ts");
+	const unknown = project("read-file", "a.ts", "b.ts");
 	expect(unknown.runtime.resolveGroup("first")).toMatchObject({
 		state: "warning",
 		summary: expect.stringContaining("1 failed"),
 	});
 
-	const failed = project("change-file", "a.ts", "b.ts", true);
+	const failed = project("read-file", "a.ts", "b.ts", true);
 	expect(failed.runtime.resolveGroup("first")).toMatchObject({
 		state: "error",
 		summary: expect.stringContaining("2 failed"),
 	});
+});
+
+test("folded retrieval exposes failed, rejected, and cancelled calls plus the first reason", () => {
+	const harness = apiHarness();
+	const read = toolFromHarness(harness, "read", "read-file");
+	const runtime = getToolUiRuntime(harness.api);
+	runtime.indexMessages(
+		[
+			assistant(
+				call("ok", "read", "ok.ts"),
+				call("failed", "read", "failed.ts"),
+				call("rejected", "read", "blocked.ts"),
+				call("cancelled", "read", "cancelled.ts"),
+			),
+			result("ok"),
+			result("failed", "FIRST REASON\nstack", true),
+			result("rejected", "Tool execution was blocked by policy", true),
+			result("cancelled", "Operation was cancelled", true),
+		],
+		true,
+	);
+	const leader = settle(read, "ok", "ok.ts");
+	settle(read, "failed", "failed.ts", true, false, "FIRST REASON\nstack");
+	settle(read, "rejected", "blocked.ts", true, false, "Tool execution was blocked by policy");
+	settle(read, "cancelled", "cancelled.ts", true, false, "Operation was cancelled");
+	const compact = renderLines(leader.callComponent).join("\n");
+	expect(compact).toContain("1 failed, 1 rejected, 1 cancelled");
+	expect(compact).toContain("FIRST REASON");
+	expect(runtime.resolveGroup("ok")).toMatchObject({ state: "warning" });
 });
 
 test("successful infrastructure-only groups disappear but expand normally", () => {
@@ -2223,20 +2412,20 @@ test("successful infrastructure-only groups disappear but expand normally", () =
 			content: [{ type: "text", text: "done" }],
 			details: { source: "internal" },
 		}),
-		label: "internal",
-		name: "internal",
+		label: "ctx_reduce",
+		name: "ctx_reduce",
 		parameters: Params,
 	};
 	registerSuiteOwnedTool(harness.api, original, {
 		activity: { categories: [], classify: () => [], silentSuccess: true },
-		label: "internal",
+		label: "ctx_reduce",
 		summarize: () => "done",
 	});
-	const tool = harness.tools.get("internal") as ToolDefinition<typeof Params, { source: string }>;
+	const tool = harness.tools.get("ctx_reduce") as ToolDefinition<typeof Params, { source: string }>;
 	const runtime = getToolUiRuntime(harness.api);
-	runtime.indexMessages([assistant(call("i1", "internal", "context")), result("i1")], true);
+	runtime.indexMessages([assistant(call("i1", "ctx_reduce", "context")), result("i1")], true);
 	expect(settle(tool, "i1", "context").callLines).toEqual([]);
-	expect(settle(tool, "i1", "context", false, true).callLines.join("\n")).toContain("internal");
+	expect(settle(tool, "i1", "context", false, true).callLines.join("\n")).toContain("ctx_reduce");
 	const [details] = runtime.listGroups();
 	expect(details?.summary).toBe("Internal activity");
 	expect(details ? runtime.groupActivities(details.id) : []).toHaveLength(1);
