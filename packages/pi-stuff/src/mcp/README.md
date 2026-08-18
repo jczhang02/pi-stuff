@@ -18,3 +18,52 @@ before it reaches model context. Discovery uses ranked literal terms; regex
 search and its heavyweight execution backends are intentionally omitted.
 Server-initiated sampling and elicitation are not advertised, so MCP callbacks
 cannot open native prompts behind the shared Command Dialog contract.
+
+## Accepted `/mcp` readability target
+
+**Decision update:** 2026-08-17
+**Status:** Accepted; implementation pending.
+
+Bare `/mcp` remains a read-only server status overview. It does not add a selectable detail mode or duplicate setup,
+OAuth, Tool discovery, or protocol inspection. Operational subcommands, `/mcp-auth`, `.mcp.json`, `/reload`, and the
+single gateway Tool retain their existing authority.
+
+The server name is each row's primary identity. Use a real state icon plus the full state word:
+
+```text
+MCP · 2/3 connected · 14 tools · 3 resources
+
+✓ filesystem · connected          8 tools · 1 resource
+! github · needs auth             run /mcp-auth github
+× browser · failed 12s ago        run /mcp reconnect browser
+■ legacy · disabled
+○ docs · cached                    6 tools · 2 resources
+
+Shift+↑/↓ page · Esc close · configure in .mcp.json
+```
+
+Use `✓` connected, `○` cached or not connected, `×` failed, `!` needs auth, and `■` disabled. Initial loading uses
+`● initializing`. Keep the state word because cached, not connected, and disabled are materially different even when a
+compact icon category is shared.
+
+Rows stay in `.mcp.json` declaration order and update in place; a connection change must not reorder the server list.
+For `needs auth`, show the explicit `/mcp-auth <server>` next step. For a recent failure, show
+`/mcp reconnect <server>`. Actions are guidance text, not inline controls. Disabled and ordinary lazy-disconnected
+servers need no warning action.
+
+Show per-server and aggregate resource counts when reported, in addition to Tool counts. At narrow widths preserve
+state icon, server name, and state word; then preserve the actionable command for auth or failure before capability
+counts. Omit zero or unavailable capability counts rather than adding placeholders.
+
+Up and Down scroll one line. PageUp/PageDown and Shift+Up/Down scroll one visible page only when the list overflows.
+Keep the configuration hint and Escape path; Enter and Space may retain their current close behavior without being
+advertised. An empty page says `No MCP servers configured.` followed by `Add .mcp.json, then run /reload.`
+
+The status snapshot and Dialog continue to exclude server URLs, executable commands, arguments, environment values,
+OAuth data, tokens, detailed failure messages, and other configuration secrets. Detailed operational failures belong
+in bounded `/diagnostics`; Tool call protocol belongs in `/tools`.
+
+The current implementation already has the correct live snapshot, lazy connection semantics, declaration order,
+sanitized server names, aggregate counts, bounded fitting, static-page interaction, and sensitive-data boundary. Its
+remaining deltas are color-only circles, omitted resource counts, no status-specific next step, one-line empty copy,
+and missing Shift+Arrow page aliases.

@@ -23,6 +23,67 @@ retaining their count and latest details.
 Browser-owned consoles and detached child-process logs remain explicit exceptions because they do not write into Pi's
 Host TUI. Repository safety checks reject any new Host-side console call outside that narrow allowlist.
 
+## Accepted `/diagnostics` readability update
+
+**Decision update:** 2026-08-17
+**Status:** Accepted; implementation pending.
+
+This update changes only the existing current-process Command Dialog. Record ownership, notice acknowledgement,
+deduplication, bounds, redaction, non-persistence, and the separation from Session, model context, transcript, and
+Statusline remain unchanged.
+
+The list's primary information is what happened. Capability is the source, not the headline. A compact row is the `›`
+focus marker, severity icon, Capability, summary, then repeat count and latest age:
+
+```text
+Diagnostics · 3 records
+
+› × Agents          Failed to read Agent transcript       ×3 · 2m
+  ! Background Work Could not confirm process ownership         5m
+  i Context         Retried a stale derived-state refresh      now
+```
+
+Use `i` for information, `!` for warning, and `×` for error. Do not use the Dialog lifecycle `●` running icon for an
+informational record. `›` remains selection only. At narrow widths preserve icon, Capability, and a useful part of the
+summary before age; preserve a repeat count ahead of age when the record is deduplicated.
+
+Records remain ordered by their most recent report or update, newest first. An update moves its deduplicated record to
+the front but does not change the focused record. When the list exceeds its visible window, show `… N newer` and
+`… N older`; Up and Down move one record, and PageUp/PageDown plus Shift+Up/Down move one visible page. The page hint
+appears only on overflow. `c clear` keeps its current immediate, current-process-only behavior; this history is bounded,
+ephemeral display state rather than durable user data.
+
+Detail uses the Capability as breadcrumb, the summary as its visual anchor, and full severity text in Header metadata:
+
+```text
+Diagnostics / Agents
+× error · 3 occurrences · latest 2m ago
+
+Failed to read Agent transcript
+
+│ Action
+Run /agents again after the session file becomes readable.
+
+│ Details
+...latest bounded and redacted diagnostic detail...
+```
+
+Omit `Action` when no user action was recorded. `Details` shows the latest bounded record content; when none exists it
+says `No additional details were recorded.` without inventing an explanation. The short `│` mark appears only on the
+section heading. PageUp/PageDown and Shift+Up/Down scroll by a page; Up and Down scroll by one line. A live update to the
+selected deduplicated record refreshes its count, age, action, and latest details without moving a user to another
+record or resetting a valid reading position.
+
+At low height preserve the Header, severity and summary, selected row or first detail line, and Escape path before age,
+counts, optional action, or surrounding records. Sanitization, credential redaction, record/detail bounds, and observer
+isolation remain mandatory and are never reduced for visual simplicity.
+
+The current implementation already has the right data boundary, deduplication, redaction, severity colors, bounded
+history, current-process clear, selection identity, detail scrolling, and low-height fitting. Its remaining presentation
+deltas are `●` for informational severity, Capability receiving more emphasis than the summary, no list overflow/page
+navigation, generic Severity/Occurred/Summary rows in detail, missing short marked sections, and missing Shift+Arrow
+page aliases.
+
 ## Consequences
 
 - Internal recovery warnings no longer appear as raw text inside the editor.

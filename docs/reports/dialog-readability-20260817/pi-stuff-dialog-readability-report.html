@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<!-- ==================================================================
+     LONG DOCUMENT TEMPLATE · parchment design system
+     多页 A4 白皮书/技术报告/年度总结
+     结构：封面 -> 目录 -> 执行摘要 -> 正文章节 -> 附录
+     ================================================================== -->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Pi Stuff Dialog 可读性重做报告</title>
+<meta name="author" content="Pi Stuff">
+<meta name="description" content="检查 8 个 Command Dialog 的共同阅读语言、专用信息结构、具体示例与待实现差距。">
+<meta name="keywords" content="Pi Stuff, Command Dialog, 可读性, Agent, 工具界面">
+<meta name="generator" content="Kami">
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 22mm 22mm 22mm;
+    background: #f5f4ed;
+
+    @top-right {
+      content: string(section-title);
+      font-family: "TsangerJinKai02", "Source Han Serif SC",
+                   "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+      font-size: 8pt;
+      color: #6b6a64;
+    }
+
+    @bottom-center {
+      content: counter(page) "  ·  Pi Stuff Dialog 可读性重做报告";
+      font-family: "TsangerJinKai02", "Source Han Serif SC",
+                   "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+      font-size: 9pt;
+      color: #6b6a64;
+    }
+  }
+
+  @page:first {
+    @top-right { content: ""; }
+    @bottom-center { content: ""; }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --parchment: #f5f4ed;
+    --ivory:     #faf9f5;
+    --near-black:#141413;
+    --dark-warm: #3d3d3a;
+    --olive:     #504e49;
+    --stone:     #6b6a64;
+    --brand:     #1B365D;
+    --border:    #e8e6dc;
+    --border-soft:#e5e3d8;
+    --tag-bg:    #E4ECF5;
+    --serif: "TsangerJinKai02", "Source Han Serif SC", "Source Han Serif CN", "Noto Serif CJK SC", "Noto Serif SC", "Songti SC", "STSong", "SimSun", Georgia, serif;
+    --sans: var(--serif);
+
+    --rhythm-module:  14pt;
+    --rhythm-section: 18pt;
+  }
+
+  html, body { background: #f5f4ed; }
+
+  @media screen {
+    body { max-width: 210mm; margin: 0 auto; padding: 20mm 22mm 22mm 22mm; }
+  }
+
+  body {
+    color: #141413;
+    font-family: var(--serif);
+    font-size: 10pt;
+    line-height: 1.55;
+    letter-spacing: 0.3pt;
+    widows: 3;
+    orphans: 3;
+  }
+
+  .sans {
+    font-family: var(--sans);
+  }
+
+  /* ========== COVER ========== */
+  .cover {
+    min-height: 240mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 40mm 0 0 0;
+    break-after: page;
+  }
+  .cover-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8pt;
+    font-family: var(--sans);
+    font-size: 10pt;
+    color: #1B365D;
+    letter-spacing: 1.5pt;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-bottom: 18pt;
+  }
+  .cover-eyebrow::before {
+    content: "";
+    width: 9pt;
+    height: 1.5pt;
+    border-radius: 0.75pt;
+    background: #1B365D;
+    flex-shrink: 0;
+  }
+  .cover-title {
+    font-size: 36pt;
+    font-weight: 500;
+    color: #141413;
+    line-height: 1.15;
+    letter-spacing: 0.3pt;
+    margin-bottom: 16pt;
+  }
+  .cover-sub {
+    font-family: var(--sans);
+    font-size: 14pt;
+    color: #504e49;
+    line-height: 1.5;
+    max-width: 85%;
+    margin-bottom: 30pt;
+  }
+  .cover-meta {
+    font-family: var(--sans);
+    font-size: 10pt;
+    color: #6b6a64;
+    line-height: 1.5;
+  }
+  .cover-meta strong {
+    color: #3d3d3a;
+    font-weight: 500;
+  }
+
+  /* ========== TOC（目录）========== */
+  .toc { break-after: page; }
+  .toc h2 {
+    font-size: 22pt;
+    font-weight: 500;
+    margin-bottom: 14pt;
+    border-left: 2.5pt solid #1B365D;
+    border-radius: 1.5pt;
+    padding-left: 8pt;
+  }
+  .toc-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6pt 0;
+    border-bottom: 0.3pt dotted #e8e6dc;
+    font-size: 11pt;
+  }
+  .toc-item:last-of-type { border-bottom: none; }
+  .toc-num {
+    color: #1B365D;
+    font-weight: 500;
+    min-width: 30pt;
+  }
+  .toc-title {
+    flex: 1;
+    color: #141413;
+    padding-left: 6pt;
+    text-decoration: none;
+    display: flex;
+    justify-content: space-between;
+    gap: 12pt;
+  }
+  .toc-title[href]::after {
+    content: target-counter(attr(href), page);
+    color: #6b6a64;
+    font-variant-numeric: tabular-nums;
+    margin-left: auto;
+  }
+
+  /* ========== HEADINGS ========== */
+  h1 {
+    font-size: 22pt;
+    font-weight: 500;
+    line-height: 1.2;
+    margin: 0 0 10pt 0;
+    border-left: 2.5pt solid #1B365D;
+    border-radius: 1.5pt;
+    padding-left: 8pt;
+    color: #141413;
+    break-after: avoid;
+    string-set: section-title content();
+  }
+
+  .running-title { string-set: section-title content(); }
+
+  h2 {
+    font-size: 16pt;
+    font-weight: 500;
+    line-height: 1.25;
+    margin: 24pt 0 8pt 0;
+    color: #141413;
+    break-after: avoid;
+  }
+
+  h3 {
+    font-size: 13pt;
+    font-weight: 500;
+    line-height: 1.3;
+    margin: 18pt 0 6pt 0;
+    color: #3d3d3a;
+    break-after: avoid;
+  }
+
+  .chapter-num {
+    font-family: var(--sans);
+    font-size: 10pt;
+    color: #1B365D;
+    letter-spacing: 1pt;
+    text-transform: uppercase;
+    margin-bottom: 6pt;
+  }
+
+  /* ========== PARAGRAPHS ========== */
+  p {
+    margin: 0 0 10pt 0;
+    line-height: 1.55;
+    color: #141413;
+    widows: 2;
+    orphans: 2;
+  }
+
+  .lead {
+    font-size: 12pt;
+    line-height: 1.55;
+    color: #3d3d3a;
+    margin-bottom: 14pt;
+  }
+
+  .hl { color: #1B365D; font-weight: 500; }
+  strong { font-weight: 500; }
+
+  /* ========== LISTS ========== */
+  ul, ol {
+    margin: 6pt 0 10pt 0;
+    padding-left: 20pt;
+    line-height: 1.55;
+  }
+  ul li::marker { color: #1B365D; }
+  ol li::marker { color: #1B365D; font-weight: 500; }
+
+  /* ========== QUOTE ========== */
+  blockquote, .quote {
+    border-left: 2pt solid #1B365D;
+    margin: 12pt 0;
+    padding: 4pt 0 4pt 16pt;
+    color: #504e49;
+    line-height: 1.55;
+    break-inside: avoid;
+  }
+  blockquote .cite, .quote .cite {
+    display: block;
+    font-size: 9pt;
+    color: #6b6a64;
+    margin-top: 4pt;
+  }
+
+  /* ========== CODE ========== */
+  /* Mono first for English glyphs, then CJK fallback so Chinese comments
+     inside code/pre render correctly. A mono-only chain causes missing
+     glyphs rendered as "?" or missing-glyph boxes in WeasyPrint when the system lacks
+     a mono font with CJK coverage. */
+  code {
+    font-family: "JetBrains Mono", "SF Mono", Consolas,
+                 "TsangerJinKai02", "Source Han Serif SC",
+                 "Noto Serif CJK SC", "Songti SC", monospace;
+    font-size: 9pt;
+    background: #faf9f5;
+    padding: 1pt 4pt;
+    border-radius: 2pt;
+    color: #3d3d3a;
+  }
+  pre {
+    font-family: "JetBrains Mono", "SF Mono", Consolas,
+                 "TsangerJinKai02", "Source Han Serif SC",
+                 "Noto Serif CJK SC", "Songti SC", monospace;
+    font-size: 9pt;
+    line-height: 1.5;
+    background: #faf9f5;
+    border-radius: 4pt;
+    padding: 10pt 14pt;
+    margin: 10pt 0;
+    white-space: pre-wrap;
+    color: #141413;
+    break-inside: avoid;
+  }
+  pre code { background: transparent; padding: 0; font-size: inherit; }
+
+  /* ========== TABLE (kami-table) ========== */
+  table, .kami-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+    margin: 12pt 0;
+    break-inside: avoid;
+  }
+  table th, .kami-table th {
+    text-align: left;
+    font-weight: 500;
+    color: #3d3d3a;
+    padding: 6pt 8pt;
+    border-bottom: 1pt solid #e8e6dc;
+    background: transparent;
+  }
+  table td, .kami-table td {
+    padding: 5pt 8pt;
+    border-bottom: 0.3pt solid #e5e3d8;
+    vertical-align: top;
+  }
+  table.compact th, .kami-table.compact th { padding: 3pt 6pt; font-size: 8pt; }
+  table.compact td, .kami-table.compact td { padding: 2pt 6pt; font-size: 8pt; line-height: 1.4; }
+  table.financial td:not(:first-child), .kami-table.financial td:not(:first-child) {
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  table.financial th:not(:first-child), .kami-table.financial th:not(:first-child) { text-align: right; }
+  table.striped tbody tr:nth-child(even) td, .kami-table.striped tbody tr:nth-child(even) td {
+    background: #faf9f5;
+  }
+  table .total td, .kami-table .total td {
+    font-weight: 500; border-top: 1pt solid #1B365D; border-bottom: none; color: #141413;
+  }
+
+  /* ========== CALLOUT ========== */
+  .callout {
+    background: #faf9f5;
+    border-left: 2pt solid #1B365D;
+    padding: 10pt 14pt;
+    border-radius: 3pt;
+    margin: 12pt 0;
+    line-height: 1.55;
+    break-inside: avoid;
+  }
+  .callout blockquote,
+  .callout .quote {
+    border-left: none;
+    padding-left: 0;
+    margin: 6pt 0;
+    color: #504e49;
+  }
+  .callout blockquote:first-child,
+  .callout .quote:first-child { margin-top: 0; }
+  .callout blockquote:last-child,
+  .callout .quote:last-child  { margin-bottom: 0; }
+
+  .takeaway {
+    background: #faf9f5;
+    border-radius: 4pt;
+    padding: 10pt 14pt;
+    margin: 14pt 0;
+    break-inside: avoid;
+  }
+  .takeaway-label {
+    font-family: var(--sans);
+    font-size: 9pt;
+    color: #1B365D;
+    letter-spacing: 0.5pt;
+    text-transform: uppercase;
+    margin-bottom: 4pt;
+  }
+
+  /* ========== TAG ========== */
+  .tag {
+    display: inline-block;
+    background: #E4ECF5;
+    color: #1B365D;
+    font-family: var(--sans);
+    font-size: 9pt;
+    font-weight: 500;
+    padding: 1pt 6pt;
+    border-radius: 3pt;
+    margin-right: 4pt;
+  }
+
+  /* ========== FIGURE ========== */
+  figure {
+    margin: 14pt 0;
+    break-inside: avoid;
+  }
+  figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 85mm;
+    object-fit: contain;
+    max-width: 100%;
+    border-radius: 4pt;
+  }
+  #ch-static figure img { max-height: 62mm; }
+  .compact-examples {
+    display: flex;
+    gap: 10pt;
+    margin: 10pt 0;
+    break-inside: avoid;
+  }
+  .compact-examples > div { flex: 1; min-width: 0; }
+  .compact-examples h2 { margin: 0 0 5pt; font-size: 14pt; }
+  .compact-examples pre {
+    margin: 0;
+    padding: 8pt;
+    font-size: 7.8pt;
+    line-height: 1.35;
+  }
+  /* Inline diagrams (e.g. a Mermaid-sourced SVG via scripts/mermaid_normalize.py):
+     center and cap width so the figure never bleeds past the text column. */
+  figure svg {
+    display: block;
+    margin: 0 auto;
+    max-width: 78%;
+    height: auto;
+  }
+  figcaption {
+    font-family: var(--sans);
+    font-size: 9pt;
+    color: #6b6a64;
+    margin-top: 6pt;
+    text-align: center;
+  }
+
+  /* ========== EXECUTIVE SUMMARY ========== */
+  .exec-summary {
+    background: #faf9f5;
+    border-left: 1.4pt solid #1B365D;
+    border-radius: 6pt;
+    padding: 16pt 20pt;
+    margin: 14pt 0;
+    break-inside: avoid;
+  }
+  .exec-summary h2 {
+    margin-top: 0;
+    font-size: 13pt;
+  }
+
+  /* ========== CHAPTER BREAK ========== */
+  .chapter { break-before: page; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div>
+    <div class="cover-eyebrow">DESIGN REVIEW · DIALOG READABILITY</div>
+    <div class="cover-title">Pi Stuff Dialog<br>可读性重做报告</div>
+    <div class="cover-sub">设计决策、具体示例与浅色预览。用于检查 8 个现有 Command Dialog 是否真的更容易读，而不是只看起来更统一。</div>
+  </div>
+  <div class="cover-meta">
+    <strong>Pi Stuff</strong><br>
+    Review draft  ·  2026-08-17<br>
+    已接受的设计决策 · UI 实现仍待完成
+  </div>
+</section>
+
+<section class="toc">
+  <h2>目录</h2>
+  <div class="toc-item"><span class="toc-num">01</span><a class="toc-title" href="#ch-summary">执行摘要</a></div>
+  <div class="toc-item"><span class="toc-num">02</span><a class="toc-title" href="#ch-scope">范围与共同语言</a></div>
+  <div class="toc-item"><span class="toc-num">03</span><a class="toc-title" href="#ch-agents">/agents</a></div>
+  <div class="toc-item"><span class="toc-num">04</span><a class="toc-title" href="#ch-work">/tools 与 /tasks</a></div>
+  <div class="toc-item"><span class="toc-num">05</span><a class="toc-title" href="#ch-context">/ctx、/diagnostics 与 /btw</a></div>
+  <div class="toc-item"><span class="toc-num">06</span><a class="toc-title" href="#ch-static">/mcp 与 /rtk</a></div>
+  <div class="toc-item"><span class="toc-num">07</span><a class="toc-title" href="#ch-implementation">实现顺序与验收</a></div>
+  <div class="toc-item"><span class="toc-num">08</span><a class="toc-title" href="#ch-appendix">附录</a></div>
+</section>
+
+<section class="chapter" id="ch-summary">
+  <div class="chapter-num">01 · Executive Summary</div>
+  <h1>执行摘要</h1>
+
+  <p class="lead">这次重做不是把所有 Dialog 画成同一张表，而是统一它们的阅读语言，再让每个 Dialog 按自己的任务展示最重要的信息。共同规则负责降低学习成本，各自的内容结构负责让用户在几秒内看懂当前页面。</p>
+
+  <div class="exec-summary">
+    <h2>先说结论</h2>
+    <ul>
+      <li>共有 8 个现有非 SettingsList Command Dialog 进入本次讨论，设计均已接受，代码实现仍待完成。</li>
+      <li>所有状态都使用有固定含义的图标，<span class="sans">›</span> 只表示当前选中项，不再同时承担状态含义。</li>
+      <li>PageUp/PageDown 保留，同时增加 Shift+Up/Down，照顾没有独立翻页键的 60% 键盘。</li>
+      <li>所有详情页使用短 <span class="sans">│</span> 标出板块标题，板块正文不继续缩进，避免三重缩进。</li>
+      <li>Conversation Transcript、SettingsList、Agent roster、Todo 和 Statusline 不在这次 Dialog 重做范围内。</li>
+    </ul>
+  </div>
+
+  <p>报告标题：Pi Stuff Dialog 可读性重做报告。</p>
+
+  <table class="kami-table striped">
+    <thead><tr><th>这份报告里的标记</th><th>意思</th></tr></thead>
+    <tbody>
+      <tr><td><strong>已决定</strong></td><td>设计已经写入 ADR 或模块 README，可作为实现依据。</td></tr>
+      <tr><td><strong>待实现</strong></td><td>当前源代码仍是旧页面，预览图不能当成已经上线的截图。</td></tr>
+      <tr><td><strong>不在范围</strong></td><td>本次不顺手重做 Transcript、SettingsList、Roster、Todo 或 Statusline。</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout"><strong>怎样检查这份报告：</strong>先看每页顶部的“一句话判断”，再看等宽示例。生成图只帮助检查层级、密度和浅色视觉，精确文案与图标含义以等宽示例和表格为准。</div>
+</section>
+
+<section class="chapter" id="ch-scope">
+  <div class="chapter-num">02 · Scope and Shared Grammar</div>
+  <h1>范围与共同语言</h1>
+
+  <h2>先统一阅读语言，不统一内容模板</h2>
+  <p class="lead">8 个 Dialog 应该让人一眼认出它们属于同一个产品，但不应该强迫它们展示同样的板块。共同语言只管选择、状态、板块、翻页和退出，各 Dialog 仍按自己的任务组织内容。</p>
+  <p>共同语言包含 5 件事：<code>›</code> 只表示选中，状态由固定图标表达，详情板块用短 <code>│</code> 标题，翻页同时支持 PageUp/PageDown 与 Shift+Up/Down，Esc 始终沿着详情、列表、Dialog 的层级返回。用户学会一次，就能在 8 个页面复用。</p>
+  <p>真正需要区别的是内容。例如 <code>/agents</code> 要围绕 Agent 名称、任务和活动来读，<code>/mcp</code> 要快速看服务器是否可用，<code>/ctx</code> 要先看上下文用了多少。把它们硬塞进同一套 State、Task、Detail 行，只会让页面看起来整齐，却不好读。</p>
+
+  <h2>本次需要检查的 8 个 Dialog</h2>
+  <table class="kami-table striped">
+    <thead><tr><th>命令</th><th>用户打开它时最想知道什么</th><th>页面形状</th></tr></thead>
+    <tbody>
+      <tr><td><code>/agents</code></td><td>哪个 Agent，正在做什么，完整活动与结果是什么</td><td>列表 + 多层详情</td></tr>
+      <tr><td><code>/tools</code></td><td>这一段工具工作做了什么，某次调用的详情是什么</td><td>Activity 列表 + 调用详情</td></tr>
+      <tr><td><code>/tasks</code></td><td>现在还有哪些后台工作，输出或监看证据是什么</td><td>当前工作列表 + 类型专用详情</td></tr>
+      <tr><td><code>/ctx</code></td><td>上下文用了多少，哪里需要注意，现在能做什么</td><td>状态概览 + 操作流程</td></tr>
+      <tr><td><code>/diagnostics</code></td><td>出了什么问题，我现在能做什么</td><td>问题列表 + 诊断详情</td></tr>
+      <tr><td><code>/btw</code></td><td>这个问题的答案是什么，历史答案在哪里</td><td>直接答案 + 成功历史</td></tr>
+      <tr><td><code>/mcp</code></td><td>每个服务器是否可用，是否需要认证或重连</td><td>静态状态页</td></tr>
+      <tr><td><code>/rtk</code></td><td>运行环境是否可信，哪些行为开启，本次节省多少</td><td>静态检查页</td></tr>
+    </tbody>
+  </table>
+
+  <h2>共同的状态与选择语言</h2>
+  <p>“统一图标”不等于每个图标在所有页面都只有一个单词。它统一的是大类：空心圆常表示尚未进入稳定工作，实心圆表示正在进行，感叹号表示需要注意，勾表示成功，叉表示失败，方块表示停止或禁用。详情里仍保留完整状态词，避免用户只靠颜色或记图标猜意思。</p>
+  <table class="kami-table compact">
+    <thead><tr><th>页面</th><th>紧凑图标</th><th>完整状态词仍然出现在哪里</th></tr></thead>
+    <tbody>
+      <tr><td>Agent</td><td><code>○ ● ! ◐ ↻ ✓ × ■</code></td><td>详情页 Header</td></tr>
+      <tr><td>Tool Activity</td><td><code>● ✓ × ! ■</code></td><td>Activity 详情 Header</td></tr>
+      <tr><td>Diagnostics</td><td><code>i ! ×</code></td><td>详情页严重程度文字</td></tr>
+      <tr><td>MCP</td><td><code>✓ ○ × ! ■ ●</code></td><td>每一行服务器状态词</td></tr>
+      <tr><td>RTK</td><td><code>✓ ○ ! ×</code></td><td>Runtime 状态词与开关词</td></tr>
+    </tbody>
+  </table>
+
+  <h2>板块与缩进</h2>
+  <pre>Agent name · ● running · 36s
+
+│ Task
+Review Dialog readability at 64 and 32 columns.
+
+│ Activity
+✓ Read agent-dialog.ts · completed
+⎿ 24 lines shown · 186 lines omitted
+
+Shift+↑/↓ page · Esc back</pre>
+  <p>短竖线只在板块标题这一行出现，不向下延伸成整根轨道。标题、正文、Agent 名称、工具行、<code>⎿</code> 预览和换行后的内容共享同一个左边界。这样保留层级，但不会越套越深。</p>
+
+  <div class="takeaway">
+    <div class="takeaway-label">不在范围</div>
+    Conversation Transcript 的小圆点 <code>•</code> 已经确定，本次不拿 Dialog 的状态图标去改它。Pi 原生 SettingsList 也保留原生键盘行为。Agent roster、Todo、BTW、Permission 和 Tool 状态继续各守一个权威位置，不复制到 Statusline 或另一个常驻面板。
+  </div>
+</section>
+
+<section class="chapter" id="ch-agents">
+  <div class="chapter-num">03 · Agent Dialog</div>
+  <h1>/agents：先认出是谁，再看它做了什么</h1>
+
+  <p class="lead">Agent 名称是 <code>/agents</code> 的第一阅读锚点。列表先展示名称，详情页再按 Task、可选结果和 Activity 展开，用户不需要先穿过 State、Task、Transcript 三行才能知道自己正在看谁。</p>
+  <p>列表保持启动顺序，不按状态重新排序。每行从 Agent 名称开始，后面可带一句任务摘要，最右侧才是状态图标与时间。这样状态变化不会让整张列表跳动，用户也能凭名称稳定地找到同一个 Agent。</p>
+  <p>详情页在任何状态下都使用同一副骨架：顶部是 Agent 名称和完整状态，Task 永远存在，Result、Error 或 Partial result 只在确实有内容时出现，Activity 永远存在。Activity 保留完整事件顺序，但每次工具输出只给有限预览，并明确说明省略了多少行。</p>
+
+  <figure>
+    <img src="assets/agents-dialog-light.png" alt="浅色 /agents 列表与详情目标预览">
+    <figcaption>图 1：浅色目标预览，不是当前实现截图。名称先建立身份，短竖线再把任务、结果和活动分成可扫读的板块。</figcaption>
+  </figure>
+
+  <h2>具体详情示例</h2>
+  <pre>Agents / reviewer
+✓ completed · 18s
+
+│ Task
+Review the /agents dialog for readability at 64 and 32 columns.
+
+│ Result
+The Agent name needs priority. Section labels should be stronger,
+and Activity should keep every event while shortening large Tool output.
+
+│ Activity
+reviewer
+I'll inspect the current list and detail layout.
+
+✓ Read agent-dialog.ts · completed
+⎿ 24 lines shown · 186 lines omitted
+
+↑/↓ scroll · Shift+↑/↓ page · r resume · Esc back</pre>
+
+  <h2>Activity 展示多少</h2>
+  <p>这里的 Activity 指“按真实先后顺序发生的可见活动”。它不是只留三条最新记录，也不是把整个原始协议文件原样倒出来。Agent 说过的话、用户明确给过的 steer 或 resume、每次 Tool 的目标、结果和有限预览都保留；内部系统记录、原始 JSON、重复 Task 和重复最终 Result 不出现。</p>
+  <p>大输出只在自己的位置缩短，例如写成“24 lines shown · 186 lines omitted”。页面不会因为输出大，就悄悄删掉更早或更晚的 Activity。运行中的 Tool 也只占一行，从 <code>●</code> 原地更新为 <code>✓</code> 或 <code>×</code>，不会完成后再追加一份。</p>
+
+  <h2>不同状态，共用同一副骨架</h2>
+  <table class="kami-table striped">
+    <thead><tr><th>Agent 状态</th><th>结果板块</th><th>Footer 中可用动作</th></tr></thead>
+    <tbody>
+      <tr><td>queued / running</td><td>不出现</td><td><code>s steer</code>、<code>x stop</code></td></tr>
+      <tr><td>waiting</td><td>不出现</td><td><code>s reply</code>、<code>x stop</code></td></tr>
+      <tr><td>stopping</td><td>不出现</td><td>不显示会被拒绝的 stop</td></tr>
+      <tr><td>completed</td><td>Result</td><td><code>r resume</code></td></tr>
+      <tr><td>failed / crashed</td><td>Error，可带 Partial result</td><td><code>r resume</code></td></tr>
+      <tr><td>stopped / cancelled</td><td>有内容时才出现 Partial result</td><td>stopped 可 resume，cancelled 无动作</td></tr>
+    </tbody>
+  </table>
+
+</section>
+
+<section class="chapter" id="ch-work">
+  <div class="chapter-num">04 · Tool and Background Work</div>
+  <h1>/tools 与 /tasks：工作记录不能混在一起</h1>
+
+  <h2>/tools：按一次工作来读，不按协议记录来读</h2>
+  <p class="lead"><code>/tools</code> 的主角是用户能理解的一次 Activity，也就是一段连续的工具工作，而不是内部调用 ID。列表先写它做了什么，详情再按需要展开调用和格式化结果。</p>
+  <p>列表按最新 Activity 在前排列。每行依次是选择标记、可读摘要、状态图标和可选调用次数，例如 <code>Read · tool-dialog.ts  ✓ 3 calls</code>。屏幕变窄时先去掉调用次数，不能先丢掉摘要或状态。</p>
+  <p>包含多次调用的 Activity 展示 Calls 和 Detail 两个板块，单次调用直接进入 Detail，不为一个条目造空列表。正常详情保留各工具自己已经设计好的格式，Raw 只在调试时打开，协议 ID 不挤进日常阅读。</p>
+
+  <figure>
+    <img src="assets/tools-dialog-light.png" alt="浅色 /tools Activity 列表与详情目标预览">
+    <figcaption>图 2：浅色目标预览。先回答“这段工作做了什么”，再允许用户钻到某一次调用。</figcaption>
+  </figure>
+
+  <pre>Tools / Read 4 files and searched 2 patterns
+✓ success · 6 calls
+
+│ Calls
+› ✓ Read · packages/pi-stuff/src/tool-display/tool-dialog.ts
+  ✓ Search · toolStateGlyph
+
+│ Detail · formatted
+Read
+Target: packages/pi-stuff/src/tool-display/tool-dialog.ts
+Summary: 58 lines returned</pre>
+  <p>Raw protocol 的意思是“调用时保存的原始协议数据”。它包含 call ID、Tool 名称、参数、结果和 details，只为调试服务。按 <code>r</code> 在 formatted 与 Raw 之间切换，Esc 先从 Raw 回 formatted，再从详情回列表。</p>
+
+  <h2>/tasks：只管当前仍在进行的后台工作</h2>
+  <p class="lead"><code>/tasks</code> 是当前工作台，不是历史记录。它只展示仍在运行、等待、停止中或恢复中的 Shell、Monitor 和 Agent 投影，并把三种任务的详情分开设计。</p>
+  <p>列表先写任务类型和可辨认的名称，再写一句短说明，右侧放状态与已用时间。Agent 行仍以 Agent 名称为核心，Enter 直接进入 <code>/agents</code>；<code>/tasks</code> 不再复制一份较差的 Agent 详情。</p>
+  <p>Shell 详情需要 Command 与 Output，因为用户关心命令和输出。Monitor 详情需要 Source、Condition 与 Latest evidence，因为用户关心它在监看什么、何时结束、最新看到了什么。不同任务不再共用 State、Task、ID 三行。</p>
+
+  <figure>
+    <img src="assets/tasks-context-light.png" alt="浅色 /tasks 与 /ctx 目标预览对照">
+    <figcaption>图 3：左侧是 /tasks Shell 详情，右侧是下一章的 /ctx。两页共用操作语言，但信息顺序完全不同。</figcaption>
+  </figure>
+
+  <table class="kami-table striped">
+    <thead><tr><th>任务类型</th><th>详情板块</th><th>谁拥有控制权</th></tr></thead>
+    <tbody>
+      <tr><td>Shell</td><td>Command、Output</td><td><code>/tasks</code> 可 stop</td></tr>
+      <tr><td>Monitor</td><td>Source、Condition、Latest evidence</td><td><code>/tasks</code> 可 stop</td></tr>
+      <tr><td>Agent 投影</td><td>不在这里复制详情</td><td>Enter 打开 <code>/agents</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout"><strong>两页的边界：</strong><code>/tools</code> 看 Tool 调用和协议详情，<code>/tasks</code> 看当前后台工作。Tool 历史不能混进当前任务列表，已经结束的后台工作也不在 <code>/tasks</code> 里长期堆积。</div>
+</section>
+
+<section class="chapter" id="ch-context">
+  <div class="chapter-num">05 · Context, Diagnostics, and BTW</div>
+  <h1>/ctx、/diagnostics 与 /btw：先回答眼前的问题</h1>
+
+  <h2>/ctx：先告诉用户还剩多少空间</h2>
+  <p class="lead"><code>/ctx</code> 的第一任务是回答上下文用了多少、是否需要处理，而不是先展示内部组件名。页面顺序改为 Usage、Overview、Attention、Actions，内部概念在出现时立刻用普通话解释。</p>
+  <p>Usage 放最前面，用实际占用和剩余空间建立判断。Compartment 可以解释成“上下文里的分区”，Historian 可以解释成“负责压缩和回顾旧内容的后台整理器”，pending drop 可以解释成“已标记、稍后会从上下文中移除的内容”。</p>
+  <p>不会产生任何变化的 flush 或 upgrade 行默认不显示，但命令仍然可用。重建这类高影响动作使用带警告图标的确认页，并默认选中 Cancel；确认后 Dialog 先关闭，进度继续写入原有 Context Activity，不再叠一个进度窗口。</p>
+
+  <pre>Context
+72.4% · 145K / 200K tokens
+
+│ Overview
+8 compartments · compacted history ~54K tokens
+Historian idle · cache 12m remaining
+
+│ Attention
+! 2 pending drops · removals waiting to apply
+
+│ Actions
+› Wrap up history
+  Apply 2 pending drops
+  Rebuild compartments</pre>
+
+  <h3>重建确认必须明确说后果</h3>
+  <pre>Context / Confirm rebuild
+
+! Rebuild the full eligible session?
+Compartment and fact data will be regenerated and may use model tokens.
+The original Pi conversation is kept.
+
+› Cancel
+  Rebuild now</pre>
+
+  <h2>/diagnostics：先看问题，再看是谁报的</h2>
+  <p class="lead">诊断记录要先让用户看懂发生了什么，再告诉他来自哪个 Capability。严重程度图标只表达信息、警告和错误，不借用运行中的实心圆。</p>
+  <p>列表使用 <code>i</code>、<code>!</code>、<code>×</code> 三种图标。每行保留来源 Capability、问题摘要、重复次数和最新发生时间，窄屏时至少留下图标、来源和一段仍有意义的摘要。记录按最新更新时间排在前面。</p>
+  <p>详情围绕 Summary、Action 和 Details 三个板块来读。Action 直接说用户下一步能做什么；Details 放诊断上下文。Severity、Occurred 这类字段不再逐行抢占首屏，因为它们已经由图标、排序和页头表达。</p>
+
+  <pre>Diagnostics · 3 records
+
+› × Agents          Failed to read Agent transcript       ×3 · 2m
+  ! Background Work Could not confirm process ownership         5m
+  i Context         Retried a stale derived-state refresh      now
+
+Diagnostics / Agents
+× error · 3 occurrences · latest 2m ago
+
+Failed to read Agent transcript
+
+│ Action
+Run /agents again after the session file becomes readable.
+
+│ Details
+...latest bounded and redacted diagnostic detail...</pre>
+
+  <h2>/btw：问完直接看答案，历史只是需要时再找</h2>
+  <p class="lead"><code>/btw question</code> 应直接进入当前答案，不先让用户穿过历史列表。只有裸 <code>/btw</code> 才打开历史；流式答案跟随用户是否停在底部，不强行把滚动位置拉回去。</p>
+  <p>回答页以 Answer 为主板块，状态图标区分等待、生成、完成、取消和失败。用户向上滚动后，自动跟随暂停，并出现有新内容的提示；回到底部或使用向下翻页后才恢复跟随。</p>
+  <p>历史只保存成功交流，所以列表不需要每行重复成功图标。Footer 使用人能直接理解的 <code>f new session</code>，清理历史仍走明确确认。等待中的回答不能因为 Enter 或 Space 被悄悄关闭。</p>
+
+  <pre>BTW · 3 of 4
+Why did the typecheck fail? · ✓ answered
+
+│ Answer
+...Markdown answer...
+
+←/→ history · Shift+↑/↓ page · c copy · f new session · Esc close</pre>
+
+</section>
+
+<section class="chapter" id="ch-static">
+  <div class="chapter-num">06 · Static Inspection Dialogs</div>
+  <h1>/mcp 与 /rtk：静态页也要有清楚的主次</h1>
+
+  <p class="lead">静态状态页不需要为了统一而增加列表详情层。<code>/mcp</code> 以服务器名称和可用性为主，<code>/rtk</code> 以运行环境、行为开关和本次节省为主，两者都在一页内完成阅读。</p>
+  <p><code>/mcp</code> 每行先写服务器名称，再用 <code>✓</code>、<code>○</code>、<code>×</code>、<code>!</code>、<code>■</code> 表达状态并保留状态词。资源和工具数量放在后面，认证或重连说明必须在能力列表之前出现。URL、命令、参数、环境变量和密钥继续留在安全边界外。</p>
+  <p><code>/rtk</code> 分成 Runtime、Behavior、Session savings 三个板块。ready、unchecked、drifted、unavailable 都有固定图标和完整词。页面还要明说 model projection 只影响模型看到的精简副本，不会改写 Conversation Transcript 或 Session。</p>
+
+  <figure>
+    <img src="assets/utility-dialogs-light.png" alt="浅色 BTW、MCP 与 RTK 目标预览对照">
+    <figcaption>图 4：浅色目标预览。三个小页面共享板块和状态语言，但没有被强行套进列表详情模板。</figcaption>
+  </figure>
+
+  <div class="compact-examples">
+    <div>
+      <h2>/mcp 的具体形状</h2>
+      <pre>MCP · 2/3 connected · 14 tools
+✓ filesystem · connected · 8 tools
+! github · needs auth · /mcp-auth github
+× browser · failed · /mcp reconnect browser
+■ legacy · disabled
+Shift+↑/↓ page · Esc close</pre>
+    </div>
+    <div>
+      <h2>/rtk 的具体形状</h2>
+      <pre>RTK · ✓ ready · v0.42.4
+│ Runtime
+~/.local/bin/rtk · SHA-256 1d8bf5f1...
+│ Behavior
+✓ rewriting on · ✓ model projection on
+│ Session savings
+12,430 chars (38%) · 24 results
+/rtk settings · Esc close</pre>
+    </div>
+  </div>
+  <p><strong>边界：</strong><code>/mcp</code> 保持只读，故障转到 <code>/diagnostics</code>，Tool 调用转到 <code>/tools</code>；页面不显示服务器 URL、命令、环境变量、OAuth 数据或 token。<code>/rtk</code> 的示例数字只用来检查排布，Session savings 不是费用承诺；model projection 也不会改写 Transcript、Tool result 或 Session JSONL。</p>
+</section>
+
+<section class="chapter" id="ch-implementation">
+  <div class="chapter-num">07 · Implementation and Acceptance</div>
+  <h1>实现顺序与验收方法</h1>
+
+  <p class="lead">设计文档已经完成，但源代码仍是旧页面。实现时应该先落共同语法，再按风险和复用程度逐个改造，最后在宽屏与窄屏上检查真实渲染，不能把这份报告当成完成证明。</p>
+  <p>第一步实现共享的图标含义、短竖线板块标题、Shift+Up/Down 翻页和 Footer 规则。第二步优先改 <code>/agents</code>、<code>/tools</code>、<code>/tasks</code>，因为它们信息量最大，也最能检验列表、详情、实时更新和窄屏退化是否成立。</p>
+  <p>第三步完成 <code>/ctx</code>、<code>/diagnostics</code>、<code>/btw</code>、<code>/mcp</code>、<code>/rtk</code>。验收至少覆盖 100×32 与窄宽度，逐项看选择是否稳定、状态是否仍可读、活动是否丢失、Footer 是否挤压正文、Esc 是否按层返回，以及 60% 键盘是否不靠 PageUp/PageDown 也能翻页。</p>
+
+  <h2>建议的实现批次</h2>
+  <table class="kami-table striped">
+    <thead><tr><th>批次</th><th>内容</th><th>为什么先做</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>共享图标、板块标题、翻页别名、Footer 规则</td><td>8 个页面都会用到，先定底座能减少返工</td></tr>
+      <tr><td>2</td><td><code>/agents</code>、<code>/tools</code>、<code>/tasks</code></td><td>信息最密，包含列表、详情、实时更新和多级返回</td></tr>
+      <tr><td>3</td><td><code>/ctx</code>、<code>/diagnostics</code>、<code>/btw</code></td><td>验证操作流程、警告、流式阅读和历史导航</td></tr>
+      <tr><td>4</td><td><code>/mcp</code>、<code>/rtk</code></td><td>静态页风险较低，最后收口状态与低高度适配</td></tr>
+    </tbody>
+  </table>
+
+  <h2>逐页验收清单</h2>
+  <ol>
+    <li><strong>第一眼：</strong>3 秒内能说出页面主角是谁或是什么，不必先读字段名。</li>
+    <li><strong>选择：</strong><code>›</code> 只表示当前焦点，状态图标仍然独立存在。</li>
+    <li><strong>状态：</strong>紧凑列表有图标，详情或静态状态行保留完整状态词。</li>
+    <li><strong>板块：</strong><code>│</code> 只在标题行出现，正文没有额外层层缩进。</li>
+    <li><strong>翻页：</strong>PageUp/PageDown 与 Shift+Up/Down 行为一致，只有溢出时才显示提示。</li>
+    <li><strong>实时内容：</strong>停在底部时自动跟随，向上阅读后不抢滚动位置，并显示有限的新内容提示。</li>
+    <li><strong>窄屏：</strong>先丢描述、计数和次要元数据，不能先丢名称、状态、选中项或 Escape。</li>
+    <li><strong>返回：</strong>Esc 每次只退一层，Raw、详情、列表、Dialog 的顺序稳定。</li>
+    <li><strong>权威边界：</strong>同一份 Agent、Tool、Todo、BTW 或 Permission 状态不在多个常驻位置重复。</li>
+    <li><strong>空与错：</strong>空页面、加载、不可用和错误都有普通话说明，同时保留真实状态与退出路径。</li>
+  </ol>
+
+  <p><strong>完成标准：</strong>只有真实 UI 代码、聚焦测试、100×32 与窄宽度渲染、完整键盘路径和最终 <span class="sans">bun run check</span> 全部通过，才能把“待实现”改成“已实现”。</p>
+</section>
+
+<section class="chapter" id="ch-appendix">
+  <div class="chapter-num">08 · Appendix</div>
+  <h1>附录</h1>
+
+  <h2>A. 本报告依据的决策文件</h2>
+  <ul>
+    <li><span class="sans">docs/research/agent-activity-ui-reference.md</span></li>
+    <li><span class="sans">docs/adr/0010-fold-continuous-retrieval-segments.md</span></li>
+    <li><span class="sans">packages/pi-stuff/src/background-work/README.md</span></li>
+    <li><span class="sans">docs/adr/0008-own-the-context-command-surface.md</span></li>
+    <li><span class="sans">docs/adr/0004-route-suite-diagnostics-through-owned-ui.md</span></li>
+    <li><span class="sans">packages/pi-stuff/src/btw/README.md</span></li>
+    <li><span class="sans">packages/pi-stuff/src/mcp/README.md</span></li>
+    <li><span class="sans">packages/pi-stuff/src/rtk/README.md</span></li>
+  </ul>
+
+  <h2>B. 术语表</h2>
+  <p><strong>Command Dialog：</strong>用户明确打开的临时全宽页面。它不是浮在 Transcript 上的小窗，也不是长期占位的仪表盘。</p>
+  <p><strong>Activity：</strong>一段按真实先后顺序发生、对用户有意义的工作记录。它可以包含 Agent 消息、Tool 调用、结果和有限预览。</p>
+  <p><strong>Capability：</strong>Pi Stuff 包里的一个能力模块，例如 Agents、Context 或 Diagnostics。它是问题来源，不一定是用户最先需要看的标题。</p>
+  <p><strong>Raw protocol：</strong>原始调用数据，给调试用。日常阅读优先看工具已经格式化好的标题、目标、摘要和结果。</p>
+  <p><strong>Compartment：</strong>从旧对话整理出来的压缩分区。它帮助控制模型上下文大小，不是另一份 Pi 对话。</p>
+  <p><strong>Historian：</strong>负责创建或重建这些压缩分区的 Context 后台整理器。</p>
+  <p><strong>model projection：</strong>发给模型看的精简副本。它不会改写用户看到的 Transcript、Tool result 或 Session 文件。</p>
+
+  <h2>C. 预览图说明</h2>
+  <p>4 张 PNG 均由 ImageGen 生成，使用浅色 Kami 配色。它们用于检查布局、主次、密度与图标位置，不是当前产品截图。图像生成无法可靠承担所有精确字符，因此本报告同时给出等宽文字示例；当图与示例冲突时，以已经写入决策文件的文字为准。</p>
+
+  <div class="takeaway">
+    <div class="takeaway-label">Review status</div>
+    内容依据已接受决策整理。报告本身完成后仍需单独复核页面密度、字体、图片清晰度和每个原子事实是否保留。
+  </div>
+</section>
+
+</body>
+
+</html>

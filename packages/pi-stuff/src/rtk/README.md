@@ -29,6 +29,57 @@ The Host transcript, Tool display, and session JSONL keep their original Tool re
 
 The local RTK executable is optional. When it is absent or fails certification, Pi continues normally without command rewriting. Model-only output projection remains available because it does not require the executable.
 
+## Accepted `/rtk` readability target
+
+**Decision update:** 2026-08-17
+**Status:** Accepted; implementation pending.
+
+The non-settings `/rtk` surface remains one static inspection Dialog. It does not add list/detail modes or duplicate
+the native `/rtk settings` component. Its three questions are whether the executable is trusted, which behaviors are
+enabled, and how much model-visible result text this session avoided:
+
+```text
+RTK
+✓ ready · v0.42.4
+
+│ Runtime
+Binary  ~/.local/bin/rtk
+SHA-256  1d8bf5f1861f5ce3…
+
+│ Behavior
+✓ Command rewriting on
+✓ Model projection on
+
+│ Session savings
+12,430 chars (38%) · 24 results
+Bash 12 · Grep 12
+
+/rtk settings · Esc close
+```
+
+Use `✓ ready`, `○ unchecked`, `! drifted`, and `× unavailable`, always with the state word. `Drifted` means the selected
+executable identity changed after certification; it is a warning and rewriting remains disabled until explicit
+`/rtk verify`. `Unavailable` includes a bounded error under a marked `Error` section and the next step
+`Run /rtk verify`; it must not imply that Pi itself cannot continue.
+
+Behavior switches use `✓ on` and `○ off` rather than color-only words. `Model projection` means only the compact copy
+sent to the model; the transcript, Tool result, and Session JSONL remain exact. Keep this distinction in the visible
+description or section copy and never imply that RTK rewrites stored output.
+
+Session savings are derived statistics, not a billing or token claim. Show saved characters, percentage of eligible
+original result characters, and result count. Technique counts are secondary and disappear before runtime state,
+error, switch values, or the total savings line at low height. Binary path and shortened SHA are verification evidence;
+they disappear after an actionable error but before core state and savings when space is scarce.
+
+`/rtk clear-stats` reports `✓ Projection statistics cleared.` `/rtk help` shows the bounded command form, and an unknown
+action uses `! Unknown action` followed by that same form. Feedback never replaces the runtime state or Escape path.
+Enter and `q` may retain their current close behavior without Footer space; Escape remains the advertised close key.
+
+The current implementation already has the correct runtime identity, exact path compaction, shortened SHA, settings
+boundary, savings source, sorted technique counts, low-height fitting, and fail-open semantics. Its remaining deltas are
+text/color-only states and switches, no marked sections, no plain explanation of model-only projection, unstructured
+feedback notes, and a Footer that spends space spelling out `Configure with` and Enter.
+
 ## Certified RTK runtime
 
 The Linux x64 runtime is pinned to [`rtk-ai/rtk` v0.42.4](https://github.com/rtk-ai/rtk/releases/tag/v0.42.4), source commit `8a7dd7e5570d7744d4b6508479a3674fe8c49286`. Two immutable builds of that exact source are accepted:

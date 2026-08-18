@@ -1,6 +1,7 @@
 # Agent activity UI reference: Claude Code and `pi-subagents`
 
 **Research date:** 2026-08-01  
+**Decision update:** 2026-08-17
 **Scope:** What a user sees in the main coding conversation when one or more agents are queued, running, completed, failed, stopped, or waiting for input. Management screens are covered only to keep them separate from transcript records.
 
 ## Bottom line
@@ -224,9 +225,172 @@ A permission request is modal because the tool cannot continue without a decisio
 
 An internal child-to-supervisor question is not automatically a user interruption: the main Agent first tries to answer it through the fork's supervisor channel. Only when the main Agent decides that a human choice is required does Pi Stuff show the persistent attention row above Todo. It marks the roster row `waiting` but does not steal focus, modify the draft, consume keystrokes, or copy the question into Todo. Down and Enter open the Agent Command Dialog to reply.
 
-### F. Non-floating detail view
+### F. Accepted Agent Command Dialog redesign
 
-Enter on a child temporarily hides the roster and opens the accepted full-width Command Dialog below its divider. It owns full conversation, steer, stop, resume, and local details. Do not draw a centered bordered overlay over the transcript.
+**Status:** Accepted on 2026-08-17; implementation pending.
+
+Enter on a child temporarily hides the roster and opens the accepted full-width Command Dialog below its divider. It
+owns full conversation, steer, stop, resume, and local details. Do not draw a centered bordered overlay over the
+transcript. This decision covers the Agent Command Dialog only: it does not change the Conversation Transcript marker,
+Fleetview, or another Capability's Dialog.
+
+The following sketch is the layout authority. It deliberately has no content-level indentation; every first glyph in
+the section bodies and Activity starts at the same Dialog content column.
+
+```text
+Agents / reviewer
+✓ completed · 18s
+
+│ Task
+Review the /agents dialog for readability at 64 and 32 columns.
+
+│ Result
+The Agent name needs priority. Section labels should be stronger,
+and Activity should keep every event while shortening large Tool output.
+
+│ Activity
+reviewer
+I'll inspect the current list and detail layout.
+
+✓ Read agent-dialog.ts · completed
+⎿ 24 lines shown · … 186 lines omitted
+
+✓ Search renderListRow · completed
+⎿ 3 matches
+
+reviewer
+The name currently receives at most 38% of the available width.
+
+↑/↓ scroll · Shift+↑/↓ page · r resume · Esc back
+```
+
+#### Agent list
+
+- A Dialog list row is `selection marker`, Agent name, optional task description, then a right-aligned lifecycle icon
+  with elapsed time or queue position. `›` means focus only; it never replaces the lifecycle icon.
+- Keep the Agent name immediately after the selection marker and give it priority over the description. The task
+  description disappears as one unit at narrow widths; do not cap the name to a fixed percentage while preserving
+  lower-priority description text.
+- Compact rows replace lifecycle words with their fixed icons: for example, `● 12s`, `✓ 12s`, and `○ #1`. The detail
+  Header retains the full state word.
+- Keep rows in launch order for the life of the Dialog. State changes and newly discovered Activity update the row in
+  place; they do not re-sort the list or move the focused Agent. New Agents append in launch order.
+- When the list exceeds its visible window, keep the focused row visible and use `… N earlier` and `… N later` rather
+  than a scrollbar or a second pagination mode. Up and Down move one Agent; PageUp/PageDown and Shift+Up/Down move one
+  visible page. Show the page hint only while the list overflows.
+- The list owns navigation, inspect, and one direct control: `x stop` for queued, running, waiting, or resuming Agents.
+  Do not show it for `stopping` or terminal states. Steer, reply, resume, and child-Agent navigation belong to detail.
+- `/agents` is the complete current-session list and does not provide `x dismiss`. Dismiss remains an independent
+  behavior of the temporary below-editor roster.
+- Do not flatten descendants into one list with `d1`, `d2`, or `d3` labels. A parent detail exposes `n child agents`;
+  that action opens only its direct children with the same row grammar. A child with descendants repeats the same
+  navigation one level deeper, and Escape returns exactly one level.
+
+#### Stable structure across states
+
+- The configured Agent name is the primary visual anchor. The breadcrumb is quieter, and optional description text
+  yields before the name at narrow widths.
+- Every state uses the same page skeleton: Header, Task, one optional outcome slot, Activity, and Footer.
+- Header shows the Agent name followed by one status icon, the complete state word, and elapsed time when known. State
+  does not receive a separate section.
+- Task is always present and shows the full delegated task once.
+- The outcome slot is named `Result`, `Error`, or `Partial result` according to its real content. It is omitted instead
+  of displaying an empty placeholder, and it never repeats content already owned by Task or Activity.
+- A completed Agent uses `Result`. A failed or crashed Agent uses `Error`; when it also retained useful partial output,
+  `Partial result` is a secondary label inside that same outcome slot rather than a second marked section. A stopped or
+  cancelled Agent uses `Partial result` only when such content exists. Queued, running, and waiting Agents have no
+  outcome slot.
+- Outcome content is the sanitized result actually retained for the Agent. The Dialog does not generate a replacement
+  summary. A terminal Agent initially opens at its outcome; a non-terminal Agent initially opens at its newest Activity.
+- Activity is always present. Footer actions remain state-dependent, while Escape retains the shared back/close
+  behavior.
+
+#### Section and spacing grammar
+
+- Keep the Suite's full-width top divider and Footer boundary. Do not add a horizontal rule, card, frame, or floating
+  container around an individual section.
+- Section headings are `│ Task`, `│ Result`, `│ Error`, `│ Partial result`, and `│ Activity`. The short semantic-theme
+  vertical mark exists only on the heading row; it never grows into a rail.
+- Beyond the Command Dialog's one outer content gutter, do not add hierarchy indentation. Section bodies, Agent names,
+  Agent messages, Tool rows, `⎿` result rows, and wrapped continuation lines share one left edge with the section mark.
+- Blank lines, heading weight, and semantic text colors separate sections and events. The Agent name remains stronger
+  than every section heading.
+
+#### Activity content
+
+- Activity preserves the complete relevant event order: Agent messages, user-visible steer or resume messages, every
+  Tool call, its target, outcome, and a bounded result preview.
+- Agent messages render the configured Agent name on its own line followed by the message. User guidance renders `You`
+  in the same speaker position; it does not borrow the `›` selection marker.
+- A Tool event is one item: lifecycle icon, operation, and target on the first line, followed by a bounded `⎿` result
+  preview when useful. A running Tool updates that item in place from `●` to `✓` or `×`; completion does not append a
+  second copy of the call.
+- Large Tool output is shortened in place and reports the omitted line count explicitly. The Dialog never silently
+  drops earlier or later Activity.
+- Internal/system records, raw protocol JSON, the delegated Task, and a duplicate final Result do not appear in
+  Activity.
+- Agent messages use the configured Agent name rather than a generic `Agent` label. Tool rows use their actual outcome
+  icon rather than one universal circle.
+
+#### Live Activity
+
+- Activity must refresh while the selected Agent runs; a one-time transcript read on detail entry is insufficient.
+- While the viewport is at the newest event, append and follow new Activity automatically. The first upward line or
+  page movement pauses following and preserves the exact reading position.
+- While following is paused, append without moving the viewport and show `↓ N new events`. Reaching the bottom with
+  Down, PageDown, or Shift+Down clears the notice and resumes following. No separate follow toggle is needed.
+- A lifecycle change, including completion or failure, updates the Header without moving a user who is reading older
+  Activity. Reopening a terminal Agent still begins at its outcome.
+
+#### Footer actions by Agent state
+
+| Visible state | State-specific actions |
+|---|---|
+| queued, running | `s steer`, `x stop` |
+| waiting | `s reply`, `x stop` |
+| stopping | none |
+| resuming | `x stop` |
+| completed, failed, crashed, stopped | `r resume` |
+| cancelled | none |
+
+`Steer` means adding guidance to a live Agent. The waiting state reuses that input path but labels it `reply` because
+the user is answering an Agent. Add scroll and page hints only when content overflows, add `n child agents` only when
+children exist, and keep `Esc back` present and last in every detail state. Never advertise an action that validation
+will reject.
+
+#### Empty and degraded states
+
+- An empty list says `No Agents in the current session.` and retains `Esc close`.
+- An Agent with no events yet says `No Activity yet.` Loading says `Loading Activity…`; an unavailable source says
+  `Activity unavailable.` and includes one sanitized reason when known.
+- Loading or read failure is Activity-source feedback, not an Agent lifecycle state. It must not replace the Header's
+  real lifecycle icon or word, steal focus, or remove the Escape path.
+
+#### Dialog-only icon language
+
+- The Conversation Transcript's small U+2022 `•` marker remains unchanged and does not determine Dialog status icons.
+  Dialog and transcript share one-cell-safe glyphs, semantic colors, state names, and restrained density, not the same
+  row marker.
+- `›` means the focused selectable row and never means lifecycle state.
+- Agent lifecycle icons are fixed: `○ queued`, `● running`, `! waiting`, `◐ stopping`, `↻ resuming`, `✓ completed`,
+  `× failed` or `crashed`, and `■ stopped` or `cancelled`.
+- Compact lists may lead with the icon; detail status always retains the full state word so color and icon recognition
+  are never the only evidence. Tool events in Activity reuse the same success, running, and failure meanings.
+
+#### Navigation and adaptation
+
+- Up and Down scroll by one line in scrollable detail. PageUp and PageDown remain available; Shift+Up and Shift+Down
+  are equivalent page-scroll aliases for compact keyboards.
+- The Footer advertises `Shift+↑/↓ page` when page scrolling is available. Hints wrap rather than displacing the Agent
+  name, selected state, attached error, or Escape path.
+- At narrow widths, preserve the Agent name, section heading, state, and action before optional descriptions, targets,
+  previews, or metadata. Content wraps without adding indentation or extending the short section mark.
+
+The current implementation still renders `Task`, `State`, and `Transcript`; sorts list rows by lifecycle state; limits
+the Agent name to 38 percent of available content width; often replaces the compact lifecycle indication with elapsed
+time alone; flattens descendants behind `d1`/`d2`/`d3`; reads transcript content only on entry; advertises `x stop`
+while stopping; hard-codes a filled circle in projected child Tool rows; and lacks Shift+Arrow page aliases. Those are
+implementation deltas, not alternate accepted designs.
 
 ## Decisions supported by this research
 
@@ -238,6 +402,9 @@ Enter on a child temporarily hides the roster and opens the accepted full-width 
 6. **Distinguish permission from a human question.** Permission temporarily owns the Command Dialog. A human-required question remains visible and actionable but preserves a non-empty editor; internal supervisor coordination stays silent unless the main Agent escalates it.
 7. **Keep terminal outcomes durable.** Live rows may disappear after a short linger, but the conversation record must retain completed, failed, stopped, and partial outcomes.
 8. **Keep the selected capability fork separate from the UI references.** Pi Stuff will fork `nicobailon/pi-subagents` for multi-Agent capability. Tintinweb and Claude Code remain observable UI references only; neither reference code is adopted, copied, translated, or ported into the final UI.
+9. **Use the accepted Agent Command Dialog contract above for detailed inspection.** Its state-stable sections,
+   Dialog-only icon language, flush-left content, bounded complete Activity, and compact-keyboard paging are product
+   decisions rather than claims about exact Claude Code pixels.
 
 ## Facts the main agent must personally verify before freezing the preview or fork base
 

@@ -35,6 +35,11 @@ official engine handles `before_agent_start`. The engine therefore keeps its
 own prompt-cache processing while skipping its much longer default guidance;
 history semantics, retrieval, reduction, memory, notes, and fail-open behavior
 remain unchanged.
+
+The accepted `/ctx` readability target is recorded in
+[`docs/adr/0008-own-the-context-command-surface.md`](../../../../docs/adr/0008-own-the-context-command-surface.md).
+Its 2026-08-17 update is implementation pending; do not describe the current Dialog as matching that target until the
+source and PTY verification land.
 Suite-owned custom Agent messages use one shared delivery seam. That seam waits
 for Context activation before the Host freezes the first request. Pi 0.84.2
 does not emit `before_agent_start` for an idle `sendMessage` turn, so when such a
