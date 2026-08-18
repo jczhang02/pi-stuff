@@ -32,7 +32,7 @@ The local RTK executable is optional. When it is absent or fails certification, 
 ## Accepted `/rtk` readability target
 
 **Decision update:** 2026-08-17
-**Status:** Accepted; implementation pending.
+**Status:** Implemented on 2026-08-18.
 
 The non-settings `/rtk` surface remains one static inspection Dialog. It does not add list/detail modes or duplicate
 the native `/rtk settings` component. Its three questions are whether the executable is trusted, which behaviors are
@@ -42,15 +42,15 @@ enabled, and how much model-visible result text this session avoided:
 RTK
 ✓ ready · v0.42.4
 
-│ Runtime
+◆ Runtime
 Binary  ~/.local/bin/rtk
 SHA-256  1d8bf5f1861f5ce3…
 
-│ Behavior
+◆ Behavior
 ✓ Command rewriting on
 ✓ Model projection on
 
-│ Session savings
+◆ Session savings
 12,430 chars (38%) · 24 results
 Bash 12 · Grep 12
 
@@ -75,10 +75,9 @@ they disappear after an actionable error but before core state and savings when 
 action uses `! Unknown action` followed by that same form. Feedback never replaces the runtime state or Escape path.
 Enter and `q` may retain their current close behavior without Footer space; Escape remains the advertised close key.
 
-The current implementation already has the correct runtime identity, exact path compaction, shortened SHA, settings
-boundary, savings source, sorted technique counts, low-height fitting, and fail-open semantics. Its remaining deltas are
-text/color-only states and switches, no marked sections, no plain explanation of model-only projection, unstructured
-feedback notes, and a Footer that spends space spelling out `Configure with` and Enter.
+The implementation now pairs states and switches with fixed icons, uses `◆` sections, explains model-only projection,
+keeps feedback structured, and shortens the Footer. Focused tests cover runtime states, settings ownership, projection
+wording, low-height fitting, and failure behavior; the real PTY verifier covers Host rendering.
 
 ## Certified RTK runtime
 

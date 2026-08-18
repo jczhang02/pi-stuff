@@ -66,7 +66,8 @@ A planned unit of work maintained by the Suite's Task tools and checklist. It de
 _Avoid_: Background task, job
 
 **Background Work**:
-Current-session activity that continues without occupying the main Agent, comprising a Background Shell, a Monitor, or a read-only projection of a running Agent. It is live management state, not a Todo Task or durable history.
+Current-session activity that continues without occupying the main Agent, comprising a Background Shell or a Monitor.
+It is live management state, not a Todo Task, Agent projection, Tool invocation, or durable history.
 _Avoid_: Todo, daemon, scheduler
 
 **Background Shell**:

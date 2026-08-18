@@ -181,7 +181,7 @@ test("bare goal is menu-first in TUI, observable in RPC, and rejects headless mo
 
 	await mock.commands.get("goal")?.handler("", tui.ctx);
 	assert.equal(selections.length, 1);
-	assert.match(selections[0]?.title ?? "", /^─+\n {2}Goal\n {2}No goal is currently set/im);
+	assert.match(selections[0]?.title ?? "", /^━+\n {2}Goal\n {2}No goal is currently set/im);
 	assert.ok(selections[0]?.actions.includes("Start a goal…"));
 	assert.equal(tui.notifications.length, 0);
 

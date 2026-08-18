@@ -22,7 +22,7 @@ cannot open native prompts behind the shared Command Dialog contract.
 ## Accepted `/mcp` readability target
 
 **Decision update:** 2026-08-17
-**Status:** Accepted; implementation pending.
+**Status:** Implemented on 2026-08-18.
 
 Bare `/mcp` remains a read-only server status overview. It does not add a selectable detail mode or duplicate setup,
 OAuth, Tool discovery, or protocol inspection. Operational subcommands, `/mcp-auth`, `.mcp.json`, `/reload`, and the
@@ -63,7 +63,7 @@ The status snapshot and Dialog continue to exclude server URLs, executable comma
 OAuth data, tokens, detailed failure messages, and other configuration secrets. Detailed operational failures belong
 in bounded `/diagnostics`; Tool call protocol belongs in `/tools`.
 
-The current implementation already has the correct live snapshot, lazy connection semantics, declaration order,
-sanitized server names, aggregate counts, bounded fitting, static-page interaction, and sensitive-data boundary. Its
-remaining deltas are color-only circles, omitted resource counts, no status-specific next step, one-line empty copy,
-and missing Shift+Arrow page aliases.
+The implementation now uses distinct state icons, includes resource counts, shows status-specific next steps, provides
+the two-line empty state, and routes PageUp/PageDown plus Shift+Arrow through one paging path. Focused tests cover live
+updates, declaration order, narrow fitting, empty state, sensitive-data exclusion, and page aliases; the real PTY
+verifier covers Host rendering.

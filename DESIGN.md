@@ -76,26 +76,28 @@ targets and previews, then secondary metadata. Preserve primary identity, useful
 action, and the way back. Wrapping must not introduce extra indentation or extend a section mark into a rail.
 
 A wide split view remains one Dialog surface. Its top structural rule is continuous across the full width; one internal
-vertical divider separates navigation from detail. It must not look like two adjacent cards. Collapse to a single
-column before either side becomes unreadable.
+vertical divider separates navigation from detail. It must not look like two adjacent cards. Use this shape only for
+`/tools` and `/tasks`, where the user repeatedly switches between peer rows and their details, and collapse to a single
+column before either side becomes unreadable. `/agents`, `/diagnostics`, and `/btw` remain single-column at every width.
 
 ## Elevation & Depth
 
 Pi Stuff is flat. It has no shadows, blur, floating cards, or decorative layers. Depth comes from ownership and
 sequence: conversation, temporary focused surface, selected row, then detail.
 
-Use one structural divider, restrained spacing, semantic contrast, and short section marks to express that hierarchy.
+Use one structural divider, restrained spacing, semantic contrast, and compact section markers to express that hierarchy.
 Do not surround each section with another frame. The scrollable Welcome identity card is the sole confirmed bordered
 exception because it belongs to the conversation document rather than the temporary Dialog system.
 
 ## Shapes
 
 The shape language is terminal-native and rectilinear. Structural Dialog rules use heavy box-drawing characters; a
-wide split uses a heavy internal divider beneath one continuous top rule. Short, thin `│` marks identify section
-headings only. They never continue beside section content.
+wide split uses a heavy `┃` divider beneath one continuous `━` top rule. A compact `◆` identifies a section heading
+without becoming a rail beside the section content.
 
 `›` means the currently focused selectable row and nothing else. Lifecycle and severity use separate one-cell-safe
-icons. The Conversation Transcript's small `•` marker is already established and does not define Dialog iconography.
+icons. The Conversation Transcript's small `•` marker remains unchanged. Dialogs inherit the Transcript's restrained,
+semantic status language, but never reuse its generic message marker as a lifecycle icon.
 
 Use icon families consistently: `●` for active work, `○` for queued or inactive work, `◐` for a transition such as
 stopping, `↻` for resuming, `✓` for success, `!` for attention, `×` for failure, and `■` for a stopped or deliberately
@@ -120,19 +122,23 @@ compact keyboards. Show page hints only when overflow exists.
 
 ### Detail sections
 
-Use a short `│` heading such as `│ Task`, `│ Activity`, `│ Output`, or `│ Details`. Section sets are specific to the
+Use a compact `◆` heading such as `◆ Task`, `◆ Activity`, `◆ Output`, or `◆ Details`. Section sets are specific to the
 job: `/agents` is organized around Agent identity, Task, optional outcome, and Activity; `/ctx` begins with Context
 usage; `/diagnostics` begins with the problem; `/tools` begins with a readable Tool Activity. Do not force every
 Dialog into the same field template.
 
+`/btw` is a deliberate reference-matching exception: it shows the question followed directly by the Markdown answer,
+with no generic state line or `Answer` section. Its history controls stay in the Footer rather than creating a second
+pane or card.
+
 Keep complete relevant event order but bound each expensive preview. Say how much was omitted. Raw identifiers,
 arguments, and protocol content belong behind an explicit raw/debug action rather than in the default reading path.
 
-### Wide Tool inspection
+### Wide work inspection
 
-At wide terminal widths, `/tools` may show its Activity list and selected detail together. It is one 18-row Dialog,
-with one continuous heavy top rule and one heavy internal vertical divider. Switching Activity keeps this geometry
-fixed. The narrow version remains a single-column list/detail flow.
+At terminal widths of at least 96 cells, `/tools` and `/tasks` may show a non-empty list and selected detail together.
+Each remains one fixed 18-row Dialog, with one continuous heavy top rule and one heavy internal vertical divider.
+Switching rows keeps this geometry fixed. Empty and narrow versions remain single-column list/detail flows.
 
 ### Persistent and transcript surfaces
 

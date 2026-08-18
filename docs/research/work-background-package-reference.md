@@ -138,7 +138,8 @@ The fork is acceptable only if its first local change makes the ownership bounda
 3. **Lazy runtime directory:** upstream creates `.pi/tasks/...` during `session_start`. Pi Stuff must create it only on the first user-triggered Background or Monitor action so startup stays pure.
 4. **Foreground detachment:** integrate with Pi Stuff's Bash execution so Ctrl+B detaches exactly one active foreground Bash call. Do not background every command and do not claim Ctrl+B when no eligible Bash call exists.
 5. **Monitor:** build command, log, file, and HTTP conditions on the same runtime. A Monitor has one concrete success/error predicate, one deadline, bounded evidence, cancellation, and exactly one outcome.
-6. **`/tasks`:** use the shared full-width non-floating Command Dialog with list and in-place detail. Include Background Shell, Monitor, and read-only running-Subagent projections; keep Todo, Goal, Beads, and Agent detail out.
+6. **`/tasks`:** use the shared full-width non-floating Command Dialog with list and in-place detail. Include only
+   Background Shell and Monitor; keep Todo, Goal, Beads, Agents, and Tool invocation history out.
 7. **Transcript outcomes:** deliver compact, deduplicated completion/failure/stop records without a forced acknowledgement turn, task statusline, or permanent task row.
 8. **Failure gates:** test spawn failure, output failure/cap, timeout, TERM-ignoring trees, forked grandchildren, PID reuse, simultaneous stop/finalize, reload, abrupt Pi death, narrow TUI, resize, and cleanup failure.
 

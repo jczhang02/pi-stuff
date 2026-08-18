@@ -121,9 +121,9 @@ that needs the user raises at most one focus-neutral row above the editor, such 
 and multiple active problems collapse to one count.
 
 `/diagnostics` opens the shared full-width Command Dialog with bounded current-process history, occurrence counts,
-details, and the suggested Capability command when one exists. Enter opens one record; `c` clears history; Escape first
-returns to the list and then restores the exact editor draft and Suite chrome. Opening the dialog or starting the next
-prompt acknowledges the one-row notice without deleting history.
+details, and the suggested Capability command when one exists. It stays single-column at every width. Enter opens one
+record; `c` clears history; Escape first returns to the list and then restores the exact editor draft and Suite chrome.
+Opening the dialog or starting the next prompt acknowledges the one-row notice without deleting history.
 
 Diagnostics never enter Session history, model context, the Statusline, or an independent persistence layer. Details
 are bounded, terminal control characters are removed, and common tokens and API keys are redacted. Restarting Pi clears

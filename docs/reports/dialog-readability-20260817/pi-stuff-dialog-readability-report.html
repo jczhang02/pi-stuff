@@ -9,7 +9,7 @@
 <meta charset="UTF-8">
 <title>Pi Stuff Dialog 可读性重做报告</title>
 <meta name="author" content="Pi Stuff">
-<meta name="description" content="检查 8 个 Command Dialog 的共同阅读语言、专用信息结构、具体示例与待实现差距。">
+<meta name="description" content="检查本轮 8 个重点 Command Dialog 的共同阅读语言、专用信息结构、真实实现与验收边界。">
 <meta name="keywords" content="Pi Stuff, Command Dialog, 可读性, Agent, 工具界面">
 <meta name="generator" content="Kami">
 <style>
@@ -448,12 +448,12 @@
   <div>
     <div class="cover-eyebrow">DESIGN REVIEW · DIALOG READABILITY</div>
     <div class="cover-title">Pi Stuff Dialog<br>可读性重做报告</div>
-    <div class="cover-sub">设计决策、具体示例与浅色预览。用于检查 8 个现有 Command Dialog 是否真的更容易读，而不是只看起来更统一。</div>
+    <div class="cover-sub">最终决策、实现结果与浅色示意。用于检查本轮 8 个重点 Command Dialog 是否真的更容易读，而不是只看起来更统一。</div>
   </div>
   <div class="cover-meta">
     <strong>Pi Stuff</strong><br>
-    Review draft  ·  2026-08-17<br>
-    已接受的设计决策 · UI 实现仍待完成
+    Implementation review  ·  2026-08-18<br>
+    已接受的设计决策 · 已落实到生产代码
   </div>
 </section>
 
@@ -465,7 +465,7 @@
   <div class="toc-item"><span class="toc-num">04</span><a class="toc-title" href="#ch-work">/tools 与 /tasks</a></div>
   <div class="toc-item"><span class="toc-num">05</span><a class="toc-title" href="#ch-context">/ctx、/diagnostics 与 /btw</a></div>
   <div class="toc-item"><span class="toc-num">06</span><a class="toc-title" href="#ch-static">/mcp 与 /rtk</a></div>
-  <div class="toc-item"><span class="toc-num">07</span><a class="toc-title" href="#ch-implementation">实现顺序与验收</a></div>
+  <div class="toc-item"><span class="toc-num">07</span><a class="toc-title" href="#ch-implementation">实现结果与验收</a></div>
   <div class="toc-item"><span class="toc-num">08</span><a class="toc-title" href="#ch-appendix">附录</a></div>
 </section>
 
@@ -478,10 +478,11 @@
   <div class="exec-summary">
     <h2>先说结论</h2>
     <ul>
-      <li>共有 8 个现有非 SettingsList Command Dialog 进入本次讨论，设计均已接受，代码实现仍待完成。</li>
+      <li>本轮逐项讨论了 8 个重点 Command Dialog，设计已经落实到生产代码与聚焦验证。</li>
       <li>所有状态都使用有固定含义的图标，<span class="sans">›</span> 只表示当前选中项，不再同时承担状态含义。</li>
       <li>PageUp/PageDown 保留，同时增加 Shift+Up/Down，照顾没有独立翻页键的 60% 键盘。</li>
-      <li>所有详情页使用短 <span class="sans">│</span> 标出板块标题，板块正文不继续缩进，避免三重缩进。</li>
+      <li>普通详情板块使用紧凑的 <span class="sans">◆</span> 标记，板块正文不继续缩进；<span class="sans">/btw</span> 保留直接阅读流，不硬加板块。</li>
+      <li>只有非空宽屏下的 <span class="sans">/tools</span> 与 <span class="sans">/tasks</span> 使用固定 18 行双栏；<span class="sans">/agents</span>、<span class="sans">/diagnostics</span> 与 <span class="sans">/btw</span> 始终单栏。</li>
       <li>Conversation Transcript、SettingsList、Agent roster、Todo 和 Statusline 不在这次 Dialog 重做范围内。</li>
     </ul>
   </div>
@@ -492,12 +493,12 @@
     <thead><tr><th>这份报告里的标记</th><th>意思</th></tr></thead>
     <tbody>
       <tr><td><strong>已决定</strong></td><td>设计已经写入 ADR 或模块 README，可作为实现依据。</td></tr>
-      <tr><td><strong>待实现</strong></td><td>当前源代码仍是旧页面，预览图不能当成已经上线的截图。</td></tr>
+      <tr><td><strong>已实现</strong></td><td>源代码、聚焦测试和真实 PTY 预期已经同步；最终合并仍以仓库完整检查为门槛。</td></tr>
       <tr><td><strong>不在范围</strong></td><td>本次不顺手重做 Transcript、SettingsList、Roster、Todo 或 Statusline。</td></tr>
     </tbody>
   </table>
 
-  <div class="callout"><strong>怎样检查这份报告：</strong>先看每页顶部的“一句话判断”，再看等宽示例。生成图只帮助检查层级、密度和浅色视觉，精确文案与图标含义以等宽示例和表格为准。</div>
+  <div class="callout"><strong>怎样检查这份报告：</strong>先看每页顶部的“一句话判断”，再看等宽示例。浅色图帮助检查层级、密度和整体形状；真实行为仍以源码、测试和 PTY 验证为准。</div>
 </section>
 
 <section class="chapter" id="ch-scope">
@@ -506,19 +507,19 @@
 
   <h2>先统一阅读语言，不统一内容模板</h2>
   <p class="lead">8 个 Dialog 应该让人一眼认出它们属于同一个产品，但不应该强迫它们展示同样的板块。共同语言只管选择、状态、板块、翻页和退出，各 Dialog 仍按自己的任务组织内容。</p>
-  <p>共同语言包含 5 件事：<code>›</code> 只表示选中，状态由固定图标表达，详情板块用短 <code>│</code> 标题，翻页同时支持 PageUp/PageDown 与 Shift+Up/Down，Esc 始终沿着详情、列表、Dialog 的层级返回。用户学会一次，就能在 8 个页面复用。</p>
+  <p>共同语言包含 5 件事：<code>›</code> 只表示选中，状态由固定图标表达，普通详情板块用 <code>◆</code> 标记，翻页同时支持 PageUp/PageDown 与 Shift+Up/Down，Esc 始终沿着详情、列表、Dialog 的层级返回。用户学会一次，就能在 8 个页面复用。</p>
   <p>真正需要区别的是内容。例如 <code>/agents</code> 要围绕 Agent 名称、任务和活动来读，<code>/mcp</code> 要快速看服务器是否可用，<code>/ctx</code> 要先看上下文用了多少。把它们硬塞进同一套 State、Task、Detail 行，只会让页面看起来整齐，却不好读。</p>
 
   <h2>本次需要检查的 8 个 Dialog</h2>
   <table class="kami-table striped">
     <thead><tr><th>命令</th><th>用户打开它时最想知道什么</th><th>页面形状</th></tr></thead>
     <tbody>
-      <tr><td><code>/agents</code></td><td>哪个 Agent，正在做什么，完整活动与结果是什么</td><td>列表 + 多层详情</td></tr>
-      <tr><td><code>/tools</code></td><td>这一段工具工作做了什么，某次调用的详情是什么</td><td>Activity 列表 + 调用详情</td></tr>
-      <tr><td><code>/tasks</code></td><td>现在还有哪些后台工作，输出或监看证据是什么</td><td>当前工作列表 + 类型专用详情</td></tr>
+      <tr><td><code>/agents</code></td><td>哪个 Agent，正在做什么，完整活动与结果是什么</td><td>始终单栏的列表 / 多层详情</td></tr>
+      <tr><td><code>/tools</code></td><td>这一段工具工作做了什么，某次调用的详情是什么</td><td>宽屏固定双栏，窄屏列表 / 详情</td></tr>
+      <tr><td><code>/tasks</code></td><td>现在还有哪些后台 Shell 或 Monitor，证据是什么</td><td>宽屏固定双栏，窄屏列表 / 详情</td></tr>
       <tr><td><code>/ctx</code></td><td>上下文用了多少，哪里需要注意，现在能做什么</td><td>状态概览 + 操作流程</td></tr>
-      <tr><td><code>/diagnostics</code></td><td>出了什么问题，我现在能做什么</td><td>问题列表 + 诊断详情</td></tr>
-      <tr><td><code>/btw</code></td><td>这个问题的答案是什么，历史答案在哪里</td><td>直接答案 + 成功历史</td></tr>
+      <tr><td><code>/diagnostics</code></td><td>出了什么问题，我现在能做什么</td><td>始终单栏的问题列表 / 诊断详情</td></tr>
+      <tr><td><code>/btw</code></td><td>这个问题的答案是什么，怎样切换历史</td><td>始终单栏的直接阅读流</td></tr>
       <tr><td><code>/mcp</code></td><td>每个服务器是否可用，是否需要认证或重连</td><td>静态状态页</td></tr>
       <tr><td><code>/rtk</code></td><td>运行环境是否可信，哪些行为开启，本次节省多少</td><td>静态检查页</td></tr>
     </tbody>
@@ -540,19 +541,19 @@
   <h2>板块与缩进</h2>
   <pre>Agent name · ● running · 36s
 
-│ Task
+◆ Task
 Review Dialog readability at 64 and 32 columns.
 
-│ Activity
+◆ Activity
 ✓ Read agent-dialog.ts · completed
 ⎿ 24 lines shown · 186 lines omitted
 
 Shift+↑/↓ page · Esc back</pre>
-  <p>短竖线只在板块标题这一行出现，不向下延伸成整根轨道。标题、正文、Agent 名称、工具行、<code>⎿</code> 预览和换行后的内容共享同一个左边界。这样保留层级，但不会越套越深。</p>
+  <p><code>◆</code> 只在板块标题这一行出现。标题、正文、Agent 名称、工具行、<code>⎿</code> 预览和换行后的内容共享同一个左边界。这样保留层级，但不会越套越深。</p>
 
   <div class="takeaway">
     <div class="takeaway-label">不在范围</div>
-    Conversation Transcript 的小圆点 <code>•</code> 已经确定，本次不拿 Dialog 的状态图标去改它。Pi 原生 SettingsList 也保留原生键盘行为。Agent roster、Todo、BTW、Permission 和 Tool 状态继续各守一个权威位置，不复制到 Statusline 或另一个常驻面板。
+    Conversation Transcript 的小圆点 <code>•</code> 已经确定，本次不改它。Dialog 沿用 Transcript 克制、按语义表达状态的语言，但不会把这个通用消息标记当作生命周期图标。Pi 原生 SettingsList 也保留原生键盘行为。Agent roster、Todo、BTW、Permission 和 Tool 状态继续各守一个权威位置。
   </div>
 </section>
 
@@ -562,25 +563,25 @@ Shift+↑/↓ page · Esc back</pre>
 
   <p class="lead">Agent 名称是 <code>/agents</code> 的第一阅读锚点。列表先展示名称，详情页再按 Task、可选结果和 Activity 展开，用户不需要先穿过 State、Task、Transcript 三行才能知道自己正在看谁。</p>
   <p>列表保持启动顺序，不按状态重新排序。每行从 Agent 名称开始，后面可带一句任务摘要，最右侧才是状态图标与时间。这样状态变化不会让整张列表跳动，用户也能凭名称稳定地找到同一个 Agent。</p>
-  <p>详情页在任何状态下都使用同一副骨架：顶部是 Agent 名称和完整状态，Task 永远存在，Result、Error 或 Partial result 只在确实有内容时出现，Activity 永远存在。Activity 保留完整事件顺序，但每次工具输出只给有限预览，并明确说明省略了多少行。</p>
+  <p>详情页在任何状态下都使用同一副单栏骨架：顶部是 Agent 名称和完整状态，Task 永远存在，Result、Error 或 Partial result 只在确实有内容时出现，Activity 永远存在。Activity 保留完整相关顺序，但每次工具输出只给有限预览，并明确说明省略了多少行。</p>
 
   <figure>
-    <img src="assets/agents-dialog-light.png" alt="浅色 /agents 列表与详情目标预览">
-    <figcaption>图 1：浅色目标预览，不是当前实现截图。名称先建立身份，短竖线再把任务、结果和活动分成可扫读的板块。</figcaption>
+    <img src="assets/agents-dialog-light.png" alt="浅色单栏 /agents 详情实现示意">
+    <figcaption>图 1：浅色实现示意。<span class="sans">/agents</span> 始终单栏；名称先建立身份，<span class="sans">◆</span> 再把任务、结果和活动分成可扫读的板块。</figcaption>
   </figure>
 
   <h2>具体详情示例</h2>
   <pre>Agents / reviewer
 ✓ completed · 18s
 
-│ Task
+◆ Task
 Review the /agents dialog for readability at 64 and 32 columns.
 
-│ Result
+◆ Result
 The Agent name needs priority. Section labels should be stronger,
 and Activity should keep every event while shortening large Tool output.
 
-│ Activity
+◆ Activity
 reviewer
 I'll inspect the current list and detail layout.
 
@@ -616,45 +617,36 @@ I'll inspect the current list and detail layout.
   <p class="lead"><code>/tools</code> 的主角是用户能理解的一次 Activity，也就是一段连续的工具工作，而不是内部调用 ID。列表先写它做了什么，详情再按需要展开调用和格式化结果。</p>
   <p>列表按最新 Activity 在前排列。每行依次是选择标记、可读摘要、状态图标和可选调用次数，例如 <code>Read · tool-dialog.ts  ✓ 3 calls</code>。屏幕变窄时先去掉调用次数，不能先丢掉摘要或状态。</p>
   <p>包含多次调用的 Activity 展示 Calls 和 Detail 两个板块，单次调用直接进入 Detail，不为一个条目造空列表。正常详情保留各工具自己已经设计好的格式，Raw 只在调试时打开，协议 ID 不挤进日常阅读。</p>
+  <p>宽度达到 96 格且列表非空时，Activity 列表与选中详情共用一块固定 18 行区域。顶部粗线连续贯穿全宽，中间只有一条粗 <code>┃</code> 分隔线；切换 Activity 不会推动编辑器。空页面和窄屏仍是单栏。</p>
 
   <figure>
-    <img src="assets/tools-dialog-light.png" alt="浅色 /tools Activity 列表与详情目标预览">
-    <figcaption>图 2：浅色目标预览。先回答“这段工作做了什么”，再允许用户钻到某一次调用。</figcaption>
+    <img src="assets/tools-dialog-light.png" alt="浅色固定双栏 /tools 实现示意">
+    <figcaption>图 2：浅色实现示意。它是一块有内部中线的区域，不是两张并排卡片；先回答“这段工作做了什么”，再允许用户钻到某一次调用。</figcaption>
   </figure>
 
   <pre>Tools / Read 4 files and searched 2 patterns
 ✓ success · 6 calls
 
-│ Calls
+◆ Calls
 › ✓ Read · packages/pi-stuff/src/tool-display/tool-dialog.ts
   ✓ Search · toolStateGlyph
 
-│ Detail · formatted
+◆ Detail · formatted
 Read
 Target: packages/pi-stuff/src/tool-display/tool-dialog.ts
 Summary: 58 lines returned</pre>
   <p>Raw protocol 的意思是“调用时保存的原始协议数据”。它包含 call ID、Tool 名称、参数、结果和 details，只为调试服务。按 <code>r</code> 在 formatted 与 Raw 之间切换，Esc 先从 Raw 回 formatted，再从详情回列表。</p>
 
   <h2>/tasks：只管当前仍在进行的后台工作</h2>
-  <p class="lead"><code>/tasks</code> 是当前工作台，不是历史记录。它只展示仍在运行、等待、停止中或恢复中的 Shell、Monitor 和 Agent 投影，并把三种任务的详情分开设计。</p>
-  <p>列表先写任务类型和可辨认的名称，再写一句短说明，右侧放状态与已用时间。Agent 行仍以 Agent 名称为核心，Enter 直接进入 <code>/agents</code>；<code>/tasks</code> 不再复制一份较差的 Agent 详情。</p>
+  <p class="lead"><code>/tasks</code> 是当前工作台，不是历史记录。它只展示当前仍活跃的 Background Shell 和 Monitor，不展示 Agent、Todo、Goal 或 Tool 调用历史。</p>
+  <p>列表先写任务类型和可辨认的名称，再写一句短说明，右侧放状态与已用时间。数据直接来自 Background Work runtime snapshot；<code>/agents</code> 和 <code>/tools</code> 各自读取自己的权威数据，不需要匹配文本或在显示阶段删掉所谓重复项。</p>
   <p>Shell 详情需要 Command 与 Output，因为用户关心命令和输出。Monitor 详情需要 Source、Condition 与 Latest evidence，因为用户关心它在监看什么、何时结束、最新看到了什么。不同任务不再共用 State、Task、ID 三行。</p>
 
   <figure>
-    <img src="assets/tasks-context-light.png" alt="浅色 /tasks 与 /ctx 目标预览对照">
-    <figcaption>图 3：左侧是 /tasks Shell 详情，右侧是下一章的 /ctx。两页共用操作语言，但信息顺序完全不同。</figcaption>
+    <img src="assets/tasks-context-light.png" alt="浅色固定双栏 /tasks 实现示意">
+    <figcaption>图 3：浅色实现示意。<span class="sans">/tasks</span> 的列表只有 Shell 与 Monitor，宽屏详情与列表处在同一块固定区域。</figcaption>
   </figure>
 
-  <table class="kami-table striped">
-    <thead><tr><th>任务类型</th><th>详情板块</th><th>谁拥有控制权</th></tr></thead>
-    <tbody>
-      <tr><td>Shell</td><td>Command、Output</td><td><code>/tasks</code> 可 stop</td></tr>
-      <tr><td>Monitor</td><td>Source、Condition、Latest evidence</td><td><code>/tasks</code> 可 stop</td></tr>
-      <tr><td>Agent 投影</td><td>不在这里复制详情</td><td>Enter 打开 <code>/agents</code></td></tr>
-    </tbody>
-  </table>
-
-  <div class="callout"><strong>两页的边界：</strong><code>/tools</code> 看 Tool 调用和协议详情，<code>/tasks</code> 看当前后台工作。Tool 历史不能混进当前任务列表，已经结束的后台工作也不在 <code>/tasks</code> 里长期堆积。</div>
 </section>
 
 <section class="chapter" id="ch-context">
@@ -669,14 +661,14 @@ Summary: 58 lines returned</pre>
   <pre>Context
 72.4% · 145K / 200K tokens
 
-│ Overview
+◆ Overview
 8 compartments · compacted history ~54K tokens
 Historian idle · cache 12m remaining
 
-│ Attention
+◆ Attention
 ! 2 pending drops · removals waiting to apply
 
-│ Actions
+◆ Actions
 › Wrap up history
   Apply 2 pending drops
   Rebuild compartments</pre>
@@ -692,7 +684,7 @@ The original Pi conversation is kept.
   Rebuild now</pre>
 
   <h2>/diagnostics：先看问题，再看是谁报的</h2>
-  <p class="lead">诊断记录要先让用户看懂发生了什么，再告诉他来自哪个 Capability。严重程度图标只表达信息、警告和错误，不借用运行中的实心圆。</p>
+  <p class="lead">诊断记录要先让用户看懂发生了什么，再告诉他来自哪个 Capability。严重程度图标只表达信息、警告和错误，不借用运行中的实心圆；页面在任何宽度下都保持单栏。</p>
   <p>列表使用 <code>i</code>、<code>!</code>、<code>×</code> 三种图标。每行保留来源 Capability、问题摘要、重复次数和最新发生时间，窄屏时至少留下图标、来源和一段仍有意义的摘要。记录按最新更新时间排在前面。</p>
   <p>详情围绕 Summary、Action 和 Details 三个板块来读。Action 直接说用户下一步能做什么；Details 放诊断上下文。Severity、Occurred 这类字段不再逐行抢占首屏，因为它们已经由图标、排序和页头表达。</p>
 
@@ -707,24 +699,24 @@ Diagnostics / Agents
 
 Failed to read Agent transcript
 
-│ Action
+◆ Action
 Run /agents again after the session file becomes readable.
 
-│ Details
+◆ Details
 ...latest bounded and redacted diagnostic detail...</pre>
 
-  <h2>/btw：问完直接看答案，历史只是需要时再找</h2>
-  <p class="lead"><code>/btw question</code> 应直接进入当前答案，不先让用户穿过历史列表。只有裸 <code>/btw</code> 才打开历史；流式答案跟随用户是否停在底部，不强行把滚动位置拉回去。</p>
-  <p>回答页以 Answer 为主板块，状态图标区分等待、生成、完成、取消和失败。用户向上滚动后，自动跟随暂停，并出现有新内容的提示；回到底部或使用向下翻页后才恢复跟随。</p>
-  <p>历史只保存成功交流，所以列表不需要每行重复成功图标。Footer 使用人能直接理解的 <code>f new session</code>，清理历史仍走明确确认。等待中的回答不能因为 Enter 或 Space 被悄悄关闭。</p>
+  <h2>/btw：复刻 Claude Code 的直接阅读流</h2>
+  <p class="lead"><code>/btw question</code> 在一条连续粗顶线下面显示近期问题、当前问题和 Markdown 答案。它没有 BTW 标题、状态行、Answer 板块、卡片或双栏。</p>
+  <p>Left/Right 切换保留的成功交流；Up/Down 滚动，PageUp/PageDown 与 Shift+Up/Down 翻一页。流式答案只在用户停在底部时自动跟随。失败信息也进入同一条答案阅读流，不另开错误板块。</p>
+  <p>Footer 使用已经观察到的 Claude 词句：<code>c to copy</code>、<code>f to fork</code>、<code>x to clear history</code>、<code>Esc to close</code>。清理历史仍在原界面内用 <code>y</code> 确认；Space、Enter 和 Esc 都可以关闭。</p>
 
-  <pre>BTW · 3 of 4
-Why did the typecheck fail? · ✓ answered
+  <pre>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  /btw Why did the typecheck fail?
 
-│ Answer
-...Markdown answer...
+  The generated declaration file was stale, so TypeScript read an old API shape.
 
-←/→ history · Shift+↑/↓ page · c copy · f new session · Esc close</pre>
+  ←/→ to switch · ↑/↓ to scroll · c to copy · f to fork
+  x to clear history · Esc to close</pre>
 
 </section>
 
@@ -732,13 +724,13 @@ Why did the typecheck fail? · ✓ answered
   <div class="chapter-num">06 · Static Inspection Dialogs</div>
   <h1>/mcp 与 /rtk：静态页也要有清楚的主次</h1>
 
-  <p class="lead">静态状态页不需要为了统一而增加列表详情层。<code>/mcp</code> 以服务器名称和可用性为主，<code>/rtk</code> 以运行环境、行为开关和本次节省为主，两者都在一页内完成阅读。</p>
+  <p class="lead">静态状态页不需要为了统一而增加列表详情层。<span class="sans">/mcp</span> 以服务器名称和可用性为主，<span class="sans">/rtk</span> 以运行环境、行为开关和本次节省为主，两者都在一页内完成阅读。</p>
   <p><code>/mcp</code> 每行先写服务器名称，再用 <code>✓</code>、<code>○</code>、<code>×</code>、<code>!</code>、<code>■</code> 表达状态并保留状态词。资源和工具数量放在后面，认证或重连说明必须在能力列表之前出现。URL、命令、参数、环境变量和密钥继续留在安全边界外。</p>
   <p><code>/rtk</code> 分成 Runtime、Behavior、Session savings 三个板块。ready、unchecked、drifted、unavailable 都有固定图标和完整词。页面还要明说 model projection 只影响模型看到的精简副本，不会改写 Conversation Transcript 或 Session。</p>
 
   <figure>
-    <img src="assets/utility-dialogs-light.png" alt="浅色 BTW、MCP 与 RTK 目标预览对照">
-    <figcaption>图 4：浅色目标预览。三个小页面共享板块和状态语言，但没有被强行套进列表详情模板。</figcaption>
+    <img src="assets/utility-dialogs-light.png" alt="浅色 BTW、MCP 与 RTK 实现示意">
+    <figcaption>图 4：浅色实现示意。BTW 保留 Claude 的直接阅读流；MCP 与 RTK 共享 Pi Stuff 的状态语言，但没有被强行套进列表详情模板。</figcaption>
   </figure>
 
   <div class="compact-examples">
@@ -754,11 +746,11 @@ Shift+↑/↓ page · Esc close</pre>
     <div>
       <h2>/rtk 的具体形状</h2>
       <pre>RTK · ✓ ready · v0.42.4
-│ Runtime
+◆ Runtime
 ~/.local/bin/rtk · SHA-256 1d8bf5f1...
-│ Behavior
+◆ Behavior
 ✓ rewriting on · ✓ model projection on
-│ Session savings
+◆ Session savings
 12,430 chars (38%) · 24 results
 /rtk settings · Esc close</pre>
     </div>
@@ -768,20 +760,20 @@ Shift+↑/↓ page · Esc close</pre>
 
 <section class="chapter" id="ch-implementation">
   <div class="chapter-num">07 · Implementation and Acceptance</div>
-  <h1>实现顺序与验收方法</h1>
+  <h1>实现结果与验收方法</h1>
 
-  <p class="lead">设计文档已经完成，但源代码仍是旧页面。实现时应该先落共同语法，再按风险和复用程度逐个改造，最后在宽屏与窄屏上检查真实渲染，不能把这份报告当成完成证明。</p>
-  <p>第一步实现共享的图标含义、短竖线板块标题、Shift+Up/Down 翻页和 Footer 规则。第二步优先改 <code>/agents</code>、<code>/tools</code>、<code>/tasks</code>，因为它们信息量最大，也最能检验列表、详情、实时更新和窄屏退化是否成立。</p>
-  <p>第三步完成 <code>/ctx</code>、<code>/diagnostics</code>、<code>/btw</code>、<code>/mcp</code>、<code>/rtk</code>。验收至少覆盖 100×32 与窄宽度，逐项看选择是否稳定、状态是否仍可读、活动是否丢失、Footer 是否挤压正文、Esc 是否按层返回，以及 60% 键盘是否不靠 PageUp/PageDown 也能翻页。</p>
+  <p class="lead">本轮决策已经落实到生产代码，不再停留在 prototype。共享布局、8 个重点 Dialog、模块文档和真实 PTY 预期已经同步；报告只负责把结果集中说明，不能代替测试证据。</p>
+  <p>共享层已经提供粗 Dialog 顶线、<code>◆</code> 板块标记、固定状态图标、PageUp/PageDown 与 Shift+Up/Down 的同一路径，以及一块区域式的固定双栏。双栏只由 <code>/tools</code> 和 <code>/tasks</code> 使用，数据为空时不会留下半块详情。</p>
+  <p><code>/tasks</code> 已删除 Agent 投影与 current-work 聚合注册表，直接使用 Background Work runtime snapshot；<code>/diagnostics</code> 已固定为单栏；<code>/btw</code> 已按真实 Claude Code 形状去掉 Answer 板块与状态壳。Agent、Tool、Context、MCP 和 RTK 的状态图标、板块、翻页与低高度路径也已同步。</p>
 
-  <h2>建议的实现批次</h2>
+  <h2>已经落地的批次</h2>
   <table class="kami-table striped">
-    <thead><tr><th>批次</th><th>内容</th><th>为什么先做</th></tr></thead>
+    <thead><tr><th>批次</th><th>内容</th><th>结果</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td>共享图标、板块标题、翻页别名、Footer 规则</td><td>8 个页面都会用到，先定底座能减少返工</td></tr>
-      <tr><td>2</td><td><code>/agents</code>、<code>/tools</code>、<code>/tasks</code></td><td>信息最密，包含列表、详情、实时更新和多级返回</td></tr>
-      <tr><td>3</td><td><code>/ctx</code>、<code>/diagnostics</code>、<code>/btw</code></td><td>验证操作流程、警告、流式阅读和历史导航</td></tr>
-      <tr><td>4</td><td><code>/mcp</code>、<code>/rtk</code></td><td>静态页风险较低，最后收口状态与低高度适配</td></tr>
+      <tr><td>1</td><td>共享图标、<code>◆</code> 板块、翻页别名、Footer 与固定双栏</td><td>共享单元测试已覆盖</td></tr>
+      <tr><td>2</td><td><code>/agents</code>、<code>/tools</code>、<code>/tasks</code></td><td>列表、详情、实时更新、双栏与边界测试已覆盖</td></tr>
+      <tr><td>3</td><td><code>/ctx</code>、<code>/diagnostics</code>、<code>/btw</code></td><td>操作流程、单栏诊断、流式阅读和历史导航已覆盖</td></tr>
+      <tr><td>4</td><td><code>/mcp</code>、<code>/rtk</code></td><td>状态、低高度、敏感信息边界与真实 PTY 预期已覆盖</td></tr>
     </tbody>
   </table>
 
@@ -790,16 +782,16 @@ Shift+↑/↓ page · Esc close</pre>
     <li><strong>第一眼：</strong>3 秒内能说出页面主角是谁或是什么，不必先读字段名。</li>
     <li><strong>选择：</strong><code>›</code> 只表示当前焦点，状态图标仍然独立存在。</li>
     <li><strong>状态：</strong>紧凑列表有图标，详情或静态状态行保留完整状态词。</li>
-    <li><strong>板块：</strong><code>│</code> 只在标题行出现，正文没有额外层层缩进。</li>
+    <li><strong>板块：</strong><code>◆</code> 只在标题行出现，正文没有额外层层缩进；<code>/btw</code> 不强加板块。</li>
     <li><strong>翻页：</strong>PageUp/PageDown 与 Shift+Up/Down 行为一致，只有溢出时才显示提示。</li>
     <li><strong>实时内容：</strong>停在底部时自动跟随，向上阅读后不抢滚动位置，并显示有限的新内容提示。</li>
     <li><strong>窄屏：</strong>先丢描述、计数和次要元数据，不能先丢名称、状态、选中项或 Escape。</li>
     <li><strong>返回：</strong>Esc 每次只退一层，Raw、详情、列表、Dialog 的顺序稳定。</li>
-    <li><strong>权威边界：</strong>同一份 Agent、Tool、Todo、BTW 或 Permission 状态不在多个常驻位置重复。</li>
+    <li><strong>权威边界：</strong><code>/tasks</code> 只读 Background Work，<code>/agents</code> 只管 Agent，<code>/tools</code> 只管调用记录；不靠字符串匹配去重。</li>
     <li><strong>空与错：</strong>空页面、加载、不可用和错误都有普通话说明，同时保留真实状态与退出路径。</li>
   </ol>
 
-  <p><strong>完成标准：</strong>只有真实 UI 代码、聚焦测试、100×32 与窄宽度渲染、完整键盘路径和最终 <span class="sans">bun run check</span> 全部通过，才能把“待实现”改成“已实现”。</p>
+  <p><strong>完成标准：</strong>真实 UI 代码、聚焦测试、100×32 与窄宽度渲染、完整键盘路径已经落地；最终以 <span class="sans">bun run check</span> 对这些代码、文档与图片的通过结果作为可合并门槛。</p>
 </section>
 
 <section class="chapter" id="ch-appendix">
@@ -808,6 +800,7 @@ Shift+↑/↓ page · Esc close</pre>
 
   <h2>A. 本报告依据的决策文件</h2>
   <ul>
+    <li><span class="sans">DESIGN.md</span></li>
     <li><span class="sans">docs/research/agent-activity-ui-reference.md</span></li>
     <li><span class="sans">docs/adr/0010-fold-continuous-retrieval-segments.md</span></li>
     <li><span class="sans">packages/pi-stuff/src/background-work/README.md</span></li>
@@ -828,11 +821,11 @@ Shift+↑/↓ page · Esc close</pre>
   <p><strong>model projection：</strong>发给模型看的精简副本。它不会改写用户看到的 Transcript、Tool result 或 Session 文件。</p>
 
   <h2>C. 预览图说明</h2>
-  <p>4 张 PNG 均由 ImageGen 生成，使用浅色 Kami 配色。它们用于检查布局、主次、密度与图标位置，不是当前产品截图。图像生成无法可靠承担所有精确字符，因此本报告同时给出等宽文字示例；当图与示例冲突时，以已经写入决策文件的文字为准。</p>
+  <p>4 张 PNG 使用浅色 Kami 配色，并由可精确控制文字的排版源渲染。它们用于检查布局、主次、密度与图标位置，不冒充真实终端截图；真实行为以源码、测试和 PTY 验证为准。</p>
 
   <div class="takeaway">
     <div class="takeaway-label">Review status</div>
-    内容依据已接受决策整理。报告本身完成后仍需单独复核页面密度、字体、图片清晰度和每个原子事实是否保留。
+    内容依据最终决策和真实实现整理。交付前还会单独复核页面密度、字体、图片清晰度、窄屏 HTML 和每个原子事实是否保留。
   </div>
 </section>
 

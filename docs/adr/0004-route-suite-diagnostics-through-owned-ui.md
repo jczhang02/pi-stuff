@@ -26,11 +26,12 @@ Host TUI. Repository safety checks reject any new Host-side console call outside
 ## Accepted `/diagnostics` readability update
 
 **Decision update:** 2026-08-17
-**Status:** Accepted; implementation pending.
+**Status:** Implemented on 2026-08-18.
 
 This update changes only the existing current-process Command Dialog. Record ownership, notice acknowledgement,
 deduplication, bounds, redaction, non-persistence, and the separation from Session, model context, transcript, and
-Statusline remain unchanged.
+Statusline remain unchanged. `/diagnostics` uses a sequential list/detail flow and remains single-column at every
+terminal width; it never introduces a split pane for this troubleshooting path.
 
 The list's primary information is what happened. Capability is the source, not the headline. A compact row is the `›`
 focus marker, severity icon, Capability, summary, then repeat count and latest age:
@@ -61,15 +62,15 @@ Diagnostics / Agents
 
 Failed to read Agent transcript
 
-│ Action
+◆ Action
 Run /agents again after the session file becomes readable.
 
-│ Details
+◆ Details
 ...latest bounded and redacted diagnostic detail...
 ```
 
 Omit `Action` when no user action was recorded. `Details` shows the latest bounded record content; when none exists it
-says `No additional details were recorded.` without inventing an explanation. The short `│` mark appears only on the
+says `No additional details were recorded.` without inventing an explanation. The compact `◆` appears only on the
 section heading. PageUp/PageDown and Shift+Up/Down scroll by a page; Up and Down scroll by one line. A live update to the
 selected deduplicated record refreshes its count, age, action, and latest details without moving a user to another
 record or resetting a valid reading position.
@@ -78,11 +79,10 @@ At low height preserve the Header, severity and summary, selected row or first d
 counts, optional action, or surrounding records. Sanitization, credential redaction, record/detail bounds, and observer
 isolation remain mandatory and are never reduced for visual simplicity.
 
-The current implementation already has the right data boundary, deduplication, redaction, severity colors, bounded
-history, current-process clear, selection identity, detail scrolling, and low-height fitting. Its remaining presentation
-deltas are `●` for informational severity, Capability receiving more emphasis than the summary, no list overflow/page
-navigation, generic Severity/Occurred/Summary rows in detail, missing short marked sections, and missing Shift+Arrow
-page aliases.
+The implementation now uses `i` for informational severity, gives the problem summary priority, provides list overflow
+and page navigation, removes generic Severity/Occurred/Summary detail rows, and renders `◆` sections. Focused tests
+cover the single-column contract, status icons, update-stable selection, detail bounds, page aliases, and low-height
+fitting; the real PTY verifier covers Host rendering.
 
 ## Consequences
 

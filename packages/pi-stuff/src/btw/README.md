@@ -2,102 +2,62 @@
 
 Pi Stuff's one-shot `/btw` capability.
 
-`/btw <question>` opens the shared full-width, non-floating Command Dialog and
-streams one no-tool answer from the active model while the main Agent keeps
-running. The surface contains only the `/btw` question, Markdown answer, and
-the controls available in its current state. Closing it restores the editor
-draft and normal Suite chrome.
+`/btw <question>` opens the shared full-width, non-floating Command Dialog and streams one no-tool answer from the
+active model while the main Agent keeps running. Closing it restores the editor draft and normal Suite chrome.
 
-Routine side questions never become messages in the main transcript or model
-context. BTW receives Pi's completed, compaction-aware context, including text,
-images, tool calls, and tool results; an unfinished assistant partial is
+Routine side questions never become messages in the main transcript or model context. BTW receives Pi's completed,
+compaction-aware context, including text, images, Tool calls, and Tool results; an unfinished assistant partial is
 excluded. Every side call has its own abort signal and `tools: []`.
 
-Run bare `/btw` to reopen successful history for the current session. History
-is stored as invisible, no-context Pi custom entries, survives process restart
-and resume, and is not inherited by `/clear`, a new session, or a forked
-session. It is retained for the practical session lifetime, with only abnormal
-guards of 1,000 exchanges or 8 MiB evicting the oldest records; an individual
-exchange larger than the entire byte budget is not retained. Process-local
-copies are released when their session shuts down and rebuilt from those
-custom entries when that session is resumed.
+Successful exchanges are stored as invisible, no-context Pi custom entries. They survive process restart and resume,
+but are not inherited by `/clear`, a new session, or a forked session. Retention is bounded by the practical session
+lifetime, 1,000 exchanges, and 8 MiB. Process-local copies are released when their session shuts down and rebuilt from
+those custom entries when that session resumes.
 
-Answered exchanges support history navigation, scrolling, copy, clear, and
-`f`. Promotion waits for the main Agent to become idle, then opens a new Pi
-session whose formal user and assistant turns are the selected BTW question
-and answer. The original session remains unchanged apart from its invisible
-display-history entry. Space, Enter, and Esc dismiss the focused surface; Esc
-is the advertised close/cancel key.
+Answered exchanges support history switching, scrolling, copy, clear, and `f`. Promotion waits for the main Agent to
+become idle, then opens a new Pi session whose formal user and assistant turns are the selected BTW question and
+answer. The original session remains unchanged apart from its invisible display-history entry. Space, Enter, and Esc
+dismiss the focused surface; Esc is the advertised close key.
 
-Clearing earlier history is a two-step inline action inside the same Command
-Dialog: `x` asks for confirmation, `y` commits it, and Esc cancels. It never
-opens a floating confirmation window. At low terminal heights the current
+Clearing earlier history is a two-step inline action inside the same Command Dialog: `x` asks for confirmation, `y`
+commits it, and Esc cancels. It never opens a floating confirmation window. At low terminal heights the selected
 question or error and an Escape hint remain visible before answer history.
 
 The implementation derives from `@juicesharp/rpiv-btw`; see [UPSTREAM.md](./UPSTREAM.md).
 
-Pi does not expose a public transcript-free Host model-call seam. `/btw`
-therefore uses the active model's registered provider and Model Registry auth,
-but it does not run provider lifecycle/context hooks or inherit Host retry and
+Pi does not expose a public transcript-free Host model-call seam. `/btw` therefore uses the active model's registered
+provider and Model Registry auth, but it does not run provider lifecycle/context hooks or inherit Host retry and
 transport settings.
 
-## Accepted `/btw` readability target
+## `/btw` readability contract
 
-**Decision update:** 2026-08-17
-**Status:** Accepted; implementation pending.
+**Decision update:** 2026-08-17  
+**Status:** Implemented on 2026-08-18.
 
-The question is the primary identity of a BTW exchange. `/btw <question>` opens that exchange directly and gives the
-answer the available body height. It does not keep up to five unrelated history questions above a streaming answer.
-Bare `/btw` has a different job and opens a compact successful-history list first:
-
-```text
-BTW history · 4 exchanges
-
-› Why did the typecheck fail?                          2m
-  What does Context wrapup preserve?                 18m
-  How does Tool grouping work?                        1h
-
-↑/↓ select · Enter open · x clear earlier · Esc close
-```
-
-The history list keeps newest first, preserves focus while records update, and uses `… N newer`/`… N older` when it
-overflows. Up and Down move one exchange; PageUp/PageDown and Shift+Up/Down move one visible page. History contains
-successful exchanges only, so a repeated success icon would add no information and is omitted.
-
-Exchange detail uses the selected question as its visual anchor:
+This surface follows the observed Claude Code shape within Pi's native Command Dialog lifecycle. One continuous heavy
+top rule introduces a single-column reading flow at every width. Up to five recent questions appear as quiet `/btw`
+lines, the selected question is emphasized, and its Markdown answer follows directly:
 
 ```text
-BTW · 3 of 4
-Why did the typecheck fail?
-✓ answered
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  /btw Why did the typecheck fail?
 
-│ Answer
-...Markdown answer...
+  The generated declaration file was stale, so TypeScript read an old API shape.
 
-←/→ history · Shift+↑/↓ page · c copy · f new session · x clear earlier · Esc close
+  ←/→ to switch · ↑/↓ to scroll · c to copy · f to fork
+  x to clear history · Esc to close
 ```
 
-Use `● answering`, `✓ answered`, and `× failed`; when a failed call retained text, add `partial answer` to the full
-state line. The short `│` mark appears only on `Answer`. Markdown retains its own meaningful list, quote, and code-block
-hierarchy. A blank successful answer says `(empty answer)`; bare `/btw` with no history is an empty state, not a failed
-exchange.
+There is no `BTW` title, lifecycle label, `Answer` section, list/detail transition, card, or split pane. Pending work is
+shown by the answer loader; a failure appears in the answer flow. A blank successful answer says `(empty answer)`, and
+bare `/btw` with no retained exchange says `No previous /btw exchange in this session.`
 
-While streaming, follow appended answer content only at the bottom. Up, PageUp, or Shift+Up pauses following and shows
-a bounded newer-content notice; reaching the bottom resumes following. Up and Down scroll by one step;
-PageUp/PageDown and Shift+Up/Down scroll by one page. Left and Right switch successful history and reset the selected
-answer to its beginning. They do not affect the current streaming exchange.
-
-`c copy` and `f new session` appear only for a successful exchange. The latter is the existing fork operation, but the
-visible label describes its outcome: it waits for the main Agent to become idle and then opens a new Pi session seeded
-with the selected question and answer. `x clear earlier` keeps the existing inline `y` confirmation and retains the
-selected or active exchange. Feedback stays above the Escape path and never replaces the question or a partial error.
-
-The history list uses Enter to open. In exchange detail, Enter and Space may close only a settled answer; a pending
-answer advertises and accepts Escape as its cancellation path so an ordinary confirm key cannot silently cancel a
-stream. Escape from detail closes the focused BTW surface and restores the exact editor draft and Suite chrome.
+Left and Right switch retained exchanges. Up and Down scroll by three lines; PageUp/PageDown and Shift+Up/Down scroll
+one visible page. A streaming answer follows its tail only while the reader remains at the bottom. `c` and `f` apply
+only to a successful exchange. `x` appears only when earlier history exists and keeps the inline confirmation inside
+the same surface.
 
 The transcript-free context projection, no-Tool provider call, per-call abort signal, persisted invisible display
-history, bounds, sanitization, original-session preservation, and Session isolation remain unchanged. The current UI's
-remaining deltas are the always-visible five-question history strip, no dedicated bare-history list, no state icon or
-Answer section, `f fork` implementation wording, no explicit newer-content notice, hidden pending Enter/Space
-cancellation, and missing PageUp/PageDown plus Shift+Arrow page aliases.
+history, bounds, sanitization, original-session preservation, and Session isolation remain unchanged. Focused tests
+and the real PTY verifier cover history switching, streaming, clear confirmation, copy/fork controls, page aliases,
+low-height fitting, and exact draft/chrome restoration.

@@ -19,7 +19,7 @@ helper, provenance record, and verification seam has an explicit destination.
 | `packages/pi-web-access` | `packages/pi-stuff/src/web/runtime` | Adapted search, extraction, storage, PDF and SSRF implementation |
 | `packages/pi-stuff-mcp` | `packages/pi-stuff/src/mcp` | Bounded Suite MCP surface, status dialog and Tool presentation |
 | `packages/pi-mcp-adapter` | `packages/pi-stuff/src/mcp/runtime` | Adapted transports, discovery, OAuth, lifecycle, output guard and protocol implementation |
-| `packages/pi-stuff-work` | `packages/pi-stuff/src/background-work` | Background Shell, Monitor, task dialog and current-work registry |
+| `packages/pi-stuff-work` | `packages/pi-stuff/src/background-work` | Background Shell, Monitor, task dialog and live runtime registry |
 | `packages/pi-stuff-agents` | `packages/pi-stuff/src/subagents` | Agent discovery, execution, steering, session ownership, roster and dialog |
 | `packages/pi-stuff-todo` | `packages/pi-stuff/src/todo` | Todo state, task graph, Task Tools and checklist UI |
 | `packages/pi-stuff-btw` | `packages/pi-stuff/src/btw` | One-shot side question, isolated model request, history and Command Dialog |

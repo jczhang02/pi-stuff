@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1024" viewBox="0 0 1536 1024">
+  <rect width="1536" height="1024" fill="#f5f4ed"/>
+  <style>
+    text { font-family: "Iosevka Nerd Font Mono", "Noto Sans Mono CJK SC", monospace; fill: #141413; }
+    .title { font-size: 37px; font-weight: 700; }
+    .body { font-size: 27px; }
+    .meta { font-size: 24px; fill: #6b6a64; }
+    .section { font-size: 29px; font-weight: 700; }
+    .accent { fill: #1B365D; }
+    .rule { stroke: #504e49; stroke-width: 4; }
+  </style>
+
+  <line class="rule" x1="32" y1="42" x2="1504" y2="42"/>
+  <text class="body accent" x="48" y="94">/btw</text>
+  <text class="body" x="142" y="94">Why did the typecheck fail?</text>
+  <text class="body" x="48" y="150">The generated declaration file was stale, so TypeScript read an old API shape.</text>
+  <text class="meta" x="48" y="210">←/→ to switch · ↑/↓ to scroll · c to copy · f to fork · x to clear history · Esc to close</text>
+
+  <line class="rule" x1="32" y1="286" x2="1504" y2="286"/>
+  <text class="title" x="48" y="344">MCP</text>
+  <text class="meta" x="154" y="344">· 2/3 connected · 14 tools · 3 resources</text>
+  <text class="body accent" x="48" y="404">✓</text>
+  <text class="body" x="94" y="404">filesystem · connected · 8 tools · 1 resource</text>
+  <text class="body accent" x="48" y="458">!</text>
+  <text class="body" x="94" y="458">github · needs auth · run /mcp-auth github</text>
+  <text class="body accent" x="48" y="512">×</text>
+  <text class="body" x="94" y="512">browser · failed · run /mcp reconnect browser</text>
+  <text class="meta" x="48" y="566">Shift+↑/↓ page · Esc close · configure in .mcp.json</text>
+
+  <line class="rule" x1="32" y1="640" x2="1504" y2="640"/>
+  <text class="title" x="48" y="698">RTK</text>
+  <text class="body accent" x="166" y="698">✓ ready</text>
+  <text class="meta" x="330" y="698">· v0.42.4</text>
+  <text class="section accent" x="48" y="758">◆</text>
+  <text class="section" x="90" y="758">Runtime</text>
+  <text class="body" x="300" y="758">~/.local/bin/rtk · SHA-256 1d8bf5f1…</text>
+  <text class="section accent" x="48" y="816">◆</text>
+  <text class="section" x="90" y="816">Behavior</text>
+  <text class="body" x="300" y="816">✓ rewriting on · ✓ model projection on</text>
+  <text class="section accent" x="48" y="874">◆</text>
+  <text class="section" x="90" y="874">Session savings</text>
+  <text class="body" x="432" y="874">12,430 chars (38%) · 24 results</text>
+  <text class="meta" x="48" y="958">/rtk settings · Esc close</text>
+</svg>

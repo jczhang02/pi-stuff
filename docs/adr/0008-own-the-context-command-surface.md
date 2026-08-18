@@ -17,30 +17,30 @@ maintenance does not claim a Statusline slot.
 ## Accepted `/ctx` readability update
 
 **Decision update:** 2026-08-17
-**Status:** Accepted; implementation pending.
+**Status:** Implemented on 2026-08-18.
 
 This update changes only the Suite-owned Context Command Dialog presentation. The dispatcher, upstream validation,
 storage, confirmation authority, Historian work, Context Activity, typed subcommands, and suppression of upstream UI
-remain unchanged.
+remain unchanged. `/ctx` stays single-column at every terminal width.
 
 The overview must answer three questions in order: how full the current model context is, what Context state needs
 attention, and which maintenance actions are useful now. Context usage remains the Header's primary value. The body
-uses short section marks instead of three unlabeled dense status lines:
+uses compact `◆` section markers instead of three unlabeled dense status lines:
 
 ```text
 Context
 72.4% · 145K / 200K tokens
 
-│ Overview
+◆ Overview
 8 compartments · compacted history ~54K tokens
 3 memories · 2 notes
 Historian idle · cache 12m remaining
 12 active tags · 4 dropped tags
 
-│ Attention
+◆ Attention
 ! 2 pending drops · removals waiting to apply
 
-│ Actions
+◆ Actions
 › Wrap up history
   Keep recent messages in full and compact older history
   Apply 2 pending drops
@@ -87,11 +87,10 @@ Cancel remains the initial selection. Escape returns exactly one screen. Flush, 
 close the Dialog before the shared dispatcher starts work; progress and completion continue through one persisted,
 model-invisible Context Activity rather than a second modal or Statusline item.
 
-The current implementation already has the correct dispatcher, nested Escape path, input validation, safe rebuild
-default, refresh preservation, and low-height priority seam. Its remaining presentation deltas are the three unlabeled
-overview lines, color-only status wording, no visible explanation of Context vocabulary, always-present no-op flush and
-upgrade rows, a warning confirmation without an icon, and descriptions that compete with primary labels at narrow
-widths.
+The implementation now labels the overview, uses icon-plus-word status, explains Context vocabulary, hides known no-op
+flush and upgrade actions, marks the warning confirmation, and lets descriptions yield to primary labels at narrow
+widths. Focused tests cover action visibility, selection preservation, validation, safe rebuild defaults, page aliases,
+and low-height fitting; the real PTY verifier covers Host rendering.
 
 ## Consequences
 

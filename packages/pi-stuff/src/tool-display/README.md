@@ -60,6 +60,6 @@ The formatted benchmark also rejects Raw protocol headings. Streaming updates re
 Narrative Boundary tail, while timer frames reconcile only the affected group; neither path rescans the full Session.
 
 See `UPSTREAM.md` for source provenance and the local delta. The accepted interaction contract is recorded in the
-repository ADR `docs/adr/0010-fold-continuous-retrieval-segments.md`. Its 2026-08-17 `/tools` readability update is
-accepted but implementation pending; the current Dialog must not be described as matching that target until its source
-and PTY verification land.
+repository ADR `docs/adr/0010-fold-continuous-retrieval-segments.md`. Its 2026-08-17 `/tools` readability update was
+implemented on 2026-08-18, including lifecycle icons, `◆` sections, compact-keyboard paging, singleton detail,
+formatted/Raw navigation, and the fixed wide split. Focused tests and the real PTY verifier cover the shipped Dialog.

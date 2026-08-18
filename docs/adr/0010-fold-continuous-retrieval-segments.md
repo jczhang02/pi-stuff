@@ -55,7 +55,7 @@ invocation.
 ### Accepted `/tools` readability update
 
 **Decision update:** 2026-08-17
-**Status:** Accepted; implementation pending.
+**Status:** Implemented on 2026-08-18.
 
 This update applies only to the `/tools` Command Dialog. It does not change the compact Conversation Transcript, its
 small `•` marker, global `Ctrl+O` expansion, Tool-owned result renderers, model-visible results, or persisted protocol
@@ -70,6 +70,10 @@ Keep the newest Activity first and retain each Activity's position while it chan
 PageUp/PageDown and Shift+Up/Down move one visible page. Use the existing `… N newer` and `… N older` window instead of
 a scrollbar or a second pagination mode. The Footer advertises page movement only when the list overflows.
 
+At 96 columns and wider, a non-empty Activity list and selected detail share one fixed 18-row Dialog. One continuous
+heavy top rule spans the complete surface and one heavy `┃` divider separates the panes. Switching Activities keeps
+the outer geometry fixed. Empty and narrow states remain single-column.
+
 The detail Header uses the selected Activity summary as its visual anchor and retains the full lifecycle word and call
 count. A grouped Activity has two sections:
 
@@ -77,18 +81,18 @@ count. A grouped Activity has two sections:
 Tools / Read 4 files and searched 2 patterns
 ✓ success · 6 calls
 
-│ Calls
+◆ Calls
 › ✓ Read · packages/pi-stuff/src/tool-display/tool-dialog.ts
   ✓ Search · toolStateGlyph
 
-│ Detail · formatted
+◆ Detail · formatted
 Read
 Target: packages/pi-stuff/src/tool-display/tool-dialog.ts
 Summary: 58 lines returned
 ```
 
 `Calls` uses Up and Down to select an invocation. A singleton Activity omits that section and opens its Detail
-directly. The short vertical mark exists only on a section heading; member rows keep the native `›` selection grammar,
+directly. The compact `◆` exists only on a section heading; member rows keep the native `›` selection grammar,
 and Tool-owned formatted content keeps its own meaningful hierarchy rather than being forced into a generic table.
 
 Formatted Detail uses the selected Tool's existing title, target, summary, and bounded Tool-owned detail lines. Bash,
@@ -101,10 +105,10 @@ space. A running Detail follows appended content only while its viewport is at t
 reading position, displays a bounded newer-content notice, and resumes following when the viewport returns to the
 bottom.
 
-The current implementation already has the correct Activity grouping, lazy five-member window, formatted/Raw data
-boundary, caps, and Escape chain. Its remaining visual deltas are the generic `Tool activity details` Header, duplicate
-State and Summary rows, one large color-only circle for every lifecycle state, `items`/`tools` count wording, a retained
-one-member Calls list, and missing Shift+Arrow page aliases.
+The implementation now uses the readable Activity summary as the Header, removes duplicate State/Summary fields,
+renders distinct lifecycle icons, says `calls`, omits the singleton Calls list, and routes PageUp/PageDown plus
+Shift+Arrow through one paging path. Focused tests cover fixed split geometry, the empty single-column state, lazy
+formatted/Raw detail, overflow, live follow behavior, and the Escape chain; the real PTY verifier covers Host rendering.
 
 The runtime stores only the derived group plan and small presentation callbacks. It does not cache a global Raw
 transcript or duplicate large formatted and Raw bodies in `ToolActivityStore`. No Tool schema, dependency, setting,

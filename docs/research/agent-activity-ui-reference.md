@@ -227,12 +227,12 @@ An internal child-to-supervisor question is not automatically a user interruptio
 
 ### F. Accepted Agent Command Dialog redesign
 
-**Status:** Accepted on 2026-08-17; implementation pending.
+**Status:** Accepted on 2026-08-17; implemented on 2026-08-18.
 
 Enter on a child temporarily hides the roster and opens the accepted full-width Command Dialog below its divider. It
 owns full conversation, steer, stop, resume, and local details. Do not draw a centered bordered overlay over the
 transcript. This decision covers the Agent Command Dialog only: it does not change the Conversation Transcript marker,
-Fleetview, or another Capability's Dialog.
+Fleetview, or another Capability's Dialog. `/agents` remains single-column at every terminal width.
 
 The following sketch is the layout authority. It deliberately has no content-level indentation; every first glyph in
 the section bodies and Activity starts at the same Dialog content column.
@@ -241,14 +241,14 @@ the section bodies and Activity starts at the same Dialog content column.
 Agents / reviewer
 ✓ completed · 18s
 
-│ Task
+◆ Task
 Review the /agents dialog for readability at 64 and 32 columns.
 
-│ Result
+◆ Result
 The Agent name needs priority. Section labels should be stronger,
 and Activity should keep every event while shortening large Tool output.
 
-│ Activity
+◆ Activity
 reviewer
 I'll inspect the current list and detail layout.
 
@@ -309,8 +309,8 @@ The name currently receives at most 38% of the available width.
 
 - Keep the Suite's full-width top divider and Footer boundary. Do not add a horizontal rule, card, frame, or floating
   container around an individual section.
-- Section headings are `│ Task`, `│ Result`, `│ Error`, `│ Partial result`, and `│ Activity`. The short semantic-theme
-  vertical mark exists only on the heading row; it never grows into a rail.
+- Section headings are `◆ Task`, `◆ Result`, `◆ Error`, `◆ Partial result`, and `◆ Activity`. The compact semantic-theme
+  diamond exists only on the heading row and never grows into a rail.
 - Beyond the Command Dialog's one outer content gutter, do not add hierarchy indentation. Section bodies, Agent names,
   Agent messages, Tool rows, `⎿` result rows, and wrapped continuation lines share one left edge with the section mark.
 - Blank lines, heading weight, and semantic text colors separate sections and events. The Agent name remains stronger
@@ -368,9 +368,9 @@ will reject.
 
 #### Dialog-only icon language
 
-- The Conversation Transcript's small U+2022 `•` marker remains unchanged and does not determine Dialog status icons.
-  Dialog and transcript share one-cell-safe glyphs, semantic colors, state names, and restrained density, not the same
-  row marker.
+- The Conversation Transcript's small U+2022 `•` marker remains unchanged. Dialogs derive their restrained,
+  one-cell-safe semantic state language from that established Transcript system, but do not reuse its generic message
+  marker as a lifecycle icon.
 - `›` means the focused selectable row and never means lifecycle state.
 - Agent lifecycle icons are fixed: `○ queued`, `● running`, `! waiting`, `◐ stopping`, `↻ resuming`, `✓ completed`,
   `× failed` or `crashed`, and `■ stopped` or `cancelled`.
@@ -384,13 +384,12 @@ will reject.
 - The Footer advertises `Shift+↑/↓ page` when page scrolling is available. Hints wrap rather than displacing the Agent
   name, selected state, attached error, or Escape path.
 - At narrow widths, preserve the Agent name, section heading, state, and action before optional descriptions, targets,
-  previews, or metadata. Content wraps without adding indentation or extending the short section mark.
+  previews, or metadata. Content wraps without adding indentation.
 
-The current implementation still renders `Task`, `State`, and `Transcript`; sorts list rows by lifecycle state; limits
-the Agent name to 38 percent of available content width; often replaces the compact lifecycle indication with elapsed
-time alone; flattens descendants behind `d1`/`d2`/`d3`; reads transcript content only on entry; advertises `x stop`
-while stopping; hard-codes a filled circle in projected child Tool rows; and lacks Shift+Arrow page aliases. Those are
-implementation deltas, not alternate accepted designs.
+The implementation now follows this contract: Agent names lead stable launch-order rows; descendants use hierarchical
+navigation; Activity refreshes live; state-specific controls omit invalid actions; Tool rows use their actual outcome
+icons; and PageUp/PageDown plus Shift+Arrow aliases share the paging path. Focused tests and the real PTY verifier cover
+the wide, narrow, low-height, lifecycle, overflow, and restoration paths.
 
 ## Decisions supported by this research
 
