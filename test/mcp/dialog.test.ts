@@ -37,7 +37,7 @@ describe("MCP Command Dialog", () => {
 		});
 		const lines = component.render(36);
 
-		expect(lines[0]).toBe("─".repeat(36));
+		expect(lines[0]).toBe("━".repeat(36));
 		expect(lines.join("\n")).toContain("MCP · 1/1 connected · 8 tools");
 		expect(lines.join("\n")).toContain("local-filesystem");
 		expect(lines.join("\n")).not.toMatch(/[╭╮╰╯]/u);

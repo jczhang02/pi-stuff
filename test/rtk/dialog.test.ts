@@ -101,7 +101,7 @@ test("RTK status keeps unchecked and off states readable at low height", () => {
 	expect(lines.join("\n")).toContain("RTK");
 	expect(lines.join("\n")).toContain("unchecked");
 	expect(lines.at(-1)).toContain("Esc close");
-	expect(colors).toContainEqual({ color: "muted", text: "unchecked" });
-	expect(colors.filter(({ color, text }) => color === "muted" && text === "off")).toHaveLength(2);
+	expect(colors).toContainEqual({ color: "muted", text: "○ unchecked" });
+	expect(colors.filter(({ color, text }) => color === "muted" && text === "○")).toHaveLength(2);
 	component.dispose?.();
 });

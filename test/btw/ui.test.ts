@@ -66,14 +66,17 @@ function setup(
 }
 
 describe("BTW Command Dialog", () => {
-	test("renders only the command, native Answering spinner, and contextual hint", () => {
+	test("matches Claude Code's direct question surface without extra sections or state labels", () => {
 		const { controller } = setup({ question: "Why keep this isolated?" });
 		const output = controller.render(100).join("\n");
 
 		expect(output).toContain("/btw Why keep this isolated?");
 		expect(output).toContain("Answering…");
-		expect(output).toContain("Esc cancel");
+		expect(output).toContain("Esc to close");
 		for (const redundant of [
+			"BTW history",
+			"● answering",
+			"◆ Answer",
 			"side question · main task continues",
 			"single exchange",
 			"\n  Question",
@@ -107,18 +110,19 @@ describe("BTW Command Dialog", () => {
 		const output = controller.render(80).join("\n");
 		expect(output).toContain("final answer");
 		expect(output).toContain("Copied answer");
-		expect(output).toContain("Esc close");
+		expect(output).toContain("Esc to close");
 		expect(copied).toEqual(["**final answer**"]);
 		controller.dispose();
 	});
 
-	test("keeps all history navigable while rendering only a compact five-question window", () => {
+	test("keeps recent questions in one reading flow and lets arrows switch answers", () => {
 		const history = Array.from({ length: 10 }, (_, index) => exchange(index));
 		const result = setup({ question: "current question", history });
 		const newest = result.controller.render(100).join("\n");
-		expect(newest).not.toContain("earlier question 5");
 		expect(newest).toContain("earlier question 6");
-		expect(newest).toContain("/btw current question");
+		expect(newest).toContain("earlier question 9");
+		expect(newest).toContain("current question");
+		expect(newest).not.toContain("earlier question 5");
 
 		for (let index = 0; index < 10; index++) result.controller.handleInput("\u001b[D");
 		const oldest = result.controller.render(100).join("\n");
@@ -127,24 +131,35 @@ describe("BTW Command Dialog", () => {
 		result.controller.dispose();
 	});
 
-	test("clears siblings but never discards the in-flight current exchange", () => {
+	test("stays a single Claude-style surface at every width", () => {
+		for (const width of [64, 100]) {
+			const result = setup({ history: [exchange(1), exchange(2)] });
+			const lines = result.controller.render(width);
+			const output = lines.join("\n");
+			expect(lines[0]).toBe("━".repeat(width));
+			expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+			expect(output).toContain("/btw earlier question 2");
+			expect(output).toContain("earlier answer 2");
+			expect(output).toContain("←/→ to switch");
+			expect(output).toContain("x to clear history");
+			expect(output).not.toContain("┃");
+			expect(output).not.toContain("BTW history");
+			result.controller.dispose();
+		}
+	});
+
+	test("keeps history navigation and clearing available beside an in-flight question", () => {
 		const result = setup({ question: "current question", history: [exchange(1), exchange(2)] });
 		result.controller.handleInput("\u001b[D");
+		expect(result.controller.render(80).join("\n")).toContain("earlier answer 2");
+		result.controller.handleInput("\u001b[C");
 		result.controller.handleInput("x");
 		expect(result.clearCalls).toEqual([]);
-		expect(result.controller.render(80).join("\n")).toContain("Clear earlier BTW history?");
+		expect(result.controller.render(80).join("\n")).toContain("Clear BTW history?");
 		result.controller.handleInput("y");
-		result.controller.setSuccess({
-			id: "current",
-			question: "current question",
-			answer: "current answer",
-			timestamp: 3,
-			contextTrimmed: false,
-		});
 		const output = result.controller.render(80).join("\n");
 		expect(result.clearCalls).toEqual([undefined]);
-		expect(output).toContain("/btw current question");
-		expect(output).toContain("current answer");
+		expect(output).toContain("current question");
 		expect(output).not.toContain("earlier question");
 		result.controller.dispose();
 	});
@@ -156,12 +171,12 @@ describe("BTW Command Dialog", () => {
 		expect(result.clearCalls).toEqual([]);
 		result.controller.handleInput("\u001b");
 		expect(result.clearCalls).toEqual([]);
-		expect(result.controller.render(80).join("\n")).not.toContain("Clear earlier BTW history?");
+		expect(result.controller.render(80).join("\n")).not.toContain("Clear BTW history?");
 		result.controller.handleInput("x");
 		result.controller.handleInput("y");
 		expect(result.clearCalls).toEqual(["exchange-1"]);
 		const output = result.controller.render(80).join("\n");
-		expect(output).toContain("/btw earlier question 1");
+		expect(output).toContain("earlier question 1");
 		expect(output).toContain("earlier answer 1");
 		expect(output).toContain("Cleared BTW history");
 		result.controller.dispose();
@@ -183,7 +198,7 @@ describe("BTW Command Dialog", () => {
 		expect(promoted.map((item) => item.id)).toEqual(["exchange-1"]);
 		const waiting = result.controller.render(80).join("\n");
 		expect(waiting).toContain("Waiting for the main Agent to finish");
-		expect(waiting).toContain("Esc close");
+		expect(waiting).toContain("Esc to close");
 		result.controller.handleInput("\u001b");
 		result.controller.dispose();
 		expect(result.closeCount).toBe(1);
@@ -220,8 +235,9 @@ describe("BTW Command Dialog", () => {
 		controller.setError("provider unavailable", "partial answer");
 		const output = controller.render(80).join("\n");
 		expect(output).toContain("partial answer");
-		expect(output).toContain("Incomplete answer");
 		expect(output).toContain("provider unavailable");
+		expect(output).not.toContain("Partial answer");
+		expect(output).not.toContain("Answer");
 		controller.dispose();
 	});
 
@@ -231,14 +247,14 @@ describe("BTW Command Dialog", () => {
 		result.terminal.rows = 6;
 		const lines = result.controller.render(64);
 		expect(lines).toHaveLength(3);
-		expect(lines.join("\n")).toContain("/btw question");
+		expect(lines.join("\n")).toContain("question");
 		expect(lines.join("\n")).toContain("provider unavailable");
-		expect(lines.at(-1)).toContain("Esc close");
+		expect(lines.at(-1)).toContain("Esc to close");
 		result.controller.dispose();
 	});
 
-	test("Space, Enter, and Esc match Claude by cancelling the pending Answering surface", () => {
-		for (const key of [" ", "\r", "\u001b"]) {
+	test("Space, Enter, and Escape dismiss the surface", () => {
+		for (const key of [" ", "\r", "\u001b"] as const) {
 			const result = setup({
 				question: "a very long question ".repeat(10),
 				history: [exchange(1), exchange(2)],
@@ -247,6 +263,25 @@ describe("BTW Command Dialog", () => {
 			expect(lines.every((line) => visibleWidth(line) <= 64)).toBe(true);
 			result.controller.handleInput(key);
 			expect(result.closeCount).toBe(1);
+			result.controller.dispose();
+		}
+	});
+
+	test("accepts both PageUp and Shift+Up for page scrolling", () => {
+		for (const key of ["\u001b[5~", "\u001b[1;2A"] as const) {
+			const result = setup({ question: "question" });
+			result.controller.setSuccess({
+				id: "current",
+				question: "question",
+				answer: Array.from({ length: 30 }, (_, index) => `line ${String(index + 1)}`).join("\n\n"),
+				timestamp: 1,
+				contextTrimmed: false,
+			});
+			result.terminal.rows = 12;
+			const tail = result.controller.render(64).join("\n");
+			result.controller.handleInput(key);
+			const earlier = result.controller.render(64).join("\n");
+			expect(earlier).not.toBe(tail);
 			result.controller.dispose();
 		}
 	});

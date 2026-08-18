@@ -171,11 +171,21 @@ export class CachedToolRow implements Component {
 	}
 }
 
-const CONTROL_STATE_GLYPH = "●";
-
 /** Non-transcript controls retain their larger state glyph. */
-export function toolStateGlyph(_state: ToolActivityOutcome | ToolActivityState): string {
-	return CONTROL_STATE_GLYPH;
+export function toolStateGlyph(state: ToolActivityOutcome | ToolActivityState): string {
+	switch (state) {
+		case "running":
+			return "●";
+		case "success":
+			return "✓";
+		case "error":
+			return "×";
+		case "warning":
+		case "rejected":
+			return "!";
+		case "cancelled":
+			return "■";
+	}
 }
 
 function styleState(theme: Theme, state: ToolActivityState, text: string): string {

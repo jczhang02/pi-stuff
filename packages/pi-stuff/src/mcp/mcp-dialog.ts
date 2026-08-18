@@ -5,6 +5,8 @@ import {
 	type CommandDialogViewContext,
 	commandDialogRows,
 	fitCommandDialogRows,
+	matchesCommandDialogPageDown,
+	matchesCommandDialogPageUp,
 } from "../conversation-ui/index.js";
 import type { McpServerStatusSnapshot, McpStatusSnapshot } from "./runtime/index.js";
 import type { McpStatusStore } from "./status-store.js";
@@ -30,21 +32,54 @@ function statusLabel(server: McpServerStatusSnapshot): string {
 
 function serverLine(context: CommandDialogViewContext, server: McpServerStatusSnapshot): string {
 	const { theme } = context;
-	const active = server.status === "connected";
-	const failed = server.status === "failed" || server.status === "needs-auth";
-	const marker = active ? theme.fg("success", "●") : failed ? theme.fg("error", "●") : theme.fg("dim", "○");
-	const name = theme.fg(active ? "text" : "muted", server.name);
-	const status = failed ? theme.fg("error", statusLabel(server)) : theme.fg("muted", statusLabel(server));
-	const tools = server.disabled ? "" : theme.fg("dim", ` · ${String(server.toolCount)} tools`);
-	return `${GUTTER}${marker} ${name} ${theme.fg("dim", "·")} ${status}${tools}`;
+	const marker =
+		server.status === "connected"
+			? theme.fg("success", "✓")
+			: server.status === "failed"
+				? theme.fg("error", "×")
+				: server.status === "needs-auth"
+					? theme.fg("warning", "!")
+					: server.status === "disabled"
+						? theme.fg("dim", "■")
+						: theme.fg("muted", "○");
+	const statusColor =
+		server.status === "failed"
+			? "error"
+			: server.status === "needs-auth"
+				? "warning"
+				: server.status === "connected"
+					? "success"
+					: "muted";
+	const action =
+		server.status === "needs-auth"
+			? `run /mcp-auth ${server.name}`
+			: server.status === "failed"
+				? `run /mcp reconnect ${server.name}`
+				: "";
+	const capabilities = [
+		...(server.toolCount > 0 ? [`${String(server.toolCount)} ${server.toolCount === 1 ? "tool" : "tools"}`] : []),
+		...(server.resourceCount && server.resourceCount > 0
+			? [`${String(server.resourceCount)} ${server.resourceCount === 1 ? "resource" : "resources"}`]
+			: []),
+	].join(" · ");
+	const suffix = action || capabilities;
+	return `${GUTTER}${marker} ${theme.fg("text", server.name)} ${theme.fg("dim", "·")} ${theme.fg(
+		statusColor,
+		statusLabel(server),
+	)}${suffix ? theme.fg(action ? "warning" : "dim", `  ${suffix}`) : ""}`;
 }
 
 function headerLine(context: CommandDialogViewContext, snapshot: McpStatusSnapshot | undefined): string {
-	if (!snapshot) return `${GUTTER}${context.theme.bold("MCP")} ${context.theme.fg("muted", "· initializing")}`;
+	if (!snapshot) return `${GUTTER}${context.theme.bold("MCP")} ${context.theme.fg("accent", "· ● initializing")}`;
 	const enabled = Math.max(0, snapshot.servers.length - snapshot.disabledCount);
+	const tools = `${String(snapshot.totalTools)} ${snapshot.totalTools === 1 ? "tool" : "tools"}`;
+	const resources =
+		snapshot.totalResources > 0
+			? ` · ${String(snapshot.totalResources)} ${snapshot.totalResources === 1 ? "resource" : "resources"}`
+			: "";
 	return `${GUTTER}${context.theme.bold("MCP")} ${context.theme.fg(
 		"muted",
-		`· ${String(snapshot.connectedCount)}/${String(enabled)} connected · ${String(snapshot.totalTools)} tools`,
+		`· ${String(snapshot.connectedCount)}/${String(enabled)} connected · ${tools}${resources}`,
 	)}`;
 }
 
@@ -80,8 +115,8 @@ class McpStatusDialog implements CommandDialogComponent {
 		const page = this.viewportRows();
 		if (matchesKey(data, Key.up)) this.scroll = Math.max(0, this.scroll - 1);
 		else if (matchesKey(data, Key.down)) this.scroll += 1;
-		else if (matchesKey(data, "pageUp")) this.scroll = Math.max(0, this.scroll - page);
-		else if (matchesKey(data, "pageDown")) this.scroll += page;
+		else if (matchesCommandDialogPageUp(data)) this.scroll = Math.max(0, this.scroll - page);
+		else if (matchesCommandDialogPageDown(data)) this.scroll += page;
 		else return;
 		this.clampScroll();
 		this.context.requestRender();
@@ -96,22 +131,26 @@ class McpStatusDialog implements CommandDialogComponent {
 		const servers = this.snapshot?.servers ?? [];
 		const viewportRows = this.viewportRows();
 		const visible = servers.slice(this.scroll, this.scroll + viewportRows);
-		const emptyLine = `${GUTTER}${this.context.theme.fg("muted", "No MCP servers · add .mcp.json, then /reload")}`;
+		const emptyLines = [
+			`${GUTTER}${this.context.theme.fg("muted", "No MCP servers configured.")}`,
+			`${GUTTER}${this.context.theme.fg("dim", "Add .mcp.json, then run /reload.")}`,
+		];
 		const serverLines = visible.map((server) => serverLine(this.context, server));
-		const body = servers.length === 0 ? [emptyLine] : serverLines;
+		const body = servers.length === 0 ? emptyLines : serverLines;
 		const footer = `${GUTTER}${this.context.theme.fg(
 			"dim",
 			servers.length > viewportRows
-				? "↑↓ scroll · Esc close · configure in .mcp.json"
+				? "Esc close · ↑/↓ scroll · Shift+↑/↓ page · configure in .mcp.json"
 				: "Esc close · configure in .mcp.json",
 		)}`;
 		const priority =
 			serverLines.find((line) => line.includes("failed") || line.includes("needs auth")) ??
 			serverLines[0] ??
-			emptyLine;
+			emptyLines[0] ??
+			"";
 		const lines = fitCommandDialogRows(
 			{
-				header: [this.context.theme.fg("border", "─".repeat(renderWidth)), headerLine(this.context, this.snapshot)],
+				header: [this.context.theme.fg("border", "━".repeat(renderWidth)), headerLine(this.context, this.snapshot)],
 				body,
 				footer: [footer],
 				priority: [priority],

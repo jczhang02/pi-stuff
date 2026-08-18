@@ -25,6 +25,10 @@ function percent(saved: number, original: number): string {
 	return original > 0 ? `${String(Math.round((saved / original) * 100))}%` : "0%";
 }
 
+function sectionHeading(theme: CommandDialogViewContext["theme"], value: string): string {
+	return `${GUTTER}${theme.fg("accent", "◆")} ${theme.bold(value)}`;
+}
+
 /** Keep the executable identity useful without letting a package-manager path consume the dialog. */
 export function compactRtkBinaryPath(value: string, maximumWidth: number): string {
 	const width = Math.max(1, Math.floor(maximumWidth));
@@ -58,17 +62,48 @@ class RtkDialogComponent implements CommandDialogComponent {
 		const runtime = this.options.runtime.snapshot();
 		const settings = this.options.settings.get();
 		const stats = this.options.projection.stats();
-		const runtimeColor = runtime.state === "ready" ? "success" : runtime.state === "unchecked" ? "muted" : "error";
+		const runtimeColor =
+			runtime.state === "ready"
+				? "success"
+				: runtime.state === "unchecked"
+					? "muted"
+					: runtime.state === "drifted"
+						? "warning"
+						: "error";
+		const runtimeGlyph =
+			runtime.state === "ready"
+				? "✓"
+				: runtime.state === "unchecked"
+					? "○"
+					: runtime.state === "drifted"
+						? "!"
+						: "×";
 		const techniques = Object.entries(stats.techniques)
 			.sort(([left], [right]) => left.localeCompare(right))
 			.map(([name, count]) => `${name} ${String(count)}`)
 			.join(" · ");
-		const runtimeLine = `${GUTTER}${theme.fg(runtimeColor, runtime.state)}${runtime.version ? theme.fg("dim", ` · ${runtime.version}`) : ""}`;
+		const version = runtime.version
+			? runtime.version.startsWith("v")
+				? runtime.version
+				: `v${runtime.version}`
+			: "";
+		const runtimeLine = `${GUTTER}${theme.fg(runtimeColor, `${runtimeGlyph} ${runtime.state}`)}${
+			version ? theme.fg("dim", ` · ${version}`) : ""
+		}`;
 		const errorLines = runtime.lastError
 			? this.wrapped(renderWidth, theme.fg("error", boundTerminalLine(runtime.lastError, 220)))
 			: [];
+		const noteHeading = this.options.note?.startsWith("/rtk ") ? "Commands" : "Feedback";
+		const note = this.options.note
+			? this.options.note === "Projection statistics cleared."
+				? "✓ Projection statistics cleared."
+				: this.options.note.startsWith("Unknown action")
+					? `! ${this.options.note}`
+					: this.options.note
+			: undefined;
 		const body = [
 			"",
+			sectionHeading(theme, "Runtime"),
 			runtimeLine,
 			...(runtime.path
 				? [
@@ -79,19 +114,34 @@ class RtkDialogComponent implements CommandDialogComponent {
 					]
 				: []),
 			...(runtime.sha256 ? [`${GUTTER}${theme.fg("dim", `SHA-256  ${runtime.sha256.slice(0, 16)}…`)}`] : []),
-			...errorLines,
+			...(runtime.state === "unchecked" && !runtime.path
+				? [`${GUTTER}${theme.fg("muted", "Not verified yet.")}`]
+				: []),
+			...(errorLines.length > 0
+				? ["", sectionHeading(theme, "Error"), ...errorLines, `${GUTTER}${theme.fg("warning", "Run /rtk verify")}`]
+				: []),
 			"",
-			`${GUTTER}Command rewriting  ${settings.rewriteCommands ? theme.fg("success", "on") : theme.fg("muted", "off")}`,
-			`${GUTTER}Model projection  ${settings.outputProjection ? theme.fg("success", "on") : theme.fg("muted", "off")}`,
-			`${GUTTER}Saved  ${String(stats.savedChars)} chars (${percent(stats.savedChars, stats.originalChars)}) · ${String(stats.resultCount)} results`,
+			sectionHeading(theme, "Behavior"),
+			`${GUTTER}${settings.rewriteCommands ? theme.fg("success", "✓") : theme.fg("muted", "○")} Command rewriting ${settings.rewriteCommands ? "on" : "off"}`,
+			`${GUTTER}${settings.outputProjection ? theme.fg("success", "✓") : theme.fg("muted", "○")} Model projection ${settings.outputProjection ? "on" : "off"}`,
+			...this.wrapped(
+				renderWidth,
+				theme.fg(
+					"dim",
+					"Model projection changes only the compact copy sent to the model; stored output stays exact.",
+				),
+			),
+			"",
+			sectionHeading(theme, "Session savings"),
+			`${GUTTER}${String(stats.savedChars)} chars (${percent(stats.savedChars, stats.originalChars)}) · ${String(stats.resultCount)} results`,
 			...(techniques ? this.wrapped(renderWidth, `Techniques  ${techniques}`) : []),
-			...(this.options.note ? ["", ...this.wrapped(renderWidth, this.options.note)] : []),
+			...(note ? ["", sectionHeading(theme, noteHeading), ...this.wrapped(renderWidth, note)] : []),
 		];
 		const lines = fitCommandDialogRows(
 			{
-				header: [theme.fg("border", "─".repeat(renderWidth)), `${GUTTER}${theme.bold("RTK")}`],
+				header: [theme.fg("border", "━".repeat(renderWidth)), `${GUTTER}${theme.bold("RTK")}`],
 				body,
-				footer: [`${GUTTER}${theme.fg("dim", "Configure with /rtk settings · Enter/Esc close")}`],
+				footer: [`${GUTTER}${theme.fg("dim", "/rtk settings · Esc close")}`],
 				priority: [errorLines[0] ?? runtimeLine],
 			},
 			maximumRows,

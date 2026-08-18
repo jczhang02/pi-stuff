@@ -118,7 +118,13 @@ describe("file and log Monitor", () => {
 			state.context,
 		);
 		await Bun.sleep(250);
-		expect(state.runtime.snapshot().map((item) => item.id)).toContain(started.id);
+		const snapshot = state.runtime.snapshot().find((item) => item.id === started.id);
+		expect(snapshot).toMatchObject({
+			monitorSource: "log",
+			monitorSuccessText: "READY",
+			monitorTarget: path,
+			monitorTimeoutSeconds: 3,
+		});
 		expect(state.messages).toHaveLength(0);
 		appendFileSync(path, "READY from this run\n");
 		await waitUntil(() => state.messages.length === 1);

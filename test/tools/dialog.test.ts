@@ -87,11 +87,11 @@ test("/tools lists groups and formats only the selected member", () => {
 
 	const list = component.render(42).join("\n");
 	expect(list).toContain("Read 2 files");
-	expect(list).toContain("2 tools");
+	expect(list).toContain("2 calls");
 	expect(list).toContain("Enter details");
 	component.handleInput?.("\r");
 	let detail = component.render(42).join("\n");
-	expect(detail).toContain("Tool activity details");
+	expect(detail).toContain("Tools / Read 2 files");
 	expect(detail).toContain("Target: 工具.txt");
 	expect(detail).not.toContain("Target: src/config.ts");
 	component.handleInput?.("\u001b[F");
@@ -117,11 +117,13 @@ test("/tools <member-id> focuses the requested member within its complete group"
 	const harness = contextHarness(36);
 	const component = createToolDialogView(runtime, "read-2").create(harness.context);
 	const detail = component.render(60).join("\n");
-	expect(detail).toContain("3 tools");
+	expect(detail).toContain("3 calls");
+	expect(detail).toContain("◆ Calls");
+	expect(detail).toContain("◆ Detail · formatted");
 	expect(detail).not.toContain("Target: a.ts");
 	expect(detail).toContain("Target: b.ts");
 	expect(detail).not.toContain("Target: c.ts");
-	expect(detail).toContain("member 2/3");
+	expect(detail).toContain("call 2/3");
 	component.dispose?.();
 });
 
@@ -129,12 +131,36 @@ test("/tools keeps a five-member selection window while arrows traverse the whol
 	const runtime = groupedRuntime(Array.from({ length: 8 }, (_, index) => `${String(index + 1)}.ts`));
 	const harness = contextHarness(28);
 	const component = createToolDialogView(runtime, "read-1").create(harness.context);
-	expect(component.render(64).filter((line) => /\d+\. Read/u.test(line))).toHaveLength(5);
+	expect(component.render(64).filter((line) => line.includes("Read ·"))).toHaveLength(5);
 	for (let index = 0; index < 7; index += 1) component.handleInput?.("\u001b[B");
 	const last = component.render(64);
-	expect(last.filter((line) => /\d+\. Read/u.test(line))).toHaveLength(5);
+	expect(last.filter((line) => line.includes("Read ·"))).toHaveLength(5);
 	expect(last.join("\n")).toContain("Target: 8.ts");
 	component.dispose?.();
+});
+
+test("/tools pages the Activity list with Shift+Down", () => {
+	const paths = Array.from({ length: 12 }, (_, index) => `${String(index + 1)}.ts`);
+	const first = createToolDialogView(groupedRuntime(paths, -1, true)).create(contextHarness().context);
+	first.render(64);
+	first.handleInput?.("\r");
+	const firstTarget = first
+		.render(64)
+		.join("\n")
+		.match(/Target: (\S+)/u)?.[1];
+	first.dispose?.();
+
+	const paged = createToolDialogView(groupedRuntime(paths, -1, true)).create(contextHarness().context);
+	expect(paged.render(64).join("\n")).toContain("Shift+↑/↓ page");
+	paged.handleInput?.("\u001b[1;2B");
+	paged.handleInput?.("\r");
+	const pagedTarget = paged
+		.render(64)
+		.join("\n")
+		.match(/Target: (\S+)/u)?.[1];
+	expect(pagedTarget).toBeDefined();
+	expect(pagedTarget).not.toBe(firstTarget);
+	paged.dispose?.();
 });
 
 test("/tools <member-id> opens an infrastructure-only group hidden from the compact transcript", () => {
@@ -168,7 +194,9 @@ test("/tools <member-id> opens an infrastructure-only group hidden from the comp
 	const harness = contextHarness();
 	const component = createToolDialogView(runtime, "internal-1").create(harness.context);
 	const detail = component.render(60).join("\n");
-	expect(detail).toContain("Tool activity details");
+	expect(detail).toContain("Tools / Internal activity");
+	expect(detail).toContain("◆ Detail · formatted");
+	expect(detail).not.toContain("◆ Calls");
 	expect(detail).toContain("Context reduction");
 	expect(detail).not.toContain("internal-1");
 	expect(detail).not.toContain("Arguments");
@@ -275,13 +303,13 @@ test("/tools colors mixed groups amber and no-success failures red", () => {
 	);
 	const mixedOutput = mixed.render(100).join("\n");
 	expect(Bun.stripANSI(mixedOutput)).toContain("Read 2 files · 1 failed");
-	expect(mixedOutput).toContain("\u001b[33m●\u001b[0m");
+	expect(mixedOutput).toContain("\u001b[33m!\u001b[0m");
 	mixed.dispose?.();
 
 	const failed = createToolDialogView(groupedRuntime(["missing.ts"], 0)).create(
 		contextHarness(28, semanticTheme).context,
 	);
-	expect(failed.render(100).join("\n")).toContain("\u001b[31m●\u001b[0m");
+	expect(failed.render(100).join("\n")).toContain("\u001b[31m×\u001b[0m");
 	failed.dispose?.();
 });
 
@@ -301,22 +329,22 @@ test("/tools respects narrow widths and terminal row budgets", () => {
 	component.dispose?.();
 });
 
-test("prototype split pane keeps list and detail visible on wide terminals", () => {
-	const harness = contextHarness(32);
+test("/tools keeps list and detail visible on wide terminals", () => {
+	const focusTheme = {
+		bold: (value: string) => value,
+		fg: (color: string, value: string) => (color === "accent" ? `\u001b[35m${value}\u001b[0m` : value),
+	} as unknown as Theme;
+	const harness = contextHarness(32, focusTheme);
 	const component = createToolDialogView(groupedRuntime(["a.ts", "b.ts"], -1, true)).create(harness.context);
 	let lines = component.render(100);
 	let output = lines.join("\n");
 	expect(lines.every((line) => visibleWidth(line) <= 100)).toBe(true);
 	expect(lines).toHaveLength(18);
 	expect(lines[0]).toBe("━".repeat(100));
-	expect(lines.slice(1).every((line) => line[36] === "┃")).toBe(true);
-	expect(lines.find((line) => line.includes("Tools"))?.startsWith("│ ")).toBe(true);
-	expect(
-		lines
-			.find((line) => line.includes("Tool activity details"))
-			?.slice(37)
-			.startsWith("│ "),
-	).toBe(true);
+	expect(lines.slice(1).every((line) => Bun.stripANSI(line)[36] === "┃")).toBe(true);
+	expect(Bun.stripANSI(output)).not.toContain("│");
+	expect(lines[1]?.split("┃")[0]).toContain("\u001b[35mTools\u001b[0m");
+	expect(lines[1]?.split("┃")[1]).not.toContain("\u001b[35mTools /");
 	expect(output).toContain("Path: b.ts");
 
 	component.handleInput?.("\u001b[B");
@@ -329,30 +357,35 @@ test("prototype split pane keeps list and detail visible on wide terminals", () 
 	component.handleInput?.("\r");
 	lines = component.render(100);
 	expect(lines).toHaveLength(18);
-	expect(lines.find((line) => line.includes("Tool activity details"))?.[37]).toBe("│");
-	expect(component.render(64).join("\n")).toContain("Tool activity details");
+	expect(lines[1]?.split("┃")[0]).not.toContain("\u001b[35mTools\u001b[0m");
+	expect(lines[1]?.split("┃")[1]).toContain("\u001b[35mTools /");
+	expect(component.render(64).join("\n")).toContain("Tools /");
 	lines = component.render(100);
 	expect(lines).toHaveLength(18);
-	expect(lines.find((line) => line.includes("Tool activity details"))?.[37]).toBe("│");
+	expect(lines[1]?.split("┃")[1]).toContain("\u001b[35mTools /");
 
 	component.handleInput?.("\u001b");
-	expect(
-		component
-			.render(100)
-			.find((line) => line.includes("Tool activity details"))
-			?.slice(37)
-			.startsWith("│ "),
-	).toBe(true);
+	lines = component.render(100);
+	expect(lines[1]?.split("┃")[0]).toContain("\u001b[35mTools\u001b[0m");
+	expect(lines[1]?.split("┃")[1]).not.toContain("\u001b[35mTools /");
 	component.handleInput?.("\u001b");
 	expect(harness.closed()).toBe(1);
 	component.dispose?.();
 });
 
-test("prototype split pane keeps narrow terminals single-column", () => {
+test("/tools keeps narrow terminals single-column", () => {
 	const component = createToolDialogView(groupedRuntime(["a.ts"])).create(contextHarness().context);
 	const output = component.render(64).join("\n");
 	expect(output).toContain("Tools");
 	expect(output.startsWith("━".repeat(64))).toBe(true);
 	expect(output).not.toContain("Tool activity details");
+	component.dispose?.();
+});
+
+test("/tools keeps its empty state single-column at wide widths", () => {
+	const component = createToolDialogView(new ToolUiRuntime()).create(contextHarness(32).context);
+	const output = component.render(100).join("\n");
+	expect(output.match(/No tool activity in this session\./gu)).toHaveLength(1);
+	expect(output).not.toContain("┃");
 	component.dispose?.();
 });

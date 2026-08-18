@@ -23,7 +23,7 @@ export function isTaskOnlyAgentText(value: unknown, task: unknown): boolean {
 	const expected = boundedTerminalLine(task);
 	if (!expected) return false;
 	let candidate = boundedTerminalLine(value);
-	candidate = candidate.replace(/^User(?:\s*:)?\s+/iu, "").replace(/^Task\s*:\s*/iu, "");
+	candidate = candidate.replace(/^(?:User|You)(?:\s*:)?\s+/iu, "").replace(/^Task\s*:\s*/iu, "");
 	const xml = candidate.match(/^<task>\s*(.*?)\s*<\/task>$/iu)?.[1];
 	return (xml ?? candidate) === expected;
 }

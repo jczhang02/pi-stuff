@@ -1,7 +1,11 @@
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { CommandDialogViewContext } from "./index.js";
 
 const DEFAULT_TERMINAL_ROWS = 24;
 const DEFAULT_NORMAL_SCREEN_RESERVE_ROWS = 3;
+
+export const WIDE_COMMAND_DIALOG_MIN_WIDTH = 96;
 
 export interface CommandDialogRowSections {
 	readonly body: readonly string[];
@@ -27,6 +31,14 @@ export function commandDialogRows(
 			: DEFAULT_TERMINAL_ROWS;
 	if (rows === 0) return 0;
 	return Math.max(1, rows - Math.max(0, Math.floor(reserveRows)));
+}
+
+export function matchesCommandDialogPageUp(data: string): boolean {
+	return matchesKey(data, Key.pageUp) || matchesKey(data, Key.shift(Key.up));
+}
+
+export function matchesCommandDialogPageDown(data: string): boolean {
+	return matchesKey(data, Key.pageDown) || matchesKey(data, Key.shift(Key.down));
 }
 
 function withoutPriority(body: readonly string[], priority: readonly string[]): string[] {
@@ -86,4 +98,41 @@ export function fitCommandDialogRows(sections: CommandDialogRowSections, maximum
 		...visibleFooterPrefix,
 		...visibleClose,
 	];
+}
+
+/** Keep a stable Dialog height while anchoring its footer to the bottom row. */
+export function fitFixedCommandDialogRows(sections: CommandDialogRowSections, maximumRows: number): string[] {
+	const fitted = fitCommandDialogRows(sections, maximumRows);
+	const missingRows = Math.max(0, maximumRows - fitted.length);
+	if (missingRows === 0) return fitted;
+	const footerStart = Math.max(0, fitted.length - sections.footer.length);
+	return [
+		...fitted.slice(0, footerStart),
+		...Array.from({ length: missingRows }, () => ""),
+		...fitted.slice(footerStart),
+	];
+}
+
+/** Render list and detail as one full-width Dialog with one structural divider. */
+export function renderCommandDialogSplit(
+	theme: Theme,
+	width: number,
+	renderLeft: (width: number) => readonly string[],
+	renderRight: (width: number) => readonly string[],
+	preferredLeftWidth = 36,
+): string[] {
+	const totalWidth = Math.max(1, Math.floor(width));
+	const leftWidth = Math.min(preferredLeftWidth, Math.max(30, Math.floor(totalWidth * 0.38)));
+	const rightWidth = Math.max(1, totalWidth - leftWidth - 1);
+	const left = renderLeft(leftWidth);
+	const right = renderRight(rightWidth);
+	const rows = Math.max(left.length, right.length);
+	const divider = theme.fg("border", "┃");
+
+	return Array.from({ length: rows }, (_, index) => {
+		if (index === 0) return theme.fg("border", "━".repeat(totalWidth));
+		const leftLine = truncateToWidth(left[index] ?? "", leftWidth, "…");
+		const rightLine = truncateToWidth(right[index] ?? "", rightWidth, "…");
+		return `${leftLine}${" ".repeat(Math.max(0, leftWidth - visibleWidth(leftLine)))}${divider}${rightLine}`;
+	});
 }

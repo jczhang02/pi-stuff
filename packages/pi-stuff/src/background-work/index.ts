@@ -7,20 +7,11 @@ import {
 import { isKeyRelease, Key, matchesKey, Text } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
 import { TRANSCRIPT_MARKER } from "../conversation-ui/transcript.js";
-import { getCurrentWorkSources } from "./src/current-work.js";
 import { reportWorkDiagnostic } from "./src/diagnostics.js";
 import { type BackgroundWorkOutcome, BackgroundWorkRuntime } from "./src/runtime.js";
 import { createTasksDialogView } from "./src/tasks-dialog.js";
 import { registerWorkTools, type WorkToolRuntimeRef } from "./src/tools.js";
 
-export {
-	type CurrentWorkProjectionItem,
-	type CurrentWorkProjectionStatus,
-	type CurrentWorkSource,
-	CurrentWorkSources,
-	getCurrentWorkSources,
-	registerCurrentWorkSource,
-} from "./src/current-work.js";
 export {
 	type BackgroundWorkKind,
 	type BackgroundWorkOutcome,
@@ -70,7 +61,6 @@ export default async function piStuffWork(
 	const shutdowns = new Set<Promise<void>>();
 	const createRuntime = options.createRuntime ?? ((input) => new BackgroundWorkRuntime(input));
 	const runtimeRef: WorkToolRuntimeRef = { current: () => runtime };
-	const sources = getCurrentWorkSources(pi);
 	const dialogs = getCommandDialogCoordinator(pi);
 
 	// Install renderers before session replay. The session_start registration runs
@@ -90,7 +80,7 @@ export default async function piStuffWork(
 				return;
 			}
 			await runtime.prepare();
-			await dialogs.show(ctx, createTasksDialogView(runtime, sources));
+			await dialogs.show(ctx, createTasksDialogView(runtime));
 		},
 	});
 

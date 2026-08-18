@@ -69,7 +69,7 @@ send -- "/agents\\r"
 must_expect "↑/↓ navigate · Enter inspect"
 send -- "\\r"
 must_expect "Agents / general-purpose"
-must_expect "Transcript"
+must_expect "Activity"
 for {set index 0} {$index < 12} {incr index} {
     send -- "\\033\\[B"
     after 20
@@ -96,7 +96,7 @@ send -- "/agents\\r"
 must_expect "↑/↓ navigate · Enter inspect"
 send -- "\\r"
 must_expect "Agents / general-purpose"
-must_expect "Transcript"
+must_expect "Activity"
 for {set index 0} {$index < 12} {incr index} {
     send -- "\\033\\[B"
     after 20
@@ -235,7 +235,7 @@ function verifyTerminalOutput(output: string, columns: number): void {
 		fail(`terminal output is missing the standalone Agent launch row\n${visible.slice(-8_000)}`);
 	}
 	if (compact.includes("Launched 1 background agent")) fail("Agent launch leaked into an aggregate summary");
-	if (!visible.includes("─".repeat(columns))) fail(`Agent dialog did not render a ${columns}-column divider`);
+	if (!visible.includes("━".repeat(columns))) fail(`Agent dialog did not render a ${columns}-column divider`);
 	for (const forbidden of [
 		"↓ to manage",
 		"Fleet",
@@ -601,20 +601,16 @@ async function verifyFleetviewFooterLayout(
 			fail(`${String(options.columns)}-column Fleetview did not restore the exact latest Prompt row\n${screen}`);
 		}
 
-		session.sendLiteral("/tasks");
+		session.sendLiteral("/agents");
 		session.sendKey("Enter");
-		await session.waitForText("Tasks");
-		await session.waitForText("Agent");
-		await session.waitForText("复核工具结果 🧪");
+		await session.waitForText("↑/↓ navigate · Enter inspect");
 		session.sendKey("Enter");
-		await session.waitForText("Task details");
-		await session.waitForText("Use /agents for the live transcript and controls.");
-		session.sendKey("x");
-		await session.waitForText("Open /agents to control an Agent.");
+		await session.waitForText("Agents / general-purpose");
+		await session.waitForText("Activity");
 		session.sendKey("Escape");
-		await session.waitForText("↑/↓ select");
+		await session.waitForText("↑/↓ navigate");
 		session.sendKey("Escape");
-		await session.waitForAbsence("Tasks · 1 current");
+		await session.waitForAbsence("Agents ·");
 		screen = await session.waitForFleetviewFrame("idle");
 		verifyFleetviewFrame(screen, options.columns, "idle");
 		await session.waitForText("inspect with /agents");

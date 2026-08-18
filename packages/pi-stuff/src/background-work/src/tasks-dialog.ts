@@ -6,8 +6,12 @@ import {
 	type CommandDialogViewContext,
 	commandDialogRows,
 	fitCommandDialogRows,
+	fitFixedCommandDialogRows,
+	matchesCommandDialogPageDown,
+	matchesCommandDialogPageUp,
+	renderCommandDialogSplit,
+	WIDE_COMMAND_DIALOG_MIN_WIDTH,
 } from "../../conversation-ui/index.js";
-import type { CurrentWorkProjectionItem, CurrentWorkSources } from "./current-work.js";
 import type { BackgroundWorkRuntime, BackgroundWorkSnapshot } from "./runtime.js";
 
 type TaskDialogMode = "detail" | "list";
@@ -16,9 +20,13 @@ interface TaskRow {
 	readonly command?: string;
 	readonly description?: string;
 	readonly id: string;
-	readonly kind: "agent" | "monitor" | "shell";
+	readonly kind: BackgroundWorkSnapshot["kind"];
+	readonly monitorFailureText?: string;
+	readonly monitorSource?: "command" | "file" | "http" | "log";
+	readonly monitorSuccessText?: string;
+	readonly monitorTarget?: string;
+	readonly monitorTimeoutSeconds?: number;
 	readonly output?: string;
-	readonly owned: boolean;
 	readonly startedAt?: number;
 	readonly status: string;
 	readonly title: string;
@@ -28,6 +36,7 @@ const GUTTER = "  ";
 const LIST_ROWS = 9;
 const NARROW_LIST_ROWS = 6;
 const NARROW_WIDTH = 64;
+const TASK_DIALOG_ROWS = 18;
 
 function oneLine(value: string): string {
 	return value
@@ -51,8 +60,6 @@ function elapsed(startedAt: number | undefined): string {
 
 function kindLabel(kind: TaskRow["kind"]): string {
 	switch (kind) {
-		case "agent":
-			return "Agent";
 		case "monitor":
 			return "Monitor";
 		case "shell":
@@ -61,9 +68,25 @@ function kindLabel(kind: TaskRow["kind"]): string {
 }
 
 function statusText(theme: Theme, status: string, value: string): string {
-	if (status === "stopping") return theme.fg("error", value);
-	if (status === "waiting" || status === "queued") return theme.fg("accent", value);
+	if (status === "failed") return theme.fg("error", value);
+	if (status === "complete" || status === "completed") return theme.fg("success", value);
+	if (status === "stopping" || status === "waiting" || status === "queued") return theme.fg("warning", value);
+	if (status === "running" || status === "resuming") return theme.fg("accent", value);
 	return theme.fg("muted", value);
+}
+
+function statusGlyph(status: string): string {
+	if (status === "queued" || status === "waiting") return "○";
+	if (status === "stopping") return "◐";
+	if (status === "resuming") return "↻";
+	if (status === "complete" || status === "completed") return "✓";
+	if (status === "failed") return "×";
+	if (status === "paused" || status === "stopped") return "■";
+	return "●";
+}
+
+function sectionHeading(theme: Theme, label: string): string {
+	return `${theme.fg("accent", "◆")} ${theme.bold(label)}`;
 }
 
 function fromOwned(snapshot: BackgroundWorkSnapshot): TaskRow {
@@ -72,73 +95,74 @@ function fromOwned(snapshot: BackgroundWorkSnapshot): TaskRow {
 		...(snapshot.description ? { description: snapshot.description } : {}),
 		id: snapshot.id,
 		kind: snapshot.kind,
+		...(snapshot.monitorFailureText ? { monitorFailureText: snapshot.monitorFailureText } : {}),
+		...(snapshot.monitorSource ? { monitorSource: snapshot.monitorSource } : {}),
+		...(snapshot.monitorSuccessText ? { monitorSuccessText: snapshot.monitorSuccessText } : {}),
+		...(snapshot.monitorTarget ? { monitorTarget: snapshot.monitorTarget } : {}),
+		...(snapshot.monitorTimeoutSeconds !== undefined
+			? { monitorTimeoutSeconds: snapshot.monitorTimeoutSeconds }
+			: {}),
 		...(snapshot.recentOutput ? { output: snapshot.recentOutput } : {}),
-		owned: true,
 		startedAt: snapshot.startedAt,
 		status: snapshot.status,
 		title: snapshot.title,
 	};
 }
 
-function fromProjection(item: CurrentWorkProjectionItem): TaskRow {
-	return {
-		...(item.description ? { description: item.description } : {}),
-		id: item.id,
-		kind: item.kind,
-		owned: false,
-		...(item.startedAt !== undefined ? { startedAt: item.startedAt } : {}),
-		status: item.status,
-		title: item.title,
-	};
-}
-
 function fitRow(theme: Theme, row: TaskRow, selected: boolean, width: number): string {
 	const cursor = selected ? theme.fg("accent", "›") : " ";
-	const glyph = statusText(theme, row.status, "●");
 	const label = selected ? theme.bold(kindLabel(row.kind)) : kindLabel(row.kind);
-	const suffix = statusText(theme, row.status, `${row.status} · ${elapsed(row.startedAt)}`);
-	const prefix = `${cursor} ${glyph} ${label}`;
-	const title = theme.fg("muted", oneLine(row.title));
+	const title = oneLine(row.title);
+	const description = row.description && oneLine(row.description) !== title ? `  ${oneLine(row.description)}` : "";
+	const suffix = statusText(theme, row.status, `${statusGlyph(row.status)} ${elapsed(row.startedAt)}`);
 	const available = Math.max(1, width - visibleWidth(GUTTER));
-	const identity = truncateToWidth(`${prefix}  ${title}`, available, "…");
-	const separator = " · ";
-	if (visibleWidth(identity) + visibleWidth(separator) + visibleWidth(suffix) <= available) {
-		return `${GUTTER}${identity}${theme.fg("dim", separator)}${suffix}`;
-	}
-	if (available >= 38) {
-		const identityWidth = Math.max(14, available - visibleWidth(separator) - visibleWidth(suffix));
-		return `${GUTTER}${truncateToWidth(`${prefix}  ${title}`, identityWidth, "…")}${theme.fg("dim", separator)}${suffix}`;
-	}
-	return `${GUTTER}${truncateToWidth(`${prefix}  ${title}`, available, "…")}`;
+	const identityWidth = Math.max(1, available - visibleWidth(suffix) - 1);
+	const identity = truncateToWidth(
+		`${cursor} ${label}  ${selected ? theme.bold(title) : title}${theme.fg("muted", description)}`,
+		identityWidth,
+		"…",
+	);
+	const spacing = " ".repeat(Math.max(1, available - visibleWidth(identity) - visibleWidth(suffix)));
+	return `${GUTTER}${identity}${spacing}${suffix}`;
 }
 
 function hint(theme: Theme, width: number, values: readonly string[]): string[] {
-	const text = values.join(" · ");
 	const contentWidth = Math.max(1, width - visibleWidth(GUTTER));
-	return wrapTextWithAnsi(text, contentWidth).map((line) => `${GUTTER}${theme.fg("dim", line)}`);
+	const lines: string[] = [];
+	let current = "";
+	for (const value of values) {
+		const candidate = current ? `${current} · ${value}` : value;
+		if (current && visibleWidth(candidate) > contentWidth) {
+			lines.push(current);
+			current = value;
+		} else current = candidate;
+	}
+	if (current) lines.push(current);
+	return lines.map((line) => `${GUTTER}${theme.fg("dim", line)}`);
 }
 
 class TasksDialogComponent implements CommandDialogComponent {
 	private readonly context: CommandDialogViewContext<void>;
 	private disposed = false;
+	private lastDetailWidth = 80;
+	private lastListViewportRows = NARROW_LIST_ROWS;
 	private lastWidth = 80;
 	private mode: TaskDialogMode = "list";
 	private note = "";
 	private rows: readonly TaskRow[] = [];
 	private scrollOffset = 0;
 	private selectedId: string | undefined;
+	private splitFocus: "left" | "right" = "left";
 	private stopping = false;
 	private readonly timer: ReturnType<typeof setInterval>;
 	private readonly runtime: BackgroundWorkRuntime;
-	private readonly sources: CurrentWorkSources;
-	private readonly unsubscribes: readonly (() => void)[];
+	private readonly unsubscribe: () => void;
 
-	constructor(runtime: BackgroundWorkRuntime, sources: CurrentWorkSources, context: CommandDialogViewContext<void>) {
+	constructor(runtime: BackgroundWorkRuntime, context: CommandDialogViewContext<void>) {
 		this.context = context;
 		this.runtime = runtime;
-		this.sources = sources;
 		this.refresh();
-		this.unsubscribes = [runtime.subscribe(() => this.refresh()), sources.subscribe(() => this.refresh())];
+		this.unsubscribe = runtime.subscribe(() => this.refresh());
 		this.timer = setInterval(() => context.requestRender(), 1_000);
 		this.timer.unref?.();
 	}
@@ -147,12 +171,19 @@ class TasksDialogComponent implements CommandDialogComponent {
 		if (this.disposed) return;
 		this.disposed = true;
 		clearInterval(this.timer);
-		for (const unsubscribe of this.unsubscribes) unsubscribe();
+		this.unsubscribe();
 	}
 
 	handleInput(data: string): void {
 		if (this.disposed || isKeyRelease(data)) return;
 		if (matchesKey(data, Key.escape)) {
+			if (this.isSplit()) {
+				if (this.splitFocus === "right") this.splitFocus = "left";
+				else this.context.close();
+				this.scrollOffset = 0;
+				this.context.requestRender();
+				return;
+			}
 			if (this.mode === "detail") {
 				this.mode = "list";
 				this.scrollOffset = 0;
@@ -167,22 +198,42 @@ class TasksDialogComponent implements CommandDialogComponent {
 			void this.stopSelected();
 			return;
 		}
-		if (this.mode === "list") this.handleListInput(data);
+		if (this.isSplit()) {
+			if (this.splitFocus === "left") this.handleListInput(data);
+			else this.handleDetailInput(data);
+		} else if (this.mode === "list") this.handleListInput(data);
 		else this.handleDetailInput(data);
 	}
 
 	invalidate(): void {}
 
 	render(width: number): string[] {
+		const wasSplit = this.isSplit();
 		this.lastWidth = Math.max(1, Math.floor(width));
-		const lines = this.mode === "list" ? this.renderList() : this.renderDetail();
+		const isSplit = this.isSplit();
+		if (wasSplit !== isSplit) {
+			if (isSplit) this.splitFocus = this.mode === "detail" ? "right" : "left";
+			else this.mode = this.splitFocus === "right" ? "detail" : "list";
+		}
+		const lines = isSplit ? this.renderSplit() : this.mode === "list" ? this.renderList() : this.renderDetail();
 		return lines.map((line) => bounded(this.lastWidth, line));
 	}
 
-	private refresh(): void {
-		this.rows = [...this.runtime.snapshot().map(fromOwned), ...this.sources.snapshot().map(fromProjection)].sort(
-			(left, right) => (left.startedAt ?? Number.POSITIVE_INFINITY) - (right.startedAt ?? Number.POSITIVE_INFINITY),
+	private isSplit(): boolean {
+		return this.lastWidth >= WIDE_COMMAND_DIALOG_MIN_WIDTH && this.rows.length > 0;
+	}
+
+	private renderSplit(): string[] {
+		return renderCommandDialogSplit(
+			this.context.theme,
+			this.lastWidth,
+			(leftWidth) => this.renderList(leftWidth, this.splitFocus === "left", true),
+			(rightWidth) => this.renderDetail(rightWidth, this.splitFocus === "right", true),
 		);
+	}
+
+	private refresh(): void {
+		this.rows = this.runtime.snapshot().map(fromOwned);
 		if (!this.selectedId || !this.rows.some((row) => row.id === this.selectedId)) {
 			this.selectedId = this.rows[0]?.id;
 			this.scrollOffset = 0;
@@ -197,20 +248,41 @@ class TasksDialogComponent implements CommandDialogComponent {
 
 	private handleListInput(data: string): void {
 		if (matchesKey(data, Key.enter)) {
-			if (!this.selected()) return;
+			const selected = this.selected();
+			if (!selected) return;
+			if (this.isSplit()) {
+				this.splitFocus = "right";
+				this.scrollOffset = 0;
+				this.context.requestRender();
+				return;
+			}
 			this.mode = "detail";
 			this.scrollOffset = 0;
 			this.context.requestRender();
 			return;
 		}
-		if (!matchesKey(data, Key.up) && !matchesKey(data, Key.down)) return;
+		if (
+			!matchesKey(data, Key.up) &&
+			!matchesKey(data, Key.down) &&
+			!matchesCommandDialogPageUp(data) &&
+			!matchesCommandDialogPageDown(data)
+		)
+			return;
 		const current = Math.max(
 			0,
 			this.rows.findIndex((row) => row.id === this.selectedId),
 		);
-		const next = Math.max(0, Math.min(this.rows.length - 1, current + (matchesKey(data, Key.up) ? -1 : 1)));
+		const delta = matchesKey(data, Key.up)
+			? -1
+			: matchesKey(data, Key.down)
+				? 1
+				: matchesCommandDialogPageUp(data)
+					? -this.lastListViewportRows
+					: this.lastListViewportRows;
+		const next = Math.max(0, Math.min(this.rows.length - 1, current + delta));
 		this.selectedId = this.rows[next]?.id;
 		this.note = "";
+		this.scrollOffset = 0;
 		this.context.requestRender();
 	}
 
@@ -218,8 +290,8 @@ class TasksDialogComponent implements CommandDialogComponent {
 		if (
 			!matchesKey(data, Key.up) &&
 			!matchesKey(data, Key.down) &&
-			!matchesKey(data, "pageUp") &&
-			!matchesKey(data, "pageDown")
+			!matchesCommandDialogPageUp(data) &&
+			!matchesCommandDialogPageDown(data)
 		)
 			return;
 		const document = this.detailDocument(this.selected());
@@ -228,7 +300,7 @@ class TasksDialogComponent implements CommandDialogComponent {
 			? -1
 			: matchesKey(data, Key.down)
 				? 1
-				: matchesKey(data, "pageUp")
+				: matchesCommandDialogPageUp(data)
 					? -page
 					: page;
 		this.scrollOffset = Math.max(0, Math.min(Math.max(0, document.length - page), this.scrollOffset + delta));
@@ -238,11 +310,7 @@ class TasksDialogComponent implements CommandDialogComponent {
 	private async stopSelected(): Promise<void> {
 		const row = this.selected();
 		if (!row) return;
-		if (!row.owned) {
-			this.note = "Open /agents to control an Agent.";
-			this.context.requestRender();
-			return;
-		}
+		if (row.status === "stopping") return;
 		this.stopping = true;
 		this.note = `Stopping ${row.id}…`;
 		this.context.requestRender();
@@ -257,94 +325,137 @@ class TasksDialogComponent implements CommandDialogComponent {
 		}
 	}
 
-	private renderList(): string[] {
+	private renderList(width = this.lastWidth, focused = false, stable = false): string[] {
 		const theme = this.context.theme;
 		const selected = this.selected();
-		const footer = hint(theme, this.lastWidth, [
+		const baseHints = [
 			"↑/↓ select",
-			"Enter view",
-			...(selected?.owned ? ["x stop"] : []),
+			"Enter details",
+			...(selected && selected.status !== "stopping" ? ["x stop"] : []),
 			"Esc return",
-		]);
-		const maximum = commandDialogRows(this.context);
-		const preferred = this.lastWidth <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
-		const viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		];
+		let footer = hint(theme, width, baseHints);
+		const maximum = stable
+			? Math.min(TASK_DIALOG_ROWS, commandDialogRows(this.context))
+			: commandDialogRows(this.context);
+		const preferred = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
+		let viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		if (this.rows.length > viewport) {
+			footer = hint(theme, width, ["↑/↓ select", "Shift+↑/↓ page", ...baseHints.slice(1)]);
+			viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
+		}
+		this.lastListViewportRows = Math.max(1, viewport);
 		const selectedIndex = Math.max(
 			0,
 			this.rows.findIndex((row) => row.id === this.selectedId),
 		);
 		const start = Math.max(0, Math.min(selectedIndex - Math.floor(viewport / 2), this.rows.length - viewport));
 		const visible = viewport > 0 ? this.rows.slice(start, start + viewport) : [];
+		const title = focused ? theme.bold(theme.fg("accent", "Tasks")) : theme.bold("Tasks");
 		const header = [
-			theme.fg("border", "─".repeat(this.lastWidth)),
-			`${GUTTER}${theme.bold("Tasks")}${theme.fg("dim", ` · ${String(this.rows.length)} current`)}`,
+			theme.fg("border", "━".repeat(width)),
+			`${GUTTER}${title}${theme.fg("dim", ` · ${String(this.rows.length)} current`)}`,
 		];
 		const emptyLine = `${GUTTER}${theme.fg("dim", "No background work in this session.")}`;
-		const rowLines = visible.map((row) => fitRow(theme, row, row.id === this.selectedId, this.lastWidth));
+		const rowLines = [
+			...(start > 0 ? [`${GUTTER}${theme.fg("dim", `… ${String(start)} earlier`)}`] : []),
+			...visible.map((row) => fitRow(theme, row, row.id === this.selectedId, width)),
+			...(start + visible.length < this.rows.length
+				? [`${GUTTER}${theme.fg("dim", `… ${String(this.rows.length - start - visible.length)} later`)}`]
+				: []),
+		];
 		const noteLine = this.note ? `${GUTTER}${theme.fg("dim", oneLine(this.note))}` : undefined;
 		const body = ["", ...(rowLines.length === 0 ? [emptyLine] : rowLines), ...(noteLine ? [noteLine] : [])];
 		while (header.length + body.length + footer.length < maximum && body.length < preferred + 1) body.push("");
-		const selectedLine = selected ? fitRow(theme, selected, true, this.lastWidth) : undefined;
-		return fitCommandDialogRows({ header, body, footer, priority: [noteLine ?? selectedLine ?? emptyLine] }, maximum);
+		const selectedLine = selected ? fitRow(theme, selected, true, width) : undefined;
+		const sections = { header, body, footer, priority: [noteLine ?? selectedLine ?? emptyLine] };
+		return stable ? fitFixedCommandDialogRows(sections, maximum) : fitCommandDialogRows(sections, maximum);
 	}
 
-	private renderDetail(): string[] {
+	private renderDetail(width = this.lastWidth, focused = false, stable = false): string[] {
+		this.lastDetailWidth = width;
 		const row = this.selected();
 		if (!row) {
 			this.mode = "list";
-			return this.renderList();
+			return this.renderList(width, focused, stable);
 		}
 		const theme = this.context.theme;
-		const footer = hint(theme, this.lastWidth, ["↑/↓ scroll", ...(row.owned ? ["x stop"] : []), "Esc back"]);
-		const maximum = commandDialogRows(this.context);
-		const document = this.detailDocument(row);
-		const fixedRows = 9 + footer.length + (this.note ? 1 : 0);
+		const maximum = stable
+			? Math.min(TASK_DIALOG_ROWS, commandDialogRows(this.context))
+			: commandDialogRows(this.context);
+		const document = this.detailDocument(row, width);
+		let footer = hint(theme, width, ["↑/↓ scroll", ...(row.status !== "stopping" ? ["x stop"] : []), "Esc back"]);
+		let fixedRows = 7 + footer.length + (this.note ? 1 : 0);
+		if (document.length > Math.max(0, maximum - fixedRows)) {
+			footer = hint(theme, width, [
+				"↑/↓ scroll",
+				"Shift+↑/↓ page",
+				...(row.status !== "stopping" ? ["x stop"] : []),
+				"Esc back",
+			]);
+			fixedRows = 7 + footer.length + (this.note ? 1 : 0);
+		}
 		const viewport = Math.max(0, maximum - fixedRows);
 		const maxOffset = Math.max(0, document.length - viewport);
 		this.scrollOffset = Math.min(maxOffset, this.scrollOffset);
 		const visible = document.slice(this.scrollOffset, this.scrollOffset + viewport);
-		const stateLine = `${GUTTER}${theme.fg("dim", "State")}  ${statusText(theme, row.status, row.status)} ${theme.fg("dim", `· ${elapsed(row.startedAt)}`)}`;
+		const stateLine = `${GUTTER}${statusText(theme, row.status, `${statusGlyph(row.status)} ${row.status}`)} ${theme.fg("dim", `· ${elapsed(row.startedAt)} · task ${oneLine(row.id)}`)}`;
 		const noteLine = this.note ? `${GUTTER}${theme.fg("dim", oneLine(this.note))}` : undefined;
-		const header = [
-			theme.fg("border", "─".repeat(this.lastWidth)),
-			`${GUTTER}${theme.bold("Task details")} ${theme.fg("dim", `· ${kindLabel(row.kind)}`)}`,
-		];
+		const breadcrumb = `Tasks / ${kindLabel(row.kind)}`;
+		const title = focused ? theme.bold(theme.fg("accent", breadcrumb)) : theme.bold(breadcrumb);
+		const header = [theme.fg("border", "━".repeat(width)), `${GUTTER}${title}`];
 		const body = [
 			"",
+			`${GUTTER}${theme.bold(oneLine(row.title))}`,
 			stateLine,
-			`${GUTTER}${theme.fg("dim", "Task")}   ${oneLine(row.title)}`,
-			`${GUTTER}${theme.fg("dim", "ID")}     ${oneLine(row.id)}`,
 			"",
 			...visible.map((line) => `${GUTTER}${line}`),
 			...(noteLine ? [noteLine] : []),
 			"",
 		];
-		return fitCommandDialogRows({ header, body, footer, priority: [noteLine ?? stateLine] }, maximum);
+		const sections = { header, body, footer, priority: [noteLine ?? stateLine] };
+		return stable ? fitFixedCommandDialogRows(sections, maximum) : fitCommandDialogRows(sections, maximum);
 	}
 
-	private detailDocument(row: TaskRow | undefined): readonly string[] {
+	private detailDocument(row: TaskRow | undefined, paneWidth = this.lastDetailWidth): readonly string[] {
 		if (!row) return [];
-		const width = Math.max(1, this.lastWidth - visibleWidth(GUTTER));
-		const sections = [
-			...(row.description ? [row.description] : []),
-			...(row.command ? [`$ ${row.command}`] : []),
-			...(row.output
-				? [row.output]
-				: [row.kind === "agent" ? "Use /agents for the live transcript and controls." : "No output yet."]),
+		const width = Math.max(1, paneWidth - visibleWidth(GUTTER));
+		const wrap = (value: string) => value.split(/\r?\n/gu).flatMap((line) => wrapTextWithAnsi(line || " ", width));
+		if (row.kind === "shell") {
+			return [
+				sectionHeading(this.context.theme, "Command"),
+				...wrap(row.command ?? "Command unavailable."),
+				"",
+				sectionHeading(this.context.theme, "Output"),
+				...wrap(row.output ?? "No output yet."),
+			];
+		}
+		const source = row.monitorSource
+			? `${row.monitorSource.toUpperCase()} · ${row.monitorTarget ?? row.command ?? "target unavailable"}`
+			: row.command
+				? `COMMAND · ${row.command}`
+				: "Source unavailable.";
+		const conditions = [
+			...(row.monitorSuccessText ? [`success contains ${JSON.stringify(row.monitorSuccessText)}`] : []),
+			...(row.monitorFailureText ? [`failure contains ${JSON.stringify(row.monitorFailureText)}`] : []),
+			...(row.monitorTimeoutSeconds !== undefined ? [`timeout ${String(row.monitorTimeoutSeconds)}s`] : []),
 		];
-		return sections.flatMap((section, index) => [
-			...(index > 0 ? [""] : []),
-			...section.split(/\r?\n/gu).flatMap((line) => wrapTextWithAnsi(line || " ", width)),
-		]);
+		return [
+			sectionHeading(this.context.theme, "Source"),
+			...wrap(source),
+			"",
+			sectionHeading(this.context.theme, "Condition"),
+			...wrap(conditions.join(" · ") || "No completion text; any successful probe completes the monitor."),
+			"",
+			sectionHeading(this.context.theme, "Latest evidence"),
+			...wrap(row.output ?? "No evidence yet."),
+		];
 	}
 }
 
-export function createTasksDialogView(
-	runtime: BackgroundWorkRuntime,
-	sources: CurrentWorkSources,
-): CommandDialogView<void> {
+export function createTasksDialogView(runtime: BackgroundWorkRuntime): CommandDialogView<void> {
 	return {
 		priority: "normal",
-		create: (context) => new TasksDialogComponent(runtime, sources, context),
+		create: (context) => new TasksDialogComponent(runtime, context),
 	};
 }

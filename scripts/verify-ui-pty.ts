@@ -421,7 +421,9 @@ function verifyNoFloatingFrame(screen: string, label: string): void {
 	const lines = screen.split("\n");
 	let surfaceStart = 0;
 	for (const [index, line] of lines.entries()) {
-		if (line.length > 0 && [...line].every((character) => character === "─")) surfaceStart = index;
+		if (line.length > 0 && [...line].every((character) => character === "─" || character === "━")) {
+			surfaceStart = index;
+		}
 	}
 	const surface = lines.slice(surfaceStart).join("\n");
 	for (const forbidden of ["╭", "╮", "╰", "╯"]) {
@@ -721,18 +723,22 @@ async function verifyLiveResize(session: TmuxPiSession): Promise<void> {
 	}
 }
 
-function verifyFullWidthDivider(screen: string, columns: number, label: string): void {
-	if (!hasFullWidthDivider(screen, columns)) {
+function verifyFullWidthDivider(screen: string, columns: number, label: string, character = "━"): void {
+	if (!hasFullWidthDivider(screen, columns, character)) {
 		fail(`${label} did not expose a ${String(columns)}-column divider\n${screen}`);
 	}
 }
 
-function hasFullWidthDivider(screen: string, columns: number): boolean {
+function hasFullWidthDivider(screen: string, columns: number, character?: string): boolean {
 	return screen
 		.split("\n")
 		.some(
 			(line) =>
-				line.length > 0 && [...line].every((character) => character === "─") && visibleWidth(line) === columns,
+				line.length > 0 &&
+				[...line].every((value) =>
+					character === undefined ? value === "─" || value === "━" : value === character,
+				) &&
+				visibleWidth(line) === columns,
 		);
 }
 
@@ -853,7 +859,7 @@ async function verifyDiagnosticsUi(
 	verifyTerminalWidth(screen, columns, "/diagnostics Command Dialog");
 
 	session.sendKey("Enter");
-	screen = await session.waitForText("Diagnostic details");
+	screen = await session.waitForText("Diagnostics / Background Work");
 	screen = await session.waitForText("/tasks");
 	if (screen.includes("fixture-secret-token-value")) fail("/diagnostics exposed an unredacted credential");
 	if (!screen.includes("Bearer [redacted]")) screen = await session.waitForText("Bearer [redacted]");
@@ -901,7 +907,7 @@ async function verifyWideInteractions(
 	session.resize(64, 28);
 	screen = await session.waitForDialogFrame("Tool running timer", 64);
 	verifyNoFloatingFrame(screen, "narrow /ui Command Dialog");
-	verifyFullWidthDivider(screen, 64, "narrow /ui Command Dialog");
+	verifyFullWidthDivider(screen, 64, "narrow /ui Command Dialog", "─");
 	verifyTerminalWidth(screen, 64, "narrow /ui Command Dialog");
 	await writePtyEvidence(options.artifactDirectory, `pi-${CERTIFIED_PI_VERSION}-ui-parity-open-64x28`, session);
 	session.resize(100, 32);

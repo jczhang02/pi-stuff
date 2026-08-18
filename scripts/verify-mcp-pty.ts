@@ -135,7 +135,7 @@ must_expect "MCP: Reconnected to local"
 send -- "/mcp\\r"
 must_expect "1/3 connected"
 must_expect "local"
-must_expect "1 tools"
+must_expect "1 tool"
 must_expect "Esc close"
 send -- "\\033"
 after 100
@@ -361,7 +361,7 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 			fail("first resumed frame exposed the raw historical MCP Tool result");
 		}
 		for (const width of [columns, NARROW_COLUMNS]) {
-			if (!visible.includes("─".repeat(width)))
+			if (!visible.includes("━".repeat(width)))
 				fail(`Command Dialog did not render a ${String(width)}-column divider`);
 		}
 		if (/mcp:\d+/u.test(visible)) fail("terminal output exposed a Capability-specific MCP Statusline segment");

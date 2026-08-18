@@ -43,6 +43,11 @@ export {
 	type CommandDialogRowSections,
 	commandDialogRows,
 	fitCommandDialogRows,
+	fitFixedCommandDialogRows,
+	matchesCommandDialogPageDown,
+	matchesCommandDialogPageUp,
+	renderCommandDialogSplit,
+	WIDE_COMMAND_DIALOG_MIN_WIDTH,
 } from "./dialog-layout.js";
 
 export {

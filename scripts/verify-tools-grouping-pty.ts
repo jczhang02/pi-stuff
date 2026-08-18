@@ -303,13 +303,14 @@ export async function verifyToolsGroupingPty(options: {
 			}
 
 			send(tmux, tmuxSession, "/tools");
-			const tools = await waitForText(tmux, tmuxSession, "items");
-			for (const required of ["Tools", "Bash(printf BASH_UI_SECOND", "Esc close"]) {
+			const tools = await waitForText(tmux, tmuxSession, "activities");
+			for (const required of ["Tools", "Tools / Bash · done", "BASH_UI_SECOND_DONE", "Esc close", "┃"]) {
 				if (!tools.includes(required)) fail(`/tools lost grouped member ${required}\n${tools}`);
 			}
 			tmux(["send-keys", "-t", tmuxSession, "Enter"]);
-			const details = await waitForText(tmux, tmuxSession, "Tool activity details");
-			for (const required of ["Bash", "printf BASH_UI_SECOND", "BASH_UI_SECOND_DONE"]) {
+			await Bun.sleep(100);
+			const details = capture(tmux, tmuxSession);
+			for (const required of ["Tools / Bash · done", "◆ Detail · formatted", "BASH_UI_SECOND_DONE"]) {
 				if (!details.includes(required)) fail(`/tools group details lost member ${required}\n${details}`);
 			}
 			tmux(["send-keys", "-t", tmuxSession, "Escape"]);

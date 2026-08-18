@@ -7,6 +7,7 @@ import type { AgentTranscriptReader, AgentTranscriptRequest } from "./agent-dial
 const READ_BYTE_MULTIPLIER = 4;
 const MIN_READ_BYTES = 16 * 1024;
 const MAX_READ_BYTES = 2 * 1024 * 1024;
+const TOOL_RESULT_PREVIEW_LINES = 8;
 
 function cleanTerminalText(value: string): string {
 	let result = "";
@@ -177,7 +178,7 @@ function oneLine(value: string): string {
 	return cleanTerminalText(value).replace(/\s+/gu, " ").trim();
 }
 
-function messageBlock(entry: Record<string, unknown>): string | null {
+function messageBlock(entry: Record<string, unknown>, agentName: string): string | null {
 	const message = record(entry.message);
 	const role =
 		typeof entry.role === "string" ? entry.role : typeof message?.role === "string" ? message.role : undefined;
@@ -187,8 +188,8 @@ function messageBlock(entry: Record<string, unknown>): string | null {
 		(typeof message?.text === "string" ? message.text : "") ||
 		contentText(message?.content);
 	if (!text.trim()) return null;
-	if (role === "assistant") return `Agent\n${text.trim()}`;
-	if (role === "user") return `User\n${text.trim()}`;
+	if (role === "assistant") return `${agentName}\n${text.trim()}`;
+	if (role === "user") return `You\n${text.trim()}`;
 	if (role === "toolResult" || role === "tool_result") return null;
 	return text.trim();
 }
@@ -238,9 +239,25 @@ function toolOutcome(tool: ToolProjection): ToolOutcome {
 
 function renderTool(tool: ToolProjection): string {
 	const target = oneLine(tool.target);
-	const header = `● ${toolLabel(tool.name)}${target ? ` ${target}` : ""} · ${toolOutcome(tool)}`;
-	const result = tool.result.trim();
-	return result ? `${header}\n${result}` : header;
+	const outcome = toolOutcome(tool);
+	const glyph =
+		outcome === "running"
+			? "●"
+			: outcome === "completed"
+				? "✓"
+				: outcome === "rejected"
+					? "!"
+					: outcome === "cancelled"
+						? "■"
+						: "×";
+	const header = `${glyph} ${toolLabel(tool.name)}${target ? ` · ${target}` : ""} · ${outcome}`;
+	const result = cleanTerminalText(tool.result).trim();
+	if (!result) return header;
+	const lines = result.split("\n");
+	const visible = lines.slice(0, TOOL_RESULT_PREVIEW_LINES).map((line, index) => `${index === 0 ? "⎿ " : ""}${line}`);
+	const omitted = lines.length - visible.length;
+	if (omitted > 0) visible.push(`⎿ … ${String(omitted)} lines omitted`);
+	return `${header}\n${visible.join("\n")}`;
 }
 
 function createToolProjection(
@@ -280,7 +297,7 @@ function resolveTool(
 	return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-function jsonlTranscript(source: string, sourceTruncated: boolean, task: string): string {
+function jsonlTranscript(source: string, sourceTruncated: boolean, task: string, agentName: string): string {
 	let lines = source.split(/\r?\n/);
 	if (sourceTruncated && lines.length > 0) lines = lines.slice(1);
 	const items: TranscriptItem[] = [];
@@ -339,7 +356,7 @@ function jsonlTranscript(source: string, sourceTruncated: boolean, task: string)
 			tool.isError = booleanField(entry, message, "isError") ?? tool.isError ?? false;
 			continue;
 		}
-		const block = messageBlock(entry);
+		const block = messageBlock(entry, agentName);
 		const previous = items.at(-1);
 		if (
 			block &&
@@ -376,7 +393,7 @@ export const readAgentTranscript: AgentTranscriptReader = async (request) => {
 	if (request.signal.aborted) return null;
 	if (!tail) return partial;
 	const parsed = candidate.endsWith(".jsonl")
-		? jsonlTranscript(tail.text, tail.truncated, request.row.task)
+		? jsonlTranscript(tail.text, tail.truncated, request.row.task, oneLine(request.row.name ?? "Agent") || "Agent")
 		: `${tail.truncated ? "… earlier transcript omitted\n\n" : ""}${tail.text}`;
 	const bounded = boundedTail(parsed || partial || "", request.maxChars) || null;
 	return isTaskOnlyAgentText(bounded, request.row.task) ? null : bounded;

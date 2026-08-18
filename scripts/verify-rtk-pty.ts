@@ -50,7 +50,7 @@ send -- "/rtk\\r"
 must_expect "RTK"
 must_expect "ready"
 must_expect "0.42.4"
-must_expect "Configure with /rtk settings"
+must_expect "/rtk settings"
 send -- "\\033"
 after 100
 send -- "/rtk settings\\r"
@@ -320,7 +320,7 @@ export async function verifyRtkPty(options: {
 			"RTK",
 			"ready",
 			CERTIFIED_RTK_VERSION,
-			"Configure with /rtk settings",
+			"/rtk settings",
 			"RTK settings",
 			"Command rewriting",
 			"Model projection",

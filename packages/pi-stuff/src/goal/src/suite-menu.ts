@@ -333,7 +333,7 @@ class SuiteMenuDialog<ScreenId extends string, ActionId extends string> implemen
 		const lines = fitCommandDialogRows(
 			{
 				header: [
-					this.context.theme.fg("border", "─".repeat(renderWidth)),
+					this.context.theme.fg("border", "━".repeat(renderWidth)),
 					`${GUTTER}${this.context.theme.bold(oneLine(this.screen.title))}`,
 				],
 				body,

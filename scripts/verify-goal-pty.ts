@@ -34,7 +34,7 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 function verifyScreen(screen: string, columns: number, label: string, allowNormalChrome = false): void {
-	const divider = "─".repeat(columns);
+	const divider = (allowNormalChrome ? "─" : "━").repeat(columns);
 	if (!screen.includes(divider)) {
 		fail(`${label} did not render a ${String(columns)}-column divider\n${screen}`);
 	}

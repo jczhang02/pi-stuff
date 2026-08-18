@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { CurrentWorkSources } from "../../packages/pi-stuff/src/background-work/src/current-work.js";
 import type {
 	BackgroundWorkOutcome,
 	BackgroundWorkRuntime,
@@ -84,25 +83,6 @@ function harness(
 	};
 }
 
-function sources(): CurrentWorkSources {
-	const sources = new CurrentWorkSources();
-	sources.register({
-		id: "agents",
-		snapshot: () => [
-			{
-				description: "Review the entire implementation independently and report only actionable findings",
-				id: "agent-1",
-				kind: "agent",
-				startedAt: Date.now() - 2_000,
-				status: "running",
-				title: "Independent implementation review",
-			},
-		],
-		subscribe: () => () => {},
-	});
-	return sources;
-}
-
 describe("/tasks Command Dialog", () => {
 	test("keeps running task identity and state above the tertiary dim token", () => {
 		const colors: Array<{ color: string; text: string }> = [];
@@ -115,25 +95,21 @@ describe("/tasks Command Dialog", () => {
 		} as unknown as Theme;
 		const runtime = new RuntimeHarness();
 		const ui = harness(24, recordingTheme);
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime, sources()).create(
-			ui.context,
-		);
+		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
 		component.render(92);
-		expect(colors.some(({ color, text }) => color === "muted" && text.includes("Run the complete"))).toBe(true);
-		expect(colors.some(({ color, text }) => color === "muted" && text.includes("running"))).toBe(true);
+		expect(colors.some(({ color, text }) => color === "muted" && text.includes("Run the complete"))).toBe(false);
+		expect(colors.some(({ color, text }) => color === "accent" && text.includes("●"))).toBe(true);
 		expect(colors.some(({ color, text }) => color === "dim" && text.includes("Run the complete"))).toBe(false);
 		component.dispose?.();
 	});
 
-	test("renders owned work and read-only Agents as one full-width bounded list", () => {
+	test("renders active Background Work as one full-width bounded list", () => {
 		const runtime = new RuntimeHarness();
 		const ui = harness();
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime, sources()).create(
-			ui.context,
-		);
+		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
 		const normal = component.render(92);
-		expect(normal[0]).toBe("─".repeat(92));
-		expect(normal.join("\n")).toContain("Tasks · 2 current");
+		expect(normal[0]).toBe("━".repeat(92));
+		expect(normal.join("\n")).toContain("Tasks · 1 current");
 		expect(normal.join("\n")).toContain("Shell");
 		expect(normal.join("\n")).toContain("x stop");
 		expect(normal.join("\n")).not.toMatch(/[╭╮╰╯]/u);
@@ -145,34 +121,84 @@ describe("/tasks Command Dialog", () => {
 		component.dispose?.();
 	});
 
-	test("shows bounded details and directs Agent control back to /agents", async () => {
+	test("keeps task selection and Shell detail together in one stable wide Dialog", () => {
 		const runtime = new RuntimeHarness();
-		const ui = harness();
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime, sources()).create(
-			ui.context,
-		);
-		component.handleInput?.("\u001b[B");
-		component.handleInput?.("x");
-		await Bun.sleep(0);
-		expect(component.render(64).join("\n")).toContain("Open /agents to control an Agent.");
-		expect(runtime.stopped).toHaveLength(0);
+		const ui = harness(32);
+		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
+		const lines = component.render(100);
+		const output = lines.join("\n");
+		expect(lines).toHaveLength(18);
+		expect(lines[0]).toBe("━".repeat(100));
+		expect(lines.slice(1).every((line) => visibleWidth(line.slice(0, line.indexOf("┃"))) === 36)).toBe(true);
+		expect(output).toContain("Tasks · 1 current");
+		expect(output).toContain("Tasks / Shell");
+		expect(output).toContain("◆ Command");
+		expect(output).toContain("◆ Output");
+		expect(output).toContain("first line");
+
 		component.handleInput?.("\r");
-		const detail = component.render(40);
-		expect(detail.every((line) => visibleWidth(line) <= 40)).toBe(true);
-		expect(detail.join("\n")).toContain("Task details · Agent");
-		expect(detail.join("\n")).toContain("Use /agents");
 		component.handleInput?.("\u001b");
+		expect(ui.closed()).toBe(0);
 		component.handleInput?.("\u001b");
 		expect(ui.closed()).toBe(1);
 		component.dispose?.();
 	});
 
-	test("stops only owned Shell or Monitor activities", async () => {
+	test("shows a Monitor source, conditions, and latest evidence", () => {
+		const runtime = new RuntimeHarness();
+		runtime.rows = [
+			{
+				id: "monitor-health",
+				kind: "monitor",
+				monitorFailureText: "FATAL",
+				monitorSource: "http",
+				monitorSuccessText: "READY",
+				monitorTarget: "https://example.test/health",
+				monitorTimeoutSeconds: 30,
+				recentOutput: "503 booting",
+				startedAt: Date.now() - 3_000,
+				status: "running",
+				title: "Wait for service health",
+			},
+		];
+		const ui = harness(32);
+		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
+		const output = component.render(100).join("\n");
+		expect(output).toContain("Tasks / Monitor");
+		expect(output).toContain("◆ Source");
+		expect(output).toContain("HTTP · https://example.test/health");
+		expect(output).toContain('success contains "READY"');
+		expect(output).toContain('failure contains "FATAL"');
+		expect(output).toContain("timeout");
+		expect(output).toContain("30s");
+		expect(output).toContain("◆ Latest evidence");
+		expect(output).toContain("503 booting");
+		component.dispose?.();
+	});
+
+	test("pages a long task list with Shift+Down", () => {
+		const runtime = new RuntimeHarness();
+		const template = runtime.rows[0];
+		if (!template) throw new Error("missing task fixture");
+		runtime.rows = Array.from({ length: 12 }, (_, index) => ({
+			...template,
+			id: `shell-${String(index + 1)}`,
+			startedAt: Date.now() + index,
+			title: `Task ${String(index + 1)}`,
+		}));
+		const ui = harness();
+		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
+		expect(component.render(64).join("\n")).toContain("Shift+↑/↓ page");
+		component.handleInput?.("\u001b[1;2B");
+		component.handleInput?.("\r");
+		expect(component.render(64).join("\n")).toContain("Task 7");
+		component.dispose?.();
+	});
+
+	test("stops a selected Shell or Monitor activity", async () => {
 		const runtime = new RuntimeHarness();
 		const ui = harness();
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime, sources()).create(
-			ui.context,
-		);
+		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
 		component.handleInput?.("x");
 		await Bun.sleep(0);
 		expect(runtime.stopped).toEqual(["b-shell"]);
@@ -184,9 +210,7 @@ describe("/tasks Command Dialog", () => {
 	test("preserves controls in a short terminal", () => {
 		const runtime = new RuntimeHarness();
 		const ui = harness(6);
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime, sources()).create(
-			ui.context,
-		);
+		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
 		const lines = component.render(38);
 		expect(lines).toHaveLength(3);
 		expect(lines.join("\n")).toContain("Tasks");

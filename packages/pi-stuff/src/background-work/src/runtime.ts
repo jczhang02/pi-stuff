@@ -71,6 +71,11 @@ export interface BackgroundWorkSnapshot {
 	readonly description?: string;
 	readonly id: string;
 	readonly kind: BackgroundWorkKind;
+	readonly monitorFailureText?: string;
+	readonly monitorSource?: "command" | "file" | "http" | "log";
+	readonly monitorSuccessText?: string;
+	readonly monitorTarget?: string;
+	readonly monitorTimeoutSeconds?: number;
 	readonly outputPath?: string;
 	readonly recentOutput?: string;
 	readonly startedAt: number;
@@ -120,7 +125,10 @@ interface SpawnedActivity {
 	kind: BackgroundWorkKind;
 	launchAuthorized: boolean;
 	monitorFailureText?: string;
+	monitorSource?: "command";
 	monitorSuccessText?: string;
+	monitorTarget?: string;
+	monitorTimeoutSeconds?: number;
 	output: BoundedOutputFile;
 	outputLimitStopRequested: boolean;
 	parentRunOrigin: AgentWorkOrigin;
@@ -159,7 +167,10 @@ interface SpawnProcessInput {
 	readonly env: NodeJS.ProcessEnv;
 	readonly kind?: BackgroundWorkKind;
 	readonly monitorFailureText?: string;
+	readonly monitorSource?: "command";
 	readonly monitorSuccessText?: string;
+	readonly monitorTarget?: string;
+	readonly monitorTimeoutSeconds?: number;
 	readonly parentRunOrigin?: AgentWorkOrigin;
 	readonly toolCallId: string;
 }
@@ -691,7 +702,10 @@ export class BackgroundWorkRuntime {
 			env: sessionEnvironment(ctx),
 			kind: "monitor",
 			...(input.failureText ? { monitorFailureText: input.failureText } : {}),
+			monitorSource: "command",
 			...(input.successText ? { monitorSuccessText: input.successText } : {}),
+			monitorTarget: input.command,
+			monitorTimeoutSeconds: input.timeoutSeconds,
 			toolCallId: input.toolCallId,
 		});
 		activity.timeoutTimer = setTimeout(() => {
@@ -882,7 +896,10 @@ export class BackgroundWorkRuntime {
 			kind,
 			launchAuthorized: false,
 			...(input.monitorFailureText ? { monitorFailureText: input.monitorFailureText } : {}),
+			...(input.monitorSource ? { monitorSource: input.monitorSource } : {}),
 			...(input.monitorSuccessText ? { monitorSuccessText: input.monitorSuccessText } : {}),
+			...(input.monitorTarget ? { monitorTarget: input.monitorTarget } : {}),
+			...(input.monitorTimeoutSeconds !== undefined ? { monitorTimeoutSeconds: input.monitorTimeoutSeconds } : {}),
 			output,
 			outputLimitStopRequested: false,
 			parentRunOrigin: input.parentRunOrigin ?? "automatic",
@@ -1350,6 +1367,13 @@ export class BackgroundWorkRuntime {
 			...(activity.description ? { description: activity.description } : {}),
 			id: activity.id,
 			kind: activity.kind,
+			...(activity.monitorFailureText ? { monitorFailureText: activity.monitorFailureText } : {}),
+			...(activity.monitorSource ? { monitorSource: activity.monitorSource } : {}),
+			...(activity.monitorSuccessText ? { monitorSuccessText: activity.monitorSuccessText } : {}),
+			...(activity.monitorTarget ? { monitorTarget: activity.monitorTarget } : {}),
+			...(activity.monitorTimeoutSeconds !== undefined
+				? { monitorTimeoutSeconds: activity.monitorTimeoutSeconds }
+				: {}),
 			...(activity.output.durable && existsSync(activity.output.path) ? { outputPath: activity.output.path } : {}),
 			...(recentOutput ? { recentOutput } : {}),
 			startedAt: activity.startedAt,

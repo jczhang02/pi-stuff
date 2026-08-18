@@ -203,7 +203,7 @@ describe("/diagnostics Command Dialog", () => {
 		expect(list).toContain("Diagnostics · 2 records");
 		expect(list).toContain("Enter details");
 		component.handleInput?.("\r");
-		expect(component.render(80).join("\n")).toContain("Diagnostic details · Background Work");
+		expect(component.render(80).join("\n")).toContain("Diagnostics / Background Work");
 		expect(component.render(80).join("\n")).toContain("detail 1");
 		component.handleInput?.("\u001b");
 		component.handleInput?.("c");
@@ -212,6 +212,45 @@ describe("/diagnostics Command Dialog", () => {
 		component.handleInput?.("\u001b");
 		expect(ui.closed()).toBe(1);
 		expect(ui.renders()).toBeGreaterThan(0);
+		component.dispose?.();
+	});
+
+	test("keeps list and detail as sequential single-column views at wide widths", () => {
+		const channel = new DiagnosticChannel();
+		report(channel, 1);
+		report(channel, 2);
+		const ui = dialogHarness(32);
+		const component = createDiagnosticsView(channel).create(ui.context);
+		const lines = component.render(100);
+		let output = lines.join("\n");
+		expect(lines[0]).toBe("━".repeat(100));
+		expect(output).toContain("Diagnostics · 2 records");
+		expect(output).not.toContain("┃");
+		expect(output).not.toContain("Diagnostics / Background Work");
+		expect(output).toContain("Issue 2");
+
+		component.handleInput?.("\u001b[B");
+		component.handleInput?.("\r");
+		output = component.render(100).join("\n");
+		expect(output).toContain("Diagnostics / Background Work");
+		expect(output).toContain("Issue 1");
+		expect(output).toContain("◆ Details");
+		expect(output).not.toContain("Diagnostics · 2 records");
+		component.handleInput?.("\u001b");
+		expect(component.render(100).join("\n")).toContain("Diagnostics · 2 records");
+		expect(ui.closed()).toBe(0);
+		component.handleInput?.("\u001b");
+		expect(ui.closed()).toBe(1);
+		component.dispose?.();
+	});
+
+	test("uses Shift+Down as the compact-keyboard page alias", () => {
+		const channel = new DiagnosticChannel();
+		for (let index = 1; index <= 12; index += 1) report(channel, index);
+		const component = createDiagnosticsView(channel).create(dialogHarness().context);
+		expect(component.render(80).join("\n")).toContain("Issue 12");
+		component.handleInput?.("\u001b[1;2B");
+		expect(component.render(80).join("\n")).toContain("Issue 4");
 		component.dispose?.();
 	});
 

@@ -96,7 +96,7 @@ describe("readAgentTranscript", () => {
 			].join("\n"),
 		);
 		const output = await readAgentTranscript(request(row({ sessionFile: file })));
-		expect(output).toBe("User\nInvestigate\n\n● Read src/a.ts · completed\n112 lines\n\nAgent\nFound it");
+		expect(output).toBe("You\nInvestigate\n\n✓ Read · src/a.ts · completed\n⎿ 112 lines\n\nworker\nFound it");
 	});
 
 	test("omits a transcript User message that only repeats the delegated task", async () => {
@@ -110,7 +110,7 @@ describe("readAgentTranscript", () => {
 			].join("\n"),
 		);
 		const output = await readAgentTranscript(request(row({ sessionFile: file, task })));
-		expect(output).toBe("Agent\nActual result");
+		expect(output).toBe("worker\nActual result");
 	});
 
 	test("keeps mixed and out-of-order child Tool outcomes attributable", async () => {
@@ -159,8 +159,35 @@ describe("readAgentTranscript", () => {
 
 		const output = await readAgentTranscript(request(row({ sessionFile: file })));
 		expect(output).toBe(
-			"● Read src/配置🧪.ts · completed\nfile contents\n\n● Bash bun test · cancelled\nCommand aborted",
+			"✓ Read · src/配置🧪.ts · completed\n⎿ file contents\n\n■ Bash · bun test · cancelled\n⎿ Command aborted",
 		);
+	});
+
+	test("bounds Tool result previews and reports omitted lines", async () => {
+		const file = join(tempDirectory(), "session.jsonl");
+		writeFileSync(
+			file,
+			[
+				JSON.stringify({ recordType: "tool_start", toolCallId: "read-1", toolName: "read" }),
+				JSON.stringify({
+					recordType: "message",
+					message: {
+						role: "toolResult",
+						toolCallId: "read-1",
+						content: [
+							{
+								type: "text",
+								text: Array.from({ length: 11 }, (_, index) => `line-${String(index + 1)}`).join("\n"),
+							},
+						],
+					},
+				}),
+			].join("\n"),
+		);
+		const output = await readAgentTranscript(request(row({ sessionFile: file })));
+		expect(output).toContain("⎿ line-1");
+		expect(output).toContain("⎿ … 3 lines omitted");
+		expect(output).not.toContain("line-11");
 	});
 
 	test("distinguishes rejected results and degrades legacy records without false ownership", async () => {
@@ -214,13 +241,13 @@ describe("readAgentTranscript", () => {
 		);
 
 		const output = await readAgentTranscript(request(row({ sessionFile: file })));
-		expect(output).toContain("● Write /outside/project · rejected");
-		expect(output).toContain("● Edit · failed\ncompiler failure");
-		expect(output).toContain("● Read first.ts · running");
-		expect(output).toContain("● Read second.ts · running");
-		expect(output).toContain("● Tool · completed\nlegacy result");
-		expect(output).not.toContain("● Read first.ts · completed");
-		expect(output).not.toContain("● Read second.ts · completed");
+		expect(output).toContain("! Write · /outside/project · rejected");
+		expect(output).toContain("× Edit · failed\n⎿ compiler failure");
+		expect(output).toContain("● Read · first.ts · running");
+		expect(output).toContain("● Read · second.ts · running");
+		expect(output).toContain("✓ Tool · completed\n⎿ legacy result");
+		expect(output).not.toContain("✓ Read · first.ts · completed");
+		expect(output).not.toContain("✓ Read · second.ts · completed");
 		expect(output).not.toContain("hidden-title");
 		expect(output).not.toContain("\u001b");
 	});

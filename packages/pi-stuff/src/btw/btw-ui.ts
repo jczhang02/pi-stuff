@@ -12,7 +12,13 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { type CommandDialogViewContext, commandDialogRows, fitCommandDialogRows } from "../conversation-ui/index.js";
+import {
+	type CommandDialogViewContext,
+	commandDialogRows,
+	fitCommandDialogRows,
+	matchesCommandDialogPageDown,
+	matchesCommandDialogPageUp,
+} from "../conversation-ui/index.js";
 import { BTW_VISIBLE_HISTORY_LIMIT, type BtwExchange } from "./btw-history.js";
 
 const GUTTER = "  ";
@@ -146,7 +152,7 @@ function bounded(line: string, width: number): string {
 }
 
 function divider(theme: Theme, width: number): string {
-	return theme.fg("border", "─".repeat(Math.max(1, width)));
+	return theme.fg("border", "━".repeat(Math.max(1, width)));
 }
 
 function markdownTheme(theme: Theme): MarkdownTheme {
@@ -206,6 +212,7 @@ export class BtwDialogController implements Component {
 	private currentIndex: number;
 	private selectedIndex: number;
 	private scrollTop = 0;
+	private lastViewportHeight = 1;
 	private followTail = true;
 	private feedback: { kind: "success" | "error" | "dim"; text: string } | undefined;
 	private copyTimer: ReturnType<typeof setTimeout> | undefined;
@@ -329,14 +336,17 @@ export class BtwDialogController implements Component {
 			this.select(Math.min(this.exchanges.length - 1, this.selectedIndex + 1));
 			return;
 		}
-		if (matchesKey(data, Key.up) || matchesKey(data, Key.ctrl("p"))) {
+		if (matchesKey(data, Key.up) || matchesKey(data, Key.ctrl("p")) || matchesCommandDialogPageUp(data)) {
 			this.followTail = false;
-			this.scrollTop = Math.max(0, this.scrollTop - SCROLL_STEP);
+			this.scrollTop = Math.max(
+				0,
+				this.scrollTop - (matchesCommandDialogPageUp(data) ? this.lastViewportHeight : SCROLL_STEP),
+			);
 			this.requestRender();
 			return;
 		}
-		if (matchesKey(data, Key.down) || matchesKey(data, Key.ctrl("n"))) {
-			this.scrollTop += SCROLL_STEP;
+		if (matchesKey(data, Key.down) || matchesKey(data, Key.ctrl("n")) || matchesCommandDialogPageDown(data)) {
+			this.scrollTop += matchesCommandDialogPageDown(data) ? this.lastViewportHeight : SCROLL_STEP;
 			this.requestRender();
 			return;
 		}
@@ -370,6 +380,7 @@ export class BtwDialogController implements Component {
 		viewportHeight = Math.max(0, maximumRows - historyLines.length - footer.length - 3);
 		maxScroll = Math.max(0, answerLines.length - viewportHeight);
 		footer = this.renderFooter(selected, width, maxScroll);
+		this.lastViewportHeight = Math.max(1, viewportHeight);
 		if (this.followTail) this.scrollTop = maxScroll;
 		this.scrollTop = Math.min(maxScroll, Math.max(0, this.scrollTop));
 		if (this.scrollTop === maxScroll) this.followTail = true;
@@ -378,7 +389,7 @@ export class BtwDialogController implements Component {
 			.slice(this.scrollTop, this.scrollTop + viewportHeight)
 			.map((line) => bounded(`${GUTTER}${line}`, width));
 		const selectedQuestion = questionLine(this.theme, selected, true, width);
-		const stateLine =
+		const priorityAnswer =
 			selected.state === "error"
 				? answerLines.at(-1)
 					? bounded(`${GUTTER}${answerLines.at(-1)}`, width)
@@ -388,7 +399,7 @@ export class BtwDialogController implements Component {
 			{
 				header: [divider(this.theme, width)],
 				overflowTitle: selectedQuestion,
-				priority: [selectedQuestion, ...(stateLine ? [stateLine] : [])],
+				priority: [selectedQuestion, ...(priorityAnswer ? [priorityAnswer] : [])],
 				body: [...historyLines, "", ...visibleAnswer, ""],
 				footer,
 			},
@@ -514,7 +525,6 @@ export class BtwDialogController implements Component {
 		if (exchange.state === "pending") {
 			lines.push(...this.loader.render(Math.max(1, width)));
 		} else if (exchange.state === "error") {
-			if (safeAnswer.length > 0) lines.push(this.theme.fg("warning", "Incomplete answer"));
 			const error = stripTerminalControls(exchange.error ?? "Unknown /btw error");
 			lines.push(...wrapTextWithAnsi(this.theme.fg("error", error), Math.max(1, width)));
 		}
@@ -523,20 +533,20 @@ export class BtwDialogController implements Component {
 
 	private renderFooter(exchange: DisplayExchange, width: number, maxScroll: number): string[] {
 		if (this.clearConfirmation) {
-			return hintLines(this.theme, width, ["Clear earlier BTW history?", "y confirm", "Esc cancel"]);
+			return hintLines(this.theme, width, ["Clear BTW history?", "y to confirm", "Esc to cancel"]);
 		}
 		if (this.feedback) {
 			return [
 				bounded(`${GUTTER}${this.theme.fg(this.feedback.kind, oneLine(this.feedback.text))}`, width),
-				...hintLines(this.theme, width, [exchange.state === "pending" ? "Esc cancel" : "Esc close"]),
+				...hintLines(this.theme, width, ["Esc to close"]),
 			];
 		}
 		const hints: string[] = [];
-		if (this.exchanges.length > 1) hints.push("←/→ history");
-		if (maxScroll > 0) hints.push("↑/↓ scroll");
-		if (exchange.state === "success") hints.push("c copy", "f fork");
-		if (this.hasEarlier()) hints.push("x clear");
-		hints.push(exchange.state === "pending" ? "Esc cancel" : "Esc close");
+		if (this.exchanges.length > 1) hints.push("←/→ to switch");
+		if (maxScroll > 0) hints.push("↑/↓ to scroll");
+		if (exchange.state === "success") hints.push("c to copy", "f to fork");
+		if (this.hasEarlier()) hints.push("x to clear history");
+		hints.push("Esc to close");
 		return hintLines(this.theme, width, hints);
 	}
 }

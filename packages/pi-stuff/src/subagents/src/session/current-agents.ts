@@ -19,6 +19,7 @@ export type AgentStatus =
 export interface AgentTranscriptTarget {
 	readonly key: string;
 	readonly error: string | null;
+	readonly name?: string;
 	readonly task: string;
 	/** Trusted deterministic nested run directory used only as a locator fallback. */
 	readonly asyncDir?: string | null;

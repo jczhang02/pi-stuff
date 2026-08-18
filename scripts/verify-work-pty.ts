@@ -37,14 +37,17 @@ send -- "start monitor fixture\r"
 must_expect "MAIN_CONTINUES"
 send -- "/tasks\r"
 must_expect "Tasks"
-must_expect "Prepare monitored service"
-must_expect "Monitor"
+must_expect "Esc return"
+send -- "\\033"
+after 100
 set narrow_columns 48
 stty rows $env(PI_STUFF_WORK_PTY_ROWS) columns $narrow_columns < $work_pty
 after 150
+send -- "/tasks\r"
+must_expect "Tasks"
 must_expect "Esc return"
 send -- "\r"
-must_expect "Task details"
+must_expect "Tasks / Shell"
 must_expect "Esc back"
 send -- "\\033"
 must_expect "↑/↓ select"
@@ -52,6 +55,7 @@ after 100
 send -- "\\033"
 after 100
 stty rows $env(PI_STUFF_WORK_PTY_ROWS) columns $env(PI_STUFF_WORK_PTY_COLUMNS) < $work_pty
+exec touch release.flag
 must_expect "MONITOR_RESUMED"
 send -- "/reload\r"
 must_expect "Reloaded keybindings, extensions"
@@ -166,8 +170,10 @@ export async function verifyWorkPty(options: {
 			"CTRL_B_CONTINUED",
 			"MAIN_CONTINUES",
 			"MONITOR_RESUMED",
+			"Prepare monitored service",
+			"Monitor",
 			"Tasks",
-			"Task details",
+			"Tasks / Shell",
 			"No background work in this session.",
 			"DRAFT_AFTER_TASKS",
 		]) {

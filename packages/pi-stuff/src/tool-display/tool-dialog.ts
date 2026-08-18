@@ -2,11 +2,14 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
-	type CommandDialogRowSections,
 	type CommandDialogView,
 	type CommandDialogViewContext,
 	commandDialogRows,
-	fitCommandDialogRows,
+	fitFixedCommandDialogRows,
+	matchesCommandDialogPageDown,
+	matchesCommandDialogPageUp,
+	renderCommandDialogSplit,
+	WIDE_COMMAND_DIALOG_MIN_WIDTH,
 } from "../conversation-ui/index.js";
 import { type ToolActivityOutcome, toolActivityOutcome } from "./activity.js";
 import type { ToolActivity, ToolActivityState } from "./activity-store.js";
@@ -17,19 +20,16 @@ type ToolDialogMode = "detail" | "list";
 type ToolDetailRepresentation = "formatted" | "raw";
 
 const GUTTER = "  ";
-const DETAIL_NON_DOCUMENT_ROWS = 8;
 const DETAIL_MEMBER_WINDOW = 5;
 const NARROW_WIDTH = 64;
 const LIST_ROWS = 8;
 const NARROW_LIST_ROWS = 6;
-const SPLIT_MIN_WIDTH = 96;
-const SPLIT_LEFT_WIDTH = 36;
 const TOOL_DIALOG_ROWS = 18;
 
 function stateText(theme: Theme, state: ToolActivityOutcome | ToolActivityState, value: string): string {
 	switch (state) {
 		case "running":
-			return theme.fg("muted", value);
+			return theme.fg("accent", value);
 		case "success":
 			return theme.fg("success", value);
 		case "error":
@@ -39,6 +39,32 @@ function stateText(theme: Theme, state: ToolActivityOutcome | ToolActivityState,
 		case "cancelled":
 			return theme.fg("warning", value);
 	}
+}
+
+function sectionHeading(theme: Theme, label: string): string {
+	return `${GUTTER}${theme.fg("accent", "◆")} ${theme.bold(label)}`;
+}
+
+function activityCount(count: number): string {
+	return `${String(count)} ${count === 1 ? "activity" : "activities"}`;
+}
+
+function callCount(count: number): string {
+	return `${String(count)} ${count === 1 ? "call" : "calls"}`;
+}
+
+function activityRow(theme: Theme, group: ToolActivityGroupView, selected: boolean, width: number): string {
+	const cursor = selected ? theme.fg("accent", "›") : " ";
+	const glyph = stateText(theme, group.state, toolStateGlyph(group.state));
+	const count =
+		width >= 32 && group.memberIds.length > 1 ? theme.fg("dim", ` · ${callCount(group.memberIds.length)}`) : "";
+	const suffix = `${glyph}${count}`;
+	const prefix = `${GUTTER}${cursor} `;
+	const summaryWidth = Math.max(1, width - visibleWidth(prefix) - visibleWidth(suffix) - 1);
+	const summary = truncateToWidth(oneLine(group.summary) || "Tool activity", summaryWidth, "…");
+	const label = selected ? theme.bold(summary) : summary;
+	const gap = Math.max(1, width - visibleWidth(prefix) - visibleWidth(label) - visibleWidth(suffix));
+	return `${prefix}${label}${" ".repeat(gap)}${suffix}`;
 }
 
 function bounded(width: number, line: string): string {
@@ -78,18 +104,6 @@ function wrapDetailLines(lines: readonly string[], width: number): string[] {
 	});
 }
 
-function fixedCommandDialogRows(sections: CommandDialogRowSections, maximumRows: number): string[] {
-	const fitted = fitCommandDialogRows(sections, maximumRows);
-	const missingRows = Math.max(0, maximumRows - fitted.length);
-	if (missingRows === 0) return fitted;
-	const footerStart = Math.max(0, fitted.length - sections.footer.length);
-	return [
-		...fitted.slice(0, footerStart),
-		...Array.from({ length: missingRows }, () => ""),
-		...fitted.slice(footerStart),
-	];
-}
-
 interface DetailWrapCache {
 	readonly activityId: string;
 	readonly contentKey: string;
@@ -114,6 +128,8 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private detailRepresentation: ToolDetailRepresentation = "formatted";
 	private disposed = false;
 	private groups: readonly ToolActivityGroupView[];
+	private lastDetailWidth = 64;
+	private lastListViewportRows = NARROW_LIST_ROWS;
 	private lastRenderWidth = 64;
 	private detailMemberIndex = 0;
 	private mode: ToolDialogMode;
@@ -161,7 +177,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	handleInput(data: string): void {
 		if (this.disposed || isKeyRelease(data)) return;
 		if (matchesKey(data, Key.escape)) {
-			if (this.lastRenderWidth >= SPLIT_MIN_WIDTH) {
+			if (this.isSplit()) {
 				if (this.detailRepresentation === "raw") this.detailRepresentation = "formatted";
 				else if (this.splitFocus === "right") this.splitFocus = "left";
 				else this.context.close();
@@ -179,7 +195,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 			} else this.context.close();
 			return;
 		}
-		if (this.lastRenderWidth >= SPLIT_MIN_WIDTH) {
+		if (this.isSplit()) {
 			if (this.splitFocus === "left") this.handleListInput(data);
 			else this.handleDetailInput(data);
 		} else if (this.mode === "list") this.handleListInput(data);
@@ -190,51 +206,34 @@ class ToolDialogComponent implements CommandDialogComponent {
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
-		const wasWide = this.lastRenderWidth >= SPLIT_MIN_WIDTH;
-		const isWide = renderWidth >= SPLIT_MIN_WIDTH;
-		if (wasWide !== isWide) {
-			if (isWide) this.splitFocus = this.mode === "detail" ? "right" : "left";
-			else this.mode = this.splitFocus === "right" ? "detail" : "list";
-		}
+		const wasSplit = this.isSplit();
 		this.lastRenderWidth = renderWidth;
 		this.groups = this.currentGroups();
 		this.reconcileSelection();
-		// prototype: split-pane exploration; formal adoption should rewrite and consolidate this path.
-		const lines =
-			renderWidth >= SPLIT_MIN_WIDTH
-				? this.renderSplit(renderWidth)
-				: this.mode === "list"
-					? this.renderList(renderWidth)
-					: this.renderDetail(renderWidth);
+		const isSplit = this.isSplit();
+		if (wasSplit !== isSplit) {
+			if (isSplit) this.splitFocus = this.mode === "detail" ? "right" : "left";
+			else this.mode = this.splitFocus === "right" ? "detail" : "list";
+		}
+		const lines = isSplit
+			? this.renderSplit(renderWidth)
+			: this.mode === "list"
+				? this.renderList(renderWidth)
+				: this.renderDetail(renderWidth);
 		return lines.map((line) => bounded(renderWidth, line));
 	}
 
 	private renderSplit(width: number): string[] {
-		const leftWidth = Math.min(SPLIT_LEFT_WIDTH, Math.max(30, Math.floor(width * 0.38)));
-		const rightWidth = Math.max(1, width - leftWidth - 1);
-		const left = this.renderList(leftWidth);
-		const right = this.renderDetail(rightWidth);
-		const rows = Math.max(left.length, right.length);
-		const divider = this.context.theme.fg("border", "┃");
-		return Array.from({ length: rows }, (_, index) => {
-			if (index === 0) return this.context.theme.fg("border", "━".repeat(width));
-			let l = bounded(leftWidth, left[index] ?? "");
-			const r = bounded(rightWidth, right[index] ?? "");
-			if (index === 1) {
-				const rail = this.context.theme.fg(this.splitFocus === "left" ? "accent" : "border", "│");
-				l = `${rail}${l.slice(1)}`;
-			}
-			if (index === 1 && r) {
-				const rail = this.context.theme.fg(this.splitFocus === "right" ? "accent" : "border", "│");
-				const detail = `${rail}${r.slice(1)}`;
-				return `${this.padVisible(l, leftWidth)}${divider}${detail}`;
-			}
-			return `${this.padVisible(l, leftWidth)}${divider}${r}`;
-		});
+		return renderCommandDialogSplit(
+			this.context.theme,
+			width,
+			(leftWidth) => this.renderList(leftWidth, this.splitFocus === "left"),
+			(rightWidth) => this.renderDetail(rightWidth, this.splitFocus === "right"),
+		);
 	}
 
-	private padVisible(line: string, width: number): string {
-		return `${line}${" ".repeat(Math.max(0, width - visibleWidth(line)))}`;
+	private isSplit(): boolean {
+		return this.lastRenderWidth >= WIDE_COMMAND_DIALOG_MIN_WIDTH && this.groups.length > 0;
 	}
 
 	private currentGroups(): readonly ToolActivityGroupView[] {
@@ -249,7 +248,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private handleListInput(data: string): void {
 		if (matchesKey(data, Key.enter)) {
 			if (!this.selected()) return;
-			if (this.lastRenderWidth >= SPLIT_MIN_WIDTH) {
+			if (this.isSplit()) {
 				this.splitFocus = "right";
 				this.detailMemberIndex = 0;
 				this.detailRepresentation = "formatted";
@@ -265,13 +264,25 @@ class ToolDialogComponent implements CommandDialogComponent {
 			this.context.requestRender();
 			return;
 		}
-		if (!matchesKey(data, Key.up) && !matchesKey(data, Key.down)) return;
+		if (
+			!matchesKey(data, Key.up) &&
+			!matchesKey(data, Key.down) &&
+			!matchesCommandDialogPageUp(data) &&
+			!matchesCommandDialogPageDown(data)
+		)
+			return;
 		if (this.groups.length === 0) return;
 		const current = Math.max(
 			0,
 			this.groups.findIndex((group) => group.id === this.selectedId),
 		);
-		const delta = matchesKey(data, Key.up) ? -1 : 1;
+		const delta = matchesKey(data, Key.up)
+			? -1
+			: matchesKey(data, Key.down)
+				? 1
+				: matchesCommandDialogPageUp(data)
+					? -this.lastListViewportRows
+					: this.lastListViewportRows;
 		const next = Math.max(0, Math.min(this.groups.length - 1, current + delta));
 		this.selectedId = this.groups[next]?.id;
 		this.detailMemberIndex = 0;
@@ -300,20 +311,20 @@ class ToolDialogComponent implements CommandDialogComponent {
 			return;
 		}
 		if (
-			!matchesKey(data, "pageUp") &&
-			!matchesKey(data, "pageDown") &&
+			!matchesCommandDialogPageUp(data) &&
+			!matchesCommandDialogPageDown(data) &&
 			!matchesKey(data, "home") &&
 			!matchesKey(data, "end")
 		)
 			return;
-		const layout = this.detailLayout(group, this.lastRenderWidth);
+		const layout = this.detailLayout(group, this.lastDetailWidth);
 		const page = Math.max(1, layout.viewportRows);
-		if (matchesKey(data, "pageDown")) {
+		if (matchesCommandDialogPageDown(data)) {
 			this.scrollOffset = Math.max(0, Math.min(layout.maxOffset, this.scrollOffset + page));
 			this.context.requestRender();
 			return;
 		}
-		if (matchesKey(data, "pageUp")) {
+		if (matchesCommandDialogPageUp(data)) {
 			this.scrollOffset = Math.max(0, this.scrollOffset - page);
 			this.context.requestRender();
 			return;
@@ -322,12 +333,17 @@ class ToolDialogComponent implements CommandDialogComponent {
 		this.context.requestRender();
 	}
 
-	private renderList(width: number): string[] {
+	private renderList(width: number, focused = false): string[] {
 		const theme = this.context.theme;
-		const footer = hintLines(theme, width, ["↑/↓ select", "Enter details", "Esc close"]);
 		const maximumRows = Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context));
 		const preferredRows = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
-		const viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
+		let footer = hintLines(theme, width, ["↑/↓ select", "Enter details", "Esc close"]);
+		let viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
+		if (this.groups.length > viewportRows) {
+			footer = hintLines(theme, width, ["↑/↓ select", "Shift+↑/↓ page", "Enter details", "Esc close"]);
+			viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
+		}
+		this.lastListViewportRows = Math.max(1, viewportRows);
 		const selectedIndex = Math.max(
 			0,
 			this.groups.findIndex((group) => group.id === this.selectedId),
@@ -337,40 +353,35 @@ class ToolDialogComponent implements CommandDialogComponent {
 			Math.min(selectedIndex - Math.floor(viewportRows / 2), this.groups.length - viewportRows),
 		);
 		const visible = viewportRows > 0 ? this.groups.slice(start, start + viewportRows) : [];
-		const count = width >= 30 ? theme.fg("dim", ` · ${String(this.groups.length)} items`) : "";
-		const header = [theme.fg("border", "━".repeat(width)), `${GUTTER}${theme.bold("Tools")}${count}`];
+		const count = width >= 30 ? theme.fg("dim", ` · ${activityCount(this.groups.length)}`) : "";
+		const title = focused ? theme.bold(theme.fg("accent", "Tools")) : theme.bold("Tools");
+		const header = [theme.fg("border", "━".repeat(width)), `${GUTTER}${title}${count}`];
 		const body = [""];
 		if (visible.length === 0) body.push(`${GUTTER}${theme.fg("dim", "No tool activity in this session.")}`);
 		else {
 			if (start > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${String(start)} newer`)}`);
 			for (const group of visible) {
 				const selected = group.id === this.selectedId;
-				const cursor = selected ? theme.fg("accent", "›") : " ";
-				const glyph = stateText(theme, group.state, toolStateGlyph(group.state));
-				const summary = selected ? theme.bold(oneLine(group.summary)) : oneLine(group.summary);
-				const members = theme.fg(
-					"dim",
-					` · ${String(group.memberIds.length)} ${group.memberIds.length === 1 ? "tool" : "tools"}`,
-				);
-				body.push(`${GUTTER}${cursor} ${glyph} ${summary}${members}`);
+				body.push(activityRow(theme, group, selected, width));
 			}
 			const older = this.groups.length - start - visible.length;
 			if (older > 0) body.push(`${GUTTER}${theme.fg("dim", `… ${String(older)} older`)}`);
 		}
 		body.push("");
 		const priority = body.find((line) => line.includes("›")) ?? body.find((line) => line.trim().length > 0);
-		return fixedCommandDialogRows(
+		return fitFixedCommandDialogRows(
 			{ header, body, footer, ...(priority ? { priority: [priority] } : {}) },
 			maximumRows,
 		);
 	}
 
-	private renderDetail(width: number): string[] {
+	private renderDetail(width: number, focused = false): string[] {
+		this.lastDetailWidth = width;
 		const theme = this.context.theme;
 		const group = this.selected();
 		if (!group) {
 			this.mode = "list";
-			return this.renderList(width);
+			return this.renderList(width, focused);
 		}
 		if (this.pendingFocusId) {
 			const focusIndex = group.memberIds.indexOf(this.pendingFocusId);
@@ -382,32 +393,39 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const layout = this.detailLayout(group, width);
 		this.scrollOffset = Math.min(layout.maxOffset, Math.max(0, this.scrollOffset));
 		const detail = layout.document.slice(this.scrollOffset, this.scrollOffset + layout.viewportRows);
+		const heading = `Tools / ${oneLine(group.summary) || "Tool activity"}`;
+		const title = focused ? theme.bold(theme.fg("accent", heading)) : theme.bold(heading);
 		const header = [
 			theme.fg("border", "━".repeat(width)),
-			`${GUTTER}${theme.bold("Tool activity details")} ${theme.fg(
+			`${GUTTER}${title}`,
+			`${GUTTER}${stateText(theme, group.state, `${toolStateGlyph(group.state)} ${group.state}`)} ${theme.fg(
 				"dim",
-				`· ${String(group.memberIds.length)} ${group.memberIds.length === 1 ? "tool" : "tools"}`,
+				`· ${callCount(group.memberIds.length)}`,
 			)}`,
 		];
+		const showCalls = group.memberIds.length > 1;
 		const body = [
 			"",
-			`${GUTTER}${theme.fg("dim", "State")}   ${stateText(theme, group.state, group.state)}`,
-			`${GUTTER}${theme.fg("dim", "Summary")} ${oneLine(group.summary) || "—"}`,
-			"",
-			...layout.members.map((activity, index) => {
-				const memberIndex = layout.memberStart + index;
-				const selected = memberIndex === this.detailMemberIndex;
-				const cursor = selected ? theme.fg("accent", "›") : " ";
-				const glyph = stateText(theme, activity.state, toolStateGlyph(activity.state));
-				const title = `${String(memberIndex + 1)}. ${activity.label}${activity.target ? ` · ${activity.target}` : ""}`;
-				return `${GUTTER}${cursor} ${glyph} ${selected ? theme.bold(title) : title}`;
-			}),
-			"",
+			...(showCalls
+				? [
+						sectionHeading(theme, "Calls"),
+						...layout.members.map((activity, index) => {
+							const memberIndex = layout.memberStart + index;
+							const selected = memberIndex === this.detailMemberIndex;
+							const cursor = selected ? theme.fg("accent", "›") : " ";
+							const glyph = stateText(theme, activity.state, toolStateGlyph(activity.state));
+							const label = `${activity.label}${activity.target ? ` · ${activity.target}` : ""}`;
+							return `${GUTTER}${cursor} ${glyph} ${selected ? theme.bold(label) : label}`;
+						}),
+						"",
+					]
+				: []),
+			sectionHeading(theme, this.detailRepresentation === "raw" ? "Raw protocol" : "Detail · formatted"),
 			...detail.map((line) => `${GUTTER}${line}`),
 			"",
 		];
-		const priority = body.find((line) => line.includes("›")) ?? body[1];
-		return fixedCommandDialogRows(
+		const priority = body.find((line) => line.includes("›")) ?? header[2];
+		return fitFixedCommandDialogRows(
 			{ header, body, footer: layout.footer, ...(priority ? { priority: [priority] } : {}) },
 			Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context)),
 		);
@@ -434,9 +452,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const members = this.runtime.groupActivityPage(group.id, memberStart, DETAIL_MEMBER_WINDOW);
 		const document = this.detailDocument(group, width);
 		const maximumRows = Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context));
-		const fixedRows = DETAIL_NON_DOCUMENT_ROWS + members.length;
+		const showCalls = group.memberIds.length > 1;
+		const fixedRows = 6 + (showCalls ? members.length + 2 : 0);
 		let viewportRows = Math.max(0, maximumRows - fixedRows - 1);
-		let footer = hintLines(this.context.theme, width, ["↑/↓ member", "Esc back"]);
+		let footer = hintLines(this.context.theme, width, [...(showCalls ? ["↑/↓ call"] : []), "Esc back"]);
 		for (let iteration = 0; iteration < 3; iteration += 1) {
 			viewportRows = Math.max(0, maximumRows - fixedRows - footer.length);
 			const maximumOffset = Math.max(0, document.length - viewportRows);
@@ -447,8 +466,8 @@ class ToolDialogComponent implements CommandDialogComponent {
 					? ` · ${String(offset + 1)}–${String(rangeEnd)}/${String(document.length)}`
 					: "";
 			const nextFooter = hintLines(this.context.theme, width, [
-				`↑/↓ member ${String(this.detailMemberIndex + 1)}/${String(group.memberIds.length)}`,
-				...(viewportRows > 0 ? [`PgUp/PgDn scroll${range}`, "Home/End"] : []),
+				...(showCalls ? [`↑/↓ call ${String(this.detailMemberIndex + 1)}/${String(group.memberIds.length)}`] : []),
+				...(document.length > viewportRows ? [`Shift+↑/↓ page${range}`] : []),
 				this.detailRepresentation === "formatted" ? "r raw" : "r formatted",
 				this.detailRepresentation === "raw" ? "Esc formatted" : "Esc back",
 			]);
@@ -477,11 +496,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const activity = detail.activity;
 		const raw =
 			this.detailRepresentation === "raw"
-				? ["Raw protocol", "", ...detail.lines]
+				? detail.lines
 				: [
 						activity.label,
 						...(activity.target ? [`Target: ${activity.target}`] : []),
-						`Status: ${activity.state}`,
 						...(activity.summary ? [`Summary: ${activity.summary}`] : []),
 						"",
 						...detail.lines,
@@ -509,7 +527,10 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private reconcileSelection(): void {
 		if (this.selectedId && this.groups.some((group) => group.id === this.selectedId)) return;
 		this.selectedId = this.groups[0]?.id;
-		if (!this.selectedId) this.mode = "list";
+		if (!this.selectedId) {
+			this.mode = "list";
+			this.splitFocus = "left";
+		}
 		this.scrollOffset = 0;
 		this.detailMemberIndex = 0;
 	}

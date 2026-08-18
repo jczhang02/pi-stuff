@@ -51,13 +51,13 @@ send -- "\\017"
 after 100
 send -- "/tools\\r"
 must_expect "Tools"
-must_expect "items"
-must_expect "Searched 2 patterns, listed 1"
+must_expect "activities"
+must_expect "Searched 2 patterns"
 must_expect "Esc close"
 send -- "\\033"
 after 100
 send -- "/tools tools-pty-4\\r"
-must_expect "Tool activity details"
+must_expect "Tools /"
 must_expect "PREFIX_CJK_工具"
 must_expect "BASH_CJK_工具"
 must_expect "Esc back"
@@ -68,13 +68,13 @@ must_expect "Arguments"
 send -- "\\033\\[6~"
 must_expect "Result content"
 send -- "\\033"
-must_expect "Status: success"
+must_expect "Detail · formatted"
 send -- "\\033"
 after 100
 send -- "\\033"
 after 100
 send -- "/tools tools-pty-8\\r"
-must_expect "Tool activity details"
+must_expect "Tools /"
 must_expect "BUILTIN_FAILURE_工具"
 must_expect "Esc back"
 send -- "\\033"
@@ -100,7 +100,7 @@ stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $env(PI_STUFF_TOOLS_PTY_COLUMNS)
 after 150
 send -- "/tools\\r"
 must_expect "Tools"
-must_expect "items"
+must_expect "activities"
 send -- "\\033"
 after 150
 send -- "DRAFT_AFTER_TOOLS"
@@ -220,7 +220,7 @@ function verifyOutput(output: string, columns: number): void {
 		"State rejected",
 		"State cancelled",
 		"Tools",
-		"Tool activity details",
+		"Tools /",
 		"Raw protocol",
 		"Call ID: tools-pty-4",
 		"Arguments",
@@ -240,7 +240,7 @@ function verifyOutput(output: string, columns: number): void {
 	]) {
 		if (!visible.includes(required)) fail(`terminal output is missing ${required}`);
 	}
-	if (!visible.includes("─".repeat(columns))) fail(`Tool dialog did not render a ${String(columns)}-column divider`);
+	if (!visible.includes("━".repeat(columns))) fail(`Tool dialog did not render a ${String(columns)}-column divider`);
 	if (!/• Read pi-max-tools-[^\n]* · 1 lines/u.test(visible)) {
 		fail("long Tool target did not retain a semantic boundary before its settled result");
 	}

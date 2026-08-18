@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { commandDialogRows, fitCommandDialogRows } from "../../packages/pi-stuff/src/conversation-ui/dialog-layout.js";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import {
+	commandDialogRows,
+	fitCommandDialogRows,
+	fitFixedCommandDialogRows,
+	renderCommandDialogSplit,
+} from "../../packages/pi-stuff/src/conversation-ui/dialog-layout.js";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
 function context(rows: number): Pick<CommandDialogViewContext<unknown>, "tui"> {
@@ -58,4 +65,29 @@ test("an overflow-only semantic title can replace decorative chrome without chan
 		"Esc close",
 	]);
 	expect(fitCommandDialogRows(sections, 3)).toEqual(["/btw selected question", "provider unavailable", "Esc close"]);
+});
+
+test("fixed fitting keeps the footer on the last row", () => {
+	expect(fitFixedCommandDialogRows({ header: ["divider"], body: ["content"], footer: ["Esc close"] }, 5)).toEqual([
+		"divider",
+		"content",
+		"",
+		"",
+		"Esc close",
+	]);
+});
+
+test("split rendering stays one full-width surface with one internal divider", () => {
+	const theme = { fg: (_color: string, value: string) => value } as unknown as Theme;
+	const lines = renderCommandDialogSplit(
+		theme,
+		100,
+		() => ["ignored pane rule", "Tools", "activity", "Esc close"],
+		() => ["ignored pane rule", "Tools / Read", "detail", "Esc back"],
+	);
+	expect(lines[0]).toBe("━".repeat(100));
+	expect(lines.slice(1).every((line) => visibleWidth(line) <= 100)).toBe(true);
+	expect(lines.slice(1).every((line) => line[36] === "┃")).toBe(true);
+	expect(lines[1]).toContain("Tools");
+	expect(lines[1]).toContain("Tools / Read");
 });

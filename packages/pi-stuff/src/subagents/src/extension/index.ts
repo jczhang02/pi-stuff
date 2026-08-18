@@ -5,7 +5,6 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { registerCurrentWorkSource } from "../../../background-work/index.js";
 import { projectCurrentContext } from "../../../context-management/index.js";
 import {
 	type AgentWorkOrigin,
@@ -624,31 +623,6 @@ export default function registerSubagentExtension(
 		},
 		resume: (row, message) => runEngineControl(row, "resume", message),
 	});
-	const unregisterCurrentWorkSource = registerCurrentWorkSource(pi, {
-		id: "agents",
-		snapshot: () =>
-			current
-				.snapshot()
-				.rows.filter((row) =>
-					["queued", "running", "waiting_supervisor", "stopping", "resuming"].includes(row.status),
-				)
-				.map((row) => ({
-					...(row.description ? { description: row.description } : {}),
-					id: row.key,
-					kind: "agent" as const,
-					...(row.startedAt !== null ? { startedAt: row.startedAt } : {}),
-					status:
-						row.status === "waiting_supervisor"
-							? ("waiting" as const)
-							: row.status === "queued"
-								? ("queued" as const)
-								: row.status === "stopping"
-									? ("stopping" as const)
-									: ("running" as const),
-					title: row.description || row.name || row.task,
-				})),
-		subscribe: (listener) => current.subscribe(() => listener()),
-	});
 	const roster = deps.createRoster(current, {
 		onOpen: (key) => {
 			const ctx = state.lastUiContext;
@@ -1219,7 +1193,6 @@ export default function registerSubagentExtension(
 		supervisor.dispose();
 		unregisterRosterFooterTail();
 		unregisterRosterChrome();
-		unregisterCurrentWorkSource();
 		roster.dispose();
 		current.dispose();
 		delete process.env[SUBAGENT_PARENT_SESSION_ENV];

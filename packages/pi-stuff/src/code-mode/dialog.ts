@@ -107,7 +107,7 @@ class CodeModeDialog implements CommandDialogComponent {
 		const lines = fitCommandDialogRows(
 			{
 				header: [
-					this.context.theme.fg("border", "─".repeat(renderWidth)),
+					this.context.theme.fg("border", "━".repeat(renderWidth)),
 					`${GUTTER}${this.context.theme.bold("Code Mode")}`,
 				],
 				body,

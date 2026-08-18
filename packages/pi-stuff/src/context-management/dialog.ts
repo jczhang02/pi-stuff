@@ -360,7 +360,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 				body: sections.body,
 				footer: [`${GUTTER}${this.context.theme.fg("dim", sections.footer)}`],
 				header: [
-					this.context.theme.fg("border", "─".repeat(renderWidth)),
+					this.context.theme.fg("border", "━".repeat(renderWidth)),
 					`${GUTTER}${this.context.theme.bold(sections.title)}`,
 				],
 				priority: [errorLines[0] ?? selected ?? inputLines[0] ?? `${GUTTER}${sections.title}`],
@@ -411,16 +411,34 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 	): { readonly body: string[]; readonly footer: string; readonly title: string } {
 		if (this.screen.kind === "overview") {
 			const counts = `${plural(this.snapshot.compartmentCount, "compartment")} · ${plural(this.snapshot.memoryCount, "memory", "memories")} · ${plural(this.snapshot.noteCount, "note")}`;
-			const runtime = `Historian ${this.snapshot.historian} · ${plural(this.snapshot.pendingOps, "pending drop")} · cache ${this.snapshot.cache}`;
+			const runtime = `Historian ${this.snapshot.historian} · cache ${this.snapshot.cache}`;
 			const history = `History ${this.snapshot.historyTokens === undefined ? "unavailable" : `~${compactNumber(this.snapshot.historyTokens)} tokens`} · ${plural(this.snapshot.activeTags, "active tag")} · ${plural(this.snapshot.droppedTags, "dropped tag")}`;
+			const heading = (value: string) =>
+				`${GUTTER}${this.context.theme.fg("accent", "◆")} ${this.context.theme.bold(value)}`;
 			return {
 				body: [
+					"",
+					heading("Overview"),
 					`${GUTTER}${this.context.theme.fg("muted", counts)}`,
 					`${GUTTER}${this.context.theme.fg("muted", runtime)}`,
 					`${GUTTER}${this.context.theme.fg("muted", history)}`,
-					...errorLines,
+					...(this.snapshot.pendingOps > 0 || errorLines.length > 0
+						? [
+								"",
+								heading("Attention"),
+								...(this.snapshot.pendingOps > 0
+									? [
+											`${GUTTER}${this.context.theme.fg(
+												"warning",
+												`! ${plural(this.snapshot.pendingOps, "pending drop")} · removals waiting to apply`,
+											)}`,
+										]
+									: []),
+								...errorLines,
+							]
+						: []),
 					"",
-					`${GUTTER}${this.context.theme.bold("Actions")}`,
+					heading("Actions"),
 					...selectedLines,
 				],
 				footer: "↑/↓ select · Enter choose · Esc close",

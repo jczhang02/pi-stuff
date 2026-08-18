@@ -81,7 +81,8 @@ function fixtureStream(context: Context) {
 			return textStream("CTRL_B_CONTINUED");
 		case 2:
 			return toolStream("bash", "work-background", {
-				command: "echo $$ > background.pid; sleep 2; printf READY > ready.flag; printf BG_DONE",
+				command:
+					"echo $$ > background.pid; while [ ! -f release.flag ]; do sleep 0.1; done; printf READY > ready.flag; printf BG_DONE",
 				description: "Prepare monitored service",
 				run_in_background: true,
 			});
@@ -92,7 +93,7 @@ function fixtureStream(context: Context) {
 				source: "file",
 				success_text: "READY",
 				target: "ready.flag",
-				timeout_seconds: 8,
+				timeout_seconds: 22,
 			});
 		case 4:
 			return textStream("MAIN_CONTINUES");

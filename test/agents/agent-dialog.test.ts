@@ -187,8 +187,8 @@ describe("Agent Command Dialog", () => {
 		} as unknown as Theme;
 		const { component } = setup([row("reviewer", "running")], {}, recordingTheme);
 		component.render(64);
-		expect(colors).toContainEqual({ color: "muted", text: "12s" });
-		expect(colors).not.toContainEqual({ color: "dim", text: "12s" });
+		expect(colors).toContainEqual({ color: "accent", text: "● 12s" });
+		expect(colors).not.toContainEqual({ color: "dim", text: "● 12s" });
 		component.dispose?.();
 	});
 
@@ -202,13 +202,15 @@ describe("Agent Command Dialog", () => {
 		const rendered = component.render(64);
 
 		expect(view.priority).toBe("normal");
-		expect(rendered[0]).toBe("─".repeat(64));
+		expect(rendered[0]).toBe("━".repeat(64));
 		expect(rendered.join("\n")).toContain("Agents");
-		expect(rendered.join("\n")).toContain("waiting");
+		expect(rendered.join("\n")).toContain("○");
 		expect(rendered.join("\n")).toContain("later");
 		expect(rendered.join("\n")).not.toMatch(/[╭╮╰╯]/u);
 		expect(rendered.length).toBeLessThanOrEqual(28);
 		expect(rendered.every((line) => visibleWidth(line) <= 64 && !line.includes("\n"))).toBe(true);
+		input(component, "\u001b[1;2B");
+		expect(text(component)).toContain("› agent-7");
 	});
 
 	test("uses the short description in the list and preserves the full Task in detail", async () => {
@@ -277,7 +279,8 @@ describe("Agent Command Dialog", () => {
 		);
 		await flush();
 		const detail = text(component, 100);
-		expect(detail).toContain("State  failed · 12s\n  Error  Provider rejected the child payload after validation.");
+		expect(detail).toContain("× failed · 12s");
+		expect(detail).toContain("◆ Error\n  Provider rejected the child payload after validation.");
 		expect(detail.split("Provider rejected the child payload")).toHaveLength(2);
 		expect(detail.split(task)).toHaveLength(2);
 		expect(detail).not.toContain("Partial result");
@@ -346,7 +349,7 @@ describe("Agent Command Dialog", () => {
 		expect(list.every((line) => visibleWidth(line) <= 32)).toBe(true);
 	});
 
-	test("loads a bounded transcript, strips terminal controls, and scrolls it", async () => {
+	test("loads a bounded transcript, strips terminal controls, and accepts the compact page key", async () => {
 		const requests: AgentTranscriptRequest[] = [];
 		const transcript = [
 			"line-1",
@@ -380,18 +383,19 @@ describe("Agent Command Dialog", () => {
 		expect(requests).toHaveLength(1);
 		expect(requests[0]?.maxChars).toBe(400);
 		expect(requests[0]?.signal).toBeInstanceOf(AbortSignal);
-		expect(before).toContain("line-2-red");
-		expect(before).toContain("hidden-link-target");
-		expect(before).toContain("State  running · 12s");
+		expect(before).toContain("line-8");
+		expect(before).toContain("● running · 12s");
 		expect(before).not.toContain("0 nested");
 		expect(before).not.toContain("\u001b");
 		expect(before).not.toContain("https://example.invalid");
 		expect(before).not.toContain("\u202e");
-		expect(before).toContain("later lines");
+		expect(before).toContain("earlier lines");
 
-		input(component, "\u001b[6~");
+		input(component, "\u001b[1;2A");
 		const after = text(component);
-		expect(after).toContain("earlier lines");
+		expect(after).toContain("line-2-red");
+		expect(after).toContain("hidden-link-target");
+		expect(after).toContain("later lines");
 		expect(after).toContain("partial result");
 		expect(after).not.toBe(before);
 		expect(component.render(64).length).toBeLessThanOrEqual(28);
@@ -403,8 +407,8 @@ describe("Agent Command Dialog", () => {
 		});
 		await flush();
 		const fallbackText = text(fallback.component);
-		expect(fallbackText).toContain("Transcript unavailable.");
-		expect(fallbackText).toContain("Partial result");
+		expect(fallbackText).toContain("No Activity yet.");
+		expect(fallbackText).toContain("◆ Result");
 		expect(fallbackText.match(/ONLY_PARTIAL_9X/g)).toHaveLength(1);
 	});
 
