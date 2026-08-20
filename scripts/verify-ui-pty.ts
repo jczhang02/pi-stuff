@@ -806,7 +806,7 @@ async function verifyTodoOverlay(
 
 	const lines = screen.split("\n");
 	const summaryIndex = lines.findIndex((line) => line.includes("4 tasks (0 done, 4 open)"));
-	if (summaryIndex < 0 || !lines[summaryIndex]?.startsWith("  ◆ 4 tasks (0 done, 4 open)")) {
+	if (summaryIndex < 0 || !lines[summaryIndex]?.startsWith("◆ 4 tasks (0 done, 4 open)")) {
 		fail(`Todo summary icon and text are not aligned with the checklist columns\n${screen}`);
 	}
 	for (const [index, subject] of TODO_PTY_SUBJECTS.entries()) {
