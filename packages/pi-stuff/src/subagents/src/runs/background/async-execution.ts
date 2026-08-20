@@ -212,6 +212,7 @@ export interface CommonBuildParams {
 	parentRunOrigin?: AgentWorkOrigin;
 	/** Effective parent Code Mode state captured before child process launch. */
 	codeModeEnabled?: boolean;
+	codeModeProviderTools?: readonly string[];
 	availableModels?: AvailableModelInfo[];
 	cwd?: string;
 	maxSubagentDepth: number;
@@ -1604,6 +1605,7 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		id,
 		parentRunOrigin: params.parentRunOrigin === "user" ? "user" : "automatic",
 		...(params.codeModeEnabled !== undefined ? { codeModeEnabled: params.codeModeEnabled } : {}),
+		...(params.codeModeProviderTools?.length ? { codeModeProviderTools: [...params.codeModeProviderTools] } : {}),
 		work: parallelWork,
 		resultPath: location.inheritedNestedRoute
 			? nestedResultsPath(location.inheritedNestedRoute.rootRunId, id)
@@ -1839,6 +1841,7 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		id,
 		parentRunOrigin: params.parentRunOrigin === "user" ? "user" : "automatic",
 		...(params.codeModeEnabled !== undefined ? { codeModeEnabled: params.codeModeEnabled } : {}),
+		...(params.codeModeProviderTools?.length ? { codeModeProviderTools: [...params.codeModeProviderTools] } : {}),
 		work: built.work,
 		resultPath: location.inheritedNestedRoute
 			? nestedResultsPath(location.inheritedNestedRoute.rootRunId, id)

@@ -1559,6 +1559,7 @@ function runChildProcess(input: {
 					inheritProjectContext: input.task.inheritProjectContext,
 					inheritSkills: input.task.inheritSkills,
 					codeModeEnabled: input.config.codeModeEnabled,
+					codeModeProviderTools: input.config.codeModeProviderTools,
 					childBaseExtensionPath: input.task.childBaseExtensionPath,
 					requireReadTool: input.task.inheritSkills || Boolean(input.task.skills?.length),
 					tools: input.task.tools,

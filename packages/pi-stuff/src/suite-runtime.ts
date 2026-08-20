@@ -3,7 +3,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import backgroundWork from "./background-work/index.js";
 import btw from "./btw/index.js";
-import codeMode, { registerCodeModeContextProjection } from "./code-mode/index.js";
+import codeMode, { CODE_MODE_PROVIDER_TOOL_NAMES, registerCodeModeContextProjection } from "./code-mode/index.js";
 import codex from "./codex/index.js";
 import contextManagement from "./context-management/index.js";
 import conversationUi from "./conversation-ui/index.js";
@@ -40,8 +40,13 @@ function registerSuiteSubagents(
 	pi: ExtensionAPI,
 	options: SuiteInstallationOptions,
 	resolveCodeModeEnabled: () => boolean,
+	codeModeProviderTools: readonly string[],
 ): void | Promise<void> {
-	return subagents(pi, { childBaseExtensionPath: options.childBaseExtensionPath, resolveCodeModeEnabled });
+	return subagents(pi, {
+		childBaseExtensionPath: options.childBaseExtensionPath,
+		codeModeProviderTools,
+		resolveCodeModeEnabled,
+	});
 }
 
 function createCapabilities(
@@ -58,7 +63,10 @@ function createCapabilities(
 		{ id: "web", install: web },
 		{ id: "mcp", install: mcp },
 		{ id: "background-work", install: backgroundWork },
-		{ id: "subagents", install: (pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled) },
+		{
+			id: "subagents",
+			install: (pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled, CODE_MODE_PROVIDER_TOOL_NAMES),
+		},
 		{ id: "todo", install: todo },
 		{ id: "btw", install: btw },
 		{ id: "notification", install: notification },

@@ -182,6 +182,7 @@ interface ExecutorDeps {
 		| Promise<{ agents: AgentConfig[]; modelScope?: import("../shared/model-scope.ts").ModelScopeConfig }>;
 	projectContext?: typeof projectCurrentContext;
 	childBaseExtensionPath?: string;
+	codeModeProviderTools?: readonly string[];
 	resolveCodeModeEnabled?: () => boolean;
 	onForegroundStatus?: () => void;
 	allowMutatingManagementActions?: boolean;
@@ -990,6 +991,7 @@ function commonBuild(data: PreparedLaunch, ctx: ExtensionContext, deps: Executor
 	return {
 		ctx: asyncContext(data, ctx, deps.pi),
 		codeModeEnabled: effectiveCodeModeEnabled(deps),
+		codeModeProviderTools: deps.codeModeProviderTools,
 		availableModels: data.availableModels,
 		cwd: data.effectiveCwd,
 		artifactsDir: data.artifactConfig.enabled ? data.artifactsDir : undefined,
@@ -1152,6 +1154,7 @@ function buildForegroundConfig(
 		version: 2,
 		id: data.runId,
 		codeModeEnabled: common.codeModeEnabled,
+		...(common.codeModeProviderTools?.length ? { codeModeProviderTools: [...common.codeModeProviderTools] } : {}),
 		work: built.work,
 		resultPath,
 		cwd: built.runnerCwd,
@@ -1957,6 +1960,7 @@ async function resumeRun(input: {
 			},
 			parentRunOrigin: input.parentRunOrigin,
 			codeModeEnabled: effectiveCodeModeEnabled(input.deps),
+			codeModeProviderTools: input.deps.codeModeProviderTools,
 			cwd: effectiveCwd,
 			childBaseExtensionPath: input.deps.childBaseExtensionPath,
 			artifactsDir: getArtifactsDir(parentSessionFile, effectiveCwd, artifactConfig.dir),

@@ -90,6 +90,7 @@ export interface BuildPiArgsInput {
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
 	codeModeEnabled?: boolean;
+	codeModeProviderTools?: readonly string[];
 	childBaseExtensionPath?: string;
 	requireReadTool?: boolean;
 	tools?: string[];
@@ -387,9 +388,12 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		capabilityCeiling: input.capabilityCeiling,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 	});
+	const codeModeProviderTools =
+		input.codeModeEnabled && toolPlan.explicitToolAllowlist ? (input.codeModeProviderTools ?? []) : [];
+	const hostToolAllowlist = [...new Set([...toolPlan.effectiveToolAllowlist, ...codeModeProviderTools])];
 	if (toolPlan.explicitToolAllowlist) {
-		args.push(toolPlan.effectiveToolAllowlist.length > 0 ? "--tools" : "--no-tools");
-		if (toolPlan.effectiveToolAllowlist.length > 0) args.push(toolPlan.effectiveToolAllowlist.join(","));
+		args.push(hostToolAllowlist.length > 0 ? "--tools" : "--no-tools");
+		if (hostToolAllowlist.length > 0) args.push(hostToolAllowlist.join(","));
 	}
 	if (toolPlan.disableAmbientExtensions) {
 		args.push("--no-extensions");
@@ -432,8 +436,9 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	if (!tempDir) tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
 	const toolDiagnosticPath = path.join(tempDir, "child-diagnostic.json");
 	env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV] = toolDiagnosticPath;
-	if (toolPlan.requiredChildTools.length > 0) {
-		env[REQUIRED_CHILD_TOOLS_ENV] = JSON.stringify(toolPlan.requiredChildTools);
+	const requiredChildTools = [...new Set([...toolPlan.requiredChildTools, ...codeModeProviderTools])];
+	if (requiredChildTools.length > 0) {
+		env[REQUIRED_CHILD_TOOLS_ENV] = JSON.stringify(requiredChildTools);
 	}
 	env[MCP_DIRECT_CHILD_TOOLS_ENV] =
 		toolPlan.effectiveMcpTools.length > 0 ? JSON.stringify(toolPlan.effectiveMcpTools) : undefined;

@@ -33,6 +33,7 @@ import { V8CodeModeExecutor } from "./v8-executor.js";
 
 export const CODE_MODE_TOOL_NAME = "codemode";
 export const CODE_MODE_SEARCH_TOOL_NAME = "tool_search";
+export const CODE_MODE_PROVIDER_TOOL_NAMES = [CODE_MODE_TOOL_NAME, CODE_MODE_SEARCH_TOOL_NAME] as const;
 const CODE_MODE_DECISION_MESSAGE_TYPE = "pi-stuff-code-mode-decision";
 const CODE_MODE_FROZEN_ENV = "PI_STUFF_CODE_MODE_FROZEN";
 

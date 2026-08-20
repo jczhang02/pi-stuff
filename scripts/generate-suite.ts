@@ -53,7 +53,7 @@ function renderCapabilityImport(capability: CapabilityModule): string {
 		return `import ${identifier}, {\n\tassertSuiteToolActivityCoverage,\n\tcreateSuiteToolRegistrationTracker,\n} from "${specifier}";`;
 	}
 	if (capability === "code-mode") {
-		return `import ${identifier}, { registerCodeModeContextProjection } from "${specifier}";`;
+		return `import ${identifier}, { CODE_MODE_PROVIDER_TOOL_NAMES, registerCodeModeContextProjection } from "${specifier}";`;
 	}
 	return `import ${identifier} from "${specifier}";`;
 }
@@ -113,7 +113,7 @@ function renderSuiteRuntime(
 			install:
 				capability === "subagents"
 					? sharesCodeModeState
-						? "(pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled)"
+						? "(pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled, CODE_MODE_PROVIDER_TOOL_NAMES)"
 						: "(pi) => registerSuiteSubagents(pi, options)"
 					: CAPABILITY_MODULES[capability],
 		}));
@@ -126,7 +126,14 @@ function renderSuiteRuntime(
 		: "function createCapabilities(options: SuiteInstallationOptions): readonly CapabilityInstallation[] {";
 	const capabilityDeclaration = `${capabilityFunction}
 	return [\n${capabilityEntries
-		.map((entry) => `\t\t{ id: ${JSON.stringify(entry.id)}, install: ${entry.install} },`)
+		.map((entry) =>
+			entry.id === "subagents" && sharesCodeModeState
+				? `\t\t{
+\t\t\tid: "subagents",
+\t\t\tinstall: (pi) => registerSuiteSubagents(pi, options, resolveCodeModeEnabled, CODE_MODE_PROVIDER_TOOL_NAMES),
+\t\t},`
+				: `\t\t{ id: ${JSON.stringify(entry.id)}, install: ${entry.install} },`,
+		)
 		.join("\n")}\n\t];
 }`;
 	const coverageArguments = [
@@ -165,8 +172,13 @@ interface CapabilityInstallation {
 	pi: ExtensionAPI,
 	options: SuiteInstallationOptions,
 	resolveCodeModeEnabled: () => boolean,
+	codeModeProviderTools: readonly string[],
 ): void | Promise<void> {
-	return subagents(pi, { childBaseExtensionPath: options.childBaseExtensionPath, resolveCodeModeEnabled });
+	return subagents(pi, {
+		childBaseExtensionPath: options.childBaseExtensionPath,
+		codeModeProviderTools,
+		resolveCodeModeEnabled,
+	});
 }`
 						: `function registerSuiteSubagents(pi: ExtensionAPI, options: SuiteInstallationOptions): void | Promise<void> {
 	return subagents(pi, { childBaseExtensionPath: options.childBaseExtensionPath });
