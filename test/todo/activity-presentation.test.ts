@@ -27,20 +27,24 @@ function renderedSummary(
 	args: Record<string, unknown>,
 	result: AgentToolResult<unknown>,
 	toolCallId: string,
-	messages: readonly unknown[] = [
-		{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: tool?.name, arguments: args }] },
-		{ role: "toolResult", toolCallId, content: result.content, details: result.details },
-	],
+	messages?: readonly unknown[],
+	expanded = false,
 ): string {
 	expect(tool).toBeDefined();
-	getToolUiRuntime(api).indexMessages(messages, true);
+	getToolUiRuntime(api).indexMessages(
+		messages ?? [
+			{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: tool?.name, arguments: args }] },
+			{ role: "toolResult", toolCallId, content: result.content, details: result.details },
+		],
+		true,
+	);
 	const state = {};
 	const context = {
 		args,
 		argsComplete: true,
 		cwd: "/project",
 		executionStarted: true,
-		expanded: false,
+		expanded,
 		invalidate: () => {},
 		isError: false,
 		isPartial: false,
@@ -51,7 +55,7 @@ function renderedSummary(
 	};
 	const row = tool?.renderCall?.(args, theme, context as never);
 	expect(row).toBeDefined();
-	tool?.renderResult?.(result, { expanded: false, isPartial: false }, theme, {
+	tool?.renderResult?.(result, { expanded, isPartial: false }, theme, {
 		...context,
 		lastComponent: row,
 	} as never);
@@ -102,7 +106,20 @@ test("successful TaskList calls stay silent but remain inspectable", () => {
 	);
 
 	expect(empty).toBe("");
-	expect(getToolUiRuntime(api).listGroups()).toHaveLength(1);
+	const runtime = getToolUiRuntime(api);
+	expect(runtime.listGroups()).toHaveLength(1);
+	expect(runtime.toolActivityDetail("call-empty-list", "formatted")).toBeDefined();
+	expect(
+		renderedSummary(
+			api,
+			tools.get("TaskList"),
+			{},
+			{ content: [{ text: "No tasks found", type: "text" }], details: { tasks: [] } },
+			"call-empty-list",
+			undefined,
+			true,
+		),
+	).toContain("Task list");
 });
 
 test("failed Task calls remain visible", () => {
@@ -121,7 +138,25 @@ test("failed Task calls remain visible", () => {
 	expect(failure).toContain("Task #missing not found");
 });
 
-test("Code Mode-nested Task calls use the same success and failure visibility", () => {
+test("rejected and cancelled Task calls remain visible", () => {
+	for (const [id, message] of [
+		["rejected", "Tool execution was blocked by policy"],
+		["cancelled", "Operation was cancelled"],
+	] as const) {
+		const { api, tools } = registeredTools();
+		const output = renderedSummary(
+			api,
+			tools.get("TaskUpdate"),
+			{ status: "completed", taskId: id },
+			{ content: [{ text: message, type: "text" }], details: { error: message } },
+			`call-${id}`,
+		);
+		expect(output).toContain(message);
+		expect(getToolUiRuntime(api).toolActivityDetail(`call-${id}`, "formatted")?.activity.state).toBe(id);
+	}
+});
+
+test("Code Mode-nested Task calls use the same success and issue visibility", () => {
 	const successful = registeredTools();
 	const successRuntime = getToolUiRuntime(successful.api);
 	successRuntime.registerEnvelope("codemode", decodeCodeModeOperations);
@@ -158,39 +193,50 @@ test("Code Mode-nested Task calls use the same success and failure visibility", 
 	);
 	expect(success).toBe("");
 
-	const failed = registeredTools();
-	const failedRuntime = getToolUiRuntime(failed.api);
-	failedRuntime.registerEnvelope("codemode", decodeCodeModeOperations);
-	const failedResult = {
-		content: [{ text: "Task creation failed", type: "text" as const }],
-		details: { error: "Task creation failed" },
-	};
-	const failure = renderedSummary(
-		failed.api,
-		failed.tools.get("TaskCreate"),
-		{ description: "Nested", subject: "Nested" },
-		failedResult,
-		"nested-failure",
-		[
-			{ role: "assistant", content: [{ type: "toolCall", id: "outer-failure", name: "codemode", arguments: {} }] },
-			{
-				role: "toolResult",
-				toolCallId: "outer-failure",
-				details: {
-					kind: "pi-stuff-code-mode",
-					operations: [
-						{
-							args: { description: "Nested", subject: "Nested" },
-							id: "nested-failure",
-							name: "TaskCreate",
-							result: failedResult,
-							state: "error",
-						},
-					],
-					status: "error",
+	for (const [state, message] of [
+		["error", "Task creation failed"],
+		["rejected", "Tool execution was blocked by policy"],
+		["cancelled", "Operation was cancelled"],
+	] as const) {
+		const failed = registeredTools();
+		getToolUiRuntime(failed.api).registerEnvelope("codemode", decodeCodeModeOperations);
+		const failedResult = {
+			content: [{ text: message, type: "text" as const }],
+			details: { error: message },
+		};
+		const failure = renderedSummary(
+			failed.api,
+			failed.tools.get("TaskCreate"),
+			{ description: "Nested", subject: "Nested" },
+			failedResult,
+			`nested-${state}`,
+			[
+				{
+					role: "assistant",
+					content: [{ type: "toolCall", id: `outer-${state}`, name: "codemode", arguments: {} }],
 				},
-			},
-		],
-	);
-	expect(failure).toContain("Task creation failed");
+				{
+					role: "toolResult",
+					toolCallId: `outer-${state}`,
+					details: {
+						kind: "pi-stuff-code-mode",
+						operations: [
+							{
+								args: { description: "Nested", subject: "Nested" },
+								id: `nested-${state}`,
+								name: "TaskCreate",
+								result: failedResult,
+								state,
+							},
+						],
+						status: state === "cancelled" ? "cancelled" : "error",
+					},
+				},
+			],
+		);
+		expect(failure).toContain(message);
+		expect(getToolUiRuntime(failed.api).toolActivityDetail(`nested-${state}`, "formatted")?.activity.state).toBe(
+			state,
+		);
+	}
 });
