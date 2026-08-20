@@ -6,7 +6,7 @@ import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-w
 import { type TSchema, Type } from "typebox";
 import { withAgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage } from "../../../conversation-ui/index.js";
-import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../tool-display/index.js";
+import { activityKey, getToolUiRuntime, registerSuiteOwnedTool, singleActivity } from "../../../tool-display/index.js";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
 	SUBAGENT_CHILD_INDEX_ENV,
@@ -515,7 +515,8 @@ async function sendSupervisorRequest(
 	}
 }
 
-function hasTool(pi: ExtensionAPI, name: string): boolean {
+function hasLiveTool(pi: ExtensionAPI, name: string): boolean {
+	if (getToolUiRuntime(pi).isReplayOnlyTool(name)) return false;
 	try {
 		return pi.getAllTools?.().some((tool: { name?: unknown }) => tool.name === name) === true;
 	} catch {
@@ -569,7 +570,7 @@ export function registerNativeSupervisorClient(
 ): void {
 	if (!readChildMetadata()) return;
 	const includeIntercomFallback = options.includeIntercomFallback !== false;
-	if (!hasTool(pi, "contact_supervisor")) {
+	if (!hasLiveTool(pi, "contact_supervisor")) {
 		const tool: ToolDefinition<typeof ContactSupervisorParamsSchema, Record<string, unknown>> = {
 			name: "contact_supervisor",
 			label: "Contact Supervisor",
@@ -582,7 +583,7 @@ export function registerNativeSupervisorClient(
 		};
 		registerCommunicationTool(pi, tool, "contacting");
 	}
-	if (includeIntercomFallback && !hasTool(pi, "intercom")) {
+	if (includeIntercomFallback && !hasLiveTool(pi, "intercom")) {
 		const tool: ToolDefinition<typeof IntercomParamsSchema, Record<string, unknown>> = {
 			name: "intercom",
 			label: "Intercom",
@@ -1247,7 +1248,7 @@ export function createNativeSupervisorChannel(
 	};
 
 	const registerPrimaryParentTool = (): void => {
-		if (!hasTool(pi, NATIVE_SUPERVISOR_TOOL_NAME))
+		if (!hasLiveTool(pi, NATIVE_SUPERVISOR_TOOL_NAME))
 			registerCommunicationTool(
 				pi,
 				buildParentIntercomTool(pending, state, NATIVE_SUPERVISOR_TOOL_NAME, options.afterReplyPublish),
@@ -1255,7 +1256,7 @@ export function createNativeSupervisorChannel(
 			);
 	};
 	const registerParentIntercomFallback = (): void => {
-		if (!hasTool(pi, "intercom"))
+		if (!hasLiveTool(pi, "intercom"))
 			registerCommunicationTool(
 				pi,
 				buildParentIntercomTool(pending, state, "intercom", options.afterReplyPublish),

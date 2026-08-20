@@ -50,7 +50,7 @@ function renderCapabilityImport(capability: CapabilityModule): string {
 	const identifier = CAPABILITY_MODULES[capability];
 	const specifier = `./${capability}/index.js`;
 	if (capability === "tool-display") {
-		return `import ${identifier}, {\n\tassertSuiteToolActivityCoverage,\n\tcreateSuiteToolRegistrationTracker,\n} from "${specifier}";`;
+		return `import ${identifier}, {\n\tassertSuiteToolActivityCoverage,\n\tconfigureSuiteToolReplay,\n\tcreateSuiteToolRegistrationTracker,\n} from "${specifier}";`;
 	}
 	if (capability === "code-mode") {
 		return `import ${identifier}, { registerCodeModeContextProjection } from "${specifier}";`;
@@ -67,6 +67,7 @@ function renderSuiteRuntime(
 	const hasSubagents = capabilities.includes("subagents");
 	const hasCodeMode = capabilities.includes("code-mode");
 	const sharesCodeModeState = hasSubagents && hasCodeMode;
+	const replayToolNames = [...toolNames, ...deferredToolNames, ...optionalToolNames];
 	if ((toolNames.length > 0 || deferredToolNames.length > 0) && !capabilities.includes("tool-display")) {
 		throw new Error("A Suite Tool inventory requires the tool-display module");
 	}
@@ -184,6 +185,9 @@ interface CapabilityInstallation {
 					...(optionalToolNames.length > 0
 						? [renderToolNamesConstant("OPTIONAL_SUITE_TOOL_NAMES", optionalToolNames)]
 						: []),
+					...(replayToolNames.length > 0
+						? [renderToolNamesConstant("REPLAY_SUITE_TOOL_NAMES", replayToolNames)]
+						: []),
 				]
 			: []),
 		`export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallationOptions): Promise<void> {
@@ -194,6 +198,7 @@ ${toolNames.length > 0 ? "\tconst registrations = createSuiteToolRegistrationTra
 \t\tawait capability.install(${toolNames.length > 0 ? "registrations.api" : "suiteApi"});
 \t\tmarkLifecyclePhase(\`capability.\${capability.id}.end\`);
 \t}${hasCodeMode ? `\n\tmarkLifecyclePhase("capability.code-mode.start");\n\tcodeMode(registrations.api, {\n\t\tregistry: registrations.registry,\n\t\tsurface: registrations.surface,\n\t});\n\tmarkLifecyclePhase("capability.code-mode.end");` : ""}
+${toolNames.length > 0 ? `\n\tconfigureSuiteToolReplay(registrations.api, registrations.toolNames${replayToolNames.length > 0 ? ", REPLAY_SUITE_TOOL_NAMES" : ""});` : ""}
 \tpi.on("session_start", (_event, ctx) => {
 ${toolNames.length > 0 ? `\t\ttry {\n\t\t\t${coverageCall};\n\t\t} catch (error) {\n\t\t\trejectSuiteSessionReadiness(pi, ctx);\n\t\t\tthrow error;\n\t\t}\n\t\tmarkSuiteSessionReady(pi, ctx);` : "\t\tmarkSuiteSessionReady(pi, ctx);"}
 \t});

@@ -299,6 +299,9 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 						.slice(-30)
 						.map((record) => ({
 							command: record.command,
+							error: Reflect.get(record, "error"),
+							event: Reflect.get(record, "event"),
+							extensionPath: Reflect.get(record, "extensionPath"),
 							id: record.id,
 							reason: Reflect.get(record, "reason"),
 							success: record.success,

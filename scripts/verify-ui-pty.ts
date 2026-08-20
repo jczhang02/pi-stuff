@@ -260,6 +260,13 @@ class TmuxPiSession {
 		return this.waitFor((screen) => screen.includes(text), `text ${JSON.stringify(text)}`, history);
 	}
 
+	async waitForLatestPrompt(text: string): Promise<string> {
+		return this.waitFor(
+			(screen) => rowsBelowEditorDivider(screen).filter((line) => line.includes(text)).length === 1,
+			`one latest-prompt row containing ${JSON.stringify(text)}`,
+		);
+	}
+
 	async waitForAbsence(text: string): Promise<string> {
 		return this.waitFor((screen) => !screen.includes(text), `absence of ${JSON.stringify(text)}`);
 	}
@@ -688,6 +695,7 @@ async function verifyThoughtLifecycle(
 	session.resize(columns, rows);
 	const settledThought = expectedThoughtProjection(THOUGHT_PHASES.length - 1, columns);
 	screen = await session.waitForText(settledThought);
+	screen = await session.waitForLatestPrompt(`THOUGHT_PROBE_${String(columns)}`);
 	verifySingleThoughtRow(screen, settledThought, columns, "settled resize rerender");
 	if (!screen.includes(settledMarker)) fail("settled Thought was not present beside its completed response");
 	const promptRows = rowsBelowEditorDivider(screen).filter((line) =>

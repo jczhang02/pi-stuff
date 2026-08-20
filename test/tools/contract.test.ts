@@ -2490,6 +2490,15 @@ test("reload handoff crosses the fresh Extension event registry created by Pi", 
 	expect(incoming.hasReloadSnapshot()).toBe(false);
 });
 
+test("reload accepts the previous active-name-only handoff during a live code upgrade", () => {
+	const key = Symbol.for("@jczhang02/pi-stuff-tools/reload-handoff.v1");
+	const host = globalThis as unknown as { [name: symbol]: readonly string[] | undefined };
+	host[key] = ["read", "bash"];
+	const incoming = new ToolUiRuntime();
+	expect(incoming.hasReloadSnapshot()).toBe(true);
+	expect(incoming.consumeReloadActiveTools()).toEqual(["read", "bash"]);
+});
+
 test("timers blink, invalidate, synchronize, and are cleared for reload", () => {
 	const scheduler = new ManualTimerScheduler();
 	const runtime = new ToolUiRuntime(ToolUiSettingsStore.memory(), scheduler);

@@ -43,5 +43,5 @@
 		"TaskUpdate"
 	],
 	"deferredTools": ["ctx_expand", "ctx_search", "ctx_memory", "ctx_note", "ctx_reduce"],
-	"optionalTools": ["subagent_supervisor", "intercom"]
+	"optionalTools": ["subagent_supervisor", "intercom", "contact_supervisor", "structured_output"]
 }

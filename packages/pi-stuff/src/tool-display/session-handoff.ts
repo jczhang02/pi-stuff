@@ -1,15 +1,18 @@
+import type { SuiteToolReplayDefinition } from "./contract.js";
+
 const BUILTIN_NAMES = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
 
 export interface ResumeToolHandoff {
 	readonly activeNames: readonly string[];
 	readonly builtinNames: readonly string[];
+	readonly toolDefinitions: readonly SuiteToolReplayDefinition[];
 }
 
 interface ResumeToolHandoffStore {
 	pending: ResumeToolHandoff | undefined;
 }
 
-const RESUME_TOOL_HANDOFF = Symbol.for("@jczhang02/pi-stuff-tools/resume-tool-handoff/v2");
+const RESUME_TOOL_HANDOFF = Symbol.for("@jczhang02/pi-stuff-tools/resume-tool-handoff/v3");
 
 function handoffStore(): ResumeToolHandoffStore {
 	const root = globalThis as unknown as {
@@ -20,11 +23,15 @@ function handoffStore(): ResumeToolHandoffStore {
 }
 
 /** Retain one consume-once ordered snapshot across the Host's in-process session replacement. */
-export function prepareResumeToolHandoff(activeToolNames: readonly string[]): void {
+export function prepareResumeToolHandoff(
+	activeToolNames: readonly string[],
+	toolDefinitions: readonly SuiteToolReplayDefinition[],
+): void {
 	const activeNames = [...activeToolNames];
 	handoffStore().pending = {
 		activeNames,
 		builtinNames: activeNames.filter((name) => BUILTIN_NAMES.has(name)),
+		toolDefinitions: [...toolDefinitions],
 	};
 }
 
@@ -35,7 +42,11 @@ export function consumeResumeToolHandoff(): ResumeToolHandoff | undefined {
 	store.pending = undefined;
 	return handoff === undefined
 		? undefined
-		: { activeNames: [...handoff.activeNames], builtinNames: [...handoff.builtinNames] };
+		: {
+				activeNames: [...handoff.activeNames],
+				builtinNames: [...handoff.builtinNames],
+				toolDefinitions: [...handoff.toolDefinitions],
+			};
 }
 
 /** Preserve outgoing order without reviving non-builtins absent from the incoming runtime. */

@@ -9,6 +9,7 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/intercom/native-supervisor-channel.js";
 import { shardedDurableClaimName } from "../../packages/pi-stuff/src/subagents/src/shared/durable-claim.js";
 import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/index.js";
 
 const directories: string[] = [];
 
@@ -41,6 +42,7 @@ function harness(input: {
 }) {
 	const messages: Array<{ customType?: string; details?: unknown }> = [];
 	const tools = new Map<string, ToolDefinition>();
+	let activeTools: string[] = [];
 	const handlers = new Map<string, Array<(...args: never[]) => unknown>>();
 	const sessionCalls = { getEntries: 0, getSessionFile: 0 };
 	const sessionManager = {
@@ -78,9 +80,14 @@ function harness(input: {
 	} as unknown as SubagentState;
 	const api = {
 		events: { emit: () => {}, on: () => () => {} },
+		getActiveTools: () => [...activeTools],
 		getAllTools: () => [...tools.values()].map(({ name }) => ({ name })),
 		registerTool: (tool: ToolDefinition) => {
-			if (!tools.has(tool.name)) tools.set(tool.name, tool);
+			if (!tools.has(tool.name)) activeTools.push(tool.name);
+			tools.set(tool.name, tool);
+		},
+		setActiveTools: (names: string[]) => {
+			activeTools = [...names];
 		},
 		on: (event: string, handler: (...args: never[]) => unknown) => {
 			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
@@ -235,6 +242,40 @@ describe("native supervisor protocol compatibility", () => {
 		await test.run("before_agent_start");
 
 		expect(test.tools.get("intercom")).toBe(external);
+		channel.dispose();
+	});
+
+	test("replaces a replay-only supervisor definition when the live channel starts", async () => {
+		const now = Date.now();
+		const root = fs.mkdtempSync(path.join(TEMP_ROOT_DIR, "supervisor-session-"));
+		directories.push(root);
+		const sessionFile = path.join(root, "parent.jsonl");
+		fs.writeFileSync(sessionFile, "");
+		const fixture = harness({
+			primary: "ps2-replay-supervisor",
+			legacyFile: sessionFile,
+			legacyRunIds: new Set(),
+			startedAtMs: now,
+		});
+		const replay = {
+			name: "subagent_supervisor",
+			label: "Historical Subagent Supervisor",
+			description: "Historical replay definition",
+			parameters: {} as never,
+			async execute() {
+				return { content: [{ type: "text" as const, text: "replay-only" }], details: {} };
+			},
+		} as ToolDefinition;
+		fixture.api.registerTool(replay);
+		fixture.api.setActiveTools([]);
+		getToolUiRuntime(fixture.api).markReplayOnlyTool("subagent_supervisor");
+
+		const channel = createNativeSupervisorChannel(fixture.api, fixture.state);
+		await channel.start();
+
+		expect(fixture.tools.get("subagent_supervisor")).not.toBe(replay);
+		expect(getToolUiRuntime(fixture.api).isReplayOnlyTool("subagent_supervisor")).toBe(false);
+		expect(fixture.api.getActiveTools()).toContain("subagent_supervisor");
 		channel.dispose();
 	});
 

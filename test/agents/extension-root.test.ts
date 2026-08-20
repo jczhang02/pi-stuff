@@ -9,6 +9,7 @@ import {
 	listenForAgentWorkOriginQueries,
 } from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
 import type { CommandDialogCoordinator } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { SELF_RENDERED_TRANSCRIPT_PADDING } from "../../packages/pi-stuff/src/conversation-ui/transcript.js";
 import type { PiStuffAgentsConfig } from "../../packages/pi-stuff/src/subagents/src/extension/config.js";
 import registerAgents, {
 	type ExtensionRootDependencies,
@@ -1285,8 +1286,11 @@ describe("Agents extension composition root", () => {
 			{ fg: (_color: string, text: string) => text },
 		) as { render(width: number): string[] };
 		expect(component.render(100).map((line) => line.trimEnd())).toEqual([
-			"• Agent finished · 18s · inspect with /agents",
+			" • Agent finished · 18s · inspect with /agents",
 		]);
+		const narrow = component.render(24).map((line) => line.trimEnd());
+		expect(narrow[0]?.indexOf("•")).toBe(SELF_RENDERED_TRANSCRIPT_PADDING);
+		expect(narrow.slice(1).every((line) => line.startsWith("   "))).toBe(true);
 
 		await notifier.deliver({
 			id: "live",
@@ -1412,6 +1416,21 @@ describe("Agents extension composition root", () => {
 			}),
 		).toBe(true);
 		expect(stopped.api.entries[0]?.data).toMatchObject({ count: 1, status: "stopped", version: 1 });
+		const renderer = stopped.api.entryRenderers.get("pi-stuff-agent-outcome");
+		if (!renderer) throw new Error("Expected durable completion entry renderer");
+		const markerColors: string[] = [];
+		const component = renderer(
+			{ data: stopped.api.entries[0]?.data },
+			{ expanded: false },
+			{
+				fg: (color: string, text: string) => {
+					if (text === "•") markerColors.push(color);
+					return text;
+				},
+			},
+		) as { render(width: number): string[] };
+		expect(component.render(80).map((line) => line.trimEnd())).toEqual([" • Agent stopped · inspect with /agents"]);
+		expect(markerColors).toEqual(["dim"]);
 	});
 
 	test("rejects a launch before persistence or engine dispatch when the session governor is full", async () => {

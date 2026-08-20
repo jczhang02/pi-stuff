@@ -47,7 +47,7 @@ export interface ActivityGroupRowModel {
 	readonly expandable: boolean;
 	readonly hint: string;
 	readonly kind: "activity";
-	readonly outcome: ToolActivityOutcome;
+	readonly outcome: ToolActivityOutcome | "stopped";
 	readonly summary: string;
 }
 
@@ -172,7 +172,7 @@ export class CachedToolRow implements Component {
 }
 
 /** Non-transcript controls retain their larger state glyph. */
-export function toolStateGlyph(state: ToolActivityOutcome | ToolActivityState): string {
+export function toolStateGlyph(state: ToolActivityOutcome | ToolActivityState | "stopped"): string {
 	switch (state) {
 		case "running":
 			return "●";
@@ -183,6 +183,7 @@ export function toolStateGlyph(state: ToolActivityOutcome | ToolActivityState): 
 		case "warning":
 		case "rejected":
 			return "!";
+		case "stopped":
 		case "cancelled":
 			return "■";
 	}
@@ -207,10 +208,13 @@ const BASH_COMMAND_MAX_CODE_UNITS = 160;
 const BASH_COMMAND_MAX_LINES = 2;
 const BASH_OUTPUT_PREVIEW_LINES = 3;
 
-function activityMarkerColor(outcome: ToolActivityOutcome): "error" | "muted" | "success" | "warning" {
+function activityMarkerColor(
+	outcome: ToolActivityOutcome | "stopped",
+): "dim" | "error" | "muted" | "success" | "warning" {
 	if (outcome === "error") return "error";
 	if (outcome === "success") return "success";
 	if (outcome === "warning") return "warning";
+	if (outcome === "stopped") return "dim";
 	return "muted";
 }
 

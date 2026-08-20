@@ -105,6 +105,25 @@ describe("live Thought display", () => {
 		expect(rendered.every((line) => visibleWidth(line) <= 44)).toBe(true);
 	});
 
+	test("keeps the Assistant marker when the first Markdown block is a list", async () => {
+		for (const source of [
+			"- first\n- second",
+			"1. first\n2. second",
+			"- [ ] first\n- [x] second",
+			"- parent\n  - child\n\nAfter",
+		]) {
+			const projected = transform(source, { messageType: "assistant" });
+			expect(projected).toStartWith("- \u2060\n  ");
+			const rendered = await renderAssistant(source, 44);
+			expect(rendered[0]?.replaceAll("\u2060", "")).toBe("• ");
+			expect(rendered.filter((line) => line.startsWith("• "))).toHaveLength(1);
+		}
+
+		expect(transform("* * *\n\nAfter", { messageType: "assistant" })).not.toStartWith("- \u2060\n");
+		expect(transform("Before\n\n- first", { messageType: "assistant" })).not.toStartWith("- \u2060\n");
+		expect(transform("    - indented code", { messageType: "assistant" })).not.toStartWith("- \u2060\n");
+	});
+
 	test("aligns assistant prose wraps after one marker cell and one space", async () => {
 		initTheme("dark");
 		const transformer = createLiveThoughtTransformer();

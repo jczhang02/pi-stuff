@@ -78,12 +78,19 @@ describe("generateSuite", () => {
 		const generated = await readFile(join(root, "packages", "pi-stuff", "src", "suite-runtime.ts"), "utf8");
 		expect(generated).toContain("import toolDisplay, {");
 		expect(generated).toContain("\tassertSuiteToolActivityCoverage,");
+		expect(generated).toContain("\tconfigureSuiteToolReplay,");
 		expect(generated).toContain("\tcreateSuiteToolRegistrationTracker,");
 		expect(generated).toContain('const SUITE_TOOL_NAMES = ["read", "write"] as const;');
 		expect(generated).toContain('const DEFERRED_SUITE_TOOL_NAMES = ["ctx_search"] as const;');
 		expect(generated).toContain('const OPTIONAL_SUITE_TOOL_NAMES = ["intercom"] as const;');
+		expect(generated).toContain(
+			'const REPLAY_SUITE_TOOL_NAMES = ["read", "write", "ctx_search", "intercom"] as const;',
+		);
 		expect(generated).toContain("createSuiteToolRegistrationTracker(suiteApi)");
 		expect(generated).toContain("await capability.install(registrations.api);");
+		expect(generated).toContain(
+			"configureSuiteToolReplay(registrations.api, registrations.toolNames, REPLAY_SUITE_TOOL_NAMES);",
+		);
 		expect(generated).toContain("assertSuiteToolActivityCoverage(");
 		expect(generated).toContain("rejectSuiteSessionReadiness(pi, ctx);");
 		expect(generated).toContain("markSuiteSessionReady(pi, ctx);");
