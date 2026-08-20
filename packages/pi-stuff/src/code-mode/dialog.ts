@@ -10,17 +10,26 @@ import {
 const GUTTER = "  ";
 const MIN_RENDER_WIDTH = 24;
 
+export type CodeModeEffectiveSource = "frozen" | "project" | "global" | "environment" | "default";
+
 export interface CodeModeDialogSnapshot {
+	readonly effectiveSource: CodeModeEffectiveSource;
 	readonly enabled: boolean;
 	readonly executionCount: number;
+	readonly fallbackEnabled: boolean;
+	readonly frozen: boolean;
+	readonly globalEnabled: boolean | undefined;
 	readonly pendingCount: number;
+	readonly projectEnabled: boolean | undefined;
+	readonly projectTrusted: boolean;
 	readonly snippetCount: number;
 	readonly toolCount: number;
 }
 
 export interface CodeModeDialogControls {
 	getSnapshot(): CodeModeDialogSnapshot;
-	setEnabled(enabled: boolean): Promise<void> | void;
+	setGlobalEnabled(enabled: boolean): Promise<void> | void;
+	setProjectEnabled(enabled: boolean | undefined): Promise<void> | void;
 }
 
 function settingsListTheme(context: CommandDialogViewContext<void>): SettingsListTheme {
@@ -38,6 +47,17 @@ function countLabel(count: number, singular: string): string {
 	return `${String(count)} ${singular}${count === 1 ? "" : "s"}`;
 }
 
+function projectValue(snapshot: CodeModeDialogSnapshot): string {
+	if (snapshot.frozen) return "locked";
+	if (!snapshot.projectTrusted) return "unavailable";
+	return snapshot.projectEnabled === undefined ? "inherit" : snapshot.projectEnabled ? "on" : "off";
+}
+
+function globalValue(snapshot: CodeModeDialogSnapshot): string {
+	if (snapshot.frozen) return "locked";
+	return (snapshot.globalEnabled ?? snapshot.fallbackEnabled) ? "on" : "off";
+}
+
 class CodeModeDialog implements CommandDialogComponent {
 	private readonly context: CommandDialogViewContext<void>;
 	private readonly controls: CodeModeDialogControls;
@@ -48,21 +68,37 @@ class CodeModeDialog implements CommandDialogComponent {
 	constructor(context: CommandDialogViewContext<void>, controls: CodeModeDialogControls) {
 		this.context = context;
 		this.controls = controls;
+		const snapshot = controls.getSnapshot();
 		const items: SettingItem[] = [
 			{
-				currentValue: controls.getSnapshot().enabled ? "on" : "off",
-				description: "Replace Package Tool schemas with the local JavaScript envelope",
-				id: "enabled",
-				label: "Code Mode",
-				values: ["off", "on"],
+				currentValue: projectValue(snapshot),
+				description: snapshot.frozen
+					? "Locked by the parent Agent"
+					: snapshot.projectTrusted
+						? "Override or inherit the global default"
+						: "Unavailable for an untrusted project",
+				id: "project",
+				label: "This project",
+				values: snapshot.frozen ? ["locked"] : snapshot.projectTrusted ? ["inherit", "off", "on"] : ["unavailable"],
+			},
+			{
+				currentValue: globalValue(snapshot),
+				description: snapshot.frozen ? "Locked by the parent Agent" : "Default for projects without an override",
+				id: "global",
+				label: "Global default",
+				values: snapshot.frozen ? ["locked"] : ["off", "on"],
 			},
 		];
 		this.settingsList = new SettingsList(
 			items,
 			1,
 			settingsListTheme(context),
-			(_id, value) => {
-				void this.updateEnabled(value === "on");
+			(id, value) => {
+				if (id === "project" && snapshot.projectTrusted && !snapshot.frozen) {
+					void this.updateProject(value === "inherit" ? undefined : value === "on");
+				} else if (id === "global" && !snapshot.frozen) {
+					void this.updateGlobal(value === "on");
+				}
 			},
 			() => context.close(),
 			{ enableSearch: false },
@@ -81,17 +117,21 @@ class CodeModeDialog implements CommandDialogComponent {
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
 		const snapshot = this.controls.getSnapshot();
-		this.settingsList.updateValue("enabled", snapshot.enabled ? "on" : "off");
+		this.settingsList.updateValue("project", projectValue(snapshot));
+		this.settingsList.updateValue("global", globalValue(snapshot));
 		const nativeBody = this.settingsList
 			.render(Math.max(MIN_RENDER_WIDTH, renderWidth))
 			.filter((line) => !line.includes("Enter/Space to change") && !line.includes("Enter/Space change"));
 		const selected = nativeBody.find((line) => line.includes("→"));
+		const effective = `${GUTTER}${this.context.theme.bold("Effective")}  ${snapshot.enabled ? "on" : "off"} · ${snapshot.effectiveSource}`;
 		const session = [
 			countLabel(snapshot.executionCount, "execution"),
 			countLabel(snapshot.pendingCount, "pending"),
 			countLabel(snapshot.snippetCount, "snippet"),
 		].join(" · ");
 		const body = [
+			effective,
+			"",
 			...nativeBody,
 			...(this.error ? [`${GUTTER}${this.context.theme.fg("error", this.error)}`] : []),
 			"",
@@ -112,40 +152,39 @@ class CodeModeDialog implements CommandDialogComponent {
 				],
 				body,
 				footer: [
-					`${GUTTER}${this.context.theme.fg("dim", this.saving ? "Saving project setting… · Esc close" : "Enter toggle · Esc close")}`,
+					`${GUTTER}${this.context.theme.fg("dim", this.saving ? "Saving setting… · Esc close" : "Enter change · Esc close")}`,
 				],
-				priority: [
-					this.error
-						? `${GUTTER}${this.context.theme.fg("error", this.error)}`
-						: (selected ?? `${GUTTER}Code Mode ${snapshot.enabled ? "on" : "off"}`),
-				],
+				priority: [this.error ? `${GUTTER}${this.context.theme.fg("error", this.error)}` : (selected ?? effective)],
 			},
 			commandDialogRows(this.context),
 		);
 		return lines.map((line) => truncateToWidth(line, renderWidth, "…"));
 	}
 
-	private async updateEnabled(enabled: boolean): Promise<void> {
+	private async updateProject(enabled: boolean | undefined): Promise<void> {
+		await this.update(() => this.controls.setProjectEnabled(enabled));
+	}
+
+	private async updateGlobal(enabled: boolean): Promise<void> {
+		await this.update(() => this.controls.setGlobalEnabled(enabled));
+	}
+
+	private async update(operation: () => Promise<void> | void): Promise<void> {
 		if (this.saving) return;
 		this.error = undefined;
 		this.saving = true;
 		this.context.requestRender();
 		try {
-			await this.controls.setEnabled(enabled);
+			await operation();
 		} catch {
-			this.error = "Unable to save this project's Code Mode setting";
+			this.error = "Unable to save Code Mode setting";
 		} finally {
 			this.saving = false;
-			const current = this.controls.getSnapshot().enabled;
-			this.settingsList.updateValue("enabled", current ? "on" : "off");
 			this.context.requestRender();
 		}
 	}
 }
 
 export function createCodeModeDialogView(controls: CodeModeDialogControls): CommandDialogView<void> {
-	return {
-		priority: "normal",
-		create: (context) => new CodeModeDialog(context, controls),
-	};
+	return { priority: "normal", create: (context) => new CodeModeDialog(context, controls) };
 }

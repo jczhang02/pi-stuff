@@ -1,3 +1,4 @@
+import { readWebConfigText, webConfigExists } from "../settings.ts";
 /**
  * PDF Content Extractor
  *
@@ -5,7 +6,7 @@
  * with unpdf as the deterministic local fallback.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+
 import { writeFile, mkdir } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
@@ -37,19 +38,18 @@ export const DEFAULT_PDF_MAX_SIZE_MB = 20;
 export const MAX_PDF_MAX_SIZE_MB = 50;
 const DEFAULT_MAX_PAGES = 100;
 const DEFAULT_OUTPUT_DIR = join(tmpdir(), "pi-web-pdf");
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const PAGE_MARKER_PATTERN = /^<!-- Page (\d+) -->$/gm;
 
 let cachedPDFConfig: PDFConfig | null = null;
 
 export function loadPDFConfig(): PDFConfig {
-  if (cachedPDFConfig) return { ...cachedPDFConfig };
-  if (!existsSync(CONFIG_PATH)) {
+  if (!webConfigExists()) {
     cachedPDFConfig = { maxSizeMB: DEFAULT_PDF_MAX_SIZE_MB };
     return { ...cachedPDFConfig };
   }
 
-  const rawText = readFileSync(CONFIG_PATH, "utf-8");
+  const rawText = readWebConfigText();
   let raw: unknown;
   try {
     raw = JSON.parse(rawText) as unknown;

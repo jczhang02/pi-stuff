@@ -34,7 +34,7 @@ describe("NotificationSettingsStore", () => {
 		await expect(readFile(path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
 		await store.update({ enabled: false });
-		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ ...store.get(), enabled: false });
+		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ notification: { ...store.get(), enabled: false } });
 		expect((await stat(path)).mode & 0o777).toBe(0o600);
 		expect((await stat(`${path}.lock`)).mode & 0o777).toBe(0o600);
 	});
@@ -115,7 +115,7 @@ describe("NotificationSettingsStore", () => {
 			schemaVersion: 1,
 			sound: true,
 		};
-		await writeFile(path, `${JSON.stringify(legacy)}\n`);
+		await writeFile(path, `${JSON.stringify({ notification: legacy })}\n`);
 
 		const store = await NotificationSettingsStore.load(path);
 
@@ -130,9 +130,11 @@ describe("NotificationSettingsStore", () => {
 			schemaVersion: 2,
 			terminalBell: true,
 		});
-		expect(JSON.parse(await readFile(path, "utf8"))).toEqual(legacy);
+		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ notification: legacy });
 
 		await store.update({ responsePreview: true });
-		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ ...store.get(), responsePreview: true });
+		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+			notification: { ...store.get(), responsePreview: true },
+		});
 	});
 });

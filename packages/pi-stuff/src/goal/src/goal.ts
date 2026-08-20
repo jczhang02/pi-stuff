@@ -43,7 +43,7 @@ import {
 	hasAssistantToolCall,
 	recordGoalBlockerAttempt,
 } from "./safety.js";
-import { DEFAULT_GOAL_SETTINGS, readGoalSettings } from "./settings.js";
+import { DEFAULT_GOAL_SETTINGS, readGoalSettings, readGoalSettingsLocked, withGoalSettingsLock } from "./settings.js";
 
 // goal.ts remains the Pi-facing composition root despite its size because tool contracts and
 // lifecycle-event registration share order-sensitive wiring. Per-session mechanisms live in
@@ -68,6 +68,8 @@ interface GoalBlockedDetails {
 interface GoalOptions {
 	settingsPath?: string;
 }
+
+const BUN_RUNTIME = process.versions["bun"] !== undefined;
 
 function goalToolText(result: {
 	readonly content: readonly { readonly type: string; readonly text?: string }[];
@@ -632,6 +634,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 					const { showGoalSettings } = await import("./settings-ui.js");
 					return showGoalSettings(runtime, menuCtx, {
 						settingsPath: options.settingsPath,
+						withLock: BUN_RUNTIME ? withGoalSettingsLock : undefined,
 						onQueueUnfrozen: async (settingsCtx) => {
 							await commands.resumeQueueAfterUnfreeze(settingsCtx);
 						},
@@ -712,7 +715,9 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			runtime.queueFreezeAwaitingSettle = false;
 			runtime.clearTerminalDetails();
 			const previousToolVisibility = runtime.settings.toolVisibility;
-			const settingsResult = readGoalSettings(options.settingsPath);
+			const settingsResult = BUN_RUNTIME
+				? await readGoalSettingsLocked(options.settingsPath)
+				: readGoalSettings(options.settingsPath);
 			runtime.settings = settingsResult.kind === "loaded" ? settingsResult.settings : DEFAULT_GOAL_SETTINGS;
 			runtime.settingsLoadIssue = settingsResult.kind === "invalid" ? settingsResult : undefined;
 			if (settingsResult.kind === "invalid") {

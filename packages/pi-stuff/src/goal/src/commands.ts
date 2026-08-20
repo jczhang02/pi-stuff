@@ -345,7 +345,7 @@ export class GoalCommandController {
 
 	notifyFrozenQueue(ctx: StatusContext) {
 		ctx.ui.notify(
-			"The experimental goal queue is frozen. Re-enable experimental.goals in pi-goal.json and run /reload, or use /goal clear.",
+			"The experimental goal queue is frozen. Re-enable experimental.goals in pi-stuff.json and run /reload, or use /goal clear.",
 			"warning",
 		);
 	}

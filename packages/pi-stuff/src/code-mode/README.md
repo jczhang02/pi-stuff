@@ -7,14 +7,17 @@ implementation.
 
 It is disabled by default for a compatibility-first rollout. Use `/codemode` to open the Pi Stuff Command Dialog, or
 `/codemode on` and `/codemode off` for direct control. The dialog shows the current mode, provider surface, active
-local catalog size, and Session ledger counts. An explicit toggle is stored in the trusted project's
-`.pi/code-mode.json` and is reloaded after Pi restarts or changes projects. Loading remains read-only, and an absent
-project value falls back to `PI_STUFF_CODE_MODE_DEFAULT` (`off` when unset).
+local catalog size, and Session ledger counts. An explicit per-project toggle is stored in the trusted project's
+`.pi/code-mode.json` and is reloaded after Pi restarts or changes projects. `/codemode global on` and
+`/codemode global off` set a global default stored as the `codeMode.enabled` namespace in the merged Pi Stuff settings
+file (`<agentDir>/pi-stuff.json`). Loading remains read-only, and an absent value falls back to
+`PI_STUFF_CODE_MODE_DEFAULT` (`off` when unset). Effective precedence: frozen child launch value, then the project
+file, then the global default, then the process default, then `off`.
 
 Launching an Agent freezes the parent session's effective Code Mode state into that child run. The child receives an
 explicit `on` or `off` value without mutating the parent process environment; a later parent toggle does not change an
-already running Agent. That frozen child value takes precedence over the project's persisted preference. The child's
-existing Tool allowlist and capability ceiling still bound what its Code Mode catalog can invoke.
+already running Agent. That frozen child value takes precedence over the project's and global persisted preferences.
+The child's existing Tool allowlist and capability ceiling still bound what its Code Mode catalog can invoke.
 
 ## What the model uses
 

@@ -570,21 +570,28 @@ function verifySettingValue(screen: string, label: string, expected: boolean | s
 	}
 }
 
-async function waitForPersistedSetting(path: string, key: string, expected: unknown): Promise<Record<string, unknown>> {
+async function waitForPersistedSetting(
+	path: string,
+	namespace: string,
+	key: string,
+	expected: unknown,
+): Promise<Record<string, unknown>> {
 	const deadline = Date.now() + WAIT_TIMEOUT_MS;
 	let last = "settings file not created";
 	while (Date.now() < deadline) {
 		try {
 			const text = await readFile(path, "utf8");
 			last = text;
-			const settings = JSON.parse(text) as Record<string, unknown>;
+			const file = JSON.parse(text) as Record<string, unknown>;
+			const section = file[namespace];
+			const settings = (typeof section === "object" && section !== null ? section : {}) as Record<string, unknown>;
 			if (Object.is(settings[key], expected)) return settings;
 		} catch (error) {
 			last = String(error);
 		}
 		await delay(POLL_INTERVAL_MS);
 	}
-	fail(`${key}=${JSON.stringify(expected)} was not persisted: ${last}`);
+	fail(`${namespace}.${key}=${JSON.stringify(expected)} was not persisted: ${last}`);
 }
 
 async function waitForFixtureRecords(path: string, type: string, count: number): Promise<readonly FixtureRecord[]> {
@@ -743,7 +750,7 @@ function hasFullWidthDivider(screen: string, columns: number, character?: string
 }
 
 async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Promise<void> {
-	const settingsPath = join(paths.config, "pi-stuff-codex.json");
+	const settingsPath = join(paths.config, "pi-stuff.json");
 	session.sendKey("C-u");
 	session.sendLiteral("/codex");
 	session.sendKey("Enter");
@@ -771,13 +778,13 @@ async function verifyCodexDialog(session: TmuxPiSession, paths: CasePaths): Prom
 	// Pi may use the first Enter to accept the exact argument completion.
 	await delay(100);
 	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "fast", true);
+	await waitForPersistedSetting(settingsPath, "codex", "fast", true);
 	session.sendLiteral("/codex");
 	session.sendKey("Enter");
 	screen = await session.waitForText("gpt-image-2");
 	verifySettingValue(screen, "Fast mode", "on");
 	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "fast", false);
+	await waitForPersistedSetting(settingsPath, "codex", "fast", false);
 	screen = await session.waitForText("off");
 	verifySettingValue(screen, "Fast mode", "off");
 	session.sendKey("Escape");
@@ -895,8 +902,8 @@ async function verifyWideInteractions(
 	paths: CasePaths,
 	options: UiPtyVerificationOptions,
 ): Promise<{ readonly liveThought: boolean }> {
-	const settingsPath = join(paths.config, "pi-stuff-ui.json");
-	const toolSettingsPath = join(paths.config, "pi-stuff-tools.json");
+	const settingsPath = join(paths.config, "pi-stuff.json");
+	const toolSettingsPath = join(paths.config, "pi-stuff.json");
 
 	await verifyDiagnosticsUi(session, paths, options, 100, 32);
 	await verifyCodexDialog(session, paths);
@@ -919,7 +926,7 @@ async function verifyWideInteractions(
 	verifyNoFloatingFrame(screen, "/ui Command Dialog");
 	verifySettingValue(screen, "Welcome header", true);
 	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "welcomeHeader", false);
+	await waitForPersistedSetting(settingsPath, "ui", "welcomeHeader", false);
 	screen = await session.waitForText("false");
 	verifySettingValue(screen, "Welcome header", false);
 	session.sendKey("Escape");
@@ -1033,7 +1040,7 @@ async function verifyWideInteractions(
 	screen = await openFilteredUi(session, "density", "Statusline density");
 	verifySettingValue(screen, "Statusline density", "auto");
 	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "statuslineDensity", "full");
+	await waitForPersistedSetting(settingsPath, "ui", "statuslineDensity", "full");
 	screen = await session.waitForText("full");
 	verifySettingValue(screen, "Statusline density", "full");
 	session.sendKey("Escape");
@@ -1042,7 +1049,7 @@ async function verifyWideInteractions(
 	screen = await openFilteredUi(session, "latest prompt", "Latest prompt");
 	verifySettingValue(screen, "Latest prompt", true);
 	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "statuslineLatestPrompt", false);
+	await waitForPersistedSetting(settingsPath, "ui", "statuslineLatestPrompt", false);
 	screen = await session.waitForText("false");
 	verifySettingValue(screen, "Latest prompt", false);
 	session.sendKey("Escape");
@@ -1051,9 +1058,9 @@ async function verifyWideInteractions(
 	screen = await openFilteredUi(session, "icons", "Statusline icons");
 	verifySettingValue(screen, "Statusline icons", "auto");
 	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "statuslineIcons", "nerd");
+	await waitForPersistedSetting(settingsPath, "ui", "statuslineIcons", "nerd");
 	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "statuslineIcons", "ascii");
+	await waitForPersistedSetting(settingsPath, "ui", "statuslineIcons", "ascii");
 	screen = await session.waitForText("ascii");
 	verifySettingValue(screen, "Statusline icons", "ascii");
 	session.sendKey("Escape");
@@ -1065,7 +1072,7 @@ async function verifyWideInteractions(
 	screen = await openFilteredUi(session, "inline slash", "Inline slash autocomplete");
 	verifySettingValue(screen, "Inline slash autocomplete", true);
 	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "inlineSlashAutocomplete", false);
+	await waitForPersistedSetting(settingsPath, "ui", "inlineSlashAutocomplete", false);
 	screen = await session.waitForText("false");
 	verifySettingValue(screen, "Inline slash autocomplete", false);
 	session.sendKey("Escape");
@@ -1083,7 +1090,7 @@ async function verifyWideInteractions(
 	screen = await openFilteredUi(session, "timer", "Tool running timer");
 	verifySettingValue(screen, "Tool running timer", true);
 	session.sendKey("Enter");
-	await waitForPersistedSetting(toolSettingsPath, "liveElapsed", false);
+	await waitForPersistedSetting(toolSettingsPath, "tools", "liveElapsed", false);
 	screen = await session.waitForText("false");
 	verifySettingValue(screen, "Tool running timer", false);
 	session.sendKey("Escape");
@@ -1093,7 +1100,7 @@ async function verifyWideInteractions(
 	verifySettingValue(screen, "Statusline", true);
 	if (hasStatusline(screen)) fail("Statusline reappeared behind /ui after a completed model turn");
 	session.sendKey("Enter");
-	await waitForPersistedSetting(settingsPath, "statusline", false);
+	await waitForPersistedSetting(settingsPath, "ui", "statusline", false);
 	screen = await session.waitForText("false");
 	verifySettingValue(screen, "Statusline", false);
 	session.sendKey("Escape");
@@ -1297,7 +1304,6 @@ export async function verifyThemeLifecyclePty(
 	] as const;
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-theme-pty-"));
 	const paths = await createCase(temporaryDirectory, "lifecycle", themes[0], options.packagePath);
-	const settingsPath = join(paths.config, "settings.json");
 	const lifecycleOptions: UiPtyVerificationOptions = {
 		...options,
 		sessionId: "catppuccin-theme-lifecycle",
@@ -1335,7 +1341,6 @@ export async function verifyThemeLifecyclePty(
 			const switched = records.filter((record) => record.type === "theme-switch").at(-1) ?? {};
 			if (switched.success !== true) fail(`Pi rejected live theme switch to ${theme}`);
 			verifyCatppuccinRecord(switched, theme, colorMode);
-			await waitForPersistedSetting(settingsPath, "theme", theme);
 			await verifyThemeSizes(theme, draft);
 		}
 

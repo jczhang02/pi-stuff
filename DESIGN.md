@@ -13,7 +13,7 @@ omitted:
     reason: The current component token schema is CSS-shaped and cannot describe Pi TUI behavior faithfully.
 spacing:
   dialog-gutter-cells: 2
-  section-mark-cells: 1
+  section-icon-cells: 1
   internal-divider-cells: 1
 ---
 
@@ -73,19 +73,21 @@ or surrounding rows.
 
 At narrow widths, remove information in this order: decorative wording, counts and ages, optional descriptions,
 targets and previews, then secondary metadata. Preserve primary identity, useful summary, lifecycle state, selected
-action, and the way back. Wrapping must not introduce extra indentation or extend a section mark into a rail.
+action, and the way back. Wrapping must not introduce extra indentation or repeat a section icon on continuation
+lines.
 
 A wide split view remains one Dialog surface. Its top structural rule is continuous across the full width; one internal
 vertical divider separates navigation from detail. It must not look like two adjacent cards. Use this shape only for
 `/tools` and `/tasks`, where the user repeatedly switches between peer rows and their details, and collapse to a single
 column before either side becomes unreadable. `/agents`, `/diagnostics`, and `/btw` remain single-column at every width.
+Show pane focus with the semantic accent on the active pane heading, not with another short vertical rail.
 
 ## Elevation & Depth
 
 Pi Stuff is flat. It has no shadows, blur, floating cards, or decorative layers. Depth comes from ownership and
 sequence: conversation, temporary focused surface, selected row, then detail.
 
-Use one structural divider, restrained spacing, semantic contrast, and compact section markers to express that hierarchy.
+Use one structural divider, restrained spacing, semantic contrast, and compact section icons to express that hierarchy.
 Do not surround each section with another frame. The scrollable Welcome identity card is the sole confirmed bordered
 exception because it belongs to the conversation document rather than the temporary Dialog system.
 
@@ -93,7 +95,8 @@ exception because it belongs to the conversation document rather than the tempor
 
 The shape language is terminal-native and rectilinear. Structural Dialog rules use heavy box-drawing characters; a
 wide split uses a heavy `┃` divider beneath one continuous `━` top rule. A compact `◆` identifies a section heading
-without becoming a rail beside the section content.
+without becoming a rail beside the section content. It appears only on the heading row and never represents lifecycle
+state, focus, or a Transcript event.
 
 `›` means the currently focused selectable row and nothing else. Lifecycle and severity use separate one-cell-safe
 icons. The Conversation Transcript's small `•` marker remains unchanged. Dialogs inherit the Transcript's restrained,

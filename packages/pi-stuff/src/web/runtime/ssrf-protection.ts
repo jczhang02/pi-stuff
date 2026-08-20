@@ -1,6 +1,6 @@
 import { lookup as dnsLookup } from "node:dns/promises";
-import { existsSync, readFileSync, statSync } from "node:fs";
 import net from "node:net";
+import { readWebConfig } from "../settings.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const DEFAULT_MAX_REDIRECTS = 5;
@@ -10,45 +10,14 @@ export type LookupAddress = { address: string; family: number };
 export type Lookup = (hostname: string) => Promise<LookupAddress[]>;
 type Fetch = typeof fetch;
 
-const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
-
-let cachedConfigRoot: { signature: string; value: Record<string, unknown> | null } | null = null;
+const WEB_SEARCH_CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 
 function loadConfigRoot(): Record<string, unknown> | null {
-	if (!existsSync(WEB_SEARCH_CONFIG_PATH)) return null;
-
-	let signature: string;
 	try {
-		const stat = statSync(WEB_SEARCH_CONFIG_PATH);
-		signature = `${stat.mtimeMs}:${stat.size}`;
+		return readWebConfig() ?? null;
 	} catch {
 		return null;
 	}
-
-	if (cachedConfigRoot?.signature === signature) return cachedConfigRoot.value;
-
-	let raw: string;
-	try {
-		raw = readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8");
-	} catch {
-		// Do not memoize read failures: a chmod fix changes neither mtime nor size,
-		// so a cached failure would permanently fail-open the domain policy.
-		return null;
-	}
-
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${WEB_SEARCH_CONFIG_PATH}: ${message}`);
-	}
-
-	const value = parsed && typeof parsed === "object" && !Array.isArray(parsed)
-		? parsed as Record<string, unknown>
-		: null;
-	cachedConfigRoot = { signature, value };
-	return value;
 }
 
 export interface SsrfConfig {
@@ -64,7 +33,7 @@ export interface RuntimeSsrfDefaults {
 let runtimeSsrfDefaults: SsrfConfig = { allowRanges: [], trustEnvProxy: false };
 
 /**
- * Configure process-local defaults for an embedding host. Explicit web-search.json
+ * Configure process-local defaults for an embedding host. Explicit `web` namespace
  * fields still win, including an empty allowRanges array. This function never
  * reads or writes user settings and validates every range before applying it.
  */
@@ -374,7 +343,7 @@ function assertPublicAddress(address: string, hostname: string, allowRanges: Par
 	if (isInAllowedRange(normalized, ipVersion, allowRanges)) return;
 	if (ipVersion === 4 && isBlockedIPv4(normalized)) {
 		const hint = isFakeIpProxyAddress(normalized)
-			? '. This address is in 198.18.0.0/15, commonly used by TUN/fake-IP proxies. If that matches your setup, configure ssrf.allowRanges with ["198.18.0.0/15"] in web-search.json.'
+			? '. This address is in 198.18.0.0/15, commonly used by TUN/fake-IP proxies. If that matches your setup, configure web.ssrf.allowRanges with ["198.18.0.0/15"] in pi-stuff.json.'
 			: "";
 		throw new Error(`Blocked internal address for ${hostname}: ${normalized}${hint}`);
 	}

@@ -74,7 +74,8 @@ scrollbar or a second pagination mode. `?` carries the complete contextual key m
 
 At 96 columns and wider, a non-empty Activity list and selected detail share one fixed 18-row Dialog. One continuous
 heavy top rule spans the complete surface and one heavy `┃` divider separates the panes. Switching Activities keeps
-the outer geometry fixed. Empty and narrow states remain single-column.
+the outer geometry fixed. The active pane heading carries the semantic focus accent; `◆` remains a section heading and
+`›` remains the selected-row marker. Empty and narrow states remain single-column.
 
 The detail Header uses the selected Activity summary as its visual anchor and retains the full lifecycle word and call
 count. A grouped Activity has two sections:

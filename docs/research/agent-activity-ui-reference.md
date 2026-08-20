@@ -309,7 +309,8 @@ The name currently receives at most 38% of the available width.
 - Keep the Suite's full-width top divider and Footer boundary. Do not add a horizontal rule, card, frame, or floating
   container around an individual section.
 - Section headings are `◆ Task`, `◆ Result`, `◆ Error`, `◆ Partial result`, and `◆ Activity`. The compact semantic-theme
-  diamond exists only on the heading row and never grows into a rail.
+  diamond exists only on the heading row, never grows into a rail, and never represents lifecycle state, focus, or a
+  Transcript event.
 - Beyond the Command Dialog's one outer content gutter, do not add hierarchy indentation. Section bodies, Agent names,
   Agent messages, Tool rows, `⎿` result rows, and wrapped continuation lines share one left edge with the section mark.
 - Blank lines, heading weight, and semantic text colors separate sections and events. The Agent name remains stronger
@@ -385,7 +386,7 @@ detail state. Never advertise an action that validation will reject.
 - The Footer advertises the configured page actions when scrolling is available and keeps `? keys` visible. Hints wrap
   rather than displacing the Agent name, selected state, attached error, or Escape path.
 - At narrow widths, preserve the Agent name, section heading, state, and action before optional descriptions, targets,
-  previews, or metadata. Content wraps without adding indentation.
+  previews, or metadata. Content wraps without adding indentation or repeating the section icon on continuation lines.
 
 The implementation now follows this contract: Agent names lead stable launch-order rows; descendants use hierarchical
 navigation; Activity refreshes live; Agent prose uses the shared Pi Markdown component; state-specific controls omit

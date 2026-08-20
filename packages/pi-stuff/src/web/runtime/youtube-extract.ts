@@ -1,5 +1,6 @@
+import { readWebConfigText, webConfigExists } from "../settings.ts";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+
 import { promisify } from "node:util";
 import pLimit from "p-limit";
 import { activityMonitor } from "./activity.ts";
@@ -9,7 +10,7 @@ import { isPerplexityAvailable, searchWithPerplexity } from "./perplexity.ts";
 import { extractHeadingTitle, type ExtractedContent, type FrameResult, type VideoFrame } from "./extract.ts";
 import { formatSeconds, readExecError, isTimeoutError, trimErrorText, mapFfmpegError, getWebSearchConfigPath } from "./utils.ts";
 
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const execFileAsync = promisify(execFile);
 const frameLimit = pLimit(3);
 
@@ -56,13 +57,12 @@ const defaults: YouTubeConfig = { enabled: true, preferredModel: "gemini-3.6-fla
 let cachedConfig: YouTubeConfig | null = null;
 
 function loadYouTubeConfig(): YouTubeConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedConfig = { ...defaults };
 		return cachedConfig;
 	}
 
-	const rawText = readFileSync(CONFIG_PATH, "utf-8");
+	const rawText = readWebConfigText();
 	let raw: { youtube?: { enabled?: boolean; preferredModel?: string } };
 	try {
 		raw = JSON.parse(rawText) as { youtube?: { enabled?: boolean; preferredModel?: string } };

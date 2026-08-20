@@ -1,11 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readWebConfigText, webConfigExists } from "../settings.ts";
+
 import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 
 const RATE_LIMIT = {
 	maxRequests: 10,
@@ -40,13 +41,12 @@ interface WebSearchConfig {
 let cachedConfig: WebSearchConfig | null = null;
 
 function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedConfig = {};
 		return cachedConfig;
 	}
 
-	const content = readFileSync(CONFIG_PATH, "utf-8");
+	const content = readWebConfigText();
 	try {
 		cachedConfig = JSON.parse(content) as WebSearchConfig;
 		return cachedConfig;

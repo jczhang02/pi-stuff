@@ -1,8 +1,10 @@
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const COMMAND_TIMEOUT_MS = 5_000;
+const ONE_PASSWORD_TIMEOUT_MS = 60_000;
 const MAX_CREDENTIAL_BYTES = 16_384;
 const ENV_SOURCE = /^\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})$/;
 const OP_SESSION_NAME = /^OP_SESSION_[A-Za-z0-9_]+$/;
@@ -63,6 +65,12 @@ export type CredentialCommandRunner = (
 	options: CredentialCommandOptions,
 ) => Promise<CredentialCommandResult>;
 
+export type CredentialProgramRunner = (
+	program: string,
+	args: readonly string[],
+	options: CredentialCommandOptions,
+) => Promise<CredentialCommandResult>;
+
 export interface CredentialOptions {
 	provider: string;
 	configuredValue?: unknown;
@@ -70,6 +78,7 @@ export interface CredentialOptions {
 	environment?: Record<string, string | undefined>;
 	signal?: AbortSignal;
 	runCommand?: CredentialCommandRunner;
+	runProgram?: CredentialProgramRunner;
 }
 
 export function redactCredential(text: string, credential: string | null | undefined): string {
@@ -100,7 +109,7 @@ function configuredSource(options: CredentialOptions): string | null {
 
 function explicitEnvironmentName(source: string): string | null {
 	const match = source.match(ENV_SOURCE);
-	return match ? match[1] ?? match[2] : null;
+	return match ? (match[1] ?? match[2] ?? null) : null;
 }
 
 function escapedSource(source: string): string | null {
@@ -124,7 +133,39 @@ async function defaultRunCommand(
 		timeout: options.timeoutMs,
 		windowsHide: true,
 	});
+	return { stdout: result.stdout ?? "" };
+}
+
+async function defaultRunProgram(
+	program: string,
+	args: readonly string[],
+	options: CredentialCommandOptions,
+): Promise<CredentialCommandResult> {
+	const result = await execFileAsync(program, [...args], {
+		encoding: "utf8",
+		env: options.environment,
+		maxBuffer: options.maxOutputBytes + 1,
+		signal: options.signal,
+		timeout: options.timeoutMs,
+		windowsHide: true,
+	});
 	return { stdout: result.stdout };
+}
+
+function onePasswordOutput(provider: string, output: string | Buffer): string {
+	const stdout = Buffer.isBuffer(output) ? output.toString("utf8") : output;
+	if (Buffer.byteLength(stdout, "utf8") > MAX_CREDENTIAL_BYTES) {
+		throw new CredentialResolutionError(provider, "command-output-too-large");
+	}
+	const value = stdout.trim();
+	if (!value) throw new CredentialResolutionError(provider, "command-empty");
+	if (Array.from(value).some((character) => {
+		const code = character.charCodeAt(0);
+		return code < 32 || code === 127;
+	})) {
+		throw new CredentialResolutionError(provider, "command-invalid-output");
+	}
+	return value;
 }
 
 function commandFailureCategory(error: unknown, signal?: AbortSignal): CredentialFailureCategory {
@@ -148,13 +189,27 @@ export async function resolveCredential(options: CredentialOptions): Promise<str
 	const source = configuredSource(options);
 	const escaped = source ? escapedSource(source) : null;
 	if (escaped !== null) return escaped;
+	if (source?.startsWith("op://")) {
+		let result: CredentialCommandResult;
+		try {
+			result = await (options.runProgram ?? defaultRunProgram)("op", ["read", "--no-newline", source], {
+				...(options.signal ? { signal: options.signal } : {}),
+				timeoutMs: ONE_PASSWORD_TIMEOUT_MS,
+				maxOutputBytes: MAX_CREDENTIAL_BYTES,
+				environment: commandEnvironment(options.environment ?? process.env),
+			});
+		} catch (error) {
+			throw new CredentialResolutionError(options.provider, commandFailureCategory(error, options.signal));
+		}
+		return onePasswordOutput(options.provider, result.stdout);
+	}
 	if (source?.startsWith("!")) {
 		const command = source.slice(1).trim();
 		if (!command) throw new CredentialResolutionError(options.provider, "invalid-source");
 		let result: CredentialCommandResult;
 		try {
 			result = await (options.runCommand ?? defaultRunCommand)(command, {
-				signal: options.signal,
+				...(options.signal ? { signal: options.signal } : {}),
 				timeoutMs: COMMAND_TIMEOUT_MS,
 				maxOutputBytes: MAX_CREDENTIAL_BYTES,
 				environment: commandEnvironment(options.environment ?? process.env),

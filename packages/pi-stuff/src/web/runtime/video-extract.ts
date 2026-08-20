@@ -1,5 +1,6 @@
+import { readWebConfigText, webConfigExists } from "../settings.ts";
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve, extname, basename, join, dirname } from "node:path";
 import { promisify } from "node:util";
@@ -10,7 +11,7 @@ import { queryGeminiApiWithVideo, getApiKey, fetchGeminiApi, API_BASE, redactGem
 import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.ts";
 import { readExecError, trimErrorText, mapFfmpegError, getWebSearchConfigPath } from "./utils.ts";
 
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1beta";
 const execFileAsync = promisify(execFile);
 
@@ -78,13 +79,12 @@ const VIDEO_CONFIG_DEFAULTS: VideoConfig = {
 let cachedVideoConfig: VideoConfig | null = null;
 
 function loadVideoConfig(): VideoConfig {
-	if (cachedVideoConfig) return cachedVideoConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedVideoConfig = { ...VIDEO_CONFIG_DEFAULTS };
 		return cachedVideoConfig;
 	}
 
-	const rawText = readFileSync(CONFIG_PATH, "utf-8");
+	const rawText = readWebConfigText();
 	let raw: { video?: { enabled?: boolean; preferredModel?: string; maxSizeMB?: number } };
 	try {
 		raw = JSON.parse(rawText) as { video?: { enabled?: boolean; preferredModel?: string; maxSizeMB?: number } };

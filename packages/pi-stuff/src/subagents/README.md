@@ -95,10 +95,12 @@ transcript from `/agents`. Only the selected marker uses accent; routine states 
 and errors color only their explicit right-state text. At narrow widths, an unreadable description is omitted as a unit
 instead of being joined to the state as an ellipsis fragment.
 
-The Agent Command Dialog uses the Suite's divider and two-cell gutter, with `›` marking the focused custom row.
-Action hints wrap instead of dropping the close or back key: Escape closes the Agent list and returns one level from
-details or a steer/resume composer. At low terminal heights, the selected Agent or attached error and that Escape path
-take priority over surrounding transcript rows.
+The Agent Command Dialog uses the Suite's divider and two-cell gutter, with `›` marking the focused custom row. It
+remains single-column at every width: list and detail are sequential modes, and additional width belongs to the selected
+Agent's Task, outcome, and Activity rather than a persistent roster pane. Action hints wrap instead of dropping the
+close or back key: Escape closes the Agent list and returns one level from details or a steer/resume composer. At low
+terminal heights, the selected Agent or attached error and that Escape path take priority over surrounding transcript
+rows.
 
 The accepted Agent Command Dialog redesign is recorded in the
 [Agent activity UI reference](../../../docs/research/agent-activity-ui-reference.md#f-accepted-agent-command-dialog-redesign).

@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readWebConfigText, webConfigExists } from "../settings.ts";
+
 import { getWebSearchConfigPath } from "./utils.ts";
 
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 
 interface GeminiWebConfig {
 	chromeProfile?: string;
@@ -17,13 +18,12 @@ export function normalizeChromeProfile(value: unknown): string | undefined {
 }
 
 function loadConfig(): GeminiWebConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedConfig = {};
 		return cachedConfig;
 	}
 
-	const rawText = readFileSync(CONFIG_PATH, "utf-8");
+	const rawText = readWebConfigText();
 	let raw: { chromeProfile?: unknown; allowBrowserCookies?: unknown };
 	try {
 		raw = JSON.parse(rawText) as { chromeProfile?: unknown; allowBrowserCookies?: unknown };
