@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readWebConfigText, webConfigExists } from "../settings.ts";
+
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -7,7 +8,7 @@ import { getWebSearchConfigPath } from "./utils.ts";
 
 const SEARCH1API_SEARCH_URL = "https://api.search1api.com/search";
 const SEARCH1API_CRAWL_URL = "https://api.search1api.com/crawl";
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
 const CRAWL_TIMEOUT_MS = 60_000;
 
@@ -46,13 +47,12 @@ interface Search1APISearchOptions extends SearchOptions {
 let cachedConfig: WebSearchConfig | null = null;
 
 function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedConfig = {};
 		return cachedConfig;
 	}
 
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
+	const raw = readWebConfigText();
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(raw);

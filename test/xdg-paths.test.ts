@@ -72,8 +72,8 @@ describe.serial("Pi Stuff XDG paths", () => {
 
 	test("the default UI lock uses XDG_RUNTIME_DIR while custom stores keep a sibling lock", () => {
 		const environment = { XDG_RUNTIME_DIR: "/run/user/1000" };
-		expect(resolveUiSettingsLockPath("/srv/config/pi/pi-stuff-ui.json", environment, "/srv/config/pi")).toBe(
-			"/run/user/1000/pi-stuff/pi-stuff-ui.json.lock",
+		expect(resolveUiSettingsLockPath("/srv/config/pi/pi-stuff.json", environment, "/srv/config/pi")).toBe(
+			"/run/user/1000/pi-stuff/pi-stuff.json.lock",
 		);
 		expect(resolveUiSettingsLockPath("/tmp/settings.json", environment, "/srv/config/pi")).toBe(
 			"/tmp/settings.json.lock",

@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
+import { mergedSettingsPath, readNamespace } from "../shared/settings-io/index.js";
+import { mergeNamespaceRecordLocked, migrateLegacyNamespace } from "../shared/settings-io/lock.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-rtk.json";
+const RTK_NAMESPACE = "rtk";
 
 export interface RtkSettings {
 	readonly outputProjection: boolean;
@@ -47,9 +49,14 @@ function parseSettings(value: unknown): RtkSettings {
 	return { outputProjection, rewriteCommands, schemaVersion };
 }
 
+function toRecord(settings: RtkSettings): Record<string, unknown> {
+	return { outputProjection: settings.outputProjection, rewriteCommands: settings.rewriteCommands, schemaVersion: 1 };
+}
+
 async function readSettings(path: string): Promise<RtkSettings> {
 	try {
-		return parseSettings(JSON.parse(await readFile(path, "utf8")) as unknown);
+		const namespace = await readNamespace(path, RTK_NAMESPACE);
+		return namespace === undefined ? DEFAULT_SETTINGS : parseSettings(namespace);
 	} catch (error) {
 		if (isRecord(error) && Reflect.get(error, "code") === "ENOENT") return DEFAULT_SETTINGS;
 		reportDiagnostic({
@@ -67,14 +74,15 @@ async function readSettings(path: string): Promise<RtkSettings> {
 }
 
 async function writeSettings(path: string, settings: RtkSettings): Promise<void> {
-	await mkdir(dirname(path), { recursive: true });
-	const temporaryPath = `${path}.tmp-${String(process.pid)}-${randomUUID()}`;
+	await mergeNamespaceRecordLocked(path, RTK_NAMESPACE, toRecord(settings), "RTK");
+}
+
+/** One-time lift of the legacy `pi-stuff-rtk.json` into the merged `rtk` namespace. */
+async function readLegacySettings(path: string): Promise<RtkSettings | undefined> {
 	try {
-		await writeFile(temporaryPath, `${JSON.stringify(settings, null, "\t")}\n`, { mode: 0o600 });
-		await rename(temporaryPath, path);
-	} catch (error) {
-		await unlink(temporaryPath).catch(() => undefined);
-		throw error;
+		return parseSettings(JSON.parse(await readFile(join(dirname(path), SETTINGS_FILE_NAME), "utf8")));
+	} catch {
+		return undefined;
 	}
 }
 
@@ -105,9 +113,26 @@ export class RtkSettingsStore {
 	}
 
 	static async load(
-		path = join(getAgentDir(), SETTINGS_FILE_NAME),
+		path = mergedSettingsPath(getAgentDir()),
 		writer: SettingsWriter = writeSettings,
 	): Promise<RtkSettingsStore> {
+		const value = await readSettings(path);
+		if (value === DEFAULT_SETTINGS) {
+			const legacy = await readLegacySettings(path);
+			if (
+				legacy &&
+				(await migrateLegacyNamespace(
+					path,
+					RTK_NAMESPACE,
+					join(dirname(path), SETTINGS_FILE_NAME),
+					toRecord(legacy),
+					"RTK",
+					(value) => isValidSettings(value),
+				))
+			) {
+				return new RtkSettingsStore(path, legacy, writer);
+			}
+		}
 		return new RtkSettingsStore(path, await readSettings(path), writer);
 	}
 
@@ -200,5 +225,14 @@ export class RtkSettingsStore {
 				// Presentation observers cannot block an explicit settings write.
 			}
 		}
+	}
+}
+
+function isValidSettings(value: unknown): boolean {
+	try {
+		parseSettings(value);
+		return true;
+	} catch {
+		return false;
 	}
 }

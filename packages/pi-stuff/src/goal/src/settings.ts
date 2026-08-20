@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { mergeNamespaceRecordSync, readNamespaceSync, readSettingsFileSync } from "../../shared/settings-io/file.js";
+import { mergedSettingsPath } from "../../shared/settings-io/paths.js";
 
-export const GOAL_SETTINGS_FILE = "pi-goal.json";
+export const GOAL_SETTINGS_FILE = "pi-stuff.json";
+const GOAL_NAMESPACE = "goal";
+const LEGACY_GOAL_SETTINGS_FILE = "pi-goal.json";
 const GOAL_TOOL_VISIBILITIES = ["always", "after-first-goal"] as const;
 
 type GoalToolVisibility = (typeof GOAL_TOOL_VISIBILITIES)[number];
@@ -115,49 +119,55 @@ function normalizeContinuationLimit(value: unknown, fallback: ContinuationLimit)
 
 export function saveGoalSettings(
 	settings: GoalSettings,
-	settingsPath = join(getAgentDir(), GOAL_SETTINGS_FILE),
+	settingsPath = mergedSettingsPath(getAgentDir()),
 	overrides: Partial<GoalSettingsSaveFileSystem> = {},
 ) {
 	const normalized = normalizeGoalSettings(settings);
 	if (!normalized) throw new Error("Refusing to save invalid pi-goal settings.");
 
-	let raw: Record<string, unknown> = {};
+	let existingNamespace: Record<string, unknown> = {};
+	let existingDocument: Record<string, unknown> = {};
 	try {
-		const contents = readFileSync(settingsPath, "utf8");
-		const parsed = JSON.parse(contents) as unknown;
-		if (!normalizeGoalSettings(parsed)) {
-			throw new Error(`${settingsPath}: invalid settings shape`);
+		existingDocument = readSettingsFileSync(settingsPath);
+		const file = ownRecord(existingDocument[GOAL_NAMESPACE]);
+		if (file !== undefined) {
+			const validated = normalizeGoalSettings(file);
+			if (!validated) throw new Error(`${settingsPath}: invalid settings shape`);
+			existingNamespace = ownRecord(file) ?? {};
 		}
-		raw = ownRecord(parsed) ?? {};
 	} catch (error) {
 		if (!isNodeError(error) || error.code !== "ENOENT") {
 			throw new Error(`Cannot save invalid settings file: ${formatError(error)}`);
 		}
 	}
 
-	const experimental = ownRecord(raw.experimental) ?? {};
-	const rpc = ownRecord(raw.rpc) ?? {};
-	const continuationLimits = ownRecord(raw.continuationLimits) ?? {};
-	const document = `${JSON.stringify(
-		{
-			...raw,
-			toolVisibility: normalized.toolVisibility,
-			experimental: { ...experimental, goals: normalized.experimental.goals },
-			rpc: { ...rpc, enabled: normalized.rpc.enabled },
-			continuationLimits: {
-				...continuationLimits,
-				automaticTurns: normalized.continuationLimits.automaticTurns,
-				noProgressTurns: normalized.continuationLimits.noProgressTurns,
-			},
+	const experimental = ownRecord(existingNamespace.experimental) ?? {};
+	const rpc = ownRecord(existingNamespace.rpc) ?? {};
+	const continuationLimits = ownRecord(existingNamespace.continuationLimits) ?? {};
+	const document = {
+		...existingNamespace,
+		toolVisibility: normalized.toolVisibility,
+		experimental: { ...experimental, goals: normalized.experimental.goals },
+		rpc: { ...rpc, enabled: normalized.rpc.enabled },
+		continuationLimits: {
+			...continuationLimits,
+			automaticTurns: normalized.continuationLimits.automaticTurns,
+			noProgressTurns: normalized.continuationLimits.noProgressTurns,
 		},
-		null,
-		2,
-	)}\n`;
-	const fs = { mkdirSync, writeFileSync, renameSync, rmSync, ...overrides };
+	};
 	const temporaryPath = join(dirname(settingsPath), `.${basename(settingsPath)}.${randomUUID()}.tmp`);
+	const fs = { mkdirSync, writeFileSync, renameSync, rmSync, ...overrides };
 	try {
 		fs.mkdirSync(dirname(settingsPath), { recursive: true });
-		fs.writeFileSync(temporaryPath, document, { encoding: "utf8", flag: "wx" });
+		fs.writeFileSync(
+			temporaryPath,
+			`${JSON.stringify({ ...existingDocument, [GOAL_NAMESPACE]: document }, null, "\t")}\n`,
+			{
+				encoding: "utf8",
+				flag: "wx",
+				mode: 0o600,
+			},
+		);
 		fs.renameSync(temporaryPath, settingsPath);
 	} finally {
 		try {
@@ -168,22 +178,60 @@ export function saveGoalSettings(
 	}
 }
 
-export function readGoalSettings(settingsPath = join(getAgentDir(), GOAL_SETTINGS_FILE)): GoalSettingsLoadResult {
-	let contents: string;
+export async function withGoalSettingsLock<Value>(
+	settingsPath: string,
+	operation: () => Value | Promise<Value>,
+): Promise<Value> {
+	const { withSettingsLock } = await import("../../shared/settings-io/lock.js");
+	return withSettingsLock(settingsPath, "Goal", operation);
+}
+
+export function readGoalSettingsLocked(
+	settingsPath = mergedSettingsPath(getAgentDir()),
+): Promise<GoalSettingsLoadResult> {
+	return withGoalSettingsLock(settingsPath, () => {
+		if (settingsPath === mergedSettingsPath(getAgentDir())) migrateLegacyGoalSettings(settingsPath);
+		return readGoalSettings(settingsPath);
+	});
+}
+
+export function readGoalSettings(settingsPath = mergedSettingsPath(getAgentDir())): GoalSettingsLoadResult {
+	let namespace: unknown;
 	try {
-		contents = readFileSync(settingsPath, "utf8");
+		const file = readNamespaceSync(settingsPath, GOAL_NAMESPACE);
+		if (file === undefined) return { kind: "missing" };
+		namespace = file;
 	} catch (error: unknown) {
 		if (isNodeError(error) && error.code === "ENOENT") return { kind: "missing" };
 		return { kind: "invalid", reason: `${settingsPath}: ${formatError(error)}` };
 	}
 
 	try {
-		const settings = normalizeGoalSettings(JSON.parse(contents) as unknown);
+		const settings = normalizeGoalSettings(namespace);
 		return settings
 			? { kind: "loaded", settings }
 			: { kind: "invalid", reason: `${settingsPath}: invalid settings shape` };
 	} catch (error: unknown) {
 		return { kind: "invalid", reason: `${settingsPath}: ${formatError(error)}` };
+	}
+}
+
+function migrateLegacyGoalSettings(settingsPath: string): void {
+	if (readNamespaceSync(settingsPath, GOAL_NAMESPACE) !== undefined) return;
+	const legacyPath = join(dirname(settingsPath), LEGACY_GOAL_SETTINGS_FILE);
+	if (!existsSync(legacyPath)) return;
+	const contents = readFileSync(legacyPath, "utf8");
+	const parsed = JSON.parse(contents) as unknown;
+	const normalized = normalizeGoalSettings(parsed);
+	if (normalized) {
+		mergeNamespaceRecordSync(settingsPath, GOAL_NAMESPACE, { ...normalized });
+		// The legacy file has been lifted into the merged namespace; remove it
+		// so the user is left with a single settings file (no .bak retained).
+		try {
+			unlinkSync(legacyPath);
+		} catch {
+			// Best-effort cleanup; the merged record is already authoritative.
+		}
 	}
 }
 

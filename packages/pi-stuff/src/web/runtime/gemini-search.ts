@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readWebConfigText, webConfigExists } from "../settings.ts";
+
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { activityMonitor } from "./activity.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
@@ -84,7 +85,7 @@ export interface AttributedSearchResponse extends SearchResponse {
 	providerErrors?: ProviderSearchFailure[];
 }
 
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const DEFAULT_SEARCH_MODEL = "gemini-3.6-flash";
 // Explicit-only providers (AnySearch, xAI, Bright Data, SerpBase) are deliberately absent:
 // `all` must never fan out to a paid/surprising provider without the user asking for it.
@@ -101,13 +102,12 @@ type SearchConfig = {
 let cachedSearchConfig: SearchConfig | null = null;
 
 function getSearchConfig(): SearchConfig {
-	if (cachedSearchConfig) return cachedSearchConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedSearchConfig = { searchProvider: "auto", searchProviderConfigured: false };
 		return cachedSearchConfig;
 	}
 
-	const rawText = readFileSync(CONFIG_PATH, "utf-8");
+	const rawText = readWebConfigText();
 	let raw: Record<string, unknown>;
 	try {
 		const parsed: unknown = JSON.parse(rawText);

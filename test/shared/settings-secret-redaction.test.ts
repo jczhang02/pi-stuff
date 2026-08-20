@@ -1,0 +1,21 @@
+import { expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { readSettingsFile } from "../../packages/pi-stuff/src/shared/settings-io/file.js";
+
+test("malformed merged settings never quote credential bytes in parser errors", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-stuff-settings-secret-"));
+	const path = join(root, "pi-stuff.json");
+	try {
+		await writeFile(path, '{"web":{"apiKey":sk-live-secret}}');
+		await expect(readSettingsFile(path)).rejects.toThrow("contains invalid JSON");
+		try {
+			await readSettingsFile(path);
+		} catch (error) {
+			expect(error instanceof Error ? error.message : String(error)).not.toContain("sk-live-secret");
+		}
+	} finally {
+		await rm(root, { force: true, recursive: true });
+	}
+});

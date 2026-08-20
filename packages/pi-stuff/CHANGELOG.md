@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Consolidate the global pi-stuff settings into a single merged `pi-stuff.json` at `<agentDir>/pi-stuff.json`, with each
+  Capability owning one top-level namespace (`ui`, `tools`, `rtk`, `codex`, `notification`, `goal`, `codeMode`). The merged
+  file is plain JSON on both read and write (no JSONC, no comments); writes emit canonical tab-indented JSON under a
+  whole-file flock. Legacy per-Capability files (`pi-stuff-ui.json`, `pi-stuff-tools.json`, `pi-stuff-rtk.json`,
+  `pi-stuff-codex.json`, `pi-stuff-notification.json`, `pi-goal.json`) are lifted once into the merged file and removed.
+  See ADR 0012.
+- Add a global Code Mode default. `/codemode global on|off` persists the Suite-wide default into the `codeMode` namespace
+  of the merged file, and the project-scoped `.pi/code-mode.json` now records only an explicit difference from that global
+  default. See ADR 0011.
 - Replace complete non-Bash Tool grouping with Claude-style continuous retrieval segments. Read, Grep/Find, List, and
   conservatively read-only Bash now fold across Tool rounds and Thinking; consequential and unknown Tools remain
   independent boundaries, while failed, rejected, and cancelled retrieval stays explicit. `Ctrl+O` restores formatted

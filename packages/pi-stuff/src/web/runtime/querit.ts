@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readWebConfigText, webConfigExists } from "../settings.ts";
+
 import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -7,7 +8,7 @@ import { getWebSearchConfigPath } from "./utils.ts";
 
 const QUERIT_SEARCH_URL = "https://api.querit.ai/v1/search";
 const QUERIT_CONTENTS_URL = "https://api.querit.ai/v1/contents";
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
 const CONTENTS_TIMEOUT_MS = 60_000;
 const MAX_CONTENT_URLS = 10;
@@ -67,13 +68,12 @@ interface QueritSearchOptions extends SearchOptions {
 let cachedConfig: WebSearchConfig | null = null;
 
 function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedConfig = {};
 		return cachedConfig;
 	}
 
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
+	const raw = readWebConfigText();
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(raw);

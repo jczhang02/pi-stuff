@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readWebConfigText, webConfigExists } from "../settings.ts";
+
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { activityMonitor } from "./activity.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
@@ -23,7 +24,7 @@ import { getWebSearchConfigPath } from "./utils.ts";
 // without asking for them via `include`.
 
 const XAI_RESPONSES_URL = "https://api.x.ai/v1/responses";
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
 
 // Ordered best-first. pi's builtin xai catalog is small and xAI retires models
@@ -45,13 +46,12 @@ interface XaiAuth {
 let cachedConfig: WebSearchConfig | null = null;
 
 function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedConfig = {};
 		return cachedConfig;
 	}
 
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
+	const raw = readWebConfigText();
 	try {
 		cachedConfig = JSON.parse(raw) as WebSearchConfig;
 		return cachedConfig;

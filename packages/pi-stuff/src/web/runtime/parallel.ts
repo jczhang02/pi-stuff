@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readWebConfigText, webConfigExists } from "../settings.ts";
+
 import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -7,7 +8,7 @@ import { getWebSearchConfigPath } from "./utils.ts";
 
 const PARALLEL_SEARCH_URL = "https://api.parallel.ai/v1/search";
 const PARALLEL_EXTRACT_URL = "https://api.parallel.ai/v1/extract";
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const MIN_PARALLEL_API_KEY_LENGTH = 8;
 const MIN_USEFUL_CONTENT = 500;
 const SEARCH_TIMEOUT_MS = 60_000;
@@ -53,13 +54,12 @@ interface ParallelSearchOptions extends SearchOptions {
 let cachedConfig: WebSearchConfig | null = null;
 
 function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedConfig = {};
 		return cachedConfig;
 	}
 
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
+	const raw = readWebConfigText();
 	try {
 		cachedConfig = JSON.parse(raw) as WebSearchConfig;
 		return cachedConfig;

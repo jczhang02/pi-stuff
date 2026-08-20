@@ -94,7 +94,7 @@ test("bare /codemode owns the interactive dialog path and status is no longer a 
 	await command.handler("", context);
 	expect(notifications.at(-1)).toBe("/codemode requires interactive TUI mode; use /codemode on or /codemode off.");
 	await command.handler("status", context);
-	expect(notifications.at(-1)).toStartWith("Usage: /codemode [on|off|history|");
+	expect(notifications.at(-1)).toStartWith("Usage: /codemode [on|off|global on|global off|history|");
 	expect(notifications.at(-1)).not.toContain("status");
 });
 
@@ -162,7 +162,7 @@ test("Code Mode follows trusted project settings, persists explicit toggles, and
 		await writeFile(join(second, ".pi"), "not a directory");
 		await command.handler("off", secondContext);
 		expect(enabled).toBe(true);
-		expect(secondContext.notifications.at(-1)).toContain("Unable to read Code Mode project settings");
+		expect(secondContext.notifications.at(-1)).toContain("Unable to save Code Mode project settings");
 
 		await sessionStart(loaded.events, context(first, false));
 		expect(enabled).toBe(false);

@@ -58,11 +58,14 @@ const MISSING_SETTINGS_PATH = join(GOAL_SETTINGS_DIRECTORY, "missing.json");
 const LOW_LIMITS_SETTINGS_PATH = join(GOAL_SETTINGS_DIRECTORY, "low-limits.json");
 const ONE_TURN_LIMIT_SETTINGS_PATH = join(GOAL_SETTINGS_DIRECTORY, "one-turn-limit.json");
 const runtimeByPi = new WeakMap<object, ReturnType<typeof goal>>();
-writeFileSync(ALWAYS_SETTINGS_PATH, '{"toolVisibility":"always"}\n');
-writeFileSync(LAZY_SETTINGS_PATH, '{"toolVisibility":"after-first-goal"}\n');
-writeFileSync(INVALID_SETTINGS_PATH, '{"toolVisibility":"sometimes"}\n');
-writeFileSync(LOW_LIMITS_SETTINGS_PATH, '{"continuationLimits":{"automaticTurns":3,"noProgressTurns":3}}\n');
-writeFileSync(ONE_TURN_LIMIT_SETTINGS_PATH, '{"continuationLimits":{"automaticTurns":1,"noProgressTurns":null}}\n');
+writeFileSync(ALWAYS_SETTINGS_PATH, '{"goal":{"toolVisibility":"always"}}\n');
+writeFileSync(LAZY_SETTINGS_PATH, '{"goal":{"toolVisibility":"after-first-goal"}}\n');
+writeFileSync(INVALID_SETTINGS_PATH, '{"goal":{"toolVisibility":"sometimes"}}\n');
+writeFileSync(LOW_LIMITS_SETTINGS_PATH, '{"goal":{"continuationLimits":{"automaticTurns":3,"noProgressTurns":3}}}\n');
+writeFileSync(
+	ONE_TURN_LIMIT_SETTINGS_PATH,
+	'{"goal":{"continuationLimits":{"automaticTurns":1,"noProgressTurns":null}}}\n',
+);
 after(() => rmSync(GOAL_SETTINGS_DIRECTORY, { recursive: true, force: true }));
 
 function completionReport(goalId: string, summary: string) {
@@ -310,7 +313,7 @@ test("invalid settings remain read-only in the Goal settings UI", async () => {
 	assert.match(settingsRender, /Read only/i);
 	assert.match(settingsRender, /invalid settings file/i);
 	assert.match(settingsRender, /using built-in defaults/i);
-	assert.equal(readFileSync(INVALID_SETTINGS_PATH, "utf8"), '{"toolVisibility":"sometimes"}\n');
+	assert.equal(readFileSync(INVALID_SETTINGS_PATH, "utf8"), '{"goal":{"toolVisibility":"sometimes"}}\n');
 });
 
 test("after-first-goal hides tools until activation, then keeps them visible", async () => {
@@ -347,7 +350,7 @@ test("after-first-goal hides tools until activation, then keeps them visible", a
 
 test("switching from locked lazy visibility to always restores tools hidden by pi-goal", () => {
 	const settingsPath = join(GOAL_SETTINGS_DIRECTORY, "visibility-reload.json");
-	writeFileSync(settingsPath, '{"toolVisibility":"after-first-goal"}\n');
+	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"after-first-goal"}}\n');
 	const mock = createMockPi({ activeTools: ["read", "bash", "goal_complete", "goal_blocked"] });
 	registerGoalWithSettingsPath(mock.pi, settingsPath);
 	const context = createMockContext();
@@ -355,7 +358,7 @@ test("switching from locked lazy visibility to always restores tools hidden by p
 	mock.events.get("session_start")?.[0]?.({}, context.ctx);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
 
-	writeFileSync(settingsPath, '{"toolVisibility":"always"}\n');
+	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"always"}}\n');
 	mock.events.get("session_start")?.[0]?.({}, context.ctx);
 
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
@@ -363,7 +366,7 @@ test("switching from locked lazy visibility to always restores tools hidden by p
 
 test("always mode restores only the exact goal tools hidden by lazy mode", () => {
 	const settingsPath = join(GOAL_SETTINGS_DIRECTORY, "visibility-partial-reload.json");
-	writeFileSync(settingsPath, '{"toolVisibility":"after-first-goal"}\n');
+	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"after-first-goal"}}\n');
 	const mock = createMockPi({ activeTools: ["read", "goal_complete", "goal_blocked"] });
 	registerGoalWithSettingsPath(mock.pi, settingsPath);
 	mock.rawPi.setActiveTools(["read", "goal_complete"]);
@@ -371,7 +374,7 @@ test("always mode restores only the exact goal tools hidden by lazy mode", () =>
 
 	mock.events.get("session_start")?.[0]?.({}, context.ctx);
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read"]);
-	writeFileSync(settingsPath, '{"toolVisibility":"always"}\n');
+	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"always"}}\n');
 	mock.events.get("session_start")?.[0]?.({}, context.ctx);
 
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "goal_complete"]);
@@ -379,13 +382,13 @@ test("always mode restores only the exact goal tools hidden by lazy mode", () =>
 
 test("switching from always to lazy visibility locks a runtime without an unfinished goal", () => {
 	const settingsPath = join(GOAL_SETTINGS_DIRECTORY, "visibility-lock-reload.json");
-	writeFileSync(settingsPath, '{"toolVisibility":"always"}\n');
+	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"always"}}\n');
 	const mock = createMockPi({ activeTools: ["read", "bash", "goal_complete", "goal_blocked"] });
 	registerGoalWithSettingsPath(mock.pi, settingsPath);
 	const context = createMockContext();
 	mock.events.get("session_start")?.[0]?.({}, context.ctx);
 
-	writeFileSync(settingsPath, '{"toolVisibility":"after-first-goal"}\n');
+	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"after-first-goal"}}\n');
 	mock.events.get("session_start")?.[0]?.({}, context.ctx);
 
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash"]);
@@ -393,12 +396,12 @@ test("switching from always to lazy visibility locks a runtime without an unfini
 
 test("failed always-mode restoration preserves the restrictive set and retries later", () => {
 	const settingsPath = join(GOAL_SETTINGS_DIRECTORY, "visibility-reload-retry.json");
-	writeFileSync(settingsPath, '{"toolVisibility":"after-first-goal"}\n');
+	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"after-first-goal"}}\n');
 	const mock = createMockPi({ activeTools: ["read", "bash", "goal_complete", "goal_blocked"] });
 	registerGoalWithSettingsPath(mock.pi, settingsPath);
 	const context = createMockContext();
 	mock.events.get("session_start")?.[0]?.({}, context.ctx);
-	writeFileSync(settingsPath, '{"toolVisibility":"always"}\n');
+	writeFileSync(settingsPath, '{"goal":{"toolVisibility":"always"}}\n');
 
 	const originalSetActiveTools = mock.rawPi.setActiveTools.bind(mock.rawPi);
 	mock.rawPi.setActiveTools = (names: string[]) => {

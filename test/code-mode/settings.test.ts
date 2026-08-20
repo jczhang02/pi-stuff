@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	codeModeProjectSettingsPath,
+	readCodeModeGlobalEnabled,
 	readCodeModeProjectEnabled,
+	writeCodeModeGlobalEnabled,
 	writeCodeModeProjectEnabled,
 } from "../../packages/pi-stuff/src/code-mode/settings.js";
 
@@ -43,4 +45,48 @@ test("Code Mode project updates preserve owned-file extensions and reject malfor
 	await writeFile(path, '{"enabled":"yes"}\n');
 	await expect(readCodeModeProjectEnabled(cwd)).rejects.toThrow('"enabled" must be a boolean');
 	await expect(writeCodeModeProjectEnabled(cwd, false)).rejects.toThrow('"enabled" must be a boolean');
+});
+
+test("Code Mode project inheritance removes only the owned override", async () => {
+	const cwd = await project();
+	const path = codeModeProjectSettingsPath(cwd);
+	await writeCodeModeProjectEnabled(cwd, true);
+	await writeCodeModeProjectEnabled(cwd, undefined);
+	expect(await Bun.file(path).exists()).toBe(false);
+
+	await mkdir(dirname(path), { recursive: true });
+	await writeFile(path, '{"enabled":true,"note":"keep"}\n');
+	await writeCodeModeProjectEnabled(cwd, undefined);
+	expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ note: "keep" });
+});
+
+test("Code Mode global settings are read-only until an explicit update", async () => {
+	const agentDir = await project();
+	const mergedPath = join(agentDir, "pi-stuff.json");
+	expect(await readCodeModeGlobalEnabled(agentDir)).toBeUndefined();
+	expect(await Bun.file(mergedPath).exists()).toBe(false);
+
+	await writeCodeModeGlobalEnabled(true, agentDir);
+	expect(await readCodeModeGlobalEnabled(agentDir)).toBe(true);
+	expect(JSON.parse(await readFile(mergedPath, "utf8"))).toEqual({ codeMode: { enabled: true } });
+});
+
+test("Code Mode global settings reject malformed values", async () => {
+	const agentDir = await project();
+	const mergedPath = join(agentDir, "pi-stuff.json");
+	await mkdir(dirname(mergedPath), { recursive: true });
+	await writeFile(mergedPath, JSON.stringify({ codeMode: { enabled: "yes" } }));
+	await expect(readCodeModeGlobalEnabled(agentDir)).rejects.toThrow('"enabled" must be a boolean');
+});
+
+test("Code Mode global settings preserve sibling namespaces", async () => {
+	const agentDir = await project();
+	const mergedPath = join(agentDir, "pi-stuff.json");
+	await mkdir(dirname(mergedPath), { recursive: true });
+	await writeFile(mergedPath, JSON.stringify({ ui: { statusline: true }, codeMode: { enabled: false } }));
+	await writeCodeModeGlobalEnabled(true, agentDir);
+	expect(JSON.parse(await readFile(mergedPath, "utf8"))).toEqual({
+		ui: { statusline: true },
+		codeMode: { enabled: true },
+	});
 });
