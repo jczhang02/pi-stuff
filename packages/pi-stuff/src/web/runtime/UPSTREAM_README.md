@@ -57,7 +57,7 @@ it.
 pi install npm:pi-web-access
 ```
 
-Works immediately with no API keys — Exa MCP provides zero-config search. If Pi has Codex auth from `/login`, OpenAI search can also work without a separate key. For more providers or direct API access, add keys to `<Pi agent dir>/web-search.json`:
+Works immediately with no API keys — Exa MCP provides zero-config search. If Pi has Codex auth from `/login`, OpenAI search can also work without a separate key. For more providers or direct API access, add keys to `<Pi agent dir>/the `web` namespace in `pi-stuff.json``:
 
 ```json
 {
@@ -287,7 +287,7 @@ Toggle or configure the curator workflow at runtime.
 /curator summary-review     # explicit workflow
 ```
 
-Persists to `<Pi agent dir>/web-search.json` and takes effect on the next `web_search` call. When disabled, `web_search` returns raw results without opening the curator window.
+Persists to `<Pi agent dir>/the `web` namespace in `pi-stuff.json`` and takes effect on the next `web_search` call. When disabled, `web_search` returns raw results without opening the curator window.
 
 ### /search
 
@@ -311,7 +311,7 @@ Toggle with **Ctrl+Shift+W** to see live request/response activity:
 
 ## Configuration
 
-Config is `web-search.json` in Pi's Agent directory (`getAgentDir()` / `PI_CODING_AGENT_DIR`). Every field is optional.
+Config is `the `web` namespace in `pi-stuff.json`` in Pi's Agent directory (`getAgentDir()` / `PI_CODING_AGENT_DIR`). Every field is optional.
 
 ```json
 {
@@ -647,7 +647,7 @@ reclassified as retryable and swallowed by `searchRouting.fallbackOn`.
 
 Your token is removed from every quoted response body, error message and activity log line before it
 is shown, and no prefix of it survives either: the parser's own message, which quotes the first
-characters of a body back inside itself, is dropped rather than filtered. `web-search.json` gets the
+characters of a body back inside itself, is dropped rather than filtered. `the `web` namespace in `pi-stuff.json`` gets the
 same treatment from the other direction: if the file is not valid JSON, the error names the file, and
 the parse position where the parser reports one, but repeats none of the file's own text, since that
 text is where your credentials live.
@@ -731,7 +731,7 @@ When `false`, the extension never tries to open a Glimpse window or a browser an
 
 ### Shortcuts
 
-Both shortcuts are configurable via `<Pi agent dir>/web-search.json`:
+Both shortcuts are configurable via `<Pi agent dir>/the `web` namespace in `pi-stuff.json``:
 
 ```json
 {

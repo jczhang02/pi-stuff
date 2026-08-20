@@ -1,11 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readWebConfigText, webConfigExists } from "../settings.ts";
+
 import { activityMonitor } from "./activity.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const BRIGHTDATA_API_URL = "https://api.brightdata.com/request";
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
 
 // Bright Data proxies a real Google SERP through a provisioned "zone" and bills
@@ -50,7 +51,7 @@ interface BrightDataSearchOptions extends SearchOptions {
 
 let cachedConfig: WebSearchConfig | null = null;
 
-// `web-search.json` is a credential store: its own text is the secret. V8 quotes a
+// The merged Web settings document may contain credentials. V8 quotes a
 // window of the source it choked on back inside the `JSON.parse` message — with a
 // short file, the whole file — so `{"brightdataApiKey": bd-real-token}` (quotes
 // forgotten around a pasted token) produces
@@ -70,13 +71,12 @@ function configParseDetail(err: unknown): string {
 }
 
 function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedConfig = {};
 		return cachedConfig;
 	}
 
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
+	const raw = readWebConfigText();
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(raw);
@@ -317,7 +317,7 @@ const QUOTA_SHAPED_PATTERN = /rate limit|quota|too many requests/gi;
 // | transport/abort error from `fetch`               | yes              | n/a — see (a) |
 // | rejected zone value                             | n/a — see (b)    | yes (60)      |
 // | `JSON.parse` message on a response body         | n/a — see (c)    | n/a — see (c) |
-// | `JSON.parse` failure on `web-search.json`       | n/a — see (c)    | n/a — see (c) |
+// | merged Web settings parse failure                  | n/a — see (c)    | n/a — see (c) |
 //
 // (a) That message is generated locally by undici or by `AbortSignal`, never by the
 //     proxied page, and the abort branch below matches on it; collapsing and

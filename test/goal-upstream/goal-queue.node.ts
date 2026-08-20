@@ -15,7 +15,7 @@ const settingsDirectory = mkdtempSync(join(tmpdir(), "pi-goal-queue-settings-"))
 const enabledSettingsPath = join(settingsDirectory, "enabled.json");
 const disabledSettingsPath = join(settingsDirectory, "disabled.json");
 const runtimeByPi = new WeakMap<object, ReturnType<typeof goal>>();
-writeFileSync(enabledSettingsPath, '{"experimental":{"goals":true}}\n');
+writeFileSync(enabledSettingsPath, '{"goal":{"experimental":{"goals":true}}}\n');
 writeFileSync(disabledSettingsPath, "{}\n");
 
 type GoalTool = {

@@ -1,3 +1,4 @@
+import { readWebConfigText, webConfigExists } from "../settings.ts";
 import { existsSync, readFileSync, rmSync, statSync, readdirSync, openSync, readSync, closeSync, realpathSync } from "node:fs";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { extname, join, resolve as resolvePath, sep as pathSep } from "node:path";
@@ -6,7 +7,7 @@ import type { ExtractedContent } from "./extract.ts";
 import { checkGhAvailable, checkRepoSize, fetchViaApi, showGhHint } from "./github-api.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 
 const BINARY_EXTENSIONS = new Set([
 	".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svg", ".tiff", ".tif",
@@ -84,7 +85,6 @@ function normalizeClonePath(value: unknown, fallback: string): string {
 }
 
 function loadGitHubConfig(): GitHubCloneConfig {
-	if (cachedConfig) return cachedConfig;
 
 	const defaults: GitHubCloneConfig = {
 		enabled: true,
@@ -93,12 +93,12 @@ function loadGitHubConfig(): GitHubCloneConfig {
 		clonePath: "/tmp/pi-github-repos",
 	};
 
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedConfig = defaults;
 		return cachedConfig;
 	}
 
-	const rawText = readFileSync(CONFIG_PATH, "utf-8");
+	const rawText = readWebConfigText();
 	let raw: { githubClone?: { enabled?: unknown; maxRepoSizeMB?: unknown; cloneTimeoutSeconds?: unknown; clonePath?: unknown } };
 	try {
 		raw = JSON.parse(rawText) as { githubClone?: { enabled?: unknown; maxRepoSizeMB?: unknown; cloneTimeoutSeconds?: unknown; clonePath?: unknown } };

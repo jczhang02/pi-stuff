@@ -11,7 +11,13 @@ import {
 	saveGoalSettings,
 } from "../../packages/pi-stuff/src/goal/src/settings.js";
 
-const DEFAULT_GOAL_SETTINGS_DOCUMENT = `${JSON.stringify(DEFAULT_GOAL_SETTINGS, null, 2)}\n`;
+function goalDocument(value: unknown): string {
+	return `${JSON.stringify({ goal: value })}\n`;
+}
+
+function readGoalNamespace(path: string): unknown {
+	return (JSON.parse(readFileSync(path, "utf8")) as { goal?: unknown }).goal;
+}
 
 test("normalizeGoalSettings applies defaults and accepts bounded continuation limits", () => {
 	assert.equal(DEFAULT_GOAL_SETTINGS.continuationLimits.automaticTurns, null);
@@ -85,29 +91,32 @@ test("saveGoalSettings creates a complete document only on explicit save", async
 	const directory = await mkdtemp(join(tmpdir(), "pi-goal-settings-create-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const parent = join(directory, "nested");
-	const settingsPath = join(parent, "pi-goal.json");
+	const settingsPath = join(parent, "pi-stuff.json");
 
 	assert.deepEqual(readGoalSettings(settingsPath), { kind: "missing" });
 	assert.equal(existsSync(parent), false);
 
 	saveGoalSettings(DEFAULT_GOAL_SETTINGS, settingsPath);
 
-	assert.equal(readFileSync(settingsPath, "utf8"), `${JSON.stringify(DEFAULT_GOAL_SETTINGS, null, 2)}\n`);
-	assert.deepEqual(readdirSync(parent), ["pi-goal.json"]);
+	assert.deepEqual(readGoalNamespace(settingsPath), DEFAULT_GOAL_SETTINGS);
+	assert.deepEqual(readdirSync(parent), ["pi-stuff.json"]);
 });
 
 test("saveGoalSettings atomically preserves unknown top-level and nested fields", async (t) => {
 	const directory = await mkdtemp(join(tmpdir(), "pi-goal-settings-save-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
-	const settingsPath = join(directory, "pi-goal.json");
+	const settingsPath = join(directory, "pi-stuff.json");
 	writeFileSync(
 		settingsPath,
 		JSON.stringify({
-			future: { enabled: true },
-			toolVisibility: "after-first-goal",
-			experimental: { goals: false, futureQueue: "keep" },
-			rpc: { enabled: true, futureRpc: "keep" },
-			continuationLimits: { automaticTurns: 25, noProgressTurns: 3, futureLimit: 9 },
+			ui: { statusline: true },
+			goal: {
+				future: { enabled: true },
+				toolVisibility: "after-first-goal",
+				experimental: { goals: false, futureQueue: "keep" },
+				rpc: { enabled: true, futureRpc: "keep" },
+				continuationLimits: { automaticTurns: 25, noProgressTurns: 3, futureLimit: 9 },
+			},
 		}),
 	);
 
@@ -121,25 +130,28 @@ test("saveGoalSettings atomically preserves unknown top-level and nested fields"
 		settingsPath,
 	);
 
-	assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), {
+	assert.deepEqual(readGoalNamespace(settingsPath), {
 		future: { enabled: true },
 		toolVisibility: "always",
 		experimental: { goals: true, futureQueue: "keep" },
 		rpc: { enabled: false, futureRpc: "keep" },
 		continuationLimits: { automaticTurns: 40, noProgressTurns: null, futureLimit: 9 },
 	});
-	assert.deepEqual(readdirSync(directory), ["pi-goal.json"]);
+	assert.deepEqual((JSON.parse(readFileSync(settingsPath, "utf8")) as { ui?: unknown }).ui, {
+		statusline: true,
+	});
+	assert.deepEqual(readdirSync(directory), ["pi-stuff.json"]);
 });
 
 test("saveGoalSettings refuses malformed files and cleans a failed atomic write", async (t) => {
 	const directory = await mkdtemp(join(tmpdir(), "pi-goal-settings-save-failure-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
-	const settingsPath = join(directory, "pi-goal.json");
+	const settingsPath = join(directory, "pi-stuff.json");
 	writeFileSync(settingsPath, "{invalid");
 	assert.throws(() => saveGoalSettings(DEFAULT_GOAL_SETTINGS, settingsPath), /invalid settings/i);
 	assert.equal(readFileSync(settingsPath, "utf8"), "{invalid");
 
-	writeFileSync(settingsPath, DEFAULT_GOAL_SETTINGS_DOCUMENT);
+	writeFileSync(settingsPath, goalDocument(DEFAULT_GOAL_SETTINGS));
 	assert.throws(
 		() =>
 			saveGoalSettings(DEFAULT_GOAL_SETTINGS, settingsPath, {
@@ -149,18 +161,22 @@ test("saveGoalSettings refuses malformed files and cleans a failed atomic write"
 			}),
 		/rename failed/,
 	);
-	assert.equal(readFileSync(settingsPath, "utf8"), DEFAULT_GOAL_SETTINGS_DOCUMENT);
-	assert.deepEqual(readdirSync(directory), ["pi-goal.json"]);
+	assert.equal(readFileSync(settingsPath, "utf8"), goalDocument(DEFAULT_GOAL_SETTINGS));
+	assert.deepEqual(readdirSync(directory), ["pi-stuff.json"]);
 });
 
 test("readGoalSettings distinguishes missing, loaded, malformed, and unreadable files", async (t) => {
 	const directory = await mkdtemp(join(tmpdir(), "pi-goal-settings-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
-	const settingsPath = join(directory, "pi-goal.json");
+	const settingsPath = join(directory, "pi-stuff.json");
 
 	assert.deepEqual(readGoalSettings(settingsPath), { kind: "missing" });
 
-	await writeFile(settingsPath, '{"toolVisibility":"after-first-goal","experimental":{"goals":true}}\n', "utf8");
+	await writeFile(
+		settingsPath,
+		goalDocument({ toolVisibility: "after-first-goal", experimental: { goals: true } }),
+		"utf8",
+	);
 	assert.deepEqual(readGoalSettings(settingsPath), {
 		kind: "loaded",
 		settings: {
@@ -174,7 +190,7 @@ test("readGoalSettings distinguishes missing, loaded, malformed, and unreadable 
 	await writeFile(settingsPath, "{invalid", "utf8");
 	const malformed = readGoalSettings(settingsPath);
 	assert.equal(malformed.kind, "invalid");
-	assert.match(malformed.kind === "invalid" ? malformed.reason : "", /pi-goal\.json/);
+	assert.match(malformed.kind === "invalid" ? malformed.reason : "", /pi-stuff\.json/);
 
 	await mkdir(join(directory, "not-a-file"));
 	const unreadable = readGoalSettings(join(directory, "not-a-file"));

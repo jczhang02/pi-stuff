@@ -9,6 +9,7 @@ interface GoalSettingsUiOptions {
 	settingsPath?: string;
 	save?: (settings: GoalSettings, settingsPath: string) => void;
 	onQueueUnfrozen?: (ctx: ExtensionCommandContext) => Promise<void>;
+	withLock?: <Value>(settingsPath: string, operation: () => Value | Promise<Value>) => Promise<Value>;
 }
 
 interface GoalSettingsApplyOptions {
@@ -141,9 +142,7 @@ export async function showGoalSettings(
 						...structuredClone(runtime.settings),
 						toolVisibility: nextVisibility,
 					} satisfies GoalSettings;
-					applyGoalSettings(runtime, next, ctx, {
-						save: (settings) => (options.save ?? saveGoalSettings)(settings, settingsPath),
-					});
+					await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
 					ctx.ui.notify(`Goal tools: ${value}.`, "info");
 					return { kind: "stay" };
 				} catch (error) {
@@ -158,9 +157,7 @@ export async function showGoalSettings(
 				if (!next) return { kind: "rejected" };
 				const wasFrozen = runtime.queueFrozen;
 				try {
-					applyGoalSettings(runtime, next, ctx, {
-						save: (settings) => (options.save ?? saveGoalSettings)(settings, settingsPath),
-					});
+					await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
 					if (wasFrozen && !runtime.queueFrozen) {
 						try {
 							await options.onQueueUnfrozen?.(ctx);
@@ -186,9 +183,7 @@ export async function showGoalSettings(
 						...structuredClone(runtime.settings),
 						rpc: { enabled },
 					} satisfies GoalSettings;
-					applyGoalSettings(runtime, next, ctx, {
-						save: (settings) => (options.save ?? saveGoalSettings)(settings, settingsPath),
-					});
+					await applySavedGoalSettings(runtime, next, ctx, options, settingsPath);
 					ctx.ui.notify(`Managed run RPC: ${enabled ? "On" : "Off"}.`, "info");
 					return { kind: "stay" };
 				} catch (error) {
@@ -297,15 +292,28 @@ async function applyLimitChoice(
 		return { kind: "rejected" as const };
 	}
 	try {
-		applyGoalSettings(runtime, withLimit(runtime.settings, field, limit), ctx, {
-			save: (settings) => (options.save ?? saveGoalSettings)(settings, settingsPath),
-		});
+		await applySavedGoalSettings(runtime, withLimit(runtime.settings, field, limit), ctx, options, settingsPath);
 		ctx.ui.notify(formatLimitSuccess(field, limit), "info");
 		return { kind: "back" as const };
 	} catch (error) {
 		notifySettingsFailure(ctx, settingsPath, error);
 		return { kind: "rejected" as const };
 	}
+}
+
+async function applySavedGoalSettings(
+	runtime: GoalRuntime,
+	next: GoalSettings,
+	ctx: ExtensionCommandContext,
+	options: GoalSettingsUiOptions,
+	settingsPath: string,
+): Promise<void> {
+	const apply = () =>
+		applyGoalSettings(runtime, next, ctx, {
+			save: (settings) => (options.save ?? saveGoalSettings)(settings, settingsPath),
+		});
+	if (options.withLock) await options.withLock(settingsPath, apply);
+	else apply();
 }
 
 export function applyGoalSettings(

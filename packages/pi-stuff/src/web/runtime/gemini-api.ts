@@ -1,11 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readWebConfigText, webConfigExists } from "../settings.ts";
+
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const DEFAULT_API_HOST = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
 export const API_BASE = `${DEFAULT_API_HOST}/${API_VERSION}`;
-const CONFIG_PATH = getWebSearchConfigPath();
+const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 export const DEFAULT_MODEL = "gemini-3.6-flash";
 
 interface GeminiApiConfig {
@@ -17,13 +18,12 @@ interface GeminiApiConfig {
 let cachedConfig: GeminiApiConfig | null = null;
 
 function loadConfig(): GeminiApiConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
+	if (!webConfigExists()) {
 		cachedConfig = {};
 		return cachedConfig;
 	}
 
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
+	const raw = readWebConfigText();
 	try {
 		cachedConfig = JSON.parse(raw) as GeminiApiConfig;
 		return cachedConfig;

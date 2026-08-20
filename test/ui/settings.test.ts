@@ -60,11 +60,11 @@ test("UI settings default on without writing during startup and persist explicit
 		]);
 		await store.whenIdle();
 
-		const persisted = JSON.parse(await readFile(path, "utf8")) as UiSettings;
-		expect(persisted).toEqual({ ...DEFAULTS, inputHighlighting: false });
+		const persisted = JSON.parse(await readFile(path, "utf8")) as { ui: UiSettings };
+		expect(persisted).toEqual({ ui: { ...DEFAULTS, inputHighlighting: false } });
 		expect((await stat(path)).mode & 0o777).toBe(0o600);
 		expect((await stat(`${path}.lock`)).mode & 0o777).toBe(0o600);
-		expect((await UiSettingsStore.load(path)).get()).toEqual(persisted);
+		expect((await UiSettingsStore.load(path)).get()).toEqual(persisted.ui);
 	});
 });
 
@@ -77,7 +77,7 @@ test("complete schema v1 settings migrate in memory and persist as v2 only after
 			statusline: false,
 			welcomeHeader: false,
 		} as const;
-		await writeFile(path, `${JSON.stringify(versionOne)}\n`);
+		await writeFile(path, `${JSON.stringify({ ui: versionOne })}\n`);
 
 		const store = await UiSettingsStore.load(path);
 		expect(store.get()).toEqual({
@@ -86,15 +86,17 @@ test("complete schema v1 settings migrate in memory and persist as v2 only after
 			statusline: false,
 			welcomeHeader: false,
 		});
-		expect(JSON.parse(await readFile(path, "utf8"))).toEqual(versionOne);
+		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ ui: versionOne });
 
 		await store.set("statuslineDensity", "compact");
 		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
-			...DEFAULTS,
-			inlineSlashAutocomplete: false,
-			statusline: false,
-			statuslineDensity: "compact",
-			welcomeHeader: false,
+			ui: {
+				...DEFAULTS,
+				inlineSlashAutocomplete: false,
+				statusline: false,
+				statuslineDensity: "compact",
+				welcomeHeader: false,
+			},
 		});
 	});
 });
@@ -163,7 +165,7 @@ test("concurrent stale-lock recovery admits only one settings writer", async () 
 
 test("invalid persisted UI settings fail quiet to the complete default", async () => {
 	await withTemporarySettings(async (path) => {
-		await writeFile(path, '{"schemaVersion":1,"statusline":false}\n');
+		await writeFile(path, `${JSON.stringify({ ui: { schemaVersion: 1, statusline: false } })}\n`);
 		const diagnostics = new DiagnosticChannel();
 		activateDiagnosticChannel(diagnostics);
 		expect((await UiSettingsStore.load(path)).get()).toEqual(DEFAULTS);

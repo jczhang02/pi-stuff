@@ -1,3 +1,4 @@
+import { readWebConfig, updateWebConfig } from "../settings.ts";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, type KeyId } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -37,7 +38,7 @@ import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { platform } from "node:os";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { isPerplexityAvailable } from "./perplexity.ts";
@@ -185,36 +186,14 @@ interface CuratorBootstrap {
 	timeoutSeconds: number;
 }
 
-function parseConfigRoot(raw: string): Record<string, unknown> {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${WEB_SEARCH_CONFIG_PATH}: ${message}`);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`Invalid config in ${WEB_SEARCH_CONFIG_PATH}: expected a JSON object`);
-	}
-	return parsed as Record<string, unknown>;
-}
+
 
 function loadConfig(): WebSearchConfig {
-	if (!existsSync(WEB_SEARCH_CONFIG_PATH)) return {};
-	return parseConfigRoot(readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8")) as WebSearchConfig;
+	return (readWebConfig() ?? {}) as WebSearchConfig;
 }
 
-function saveConfig(updates: Partial<WebSearchConfig>): void {
-	let config: Record<string, unknown> = {};
-	if (existsSync(WEB_SEARCH_CONFIG_PATH)) {
-		config = parseConfigRoot(readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8"));
-	}
-
-	Object.assign(config, updates);
-	const dir = getWebSearchConfigDir();
-	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-	writeFileSync(WEB_SEARCH_CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
-	chmodSync(WEB_SEARCH_CONFIG_PATH, 0o600);
+async function saveConfig(updates: Partial<WebSearchConfig>): Promise<void> {
+	await updateWebConfig(updates);
 }
 
 type ToolNames = {
@@ -1439,14 +1418,14 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 						}
 						closeCurator(callId);
 					},
-					onProviderChange(provider) {
+					async onProviderChange(provider) {
 						if (pendingCurates.get(callId) !== pc) return;
 						const normalized = normalizeProviderInput(provider);
 						if (!normalized || normalized === "auto" || Array.isArray(normalized)) return;
 						pc.defaultProvider = normalized;
 						pc.searchProvider = normalized;
 						try {
-							saveConfig({ provider: normalized });
+							await saveConfig({ provider: normalized });
 						} catch (err) {
 							reportWebDiagnostic("The default search provider could not be saved", err, {
 								action: "/websearch",
@@ -3018,14 +2997,14 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 							}
 							closeCurator(commandCallId);
 						},
-						onProviderChange(provider) {
+						async onProviderChange(provider) {
 							if (commandHandle && !isCommandActive()) return;
 							const normalized = normalizeProviderInput(provider);
 							if (!normalized || normalized === "auto" || Array.isArray(normalized)) return;
 							currentProvider = normalized;
 							currentSearchProvider = normalized;
 							try {
-								saveConfig({ provider: normalized });
+								await saveConfig({ provider: normalized });
 							} catch (err) {
 								reportWebDiagnostic("The default search provider could not be saved", err, {
 									action: "/websearch",
@@ -3179,7 +3158,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 			}
 
 			try {
-				saveConfig({ workflow: newWorkflow });
+				await saveConfig({ workflow: newWorkflow });
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				ctx.ui.notify(`Failed to save config: ${message}`, "error");

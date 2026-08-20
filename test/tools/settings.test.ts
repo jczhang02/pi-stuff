@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { mergeNamespaceRecord } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
 import { type ToolUiSettings, ToolUiSettingsStore } from "../../packages/pi-stuff/src/tool-display/settings.js";
 
 interface Deferred {
@@ -34,9 +35,9 @@ test("rapid toggles coalesce to the final in-memory and on-disk value", async ()
 		await Promise.all(writes);
 
 		expect(store.get()).toEqual({ liveElapsed: false, schemaVersion: 1 });
-		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ liveElapsed: false, schemaVersion: 1 });
+		expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ tools: { liveElapsed: false, schemaVersion: 1 } });
 		expect((await stat(path)).mode & 0o777).toBe(0o600);
-		expect(await readdir(directory)).toEqual(["settings.json"]);
+		expect((await readdir(directory)).sort()).toEqual(["settings.json", "settings.json.lock"]);
 	});
 });
 
@@ -70,7 +71,7 @@ test("whenIdle waits for active and subsequently queued writes before a reload",
 				latestStarted.resolve();
 				await releaseLatest.promise;
 			}
-			await writeFile(settingsPath, `${JSON.stringify(settings)}\n`, { mode: 0o600 });
+			await mergeNamespaceRecord(settingsPath, "tools", { liveElapsed: settings.liveElapsed, schemaVersion: 1 });
 		});
 		const first = store.setLiveElapsed(false);
 		await firstStarted.promise;

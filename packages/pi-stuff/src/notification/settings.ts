@@ -1,13 +1,18 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
-import { acquireSettingsLock } from "../conversation-ui/settings.js";
-import { xdgRuntimeHome } from "../xdg/index.js";
+import {
+	mergedSettingsPath,
+	mergeNamespaceRecord,
+	readNamespace,
+	resolveSettingsLockPath,
+} from "../shared/settings-io/index.js";
+import { acquireSettingsLock, migrateLegacyNamespace } from "../shared/settings-io/lock.js";
 import type { TerminalDeliveryMode } from "./transport.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-notification.json";
+const NOTIFICATION_NAMESPACE = "notification";
 const DELIVERY_MODES = new Set<TerminalDeliveryMode>(["auto", "bell", "kitty", "osc9", "osc777"]);
 
 export interface NotificationSettings {
@@ -82,7 +87,8 @@ function parseSettings(value: unknown): NotificationSettings {
 
 async function readSettings(path: string): Promise<NotificationSettings> {
 	try {
-		return parseSettings(JSON.parse(await readFile(path, "utf8")) as unknown);
+		const namespace = await readNamespace(path, NOTIFICATION_NAMESPACE);
+		return namespace === undefined ? DEFAULT_NOTIFICATION_SETTINGS : parseSettings(namespace);
 	} catch (error) {
 		if (isRecord(error) && error["code"] === "ENOENT") return DEFAULT_NOTIFICATION_SETTINGS;
 		reportDiagnostic({
@@ -100,27 +106,19 @@ async function readSettings(path: string): Promise<NotificationSettings> {
 }
 
 async function writeSettings(path: string, settings: NotificationSettings): Promise<void> {
-	await mkdir(dirname(path), { recursive: true });
-	const temporaryPath = `${path}.tmp-${String(process.pid)}-${randomUUID()}`;
+	await mergeNamespaceRecord(path, NOTIFICATION_NAMESPACE, { ...settings });
+}
+
+/** One-time lift of the legacy `pi-stuff-notification.json` into the merged `notification` namespace. */
+async function readLegacySettings(path: string): Promise<NotificationSettings | undefined> {
 	try {
-		await writeFile(temporaryPath, `${JSON.stringify(settings, null, "\t")}\n`, { mode: 0o600 });
-		await rename(temporaryPath, path);
-	} catch (error) {
-		await unlink(temporaryPath).catch(() => undefined);
-		throw error;
+		return parseSettings(JSON.parse(await readFile(join(dirname(path), SETTINGS_FILE_NAME), "utf8")));
+	} catch {
+		return undefined;
 	}
 }
 
-function resolveSettingsLockPath(
-	settingsPath: string,
-	environment: NodeJS.ProcessEnv = process.env,
-	agentDir = getAgentDir(),
-): string {
-	const runtimeHome = xdgRuntimeHome(environment);
-	return settingsPath === join(agentDir, SETTINGS_FILE_NAME) && runtimeHome
-		? join(runtimeHome, "pi-stuff", `${SETTINGS_FILE_NAME}.lock`)
-		: `${settingsPath}.lock`;
-}
+// resolveSettingsLockPath is imported from shared/settings-io for the merged file.
 
 function applySettingsChanges(
 	settings: NotificationSettings,
@@ -167,9 +165,26 @@ export class NotificationSettingsStore {
 	}
 
 	static async load(
-		path = join(getAgentDir(), SETTINGS_FILE_NAME),
+		path = mergedSettingsPath(getAgentDir()),
 		writer: SettingsWriter = writeSettings,
 	): Promise<NotificationSettingsStore> {
+		const value = await readSettings(path);
+		if (value === DEFAULT_NOTIFICATION_SETTINGS) {
+			const legacy = await readLegacySettings(path);
+			if (
+				legacy &&
+				(await migrateLegacyNamespace(
+					path,
+					NOTIFICATION_NAMESPACE,
+					join(dirname(path), SETTINGS_FILE_NAME),
+					{ ...legacy },
+					"Notification",
+					(value) => isValidSettings(value),
+				))
+			) {
+				return new NotificationSettingsStore(path, resolveSettingsLockPath(path), legacy, writer);
+			}
+		}
 		return new NotificationSettingsStore(path, resolveSettingsLockPath(path), await readSettings(path), writer);
 	}
 
@@ -210,5 +225,14 @@ export class NotificationSettingsStore {
 		if (sameSettings(this.value, next)) return;
 		this.value = next;
 		this.notify();
+	}
+}
+
+function isValidSettings(value: unknown): boolean {
+	try {
+		parseSettings(value);
+		return true;
+	} catch {
+		return false;
 	}
 }

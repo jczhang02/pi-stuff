@@ -1,17 +1,18 @@
-import { dlopen, FFIType } from "bun:ffi";
-import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { xdgRuntimeHome } from "../xdg/index.js";
+import {
+	mergedSettingsPath,
+	mergeNamespaceRecord,
+	readNamespace,
+	resolveSettingsLockPath,
+} from "../shared/settings-io/index.js";
 import { reportDiagnostic } from "./diagnostics.js";
 import { getHostSharedResource } from "./host-resource.js";
 import type { StatuslineDensity, StatuslineIconMode } from "./statusline.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-ui.json";
-const SETTINGS_LOCK_POLL_MS = 10;
-const SETTINGS_LOCK_TIMEOUT_MS = 10_000;
-const FLOCK_EXCLUSIVE_NONBLOCKING = 2 | 4;
+const UI_NAMESPACE = "ui";
 
 const UI_SETTING_IDS = [
 	"statusline",
@@ -87,10 +88,7 @@ export function resolveUiSettingsLockPath(
 	environment: NodeJS.ProcessEnv = process.env,
 	agentDir = getAgentDir(),
 ): string {
-	const runtimeHome = xdgRuntimeHome(environment);
-	return settingsPath === join(agentDir, SETTINGS_FILE_NAME) && runtimeHome
-		? join(runtimeHome, "pi-stuff", `${SETTINGS_FILE_NAME}.lock`)
-		: `${settingsPath}.lock`;
+	return resolveSettingsLockPath(settingsPath, environment, agentDir);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -152,7 +150,8 @@ function parseSettings(value: unknown): UiSettings {
 
 async function readSettings(path: string): Promise<UiSettings> {
 	try {
-		return parseSettings(JSON.parse(await readFile(path, "utf8")) as unknown);
+		const namespace = await readNamespace(path, UI_NAMESPACE);
+		return namespace === undefined ? DEFAULT_SETTINGS : parseSettings(namespace);
 	} catch (error) {
 		if (isRecord(error) && Reflect.get(error, "code") === "ENOENT") return DEFAULT_SETTINGS;
 		reportDiagnostic({
@@ -170,63 +169,26 @@ async function readSettings(path: string): Promise<UiSettings> {
 }
 
 async function writeSettings(path: string, settings: UiSettings): Promise<void> {
-	await mkdir(dirname(path), { recursive: true });
-	const temporaryPath = `${path}.tmp-${String(process.pid)}-${randomUUID()}`;
+	await mergeNamespaceRecord(path, UI_NAMESPACE, { ...settings });
+}
+
+/** One-time lift of the legacy `pi-stuff-ui.json` into the merged `ui` namespace. */
+async function readLegacySettings(path: string): Promise<UiSettings | undefined> {
 	try {
-		await writeFile(temporaryPath, `${JSON.stringify(settings, null, "\t")}\n`, { mode: 0o600 });
-		await rename(temporaryPath, path);
-	} catch (error) {
-		await unlink(temporaryPath).catch(() => undefined);
-		throw error;
+		return parseSettings(JSON.parse(await readFile(join(dirname(path), SETTINGS_FILE_NAME), "utf8")));
+	} catch {
+		return undefined;
 	}
 }
 
 /**
- * Keep one stable lock inode and let the kernel own its lease. Closing the file
- * descriptor, including on process exit, releases the lease without a stale
- * check-then-unlink race against a later owner.
+ * Re-export the shared whole-file settings lock so the Notification module (and
+ * any other Capability that imported it from here) keeps one lock owner for the
+ * merged settings file. The lock path and flock lease live in shared/settings-io.
  */
-function loadFlockLibrary() {
-	if (process.platform !== "linux") {
-		throw new Error(`Settings locking is not supported on ${process.platform}`);
-	}
-	return dlopen("libc.so.6", {
-		flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
-	});
-}
-
-let flockLibrary: ReturnType<typeof loadFlockLibrary> | undefined;
-
-function tryAcquireFileLock(fileDescriptor: number): boolean {
-	flockLibrary ??= loadFlockLibrary();
-	return flockLibrary.symbols.flock(fileDescriptor, FLOCK_EXCLUSIVE_NONBLOCKING) === 0;
-}
-
 export async function acquireSettingsLock(lockPath: string, owner = "UI"): Promise<() => Promise<void>> {
-	await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
-	const startedAt = Date.now();
-	const handle = await open(lockPath, "a+", 0o600);
-	try {
-		while (!tryAcquireFileLock(handle.fd)) {
-			if (Date.now() - startedAt >= SETTINGS_LOCK_TIMEOUT_MS) {
-				throw new Error(`timed out waiting for the ${owner} settings lock at ${lockPath}`);
-			}
-			await new Promise<void>((resolve) => setTimeout(resolve, SETTINGS_LOCK_POLL_MS));
-		}
-		await handle.chmod(0o600);
-		await handle.truncate(0);
-		// This record is diagnostic only; flock owns the mutual-exclusion contract.
-		await handle.writeFile(`${JSON.stringify({ pid: process.pid, token: randomUUID() })}\n`);
-		let released = false;
-		return async () => {
-			if (released) return;
-			released = true;
-			await handle.close();
-		};
-	} catch (error) {
-		await handle.close().catch(() => undefined);
-		throw error;
-	}
+	const { acquireSettingsLock: acquireSharedSettingsLock } = await import("../shared/settings-io/lock.js");
+	return acquireSharedSettingsLock(lockPath, owner);
 }
 
 function applySettingsChanges(settings: UiSettings, changes: SettingsChanges | undefined): UiSettings {
@@ -279,9 +241,26 @@ export class UiSettingsStore {
 	}
 
 	static async load(
-		path = join(getAgentDir(), SETTINGS_FILE_NAME),
+		path = mergedSettingsPath(getAgentDir()),
 		writer: SettingsWriter = writeSettings,
 	): Promise<UiSettingsStore> {
+		const value = await readSettings(path);
+		if (value === DEFAULT_SETTINGS) {
+			const legacy = await readLegacySettings(path);
+			if (
+				legacy &&
+				(await migrateLegacyUiSettings(
+					path,
+					UI_NAMESPACE,
+					join(dirname(path), SETTINGS_FILE_NAME),
+					{ ...legacy },
+					"UI",
+					(value) => isValidSettings(value),
+				))
+			) {
+				return new UiSettingsStore(path, resolveUiSettingsLockPath(path), legacy, writer);
+			}
+		}
 		return new UiSettingsStore(path, resolveUiSettingsLockPath(path), await readSettings(path), writer);
 	}
 
@@ -372,6 +351,27 @@ export class UiSettingsStore {
 
 	private reconcileValueWithPersisted(): void {
 		this.replaceValue(applySettingsChanges(this.persistedValue, this.pendingWrite?.changes));
+	}
+}
+
+async function migrateLegacyUiSettings(
+	path: string,
+	namespace: string,
+	legacyPath: string,
+	legacy: Record<string, unknown>,
+	owner: string,
+	isExistingValid: (record: Record<string, unknown>) => boolean,
+): Promise<boolean> {
+	const { migrateLegacyNamespace } = await import("../shared/settings-io/lock.js");
+	return migrateLegacyNamespace(path, namespace, legacyPath, legacy, owner, isExistingValid);
+}
+
+function isValidSettings(value: unknown): boolean {
+	try {
+		parseSettings(value);
+		return true;
+	} catch {
+		return false;
 	}
 }
 

@@ -1,14 +1,13 @@
-import { existsSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
-import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getWebConfigPath, readWebConfig } from "../settings.ts";
 
 export function getWebSearchConfigDir(): string {
 	return getAgentDir();
 }
 
 export function getWebSearchConfigPath(): string {
-	return join(getWebSearchConfigDir(), "web-search.json");
+	return getWebConfigPath();
 }
 
 export interface CuratorNetworkConfig {
@@ -28,18 +27,15 @@ function trimmedString(value: unknown): string | undefined {
 
 /** Resolves the curator server bind address and URL host from `curatorRemote`. */
 export function resolveCuratorNetworkConfig(): CuratorNetworkConfig {
-	const configPath = getWebSearchConfigPath();
-	if (!existsSync(configPath)) return LOCAL_CURATOR_NETWORK_DEFAULTS;
-
-	let raw: unknown;
+	let raw: Record<string, unknown> | undefined;
 	try {
-		raw = JSON.parse(readFileSync(configPath, "utf-8"));
+		raw = readWebConfig();
 	} catch {
 		return LOCAL_CURATOR_NETWORK_DEFAULTS;
 	}
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return LOCAL_CURATOR_NETWORK_DEFAULTS;
+	if (!raw) return LOCAL_CURATOR_NETWORK_DEFAULTS;
 
-	const curatorRemote = (raw as Record<string, unknown>).curatorRemote;
+	const curatorRemote = raw.curatorRemote;
 	if (curatorRemote === true) return { enabled: true, host: hostname(), bind: "0.0.0.0" };
 
 	if (curatorRemote && typeof curatorRemote === "object" && !Array.isArray(curatorRemote)) {

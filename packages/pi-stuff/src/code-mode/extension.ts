@@ -23,7 +23,12 @@ import {
 	separateCodeModeMediaForUi,
 } from "./presentation.js";
 import { CodeModeRuntime, type PiStuffCodeModeDetails } from "./runtime.js";
-import { readCodeModeProjectEnabled, writeCodeModeProjectEnabled } from "./settings.js";
+import {
+	readCodeModeGlobalEnabled,
+	readCodeModeProjectEnabled,
+	writeCodeModeGlobalEnabled,
+	writeCodeModeProjectEnabled,
+} from "./settings.js";
 import { V8CodeModeExecutor } from "./v8-executor.js";
 
 export const CODE_MODE_TOOL_NAME = "codemode";
@@ -229,11 +234,16 @@ export default function piStuffCodeMode(pi: ExtensionAPI, options: PiStuffCodeMo
 	const connector = new SuiteCodeModeConnector(options.registry);
 	const ledger = new CodeModeSessionLedger(pi);
 	const runtime = new CodeModeRuntime(connector, new V8CodeModeExecutor(), ledger);
-	const defaultEnabled = environmentMode("PI_STUFF_CODE_MODE_DEFAULT") ?? false;
+	const environmentDefault = environmentMode("PI_STUFF_CODE_MODE_DEFAULT");
+	const defaultEnabled = environmentDefault ?? false;
 	const frozenEnabled = environmentMode(CODE_MODE_FROZEN_ENV);
-	let enabled = defaultEnabled;
+	let enabled = frozenEnabled ?? defaultEnabled;
+	let effectiveSource: "frozen" | "project" | "global" | "environment" | "default" =
+		frozenEnabled !== undefined ? "frozen" : environmentDefault !== undefined ? "environment" : "default";
+	let projectEnabled: boolean | undefined;
+	let globalEnabled: boolean | undefined;
 	let projectBinding: string | undefined;
-	let projectBindingGeneration = 0;
+	let settingsOperation = Promise.resolve();
 	registerSuiteToolEnvelope(pi, createCodeModeDefinition(runtime), {
 		decode: decodeCodeModeOperations,
 		media: decodeCodeModeMediaSegments,
@@ -250,39 +260,76 @@ export default function piStuffCodeMode(pi: ExtensionAPI, options: PiStuffCodeMo
 		if (enabled) options.surface.enableEnvelope(CODE_MODE_TOOL_NAME);
 		else options.surface.disableEnvelope(CODE_MODE_TOOL_NAME);
 	};
+	const applySettings = (): void => {
+		enabled = frozenEnabled ?? projectEnabled ?? globalEnabled ?? defaultEnabled;
+		effectiveSource =
+			frozenEnabled !== undefined
+				? "frozen"
+				: projectEnabled !== undefined
+					? "project"
+					: globalEnabled !== undefined
+						? "global"
+						: environmentDefault !== undefined
+							? "environment"
+							: "default";
+		apply();
+	};
+	const serializeSettings = <Value>(operation: () => Promise<Value>): Promise<Value> => {
+		const result = settingsOperation.then(operation, operation);
+		settingsOperation = result.then(
+			() => undefined,
+			() => undefined,
+		);
+		return result;
+	};
 	const bindingKey = (context: ExtensionContext): string =>
 		`${context.isProjectTrusted() ? "trusted" : "untrusted"}\0${context.cwd}`;
-	const bindProject = async (context: ExtensionContext, force = false): Promise<void> => {
+	const loadProject = async (context: ExtensionContext, force = false): Promise<void> => {
 		const key = bindingKey(context);
 		if (!force && projectBinding === key) return;
-		const generation = ++projectBindingGeneration;
+		const previousBinding = projectBinding;
 		try {
-			const projectEnabled =
+			const nextProjectEnabled =
 				frozenEnabled === undefined && context.isProjectTrusted()
 					? await readCodeModeProjectEnabled(context.cwd)
 					: undefined;
-			if (generation !== projectBindingGeneration) return;
+			const nextGlobalEnabled = frozenEnabled === undefined ? await readCodeModeGlobalEnabled() : undefined;
 			projectBinding = key;
-			enabled = frozenEnabled ?? projectEnabled ?? defaultEnabled;
-			apply();
+			projectEnabled = nextProjectEnabled;
+			globalEnabled = nextGlobalEnabled;
+			applySettings();
 		} catch (error) {
-			if (generation === projectBindingGeneration) {
+			if (previousBinding !== key) {
 				projectBinding = undefined;
-				enabled = defaultEnabled;
+				enabled = frozenEnabled ?? defaultEnabled;
+				projectEnabled = undefined;
+				globalEnabled = undefined;
+				effectiveSource =
+					frozenEnabled !== undefined ? "frozen" : environmentDefault !== undefined ? "environment" : "default";
 				apply();
 			}
 			throw error;
 		}
 	};
-	const persistProjectEnabled = async (context: ExtensionContext, value: boolean): Promise<void> => {
-		if (!context.isProjectTrusted()) throw new Error("Code Mode cannot persist settings for an untrusted project.");
-		const generation = ++projectBindingGeneration;
-		await writeCodeModeProjectEnabled(context.cwd, value);
-		if (generation !== projectBindingGeneration) return;
-		projectBinding = bindingKey(context);
-		enabled = value;
-		apply();
-	};
+	const bindProject = (context: ExtensionContext, force = false): Promise<void> =>
+		serializeSettings(() => loadProject(context, force));
+	const persistProjectEnabled = (context: ExtensionContext, value: boolean | undefined): Promise<void> =>
+		serializeSettings(async () => {
+			if (!context.isProjectTrusted()) {
+				throw new Error("Code Mode cannot persist settings for an untrusted project.");
+			}
+			await loadProject(context);
+			await writeCodeModeProjectEnabled(context.cwd, value);
+			projectEnabled = value;
+			applySettings();
+		});
+	const persistGlobalEnabled = (context: ExtensionContext, value: boolean): Promise<void> =>
+		serializeSettings(async () => {
+			await loadProject(context);
+			await writeCodeModeGlobalEnabled(value);
+			globalEnabled = value;
+			applySettings();
+		});
 	pi.registerCommand("codemode", {
 		description: "Open Code Mode controls or manage its Session ledger",
 		getArgumentCompletions: (prefix) => {
@@ -290,6 +337,7 @@ export default function piStuffCodeMode(pi: ExtensionAPI, options: PiStuffCodeMo
 			return [
 				"on",
 				"off",
+				"global",
 				"history",
 				"pending",
 				"approve",
@@ -321,13 +369,20 @@ export default function piStuffCodeMode(pi: ExtensionAPI, options: PiStuffCodeMo
 						context,
 						createCodeModeDialogView({
 							getSnapshot: () => ({
+								effectiveSource,
 								enabled,
 								executionCount: ledger.history(context).length,
+								fallbackEnabled: defaultEnabled,
+								frozen: frozenEnabled !== undefined,
+								globalEnabled,
 								pendingCount: runtime.pending(context).length,
+								projectEnabled,
+								projectTrusted: context.isProjectTrusted(),
 								snippetCount: ledger.snippets(context).length,
 								toolCount: connector.catalog().length,
 							}),
-							setEnabled: (value) => persistProjectEnabled(context, value),
+							setGlobalEnabled: (value) => persistGlobalEnabled(context, value),
+							setProjectEnabled: (value) => persistProjectEnabled(context, value),
 						}),
 					);
 				} catch (error) {
@@ -341,6 +396,12 @@ export default function piStuffCodeMode(pi: ExtensionAPI, options: PiStuffCodeMo
 				if (action === "on" || action === "off") {
 					await persistProjectEnabled(context, action === "on");
 					context.ui.notify(`Code Mode ${enabled ? "on" : "off"}`, "info");
+					return;
+				}
+				if (action === "global" && (rest[0] === "on" || rest[0] === "off")) {
+					const value = rest[0] === "on";
+					await persistGlobalEnabled(context, value);
+					context.ui.notify(`Code Mode global default ${rest[0]}`, "info");
 					return;
 				}
 				if (action === "history") {
@@ -481,7 +542,7 @@ export default function piStuffCodeMode(pi: ExtensionAPI, options: PiStuffCodeMo
 					return;
 				}
 				context.ui.notify(
-					"Usage: /codemode [on|off|history|pending|approve <execution-id>|reject <execution-id> <seq>|snippets|save <execution-id> <name> [description]|delete <name>|abandon <execution-id>|rollback <execution-id>|expire]",
+					"Usage: /codemode [on|off|global on|global off|history|pending|approve <execution-id>|reject <execution-id> <seq>|snippets|save <execution-id> <name> [description]|delete <name>|abandon <execution-id>|rollback <execution-id>|expire]",
 					"warning",
 				);
 			} catch (error) {

@@ -20,6 +20,7 @@ test("physical Tool Display Module copies share one runtime through the stable g
 			join(copy, "..", "conversation-ui"),
 			"dir",
 		);
+		symlinkSync(join(process.cwd(), "packages/pi-stuff/src/shared"), join(copy, "..", "shared"), "dir");
 	}
 	try {
 		const first = (await import(pathToFileURL(join(firstPath, "contract.ts")).href)) as ContractModule;

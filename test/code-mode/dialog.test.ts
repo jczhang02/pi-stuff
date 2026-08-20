@@ -1,105 +1,113 @@
 import { expect, test } from "bun:test";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
-import { createCodeModeDialogView } from "../../packages/pi-stuff/src/code-mode/dialog.js";
+import { type CodeModeDialogSnapshot, createCodeModeDialogView } from "../../packages/pi-stuff/src/code-mode/dialog.js";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
-const theme = {
-	bold: (value: string) => value,
-	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
-
+const theme = { bold: (value: string) => value, fg: (_color: string, value: string) => value } as unknown as Theme;
 initTheme("dark", false);
 
-test("shows Code Mode state and persists toggles inside the shared Command Dialog", async () => {
-	let enabled = false;
-	let closed = false;
-	const component = createCodeModeDialogView({
-		getSnapshot: () => ({
-			enabled,
-			executionCount: 2,
-			pendingCount: 1,
-			snippetCount: 3,
-			toolCount: 22,
-		}),
-		setEnabled: (value) => {
-			enabled = value;
-		},
-	}).create({
-		close: () => {
-			closed = true;
-		},
+function snapshot(overrides: Partial<CodeModeDialogSnapshot> = {}): CodeModeDialogSnapshot {
+	return {
+		effectiveSource: "project",
+		enabled: false,
+		executionCount: 2,
+		fallbackEnabled: false,
+		frozen: false,
+		globalEnabled: undefined,
+		pendingCount: 1,
+		projectEnabled: false,
+		projectTrusted: true,
+		snippetCount: 3,
+		toolCount: 22,
+		...overrides,
+	};
+}
+
+function context(rows = 24): CommandDialogViewContext<void> {
+	return {
+		close: () => {},
 		keybindings: {},
 		requestRender: () => {},
 		signal: new AbortController().signal,
 		theme,
-		tui: { terminal: { rows: 24 } },
-	} as unknown as CommandDialogViewContext<void>);
+		tui: { terminal: { rows } },
+	} as unknown as CommandDialogViewContext<void>;
+}
+
+test("shows effective provenance and persists independent project and global settings", async () => {
+	let state = snapshot();
+	const projectWrites: Array<boolean | undefined> = [];
+	const globalWrites: boolean[] = [];
+	const component = createCodeModeDialogView({
+		getSnapshot: () => state,
+		setProjectEnabled: (value) => {
+			projectWrites.push(value);
+			state = snapshot({
+				enabled: value ?? false,
+				projectEnabled: value,
+				effectiveSource: value === undefined ? "default" : "project",
+			});
+		},
+		setGlobalEnabled: (value) => {
+			globalWrites.push(value);
+			state = { ...state, globalEnabled: value };
+		},
+	}).create(context());
 
 	const initial = component.render(64).join("\n");
-	expect(initial).toContain("Code Mode");
-	expect(initial).toContain("off");
-	expect(initial).toContain("codemode · tool_search");
-	expect(initial).toContain("22 Package Tools");
-	expect(initial).toContain("2 executions · 1 pending · 3 snippets");
-
+	expect(initial).toContain("Effective");
+	expect(initial).toContain("off · project");
+	expect(initial).toContain("This project");
 	component.handleInput?.("\r");
 	await Promise.resolve();
-	expect(enabled).toBe(true);
-	expect(component.render(64).join("\n")).toContain("on");
-	component.handleInput?.("\u001b");
-	expect(closed).toBe(true);
+	expect(projectWrites).toEqual([true]);
+	component.handleInput?.("\u001b[B");
+	expect(component.render(64).join("\n")).toContain("Global default");
+	component.handleInput?.("\r");
+	await Promise.resolve();
+	expect(globalWrites).toEqual([true]);
 });
 
-test("keeps the prior Code Mode state visible when project persistence fails", async () => {
+test("supports project inheritance and rolls failed writes back to the durable snapshot", async () => {
+	let state = snapshot({ enabled: true, projectEnabled: true });
+	const writes: Array<boolean | undefined> = [];
 	const component = createCodeModeDialogView({
-		getSnapshot: () => ({
-			enabled: false,
-			executionCount: 0,
-			pendingCount: 0,
-			snippetCount: 0,
-			toolCount: 22,
-		}),
-		setEnabled: async () => {
-			throw new Error("disk full");
+		getSnapshot: () => state,
+		setProjectEnabled: async (value) => {
+			writes.push(value);
+			if (value === undefined) {
+				state = snapshot({ effectiveSource: "default", projectEnabled: undefined });
+			} else {
+				throw new Error("disk full");
+			}
 		},
-	}).create({
-		close: () => {},
-		keybindings: {},
-		requestRender: () => {},
-		signal: new AbortController().signal,
-		theme,
-		tui: { terminal: { rows: 24 } },
-	} as unknown as CommandDialogViewContext<void>);
-
+		setGlobalEnabled: () => {},
+	}).create(context());
+	component.handleInput?.("\r");
+	await Promise.resolve();
+	expect(writes).toEqual([undefined]);
 	component.handleInput?.("\r");
 	await Promise.resolve();
 	await Promise.resolve();
-	const rendered = component.render(64).join("\n");
-	expect(rendered).toContain("off");
-	expect(rendered).toContain("Unable to save this project's Code Mode setting");
+	expect(component.render(64).join("\n")).toContain("Unable to save Code Mode setting");
+	expect(state.projectEnabled).toBeUndefined();
 });
 
-test("keeps the Code Mode selection and Escape reachable at low terminal height", () => {
+test("keeps frozen and untrusted settings non-editable and fits a short terminal", () => {
+	let writes = 0;
 	const component = createCodeModeDialogView({
-		getSnapshot: () => ({
-			enabled: true,
-			executionCount: 0,
-			pendingCount: 0,
-			snippetCount: 0,
-			toolCount: 22,
-		}),
-		setEnabled: () => {},
-	}).create({
-		close: () => {},
-		keybindings: {},
-		requestRender: () => {},
-		signal: new AbortController().signal,
-		theme,
-		tui: { terminal: { rows: 6 } },
-	} as unknown as CommandDialogViewContext<void>);
+		getSnapshot: () => snapshot({ effectiveSource: "frozen", enabled: true, frozen: true, projectTrusted: false }),
+		setProjectEnabled: () => {
+			writes += 1;
+		},
+		setGlobalEnabled: () => {
+			writes += 1;
+		},
+	}).create(context(6));
+	component.handleInput?.("\r");
+	expect(writes).toBe(0);
 	const lines = component.render(42);
 	expect(lines).toHaveLength(3);
-	expect(lines.join("\n")).toContain("Code Mode");
-	expect(lines.join("\n")).toContain("on");
+	expect(lines.join("\n")).toContain("locked");
 	expect(lines.at(-1)).toContain("Esc close");
 });
