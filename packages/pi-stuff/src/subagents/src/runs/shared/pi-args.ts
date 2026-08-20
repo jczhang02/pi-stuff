@@ -352,7 +352,7 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 
 function appendCodeModeToolGuidance(prompt: string | null | undefined, tools: readonly string[]): string {
 	const available = tools.length > 0 ? tools.join(", ") : "none";
-	const guidance = `Available tools for this Agent: ${available}.\nIn Code Mode, call only these through tools.*; use codemode.describe(\"tools.name\") for signatures.`;
+	const guidance = `Available tools for this Agent: ${available}.\nIn Code Mode, call only these through tools.*; use codemode.describe("tools.name") for signatures.`;
 	return prompt?.trim() ? `${prompt.trimEnd()}\n\n${guidance}` : guidance;
 }
 

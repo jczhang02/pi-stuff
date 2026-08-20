@@ -1659,8 +1659,7 @@ export class ToolUiRuntime {
 			...(member.result ? { result: member.result } : {}),
 		};
 		const transparent = this.groupDisposition(member.name, metadata.args) === "transparent";
-		const silentSuccess =
-			state === "success" && this.activityPolicies.get(member.name)?.silentSuccess === true;
+		const silentSuccess = state === "success" && this.activityPolicies.get(member.name)?.silentSuccess === true;
 		const classifiedItems = forcedTerminal || transparent || silentSuccess ? [] : this.classify(metadata, state);
 		const items = visibleActivityItems(classifiedItems, state);
 		const infrastructureIssue =

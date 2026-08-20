@@ -627,14 +627,12 @@ test("keeps Code Mode carrier Tools available under a strict Agent allowlist and
 		"codemode",
 		"tool_search",
 	]);
-	const promptFlag = built.args.findIndex((arg) => arg === "--append-system-prompt");
+	const promptFlag = built.args.indexOf("--append-system-prompt");
 	expect(promptFlag).toBeGreaterThanOrEqual(0);
 	const promptPath = built.args[promptFlag + 1];
 	expect(promptPath).toBeDefined();
 	const prompt = readFileSync(promptPath ?? "", "utf8");
-	expect(prompt).toContain(
-		"Available tools for this Agent: read, web_search, fetch_content, get_search_content.",
-	);
+	expect(prompt).toContain("Available tools for this Agent: read, web_search, fetch_content, get_search_content.");
 	expect(prompt).not.toContain("Available tools for this Agent: bash");
 });
 
