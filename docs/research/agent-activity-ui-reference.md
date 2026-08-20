@@ -241,14 +241,14 @@ the section bodies and Activity starts at the same Dialog content column.
 Agents / reviewer
 ✓ completed · 18s
 
-│ Task
+◆ Task
 Review the /agents dialog for readability at 64 and 32 columns.
 
-│ Result
+◆ Result
 The Agent name needs priority. Section labels should be stronger,
 and Activity should keep every event while shortening large Tool output.
 
-│ Activity
+◆ Activity
 reviewer
 I'll inspect the current list and detail layout.
 
@@ -309,10 +309,10 @@ The name currently receives at most 38% of the available width.
 
 - Keep the Suite's full-width top divider and Footer boundary. Do not add a horizontal rule, card, frame, or floating
   container around an individual section.
-- Section headings are `│ Task`, `│ Result`, `│ Error`, `│ Partial result`, and `│ Activity`. The short semantic-theme
-  vertical mark exists only on the heading row; it never grows into a rail.
+- Section headings are `◆ Task`, `◆ Result`, `◆ Error`, `◆ Partial result`, and `◆ Activity`. The semantic-theme
+  diamond exists only on the heading row and never represents lifecycle state, focus, or a Transcript event.
 - Beyond the Command Dialog's one outer content gutter, do not add hierarchy indentation. Section bodies, Agent names,
-  Agent messages, Tool rows, `⎿` result rows, and wrapped continuation lines share one left edge with the section mark.
+  Agent messages, Tool rows, `⎿` result rows, and wrapped continuation lines share one left edge with the section icon.
 - Blank lines, heading weight, and semantic text colors separate sections and events. The Agent name remains stronger
   than every section heading.
 
@@ -384,7 +384,7 @@ will reject.
 - The Footer advertises `Shift+↑/↓ page` when page scrolling is available. Hints wrap rather than displacing the Agent
   name, selected state, attached error, or Escape path.
 - At narrow widths, preserve the Agent name, section heading, state, and action before optional descriptions, targets,
-  previews, or metadata. Content wraps without adding indentation or extending the short section mark.
+  previews, or metadata. Content wraps without adding indentation or repeating the section icon on continuation lines.
 
 The current implementation still renders `Task`, `State`, and `Transcript`; sorts list rows by lifecycle state; limits
 the Agent name to 38 percent of available content width; often replaces the compact lifecycle indication with elapsed

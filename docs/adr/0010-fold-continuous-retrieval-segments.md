@@ -70,6 +70,10 @@ Keep the newest Activity first and retain each Activity's position while it chan
 PageUp/PageDown and Shift+Up/Down move one visible page. Use the existing `… N newer` and `… N older` window instead of
 a scrollbar or a second pagination mode. The Footer advertises page movement only when the list overflows.
 
+At wide widths, the Activity list and selected detail share one fixed 18-row Dialog with one continuous heavy top rule
+and one full-height heavy divider. Pane focus is shown by accenting the active pane heading. The prototype's short
+title-row `│` focus rail is removed rather than replaced: `◆` remains a section heading and `›` remains a selected row.
+
 The detail Header uses the selected Activity summary as its visual anchor and retains the full lifecycle word and call
 count. A grouped Activity has two sections:
 
@@ -77,18 +81,18 @@ count. A grouped Activity has two sections:
 Tools / Read 4 files and searched 2 patterns
 ✓ success · 6 calls
 
-│ Calls
+◆ Calls
 › ✓ Read · packages/pi-stuff/src/tool-display/tool-dialog.ts
   ✓ Search · toolStateGlyph
 
-│ Detail · formatted
+◆ Detail · formatted
 Read
 Target: packages/pi-stuff/src/tool-display/tool-dialog.ts
 Summary: 58 lines returned
 ```
 
 `Calls` uses Up and Down to select an invocation. A singleton Activity omits that section and opens its Detail
-directly. The short vertical mark exists only on a section heading; member rows keep the native `›` selection grammar,
+directly. The `◆` icon exists only on a section heading; member rows keep the native `›` selection grammar,
 and Tool-owned formatted content keeps its own meaningful hierarchy rather than being forced into a generic table.
 
 Formatted Detail uses the selected Tool's existing title, target, summary, and bounded Tool-owned detail lines. Bash,

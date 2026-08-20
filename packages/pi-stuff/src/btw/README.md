@@ -64,6 +64,10 @@ The history list keeps newest first, preserves focus while records update, and u
 overflows. Up and Down move one exchange; PageUp/PageDown and Shift+Up/Down move one visible page. History contains
 successful exchanges only, so a repeated success icon would add no information and is omitted.
 
+At wide widths, bare `/btw` may keep the successful-history list beside the selected settled answer in one stable split
+Dialog. `/btw <question>` still opens the answer directly in a single column, and a streaming answer never gives body
+width to unrelated history. Narrow widths retain the sequential history/detail flow.
+
 Exchange detail uses the selected question as its visual anchor:
 
 ```text
@@ -71,14 +75,14 @@ BTW · 3 of 4
 Why did the typecheck fail?
 ✓ answered
 
-│ Answer
+◆ Answer
 ...Markdown answer...
 
 ←/→ history · Shift+↑/↓ page · c copy · f new session · x clear earlier · Esc close
 ```
 
 Use `● answering`, `✓ answered`, and `× failed`; when a failed call retained text, add `partial answer` to the full
-state line. The short `│` mark appears only on `Answer`. Markdown retains its own meaningful list, quote, and code-block
+state line. The `◆` section icon appears only on `Answer`. Markdown retains its own meaningful list, quote, and code-block
 hierarchy. A blank successful answer says `(empty answer)`; bare `/btw` with no history is an empty state, not a failed
 exchange.
 

@@ -25,22 +25,22 @@ remain unchanged.
 
 The overview must answer three questions in order: how full the current model context is, what Context state needs
 attention, and which maintenance actions are useful now. Context usage remains the Header's primary value. The body
-uses short section marks instead of three unlabeled dense status lines:
+uses `◆` section icons instead of three unlabeled dense status lines:
 
 ```text
 Context
 72.4% · 145K / 200K tokens
 
-│ Overview
+◆ Overview
 8 compartments · compacted history ~54K tokens
 3 memories · 2 notes
 Historian idle · cache 12m remaining
 12 active tags · 4 dropped tags
 
-│ Attention
+◆ Attention
 ! 2 pending drops · removals waiting to apply
 
-│ Actions
+◆ Actions
 › Wrap up history
   Keep recent messages in full and compact older history
   Apply 2 pending drops

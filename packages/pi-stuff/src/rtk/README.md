@@ -42,15 +42,15 @@ enabled, and how much model-visible result text this session avoided:
 RTK
 ✓ ready · v0.42.4
 
-│ Runtime
+◆ Runtime
 Binary  ~/.local/bin/rtk
 SHA-256  1d8bf5f1861f5ce3…
 
-│ Behavior
+◆ Behavior
 ✓ Command rewriting on
 ✓ Model projection on
 
-│ Session savings
+◆ Session savings
 12,430 chars (38%) · 24 results
 Bash 12 · Grep 12
 

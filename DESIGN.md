@@ -13,7 +13,7 @@ omitted:
     reason: The current component token schema is CSS-shaped and cannot describe Pi TUI behavior faithfully.
 spacing:
   dialog-gutter-cells: 2
-  section-mark-cells: 1
+  section-icon-cells: 1
   internal-divider-cells: 1
 ---
 
@@ -73,26 +73,28 @@ or surrounding rows.
 
 At narrow widths, remove information in this order: decorative wording, counts and ages, optional descriptions,
 targets and previews, then secondary metadata. Preserve primary identity, useful summary, lifecycle state, selected
-action, and the way back. Wrapping must not introduce extra indentation or extend a section mark into a rail.
+action, and the way back. Wrapping must not introduce extra indentation or repeat a section icon on continuation
+lines.
 
 A wide split view remains one Dialog surface. Its top structural rule is continuous across the full width; one internal
 vertical divider separates navigation from detail. It must not look like two adjacent cards. Collapse to a single
-column before either side becomes unreadable.
+column before either side becomes unreadable. Show pane focus by applying the semantic accent to the active pane
+heading, not by adding a second one-row vertical rail beside it.
 
 ## Elevation & Depth
 
 Pi Stuff is flat. It has no shadows, blur, floating cards, or decorative layers. Depth comes from ownership and
 sequence: conversation, temporary focused surface, selected row, then detail.
 
-Use one structural divider, restrained spacing, semantic contrast, and short section marks to express that hierarchy.
+Use one structural divider, restrained spacing, semantic contrast, and section icons to express that hierarchy.
 Do not surround each section with another frame. The scrollable Welcome identity card is the sole confirmed bordered
 exception because it belongs to the conversation document rather than the temporary Dialog system.
 
 ## Shapes
 
 The shape language is terminal-native and rectilinear. Structural Dialog rules use heavy box-drawing characters; a
-wide split uses a heavy internal divider beneath one continuous top rule. Short, thin `│` marks identify section
-headings only. They never continue beside section content.
+wide split uses a heavy internal divider beneath one continuous top rule. A small `◆` identifies section headings. It
+appears only on the heading row and never represents lifecycle state, focus, or a Transcript event.
 
 `›` means the currently focused selectable row and nothing else. Lifecycle and severity use separate one-cell-safe
 icons. The Conversation Transcript's small `•` marker is already established and does not define Dialog iconography.
@@ -120,7 +122,7 @@ compact keyboards. Show page hints only when overflow exists.
 
 ### Detail sections
 
-Use a short `│` heading such as `│ Task`, `│ Activity`, `│ Output`, or `│ Details`. Section sets are specific to the
+Use a `◆` heading such as `◆ Task`, `◆ Activity`, `◆ Output`, or `◆ Details`. Section sets are specific to the
 job: `/agents` is organized around Agent identity, Task, optional outcome, and Activity; `/ctx` begins with Context
 usage; `/diagnostics` begins with the problem; `/tools` begins with a readable Tool Activity. Do not force every
 Dialog into the same field template.
@@ -128,11 +130,17 @@ Dialog into the same field template.
 Keep complete relevant event order but bound each expensive preview. Say how much was omitted. Raw identifiers,
 arguments, and protocol content belong behind an explicit raw/debug action rather than in the default reading path.
 
-### Wide Tool inspection
+### Wide list/detail inspection
 
-At wide terminal widths, `/tools` may show its Activity list and selected detail together. It is one 18-row Dialog,
-with one continuous heavy top rule and one heavy internal vertical divider. Switching Activity keeps this geometry
-fixed. The narrow version remains a single-column list/detail flow.
+At wide terminal widths, a Dialog may show its list and selected detail together when users repeatedly compare peer
+items. This applies to `/tools`, `/tasks`, `/diagnostics`, and bare `/btw` history. Each remains one Dialog with one
+continuous heavy top rule, one heavy internal divider, and stable outer geometry while selection changes. The active
+pane heading carries the focus accent; do not reuse `◆`, `›`, or a short `│` as a pane-focus marker.
+
+`/tools` keeps its accepted fixed 18-row geometry. `/tasks` embeds Shell and Monitor detail but sends an Agent row to
+the single-column `/agents` surface. Bare `/btw` may split history from a settled answer, while `/btw <question>` and a
+streaming answer remain single-column. `/agents`, `/ctx`, `/mcp`, and `/rtk` remain single-column at every width. Every
+split collapses to the existing sequential list/detail flow before either pane becomes unreadable.
 
 ### Persistent and transcript surfaces
 

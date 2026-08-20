@@ -22,6 +22,11 @@ and Monitor inspection and stop controls. Agent rows are read-only projections: 
 `/agents` detail directly instead of showing a second generic Agent detail in `/tasks`. `/tools` continues to own Tool
 invocation and protocol inspection.
 
+At wide widths, the task list and selected Shell or Monitor detail share one stable split Dialog so users can inspect
+several live activities without repeatedly leaving the list. The split uses the Suite's continuous top rule, single
+heavy divider, and focused-heading accent. Agent rows never populate the detail pane; Enter opens the single-column
+`/agents` surface. Narrow widths keep the existing sequential list/detail flow.
+
 The list keeps launch order and updates rows in place. It contains live work only; terminal Background Work continues
 through its existing bounded receipt and notification paths. A row is the `›` focus marker, work kind, primary identity,
 then a right-aligned lifecycle icon and elapsed time:
@@ -51,10 +56,10 @@ Tasks / Shell
 Build package
 ● running · 18s · task bg-ab12
 
-│ Command
+◆ Command
 bun run check:fast
 
-│ Output
+◆ Output
 ...latest bounded output...
 ```
 
@@ -65,14 +70,14 @@ Tasks / Monitor
 Wait for CI success
 ● watching · 2m · task mon-ab12
 
-│ Source
+◆ Source
 HTTP · https://example.test/build/42
 
-│ Condition
+◆ Condition
 success contains "completed"
 timeout in 8m
 
-│ Latest evidence
+◆ Latest evidence
 ...latest bounded response or log text...
 ```
 
@@ -81,7 +86,7 @@ real source and target; exposing them requires the live snapshot to carry the ex
 of flattening every Monitor into a generic command. A task ID remains low-priority detail metadata and never enters the
 list row.
 
-The short `│` mark appears only on section headings. Content keeps its natural Tool-owned command/output hierarchy and
+The `◆` icon appears only on section headings. Content keeps its natural Tool-owned command/output hierarchy and
 does not gain another indentation level. Output or evidence follows appended content only while the viewport is at the
 bottom; upward movement freezes reading, reports bounded newer content, and resumes following at the bottom.
 PageUp/PageDown and Shift+Up/Down scroll by a page. Footer scroll hints appear only on overflow; `x stop` appears only
