@@ -253,15 +253,13 @@ reviewer
 I'll inspect the current list and detail layout.
 
 ✓ Read agent-dialog.ts · completed
-⎿ 24 lines shown · … 186 lines omitted
 
 ✓ Search renderListRow · completed
-⎿ 3 matches
 
 reviewer
 The name currently receives at most 38% of the available width.
 
-↑/↓ scroll · Shift+↑/↓ page · r resume · Esc back
+↑/↓ scroll · PgUp/PgDn page · r resume · t tool details · ? keys · Esc back
 ```
 
 #### Agent list
@@ -276,8 +274,9 @@ The name currently receives at most 38% of the available width.
 - Keep rows in launch order for the life of the Dialog. State changes and newly discovered Activity update the row in
   place; they do not re-sort the list or move the focused Agent. New Agents append in launch order.
 - When the list exceeds its visible window, keep the focused row visible and use `… N earlier` and `… N later` rather
-  than a scrollbar or a second pagination mode. Up and Down move one Agent; PageUp/PageDown and Shift+Up/Down move one
-  visible page. Show the page hint only while the list overflows.
+  than a scrollbar or a second pagination mode. Pi's configured Up and Down actions move one Agent; Ctrl+P/Ctrl+N
+  are read-only aliases. PageUp/PageDown and `b`/Space move one visible page, while Home/End jump to the first or last
+  Agent. Put the complete map behind `?` instead of crowding the Footer.
 - The list owns navigation, inspect, and one direct control: `x stop` for queued, running, waiting, or resuming Agents.
   Do not show it for `stopping` or terminal states. Steer, reply, resume, and child-Agent navigation belong to detail.
 - `/agents` is the complete current-session list and does not provide `x dismiss`. Dismiss remains an independent
@@ -318,15 +317,17 @@ The name currently receives at most 38% of the available width.
 
 #### Activity content
 
-- Activity preserves the complete relevant event order: Agent messages, user-visible steer or resume messages, every
-  Tool call, its target, outcome, and a bounded result preview.
+- Activity preserves the complete relevant event order: Agent messages, user-visible steer or resume messages, and
+  every Tool call with its target, outcome, and retained result.
 - Agent messages render the configured Agent name on its own line followed by the message. User guidance renders `You`
-  in the same speaker position; it does not borrow the `›` selection marker.
-- A Tool event is one item: lifecycle icon, operation, and target on the first line, followed by a bounded `⎿` result
-  preview when useful. A running Tool updates that item in place from `●` to `✓` or `×`; completion does not append a
-  second copy of the call.
-- Large Tool output is shortened in place and reports the omitted line count explicitly. The Dialog never silently
-  drops earlier or later Activity.
+  in the same speaker position; it does not borrow the `›` selection marker. Agent messages and retained Result or
+  Partial result prose use Pi's native Markdown renderer and semantic theme tokens.
+- A Tool event is one item: lifecycle icon, operation, and target on the first line. Successful result bodies are
+  collapsed by default; `t` reveals or hides bounded `⎿` previews for every Tool without changing event order. Failed,
+  rejected, or cancelled results remain visible by default so the reason is not hidden. A running Tool updates that
+  item in place from `●` to `✓` or `×`; completion does not append a second copy of the call.
+- Tool output is always sanitized literal terminal text, never Markdown. Large output is shortened in place and
+  reports the omitted line count explicitly. The Dialog never silently drops earlier or later Activity.
 - Internal/system records, raw protocol JSON, the delegated Task, and a duplicate final Result do not appear in
   Activity.
 - Agent messages use the configured Agent name rather than a generic `Agent` label. Tool rows use their actual outcome
@@ -338,7 +339,7 @@ The name currently receives at most 38% of the available width.
 - While the viewport is at the newest event, append and follow new Activity automatically. The first upward line or
   page movement pauses following and preserves the exact reading position.
 - While following is paused, append without moving the viewport and show `↓ N new events`. Reaching the bottom with
-  Down, PageDown, or Shift+Down clears the notice and resumes following. No separate follow toggle is needed.
+  Down, Ctrl+N, PageDown, Space, or End clears the notice and resumes following. No separate follow toggle is needed.
 - A lifecycle change, including completion or failure, updates the Header without moving a user who is reading older
   Activity. Reopening a terminal Agent still begins at its outcome.
 
@@ -355,8 +356,8 @@ The name currently receives at most 38% of the available width.
 
 `Steer` means adding guidance to a live Agent. The waiting state reuses that input path but labels it `reply` because
 the user is answering an Agent. Add scroll and page hints only when content overflows, add `n child agents` only when
-children exist, and keep `Esc back` present and last in every detail state. Never advertise an action that validation
-will reject.
+children exist, add `t tool details` only when Activity contains a Tool, and keep `Esc back` present and last in every
+detail state. Never advertise an action that validation will reject.
 
 #### Empty and degraded states
 
@@ -379,17 +380,18 @@ will reject.
 
 #### Navigation and adaptation
 
-- Up and Down scroll by one line in scrollable detail. PageUp and PageDown remain available; Shift+Up and Shift+Down
-  are equivalent page-scroll aliases for compact keyboards.
-- The Footer advertises `Shift+↑/↓ page` when page scrolling is available. Hints wrap rather than displacing the Agent
-  name, selected state, attached error, or Escape path.
+- Pi's configured Up and Down actions scroll by one line in scrollable detail; Ctrl+P/Ctrl+N are read-only aliases.
+  PageUp/PageDown and `b`/Space scroll a page, while Home/End jump to the top or bottom.
+- The Footer advertises the configured page actions when scrolling is available and keeps `? keys` visible. Hints wrap
+  rather than displacing the Agent name, selected state, attached error, or Escape path.
 - At narrow widths, preserve the Agent name, section heading, state, and action before optional descriptions, targets,
   previews, or metadata. Content wraps without adding indentation.
 
 The implementation now follows this contract: Agent names lead stable launch-order rows; descendants use hierarchical
-navigation; Activity refreshes live; state-specific controls omit invalid actions; Tool rows use their actual outcome
-icons; and PageUp/PageDown plus Shift+Arrow aliases share the paging path. Focused tests and the real PTY verifier cover
-the wide, narrow, low-height, lifecycle, overflow, and restoration paths.
+navigation; Activity refreshes live; Agent prose uses the shared Pi Markdown component; state-specific controls omit
+invalid actions; Tool rows use their actual outcome icons and collapsed-success detail; and Pi's configured page
+actions plus `b`/Space share the paging path. Focused tests and the real PTY verifier cover the wide, narrow,
+low-height, lifecycle, overflow, and restoration paths.
 
 ## Decisions supported by this research
 

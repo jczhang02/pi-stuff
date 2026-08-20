@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type KeybindingsManager, type TUI, visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, type TUI, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import { createMcpStatusView } from "../../packages/pi-stuff/src/mcp/mcp-dialog.js";
 import { McpStatusStore } from "../../packages/pi-stuff/src/mcp/status-store.js";
 
@@ -29,7 +29,7 @@ describe("MCP Command Dialog", () => {
 			close: () => {
 				closed += 1;
 			},
-			keybindings: {} as KeybindingsManager,
+			keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
@@ -42,6 +42,13 @@ describe("MCP Command Dialog", () => {
 		expect(lines.join("\n")).toContain("local-filesystem");
 		expect(lines.join("\n")).not.toMatch(/[╭╮╰╯]/u);
 		expect(lines.every((line) => visibleWidth(line) <= 36)).toBe(true);
+		component.handleInput?.("\r");
+		component.handleInput?.(" ");
+		expect(closed).toBe(0);
+		component.handleInput?.("?");
+		expect(component.render(36).join("\n")).toContain("MCP / Keys");
+		component.handleInput?.("\u001b");
+		expect(closed).toBe(0);
 		terminal.rows = 6;
 		const low = component.render(36);
 		expect(low).toHaveLength(3);

@@ -39,7 +39,7 @@
   <text class="meta" x="686" y="606">Latest bounded output; older lines remain available by scrolling.</text>
 
   <text class="meta" x="48" y="944">↑/↓ select · Enter details</text>
-  <text class="meta" x="48" y="980">x stop · Esc return</text>
+  <text class="meta" x="48" y="980">Tab pane · x stop · ? keys · Esc close</text>
   <text class="meta" x="686" y="944">↑/↓ scroll · x stop · Esc back</text>
-  <text class="meta" x="686" y="980">Shift+↑/↓ page</text>
+  <text class="meta" x="686" y="980">PgUp/PgDn page · Tab pane · ? keys</text>
 </svg>

@@ -40,15 +40,29 @@ export {
 	reportDiagnostic,
 } from "./diagnostics.js";
 export {
+	type CommandDialogKeyHelpEntry,
+	type CommandDialogNavigation,
 	type CommandDialogRowSections,
+	commandDialogHintLines,
+	commandDialogKeys,
+	commandDialogListIndex,
+	commandDialogListKeyHelp,
+	commandDialogNavigation,
+	commandDialogPrimaryKey,
+	commandDialogReadKeyHelp,
 	commandDialogRows,
+	commandDialogScrollOffset,
 	fitCommandDialogRows,
 	fitFixedCommandDialogRows,
-	matchesCommandDialogPageDown,
-	matchesCommandDialogPageUp,
+	matchesCommandDialogCancel,
+	matchesCommandDialogConfirm,
+	matchesCommandDialogHelp,
+	matchesCommandDialogPaneSwitch,
+	renderCommandDialogKeyHelp,
 	renderCommandDialogSplit,
 	WIDE_COMMAND_DIALOG_MIN_WIDTH,
 } from "./dialog-layout.js";
+export { createMarkdownRenderer } from "./markdown.js";
 
 export {
 	beginUiSettingsGeneration,

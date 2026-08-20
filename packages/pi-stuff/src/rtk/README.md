@@ -73,7 +73,9 @@ they disappear after an actionable error but before core state and savings when 
 
 `/rtk clear-stats` reports `✓ Projection statistics cleared.` `/rtk help` shows the bounded command form, and an unknown
 action uses `! Unknown action` followed by that same form. Feedback never replaces the runtime state or Escape path.
-Enter and `q` may retain their current close behavior without Footer space; Escape remains the advertised close key.
+Pi's configured Up/Down actions and Ctrl+P/Ctrl+N scroll long status content; PageUp/PageDown and `b`/Space move a
+page, Home/End jump, and `?` opens contextual key help. Only the configured cancel action closes the status surface;
+Enter and `q` have no hidden close behavior.
 
 The implementation now pairs states and switches with fixed icons, uses `◆` sections, explains model-only projection,
 keeps feedback structured, and shortens the Footer. Focused tests cover runtime states, settings ownership, projection

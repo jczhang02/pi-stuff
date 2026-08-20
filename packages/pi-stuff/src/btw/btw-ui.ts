@@ -3,9 +3,9 @@ import {
 	type Component,
 	decodeKittyPrintable,
 	Key,
+	type KeybindingsManager,
 	Loader,
-	Markdown,
-	type MarkdownTheme,
+	type Markdown,
 	matchesKey,
 	type TUI,
 	truncateToWidth,
@@ -14,10 +14,16 @@ import {
 } from "@earendil-works/pi-tui";
 import {
 	type CommandDialogViewContext,
+	commandDialogNavigation,
+	commandDialogPrimaryKey,
+	commandDialogReadKeyHelp,
 	commandDialogRows,
+	commandDialogScrollOffset,
+	createMarkdownRenderer,
 	fitCommandDialogRows,
-	matchesCommandDialogPageDown,
-	matchesCommandDialogPageUp,
+	matchesCommandDialogCancel,
+	matchesCommandDialogHelp,
+	renderCommandDialogKeyHelp,
 } from "../conversation-ui/index.js";
 import { BTW_VISIBLE_HISTORY_LIMIT, type BtwExchange } from "./btw-history.js";
 
@@ -155,25 +161,6 @@ function divider(theme: Theme, width: number): string {
 	return theme.fg("border", "━".repeat(Math.max(1, width)));
 }
 
-function markdownTheme(theme: Theme): MarkdownTheme {
-	return {
-		heading: (text) => theme.fg("text", theme.bold(text)),
-		link: (text) => theme.fg("accent", text),
-		linkUrl: (text) => theme.fg("dim", text),
-		code: (text) => theme.fg("accent", text),
-		codeBlock: (text) => theme.fg("text", text),
-		codeBlockBorder: (text) => theme.fg("borderMuted", text),
-		quote: (text) => theme.fg("muted", text),
-		quoteBorder: (text) => theme.fg("borderMuted", text),
-		hr: (text) => theme.fg("border", text),
-		listBullet: (text) => theme.fg("accent", text),
-		bold: (text) => theme.bold(text),
-		italic: (text) => theme.italic(text),
-		strikethrough: (text) => theme.strikethrough(text),
-		underline: (text) => theme.underline(text),
-	};
-}
-
 function hintLines(theme: Theme, width: number, hints: readonly string[]): string[] {
 	const available = Math.max(1, width - GUTTER.length);
 	const lines: string[] = [];
@@ -203,6 +190,7 @@ export class BtwDialogController implements Component {
 	private readonly tui: TUI;
 	private readonly loader: Loader;
 	private readonly markdown: Markdown;
+	private readonly keybindings: KeybindingsManager;
 	private readonly promotionController = new AbortController();
 	private readonly closeDialog: () => void;
 	private readonly clearEarlier: (currentId: string | undefined) => void;
@@ -213,16 +201,19 @@ export class BtwDialogController implements Component {
 	private selectedIndex: number;
 	private scrollTop = 0;
 	private lastViewportHeight = 1;
+	private lastMaximumScroll = 0;
 	private followTail = true;
 	private feedback: { kind: "success" | "error" | "dim"; text: string } | undefined;
 	private copyTimer: ReturnType<typeof setTimeout> | undefined;
 	private promoting = false;
 	private clearConfirmation = false;
 	private disposed = false;
+	private showKeyHelp = false;
 
-	constructor(theme: Theme, tui: TUI, options: BtwDialogOptions) {
+	constructor(theme: Theme, tui: TUI, keybindings: KeybindingsManager, options: BtwDialogOptions) {
 		this.theme = theme;
 		this.tui = tui;
+		this.keybindings = keybindings;
 		this.closeDialog = options.onClose;
 		this.clearEarlier = options.onClearEarlier;
 		this.forkExchange = options.onFork;
@@ -254,7 +245,7 @@ export class BtwDialogController implements Component {
 		}
 		this.currentIndex = this.exchanges.length - 1;
 		this.selectedIndex = this.currentIndex;
-		this.markdown = new Markdown("", 0, 0, markdownTheme(theme));
+		this.markdown = createMarkdownRenderer(theme);
 		this.loader = new Loader(
 			tui,
 			(frame) => theme.fg("accent", frame),
@@ -324,7 +315,19 @@ export class BtwDialogController implements Component {
 			}
 			return;
 		}
-		if (matchesKey(data, Key.escape) || matchesKey(data, Key.space) || matchesKey(data, Key.enter)) {
+		if (this.showKeyHelp) {
+			if (matchesCommandDialogCancel(data, this.keybindings)) {
+				this.showKeyHelp = false;
+				this.requestRender();
+			}
+			return;
+		}
+		if (matchesCommandDialogHelp(data)) {
+			this.showKeyHelp = true;
+			this.requestRender();
+			return;
+		}
+		if (matchesCommandDialogCancel(data, this.keybindings)) {
 			this.closeDialog();
 			return;
 		}
@@ -336,17 +339,16 @@ export class BtwDialogController implements Component {
 			this.select(Math.min(this.exchanges.length - 1, this.selectedIndex + 1));
 			return;
 		}
-		if (matchesKey(data, Key.up) || matchesKey(data, Key.ctrl("p")) || matchesCommandDialogPageUp(data)) {
-			this.followTail = false;
-			this.scrollTop = Math.max(
-				0,
-				this.scrollTop - (matchesCommandDialogPageUp(data) ? this.lastViewportHeight : SCROLL_STEP),
+		const navigation = commandDialogNavigation(data, this.keybindings);
+		if (navigation) {
+			this.scrollTop = commandDialogScrollOffset(
+				this.scrollTop,
+				this.lastMaximumScroll,
+				this.lastViewportHeight,
+				navigation,
+				SCROLL_STEP,
 			);
-			this.requestRender();
-			return;
-		}
-		if (matchesKey(data, Key.down) || matchesKey(data, Key.ctrl("n")) || matchesCommandDialogPageDown(data)) {
-			this.scrollTop += matchesCommandDialogPageDown(data) ? this.lastViewportHeight : SCROLL_STEP;
+			this.followTail = navigation === "end" || this.scrollTop >= this.lastMaximumScroll;
 			this.requestRender();
 			return;
 		}
@@ -366,6 +368,19 @@ export class BtwDialogController implements Component {
 	}
 
 	render(width: number): string[] {
+		if (this.showKeyHelp) {
+			return renderCommandDialogKeyHelp(
+				{ keybindings: this.keybindings, theme: this.theme, tui: this.tui },
+				width,
+				"BTW",
+				commandDialogReadKeyHelp(this.keybindings, "scroll step", [
+					...(this.exchanges.length > 1 ? [{ keys: "←/→", description: "Switch retained answers" }] : []),
+					{ keys: "c", description: "Copy answer" },
+					{ keys: "f", description: "Fork answer into a session" },
+					...(this.hasEarlier() ? [{ keys: "x", description: "Clear earlier history" }] : []),
+				]),
+			);
+		}
 		const selected = this.exchangeAt(this.selectedIndex);
 		const historyLines = this.renderHistory(width);
 		const answerWidth = Math.max(1, width - GUTTER.length);
@@ -379,6 +394,7 @@ export class BtwDialogController implements Component {
 		let footer = this.renderFooter(selected, width, maxScroll);
 		viewportHeight = Math.max(0, maximumRows - historyLines.length - footer.length - 3);
 		maxScroll = Math.max(0, answerLines.length - viewportHeight);
+		this.lastMaximumScroll = maxScroll;
 		footer = this.renderFooter(selected, width, maxScroll);
 		this.lastViewportHeight = Math.max(1, viewportHeight);
 		if (this.followTail) this.scrollTop = maxScroll;
@@ -535,18 +551,21 @@ export class BtwDialogController implements Component {
 		if (this.clearConfirmation) {
 			return hintLines(this.theme, width, ["Clear BTW history?", "y to confirm", "Esc to cancel"]);
 		}
+		const cancel = commandDialogPrimaryKey(this.keybindings, "tui.select.cancel", "Esc");
 		if (this.feedback) {
 			return [
 				bounded(`${GUTTER}${this.theme.fg(this.feedback.kind, oneLine(this.feedback.text))}`, width),
-				...hintLines(this.theme, width, ["Esc to close"]),
+				...hintLines(this.theme, width, ["? keys", `${cancel} close`]),
 			];
 		}
 		const hints: string[] = [];
+		const up = commandDialogPrimaryKey(this.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.keybindings, "tui.select.down", "↓");
 		if (this.exchanges.length > 1) hints.push("←/→ to switch");
-		if (maxScroll > 0) hints.push("↑/↓ to scroll");
+		if (maxScroll > 0) hints.push(`${up}/${down} scroll`);
 		if (exchange.state === "success") hints.push("c to copy", "f to fork");
 		if (this.hasEarlier()) hints.push("x to clear history");
-		hints.push("Esc to close");
+		hints.push("? keys", `${cancel} close`);
 		return hintLines(this.theme, width, hints);
 	}
 }

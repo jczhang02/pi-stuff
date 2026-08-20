@@ -125,7 +125,7 @@ describe("compact Agent status", () => {
 		expect(resultText(exact)).toContain("parallel:0 · scout · running · 4s");
 	});
 
-	test("shows bounded path-safe child text with terminal failure before stale progress", () => {
+	test("shows bounded path-safe terminal failure without stale progress", () => {
 		const state = createState();
 		state.recentAgentJobs?.set(
 			"failed-review",
@@ -148,8 +148,7 @@ describe("compact Agent status", () => {
 
 		expect(text).toContain("Task: Review implementation.ts");
 		expect(text).toContain("Failure [protocol]: protocol_invalid_event: message_end message.role is invalid");
-		expect(text).toContain("Progress: Still reading earlier-file.ts.");
-		expect(text.indexOf("Failure [protocol]")).toBeLessThan(text.indexOf("Progress:"));
+		expect(text).not.toContain("Progress:");
 		expect(text).not.toContain("/workspace/private");
 		expect(text.length).toBeLessThan(1_100);
 	});

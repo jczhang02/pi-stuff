@@ -66,6 +66,7 @@ export function createInitialStatus(
 			cwd: task.cwd,
 			...(task.context ? { context: task.context } : {}),
 			...(task.description ? { label: task.description } : {}),
+			...(task.delegatedTask && task.delegatedTask !== task.task ? { delegatedTask: task.delegatedTask } : {}),
 			task: task.task,
 			status: "pending" as const,
 			...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),

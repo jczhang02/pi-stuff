@@ -58,17 +58,19 @@ invocation.
 **Status:** Implemented on 2026-08-18.
 
 This update applies only to the `/tools` Command Dialog. It does not change the compact Conversation Transcript, its
-small `•` marker, global `Ctrl+O` expansion, Tool-owned result renderers, model-visible results, or persisted protocol
-data.
+small `•` marker, global `Ctrl+O` expansion, Tool-owned result renderers, or model-visible result content. Background
+Work Bash results additionally retain their issued task ID beside the existing output path in structured result
+details so `/tools` does not recover display data by parsing prose.
 
 The list is an activity inspector, so the human-readable Activity summary is its primary label. A row is the `›`
 selection marker, summary, then a right-aligned lifecycle icon with an optional invocation count. Use `●` running, `✓`
 success, `×` error, `!` rejected, and `■` cancelled. `›` remains selection only. Say `N calls`, not `N tools`, because
 the number counts invocations. Drop the count before the summary or lifecycle icon at narrow widths.
 
-Keep the newest Activity first and retain each Activity's position while it changes state. Up and Down select one row;
-PageUp/PageDown and Shift+Up/Down move one visible page. Use the existing `… N newer` and `… N older` window instead of
-a scrollbar or a second pagination mode. The Footer advertises page movement only when the list overflows.
+Keep the newest Activity first and retain each Activity's position while it changes state. Pi's configured Up and
+Down actions select one row; Ctrl+P/Ctrl+N are read-only aliases. PageUp/PageDown plus `b`/Space move one visible page,
+and Home/End jump to the first or last Activity. Use the existing `… N newer` and `… N older` window instead of a
+scrollbar or a second pagination mode. `?` carries the complete contextual key map so the Footer can stay compact.
 
 At 96 columns and wider, a non-empty Activity list and selected detail share one fixed 18-row Dialog. One continuous
 heavy top rule spans the complete surface and one heavy `┃` divider separates the panes. Switching Activities keeps
@@ -85,34 +87,38 @@ Tools / Read 4 files and searched 2 patterns
 › ✓ Read · packages/pi-stuff/src/tool-display/tool-dialog.ts
   ✓ Search · toolStateGlyph
 
-◆ Detail · formatted
-Read
-Target: packages/pi-stuff/src/tool-display/tool-dialog.ts
-Summary: 58 lines returned
+◆ Result
+packages/pi-stuff/src/tool-display/tool-dialog.ts
+
+import type { Theme } from "@earendil-works/pi-coding-agent";
 ```
 
 `Calls` uses Up and Down to select an invocation. A singleton Activity omits that section and opens its Detail
 directly. The compact `◆` exists only on a section heading; member rows keep the native `›` selection grammar,
 and Tool-owned formatted content keeps its own meaningful hierarchy rather than being forced into a generic table.
 
-Formatted Detail uses the selected Tool's existing title, target, summary, and bounded Tool-owned detail lines. Bash,
-Read, Search, media, and other Tool families therefore remain visibly different where their content differs. Raw mode
-is explicitly titled `Raw protocol` and retains the accepted call ID, Tool name, arguments, result, and details. `r`
-toggles formatted and Raw; Escape from Raw returns to formatted before the next Escape returns to the list.
+The default `Result` section shows the selected Tool's target as an unlabeled identity followed by bounded Tool-owned
+detail lines. The Dialog does not inject a repeated Tool label or generic `Target:` and `Summary:` fields. Bash, Read,
+Search, media, and other Tool families therefore remain visibly different where their content differs. Raw mode is
+explicitly titled `Raw` and retains the accepted call ID, Tool name, arguments, result, and details. `r` toggles
+formatted and Raw; Escape from Raw returns to formatted before the next Escape returns to the list.
 
-PageUp/PageDown and Shift+Up/Down scroll selected-call content; Home and End remain supported without requiring Footer
-space. A running Detail follows appended content only while its viewport is at the bottom. Upward movement freezes the
+PageUp/PageDown and `b`/Space scroll selected-call content; Home and End remain supported without requiring Footer
+space. Tab/Shift+Tab switches the wide list/detail focus. A running Detail follows appended content only while its
+viewport is at the bottom. Upward movement freezes the
 reading position, displays a bounded newer-content notice, and resumes following when the viewport returns to the
 bottom.
 
-The implementation now uses the readable Activity summary as the Header, removes duplicate State/Summary fields,
-renders distinct lifecycle icons, says `calls`, omits the singleton Calls list, and routes PageUp/PageDown plus
-Shift+Arrow through one paging path. Focused tests cover fixed split geometry, the empty single-column state, lazy
-formatted/Raw detail, overflow, live follow behavior, and the Escape chain; the real PTY verifier covers Host rendering.
+The implementation now uses the readable Activity summary as the Header, removes duplicate state and generic
+Label/Target/Summary fields, renders distinct lifecycle icons, says `calls`, omits the singleton Calls list, and routes
+Pi's configured page actions plus `b`/Space through one paging path. Focused tests cover fixed split geometry, the empty
+single-column state, lazy formatted/Raw detail, overflow, live follow behavior, and the Escape chain; the real PTY
+verifier covers Host rendering and sends the compact-keyboard Space sequence through Pi.
 
 The runtime stores only the derived group plan and small presentation callbacks. It does not cache a global Raw
-transcript or duplicate large formatted and Raw bodies in `ToolActivityStore`. No Tool schema, dependency, setting,
-compatibility mode, or persistent datum is added.
+transcript or duplicate large formatted and Raw bodies in `ToolActivityStore`. Background Work Bash adds only its
+already-issued task ID to the existing result-detail object; no Tool input schema, dependency, setting, compatibility
+mode, or separate history entity is added.
 
 ## Consequences and verification
 

@@ -664,6 +664,8 @@ function applyTerminalResultToStep(step: RunnerStatusStep, result: BackgroundTas
 	step.toolBudgetBlocked = result.toolBudgetBlocked;
 	step.transcriptPath = result.transcriptPath;
 	step.transcriptError = result.transcriptError;
+	step.finalOutput = boundResultText(result.output, MAX_RESULT_ERROR_BYTES);
+	step.savedOutputPath = result.artifactPaths?.outputPath;
 	step.currentTool = undefined;
 	step.currentToolArgs = undefined;
 	step.currentToolStartedAt = undefined;

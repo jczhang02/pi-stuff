@@ -63,9 +63,10 @@ user definitions, and user definitions override Package definitions.
   bounded failure category and path-scrubbed terminal reason before any stale progress text.
 - Foreground work returns bounded direct-child reports through the active Tool call so the main Agent can synthesize
   them once in the current answer.
-- The Agent detail transcript associates each child Tool call with its persisted call identity and renders a compact
-  lifecycle icon, operation, target, and bounded result. Mixed or out-of-order results remain attributable;
-  identity-free legacy records are paired only when ownership is unambiguous.
+- The Agent detail transcript associates each child Tool call with its persisted call identity. It renders a compact
+  lifecycle icon, operation, and target, keeps successful results collapsed until `t` is pressed, and leaves failure
+  reasons visible. Mixed or out-of-order results remain attributable; identity-free legacy records are paired only
+  when ownership is unambiguous.
 - A user-attributed background Agent completion asks the UI Capability to refresh its bounded Git snapshot. Direct
   user steering permanently promotes an automatically launched Agent to user-attributed work, including after reload;
   otherwise automatic Extension work does not request a refresh. The Agents Capability does not render or own the
@@ -103,9 +104,11 @@ The accepted Agent Command Dialog redesign is recorded in the
 [Agent activity UI reference](../../../docs/research/agent-activity-ui-reference.md#f-accepted-agent-command-dialog-redesign).
 It was implemented on 2026-08-18. `/agents` remains single-column at every width and keeps the Agent name as its primary
 identity. Detail uses `◆ Task`, an optional outcome section, and `◆ Activity` without nested content indentation.
-Activity preserves relevant event order while bounding each Tool preview and reporting omitted lines. Lifecycle icons,
-PageUp/PageDown plus Shift+Up/Down, stable launch order, low-height priority, and the complete Escape/control paths are
-covered by focused tests and the real PTY verifier.
+Agent messages and retained outcomes reuse Pi's Markdown component; Tool output remains literal terminal text.
+Activity preserves relevant event order while bounding expanded Tool previews and reporting omitted lines. Lifecycle
+icons, Pi-configured selection actions, Ctrl+P/Ctrl+N and `b`/Space read-only aliases, Home/End, contextual `?` help,
+stable launch order, low-height priority, and the complete Escape/control paths are covered by focused tests and the
+real PTY verifier.
 
 ## Scope
 

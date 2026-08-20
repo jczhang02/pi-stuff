@@ -7,7 +7,8 @@ const PROVIDER = "pi-stuff-agents-pty";
 const MODEL = "fixture-model";
 const DESCRIPTION = "复核工具结果 🧪";
 const TASK =
-	"AGENT_PTY_TASK · 中文长任务：独立只读复核 /tmp/pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/sample.txt 并检查终端截断与状态保留";
+	"AGENT_PTY_TASK · 中文长任务：独立只读复核 /tmp/pi-max-tools-019fc372-d606-77ef-b3d5-59ba054c8d1a/sample.txt 并检查终端截断与状态保留；同时核对窄屏换行、长路径、Activity 滚动、最终结果去重与底部快捷键在完整详情中的可见性。";
+const CHILD_RESULT_DELAY_MS = 15_000;
 const SUBAGENT_CHILD_ENV = "PI_SUBAGENT_CHILD";
 const SUBAGENT_PI_BINARY_ENV = "PI_SUBAGENT_PI_BINARY";
 
@@ -127,9 +128,14 @@ function fixtureStream(context: Context, options?: SimpleStreamOptions) {
 
 	if (child) {
 		if (!childReadResult) return childReadStream();
-		const result = textStream("CHILD_RUNNING", "\nCHILD_FINAL_SUMMARY", 4_000, () => {
-			record({ kind: "child-finished", role: "child" });
-		});
+		const result = textStream(
+			"CHILD_RUNNING",
+			"\n## CHILD_FINAL_SUMMARY\n\n**CHILD_MARKDOWN_RENDERED**\n\nCHILD_NOTE_1\nCHILD_NOTE_2\nCHILD_NOTE_3\nCHILD_NOTE_4\nCHILD_NOTE_5\nCHILD_NOTE_6",
+			CHILD_RESULT_DELAY_MS,
+			() => {
+				record({ kind: "child-finished", role: "child" });
+			},
+		);
 		options?.signal?.addEventListener("abort", result.abort, { once: true });
 		return result.stream;
 	}

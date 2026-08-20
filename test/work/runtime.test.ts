@@ -546,7 +546,10 @@ describe("BackgroundWorkRuntime", () => {
 		const result = await execution;
 		const text = result.content.find((item) => item.type === "text");
 		expect(text?.type === "text" ? text.text : "").toContain("manually moved to background task");
-		expect(active.snapshot()).toHaveLength(1);
+		const activeTasks = active.snapshot();
+		expect(activeTasks).toHaveLength(1);
+		expect(result.details?.backgroundTaskId).toBe(activeTasks[0]?.id);
+		expect(result.details?.fullOutputPath).toBe(activeTasks[0]?.outputPath);
 		await active.shutdown();
 	});
 

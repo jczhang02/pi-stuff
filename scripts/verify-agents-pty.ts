@@ -58,28 +58,97 @@ proc must_expect {pattern} {
     }
 }
 
+proc discard_pending_output {} {
+    set discarded ""
+    expect -timeout 0 {
+        -re {.+} {
+            append discarded $expect_out(0,string)
+            exp_continue
+        }
+        timeout {}
+        eof {
+            puts stderr "Reached EOF while discarding pending output"
+            exit 3
+        }
+    }
+    return $discarded
+}
+
+proc wait_for_quiet {} {
+    set deadline [expr {[clock milliseconds] + 5000}]
+    set quiet_since [clock milliseconds]
+    set output ""
+    while {[clock milliseconds] < $deadline} {
+        set pending [discard_pending_output]
+        append output $pending
+        set now [clock milliseconds]
+        if {$pending ne ""} {
+            set quiet_since $now
+        } elseif {$now - $quiet_since >= 100} {
+            return $output
+        }
+        after 10
+    }
+    puts stderr "Timed out waiting for terminal output to settle"
+    exit 2
+}
+
+proc send_and_expect {keys pattern} {
+    discard_pending_output
+    send -- $keys
+    must_expect $pattern
+    wait_for_quiet
+}
+
+proc show_agent_tool_result {} {
+    discard_pending_output
+    send -- "t"
+    for {set index 0} {$index < 4} {incr index} {
+        expect {
+            -exact "AGENT_TOOL_RESULT" {
+                wait_for_quiet
+                return
+            }
+            -exact "later lines" {
+                set pending [wait_for_quiet]
+                if {[string first "AGENT_TOOL_RESULT" $pending] >= 0} {
+                    return
+                }
+            }
+            timeout {
+                puts stderr "Timed out waiting for expanded Agent Tool result"
+                exit 2
+            }
+            eof {
+                puts stderr "Reached EOF while waiting for expanded Agent Tool result"
+                exit 3
+            }
+        }
+        discard_pending_output
+        send -- " "
+    }
+    puts stderr "Expanded Agent Tool result remained outside the bounded viewport"
+    exit 2
+}
+
+set conversation_marker "launch one background general-purpose Agent"
 spawn -noecho script -qefc $env(PI_STUFF_AGENTS_PTY_RUNNER) /dev/null
 must_expect "MAIN_NOT_BLOCKED"
 send -- "\\033\\[B"
 must_expect $env(PI_STUFF_AGENTS_PTY_MAIN_HELP)
 send -- "\\033"
 must_expect "inspect with /agents"
-after 200
 send -- "/agents\\r"
-must_expect "↑/↓ navigate · Enter inspect"
+must_expect "↑/↓ select · Enter details"
 send -- "\\r"
 must_expect "Agents / general-purpose"
 must_expect "Activity"
-for {set index 0} {$index < 12} {incr index} {
-    send -- "\\033\\[B"
-    after 20
-}
-must_expect "AGENT_TOOL_RESULT"
-must_expect "CHILD_FINAL_SUMMARY"
-send -- "\\033"
-must_expect "↑/↓ navigate · Enter inspect"
-send -- "\\033"
-after 200
+must_expect "t tool details"
+wait_for_quiet
+send_and_expect " " "CHILD_MARKDOWN_RENDERED"
+show_agent_tool_result
+send_and_expect "\\033" "↑/↓ select · Enter details"
+send_and_expect "\\033" $conversation_marker
 send -- "\\004"
 expect {
     eof {}
@@ -93,20 +162,16 @@ set env(PI_STUFF_AGENTS_PTY_RESUME) 1
 spawn -noecho script -qefc $env(PI_STUFF_AGENTS_PTY_RUNNER) /dev/null
 must_expect "inspect with /agents"
 send -- "/agents\\r"
-must_expect "↑/↓ navigate · Enter inspect"
+must_expect "↑/↓ select · Enter details"
 send -- "\\r"
 must_expect "Agents / general-purpose"
 must_expect "Activity"
-for {set index 0} {$index < 12} {incr index} {
-    send -- "\\033\\[B"
-    after 20
-}
-must_expect "AGENT_TOOL_RESULT"
-must_expect "CHILD_FINAL_SUMMARY"
-send -- "\\033"
-must_expect "↑/↓ navigate · Enter inspect"
-send -- "\\033"
-after 200
+must_expect "t tool details"
+wait_for_quiet
+send_and_expect " " "CHILD_MARKDOWN_RENDERED"
+show_agent_tool_result
+send_and_expect "\\033" "↑/↓ select · Enter details"
+send_and_expect "\\033" $conversation_marker
 send -- "\\004"
 expect {
     eof {}
@@ -393,6 +458,41 @@ class TmuxAgentsSession {
 		this.tmux(["send-keys", "-t", this.target, key]);
 	}
 
+	async sendAndWaitForChange(value: string, literal = false): Promise<string> {
+		const before = await this.waitForStableScreen();
+		if (literal) this.sendLiteral(value);
+		else this.sendKey(value);
+		const deadline = Date.now() + 20_000;
+		let changed = false;
+		let screen = before;
+		let stableSince = Date.now();
+		while (Date.now() < deadline) {
+			const current = this.capture();
+			if (current !== screen) {
+				screen = current;
+				changed ||= current !== before;
+				stableSince = Date.now();
+			} else if (changed && Date.now() - stableSince >= 100) return screen;
+			await Bun.sleep(25);
+		}
+		fail(`timed out waiting for stable screen change after ${JSON.stringify(value)}\n${screen}`);
+	}
+
+	async waitForStableScreen(): Promise<string> {
+		const deadline = Date.now() + 20_000;
+		let screen = this.capture();
+		let stableSince = Date.now();
+		while (Date.now() < deadline) {
+			await Bun.sleep(25);
+			const current = this.capture();
+			if (current !== screen) {
+				screen = current;
+				stableSince = Date.now();
+			} else if (Date.now() - stableSince >= 100) return screen;
+		}
+		fail(`timed out waiting for a stable screen\n${screen}`);
+	}
+
 	sendLiteral(value: string): void {
 		this.tmux(["send-keys", "-t", this.target, "-l", value]);
 	}
@@ -603,17 +703,62 @@ async function verifyFleetviewFooterLayout(
 
 		session.sendLiteral("/agents");
 		session.sendKey("Enter");
-		await session.waitForText("↑/↓ navigate · Enter inspect");
+		await session.waitForText("↑/↓ select · Enter details");
 		session.sendKey("Enter");
 		await session.waitForText("Agents / general-purpose");
 		await session.waitForText("Activity");
 		session.sendKey("Escape");
-		await session.waitForText("↑/↓ navigate");
+		await session.waitForText("↑/↓ select");
 		session.sendKey("Escape");
 		await session.waitForAbsence("Agents ·");
 		screen = await session.waitForFleetviewFrame("idle");
 		verifyFleetviewFrame(screen, options.columns, "idle");
 		await session.waitForText("inspect with /agents");
+		session.sendLiteral("/agents");
+		session.sendKey("Enter");
+		await session.waitForText("↑/↓ select · Enter details");
+		session.sendKey("Enter");
+		await session.waitForText("Agents / general-purpose");
+		await session.waitForText("Activity");
+		await session.waitForText("CHILD_FINAL_SUMMARY");
+		const detailInitial = await session.waitForStableScreen();
+		if (detailInitial.includes("pi-stuff-context")) fail("Agent detail exposed Suite-owned execution context");
+		if (detailInitial.split("Agents / general-purpose").length !== 2) fail("Agent detail repeated its title");
+		if (!detailInitial.includes("◆ Result") || !detailInitial.includes("CHILD_RUNNING")) {
+			fail("completed Agent detail did not start with its retained Result");
+		}
+		if (!detailInitial.includes("CHILD_MARKDOWN_RENDERED")) fail("Agent Result did not render Markdown content");
+		if (detailInitial.includes("## CHILD_FINAL_SUMMARY") || detailInitial.includes("**CHILD_MARKDOWN_RENDERED**")) {
+			fail("Agent Result exposed unrendered Markdown markers");
+		}
+		const detailDown = await session.sendAndWaitForChange("Down");
+		if (detailDown === detailInitial) fail(`Down did not move the completed Agent detail\n${detailInitial}`);
+		const detailEnd = await session.sendAndWaitForChange(" ", true);
+		if (detailEnd.includes("AGENT_TOOL_RESULT")) fail(`successful Tool result was expanded by default\n${detailEnd}`);
+		await session.sendAndWaitForChange("t");
+		await session.sendAndWaitForChange(" ", true);
+		await session.waitForText("AGENT_TOOL_RESULT");
+		const detailTools = session.capture();
+		if (options.artifactDirectory) {
+			const prefix = `pi-${CERTIFIED_PI_VERSION}-agents-detail-${String(options.columns)}x${String(options.rows)}`;
+			for (const [state, value] of [
+				["initial", detailInitial],
+				["down", detailDown],
+				["end", detailEnd],
+				["tools", detailTools],
+			] as const) {
+				await writeFile(
+					join(options.artifactDirectory, `${prefix}-${state}.txt`),
+					sanitizeFleetviewEvidence(value),
+					"utf8",
+				);
+			}
+		}
+		session.sendKey("Escape");
+		await session.waitForText("↑/↓ select");
+		session.sendKey("Escape");
+		screen = await session.waitForFleetviewFrame("idle");
+		verifyFleetviewFrame(screen, options.columns, "idle");
 		session.sendKey("Down");
 		screen = await session.waitForFleetviewFrame("main");
 		verifyFleetviewFrame(screen, options.columns, "main");

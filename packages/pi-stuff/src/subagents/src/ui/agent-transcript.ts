@@ -2,12 +2,18 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isTaskOnlyAgentText } from "../shared/display-description.ts";
 import { readStatusAsync } from "../shared/utils.ts";
-import type { AgentTranscriptReader, AgentTranscriptRequest } from "./agent-dialog.ts";
+import type {
+	AgentToolOutcome,
+	AgentTranscriptDocument,
+	AgentTranscriptItem,
+	AgentTranscriptReader,
+	AgentTranscriptRequest,
+} from "./agent-dialog.ts";
 
 const READ_BYTE_MULTIPLIER = 4;
 const MIN_READ_BYTES = 16 * 1024;
 const MAX_READ_BYTES = 2 * 1024 * 1024;
-const TOOL_RESULT_PREVIEW_LINES = 8;
+const OMITTED_NOTICE = "… earlier transcript omitted";
 
 function cleanTerminalText(value: string): string {
 	let result = "";
@@ -100,10 +106,16 @@ function cleanTerminalText(value: string): string {
 	return result.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
 }
 
-function boundedTail(value: string, maxChars: number): string {
+function boundedTail(value: string, maxChars: number): { readonly text: string; readonly truncated: boolean } {
 	const clean = cleanTerminalText(value).trim();
-	if (clean.length <= maxChars) return clean;
-	return `… earlier transcript omitted\n\n${clean.slice(-maxChars).replace(/^\S*\n?/, "")}`.trim();
+	if (clean.length <= maxChars) return { text: clean, truncated: false };
+	return {
+		text: clean
+			.slice(-maxChars)
+			.replace(/^\S*\n?/, "")
+			.trim(),
+		truncated: true,
+	};
 }
 
 async function readTail(
@@ -178,7 +190,23 @@ function oneLine(value: string): string {
 	return cleanTerminalText(value).replace(/\s+/gu, " ").trim();
 }
 
-function messageBlock(entry: Record<string, unknown>, agentName: string): string | null {
+function sameOutcome(value: string, outcome: string | null): boolean {
+	if (!outcome) return false;
+	const actual = oneLine(value);
+	const expected = oneLine(outcome);
+	return actual === expected || (expected.endsWith("…") && actual.startsWith(expected.slice(0, -1).trimEnd()));
+}
+
+function isInternalAgentPrompt(value: string): boolean {
+	return /^(?:<pi-stuff-context\b|<file\b[^>]*>\s*Task:\s*<pi-stuff-context\b)/u.test(value.trimStart());
+}
+
+interface MessageProjection {
+	readonly speaker: string | null;
+	readonly text: string;
+}
+
+function messageBlock(entry: Record<string, unknown>, agentName: string): MessageProjection | null {
 	const message = record(entry.message);
 	const role =
 		typeof entry.role === "string" ? entry.role : typeof message?.role === "string" ? message.role : undefined;
@@ -188,13 +216,11 @@ function messageBlock(entry: Record<string, unknown>, agentName: string): string
 		(typeof message?.text === "string" ? message.text : "") ||
 		contentText(message?.content);
 	if (!text.trim()) return null;
-	if (role === "assistant") return `${agentName}\n${text.trim()}`;
-	if (role === "user") return `You\n${text.trim()}`;
+	if (role === "assistant") return { speaker: agentName, text: text.trim() };
+	if (role === "user") return { speaker: "You", text: text.trim() };
 	if (role === "toolResult" || role === "tool_result") return null;
-	return text.trim();
+	return { speaker: null, text: text.trim() };
 }
-
-type ToolOutcome = "cancelled" | "completed" | "failed" | "rejected" | "running";
 
 interface ToolProjection {
 	ended: boolean;
@@ -206,8 +232,8 @@ interface ToolProjection {
 	toolCallId: string | undefined;
 }
 
-type TranscriptItem =
-	| { readonly kind: "message"; readonly text: string }
+type ParsedTranscriptItem =
+	| { readonly kind: "message"; readonly speaker: string | null; readonly text: string }
 	| { readonly kind: "tool"; tool: ToolProjection };
 
 function toolResultText(entry: Record<string, unknown>): string {
@@ -220,13 +246,7 @@ function toolResultText(entry: Record<string, unknown>): string {
 	).trim();
 }
 
-function toolLabel(value: string): string {
-	const safe = oneLine(value);
-	if (!safe) return "Tool";
-	return `${safe.charAt(0).toUpperCase()}${safe.slice(1)}`;
-}
-
-function toolOutcome(tool: ToolProjection): ToolOutcome {
+function toolOutcome(tool: ToolProjection): AgentToolOutcome {
 	if (!tool.ended && !tool.resultSeen) return "running";
 	if (tool.isError !== true) return "completed";
 	const result = cleanTerminalText(tool.result).trim();
@@ -237,31 +257,8 @@ function toolOutcome(tool: ToolProjection): ToolOutcome {
 	return "failed";
 }
 
-function renderTool(tool: ToolProjection): string {
-	const target = oneLine(tool.target);
-	const outcome = toolOutcome(tool);
-	const glyph =
-		outcome === "running"
-			? "●"
-			: outcome === "completed"
-				? "✓"
-				: outcome === "rejected"
-					? "!"
-					: outcome === "cancelled"
-						? "■"
-						: "×";
-	const header = `${glyph} ${toolLabel(tool.name)}${target ? ` · ${target}` : ""} · ${outcome}`;
-	const result = cleanTerminalText(tool.result).trim();
-	if (!result) return header;
-	const lines = result.split("\n");
-	const visible = lines.slice(0, TOOL_RESULT_PREVIEW_LINES).map((line, index) => `${index === 0 ? "⎿ " : ""}${line}`);
-	const omitted = lines.length - visible.length;
-	if (omitted > 0) visible.push(`⎿ … ${String(omitted)} lines omitted`);
-	return `${header}\n${visible.join("\n")}`;
-}
-
 function createToolProjection(
-	items: TranscriptItem[],
+	items: ParsedTranscriptItem[],
 	byId: Map<string, ToolProjection>,
 	input: { readonly name?: string; readonly target?: string; readonly toolCallId?: string },
 ): ToolProjection {
@@ -279,15 +276,15 @@ function createToolProjection(
 	return tool;
 }
 
-function unresolvedTools(items: readonly TranscriptItem[], name: string | undefined): ToolProjection[] {
+function unresolvedTools(items: readonly ParsedTranscriptItem[], name: string | undefined): ToolProjection[] {
 	return items
-		.filter((item): item is Extract<TranscriptItem, { readonly kind: "tool" }> => item.kind === "tool")
+		.filter((item): item is Extract<ParsedTranscriptItem, { readonly kind: "tool" }> => item.kind === "tool")
 		.map((item) => item.tool)
 		.filter((tool) => !tool.resultSeen && (name === undefined || tool.name === name));
 }
 
 function resolveTool(
-	items: readonly TranscriptItem[],
+	items: readonly ParsedTranscriptItem[],
 	byId: ReadonlyMap<string, ToolProjection>,
 	toolCallId: string | undefined,
 	name: string | undefined,
@@ -297,10 +294,57 @@ function resolveTool(
 	return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-function jsonlTranscript(source: string, sourceTruncated: boolean, task: string, agentName: string): string {
+function boundedDocument(
+	items: readonly ParsedTranscriptItem[],
+	maxChars: number,
+	sourceTruncated: boolean,
+): AgentTranscriptDocument {
+	const limit = Math.max(1, Math.floor(maxChars));
+	const projected: AgentTranscriptItem[] = [];
+	let omitted = sourceTruncated;
+	for (const item of items) {
+		if (item.kind === "message") {
+			const bounded = boundedTail(item.text, limit);
+			omitted ||= bounded.truncated;
+			if (bounded.text) {
+				projected.push({
+					kind: "message",
+					speaker: item.speaker ? oneLine(item.speaker) : null,
+					text: bounded.text,
+				});
+			}
+			continue;
+		}
+		const bounded = boundedTail(item.tool.result, limit);
+		omitted ||= bounded.truncated;
+		projected.push({
+			kind: "tool",
+			name: oneLine(item.tool.name) || "Tool",
+			outcome: toolOutcome(item.tool),
+			result: bounded.text,
+			target: oneLine(item.tool.target),
+		});
+	}
+
+	return {
+		items: [
+			...(omitted ? [{ kind: "notice", text: OMITTED_NOTICE } satisfies AgentTranscriptItem] : []),
+			...projected,
+		],
+	};
+}
+
+function jsonlTranscript(
+	source: string,
+	sourceTruncated: boolean,
+	task: string,
+	agentName: string,
+	outcome: string | null,
+	maxChars: number,
+): AgentTranscriptDocument {
 	let lines = source.split(/\r?\n/);
 	if (sourceTruncated && lines.length > 0) lines = lines.slice(1);
-	const items: TranscriptItem[] = [];
+	const items: ParsedTranscriptItem[] = [];
 	const toolsById = new Map<string, ToolProjection>();
 	for (const line of lines) {
 		if (!line.trim()) continue;
@@ -358,16 +402,18 @@ function jsonlTranscript(source: string, sourceTruncated: boolean, task: string,
 		}
 		const block = messageBlock(entry, agentName);
 		const previous = items.at(-1);
+		const blockText = block ? `${block.speaker ? `${block.speaker}\n` : ""}${block.text}` : "";
+		const duplicatesOutcome = role === "assistant" && block !== null && sameOutcome(block.text, outcome);
 		if (
 			block &&
-			!(role === "user" && isTaskOnlyAgentText(block, task)) &&
-			!(previous?.kind === "message" && previous.text === block)
+			!duplicatesOutcome &&
+			!(role === "user" && (isInternalAgentPrompt(block.text) || isTaskOnlyAgentText(blockText, task))) &&
+			!(previous?.kind === "message" && previous.speaker === block.speaker && previous.text === block.text)
 		) {
-			items.push({ kind: "message", text: block });
+			items.push({ kind: "message", speaker: block.speaker, text: block.text });
 		}
 	}
-	const blocks = items.map((item) => (item.kind === "tool" ? renderTool(item.tool) : item.text));
-	return `${sourceTruncated ? "… earlier transcript omitted\n\n" : ""}${blocks.join("\n\n")}`.trim();
+	return boundedDocument(items, maxChars, sourceTruncated);
 }
 
 async function transcriptCandidate(request: AgentTranscriptRequest): Promise<string | null> {
@@ -388,13 +434,32 @@ export const readAgentTranscript: AgentTranscriptReader = async (request) => {
 	if (request.signal.aborted) return null;
 	const partial = isTaskOnlyAgentText(request.row.partialResult, request.row.task) ? null : request.row.partialResult;
 	const candidate = await transcriptCandidate(request);
-	if (!candidate || !path.isAbsolute(candidate)) return partial;
+	if (!candidate || !path.isAbsolute(candidate)) return null;
 	const tail = await readTail(candidate, request.maxChars);
 	if (request.signal.aborted) return null;
-	if (!tail) return partial;
-	const parsed = candidate.endsWith(".jsonl")
-		? jsonlTranscript(tail.text, tail.truncated, request.row.task, oneLine(request.row.name ?? "Agent") || "Agent")
-		: `${tail.truncated ? "… earlier transcript omitted\n\n" : ""}${tail.text}`;
-	const bounded = boundedTail(parsed || partial || "", request.maxChars) || null;
-	return isTaskOnlyAgentText(bounded, request.row.task) ? null : bounded;
+	if (!tail) return null;
+	if (candidate.endsWith(".jsonl")) {
+		const document = jsonlTranscript(
+			tail.text,
+			tail.truncated,
+			request.row.task,
+			oneLine(request.row.name ?? "Agent") || "Agent",
+			partial,
+			request.maxChars,
+		);
+		return document.items.length > 0 ? document : null;
+	}
+
+	const bounded = boundedTail(tail.text, request.maxChars);
+	const text =
+		!bounded.text || isTaskOnlyAgentText(bounded.text, request.row.task) || sameOutcome(bounded.text, partial)
+			? ""
+			: bounded.text;
+	const items: AgentTranscriptItem[] = [
+		...(tail.truncated || bounded.truncated
+			? [{ kind: "notice", text: OMITTED_NOTICE } satisfies AgentTranscriptItem]
+			: []),
+		...(text ? [{ kind: "message", speaker: null, text } satisfies AgentTranscriptItem] : []),
+	];
+	return items.length > 0 ? { items } : null;
 };

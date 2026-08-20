@@ -1,13 +1,21 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { isKeyRelease, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
 	type CommandDialogView,
 	type CommandDialogViewContext,
+	commandDialogListIndex,
+	commandDialogListKeyHelp,
+	commandDialogNavigation,
+	commandDialogPrimaryKey,
+	commandDialogReadKeyHelp,
 	commandDialogRows,
 	fitFixedCommandDialogRows,
-	matchesCommandDialogPageDown,
-	matchesCommandDialogPageUp,
+	matchesCommandDialogCancel,
+	matchesCommandDialogConfirm,
+	matchesCommandDialogHelp,
+	matchesCommandDialogPaneSwitch,
+	renderCommandDialogKeyHelp,
 	renderCommandDialogSplit,
 	WIDE_COMMAND_DIALOG_MIN_WIDTH,
 } from "../conversation-ui/index.js";
@@ -139,6 +147,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	private readonly runtime: ToolUiRuntime;
 	private scrollOffset = 0;
 	private selectedId: string | undefined;
+	private showKeyHelp = false;
 	private readonly unsubscribe: () => void;
 
 	constructor(runtime: ToolUiRuntime, context: CommandDialogViewContext<void>, initialId?: string) {
@@ -176,7 +185,19 @@ class ToolDialogComponent implements CommandDialogComponent {
 
 	handleInput(data: string): void {
 		if (this.disposed || isKeyRelease(data)) return;
-		if (matchesKey(data, Key.escape)) {
+		if (this.showKeyHelp) {
+			if (matchesCommandDialogCancel(data, this.context.keybindings)) {
+				this.showKeyHelp = false;
+				this.context.requestRender();
+			}
+			return;
+		}
+		if (matchesCommandDialogHelp(data)) {
+			this.showKeyHelp = true;
+			this.context.requestRender();
+			return;
+		}
+		if (matchesCommandDialogCancel(data, this.context.keybindings)) {
 			if (this.isSplit()) {
 				if (this.detailRepresentation === "raw") this.detailRepresentation = "formatted";
 				else if (this.splitFocus === "right") this.splitFocus = "left";
@@ -193,6 +214,13 @@ class ToolDialogComponent implements CommandDialogComponent {
 				this.detailWrapCache = undefined;
 				this.context.requestRender();
 			} else this.context.close();
+			return;
+		}
+		if (this.isSplit() && matchesCommandDialogPaneSwitch(data)) {
+			this.splitFocus = this.splitFocus === "left" ? "right" : "left";
+			this.scrollOffset = 0;
+			this.detailWrapCache = undefined;
+			this.context.requestRender();
 			return;
 		}
 		if (this.isSplit()) {
@@ -214,6 +242,21 @@ class ToolDialogComponent implements CommandDialogComponent {
 		if (wasSplit !== isSplit) {
 			if (isSplit) this.splitFocus = this.mode === "detail" ? "right" : "left";
 			else this.mode = this.splitFocus === "right" ? "detail" : "list";
+		}
+		if (this.showKeyHelp) {
+			const list = isSplit ? this.splitFocus === "left" : this.mode === "list";
+			const pane = isSplit ? [{ keys: "Tab/Shift+Tab", description: "Switch panes" }] : [];
+			return renderCommandDialogKeyHelp(
+				this.context,
+				renderWidth,
+				"Tools",
+				list
+					? commandDialogListKeyHelp(this.context.keybindings, "activity", pane)
+					: commandDialogReadKeyHelp(this.context.keybindings, "call", [
+							...pane,
+							{ keys: "r", description: "Toggle formatted/raw result" },
+						]),
+			);
 		}
 		const lines = isSplit
 			? this.renderSplit(renderWidth)
@@ -246,7 +289,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 	}
 
 	private handleListInput(data: string): void {
-		if (matchesKey(data, Key.enter)) {
+		if (matchesCommandDialogConfirm(data, this.context.keybindings)) {
 			if (!this.selected()) return;
 			if (this.isSplit()) {
 				this.splitFocus = "right";
@@ -264,26 +307,14 @@ class ToolDialogComponent implements CommandDialogComponent {
 			this.context.requestRender();
 			return;
 		}
-		if (
-			!matchesKey(data, Key.up) &&
-			!matchesKey(data, Key.down) &&
-			!matchesCommandDialogPageUp(data) &&
-			!matchesCommandDialogPageDown(data)
-		)
-			return;
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (!navigation) return;
 		if (this.groups.length === 0) return;
 		const current = Math.max(
 			0,
 			this.groups.findIndex((group) => group.id === this.selectedId),
 		);
-		const delta = matchesKey(data, Key.up)
-			? -1
-			: matchesKey(data, Key.down)
-				? 1
-				: matchesCommandDialogPageUp(data)
-					? -this.lastListViewportRows
-					: this.lastListViewportRows;
-		const next = Math.max(0, Math.min(this.groups.length - 1, current + delta));
+		const next = commandDialogListIndex(current, this.groups.length, this.lastListViewportRows, navigation);
 		this.selectedId = this.groups[next]?.id;
 		this.detailMemberIndex = 0;
 		this.detailRepresentation = "formatted";
@@ -302,34 +333,29 @@ class ToolDialogComponent implements CommandDialogComponent {
 			this.context.requestRender();
 			return;
 		}
-		if (matchesKey(data, Key.up) || matchesKey(data, Key.down)) {
-			const delta = matchesKey(data, Key.up) ? -1 : 1;
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (navigation === "up" || navigation === "down") {
+			const delta = navigation === "up" ? -1 : 1;
 			this.detailMemberIndex = Math.max(0, Math.min(group.memberIds.length - 1, this.detailMemberIndex + delta));
 			this.scrollOffset = 0;
 			this.detailWrapCache = undefined;
 			this.context.requestRender();
 			return;
 		}
-		if (
-			!matchesCommandDialogPageUp(data) &&
-			!matchesCommandDialogPageDown(data) &&
-			!matchesKey(data, "home") &&
-			!matchesKey(data, "end")
-		)
-			return;
+		if (!navigation) return;
 		const layout = this.detailLayout(group, this.lastDetailWidth);
 		const page = Math.max(1, layout.viewportRows);
-		if (matchesCommandDialogPageDown(data)) {
+		if (navigation === "pageDown") {
 			this.scrollOffset = Math.max(0, Math.min(layout.maxOffset, this.scrollOffset + page));
 			this.context.requestRender();
 			return;
 		}
-		if (matchesCommandDialogPageUp(data)) {
+		if (navigation === "pageUp") {
 			this.scrollOffset = Math.max(0, this.scrollOffset - page);
 			this.context.requestRender();
 			return;
 		}
-		this.scrollOffset = matchesKey(data, "home") ? 0 : layout.maxOffset;
+		this.scrollOffset = navigation === "home" ? 0 : layout.maxOffset;
 		this.context.requestRender();
 	}
 
@@ -337,12 +363,18 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const theme = this.context.theme;
 		const maximumRows = Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context));
 		const preferredRows = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
-		let footer = hintLines(theme, width, ["↑/↓ select", "Enter details", "Esc close"]);
-		let viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
-		if (this.groups.length > viewportRows) {
-			footer = hintLines(theme, width, ["↑/↓ select", "Shift+↑/↓ page", "Enter details", "Esc close"]);
-			viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
-		}
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
+		const footer = hintLines(theme, width, [
+			`${up}/${down} select`,
+			...(this.isSplit() ? ["Tab pane"] : []),
+			`${confirm} details`,
+			"? keys",
+			`${cancel} close`,
+		]);
+		const viewportRows = Math.min(preferredRows, Math.max(0, maximumRows - 2 - footer.length - 2));
 		this.lastListViewportRows = Math.max(1, viewportRows);
 		const selectedIndex = Math.max(
 			0,
@@ -420,7 +452,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 						"",
 					]
 				: []),
-			sectionHeading(theme, this.detailRepresentation === "raw" ? "Raw protocol" : "Detail · formatted"),
+			sectionHeading(theme, this.detailRepresentation === "raw" ? "Raw" : "Result"),
 			...detail.map((line) => `${GUTTER}${line}`),
 			"",
 		];
@@ -454,8 +486,18 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const maximumRows = Math.min(TOOL_DIALOG_ROWS, commandDialogRows(this.context));
 		const showCalls = group.memberIds.length > 1;
 		const fixedRows = 6 + (showCalls ? members.length + 2 : 0);
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
+		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		let viewportRows = Math.max(0, maximumRows - fixedRows - 1);
-		let footer = hintLines(this.context.theme, width, [...(showCalls ? ["↑/↓ call"] : []), "Esc back"]);
+		let footer = hintLines(this.context.theme, width, [
+			...(showCalls ? [`${up}/${down} call`] : []),
+			...(this.isSplit() ? ["Tab pane"] : []),
+			"? keys",
+			`${cancel} back`,
+		]);
 		for (let iteration = 0; iteration < 3; iteration += 1) {
 			viewportRows = Math.max(0, maximumRows - fixedRows - footer.length);
 			const maximumOffset = Math.max(0, document.length - viewportRows);
@@ -466,10 +508,14 @@ class ToolDialogComponent implements CommandDialogComponent {
 					? ` · ${String(offset + 1)}–${String(rangeEnd)}/${String(document.length)}`
 					: "";
 			const nextFooter = hintLines(this.context.theme, width, [
-				...(showCalls ? [`↑/↓ call ${String(this.detailMemberIndex + 1)}/${String(group.memberIds.length)}`] : []),
-				...(document.length > viewportRows ? [`Shift+↑/↓ page${range}`] : []),
+				...(showCalls
+					? [`${up}/${down} call ${String(this.detailMemberIndex + 1)}/${String(group.memberIds.length)}`]
+					: []),
+				...(document.length > viewportRows ? [`${pageUp}/${pageDown} page${range}`] : []),
+				...(this.isSplit() ? ["Tab pane"] : []),
 				this.detailRepresentation === "formatted" ? "r raw" : "r formatted",
-				this.detailRepresentation === "raw" ? "Esc formatted" : "Esc back",
+				"? keys",
+				this.detailRepresentation === "raw" ? `${cancel} formatted` : `${cancel} back`,
 			]);
 			if (nextFooter.length === footer.length) {
 				footer = nextFooter;
@@ -497,13 +543,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		const raw =
 			this.detailRepresentation === "raw"
 				? detail.lines
-				: [
-						activity.label,
-						...(activity.target ? [`Target: ${activity.target}`] : []),
-						...(activity.summary ? [`Summary: ${activity.summary}`] : []),
-						"",
-						...detail.lines,
-					];
+				: [...(activity.target ? [activity.target, ""] : []), ...detail.lines];
 		const contentKey = JSON.stringify(raw);
 		const cached = this.detailWrapCache;
 		if (

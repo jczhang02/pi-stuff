@@ -117,8 +117,11 @@ Rows keep a stable domain order unless the owning ADR says otherwise. Live updat
 steal focus. A row begins with optional `›`, then its primary identity or readable summary, with lifecycle icon and
 low-priority timing or counts later. Overflow uses `… N earlier/newer` and `… N later/older` around a focused window.
 
-Up and Down move one row. PageUp and PageDown move one visible page; Shift+Up and Shift+Down are equivalent aliases for
-compact keyboards. Show page hints only when overflow exists.
+Resolve standard selection actions through Pi's injected keybinding manager. Up and Down move one row, with
+Ctrl+P/Ctrl+N as read-only aliases. PageUp and PageDown move one visible page, with `b`/Space as compact-keyboard
+aliases; Home and End jump to the first and last row. These aliases apply only to custom read-only lists and details,
+never text input, Settings, or confirmation controls. Show page hints only when overflow exists, and expose the full
+contextual map through `?` rather than crowding every Footer.
 
 ### Detail sections
 
@@ -139,6 +142,7 @@ arguments, and protocol content belong behind an explicit raw/debug action rathe
 At terminal widths of at least 96 cells, `/tools` and `/tasks` may show a non-empty list and selected detail together.
 Each remains one fixed 18-row Dialog, with one continuous heavy top rule and one heavy internal vertical divider.
 Switching rows keeps this geometry fixed. Empty and narrow versions remain single-column list/detail flows.
+Tab and Shift+Tab switch the focused pane; Enter moves from the list to detail, and Escape returns one level.
 
 ### Persistent and transcript surfaces
 
@@ -154,7 +158,8 @@ or Tool rendering.
 - **Do** lead with what the user recognizes: Agent name, work identity, Tool Activity summary, problem, or Context use.
 - **Do** keep focus, ordering, scroll position, and outer geometry stable across live updates.
 - **Do** pair state color with a fixed icon, and retain the full state word where detail or risk requires it.
-- **Do** preserve PageUp/PageDown and provide Shift+Up/Down as the compact-keyboard page equivalent.
+- **Do** honor Pi's configurable selection actions, preserve PageUp/PageDown, and provide `b`/Space as read-only
+  compact-keyboard page equivalents.
 - **Do** verify accepted surfaces in the real Pi Host at wide, narrow, and low terminal geometries, in light and dark
   themes; the native terminal is the final visual authority.
 - **Do** keep content ownership and safety boundaries unchanged when presentation changes.

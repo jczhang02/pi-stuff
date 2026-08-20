@@ -135,12 +135,18 @@ send -- "y"
 must_expect "Cleared BTW history"
 send -- "f"
 after 700
-foreach close_key {" " "\\r" "\\033"} {
-    send -- "/btw\\r"
-    must_expect "No previous /btw exchange in this session."
-    send -- $close_key
-    after 150
-}
+send -- "/btw\\r"
+must_expect "No previous /btw exchange in this session."
+send -- " "
+after 150
+send -- "\\r"
+after 150
+send -- "?"
+must_expect "BTW / Keys"
+send -- "\\033"
+after 150
+send -- "\\033"
+after 150
 send -- "\\003"
 after 200
 send -- "\\004"

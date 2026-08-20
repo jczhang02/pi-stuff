@@ -13,4 +13,4 @@ test("real Pi renders all seven built-ins and focused Tool details safely", asyn
 	] as const) {
 		await verifyToolsPty({ piBinary: PI_BIN, packagePath: AGGREGATE_PACKAGE, columns, rows });
 	}
-}, 60_000);
+}, 180_000);

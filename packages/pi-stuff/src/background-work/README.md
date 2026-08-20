@@ -37,13 +37,16 @@ Tasks · 2 current
 `›` means selection only. Shell and Monitor use `●` active and `◐` stopping. Descriptions disappear before kind,
 identity, lifecycle icon, or elapsed time at narrow widths.
 
-Up and Down select one row. PageUp/PageDown and Shift+Up/Down move one visible page when the list overflows; show
+Pi's configured Up and Down actions select one row; Ctrl+P/Ctrl+N are read-only aliases. PageUp/PageDown and
+`b`/Space move one visible page when the list overflows, while Home/End jump to the first or last task; show
 `… N earlier` and `… N later` around that window. New work appends without stealing focus. `x stop` appears only for an
-owned active Shell or Monitor and disappears while stopping. Escape always closes the list.
+owned active Shell or Monitor and disappears while stopping. `?` opens contextual key help. Escape always closes the
+list.
 
 At 96 columns and wider, a non-empty task list and its selected detail share one fixed 18-row Dialog. One continuous
 heavy top rule spans both panes and one heavy `┃` divider separates them. The fixed height prevents the editor from
 moving while the user switches tasks. Narrow and empty states remain single-column.
+Tab and Shift+Tab switch the wide list/detail focus without changing the Dialog height.
 
 Shell detail is specific to a background command:
 
@@ -85,7 +88,7 @@ list row.
 The compact `◆` appears only on section headings. Content keeps its natural Tool-owned command/output hierarchy and
 does not gain another indentation level. Output or evidence follows appended content only while the viewport is at the
 bottom; upward movement freezes reading, reports bounded newer content, and resumes following at the bottom.
-PageUp/PageDown and Shift+Up/Down scroll by a page. Footer scroll hints appear only on overflow; `x stop` appears only
+PageUp/PageDown and `b`/Space scroll by a page; Home/End jump to the top or bottom. Footer scroll hints appear only on overflow; `x stop` appears only
 while the selected owned activity is stoppable; `Esc back` is always present and last.
 
 An empty list says `No background work in this session.` The implementation reads the Background Work runtime snapshot

@@ -1,11 +1,26 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	Key,
+	type Keybinding,
+	type KeybindingsManager,
+	matchesKey,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import type { CommandDialogViewContext } from "./index.js";
 
 const DEFAULT_TERMINAL_ROWS = 24;
 const DEFAULT_NORMAL_SCREEN_RESERVE_ROWS = 3;
 
 export const WIDE_COMMAND_DIALOG_MIN_WIDTH = 96;
+
+export type CommandDialogNavigation = "down" | "end" | "home" | "pageDown" | "pageUp" | "up";
+
+export interface CommandDialogKeyHelpEntry {
+	readonly description: string;
+	readonly keys: string;
+}
 
 export interface CommandDialogRowSections {
 	readonly body: readonly string[];
@@ -33,12 +48,208 @@ export function commandDialogRows(
 	return Math.max(1, rows - Math.max(0, Math.floor(reserveRows)));
 }
 
-export function matchesCommandDialogPageUp(data: string): boolean {
-	return matchesKey(data, Key.pageUp) || matchesKey(data, Key.shift(Key.up));
+export function commandDialogNavigation(
+	data: string,
+	keybindings: KeybindingsManager,
+): CommandDialogNavigation | undefined {
+	if (keybindings.matches(data, "tui.select.up") || matchesKey(data, Key.ctrl("p"))) return "up";
+	if (keybindings.matches(data, "tui.select.down") || matchesKey(data, Key.ctrl("n"))) return "down";
+	if (keybindings.matches(data, "tui.select.pageUp") || matchesKey(data, "b")) return "pageUp";
+	if (keybindings.matches(data, "tui.select.pageDown") || matchesKey(data, Key.space)) return "pageDown";
+	if (matchesKey(data, Key.home)) return "home";
+	if (matchesKey(data, Key.end)) return "end";
+	return undefined;
 }
 
-export function matchesCommandDialogPageDown(data: string): boolean {
-	return matchesKey(data, Key.pageDown) || matchesKey(data, Key.shift(Key.down));
+export function commandDialogListIndex(
+	current: number,
+	length: number,
+	page: number,
+	navigation: CommandDialogNavigation,
+): number {
+	const maximum = Math.max(0, length - 1);
+	if (navigation === "home") return 0;
+	if (navigation === "end") return maximum;
+	const delta = navigation === "up" ? -1 : navigation === "down" ? 1 : navigation === "pageUp" ? -page : page;
+	return Math.max(0, Math.min(maximum, current + delta));
+}
+
+export function commandDialogScrollOffset(
+	current: number,
+	maximum: number,
+	page: number,
+	navigation: CommandDialogNavigation,
+	line = 1,
+): number {
+	const boundedMaximum = Math.max(0, maximum);
+	if (navigation === "home") return 0;
+	if (navigation === "end") return boundedMaximum;
+	const delta = navigation === "up" ? -line : navigation === "down" ? line : navigation === "pageUp" ? -page : page;
+	return Math.max(0, Math.min(boundedMaximum, current + delta));
+}
+
+export function matchesCommandDialogCancel(data: string, keybindings: KeybindingsManager): boolean {
+	return keybindings.matches(data, "tui.select.cancel");
+}
+
+export function matchesCommandDialogConfirm(data: string, keybindings: KeybindingsManager): boolean {
+	return keybindings.matches(data, "tui.select.confirm");
+}
+
+export function matchesCommandDialogHelp(data: string): boolean {
+	return matchesKey(data, "?");
+}
+
+export function matchesCommandDialogPaneSwitch(data: string): boolean {
+	return matchesKey(data, Key.tab) || matchesKey(data, Key.shift(Key.tab));
+}
+
+function formatCommandDialogKey(key: string): string {
+	const labels: Readonly<Record<string, string>> = {
+		alt: "Alt",
+		ctrl: "Ctrl",
+		down: "↓",
+		end: "End",
+		enter: "Enter",
+		escape: "Esc",
+		home: "Home",
+		left: "←",
+		meta: "Meta",
+		pageDown: "PgDn",
+		pageUp: "PgUp",
+		right: "→",
+		shift: "Shift",
+		space: "Space",
+		tab: "Tab",
+		up: "↑",
+	};
+	const parts = key.split("+");
+	return parts
+		.map(
+			(part, index) => labels[part] ?? (parts.length > 1 && index === parts.length - 1 ? part.toUpperCase() : part),
+		)
+		.join("+");
+}
+
+export function commandDialogKeys(keybindings: KeybindingsManager, binding: Keybinding, fallback: string): string {
+	const keys = keybindings.getKeys(binding);
+	return keys.length > 0 ? keys.map(formatCommandDialogKey).join("/") : fallback;
+}
+
+export function commandDialogPrimaryKey(
+	keybindings: KeybindingsManager,
+	binding: Keybinding,
+	fallback: string,
+): string {
+	const key = keybindings.getKeys(binding)[0];
+	return key ? formatCommandDialogKey(key) : fallback;
+}
+
+export function commandDialogHintLines(theme: Theme, width: number, hints: readonly string[], gutter = "  "): string[] {
+	const available = Math.max(1, width - visibleWidth(gutter));
+	const lines: string[] = [];
+	let current = "";
+	for (const hint of hints) {
+		const candidate = current ? `${current} · ${hint}` : hint;
+		if (current && visibleWidth(candidate) > available) {
+			lines.push(current);
+			current = hint;
+		} else current = candidate;
+	}
+	if (current) lines.push(current);
+	return lines.flatMap((line) =>
+		wrapTextWithAnsi(line, available).map((wrapped) => `${gutter}${theme.fg("dim", wrapped)}`),
+	);
+}
+
+function commandDialogNavigationKeyHelp(keybindings: KeybindingsManager, unit: string): CommandDialogKeyHelpEntry[] {
+	return [
+		{
+			keys: `${commandDialogKeys(keybindings, "tui.select.up", "↑")}/${commandDialogKeys(keybindings, "tui.select.down", "↓")}, Ctrl+P/Ctrl+N`,
+			description: `Previous/next ${unit}`,
+		},
+		{
+			keys: `${commandDialogKeys(keybindings, "tui.select.pageUp", "PgUp")}/${commandDialogKeys(keybindings, "tui.select.pageDown", "PgDn")}, b/Space`,
+			description: "Previous/next page",
+		},
+	];
+}
+
+function commandDialogExitKeyHelp(keybindings: KeybindingsManager): CommandDialogKeyHelpEntry[] {
+	return [
+		{ keys: "?", description: "Show this key guide" },
+		{
+			keys: commandDialogKeys(keybindings, "tui.select.cancel", "Esc"),
+			description: "Return one level",
+		},
+	];
+}
+
+export function commandDialogListKeyHelp(
+	keybindings: KeybindingsManager,
+	item: string,
+	extra: readonly CommandDialogKeyHelpEntry[] = [],
+): CommandDialogKeyHelpEntry[] {
+	return [
+		...commandDialogNavigationKeyHelp(keybindings, item),
+		{ keys: "Home/End", description: `First/last ${item}` },
+		{
+			keys: commandDialogKeys(keybindings, "tui.select.confirm", "Enter"),
+			description: "Open details",
+		},
+		...extra,
+		...commandDialogExitKeyHelp(keybindings),
+	];
+}
+
+export function commandDialogReadKeyHelp(
+	keybindings: KeybindingsManager,
+	unit: string,
+	extra: readonly CommandDialogKeyHelpEntry[] = [],
+): CommandDialogKeyHelpEntry[] {
+	return [
+		...commandDialogNavigationKeyHelp(keybindings, unit),
+		{ keys: "Home/End", description: "Top/bottom" },
+		...extra,
+		...commandDialogExitKeyHelp(keybindings),
+	];
+}
+
+export function renderCommandDialogKeyHelp(
+	context: Pick<CommandDialogViewContext<unknown>, "keybindings" | "theme" | "tui">,
+	width: number,
+	title: string,
+	entries: readonly CommandDialogKeyHelpEntry[],
+): string[] {
+	const renderWidth = Math.max(1, Math.floor(width));
+	const keyWidth = Math.min(
+		Math.max(8, Math.min(40, Math.floor(renderWidth * 0.55))),
+		Math.max(8, ...entries.map((entry) => visibleWidth(entry.keys))),
+	);
+	const descriptionWidth = Math.max(1, renderWidth - 4 - keyWidth);
+	const body = [
+		"",
+		...entries.flatMap((entry) => {
+			const key = truncateToWidth(entry.keys, keyWidth, "…");
+			const descriptions = wrapTextWithAnsi(entry.description, descriptionWidth);
+			return descriptions.map((description, index) =>
+				index === 0
+					? `  ${context.theme.fg("accent", key)}${" ".repeat(Math.max(1, keyWidth - visibleWidth(key) + 1))}${description}`
+					: `${" ".repeat(keyWidth + 3)}${description}`,
+			);
+		}),
+		"",
+	];
+	const cancel = commandDialogPrimaryKey(context.keybindings, "tui.select.cancel", "Esc");
+	return fitCommandDialogRows(
+		{
+			header: [context.theme.fg("border", "━".repeat(renderWidth)), `  ${context.theme.bold(`${title} / Keys`)}`],
+			body,
+			footer: [`  ${context.theme.fg("dim", `${cancel} back`)}`],
+			priority: [body.find((line) => line.trim().length > 0) ?? `  ${title}`],
+		},
+		commandDialogRows(context),
+	).map((line) => truncateToWidth(line, renderWidth, "…"));
 }
 
 function withoutPriority(body: readonly string[], priority: readonly string[]): string[] {
@@ -62,8 +273,11 @@ export function fitCommandDialogRows(sections: CommandDialogRowSections, maximum
 	if (full.length <= limit) return full;
 
 	const title = sections.overflowTitle ?? sections.header.at(-1);
+	const titleIndex = title === undefined ? -1 : sections.header.indexOf(title);
 	const headerPrefix =
-		sections.overflowTitle === undefined && title !== undefined ? sections.header.slice(0, -1) : [...sections.header];
+		titleIndex < 0
+			? [...sections.header]
+			: [...sections.header.slice(0, titleIndex), ...sections.header.slice(titleIndex + 1)];
 	const close = sections.footer.at(-1);
 	const footerPrefix = close === undefined ? [...sections.footer] : sections.footer.slice(0, -1);
 	const priority = [...new Set((sections.priority ?? []).filter((line) => line.trim().length > 0))];

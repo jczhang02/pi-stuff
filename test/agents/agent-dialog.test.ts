@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import type {
 	CommandDialogComponent,
 	CommandDialogViewContext,
@@ -91,9 +91,11 @@ class DialogContextHarness {
 	readonly controller = new AbortController();
 	readonly tui = { terminal: { columns: 64, rows: 28 } } as unknown as TUI;
 	private readonly activeTheme: Theme;
+	private readonly keybindings: KeybindingsManager;
 
-	constructor(activeTheme = theme) {
+	constructor(activeTheme = theme, keybindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
 		this.activeTheme = activeTheme;
+		this.keybindings = keybindings;
 	}
 
 	context(): CommandDialogViewContext<void> {
@@ -101,7 +103,7 @@ class DialogContextHarness {
 			close: () => {
 				this.closed += 1;
 			},
-			keybindings: {} as CommandDialogViewContext<void>["keybindings"],
+			keybindings: this.keybindings,
 			requestRender: () => {
 				this.renderRequests += 1;
 			},
@@ -209,7 +211,7 @@ describe("Agent Command Dialog", () => {
 		expect(rendered.join("\n")).not.toMatch(/[╭╮╰╯]/u);
 		expect(rendered.length).toBeLessThanOrEqual(28);
 		expect(rendered.every((line) => visibleWidth(line) <= 64 && !line.includes("\n"))).toBe(true);
-		input(component, "\u001b[1;2B");
+		input(component, " ");
 		expect(text(component)).toContain("› agent-7");
 	});
 
@@ -306,6 +308,10 @@ describe("Agent Command Dialog", () => {
 		input(component, "\u001b[B");
 		expect(text(component)).toContain("  › second");
 		expect(text(component)).not.toContain("x dismiss");
+		input(component, "?");
+		expect(text(component)).toContain("Agents / Keys");
+		input(component, "\u001b");
+		expect(text(component)).toContain("  › second");
 
 		input(component, "\r");
 		await flush();
@@ -391,7 +397,7 @@ describe("Agent Command Dialog", () => {
 		expect(before).not.toContain("\u202e");
 		expect(before).toContain("earlier lines");
 
-		input(component, "\u001b[1;2A");
+		input(component, "b");
 		const after = text(component);
 		expect(after).toContain("line-2-red");
 		expect(after).toContain("hidden-link-target");
@@ -410,6 +416,124 @@ describe("Agent Command Dialog", () => {
 		expect(fallbackText).toContain("No Activity yet.");
 		expect(fallbackText).toContain("◆ Result");
 		expect(fallbackText.match(/ONLY_PARTIAL_9X/g)).toHaveLength(1);
+	});
+
+	test("renders Agent prose and Result as Markdown while failed Tool output stays literal", async () => {
+		const { component } = setup(
+			[
+				row("researcher", "completed", {
+					partialResult: "## Result\n**Complete**\n\n```sh\nbun test\n```",
+				}),
+			],
+			{
+				initialKey: "researcher",
+				readTranscript: () => ({
+					items: [
+						{ kind: "message", speaker: "researcher", text: "# Finding\n**Readable** explanation" },
+						{
+							kind: "tool",
+							name: "bash",
+							outcome: "failed",
+							result: "# literal Tool output\n**not Markdown**",
+							target: "bun test",
+						},
+					],
+				}),
+			},
+		);
+		await flush();
+		const rendered = text(component, 120);
+
+		expect(rendered).toContain("Result");
+		expect(rendered).toContain("Complete");
+		expect(rendered).toContain("bun test");
+		expect(rendered).not.toContain("## Result");
+		expect(rendered).not.toContain("**Complete**");
+
+		input(component, "\u001b[F");
+		const activity = text(component, 120);
+		expect(activity).toContain("Finding");
+		expect(activity).toContain("Readable explanation");
+		expect(activity).not.toContain("# Finding");
+		expect(activity).not.toContain("**Readable**");
+		expect(activity).toContain("# literal Tool output");
+		expect(activity).toContain("**not Markdown**");
+	});
+
+	test("keeps successful Tool results collapsed until t and bounds the expanded preview", async () => {
+		const resultLines = Array.from({ length: 11 }, (_, index) => `tool-line-${String(index + 1)}`);
+		const { component } = setup([row("reader", "running")], {
+			initialKey: "reader",
+			readTranscript: () => ({
+				items: [
+					{
+						kind: "tool",
+						name: "read",
+						outcome: "completed",
+						result: resultLines.join("\n"),
+						target: "src/agent-dialog.ts",
+					},
+				],
+			}),
+		});
+		await flush();
+		const collapsed = text(component, 120);
+		expect(collapsed).toContain("✓ Read · src/agent-dialog.ts · completed");
+		expect(collapsed).toContain("t tool details");
+		expect(collapsed).not.toContain("tool-line-1");
+
+		input(component, "t");
+		input(component, "\u001b[H");
+		const expanded = text(component, 120);
+		expect(expanded).toContain("⎿ tool-line-1");
+		expect(expanded).toContain("tool-line-8");
+		expect(expanded).toContain("⎿ … 3 lines omitted");
+		expect(expanded).not.toContain("tool-line-11");
+
+		input(component, "t");
+		expect(text(component, 120)).not.toContain("tool-line-1");
+	});
+
+	test("keeps long detail content in one fixed scrollable window", async () => {
+		const task = Array.from({ length: 16 }, (_, index) => `task line ${index + 1}`).join("\n");
+		const result = Array.from({ length: 80 }, (_, index) => `result line ${index + 1}`).join("\n");
+		const activity = Array.from({ length: 5 }, (_, index) => `activity line ${index + 1}`).join("\n");
+		const { component, context } = setup([row("reviewer", "completed", { partialResult: result, task })], {
+			initialKey: "reviewer",
+			readTranscript: () => activity,
+		});
+		(context.tui.terminal as { columns: number; rows: number }).columns = 120;
+		(context.tui.terminal as { columns: number; rows: number }).rows = 76;
+		await flush();
+
+		const before = component.render(120);
+		expect(before).toHaveLength(20);
+		expect(before.filter((line) => line.includes("Agents / reviewer"))).toHaveLength(1);
+
+		input(component, "\u001b[B");
+		const afterDown = component.render(120);
+		expect(afterDown).not.toEqual(before);
+
+		input(component, "\u001b[F");
+		const atEnd = text(component, 120);
+		expect(atEnd).toContain("◆ Activity");
+		expect(atEnd).toContain("activity line 5");
+		expect(atEnd).toContain("Esc back");
+	});
+
+	test("keeps a section visible while scrolling at low height", async () => {
+		const { component, context } = setup([row("reviewer", "completed", { task: "Review the dialog" })], {
+			initialKey: "reviewer",
+			readTranscript: () => "activity line 1\nactivity line 2\nactivity line 3",
+		});
+		(context.tui.terminal as { columns: number; rows: number }).columns = 100;
+		(context.tui.terminal as { columns: number; rows: number }).rows = 12;
+		await flush();
+		component.render(100);
+
+		input(component, "\u001b[H");
+		input(component, "\u001b[B");
+		expect(text(component, 100)).toContain("◆ Activity");
 	});
 
 	test("shows pending and rejected stop results without inventing success", async () => {

@@ -14,7 +14,7 @@
   <text class="body accent" x="48" y="94">/btw</text>
   <text class="body" x="142" y="94">Why did the typecheck fail?</text>
   <text class="body" x="48" y="150">The generated declaration file was stale, so TypeScript read an old API shape.</text>
-  <text class="meta" x="48" y="210">←/→ to switch · ↑/↓ to scroll · c to copy · f to fork · x to clear history · Esc to close</text>
+  <text class="meta" x="48" y="210">←/→ switch · ↑/↓ scroll · c copy · f fork · x clear history · ? keys · Esc close</text>
 
   <line class="rule" x1="32" y1="286" x2="1504" y2="286"/>
   <text class="title" x="48" y="344">MCP</text>
@@ -25,7 +25,7 @@
   <text class="body" x="94" y="458">github · needs auth · run /mcp-auth github</text>
   <text class="body accent" x="48" y="512">×</text>
   <text class="body" x="94" y="512">browser · failed · run /mcp reconnect browser</text>
-  <text class="meta" x="48" y="566">Shift+↑/↓ page · Esc close · configure in .mcp.json</text>
+  <text class="meta" x="48" y="566">PgUp/PgDn page · ? keys · Esc close · configure in .mcp.json</text>
 
   <line class="rule" x1="32" y1="640" x2="1504" y2="640"/>
   <text class="title" x="48" y="698">RTK</text>
@@ -40,5 +40,5 @@
   <text class="section accent" x="48" y="874">◆</text>
   <text class="section" x="90" y="874">Session savings</text>
   <text class="body" x="432" y="874">12,430 chars (38%) · 24 results</text>
-  <text class="meta" x="48" y="958">/rtk settings · Esc close</text>
+  <text class="meta" x="48" y="958">/rtk settings · ? keys · Esc close</text>
 </svg>

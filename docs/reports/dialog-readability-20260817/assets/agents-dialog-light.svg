@@ -31,5 +31,5 @@
   <text class="body" x="92" y="722">Run focused Agent dialog tests</text>
   <text class="meta" x="92" y="766">⎿ Running…</text>
 
-  <text class="meta" x="48" y="976">↑/↓ scroll · Shift+↑/↓ page · s steer · x stop · Esc back</text>
+  <text class="meta" x="48" y="976">↑/↓ scroll · PgUp/PgDn page · s steer · x stop · ? keys · Esc back</text>
 </svg>

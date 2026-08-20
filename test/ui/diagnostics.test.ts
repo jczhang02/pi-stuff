@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	DiagnosticNoticeController,
 	renderDiagnosticNotice,
@@ -33,7 +33,7 @@ function report(channel: DiagnosticChannel, index = 1, visibility: "notice" | "s
 	});
 }
 
-function dialogHarness(rows = 24) {
+function dialogHarness(rows = 24, keybindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
 	let closes = 0;
 	let renders = 0;
 	return {
@@ -42,7 +42,7 @@ function dialogHarness(rows = 24) {
 			close: () => {
 				closes += 1;
 			},
-			keybindings: {},
+			keybindings,
 			requestRender: () => {
 				renders += 1;
 			},
@@ -202,6 +202,9 @@ describe("/diagnostics Command Dialog", () => {
 		const list = component.render(80).join("\n");
 		expect(list).toContain("Diagnostics · 2 records");
 		expect(list).toContain("Enter details");
+		component.handleInput?.("?");
+		expect(component.render(80).join("\n")).toContain("Diagnostics / Keys");
+		component.handleInput?.("\u001b");
 		component.handleInput?.("\r");
 		expect(component.render(80).join("\n")).toContain("Diagnostics / Background Work");
 		expect(component.render(80).join("\n")).toContain("detail 1");
@@ -244,12 +247,12 @@ describe("/diagnostics Command Dialog", () => {
 		component.dispose?.();
 	});
 
-	test("uses Shift+Down as the compact-keyboard page alias", () => {
+	test("uses Space as the compact-keyboard page alias", () => {
 		const channel = new DiagnosticChannel();
 		for (let index = 1; index <= 12; index += 1) report(channel, index);
 		const component = createDiagnosticsView(channel).create(dialogHarness().context);
 		expect(component.render(80).join("\n")).toContain("Issue 12");
-		component.handleInput?.("\u001b[1;2B");
+		component.handleInput?.(" ");
 		expect(component.render(80).join("\n")).toContain("Issue 4");
 		component.dispose?.();
 	});
@@ -268,7 +271,7 @@ describe("/diagnostics Command Dialog", () => {
 		for (const width of [64, 32, 24]) {
 			const lines = component.render(width);
 			expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
-			expect(lines.at(-1)).toContain("Esc return");
+			expect(lines.at(-1)).toContain("Esc close");
 		}
 		component.handleInput?.("\r");
 		const detail = component.render(32);

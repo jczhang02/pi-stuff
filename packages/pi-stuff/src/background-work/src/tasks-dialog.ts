@@ -1,14 +1,23 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { isKeyRelease, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
 	type CommandDialogView,
 	type CommandDialogViewContext,
+	commandDialogListIndex,
+	commandDialogListKeyHelp,
+	commandDialogNavigation,
+	commandDialogPrimaryKey,
+	commandDialogReadKeyHelp,
 	commandDialogRows,
+	commandDialogScrollOffset,
 	fitCommandDialogRows,
 	fitFixedCommandDialogRows,
-	matchesCommandDialogPageDown,
-	matchesCommandDialogPageUp,
+	matchesCommandDialogCancel,
+	matchesCommandDialogConfirm,
+	matchesCommandDialogHelp,
+	matchesCommandDialogPaneSwitch,
+	renderCommandDialogKeyHelp,
 	renderCommandDialogSplit,
 	WIDE_COMMAND_DIALOG_MIN_WIDTH,
 } from "../../conversation-ui/index.js";
@@ -152,6 +161,7 @@ class TasksDialogComponent implements CommandDialogComponent {
 	private rows: readonly TaskRow[] = [];
 	private scrollOffset = 0;
 	private selectedId: string | undefined;
+	private showKeyHelp = false;
 	private splitFocus: "left" | "right" = "left";
 	private stopping = false;
 	private readonly timer: ReturnType<typeof setInterval>;
@@ -176,7 +186,19 @@ class TasksDialogComponent implements CommandDialogComponent {
 
 	handleInput(data: string): void {
 		if (this.disposed || isKeyRelease(data)) return;
-		if (matchesKey(data, Key.escape)) {
+		if (this.showKeyHelp) {
+			if (matchesCommandDialogCancel(data, this.context.keybindings)) {
+				this.showKeyHelp = false;
+				this.context.requestRender();
+			}
+			return;
+		}
+		if (matchesCommandDialogHelp(data)) {
+			this.showKeyHelp = true;
+			this.context.requestRender();
+			return;
+		}
+		if (matchesCommandDialogCancel(data, this.context.keybindings)) {
 			if (this.isSplit()) {
 				if (this.splitFocus === "right") this.splitFocus = "left";
 				else this.context.close();
@@ -191,6 +213,12 @@ class TasksDialogComponent implements CommandDialogComponent {
 			} else {
 				this.context.close();
 			}
+			return;
+		}
+		if (this.isSplit() && matchesCommandDialogPaneSwitch(data)) {
+			this.splitFocus = this.splitFocus === "left" ? "right" : "left";
+			this.scrollOffset = 0;
+			this.context.requestRender();
 			return;
 		}
 		if (this.stopping) return;
@@ -214,6 +242,21 @@ class TasksDialogComponent implements CommandDialogComponent {
 		if (wasSplit !== isSplit) {
 			if (isSplit) this.splitFocus = this.mode === "detail" ? "right" : "left";
 			else this.mode = this.splitFocus === "right" ? "detail" : "list";
+		}
+		if (this.showKeyHelp) {
+			const list = isSplit ? this.splitFocus === "left" : this.mode === "list";
+			const extra = [
+				...(isSplit ? [{ keys: "Tab/Shift+Tab", description: "Switch panes" }] : []),
+				...(this.selected()?.status !== "stopping" ? [{ keys: "x", description: "Stop selected task" }] : []),
+			];
+			return renderCommandDialogKeyHelp(
+				this.context,
+				this.lastWidth,
+				"Tasks",
+				list
+					? commandDialogListKeyHelp(this.context.keybindings, "task", extra)
+					: commandDialogReadKeyHelp(this.context.keybindings, "line", extra),
+			);
 		}
 		const lines = isSplit ? this.renderSplit() : this.mode === "list" ? this.renderList() : this.renderDetail();
 		return lines.map((line) => bounded(this.lastWidth, line));
@@ -247,7 +290,7 @@ class TasksDialogComponent implements CommandDialogComponent {
 	}
 
 	private handleListInput(data: string): void {
-		if (matchesKey(data, Key.enter)) {
+		if (matchesCommandDialogConfirm(data, this.context.keybindings)) {
 			const selected = this.selected();
 			if (!selected) return;
 			if (this.isSplit()) {
@@ -261,25 +304,13 @@ class TasksDialogComponent implements CommandDialogComponent {
 			this.context.requestRender();
 			return;
 		}
-		if (
-			!matchesKey(data, Key.up) &&
-			!matchesKey(data, Key.down) &&
-			!matchesCommandDialogPageUp(data) &&
-			!matchesCommandDialogPageDown(data)
-		)
-			return;
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (!navigation) return;
 		const current = Math.max(
 			0,
 			this.rows.findIndex((row) => row.id === this.selectedId),
 		);
-		const delta = matchesKey(data, Key.up)
-			? -1
-			: matchesKey(data, Key.down)
-				? 1
-				: matchesCommandDialogPageUp(data)
-					? -this.lastListViewportRows
-					: this.lastListViewportRows;
-		const next = Math.max(0, Math.min(this.rows.length - 1, current + delta));
+		const next = commandDialogListIndex(current, this.rows.length, this.lastListViewportRows, navigation);
 		this.selectedId = this.rows[next]?.id;
 		this.note = "";
 		this.scrollOffset = 0;
@@ -287,23 +318,12 @@ class TasksDialogComponent implements CommandDialogComponent {
 	}
 
 	private handleDetailInput(data: string): void {
-		if (
-			!matchesKey(data, Key.up) &&
-			!matchesKey(data, Key.down) &&
-			!matchesCommandDialogPageUp(data) &&
-			!matchesCommandDialogPageDown(data)
-		)
-			return;
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (!navigation) return;
 		const document = this.detailDocument(this.selected());
 		const page = Math.max(1, commandDialogRows(this.context) - 10);
-		const delta = matchesKey(data, Key.up)
-			? -1
-			: matchesKey(data, Key.down)
-				? 1
-				: matchesCommandDialogPageUp(data)
-					? -page
-					: page;
-		this.scrollOffset = Math.max(0, Math.min(Math.max(0, document.length - page), this.scrollOffset + delta));
+		const maximum = Math.max(0, document.length - page);
+		this.scrollOffset = commandDialogScrollOffset(this.scrollOffset, maximum, page, navigation);
 		this.context.requestRender();
 	}
 
@@ -328,22 +348,24 @@ class TasksDialogComponent implements CommandDialogComponent {
 	private renderList(width = this.lastWidth, focused = false, stable = false): string[] {
 		const theme = this.context.theme;
 		const selected = this.selected();
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const baseHints = [
-			"↑/↓ select",
-			"Enter details",
+			`${up}/${down} select`,
+			...(this.isSplit() ? ["Tab pane"] : []),
+			`${confirm} details`,
 			...(selected && selected.status !== "stopping" ? ["x stop"] : []),
-			"Esc return",
+			"? keys",
+			`${cancel} close`,
 		];
-		let footer = hint(theme, width, baseHints);
+		const footer = hint(theme, width, baseHints);
 		const maximum = stable
 			? Math.min(TASK_DIALOG_ROWS, commandDialogRows(this.context))
 			: commandDialogRows(this.context);
 		const preferred = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
-		let viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
-		if (this.rows.length > viewport) {
-			footer = hint(theme, width, ["↑/↓ select", "Shift+↑/↓ page", ...baseHints.slice(1)]);
-			viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
-		}
+		const viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
 		this.lastListViewportRows = Math.max(1, viewport);
 		const selectedIndex = Math.max(
 			0,
@@ -380,18 +402,31 @@ class TasksDialogComponent implements CommandDialogComponent {
 			return this.renderList(width, focused, stable);
 		}
 		const theme = this.context.theme;
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
+		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const maximum = stable
 			? Math.min(TASK_DIALOG_ROWS, commandDialogRows(this.context))
 			: commandDialogRows(this.context);
 		const document = this.detailDocument(row, width);
-		let footer = hint(theme, width, ["↑/↓ scroll", ...(row.status !== "stopping" ? ["x stop"] : []), "Esc back"]);
+		let footer = hint(theme, width, [
+			`${up}/${down} scroll`,
+			...(this.isSplit() ? ["Tab pane"] : []),
+			...(row.status !== "stopping" ? ["x stop"] : []),
+			"? keys",
+			`${cancel} back`,
+		]);
 		let fixedRows = 7 + footer.length + (this.note ? 1 : 0);
 		if (document.length > Math.max(0, maximum - fixedRows)) {
 			footer = hint(theme, width, [
-				"↑/↓ scroll",
-				"Shift+↑/↓ page",
+				`${up}/${down} scroll`,
+				`${pageUp}/${pageDown} page`,
+				...(this.isSplit() ? ["Tab pane"] : []),
 				...(row.status !== "stopping" ? ["x stop"] : []),
-				"Esc back",
+				"? keys",
+				`${cancel} back`,
 			]);
 			fixedRows = 7 + footer.length + (this.note ? 1 : 0);
 		}

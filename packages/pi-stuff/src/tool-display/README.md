@@ -41,8 +41,10 @@ Tools keep their native renderer and form a display boundary.
 - `/ui` contains the default-on **Tool running timer** setting. It controls whether long-running standalone/expanded
   Tool rows show live elapsed time. Activity Group completion summaries never retain elapsed time.
 - Formatted and Raw detail text is capped at 240 lines and 24 KiB per selected call. Raw includes call ID, Tool name,
-  arguments, result content, and details; formatted detail hides protocol IDs. Compact mode neither precomputes nor
-  caches a global Raw transcript. The model-visible Tool result is never truncated or rewritten by this Capability.
+  arguments, result content, and details. The default `Result` section shows an unlabeled target followed by
+  Tool-owned detail instead of injecting repeated Tool, `Target:`, or `Summary:` fields; Raw is explicitly titled
+  `Raw`. Compact mode neither precomputes nor caches a global Raw transcript. The model-visible Tool result is never
+  truncated or rewritten by this Capability.
 - Grouping is a deterministic display projection. Session JSONL, model-visible messages, active Tool membership, and
   execution behavior remain unchanged, and groups are rebuilt after reload, restart/resume, tree navigation, and
   compaction.
@@ -62,4 +64,5 @@ Narrative Boundary tail, while timer frames reconcile only the affected group; n
 See `UPSTREAM.md` for source provenance and the local delta. The accepted interaction contract is recorded in the
 repository ADR `docs/adr/0010-fold-continuous-retrieval-segments.md`. Its 2026-08-17 `/tools` readability update was
 implemented on 2026-08-18, including lifecycle icons, `◆` sections, compact-keyboard paging, singleton detail,
-formatted/Raw navigation, and the fixed wide split. Focused tests and the real PTY verifier cover the shipped Dialog.
+formatted/Raw navigation, and the fixed wide split. Focused tests and the real PTY verifier cover the shipped Dialog,
+including a Space page sequence and Tab pane switch sent through the real Host.

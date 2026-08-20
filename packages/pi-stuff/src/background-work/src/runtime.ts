@@ -66,6 +66,10 @@ export type BackgroundWorkKind = "monitor" | "shell";
 export type BackgroundWorkStatus = "running" | "stopping";
 export type BackgroundWorkTerminalStatus = "completed" | "failed" | "stopped" | "timed_out";
 
+export interface BackgroundWorkBashDetails extends BashToolDetails {
+	readonly backgroundTaskId?: string;
+}
+
 export interface BackgroundWorkSnapshot {
 	readonly command?: string;
 	readonly description?: string;
@@ -101,7 +105,7 @@ export interface BackgroundWorkOutcome {
 export interface BashExecutionInput {
 	readonly command: string;
 	readonly description?: string;
-	readonly onUpdate?: AgentToolUpdateCallback<BashToolDetails | undefined>;
+	readonly onUpdate?: AgentToolUpdateCallback<BackgroundWorkBashDetails | undefined>;
 	readonly runInBackground?: boolean;
 	readonly signal?: AbortSignal;
 	readonly timeoutSeconds?: number;
@@ -249,13 +253,16 @@ interface RuntimeOptions {
 	readonly signalSupervisor?: SignalVerifiedSupervisor;
 }
 
-function textResult(text: string, details?: BashToolDetails): AgentToolResult<BashToolDetails | undefined> {
+function textResult(
+	text: string,
+	details?: BackgroundWorkBashDetails,
+): AgentToolResult<BackgroundWorkBashDetails | undefined> {
 	return { content: [{ type: "text", text }], details };
 }
 
 function emitToolUpdate(
-	onUpdate: AgentToolUpdateCallback<BashToolDetails | undefined> | undefined,
-	result: AgentToolResult<BashToolDetails | undefined>,
+	onUpdate: AgentToolUpdateCallback<BackgroundWorkBashDetails | undefined> | undefined,
+	result: AgentToolResult<BackgroundWorkBashDetails | undefined>,
 ): void {
 	try {
 		onUpdate?.(result);
@@ -580,7 +587,7 @@ export class BackgroundWorkRuntime {
 	async executeBash(
 		input: BashExecutionInput,
 		ctx: ExtensionContext,
-	): Promise<AgentToolResult<BashToolDetails | undefined>> {
+	): Promise<AgentToolResult<BackgroundWorkBashDetails | undefined>> {
 		const parentRunOrigin = readCurrentAgentWorkOrigin(this.pi);
 		const pendingForegroundLaunch = input.runInBackground ? undefined : { manualDetachRequested: false };
 		if (pendingForegroundLaunch) this.pendingForegroundLaunches.add(pendingForegroundLaunch);
@@ -1303,7 +1310,7 @@ export class BackgroundWorkRuntime {
 		}
 	}
 
-	private foregroundResult(outcome: BackgroundWorkOutcome): AgentToolResult<BashToolDetails | undefined> {
+	private foregroundResult(outcome: BackgroundWorkOutcome): AgentToolResult<BackgroundWorkBashDetails | undefined> {
 		const snapshot = this.foregroundSnapshot(outcome);
 		if (outcome.status !== "completed") {
 			let status = outcome.summary;
@@ -1320,7 +1327,7 @@ export class BackgroundWorkRuntime {
 	}
 
 	private foregroundSnapshot(outcome: BackgroundWorkOutcome): {
-		readonly details?: BashToolDetails;
+		readonly details?: BackgroundWorkBashDetails;
 		readonly text: string;
 	} {
 		if (!outcome.outputPath) return { text: outcome.recentOutput ?? "" };
@@ -1351,12 +1358,12 @@ export class BackgroundWorkRuntime {
 	private backgroundLaunchResult(
 		activity: SpawnedActivity,
 		reason?: "manual" | "timeout",
-	): AgentToolResult<BashToolDetails | undefined> {
+	): AgentToolResult<BackgroundWorkBashDetails | undefined> {
 		const action = reason === "manual" ? "manually moved" : reason === "timeout" ? "moved" : "started";
 		const outputPath = activity.output.durable && existsSync(activity.output.path) ? activity.output.path : undefined;
 		return textResult(
 			`Command ${action} to background task ${activity.id}.${outputPath ? `\nOutput: ${outputPath}` : ""}\nThe terminal result will be delivered automatically; continue useful work instead of polling.`,
-			outputPath ? { fullOutputPath: outputPath } : undefined,
+			{ backgroundTaskId: activity.id, ...(outputPath ? { fullOutputPath: outputPath } : {}) },
 		);
 	}
 

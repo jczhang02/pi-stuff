@@ -40,6 +40,43 @@ test("the live Background Work Bash keeps its Code Mode contract", () => {
 	});
 });
 
+test("/tools formats a background Bash handoff from structured result details", () => {
+	const { api } = registeredBash();
+	const runtime = getToolUiRuntime(api);
+	const args = {
+		command: "bun run check",
+		description: "Run the complete checks",
+		run_in_background: true,
+	};
+	runtime.indexMessages(
+		[
+			{
+				role: "assistant",
+				content: [{ type: "toolCall", id: "bash-background", name: "bash", arguments: args }],
+			},
+			{
+				role: "toolResult",
+				toolCallId: "bash-background",
+				content: [{ type: "text", text: "legacy display text that formatted detail must not expose" }],
+				details: {
+					backgroundTaskId: "bf8t2miir",
+					fullOutputPath: "/tmp/bf8t2miir.output",
+				},
+			},
+		],
+		true,
+	);
+
+	expect(runtime.toolActivityDetail("bash-background", "formatted")?.lines).toEqual([
+		"Started in background · bf8t2miir",
+		"",
+		"Output file",
+		"/tmp/bf8t2miir.output",
+		"",
+		"Result will be delivered automatically.",
+	]);
+});
+
 test("standalone Bash preserves an automatic foreground-to-background handoff in its child output", () => {
 	const { api, bash } = registeredBash();
 	const args = { command: "sleep 300", description: "Wait for service" };

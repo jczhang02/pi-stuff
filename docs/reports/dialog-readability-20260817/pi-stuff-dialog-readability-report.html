@@ -480,7 +480,7 @@
     <ul>
       <li>本轮逐项讨论了 8 个重点 Command Dialog，设计已经落实到生产代码与聚焦验证。</li>
       <li>所有状态都使用有固定含义的图标，<span class="sans">›</span> 只表示当前选中项，不再同时承担状态含义。</li>
-      <li>PageUp/PageDown 保留，同时增加 Shift+Up/Down，照顾没有独立翻页键的 60% 键盘。</li>
+      <li>PageUp/PageDown 保留；只读界面增加 b/Space 翻页和 Ctrl+P/N 按行移动，照顾没有独立翻页键的紧凑键盘。</li>
       <li>普通详情板块使用紧凑的 <span class="sans">◆</span> 标记，板块正文不继续缩进；<span class="sans">/btw</span> 保留直接阅读流，不硬加板块。</li>
       <li>只有非空宽屏下的 <span class="sans">/tools</span> 与 <span class="sans">/tasks</span> 使用固定 18 行双栏；<span class="sans">/agents</span>、<span class="sans">/diagnostics</span> 与 <span class="sans">/btw</span> 始终单栏。</li>
       <li>Conversation Transcript、SettingsList、Agent roster、Todo 和 Statusline 不在这次 Dialog 重做范围内。</li>
@@ -507,7 +507,7 @@
 
   <h2>先统一阅读语言，不统一内容模板</h2>
   <p class="lead">8 个 Dialog 应该让人一眼认出它们属于同一个产品，但不应该强迫它们展示同样的板块。共同语言只管选择、状态、板块、翻页和退出，各 Dialog 仍按自己的任务组织内容。</p>
-  <p>共同语言包含 5 件事：<code>›</code> 只表示选中，状态由固定图标表达，普通详情板块用 <code>◆</code> 标记，翻页同时支持 PageUp/PageDown 与 Shift+Up/Down，Esc 始终沿着详情、列表、Dialog 的层级返回。用户学会一次，就能在 8 个页面复用。</p>
+  <p>共同语言包含 5 件事：<code>›</code> 只表示选中，状态由固定图标表达，普通详情板块用 <code>◆</code> 标记，只读翻页支持 PageUp/PageDown 与 b/Space，Esc 始终沿着详情、列表、Dialog 的层级返回。完整快捷键放在 <code>?</code> 帮助页里。</p>
   <p>真正需要区别的是内容。例如 <code>/agents</code> 要围绕 Agent 名称、任务和活动来读，<code>/mcp</code> 要快速看服务器是否可用，<code>/ctx</code> 要先看上下文用了多少。把它们硬塞进同一套 State、Task、Detail 行，只会让页面看起来整齐，却不好读。</p>
 
   <h2>本次需要检查的 8 个 Dialog</h2>
@@ -548,7 +548,7 @@ Review Dialog readability at 64 and 32 columns.
 ✓ Read agent-dialog.ts · completed
 ⎿ 24 lines shown · 186 lines omitted
 
-Shift+↑/↓ page · Esc back</pre>
+PgUp/PgDn page · ? keys · Esc back</pre>
   <p><code>◆</code> 只在板块标题这一行出现。标题、正文、Agent 名称、工具行、<code>⎿</code> 预览和换行后的内容共享同一个左边界。这样保留层级，但不会越套越深。</p>
 
   <div class="takeaway">
@@ -588,7 +588,7 @@ I'll inspect the current list and detail layout.
 ✓ Read agent-dialog.ts · completed
 ⎿ 24 lines shown · 186 lines omitted
 
-↑/↓ scroll · Shift+↑/↓ page · r resume · Esc back</pre>
+↑/↓ scroll · PgUp/PgDn page · r resume · ? keys · Esc back</pre>
 
   <h2>Activity 展示多少</h2>
   <p>这里的 Activity 指“按真实先后顺序发生的可见活动”。它不是只留三条最新记录，也不是把整个原始协议文件原样倒出来。Agent 说过的话、用户明确给过的 steer 或 resume、每次 Tool 的目标、结果和有限预览都保留；内部系统记录、原始 JSON、重复 Task 和重复最终 Result 不出现。</p>
@@ -616,7 +616,7 @@ I'll inspect the current list and detail layout.
   <h2>/tools：按一次工作来读，不按协议记录来读</h2>
   <p class="lead"><code>/tools</code> 的主角是用户能理解的一次 Activity，也就是一段连续的工具工作，而不是内部调用 ID。列表先写它做了什么，详情再按需要展开调用和格式化结果。</p>
   <p>列表按最新 Activity 在前排列。每行依次是选择标记、可读摘要、状态图标和可选调用次数，例如 <code>Read · tool-dialog.ts  ✓ 3 calls</code>。屏幕变窄时先去掉调用次数，不能先丢掉摘要或状态。</p>
-  <p>包含多次调用的 Activity 展示 Calls 和 Detail 两个板块，单次调用直接进入 Detail，不为一个条目造空列表。正常详情保留各工具自己已经设计好的格式，Raw 只在调试时打开，协议 ID 不挤进日常阅读。</p>
+  <p>包含多次调用的 Activity 展示 Calls 和 Result 两个板块，单次调用直接进入 Result，不为一个条目造空列表。正常结果保留各工具自己已经设计好的格式，Raw 只在调试时打开，协议 ID 不挤进日常阅读。</p>
   <p>宽度达到 96 格且列表非空时，Activity 列表与选中详情共用一块固定 18 行区域。顶部粗线连续贯穿全宽，中间只有一条粗 <code>┃</code> 分隔线；切换 Activity 不会推动编辑器。空页面和窄屏仍是单栏。</p>
 
   <figure>
@@ -631,7 +631,7 @@ I'll inspect the current list and detail layout.
 › ✓ Read · packages/pi-stuff/src/tool-display/tool-dialog.ts
   ✓ Search · toolStateGlyph
 
-◆ Detail · formatted
+◆ Result
 Read
 Target: packages/pi-stuff/src/tool-display/tool-dialog.ts
 Summary: 58 lines returned</pre>
@@ -707,7 +707,7 @@ Run /agents again after the session file becomes readable.
 
   <h2>/btw：复刻 Claude Code 的直接阅读流</h2>
   <p class="lead"><code>/btw question</code> 在一条连续粗顶线下面显示近期问题、当前问题和 Markdown 答案。它没有 BTW 标题、状态行、Answer 板块、卡片或双栏。</p>
-  <p>Left/Right 切换保留的成功交流；Up/Down 滚动，PageUp/PageDown 与 Shift+Up/Down 翻一页。流式答案只在用户停在底部时自动跟随。失败信息也进入同一条答案阅读流，不另开错误板块。</p>
+  <p>Left/Right 切换保留的成功交流；Up/Down 或 Ctrl+P/N 滚动，PageUp/PageDown 与 b/Space 翻一页。流式答案只在用户停在底部时自动跟随。失败信息也进入同一条答案阅读流，不另开错误板块。</p>
   <p>Footer 使用已经观察到的 Claude 词句：<code>c to copy</code>、<code>f to fork</code>、<code>x to clear history</code>、<code>Esc to close</code>。清理历史仍在原界面内用 <code>y</code> 确认；Space、Enter 和 Esc 都可以关闭。</p>
 
   <pre>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -741,7 +741,7 @@ Run /agents again after the session file becomes readable.
 ! github · needs auth · /mcp-auth github
 × browser · failed · /mcp reconnect browser
 ■ legacy · disabled
-Shift+↑/↓ page · Esc close</pre>
+PgUp/PgDn page · ? keys · Esc close</pre>
     </div>
     <div>
       <h2>/rtk 的具体形状</h2>
@@ -763,7 +763,7 @@ Shift+↑/↓ page · Esc close</pre>
   <h1>实现结果与验收方法</h1>
 
   <p class="lead">本轮决策已经落实到生产代码，不再停留在 prototype。共享布局、8 个重点 Dialog、模块文档和真实 PTY 预期已经同步；报告只负责把结果集中说明，不能代替测试证据。</p>
-  <p>共享层已经提供粗 Dialog 顶线、<code>◆</code> 板块标记、固定状态图标、PageUp/PageDown 与 Shift+Up/Down 的同一路径，以及一块区域式的固定双栏。双栏只由 <code>/tools</code> 和 <code>/tasks</code> 使用，数据为空时不会留下半块详情。</p>
+  <p>共享层已经提供粗 Dialog 顶线、<code>◆</code> 板块标记、固定状态图标、Pi 可配置按键与只读紧凑别名的同一路径，以及一块区域式的固定双栏。双栏只由 <code>/tools</code> 和 <code>/tasks</code> 使用，数据为空时不会留下半块详情。</p>
   <p><code>/tasks</code> 已删除 Agent 投影与 current-work 聚合注册表，直接使用 Background Work runtime snapshot；<code>/diagnostics</code> 已固定为单栏；<code>/btw</code> 已按真实 Claude Code 形状去掉 Answer 板块与状态壳。Agent、Tool、Context、MCP 和 RTK 的状态图标、板块、翻页与低高度路径也已同步。</p>
 
   <h2>已经落地的批次</h2>
@@ -783,7 +783,7 @@ Shift+↑/↓ page · Esc close</pre>
     <li><strong>选择：</strong><code>›</code> 只表示当前焦点，状态图标仍然独立存在。</li>
     <li><strong>状态：</strong>紧凑列表有图标，详情或静态状态行保留完整状态词。</li>
     <li><strong>板块：</strong><code>◆</code> 只在标题行出现，正文没有额外层层缩进；<code>/btw</code> 不强加板块。</li>
-    <li><strong>翻页：</strong>PageUp/PageDown 与 Shift+Up/Down 行为一致，只有溢出时才显示提示。</li>
+    <li><strong>翻页：</strong>PageUp/PageDown 与 b/Space 行为一致，Ctrl+P/N 按行移动；完整按键放在 <code>?</code> 帮助页。</li>
     <li><strong>实时内容：</strong>停在底部时自动跟随，向上阅读后不抢滚动位置，并显示有限的新内容提示。</li>
     <li><strong>窄屏：</strong>先丢描述、计数和次要元数据，不能先丢名称、状态、选中项或 Escape。</li>
     <li><strong>返回：</strong>Esc 每次只退一层，Raw、详情、列表、Dialog 的顺序稳定。</li>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import type { BtwExchange } from "../../packages/pi-stuff/src/btw/btw-history.js";
 import { BtwDialogController } from "../../packages/pi-stuff/src/btw/btw-ui.js";
 
@@ -41,7 +41,8 @@ function setup(
 			renderCount++;
 		},
 	};
-	const controller = new BtwDialogController(theme, tui as never, {
+	const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+	const controller = new BtwDialogController(theme, tui as never, keybindings, {
 		history: options.history ?? [],
 		...(options.question === undefined ? {} : { question: options.question }),
 		...(options.error === undefined ? {} : { error: options.error }),
@@ -72,7 +73,7 @@ describe("BTW Command Dialog", () => {
 
 		expect(output).toContain("/btw Why keep this isolated?");
 		expect(output).toContain("Answering…");
-		expect(output).toContain("Esc to close");
+		expect(output).toContain("Esc close");
 		for (const redundant of [
 			"BTW history",
 			"● answering",
@@ -110,7 +111,7 @@ describe("BTW Command Dialog", () => {
 		const output = controller.render(80).join("\n");
 		expect(output).toContain("final answer");
 		expect(output).toContain("Copied answer");
-		expect(output).toContain("Esc to close");
+		expect(output).toContain("Esc close");
 		expect(copied).toEqual(["**final answer**"]);
 		controller.dispose();
 	});
@@ -198,7 +199,7 @@ describe("BTW Command Dialog", () => {
 		expect(promoted.map((item) => item.id)).toEqual(["exchange-1"]);
 		const waiting = result.controller.render(80).join("\n");
 		expect(waiting).toContain("Waiting for the main Agent to finish");
-		expect(waiting).toContain("Esc to close");
+		expect(waiting).toContain("Esc close");
 		result.controller.handleInput("\u001b");
 		result.controller.dispose();
 		expect(result.closeCount).toBe(1);
@@ -249,26 +250,31 @@ describe("BTW Command Dialog", () => {
 		expect(lines).toHaveLength(3);
 		expect(lines.join("\n")).toContain("question");
 		expect(lines.join("\n")).toContain("provider unavailable");
-		expect(lines.at(-1)).toContain("Esc to close");
+		expect(lines.at(-1)).toContain("Esc close");
 		result.controller.dispose();
 	});
 
-	test("Space, Enter, and Escape dismiss the surface", () => {
-		for (const key of [" ", "\r", "\u001b"] as const) {
-			const result = setup({
-				question: "a very long question ".repeat(10),
-				history: [exchange(1), exchange(2)],
-			});
-			const lines = result.controller.render(64);
-			expect(lines.every((line) => visibleWidth(line) <= 64)).toBe(true);
-			result.controller.handleInput(key);
-			expect(result.closeCount).toBe(1);
-			result.controller.dispose();
-		}
+	test("only Escape closes the reading surface", () => {
+		const result = setup({
+			question: "a very long question ".repeat(10),
+			history: [exchange(1), exchange(2)],
+		});
+		const lines = result.controller.render(64);
+		expect(lines.every((line) => visibleWidth(line) <= 64)).toBe(true);
+		result.controller.handleInput(" ");
+		result.controller.handleInput("\r");
+		expect(result.closeCount).toBe(0);
+		result.controller.handleInput("?");
+		expect(result.controller.render(64).join("\n")).toContain("BTW / Keys");
+		result.controller.handleInput("\u001b");
+		expect(result.closeCount).toBe(0);
+		result.controller.handleInput("\u001b");
+		expect(result.closeCount).toBe(1);
+		result.controller.dispose();
 	});
 
-	test("accepts both PageUp and Shift+Up for page scrolling", () => {
-		for (const key of ["\u001b[5~", "\u001b[1;2A"] as const) {
+	test("accepts both PageUp and b for page scrolling", () => {
+		for (const key of ["\u001b[5~", "b"] as const) {
 			const result = setup({ question: "question" });
 			result.controller.setSuccess({
 				id: "current",

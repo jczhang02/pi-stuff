@@ -1,11 +1,19 @@
 import { homedir } from "node:os";
-import { isKeyRelease, Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { isKeyRelease, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
 	type CommandDialogView,
 	type CommandDialogViewContext,
+	commandDialogHintLines,
+	commandDialogNavigation,
+	commandDialogPrimaryKey,
+	commandDialogReadKeyHelp,
 	commandDialogRows,
+	commandDialogScrollOffset,
 	fitCommandDialogRows,
+	matchesCommandDialogCancel,
+	matchesCommandDialogHelp,
+	renderCommandDialogKeyHelp,
 } from "../conversation-ui/index.js";
 import { boundTerminalLine, compactTerminalPath } from "../tool-display/index.js";
 import type { RtkProjectionAdapter } from "./projection.js";
@@ -40,7 +48,11 @@ export function compactRtkBinaryPath(value: string, maximumWidth: number): strin
 
 class RtkDialogComponent implements CommandDialogComponent {
 	private readonly context: CommandDialogViewContext<void>;
+	private lastMaximumScroll = 0;
+	private lastViewportRows = 1;
 	private readonly options: RtkDialogOptions;
+	private scrollOffset = 0;
+	private showKeyHelp = false;
 
 	constructor(context: CommandDialogViewContext<void>, options: RtkDialogOptions) {
 		this.context = context;
@@ -49,13 +61,47 @@ class RtkDialogComponent implements CommandDialogComponent {
 
 	handleInput(data: string): void {
 		if (isKeyRelease(data)) return;
-		if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter) || data === "q") this.context.close();
+		if (this.showKeyHelp) {
+			if (matchesCommandDialogCancel(data, this.context.keybindings)) {
+				this.showKeyHelp = false;
+				this.context.requestRender();
+			}
+			return;
+		}
+		if (matchesCommandDialogHelp(data)) {
+			this.showKeyHelp = true;
+			this.context.requestRender();
+			return;
+		}
+		if (matchesCommandDialogCancel(data, this.context.keybindings)) {
+			this.context.close();
+			return;
+		}
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (!navigation) return;
+		this.scrollOffset = commandDialogScrollOffset(
+			this.scrollOffset,
+			this.lastMaximumScroll,
+			this.lastViewportRows,
+			navigation,
+		);
+		this.context.requestRender();
 	}
 
 	invalidate(): void {}
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
+		if (this.showKeyHelp) {
+			return renderCommandDialogKeyHelp(
+				this.context,
+				renderWidth,
+				"RTK",
+				commandDialogReadKeyHelp(this.context.keybindings, "line", [
+					{ keys: "/rtk settings", description: "Open RTK settings" },
+				]),
+			);
+		}
 		const maximumRows = commandDialogRows(this.context);
 		if (maximumRows === 0) return [];
 		const theme = this.context.theme;
@@ -137,12 +183,32 @@ class RtkDialogComponent implements CommandDialogComponent {
 			...(techniques ? this.wrapped(renderWidth, `Techniques  ${techniques}`) : []),
 			...(note ? ["", sectionHeading(theme, noteHeading), ...this.wrapped(renderWidth, note)] : []),
 		];
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
+		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
+		const footerFor = (overflow: boolean) =>
+			commandDialogHintLines(theme, renderWidth, [
+				...(overflow ? [`${up}/${down} scroll`, `${pageUp}/${pageDown} page`] : []),
+				"/rtk settings",
+				"? keys",
+				`${cancel} close`,
+			]);
+		let footer = footerFor(false);
+		this.lastViewportRows = Math.max(1, maximumRows - 2 - footer.length);
+		this.lastMaximumScroll = Math.max(0, body.length - this.lastViewportRows);
+		footer = footerFor(this.lastMaximumScroll > 0);
+		this.lastViewportRows = Math.max(1, maximumRows - 2 - footer.length);
+		this.lastMaximumScroll = Math.max(0, body.length - this.lastViewportRows);
+		this.scrollOffset = Math.min(this.lastMaximumScroll, Math.max(0, this.scrollOffset));
+		const visibleBody = body.slice(this.scrollOffset, this.scrollOffset + this.lastViewportRows);
 		const lines = fitCommandDialogRows(
 			{
 				header: [theme.fg("border", "━".repeat(renderWidth)), `${GUTTER}${theme.bold("RTK")}`],
-				body,
-				footer: [`${GUTTER}${theme.fg("dim", "/rtk settings · Esc close")}`],
-				priority: [errorLines[0] ?? runtimeLine],
+				body: visibleBody,
+				footer,
+				priority: [visibleBody.find((line) => line.trim().length > 0) ?? errorLines[0] ?? runtimeLine],
 			},
 			maximumRows,
 		);

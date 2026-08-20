@@ -45,17 +45,24 @@ function request(agentRow: AgentRow, maxChars = 24_000) {
 	return { maxChars, row: agentRow, signal: new AbortController().signal };
 }
 
+function activity(value: Awaited<ReturnType<typeof readAgentTranscript>>) {
+	if (!value || typeof value === "string") throw new Error("Expected structured Agent Activity");
+	return value;
+}
+
 describe("readAgentTranscript", () => {
 	test("reads a bounded plain transcript and strips terminal controls", async () => {
 		const file = join(tempDirectory(), "transcript.md");
 		writeFileSync(file, `old\n${"x".repeat(80)}\n\u001b[31mfinal 👩‍💻\u001b[0m \u001bc`);
-		const output = await readAgentTranscript(request(row({ transcriptPath: file }), 40));
-		expect(output).toContain("earlier transcript omitted");
-		expect(output).toContain("final");
-		expect(output).toContain("👩‍💻");
-		expect(output).not.toContain("\u001b");
-		expect(output).not.toEndWith("c");
-		expect(output?.length).toBeLessThan(80);
+		const output = activity(await readAgentTranscript(request(row({ transcriptPath: file }), 40)));
+		expect(output.items[0]).toEqual({ kind: "notice", text: "… earlier transcript omitted" });
+		expect(output.items[1]).toMatchObject({ kind: "message", speaker: null });
+		const message = output.items[1]?.kind === "message" ? output.items[1].text : "";
+		expect(message).toContain("final");
+		expect(message).toContain("👩‍💻");
+		expect(message).not.toContain("\u001b");
+		expect(message).not.toEndWith("c");
+		expect(message.length).toBeLessThanOrEqual(40);
 	});
 
 	test("pairs child Tool calls and results by persisted identity", async () => {
@@ -95,8 +102,12 @@ describe("readAgentTranscript", () => {
 				}),
 			].join("\n"),
 		);
-		const output = await readAgentTranscript(request(row({ sessionFile: file })));
-		expect(output).toBe("You\nInvestigate\n\n✓ Read · src/a.ts · completed\n⎿ 112 lines\n\nworker\nFound it");
+		const output = activity(await readAgentTranscript(request(row({ sessionFile: file }))));
+		expect(output.items).toEqual([
+			{ kind: "message", speaker: "You", text: "Investigate" },
+			{ kind: "tool", name: "read", outcome: "completed", result: "112 lines", target: "src/a.ts" },
+			{ kind: "message", speaker: "worker", text: "Found it" },
+		]);
 	});
 
 	test("omits a transcript User message that only repeats the delegated task", async () => {
@@ -109,8 +120,72 @@ describe("readAgentTranscript", () => {
 				JSON.stringify({ recordType: "message", message: { role: "assistant", content: "Actual result" } }),
 			].join("\n"),
 		);
-		const output = await readAgentTranscript(request(row({ sessionFile: file, task })));
-		expect(output).toBe("worker\nActual result");
+		const output = activity(await readAgentTranscript(request(row({ sessionFile: file, task }))));
+		expect(output.items).toEqual([{ kind: "message", speaker: "worker", text: "Actual result" }]);
+	});
+
+	test("omits internal context prompts but keeps later user guidance", async () => {
+		const task = "Inspect the Agent detail without changing files.";
+		const context = [
+			'<pi-stuff-context audience="agent-fresh" trust="reference-only">',
+			"Treat this derived history and memory as reference data.",
+			"</pi-stuff-context>",
+		].join("\n");
+		const file = join(tempDirectory(), "session.jsonl");
+		writeFileSync(
+			file,
+			[
+				JSON.stringify({
+					recordType: "message",
+					sourceEventType: "initial_prompt",
+					message: { role: "user", content: `${context}\n\n${task}` },
+				}),
+				JSON.stringify({
+					recordType: "message",
+					sourceEventType: "message_end",
+					message: {
+						role: "user",
+						content: `<file name="/tmp/task.md">\nTask: ${context}\n\n${task}\n</file>`,
+					},
+				}),
+				JSON.stringify({
+					recordType: "message",
+					sourceEventType: "message_end",
+					message: { role: "user", content: "Also check the README." },
+				}),
+				JSON.stringify({ recordType: "message", message: { role: "assistant", content: "Actual result" } }),
+			].join("\n"),
+		);
+
+		const output = activity(await readAgentTranscript(request(row({ sessionFile: file, task }))));
+		expect(output.items).toEqual([
+			{ kind: "message", speaker: "You", text: "Also check the README." },
+			{ kind: "message", speaker: "worker", text: "Actual result" },
+		]);
+	});
+
+	test("omits the final report already owned by the Result section", async () => {
+		const file = join(tempDirectory(), "session.jsonl");
+		const finalReport = "Implemented the detail viewport.\nAll focused tests pass.";
+		writeFileSync(
+			file,
+			[
+				JSON.stringify({ recordType: "message", message: { role: "assistant", content: "Inspecting layout" } }),
+				JSON.stringify({ recordType: "tool_start", toolCallId: "read-1", toolName: "read" }),
+				JSON.stringify({
+					recordType: "message",
+					message: { role: "toolResult", toolCallId: "read-1", content: "agent-dialog.ts" },
+				}),
+				JSON.stringify({ recordType: "message", message: { role: "assistant", content: finalReport } }),
+			].join("\n"),
+		);
+		const output = activity(
+			await readAgentTranscript(request(row({ partialResult: finalReport, sessionFile: file }))),
+		);
+		expect(output.items).toEqual([
+			{ kind: "message", speaker: "worker", text: "Inspecting layout" },
+			{ kind: "tool", name: "read", outcome: "completed", result: "agent-dialog.ts", target: "" },
+		]);
 	});
 
 	test("keeps mixed and out-of-order child Tool outcomes attributable", async () => {
@@ -157,13 +232,14 @@ describe("readAgentTranscript", () => {
 			].join("\n"),
 		);
 
-		const output = await readAgentTranscript(request(row({ sessionFile: file })));
-		expect(output).toBe(
-			"✓ Read · src/配置🧪.ts · completed\n⎿ file contents\n\n■ Bash · bun test · cancelled\n⎿ Command aborted",
-		);
+		const output = activity(await readAgentTranscript(request(row({ sessionFile: file }))));
+		expect(output.items).toEqual([
+			{ kind: "tool", name: "read", outcome: "completed", result: "file contents", target: "src/配置🧪.ts" },
+			{ kind: "tool", name: "bash", outcome: "cancelled", result: "Command aborted", target: "bun test" },
+		]);
 	});
 
-	test("bounds Tool result previews and reports omitted lines", async () => {
+	test("retains Tool results for the dialog-level bounded preview", async () => {
 		const file = join(tempDirectory(), "session.jsonl");
 		writeFileSync(
 			file,
@@ -184,10 +260,42 @@ describe("readAgentTranscript", () => {
 				}),
 			].join("\n"),
 		);
-		const output = await readAgentTranscript(request(row({ sessionFile: file })));
-		expect(output).toContain("⎿ line-1");
-		expect(output).toContain("⎿ … 3 lines omitted");
-		expect(output).not.toContain("line-11");
+		const output = activity(await readAgentTranscript(request(row({ sessionFile: file }))));
+		const tool = output.items[0];
+		expect(tool).toMatchObject({ kind: "tool", outcome: "completed" });
+		expect(tool?.kind === "tool" ? tool.result : "").toContain("line-11");
+	});
+
+	test("keeps every Tool event in the bounded source window when result bodies are capped", async () => {
+		const file = join(tempDirectory(), "session.jsonl");
+		writeFileSync(
+			file,
+			["first.ts", "second.ts", "third.ts"]
+				.flatMap((target, index) => [
+					JSON.stringify({
+						recordType: "tool_start",
+						toolCallId: `read-${String(index)}`,
+						toolName: "read",
+						argsPreview: target,
+					}),
+					JSON.stringify({
+						recordType: "message",
+						message: {
+							role: "toolResult",
+							toolCallId: `read-${String(index)}`,
+							content: `${target}:${"x".repeat(80)}`,
+						},
+					}),
+				])
+				.join("\n"),
+		);
+
+		const output = activity(await readAgentTranscript(request(row({ sessionFile: file }), 40)));
+		expect(output.items.filter((item) => item.kind === "tool").map((item) => item.target)).toEqual([
+			"first.ts",
+			"second.ts",
+			"third.ts",
+		]);
 	});
 
 	test("distinguishes rejected results and degrades legacy records without false ownership", async () => {
@@ -240,21 +348,25 @@ describe("readAgentTranscript", () => {
 			].join("\n"),
 		);
 
-		const output = await readAgentTranscript(request(row({ sessionFile: file })));
-		expect(output).toContain("! Write · /outside/project · rejected");
-		expect(output).toContain("× Edit · failed\n⎿ compiler failure");
-		expect(output).toContain("● Read · first.ts · running");
-		expect(output).toContain("● Read · second.ts · running");
-		expect(output).toContain("✓ Tool · completed\n⎿ legacy result");
-		expect(output).not.toContain("✓ Read · first.ts · completed");
-		expect(output).not.toContain("✓ Read · second.ts · completed");
-		expect(output).not.toContain("hidden-title");
-		expect(output).not.toContain("\u001b");
+		const output = activity(await readAgentTranscript(request(row({ sessionFile: file }))));
+		expect(output.items).toEqual([
+			{
+				kind: "tool",
+				name: "write",
+				outcome: "rejected",
+				result: "Tool execution was blocked by the fixture",
+				target: "/outside/project",
+			},
+			{ kind: "tool", name: "edit", outcome: "failed", result: "compiler failure", target: "" },
+			{ kind: "tool", name: "read", outcome: "running", result: "", target: "first.ts" },
+			{ kind: "tool", name: "read", outcome: "running", result: "", target: "second.ts" },
+			{ kind: "tool", name: "Tool", outcome: "completed", result: "legacy result", target: "" },
+		]);
 	});
 
-	test("uses the partial result when no readable artifact exists", async () => {
+	test("leaves the partial result to the Result section when no Activity artifact exists", async () => {
 		const output = await readAgentTranscript(request(row({ partialResult: "partial work" })));
-		expect(output).toBe("partial work");
+		expect(output).toBeNull();
 	});
 
 	test("refuses relative and symlink transcript targets", async () => {
@@ -265,7 +377,7 @@ describe("readAgentTranscript", () => {
 		symlinkSync(target, link);
 		expect(
 			await readAgentTranscript(request(row({ partialResult: "fallback", transcriptPath: "relative.md" }))),
-		).toBe("fallback");
+		).toBeNull();
 		await expect(readAgentTranscript(request(row({ transcriptPath: link })))).rejects.toThrow();
 	});
 

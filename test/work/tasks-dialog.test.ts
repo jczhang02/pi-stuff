@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import type {
 	BackgroundWorkOutcome,
 	BackgroundWorkRuntime,
@@ -58,6 +58,7 @@ class RuntimeHarness {
 function harness(
 	rows = 24,
 	activeTheme = theme,
+	keybindings = new KeybindingsManager(TUI_KEYBINDINGS),
 ): {
 	readonly closed: () => number;
 	readonly context: CommandDialogViewContext<void>;
@@ -71,7 +72,7 @@ function harness(
 			close: () => {
 				closed += 1;
 			},
-			keybindings: {},
+			keybindings,
 			requestRender: () => {
 				renders += 1;
 			},
@@ -117,7 +118,7 @@ describe("/tasks Command Dialog", () => {
 		const narrow = component.render(28);
 		expect(narrow.every((line) => visibleWidth(line) <= 28)).toBe(true);
 		expect(narrow.join("\n")).not.toContain("running · 5s");
-		expect(narrow.join("\n")).toContain("Esc return");
+		expect(narrow.join("\n")).toContain("Esc close");
 		component.dispose?.();
 	});
 
@@ -136,9 +137,15 @@ describe("/tasks Command Dialog", () => {
 		expect(output).toContain("◆ Output");
 		expect(output).toContain("first line");
 
-		component.handleInput?.("\r");
+		component.handleInput?.("\t");
 		component.handleInput?.("\u001b");
 		expect(ui.closed()).toBe(0);
+		component.handleInput?.("\u001b[Z");
+		component.handleInput?.("\u001b");
+		expect(ui.closed()).toBe(0);
+		component.handleInput?.("?");
+		expect(component.render(100).join("\n")).toContain("Tasks / Keys");
+		component.handleInput?.("\u001b");
 		component.handleInput?.("\u001b");
 		expect(ui.closed()).toBe(1);
 		component.dispose?.();
@@ -176,7 +183,7 @@ describe("/tasks Command Dialog", () => {
 		component.dispose?.();
 	});
 
-	test("pages a long task list with Shift+Down", () => {
+	test("pages a long task list with Space", () => {
 		const runtime = new RuntimeHarness();
 		const template = runtime.rows[0];
 		if (!template) throw new Error("missing task fixture");
@@ -188,10 +195,26 @@ describe("/tasks Command Dialog", () => {
 		}));
 		const ui = harness();
 		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
-		expect(component.render(64).join("\n")).toContain("Shift+↑/↓ page");
-		component.handleInput?.("\u001b[1;2B");
+		expect(component.render(64).join("\n")).toContain("? keys");
+		component.handleInput?.(" ");
 		component.handleInput?.("\r");
 		expect(component.render(64).join("\n")).toContain("Task 7");
+		component.dispose?.();
+	});
+
+	test("honors a user-rebound Pi selection key", () => {
+		const runtime = new RuntimeHarness();
+		const first = runtime.rows[0];
+		if (!first) throw new Error("missing task fixture");
+		runtime.rows = [first, { ...first, id: "second", title: "Second task" }];
+		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.down": "ctrl+y" });
+		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(
+			harness(24, theme, keybindings).context,
+		);
+		component.render(64);
+		component.handleInput?.("\u0019");
+		component.handleInput?.("\r");
+		expect(component.render(64).join("\n")).toContain("Second task");
 		component.dispose?.();
 	});
 
@@ -215,7 +238,7 @@ describe("/tasks Command Dialog", () => {
 		expect(lines).toHaveLength(3);
 		expect(lines.join("\n")).toContain("Tasks");
 		expect(lines.join("\n")).toContain("Shell");
-		expect(lines.at(-1)).toContain("Esc return");
+		expect(lines.at(-1)).toContain("Esc close");
 		component.dispose?.();
 	});
 });

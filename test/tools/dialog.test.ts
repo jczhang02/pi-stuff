@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { createToolDialogView } from "../../packages/pi-stuff/src/tool-display/tool-dialog.js";
@@ -10,7 +10,7 @@ const theme = {
 	fg: (_color: string, value: string) => value,
 } as unknown as Theme;
 
-function contextHarness(rows = 28, activeTheme = theme) {
+function contextHarness(rows = 28, activeTheme = theme, keybindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
 	let closed = 0;
 	let renders = 0;
 	const terminal = { rows };
@@ -18,7 +18,7 @@ function contextHarness(rows = 28, activeTheme = theme) {
 		closed: () => closed,
 		context: {
 			close: () => closed++,
-			keybindings: {},
+			keybindings,
 			requestRender: () => renders++,
 			signal: new AbortController().signal,
 			theme: activeTheme,
@@ -92,15 +92,16 @@ test("/tools lists groups and formats only the selected member", () => {
 	component.handleInput?.("\r");
 	let detail = component.render(42).join("\n");
 	expect(detail).toContain("Tools / Read 2 files");
-	expect(detail).toContain("Target: 工具.txt");
-	expect(detail).not.toContain("Target: src/config.ts");
+	expect(detail).toContain("◆ Result");
+	expect(detail).not.toContain("formatted");
+	expect(detail).not.toContain("Target:");
+	expect(detail).not.toContain("Summary:");
 	component.handleInput?.("\u001b[F");
 	detail = component.render(42).join("\n");
 	expect(detail).toContain("Path: 工具.txt");
 	expect(detail).not.toContain("Path: src/config.ts");
 	component.handleInput?.("\u001b[B");
 	let second = component.render(42).join("\n");
-	expect(second).toContain("Target: src/config.ts");
 	component.handleInput?.("\u001b[F");
 	second = component.render(42).join("\n");
 	expect(second).toContain("Path: src/config.ts");
@@ -119,10 +120,10 @@ test("/tools <member-id> focuses the requested member within its complete group"
 	const detail = component.render(60).join("\n");
 	expect(detail).toContain("3 calls");
 	expect(detail).toContain("◆ Calls");
-	expect(detail).toContain("◆ Detail · formatted");
-	expect(detail).not.toContain("Target: a.ts");
-	expect(detail).toContain("Target: b.ts");
-	expect(detail).not.toContain("Target: c.ts");
+	expect(detail).toContain("◆ Result");
+	expect(detail).not.toContain("Path: a.ts");
+	expect(detail).toContain("Path: b.ts");
+	expect(detail).not.toContain("Path: c.ts");
 	expect(detail).toContain("call 2/3");
 	component.dispose?.();
 });
@@ -135,11 +136,11 @@ test("/tools keeps a five-member selection window while arrows traverse the whol
 	for (let index = 0; index < 7; index += 1) component.handleInput?.("\u001b[B");
 	const last = component.render(64);
 	expect(last.filter((line) => line.includes("Read ·"))).toHaveLength(5);
-	expect(last.join("\n")).toContain("Target: 8.ts");
+	expect(last.join("\n")).toContain("Path: 8.ts");
 	component.dispose?.();
 });
 
-test("/tools pages the Activity list with Shift+Down", () => {
+test("/tools pages the Activity list with Space", () => {
 	const paths = Array.from({ length: 12 }, (_, index) => `${String(index + 1)}.ts`);
 	const first = createToolDialogView(groupedRuntime(paths, -1, true)).create(contextHarness().context);
 	first.render(64);
@@ -147,17 +148,17 @@ test("/tools pages the Activity list with Shift+Down", () => {
 	const firstTarget = first
 		.render(64)
 		.join("\n")
-		.match(/Target: (\S+)/u)?.[1];
+		.match(/Path: (\S+)/u)?.[1];
 	first.dispose?.();
 
 	const paged = createToolDialogView(groupedRuntime(paths, -1, true)).create(contextHarness().context);
-	expect(paged.render(64).join("\n")).toContain("Shift+↑/↓ page");
-	paged.handleInput?.("\u001b[1;2B");
+	expect(paged.render(64).join("\n")).toContain("? keys");
+	paged.handleInput?.(" ");
 	paged.handleInput?.("\r");
 	const pagedTarget = paged
 		.render(64)
 		.join("\n")
-		.match(/Target: (\S+)/u)?.[1];
+		.match(/Path: (\S+)/u)?.[1];
 	expect(pagedTarget).toBeDefined();
 	expect(pagedTarget).not.toBe(firstTarget);
 	paged.dispose?.();
@@ -195,15 +196,18 @@ test("/tools <member-id> opens an infrastructure-only group hidden from the comp
 	const component = createToolDialogView(runtime, "internal-1").create(harness.context);
 	const detail = component.render(60).join("\n");
 	expect(detail).toContain("Tools / Internal activity");
-	expect(detail).toContain("◆ Detail · formatted");
+	expect(detail).toContain("◆ Result");
 	expect(detail).not.toContain("◆ Calls");
-	expect(detail).toContain("Context reduction");
+	expect(detail).not.toContain("formatted");
+	expect(detail).not.toContain("Target:");
+	expect(detail).not.toContain("Summary:");
+	expect(detail).toContain("context");
 	expect(detail).not.toContain("internal-1");
 	expect(detail).not.toContain("Arguments");
 	expect(detail).not.toContain("Result content");
 	component.handleInput?.("r");
 	let raw = component.render(60).join("\n");
-	expect(raw).toContain("Raw protocol");
+	expect(raw).toContain("◆ Raw");
 	expect(raw).toContain("Call ID: internal-1");
 	expect(raw).toContain("Tool name: ctx_reduce");
 	expect(raw).toContain("Arguments");
@@ -214,7 +218,7 @@ test("/tools <member-id> opens an infrastructure-only group hidden from the comp
 	expect(raw).toContain("Result content");
 	expect(raw).toContain("Details");
 	component.handleInput?.("\u001b");
-	expect(component.render(60).join("\n")).not.toContain("Raw protocol");
+	expect(component.render(60).join("\n")).toContain("◆ Result");
 	component.handleInput?.("\u001b");
 	expect(component.render(60).join("\n")).toContain("Tools");
 	component.handleInput?.("\u001b");
@@ -354,11 +358,18 @@ test("/tools keeps list and detail visible on wide terminals", () => {
 	expect(output).toContain("Path: a.ts");
 	expect(output).not.toContain("Path: b.ts");
 
-	component.handleInput?.("\r");
+	component.handleInput?.("\t");
 	lines = component.render(100);
 	expect(lines).toHaveLength(18);
 	expect(lines[1]?.split("┃")[0]).not.toContain("\u001b[35mTools\u001b[0m");
 	expect(lines[1]?.split("┃")[1]).toContain("\u001b[35mTools /");
+	component.handleInput?.("\u001b[Z");
+	lines = component.render(100);
+	expect(lines[1]?.split("┃")[0]).toContain("\u001b[35mTools\u001b[0m");
+	component.handleInput?.("?");
+	expect(component.render(100).join("\n")).toContain("Tools / Keys");
+	component.handleInput?.("\u001b");
+	component.handleInput?.("\t");
 	expect(component.render(64).join("\n")).toContain("Tools /");
 	lines = component.render(100);
 	expect(lines).toHaveLength(18);

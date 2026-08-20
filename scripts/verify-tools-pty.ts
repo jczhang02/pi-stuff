@@ -40,56 +40,103 @@ proc must_expect {pattern} {
     }
 }
 
+proc discard_pending_output {} {
+    set discarded ""
+    expect -timeout 0 {
+        -re {.+} {
+            append discarded $expect_out(0,string)
+            exp_continue
+        }
+        timeout {}
+        eof {
+            puts stderr "Reached EOF while discarding pending output"
+            exit 3
+        }
+    }
+    return $discarded
+}
+
+proc wait_for_quiet {} {
+    set deadline [expr {[clock milliseconds] + 5000}]
+    set quiet_since [clock milliseconds]
+    while {[clock milliseconds] < $deadline} {
+        set pending [discard_pending_output]
+        set now [clock milliseconds]
+        if {$pending ne ""} {
+            set quiet_since $now
+        } elseif {$now - $quiet_since >= 100} {
+            return
+        }
+        after 10
+    }
+    puts stderr "Timed out waiting for terminal output to settle"
+    exit 2
+}
+
+proc send_and_expect {keys pattern} {
+    discard_pending_output
+    send -- $keys
+    must_expect $pattern
+    wait_for_quiet
+}
+
 spawn -noecho script -qefc $env(PI_STUFF_TOOLS_PTY_RUNNER) /dev/null
 set tool_pty $spawn_out(slave,name)
+set conversation_marker "run the deterministic Tool UI fixture"
 must_expect "TOOLS_DONE"
-after 200
-send -- "\\017"
-must_expect "Tool output: expanded"
-after 200
-send -- "\\017"
-after 100
+wait_for_quiet
+send_and_expect "\\017" "Tool output: expanded"
+send_and_expect "\\017" "Tool output: collapsed"
 send -- "/tools\\r"
 must_expect "Tools"
 must_expect "activities"
 must_expect "Searched 2 patterns"
 must_expect "Esc close"
-send -- "\\033"
-after 100
+wait_for_quiet
+send -- "?"
+must_expect "Tools / Keys"
+must_expect "Ctrl+Y"
+wait_for_quiet
+send_and_expect "\\033" "activities"
+if {$env(PI_STUFF_TOOLS_PTY_COLUMNS) >= 96} {
+    send_and_expect "\\tr" "Raw"
+    send_and_expect "r" "Result"
+    send -- "\\033\\[Z"
+    wait_for_quiet
+}
+send_and_expect "\\031" "State · rejected"
+send_and_expect "\\033\\[A" "State · cancelled"
+send_and_expect " " "Bash · done"
+send_and_expect "\\rr" "Raw"
+send_and_expect "r" "Result"
+send_and_expect "\\033" "activities"
+send_and_expect "\\033" $conversation_marker
 send -- "/tools tools-pty-4\\r"
 must_expect "Tools /"
 must_expect "PREFIX_CJK_工具"
 must_expect "BASH_CJK_工具"
 must_expect "Esc back"
 send -- "r"
-must_expect "Raw protocol"
+must_expect "Raw"
 must_expect "Call ID: tools-pty-4"
 must_expect "Arguments"
-send -- "\\033\\[6~"
-must_expect "Result content"
-send -- "\\033"
-must_expect "Detail · formatted"
-send -- "\\033"
-after 100
-send -- "\\033"
-after 100
+send_and_expect "\\033\\[6~" "Result content"
+send_and_expect "\\033" "r raw"
+send_and_expect "\\033" "activities"
+send_and_expect "\\033" $conversation_marker
 send -- "/tools tools-pty-8\\r"
 must_expect "Tools /"
 must_expect "BUILTIN_FAILURE_工具"
 must_expect "Esc back"
-send -- "\\033"
-after 100
-send -- "\\033"
-after 100
+send_and_expect "\\033" "activities"
+send_and_expect "\\033" $conversation_marker
 send -- "/ui\\r"
 must_expect "UI"
 must_expect "Tool running timer"
 must_expect "true"
 must_expect "Enter/Space to change"
-send -- "timer"
-after 150
-send -- "\\033"
-after 100
+send_and_expect "timer" "Tool running timer"
+send_and_expect "\\033" $conversation_marker
 send -- "/reload\\r"
 must_expect "Reloaded keybindings, extensions"
 must_expect "context files"
@@ -97,17 +144,14 @@ set resized_columns [expr {$env(PI_STUFF_TOOLS_PTY_COLUMNS) + 1}]
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $resized_columns < $tool_pty
 must_expect "Searched 2 patterns, listed 1 directory"
 stty rows $env(PI_STUFF_TOOLS_PTY_ROWS) columns $env(PI_STUFF_TOOLS_PTY_COLUMNS) < $tool_pty
-after 150
 send -- "/tools\\r"
 must_expect "Tools"
 must_expect "activities"
-send -- "\\033"
-after 150
+wait_for_quiet
+send_and_expect "\\033" $conversation_marker
 send -- "DRAFT_AFTER_TOOLS"
 must_expect "DRAFT_AFTER_TOOLS"
-send -- "\\003"
-after 200
-send -- "\\004"
+send -- "\\003\\004"
 expect {
     eof {}
     timeout {
@@ -221,7 +265,8 @@ function verifyOutput(output: string, columns: number): void {
 		"State cancelled",
 		"Tools",
 		"Tools /",
-		"Raw protocol",
+		"Tools / Keys",
+		"Ctrl+Y",
 		"Call ID: tools-pty-4",
 		"Arguments",
 		"Result content",
@@ -417,6 +462,11 @@ export async function verifyToolsPty(options: ToolsPtyVerificationOptions): Prom
 	await writeFile(
 		join(configDirectory, "settings.json"),
 		`${JSON.stringify({ defaultProjectTrust: "always", images: { autoResize: false }, shellPath: shellWrapper }, null, "\t")}\n`,
+		{ mode: 0o600 },
+	);
+	await writeFile(
+		join(configDirectory, "keybindings.json"),
+		`${JSON.stringify({ "tui.select.down": ["down", "ctrl+y"] }, null, "\t")}\n`,
 		{ mode: 0o600 },
 	);
 	await writeFile(

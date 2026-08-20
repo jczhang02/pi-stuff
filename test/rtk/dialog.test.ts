@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { RtkProjectionAdapter } from "../../packages/pi-stuff/src/rtk/projection.js";
 import { compactRtkBinaryPath, createRtkDialogView } from "../../packages/pi-stuff/src/rtk/rtk-dialog.js";
@@ -84,13 +84,16 @@ test("RTK status keeps unchecked and off states readable at low height", () => {
 			return text;
 		},
 	} as unknown as Theme;
+	let closed = 0;
 	const component = createRtkDialogView({
 		projection: new RtkProjectionAdapter(),
 		runtime: new RtkRuntime(),
 		settings: RtkSettingsStore.memory({ outputProjection: false, rewriteCommands: false, schemaVersion: 1 }),
 	}).create({
-		close: () => {},
-		keybindings: {},
+		close: () => {
+			closed += 1;
+		},
+		keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
 		requestRender: () => {},
 		signal: new AbortController().signal,
 		theme: recordingTheme,
@@ -103,5 +106,14 @@ test("RTK status keeps unchecked and off states readable at low height", () => {
 	expect(lines.at(-1)).toContain("Esc close");
 	expect(colors).toContainEqual({ color: "muted", text: "○ unchecked" });
 	expect(colors.filter(({ color, text }) => color === "muted" && text === "○")).toHaveLength(2);
+	component.handleInput?.("\r");
+	component.handleInput?.("q");
+	expect(closed).toBe(0);
+	component.handleInput?.("?");
+	expect(component.render(64).join("\n")).toContain("RTK / Keys");
+	component.handleInput?.("\u001b");
+	expect(closed).toBe(0);
+	component.handleInput?.("\u001b");
+	expect(closed).toBe(1);
 	component.dispose?.();
 });

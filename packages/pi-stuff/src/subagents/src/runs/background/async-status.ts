@@ -279,6 +279,7 @@ function statusToSummary(
 			index,
 			agent: step.agent,
 			...(step.context ? { context: step.context } : {}),
+			...(step.delegatedTask ? { delegatedTask: step.delegatedTask } : {}),
 			...(step.task ? { task: step.task } : {}),
 			...(step.label ? { label: step.label } : {}),
 			...(step.phase ? { phase: step.phase } : {}),

@@ -39,8 +39,9 @@ remain unchanged.
 The accepted `/ctx` readability target is recorded in
 [`docs/adr/0008-own-the-context-command-surface.md`](../../../../docs/adr/0008-own-the-context-command-surface.md).
 Its 2026-08-17 update was implemented on 2026-08-18. The shipped single-column Dialog now leads with usage, uses
-`◆` sections and semantic status icons, hides known no-op actions, explains Context vocabulary, and provides
-PageUp/PageDown plus Shift+Up/Down where content overflows.
+`◆` sections and semantic status icons, hides known no-op actions, and explains Context vocabulary. Its action lists
+and text fields keep Pi's native SelectList and Input keyboard behavior rather than intercepting the read-only Dialog
+aliases.
 Suite-owned custom Agent messages use one shared delivery seam. That seam waits
 for Context activation before the Host freezes the first request. Pi 0.84.2
 does not emit `before_agent_start` for an idle `sendMessage` turn, so when such a

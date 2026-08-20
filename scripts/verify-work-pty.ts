@@ -37,7 +37,7 @@ send -- "start monitor fixture\r"
 must_expect "MAIN_CONTINUES"
 send -- "/tasks\r"
 must_expect "Tasks"
-must_expect "Esc return"
+must_expect "Esc close"
 send -- "\\033"
 after 100
 set narrow_columns 48
@@ -45,7 +45,7 @@ stty rows $env(PI_STUFF_WORK_PTY_ROWS) columns $narrow_columns < $work_pty
 after 150
 send -- "/tasks\r"
 must_expect "Tasks"
-must_expect "Esc return"
+must_expect "Esc close"
 send -- "\r"
 must_expect "Tasks / Shell"
 must_expect "Esc back"
@@ -63,7 +63,7 @@ must_expect "context files"
 after 150
 send -- "/tasks\r"
 must_expect "No background work in this session."
-must_expect "Esc return"
+must_expect "Esc close"
 send -- "\\033"
 after 100
 send -- "DRAFT_AFTER_TASKS"

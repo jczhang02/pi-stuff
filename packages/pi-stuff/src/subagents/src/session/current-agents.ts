@@ -156,7 +156,7 @@ const STATUS_ORDER: Record<AgentStatus, number> = {
 };
 const MAX_PARTIAL_RESULT_CHARS = 4_000;
 const MAX_TERMINAL_ERROR_CHARS = 1_000;
-const MAX_TASK_CHARS = 500;
+const MAX_TASK_CHARS = 4_000;
 const MAX_DYNAMIC_SOURCE_CODE_UNITS = 4_096;
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -192,6 +192,10 @@ function boundedText(value: unknown, limit: number): string | null {
 	return text;
 }
 
+function boundedTask(value: string | null): string {
+	return value ? boundTerminalText(value, MAX_TASK_CHARS).trim() : "";
+}
+
 function terminalError(status: AgentStatus, ...values: unknown[]): string | null {
 	if (status !== "failed" && status !== "crashed") return null;
 	for (const value of values) {
@@ -208,6 +212,17 @@ function firstString(...values: unknown[]): string | null {
 	for (const value of values) {
 		const text = optionalString(value);
 		if (text) return text;
+	}
+	return null;
+}
+
+function taskForDisplay(...values: unknown[]): string | null {
+	for (const value of values) {
+		const text = optionalString(value);
+		if (!text) continue;
+		const trimmed = text.trimStart();
+		if (trimmed.startsWith("<pi-stuff-context ")) continue;
+		return text;
 	}
 	return null;
 }
@@ -348,6 +363,7 @@ function projectNestedAgents(value: unknown): AgentNestedDetail[] {
 			const asyncDir = rootRunId && sanitizedRun ? (resolveNestedAsyncDir(rootRunId, sanitizedRun) ?? null) : null;
 			if (steps.length === 0) {
 				const status = deriveStatus(run, runStatus);
+				const task = boundedTask(taskForDisplay(run["delegatedTask"], run["task"]));
 				details.push(
 					Object.freeze({
 						key: `nested:${runId}:0`,
@@ -357,15 +373,15 @@ function projectNestedAgents(value: unknown): AgentNestedDetail[] {
 						parentRunId,
 						depth,
 						name: firstString(run["agent"], runId) ?? "agent",
-						description: resolveDisplayDescription(undefined, firstString(run["task"]) ?? ""),
-						task: boundedText(run["task"], MAX_TASK_CHARS) ?? "",
+						description: resolveDisplayDescription(undefined, task),
+						task,
 						status,
 						error: terminalError(status, run),
 						nestedCount: countNestedRuns(runChildren),
 						sessionFile: firstLocator(run["sessionFile"]),
 						transcriptPath: firstLocator(run["transcriptPath"]),
 						savedOutputPath: firstLocator(run["savedOutputPath"]),
-						partialResult: partialResult(run),
+						partialResult: partialResult(status, run),
 					}),
 				);
 			}
@@ -386,7 +402,7 @@ function projectNestedAgents(value: unknown): AgentNestedDetail[] {
 						all.findIndex((candidate) => optionalString(asRecord(candidate)["id"]) === childId) === position
 					);
 				});
-				const task = boundedText(step["task"], MAX_TASK_CHARS) ?? "";
+				const task = boundedTask(taskForDisplay(step["delegatedTask"], step["task"]));
 				const description = resolveDisplayDescription(firstString(step["description"]), task);
 				const status = deriveStatus(step, sourceStatus(step["status"] ?? runStatus));
 				details.push(
@@ -406,7 +422,7 @@ function projectNestedAgents(value: unknown): AgentNestedDetail[] {
 						sessionFile: firstLocator(step["sessionFile"], run["sessionFile"]),
 						transcriptPath: firstLocator(step["transcriptPath"]),
 						savedOutputPath: firstLocator(step["savedOutputPath"]),
-						partialResult: partialResult(step, run),
+						partialResult: partialResult(status, step, run),
 					}),
 				);
 				walk(stepChildren, depth + 1);
@@ -441,14 +457,14 @@ function boundedRecentOutput(value: unknown): string | null {
 	return lines.join("\n") || null;
 }
 
-function partialResult(...values: unknown[]): string | null {
+function partialResult(status: AgentStatus, ...values: unknown[]): string | null {
 	for (const value of values) {
 		const record = asRecord(value);
-		const direct = boundedText(
-			record["finalOutput"] ?? record["summary"] ?? record["output"],
-			MAX_PARTIAL_RESULT_CHARS,
-		);
+		const candidate = record["finalOutput"] ?? record["summary"] ?? record["output"];
+		const direct =
+			typeof candidate === "string" ? boundTerminalText(candidate, MAX_PARTIAL_RESULT_CHARS).trim() || null : null;
 		if (direct) return direct;
+		if (TERMINAL_STATUSES.has(status)) continue;
 		const recent = boundedRecentOutput(record["recentOutput"]);
 		if (recent) return recent;
 	}
@@ -472,7 +488,7 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 
 	return steps.map(({ step, childIndex }) => {
 		const stepRecord = asRecord(step);
-		const persistedTask = firstString(stepRecord["task"], job.tasks?.[childIndex]);
+		const persistedTask = taskForDisplay(stepRecord["delegatedTask"], job.tasks?.[childIndex], stepRecord["task"]);
 		const taskSource = persistedTask ?? firstString(stepRecord["label"], stepRecord["phase"], job.description) ?? "";
 		const explicitDescription = firstString(
 			job.descriptions?.[childIndex],
@@ -500,14 +516,14 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 			sessionId,
 			name: firstString(stepRecord["agent"], job.agents?.[childIndex]) ?? "agent",
 			description: resolveDisplayDescription(explicitDescription, taskSource),
-			task: boundedText(taskSource, MAX_TASK_CHARS) ?? "",
+			task: boundedTask(taskSource),
 			status,
 			error: terminalError(status, stepRecord, job),
 			startedAt: finiteNumber(stepRecord["startedAt"] ?? job.startedAt),
 			endedAt: finiteNumber(
 				stepRecord["endedAt"] ?? (TERMINAL_SOURCE_STATUSES.has(jobStatus) ? job.updatedAt : null),
 			),
-			partialResult: partialResult(stepRecord, job),
+			partialResult: partialResult(status, stepRecord, job),
 			nestedCount: countNestedRuns(nested),
 			nestedAgents: projectNestedAgents(nested),
 			sessionFile: firstLocator(stepRecord["sessionFile"], job.sessionFile),
@@ -582,12 +598,12 @@ function projectForegroundControl(
 				persistedTask ? firstString(childRecord["description"], control.description) : undefined,
 				taskSource,
 			),
-			task: boundedText(taskSource, MAX_TASK_CHARS) ?? "",
+			task: boundedTask(taskSource),
 			status,
 			error: terminalError(status, rememberedChild, childRecord, control),
 			startedAt: finiteNumber(childRecord["startedAt"] ?? control.startedAt),
 			endedAt: null,
-			partialResult: partialResult(rememberedChild, childRecord),
+			partialResult: partialResult(status, rememberedChild, childRecord),
 			nestedCount: countNestedRuns(nested),
 			nestedAgents: projectNestedAgents(nested),
 			sessionFile: firstLocator(rememberedChild["sessionFile"]),
@@ -617,12 +633,12 @@ function projectForegroundRun(run: ForegroundRun, sessionId: string): RowDraft[]
 				sessionId,
 				name: child.agent || "agent",
 				description: resolveDisplayDescription(persistedTask ? childRecord["description"] : undefined, taskSource),
-				task: boundedText(taskSource, MAX_TASK_CHARS) ?? "",
+				task: boundedTask(taskSource),
 				status,
 				error: terminalError(status, childRecord),
 				startedAt: finiteNumber(childRecord["startedAt"]),
 				endedAt: finiteNumber(child.updatedAt ?? run.updatedAt),
-				partialResult: partialResult(childRecord),
+				partialResult: partialResult(status, childRecord),
 				nestedCount: countNestedRuns(nested),
 				nestedAgents: projectNestedAgents(nested),
 				sessionFile: firstLocator(child.sessionFile),

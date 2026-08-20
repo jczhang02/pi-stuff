@@ -31,6 +31,8 @@ export interface RunnerAgentTask {
 	agent: string;
 	/** Short launcher-normalized label for terminal surfaces. */
 	description?: string;
+	/** Original delegated task before Suite-owned execution context is prepended. */
+	delegatedTask?: string;
 	task: string;
 	/** Resolved launch context for this child. */
 	context?: "fresh" | "fork";

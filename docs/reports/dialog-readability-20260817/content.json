@@ -14,7 +14,7 @@
 			"只有 /tools 和 /tasks 在非空宽屏下使用固定 18 行双栏",
 			"/tasks 只展示 Background Shell 和 Monitor，不投影 Agent",
 			"/diagnostics 始终单栏，/btw 直接复刻 Claude Code 的问题加答案阅读流",
-			"Shift+Up/Down 是 PageUp/PageDown 的 60% 键盘替代",
+			"PageUp/PageDown 保留；紧凑键盘用 b/Space 翻页，Ctrl+P/N 按行移动",
 			"Conversation Transcript 不在本次重做范围内",
 			"所有本轮设计决策已经落实到代码和聚焦验证"
 		],
@@ -52,7 +52,7 @@
 			"takeaways": [
 				"本轮逐项讨论了 8 个重点 Command Dialog，设计已经落实到生产代码与聚焦验证。",
 				"所有状态都使用有固定含义的图标，› 只表示当前选中项，不再同时承担状态含义。",
-				"PageUp/PageDown 保留，同时增加 Shift+Up/Down，照顾没有独立翻页键的 60% 键盘。",
+				"PageUp/PageDown 保留；只读界面增加 b/Space 翻页和 Ctrl+P/N 按行移动，照顾没有独立翻页键的紧凑键盘。",
 				"普通详情板块使用紧凑的 ◆ 标记，板块正文不继续缩进；/btw 保留直接阅读流，不硬加板块。",
 				"只有非空宽屏下的 /tools 与 /tasks 使用固定 18 行双栏；/agents、/diagnostics 与 /btw 始终单栏。"
 			]
@@ -62,7 +62,7 @@
 				"title": "先统一阅读语言，不统一内容模板",
 				"claim": "8 个 Dialog 应该让人一眼认出它们属于同一个产品，但不应该强迫它们展示同样的板块。共同语言只管选择、状态、板块、翻页和退出，各 Dialog 仍按自己的任务组织内容。",
 				"paragraphs": [
-					"共同语言包含 5 件事：`›` 只表示选中，状态由固定图标表达，普通详情板块用 `◆` 标记，翻页同时支持 PageUp/PageDown 与 Shift+Up/Down，Esc 始终沿着详情、列表、Dialog 的层级返回。用户学会一次，就能在 8 个页面复用。",
+					"共同语言包含 5 件事：`›` 只表示选中，状态由固定图标表达，普通详情板块用 `◆` 标记，只读翻页支持 PageUp/PageDown 与 b/Space，Esc 始终沿着详情、列表、Dialog 的层级返回。完整快捷键放在 `?` 帮助页里。",
 					"真正需要区别的是内容。例如 `/agents` 要围绕 Agent 名称、任务和活动来读，`/mcp` 要快速看服务器是否可用，`/ctx` 要先看上下文用了多少。把它们硬塞进同一套 State、Task、Detail 行，只会让页面看起来整齐，却不好读。"
 				]
 			},
@@ -82,7 +82,7 @@
 				"title": "/tools：按一次工作来读，不按协议记录来读",
 				"claim": "`/tools` 的主角是用户能理解的一次 Activity，也就是一段连续的工具工作，而不是内部调用 ID。列表先写它做了什么，详情再按需要展开调用和格式化结果。",
 				"paragraphs": [
-					"包含多次调用的 Activity 展示 Calls 和 Detail 两个板块，单次调用直接进入 Detail，不为一个条目造空列表。正常详情保留各工具自己已经设计好的格式，Raw 只在调试时打开，协议 ID 不挤进日常阅读。",
+					"包含多次调用的 Activity 展示 Calls 和 Result 两个板块，单次调用直接进入 Result，不为一个条目造空列表。正常结果保留各工具自己已经设计好的格式，Raw 只在调试时打开，协议 ID 不挤进日常阅读。",
 					"宽度达到 96 格且列表非空时，Activity 列表与选中详情共用一块固定 18 行区域。顶部粗线连续贯穿全宽，中间只有一条粗 `┃` 分隔线；切换 Activity 不会推动编辑器。空页面和窄屏仍是单栏。"
 				],
 				"figure": {
@@ -122,7 +122,7 @@
 				"title": "/btw：复刻 Claude Code 的直接阅读流",
 				"claim": "`/btw question` 在一条连续粗顶线下面显示近期问题、当前问题和 Markdown 答案。它没有 BTW 标题、状态行、Answer 板块、卡片或双栏。",
 				"paragraphs": [
-					"Left/Right 切换保留的成功交流；Up/Down 滚动，PageUp/PageDown 与 Shift+Up/Down 翻一页。流式答案只在用户停在底部时自动跟随。失败信息也进入同一条答案阅读流，不另开错误板块。",
+					"Left/Right 切换保留的成功交流；Up/Down 或 Ctrl+P/N 滚动，PageUp/PageDown 与 b/Space 翻一页。流式答案只在用户停在底部时自动跟随。失败信息也进入同一条答案阅读流，不另开错误板块。",
 					"Footer 使用已经观察到的 Claude 词句：`c to copy`、`f to fork`、`x to clear history`、`Esc to close`。清理历史仍在原界面内用 `y` 确认；Space、Enter 和 Esc 都可以关闭。"
 				]
 			},
@@ -142,7 +142,7 @@
 				"title": "实现结果与验收方法",
 				"claim": "本轮决策已经落实到生产代码，不再停留在 prototype。共享布局、8 个重点 Dialog、模块文档和真实 PTY 预期已经同步；报告只负责把结果集中说明，不能代替测试证据。",
 				"paragraphs": [
-					"共享层已经提供粗 Dialog 顶线、`◆` 板块标记、固定状态图标、PageUp/PageDown 与 Shift+Up/Down 的同一路径，以及一块区域式的固定双栏。双栏只由 `/tools` 和 `/tasks` 使用，数据为空时不会留下半块详情。",
+					"共享层已经提供粗 Dialog 顶线、`◆` 板块标记、固定状态图标、Pi 可配置按键与只读紧凑别名的同一路径，以及一块区域式的固定双栏。双栏只由 `/tools` 和 `/tasks` 使用，数据为空时不会留下半块详情。",
 					"`/tasks` 已删除 Agent 投影与 current-work 聚合注册表，直接使用 Background Work runtime snapshot；`/diagnostics` 已固定为单栏；`/btw` 已按真实 Claude Code 形状去掉 Answer 板块与状态壳。Agent、Tool、Context、MCP 和 RTK 的状态图标、板块、翻页与低高度路径也已同步。"
 				]
 			}

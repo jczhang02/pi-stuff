@@ -961,6 +961,7 @@ function parallelInputs(data: PreparedLaunch) {
 		return {
 			agent: task.agent,
 			...(task.description ? { description: task.description } : {}),
+			delegatedTask: task.task,
 			task: childTask(data, task, index),
 			...(task.cwd ? { cwd: task.cwd } : {}),
 			...(task.model ? { model: task.model } : {}),
@@ -1116,6 +1117,7 @@ function buildForegroundConfig(
 						...common,
 						agent: singleName,
 						description: data.params.description,
+						delegatedTask: singleTask,
 						task: childTask(data, { agent: singleName, task: singleTask }, 0),
 						agentConfig: singleAgent(data),
 						context: data.context,
@@ -1406,6 +1408,7 @@ function emitNestedLifecycle(
 	const directTasks = taskInputs(data.params);
 	const liveSteps = liveStatus?.steps?.map((step) => ({
 		agent: step.agent,
+		...(step.delegatedTask ? { delegatedTask: step.delegatedTask } : {}),
 		...(step.task ? { task: step.task } : {}),
 		...(step.label ? { description: step.label } : {}),
 		status: step.status,

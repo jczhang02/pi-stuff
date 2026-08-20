@@ -1,4 +1,4 @@
-import type { AgentToolResult, BashToolDetails, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
 	activityKey,
@@ -12,7 +12,7 @@ import {
 } from "../../tool-display/index.js";
 import { startMonitor } from "./monitor.js";
 import { DEFAULT_MODEL_OUTPUT_LIMIT } from "./output.js";
-import type { BackgroundWorkOutcome, BackgroundWorkRuntime } from "./runtime.js";
+import type { BackgroundWorkBashDetails, BackgroundWorkOutcome, BackgroundWorkRuntime } from "./runtime.js";
 
 const BASH_PARAMETERS = Type.Object({
 	command: Type.String({ description: "Shell command to execute", maxLength: 1_000_000, minLength: 1 }),
@@ -95,8 +95,27 @@ function resultText<T>(result: AgentToolResult<T>): string {
 	return item?.type === "text" ? item.text : "";
 }
 
-export function isForegroundBashResult(result: AgentToolResult<BashToolDetails | undefined>): boolean {
-	return !bashResultMovedToBackground(result);
+export function isForegroundBashResult(result: AgentToolResult<unknown>): boolean {
+	const details = result.details;
+	return !(
+		(typeof details === "object" &&
+			details !== null &&
+			"backgroundTaskId" in details &&
+			typeof details.backgroundTaskId === "string") ||
+		bashResultMovedToBackground(result)
+	);
+}
+
+function backgroundBashDetailLines(result: AgentToolResult<BackgroundWorkBashDetails | undefined>): readonly string[] {
+	const taskId = result.details?.backgroundTaskId;
+	if (!taskId) return [];
+	const outputPath = result.details?.fullOutputPath;
+	return [
+		`Started in background · ${taskId}`,
+		...(outputPath ? ["", "Output file", outputPath] : []),
+		"",
+		"Result will be delivered automatically.",
+	];
 }
 
 function requireRuntime(ref: WorkToolRuntimeRef): BackgroundWorkRuntime {
@@ -151,7 +170,7 @@ export function registerWorkTools(
 	const includeBash = options.includeBash !== false;
 	const bashWasActive = includeBash ? pi.getActiveTools().includes("bash") : false;
 	if (includeBash) {
-		const bash: ToolDefinition<typeof BASH_PARAMETERS, BashToolDetails | undefined> = {
+		const bash: ToolDefinition<typeof BASH_PARAMETERS, BackgroundWorkBashDetails | undefined> = {
 			name: "bash",
 			label: "bash",
 			description:
@@ -185,8 +204,7 @@ export function registerWorkTools(
 					categories: ["commit", "push", "merge", "rebase", "create-pr", "launch-background", "run-command"],
 					classify: (input) => {
 						if (input.result && !isForegroundBashResult(input.result)) {
-							const text = resultText(input.result);
-							const taskId = text.match(/background task ([a-z0-9]+)/u)?.[1];
+							const taskId = input.result.details?.backgroundTaskId;
 							return singleActivity("launch-background", {
 								key: activityKey(taskId ?? input.args.description ?? input.args.command),
 								target: firstLine(input.args.description) || "background command",
@@ -199,14 +217,15 @@ export function registerWorkTools(
 						return line || state;
 					},
 				},
+				detailLines: (_args, result) => backgroundBashDetailLines(result),
 				label: "Bash",
 				runningSummary: (_args, durationMs) =>
 					`running ${String(Math.max(0, Math.floor((durationMs ?? 0) / 1_000)))}s`,
 				summarize: (_args, result, state) => {
-					const text = resultText(result);
-					const id = text.match(/background task ([a-z0-9]+)/u)?.[1];
+					const id = result.details?.backgroundTaskId;
 					if (id) return `background · ${id}`;
 					if (state === "success") return "done";
+					const text = resultText(result);
 					const terminal = text.trim().split(/\r?\n/u).at(-1)?.trim();
 					return terminal || state;
 				},

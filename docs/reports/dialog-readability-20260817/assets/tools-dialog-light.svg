@@ -41,13 +41,13 @@
   <text class="body" x="762" y="368">Read ADR 0010</text>
 
   <text class="section accent" x="686" y="484">◆</text>
-  <text class="section" x="728" y="484">Detail · formatted</text>
+  <text class="section" x="728" y="484">Result</text>
   <text class="body" x="686" y="548">Read</text>
   <text class="body" x="686" y="606">Target: packages/pi-stuff/src/tool-display/tool-dialog.ts</text>
   <text class="body" x="686" y="664">Summary: 58 lines returned</text>
 
   <text class="meta" x="48" y="944">↑/↓ select · Enter details</text>
-  <text class="meta" x="48" y="980">Shift+↑/↓ page · Esc return</text>
+  <text class="meta" x="48" y="980">PgUp/PgDn page · ? keys · Esc close</text>
   <text class="meta" x="686" y="944">↑/↓ calls · r raw · Esc back</text>
-  <text class="meta" x="686" y="980">Shift+↑/↓ page</text>
+  <text class="meta" x="686" y="980">PgUp/PgDn page · Tab pane · ? keys</text>
 </svg>

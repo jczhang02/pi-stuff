@@ -39,7 +39,7 @@ MCP · 2/3 connected · 14 tools · 3 resources
 ■ legacy · disabled
 ○ docs · cached                    6 tools · 2 resources
 
-Shift+↑/↓ page · Esc close · configure in .mcp.json
+PgUp/PgDn page · ? keys · Esc close · configure in .mcp.json
 ```
 
 Use `✓` connected, `○` cached or not connected, `×` failed, `!` needs auth, and `■` disabled. Initial loading uses
@@ -55,15 +55,16 @@ Show per-server and aggregate resource counts when reported, in addition to Tool
 state icon, server name, and state word; then preserve the actionable command for auth or failure before capability
 counts. Omit zero or unavailable capability counts rather than adding placeholders.
 
-Up and Down scroll one line. PageUp/PageDown and Shift+Up/Down scroll one visible page only when the list overflows.
-Keep the configuration hint and Escape path; Enter and Space may retain their current close behavior without being
-advertised. An empty page says `No MCP servers configured.` followed by `Add .mcp.json, then run /reload.`
+Pi's configured Up and Down actions scroll one line; Ctrl+P/Ctrl+N are read-only aliases. PageUp/PageDown and
+`b`/Space scroll one visible page only when the list overflows, while Home/End jump to the top or bottom. Keep the
+configuration hint, `?` help, and Escape path. Enter and Space do not close the status surface. An empty page says
+`No MCP servers configured.` followed by `Add .mcp.json, then run /reload.`
 
 The status snapshot and Dialog continue to exclude server URLs, executable commands, arguments, environment values,
 OAuth data, tokens, detailed failure messages, and other configuration secrets. Detailed operational failures belong
 in bounded `/diagnostics`; Tool call protocol belongs in `/tools`.
 
 The implementation now uses distinct state icons, includes resource counts, shows status-specific next steps, provides
-the two-line empty state, and routes PageUp/PageDown plus Shift+Arrow through one paging path. Focused tests cover live
+the two-line empty state, and routes Pi's configured page actions plus `b`/Space through one paging path. Focused tests cover live
 updates, declaration order, narrow fitting, empty state, sensitive-data exclusion, and page aliases; the real PTY
 verifier covers Host rendering.

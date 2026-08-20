@@ -1,12 +1,18 @@
-import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { isKeyRelease, truncateToWidth } from "@earendil-works/pi-tui";
 import {
 	type CommandDialogComponent,
 	type CommandDialogView,
 	type CommandDialogViewContext,
+	commandDialogHintLines,
+	commandDialogNavigation,
+	commandDialogPrimaryKey,
+	commandDialogReadKeyHelp,
 	commandDialogRows,
+	commandDialogScrollOffset,
 	fitCommandDialogRows,
-	matchesCommandDialogPageDown,
-	matchesCommandDialogPageUp,
+	matchesCommandDialogCancel,
+	matchesCommandDialogHelp,
+	renderCommandDialogKeyHelp,
 } from "../conversation-ui/index.js";
 import type { McpServerStatusSnapshot, McpStatusSnapshot } from "./runtime/index.js";
 import type { McpStatusStore } from "./status-store.js";
@@ -86,7 +92,9 @@ function headerLine(context: CommandDialogViewContext, snapshot: McpStatusSnapsh
 class McpStatusDialog implements CommandDialogComponent {
 	private readonly context: CommandDialogViewContext<void>;
 	private disposed = false;
+	private lastViewportRows = 1;
 	private scroll = 0;
+	private showKeyHelp = false;
 	private snapshot: McpStatusSnapshot | undefined;
 	private readonly unsubscribe: () => void;
 
@@ -108,17 +116,32 @@ class McpStatusDialog implements CommandDialogComponent {
 	}
 
 	handleInput(data: string): void {
-		if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter) || matchesKey(data, Key.space)) {
+		if (this.disposed || isKeyRelease(data)) return;
+		if (this.showKeyHelp) {
+			if (matchesCommandDialogCancel(data, this.context.keybindings)) {
+				this.showKeyHelp = false;
+				this.context.requestRender();
+			}
+			return;
+		}
+		if (matchesCommandDialogHelp(data)) {
+			this.showKeyHelp = true;
+			this.context.requestRender();
+			return;
+		}
+		if (matchesCommandDialogCancel(data, this.context.keybindings)) {
 			this.context.close();
 			return;
 		}
-		const page = this.viewportRows();
-		if (matchesKey(data, Key.up)) this.scroll = Math.max(0, this.scroll - 1);
-		else if (matchesKey(data, Key.down)) this.scroll += 1;
-		else if (matchesCommandDialogPageUp(data)) this.scroll = Math.max(0, this.scroll - page);
-		else if (matchesCommandDialogPageDown(data)) this.scroll += page;
-		else return;
-		this.clampScroll();
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (!navigation) return;
+		const page = this.lastViewportRows;
+		this.scroll = commandDialogScrollOffset(
+			this.scroll,
+			Math.max(0, (this.snapshot?.servers.length ?? 0) - page),
+			page,
+			navigation,
+		);
 		this.context.requestRender();
 	}
 
@@ -126,23 +149,43 @@ class McpStatusDialog implements CommandDialogComponent {
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, Math.floor(width));
+		if (this.showKeyHelp) {
+			return renderCommandDialogKeyHelp(
+				this.context,
+				renderWidth,
+				"MCP",
+				commandDialogReadKeyHelp(this.context.keybindings, "server", [
+					{ keys: ".mcp.json", description: "Configure servers" },
+				]),
+			);
+		}
 		const maximumRows = commandDialogRows(this.context);
 		if (maximumRows === 0) return [];
 		const servers = this.snapshot?.servers ?? [];
-		const viewportRows = this.viewportRows();
-		const visible = servers.slice(this.scroll, this.scroll + viewportRows);
 		const emptyLines = [
 			`${GUTTER}${this.context.theme.fg("muted", "No MCP servers configured.")}`,
 			`${GUTTER}${this.context.theme.fg("dim", "Add .mcp.json, then run /reload.")}`,
 		];
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
+		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
+		const footerFor = (overflow: boolean) =>
+			commandDialogHintLines(this.context.theme, renderWidth, [
+				...(overflow ? [`${up}/${down} scroll`, `${pageUp}/${pageDown} page`] : []),
+				"configure in .mcp.json",
+				"? keys",
+				`${cancel} close`,
+			]);
+		let footer = footerFor(false);
+		this.lastViewportRows = Math.max(1, maximumRows - 2 - footer.length);
+		footer = footerFor(servers.length > this.lastViewportRows);
+		this.lastViewportRows = Math.max(1, maximumRows - 2 - footer.length);
+		this.clampScroll();
+		const visible = servers.slice(this.scroll, this.scroll + this.lastViewportRows);
 		const serverLines = visible.map((server) => serverLine(this.context, server));
 		const body = servers.length === 0 ? emptyLines : serverLines;
-		const footer = `${GUTTER}${this.context.theme.fg(
-			"dim",
-			servers.length > viewportRows
-				? "Esc close · ↑/↓ scroll · Shift+↑/↓ page · configure in .mcp.json"
-				: "Esc close · configure in .mcp.json",
-		)}`;
 		const priority =
 			serverLines.find((line) => line.includes("failed") || line.includes("needs auth")) ??
 			serverLines[0] ??
@@ -152,7 +195,7 @@ class McpStatusDialog implements CommandDialogComponent {
 			{
 				header: [this.context.theme.fg("border", "━".repeat(renderWidth)), headerLine(this.context, this.snapshot)],
 				body,
-				footer: [footer],
+				footer,
 				priority: [priority],
 			},
 			maximumRows,
@@ -161,12 +204,8 @@ class McpStatusDialog implements CommandDialogComponent {
 	}
 
 	private clampScroll(): void {
-		const maximum = Math.max(0, (this.snapshot?.servers.length ?? 0) - this.viewportRows());
+		const maximum = Math.max(0, (this.snapshot?.servers.length ?? 0) - this.lastViewportRows);
 		this.scroll = Math.min(maximum, Math.max(0, this.scroll));
-	}
-
-	private viewportRows(): number {
-		return Math.max(1, commandDialogRows(this.context) - 3);
 	}
 }
 

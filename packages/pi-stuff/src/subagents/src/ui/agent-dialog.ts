@@ -3,6 +3,7 @@ import {
 	decodeKittyPrintable,
 	isKeyRelease,
 	Key,
+	type Markdown,
 	matchesKey,
 	parseKey,
 	truncateToWidth,
@@ -16,10 +17,20 @@ import type {
 	CommandDialogViewContext,
 } from "../../../conversation-ui/index.js";
 import {
+	commandDialogListIndex,
+	commandDialogListKeyHelp,
+	commandDialogNavigation,
+	commandDialogPrimaryKey,
+	commandDialogReadKeyHelp,
 	commandDialogRows,
+	commandDialogScrollOffset,
+	createMarkdownRenderer,
 	fitCommandDialogRows,
-	matchesCommandDialogPageDown,
-	matchesCommandDialogPageUp,
+	fitFixedCommandDialogRows,
+	matchesCommandDialogCancel,
+	matchesCommandDialogConfirm,
+	matchesCommandDialogHelp,
+	renderCommandDialogKeyHelp,
 } from "../../../conversation-ui/index.js";
 import { boundTerminalText as boundTerminalPreview } from "../../../tool-display/index.js";
 import type {
@@ -42,8 +53,9 @@ const MAX_TRANSCRIPT_CHARS = 64_000;
 const INPUT_CHAR_LIMIT = 4_000;
 const LIST_ROWS = 8;
 const NARROW_LIST_ROWS = 6;
-const DETAIL_ROWS = 10;
-const NARROW_DETAIL_ROWS = 6;
+const AGENT_DIALOG_ROWS = 20;
+const TOOL_RESULT_PREVIEW_CHARS = 4_000;
+const TOOL_RESULT_PREVIEW_LINES = 8;
 
 const TERMINAL_STATUSES = new Set<AgentStatus>(["agent_stopped", "completed", "crashed", "failed", "user_cancelled"]);
 const RESUMABLE_STATUSES = new Set<AgentStatus>(["agent_stopped", "completed", "crashed", "failed"]);
@@ -54,8 +66,27 @@ export interface AgentTranscriptRequest {
 	readonly signal: AbortSignal;
 }
 
-/** The reader should use maxChars to bound file I/O before returning text. */
-export type AgentTranscriptReader = (request: AgentTranscriptRequest) => Promise<string | null> | string | null;
+export type AgentToolOutcome = "cancelled" | "completed" | "failed" | "rejected" | "running";
+
+export type AgentTranscriptItem =
+	| { readonly kind: "message"; readonly speaker: string | null; readonly text: string }
+	| {
+			readonly kind: "tool";
+			readonly name: string;
+			readonly outcome: AgentToolOutcome;
+			readonly result: string;
+			readonly target: string;
+	  }
+	| { readonly kind: "notice"; readonly text: string };
+
+export interface AgentTranscriptDocument {
+	readonly items: readonly AgentTranscriptItem[];
+}
+
+/** The reader should use maxChars to bound file I/O before returning Activity. */
+export type AgentTranscriptReader = (
+	request: AgentTranscriptRequest,
+) => Promise<AgentTranscriptDocument | string | null> | AgentTranscriptDocument | string | null;
 
 export interface AgentDialogOptions {
 	readonly initialKey?: string;
@@ -73,6 +104,7 @@ interface Feedback {
 }
 
 interface Transcript {
+	readonly items: readonly AgentTranscriptItem[];
 	readonly state: TranscriptState;
 	readonly text: string;
 }
@@ -113,9 +145,11 @@ class AgentDialogComponent implements CommandDialogComponent {
 	private disposed = false;
 	private feedback: Feedback | undefined;
 	private input = "";
-	private lastActivityMaxOffset = 0;
+	private lastDetailMaxOffset = 0;
+	private lastDetailViewportRows = 1;
 	private listPageRows = LIST_ROWS;
 	private listSelectedKey: string | undefined;
+	private readonly markdown: Markdown;
 	private mode: DialogMode = "list";
 	private nestedListPageRows = LIST_ROWS;
 	private nestedSelectedKey: string | undefined;
@@ -124,8 +158,10 @@ class AgentDialogComponent implements CommandDialogComponent {
 	private followActivity = true;
 	private scrollOffset = 0;
 	private selectedKey: string | undefined;
+	private showKeyHelp = false;
+	private showToolDetails = false;
 	private snapshotValue: AgentSessionSnapshot;
-	private transcript: Transcript = { state: "unavailable", text: "" };
+	private transcript: Transcript = { items: [], state: "unavailable", text: "" };
 	private transcriptGeneration = 0;
 	private readonly options: NormalizedOptions;
 	private readonly unsubscribe: () => void;
@@ -133,6 +169,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 	constructor(current: CurrentAgents, context: CommandDialogViewContext<void>, options: NormalizedOptions) {
 		this.context = context;
 		this.current = current;
+		this.markdown = createMarkdownRenderer(context.theme);
 		this.options = options;
 		this.snapshotValue = current.snapshot();
 		this.listSelectedKey = this.snapshotValue.rows[0]?.key;
@@ -155,7 +192,19 @@ class AgentDialogComponent implements CommandDialogComponent {
 			this.handleComposerInput(data);
 			return;
 		}
-		if (matchesKey(data, Key.escape)) {
+		if (this.showKeyHelp) {
+			if (matchesCommandDialogCancel(data, this.context.keybindings)) {
+				this.showKeyHelp = false;
+				this.requestRender();
+			}
+			return;
+		}
+		if (matchesCommandDialogHelp(data)) {
+			this.showKeyHelp = true;
+			this.requestRender();
+			return;
+		}
+		if (matchesCommandDialogCancel(data, this.context.keybindings)) {
 			if (this.mode === "nested-detail") this.showNestedList();
 			else if (this.mode === "nested-list") this.returnToDetail();
 			else if (this.mode === "detail") this.showList();
@@ -169,10 +218,43 @@ class AgentDialogComponent implements CommandDialogComponent {
 		else this.handleDetailInput(data);
 	}
 
-	invalidate(): void {}
+	invalidate(): void {
+		this.markdown.invalidate();
+	}
 
 	render(width: number): string[] {
 		const renderWidth = Math.max(1, width);
+		if (this.showKeyHelp) {
+			const row = this.detailRow();
+			const listRow = this.listRow();
+			const canStop =
+				(this.mode === "list" && listRow !== undefined && !TERMINAL_STATUSES.has(listRow.status)) ||
+				(this.mode === "detail" && row !== undefined && !TERMINAL_STATUSES.has(row.status));
+			const extras = [
+				...(this.mode === "detail" && row?.nestedAgents.length
+					? [{ keys: "n", description: "Inspect nested Agents" }]
+					: []),
+				...(this.mode === "detail" && row && !TERMINAL_STATUSES.has(row.status) && row.status !== "stopping"
+					? [{ keys: "s", description: "Steer Agent" }]
+					: []),
+				...(this.mode === "detail" && row && RESUMABLE_STATUSES.has(row.status)
+					? [{ keys: "r", description: "Resume Agent" }]
+					: []),
+				...(canStop ? [{ keys: "x", description: "Stop Agent" }] : []),
+				...((this.mode === "detail" || this.mode === "nested-detail") && this.hasToolActivity()
+					? [{ keys: "t", description: this.showToolDetails ? "Hide Tool results" : "Show Tool results" }]
+					: []),
+			];
+			const list = this.mode === "list" || this.mode === "nested-list";
+			return renderCommandDialogKeyHelp(
+				this.context,
+				renderWidth,
+				"Agents",
+				list
+					? commandDialogListKeyHelp(this.context.keybindings, "Agent", extras)
+					: commandDialogReadKeyHelp(this.context.keybindings, "line", extras),
+			);
+		}
 		const lines =
 			this.mode === "list"
 				? this.renderList(renderWidth)
@@ -204,7 +286,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 			this.input = "";
 			this.scrollOffset = 0;
 			this.transcriptGeneration += 1;
-			this.transcript = { state: "unavailable", text: "" };
+			this.transcript = { items: [], state: "unavailable", text: "" };
 			this.nestedSelectedKey = undefined;
 			if (!this.operationPending) {
 				this.feedback = { kind: "success", message: "Agent left the current-session list." };
@@ -227,32 +309,21 @@ class AgentDialogComponent implements CommandDialogComponent {
 	}
 
 	private handleListInput(data: string): void {
-		if (
-			matchesKey(data, Key.up) ||
-			matchesKey(data, Key.down) ||
-			matchesCommandDialogPageUp(data) ||
-			matchesCommandDialogPageDown(data)
-		) {
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (navigation) {
 			const rows = this.snapshotValue.rows;
 			if (rows.length === 0) return;
 			const currentIndex = Math.max(
 				0,
 				rows.findIndex((row) => row.key === this.listSelectedKey),
 			);
-			const delta = matchesKey(data, Key.up)
-				? -1
-				: matchesKey(data, Key.down)
-					? 1
-					: matchesCommandDialogPageUp(data)
-						? -this.listPageRows
-						: this.listPageRows;
-			const nextIndex = Math.min(rows.length - 1, Math.max(0, currentIndex + delta));
+			const nextIndex = commandDialogListIndex(currentIndex, rows.length, this.listPageRows, navigation);
 			this.listSelectedKey = rows[nextIndex]?.key;
 			if (!this.operationPending) this.feedback = undefined;
 			this.requestRender();
 			return;
 		}
-		if (matchesKey(data, Key.enter)) {
+		if (matchesCommandDialogConfirm(data, this.context.keybindings)) {
 			const row = this.listRow();
 			if (row) this.showDetail(row);
 			return;
@@ -265,73 +336,44 @@ class AgentDialogComponent implements CommandDialogComponent {
 
 	private handleNestedListInput(data: string): void {
 		const rows = this.detailRow()?.nestedAgents ?? [];
-		if (
-			matchesKey(data, Key.up) ||
-			matchesKey(data, Key.down) ||
-			matchesCommandDialogPageUp(data) ||
-			matchesCommandDialogPageDown(data)
-		) {
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (navigation) {
 			if (rows.length === 0) return;
 			const currentIndex = Math.max(
 				0,
 				rows.findIndex((row) => row.key === this.nestedSelectedKey),
 			);
-			const delta = matchesKey(data, Key.up)
-				? -1
-				: matchesKey(data, Key.down)
-					? 1
-					: matchesCommandDialogPageUp(data)
-						? -this.nestedListPageRows
-						: this.nestedListPageRows;
-			const nextIndex = Math.min(rows.length - 1, Math.max(0, currentIndex + delta));
+			const nextIndex = commandDialogListIndex(currentIndex, rows.length, this.nestedListPageRows, navigation);
 			this.nestedSelectedKey = rows[nextIndex]?.key;
 			this.requestRender();
 			return;
 		}
-		if (matchesKey(data, Key.enter)) {
+		if (matchesCommandDialogConfirm(data, this.context.keybindings)) {
 			const row = this.nestedDetailRow();
 			if (row) this.showNestedDetail(row);
 		}
 	}
 
 	private handleNestedDetailInput(data: string): void {
-		if (
-			!matchesKey(data, Key.up) &&
-			!matchesKey(data, Key.down) &&
-			!matchesCommandDialogPageUp(data) &&
-			!matchesCommandDialogPageDown(data)
-		)
+		if (decodePrintable(data)?.toLowerCase() === "t" && this.hasToolActivity()) {
+			this.showToolDetails = !this.showToolDetails;
+			this.requestRender();
 			return;
+		}
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (!navigation) return;
 		const page = this.detailViewportRows();
-		const delta = matchesKey(data, Key.up)
-			? -1
-			: matchesKey(data, Key.down)
-				? 1
-				: matchesCommandDialogPageUp(data)
-					? -page
-					: page;
-		this.scrollOffset = Math.max(0, this.scrollOffset + delta);
-		this.followActivity = delta > 0 && this.scrollOffset >= this.lastActivityMaxOffset;
+		this.scrollOffset = commandDialogScrollOffset(this.scrollOffset, this.lastDetailMaxOffset, page, navigation);
+		this.followActivity = navigation === "end" || this.scrollOffset >= this.lastDetailMaxOffset;
 		this.requestRender();
 	}
 
 	private handleDetailInput(data: string): void {
-		if (
-			matchesKey(data, Key.up) ||
-			matchesKey(data, Key.down) ||
-			matchesCommandDialogPageUp(data) ||
-			matchesCommandDialogPageDown(data)
-		) {
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (navigation) {
 			const page = this.detailViewportRows();
-			const delta = matchesKey(data, Key.up)
-				? -1
-				: matchesKey(data, Key.down)
-					? 1
-					: matchesCommandDialogPageUp(data)
-						? -page
-						: page;
-			this.scrollOffset = Math.max(0, this.scrollOffset + delta);
-			this.followActivity = delta > 0 && this.scrollOffset >= this.lastActivityMaxOffset;
+			this.scrollOffset = commandDialogScrollOffset(this.scrollOffset, this.lastDetailMaxOffset, page, navigation);
+			this.followActivity = navigation === "end" || this.scrollOffset >= this.lastDetailMaxOffset;
 			this.requestRender();
 			return;
 		}
@@ -342,6 +384,11 @@ class AgentDialogComponent implements CommandDialogComponent {
 			return;
 		}
 		const printable = decodePrintable(data)?.toLowerCase();
+		if (printable === "t" && this.hasToolActivity()) {
+			this.showToolDetails = !this.showToolDetails;
+			this.requestRender();
+			return;
+		}
 		if (this.operationPending) return;
 		if (printable === "x" && !TERMINAL_STATUSES.has(row.status)) {
 			this.stop(row);
@@ -459,9 +506,11 @@ class AgentDialogComponent implements CommandDialogComponent {
 		this.input = "";
 		this.scrollOffset = 0;
 		this.followActivity = true;
-		this.lastActivityMaxOffset = 0;
+		this.lastDetailMaxOffset = 0;
+		this.lastDetailViewportRows = 1;
 		this.transcriptGeneration += 1;
-		this.transcript = { state: "unavailable", text: "" };
+		this.transcript = { items: [], state: "unavailable", text: "" };
+		this.showToolDetails = false;
 		if (!this.operationPending) this.feedback = undefined;
 		this.reconcileListSelection();
 		this.requestRender();
@@ -474,7 +523,9 @@ class AgentDialogComponent implements CommandDialogComponent {
 		this.listSelectedKey = row.key;
 		this.scrollOffset = 0;
 		this.followActivity = true;
-		this.lastActivityMaxOffset = 0;
+		this.lastDetailMaxOffset = 0;
+		this.lastDetailViewportRows = 1;
+		this.showToolDetails = false;
 		if (!this.operationPending) this.feedback = undefined;
 		this.loadTranscript(row, row.key);
 		this.requestRender();
@@ -489,7 +540,9 @@ class AgentDialogComponent implements CommandDialogComponent {
 		this.mode = "detail";
 		this.scrollOffset = 0;
 		this.followActivity = true;
-		this.lastActivityMaxOffset = 0;
+		this.lastDetailMaxOffset = 0;
+		this.lastDetailViewportRows = 1;
+		this.showToolDetails = false;
 		this.loadTranscript(row, row.key);
 		this.requestRender();
 	}
@@ -506,9 +559,11 @@ class AgentDialogComponent implements CommandDialogComponent {
 		}
 		this.scrollOffset = 0;
 		this.followActivity = true;
-		this.lastActivityMaxOffset = 0;
+		this.lastDetailMaxOffset = 0;
+		this.lastDetailViewportRows = 1;
 		this.transcriptGeneration += 1;
-		this.transcript = { state: "unavailable", text: "" };
+		this.transcript = { items: [], state: "unavailable", text: "" };
+		this.showToolDetails = false;
 		this.requestRender();
 	}
 
@@ -517,14 +572,16 @@ class AgentDialogComponent implements CommandDialogComponent {
 		this.nestedSelectedKey = row.key;
 		this.scrollOffset = 0;
 		this.followActivity = true;
-		this.lastActivityMaxOffset = 0;
+		this.lastDetailMaxOffset = 0;
+		this.lastDetailViewportRows = 1;
+		this.showToolDetails = false;
 		this.loadTranscript(row, row.key);
 		this.requestRender();
 	}
 
 	private loadTranscript(row: AgentTranscriptTarget, selectionKey: string): void {
 		const generation = ++this.transcriptGeneration;
-		this.transcript = { state: "loading", text: "" };
+		this.transcript = { items: [], state: "loading", text: "" };
 		void Promise.resolve()
 			.then(() =>
 				this.options.readTranscript({
@@ -543,14 +600,25 @@ class AgentDialogComponent implements CommandDialogComponent {
 						? ""
 						: boundedTerminalText(row.partialResult, Math.min(this.options.maxTranscriptChars, 4_000))
 					: "";
+				const items =
+					typeof value === "string"
+						? text
+							? [{ kind: "message", speaker: null, text } satisfies AgentTranscriptItem]
+							: []
+						: (value?.items ?? []);
+				const onlyPartial =
+					items.length === 1 && items[0]?.kind === "message" && items[0].text.trim() === partial.trim();
 				this.transcript =
-					text && text.trim() !== partial.trim() ? { state: "ready", text } : { state: "unavailable", text: "" };
+					items.length > 0 && !onlyPartial
+						? { items, state: "ready", text: "" }
+						: { items: [], state: "unavailable", text: "" };
 				this.scrollOffset = 0;
 				this.requestRender();
 			})
 			.catch((error) => {
 				if (!this.canFinishTranscript(generation, selectionKey)) return;
 				this.transcript = {
+					items: [],
 					state: "error",
 					text: `Unable to read Activity: ${oneLine(errorMessage(error))}`,
 				};
@@ -576,9 +644,17 @@ class AgentDialogComponent implements CommandDialogComponent {
 		return this.detailRow()?.nestedAgents.find((row) => row.key === this.nestedSelectedKey);
 	}
 
+	private hasToolActivity(): boolean {
+		return this.transcript.items.some((item) => item.kind === "tool");
+	}
+
 	private renderList(width: number): string[] {
 		const rows = this.snapshotValue.rows;
 		const limit = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		this.listPageRows = limit;
 		const window = selectedWindow(rows, this.listSelectedKey, limit);
 		const header = [divider(this.context.theme, width), title(this.context.theme, "Agents")];
@@ -598,10 +674,10 @@ class AgentDialogComponent implements CommandDialogComponent {
 			const later = rows.length - window.start - window.rows.length;
 			if (later > 0) body.push(`${GUTTER}${this.context.theme.fg("dim", `… ${later} later`)}`);
 		}
-		const hints = ["↑/↓ navigate", ...(rows.length > limit ? ["Shift+↑/↓ page"] : []), "Enter inspect"];
+		const hints = [`${up}/${down} select`, `${confirm} details`];
 		const selected = this.listRow();
 		if (selected && !TERMINAL_STATUSES.has(selected.status)) hints.push("x stop");
-		hints.push("Esc close");
+		hints.push("? keys", `${cancel} close`);
 		body.push("");
 		const footer = hintLines(this.context.theme, width, hints);
 		const selectedIndex = window.rows.findIndex((row) => row.key === this.listSelectedKey);
@@ -644,6 +720,10 @@ class AgentDialogComponent implements CommandDialogComponent {
 		this.nestedListPageRows = limit;
 		const window = selectedWindow(rows, this.nestedSelectedKey, limit);
 		const theme = this.context.theme;
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const header = [divider(theme, width), title(theme, `Agents / ${oneLine(parent.name) || "agent"} / nested`)];
 		const body = ["", `${GUTTER}${theme.fg("muted", `${rows.length} nested Agent${rows.length === 1 ? "" : "s"}`)}`];
 		const rowLines: string[] = [];
@@ -661,12 +741,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 			{
 				header,
 				body,
-				footer: hintLines(theme, width, [
-					"↑/↓ navigate",
-					...(rows.length > limit ? ["Shift+↑/↓ page"] : []),
-					"Enter inspect",
-					"Esc back",
-				]),
+				footer: hintLines(theme, width, [`${up}/${down} select`, `${confirm} details`, "? keys", `${cancel} back`]),
 				priority: [rowLines[selectedIndex] ?? body[1] ?? ""],
 			},
 			commandDialogRows(this.context),
@@ -703,29 +778,24 @@ class AgentDialogComponent implements CommandDialogComponent {
 		const header = [divider(theme, width), title(theme, `Agents / ${oneLine(row.name) || "agent"}`), stateLine];
 		const feedbackLine = this.feedback ? renderFeedback(theme, this.feedback, width) : undefined;
 		const taskLines = sectionBody(row.task || "(no task)", width);
-		const outcome = agentOutcome(row, width, theme);
-		const activity = this.renderScrollableContent(width, !TERMINAL_STATUSES.has(row.status));
-		const body = [
-			"",
-			...(feedbackLine ? [feedbackLine, ""] : []),
+		const outcome = agentOutcome(row, width, theme, this.markdown);
+		const activity = this.activityLines(width);
+		const document = [
 			sectionHeading(theme, "Task"),
 			...taskLines,
 			...(outcome ? ["", sectionHeading(theme, outcome.label), ...outcome.lines] : []),
 			"",
 			sectionHeading(theme, "Activity"),
 			...activity,
-			"",
 		];
 		const activityError = this.transcript.state === "error" ? activity.find((line) => line.trim()) : undefined;
-		return fitCommandDialogRows(
-			{
-				header,
-				body,
-				footer: this.renderDetailFooter(row, width),
-				overflowTitle: header[1],
-				priority: [feedbackLine ?? outcome?.lines[0] ?? activityError ?? stateLine, ...taskLines.slice(0, 1)],
-			},
-			commandDialogRows(this.context),
+		return this.renderDetailSurface(
+			header,
+			document,
+			(scrollable) => this.renderDetailFooter(row, width, scrollable),
+			!TERMINAL_STATUSES.has(row.status),
+			[feedbackLine ?? outcome?.lines[0] ?? activityError ?? stateLine, ...taskLines.slice(0, 1)],
+			feedbackLine,
 		);
 	}
 
@@ -734,6 +804,11 @@ class AgentDialogComponent implements CommandDialogComponent {
 		const row = this.nestedDetailRow();
 		if (!parent || !row) return this.renderNestedList(width);
 		const theme = this.context.theme;
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
+		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const header = [
 			divider(theme, width),
 			title(theme, `Agents / ${oneLine(parent.name) || "agent"} / ${oneLine(row.name) || "nested"}`),
@@ -744,36 +819,74 @@ class AgentDialogComponent implements CommandDialogComponent {
 		)}`;
 		header.push(stateLine);
 		const taskLines = sectionBody(row.task || "(no task)", width);
-		const outcome = agentOutcome(row, width, theme);
-		const activity = this.renderScrollableContent(width, !TERMINAL_STATUSES.has(row.status));
-		const body = [
-			"",
+		const outcome = agentOutcome(row, width, theme, this.markdown);
+		const activity = this.activityLines(width);
+		const document = [
 			sectionHeading(theme, "Task"),
 			...taskLines,
 			...(outcome ? ["", sectionHeading(theme, outcome.label), ...outcome.lines] : []),
 			"",
 			sectionHeading(theme, "Activity"),
 			...activity,
-			"",
 		];
 		const activityError = this.transcript.state === "error" ? activity.find((line) => line.trim()) : undefined;
-		return fitCommandDialogRows(
-			{
-				header,
-				body,
-				footer: hintLines(theme, width, [
-					"↑/↓ scroll",
-					...(this.lastActivityMaxOffset > 0 ? ["Shift+↑/↓ page"] : []),
-					"Esc back",
+		return this.renderDetailSurface(
+			header,
+			document,
+			(scrollable) =>
+				hintLines(theme, width, [
+					...(scrollable ? [`${up}/${down} scroll`, `${pageUp}/${pageDown} page`] : []),
+					...(this.hasToolActivity() ? ["t tool details"] : []),
+					"? keys",
+					`${cancel} back`,
 				]),
-				overflowTitle: header[1],
-				priority: [outcome?.lines[0] ?? activityError ?? stateLine, ...taskLines.slice(0, 1)],
-			},
-			commandDialogRows(this.context),
+			!TERMINAL_STATUSES.has(row.status),
+			[outcome?.lines[0] ?? activityError ?? stateLine, ...taskLines.slice(0, 1)],
 		);
 	}
 
-	private renderScrollableContent(width: number, live: boolean): string[] {
+	private renderDetailSurface(
+		header: readonly string[],
+		document: readonly string[],
+		footerFor: (scrollable: boolean) => string[],
+		live: boolean,
+		priority: readonly string[],
+		feedbackLine?: string,
+	): string[] {
+		const maximum = Math.min(AGENT_DIALOG_ROWS, commandDialogRows(this.context));
+		const fixedRows = header.length + 2 + (feedbackLine ? 2 : 0);
+		let footer = footerFor(false);
+		let viewport = Math.max(0, maximum - fixedRows - footer.length);
+		if (document.length > viewport) {
+			footer = footerFor(true);
+			viewport = Math.max(0, maximum - fixedRows - footer.length);
+		}
+		const content = viewport <= 3 ? document.filter((line) => line.trim().length > 0) : document;
+		const maxOffset = Math.max(0, content.length - viewport);
+		this.lastDetailMaxOffset = maxOffset;
+		this.lastDetailViewportRows = Math.max(1, viewport);
+		this.scrollOffset = this.followActivity && live ? maxOffset : Math.min(maxOffset, Math.max(0, this.scrollOffset));
+		const visible = [...content.slice(this.scrollOffset, this.scrollOffset + viewport)];
+		if (this.scrollOffset > 0 && visible.length > 0) {
+			visible[0] = `${GUTTER}${this.context.theme.fg("dim", `… ${this.scrollOffset} earlier lines`)}`;
+		}
+		const later = content.length - this.scrollOffset - visible.length;
+		if (later > 0 && visible.length > 0) {
+			visible[visible.length - 1] = `${GUTTER}${this.context.theme.fg("dim", `… ${later} later lines`)}`;
+		}
+		return fitFixedCommandDialogRows(
+			{
+				header,
+				body: ["", ...(feedbackLine ? [feedbackLine, ""] : []), ...visible, ""],
+				footer,
+				overflowTitle: header[1],
+				priority,
+			},
+			maximum,
+		);
+	}
+
+	private activityLines(width: number): string[] {
 		const theme = this.context.theme;
 		const contentWidth = Math.max(1, width - GUTTER.length);
 		const allLines: string[] = [];
@@ -788,30 +901,40 @@ class AgentDialogComponent implements CommandDialogComponent {
 				allLines.push(theme.fg("error", truncateToWidth(this.transcript.text, contentWidth, "…")));
 				break;
 			case "ready":
-				allLines.push(...transcriptLines(this.transcript.text, contentWidth));
+				for (const item of this.transcript.items) {
+					if (allLines.length > 0) allLines.push("");
+					if (item.kind === "notice") {
+						allLines.push(theme.fg("dim", oneLine(item.text)));
+						continue;
+					}
+					if (item.kind === "tool") {
+						allLines.push(...renderAgentTool(item, contentWidth, theme, this.showToolDetails));
+						continue;
+					}
+					const speaker = item.speaker ? oneLine(item.speaker) : "";
+					if (speaker) allLines.push(theme.fg("text", theme.bold(speaker)));
+					const body = boundedTerminalText(item.text, this.options.maxTranscriptChars);
+					this.markdown.setText(body);
+					allLines.push(...this.markdown.render(contentWidth));
+				}
 				break;
 		}
-		const viewport = width <= NARROW_WIDTH ? NARROW_DETAIL_ROWS : DETAIL_ROWS;
-		const maxOffset = Math.max(0, allLines.length - viewport);
-		this.lastActivityMaxOffset = maxOffset;
-		this.scrollOffset = this.followActivity && live ? maxOffset : Math.min(maxOffset, Math.max(0, this.scrollOffset));
-		const visible = allLines.slice(this.scrollOffset, this.scrollOffset + viewport);
-		const result = visible.map((line) => `${GUTTER}${line || " "}`);
-		if (this.scrollOffset > 0) result[0] = `${GUTTER}${theme.fg("dim", `… ${this.scrollOffset} earlier lines`)}`;
-		const later = allLines.length - this.scrollOffset - visible.length;
-		if (later > 0 && result.length > 0)
-			result[result.length - 1] = `${GUTTER}${theme.fg("dim", `… ${later} later lines`)}`;
-		return result;
+		return allLines.map((line) => `${GUTTER}${line || " "}`);
 	}
 
-	private renderDetailFooter(row: AgentRow, width: number): string[] {
-		const actions = ["↑/↓ scroll"];
-		if (this.lastActivityMaxOffset > 0) actions.push("Shift+↑/↓ page");
+	private renderDetailFooter(row: AgentRow, width: number, scrollable: boolean): string[] {
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
+		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
+		const actions = scrollable ? [`${up}/${down} scroll`, `${pageUp}/${pageDown} page`] : [];
 		if (row.nestedAgents.length > 0) actions.push("n nested");
 		if (!TERMINAL_STATUSES.has(row.status) && row.status !== "stopping") actions.push("s steer");
 		if (RESUMABLE_STATUSES.has(row.status)) actions.push("r resume");
 		if (!TERMINAL_STATUSES.has(row.status)) actions.push("x stop");
-		actions.push("Esc back");
+		if (this.hasToolActivity()) actions.push("t tool details");
+		actions.push("? keys", `${cancel} back`);
 		return hintLines(this.context.theme, width, actions);
 	}
 
@@ -841,8 +964,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 	}
 
 	private detailViewportRows(): number {
-		const columns = (this.context.tui.terminal as { columns?: number }).columns;
-		return typeof columns === "number" && columns <= NARROW_WIDTH ? NARROW_DETAIL_ROWS : DETAIL_ROWS;
+		return this.lastDetailViewportRows;
 	}
 
 	private requestRender(): void {
@@ -888,10 +1010,18 @@ function sectionBody(value: string, width: number): string[] {
 	return transcriptLines(safe, contentWidth).map((line) => `${GUTTER}${line || " "}`);
 }
 
+function markdownSectionBody(value: string, width: number, markdown: Markdown): string[] {
+	const contentWidth = Math.max(1, width - visibleWidth(GUTTER));
+	const safe = boundedTerminalText(value, 4_000) || "—";
+	markdown.setText(safe);
+	return markdown.render(contentWidth).map((line) => `${GUTTER}${line || " "}`);
+}
+
 function agentOutcome(
 	row: AgentRow | AgentNestedDetail,
 	width: number,
 	theme: Theme,
+	markdown: Markdown,
 ): { readonly label: "Error" | "Partial result" | "Result"; readonly lines: readonly string[] } | undefined {
 	const partial = row.partialResult && !isTaskOnlyAgentText(row.partialResult, row.task) ? row.partialResult : "";
 	if (row.error) {
@@ -900,15 +1030,62 @@ function agentOutcome(
 			label: "Error",
 			lines: [
 				...errorLines,
-				...(partial ? ["", `${GUTTER}${theme.fg("muted", "Partial result")}`, ...sectionBody(partial, width)] : []),
+				...(partial
+					? [
+							"",
+							`${GUTTER}${theme.fg("muted", "Partial result")}`,
+							...markdownSectionBody(partial, width, markdown),
+						]
+					: []),
 			],
 		};
 	}
 	if (!partial) return undefined;
 	return {
 		label: row.status === "completed" ? "Result" : "Partial result",
-		lines: sectionBody(partial, width),
+		lines: markdownSectionBody(partial, width, markdown),
 	};
+}
+
+function renderAgentTool(
+	item: Extract<AgentTranscriptItem, { readonly kind: "tool" }>,
+	width: number,
+	theme: Theme,
+	showDetails: boolean,
+): string[] {
+	const target = oneLine(item.target);
+	const glyph = styleToolOutcome(theme, item.outcome, toolOutcomeGlyph(item.outcome));
+	const header = `${glyph} ${theme.fg("text", toolLabel(item.name))}${target ? ` · ${theme.fg("muted", target)}` : ""}${theme.fg("dim", ` · ${item.outcome}`)}`;
+	const result = boundedTerminalText(item.result, TOOL_RESULT_PREVIEW_CHARS).trim();
+	if (!result || (!showDetails && item.outcome === "completed")) return [header];
+
+	const logicalLines = result.split("\n");
+	const lines = logicalLines
+		.slice(0, TOOL_RESULT_PREVIEW_LINES)
+		.flatMap((line, index) => transcriptLines(`${index === 0 ? "⎿ " : ""}${line}`, width));
+	const omitted = logicalLines.length - Math.min(logicalLines.length, TOOL_RESULT_PREVIEW_LINES);
+	if (omitted > 0) lines.push(`⎿ … ${String(omitted)} lines omitted`);
+	return [header, ...lines];
+}
+
+function toolLabel(value: string): string {
+	const safe = oneLine(value) || "Tool";
+	return `${safe.charAt(0).toUpperCase()}${safe.slice(1)}`;
+}
+
+function toolOutcomeGlyph(outcome: AgentToolOutcome): string {
+	if (outcome === "running") return "●";
+	if (outcome === "completed") return "✓";
+	if (outcome === "rejected") return "!";
+	if (outcome === "cancelled") return "■";
+	return "×";
+}
+
+function styleToolOutcome(theme: Theme, outcome: AgentToolOutcome, value: string): string {
+	if (outcome === "running") return theme.fg("accent", value);
+	if (outcome === "completed") return theme.fg("success", value);
+	if (outcome === "failed") return theme.fg("error", value);
+	return theme.fg("warning", value);
 }
 
 function renderFeedback(theme: Theme, feedback: Feedback, width: number): string {

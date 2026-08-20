@@ -868,6 +868,8 @@ export interface NestedStepSummary {
 	agent: string;
 	/** Bounded task text used to distinguish same-named nested Agents. */
 	task?: string;
+	/** Original delegated task before Suite-owned execution context is prepended. */
+	delegatedTask?: string;
 	description?: string;
 	/** Small UI projection retained when full process proof is intentionally omitted. */
 	agentStatus?: "crashed";
@@ -1040,6 +1042,8 @@ export interface AsyncStatus {
 		phase?: string;
 		/** Full execution task; legacy status files may only have label. */
 		task?: string;
+		/** Original delegated task before Suite-owned execution context is prepended. */
+		delegatedTask?: string;
 		label?: string;
 		outputName?: string;
 		structured?: boolean;
@@ -1048,6 +1052,9 @@ export interface AsyncStatus {
 		sessionFile?: string;
 		transcriptPath?: string;
 		transcriptError?: string;
+		/** Bounded final Agent answer retained separately from recent activity. */
+		finalOutput?: string;
+		savedOutputPath?: string;
 		activityState?: ActivityState;
 		lastActivityAt?: number;
 		currentTool?: string;

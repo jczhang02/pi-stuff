@@ -102,8 +102,8 @@ function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: 
 
 	const view: CommandDialogView = {
 		priority: "normal",
-		create: ({ signal, tui, theme, close }) => {
-			const controller = new BtwDialogController(theme, tui, {
+		create: ({ signal, tui, theme, keybindings, close }) => {
+			const controller = new BtwDialogController(theme, tui, keybindings, {
 				history,
 				...(question === undefined ? {} : { question }),
 				...(question === undefined && history.length === 0

@@ -4123,6 +4123,9 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 			}>;
 		};
 		const child = completion.results[0];
+		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
+			steps: Array<{ finalOutput?: string; savedOutputPath?: string }>;
+		};
 
 		expect(completion).toMatchObject({
 			state: "complete",
@@ -4130,6 +4133,10 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 			results: [{ output: "VALID_AFTER_ARTIFACT_LOSS", success: true }],
 		});
 		expect(child?.transcriptError).toContain("Failed to write child transcript");
+		expect(status.steps[0]).toMatchObject({
+			finalOutput: "VALID_AFTER_ARTIFACT_LOSS",
+			savedOutputPath: child?.artifactPaths?.outputPath,
+		});
 		expect(child?.artifactPaths && fs.existsSync(child.artifactPaths.outputPath)).toBe(true);
 		expect(child?.artifactPaths && fs.existsSync(child.artifactPaths.metadataPath)).toBe(true);
 		const metadata = JSON.parse(fs.readFileSync(child?.artifactPaths?.metadataPath ?? "", "utf8")) as {

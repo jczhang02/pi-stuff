@@ -50,9 +50,10 @@ summary before age; preserve a repeat count ahead of age when the record is dedu
 
 Records remain ordered by their most recent report or update, newest first. An update moves its deduplicated record to
 the front but does not change the focused record. When the list exceeds its visible window, show `… N newer` and
-`… N older`; Up and Down move one record, and PageUp/PageDown plus Shift+Up/Down move one visible page. The page hint
-appears only on overflow. `c clear` keeps its current immediate, current-process-only behavior; this history is bounded,
-ephemeral display state rather than durable user data.
+`… N older`. Pi's configured Up and Down actions move one record; Ctrl+P/Ctrl+N are read-only aliases.
+PageUp/PageDown plus `b`/Space move one visible page, and Home/End jump to the first or last record. The page hint
+appears only on overflow; `?` opens contextual key help. `c clear` keeps its current immediate,
+current-process-only behavior; this history is bounded, ephemeral display state rather than durable user data.
 
 Detail uses the Capability as breadcrumb, the summary as its visual anchor, and full severity text in Header metadata:
 
@@ -71,9 +72,9 @@ Run /agents again after the session file becomes readable.
 
 Omit `Action` when no user action was recorded. `Details` shows the latest bounded record content; when none exists it
 says `No additional details were recorded.` without inventing an explanation. The compact `◆` appears only on the
-section heading. PageUp/PageDown and Shift+Up/Down scroll by a page; Up and Down scroll by one line. A live update to the
-selected deduplicated record refreshes its count, age, action, and latest details without moving a user to another
-record or resetting a valid reading position.
+section heading. PageUp/PageDown and `b`/Space scroll by a page; Up/Down and Ctrl+P/Ctrl+N scroll by one line, while
+Home/End jump to the top or bottom. A live update to the selected deduplicated record refreshes its count, age,
+action, and latest details without moving a user to another record or resetting a valid reading position.
 
 At low height preserve the Header, severity and summary, selected row or first detail line, and Escape path before age,
 counts, optional action, or surrounding records. Sanitization, credential redaction, record/detail bounds, and observer

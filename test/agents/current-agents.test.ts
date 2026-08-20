@@ -348,6 +348,80 @@ describe("CurrentAgents snapshot", () => {
 		}
 	});
 
+	test("uses the delegated task instead of the execution prompt", () => {
+		const state = createState();
+		const delegatedTask = `Review the Agent dialog.\n${"Keep this detail readable. ".repeat(30)}\nLAST_TASK_LINE`;
+		state.recentAgentJobs?.set(
+			"derived-prompt",
+			asyncJob("derived-prompt", "complete", {
+				steps: [
+					{
+						agent: "reviewer",
+						delegatedTask,
+						label: "Review Agent dialog",
+						status: "completed",
+						task: `<pi-stuff-context trust="reference-only">${"memory".repeat(1_000)}</pi-stuff-context>\n\nReview the Agent dialog.`,
+					},
+				],
+			}),
+		);
+		state.recentAgentJobs?.set(
+			"legacy-derived-prompt",
+			asyncJob("legacy-derived-prompt", "complete", {
+				steps: [
+					{
+						agent: "reviewer",
+						label: "Review Agent dialog",
+						status: "completed",
+						task: `<pi-stuff-context trust="reference-only">${"memory".repeat(1_000)}</pi-stuff-context>\n\nReview the Agent dialog.`,
+					},
+				],
+			}),
+		);
+
+		const projected = row(new CurrentAgents(state, acknowledgedOptions()).snapshot(), "derived-prompt:0");
+		expect(projected.task).toBe(delegatedTask);
+		expect(projected.task).toEndWith("LAST_TASK_LINE");
+		expect(projected.task).not.toContain("pi-stuff-context");
+		const legacy = row(new CurrentAgents(state, acknowledgedOptions()).snapshot(), "legacy-derived-prompt:0");
+		expect(legacy.task).toBe("Review Agent dialog");
+		expect(legacy.task).not.toContain("pi-stuff-context");
+	});
+
+	test("does not present terminal activity as the Agent result", () => {
+		const state = createState();
+		state.recentAgentJobs?.set(
+			"completed-agent",
+			asyncJob("completed-agent", "complete", {
+				steps: [
+					{
+						agent: "reviewer",
+						recentOutput: ["Read package.json", "Final answer"],
+						status: "completed",
+					},
+				],
+			}),
+		);
+		state.recentAgentJobs?.set(
+			"completed-with-result",
+			asyncJob("completed-with-result", "complete", {
+				steps: [
+					{
+						agent: "reviewer",
+						finalOutput: "First line\nSecond line",
+						recentOutput: ["Read package.json", "First line", "Second line"],
+						status: "completed",
+					},
+				],
+			}),
+		);
+
+		const snapshot = new CurrentAgents(state, acknowledgedOptions()).snapshot();
+		const completed = row(snapshot, "completed-agent:0");
+		expect(completed.partialResult).toBeNull();
+		expect(row(snapshot, "completed-with-result:0").partialResult).toBe("First line\nSecond line");
+	});
+
 	test("reconstructs a task-only legacy background label from persisted status", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-legacy-agent-restore-"));
 		const runDir = path.join(root, "legacy-run");
@@ -755,10 +829,10 @@ describe("CurrentAgents snapshot", () => {
 				steps: [{ agent: "reviewer", label: leadingWhitespaceTask, status: "completed" }],
 			}),
 		);
-		state.recentAgentJobs?.set(
+		state.asyncJobs.set(
 			"bounded-output",
-			asyncJob("bounded-output", "complete", {
-				steps: [{ agent: "reviewer", recentOutput, status: "completed" }],
+			asyncJob("bounded-output", "running", {
+				steps: [{ agent: "reviewer", recentOutput, status: "running" }],
 			}),
 		);
 

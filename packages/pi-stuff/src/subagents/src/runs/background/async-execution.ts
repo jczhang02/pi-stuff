@@ -197,6 +197,7 @@ export interface AsyncExecutionContext {
 export interface AsyncParallelTaskInput {
 	agent: string;
 	description?: string;
+	delegatedTask?: string;
 	task: string;
 	cwd?: string;
 	model?: string;
@@ -245,6 +246,7 @@ export interface AsyncParallelRunnerWorkBuildParams extends CommonBuildParams {
 export interface AsyncSingleRunnerWorkBuildParams extends CommonBuildParams {
 	agent: string;
 	description?: string;
+	delegatedTask?: string;
 	task: string;
 	agentConfig: AgentConfig;
 	context?: ContextMode;
@@ -502,6 +504,7 @@ export function buildResolvedTask(input: {
 		}`,
 		agent: agent.name,
 		description: resolveDisplayDescription(taskInput.description, taskInput.task),
+		delegatedTask: taskInput.delegatedTask ?? taskInput.task,
 		task: taskInput.task,
 		...(input.context ? { context: input.context } : {}),
 		cwd: taskCwd,
@@ -621,7 +624,12 @@ export function buildAsyncSingleRunnerWork(
 	const built = buildResolvedTask({
 		runId: id,
 		index: 0,
-		taskInput: { agent: params.agent, description: params.description, task: params.task },
+		taskInput: {
+			agent: params.agent,
+			description: params.description,
+			delegatedTask: params.delegatedTask,
+			task: params.task,
+		},
 		agent: params.agentConfig,
 		params,
 		runnerCwd,
@@ -1526,8 +1534,8 @@ function emitStarted(input: {
 			agents: tasks.map((task) => task.agent),
 			description: first.description,
 			descriptions: tasks.map((task) => resolveDisplayDescription(task.description, task.task)),
-			task: first.task.slice(0, 50),
-			tasks: tasks.map((task) => taskPreview(task.task)),
+			task: (first.delegatedTask ?? first.task).slice(0, 50),
+			tasks: tasks.map((task) => taskPreview(task.delegatedTask ?? task.task)),
 			goal: (input.goal ?? first.task).slice(0, 120),
 			cwd: input.runnerCwd,
 			asyncDir: input.asyncDir,

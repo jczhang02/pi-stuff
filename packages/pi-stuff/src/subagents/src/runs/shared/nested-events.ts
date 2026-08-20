@@ -530,6 +530,7 @@ function sanitizeStep(input: unknown, depth: number): NestedStepSummary | undefi
 	const toolBudget = sanitizeToolBudget(raw.toolBudget);
 	return {
 		agent,
+		...(stringValue(raw.delegatedTask, 500) ? { delegatedTask: stringValue(raw.delegatedTask, 500) } : {}),
 		...(stringValue(raw.task, 500) ? { task: stringValue(raw.task, 500) } : {}),
 		...(stringValue(raw.description, 500) ? { description: stringValue(raw.description, 500) } : {}),
 		...(raw.agentStatus === "crashed" ? { agentStatus: "crashed" as const } : {}),
@@ -706,6 +707,7 @@ function compactStepForTransport(step: NestedStepSummary, includeChildren: boole
 		capabilityCeiling: _capabilityCeiling,
 		children: _children,
 		currentPath: _currentPath,
+		delegatedTask: _delegatedTask,
 		description: _description,
 		error: _error,
 		processTerminal: _processTerminal,
@@ -724,6 +726,7 @@ function compactStepForTransport(step: NestedStepSummary, includeChildren: boole
 		: truncateUtf8(step.transcriptError, 256);
 	return {
 		...base,
+		...(truncateUtf8(step.delegatedTask, 512) ? { delegatedTask: truncateUtf8(step.delegatedTask, 512) } : {}),
 		...(truncateUtf8(step.task, 512) ? { task: truncateUtf8(step.task, 512) } : {}),
 		...(truncateUtf8(step.description, 256) ? { description: truncateUtf8(step.description, 256) } : {}),
 		...(step.agentStatus === "crashed" || externalWriterCrash(step.processTerminal)
@@ -1959,6 +1962,7 @@ export function nestedSummaryFromAsyncStatus(
 					steps: status.steps
 						.map((step, index) => ({
 							agent: step.agent,
+							...(step.delegatedTask ? { delegatedTask: step.delegatedTask } : {}),
 							...(step.task ? { task: step.task } : {}),
 							...(step.label ? { description: step.label } : {}),
 							status: step.status,

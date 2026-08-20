@@ -1,11 +1,19 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { isKeyRelease, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { DiagnosticChannel, DiagnosticRecord, DiagnosticSeverity } from "./diagnostics.js";
 import {
+	commandDialogListIndex,
+	commandDialogListKeyHelp,
+	commandDialogNavigation,
+	commandDialogPrimaryKey,
+	commandDialogReadKeyHelp,
 	commandDialogRows,
+	commandDialogScrollOffset,
 	fitCommandDialogRows,
-	matchesCommandDialogPageDown,
-	matchesCommandDialogPageUp,
+	matchesCommandDialogCancel,
+	matchesCommandDialogConfirm,
+	matchesCommandDialogHelp,
+	renderCommandDialogKeyHelp,
 } from "./dialog-layout.js";
 import type { CommandDialogComponent, CommandDialogView, CommandDialogViewContext } from "./index.js";
 
@@ -87,6 +95,7 @@ class DiagnosticsDialog implements CommandDialogComponent {
 	private records: readonly DiagnosticRecord[];
 	private scrollOffset = 0;
 	private selectedId: string | undefined;
+	private showKeyHelp = false;
 	private readonly unsubscribe: () => void;
 
 	constructor(channel: DiagnosticChannel, context: CommandDialogViewContext<void>) {
@@ -105,7 +114,19 @@ class DiagnosticsDialog implements CommandDialogComponent {
 
 	handleInput(data: string): void {
 		if (this.disposed || isKeyRelease(data)) return;
-		if (matchesKey(data, Key.escape)) {
+		if (this.showKeyHelp) {
+			if (matchesCommandDialogCancel(data, this.context.keybindings)) {
+				this.showKeyHelp = false;
+				this.context.requestRender();
+			}
+			return;
+		}
+		if (matchesCommandDialogHelp(data)) {
+			this.showKeyHelp = true;
+			this.context.requestRender();
+			return;
+		}
+		if (matchesCommandDialogCancel(data, this.context.keybindings)) {
 			if (this.mode === "detail") {
 				this.mode = "list";
 				this.scrollOffset = 0;
@@ -122,6 +143,18 @@ class DiagnosticsDialog implements CommandDialogComponent {
 	render(width: number): string[] {
 		this.lastWidth = Math.max(1, Math.floor(width));
 		this.reconcileSelection();
+		if (this.showKeyHelp) {
+			return renderCommandDialogKeyHelp(
+				this.context,
+				this.lastWidth,
+				"Diagnostics",
+				this.mode === "list"
+					? commandDialogListKeyHelp(this.context.keybindings, "record", [
+							...(this.records.length > 0 ? [{ keys: "c", description: "Clear records" }] : []),
+						])
+					: commandDialogReadKeyHelp(this.context.keybindings, "line"),
+			);
+		}
 		const lines = this.mode === "list" ? this.renderList() : this.renderDetail();
 		return lines.map((line) => bounded(this.lastWidth, line));
 	}
@@ -148,59 +181,40 @@ class DiagnosticsDialog implements CommandDialogComponent {
 			this.channel.clear();
 			return;
 		}
-		if (matchesKey(data, Key.enter)) {
+		if (matchesCommandDialogConfirm(data, this.context.keybindings)) {
 			if (!this.selected()) return;
 			this.mode = "detail";
 			this.scrollOffset = 0;
 			this.context.requestRender();
 			return;
 		}
-		if (
-			!matchesKey(data, Key.up) &&
-			!matchesKey(data, Key.down) &&
-			!matchesCommandDialogPageUp(data) &&
-			!matchesCommandDialogPageDown(data)
-		)
-			return;
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (!navigation) return;
 		if (this.records.length === 0) return;
 		const current = Math.max(
 			0,
 			this.records.findIndex((record) => record.id === this.selectedId),
 		);
 		const page = Math.max(1, this.lastWidth <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS);
-		const delta = matchesKey(data, Key.up)
-			? -1
-			: matchesKey(data, Key.down)
-				? 1
-				: matchesCommandDialogPageUp(data)
-					? -page
-					: page;
-		const next = Math.max(0, Math.min(this.records.length - 1, current + delta));
+		const next = commandDialogListIndex(current, this.records.length, page, navigation);
 		this.selectedId = this.records[next]?.id;
 		this.scrollOffset = 0;
 		this.context.requestRender();
 	}
 
 	private handleDetailInput(data: string): void {
-		if (
-			!matchesKey(data, Key.up) &&
-			!matchesKey(data, Key.down) &&
-			!matchesCommandDialogPageUp(data) &&
-			!matchesCommandDialogPageDown(data)
-		)
-			return;
+		const navigation = commandDialogNavigation(data, this.context.keybindings);
+		if (!navigation) return;
 		const record = this.selected();
 		if (!record) return;
 		const document = this.detailDocument(record);
 		const page = Math.max(1, commandDialogRows(this.context) - 11);
-		const delta = matchesKey(data, Key.up)
-			? -1
-			: matchesKey(data, Key.down)
-				? 1
-				: matchesCommandDialogPageUp(data)
-					? -page
-					: page;
-		this.scrollOffset = Math.max(0, Math.min(Math.max(0, document.length - page), this.scrollOffset + delta));
+		this.scrollOffset = commandDialogScrollOffset(
+			this.scrollOffset,
+			Math.max(0, document.length - page),
+			page,
+			navigation,
+		);
 		this.context.requestRender();
 	}
 
@@ -209,13 +223,14 @@ class DiagnosticsDialog implements CommandDialogComponent {
 		const theme = this.context.theme;
 		const maximum = commandDialogRows(this.context);
 		const preferred = width <= NARROW_WIDTH ? NARROW_LIST_ROWS : LIST_ROWS;
-		const provisionalViewport = Math.min(preferred, Math.max(0, maximum - 5));
-		const overflows = this.records.length > provisionalViewport;
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const confirm = commandDialogPrimaryKey(this.context.keybindings, "tui.select.confirm", "Enter");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
 		const footer = hint(theme, width, [
-			...(this.records.length > 0
-				? ["↑/↓ select", ...(overflows ? ["Pg/Shift+↑/↓ page"] : []), "Enter details", "c clear"]
-				: []),
-			"Esc return",
+			...(this.records.length > 0 ? [`${up}/${down} select`, `${confirm} details`, "c clear"] : []),
+			"? keys",
+			`${cancel} close`,
 		]);
 		const viewport = Math.min(preferred, Math.max(0, maximum - footer.length - 4));
 		const selectedIndex = Math.max(
@@ -252,10 +267,20 @@ class DiagnosticsDialog implements CommandDialogComponent {
 		const theme = this.context.theme;
 		const maximum = commandDialogRows(this.context);
 		const document = this.detailDocument(record);
-		let footer = hint(theme, width, ["↑/↓ scroll", "Esc back"]);
+		const up = commandDialogPrimaryKey(this.context.keybindings, "tui.select.up", "↑");
+		const down = commandDialogPrimaryKey(this.context.keybindings, "tui.select.down", "↓");
+		const pageUp = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageUp", "PgUp");
+		const pageDown = commandDialogPrimaryKey(this.context.keybindings, "tui.select.pageDown", "PgDn");
+		const cancel = commandDialogPrimaryKey(this.context.keybindings, "tui.select.cancel", "Esc");
+		let footer = hint(theme, width, [`${up}/${down} scroll`, "? keys", `${cancel} back`]);
 		let viewport = Math.max(0, maximum - 8 - footer.length);
 		if (document.length > viewport) {
-			footer = hint(theme, width, ["↑/↓ scroll", "Pg/Shift+↑/↓ page", "Esc back"]);
+			footer = hint(theme, width, [
+				`${up}/${down} scroll`,
+				`${pageUp}/${pageDown} page`,
+				"? keys",
+				`${cancel} back`,
+			]);
 			viewport = Math.max(0, maximum - 8 - footer.length);
 		}
 		const maxOffset = Math.max(0, document.length - viewport);

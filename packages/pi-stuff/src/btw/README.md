@@ -44,16 +44,18 @@ lines, the selected question is emphasized, and its Markdown answer follows dire
 
   The generated declaration file was stale, so TypeScript read an old API shape.
 
-  ←/→ to switch · ↑/↓ to scroll · c to copy · f to fork
-  x to clear history · Esc to close
+  ←/→ switch · ↑/↓ scroll · c copy · f fork
+  x clear history · ? keys · Esc close
 ```
 
 There is no `BTW` title, lifecycle label, `Answer` section, list/detail transition, card, or split pane. Pending work is
 shown by the answer loader; a failure appears in the answer flow. A blank successful answer says `(empty answer)`, and
 bare `/btw` with no retained exchange says `No previous /btw exchange in this session.`
 
-Left and Right switch retained exchanges. Up and Down scroll by three lines; PageUp/PageDown and Shift+Up/Down scroll
-one visible page. A streaming answer follows its tail only while the reader remains at the bottom. `c` and `f` apply
+Left and Right switch retained exchanges. Pi's configured Up and Down actions scroll by three lines, with
+Ctrl+P/Ctrl+N as read-only aliases; PageUp/PageDown and `b`/Space scroll one visible page, and Home/End jump to the top
+or bottom. Enter and Space no longer close the reading surface. `?` opens contextual key help. A streaming answer
+follows its tail only while the reader remains at the bottom. `c` and `f` apply
 only to a successful exchange. `x` appears only when earlier history exists and keeps the inline confirmation inside
 the same surface.
 
