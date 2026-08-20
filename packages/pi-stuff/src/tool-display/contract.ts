@@ -1223,10 +1223,11 @@ export class ToolUiRuntime {
 		return decodeEnvelopeOperations(decode, details);
 	}
 
-	private projectedMessages(): readonly unknown[] {
-		if (this.envelopeDecoders.size === 0) return this.indexedMessages;
+	/** Project registered Tool envelopes into the ordinary calls and results they contain. */
+	projectMessages(messages: readonly unknown[]): readonly unknown[] {
+		if (this.envelopeDecoders.size === 0) return messages;
 		const envelopeNamesById = new Map<string, string>();
-		for (const candidate of this.indexedMessages) {
+		for (const candidate of messages) {
 			if (!isRecordValue(candidate) || candidate["role"] !== "assistant" || !Array.isArray(candidate["content"])) {
 				continue;
 			}
@@ -1240,7 +1241,7 @@ export class ToolUiRuntime {
 			}
 		}
 		const operationsById = new Map<string, readonly SuiteToolEnvelopeOperation[]>();
-		for (const candidate of this.indexedMessages) {
+		for (const candidate of messages) {
 			if (!isRecordValue(candidate) || candidate["role"] !== "toolResult") continue;
 			const id = candidate["toolCallId"];
 			if (typeof id !== "string") continue;
@@ -1249,7 +1250,7 @@ export class ToolUiRuntime {
 			operationsById.set(id, this.decodeEnvelope(name, candidate["details"]));
 		}
 		const projected: unknown[] = [];
-		for (const candidate of this.indexedMessages) {
+		for (const candidate of messages) {
 			if (!isRecordValue(candidate)) {
 				projected.push(candidate);
 				continue;
@@ -1307,7 +1308,7 @@ export class ToolUiRuntime {
 		this.openGroupLeaderId = undefined;
 		const closeTail = !this.agentActive || this.tailForcedClosed;
 		const planned = planToolActivityGroups(
-			this.projectedMessages(),
+			this.projectMessages(this.indexedMessages),
 			(name, args) => this.groupDisposition(name, args),
 			closeTail,
 		);

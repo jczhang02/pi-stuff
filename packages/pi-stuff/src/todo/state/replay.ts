@@ -1,3 +1,4 @@
+import { sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
 import {
 	TASK_SNAPSHOT_CAPABILITY,
 	TASK_SNAPSHOT_SCHEMA_VERSION,
@@ -28,11 +29,6 @@ interface RawSnapshot {
 	schemaVersion?: unknown;
 	tasks?: unknown;
 	nextId?: unknown;
-}
-
-interface RawBranchEntry {
-	type?: unknown;
-	message?: unknown;
 }
 
 interface RawToolResult {
@@ -191,14 +187,18 @@ export function isTaskDetails(value: unknown): value is TaskDetails {
  * branch. New snapshots are accepted only from the four Task* tools; the old
  * numeric snapshot is accepted only from the historical `todo` tool.
  */
-export function replayFromBranch(ctx: { sessionManager: { getBranch(): Iterable<unknown> } }): TaskState {
+export function replayFromBranch(
+	ctx: { sessionManager: { getBranch(): Iterable<unknown> } },
+	projectMessages: (messages: readonly unknown[]) => readonly unknown[] = (messages) => messages,
+): TaskState {
 	let result: TaskState = { tasks: [...EMPTY_STATE.tasks], nextId: EMPTY_STATE.nextId };
 	let highWaterNextId = result.nextId;
-	for (const entry of ctx.sessionManager.getBranch()) {
-		if (!isRecord(entry)) continue;
-		const rawEntry = entry as RawBranchEntry;
-		if (rawEntry.type !== "message" || !isRecord(rawEntry.message)) continue;
-		const message = rawEntry.message as RawToolResult;
+	const branchMessages = [...ctx.sessionManager.getBranch()].flatMap((entry) =>
+		sessionEntryToContextMessages(entry as never),
+	);
+	for (const candidate of projectMessages(branchMessages)) {
+		if (!isRecord(candidate)) continue;
+		const message = candidate as RawToolResult;
 		if (message.role !== "toolResult" || typeof message.toolName !== "string") continue;
 
 		const snapshot =
