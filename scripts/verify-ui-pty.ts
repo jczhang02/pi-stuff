@@ -811,7 +811,7 @@ async function verifyTodoOverlay(
 	}
 	for (const [index, subject] of TODO_PTY_SUBJECTS.entries()) {
 		const line = lines[summaryIndex + index + 1];
-		if (!line?.startsWith(`   □ ${subject}`)) {
+		if (!line?.startsWith(`  □ ${subject}`)) {
 			fail(`Todo row ${String(index + 1)} is not adjacent and aligned beneath its summary\n${screen}`);
 		}
 	}

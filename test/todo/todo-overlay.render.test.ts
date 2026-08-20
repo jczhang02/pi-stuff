@@ -66,12 +66,12 @@ describe("TodoOverlay rendering", () => {
 		expect(widget).toBeUndefined();
 	});
 
-	test("places the summary one cell before the indented task rows", () => {
+	test("places the summary and task glyph on the same two-cell gutter", () => {
 		const { setWidgetCalls, widget } = setup([task("1", "write tests")]);
 		expect(setWidgetCalls).toHaveLength(1);
 		expect(setWidgetCalls[0]?.[0]).toBe("rpiv-todos");
 		expect(setWidgetCalls[0]?.[2]).toEqual({ placement: "aboveEditor" });
-		expect(widget?.render(200)).toEqual(["  1 tasks (0 done, 1 open)", "   □ write tests"]);
+		expect(widget?.render(200)).toEqual(["  1 tasks (0 done, 1 open)", "  □ write tests"]);
 	});
 
 	test("shows at most five ordered task rows plus one overflow row", () => {
@@ -92,12 +92,12 @@ describe("TodoOverlay rendering", () => {
 		overlay.refresh({ forceExpanded: true });
 		expect(widget?.render(200)).toEqual([
 			"  7 tasks (2 done, 5 open)",
-			"   ✓ recent 3",
-			"   ✓ recent 7",
-			"   ■ active",
-			"   □ runnable 1",
-			"   □ runnable 5",
-			"   … +2 pending",
+			"  ✓ recent 3",
+			"  ✓ recent 7",
+			"  ■ active",
+			"  □ runnable 1",
+			"  □ runnable 5",
+			"  … +2 pending",
 		]);
 	});
 
@@ -125,7 +125,7 @@ describe("TodoOverlay rendering", () => {
 		overlay.toggle();
 		expect(widget?.render(200)).toHaveLength(1);
 		overlay.refresh({ forceExpanded: true });
-		expect(widget?.render(200)).toEqual(["  2 tasks (0 done, 2 open)", "   □ one", "   □ two"]);
+		expect(widget?.render(200)).toEqual(["  2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
 	});
 
 	test("retains forceExpanded while a Command Dialog suppresses the widget", () => {
@@ -137,7 +137,7 @@ describe("TodoOverlay rendering", () => {
 		overlay.refresh({ forceExpanded: true });
 		overlay.setSuppressed(false);
 
-		expect(widget?.render(200)).toEqual(["  2 tasks (0 done, 2 open)", "   □ one", "   □ two"]);
+		expect(widget?.render(200)).toEqual(["  2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
 		expect(overlay.isRegistered()).toBe(true);
 	});
 
@@ -149,16 +149,32 @@ describe("TodoOverlay rendering", () => {
 		expect(lines.every((line) => visibleWidth(line) <= 18)).toBe(true);
 	});
 
-	test("keeps CJK rows inside both certified terminal widths", () => {
-		const { widget } = setup([
-			task("1", "检查一个非常长的中文任务名称，确保终端不会横向溢出", "in_progress"),
-			task("2", "继续验证后续步骤"),
+	test("keeps aligned CJK, emoji, overflow, and collapsed rows inside the width matrix", () => {
+		const { overlay, widget } = setup([
+			task("1", "检查🙂一个非常长的中文任务名称，确保终端不会横向溢出", "in_progress"),
+			task("2", "继续验证后续步骤🧪"),
+			task("3", "第三个任务"),
+			task("4", "第四个任务"),
+			task("5", "第五个任务"),
+			task("6", "第六个任务"),
+			task("7", "第七个任务"),
 		]);
 
-		for (const width of [100, 64]) {
+		for (const width of [100, 64, 48, 32, 24]) {
 			const lines = widget?.render(width) ?? [];
-			expect(lines).toHaveLength(3);
+			expect(lines).toHaveLength(7);
 			expect(lines.every((line) => visibleWidth(line) <= width && !line.includes("\n"))).toBe(true);
+			expect(lines.every((line) => Bun.stripANSI(line).startsWith("  "))).toBe(true);
+			expect(lines.every((line) => !Bun.stripANSI(line).startsWith("   "))).toBe(true);
+		}
+
+		overlay.toggle();
+		for (const width of [100, 64, 48, 32, 24]) {
+			const lines = widget?.render(width) ?? [];
+			expect(lines).toHaveLength(1);
+			expect(visibleWidth(lines[0] ?? "")).toBeLessThanOrEqual(width);
+			expect(Bun.stripANSI(lines[0] ?? "").startsWith("  ")).toBe(true);
+			expect(Bun.stripANSI(lines[0] ?? "").startsWith("   ")).toBe(false);
 		}
 	});
 
@@ -204,7 +220,7 @@ describe("TodoOverlay all-complete linger", () => {
 				lingerCompleted: true,
 			});
 			expect(scheduledDelay).toBe(5_000);
-			expect(widget?.render(200)).toEqual(["  1 tasks (1 done, 0 open)", "   ✓ finished"]);
+			expect(widget?.render(200)).toEqual(["  1 tasks (1 done, 0 open)", "  ✓ finished"]);
 			expect(overlay.isRegistered()).toBe(true);
 
 			scheduledCallback?.();

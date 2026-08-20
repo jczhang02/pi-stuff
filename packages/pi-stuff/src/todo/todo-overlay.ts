@@ -20,7 +20,7 @@ import {
 const WIDGET_KEY = "rpiv-todos";
 const COLLAPSED_GUTTER = "  ";
 const SUMMARY_GUTTER = "  ";
-const TASK_ROW_GUTTER = "   ";
+const TASK_ROW_GUTTER = "  ";
 const ALL_COMPLETE_LINGER_MS = 5_000;
 const RECENT_COMPLETION_MS = 30_000;
 
