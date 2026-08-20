@@ -602,23 +602,40 @@ test("keeps Code Mode carrier Tools available under a strict Agent allowlist and
 	const built = buildPiArgs({
 		baseArgs: ["--mode", "json", "-p"],
 		task: "Inspect the project.",
+		systemPrompt: "Research using the available tools.",
 		sessionEnabled: false,
 		inheritProjectContext: true,
 		inheritSkills: true,
 		codeModeEnabled: true,
 		codeModeProviderTools: ["codemode", "tool_search"],
-		tools: ["read", "bash"],
+		tools: ["read", "web_search", "fetch_content", "get_search_content", "bash"],
 		capabilityCeiling: {
 			version: 1,
-			allowedTools: ["read"],
+			allowedTools: ["read", "web_search", "fetch_content", "get_search_content"],
 			denyExtensions: false,
 			sources: ["test"],
 		},
 	});
 	if (built.tempDir) temporaryDirectories.push(built.tempDir);
 
-	expect(built.args).toContain("read,codemode,tool_search");
-	expect(JSON.parse(built.env[REQUIRED_CHILD_TOOLS_ENV] ?? "[]")).toEqual(["read", "codemode", "tool_search"]);
+	expect(built.args).toContain("read,web_search,fetch_content,get_search_content,codemode,tool_search");
+	expect(JSON.parse(built.env[REQUIRED_CHILD_TOOLS_ENV] ?? "[]")).toEqual([
+		"read",
+		"web_search",
+		"fetch_content",
+		"get_search_content",
+		"codemode",
+		"tool_search",
+	]);
+	const promptFlag = built.args.findIndex((arg) => arg === "--append-system-prompt");
+	expect(promptFlag).toBeGreaterThanOrEqual(0);
+	const promptPath = built.args[promptFlag + 1];
+	expect(promptPath).toBeDefined();
+	const prompt = readFileSync(promptPath ?? "", "utf8");
+	expect(prompt).toContain(
+		"Available tools for this Agent: read, web_search, fetch_content, get_search_content.",
+	);
+	expect(prompt).not.toContain("Available tools for this Agent: bash");
 });
 
 test("forces and verifies read for every skill-enabled explicit Tool shape", () => {

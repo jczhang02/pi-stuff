@@ -117,14 +117,13 @@ function sessionLedgerFixture(): {
 	};
 }
 
-test("the compact Tool contract states execution and Bash timeout constraints", () => {
+test("the compact Tool contract describes execution without advertising optional Tools", () => {
 	const definition = createCodeModeDefinition({} as CodeModeRuntime);
-	expect(definition.description).toContain("timeout is seconds");
-	expect(definition.description).toContain("max 86400");
 	expect(definition.description).toContain("top-level await");
 	expect(definition.description).toContain("await every tools.* call");
-	expect(definition.description).toContain("JSON.parse(await tools.read");
-	expect(definition.description).toContain("text(data.packageManager)");
+	expect(definition.description).toContain("Do not guess Tool names");
+	expect(definition.description).not.toContain("tools.read");
+	expect(definition.description).not.toContain("tools.bash");
 	expect(definition.description).toContain("console is unavailable");
 	expect(definition.description).toContain("async arrow functions with return");
 	expect(definition.description).not.toContain("codemode.resultText");
@@ -136,6 +135,8 @@ test("the Connector exposes every active Suite Tool without a per-Tool caller co
 	const connector = new SuiteCodeModeConnector(registry);
 	const tools = connector.tools();
 	expect(tools.map((tool) => tool.name)).toEqual(["read", "write"]);
+	expect(connector.search("inactive fixture").results).toEqual([]);
+	expect(connector.describe("tools.hidden").types).toBe('"tools.hidden" not found.');
 	expect(tools[0]?.inputSchema).toEqual(registry.get("read")?.parameters);
 
 	let captured: AgentToolResult<unknown> | undefined;

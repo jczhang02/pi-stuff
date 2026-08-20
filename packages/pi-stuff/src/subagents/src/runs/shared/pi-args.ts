@@ -350,6 +350,12 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 	};
 }
 
+function appendCodeModeToolGuidance(prompt: string | null | undefined, tools: readonly string[]): string {
+	const available = tools.length > 0 ? tools.join(", ") : "none";
+	const guidance = `Available tools for this Agent: ${available}.\nIn Code Mode, call only these through tools.*; use codemode.describe(\"tools.name\") for signatures.`;
+	return prompt?.trim() ? `${prompt.trimEnd()}\n\n${guidance}` : guidance;
+}
+
 export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	const args = [...input.baseArgs];
 	const physicalSessionId = input.physicalSessionId ?? input.governorSessionId;
@@ -390,6 +396,10 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	});
 	const codeModeProviderTools =
 		input.codeModeEnabled && toolPlan.explicitToolAllowlist ? (input.codeModeProviderTools ?? []) : [];
+	const systemPrompt =
+		input.codeModeEnabled && toolPlan.explicitToolAllowlist
+			? appendCodeModeToolGuidance(input.systemPrompt, toolPlan.effectiveToolAllowlist)
+			: input.systemPrompt;
 	const hostToolAllowlist = [...new Set([...toolPlan.effectiveToolAllowlist, ...codeModeProviderTools])];
 	if (toolPlan.explicitToolAllowlist) {
 		args.push(hostToolAllowlist.length > 0 ? "--tools" : "--no-tools");
@@ -408,11 +418,11 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	}
 
 	let tempDir: string | undefined;
-	if (input.systemPrompt !== undefined && input.systemPrompt !== null) {
+	if (systemPrompt !== undefined && systemPrompt !== null) {
 		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
 		const stem = (input.promptFileStem ?? "prompt").replace(/[^\w.-]/g, "_");
 		const promptPath = path.join(tempDir, `${stem}.md`);
-		fs.writeFileSync(promptPath, input.systemPrompt, { mode: 0o600 });
+		fs.writeFileSync(promptPath, systemPrompt, { mode: 0o600 });
 		args.push(input.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt", promptPath);
 	}
 
