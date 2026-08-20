@@ -261,6 +261,7 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 			...process.env,
 			MAGIC_CONTEXT_PI_SUBAGENT: "1",
 			PI_CODING_AGENT_DIR: configDirectory,
+			PI_STUFF_CODE_MODE_FROZEN: "off",
 			PI_STUFF_PTY_BIN: options.piBinary,
 			PI_STUFF_PTY_COLUMNS: String(options.columns),
 			PI_STUFF_PTY_LOG: requestLog,

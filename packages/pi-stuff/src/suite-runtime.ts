@@ -23,6 +23,7 @@ import type { SuiteInstallationOptions } from "./suite-loader.js";
 import todo from "./todo/index.js";
 import toolDisplay, {
 	assertSuiteToolActivityCoverage,
+	configureSuiteToolReplay,
 	createSuiteToolRegistrationTracker,
 } from "./tool-display/index.js";
 import web from "./web/index.js";
@@ -106,7 +107,47 @@ const REQUIRED_SUITE_TOOL_NAMES =
 
 const DEFERRED_SUITE_TOOL_NAMES = ["ctx_expand", "ctx_search", "ctx_memory", "ctx_note", "ctx_reduce"] as const;
 
-const OPTIONAL_SUITE_TOOL_NAMES = ["subagent_supervisor", "intercom"] as const;
+const OPTIONAL_SUITE_TOOL_NAMES = [
+	"subagent_supervisor",
+	"intercom",
+	"contact_supervisor",
+	"structured_output",
+] as const;
+
+const REPLAY_SUITE_TOOL_NAMES = [
+	"read",
+	"write",
+	"edit",
+	"grep",
+	"find",
+	"ls",
+	"bash",
+	"apply_patch",
+	"view_image",
+	"imagegen",
+	"goal_complete",
+	"goal_blocked",
+	"web_search",
+	"fetch_content",
+	"get_search_content",
+	"mcp",
+	"background",
+	"monitor",
+	"subagent",
+	"TaskCreate",
+	"TaskGet",
+	"TaskList",
+	"TaskUpdate",
+	"ctx_expand",
+	"ctx_search",
+	"ctx_memory",
+	"ctx_note",
+	"ctx_reduce",
+	"subagent_supervisor",
+	"intercom",
+	"contact_supervisor",
+	"structured_output",
+] as const;
 
 export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallationOptions): Promise<void> {
 	markLifecyclePhase("suite.factory.start");
@@ -125,6 +166,8 @@ export async function installPiStuff(pi: ExtensionAPI, options: SuiteInstallatio
 		surface: registrations.surface,
 	});
 	markLifecyclePhase("capability.code-mode.end");
+
+	configureSuiteToolReplay(registrations.api, registrations.toolNames, REPLAY_SUITE_TOOL_NAMES);
 	pi.on("session_start", (_event, ctx) => {
 		try {
 			assertSuiteToolActivityCoverage(

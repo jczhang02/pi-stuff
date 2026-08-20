@@ -23,6 +23,7 @@ const COMPACT_PREFIX = `${THOUGHT_MARKER} `;
 // preserving all nested block structure inside one message-level list item.
 const ASSISTANT_LIST_PREFIX = "- ";
 const ASSISTANT_LIST_CONTINUATION = "  ";
+const ASSISTANT_MARKER_ANCHOR = "\u2060";
 const LABEL = `${THOUGHT_MARKER} thoughts:`;
 const ELLIPSIS = "…";
 const MIDDLE_ELLIPSIS = " … ";
@@ -34,6 +35,7 @@ const MARKDOWN_PUNCTUATION = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/gu;
 const HEADING = /^(#{1,6})[ \t]+(.*)$/u;
 const TRAILING_HEADING_MARKER = /[ \t]+#+[ \t]*$/u;
 const LIST_ITEM = /^(?:[-+*]|\d{1,9}[.)])[ \t]+(.*)$/u;
+const THEMATIC_BREAK = /^(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/u;
 const EMPHASIS_MARKERS = ["***", "___", "**", "__", "*", "_"] as const;
 
 /** Register the display-only Thought projection through Pi's public Host seam. */
@@ -96,11 +98,16 @@ export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 }
 
 function renderAssistantTranscript(markdown: string, availableWidth: number): string {
-	const text = sanitizeMarkdown(markdown).trim();
+	const sanitized = sanitizeMarkdown(markdown);
+	const text = sanitized.trim();
 	const width = normalizeWidth(availableWidth);
 	if (!text || width === 0) return "";
 	if (width <= visibleWidth(ASSISTANT_LIST_PREFIX)) return fitHead(`${ASSISTANT_LIST_PREFIX}${text}`, width);
 	armAssistantTranscriptMarker();
+	const firstLine = (sanitized.split("\n").find((line) => line.trim()) ?? "").trimEnd();
+	if (LIST_ITEM.test(firstLine) && !THEMATIC_BREAK.test(firstLine)) {
+		return `${ASSISTANT_LIST_PREFIX}${ASSISTANT_MARKER_ANCHOR}\n${ASSISTANT_LIST_CONTINUATION}${text.replaceAll("\n", `\n${ASSISTANT_LIST_CONTINUATION}`)}`;
+	}
 	return `${ASSISTANT_LIST_PREFIX}${text.replaceAll("\n", `\n${ASSISTANT_LIST_CONTINUATION}`)}`;
 }
 

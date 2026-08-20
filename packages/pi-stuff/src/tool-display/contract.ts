@@ -20,7 +20,7 @@ import {
 	Text,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import type { Static, TSchema } from "typebox";
+import { type Static, type TSchema, Type } from "typebox";
 import { getHostSharedResource } from "../conversation-ui/host-resource.js";
 import { SELF_RENDERED_TRANSCRIPT_PADDING, TRANSCRIPT_CONTINUATION } from "../conversation-ui/transcript.js";
 import {
@@ -67,6 +67,7 @@ const SUITE_ACTIVITY_RENDERER = Symbol.for("@jczhang02/pi-stuff-tools/activity-r
 const SUITE_TOOL_ENVELOPE = Symbol.for("@jczhang02/pi-stuff-tools/tool-envelope.v1");
 const SUITE_TOOL_ENVELOPE_COMPANION = Symbol.for("@jczhang02/pi-stuff-tools/tool-envelope-companion.v1");
 const SUITE_TOOL_CODE_MODE = Symbol.for("@jczhang02/pi-stuff-tools/code-mode.v1");
+const SUITE_TOOL_REPLAY = Symbol.for("@jczhang02/pi-stuff-tools/replay-definition.v1");
 
 interface SuiteActivityRendererMarker {
 	readonly activity: ToolActivityMetadata<Record<string, unknown>, unknown>;
@@ -111,21 +112,41 @@ function isRecordValue(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function reloadHandoff(value?: readonly string[]): readonly string[] | undefined {
-	const host = globalThis as typeof globalThis & {
-		[key: symbol]: readonly string[] | undefined;
-	};
-	if (value !== undefined) host[TOOL_RELOAD_HANDOFF] = [...value];
-	return host[TOOL_RELOAD_HANDOFF];
+interface ToolReloadHandoff {
+	readonly activeNames: readonly string[];
+	readonly toolDefinitions: readonly SuiteToolReplayDefinition[];
 }
 
-function consumeReloadHandoff(): readonly string[] | undefined {
+function normalizeReloadHandoff(
+	value: ToolReloadHandoff | readonly string[] | undefined,
+): ToolReloadHandoff | undefined {
+	if (!value) return undefined;
+	if (Array.isArray(value)) return { activeNames: [...value], toolDefinitions: [] };
+	return value as ToolReloadHandoff;
+}
+
+function reloadHandoff(value?: ToolReloadHandoff): ToolReloadHandoff | undefined {
 	const host = globalThis as typeof globalThis & {
-		[key: symbol]: readonly string[] | undefined;
+		[key: symbol]: ToolReloadHandoff | readonly string[] | undefined;
 	};
-	const value = host[TOOL_RELOAD_HANDOFF];
+	if (value !== undefined) {
+		host[TOOL_RELOAD_HANDOFF] = {
+			activeNames: [...value.activeNames],
+			toolDefinitions: [...value.toolDefinitions],
+		};
+	}
+	return normalizeReloadHandoff(host[TOOL_RELOAD_HANDOFF]);
+}
+
+function consumeReloadHandoff(): ToolReloadHandoff | undefined {
+	const host = globalThis as typeof globalThis & {
+		[key: symbol]: ToolReloadHandoff | readonly string[] | undefined;
+	};
+	const value = normalizeReloadHandoff(host[TOOL_RELOAD_HANDOFF]);
 	host[TOOL_RELOAD_HANDOFF] = undefined;
-	return value;
+	return value === undefined
+		? undefined
+		: { activeNames: [...value.activeNames], toolDefinitions: [...value.toolDefinitions] };
 }
 
 export interface SuiteToolPresentation<TArgs extends Record<string, unknown>, TDetails> {
@@ -147,6 +168,12 @@ export interface SuiteToolPresentation<TArgs extends Record<string, unknown>, TD
 	) => string;
 	readonly target?: (args: Readonly<TArgs>) => string;
 	readonly tracksElapsed?: boolean;
+}
+
+export interface SuiteToolReplayDefinition {
+	readonly codeMode?: SuiteToolCodeModeContract;
+	readonly presentation: SuiteToolPresentation<Record<string, unknown>, unknown>;
+	readonly tool: ToolDefinition<TSchema, unknown>;
 }
 
 export type SuiteToolEnvelopeOperationState = "cancelled" | "error" | "rejected" | "running" | "success";
@@ -660,6 +687,10 @@ export class ToolUiRuntime {
 	private readonly pendingInvalidations = new Set<() => void>();
 	private readonly pendingResults = new Map<string, AgentToolResult<unknown>>();
 	private reloadActiveToolNames: readonly string[] | undefined;
+	private readonly replayFallbackToolNames = new Set<string>();
+	private readonly replayToolDefinitions = new Map<string, SuiteToolReplayDefinition>();
+	private readonly replayOnlyToolNames = new Set<string>();
+	private stagedReplayToolDefinitions: readonly SuiteToolReplayDefinition[] | undefined;
 	private indexedMessages: unknown[] = [];
 	private readonly renderedToolNames = new Set<string>();
 	private streamActive = false;
@@ -693,20 +724,85 @@ export class ToolUiRuntime {
 
 	consumeReloadActiveTools(): readonly string[] | undefined {
 		const handoff = consumeReloadHandoff();
-		const names = this.reloadActiveToolNames ?? handoff;
+		if (handoff) this.stagedReplayToolDefinitions ??= handoff.toolDefinitions;
+		const names = this.reloadActiveToolNames ?? handoff?.activeNames;
 		this.reloadActiveToolNames = undefined;
 		return names;
 	}
 
 	hasReloadSnapshot(): boolean {
-		return this.reloadActiveToolNames !== undefined || reloadHandoff() !== undefined;
+		const handoff = reloadHandoff();
+		if (handoff) {
+			this.reloadActiveToolNames ??= handoff.activeNames;
+			this.stagedReplayToolDefinitions ??= handoff.toolDefinitions;
+		}
+		return this.reloadActiveToolNames !== undefined;
 	}
 
 	prepareReload(activeToolNames: readonly string[]): void {
 		this.reloadActiveToolNames = [...activeToolNames];
-		reloadHandoff(activeToolNames);
+		reloadHandoff({
+			activeNames: activeToolNames,
+			toolDefinitions: this.resumeToolDefinitions(),
+		});
 		this.suspend();
 		this.bindings.clear();
+	}
+
+	registerReplayToolDefinition(definition: SuiteToolReplayDefinition): void {
+		this.replayToolDefinitions.set(definition.tool.name, definition);
+	}
+
+	markReplayOnlyTool(name: string): void {
+		this.replayOnlyToolNames.add(name);
+	}
+
+	markLiveTool(name: string): boolean {
+		return this.replayOnlyToolNames.delete(name);
+	}
+
+	isReplayOnlyTool(name: string): boolean {
+		return this.replayOnlyToolNames.has(name);
+	}
+
+	replayOnlyTools(): readonly string[] {
+		return [...this.replayOnlyToolNames];
+	}
+
+	resumeToolDefinitions(): readonly SuiteToolReplayDefinition[] {
+		return [...this.replayToolDefinitions.values()];
+	}
+
+	stageResumeToolDefinitions(definitions: readonly SuiteToolReplayDefinition[]): void {
+		this.stagedReplayToolDefinitions = [...definitions];
+	}
+
+	hasStagedResumeToolDefinitions(): boolean {
+		return this.stagedReplayToolDefinitions !== undefined;
+	}
+
+	stageReplayFallbackToolNames(names: readonly string[]): void {
+		for (const name of names) this.replayFallbackToolNames.add(name);
+	}
+
+	missingResumeToolDefinitions(
+		registeredNames: ReadonlySet<string>,
+		historicalNames?: ReadonlySet<string>,
+	): readonly SuiteToolReplayDefinition[] {
+		return (this.stagedReplayToolDefinitions ?? []).filter(
+			(definition) =>
+				(historicalNames === undefined || historicalNames.has(definition.tool.name)) &&
+				!registeredNames.has(definition.tool.name),
+		);
+	}
+
+	missingReplayFallbackToolNames(
+		registeredNames: ReadonlySet<string>,
+		historicalNames?: ReadonlySet<string>,
+	): readonly string[] {
+		return [...this.replayFallbackToolNames].filter(
+			(name) => (historicalNames === undefined || historicalNames.has(name)) && !registeredNames.has(name),
+		);
 	}
 
 	registerActivity<TArgs extends Record<string, unknown>, TDetails>(
@@ -780,7 +876,10 @@ export class ToolUiRuntime {
 	missingActivityMetadata(toolNames: readonly string[]): readonly string[] {
 		return toolNames.filter((name) => {
 			const metadata = this.activityPolicies.get(name);
-			return !metadata || (metadata.categories.length === 0 && metadata.silentSuccess !== true);
+			const displayOnlyFallback = this.replayOnlyToolNames.has(name) && this.replayFallbackToolNames.has(name);
+			return (
+				!metadata || (metadata.categories.length === 0 && metadata.silentSuccess !== true && !displayOnlyFallback)
+			);
 		});
 	}
 
@@ -2023,6 +2122,15 @@ function suiteToolEnvelopeCompanionMarker(tool: unknown): SuiteToolEnvelopeCompa
 		: undefined;
 }
 
+function suiteToolReplayDefinition(tool: unknown): SuiteToolReplayDefinition | undefined {
+	if (!isRecordValue(tool)) return undefined;
+	const marker = Reflect.get(tool, SUITE_TOOL_REPLAY);
+	if (!isRecordValue(marker) || !isRecordValue(marker["tool"]) || !isRecordValue(marker["presentation"])) {
+		return undefined;
+	}
+	return marker as unknown as SuiteToolReplayDefinition;
+}
+
 const CAPTURED_TOOL_EVENTS = new Set([
 	"tool_call",
 	"tool_result",
@@ -2362,8 +2470,10 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 	const registerTool: ExtensionAPI["registerTool"] = (tool) => {
 		const envelope = suiteToolEnvelopeMarker(tool);
 		const companion = suiteToolEnvelopeCompanionMarker(tool);
+		const replay = suiteToolReplayDefinition(tool);
 		pi.registerTool(tool);
 		const runtime = getToolUiRuntime(pi);
+		if (replay) runtime.registerReplayToolDefinition(replay);
 		if (envelope) {
 			envelopeTools.add(tool.name);
 			runtime.registerEnvelope(tool.name, envelope.decode);
@@ -3031,6 +3141,7 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 	presentation: SuiteToolEnvelopePresentation,
 ): void {
 	const runtime = getToolUiRuntime(pi);
+	const replacesReplay = runtime.markLiveTool(tool.name);
 	runtime.registerEnvelope(tool.name, presentation.decode);
 	const decorated: ToolDefinition<TParams, TDetails> = {
 		...tool,
@@ -3071,6 +3182,9 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 		} satisfies SuiteToolEnvelopeMarker,
 	});
 	pi.registerTool(decorated);
+	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
+		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
+	}
 }
 
 /** Register a Tool that is visible only while its owning execution envelope is enabled. */
@@ -3081,6 +3195,7 @@ export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDet
 	presentation: SuiteToolPresentation<Static<TParams> & Record<string, unknown>, TDetails>,
 ): void {
 	const runtime = getToolUiRuntime(pi);
+	const replacesReplay = runtime.markLiveTool(tool.name);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
 	const decorated = attachRenderer(
 		tool as unknown as ToolDefinition<TSchema, TDetails>,
@@ -3092,6 +3207,9 @@ export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDet
 		value: { owner } satisfies SuiteToolEnvelopeCompanionMarker,
 	});
 	pi.registerTool(decorated);
+	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
+		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
+	}
 	runtime.markRendererAttached(tool.name);
 }
 
@@ -3103,6 +3221,7 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 	codeMode?: SuiteToolCodeModeContract,
 ): void {
 	const runtime = getToolUiRuntime(pi);
+	const replacesReplay = runtime.markLiveTool(tool.name);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
 	const decorated = attachRenderer(
 		tool as unknown as ToolDefinition<TSchema, TDetails>,
@@ -3110,6 +3229,113 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 		runtime,
 	) as ToolDefinition<TParams, TDetails>;
 	if (codeMode) Object.defineProperty(decorated, SUITE_TOOL_CODE_MODE, { enumerable: true, value: codeMode });
+	Object.defineProperty(decorated, SUITE_TOOL_REPLAY, {
+		enumerable: true,
+		value: {
+			...(codeMode ? { codeMode } : {}),
+			presentation: presentation as unknown as SuiteToolPresentation<Record<string, unknown>, unknown>,
+			tool: tool as unknown as ToolDefinition<TSchema, unknown>,
+		} satisfies SuiteToolReplayDefinition,
+	});
 	pi.registerTool(decorated);
+	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
+		pi.setActiveTools([...pi.getActiveTools(), tool.name]);
+	}
 	runtime.markRendererAttached(tool.name);
+}
+
+function replayFallbackLabel(name: string): string {
+	return (
+		name
+			.split(/[_-]+/u)
+			.filter(Boolean)
+			.map((part) => (part.toLowerCase() === "ctx" ? "Context" : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`))
+			.join(" ") || name
+	);
+}
+
+function replayFallbackDefinition(name: string): SuiteToolReplayDefinition {
+	return {
+		tool: {
+			name,
+			label: replayFallbackLabel(name),
+			description: `Historical ${name} Tool display`,
+			parameters: Type.Object({}, { additionalProperties: true }),
+			execute: async () => ({
+				content: [{ type: "text", text: `${name} is unavailable during Session replay.` }],
+				details: undefined,
+				isError: true,
+			}),
+		},
+		presentation: {
+			activity: { categories: [], classify: () => [] },
+			runningSummary: "working",
+			summarize: (_args, result, state) =>
+				buildToolResultLines(result)[0] ?? (state === "success" ? "done" : "failed"),
+			target: (args) => {
+				for (const key of ["action", "path", "query", "id", "to"] as const) {
+					if (typeof args[key] === "string" && args[key]) return args[key];
+				}
+				return "";
+			},
+		},
+	};
+}
+
+function registerMissingReplayToolDefinitions(
+	pi: ExtensionAPI,
+	registeredNames: Set<string>,
+	historicalNames?: ReadonlySet<string>,
+): readonly string[] {
+	const runtime = getToolUiRuntime(pi);
+	const registeredReplayNames: string[] = [];
+	for (const definition of runtime.missingResumeToolDefinitions(registeredNames, historicalNames)) {
+		registerSuiteOwnedTool(
+			pi,
+			{
+				...definition.tool,
+				execute: async () => ({
+					content: [{ type: "text", text: `${definition.tool.name} is unavailable during Session replay.` }],
+					details: undefined,
+					isError: true,
+				}),
+			},
+			definition.presentation,
+			definition.codeMode,
+		);
+		runtime.markReplayOnlyTool(definition.tool.name);
+		registeredNames.add(definition.tool.name);
+		registeredReplayNames.push(definition.tool.name);
+	}
+	for (const name of runtime.missingReplayFallbackToolNames(registeredNames, historicalNames)) {
+		const definition = replayFallbackDefinition(name);
+		registerSuiteOwnedTool(pi, definition.tool, definition.presentation);
+		runtime.markReplayOnlyTool(name);
+		registeredNames.add(name);
+		registeredReplayNames.push(name);
+	}
+	return registeredReplayNames;
+}
+
+/** Stage the Suite catalog and prebind it only when the Host is replacing a Session in-process. */
+export function configureSuiteToolReplay(
+	pi: ExtensionAPI,
+	registeredNames: ReadonlySet<string>,
+	fallbackNames: readonly string[] = [],
+): void {
+	const runtime = getToolUiRuntime(pi);
+	runtime.stageReplayFallbackToolNames(fallbackNames);
+	const hasReloadHandoff = runtime.hasReloadSnapshot();
+	if (!hasReloadHandoff && !runtime.hasStagedResumeToolDefinitions()) return;
+	registerMissingReplayToolDefinitions(pi, new Set(registeredNames));
+}
+
+/** Bind only known Suite definitions that are missing and present in the current historical branch. */
+export function registerHistoricalSuiteToolDefinitions(
+	pi: ExtensionAPI,
+	historicalNames: ReadonlySet<string>,
+): readonly string[] {
+	const runtime = getToolUiRuntime(pi);
+	runtime.hasReloadSnapshot();
+	return registerMissingReplayToolDefinitions(pi, new Set(pi.getAllTools().map((tool) => tool.name)), historicalNames);
 }

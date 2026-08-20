@@ -4,7 +4,7 @@ set -eu
 stty rows 28 columns 100
 
 case "$PI_STUFF_TOOLS_RESUME_PTY_MODE" in
-	default)
+	default|supervisor)
 		set --
 		;;
 	disabled)
@@ -19,6 +19,12 @@ case "$PI_STUFF_TOOLS_RESUME_PTY_MODE" in
 		;;
 esac
 
+if [ "${PI_STUFF_TOOLS_RESUME_PTY_COLD:-0}" = "1" ]; then
+	set -- "$@" --session "$PI_STUFF_TOOLS_RESUME_PTY_TARGET"
+else
+	set -- "$@" --session-id "tools-resume-source-$PI_STUFF_TOOLS_RESUME_PTY_MODE"
+fi
+
 exec "$PI_STUFF_TOOLS_RESUME_PTY_BIN" \
 	--offline \
 	--approve \
@@ -31,4 +37,4 @@ exec "$PI_STUFF_TOOLS_RESUME_PTY_BIN" \
 	--provider pi-stuff-tools-resume-pty \
 	--model fixture-model \
 	--session-dir "$PI_STUFF_TOOLS_RESUME_PTY_SESSIONS" \
-	--session-id "tools-resume-source-$PI_STUFF_TOOLS_RESUME_PTY_MODE"
+	"$@"

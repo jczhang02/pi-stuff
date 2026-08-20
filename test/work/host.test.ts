@@ -12,6 +12,7 @@ import type {
 import type { TSchema } from "typebox";
 import piStuffWork from "../../packages/pi-stuff/src/background-work/index.js";
 import type { BackgroundWorkRuntime } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
+import { SELF_RENDERED_TRANSCRIPT_PADDING } from "../../packages/pi-stuff/src/conversation-ui/transcript.js";
 
 type Handler = (event: unknown, context: ExtensionContext) => unknown | Promise<unknown>;
 
@@ -106,22 +107,38 @@ describe("Pi Stuff Work host composition", () => {
 		expect(host.commands.has("tasks")).toBe(true);
 		expect(host.renderers.has("pi-stuff-background-work-result")).toBe(true);
 		const renderer = host.renderers.get("pi-stuff-background-work-result");
+		const markerColors: string[] = [];
 		const component = renderer?.(
 			{
 				details: {
 					outcomes: [
 						{ status: "completed", summary: "Background Shell finished" },
 						{ status: "failed", summary: "Monitor failed" },
+						{ status: "stopped", summary: "Monitor stopped" },
 					],
 				},
 			},
 			{},
-			{ fg: (_color: string, value: string) => value } as unknown as Theme,
+			{
+				fg: (color: string, value: string) => {
+					if (value === "•") markerColors.push(color);
+					return value;
+				},
+			} as unknown as Theme,
 		) as { render(width: number): string[] } | undefined;
 		expect(component?.render(80).map((line) => line.trimEnd())).toEqual([
-			"• Background Shell finished",
-			"• Monitor failed",
+			" • Background Shell finished",
+			" • Monitor failed",
+			" • Monitor stopped",
 		]);
+		expect(markerColors).toEqual(["success", "error", "dim"]);
+		const narrow = component?.render(24).map((line) => line.trimEnd()) ?? [];
+		expect(
+			narrow
+				.filter((line) => line.includes("•"))
+				.every((line) => line.indexOf("•") === SELF_RENDERED_TRANSCRIPT_PADDING),
+		).toBe(true);
+		expect(narrow.filter((line) => !line.includes("•")).every((line) => line.startsWith("   "))).toBe(true);
 
 		const ctx = host.context(root);
 		await host.emit("session_start", ctx);

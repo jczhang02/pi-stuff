@@ -9,9 +9,10 @@ const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/tools-resume-pty-provider.ts");
 const runner = join(root, "test/fixtures/tools-resume-pty-runner.sh");
 const BUILTINS = ["read", "write", "edit", "bash", "grep", "find", "ls"] as const;
+const COLD_FIRST_FRAME_BOUNDARY = "COLD_FIRST_FRAME_BOUNDARY";
 const FIRST_FRAME_BOUNDARY = "RESUME_FIRST_FRAME_BOUNDARY";
 
-type ResumeMode = "allowlist" | "default" | "disabled";
+type ResumeMode = "allowlist" | "default" | "disabled" | "supervisor";
 
 interface RequestRecord {
 	readonly tools?: unknown;
@@ -20,8 +21,11 @@ interface RequestRecord {
 interface ResumeFixture {
 	readonly compactRow?: string;
 	readonly expectedBuiltins: readonly string[];
+	readonly forbiddenProviderTools?: readonly string[];
+	readonly forbiddenText?: string;
 	readonly mode: ResumeMode;
 	readonly rawMarker?: string;
+	readonly resultText?: string;
 }
 
 const ZERO_USAGE = {
@@ -70,6 +74,47 @@ expect {
     eof {}
     timeout {
         puts stderr "Timed out waiting for Pi to exit"
+        exit 4
+    }
+}
+`;
+}
+
+function coldExpectProgram(): string {
+	return `
+set timeout 20
+
+proc must_expect {pattern} {
+    expect {
+        -exact $pattern {}
+        timeout {
+            puts stderr "Timed out waiting for: $pattern"
+            exit 2
+        }
+        eof {
+            puts stderr "Reached EOF while waiting for: $pattern"
+            exit 3
+        }
+    }
+}
+
+spawn -noecho script -qefc $env(PI_STUFF_TOOLS_RESUME_PTY_RUNNER) /dev/null
+must_expect "historical supervisor operation"
+after 150
+puts "COLD_FIRST_FRAME_BOUNDARY"
+send -- "probe before activation\\r"
+must_expect "RESUME_PROBE_DONE"
+send -- "/agents\\r"
+must_expect "No Agents in the current session."
+send -- "\\033"
+after 150
+send -- "probe after activation\\r"
+must_expect "RESUME_PROBE_DONE"
+send -- "\\004"
+expect {
+    eof {}
+    timeout {
+        puts stderr "Timed out waiting for cold Pi to exit"
         exit 4
     }
 }
@@ -131,14 +176,26 @@ function seedTargetSession(sessionDirectory: string, cwd: string, fixture: Resum
 	manager.appendMessage(user);
 	if (fixture.mode !== "disabled") {
 		const toolCall =
-			fixture.mode === "default"
-				? { type: "toolCall" as const, id: "resume-read-1", name: "read", arguments: { path: "resume-target.txt" } }
-				: {
+			fixture.mode === "supervisor"
+				? {
 						type: "toolCall" as const,
-						id: "resume-grep-1",
-						name: "grep",
-						arguments: { pattern: "NEEDLE", path: "." },
-					};
+						id: "resume-supervisor-1",
+						name: "subagent_supervisor",
+						arguments: { action: "pending" },
+					}
+				: fixture.mode === "default"
+					? {
+							type: "toolCall" as const,
+							id: "resume-read-1",
+							name: "read",
+							arguments: { path: "resume-target.txt" },
+						}
+					: {
+							type: "toolCall" as const,
+							id: "resume-grep-1",
+							name: "grep",
+							arguments: { pattern: "NEEDLE", path: "." },
+						};
 		const assistant: AssistantMessage = {
 			role: "assistant",
 			content: [toolCall],
@@ -153,7 +210,7 @@ function seedTargetSession(sessionDirectory: string, cwd: string, fixture: Resum
 			role: "toolResult",
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
-			content: [{ type: "text", text: fixture.rawMarker ?? "" }],
+			content: [{ type: "text", text: fixture.resultText ?? fixture.rawMarker ?? "" }],
 			isError: false,
 			timestamp: Date.now(),
 		};
@@ -167,6 +224,7 @@ function seedTargetSession(sessionDirectory: string, cwd: string, fixture: Resum
 
 function verifyRequest(record: RequestRecord | undefined, fixture: ResumeFixture): void {
 	if (!record || !Array.isArray(record.tools)) fail(`${fixture.mode} did not record active tools after resume`);
+	const providerTools = record.tools.filter((name): name is string => typeof name === "string");
 	const actual = record.tools.filter(
 		(name): name is string => typeof name === "string" && (BUILTINS as readonly string[]).includes(name),
 	);
@@ -177,6 +235,8 @@ function verifyRequest(record: RequestRecord | undefined, fixture: ResumeFixture
 			`${fixture.mode} changed active built-ins: expected ${normalizedExpected.join(", ") || "none"}; received ${normalizedActual.join(", ") || "none"}`,
 		);
 	}
+	const leaked = fixture.forbiddenProviderTools?.filter((name) => providerTools.includes(name)) ?? [];
+	if (leaked.length > 0) fail(`${fixture.mode} exposed replay-only Tools to the provider: ${leaked.join(", ")}`);
 }
 
 function verifyActiveToolOrder(
@@ -192,6 +252,14 @@ function verifyActiveToolOrder(
 	if (JSON.stringify(beforeTools) !== JSON.stringify(afterTools)) {
 		fail(`${mode} changed active Tool order across resume`);
 	}
+}
+
+function readRequestRecords(content: string): RequestRecord[] {
+	return content
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => JSON.parse(line) as RequestRecord);
 }
 
 export async function verifyToolsResumePty(options: {
@@ -215,6 +283,14 @@ export async function verifyToolsResumePty(options: {
 			expectedBuiltins: ["find", "grep", "ls"],
 			mode: "allowlist",
 			rawMarker: "resume-target.txt:1:RAW_RESUME_GREP_RESULT_MARKER",
+		},
+		{
+			compactRow: "Subagent Supervisor pending · No pending supervisor requests.",
+			expectedBuiltins: ["bash", "edit", "read", "write"],
+			forbiddenProviderTools: ["subagent_supervisor", "intercom"],
+			forbiddenText: '"action": "pending"',
+			mode: "supervisor",
+			resultText: "No pending supervisor requests.",
 		},
 	] satisfies readonly ResumeFixture[]) {
 		const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-tools-resume-"));
@@ -272,21 +348,72 @@ export async function verifyToolsResumePty(options: {
 			const boundary = output.indexOf(FIRST_FRAME_BOUNDARY);
 			if (boundary < 0) fail(`${fixture.mode} did not capture the first resumed frame boundary`);
 			const firstFrame = stripTerminalControls(output.slice(0, boundary));
-			if (fixture.compactRow && !firstFrame.includes(fixture.compactRow)) {
-				fail(`${fixture.mode} first resumed frame did not contain compact row: ${fixture.compactRow}`);
-			}
 			if (fixture.rawMarker && firstFrame.includes(fixture.rawMarker)) {
 				fail(`${fixture.mode} first resumed frame exposed the raw built-in result`);
 			}
-			const records = (await readFile(requestLog, "utf8"))
-				.trim()
-				.split("\n")
-				.filter(Boolean)
-				.map((line) => JSON.parse(line) as RequestRecord);
+			if (fixture.forbiddenText && firstFrame.includes(fixture.forbiddenText)) {
+				fail(`${fixture.mode} first resumed frame used the generic Tool renderer`);
+			}
+			if (fixture.compactRow && !firstFrame.includes(fixture.compactRow)) {
+				fail(
+					`${fixture.mode} first resumed frame did not contain compact row: ${fixture.compactRow}\nFrame tail:\n${firstFrame.slice(-2_000)}`,
+				);
+			}
+			const records = readRequestRecords(await readFile(requestLog, "utf8"));
 			if (records.length !== 2)
 				fail(`${fixture.mode} expected pre- and post-resume requests; received ${String(records.length)}`);
 			verifyActiveToolOrder(records[0], records[1], fixture.mode);
 			verifyRequest(records[1], fixture);
+
+			if (fixture.mode === "supervisor") {
+				const coldRequestLog = join(temporaryDirectory, "cold-requests.jsonl");
+				const cold = Bun.spawnSync(["expect", "-c", coldExpectProgram()], {
+					cwd: targetDirectory,
+					env: {
+						...process.env,
+						PI_CODING_AGENT_DIR: configDirectory,
+						PI_STUFF_TOOLS_RESUME_PTY_BIN: options.piBinary,
+						PI_STUFF_TOOLS_RESUME_PTY_COLD: "1",
+						PI_STUFF_TOOLS_RESUME_PTY_LOG: coldRequestLog,
+						PI_STUFF_TOOLS_RESUME_PTY_MODE: fixture.mode,
+						PI_STUFF_TOOLS_RESUME_PTY_PACKAGE: resolve(options.packagePath),
+						PI_STUFF_TOOLS_RESUME_PTY_PROVIDER_EXTENSION: providerExtension,
+						PI_STUFF_TOOLS_RESUME_PTY_RUNNER: runner,
+						PI_STUFF_TOOLS_RESUME_PTY_SESSIONS: sessionDirectory,
+						PI_STUFF_TOOLS_RESUME_PTY_TARGET: targetSession,
+						SHELL: "/bin/sh",
+						TERM: "xterm-256color",
+					},
+					stdout: "pipe",
+					stderr: "pipe",
+				});
+				const coldOutput = cold.stdout.toString();
+				if (cold.exitCode !== 0) {
+					fail(
+						`supervisor cold start failed: ${cold.stderr.toString().trim()}\nPTY tail:\n${coldOutput.slice(-10_000)}`,
+					);
+				}
+				const coldBoundary = coldOutput.indexOf(COLD_FIRST_FRAME_BOUNDARY);
+				if (coldBoundary < 0) fail("supervisor cold start did not capture the first frame boundary");
+				const coldFirstFrame = stripTerminalControls(coldOutput.slice(0, coldBoundary));
+				if (fixture.forbiddenText && coldFirstFrame.includes(fixture.forbiddenText)) {
+					fail("supervisor cold first frame used the generic Tool renderer");
+				}
+				if (fixture.compactRow && !coldFirstFrame.includes(fixture.compactRow)) {
+					fail(`supervisor cold first frame did not contain compact row: ${fixture.compactRow}`);
+				}
+				const coldRecords = readRequestRecords(await readFile(coldRequestLog, "utf8"));
+				if (coldRecords.length !== 2) {
+					fail(
+						`supervisor cold start expected pre- and post-activation requests; received ${String(coldRecords.length)}`,
+					);
+				}
+				verifyActiveToolOrder(records[1], coldRecords[0], "supervisor cold startup");
+				verifyRequest(coldRecords[0], fixture);
+				if (!Array.isArray(coldRecords[1]?.tools) || !coldRecords[1].tools.includes("subagent_supervisor")) {
+					fail("live subagent_supervisor did not replace the replay definition after /agents activation");
+				}
+			}
 		} finally {
 			await rm(temporaryDirectory, { force: true, recursive: true });
 		}
@@ -296,5 +423,5 @@ export async function verifyToolsResumePty(options: {
 if (import.meta.main) {
 	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 	await verifyToolsResumePty({ piBinary: PI_BIN, packagePath: join(root, "packages/pi-stuff") });
-	console.log("Certified compact Tool rows across in-process /resume");
+	console.log("Certified compact Tool rows across in-process /resume and cold --session startup");
 }

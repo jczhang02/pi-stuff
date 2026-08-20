@@ -110,6 +110,27 @@ describe("terminal-safe Tool rendering", () => {
 	});
 
 	test("renders compact activity summaries without raw Tool chrome", () => {
+		const stoppedMarkerColors: string[] = [];
+		const stopped = new CachedToolRow(
+			{
+				bold: (value: string) => value,
+				fg: (color: string, value: string) => {
+					if (value === "•") stoppedMarkerColors.push(color);
+					return value;
+				},
+			} as unknown as Theme,
+			{
+				active: false,
+				expandable: false,
+				hint: "",
+				kind: "activity",
+				outcome: "stopped",
+				summary: "Agent stopped",
+			},
+		);
+		expect(stopped.render(54)).toEqual([" • Agent stopped"]);
+		expect(stoppedMarkerColors).toEqual(["dim"]);
+
 		const active = new CachedToolRow(theme, {
 			active: true,
 			expandable: true,

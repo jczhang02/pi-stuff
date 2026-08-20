@@ -13,8 +13,7 @@ import {
 	readCurrentAgentWorkOrigin,
 	requestStatuslineGitRefreshAfterUserWork,
 } from "../../../conversation-ui/index.js";
-import { TRANSCRIPT_MARKER } from "../../../conversation-ui/transcript.js";
-import { registerSuiteOwnedTool } from "../../../tool-display/index.js";
+import { CachedToolRow, registerSuiteOwnedTool } from "../../../tool-display/index.js";
 import { discoverAgents } from "../agents/agents.ts";
 import { createNativeSupervisorChannel } from "../intercom/native-supervisor-channel.ts";
 import { createAsyncJobTracker } from "../runs/background/async-job-tracker.ts";
@@ -1022,8 +1021,14 @@ export default function registerSubagentExtension(
 	pi.registerEntryRenderer<CompletionOutcomeEntry>(COMPLETION_ENTRY_TYPE, (entry, _options, theme) => {
 		const data = entry.data;
 		if (data?.version !== 1) return undefined;
-		const color = data.status === "completed" ? "success" : data.status === "failed" ? "error" : "muted";
-		return new Text(`${theme.fg(color, TRANSCRIPT_MARKER)} ${theme.fg("muted", completionOutcomeText(data))}`, 0, 0);
+		return new CachedToolRow(theme, {
+			active: false,
+			expandable: false,
+			hint: "",
+			kind: "activity",
+			outcome: data.status === "completed" ? "success" : data.status === "failed" ? "error" : "stopped",
+			summary: completionOutcomeText(data),
+		});
 	});
 
 	const eventUnsubscribes: Array<() => void> = [];

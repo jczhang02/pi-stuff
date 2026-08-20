@@ -10,7 +10,7 @@ import {
 } from "../conversation-ui/index.js";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { registerBuiltins, resolveBuiltinHostSettings } from "./builtin-tools.js";
-import { installToolUiRuntime } from "./contract.js";
+import { installToolUiRuntime, registerHistoricalSuiteToolDefinitions } from "./contract.js";
 import { consumeResumeToolHandoff, prepareResumeToolHandoff, restoreResumeActiveToolOrder } from "./session-handoff.js";
 import { ToolUiSettingsStore } from "./settings.js";
 import { createToolDialogView } from "./tool-dialog.js";
@@ -38,8 +38,28 @@ function releaseToolLifecycle(state: ToolLifecycleState, activation: object): vo
 	delete state.activation;
 }
 
-function currentTranscriptMessages(ctx: ExtensionContext): unknown[] {
-	return ctx.sessionManager.getBranch().flatMap(sessionEntryToContextMessages);
+interface CurrentTranscript {
+	readonly messages: readonly unknown[];
+	readonly toolNames: ReadonlySet<string>;
+}
+
+function currentTranscript(ctx: ExtensionContext): CurrentTranscript {
+	const messages: unknown[] = [];
+	const toolNames = new Set<string>();
+	for (const entry of ctx.sessionManager.getBranch()) {
+		for (const message of sessionEntryToContextMessages(entry)) {
+			messages.push(message);
+			if (typeof message !== "object" || message === null || Reflect.get(message, "role") !== "assistant") continue;
+			const content = Reflect.get(message, "content");
+			if (!Array.isArray(content)) continue;
+			for (const part of content) {
+				if (typeof part !== "object" || part === null || Reflect.get(part, "type") !== "toolCall") continue;
+				const name = Reflect.get(part, "name");
+				if (typeof name === "string") toolNames.add(name);
+			}
+		}
+	}
+	return { messages, toolNames };
 }
 
 export {
@@ -59,8 +79,10 @@ export {
 export { BASH_CODE_MODE_CONTRACT } from "./builtin-tools.js";
 export {
 	assertSuiteToolActivityCoverage,
+	configureSuiteToolReplay,
 	createSuiteToolRegistrationTracker,
 	getToolUiRuntime,
+	registerHistoricalSuiteToolDefinitions,
 	registerSuiteOwnedTool,
 	registerSuiteToolActivityMetadata,
 	registerSuiteToolEnvelope,
@@ -76,13 +98,14 @@ export {
 	type SuiteToolInvocationResult,
 	type SuiteToolPresentation,
 	type SuiteToolRegistrationTracker,
+	type SuiteToolReplayDefinition,
 	type SuiteToolSurfaceController,
 	type ToolActivityDetailMode,
 	type ToolActivityDetailView,
 	type ToolActivityGroupView,
 	ToolUiRuntime,
 } from "./contract.js";
-export { formatElapsed } from "./render.js";
+export { CachedToolRow, formatElapsed } from "./render.js";
 export {
 	boundTerminalLine,
 	boundTerminalText,
@@ -105,20 +128,9 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 	lifecycle.activation = activation;
 	try {
 		const resumeHandoff = consumeResumeToolHandoff();
-		if (resumeHandoff !== undefined) {
-			// Pi reconstructs a replaced session before session_start. Register only
-			// the outgoing active built-ins so historical rows get compact renderers
-			// without reviving disabled built-ins in the incoming runtime.
-			registerBuiltins(
-				pi,
-				process.cwd(),
-				resolveBuiltinHostSettings(process.cwd(), false),
-				{},
-				new Set(resumeHandoff.builtinNames),
-			);
-		}
 		const settings = await ToolUiSettingsStore.load();
 		const runtime = installToolUiRuntime(pi, settings);
+		if (resumeHandoff) runtime.stageResumeToolDefinitions(resumeHandoff.toolDefinitions);
 		const unsubscribeSettings = settings.subscribe(() => runtime.syncTimers());
 		const unregisterUiSetting = ensureUiSettingsCommand(pi).register({
 			description: "Show elapsed time while long-running tools work",
@@ -133,13 +145,6 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 			subscribe: (listener) => settings.subscribe(() => listener()),
 			values: ["true", "false"],
 		});
-		if (runtime.hasReloadSnapshot()) {
-			// During /reload, Pi rebuilds historical components before session_start.
-			// A bounded snapshot lets us install safe renderers for that rebuild; the
-			// exact active-tool set is restored as soon as the new runtime is bound.
-			registerBuiltins(pi, process.cwd(), resolveBuiltinHostSettings(process.cwd(), false));
-		}
-
 		pi.registerCommand("tools", {
 			description: "Inspect current-session Tool operations",
 			handler: async (args, ctx) => {
@@ -165,23 +170,42 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 		});
 
 		pi.on("session_start", (_event, ctx) => {
+			const transcript = currentTranscript(ctx);
+			const replayOnlyNames = new Set(runtime.replayOnlyTools());
 			registerBuiltins(pi, ctx.cwd, resolveBuiltinHostSettings(ctx.cwd, ctx.isProjectTrusted()));
+			let restoredActiveTools: readonly string[] | undefined;
 			if (resumeHandoff) {
-				pi.setActiveTools(restoreResumeActiveToolOrder(pi.getActiveTools(), resumeHandoff));
+				restoredActiveTools = restoreResumeActiveToolOrder(
+					pi.getActiveTools().filter((name) => !replayOnlyNames.has(name)),
+					resumeHandoff,
+				);
 			} else {
 				const restoreActiveBuiltins = runtime.consumeReloadActiveTools();
 				if (restoreActiveBuiltins) {
-					const activeNonBuiltins = pi.getActiveTools().filter((name) => !BUILTIN_TOOL_NAMES.has(name));
-					pi.setActiveTools([...activeNonBuiltins, ...restoreActiveBuiltins]);
+					const activeNonBuiltins = pi
+						.getActiveTools()
+						.filter((name) => !BUILTIN_TOOL_NAMES.has(name) && !replayOnlyNames.has(name));
+					restoredActiveTools = [...activeNonBuiltins, ...restoreActiveBuiltins];
 				}
 			}
-			runtime.resetProjection(currentTranscriptMessages(ctx));
+			const activeToolsBeforeReplay = restoredActiveTools ?? pi.getActiveTools();
+			const registeredReplayNames = registerHistoricalSuiteToolDefinitions(pi, transcript.toolNames);
+			if (restoredActiveTools || registeredReplayNames.length > 0) pi.setActiveTools([...activeToolsBeforeReplay]);
+			runtime.resetProjection(transcript.messages);
 		});
 		pi.on("session_compact", (_event, ctx) => {
-			runtime.resetProjection(currentTranscriptMessages(ctx));
+			const transcript = currentTranscript(ctx);
+			const activeTools = pi.getActiveTools();
+			if (registerHistoricalSuiteToolDefinitions(pi, transcript.toolNames).length > 0)
+				pi.setActiveTools(activeTools);
+			runtime.resetProjection(transcript.messages);
 		});
 		pi.on("session_tree", (_event, ctx) => {
-			runtime.resetProjection(currentTranscriptMessages(ctx));
+			const transcript = currentTranscript(ctx);
+			const activeTools = pi.getActiveTools();
+			if (registerHistoricalSuiteToolDefinitions(pi, transcript.toolNames).length > 0)
+				pi.setActiveTools(activeTools);
+			runtime.resetProjection(transcript.messages);
 		});
 		pi.on("input", () => {
 			runtime.observeUserBoundary();
@@ -230,7 +254,7 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 				runtime.prepareReload(pi.getActiveTools().filter((name) => BUILTIN_TOOL_NAMES.has(name)));
 			} else {
 				if (event.reason === "resume") {
-					prepareResumeToolHandoff(pi.getActiveTools());
+					prepareResumeToolHandoff(pi.getActiveTools(), runtime.resumeToolDefinitions());
 				}
 				// Pi can emit session_shutdown while rebuilding the current transcript
 				// for tree navigation. Keep the display projection available to the

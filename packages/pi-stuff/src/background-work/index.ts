@@ -4,9 +4,9 @@ import {
 	getAgentDir,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { isKeyRelease, Key, matchesKey, Text } from "@earendil-works/pi-tui";
+import { Container, isKeyRelease, Key, matchesKey, Text } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
-import { TRANSCRIPT_MARKER } from "../conversation-ui/transcript.js";
+import { CachedToolRow } from "../tool-display/index.js";
 import { reportWorkDiagnostic } from "./src/diagnostics.js";
 import { type BackgroundWorkOutcome, BackgroundWorkRuntime } from "./src/runtime.js";
 import { createTasksDialogView } from "./src/tasks-dialog.js";
@@ -32,11 +32,20 @@ function registerCompletionRenderer(pi: ExtensionAPI): void {
 	pi.registerMessageRenderer<CompletionDetails>(COMPLETION_MESSAGE_TYPE, (message, _options, theme) => {
 		const outcomes = message.details?.outcomes ?? [];
 		if (outcomes.length === 0) return new Text(theme.fg("dim", "Background work updated."), 0, 0);
-		const lines = outcomes.map((outcome) => {
-			const color = outcome.status === "completed" ? "success" : outcome.status === "stopped" ? "dim" : "error";
-			return `${theme.fg(color, TRANSCRIPT_MARKER)} ${theme.fg("muted", outcome.summary)}`;
-		});
-		return new Text(lines.join("\n"), 0, 0);
+		const rows = new Container();
+		for (const outcome of outcomes) {
+			rows.addChild(
+				new CachedToolRow(theme, {
+					active: false,
+					expandable: false,
+					hint: "",
+					kind: "activity",
+					outcome: outcome.status === "completed" ? "success" : outcome.status === "stopped" ? "stopped" : "error",
+					summary: outcome.summary,
+				}),
+			);
+		}
+		return rows;
 	});
 }
 
