@@ -99,11 +99,13 @@ test("bare /codemode owns the interactive dialog path and status is no longer a 
 });
 
 test("Code Mode follows trusted project settings, persists explicit toggles, and rolls back failed writes", async () => {
+	const previousAgentDir = process.env["PI_CODING_AGENT_DIR"];
 	const previousDefault = process.env["PI_STUFF_CODE_MODE_DEFAULT"];
 	const previousFrozen = process.env["PI_STUFF_CODE_MODE_FROZEN"];
 	delete process.env["PI_STUFF_CODE_MODE_DEFAULT"];
 	delete process.env["PI_STUFF_CODE_MODE_FROZEN"];
 	try {
+		process.env["PI_CODING_AGENT_DIR"] = await project();
 		const first = await project();
 		const second = await project();
 		await writeCodeModeProjectEnabled(first, true);
@@ -167,6 +169,8 @@ test("Code Mode follows trusted project settings, persists explicit toggles, and
 		await sessionStart(loaded.events, context(first, false));
 		expect(enabled).toBe(false);
 	} finally {
+		if (previousAgentDir === undefined) delete process.env["PI_CODING_AGENT_DIR"];
+		else process.env["PI_CODING_AGENT_DIR"] = previousAgentDir;
 		if (previousDefault === undefined) delete process.env["PI_STUFF_CODE_MODE_DEFAULT"];
 		else process.env["PI_STUFF_CODE_MODE_DEFAULT"] = previousDefault;
 		if (previousFrozen === undefined) delete process.env["PI_STUFF_CODE_MODE_FROZEN"];
