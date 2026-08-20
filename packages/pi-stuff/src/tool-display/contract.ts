@@ -1516,7 +1516,13 @@ export class ToolUiRuntime {
 			this.stopGroupPulse(group.leaderId);
 			const member = group.members[0];
 			if (member?.name === "bash") this.applyBashOperation(member, leader);
-			else this.applyBinding(leader, leader.baseModel, leader.baseVisible);
+			else {
+				const silentSuccess =
+					member !== undefined &&
+					this.summaryMember(member).state === "success" &&
+					this.activityPolicies.get(member.name)?.silentSuccess === true;
+				this.applyBinding(leader, leader.baseModel, leader.baseVisible && (!silentSuccess || leader.expanded));
+			}
 			return;
 		}
 		const index = this.summaryIndex(group, changedMemberId);
@@ -1653,7 +1659,9 @@ export class ToolUiRuntime {
 			...(member.result ? { result: member.result } : {}),
 		};
 		const transparent = this.groupDisposition(member.name, metadata.args) === "transparent";
-		const classifiedItems = forcedTerminal || transparent ? [] : this.classify(metadata, state);
+		const silentSuccess =
+			state === "success" && this.activityPolicies.get(member.name)?.silentSuccess === true;
+		const classifiedItems = forcedTerminal || transparent || silentSuccess ? [] : this.classify(metadata, state);
 		const items = visibleActivityItems(classifiedItems, state);
 		const infrastructureIssue =
 			isIssueState(state) &&

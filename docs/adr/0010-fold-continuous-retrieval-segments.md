@@ -24,9 +24,10 @@ by streaming updates, Session reconstruction, and Code Mode envelope projection.
 - `tool_search` and `ctx_reduce` are transparent. They remain recoverable in details but neither create a successful
   compact clause nor split adjacent retrieval.
 - Edit, Write, Apply Patch, Web, History, Memory, Task, Agent, Background Work, Goal, Image, ordinary Bash, and unknown
-  third-party or MCP Tools are boundaries. They retain their existing independent Tool rows. An MCP Tool may become
-  retrieval only when its registered presentation metadata explicitly declares a retrieval category; names are never
-  guessed.
+  third-party or MCP Tools are boundaries. Successful Task calls render no compact row because the Todo checklist owns
+  their visible state; Task issues remain visible and every call stays available through `/tools`. Other boundaries
+  retain their independent Tool rows. An MCP Tool may become retrieval only when its registered presentation metadata
+  explicitly declares a retrieval category; names are never guessed.
 
 One retrieval invocation is enough to form a group. Tool results and Thinking are transparent to its continuity.
 Assistant prose, a boundary Tool, unknown visible context, user input, and turn completion close it. A later automatic

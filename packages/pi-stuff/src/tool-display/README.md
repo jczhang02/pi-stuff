@@ -28,10 +28,12 @@ Tools keep their native renderer and form a display boundary.
   width-safe target hint; settled summaries use past tense and remove raw commands, paths, result text, elapsed time,
   and redundant `done` labels. Native Read deduplicates canonical paths; Search, List, and Bash-only retrieval count
   invocations.
-- Edit, Write, Apply Patch, Web, History, Memory, Task, Agent, Background Work, Goal, Image, ordinary Bash, and unknown
-  third-party or MCP calls retain independent Tool rows and bound retrieval. `tool_search` and `ctx_reduce` are silent,
-  transparent members that remain available in details. Failed, rejected, and cancelled retrieval remains folded but
-  is called out with counts and the first issue reason.
+- Edit, Write, Apply Patch, Web, History, Memory, Agent, Background Work, Goal, Image, ordinary Bash, and unknown
+  third-party or MCP calls retain independent Tool rows and bound retrieval. Task calls also bound retrieval, but
+  successful calls stay silent because the Todo checklist owns their visible state; Task issues retain a row and every
+  call remains available through `/tools`. `tool_search` and `ctx_reduce` are silent, transparent members that remain
+  available in details. Failed, rejected, and cancelled retrieval remains folded but is called out with counts and the
+  first issue reason.
 - The compact transcript hides Tool arguments and textual results. Real media remains visible. Pi's global `Ctrl+O`
   restores every folded Tool row in native transcript order with formatted Tool-owned details and restores retrieval
   Bash as a Bash Operation Block. It does not add generic protocol headings or argument dumps. `/tools

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { decodeCodeModeOperations } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { registerTaskTools } from "../../packages/pi-stuff/src/todo/todo.js";
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
@@ -26,15 +27,13 @@ function renderedSummary(
 	args: Record<string, unknown>,
 	result: AgentToolResult<unknown>,
 	toolCallId: string,
+	messages: readonly unknown[] = [
+		{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: tool?.name, arguments: args }] },
+		{ role: "toolResult", toolCallId, content: result.content, details: result.details },
+	],
 ): string {
 	expect(tool).toBeDefined();
-	getToolUiRuntime(api).indexMessages(
-		[
-			{ role: "assistant", content: [{ type: "toolCall", id: toolCallId, name: tool?.name, arguments: args }] },
-			{ role: "toolResult", toolCallId, content: result.content, details: result.details },
-		],
-		true,
-	);
+	getToolUiRuntime(api).indexMessages(messages, true);
 	const state = {};
 	const context = {
 		args,
@@ -59,7 +58,7 @@ function renderedSummary(
 	return row?.render(100).join("\n") ?? "";
 }
 
-test("TaskUpdate keeps no-op and mutation results in standalone rows", () => {
+test("successful TaskUpdate calls stay silent but remain inspectable", () => {
 	const { api, tools } = registeredTools();
 	const tool = tools.get("TaskUpdate");
 	const args = { status: "completed", taskId: "task-1" };
@@ -84,11 +83,12 @@ test("TaskUpdate keeps no-op and mutation results in standalone rows", () => {
 		"call-update",
 	);
 
-	expect(noOp).toContain("Task update #task-1 · Task #task-1 already matches the requested values");
-	expect(updated).toContain("Task update #task-1 · Task task-1 updated: status");
+	expect(noOp).toBe("");
+	expect(updated).toBe("");
+	expect(getToolUiRuntime(api).listGroups()).toHaveLength(2);
 });
 
-test("an empty TaskList reports zero returned tasks", () => {
+test("successful TaskList calls stay silent but remain inspectable", () => {
 	const { api, tools } = registeredTools();
 	const empty = renderedSummary(
 		api,
@@ -101,5 +101,96 @@ test("an empty TaskList reports zero returned tasks", () => {
 		"call-empty-list",
 	);
 
-	expect(empty).toContain("Task list · 0 tasks (0 done, 0 open)");
+	expect(empty).toBe("");
+	expect(getToolUiRuntime(api).listGroups()).toHaveLength(1);
+});
+
+test("failed Task calls remain visible", () => {
+	const { api, tools } = registeredTools();
+	const failure = renderedSummary(
+		api,
+		tools.get("TaskUpdate"),
+		{ status: "completed", taskId: "missing" },
+		{
+			content: [{ text: "Task #missing not found", type: "text" }],
+			details: { error: "Task #missing not found" },
+		},
+		"call-failed",
+	);
+
+	expect(failure).toContain("Task #missing not found");
+});
+
+test("Code Mode-nested Task calls use the same success and failure visibility", () => {
+	const successful = registeredTools();
+	const successRuntime = getToolUiRuntime(successful.api);
+	successRuntime.registerEnvelope("codemode", decodeCodeModeOperations);
+	const successResult = {
+		content: [{ text: "Task #1 created successfully", type: "text" as const }],
+		details: {},
+	};
+	const success = renderedSummary(
+		successful.api,
+		successful.tools.get("TaskCreate"),
+		{ description: "Nested", subject: "Nested" },
+		successResult,
+		"nested-success",
+		[
+			{ role: "assistant", content: [{ type: "toolCall", id: "outer-success", name: "codemode", arguments: {} }] },
+			{
+				role: "toolResult",
+				toolCallId: "outer-success",
+				details: {
+					kind: "pi-stuff-code-mode",
+					operations: [
+						{
+							args: { description: "Nested", subject: "Nested" },
+							id: "nested-success",
+							name: "TaskCreate",
+							result: successResult,
+							state: "success",
+						},
+					],
+					status: "success",
+				},
+			},
+		],
+	);
+	expect(success).toBe("");
+
+	const failed = registeredTools();
+	const failedRuntime = getToolUiRuntime(failed.api);
+	failedRuntime.registerEnvelope("codemode", decodeCodeModeOperations);
+	const failedResult = {
+		content: [{ text: "Task creation failed", type: "text" as const }],
+		details: { error: "Task creation failed" },
+	};
+	const failure = renderedSummary(
+		failed.api,
+		failed.tools.get("TaskCreate"),
+		{ description: "Nested", subject: "Nested" },
+		failedResult,
+		"nested-failure",
+		[
+			{ role: "assistant", content: [{ type: "toolCall", id: "outer-failure", name: "codemode", arguments: {} }] },
+			{
+				role: "toolResult",
+				toolCallId: "outer-failure",
+				details: {
+					kind: "pi-stuff-code-mode",
+					operations: [
+						{
+							args: { description: "Nested", subject: "Nested" },
+							id: "nested-failure",
+							name: "TaskCreate",
+							result: failedResult,
+							state: "error",
+						},
+					],
+					status: "error",
+				},
+			},
+		],
+	);
+	expect(failure).toContain("Task creation failed");
 });
