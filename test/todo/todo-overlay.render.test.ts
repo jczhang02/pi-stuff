@@ -66,12 +66,12 @@ describe("TodoOverlay rendering", () => {
 		expect(widget).toBeUndefined();
 	});
 
-	test("places the summary and task glyph on the same two-cell gutter", () => {
+	test("aligns the summary icon with task glyphs and summary text with task subjects", () => {
 		const { setWidgetCalls, widget } = setup([task("1", "write tests")]);
 		expect(setWidgetCalls).toHaveLength(1);
 		expect(setWidgetCalls[0]?.[0]).toBe("rpiv-todos");
 		expect(setWidgetCalls[0]?.[2]).toEqual({ placement: "aboveEditor" });
-		expect(widget?.render(200)).toEqual(["  1 tasks (0 done, 1 open)", "  □ write tests"]);
+		expect(widget?.render(200)).toEqual(["  ◆ 1 tasks (0 done, 1 open)", "  □ write tests"]);
 	});
 
 	test("shows at most five ordered task rows plus one overflow row", () => {
@@ -91,7 +91,7 @@ describe("TodoOverlay rendering", () => {
 		replaceState(SESSION_ID, { tasks: finalTasks, nextId: 8 });
 		overlay.refresh({ forceExpanded: true });
 		expect(widget?.render(200)).toEqual([
-			"  7 tasks (2 done, 5 open)",
+			"  ◆ 7 tasks (2 done, 5 open)",
 			"  ✓ recent 3",
 			"  ✓ recent 7",
 			"  ■ active",
@@ -125,7 +125,7 @@ describe("TodoOverlay rendering", () => {
 		overlay.toggle();
 		expect(widget?.render(200)).toHaveLength(1);
 		overlay.refresh({ forceExpanded: true });
-		expect(widget?.render(200)).toEqual(["  2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
+		expect(widget?.render(200)).toEqual(["  ◆ 2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
 	});
 
 	test("retains forceExpanded while a Command Dialog suppresses the widget", () => {
@@ -137,7 +137,7 @@ describe("TodoOverlay rendering", () => {
 		overlay.refresh({ forceExpanded: true });
 		overlay.setSuppressed(false);
 
-		expect(widget?.render(200)).toEqual(["  2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
+		expect(widget?.render(200)).toEqual(["  ◆ 2 tasks (0 done, 2 open)", "  □ one", "  □ two"]);
 		expect(overlay.isRegistered()).toBe(true);
 	});
 
@@ -220,7 +220,7 @@ describe("TodoOverlay all-complete linger", () => {
 				lingerCompleted: true,
 			});
 			expect(scheduledDelay).toBe(5_000);
-			expect(widget?.render(200)).toEqual(["  1 tasks (1 done, 0 open)", "  ✓ finished"]);
+			expect(widget?.render(200)).toEqual(["  ◆ 1 tasks (1 done, 0 open)", "  ✓ finished"]);
 			expect(overlay.isRegistered()).toBe(true);
 
 			scheduledCallback?.();

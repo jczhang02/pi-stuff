@@ -173,7 +173,7 @@ export class TodoOverlay {
 		const open = renderable.length - completed;
 		const summary = theme.fg(
 			"dim",
-			`${String(renderable.length)} tasks (${String(completed)} done, ${String(open)} open)`,
+			`◆ ${String(renderable.length)} tasks (${String(completed)} done, ${String(open)} open)`,
 		);
 		const taskWidth = Math.max(0, width - visibleWidth(TASK_ROW_GUTTER));
 		const lines = [truncate(`${SUMMARY_GUTTER}${summary}`)];
