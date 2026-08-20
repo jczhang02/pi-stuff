@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -455,7 +456,7 @@ describe("native supervisor protocol compatibility", () => {
 
 	test("releases every delivery claim when one claim close fails", async () => {
 		const now = Date.now();
-		const runId = `release-failure-${now}`;
+		const runId = `release-failure-${now}-${randomUUID()}`;
 		for (const suffix of ["first", "second"]) {
 			writeRequest(legacyChannel(runId), {
 				...baseRequest(`${suffix}-${now}`, runId, now),

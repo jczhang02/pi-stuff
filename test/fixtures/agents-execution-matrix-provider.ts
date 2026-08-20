@@ -29,6 +29,7 @@ const ZERO_USAGE = {
 
 type ScenarioId =
 	| "single-fresh-foreground"
+	| "single-fresh-foreground-code-mode"
 	| "single-fork-background"
 	| "parallel-fresh-background"
 	| "parallel-fork-foreground"
@@ -59,6 +60,7 @@ function scenarioId(): ScenarioId {
 	const value = requiredEnvironment("PI_STUFF_AGENTS_EXECUTION_MATRIX_SCENARIO");
 	if (
 		value !== "single-fresh-foreground" &&
+		value !== "single-fresh-foreground-code-mode" &&
 		value !== "single-fork-background" &&
 		value !== "parallel-fresh-background" &&
 		value !== "parallel-fork-foreground" &&
@@ -89,16 +91,20 @@ function lastUserText(context: Context): string {
 	return "";
 }
 
-function latestSubagentResult(context: Context): string | undefined {
+function latestToolResult(context: Context, toolName: string): string | undefined {
 	for (let index = context.messages.length - 1; index >= 0; index--) {
 		const entry = context.messages[index];
-		if (entry?.role !== "toolResult" || entry.toolName !== "subagent") continue;
+		if (entry?.role !== "toolResult" || entry.toolName !== toolName) continue;
 		return entry.content
 			.filter((part): part is { type: "text"; text: string } => part.type === "text")
 			.map((part) => part.text)
 			.join("\n");
 	}
 	return undefined;
+}
+
+function latestSubagentResult(context: Context): string | undefined {
+	return latestToolResult(context, "subagent");
 }
 
 function toolResultCount(context: Context, toolName: string): number {
@@ -206,6 +212,52 @@ function toolCallStream(scenario: ScenarioId) {
 	return stream;
 }
 
+function codeModeMainLaunchStream(scenario: ScenarioId) {
+	const stream = createAssistantMessageEventStream();
+	const pending = message([], "pending");
+	const toolCall = {
+		type: "toolCall" as const,
+		id: `agents-execution-matrix-code-mode-${scenario}`,
+		name: "codemode",
+		arguments: {
+			code: `const result = await tools.subagent({ agent: "${AGENT}", task: "MATRIX_TASK_${scenario.toUpperCase().replaceAll("-", "_")}", foreground: true }); text(String(result));`,
+		},
+	};
+	stream.push({ type: "start", partial: pending });
+	stream.push({ type: "toolcall_start", contentIndex: 0, partial: pending });
+	stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: pending });
+	stream.push({ type: "done", reason: "toolUse", message: message([toolCall], "toolUse") });
+	return stream;
+}
+
+function codeModeChildToolStream(scenario: ScenarioId) {
+	const stream = createAssistantMessageEventStream();
+	const pending = message([], "pending");
+	const toolCalls = [
+		{
+			type: "toolCall" as const,
+			id: `agents-execution-matrix-child-code-mode-${scenario}`,
+			name: "codemode",
+			arguments: {
+				code: 'const file = await tools.read({ path: "matrix.txt", limit: 1 }); const shell = await tools.bash({ command: "printf MATRIX_CHILD_BASH_OK", description: "Verify child Bash" }); text(file + "\\n" + shell);',
+			},
+		},
+		{
+			type: "toolCall" as const,
+			id: `agents-execution-matrix-child-extension-${scenario}`,
+			name: "matrix_blob",
+			arguments: { round: 1 },
+		},
+	];
+	stream.push({ type: "start", partial: pending });
+	for (const [contentIndex, toolCall] of toolCalls.entries()) {
+		stream.push({ type: "toolcall_start", contentIndex, partial: pending });
+		stream.push({ type: "toolcall_end", contentIndex, toolCall, partial: pending });
+	}
+	stream.push({ type: "done", reason: "toolUse", message: message(toolCalls, "toolUse") });
+	return stream;
+}
+
 function longToolCallStream(round: number) {
 	const stream = createAssistantMessageEventStream();
 	const pending = message([], "pending");
@@ -232,6 +284,34 @@ function childStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamO
 	const expectedBaseExtension = requiredEnvironment("PI_STUFF_AGENTS_EXECUTION_MATRIX_EXPECTED_BASE_EXTENSION");
 	const childBaseExtension = process.env["PI_STUFF_CHILD_BASE_EXTENSION_PATH"];
 	const nestedResult = latestSubagentResult(context);
+	if (scenario === "single-fresh-foreground-code-mode") {
+		const codeModeResult = latestToolResult(context, "codemode");
+		const extensionResult = latestToolResult(context, "matrix_blob");
+		if (codeModeResult === undefined && extensionResult === undefined) {
+			record({
+				kind: "child-start",
+				scenario,
+				task,
+				lastUser,
+				messageCount: context.messages.length,
+				sawRootMarker,
+				sawSuiteSurface: pi.getCommands().some((command) => command.name === "ui"),
+				baseExtensionMatches: childBaseExtension === expectedBaseExtension,
+				childBaseExtension,
+				codeModeFrozen: process.env["PI_STUFF_CODE_MODE_FROZEN"],
+				activeTools: (context.tools ?? []).map((tool) => tool.name),
+			});
+			return codeModeChildToolStream(scenario);
+		}
+		const text =
+			codeModeResult?.includes("MATRIX_CHILD_FILE_OK") &&
+			codeModeResult.includes("MATRIX_CHILD_BASH_OK") &&
+			extensionResult?.includes("MATRIX_CHILD_EXTENSION_OK")
+				? "MATRIX_CODE_CHILD_TOOLS_OK"
+				: `MATRIX_CODE_CHILD_TOOLS_MISSING:${String(codeModeResult)}:${String(extensionResult)}`;
+		record({ kind: "child-finish", scenario, task, text });
+		return textStream(text);
+	}
 	if (scenario.startsWith("long-")) {
 		const round = toolResultCount(context, "matrix_blob");
 		const sawProjection = serialized.includes("compacted for child continuation safety");
@@ -291,14 +371,16 @@ function childStream(pi: ExtensionAPI, context: Context, options?: SimpleStreamO
 
 function mainStream(context: Context) {
 	const scenario = scenarioId();
-	const result = latestSubagentResult(context);
+	const result = latestToolResult(context, scenario === "single-fresh-foreground-code-mode" ? "codemode" : "subagent");
 	if (result === undefined) {
 		record({
 			kind: "main-launch",
 			scenario,
 			tools: (context.tools ?? []).map((tool) => tool.name),
 		});
-		return toolCallStream(scenario);
+		return scenario === "single-fresh-foreground-code-mode"
+			? codeModeMainLaunchStream(scenario)
+			: toolCallStream(scenario);
 	}
 	record({ kind: "main-result", scenario, result });
 	return textStream(`MATRIX_MAIN_RESULT:${scenario}`);
@@ -316,6 +398,12 @@ export default function agentsExecutionMatrixProvider(pi: ExtensionAPI): void {
 		parameters: Type.Object({ round: Type.Integer({ minimum: 1, maximum: LONG_TOOL_ROUNDS }) }),
 		execute: async (_toolCallId, parameters) => {
 			const round = parameters.round;
+			if (scenarioId() === "single-fresh-foreground-code-mode") {
+				return {
+					content: [{ type: "text" as const, text: "MATRIX_CHILD_EXTENSION_OK" }],
+					details: { round },
+				};
+			}
 			if (process.env["PI_SUBAGENT_CHILD"] === "1" && scenarioId().startsWith("long-")) {
 				record({
 					kind: "child-long-tool",

@@ -33,6 +33,7 @@ import { V8CodeModeExecutor } from "./v8-executor.js";
 
 export const CODE_MODE_TOOL_NAME = "codemode";
 export const CODE_MODE_SEARCH_TOOL_NAME = "tool_search";
+export const CODE_MODE_PROVIDER_TOOL_NAMES = [CODE_MODE_TOOL_NAME, CODE_MODE_SEARCH_TOOL_NAME] as const;
 const CODE_MODE_DECISION_MESSAGE_TYPE = "pi-stuff-code-mode-decision";
 const CODE_MODE_FROZEN_ENV = "PI_STUFF_CODE_MODE_FROZEN";
 
@@ -51,12 +52,10 @@ const CODE_MODE_SEARCH_PARAMETERS = Type.Object(
 const CODE_MODE_DESCRIPTION = `Run JavaScript in isolated V8 and compose eligible Pi Stuff Tools through tools.*.
 Rules:
 - Write plain JavaScript with top-level await and await every tools.* call.
+- Call only methods listed for this Agent or returned by codemode.search(query); inspect unfamiliar methods with codemode.describe("tools.name"). Do not guess Tool names.
 - Tool results are unwrapped to structured JSON when available, parsed JSON when valid, or text.
 - Emit only the evidence needed with text(...), image(...), or another supported output helper.
-Example: const data = JSON.parse(await tools.read({ path: "package.json" })); text(data.packageManager);
-Other common calls:
-- const value = await tools.bash({ command: string, description?: string, run_in_background?: boolean, timeout?: number }) // timeout is seconds, max 86400
-Await codemode.search(query) and codemode.describe("tools.name") for unfamiliar Tools. Cloudflare-style async arrow functions with return and the legacy suite.* alias are accepted, but tools.* plus explicit output helpers are canonical. console is unavailable. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through tools.*. Other helpers include generatedImage, store, load, notify, exit, setTimeout, clearTimeout, and yield_control.`;
+Cloudflare-style async arrow functions with return and the legacy suite.* alias are accepted, but tools.* plus explicit output helpers are canonical. console is unavailable. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through tools.*. Other helpers include generatedImage, store, load, notify, exit, setTimeout, clearTimeout, and yield_control.`;
 
 export interface PiStuffCodeModeOptions {
 	readonly registry: SuiteToolDefinitionRegistry;

@@ -118,9 +118,6 @@ function requireGroup(frame: string): void {
 		}
 	}
 	if (!frame.includes("• Bash(pwd)") || !frame.includes("⎿ ")) fail(`standalone Bash operation was lost\n${frame}`);
-	if (!compact.includes("• Task create")) {
-		fail(`standalone Task operation was lost\n${frame}`);
-	}
 	if (compact.includes("ran 1 command") || compact.includes("Ran 1 command")) {
 		fail(`Bash leaked back into an aggregate command count\n${frame}`);
 	}
@@ -479,7 +476,7 @@ export async function verifyToolsGroupingPty(options: {
 			for (const required of [
 				"Searched 1 pattern, read 1 file, listed 1 directory",
 				"Bash(pwd)",
-				"Task create Certify Activity Group",
+				"Certify Activity Group",
 			]) {
 				if (!treeText.includes(required)) fail(`session_tree replay lost ${required}\n${treeHistory}`);
 			}

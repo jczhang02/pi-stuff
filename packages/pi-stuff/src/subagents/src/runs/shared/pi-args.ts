@@ -90,6 +90,7 @@ export interface BuildPiArgsInput {
 	inheritProjectContext: boolean;
 	inheritSkills: boolean;
 	codeModeEnabled?: boolean;
+	codeModeProviderTools?: readonly string[];
 	childBaseExtensionPath?: string;
 	requireReadTool?: boolean;
 	tools?: string[];
@@ -349,6 +350,12 @@ export function resolvePiLaunchToolPlan(input: ResolvePiLaunchToolPlanInput): Pi
 	};
 }
 
+function appendCodeModeToolGuidance(prompt: string | null | undefined, tools: readonly string[]): string {
+	const available = tools.length > 0 ? tools.join(", ") : "none";
+	const guidance = `Available tools for this Agent: ${available}.\nIn Code Mode, call only these through tools.*; use codemode.describe("tools.name") for signatures.`;
+	return prompt?.trim() ? `${prompt.trimEnd()}\n\n${guidance}` : guidance;
+}
+
 export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	const args = [...input.baseArgs];
 	const physicalSessionId = input.physicalSessionId ?? input.governorSessionId;
@@ -387,9 +394,16 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		capabilityCeiling: input.capabilityCeiling,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 	});
+	const codeModeProviderTools =
+		input.codeModeEnabled && toolPlan.explicitToolAllowlist ? (input.codeModeProviderTools ?? []) : [];
+	const systemPrompt =
+		input.codeModeEnabled && toolPlan.explicitToolAllowlist
+			? appendCodeModeToolGuidance(input.systemPrompt, toolPlan.effectiveToolAllowlist)
+			: input.systemPrompt;
+	const hostToolAllowlist = [...new Set([...toolPlan.effectiveToolAllowlist, ...codeModeProviderTools])];
 	if (toolPlan.explicitToolAllowlist) {
-		args.push(toolPlan.effectiveToolAllowlist.length > 0 ? "--tools" : "--no-tools");
-		if (toolPlan.effectiveToolAllowlist.length > 0) args.push(toolPlan.effectiveToolAllowlist.join(","));
+		args.push(hostToolAllowlist.length > 0 ? "--tools" : "--no-tools");
+		if (hostToolAllowlist.length > 0) args.push(hostToolAllowlist.join(","));
 	}
 	if (toolPlan.disableAmbientExtensions) {
 		args.push("--no-extensions");
@@ -404,11 +418,11 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	}
 
 	let tempDir: string | undefined;
-	if (input.systemPrompt !== undefined && input.systemPrompt !== null) {
+	if (systemPrompt !== undefined && systemPrompt !== null) {
 		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
 		const stem = (input.promptFileStem ?? "prompt").replace(/[^\w.-]/g, "_");
 		const promptPath = path.join(tempDir, `${stem}.md`);
-		fs.writeFileSync(promptPath, input.systemPrompt, { mode: 0o600 });
+		fs.writeFileSync(promptPath, systemPrompt, { mode: 0o600 });
 		args.push(input.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt", promptPath);
 	}
 
@@ -432,8 +446,9 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	if (!tempDir) tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
 	const toolDiagnosticPath = path.join(tempDir, "child-diagnostic.json");
 	env[CHILD_TOOL_DIAGNOSTIC_PATH_ENV] = toolDiagnosticPath;
-	if (toolPlan.requiredChildTools.length > 0) {
-		env[REQUIRED_CHILD_TOOLS_ENV] = JSON.stringify(toolPlan.requiredChildTools);
+	const requiredChildTools = [...new Set([...toolPlan.requiredChildTools, ...codeModeProviderTools])];
+	if (requiredChildTools.length > 0) {
+		env[REQUIRED_CHILD_TOOLS_ENV] = JSON.stringify(requiredChildTools);
 	}
 	env[MCP_DIRECT_CHILD_TOOLS_ENV] =
 		toolPlan.effectiveMcpTools.length > 0 ? JSON.stringify(toolPlan.effectiveMcpTools) : undefined;

@@ -66,6 +66,7 @@ function taskPresentation<TParams extends Record<string, unknown>>(
 	return {
 		activity: {
 			categories: category === "update-task" ? ["check-task", "update-task"] : [category],
+			silentSuccess: true,
 			classify: ({ args, result }) => {
 				const value = target(args);
 				const returnedIds = result?.details

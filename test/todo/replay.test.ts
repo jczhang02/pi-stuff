@@ -1,12 +1,15 @@
 import { describe, expect, it } from "bun:test";
+import { decodeCodeModeOperations } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { isTaskDetails, replayFromBranch } from "../../packages/pi-stuff/src/todo/state/replay.js";
 import {
 	TASK_CREATE_TOOL_NAME,
 	TASK_SNAPSHOT_CAPABILITY,
 	TASK_SNAPSHOT_SCHEMA_VERSION,
+	TASK_UPDATE_TOOL_NAME,
 	type Task,
 	type TaskDetails,
 } from "../../packages/pi-stuff/src/todo/tool/types.js";
+import { ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 function task(id: string, subject: string, overrides: Partial<Task> = {}): Task {
 	return {
@@ -31,8 +34,8 @@ function toolResult(toolName: string, details: unknown): unknown {
 	return { type: "message", message: { role: "toolResult", toolName, details } };
 }
 
-function replay(branch: unknown[]) {
-	return replayFromBranch({ sessionManager: { getBranch: () => branch } });
+function replay(branch: unknown[], projectMessages?: (messages: readonly unknown[]) => readonly unknown[]) {
+	return replayFromBranch({ sessionManager: { getBranch: () => branch } }, projectMessages);
 }
 
 describe("isTaskDetails", () => {
@@ -78,6 +81,48 @@ describe("replayFromBranch", () => {
 
 		expect(state.tasks.map(({ subject }) => subject)).toEqual(["Old", "Latest"]);
 		expect(state.nextId).toBe(3);
+	});
+
+	it("uses Task snapshots nested in a registered Tool envelope", () => {
+		const runtime = new ToolUiRuntime();
+		runtime.registerEnvelope("codemode", decodeCodeModeOperations);
+		const latestSnapshot = snapshot([task("1", "Nested")], 2);
+		const state = replay(
+			[
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [{ type: "toolCall", id: "outer", name: "codemode", arguments: { code: "..." } }],
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolCallId: "outer",
+						toolName: "codemode",
+						content: [],
+						details: {
+							kind: "pi-stuff-code-mode",
+							operations: [
+								{
+									args: { taskId: "1", status: "completed" },
+									id: "nested-task",
+									name: TASK_UPDATE_TOOL_NAME,
+									result: { content: [], details: latestSnapshot },
+									state: "success",
+								},
+							],
+							status: "success",
+						},
+					},
+				},
+			],
+			(messages) => runtime.projectMessages(messages),
+		);
+
+		expect(state).toEqual({ tasks: [task("1", "Nested")], nextId: 2 });
 	});
 
 	it("skips a corrupt later snapshot instead of replacing the last valid state", () => {

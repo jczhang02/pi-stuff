@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { waitForDetachedProcess } from "./detached-process.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
@@ -12,6 +13,7 @@ const BACKGROUND_SETTLE_TIMEOUT_MS = 20_000;
 
 type ScenarioId =
 	| "single-fresh-foreground"
+	| "single-fresh-foreground-code-mode"
 	| "single-fork-background"
 	| "parallel-fresh-background"
 	| "parallel-fork-foreground"
@@ -22,6 +24,7 @@ type ScenarioId =
 interface Scenario {
 	readonly id: ScenarioId;
 	readonly childCount: 1 | 2;
+	readonly codeMode?: true;
 	readonly context: "fresh" | "fork";
 	readonly foreground: boolean;
 }
@@ -33,6 +36,7 @@ interface LogRecord {
 	readonly baseExtensionMatches?: unknown;
 	readonly activeTools?: unknown;
 	readonly childBaseExtension?: unknown;
+	readonly codeModeFrozen?: unknown;
 	readonly sawRootMarker?: unknown;
 	readonly sawSuiteSurface?: unknown;
 	readonly scenario?: unknown;
@@ -57,6 +61,13 @@ export interface AgentsExecutionMatrixVerificationOptions {
 
 const SCENARIOS: readonly Scenario[] = [
 	{ id: "single-fresh-foreground", childCount: 1, context: "fresh", foreground: true },
+	{
+		id: "single-fresh-foreground-code-mode",
+		childCount: 1,
+		codeMode: true,
+		context: "fresh",
+		foreground: true,
+	},
 	{ id: "single-fork-background", childCount: 1, context: "fork", foreground: false },
 	{ id: "parallel-fresh-background", childCount: 2, context: "fresh", foreground: false },
 	{ id: "parallel-fork-foreground", childCount: 2, context: "fork", foreground: true },
@@ -195,6 +206,25 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 			);
 		}
 		const activeTools = Array.isArray(start.activeTools) ? start.activeTools : [];
+		if (scenario.codeMode) {
+			if (start.codeModeFrozen !== "on") {
+				fail(`${scenario.id} child inherited Code Mode as ${String(start.codeModeFrozen)} instead of on`);
+			}
+			for (const tool of ["codemode", "tool_search", "matrix_blob"]) {
+				if (!activeTools.includes(tool)) {
+					fail(`${scenario.id} child lost the provider-facing path for ${tool}: ${JSON.stringify(activeTools)}`);
+				}
+			}
+			if (activeTools.includes("read") || activeTools.includes("bash")) {
+				fail(`${scenario.id} exposed Suite Tool schemas outside Code Mode: ${JSON.stringify(activeTools)}`);
+			}
+		} else if (scenario.id === "single-fresh-foreground") {
+			for (const tool of ["read", "bash", "matrix_blob"]) {
+				if (!activeTools.includes(tool)) {
+					fail(`${scenario.id} direct child lost Agent-defined Tool ${tool}: ${JSON.stringify(activeTools)}`);
+				}
+			}
+		}
 		const fanoutAuthorized =
 			scenario.id === "aggregate-fanout-foreground" &&
 			start.task !== "MATRIX_GRANDCHILD_TASK_AGGREGATE_FANOUT_FOREGROUND";
@@ -267,6 +297,9 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 			fail(`long child did not return its stable completion evidence: ${String(mainResult)}`);
 		}
 	}
+	if (scenario.codeMode && (typeof mainResult !== "string" || !mainResult.includes("MATRIX_CODE_CHILD_TOOLS_OK"))) {
+		fail(`${scenario.id} child could not use every resolved Agent Tool: ${String(mainResult)}`);
+	}
 }
 
 async function runScenario(input: {
@@ -313,6 +346,8 @@ async function runScenario(input: {
 				PI_STUFF_AGENTS_EXECUTION_MATRIX_EXPECTED_BASE_EXTENSION: join(resolve(input.packagePath), "index.ts"),
 				PI_STUFF_AGENTS_EXECUTION_MATRIX_ROOT_MARKER: marker,
 				PI_STUFF_AGENTS_EXECUTION_MATRIX_SCENARIO: input.scenario.id,
+				PI_STUFF_CODE_MODE_DEFAULT: input.scenario.codeMode ? "on" : "off",
+				PI_STUFF_CODE_MODE_HOST: codeModeHostBinaryPath(),
 				TERM: "xterm-256color",
 				TMPDIR: input.temporaryDirectory,
 				XDG_STATE_HOME: join(input.temporaryDirectory, "state"),
@@ -333,13 +368,14 @@ export async function verifyAgentsExecutionMatrix(options: AgentsExecutionMatrix
 	const logPath = join(temporaryDirectory, "provider.jsonl");
 	await Promise.all([mkdir(agentsDirectory, { recursive: true }), mkdir(projectDirectory), mkdir(sessionsDirectory)]);
 	await Promise.all([
+		writeFile(join(projectDirectory, "matrix.txt"), "MATRIX_CHILD_FILE_OK\n", { mode: 0o600 }),
 		writeFile(
 			join(agentsDirectory, "matrix-agent.md"),
 			`---
 name: matrix-agent
 description: Deterministic restricted execution-matrix Agent.
 model: pi-stuff-agents-execution-matrix/fixture-model
-tools: matrix_blob
+tools: read, bash, matrix_blob
 subagentOnlyExtensions: ${providerExtension}
 maxSubagentDepth: 2
 systemPromptMode: append
@@ -370,7 +406,10 @@ Return the deterministic matrix result without calling tools.
 	]);
 
 	try {
-		for (const scenario of SCENARIOS) {
+		const filter = process.env["PI_STUFF_AGENTS_EXECUTION_MATRIX_FILTER"]?.trim();
+		const scenarios = filter ? SCENARIOS.filter((scenario) => scenario.id === filter) : SCENARIOS;
+		if (scenarios.length === 0) fail(`unknown scenario filter ${filter}`);
+		for (const scenario of scenarios) {
 			await runScenario({
 				configDirectory,
 				logPath,

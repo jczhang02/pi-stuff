@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
+import { getToolUiRuntime } from "../tool-display/contract.js";
 import { replayFromBranch } from "./state/replay.js";
 import {
 	clearActiveRenderSession,
@@ -22,6 +23,7 @@ function isStaleContext(error: unknown): boolean {
 
 export default function piStuffTodo(pi: ExtensionAPI): void {
 	const overlay = new TodoOverlay();
+	const toolUi = getToolUiRuntime(pi);
 	getCommandDialogCoordinator(pi).registerChrome("todo", {
 		setSuppressed: (suppressed) => overlay.setSuppressed(suppressed),
 	});
@@ -46,7 +48,10 @@ export default function piStuffTodo(pi: ExtensionAPI): void {
 	function replaySession(ctx: Parameters<typeof replayFromBranch>[0] & Parameters<typeof sid>[0]): string | undefined {
 		try {
 			const sessionId = sid(ctx);
-			replaceState(sessionId, replayFromBranch(ctx));
+			replaceState(
+				sessionId,
+				replayFromBranch(ctx, (messages) => toolUi.projectMessages(messages)),
+			);
 			return sessionId;
 		} catch (error) {
 			if (!isStaleContext(error)) throw error;

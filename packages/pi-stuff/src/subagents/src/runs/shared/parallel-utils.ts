@@ -78,6 +78,8 @@ export interface BackgroundRunnerConfig {
 	parentRunOrigin?: AgentWorkOrigin;
 	/** Effective parent Code Mode state frozen when this Agent run launches. */
 	codeModeEnabled?: boolean;
+	/** Provider carrier Tools required to preserve Code Mode under a strict child allowlist. */
+	codeModeProviderTools?: string[];
 	work: BackgroundRunnerWork;
 	resultPath: string;
 	cwd: string;

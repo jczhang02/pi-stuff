@@ -156,6 +156,7 @@ interface CompactCompletionNotifier {
 
 interface RootExecutorInput {
 	readonly config: PiStuffAgentsConfig;
+	readonly codeModeProviderTools?: readonly string[];
 	readonly pi: ExtensionAPI;
 	readonly projectContext: typeof projectCurrentContext;
 	readonly resolveCodeModeEnabled?: () => boolean;
@@ -173,6 +174,7 @@ interface RootWatcherInput {
 /** Narrow seams keep the production root auditable and the host contract testable. */
 export interface ExtensionRootDependencies {
 	readonly childBaseExtensionPath?: string;
+	readonly codeModeProviderTools?: readonly string[];
 	readonly resolveCodeModeEnabled?: () => boolean;
 	readonly createCurrentAgents: (state: SubagentState, options: CurrentAgentsOptions) => CurrentAgents;
 	readonly createExecutor: (input: RootExecutorInput) => RootExecutor;
@@ -215,6 +217,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 	createCurrentAgents: (state, options) => new CurrentAgents(state, options),
 	createExecutor: ({
 		childBaseExtensionPath,
+		codeModeProviderTools,
 		config,
 		onForegroundStatus,
 		pi,
@@ -233,6 +236,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 			discoverAgents,
 			projectContext,
 			childBaseExtensionPath,
+			codeModeProviderTools,
 			resolveCodeModeEnabled,
 			onForegroundStatus,
 		}),
@@ -520,6 +524,7 @@ export default function registerSubagentExtension(
 		resolveCodeModeEnabled: deps.resolveCodeModeEnabled,
 		state,
 		childBaseExtensionPath: deps.childBaseExtensionPath,
+		codeModeProviderTools: deps.codeModeProviderTools,
 	});
 	const executionGovernor = deps.createGovernorCoordinator(config);
 	const tracker = deps.createTracker(pi, state, () => current.refresh());

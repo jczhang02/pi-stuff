@@ -137,7 +137,7 @@ describe("generateSuite", () => {
 		await generateSuite(root, "write");
 		const generated = await readFile(join(root, "packages", "pi-stuff", "src", "suite-runtime.ts"), "utf8");
 		expect(generated).toContain(
-			'import codeMode, { registerCodeModeContextProjection } from "./code-mode/index.js";',
+			'import codeMode, { CODE_MODE_PROVIDER_TOOL_NAMES, registerCodeModeContextProjection } from "./code-mode/index.js";',
 		);
 		expect(generated).toContain('{ id: "tool-display", install: toolDisplay },');
 		expect(generated).toContain("\tregisterCodeModeContextProjection(suiteApi);");
@@ -166,8 +166,12 @@ describe("generateSuite", () => {
 		expect(generated).toContain(
 			'const resolveCodeModeEnabled = () => registrations.surface.isEnvelopeEnabled("codemode");',
 		);
-		expect(generated).toContain("registerSuiteSubagents(pi, options, resolveCodeModeEnabled)");
-		expect(generated).toContain("childBaseExtensionPath: options.childBaseExtensionPath, resolveCodeModeEnabled");
+		expect(generated).toContain(
+			"registerSuiteSubagents(pi, options, resolveCodeModeEnabled, CODE_MODE_PROVIDER_TOOL_NAMES)",
+		);
+		expect(generated).toContain("childBaseExtensionPath: options.childBaseExtensionPath");
+		expect(generated).toContain("codeModeProviderTools,");
+		expect(generated).toContain("resolveCodeModeEnabled,");
 	});
 
 	test("reports generated drift without rewriting the working tree", async () => {
