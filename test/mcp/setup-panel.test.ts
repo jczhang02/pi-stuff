@@ -46,7 +46,12 @@ function callbacks(scaffoldProjectConfig: SetupPanelCallbacks["scaffoldProjectCo
 	};
 }
 
-function createPanel(panelCallbacks: SetupPanelCallbacks, rows = 28, panelDiscovery = discovery) {
+function createPanel(
+	panelCallbacks: SetupPanelCallbacks,
+	rows = 28,
+	panelDiscovery = discovery,
+	done: () => void = () => undefined,
+) {
 	return createMcpSetupPanel(
 		panelDiscovery,
 		panelCallbacks,
@@ -58,11 +63,11 @@ function createPanel(panelCallbacks: SetupPanelCallbacks, rows = 28, panelDiscov
 					(data === "down" && binding === "tui.select.down"),
 			},
 			mode: "setup",
-			onboardingState: { setupCompleted: false, sharedConfigHintShown: false, version: 1 },
+			onboardingState: { setupCompleted: false, version: 1 },
 		},
 		{ requestRender: () => undefined, terminal: { rows } },
 		{ bold: (value: string) => value, fg: (_color: string, value: string) => value } as Theme,
-		() => undefined,
+		done,
 	);
 }
 
@@ -175,7 +180,7 @@ test("MCP Setup pages only overflowing lists and renders active Pi bindings", ()
 					(data === "go-down" && binding === "tui.select.down"),
 			},
 			mode: "setup",
-			onboardingState: { setupCompleted: false, sharedConfigHintShown: false, version: 1 },
+			onboardingState: { setupCompleted: false, version: 1 },
 		},
 		{ requestRender: () => undefined, terminal: { rows: 28 } },
 		{ bold: (value: string) => value, fg: (_color: string, value: string) => value } as Theme,
@@ -184,6 +189,8 @@ test("MCP Setup pages only overflowing lists and renders active Pi bindings", ()
 
 	panel.handleInput("go-down");
 	panel.handleInput("go-down");
+	panel.handleInput("\r");
+	expect(panel.render(64).join("\n")).not.toContain("◆ Detected paths");
 	panel.handleInput("accept");
 	panel.handleInput(" ");
 	const rendered = panel.render(64).join("\n");
@@ -208,7 +215,7 @@ test("MCP Setup honors the active Pi cancel binding", () => {
 					(data === "down" && binding === "tui.select.down"),
 			},
 			mode: "setup",
-			onboardingState: { setupCompleted: false, sharedConfigHintShown: false, version: 1 },
+			onboardingState: { setupCompleted: false, version: 1 },
 		},
 		{ requestRender: () => undefined, terminal: { rows: 28 } },
 		{ bold: (value: string) => value, fg: (_color: string, value: string) => value } as Theme,
@@ -260,6 +267,82 @@ test("MCP Setup previews writes and defaults confirmation to Cancel", async () =
 	expect(lines.join("\n")).not.toMatch(/[┌┐└┘│]/u);
 	expect(lines.at(-1)).toContain("Esc");
 	expect(panel.render(12).every((line) => visibleWidth(line) <= 12)).toBe(true);
+	panel.dispose();
+});
+
+test("MCP Setup cannot close while a confirmed write is pending", async () => {
+	let finishWrite: ((value: { path: string }) => void) | undefined;
+	const pendingWrite = new Promise<{ path: string }>((resolve) => {
+		finishWrite = resolve;
+	});
+	let closed = 0;
+	const panel = createPanel(
+		callbacks(() => pendingWrite),
+		28,
+		discovery,
+		() => {
+			closed += 1;
+		},
+	);
+
+	panel.handleInput("down");
+	panel.handleInput("confirm");
+	panel.handleInput("down");
+	panel.handleInput("confirm");
+	panel.handleInput("\u001b");
+	expect(closed).toBe(0);
+	expect(panel.render(64).join("\n")).toContain("Working...");
+	finishWrite?.({ path: "/项目配置/服务.json" });
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(closed).toBe(0);
+	expect(panel.render(24).join("")).toContain("项目配置");
+	panel.handleInput("\u001b");
+	expect(closed).toBe(1);
+	panel.dispose();
+});
+
+test("MCP Setup can close while a non-writing open action is pending", async () => {
+	let finishOpen: (() => void) | undefined;
+	const pendingOpen = new Promise<void>((resolve) => {
+		finishOpen = resolve;
+	});
+	let closed = 0;
+	const panelCallbacks = callbacks(async () => ({ path: "/project/.mcp.json" }));
+	panelCallbacks.openPath = () => pendingOpen;
+	const panel = createPanel(
+		panelCallbacks,
+		28,
+		{
+			...discovery,
+			hasAnyConfig: true,
+			hasAnyDetectedPaths: true,
+			sources: [
+				{
+					exists: true,
+					id: "shared-project",
+					kind: "shared",
+					label: "project",
+					path: "/project/.mcp.json",
+					scope: "project",
+					serverCount: 0,
+				},
+			],
+		},
+		() => {
+			closed += 1;
+		},
+	);
+
+	panel.handleInput("down");
+	panel.handleInput("down");
+	panel.handleInput("confirm");
+	panel.handleInput("confirm");
+	expect(panel.render(64).join("\n")).toContain("Working...");
+	panel.handleInput("\u001b");
+	expect(closed).toBe(1);
+	finishOpen?.();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(closed).toBe(1);
 	panel.dispose();
 });
 

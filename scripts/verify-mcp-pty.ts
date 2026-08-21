@@ -19,6 +19,8 @@ const SETUP_THEMES = [
 ] as const;
 const RESUME_FIRST_FRAME_BOUNDARY = "MCP_RESUME_FIRST_FRAME_BOUNDARY";
 const RESUME_RAW_MARKER = "RAW_MCP_RESUME_RESULT_MARKER";
+const SETUP_FRAME_START = "MCP_SETUP_FRAME_START";
+const SETUP_FRAME_END = "MCP_SETUP_FRAME_END";
 
 const ZERO_USAGE = {
 	input: 0,
@@ -322,6 +324,7 @@ if {[file exists $env(PI_STUFF_MCP_PTY_FRESH_CONFIG)]} {
     puts stderr "Space wrote MCP config"
     exit 12
 }
+puts "${SETUP_FRAME_START}"
 send -- "\\r"
 must_expect "MCP setup"
 must_expect "◆ Setup"
@@ -329,6 +332,12 @@ must_expect "View example"
 must_expect "Scaffold project"
 must_expect "◆ Preview"
 must_expect "Esc close"
+set setup_probe_columns [expr {$env(PI_STUFF_MCP_PTY_COLUMNS) - 1}]
+stty rows $env(PI_STUFF_MCP_PTY_ROWS) columns $setup_probe_columns < $mcp_pty
+after 150
+stty rows $env(PI_STUFF_MCP_PTY_ROWS) columns $env(PI_STUFF_MCP_PTY_COLUMNS) < $mcp_pty
+after 200
+must_expect "MCP setup"
 stty rows $env(PI_STUFF_MCP_PTY_ROWS) columns $env(PI_STUFF_MCP_PTY_NARROW_COLUMNS) < $mcp_pty
 after 200
 must_expect "◆ Setup"
@@ -372,6 +381,7 @@ if {![file exists $env(PI_STUFF_MCP_PTY_FRESH_CONFIG)]} {
     puts stderr "Confirmed setup did not write MCP config"
     exit 15
 }
+puts "${SETUP_FRAME_END}"
 send -- "\\033"
 after 1000
 send -- "/mcp\\r"
@@ -429,6 +439,13 @@ function stripTerminalControls(output: string): string {
 	return visible;
 }
 
+function outputBetweenMarkers(output: string, start: string, end: string): string {
+	const startIndex = output.indexOf(start);
+	const endIndex = output.indexOf(end, startIndex + start.length);
+	if (startIndex < 0 || endIndex < 0) fail(`terminal output is missing ${startIndex < 0 ? start : end}`);
+	return output.slice(startIndex + start.length, endIndex);
+}
+
 async function waitForFile(path: string): Promise<void> {
 	const deadline = Date.now() + 10_000;
 	while (Date.now() < deadline) {
@@ -472,8 +489,13 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 	const xdgState = join(temporaryDirectory, "xdg-state");
 	const noobCases = SETUP_THEMES.map((theme) => ({
 		...theme,
+		config: join(temporaryDirectory, `noob-${theme.name}-agent`),
+		home: join(temporaryDirectory, `noob-${theme.name}-home`),
 		project: join(temporaryDirectory, `noob-${theme.name}`),
 		sessions: join(temporaryDirectory, `noob-${theme.name}-sessions`),
+		xdgCache: join(temporaryDirectory, `noob-${theme.name}-xdg-cache`),
+		xdgConfig: join(temporaryDirectory, `noob-${theme.name}-xdg-config`),
+		xdgState: join(temporaryDirectory, `noob-${theme.name}-xdg-state`),
 	}));
 	const project = join(temporaryDirectory, "project");
 	const sessions = join(temporaryDirectory, "sessions");
@@ -489,9 +511,14 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 		mkdir(xdgCache),
 		mkdir(xdgConfig),
 		mkdir(xdgState),
-		...noobCases.flatMap(({ project: noobProject, sessions: noobSessions }) => [
-			mkdir(noobProject),
-			mkdir(noobSessions),
+		...noobCases.flatMap((noobCase) => [
+			mkdir(noobCase.config),
+			mkdir(noobCase.home),
+			mkdir(noobCase.xdgCache),
+			mkdir(noobCase.xdgConfig),
+			mkdir(noobCase.xdgState),
+			mkdir(noobCase.project),
+			mkdir(noobCase.sessions),
 		]),
 		mkdir(project),
 		mkdir(sessions),
@@ -534,19 +561,25 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 		};
 		for (const noobCase of noobCases) {
 			await writeFile(
-				join(config, "settings.json"),
+				join(noobCase.config, "settings.json"),
 				`${JSON.stringify({ defaultProjectTrust: "always", enableInstallTelemetry: false, quietStartup: true, theme: noobCase.name }, null, "\t")}\n`,
 			);
 			const freshConfig = join(noobCase.project, ".mcp.json");
 			const noobOutput = runExpect(noobExpectProgram(), noobCase.project, {
 				...commonEnv,
+				HOME: noobCase.home,
+				PI_CODING_AGENT_DIR: noobCase.config,
 				PI_STUFF_MCP_PTY_FRESH_CONFIG: freshConfig,
 				PI_STUFF_MCP_PTY_RESUME_TARGET: join(noobCase.sessions, "unused.jsonl"),
 				PI_STUFF_MCP_PTY_SESSIONS: noobCase.sessions,
 				PI_STUFF_MCP_PTY_SESSION_ID: `mcp-noob-${noobCase.name}`,
+				XDG_CACHE_HOME: noobCase.xdgCache,
+				XDG_CONFIG_HOME: noobCase.xdgConfig,
+				XDG_STATE_HOME: noobCase.xdgState,
 			});
-			const noobVisible = stripTerminalControls(noobOutput);
-			if (!noobOutput.includes(noobCase.accent)) {
+			const setupOutput = outputBetweenMarkers(noobOutput, SETUP_FRAME_START, SETUP_FRAME_END);
+			const noobVisible = stripTerminalControls(setupOutput);
+			if (!setupOutput.includes(noobCase.accent)) {
 				fail(`MCP setup did not render the ${noobCase.name} semantic accent`);
 			}
 			if (!noobVisible.includes("Write and reload")) {
@@ -571,6 +604,10 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 				fail("fresh-state setup did not persist the selected Context7 server");
 			}
 		}
+		await writeFile(
+			join(config, "settings.json"),
+			`${JSON.stringify({ defaultProjectTrust: "always", enableInstallTelemetry: false, quietStartup: true, theme: "catppuccin-mocha" }, null, "\t")}\n`,
+		);
 
 		await writeFile(
 			join(project, ".mcp.json"),

@@ -32,9 +32,9 @@ describe("MCP Command Dialog", () => {
 		let closed = 0;
 		const terminal = { rows: 20 };
 		const component = createMcpControlView(store, {
-			authenticate: async () => undefined,
-			logout: async () => undefined,
-			reconnect: async () => undefined,
+			authenticate: async () => true,
+			logout: async () => true,
+			reconnect: async () => true,
 		}).create({
 			close: () => {
 				closed += 1;
@@ -90,9 +90,9 @@ describe("MCP Command Dialog", () => {
 		});
 		let result: unknown;
 		const component = createMcpControlView(store, {
-			authenticate: async () => undefined,
-			logout: async () => undefined,
-			reconnect: async () => undefined,
+			authenticate: async () => true,
+			logout: async () => true,
+			reconnect: async () => true,
 		}).create({
 			close: (value) => {
 				result = value;
@@ -131,10 +131,11 @@ describe("MCP Command Dialog", () => {
 		});
 		const reconnected: string[] = [];
 		const component = createMcpControlView(store, {
-			authenticate: async () => undefined,
-			logout: async () => undefined,
+			authenticate: async () => true,
+			logout: async () => true,
 			reconnect: async (server) => {
 				reconnected.push(server);
+				return true;
 			},
 		}).create({
 			close: () => undefined,
@@ -169,9 +170,9 @@ describe("MCP Command Dialog", () => {
 		});
 		let result: unknown;
 		const component = createMcpControlView(store, {
-			authenticate: async () => undefined,
-			logout: async () => undefined,
-			reconnect: async () => undefined,
+			authenticate: async () => true,
+			logout: async () => true,
+			reconnect: async () => true,
 		}).create({
 			close: (value) => {
 				result = value;
@@ -226,9 +227,9 @@ describe("MCP Command Dialog", () => {
 		});
 		let result: unknown;
 		const component = createMcpControlView(store, {
-			authenticate: async () => undefined,
-			logout: async () => undefined,
-			reconnect: async () => undefined,
+			authenticate: async () => true,
+			logout: async () => true,
+			reconnect: async () => true,
 		}).create({
 			close: (value) => {
 				result = value;
@@ -280,8 +281,8 @@ describe("MCP Command Dialog", () => {
 			version: 1,
 		});
 		const component = createMcpControlView(store, {
-			authenticate: async () => undefined,
-			logout: async () => undefined,
+			authenticate: async () => true,
+			logout: async () => true,
 			reconnect: async () => {
 				store.set({
 					connectedCount: 0,
@@ -299,6 +300,7 @@ describe("MCP Command Dialog", () => {
 					totalTools: 0,
 					version: 1,
 				});
+				return false;
 			},
 		}).create({
 			close: () => undefined,
@@ -316,7 +318,7 @@ describe("MCP Command Dialog", () => {
 		component.handleInput?.("\r");
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		const failed = component.render(64).join("\n");
-		expect(failed).toContain("Reconnect failed for broken.");
+		expect(failed).toContain("Action failed. See /diagnostics for details.");
 		expect(failed).not.toContain("Reconnected broken.");
 		component.dispose?.();
 	});
@@ -336,9 +338,9 @@ describe("MCP Command Dialog", () => {
 		store.set(snapshot("local", false));
 		let result: unknown;
 		const component = createMcpControlView(store, {
-			authenticate: async () => undefined,
-			logout: async () => undefined,
-			reconnect: async () => undefined,
+			authenticate: async () => true,
+			logout: async () => true,
+			reconnect: async () => true,
 		}).create({
 			close: (value) => {
 				result = value;
@@ -382,8 +384,8 @@ describe("MCP Command Dialog", () => {
 				authenticated.push(server);
 				throw new Error("token=SECRET\u001b]8;;https://malicious.invalid\u0007link");
 			},
-			logout: async () => undefined,
-			reconnect: async () => undefined,
+			logout: async () => true,
+			reconnect: async () => true,
 		}).create({
 			close: () => undefined,
 			keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
@@ -424,9 +426,9 @@ describe("MCP Command Dialog", () => {
 		});
 		let result: unknown;
 		const component = createMcpControlView(store, {
-			authenticate: async () => undefined,
-			logout: async () => undefined,
-			reconnect: async () => undefined,
+			authenticate: async () => true,
+			logout: async () => true,
+			reconnect: async () => true,
 		}).create({
 			close: (value) => {
 				result = value;

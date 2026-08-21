@@ -1,26 +1,23 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { McpExtensionState } from "./state.ts";
-import { isServerDisabled, type McpAuthResult, type McpConfig, type McpPanelCallbacks, type McpPanelResult, type ImportKind } from "./types.ts";
+import { isServerDisabled, type McpAuthResult, type McpConfig, type ImportKind } from "./types.ts";
 import {
   ensureCompatibilityImports,
   getMcpDiscoverySummary,
   getProjectConfigPath,
   type KnownServerPreset,
-  getServerProvenance,
   previewCompatibilityImports,
   previewSharedServerEntry,
   previewStarterProjectConfig,
-  writeDirectToolsConfig,
-  writeProjectServerDisabledOverride,
   writeSharedServerEntry,
   writeStarterProjectConfig,
 } from "./config.ts";
 import { markKeepAliveAfterConnect, notifyToolMetadataUpdated, updateMetadataCache, updateStatusBar, getFailureAgeSeconds, getFailureMessage, clearFailure, recordFailure } from "./init.ts";
-import { loadMetadataCache, reconstructPromptMetadata } from "./metadata-cache.ts";
+import { reconstructPromptMetadata } from "./metadata-cache.ts";
 import { buildToolMetadata } from "./tool-metadata.ts";
 import { supportsOAuth, authenticate, removeAuth, type McpOAuthRuntime } from "./mcp-auth-flow.ts";
-import { getAuthStorageOptions, inspectAuthForUrl } from "./mcp-auth.ts";
-import { loadOnboardingState, markSetupCompleted as persistSetupCompleted, markSharedConfigHintShown } from "./onboarding-state.ts";
+import { getAuthStorageOptions } from "./mcp-auth.ts";
+import { loadOnboardingState, markSetupCompleted as persistSetupCompleted } from "./onboarding-state.ts";
 import { openPath, resolveServerUrl, sanitizeTerminalText } from "./utils.ts";
 import { isAbortError } from "./runtime-owner.ts";
 
@@ -208,20 +205,22 @@ export async function reconnectServers(
   state: McpExtensionState,
   ctx: ExtensionContext,
   targetServer?: string
-): Promise<void> {
+): Promise<boolean> {
   if (targetServer && !state.config.mcpServers[targetServer]) {
     if (ctx.hasUI) {
       ctx.ui.notify(`Server "${targetServer}" not found in config`, "error");
     }
-    return;
+    return false;
   }
 
   const names = targetServer ? [targetServer] : Object.keys(state.config.mcpServers);
+  let succeeded = true;
   for (const name of names) {
-    await reconnectServer(state, ctx, name);
+    succeeded = await reconnectServer(state, ctx, name) && succeeded;
   }
 
   updateStatusBar(state);
+  return succeeded;
 }
 
 export async function authenticateServer(
@@ -353,24 +352,6 @@ export interface PanelFlowResult {
   configChanged: boolean;
 }
 
-function buildSharedConfigNoticeLines(configOverridePath: string | undefined, cwd: string): { lines: string[]; fingerprint: string | null } {
-  const discovery = getMcpDiscoverySummary(configOverridePath, cwd);
-  const onboardingState = loadOnboardingState();
-  if (!discovery.hasSharedServers || onboardingState.sharedConfigHintShown) {
-    return { lines: [], fingerprint: null };
-  }
-
-  const sharedSources = discovery.sources.filter((source) => source.kind === "shared" && source.serverCount > 0);
-  const sourceList = sharedSources.map((source) => source.path).join(", ");
-  return {
-    lines: [
-      `Using standard MCP config from ${sourceList}.`,
-      "Pi only writes compatibility imports and adapter-specific overrides into Pi-owned files when needed.",
-    ],
-    fingerprint: discovery.fingerprint,
-  };
-}
-
 export async function openMcpSetup(
   state: McpExtensionState,
   pi: ExtensionAPI,
@@ -426,7 +407,7 @@ export async function openMcpSetup(
       await openPath(pi, targetPath);
     },
     markSetupCompleted: () => {
-      persistSetupCompleted(discovery.fingerprint);
+      persistSetupCompleted();
     },
   };
 
@@ -440,121 +421,4 @@ export async function openMcpSetup(
       },
     );
   });
-}
-
-function buildMcpPanelCallbacks(
-  state: McpExtensionState,
-  config: McpConfig,
-  ctx: ExtensionContext,
-): McpPanelCallbacks {
-  // Panel-only diagnostics keep status inspection from mutating connection
-  // failure state while allowing the existing panel failure UI to show why the
-  // credential store could not be inspected.
-  const authStatusFailures = new Map<string, string>();
-
-  return {
-    reconnect: (serverName: string) => reconnectServer(state, ctx, serverName),
-    canAuthenticate: (serverName: string) => {
-      const definition = config.mcpServers[serverName];
-      return definition ? !isServerDisabled(definition) && supportsOAuth(definition) : false;
-    },
-    authenticate: (serverName: string) => authenticateServer(serverName, config, ctx, state.owner?.signal, state.oauthRuntime),
-    getConnectionStatus: (serverName: string) => {
-      authStatusFailures.delete(serverName);
-      const definition = config.mcpServers[serverName];
-      if (isServerDisabled(definition)) return "disabled";
-      const connection = state.manager.getConnection(serverName);
-      let serverUrl: string | undefined;
-      try {
-        serverUrl = definition ? resolveServerUrl(definition) : undefined;
-      } catch {
-        return "failed";
-      }
-      if (
-        definition?.auth === "oauth"
-        && serverUrl
-        && definition.oauth !== false
-        && definition.oauth?.grantType !== "client_credentials"
-      ) {
-        const authStatus = inspectAuthForUrl(serverName, serverUrl, state.authStorageOptions);
-        if (authStatus.status === "unavailable") {
-          authStatusFailures.set(serverName, authStatus.message);
-          return "failed";
-        }
-        if (authStatus.status === "absent" || !authStatus.entry.tokens) {
-          return "needs-auth";
-        }
-      }
-      if (connection?.status === "needs-auth") return "needs-auth";
-      if (connection?.status === "connected") return "connected";
-      if (getFailureAgeSeconds(state, serverName) !== null) return "failed";
-      return "idle";
-    },
-    getFailureMessage: (serverName: string) => authStatusFailures.get(serverName) ?? getFailureMessage(state, serverName),
-    refreshCacheAfterReconnect: (serverName: string) => {
-      const freshCache = loadMetadataCache();
-      return freshCache?.servers?.[serverName] ?? null;
-    },
-  };
-}
-
-export async function openMcpPanel(
-  state: McpExtensionState,
-  pi: ExtensionAPI,
-  ctx: ExtensionContext,
-  configOverridePath?: string,
-  onDirectToolsConfigChanged?: (changes: Map<string, true | string[] | false>) => void | Promise<void>,
-): Promise<PanelFlowResult> {
-  if (state.programmaticConfig) {
-    if (ctx.hasUI) {
-      ctx.ui.notify("MCP status is shown from the in-memory SDK config; configuration discovery is unavailable.", "info");
-      await showStatus(state, ctx);
-    }
-    return { configChanged: false };
-  }
-  if (Object.keys(state.config.mcpServers).length === 0) {
-    return openMcpSetup(state, pi, ctx, configOverridePath, "empty");
-  }
-
-  const config = state.config;
-  const cache = loadMetadataCache();
-  const configPath = pi.getFlag("mcp-config") as string | undefined ?? configOverridePath;
-  const provenanceMap = getServerProvenance(configPath, ctx.cwd);
-  const { lines: noticeLines, fingerprint } = buildSharedConfigNoticeLines(configPath, ctx.cwd);
-
-  const callbacks = buildMcpPanelCallbacks(state, config, ctx);
-
-  const { createMcpPanel } = await import("./mcp-panel.ts");
-  let configChanged = false;
-
-  await new Promise<void>((resolve) => {
-    ctx.ui.custom(
-      (tui, theme, keybindings, done) => {
-        return createMcpPanel(config, cache, provenanceMap, callbacks, tui, theme, (result: McpPanelResult) => {
-          void (async () => {
-            if (!result.cancelled && result.changes.size > 0) {
-              await writeDirectToolsConfig(result.changes, provenanceMap, config);
-              await onDirectToolsConfigChanged?.(result.changes);
-              ctx.ui.notify("Direct tools updated for this session.", "info");
-            }
-            done(undefined);
-            resolve();
-          })().catch((error) => {
-            const message = error instanceof Error ? error.message : String(error);
-            ctx.ui.notify(`Direct tools updated, but live refresh failed: ${message}`, "error");
-            configChanged = true;
-            done(undefined);
-            resolve();
-          });
-        }, { noticeLines, keybindings });
-      },
-      { overlay: true, overlayOptions: { anchor: "center", width: 82 } },
-    );
-  });
-
-  if (noticeLines.length > 0 && fingerprint) {
-    markSharedConfigHintShown(fingerprint);
-  }
-
-  return { configChanged };
 }

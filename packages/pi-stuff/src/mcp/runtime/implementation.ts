@@ -4,7 +4,7 @@ import type { McpExtensionState } from "./state.ts";
 import type { DirectToolSpec, McpAdapterOptions, McpConfig, PromptMetadata } from "./types.ts";
 import type { McpOAuthRuntime } from "./mcp-auth-flow.ts";
 import { Type } from "typebox";
-import { showStatus, showTools, showPrompts, reconnectServer, reconnectServers, authenticateServer, logoutServer, openMcpPanel, openMcpSetup } from "./commands.ts";
+import { showStatus, showTools, showPrompts, reconnectServer, reconnectServers, authenticateServer, logoutServer, openMcpSetup } from "./commands.ts";
 import {
   cloneMcpConfig,
   loadMcpConfig,
@@ -33,6 +33,9 @@ export {
   type McpServerStatusSnapshot,
   type McpStatusSnapshot,
 } from "./types.ts";
+
+type AdapterCommandHandler = Parameters<ExtensionAPI["registerCommand"]>[1]["handler"];
+type AdapterCommandContext = Parameters<AdapterCommandHandler>[1];
 
 const INIT_WAIT_TIMEOUT_MS = 30_000;
 const INIT_WAIT_TIMED_OUT: unique symbol = Symbol("init-wait-timed-out");
@@ -215,15 +218,6 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
 
     deactivateTools(deactivated);
     return { specs, added, updated, deactivated };
-  }
-
-  function applyDirectToolConfigChanges(changes: Map<string, true | string[] | false>): void {
-    if (!state) return;
-    for (const [serverName, value] of changes) {
-      const definition = state.config.mcpServers[serverName];
-      if (!definition) continue;
-      state.config.mcpServers[serverName] = { ...definition, directTools: value };
-    }
   }
 
   function syncToolSurface(ctx?: ExtensionContext): void {
@@ -472,7 +466,8 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
         .map((serverName) => ({ value: `${subcommand} ${serverName}`, label: serverName }));
       return servers.length > 0 ? servers : null;
     },
-    handler: async (args, ctx) => {
+    // Pi Stuff captures this private boolean result before the command reaches Pi's void-returning Host API.
+    handler: (async (args: string, ctx: AdapterCommandContext) => {
       const commandOwner = currentOwner;
       const commandReload = typeof ctx.reload === "function" ? ctx.reload.bind(ctx) : async () => {};
       const commandHasUI = ctx.hasUI;
@@ -501,17 +496,13 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
         return;
       }
 
-      const parts = args?.trim()?.split(/\s+/) ?? [];
-      const subcommand = parts[0] ?? "";
-      const targetServer = parts[1];
-      const rest = parts.slice(1).join(" ");
+      const { subcommand, serverName } = parseMcpCommand(args);
 
       switch (subcommand) {
         case "auth": {
-          const serverName = rest;
           if (!serverName) {
             if (commandCtx.hasUI) commandCtx.ui?.notify("Usage: /mcp auth <server>", "error");
-            return;
+            return false;
           }
           commandOwner?.throwIfInactive();
           const result = await authenticateServer(serverName, state.config, commandCtx, commandCtx.signal, state.oauthRuntime);
@@ -519,13 +510,15 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
             commandOwner?.throwIfInactive();
             await reconnectServer(state, commandCtx, serverName);
           }
-          break;
+          // Stored authentication is authoritative; connection failures remain visible in MCP status.
+          return result.ok;
         }
-        case "reconnect":
+        case "reconnect": {
           commandOwner?.throwIfInactive();
-          await reconnectServers(state, commandCtx, targetServer);
+          const succeeded = await reconnectServers(state, commandCtx, serverName);
           if (directToolsFrozen) syncToolSurface(commandCtx);
-          break;
+          return succeeded;
+        }
         case "tools":
           await showTools(state, commandCtx);
           break;
@@ -547,18 +540,16 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
           break;
         }
         case "logout": {
-          const serverName = rest;
           if (!serverName) {
             if (commandCtx.hasUI) commandCtx.ui?.notify("Usage: /mcp logout <server>", "error");
-            return;
+            return false;
           }
           commandOwner?.throwIfInactive();
-          await logoutServer(serverName, state, commandCtx);
-          break;
+          const result = await logoutServer(serverName, state, commandCtx);
+          return result.ok;
         }
         case "disable":
         case "enable": {
-          const serverName = rest;
           if (programmaticConfig) {
             commandCtx.ui?.notify(`/mcp ${subcommand} is unavailable when config is supplied by createMcpAdapter().`, "info");
             break;
@@ -584,7 +575,6 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
         }
         case "auto-connect":
         case "on-demand": {
-          const serverName = rest;
           if (programmaticConfig) {
             commandCtx.ui?.notify(`/mcp ${subcommand} is unavailable when config is supplied by createMcpAdapter().`, "info");
             break;
@@ -621,28 +611,14 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
         case "status":
         case "":
         default:
-          if (commandCtx.hasUI) {
-            commandOwner?.throwIfInactive();
-            if (programmaticConfig) {
-              commandCtx.ui?.notify("MCP status is shown from the in-memory SDK config; configuration discovery is unavailable.", "info");
-              await showStatus(state, commandCtx);
-              break;
-            }
-            const result = await openMcpPanel(state, pi, commandCtx, earlyConfigPath, (changes) => {
-              applyDirectToolConfigChanges(changes);
-              syncToolSurface(commandCtx);
-            });
-            if (result?.configChanged) {
-              commandOwner?.throwIfInactive();
-              await commandReload();
-              return;
-            }
-          } else {
-            await showStatus(state, commandCtx);
+          commandOwner?.throwIfInactive();
+          if (programmaticConfig && commandCtx.hasUI) {
+            commandCtx.ui?.notify("MCP status is shown from the in-memory SDK config; configuration discovery is unavailable.", "info");
           }
+          await showStatus(state, commandCtx);
           break;
       }
-    },
+		}) as unknown as AdapterCommandHandler,
   });
 
   if (options.proxyOnly !== true && earlyConfig.settings?.scriptMode !== false) {
@@ -855,7 +831,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
       || missingConfiguredDirectToolServers.length > 0;
 
     if (shouldRegisterProxyTool) {
-      const description = buildProxyDescription(config, cache, directSpecs);
+      const description = buildProxyDescription();
       if (!proxyToolRegistered || proxyToolDescription !== description) {
         registerProxyTool(description);
         return;
@@ -879,6 +855,14 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
   const initialDirectTools = syncDirectTools(earlyConfig, earlyCache).specs;
   syncProxyTool(earlyConfig, earlyCache, initialDirectTools);
   startLoadTimeInitialization();
+}
+
+export function parseMcpCommand(args: string | undefined): { subcommand: string; serverName?: string } {
+  const match = args?.trim().match(/^(\S+)(?:\s+([\s\S]*))?$/u);
+  return {
+    subcommand: match?.[1] ?? "",
+    ...(match?.[2] ? { serverName: match[2] } : {}),
+  };
 }
 
 export function createMcpAdapter(options: McpAdapterOptions = {}) {

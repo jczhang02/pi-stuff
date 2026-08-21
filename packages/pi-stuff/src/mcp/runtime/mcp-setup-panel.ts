@@ -1,4 +1,4 @@
-import { Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { createPanelKeys, type PanelKeybindings, type PanelKeys } from "./panel-keys.ts";
 import type { ImportKind } from "./types.ts";
@@ -44,24 +44,6 @@ const VERBOSE_WIDTH = 80;
 
 function fg(style: (text: string) => string, text: string): string {
 	return style(text);
-}
-
-function wrapText(text: string, width: number): string[] {
-  if (width <= 8) return [text];
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
-    if (visibleWidth(candidate) <= width) {
-      current = candidate;
-      continue;
-    }
-    if (current) lines.push(current);
-    current = word;
-  }
-  if (current) lines.push(current);
-  return lines.length > 0 ? lines : [""];
 }
 
 export interface SetupPanelCallbacks {
@@ -118,6 +100,7 @@ export class McpSetupPanel {
   private pathCursor = 0;
   private selectedImports = new Set<ImportKind>();
   private busy = false;
+	private busyCanClose = false;
 	private disposed = false;
 	private confirmation: PendingWrite | null = null;
 	private confirmCursor = 0;
@@ -204,8 +187,19 @@ export class McpSetupPanel {
 
   handleInput(data: string): void {
 		if (this.disposed) return;
+		if (this.busy) {
+			const cancel =
+				matchesKey(data, "ctrl+c")
+				|| matchesKey(data, "escape")
+				|| !!(this.options.keybindings && matchesCommandDialogCancel(data, this.options.keybindings));
+			if (!this.busyCanClose || !cancel) return;
+			this.cleanup();
+			this.disposed = true;
+			this.done();
+			return;
+		}
     this.resetInactivityTimeout();
-    if (!this.busy) this.notice = null;
+    this.notice = null;
 
     if (matchesKey(data, "ctrl+c")) {
       this.cleanup();
@@ -233,8 +227,6 @@ export class McpSetupPanel {
       this.done();
       return;
     }
-
-    if (this.busy) return;
 
     if (this.screen === "imports") {
       this.handleImportsInput(data);
@@ -401,7 +393,7 @@ export class McpSetupPanel {
       void this.runBusy(async () => {
         await this.callbacks.openPath(selected);
         this.notice = { text: `Opened ${selected}`, tone: "success" };
-      });
+      }, true);
     }
   }
 
@@ -472,8 +464,9 @@ export class McpSetupPanel {
     });
   }
 
-  private async runBusy(fn: () => Promise<void>): Promise<void> {
+  private async runBusy(fn: () => Promise<void>, canClose = false): Promise<void> {
     this.busy = true;
+		this.busyCanClose = canClose;
 		this.cleanup();
     this.notice = { text: "Working...", tone: "muted" };
     this.tui.requestRender();
@@ -486,6 +479,7 @@ export class McpSetupPanel {
       };
     } finally {
       this.busy = false;
+			this.busyCanClose = false;
 			if (this.disposed) return;
 			this.resetInactivityTimeout();
       this.tui.requestRender();
@@ -498,11 +492,11 @@ export class McpSetupPanel {
 		const header = [fg(this.t.border, "━".repeat(panelW)), this.padLine(fg(this.t.title, "MCP setup"), panelW)];
 		const body: string[] = [];
 		const summary = this.discoverySummary();
-		for (const line of wrapText(summary.text, contentW)) {
+		for (const line of wrapTextWithAnsi(summary.text, contentW)) {
 			body.push(this.padLine(fg(summary.tone === "warning" ? this.t.warning : this.t.hint, line), panelW));
 		}
 		if (panelW >= VERBOSE_WIDTH) {
-			for (const line of wrapText(this.secondarySummaryLine(), contentW)) {
+			for (const line of wrapTextWithAnsi(this.secondarySummaryLine(), contentW)) {
 				body.push(this.padLine(fg(this.t.muted, line), panelW));
 			}
 		}
@@ -512,7 +506,7 @@ export class McpSetupPanel {
 		if (this.notice) {
 			const tone = this.notice.tone === "success" ? this.t.success : this.notice.tone === "warning" ? this.t.warning : this.t.hint;
 			const icon = this.busy ? "●" : this.notice.tone === "success" ? "✓" : this.notice.tone === "warning" ? "!" : "○";
-			for (const [index, line] of wrapText(this.notice.text, Math.max(1, contentW - 2)).entries()) {
+			for (const [index, line] of wrapTextWithAnsi(this.notice.text, Math.max(1, contentW - 2)).entries()) {
 				const rendered = this.padLine(fg(tone, `${index === 0 ? `${icon} ` : "  "}${line}`), panelW);
 				body.push(rendered);
 				noticeLine ??= rendered;
@@ -869,7 +863,7 @@ export class McpSetupPanel {
     const preview: string[] = [];
     for (const line of lines) {
 			if (/^\s|^[{}]$|^"/u.test(line)) preview.push(truncateToWidth(line, width, "…", true));
-			else preview.push(...wrapText(line, width));
+			else preview.push(...wrapTextWithAnsi(line, width));
     }
     return preview;
   }
@@ -877,11 +871,11 @@ export class McpSetupPanel {
   private formatWritePreview(title: string, preview: ConfigWritePreview, intro: string[] = [], width = DESKTOP_PREVIEW_WIDTH): string[] {
     const lines: string[] = [];
     for (const line of intro) {
-      lines.push(...wrapText(line, width));
+      lines.push(...wrapTextWithAnsi(line, width));
     }
     if (intro.length > 0) lines.push("");
-    lines.push(...wrapText(`${title}: ${preview.path}`, width));
-    lines.push(...wrapText(preview.existed ? "Existing file detected. Showing exact before/after diff." : "New file will be created. Showing exact content diff.", width));
+    lines.push(...wrapTextWithAnsi(`${title}: ${preview.path}`, width));
+    lines.push(...wrapTextWithAnsi(preview.existed ? "Existing file detected. Showing exact before/after diff." : "New file will be created. Showing exact content diff.", width));
     lines.push("");
     const diffLines = preview.diffText.split("\n");
     const maxLines = 18;
@@ -890,7 +884,7 @@ export class McpSetupPanel {
 			lines.push(truncateToWidth(line, width, "…", true));
     }
     if (diffLines.length > maxLines) {
-      lines.push(...wrapText(`… ${diffLines.length - maxLines} more diff line${diffLines.length - maxLines === 1 ? "" : "s"}`, width));
+      lines.push(...wrapTextWithAnsi(`… ${diffLines.length - maxLines} more diff line${diffLines.length - maxLines === 1 ? "" : "s"}`, width));
     }
     return lines;
   }

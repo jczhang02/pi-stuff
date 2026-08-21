@@ -9,6 +9,7 @@
 
 import { dlopen, FFIType } from "bun:ffi";
 import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import { mkdir, open, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { mergeNamespaceRecord, readNamespace, type SettingsRecord } from "./file.js";
@@ -47,7 +48,11 @@ export async function acquireSettingsLock(
 ): Promise<() => Promise<void>> {
 	await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
 	const startedAt = Date.now();
-	const handle = await open(lockPath, "a+", 0o600);
+	const handle = await open(
+		lockPath,
+		constants.O_APPEND | constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW,
+		0o600,
+	);
 	try {
 		while (!tryAcquireFileLock(handle.fd)) {
 			if (Date.now() - startedAt >= SETTINGS_LOCK_TIMEOUT_MS) {

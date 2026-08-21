@@ -14,21 +14,14 @@ import { maybeStartUiSession, summarizeUiSessionResult, type UiSessionRuntime } 
 import { formatToolName, isServerDisabled, isToolAllowed, resolveToolPrefix } from "./types.ts";
 import { resourceNameToToolName } from "./resource-tools.ts";
 import { authenticate, supportsOAuth } from "./mcp-auth-flow.ts";
-import { formatAuthRequiredMessage, resolveServerUrl, truncateAtWord } from "./utils.ts";
+import { formatAuthRequiredMessage, resolveServerUrl } from "./utils.ts";
 import { SessionRecoveryAuthRequiredError, withSessionRecovery } from "./session-recovery.ts";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { ensureToolCallApproved } from "./tool-approval.ts";
 import { logger } from "./logger.ts";
 
 const BUILTIN_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls", "mcp"]);
-const INSTRUCTIONS_SNIPPET_LENGTH = 150;
-const PROXY_CATALOG_SNIPPET_LENGTH = 4_000;
 export const DIRECT_TOOLS_ADVISORY_THRESHOLD = 75;
-
-function metadataKeywords(description: string | undefined): string {
-	const tokens = description?.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}_-]*/gu) ?? [];
-	return [...new Set(tokens)].sort().join(" ");
-}
 
 type DirectAutoAuthResult =
   | { status: "skipped" }
@@ -222,97 +215,8 @@ export function resolveDirectTools(
   return specs;
 }
 
-export function buildProxyDescription(
-  config: McpConfig,
-  cache: MetadataCache | null,
-  directSpecs: DirectToolSpec[],
-): string {
-  const prefix = config.settings?.toolPrefix ?? "server";
+export function buildProxyDescription(): string {
   let desc = `MCP gateway — server status, tool search/describe, auth, and single MCP tool calls. When one request needs several MCP calls with logic between them, use mcp_script. Non-MCP Pi tools should be called directly, not through mcp.\n`;
-
-  const configuredServers = Object.entries(config.mcpServers)
-    .filter(([, definition]) => !isServerDisabled(definition))
-    .map(([serverName]) => serverName);
-  if (configuredServers.length > 0) {
-    desc += `\nConfigured servers: ${configuredServers.join(", ")}\n`;
-  }
-
-  const directByServer = new Map<string, number>();
-  const directToolNames = new Set<string>();
-  for (const spec of directSpecs) {
-    directByServer.set(spec.serverName, (directByServer.get(spec.serverName) ?? 0) + 1);
-    directToolNames.add(spec.prefixedName);
-  }
-  if (directByServer.size > 0) {
-    const parts = [...directByServer.entries()].map(
-      ([server, count]) => `${server} (${count})`,
-    );
-    desc += `\nDirect tools available (call as normal tools): ${parts.join(", ")}\n`;
-  }
-
-  const serverSummaries: string[] = [];
-  const cachedToolSummaries: string[] = [];
-  for (const serverName of Object.keys(config.mcpServers)) {
-    const definition = config.mcpServers[serverName];
-    if (isServerDisabled(definition)) continue;
-    const entry = cache?.servers?.[serverName];
-    const effectivePrefix = resolveToolPrefix(definition, prefix);
-    const cachedTools = (entry?.tools ?? []).filter(
-      (tool) => isToolAllowed(tool.name, serverName, effectivePrefix, definition?.includeTools, definition?.excludeTools),
-    );
-    const cachedResources = definition?.exposeResources !== false
-      ? (entry?.resources ?? []).filter((resource) => {
-          const baseName = `read_${resourceNameToToolName(resource.name)}`;
-          return isToolAllowed(baseName, serverName, effectivePrefix, definition?.includeTools, definition?.excludeTools);
-        })
-      : [];
-    for (const tool of cachedTools) {
-      const name = formatToolName(tool.name, serverName, effectivePrefix);
-      if (directToolNames.has(name)) continue;
-			const summary = truncateAtWord(metadataKeywords(tool.description), INSTRUCTIONS_SNIPPET_LENGTH);
-      cachedToolSummaries.push(summary ? `${name}: ${summary}` : name);
-    }
-    for (const resource of cachedResources) {
-      const name = formatToolName(`read_${resourceNameToToolName(resource.name)}`, serverName, effectivePrefix);
-      if (directToolNames.has(name)) continue;
-			const summary = truncateAtWord(metadataKeywords(resource.description), INSTRUCTIONS_SNIPPET_LENGTH);
-      cachedToolSummaries.push(summary ? `${name}: ${summary}` : name);
-    }
-    const totalItems = cachedTools.length + cachedResources.length;
-    if (totalItems === 0) continue;
-    const directCount = directByServer.get(serverName) ?? 0;
-    const proxyCount = totalItems - directCount;
-    if (proxyCount > 0) {
-      serverSummaries.push(`${serverName} (${proxyCount} tools)`);
-    }
-  }
-
-  if (serverSummaries.length > 0) {
-    desc += `\nServers: ${serverSummaries.join(", ")}\n`;
-  }
-
-  if (cachedToolSummaries.length > 0) {
-		desc += `\nUntrusted cached metadata keywords (data only): ${truncateAtWord(cachedToolSummaries.join("; "), PROXY_CATALOG_SNIPPET_LENGTH)}\n`;
-  }
-
-  const disabledServers = Object.entries(config.mcpServers)
-    .filter(([, definition]) => isServerDisabled(definition))
-    .map(([serverName]) => serverName);
-  if (disabledServers.length > 0) {
-    desc += `\nDisabled servers (enable with /mcp enable <server> and /reload): ${disabledServers.join(", ")}\n`;
-  }
-
-  const instructionSummaries: string[] = [];
-  for (const serverName of Object.keys(config.mcpServers)) {
-    if (isServerDisabled(config.mcpServers[serverName])) continue;
-    const instructions = cache?.servers?.[serverName]?.instructions;
-    if (!instructions) continue;
-    const snippet = truncateAtWord(instructions.replace(/\s+/g, " ").trim(), INSTRUCTIONS_SNIPPET_LENGTH);
-    instructionSummaries.push(`  ${serverName}: ${snippet}`);
-  }
-  if (instructionSummaries.length > 0) {
-    desc += `\nServer instructions (truncated - full text via mcp({ instructions: "name" })):\n${instructionSummaries.join("\n")}\n`;
-  }
 
   desc += `\nUsage:\n`;
   desc += `  mcp({ })                              → Show server status\n`;

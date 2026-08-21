@@ -22,13 +22,19 @@ import { McpStatusStore } from "./status-store.js";
 type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
 type CommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];
 type CommandContext = Parameters<CommandSpec["handler"]>[1];
+type CapturedCommandSpec = Omit<CommandSpec, "handler"> & {
+	handler(args: string, ctx: CommandContext): unknown | Promise<unknown>;
+};
 type EventHandler = (event: unknown, ctx: ExtensionContext) => unknown;
 type McpCustomFactory = Parameters<ExtensionUIContext["custom"]>[0];
 type McpCustomKeybindings = Parameters<McpCustomFactory>[2];
 
 interface CapturedCommands {
-	mcp?: CommandSpec;
+	mcp?: CapturedCommandSpec;
 }
+
+const MCP_GATEWAY_DESCRIPTION =
+	"MCP gateway for configured servers. List or search first, then pass one returned prefixed Tool name with its args. Connect a server when cached metadata is unavailable. Authentication is user-driven through /mcp.";
 
 const MCP_PARAMETERS = Type.Object({
 	tool: Type.Optional(
@@ -101,35 +107,14 @@ function sharedToolFields(upstream: CapturedTool) {
 	};
 }
 
-function mcpDiscoverySummary(description: string): string {
-	return description
-		.split("\n")
-		.filter(
-			(line) =>
-				line.startsWith("Configured servers: ") ||
-				line.startsWith("Servers: ") ||
-				line.startsWith("Untrusted cached metadata keywords (data only): "),
-		)
-		.join(" ");
-}
-
 function registerGateway(pi: ExtensionAPI, upstream: CapturedTool): void {
-	const discoverySummary = mcpDiscoverySummary(upstream.description);
-	const description = [
-		"MCP gateway for configured servers.",
-		discoverySummary,
-		"List or search first, then pass one returned prefixed Tool name with its args. Connect a server when cached metadata is unavailable. Use this gateway for MCP protocol operations.",
-		"Authentication is user-driven through /mcp.",
-	]
-		.filter(Boolean)
-		.join(" ");
 	const tool: ToolDefinition<typeof MCP_PARAMETERS, unknown> = {
 		...sharedToolFields(upstream),
-		description,
+		description: MCP_GATEWAY_DESCRIPTION,
 		execute: (toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<unknown>> =>
 			upstream.execute(toolCallId, boundedMcpParameters(params), signal, onUpdate, ctx),
 		parameters: MCP_PARAMETERS,
-		promptSnippet: description,
+		promptSnippet: "Discover and call configured MCP servers through one bounded, lazy gateway.",
 	};
 	registerSuiteOwnedTool(pi, tool, MCP_PRESENTATION);
 }
@@ -196,7 +181,7 @@ export function createMcpAdapterApi(pi: ExtensionAPI, commands: CapturedCommands
 		if (tool.name === "mcp") registerGateway(pi, tool);
 	}) as ExtensionAPI["registerTool"];
 	const registerCommand = ((name: string, spec: CommandSpec) => {
-		if (name === "mcp") commands.mcp = spec;
+		if (name === "mcp") commands.mcp = spec as CapturedCommandSpec;
 	}) as ExtensionAPI["registerCommand"];
 	const on = ((event: string, handler: EventHandler) => {
 		const hostOn = pi.on as unknown as (eventName: string, eventHandler: EventHandler) => unknown;
@@ -221,10 +206,16 @@ function firstArgument(args: string): string {
 
 function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: McpStatusStore): void {
 	const coordinator = getCommandDialogCoordinator(pi);
-	const invoke = async (command: CommandSpec | undefined, args: string, ctx: CommandContext): Promise<void> => {
+	const invoke = async (
+		command: CapturedCommandSpec | undefined,
+		args: string,
+		ctx: CommandContext,
+	): Promise<unknown> => {
 		if (!command) throw new Error("MCP command is unavailable");
-		await command.handler(args, ctx);
+		return command.handler(args, ctx);
 	};
+	const invokeAction = async (args: string, ctx: CommandContext): Promise<boolean> =>
+		(await invoke(commands.mcp, args, ctx)) === true;
 	pi.registerCommand("mcp", {
 		description: "Manage MCP servers",
 		getArgumentCompletions: (prefix) => {
@@ -254,9 +245,9 @@ function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: Mc
 				const result = await coordinator.show(
 					ctx,
 					createMcpControlView(store, {
-						authenticate: (server) => invoke(commands.mcp, `auth ${server}`, ctx),
-						logout: (server) => invoke(commands.mcp, `logout ${server}`, ctx),
-						reconnect: (server) => invoke(commands.mcp, `reconnect ${server}`, ctx),
+						authenticate: (server) => invokeAction(`auth ${server}`, ctx),
+						logout: (server) => invokeAction(`logout ${server}`, ctx),
+						reconnect: (server) => invokeAction(`reconnect ${server}`, ctx),
 					}),
 				);
 				if (result?.action === "setup") {
