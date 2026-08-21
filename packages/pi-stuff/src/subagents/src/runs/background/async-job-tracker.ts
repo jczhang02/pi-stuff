@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { readOwnedFileTailAsync } from "../../shared/private-directory.ts";
@@ -41,8 +42,32 @@ const MAX_RECENT_AGENT_JOBS = 200;
 const RESTORE_READ_CONCURRENCY = 8;
 const MAX_LEGACY_TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
 
-function record(value: unknown): Record<string, unknown> {
-	return isRuntimeObject(value) && value !== null ? (value as Record<string, unknown>) : {};
+interface TrackerEventRecord {
+	readonly channels?: unknown;
+	readonly childIntercomTarget?: unknown;
+	readonly error?: unknown;
+	readonly errorMessage?: unknown;
+	readonly event?: unknown;
+	readonly intercom?: unknown;
+	readonly isError?: unknown;
+	readonly message?: unknown;
+	readonly noticeText?: unknown;
+	readonly recordType?: unknown;
+	readonly role?: unknown;
+	readonly sourceEventType?: unknown;
+	readonly stopReason?: unknown;
+	readonly text?: unknown;
+	readonly type?: unknown;
+}
+
+function record<Value>(value: Value): TrackerEventRecord {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
+	// SAFETY: consumers read only the declared raw fields and validate them before dispatch.
+	return value as Value & TrackerEventRecord;
+}
+
+function hasErrorCode<ErrorValue>(error: ErrorValue, code: string): boolean {
+	return isRuntimeObject(error) && error !== null && "code" in error && error.code === code;
 }
 
 function ambiguousLegacyFinalDrain(step: NonNullable<AsyncStatus["steps"]>[number]): boolean {
@@ -74,7 +99,7 @@ async function recoverLegacyFinalReports(status: AsyncStatus): Promise<AsyncStat
 			const tail = await readOwnedFileTailAsync(step.transcriptPath, MAX_LEGACY_TRANSCRIPT_TAIL_BYTES);
 			const lastLine = tail.text.trimEnd().split("\n").at(-1);
 			if (!lastLine) return step;
-			const entry = record(JSON.parse(lastLine));
+			const entry = record(parseJsonValue(lastLine));
 			const message = record(entry.message);
 			if (
 				entry.recordType !== "message" ||
@@ -147,14 +172,14 @@ export function createAsyncJobTracker(
 		| undefined;
 	let restoredGeneration = -1;
 
-	const normalizeAcceptedSessionId = (sessionId: unknown, runId: unknown): string | undefined => {
+	const normalizeAcceptedSessionId = <SessionId, RunId>(sessionId: SessionId, runId: RunId): string | undefined => {
 		if (!state.currentSessionId || !isRuntimeString(sessionId)) return undefined;
 		if (sessionId === state.currentSessionId) return state.currentSessionId;
 		return state.currentSessionScope && sessionArtifactMatches(state.currentSessionScope, sessionId, runId)
 			? state.currentSessionId
 			: undefined;
 	};
-	const emitLifecycleEvent = (event: string, payload: unknown): void => {
+	const emitLifecycleEvent = <Payload extends object>(event: string, payload: Payload): void => {
 		try {
 			pi.events.emit(event, payload);
 		} catch (error) {
@@ -295,26 +320,26 @@ export function createAsyncJobTracker(
 			asyncDir,
 			status: status.state,
 			mode: status.mode,
-			...(sessionId ? { sessionId } : {}),
 			startedAt: status.startedAt,
 			updatedAt: status.lastUpdate ?? status.startedAt,
 			...(restored ? { controlEventCursorPending: true } : { controlEventCursor: 0 }),
 		};
+		if (sessionId) job.sessionId = sessionId;
 		applyStatus(job, status);
 		return job;
 	};
 
 	const handleControlLine = (job: AsyncJobState, line: string): boolean => {
 		if (!line.trim()) return false;
-		let parsed: unknown;
+		let parsed: TrackerEventRecord;
 		try {
-			parsed = JSON.parse(line);
+			parsed = record(parseJsonValue(line));
 		} catch (error) {
 			reportAgentDiagnostic(`Ignoring malformed async control event in '${job.asyncDir}':`, error);
 			return false;
 		}
-		if (!parsed || !isRuntimeObject(parsed)) return false;
-		if ((parsed as { type?: unknown }).type === "subagent.steering.notice") {
+		if (parsed.type === "subagent.steering.notice") {
+			// SAFETY: the discriminator selects the Suite-owned steering notice protocol; required fields are checked below.
 			const notice = parsed as Partial<SteeringNotice>;
 			if (
 				!isRuntimeString(notice.requestId) ||
@@ -334,42 +359,46 @@ export function createAsyncJobTracker(
 					if (now - seenAt > 10 * 60 * 1_000 || steeringNoticeSeen.size > 200) steeringNoticeSeen.delete(seenKey);
 				}
 			}
-			emitLifecycleEvent(SUBAGENT_STEERING_NOTICE_EVENT, {
+			const payload = {
 				...notice,
-				...(normalizedSessionId ? { currentSessionId: normalizedSessionId } : {}),
 				source: "async",
 				asyncDir: job.asyncDir,
 				noticeText: notice.message,
-			});
+			};
+			if (normalizedSessionId) Object.assign(payload, { currentSessionId: normalizedSessionId });
+			emitLifecycleEvent(SUBAGENT_STEERING_NOTICE_EVENT, payload);
 			return true;
 		}
-		if ((parsed as { type?: unknown }).type !== "subagent.control") return false;
-		const record = parsed as {
+		if (parsed.type !== "subagent.control") return false;
+		// SAFETY: the discriminator selects the Suite-owned control record; channel and event presence are checked next.
+		const controlRecord = parsed as {
 			event?: ControlEvent;
 			channels?: string[];
 			childIntercomTarget?: string;
 			noticeText?: string;
 			intercom?: { to?: string; message?: string };
 		};
-		if (!record.event || !Array.isArray(record.channels)) return false;
+		if (!controlRecord.event || !Array.isArray(controlRecord.channels)) return false;
 		const payload = {
-			event: record.event,
+			event: controlRecord.event,
 			source: "async" as const,
 			asyncDir: job.asyncDir,
-			childIntercomTarget: record.childIntercomTarget,
-			noticeText: record.noticeText ?? formatControlNoticeMessage(record.event, record.childIntercomTarget),
+			childIntercomTarget: controlRecord.childIntercomTarget,
+			noticeText:
+				controlRecord.noticeText ??
+				formatControlNoticeMessage(controlRecord.event, controlRecord.childIntercomTarget),
 		};
-		if (record.channels.includes("event")) emitLifecycleEvent(SUBAGENT_CONTROL_EVENT, payload);
+		if (controlRecord.channels.includes("event")) emitLifecycleEvent(SUBAGENT_CONTROL_EVENT, payload);
 		if (
-			record.event.type !== "active_long_running" &&
-			record.channels.includes("intercom") &&
-			record.intercom?.to &&
-			record.intercom.message
+			controlRecord.event.type !== "active_long_running" &&
+			controlRecord.channels.includes("intercom") &&
+			controlRecord.intercom?.to &&
+			controlRecord.intercom.message
 		) {
 			emitLifecycleEvent(SUBAGENT_CONTROL_INTERCOM_EVENT, {
 				...payload,
-				to: record.intercom.to,
-				message: record.intercom.message,
+				to: controlRecord.intercom.to,
+				message: controlRecord.intercom.message,
 			});
 		}
 		return true;
@@ -377,12 +406,12 @@ export function createAsyncJobTracker(
 
 	const emitNewControlEvents = async (job: AsyncJobState): Promise<{ changed: boolean; more: boolean }> => {
 		const eventsPath = path.join(job.asyncDir, "events.jsonl");
-		const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+		const noFollow = isRuntimeNumber(fs.constants.O_NOFOLLOW) ? fs.constants.O_NOFOLLOW : 0;
 		let handle: fs.promises.FileHandle;
 		try {
 			handle = await fs.promises.open(eventsPath, fs.constants.O_RDONLY | noFollow);
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			if (hasErrorCode(error, "ENOENT")) {
 				if (job.controlEventCursorPending) {
 					job.controlEventCursor = 0;
 					job.controlEventCursorPending = false;
@@ -559,7 +588,9 @@ export function createAsyncJobTracker(
 		for (const job of state.asyncJobs.values()) ensureJobObserver(job);
 	};
 
-	const handleStarted = (data: unknown): void => {
+	const handleStarted = <Data>(data: Data): void => {
+		if (!isRuntimeObject(data) || data === null || Array.isArray(data)) return;
+		// SAFETY: this callback is bound to the Suite-owned async-started event; id is checked before state mutation.
 		const info = data as AsyncStartedEvent;
 		if (!info.id) return;
 		const normalizedSessionId = normalizeAcceptedSessionId(info.sessionId, info.id);
@@ -608,8 +639,9 @@ export function createAsyncJobTracker(
 		scheduleRefresh();
 	};
 
-	const handleStatus = (data: unknown): void => {
-		if (!data || !isRuntimeObject(data)) return;
+	const handleStatus = <Data>(data: Data): void => {
+		if (!data || !isRuntimeObject(data) || Array.isArray(data)) return;
+		// SAFETY: this callback is bound to the Suite-owned status event; envelope fields are checked below.
 		const update = data as { id?: unknown; asyncDir?: unknown; sessionId?: unknown; status?: unknown };
 		if (
 			!isRuntimeString(update.id) ||
@@ -618,6 +650,7 @@ export function createAsyncJobTracker(
 			!isRuntimeObject(update.status)
 		)
 			return;
+		// SAFETY: the status event producer emits AsyncStatus and the run/directory identities are checked immediately after.
 		const status = update.status as AsyncStatus;
 		if (status.runId !== update.id || path.basename(update.asyncDir) !== update.id) return;
 		const normalizedSessionId = normalizeAcceptedSessionId(update.sessionId ?? status.sessionId, update.id);
@@ -636,7 +669,9 @@ export function createAsyncJobTracker(
 		scheduleRefresh();
 	};
 
-	const handleComplete = (data: unknown): void => {
+	const handleComplete = <Data>(data: Data): void => {
+		if (!isRuntimeObject(data) || data === null || Array.isArray(data)) return;
+		// SAFETY: this callback is bound to the Suite-owned completion event; id gates all state mutation.
 		const result = data as {
 			id?: string;
 			success?: boolean;
@@ -663,8 +698,9 @@ export function createAsyncJobTracker(
 		scheduleRefresh();
 	};
 
-	const handleProcessTerminal = (data: unknown): void => {
-		if (!data || !isRuntimeObject(data)) return;
+	const handleProcessTerminal = <Data>(data: Data): void => {
+		if (!data || !isRuntimeObject(data) || Array.isArray(data)) return;
+		// SAFETY: this callback is bound to the Suite-owned process-terminal event; proof identity fields are checked below.
 		const proof = data as Partial<ProcessTerminalV1> & { asyncDir?: unknown };
 		if (
 			!isRuntimeString(proof.runId) ||
@@ -683,6 +719,7 @@ export function createAsyncJobTracker(
 			job.processTerminal.runnerProcessInstanceId !== proof.runnerProcessInstanceId
 		)
 			return;
+		// SAFETY: the process-terminal producer emits the full discriminated proof and the observed variant's identity was checked above.
 		job.processTerminal = proof as ProcessTerminalV1;
 		job.updatedAt = Math.max(job.updatedAt ?? 0, proof.observedAt);
 		maybeScheduleCleanup(job);
@@ -728,7 +765,7 @@ export function createAsyncJobTracker(
 				try {
 					entries = await fs.promises.readdir(asyncDirRoot, { withFileTypes: true });
 				} catch (error) {
-					if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+					if (hasErrorCode(error, "ENOENT")) {
 						if (trackerGeneration === generation && state.currentSessionId === sessionId) {
 							restoredGeneration = generation;
 						}
