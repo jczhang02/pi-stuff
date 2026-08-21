@@ -7,23 +7,26 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { buildSkillInjection, normalizeSkillInput, resolveSkillsWithFallback } from "../../agents/skills.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
-import { agentDefinitionDigest, launchBindingDigest } from "../../shared/launch-contract.ts";
+import { agentDefinitionDigest, launchBindingDigest, type LaunchBindingInput } from "../../shared/launch-contract.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
 import { ensurePrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { readProcessStartIdentity } from "../../shared/process-identity.ts";
 import {
 	type ArtifactConfig,
 	ASYNC_DIR,
+	type AsyncStartedEvent,
 	type AsyncStatus,
 	type Details,
 	getAsyncConfigPath,
 	type NestedRouteInfo,
+	type NestedRunSummary,
 	type ProcessTerminalV1,
 	RESULTS_DIR,
 	type ResolvedControlConfig,
@@ -89,24 +92,74 @@ const MAX_RUNNER_STARTUP_FILE_BYTES = 64 * 1024;
 const piPackageRoot = resolvePiPackageRoot();
 const piExecutable = resolveStandalonePiHostExecutable();
 
+interface SemanticResult {
+	state?: unknown;
+	success?: unknown;
+	startedAt?: unknown;
+	endedAt?: unknown;
+	error?: unknown;
+	mode?: unknown;
+	timedOut?: unknown;
+	stopped?: unknown;
+}
+
+interface RawTerminalStatus {
+	runId?: unknown;
+	mode?: unknown;
+	state?: unknown;
+	startedAt?: unknown;
+}
+
+interface RunnerStatusMessage {
+	type?: unknown;
+	asyncDir?: unknown;
+	status?: unknown;
+}
+
+type ProcessTerminalNotice = ProcessTerminalV1 & { asyncDir: string; sessionId?: string | null };
+
+interface AsyncStatusNotice {
+	id: string;
+	asyncDir: string;
+	sessionId?: string | null;
+	status: object;
+}
+
+interface AsyncStartedNotice extends AsyncStartedEvent {
+	acknowledgeStart?: () => void;
+	abortStart?: () => boolean;
+}
+
+interface SpawnedRunnerLifecycle {
+	pid?: number;
+	processStartIdentity?: string;
+	acknowledgeStart?: () => void;
+	abortStart?: () => boolean;
+}
+
+interface SpawnRunnerResult extends SpawnedRunnerLifecycle {
+	error?: string;
+	safeToCleanup?: boolean;
+}
+
 function taskPreview(task: string): string {
 	return task.length <= START_EVENT_TASK_PREVIEW_CODE_UNITS
 		? task
 		: `${task.slice(0, START_EVENT_TASK_PREVIEW_CODE_UNITS - 1)}…`;
 }
 
-function finiteTimestamp(value: unknown): number | undefined {
+function finiteTimestamp<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
-function semanticResultState(value: Record<string, unknown>): AsyncStatus["state"] | undefined {
-	if ((value["state"] === "complete" || value["state"] === "completed") && value["success"] !== false) {
+function semanticResultState(value: SemanticResult): AsyncStatus["state"] | undefined {
+	if ((value.state === "complete" || value.state === "completed") && value.success !== false) {
 		return "complete";
 	}
-	if (value["state"] === "failed" || value["state"] === "paused" || value["state"] === "stopped") {
-		return value["state"];
+	if (value.state === "failed" || value.state === "paused" || value.state === "stopped") {
+		return value.state;
 	}
-	return value["success"] === true ? "complete" : value["success"] === false ? "failed" : undefined;
+	return value.success === true ? "complete" : value.success === false ? "failed" : undefined;
 }
 
 /**
@@ -118,49 +171,54 @@ export function buildNestedTerminalFallbackStatus(
 	processTerminal: ProcessTerminalV1,
 	now = Date.now(),
 ): AsyncStatus {
-	let result: Record<string, unknown> | undefined;
+	let result: SemanticResult | undefined;
 	try {
-		const parsed = JSON.parse(readBoundedOwnedFile(config.resultPath, MAX_NESTED_RESULT_FILE_BYTES)) as unknown;
-		if (parsed && isRuntimeObject(parsed) && !Array.isArray(parsed)) result = parsed as Record<string, unknown>;
+		const parsed = parseJsonValue(readBoundedOwnedFile(config.resultPath, MAX_NESTED_RESULT_FILE_BYTES));
+		if (parsed && isRuntimeObject(parsed) && !Array.isArray(parsed)) {
+			// SAFETY: the parsed JSON object is read only through the semantic-result fields validated below.
+			result = parsed as SemanticResult;
+		}
 	} catch {
 		// The conservative fallback below is authoritative when no semantic result exists.
 	}
 	const semanticState = result ? semanticResultState(result) : undefined;
 	const state = semanticState ?? "failed";
 	const observedAt = processTerminal.state === "observed" ? processTerminal.observedAt : now;
-	const startedAt = finiteTimestamp(result?.["startedAt"]) ?? observedAt;
-	const endedAt = finiteTimestamp(result?.["endedAt"]) ?? observedAt;
+	const startedAt = finiteTimestamp(result?.startedAt) ?? observedAt;
+	const endedAt = finiteTimestamp(result?.endedAt) ?? observedAt;
 	const error =
-		isRuntimeString(result?.["error"]) && result["error"].trim()
-			? result["error"]
+		isRuntimeString(result?.error) && result.error.trim()
+			? result.error
 			: semanticState
 				? undefined
 				: "Agent runner exited without a readable semantic result or status.";
-	return {
+	const status: AsyncStatus = {
 		runId: config.id,
-		mode: result?.["mode"] === "single" || result?.["mode"] === "parallel" ? result["mode"] : config.work.mode,
+		mode: result?.mode === "single" || result?.mode === "parallel" ? result.mode : config.work.mode,
 		state,
 		startedAt,
 		endedAt,
 		lastUpdate: endedAt,
 		processTerminal,
-		...(error ? { error } : {}),
-		...(result?.["timedOut"] === true ? { timedOut: true } : {}),
-		...(state === "stopped" || result?.["stopped"] === true ? { stopped: true } : {}),
 	};
+	if (error) status.error = error;
+	if (result?.timedOut === true) status.timedOut = true;
+	if (state === "stopped" || result?.stopped === true) status.stopped = true;
+	return status;
 }
 
-function isTerminalAsyncStatus(value: unknown, runId: string): value is AsyncStatus {
+function isTerminalAsyncStatus<Value>(value: Value, runId: string): value is Value & AsyncStatus {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return false;
-	const status = value as Record<string, unknown>;
+	// SAFETY: the non-array object guard permits inspection through the terminal-status schema's optional raw fields.
+	const status = value as Value & RawTerminalStatus;
 	return (
-		status["runId"] === runId &&
-		(status["mode"] === "single" || status["mode"] === "parallel") &&
-		(status["state"] === "complete" ||
-			status["state"] === "failed" ||
-			status["state"] === "paused" ||
-			status["state"] === "stopped") &&
-		finiteTimestamp(status["startedAt"]) !== undefined
+		status.runId === runId &&
+		(status.mode === "single" || status.mode === "parallel") &&
+		(status.state === "complete" ||
+			status.state === "failed" ||
+			status.state === "paused" ||
+			status.state === "stopped") &&
+		finiteTimestamp(status.startedAt) !== undefined
 	);
 }
 
@@ -169,11 +227,11 @@ export function resolveNestedTerminalStatus(
 	processTerminal: ProcessTerminalV1,
 ): AsyncStatus {
 	try {
-		const parsed = JSON.parse(
+		const parsed = parseJsonValue(
 			readBoundedOwnedFile(path.join(config.asyncDir, "status.json"), MAX_ASYNC_STATUS_FILE_BYTES),
-		) as unknown;
+		);
 		if (!isTerminalAsyncStatus(parsed, config.id)) throw new Error("invalid terminal Agent status");
-		return { ...parsed, processTerminal };
+		return Object.assign({}, parsed, { processTerminal });
 	} catch {
 		return buildNestedTerminalFallbackStatus(config, processTerminal);
 	}
@@ -478,26 +536,28 @@ export function buildResolvedTask(input: {
 		capabilityCeiling,
 		inheritedCapabilityCeiling: decodeSubagentCapabilityCeiling(process.env[SUBAGENT_CAPABILITY_CEILING_ENV]),
 	});
-	const launchContractDigest = launchBindingDigest({
+	const launchBinding: Partial<LaunchBindingInput> = {
 		definitionDigest,
 		task: taskInput.task,
 		modelCandidates,
-		...(thinking ? { thinking } : {}),
-		systemPrompt,
-		systemPromptMode: agent.systemPromptMode,
-		inheritProjectContext: agent.inheritProjectContext,
-		inheritSkills: agent.inheritSkills,
-		skills: resolvedSkills.map((skill) => skill.name),
-		tools: toolPlan.effectiveToolAllowlist,
-		extensions: toolPlan.extensionArgs,
-		mcpDirectTools: toolPlan.effectiveMcpTools,
-		turnBudget: turnBudget.turnBudget,
-		toolBudget: toolBudget.toolBudget,
-		maxSubagentDepth,
-		capabilityCeiling,
-	});
+	};
+	if (thinking) launchBinding.thinking = thinking;
+	launchBinding.systemPrompt = systemPrompt;
+	launchBinding.systemPromptMode = agent.systemPromptMode;
+	launchBinding.inheritProjectContext = agent.inheritProjectContext;
+	launchBinding.inheritSkills = agent.inheritSkills;
+	launchBinding.skills = resolvedSkills.map((skill) => skill.name);
+	launchBinding.tools = toolPlan.effectiveToolAllowlist;
+	launchBinding.extensions = toolPlan.extensionArgs;
+	launchBinding.mcpDirectTools = toolPlan.effectiveMcpTools;
+	launchBinding.turnBudget = turnBudget.turnBudget;
+	launchBinding.toolBudget = toolBudget.toolBudget;
+	launchBinding.maxSubagentDepth = maxSubagentDepth;
+	launchBinding.capabilityCeiling = capabilityCeiling;
+	// SAFETY: both required launch-binding flags and the definition digest are assigned before hashing.
+	const launchContractDigest = launchBindingDigest(launchBinding as LaunchBindingInput);
 
-	const task: RunnerAgentTask = {
+	const task: Partial<RunnerAgentTask> = {
 		governorSessionId: params.ctx.governorSessionId ?? params.ctx.currentSessionId,
 		physicalSessionId: params.ctx.physicalSessionId ?? params.ctx.currentSessionId,
 		parentSessionId: params.ctx.parentSessionId ?? params.ctx.currentSessionId,
@@ -508,64 +568,69 @@ export function buildResolvedTask(input: {
 		description: resolveDisplayDescription(taskInput.description, taskInput.task),
 		delegatedTask: taskInput.delegatedTask ?? taskInput.task,
 		task: taskInput.task,
-		...(input.context ? { context: input.context } : {}),
-		cwd: taskCwd,
-		...(primaryModel ? { model: primaryModel } : {}),
-		...(thinking ? { thinking } : {}),
-		modelCandidates,
-		tools: agent.tools,
-		extensions: agent.extensions,
-		subagentOnlyExtensions: agent.subagentOnlyExtensions,
-		mcpDirectTools: agent.mcpDirectTools,
-		systemPrompt,
-		systemPromptMode: agent.systemPromptMode,
-		inheritProjectContext: agent.inheritProjectContext,
-		inheritSkills: agent.inheritSkills,
-		...(params.childBaseExtensionPath ? { childBaseExtensionPath: params.childBaseExtensionPath } : {}),
-		skills: resolvedSkills.map((skill) => skill.name),
-		...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
-		maxSubagentDepth,
-		definitionDigest,
-		launchBindingTask: taskInput.task,
-		launchContractDigest,
-		...(turnBudget.turnBudget ? { turnBudget: turnBudget.turnBudget } : {}),
-		...(toolBudget.toolBudget ? { toolBudget: toolBudget.toolBudget } : {}),
-		...(capabilityCeiling ? { capabilityCeiling } : {}),
 	};
-	const recovery: BackgroundRecoveryDescriptor = {
+	if (input.context) task.context = input.context;
+	task.cwd = taskCwd;
+	if (primaryModel) task.model = primaryModel;
+	if (thinking) task.thinking = thinking;
+	task.modelCandidates = modelCandidates;
+	task.tools = agent.tools;
+	task.extensions = agent.extensions;
+	task.subagentOnlyExtensions = agent.subagentOnlyExtensions;
+	task.mcpDirectTools = agent.mcpDirectTools;
+	task.systemPrompt = systemPrompt;
+	task.systemPromptMode = agent.systemPromptMode;
+	task.inheritProjectContext = agent.inheritProjectContext;
+	task.inheritSkills = agent.inheritSkills;
+	if (params.childBaseExtensionPath) task.childBaseExtensionPath = params.childBaseExtensionPath;
+	task.skills = resolvedSkills.map((skill) => skill.name);
+	if (input.sessionFile) task.sessionFile = input.sessionFile;
+	task.maxSubagentDepth = maxSubagentDepth;
+	task.definitionDigest = definitionDigest;
+	task.launchBindingTask = taskInput.task;
+	task.launchContractDigest = launchContractDigest;
+	if (turnBudget.turnBudget) task.turnBudget = turnBudget.turnBudget;
+	if (toolBudget.toolBudget) task.toolBudget = toolBudget.toolBudget;
+	if (capabilityCeiling) task.capabilityCeiling = capabilityCeiling;
+
+	const recovery: Partial<BackgroundRecoveryDescriptor> = {
 		version: 2,
 		sourceRunId: params.logicalSourceRunId ?? input.runId,
 		childIndex: params.logicalChildIndex ?? input.index,
 		launchContractDigest,
 		agent: agent.name,
-		...(input.context ? { context: input.context } : {}),
-		...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
-		cwd: taskCwd,
-		...(primaryModel ? { model: primaryModel } : {}),
-		...(modelCandidates.length > 1 ? { fallbackModels: modelCandidates.slice(1) } : {}),
-		...(thinking ? { thinking } : {}),
-		...(agent.tools ? { tools: [...agent.tools] } : {}),
-		...(agent.extensions ? { extensions: [...agent.extensions] } : {}),
-		...(agent.subagentOnlyExtensions ? { subagentOnlyExtensions: [...agent.subagentOnlyExtensions] } : {}),
-		...(agent.mcpDirectTools ? { mcpDirectTools: [...agent.mcpDirectTools] } : {}),
-		...(systemPrompt ? { systemPrompt } : {}),
-		systemPromptMode: agent.systemPromptMode,
-		inheritProjectContext: agent.inheritProjectContext,
-		inheritSkills: agent.inheritSkills,
-		...(resolvedSkills.length ? { skills: resolvedSkills.map((skill) => skill.name) } : {}),
-		...(agent.skillPath ? { skillPath: [...agent.skillPath] } : {}),
-		...(agent.filePath ? { agentFilePath: agent.filePath } : {}),
-		...(params.controlConfig ? { controlConfig: params.controlConfig } : {}),
-		...(params.absoluteDeadlineAt ? { absoluteDeadlineAt: params.absoluteDeadlineAt } : {}),
-		...(turnBudget.turnBudget ? { initialTurnBudget: turnBudget.turnBudget } : {}),
-		...(toolBudget.toolBudget ? { initialToolBudget: toolBudget.toolBudget } : {}),
-		maxSubagentDepth,
-		...(capabilityCeiling ? { capabilityCeiling } : {}),
-		...(params.sessionDir ? { sessionDir: params.sessionDir } : {}),
-		...(params.artifactsDir ? { artifactsDir: params.artifactsDir } : {}),
-		...(params.artifactConfig ? { artifactConfig: params.artifactConfig } : {}),
 	};
-	return { task, recovery };
+	if (input.context) recovery.context = input.context;
+	if (input.sessionFile) recovery.sessionFile = input.sessionFile;
+	recovery.cwd = taskCwd;
+	if (primaryModel) recovery.model = primaryModel;
+	if (modelCandidates.length > 1) recovery.fallbackModels = modelCandidates.slice(1);
+	if (thinking) recovery.thinking = thinking;
+	if (agent.tools) recovery.tools = [...agent.tools];
+	if (agent.extensions) recovery.extensions = [...agent.extensions];
+	if (agent.subagentOnlyExtensions) recovery.subagentOnlyExtensions = [...agent.subagentOnlyExtensions];
+	if (agent.mcpDirectTools) recovery.mcpDirectTools = [...agent.mcpDirectTools];
+	if (systemPrompt) recovery.systemPrompt = systemPrompt;
+	recovery.systemPromptMode = agent.systemPromptMode;
+	recovery.inheritProjectContext = agent.inheritProjectContext;
+	recovery.inheritSkills = agent.inheritSkills;
+	if (resolvedSkills.length) recovery.skills = resolvedSkills.map((skill) => skill.name);
+	if (agent.skillPath) recovery.skillPath = [...agent.skillPath];
+	if (agent.filePath) recovery.agentFilePath = agent.filePath;
+	if (params.controlConfig) recovery.controlConfig = params.controlConfig;
+	if (params.absoluteDeadlineAt) recovery.absoluteDeadlineAt = params.absoluteDeadlineAt;
+	if (turnBudget.turnBudget) recovery.initialTurnBudget = turnBudget.turnBudget;
+	if (toolBudget.toolBudget) recovery.initialToolBudget = toolBudget.toolBudget;
+	recovery.maxSubagentDepth = maxSubagentDepth;
+	if (capabilityCeiling) recovery.capabilityCeiling = capabilityCeiling;
+	if (params.sessionDir) recovery.sessionDir = params.sessionDir;
+	if (params.artifactsDir) recovery.artifactsDir = params.artifactsDir;
+	if (params.artifactConfig) recovery.artifactConfig = params.artifactConfig;
+	// SAFETY: every required RunnerAgentTask field is assigned from resolved launch inputs above.
+	const resolvedTask = task as RunnerAgentTask;
+	// SAFETY: every required recovery descriptor field is assigned alongside its paired RunnerAgentTask.
+	const recoveryDescriptor = recovery as BackgroundRecoveryDescriptor;
+	return { task: resolvedTask, recovery: recoveryDescriptor };
 }
 
 export function buildAsyncParallelRunnerWork(
@@ -678,11 +743,8 @@ function readRunnerStartup(
 ): RunnerStartupWaitResult | undefined {
 	if (!fs.existsSync(startupPath)) return undefined;
 	try {
-		const payload = JSON.parse(readBoundedOwnedFile(startupPath, MAX_RUNNER_STARTUP_FILE_BYTES)) as {
-			state?: unknown;
-			token?: unknown;
-			error?: unknown;
-		};
+		const payload = parseJsonValue(readBoundedOwnedFile(startupPath, MAX_RUNNER_STARTUP_FILE_BYTES));
+		if (!isRuntimeObject(payload) || payload === null || Array.isArray(payload)) return undefined;
 		if (payload.state === "error" && isRuntimeString(payload.error)) {
 			return { ok: false, error: payload.error };
 		}
@@ -763,7 +825,7 @@ function runnerIsAlive(pid: number): boolean {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM";
+		return isRuntimeObject(error) && error !== null && "code" in error && error.code === "EPERM";
 	}
 }
 
@@ -857,7 +919,7 @@ export function finalizeSpawnedRunnerClose(input: {
 	readonly runnerProcessInstanceId: string;
 	readonly exitCode: number | null;
 	readonly signal: NodeJS.Signals | null;
-	readonly onProcessTerminal?: (proof: unknown) => void;
+	readonly onProcessTerminal?: (proof: ProcessTerminalNotice) => void;
 }): void {
 	try {
 		finalizeProcessTerminal(input.launchConfig.asyncDir, input.launchConfig.id, {
@@ -890,7 +952,7 @@ export function finalizeSpawnedRunnerClose(input: {
 					}),
 				});
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				if (!isRuntimeObject(error) || error === null || !("code" in error) || error.code !== "ENOENT") {
 					reportAgentDiagnostic("Failed to emit final nested Agent state:", error);
 				}
 			}
@@ -930,16 +992,9 @@ async function spawnRunner(
 	cfg: BackgroundRunnerConfig,
 	suffix: string,
 	cwd: string,
-	onProcessTerminal?: (proof: unknown) => void,
-	onStatus?: (status: unknown) => void,
-): Promise<{
-	pid?: number;
-	processStartIdentity?: string;
-	error?: string;
-	safeToCleanup?: boolean;
-	acknowledgeStart?: () => void;
-	abortStart?: () => boolean;
-}> {
+	onProcessTerminal?: (proof: ProcessTerminalNotice) => void,
+	onStatus?: (status: AsyncStatusNotice) => void,
+): Promise<SpawnRunnerResult> {
 	const bunCommand = resolveAsyncRunnerBunCommand();
 	if (!bunCommand) {
 		return {
@@ -958,8 +1013,8 @@ async function spawnRunner(
 		...cfg,
 		runnerProcessInstanceId,
 		startedAt,
-		...(startupGateToken ? { startupGateToken } : {}),
 	};
+	if (startupGateToken) launchConfig.startupGateToken = startupGateToken;
 
 	let stdoutFd: number | undefined;
 	let stderrFd: number | undefined;
@@ -992,17 +1047,16 @@ async function spawnRunner(
 			stdoutFd = fs.openSync(logPaths.stdoutPath, "a", 0o600);
 			stderrFd = fs.openSync(logPaths.stderrPath, "a", 0o600);
 		}
+		const env = Object.assign({}, process.env);
+		env.PI_STUFF_BACKGROUND_RUNNER = "1";
+		env.PI_STUFF_BACKGROUND_RUNNER_CONFIG = configPath;
+		if (piPackageRoot) env[PI_CODING_AGENT_PACKAGE_ROOT_ENV] = piPackageRoot;
 		proc = spawn(bunCommand, [runner, configPath], {
 			cwd,
 			detached: true,
 			stdio: ["ignore", stdoutFd ?? "ignore", stderrFd ?? "ignore", "ipc"],
 			windowsHide: true,
-			env: {
-				...process.env,
-				PI_STUFF_BACKGROUND_RUNNER: "1",
-				PI_STUFF_BACKGROUND_RUNNER_CONFIG: configPath,
-				...(piPackageRoot ? { [PI_CODING_AGENT_PACKAGE_ROOT_ENV]: piPackageRoot } : {}),
-			},
+			env,
 		});
 		closeFd(stdoutFd);
 		closeFd(stderrFd);
@@ -1019,15 +1073,17 @@ async function spawnRunner(
 				onProcessTerminal,
 			});
 		});
-		proc.on("message", (message: unknown) => {
+		proc.on("message", (message) => {
 			if (!message || !isRuntimeObject(message)) return;
-			const update = message as { type?: unknown; asyncDir?: unknown; status?: unknown };
+			// SAFETY: Node's IPC callback and the object guard establish an inspectable runner-status envelope.
+			const update = message as RunnerStatusMessage;
 			if (
 				update.type !== SUBAGENT_ASYNC_STATUS_EVENT ||
 				update.asyncDir !== launchConfig.asyncDir ||
 				!update.status ||
 				!isRuntimeObject(update.status) ||
-				(update.status as { runId?: unknown }).runId !== launchConfig.id
+				!("runId" in update.status) ||
+				update.status.runId !== launchConfig.id
 			)
 				return;
 			try {
@@ -1191,12 +1247,13 @@ async function spawnRunner(
 						return true;
 					}
 				: undefined;
-		return {
+		const lifecycle: SpawnRunnerResult = {
 			pid: proc.pid,
 			processStartIdentity: runnerProcessStartIdentity,
-			...(acknowledgeStart ? { acknowledgeStart } : {}),
-			...(abortStart ? { abortStart } : {}),
 		};
+		if (acknowledgeStart) lifecycle.acknowledgeStart = acknowledgeStart;
+		if (abortStart) lifecycle.abortStart = abortStart;
+		return lifecycle;
 	} catch (error) {
 		const safeToCleanup = proc ? await terminateExactSpawnedRunner(proc) : true;
 		launchAborted = safeToCleanup;
@@ -1256,11 +1313,12 @@ async function spawnRunner(
 				abortStart,
 			};
 		}
-		return {
+		const failure: SpawnRunnerResult = {
 			error: message,
 			safeToCleanup,
-			...(isRuntimeNumber(proc?.pid) ? { pid: proc.pid } : {}),
 		};
+		if (isRuntimeNumber(proc?.pid)) failure.pid = proc.pid;
+		return failure;
 	}
 }
 
@@ -1274,6 +1332,16 @@ function formatAsyncStartError(
 		isError: true,
 		details: { mode, results: [], ...details },
 	};
+}
+
+function lifecycleRecoveryDetails(
+	runId: string,
+	asyncDir: string,
+	lifecycleBinding?: NonNullable<Details["lifecycleBinding"]>,
+): Partial<Details> {
+	const details: Partial<Details> = { runId, asyncId: runId, asyncDir };
+	if (lifecycleBinding) details.lifecycleBinding = lifecycleBinding;
+	return details;
 }
 
 interface BackgroundRunDirectoryClaim {
@@ -1300,25 +1368,19 @@ export function cleanupBackgroundRunAfterAbort(
 	return safeToCleanup;
 }
 
-interface SpawnedRunnerLifecycle {
-	readonly pid?: number;
-	readonly processStartIdentity?: string;
-	readonly acknowledgeStart?: () => void;
-	readonly abortStart?: () => boolean;
-}
-
 function retainedRunnerLifecycleBinding(
 	asyncDir: string,
 	spawned: SpawnedRunnerLifecycle,
 ): NonNullable<Details["lifecycleBinding"]> | undefined {
 	if (!spawned.pid) return undefined;
-	return {
+	const binding: NonNullable<Details["lifecycleBinding"]> = {
 		pid: spawned.pid,
-		...(spawned.processStartIdentity ? { processStartIdentity: spawned.processStartIdentity } : {}),
 		asyncDir,
-		...(spawned.acknowledgeStart ? { acknowledgeStart: spawned.acknowledgeStart } : {}),
-		...(spawned.abortStart ? { abortStart: spawned.abortStart } : {}),
 	};
+	if (spawned.processStartIdentity) binding.processStartIdentity = spawned.processStartIdentity;
+	if (spawned.acknowledgeStart) binding.acknowledgeStart = spawned.acknowledgeStart;
+	if (spawned.abortStart) binding.abortStart = spawned.abortStart;
+	return binding;
 }
 
 export type BackgroundOwnershipFailureResolution =
@@ -1367,7 +1429,7 @@ export function claimBackgroundRunDirectory(id: string): BackgroundRunDirectoryC
 		try {
 			fs.mkdirSync(asyncDir, { mode: 0o700 });
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+			if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "EEXIST") {
 				throw new Error(
 					`Background Agent runtime '${asyncDir}' already exists; refusing to overwrite retained lifecycle evidence.`,
 				);
@@ -1412,8 +1474,8 @@ export function claimBackgroundRunDirectory(id: string): BackgroundRunDirectoryC
 			try {
 				const current = fs.lstatSync(asyncDir);
 				if (!current.isDirectory() || current.dev !== created.dev || current.ino !== created.ino) return false;
-				const marker = JSON.parse(readBoundedOwnedFile(markerPath, 4 * 1024)) as { token?: unknown };
-				return marker.token === token;
+				const marker = parseJsonValue(readBoundedOwnedFile(markerPath, 4 * 1024));
+				return isRuntimeObject(marker) && marker !== null && !Array.isArray(marker) && marker.token === token;
 			} catch {
 				return false;
 			}
@@ -1490,40 +1552,44 @@ function emitStarted(input: {
 	if (input.nestedRoute && input.nestedSelf) {
 		const now = Date.now();
 		try {
+			const child: NestedRunSummary = {
+				id: input.id,
+				parentRunId: input.nestedSelf.parentRunId,
+				parentStepIndex: input.nestedSelf.parentStepIndex,
+				depth: input.nestedSelf.depth,
+				path: input.nestedSelf.path ?? [],
+				asyncDir: input.asyncDir,
+				pid: input.pid,
+				ownerIntercomTarget: process.env.PI_SUBAGENT_INTERCOM_SESSION_NAME,
+				ownerState: "live",
+				mode: input.work.mode,
+				state: "running",
+				agent: first.agent,
+				agents: tasks.map((task) => task.agent),
+				startedAt: now,
+				lastUpdate: now,
+			};
+			if (input.timeoutMs !== undefined) {
+				child.timeoutMs = input.timeoutMs;
+				child.deadlineAt = input.deadlineAt;
+			}
+			if (input.work.mode === "single" && first.turnBudget) {
+				child.turnBudget = initialTurnBudgetState(first.turnBudget);
+			}
+			if (input.capabilityCeiling) child.capabilityCeiling = input.capabilityCeiling;
 			writeNestedEvent(input.nestedRoute, {
 				type: "subagent.nested.started",
 				ts: now,
 				parentRunId: input.nestedSelf.parentRunId,
 				parentStepIndex: input.nestedSelf.parentStepIndex,
-				child: {
-					id: input.id,
-					parentRunId: input.nestedSelf.parentRunId,
-					parentStepIndex: input.nestedSelf.parentStepIndex,
-					depth: input.nestedSelf.depth,
-					path: input.nestedSelf.path ?? [],
-					asyncDir: input.asyncDir,
-					pid: input.pid,
-					ownerIntercomTarget: process.env.PI_SUBAGENT_INTERCOM_SESSION_NAME,
-					ownerState: "live",
-					mode: input.work.mode,
-					state: "running",
-					agent: first.agent,
-					agents: tasks.map((task) => task.agent),
-					...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs, deadlineAt: input.deadlineAt } : {}),
-					...(input.work.mode === "single" && first.turnBudget
-						? { turnBudget: initialTurnBudgetState(first.turnBudget) }
-						: {}),
-					startedAt: now,
-					lastUpdate: now,
-					...(input.capabilityCeiling ? { capabilityCeiling: input.capabilityCeiling } : {}),
-				},
+				child,
 			});
 		} catch (error) {
 			reportAgentDiagnostic("Failed to emit nested Agent start:", error);
 		}
 	}
 	try {
-		input.ctx.pi.events.emit(SUBAGENT_ASYNC_STARTED_EVENT, {
+		const started: AsyncStartedNotice = {
 			lifecycleArtifactVersion: SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
 			id: input.id,
 			pid: input.pid,
@@ -1539,15 +1605,19 @@ function emitStarted(input: {
 			goal: (input.goal ?? first.task).slice(0, 120),
 			cwd: input.runnerCwd,
 			asyncDir: input.asyncDir,
-			...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs, deadlineAt: input.deadlineAt } : {}),
-			...(input.work.mode === "single" && first.turnBudget
-				? { turnBudget: initialTurnBudgetState(first.turnBudget) }
-				: {}),
-			...(input.capabilityCeiling ? { capabilityCeiling: input.capabilityCeiling } : {}),
 			nestedRoute: input.nestedRoute,
-			...(input.acknowledgeStart ? { acknowledgeStart: input.acknowledgeStart } : {}),
-			...(input.abortStart ? { abortStart: input.abortStart } : {}),
-		});
+		};
+		if (input.timeoutMs !== undefined) {
+			started.timeoutMs = input.timeoutMs;
+			started.deadlineAt = input.deadlineAt;
+		}
+		if (input.work.mode === "single" && first.turnBudget) {
+			started.turnBudget = initialTurnBudgetState(first.turnBudget);
+		}
+		if (input.capabilityCeiling) started.capabilityCeiling = input.capabilityCeiling;
+		if (input.acknowledgeStart) started.acknowledgeStart = input.acknowledgeStart;
+		if (input.abortStart) started.abortStart = input.abortStart;
+		input.ctx.pi.events.emit(SUBAGENT_ASYNC_STARTED_EVENT, started);
 	} catch (error) {
 		reportAgentDiagnostic(`Async Agent start observer failed for '${input.id}':`, error);
 	}
@@ -1603,8 +1673,6 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		version: 2,
 		id,
 		parentRunOrigin: params.parentRunOrigin === "user" ? "user" : "automatic",
-		...(params.codeModeEnabled !== undefined ? { codeModeEnabled: params.codeModeEnabled } : {}),
-		...(params.codeModeProviderTools?.length ? { codeModeProviderTools: [...params.codeModeProviderTools] } : {}),
 		work: parallelWork,
 		resultPath: location.inheritedNestedRoute
 			? nestedResultsPath(location.inheritedNestedRoute.rootRunId, id)
@@ -1612,12 +1680,9 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		cwd: built.runnerCwd,
 		asyncDir: location.asyncDir,
 		sessionId: params.ctx.currentSessionId,
-		...(params.artifactConfig.enabled && params.artifactsDir ? { artifactsDir: params.artifactsDir } : {}),
 		artifactConfig: params.artifactConfig,
-		...(sessionDir ? { sessionDir } : {}),
 		piPackageRoot,
 		piArgv1: process.argv[1],
-		...(piExecutable ? { piExecutable } : {}),
 		worktreeSetupHook: params.worktreeSetupHook,
 		worktreeSetupHookTimeoutMs: params.worktreeSetupHookTimeoutMs,
 		worktreeBaseDir: params.worktreeBaseDir,
@@ -1631,8 +1696,13 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		nestedSelf,
 		timeoutMs: params.timeoutMs,
 		deadlineAt,
-		...(capabilityCeiling ? { capabilityCeiling } : {}),
 	};
+	if (params.codeModeEnabled !== undefined) config.codeModeEnabled = params.codeModeEnabled;
+	if (params.codeModeProviderTools?.length) config.codeModeProviderTools = [...params.codeModeProviderTools];
+	if (params.artifactConfig.enabled && params.artifactsDir) config.artifactsDir = params.artifactsDir;
+	if (sessionDir) config.sessionDir = sessionDir;
+	if (piExecutable) config.piExecutable = piExecutable;
+	if (capabilityCeiling) config.capabilityCeiling = capabilityCeiling;
 	const spawned = await spawnRunner(
 		config,
 		id,
@@ -1668,12 +1738,7 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		return formatAsyncStartError(
 			"parallel",
 			`Failed to start background Agents '${id}'; lifecycle recovery is still pending: ${spawned.error}`,
-			{
-				runId: id,
-				asyncId: id,
-				asyncDir: location.asyncDir,
-				...(lifecycleBinding ? { lifecycleBinding } : {}),
-			},
+			lifecycleRecoveryDetails(id, location.asyncDir, lifecycleBinding),
 		);
 	}
 	if (!spawned.pid || !spawned.processStartIdentity || !spawned.acknowledgeStart || !spawned.abortStart) {
@@ -1702,14 +1767,7 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 			resolution.safeToRelease
 				? `Background Agents '${id}' started without a complete lifecycle binding.`
 				: `Background Agents '${id}' started without a complete lifecycle binding; lifecycle recovery is still pending.`,
-			resolution.safeToRelease
-				? {}
-				: {
-						runId: id,
-						asyncId: id,
-						asyncDir: location.asyncDir,
-						...(resolution.lifecycleBinding ? { lifecycleBinding: resolution.lifecycleBinding } : {}),
-					},
+			resolution.safeToRelease ? {} : lifecycleRecoveryDetails(id, location.asyncDir, resolution.lifecycleBinding),
 		);
 	}
 	if (!location.commit()) {
@@ -1738,14 +1796,7 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 			resolution.safeToRelease
 				? `Background Agents '${id}' could not commit ownership of their lifecycle directory.`
 				: `Background Agents '${id}' could not commit ownership of their lifecycle directory; lifecycle recovery is still pending.`,
-			resolution.safeToRelease
-				? {}
-				: {
-						runId: id,
-						asyncId: id,
-						asyncDir: location.asyncDir,
-						...(resolution.lifecycleBinding ? { lifecycleBinding: resolution.lifecycleBinding } : {}),
-					},
+			resolution.safeToRelease ? {} : lifecycleRecoveryDetails(id, location.asyncDir, resolution.lifecycleBinding),
 		);
 	}
 	emitStarted({
@@ -1765,6 +1816,25 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 		acknowledgeStart: spawned.acknowledgeStart,
 		abortStart: spawned.abortStart,
 	});
+	const details: Details = {
+		mode: "parallel",
+		runId: id,
+		results: [],
+		asyncId: id,
+		asyncDir: location.asyncDir,
+		lifecycleBinding: {
+			pid: spawned.pid,
+			processStartIdentity: spawned.processStartIdentity,
+			asyncDir: location.asyncDir,
+			acknowledgeStart: spawned.acknowledgeStart,
+			abortStart: spawned.abortStart,
+		},
+	};
+	if (capabilityCeiling) details.capabilityCeiling = capabilityCeiling;
+	if (params.timeoutMs !== undefined) {
+		details.timeoutMs = params.timeoutMs;
+		details.deadlineAt = deadlineAt;
+	}
 	return {
 		content: [
 			{
@@ -1775,22 +1845,7 @@ export async function executeAsyncParallel(id: string, params: AsyncParallelPara
 				),
 			},
 		],
-		details: {
-			mode: "parallel",
-			runId: id,
-			results: [],
-			asyncId: id,
-			asyncDir: location.asyncDir,
-			...(capabilityCeiling ? { capabilityCeiling } : {}),
-			...(params.timeoutMs !== undefined ? { timeoutMs: params.timeoutMs, deadlineAt } : {}),
-			lifecycleBinding: {
-				pid: spawned.pid,
-				processStartIdentity: spawned.processStartIdentity,
-				asyncDir: location.asyncDir,
-				acknowledgeStart: spawned.acknowledgeStart,
-				abortStart: spawned.abortStart,
-			},
-		},
+		details,
 	};
 }
 
@@ -1839,8 +1894,6 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		version: 2,
 		id,
 		parentRunOrigin: params.parentRunOrigin === "user" ? "user" : "automatic",
-		...(params.codeModeEnabled !== undefined ? { codeModeEnabled: params.codeModeEnabled } : {}),
-		...(params.codeModeProviderTools?.length ? { codeModeProviderTools: [...params.codeModeProviderTools] } : {}),
 		work: built.work,
 		resultPath: location.inheritedNestedRoute
 			? nestedResultsPath(location.inheritedNestedRoute.rootRunId, id)
@@ -1848,12 +1901,9 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		cwd: built.runnerCwd,
 		asyncDir: location.asyncDir,
 		sessionId: params.ctx.currentSessionId,
-		...(params.artifactConfig.enabled && params.artifactsDir ? { artifactsDir: params.artifactsDir } : {}),
 		artifactConfig: params.artifactConfig,
-		...(sessionDir ? { sessionDir } : {}),
 		piPackageRoot,
 		piArgv1: process.argv[1],
-		...(piExecutable ? { piExecutable } : {}),
 		worktreeSetupHook: params.worktreeSetupHook,
 		worktreeSetupHookTimeoutMs: params.worktreeSetupHookTimeoutMs,
 		worktreeBaseDir: params.worktreeBaseDir,
@@ -1868,9 +1918,14 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		timeoutMs,
 		deadlineAt,
 		revivalLease: params.revivalLease ? { ...params.revivalLease, asyncDir: location.asyncDir } : undefined,
-		...(capabilityCeiling ? { capabilityCeiling } : {}),
 		launchContractDigest: built.work.task.launchContractDigest,
 	};
+	if (params.codeModeEnabled !== undefined) config.codeModeEnabled = params.codeModeEnabled;
+	if (params.codeModeProviderTools?.length) config.codeModeProviderTools = [...params.codeModeProviderTools];
+	if (params.artifactConfig.enabled && params.artifactsDir) config.artifactsDir = params.artifactsDir;
+	if (sessionDir) config.sessionDir = sessionDir;
+	if (piExecutable) config.piExecutable = piExecutable;
+	if (capabilityCeiling) config.capabilityCeiling = capabilityCeiling;
 	const spawned = await spawnRunner(
 		config,
 		id,
@@ -1906,12 +1961,7 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		return formatAsyncStartError(
 			"single",
 			`Failed to start background Agent '${id}'; lifecycle recovery is still pending: ${spawned.error}`,
-			{
-				runId: id,
-				asyncId: id,
-				asyncDir: location.asyncDir,
-				...(lifecycleBinding ? { lifecycleBinding } : {}),
-			},
+			lifecycleRecoveryDetails(id, location.asyncDir, lifecycleBinding),
 		);
 	}
 	if (!spawned.pid || !spawned.processStartIdentity || !spawned.acknowledgeStart || !spawned.abortStart) {
@@ -1940,14 +1990,7 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 			resolution.safeToRelease
 				? `Background Agent '${id}' started without a complete lifecycle binding.`
 				: `Background Agent '${id}' started without a complete lifecycle binding; lifecycle recovery is still pending.`,
-			resolution.safeToRelease
-				? {}
-				: {
-						runId: id,
-						asyncId: id,
-						asyncDir: location.asyncDir,
-						...(resolution.lifecycleBinding ? { lifecycleBinding: resolution.lifecycleBinding } : {}),
-					},
+			resolution.safeToRelease ? {} : lifecycleRecoveryDetails(id, location.asyncDir, resolution.lifecycleBinding),
 		);
 	}
 	if (!location.commit()) {
@@ -1976,14 +2019,7 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 			resolution.safeToRelease
 				? `Background Agent '${id}' could not commit ownership of its lifecycle directory.`
 				: `Background Agent '${id}' could not commit ownership of its lifecycle directory; lifecycle recovery is still pending.`,
-			resolution.safeToRelease
-				? {}
-				: {
-						runId: id,
-						asyncId: id,
-						asyncDir: location.asyncDir,
-						...(resolution.lifecycleBinding ? { lifecycleBinding: resolution.lifecycleBinding } : {}),
-					},
+			resolution.safeToRelease ? {} : lifecycleRecoveryDetails(id, location.asyncDir, resolution.lifecycleBinding),
 		);
 	}
 	emitStarted({
@@ -2003,6 +2039,29 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 		acknowledgeStart: spawned.acknowledgeStart,
 		abortStart: spawned.abortStart,
 	});
+	const details: Details = {
+		mode: "single",
+		runId: id,
+		results: [],
+		asyncId: id,
+		asyncDir: location.asyncDir,
+		launchContractDigest: built.work.task.launchContractDigest,
+		lifecycleBinding: {
+			pid: spawned.pid,
+			processStartIdentity: spawned.processStartIdentity,
+			asyncDir: location.asyncDir,
+			acknowledgeStart: spawned.acknowledgeStart,
+			abortStart: spawned.abortStart,
+		},
+	};
+	if (capabilityCeiling) details.capabilityCeiling = capabilityCeiling;
+	if (params.context) details.context = params.context;
+	if (timeoutMs !== undefined) {
+		details.timeoutMs = timeoutMs;
+		details.deadlineAt = deadlineAt;
+	}
+	if (built.work.task.turnBudget) details.turnBudget = built.work.task.turnBudget;
+	if (built.work.task.toolBudget) details.toolBudget = built.work.task.toolBudget;
 	return {
 		content: [
 			{
@@ -2013,25 +2072,6 @@ export async function executeAsyncSingle(id: string, params: AsyncSingleParams):
 				),
 			},
 		],
-		details: {
-			mode: "single",
-			runId: id,
-			results: [],
-			asyncId: id,
-			asyncDir: location.asyncDir,
-			launchContractDigest: built.work.task.launchContractDigest,
-			...(capabilityCeiling ? { capabilityCeiling } : {}),
-			...(params.context ? { context: params.context } : {}),
-			...(timeoutMs !== undefined ? { timeoutMs, deadlineAt } : {}),
-			...(built.work.task.turnBudget ? { turnBudget: built.work.task.turnBudget } : {}),
-			...(built.work.task.toolBudget ? { toolBudget: built.work.task.toolBudget } : {}),
-			lifecycleBinding: {
-				pid: spawned.pid,
-				processStartIdentity: spawned.processStartIdentity,
-				asyncDir: location.asyncDir,
-				acknowledgeStart: spawned.acknowledgeStart,
-				abortStart: spawned.abortStart,
-			},
-		},
+		details,
 	};
 }
