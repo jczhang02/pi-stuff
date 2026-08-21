@@ -518,8 +518,8 @@ export interface ToolActivityDetailView {
 }
 
 export interface ToolUiTimerScheduler {
-	setInterval(callback: () => void, delayMs: number): unknown;
-	clearInterval(id: unknown): void;
+	setInterval(callback: () => void, delayMs: number): ReturnType<typeof setInterval> | number;
+	clearInterval(id: ReturnType<typeof setInterval> | number): void;
 }
 
 const DEFAULT_TIMER_SCHEDULER: ToolUiTimerScheduler = {
@@ -528,7 +528,7 @@ const DEFAULT_TIMER_SCHEDULER: ToolUiTimerScheduler = {
 		id.unref?.();
 		return id;
 	},
-	clearInterval: (id) => clearInterval(id as ReturnType<typeof setInterval>),
+	clearInterval: (id) => clearInterval(id),
 };
 
 function isIssueState(state: ToolActivityState): state is "cancelled" | "error" | "rejected" {
@@ -684,7 +684,7 @@ export class ToolUiRuntime {
 	private readonly envelopeDecoders = new Map<string, SuiteToolEnvelopeDecoder>();
 	private readonly groupHints = new Map<string, HintState>();
 	private readonly groupPulses = new Map<string, GroupPulseState>();
-	private groupPulseTimer: unknown | undefined;
+	private groupPulseTimer: ReturnType<ToolUiTimerScheduler["setInterval"]> | undefined;
 	private readonly groupOrder: string[] = [];
 	private readonly groups = new Map<string, PlannedToolActivityGroup>();
 	private readonly groupSummaries = new Map<string, GroupSummaryIndex>();
@@ -711,7 +711,7 @@ export class ToolUiRuntime {
 	private readonly scheduler: ToolUiTimerScheduler;
 	private settings: ToolUiSettingsStore;
 	private tailForcedClosed = false;
-	private timer: unknown | undefined;
+	private timer: ReturnType<ToolUiTimerScheduler["setInterval"]> | undefined;
 	private readonly timerStates = new Map<string, ToolTimerState>();
 
 	constructor(
@@ -2204,7 +2204,20 @@ function errorToolResult(error: unknown): AgentToolResult<unknown> {
 	};
 }
 
-type CapturedToolHandler = (event: Record<string, unknown>, context: ExtensionContext) => unknown;
+interface CapturedToolHandlerResult {
+	readonly block?: boolean;
+	readonly content?: AgentToolResult<unknown>["content"];
+	readonly details?: unknown;
+	readonly isError?: boolean;
+	readonly reason?: string;
+	readonly terminate?: boolean;
+	readonly usage?: AgentToolResult<unknown>["usage"];
+}
+
+type CapturedToolHandler = (
+	event: Record<string, unknown>,
+	context: ExtensionContext,
+) => CapturedToolHandlerResult | undefined | Promise<CapturedToolHandlerResult | undefined>;
 
 function isCapturedToolHandler(value: unknown): value is CapturedToolHandler {
 	return isRuntimeFunction(value);

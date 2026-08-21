@@ -10,13 +10,16 @@ import {
 	readGoalSettings,
 	saveGoalSettings,
 } from "../../packages/pi-stuff/src/goal/src/settings.js";
+import { type JsonValue, parseJsonValue } from "../../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 function goalDocument(value: unknown): string {
 	return `${JSON.stringify({ goal: value })}\n`;
 }
 
-function readGoalNamespace(path: string): unknown {
-	return (JSON.parse(readFileSync(path, "utf8")) as { goal?: unknown }).goal;
+function readGoalNamespace(path: string): JsonValue | undefined {
+	const document = parseJsonValue(readFileSync(path, "utf8"));
+	return isRuntimeObject(document) && document !== null && !Array.isArray(document) ? document["goal"] : undefined;
 }
 
 test("normalizeGoalSettings applies defaults and accepts bounded continuation limits", () => {

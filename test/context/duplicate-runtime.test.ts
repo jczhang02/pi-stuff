@@ -6,7 +6,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
-type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
+type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 type ContextModule = typeof import("../../packages/pi-stuff/src/context-management/index.js");
 
 class EventBusHarness {

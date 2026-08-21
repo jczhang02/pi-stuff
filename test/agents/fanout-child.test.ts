@@ -24,7 +24,7 @@ import { SUBAGENT_ASYNC_COMPLETE_EVENT } from "../../packages/pi-stuff/src/subag
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
-type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
+type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined;
 
 class ApiHarness {
 	readonly events = createEventBus();

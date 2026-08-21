@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type JsonValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import { parseForStorage, stringifyForStorage } from "./cloudflare/codec.js";
+import { type CodemodeValue, parseForStorage, stringifyForStorage } from "./cloudflare/codec.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import { stableStringify } from "./cloudflare/stable-stringify.js";
 import type { RuntimeToolCallPlan, RuntimeToolCallSettlement } from "./protocol.js";
@@ -27,7 +28,7 @@ export type CodeModeExecutionStatus =
 
 type ReplayPolicy = "never" | "record" | "reexecute";
 
-type StoredValue = { readonly kind: "undefined" } | { readonly json: unknown; readonly kind: "json" };
+type StoredValue = { readonly kind: "undefined" } | { readonly json: JsonValue; readonly kind: "json" };
 
 interface ExecutionStartedEvent {
 	readonly at: number;
@@ -140,7 +141,7 @@ type LedgerEvent =
 	| SnippetSavedEvent;
 
 interface CallState {
-	args: unknown;
+	args: CodemodeValue;
 	argsKey: string;
 	attempt: number;
 	callId: string;
@@ -152,7 +153,7 @@ interface CallState {
 	result?: AgentToolResult<unknown>;
 	sequence: number;
 	status: "error" | "pending" | "running" | "success";
-	value?: unknown;
+	value?: CodemodeValue;
 	valuePresent?: boolean;
 }
 
@@ -169,14 +170,14 @@ export interface CodeModeExecutionHistoryItem {
 
 export interface CodeModeCompensationTarget {
 	readonly callId: string;
-	readonly input: unknown;
+	readonly input: CodemodeValue;
 	readonly name: string;
 	readonly sequence: number;
-	readonly value: unknown;
+	readonly value: CodemodeValue;
 }
 
 export interface CodeModePendingAction {
-	readonly args: unknown;
+	readonly args: CodemodeValue;
 	readonly connector: "tools";
 	readonly executionId: string;
 	readonly method: string;
@@ -185,7 +186,7 @@ export interface CodeModePendingAction {
 
 export type CodeModeStepDecision =
 	| { readonly kind: "execute"; readonly plan: RuntimeToolCallPlan }
-	| { readonly kind: "replay"; readonly result: unknown };
+	| { readonly kind: "replay"; readonly result: CodemodeValue };
 
 interface ExecutionState extends CodeModeExecutionHistoryItem {
 	attempt: number;
@@ -252,7 +253,7 @@ function durableValue(what: string, value: unknown): StoredValue {
 			`${what} is too large to record durably (${String(bytes)} bytes > ${String(MAX_DURABLE_VALUE_BYTES)} byte limit). Write large data to a file or workspace and return a small reference such as a path.`,
 		);
 	}
-	return { json: JSON.parse(serialized), kind: "json" };
+	return { json: parseJsonValue(serialized), kind: "json" };
 }
 
 function optionalPresentationValue(value: unknown): StoredValue | undefined {
@@ -263,7 +264,7 @@ function optionalPresentationValue(value: unknown): StoredValue | undefined {
 	}
 }
 
-function restoreValue(value: StoredValue | undefined): unknown {
+function restoreValue(value: StoredValue | undefined): CodemodeValue {
 	if (!value || value.kind === "undefined") return undefined;
 	return parseForStorage(JSON.stringify(value.json));
 }
@@ -546,7 +547,13 @@ function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
 		call.value = restoreValue(event.value);
 		call.valuePresent = true;
 	}
-	if (event.result) call.result = restoreValue(event.result) as AgentToolResult<unknown>;
+	if (event.result) {
+		const result = restoreValue(event.result);
+		if (isRuntimeObject(result) && result !== null) {
+			// SAFETY: call-settled events persist AgentToolResult through the lossless storage codec.
+			call.result = result as AgentToolResult<unknown>;
+		}
+	}
 }
 
 export class CodeModeIncompleteExecutionError extends Error {
@@ -891,7 +898,7 @@ export class CodeModeExecutionController {
 		this.cursor = 0;
 	}
 
-	beginToolCall = (name: string, input: unknown): RuntimeToolCallPlan => this.planCall(name, input);
+	beginToolCall = (name: string, input: CodemodeValue): RuntimeToolCallPlan => this.planCall(name, input);
 
 	beginStep(name: string): CodeModeStepDecision {
 		const plan = this.planCall(`codemode.step:${name}`, undefined, "record");
@@ -900,7 +907,7 @@ export class CodeModeExecutionController {
 		return { kind: "replay", result: plan.replay.value };
 	}
 
-	completeStep(plan: RuntimeToolCallPlan, value: unknown): void {
+	completeStep(plan: RuntimeToolCallPlan, value: CodemodeValue): void {
 		if (plan.executionId !== this.execution.executionId)
 			throw new Error("Code Mode step belongs to another execution");
 		const call = this.execution.calls.get(plan.sequence);
@@ -908,7 +915,7 @@ export class CodeModeExecutionController {
 		this.completeToolCall(plan, { status: "success", value });
 	}
 
-	private planCall(name: string, input: unknown, policy?: ReplayPolicy): RuntimeToolCallPlan {
+	private planCall(name: string, input: CodemodeValue, policy?: ReplayPolicy): RuntimeToolCallPlan {
 		const sequence = this.cursor++;
 		const callId = `${this.execution.executionId}:${String(sequence)}`;
 		if (this.execution.status !== "running") {

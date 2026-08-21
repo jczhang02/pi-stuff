@@ -20,7 +20,7 @@ export interface WebIntegrationVerificationOptions {
 	readonly publicNetwork?: boolean;
 }
 
-type EventHandler = (event: unknown, context: ExtensionContext) => unknown;
+type EventHandler = (event: unknown, context: ExtensionContext) => object | undefined;
 
 function fail(message: string): never {
 	throw new Error(`Web integration verification failed: ${message}`);

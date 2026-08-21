@@ -48,7 +48,7 @@ interface WriterProcessRegistry {
 	writers: Record<string, PersistedWriterState>;
 }
 
-type KillFn = (pid: number, signal?: NodeJS.Signals | 0) => unknown;
+type KillFn = (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 
 export function writerProcessRegistryPath(asyncDir: string): string {
 	return path.join(asyncDir, WRITER_PROCESS_REGISTRY_FILE);

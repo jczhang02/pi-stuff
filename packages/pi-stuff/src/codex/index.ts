@@ -11,9 +11,9 @@ import { CodexSettingsStore } from "./settings.js";
 import { registerCodexTools } from "./tools.js";
 import { type CodexUsageSnapshot, fetchCodexUsage, formatCodexUsage, weeklyRemainingPercent } from "./usage.js";
 
-function requestPayloadWithFast(payload: unknown): unknown | undefined {
+function requestPayloadWithFast<Payload>(payload: Payload) {
 	if (!isRuntimeObject(payload) || payload === null || Array.isArray(payload)) return undefined;
-	return { ...(payload as Record<string, unknown>), service_tier: "priority" };
+	return { ...payload, service_tier: "priority" };
 }
 
 export default async function piStuffCodex(pi: ExtensionAPI): Promise<void> {

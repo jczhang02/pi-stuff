@@ -1,13 +1,16 @@
 import { resolve } from "node:path";
 import type {
+	BeforeAgentStartEventResult,
 	ContextEvent,
 	ExtensionAPI,
 	ExtensionContext,
+	ExtensionEvent,
 	InputEvent,
 	SessionEntry,
 	SessionShutdownEvent,
 	SessionStartEvent,
 	ToolDefinition,
+	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -149,7 +152,6 @@ const MANUAL_COMPACTION_EVENT_SCHEMA = Type.Object(
 	{ additionalProperties: true },
 );
 
-type LooseEventHandler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type AgentMessage = ContextEvent["messages"][number];
 
 function addCompactMagicContextPrompt<Event>(event: Event) {
@@ -182,14 +184,28 @@ interface ManualCompactionPreparation {
 interface ContextEventResult {
 	readonly messages?: AgentMessage[];
 }
+interface MagicToolResultEventResult {
+	readonly content?: ToolResultEvent["content"];
+}
+interface MagicCompactionEventResult {
+	readonly cancel?: boolean;
+	readonly compaction?: NonNullable<ReturnType<typeof magicManualCompaction>>["compaction"];
+}
+type MagicEventResult =
+	| BeforeAgentStartEventResult
+	| ContextEventResult
+	| MagicCompactionEventResult
+	| MagicToolResultEventResult
+	| undefined;
+type LooseEventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => MagicEventResult | Promise<MagicEventResult>;
 type MagicContextHandler = (
 	event: ContextEvent,
 	ctx: ExtensionContext,
 ) => ContextEventResult | undefined | Promise<ContextEventResult | undefined>;
-type MagicFactory = (pi: ExtensionAPI) => unknown | Promise<unknown>;
+type MagicFactory = (pi: ExtensionAPI) => Promise<void> | void;
 type MagicModule = { default: MagicFactory };
 interface MagicCommandDefinition {
-	readonly handler?: (args: string, ctx: ExtensionContext) => unknown | Promise<unknown>;
+	readonly handler?: (args: string, ctx: ExtensionContext) => Promise<void> | void;
 	readonly [key: string]: unknown;
 }
 
@@ -1686,7 +1702,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 			register(event, async (rawEvent, ctx) => {
 				if (!this.isCurrentGeneration(generation) || this.state.state !== "active" || !this.magicContextHandler)
 					return;
-				let result: unknown;
+				let result: MagicEventResult;
 				try {
 					result = await handler(rawEvent, quietMagicContext(ctx));
 				} catch (error) {

@@ -15,6 +15,7 @@ import type {
 	SuiteToolCodeModePassEndStatus,
 	SuiteToolDefinitionRegistry,
 } from "../tool-display/contract.js";
+import type { CodemodeValue } from "./cloudflare/codec.js";
 import type { ConnectorDescription } from "./cloudflare/connector-types.js";
 import { describeTarget } from "./cloudflare/describe.js";
 import { normalizeCode } from "./cloudflare/normalize.js";
@@ -84,14 +85,20 @@ function invalidResult(name: string, path: string, expected: string, received: u
 }
 
 /** Cloudflare-compatible MCP/Pi result unwrapping with a strict content boundary. */
-export function unwrapSuiteToolResult(name: string, result: unknown): unknown {
+export function unwrapSuiteToolResult(name: string, result: unknown): CodemodeValue {
 	if (!isRuntimeObject(result) || result === null) invalidResult(name, "result", "an object", result);
 	const record = result as AgentToolResult<unknown> & {
 		readonly structuredContent?: unknown;
 		readonly toolResult?: unknown;
 	};
-	if (record.toolResult !== undefined) return record.toolResult;
-	if (record.structuredContent != null) return record.structuredContent;
+	if (record.toolResult !== undefined) {
+		// SAFETY: Suite Tool values cross Code Mode through its JSON/binary/bigint codec, whose supported domain is CodemodeValue.
+		return record.toolResult as CodemodeValue;
+	}
+	if (record.structuredContent != null) {
+		// SAFETY: structured Tool output crosses Code Mode through its JSON/binary/bigint codec.
+		return record.structuredContent as CodemodeValue;
+	}
 	const content: unknown = record.content;
 	if (!Array.isArray(content)) invalidResult(name, "result.content", "an array", content);
 	for (const [index, item] of content.entries()) {
@@ -110,11 +117,13 @@ export function unwrapSuiteToolResult(name: string, result: unknown): unknown {
 		}
 	}
 	if (content.length === 0 || !content.every((item) => (item as Record<string, unknown>)["type"] === "text")) {
+		// SAFETY: validated AgentToolResult content blocks are plain Code Mode transport values.
 		return record;
 	}
 	const text = content.map((item) => String((item as Record<string, unknown>)["text"])).join("\n");
 	try {
-		return JSON.parse(text);
+		// SAFETY: successful JSON.parse output is within CodemodeValue's recursive JSON branch.
+		return JSON.parse(text) as CodemodeValue;
 	} catch {
 		return text;
 	}
@@ -194,7 +203,7 @@ export class SuiteCodeModeConnector {
 				usage: `${INTERNAL_SEARCH_TOOL}({ query })`,
 				invoke: async (input) =>
 					this.search(
-						isRuntimeObject(input) && input !== null && "query" in input ? String(input.query) : "",
+						isRuntimeObject(input) && input !== null && "query" in input ? String(input["query"]) : "",
 						snippets,
 					),
 			},
@@ -212,7 +221,7 @@ export class SuiteCodeModeConnector {
 				usage: `${INTERNAL_DESCRIBE_TOOL}({ target })`,
 				invoke: async (input) =>
 					this.describe(
-						isRuntimeObject(input) && input !== null && "target" in input ? String(input.target) : "",
+						isRuntimeObject(input) && input !== null && "target" in input ? String(input["target"]) : "",
 						snippets,
 					),
 			},
@@ -256,7 +265,7 @@ export class SuiteCodeModeConnector {
 		input: unknown,
 		context: SandboxToolExecutionContext,
 		signal: AbortSignal,
-	): Promise<unknown> {
+	): Promise<CodemodeValue> {
 		if (!context.extensionContext) throw new Error("Code Mode ExtensionContext is unavailable");
 		if (!context.toolCallId) throw new Error("Code Mode nested Tool call ID is unavailable");
 		const outcome = await this.registry.invoke({

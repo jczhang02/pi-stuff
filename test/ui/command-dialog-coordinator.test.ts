@@ -43,7 +43,7 @@ const INPUT_EVENT_SCHEMA = Type.Object(
 type FooterFactory = Parameters<ExtensionUIContext["setFooter"]>[0];
 type HeaderFactory = Parameters<ExtensionUIContext["setHeader"]>[0];
 type EditorFactory = NonNullable<ReturnType<ExtensionUIContext["getEditorComponent"]>>;
-type SessionHandler = (event: unknown, ctx: ExtensionContext) => Promise<unknown> | unknown;
+type SessionHandler = (event: unknown, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 
 interface TestDeferred<Value> {
 	readonly promise: Promise<Value>;

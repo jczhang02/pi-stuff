@@ -11,7 +11,7 @@ import {
 import { shardedDurableClaimName } from "../../packages/pi-stuff/src/subagents/src/shared/durable-claim.js";
 import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/index.js";
-import { createExtensionApi } from "../fixtures/extension-api.js";
+import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
 const directories: string[] = [];
@@ -43,10 +43,12 @@ function harness(input: {
 	startedAtMs: number;
 	sendMessage?: ExtensionAPI["sendMessage"];
 }) {
+	type TestHandlerResult = object | undefined | Promise<object | undefined>;
+	type TestHandler = (...args: never[]) => TestHandlerResult;
 	const messages: Array<{ customType?: string; details?: unknown }> = [];
 	const tools = new Map<string, ToolDefinition>();
 	let activeTools: string[] = [];
-	const handlers = new Map<string, Array<(...args: never[]) => unknown>>();
+	const handlers = new Map<string, TestHandler[]>();
 	const sessionCalls = { getEntries: 0, getSessionFile: 0 };
 	const sessionManager = {
 		getEntries: () => {
@@ -103,9 +105,7 @@ function harness(input: {
 		setActiveTools: (names: string[]) => {
 			activeTools = [...names];
 		},
-		on: (event: string, handler: (...args: never[]) => unknown) => {
-			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-		},
+		on: captureExtensionHandlers(handlers),
 		sendMessage:
 			input.sendMessage ?? ((message: { customType?: string; details?: unknown }) => messages.push(message)),
 	});

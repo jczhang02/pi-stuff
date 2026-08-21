@@ -34,9 +34,7 @@ export function createExtensionApi(overrides: Partial<ExtensionAPI> = {}): Exten
 	return api;
 }
 
-export function captureExtensionHandlers<Handler extends (...args: never[]) => unknown>(
-	handlers: Map<string, Handler[]>,
-): ExtensionAPI["on"] {
+export function captureExtensionHandlers<Handler>(handlers: Map<string, Handler[]>): ExtensionAPI["on"] {
 	return new Proxy(createExtensionApi().on, {
 		apply(_target, _thisArg, [event, handler]) {
 			if (!isRuntimeString(event) || !isRuntimeFunction(handler)) return undefined;

@@ -1,6 +1,7 @@
 import type { AgentToolResult, AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { SuiteToolEnvelopeOperation } from "../tool-display/contract.js";
+import type { CodemodeValue } from "./cloudflare/codec.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import {
 	buildSuiteSandboxSource,
@@ -272,7 +273,9 @@ function stepTools(controller: CodeModeExecutionController): SuiteSandboxTool[] 
 			description: "Decide whether a durable Code Mode step should execute or replay",
 			inputSchema: { properties: { name: { type: "string" } }, required: ["name"], type: "object" },
 			invoke: async (input) =>
-				controller.beginStep(isRuntimeObject(input) && input !== null && "name" in input ? String(input.name) : ""),
+				controller.beginStep(
+					isRuntimeObject(input) && input !== null && "name" in input ? String(input["name"]) : "",
+				),
 			ledger: "bypass",
 			name: INTERNAL_STEP_DECIDE_TOOL,
 			presentation: "hidden",
@@ -289,7 +292,9 @@ function stepTools(controller: CodeModeExecutionController): SuiteSandboxTool[] 
 				if (!isRuntimeObject(input) || input === null || !("plan" in input)) {
 					throw new Error("Code Mode step record is missing its decision");
 				}
-				controller.completeStep(input.plan as never, "value" in input ? input.value : undefined);
+				// SAFETY: sandbox Tool inputs were decoded by the Code Mode transport codec.
+				const value = "value" in input ? (input["value"] as CodemodeValue) : undefined;
+				controller.completeStep(input["plan"] as never, value);
 				return true;
 			},
 			ledger: "bypass",

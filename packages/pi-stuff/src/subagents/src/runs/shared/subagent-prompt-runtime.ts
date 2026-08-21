@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ContextEvent, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
 import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../../tool-display/index.js";
@@ -90,6 +90,8 @@ const PARENT_ONLY_CUSTOM_MESSAGE_TYPES = new Set([
 	"subagent-control-notice",
 ]);
 
+type SubagentContextMessage = ContextEvent["messages"][number];
+
 export function validateFinalProviderPayload(
 	payload: unknown,
 	model: ProviderPayloadModel | undefined,
@@ -149,35 +151,27 @@ export function rewriteSubagentPrompt(prompt: string, options: { fanoutChild?: b
 	return `${boundary}${structured}\n\n${prompt}`;
 }
 
-function isParentOnlySubagentMessage(message: unknown): boolean {
-	const m = message as { role?: string; customType?: string };
-	if (m?.role !== "custom" || !isRuntimeString(m.customType)) return false;
-	return PARENT_ONLY_CUSTOM_MESSAGE_TYPES.has(m.customType);
+function isParentOnlySubagentMessage(message: SubagentContextMessage): boolean {
+	if (message.role !== "custom" || !isRuntimeString(message.customType)) return false;
+	return PARENT_ONLY_CUSTOM_MESSAGE_TYPES.has(message.customType);
 }
 
-function isSubagentToolResultMessage(message: unknown): boolean {
-	const m = message as { role?: string; toolName?: string };
-	return m?.role === "toolResult" && m.toolName === "subagent";
+function isSubagentToolResultMessage(message: SubagentContextMessage): boolean {
+	return message.role === "toolResult" && message.toolName === "subagent";
 }
 
-function isSubagentToolCallBlock(block: unknown): boolean {
-	const b = block as { type?: string; name?: string };
-	return b?.type === "toolCall" && b.name === "subagent";
-}
-
-function stripAssistantSubagentToolCallBlocks(message: unknown): unknown | undefined {
-	const m = message as { role?: string; content?: unknown };
-	if (m?.role !== "assistant" || !Array.isArray(m.content)) return message;
-	const filteredContent = m.content.filter((block) => !isSubagentToolCallBlock(block));
-	if (filteredContent.length === m.content.length) return message;
+function stripAssistantSubagentToolCallBlocks(message: SubagentContextMessage): SubagentContextMessage | undefined {
+	if (message.role !== "assistant") return message;
+	const filteredContent = message.content.filter((block) => block.type !== "toolCall" || block.name !== "subagent");
+	if (filteredContent.length === message.content.length) return message;
 	if (filteredContent.length === 0) return undefined;
-	return { ...m, content: filteredContent };
+	return { ...message, content: filteredContent };
 }
 
-export function stripParentOnlySubagentMessages(messages: unknown[]): unknown[] {
+export function stripParentOnlySubagentMessages(messages: SubagentContextMessage[]): SubagentContextMessage[] {
 	const preserveCurrentFanoutToolHistory = process.env[SUBAGENT_FANOUT_CHILD_ENV] === "1";
 	let changed = false;
-	const filtered: unknown[] = [];
+	const filtered: SubagentContextMessage[] = [];
 	for (const message of messages) {
 		if (
 			isParentOnlySubagentMessage(message) ||
@@ -225,9 +219,16 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 	if (!budget) return;
 	let toolCount = 0;
 	let softNudged = false;
-	const sendUserMessage = (pi as { sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => unknown })
-		.sendUserMessage;
-	const onRuntimeEvent = pi.on as (event: string, handler: (event: { toolName?: string }) => unknown) => void;
+	const sendUserMessage = (
+		pi as {
+			sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => PromiseLike<void> | void;
+		}
+	).sendUserMessage;
+	type ToolBudgetEventResult = { readonly block: true; readonly reason: string } | undefined;
+	const onRuntimeEvent = pi.on as (
+		event: string,
+		handler: (event: { toolName?: string }) => ToolBudgetEventResult,
+	) => void;
 	onRuntimeEvent("tool_call", (event) => {
 		const toolName = isRuntimeString(event.toolName) ? event.toolName : "tool";
 		toolCount++;
@@ -235,7 +236,7 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 			softNudged = true;
 			try {
 				const dispatched = sendUserMessage?.(toolBudgetSoftNudge(budget, toolCount), { deliverAs: "steer" });
-				if (dispatched && isRuntimeFunction((dispatched as PromiseLike<unknown>).then)) {
+				if (dispatched) {
 					void Promise.resolve(dispatched).catch(() => {
 						// Budget nudges are advisory; blocking below remains authoritative.
 					});
@@ -257,8 +258,11 @@ export function registerSteeringInbox(
 	if (!steerInbox) return;
 	const capabilityPath = process.env[SUBAGENT_STEER_CAPABILITY_ENV]?.trim();
 	const ackDir = process.env[SUBAGENT_STEER_ACK_DIR_ENV]?.trim();
-	const sendUserMessage = (pi as { sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => unknown })
-		.sendUserMessage;
+	const sendUserMessage = (
+		pi as {
+			sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => PromiseLike<void> | void;
+		}
+	).sendUserMessage;
 	const childIndex = Number(process.env[SUBAGENT_CHILD_INDEX_ENV]);
 	type PendingDelivery = { request: SteerRequest; complete: () => boolean };
 	type PendingAck = {
@@ -355,7 +359,7 @@ export function registerSteeringInbox(
 				pendingById.set(request.id, delivery);
 				try {
 					const dispatched = sendUserMessage(formatted, { deliverAs: "steer" });
-					if (dispatched && isRuntimeFunction((dispatched as PromiseLike<unknown>).then)) {
+					if (dispatched) {
 						void Promise.resolve(dispatched).catch((error) => {
 							if (pendingById.get(request.id) !== delivery) return;
 							forgetPendingDelivery(delivery);
@@ -436,7 +440,7 @@ export function registerSteeringInbox(
 		return undefined;
 	};
 
-	const onRuntimeEvent = pi.on as (event: string, handler: (event: unknown) => unknown) => void;
+	const onRuntimeEvent = pi.on as (event: string, handler: (event: unknown) => void) => void;
 	// Register input before the watcher so an accepted extension input cannot race request dispatch.
 	onRuntimeEvent("input", onInput);
 	onRuntimeEvent("session_start", activate);

@@ -343,7 +343,14 @@ function inheritedLaunchPromptTokens(ctx: ExtensionContext): number {
 		// Older compatible Hosts or focused tests may not expose this optional seam.
 	}
 	try {
-		const getOptions = (ctx as ExtensionContext & { getSystemPromptOptions?: () => unknown }).getSystemPromptOptions;
+		const getOptions = (
+			ctx as ExtensionContext & {
+				getSystemPromptOptions?: () => {
+					readonly cwd?: string;
+					readonly [key: string]: object | string | undefined;
+				};
+			}
+		).getSystemPromptOptions;
 		const options = getOptions?.call(ctx);
 		const serialized = JSON.stringify(options);
 		if (serialized !== undefined) promptTokens = Math.max(promptTokens, estimateTextTokens(serialized));

@@ -17,7 +17,7 @@ export function sendTerminalNotification(
 	input: TerminalNotificationInput,
 	options: {
 		readonly environment?: NodeJS.ProcessEnv;
-		readonly write?: (bytes: string) => unknown;
+		readonly write?: (bytes: string) => void;
 	} = {},
 ): TerminalNotificationResult {
 	if (input.mode !== "tui" || !input.hasUI) return "not-interactive";

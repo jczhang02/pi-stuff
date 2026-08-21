@@ -32,7 +32,7 @@ import { createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionCommandContext, testTheme } from "../fixtures/extension-context.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
-type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
+type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 type Handlers = Map<string, Handler[]>;
 const UI_RENDER_REQUEST_EVENT = "@jczhang02/pi-stuff-ui/render-request/v1";
 const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object(
@@ -183,7 +183,10 @@ function magicModule(
 				};
 			});
 			if (options.registerBeforeStart) {
-				register("before_agent_start", () => options.registerBeforeStart?.());
+				register("before_agent_start", () => {
+					options.registerBeforeStart?.();
+					return undefined;
+				});
 			}
 			if (options.registerTool) {
 				pi.registerTool({
@@ -1334,7 +1337,7 @@ describe("Context capability lifecycle", () => {
 				return {
 					default: async (pi: ExtensionAPI) => {
 						const register = pi.on.bind(pi) as (event: string, handler: Handler) => void;
-						register("context", (event) => event);
+						register("context", (event) => (isRuntimeObject(event) && event !== null ? event : undefined));
 						register("session_before_compact", () => {
 							sequence.push("magic-compaction");
 							return { cancel: true };
@@ -2154,10 +2157,10 @@ describe("Context projections", () => {
 			}),
 		});
 		const projectAContext = context([], "/workspace/project-a");
-		const projectBContext = createExtensionCommandContext({
+		const projectBContext: ExtensionCommandContext = {
 			...projectAContext,
 			cwd: "/workspace/project-b",
-		});
+		};
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, projectAContext);
 
 		const projectA = await projectCurrentContext("agent-fresh", projectAContext);

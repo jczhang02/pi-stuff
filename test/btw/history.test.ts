@@ -148,9 +148,9 @@ describe("BTW display history", () => {
 	});
 
 	test("evicts only the shutting-down session and can replay that session again", async () => {
-		const shutdownHandlers: Array<(event: unknown, ctx: ExtensionContext) => unknown> = [];
+		const shutdownHandlers: Array<(event: unknown, ctx: ExtensionContext) => Promise<void> | void> = [];
 		// SAFETY: this test adapter records the one shutdown overload without changing its callback.
-		const on = ((event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
+		const on = ((event: string, handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void) => {
 			if (event === "session_shutdown") shutdownHandlers.push(handler);
 		}) as ExtensionAPI["on"];
 		const api: BtwHost = {

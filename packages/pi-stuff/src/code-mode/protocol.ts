@@ -1,4 +1,5 @@
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { CodemodeValue } from "./cloudflare/codec.js";
 
 export interface SandboxToolExecutionContext {
 	readonly captureResult?: (result: AgentToolResult<unknown>) => void;
@@ -19,7 +20,7 @@ export interface SuiteSandboxTool {
 	readonly replay?: "never" | "record" | "reexecute";
 	readonly requiresApproval?: boolean;
 	readonly usage: string;
-	invoke(input: unknown, context: SandboxToolExecutionContext, signal: AbortSignal): Promise<unknown>;
+	invoke(input: CodemodeValue, context: SandboxToolExecutionContext, signal: AbortSignal): Promise<CodemodeValue>;
 }
 
 export interface RuntimeContentItem {
@@ -36,7 +37,7 @@ export interface RuntimeToolTrace {
 	error?: string;
 	readonly executionId?: string;
 	readonly id: string;
-	readonly input: unknown;
+	readonly input: CodemodeValue;
 	readonly name: string;
 	readonly replayed?: boolean;
 	result?: AgentToolResult<unknown>;
@@ -53,7 +54,7 @@ export type RuntimeToolReplay =
 	| {
 			readonly kind: "result";
 			readonly result?: AgentToolResult<unknown>;
-			readonly value: unknown;
+			readonly value: CodemodeValue;
 	  };
 
 export interface RuntimeToolCallPlan {
@@ -69,7 +70,7 @@ export interface RuntimeToolCallSettlement {
 	readonly message?: string;
 	readonly result?: AgentToolResult<unknown>;
 	readonly status: "error" | "success";
-	readonly value?: unknown;
+	readonly value?: CodemodeValue;
 }
 
 export type RuntimeResponse = (
@@ -90,7 +91,7 @@ export interface RuntimeTraceUpdate {
 }
 
 export interface ExecutorContext extends SandboxToolExecutionContext {
-	readonly beginToolCall?: (name: string, input: unknown) => RuntimeToolCallPlan;
+	readonly beginToolCall?: (name: string, input: CodemodeValue) => RuntimeToolCallPlan;
 	readonly completeToolCall?: (plan: RuntimeToolCallPlan, settlement: RuntimeToolCallSettlement) => void;
 	readonly onTraceUpdate?: (update: RuntimeTraceUpdate) => void;
 }

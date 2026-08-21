@@ -167,7 +167,7 @@ function extensionApiWithoutToolIntrospection(
 
 type ForegroundTestContext = ExtensionCommandContext & {
 	readonly sessionManager: ExtensionCommandContext["sessionManager"] & {
-		openSession: () => unknown;
+		openSession: () => object | undefined;
 	};
 };
 

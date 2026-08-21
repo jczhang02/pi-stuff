@@ -1,6 +1,6 @@
 interface TimerApi {
-	setTimeout(handler: () => void, delayMs: number): unknown;
-	clearTimeout(handle: unknown): void;
+	setTimeout(handler: () => void, delayMs: number): ReturnType<typeof setTimeout>;
+	clearTimeout(handle: ReturnType<typeof setTimeout>): void;
 }
 
 interface FileCoalescer {
@@ -10,7 +10,7 @@ interface FileCoalescer {
 
 const defaultTimerApi: TimerApi = {
 	setTimeout: (handler, delayMs) => setTimeout(handler, delayMs),
-	clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+	clearTimeout: (handle) => clearTimeout(handle),
 };
 
 export function createFileCoalescer(
@@ -18,7 +18,7 @@ export function createFileCoalescer(
 	defaultDelayMs: number,
 	timerApi: TimerApi = defaultTimerApi,
 ): FileCoalescer {
-	const pending = new Map<string, unknown>();
+	const pending = new Map<string, ReturnType<typeof setTimeout>>();
 
 	return {
 		schedule(file: string, delayMs = defaultDelayMs): boolean {

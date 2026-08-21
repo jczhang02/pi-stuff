@@ -17,14 +17,14 @@ import { SELF_RENDERED_TRANSCRIPT_PADDING } from "../../packages/pi-stuff/src/co
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 
-type Handler = (event: unknown, context: ExtensionContext) => unknown | Promise<unknown>;
+type Handler = (event: unknown, context: ExtensionContext) => object | undefined | Promise<object | undefined>;
 
 class HostHarness {
 	readonly activeTools = new Set<string>(["bash"]);
 	readonly commands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]>();
 	readonly handlers = new Map<string, Handler[]>();
 	readonly messages: Array<{ readonly message: unknown; readonly options: unknown }> = [];
-	readonly renderers = new Map<string, (message: unknown, options: unknown, theme: Theme) => unknown>();
+	readonly renderers = new Map<string, (message: unknown, options: unknown, theme: Theme) => object | undefined>();
 	readonly tools = new Map<string, ToolDefinition<TSchema, unknown>>();
 	terminalInput: TerminalInputHandler | undefined;
 
@@ -45,7 +45,10 @@ class HostHarness {
 			},
 			registerMessageRenderer: (name, renderer) => {
 				// SAFETY: the harness stores the renderer without changing its message, options, theme, or result.
-				this.renderers.set(name, renderer as (message: unknown, options: unknown, theme: Theme) => unknown);
+				this.renderers.set(
+					name,
+					renderer as (message: unknown, options: unknown, theme: Theme) => object | undefined,
+				);
 			},
 			registerTool: (tool) => {
 				// SAFETY: this test registry erases only generic renderer state and retains the original Tool object.

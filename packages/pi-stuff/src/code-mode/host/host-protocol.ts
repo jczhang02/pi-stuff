@@ -1,3 +1,4 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import type { RuntimeContentItem, RuntimeResponse, SuiteSandboxTool } from "../protocol.js";
 
@@ -79,7 +80,7 @@ function isImageDetail(value: unknown): value is "auto" | "high" | "low" | "orig
 
 export type HostMessage =
 	| { readonly capabilities: string[]; readonly selectedVersion: 1; readonly type: "connection/ready" }
-	| { readonly reason: unknown; readonly type: "connection/rejected" }
+	| { readonly reason: JsonInputValue; readonly type: "connection/rejected" }
 	| { readonly id: number; readonly result: HostResult; readonly type: "operation/response" }
 	| { readonly id: number; readonly result: HostResult; readonly type: "execute/initialResponse" }
 	| ({ readonly type: "delegate/request" } & DelegateRequestMessage)
@@ -93,7 +94,7 @@ export interface DelegateRequestMessage {
 		| {
 				readonly invocation: {
 					readonly cell_id: string;
-					readonly input?: unknown;
+					readonly input?: JsonInputValue;
 					readonly runtime_tool_call_id: string;
 					readonly tool_name: { readonly name: string };
 				};
@@ -103,7 +104,7 @@ export interface DelegateRequestMessage {
 
 type HostResult =
 	| { readonly status: "error"; readonly message: string }
-	| { readonly status: "ok"; readonly value: unknown };
+	| { readonly status: "ok"; readonly value: JsonInputValue };
 
 export function parseHostMessage(value: unknown): HostMessage {
 	if (!isRecord(value) || !isRuntimeString(value["type"])) {
@@ -116,7 +117,10 @@ export function parseHostMessage(value: unknown): HostMessage {
 		}
 		return { capabilities: value["capabilities"], selectedVersion: 1, type };
 	}
-	if (type === "connection/rejected") return { reason: value["reason"], type };
+	if (type === "connection/rejected") {
+		// SAFETY: host messages arrive from JSON.parse, so every field is recursively a JSON value or absent.
+		return { reason: value["reason"] as JsonInputValue, type };
+	}
 	if (type === "operation/response" || type === "execute/initialResponse") {
 		return { id: parseMessageId(value["id"]), result: parseHostResult(value["result"]), type };
 	}
@@ -135,9 +139,10 @@ export function executionCellId(value: unknown): string | undefined {
 		: undefined;
 }
 
-export function runtimeOutcome(value: unknown): unknown {
+export function runtimeOutcome(value: unknown): JsonInputValue {
 	if (!isRecord(value) || !isRecord(value["outcome"])) return undefined;
-	return value["outcome"]["LiveCell"] ?? value["outcome"]["MissingCell"];
+	// SAFETY: runtime outcomes are fields of a message produced by JSON.parse.
+	return (value["outcome"]["LiveCell"] ?? value["outcome"]["MissingCell"]) as JsonInputValue;
 }
 
 function parseDelegateRequest(value: Record<string, unknown>): DelegateRequestMessage {
@@ -172,7 +177,12 @@ function parseDelegateRequest(value: Record<string, unknown>): DelegateRequestMe
 				cell_id: invocation["cell_id"],
 				runtime_tool_call_id: invocation["runtime_tool_call_id"],
 				tool_name: { name: toolName["name"] },
-				...(invocation["input"] === undefined ? {} : { input: invocation["input"] }),
+				...(invocation["input"] === undefined
+					? {}
+					: {
+							// SAFETY: delegate requests are parsed JSON messages.
+							input: invocation["input"] as JsonInputValue,
+						}),
 			},
 			type: "tool/invoke",
 		},
@@ -181,7 +191,10 @@ function parseDelegateRequest(value: Record<string, unknown>): DelegateRequestMe
 
 function parseHostResult(value: unknown): HostResult {
 	if (!isRecord(value)) throw new Error("Code Mode host returned an invalid operation result");
-	if (value["status"] === "ok") return { status: "ok", value: value["value"] };
+	if (value["status"] === "ok") {
+		// SAFETY: operation results are parsed JSON messages.
+		return { status: "ok", value: value["value"] as JsonInputValue };
+	}
 	if (value["status"] === "error" && isRuntimeString(value["message"])) {
 		return { message: value["message"], status: "error" };
 	}

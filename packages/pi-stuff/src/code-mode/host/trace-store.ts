@@ -1,3 +1,4 @@
+import type { CodemodeValue } from "../cloudflare/codec.js";
 import type {
 	ExecutorContext,
 	RuntimeResponse,
@@ -33,7 +34,7 @@ export class CodeModeTraceStore {
 		this.traces.delete(cellId);
 	}
 
-	start(cellId: string, id: string, name: string, input: unknown, plan?: RuntimeToolCallPlan): RuntimeToolTrace {
+	start(cellId: string, id: string, name: string, input: CodemodeValue, plan?: RuntimeToolCallPlan): RuntimeToolTrace {
 		const traces = this.traces.get(cellId) ?? [];
 		if (traces.length >= MAX_OPERATION_COUNT) {
 			throw new Error(`Code Mode supports at most ${String(MAX_OPERATION_COUNT)} nested Tool calls per execution`);

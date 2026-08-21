@@ -16,7 +16,10 @@ import {
 } from "../../packages/pi-stuff/src/notification/settings.js";
 import { createExtensionCommandContext, createExtensionContext } from "../fixtures/extension-context.js";
 
-type EventHandler = (event: ExtensionEvent, context: ExtensionContext) => unknown | Promise<unknown>;
+type EventHandler = (
+	event: ExtensionEvent,
+	context: ExtensionContext,
+) => object | undefined | Promise<object | undefined>;
 type CommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];
 
 class EventBusHarness {

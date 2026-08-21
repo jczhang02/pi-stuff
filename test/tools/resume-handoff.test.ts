@@ -20,7 +20,7 @@ import piStuffTools, {
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
-type EventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => Promise<unknown> | unknown;
+type EventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 const HOST_BUILTINS = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
 
 class EventBusHarness {

@@ -7,7 +7,8 @@ import {
 	isRuntimeString,
 } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
-type MockHandler = (...args: unknown[]) => unknown;
+type MockValue = bigint | boolean | null | number | object | string | undefined;
+type MockHandler = (...args: unknown[]) => MockValue | Promise<MockValue>;
 
 interface StringLookup<Value> {
 	readonly [key: string]: Value;
@@ -16,7 +17,7 @@ interface StringLookup<Value> {
 type MockCommand = {
 	description?: string;
 	handler: MockHandler;
-	getArgumentCompletions?: (prefix: string) => unknown;
+	getArgumentCompletions?: (prefix: string) => MockValue;
 };
 
 type MockTool = {
@@ -25,7 +26,7 @@ type MockTool = {
 };
 
 type MockFlag = {
-	value?: unknown;
+	value?: MockValue;
 	[key: string]: unknown;
 };
 
@@ -42,7 +43,7 @@ type MockPiApi = {
 		on: (channel: string, handler: (data: unknown) => void) => () => void;
 		clear: () => void;
 	};
-	getFlag(name: string): unknown;
+	getFlag(name: string): MockValue;
 	getActiveTools(): string[];
 	setActiveTools(names: string[]): void;
 	getAllTools(): unknown[];
@@ -223,7 +224,7 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 	const selectOverride = overrides.select as
 		| ((title: string, options: string[]) => Promise<string | undefined>)
 		| undefined;
-	const inputOverride = overrides.input as ((title: string, placeholder?: string) => Promise<unknown>) | undefined;
+	const inputOverride = overrides.input as ((title: string, placeholder?: string) => Promise<MockValue>) | undefined;
 	const defaultCustom = async (factory: unknown) => {
 		if (!selectOverride) return undefined;
 		const harness = createCustomSelectorHarness(factory, 100, undefined, Number(overrides.terminalRows ?? 24));
@@ -285,7 +286,7 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 		harness.handleInput("tui.select.cancel");
 		return harness.result;
 	};
-	const customOverride = overrides.custom as ((factory: unknown, options?: unknown) => Promise<unknown>) | undefined;
+	const customOverride = overrides.custom as ((factory: unknown, options?: unknown) => Promise<MockValue>) | undefined;
 	const custom =
 		customOverride && selectOverride
 			? async (factory: unknown, options?: unknown) => {

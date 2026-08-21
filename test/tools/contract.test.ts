@@ -47,11 +47,11 @@ class ManualTimerScheduler implements ToolUiTimerScheduler {
 		return this.callbacks.size;
 	}
 
-	clearInterval(id: unknown): void {
+	clearInterval(id: ReturnType<ToolUiTimerScheduler["setInterval"]>): void {
 		if (isRuntimeNumber(id)) this.callbacks.delete(id);
 	}
 
-	setInterval(callback: () => void, delayMs: number): unknown {
+	setInterval(callback: () => void, delayMs: number): ReturnType<ToolUiTimerScheduler["setInterval"]> {
 		const id = this.nextId++;
 		this.callbacks.set(id, callback);
 		this.delays.push(delayMs);
@@ -92,10 +92,11 @@ function eventBusView(bus: EventBusHarness): EventBusLike {
 
 function apiHarness(events: EventBus = createEventBus()) {
 	let activeTools: string[] = [];
-	const handlers = new Map<string, Array<(event: unknown, context: unknown) => unknown>>();
+	type CapturedHandlerResult = object | undefined | Promise<object | undefined>;
+	const handlers = new Map<string, Array<(event: unknown, context: unknown) => CapturedHandlerResult>>();
 	const tools = new Map<string, ToolDefinition>();
 	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
-	const on = ((event: string, handler: (event: unknown, context: unknown) => unknown) => {
+	const on = ((event: string, handler: (event: unknown, context: unknown) => CapturedHandlerResult) => {
 		const existing = handlers.get(event) ?? [];
 		existing.push(handler);
 		handlers.set(event, existing);

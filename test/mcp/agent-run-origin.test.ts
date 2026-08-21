@@ -63,7 +63,9 @@ describe("MCP user-driven Agent attribution", () => {
 
 	test("renders the custom prompt with Pi's native user-message component", () => {
 		initTheme("dark", false);
-		let renderer: ((message: { content: string }, options: { outputPad: number }) => unknown) | undefined;
+		let renderer:
+			| ((message: { content: string }, options: { outputPad: number }) => UserMessageComponent | undefined)
+			| undefined;
 		const pi = {
 			registerMessageRenderer: (_type: string, next: typeof renderer) => {
 				renderer = next;

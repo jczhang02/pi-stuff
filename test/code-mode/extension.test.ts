@@ -17,7 +17,7 @@ import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
 type Command = Parameters<ExtensionAPI["registerCommand"]>[1];
 
-type EventHandler = (event: unknown, context: ExtensionContext) => unknown;
+type EventHandler = (event: unknown, context: ExtensionContext) => object | undefined;
 
 const roots: string[] = [];
 

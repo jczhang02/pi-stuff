@@ -201,7 +201,7 @@ export interface ExtensionRootDependencies {
 	readonly getCoordinator: (pi: ExtensionAPI) => CommandDialogCoordinator;
 	readonly isChildProcess: () => boolean;
 	readonly loadConfiguration: () => PiStuffAgentsConfig;
-	readonly maintainRuntime: () => unknown | Promise<unknown>;
+	readonly maintainRuntime: () => Promise<void> | void;
 	readonly monotonicNow: () => number;
 	readonly openDialog: (
 		ctx: ExtensionContext,
@@ -1055,10 +1055,8 @@ export default function registerSubagentExtension(
 		const event = data as { sessionId?: unknown; runId?: unknown; id?: unknown };
 		return sessionArtifactMatches(state.currentSessionScope, event.sessionId, event.runId ?? event.id);
 	};
-	const normalizeCurrentSessionEvent = (data: unknown): unknown =>
-		data && isRuntimeObject(data) && state.currentSessionId
-			? { ...(data as Record<string, unknown>), sessionId: state.currentSessionId }
-			: data;
+	const normalizeCurrentSessionEvent = <Event>(data: Event) =>
+		data && isRuntimeObject(data) && state.currentSessionId ? { ...data, sessionId: state.currentSessionId } : data;
 	onBus(SUBAGENT_ASYNC_STARTED_EVENT, (data) => {
 		if (!active || !belongsToCurrentSession(data)) return;
 		const normalized = normalizeCurrentSessionEvent(data);

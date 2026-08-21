@@ -22,6 +22,17 @@ type EncodedBinary = {
 	data: string;
 };
 
+export type CodemodeValue =
+	| ArrayBuffer
+	| ArrayBufferView
+	| bigint
+	| boolean
+	| null
+	| number
+	| object
+	| string
+	| undefined;
+
 function bytesToBase64(bytes: Uint8Array): string {
 	let binary = "";
 	const chunkSize = 0x8000;
@@ -73,12 +84,13 @@ export function decodeCodemodeValue<Value>(value: Value): ArrayBuffer | Uint8Arr
 	return bytes;
 }
 
-export function stringifyForCodemode(value: unknown): string {
+export function stringifyForCodemode<Value>(value: Value): string {
 	return JSON.stringify(value, (_key, nested) => encodeCodemodeValue(nested));
 }
 
-export function parseForCodemode(json: string): unknown {
-	return JSON.parse(json, (_key, nested) => decodeCodemodeValue(nested));
+export function parseForCodemode(json: string): CodemodeValue {
+	// SAFETY: JSON.parse plus this reviver can only produce JSON values and the binary values returned by decodeCodemodeValue.
+	return JSON.parse(json, (_key, nested) => decodeCodemodeValue(nested)) as CodemodeValue;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +106,7 @@ export function parseForCodemode(json: string): unknown {
  * a durable replay log cannot faithfully store such a value, and silently
  * storing an approximation would corrupt replay.
  */
-export function stringifyForStorage(value: unknown): string | undefined {
+export function stringifyForStorage<Value>(value: Value): string | undefined {
 	if (value === undefined) return undefined;
 	return JSON.stringify(value, (_key, nested) => {
 		if (isRuntimeBigInt(nested)) {
@@ -104,14 +116,14 @@ export function stringifyForStorage(value: unknown): string | undefined {
 	});
 }
 
-export function parseForStorage(json: string | null): unknown {
+export function parseForStorage(json: string | null): CodemodeValue {
 	if (json === null) return undefined;
+	// SAFETY: JSON.parse plus this reviver can only produce JSON, binary, and bigint values declared by CodemodeValue.
 	return JSON.parse(json, (_key, nested) => {
-		const encodedBigInt =
-			nested && isRuntimeObject(nested) ? (nested as Record<string, unknown>)[BIGINT_TAG] : undefined;
+		const encodedBigInt = nested && isRuntimeObject(nested) && BIGINT_TAG in nested ? nested[BIGINT_TAG] : undefined;
 		if (nested && isRuntimeObject(nested) && BIGINT_TAG in nested && isRuntimeString(encodedBigInt)) {
 			return BigInt(encodedBigInt);
 		}
 		return decodeCodemodeValue(nested);
-	});
+	}) as CodemodeValue;
 }

@@ -44,8 +44,8 @@ import {
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 
-type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
-type EntryRenderer = (...args: unknown[]) => unknown;
+type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined;
+type EntryRenderer = (...args: unknown[]) => object | undefined;
 
 type TestMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
 
@@ -141,7 +141,7 @@ interface HarnessOptions {
 	compatibility?: ExtensionRootDependencies["prepareGovernorCompatibility"];
 	contextProjection?: string;
 	coordinatorIdle?: Promise<void>;
-	maintenance?: () => unknown | Promise<unknown>;
+	maintenance?: () => Promise<void> | void;
 	monotonicNow?: () => number;
 	governorLedgerExists?: boolean;
 	governorReject?: boolean;

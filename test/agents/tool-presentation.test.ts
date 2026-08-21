@@ -71,6 +71,8 @@ const temporaryDirectories: string[] = [];
 const theme = testTheme;
 
 type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
+type LifecycleResult = object | undefined | Promise<object | undefined>;
+type LifecycleHandler = (...args: never[]) => LifecycleResult;
 
 function toolInfo(tool: Pick<ToolDefinition, "description" | "name" | "parameters">): ToolInfo {
 	return {
@@ -81,9 +83,7 @@ function toolInfo(tool: Pick<ToolDefinition, "description" | "name" | "parameter
 	};
 }
 
-function lifecycleHandlers<Handler extends (...args: never[]) => unknown>(
-	handlers: Map<string, Handler[]>,
-): ExtensionAPI["on"] {
+function lifecycleHandlers<Handler>(handlers: Map<string, Handler[]>): ExtensionAPI["on"] {
 	return new Proxy(createExtensionApi().on, {
 		apply(_target, _thisArg, [event, handler]) {
 			if (!isRuntimeString(event) || !isRuntimeFunction(handler)) return undefined;
@@ -95,12 +95,12 @@ function lifecycleHandlers<Handler extends (...args: never[]) => unknown>(
 	});
 }
 
-function lifecycleHandler<Event>(handlers: Map<string, (event: Event) => unknown>): ExtensionAPI["on"] {
+function lifecycleHandler<Event>(handlers: Map<string, (event: Event) => LifecycleResult>): ExtensionAPI["on"] {
 	return new Proxy(createExtensionApi().on, {
 		apply(_target, _thisArg, [event, handler]) {
 			if (!isRuntimeString(event) || !isRuntimeFunction(handler)) return undefined;
 			// SAFETY: Tests invoke each captured callback only with the matching lifecycle payload used at registration.
-			handlers.set(event, handler as (event: Event) => unknown);
+			handlers.set(event, handler as (event: Event) => LifecycleResult);
 			return undefined;
 		},
 	});
@@ -125,7 +125,7 @@ function setEnvironment(name: string, value: string): void {
 
 function apiHarness() {
 	const tools = new Map<string, ToolDefinition>();
-	const handlers = new Map<string, Array<(...args: never[]) => unknown>>();
+	const handlers = new Map<string, LifecycleHandler[]>();
 	const api = createExtensionApi({
 		getAllTools: () => [...tools.values()].map(toolInfo),
 		on: lifecycleHandlers(handlers),
@@ -464,7 +464,7 @@ test("waits until before_agent_start before installing intercom fallback so a la
 	setEnvironment(REQUIRED_CHILD_TOOLS_ENV, JSON.stringify(["intercom"]));
 
 	const tools = new Map<string, ToolDefinition>();
-	const handlers = new Map<string, Array<(event: never) => unknown>>();
+	const handlers = new Map<string, Array<(event: never) => LifecycleResult>>();
 	const api = createExtensionApi({
 		getAllTools: () => [...tools.values()].map(toolInfo),
 		on: lifecycleHandlers(handlers),
@@ -750,7 +750,7 @@ test("leaves Host-like delimiter examples intact because resource isolation belo
 });
 
 test("a rejected advisory tool-budget nudge cannot escape the child runtime", async () => {
-	const handlers = new Map<string, (event: { toolName?: string }) => unknown>();
+	const handlers = new Map<string, (event: { toolName?: string }) => LifecycleResult>();
 	const pi = createExtensionApi({
 		on: lifecycleHandler(handlers),
 		sendUserMessage: () => Promise.reject(new Error("injected advisory transport failure")),
@@ -770,7 +770,7 @@ test("aborts an oversized final child provider payload with a durable diagnostic
 	temporaryDirectories.push(root);
 	const diagnosticPath = join(root, "child-diagnostic.json");
 	setEnvironment(CHILD_TOOL_DIAGNOSTIC_PATH_ENV, diagnosticPath);
-	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+	const handlers = new Map<string, Array<(event: never, ctx: never) => LifecycleResult>>();
 	const pi = createExtensionApi({
 		events: { emit: () => {}, on: () => () => {} },
 		getAllTools: () => [],
@@ -800,7 +800,7 @@ test("aborts an oversized final child provider payload with a durable diagnostic
 });
 
 test("projects long child Tool history before a continuation request while preserving task and steering authority", async () => {
-	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+	const handlers = new Map<string, Array<(event: never, ctx: never) => LifecycleResult>>();
 	const activeTool = {
 		name: "read",
 		description: "Read bounded project files.",
@@ -913,7 +913,7 @@ test("projects long child Tool history before a continuation request while prese
 });
 
 test("falls back to a bounded authority-and-recent-Tool continuation when old outputs are extreme", async () => {
-	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+	const handlers = new Map<string, Array<(event: never, ctx: never) => LifecycleResult>>();
 	const activeTool = {
 		name: "bash",
 		description: "Execute a bounded command.",
@@ -1014,7 +1014,7 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 });
 
 test("projects oversized non-text Tool evidence without breaking the signed recent Tool exchange", async () => {
-	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+	const handlers = new Map<string, Array<(event: never, ctx: never) => LifecycleResult>>();
 	const activeTool = {
 		name: "screenshot",
 		description: "Capture the current screen.",
@@ -1076,7 +1076,7 @@ test("labels an irreducible oversized request as a continuation after a resumed 
 	temporaryDirectories.push(root);
 	const diagnosticPath = join(root, "child-diagnostic.json");
 	setEnvironment(CHILD_TOOL_DIAGNOSTIC_PATH_ENV, diagnosticPath);
-	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
+	const handlers = new Map<string, Array<(event: never, ctx: never) => LifecycleResult>>();
 	const pi = createExtensionApi({
 		events: { emit: () => {}, on: () => () => {} },
 		getActiveTools: () => [],
@@ -1232,7 +1232,7 @@ test("retries a failed steering acknowledgement without delivering the steer twi
 	setEnvironment(SUBAGENT_STEER_ACK_DIR_ENV, ackDir);
 	setEnvironment(SUBAGENT_CHILD_INDEX_ENV, "0");
 
-	const handlers = new Map<string, (event: unknown) => unknown>();
+	const handlers = new Map<string, (event: unknown) => LifecycleResult>();
 	const delivered: string[] = [];
 	const pi = createExtensionApi({
 		on: lifecycleHandler(handlers),
@@ -1283,7 +1283,7 @@ test("retries a correlated steering acknowledgement once during immediate shutdo
 	setEnvironment(SUBAGENT_STEER_ACK_DIR_ENV, ackDir);
 	setEnvironment(SUBAGENT_CHILD_INDEX_ENV, "0");
 
-	const handlers = new Map<string, (event: unknown) => unknown>();
+	const handlers = new Map<string, (event: unknown) => LifecycleResult>();
 	const delivered: string[] = [];
 	const pi = createExtensionApi({
 		on: lifecycleHandler(handlers),
@@ -1320,7 +1320,7 @@ test("holds startup steering until the child's initial Agent turn has started", 
 	const inbox = join(directory, "inbox");
 	setEnvironment(SUBAGENT_STEER_INBOX_ENV, inbox);
 
-	const handlers = new Map<string, (event: unknown) => unknown>();
+	const handlers = new Map<string, (event: unknown) => LifecycleResult>();
 	const delivered: string[] = [];
 	registerSteeringInbox(
 		createExtensionApi({
@@ -1360,7 +1360,7 @@ test("replays a steering request after dispatch crashes before Pi accepts the in
 		ts: Date.now(),
 		message: "Continue after the child restart.",
 	};
-	const firstHandlers = new Map<string, (event: unknown) => unknown>();
+	const firstHandlers = new Map<string, (event: unknown) => LifecycleResult>();
 	const firstDeliveries: string[] = [];
 	registerSteeringInbox(
 		createExtensionApi({
@@ -1375,7 +1375,7 @@ test("replays a steering request after dispatch crashes before Pi accepts the in
 	expect(readdirSync(inbox).some((entry) => entry.includes(".pi-stuff-inflight."))).toBeTrue();
 	firstHandlers.get("session_shutdown")?.({});
 
-	const replacementHandlers = new Map<string, (event: unknown) => unknown>();
+	const replacementHandlers = new Map<string, (event: unknown) => LifecycleResult>();
 	const replacementDeliveries: string[] = [];
 	registerSteeringInbox(
 		createExtensionApi({
@@ -1420,7 +1420,7 @@ test("uses an existing steering acknowledgement to retire a crash-left request w
 		message: "Pi accepted the correlated steering input.",
 	});
 
-	const handlers = new Map<string, (event: unknown) => unknown>();
+	const handlers = new Map<string, (event: unknown) => LifecycleResult>();
 	const delivered: string[] = [];
 	registerSteeringInbox(
 		createExtensionApi({

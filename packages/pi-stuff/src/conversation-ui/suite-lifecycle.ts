@@ -1,7 +1,6 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { Guard } from "typebox/guard";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
-import { isRuntimeObject } from "../shared/runtime-type.js";
 
 type SessionManager = ExtensionContext["sessionManager"];
 
@@ -48,19 +47,21 @@ function createGate(sessionManager: SessionManager): ReadinessGate {
 }
 
 function createReadinessApi(pi: ExtensionAPI): ExtensionAPI {
-	const on = ((event: string, handler: (...args: unknown[]) => unknown) => {
+	type ReadinessHandler = (
+		event: SessionStartEvent,
+		ctx: ExtensionContext,
+	) => object | undefined | Promise<object | undefined>;
+	const register = pi.on.bind(pi) as (event: string, handler: ReadinessHandler) => void;
+	const on = ((event: string, handler: ReadinessHandler) => {
 		if (event !== "session_start") {
-			(pi.on as (name: string, value: typeof handler) => void)(event, handler);
+			register(event, handler);
 			return;
 		}
-		(pi.on as (name: string, value: typeof handler) => void)(event, async (...args: unknown[]) => {
+		register(event, async (sessionEvent, ctx) => {
 			try {
-				return await handler(...args);
+				return await handler(sessionEvent, ctx);
 			} catch (error) {
-				const ctx = args[1];
-				if (ctx && isRuntimeObject(ctx)) {
-					rejectSuiteSessionReadiness(pi, ctx as ExtensionContext);
-				}
+				rejectSuiteSessionReadiness(pi, ctx);
 				throw error;
 			}
 		});

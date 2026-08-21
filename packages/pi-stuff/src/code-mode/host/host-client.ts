@@ -1,5 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import type { JsonInputValue } from "../../shared/json-value.js";
 import type {
 	CodeModeExecuteOptions,
 	CodeModeWaitOptions,
@@ -27,7 +28,7 @@ const STARTUP_TIMEOUT_MS = 10_000;
 interface Pending {
 	readonly context?: ExecutorContext;
 	reject(error: Error): void;
-	resolve(value: unknown): void;
+	resolve(value: JsonInputValue): void;
 	readonly tools?: Map<string, SuiteSandboxTool>;
 }
 
@@ -74,7 +75,7 @@ export class CodeModeHostClient {
 		await this.start(options.signal);
 		throwIfAborted(options.signal);
 		const id = ++this.requestId;
-		const initial = new Promise<unknown>((resolve, reject) => this.initial.set(id, { reject, resolve }));
+		const initial = new Promise<JsonInputValue>((resolve, reject) => this.initial.set(id, { reject, resolve }));
 		void initial.catch(() => undefined);
 		const tools = new Map(options.tools.map((tool) => [tool.name, tool]));
 		const started = this.requestWithId(
@@ -215,7 +216,7 @@ export class CodeModeHostClient {
 		await this.request({ method: "session/open", sessionId: this.sessionId });
 	}
 
-	private request(request: Record<string, unknown>, context?: ExecutorContext): Promise<unknown> {
+	private request(request: Record<string, unknown>, context?: ExecutorContext): Promise<JsonInputValue> {
 		return this.requestWithId(++this.requestId, request, context);
 	}
 
@@ -224,7 +225,7 @@ export class CodeModeHostClient {
 		request: Record<string, unknown>,
 		context?: ExecutorContext,
 		tools?: Map<string, SuiteSandboxTool>,
-	): Promise<unknown> {
+	): Promise<JsonInputValue> {
 		return new Promise((resolve, reject) => {
 			this.pending.set(id, {
 				...(context ? { context } : {}),

@@ -7,7 +7,7 @@ import {
 	whenSuiteSessionReady,
 } from "../packages/pi-stuff/src/conversation-ui/suite-lifecycle.js";
 
-type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
+type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 
 function fakePi() {
 	const handlers = new Map<string, Handler[]>();

@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { isTaskOnlyAgentText } from "../shared/display-description.ts";
 import { readStatusAsync } from "../shared/utils.ts";
@@ -143,13 +144,11 @@ async function readTail(
 	}
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: undefined;
+function record(value: JsonValue | undefined): JsonObject | undefined {
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value) ? value : undefined;
 }
 
-function contentText(value: unknown): string {
+function contentText(value: JsonValue | undefined): string {
 	if (isRuntimeString(value)) return value;
 	if (!Array.isArray(value)) return "";
 	return value
@@ -165,24 +164,16 @@ function contentText(value: unknown): string {
 		.join("\n");
 }
 
-function field(entry: Record<string, unknown>, message: Record<string, unknown> | undefined, key: string): unknown {
+function field(entry: JsonObject, message: JsonObject | undefined, key: string): JsonValue | undefined {
 	return entry[key] ?? message?.[key];
 }
 
-function stringField(
-	entry: Record<string, unknown>,
-	message: Record<string, unknown> | undefined,
-	key: string,
-): string | undefined {
+function stringField(entry: JsonObject, message: JsonObject | undefined, key: string): string | undefined {
 	const value = field(entry, message, key);
 	return isRuntimeString(value) && value ? value : undefined;
 }
 
-function booleanField(
-	entry: Record<string, unknown>,
-	message: Record<string, unknown> | undefined,
-	key: string,
-): boolean | undefined {
+function booleanField(entry: JsonObject, message: JsonObject | undefined, key: string): boolean | undefined {
 	const value = field(entry, message, key);
 	return isRuntimeBoolean(value) ? value : undefined;
 }
@@ -207,7 +198,7 @@ interface MessageProjection {
 	readonly text: string;
 }
 
-function messageBlock(entry: Record<string, unknown>, agentName: string): MessageProjection | null {
+function messageBlock(entry: JsonObject, agentName: string): MessageProjection | null {
 	const message = record(entry.message);
 	const role = isRuntimeString(entry.role) ? entry.role : isRuntimeString(message?.role) ? message.role : undefined;
 	const text =
@@ -236,7 +227,7 @@ type ParsedTranscriptItem =
 	| { readonly kind: "message"; readonly speaker: string | null; readonly text: string }
 	| { readonly kind: "tool"; tool: ToolProjection };
 
-function toolResultText(entry: Record<string, unknown>): string {
+function toolResultText(entry: JsonObject): string {
 	const message = record(entry.message);
 	return (
 		(isRuntimeString(entry.text) ? entry.text : "") ||
@@ -348,9 +339,9 @@ function jsonlTranscript(
 	const toolsById = new Map<string, ToolProjection>();
 	for (const line of lines) {
 		if (!line.trim()) continue;
-		let entry: Record<string, unknown> | undefined;
+		let entry: JsonObject | undefined;
 		try {
-			entry = record(JSON.parse(line));
+			entry = record(parseJsonValue(line));
 		} catch {
 			continue;
 		}

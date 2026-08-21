@@ -1,6 +1,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
-import { parseForStorage, stringifyForStorage } from "../cloudflare/codec.js";
+import { type CodemodeValue, parseForStorage, stringifyForStorage } from "../cloudflare/codec.js";
 import { SuiteToolInvocationError } from "../connector.js";
 import type {
 	ExecutorContext,
@@ -42,15 +43,15 @@ function resultFromValue(value: unknown): AgentToolResult<unknown> {
 	};
 }
 
-function decodeTransportValue(value: unknown): unknown {
+function decodeTransportValue(value: unknown): CodemodeValue {
 	const serialized = JSON.stringify(value);
 	return serialized === undefined ? undefined : parseForStorage(serialized);
 }
 
-function encodeTransportValue(value: unknown): unknown {
+function encodeTransportValue(value: unknown): JsonValue | undefined {
 	try {
 		const serialized = stringifyForStorage(value);
-		return serialized === undefined ? undefined : JSON.parse(serialized);
+		return serialized === undefined ? undefined : parseJsonValue(serialized);
 	} catch (error) {
 		throw new Error(
 			`Failed to serialize nested Tool result: ${error instanceof Error ? error.message : String(error)}`,

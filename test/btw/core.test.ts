@@ -228,11 +228,12 @@ describe("BTW context budget", () => {
 
 describe("BTW stream execution", () => {
 	test("reuses captured Magic memory without re-running stateful projection for a frozen branch", async () => {
-		const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
+		type ContextHandlerResult = object | undefined | Promise<object | undefined>;
+		const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => ContextHandlerResult>>();
 		const activeTools: string[] = [];
 		const api = {
 			events: {},
-			on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
+			on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => ContextHandlerResult) => {
 				const current = handlers.get(event) ?? [];
 				current.push(handler);
 				handlers.set(event, current);
@@ -253,7 +254,7 @@ describe("BTW stream execution", () => {
 					default: async (magicPi) => {
 						const register = magicPi.on.bind(magicPi) as (
 							event: string,
-							handler: (event: unknown) => unknown,
+							handler: (event: unknown) => ContextHandlerResult,
 						) => void;
 						register("context", () => {
 							magicTransforms += 1;

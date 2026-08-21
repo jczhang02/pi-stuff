@@ -13,7 +13,7 @@ import { mergeNamespaceRecord, readNamespace, type SettingsRecord } from "./file
 import { mergedSettingsPath, resolveSettingsLockPath } from "./paths.js";
 
 export type NamespaceRecord = SettingsRecord;
-export type NamespaceWriter = (path: string, namespace: string, record: NamespaceRecord) => Promise<unknown>;
+export type NamespaceWriter = (path: string, namespace: string, record: NamespaceRecord) => Promise<void>;
 export type NamespaceLockAcquirer = (lockPath: string, owner: string) => Promise<() => Promise<void>>;
 
 /**
@@ -111,7 +111,11 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 	): Promise<NamespacedSettingsStore<T>> {
 		const path = options.path ?? mergedSettingsPath();
 		const lockPath = resolveSettingsLockPath(path);
-		const writer = options.writer ?? mergeNamespaceRecord;
+		const writer: NamespaceWriter =
+			options.writer ??
+			(async (settingsPath, settingsNamespace, record) => {
+				await mergeNamespaceRecord(settingsPath, settingsNamespace, record);
+			});
 		const store = new NamespacedSettingsStore<T>(
 			namespace,
 			path,
@@ -246,7 +250,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 	 * per-Capability store's fail-closed contract. A missing file returns
 	 * `undefined`.
 	 */
-	private async readExisting(namespace: string): Promise<unknown> {
+	private async readExisting(namespace: string): Promise<SettingsRecord | undefined> {
 		try {
 			return await readNamespace(this.path, namespace);
 		} catch (error) {

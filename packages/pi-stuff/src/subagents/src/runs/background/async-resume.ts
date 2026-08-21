@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeNumber,
@@ -449,9 +450,9 @@ function validateStatusForResume(status: AsyncStatus | null, source: string): vo
 	}
 }
 
-function parseRecoveryJson(descriptorPath: string): unknown {
+function parseRecoveryJson(descriptorPath: string): JsonValue {
 	try {
-		return JSON.parse(readBoundedOwnedFile(descriptorPath, MAX_RECOVERY_DESCRIPTOR_BYTES));
+		return parseJsonValue(readBoundedOwnedFile(descriptorPath, MAX_RECOVERY_DESCRIPTOR_BYTES));
 	} catch (error) {
 		throw new Error(`Failed to parse async recovery descriptor '${descriptorPath}': ${getErrorMessage(error)}`, {
 			cause: error instanceof Error ? error : undefined,

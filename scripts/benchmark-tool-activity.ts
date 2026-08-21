@@ -76,7 +76,7 @@ function median(values: readonly number[]): number {
 	return sorted[Math.floor(sorted.length / 2)] ?? Number.NaN;
 }
 
-function benchmark(run: () => unknown): number {
+function benchmark(run: () => void): number {
 	for (let index = 0; index < 3; index += 1) run();
 	const samples: number[] = [];
 	for (let index = 0; index < ITERATIONS; index += 1) {

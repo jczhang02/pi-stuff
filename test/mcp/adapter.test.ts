@@ -33,7 +33,7 @@ class TestAppKeybindingsManager extends KeybindingsManager {
 
 const Parameters = Type.Object({}, { additionalProperties: true });
 type Tool = ToolDefinition<typeof Parameters, unknown>;
-type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
+type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined;
 
 function harness() {
 	const handlers = new Map<string, Handler[]>();

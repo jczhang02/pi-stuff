@@ -26,9 +26,9 @@ export type McpAdapterHost = SuiteToolRegistrationHost & Pick<ExtensionAPI, "reg
 type CommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];
 type CommandContext = Parameters<CommandSpec["handler"]>[1];
 type CapturedCommandSpec = Omit<CommandSpec, "handler"> & {
-	handler(args: string, ctx: CommandContext): unknown | Promise<unknown>;
+	handler(args: string, ctx: CommandContext): boolean | undefined | Promise<boolean | undefined>;
 };
-type EventHandler = (event: unknown, ctx: ExtensionContext) => unknown;
+type EventHandler = (event: unknown, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 type McpCustomFactory = Parameters<ExtensionUIContext["custom"]>[0];
 type McpCustomKeybindings = Parameters<McpCustomFactory>[2];
 
@@ -203,7 +203,7 @@ export function createMcpAdapterApi<Host extends McpAdapterHost>(pi: Host, comma
 		if (name === "mcp") commands.mcp = spec as CapturedCommandSpec;
 	}) as ExtensionAPI["registerCommand"];
 	const on = ((event: string, handler: EventHandler) => {
-		const hostOn = pi.on as (eventName: string, eventHandler: EventHandler) => unknown;
+		const hostOn = pi.on as (eventName: string, eventHandler: EventHandler) => void;
 		if (event === "session_start") {
 			return hostOn(event, (eventData, ctx) => handler(eventData, suppressMcpFooterContext(ctx)));
 		}
@@ -229,12 +229,11 @@ function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: Mc
 		command: CapturedCommandSpec | undefined,
 		args: string,
 		ctx: CommandContext,
-	): Promise<unknown> => {
+	): Promise<boolean> => {
 		if (!command) throw new Error("MCP command is unavailable");
-		return command.handler(args, ctx);
+		return (await command.handler(args, ctx)) === true;
 	};
-	const invokeAction = async (args: string, ctx: CommandContext): Promise<boolean> =>
-		(await invoke(commands.mcp, args, ctx)) === true;
+	const invokeAction = async (args: string, ctx: CommandContext): Promise<boolean> => invoke(commands.mcp, args, ctx);
 	pi.registerCommand("mcp", {
 		description: "Manage MCP servers",
 		getArgumentCompletions: (prefix) => {

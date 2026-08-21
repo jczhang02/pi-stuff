@@ -54,7 +54,7 @@ export type ControlChannelFs = Pick<
 	"mkdirSync" | "existsSync" | "rmSync" | "watch" | "readdirSync" | "readFileSync" | "realpathSync"
 >;
 export type ControlChannelTimers = { setInterval: typeof setInterval; clearInterval: typeof clearInterval };
-type KillFn = (pid: number, signal?: NodeJS.Signals | 0) => unknown;
+type KillFn = (pid: number, signal?: NodeJS.Signals | 0) => boolean;
 
 export interface InterruptRequest {
 	type: "interrupt";

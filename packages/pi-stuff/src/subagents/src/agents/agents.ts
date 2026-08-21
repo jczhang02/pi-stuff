@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../runs/shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
@@ -416,9 +417,9 @@ async function readDirectories(directory: string): Promise<string[]> {
 	}
 }
 
-async function readJson(filePath: string): Promise<unknown> {
+async function readJson(filePath: string): Promise<JsonValue | undefined> {
 	try {
-		return JSON.parse(await fs.promises.readFile(filePath, "utf8"));
+		return parseJsonValue(await fs.promises.readFile(filePath, "utf8"));
 	} catch {
 		return undefined;
 	}
