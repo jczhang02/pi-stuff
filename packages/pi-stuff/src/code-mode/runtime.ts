@@ -15,8 +15,10 @@ import { captureCodeModeModelContent } from "./presentation.js";
 import type {
 	CodeModeExecuteOptions,
 	CodeModeWaitOptions,
+	ExecutorContext,
 	RuntimeContentItem,
 	RuntimeResponse,
+	RuntimeToolCallPlan,
 	RuntimeToolTrace,
 	SuiteSandboxTool,
 } from "./protocol.js";
@@ -58,18 +60,15 @@ function approvalMessage(executionId: string, pending: readonly CodeModePendingA
 }
 
 function operation(trace: RuntimeToolTrace): SuiteToolEnvelopeOperation {
-	return {
-		args:
-			isRuntimeObject(trace.input) && trace.input !== null && !Array.isArray(trace.input)
-				? (trace.input as Record<string, unknown>)
-				: {},
-		...(trace.attempt === undefined ? {} : { attempt: trace.attempt }),
-		...(trace.executionId ? { executionId: trace.executionId } : {}),
+	let args: Readonly<Record<string, CodemodeValue>> = {};
+	if (isRuntimeObject(trace.input) && trace.input !== null && !Array.isArray(trace.input)) {
+		// SAFETY: the Code Mode transport decoded this non-null, non-array Tool input as a CodemodeValue object.
+		args = trace.input as Record<string, CodemodeValue>;
+	}
+	const value: SuiteToolEnvelopeOperation = {
+		args,
 		id: trace.id,
 		name: trace.name,
-		...(trace.replayed ? { replayed: true } : {}),
-		...(trace.result ? { result: trace.result } : {}),
-		...(trace.sequence === undefined ? {} : { sequence: trace.sequence }),
 		state:
 			trace.status === "done"
 				? "success"
@@ -81,6 +80,12 @@ function operation(trace: RuntimeToolTrace): SuiteToolEnvelopeOperation {
 							? "cancelled"
 							: "running",
 	};
+	if (trace.attempt !== undefined) Object.assign(value, { attempt: trace.attempt });
+	if (trace.executionId) Object.assign(value, { executionId: trace.executionId });
+	if (trace.replayed) Object.assign(value, { replayed: true });
+	if (trace.result) Object.assign(value, { result: trace.result });
+	if (trace.sequence !== undefined) Object.assign(value, { sequence: trace.sequence });
+	return value;
 }
 
 function imageKey(item: AgentToolResult<unknown>["content"][number]): string | undefined {
@@ -210,10 +215,9 @@ function aggregateUsage(results: readonly AgentToolResult<unknown>[]): ToolUsage
 	};
 	const cacheWrite1h = optional("cacheWrite1h");
 	const reasoning = optional("reasoning");
-	return {
+	const usage: ToolUsage = {
 		cacheRead: values.reduce((total, usage) => total + usage.cacheRead, 0),
 		cacheWrite: values.reduce((total, usage) => total + usage.cacheWrite, 0),
-		...(cacheWrite1h === undefined ? {} : { cacheWrite1h }),
 		cost: {
 			cacheRead: values.reduce((total, usage) => total + usage.cost.cacheRead, 0),
 			cacheWrite: values.reduce((total, usage) => total + usage.cost.cacheWrite, 0),
@@ -223,20 +227,24 @@ function aggregateUsage(results: readonly AgentToolResult<unknown>[]): ToolUsage
 		},
 		input: values.reduce((total, usage) => total + usage.input, 0),
 		output: values.reduce((total, usage) => total + usage.output, 0),
-		...(reasoning === undefined ? {} : { reasoning }),
 		totalTokens: values.reduce((total, usage) => total + usage.totalTokens, 0),
 	};
+	if (cacheWrite1h !== undefined) Object.assign(usage, { cacheWrite1h });
+	if (reasoning !== undefined) Object.assign(usage, { reasoning });
+	return usage;
 }
 
-function nestedResultControls(traces: ReadonlyMap<string, RuntimeToolTrace>) {
+function nestedResultControls(
+	traces: ReadonlyMap<string, RuntimeToolTrace>,
+): Pick<AgentToolResult<unknown>, "addedToolNames" | "terminate" | "usage"> {
 	const results = [...traces.values()].flatMap((trace) => (trace.result ? [trace.result] : []));
 	const addedToolNames = [...new Set(results.flatMap((result) => result.addedToolNames ?? []))];
 	const usage = aggregateUsage(results);
-	return {
-		...(addedToolNames.length > 0 ? { addedToolNames } : {}),
-		...(results.some((result) => result.terminate === true) ? { terminate: true as const } : {}),
-		...(usage ? { usage } : {}),
-	};
+	const controls: Pick<AgentToolResult<unknown>, "addedToolNames" | "terminate" | "usage"> = {};
+	if (addedToolNames.length > 0) Object.assign(controls, { addedToolNames });
+	if (results.some((result) => result.terminate === true)) Object.assign(controls, { terminate: true });
+	if (usage) Object.assign(controls, { usage });
+	return controls;
 }
 
 function settleController(
@@ -246,7 +254,7 @@ function settleController(
 ): ControllerSettlement {
 	try {
 		controller?.finish(status, error);
-		return { ...(error ? { error } : {}), status };
+		return error ? { error, status } : { status };
 	} catch (ledgerError) {
 		const message = `${error ? `${error}; ` : ""}Code Mode ledger update failed: ${ledgerError instanceof Error ? ledgerError.message : String(ledgerError)}`;
 		return { error: message, status: status === "cancelled" ? "cancelled" : "incomplete" };
@@ -294,7 +302,8 @@ function stepTools(controller: CodeModeExecutionController): SuiteSandboxTool[] 
 				}
 				// SAFETY: sandbox Tool inputs were decoded by the Code Mode transport codec.
 				const value = "value" in input ? (input["value"] as CodemodeValue) : undefined;
-				controller.completeStep(input["plan"] as never, value);
+				// SAFETY: beginStep produced this plan and the sandbox returned it unchanged through the Code Mode codec.
+				controller.completeStep(input["plan"] as RuntimeToolCallPlan, value);
 				return true;
 			},
 			ledger: "bypass",
@@ -417,28 +426,23 @@ export class CodeModeRuntime {
 			projectedOperations: readonly SuiteToolEnvelopeOperation[] = [...operations],
 		): PiStuffCodeModeDetails => {
 			const pending = controller && this.ledger ? this.ledger.pending(context, controller.executionId) : [];
-			return {
-				...(attempt > 0 ? { attempt } : {}),
-				...(cellId ? { cellId } : {}),
-				...(droppedOperationCount > 0 ? { droppedOperationCount } : {}),
-				...(error ? { error } : {}),
-				...(controller ? { executionId: controller.executionId } : {}),
+			const value: PiStuffCodeModeDetails = {
 				kind: "pi-stuff-code-mode",
 				operations: projectedOperations,
-				...(pending.length > 0 ? { pending } : {}),
 				status,
 			};
+			if (attempt > 0) Object.assign(value, { attempt });
+			if (cellId) Object.assign(value, { cellId });
+			if (droppedOperationCount > 0) Object.assign(value, { droppedOperationCount });
+			if (error) Object.assign(value, { error });
+			if (controller) Object.assign(value, { executionId: controller.executionId });
+			if (pending.length > 0) Object.assign(value, { pending });
+			return value;
 		};
 		const publish = (): void => {
 			onUpdate?.({ content: [], details: details("running") });
 		};
-		const executorContext = {
-			...(controller
-				? {
-						beginToolCall: controller.beginToolCall,
-						completeToolCall: controller.completeToolCall,
-					}
-				: {}),
+		const executorContext: ExecutorContext = {
 			cwd: context.cwd,
 			extensionContext: context,
 			onTraceUpdate: (update: { cellId: string; droppedTraceCount?: number; trace: RuntimeToolTrace }) => {
@@ -449,24 +453,32 @@ export class CodeModeRuntime {
 			},
 			toolCallId: outerToolCallId,
 		};
+		if (controller) {
+			Object.assign(executorContext, {
+				beginToolCall: controller.beginToolCall,
+				completeToolCall: controller.completeToolCall,
+			});
+		}
 		try {
 			const runPass = async (): Promise<RuntimeResponse> => {
-				let response = await this.executor.execute({
+				const executeOptions: CodeModeExecuteOptions = {
 					context: executorContext,
-					...(signal ? { signal } : {}),
 					source: buildSuiteSandboxSource(code, this.connector.catalog(), snippets),
 					tools,
-				});
+				};
+				if (signal) Object.assign(executeOptions, { signal });
+				let response = await this.executor.execute(executeOptions);
 				cellId = response.cellId;
 				droppedOperationCount = Math.max(droppedOperationCount, response.droppedTraceCount ?? 0);
 				mergeTraces(traces, operationIndexes, operations, response.traces);
 				publish();
 				while (response.kind === "yielded") {
-					response = await this.executor.wait(response.cellId, {
+					const waitOptions: CodeModeWaitOptions & { readonly yieldTimeMs: number } = {
 						context: executorContext,
-						...(signal ? { signal } : {}),
 						yieldTimeMs: AUTO_WAIT_MS,
-					});
+					};
+					if (signal) Object.assign(waitOptions, { signal });
+					response = await this.executor.wait(response.cellId, waitOptions);
 					cellId = response.cellId;
 					droppedOperationCount = Math.max(droppedOperationCount, response.droppedTraceCount ?? 0);
 					mergeTraces(traces, operationIndexes, operations, response.traces);
