@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeObject } from "../../../../shared/runtime-type.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { isOwnedFileChangedDuringReadError } from "../../shared/private-directory.ts";
 import type {
@@ -39,16 +40,18 @@ export function recordSteeringRequest(
 ): SteeringRequestStatus {
 	const existing = status.recent.find((request) => request.id === input.id);
 	if (existing) return existing;
+	const source: Pick<SteeringRequestStatus, "source"> = {};
+	if (input.source) source.source = input.source;
 	const request: SteeringRequestStatus = {
 		id: input.id,
 		requestedAt: input.requestedAt,
-		...(input.source ? { source: input.source } : {}),
+		...source,
 		messagePreview: input.message.slice(0, STEERING_MESSAGE_PREVIEW_LIMIT),
-		targets: input.targets.map((target) => ({
-			index: target.index,
-			state: target.state,
-			...(target.reason ? { reason: target.reason } : {}),
-		})),
+		targets: input.targets.map((target) => {
+			const reason: Pick<SteeringTargetStatus, "reason"> = {};
+			if (target.reason) reason.reason = target.reason;
+			return { index: target.index, state: target.state, ...reason };
+		}),
 	};
 	status.requested++;
 	status.lastRequestedAt = input.requestedAt;
@@ -146,14 +149,14 @@ export function actionResultFromSteeringStatus(
 ): SteerActionResult | undefined {
 	const request = findSteeringRequest(status, requestId);
 	if (!request) return undefined;
-	const targets = request.targets.map((target) => ({
-		index: target.index,
-		state: target.state,
-		...(target.deliveredAt !== undefined ? { deliveredAt: target.deliveredAt } : {}),
-		...(target.lateDeliveredAt !== undefined ? { lateDeliveredAt: target.lateDeliveredAt } : {}),
-		...(target.reason ? { reason: target.reason } : {}),
-		...(target.replacementRunId ? { replacementRunId: target.replacementRunId } : {}),
-	}));
+	const targets = request.targets.map((target) => {
+		const details: Pick<SteeringTargetStatus, "deliveredAt" | "lateDeliveredAt" | "reason" | "replacementRunId"> = {};
+		if (target.deliveredAt !== undefined) details.deliveredAt = target.deliveredAt;
+		if (target.lateDeliveredAt !== undefined) details.lateDeliveredAt = target.lateDeliveredAt;
+		if (target.reason) details.reason = target.reason;
+		if (target.replacementRunId) details.replacementRunId = target.replacementRunId;
+		return { index: target.index, state: target.state, ...details };
+	});
 	const states = targets.map((target) => target.state);
 	let state: SteerActionResult["state"] = "pending";
 	if (states.length > 0 && states.every((candidate) => candidate === "delivered")) state = "delivered";
@@ -168,11 +171,13 @@ export function actionResultFromSteeringStatus(
 		state = "partial";
 	const effectiveReplacementRunId =
 		replacementRunId ?? request.targets.find((target) => target.replacementRunId)?.replacementRunId;
+	const replacement: Pick<SteerActionResult, "replacementRunId"> = {};
+	if (effectiveReplacementRunId) replacement.replacementRunId = effectiveReplacementRunId;
 	return {
 		requestId,
 		state,
 		sourceRunId,
-		...(effectiveReplacementRunId ? { replacementRunId: effectiveReplacementRunId } : {}),
+		...replacement,
 		targets,
 	};
 }
@@ -211,7 +216,7 @@ export function claimSteeringRecovery(
 	try {
 		fd = fs.openSync(claimPath, "wx", 0o600);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+		if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "EEXIST") {
 			throw new Error("Another steering recovery is already committed for this source run.");
 		}
 		throw error;
@@ -278,9 +283,11 @@ export function remainingSteeringRecoveryLimits(
 		if (hard <= 0) throw new Error("Source run has no remaining tool budget; it remains paused.");
 		const soft =
 			descriptor.initialToolBudget.soft === undefined ? undefined : descriptor.initialToolBudget.soft - consumed;
+		const optional: Pick<ResolvedToolBudget, "soft"> = {};
+		if (soft !== undefined && soft > 0 && soft < hard) optional.soft = soft;
 		limits.toolBudget = {
 			hard,
-			...(soft !== undefined && soft > 0 && soft < hard ? { soft } : {}),
+			...optional,
 			block: descriptor.initialToolBudget.block,
 		};
 	}
