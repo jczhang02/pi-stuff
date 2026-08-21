@@ -1,42 +1,56 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import { activityKey, type SuiteToolPresentation } from "../tool-display/index.js";
+import type { ToolArguments } from "../tool-display/activity.js";
+import { activityKey } from "../tool-display/index.js";
 
-type Arguments = Record<string, unknown>;
-
-function record(value: unknown): Record<string, unknown> {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+interface WebResultDetails {
+	readonly error?: unknown;
+	readonly matchCount?: unknown;
+	readonly queryCount?: unknown;
+	readonly resultCount?: unknown;
+	readonly returnedChars?: unknown;
+	readonly returnedMatches?: unknown;
+	readonly successful?: unknown;
+	readonly successfulQueries?: unknown;
+	readonly totalResults?: unknown;
+	readonly urlCount?: unknown;
 }
 
-function finiteNumber(value: unknown): number | undefined {
+function resultDetails<Value>(value: Value): WebResultDetails {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
+	// SAFETY: presentation code reads only the declared fields and validates each before display.
+	return value as Value & WebResultDetails;
+}
+
+function finiteNumber<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
-function stringValue(value: unknown): string {
+function stringValue<Value>(value: Value): string {
 	return isRuntimeString(value) ? value : "";
 }
 
-function errorResult(_args: Readonly<Arguments>, result: AgentToolResult<unknown>): boolean {
-	return isRuntimeString(record(result.details)["error"]);
+function errorResult<Details>(_args: ToolArguments, result: AgentToolResult<Details>): boolean {
+	return isRuntimeString(resultDetails(result.details).error);
 }
 
-function searchResultIsError(_args: Readonly<Arguments>, result: AgentToolResult<unknown>): boolean {
-	const details = record(result.details);
-	if (isRuntimeString(details["error"])) return true;
-	const successful = finiteNumber(details["successfulQueries"]);
-	const total = finiteNumber(details["queryCount"]);
+function searchResultIsError<Details>(_args: ToolArguments, result: AgentToolResult<Details>): boolean {
+	const details = resultDetails(result.details);
+	if (isRuntimeString(details.error)) return true;
+	const successful = finiteNumber(details.successfulQueries);
+	const total = finiteNumber(details.queryCount);
 	return total !== undefined && total > 0 && successful === 0;
 }
 
-function fetchResultIsError(_args: Readonly<Arguments>, result: AgentToolResult<unknown>): boolean {
-	const details = record(result.details);
-	if (isRuntimeString(details["error"])) return true;
-	const successful = finiteNumber(details["successful"]);
-	const total = finiteNumber(details["urlCount"]);
+function fetchResultIsError<Details>(_args: ToolArguments, result: AgentToolResult<Details>): boolean {
+	const details = resultDetails(result.details);
+	if (isRuntimeString(details.error)) return true;
+	const successful = finiteNumber(details.successful);
+	const total = finiteNumber(details.urlCount);
 	return total !== undefined && total > 0 && successful === 0;
 }
 
-function firstQuery(args: Readonly<Arguments>): string {
+function firstQuery(args: ToolArguments): string {
 	const query = stringValue(args["query"]).trim();
 	if (query) return query;
 	const queries = Array.isArray(args["queries"])
@@ -46,7 +60,7 @@ function firstQuery(args: Readonly<Arguments>): string {
 	return queries.length > 1 ? `${String(queries.length)} queries` : "";
 }
 
-function hostname(raw: unknown): string {
+function hostname<Value>(raw: Value): string {
 	if (!isRuntimeString(raw)) return "";
 	try {
 		return new URL(raw).hostname;
@@ -55,14 +69,14 @@ function hostname(raw: unknown): string {
 	}
 }
 
-function fetchTarget(args: Readonly<Arguments>): string {
+function fetchTarget(args: ToolArguments): string {
 	if (isRuntimeString(args["url"])) return hostname(args["url"]);
 	const urls = Array.isArray(args["urls"]) ? args["urls"] : [];
 	const first = hostname(urls[0]);
 	return urls.length > 1 ? `${first} +${String(urls.length - 1)}` : first;
 }
 
-function retrievalTarget(args: Readonly<Arguments>): string {
+function retrievalTarget(args: ToolArguments): string {
 	const responseId = stringValue(args["responseId"]).slice(0, 8);
 	const query = stringValue(args["query"]);
 	const url = stringValue(args["url"]);
@@ -71,52 +85,56 @@ function retrievalTarget(args: Readonly<Arguments>): string {
 	return [responseId, selector].filter(Boolean).join(" ");
 }
 
-function searchSummary(args: Readonly<Arguments>, result: AgentToolResult<unknown>): string {
-	const details = record(result.details);
+function searchSummary<Details>(args: ToolArguments, result: AgentToolResult<Details>): string {
+	const details = resultDetails(result.details);
 	if (searchResultIsError(args, result)) return "failed";
-	const successful = finiteNumber(details["successfulQueries"]);
-	const total = finiteNumber(details["queryCount"]);
-	const sources = finiteNumber(details["totalResults"]);
+	const successful = finiteNumber(details.successfulQueries);
+	const total = finiteNumber(details.queryCount);
+	const sources = finiteNumber(details.totalResults);
 	if (successful !== undefined && total !== undefined) {
 		return `${String(successful)}/${String(total)} queries · ${String(sources ?? 0)} sources`;
 	}
 	return sources === undefined ? "done" : `${String(sources)} sources`;
 }
 
-function fetchSummary(args: Readonly<Arguments>, result: AgentToolResult<unknown>): string {
-	const details = record(result.details);
+function fetchSummary<Details>(args: ToolArguments, result: AgentToolResult<Details>): string {
+	const details = resultDetails(result.details);
 	if (fetchResultIsError(args, result)) return "failed";
-	const successful = finiteNumber(details["successful"]);
-	const total = finiteNumber(details["urlCount"]);
+	const successful = finiteNumber(details.successful);
+	const total = finiteNumber(details.urlCount);
 	if (successful !== undefined && total !== undefined) return `${String(successful)}/${String(total)} read`;
 	return "done";
 }
 
-function retrievalSummary(_args: Readonly<Arguments>, result: AgentToolResult<unknown>): string {
-	const details = record(result.details);
-	if (isRuntimeString(details["error"])) return "failed";
-	const matches = finiteNumber(details["returnedMatches"]) ?? finiteNumber(details["matchCount"]);
+function retrievalSummary<Details>(_args: ToolArguments, result: AgentToolResult<Details>): string {
+	const details = resultDetails(result.details);
+	if (isRuntimeString(details.error)) return "failed";
+	const matches = finiteNumber(details.returnedMatches) ?? finiteNumber(details.matchCount);
 	if (matches !== undefined) return `${String(matches)} matches`;
-	const returned = finiteNumber(details["returnedChars"]);
+	const returned = finiteNumber(details.returnedChars);
 	if (returned !== undefined) return `${String(returned)} chars`;
-	const count = finiteNumber(details["resultCount"]);
+	const count = finiteNumber(details.resultCount);
 	return count === undefined ? "done" : `${String(count)} sources`;
 }
 
-export const WEB_SEARCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
+export const WEB_SEARCH_PRESENTATION = {
 	activity: {
-		categories: ["search-web"],
-		classify: ({ args }) => {
+		categories: ["search-web"] as const,
+		classify: ({ args }: { readonly args: ToolArguments }) => {
 			const queries = isRuntimeString(args["query"])
 				? [args["query"]]
 				: Array.isArray(args["queries"])
 					? args["queries"].filter((value): value is string => isRuntimeString(value))
 					: [];
 			return [
-				{ category: "search-web", countKeys: queries.map((query) => activityKey(query)), target: firstQuery(args) },
+				{
+					category: "search-web" as const,
+					countKeys: queries.map((query) => activityKey(query)),
+					target: firstQuery(args),
+				},
 			];
 		},
-	},
+	} as const,
 	label: "Web search",
 	resultIsError: searchResultIsError,
 	runningSummary: "searching",
@@ -124,18 +142,24 @@ export const WEB_SEARCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> 
 	target: firstQuery,
 };
 
-export const WEB_FETCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
+export const WEB_FETCH_PRESENTATION = {
 	activity: {
-		categories: ["fetch-page"],
-		classify: ({ args }) => {
+		categories: ["fetch-page"] as const,
+		classify: ({ args }: { readonly args: ToolArguments }) => {
 			const urls = isRuntimeString(args["url"])
 				? [args["url"]]
 				: Array.isArray(args["urls"])
 					? args["urls"].filter((value): value is string => isRuntimeString(value))
 					: [];
-			return [{ category: "fetch-page", countKeys: urls.map((url) => activityKey(url)), target: fetchTarget(args) }];
+			return [
+				{
+					category: "fetch-page" as const,
+					countKeys: urls.map((url) => activityKey(url)),
+					target: fetchTarget(args),
+				},
+			];
 		},
-	},
+	} as const,
 	label: "Web fetch",
 	resultIsError: fetchResultIsError,
 	runningSummary: "reading",
@@ -143,12 +167,12 @@ export const WEB_FETCH_PRESENTATION: SuiteToolPresentation<Arguments, unknown> =
 	target: fetchTarget,
 };
 
-export const WEB_CONTENT_PRESENTATION: SuiteToolPresentation<Arguments, unknown> = {
+export const WEB_CONTENT_PRESENTATION = {
 	activity: {
-		categories: ["retrieve-passage"],
-		classify: ({ args }) => [
+		categories: ["retrieve-passage"] as const,
+		classify: ({ args }: { readonly args: ToolArguments }) => [
 			{
-				category: "retrieve-passage",
+				category: "retrieve-passage" as const,
 				countKeys: [
 					activityKey(
 						args["responseId"],
@@ -162,7 +186,7 @@ export const WEB_CONTENT_PRESENTATION: SuiteToolPresentation<Arguments, unknown>
 				target: retrievalTarget(args),
 			},
 		],
-	},
+	} as const,
 	label: "Web content",
 	resultIsError: errorResult,
 	runningSummary: "retrieving",

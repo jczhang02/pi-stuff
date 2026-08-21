@@ -8,6 +8,8 @@ import { createPiWebAccess, type PiWebAccessHost } from "./runtime/index.js";
 import { validateWebFetchInput } from "./url-policy.js";
 
 type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
+type SharedToolFields = Pick<CapturedTool, "label" | "name"> &
+	Partial<Pick<CapturedTool, "constrainedSampling" | "executionMode">>;
 export type WebAdapterHost = SuiteToolRegistrationHost & Pick<ExtensionAPI, "registerCommand" | "registerShortcut">;
 export type WebCapabilityHost = WebAdapterHost & PiWebAccessHost;
 
@@ -69,12 +71,13 @@ function errorResult(error: string): AgentToolResult<unknown> {
 }
 
 function sharedToolFields(upstream: CapturedTool) {
-	return {
-		...(upstream.constrainedSampling !== undefined ? { constrainedSampling: upstream.constrainedSampling } : {}),
-		...(upstream.executionMode !== undefined ? { executionMode: upstream.executionMode } : {}),
+	const fields: SharedToolFields = {
 		label: upstream.label,
 		name: upstream.name,
 	};
+	if (upstream.constrainedSampling !== undefined) fields.constrainedSampling = upstream.constrainedSampling;
+	if (upstream.executionMode !== undefined) fields.executionMode = upstream.executionMode;
+	return fields;
 }
 
 function registerSearch(pi: SuiteToolRegistrationHost, upstream: CapturedTool): void {
@@ -148,9 +151,12 @@ function registerSelectedTool(
 /** Build the narrow host facade supplied to the pinned fork. */
 export function createWebAdapterApi<Host extends WebAdapterHost>(pi: Host, options: WebAdapterOptions = {}): Host {
 	const fakeIpCompatibility = options.fakeIpCompatibility ?? new FakeIpCompatibility();
+	// SAFETY: the fork calls registerTool with ToolDefinition values; this facade only narrows which labels are installed.
 	const registerTool = ((tool: CapturedTool) =>
 		registerSelectedTool(pi, tool, fakeIpCompatibility)) as ExtensionAPI["registerTool"];
+	// SAFETY: registerCommand returns void, and a zero-argument callback may safely ignore its declaration argument.
 	const ignoreCommand = (() => undefined) as ExtensionAPI["registerCommand"];
+	// SAFETY: registerShortcut returns void, and a zero-argument callback may safely ignore its declaration argument.
 	const ignoreShortcut = (() => undefined) as ExtensionAPI["registerShortcut"];
 	return new Proxy(pi, {
 		get(target, property, receiver) {
