@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { readBoundedOwnedFile, readBoundedOwnedFileSnapshotAsync } from "../../shared/private-directory.ts";
 
@@ -41,10 +42,10 @@ export function readForegroundOwnerExit(asyncDir: string, runId: string): Foregr
 		if (
 			value.version !== 1 ||
 			value.runId !== runId ||
-			typeof value.endedAt !== "number" ||
+			!isRuntimeNumber(value.endedAt) ||
 			!Number.isFinite(value.endedAt) ||
 			value.endedAt < 0 ||
-			typeof value.error !== "string" ||
+			!isRuntimeString(value.error) ||
 			value.error.length === 0 ||
 			value.error.length > MAX_FOREGROUND_OWNER_ERROR_CHARS
 		) {
@@ -68,10 +69,10 @@ export async function readForegroundOwnerExitAsync(
 		if (
 			value.version !== 1 ||
 			value.runId !== runId ||
-			typeof value.endedAt !== "number" ||
+			!isRuntimeNumber(value.endedAt) ||
 			!Number.isFinite(value.endedAt) ||
 			value.endedAt < 0 ||
-			typeof value.error !== "string" ||
+			!isRuntimeString(value.error) ||
 			value.error.length === 0 ||
 			value.error.length > MAX_FOREGROUND_OWNER_ERROR_CHARS
 		)

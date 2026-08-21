@@ -10,11 +10,12 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { isRuntimeObject } from "../runtime-type.js";
 
 export type SettingsRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is SettingsRecord {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 /** Missing file returns `{}`; a malformed file throws so callers can fall back. */

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { link, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject } from "../shared/runtime-type.js";
 import { mergeNamespaceRecord, readSettingsFile, readSettingsFileSync } from "../shared/settings-io/file.js";
 import { mergedSettingsPath } from "../shared/settings-io/index.js";
 import { withSettingsLock } from "../shared/settings-io/lock.js";
@@ -11,7 +12,7 @@ const LEGACY_FILE = "web-search.json";
 const LEGACY_MIGRATION_FILE = `${LEGACY_FILE}.migrating`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function isFileError(error: unknown, code: string): boolean {

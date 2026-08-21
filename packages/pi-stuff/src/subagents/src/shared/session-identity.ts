@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 
 interface SessionIdentityManager {
 	getSessionFile(): string | null | undefined;
@@ -131,16 +132,16 @@ function parseHeaderCandidate(line: string): HeaderCandidate | null | undefined 
 	} catch {
 		return undefined;
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+	if (!parsed || !isRuntimeObject(parsed) || Array.isArray(parsed)) return null;
 	const candidate = parsed as HeaderCandidate;
-	return candidate.type === "session" && typeof candidate.id === "string" ? candidate : null;
+	return candidate.type === "session" && isRuntimeString(candidate.id) ? candidate : null;
 }
 
 function matchingHeader(
 	header: HeaderCandidate,
 	logicalSessionId: string,
 ): { readonly id: string; readonly startedAtMs: number } | undefined {
-	if (header.id !== logicalSessionId || typeof header.timestamp !== "string") return undefined;
+	if (header.id !== logicalSessionId || !isRuntimeString(header.timestamp)) return undefined;
 	const startedAtMs = Date.parse(header.timestamp);
 	return Number.isFinite(startedAtMs) ? { id: logicalSessionId, startedAtMs } : undefined;
 }
@@ -179,7 +180,7 @@ export function resolveCurrentSessionIdentity(
 }
 
 function record(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+	return value && isRuntimeObject(value) && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function legacyLaunchRunId(toolCallId: string): string {
@@ -195,11 +196,11 @@ function collectLegacyRunIds(entries: Iterable<unknown>): Set<string> {
 		if (message.role === "assistant" && Array.isArray(message.content)) {
 			for (const itemValue of message.content) {
 				const item = record(itemValue);
-				if (item.type !== "toolCall" || item.name !== "subagent" || typeof item.id !== "string") continue;
+				if (item.type !== "toolCall" || item.name !== "subagent" || !isRuntimeString(item.id)) continue;
 				const args = record(item.arguments);
-				if (typeof args.action === "string") continue;
+				if (isRuntimeString(args.action)) continue;
 				if (
-					(typeof args.agent === "string" && typeof args.task === "string") ||
+					(isRuntimeString(args.agent) && isRuntimeString(args.task)) ||
 					(Array.isArray(args.tasks) && args.tasks.length > 0)
 				) {
 					runIds.add(legacyLaunchRunId(item.id));
@@ -210,7 +211,7 @@ function collectLegacyRunIds(entries: Iterable<unknown>): Set<string> {
 		const details = record(message.details);
 		for (const field of ["runId", "asyncId"] as const) {
 			const runId = details[field];
-			if (typeof runId === "string" && runId.trim()) runIds.add(runId);
+			if (isRuntimeString(runId) && runId.trim()) runIds.add(runId);
 		}
 	}
 	return runIds;
@@ -238,11 +239,11 @@ function legacyLaunchDeclarations(entries: Iterable<unknown>): {
 		if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
 		for (const itemValue of message.content) {
 			const item = record(itemValue);
-			if (item.type !== "toolCall" || item.name !== "subagent" || typeof item.id !== "string") continue;
+			if (item.type !== "toolCall" || item.name !== "subagent" || !isRuntimeString(item.id)) continue;
 			const args = record(item.arguments);
-			if (typeof args.action === "string") continue;
+			if (isRuntimeString(args.action)) continue;
 			const childCount =
-				typeof args.agent === "string" && typeof args.task === "string"
+				isRuntimeString(args.agent) && isRuntimeString(args.task)
 					? 1
 					: Array.isArray(args.tasks) && args.tasks.length > 0
 						? args.tasks.length
@@ -264,19 +265,19 @@ function legacyLaunchDeclarations(entries: Iterable<unknown>): {
 		if (message.role !== "toolResult" || message.toolName !== "subagent") continue;
 		const details = record(message.details);
 		const resultRunId =
-			typeof details.asyncId === "string" && details.asyncId.trim()
+			isRuntimeString(details.asyncId) && details.asyncId.trim()
 				? details.asyncId.trim()
-				: typeof details.runId === "string" && details.runId.trim()
+				: isRuntimeString(details.runId) && details.runId.trim()
 					? details.runId.trim()
 					: undefined;
 		const toolCallId =
-			typeof message.toolCallId === "string" && message.toolCallId.trim() ? message.toolCallId.trim() : undefined;
+			isRuntimeString(message.toolCallId) && message.toolCallId.trim() ? message.toolCallId.trim() : undefined;
 		const declaration =
 			(toolCallId ? byToolCallId.get(toolCallId) : undefined) ??
 			(resultRunId ? byRunId.get(resultRunId) : undefined);
 		if (!declaration) continue;
 		const provesStart =
-			(typeof details.asyncId === "string" && details.asyncId.trim().length > 0) ||
+			(isRuntimeString(details.asyncId) && details.asyncId.trim().length > 0) ||
 			(Array.isArray(details.results) && details.results.length > 0);
 		if (!provesStart) continue;
 		for (const logicalAgentId of declaration.logicalAgentIds) started.add(logicalAgentId);
@@ -315,8 +316,8 @@ export function sessionArtifactMatches(
 	artifactSessionId: unknown,
 	artifactRunId: unknown,
 ): boolean {
-	if (!identity || typeof artifactSessionId !== "string") return false;
+	if (!identity || !isRuntimeString(artifactSessionId)) return false;
 	if (artifactSessionId === identity.sessionId) return true;
 	if (!identity.legacyArtifactSessionId || artifactSessionId !== identity.legacyArtifactSessionId) return false;
-	return typeof artifactRunId === "string" && identity.legacyRunIds.has(artifactRunId);
+	return isRuntimeString(artifactRunId) && identity.legacyRunIds.has(artifactRunId);
 }

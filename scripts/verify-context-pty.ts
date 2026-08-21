@@ -6,6 +6,7 @@ import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/context-pty-provider.ts");
@@ -796,7 +797,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		const freshNativeCompactions = rawLines.filter(
 			(line) =>
 				line.type === "compaction" &&
-				(typeof line.details !== "object" ||
+				(!isRuntimeObject(line.details) ||
 					line.details === null ||
 					(line.details as { readonly source?: unknown }).source !== "magic-context"),
 		);
@@ -845,7 +846,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		const compactions = resumedRawLines.filter((line) => line.type === "compaction");
 		const magicCompactions = compactions.filter(
 			(line) =>
-				typeof line.details === "object" &&
+				isRuntimeObject(line.details) &&
 				line.details !== null &&
 				(line.details as { readonly source?: unknown }).source === "magic-context",
 		);
@@ -878,7 +879,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			const contextCommands = commands
 				.filter(
 					(command): command is string =>
-						typeof command === "string" && (command === "ctx" || command.startsWith("ctx-")),
+						isRuntimeString(command) && (command === "ctx" || command.startsWith("ctx-")),
 				)
 				.sort();
 			if (JSON.stringify(contextCommands) !== JSON.stringify(expectedCommands)) {
@@ -905,13 +906,13 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			if (request.hasVerboseMagicContextPrompt !== false) {
 				fail(`verbose upstream Magic Context instructions leaked into request ${String(request.lastUser)}`);
 			}
-			if (typeof request.systemPromptChars !== "number" || request.systemPromptChars > 8_000) {
+			if (!isRuntimeNumber(request.systemPromptChars) || request.systemPromptChars > 8_000) {
 				fail(
 					`provider-visible system prompt exceeded the 8,000-character budget: ${String(request.systemPromptChars)}`,
 				);
 			}
 		}
-		const searchRequest = requests.find((record) => typeof record.searchResult === "string");
+		const searchRequest = requests.find((record) => isRuntimeString(record.searchResult));
 		if (!searchRequest || !(searchRequest.searchResult as string).includes(MEMORY_EVIDENCE)) {
 			fail("ctx_search did not retrieve the Chinese memory written through ctx_memory");
 		}
@@ -920,14 +921,14 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			fail("the certified lexical-only profile still attempted to load the incompatible local embedding runtime");
 		}
 		const resumed = requests.find(
-			(record) => typeof record.lastUser === "string" && record.lastUser.includes("CONTEXT_RESUME"),
+			(record) => isRuntimeString(record.lastUser) && record.lastUser.includes("CONTEXT_RESUME"),
 		);
 		if (!resumed) {
 			fail(`resumed session did not reach the model: ${JSON.stringify(requests.map((record) => record.lastUser))}`);
 		}
 
 		const sessionRecord = records.find((record) => record.type === "session");
-		if (typeof sessionRecord?.sessionId !== "string") fail("session identity was not recorded");
+		if (!isRuntimeString(sessionRecord?.sessionId)) fail("session identity was not recorded");
 		const isolationSessionDirectory = join(temporaryDirectory, "isolation-sessions");
 		const isolationLog = join(temporaryDirectory, "isolation.jsonl");
 		await mkdir(isolationSessionDirectory);
@@ -945,7 +946,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			isolatedProjectDirectory,
 		);
 		const isolationRequests = (await readRecords(isolationLog)).filter((record) => record.type === "request");
-		const isolationSearch = isolationRequests.find((record) => typeof record.searchResult === "string");
+		const isolationSearch = isolationRequests.find((record) => isRuntimeString(record.searchResult));
 		if (!isolationSearch) fail("isolated project did not execute ctx_search");
 		if ((isolationSearch.searchResult as string).includes(MEMORY_EVIDENCE)) {
 			fail("memory from the first project leaked into the isolated project search");
@@ -969,7 +970,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		);
 		const nativeRequests = (await readRecords(nativeLog)).filter((record) => record.type === "request");
 		const nativeResume = nativeRequests.find(
-			(record) => typeof record.lastUser === "string" && record.lastUser.includes("CONTEXT_NATIVE_RESUME"),
+			(record) => isRuntimeString(record.lastUser) && record.lastUser.includes("CONTEXT_NATIVE_RESUME"),
 		);
 		if (nativeResume?.hasHistory !== true || nativeResume.hasNativeSummary !== true) {
 			fail("Magic Context did not adopt the existing Pi-native compaction summary on resume");
@@ -984,7 +985,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			const ownership = database
 				.query("SELECT project_path FROM session_projects WHERE session_id = ? AND harness = 'pi'")
 				.get(sessionRecord.sessionId) as { readonly project_path?: unknown } | null;
-			if (!ownership || typeof ownership.project_path !== "string") {
+			if (!ownership || !isRuntimeString(ownership.project_path)) {
 				fail("Magic Context did not persist a Pi-scoped project binding");
 			}
 			if (!ownership.project_path.startsWith("git:") && !ownership.project_path.startsWith("dir:")) {
@@ -993,7 +994,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			const isolatedOwnership = database
 				.query("SELECT project_path FROM session_projects WHERE session_id = ? AND harness = 'pi'")
 				.get("context-isolation") as { readonly project_path?: unknown } | null;
-			if (typeof isolatedOwnership?.project_path !== "string") {
+			if (!isRuntimeString(isolatedOwnership?.project_path)) {
 				fail("isolated Pi session did not persist its project binding");
 			}
 			if (isolatedOwnership.project_path === ownership.project_path) {

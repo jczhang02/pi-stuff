@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { CERTIFIED_RTK_LINUX_X64_SHA256S, CERTIFIED_RTK_VERSION } from "../packages/pi-stuff/src/rtk/runtime.js";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -259,7 +260,7 @@ function recordForPhase(records: readonly ContextRecord[], phase: string): Conte
 function projectedResult(record: ContextRecord): string {
 	if (!Array.isArray(record.toolResults)) fail("provider record has no projected Tool results");
 	const result = (record.toolResults as ProjectedToolResult[]).find((candidate) => candidate.id === LONG_RESULT_ID);
-	if (!result || typeof result.text !== "string") fail("provider record has no projected long Bash result");
+	if (!result || !isRuntimeString(result.text)) fail("provider record has no projected long Bash result");
 	return result.text;
 }
 

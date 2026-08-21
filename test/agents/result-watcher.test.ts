@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { CompletionNotification } from "../../packages/pi-stuff/src/subagents/src/runs/background/notify.js";
 import { createResultWatcher } from "../../packages/pi-stuff/src/subagents/src/runs/background/result-watcher.js";
 import { reconcileAsyncRun } from "../../packages/pi-stuff/src/subagents/src/runs/background/stale-run-reconciler.js";
@@ -30,7 +31,7 @@ function createIntercomBus(deliveries: boolean[]): {
 			return () => listeners.delete(handler);
 		},
 		emit(channel, data) {
-			if (channel === SUBAGENT_RESULT_INTERCOM_EVENT && data && typeof data === "object") {
+			if (channel === SUBAGENT_RESULT_INTERCOM_EVENT && data && isRuntimeObject(data)) {
 				const payload = data as Record<string, unknown>;
 				received.push(payload);
 				const delivered = deliveries.shift() ?? false;

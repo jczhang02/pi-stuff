@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { findModelInfo, type ModelInfo } from "./model-info.ts";
 
 type SubagentExecutionContext = "fresh" | "fork";
@@ -69,20 +70,20 @@ export function forkedChildRequiresThinkingOff(
 }
 
 function isUnsafeAnthropicThinkingBlock(message: BranchSessionEntry["message"], block: unknown): boolean {
-	if (!message || !block || typeof block !== "object" || !("type" in block)) return false;
-	const provider = typeof message.provider === "string" ? message.provider.toLowerCase() : "";
-	const api = typeof message.api === "string" ? message.api.toLowerCase() : "";
-	const model = typeof message.model === "string" ? message.model.toLowerCase() : "";
+	if (!message || !block || !isRuntimeObject(block) || !("type" in block)) return false;
+	const provider = isRuntimeString(message.provider) ? message.provider.toLowerCase() : "";
+	const api = isRuntimeString(message.api) ? message.api.toLowerCase() : "";
+	const model = isRuntimeString(message.model) ? message.model.toLowerCase() : "";
 	const isAnthropic = provider === "anthropic" || api === "anthropic-messages" || model.startsWith("anthropic/");
 	if (block.type === "redacted_thinking") return true;
 	if (block.type !== "thinking" || !isAnthropic) return false;
 	const signature =
 		"thinkingSignature" in block ? block.thinkingSignature : "signature" in block ? block.signature : undefined;
-	return ("redacted" in block && block.redacted === true) || (typeof signature === "string" && signature.length > 0);
+	return ("redacted" in block && block.redacted === true) || (isRuntimeString(signature) && signature.length > 0);
 }
 
 function createEntryId(entries: BranchSessionEntry[]): string {
-	const ids = new Set(entries.map((entry) => entry.id).filter((id): id is string => typeof id === "string"));
+	const ids = new Set(entries.map((entry) => entry.id).filter((id): id is string => isRuntimeString(id)));
 	for (let attempt = 0; attempt < 100; attempt++) {
 		const id = randomUUID().slice(0, 8);
 		if (!ids.has(id)) return id;
@@ -93,7 +94,7 @@ function createEntryId(entries: BranchSessionEntry[]): string {
 function appendThinkingOffEntry(entries: BranchSessionEntry[]): void {
 	const last = entries[entries.length - 1];
 	if (last?.type === "thinking_level_change" && last.thinkingLevel === "off") return;
-	const parent = [...entries].reverse().find((entry) => typeof entry.id === "string");
+	const parent = [...entries].reverse().find((entry) => isRuntimeString(entry.id));
 	entries.push({
 		type: "thinking_level_change",
 		id: createEntryId(entries),

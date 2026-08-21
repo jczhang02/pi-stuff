@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import type { ActiveGoal, GoalBlockerAudit } from "./persistence.js";
 
 export interface GoalCompletionEvidence {
@@ -198,7 +199,7 @@ export function normalizeVisibleAssistantOutput(messages: readonly unknown[]) {
 			continue;
 		}
 		for (const block of message.content) {
-			if (!isRecord(block) || block.type !== "text" || typeof block.text !== "string") continue;
+			if (!isRecord(block) || block.type !== "text" || !isRuntimeString(block.text)) continue;
 			text.push(block.text);
 		}
 	}
@@ -213,5 +214,5 @@ export function normalizeVisibleAssistantOutput(messages: readonly unknown[]) {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }

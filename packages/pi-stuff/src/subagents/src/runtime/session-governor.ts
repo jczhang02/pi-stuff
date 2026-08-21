@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import * as nodeFs from "node:fs/promises";
 import * as path from "node:path";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../shared/diagnostics.ts";
 import { type DurableClaim, tryAcquireDurableClaim } from "../shared/durable-claim.ts";
 import { readProcessStartIdentity, readSystemBootIdentity } from "../shared/process-identity.ts";
@@ -355,7 +356,7 @@ export class SessionAgentGovernor {
 		let raw: string;
 		try {
 			const stat = await this.fs.lstat(this.ledgerPath);
-			const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+			const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
 			if (stat.isSymbolicLink() || !stat.isFile() || stat.size > MAX_LEDGER_BYTES) {
 				throw new SessionGovernorStateError(`Session governor ledger '${this.ledgerPath}' is not a safe file.`);
 			}
@@ -1048,7 +1049,7 @@ export class SessionAgentGovernor {
 					`Session governor ledger '${this.ledgerPath}' exceeds the ${MAX_LEDGER_BYTES}-byte safety limit.`,
 				);
 			}
-			const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+			const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
 			if (currentUid !== undefined && stat.uid !== currentUid) {
 				throw new SessionGovernorStateError(
 					`Session governor ledger '${this.ledgerPath}' is not owned by the current user.`,
@@ -1270,7 +1271,7 @@ function parseLedger(raw: string, expectedSessionId: string): ReadLedgerResult {
 	if (!isRecord(value) || value["version"] !== LEDGER_VERSION || value["sessionId"] !== expectedSessionId) {
 		throw new SessionGovernorStateError("Session governor ledger identity or version is invalid.");
 	}
-	if (typeof value["total"] !== "number" || !Number.isInteger(value["total"]) || value["total"] < 0) {
+	if (!isRuntimeNumber(value["total"]) || !Number.isInteger(value["total"]) || value["total"] < 0) {
 		throw new SessionGovernorStateError("Session governor ledger total is invalid.");
 	}
 	if (!Array.isArray(value["agents"]) || !Array.isArray(value["leases"])) {
@@ -1397,7 +1398,7 @@ function validateLimitInput(value: SessionGovernorLimitInput): SessionGovernorLi
 
 function stableText(name: string, value: unknown): string {
 	if (
-		typeof value !== "string" ||
+		!isRuntimeString(value) ||
 		value.length === 0 ||
 		value.length > 256 ||
 		value.trim() !== value ||
@@ -1417,21 +1418,21 @@ function containsControlCharacter(value: string): boolean {
 }
 
 function positiveInteger(name: string, value: unknown): number {
-	if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+	if (!isRuntimeNumber(value) || !Number.isSafeInteger(value) || value <= 0) {
 		throw new TypeError(`${name} must be a positive safe integer; unlimited and zero are not supported.`);
 	}
 	return value;
 }
 
 function nonNegativeInteger(name: string, value: unknown): number {
-	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+	if (!isRuntimeNumber(value) || !Number.isSafeInteger(value) || value < 0) {
 		throw new TypeError(`${name} must be a non-negative safe integer.`);
 	}
 	return value;
 }
 
 function finiteNumber(name: string, value: unknown): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) throw new SessionGovernorStateError(`${name} is invalid.`);
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) throw new SessionGovernorStateError(`${name} is invalid.`);
 	return value;
 }
 
@@ -1440,11 +1441,11 @@ function samePath(left: readonly string[], right: readonly string[]): boolean {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function errorCode(error: unknown): string | undefined {
-	return isRecord(error) && typeof error["code"] === "string" ? error["code"] : undefined;
+	return isRecord(error) && isRuntimeString(error["code"]) ? error["code"] : undefined;
 }
 
 async function ensurePrivateDirectory(fs: SessionGovernorFileSystem, directory: string): Promise<void> {
@@ -1453,7 +1454,7 @@ async function ensurePrivateDirectory(fs: SessionGovernorFileSystem, directory: 
 	if (stat.isSymbolicLink() || !stat.isDirectory()) {
 		throw new SessionGovernorStateError(`Session governor directory '${directory}' is not a safe real directory.`);
 	}
-	const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+	const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
 	if (currentUid !== undefined && stat.uid !== currentUid) {
 		throw new SessionGovernorStateError(
 			`Session governor directory '${directory}' is not owned by the current user.`,
@@ -1465,7 +1466,7 @@ async function ensurePrivateDirectory(fs: SessionGovernorFileSystem, directory: 
 async function inspectExistingPrivateDirectory(fs: SessionGovernorFileSystem, directory: string): Promise<boolean> {
 	try {
 		const stat = await fs.lstat(directory);
-		const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+		const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
 		if (stat.isSymbolicLink() || !stat.isDirectory()) {
 			throw new SessionGovernorStateError(`Session governor directory '${directory}' is not a safe real directory.`);
 		}

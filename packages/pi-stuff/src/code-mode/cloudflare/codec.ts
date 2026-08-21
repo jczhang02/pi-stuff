@@ -1,3 +1,4 @@
+import { isRuntimeBigInt, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 /**
  * Host-side value codec.
  *
@@ -60,11 +61,11 @@ export function encodeCodemodeValue(value: unknown): unknown {
 }
 
 export function decodeCodemodeValue(value: unknown): unknown {
-	if (!value || typeof value !== "object" || !(BINARY_TAG in value)) {
+	if (!value || !isRuntimeObject(value) || !(BINARY_TAG in value)) {
 		return value;
 	}
 	const encoded = value as EncodedBinary;
-	if (typeof encoded.data !== "string") return value;
+	if (!isRuntimeString(encoded.data)) return value;
 	const bytes = base64ToBytes(encoded.data);
 	if (encoded[BINARY_TAG] === "ArrayBuffer") {
 		return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
@@ -96,7 +97,7 @@ export function parseForCodemode(json: string): unknown {
 export function stringifyForStorage(value: unknown): string | undefined {
 	if (value === undefined) return undefined;
 	return JSON.stringify(value, (_key, nested) => {
-		if (typeof nested === "bigint") {
+		if (isRuntimeBigInt(nested)) {
 			return { [BIGINT_TAG]: nested.toString() };
 		}
 		return encodeCodemodeValue(nested);
@@ -107,8 +108,8 @@ export function parseForStorage(json: string | null): unknown {
 	if (json === null) return undefined;
 	return JSON.parse(json, (_key, nested) => {
 		const encodedBigInt =
-			nested && typeof nested === "object" ? (nested as Record<string, unknown>)[BIGINT_TAG] : undefined;
-		if (nested && typeof nested === "object" && BIGINT_TAG in nested && typeof encodedBigInt === "string") {
+			nested && isRuntimeObject(nested) ? (nested as Record<string, unknown>)[BIGINT_TAG] : undefined;
+		if (nested && isRuntimeObject(nested) && BIGINT_TAG in nested && isRuntimeString(encodedBigInt)) {
 			return BigInt(encodedBigInt);
 		}
 		return decodeCodemodeValue(nested);

@@ -1,3 +1,4 @@
+import { isRuntimeString } from "../../../shared/runtime-type.js";
 import type {
 	AcquireAgentRequest,
 	AcquireSpawnRequest,
@@ -304,8 +305,7 @@ function uniqueReservationIndexes(
 }
 
 function requiredText(name: string, value: string): string {
-	if (typeof value !== "string" || value.trim().length === 0)
-		throw new TypeError(`${name} must be a non-empty string.`);
+	if (!isRuntimeString(value) || value.trim().length === 0) throw new TypeError(`${name} must be a non-empty string.`);
 	return value.trim();
 }
 

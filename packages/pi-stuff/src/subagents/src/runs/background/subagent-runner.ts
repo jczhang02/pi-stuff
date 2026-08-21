@@ -9,6 +9,13 @@ import { fileURLToPath } from "node:url";
 import type { Message } from "@earendil-works/pi-ai";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
 import {
+	isRuntimeBoolean,
+	isRuntimeFunction,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
+import {
 	appendArtifactJsonl,
 	appendJsonl,
 	formatOutputArtifactContent,
@@ -224,19 +231,19 @@ function readWriterSupervisorDisposition(
 			value.version !== 1 ||
 			value.supervisorPid !== supervisorPid ||
 			value.supervisorProcessStartIdentity !== supervisorProcessStartIdentity ||
-			typeof value.childPid !== "number" ||
+			!isRuntimeNumber(value.childPid) ||
 			!Number.isSafeInteger(value.childPid) ||
-			typeof value.childProcessStartIdentity !== "string" ||
+			!isRuntimeString(value.childProcessStartIdentity) ||
 			!value.childProcessStartIdentity ||
-			(typeof value.exitCode !== "number" && value.exitCode !== null) ||
-			(typeof value.signal !== "string" && value.signal !== null) ||
+			(!isRuntimeNumber(value.exitCode) && value.exitCode !== null) ||
+			(!isRuntimeString(value.signal) && value.signal !== null) ||
 			(value.origin !== null &&
 				value.origin !== "external" &&
 				value.origin !== "manager-final-drain" &&
 				value.origin !== "manager-request") ||
-			typeof value.reaped !== "boolean" ||
+			!isRuntimeBoolean(value.reaped) ||
 			(value.outputForwardingError !== undefined &&
-				(typeof value.outputForwardingError !== "string" || value.outputForwardingError.length > 1_000))
+				(!isRuntimeString(value.outputForwardingError) || value.outputForwardingError.length > 1_000))
 		)
 			return undefined;
 		return value as WriterSupervisorDisposition;
@@ -520,13 +527,13 @@ function emptyUsage(): Usage {
 }
 
 function finiteUsageNumber(value: unknown): number {
-	return typeof value === "number" && Number.isFinite(value) ? value : 0;
+	return isRuntimeNumber(value) && Number.isFinite(value) ? value : 0;
 }
 
 function addUsage(target: Usage, message: ChildMessage): void {
 	const usage = message.usage;
 	target.turns += 1;
-	if (!usage || typeof usage !== "object") return;
+	if (!usage || !isRuntimeObject(usage)) return;
 	target.input += finiteUsageNumber(usage.input ?? usage.inputTokens);
 	target.output += finiteUsageNumber(usage.output ?? usage.outputTokens);
 	target.cacheRead += finiteUsageNumber(usage.cacheRead);
@@ -850,7 +857,7 @@ function sendPublishedStatus(): void {
 	const pending = pendingPublishedStatus;
 	pendingPublishedStatus = undefined;
 	statusPublishTimer = undefined;
-	if (!pending || typeof process.send !== "function" || process.connected === false) return;
+	if (!pending || !isRuntimeFunction(process.send) || process.connected === false) return;
 	try {
 		process.send(
 			{
@@ -1687,9 +1694,10 @@ function runChildProcess(input: {
 					rollBackWriterSpawning(input.index, built.tempDir, input.onWriterProcess);
 					throw error;
 				}
-				const writerProcessStartIdentity =
-					typeof child.pid === "number" ? await captureWriterProcessStartIdentity(child.pid) : undefined;
-				if (typeof child.pid !== "number" || !writerProcessStartIdentity) {
+				const writerProcessStartIdentity = isRuntimeNumber(child.pid)
+					? await captureWriterProcessStartIdentity(child.pid)
+					: undefined;
+				if (!isRuntimeNumber(child.pid) || !writerProcessStartIdentity) {
 					// The gate has not been released, so this exact ChildProcess handle is
 					// still the only authority needed to terminate the unbound shell safely.
 					try {
@@ -1756,7 +1764,7 @@ function runChildProcess(input: {
 					if (!queued) return trySignalChild(child, signal, writerProcessStartIdentity);
 					return true;
 				};
-				if (typeof child.pid === "number") {
+				if (isRuntimeNumber(child.pid)) {
 					try {
 						input.afterWriterSpawnBeforeBinding?.(input.index, child.pid);
 					} catch (error) {
@@ -1766,7 +1774,7 @@ function runChildProcess(input: {
 						throw error;
 					}
 				}
-				if (typeof child.pid === "number") {
+				if (isRuntimeNumber(child.pid)) {
 					try {
 						input.onWriterProcess?.({
 							state: "running",
@@ -2163,7 +2171,7 @@ function runChildProcess(input: {
 					try {
 						await input.beforeWriterCloseRecovery?.(input.index);
 						let groupClosed =
-							typeof child.pid !== "number" ||
+							!isRuntimeNumber(child.pid) ||
 							(await closeWriterProcessGroup(child.pid, writerProcessStartIdentity));
 						if (!groupClosed && writerSpawn.gated) {
 							groupClosed = (await reapOrphanWriterProcesses(input.config.asyncDir)).remaining === 0;
@@ -2236,7 +2244,7 @@ function runChildProcess(input: {
 						const signalledExit =
 							observedSignal !== null ||
 							(observedSignal === null &&
-								typeof observedExitCode === "number" &&
+								isRuntimeNumber(observedExitCode) &&
 								observedExitCode > 128 &&
 								observedExitCode <= 255);
 						const terminationOrigin = writerSpawn.gated

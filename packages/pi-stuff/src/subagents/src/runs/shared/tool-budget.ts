@@ -1,3 +1,4 @@
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import type { ResolvedToolBudget, ToolBudgetConfig, ToolBudgetState } from "../../shared/types.ts";
 
 export const DEFAULT_TOOL_BUDGET_BLOCK = ["read", "grep", "find", "ls"] as const;
@@ -16,17 +17,14 @@ export function validateToolBudgetConfig(
 	options: { minimumHard?: 0 | 1 } = {},
 ): { budget?: ResolvedToolBudget; error?: string } {
 	if (raw === undefined) return {};
-	if (!raw || typeof raw !== "object" || Array.isArray(raw))
+	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw))
 		return { error: `${label} must be an object with hard and optional soft/block.` };
 	const value = raw as ToolBudgetConfig;
 	const minimumHard = options.minimumHard ?? 1;
-	if (typeof value.hard !== "number" || !Number.isInteger(value.hard) || value.hard < minimumHard) {
+	if (!isRuntimeNumber(value.hard) || !Number.isInteger(value.hard) || value.hard < minimumHard) {
 		return { error: `${label}.hard must be an integer >= ${minimumHard}.` };
 	}
-	if (
-		value.soft !== undefined &&
-		(typeof value.soft !== "number" || !Number.isInteger(value.soft) || value.soft < 1)
-	) {
+	if (value.soft !== undefined && (!isRuntimeNumber(value.soft) || !Number.isInteger(value.soft) || value.soft < 1)) {
 		return { error: `${label}.soft must be an integer >= 1 when provided.` };
 	}
 	if (value.soft !== undefined && value.soft > value.hard) {
@@ -36,7 +34,7 @@ export function validateToolBudgetConfig(
 		if (!Array.isArray(value.block)) return { error: `${label}.block must be "*" or an array of tool names.` };
 		if (value.block.length === 0) return { error: `${label}.block must contain at least one tool name.` };
 		for (const item of value.block) {
-			if (typeof item !== "string" || !item.trim())
+			if (!isRuntimeString(item) || !item.trim())
 				return { error: `${label}.block must contain non-empty tool names.` };
 		}
 	}

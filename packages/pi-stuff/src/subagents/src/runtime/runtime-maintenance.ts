@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
 import { inspectWriterProcessLivenessAsync } from "../runs/background/writer-process-registry.ts";
 import { readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
 import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
@@ -217,17 +218,17 @@ async function readPreparationMarker(directory: string, kind: RuntimeRunKind): P
 		) as Partial<PreparationMarker>;
 		if (
 			value.version !== 2 ||
-			typeof value.token !== "string" ||
+			!isRuntimeString(value.token) ||
 			!/^[0-9a-f-]{16,64}$/iu.test(value.token) ||
 			!Number.isSafeInteger(value.pid) ||
 			(value.pid ?? 0) <= 0 ||
-			typeof value.processStartIdentity !== "string" ||
+			!isRuntimeString(value.processStartIdentity) ||
 			value.processStartIdentity.length === 0 ||
-			typeof value.createdAt !== "number" ||
+			!isRuntimeNumber(value.createdAt) ||
 			!Number.isFinite(value.createdAt) ||
-			typeof value.device !== "number" ||
+			!isRuntimeNumber(value.device) ||
 			!Number.isFinite(value.device) ||
-			typeof value.inode !== "number" ||
+			!isRuntimeNumber(value.inode) ||
 			!Number.isFinite(value.inode)
 		) {
 			return undefined;

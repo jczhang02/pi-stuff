@@ -11,6 +11,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { FooterTailComponent } from "../../../conversation-ui/index.js";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../shared/runtime-type.js";
 import type { AgentRow, AgentSessionSnapshot, CurrentAgents } from "../session/current-agents.js";
 import { boundedTerminalLine } from "../shared/display-description.js";
 
@@ -273,7 +274,7 @@ export class AgentRoster {
 
 	private syncRefreshTimer(): void {
 		const hasRunningElapsed = this.rows().some(
-			(row) => row.status === "running" && typeof row.startedAt === "number" && Number.isFinite(row.startedAt),
+			(row) => row.status === "running" && isRuntimeNumber(row.startedAt) && Number.isFinite(row.startedAt),
 		);
 		if (!hasRunningElapsed) {
 			if (this.refreshTimer) clearInterval(this.refreshTimer);
@@ -436,14 +437,14 @@ function isTerminal(row: AgentRow): boolean {
 function isEditorComponent(
 	value: unknown,
 ): value is Pick<EditorComponent, "getText" | "handleInput" | "invalidate" | "render" | "setText"> {
-	if (typeof value !== "object" || value === null) return false;
+	if (!isRuntimeObject(value) || value === null) return false;
 	const candidate = value as Partial<EditorComponent>;
 	return (
-		typeof candidate.getText === "function" &&
-		typeof candidate.setText === "function" &&
-		typeof candidate.handleInput === "function" &&
-		typeof candidate.invalidate === "function" &&
-		typeof candidate.render === "function"
+		isRuntimeFunction(candidate.getText) &&
+		isRuntimeFunction(candidate.setText) &&
+		isRuntimeFunction(candidate.handleInput) &&
+		isRuntimeFunction(candidate.invalidate) &&
+		isRuntimeFunction(candidate.render)
 	);
 }
 
@@ -508,9 +509,9 @@ function styledState(row: AgentRow, theme: Theme, now: number): string {
 
 function elapsedText(row: AgentRow, now: number): string {
 	const elapsedMs =
-		!isTerminal(row) && typeof row.startedAt === "number" && Number.isFinite(row.startedAt)
+		!isTerminal(row) && isRuntimeNumber(row.startedAt) && Number.isFinite(row.startedAt)
 			? now - row.startedAt
-			: typeof row.elapsedMs === "number" && Number.isFinite(row.elapsedMs)
+			: isRuntimeNumber(row.elapsedMs) && Number.isFinite(row.elapsedMs)
 				? row.elapsedMs
 				: undefined;
 	if (elapsedMs === undefined) return "";

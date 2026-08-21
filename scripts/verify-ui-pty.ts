@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createLiveThoughtTransformer } from "../packages/pi-stuff/src/conversation-ui/live-thought.js";
+import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import {
 	DIAGNOSTIC_PTY_SUMMARY,
 	FIXTURE_THINKING,
@@ -591,7 +592,7 @@ async function waitForPersistedSetting(
 			last = text;
 			const file = JSON.parse(text) as Record<string, unknown>;
 			const section = file[namespace];
-			const settings = (typeof section === "object" && section !== null ? section : {}) as Record<string, unknown>;
+			const settings = (isRuntimeObject(section) && section !== null ? section : {}) as Record<string, unknown>;
 			if (Object.is(settings[key], expected)) return settings;
 		} catch (error) {
 			last = String(error);
@@ -615,7 +616,7 @@ async function waitForFixtureRecords(path: string, type: string, count: number):
 function containsFixtureThinking(value: unknown): boolean {
 	if (value === FIXTURE_THINKING) return true;
 	if (Array.isArray(value)) return value.some(containsFixtureThinking);
-	if (typeof value !== "object" || value === null) return false;
+	if (!isRuntimeObject(value) || value === null) return false;
 	return Object.values(value).some(containsFixtureThinking);
 }
 
@@ -1175,7 +1176,7 @@ function verifyCatppuccinRecord(
 	const accentMatches =
 		colorMode === "truecolor"
 			? record.themeAccent === expectedAccent
-			: typeof record.themeAccent === "string" &&
+			: isRuntimeString(record.themeAccent) &&
 				record.themeAccent.startsWith("\u001b[38;5;") &&
 				record.themeAccent.endsWith("m");
 	if (record.theme !== selectedTheme || record.themeMode !== expectedHostMode || !accentMatches) {

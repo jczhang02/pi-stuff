@@ -1,6 +1,7 @@
 import { access, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_SOURCE_COMMIT, CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { runPiRpcSmoke } from "./smoke-pi.ts";
 import { verifyAgentsExecutionMatrix } from "./verify-agents-execution-matrix.ts";
@@ -169,14 +170,14 @@ export function verifyPackageArchive(manifest: PackageArchiveManifest, archiveFi
 		throw new Error("Package manifest files must be a non-empty array");
 	}
 	for (const entry of manifest.files) {
-		if (typeof entry !== "string") throw new Error("Package manifest files must contain only strings");
+		if (!isRuntimeString(entry)) throw new Error("Package manifest files must contain only strings");
 		normalizedFilesEntry(entry);
 	}
 	if (manifest.bundledDependencies !== undefined) {
 		throw new Error("The local single Package must not use bundledDependencies");
 	}
 	if (
-		typeof manifest.dependencies !== "object" ||
+		!isRuntimeObject(manifest.dependencies) ||
 		manifest.dependencies === null ||
 		Object.keys(manifest.dependencies).some((name) => name.startsWith("@jczhang02/pi-"))
 	) {
@@ -220,7 +221,7 @@ export async function verifyInstalledRuntimeDependencies(baseDirectory = package
 	};
 	for (const [name, version] of Object.entries(manifest.dependencies ?? {})) {
 		if (
-			typeof version !== "string" ||
+			!isRuntimeString(version) ||
 			!/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u.test(version)
 		) {
 			throw new Error(`Runtime dependency ${name} must use an exact version`);

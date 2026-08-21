@@ -4,6 +4,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator, reportDiagnostic } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 const PROVIDER = "pi-stuff-ui-pty";
 const MODEL = "ui-pty-model";
@@ -77,7 +78,7 @@ function lastUserText(context: Context): string {
 	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
 		const message = context.messages[index];
 		if (message?.role !== "user") continue;
-		if (typeof message.content === "string") return message.content;
+		if (isRuntimeString(message.content)) return message.content;
 		return message.content
 			.filter((part): part is { readonly type: "text"; readonly text: string } => part.type === "text")
 			.map((part) => part.text)
@@ -96,13 +97,13 @@ function lastOwnedGoalPrompt(context: Context): string | undefined {
 		if (
 			message.role === "custom" &&
 			(message.customType === "pi-stuff-goal-prompt" || message.customType === "pi-stuff-goal-context") &&
-			typeof message.content === "string"
+			isRuntimeString(message.content)
 		) {
 			return message.content;
 		}
 	}
 	if (
-		typeof context.systemPrompt === "string" &&
+		isRuntimeString(context.systemPrompt) &&
 		context.systemPrompt.includes("<goal_id>") &&
 		context.systemPrompt.includes("<goal_objective>")
 	) {

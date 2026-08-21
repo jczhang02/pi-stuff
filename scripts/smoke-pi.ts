@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { waitForDetachedProcess } from "./detached-process.js";
 
 const RPC_REQUEST_ID = "pi-stuff-smoke";
@@ -35,7 +36,7 @@ interface RpcObject {
 }
 
 function isRpcObject(value: unknown): value is RpcObject {
-	return typeof value === "object" && value !== null;
+	return isRuntimeObject(value) && value !== null;
 }
 
 function parseJsonLines(stdout: string): RpcObject[] {
@@ -57,7 +58,7 @@ function commandNames(response: RpcObject): string[] {
 		throw new Error("Pi get_commands response did not contain a commands array");
 	}
 	return data.commands.map((command) => {
-		if (!isRpcObject(command) || typeof command.name !== "string") {
+		if (!isRpcObject(command) || !isRuntimeString(command.name)) {
 			throw new Error("Pi get_commands returned an invalid command entry");
 		}
 		return command.name;

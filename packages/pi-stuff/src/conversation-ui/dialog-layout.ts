@@ -8,6 +8,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { isRuntimeNumber } from "../shared/runtime-type.js";
 import type { CommandDialogViewContext } from "./index.js";
 
 const DEFAULT_TERMINAL_ROWS = 24;
@@ -41,7 +42,7 @@ export function commandDialogRows(
 ): number {
 	const terminalRows = (context.tui.terminal as { readonly rows?: number }).rows;
 	const rows =
-		typeof terminalRows === "number" && Number.isFinite(terminalRows)
+		isRuntimeNumber(terminalRows) && Number.isFinite(terminalRows)
 			? Math.max(0, Math.floor(terminalRows))
 			: DEFAULT_TERMINAL_ROWS;
 	if (rows === 0) return 0;

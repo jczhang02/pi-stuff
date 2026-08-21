@@ -1,5 +1,6 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { resolveCodexAccount } from "./account.js";
 
 const USAGE_TIMEOUT_MS = 10_000;
@@ -20,17 +21,17 @@ export interface CodexUsageSnapshot {
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 function record(value: unknown): Record<string, unknown> | undefined {
-	return typeof value === "object" && value !== null && !Array.isArray(value)
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: undefined;
 }
 
 function finiteNumber(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
 function text(value: unknown): string | undefined {
-	return typeof value === "string" && value.trim() ? value.trim() : undefined;
+	return isRuntimeString(value) && value.trim() ? value.trim() : undefined;
 }
 
 function parseWindow(value: unknown): CodexUsageWindow | undefined {

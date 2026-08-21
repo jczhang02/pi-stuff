@@ -1,4 +1,5 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { boundTerminalLine, boundTerminalText } from "../../../tool-display/index.js";
 import { resolveNestedAsyncDir, sanitizeSummary } from "../runs/shared/nested-events.ts";
 import { boundedTerminalLine, isTaskOnlyAgentText, resolveDisplayDescription } from "../shared/display-description.ts";
@@ -160,21 +161,21 @@ const MAX_TASK_CHARS = 4_000;
 const MAX_DYNAMIC_SOURCE_CODE_UNITS = 4_096;
 
 function asRecord(value: unknown): Record<string, unknown> {
-	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+	return isRuntimeObject(value) && value !== null ? (value as Record<string, unknown>) : {};
 }
 
 function finiteNumber(value: unknown): number | null {
-	return typeof value === "number" && Number.isFinite(value) ? value : null;
+	return isRuntimeNumber(value) && Number.isFinite(value) ? value : null;
 }
 
 function optionalString(value: unknown): string | null {
-	if (typeof value !== "string") return null;
+	if (!isRuntimeString(value)) return null;
 	const bounded = value.slice(0, MAX_DYNAMIC_SOURCE_CODE_UNITS);
 	return bounded.trim() ? bounded : null;
 }
 
 function locatorString(value: unknown): string | null {
-	if (typeof value !== "string" || !value.trim()) return null;
+	if (!isRuntimeString(value) || !value.trim()) return null;
 	return value.length <= MAX_DYNAMIC_SOURCE_CODE_UNITS ? value : null;
 }
 
@@ -232,7 +233,7 @@ function rowKey(runId: string, childIndex: number): string {
 }
 
 function sourceStatus(value: unknown): string {
-	return typeof value === "string" ? value : "running";
+	return isRuntimeString(value) ? value : "running";
 }
 
 function isSupervisorWait(record: Record<string, unknown>): boolean {
@@ -446,7 +447,7 @@ function boundedRecentOutput(value: unknown): string | null {
 	let usedWidth = 0;
 	for (let index = 0; index < value.length; index += 1) {
 		const line = value[index];
-		if (typeof line !== "string") continue;
+		if (!isRuntimeString(line)) continue;
 		const remaining = MAX_PARTIAL_RESULT_CHARS - usedWidth;
 		if (remaining <= 0) break;
 		const bounded = boundTerminalText(line, remaining);
@@ -461,8 +462,9 @@ function partialResult(status: AgentStatus, ...values: unknown[]): string | null
 	for (const value of values) {
 		const record = asRecord(value);
 		const candidate = record["finalOutput"] ?? record["summary"] ?? record["output"];
-		const direct =
-			typeof candidate === "string" ? boundTerminalText(candidate, MAX_PARTIAL_RESULT_CHARS).trim() || null : null;
+		const direct = isRuntimeString(candidate)
+			? boundTerminalText(candidate, MAX_PARTIAL_RESULT_CHARS).trim() || null
+			: null;
 		if (direct) return direct;
 		if (TERMINAL_STATUSES.has(status)) continue;
 		const recent = boundedRecentOutput(record["recentOutput"]);
@@ -689,7 +691,7 @@ function semanticSnapshotKey(sessionId: string | null, rows: readonly AgentRow[]
 }
 
 function normalizeAcknowledgement(value: AgentControlAcknowledgement): Exclude<AgentControlAcknowledgement, boolean> {
-	return typeof value === "boolean" ? { acknowledged: value } : value;
+	return isRuntimeBoolean(value) ? { acknowledged: value } : value;
 }
 
 function controlResult(

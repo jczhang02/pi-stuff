@@ -1,6 +1,12 @@
 import { Buffer } from "node:buffer";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
+import {
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
 import type { ProtocolOutputLimit } from "../../shared/types.ts";
 
 export type { ProtocolOutputLimit } from "../../shared/types.ts";
@@ -65,7 +71,7 @@ export interface ChildProtocolEvent {
 }
 
 export function childMessageProtocolError(value: unknown): string | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return "message must be an object";
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return "message must be an object";
 	const message = value as Record<string, unknown>;
 	if (
 		message.role !== "assistant" &&
@@ -76,42 +82,42 @@ export function childMessageProtocolError(value: unknown): string | undefined {
 		return "message.role is invalid";
 	}
 	for (const field of ["model", "errorMessage", "stopReason"] as const) {
-		if (message[field] !== undefined && typeof message[field] !== "string") {
+		if (message[field] !== undefined && !isRuntimeString(message[field])) {
 			return `message.${field} must be a string`;
 		}
 	}
 	if (message.role === "custom") {
-		if (typeof message.customType !== "string" || !message.customType.trim()) {
+		if (!isRuntimeString(message.customType) || !message.customType.trim()) {
 			return "message.customType must be a non-empty string";
 		}
-		if (typeof message.display !== "boolean") return "message.display must be a boolean";
-		if (typeof message.timestamp !== "number" || !Number.isFinite(message.timestamp)) {
+		if (!isRuntimeBoolean(message.display)) return "message.display must be a boolean";
+		if (!isRuntimeNumber(message.timestamp) || !Number.isFinite(message.timestamp)) {
 			return "message.timestamp must be a finite number";
 		}
-		if (typeof message.content === "string") return undefined;
+		if (isRuntimeString(message.content)) return undefined;
 		if (!Array.isArray(message.content)) return "message.content for role 'custom' must be a string or array";
 	}
-	if (message.role === "user" && typeof message.content === "string") return undefined;
+	if (message.role === "user" && isRuntimeString(message.content)) return undefined;
 	if (!Array.isArray(message.content)) return `message.content for role '${message.role}' must be an array`;
 	for (const part of message.content) {
-		if (!part || typeof part !== "object" || Array.isArray(part)) return "message.content contains a non-object part";
+		if (!part || !isRuntimeObject(part) || Array.isArray(part)) return "message.content contains a non-object part";
 		const content = part as Record<string, unknown>;
-		if (typeof content.type !== "string") return "message.content part type must be a string";
-		if (content.type === "text" && typeof content.text !== "string") {
+		if (!isRuntimeString(content.type)) return "message.content part type must be a string";
+		if (content.type === "text" && !isRuntimeString(content.text)) {
 			return "message.content text must be a string";
 		}
-		if (content.type === "thinking" && typeof content.thinking !== "string") {
+		if (content.type === "thinking" && !isRuntimeString(content.thinking)) {
 			return "message.content thinking must be a string";
 		}
-		if (content.type === "image" && (typeof content.data !== "string" || typeof content.mimeType !== "string")) {
+		if (content.type === "image" && (!isRuntimeString(content.data) || !isRuntimeString(content.mimeType))) {
 			return "message.content image fields must be strings";
 		}
 		if (
 			content.type === "toolCall" &&
-			(typeof content.id !== "string" ||
-				typeof content.name !== "string" ||
+			(!isRuntimeString(content.id) ||
+				!isRuntimeString(content.name) ||
 				!content.arguments ||
-				typeof content.arguments !== "object" ||
+				!isRuntimeObject(content.arguments) ||
 				Array.isArray(content.arguments))
 		) {
 			return "message.content toolCall fields are invalid";
@@ -130,11 +136,11 @@ export function childMessageProtocolError(value: unknown): string | undefined {
 }
 
 export function parseChildProtocolEvent(value: unknown): { event?: ChildProtocolEvent; error?: string } {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) {
 		return { error: "event must be an object" };
 	}
 	const event = value as Record<string, unknown>;
-	if (typeof event.type !== "string" || !event.type.trim()) {
+	if (!isRuntimeString(event.type) || !event.type.trim()) {
 		return { error: "event.type must be a non-empty string" };
 	}
 	if (!CHILD_PROTOCOL_EVENT_TYPES.has(event.type)) {
@@ -224,7 +230,7 @@ export function createBoundedLineReader(options: {
 	return {
 		push(chunk) {
 			if (limitExceeded) return;
-			const bytes = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+			const bytes = isRuntimeString(chunk) ? Buffer.from(chunk) : chunk;
 			let start = 0;
 			for (let index = 0; index < bytes.length; index++) {
 				if (bytes[index] !== 0x0a) continue;
@@ -261,7 +267,7 @@ export function createBoundedByteTail(maxBytes = MAX_CHILD_STDERR_BYTES): {
 	let tail: Buffer = Buffer.alloc(0);
 	return {
 		push(chunk) {
-			const bytes = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+			const bytes = isRuntimeString(chunk) ? Buffer.from(chunk) : chunk;
 			tail = trimToUtf8Boundary(Buffer.concat([tail, bytes]), maxBytes);
 		},
 		text: () => tail.toString("utf8"),

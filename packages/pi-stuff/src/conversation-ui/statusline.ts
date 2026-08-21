@@ -10,6 +10,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { isRuntimeNumber, isRuntimeString } from "../shared/runtime-type.js";
 import { getHostSharedResource } from "./host-resource.js";
 
 const DEFAULT_EXTENSION_STATUS_KEYS: readonly string[] = [];
@@ -125,7 +126,7 @@ class SharedCodexStatusChannel implements CodexStatusChannel, CodexStatusSource 
 	publish(snapshot: CodexStatusSnapshot): void {
 		const next: CodexStatusSnapshot = {
 			fastEnabled: snapshot.fastEnabled === true,
-			...(typeof snapshot.weeklyRemainingPercent === "number" && Number.isFinite(snapshot.weeklyRemainingPercent)
+			...(isRuntimeNumber(snapshot.weeklyRemainingPercent) && Number.isFinite(snapshot.weeklyRemainingPercent)
 				? { weeklyRemainingPercent: snapshot.weeklyRemainingPercent }
 				: {}),
 		};
@@ -878,9 +879,9 @@ function renderContextSegment(
 		return undefined;
 	}
 	const percent = usage?.percent;
-	const knownPercent = typeof percent === "number" && Number.isFinite(percent);
+	const knownPercent = isRuntimeNumber(percent) && Number.isFinite(percent);
 	const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow;
-	const knownWindow = typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0;
+	const knownWindow = isRuntimeNumber(contextWindow) && Number.isFinite(contextWindow) && contextWindow > 0;
 	if (!knownPercent && !knownWindow) return undefined;
 	const boundedPercent = knownPercent ? Math.max(0, percent) : undefined;
 	const fullValue = boundedPercent === undefined ? "?" : `${boundedPercent.toFixed(1).replace(/\.0$/u, "")}%`;
@@ -914,7 +915,7 @@ function finiteNonNegative(value: number): number {
 }
 
 function finitePositive(value: number | undefined): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 function isGoalStatus(value: unknown): value is GoalStatus {
@@ -1024,13 +1025,12 @@ function userPrompt(
 	content: string | ReadonlyArray<{ type: string; text?: string }>,
 	skillAliases: ReadonlyMap<string, string>,
 ): PromptPreview | undefined {
-	const text =
-		typeof content === "string"
-			? content
-			: content
-					.filter((part): part is { type: "text"; text: string } => part.type === "text" && !!part.text)
-					.map((part) => part.text)
-					.join(" ");
+	const text = isRuntimeString(content)
+		? content
+		: content
+				.filter((part): part is { type: "text"; text: string } => part.type === "text" && !!part.text)
+				.map((part) => part.text)
+				.join(" ");
 	return buildPromptPreview(text, skillAliases);
 }
 
@@ -1144,7 +1144,7 @@ function readCodexStatus(
 function formatCodexWeekly(snapshot: CodexStatusSnapshot | undefined): string | undefined {
 	if (!snapshot) return undefined;
 	const weekly = snapshot.weeklyRemainingPercent;
-	return typeof weekly === "number" && Number.isFinite(weekly)
+	return isRuntimeNumber(weekly) && Number.isFinite(weekly)
 		? `${String(Math.round(Math.max(0, Math.min(100, weekly))))}%`
 		: undefined;
 }

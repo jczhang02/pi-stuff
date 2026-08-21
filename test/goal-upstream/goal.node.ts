@@ -42,6 +42,7 @@ import {
 	normalizeVisibleAssistantOutput,
 	recordGoalBlockerAttempt,
 } from "../../packages/pi-stuff/src/goal/src/safety.js";
+import { isRuntimeFunction, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { createMockContext, createMockPi, goalStatusSnapshot } from "./support.js";
 
 // This suite stays in one file because it exercises one module-scoped extension
@@ -97,15 +98,15 @@ test("goal registers command, status tools, and lifecycle hooks", () => {
 	registerGoal(mock.pi);
 
 	assert.ok(mock.commands.has("goal"));
-	assert.equal(typeof mock.commands.get("goal")?.getArgumentCompletions, "function");
+	assert.equal(isRuntimeFunction(mock.commands.get("goal")?.getArgumentCompletions), true);
 	assert.deepEqual(
 		mock.tools.map((tool) => tool.name),
 		["goal_complete", "goal_blocked"],
 	);
 	for (const tool of mock.tools) {
 		assert.equal(tool.renderShell, "self");
-		assert.equal(typeof tool.renderCall, "function");
-		assert.equal(typeof tool.renderResult, "function");
+		assert.equal(isRuntimeFunction(tool.renderCall), true);
+		assert.equal(isRuntimeFunction(tool.renderResult), true);
 	}
 	assert.deepEqual(mock.rawPi.getActiveTools(), ["read", "bash", "goal_complete", "goal_blocked"]);
 	const context = createMockContext();
@@ -1787,7 +1788,7 @@ test("all goal prompt paths share the goal_id guard and hardened audit", async (
 		};
 		assert.equal(message.customType, GOAL_PROMPT_MESSAGE_TYPE);
 		assert.equal(message.display, false);
-		assert.equal(typeof message.content, "string");
+		assert.equal(isRuntimeString(message.content), true);
 		assert.equal(readAgentWorkOrigin(message), expectedOrigins[index]);
 	}
 });
@@ -3227,7 +3228,7 @@ test("owned Goal prompt attribution remains lossless beyond the former marker li
 	}
 
 	const oldestPrompt = mock.sentUserMessages[0]?.text;
-	assert.equal(typeof oldestPrompt, "string");
+	assert.equal(isRuntimeString(oldestPrompt), true);
 	assert.deepEqual(runtime.consumeOwnedGoalPrompt(oldestPrompt ?? ""), {
 		goalId: "goal-0",
 		origin: "automatic",

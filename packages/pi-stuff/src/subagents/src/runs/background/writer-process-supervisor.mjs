@@ -2,12 +2,22 @@ import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync, readdirSync, renameSync, watch, writeFileSync } from "node:fs";
 import { constants as osConstants } from "node:os";
+import { Guard } from "typebox/guard";
 
 const DEFAULT_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const MAX_OUTPUT_BYTES_ENV = "PI_SUBAGENT_CHILD_PROTOCOL_MAX_BYTES";
 const MAX_PROTOCOL_LINE_BYTES = 16 * 1024 * 1024;
 const POST_EXIT_OUTPUT_IDLE_MS = 2_000;
 const POST_EXIT_OUTPUT_HARD_MS = 8_000;
+
+function isRuntimeNumber(value) {
+	return (
+		Guard.IsNumber(value) ||
+		Object.is(value, Number.NaN) ||
+		Object.is(value, Number.POSITIVE_INFINITY) ||
+		Object.is(value, Number.NEGATIVE_INFINITY)
+	);
+}
 
 function processStartIdentity(pid) {
 	if (process.platform === "linux") {
@@ -32,7 +42,7 @@ function processExists(pid) {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return error && typeof error === "object" && error.code === "EPERM";
+		return error && Guard.IsObject(error) && error.code === "EPERM";
 	}
 }
 
@@ -54,7 +64,7 @@ function linuxGroupMembers() {
 		} catch (error) {
 			// ENOENT means this particular process exited between readdir and stat.
 			// Any other failure makes the whole group scan inconclusive.
-			if (!error || typeof error !== "object" || (error.code !== "ENOENT" && error.code !== "ESRCH")) throw error;
+			if (!error || !Guard.IsObject(error) || (error.code !== "ENOENT" && error.code !== "ESRCH")) throw error;
 		}
 	}
 	return members;
@@ -125,7 +135,7 @@ function projectProtocolLine(line) {
 	} catch {
 		return line;
 	}
-	if (!event || typeof event !== "object" || Array.isArray(event) || typeof event.type !== "string") return line;
+	if (!event || !Guard.IsObject(event) || Array.isArray(event) || !Guard.IsString(event.type)) return line;
 	if (event.type === "message_start" || event.type === "message_update" || event.type === "turn_end") {
 		return Buffer.from(JSON.stringify({ type: event.type }));
 	}
@@ -136,9 +146,9 @@ function projectProtocolLine(line) {
 		return Buffer.from(
 			JSON.stringify({
 				type: event.type,
-				...(typeof event.toolCallId === "string" ? { toolCallId: event.toolCallId } : {}),
-				...(typeof event.toolName === "string" ? { toolName: event.toolName } : {}),
-				...(typeof event.isError === "boolean" ? { isError: event.isError } : {}),
+				...(Guard.IsString(event.toolCallId) ? { toolCallId: event.toolCallId } : {}),
+				...(Guard.IsString(event.toolName) ? { toolName: event.toolName } : {}),
+				...(Guard.IsBoolean(event.isError) ? { isError: event.isError } : {}),
 			}),
 		);
 	}
@@ -379,7 +389,7 @@ function createFileControlChannel(filePath, token, parentPid, parentStarted) {
 							record.token !== token ||
 							!Number.isSafeInteger(record.sequence) ||
 							record.sequence <= lastSequence ||
-							typeof record.command !== "string"
+							!Guard.IsString(record.command)
 						) {
 							return invalid();
 						}
@@ -387,7 +397,7 @@ function createFileControlChannel(filePath, token, parentPid, parentStarted) {
 						return { done: false, value: record.command };
 					}
 				} catch (error) {
-					if (!error || typeof error !== "object" || error.code !== "ENOENT") {
+					if (!error || !Guard.IsObject(error) || error.code !== "ENOENT") {
 						return invalid();
 					}
 				}
@@ -418,7 +428,7 @@ const encoded = process.argv[2];
 if (!encoded) throw new Error("Agent writer supervisor requires a launch envelope.");
 const envelope = JSON.parse(Buffer.from(encoded, "base64url").toString("utf-8"));
 const controlLines =
-	typeof envelope.controlPath === "string" && typeof envelope.controlToken === "string"
+	Guard.IsString(envelope.controlPath) && Guard.IsString(envelope.controlToken)
 		? createFileControlChannel(
 				envelope.controlPath,
 				envelope.controlToken,
@@ -469,7 +479,7 @@ function forgetManagerSignalSource(source) {
 }
 
 function managerSignalSourceForChild(signal) {
-	if (!child?.pid || !childStarted || typeof signal !== "string") return undefined;
+	if (!child?.pid || !childStarted || !Guard.IsString(signal)) return undefined;
 	const sources = managerSignalsByMember
 		.get(memberKey({ pid: child.pid, started: childStarted }))
 		?.get(signal);
@@ -483,13 +493,13 @@ function managerSignalSourceForChild(signal) {
 }
 
 function signalFromExitCode(code) {
-	if (typeof code !== "number" || code <= 128 || code > 255) return undefined;
+	if (!isRuntimeNumber(code) || code <= 128 || code > 255) return undefined;
 	const signalNumber = code - 128;
 	return Object.entries(osConstants.signals).find(([, value]) => value === signalNumber)?.[0];
 }
 
 function writeTerminalDisposition(value) {
-	if (typeof envelope.dispositionPath !== "string" || !envelope.dispositionPath) return;
+	if (!Guard.IsString(envelope.dispositionPath) || !envelope.dispositionPath) return;
 	const temporary = `${envelope.dispositionPath}.${process.pid}.${randomUUID()}.tmp`;
 	writeFileSync(temporary, `${JSON.stringify(value)}\n`, { encoding: "utf-8", mode: 0o600, flag: "wx" });
 	renameSync(temporary, envelope.dispositionPath);
@@ -497,7 +507,7 @@ function writeTerminalDisposition(value) {
 
 function writeGroupMemberProof() {
 	if (
-		typeof envelope.groupMemberProofPath !== "string" ||
+		!Guard.IsString(envelope.groupMemberProofPath) ||
 		!envelope.groupMemberProofPath ||
 		!child?.pid ||
 		!childStarted
@@ -622,7 +632,7 @@ async function settle(code, signal) {
 	// `readline.close()` stops line parsing but does not close the inherited pipe.
 	// Keeping that stdin handle referenced prevents Bun/Node from exiting after
 	// the writer has settled, so the parent runner never observes `close`.
-	if (typeof envelope.controlPath !== "string") {
+	if (!Guard.IsString(envelope.controlPath)) {
 		process.stdin.pause();
 		process.stdin.destroy();
 	}
@@ -641,7 +651,7 @@ async function settle(code, signal) {
 			: managerSource === "finalization"
 				? "SIGTERM"
 				: observedSignal;
-	const signalNumber = typeof signalCode === "string" ? osConstants.signals[signalCode] : undefined;
+	const signalNumber = Guard.IsString(signalCode) ? osConstants.signals[signalCode] : undefined;
 	try {
 		writeTerminalDisposition({
 			version: 1,
@@ -649,7 +659,7 @@ async function settle(code, signal) {
 			supervisorProcessStartIdentity: processStartIdentity(process.pid),
 			childPid: child?.pid,
 			childProcessStartIdentity: childStarted,
-			exitCode: typeof code === "number" ? code : null,
+			exitCode: isRuntimeNumber(code) ? code : null,
 			// Keep the child's raw exit tuple authoritative. `observedSignal` may be
 			// inferred from an explicit 128+N exit code solely for provenance.
 			signal: signal ?? null,
@@ -676,7 +686,7 @@ async function settle(code, signal) {
 		);
 	}
 	const supervisorExitCode =
-		!reaped || childOutputError ? 1 : signalNumber ? 128 + signalNumber : typeof code === "number" ? code : 1;
+		!reaped || childOutputError ? 1 : signalNumber ? 128 + signalNumber : isRuntimeNumber(code) ? code : 1;
 	// Let inherited stdout/stderr drain after the child exit. Calling
 	// `process.exit()` here can close the shared pipe before a fast Pi writer's
 	// final JSON frames reach the parent runner.

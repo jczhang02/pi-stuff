@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeString } from "../../../../shared/runtime-type.js";
 
 export const REQUIRED_CHILD_TOOLS_ENV = "PI_SUBAGENT_REQUIRED_TOOLS";
 export const MCP_DIRECT_CHILD_TOOLS_ENV = "PI_SUBAGENT_MCP_DIRECT_TOOLS";
@@ -59,15 +60,14 @@ export function readChildToolDiagnostic(filePath: string | undefined): ChildTool
 	if (!filePath || !fs.existsSync(filePath)) return undefined;
 	const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8")) as Partial<ChildToolDiagnostic>;
 	const stringArray = (value: unknown): value is string[] =>
-		Array.isArray(value) && value.every((entry) => typeof entry === "string" && entry.length > 0);
+		Array.isArray(value) && value.every((entry) => isRuntimeString(entry) && entry.length > 0);
 	if (
 		!stringArray(parsed.required) ||
 		!stringArray(parsed.available) ||
 		!stringArray(parsed.missing) ||
-		(parsed.agent !== undefined && typeof parsed.agent !== "string") ||
+		(parsed.agent !== undefined && !isRuntimeString(parsed.agent)) ||
 		(parsed.missingMcpDirectTools !== undefined && !stringArray(parsed.missingMcpDirectTools)) ||
-		(parsed.launchError !== undefined &&
-			(typeof parsed.launchError !== "string" || parsed.launchError.length > 8_192))
+		(parsed.launchError !== undefined && (!isRuntimeString(parsed.launchError) || parsed.launchError.length > 8_192))
 	) {
 		throw new Error(`Malformed child tool diagnostic at '${filePath}'.`);
 	}

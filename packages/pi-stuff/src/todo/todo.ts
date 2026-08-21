@@ -1,5 +1,6 @@
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
+import { isRuntimeString } from "../shared/runtime-type.js";
 import {
 	activityKey,
 	registerSuiteOwnedTool,
@@ -48,7 +49,7 @@ function resultText(result: AgentToolResult<TaskDetails>): string {
 
 function taskIdTarget(params: Readonly<TaskIdPresentationParams>): string {
 	const taskId = params.taskId;
-	return typeof taskId === "string" && taskId ? `#${taskId}` : "";
+	return isRuntimeString(taskId) && taskId ? `#${taskId}` : "";
 }
 
 function taskPresentation<TParams extends Record<string, unknown>>(
@@ -173,7 +174,7 @@ export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationLis
 		pi,
 		getTool,
 		taskPresentation("Task get", "check-task", taskIdTarget, resultText, (params, result) => {
-			const taskId = typeof params.taskId === "string" ? params.taskId : "";
+			const taskId = isRuntimeString(params.taskId) ? params.taskId : "";
 			return taskId && resultText(result) !== "Task not found" ? [taskId] : [];
 		}),
 	);

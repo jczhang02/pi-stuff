@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { ContextEvent, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import Tokenizer from "ai-tokenizer";
 import * as o200kBase from "ai-tokenizer/encoding/o200k_base";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV } from "./pi-args.ts";
 
 const CHILD_INPUT_RESERVE_RATIO = 0.25;
@@ -52,10 +53,10 @@ export function childProviderInputCapacity(model: ProviderPayloadModel | undefin
 	const contextWindow = model?.contextWindow;
 	const maxTokens = model?.maxTokens;
 	if (
-		typeof contextWindow !== "number" ||
+		!isRuntimeNumber(contextWindow) ||
 		!Number.isFinite(contextWindow) ||
 		contextWindow <= 0 ||
-		typeof maxTokens !== "number" ||
+		!isRuntimeNumber(maxTokens) ||
 		!Number.isFinite(maxTokens) ||
 		maxTokens <= 0
 	)
@@ -197,13 +198,13 @@ function boundedHeadTail(value: string, maxBytes: number, marker: string): strin
 }
 
 function textFromContent(content: unknown): string {
-	if (typeof content === "string") return content;
+	if (isRuntimeString(content)) return content;
 	if (!Array.isArray(content)) return "";
 	const texts: string[] = [];
 	for (const part of content) {
-		if (!part || typeof part !== "object") continue;
+		if (!part || !isRuntimeObject(part)) continue;
 		const record = part as JsonRecord;
-		if (record.type === "text" && typeof record.text === "string") {
+		if (record.type === "text" && isRuntimeString(record.text)) {
 			texts.push(record.text);
 			continue;
 		}
@@ -213,7 +214,7 @@ function textFromContent(content: unknown): string {
 		} catch {
 			// Keep the omission marker useful even for malformed non-text parts.
 		}
-		const type = typeof record.type === "string" ? record.type : "non-text";
+		const type = isRuntimeString(record.type) ? record.type : "non-text";
 		texts.push(
 			`[${type} Tool content omitted from projected child history: ${serializedBytes.toLocaleString("en-US")} serialized bytes]`,
 		);
@@ -232,7 +233,7 @@ function projectedToolResult(message: ChildMessage, maxBytes: number): ChildMess
 	}
 	const originalBytes = Math.max(Buffer.byteLength(fullText, "utf8"), serializedContentBytes);
 	if (originalBytes <= maxBytes) return message;
-	const toolName = typeof source.toolName === "string" ? source.toolName : "tool";
+	const toolName = isRuntimeString(source.toolName) ? source.toolName : "tool";
 	const header = `[Pi Stuff compacted this earlier ${toolName} result for child continuation safety: ${originalBytes.toLocaleString(
 		"en-US",
 	)} serialized UTF-8 bytes. The exact result remains in the child transcript. Do not rerun completed verification already represented by retained child history; rerun only if other exact omitted content is required.]\n`;
@@ -249,9 +250,9 @@ function toolCallIds(message: ChildMessage): string[] {
 	const source = message as unknown as JsonRecord;
 	if (source.role !== "assistant" || !Array.isArray(source.content)) return [];
 	return source.content.flatMap((part) => {
-		if (!part || typeof part !== "object") return [];
+		if (!part || !isRuntimeObject(part)) return [];
 		const block = part as JsonRecord;
-		return block.type === "toolCall" && typeof block.id === "string" ? [block.id] : [];
+		return block.type === "toolCall" && isRuntimeString(block.id) ? [block.id] : [];
 	});
 }
 
@@ -263,7 +264,7 @@ function latestCompletedToolBatch(messages: readonly ChildMessage[]): CompletedT
 		for (let index = assistantIndex + 1; index < messages.length; index += 1) {
 			const record = messages[index] as unknown as JsonRecord | undefined;
 			if (record?.role === "assistant") break;
-			if (record?.role !== "toolResult" || typeof record.toolCallId !== "string") continue;
+			if (record?.role !== "toolResult" || !isRuntimeString(record.toolCallId)) continue;
 			if (!callIds.includes(record.toolCallId) || resultById.has(record.toolCallId)) continue;
 			resultById.set(record.toolCallId, index);
 		}
@@ -280,13 +281,13 @@ function latestCompletedToolBatch(messages: readonly ChildMessage[]): CompletedT
 
 function messageText(message: ChildMessage): string {
 	const content = (message as unknown as JsonRecord).content;
-	if (typeof content === "string") return content;
+	if (isRuntimeString(content)) return content;
 	if (!Array.isArray(content)) return "";
 	return content
 		.flatMap((part) => {
-			if (!part || typeof part !== "object") return [];
+			if (!part || !isRuntimeObject(part)) return [];
 			const text = (part as JsonRecord).text;
-			return typeof text === "string" ? [text] : [];
+			return isRuntimeString(text) ? [text] : [];
 		})
 		.join("\n");
 }
@@ -358,7 +359,7 @@ function toolProtocolIsValid(messages: readonly ChildMessage[]): boolean {
 		if (expected) {
 			if (
 				record.role !== "toolResult" ||
-				typeof record.toolCallId !== "string" ||
+				!isRuntimeString(record.toolCallId) ||
 				!expected.delete(record.toolCallId)
 			) {
 				return false;

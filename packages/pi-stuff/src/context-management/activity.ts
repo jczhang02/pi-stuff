@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { CustomEntry, EntryRenderer, Theme } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { boundTerminalLine, boundTerminalText } from "../tool-display/terminal.js";
 
 export const CONTEXT_ACTIVITY_ENTRY_TYPE = "pi-stuff-context-activity";
@@ -31,22 +32,22 @@ const CONTEXT_OPERATIONS = new Set<ContextOperation>(["flush", "recomp", "upgrad
 const CONTEXT_STATES = new Set<ContextActivityState>(["error", "info", "running", "success", "warning"]);
 
 function isActivityData(value: unknown): value is ContextActivityData {
-	if (!value || typeof value !== "object") return false;
+	if (!value || !isRuntimeObject(value)) return false;
 	const data = value as Partial<ContextActivityData>;
 	return (
 		data.version === 1 &&
-		typeof data.id === "string" &&
+		isRuntimeString(data.id) &&
 		/^context-[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/iu.test(data.id) &&
 		(data.kind === "anchor" || data.kind === "update") &&
 		CONTEXT_OPERATIONS.has(data.operation as ContextOperation) &&
 		CONTEXT_STATES.has(data.state as ContextActivityState) &&
-		typeof data.summary === "string" &&
-		typeof data.detail === "string"
+		isRuntimeString(data.summary) &&
+		isRuntimeString(data.detail)
 	);
 }
 
 function asEntry(value: unknown): CustomEntry | undefined {
-	if (!value || typeof value !== "object") return undefined;
+	if (!value || !isRuntimeObject(value)) return undefined;
 	return value as CustomEntry;
 }
 

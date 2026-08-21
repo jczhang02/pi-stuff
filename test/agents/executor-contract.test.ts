@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Check } from "typebox/value";
+import { isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import {
 	normalizePublicAgentParams,
 	toEngineParams,
@@ -56,10 +57,10 @@ describe("Agent product contract", () => {
 				nodes.push(...node);
 				continue;
 			}
-			if (!node || typeof node !== "object") continue;
+			if (!node || !isRuntimeObject(node)) continue;
 			const schema = node as Record<string, unknown>;
 			expect(Object.hasOwn(schema, "oneOf")).toBeFalse();
-			if (schema.properties && typeof schema.properties === "object") {
+			if (schema.properties && isRuntimeObject(schema.properties)) {
 				for (const property of Object.values(schema.properties)) expect(property).not.toBe(false);
 			}
 			nodes.push(...Object.values(schema));

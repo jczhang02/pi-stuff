@@ -1,5 +1,6 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { isRuntimeFunction } from "../shared/runtime-type.js";
 import { TRANSCRIPT_MARKER } from "./transcript.js";
 
 export interface ThoughtMarkdownTransformContext {
@@ -62,7 +63,7 @@ type PendingAssistantMarkerTheme = Theme & {
  */
 function armAssistantTranscriptMarker(): void {
 	const themed = (globalThis as Record<symbol, unknown>)[HOST_THEME_KEY] as PendingAssistantMarkerTheme | undefined;
-	if (!themed || typeof themed.fg !== "function" || themed[PENDING_ASSISTANT_MARKER]) return;
+	if (!themed || !isRuntimeFunction(themed.fg) || themed[PENDING_ASSISTANT_MARKER]) return;
 	const originalFg = themed.fg;
 	let restored = false;
 	const restore = () => {
@@ -113,7 +114,7 @@ function renderAssistantTranscript(markdown: string, availableWidth: number): st
 
 function hasMarkdownTransformer(pi: ExtensionAPI): pi is ExtensionAPI & MarkdownTransformerExtensionAPI {
 	const candidate = pi as ExtensionAPI & Partial<MarkdownTransformerExtensionAPI>;
-	return typeof candidate.registerMarkdownTransformer === "function";
+	return isRuntimeFunction(candidate.registerMarkdownTransformer);
 }
 
 function latestMeaningfulMarkdownFragment(markdown: string): string {

@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { formatDuration, formatModelThinking, formatTokens, shortenPath } from "../../shared/formatters.ts";
 import { type SessionCompatibilityScope, sessionArtifactMatches } from "../../shared/session-identity.ts";
@@ -150,10 +151,7 @@ function getErrorMessage(error: unknown): string {
 
 function isNotFoundError(error: unknown): boolean {
 	return (
-		typeof error === "object" &&
-		error !== null &&
-		"code" in error &&
-		(error as NodeJS.ErrnoException).code === "ENOENT"
+		isRuntimeObject(error) && error !== null && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
 	);
 }
 
@@ -225,7 +223,7 @@ function deriveAsyncActivityState(
 			? status.outputFile
 			: path.join(asyncDir, status.outputFile)
 		: undefined;
-	const currentStep = typeof status.currentStep === "number" ? status.steps?.[status.currentStep] : undefined;
+	const currentStep = isRuntimeNumber(status.currentStep) ? status.steps?.[status.currentStep] : undefined;
 	return {
 		activityState: status.activityState,
 		lastActivityAt:
@@ -244,7 +242,7 @@ function statusToSummary(
 	nestedRoute?: NestedRoute,
 	projectNested = true,
 ): AsyncRunSummary {
-	if (status.sessionId !== undefined && typeof status.sessionId !== "string") {
+	if (status.sessionId !== undefined && !isRuntimeString(status.sessionId)) {
 		throw new Error(`Invalid async status '${path.join(asyncDir, "status.json")}': sessionId must be a string.`);
 	}
 	const { activityState, lastActivityAt } = deriveAsyncActivityState(asyncDir, status);

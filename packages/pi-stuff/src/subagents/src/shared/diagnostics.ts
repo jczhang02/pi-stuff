@@ -1,11 +1,12 @@
 import { reportDiagnostic, sanitizeDiagnosticLine } from "../../../conversation-ui/diagnostics.js";
+import { isRuntimeString } from "../../../shared/runtime-type.js";
 import { writeDetachedRunnerDiagnostic } from "./detached-runner-diagnostics.ts";
 
 const AGENT_PREFIX = /^\[(?:pi-stuff-agents(?::[^\]]+)?|pi-subagents)\]\s*/i;
 
 function formatValue(value: unknown): string {
 	if (value instanceof Error) return value.stack || value.message || value.name;
-	if (typeof value === "string") return value;
+	if (isRuntimeString(value)) return value;
 	if (value === undefined) return "undefined";
 	if (value === null) return "null";
 	try {

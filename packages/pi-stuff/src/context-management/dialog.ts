@@ -14,6 +14,7 @@ import {
 	commandDialogRows,
 	fitCommandDialogRows,
 } from "../conversation-ui/index.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { boundTerminalText } from "../tool-display/index.js";
 
 export type ContextDialogAction = "flush" | "recomp" | "upgrade" | "wrapup";
@@ -72,11 +73,11 @@ const ERROR_MAX_CELLS = 2_000;
 const REFRESH_INTERVAL_MS = 1_000;
 
 function record(value: unknown): Readonly<Record<string, unknown>> {
-	return value && typeof value === "object" ? (value as Readonly<Record<string, unknown>>) : {};
+	return value && isRuntimeObject(value) ? (value as Readonly<Record<string, unknown>>) : {};
 }
 
 function finite(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
 function textNumber(text: string, pattern: RegExp): number | undefined {
@@ -91,7 +92,7 @@ function count(details: Readonly<Record<string, unknown>>, text: string, key: st
 }
 
 function usageValue(value: number | null | undefined): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function safeDialogError(value: string | undefined): string | undefined {
@@ -124,7 +125,7 @@ export function statusSnapshotFromMagic(
 			? (tokens / contextWindow) * 100
 			: undefined);
 	const messageError = message?.level === "error" ? text.replace(/^#{1,6}\s+.*$/mu, "").trim() : undefined;
-	const historianError = typeof historian["lastError"] === "string" ? historian["lastError"] : undefined;
+	const historianError = isRuntimeString(historian["lastError"]) ? historian["lastError"] : undefined;
 	const error = safeDialogError(fallbackError) ?? safeDialogError(messageError) ?? safeDialogError(historianError);
 	const historyTokens = textNumber(text, /History block:\s*~?([\d,]+)\s+tokens/iu);
 	const upgradeNeeded = textNumber(text, /([\d,]+)\s+compartments?\s+need upgrade/iu);

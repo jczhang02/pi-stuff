@@ -20,6 +20,7 @@ import {
 	type SessionEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
+import { isRuntimeString } from "../shared/runtime-type.js";
 
 // ---------------------------------------------------------------------------
 // Budget constants — the engine's tuning surface. Defined in this leaf module so
@@ -258,7 +259,7 @@ function truncateToFit(result: Message[], budget: number, initialEstimate: numbe
 	const targets: Array<{ ci: number; isString: boolean; len: number; mi: number }> = [];
 	for (let mi = 0; mi < result.length; mi++) {
 		const content = result[mi]?.content;
-		if (typeof content === "string") {
+		if (isRuntimeString(content)) {
 			targets.push({ ci: -1, isString: true, len: content.length, mi });
 			continue;
 		}
@@ -277,7 +278,7 @@ function truncateToFit(result: Message[], budget: number, initialEstimate: numbe
 		const content = msg.content;
 		const part = Array.isArray(content) ? content[target.ci] : undefined;
 		const text =
-			target.isString && typeof content === "string" ? content : part?.type === "text" ? part.text : undefined;
+			target.isString && isRuntimeString(content) ? content : part?.type === "text" ? part.text : undefined;
 		if (!text) continue;
 		const overTokens = estimate - budget;
 		const removeChars = Math.max(1, Math.ceil(overTokens * 4));
@@ -292,7 +293,7 @@ function truncateToFit(result: Message[], budget: number, initialEstimate: numbe
 		// directly does not typecheck). Top-level branches are pure msg.role checks so
 		// narrowing flows into each arm; the user arm narrows string-vs-array content.
 		if (msg.role === "user") {
-			if (typeof msg.content === "string") {
+			if (isRuntimeString(msg.content)) {
 				estimate = replaceMessage(
 					result,
 					target.mi,

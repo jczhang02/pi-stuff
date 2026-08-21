@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
+import { isRuntimeObject } from "../../shared/runtime-type.js";
 import { mergeNamespaceRecordSync, readNamespaceSync, readSettingsFileSync } from "../../shared/settings-io/file.js";
 import { mergedSettingsPath } from "../../shared/settings-io/paths.js";
 
@@ -208,7 +209,7 @@ function migrateLegacyGoalSettings(settingsPath: string): void {
 }
 
 function ownRecord(value: unknown): Record<string, unknown> | undefined {
-	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+	return value && isRuntimeObject(value) && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

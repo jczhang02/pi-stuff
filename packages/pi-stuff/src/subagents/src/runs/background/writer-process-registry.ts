@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import {
 	assertPrivateDirectory,
@@ -373,19 +374,18 @@ async function readWriterProcessRegistryAsync(asyncDir: string): Promise<WriterP
 }
 
 function parseWriterProcessRegistry(value: unknown): WriterProcessRegistry | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	const candidate = value as Partial<WriterProcessRegistry>;
 	if (
 		candidate.version !== 1 ||
-		typeof candidate.runId !== "string" ||
+		!isRuntimeString(candidate.runId) ||
 		!positiveInteger(candidate.runnerPid) ||
-		(candidate.runnerProcessStartIdentity !== undefined &&
-			typeof candidate.runnerProcessStartIdentity !== "string") ||
+		(candidate.runnerProcessStartIdentity !== undefined && !isRuntimeString(candidate.runnerProcessStartIdentity)) ||
 		(candidate.writerStartupGate !== undefined && candidate.writerStartupGate !== "parent-pipe-v1") ||
 		(candidate.writerProcessGroup !== undefined && candidate.writerProcessGroup !== "writer-pid-v1") ||
-		typeof candidate.updatedAt !== "number" ||
+		!isRuntimeNumber(candidate.updatedAt) ||
 		!candidate.writers ||
-		typeof candidate.writers !== "object" ||
+		!isRuntimeObject(candidate.writers) ||
 		Array.isArray(candidate.writers)
 	)
 		return undefined;
@@ -409,18 +409,18 @@ function parseWriterProcessRegistry(value: unknown): WriterProcessRegistry | und
 }
 
 function validWriterState(value: unknown): value is PersistedWriterState {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return false;
 	const writer = value as PersistedWriterState;
 	if (writer.state !== "none" && writer.state !== "spawning" && writer.state !== "running") return false;
 	if (writer.state === "running") {
 		return (
 			positiveInteger(writer.pid) &&
-			(writer.processStartIdentity === undefined || typeof writer.processStartIdentity === "string") &&
+			(writer.processStartIdentity === undefined || isRuntimeString(writer.processStartIdentity)) &&
 			(writer.groupMemberProofFile === undefined || safeProofFileName(writer.groupMemberProofFile) !== undefined) &&
 			(writer.terminationRequestedAt === undefined ||
-				(typeof writer.terminationRequestedAt === "number" && Number.isFinite(writer.terminationRequestedAt))) &&
+				(isRuntimeNumber(writer.terminationRequestedAt) && Number.isFinite(writer.terminationRequestedAt))) &&
 			(writer.killRequestedAt === undefined ||
-				(typeof writer.killRequestedAt === "number" && Number.isFinite(writer.killRequestedAt)))
+				(isRuntimeNumber(writer.killRequestedAt) && Number.isFinite(writer.killRequestedAt)))
 		);
 	}
 	return (
@@ -433,7 +433,7 @@ function validWriterState(value: unknown): value is PersistedWriterState {
 }
 
 function positiveInteger(value: unknown): value is number {
-	return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0;
 }
 
 function processLiveness(pid: number, kill: KillFn): boolean | undefined {
@@ -511,7 +511,7 @@ export function readAuthenticatedGroupMember(
 			parsed.groupLeaderPid !== writer.pid ||
 			parsed.groupLeaderProcessStartIdentity !== writer.processStartIdentity ||
 			!positiveInteger(parsed.memberPid) ||
-			typeof parsed.memberProcessStartIdentity !== "string"
+			!isRuntimeString(parsed.memberProcessStartIdentity)
 		) {
 			return undefined;
 		}
@@ -534,7 +534,7 @@ function safeProofFileName(value: string): string | undefined {
 }
 
 function errorCode(error: unknown): string | undefined {
-	return error && typeof error === "object" && "code" in error
+	return error && isRuntimeObject(error) && "code" in error
 		? String((error as NodeJS.ErrnoException).code)
 		: undefined;
 }

@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import { isRuntimeNumber } from "../../../shared/runtime-type.js";
 import { readProcessStartIdentity } from "./process-identity.ts";
 
 interface PostExitStdioGuardOptions {
@@ -22,7 +23,7 @@ export function trySignalChild(
 	signal: NodeJS.Signals,
 	expectedProcessStartIdentity?: string,
 ): boolean {
-	if (process.platform !== "win32" && typeof child.pid === "number") {
+	if (process.platform !== "win32" && isRuntimeNumber(child.pid)) {
 		if (!expectedProcessStartIdentity) return false;
 		if (expectedProcessStartIdentity) {
 			const currentIdentity = readProcessStartIdentity(child.pid);

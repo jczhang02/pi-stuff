@@ -1,4 +1,5 @@
 import type { Usage } from "@earendil-works/pi-ai";
+import { isRuntimeNumber, isRuntimeObject } from "../../shared/runtime-type.js";
 
 export interface GoalAccountingState {
 	status: string;
@@ -21,7 +22,7 @@ interface UsageContext {
 export function checkpointGoalActiveTime(goal: GoalAccountingState, now: number, continueClock: boolean) {
 	const accumulated = nonNegativeFiniteNumber(goal.timeUsedSeconds);
 	const startedAt = goal.activeStartedAt;
-	if (typeof startedAt === "number" && Number.isFinite(startedAt)) {
+	if (isRuntimeNumber(startedAt) && Number.isFinite(startedAt)) {
 		goal.timeUsedSeconds = accumulated + Math.max(0, now - startedAt) / 1000;
 	} else {
 		goal.timeUsedSeconds = accumulated;
@@ -60,7 +61,7 @@ export function formatTokenCount(value: number) {
 }
 
 export function isNonNegativeFiniteNumber(value: unknown): value is number {
-	return typeof value === "number" && Number.isFinite(value) && value >= 0;
+	return isRuntimeNumber(value) && Number.isFinite(value) && value >= 0;
 }
 
 export function nonNegativeFiniteNumber(value: unknown) {
@@ -68,11 +69,11 @@ export function nonNegativeFiniteNumber(value: unknown) {
 }
 
 export function normalizeTokenBudget(value: unknown) {
-	return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
 export function assistantUsageTokens(value: unknown) {
-	if (!value || typeof value !== "object") return 0;
+	if (!value || !isRuntimeObject(value)) return 0;
 	const usage = value as Partial<Usage>;
 	if (isNonNegativeFiniteNumber(usage.totalTokens)) return usage.totalTokens;
 	return Math.min(

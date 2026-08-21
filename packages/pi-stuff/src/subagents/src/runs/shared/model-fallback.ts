@@ -1,3 +1,4 @@
+import { isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentWarning } from "../../shared/diagnostics.ts";
 import type { ModelInfo as AvailableModelInfo } from "../../shared/model-info.ts";
 import type { Usage } from "../../shared/types.ts";
@@ -35,9 +36,9 @@ export interface ParentModel {
 }
 
 export function normalizeParentModel(model: unknown): ParentModel | undefined {
-	if (!model || typeof model !== "object") return undefined;
+	if (!model || !isRuntimeObject(model)) return undefined;
 	const candidate = model as { provider?: unknown; id?: unknown };
-	if (typeof candidate.provider !== "string" || typeof candidate.id !== "string") return undefined;
+	if (!isRuntimeString(candidate.provider) || !isRuntimeString(candidate.id)) return undefined;
 	if (!candidate.provider || !candidate.id) return undefined;
 	return { provider: candidate.provider, id: candidate.id };
 }
@@ -204,7 +205,7 @@ export function resolveSubagentModelOverride(
 	preferredProvider?: string,
 	options?: ResolveSubagentModelOverrideOptions,
 ): string | undefined {
-	const trimmed = typeof requestedModel === "string" ? requestedModel.trim() : "";
+	const trimmed = isRuntimeString(requestedModel) ? requestedModel.trim() : "";
 	const explicit = trimmed && trimmed !== INHERIT_MODEL ? trimmed : undefined;
 	let resolved: string | undefined;
 	if (explicit === undefined) {

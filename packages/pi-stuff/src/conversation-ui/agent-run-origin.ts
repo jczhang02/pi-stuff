@@ -2,6 +2,7 @@ import type { ExtensionAPI, InputEvent } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Guard } from "typebox/guard";
 import { Check } from "typebox/value";
+import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
 
 const ACTIVE_AGENT_WORK_USER_EVENT = "@jczhang02/pi-stuff-ui/active-agent-work-user/v1";
 const AGENT_WORK_ORIGIN_QUERY_EVENT = "@jczhang02/pi-stuff-ui/agent-work-origin-query/v1";
@@ -197,7 +198,7 @@ export function listenForActiveAgentWorkUserPromotions(
 	listener: () => void,
 ): () => void {
 	const unsubscribe = pi.events.on(ACTIVE_AGENT_WORK_USER_EVENT, listener);
-	return typeof unsubscribe === "function" ? unsubscribe : () => {};
+	return isRuntimeFunction(unsubscribe) ? unsubscribe : () => {};
 }
 
 /** Publish the current parent Agent run's origin to independently loaded Capabilities. */
@@ -206,12 +207,12 @@ export function listenForAgentWorkOriginQueries(
 	readOrigin: () => AgentWorkOrigin,
 ): () => void {
 	const unsubscribe = pi.events.on(AGENT_WORK_ORIGIN_QUERY_EVENT, (value) => {
-		if (!value || typeof value !== "object") return;
+		if (!value || !isRuntimeObject(value)) return;
 		const query = value as AgentWorkOriginQuery;
 		query.origin = readOrigin();
 		query.handled = true;
 	});
-	return typeof unsubscribe === "function" ? unsubscribe : () => {};
+	return isRuntimeFunction(unsubscribe) ? unsubscribe : () => {};
 }
 
 /**

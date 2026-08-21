@@ -1,3 +1,4 @@
+import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
 import type {
 	ActivityState,
 	ControlConfig,
@@ -21,7 +22,7 @@ export const DEFAULT_CONTROL_CONFIG: ResolvedControlConfig = {
 };
 
 function parsePositiveInt(value: unknown): number | undefined {
-	if (typeof value !== "number") return undefined;
+	if (!isRuntimeNumber(value)) return undefined;
 	if (!Number.isFinite(value) || !Number.isInteger(value) || value < 1) return undefined;
 	return value;
 }
@@ -30,7 +31,7 @@ function parseControlList<T extends string>(value: unknown, allowed: readonly T[
 	if (!Array.isArray(value)) return undefined;
 	if (value.length === 0) return [];
 	const allowedSet = new Set(allowed);
-	const parsed = value.filter((entry): entry is T => typeof entry === "string" && allowedSet.has(entry as T));
+	const parsed = value.filter((entry): entry is T => isRuntimeString(entry) && allowedSet.has(entry as T));
 	return parsed.length > 0 ? Array.from(new Set(parsed)) : undefined;
 }
 

@@ -439,11 +439,14 @@ test("unknown, stale, and manual runs cannot be cancelled", async () => {
 });
 
 test("cancel rejects malformed reasons without mutating the run", async () => {
-	for (const reason of [42, "x".repeat(1_001)]) {
+	for (const [reason, reasonType] of [
+		[42, "number"],
+		["x".repeat(1_001), "string"],
+	] as const) {
 		const mock = createMockPi({ activeTools: ["read", "bash"] });
 		registerGoal(mock);
 		bindSession(mock);
-		const runId = `bad-reason-${typeof reason}`;
+		const runId = `bad-reason-${reasonType}`;
 		const events = observeRun(mock, runId);
 		startRun(mock, runId);
 		await flush();

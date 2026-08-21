@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { createAtomicJsonWriter } from "../../shared/atomic-json.ts";
 import { TEMP_ROOT_DIR } from "../../shared/types.ts";
 
@@ -137,34 +138,34 @@ export function inspectSessionLease(sessionFile: string, rootDir = SESSION_LEASE
 }
 
 function parseOwner(value: unknown): SessionLeaseOwner | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	const owner = value as Partial<SessionLeaseOwner>;
 	if (
 		owner.version !== 1 ||
-		typeof owner.token !== "string" ||
-		typeof owner.canonicalSessionFile !== "string" ||
-		typeof owner.runId !== "string" ||
-		typeof owner.sourceRunId !== "string" ||
-		typeof owner.pid !== "number" ||
+		!isRuntimeString(owner.token) ||
+		!isRuntimeString(owner.canonicalSessionFile) ||
+		!isRuntimeString(owner.runId) ||
+		!isRuntimeString(owner.sourceRunId) ||
+		!isRuntimeNumber(owner.pid) ||
 		!Number.isInteger(owner.pid) ||
 		owner.pid <= 0 ||
-		typeof owner.hostname !== "string" ||
+		!isRuntimeString(owner.hostname) ||
 		(owner.writerState !== "none" && owner.writerState !== "spawning" && owner.writerState !== "running") ||
-		typeof owner.acquiredAt !== "string" ||
-		typeof owner.acquiredAtMs !== "number" ||
-		typeof owner.updatedAtMs !== "number"
+		!isRuntimeString(owner.acquiredAt) ||
+		!isRuntimeNumber(owner.acquiredAtMs) ||
+		!isRuntimeNumber(owner.updatedAtMs)
 	)
 		return undefined;
-	if (owner.parentSessionId !== undefined && typeof owner.parentSessionId !== "string") return undefined;
-	if (owner.processStartIdentity !== undefined && typeof owner.processStartIdentity !== "string") return undefined;
+	if (owner.parentSessionId !== undefined && !isRuntimeString(owner.parentSessionId)) return undefined;
+	if (owner.processStartIdentity !== undefined && !isRuntimeString(owner.processStartIdentity)) return undefined;
 	if (
 		owner.writerPid !== undefined &&
-		(typeof owner.writerPid !== "number" || !Number.isInteger(owner.writerPid) || owner.writerPid <= 0)
+		(!isRuntimeNumber(owner.writerPid) || !Number.isInteger(owner.writerPid) || owner.writerPid <= 0)
 	)
 		return undefined;
-	if (owner.writerProcessStartIdentity !== undefined && typeof owner.writerProcessStartIdentity !== "string")
+	if (owner.writerProcessStartIdentity !== undefined && !isRuntimeString(owner.writerProcessStartIdentity))
 		return undefined;
-	if (owner.asyncDir !== undefined && (typeof owner.asyncDir !== "string" || !path.isAbsolute(owner.asyncDir)))
+	if (owner.asyncDir !== undefined && (!isRuntimeString(owner.asyncDir) || !path.isAbsolute(owner.asyncDir)))
 		return undefined;
 	if (owner.writerStartupGate !== undefined && owner.writerStartupGate !== "parent-pipe-v1") return undefined;
 	if (owner.writerState === "running" && owner.writerPid === undefined) return undefined;

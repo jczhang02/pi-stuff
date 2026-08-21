@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -224,9 +225,9 @@ function seedTargetSession(sessionDirectory: string, cwd: string, fixture: Resum
 
 function verifyRequest(record: RequestRecord | undefined, fixture: ResumeFixture): void {
 	if (!record || !Array.isArray(record.tools)) fail(`${fixture.mode} did not record active tools after resume`);
-	const providerTools = record.tools.filter((name): name is string => typeof name === "string");
+	const providerTools = record.tools.filter((name): name is string => isRuntimeString(name));
 	const actual = record.tools.filter(
-		(name): name is string => typeof name === "string" && (BUILTINS as readonly string[]).includes(name),
+		(name): name is string => isRuntimeString(name) && (BUILTINS as readonly string[]).includes(name),
 	);
 	const normalizedActual = [...actual].sort();
 	const normalizedExpected = [...fixture.expectedBuiltins].sort();

@@ -3,6 +3,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import {
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { tryAcquireStatusMutationClaim } from "../../shared/status-mutation.ts";
@@ -69,19 +75,17 @@ const DEFAULT_DEPENDENCIES: ForegroundExecutionDependencies = {
 };
 
 function record(value: unknown): Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: {};
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function validateCompletion(value: unknown, source: string): ForegroundCompletion {
 	const candidate = record(value);
 	if (
-		typeof candidate.id !== "string" ||
-		typeof candidate.runId !== "string" ||
+		!isRuntimeString(candidate.id) ||
+		!isRuntimeString(candidate.runId) ||
 		(candidate.mode !== "single" && candidate.mode !== "parallel") ||
 		!Array.isArray(candidate.results) ||
-		typeof candidate.success !== "boolean"
+		!isRuntimeBoolean(candidate.success)
 	) {
 		throw new Error(`Foreground Agent result is malformed: ${source}`);
 	}
@@ -278,7 +282,7 @@ function projectForegroundStatus(
 			task: step.task ?? task.task,
 			cwd: task.cwd,
 			...(step.context ? { context: step.context } : {}),
-			exitCode: typeof step.exitCode === "number" ? step.exitCode : completed ? 0 : 1,
+			exitCode: isRuntimeNumber(step.exitCode) ? step.exitCode : completed ? 0 : 1,
 			...(detached
 				? { detached: true, detachedReason: detachedReason ?? "Foreground owner recovery pending." }
 				: {}),

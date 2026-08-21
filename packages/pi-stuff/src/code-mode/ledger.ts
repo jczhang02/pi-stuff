@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { parseForStorage, stringifyForStorage } from "./cloudflare/codec.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import { stableStringify } from "./cloudflare/stable-stringify.js";
@@ -211,7 +212,7 @@ interface SessionScope {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function sessionId(context: ExtensionContext): string | undefined {
@@ -274,26 +275,26 @@ function storedValue(value: unknown): value is StoredValue {
 }
 
 function eventFrom(value: unknown): LedgerEvent | undefined {
-	if (!isRecord(value) || value["schemaVersion"] !== SCHEMA_VERSION || typeof value["kind"] !== "string") {
+	if (!isRecord(value) || value["schemaVersion"] !== SCHEMA_VERSION || !isRuntimeString(value["kind"])) {
 		return undefined;
 	}
-	if (typeof value["at"] !== "number" || !Number.isFinite(value["at"])) return undefined;
-	const executionId = typeof value["executionId"] === "string" && value["executionId"].length > 0;
+	if (!isRuntimeNumber(value["at"]) || !Number.isFinite(value["at"])) return undefined;
+	const executionId = isRuntimeString(value["executionId"]) && value["executionId"].length > 0;
 	switch (value["kind"]) {
 		case "execution-started":
 			return executionId &&
-				typeof value["code"] === "string" &&
-				(value["cwd"] === undefined || typeof value["cwd"] === "string") &&
-				typeof value["outerToolCallId"] === "string"
+				isRuntimeString(value["code"]) &&
+				(value["cwd"] === undefined || isRuntimeString(value["cwd"])) &&
+				isRuntimeString(value["outerToolCallId"])
 				? (value as unknown as ExecutionStartedEvent)
 				: undefined;
 		case "call-pending":
 		case "call-started":
 			return executionId &&
-				typeof value["argsKey"] === "string" &&
+				isRuntimeString(value["argsKey"]) &&
 				storedValue(value["args"]) &&
-				typeof value["callId"] === "string" &&
-				typeof value["name"] === "string" &&
+				isRuntimeString(value["callId"]) &&
+				isRuntimeString(value["name"]) &&
 				(value["replay"] === "never" || value["replay"] === "record" || value["replay"] === "reexecute") &&
 				Number.isInteger(value["attempt"]) &&
 				Number.isInteger(value["sequence"])
@@ -301,15 +302,15 @@ function eventFrom(value: unknown): LedgerEvent | undefined {
 				: undefined;
 		case "call-settled":
 			return executionId &&
-				typeof value["callId"] === "string" &&
+				isRuntimeString(value["callId"]) &&
 				(value["status"] === "error" || value["status"] === "success") &&
-				(value["error"] === undefined || typeof value["error"] === "string") &&
+				(value["error"] === undefined || isRuntimeString(value["error"])) &&
 				(value["result"] === undefined || storedValue(value["result"])) &&
 				(value["value"] === undefined || storedValue(value["value"]))
 				? (value as unknown as CallSettledEvent)
 				: undefined;
 		case "call-compensated":
-			return executionId && typeof value["callId"] === "string"
+			return executionId && isRuntimeString(value["callId"])
 				? (value as unknown as CallCompensatedEvent)
 				: undefined;
 		case "execution-settled":
@@ -328,7 +329,7 @@ function eventFrom(value: unknown): LedgerEvent | undefined {
 					"running",
 					"success",
 				].includes(String(value["status"])) &&
-				(value["error"] === undefined || typeof value["error"] === "string")
+				(value["error"] === undefined || isRuntimeString(value["error"]))
 				? (value as unknown as ExecutionSettledEvent)
 				: undefined;
 		case "execution-pruned":
@@ -340,15 +341,15 @@ function eventFrom(value: unknown): LedgerEvent | undefined {
 		case "snippet-saved": {
 			const snippet = value["snippet"];
 			return isRecord(snippet) &&
-				typeof snippet["name"] === "string" &&
-				typeof snippet["description"] === "string" &&
-				typeof snippet["code"] === "string" &&
-				typeof snippet["savedAt"] === "number"
+				isRuntimeString(snippet["name"]) &&
+				isRuntimeString(snippet["description"]) &&
+				isRuntimeString(snippet["code"]) &&
+				isRuntimeNumber(snippet["savedAt"])
 				? (value as unknown as SnippetSavedEvent)
 				: undefined;
 		}
 		case "snippet-deleted":
-			return typeof value["name"] === "string" ? (value as unknown as SnippetDeletedEvent) : undefined;
+			return isRuntimeString(value["name"]) ? (value as unknown as SnippetDeletedEvent) : undefined;
 		default:
 			return undefined;
 	}

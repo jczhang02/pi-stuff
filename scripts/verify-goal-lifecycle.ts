@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { terminateDetachedProcessGroup } from "./detached-process.js";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
@@ -118,7 +119,7 @@ async function createRpcTransport(command: string[], cwd: string, env: Record<st
 		if (!Check(RPC_RECORD_SCHEMA, parsed)) throw new Error(`Invalid Pi RPC record: ${line}`);
 		const record = parsed;
 		records.push(record);
-		if (typeof record.id !== "string" || record.type !== "response") return;
+		if (!isRuntimeString(record.id) || record.type !== "response") return;
 		const request = pending.get(record.id);
 		if (!request) return;
 		pending.delete(record.id);

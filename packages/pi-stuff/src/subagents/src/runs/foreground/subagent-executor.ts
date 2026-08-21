@@ -16,6 +16,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { projectCurrentContext } from "../../../../context-management/index.js";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../../shared/runtime-type.js";
 import type { AgentConfig, AgentScope } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { getArtifactsDir } from "../../shared/artifacts.ts";
@@ -264,7 +265,7 @@ function errorResult(mode: Details["mode"], message: string, extras: Partial<Det
 }
 
 function resultIsError(value: unknown): boolean {
-	return typeof value === "object" && value !== null && (value as { isError?: unknown }).isError === true;
+	return isRuntimeObject(value) && value !== null && (value as { isError?: unknown }).isError === true;
 }
 
 function requestedMode(params: SubagentParamsLike): "single" | "parallel" {
@@ -311,7 +312,7 @@ function inheritedContextSnapshot(ctx: ExtensionContext): {
 	let effective: number | undefined;
 	try {
 		const value = ctx.getContextUsage()?.tokens;
-		if (typeof value === "number" && Number.isFinite(value) && value >= 0) effective = value;
+		if (isRuntimeNumber(value) && Number.isFinite(value) && value >= 0) effective = value;
 	} catch {
 		// Continue with the persisted branch estimator.
 	}
@@ -398,7 +399,7 @@ function inheritedReplacementPromptTokens(
 }
 
 function childLaunchSurfaceTokens(pi: ExtensionAPI, task: RunnerAgentTask): number {
-	if (typeof pi.getAllTools !== "function" || typeof pi.getActiveTools !== "function") return 0;
+	if (!isRuntimeFunction(pi.getAllTools) || !isRuntimeFunction(pi.getActiveTools)) return 0;
 	try {
 		const plan = resolvePiLaunchToolPlan({
 			tools: task.tools,
@@ -486,10 +487,10 @@ function projectionTokenBudget(data: PreparedLaunch): number {
 
 function forkInputCapacity(model: ModelInfo): number | undefined {
 	if (
-		typeof model.contextWindow !== "number" ||
+		!isRuntimeNumber(model.contextWindow) ||
 		!Number.isFinite(model.contextWindow) ||
 		model.contextWindow <= 0 ||
-		typeof model.maxTokens !== "number" ||
+		!isRuntimeNumber(model.maxTokens) ||
 		!Number.isFinite(model.maxTokens) ||
 		model.maxTokens <= 0
 	)
@@ -705,7 +706,7 @@ function validateLaunchInput(params: SubagentParamsLike, agents: readonly AgentC
 
 function resolveTimeout(value: unknown): { timeoutMs?: number; error?: string } {
 	if (value === undefined) return {};
-	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+	if (!isRuntimeNumber(value) || !Number.isInteger(value) || value <= 0) {
 		return { error: "timeoutMs must be a positive integer." };
 	}
 	return { timeoutMs: value };
@@ -1755,7 +1756,7 @@ function stopRun(params: SubagentParamsLike, deps: ExecutorDeps): AgentToolResul
 	try {
 		deliverStopRequest({
 			asyncDir: job.asyncDir,
-			pid: typeof status.pid === "number" ? status.pid : undefined,
+			pid: isRuntimeNumber(status.pid) ? status.pid : undefined,
 			kill: deps.kill,
 			source: "agent-stop",
 			...(params.index !== undefined ? { targetIndex: params.index } : {}),

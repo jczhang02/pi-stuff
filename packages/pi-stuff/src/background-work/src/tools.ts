@@ -1,5 +1,6 @@
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	activityKey,
 	BASH_CODE_MODE_CONTRACT,
@@ -87,7 +88,7 @@ function textResult<T>(text: string, details: T, isError = false): AgentToolResu
 }
 
 function firstLine(value: unknown): string {
-	return typeof value === "string" ? boundTerminalLine(value.split(/\r?\n/u)[0] ?? "", 180) : "";
+	return isRuntimeString(value) ? boundTerminalLine(value.split(/\r?\n/u)[0] ?? "", 180) : "";
 }
 
 function resultText<T>(result: AgentToolResult<T>): string {
@@ -98,10 +99,10 @@ function resultText<T>(result: AgentToolResult<T>): string {
 export function isForegroundBashResult(result: AgentToolResult<unknown>): boolean {
 	const details = result.details;
 	return !(
-		(typeof details === "object" &&
+		(isRuntimeObject(details) &&
 			details !== null &&
 			"backgroundTaskId" in details &&
-			typeof details.backgroundTaskId === "string") ||
+			isRuntimeString(details.backgroundTaskId)) ||
 		bashResultMovedToBackground(result)
 	);
 }
@@ -146,7 +147,7 @@ const backgroundPresentation: SuiteToolPresentation<Record<string, unknown>, Wor
 		categories: ["inspect-background", "read-background", "stop-background"],
 		classify: ({ args }) => {
 			const action = String(args["action"] ?? "list");
-			const taskId = typeof args["task_id"] === "string" ? args["task_id"] : action;
+			const taskId = isRuntimeString(args["task_id"]) ? args["task_id"] : action;
 			if (action === "output")
 				return singleActivity("read-background", { key: activityKey(taskId), target: taskId });
 			if (action === "stop") return singleActivity("stop-background", { key: activityKey(taskId), target: taskId });
@@ -159,7 +160,7 @@ const backgroundPresentation: SuiteToolPresentation<Record<string, unknown>, Wor
 	runningSummary: "checking",
 	summarize: (_args, result) =>
 		result.details.error ?? result.details.status ?? (firstLine(resultText(result)) || "done"),
-	target: (args) => (typeof args["task_id"] === "string" ? args["task_id"] : String(args["action"] ?? "")),
+	target: (args) => (isRuntimeString(args["task_id"]) ? args["task_id"] : String(args["action"] ?? "")),
 };
 
 export function registerWorkTools(

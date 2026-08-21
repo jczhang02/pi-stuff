@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import {
+	isRuntimeFunction,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { createAgentToolPresentation } from "../../packages/pi-stuff/src/subagents/src/extension/agent-tool-presentation.js";
 import {
 	createNativeSupervisorChannel,
@@ -234,9 +239,7 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 			{ agent: "writer", task: "Check the docs." },
 		],
 	};
-	expect(typeof presentation.label === "function" ? presentation.label(parallelArgs) : presentation.label).toBe(
-		"Agents",
-	);
+	expect(isRuntimeFunction(presentation.label) ? presentation.label(parallelArgs) : presentation.label).toBe("Agents");
 	expect(
 		presentation.activity?.classify({
 			args: parallelArgs,
@@ -833,9 +836,9 @@ test("projects long child Tool history before a continuation request while prese
 		const content = message.content;
 		return Array.isArray(content)
 			? content.flatMap((part) =>
-					part && typeof part === "object" && "text" in part && typeof part.text === "string" ? [part.text] : [],
+					part && isRuntimeObject(part) && "text" in part && isRuntimeString(part.text) ? [part.text] : [],
 				)
-			: typeof content === "string"
+			: isRuntimeString(content)
 				? [content]
 				: [];
 	});
@@ -848,7 +851,7 @@ test("projects long child Tool history before a continuation request while prese
 	const recentAssistantIndex = projected.findIndex(
 		(message) =>
 			Array.isArray(message.content) &&
-			message.content.some((part) => part && typeof part === "object" && "id" in part && part.id === "call-2"),
+			message.content.some((part) => part && isRuntimeObject(part) && "id" in part && part.id === "call-2"),
 	);
 	const recentResultIndex = projected.findIndex((message) => message.toolCallId === "call-2");
 	expect(recentResultIndex).toBe(recentAssistantIndex + 1);
@@ -930,7 +933,7 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 		(message) =>
 			message.role === "assistant" &&
 			Array.isArray(message.content) &&
-			message.content.some((part) => part && typeof part === "object" && "id" in part && part.id === "extreme-11"),
+			message.content.some((part) => part && isRuntimeObject(part) && "id" in part && part.id === "extreme-11"),
 	);
 	const model = { provider: "openai-codex", contextWindow: 100_000, maxTokens: 40_000 };
 	let projected = messages;
@@ -954,7 +957,7 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 		(message) =>
 			message.role === "assistant" &&
 			Array.isArray(message.content) &&
-			message.content.some((part) => part && typeof part === "object" && "id" in part && part.id === "extreme-11"),
+			message.content.some((part) => part && isRuntimeObject(part) && "id" in part && part.id === "extreme-11"),
 	);
 	expect(projectedLatestAssistant).toEqual(latestAssistant);
 	const latestAssistantIndex = projectedLatestAssistant ? projected.indexOf(projectedLatestAssistant) : -1;

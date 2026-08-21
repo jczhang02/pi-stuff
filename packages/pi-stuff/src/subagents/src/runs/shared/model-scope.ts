@@ -12,6 +12,7 @@
  * inputs so it can be unit-tested without touching the filesystem or config.
  */
 
+import { isRuntimeBoolean, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { splitKnownThinkingSuffix } from "../../shared/model-info.ts";
 
 export interface ModelScopeConfig {
@@ -85,7 +86,7 @@ export function checkModelScope(
  */
 export function parseModelScopeConfig(value: unknown, meta: { filePath: string }): ModelScopeConfig | undefined {
 	if (value === undefined) return undefined;
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) {
 		throw new Error(`Subagent settings in '${meta.filePath}' have invalid 'modelScope'; expected an object.`);
 	}
 
@@ -93,7 +94,7 @@ export function parseModelScopeConfig(value: unknown, meta: { filePath: string }
 	const config: ModelScopeConfig = {};
 
 	if ("enforce" in input) {
-		if (typeof input.enforce !== "boolean") {
+		if (!isRuntimeBoolean(input.enforce)) {
 			throw new Error(
 				`Subagent settings in '${meta.filePath}' have invalid 'modelScope.enforce'; expected a boolean.`,
 			);
@@ -109,7 +110,7 @@ export function parseModelScopeConfig(value: unknown, meta: { filePath: string }
 		}
 		const allow: string[] = [];
 		for (const entry of input.allow) {
-			if (typeof entry !== "string") {
+			if (!isRuntimeString(entry)) {
 				throw new Error(
 					`Subagent settings in '${meta.filePath}' have invalid 'modelScope.allow'; expected an array of strings.`,
 				);

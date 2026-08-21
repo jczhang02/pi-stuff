@@ -2,6 +2,7 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/index.js";
 
 const PROVIDER = "pi-stuff-tools-grouping-pty";
@@ -186,7 +187,7 @@ function toolCallsStream(prefix: string, fixtures: readonly FixtureCall[], think
 
 function textContent(message: Context["messages"][number]): string {
 	if (message.role !== "user") return "";
-	if (typeof message.content === "string") return message.content;
+	if (isRuntimeString(message.content)) return message.content;
 	return message.content
 		.filter((content) => content.type === "text")
 		.map((content) => content.text)

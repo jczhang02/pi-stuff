@@ -23,6 +23,7 @@ import {
 } from "../../conversation-ui/agent-run-origin.js";
 import { requestStatuslineGitRefreshAfterUserWork, sendSuiteAgentMessage } from "../../conversation-ui/index.js";
 import { settleWithin } from "../../lifecycle-deadline.js";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
 import {
@@ -428,7 +429,7 @@ function publishCommandAuthorization(filePath: string, token: string, command: s
 function consumeCommandAcknowledgement(filePath: string, token: string, supervisorIdentity: ProcessIdentity): boolean {
 	try {
 		const stat = lstatSync(filePath);
-		const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+		const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
 		if (
 			stat.isSymbolicLink() ||
 			!stat.isFile() ||
@@ -1136,7 +1137,7 @@ export class BackgroundWorkRuntime {
 						notice: true,
 					});
 				}
-			} else if (event["type"] === "spawn-error" && typeof event["message"] === "string") {
+			} else if (event["type"] === "spawn-error" && isRuntimeString(event["message"])) {
 				activity.output.append(Buffer.from(`Command spawn failed: ${event["message"]}\n`, "utf-8"));
 			} else if (event["type"] === "exit") {
 				activity.commandGroupReaped = event["groupReaped"] === true;
@@ -1260,7 +1261,7 @@ export class BackgroundWorkRuntime {
 		}
 		const outcome: BackgroundWorkOutcome = {
 			endedAt,
-			...(typeof code === "number" ? { exitCode: code } : {}),
+			...(isRuntimeNumber(code) ? { exitCode: code } : {}),
 			id: activity.id,
 			kind: activity.kind,
 			...(activity.output.durable && existsSync(activity.output.path) ? { outputPath: activity.output.path } : {}),
@@ -1302,7 +1303,7 @@ export class BackgroundWorkRuntime {
 			case "failed":
 				return activity.stopReason === "output_limit"
 					? `${subject} "${activity.title}" exceeded the output limit and was stopped`
-					: `${subject} "${activity.title}" failed${typeof code === "number" ? ` (exit ${String(code)})` : ""}`;
+					: `${subject} "${activity.title}" failed${isRuntimeNumber(code) ? ` (exit ${String(code)})` : ""}`;
 			case "stopped":
 				return `${subject} "${activity.title}" stopped`;
 			case "timed_out":
@@ -1314,7 +1315,7 @@ export class BackgroundWorkRuntime {
 		const snapshot = this.foregroundSnapshot(outcome);
 		if (outcome.status !== "completed") {
 			let status = outcome.summary;
-			if (typeof outcome.exitCode === "number" && outcome.exitCode !== 0) {
+			if (isRuntimeNumber(outcome.exitCode) && outcome.exitCode !== 0) {
 				status = `Command exited with code ${String(outcome.exitCode)}`;
 			} else if (outcome.status === "timed_out") {
 				status = "Command timed out";
@@ -1641,7 +1642,7 @@ export function projectNotificationBatch(outcomes: readonly BackgroundWorkOutcom
 	const header = "<background-work-notification>\n";
 	const footer = "\n</background-work-notification>";
 	const baseContent = `${header}${rows.map((row) => `${row.prefix}${row.suffix}`).join("\n")}${footer}`;
-	const inlineRows = rows.filter((row) => typeof row.inline === "string");
+	const inlineRows = rows.filter((row) => isRuntimeString(row.inline));
 	const remainingBytes = Math.max(
 		0,
 		Math.min(MAX_NOTIFICATION_INLINE_BYTES, MAX_NOTIFICATION_CONTENT_BYTES - Buffer.byteLength(baseContent, "utf-8")),

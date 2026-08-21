@@ -1,3 +1,4 @@
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import {
 	inspectWriterChildProcessLiveness,
 	inspectWriterProcessLiveness,
@@ -208,7 +209,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		const launchRunId = requiredText("launchRunId", input.launchRunId);
 		if (input.params.action && input.params.action !== "resume") return { ok: true };
 		const session = this.sessionOrFailure();
-		if (typeof session === "string") return { ok: false, message: session };
+		if (isRuntimeString(session)) return { ok: false, message: session };
 		const generation = this.generation;
 		try {
 			// A nested background completion may outlive the fanout Host that
@@ -283,9 +284,10 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 			optionalText(value.processStartIdentity) ??
 			(pid === undefined ? undefined : this.readProcessStartIdentity(pid));
 		const asyncDir = optionalText(value.asyncDir);
-		const rawAcknowledgeStart =
-			typeof value.acknowledgeStart === "function" ? (value.acknowledgeStart as () => void) : undefined;
-		const abortStart = typeof value.abortStart === "function" ? (value.abortStart as () => boolean) : undefined;
+		const rawAcknowledgeStart = isRuntimeFunction(value.acknowledgeStart)
+			? (value.acknowledgeStart as () => void)
+			: undefined;
+		const abortStart = isRuntimeFunction(value.abortStart) ? (value.abortStart as () => boolean) : undefined;
 		let startupAcknowledged = false;
 		const acknowledgeStart = rawAcknowledgeStart
 			? () => {
@@ -908,11 +910,11 @@ function samePath(left: readonly string[], right: readonly string[]): boolean {
 }
 
 function record(value: unknown): Record<string, unknown> {
-	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+	return isRuntimeObject(value) && value !== null ? (value as Record<string, unknown>) : {};
 }
 
 function optionalText(value: unknown): string | undefined {
-	return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+	return isRuntimeString(value) && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function requiredText(name: string, value: string): string {
@@ -922,11 +924,11 @@ function requiredText(name: string, value: string): string {
 }
 
 function optionalPositiveSafeInteger(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
 function optionalNonNegativeSafeInteger(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 function nonNegativeSafeInteger(name: string, value: number): number {

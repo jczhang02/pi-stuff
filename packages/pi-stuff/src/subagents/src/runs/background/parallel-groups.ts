@@ -1,12 +1,13 @@
+import { isRuntimeNumber, isRuntimeObject } from "../../../../shared/runtime-type.js";
 import type { AsyncParallelGroupStatus } from "../../shared/types.ts";
 
 function isValidParallelGroup(group: unknown, stepCount: number): group is AsyncParallelGroupStatus {
-	if (typeof group !== "object" || group === null) return false;
+	if (!isRuntimeObject(group) || group === null) return false;
 	const { start, count, stepIndex } = group as Partial<AsyncParallelGroupStatus>;
 	return (
-		typeof start === "number" &&
-		typeof count === "number" &&
-		typeof stepIndex === "number" &&
+		isRuntimeNumber(start) &&
+		isRuntimeNumber(count) &&
+		isRuntimeNumber(stepIndex) &&
 		Number.isInteger(start) &&
 		Number.isInteger(count) &&
 		Number.isInteger(stepIndex) &&

@@ -13,6 +13,7 @@ import {
 	getCommandDialogCoordinator,
 } from "../conversation-ui/index.js";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../tool-display/index.js";
 import { createMcpControlView } from "./mcp-dialog.js";
 import { MCP_PRESENTATION } from "./presentation.js";
@@ -88,9 +89,9 @@ function boundedMcpParameters(params: Record<string, unknown>): Record<string, u
 	for (const key of MCP_PARAMETER_KEYS) {
 		if (params[key] !== undefined) bounded[key] = params[key];
 	}
-	if (typeof bounded["limit"] === "number") bounded["limit"] = Math.min(20, Math.max(1, bounded["limit"]));
+	if (isRuntimeNumber(bounded["limit"])) bounded["limit"] = Math.min(20, Math.max(1, bounded["limit"]));
 	const serverOnly =
-		typeof bounded["server"] === "string" &&
+		isRuntimeString(bounded["server"]) &&
 		!["tool", "connect", "describe", "search"].some((key) => bounded[key] !== undefined);
 	if (serverOnly) {
 		bounded["search"] = "";
@@ -313,6 +314,6 @@ export function installMcpCapability(pi: ExtensionAPI): void {
 	pi.on("session_shutdown", () => {
 		removeDiagnosticHandler();
 		store.clear();
-		if (typeof unsubscribeStatus === "function") unsubscribeStatus();
+		if (isRuntimeFunction(unsubscribeStatus)) unsubscribeStatus();
 	});
 }

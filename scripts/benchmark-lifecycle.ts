@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_BUN_VERSION } from "./pi-host-contract.js";
 import { stageCertifiedPiHost } from "./verify-pi-host-provenance.js";
 
@@ -309,7 +310,7 @@ export function summarize(values: readonly number[]): MetricSummary {
 }
 
 function objectValue(value: unknown): Record<string, unknown> | undefined {
-	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
+	return isRuntimeObject(value) && value !== null ? (value as Record<string, unknown>) : undefined;
 }
 
 function serializedIncludes(value: unknown, marker: string): boolean {
@@ -359,7 +360,7 @@ export function lifecycleSessionFindings(
 		const historicalToolResults = messages.filter(
 			(message) =>
 				message["role"] === "toolResult" &&
-				typeof message["toolCallId"] === "string" &&
+				isRuntimeString(message["toolCallId"]) &&
 				message["toolCallId"].startsWith("ps5bw-history-tool-"),
 		).length;
 		if (historicalToolResults < expectedLongSessionTools) {
@@ -376,7 +377,7 @@ export function lifecycleSessionFindings(
 				const content = Array.isArray(result?.["content"]) ? result["content"] : [];
 				const text = content
 					.map((part) => objectValue(part)?.["text"])
-					.filter((value): value is string => typeof value === "string")
+					.filter((value): value is string => isRuntimeString(value))
 					.join("");
 				if (!text.includes(`PS5BW_HISTORY_PAYLOAD_${String(index)}`)) {
 					findings.push(`Session JSONL lost historical Tool payload marker ${String(index)}`);

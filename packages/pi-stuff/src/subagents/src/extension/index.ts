@@ -13,6 +13,13 @@ import {
 	readCurrentAgentWorkOrigin,
 	requestStatuslineGitRefreshAfterUserWork,
 } from "../../../conversation-ui/index.js";
+import {
+	isRuntimeBoolean,
+	isRuntimeFunction,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../shared/runtime-type.js";
 import { CachedToolRow, registerSuiteOwnedTool } from "../../../tool-display/index.js";
 import { discoverAgents } from "../agents/agents.ts";
 import { createNativeSupervisorChannel } from "../intercom/native-supervisor-channel.ts";
@@ -316,12 +323,15 @@ function createState(config: PiStuffAgentsConfig): SubagentState {
 }
 
 function record(value: unknown): Record<string, unknown> {
-	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+	return isRuntimeObject(value) && value !== null ? (value as Record<string, unknown>) : {};
 }
 
 function completionState(value: Record<string, unknown>, fallback: CompletionNotification): CompletionOutcomeStatus {
-	const explicitState =
-		typeof value.status === "string" ? value.status : typeof value.state === "string" ? value.state : undefined;
+	const explicitState = isRuntimeString(value.status)
+		? value.status
+		: isRuntimeString(value.state)
+			? value.state
+			: undefined;
 	if (
 		["cancelled", "detached", "paused", "stopped"].includes(explicitState ?? "") ||
 		value.stopped === true ||
@@ -330,7 +340,7 @@ function completionState(value: Record<string, unknown>, fallback: CompletionNot
 		return "stopped";
 	}
 	if (explicitState === "crashed" || explicitState === "failed") return "failed";
-	if (typeof value.success === "boolean") return value.success ? "completed" : "failed";
+	if (isRuntimeBoolean(value.success)) return value.success ? "completed" : "failed";
 	if (explicitState !== undefined) return "completed";
 	if (
 		["cancelled", "detached", "paused", "stopped"].includes(fallback.state ?? "") ||
@@ -349,12 +359,11 @@ function completionKey(result: CompletionNotification): string {
 }
 
 function completionDuration(result: CompletionNotification): number | undefined {
-	const duration =
-		typeof result.durationMs === "number"
-			? result.durationMs
-			: typeof result.startedAt === "number" && typeof result.endedAt === "number"
-				? result.endedAt - result.startedAt
-				: undefined;
+	const duration = isRuntimeNumber(result.durationMs)
+		? result.durationMs
+		: isRuntimeNumber(result.startedAt) && isRuntimeNumber(result.endedAt)
+			? result.endedAt - result.startedAt
+			: undefined;
 	return duration !== undefined && Number.isFinite(duration) && duration >= 0 ? Math.round(duration) : undefined;
 }
 
@@ -400,7 +409,7 @@ function createCompactCompletionNotifier(
 			if (
 				disposed ||
 				result.intercomDelivered === true ||
-				typeof result.sessionId !== "string" ||
+				!isRuntimeString(result.sessionId) ||
 				!sessionArtifactMatches(state.currentSessionScope, result.sessionId, result.runId ?? result.id)
 			) {
 				return result.intercomDelivered === true;
@@ -441,7 +450,7 @@ function createCompactCompletionNotifier(
 			for (const entry of entries) {
 				if (entry.type !== "custom" || entry.customType !== COMPLETION_ENTRY_TYPE) continue;
 				const data = record(entry.data);
-				if (data.version === 1 && typeof data.key === "string") delivered.add(data.key);
+				if (data.version === 1 && isRuntimeString(data.key)) delivered.add(data.key);
 			}
 		},
 		dispose() {
@@ -503,7 +512,7 @@ export default function registerSubagentExtension(
 	const globalStore = globalThis as Record<string, unknown>;
 	const previousCleanup = globalStore[RUNTIME_CLEANUP_KEY];
 	let previousCleanupPromise = Promise.resolve();
-	if (typeof previousCleanup === "function") {
+	if (isRuntimeFunction(previousCleanup)) {
 		try {
 			previousCleanupPromise = Promise.resolve(previousCleanup()).catch(() => undefined);
 		} catch {
@@ -1015,7 +1024,7 @@ export default function registerSubagentExtension(
 		handler: async (_args, ctx) => showAgents(ctx),
 	});
 	pi.registerMessageRenderer(COMPLETION_MESSAGE_TYPE, (message, _options, theme) => {
-		const content = typeof message.content === "string" ? message.content : "";
+		const content = isRuntimeString(message.content) ? message.content : "";
 		return new Text(theme.fg("text", content), 0, 0);
 	});
 	pi.registerEntryRenderer<CompletionOutcomeEntry>(COMPLETION_ENTRY_TYPE, (entry, _options, theme) => {
@@ -1034,15 +1043,15 @@ export default function registerSubagentExtension(
 	const eventUnsubscribes: Array<() => void> = [];
 	const onBus = (event: string, handler: (data: unknown) => void): void => {
 		const unsubscribe = pi.events.on(event, handler);
-		if (typeof unsubscribe === "function") eventUnsubscribes.push(unsubscribe);
+		if (isRuntimeFunction(unsubscribe)) eventUnsubscribes.push(unsubscribe);
 	};
 	const belongsToCurrentSession = (data: unknown): boolean => {
-		if (!data || typeof data !== "object") return false;
+		if (!data || !isRuntimeObject(data)) return false;
 		const event = data as { sessionId?: unknown; runId?: unknown; id?: unknown };
 		return sessionArtifactMatches(state.currentSessionScope, event.sessionId, event.runId ?? event.id);
 	};
 	const normalizeCurrentSessionEvent = (data: unknown): unknown =>
-		data && typeof data === "object" && state.currentSessionId
+		data && isRuntimeObject(data) && state.currentSessionId
 			? { ...(data as Record<string, unknown>), sessionId: state.currentSessionId }
 			: data;
 	onBus(SUBAGENT_ASYNC_STARTED_EVENT, (data) => {
@@ -1121,10 +1130,9 @@ export default function registerSubagentExtension(
 		state.currentGovernorSessionId = identity.governorSessionId;
 		governorCompatibilityReady = false;
 		governorCompatibilityError = undefined;
-		const sessionEntries =
-			typeof ctx.sessionManager.getBranch === "function"
-				? ctx.sessionManager.getBranch()
-				: ctx.sessionManager.getEntries();
+		const sessionEntries = isRuntimeFunction(ctx.sessionManager.getBranch)
+			? ctx.sessionManager.getBranch()
+			: ctx.sessionManager.getEntries();
 		notifier.reset(sessionEntries);
 		state.currentSessionScope = buildSessionCompatibilityScope(identity, sessionEntries);
 		governorCompatibilityScope = buildSessionGovernorCompatibilityScope(identity, sessionEntries);

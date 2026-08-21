@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/ui-pty-provider.ts");
@@ -324,7 +325,7 @@ exec /usr/bin/git "$@"
 			})
 			.map((entry) => entry.message as { content?: Array<{ text?: unknown }> });
 		const successfulCompletion = completionResults.some((message) =>
-			message.content?.some((part) => typeof part.text === "string" && part.text.startsWith("Goal complete:")),
+			message.content?.some((part) => isRuntimeString(part.text) && part.text.startsWith("Goal complete:")),
 		);
 		if (!completedGoal || !successfulCompletion) {
 			fail(

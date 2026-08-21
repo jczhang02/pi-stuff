@@ -1,3 +1,4 @@
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import type { RuntimeContentItem, RuntimeResponse, SuiteSandboxTool } from "../protocol.js";
 
 export const DEFAULT_EXEC_YIELD_MS = 60_000;
@@ -25,14 +26,14 @@ export function parseRuntimeResponse(value: unknown): RuntimeResponse {
 				: undefined;
 	if (!kind) throw new Error("Code Mode host returned an invalid runtime response");
 	const body = value[kind === "yielded" ? "Yielded" : kind === "terminated" ? "Terminated" : "Result"];
-	if (!isRecord(body) || typeof body["cell_id"] !== "string") {
+	if (!isRecord(body) || !isRuntimeString(body["cell_id"])) {
 		throw new Error("Code Mode host returned an invalid runtime response");
 	}
 	return {
 		cellId: body["cell_id"],
 		contentItems: parseContentItems(body["content_items"]),
 		kind,
-		...(kind === "result" && typeof body["error_text"] === "string" ? { errorText: body["error_text"] } : {}),
+		...(kind === "result" && isRuntimeString(body["error_text"]) ? { errorText: body["error_text"] } : {}),
 	};
 }
 
@@ -41,10 +42,10 @@ function parseContentItems(value: unknown): RuntimeContentItem[] {
 	if (!Array.isArray(value)) throw new Error("Code Mode host returned invalid content items");
 	return value.map((item) => {
 		if (!isRecord(item)) throw new Error("Code Mode host returned an invalid content item");
-		if (item["type"] === "input_text" && typeof item["text"] === "string") {
+		if (item["type"] === "input_text" && isRuntimeString(item["text"])) {
 			return { type: "input_text", text: item["text"] };
 		}
-		if (item["type"] === "input_image" && typeof item["image_url"] === "string" && isImageDetail(item["detail"])) {
+		if (item["type"] === "input_image" && isRuntimeString(item["image_url"]) && isImageDetail(item["detail"])) {
 			return {
 				type: "input_image",
 				image_url: item["image_url"],
@@ -96,7 +97,7 @@ type HostResult =
 	| { readonly status: "ok"; readonly value: unknown };
 
 export function parseHostMessage(value: unknown): HostMessage {
-	if (!isRecord(value) || typeof value["type"] !== "string") {
+	if (!isRecord(value) || !isRuntimeString(value["type"])) {
 		throw new Error("Code Mode host returned an invalid message");
 	}
 	const type = value["type"];
@@ -112,7 +113,7 @@ export function parseHostMessage(value: unknown): HostMessage {
 	}
 	if (type === "delegate/cancel") return { id: parseMessageId(value["id"]), type };
 	if (type === "cell/closed") {
-		if (typeof value["cellId"] !== "string") throw new Error("Code Mode host returned an invalid cell closure");
+		if (!isRuntimeString(value["cellId"])) throw new Error("Code Mode host returned an invalid cell closure");
 		return { cellId: value["cellId"], type };
 	}
 	if (type === "delegate/request") return { type, ...parseDelegateRequest(value) };
@@ -120,7 +121,7 @@ export function parseHostMessage(value: unknown): HostMessage {
 }
 
 export function executionCellId(value: unknown): string | undefined {
-	return isRecord(value) && value["type"] === "execution/started" && typeof value["cellId"] === "string"
+	return isRecord(value) && value["type"] === "execution/started" && isRuntimeString(value["cellId"])
 		? value["cellId"]
 		: undefined;
 }
@@ -133,11 +134,11 @@ export function runtimeOutcome(value: unknown): unknown {
 function parseDelegateRequest(value: Record<string, unknown>): DelegateRequestMessage {
 	const id = parseMessageId(value["id"]);
 	const request = value["request"];
-	if (!isRecord(request) || typeof request["type"] !== "string") {
+	if (!isRecord(request) || !isRuntimeString(request["type"])) {
 		throw new Error("Code Mode host returned an invalid delegate request");
 	}
 	if (request["type"] === "notification/send") {
-		if (typeof request["cellId"] !== "string" || typeof request["text"] !== "string") {
+		if (!isRuntimeString(request["cellId"]) || !isRuntimeString(request["text"])) {
 			throw new Error("Code Mode host returned an invalid notification");
 		}
 		return { id, request: { cellId: request["cellId"], text: request["text"], type: "notification/send" } };
@@ -148,10 +149,10 @@ function parseDelegateRequest(value: Record<string, unknown>): DelegateRequestMe
 	const invocation = request["invocation"];
 	const toolName = invocation["tool_name"];
 	if (
-		typeof invocation["cell_id"] !== "string" ||
-		typeof invocation["runtime_tool_call_id"] !== "string" ||
+		!isRuntimeString(invocation["cell_id"]) ||
+		!isRuntimeString(invocation["runtime_tool_call_id"]) ||
 		!isRecord(toolName) ||
-		typeof toolName["name"] !== "string"
+		!isRuntimeString(toolName["name"])
 	) {
 		throw new Error("Code Mode host returned an invalid tool invocation");
 	}
@@ -172,7 +173,7 @@ function parseDelegateRequest(value: Record<string, unknown>): DelegateRequestMe
 function parseHostResult(value: unknown): HostResult {
 	if (!isRecord(value)) throw new Error("Code Mode host returned an invalid operation result");
 	if (value["status"] === "ok") return { status: "ok", value: value["value"] };
-	if (value["status"] === "error" && typeof value["message"] === "string") {
+	if (value["status"] === "error" && isRuntimeString(value["message"])) {
 		return { message: value["message"], status: "error" };
 	}
 	throw new Error("Code Mode host returned an invalid operation result");
@@ -185,9 +186,9 @@ function parseMessageId(value: unknown): number {
 }
 
 function isStringArray(value: unknown): value is string[] {
-	return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+	return Array.isArray(value) && value.every((entry) => isRuntimeString(entry));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }

@@ -9,7 +9,7 @@ test("real Pi renders and restores the integrated production UI at all accepted 
 	const evidence = await verifyUiPty({ piBinary: PI_BIN, packagePath: AGGREGATE_PACKAGE });
 
 	expect(evidence.sizes).toEqual(["100x32", "64x28", "48x22", "32x18", "24x16"]);
-	expect(typeof evidence.markdownTransformer).toBe("boolean");
+	expect(evidence.markdownTransformer).toBeTypeOf("boolean");
 	for (const required of [
 		"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
 		"priority Statusline fields and responsive prompt bounds at all accepted widths",

@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import {
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { type DurableClaim, tryAcquireDurableClaim } from "../../shared/durable-claim.ts";
@@ -221,13 +227,13 @@ export function resolveInheritedNestedRouteFromEnv(env: NodeJS.ProcessEnv = proc
 
 /** Validate one exact persisted route without falling back to another route with the same root id. */
 export function resolvePersistedNestedRoute(value: unknown, expectedRootRunId: string): NestedRoute | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	const raw = value as Record<string, unknown>;
 	if (
 		raw.rootRunId !== expectedRootRunId ||
 		!isSafeNestedId(raw.rootRunId) ||
-		typeof raw.eventSink !== "string" ||
-		typeof raw.controlInbox !== "string" ||
+		!isRuntimeString(raw.eventSink) ||
+		!isRuntimeString(raw.controlInbox) ||
 		!isSafeNestedId(raw.capabilityToken)
 	) {
 		return undefined;
@@ -322,15 +328,15 @@ export function resolveNestedAsyncDir(rootRunId: string, run: NestedRunSummary):
 }
 
 function clampNumber(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
 function stringValue(value: unknown, max = 512): string | undefined {
-	return typeof value === "string" && value.length > 0 ? value.slice(0, max) : undefined;
+	return isRuntimeString(value) && value.length > 0 ? value.slice(0, max) : undefined;
 }
 
 function sanitizeTokenUsage(value: unknown): NestedRunSummary["totalTokens"] | undefined {
-	if (!value || typeof value !== "object") return undefined;
+	if (!value || !isRuntimeObject(value)) return undefined;
 	const raw = value as Record<string, unknown>;
 	const input = clampNumber(raw.input);
 	const output = clampNumber(raw.output);
@@ -339,7 +345,7 @@ function sanitizeTokenUsage(value: unknown): NestedRunSummary["totalTokens"] | u
 }
 
 function sanitizeCost(value: unknown): NestedRunSummary["totalCost"] | undefined {
-	if (!value || typeof value !== "object") return undefined;
+	if (!value || !isRuntimeObject(value)) return undefined;
 	const raw = value as Record<string, unknown>;
 	const inputTokens = clampNumber(raw.inputTokens);
 	const outputTokens = clampNumber(raw.outputTokens);
@@ -350,7 +356,7 @@ function sanitizeCost(value: unknown): NestedRunSummary["totalCost"] | undefined
 }
 
 function sanitizeTurnBudget(value: unknown): TurnBudgetState | undefined {
-	if (!value || typeof value !== "object") return undefined;
+	if (!value || !isRuntimeObject(value)) return undefined;
 	const raw = value as Record<string, unknown>;
 	const maxTurns = clampNumber(raw.maxTurns);
 	const graceTurns = clampNumber(raw.graceTurns);
@@ -379,7 +385,7 @@ function sanitizeTurnBudget(value: unknown): TurnBudgetState | undefined {
 }
 
 function sanitizeToolBudget(value: unknown): NestedStepSummary["toolBudget"] | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	const raw = value as Record<string, unknown>;
 	const hard = clampNumber(raw.hard);
 	const toolCount = clampNumber(raw.toolCount);
@@ -422,7 +428,7 @@ function sanitizeToolBudget(value: unknown): NestedStepSummary["toolBudget"] | u
 }
 
 function sanitizeCapabilityCeiling(value: unknown): ResolvedSubagentCapabilityCeiling | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	try {
 		return decodeSubagentCapabilityCeiling(Buffer.from(JSON.stringify(value), "utf8").toString("base64url"));
 	} catch {
@@ -439,7 +445,7 @@ function sanitizeStringList(value: unknown): string[] | undefined {
 }
 
 function sanitizeCapabilityAudit(value: unknown): SubagentCapabilityAudit | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	const raw = value as Record<string, unknown>;
 	const ceiling = sanitizeCapabilityCeiling(raw.ceiling);
 	const effectiveTools = sanitizeStringList(raw.effectiveTools);
@@ -454,7 +460,7 @@ function sanitizeCapabilityAudit(value: unknown): SubagentCapabilityAudit | unde
 		!removedTools ||
 		!internalTools ||
 		!effectiveMcpTools ||
-		typeof raw.extensionsDenied !== "boolean" ||
+		!isRuntimeBoolean(raw.extensionsDenied) ||
 		removedExtensionCount === undefined ||
 		!Number.isInteger(removedExtensionCount) ||
 		removedExtensionCount < 0 ||
@@ -493,7 +499,7 @@ function sanitizeParallelGroups(value: unknown): NestedRunSummary["parallelGroup
 	if (!Array.isArray(value)) return undefined;
 	return value
 		.map((entry) => {
-			if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined;
+			if (!entry || !isRuntimeObject(entry) || Array.isArray(entry)) return undefined;
 			const raw = entry as Record<string, unknown>;
 			const start = clampNumber(raw.start);
 			const count = clampNumber(raw.count);
@@ -510,7 +516,7 @@ function sanitizeParallelGroups(value: unknown): NestedRunSummary["parallelGroup
 }
 
 function sanitizeStep(input: unknown, depth: number): NestedStepSummary | undefined {
-	if (!input || typeof input !== "object") return undefined;
+	if (!input || !isRuntimeObject(input)) return undefined;
 	const raw = input as Record<string, unknown>;
 	const agent = stringValue(raw.agent, 128);
 	if (!agent) return undefined;
@@ -574,7 +580,7 @@ function sanitizeStep(input: unknown, depth: number): NestedStepSummary | undefi
 }
 
 export function sanitizeSummary(input: unknown, depth = 0): NestedRunSummary | undefined {
-	if (!input || typeof input !== "object") return undefined;
+	if (!input || !isRuntimeObject(input)) return undefined;
 	const raw = input as Record<string, unknown>;
 	if (!isSafeNestedId(raw.id) || !isSafeNestedId(raw.parentRunId)) return undefined;
 	const pathParts = sanitizeNestedPath(raw.path);
@@ -872,7 +878,7 @@ function parseRecord(content: string, route: NestedRoute): NestedEventRecord | u
 	} catch {
 		return undefined;
 	}
-	if (!parsed || typeof parsed !== "object") return undefined;
+	if (!parsed || !isRuntimeObject(parsed)) return undefined;
 	const raw = parsed as Record<string, unknown>;
 	if (
 		raw.type !== "subagent.nested.started" &&
@@ -1342,7 +1348,7 @@ export function readNestedRegistry(route: NestedRoute): NestedRegistry {
 		}
 		const registry = {
 			rootRunId: route.rootRunId,
-			updatedAt: typeof parsed.updatedAt === "number" ? parsed.updatedAt : 0,
+			updatedAt: isRuntimeNumber(parsed.updatedAt) ? parsed.updatedAt : 0,
 			children: Array.isArray(parsed.children)
 				? parsed.children
 						.map((child) => sanitizeSummary(child))
@@ -1357,7 +1363,7 @@ export function readNestedRegistry(route: NestedRoute): NestedRegistry {
 				? parsed.processedEvents
 						.filter(
 							(item): item is string =>
-								typeof item === "string" && path.basename(item) === item && item.length <= 256,
+								isRuntimeString(item) && path.basename(item) === item && item.length <= 256,
 						)
 						.slice(-MAX_PROCESSED_EVENTS)
 				: [],
@@ -1614,8 +1620,8 @@ function readRootTerminalMarker(route: NestedRoute): NestedRootTerminalMarker | 
 			marker.version === 1 &&
 			marker.rootRunId === route.rootRunId &&
 			marker.capabilityToken === route.capabilityToken &&
-			typeof marker.rootAsyncDir === "string" &&
-			typeof marker.committedAt === "number" &&
+			isRuntimeString(marker.rootAsyncDir) &&
+			isRuntimeNumber(marker.committedAt) &&
 			Number.isFinite(marker.committedAt)
 		) {
 			return marker as NestedRootTerminalMarker;

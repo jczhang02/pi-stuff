@@ -3,6 +3,7 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { isRuntimeObject, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 const PROVIDER = "pi-stuff-context-pty";
@@ -34,13 +35,13 @@ function record(value: Readonly<Record<string, unknown>>): void {
 }
 
 function contentText(content: unknown): string {
-	if (typeof content === "string") return content;
+	if (isRuntimeString(content)) return content;
 	if (!Array.isArray(content)) return "";
 	return content
 		.map((part) => {
-			if (!part || typeof part !== "object") return "";
+			if (!part || !isRuntimeObject(part)) return "";
 			const text = (part as { readonly text?: unknown }).text;
-			return typeof text === "string" ? text : "";
+			return isRuntimeString(text) ? text : "";
 		})
 		.filter(Boolean)
 		.join("\n");

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import {
 	mergedSettingsPath,
 	mergeNamespaceRecord,
@@ -45,7 +46,7 @@ type SettingsChanges = {
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function parseSettings(value: unknown): NotificationSettings {
@@ -56,17 +57,17 @@ function parseSettings(value: unknown): NotificationSettings {
 	const legacy = value["schemaVersion"] === 1;
 	if (
 		(!legacy && value["schemaVersion"] !== 2) ||
-		typeof value["enabled"] !== "boolean" ||
-		typeof value["completionAlerts"] !== "boolean" ||
-		typeof value["failureAlerts"] !== "boolean" ||
-		(legacy ? typeof value["sound"] !== "boolean" : typeof value["terminalBell"] !== "boolean") ||
-		(!legacy && typeof value["responsePreview"] !== "boolean") ||
-		typeof delivery !== "string" ||
+		!isRuntimeBoolean(value["enabled"]) ||
+		!isRuntimeBoolean(value["completionAlerts"]) ||
+		!isRuntimeBoolean(value["failureAlerts"]) ||
+		(legacy ? !isRuntimeBoolean(value["sound"]) : !isRuntimeBoolean(value["terminalBell"])) ||
+		(!legacy && !isRuntimeBoolean(value["responsePreview"])) ||
+		!isRuntimeString(delivery) ||
 		!DELIVERY_MODES.has(delivery as TerminalDeliveryMode) ||
-		typeof minimumDurationMs !== "number" ||
+		!isRuntimeNumber(minimumDurationMs) ||
 		!Number.isFinite(minimumDurationMs) ||
 		minimumDurationMs < 0 ||
-		typeof gracePeriodMs !== "number" ||
+		!isRuntimeNumber(gracePeriodMs) ||
 		!Number.isFinite(gracePeriodMs) ||
 		gracePeriodMs < 0
 	) {

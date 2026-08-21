@@ -10,6 +10,7 @@ import {
 	parseGoalLimit,
 	showGoalSettings,
 } from "../../packages/pi-stuff/src/goal/src/settings-ui.js";
+import { isRuntimeNumber } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { createMockContext, createMockPi } from "./support.js";
 
 initTheme("dark", false);
@@ -365,7 +366,7 @@ test("unfreezing waits for an aborted frozen run to settle before dispatching", 
 
 	assert.equal(dispatchedAfterSettle, true);
 	assert.equal(state.queueFrozen, false);
-	assert.equal(typeof state.activeGoal?.activeStartedAt, "number");
+	assert.equal(isRuntimeNumber(state.activeGoal?.activeStartedAt), true);
 	assert.equal(mock.sentUserMessages.length, 1);
 });
 

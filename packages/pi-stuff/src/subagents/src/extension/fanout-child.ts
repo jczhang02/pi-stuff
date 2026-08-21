@@ -4,6 +4,7 @@ import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { projectCurrentContext } from "../../../context-management/index.js";
+import { isRuntimeFunction } from "../../../shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../../../tool-display/index.js";
 import { discoverAgents } from "../agents/agents.ts";
 import {
@@ -357,7 +358,7 @@ export default function registerFanoutChildSubagentExtension(
 	const eventUnsubscribes: Array<() => void> = [];
 	const onBus = (event: string, handler: (data: unknown) => void): void => {
 		const unsubscribe = pi.events.on(event, handler);
-		if (typeof unsubscribe === "function") eventUnsubscribes.push(unsubscribe);
+		if (isRuntimeFunction(unsubscribe)) eventUnsubscribes.push(unsubscribe);
 	};
 	const disposeComposition = (): void => {
 		for (const unsubscribe of eventUnsubscribes.splice(0)) {

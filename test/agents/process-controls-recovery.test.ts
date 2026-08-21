@@ -3,6 +3,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+	isRuntimeFunction,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.ts";
 import {
 	executeAsyncParallel,
@@ -111,7 +117,7 @@ class EventLog {
 		const match = this.records.find(
 			(record) =>
 				record.name === SUBAGENT_ASYNC_STARTED_EVENT &&
-				typeof record.data === "object" &&
+				isRuntimeObject(record.data) &&
 				record.data !== null &&
 				(record.data as { id?: unknown }).id === runId,
 		);
@@ -123,7 +129,7 @@ class EventLog {
 		const match = this.records.find(
 			(record) =>
 				record.name === SUBAGENT_ASYNC_STATUS_EVENT &&
-				typeof record.data === "object" &&
+				isRuntimeObject(record.data) &&
 				record.data !== null &&
 				(record.data as { id?: unknown }).id === runId,
 		);
@@ -171,9 +177,9 @@ async function waitFor<T>(description: string, read: () => T | undefined, timeou
 
 function runnerPid(events: EventLog, runId: string): number {
 	const started = events.started(runId);
-	if (typeof started.acknowledgeStart === "function") started.acknowledgeStart();
+	if (isRuntimeFunction(started.acknowledgeStart)) started.acknowledgeStart();
 	const pid = started.pid;
-	if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
+	if (!isRuntimeNumber(pid) || !Number.isInteger(pid) || pid <= 0) {
 		throw new Error(`Run ${runId} did not publish a runner PID.`);
 	}
 	processGroups.add(pid);
@@ -329,7 +335,7 @@ describe("process-level Agent controls and crash recovery", () => {
 						(record) =>
 							record.kind === "request" &&
 							record.childIndex === "0" &&
-							typeof record.userText === "string" &&
+							isRuntimeString( record.userText) &&
 							record.userText.includes("TARGET_ONLY_CHILD_ZERO"),
 					);
 					return request ? true : undefined;
@@ -338,7 +344,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					readProviderRecords(root).some(
 						(record) =>
 							record.childIndex === "1" &&
-							typeof record.userText === "string" &&
+							isRuntimeString( record.userText) &&
 							record.userText.includes("TARGET_ONLY_CHILD_ZERO"),
 					),
 				).toBeFalse();
@@ -433,7 +439,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					if (!fs.existsSync(registryPath)) return undefined;
 					const registry = readJson(registryPath);
 					const writer = (registry.writers as Record<string, { state?: string; pid?: number }> | undefined)?.["0"];
-					return writer?.state === "running" && typeof writer.pid === "number" ? writer.pid : undefined;
+					return writer?.state === "running" && isRuntimeNumber( writer.pid) ? writer.pid : undefined;
 				});
 				expect(processAlive(writerPid)).toBeTrue();
 				process.kill(pid, "SIGKILL");
@@ -513,7 +519,7 @@ describe("process-level Agent controls and crash recovery", () => {
 				expect(resumedResult).toMatchObject({ success: true, summary: "PROCESS_RESUME_COMPLETED" });
 				await waitFor("resumed runner process exit", () => {
 					const resumedPid = events.started(resumedRunId).pid;
-					return typeof resumedPid === "number" && !processAlive(resumedPid) ? true : undefined;
+					return isRuntimeNumber( resumedPid) && !processAlive(resumedPid) ? true : undefined;
 				});
 
 				const completion = { runId: resumedRunId, results: [{ taskIndex: 0 }] };
@@ -590,7 +596,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					const proofPath = path.join(asyncDir, writer.groupMemberProofFile);
 					if (!fs.existsSync(proofPath)) return undefined;
 					const proof = readJson(proofPath);
-					return typeof proof.memberPid === "number"
+					return isRuntimeNumber( proof.memberPid)
 						? { supervisorPid: writer.pid, memberPid: proof.memberPid }
 						: undefined;
 				});
@@ -613,7 +619,7 @@ describe("process-level Agent controls and crash recovery", () => {
 				});
 				await waitFor("supervisor-crash runner exit", () => {
 					const pid = events.started(runId).pid;
-					return typeof pid === "number" && !processAlive(pid) ? true : undefined;
+					return isRuntimeNumber( pid) && !processAlive(pid) ? true : undefined;
 				});
 				await coordinator.reconcileExisting();
 				const snapshot = await new SessionAgentGovernor({ rootDir: governorRoot, sessionId }).snapshot();

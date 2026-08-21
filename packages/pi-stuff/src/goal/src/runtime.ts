@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
 import { getGoalStatusChannel } from "../../conversation-ui/statusline.js";
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { checkpointGoalActiveTime, formatDuration, formatTokenCount, updateGoalUsage } from "./accounting.js";
 import { formatError, truncateNotification } from "./errors.js";
 import { appendGoalPromptMarker, extractContinuationMarker, extractGoalPromptMarker } from "./markers.js";
@@ -416,7 +417,7 @@ export class GoalRuntime {
 	}
 
 	isActiveBudgetWrapUpMessage(message: unknown) {
-		if (!message || typeof message !== "object") return false;
+		if (!message || !isRuntimeObject(message)) return false;
 		const candidate = message as {
 			role?: unknown;
 			customType?: unknown;
@@ -425,14 +426,14 @@ export class GoalRuntime {
 		return (
 			candidate.role === "custom" &&
 			candidate.customType === BUDGET_WRAP_UP_MESSAGE_TYPE &&
-			typeof candidate.details?.goalId === "string" &&
+			isRuntimeString(candidate.details?.goalId) &&
 			candidate.details.goalId === this.budgetWrapUp?.goalId &&
 			candidate.details.goalId === this.activeGoal?.id
 		);
 	}
 
 	keepBudgetWrapUpMessage(message: unknown) {
-		if (!message || typeof message !== "object") return true;
+		if (!message || !isRuntimeObject(message)) return true;
 		const candidate = message as { role?: unknown; customType?: unknown };
 		if (candidate.role !== "custom" || candidate.customType !== BUDGET_WRAP_UP_MESSAGE_TYPE) {
 			return true;
@@ -747,7 +748,7 @@ export class GoalRuntime {
 		allowDeliveryFallback = true,
 		behaviors: readonly ("idle" | "steer" | "followUp")[] = ["steer", "followUp"],
 	) {
-		if (typeof prompt !== "string") return undefined;
+		if (!isRuntimeString(prompt)) return undefined;
 		const fingerprint = inputFingerprint(prompt);
 		const candidates = this.pendingNonGoalInputs.filter((pending) => behaviors.includes(pending.behavior));
 		if (

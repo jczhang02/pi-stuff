@@ -3,6 +3,7 @@ import { type Component, type Focusable, isFocusable, type KeybindingsManager, t
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
+import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
 import {
 	AgentRunOriginTracker,
 	listenForActiveAgentWorkUserPromotions,
@@ -760,7 +761,7 @@ export function listenForUserAgentRunSettled(
 			// A derived usage refresh cannot be allowed to break Agent settlement.
 		}
 	});
-	return typeof unsubscribe === "function" ? unsubscribe : () => {};
+	return isRuntimeFunction(unsubscribe) ? unsubscribe : () => {};
 }
 
 function publishUserAgentRunSettled(pi: Pick<ExtensionAPI, "events">, ctx: ExtensionContext): void {
@@ -796,7 +797,7 @@ function listenForStatuslineGitRefreshAfterUserWorkRequests(pi: ExtensionAPI, re
 	const cleanup = (): void => {
 		if (!active) return;
 		active = false;
-		if (typeof unsubscribe === "function") unsubscribe();
+		if (isRuntimeFunction(unsubscribe)) unsubscribe();
 		if (listeners.get(pi.events) === cleanup) listeners.delete(pi.events);
 	};
 	listeners.set(pi.events, cleanup);
@@ -826,7 +827,7 @@ function listenForUiRenderRequests(pi: ExtensionAPI, render: (force: boolean) =>
 
 	let active = true;
 	const unsubscribe = pi.events.on(UI_RENDER_REQUEST_EVENT, (value) => {
-		if (!active || typeof value !== "object" || value === null) return;
+		if (!active || !isRuntimeObject(value) || value === null) return;
 		const request = value as { force?: unknown; handled?: unknown };
 		request.handled = true;
 		render(request.force === true);
@@ -834,7 +835,7 @@ function listenForUiRenderRequests(pi: ExtensionAPI, render: (force: boolean) =>
 	const cleanup = (): void => {
 		if (!active) return;
 		active = false;
-		if (typeof unsubscribe === "function") unsubscribe();
+		if (isRuntimeFunction(unsubscribe)) unsubscribe();
 		if (listeners.get(pi.events) === cleanup) listeners.delete(pi.events);
 	};
 	listeners.set(pi.events, cleanup);

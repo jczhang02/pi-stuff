@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { isNonNegativeFiniteNumber, nonNegativeFiniteNumber, normalizeTokenBudget } from "./accounting.js";
 import type { GoalStatus } from "./prompts.js";
 
@@ -164,7 +165,7 @@ function normalizePendingQueueAction(value: unknown): PendingQueueAction | undef
 	if (value.kind === "prioritize") {
 		if (
 			!validObjective(value.objective) ||
-			(Object.hasOwn(value, "displacedUsageFinalized") && typeof value.displacedUsageFinalized !== "boolean")
+			(Object.hasOwn(value, "displacedUsageFinalized") && !isRuntimeBoolean(value.displacedUsageFinalized))
 		) {
 			return undefined;
 		}
@@ -177,7 +178,7 @@ function normalizePendingQueueAction(value: unknown): PendingQueueAction | undef
 	}
 	if (value.kind === "advance") {
 		if (
-			typeof value.goalId !== "string" ||
+			!isRuntimeString(value.goalId) ||
 			!value.goalId ||
 			value.goalId !== value.goalId.trim() ||
 			(value.reason !== "complete" && value.reason !== "skip") ||
@@ -205,7 +206,7 @@ function normalizeLegacyPendingPrioritize(value: unknown): PendingQueueAction | 
 }
 
 function validObjective(value: unknown): value is string {
-	return typeof value === "string" && Boolean(value.trim()) && value.length <= 4_000;
+	return isRuntimeString(value) && Boolean(value.trim()) && value.length <= 4_000;
 }
 
 function normalizeQueuedGoal(goal: ActiveGoal): ActiveGoal {
@@ -264,10 +265,10 @@ function normalizeBlockerAttempts(value: unknown): GoalBlockerAttempt[] {
 		const iteration = normalizeSafetyCounter(candidate.iteration);
 		const attemptFingerprint = normalizeOutputFingerprint(candidate.attemptFingerprint);
 		if (
-			typeof candidate.attempt !== "string" ||
+			!isRuntimeString(candidate.attempt) ||
 			!candidate.attempt.trim() ||
 			candidate.attempt.length > 4_000 ||
-			typeof candidate.evidence !== "string" ||
+			!isRuntimeString(candidate.evidence) ||
 			!candidate.evidence.trim() ||
 			candidate.evidence.length > 4_000 ||
 			!attemptFingerprint ||
@@ -287,11 +288,11 @@ function normalizeBlockerAttempts(value: unknown): GoalBlockerAttempt[] {
 }
 
 function normalizeSafetyCounter(value: unknown) {
-	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
 function normalizeOutputFingerprint(value: unknown) {
-	return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value) ? value : undefined;
+	return isRuntimeString(value) && /^[a-f0-9]{64}$/u.test(value) ? value : undefined;
 }
 
 function normalizeSafetyPauseCause(value: unknown): SafetyPauseCause | undefined {
@@ -310,7 +311,7 @@ function readState(): Record<string, unknown> {
 	if (!existsSync(STATE_FILE)) return {};
 	try {
 		const parsed = JSON.parse(readFileSync(STATE_FILE, "utf8")) as unknown;
-		return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+		return parsed && isRuntimeObject(parsed) && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
 	} catch {
 		return {};
 	}
@@ -319,21 +320,21 @@ function readState(): Record<string, unknown> {
 function isGoal(value: unknown): value is ActiveGoal {
 	if (!isRecord(value)) return false;
 	return (
-		typeof value.id === "string" &&
+		isRuntimeString(value.id) &&
 		Boolean(value.id) &&
 		value.id === value.id.trim() &&
 		validObjective(value.text) &&
 		["active", "queued", "paused", "blocked", "usage_limited", "budget_limited", "complete"].includes(
 			String(value.status),
 		) &&
-		typeof value.startedAt === "number" &&
-		typeof value.updatedAt === "number" &&
-		typeof value.iteration === "number" &&
-		typeof value.tokensUsed === "number" &&
-		typeof value.timeUsedSeconds === "number" &&
-		typeof value.baselineTokens === "number" &&
-		(value.activeStartedAt === undefined || typeof value.activeStartedAt === "number") &&
-		(value.safetyResetPending === undefined || typeof value.safetyResetPending === "boolean")
+		isRuntimeNumber(value.startedAt) &&
+		isRuntimeNumber(value.updatedAt) &&
+		isRuntimeNumber(value.iteration) &&
+		isRuntimeNumber(value.tokensUsed) &&
+		isRuntimeNumber(value.timeUsedSeconds) &&
+		isRuntimeNumber(value.baselineTokens) &&
+		(value.activeStartedAt === undefined || isRuntimeNumber(value.activeStartedAt)) &&
+		(value.safetyResetPending === undefined || isRuntimeBoolean(value.safetyResetPending))
 	);
 }
 
@@ -342,7 +343,7 @@ function isQueueGoal(value: unknown): value is ActiveGoal {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function emptyGoalState(source: LoadedGoalState["source"]): LoadedGoalState {

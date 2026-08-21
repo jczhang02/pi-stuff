@@ -24,6 +24,7 @@ import {
 	withAgentWorkOrigin,
 	withDirectUserActivation,
 } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type Handlers = Map<string, Handler[]>;
@@ -845,7 +846,7 @@ describe("Context capability lifecycle", () => {
 		const api = apiFor(handlers, [], registrations);
 		const renderRequests: Array<{ force?: unknown; handled?: unknown }> = [];
 		api.events.on(UI_RENDER_REQUEST_EVENT, (value) => {
-			if (typeof value !== "object" || value === null) return;
+			if (!isRuntimeObject(value) || value === null) return;
 			const request = value as { force?: unknown; handled?: unknown };
 			request.handled = true;
 			renderRequests.push(request);

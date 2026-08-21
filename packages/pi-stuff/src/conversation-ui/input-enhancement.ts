@@ -18,6 +18,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
+import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
 
 const COMMAND_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/u;
 const BACKSPACE_INPUT = "\u007f";
@@ -38,7 +39,7 @@ function installedFactoryRecord(factory: EditorFactory): InstalledFactoryRecord 
 	const local = installedFactories.get(factory);
 	if (local) return local;
 	const shared = (factory as unknown as Record<symbol, unknown>)[INSTALLED_FACTORY_RECORD];
-	return typeof shared === "object" && shared !== null && "supersede" in shared
+	return isRuntimeObject(shared) && shared !== null && "supersede" in shared
 		? (shared as InstalledFactoryRecord)
 		: undefined;
 }
@@ -112,9 +113,9 @@ interface InlineAutocompleteState {
 function isCursorAwareEditor(editor: EditorComponent): editor is CursorAwareEditor {
 	const candidate = editor as Partial<CursorAwareEditor>;
 	return (
-		typeof candidate.getCursor === "function" &&
-		typeof candidate.getLines === "function" &&
-		typeof candidate.isShowingAutocomplete === "function"
+		isRuntimeFunction(candidate.getCursor) &&
+		isRuntimeFunction(candidate.getLines) &&
+		isRuntimeFunction(candidate.isShowingAutocomplete)
 	);
 }
 

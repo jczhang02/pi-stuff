@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { AgentRow } from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
 import { readAgentTranscript } from "../../packages/pi-stuff/src/subagents/src/ui/agent-transcript.js";
 
@@ -46,7 +47,7 @@ function request(agentRow: AgentRow, maxChars = 24_000) {
 }
 
 function activity(value: Awaited<ReturnType<typeof readAgentTranscript>>) {
-	if (!value || typeof value === "string") throw new Error("Expected structured Agent Activity");
+	if (!value || isRuntimeString(value)) throw new Error("Expected structured Agent Activity");
 	return value;
 }
 

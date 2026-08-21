@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeObject } from "../../../shared/runtime-type.js";
 import { inspectWriterProcessLivenessAsync } from "../runs/background/writer-process-registry.ts";
 import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
 import type { SessionGovernorCompatibilityScope } from "../shared/session-identity.ts";
@@ -376,7 +377,7 @@ function explicitPidState(pid: number): boolean | undefined {
 }
 
 function messageCode(error: unknown): string | undefined {
-	return error && typeof error === "object" && "code" in error
+	return error && isRuntimeObject(error) && "code" in error
 		? String((error as NodeJS.ErrnoException).code)
 		: undefined;
 }

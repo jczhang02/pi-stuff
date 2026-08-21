@@ -18,6 +18,12 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import {
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import {
 	assertPrivateDirectory,
@@ -194,13 +200,13 @@ function steerRequestFileName(request: SteerRequest): string {
 function validSteerRequest(request: Partial<SteerRequest>): request is SteerRequest {
 	return (
 		request.type === "steer" &&
-		typeof request.id === "string" &&
+		isRuntimeString(request.id) &&
 		/^[^\s]+$/.test(request.id) &&
 		request.id.length <= MAX_STEER_REQUEST_ID_LENGTH &&
-		typeof request.ts === "number" &&
+		isRuntimeNumber(request.ts) &&
 		Number.isFinite(request.ts) &&
 		request.ts > 0 &&
-		typeof request.message === "string" &&
+		isRuntimeString(request.message) &&
 		Boolean(request.message.trim()) &&
 		Buffer.byteLength(request.message, "utf8") <= MAX_STEER_MESSAGE_BYTES &&
 		(request.targetIndex === undefined ||
@@ -216,7 +222,7 @@ function validSteerRequest(request: Partial<SteerRequest>): request is SteerRequ
 			request.parentRunOrigin === "automatic" ||
 			request.parentRunOrigin === "user") &&
 		(request.source === undefined ||
-			(typeof request.source === "string" && Boolean(request.source.trim()) && request.source.length <= 256))
+			(isRuntimeString(request.source) && Boolean(request.source.trim()) && request.source.length <= 256))
 	);
 }
 
@@ -397,33 +403,33 @@ export function enqueueStepSteer(asyncDir: string, index: number, request: Steer
 }
 
 function parseSteerCapability(raw: unknown): SteerCapability | undefined {
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
 	const input = raw as Partial<SteerCapability>;
 	if (input.type !== "steer-capability" || input.protocolVersion !== 1) return undefined;
 	const { index, pid, readyAt } = input;
-	if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 1_000_000) return undefined;
-	if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return undefined;
-	if (typeof readyAt !== "number" || !Number.isFinite(readyAt) || readyAt <= 0 || typeof input.supported !== "boolean")
+	if (!isRuntimeNumber(index) || !Number.isInteger(index) || index < 0 || index > 1_000_000) return undefined;
+	if (!isRuntimeNumber(pid) || !Number.isInteger(pid) || pid <= 0) return undefined;
+	if (!isRuntimeNumber(readyAt) || !Number.isFinite(readyAt) || readyAt <= 0 || !isRuntimeBoolean(input.supported))
 		return undefined;
 	return { type: "steer-capability", protocolVersion: 1, index, pid, readyAt, supported: input.supported };
 }
 
 function parseSteerAck(raw: unknown): SteerAck | undefined {
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
 	const input = raw as Partial<SteerAck>;
 	if (
 		input.type !== "steer-ack" ||
 		input.protocolVersion !== 1 ||
-		typeof input.requestId !== "string" ||
+		!isRuntimeString(input.requestId) ||
 		!/^[^\s]+$/.test(input.requestId) ||
 		input.requestId.length > 256
 	)
 		return undefined;
 	const { index, ts } = input;
-	if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index > 1_000_000) return undefined;
-	if (typeof ts !== "number" || !Number.isFinite(ts) || ts <= 0) return undefined;
+	if (!isRuntimeNumber(index) || !Number.isInteger(index) || index < 0 || index > 1_000_000) return undefined;
+	if (!isRuntimeNumber(ts) || !Number.isFinite(ts) || ts <= 0) return undefined;
 	if (input.state !== "delivered" && input.state !== "failed") return undefined;
-	if (typeof input.message !== "string" || !input.message.trim() || input.message.length > 1000) return undefined;
+	if (!isRuntimeString(input.message) || !input.message.trim() || input.message.length > 1000) return undefined;
 	return {
 		type: "steer-ack",
 		protocolVersion: 1,
@@ -654,13 +660,13 @@ function processDurableControlRecords<T>(input: {
 }
 
 function parseInterruptRequest(raw: unknown): InterruptRequest | undefined {
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
 	const request = raw as Partial<InterruptRequest>;
 	return request.type === "interrupt" ? { ...request, type: "interrupt" } : undefined;
 }
 
 function parseTimeoutRequest(raw: unknown): TimeoutRequest | undefined {
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
 	const request = raw as Partial<TimeoutRequest>;
 	return request.type === "timeout" ? { ...request, type: "timeout" } : undefined;
 }
@@ -737,7 +743,7 @@ export function consumeSteerAcks(
 }
 
 function parseSteerRequest(raw: unknown): SteerRequest | undefined {
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
 	const input = raw as Partial<SteerRequest>;
 	if (!validSteerRequest(input)) return undefined;
 	return {
@@ -748,7 +754,7 @@ function parseSteerRequest(raw: unknown): SteerRequest | undefined {
 		...(input.parentRunOrigin ? { parentRunOrigin: input.parentRunOrigin } : {}),
 		...(input.targetIndex !== undefined ? { targetIndex: input.targetIndex } : {}),
 		...(input.targetIndexes !== undefined ? { targetIndexes: [...input.targetIndexes] } : {}),
-		...(typeof input.source === "string" && input.source.trim() ? { source: input.source } : {}),
+		...(isRuntimeString(input.source) && input.source.trim() ? { source: input.source } : {}),
 	};
 }
 
@@ -817,14 +823,14 @@ export function consumeTimeoutRequest(
 }
 
 function parseStopRequest(raw: unknown): StopRequest | undefined {
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
 	const parsed = raw as Partial<StopRequest>;
 	if (
 		parsed.type !== "stop" ||
 		(parsed.id !== undefined && (!/^\S+$/.test(parsed.id) || parsed.id.length > MAX_STEER_REQUEST_ID_LENGTH)) ||
 		(parsed.ts !== undefined && (!Number.isFinite(parsed.ts) || parsed.ts <= 0)) ||
-		(parsed.source !== undefined && typeof parsed.source !== "string") ||
-		(parsed.reason !== undefined && typeof parsed.reason !== "string") ||
+		(parsed.source !== undefined && !isRuntimeString(parsed.source)) ||
+		(parsed.reason !== undefined && !isRuntimeString(parsed.reason)) ||
 		(parsed.targetIndex !== undefined &&
 			(!Number.isInteger(parsed.targetIndex) || parsed.targetIndex < 0 || parsed.targetIndex > 1_000_000))
 	) {
@@ -935,7 +941,7 @@ export function deliverInterruptRequest(input: {
 	const requestPath = requestAsyncInterrupt(input.asyncDir, input.source ? { source: input.source } : {}, {
 		now: input.now,
 	});
-	if (typeof input.pid === "number" && input.pid > 0) {
+	if (isRuntimeNumber(input.pid) && input.pid > 0) {
 		try {
 			(input.kill ?? process.kill)(input.pid, input.signal ?? INTERRUPT_SIGNAL);
 		} catch (error) {

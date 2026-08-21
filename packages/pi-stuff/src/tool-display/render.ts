@@ -5,6 +5,16 @@ import {
 	TRANSCRIPT_CONTINUATION,
 	TRANSCRIPT_MARKER,
 } from "../conversation-ui/transcript.js";
+import {
+	isRuntimeBigInt,
+	isRuntimeBoolean,
+	isRuntimeFunction,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+	isRuntimeSymbol,
+	isRuntimeUndefined,
+} from "../shared/runtime-type.js";
 import type { ToolActivityOutcome } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
 import {
@@ -498,7 +508,7 @@ export function oneLine(value: string): string {
 
 function stringArgument(args: Readonly<Record<string, unknown>>, key: string): string {
 	const value = args[key];
-	return typeof value === "string" ? value : "";
+	return isRuntimeString(value) ? value : "";
 }
 
 export function describeBuiltinTarget(name: string, args: Readonly<Record<string, unknown>>): string {
@@ -596,7 +606,7 @@ function diffCounts(value: string): { readonly additions: number; readonly delet
 }
 
 function detailsRecord(result: AgentToolResult<unknown>): Record<string, unknown> {
-	return typeof result.details === "object" && result.details !== null && !Array.isArray(result.details)
+	return isRuntimeObject(result.details) && result.details !== null && !Array.isArray(result.details)
 		? (result.details as Record<string, unknown>)
 		: {};
 }
@@ -622,7 +632,7 @@ export function summarizeBuiltin(
 	}
 	if (name === "edit") {
 		const diff = detailsRecord(result)["diff"];
-		if (typeof diff !== "string" || !diff) return "applied";
+		if (!isRuntimeString(diff) || !diff) return "applied";
 		const counts = diffCounts(diff);
 		return `+${String(counts.additions)}/-${String(counts.deletions)}`;
 	}
@@ -669,29 +679,29 @@ function boundedJson(value: unknown, maxCodeUnits: number): string {
 			append("null");
 			return;
 		}
-		if (typeof candidate === "string") {
+		if (isRuntimeString(candidate)) {
 			const slice = graphemePrefix(candidate, Math.max(0, remaining - 2));
 			append(JSON.stringify(slice));
 			if (slice.length < candidate.length) truncated = true;
 			return;
 		}
-		if (typeof candidate === "number" || typeof candidate === "boolean") {
+		if (isRuntimeNumber(candidate) || isRuntimeBoolean(candidate)) {
 			append(String(candidate));
 			return;
 		}
-		if (typeof candidate === "bigint") {
+		if (isRuntimeBigInt(candidate)) {
 			append(`${String(candidate)}n`);
 			return;
 		}
-		if (typeof candidate === "undefined") {
+		if (isRuntimeUndefined(candidate)) {
 			append("undefined");
 			return;
 		}
-		if (typeof candidate === "symbol" || typeof candidate === "function") {
+		if (isRuntimeSymbol(candidate) || isRuntimeFunction(candidate)) {
 			append(JSON.stringify(String(candidate)));
 			return;
 		}
-		if (typeof candidate !== "object") {
+		if (!isRuntimeObject(candidate)) {
 			append(JSON.stringify(String(candidate)));
 			return;
 		}
@@ -882,7 +892,7 @@ export function buildToolDetailLines(
 		argumentCount += 1;
 		const value = args[key];
 		const safeKey = oneLine(key);
-		if (typeof value === "string") {
+		if (isRuntimeString(value)) {
 			collector.add(`${safeKey}:`);
 			addMultiline(collector, value, "  ");
 		} else {

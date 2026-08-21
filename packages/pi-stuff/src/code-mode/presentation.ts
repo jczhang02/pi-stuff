@@ -1,4 +1,5 @@
 import type { AgentToolResult, ContextEvent } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject } from "../shared/runtime-type.js";
 import type { PiStuffCodeModeDetails } from "./runtime.js";
 
 type ToolContent = AgentToolResult<unknown>["content"];
@@ -12,7 +13,7 @@ type DetailsWithRawContent = PiStuffCodeModeDetails & {
 };
 
 function codeModeDetails(value: unknown): PiStuffCodeModeDetails | undefined {
-	if (typeof value !== "object" || value === null) return undefined;
+	if (!isRuntimeObject(value) || value === null) return undefined;
 	if (!("kind" in value) || value.kind !== "pi-stuff-code-mode") return undefined;
 	if (!("operations" in value) || !Array.isArray(value.operations)) return undefined;
 	return value as PiStuffCodeModeDetails;

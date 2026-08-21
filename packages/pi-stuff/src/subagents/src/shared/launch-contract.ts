@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
+import { isRuntimeObject } from "../../../shared/runtime-type.js";
 import type { AgentConfig } from "../agents/agents.ts";
 
 export const AGENT_DEFINITION_PROJECTION_VERSION = 2 as const;
@@ -7,7 +8,7 @@ export const LAUNCH_BINDING_PROJECTION_VERSION = 2 as const;
 
 function stableJson(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-	if (value && typeof value === "object") {
+	if (value && isRuntimeObject(value)) {
 		return `{${Object.entries(value as Record<string, unknown>)
 			.filter(([, entry]) => entry !== undefined)
 			.sort(([a], [b]) => a.localeCompare(b))

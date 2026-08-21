@@ -4,6 +4,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, SessionManager } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 const PROVIDER = "pi-stuff-pty";
 const MODEL = "fixture-model";
@@ -32,7 +33,7 @@ function message(text: string, stopReason: AssistantMessage["stopReason"]): Assi
 }
 
 function contextMessageText(message: Context["messages"][number]): string {
-	if (typeof message.content === "string") return message.content;
+	if (isRuntimeString(message.content)) return message.content;
 	return message.content
 		.filter((part): part is { type: "text"; text: string } => part.type === "text")
 		.map((part) => part.text)

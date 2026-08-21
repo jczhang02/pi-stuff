@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../tool-display/index.js";
 import { isOpenAICodexResponsesModel, resolveCodexAccount, supportsCodexImages } from "./account.js";
 import { parseNativeJson, runNativeTool } from "./native-runner.js";
@@ -116,10 +117,10 @@ function createApplyPatchTool() {
 		parameters: APPLY_PATCH_PARAMETERS,
 		executionMode: "sequential" as const,
 		prepareArguments(args: unknown): { input: string } {
-			if (typeof args === "object" && args !== null) {
+			if (isRuntimeObject(args) && args !== null) {
 				const source = args as Record<string, unknown>;
 				for (const key of ["input", "patch", "patchText"] as const) {
-					if (typeof source[key] === "string") return { input: source[key] };
+					if (isRuntimeString(source[key])) return { input: source[key] };
 				}
 			}
 			return args as { input: string };
@@ -131,7 +132,7 @@ function createApplyPatchTool() {
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
 		) {
-			if (typeof params.input !== "string") throw new Error("apply_patch requires a string input.");
+			if (!isRuntimeString(params.input)) throw new Error("apply_patch requires a string input.");
 			const native = await withFileMutationQueue(ctx.cwd, () =>
 				runNativeTool({
 					cwd: ctx.cwd,
@@ -164,7 +165,7 @@ function createApplyPatchTool() {
 
 function parseImageDataUrl(stdout: string): ImageContent {
 	const value = parseNativeJson<{ detail?: unknown; image_url?: unknown }>(stdout, "view_image");
-	if (typeof value.image_url !== "string") throw new Error("view_image returned no image.");
+	if (!isRuntimeString(value.image_url)) throw new Error("view_image returned no image.");
 	const match = value.image_url.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/u);
 	if (!match?.[1] || !match[2]) throw new Error("view_image returned an unsupported image payload.");
 	return { data: match[2], mimeType: match[1], type: "image" };
@@ -178,12 +179,12 @@ function createViewImageTool() {
 		promptSnippet: "Use view_image to inspect local image files",
 		parameters: VIEW_IMAGE_PARAMETERS,
 		prepareArguments(args: unknown): { detail?: "original"; path: string } {
-			if (typeof args !== "object" || args === null) return args as { path: string };
+			if (!isRuntimeObject(args) || args === null) return args as { path: string };
 			const source = args as Record<string, unknown>;
 			const path = source["path"] ?? source["file_path"] ?? source["image_path"];
 			return {
 				...(source["detail"] === "original" ? { detail: "original" as const } : {}),
-				path: typeof path === "string" && path.startsWith("@") ? path.slice(1) : (path as string),
+				path: isRuntimeString(path) && path.startsWith("@") ? path.slice(1) : (path as string),
 			};
 		},
 		async execute(
@@ -195,7 +196,7 @@ function createViewImageTool() {
 		) {
 			if (!supportsCodexImages(ctx.model))
 				throw new Error("view_image requires an image-capable OpenAI Codex model.");
-			if (typeof params.path !== "string" || !params.path.trim()) throw new Error("view_image requires a path.");
+			if (!isRuntimeString(params.path) || !params.path.trim()) throw new Error("view_image requires a path.");
 			const native = await runNativeTool({
 				arguments: [JSON.stringify(params)],
 				cwd: ctx.cwd,
@@ -246,7 +247,7 @@ function createImageGenerationTool() {
 			ctx: ExtensionContext,
 		) {
 			if (!supportsCodexImages(ctx.model)) throw new Error("imagegen requires an image-capable OpenAI Codex model.");
-			if (typeof params.prompt !== "string" || !params.prompt.trim()) throw new Error("imagegen requires a prompt.");
+			if (!isRuntimeString(params.prompt) || !params.prompt.trim()) throw new Error("imagegen requires a prompt.");
 			const account = await resolveCodexAccount(ctx);
 			const native = await runNativeTool({
 				arguments: [
@@ -268,7 +269,7 @@ function createImageGenerationTool() {
 			});
 			if (native.status !== 0) throw nativeError("imagegen", native);
 			const parsed = parseNativeJson<ImageGenerationNativeResult>(native.stdout, "imagegen");
-			if (typeof parsed.path !== "string") throw new Error("imagegen returned no image path.");
+			if (!isRuntimeString(parsed.path)) throw new Error("imagegen returned no image path.");
 			const images = await inlineGeneratedImages(parsed.images ?? []);
 			return {
 				content: [{ type: "text" as const, text: `Generated image: ${parsed.path}` }, ...images],

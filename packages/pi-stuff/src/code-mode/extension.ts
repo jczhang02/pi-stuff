@@ -1,6 +1,7 @@
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
+import { isRuntimeObject } from "../shared/runtime-type.js";
 import {
 	registerSuiteToolEnvelope,
 	registerSuiteToolEnvelopeCompanion,
@@ -98,7 +99,7 @@ export const CODE_MODE_SEARCH_PRESENTATION: SuiteToolPresentation<{ readonly que
 
 export function decodeCodeModeOperations(details: unknown): readonly SuiteToolEnvelopeOperation[] {
 	if (
-		typeof details !== "object" ||
+		!isRuntimeObject(details) ||
 		details === null ||
 		!("kind" in details) ||
 		details.kind !== "pi-stuff-code-mode" ||

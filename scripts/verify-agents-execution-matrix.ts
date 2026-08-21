@@ -3,6 +3,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
+import { isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { waitForDetachedProcess } from "./detached-process.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
@@ -236,7 +237,7 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 	}
 
 	const mainResult = mainResults[0]?.result;
-	if (typeof mainResult !== "string") fail(`${scenario.id} main Agent did not receive a textual subagent result`);
+	if (!isRuntimeString(mainResult)) fail(`${scenario.id} main Agent did not receive a textual subagent result`);
 	if (scenario.foreground) {
 		if (mainResult.includes("started in the background") || !mainResult.includes("completed")) {
 			fail(`${scenario.id} did not return foreground child summaries to the main Agent: ${mainResult}`);
@@ -277,11 +278,11 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 			fail(`long child expected one steering delivery after round 4, received ${JSON.stringify(steers)}`);
 		}
 		const projectedContinuation = longTurns.find(
-			(record) => typeof record.round === "number" && record.round >= 5 && record.sawProjection === true,
+			(record) => isRuntimeNumber(record.round) && record.round >= 5 && record.sawProjection === true,
 		);
 		const steeredContinuation = longTurns.find(
 			(record) =>
-				typeof record.round === "number" &&
+				isRuntimeNumber(record.round) &&
 				record.round >= 5 &&
 				record.sawProjection === true &&
 				record.sawSteering === true,
@@ -293,11 +294,11 @@ function verifyScenario(scenario: Scenario, records: readonly LogRecord[], proce
 		if (finalTurn?.sawProjection !== true || finalTurn.sawSteering !== true) {
 			fail(`long child final turn lost projection or steering authority: ${JSON.stringify(finalTurn)}`);
 		}
-		if (typeof mainResult !== "string" || !mainResult.includes("rounds=8:projection=true:steering=true")) {
+		if (!isRuntimeString(mainResult) || !mainResult.includes("rounds=8:projection=true:steering=true")) {
 			fail(`long child did not return its stable completion evidence: ${String(mainResult)}`);
 		}
 	}
-	if (scenario.codeMode && (typeof mainResult !== "string" || !mainResult.includes("MATRIX_CODE_CHILD_TOOLS_OK"))) {
+	if (scenario.codeMode && (!isRuntimeString(mainResult) || !mainResult.includes("MATRIX_CODE_CHILD_TOOLS_OK"))) {
 		fail(`${scenario.id} child could not use every resolved Agent Tool: ${String(mainResult)}`);
 	}
 }

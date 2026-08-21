@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { withArtifactGroupWriteClaim } from "./artifacts.ts";
 import { extractTextFromContent, extractToolArgsPreview } from "./utils.ts";
 
@@ -10,7 +11,7 @@ const TOOL_PAYLOAD_TRUNCATION_MARKER = "\n\n… payload truncated";
 
 function boundedPayload(value: unknown, maxBytes = MAX_TOOL_PAYLOAD_BYTES): string | undefined {
 	let text: string;
-	if (typeof value === "string") text = value;
+	if (isRuntimeString(value)) text = value;
 	else {
 		try {
 			const serialized = JSON.stringify(value, null, 2);
@@ -83,17 +84,17 @@ function errorMessage(error: unknown): string {
 }
 
 function finiteNumber(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
 function normalizeUsage(
 	value: unknown,
 ): { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number } | undefined {
-	if (!value || typeof value !== "object") return undefined;
+	if (!value || !isRuntimeObject(value)) return undefined;
 	const raw = value as Record<string, unknown>;
 	const rawCost = raw.cost;
 	const cost =
-		rawCost && typeof rawCost === "object"
+		rawCost && isRuntimeObject(rawCost)
 			? (finiteNumber((rawCost as { total?: unknown }).total) ?? 0)
 			: (finiteNumber(rawCost) ?? 0);
 	return {
@@ -106,7 +107,7 @@ function normalizeUsage(
 }
 
 function eventArgs(event: ChildTranscriptEvent): Record<string, unknown> {
-	return event.args && typeof event.args === "object" && !Array.isArray(event.args)
+	return event.args && isRuntimeObject(event.args) && !Array.isArray(event.args)
 		? (event.args as Record<string, unknown>)
 		: {};
 }
@@ -259,7 +260,7 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 					sourceEventType: event.type,
 					...(event.toolCallId ? { toolCallId: event.toolCallId } : {}),
 					...(event.toolName ? { toolName: event.toolName } : {}),
-					...(typeof event.isError === "boolean" ? { isError: event.isError } : {}),
+					...(isRuntimeBoolean(event.isError) ? { isError: event.isError } : {}),
 				});
 			}
 		},

@@ -1,5 +1,6 @@
 import { appendFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { Guard } from "typebox/guard";
 
 const endpointFile = process.env.PI_STUFF_MCP_HTTP_ENDPOINT;
 const requestLog = process.env.PI_STUFF_MCP_HTTP_LOG;
@@ -89,7 +90,7 @@ const server = createServer((request, response) => {
 
 server.listen(0, "127.0.0.1", () => {
 	const address = server.address();
-	if (!address || typeof address === "string") throw new Error("HTTP fixture did not bind a TCP port");
+	if (!address || Guard.IsString(address)) throw new Error("HTTP fixture did not bind a TCP port");
 	writeFileSync(endpointFile, `http://127.0.0.1:${String(address.port)}/mcp\n`, "utf8");
 });
 

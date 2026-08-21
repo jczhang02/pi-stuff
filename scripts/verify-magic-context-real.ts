@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { terminateDetachedProcessGroup } from "./detached-process.js";
 
 const root = resolve(import.meta.dir, "..");
@@ -210,7 +211,7 @@ async function verifyLocalPackage(packagePath: string): Promise<string> {
 		private?: unknown;
 		version?: unknown;
 	};
-	if (manifest.name !== "@jczhang02/pi-stuff" || manifest.private !== true || typeof manifest.version !== "string") {
+	if (manifest.name !== "@jczhang02/pi-stuff" || manifest.private !== true || !isRuntimeString(manifest.version)) {
 		fail(`path is not the private local @jczhang02/pi-stuff Package: ${JSON.stringify(manifest)}`);
 	}
 	const resolver = createRequire(join(packagePath, "package.json"));
@@ -238,7 +239,7 @@ async function extractPackage(archivePath: string, destination: string): Promise
 		name?: unknown;
 		version?: unknown;
 	};
-	if (manifest.name !== "@jczhang02/pi-stuff" || typeof manifest.version !== "string") {
+	if (manifest.name !== "@jczhang02/pi-stuff" || !isRuntimeString(manifest.version)) {
 		fail(`archive is not @jczhang02/pi-stuff: ${JSON.stringify(manifest)}`);
 	}
 	await symlink(join(root, "packages/pi-stuff/node_modules"), join(packagePath, "node_modules"), "dir");
@@ -255,7 +256,7 @@ function successfulResponse(record: RpcRecord, commandName: string): Record<stri
 	if (record.type !== "response" || record.command !== commandName || record.success !== true) {
 		fail(`RPC ${commandName} failed: ${JSON.stringify(record)}`);
 	}
-	if (typeof record.data !== "object" || record.data === null) return {};
+	if (!isRuntimeObject(record.data) || record.data === null) return {};
 	return record.data as Record<string, unknown>;
 }
 
@@ -301,10 +302,10 @@ async function createRpcTransport(
 	const consume = (line: string): void => {
 		if (!line) return;
 		const parsed: unknown = JSON.parse(line);
-		if (typeof parsed !== "object" || parsed === null) throw new Error(`Invalid Pi RPC record: ${line}`);
+		if (!isRuntimeObject(parsed) || parsed === null) throw new Error(`Invalid Pi RPC record: ${line}`);
 		const record = parsed as RpcRecord;
 		records.push(record);
-		if (typeof record.id === "string" && record.type === "response") {
+		if (isRuntimeString(record.id) && record.type === "response") {
 			const request = pending.get(record.id);
 			if (request) {
 				pending.delete(record.id);
@@ -556,7 +557,7 @@ function assertToolSuccess(records: readonly RpcRecord[], name: string, expected
 
 async function lastAssistantText(rpc: RpcTransport): Promise<string> {
 	const data = successfulResponse(await rpc.send({ type: "get_last_assistant_text" }), "get_last_assistant_text");
-	return typeof data["text"] === "string" ? data["text"] : "";
+	return isRuntimeString(data["text"]) ? data["text"] : "";
 }
 
 async function sessionState(rpc: RpcTransport): Promise<SessionState> {
@@ -652,7 +653,7 @@ function readDatabaseEvidence(databasePath: string, sessionId: string): Database
 			historianSuccesses: count(
 				"SELECT COUNT(*) AS count FROM historian_runs WHERE session_id = ? AND status = 'success'",
 			),
-			pendingMarker: typeof marker?.marker === "string" && marker.marker.length > 0,
+			pendingMarker: isRuntimeString(marker?.marker) && marker.marker.length > 0,
 		};
 	} finally {
 		database.close();
@@ -665,7 +666,7 @@ function readProjectIdentity(databasePath: string, sessionId: string): string {
 		const row = database
 			.query("SELECT project_path AS projectIdentity FROM session_projects WHERE session_id = ? AND harness = 'pi'")
 			.get(sessionId) as { readonly projectIdentity?: unknown } | null;
-		if (typeof row?.projectIdentity !== "string" || !row.projectIdentity) {
+		if (!isRuntimeString(row?.projectIdentity) || !row.projectIdentity) {
 			fail(`Magic Context stored no project identity for ${sessionId}`);
 		}
 		return row.projectIdentity;
@@ -903,7 +904,7 @@ async function main(): Promise<void> {
 		) {
 			fail(`unexpected real model contract: ${JSON.stringify(initialState.model)}`);
 		}
-		if (typeof initialState.sessionFile !== "string" || typeof initialState.sessionId !== "string") {
+		if (!isRuntimeString(initialState.sessionFile) || !isRuntimeString(initialState.sessionId)) {
 			fail(`Pi did not expose a durable real session: ${JSON.stringify(initialState)}`);
 		}
 		sessionFile = initialState.sessionFile;

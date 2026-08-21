@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { isTaskOnlyAgentText } from "../shared/display-description.ts";
 import { readStatusAsync } from "../shared/utils.ts";
 import type {
@@ -124,7 +125,7 @@ async function readTail(
 ): Promise<{ readonly text: string; readonly truncated: boolean } | null> {
 	let file: fs.promises.FileHandle | undefined;
 	try {
-		const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+		const noFollow = isRuntimeNumber(fs.constants.O_NOFOLLOW) ? fs.constants.O_NOFOLLOW : 0;
 		file = await fs.promises.open(filePath, fs.constants.O_RDONLY | noFollow);
 		const stat = await file.stat();
 		if (!stat.isFile() || stat.size === 0) return null;
@@ -143,21 +144,21 @@ async function readTail(
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
-	return typeof value === "object" && value !== null && !Array.isArray(value)
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: undefined;
 }
 
 function contentText(value: unknown): string {
-	if (typeof value === "string") return value;
+	if (isRuntimeString(value)) return value;
 	if (!Array.isArray(value)) return "";
 	return value
 		.map((item) => {
-			if (typeof item === "string") return item;
+			if (isRuntimeString(item)) return item;
 			const part = record(item);
 			if (!part) return "";
-			if (typeof part.text === "string") return part.text;
-			if (typeof part.content === "string") return part.content;
+			if (isRuntimeString(part.text)) return part.text;
+			if (isRuntimeString(part.content)) return part.content;
 			return "";
 		})
 		.filter(Boolean)
@@ -174,7 +175,7 @@ function stringField(
 	key: string,
 ): string | undefined {
 	const value = field(entry, message, key);
-	return typeof value === "string" && value ? value : undefined;
+	return isRuntimeString(value) && value ? value : undefined;
 }
 
 function booleanField(
@@ -183,7 +184,7 @@ function booleanField(
 	key: string,
 ): boolean | undefined {
 	const value = field(entry, message, key);
-	return typeof value === "boolean" ? value : undefined;
+	return isRuntimeBoolean(value) ? value : undefined;
 }
 
 function oneLine(value: string): string {
@@ -208,12 +209,11 @@ interface MessageProjection {
 
 function messageBlock(entry: Record<string, unknown>, agentName: string): MessageProjection | null {
 	const message = record(entry.message);
-	const role =
-		typeof entry.role === "string" ? entry.role : typeof message?.role === "string" ? message.role : undefined;
+	const role = isRuntimeString(entry.role) ? entry.role : isRuntimeString(message?.role) ? message.role : undefined;
 	const text =
-		(typeof entry.text === "string" ? entry.text : "") ||
+		(isRuntimeString(entry.text) ? entry.text : "") ||
 		contentText(entry.content) ||
-		(typeof message?.text === "string" ? message.text : "") ||
+		(isRuntimeString(message?.text) ? message.text : "") ||
 		contentText(message?.content);
 	if (!text.trim()) return null;
 	if (role === "assistant") return { speaker: agentName, text: text.trim() };
@@ -239,9 +239,9 @@ type ParsedTranscriptItem =
 function toolResultText(entry: Record<string, unknown>): string {
 	const message = record(entry.message);
 	return (
-		(typeof entry.text === "string" ? entry.text : "") ||
+		(isRuntimeString(entry.text) ? entry.text : "") ||
 		contentText(entry.content) ||
-		(typeof message?.text === "string" ? message.text : "") ||
+		(isRuntimeString(message?.text) ? message.text : "") ||
 		contentText(message?.content)
 	).trim();
 }
@@ -355,7 +355,7 @@ function jsonlTranscript(
 			continue;
 		}
 		if (!entry) continue;
-		const recordType = typeof entry.recordType === "string" ? entry.recordType : undefined;
+		const recordType = isRuntimeString(entry.recordType) ? entry.recordType : undefined;
 		if (recordType === "tool_start") {
 			const toolCallId = stringField(entry, undefined, "toolCallId");
 			const name = stringField(entry, undefined, "toolName") ?? "Tool";
@@ -382,8 +382,7 @@ function jsonlTranscript(
 		}
 		if (recordType && recordType !== "message") continue;
 		const message = record(entry.message);
-		const role =
-			typeof entry.role === "string" ? entry.role : typeof message?.role === "string" ? message.role : undefined;
+		const role = isRuntimeString(entry.role) ? entry.role : isRuntimeString(message?.role) ? message.role : undefined;
 		if (role === "toolResult" || role === "tool_result") {
 			const toolCallId = stringField(entry, message, "toolCallId");
 			const name = stringField(entry, message, "toolName");

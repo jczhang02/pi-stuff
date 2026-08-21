@@ -1,5 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
 import { writeAtomicJson, writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { assertPrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { tryAcquireStatusMutationClaim } from "../../shared/status-mutation.ts";
@@ -41,23 +47,23 @@ export interface RunnerCloseObservation {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+	return Boolean(value) && isRuntimeObject(value) && !Array.isArray(value);
 }
 
 function validProcessInstance(value: unknown, kind?: "runner" | "pi-writer"): value is ProcessInstanceExitV1 {
 	if (!isRecord(value)) return false;
 	if (
-		typeof value.processInstanceId !== "string" ||
+		!isRuntimeString(value.processInstanceId) ||
 		value.processInstanceId.length === 0 ||
 		value.processInstanceId.length > 256
 	)
 		return false;
 	if (kind ? value.kind !== kind : value.kind !== "runner" && value.kind !== "pi-writer") return false;
-	if (typeof value.closeObservedAt !== "number" || !Number.isFinite(value.closeObservedAt)) return false;
-	if (typeof value.exitCode !== "number" && value.exitCode !== null) return false;
+	if (!isRuntimeNumber(value.closeObservedAt) || !Number.isFinite(value.closeObservedAt)) return false;
+	if (!isRuntimeNumber(value.exitCode) && value.exitCode !== null) return false;
 	if (
-		(typeof value.signal !== "string" && value.signal !== null) ||
-		(typeof value.signal === "string" && value.signal.length > 32)
+		(!isRuntimeString(value.signal) && value.signal !== null) ||
+		(isRuntimeString(value.signal) && value.signal.length > 32)
 	)
 		return false;
 	if (
@@ -68,7 +74,7 @@ function validProcessInstance(value: unknown, kind?: "runner" | "pi-writer"): va
 		return false;
 	return value.kind === "runner"
 		? value.attempt === undefined
-		: typeof value.attempt === "number" && Number.isInteger(value.attempt) && value.attempt >= 0;
+		: isRuntimeNumber(value.attempt) && Number.isInteger(value.attempt) && value.attempt >= 0;
 }
 
 function validInstance(value: unknown): value is ProcessInstanceExitV1 {
@@ -96,8 +102,8 @@ export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalC
 		if (
 			!isRecord(raw) ||
 			raw.version !== 1 ||
-			typeof raw.runId !== "string" ||
-			typeof raw.runnerProcessInstanceId !== "string" ||
+			!isRuntimeString(raw.runId) ||
+			!isRuntimeString(raw.runnerProcessInstanceId) ||
 			!isRecord(raw.writers)
 		) {
 			throw new Error(`Invalid process-terminal candidate in '${asyncDir}'.`);
@@ -124,7 +130,7 @@ export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalC
 				if (
 					!/^\d+$/u.test(index) ||
 					Number(index) >= MAX_PROCESS_TERMINAL_CHILDREN ||
-					typeof count !== "number" ||
+					!isRuntimeNumber(count) ||
 					!Number.isInteger(count) ||
 					count < 0 ||
 					count > MAX_WRITER_INSTANCES_PER_CHILD
@@ -135,11 +141,11 @@ export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalC
 			if (Object.keys(expectedWriters).length > MAX_PROCESS_TERMINAL_CHILDREN)
 				throw new Error("Process-terminal candidate has too many expected children.");
 		}
-		if (raw.sessionFile !== undefined && typeof raw.sessionFile !== "string")
+		if (raw.sessionFile !== undefined && !isRuntimeString(raw.sessionFile))
 			throw new Error("Invalid process-terminal candidate sessionFile.");
-		if (raw.revivalLeaseToken !== undefined && typeof raw.revivalLeaseToken !== "string")
+		if (raw.revivalLeaseToken !== undefined && !isRuntimeString(raw.revivalLeaseToken))
 			throw new Error("Invalid process-terminal candidate lease token.");
-		if (raw.revivalLeaseReleaseAcknowledged !== undefined && typeof raw.revivalLeaseReleaseAcknowledged !== "boolean")
+		if (raw.revivalLeaseReleaseAcknowledged !== undefined && !isRuntimeBoolean(raw.revivalLeaseReleaseAcknowledged))
 			throw new Error("Invalid process-terminal lease release acknowledgement.");
 		return {
 			version: 1,
@@ -218,9 +224,9 @@ function validateProof(
 		!isRecord(raw) ||
 		raw.version !== 1 ||
 		!["pending", "observed", "unknown", "not-started"].includes(String(raw.state)) ||
-		typeof raw.runId !== "string" ||
+		!isRuntimeString(raw.runId) ||
 		!raw.runId ||
-		typeof raw.runnerProcessInstanceId !== "string" ||
+		!isRuntimeString(raw.runnerProcessInstanceId) ||
 		!raw.runnerProcessInstanceId
 	) {
 		throw new Error(`Invalid process-terminal proof in '${asyncDir}'.`);
@@ -244,7 +250,7 @@ function validateProof(
 	const childProof = raw.childIndex !== undefined;
 	if (
 		childProof &&
-		(typeof raw.childIndex !== "number" ||
+		(!isRuntimeNumber(raw.childIndex) ||
 			!Number.isInteger(raw.childIndex) ||
 			raw.childIndex < 0 ||
 			raw.childIndex >= MAX_PROCESS_TERMINAL_CHILDREN)
@@ -252,7 +258,7 @@ function validateProof(
 		throw new Error(`Invalid process-terminal childIndex in '${asyncDir}'.`);
 	}
 	if (raw.state === "observed") {
-		if (typeof raw.observedAt !== "number" || !Number.isFinite(raw.observedAt))
+		if (!isRuntimeNumber(raw.observedAt) || !Number.isFinite(raw.observedAt))
 			throw new Error(`Observed process-terminal proof in '${asyncDir}' is missing observedAt.`);
 		if (!Array.isArray(raw.instances))
 			throw new Error(`Observed process-terminal proof in '${asyncDir}' is missing instances.`);

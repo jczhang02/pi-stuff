@@ -1,4 +1,5 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { isRuntimeString } from "../shared/runtime-type.js";
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 // Keep fold ink inside its terminal cells instead of relying on a font's ellipsis bearing.
@@ -114,7 +115,7 @@ export function sanitizeTerminalText(value: string): string {
 
 /** Sanitize, flatten, and fit one display line by terminal cells without splitting a grapheme. */
 export function boundTerminalLine(value: unknown, maximumWidth: number, ellipsis = "…"): string {
-	if (typeof value !== "string") return "";
+	if (!isRuntimeString(value)) return "";
 	const width = Math.max(0, Math.floor(maximumWidth));
 	const line = sanitizeTerminalText(value).replace(/\s+/gu, " ").trim();
 	return sanitizeTerminalText(truncateToWidth(line, width, sanitizeTerminalText(ellipsis)));

@@ -1,3 +1,4 @@
+import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { boundTerminalLine } from "../tool-display/index.js";
 
 const SESSION_WIDTH = 32;
@@ -45,12 +46,12 @@ export function extractNotificationPreview(content: readonly unknown[]): string 
 	const text = content
 		.filter(
 			(part): part is { readonly text: string; readonly type: "text" } =>
-				typeof part === "object" &&
+				isRuntimeObject(part) &&
 				part !== null &&
 				"type" in part &&
 				part.type === "text" &&
 				"text" in part &&
-				typeof part.text === "string",
+				isRuntimeString(part.text),
 		)
 		.map((part) => part.text)
 		.join("\n\n");

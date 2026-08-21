@@ -3,6 +3,7 @@ import { lstat, readdir, readlink, realpath } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { markLifecyclePhase } from "./lifecycle-performance.js";
+import { isRuntimeObject } from "./shared/runtime-type.js";
 
 const SUITE_RUNTIME_CACHE_KEY = Symbol.for("@jczhang02/pi-stuff/suite-runtime-cache/v2");
 
@@ -36,7 +37,7 @@ interface SuiteRuntimeCache {
 function runtimeCache(): SuiteRuntimeCache {
 	const root = globalThis as Record<symbol, unknown>;
 	const existing = root[SUITE_RUNTIME_CACHE_KEY];
-	if (typeof existing === "object" && existing !== null && "entries" in existing) {
+	if (isRuntimeObject(existing) && existing !== null && "entries" in existing) {
 		const state = existing as Partial<SuiteRuntimeCache>;
 		if (state.entries instanceof Map && state.attemptedRoots instanceof Set) return existing as SuiteRuntimeCache;
 	}

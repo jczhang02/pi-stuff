@@ -2,6 +2,7 @@ import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -188,7 +189,7 @@ function fail(message: string): never {
 }
 
 function number(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -357,7 +358,7 @@ function verifyRequests(records: readonly LogRecord[]): void {
 	if (!Array.isArray(launch.tools) || !launch.tools.includes("subagent")) {
 		fail("the model did not receive the public subagent tool");
 	}
-	if (typeof child.lastUser !== "string" || !child.lastUser.includes("AGENT_PTY_TASK")) {
+	if (!isRuntimeString(child.lastUser) || !child.lastUser.includes("AGENT_PTY_TASK")) {
 		fail("the general-purpose child did not receive its task");
 	}
 	const continuedAt = number(continued.at);
@@ -891,12 +892,12 @@ Return the deterministic fixture result.
 			);
 		}
 		const outcomeData = outcomes[0]?.data;
-		if (!outcomeData || typeof outcomeData !== "object") fail("durable completion outcome has no data");
+		if (!outcomeData || !isRuntimeObject(outcomeData)) fail("durable completion outcome has no data");
 		const outcome = outcomeData as PersistedOutcome;
 		if (outcome.version !== 1 || outcome.count !== 1 || outcome.status !== "completed") {
 			fail("durable completion outcome has the wrong public state projection");
 		}
-		if (typeof outcome.key !== "string" || !/^[a-f0-9]{24}$/.test(outcome.key)) {
+		if (!isRuntimeString(outcome.key) || !/^[a-f0-9]{24}$/.test(outcome.key)) {
 			fail("durable completion outcome does not use a safe digest key");
 		}
 		for (const forbiddenKey of ["agent", "task", "report", "summary", "path", "error", "output"]) {

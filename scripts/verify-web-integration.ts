@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -100,7 +101,7 @@ export async function verifyWebIntegration(options: WebIntegrationVerificationOp
 			if (
 				searchDetails.error ||
 				searchDetails.successfulQueries !== 1 ||
-				typeof searchDetails.totalResults !== "number" ||
+				!isRuntimeNumber(searchDetails.totalResults) ||
 				searchDetails.totalResults < 1 ||
 				!resultText(search).includes("http")
 			) {
@@ -170,7 +171,7 @@ export async function verifyWebIntegration(options: WebIntegrationVerificationOp
 				fixture.context,
 			);
 			const longDetails = longDocument.details as { error?: unknown; responseId?: unknown };
-			if (longDetails.error || typeof longDetails.responseId !== "string") {
+			if (longDetails.error || !isRuntimeString(longDetails.responseId)) {
 				fail("real long-document extraction did not create a continuation id");
 			}
 			if (resultText(longDocument).length > 55_000) {

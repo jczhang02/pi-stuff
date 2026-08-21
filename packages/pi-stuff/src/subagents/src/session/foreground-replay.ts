@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { terminateOrphanWriterProcesses } from "../runs/background/writer-process-registry.ts";
 import { readForegroundOwnerExit, readForegroundOwnerExitAsync } from "../runs/foreground/owner-exit.ts";
 import { parseSubagentCapabilityCeiling } from "../runs/shared/capability-ceiling.ts";
@@ -20,11 +21,11 @@ const MAX_FOREGROUND_COMPLETION_BYTES = 32 * 1024 * 1024;
 const FOREGROUND_OWNER_CRASH = "Foreground Agent crashed because its owning Pi process exited.";
 
 function record(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+	return value && isRuntimeObject(value) && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function displayString(value: unknown, maxChars: number): string | undefined {
-	if (typeof value !== "string" || !value.trim()) return undefined;
+	if (!isRuntimeString(value) || !value.trim()) return undefined;
 	return value.length > maxChars ? value.slice(0, maxChars) : value;
 }
 
@@ -37,18 +38,18 @@ function hasControlCharacter(value: string): boolean {
 }
 
 function exactString(value: unknown, maxChars: number): string | undefined {
-	if (typeof value !== "string" || !value.trim() || value.length > maxChars || hasControlCharacter(value)) {
+	if (!isRuntimeString(value) || !value.trim() || value.length > maxChars || hasControlCharacter(value)) {
 		return undefined;
 	}
 	return value;
 }
 
 function finiteInteger(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) && Number.isInteger(value) ? value : undefined;
 }
 
 function entryTime(value: unknown): number {
-	if (typeof value !== "string") return 0;
+	if (!isRuntimeString(value)) return 0;
 	const parsed = Date.parse(value);
 	return Number.isFinite(parsed) ? parsed : 0;
 }
@@ -163,7 +164,7 @@ export function replayForegroundRuns(entries: Iterable<unknown>, sessionId: stri
 
 function ownerLiveness(status: AsyncStatus): "alive" | "dead" | "unknown" {
 	const pid = status.pid;
-	if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0 || !status.processStartIdentity)
+	if (!isRuntimeNumber(pid) || !Number.isSafeInteger(pid) || pid <= 0 || !status.processStartIdentity)
 		return "unknown";
 	const current = readProcessStartIdentity(pid);
 	if (current) return current === status.processStartIdentity ? "alive" : "dead";
@@ -177,7 +178,7 @@ function ownerLiveness(status: AsyncStatus): "alive" | "dead" | "unknown" {
 
 async function ownerLivenessAsync(status: AsyncStatus): Promise<"alive" | "dead" | "unknown"> {
 	const pid = status.pid;
-	if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0 || !status.processStartIdentity)
+	if (!isRuntimeNumber(pid) || !Number.isSafeInteger(pid) || pid <= 0 || !status.processStartIdentity)
 		return "unknown";
 	const current = await readProcessStartIdentityAsync(pid);
 	if (current) return current === status.processStartIdentity ? "alive" : "dead";
@@ -199,7 +200,7 @@ function foregroundChildStatus(status: unknown): ForegroundResumeChild["status"]
 }
 
 function finiteTimestamp(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function runtimeChild(value: unknown, index: number, updatedAt: number): ForegroundResumeChild | undefined {
@@ -236,7 +237,7 @@ function runtimeChild(value: unknown, index: number, updatedAt: number): Foregro
 	const recentOutput = Array.isArray(step.recentOutput)
 		? displayString(
 				step.recentOutput
-					.filter((line): line is string => typeof line === "string")
+					.filter((line): line is string => isRuntimeString(line))
 					.slice(-50)
 					.join("\n"),
 				32 * 1024,
@@ -385,11 +386,11 @@ function applyCompletionValue(
 			: undefined;
 	if (!state) return undefined;
 	const endedAt =
-		typeof completion.endedAt === "number" && Number.isFinite(completion.endedAt) ? completion.endedAt : Date.now();
+		isRuntimeNumber(completion.endedAt) && Number.isFinite(completion.endedAt) ? completion.endedAt : Date.now();
 	const steps = (status.steps ?? []).map((step, index) => {
 		const result = record(completionResults[index]);
 		const displayOutput =
-			typeof result.output === "string" && result.output ? displayString(result.output, 32 * 1024) : undefined;
+			isRuntimeString(result.output) && result.output ? displayString(result.output, 32 * 1024) : undefined;
 		const childState =
 			result.stopped === true
 				? ("stopped" as const)

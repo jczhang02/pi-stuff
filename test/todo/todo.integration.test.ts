@@ -133,7 +133,7 @@ describe("registered Task tools", () => {
 		const secondDetails = details(second);
 		expect(firstDetails.tasks[0]?.id).toBe("1");
 		expect(secondDetails.tasks[1]?.id).toBe("2");
-		expect(typeof secondDetails.tasks[1]?.id).toBe("string");
+		expect(secondDetails.tasks[1]?.id).toBeTypeOf("string");
 		expect(secondDetails.nextId).toBe(3);
 
 		const listed = await harness.execute(TASK_LIST_TOOL_NAME, {});

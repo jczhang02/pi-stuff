@@ -1,0 +1,21 @@
+import { Guard } from "typebox/guard";
+
+export const isRuntimeBigInt = Guard.IsBigInt;
+export const isRuntimeBoolean = Guard.IsBoolean;
+export const isRuntimeFunction = Guard.IsFunction;
+export const isRuntimeString = Guard.IsString;
+export const isRuntimeSymbol = Guard.IsSymbol;
+export const isRuntimeUndefined = Guard.IsUndefined;
+
+export function isRuntimeNumber<Value>(value: Value): value is Value & number {
+	return (
+		Guard.IsNumber(value) ||
+		Object.is(value, Number.NaN) ||
+		Object.is(value, Number.POSITIVE_INFINITY) ||
+		Object.is(value, Number.NEGATIVE_INFINITY)
+	);
+}
+
+export function isRuntimeObject<Value>(value: Value): value is Value & (object | null) {
+	return Guard.IsObject(value) || Guard.IsNull(value);
+}

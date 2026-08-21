@@ -1,3 +1,5 @@
+import { isRuntimeNumber, isRuntimeObject } from "./shared/runtime-type.js";
+
 const LIFECYCLE_TRACE_KEY = "@jczhang02/pi-stuff/lifecycle-performance";
 
 interface LifecycleTraceState {
@@ -7,9 +9,9 @@ interface LifecycleTraceState {
 
 function traceState(): LifecycleTraceState | undefined {
 	const value = (globalThis as Record<symbol, unknown>)[Symbol.for(LIFECYCLE_TRACE_KEY)];
-	if (typeof value !== "object" || value === null) return undefined;
+	if (!isRuntimeObject(value) || value === null) return undefined;
 	const state = value as Partial<LifecycleTraceState>;
-	if (typeof state.origin !== "number" || !Array.isArray(state.events)) return undefined;
+	if (!isRuntimeNumber(state.origin) || !Array.isArray(state.events)) return undefined;
 	return state as LifecycleTraceState;
 }
 

@@ -3,6 +3,7 @@ import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";
 import { isSuiteNativeCompactionPreflight, whenSuiteSessionReady } from "../../conversation-ui/index.js";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { activityKey, singleActivity } from "../../tool-display/activity.js";
 import { registerSuiteOwnedTool, type SuiteToolPresentation } from "../../tool-display/contract.js";
 import { currentTokenTotal } from "./accounting.js";
@@ -76,7 +77,7 @@ function goalToolText(result: {
 	readonly content: readonly { readonly type: string; readonly text?: string }[];
 }): string {
 	const text = result.content.find((part) => part.type === "text")?.text;
-	return typeof text === "string" ? text : "";
+	return isRuntimeString(text) ? text : "";
 }
 
 function goalCompletePresentation(): SuiteToolPresentation<Record<string, unknown>, GoalCompleteDetails> {
@@ -85,8 +86,8 @@ function goalCompletePresentation(): SuiteToolPresentation<Record<string, unknow
 			categories: ["complete-goal"],
 			classify: ({ args, state }) => {
 				if (state !== "running" && state !== "success") return [];
-				const goalId = typeof args["goal_id"] === "string" ? args["goal_id"] : "goal";
-				const summary = typeof args["summary"] === "string" ? args["summary"] : goalId;
+				const goalId = isRuntimeString(args["goal_id"]) ? args["goal_id"] : "goal";
+				const summary = isRuntimeString(args["summary"]) ? args["summary"] : goalId;
 				return singleActivity("complete-goal", { key: activityKey(goalId), target: summary });
 			},
 		},
@@ -117,8 +118,8 @@ function goalBlockedPresentation(): SuiteToolPresentation<Record<string, unknown
 			categories: ["block-goal"],
 			classify: ({ args, state }) => {
 				if (state !== "running" && state !== "success") return [];
-				const goalId = typeof args["goal_id"] === "string" ? args["goal_id"] : "goal";
-				const reason = typeof args["reason"] === "string" ? args["reason"] : goalId;
+				const goalId = isRuntimeString(args["goal_id"]) ? args["goal_id"] : "goal";
+				const reason = isRuntimeString(args["reason"]) ? args["reason"] : goalId;
 				return singleActivity("block-goal", { key: activityKey(goalId), target: reason });
 			},
 		},
@@ -246,7 +247,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		ownedCompactionTimer = undefined;
 	};
 	const armOwnedCompaction = (event: unknown, ctx: StatusContext, goalId: string): void => {
-		if (typeof ctx.sessionManager !== "object" || ctx.sessionManager === null) return;
+		if (!isRuntimeObject(ctx.sessionManager) || ctx.sessionManager === null) return;
 		pendingOwnedCompaction = {
 			ctx,
 			event,
@@ -334,8 +335,8 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const completedGoal = runtime.activeGoal;
 			const goal = completedGoal?.text ?? "unknown goal";
-			const requestedGoalId = typeof params.goal_id === "string" ? params.goal_id.trim() : "";
-			const summary = typeof params.summary === "string" ? params.summary.trim() : "";
+			const requestedGoalId = isRuntimeString(params.goal_id) ? params.goal_id.trim() : "";
+			const summary = isRuntimeString(params.summary) ? params.summary.trim() : "";
 			const evidence = Array.isArray(params.evidence)
 				? params.evidence.map((item) => {
 						if (!Check(GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA, item)) {
@@ -539,11 +540,11 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const blockedGoal = runtime.activeGoal;
 			const goal = blockedGoal?.text ?? "unknown goal";
-			const requestedGoalId = typeof params.goal_id === "string" ? params.goal_id.trim() : "";
-			const reason = typeof params.reason === "string" ? params.reason.trim() : "";
-			const attemptedAction = typeof params.attempt === "string" ? params.attempt.trim() : "";
-			const evidence = typeof params.evidence === "string" ? params.evidence.trim() : "";
-			const repeatedTurns = typeof params.repeated_turns === "number" ? params.repeated_turns : Number.NaN;
+			const requestedGoalId = isRuntimeString(params.goal_id) ? params.goal_id.trim() : "";
+			const reason = isRuntimeString(params.reason) ? params.reason.trim() : "";
+			const attemptedAction = isRuntimeString(params.attempt) ? params.attempt.trim() : "";
+			const evidence = isRuntimeString(params.evidence) ? params.evidence.trim() : "";
+			const repeatedTurns = isRuntimeNumber(params.repeated_turns) ? params.repeated_turns : Number.NaN;
 			const reject = (rejectionReason: string, terminate = false) => {
 				const rejection = `goal_blocked rejected: ${rejectionReason}.`;
 				ctx.ui.notify(rejection, "warning");
@@ -642,7 +643,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			const result = parseCommand(args, {
 				experimentalGoals: runtime.settings.experimental.goals,
 			});
-			if (typeof result === "string") {
+			if (isRuntimeString(result)) {
 				ctx.ui.notify(result, "warning");
 				return;
 			}
@@ -862,7 +863,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		goalProjectionNeeded = false;
 		turnActive = false;
 		clearPendingOwnedCompaction();
-		if (typeof unsubscribeOwnedCompaction === "function") unsubscribeOwnedCompaction();
+		if (isRuntimeFunction(unsubscribeOwnedCompaction)) unsubscribeOwnedCompaction();
 		runController.unbindSession();
 		runtime.closeMenuSession();
 		if (runtime.activeGoal) {
@@ -984,7 +985,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		}
 		if (message.role === "custom") {
 			if (turnActive) runtime.discardQueuedNonGoalInputs(["idle"]);
-			if (message.customType === GOAL_PROMPT_MESSAGE_TYPE && typeof message.content === "string") {
+			if (message.customType === GOAL_PROMPT_MESSAGE_TYPE && isRuntimeString(message.content)) {
 				beginPromptRun(message.content, ctx);
 				return;
 			}
@@ -1441,7 +1442,7 @@ export {
 } from "./runtime.js";
 
 function isGoalContextMessage(message: unknown) {
-	if (!message || typeof message !== "object") return false;
+	if (!message || !isRuntimeObject(message)) return false;
 	const customType = (message as { role?: unknown; customType?: unknown }).customType;
 	return (
 		(message as { role?: unknown }).role === "custom" &&

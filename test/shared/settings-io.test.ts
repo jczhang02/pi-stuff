@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import {
 	mergeNamespaceRecord,
 	NamespacedSettingsStore,
@@ -79,9 +80,9 @@ test("readNamespace rejects a malformed namespace", async () => {
 type TestSettings = { enabled: boolean; count: number };
 
 function normalize(value: unknown): TestSettings {
-	if (typeof value !== "object" || value === null) throw new Error("expected an object");
+	if (!isRuntimeObject(value) || value === null) throw new Error("expected an object");
 	const record = value as Record<string, unknown>;
-	if (typeof record["enabled"] !== "boolean" || typeof record["count"] !== "number") {
+	if (!isRuntimeBoolean(record["enabled"]) || !isRuntimeNumber(record["count"])) {
 		throw new Error("expected enabled boolean and count number");
 	}
 	return { enabled: record["enabled"], count: record["count"] };

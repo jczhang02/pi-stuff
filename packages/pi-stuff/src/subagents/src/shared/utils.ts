@@ -7,6 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import { getAgentDir as getPiAgentDir } from "@earendil-works/pi-coding-agent";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../../tool-display/index.js";
 import { formatToolCall } from "./formatters.ts";
 import {
@@ -47,7 +48,7 @@ export function resolveWatchPath(
 }
 
 function validConfigDirName(value: unknown): string | undefined {
-	return typeof value === "string" && value.trim() ? value : undefined;
+	return isRuntimeString(value) && value.trim() ? value : undefined;
 }
 
 function readConfigDirNameFromPackageRoot(packageRoot: string | undefined): string | undefined {
@@ -86,7 +87,7 @@ function resolveConfigDirNameFromPackageJson(
 
 export function resolveConfigDirName(codingAgentModule?: unknown, entryPoint?: string, packageRoot?: string): string {
 	const moduleValue =
-		codingAgentModule && typeof codingAgentModule === "object"
+		codingAgentModule && isRuntimeObject(codingAgentModule)
 			? validConfigDirName((codingAgentModule as { CONFIG_DIR_NAME?: unknown }).CONFIG_DIR_NAME)
 			: undefined;
 	return moduleValue ?? resolveConfigDirNameFromPackageJson(entryPoint, packageRoot) ?? DEFAULT_CONFIG_DIR_NAME;
@@ -129,10 +130,7 @@ export function resolveChildCwd(baseCwd: string, childCwd: string | undefined): 
 
 function isNotFoundError(error: unknown): boolean {
 	return (
-		typeof error === "object" &&
-		error !== null &&
-		"code" in error &&
-		(error as NodeJS.ErrnoException).code === "ENOENT"
+		isRuntimeObject(error) && error !== null && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
 	);
 }
 
@@ -174,7 +172,7 @@ export function readStatus(asyncDir: string): AsyncStatus | null {
 			cause: error instanceof Error ? error : undefined,
 		});
 	}
-	if (!status || typeof status !== "object" || Array.isArray(status) || status.runId !== path.basename(asyncDir)) {
+	if (!status || !isRuntimeObject(status) || Array.isArray(status) || status.runId !== path.basename(asyncDir)) {
 		throw new Error(`Async status file '${statusPath}' runId must exactly match its run directory.`);
 	}
 
@@ -230,7 +228,7 @@ export async function readStatusAsync(asyncDir: string): Promise<AsyncStatus | n
 			cause: error instanceof Error ? error : undefined,
 		});
 	}
-	if (!status || typeof status !== "object" || Array.isArray(status) || status.runId !== path.basename(asyncDir)) {
+	if (!status || !isRuntimeObject(status) || Array.isArray(status) || status.runId !== path.basename(asyncDir)) {
 		throw new Error(`Async status file '${statusPath}' runId must exactly match its run directory.`);
 	}
 	statusCache.set(statusPath, {
@@ -295,18 +293,18 @@ export function getFinalOutput(messages: readonly { role?: string; content?: unk
 	const validTextParts: string[] = [];
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
-		if (!msg || typeof msg !== "object" || msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+		if (!msg || !isRuntimeObject(msg) || msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
 		const hasAssistantError =
-			("errorMessage" in msg && typeof msg.errorMessage === "string" && msg.errorMessage.length > 0) ||
+			("errorMessage" in msg && isRuntimeString(msg.errorMessage) && msg.errorMessage.length > 0) ||
 			("stopReason" in msg && msg.stopReason === "error");
 		if (hasAssistantError) continue;
 		const messageText = msg.content
 			.filter(
 				(part) =>
 					part !== null &&
-					typeof part === "object" &&
+					isRuntimeObject(part) &&
 					part.type === "text" &&
-					typeof part.text === "string" &&
+					isRuntimeString(part.text) &&
 					part.text.trim().length > 0,
 			)
 			.map((part) => (part.type === "text" ? part.text : ""))
@@ -315,9 +313,9 @@ export function getFinalOutput(messages: readonly { role?: string; content?: unk
 			const part = msg.content[j];
 			if (
 				!part ||
-				typeof part !== "object" ||
+				!isRuntimeObject(part) ||
 				part.type !== "text" ||
-				typeof part.text !== "string" ||
+				!isRuntimeString(part.text) ||
 				part.text.trim().length === 0
 			)
 				continue;
@@ -351,15 +349,15 @@ export function getDisplayItems(messages: Message[] | undefined): DisplayItem[] 
 	if (!messages || messages.length === 0) return [];
 	const items: DisplayItem[] = [];
 	for (const msg of messages) {
-		if (msg && typeof msg === "object" && msg.role === "assistant" && Array.isArray(msg.content)) {
+		if (msg && isRuntimeObject(msg) && msg.role === "assistant" && Array.isArray(msg.content)) {
 			for (const part of msg.content) {
-				if (!part || typeof part !== "object") continue;
-				if (part.type === "text" && typeof part.text === "string") items.push({ type: "text", text: part.text });
+				if (!part || !isRuntimeObject(part)) continue;
+				if (part.type === "text" && isRuntimeString(part.text)) items.push({ type: "text", text: part.text });
 				else if (
 					part.type === "toolCall" &&
-					typeof part.name === "string" &&
+					isRuntimeString(part.name) &&
 					part.arguments !== null &&
-					typeof part.arguments === "object" &&
+					isRuntimeObject(part.arguments) &&
 					!Array.isArray(part.arguments)
 				)
 					items.push({ type: "tool", name: part.name, args: part.arguments });
@@ -396,7 +394,7 @@ function extractToolCallSummaries(messages: Message[] | undefined): ToolCallSumm
 		for (const part of msg.content) {
 			if (part.type !== "toolCall") continue;
 			const args =
-				typeof part.arguments === "object" && part.arguments !== null && !Array.isArray(part.arguments)
+				isRuntimeObject(part.arguments) && part.arguments !== null && !Array.isArray(part.arguments)
 					? part.arguments
 					: {};
 			summaries.push({
@@ -508,14 +506,14 @@ export function boundStreamedToolCalls(
 
 export function hasEmptyTerminalAssistantResponse(messages: Message[]): boolean {
 	const lastAssistant = messages.findLast(
-		(message) => message !== null && typeof message === "object" && message.role === "assistant",
+		(message) => message !== null && isRuntimeObject(message) && message.role === "assistant",
 	);
 	return (
 		lastAssistant !== undefined &&
 		lastAssistant.role === "assistant" &&
 		Array.isArray(lastAssistant.content) &&
 		lastAssistant.content.length === 0 &&
-		(!lastAssistant.usage || typeof lastAssistant.usage !== "object" || lastAssistant.usage.output === 0)
+		(!lastAssistant.usage || !isRuntimeObject(lastAssistant.usage) || lastAssistant.usage.output === 0)
 	);
 }
 
@@ -526,16 +524,16 @@ export function detectSubagentError(messages: Message[]): ErrorInfo {
 	let lastAssistantTextIndex = -1;
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
-		if (msg && typeof msg === "object" && msg.role === "assistant") {
+		if (msg && isRuntimeObject(msg) && msg.role === "assistant") {
 			const hasText =
 				Array.isArray(msg.content) &&
 				msg.content.some(
 					(c) =>
 						c !== null &&
-						typeof c === "object" &&
+						isRuntimeObject(c) &&
 						c.type === "text" &&
 						"text" in c &&
-						typeof c.text === "string" &&
+						isRuntimeString(c.text) &&
 						c.text.trim().length > 0,
 				);
 			if (hasText) {
@@ -549,16 +547,16 @@ export function detectSubagentError(messages: Message[]): ErrorInfo {
 
 	for (let i = messages.length - 1; i >= scanStart; i--) {
 		const msg = messages[i];
-		if (!msg || typeof msg !== "object" || msg.role !== "toolResult" || !Array.isArray(msg.content)) continue;
-		const toolName = "toolName" in msg && typeof msg.toolName === "string" ? msg.toolName : undefined;
+		if (!msg || !isRuntimeObject(msg) || msg.role !== "toolResult" || !Array.isArray(msg.content)) continue;
+		const toolName = "toolName" in msg && isRuntimeString(msg.toolName) ? msg.toolName : undefined;
 		const isError = "isError" in msg && msg.isError === true;
 
 		if (!isError) continue;
 
 		const text = msg.content.find(
-			(c) => c !== null && typeof c === "object" && c.type === "text" && typeof c.text === "string",
+			(c) => c !== null && isRuntimeObject(c) && c.type === "text" && isRuntimeString(c.text),
 		);
-		const details = text && "text" in text && typeof text.text === "string" ? text.text : undefined;
+		const details = text && "text" in text && isRuntimeString(text.text) ? text.text : undefined;
 		const exitMatch = details?.match(/exit(?:ed)?\s*(?:with\s*)?(?:code|status)?\s*[:\s]?\s*(\d+)/i);
 		return {
 			hasError: true,
@@ -579,8 +577,8 @@ export function extractToolArgsPreview(args: Record<string, unknown>): string {
 		boundTerminalLine(value, maximumWidth, "...");
 
 	const stringifyPreviewValue = (value: unknown): string | undefined => {
-		if (typeof value === "string" && value.trim().length > 0) return value;
-		if (typeof value === "number" || typeof value === "boolean") return String(value);
+		if (isRuntimeString(value) && value.trim().length > 0) return value;
+		if (isRuntimeNumber(value) || isRuntimeBoolean(value)) return String(value);
 		return undefined;
 	};
 
@@ -593,24 +591,24 @@ export function extractToolArgsPreview(args: Record<string, unknown>): string {
 	};
 
 	// Handle MCP tool calls - show server/tool info
-	if (args.tool && typeof args.tool === "string") {
-		const server = args.server && typeof args.server === "string" ? `${args.server}/` : "";
-		const toolArgs = args.args && typeof args.args === "string" ? ` ${truncatePreview(args.args, 40)}` : "";
+	if (args.tool && isRuntimeString(args.tool)) {
+		const server = args.server && isRuntimeString(args.server) ? `${args.server}/` : "";
+		const toolArgs = args.args && isRuntimeString(args.args) ? ` ${truncatePreview(args.args, 40)}` : "";
 		return `${server}${args.tool}${toolArgs}`;
 	}
 
 	const queriesPreview = previewArray(args.queries);
 	if (queriesPreview) return truncatePreview(queriesPreview, 60);
-	if (typeof args.query === "string" && args.query.trim().length > 0) return truncatePreview(args.query, 60);
+	if (isRuntimeString(args.query) && args.query.trim().length > 0) return truncatePreview(args.query, 60);
 
-	if (typeof args.url === "string" && args.url.trim().length > 0) return truncatePreview(args.url, 60);
+	if (isRuntimeString(args.url) && args.url.trim().length > 0) return truncatePreview(args.url, 60);
 	const urlsPreview = previewArray(args.urls);
 	if (urlsPreview) return truncatePreview(urlsPreview, 60);
-	if (typeof args.prompt === "string" && args.prompt.trim().length > 0) return truncatePreview(args.prompt, 60);
+	if (isRuntimeString(args.prompt) && args.prompt.trim().length > 0) return truncatePreview(args.prompt, 60);
 
 	const previewKeys = ["command", "path", "file_path", "pattern", "query", "url", "task", "describe", "search"];
 	for (const key of previewKeys) {
-		if (args[key] && typeof args[key] === "string") {
+		if (args[key] && isRuntimeString(args[key])) {
 			const value = args[key] as string;
 			return truncatePreview(value, 60);
 		}
@@ -620,7 +618,7 @@ export function extractToolArgsPreview(args: Record<string, unknown>): string {
 	for (const [key, value] of Object.entries(args)) {
 		const arrayPreview = previewArray(value);
 		if (arrayPreview) return `${key}=${truncatePreview(arrayPreview, 50)}`;
-		if (typeof value === "string" && value.length > 0) {
+		if (isRuntimeString(value) && value.length > 0) {
 			const preview = truncatePreview(value, 50);
 			return `${key}=${preview}`;
 		}
@@ -634,12 +632,12 @@ export function extractToolArgsPreview(args: Record<string, unknown>): string {
 export function extractTextFromContent(content: unknown): string {
 	if (!content) return "";
 	// Handle string content directly
-	if (typeof content === "string") return content;
+	if (isRuntimeString(content)) return content;
 	// Handle array content
 	if (!Array.isArray(content)) return "";
 	const texts: string[] = [];
 	for (const part of content) {
-		if (part && typeof part === "object") {
+		if (part && isRuntimeObject(part)) {
 			// Handle { type: "text", text: "..." }
 			if ("type" in part && part.type === "text" && "text" in part) {
 				texts.push(String(part.text));

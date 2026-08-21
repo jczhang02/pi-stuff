@@ -3,6 +3,12 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+	isRuntimeBoolean,
+	isRuntimeFunction,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
 import type { JsonSchemaObject } from "../../shared/types.ts";
 import { PI_CODING_AGENT_PACKAGE_ROOT_ENV } from "../../shared/utils.ts";
 
@@ -34,21 +40,20 @@ const SCHEMA_SINGLE_KEYWORDS = [
 const SCHEMA_ARRAY_KEYWORDS = ["allOf", "anyOf", "oneOf", "prefixItems"] as const;
 
 function rewriteLocalJsonPointerRefs(schema: unknown, pointerPrefix: string, inheritsWrapperResource = true): unknown {
-	if (typeof schema === "boolean" || !schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+	if (isRuntimeBoolean(schema) || !schema || !isRuntimeObject(schema) || Array.isArray(schema)) return schema;
 	const source = schema as Record<string, unknown>;
 	const rewritten: Record<string, unknown> = { ...source };
-	const sharesWrapperResource = inheritsWrapperResource && typeof source.$id !== "string";
+	const sharesWrapperResource = inheritsWrapperResource && !isRuntimeString(source.$id);
 	if (sharesWrapperResource) {
 		for (const keyword of ["$ref", "$dynamicRef", "$recursiveRef"] as const) {
 			const ref = source[keyword];
 			if (ref === "#") rewritten[keyword] = pointerPrefix;
-			else if (typeof ref === "string" && ref.startsWith("#/"))
-				rewritten[keyword] = `${pointerPrefix}${ref.slice(1)}`;
+			else if (isRuntimeString(ref) && ref.startsWith("#/")) rewritten[keyword] = `${pointerPrefix}${ref.slice(1)}`;
 		}
 	}
 	for (const keyword of SCHEMA_MAP_KEYWORDS) {
 		const entries = source[keyword];
-		if (!entries || typeof entries !== "object" || Array.isArray(entries)) continue;
+		if (!entries || !isRuntimeObject(entries) || Array.isArray(entries)) continue;
 		rewritten[keyword] = Object.fromEntries(
 			Object.entries(entries).map(([name, nested]) => [
 				name,
@@ -74,7 +79,7 @@ function rewriteLocalJsonPointerRefs(schema: unknown, pointerPrefix: string, inh
 			);
 	}
 	const dependencies = source.dependencies;
-	if (dependencies && typeof dependencies === "object" && !Array.isArray(dependencies)) {
+	if (dependencies && isRuntimeObject(dependencies) && !Array.isArray(dependencies)) {
 		rewritten.dependencies = Object.fromEntries(
 			Object.entries(dependencies).map(([name, nested]) => [
 				name,
@@ -107,14 +112,14 @@ export async function resolveCompileFromPackageRoot(packageRoot: string): Promis
 	const requireFromRoot = createRequire(path.join(packageRoot, "package.json"));
 	const resolved = requireFromRoot.resolve("typebox/compile");
 	const mod = (await import(pathToFileURL(resolved).href)) as { Compile?: unknown };
-	return typeof mod.Compile === "function" ? (mod.Compile as CompileJsonSchema) : undefined;
+	return isRuntimeFunction(mod.Compile) ? (mod.Compile as CompileJsonSchema) : undefined;
 }
 
 async function importCompile(): Promise<CompileJsonSchema> {
 	const failures: string[] = [];
 	try {
 		const mod = (await import("typebox/compile")) as { Compile?: unknown };
-		if (typeof mod.Compile === "function") return mod.Compile as CompileJsonSchema;
+		if (isRuntimeFunction(mod.Compile)) return mod.Compile as CompileJsonSchema;
 		failures.push("typebox/compile did not export a Compile function");
 	} catch (error) {
 		failures.push(`direct import failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -145,7 +150,7 @@ function loadCompile(): Promise<CompileJsonSchema> {
 }
 
 export function assertJsonSchemaObject(schema: unknown, label = "outputSchema"): asserts schema is JsonSchemaObject {
-	if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+	if (!schema || !isRuntimeObject(schema) || Array.isArray(schema)) {
 		throw new Error(`${label} must be a JSON Schema object.`);
 	}
 }

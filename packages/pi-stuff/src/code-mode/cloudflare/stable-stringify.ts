@@ -1,3 +1,4 @@
+import { isRuntimeBigInt, isRuntimeObject } from "../../shared/runtime-type.js";
 /**
  * Deterministic JSON of a value: object keys sorted recursively, BigInt tagged.
  * Used to compare a replayed call's args against the recorded args. Best-effort
@@ -8,8 +9,8 @@
 export function stableStringify(value: unknown): string | undefined {
 	try {
 		return JSON.stringify(value, (_key, val) => {
-			if (typeof val === "bigint") return `__bigint__:${val.toString()}`;
-			if (val && typeof val === "object" && !Array.isArray(val)) {
+			if (isRuntimeBigInt(val)) return `__bigint__:${val.toString()}`;
+			if (val && isRuntimeObject(val) && !Array.isArray(val)) {
 				const record = val as Record<string, unknown>;
 				const sorted: Record<string, unknown> = {};
 				for (const key of Object.keys(record).sort()) sorted[key] = record[key];

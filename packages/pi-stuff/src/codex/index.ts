@@ -4,6 +4,7 @@ import {
 	getCommandDialogCoordinator,
 	listenForUserAgentRunSettled,
 } from "../conversation-ui/index.js";
+import { isRuntimeObject } from "../shared/runtime-type.js";
 import { isOpenAICodexResponsesModel } from "./account.js";
 import { type CodexControls, createCodexDialogView } from "./dialog.js";
 import { CodexSettingsStore } from "./settings.js";
@@ -11,7 +12,7 @@ import { registerCodexTools } from "./tools.js";
 import { type CodexUsageSnapshot, fetchCodexUsage, formatCodexUsage, weeklyRemainingPercent } from "./usage.js";
 
 function requestPayloadWithFast(payload: unknown): unknown | undefined {
-	if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return undefined;
+	if (!isRuntimeObject(payload) || payload === null || Array.isArray(payload)) return undefined;
 	return { ...(payload as Record<string, unknown>), service_tier: "priority" };
 }
 

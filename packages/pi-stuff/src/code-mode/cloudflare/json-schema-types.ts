@@ -1,4 +1,5 @@
 import type { JSONSchema7, JSONSchema7Definition } from "json-schema";
+import { isRuntimeBoolean, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { escapeJsDoc, escapeStringLiteral, quoteProp, sanitizeToolName, toPascalCase } from "./utils.js";
 
 export interface ConversionContext {
@@ -25,14 +26,14 @@ function resolveRef(ref: string, root: JSONSchema7): JSONSchema7Definition | nul
 
 	let current: unknown = root;
 	for (const seg of segments) {
-		if (current === null || typeof current !== "object") return null;
+		if (current === null || !isRuntimeObject(current)) return null;
 		current = (current as Record<string, unknown>)[seg];
 		if (current === undefined) return null;
 	}
 
 	// Allow both object schemas and boolean schemas (true = any, false = never)
-	if (typeof current === "boolean") return current;
-	if (current === null || typeof current !== "object") return null;
+	if (isRuntimeBoolean(current)) return current;
+	if (current === null || !isRuntimeObject(current)) return null;
 	return current as JSONSchema7;
 }
 
@@ -52,7 +53,7 @@ function applyNullable(result: string, schema: unknown): string {
  */
 export function jsonSchemaToTypeString(schema: JSONSchema7Definition, indent: string, ctx: ConversionContext): string {
 	// Handle boolean schemas
-	if (typeof schema === "boolean") {
+	if (isRuntimeBoolean(schema)) {
 		return schema ? "unknown" : "never";
 	}
 
@@ -98,8 +99,8 @@ export function jsonSchemaToTypeString(schema: JSONSchema7Definition, indent: st
 			const result = schema.enum
 				.map((v) => {
 					if (v === null) return "null";
-					if (typeof v === "string") return `"${escapeStringLiteral(v)}"`;
-					if (typeof v === "object") return JSON.stringify(v) ?? "unknown";
+					if (isRuntimeString(v)) return `"${escapeStringLiteral(v)}"`;
+					if (isRuntimeObject(v)) return JSON.stringify(v) ?? "unknown";
 					return String(v);
 				})
 				.join(" | ");
@@ -111,9 +112,9 @@ export function jsonSchemaToTypeString(schema: JSONSchema7Definition, indent: st
 			const result =
 				schema.const === null
 					? "null"
-					: typeof schema.const === "string"
+					: isRuntimeString(schema.const)
 						? `"${escapeStringLiteral(schema.const)}"`
-						: typeof schema.const === "object"
+						: isRuntimeObject(schema.const)
 							? (JSON.stringify(schema.const) ?? "unknown")
 							: String(schema.const);
 			return applyNullable(result, schema);
@@ -154,7 +155,7 @@ export function jsonSchemaToTypeString(schema: JSONSchema7Definition, indent: st
 			const lines: string[] = [];
 
 			for (const [propName, propSchema] of Object.entries(props)) {
-				if (typeof propSchema === "boolean") {
+				if (isRuntimeBoolean(propSchema)) {
 					const boolType = propSchema ? "unknown" : "never";
 					const optionalMark = required.has(propName) ? "" : "?";
 					lines.push(`${indent}    ${quoteProp(propName)}${optionalMark}: ${boolType};`);
@@ -246,7 +247,7 @@ function extractJsonSchemaDescriptions(schema: JSONSchema7): Record<string, stri
 	const descriptions: Record<string, string> = {};
 	if (schema.properties) {
 		for (const [fieldName, propSchema] of Object.entries(schema.properties)) {
-			if (propSchema && typeof propSchema === "object" && propSchema.description) {
+			if (propSchema && isRuntimeObject(propSchema) && propSchema.description) {
 				descriptions[fieldName] = propSchema.description;
 			}
 		}

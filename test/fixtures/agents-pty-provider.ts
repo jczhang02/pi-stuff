@@ -2,6 +2,7 @@ import { appendFileSync } from "node:fs";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 const PROVIDER = "pi-stuff-agents-pty";
 const MODEL = "fixture-model";
@@ -38,7 +39,7 @@ function lastUserText(context: Context): string {
 	for (let index = context.messages.length - 1; index >= 0; index--) {
 		const entry = context.messages[index];
 		if (entry?.role !== "user") continue;
-		if (typeof entry.content === "string") return entry.content;
+		if (isRuntimeString(entry.content)) return entry.content;
 		return entry.content
 			.filter((part): part is { type: "text"; text: string } => part.type === "text")
 			.map((part) => part.text)

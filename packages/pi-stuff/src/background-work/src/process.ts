@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { isRuntimeObject } from "../../shared/runtime-type.js";
 
 export interface ProcessIdentity {
 	readonly pid: number;
@@ -7,7 +8,7 @@ export interface ProcessIdentity {
 }
 
 function errorCode(error: unknown): string | undefined {
-	return error && typeof error === "object" && "code" in error
+	return error && isRuntimeObject(error) && "code" in error
 		? String((error as NodeJS.ErrnoException).code)
 		: undefined;
 }

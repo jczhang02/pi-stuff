@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { parseForStorage, stringifyForStorage } from "../cloudflare/codec.js";
 import { SuiteToolInvocationError } from "../connector.js";
 import type {
@@ -18,7 +19,7 @@ type SendMessage = (message: unknown) => void;
 
 function resultFromValue(value: unknown): AgentToolResult<unknown> {
 	if (
-		typeof value === "object" &&
+		isRuntimeObject(value) &&
 		value !== null &&
 		"content" in value &&
 		Array.isArray((value as { content?: unknown }).content)
@@ -27,7 +28,7 @@ function resultFromValue(value: unknown): AgentToolResult<unknown> {
 	}
 	let text: string;
 	try {
-		text = typeof value === "string" ? value : (JSON.stringify(value) ?? String(value));
+		text = isRuntimeString(value) ? value : (JSON.stringify(value) ?? String(value));
 	} catch {
 		try {
 			text = String(value);

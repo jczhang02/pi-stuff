@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { validateObjective } from "./command.js";
 import type { GoalCommandController } from "./commands.js";
 import {
@@ -75,7 +76,7 @@ function goalRunEventChannel(runId: string) {
 }
 
 function isPayloadRecord(data: unknown): data is GoalRunPayloadRecord {
-	if (!data || typeof data !== "object") return false;
+	if (!data || !isRuntimeObject(data)) return false;
 	try {
 		return !Array.isArray(data);
 	} catch {
@@ -97,7 +98,7 @@ function readPayloadProperty(
 function parseRunId(data: unknown): string | undefined {
 	if (!isPayloadRecord(data)) return undefined;
 	const runId = readPayloadProperty(data, "runId");
-	return runId.ok && typeof runId.value === "string" && RUN_ID_PATTERN.test(runId.value) ? runId.value : undefined;
+	return runId.ok && isRuntimeString(runId.value) && RUN_ID_PATTERN.test(runId.value) ? runId.value : undefined;
 }
 
 function currentActiveGoal(runtime: GoalRuntime) {
@@ -107,7 +108,7 @@ function currentActiveGoal(runtime: GoalRuntime) {
 function parseStartPayload(data: unknown): string | Omit<GoalRunStartPayload, "runId"> {
 	if (!isPayloadRecord(data)) return "start payload must be an object";
 	const objectiveValue = readPayloadProperty(data, "objective");
-	if (!objectiveValue.ok || typeof objectiveValue.value !== "string") {
+	if (!objectiveValue.ok || !isRuntimeString(objectiveValue.value)) {
 		return "objective must be a string";
 	}
 	const objective = objectiveValue.value.trim();
@@ -117,7 +118,7 @@ function parseStartPayload(data: unknown): string | Omit<GoalRunStartPayload, "r
 	if (
 		!tokenBudgetValue.ok ||
 		(tokenBudgetValue.value !== undefined &&
-			(typeof tokenBudgetValue.value !== "number" ||
+			(!isRuntimeNumber(tokenBudgetValue.value) ||
 				!Number.isFinite(tokenBudgetValue.value) ||
 				!Number.isSafeInteger(tokenBudgetValue.value) ||
 				tokenBudgetValue.value <= 0))
@@ -130,7 +131,7 @@ function parseStartPayload(data: unknown): string | Omit<GoalRunStartPayload, "r
 function parseCancelReason(data: unknown): string | undefined | { error: string } {
 	if (!isPayloadRecord(data)) return { error: "cancel payload must be an object" };
 	const reasonValue = readPayloadProperty(data, "reason");
-	if (!reasonValue.ok || (reasonValue.value !== undefined && typeof reasonValue.value !== "string")) {
+	if (!reasonValue.ok || (reasonValue.value !== undefined && !isRuntimeString(reasonValue.value))) {
 		return { error: "reason must be a string" };
 	}
 	if (reasonValue.value === undefined) return undefined;
@@ -193,7 +194,7 @@ export class GoalRunController {
 			return;
 		}
 		const parsed = parseStartPayload(data);
-		if (typeof parsed === "string") {
+		if (isRuntimeString(parsed)) {
 			this.emitError(runId, "start", "INVALID_REQUEST", parsed);
 			return;
 		}
@@ -260,7 +261,7 @@ export class GoalRunController {
 			return;
 		}
 		const reason = parseCancelReason(data);
-		if (reason && typeof reason === "object") {
+		if (reason && isRuntimeObject(reason)) {
 			this.emitError(runId, "cancel", "INVALID_REQUEST", reason.error);
 			return;
 		}

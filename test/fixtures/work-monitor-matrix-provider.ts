@@ -4,6 +4,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
+import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 const PROVIDER = "pi-stuff-work-monitor-matrix";
 const MODEL = "fixture-model";
@@ -76,7 +77,7 @@ function toolStream(name: string, id: string, arguments_: Record<string, unknown
 function userTexts(context: Context): string[] {
 	return context.messages.flatMap((entry) => {
 		if (entry.role !== "user") return [];
-		if (typeof entry.content === "string") return [entry.content];
+		if (isRuntimeString(entry.content)) return [entry.content];
 		return entry.content
 			.filter((part): part is { readonly text: string; readonly type: "text" } => part.type === "text")
 			.map((part) => part.text);

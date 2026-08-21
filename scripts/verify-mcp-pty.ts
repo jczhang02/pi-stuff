@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/mcp-pty-provider.ts");
@@ -595,7 +596,7 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 			};
 			if (
 				!freshDocument.mcpServers ||
-				typeof freshDocument.mcpServers !== "object" ||
+				!isRuntimeObject(freshDocument.mcpServers) ||
 				Array.isArray(freshDocument.mcpServers)
 			) {
 				fail("fresh-state setup did not write a valid MCP server map");

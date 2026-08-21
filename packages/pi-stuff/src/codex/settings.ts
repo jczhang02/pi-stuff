@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
+import { isRuntimeObject } from "../shared/runtime-type.js";
 import { mergedSettingsPath, NamespacedSettingsStore } from "../shared/settings-io/index.js";
 import { acquireSettingsLock } from "../shared/settings-io/lock.js";
 
@@ -17,7 +18,7 @@ const CODEX_NAMESPACE = "codex";
 type CodexRecord = { fast: boolean };
 
 function normalizeSettings(value: unknown): CodexSettings {
-	if (typeof value !== "object" || value === null) return DEFAULT_SETTINGS;
+	if (!isRuntimeObject(value) || value === null) return DEFAULT_SETTINGS;
 	return { fast: (value as Record<string, unknown>)["fast"] === true };
 }
 

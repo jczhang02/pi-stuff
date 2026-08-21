@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolActivityState } from "./activity-store.js";
 import { oneLine } from "./render.js";
 import { boundTerminalLine, compactTerminalPath } from "./terminal.js";
@@ -92,7 +93,7 @@ export interface ToolActivityMetadata<TArgs extends Record<string, unknown>, TDe
 
 export function activityKey(...parts: readonly unknown[]): string {
 	return parts
-		.map((part) => oneLine(typeof part === "string" ? part : (JSON.stringify(part) ?? "")))
+		.map((part) => oneLine(isRuntimeString(part) ? part : (JSON.stringify(part) ?? "")))
 		.filter(Boolean)
 		.join("\u0000");
 }
@@ -314,7 +315,7 @@ function bashSegmentWords(segment: string): readonly string[] | undefined {
 /** Classify only clearly read-only shell retrieval; ambiguity stays standalone. */
 export function classifyBashRetrievalActivity(args: Readonly<Record<string, unknown>>): readonly ToolActivityItem[] {
 	if (args["run_in_background"] === true) return [];
-	const command = typeof args["command"] === "string" ? args["command"] : "";
+	const command = isRuntimeString(args["command"]) ? args["command"] : "";
 	const segments = splitBashRetrievalSegments(command);
 	if (!segments) return [];
 	const categories = new Set<ToolActivityCategory>();
@@ -334,7 +335,7 @@ export function classifyBashRetrievalActivity(args: Readonly<Record<string, unkn
 		categories.add(category);
 	}
 	if (categories.size === 0) return [];
-	const description = typeof args["description"] === "string" ? oneLine(args["description"]) : "";
+	const description = isRuntimeString(args["description"]) ? oneLine(args["description"]) : "";
 	const fallback = categories.has("search-pattern")
 		? "Searching files"
 		: categories.has("read-file")
@@ -348,8 +349,8 @@ export function classifyBashRetrievalActivity(args: Readonly<Record<string, unkn
 export function classifyBashActivity(
 	input: ToolActivityClassifierInput<Record<string, unknown>, unknown>,
 ): readonly ToolActivityItem[] {
-	const command = typeof input.args["command"] === "string" ? input.args["command"] : "";
-	const description = typeof input.args["description"] === "string" ? oneLine(input.args["description"]) : "";
+	const command = isRuntimeString(input.args["command"]) ? input.args["command"] : "";
+	const description = isRuntimeString(input.args["description"]) ? oneLine(input.args["description"]) : "";
 	const target = activityTarget(description || "Running command");
 	const background = input.args["run_in_background"] === true || bashResultMovedToBackground(input.result);
 	const outcomeEligible = input.state === "running" || input.state === "success";
@@ -636,7 +637,7 @@ export interface ToolActivityAggregate {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function toolCall(value: unknown): Omit<PlannedToolActivityMember, "result"> | undefined {
@@ -644,7 +645,7 @@ function toolCall(value: unknown): Omit<PlannedToolActivityMember, "result"> | u
 	const id = value["id"];
 	const name = value["name"];
 	const args = value["arguments"];
-	if (typeof id !== "string" || !id || typeof name !== "string" || !name || !isRecord(args)) return undefined;
+	if (!isRuntimeString(id) || !id || !isRuntimeString(name) || !name || !isRecord(args)) return undefined;
 	return { args, id, name };
 }
 
@@ -652,7 +653,7 @@ function toolResult(value: unknown): { readonly id: string; readonly result: Age
 	if (!isRecord(value) || value["role"] !== "toolResult") return undefined;
 	const id = value["toolCallId"];
 	const content = value["content"];
-	if (typeof id !== "string" || !id || !Array.isArray(content)) return undefined;
+	if (!isRuntimeString(id) || !id || !Array.isArray(content)) return undefined;
 	return {
 		id,
 		result: {
@@ -665,10 +666,7 @@ function toolResult(value: unknown): { readonly id: string; readonly result: Age
 
 function hasVisibleText(block: unknown): boolean {
 	return (
-		isRecord(block) &&
-		block["type"] === "text" &&
-		typeof block["text"] === "string" &&
-		block["text"].trim().length > 0
+		isRecord(block) && block["type"] === "text" && isRuntimeString(block["text"]) && block["text"].trim().length > 0
 	);
 }
 

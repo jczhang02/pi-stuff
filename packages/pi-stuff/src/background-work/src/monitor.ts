@@ -1,5 +1,6 @@
 import { open, stat } from "node:fs/promises";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject } from "../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
 import { sanitizeTerminalText, utf8SafePrefix, utf8SafeTail } from "./output.js";
 import type {
@@ -207,7 +208,7 @@ class PollingMonitor implements BackgroundMonitorActivity {
 				}
 			} catch (error) {
 				if (this.controller.signal.aborted) return;
-				const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+				const code = error && isRuntimeObject(error) && "code" in error ? String(error.code) : "";
 				if (this.input.source !== "http" && code && code !== "ENOENT") {
 					this.evidence = error instanceof Error ? error.message : String(error);
 					this.finish("failed", `Monitor "${this.title}" could not read its source`);

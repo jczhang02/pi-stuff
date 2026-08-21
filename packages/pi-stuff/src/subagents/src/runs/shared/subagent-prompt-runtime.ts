@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
+import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../../tool-display/index.js";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
@@ -106,7 +107,7 @@ function readRequiredChildTools(): string[] | undefined {
 	const encoded = process.env[REQUIRED_CHILD_TOOLS_ENV]?.trim();
 	if (!encoded) return undefined;
 	const required = JSON.parse(encoded) as unknown;
-	if (!Array.isArray(required) || required.some((name) => typeof name !== "string" || !name)) {
+	if (!Array.isArray(required) || required.some((name) => !isRuntimeString(name) || !name)) {
 		throw new Error(`Invalid ${REQUIRED_CHILD_TOOLS_ENV} payload.`);
 	}
 	return required;
@@ -117,7 +118,7 @@ function readMcpDirectChildTools(): string[] | undefined {
 	if (!encoded) return undefined;
 	try {
 		const tools = JSON.parse(encoded) as unknown;
-		if (!Array.isArray(tools) || tools.some((name) => typeof name !== "string" || !name)) return undefined;
+		if (!Array.isArray(tools) || tools.some((name) => !isRuntimeString(name) || !name)) return undefined;
 		return tools;
 	} catch {
 		return undefined;
@@ -150,7 +151,7 @@ export function rewriteSubagentPrompt(prompt: string, options: { fanoutChild?: b
 
 function isParentOnlySubagentMessage(message: unknown): boolean {
 	const m = message as { role?: string; customType?: string };
-	if (m?.role !== "custom" || typeof m.customType !== "string") return false;
+	if (m?.role !== "custom" || !isRuntimeString(m.customType)) return false;
 	return PARENT_ONLY_CUSTOM_MESSAGE_TYPES.has(m.customType);
 }
 
@@ -231,13 +232,13 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 		handler: (event: { toolName?: string }) => unknown,
 	) => void;
 	onRuntimeEvent("tool_call", (event) => {
-		const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
+		const toolName = isRuntimeString(event.toolName) ? event.toolName : "tool";
 		toolCount++;
 		if (budget.soft !== undefined && toolCount >= budget.soft && !softNudged) {
 			softNudged = true;
 			try {
 				const dispatched = sendUserMessage?.(toolBudgetSoftNudge(budget, toolCount), { deliverAs: "steer" });
-				if (dispatched && typeof (dispatched as PromiseLike<unknown>).then === "function") {
+				if (dispatched && isRuntimeFunction((dispatched as PromiseLike<unknown>).then)) {
 					void Promise.resolve(dispatched).catch(() => {
 						// Budget nudges are advisory; blocking below remains authoritative.
 					});
@@ -275,7 +276,7 @@ export function registerSteeringInbox(
 	let flushing = false;
 	let started = false;
 	let ready = false;
-	const canSteer = typeof sendUserMessage === "function";
+	const canSteer = isRuntimeFunction(sendUserMessage);
 	let watcher: fs.FSWatcher | undefined;
 	let interval: NodeJS.Timeout | undefined;
 	let lastRuntimeError = "";
@@ -348,7 +349,7 @@ export function registerSteeringInbox(
 					return "retain";
 				}
 				if (pendingById.has(request.id) || pendingAcks.has(request.id)) return "retain";
-				if (!canSteer || typeof sendUserMessage !== "function") {
+				if (!canSteer || !isRuntimeFunction(sendUserMessage)) {
 					acknowledge(request, "failed", "Child Pi session does not support sendUserMessage steering.", complete);
 					return "retain";
 				}
@@ -357,7 +358,7 @@ export function registerSteeringInbox(
 				pendingById.set(request.id, delivery);
 				try {
 					const dispatched = sendUserMessage(formatted, { deliverAs: "steer" });
-					if (dispatched && typeof (dispatched as PromiseLike<unknown>).then === "function") {
+					if (dispatched && isRuntimeFunction((dispatched as PromiseLike<unknown>).then)) {
 						void Promise.resolve(dispatched).catch((error) => {
 							if (pendingById.get(request.id) !== delivery) return;
 							forgetPendingDelivery(delivery);
@@ -382,7 +383,7 @@ export function registerSteeringInbox(
 		}
 	};
 	const onInput = (event: unknown): undefined => {
-		if (disposed || !event || typeof event !== "object") return undefined;
+		if (disposed || !event || !isRuntimeObject(event)) return undefined;
 		const input = event as { source?: unknown; streamingBehavior?: unknown; text?: unknown; content?: unknown };
 		// Pi reports `steer` only when the Agent is still streaming. If the same
 		// accepted extension message arrives just after the stream ends, it starts a
@@ -393,8 +394,11 @@ export function registerSteeringInbox(
 			(input.streamingBehavior !== undefined && input.streamingBehavior !== "steer")
 		)
 			return undefined;
-		const text =
-			typeof input.text === "string" ? input.text : typeof input.content === "string" ? input.content : undefined;
+		const text = isRuntimeString(input.text)
+			? input.text
+			: isRuntimeString(input.content)
+				? input.content
+				: undefined;
 		if (!text) return undefined;
 		const requestId = steerRequestIdFromInput(text);
 		const delivery = requestId ? pendingById.get(requestId) : undefined;
@@ -562,7 +566,7 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", async (event) => {
 		if (readRequiredChildTools()?.includes("intercom")) registerNativeSupervisorFallbackOnce();
 		const intercomSessionName = process.env[SUBAGENT_INTERCOM_SESSION_NAME_ENV]?.trim();
-		if (intercomSessionName && typeof pi.setSessionName === "function") {
+		if (intercomSessionName && isRuntimeFunction(pi.setSessionName)) {
 			pi.setSessionName(intercomSessionName);
 		}
 

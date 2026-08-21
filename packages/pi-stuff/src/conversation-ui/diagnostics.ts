@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isRuntimeString } from "../shared/runtime-type.js";
 import { getHostSharedResource } from "./host-resource.js";
 
 export type DiagnosticSeverity = "error" | "info" | "warning";
@@ -120,14 +121,14 @@ function errorDetails(error: unknown): string[] {
 		const source = error.stack || `${error.name}: ${error.message}`;
 		return source.split(/\r?\n/gu);
 	}
-	if (typeof error === "string") return error.split(/\r?\n/gu);
+	if (isRuntimeString(error)) return error.split(/\r?\n/gu);
 	return [safeJson(error) ?? String(error)];
 }
 
 function normalizedDetails(report: DiagnosticReport): string[] {
 	const supplied = Array.isArray(report.details)
 		? report.details
-		: typeof report.details === "string"
+		: isRuntimeString(report.details)
 			? report.details.split(/\r?\n/gu)
 			: [];
 	const lines: string[] = [];

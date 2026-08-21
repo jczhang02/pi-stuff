@@ -1,4 +1,5 @@
 import { performance } from "node:perf_hooks";
+import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { planToolActivityGroups } from "../packages/pi-stuff/src/tool-display/activity.js";
 import { ToolUiRuntime } from "../packages/pi-stuff/src/tool-display/contract.js";
 import { buildToolResultLines } from "../packages/pi-stuff/src/tool-display/render.js";
@@ -42,7 +43,7 @@ for (let start = 0; start < CALLS; start += CALLS_PER_ROUND) {
 function shippedExplorationProjection(input: readonly unknown[]): number {
 	let groups = 0;
 	for (const candidate of input) {
-		if (typeof candidate !== "object" || candidate === null) continue;
+		if (!isRuntimeObject(candidate) || candidate === null) continue;
 		const message = candidate as Record<string, unknown>;
 		if (message["role"] !== "assistant" || !Array.isArray(message["content"])) continue;
 		let adjacent = 0;
@@ -51,15 +52,15 @@ function shippedExplorationProjection(input: readonly unknown[]): number {
 			adjacent = 0;
 		};
 		for (const block of message["content"]) {
-			if (typeof block !== "object" || block === null) continue;
+			if (!isRuntimeObject(block) || block === null) continue;
 			const value = block as Record<string, unknown>;
 			const args = value["arguments"];
 			const explorationCall =
 				value["type"] === "toolCall" &&
-				typeof value["id"] === "string" &&
+				isRuntimeString(value["id"]) &&
 				Boolean(value["id"]) &&
 				value["name"] === "read" &&
-				typeof args === "object" &&
+				isRuntimeObject(args) &&
 				args !== null &&
 				!Array.isArray(args);
 			if (explorationCall) adjacent += 1;

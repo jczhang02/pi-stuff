@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
+import {
 	attachNestedChildrenToResultChildren,
 	buildSubagentResultIntercomPayload,
 	compactNestedResultChildren,
@@ -210,7 +216,7 @@ function sanitizeNestedResultChildren(
 }
 
 function errorCode(error: unknown): string | undefined {
-	return typeof error === "object" && error !== null && "code" in error
+	return isRuntimeObject(error) && error !== null && "code" in error
 		? (error as NodeJS.ErrnoException).code
 		: undefined;
 }
@@ -254,11 +260,11 @@ async function readDeliveryState(
 			value?.version !== 1 ||
 			value.completionKey !== completionKey ||
 			value.resultDigest !== digest ||
-			typeof value.intercomComplete !== "boolean" ||
-			typeof value.intercomDelivered !== "boolean" ||
-			typeof value.notificationAccepted !== "boolean" ||
-			typeof value.completionEmitted !== "boolean" ||
-			typeof value.updatedAt !== "number" ||
+			!isRuntimeBoolean(value.intercomComplete) ||
+			!isRuntimeBoolean(value.intercomDelivered) ||
+			!isRuntimeBoolean(value.notificationAccepted) ||
+			!isRuntimeBoolean(value.completionEmitted) ||
+			!isRuntimeNumber(value.updatedAt) ||
 			!Number.isFinite(value.updatedAt)
 		)
 			return undefined;
@@ -379,7 +385,7 @@ export function createResultWatcher(
 		if ((data.runId !== undefined && data.runId !== fileRunId) || (data.id !== undefined && data.id !== fileRunId)) {
 			return "invalid";
 		}
-		if (typeof data.asyncDir !== "string" || !data.asyncDir) return "valid";
+		if (!isRuntimeString(data.asyncDir) || !data.asyncDir) return "valid";
 		const runId = fileRunId;
 		const expectedDir = path.join(path.resolve(asyncDirRoot), runId);
 		if (path.resolve(data.asyncDir) !== expectedDir || path.dirname(expectedDir) !== path.resolve(asyncDirRoot)) {
@@ -444,7 +450,7 @@ export function createResultWatcher(
 		file: string,
 		resultContent: string,
 	): boolean => {
-		if (typeof data.asyncDir !== "string" || !data.asyncDir) return true;
+		if (!isRuntimeString(data.asyncDir) || !data.asyncDir) return true;
 		try {
 			const terminal = repairTerminalStatusFromResult(data.asyncDir, resultPath, Date.now(), resultContent);
 			if (
@@ -502,7 +508,7 @@ export function createResultWatcher(
 			const data = JSON.parse(rawResult) as ResultFileData;
 			processRetryDelay.delete(file);
 			processRetryLastLog.delete(file);
-			if (typeof data.sessionId !== "string" || !data.sessionId) {
+			if (!isRuntimeString(data.sessionId) || !data.sessionId) {
 				rememberIgnoredResult(file, resultSnapshot, attemptEpoch);
 				return;
 			}
@@ -528,7 +534,7 @@ export function createResultWatcher(
 				sanitizeNestedResultChildren(data.nestedChildren, resultPath, "nestedChildren"),
 			);
 			let persistedStatus: AsyncStatus | null = null;
-			if (typeof data.asyncDir === "string" && data.asyncDir) {
+			if (isRuntimeString(data.asyncDir) && data.asyncDir) {
 				try {
 					persistedStatus = await readStatusAsync(data.asyncDir);
 				} catch (error) {
@@ -635,14 +641,14 @@ export function createResultWatcher(
 			const sessionPaths = await Promise.all(
 				resultChildren.map(async (result) => {
 					const sessionPath = result.sessionFile ?? (resultChildren.length === 1 ? data.sessionFile : undefined);
-					return typeof sessionPath === "string" && (await fileExists(sessionPath)) ? sessionPath : undefined;
+					return isRuntimeString(sessionPath) && (await fileExists(sessionPath)) ? sessionPath : undefined;
 				}),
 			);
 			const normalizedChildren = attachNestedChildrenToResultChildren(
 				runId,
 				resultChildren.map((result = {}, index): SubagentResultIntercomChild => {
 					const baseOutput = result.output ?? data.summary;
-					const hasRealOutput = typeof baseOutput === "string" && baseOutput.trim().length > 0;
+					const hasRealOutput = isRuntimeString(baseOutput) && baseOutput.trim().length > 0;
 					const output = hasRealOutput ? baseOutput : "(no output)";
 					const summary =
 						result.success === false && result.error
@@ -664,7 +670,7 @@ export function createResultWatcher(
 									: !hasResultChildren &&
 											(data.state === "paused" ||
 												data.state === "stopped" ||
-												typeof result.success !== "boolean")
+												!isRuntimeBoolean(result.success))
 										? data.state
 										: undefined;
 					return {

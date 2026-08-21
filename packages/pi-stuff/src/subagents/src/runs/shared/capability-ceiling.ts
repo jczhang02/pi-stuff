@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { isRuntimeBoolean, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 
 export const SUBAGENT_CAPABILITY_CEILING_VERSION = 1 as const;
 export const SUBAGENT_CAPABILITY_CEILING_REGISTRY_KEY = "pi-subagents.capability-ceiling.v1";
@@ -61,7 +62,7 @@ function hasControlCharacter(value: string): boolean {
 
 function validateText(value: unknown, field: string): string {
 	if (
-		typeof value !== "string" ||
+		!isRuntimeString(value) ||
 		!value.trim() ||
 		hasControlCharacter(value) ||
 		Buffer.byteLength(value.trim(), "utf8") > 256
@@ -74,13 +75,13 @@ function validateText(value: unknown, field: string): string {
 }
 
 function normalizeCeiling(ceiling: SubagentCapabilityCeiling): ResolvedSubagentCapabilityCeiling {
-	if (!ceiling || typeof ceiling !== "object" || Array.isArray(ceiling))
+	if (!ceiling || !isRuntimeObject(ceiling) || Array.isArray(ceiling))
 		throw new Error("Invalid capability ceiling; expected an object.");
 	const hasAllowedTools = Object.hasOwn(ceiling, "allowedTools");
 	const hasDenyExtensions = Object.hasOwn(ceiling, "denyExtensions");
 	if (!hasAllowedTools && !hasDenyExtensions)
 		throw new Error("Invalid capability ceiling; expected allowedTools or denyExtensions.");
-	if (hasDenyExtensions && typeof ceiling.denyExtensions !== "boolean")
+	if (hasDenyExtensions && !isRuntimeBoolean(ceiling.denyExtensions))
 		throw new Error("Invalid capability ceiling denyExtensions; expected a boolean.");
 	let allowedTools: string[] | undefined;
 	if (hasAllowedTools) {
@@ -113,13 +114,13 @@ export function parseSubagentCapabilityCeiling(
 	value: unknown,
 	field = "capability ceiling",
 ): ResolvedSubagentCapabilityCeiling {
-	if (!value || typeof value !== "object" || Array.isArray(value))
+	if (!value || !isRuntimeObject(value) || Array.isArray(value))
 		throw new Error(`Invalid ${field}; expected an object.`);
 	const record = value as Record<string, unknown>;
 	if (record.version !== SUBAGENT_CAPABILITY_CEILING_VERSION) throw new Error(`Invalid ${field} version.`);
 	const normalized = normalizeCeiling(record as SubagentCapabilityCeiling);
 	const sources = record.sources;
-	if (!Array.isArray(sources) || sources.some((source) => typeof source !== "string"))
+	if (!Array.isArray(sources) || sources.some((source) => !isRuntimeString(source)))
 		throw new Error(`Invalid ${field} sources; expected an array of strings.`);
 	normalized.sources = [...new Set(sources.map((source) => validateText(source, `${field} source`)))].sort();
 	return normalized;
@@ -224,7 +225,7 @@ export function decodeSubagentCapabilityCeiling(
 	}
 	if (
 		!parsed ||
-		typeof parsed !== "object" ||
+		!isRuntimeObject(parsed) ||
 		Array.isArray(parsed) ||
 		(parsed as { version?: unknown }).version !== SUBAGENT_CAPABILITY_CEILING_VERSION
 	) {

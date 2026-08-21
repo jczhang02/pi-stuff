@@ -1,4 +1,5 @@
 import type { AgentToolResult, AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { SuiteToolEnvelopeOperation } from "../tool-display/contract.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import {
@@ -56,7 +57,7 @@ function approvalMessage(executionId: string, pending: readonly CodeModePendingA
 function operation(trace: RuntimeToolTrace): SuiteToolEnvelopeOperation {
 	return {
 		args:
-			typeof trace.input === "object" && trace.input !== null && !Array.isArray(trace.input)
+			isRuntimeObject(trace.input) && trace.input !== null && !Array.isArray(trace.input)
 				? (trace.input as Record<string, unknown>)
 				: {},
 		...(trace.attempt === undefined ? {} : { attempt: trace.attempt }),
@@ -171,8 +172,8 @@ function wasCancelled(error: unknown, signal?: AbortSignal): boolean {
 }
 
 function contentItem(item: RuntimeContentItem): AgentToolResult<unknown>["content"][number] | undefined {
-	if (item.type === "input_text" && typeof item.text === "string") return { type: "text", text: item.text };
-	if (item.type !== "input_image" || typeof item.image_url !== "string") return undefined;
+	if (item.type === "input_text" && isRuntimeString(item.text)) return { type: "text", text: item.text };
+	if (item.type !== "input_image" || !isRuntimeString(item.image_url)) return undefined;
 	const match = item.image_url.match(/^data:([^;,]+);base64,(.+)$/su);
 	return match ? { type: "image", data: match[2] ?? "", mimeType: match[1] ?? "application/octet-stream" } : undefined;
 }
@@ -273,9 +274,7 @@ function stepTools(controller: CodeModeExecutionController): SuiteSandboxTool[] 
 			description: "Decide whether a durable Code Mode step should execute or replay",
 			inputSchema: { properties: { name: { type: "string" } }, required: ["name"], type: "object" },
 			invoke: async (input) =>
-				controller.beginStep(
-					typeof input === "object" && input !== null && "name" in input ? String(input.name) : "",
-				),
+				controller.beginStep(isRuntimeObject(input) && input !== null && "name" in input ? String(input.name) : ""),
 			ledger: "bypass",
 			name: INTERNAL_STEP_DECIDE_TOOL,
 			presentation: "hidden",
@@ -289,7 +288,7 @@ function stepTools(controller: CodeModeExecutionController): SuiteSandboxTool[] 
 				type: "object",
 			},
 			invoke: async (input) => {
-				if (typeof input !== "object" || input === null || !("plan" in input)) {
+				if (!isRuntimeObject(input) || input === null || !("plan" in input)) {
 					throw new Error("Code Mode step record is missing its decision");
 				}
 				controller.completeStep(input.plan as never, "value" in input ? input.value : undefined);

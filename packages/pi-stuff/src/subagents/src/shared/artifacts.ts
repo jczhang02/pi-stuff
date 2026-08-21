@@ -2,6 +2,7 @@ import { dlopen, FFIType, read } from "bun:ffi";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { shardedDurableClaimName, tryAcquireDurableClaim, tryAcquireKernelClaim } from "./durable-claim.ts";
 import { type ArtifactDirPreference, type ArtifactPaths, TEMP_ARTIFACTS_DIR } from "./types.ts";
 import { getAgentSessionsDir } from "./utils.ts";
@@ -216,9 +217,9 @@ export function withArtifactGroupWriteClaim<T>(filePath: string, operation: () =
 		const result = operation();
 		if (
 			result !== null &&
-			(typeof result === "object" || typeof result === "function") &&
+			(isRuntimeObject(result) || isRuntimeFunction(result)) &&
 			"then" in result &&
-			typeof (result as { then?: unknown }).then === "function"
+			isRuntimeFunction((result as { then?: unknown }).then)
 		) {
 			releaseSynchronously = false;
 			return Promise.resolve(result).finally(release) as T;
@@ -237,13 +238,13 @@ function orderedArtifactGroupNames(base: string): string[] {
 }
 
 function isTerminalArtifactMetadata(value: unknown): boolean {
-	if (!value || typeof value !== "object") return false;
+	if (!value || !isRuntimeObject(value)) return false;
 	const metadata = value as { state?: unknown; exitCode?: unknown };
 	if (metadata.state === "running" || metadata.state === "queued") return false;
 	if (["complete", "failed", "stopped"].includes(String(metadata.state))) return true;
 	// Metadata written before lifecycle state was added is terminal because this
 	// file was emitted only after the child process had settled.
-	return typeof metadata.exitCode === "number" && Number.isFinite(metadata.exitCode);
+	return isRuntimeNumber(metadata.exitCode) && Number.isFinite(metadata.exitCode);
 }
 
 function ownedRegularFile(stat: fs.Stats): boolean {
@@ -299,7 +300,7 @@ interface ArtifactCleanupBudget {
 
 function safeSnapshotName(value: unknown): value is string {
 	return (
-		typeof value === "string" &&
+		isRuntimeString(value) &&
 		value.length > 0 &&
 		value.length <= 4_096 &&
 		value !== "." &&
@@ -361,9 +362,9 @@ async function readSnapshotBuildState(target: string): Promise<SnapshotBuildStat
 		const parsed = JSON.parse(await fs.promises.readFile(statePath, "utf8")) as Partial<SnapshotBuildState>;
 		if (
 			parsed.version !== 1 ||
-			typeof parsed.cookie !== "string" ||
+			!isRuntimeString(parsed.cookie) ||
 			!/^\d+$/u.test(parsed.cookie) ||
-			typeof parsed.size !== "number" ||
+			!isRuntimeNumber(parsed.size) ||
 			!Number.isSafeInteger(parsed.size) ||
 			parsed.size < 0 ||
 			parsed.size > MAX_SNAPSHOT_BYTES
@@ -408,7 +409,7 @@ async function snapshotOverflowIsDeferred(target: string, now: number): Promise<
 			await fs.promises.unlink(overflow);
 			return false;
 		}
-		if (typeof parsed.retryAt === "number" && Number.isFinite(parsed.retryAt) && parsed.retryAt > now) return true;
+		if (isRuntimeNumber(parsed.retryAt) && Number.isFinite(parsed.retryAt) && parsed.retryAt > now) return true;
 		await fs.promises.unlink(overflow);
 		return false;
 	} catch (error) {
@@ -725,7 +726,7 @@ async function cleanupSnapshotIdentity(snapshot: string): Promise<CleanupSnapsho
 }
 
 function sameCleanupSnapshotIdentity(left: unknown, right: CleanupSnapshotIdentity): boolean {
-	if (!left || typeof left !== "object" || Array.isArray(left)) return false;
+	if (!left || !isRuntimeObject(left) || Array.isArray(left)) return false;
 	const value = left as Partial<CleanupSnapshotIdentity>;
 	return (
 		value.dev === right.dev && value.ino === right.ino && value.mtimeMs === right.mtimeMs && value.size === right.size
@@ -744,7 +745,7 @@ async function readSnapshotCursor(cursorPath: string, snapshot: string): Promise
 		const identity = await cleanupSnapshotIdentity(snapshot);
 		if (value.version !== 2 || !sameCleanupSnapshotIdentity(value.snapshot, identity)) return 0;
 		if (
-			typeof value.offset !== "number" ||
+			!isRuntimeNumber(value.offset) ||
 			!Number.isSafeInteger(value.offset) ||
 			value.offset < 0 ||
 			value.offset > identity.size
@@ -1028,12 +1029,12 @@ interface DiscoveryFrontier {
 }
 
 function safeDiscoveryDirectory(value: unknown): value is string {
-	if (typeof value !== "string" || value.length === 0 || value.length > 4_096 || path.isAbsolute(value)) return false;
+	if (!isRuntimeString(value) || value.length === 0 || value.length > 4_096 || path.isAbsolute(value)) return false;
 	return !value.split(/[\\/]+/u).some((part) => part === ".." || part.includes("\0"));
 }
 
 function safeDiscoverySnapshot(value: unknown): value is string {
-	return typeof value === "string" && /^[0-9a-f-]{36}\.jsonl$/u.test(value);
+	return isRuntimeString(value) && /^[0-9a-f-]{36}\.jsonl$/u.test(value);
 }
 
 async function ensureDiscoverySnapshotDirectory(root: string): Promise<string> {
@@ -1144,7 +1145,7 @@ async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | u
 			return undefined;
 		const pending: DiscoveryFrame[] = [];
 		for (const frame of parsed.pending) {
-			if (!frame || typeof frame !== "object") return undefined;
+			if (!frame || !isRuntimeObject(frame)) return undefined;
 			const candidate = frame as {
 				directory?: unknown;
 				snapshot?: unknown;
@@ -1156,7 +1157,7 @@ async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | u
 			if (candidate.snapshot !== undefined && !safeDiscoverySnapshot(candidate.snapshot)) return undefined;
 			if (
 				candidate.offset !== undefined &&
-				(typeof candidate.offset !== "number" || !Number.isSafeInteger(candidate.offset) || candidate.offset < 0)
+				(!isRuntimeNumber(candidate.offset) || !Number.isSafeInteger(candidate.offset) || candidate.offset < 0)
 			)
 				return undefined;
 			if (candidate.artifact !== undefined && candidate.artifact !== true) return undefined;
@@ -1168,8 +1169,8 @@ async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | u
 			if (candidate.building && candidate.offset !== undefined) return undefined;
 			pending.push({
 				directory: candidate.directory,
-				...(typeof candidate.snapshot === "string" ? { snapshot: candidate.snapshot } : {}),
-				...(typeof candidate.offset === "number" ? { offset: candidate.offset } : {}),
+				...(isRuntimeString(candidate.snapshot) ? { snapshot: candidate.snapshot } : {}),
+				...(isRuntimeNumber(candidate.offset) ? { offset: candidate.offset } : {}),
 				...(candidate.building === true ? { building: true as const } : {}),
 				...(candidate.artifact === true ? { artifact: true as const } : {}),
 			});

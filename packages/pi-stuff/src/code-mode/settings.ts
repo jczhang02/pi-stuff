@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { isRuntimeBoolean, isRuntimeObject } from "../shared/runtime-type.js";
 import { mergedSettingsPath, readNamespace } from "../shared/settings-io/index.js";
 import { mergeNamespaceRecordLocked, withSettingsLock } from "../shared/settings-io/lock.js";
 
@@ -10,7 +11,7 @@ const PROJECT_SETTINGS_FILE = "code-mode.json";
 const CODE_MODE_NAMESPACE = "codeMode";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function isMissingFile(error: unknown): boolean {
@@ -40,7 +41,7 @@ export async function readCodeModeProjectEnabled(cwd: string): Promise<boolean |
 	const path = codeModeProjectSettingsPath(cwd);
 	const value = await readRawSettings(path);
 	if (!value || value["enabled"] === undefined) return undefined;
-	if (typeof value["enabled"] !== "boolean") {
+	if (!isRuntimeBoolean(value["enabled"])) {
 		throw new Error(`Invalid Code Mode project settings at ${path}: "enabled" must be a boolean`);
 	}
 	return value["enabled"];
@@ -52,7 +53,7 @@ export async function writeCodeModeProjectEnabled(cwd: string, enabled: boolean 
 	try {
 		await withSettingsLock(path, "Code Mode project", async () => {
 			const current = (await readRawSettings(path)) ?? {};
-			if (current["enabled"] !== undefined && typeof current["enabled"] !== "boolean") {
+			if (current["enabled"] !== undefined && !isRuntimeBoolean(current["enabled"])) {
 				throw new Error(`Invalid Code Mode project settings at ${path}: "enabled" must be a boolean`);
 			}
 			const next = { ...current };
@@ -95,7 +96,7 @@ export async function writeCodeModeProjectEnabled(cwd: string, enabled: boolean 
 export async function readCodeModeGlobalEnabled(agentDirectory = getAgentDir()): Promise<boolean | undefined> {
 	const namespace = await readNamespace(mergedSettingsPath(agentDirectory), CODE_MODE_NAMESPACE);
 	if (namespace === undefined || namespace["enabled"] === undefined) return undefined;
-	if (typeof namespace["enabled"] !== "boolean") {
+	if (!isRuntimeBoolean(namespace["enabled"])) {
 		throw new Error(`Invalid Code Mode global settings: "enabled" must be a boolean`);
 	}
 	return namespace["enabled"];

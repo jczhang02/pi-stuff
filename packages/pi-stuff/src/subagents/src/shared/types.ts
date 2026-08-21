@@ -8,6 +8,7 @@ import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
 import { xdgRuntimeHome, xdgStateHome } from "../../../xdg/index.js";
 import type { AgentConfig } from "../agents/agents.ts";
 import type { ResolvedSubagentCapabilityCeiling, SubagentCapabilityAudit } from "../runs/shared/capability-ceiling.ts";
@@ -1470,7 +1471,7 @@ export function resolveTempScopeId(options?: {
 }): string {
 	const env = options?.env ?? process.env;
 	const getuid = options && Object.hasOwn(options, "getuid") ? options.getuid : process.getuid?.bind(process);
-	if (typeof getuid === "function") {
+	if (isRuntimeFunction(getuid)) {
 		return `uid-${getuid()}`;
 	}
 
@@ -1546,7 +1547,7 @@ export const DEFAULT_FORK_PREAMBLE =
 	"Your sole job is to execute the task below and return a focused result for that task using your tools.";
 
 function normalizeTopLevelParallelValue(value: unknown): number | undefined {
-	const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+	const parsed = isRuntimeNumber(value) ? value : isRuntimeString(value) ? Number(value) : NaN;
 	if (!Number.isInteger(parsed) || parsed < 1) return undefined;
 	return parsed;
 }
@@ -1576,7 +1577,7 @@ export function wrapForkTask(task: string, preamble?: string | false): string {
 // ============================================================================
 
 function normalizeNonNegativeInteger(value: unknown): number | undefined {
-	const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+	const parsed = isRuntimeNumber(value) ? value : isRuntimeString(value) ? Number(value) : NaN;
 	if (!Number.isInteger(parsed) || parsed < 0) return undefined;
 	return parsed;
 }

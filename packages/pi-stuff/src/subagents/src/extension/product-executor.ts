@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import { isRuntimeNumber } from "../../../shared/runtime-type.js";
 import type { SubagentParamsLike } from "../runs/foreground/subagent-executor.ts";
 import { scanAgentReport } from "../runtime/final-report-scanner.ts";
 import { resolveDisplayDescription } from "../shared/display-description.ts";
@@ -207,8 +208,7 @@ function bounded(value: string, limit: number): string {
 
 function resultStatus(result: SingleResult): "completed" | "failed" | "stopped" | "status unknown" {
 	if (result.interrupted || result.stopped || result.detached) return "stopped";
-	if (result.crashed || result.error || (typeof result.exitCode === "number" && result.exitCode !== 0))
-		return "failed";
+	if (result.crashed || result.error || (isRuntimeNumber(result.exitCode) && result.exitCode !== 0)) return "failed";
 	if (result.exitCode === 0) return "completed";
 	return "status unknown";
 }
@@ -254,9 +254,7 @@ export function projectEngineResult(params: PublicAgentParams, result: AgentEngi
 		params.foreground === true &&
 		publicDetails.results.some(
 			(child) =>
-				(typeof child.exitCode === "number" && child.exitCode !== 0) ||
-				Boolean(child.error) ||
-				child.crashed === true,
+				(isRuntimeNumber(child.exitCode) && child.exitCode !== 0) || Boolean(child.error) || child.crashed === true,
 		);
 	const publicResult: AgentEngineResult = {
 		...result,

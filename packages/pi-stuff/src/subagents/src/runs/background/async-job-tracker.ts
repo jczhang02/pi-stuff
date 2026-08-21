@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { readOwnedFileTailAsync } from "../../shared/private-directory.ts";
 import { sessionArtifactMatches } from "../../shared/session-identity.ts";
@@ -41,7 +42,7 @@ const RESTORE_READ_CONCURRENCY = 8;
 const MAX_LEGACY_TRANSCRIPT_TAIL_BYTES = 1024 * 1024;
 
 function record(value: unknown): Record<string, unknown> {
-	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+	return isRuntimeObject(value) && value !== null ? (value as Record<string, unknown>) : {};
 }
 
 function ambiguousLegacyFinalDrain(step: NonNullable<AsyncStatus["steps"]>[number]): boolean {
@@ -81,11 +82,11 @@ async function recoverLegacyFinalReports(status: AsyncStatus): Promise<AsyncStat
 				entry.role !== "assistant" ||
 				entry.stopReason !== "stop" ||
 				entry.isError === true ||
-				typeof entry.text !== "string" ||
+				!isRuntimeString(entry.text) ||
 				!entry.text.trim() ||
-				typeof entry.error === "string" ||
-				typeof entry.errorMessage === "string" ||
-				typeof message.errorMessage === "string"
+				isRuntimeString(entry.error) ||
+				isRuntimeString(entry.errorMessage) ||
+				isRuntimeString(message.errorMessage)
 			)
 				return step;
 			changed = true;
@@ -155,7 +156,7 @@ export function createAsyncJobTracker(
 	let restoredGeneration = -1;
 
 	const normalizeAcceptedSessionId = (sessionId: unknown, runId: unknown): string | undefined => {
-		if (!state.currentSessionId || typeof sessionId !== "string") return undefined;
+		if (!state.currentSessionId || !isRuntimeString(sessionId)) return undefined;
 		if (sessionId === state.currentSessionId) return state.currentSessionId;
 		return state.currentSessionScope && sessionArtifactMatches(state.currentSessionScope, sessionId, runId)
 			? state.currentSessionId
@@ -320,14 +321,14 @@ export function createAsyncJobTracker(
 			reportAgentDiagnostic(`Ignoring malformed async control event in '${job.asyncDir}':`, error);
 			return false;
 		}
-		if (!parsed || typeof parsed !== "object") return false;
+		if (!parsed || !isRuntimeObject(parsed)) return false;
 		if ((parsed as { type?: unknown }).type === "subagent.steering.notice") {
 			const notice = parsed as Partial<SteeringNotice>;
 			if (
-				typeof notice.requestId !== "string" ||
-				typeof notice.runId !== "string" ||
+				!isRuntimeString(notice.requestId) ||
+				!isRuntimeString(notice.runId) ||
 				(notice.state !== "failed" && notice.state !== "partial" && notice.state !== "recovered") ||
-				typeof notice.message !== "string"
+				!isRuntimeString(notice.message)
 			)
 				return false;
 			const normalizedSessionId = normalizeAcceptedSessionId(notice.currentSessionId, notice.runId);
@@ -593,8 +594,8 @@ export function createAsyncJobTracker(
 			controlEventCursor: 0,
 		};
 		job.asyncDir = asyncDir;
-		job.cwd = typeof info.cwd === "string" ? path.resolve(info.cwd) : job.cwd;
-		job.pid = typeof info.pid === "number" ? info.pid : job.pid;
+		job.cwd = isRuntimeString(info.cwd) ? path.resolve(info.cwd) : job.cwd;
+		job.pid = isRuntimeNumber(info.pid) ? info.pid : job.pid;
 		job.sessionId = normalizedSessionId ?? job.sessionId;
 		job.description = info.description ?? info.goal ?? info.task ?? job.description;
 		job.descriptions = info.descriptions ?? job.descriptions;
@@ -616,13 +617,13 @@ export function createAsyncJobTracker(
 	};
 
 	const handleStatus = (data: unknown): void => {
-		if (!data || typeof data !== "object") return;
+		if (!data || !isRuntimeObject(data)) return;
 		const update = data as { id?: unknown; asyncDir?: unknown; sessionId?: unknown; status?: unknown };
 		if (
-			typeof update.id !== "string" ||
-			typeof update.asyncDir !== "string" ||
+			!isRuntimeString(update.id) ||
+			!isRuntimeString(update.asyncDir) ||
 			!update.status ||
-			typeof update.status !== "object"
+			!isRuntimeObject(update.status)
 		)
 			return;
 		const status = update.status as AsyncStatus;
@@ -671,20 +672,20 @@ export function createAsyncJobTracker(
 	};
 
 	const handleProcessTerminal = (data: unknown): void => {
-		if (!data || typeof data !== "object") return;
+		if (!data || !isRuntimeObject(data)) return;
 		const proof = data as Partial<ProcessTerminalV1> & { asyncDir?: unknown };
 		if (
-			typeof proof.runId !== "string" ||
+			!isRuntimeString(proof.runId) ||
 			proof.state !== "observed" ||
-			typeof proof.observedAt !== "number" ||
+			!isRuntimeNumber(proof.observedAt) ||
 			!Number.isFinite(proof.observedAt) ||
-			typeof proof.runnerProcessInstanceId !== "string" ||
+			!isRuntimeString(proof.runnerProcessInstanceId) ||
 			!proof.runnerProcessInstanceId
 		)
 			return;
 		const job = state.asyncJobs.get(proof.runId);
 		if (!job) return;
-		if (typeof proof.asyncDir === "string" && path.resolve(proof.asyncDir) !== path.resolve(job.asyncDir)) return;
+		if (isRuntimeString(proof.asyncDir) && path.resolve(proof.asyncDir) !== path.resolve(job.asyncDir)) return;
 		if (
 			job.processTerminal?.runnerProcessInstanceId &&
 			job.processTerminal.runnerProcessInstanceId !== proof.runnerProcessInstanceId

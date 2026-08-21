@@ -1,5 +1,10 @@
 import { Key, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { getGoalStatusChannel } from "../../packages/pi-stuff/src/conversation-ui/statusline.js";
+import {
+	isRuntimeFunction,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 type MockHandler = (...args: unknown[]) => unknown;
 
@@ -114,10 +119,10 @@ export function createMockPi(
 			const previous = providers.get(name);
 			const effective =
 				previous &&
-				typeof previous === "object" &&
+				isRuntimeObject(previous) &&
 				!Array.isArray(previous) &&
 				config &&
-				typeof config === "object" &&
+				isRuntimeObject(config) &&
 				!Array.isArray(config)
 					? { ...previous, ...config }
 					: config;
@@ -157,11 +162,7 @@ export function createMockPi(
 			sentUserMessages.push({ text, options: messageOptions });
 		},
 		sendMessage(message: unknown, messageOptions?: unknown) {
-			if (
-				isRecord(message) &&
-				message.customType === "pi-stuff-goal-prompt" &&
-				typeof message.content === "string"
-			) {
+			if (isRecord(message) && message.customType === "pi-stuff-goal-prompt" && isRuntimeString(message.content)) {
 				sentHiddenGoalMessages.push({ message, options: messageOptions });
 				if (isRecord(messageOptions) && messageOptions.triggerTurn === false) return;
 				const deliverAs = isRecord(messageOptions) ? messageOptions.deliverAs : undefined;
@@ -243,7 +244,7 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 					return harness.result;
 				}
 				const value = isRecord(response) && response.kind === "submitted" ? response.value : response;
-				if (typeof value !== "string") throw new Error("Mock input must return a string or exit");
+				if (!isRuntimeString(value)) throw new Error("Mock input must return a string or exit");
 				harness.setFocused(true);
 				if (attempt > 0) harness.handleInput("\u0015");
 				harness.handleInput(value);
@@ -371,7 +372,7 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function selectedKitRow(lines: readonly string[]): string | undefined {
@@ -396,7 +397,7 @@ function createCustomSelectorHarness(
 	},
 	terminalRows = 24,
 ) {
-	if (typeof factory !== "function") throw new Error("Expected a custom component factory");
+	if (!isRuntimeFunction(factory)) throw new Error("Expected a custom component factory");
 	let result: unknown;
 	let resolveResult!: (value: unknown) => void;
 	const resultPromise = new Promise<unknown>((resolve) => {

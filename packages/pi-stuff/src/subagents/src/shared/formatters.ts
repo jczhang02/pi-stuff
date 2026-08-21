@@ -2,6 +2,7 @@
  * Formatting utilities for display output
  */
 
+import { isRuntimeString } from "../../../shared/runtime-type.js";
 import { splitKnownThinkingSuffix, THINKING_LEVELS } from "./model-info.ts";
 import type { Usage } from "./types.ts";
 
@@ -54,15 +55,14 @@ export function formatDuration(ms: number): string {
 export function formatToolCall(name: string, args: Record<string, unknown>, expanded = false): string {
 	switch (name) {
 		case "bash": {
-			const command = typeof args.command === "string" ? args.command : "";
+			const command = isRuntimeString(args.command) ? args.command : "";
 			const maxLength = expanded ? 240 : 60;
 			return `$ ${command.slice(0, maxLength)}${command.length > maxLength ? "..." : ""}`;
 		}
 		case "read":
 		case "write":
 		case "edit": {
-			const target =
-				typeof args.path === "string" ? args.path : typeof args.file_path === "string" ? args.file_path : "";
+			const target = isRuntimeString(args.path) ? args.path : isRuntimeString(args.file_path) ? args.file_path : "";
 			return `${name} ${shortenPath(target)}`;
 		}
 		default: {

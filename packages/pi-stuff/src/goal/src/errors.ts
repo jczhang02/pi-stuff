@@ -4,6 +4,7 @@ import {
 	type AssistantMessage as PiAssistantMessage,
 	type Usage,
 } from "@earendil-works/pi-ai";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { assistantUsageTokens, nonNegativeFiniteNumber } from "./accounting.js";
 
 type AgentStopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
@@ -48,7 +49,7 @@ export function isUsageLimitedGoalInterruption(assistant: AssistantMessageLike) 
 	const errorMessage = assistant.errorMessage;
 	return (
 		assistant.stopReason === "error" &&
-		typeof errorMessage === "string" &&
+		isRuntimeString(errorMessage) &&
 		USAGE_LIMIT_GOAL_ERROR_PATTERNS.some((pattern) => pattern.test(errorMessage))
 	);
 }
@@ -69,7 +70,7 @@ export function isRetryableGoalInterruption(assistant: AssistantMessageLike) {
 export function isExternallyBlockedGoalInterruption(assistant: AssistantMessageLike) {
 	return (
 		assistant.stopReason === "error" &&
-		typeof assistant.errorMessage === "string" &&
+		isRuntimeString(assistant.errorMessage) &&
 		EXTERNAL_GOAL_ERROR_RE.test(assistant.errorMessage)
 	);
 }
@@ -81,21 +82,21 @@ export function isGoalContextOverflow(assistant: AssistantMessageLike) {
 export function findFinalAssistantMessage(messages: unknown[]): AssistantMessageLike | undefined {
 	for (let index = messages.length - 1; index >= 0; index--) {
 		const message = messages[index];
-		if (!message || typeof message !== "object") continue;
+		if (!message || !isRuntimeObject(message)) continue;
 		const candidate = message as Record<string, unknown>;
 		if (candidate.role !== "assistant") continue;
 		const assistant: AssistantMessageLike = {
 			role: "assistant",
 			stopReason: isAgentStopReason(candidate.stopReason) ? candidate.stopReason : undefined,
-			errorMessage: typeof candidate.errorMessage === "string" ? candidate.errorMessage : undefined,
+			errorMessage: isRuntimeString(candidate.errorMessage) ? candidate.errorMessage : undefined,
 		};
 		if (Array.isArray(candidate.content)) {
 			assistant.content = candidate.content as PiAssistantMessage["content"];
 		}
-		if (typeof candidate.api === "string") assistant.api = candidate.api;
-		if (typeof candidate.provider === "string") assistant.provider = candidate.provider;
-		if (typeof candidate.model === "string") assistant.model = candidate.model;
-		if (typeof candidate.timestamp === "number") assistant.timestamp = candidate.timestamp;
+		if (isRuntimeString(candidate.api)) assistant.api = candidate.api;
+		if (isRuntimeString(candidate.provider)) assistant.provider = candidate.provider;
+		if (isRuntimeString(candidate.model)) assistant.model = candidate.model;
+		if (isRuntimeNumber(candidate.timestamp)) assistant.timestamp = candidate.timestamp;
 		const usage = normalizeUsage(candidate.usage);
 		if (usage) assistant.usage = usage;
 		return assistant;
@@ -133,9 +134,9 @@ function isAgentStopReason(value: unknown): value is AgentStopReason {
 }
 
 function normalizeUsage(value: unknown): Usage | undefined {
-	if (!value || typeof value !== "object") return undefined;
+	if (!value || !isRuntimeObject(value)) return undefined;
 	const usage = value as Partial<Usage>;
-	if (typeof usage.input !== "number" || typeof usage.output !== "number") return undefined;
+	if (!isRuntimeNumber(usage.input) || !isRuntimeNumber(usage.output)) return undefined;
 	return {
 		input: nonNegativeFiniteNumber(usage.input),
 		output: nonNegativeFiniteNumber(usage.output),

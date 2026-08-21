@@ -16,6 +16,7 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { Guard } from "typebox/guard";
 
 const { AuthStorage } = await import(
 	new URL("./core/auth-storage.js", import.meta.resolve("@earendil-works/pi-coding-agent"))
@@ -222,7 +223,7 @@ function blockerResponse(repeatedTurns) {
 
 function userMessageText(message) {
 	if (message.role !== "user") return "";
-	if (typeof message.content === "string") return message.content;
+	if (Guard.IsString(message.content)) return message.content;
 	if (!Array.isArray(message.content)) return "";
 	return message.content
 		.filter((part) => part?.type === "text")
@@ -233,7 +234,7 @@ function userMessageText(message) {
 function storedPromptText(message) {
 	const userText = userMessageText(message);
 	if (userText || message.role !== "custom") return userText;
-	if (typeof message.content === "string") return message.content;
+	if (Guard.IsString(message.content)) return message.content;
 	if (!Array.isArray(message.content)) return "";
 	return message.content
 		.filter((part) => part?.type === "text")

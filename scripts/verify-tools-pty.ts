@@ -1,6 +1,7 @@
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -419,7 +420,7 @@ export async function verifyActiveToolParity(options: {
 			for (const [index, record] of records.entries()) {
 				if (!Array.isArray(record.tools)) fail(`${fixture.name} request ${String(index + 1)} did not expose tools`);
 				const builtins = record.tools.filter(
-					(name): name is string => typeof name === "string" && (BUILTINS as readonly string[]).includes(name),
+					(name): name is string => isRuntimeString(name) && (BUILTINS as readonly string[]).includes(name),
 				);
 				expectEqualStrings(builtins, fixture.expected, `${fixture.name} request ${String(index + 1)}`);
 			}

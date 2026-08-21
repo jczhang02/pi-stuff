@@ -32,6 +32,7 @@ import {
 	matchesCommandDialogHelp,
 	renderCommandDialogKeyHelp,
 } from "../../../conversation-ui/index.js";
+import { isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
 import { boundTerminalText as boundTerminalPreview } from "../../../tool-display/index.js";
 import type {
 	AgentControlAction,
@@ -592,20 +593,18 @@ class AgentDialogComponent implements CommandDialogComponent {
 			)
 			.then((value) => {
 				if (!this.canFinishTranscript(generation, selectionKey)) return;
-				const rawText =
-					typeof value === "string" ? boundedTerminalText(value, this.options.maxTranscriptChars) : "";
+				const rawText = isRuntimeString(value) ? boundedTerminalText(value, this.options.maxTranscriptChars) : "";
 				const text = isTaskOnlyAgentText(rawText, row.task) ? "" : rawText;
 				const partial = row.partialResult
 					? isTaskOnlyAgentText(row.partialResult, row.task)
 						? ""
 						: boundedTerminalText(row.partialResult, Math.min(this.options.maxTranscriptChars, 4_000))
 					: "";
-				const items =
-					typeof value === "string"
-						? text
-							? [{ kind: "message", speaker: null, text } satisfies AgentTranscriptItem]
-							: []
-						: (value?.items ?? []);
+				const items = isRuntimeString(value)
+					? text
+						? [{ kind: "message", speaker: null, text } satisfies AgentTranscriptItem]
+						: []
+					: (value?.items ?? []);
 				const onlyPartial =
 					items.length === 1 && items[0]?.kind === "message" && items[0].text.trim() === partial.trim();
 				this.transcript =
@@ -1183,7 +1182,7 @@ function styledNestedStatus(status: AgentStatus, theme: Theme, detailed = false)
 
 function elapsedText(row: AgentRow): string {
 	const value = row.elapsedMs;
-	if (typeof value !== "number" || !Number.isFinite(value)) return "";
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return "";
 	const seconds = Math.max(0, Math.floor(value / 1_000));
 	if (seconds < 60) return `${seconds}s`;
 	const minutes = Math.floor(seconds / 60);

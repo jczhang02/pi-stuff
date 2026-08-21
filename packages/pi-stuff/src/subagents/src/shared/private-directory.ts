@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeObject } from "../../../shared/runtime-type.js";
 
 function notFound(error: unknown): boolean {
-	return typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === "ENOENT";
+	return isRuntimeObject(error) && error !== null && (error as NodeJS.ErrnoException).code === "ENOENT";
 }
 
 /** Create or validate an Agent runtime directory without accepting symlink ownership. */
@@ -126,7 +127,7 @@ export function isOwnedFileChangedDuringReadError(error: unknown): boolean {
 	let current = error;
 	for (let depth = 0; depth < 8; depth += 1) {
 		if (current instanceof OwnedFileChangedDuringReadError) return true;
-		if (typeof current !== "object" || current === null || !("cause" in current)) return false;
+		if (!isRuntimeObject(current) || current === null || !("cause" in current)) return false;
 		current = (current as { cause?: unknown }).cause;
 	}
 	return false;

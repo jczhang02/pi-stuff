@@ -4,6 +4,7 @@ import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui"
 import { Type } from "typebox";
 import { ToolExecutionComponent } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js";
 import { initTheme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+import { isRuntimeNumber, isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { classifyBashActivity } from "../../packages/pi-stuff/src/tool-display/activity.js";
 import {
 	assertSuiteToolActivityCoverage,
@@ -40,7 +41,7 @@ class ManualTimerScheduler implements ToolUiTimerScheduler {
 	}
 
 	clearInterval(id: unknown): void {
-		if (typeof id === "number") this.callbacks.delete(id);
+		if (isRuntimeNumber(id)) this.callbacks.delete(id);
 	}
 
 	setInterval(callback: () => void, delayMs: number): unknown {
@@ -525,7 +526,7 @@ test("a Code Mode envelope renders the same compact Tool Activity as a direct To
 		},
 		{
 			decode: (details) =>
-				typeof details === "object" && details !== null && "operations" in details
+				isRuntimeObject(details) && details !== null && "operations" in details
 					? ((details as { operations: readonly SuiteToolEnvelopeOperation[] }).operations ?? [])
 					: [],
 			registry: registrations.registry,
@@ -626,7 +627,7 @@ test("Code Mode and direct Tools stay pixel-equivalent when expanded, failed, an
 			},
 			{
 				decode: (details) =>
-					typeof details === "object" && details !== null && "operations" in details
+					isRuntimeObject(details) && details !== null && "operations" in details
 						? ((details as { operations: readonly SuiteToolEnvelopeOperation[] }).operations ?? [])
 						: [],
 				registry: registrations.registry,
@@ -1187,8 +1188,8 @@ test("the Code Mode surface hides every active Suite Tool without changing the v
 		},
 	);
 	expect(harness.tools.get("tool_search")?.renderShell).toBe("self");
-	expect(typeof harness.tools.get("tool_search")?.renderCall).toBe("function");
-	expect(typeof harness.tools.get("tool_search")?.renderResult).toBe("function");
+	expect(harness.tools.get("tool_search")?.renderCall).toBeTypeOf("function");
+	expect(harness.tools.get("tool_search")?.renderResult).toBeTypeOf("function");
 	const searchTool = harness.tools.get("tool_search");
 	if (!searchTool) throw new Error("missing tool_search companion");
 	const runtime = getToolUiRuntime(harness.api);

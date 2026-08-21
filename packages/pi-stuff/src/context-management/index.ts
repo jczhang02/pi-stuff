@@ -25,6 +25,7 @@ import {
 } from "../conversation-ui/index.js";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString, isRuntimeSymbol } from "../shared/runtime-type.js";
 import {
 	activityKey,
 	activityTarget,
@@ -278,7 +279,7 @@ interface ContextCapabilityRegistry {
 }
 
 function ownerKey(pi: ExtensionAPI): object {
-	return typeof pi.events === "object" && pi.events !== null ? pi.events : pi;
+	return isRuntimeObject(pi.events) && pi.events !== null ? pi.events : pi;
 }
 
 function capabilityRegistry(): ContextCapabilityRegistry {
@@ -348,7 +349,7 @@ function currentAgentMessages(ctx: ExtensionContext): AgentMessage[] {
 }
 
 function contextCwd(ctx: ExtensionContext): string {
-	return typeof ctx.cwd === "string" && ctx.cwd.trim() ? ctx.cwd : process.cwd();
+	return isRuntimeString(ctx.cwd) && ctx.cwd.trim() ? ctx.cwd : process.cwd();
 }
 
 function sessionOwnerKey(ctx: ExtensionContext): string {
@@ -369,13 +370,13 @@ function textOfMessage(message: AgentMessage): string {
 
 function messageTextParts(message: AgentMessage): string[] {
 	const content = (message as { content?: unknown }).content;
-	if (typeof content === "string") return [content];
+	if (isRuntimeString(content)) return [content];
 	if (!Array.isArray(content)) return [];
 	const parts: string[] = [];
 	for (const part of content) {
-		if (part && typeof part === "object") {
+		if (part && isRuntimeObject(part)) {
 			const text = (part as { text?: unknown }).text;
-			if (typeof text === "string") parts.push(text);
+			if (isRuntimeString(text)) parts.push(text);
 		}
 	}
 	return parts;
@@ -453,7 +454,7 @@ interface BoundedMessageFragment {
 }
 
 function nativeMessageRole(message: AgentMessage): string {
-	const role = typeof message.role === "string" ? safePrefix(message.role, 64) : "message";
+	const role = isRuntimeString(message.role) ? safePrefix(message.role, 64) : "message";
 	return role.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
@@ -686,7 +687,7 @@ function quietMagicContext(
 	hasUi: boolean | undefined = undefined,
 ): ExtensionContext {
 	const ui = ctx.ui;
-	if (!ui || typeof ui !== "object") return ctx;
+	if (!ui || !isRuntimeObject(ui)) return ctx;
 	const quietUi = new Proxy(ui, {
 		get(target, property, receiver) {
 			if (MAGIC_QUIET_UI_METHODS.has(String(property)) || (!notifications && property === "notify"))
@@ -714,19 +715,19 @@ function magicCommandContext(name: string, ctx: ExtensionContext): ExtensionCont
 function firstPresentationTarget(args: Readonly<Record<string, unknown>>): string {
 	for (const key of ["query", "message", "note_id", "memory_id", "id", "range", "content", "note", "reason"]) {
 		const value = args[key];
-		if (typeof value === "string" && value.trim()) return value.trim();
+		if (isRuntimeString(value) && value.trim()) return value.trim();
 	}
 	const ids = args["ids"];
 	if (Array.isArray(ids) && ids.length > 0) return ids.map(String).join(", ");
 	const { end, start } = args;
-	return typeof start === "number" && typeof end === "number" ? `${String(start)}-${String(end)}` : "";
+	return isRuntimeNumber(start) && isRuntimeNumber(end) ? `${String(start)}-${String(end)}` : "";
 }
 
 function toolResultText(result: { readonly content?: readonly unknown[] } | undefined): string {
 	if (!Array.isArray(result?.content)) return "";
 	return result.content
 		.map((item) =>
-			item && typeof item === "object" && "type" in item && item.type === "text" && "text" in item
+			item && isRuntimeObject(item) && "type" in item && item.type === "text" && "text" in item
 				? String(item.text)
 				: "",
 		)
@@ -797,7 +798,7 @@ function magicToolPresentation(name: string): SuiteToolPresentation<Record<strin
 								? "save-memory"
 								: "update-memory";
 					const argumentIds = Array.isArray(args["ids"])
-						? args["ids"].filter((item): item is number => typeof item === "number").map(String)
+						? args["ids"].filter((item): item is number => isRuntimeNumber(item)).map(String)
 						: [];
 					const ids = [...new Set([...argumentIds, ...resultObjectIds(text, "memory")])];
 					return objectActivity(
@@ -807,9 +808,9 @@ function magicToolPresentation(name: string): SuiteToolPresentation<Record<strin
 						target || action,
 					);
 				}
-				const action = String(args["action"] ?? (typeof args["content"] === "string" ? "write" : "read"));
+				const action = String(args["action"] ?? (isRuntimeString(args["content"]) ? "write" : "read"));
 				const category = action === "read" ? "read-note" : action === "write" ? "save-note" : "update-note";
-				const argumentIds = typeof args["note_id"] === "number" ? [String(args["note_id"])] : [];
+				const argumentIds = isRuntimeNumber(args["note_id"]) ? [String(args["note_id"])] : [];
 				const ids = [...new Set([...argumentIds, ...resultObjectIds(text, "note")])];
 				return objectActivity(
 					category,
@@ -1321,7 +1322,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 
 	private consumeSuiteCustomContextGuidance(): boolean {
 		const token = this.suiteCustomContextGuidance.values().next().value;
-		if (typeof token !== "symbol") return false;
+		if (!isRuntimeSymbol(token)) return false;
 		this.suiteCustomContextGuidance.delete(token);
 		return true;
 	}

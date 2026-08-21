@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isRuntimeString } from "../../../../shared/runtime-type.js";
 
 export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
 export const PI_SUBAGENT_PI_BINARY_ENV = "PI_SUBAGENT_PI_BINARY";
@@ -116,7 +117,7 @@ export function resolvePiCliScript(deps: PiSpawnDeps = {}): string | undefined {
 			bin?: string | Record<string, string>;
 		};
 		const binField = packageJson.bin;
-		const binPath = typeof binField === "string" ? binField : (binField?.pi ?? Object.values(binField ?? {})[0]);
+		const binPath = isRuntimeString(binField) ? binField : (binField?.pi ?? Object.values(binField ?? {})[0]);
 		if (!binPath) return undefined;
 		const candidate = path.resolve(path.dirname(packageJsonPath), binPath);
 		if (isRunnableNodeScript(candidate, existsSync)) {

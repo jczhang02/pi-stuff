@@ -27,6 +27,13 @@ import { getHostSharedResource } from "../conversation-ui/host-resource.js";
 import { SELF_RENDERED_TRANSCRIPT_PADDING, TRANSCRIPT_CONTINUATION } from "../conversation-ui/transcript.js";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 import {
+	isRuntimeBoolean,
+	isRuntimeFunction,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../shared/runtime-type.js";
+import {
 	type ActivityCategoryAggregate,
 	type ActivitySummaryMember,
 	classifyToolActivityGroupInvocation,
@@ -113,7 +120,7 @@ const BASH_OUTPUT_SOURCE_LIMIT = 32 * 1_024;
 const BASH_OUTPUT_COLLAPSED_SOURCE_LIMIT = 2 * 1_024;
 
 function isRecordValue(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 interface ToolReloadHandoff {
@@ -597,21 +604,21 @@ function hashRetryValue(hash: Hash, value: unknown, seen = new WeakSet<object>()
 		hash.update("n");
 		return;
 	}
-	if (typeof value === "string") {
+	if (isRuntimeString(value)) {
 		hash.update("s");
 		hashRetryText(hash, value);
 		return;
 	}
-	if (typeof value === "number") {
+	if (isRuntimeNumber(value)) {
 		if (!Number.isFinite(value)) throw new TypeError("non-JSON Tool arguments");
 		hash.update(`d${JSON.stringify(value)};`);
 		return;
 	}
-	if (typeof value === "boolean") {
+	if (isRuntimeBoolean(value)) {
 		hash.update(value ? "t" : "f");
 		return;
 	}
-	if (typeof value !== "object") throw new TypeError("non-JSON Tool arguments");
+	if (!isRuntimeObject(value)) throw new TypeError("non-JSON Tool arguments");
 	if (seen.has(value)) throw new TypeError("circular Tool arguments");
 	seen.add(value);
 	if (Array.isArray(value)) {
@@ -919,7 +926,7 @@ export class ToolUiRuntime {
 	}
 
 	observeAssistantUpdate(message: unknown): void {
-		if (typeof message !== "object" || message === null) return;
+		if (!isRuntimeObject(message) || message === null) return;
 		const value = message as Record<string, unknown>;
 		if (value["role"] !== "assistant" || !Array.isArray(value["content"])) return;
 		if (!this.streamActive) {
@@ -961,7 +968,7 @@ export class ToolUiRuntime {
 		this.indexedMessages.push(message);
 		this.applyMessage(message);
 		if (
-			typeof message === "object" &&
+			isRuntimeObject(message) &&
 			message !== null &&
 			(message as Record<string, unknown>)["role"] === "assistant"
 		) {
@@ -1338,7 +1345,7 @@ export class ToolUiRuntime {
 				if (!isRecordValue(block) || block["type"] !== "toolCall") continue;
 				const id = block["id"];
 				const name = block["name"];
-				if (typeof id === "string" && typeof name === "string" && this.envelopeDecoders.has(name)) {
+				if (isRuntimeString(id) && isRuntimeString(name) && this.envelopeDecoders.has(name)) {
 					envelopeNamesById.set(id, name);
 				}
 			}
@@ -1347,7 +1354,7 @@ export class ToolUiRuntime {
 		for (const candidate of messages) {
 			if (!isRecordValue(candidate) || candidate["role"] !== "toolResult") continue;
 			const id = candidate["toolCallId"];
-			if (typeof id !== "string") continue;
+			if (!isRuntimeString(id)) continue;
 			const name = envelopeNamesById.get(id);
 			if (!name) continue;
 			operationsById.set(id, this.decodeEnvelope(name, candidate["details"]));
@@ -1363,7 +1370,7 @@ export class ToolUiRuntime {
 					if (!isRecordValue(block) || block["type"] !== "toolCall") return [block];
 					const id = block["id"];
 					const name = block["name"];
-					if (typeof id !== "string" || typeof name !== "string" || !this.envelopeDecoders.has(name)) {
+					if (!isRuntimeString(id) || !isRuntimeString(name) || !this.envelopeDecoders.has(name)) {
 						return [block];
 					}
 					return (operationsById.get(id) ?? []).map((operation) => ({
@@ -1378,7 +1385,7 @@ export class ToolUiRuntime {
 			}
 			if (candidate["role"] === "toolResult") {
 				const id = candidate["toolCallId"];
-				const operations = typeof id === "string" ? operationsById.get(id) : undefined;
+				const operations = isRuntimeString(id) ? operationsById.get(id) : undefined;
 				if (!operations) {
 					projected.push(candidate);
 					continue;
@@ -1437,7 +1444,7 @@ export class ToolUiRuntime {
 	}
 
 	private applyMessage(message: unknown): void {
-		if (typeof message !== "object" || message === null) return;
+		if (!isRuntimeObject(message) || message === null) return;
 		const value = message as Record<string, unknown>;
 		const role = value["role"];
 		if (role === "assistant" && Array.isArray(value["content"])) {
@@ -1447,9 +1454,9 @@ export class ToolUiRuntime {
 		if (role === "toolResult") {
 			const id = value["toolCallId"];
 			const content = value["content"];
-			if (typeof id !== "string" || !Array.isArray(content)) return;
+			if (!isRuntimeString(id) || !Array.isArray(content)) return;
 			const name = value["toolName"];
-			if (typeof name === "string" && this.envelopeDecoders.has(name)) {
+			if (isRuntimeString(name) && this.envelopeDecoders.has(name)) {
 				this.rebuildGroups();
 				return;
 			}
@@ -1473,9 +1480,9 @@ export class ToolUiRuntime {
 	): void {
 		for (let index = 0; index < content.length; index += 1) {
 			const block = content[index];
-			if (typeof block !== "object" || block === null) continue;
+			if (!isRuntimeObject(block) || block === null) continue;
 			const item = block as Record<string, unknown>;
-			if (item["type"] === "text" && typeof item["text"] === "string" && item["text"].trim()) {
+			if (item["type"] === "text" && isRuntimeString(item["text"]) && item["text"].trim()) {
 				if (
 					streaming
 						? this.streamedProseIndexes.has(index)
@@ -1492,7 +1499,7 @@ export class ToolUiRuntime {
 			const id = item["id"];
 			const name = item["name"];
 			const args = item["arguments"];
-			if (typeof id !== "string" || !id || typeof name !== "string" || !name || !isRecordValue(args)) continue;
+			if (!isRuntimeString(id) || !id || !isRuntimeString(name) || !name || !isRecordValue(args)) continue;
 			if (streaming && name === "bash") continue;
 			const trackedSnapshot = streaming || this.streamActive;
 			const signature = trackedSnapshot ? JSON.stringify([name, args, terminalState ?? ""]) : "";
@@ -1677,8 +1684,7 @@ export class ToolUiRuntime {
 		const output = this.bashOutput(binding, member.result ?? binding.metadata.result, binding.expanded);
 		const model: BashOperationRowModel = {
 			active: summaryMember.state === "running",
-			command:
-				typeof member.args["command"] === "string" ? member.args["command"] : String(member.args["value"] ?? ""),
+			command: isRuntimeString(member.args["command"]) ? member.args["command"] : String(member.args["value"] ?? ""),
 			expandable: true,
 			expanded: binding.expanded,
 			kind: "bash-operation",
@@ -2075,7 +2081,7 @@ export interface SuiteToolRegistrationTracker {
 
 function suiteActivityRendererMarker(tool: unknown): SuiteActivityRendererMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
-	if (typeof tool["renderCall"] !== "function" || typeof tool["renderResult"] !== "function") return undefined;
+	if (!isRuntimeFunction(tool["renderCall"]) || !isRuntimeFunction(tool["renderResult"])) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_ACTIVITY_RENDERER)?.value;
 	return isRecordValue(marker) && isRecordValue(marker["activity"])
 		? (marker as unknown as SuiteActivityRendererMarker)
@@ -2093,16 +2099,16 @@ function suiteToolCodeModeContract(tool: unknown): SuiteToolCodeModeContract | u
 	if (value["replay"] !== "never" && value["replay"] !== "record" && value["replay"] !== "reexecute") {
 		return undefined;
 	}
-	if (value["compensate"] !== undefined && typeof value["compensate"] !== "function") return undefined;
+	if (value["compensate"] !== undefined && !isRuntimeFunction(value["compensate"])) return undefined;
 	if (value["lifecycle"] !== undefined) {
 		if (!isRecordValue(value["lifecycle"])) return undefined;
 		if (
 			value["lifecycle"]["disposeExecution"] !== undefined &&
-			typeof value["lifecycle"]["disposeExecution"] !== "function"
+			!isRuntimeFunction(value["lifecycle"]["disposeExecution"])
 		) {
 			return undefined;
 		}
-		if (value["lifecycle"]["onPassEnd"] !== undefined && typeof value["lifecycle"]["onPassEnd"] !== "function") {
+		if (value["lifecycle"]["onPassEnd"] !== undefined && !isRuntimeFunction(value["lifecycle"]["onPassEnd"])) {
 			return undefined;
 		}
 	}
@@ -2112,7 +2118,7 @@ function suiteToolCodeModeContract(tool: unknown): SuiteToolCodeModeContract | u
 function suiteToolEnvelopeMarker(tool: unknown): SuiteToolEnvelopeMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_ENVELOPE)?.value;
-	if (!isRecordValue(marker) || typeof marker["decode"] !== "function" || !isRecordValue(marker["registry"])) {
+	if (!isRecordValue(marker) || !isRuntimeFunction(marker["decode"]) || !isRecordValue(marker["registry"])) {
 		return undefined;
 	}
 	return marker as unknown as SuiteToolEnvelopeMarker;
@@ -2121,7 +2127,7 @@ function suiteToolEnvelopeMarker(tool: unknown): SuiteToolEnvelopeMarker | undef
 function suiteToolEnvelopeCompanionMarker(tool: unknown): SuiteToolEnvelopeCompanionMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_ENVELOPE_COMPANION)?.value;
-	return isRecordValue(marker) && typeof marker["owner"] === "string"
+	return isRecordValue(marker) && isRuntimeString(marker["owner"])
 		? (marker as unknown as SuiteToolEnvelopeCompanionMarker)
 		: undefined;
 }
@@ -2276,7 +2282,7 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 				const decision = await handler(callEvent, invocation.context);
 				if (!isRecordValue(decision) || decision["block"] !== true) continue;
 				const result = errorToolResult(
-					typeof decision["reason"] === "string" ? decision["reason"] : "Tool execution was blocked",
+					isRuntimeString(decision["reason"]) ? decision["reason"] : "Tool execution was blocked",
 				);
 				if (decision["terminate"] === true) Reflect.set(result, "terminate", true);
 				await dispatchInformational(
@@ -2586,7 +2592,7 @@ function labelFor<TArgs extends Record<string, unknown>, TDetails>(
 	presentation: SuiteToolPresentation<TArgs, TDetails>,
 	args: Readonly<TArgs>,
 ): string {
-	const label = typeof presentation.label === "function" ? presentation.label(args) : presentation.label;
+	const label = isRuntimeFunction(presentation.label) ? presentation.label(args) : presentation.label;
 	return sanitizeTerminalText(label ?? tool.label ?? tool.name) || tool.name;
 }
 
@@ -2604,10 +2610,9 @@ function updateRunningRow<TArgs extends Record<string, unknown>, TDetails>(
 	if (state.wasLiveExecution && state.startedAt === undefined) state.startedAt = Date.now();
 	const durationMs = state.startedAt === undefined ? undefined : Math.max(0, Date.now() - state.startedAt);
 	const summarySource = presentation.runningSummary;
-	const summary =
-		typeof summarySource === "function"
-			? summarySource(args, presentation.tracksElapsed && runtime.showLiveElapsed() ? durationMs : undefined)
-			: (summarySource ?? "working");
+	const summary = isRuntimeFunction(summarySource)
+		? summarySource(args, presentation.tracksElapsed && runtime.showLiveElapsed() ? durationMs : undefined)
+		: (summarySource ?? "working");
 	const model: ToolRowModel = {
 		durationMs,
 		label: labelFor(tool, presentation, args),
@@ -2811,8 +2816,8 @@ function resultBody<TArgs extends Record<string, unknown>, TDetails>(
 					readonly mimeType: string;
 				} =>
 					item.type === "image" &&
-					typeof item.data === "string" &&
-					typeof item.mimeType === "string" &&
+					isRuntimeString(item.data) &&
+					isRuntimeString(item.mimeType) &&
 					!hostImageKeys?.get(item.mimeType)?.has(item.data),
 			);
 	for (const [index, image] of images.entries()) {
@@ -2854,7 +2859,7 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 			const typedArgs = args as Readonly<TArgs>;
 			if (state === "running") {
 				const source = presentation.runningSummary;
-				return oneLine(typeof source === "function" ? source(typedArgs, undefined) : (source ?? "working"));
+				return oneLine(isRuntimeFunction(source) ? source(typedArgs, undefined) : (source ?? "working"));
 			}
 			return oneLine(
 				result
@@ -3000,9 +3005,9 @@ function decodeEnvelopeOperations(
 	try {
 		return decode(details).filter(
 			(operation) =>
-				typeof operation.id === "string" &&
+				isRuntimeString(operation.id) &&
 				operation.id.length > 0 &&
-				typeof operation.name === "string" &&
+				isRuntimeString(operation.name) &&
 				operation.name.length > 0 &&
 				isRecordValue(operation.args),
 		);
@@ -3081,7 +3086,7 @@ function renderEnvelopeOperations(
 	let hostImageKeys: Map<string, Set<string>> | undefined;
 	if (getCapabilities().images && context.showImages) {
 		for (const item of result.content) {
-			if (item.type !== "image" || typeof item.data !== "string" || typeof item.mimeType !== "string") continue;
+			if (item.type !== "image" || !isRuntimeString(item.data) || !isRuntimeString(item.mimeType)) continue;
 			hostImageKeys ??= new Map();
 			const data = hostImageKeys.get(item.mimeType) ?? new Set<string>();
 			data.add(item.data);
@@ -3277,7 +3282,7 @@ function replayFallbackDefinition(name: string): SuiteToolReplayDefinition {
 				buildToolResultLines(result)[0] ?? (state === "success" ? "done" : "failed"),
 			target: (args) => {
 				for (const key of ["action", "path", "query", "id", "to"] as const) {
-					if (typeof args[key] === "string" && args[key]) return args[key];
+					if (isRuntimeString(args[key]) && args[key]) return args[key];
 				}
 				return "";
 			},

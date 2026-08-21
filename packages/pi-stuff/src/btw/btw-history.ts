@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AssistantMessage, StopReason, Usage } from "@earendil-works/pi-ai";
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 
 /** A session would have to accumulate roughly three BTW exchanges a day for a year to reach this guard. */
 export const BTW_HISTORY_LIMIT = 1_000;
@@ -63,7 +64,7 @@ function state(): BtwHistoryState {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
+	return isRuntimeObject(value) && value !== null;
 }
 
 function isResponseMetadata(value: unknown): value is BtwResponseMetadata {
@@ -78,11 +79,11 @@ function isResponseMetadata(value: unknown): value is BtwResponseMetadata {
 	};
 	if (!isRecord(candidate.usage)) return false;
 	return (
-		typeof candidate.api === "string" &&
-		typeof candidate.provider === "string" &&
-		typeof candidate.model === "string" &&
-		typeof candidate.stopReason === "string" &&
-		typeof candidate.timestamp === "number"
+		isRuntimeString(candidate.api) &&
+		isRuntimeString(candidate.provider) &&
+		isRuntimeString(candidate.model) &&
+		isRuntimeString(candidate.stopReason) &&
+		isRuntimeNumber(candidate.timestamp)
 	);
 }
 
@@ -97,11 +98,11 @@ function isExchange(value: unknown): value is BtwExchange {
 		response?: unknown;
 	};
 	return (
-		typeof candidate.id === "string" &&
-		typeof candidate.question === "string" &&
-		typeof candidate.answer === "string" &&
-		typeof candidate.timestamp === "number" &&
-		typeof candidate.contextTrimmed === "boolean" &&
+		isRuntimeString(candidate.id) &&
+		isRuntimeString(candidate.question) &&
+		isRuntimeString(candidate.answer) &&
+		isRuntimeNumber(candidate.timestamp) &&
+		isRuntimeBoolean(candidate.contextTrimmed) &&
 		(candidate.response === undefined || isResponseMetadata(candidate.response))
 	);
 }
@@ -117,11 +118,11 @@ function readEvent(entry: SessionEntry): BtwHistoryEvent | undefined {
 		exchangeId?: unknown;
 		exchange?: unknown;
 	};
-	if (data.version !== 1 || typeof data.ownerSessionId !== "string") return undefined;
+	if (data.version !== 1 || !isRuntimeString(data.ownerSessionId)) return undefined;
 	if (data.operation === "clear") {
 		return { version: 1, ownerSessionId: data.ownerSessionId, operation: "clear" };
 	}
-	if (data.operation === "retain" && typeof data.exchangeId === "string") {
+	if (data.operation === "retain" && isRuntimeString(data.exchangeId)) {
 		return {
 			version: 1,
 			ownerSessionId: data.ownerSessionId,

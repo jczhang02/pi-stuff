@@ -8,6 +8,7 @@ import {
 	DefaultResourceLoader,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { runPiRpcSmoke } from "../scripts/smoke-pi.js";
 
 const REPOSITORY_ROOT = resolve(import.meta.dir, "..");
@@ -34,7 +35,7 @@ async function loadExtension(extensionPath: ExtensionPath): Promise<AgentSession
 	temporaryRoots.push(root);
 	const agentDir = join(root, "agent");
 	await mkdir(agentDir);
-	const resolvedExtensionPath = typeof extensionPath === "string" ? extensionPath : await extensionPath(root);
+	const resolvedExtensionPath = isRuntimeString(extensionPath) ? extensionPath : await extensionPath(root);
 
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: root,

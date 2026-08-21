@@ -7,6 +7,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import type { AgentConfig } from "../../agents/agents.ts";
 import { buildSkillInjection, normalizeSkillInput, resolveSkillsWithFallback } from "../../agents/skills.ts";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
@@ -95,7 +96,7 @@ function taskPreview(task: string): string {
 }
 
 function finiteTimestamp(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
 function semanticResultState(value: Record<string, unknown>): AsyncStatus["state"] | undefined {
@@ -120,7 +121,7 @@ export function buildNestedTerminalFallbackStatus(
 	let result: Record<string, unknown> | undefined;
 	try {
 		const parsed = JSON.parse(readBoundedOwnedFile(config.resultPath, MAX_NESTED_RESULT_FILE_BYTES)) as unknown;
-		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) result = parsed as Record<string, unknown>;
+		if (parsed && isRuntimeObject(parsed) && !Array.isArray(parsed)) result = parsed as Record<string, unknown>;
 	} catch {
 		// The conservative fallback below is authoritative when no semantic result exists.
 	}
@@ -130,7 +131,7 @@ export function buildNestedTerminalFallbackStatus(
 	const startedAt = finiteTimestamp(result?.["startedAt"]) ?? observedAt;
 	const endedAt = finiteTimestamp(result?.["endedAt"]) ?? observedAt;
 	const error =
-		typeof result?.["error"] === "string" && result["error"].trim()
+		isRuntimeString(result?.["error"]) && result["error"].trim()
 			? result["error"]
 			: semanticState
 				? undefined
@@ -150,7 +151,7 @@ export function buildNestedTerminalFallbackStatus(
 }
 
 function isTerminalAsyncStatus(value: unknown, runId: string): value is AsyncStatus {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return false;
 	const status = value as Record<string, unknown>;
 	return (
 		status["runId"] === runId &&
@@ -685,11 +686,11 @@ function readRunnerStartup(
 			token?: unknown;
 			error?: unknown;
 		};
-		if (payload.state === "error" && typeof payload.error === "string") {
+		if (payload.state === "error" && isRuntimeString(payload.error)) {
 			return { ok: false, error: payload.error };
 		}
 		if (payload.state !== expectedState) return undefined;
-		if (typeof payload.token !== "string" || (expectedToken !== undefined && payload.token !== expectedToken)) {
+		if (!isRuntimeString(payload.token) || (expectedToken !== undefined && payload.token !== expectedToken)) {
 			return {
 				ok: false,
 				error: `Async runner wrote an invalid ${expectedState} startup handshake: ${startupPath}`,
@@ -1022,13 +1023,13 @@ async function spawnRunner(
 			});
 		});
 		proc.on("message", (message: unknown) => {
-			if (!message || typeof message !== "object") return;
+			if (!message || !isRuntimeObject(message)) return;
 			const update = message as { type?: unknown; asyncDir?: unknown; status?: unknown };
 			if (
 				update.type !== SUBAGENT_ASYNC_STATUS_EVENT ||
 				update.asyncDir !== launchConfig.asyncDir ||
 				!update.status ||
-				typeof update.status !== "object" ||
+				!isRuntimeObject(update.status) ||
 				(update.status as { runId?: unknown }).runId !== launchConfig.id
 			)
 				return;
@@ -1043,7 +1044,7 @@ async function spawnRunner(
 				reportAgentDiagnostic(`Agent status observer failed for '${launchConfig.id}':`, error);
 			}
 		});
-		if (typeof proc.pid !== "number") {
+		if (!isRuntimeNumber(proc.pid)) {
 			launchAborted = true;
 			throw new Error(`background runner has no pid for cwd: ${cwd}`);
 		}
@@ -1261,7 +1262,7 @@ async function spawnRunner(
 		return {
 			error: message,
 			safeToCleanup,
-			...(typeof proc?.pid === "number" ? { pid: proc.pid } : {}),
+			...(isRuntimeNumber(proc?.pid) ? { pid: proc.pid } : {}),
 		};
 	}
 }

@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { isRuntimeNumber } from "../shared/runtime-type.js";
 
 const MAX_DYNAMIC_TEXT_CODE_UNITS = 16 * 1024;
 const MIN_BOX_WIDTH = 13;
@@ -204,7 +205,7 @@ function narrowLines(ctx: ExtensionContext, theme: Theme, width: number, rows: n
 
 function terminalRows(tui: TUI): number | undefined {
 	const rows = (tui as unknown as { terminal?: { rows?: unknown } }).terminal?.rows;
-	return typeof rows === "number" && Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : undefined;
+	return isRuntimeNumber(rows) && Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : undefined;
 }
 
 function boxTop(theme: Theme, width: number, title: string, wide: boolean): string {

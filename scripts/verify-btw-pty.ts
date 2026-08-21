@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/btw-pty-provider.ts");
@@ -34,25 +35,25 @@ interface PersistedSession {
 }
 
 function textPart(value: unknown): { readonly type?: unknown; readonly text?: unknown } | undefined {
-	return typeof value === "object" && value !== null
+	return isRuntimeObject(value) && value !== null
 		? (value as { readonly type?: unknown; readonly text?: unknown })
 		: undefined;
 }
 
 function contentText(content: unknown): string {
-	if (typeof content === "string") return content;
+	if (isRuntimeString(content)) return content;
 	if (!Array.isArray(content)) return "";
 	return content
 		.map(textPart)
 		.filter((part): part is { readonly type?: unknown; readonly text?: unknown } => part !== undefined)
-		.filter((part) => part.type === "text" && typeof part.text === "string")
+		.filter((part) => part.type === "text" && isRuntimeString(part.text))
 		.map((part) => part.text as string)
 		.join("\n");
 }
 
 function messageText(line: PersistedLine): string | undefined {
 	if (line.type !== "message") return undefined;
-	if (typeof line.message !== "object" || line.message === null) return undefined;
+	if (!isRuntimeObject(line.message) || line.message === null) return undefined;
 	const message = line.message as { readonly role?: unknown; readonly content?: unknown };
 	if (message.role !== "user" && message.role !== "assistant") return undefined;
 	return contentText(message.content);
@@ -391,7 +392,7 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 		if (largeRequests.length !== 2) fail(`expected main and large BTW requests, received ${largeRequests.length}`);
 		const largeRequest = largeRequests[1];
 		if (largeRequest?.lastUser !== "large fit question") fail("large BTW question was not observed");
-		if (typeof largeRequest.messageChars !== "number" || largeRequest.messageChars > 750_000) {
+		if (!isRuntimeNumber(largeRequest.messageChars) || largeRequest.messageChars > 750_000) {
 			fail(`large BTW request was not fitted to the model window: ${String(largeRequest.messageChars)}`);
 		}
 		if (!Array.isArray(largeRequest.tools) || largeRequest.tools.length !== 0) {

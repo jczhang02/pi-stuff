@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isRuntimeBoolean, isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../shared/runtime-type.js";
 import { scanAgentReport } from "../runtime/final-report-scanner.ts";
 import {
 	type IntercomEventBus,
@@ -22,10 +23,10 @@ export function resolveSubagentResultStatus(input: {
 	if (input.detached) return "detached";
 	if (input.state === "stopped") return "stopped";
 	if (input.interrupted || input.state === "paused") return "paused";
-	if (typeof input.success === "boolean") return input.success ? "completed" : "failed";
+	if (isRuntimeBoolean(input.success)) return input.success ? "completed" : "failed";
 	if (input.state === "complete") return "completed";
 	if (input.state === "failed") return "failed";
-	if (typeof input.exitCode === "number") return input.exitCode === 0 ? "completed" : "failed";
+	if (isRuntimeNumber(input.exitCode)) return input.exitCode === 0 ? "completed" : "failed";
 	return "failed";
 }
 
@@ -289,7 +290,7 @@ export async function deliverSubagentIntercomMessageEvent(
 	timeoutMs = 500,
 	extra: SubagentIntercomExtra = {},
 ): Promise<boolean> {
-	if (typeof events.on !== "function" || typeof events.emit !== "function") return false;
+	if (!isRuntimeFunction(events.on) || !isRuntimeFunction(events.emit)) return false;
 	const requestId = extra.requestId ?? randomUUID();
 	return new Promise((resolve) => {
 		let settled = false;
@@ -303,7 +304,7 @@ export async function deliverSubagentIntercomMessageEvent(
 			resolve(delivered);
 		};
 		unsubscribe = events.on(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT, (data) => {
-			if (!data || typeof data !== "object") return;
+			if (!data || !isRuntimeObject(data)) return;
 			const delivery = data as { requestId?: unknown; delivered?: unknown };
 			if (delivery.requestId !== requestId) return;
 			finish(delivery.delivered === true);

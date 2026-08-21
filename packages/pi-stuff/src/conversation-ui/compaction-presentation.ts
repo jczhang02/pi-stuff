@@ -1,4 +1,5 @@
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { isRuntimeFunction } from "../shared/runtime-type.js";
 
 type SessionManager = ExtensionContext["sessionManager"];
 
@@ -13,7 +14,7 @@ export function suppressDuplicatedLiveCompactionReplay(
 	compactionEntryId: string,
 ): boolean {
 	const original = sessionManager.buildContextEntries;
-	if (typeof original !== "function" || !compactionEntryId) return false;
+	if (!isRuntimeFunction(original) || !compactionEntryId) return false;
 
 	const hadOwnMethod = Object.hasOwn(sessionManager, "buildContextEntries");
 	const previousDescriptor = Object.getOwnPropertyDescriptor(sessionManager, "buildContextEntries");

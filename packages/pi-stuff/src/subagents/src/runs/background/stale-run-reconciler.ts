@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
 import { readBoundedOwnedFile } from "../../shared/private-directory.ts";
@@ -99,16 +100,13 @@ function readRunnerStartupDiagnostics(asyncDir: string): string | undefined {
 
 function isNotFoundError(error: unknown): boolean {
 	return (
-		typeof error === "object" &&
-		error !== null &&
-		"code" in error &&
-		(error as NodeJS.ErrnoException).code === "ENOENT"
+		isRuntimeObject(error) && error !== null && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
 	);
 }
 
 function safeRunId(value: unknown): value is string {
 	return (
-		typeof value === "string" &&
+		isRuntimeString(value) &&
 		value.length > 0 &&
 		value.trim() === value &&
 		!path.isAbsolute(value) &&
@@ -208,7 +206,7 @@ interface ResultRepairData {
 }
 
 function finiteTimestamp(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+	return isRuntimeNumber(value) && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function readResultRepairData(
@@ -245,13 +243,13 @@ function readResultRepairData(
 					: "failed";
 		const results = Array.isArray(data.results)
 			? data.results.map((entry, index) => {
-					if (!entry || typeof entry !== "object" || Array.isArray(entry)) return {};
+					if (!entry || !isRuntimeObject(entry) || Array.isArray(entry)) return {};
 					const child = entry as ResultChildOutcome;
-					if (child.model !== undefined && typeof child.model !== "string")
+					if (child.model !== undefined && !isRuntimeString(child.model))
 						throw new Error(
 							`Invalid async result file '${resultPath}': results[${index}].model must be a string.`,
 						);
-					if (child.thinking !== undefined && typeof child.thinking !== "string")
+					if (child.thinking !== undefined && !isRuntimeString(child.thinking))
 						throw new Error(
 							`Invalid async result file '${resultPath}': results[${index}].thinking must be a string.`,
 						);
@@ -479,7 +477,7 @@ function buildFailedRepair(
 	reason?: string,
 ): { status: AsyncStatus; result: object; message: string } {
 	const runId = status.runId || path.basename(asyncDir);
-	const pid = typeof status.pid === "number" ? status.pid : "unknown";
+	const pid = isRuntimeNumber(status.pid) ? status.pid : "unknown";
 	const baseMessage =
 		reason ??
 		`Async runner process ${pid} exited or disappeared before writing a result. Marked run failed by stale-run reconciliation.`;
@@ -651,7 +649,7 @@ export function checkPidLiveness(pid: number, kill: KillFn = process.kill): PidL
 		return "alive";
 	} catch (error) {
 		const code =
-			typeof error === "object" && error !== null && "code" in error
+			isRuntimeObject(error) && error !== null && "code" in error
 				? (error as NodeJS.ErrnoException).code
 				: undefined;
 		if (code === "ESRCH") return "dead";
@@ -690,9 +688,9 @@ function reconcileAsyncRunWithStatusClaim(
 	const statusPath = path.join(asyncDir, "status.json");
 	for (const [index, step] of (effectiveStatus.steps ?? []).entries()) {
 		const stepRecord = step as Record<string, unknown>;
-		if (stepRecord.model !== undefined && typeof stepRecord.model !== "string")
+		if (stepRecord.model !== undefined && !isRuntimeString(stepRecord.model))
 			throw new Error(`Invalid async status file '${statusPath}': steps[${index}].model must be a string.`);
-		if (stepRecord.thinking !== undefined && typeof stepRecord.thinking !== "string")
+		if (stepRecord.thinking !== undefined && !isRuntimeString(stepRecord.thinking))
 			throw new Error(`Invalid async status file '${statusPath}': steps[${index}].thinking must be a string.`);
 	}
 
@@ -757,7 +755,7 @@ function reconcileAsyncRunWithStatusClaim(
 
 	const needsProcessRecovery =
 		effectiveStatus.lifecycleArtifactVersion === 3 && durableProcessTerminal?.state !== "observed";
-	if ((!needsProcessRecovery && effectiveStatus.state !== "running") || typeof effectiveStatus.pid !== "number") {
+	if ((!needsProcessRecovery && effectiveStatus.state !== "running") || !isRuntimeNumber(effectiveStatus.pid)) {
 		return { status: status ?? null, repaired: false, resultPath };
 	}
 

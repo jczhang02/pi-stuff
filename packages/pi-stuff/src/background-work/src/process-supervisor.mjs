@@ -1,7 +1,17 @@
 import { spawn, spawnSync } from "node:child_process";
 import { lstatSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { Guard } from "typebox/guard";
 
 const MAX_COMMAND_AUTHORIZATION_BYTES = 4 * 1024 * 1024;
+
+function isRuntimeNumber(value) {
+	return (
+		Guard.IsNumber(value) ||
+		Object.is(value, Number.NaN) ||
+		Object.is(value, Number.POSITIVE_INFINITY) ||
+		Object.is(value, Number.NEGATIVE_INFINITY)
+	);
+}
 
 function processStartIdentity(pid) {
 	if (process.platform === "linux") {
@@ -39,7 +49,7 @@ function processExists(pid) {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return error && typeof error === "object" && error.code === "EPERM";
+		return error && Guard.IsObject(error) && error.code === "EPERM";
 	}
 }
 
@@ -61,7 +71,7 @@ function linuxCommandGroupMembers() {
 		} catch (error) {
 			// ENOENT means this particular process exited between readdir and stat.
 			// Any other failure makes the whole group scan inconclusive.
-			if (!error || typeof error !== "object" || (error.code !== "ENOENT" && error.code !== "ESRCH")) throw error;
+			if (!error || !Guard.IsObject(error) || (error.code !== "ENOENT" && error.code !== "ESRCH")) throw error;
 		}
 	}
 	return members;
@@ -147,7 +157,7 @@ function parentStillOwnsUs() {
 }
 
 function writeCommandAcknowledgement() {
-	if (typeof envelope.commandAcknowledgementPath !== "string" || !envelope.commandAcknowledgementPath) return;
+	if (!Guard.IsString(envelope.commandAcknowledgementPath) || !envelope.commandAcknowledgementPath) return;
 	const supervisorStarted = processStartIdentity(process.pid);
 	if (!supervisorStarted) throw new Error("Background Work supervisor lost its process-start identity.");
 	const temporary = `${envelope.commandAcknowledgementPath}.${process.pid}.tmp`;
@@ -165,18 +175,18 @@ function writeCommandAcknowledgement() {
 }
 
 async function commandAuthorizationText() {
-	if (typeof envelope.commandAuthorizationPath !== "string" || !envelope.commandAuthorizationPath) {
+	if (!Guard.IsString(envelope.commandAuthorizationPath) || !envelope.commandAuthorizationPath) {
 		// Compatibility for a parent from before the regular-file transport.
 		return stdinText();
 	}
-	if (typeof envelope.commandAuthorizationToken !== "string" || !envelope.commandAuthorizationToken) {
+	if (!Guard.IsString(envelope.commandAuthorizationToken) || !envelope.commandAuthorizationToken) {
 		throw new Error("Background Work command authorization token is missing.");
 	}
 	for (;;) {
 		if (!parentStillOwnsUs()) throw new Error("Background Work parent exited before command authorization.");
 		try {
 			const stat = lstatSync(envelope.commandAuthorizationPath);
-			const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+			const currentUid = Guard.IsFunction(process.getuid) ? process.getuid() : undefined;
 			if (
 				stat.isSymbolicLink() ||
 				!stat.isFile() ||
@@ -191,7 +201,7 @@ async function commandAuthorizationText() {
 			if (
 				payload?.version !== 1 ||
 				payload.token !== envelope.commandAuthorizationToken ||
-				typeof payload.command !== "string" ||
+				!Guard.IsString(payload.command) ||
 				Buffer.byteLength(payload.command, "utf-8") > MAX_COMMAND_AUTHORIZATION_BYTES
 			) {
 				throw new Error("Background Work command authorization is invalid.");
@@ -200,7 +210,7 @@ async function commandAuthorizationText() {
 				writeCommandAcknowledgement();
 				return payload.command;
 		} catch (error) {
-			if (error && typeof error === "object" && error.code === "ENOENT") {
+			if (error && Guard.IsObject(error) && error.code === "ENOENT") {
 				await delay(20);
 				continue;
 			}
@@ -291,7 +301,7 @@ async function settle(code, signal) {
 		}
 	}
 	report({ type: "exit", code, signal, groupReaped: true });
-	const exitCode = typeof code === "number" ? code : signal ? 128 : 1;
+	const exitCode = isRuntimeNumber(code) ? code : signal ? 128 : 1;
 	process.exitCode = exitCode;
 	if (controlAvailable && !control.destroyed) control.end();
 	setTimeout(() => process.exit(exitCode), 25);

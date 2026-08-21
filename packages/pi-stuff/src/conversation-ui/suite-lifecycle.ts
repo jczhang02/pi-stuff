@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Guard } from "typebox/guard";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
+import { isRuntimeObject } from "../shared/runtime-type.js";
 
 type SessionManager = ExtensionContext["sessionManager"];
 
@@ -57,7 +58,7 @@ function createReadinessApi(pi: ExtensionAPI): ExtensionAPI {
 				return await handler(...args);
 			} catch (error) {
 				const ctx = args[1];
-				if (ctx && typeof ctx === "object") {
+				if (ctx && isRuntimeObject(ctx)) {
 					rejectSuiteSessionReadiness(pi, ctx as ExtensionContext);
 				}
 				throw error;

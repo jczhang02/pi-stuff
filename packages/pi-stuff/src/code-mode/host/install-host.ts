@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { getProxyForUrl } from "proxy-from-env";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
+import { isRuntimeObject } from "../../shared/runtime-type.js";
 import { codeModeHostBinaryName, hostAssetUrl, resolveCodeModeHostAsset } from "./host-assets.js";
 import { readProcessStartIdentity } from "./process-start-identity.js";
 
@@ -254,7 +255,7 @@ export async function installCodeModeHost(options: InstallCodeModeHostOptions): 
 				await execFileAsync("tar", ["-xzf", archive, "-C", extracted], { signal: options.signal });
 			} catch (error) {
 				options.signal?.throwIfAborted();
-				const stderr = error && typeof error === "object" && "stderr" in error ? String(error.stderr).trim() : "";
+				const stderr = error && isRuntimeObject(error) && "stderr" in error ? String(error.stderr).trim() : "";
 				throw new Error(`Code Mode host archive extraction failed${stderr ? `: ${stderr}` : ""}`, { cause: error });
 			}
 			const candidates = walk(extracted).filter((path) => basename(path).startsWith("codex-code-mode-host"));

@@ -1,4 +1,14 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import {
+	isRuntimeBigInt,
+	isRuntimeBoolean,
+	isRuntimeFunction,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+	isRuntimeSymbol,
+	isRuntimeUndefined,
+} from "../shared/runtime-type.js";
 import type {
 	SuiteToolCodeModeExecutionEndStatus,
 	SuiteToolCodeModeLifecycle,
@@ -57,7 +67,14 @@ export class SuiteToolInvocationError extends Error {
 function describeReceivedValue(value: unknown): string {
 	if (value === null) return "null";
 	if (Array.isArray(value)) return "array";
-	return typeof value;
+	if (isRuntimeBigInt(value)) return "bigint";
+	if (isRuntimeBoolean(value)) return "boolean";
+	if (isRuntimeFunction(value)) return "function";
+	if (isRuntimeNumber(value)) return "number";
+	if (isRuntimeString(value)) return "string";
+	if (isRuntimeSymbol(value)) return "symbol";
+	if (isRuntimeUndefined(value)) return "undefined";
+	return "object";
 }
 
 function invalidResult(name: string, path: string, expected: string, received: unknown): never {
@@ -68,7 +85,7 @@ function invalidResult(name: string, path: string, expected: string, received: u
 
 /** Cloudflare-compatible MCP/Pi result unwrapping with a strict content boundary. */
 export function unwrapSuiteToolResult(name: string, result: AgentToolResult<unknown>): unknown {
-	if (typeof result !== "object" || result === null) invalidResult(name, "result", "an object", result);
+	if (!isRuntimeObject(result) || result === null) invalidResult(name, "result", "an object", result);
 	const record = result as AgentToolResult<unknown> & {
 		readonly structuredContent?: unknown;
 		readonly toolResult?: unknown;
@@ -78,14 +95,14 @@ export function unwrapSuiteToolResult(name: string, result: AgentToolResult<unkn
 	const content: unknown = record.content;
 	if (!Array.isArray(content)) invalidResult(name, "result.content", "an array", content);
 	for (const [index, item] of content.entries()) {
-		if (typeof item !== "object" || item === null) {
+		if (!isRuntimeObject(item) || item === null) {
 			invalidResult(name, `result.content[${String(index)}]`, "a content object", item);
 		}
 		const block = item as Record<string, unknown>;
-		if (block["type"] === "text" && typeof block["text"] !== "string") {
+		if (block["type"] === "text" && !isRuntimeString(block["text"])) {
 			invalidResult(name, `result.content[${String(index)}].text`, "a string", block["text"]);
 		}
-		if (block["type"] === "image" && (typeof block["data"] !== "string" || typeof block["mimeType"] !== "string")) {
+		if (block["type"] === "image" && (!isRuntimeString(block["data"]) || !isRuntimeString(block["mimeType"]))) {
 			invalidResult(name, `result.content[${String(index)}]`, "base64 image data and a MIME type", item);
 		}
 		if (block["type"] !== "text" && block["type"] !== "image") {
@@ -177,7 +194,7 @@ export class SuiteCodeModeConnector {
 				usage: `${INTERNAL_SEARCH_TOOL}({ query })`,
 				invoke: async (input) =>
 					this.search(
-						typeof input === "object" && input !== null && "query" in input ? String(input.query) : "",
+						isRuntimeObject(input) && input !== null && "query" in input ? String(input.query) : "",
 						snippets,
 					),
 			},
@@ -195,7 +212,7 @@ export class SuiteCodeModeConnector {
 				usage: `${INTERNAL_DESCRIBE_TOOL}({ target })`,
 				invoke: async (input) =>
 					this.describe(
-						typeof input === "object" && input !== null && "target" in input ? String(input.target) : "",
+						isRuntimeObject(input) && input !== null && "target" in input ? String(input.target) : "",
 						snippets,
 					),
 			},

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
+import { isRuntimeBoolean, isRuntimeObject } from "../shared/runtime-type.js";
 import { mergedSettingsPath, readNamespace } from "../shared/settings-io/index.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-tools.json";
@@ -32,11 +33,11 @@ interface PendingSettingsWrite {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function parseSettings(value: unknown): ToolUiSettings {
-	if (!isRecord(value) || value["schemaVersion"] !== 1 || typeof value["liveElapsed"] !== "boolean") {
+	if (!isRecord(value) || value["schemaVersion"] !== 1 || !isRuntimeBoolean(value["liveElapsed"])) {
 		throw new Error("expected schemaVersion 1 and a boolean liveElapsed value");
 	}
 	return { liveElapsed: value["liveElapsed"], schemaVersion: 1 };

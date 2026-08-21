@@ -1,3 +1,5 @@
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
+
 interface CompletionDataLike {
 	id?: unknown;
 	agent?: unknown;
@@ -9,13 +11,13 @@ interface CompletionDataLike {
 }
 
 function asNonEmptyString(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
+	if (!isRuntimeString(value)) return undefined;
 	const trimmed = value.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function asFiniteNumber(value: unknown): number | undefined {
-	if (typeof value !== "number") return undefined;
+	if (!isRuntimeNumber(value)) return undefined;
 	return Number.isFinite(value) ? value : undefined;
 }
 
@@ -27,7 +29,7 @@ export function buildCompletionKey(data: CompletionDataLike, fallback: string): 
 	const timestamp = asFiniteNumber(data.timestamp);
 	const taskIndex = asFiniteNumber(data.taskIndex);
 	const totalTasks = asFiniteNumber(data.totalTasks);
-	const success = typeof data.success === "boolean" ? (data.success ? "1" : "0") : "?";
+	const success = isRuntimeBoolean(data.success) ? (data.success ? "1" : "0") : "?";
 	return [
 		"meta",
 		sessionId,

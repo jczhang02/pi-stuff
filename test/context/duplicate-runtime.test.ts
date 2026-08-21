@@ -30,6 +30,7 @@ test("physical Context Module copies share one Host runtime", async () => {
 		mkdirSync(copy, { recursive: true });
 		cpSync(join(process.cwd(), "packages/pi-stuff/src/context-management"), copy, { recursive: true });
 		const sourceRoot = join(copy, "..");
+		symlinkSync(join(process.cwd(), "packages/pi-stuff/src/shared"), join(sourceRoot, "shared"), "dir");
 		symlinkSync(join(process.cwd(), "packages/pi-stuff/src/tool-display"), join(sourceRoot, "tool-display"), "dir");
 		symlinkSync(
 			join(process.cwd(), "packages/pi-stuff/src/conversation-ui"),

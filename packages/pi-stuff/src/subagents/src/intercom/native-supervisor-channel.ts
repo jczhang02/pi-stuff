@@ -6,6 +6,7 @@ import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-w
 import { type TSchema, Type } from "typebox";
 import { withAgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage } from "../../../conversation-ui/index.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { activityKey, getToolUiRuntime, registerSuiteOwnedTool, singleActivity } from "../../../tool-display/index.js";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
@@ -227,12 +228,12 @@ function readRequestDeliveryState(requestFile: string, requestId: string): Reque
 		if (
 			(value.version !== 1 && value.version !== 2) ||
 			(value.requestId === requestId &&
-				(typeof value.lastAttemptAt !== "number" || !Number.isFinite(value.lastAttemptAt)))
+				(!isRuntimeNumber(value.lastAttemptAt) || !Number.isFinite(value.lastAttemptAt)))
 		)
 			return undefined;
 		if (value.requestId !== requestId) return undefined;
 		const acceptedAt =
-			typeof value.acceptedAt === "number" && Number.isFinite(value.acceptedAt) ? value.acceptedAt : undefined;
+			isRuntimeNumber(value.acceptedAt) && Number.isFinite(value.acceptedAt) ? value.acceptedAt : undefined;
 		return {
 			version: 2,
 			requestId,
@@ -417,9 +418,9 @@ async function waitForReply(
 			if (
 				parsed.type === "subagent.supervisor.reply" &&
 				parsed.requestId === requestId &&
-				typeof parsed.createdAt === "number" &&
+				isRuntimeNumber(parsed.createdAt) &&
 				Number.isFinite(parsed.createdAt) &&
-				typeof parsed.message === "string" &&
+				isRuntimeString(parsed.message) &&
 				Buffer.byteLength(parsed.message, "utf-8") <= MAX_MESSAGE_BYTES
 			) {
 				const reply = parsed as SupervisorReply;
@@ -534,13 +535,13 @@ function toolResultText(result: AgentToolResult<Record<string, unknown>>): strin
 }
 
 function communicationTarget(args: Readonly<Record<string, unknown>>): string {
-	const action = typeof args.action === "string" ? args.action : typeof args.reason === "string" ? args.reason : "";
-	const destination = typeof args.replyTo === "string" ? args.replyTo : typeof args.to === "string" ? args.to : "";
+	const action = isRuntimeString(args.action) ? args.action : isRuntimeString(args.reason) ? args.reason : "";
+	const destination = isRuntimeString(args.replyTo) ? args.replyTo : isRuntimeString(args.to) ? args.to : "";
 	return [action, destination].filter(Boolean).join(" · ");
 }
 
 function communicationCategory(args: Readonly<Record<string, unknown>>) {
-	const action = typeof args.action === "string" ? args.action : "";
+	const action = isRuntimeString(args.action) ? args.action : "";
 	return action === "status" || action === "list" || action === "pending" ? "check-agent" : "message-agent";
 }
 
@@ -632,7 +633,7 @@ function parseRequestFile(file: string, channelDir: string): SupervisorRequestFi
 	try {
 		const parsed = JSON.parse(snapshot.text) as Partial<SupervisorRequest>;
 		if (parsed.type !== "subagent.supervisor.request") return { snapshot };
-		if (typeof parsed.id !== "string" || !parsed.id.trim() || parsed.id.length > 256) return { snapshot };
+		if (!isRuntimeString(parsed.id) || !parsed.id.trim() || parsed.id.length > 256) return { snapshot };
 		if (
 			parsed.reason !== "need_decision" &&
 			parsed.reason !== "interview_request" &&
@@ -640,34 +641,34 @@ function parseRequestFile(file: string, channelDir: string): SupervisorRequestFi
 		)
 			return { snapshot };
 		const physicalSessionId =
-			typeof parsed.physicalSessionId === "string" && parsed.physicalSessionId.trim()
+			isRuntimeString(parsed.physicalSessionId) && parsed.physicalSessionId.trim()
 				? parsed.physicalSessionId
 				: undefined;
 		const protocolVersion = physicalSessionId ? 2 : 1;
 		if (
-			typeof parsed.message !== "string" ||
+			!isRuntimeString(parsed.message) ||
 			!parsed.message ||
 			Buffer.byteLength(parsed.message, "utf-8") > MAX_MESSAGE_BYTES
 		)
 			return { snapshot };
 		if (
-			typeof parsed.createdAt !== "number" ||
+			!isRuntimeNumber(parsed.createdAt) ||
 			!Number.isFinite(parsed.createdAt) ||
 			parsed.createdAt <= 0 ||
 			(parsed.expiresAt !== undefined &&
-				(typeof parsed.expiresAt !== "number" ||
+				(!isRuntimeNumber(parsed.expiresAt) ||
 					!Number.isFinite(parsed.expiresAt) ||
 					parsed.expiresAt < parsed.createdAt)) ||
-			(protocolVersion === 2 && (typeof parsed.expiresAt !== "number" || !Number.isFinite(parsed.expiresAt))) ||
-			typeof parsed.expectsReply !== "boolean" ||
+			(protocolVersion === 2 && (!isRuntimeNumber(parsed.expiresAt) || !Number.isFinite(parsed.expiresAt))) ||
+			!isRuntimeBoolean(parsed.expectsReply) ||
 			parsed.expectsReply !== (parsed.reason !== "progress_update") ||
-			typeof parsed.orchestratorSessionId !== "string" ||
+			!isRuntimeString(parsed.orchestratorSessionId) ||
 			!parsed.orchestratorSessionId.trim() ||
-			typeof parsed.runId !== "string" ||
+			!isRuntimeString(parsed.runId) ||
 			!parsed.runId.trim() ||
-			typeof parsed.agent !== "string" ||
+			!isRuntimeString(parsed.agent) ||
 			!parsed.agent.trim() ||
-			typeof parsed.childIndex !== "number" ||
+			!isRuntimeNumber(parsed.childIndex) ||
 			!Number.isSafeInteger(parsed.childIndex) ||
 			(parsed.childIndex ?? -1) < 0
 		)
@@ -788,21 +789,21 @@ async function readSupervisorChannelMetadataAsync(channelDir: string): Promise<S
 		) as Partial<SupervisorChannelMetadata>;
 		if (
 			value.version !== 1 ||
-			typeof value.physicalSessionId !== "string" ||
+			!isRuntimeString(value.physicalSessionId) ||
 			!value.physicalSessionId ||
-			typeof value.runId !== "string" ||
+			!isRuntimeString(value.runId) ||
 			!value.runId ||
-			typeof value.agent !== "string" ||
+			!isRuntimeString(value.agent) ||
 			!value.agent ||
-			typeof value.childIndex !== "number" ||
+			!isRuntimeNumber(value.childIndex) ||
 			!Number.isSafeInteger(value.childIndex) ||
 			value.childIndex < 0 ||
 			!Number.isSafeInteger(value.ownerPid) ||
 			(value.ownerPid ?? -1) <= 0 ||
-			typeof value.updatedAt !== "number" ||
+			!isRuntimeNumber(value.updatedAt) ||
 			!Number.isFinite(value.updatedAt) ||
 			(value.ownerProcessStartIdentity !== undefined &&
-				(typeof value.ownerProcessStartIdentity !== "string" || !value.ownerProcessStartIdentity))
+				(!isRuntimeString(value.ownerProcessStartIdentity) || !value.ownerProcessStartIdentity))
 		) {
 			return undefined;
 		}
@@ -877,13 +878,13 @@ function requestMatchesContext(
 }
 
 function addPersistedSupervisorRequestId(entry: unknown, requestIds: Set<string>): void {
-	if (!entry || typeof entry !== "object") return;
+	if (!entry || !isRuntimeObject(entry)) return;
 	const candidate = entry as { type?: unknown; customType?: unknown; details?: unknown };
 	if (candidate.type !== "custom_message" || candidate.customType !== "subagent_supervisor_request") return;
 	const details = candidate.details;
-	if (!details || typeof details !== "object") return;
+	if (!details || !isRuntimeObject(details)) return;
 	const id = (details as { id?: unknown }).id;
-	if (typeof id === "string" && id) requestIds.add(id);
+	if (isRuntimeString(id) && id) requestIds.add(id);
 }
 
 /** Build one delivery index for the whole poll instead of rescanning the session per request. */
@@ -996,7 +997,7 @@ type SupervisorRequestLifecycle = "pending" | "resolved" | "expired" | "inactive
 
 function requestExpiresAt(request: SupervisorRequest, now: number): number {
 	const expiresAt = (request as { expiresAt?: unknown }).expiresAt;
-	if (typeof expiresAt === "number" && Number.isFinite(expiresAt)) return expiresAt;
+	if (isRuntimeNumber(expiresAt) && Number.isFinite(expiresAt)) return expiresAt;
 	return Number.isFinite(request.createdAt) ? request.createdAt + askTimeoutMs() : now;
 }
 

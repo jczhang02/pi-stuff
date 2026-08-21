@@ -1,4 +1,5 @@
 import { sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	TASK_SNAPSHOT_CAPABILITY,
 	TASK_SNAPSHOT_SCHEMA_VERSION,
@@ -38,7 +39,7 @@ interface RawToolResult {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 function isTaskStatus(value: unknown): value is TaskStatus {
@@ -53,8 +54,8 @@ function cloneMetadata(value: unknown): Record<string, unknown> | undefined | nu
 function normalizeVersionedTask(value: unknown): Task | null {
 	if (!isRecord(value)) return null;
 	const raw = value as RawTask;
-	if (typeof raw.id !== "string" || raw.id.length === 0) return null;
-	if (typeof raw.subject !== "string" || typeof raw.description !== "string") return null;
+	if (!isRuntimeString(raw.id) || raw.id.length === 0) return null;
+	if (!isRuntimeString(raw.subject) || !isRuntimeString(raw.description)) return null;
 	if (!isTaskStatus(raw.status)) return null;
 
 	const task: Task = {
@@ -64,15 +65,15 @@ function normalizeVersionedTask(value: unknown): Task | null {
 		status: raw.status,
 	};
 	if (raw.activeForm !== undefined) {
-		if (typeof raw.activeForm !== "string") return null;
+		if (!isRuntimeString(raw.activeForm)) return null;
 		task.activeForm = raw.activeForm;
 	}
 	if (raw.owner !== undefined) {
-		if (typeof raw.owner !== "string") return null;
+		if (!isRuntimeString(raw.owner)) return null;
 		task.owner = raw.owner;
 	}
 	if (raw.blockedBy !== undefined) {
-		if (!Array.isArray(raw.blockedBy) || raw.blockedBy.some((id) => typeof id !== "string" || id.length === 0)) {
+		if (!Array.isArray(raw.blockedBy) || raw.blockedBy.some((id) => !isRuntimeString(id) || id.length === 0)) {
 			return null;
 		}
 		const blockedBy = [...new Set(raw.blockedBy as string[])];
@@ -88,8 +89,8 @@ function normalizeLegacyTask(value: unknown): Task | null {
 	if (!isRecord(value)) return null;
 	const raw = value as RawTask;
 	if (!Number.isSafeInteger(raw.id) || (raw.id as number) < 1) return null;
-	if (typeof raw.subject !== "string" || !isTaskStatus(raw.status)) return null;
-	if (raw.description !== undefined && typeof raw.description !== "string") return null;
+	if (!isRuntimeString(raw.subject) || !isTaskStatus(raw.status)) return null;
+	if (raw.description !== undefined && !isRuntimeString(raw.description)) return null;
 
 	const task: Task = {
 		id: String(raw.id),
@@ -98,11 +99,11 @@ function normalizeLegacyTask(value: unknown): Task | null {
 		status: raw.status,
 	};
 	if (raw.activeForm !== undefined) {
-		if (typeof raw.activeForm !== "string") return null;
+		if (!isRuntimeString(raw.activeForm)) return null;
 		task.activeForm = raw.activeForm;
 	}
 	if (raw.owner !== undefined) {
-		if (typeof raw.owner !== "string") return null;
+		if (!isRuntimeString(raw.owner)) return null;
 		task.owner = raw.owner;
 	}
 	if (raw.blockedBy !== undefined) {
@@ -199,7 +200,7 @@ export function replayFromBranch(
 	for (const candidate of projectMessages(branchMessages)) {
 		if (!isRecord(candidate)) continue;
 		const message = candidate as RawToolResult;
-		if (message.role !== "toolResult" || typeof message.toolName !== "string") continue;
+		if (message.role !== "toolResult" || !isRuntimeString(message.toolName)) continue;
 
 		const snapshot =
 			message.toolName === LEGACY_TOOL_NAME

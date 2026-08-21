@@ -1313,7 +1313,7 @@ describe("Command Dialog coordinator", () => {
 		expect(ui.workingWrites).toEqual([false]);
 		expect(chromeWrites).toEqual([true]);
 		const footerFactory = ui.footerWrites[1];
-		expect(typeof footerFactory).toBe("function");
+		expect(footerFactory).toBeTypeOf("function");
 		expect(footerFactory?.(ui.tui, ui.theme, {} as never).render(80)).toEqual([]);
 		expect(ui.currentHost.render(80)).toEqual(["normal"]);
 		expect(ui.renderRequests).toEqual([undefined]);

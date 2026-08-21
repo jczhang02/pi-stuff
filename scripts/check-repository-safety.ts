@@ -1,6 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { join, posix, resolve } from "node:path";
 import ts from "typescript";
+import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const FORBIDDEN_HOST_FILES = new Set(["auth.json", "models-store.json"]);
 const FORBIDDEN_PACKAGE_FILES = new Set(["AGENTS.md", "CONTEXT.md"]);
@@ -137,12 +138,12 @@ function hasExplicitFilesAllowlist(files: unknown): boolean {
 	if (
 		!Array.isArray(files) ||
 		files.length === 0 ||
-		!files.some((entry) => typeof entry === "string" && !entry.startsWith("!"))
+		!files.some((entry) => isRuntimeString(entry) && !entry.startsWith("!"))
 	) {
 		return false;
 	}
 	return files.every((entry) => {
-		if (typeof entry !== "string" || entry.length === 0) return false;
+		if (!isRuntimeString(entry) || entry.length === 0) return false;
 		const normalized = entry.startsWith("!") ? entry.slice(1) : entry;
 		if (normalized.length === 0 || normalized.startsWith("/") || normalized.includes("\\")) return false;
 		const segments = normalized.split("/").filter((segment) => segment.length > 0 && segment !== ".");
@@ -259,18 +260,18 @@ function hasInexactDependency(manifest: PackageManifest): boolean {
 	const exactVersion = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 	for (const section of [manifest.dependencies, manifest.devDependencies, manifest.optionalDependencies] as const) {
 		if (
-			typeof section === "object" &&
+			isRuntimeObject(section) &&
 			section !== null &&
-			Object.values(section).some((version) => typeof version !== "string" || !exactVersion.test(version))
+			Object.values(section).some((version) => !isRuntimeString(version) || !exactVersion.test(version))
 		) {
 			return true;
 		}
 	}
 	if (
-		typeof manifest.peerDependencies === "object" &&
+		isRuntimeObject(manifest.peerDependencies) &&
 		manifest.peerDependencies !== null &&
 		Object.values(manifest.peerDependencies).some(
-			(version) => typeof version !== "string" || (version !== "*" && !exactVersion.test(version)),
+			(version) => !isRuntimeString(version) || (version !== "*" && !exactVersion.test(version)),
 		)
 	) {
 		return true;
@@ -313,7 +314,7 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 			findings.push({ path, rule: "package-pi-manifest" });
 		}
 		if (
-			typeof manifest.scripts === "object" &&
+			isRuntimeObject(manifest.scripts) &&
 			manifest.scripts !== null &&
 			Object.keys(manifest.scripts).some((script) => LIFECYCLE_SCRIPTS.has(script))
 		) {
@@ -325,7 +326,7 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 
 async function auditSuiteManifest(root: string, path: string): Promise<SafetyFinding[]> {
 	const manifest = JSON.parse(await readFile(join(root, path), "utf8")) as SuiteManifest;
-	if (!Array.isArray(manifest.capabilities) || manifest.capabilities.some((name) => typeof name !== "string")) {
+	if (!Array.isArray(manifest.capabilities) || manifest.capabilities.some((name) => !isRuntimeString(name))) {
 		return [{ path, rule: "suite-capabilities-must-be-string-array" }];
 	}
 	const capabilities = new Set(manifest.capabilities as string[]);
@@ -346,7 +347,7 @@ async function auditSuiteSchema(root: string, path: string): Promise<SafetyFindi
 	const declared = schema.properties?.capabilities?.items?.enum;
 	if (
 		!Array.isArray(declared) ||
-		declared.some((name) => typeof name !== "string") ||
+		declared.some((name) => !isRuntimeString(name)) ||
 		new Set(declared).size !== declared.length
 	) {
 		return [{ path, rule: "suite-schema-capabilities-must-be-unique-string-array" }];

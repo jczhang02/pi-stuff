@@ -1,4 +1,6 @@
-const WAIT_BUFFER = typeof SharedArrayBuffer !== "undefined" ? new SharedArrayBuffer(4) : undefined;
+import { isRuntimeString, isRuntimeUndefined } from "../../../shared/runtime-type.js";
+
+const WAIT_BUFFER = isRuntimeUndefined(globalThis.SharedArrayBuffer) ? undefined : new globalThis.SharedArrayBuffer(4);
 const WAIT_VIEW = WAIT_BUFFER ? new Int32Array(WAIT_BUFFER) : undefined;
 const RETRYABLE_FILE_SYSTEM_ERROR_CODES = new Set(["EACCES", "EBUSY", "EPERM"]);
 
@@ -29,7 +31,7 @@ export function waitForFileSystemRetry(delayMs: number): void {
 
 export function isRetryableFileSystemError(error: unknown): boolean {
 	const code = (error as NodeJS.ErrnoException | undefined)?.code;
-	return typeof code === "string" && RETRYABLE_FILE_SYSTEM_ERROR_CODES.has(code);
+	return isRuntimeString(code) && RETRYABLE_FILE_SYSTEM_ERROR_CODES.has(code);
 }
 
 export function runFileSystemOperationWithRetry<T>(operation: () => T, options: FileSystemRetryOptions = {}): T {

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { piStuffCachePath, xdgConfigHome } from "../../../../xdg/index.ts";
 import { getAgentDir, getProjectConfigDir } from "../../shared/utils.ts";
 
@@ -103,9 +104,9 @@ function loadMetadataCache(): MetadataCache | null {
 		return null;
 	}
 
-	if (!parsed || typeof parsed !== "object") return null;
+	if (!parsed || !isRuntimeObject(parsed)) return null;
 	const raw = parsed as Record<string, unknown>;
-	if (raw.version !== CACHE_VERSION || !raw.servers || typeof raw.servers !== "object" || Array.isArray(raw.servers)) {
+	if (raw.version !== CACHE_VERSION || !raw.servers || !isRuntimeObject(raw.servers) || Array.isArray(raw.servers)) {
 		return null;
 	}
 	return raw as unknown as MetadataCache;
@@ -145,19 +146,17 @@ function readConfig(configPath: string): McpConfig | null {
 }
 
 function validateConfig(raw: unknown): McpConfig {
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { mcpServers: {} };
+	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return { mcpServers: {} };
 	const obj = raw as Record<string, unknown>;
 	const servers = obj.mcpServers ?? obj["mcp-servers"] ?? {};
 	return {
 		mcpServers:
-			servers && typeof servers === "object" && !Array.isArray(servers)
-				? (servers as Record<string, ServerEntry>)
-				: {},
+			servers && isRuntimeObject(servers) && !Array.isArray(servers) ? (servers as Record<string, ServerEntry>) : {},
 		imports: Array.isArray(obj.imports)
 			? obj.imports.filter((value): value is ImportKind => isImportKind(value))
 			: undefined,
 		settings:
-			obj.settings && typeof obj.settings === "object" && !Array.isArray(obj.settings)
+			obj.settings && isRuntimeObject(obj.settings) && !Array.isArray(obj.settings)
 				? (obj.settings as McpConfig["settings"])
 				: undefined,
 	};
@@ -206,13 +205,13 @@ function resolveImportPath(importKind: ImportKind, cwd: string): string | null {
 }
 
 function extractServers(config: unknown, kind: ImportKind): Record<string, ServerEntry> {
-	if (!config || typeof config !== "object" || Array.isArray(config)) return {};
+	if (!config || !isRuntimeObject(config) || Array.isArray(config)) return {};
 	const obj = config as Record<string, unknown>;
 	const servers =
 		kind === "cursor" || kind === "windsurf" || kind === "vscode"
 			? (obj.mcpServers ?? obj["mcp-servers"])
 			: obj.mcpServers;
-	return servers && typeof servers === "object" && !Array.isArray(servers)
+	return servers && isRuntimeObject(servers) && !Array.isArray(servers)
 		? (servers as Record<string, ServerEntry>)
 		: {};
 }
@@ -235,7 +234,7 @@ function resolveDirectToolSelections(
 		if (!toolFilter) continue;
 
 		for (const tool of Array.isArray(serverCache.tools) ? serverCache.tools : []) {
-			if (typeof tool?.name !== "string" || !tool.name) continue;
+			if (!isRuntimeString(tool?.name) || !tool.name) continue;
 			if (toolFilter !== true && !toolFilter.has(tool.name)) continue;
 			if (isToolExcluded(tool.name, serverName, prefix, definition.excludeTools)) continue;
 			const prefixedName = formatToolName(tool.name, serverName, prefix);
@@ -246,7 +245,7 @@ function resolveDirectToolSelections(
 
 		if (definition.exposeResources === false) continue;
 		for (const resource of Array.isArray(serverCache.resources) ? serverCache.resources : []) {
-			if (typeof resource?.name !== "string" || !resource.name || typeof resource.uri !== "string" || !resource.uri)
+			if (!isRuntimeString(resource?.name) || !resource.name || !isRuntimeString(resource.uri) || !resource.uri)
 				continue;
 			const baseName = `get_${resourceNameToToolName(resource.name)}`;
 			if (toolFilter !== true && !toolFilter.has(baseName)) continue;
@@ -291,7 +290,7 @@ function parseSelections(selections: string[]): { servers: Set<string>; tools: M
 
 function isServerCacheValid(entry: ServerCacheEntry | undefined, definition: ServerEntry): entry is ServerCacheEntry {
 	if (!entry || entry.configHash !== computeMcpServerHash(definition)) return false;
-	if (!entry.cachedAt || typeof entry.cachedAt !== "number") return false;
+	if (!entry.cachedAt || !isRuntimeNumber(entry.cachedAt)) return false;
 	return Date.now() - entry.cachedAt <= CACHE_MAX_AGE_MS;
 }
 
@@ -319,7 +318,7 @@ function getToolPrefix(value: unknown): ToolPrefix {
 }
 
 function isImportKind(value: unknown): value is ImportKind {
-	return typeof value === "string" && Object.hasOwn(IMPORT_PATHS, value);
+	return isRuntimeString(value) && Object.hasOwn(IMPORT_PATHS, value);
 }
 
 function getServerPrefix(serverName: string, mode: ToolPrefix): string {
@@ -344,7 +343,7 @@ function isToolExcluded(toolName: string, serverName: string, prefix: ToolPrefix
 		normalizeToolName(formatToolName(toolName, serverName, "server")),
 		normalizeToolName(formatToolName(toolName, serverName, "short")),
 	]);
-	return excludeTools.some((excluded) => typeof excluded === "string" && candidates.has(normalizeToolName(excluded)));
+	return excludeTools.some((excluded) => isRuntimeString(excluded) && candidates.has(normalizeToolName(excluded)));
 }
 
 function normalizeToolName(value: string): string {
@@ -390,7 +389,7 @@ function getMissingEnvVars(value: string): string[] {
 
 function resolveServerUrl(definition: Pick<ServerEntry, "url">): string | undefined {
 	if (definition.url == null) return undefined;
-	if (typeof definition.url !== "string") throw new Error("MCP server URL must be a string");
+	if (!isRuntimeString(definition.url)) throw new Error("MCP server URL must be a string");
 
 	const missing = getMissingEnvVars(definition.url);
 	if (missing.length > 0) {
@@ -422,7 +421,7 @@ function resolveBearerToken(definition: Pick<ServerEntry, "bearerToken" | "beare
 }
 
 function stableStringify(value: unknown): string {
-	if (value === null || value === undefined || typeof value !== "object") {
+	if (value === null || value === undefined || !isRuntimeObject(value)) {
 		const serialized = JSON.stringify(value);
 		return serialized === undefined ? "undefined" : serialized;
 	}

@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../runs/shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
 import { validateToolBudgetConfig } from "../runs/shared/tool-budget.ts";
@@ -303,8 +304,8 @@ async function packageRootsFromSettings(settingsPath: string, baseDir: string): 
 	if (!isRecord(settings) || !Array.isArray(settings.packages)) return [];
 	const roots: string[] = [];
 	for (const entry of settings.packages) {
-		const source = typeof entry === "string" ? entry : isRecord(entry) ? entry.source : undefined;
-		if (typeof source !== "string") continue;
+		const source = isRuntimeString(entry) ? entry : isRecord(entry) ? entry.source : undefined;
+		if (!isRuntimeString(source)) continue;
 		const resolved = resolvePackageSource(source, baseDir);
 		if (resolved) roots.push(resolved);
 	}
@@ -397,7 +398,7 @@ function optionalNonNegativeInteger(value: string | undefined): number | undefin
 }
 
 function optionalText(value: string | undefined): value is string {
-	return typeof value === "string" && value.trim().length > 0;
+	return isRuntimeString(value) && value.trim().length > 0;
 }
 
 function nonEmpty(values: string[] | undefined): string[] | undefined {
@@ -425,7 +426,7 @@ async function readJson(filePath: string): Promise<unknown> {
 
 function stringArray(value: unknown): string[] {
 	return Array.isArray(value)
-		? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+		? value.filter((entry): entry is string => isRuntimeString(entry) && entry.trim().length > 0)
 		: [];
 }
 
@@ -443,7 +444,7 @@ function isWithin(candidate: string, root: string): boolean {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
 async function isDirectory(candidate: string): Promise<boolean> {

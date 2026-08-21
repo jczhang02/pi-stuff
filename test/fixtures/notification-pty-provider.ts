@@ -1,6 +1,7 @@
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 const PROVIDER = "pi-stuff-notification-pty";
 const MODEL = "notification-pty-model";
@@ -31,7 +32,7 @@ function lastUserText(context: Context): string {
 	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
 		const candidate = context.messages[index];
 		if (candidate?.role !== "user") continue;
-		if (typeof candidate.content === "string") return candidate.content;
+		if (isRuntimeString(candidate.content)) return candidate.content;
 		return candidate.content
 			.filter((part): part is { readonly text: string; readonly type: "text" } => part.type === "text")
 			.map((part) => part.text)

@@ -1,4 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import { isRuntimeString } from "../../../shared/runtime-type.js";
 import {
 	activityKey,
 	boundTerminalLine,
@@ -28,7 +29,7 @@ function firstText(result: AgentToolResult<Details>): string {
 }
 
 function action(params: PublicAgentParams): keyof typeof AGENT_ACTION_PRESENTATION | undefined {
-	return typeof params.action === "string" && Object.hasOwn(AGENT_ACTION_PRESENTATION, params.action)
+	return isRuntimeString(params.action) && Object.hasOwn(AGENT_ACTION_PRESENTATION, params.action)
 		? params.action
 		: undefined;
 }
@@ -49,9 +50,7 @@ function requestedLaunchCount(params: PublicAgentParams): number {
 function launchedCount(params: PublicAgentParams, result?: AgentToolResult<Details>): number {
 	if (!result) return 0;
 	if (params.foreground === true) return Array.isArray(result.details?.results) ? result.details.results.length : 0;
-	return typeof result.details?.asyncId === "string" && result.details.asyncId.trim()
-		? requestedLaunchCount(params)
-		: 0;
+	return isRuntimeString(result.details?.asyncId) && result.details.asyncId.trim() ? requestedLaunchCount(params) : 0;
 }
 
 function label(params: PublicAgentParams): string {

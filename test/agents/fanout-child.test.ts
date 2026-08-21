@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isRuntimeFunction } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { PiStuffAgentsConfig } from "../../packages/pi-stuff/src/subagents/src/extension/config.js";
 import registerFanoutChild, {
 	type FanoutChildDependencies,
@@ -186,7 +187,7 @@ describe("fanout child Agent composition", () => {
 		const dependencies: Partial<FanoutChildDependencies> = {
 			loadConfiguration: config,
 			createExecutor: (input) => {
-				projectorProvided = typeof input.projectContext === "function";
+				projectorProvided = isRuntimeFunction(input.projectContext);
 				return {
 					execute: async (_id, params, _signal, _onUpdate, _ctx, hooks) => {
 						engineParams.push(params);

@@ -1,3 +1,4 @@
+import { isRuntimeNumber, isRuntimeObject } from "../../../../shared/runtime-type.js";
 import type { ResolvedTurnBudget, TurnBudgetState } from "../../shared/types.ts";
 
 export const DEFAULT_TURN_BUDGET_GRACE_TURNS = 1;
@@ -7,17 +8,17 @@ export function resolveTurnBudgetConfig(
 	label = "turnBudget",
 ): { turnBudget?: ResolvedTurnBudget; error?: string } {
 	if (raw === undefined) return {};
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) {
 		return { error: `${label} must be an object with maxTurns and optional graceTurns.` };
 	}
 	const unknownField = Object.keys(raw).find((key) => key !== "maxTurns" && key !== "graceTurns");
 	if (unknownField) return { error: `${label}.${unknownField} is not supported.` };
 	const budget = raw as { maxTurns?: unknown; graceTurns?: unknown };
-	if (typeof budget.maxTurns !== "number" || !Number.isInteger(budget.maxTurns) || budget.maxTurns < 1) {
+	if (!isRuntimeNumber(budget.maxTurns) || !Number.isInteger(budget.maxTurns) || budget.maxTurns < 1) {
 		return { error: `${label}.maxTurns must be an integer >= 1.` };
 	}
 	const graceTurns = budget.graceTurns ?? DEFAULT_TURN_BUDGET_GRACE_TURNS;
-	if (typeof graceTurns !== "number" || !Number.isInteger(graceTurns) || graceTurns < 0) {
+	if (!isRuntimeNumber(graceTurns) || !Number.isInteger(graceTurns) || graceTurns < 0) {
 		return { error: `${label}.graceTurns must be an integer >= 0.` };
 	}
 	return { turnBudget: { maxTurns: budget.maxTurns, graceTurns } };

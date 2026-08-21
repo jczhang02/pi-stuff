@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	captureProcessIdentity,
 	identityMatches,
@@ -59,19 +60,19 @@ function safeToken(value: string): string {
 }
 
 function isPositiveInteger(value: unknown): value is number {
-	return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0;
 }
 
 function parseIdentity(value: unknown): ProcessIdentity | undefined {
-	if (!value || typeof value !== "object") return undefined;
+	if (!value || !isRuntimeObject(value)) return undefined;
 	const record = value as Record<string, unknown>;
-	return isPositiveInteger(record["pid"]) && typeof record["started"] === "string" && record["started"]
+	return isPositiveInteger(record["pid"]) && isRuntimeString(record["started"]) && record["started"]
 		? { pid: record["pid"], started: record["started"] }
 		: undefined;
 }
 
 function parseStoredRuntime(value: unknown, authorityKey: Uint8Array): StoredRuntime | undefined {
-	if (!value || typeof value !== "object") return undefined;
+	if (!value || !isRuntimeObject(value)) return undefined;
 	const record = value as Record<string, unknown>;
 	const owner = parseIdentity(record["owner"]);
 	if (
@@ -84,21 +85,21 @@ function parseStoredRuntime(value: unknown, authorityKey: Uint8Array): StoredRun
 	}
 	const tasks: StoredProcessTask[] = [];
 	for (const value of record["tasks"]) {
-		if (!value || typeof value !== "object") return undefined;
+		if (!value || !isRuntimeObject(value)) return undefined;
 		const task = value as Record<string, unknown>;
 		const supervisor = parseIdentity(task["supervisor"]);
 		const command = task["command"] === undefined ? undefined : parseIdentity(task["command"]);
-		if (typeof task["id"] !== "string" || !task["id"] || !supervisor || (task["command"] && !command)) {
+		if (!isRuntimeString(task["id"]) || !task["id"] || !supervisor || (task["command"] && !command)) {
 			return undefined;
 		}
 		tasks.push({ id: task["id"], supervisor, ...(command ? { command } : {}) });
 	}
 	const auth = record["auth"];
-	if (!auth || typeof auth !== "object") return undefined;
+	if (!auth || !isRuntimeObject(auth)) return undefined;
 	const authRecord = auth as Record<string, unknown>;
 	if (
 		authRecord["algorithm"] !== AUTHORITY_ALGORITHM ||
-		typeof authRecord["digest"] !== "string" ||
+		!isRuntimeString(authRecord["digest"]) ||
 		!/^[a-f0-9]{64}$/u.test(authRecord["digest"])
 	) {
 		return undefined;
@@ -170,7 +171,7 @@ function loadOrCreateAuthorityKey(injected?: Uint8Array, create = true): Buffer 
 		try {
 			ensureOwnedDirectory(root, "Background Work authority directory", false);
 			const stat = lstatSync(target);
-			const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+			const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
 			if (
 				stat.isSymbolicLink() ||
 				!stat.isFile() ||
@@ -188,7 +189,7 @@ function loadOrCreateAuthorityKey(injected?: Uint8Array, create = true): Buffer 
 	ensureOwnedDirectory(root, "Background Work authority directory");
 	try {
 		const stat = lstatSync(target);
-		const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+		const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
 		if (
 			stat.isSymbolicLink() ||
 			!stat.isFile() ||
@@ -219,7 +220,7 @@ function isMissingPath(error: unknown): boolean {
 function isDirectory(path: string): boolean {
 	try {
 		const stat = lstatSync(path);
-		const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+		const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
 		return stat.isDirectory() && !stat.isSymbolicLink() && (currentUid === undefined || stat.uid === currentUid);
 	} catch {
 		return false;
@@ -234,7 +235,7 @@ function ensureOwnedDirectory(directory: string, label: string, create = true): 
 	} catch (error) {
 		throw new Error(`${label} '${directory}' is unavailable.`, { cause: error });
 	}
-	const currentUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+	const currentUid = isRuntimeFunction(process.getuid) ? process.getuid() : undefined;
 	if (stat.isSymbolicLink() || !stat.isDirectory() || (currentUid !== undefined && stat.uid !== currentUid)) {
 		throw new Error(`${label} '${directory}' must be a real directory owned by the current user.`);
 	}

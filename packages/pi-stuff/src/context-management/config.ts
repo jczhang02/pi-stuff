@@ -2,6 +2,7 @@ import { access, mkdir, open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isRuntimeString } from "../shared/runtime-type.js";
 
 const DEFAULT_HISTORIAN_MODEL = "openai-codex/gpt-5.6-terra";
 const environment = process.env as NodeJS.ProcessEnv & {
@@ -38,7 +39,7 @@ function userScopeConfigPaths(): ReadonlySet<string> {
 }
 
 function contextDirectory(ctx: ExtensionContext): string {
-	return typeof ctx.cwd === "string" && ctx.cwd.trim() ? ctx.cwd : process.cwd();
+	return isRuntimeString(ctx.cwd) && ctx.cwd.trim() ? ctx.cwd : process.cwd();
 }
 
 function canonicalProjectConfigPaths(ctx: ExtensionContext): readonly string[] {

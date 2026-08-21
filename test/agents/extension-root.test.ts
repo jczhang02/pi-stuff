@@ -10,6 +10,7 @@ import {
 } from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
 import type { CommandDialogCoordinator } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { SELF_RENDERED_TRANSCRIPT_PADDING } from "../../packages/pi-stuff/src/conversation-ui/transcript.js";
+import { isRuntimeFunction } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { PiStuffAgentsConfig } from "../../packages/pi-stuff/src/subagents/src/extension/config.js";
 import registerAgents, {
 	type ExtensionRootDependencies,
@@ -243,7 +244,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 	const coordinator = {
 		registerChrome: (_id: string, chromeValue: { setSuppressed(suppressed: boolean): void }) => {
 			chrome.registered += 1;
-			expect(typeof chromeValue.setSuppressed).toBe("function");
+			expect(chromeValue.setSuppressed).toBeTypeOf("function");
 			return () => {
 				chrome.unregistered += 1;
 			};
@@ -310,7 +311,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			})),
 		createExecutor: ({ projectContext, state: rootState }) => {
 			state.value = rootState;
-			projectionOwnership.delegated = typeof projectContext === "function";
+			projectionOwnership.delegated = isRuntimeFunction(projectContext);
 			const backgroundLifecycleAbort = options.backgroundLifecycleAbort;
 			return {
 				execute: async (_id, params, _signal, _onUpdate, _ctx, hooks) => {
@@ -445,7 +446,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			return value;
 		},
 		createRoster: (_current, rosterOptions) => {
-			expect(typeof rosterOptions.onOpen).toBe("function");
+			expect(rosterOptions.onOpen).toBeTypeOf("function");
 			return {
 				createFooterTail: () => ({ invalidate: () => {}, render: () => [] }),
 				setContext: () => {
@@ -461,7 +462,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		openDialog: async (_ctx, _coordinator, _current, dialogOptions) => {
 			dialogs.push({
 				...(dialogOptions.initialKey ? { initialKey: dialogOptions.initialKey } : {}),
-				hasReader: typeof dialogOptions.readTranscript === "function",
+				hasReader: isRuntimeFunction(dialogOptions.readTranscript),
 			});
 		},
 		projectContext: async (audience) => {

@@ -1,5 +1,6 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const JWT_AUTH_CLAIM = "https://api.openai.com/auth";
@@ -30,14 +31,14 @@ function bearerToken(headers: Readonly<Record<string, string>> | undefined): str
 function mergeResolvedHeaders(...sources: unknown[]): Record<string, string> {
 	const headers = new Map<string, { name: string; value: string }>();
 	for (const source of sources) {
-		if (typeof source !== "object" || source === null || Array.isArray(source)) continue;
+		if (!isRuntimeObject(source) || source === null || Array.isArray(source)) continue;
 		for (const [name, value] of Object.entries(source)) {
 			const key = name.toLowerCase();
 			if (value === null) {
 				headers.delete(key);
 				continue;
 			}
-			if (typeof value === "string") headers.set(key, { name, value });
+			if (isRuntimeString(value)) headers.set(key, { name, value });
 		}
 	}
 	return Object.fromEntries([...headers.values()].map(({ name, value }) => [name, value]));
@@ -48,11 +49,11 @@ function accountIdFromToken(token: string): string | undefined {
 		const encoded = token.split(".")[1];
 		if (!encoded) return undefined;
 		const payload: unknown = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-		if (typeof payload !== "object" || payload === null) return undefined;
+		if (!isRuntimeObject(payload) || payload === null) return undefined;
 		const claims = (payload as Record<string, unknown>)[JWT_AUTH_CLAIM];
-		if (typeof claims !== "object" || claims === null) return undefined;
+		if (!isRuntimeObject(claims) || claims === null) return undefined;
 		const accountId = (claims as Record<string, unknown>)["chatgpt_account_id"];
-		return typeof accountId === "string" && accountId.trim() ? accountId.trim() : undefined;
+		return isRuntimeString(accountId) && accountId.trim() ? accountId.trim() : undefined;
 	} catch {
 		return undefined;
 	}

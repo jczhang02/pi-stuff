@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 
 export interface WorktreeSetup {
 	cwd: string;
@@ -295,7 +296,7 @@ function parseWorktreeSetupHookOutput(rawStdout: string): WorktreeSetupHookOutpu
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`worktree setup hook returned invalid JSON: ${message}`);
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+	if (!parsed || !isRuntimeObject(parsed) || Array.isArray(parsed)) {
 		throw new Error("worktree setup hook stdout must be a JSON object");
 	}
 	return parsed as WorktreeSetupHookOutput;
@@ -331,7 +332,7 @@ function runWorktreeSetupHook(hook: ResolvedWorktreeSetupHook, input: WorktreeSe
 
 	const uniquePaths = new Set<string>();
 	for (const candidate of output.syntheticPaths) {
-		if (typeof candidate !== "string") {
+		if (!isRuntimeString(candidate)) {
 			throw new Error("worktree setup hook output field 'syntheticPaths' must contain only strings");
 		}
 		const normalizedPath = normalizeSyntheticPath(input.worktreePath, candidate);
@@ -434,7 +435,7 @@ function removeSyntheticPath(worktree: WorktreeInfo, syntheticPath: string): voi
 			ancestorStat = fs.lstatSync(ancestor);
 		} catch (error) {
 			const code =
-				error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+				error && isRuntimeObject(error) && "code" in error ? (error as { code?: unknown }).code : undefined;
 			if (code === "ENOENT") return;
 			throw error;
 		}
@@ -450,8 +451,7 @@ function removeSyntheticPath(worktree: WorktreeInfo, syntheticPath: string): voi
 	try {
 		stat = fs.lstatSync(resolved);
 	} catch (error) {
-		const code =
-			error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+		const code = error && isRuntimeObject(error) && "code" in error ? (error as { code?: unknown }).code : undefined;
 		if (code === "ENOENT") return;
 		throw error;
 	}
