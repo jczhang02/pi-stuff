@@ -1,8 +1,8 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
 import { readFile, stat } from "node:fs/promises";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import {
 	activityKey,
@@ -29,6 +29,26 @@ const IMAGE_GENERATION_PARAMETERS = Type.Object({
 	action: Type.Optional(Type.Union([Type.Literal("generate"), Type.Literal("edit")])),
 	images: Type.Optional(Type.Array(Type.String())),
 });
+
+type ApplyPatchParams = Static<typeof APPLY_PATCH_PARAMETERS>;
+type ViewImageParams = Static<typeof VIEW_IMAGE_PARAMETERS>;
+type ImageGenerationParams = Static<typeof IMAGE_GENERATION_PARAMETERS>;
+
+interface CodexToolArgumentAliases {
+	readonly detail?: unknown;
+	readonly file_path?: unknown;
+	readonly image_path?: unknown;
+	readonly input?: unknown;
+	readonly patch?: unknown;
+	readonly patchText?: unknown;
+	readonly path?: unknown;
+}
+
+function argumentAliases<Value>(value: Value): CodexToolArgumentAliases {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
+	// SAFETY: compatibility preparation reads only the declared aliases and leaves schema validation to Pi.
+	return value as Value & CodexToolArgumentAliases;
+}
 
 const MAX_INLINE_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_INLINE_IMAGES = 4;
@@ -121,20 +141,19 @@ function createApplyPatchTool() {
 		promptSnippet: "Use apply_patch for text-file edits; split oversized patches",
 		parameters: APPLY_PATCH_PARAMETERS,
 		executionMode: "sequential" as const,
-		prepareArguments(args: unknown) {
-			if (isRuntimeObject(args) && args !== null) {
-				const source = args as Record<string, unknown>;
-				for (const key of ["input", "patch", "patchText"] as const) {
-					if (isRuntimeString(source[key])) return { input: source[key] };
-				}
+		prepareArguments<Args>(args: Args) {
+			const source = argumentAliases(args);
+			for (const value of [source.input, source.patch, source.patchText]) {
+				if (isRuntimeString(value)) return { input: value };
 			}
-			return args as { input: string };
+			// SAFETY: unchanged invalid input is returned only so Pi's owning schema validator can reject it.
+			return args as Args & ApplyPatchParams;
 		},
 		async execute(
 			_toolCallId: string,
-			params: { input: string },
+			params: ApplyPatchParams,
 			signal: AbortSignal | undefined,
-			_onUpdate: unknown,
+			_onUpdate: AgentToolUpdateCallback<ApplyPatchResult> | undefined,
 			ctx: ExtensionContext,
 		) {
 			if (!isRuntimeString(params.input)) throw new Error("apply_patch requires a string input.");
@@ -183,20 +202,24 @@ function createViewImageTool() {
 		description: "View a local image",
 		promptSnippet: "Use view_image to inspect local image files",
 		parameters: VIEW_IMAGE_PARAMETERS,
-		prepareArguments(args: unknown) {
-			if (!isRuntimeObject(args) || args === null) return args as { path: string };
-			const source = args as Record<string, unknown>;
-			const path = source["path"] ?? source["file_path"] ?? source["image_path"];
-			return {
-				...(source["detail"] === "original" ? { detail: "original" as const } : {}),
-				path: isRuntimeString(path) && path.startsWith("@") ? path.slice(1) : (path as string),
-			};
+		prepareArguments<Args>(args: Args) {
+			if (!isRuntimeObject(args) || args === null || Array.isArray(args)) {
+				// SAFETY: unchanged invalid input is returned only so Pi's owning schema validator can reject it.
+				return args as Args & ViewImageParams;
+			}
+			const source = argumentAliases(args);
+			const path = source.path ?? source.file_path ?? source.image_path;
+			// SAFETY: non-string aliases remain unchanged only so Pi's owning schema validator can reject them.
+			const preparedPath = isRuntimeString(path) && path.startsWith("@") ? path.slice(1) : (path as string);
+			const prepared: ViewImageParams = { path: preparedPath };
+			if (source.detail === "original") prepared.detail = "original";
+			return prepared;
 		},
 		async execute(
 			_toolCallId: string,
-			params: { detail?: "original"; path: string },
+			params: ViewImageParams,
 			signal: AbortSignal | undefined,
-			_onUpdate: unknown,
+			_onUpdate: AgentToolUpdateCallback<ViewImageDetails> | undefined,
 			ctx: ExtensionContext,
 		) {
 			if (!supportsCodexImages(ctx.model))
@@ -246,9 +269,9 @@ function createImageGenerationTool() {
 		parameters: IMAGE_GENERATION_PARAMETERS,
 		async execute(
 			_toolCallId: string,
-			params: { action?: "edit" | "generate"; images?: string[]; prompt: string },
+			params: ImageGenerationParams,
 			signal: AbortSignal | undefined,
-			_onUpdate: unknown,
+			_onUpdate: AgentToolUpdateCallback<ImageGenerationDetails> | undefined,
 			ctx: ExtensionContext,
 		) {
 			if (!supportsCodexImages(ctx.model)) throw new Error("imagegen requires an image-capable OpenAI Codex model.");

@@ -17,9 +17,18 @@ const CODEX_NAMESPACE = "codex";
 
 type CodexRecord = { fast: boolean };
 
-function normalizeSettings(value: unknown): CodexSettings {
-	if (!isRuntimeObject(value) || value === null) return DEFAULT_SETTINGS;
-	return { fast: (value as Record<string, unknown>)["fast"] === true };
+interface RawCodexSettings {
+	readonly fast?: unknown;
+}
+
+function rawCodexSettings<Value>(value: Value): RawCodexSettings {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
+	// SAFETY: the normalizer reads only the declared field and accepts only the literal true value.
+	return value as Value & RawCodexSettings;
+}
+
+function normalizeSettings<Value>(value: Value): CodexSettings {
+	return { fast: rawCodexSettings(value).fast === true };
 }
 
 function toRecord(settings: CodexSettings): CodexRecord {
