@@ -23,7 +23,8 @@ import {
 import { requestStatuslineGitRefreshAfterUserWork, sendSuiteAgentMessage } from "../../conversation-ui/index.js";
 import type { SuiteAgentMessageHost } from "../../conversation-ui/suite-agent-message.js";
 import { settleWithin } from "../../lifecycle-deadline.js";
-import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { parseJsonValue } from "../../shared/json-value.js";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
 import {
@@ -445,8 +446,11 @@ function consumeCommandAcknowledgement(filePath: string, token: string, supervis
 		) {
 			throw new Error("Background Work command acknowledgement is not a private bounded regular file.");
 		}
-		const payload = JSON.parse(readFileSync(filePath, "utf-8")) as Record<string, unknown>;
+		const payload = parseJsonValue(readFileSync(filePath, "utf-8"));
 		if (
+			!isRuntimeObject(payload) ||
+			payload === null ||
+			Array.isArray(payload) ||
 			payload["version"] !== 1 ||
 			payload["token"] !== token ||
 			payload["supervisorPid"] !== supervisorIdentity.pid ||
@@ -456,9 +460,9 @@ function consumeCommandAcknowledgement(filePath: string, token: string, supervis
 		}
 		rmSync(filePath, { force: true });
 		return true;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-		throw error;
+	} catch (cause) {
+		if (cause && isRuntimeObject(cause) && "code" in cause && cause.code === "ENOENT") return false;
+		throw cause;
 	}
 }
 
@@ -603,14 +607,15 @@ export class BackgroundWorkRuntime {
 			if (!input.command.trim()) throw new Error("Command is empty");
 			accessSync(ctx.cwd, constants.F_OK);
 			const resolvedCommand = this.commandPrefix ? `${this.commandPrefix}\n${input.command}` : input.command;
-			activity = await this.spawnProcess({
+			const spawnInput: SpawnProcessInput = {
 				backgrounded: input.runInBackground === true,
 				command: resolvedCommand,
-				...(input.description ? { description: input.description } : {}),
 				env: sessionEnvironment(ctx),
 				parentRunOrigin,
 				toolCallId: input.toolCallId,
-			});
+			};
+			if (input.description) Object.assign(spawnInput, { description: input.description });
+			activity = await this.spawnProcess(spawnInput);
 			if (pendingForegroundLaunch?.manualDetachRequested) this.detach(activity, "manual");
 		} finally {
 			if (pendingForegroundLaunch) this.pendingForegroundLaunches.delete(pendingForegroundLaunch);
@@ -708,28 +713,32 @@ export class BackgroundWorkRuntime {
 	}> {
 		if (!input.command.trim()) throw new Error("Monitor command is empty");
 		const command = this.commandPrefix ? `${this.commandPrefix}\n${input.command}` : input.command;
-		const activity = await this.spawnProcess({
+		const spawnInput: SpawnProcessInput = {
 			backgrounded: true,
 			command,
-			...(input.description ? { description: input.description } : {}),
 			env: sessionEnvironment(ctx),
 			kind: "monitor",
-			...(input.failureText ? { monitorFailureText: input.failureText } : {}),
 			monitorSource: "command",
-			...(input.successText ? { monitorSuccessText: input.successText } : {}),
 			monitorTarget: input.command,
 			monitorTimeoutSeconds: input.timeoutSeconds,
 			toolCallId: input.toolCallId,
-		});
+		};
+		if (input.description) Object.assign(spawnInput, { description: input.description });
+		if (input.failureText) Object.assign(spawnInput, { monitorFailureText: input.failureText });
+		if (input.successText) Object.assign(spawnInput, { monitorSuccessText: input.successText });
+		const activity = await this.spawnProcess(spawnInput);
 		activity.timeoutTimer = setTimeout(() => {
 			this.requestStopInBackground(activity, "timeout", "monitor timeout");
 		}, timeoutMilliseconds(input.timeoutSeconds));
 		activity.timeoutTimer.unref?.();
-		return {
+		const started = {
 			id: activity.id,
 			outcome: activity.completion,
-			...(activity.output.durable && existsSync(activity.output.path) ? { outputPath: activity.output.path } : {}),
 		};
+		if (activity.output.durable && existsSync(activity.output.path)) {
+			Object.assign(started, { outputPath: activity.output.path });
+		}
+		return started;
 	}
 
 	readOutput(id: string, maxBytes = DEFAULT_MODEL_OUTPUT_LIMIT): string {
@@ -900,7 +909,6 @@ export class BackgroundWorkRuntime {
 			completionResolve,
 			commandGroupReaped: false,
 			controlBuffer: "",
-			...(input.description ? { description: input.description } : {}),
 			detachResolve,
 			detachResult,
 			finalized: false,
@@ -908,11 +916,6 @@ export class BackgroundWorkRuntime {
 			id,
 			kind,
 			launchAuthorized: false,
-			...(input.monitorFailureText ? { monitorFailureText: input.monitorFailureText } : {}),
-			...(input.monitorSource ? { monitorSource: input.monitorSource } : {}),
-			...(input.monitorSuccessText ? { monitorSuccessText: input.monitorSuccessText } : {}),
-			...(input.monitorTarget ? { monitorTarget: input.monitorTarget } : {}),
-			...(input.monitorTimeoutSeconds !== undefined ? { monitorTimeoutSeconds: input.monitorTimeoutSeconds } : {}),
 			output,
 			outputLimitStopRequested: false,
 			parentRunOrigin: input.parentRunOrigin ?? "automatic",
@@ -923,6 +926,12 @@ export class BackgroundWorkRuntime {
 			title: input.description?.trim() || titleFromCommand(input.command),
 			toolCallId: input.toolCallId,
 		};
+		if (input.description) activity.description = input.description;
+		if (input.monitorFailureText) activity.monitorFailureText = input.monitorFailureText;
+		if (input.monitorSource) activity.monitorSource = input.monitorSource;
+		if (input.monitorSuccessText) activity.monitorSuccessText = input.monitorSuccessText;
+		if (input.monitorTarget) activity.monitorTarget = input.monitorTarget;
+		if (input.monitorTimeoutSeconds !== undefined) activity.monitorTimeoutSeconds = input.monitorTimeoutSeconds;
 		this.activities.set(id, activity);
 		reservation.active = false;
 		this.launchReservations -= 1;
@@ -1118,10 +1127,14 @@ export class BackgroundWorkRuntime {
 			if (newline === -1) return;
 			const line = activity.controlBuffer.slice(0, newline);
 			activity.controlBuffer = activity.controlBuffer.slice(newline + 1);
-			let event: Record<string, unknown>;
+			let event;
 			try {
-				event = JSON.parse(line) as Record<string, unknown>;
+				event = parseJsonValue(line);
 			} catch {
+				activity.output.append(Buffer.from("Invalid supervisor control record.\n", "utf-8"));
+				continue;
+			}
+			if (!isRuntimeObject(event) || event === null || Array.isArray(event)) {
 				activity.output.append(Buffer.from("Invalid supervisor control record.\n", "utf-8"));
 				continue;
 			}
@@ -1266,17 +1279,19 @@ export class BackgroundWorkRuntime {
 		}
 		const outcome: BackgroundWorkOutcome = {
 			endedAt,
-			...(isRuntimeNumber(code) ? { exitCode: code } : {}),
 			id: activity.id,
 			kind: activity.kind,
-			...(activity.output.durable && existsSync(activity.output.path) ? { outputPath: activity.output.path } : {}),
 			parentRunOrigin: activity.parentRunOrigin,
-			...(recentOutput ? { recentOutput } : {}),
 			startedAt: activity.startedAt,
 			status,
 			summary: this.shellSummary(activity, status, code),
 			title: activity.title,
 		};
+		if (isRuntimeNumber(code)) Object.assign(outcome, { exitCode: code });
+		if (activity.output.durable && existsSync(activity.output.path)) {
+			Object.assign(outcome, { outputPath: activity.output.path });
+		}
+		if (recentOutput) Object.assign(outcome, { recentOutput });
 		this.activities.delete(activity.id);
 		if (activity.backgrounded) this.rememberTerminalOutcome(outcome);
 		try {
@@ -1364,32 +1379,37 @@ export class BackgroundWorkRuntime {
 	): AgentToolResult<BackgroundWorkBashDetails | undefined> {
 		const action = reason === "manual" ? "manually moved" : reason === "timeout" ? "moved" : "started";
 		const outputPath = activity.output.durable && existsSync(activity.output.path) ? activity.output.path : undefined;
+		const details: BackgroundWorkBashDetails = { backgroundTaskId: activity.id };
+		if (outputPath) Object.assign(details, { fullOutputPath: outputPath });
 		return textResult(
 			`Command ${action} to background task ${activity.id}.${outputPath ? `\nOutput: ${outputPath}` : ""}\nThe terminal result will be delivered automatically; continue useful work instead of polling.`,
-			{ backgroundTaskId: activity.id, ...(outputPath ? { fullOutputPath: outputPath } : {}) },
+			details,
 		);
 	}
 
 	private activitySnapshot(activity: SpawnedActivity): BackgroundWorkSnapshot {
 		const recentOutput = activity.output.recentText(4_000);
-		return {
+		const snapshot: BackgroundWorkSnapshot = {
 			command: activity.command,
-			...(activity.description ? { description: activity.description } : {}),
 			id: activity.id,
 			kind: activity.kind,
-			...(activity.monitorFailureText ? { monitorFailureText: activity.monitorFailureText } : {}),
-			...(activity.monitorSource ? { monitorSource: activity.monitorSource } : {}),
-			...(activity.monitorSuccessText ? { monitorSuccessText: activity.monitorSuccessText } : {}),
-			...(activity.monitorTarget ? { monitorTarget: activity.monitorTarget } : {}),
-			...(activity.monitorTimeoutSeconds !== undefined
-				? { monitorTimeoutSeconds: activity.monitorTimeoutSeconds }
-				: {}),
-			...(activity.output.durable && existsSync(activity.output.path) ? { outputPath: activity.output.path } : {}),
-			...(recentOutput ? { recentOutput } : {}),
 			startedAt: activity.startedAt,
 			status: activity.status,
 			title: activity.title,
 		};
+		if (activity.description) Object.assign(snapshot, { description: activity.description });
+		if (activity.monitorFailureText) Object.assign(snapshot, { monitorFailureText: activity.monitorFailureText });
+		if (activity.monitorSource) Object.assign(snapshot, { monitorSource: activity.monitorSource });
+		if (activity.monitorSuccessText) Object.assign(snapshot, { monitorSuccessText: activity.monitorSuccessText });
+		if (activity.monitorTarget) Object.assign(snapshot, { monitorTarget: activity.monitorTarget });
+		if (activity.monitorTimeoutSeconds !== undefined) {
+			Object.assign(snapshot, { monitorTimeoutSeconds: activity.monitorTimeoutSeconds });
+		}
+		if (activity.output.durable && existsSync(activity.output.path)) {
+			Object.assign(snapshot, { outputPath: activity.output.path });
+		}
+		if (recentOutput) Object.assign(snapshot, { recentOutput });
+		return snapshot;
 	}
 
 	private persistRunningProcesses(): void {
@@ -1399,11 +1419,9 @@ export class BackgroundWorkRuntime {
 		}
 		const tasks: StoredProcessTask[] = [];
 		for (const activity of this.activities.values()) {
-			tasks.push({
-				...(activity.commandIdentity ? { command: activity.commandIdentity } : {}),
-				id: activity.id,
-				supervisor: activity.supervisorIdentity,
-			});
+			const task: StoredProcessTask = { id: activity.id, supervisor: activity.supervisorIdentity };
+			if (activity.commandIdentity) Object.assign(task, { command: activity.commandIdentity });
+			tasks.push(task);
 		}
 		this.storage.persist(tasks);
 		this.refreshMetadataHeartbeat();
@@ -1585,7 +1603,7 @@ function fitEscapedTail(value: string, maxBytes: number) {
 }
 
 function fairInlineBudgets(values: string[], totalBytes: number): number[] {
-	const budgets = Array(values.length).fill(0) as number[];
+	const budgets = Array.from({ length: values.length }, () => 0);
 	let remaining = Math.max(0, totalBytes);
 	let unresolved = values.map((_, index) => index);
 	while (unresolved.length > 0 && remaining > 0) {
@@ -1667,14 +1685,15 @@ export function projectNotificationBatch(outcomes: readonly BackgroundWorkOutcom
 		const title = fitEscapedHead(row.outcome.title, 256).raw;
 		const detailsSummary = fitEscapedHead(row.outcome.summary, 512).raw;
 		const recentOutput = fittedInline.get(row)?.raw;
-		return {
+		const projected: BackgroundWorkOutcome = {
 			...base,
 			id: row.id.raw,
 			summary: detailsSummary,
 			title,
-			...(row.outputPath ? { outputPath: row.outputPath.raw } : {}),
-			...(recentOutput ? { recentOutput } : {}),
 		};
+		if (row.outputPath) Object.assign(projected, { outputPath: row.outputPath.raw });
+		if (recentOutput) Object.assign(projected, { recentOutput });
+		return projected;
 	});
 	if (Buffer.byteLength(content, "utf-8") <= MAX_NOTIFICATION_CONTENT_BYTES) {
 		return { content, outcomes: projectedOutcomes };
