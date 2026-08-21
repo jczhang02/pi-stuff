@@ -18,6 +18,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeNumber,
@@ -378,11 +379,11 @@ export function requestAsyncSteer(
 		id: payload.id ?? deps.randomId?.() ?? randomUUID(),
 		ts: payload.ts ?? deps.now?.() ?? Date.now(),
 		message,
-		...(payload.parentRunOrigin ? { parentRunOrigin: payload.parentRunOrigin } : {}),
-		...(payload.targetIndex !== undefined ? { targetIndex: payload.targetIndex } : {}),
-		...(payload.targetIndexes !== undefined ? { targetIndexes: [...payload.targetIndexes] } : {}),
-		...(payload.source ? { source: payload.source } : {}),
 	};
+	if (payload.parentRunOrigin) request.parentRunOrigin = payload.parentRunOrigin;
+	if (payload.targetIndex !== undefined) request.targetIndex = payload.targetIndex;
+	if (payload.targetIndexes !== undefined) request.targetIndexes = [...payload.targetIndexes];
+	if (payload.source) request.source = payload.source;
 	const requestPath = writeSteerRequestToDir(steerRequestsDir(asyncDir), request);
 	if (fs.existsSync(closedPath)) {
 		fs.rmSync(requestPath, { force: true });
@@ -402,8 +403,9 @@ export function enqueueStepSteer(asyncDir: string, index: number, request: Steer
 	});
 }
 
-function parseSteerCapability(raw: unknown): SteerCapability | undefined {
+function parseSteerCapability(raw: JsonValue): SteerCapability | undefined {
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
+	// SAFETY: the JSON object check establishes the field container; every protocol field is validated below.
 	const input = raw as Partial<SteerCapability>;
 	if (input.type !== "steer-capability" || input.protocolVersion !== 1) return undefined;
 	const { index, pid, readyAt } = input;
@@ -414,8 +416,9 @@ function parseSteerCapability(raw: unknown): SteerCapability | undefined {
 	return { type: "steer-capability", protocolVersion: 1, index, pid, readyAt, supported: input.supported };
 }
 
-function parseSteerAck(raw: unknown): SteerAck | undefined {
+function parseSteerAck(raw: JsonValue): SteerAck | undefined {
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
+	// SAFETY: the JSON object check establishes the field container; every protocol field is validated below.
 	const input = raw as Partial<SteerAck>;
 	if (
 		input.type !== "steer-ack" ||
@@ -443,7 +446,7 @@ function parseSteerAck(raw: unknown): SteerAck | undefined {
 
 export function readSteerAckAt(filePath: string): SteerAck | undefined {
 	try {
-		return parseSteerAck(JSON.parse(readBoundedOwnedFile(filePath, MAX_CONTROL_RECORD_BYTES)));
+		return parseSteerAck(parseJsonValue(readBoundedOwnedFile(filePath, MAX_CONTROL_RECORD_BYTES)));
 	} catch {
 		return undefined;
 	}
@@ -452,7 +455,7 @@ export function readSteerAckAt(filePath: string): SteerAck | undefined {
 export function readSteerCapability(asyncDir: string, index: number): SteerCapability | undefined {
 	try {
 		return parseSteerCapability(
-			JSON.parse(readBoundedOwnedFile(steerCapabilityPath(asyncDir, index), MAX_CONTROL_RECORD_BYTES)),
+			parseJsonValue(readBoundedOwnedFile(steerCapabilityPath(asyncDir, index), MAX_CONTROL_RECORD_BYTES)),
 		);
 	} catch {
 		return undefined;
@@ -476,7 +479,7 @@ export function consumeSteerCapabilities(
 				fsImpl === fs
 					? readBoundedOwnedFile(target, MAX_CONTROL_RECORD_BYTES)
 					: fsImpl.readFileSync(target, "utf-8");
-			const capability = parseSteerCapability(JSON.parse(text));
+			const capability = parseSteerCapability(parseJsonValue(text));
 			if (capability) capabilities.push(capability);
 		} catch {
 			// A partially written or malformed capability is ignored until a valid one arrives.
@@ -493,7 +496,7 @@ export function consumeSteerCapabilities(
  */
 function consumeJsonRecord<T>(
 	target: string,
-	parse: (raw: unknown) => T | undefined,
+	parse: (raw: JsonValue) => T | undefined,
 	fsImpl: Pick<typeof fs, "readFileSync" | "rmSync">,
 ): T | undefined {
 	if (fsImpl === fs) {
@@ -501,7 +504,7 @@ function consumeJsonRecord<T>(
 			const snapshot = readBoundedOwnedFileSnapshot(target, MAX_CONTROL_RECORD_BYTES);
 			let parsed: T | undefined;
 			try {
-				parsed = parse(JSON.parse(snapshot.text));
+				parsed = parse(parseJsonValue(snapshot.text));
 			} catch {
 				parsed = undefined;
 			}
@@ -518,7 +521,7 @@ function consumeJsonRecord<T>(
 	}
 	let parsed: T | undefined;
 	try {
-		parsed = parse(JSON.parse(text));
+		parsed = parse(parseJsonValue(text));
 	} catch {
 		parsed = undefined;
 	}
@@ -566,6 +569,10 @@ function parseClaimedControlRecord(
 	return { claimedPath: path.join(directory, entry), originalName, ownerPid, ownerIdentity, consumerId };
 }
 
+function hasErrorCode<ErrorValue>(error: ErrorValue, code: string): boolean {
+	return isRuntimeObject(error) && error !== null && "code" in error && error.code === code;
+}
+
 function controlClaimRecoverable(claim: ReturnType<typeof parseClaimedControlRecord>): boolean {
 	if (!claim || activeControlConsumers.has(claim.consumerId)) return false;
 	if (claim.ownerPid === process.pid && claim.ownerIdentity === "pid-only") return true;
@@ -575,7 +582,7 @@ function controlClaimRecoverable(claim: ReturnType<typeof parseClaimedControlRec
 		process.kill(claim.ownerPid, 0);
 		return false;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "ESRCH";
+		return hasErrorCode(error, "ESRCH");
 	}
 }
 
@@ -595,7 +602,7 @@ function claimControlRecord(target: string, consumerId: string): ClaimedControlR
 
 function processDurableControlRecords<T>(input: {
 	readonly directories: Array<{ readonly path: string; readonly accepts: (name: string) => boolean }>;
-	readonly parse: (raw: unknown) => T | undefined;
+	readonly parse: (raw: JsonValue) => T | undefined;
 	readonly callback: (value: T, complete: () => boolean) => undefined | "retain";
 	readonly kind: "interrupt" | "timeout" | "stop" | "steer" | "steer-ack";
 	readonly afterClaim?: (kind: string, claimedPath: string) => void;
@@ -636,7 +643,7 @@ function processDurableControlRecords<T>(input: {
 			}
 			let parsed: T | undefined;
 			try {
-				parsed = input.parse(JSON.parse(snapshot.text));
+				parsed = input.parse(parseJsonValue(snapshot.text));
 			} catch {
 				parsed = undefined;
 			}
@@ -659,14 +666,16 @@ function processDurableControlRecords<T>(input: {
 	}
 }
 
-function parseInterruptRequest(raw: unknown): InterruptRequest | undefined {
+function parseInterruptRequest(raw: JsonValue): InterruptRequest | undefined {
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
+	// SAFETY: the JSON object check establishes the legacy request container; the discriminator is checked next.
 	const request = raw as Partial<InterruptRequest>;
 	return request.type === "interrupt" ? { ...request, type: "interrupt" } : undefined;
 }
 
-function parseTimeoutRequest(raw: unknown): TimeoutRequest | undefined {
+function parseTimeoutRequest(raw: JsonValue): TimeoutRequest | undefined {
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
+	// SAFETY: the JSON object check establishes the legacy request container; the discriminator is checked next.
 	const request = raw as Partial<TimeoutRequest>;
 	return request.type === "timeout" ? { ...request, type: "timeout" } : undefined;
 }
@@ -742,20 +751,22 @@ export function consumeSteerAcks(
 	return acks;
 }
 
-function parseSteerRequest(raw: unknown): SteerRequest | undefined {
+function parseSteerRequest(raw: JsonValue): SteerRequest | undefined {
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
+	// SAFETY: the JSON object check establishes the field container; validSteerRequest validates the full protocol.
 	const input = raw as Partial<SteerRequest>;
 	if (!validSteerRequest(input)) return undefined;
-	return {
+	const request: SteerRequest = {
 		type: "steer",
 		id: input.id.trim(),
 		ts: input.ts,
 		message: input.message.trim(),
-		...(input.parentRunOrigin ? { parentRunOrigin: input.parentRunOrigin } : {}),
-		...(input.targetIndex !== undefined ? { targetIndex: input.targetIndex } : {}),
-		...(input.targetIndexes !== undefined ? { targetIndexes: [...input.targetIndexes] } : {}),
-		...(isRuntimeString(input.source) && input.source.trim() ? { source: input.source } : {}),
 	};
+	if (input.parentRunOrigin) request.parentRunOrigin = input.parentRunOrigin;
+	if (input.targetIndex !== undefined) request.targetIndex = input.targetIndex;
+	if (input.targetIndexes !== undefined) request.targetIndexes = [...input.targetIndexes];
+	if (isRuntimeString(input.source) && input.source.trim()) request.source = input.source;
+	return request;
 }
 
 export function consumeSteerRequestsFromDir(
@@ -822,8 +833,9 @@ export function consumeTimeoutRequest(
 	return true;
 }
 
-function parseStopRequest(raw: unknown): StopRequest | undefined {
+function parseStopRequest(raw: JsonValue): StopRequest | undefined {
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return undefined;
+	// SAFETY: the JSON object check establishes the field container; every optional protocol field is validated below.
 	const parsed = raw as Partial<StopRequest>;
 	if (
 		parsed.type !== "stop" ||
@@ -836,14 +848,13 @@ function parseStopRequest(raw: unknown): StopRequest | undefined {
 	) {
 		return undefined;
 	}
-	return {
-		type: "stop",
-		...(parsed.id !== undefined ? { id: parsed.id } : {}),
-		...(parsed.ts !== undefined ? { ts: parsed.ts } : {}),
-		...(parsed.source !== undefined ? { source: parsed.source } : {}),
-		...(parsed.reason !== undefined ? { reason: parsed.reason } : {}),
-		...(parsed.targetIndex !== undefined ? { targetIndex: parsed.targetIndex } : {}),
-	};
+	const request: StopRequest = { type: "stop" };
+	if (parsed.id !== undefined) request.id = parsed.id;
+	if (parsed.ts !== undefined) request.ts = parsed.ts;
+	if (parsed.source !== undefined) request.source = parsed.source;
+	if (parsed.reason !== undefined) request.reason = parsed.reason;
+	if (parsed.targetIndex !== undefined) request.targetIndex = parsed.targetIndex;
+	return request;
 }
 
 function consumeStopFile(
@@ -905,7 +916,7 @@ function processStopRequests(
 
 function processSingletonRequest<T>(input: {
 	readonly target: string;
-	readonly parse: (raw: unknown) => T | undefined;
+	readonly parse: (raw: JsonValue) => T | undefined;
 	readonly callback: (request: T) => void;
 	readonly kind: "interrupt" | "timeout";
 	readonly afterClaim?: (kind: string, claimedPath: string) => void;
@@ -945,7 +956,7 @@ export function deliverInterruptRequest(input: {
 		try {
 			(input.kill ?? process.kill)(input.pid, input.signal ?? INTERRUPT_SIGNAL);
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOSYS") {
+			if (hasErrorCode(error, "ENOSYS")) {
 				// File inbox is authoritative when custom cross-process signals are unavailable.
 				return;
 			}
@@ -979,14 +990,10 @@ export function deliverStopRequest(input: {
 	source?: string;
 	targetIndex?: number;
 }): void {
-	requestAsyncStop(
-		input.asyncDir,
-		{
-			...(input.source ? { source: input.source } : {}),
-			...(input.targetIndex !== undefined ? { targetIndex: input.targetIndex } : {}),
-		},
-		{ now: input.now },
-	);
+	const request: Omit<StopRequest, "type" | "id"> = {};
+	if (input.source) request.source = input.source;
+	if (input.targetIndex !== undefined) request.targetIndex = input.targetIndex;
+	requestAsyncStop(input.asyncDir, request, { now: input.now });
 }
 
 /**
