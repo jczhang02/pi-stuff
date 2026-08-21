@@ -2,6 +2,7 @@ import { dlopen, FFIType, read } from "bun:ffi";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { shardedDurableClaimName, tryAcquireDurableClaim, tryAcquireKernelClaim } from "./durable-claim.ts";
 import { type ArtifactDirPreference, type ArtifactPaths, TEMP_ARTIFACTS_DIR } from "./types.ts";
@@ -43,6 +44,10 @@ const cachedArtifactClaims = new Map<
 		users: number;
 	}
 >();
+
+function hasErrorCode<Cause>(cause: Cause, code: string): boolean {
+	return isRuntimeObject(cause) && cause !== null && "code" in cause && cause.code === code;
+}
 
 export interface ArtifactMaintenanceReport {
 	readonly directoriesInspected: number;
@@ -162,7 +167,7 @@ function ensureArtifactCleanupControlDirectorySync(directory: string): string {
 	try {
 		fs.mkdirSync(control, { mode: 0o700 });
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		if (!hasErrorCode(error, "EEXIST")) throw error;
 	}
 	const stat = fs.lstatSync(control);
 	if (stat.isSymbolicLink() || !stat.isDirectory() || (currentUid !== undefined && stat.uid !== currentUid)) {
@@ -219,9 +224,10 @@ export function withArtifactGroupWriteClaim<T>(filePath: string, operation: () =
 			result !== null &&
 			(isRuntimeObject(result) || isRuntimeFunction(result)) &&
 			"then" in result &&
-			isRuntimeFunction((result as { then?: unknown }).then)
+			isRuntimeFunction(result.then)
 		) {
 			releaseSynchronously = false;
+			// SAFETY: the runtime thenable check proves this branch preserves the operation's asynchronous T contract.
 			return Promise.resolve(result).finally(release) as T;
 		}
 		return result;
@@ -237,14 +243,15 @@ function orderedArtifactGroupNames(base: string): string[] {
 	});
 }
 
-function isTerminalArtifactMetadata(value: unknown): boolean {
-	if (!value || !isRuntimeObject(value)) return false;
-	const metadata = value as { state?: unknown; exitCode?: unknown };
-	if (metadata.state === "running" || metadata.state === "queued") return false;
-	if (["complete", "failed", "stopped"].includes(String(metadata.state))) return true;
+function isTerminalArtifactMetadata<Value>(value: Value): boolean {
+	if (!value || !isRuntimeObject(value) || value === null || Array.isArray(value)) return false;
+	const state = "state" in value ? value.state : undefined;
+	if (state === "running" || state === "queued") return false;
+	if (["complete", "failed", "stopped"].includes(String(state))) return true;
 	// Metadata written before lifecycle state was added is terminal because this
 	// file was emitted only after the child process had settled.
-	return isRuntimeNumber(metadata.exitCode) && Number.isFinite(metadata.exitCode);
+	const exitCode = "exitCode" in value ? value.exitCode : undefined;
+	return isRuntimeNumber(exitCode) && Number.isFinite(exitCode);
 }
 
 function ownedRegularFile(stat: fs.Stats): boolean {
@@ -298,7 +305,7 @@ interface ArtifactCleanupBudget {
 	readonly maxEntries: number;
 }
 
-function safeSnapshotName(value: unknown): value is string {
+function safeSnapshotName<Value>(value: Value): value is Value & string {
 	return (
 		isRuntimeString(value) &&
 		value.length > 0 &&
@@ -359,8 +366,11 @@ async function readSnapshotBuildState(target: string): Promise<SnapshotBuildStat
 		const statePath = snapshotBuildStatePath(target);
 		const stat = await fs.promises.lstat(statePath);
 		if (!ownedRegularFile(stat) || stat.size > 4_096) return undefined;
-		const parsed = JSON.parse(await fs.promises.readFile(statePath, "utf8")) as Partial<SnapshotBuildState>;
+		const parsed = parseJsonValue(await fs.promises.readFile(statePath, "utf8"));
 		if (
+			!isRuntimeObject(parsed) ||
+			parsed === null ||
+			Array.isArray(parsed) ||
 			parsed.version !== 1 ||
 			!isRuntimeString(parsed.cookie) ||
 			!/^\d+$/u.test(parsed.cookie) ||
@@ -400,20 +410,29 @@ async function snapshotOverflowIsDeferred(target: string, now: number): Promise<
 			await fs.promises.unlink(overflow);
 			return false;
 		}
-		let parsed: { retryAt?: unknown };
+		let parsed: JsonValue;
 		try {
-			parsed = JSON.parse(await fs.promises.readFile(overflow, "utf8")) as { retryAt?: unknown };
+			parsed = parseJsonValue(await fs.promises.readFile(overflow, "utf8"));
 		} catch {
 			// This is an owned bounded control file, so malformed crash debris can be
 			// discarded safely instead of disabling maintenance forever.
 			await fs.promises.unlink(overflow);
 			return false;
 		}
-		if (isRuntimeNumber(parsed.retryAt) && Number.isFinite(parsed.retryAt) && parsed.retryAt > now) return true;
+		if (
+			isRuntimeObject(parsed) &&
+			parsed !== null &&
+			!Array.isArray(parsed) &&
+			isRuntimeNumber(parsed.retryAt) &&
+			Number.isFinite(parsed.retryAt) &&
+			parsed.retryAt > now
+		) {
+			return true;
+		}
 		await fs.promises.unlink(overflow);
 		return false;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code !== "ENOENT";
+		return !hasErrorCode(error, "ENOENT");
 	}
 }
 
@@ -463,7 +482,7 @@ async function advanceLinuxNameSnapshot(
 		await unlinkOwnedRegularFile(snapshotBuildStatePath(target));
 		return { complete: true, scanned: 0 };
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		if (!hasErrorCode(error, "ENOENT")) throw error;
 	}
 
 	const partial = snapshotPartialPath(target);
@@ -637,7 +656,7 @@ async function advanceNameSnapshot(
 			throw new Error("Invalid artifact maintenance snapshot.");
 		return { complete: true, scanned: 0 };
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		if (!hasErrorCode(error, "ENOENT")) throw error;
 	}
 	return buildPortableNameSnapshot(directory, target, accept, limit, now);
 }
@@ -725,11 +744,17 @@ async function cleanupSnapshotIdentity(snapshot: string): Promise<CleanupSnapsho
 	return { dev: stat.dev, ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size };
 }
 
-function sameCleanupSnapshotIdentity(left: unknown, right: CleanupSnapshotIdentity): boolean {
+function sameCleanupSnapshotIdentity<Left>(left: Left, right: CleanupSnapshotIdentity): boolean {
 	if (!left || !isRuntimeObject(left) || Array.isArray(left)) return false;
-	const value = left as Partial<CleanupSnapshotIdentity>;
 	return (
-		value.dev === right.dev && value.ino === right.ino && value.mtimeMs === right.mtimeMs && value.size === right.size
+		"dev" in left &&
+		left.dev === right.dev &&
+		"ino" in left &&
+		left.ino === right.ino &&
+		"mtimeMs" in left &&
+		left.mtimeMs === right.mtimeMs &&
+		"size" in left &&
+		left.size === right.size
 	);
 }
 
@@ -737,13 +762,17 @@ async function readSnapshotCursor(cursorPath: string, snapshot: string): Promise
 	try {
 		const stat = await fs.promises.lstat(cursorPath);
 		if (!ownedRegularFile(stat) || stat.size > 4_096) return 0;
-		const value = JSON.parse(await fs.promises.readFile(cursorPath, "utf8")) as {
-			version?: unknown;
-			offset?: unknown;
-			snapshot?: unknown;
-		};
+		const value = parseJsonValue(await fs.promises.readFile(cursorPath, "utf8"));
 		const identity = await cleanupSnapshotIdentity(snapshot);
-		if (value.version !== 2 || !sameCleanupSnapshotIdentity(value.snapshot, identity)) return 0;
+		if (
+			!isRuntimeObject(value) ||
+			value === null ||
+			Array.isArray(value) ||
+			value.version !== 2 ||
+			!sameCleanupSnapshotIdentity(value.snapshot, identity)
+		) {
+			return 0;
+		}
 		if (
 			!isRuntimeNumber(value.offset) ||
 			!Number.isSafeInteger(value.offset) ||
@@ -795,14 +824,14 @@ function terminalArtifactGroup(directory: string, base: string, cutoff: number):
 		const metadataStat = fs.lstatSync(metadataPath);
 		if (!ownedRegularFile(metadataStat) || metadataStat.mtimeMs >= cutoff || metadataStat.size > 64 * 1024)
 			return false;
-		const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+		const metadata = parseJsonValue(fs.readFileSync(metadataPath, "utf8"));
 		if (!isTerminalArtifactMetadata(metadata)) return false;
 		for (const name of artifactGroupNames(base)) {
 			try {
 				const stat = fs.lstatSync(path.join(directory, name));
 				if (!ownedRegularFile(stat) || stat.mtimeMs >= cutoff) return false;
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+				if (!hasErrorCode(error, "ENOENT")) return false;
 			}
 		}
 		return true;
@@ -842,7 +871,7 @@ async function removeTerminalArtifactGroup(
 			} catch (error) {
 				// Missing siblings are valid for disabled artifact kinds; other failures
 				// leave the remaining group intact for a later safe pass.
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") return { filesRemoved, bytesReclaimed };
+				if (!hasErrorCode(error, "ENOENT")) return { filesRemoved, bytesReclaimed };
 			}
 		}
 		return { filesRemoved, bytesReclaimed };
@@ -856,7 +885,7 @@ async function ensureArtifactCleanupControlDirectory(directory: string): Promise
 	try {
 		await fs.promises.mkdir(control, { mode: 0o700 });
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		if (!hasErrorCode(error, "EEXIST")) throw error;
 	}
 	if (!(await ownedDirectory(control))) throw new Error("Invalid artifact cleanup control directory.");
 	await fs.promises.chmod(control, 0o700);
@@ -1023,17 +1052,12 @@ interface DiscoveryFrame {
 	readonly artifact?: true;
 }
 
-interface DiscoveryFrontier {
-	readonly version: 3;
-	readonly pending: DiscoveryFrame[];
-}
-
-function safeDiscoveryDirectory(value: unknown): value is string {
+function safeDiscoveryDirectory<Value>(value: Value): value is Value & string {
 	if (!isRuntimeString(value) || value.length === 0 || value.length > 4_096 || path.isAbsolute(value)) return false;
 	return !value.split(/[\\/]+/u).some((part) => part === ".." || part.includes("\0"));
 }
 
-function safeDiscoverySnapshot(value: unknown): value is string {
+function safeDiscoverySnapshot<Value>(value: Value): value is Value & string {
 	return isRuntimeString(value) && /^[0-9a-f-]{36}\.jsonl$/u.test(value);
 }
 
@@ -1042,7 +1066,7 @@ async function ensureDiscoverySnapshotDirectory(root: string): Promise<string> {
 	try {
 		await fs.promises.mkdir(directory, { mode: 0o700 });
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		if (!hasErrorCode(error, "EEXIST")) throw error;
 	}
 	if (!(await ownedDirectory(directory))) throw new Error("Invalid artifact discovery snapshot directory.");
 	await fs.promises.chmod(directory, 0o700);
@@ -1136,8 +1160,11 @@ async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | u
 		const cursorPath = path.join(root, DISCOVERY_CURSOR_FILE);
 		const stat = await fs.promises.lstat(cursorPath);
 		if (!ownedRegularFile(stat) || stat.size > MAX_DISCOVERY_CURSOR_BYTES) return undefined;
-		const parsed = JSON.parse(await fs.promises.readFile(cursorPath, "utf8")) as Partial<DiscoveryFrontier>;
+		const parsed = parseJsonValue(await fs.promises.readFile(cursorPath, "utf8"));
 		if (
+			!isRuntimeObject(parsed) ||
+			parsed === null ||
+			Array.isArray(parsed) ||
 			parsed.version !== 3 ||
 			!Array.isArray(parsed.pending) ||
 			parsed.pending.length > MAX_ARTIFACT_ENTRIES_PER_PASS
@@ -1145,35 +1172,26 @@ async function readDiscoveryFrontier(root: string): Promise<DiscoveryFrame[] | u
 			return undefined;
 		const pending: DiscoveryFrame[] = [];
 		for (const frame of parsed.pending) {
-			if (!frame || !isRuntimeObject(frame)) return undefined;
-			const candidate = frame as {
-				directory?: unknown;
-				snapshot?: unknown;
-				offset?: unknown;
-				artifact?: unknown;
-				building?: unknown;
-			};
-			if (!safeDiscoveryDirectory(candidate.directory)) return undefined;
-			if (candidate.snapshot !== undefined && !safeDiscoverySnapshot(candidate.snapshot)) return undefined;
+			if (!frame || !isRuntimeObject(frame) || Array.isArray(frame)) return undefined;
+			if (!safeDiscoveryDirectory(frame.directory)) return undefined;
+			if (frame.snapshot !== undefined && !safeDiscoverySnapshot(frame.snapshot)) return undefined;
 			if (
-				candidate.offset !== undefined &&
-				(!isRuntimeNumber(candidate.offset) || !Number.isSafeInteger(candidate.offset) || candidate.offset < 0)
+				frame.offset !== undefined &&
+				(!isRuntimeNumber(frame.offset) || !Number.isSafeInteger(frame.offset) || frame.offset < 0)
 			)
 				return undefined;
-			if (candidate.artifact !== undefined && candidate.artifact !== true) return undefined;
-			if (candidate.building !== undefined && candidate.building !== true) return undefined;
-			if (candidate.artifact && (candidate.snapshot !== undefined || candidate.offset !== undefined))
-				return undefined;
-			if (candidate.offset !== undefined && candidate.snapshot === undefined) return undefined;
-			if (candidate.building && candidate.snapshot === undefined) return undefined;
-			if (candidate.building && candidate.offset !== undefined) return undefined;
-			pending.push({
-				directory: candidate.directory,
-				...(isRuntimeString(candidate.snapshot) ? { snapshot: candidate.snapshot } : {}),
-				...(isRuntimeNumber(candidate.offset) ? { offset: candidate.offset } : {}),
-				...(candidate.building === true ? { building: true as const } : {}),
-				...(candidate.artifact === true ? { artifact: true as const } : {}),
-			});
+			if (frame.artifact !== undefined && frame.artifact !== true) return undefined;
+			if (frame.building !== undefined && frame.building !== true) return undefined;
+			if (frame.artifact && (frame.snapshot !== undefined || frame.offset !== undefined)) return undefined;
+			if (frame.offset !== undefined && frame.snapshot === undefined) return undefined;
+			if (frame.building && frame.snapshot === undefined) return undefined;
+			if (frame.building && frame.offset !== undefined) return undefined;
+			let candidate: DiscoveryFrame = { directory: frame.directory };
+			if (isRuntimeString(frame.snapshot)) candidate = { ...candidate, snapshot: frame.snapshot };
+			if (isRuntimeNumber(frame.offset)) candidate = { ...candidate, offset: frame.offset };
+			if (frame.building === true) candidate = { ...candidate, building: true };
+			if (frame.artifact === true) candidate = { ...candidate, artifact: true };
+			pending.push(candidate);
 		}
 		return pending;
 	} catch {
