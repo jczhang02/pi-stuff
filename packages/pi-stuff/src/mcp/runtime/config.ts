@@ -1,15 +1,15 @@
 // config.ts - Config loading with import support
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import stripJsonComments from "strip-json-comments";
 import { withSettingsLock } from "../../shared/settings-io/lock.ts";
 import { xdgConfigHome } from "../../xdg/index.ts";
 import { getAgentPath } from "./agent-dir.ts";
 import { logger } from "./logger.ts";
-import { isServerDisabled, type HostConfigDiscovery, type McpConfig, type ServerEntry, type McpSettings, type ImportKind, type ServerProvenance } from "./types.ts";
+import { isServerDisabled, type HostConfigDiscovery, type McpConfig, type ServerEntry, type McpSettings, type ImportKind } from "./types.ts";
 import { toStringRecord } from "./utils.ts";
 
 const AGENTS_GLOBAL_CONFIG_PATHS = [
@@ -865,24 +865,44 @@ function resolveConfigWritePath(filePath: string): string {
 }
 
 function writeRawConfigObject(filePath: string, raw: Record<string, unknown>): void {
-  const writePath = resolveConfigWritePath(filePath);
-  const tmpPath = `${writePath}.${process.pid}.${randomUUID()}.tmp`;
+	const tmpPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
   try {
     writeFileSync(tmpPath, `${JSON.stringify(raw, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
-    renameSync(tmpPath, writePath);
+    renameSync(tmpPath, filePath);
   } catch (error) {
     rmSync(tmpPath, { force: true });
     throw error;
   }
 }
 
-function withConfigWriteLock<T>(filePath: string, write: () => T): Promise<T> {
-  filePath = resolveConfigWritePath(filePath);
-  return withSettingsLock(filePath, "MCP project config", write);
+function withConfigWriteLock<T>(filePath: string, write: (writePath: string) => T): Promise<T> {
+  const writePath = resolveConfigWritePath(filePath);
+  return withSettingsLock(writePath, "MCP config", () => write(writePath));
 }
 
-function withProjectConfigWriteLock<T>(cwd: string, write: () => T): Promise<T> {
-  return withConfigWriteLock(getProjectPiConfigPath(cwd), write);
+async function withProjectConfigWriteLock<T>(cwd: string, write: (writePath: string) => T | Promise<T>): Promise<T> {
+  const filePath = getProjectPiConfigPath(cwd);
+	for (const candidate of [dirname(filePath), filePath]) {
+		if (lstatSync(candidate, { throwIfNoEntry: false })?.isSymbolicLink()) {
+			throw new Error(`Refusing to write project MCP config through a symbolic link at ${candidate}`);
+		}
+  }
+  const writePath = resolveConfigWritePath(filePath);
+  const projectRoot = realpathSync(cwd);
+  const projectRelative = relative(projectRoot, writePath);
+  if (projectRelative === ".." || projectRelative.startsWith(`..${sep}`) || isAbsolute(projectRelative)) {
+    throw new Error(`Project MCP config escapes the project root: ${filePath}`);
+  }
+	const directoryDescriptor = openSync(
+		dirname(writePath),
+		constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+	);
+	const pinnedWritePath = join("/proc/self/fd", String(directoryDescriptor), basename(writePath));
+	try {
+		return await withSettingsLock(pinnedWritePath, "MCP project config", () => write(pinnedWritePath));
+	} finally {
+		closeSync(directoryDescriptor);
+	}
 }
 
 function getServersObject(raw: Record<string, unknown>): Record<string, ServerEntry> {
@@ -906,23 +926,27 @@ export interface ServerDisabledOverrideResult {
 interface ProjectServerOverride {
   existing: Record<string, unknown> | undefined;
   filePath: string;
+  writePath: string;
   raw: Record<string, unknown>;
   serverKey: "mcpServers" | "mcp-servers";
   servers: Record<string, unknown>;
 }
 
-function readProjectServerOverride(cwd: string, serverName: string): ProjectServerOverride {
-  const filePath = getProjectPiConfigPath(cwd);
+function readProjectServerOverride(writePath: string, filePath: string, serverName: string): ProjectServerOverride {
   let raw: Record<string, unknown> = {};
-  if (existsSync(filePath)) {
+  if (existsSync(writePath)) {
+		let descriptor: number | undefined;
     try {
-      const parsed = parseJsonConfig(readFileSync(filePath, "utf-8"));
+			descriptor = openSync(writePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const parsed = parseJsonConfig(readFileSync(descriptor, "utf-8"));
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("root value must be an object");
       }
       raw = parsed as Record<string, unknown>;
     } catch (error) {
       throw new Error(`Failed to read project MCP override at ${filePath}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+		} finally {
+			if (descriptor !== undefined) closeSync(descriptor);
     }
   }
 
@@ -936,7 +960,7 @@ function readProjectServerOverride(cwd: string, serverName: string): ProjectServ
   if (previous !== undefined && (!previous || typeof previous !== "object" || Array.isArray(previous))) {
     throw new Error(`Failed to update project MCP override at ${filePath}: server "${serverName}" must be an object`);
   }
-  return { existing: previous as Record<string, unknown> | undefined, filePath, raw, serverKey, servers };
+  return { existing: previous as Record<string, unknown> | undefined, filePath, raw, serverKey, servers, writePath };
 }
 
 function writeProjectServerOverride(
@@ -944,14 +968,14 @@ function writeProjectServerOverride(
   serverName: string,
   next: Record<string, unknown>,
 ): ServerDisabledOverrideResult {
-  const { existing, filePath, raw, serverKey, servers } = override;
+  const { existing, filePath, raw, serverKey, servers, writePath } = override;
   if ((!existing && Object.keys(next).length === 0) || JSON.stringify(existing) === JSON.stringify(next)) {
     return { path: filePath, changed: false };
   }
   if (Object.keys(next).length === 0) delete servers[serverName];
   else Object.defineProperty(servers, serverName, { configurable: true, enumerable: true, value: next, writable: true });
   raw[serverKey] = servers;
-  writeRawConfigObject(filePath, raw);
+  writeRawConfigObject(writePath, raw);
   return { path: filePath, changed: true };
 }
 
@@ -968,18 +992,19 @@ export function writeProjectServerDisabledOverride(
   serverName: string,
   disabled: boolean,
 ): Promise<ServerDisabledOverrideResult> {
-	return withProjectConfigWriteLock(cwd, () =>
-		writeProjectServerDisabledOverrideUnlocked(globalConfigPath, cwd, serverName, disabled),
+	return withProjectConfigWriteLock(cwd, (writePath) =>
+		writeProjectServerDisabledOverrideUnlocked(globalConfigPath, cwd, writePath, serverName, disabled),
 	);
 }
 
 function writeProjectServerDisabledOverrideUnlocked(
 	globalConfigPath: string | undefined,
   cwd: string,
+  writePath: string,
   serverName: string,
   disabled: boolean,
 ): ServerDisabledOverrideResult {
-  const override = readProjectServerOverride(cwd, serverName);
+  const override = readProjectServerOverride(writePath, getProjectPiConfigPath(cwd), serverName);
   const { existing, filePath, raw } = override;
 
   let next: Record<string, unknown>;
@@ -988,8 +1013,13 @@ function writeProjectServerDisabledOverrideUnlocked(
   } else {
     next = Object.fromEntries(Object.entries(existing ?? {}).filter(([key]) => key !== "disabled"));
     let lowerConfig: McpConfig = { mcpServers: {} };
+		const projectTarget = existsSync(writePath) ? realpathSync(writePath) : null;
 		for (const source of getConfigSources(globalConfigPath, cwd)) {
-      if (source.readPath === filePath) continue;
+			if (
+				source.id === "pi-project"
+				|| source.readPath === filePath
+				|| (projectTarget !== null && existsSync(source.readPath) && realpathSync(source.readPath) === projectTarget)
+			) continue;
       const loaded = readValidatedConfig(source.readPath, `MCP config from ${source.readPath}`);
       if (loaded) lowerConfig = mergeConfigs(lowerConfig, expandImports(loaded, cwd));
     }
@@ -1010,8 +1040,8 @@ export function writeProjectServerLifecycleOverride(
   serverName: string,
   lifecycle: "keep-alive" | "lazy",
 ): Promise<ServerDisabledOverrideResult> {
-  return withProjectConfigWriteLock(cwd, () => {
-    const override = readProjectServerOverride(cwd, serverName);
+  return withProjectConfigWriteLock(cwd, (writePath) => {
+    const override = readProjectServerOverride(writePath, getProjectPiConfigPath(cwd), serverName);
     return writeProjectServerOverride(override, serverName, { ...override.existing, lifecycle });
   });
 }
@@ -1096,8 +1126,8 @@ export function previewCompatibilityImports(importKinds: ImportKind[], overrideP
 
 export function ensureCompatibilityImports(importKinds: ImportKind[], overridePath?: string): Promise<{ path: string; added: ImportKind[] }> {
   const targetPath = getPiGlobalConfigPath(overridePath);
-  return withConfigWriteLock(targetPath, () => {
-    const raw = readRawConfigObject(targetPath);
+  return withConfigWriteLock(targetPath, (writePath) => {
+    const raw = readRawConfigObject(writePath);
     const currentImports = Array.isArray(raw.imports) ? raw.imports.filter((value): value is ImportKind => typeof value === "string") : [];
     const merged = [...new Set([...currentImports, ...importKinds])];
     const added = merged.filter((kind) => !currentImports.includes(kind));
@@ -1105,7 +1135,7 @@ export function ensureCompatibilityImports(importKinds: ImportKind[], overridePa
 
     raw.imports = merged;
     setServersObject(raw, getServersObject(raw));
-    writeRawConfigObject(targetPath, raw);
+    writeRawConfigObject(writePath, raw);
     return { path: targetPath, added };
   });
 }
@@ -1124,9 +1154,9 @@ export function previewStarterProjectConfig(cwd = process.cwd()): ConfigWritePre
 
 export function writeStarterProjectConfig(cwd = process.cwd()): Promise<string> {
   const targetPath = getProjectConfigPath(cwd);
-  return withConfigWriteLock(targetPath, () => {
+  return withConfigWriteLock(targetPath, (writePath) => {
     if (existsSync(targetPath)) throw new Error(`Refusing to replace existing MCP config at ${targetPath}`);
-    writeRawConfigObject(targetPath, { mcpServers: buildStarterProjectConfig().mcpServers });
+    writeRawConfigObject(writePath, { mcpServers: buildStarterProjectConfig().mcpServers });
     return targetPath;
   });
 }
@@ -1141,99 +1171,14 @@ export function previewSharedServerEntry(filePath: string, serverName: string, e
 }
 
 export function writeSharedServerEntry(filePath: string, serverName: string, entry: ServerEntry): Promise<string> {
-  return withConfigWriteLock(filePath, () => {
-    const raw = readRawConfigObject(filePath);
+  return withConfigWriteLock(filePath, (writePath) => {
+    const raw = readRawConfigObject(writePath);
     const servers = getServersObject(raw);
     Object.defineProperty(servers, serverName, { configurable: true, enumerable: true, value: entry, writable: true });
     setServersObject(raw, servers);
-    writeRawConfigObject(filePath, raw);
+    writeRawConfigObject(writePath, raw);
     return filePath;
   });
-}
-
-export function getServerProvenance(overridePath?: string, cwd = process.cwd()): Map<string, ServerProvenance> {
-  const provenance = new Map<string, ServerProvenance>();
-  const userPath = getPiGlobalConfigPath(overridePath);
-
-  if (getConfiguredHostConfigDiscovery(overridePath, cwd) === "on") {
-    for (const importKind of Object.keys(IMPORT_PATHS) as ImportKind[]) {
-      const imported = loadImportedConfig(importKind, cwd, `Failed to inspect imported MCP config from ${importKind}:`);
-      if (!imported) continue;
-      for (const name of Object.keys(extractServers(imported.value, importKind))) {
-        // Keep writes inside Pi-owned storage even though the source is external.
-        // Later import kinds win in the same deterministic order as loadDiscoveredHostConfigs.
-        provenance.set(name, { path: userPath, kind: "import", importKind });
-      }
-    }
-  }
-
-  for (const source of getConfigSources(overridePath, cwd)) {
-    const loaded = readValidatedConfig(source.readPath, `MCP config from ${source.readPath}`);
-    if (!loaded) continue;
-
-    if (loaded.imports?.length) {
-      for (const importKind of loaded.imports) {
-        const imported = loadImportedConfig(importKind, cwd, `Failed to inspect imported MCP config from ${importKind}:`);
-        if (!imported) continue;
-
-        const servers = extractServers(imported.value, importKind);
-        for (const name of Object.keys(servers)) {
-          if (!provenance.has(name)) {
-            provenance.set(name, { path: userPath, kind: "import", importKind });
-          }
-        }
-      }
-    }
-
-    for (const name of Object.keys(loaded.mcpServers)) {
-      provenance.set(name, {
-        path: source.writePath,
-        kind: source.kind,
-        importKind: source.importKind,
-      });
-    }
-  }
-
-  return provenance;
-}
-
-export async function writeDirectToolsConfig(
-  changes: Map<string, true | string[] | false>,
-  provenance: Map<string, ServerProvenance>,
-  fullConfig: McpConfig,
-): Promise<void> {
-  const byPath = new Map<string, { name: string; value: true | string[] | false; prov: ServerProvenance }[]>();
-
-  for (const [serverName, value] of changes) {
-    const prov = provenance.get(serverName);
-    if (!prov) continue;
-
-    const targetPath = prov.path;
-
-    if (!byPath.has(targetPath)) byPath.set(targetPath, []);
-    byPath.get(targetPath)!.push({ name: serverName, value, prov });
-  }
-
-  for (const [filePath, entries] of byPath) {
-    await withConfigWriteLock(filePath, () => {
-      const raw = readRawConfigObject(filePath);
-      const servers = getServersObject(raw);
-
-      for (const { name, value, prov } of entries) {
-        if (prov.kind === "import") {
-          const fullDef = fullConfig.mcpServers[name];
-          if (fullDef) {
-            Object.defineProperty(servers, name, { configurable: true, enumerable: true, value: { ...fullDef, directTools: value }, writable: true });
-          }
-        } else if (Object.hasOwn(servers, name)) {
-          Object.defineProperty(servers, name, { configurable: true, enumerable: true, value: { ...servers[name], directTools: value }, writable: true });
-        }
-      }
-
-      setServersObject(raw, servers);
-      writeRawConfigObject(filePath, raw);
-    });
-  }
 }
 
 export function resolveConfiguredOAuthDir(raw: unknown, cwd = process.cwd()): string | undefined {

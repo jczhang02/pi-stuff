@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -9,7 +9,7 @@ import {
 	readSettingsFile,
 	writeSettingsFile,
 } from "../../packages/pi-stuff/src/shared/settings-io/index.js";
-import { migrateLegacyNamespace } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
+import { acquireSettingsLock, migrateLegacyNamespace } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
 
 const roots: string[] = [];
 
@@ -42,6 +42,17 @@ test("writeSettingsFile writes tab-indented JSON", async () => {
 	await writeSettingsFile(path, { ui: { statusline: true } });
 	const content = await readFile(path, "utf8");
 	expect(content).toBe('{\n\t"ui": {\n\t\t"statusline": true\n\t}\n}\n');
+});
+
+test("settings locks refuse symlinks without changing their targets", async () => {
+	const root = await dir();
+	const target = join(root, "outside.txt");
+	const lockPath = join(root, "pi-stuff.json.lock");
+	await Bun.write(target, "preserve me\n");
+	await symlink(target, lockPath);
+
+	await expect(acquireSettingsLock(lockPath, "test settings")).rejects.toThrow();
+	expect(await readFile(target, "utf8")).toBe("preserve me\n");
 });
 
 test("mergeNamespaceRecord preserves sibling namespaces", async () => {

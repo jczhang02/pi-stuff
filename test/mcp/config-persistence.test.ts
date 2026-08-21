@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -9,6 +9,20 @@ import {
 	writeSharedServerEntry,
 	writeStarterProjectConfig,
 } from "../../packages/pi-stuff/src/mcp/runtime/config.js";
+import { parseMcpCommand } from "../../packages/pi-stuff/src/mcp/runtime/implementation.js";
+import { acquireSettingsLock } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
+
+test("parses the full server name after an MCP subcommand", () => {
+	expect(parseMcpCommand("  reconnect docs local  ")).toEqual({
+		serverName: "docs local",
+		subcommand: "reconnect",
+	});
+	expect(parseMcpCommand("auth docs  local")).toEqual({
+		serverName: "docs  local",
+		subcommand: "auth",
+	});
+	expect(parseMcpCommand("   ")).toEqual({ subcommand: "" });
+});
 
 test("keeps server state writes project-local when a custom global config is loaded", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-config-"));
@@ -23,6 +37,24 @@ test("keeps server state writes project-local when a custom global config is loa
 		expect(JSON.parse(await readFile(projectPath, "utf8"))).toEqual({
 			mcpServers: { docs: { disabled: false } },
 		});
+	} finally {
+		await rm(cwd, { force: true, recursive: true });
+	}
+});
+
+test("does not treat the project override or its alias as a lower config source", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-config-"));
+	const projectPath = join(cwd, ".pi/mcp.json");
+	const aliasPath = join(cwd, "project-override-alias.json");
+	try {
+		await mkdir(join(cwd, ".pi"));
+		await writeFile(projectPath, '{"mcpServers":{"docs":{"disabled":true}}}\n');
+		await symlink(projectPath, aliasPath);
+		for (const configPath of [projectPath, aliasPath]) {
+			await writeFile(projectPath, '{"mcpServers":{"docs":{"disabled":true}}}\n');
+			expect((await writeProjectServerDisabledOverride(configPath, cwd, "docs", false)).changed).toBe(true);
+			expect(JSON.parse(await readFile(projectPath, "utf8"))).toEqual({ mcpServers: {} });
+		}
 	} finally {
 		await rm(cwd, { force: true, recursive: true });
 	}
@@ -68,7 +100,7 @@ test("creates the first project override and preserves special server names", as
 	}
 });
 
-test("preserves a project override symlink", async () => {
+test("refuses to write a project override through a symlink", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-config-"));
 	const path = join(cwd, ".pi/mcp.json");
 	const target = join(cwd, "shared-mcp.json");
@@ -76,10 +108,76 @@ test("preserves a project override symlink", async () => {
 		await mkdir(join(cwd, ".pi"));
 		await writeFile(target, '{"mcpServers":{}}\n');
 		await symlink(target, path);
-		expect((await writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive")).changed).toBe(true);
+		expect(() => writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive")).toThrow(
+			"Refusing to write project MCP config through a symbolic link",
+		);
+		expect((await lstat(path)).isSymbolicLink()).toBe(true);
+		expect(await readFile(target, "utf8")).toBe('{"mcpServers":{}}\n');
+	} finally {
+		await rm(cwd, { force: true, recursive: true });
+	}
+});
+
+test("refuses a project override whose parent symlink escapes the project", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-config-"));
+	const outside = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-outside-"));
+	try {
+		await symlink(outside, join(cwd, ".pi"));
+		expect(() => writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive")).toThrow(
+			"Refusing to write project MCP config through a symbolic link",
+		);
+		expect(await Bun.file(join(outside, "mcp.json")).exists()).toBe(false);
+	} finally {
+		await rm(cwd, { force: true, recursive: true });
+		await rm(outside, { force: true, recursive: true });
+	}
+});
+
+test("pins the validated project config directory while waiting for its lock", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-config-"));
+	const outside = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-outside-"));
+	const projectDirectory = join(cwd, ".pi");
+	const pinnedDirectory = join(cwd, ".pi-pinned");
+	let release: (() => Promise<void>) | undefined;
+	try {
+		await mkdir(projectDirectory);
+		release = await acquireSettingsLock(join(projectDirectory, "mcp.json.lock"), "MCP race test");
+		const pendingWrite = writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive");
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		await rename(projectDirectory, pinnedDirectory);
+		await symlink(outside, projectDirectory);
+		await release();
+		release = undefined;
+
+		expect(await pendingWrite).toEqual({ changed: true, path: join(cwd, ".pi/mcp.json") });
+		expect(JSON.parse(await readFile(join(pinnedDirectory, "mcp.json"), "utf8"))).toEqual({
+			mcpServers: { docs: { lifecycle: "keep-alive" } },
+		});
+		expect(await Bun.file(join(outside, "mcp.json")).exists()).toBe(false);
+	} finally {
+		await release?.();
+		await rm(cwd, { force: true, recursive: true });
+		await rm(outside, { force: true, recursive: true });
+	}
+});
+
+test("locks a shared config symlink and its resolved target as one file", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-config-"));
+	const path = join(cwd, ".mcp.json");
+	const target = join(cwd, "shared-mcp.json");
+	try {
+		await writeFile(target, '{"mcpServers":{}}\n');
+		await symlink(target, path);
+		await Promise.all([
+			writeSharedServerEntry(path, "docs", { command: "docs-mcp" }),
+			writeSharedServerEntry(target, "browser", { command: "browser-mcp" }),
+		]);
 		expect((await lstat(path)).isSymbolicLink()).toBe(true);
 		expect(JSON.parse(await readFile(target, "utf8"))).toEqual({
-			mcpServers: { docs: { lifecycle: "keep-alive" } },
+			mcpServers: {
+				browser: { command: "browser-mcp" },
+				docs: { command: "docs-mcp" },
+			},
 		});
 	} finally {
 		await rm(cwd, { force: true, recursive: true });

@@ -536,12 +536,6 @@ export interface DirectToolSpec {
   uiStreamMode?: UiStreamMode;
 }
 
-export interface ServerProvenance {
-  path: string;
-  kind: "user" | "project" | "import";
-  importKind?: string;
-}
-
 export interface McpAuthResult {
   ok: boolean;
   message?: string;
@@ -581,20 +575,6 @@ export interface ServerCacheEntry {
 export interface MetadataCache {
   version: number;
   servers: Record<string, ServerCacheEntry>;
-}
-
-export interface McpPanelCallbacks {
-  reconnect: (serverName: string) => Promise<boolean>;
-  canAuthenticate: (serverName: string) => boolean;
-  authenticate: (serverName: string) => Promise<McpAuthResult>;
-  getConnectionStatus: (serverName: string) => "connected" | "idle" | "failed" | "needs-auth" | "disabled";
-  getFailureMessage?: (serverName: string) => string | null;
-  refreshCacheAfterReconnect: (serverName: string) => ServerCacheEntry | null;
-}
-
-export interface McpPanelResult {
-  changes: Map<string, true | string[] | false>;
-  cancelled: boolean;
 }
 
 /**

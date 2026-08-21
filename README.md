@@ -165,9 +165,9 @@ the user's theme choice.
 | Contract | Certified profile |
 | --- | --- |
 | Pi Host | `0.84.2`, upstream `914cf1472e715297caa30db4b9535d534a9eb718` |
+| Pi Host binary | Audited upstream Linux x64 release SHA-256 |
 | Platform | Linux x64; Ubuntu 24.04 is the CI system-utility baseline |
 | Bun | `1.3.14` |
-| Node.js / npm | `24.16.0` / `11.13.0` for the certified Host build |
 | TypeScript | `5.9.3` |
 | Optional RTK runtime | `0.42.4`, certified Linux x64 builds only |
 
@@ -185,8 +185,8 @@ bun run check
 ```
 
 The check covers formatting, type surfaces, tests, unused code, generated Suite composition, repository safety, Tool
-Activity performance, and verification of the extracted local Package. `bun run host:build` builds the pinned Pi Host
-under ignored `.artifacts/` for full acceptance work.
+Activity performance, and verification of the extracted local Package against the certified Pi Host release. CI
+downloads that release, verifies its exact binary hash, and runs acceptance without external network access.
 
 Maintainer documentation is indexed in [`docs/README.md`](docs/README.md). Before changing behavior, read
 [`CONTRIBUTING.md`](.github/CONTRIBUTING.md), the canonical language in [`CONTEXT.md`](CONTEXT.md),

@@ -31,7 +31,7 @@ export function createPanelKeys(keybindings?: PanelKeybindings): PanelKeys {
 			selectDown: (data) => commandDialogNavigation(data, keybindings) === "down",
 			selectPageUp: (data) => commandDialogNavigation(data, keybindings) === "pageUp",
 			selectPageDown: (data) => commandDialogNavigation(data, keybindings) === "pageDown",
-      selectConfirm: (data) => keybindings.matches(data, "tui.select.confirm") || matchesKey(data, "return"),
+      selectConfirm: (data) => keybindings.matches(data, "tui.select.confirm"),
     };
   }
   return {

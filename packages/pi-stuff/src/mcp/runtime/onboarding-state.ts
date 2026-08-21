@@ -5,14 +5,11 @@ import { getAgentPath } from "./agent-dir.ts";
 
 export interface McpOnboardingState {
   version: 1;
-  sharedConfigHintShown: boolean;
   setupCompleted: boolean;
-  lastDiscoveryFingerprint?: string;
 }
 
 const DEFAULT_STATE: McpOnboardingState = {
   version: 1,
-  sharedConfigHintShown: false,
   setupCompleted: false,
 };
 
@@ -30,9 +27,7 @@ export function loadOnboardingState(): McpOnboardingState {
     if (!raw || typeof raw !== "object") return { ...DEFAULT_STATE };
     return {
       version: 1,
-      sharedConfigHintShown: raw.sharedConfigHintShown === true,
       setupCompleted: raw.setupCompleted === true,
-      lastDiscoveryFingerprint: typeof raw.lastDiscoveryFingerprint === "string" ? raw.lastDiscoveryFingerprint : undefined,
     };
   } catch {
     return { ...DEFAULT_STATE };
@@ -53,18 +48,9 @@ export function updateOnboardingState(updater: (state: McpOnboardingState) => Mc
   return next;
 }
 
-export function markSharedConfigHintShown(fingerprint?: string): McpOnboardingState {
-  return updateOnboardingState((state) => ({
-    ...state,
-    sharedConfigHintShown: true,
-    lastDiscoveryFingerprint: fingerprint ?? state.lastDiscoveryFingerprint,
-  }));
-}
-
-export function markSetupCompleted(fingerprint?: string): McpOnboardingState {
+export function markSetupCompleted(): McpOnboardingState {
   return updateOnboardingState((state) => ({
     ...state,
     setupCompleted: true,
-    lastDiscoveryFingerprint: fingerprint ?? state.lastDiscoveryFingerprint,
   }));
 }

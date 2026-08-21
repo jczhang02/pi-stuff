@@ -59,8 +59,8 @@ describe.serial("MCP XDG paths", () => {
 				JSON.stringify({ version: 1, sharedConfigHintShown: true, setupCompleted: false }),
 			);
 
-			expect(loadOnboardingState().sharedConfigHintShown).toBeTrue();
-			saveOnboardingState({ version: 1, sharedConfigHintShown: true, setupCompleted: true });
+			expect(loadOnboardingState()).toEqual({ version: 1, setupCompleted: false });
+			saveOnboardingState({ version: 1, setupCompleted: true });
 
 			expect(JSON.parse(await readFile(getOnboardingStatePath(), "utf8"))).toMatchObject({ setupCompleted: true });
 			expect(JSON.parse(await readFile(legacyPath, "utf8"))).toMatchObject({ setupCompleted: false });

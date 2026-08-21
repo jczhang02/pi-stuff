@@ -23,9 +23,9 @@ import type { McpStatusStore } from "./status-store.js";
 const GUTTER = "  ";
 
 export interface McpControlActions {
-	authenticate(server: string): Promise<void>;
-	logout(server: string): Promise<void>;
-	reconnect(server: string): Promise<void>;
+	authenticate(server: string): Promise<boolean>;
+	logout(server: string): Promise<boolean>;
+	reconnect(server: string): Promise<boolean>;
 }
 
 export type McpControlResult =
@@ -364,13 +364,12 @@ class McpControlDialog implements CommandDialogComponent {
 		this.notice = `${verb} ${server}…`;
 		this.context.requestRender();
 		void this.actions[action](server)
-			.then(() => {
+			.then((succeeded) => {
 				if (this.disposed) return;
-				const updated = this.servers().find((candidate) => candidate.name === server);
-				this.notice =
-					action === "reconnect" && updated?.status === "failed"
-						? `Reconnect failed for ${server}.`
-						: `${action === "logout" ? "Logged out of" : action === "authenticate" ? "Authenticated" : "Reconnected"} ${server}.`;
+				if (!succeeded) this.notice = "Action failed. See /diagnostics for details.";
+				else if (action === "logout") this.notice = `Logged out of ${server}.`;
+				else if (action === "authenticate") this.notice = `Authenticated ${server}.`;
+				else this.notice = `Reconnected ${server}.`;
 			})
 			.catch(() => {
 				if (!this.disposed) this.notice = "Action failed. See /diagnostics for details.";
