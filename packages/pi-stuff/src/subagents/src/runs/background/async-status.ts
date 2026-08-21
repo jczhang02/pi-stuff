@@ -44,6 +44,7 @@ interface AsyncRunStepSummary {
 	index: number;
 	agent: string;
 	context?: ContextMode;
+	delegatedTask?: string;
 	task?: string;
 	label?: string;
 	phase?: string;
@@ -70,6 +71,7 @@ interface AsyncRunStepSummary {
 	attemptedModels?: string[];
 	sessionFile?: string;
 	transcriptPath?: string;
+	transcriptError?: string;
 	error?: string;
 	timedOut?: boolean;
 	stopped?: boolean;
@@ -78,6 +80,7 @@ interface AsyncRunStepSummary {
 	wrapUpRequested?: boolean;
 	acceptance?: AsyncJobStep["acceptance"];
 	agentContract?: AsyncJobStep["agentContract"];
+	launchContractDigest?: string;
 	execution?: AsyncJobStep["execution"];
 	review?: AsyncJobStep["review"];
 	effects?: AsyncJobStep["effects"];
@@ -127,6 +130,7 @@ export interface AsyncRunSummary {
 	nestedChildren?: NestedRunSummary[];
 	nestedWarnings?: string[];
 	processTerminal?: AsyncStatus["processTerminal"];
+	launchContractDigest?: string;
 	capabilityCeiling?: ResolvedSubagentCapabilityCeiling;
 	capabilityAudit?: SubagentCapabilityAudit;
 }
@@ -150,9 +154,7 @@ function getErrorMessage(cause: unknown): string {
 }
 
 function isNotFoundError(cause: unknown): boolean {
-	return (
-		isRuntimeObject(cause) && cause !== null && "code" in cause && (cause as NodeJS.ErrnoException).code === "ENOENT"
-	);
+	return isRuntimeObject(cause) && cause !== null && "code" in cause && cause.code === "ENOENT";
 }
 
 function isAsyncRunDir(root: string, entry: string): boolean {
@@ -270,69 +272,66 @@ function statusToSummary(
 	const summarizedSteps = steps.map((step, index) => {
 		const stepActivityState = step.activityState;
 		const stepLastActivityAt = step.lastActivityAt;
-		return {
+		const summary: AsyncRunStepSummary = {
 			index,
 			agent: step.agent,
-			...(step.context ? { context: step.context } : {}),
-			...(step.delegatedTask ? { delegatedTask: step.delegatedTask } : {}),
-			...(step.task ? { task: step.task } : {}),
-			...(step.label ? { label: step.label } : {}),
-			...(step.phase ? { phase: step.phase } : {}),
-			...(step.outputName ? { outputName: step.outputName } : {}),
-			...(step.structured ? { structured: step.structured } : {}),
 			status: step.status,
-			...(stepActivityState ? { activityState: stepActivityState } : {}),
-			...(stepLastActivityAt ? { lastActivityAt: stepLastActivityAt } : {}),
-			...(step.currentTool ? { currentTool: step.currentTool } : {}),
-			...(step.currentToolArgs ? { currentToolArgs: step.currentToolArgs } : {}),
-			...(step.currentToolStartedAt ? { currentToolStartedAt: step.currentToolStartedAt } : {}),
-			...(step.currentPath ? { currentPath: step.currentPath } : {}),
-			...(step.recentTools ? { recentTools: step.recentTools.map((tool) => ({ ...tool })) } : {}),
-			...(step.recentOutput ? { recentOutput: [...step.recentOutput] } : {}),
-			...(step.turnCount !== undefined ? { turnCount: step.turnCount } : {}),
-			...(step.toolCount !== undefined ? { toolCount: step.toolCount } : {}),
-			...(step.steering ? { steering: step.steering } : {}),
-			...(step.durationMs !== undefined ? { durationMs: step.durationMs } : {}),
-			...(step.tokens ? { tokens: step.tokens } : {}),
-			...(step.totalCost ? { totalCost: step.totalCost } : {}),
-			...(step.skills ? { skills: step.skills } : {}),
-			...(step.model ? { model: step.model } : {}),
-			...(step.thinking ? { thinking: step.thinking } : {}),
-			...(step.attemptedModels ? { attemptedModels: step.attemptedModels } : {}),
-			...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
-			...(step.transcriptPath ? { transcriptPath: step.transcriptPath } : {}),
-			...(step.transcriptError ? { transcriptError: step.transcriptError } : {}),
-			...(step.error ? { error: step.error } : {}),
-			...(step.timedOut !== undefined ? { timedOut: step.timedOut } : {}),
-			...(step.stopped !== undefined ? { stopped: step.stopped } : {}),
-			...(step.turnBudget ? { turnBudget: step.turnBudget } : {}),
-			...(step.turnBudgetExceeded !== undefined ? { turnBudgetExceeded: step.turnBudgetExceeded } : {}),
-			...(step.wrapUpRequested !== undefined ? { wrapUpRequested: step.wrapUpRequested } : {}),
-			...(step.acceptance ? { acceptance: step.acceptance } : {}),
-			...(step.agentContract ? { agentContract: step.agentContract } : {}),
-			...(step.launchContractDigest ? { launchContractDigest: step.launchContractDigest } : {}),
-			...(step.execution ? { execution: step.execution } : {}),
-			...(step.review ? { review: step.review } : {}),
-			...(step.effects ? { effects: step.effects } : {}),
-			...(step.processTerminal
-				? {
-						processTerminal: sanitizeProcessTerminal(
-							step.processTerminal,
-							{ runId: status.runId, runnerProcessInstanceId: step.processTerminal.runnerProcessInstanceId },
-							`${path.join(asyncDir, "status.json")} step ${index}`,
-						),
-					}
-				: {}),
-			...(step.capabilityCeiling ? { capabilityCeiling: step.capabilityCeiling } : {}),
-			...(step.capabilityAudit ? { capabilityAudit: step.capabilityAudit } : {}),
-			...(step.children?.length
-				? {
-						children: step.children
-							.map((child) => sanitizeSummary(child))
-							.filter((child): child is NestedRunSummary => child !== undefined),
-					}
-				: {}),
 		};
+		if (step.context) summary.context = step.context;
+		if (step.delegatedTask) summary.delegatedTask = step.delegatedTask;
+		if (step.task) summary.task = step.task;
+		if (step.label) summary.label = step.label;
+		if (step.phase) summary.phase = step.phase;
+		if (step.outputName) summary.outputName = step.outputName;
+		if (step.structured) summary.structured = step.structured;
+		if (stepActivityState) summary.activityState = stepActivityState;
+		if (stepLastActivityAt) summary.lastActivityAt = stepLastActivityAt;
+		if (step.currentTool) summary.currentTool = step.currentTool;
+		if (step.currentToolArgs) summary.currentToolArgs = step.currentToolArgs;
+		if (step.currentToolStartedAt) summary.currentToolStartedAt = step.currentToolStartedAt;
+		if (step.currentPath) summary.currentPath = step.currentPath;
+		if (step.recentTools) summary.recentTools = step.recentTools.map((tool) => ({ ...tool }));
+		if (step.recentOutput) summary.recentOutput = [...step.recentOutput];
+		if (step.turnCount !== undefined) summary.turnCount = step.turnCount;
+		if (step.toolCount !== undefined) summary.toolCount = step.toolCount;
+		if (step.steering) summary.steering = step.steering;
+		if (step.durationMs !== undefined) summary.durationMs = step.durationMs;
+		if (step.tokens) summary.tokens = step.tokens;
+		if (step.totalCost) summary.totalCost = step.totalCost;
+		if (step.skills) summary.skills = step.skills;
+		if (step.model) summary.model = step.model;
+		if (step.thinking) summary.thinking = step.thinking;
+		if (step.attemptedModels) summary.attemptedModels = step.attemptedModels;
+		if (step.sessionFile) summary.sessionFile = step.sessionFile;
+		if (step.transcriptPath) summary.transcriptPath = step.transcriptPath;
+		if (step.transcriptError) summary.transcriptError = step.transcriptError;
+		if (step.error) summary.error = step.error;
+		if (step.timedOut !== undefined) summary.timedOut = step.timedOut;
+		if (step.stopped !== undefined) summary.stopped = step.stopped;
+		if (step.turnBudget) summary.turnBudget = step.turnBudget;
+		if (step.turnBudgetExceeded !== undefined) summary.turnBudgetExceeded = step.turnBudgetExceeded;
+		if (step.wrapUpRequested !== undefined) summary.wrapUpRequested = step.wrapUpRequested;
+		if (step.acceptance) summary.acceptance = step.acceptance;
+		if (step.agentContract) summary.agentContract = step.agentContract;
+		if (step.launchContractDigest) summary.launchContractDigest = step.launchContractDigest;
+		if (step.execution) summary.execution = step.execution;
+		if (step.review) summary.review = step.review;
+		if (step.effects) summary.effects = step.effects;
+		if (step.processTerminal) {
+			summary.processTerminal = sanitizeProcessTerminal(
+				step.processTerminal,
+				{ runId: status.runId, runnerProcessInstanceId: step.processTerminal.runnerProcessInstanceId },
+				`${path.join(asyncDir, "status.json")} step ${index}`,
+			);
+		}
+		if (step.capabilityCeiling) summary.capabilityCeiling = step.capabilityCeiling;
+		if (step.capabilityAudit) summary.capabilityAudit = step.capabilityAudit;
+		if (step.children?.length) {
+			summary.children = step.children
+				.map((child) => sanitizeSummary(child))
+				.filter((child): child is NestedRunSummary => child !== undefined);
+		}
+		return summary;
 	});
 	if (nestedProjectionAvailable) {
 		attachRootChildrenToSteps(status.runId || path.basename(asyncDir), summarizedSteps, nestedChildren);
@@ -342,12 +341,11 @@ function statusToSummary(
 		// `/agents` inspection does not erase known descendants.
 		nestedChildren = summarizedSteps.flatMap((step) => step.children ?? []);
 	}
-	return {
+	const context = summarizeContextModes(summarizedSteps.map((step) => step.context));
+	const summary: AsyncRunSummary = {
 		id: status.runId || path.basename(asyncDir),
 		asyncDir,
-		...(status.sessionId ? { sessionId: status.sessionId } : {}),
 		state: status.state,
-		...(status.error ? { error: status.error } : {}),
 		activityState,
 		lastActivityAt,
 		currentTool: status.currentTool,
@@ -357,36 +355,37 @@ function statusToSummary(
 		toolCount: status.toolCount,
 		steering: status.steering,
 		mode: status.mode,
-		...(summarizeContextModes(summarizedSteps.map((step) => step.context))
-			? { context: summarizeContextModes(summarizedSteps.map((step) => step.context)) }
-			: {}),
 		cwd: status.cwd,
 		startedAt: status.startedAt,
 		lastUpdate: status.lastUpdate,
 		endedAt: status.endedAt,
-		...(status.timeoutMs !== undefined ? { timeoutMs: status.timeoutMs } : {}),
-		...(status.deadlineAt !== undefined ? { deadlineAt: status.deadlineAt } : {}),
-		...(status.timedOut !== undefined ? { timedOut: status.timedOut } : {}),
-		...(status.stopped !== undefined ? { stopped: status.stopped } : {}),
-		...(status.turnBudget ? { turnBudget: status.turnBudget } : {}),
-		...(status.turnBudgetExceeded !== undefined ? { turnBudgetExceeded: status.turnBudgetExceeded } : {}),
-		...(status.wrapUpRequested !== undefined ? { wrapUpRequested: status.wrapUpRequested } : {}),
 		currentStep: status.currentStep,
-		...(parallelGroups.length ? { parallelGroups } : {}),
 		steps: summarizedSteps,
-		...(nestedRoute ? { nestedRoute } : {}),
-		...(nestedChildren.length ? { nestedChildren } : {}),
-		...(nestedWarnings.length ? { nestedWarnings } : {}),
-		...(processTerminal ? { processTerminal } : {}),
-		...(status.launchContractDigest ? { launchContractDigest: status.launchContractDigest } : {}),
-		...(status.capabilityCeiling ? { capabilityCeiling: status.capabilityCeiling } : {}),
-		...(status.capabilityAudit ? { capabilityAudit: status.capabilityAudit } : {}),
-		...(status.sessionDir ? { sessionDir: status.sessionDir } : {}),
-		...(status.outputFile ? { outputFile: status.outputFile } : {}),
-		...(status.totalTokens ? { totalTokens: status.totalTokens } : {}),
-		...(status.totalCost ? { totalCost: status.totalCost } : {}),
-		...(status.sessionFile ? { sessionFile: status.sessionFile } : {}),
 	};
+	if (status.sessionId) summary.sessionId = status.sessionId;
+	if (status.error) summary.error = status.error;
+	if (context) summary.context = context;
+	if (status.timeoutMs !== undefined) summary.timeoutMs = status.timeoutMs;
+	if (status.deadlineAt !== undefined) summary.deadlineAt = status.deadlineAt;
+	if (status.timedOut !== undefined) summary.timedOut = status.timedOut;
+	if (status.stopped !== undefined) summary.stopped = status.stopped;
+	if (status.turnBudget) summary.turnBudget = status.turnBudget;
+	if (status.turnBudgetExceeded !== undefined) summary.turnBudgetExceeded = status.turnBudgetExceeded;
+	if (status.wrapUpRequested !== undefined) summary.wrapUpRequested = status.wrapUpRequested;
+	if (parallelGroups.length) summary.parallelGroups = parallelGroups;
+	if (nestedRoute) summary.nestedRoute = nestedRoute;
+	if (nestedChildren.length) summary.nestedChildren = nestedChildren;
+	if (nestedWarnings.length) summary.nestedWarnings = nestedWarnings;
+	if (processTerminal) summary.processTerminal = processTerminal;
+	if (status.launchContractDigest) summary.launchContractDigest = status.launchContractDigest;
+	if (status.capabilityCeiling) summary.capabilityCeiling = status.capabilityCeiling;
+	if (status.capabilityAudit) summary.capabilityAudit = status.capabilityAudit;
+	if (status.sessionDir) summary.sessionDir = status.sessionDir;
+	if (status.outputFile) summary.outputFile = status.outputFile;
+	if (status.totalTokens) summary.totalTokens = status.totalTokens;
+	if (status.totalCost) summary.totalCost = status.totalCost;
+	if (status.sessionFile) summary.sessionFile = status.sessionFile;
+	return summary;
 }
 
 export function summarizeAsyncStatus(asyncDir: string, status: AsyncStatus & { cwd?: string }): AsyncRunSummary {
@@ -503,11 +502,7 @@ export function listAsyncRuns(asyncDirRoot: string, options: AsyncRunListOptions
 							kill: options.kill,
 							now: options.now,
 						});
-			const status = (reconciliation?.status ?? preselectedStatus ?? readStatus(asyncDir)) as
-				| (AsyncStatus & {
-						cwd?: string;
-				  })
-				| null;
+			const status = reconciliation?.status ?? preselectedStatus ?? readStatus(asyncDir);
 			if (!status) continue;
 			// Filter before the nested-route lookup: the lookup builds an index over
 			// the nested-events directory, so deferring it for filtered-out runs keeps
