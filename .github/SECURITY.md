@@ -2,12 +2,13 @@
 
 ## Supported versions
 
-| Version | Supported |
+| Package version | Supported |
 | --- | --- |
 | `0.3.x` | Yes |
 | `< 0.3.0` | No |
 
 Security fixes are provided for the current private local `0.3.x` Package line.
+Host compatibility is a separate contract documented in [`docs/compatibility.md`](../docs/compatibility.md).
 
 ## Reporting a vulnerability
 

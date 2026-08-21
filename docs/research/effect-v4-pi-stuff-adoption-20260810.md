@@ -5,6 +5,10 @@
 **Certified runtime:** Bun 1.3.14, Pi 0.84.1, Linux x64  
 **Question:** Should Pi Stuff adopt Effect v4, and would doing so improve correctness, code volume, startup, or shutdown behavior?
 
+> **Historical research snapshot.** The Package topology below is the one recorded at the stated commit. Paths removed
+> by the later single-Package migration remain as code text; use the
+> [migration record](../reports/single-package-migration.md) to locate their current Modules.
+
 ## Evidence labels
 
 - **Official fact** means the claim is directly supported by Effect's official website, tagged source, release notes, migration material, or npm Registry metadata.
@@ -132,7 +136,7 @@ Pi Stuff does not currently use Effect v3, so it does not owe a v3 migration. Th
 
 **Official fact.** Scope and finalizers provide a standard ownership model across success, expected failure, defect, and interruption.
 
-**Local evidence.** [`packages/pi-stuff-work/src/runtime.ts`](../../packages/pi-stuff-work/src/runtime.ts) currently tracks completion and detach Promises, timeout handles, stop Promises, finalizing/finalized flags, launch identity, supervisor state, and several terminal/cleanup paths in one runtime. [`packages/pi-stuff-agents/src/runs/background/subagent-runner.ts`](../../packages/pi-stuff-agents/src/runs/background/subagent-runner.ts) combines child processes, writers, worktrees, durable events, steering, timeouts, and cleanup.
+**Local evidence.** `packages/pi-stuff-work/src/runtime.ts` tracked completion and detach Promises, timeout handles, stop Promises, finalizing/finalized flags, launch identity, supervisor state, and several terminal/cleanup paths in one runtime. `packages/pi-stuff-agents/src/runs/background/subagent-runner.ts` combined child processes, writers, worktrees, durable events, steering, timeouts, and cleanup in the recorded snapshot.
 
 **Inference.** A Scope can make in-process timer/listener/temporary-resource cleanup single-owner and mechanically complete. It can reduce some hand-written `try/finally` and shutdown registration. It cannot remove the durable process state or domain terminal-state logic.
 
@@ -227,7 +231,7 @@ These numbers use Bun's bundler rather than Effect's Rollup tool and therefore d
 
 ### 7. Broad Schema adoption duplicates existing authority
 
-**Local evidence.** [`packages/pi-stuff/package.json`](../../packages/pi-stuff/package.json) ships Zod 4.4.3, while Capability packages such as [`pi-stuff-work`](../../packages/pi-stuff-work/package.json) and [`pi-stuff-agents`](../../packages/pi-stuff-agents/package.json) ship TypeBox 1.3.7.
+**Local evidence.** [`packages/pi-stuff/package.json`](../../packages/pi-stuff/package.json) shipped Zod 4.4.3, while the former `packages/pi-stuff-work/package.json` and `packages/pi-stuff-agents/package.json` shipped TypeBox 1.3.7 in the recorded snapshot.
 
 **Inference.** Using Effect Schema only because it is available would increase vocabulary, package reach, and migration cost. Any Schema adoption needs a separate consolidation decision with compatibility tests for Pi Tool schemas and existing serialized data.
 
@@ -275,7 +279,7 @@ The experiment should live on a disposable branch or prototype directory and sho
 
 ### Candidate
 
-Extract the Background Work notification retry/timeout orchestration from [`packages/pi-stuff-work/src/runtime.ts`](../../packages/pi-stuff-work/src/runtime.ts). This candidate has timers, retries, cancellation, shutdown interaction, and failure classification, but it does not own the core process-authentication protocol.
+Extract the Background Work notification retry/timeout orchestration from the recorded `packages/pi-stuff-work/src/runtime.ts`. This candidate has timers, retries, cancellation, shutdown interaction, and failure classification, but it does not own the core process-authentication protocol.
 
 Implement two variants against the same tests:
 

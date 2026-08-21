@@ -1,5 +1,8 @@
 # @jczhang02/pi-stuff
 
+> Engineering change record for the private local Package, not an npm publication input. Current Host certification
+> is defined by [`docs/compatibility.md`](../../docs/compatibility.md).
+
 ## Unreleased
 
 - Consolidate the global pi-stuff settings into a single merged `pi-stuff.json` at `<agentDir>/pi-stuff.json`, with each
@@ -32,7 +35,7 @@
   owned `/notifications` settings with an in-dialog test action, and an accurately named terminal-BEL control.
 - Consolidate the Suite into one private local Pi Package with fourteen named internal Modules. Remove the former
   per-Capability manifests, self-owned runtime dependencies, version synchronization, Changesets, and npm publication
-  workflow while preserving the accepted installation order and Pi 0.84.1 behavior.
+  workflow while preserving the accepted installation order and the Pi 0.84.1 migration baseline.
 - Add the opt-in Code Mode Module, which replaces the active Suite Tool schemas with one local JavaScript envelope while
   preserving the original Tool execution, session, media, and UI behavior.
 - Absorb the adapted Web and MCP implementations into their owning Modules. Retain their pinned upstream revisions,

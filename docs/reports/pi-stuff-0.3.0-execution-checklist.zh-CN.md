@@ -1,4 +1,7 @@
-# Pi Stuff 下一轮统一执行清单
+# Pi Stuff 0.3.0 已完成执行清单
+
+> **历史记录。** 本清单已全部执行完毕，用于解释 0.3.0 验收证据，不是下一轮工作入口。当前认证版本以
+> [`docs/compatibility.md`](../compatibility.md) 为准；对应结果见[最终验收报告](./pi-stuff-0.3.0-final-acceptance.md)。
 
 这份清单只收录已经确定要做的事情。目标不是“代码写完”，而是把 Pi Stuff 装进真实 Pi 后，常用界面舒服、功能可靠、长 Session 也能正常工作。
 

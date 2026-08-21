@@ -1,5 +1,8 @@
 # Pi Stuff 0.3.0 最终验收报告
 
+> **历史验收记录。** 本文保留 2026-08-05 的安装与验收环境，不代表当前 Host 或安装流程；当前认证以
+> [`docs/compatibility.md`](../compatibility.md) 为准。
+
 日期：2026-08-05<br>
 目标版本：`@jczhang02/pi-stuff@0.3.0`<br>
 Pi Host：`0.83.0`

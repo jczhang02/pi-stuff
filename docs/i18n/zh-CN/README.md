@@ -6,24 +6,28 @@
 
 一个本地 Pi Package，提供紧凑的 Tool 活动展示、持久工作、专注的侧边流程与按需集成，同时不取代 Pi。
 
-[English](../README.md) · 简体中文
+[English](../../../README.md) · 简体中文
 
 [![CI](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml/badge.svg)](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-2f2f2f.svg)](../LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2f2f2f.svg)](../../../LICENSE)
 
 </div>
 
+> 本文件是根目录 [`README.md`](../../../README.md) 的简体中文译本。英文版是当前产品与工程事实的权威
+> 来源；两者如有差异，以英文版为准。
+
 ## 界面预览
 
-以下真实画面来自 Ghostty `1.3.1` 中运行的 Pi `0.84.1`。点击图片可查看原始尺寸。
+以下界面画面是在 Ghostty `1.3.1` 与 Pi `0.84.1` 上记录的历史 UI 证据，不代表当前 Host 认证版本。
+点击图片可查看原始尺寸。
 
 **Welcome 与共享 Statusline**
 
-[![Pi Stuff Welcome 卡片与共享 Statusline](assets/readme/pi-stuff-welcome.png)](assets/readme/pi-stuff-welcome.png)
+[![Pi Stuff Welcome 卡片与共享 Statusline](../../assets/readme/pi-stuff-welcome.png)](../../assets/readme/pi-stuff-welcome.png)
 
 | 原生 `/ui` 设置 | 紧凑的 Tool 活动与 Todo |
 | :---: | :---: |
-| [![Pi Stuff 原生 UI 设置](assets/readme/pi-stuff-ui-settings.png)](assets/readme/pi-stuff-ui-settings.png) | [![Pi Stuff 紧凑的 Tool 活动与 Todo](assets/readme/pi-stuff-tool-activity.png)](assets/readme/pi-stuff-tool-activity.png) |
+| [![Pi Stuff 原生 UI 设置](../../assets/readme/pi-stuff-ui-settings.png)](../../assets/readme/pi-stuff-ui-settings.png) | [![Pi Stuff 紧凑的 Tool 活动与 Todo](../../assets/readme/pi-stuff-tool-activity.png)](../../assets/readme/pi-stuff-tool-activity.png) |
 
 ## Pi Stuff 是什么？
 
@@ -92,19 +96,20 @@ Pi 启动后，可以从这些命令开始：
 
 ## 架构
 
-[![Pi Stuff 动态架构图：用户拥有的设置与输入经由 Pi Host 进入一个本地 Pi Stuff Package 及其有序 Capability Module](assets/readme/pi-stuff-architecture.gif)](assets/readme/pi-stuff-architecture.png)
+[![Pi Stuff 动态架构图：用户拥有的设置与输入经由 Pi Host 进入一个本地 Pi Stuff Package 及其有序 Capability Module](../../assets/readme/pi-stuff-architecture.gif)](../../assets/readme/pi-stuff-architecture.png)
 
 整体只有三层：
 
 1. **Pi Host** 负责 CLI、TUI、会话、设置、Package 加载器和模型循环。
 2. **`@jczhang02/pi-stuff`** 导出一个默认 Extension factory；生成后的入口严格遵循
-   [`packages/pi-stuff/suite.json`](../packages/pi-stuff/suite.json) 声明的顺序。
+   [`packages/pi-stuff/suite.json`](../../../packages/pi-stuff/suite.json) 声明的顺序。
 3. **Capability Module** 在 Package 内分别拥有一种职责清晰的行为。`conversation-ui` 提供共享呈现与 Host
    生命周期协调；`tool-display` 提供共享 Tool 呈现契约。
 
 导入过程保持纯净。会话启动不会访问网络、启动子进程、修改 Host 设置，也不会创建、重写或迁移用户配置。
-对于已经识别且无需迁移的 Context 配置，可以在编辑器就绪前初始化可重建的派生 SQLite 状态。必要模块初始化
-失败时会直接暴露错误，不会留下一个悄悄缺失功能的 Suite。
+根据 [ADR 0007](../../adr/0007-initialize-configured-context-before-editor-readiness.md)，对于已经识别且无需迁移的
+Context 配置，可以在编辑器就绪前初始化可重建的派生 SQLite 状态。必要模块初始化失败时会直接暴露错误，
+不会留下一个悄悄缺失功能的 Suite。
 
 ### Capability 一览
 
@@ -164,7 +169,7 @@ Package 包含 `catppuccin-latte`、`catppuccin-frappe`、`catppuccin-macchiato`
 | 可选 RTK runtime | `0.42.4`，只认证 Linux x64 构建 |
 
 仓库不声明兼容其他 Pi 构建。升级 Pi 必须作为一次协调变更，同时更新固定的 Host 源码配置、开发类型依赖和
-公开接缝验收检查。完整信息见 [`兼容性契约`](compatibility.md)。
+公开接缝验收检查。完整信息见 [`兼容性契约`](../../compatibility.md)。
 
 ## 开发
 
@@ -178,15 +183,17 @@ bun run check
 检查范围包括格式、类型接口、测试、未使用代码、生成的 Suite 组合、仓库安全、Tool Activity 性能，以及提取后
 本地 Package 的验证。`bun run host:build` 会在被忽略的 `.artifacts/` 下构建固定版本的 Pi Host，用于完整验收。
 
-修改行为前，请阅读 [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md)、[`CONTEXT.md`](../CONTEXT.md) 中的规范术语，以及
-[`adr/`](adr/) 下相关决策记录。工程工作由 Beads 跟踪，并同步到
+维护者文档统一收录在 [`docs/README.md`](../../README.md)。修改行为前，请阅读
+[`CONTRIBUTING.md`](../../../.github/CONTRIBUTING.md)、[`CONTEXT.md`](../../../CONTEXT.md) 中的规范术语、
+可见界面的[中文设计说明](./DESIGN.md)（英文 [`DESIGN.md`](../../../DESIGN.md) 为准），以及 [`adr/`](../../adr/)
+下相关决策记录。工程工作遵循 [Beads 流程](../../agents/issue-tracker.md)，并同步到
 [GitHub Issues](https://github.com/jczhang02/pi-stuff/issues)。
 
 ## 安全
 
 Pi Extension 以用户的操作系统权限运行。Pi Stuff 不额外提供权限层或命令拦截层。安装前请审阅源码；安全问题
-请使用[私密漏洞报告渠道](../.github/SECURITY.md)。
+请使用[私密漏洞报告渠道](../../../.github/SECURITY.md)。
 
 ## 许可证
 
-[MIT](../LICENSE) © 2026 JC Zhang。吸收的第三方源码保留其相邻许可证与来源记录。
+[MIT](../../../LICENSE) © 2026 JC Zhang。吸收的第三方源码保留其相邻许可证与来源记录。

@@ -7,7 +7,7 @@
 One local Pi Package for compact Tool activity, durable work, focused side flows, and lazy integrations—without
 replacing Pi.
 
-English · [简体中文](docs/README.zh-CN.md)
+English · [简体中文](docs/i18n/zh-CN/README.md)
 
 [![CI](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml/badge.svg)](https://github.com/jczhang02/pi-stuff/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2f2f2f.svg)](LICENSE)
@@ -16,7 +16,8 @@ English · [简体中文](docs/README.zh-CN.md)
 
 ## Interface
 
-Real captures from Ghostty `1.3.1` running Pi `0.84.1`. Click an image for the full-resolution view.
+These visual captures were recorded in Ghostty `1.3.1` on Pi `0.84.1`; they are historical UI evidence, not the
+current Host certification. Click an image for the full-resolution view.
 
 **Welcome and shared Statusline**
 
@@ -108,9 +109,9 @@ The architecture has three deliberate layers:
    presentation and Host-lifecycle coordination; `tool-display` provides the shared Tool presentation contract.
 
 Import stays pure. Session startup does not access the network, launch subprocesses, mutate Host settings, or create,
-rewrite, or migrate user configuration. A recognized, migration-free Context configuration may initialize rebuildable
-derived SQLite state before editor readiness. Required initialization failures propagate instead of leaving a silently
-partial Suite.
+rewrite, or migrate user configuration. Under [ADR 0007](docs/adr/0007-initialize-configured-context-before-editor-readiness.md),
+a recognized, migration-free Context configuration may initialize rebuildable derived SQLite state before editor
+readiness. Required initialization failures propagate instead of leaving a silently partial Suite.
 
 ### Capability map
 
@@ -187,9 +188,11 @@ The check covers formatting, type surfaces, tests, unused code, generated Suite 
 Activity performance, and verification of the extracted local Package. `bun run host:build` builds the pinned Pi Host
 under ignored `.artifacts/` for full acceptance work.
 
-Before changing behavior, read [`CONTRIBUTING.md`](.github/CONTRIBUTING.md), the canonical language in
-[`CONTEXT.md`](CONTEXT.md), and the relevant records under [`docs/adr/`](docs/adr/). Engineering work is tracked in
-Beads and mirrored to [GitHub Issues](https://github.com/jczhang02/pi-stuff/issues).
+Maintainer documentation is indexed in [`docs/README.md`](docs/README.md). Before changing behavior, read
+[`CONTRIBUTING.md`](.github/CONTRIBUTING.md), the canonical language in [`CONTEXT.md`](CONTEXT.md),
+[`DESIGN.md`](DESIGN.md) for visible surfaces, and the relevant records under [`docs/adr/`](docs/adr/). Engineering
+work follows the [Beads workflow](docs/agents/issue-tracker.md) and is mirrored to
+[GitHub Issues](https://github.com/jczhang02/pi-stuff/issues).
 
 ## Security
 

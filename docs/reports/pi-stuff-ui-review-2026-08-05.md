@@ -1,5 +1,8 @@
 # Pi Stuff UI 审查与修整报告
 
+> **历史 UI 验收记录。** 本文中的 Package、Host、路径和测试数量属于 2026-08-05 快照；当前认证以
+> [`docs/compatibility.md`](../compatibility.md) 为准。
+
 日期：2026-08-05
 
 验收版本：`@jczhang02/pi-stuff@0.3.2`

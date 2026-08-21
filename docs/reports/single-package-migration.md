@@ -1,4 +1,8 @@
-# Single-Package migration inventory
+# Completed single-Package migration inventory
+
+> **Historical architecture record.** This inventory preserves the topology and Pi `0.84.1` dependency baseline used
+> during the completed migration. It is not a current compatibility statement; see
+> [`docs/compatibility.md`](../compatibility.md).
 
 This record maps the source topology frozen at the start of `ps-7lq` to the completed single-Package layout, including
 the Code Mode integration that landed immediately afterward. Every listed Runtime Resource, behavior, prompt, native

@@ -103,7 +103,7 @@ terminal heights, the selected Agent or attached error and that Escape path take
 rows.
 
 The accepted Agent Command Dialog redesign is recorded in the
-[Agent activity UI reference](../../../docs/research/agent-activity-ui-reference.md#f-accepted-agent-command-dialog-redesign).
+[Agent activity UI reference](../../../../docs/research/agent-activity-ui-reference.md#f-accepted-agent-command-dialog-redesign).
 It was implemented on 2026-08-18. `/agents` remains single-column at every width and keeps the Agent name as its primary
 identity. Detail uses `◆ Task`, an optional outcome section, and `◆ Activity` without nested content indentation.
 Agent messages and retained outcomes reuse Pi's Markdown component; Tool output remains literal terminal text.
