@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeNumber,
@@ -17,13 +18,13 @@ import {
 	type ProcessTerminalV1,
 	SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
 } from "../../shared/types.ts";
+import { readStatus } from "../../shared/utils.ts";
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../shared/model-fallback.ts";
 import { canonicalSessionId, inspectSessionLease } from "../shared/session-lease.ts";
 import { inspectWriterProcessLiveness } from "./writer-process-registry.ts";
 
 const MAX_PROCESS_TERMINAL_CANDIDATE_BYTES = 8 * 1024 * 1024;
 const MAX_PROCESS_TERMINAL_PROOF_BYTES = 8 * 1024 * 1024;
-const MAX_PROCESS_TERMINAL_STATUS_BYTES = 32 * 1024 * 1024;
 const MAX_PROCESS_TERMINAL_CHILDREN = 20;
 const MAX_WRITER_INSTANCES_PER_CHILD = MAX_MODEL_CANDIDATES_PER_CHILD;
 const MAX_PROCESS_TERMINAL_INSTANCES = 1 + MAX_PROCESS_TERMINAL_CHILDREN * MAX_WRITER_INSTANCES_PER_CHILD;
@@ -46,11 +47,37 @@ export interface RunnerCloseObservation {
 	signal: string | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+interface ProcessTerminalRecord {
+	readonly attempt?: unknown;
+	readonly childIndex?: unknown;
+	readonly closeObservedAt?: unknown;
+	readonly expectedWriters?: unknown;
+	readonly exitCode?: unknown;
+	readonly instances?: unknown;
+	readonly kind?: unknown;
+	readonly observedAt?: unknown;
+	readonly processInstanceId?: unknown;
+	readonly resumeDisposition?: unknown;
+	readonly revivalLeaseReleaseAcknowledged?: unknown;
+	readonly revivalLeaseToken?: unknown;
+	readonly runId?: unknown;
+	readonly runnerProcessInstanceId?: unknown;
+	readonly sessionFile?: unknown;
+	readonly signal?: unknown;
+	readonly state?: unknown;
+	readonly terminationOrigin?: unknown;
+	readonly version?: unknown;
+	readonly writers?: unknown;
+}
+
+function isRecord<Value>(value: Value): value is Value & ProcessTerminalRecord {
 	return Boolean(value) && isRuntimeObject(value) && !Array.isArray(value);
 }
 
-function validProcessInstance(value: unknown, kind?: "runner" | "pi-writer"): value is ProcessInstanceExitV1 {
+function validProcessInstance<Value>(
+	value: Value,
+	kind?: "runner" | "pi-writer",
+): value is Value & ProcessInstanceExitV1 {
 	if (!isRecord(value)) return false;
 	if (
 		!isRuntimeString(value.processInstanceId) ||
@@ -77,7 +104,7 @@ function validProcessInstance(value: unknown, kind?: "runner" | "pi-writer"): va
 		: isRuntimeNumber(value.attempt) && Number.isInteger(value.attempt) && value.attempt >= 0;
 }
 
-function validInstance(value: unknown): value is ProcessInstanceExitV1 {
+function validInstance<Value>(value: Value): value is Value & ProcessInstanceExitV1 {
 	return validProcessInstance(value, "pi-writer");
 }
 
@@ -93,12 +120,16 @@ function errorMessage(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
 }
 
+function hasErrorCode<ErrorValue>(error: ErrorValue, code: string): boolean {
+	return isRuntimeObject(error) && error !== null && "code" in error && error.code === code;
+}
+
 export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalCandidate | undefined {
 	try {
 		assertPrivateDirectory(asyncDir);
-		const raw = JSON.parse(
+		const raw = parseJsonValue(
 			readBoundedOwnedFile(processTerminalCandidatePath(asyncDir), MAX_PROCESS_TERMINAL_CANDIDATE_BYTES),
-		) as unknown;
+		);
 		if (
 			!isRecord(raw) ||
 			raw.version !== 1 ||
@@ -147,20 +178,21 @@ export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalC
 			throw new Error("Invalid process-terminal candidate lease token.");
 		if (raw.revivalLeaseReleaseAcknowledged !== undefined && !isRuntimeBoolean(raw.revivalLeaseReleaseAcknowledged))
 			throw new Error("Invalid process-terminal lease release acknowledgement.");
-		return {
+		const candidate: ProcessTerminalCandidate = {
 			version: 1,
 			runId: raw.runId,
 			runnerProcessInstanceId: raw.runnerProcessInstanceId,
 			writers,
-			...(expectedWriters ? { expectedWriters } : {}),
-			...(raw.sessionFile ? { sessionFile: raw.sessionFile } : {}),
-			...(raw.revivalLeaseToken ? { revivalLeaseToken: raw.revivalLeaseToken } : {}),
-			...(raw.revivalLeaseReleaseAcknowledged !== undefined
-				? { revivalLeaseReleaseAcknowledged: raw.revivalLeaseReleaseAcknowledged }
-				: {}),
 		};
+		if (expectedWriters) candidate.expectedWriters = expectedWriters;
+		if (raw.sessionFile) candidate.sessionFile = raw.sessionFile;
+		if (raw.revivalLeaseToken) candidate.revivalLeaseToken = raw.revivalLeaseToken;
+		if (raw.revivalLeaseReleaseAcknowledged !== undefined) {
+			candidate.revivalLeaseReleaseAcknowledged = raw.revivalLeaseReleaseAcknowledged;
+		}
+		return candidate;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		if (hasErrorCode(error, "ENOENT")) return undefined;
 		return undefined;
 	}
 }
@@ -182,14 +214,15 @@ function unknownProof(
 	reason: ProcessTerminalReason,
 	diagnostic?: string,
 ): ProcessTerminalV1 {
-	return {
+	const proof: ProcessTerminalV1 = {
 		version: 1,
 		state: "unknown",
 		runId,
 		runnerProcessInstanceId,
 		reason,
-		...(diagnostic ? { diagnostic } : {}),
 	};
+	if (diagnostic) proof.diagnostic = diagnostic;
+	return proof;
 }
 
 export function processTerminalResumeDisposition(
@@ -207,19 +240,20 @@ function sessionProjection(
 ): CanonicalSessionTerminalV1 | undefined {
 	if (!candidate.sessionFile || lease.state !== "free") return undefined;
 	if (candidate.revivalLeaseToken && candidate.revivalLeaseReleaseAcknowledged !== true) return undefined;
-	return {
+	const projection: CanonicalSessionTerminalV1 = {
 		canonicalSessionId: canonicalSessionId(candidate.sessionFile),
 		leaseDisposition: candidate.revivalLeaseToken ? "released" : "not-held",
 		freeAtObservation: true,
-		...(candidate.revivalLeaseToken ? { canonicalSessionLeaseReleased: true } : {}),
 	};
+	if (candidate.revivalLeaseToken) projection.canonicalSessionLeaseReleased = true;
+	return projection;
 }
 
-function validateProof(
-	raw: unknown,
+function validateProof<Value>(
+	raw: Value,
 	asyncDir: string,
 	fallback?: { runId?: string; runnerProcessInstanceId?: string },
-): asserts raw is ProcessTerminalV1 {
+): asserts raw is Value & ProcessTerminalV1 {
 	if (
 		!isRecord(raw) ||
 		raw.version !== 1 ||
@@ -279,8 +313,8 @@ function validateProof(
 		throw new Error(`Invalid process-terminal resume disposition in '${asyncDir}'.`);
 }
 
-export function sanitizeProcessTerminal(
-	value: unknown,
+export function sanitizeProcessTerminal<Value>(
+	value: Value,
 	fallback: { runId?: string; runnerProcessInstanceId?: string },
 	label = "status",
 ): ProcessTerminalV1 | undefined {
@@ -304,13 +338,11 @@ export function readProcessTerminal(
 ): ProcessTerminalV1 | undefined {
 	try {
 		assertPrivateDirectory(asyncDir);
-		const raw = JSON.parse(
-			readBoundedOwnedFile(processTerminalPath(asyncDir), MAX_PROCESS_TERMINAL_PROOF_BYTES),
-		) as unknown;
+		const raw = parseJsonValue(readBoundedOwnedFile(processTerminalPath(asyncDir), MAX_PROCESS_TERMINAL_PROOF_BYTES));
 		validateProof(raw, asyncDir, fallback);
 		return raw;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		if (hasErrorCode(error, "ENOENT")) return undefined;
 		return unknownProof(
 			fallback?.runId ?? path.basename(asyncDir),
 			fallback?.runnerProcessInstanceId ?? "unknown",
@@ -380,8 +412,8 @@ function stepProcessTerminalProof(
 		runId: proof.runId,
 		childIndex,
 		runnerProcessInstanceId: proof.runnerProcessInstanceId,
-		...(resumeDispositionValue ? { resumeDisposition: resumeDispositionValue } : {}),
 	};
+	if (resumeDispositionValue) Object.assign(base, { resumeDisposition: resumeDispositionValue });
 	if (state === "observed") {
 		return {
 			...base,
@@ -403,7 +435,8 @@ function overlayStatus(asyncDir: string, proof: ProcessTerminalV1, candidate?: P
 		assertPrivateDirectory(asyncDir);
 		claim = tryAcquireStatusMutationClaim(asyncDir);
 		if (!claim) return;
-		const status = JSON.parse(readBoundedOwnedFile(statusPath, MAX_PROCESS_TERMINAL_STATUS_BYTES)) as AsyncStatus;
+		const status = readStatus(asyncDir);
+		if (!status) return;
 		if (status.steps && status.steps.length > MAX_PROCESS_TERMINAL_CHILDREN) return;
 		status.processTerminal = proof;
 		if (status.steps) {
@@ -472,9 +505,7 @@ export function finalizeProcessTerminal(
 			const status = (() => {
 				try {
 					assertPrivateDirectory(asyncDir);
-					return JSON.parse(
-						readBoundedOwnedFile(path.join(asyncDir, "status.json"), MAX_PROCESS_TERMINAL_STATUS_BYTES),
-					) as AsyncStatus;
+					return readStatus(asyncDir);
 				} catch {
 					return undefined;
 				}
@@ -520,7 +551,7 @@ export function finalizeProcessTerminal(
 			} else {
 				const runner: ProcessInstanceExitV1 = { kind: "runner", ...runnerClose };
 				const canonicalSession = session && sessionProjection(candidate, session);
-				proof = {
+				const observed: ProcessTerminalV1 = {
 					version: 1,
 					state: "observed",
 					runId,
@@ -531,8 +562,9 @@ export function finalizeProcessTerminal(
 						status?.state,
 						candidate.sessionFile ?? status?.sessionFile,
 					),
-					...(canonicalSession ? { canonicalSession } : {}),
 				};
+				if (canonicalSession) observed.canonicalSession = canonicalSession;
+				proof = observed;
 			}
 		}
 	} catch (error) {
