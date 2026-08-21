@@ -5,6 +5,7 @@ import {
 	type IntercomEventBus,
 	type NestedRunSummary,
 	type PublicNestedRunSummary,
+	type PublicNestedStepSummary,
 	SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT,
 	SUBAGENT_RESULT_INTERCOM_EVENT,
 	type SubagentResultIntercomChild,
@@ -94,87 +95,84 @@ function compactNestedRun(
 	budget.runs -= 1;
 	const steps = (run.steps ?? []).slice(0, Math.min(MAX_PUBLIC_STEPS_PER_RUN, budget.steps));
 	budget.steps -= steps.length;
-	return {
+	const path = run.path.slice(0, 4).map((part) => {
+		const projected: PublicNestedRunSummary["path"][number] = { runId: part.runId };
+		if (part.stepIndex !== undefined) projected.stepIndex = part.stepIndex;
+		if (part.agent) projected.agent = part.agent;
+		return projected;
+	});
+	const projected: PublicNestedRunSummary = {
 		id: run.id,
-		...(run.agentStatus ? { agentStatus: run.agentStatus } : {}),
 		parentRunId: run.parentRunId,
-		...(run.parentStepIndex !== undefined ? { parentStepIndex: run.parentStepIndex } : {}),
-		...(run.parentAgent ? { parentAgent: run.parentAgent } : {}),
 		depth: run.depth,
-		path: run.path.slice(0, 4).map((part) => ({
-			runId: part.runId,
-			...(part.stepIndex !== undefined ? { stepIndex: part.stepIndex } : {}),
-			...(part.agent ? { agent: part.agent } : {}),
-		})),
-		...(run.asyncDir ? { asyncDir: run.asyncDir } : {}),
-		...(run.sessionId ? { sessionId: run.sessionId } : {}),
-		...(run.sessionFile ? { sessionFile: run.sessionFile } : {}),
-		...(run.intercomTarget ? { intercomTarget: run.intercomTarget } : {}),
-		...(run.ownerIntercomTarget ? { ownerIntercomTarget: run.ownerIntercomTarget } : {}),
-		...(run.leafIntercomTarget ? { leafIntercomTarget: run.leafIntercomTarget } : {}),
-		...(run.parentRunOrigin ? { parentRunOrigin: run.parentRunOrigin } : {}),
-		...(run.ownerState ? { ownerState: run.ownerState } : {}),
-		...(run.mode ? { mode: run.mode } : {}),
+		path,
 		state: run.state,
-		...(run.agent ? { agent: run.agent } : {}),
-		...(run.agents?.length ? { agents: run.agents.slice(0, MAX_PUBLIC_STEPS_PER_RUN) } : {}),
-		...(run.currentStep !== undefined ? { currentStep: run.currentStep } : {}),
-		...(run.parallelGroups?.length ? { parallelGroups: run.parallelGroups.slice(0, MAX_PUBLIC_STEPS_PER_RUN) } : {}),
-		...(run.activityState ? { activityState: run.activityState } : {}),
-		...(run.lastActivityAt !== undefined ? { lastActivityAt: run.lastActivityAt } : {}),
-		...(run.currentTool ? { currentTool: run.currentTool } : {}),
-		...(run.currentToolStartedAt !== undefined ? { currentToolStartedAt: run.currentToolStartedAt } : {}),
-		...(run.currentPath ? { currentPath: run.currentPath } : {}),
-		...(run.turnCount !== undefined ? { turnCount: run.turnCount } : {}),
-		...(run.toolCount !== undefined ? { toolCount: run.toolCount } : {}),
-		...(run.totalTokens ? { totalTokens: run.totalTokens } : {}),
-		...(run.startedAt !== undefined ? { startedAt: run.startedAt } : {}),
-		...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),
-		...(run.lastUpdate !== undefined ? { lastUpdate: run.lastUpdate } : {}),
-		...(run.error ? { error: run.error } : {}),
-		...(steps.length
-			? {
-					steps: steps.map((step) => ({
-						agent: step.agent,
-						...(step.agentStatus ? { agentStatus: step.agentStatus } : {}),
-						...(step.task ? { task: step.task } : {}),
-						...(step.description ? { description: step.description } : {}),
-						status: step.status,
-						...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
-						...(step.transcriptPath ? { transcriptPath: step.transcriptPath } : {}),
-						...(step.transcriptError ? { transcriptError: step.transcriptError } : {}),
-						...(step.activityState ? { activityState: step.activityState } : {}),
-						...(step.lastActivityAt !== undefined ? { lastActivityAt: step.lastActivityAt } : {}),
-						...(step.currentTool ? { currentTool: step.currentTool } : {}),
-						...(step.currentToolStartedAt !== undefined
-							? { currentToolStartedAt: step.currentToolStartedAt }
-							: {}),
-						...(step.currentPath ? { currentPath: step.currentPath } : {}),
-						...(step.turnCount !== undefined ? { turnCount: step.turnCount } : {}),
-						...(step.toolCount !== undefined ? { toolCount: step.toolCount } : {}),
-						...(step.toolBudget ? { toolBudget: step.toolBudget } : {}),
-						...(step.toolBudgetBlocked ? { toolBudgetBlocked: true } : {}),
-						...(step.startedAt !== undefined ? { startedAt: step.startedAt } : {}),
-						...(step.endedAt !== undefined ? { endedAt: step.endedAt } : {}),
-						...(step.error ? { error: step.error } : {}),
-						...(depth < MAX_PUBLIC_NESTED_DEPTH && step.children?.length
-							? {
-									children: step.children
-										.map((child) => compactNestedRun(child, depth + 1, budget))
-										.filter((child): child is PublicNestedRunSummary => Boolean(child)),
-								}
-							: {}),
-					})),
-				}
-			: {}),
-		...(depth < MAX_PUBLIC_NESTED_DEPTH && run.children?.length
-			? {
-					children: run.children
-						.map((child) => compactNestedRun(child, depth + 1, budget))
-						.filter((child): child is PublicNestedRunSummary => Boolean(child)),
-				}
-			: {}),
 	};
+	if (run.agentStatus) projected.agentStatus = run.agentStatus;
+	if (run.parentStepIndex !== undefined) projected.parentStepIndex = run.parentStepIndex;
+	if (run.parentAgent) projected.parentAgent = run.parentAgent;
+	if (run.asyncDir) projected.asyncDir = run.asyncDir;
+	if (run.sessionId) projected.sessionId = run.sessionId;
+	if (run.sessionFile) projected.sessionFile = run.sessionFile;
+	if (run.intercomTarget) projected.intercomTarget = run.intercomTarget;
+	if (run.ownerIntercomTarget) projected.ownerIntercomTarget = run.ownerIntercomTarget;
+	if (run.leafIntercomTarget) projected.leafIntercomTarget = run.leafIntercomTarget;
+	if (run.parentRunOrigin) projected.parentRunOrigin = run.parentRunOrigin;
+	if (run.ownerState) projected.ownerState = run.ownerState;
+	if (run.mode) projected.mode = run.mode;
+	if (run.agent) projected.agent = run.agent;
+	if (run.agents?.length) projected.agents = run.agents.slice(0, MAX_PUBLIC_STEPS_PER_RUN);
+	if (run.currentStep !== undefined) projected.currentStep = run.currentStep;
+	if (run.parallelGroups?.length) {
+		projected.parallelGroups = run.parallelGroups.slice(0, MAX_PUBLIC_STEPS_PER_RUN);
+	}
+	if (run.activityState) projected.activityState = run.activityState;
+	if (run.lastActivityAt !== undefined) projected.lastActivityAt = run.lastActivityAt;
+	if (run.currentTool) projected.currentTool = run.currentTool;
+	if (run.currentToolStartedAt !== undefined) projected.currentToolStartedAt = run.currentToolStartedAt;
+	if (run.currentPath) projected.currentPath = run.currentPath;
+	if (run.turnCount !== undefined) projected.turnCount = run.turnCount;
+	if (run.toolCount !== undefined) projected.toolCount = run.toolCount;
+	if (run.totalTokens) projected.totalTokens = run.totalTokens;
+	if (run.startedAt !== undefined) projected.startedAt = run.startedAt;
+	if (run.endedAt !== undefined) projected.endedAt = run.endedAt;
+	if (run.lastUpdate !== undefined) projected.lastUpdate = run.lastUpdate;
+	if (run.error) projected.error = run.error;
+	if (steps.length) {
+		projected.steps = steps.map((step) => {
+			const projectedStep: PublicNestedStepSummary = { agent: step.agent, status: step.status };
+			if (step.agentStatus) projectedStep.agentStatus = step.agentStatus;
+			if (step.task) projectedStep.task = step.task;
+			if (step.description) projectedStep.description = step.description;
+			if (step.sessionFile) projectedStep.sessionFile = step.sessionFile;
+			if (step.transcriptPath) projectedStep.transcriptPath = step.transcriptPath;
+			if (step.transcriptError) projectedStep.transcriptError = step.transcriptError;
+			if (step.activityState) projectedStep.activityState = step.activityState;
+			if (step.lastActivityAt !== undefined) projectedStep.lastActivityAt = step.lastActivityAt;
+			if (step.currentTool) projectedStep.currentTool = step.currentTool;
+			if (step.currentToolStartedAt !== undefined) projectedStep.currentToolStartedAt = step.currentToolStartedAt;
+			if (step.currentPath) projectedStep.currentPath = step.currentPath;
+			if (step.turnCount !== undefined) projectedStep.turnCount = step.turnCount;
+			if (step.toolCount !== undefined) projectedStep.toolCount = step.toolCount;
+			if (step.toolBudget) projectedStep.toolBudget = step.toolBudget;
+			if (step.toolBudgetBlocked) projectedStep.toolBudgetBlocked = true;
+			if (step.startedAt !== undefined) projectedStep.startedAt = step.startedAt;
+			if (step.endedAt !== undefined) projectedStep.endedAt = step.endedAt;
+			if (step.error) projectedStep.error = step.error;
+			if (depth < MAX_PUBLIC_NESTED_DEPTH && step.children?.length) {
+				projectedStep.children = step.children
+					.map((child) => compactNestedRun(child, depth + 1, budget))
+					.filter((child): child is PublicNestedRunSummary => Boolean(child));
+			}
+			return projectedStep;
+		});
+	}
+	if (depth < MAX_PUBLIC_NESTED_DEPTH && run.children?.length) {
+		projected.children = run.children
+			.map((child) => compactNestedRun(child, depth + 1, budget))
+			.filter((child): child is PublicNestedRunSummary => Boolean(child));
+	}
+	return projected;
 }
 
 export function compactNestedResultChildren(
@@ -267,14 +265,14 @@ export function buildSubagentResultIntercomPayload(
 		summary,
 		source: input.source,
 		children,
-		...(input.asyncId ? { asyncId: input.asyncId } : {}),
-		...(input.asyncDir ? { asyncDir: input.asyncDir } : {}),
-		...(firstChild?.agent ? { agent: firstChild.agent } : {}),
-		...(firstChild?.index !== undefined ? { index: firstChild.index } : {}),
-		...(firstChild?.artifactPath ? { artifactPath: firstChild.artifactPath } : {}),
-		...(firstChild?.sessionPath ? { sessionPath: firstChild.sessionPath } : {}),
 		message: "",
 	};
+	if (input.asyncId) payload.asyncId = input.asyncId;
+	if (input.asyncDir) payload.asyncDir = input.asyncDir;
+	if (firstChild?.agent) payload.agent = firstChild.agent;
+	if (firstChild?.index !== undefined) payload.index = firstChild.index;
+	if (firstChild?.artifactPath) payload.artifactPath = firstChild.artifactPath;
+	if (firstChild?.sessionPath) payload.sessionPath = firstChild.sessionPath;
 	payload.message = formatSubagentResultIntercomMessage(payload);
 	return payload;
 }
@@ -313,9 +311,9 @@ export async function deliverSubagentIntercomMessageEvent(
 		};
 		unsubscribe = events.on(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT, (data) => {
 			if (!data || !isRuntimeObject(data)) return;
-			const delivery = data as { requestId?: unknown; delivered?: unknown };
-			if (delivery.requestId !== requestId) return;
-			finish(delivery.delivered === true);
+			const deliveredRequestId = "requestId" in data ? data.requestId : undefined;
+			if (deliveredRequestId !== requestId) return;
+			finish("delivered" in data && data.delivered === true);
 		});
 		timer = setTimeout(() => finish(false), timeoutMs);
 		try {
