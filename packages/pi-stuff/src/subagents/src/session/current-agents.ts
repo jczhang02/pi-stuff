@@ -115,6 +115,63 @@ type CurrentAgentsState = Pick<
 type AsyncJob = SubagentState["asyncJobs"] extends Map<string, infer Job> ? Job : never;
 type ForegroundControl = SubagentState["foregroundControls"] extends Map<string, infer Control> ? Control : never;
 type ForegroundRun = NonNullable<SubagentState["foregroundRuns"]> extends Map<string, infer Run> ? Run : never;
+type ForegroundResumeChild = ForegroundRun["children"][number];
+type AgentProjectionValue = boolean | null | number | object | string | undefined;
+
+interface AgentProjectionRecord {
+	readonly activityState?: AgentProjectionValue;
+	readonly agent?: AgentProjectionValue;
+	readonly agentStatus?: AgentProjectionValue;
+	readonly artifactPaths?: AgentProjectionValue;
+	readonly attempt?: AgentProjectionValue;
+	readonly attentionKind?: AgentProjectionValue;
+	readonly cancelledBy?: AgentProjectionValue;
+	readonly children?: AgentProjectionValue;
+	readonly crashed?: AgentProjectionValue;
+	readonly currentActivityState?: AgentProjectionValue;
+	readonly currentTool?: AgentProjectionValue;
+	readonly delegatedTask?: AgentProjectionValue;
+	readonly depth?: AgentProjectionValue;
+	readonly description?: AgentProjectionValue;
+	readonly endedAt?: AgentProjectionValue;
+	readonly error?: AgentProjectionValue;
+	readonly execution?: AgentProjectionValue;
+	readonly finalOutput?: AgentProjectionValue;
+	readonly id?: AgentProjectionValue;
+	readonly instances?: AgentProjectionValue;
+	readonly interrupted?: AgentProjectionValue;
+	readonly kind?: AgentProjectionValue;
+	readonly label?: AgentProjectionValue;
+	readonly legacyFinalReportComplete?: AgentProjectionValue;
+	readonly output?: AgentProjectionValue;
+	readonly parentRunId?: AgentProjectionValue;
+	readonly parentStepIndex?: AgentProjectionValue;
+	readonly phase?: AgentProjectionValue;
+	readonly processTerminal?: AgentProjectionValue;
+	readonly reason?: AgentProjectionValue;
+	readonly recentOutput?: AgentProjectionValue;
+	readonly resuming?: AgentProjectionValue;
+	readonly savedOutputPath?: AgentProjectionValue;
+	readonly sessionFile?: AgentProjectionValue;
+	readonly startedAt?: AgentProjectionValue;
+	readonly state?: AgentProjectionValue;
+	readonly status?: AgentProjectionValue;
+	readonly steps?: AgentProjectionValue;
+	readonly stopped?: AgentProjectionValue;
+	readonly stoppedBy?: AgentProjectionValue;
+	readonly stopping?: AgentProjectionValue;
+	readonly structuredOutputPath?: AgentProjectionValue;
+	readonly summary?: AgentProjectionValue;
+	readonly task?: AgentProjectionValue;
+	readonly terminationOrigin?: AgentProjectionValue;
+	readonly timedOut?: AgentProjectionValue;
+	readonly toolBudgetBlocked?: AgentProjectionValue;
+	readonly transcriptPath?: AgentProjectionValue;
+	readonly turnBudgetExceeded?: AgentProjectionValue;
+	readonly uiStatus?: AgentProjectionValue;
+	readonly waitReason?: AgentProjectionValue;
+	readonly waitingFor?: AgentProjectionValue;
+}
 
 interface RowDraft {
 	key: string;
@@ -162,26 +219,28 @@ const MAX_TERMINAL_ERROR_CHARS = 1_000;
 const MAX_TASK_CHARS = 4_000;
 const MAX_DYNAMIC_SOURCE_CODE_UNITS = 4_096;
 
-function asRecord(value: unknown): Record<string, unknown> {
-	return isRuntimeObject(value) && value !== null ? (value as Record<string, unknown>) : {};
+function asRecord<Value>(value: Value): AgentProjectionRecord {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
+	// SAFETY: projection consumers read only the declared raw fields and validate them before display.
+	return value as Value & AgentProjectionRecord;
 }
 
-function finiteNumber(value: unknown): number | null {
+function finiteNumber<Value>(value: Value): number | null {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : null;
 }
 
-function optionalString(value: unknown): string | null {
+function optionalString<Value>(value: Value): string | null {
 	if (!isRuntimeString(value)) return null;
 	const bounded = value.slice(0, MAX_DYNAMIC_SOURCE_CODE_UNITS);
 	return bounded.trim() ? bounded : null;
 }
 
-function locatorString(value: unknown): string | null {
+function locatorString<Value>(value: Value): string | null {
 	if (!isRuntimeString(value) || !value.trim()) return null;
 	return value.length <= MAX_DYNAMIC_SOURCE_CODE_UNITS ? value : null;
 }
 
-function firstLocator(...values: unknown[]): string | null {
+function firstLocator(...values: AgentProjectionValue[]): string | null {
 	for (const value of values) {
 		const locator = locatorString(value);
 		if (locator) return locator;
@@ -189,7 +248,7 @@ function firstLocator(...values: unknown[]): string | null {
 	return null;
 }
 
-function boundedText(value: unknown, limit: number): string | null {
+function boundedText<Value>(value: Value, limit: number): string | null {
 	const text = boundTerminalLine(value, limit);
 	if (!text) return null;
 	return text;
@@ -199,7 +258,7 @@ function boundedTask(value: string | null): string {
 	return value ? boundTerminalText(value, MAX_TASK_CHARS).trim() : "";
 }
 
-function terminalError(status: AgentStatus, ...values: unknown[]): string | null {
+function terminalError(status: AgentStatus, ...values: AgentProjectionValue[]): string | null {
 	if (status !== "failed" && status !== "crashed") return null;
 	for (const value of values) {
 		const record = asRecord(value);
@@ -211,7 +270,7 @@ function terminalError(status: AgentStatus, ...values: unknown[]): string | null
 	return null;
 }
 
-function firstString(...values: unknown[]): string | null {
+function firstString(...values: AgentProjectionValue[]): string | null {
 	for (const value of values) {
 		const text = optionalString(value);
 		if (text) return text;
@@ -219,7 +278,7 @@ function firstString(...values: unknown[]): string | null {
 	return null;
 }
 
-function taskForDisplay(...values: unknown[]): string | null {
+function taskForDisplay(...values: AgentProjectionValue[]): string | null {
 	for (const value of values) {
 		const text = optionalString(value);
 		if (!text) continue;
@@ -234,11 +293,11 @@ function rowKey(runId: string, childIndex: number): string {
 	return `${runId}:${childIndex}`;
 }
 
-function sourceStatus(value: unknown): string {
+function sourceStatus<Value>(value: Value): string {
 	return isRuntimeString(value) ? value : "running";
 }
 
-function isSupervisorWait(record: Record<string, unknown>): boolean {
+function isSupervisorWait(record: AgentProjectionRecord): boolean {
 	const waitingFor = firstString(record["waitingFor"], record["attentionKind"], record["waitReason"])?.toLowerCase();
 	const currentTool = optionalString(record["currentTool"])?.toLowerCase();
 	return (
@@ -249,13 +308,18 @@ function isSupervisorWait(record: Record<string, unknown>): boolean {
 	);
 }
 
-function processHasExternalSignal(record: Record<string, unknown>): boolean {
+function processHasExternalSignal(record: AgentProjectionRecord): boolean {
 	const terminal = asRecord(record["processTerminal"]);
 	const writers = (Array.isArray(terminal["instances"]) ? terminal["instances"] : [])
 		.map(asRecord)
-		.filter((instance) => instance["kind"] === "pi-writer" && Number.isInteger(instance["attempt"]));
+		.filter(
+			(instance) =>
+				instance["kind"] === "pi-writer" &&
+				isRuntimeNumber(instance["attempt"]) &&
+				Number.isInteger(instance["attempt"]),
+		);
 	const finalAttempt = writers.reduce(
-		(latest, instance) => Math.max(latest, instance["attempt"] as number),
+		(latest, instance) => Math.max(latest, isRuntimeNumber(instance["attempt"]) ? instance["attempt"] : -1),
 		Number.NEGATIVE_INFINITY,
 	);
 	return writers.some(
@@ -263,11 +327,11 @@ function processHasExternalSignal(record: Record<string, unknown>): boolean {
 	);
 }
 
-function legacyFinalDrainHasCompleteReport(record: Record<string, unknown>): boolean {
+function legacyFinalDrainHasCompleteReport(record: AgentProjectionRecord): boolean {
 	return record["legacyFinalReportComplete"] === true;
 }
 
-function processTerminalIsStaleRepair(record: Record<string, unknown>): boolean {
+function processTerminalIsStaleRepair(record: AgentProjectionRecord): boolean {
 	const terminal = asRecord(record["processTerminal"]);
 	return terminal["state"] === "unknown" && terminal["reason"] === "stale-repair";
 }
@@ -276,10 +340,14 @@ function isLegacyRunnerDisappearance(error: string): boolean {
 	return /async runner process .* exited or disappeared before writing a result/i.test(error);
 }
 
-function deriveStatus(value: unknown, fallback: string): AgentStatus {
+function isAgentStatus<Value>(value: Value): value is Value & AgentStatus {
+	return isRuntimeString(value) && value in STATUS_ORDER;
+}
+
+function deriveStatus<Value>(value: Value, fallback: string): AgentStatus {
 	const record = asRecord(value);
 	const explicit = firstString(record["agentStatus"], record["uiStatus"]);
-	if (explicit && explicit in STATUS_ORDER) return explicit as AgentStatus;
+	if (isAgentStatus(explicit)) return explicit;
 	if (record["stopping"] === true || fallback === "stopping") return "stopping";
 	if (record["resuming"] === true || fallback === "resuming") return "resuming";
 
@@ -322,7 +390,7 @@ function deriveStatus(value: unknown, fallback: string): AgentStatus {
 	}
 }
 
-function countNestedRuns(value: unknown): number {
+function countNestedRuns<Value>(value: Value): number {
 	if (!Array.isArray(value)) return 0;
 	let count = 0;
 	for (const nested of value) {
@@ -336,18 +404,18 @@ function countNestedRuns(value: unknown): number {
 	return count;
 }
 
-function nestedForChild(value: unknown, childIndex: number, directCount: number): unknown[] {
+function nestedForChild<Value>(value: Value, childIndex: number, directCount: number): AgentProjectionValue[] {
 	if (!Array.isArray(value)) return [];
 	const exact = value.filter((nested) => asRecord(nested)["parentStepIndex"] === childIndex);
 	if (exact.length > 0) return exact;
 	return directCount === 1 ? value : [];
 }
 
-function projectNestedAgents(value: unknown): AgentNestedDetail[] {
+function projectNestedAgents<Value>(value: Value): AgentNestedDetail[] {
 	if (!Array.isArray(value)) return [];
 	const details: AgentNestedDetail[] = [];
 	const seenRuns = new Set<string>();
-	const walk = (runs: unknown[], inheritedDepth: number): void => {
+	const walk = (runs: AgentProjectionValue[], inheritedDepth: number): void => {
 		for (const candidate of runs) {
 			if (details.length >= 200) return;
 			const run = asRecord(candidate);
@@ -443,7 +511,7 @@ function projectNestedAgents(value: unknown): AgentNestedDetail[] {
 	return details;
 }
 
-function boundedRecentOutput(value: unknown): string | null {
+function boundedRecentOutput<Value>(value: Value): string | null {
 	if (!Array.isArray(value)) return null;
 	const lines: string[] = [];
 	let usedWidth = 0;
@@ -460,7 +528,7 @@ function boundedRecentOutput(value: unknown): string | null {
 	return lines.join("\n") || null;
 }
 
-function partialResult(status: AgentStatus, ...values: unknown[]): string | null {
+function partialResult(status: AgentStatus, ...values: AgentProjectionValue[]): string | null {
 	for (const value of values) {
 		const record = asRecord(value);
 		const candidate = record["finalOutput"] ?? record["summary"] ?? record["output"];
@@ -503,11 +571,10 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 			TERMINAL_SOURCE_STATUSES.has(jobStatus) && !TERMINAL_SOURCE_STATUSES.has(rawStepStatus)
 				? jobStatus
 				: rawStepStatus;
-		const statusRecord = {
-			...(hasPersistedSteps && directCount > 1 ? {} : asRecord(job)),
-			...stepRecord,
-			status: effectiveStatus,
-		};
+		let statusRecord = { ...stepRecord, status: effectiveStatus };
+		if (!hasPersistedSteps || directCount <= 1) {
+			statusRecord = { ...asRecord(job), ...stepRecord, status: effectiveStatus };
+		}
 		const status = deriveStatus(statusRecord, effectiveStatus);
 		const nested =
 			Array.isArray(stepRecord["children"]) && stepRecord["children"].length > 0
@@ -540,13 +607,13 @@ function projectAsyncJob(job: AsyncJob, sessionId: string, terminalOnly: boolean
 function rememberedForegroundChildren(
 	state: CurrentAgentsState,
 	sessionId: string,
-): Map<string, Record<string, unknown>> {
-	const remembered = new Map<string, Record<string, unknown>>();
+): Map<string, ForegroundResumeChild> {
+	const remembered = new Map<string, ForegroundResumeChild>();
 	for (const run of state.foregroundRuns?.values() ?? []) {
 		if (run.sessionId !== sessionId) continue;
 		for (const child of run.children) {
 			if (!child) continue;
-			remembered.set(rowKey(run.runId, child.index), asRecord(child));
+			remembered.set(rowKey(run.runId, child.index), child);
 		}
 	}
 	return remembered;
@@ -555,7 +622,7 @@ function rememberedForegroundChildren(
 function projectForegroundControl(
 	control: ForegroundControl,
 	sessionId: string,
-	remembered: ReadonlyMap<string, Record<string, unknown>>,
+	remembered: ReadonlyMap<string, ForegroundResumeChild>,
 ): RowDraft[] {
 	if (control.sessionId !== sessionId) return [];
 	const children = control.activeChildren?.size
@@ -582,7 +649,7 @@ function projectForegroundControl(
 		const childRecord = asRecord(child);
 		const persistedTask = firstString(childRecord["task"], control.task);
 		const taskSource = persistedTask ?? firstString(childRecord["description"], control.description) ?? "";
-		const rememberedChild = remembered.get(rowKey(control.runId, childIndex)) ?? {};
+		const rememberedChild = asRecord(remembered.get(rowKey(control.runId, childIndex)));
 		const statusRecord = {
 			...asRecord(control),
 			...childRecord,
