@@ -1243,7 +1243,7 @@ export function createNativeSupervisorChannel(
 		}
 	};
 	const releaseIdleDeliveryClaims = (): void => {
-		for (const requestId of [...deliveryClaims.keys()]) {
+		for (const requestId of Array.from(deliveryClaims.keys())) {
 			if (!deliveryDispatches.has(requestId)) releaseDeliveryClaim(requestId);
 		}
 	};

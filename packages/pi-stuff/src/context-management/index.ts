@@ -1787,13 +1787,12 @@ class ContextCapabilityRuntime implements ContextCapability {
 	}
 
 	private magicPiAdapter(plan: MagicRegistrationPlan): ExtensionAPI {
-		const runtime = this;
 		const suppressedMethods = new Set<PropertyKey>(["registerFlag", "registerMessageRenderer", "registerShortcut"]);
 		return new Proxy(this.pi, {
-			get(target, property, receiver) {
+			get: (target, property, receiver) => {
 				if (property === "appendEntry") {
 					return (customType: string, data: unknown): void => {
-						if (customType === "ctx-status") runtime.captureMagicCommandStatus(data);
+						if (customType === "ctx-status") this.captureMagicCommandStatus(data);
 						else target.appendEntry(customType, data);
 					};
 				}
@@ -1816,7 +1815,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 				}
 				if (suppressedMethods.has(property)) return () => undefined;
 				const value = readHostProxyProperty(target, property, receiver);
-				return Guard.IsFunction(value) ? value.bind(runtime.pi) : value;
+				return Guard.IsFunction(value) ? value.bind(this.pi) : value;
 			},
 		});
 	}

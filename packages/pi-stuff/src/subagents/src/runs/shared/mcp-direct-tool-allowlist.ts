@@ -74,7 +74,7 @@ interface MetadataCache {
 	servers: Record<string, ServerCacheEntry>;
 }
 
-function cacheRecord(value: object): Record<string, unknown> {
+function cacheRecord<Value extends object>(value: Value): Record<string, unknown> {
 	return Object.fromEntries(Object.entries(value));
 }
 

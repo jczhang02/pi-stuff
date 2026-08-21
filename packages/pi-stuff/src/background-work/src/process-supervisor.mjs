@@ -34,16 +34,6 @@ function processStartIdentity(pid) {
 	return started ? `${process.platform}:${started}` : undefined;
 }
 
-function signalGroup(pid, signal) {
-	if (!Number.isSafeInteger(pid) || pid <= 0) return;
-	try {
-		process.kill(process.platform === "win32" ? pid : -pid, signal);
-	} catch {
-		// Never fall back from a vanished Unix PGID to +pid: the leader may
-		// already have exited and that number may identify an unrelated process.
-	}
-}
-
 function processExists(pid) {
 	try {
 		process.kill(pid, 0);

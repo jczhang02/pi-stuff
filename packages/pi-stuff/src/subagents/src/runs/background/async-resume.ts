@@ -459,7 +459,7 @@ function parseRecoveryJson(descriptorPath: string): unknown {
 	}
 }
 
-function recoveryRecord(value: object): Record<string, unknown> {
+function recoveryRecord<Value extends object>(value: Value): Record<string, unknown> {
 	return Object.fromEntries(Object.entries(value));
 }
 

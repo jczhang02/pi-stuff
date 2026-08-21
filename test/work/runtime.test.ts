@@ -149,7 +149,7 @@ function attributedRuntime(
 	const events = {
 		emit(event: string, data: unknown) {
 			if (event.includes("statusline-git-refresh-after-user-work-request")) refreshRequests += 1;
-			for (const listener of [...(listeners.get(event) ?? [])]) listener(data);
+			for (const listener of Array.from(listeners.get(event) ?? [])) listener(data);
 		},
 		on(event: string, listener: (data: unknown) => void) {
 			let registered = listeners.get(event);

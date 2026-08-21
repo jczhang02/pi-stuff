@@ -122,12 +122,12 @@ export class AgentRoster {
 	/** Create the Fleetview tail rendered after the shared Statusline. */
 	createFooterTail(tui: TUI, theme: Theme): FooterTailComponent & { dispose(): void } {
 		const attachment = { tui };
-		const roster = this;
+		const navigationActive = () => this.navigationActive;
 		this.footerAttachment = attachment;
 		this.syncRegistration();
 		return {
 			get replacesBaseRow2() {
-				return roster.navigationActive;
+				return navigationActive();
 			},
 			dispose: () => {
 				if (this.footerAttachment === attachment) this.footerAttachment = undefined;

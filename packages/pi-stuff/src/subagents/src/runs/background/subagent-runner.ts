@@ -741,7 +741,7 @@ export async function runBackgroundWork(
 	if (tasks.length > MAX_BACKGROUND_TASKS) {
 		throw new RangeError(`Background runner supports at most ${MAX_BACKGROUND_TASKS} tasks per launch.`);
 	}
-	const results: Array<BackgroundTaskResult | undefined> = new Array(tasks.length);
+	const results: Array<BackgroundTaskResult | undefined> = [];
 	const stopMessage = options.stoppedMessage ?? "Agent stopped before it started.";
 	const executeTask = async (task: RunnerAgentTask, index: number): Promise<BackgroundTaskResult> => {
 		if (options.signal?.aborted) return stoppedResult(task, stopMessage);

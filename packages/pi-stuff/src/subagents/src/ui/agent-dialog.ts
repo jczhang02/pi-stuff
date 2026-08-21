@@ -868,7 +868,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 		this.lastDetailMaxOffset = maxOffset;
 		this.lastDetailViewportRows = Math.max(1, viewport);
 		this.scrollOffset = this.followActivity && live ? maxOffset : Math.min(maxOffset, Math.max(0, this.scrollOffset));
-		const visible = [...content.slice(this.scrollOffset, this.scrollOffset + viewport)];
+		const visible = content.slice(this.scrollOffset, this.scrollOffset + viewport);
 		if (this.scrollOffset > 0 && visible.length > 0) {
 			visible[0] = `${GUTTER}${this.context.theme.fg("dim", `… ${this.scrollOffset} earlier lines`)}`;
 		}

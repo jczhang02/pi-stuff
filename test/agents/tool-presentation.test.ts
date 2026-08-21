@@ -86,7 +86,7 @@ function lifecycleHandlers<Handler extends (...args: never[]) => unknown>(
 ): ExtensionAPI["on"] {
 	return new Proxy(createExtensionApi().on, {
 		apply(_target, _thisArg, [event, handler]) {
-			if (typeof event !== "string" || typeof handler !== "function") return undefined;
+			if (!isRuntimeString(event) || !isRuntimeFunction(handler)) return undefined;
 			// SAFETY: Tests invoke each captured callback only with the matching lifecycle payload used at registration.
 			const captured = handler as Handler;
 			handlers.set(event, [...(handlers.get(event) ?? []), captured]);
@@ -98,7 +98,7 @@ function lifecycleHandlers<Handler extends (...args: never[]) => unknown>(
 function lifecycleHandler<Event>(handlers: Map<string, (event: Event) => unknown>): ExtensionAPI["on"] {
 	return new Proxy(createExtensionApi().on, {
 		apply(_target, _thisArg, [event, handler]) {
-			if (typeof event !== "string" || typeof handler !== "function") return undefined;
+			if (!isRuntimeString(event) || !isRuntimeFunction(handler)) return undefined;
 			// SAFETY: Tests invoke each captured callback only with the matching lifecycle payload used at registration.
 			handlers.set(event, handler as (event: Event) => unknown);
 			return undefined;

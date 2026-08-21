@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isRuntimeString } from "../shared/runtime-type.js";
 import { getHostSharedResource } from "./host-resource.js";
@@ -36,10 +37,6 @@ const MAX_RECORDS = 100;
 const MAX_PENDING_REPORTS = 32;
 const MAX_SUMMARY_LENGTH = 512;
 const MAX_DETAIL_LENGTH = 8_192;
-// biome-ignore lint/suspicious/noControlCharactersInRegex: terminal escape sequences are the hostile input this boundary removes.
-const ANSI_SEQUENCE = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001b\\))/gu;
-// biome-ignore lint/suspicious/noControlCharactersInRegex: C0 and DEL controls are the hostile input this boundary removes.
-const CONTROL_CHARACTER = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu;
 const DIAGNOSTIC_REGISTRY = Symbol.for("@jczhang02/pi-stuff/diagnostics/v1");
 const DIAGNOSTIC_DISCOVERY_EVENT = "@jczhang02/pi-stuff/diagnostics-discovery/v1";
 const PROCESS_STATE = Symbol.for("@jczhang02/pi-stuff/diagnostic-process-state/v1");
@@ -92,12 +89,18 @@ function redactSensitiveText(value: string): string {
 }
 
 function withoutAnsi(value: string): string {
-	return value.replace(ANSI_SEQUENCE, "");
+	return stripVTControlCharacters(value);
+}
+
+function withoutControlCharacters(value: string): string {
+	return Array.from(value, (character) => {
+		const code = character.charCodeAt(0);
+		return code <= 8 || code === 11 || code === 12 || (code >= 14 && code <= 31) || code === 127 ? "" : character;
+	}).join("");
 }
 
 export function sanitizeDiagnosticLine(value: string): string {
-	return redactSensitiveText(withoutAnsi(value))
-		.replace(CONTROL_CHARACTER, "")
+	return withoutControlCharacters(redactSensitiveText(withoutAnsi(value)))
 		.replace(/[\r\n\t]+/gu, " ")
 		.replace(/\s+/gu, " ")
 		.trim();
@@ -234,7 +237,7 @@ export class DiagnosticChannel {
 	}
 
 	private emit(): void {
-		for (const listener of [...this.listeners]) {
+		for (const listener of Array.from(this.listeners)) {
 			try {
 				listener();
 			} catch {

@@ -29,7 +29,7 @@ class EventBusHarness {
 	view(): ExtensionAPI["events"] {
 		return {
 			emit: (event, data) => {
-				for (const listener of [...(this.listeners.get(event) ?? [])]) listener(data);
+				for (const listener of Array.from(this.listeners.get(event) ?? [])) listener(data);
 			},
 			on: (event, listener) => {
 				const listeners = this.listeners.get(event) ?? new Set();

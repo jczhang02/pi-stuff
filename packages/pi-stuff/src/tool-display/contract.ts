@@ -1063,8 +1063,8 @@ export class ToolUiRuntime {
 	}
 
 	suspend(): void {
-		for (const toolCallId of [...this.timerStates.keys()]) this.stopTimer(toolCallId);
-		for (const leaderId of [...this.groupPulses.keys()]) this.stopGroupPulse(leaderId);
+		for (const toolCallId of Array.from(this.timerStates.keys())) this.stopTimer(toolCallId);
+		for (const leaderId of Array.from(this.groupPulses.keys())) this.stopGroupPulse(leaderId);
 		this.invalidationGeneration += 1;
 		this.invalidationScheduled = false;
 		this.pendingInvalidations.clear();
@@ -1432,10 +1432,10 @@ export class ToolUiRuntime {
 		for (const [toolCallId, binding] of this.bindings) {
 			if (!this.membership.has(toolCallId)) this.applyBinding(binding, binding.baseModel, binding.baseVisible);
 		}
-		for (const key of [...this.groupHints.keys()]) {
+		for (const key of Array.from(this.groupHints.keys())) {
 			if (!this.groups.has(key)) this.groupHints.delete(key);
 		}
-		for (const leaderId of [...this.groupPulses.keys()]) {
+		for (const leaderId of Array.from(this.groupPulses.keys())) {
 			if (!this.groups.has(leaderId)) this.stopGroupPulse(leaderId);
 		}
 	}
@@ -1759,7 +1759,7 @@ export class ToolUiRuntime {
 				? terminalStateFromResult(member, this.errorPolicies.get(member.name))
 				: (binding?.baseModel.state ?? "running"));
 		const metadata: PresentedToolMetadata = {
-			...(binding?.metadata ?? {}),
+			...binding?.metadata,
 			args: binding?.metadata.args ?? member.args,
 			name: member.name,
 			...(member.result ? { result: member.result } : {}),

@@ -39,19 +39,17 @@ function hostApis(
 
 test("Suite Agent message preparation crosses Pi event facades and awaits thenables", async () => {
 	const order: string[] = [];
-	const thenable: PromiseLike<void> = {
-		// biome-ignore lint/suspicious/noThenProperty: this regression intentionally exercises a non-Promise thenable.
-		then<TResult1 = void, TResult2 = never>(
-			onfulfilled?: ((value: void) => PromiseLike<TResult1> | TResult1) | null,
-			_onrejected?: ((reason: unknown) => PromiseLike<TResult2> | TResult2) | null,
-		): PromiseLike<TResult1 | TResult2> {
-			return Promise.resolve()
-				.then(() => {
-					order.push("accepted");
-				})
-				.then(onfulfilled, _onrejected);
-		},
-	};
+	const then: PromiseLike<void>["then"] = (onfulfilled, onrejected) =>
+		Promise.resolve()
+			.then(() => {
+				order.push("accepted");
+			})
+			.then(onfulfilled, onrejected);
+	// SAFETY: the proxy exposes the bound Promise-compatible method for `then` and no conflicting properties.
+	const thenable = new Proxy(
+		{},
+		{ get: (_target, property): PromiseLike<void>["then"] | undefined => (property === "then" ? then : undefined) },
+	) as PromiseLike<void>;
 	const [owner, sender] = hostApis(() => {
 		order.push("send");
 		return thenable;

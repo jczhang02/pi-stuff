@@ -131,6 +131,6 @@ export default async function piStuffWork(
 		const active = runtime;
 		runtime = undefined;
 		if (active) void releaseRuntime(active);
-		await Promise.allSettled([...shutdowns]);
+		await Promise.allSettled(shutdowns);
 	});
 }

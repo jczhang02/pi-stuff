@@ -59,7 +59,7 @@ class ManualTimerScheduler implements ToolUiTimerScheduler {
 	}
 
 	tick(): void {
-		for (const callback of [...this.callbacks.values()]) callback();
+		for (const callback of Array.from(this.callbacks.values())) callback();
 	}
 }
 
@@ -72,7 +72,7 @@ class EventBusHarness implements EventBusLike {
 	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
 
 	emit(event: string, data: unknown): void {
-		for (const listener of [...(this.listeners.get(event) ?? [])]) listener(data);
+		for (const listener of Array.from(this.listeners.get(event) ?? [])) listener(data);
 	}
 
 	on(event: string, listener: (data: unknown) => void): () => void {

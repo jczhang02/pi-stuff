@@ -1511,7 +1511,7 @@ export class BackgroundWorkRuntime {
 	}
 
 	private emit(): void {
-		for (const listener of [...this.listeners]) {
+		for (const listener of Array.from(this.listeners)) {
 			try {
 				listener();
 			} catch {

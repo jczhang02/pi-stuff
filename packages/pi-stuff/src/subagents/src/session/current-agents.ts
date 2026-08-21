@@ -882,7 +882,7 @@ export class CurrentAgents {
 		this.semanticKey = nextSemanticKey;
 		this.snapshotValue = Object.freeze({ sessionId: currentSessionId, revision: this.revision, rows });
 		if (changed && notify) {
-			for (const listener of [...this.listeners]) this.callListener(listener, this.snapshotValue);
+			for (const listener of Array.from(this.listeners)) this.callListener(listener, this.snapshotValue);
 		}
 	}
 

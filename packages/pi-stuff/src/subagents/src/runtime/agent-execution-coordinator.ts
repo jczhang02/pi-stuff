@@ -546,7 +546,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 			}
 		}
 		if (!pending.bindRuntime) {
-			for (const completion of [...this.pendingCompletions.values()]) {
+			for (const completion of Array.from(this.pendingCompletions.values())) {
 				if (completion.session === pending.session && completion.address.runtimeRunId === pending.runtimeRunId) {
 					this.finishPendingCompletion(completion);
 				}

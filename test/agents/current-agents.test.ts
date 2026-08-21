@@ -37,7 +37,7 @@ function signalChannel(): SignalChannel {
 	const listeners = new Set<() => void>();
 	return {
 		emit() {
-			for (const listener of [...listeners]) listener();
+			for (const listener of Array.from(listeners)) listener();
 		},
 		get size() {
 			return listeners.size;

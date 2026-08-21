@@ -27,7 +27,7 @@ export type ProviderPayloadModel = {
 type ChildMessage = ContextEvent["messages"][number];
 type JsonRecord = Record<string, unknown>;
 
-function jsonRecord(value: object): JsonRecord {
+function jsonRecord<Value extends object>(value: Value): JsonRecord {
 	return Object.fromEntries(Object.entries(value));
 }
 

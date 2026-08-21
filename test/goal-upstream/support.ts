@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { Key, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import { getGoalStatusChannel } from "../../packages/pi-stuff/src/conversation-ui/statusline.js";
 import {
@@ -180,7 +181,7 @@ export function createMockPi(
 		events: eventBus,
 	};
 	const emitHostEvent = (name: string, ...args: unknown[]): void => {
-		for (const handler of [...(events.get(name) ?? [])]) handler(...args);
+		for (const handler of Array.from(events.get(name) ?? [])) handler(...args);
 	};
 
 	return {
@@ -377,8 +378,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function selectedKitRow(lines: readonly string[]): string | undefined {
 	const line = lines
-		// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI CSI controls are the data this TUI test helper strips.
-		.map((candidate) => candidate.replaceAll(/\u001b\[[0-?]*[ -/]*[@-~]/gu, ""))
+		.map(stripVTControlCharacters)
 		.find((candidate) => candidate.startsWith("→ ") || candidate.startsWith("› "));
 	if (!line) return undefined;
 	return line

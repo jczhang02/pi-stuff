@@ -149,9 +149,11 @@ class DiagnosticsDialog implements CommandDialogComponent {
 				this.lastWidth,
 				"Diagnostics",
 				this.mode === "list"
-					? commandDialogListKeyHelp(this.context.keybindings, "record", [
-							...(this.records.length > 0 ? [{ keys: "c", description: "Clear records" }] : []),
-						])
+					? commandDialogListKeyHelp(
+							this.context.keybindings,
+							"record",
+							this.records.length > 0 ? [{ keys: "c", description: "Clear records" }] : [],
+						)
 					: commandDialogReadKeyHelp(this.context.keybindings, "line"),
 			);
 		}

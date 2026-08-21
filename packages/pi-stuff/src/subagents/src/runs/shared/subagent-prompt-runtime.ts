@@ -315,7 +315,7 @@ export function registerSteeringInbox(
 		}
 	};
 	const retryAcknowledgements = (): void => {
-		for (const { request, state, message, complete } of [...pendingAcks.values()])
+		for (const { request, state, message, complete } of Array.from(pendingAcks.values()))
 			acknowledge(request, state, message, complete);
 	};
 	const forgetPendingDelivery = (delivery: PendingDelivery): void => {

@@ -213,7 +213,7 @@ function assertScenario(
 	const goals = states.map(goal);
 	const finalGoal = goals.at(-1);
 	if (scenario === "blocker") {
-		if (!finalGoal || finalGoal.status !== "blocked") {
+		if (finalGoal?.status !== "blocked") {
 			throw new Error("blocker: Goal did not reach blocked status");
 		}
 		const attempts = finalGoal.blockerAudit?.attempts;
@@ -247,7 +247,7 @@ function assertScenario(
 					`compaction: certified host did not complete native compaction successfully: ${JSON.stringify(compactionEnd)}`,
 				);
 			}
-		} else if (!compactionEnd || compactionEnd.aborted !== true) {
+		} else if (compactionEnd?.aborted !== true) {
 			throw new Error(
 				`compaction: Magic Context bypass did not intentionally cancel native compaction: ${JSON.stringify(compactionEnd)}`,
 			);

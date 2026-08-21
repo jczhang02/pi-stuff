@@ -1,4 +1,5 @@
 import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isRuntimeFunction, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 export function createExtensionApi(overrides: Partial<ExtensionAPI> = {}): ExtensionAPI {
 	const api: ExtensionAPI = {
@@ -38,7 +39,7 @@ export function captureExtensionHandlers<Handler extends (...args: never[]) => u
 ): ExtensionAPI["on"] {
 	return new Proxy(createExtensionApi().on, {
 		apply(_target, _thisArg, [event, handler]) {
-			if (typeof event !== "string" || typeof handler !== "function") return undefined;
+			if (!isRuntimeString(event) || !isRuntimeFunction(handler)) return undefined;
 			// SAFETY: Test harnesses invoke captured callbacks only with the matching registered lifecycle payload.
 			const captured = handler as Handler;
 			handlers.set(event, [...(handlers.get(event) ?? []), captured]);

@@ -167,7 +167,7 @@ export async function mapConcurrent<T, R>(
 	fn: (item: T, i: number) => Promise<R>,
 ): Promise<R[]> {
 	const safeLimit = Math.max(1, Math.floor(limit) || 1);
-	const results: R[] = new Array(items.length);
+	const results: R[] = [];
 	let next = 0;
 
 	async function worker(_workerIndex: number): Promise<void> {
