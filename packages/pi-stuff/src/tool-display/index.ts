@@ -49,13 +49,9 @@ function currentTranscript(ctx: ExtensionContext): CurrentTranscript {
 	for (const entry of ctx.sessionManager.getBranch()) {
 		for (const message of sessionEntryToContextMessages(entry)) {
 			messages.push(message);
-			if (typeof message !== "object" || message === null || Reflect.get(message, "role") !== "assistant") continue;
-			const content = Reflect.get(message, "content");
-			if (!Array.isArray(content)) continue;
-			for (const part of content) {
-				if (typeof part !== "object" || part === null || Reflect.get(part, "type") !== "toolCall") continue;
-				const name = Reflect.get(part, "name");
-				if (typeof name === "string") toolNames.add(name);
+			if (message.role !== "assistant") continue;
+			for (const part of message.content) {
+				if (part.type === "toolCall") toolNames.add(part.name);
 			}
 		}
 	}

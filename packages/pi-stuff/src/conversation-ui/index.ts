@@ -1,5 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, type Focusable, isFocusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import {
 	AgentRunOriginTracker,
@@ -726,6 +728,10 @@ const UI_SETTINGS_COMMAND_STATE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/settin
 const UI_LIFECYCLE_STATES = Symbol.for("@jczhang02/pi-stuff-ui/lifecycle-states/v1");
 const UI_LIFECYCLE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/lifecycle-discovery/v1";
 const USER_AGENT_RUN_SETTLED_EVENT = "@jczhang02/pi-stuff-ui/user-agent-run-settled/v1";
+const USER_AGENT_RUN_SETTLED_SCHEMA = Type.Object(
+	{ ctx: Type.Object({}, { additionalProperties: true }) },
+	{ additionalProperties: true },
+);
 
 interface UiLifecycleState {
 	active: boolean;
@@ -746,11 +752,10 @@ export function listenForUserAgentRunSettled(
 	listener: (ctx: ExtensionContext) => void,
 ): () => void {
 	const unsubscribe = pi.events.on(USER_AGENT_RUN_SETTLED_EVENT, (value) => {
-		if (typeof value !== "object" || value === null) return;
-		const ctx = Reflect.get(value, "ctx");
-		if (typeof ctx !== "object" || ctx === null) return;
+		if (!Check(USER_AGENT_RUN_SETTLED_SCHEMA, value)) return;
 		try {
-			listener(ctx as ExtensionContext);
+			// SAFETY: this private event is emitted below with the live Host ExtensionContext.
+			listener(value.ctx as ExtensionContext);
 		} catch {
 			// A derived usage refresh cannot be allowed to break Agent settlement.
 		}

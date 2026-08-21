@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import { Guard } from "typebox/guard";
 import {
 	aggregateLinterOutput,
 	aggregateTestOutput,
@@ -48,7 +49,7 @@ interface TextProjection {
 }
 
 function isProjected(message: AgentMessage): boolean {
-	return typeof message === "object" && message !== null && Reflect.get(message, PROJECTION_MARK) === true;
+	return Object.getOwnPropertyDescriptor(message, PROJECTION_MARK)?.value === true;
 }
 
 function markProjected<Message extends AgentMessage>(message: Message): Message {
@@ -62,8 +63,8 @@ function commandByToolCall(messages: readonly AgentMessage[]): Map<string, strin
 		if (message.role !== "assistant") continue;
 		for (const part of message.content) {
 			if (part.type !== "toolCall" || part.name !== "bash") continue;
-			const command = Reflect.get(part.arguments, "command");
-			if (typeof command === "string") commands.set(part.id, command);
+			const command = part.arguments["command"];
+			if (Guard.IsString(command)) commands.set(part.id, command);
 		}
 	}
 	return commands;
@@ -231,7 +232,7 @@ export class RtkProjectionAdapter implements ContextProjectionAdapter {
 		this.cacheBytes += result.cacheBytes;
 		while (this.cache.size > MAX_CACHE_ENTRIES || this.cacheBytes > MAX_CACHE_BYTES) {
 			const oldest = this.cache.keys().next().value;
-			if (typeof oldest !== "string") break;
+			if (oldest === undefined) break;
 			this.cacheBytes -= this.cache.get(oldest)?.cacheBytes ?? 0;
 			this.cache.delete(oldest);
 		}

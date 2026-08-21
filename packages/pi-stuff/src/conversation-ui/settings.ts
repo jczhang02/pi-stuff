@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import {
 	mergedSettingsPath,
 	mergeNamespaceRecord,
@@ -27,6 +29,30 @@ const UI_SETTING_IDS = [
 const BOOLEAN_SETTING_VALUES = [true, false] as const;
 const STATUSLINE_DENSITY_VALUES = ["auto", "full", "compact"] as const satisfies readonly StatuslineDensity[];
 const STATUSLINE_ICON_VALUES = ["auto", "nerd", "ascii"] as const satisfies readonly StatuslineIconMode[];
+const ERRNO_SCHEMA = Type.Object({ code: Type.String() });
+const UI_SETTINGS_VERSION_ONE_SCHEMA = Type.Object(
+	{
+		inlineSlashAutocomplete: Type.Boolean(),
+		inputHighlighting: Type.Boolean(),
+		schemaVersion: Type.Literal(1),
+		statusline: Type.Boolean(),
+		welcomeHeader: Type.Boolean(),
+	},
+	{ additionalProperties: true },
+);
+const UI_SETTINGS_VERSION_TWO_SCHEMA = Type.Object(
+	{
+		inlineSlashAutocomplete: Type.Boolean(),
+		inputHighlighting: Type.Boolean(),
+		schemaVersion: Type.Literal(2),
+		statusline: Type.Boolean(),
+		statuslineDensity: Type.Union(STATUSLINE_DENSITY_VALUES.map((value) => Type.Literal(value))),
+		statuslineIcons: Type.Union(STATUSLINE_ICON_VALUES.map((value) => Type.Literal(value))),
+		statuslineLatestPrompt: Type.Boolean(),
+		welcomeHeader: Type.Boolean(),
+	},
+	{ additionalProperties: true },
+);
 
 export type UiSettingId = (typeof UI_SETTING_IDS)[number];
 
@@ -72,7 +98,7 @@ type SettingsListener = (settings: UiSettings) => void;
 type SettingsWriter = (path: string, settings: UiSettings) => Promise<void>;
 
 interface PersistenceWaiter {
-	reject(reason: unknown): void;
+	reject(cause: unknown): void;
 	resolve(): void;
 }
 
@@ -91,60 +117,22 @@ export function resolveUiSettingsLockPath(
 	return resolveSettingsLockPath(settingsPath, environment, agentDir);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function booleanProperty(value: Record<string, unknown>, id: string): boolean {
-	const property = Reflect.get(value, id);
-	if (typeof property !== "boolean") throw new Error(`expected a boolean ${id} value`);
-	return property;
-}
-
-function enumProperty<Value extends string>(
-	value: Record<string, unknown>,
-	id: string,
-	values: readonly Value[],
-): Value {
-	const property = Reflect.get(value, id);
-	const match = typeof property === "string" ? values.find((candidate) => candidate === property) : undefined;
-	if (match === undefined) {
-		throw new Error(`expected ${id} to be one of ${values.join(", ")}`);
-	}
-	return match;
-}
-
-function parseVersionOneSettings(value: Record<string, unknown>): UiSettings {
+function parseVersionOneSettings(value: Static<typeof UI_SETTINGS_VERSION_ONE_SCHEMA>): UiSettings {
 	return {
-		inlineSlashAutocomplete: booleanProperty(value, "inlineSlashAutocomplete"),
-		inputHighlighting: booleanProperty(value, "inputHighlighting"),
+		inlineSlashAutocomplete: value.inlineSlashAutocomplete,
+		inputHighlighting: value.inputHighlighting,
 		schemaVersion: 2,
-		statusline: booleanProperty(value, "statusline"),
+		statusline: value.statusline,
 		statuslineDensity: DEFAULT_SETTINGS.statuslineDensity,
 		statuslineIcons: DEFAULT_SETTINGS.statuslineIcons,
 		statuslineLatestPrompt: DEFAULT_SETTINGS.statuslineLatestPrompt,
-		welcomeHeader: booleanProperty(value, "welcomeHeader"),
+		welcomeHeader: value.welcomeHeader,
 	};
 }
 
-function parseVersionTwoSettings(value: Record<string, unknown>): UiSettings {
-	return {
-		inlineSlashAutocomplete: booleanProperty(value, "inlineSlashAutocomplete"),
-		inputHighlighting: booleanProperty(value, "inputHighlighting"),
-		schemaVersion: 2,
-		statusline: booleanProperty(value, "statusline"),
-		statuslineDensity: enumProperty(value, "statuslineDensity", STATUSLINE_DENSITY_VALUES),
-		statuslineIcons: enumProperty(value, "statuslineIcons", STATUSLINE_ICON_VALUES),
-		statuslineLatestPrompt: booleanProperty(value, "statuslineLatestPrompt"),
-		welcomeHeader: booleanProperty(value, "welcomeHeader"),
-	};
-}
-
-function parseSettings(value: unknown): UiSettings {
-	if (!isRecord(value)) throw new Error("expected a settings object");
-	const schemaVersion = Reflect.get(value, "schemaVersion");
-	if (schemaVersion === 1) return parseVersionOneSettings(value);
-	if (schemaVersion === 2) return parseVersionTwoSettings(value);
+function parseSettings<Value>(value: Value): UiSettings {
+	if (Check(UI_SETTINGS_VERSION_ONE_SCHEMA, value)) return parseVersionOneSettings(value);
+	if (Check(UI_SETTINGS_VERSION_TWO_SCHEMA, value)) return value;
 	throw new Error("expected schemaVersion 1 or 2");
 }
 
@@ -153,7 +141,7 @@ async function readSettings(path: string): Promise<UiSettings> {
 		const namespace = await readNamespace(path, UI_NAMESPACE);
 		return namespace === undefined ? DEFAULT_SETTINGS : parseSettings(namespace);
 	} catch (error) {
-		if (isRecord(error) && Reflect.get(error, "code") === "ENOENT") return DEFAULT_SETTINGS;
+		if (Check(ERRNO_SCHEMA, error) && error.code === "ENOENT") return DEFAULT_SETTINGS;
 		reportDiagnostic({
 			action: "/ui",
 			capability: "UI",

@@ -1,9 +1,16 @@
 import type { ExtensionAPI, InputEvent } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { Guard } from "typebox/guard";
+import { Check } from "typebox/value";
 
 const ACTIVE_AGENT_WORK_USER_EVENT = "@jczhang02/pi-stuff-ui/active-agent-work-user/v1";
 const AGENT_WORK_ORIGIN_QUERY_EVENT = "@jczhang02/pi-stuff-ui/agent-work-origin-query/v1";
 const AGENT_WORK_ORIGIN_DETAIL = Symbol.for("@jczhang02/pi-stuff/agent-work-origin/v1");
 const DIRECT_USER_ACTIVATION_DETAIL = Symbol.for("@jczhang02/pi-stuff/direct-user-activation/v1");
+const TEXT_MESSAGE_PART_SCHEMA = Type.Object(
+	{ text: Type.Optional(Type.String()), type: Type.Literal("text") },
+	{ additionalProperties: true },
+);
 
 export type AgentWorkOrigin = "automatic" | "user";
 
@@ -153,15 +160,15 @@ export function withAgentWorkOrigin<Message extends object>(
 	message: Message,
 	origin: AgentWorkOrigin,
 ): Message & { details: object } {
-	const details = cloneMessageDetails(Reflect.get(message, "details"));
+	const details = cloneMessageDetails(Object.getOwnPropertyDescriptor(message, "details")?.value);
 	Object.defineProperty(details, AGENT_WORK_ORIGIN_DETAIL, { value: origin });
 	return { ...message, details };
 }
 
 export function readAgentWorkOrigin<Message extends object>(message: Message): AgentWorkOrigin | undefined {
-	const details = Reflect.get(message, "details");
-	if (!details || typeof details !== "object") return undefined;
-	const origin: unknown = Reflect.get(details, AGENT_WORK_ORIGIN_DETAIL);
+	const details = Object.getOwnPropertyDescriptor(message, "details")?.value;
+	if (!Guard.IsObject(details)) return undefined;
+	const origin = Object.getOwnPropertyDescriptor(details, AGENT_WORK_ORIGIN_DETAIL)?.value;
 	return origin === "user" || origin === "automatic" ? origin : undefined;
 }
 
@@ -172,15 +179,15 @@ export function readAgentWorkOrigin<Message extends object>(message: Message): A
  * authority of a current command, prompt, or UI/RPC action.
  */
 export function withDirectUserActivation<Message extends object>(message: Message): Message & { details: object } {
-	const details = cloneMessageDetails(Reflect.get(message, "details"));
+	const details = cloneMessageDetails(Object.getOwnPropertyDescriptor(message, "details")?.value);
 	Object.defineProperty(details, DIRECT_USER_ACTIVATION_DETAIL, { value: true });
 	return { ...message, details };
 }
 
 export function hasDirectUserActivation<Message extends object>(message: Message): boolean {
-	const details = Reflect.get(message, "details");
-	return Boolean(
-		details && typeof details === "object" && Reflect.get(details, DIRECT_USER_ACTIVATION_DETAIL) === true,
+	const details = Object.getOwnPropertyDescriptor(message, "details")?.value;
+	return (
+		Guard.IsObject(details) && Object.getOwnPropertyDescriptor(details, DIRECT_USER_ACTIVATION_DETAIL)?.value === true
 	);
 }
 
@@ -230,19 +237,17 @@ export function promoteActiveAgentWorkToUser(pi: Pick<ExtensionAPI, "events">): 
 	}
 }
 
-function extractMessageText(content: unknown): string {
-	if (typeof content === "string") return content;
+function extractMessageText<Content>(content: Content): string {
+	if (Guard.IsString(content)) return content;
 	if (!Array.isArray(content)) return "";
 	return content
-		.filter((part): part is object => Boolean(part) && typeof part === "object")
-		.filter((part) => Reflect.get(part, "type") === "text")
-		.map((part) => Reflect.get(part, "text"))
-		.filter((text): text is string => typeof text === "string")
+		.filter((part) => Check(TEXT_MESSAGE_PART_SCHEMA, part))
+		.flatMap((part) => (part.text === undefined ? [] : [part.text]))
 		.join("\n");
 }
 
-function cloneMessageDetails(value: unknown): object {
-	if (value && typeof value === "object" && !Array.isArray(value)) {
+function cloneMessageDetails<Value>(value: Value): object {
+	if (Guard.IsObject(value) && !Array.isArray(value)) {
 		return Object.defineProperties({}, Object.getOwnPropertyDescriptors(value));
 	}
 	return value === undefined ? {} : { value };

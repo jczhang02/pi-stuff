@@ -1,5 +1,6 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import { hasDirectUserActivation } from "../../conversation-ui/agent-run-origin.js";
 import { isSuiteNativeCompactionPreflight, whenSuiteSessionReady } from "../../conversation-ui/index.js";
 import { activityKey, singleActivity } from "../../tool-display/activity.js";
@@ -143,14 +144,34 @@ interface ContextCompactionBypassedEvent {
 	readonly source: "magic-context";
 }
 
-function isContextCompactionBypassedEvent(value: unknown): value is ContextCompactionBypassedEvent {
-	if (typeof value !== "object" || value === null) return false;
-	return (
-		Reflect.get(value, "schemaVersion") === 1 &&
-		Reflect.get(value, "source") === "magic-context" &&
-		typeof Reflect.get(value, "sessionManager") === "object" &&
-		Reflect.get(value, "sessionManager") !== null
-	);
+const CONTEXT_COMPACTION_BYPASSED_SCHEMA = Type.Object(
+	{
+		schemaVersion: Type.Literal(1),
+		sessionManager: Type.Union([Type.Object({}, { additionalProperties: true }), Type.Array(Type.Unknown())]),
+		source: Type.Literal("magic-context"),
+	},
+	{ additionalProperties: true },
+);
+const GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA = Type.Object(
+	{ proof: Type.String(), requirement: Type.String() },
+	{ additionalProperties: true },
+);
+const MESSAGE_ENVELOPE_SCHEMA = Type.Object(
+	{
+		content: Type.Optional(Type.Unknown()),
+		customType: Type.Optional(Type.String()),
+		role: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+type MessageEnvelope = Static<typeof MESSAGE_ENVELOPE_SCHEMA>;
+const TEXT_MESSAGE_PART_SCHEMA = Type.Object(
+	{ text: Type.Optional(Type.String()), type: Type.Literal("text") },
+	{ additionalProperties: true },
+);
+
+function isContextCompactionBypassedEvent<Value>(value: Value): value is Value & ContextCompactionBypassedEvent {
+	return Check(CONTEXT_COMPACTION_BYPASSED_SCHEMA, value);
 }
 
 // Cohesion justification: command, tool, continuation, and lifecycle handlers coordinate one
@@ -317,16 +338,12 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 			const summary = typeof params.summary === "string" ? params.summary.trim() : "";
 			const evidence = Array.isArray(params.evidence)
 				? params.evidence.map((item) => {
-						const candidate = item && typeof item === "object" ? item : {};
+						if (!Check(GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA, item)) {
+							return { proof: "", requirement: "" };
+						}
 						return {
-							requirement:
-								typeof Reflect.get(candidate, "requirement") === "string"
-									? String(Reflect.get(candidate, "requirement")).trim()
-									: "",
-							proof:
-								typeof Reflect.get(candidate, "proof") === "string"
-									? String(Reflect.get(candidate, "proof")).trim()
-									: "",
+							requirement: item.requirement.trim(),
+							proof: item.proof.trim(),
 						};
 					})
 				: [];
@@ -956,7 +973,7 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 	});
 
 	pi.on("message_start", (event, ctx) => {
-		const message = event.message as { role?: unknown; customType?: unknown; content?: unknown };
+		const message: MessageEnvelope = Check(MESSAGE_ENVELOPE_SCHEMA, event.message) ? event.message : {};
 		if (
 			message.role === "assistant" &&
 			runtime.activeGoal?.status === "paused" &&
@@ -983,11 +1000,10 @@ function registerGoalRuntime(pi: ExtensionAPI, options: GoalOptions = {}) {
 		if (message.role !== "user") return;
 		const prompt = Array.isArray(message.content)
 			? message.content
-					.filter((part) => part && typeof part === "object" && Reflect.get(part, "type") === "text")
-					.map((part) => Reflect.get(part as object, "text"))
-					.filter((text): text is string => typeof text === "string")
+					.filter((part) => Check(TEXT_MESSAGE_PART_SCHEMA, part))
+					.flatMap((part) => (part.text === undefined ? [] : [part.text]))
 					.join("\n")
-			: typeof message.content === "string"
+			: Check(Type.String(), message.content)
 				? message.content
 				: "";
 		const ownedPrompt = consumePendingGoalPrompt(prompt);

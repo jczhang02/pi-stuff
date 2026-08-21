@@ -7,6 +7,8 @@ import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { getProxyForUrl } from "proxy-from-env";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { codeModeHostBinaryName, hostAssetUrl, resolveCodeModeHostAsset } from "./host-assets.js";
 import { readProcessStartIdentity } from "./process-start-identity.js";
 
@@ -17,6 +19,14 @@ const INSTALL_LOCK_POLL_MS = 200;
 const INSTALL_LOCK_TIMEOUT_MS = 125_000;
 const INSTALL_LOCK_STALE_MS = 180_000;
 const INSTALL_LOCK_OWNER_FILE = "owner.json";
+const INSTALL_LOCK_OWNER_SCHEMA = Type.Object(
+	{
+		pid: Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 1 }),
+		processIdentity: Type.Optional(Type.String({ minLength: 1 })),
+		token: Type.String({ minLength: 1 }),
+	},
+	{ additionalProperties: true },
+);
 
 interface InstallLockOwner {
 	readonly pid: number;
@@ -107,8 +117,8 @@ async function acquireInstallLock(
 	throw new Error(`Timed out waiting for Code Mode host install lock: ${lockPath}`);
 }
 
-function isErrno(error: unknown, code: string): boolean {
-	return error instanceof Error && "code" in error && error.code === code;
+function isErrno(cause: unknown, code: string): boolean {
+	return cause instanceof Error && "code" in cause && cause.code === code;
 }
 
 function cleanupAbandonedInstallCandidates(lockPath: string): void {
@@ -130,18 +140,9 @@ function cleanupAbandonedInstallCandidates(lockPath: string): void {
 
 function readLockOwner(lockPath: string): InstallLockOwner | undefined {
 	try {
-		const value: unknown = JSON.parse(readFileSync(join(lockPath, INSTALL_LOCK_OWNER_FILE), "utf8"));
-		if (typeof value !== "object" || value === null) return undefined;
-		const pid = Reflect.get(value, "pid");
-		const processIdentity = Reflect.get(value, "processIdentity");
-		const token = Reflect.get(value, "token");
-		if (!Number.isSafeInteger(pid) || (pid as number) <= 0 || typeof token !== "string" || token.length === 0) {
-			return undefined;
-		}
-		if (processIdentity !== undefined && (typeof processIdentity !== "string" || processIdentity.length === 0)) {
-			return undefined;
-		}
-		return { pid: pid as number, ...(processIdentity ? { processIdentity } : {}), token };
+		const value = JSON.parse(readFileSync(join(lockPath, INSTALL_LOCK_OWNER_FILE), "utf8"));
+		if (!Check(INSTALL_LOCK_OWNER_SCHEMA, value)) return undefined;
+		return value;
 	} catch {
 		return undefined;
 	}
@@ -151,7 +152,7 @@ function lockOwnerIsAlive(owner: InstallLockOwner): boolean {
 	try {
 		process.kill(owner.pid, 0);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+		if (isErrno(error, "ESRCH")) return false;
 		return true;
 	}
 	const currentIdentity = readProcessStartIdentity(owner.pid);

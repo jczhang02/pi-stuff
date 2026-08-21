@@ -1,12 +1,23 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { mergedSettingsPath, readNamespace } from "../shared/settings-io/index.js";
 import { mergeNamespaceRecordLocked, migrateLegacyNamespace } from "../shared/settings-io/lock.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-rtk.json";
 const RTK_NAMESPACE = "rtk";
+const ERRNO_SCHEMA = Type.Object({ code: Type.String() });
+const RTK_SETTINGS_SCHEMA = Type.Object(
+	{
+		outputProjection: Type.Boolean(),
+		rewriteCommands: Type.Boolean(),
+		schemaVersion: Type.Literal(1),
+	},
+	{ additionalProperties: true },
+);
 
 export interface RtkSettings {
 	readonly outputProjection: boolean;
@@ -24,7 +35,7 @@ type SettingsListener = (settings: RtkSettings) => void;
 type SettingsWriter = (path: string, settings: RtkSettings) => Promise<void>;
 
 interface PersistenceWaiter {
-	reject(reason: unknown): void;
+	reject(cause: unknown): void;
 	resolve(): void;
 }
 
@@ -34,22 +45,14 @@ interface PendingSettingsWrite {
 	readonly waiters: PersistenceWaiter[];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function parseSettings(value: unknown): RtkSettings {
-	if (!isRecord(value)) throw new Error("expected a settings object");
-	const schemaVersion = Reflect.get(value, "schemaVersion");
-	const outputProjection = Reflect.get(value, "outputProjection");
-	const rewriteCommands = Reflect.get(value, "rewriteCommands");
-	if (schemaVersion !== 1 || typeof outputProjection !== "boolean" || typeof rewriteCommands !== "boolean") {
+function parseSettings<Value>(value: Value): RtkSettings {
+	if (!Check(RTK_SETTINGS_SCHEMA, value)) {
 		throw new Error("expected schemaVersion 1 and boolean RTK settings");
 	}
-	return { outputProjection, rewriteCommands, schemaVersion };
+	return value;
 }
 
-function toRecord(settings: RtkSettings): Record<string, unknown> {
+function toRecord(settings: RtkSettings) {
 	return { outputProjection: settings.outputProjection, rewriteCommands: settings.rewriteCommands, schemaVersion: 1 };
 }
 
@@ -58,7 +61,7 @@ async function readSettings(path: string): Promise<RtkSettings> {
 		const namespace = await readNamespace(path, RTK_NAMESPACE);
 		return namespace === undefined ? DEFAULT_SETTINGS : parseSettings(namespace);
 	} catch (error) {
-		if (isRecord(error) && Reflect.get(error, "code") === "ENOENT") return DEFAULT_SETTINGS;
+		if (Check(ERRNO_SCHEMA, error) && error.code === "ENOENT") return DEFAULT_SETTINGS;
 		reportDiagnostic({
 			action: "/rtk settings",
 			capability: "RTK",
@@ -228,7 +231,7 @@ export class RtkSettingsStore {
 	}
 }
 
-function isValidSettings(value: unknown): boolean {
+function isValidSettings<Value>(value: Value): boolean {
 	try {
 		parseSettings(value);
 		return true;

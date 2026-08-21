@@ -103,7 +103,7 @@ export function createAgentToolPresentation(): SuiteToolPresentation<Presentatio
 		label: (params) => label(params as PublicAgentParams),
 		resultIsError: (params, result) => {
 			const publicParams = params as PublicAgentParams;
-			if (Reflect.get(result, "isError") === true) return true;
+			if (Object.getOwnPropertyDescriptor(result, "isError")?.value === true) return true;
 			return action(publicParams) ? false : launchedCount(publicParams, result) === 0;
 		},
 		runningSummary: "working",

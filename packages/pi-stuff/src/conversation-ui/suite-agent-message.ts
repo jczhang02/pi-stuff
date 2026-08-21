@@ -9,6 +9,11 @@ const NATIVE_COMPACTION_PREFLIGHTS = Symbol.for("@jczhang02/pi-stuff-ui/native-c
 type SuiteAgentMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
 export type SuiteAgentMessageOptions = Parameters<ExtensionAPI["sendMessage"]>[1];
 
+type SuiteAgentMessageHost = Omit<ExtensionAPI, "events" | "sendMessage"> & {
+	readonly events?: ExtensionAPI["events"];
+	sendMessage(message: SuiteAgentMessage, options?: SuiteAgentMessageOptions): void | PromiseLike<void>;
+};
+
 export interface SuiteAgentMessagePreparation {
 	prepare(activation: "automatic" | "direct-user", options: SuiteAgentMessageOptions): Promise<void>;
 	/** Stage provider-only state immediately before the Host accepts the message. */
@@ -27,18 +32,15 @@ function brokerRegistry(): WeakMap<object, SuiteAgentMessageBroker> {
 	return root[SUITE_AGENT_MESSAGE_BROKERS];
 }
 
-function brokerFor(pi: Pick<ExtensionAPI, "events">): SuiteAgentMessageBroker {
+function brokerFor(pi: { readonly events?: ExtensionAPI["events"] }): SuiteAgentMessageBroker {
 	const registry = brokerRegistry();
-	const events = Reflect.get(pi as object, "events");
-	if (typeof events === "object" && events !== null) {
-		return getHostSharedResource(
-			events as ExtensionAPI["events"],
-			registry,
-			SUITE_AGENT_MESSAGE_BROKER_DISCOVERY,
-			() => ({ preparation: undefined }),
-		);
+	const events = pi.events;
+	if (events) {
+		return getHostSharedResource(events, registry, SUITE_AGENT_MESSAGE_BROKER_DISCOVERY, () => ({
+			preparation: undefined,
+		}));
 	}
-	const key = pi as object;
+	const key = pi;
 	let broker = registry.get(key);
 	if (!broker) {
 		broker = { preparation: undefined };
@@ -71,7 +73,7 @@ export function registerSuiteAgentMessagePreparation(
  * not depend on Context; Context contributes behavior by registration instead.
  */
 export async function sendSuiteAgentMessage(
-	pi: ExtensionAPI,
+	pi: SuiteAgentMessageHost,
 	message: SuiteAgentMessage,
 	options?: SuiteAgentMessageOptions,
 	isCurrent: () => boolean = () => true,
@@ -85,14 +87,7 @@ export async function sendSuiteAgentMessage(
 	if (!isCurrent()) return false;
 	const rollback = preparation?.stage?.(options);
 	try {
-		const delivered = pi.sendMessage(message, options) as unknown;
-		if (
-			delivered !== null &&
-			(typeof delivered === "object" || typeof delivered === "function") &&
-			typeof Reflect.get(delivered, "then") === "function"
-		) {
-			await Promise.resolve(delivered as PromiseLike<unknown>);
-		}
+		await pi.sendMessage(message, options);
 	} catch (error) {
 		rollback?.();
 		throw error;

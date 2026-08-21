@@ -21,8 +21,11 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { type Static, type TSchema, Type } from "typebox";
+import { Guard } from "typebox/guard";
+import { Check } from "typebox/value";
 import { getHostSharedResource } from "../conversation-ui/host-resource.js";
 import { SELF_RENDERED_TRANSCRIPT_PADDING, TRANSCRIPT_CONTINUATION } from "../conversation-ui/transcript.js";
+import { readHostProxyProperty } from "../shared/host-proxy.js";
 import {
 	type ActivityCategoryAggregate,
 	type ActivitySummaryMember,
@@ -68,6 +71,7 @@ const SUITE_TOOL_ENVELOPE = Symbol.for("@jczhang02/pi-stuff-tools/tool-envelope.
 const SUITE_TOOL_ENVELOPE_COMPANION = Symbol.for("@jczhang02/pi-stuff-tools/tool-envelope-companion.v1");
 const SUITE_TOOL_CODE_MODE = Symbol.for("@jczhang02/pi-stuff-tools/code-mode.v1");
 const SUITE_TOOL_REPLAY = Symbol.for("@jczhang02/pi-stuff-tools/replay-definition.v1");
+const ERROR_RESULT_SCHEMA = Type.Object({ isError: Type.Literal(true) }, { additionalProperties: true });
 
 interface SuiteActivityRendererMarker {
 	readonly activity: ToolActivityMetadata<Record<string, unknown>, unknown>;
@@ -649,7 +653,7 @@ function terminalStateFromResult(
 	resultIsError: ((args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean) | undefined,
 ): ToolActivityState {
 	if (!member.result) return member.terminalState ?? "running";
-	let domainError = Reflect.get(member.result, "isError") === true;
+	let domainError = Check(ERROR_RESULT_SCHEMA, member.result);
 	if (!domainError && resultIsError) {
 		try {
 			domainError = resultIsError(member.args, member.result);
@@ -2072,7 +2076,7 @@ export interface SuiteToolRegistrationTracker {
 function suiteActivityRendererMarker(tool: unknown): SuiteActivityRendererMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	if (typeof tool["renderCall"] !== "function" || typeof tool["renderResult"] !== "function") return undefined;
-	const marker = Reflect.get(tool, SUITE_ACTIVITY_RENDERER);
+	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_ACTIVITY_RENDERER)?.value;
 	return isRecordValue(marker) && isRecordValue(marker["activity"])
 		? (marker as unknown as SuiteActivityRendererMarker)
 		: undefined;
@@ -2084,7 +2088,7 @@ function hasSuiteActivityRenderer(tool: unknown): boolean {
 
 function suiteToolCodeModeContract(tool: unknown): SuiteToolCodeModeContract | undefined {
 	if (!isRecordValue(tool)) return undefined;
-	const value = Reflect.get(tool, SUITE_TOOL_CODE_MODE);
+	const value = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_CODE_MODE)?.value;
 	if (!isRecordValue(value)) return undefined;
 	if (value["replay"] !== "never" && value["replay"] !== "record" && value["replay"] !== "reexecute") {
 		return undefined;
@@ -2107,7 +2111,7 @@ function suiteToolCodeModeContract(tool: unknown): SuiteToolCodeModeContract | u
 
 function suiteToolEnvelopeMarker(tool: unknown): SuiteToolEnvelopeMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
-	const marker = Reflect.get(tool, SUITE_TOOL_ENVELOPE);
+	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_ENVELOPE)?.value;
 	if (!isRecordValue(marker) || typeof marker["decode"] !== "function" || !isRecordValue(marker["registry"])) {
 		return undefined;
 	}
@@ -2116,7 +2120,7 @@ function suiteToolEnvelopeMarker(tool: unknown): SuiteToolEnvelopeMarker | undef
 
 function suiteToolEnvelopeCompanionMarker(tool: unknown): SuiteToolEnvelopeCompanionMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
-	const marker = Reflect.get(tool, SUITE_TOOL_ENVELOPE_COMPANION);
+	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_ENVELOPE_COMPANION)?.value;
 	return isRecordValue(marker) && typeof marker["owner"] === "string"
 		? (marker as unknown as SuiteToolEnvelopeCompanionMarker)
 		: undefined;
@@ -2124,7 +2128,7 @@ function suiteToolEnvelopeCompanionMarker(tool: unknown): SuiteToolEnvelopeCompa
 
 function suiteToolReplayDefinition(tool: unknown): SuiteToolReplayDefinition | undefined {
 	if (!isRecordValue(tool)) return undefined;
-	const marker = Reflect.get(tool, SUITE_TOOL_REPLAY);
+	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_REPLAY)?.value;
 	if (!isRecordValue(marker) || !isRecordValue(marker["tool"]) || !isRecordValue(marker["presentation"])) {
 		return undefined;
 	}
@@ -2503,8 +2507,8 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 			if (property === "on") return on;
 			if (property === "registerTool") return registerTool;
 			if (property === "setActiveTools") return setActiveTools;
-			const value = Reflect.get(target, property, target);
-			return typeof value === "function" ? value.bind(target) : value;
+			const value = readHostProxyProperty(target, property, target);
+			return Guard.IsFunction(value) ? value.bind(target) : value;
 		},
 	});
 	return { api, registry, surface, toolNames };
@@ -2917,6 +2921,7 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 				return new EmptyToolComponent();
 			}
 			settleRow(tool, presentation, runtime, state, result, typed, theme);
+			const embeddedHostImageKeys = Object.getOwnPropertyDescriptor(typed, EMBEDDED_HOST_IMAGE_KEYS)?.value;
 			return resultBody(
 				state,
 				result,
@@ -2924,10 +2929,8 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 				typed.showImages,
 				theme,
 				tool.name === "bash",
-				Reflect.get(typed, EMBEDDED_TOOL_RESULT) === true,
-				Reflect.get(typed, EMBEDDED_HOST_IMAGE_KEYS) instanceof Map
-					? (Reflect.get(typed, EMBEDDED_HOST_IMAGE_KEYS) as ImageContentIndex)
-					: undefined,
+				Object.getOwnPropertyDescriptor(typed, EMBEDDED_TOOL_RESULT)?.value === true,
+				embeddedHostImageKeys instanceof Map ? embeddedHostImageKeys : undefined,
 			);
 		},
 	};

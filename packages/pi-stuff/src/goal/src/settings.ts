@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { mergeNamespaceRecordSync, readNamespaceSync, readSettingsFileSync } from "../../shared/settings-io/file.js";
 import { mergedSettingsPath } from "../../shared/settings-io/paths.js";
 
@@ -9,6 +11,29 @@ export const GOAL_SETTINGS_FILE = "pi-stuff.json";
 const GOAL_NAMESPACE = "goal";
 const LEGACY_GOAL_SETTINGS_FILE = "pi-goal.json";
 const GOAL_TOOL_VISIBILITIES = ["always", "after-first-goal"] as const;
+const CONTINUATION_LIMIT_SCHEMA = Type.Union([
+	Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 1 }),
+	Type.Null(),
+]);
+const GOAL_SETTINGS_INPUT_SCHEMA = Type.Object(
+	{
+		continuationLimits: Type.Optional(
+			Type.Object(
+				{
+					automaticTurns: Type.Optional(CONTINUATION_LIMIT_SCHEMA),
+					noProgressTurns: Type.Optional(CONTINUATION_LIMIT_SCHEMA),
+				},
+				{ additionalProperties: true },
+			),
+		),
+		experimental: Type.Optional(
+			Type.Object({ goals: Type.Optional(Type.Boolean()) }, { additionalProperties: true }),
+		),
+		rpc: Type.Optional(Type.Object({ enabled: Type.Optional(Type.Boolean()) }, { additionalProperties: true })),
+		toolVisibility: Type.Optional(Type.Union(GOAL_TOOL_VISIBILITIES.map((value) => Type.Literal(value)))),
+	},
+	{ additionalProperties: true },
+);
 
 type GoalToolVisibility = (typeof GOAL_TOOL_VISIBILITIES)[number];
 type ContinuationLimit = number | null;
@@ -48,73 +73,20 @@ interface GoalSettingsSaveFileSystem {
 	rmSync: typeof rmSync;
 }
 
-export function normalizeGoalSettings(value: unknown): GoalSettings | undefined {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-	const toolVisibility = Object.hasOwn(value, "toolVisibility")
-		? Reflect.get(value, "toolVisibility")
-		: DEFAULT_GOAL_SETTINGS.toolVisibility;
-	if (!GOAL_TOOL_VISIBILITIES.includes(toolVisibility as GoalToolVisibility)) return undefined;
-
-	const experimentalValue = Object.hasOwn(value, "experimental") ? Reflect.get(value, "experimental") : undefined;
-	if (
-		experimentalValue !== undefined &&
-		(typeof experimentalValue !== "object" || experimentalValue === null || Array.isArray(experimentalValue))
-	) {
-		return undefined;
-	}
-	const goals =
-		experimentalValue && Object.hasOwn(experimentalValue, "goals")
-			? Reflect.get(experimentalValue, "goals")
-			: DEFAULT_GOAL_SETTINGS.experimental.goals;
-	if (typeof goals !== "boolean") return undefined;
-
-	const rpcValue = Object.hasOwn(value, "rpc") ? Reflect.get(value, "rpc") : undefined;
-	if (rpcValue !== undefined && (typeof rpcValue !== "object" || rpcValue === null || Array.isArray(rpcValue))) {
-		return undefined;
-	}
-	const rpcEnabled =
-		rpcValue && Object.hasOwn(rpcValue, "enabled")
-			? Reflect.get(rpcValue, "enabled")
-			: DEFAULT_GOAL_SETTINGS.rpc.enabled;
-	if (typeof rpcEnabled !== "boolean") return undefined;
-
-	const continuationLimitsValue = Object.hasOwn(value, "continuationLimits")
-		? Reflect.get(value, "continuationLimits")
-		: undefined;
-	if (
-		continuationLimitsValue !== undefined &&
-		(typeof continuationLimitsValue !== "object" ||
-			continuationLimitsValue === null ||
-			Array.isArray(continuationLimitsValue))
-	) {
-		return undefined;
-	}
-	const automaticTurns = continuationLimitsValue
-		? normalizeContinuationLimit(
-				Reflect.get(continuationLimitsValue, "automaticTurns"),
-				DEFAULT_GOAL_SETTINGS.continuationLimits.automaticTurns,
-			)
-		: DEFAULT_GOAL_SETTINGS.continuationLimits.automaticTurns;
-	const noProgressTurns = continuationLimitsValue
-		? normalizeContinuationLimit(
-				Reflect.get(continuationLimitsValue, "noProgressTurns"),
-				DEFAULT_GOAL_SETTINGS.continuationLimits.noProgressTurns,
-			)
-		: DEFAULT_GOAL_SETTINGS.continuationLimits.noProgressTurns;
-	if (automaticTurns === undefined || noProgressTurns === undefined) return undefined;
-
+export function normalizeGoalSettings<Value>(value: Value): GoalSettings | undefined {
+	if (!Check(GOAL_SETTINGS_INPUT_SCHEMA, value)) return undefined;
+	if (Object.hasOwn(value, "toolVisibility") && value.toolVisibility === undefined) return undefined;
 	return {
-		toolVisibility: toolVisibility as GoalToolVisibility,
-		experimental: { goals },
-		rpc: { enabled: rpcEnabled },
-		continuationLimits: { automaticTurns, noProgressTurns },
+		toolVisibility: value.toolVisibility ?? DEFAULT_GOAL_SETTINGS.toolVisibility,
+		experimental: { goals: value.experimental?.goals ?? DEFAULT_GOAL_SETTINGS.experimental.goals },
+		rpc: { enabled: value.rpc?.enabled ?? DEFAULT_GOAL_SETTINGS.rpc.enabled },
+		continuationLimits: {
+			automaticTurns:
+				value.continuationLimits?.automaticTurns ?? DEFAULT_GOAL_SETTINGS.continuationLimits.automaticTurns,
+			noProgressTurns:
+				value.continuationLimits?.noProgressTurns ?? DEFAULT_GOAL_SETTINGS.continuationLimits.noProgressTurns,
+		},
 	};
-}
-
-function normalizeContinuationLimit(value: unknown, fallback: ContinuationLimit): ContinuationLimit | undefined {
-	if (value === undefined) return fallback;
-	if (value === null) return null;
-	return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
 export function saveGoalSettings(

@@ -1,5 +1,6 @@
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type TSchema, Type } from "typebox";
+import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { registerSuiteOwnedTool } from "../tool-display/index.js";
 import { FakeIpCompatibility } from "./fake-ip.js";
 import { WEB_CONTENT_PRESENTATION, WEB_FETCH_PRESENTATION, WEB_SEARCH_PRESENTATION } from "./presentation.js";
@@ -154,7 +155,7 @@ export function createWebAdapterApi(pi: ExtensionAPI, options: WebAdapterOptions
 			if (property === "registerTool") return registerTool;
 			if (property === "registerCommand") return ignoreCommand;
 			if (property === "registerShortcut") return ignoreShortcut;
-			return Reflect.get(target, property, receiver) as unknown;
+			return readHostProxyProperty(target, property, receiver);
 		},
 	});
 }

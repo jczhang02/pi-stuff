@@ -1,4 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Guard } from "typebox/guard";
+import { readHostProxyProperty } from "../shared/host-proxy.js";
 
 type SessionManager = ExtensionContext["sessionManager"];
 
@@ -65,8 +67,8 @@ function createReadinessApi(pi: ExtensionAPI): ExtensionAPI {
 	return new Proxy(pi, {
 		get(target, property) {
 			if (property === "on") return on;
-			const value = Reflect.get(target, property, target);
-			return typeof value === "function" ? value.bind(target) : value;
+			const value = readHostProxyProperty(target, property, target);
+			return Guard.IsFunction(value) ? value.bind(target) : value;
 		},
 	});
 }

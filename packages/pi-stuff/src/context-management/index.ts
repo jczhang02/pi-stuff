@@ -11,6 +11,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { Guard } from "typebox/guard";
+import { Check } from "typebox/value";
 import {
 	beginSuiteNativeCompactionPreflight,
 	getCommandDialogCoordinator,
@@ -22,6 +24,7 @@ import {
 	type SuiteAgentMessageOptions,
 } from "../conversation-ui/index.js";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
+import { readHostProxyProperty } from "../shared/host-proxy.js";
 import {
 	activityKey,
 	activityTarget,
@@ -112,15 +115,39 @@ const CONTEXT_OPERATION_BY_MAGIC_TITLE: Readonly<Record<string, ContextOperation
 	"/ctx-wrapup": "wrapup",
 };
 const MAGIC_TOOL_HANDOFF_PARAMETERS = Type.Object({}, { additionalProperties: true });
+const COMPACT_PROMPT_EVENT_SCHEMA = Type.Object({ systemPrompt: Type.String() }, { additionalProperties: true });
+const CANCELLED_EVENT_RESULT_SCHEMA = Type.Object({ cancel: Type.Literal(true) }, { additionalProperties: true });
+const MAGIC_STATUS_MESSAGE_SCHEMA = Type.Object(
+	{
+		details: Type.Optional(Type.Unknown()),
+		level: Type.Optional(Type.String()),
+		text: Type.Optional(Type.String()),
+		title: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const MANUAL_COMPACTION_EVENT_SCHEMA = Type.Object(
+	{
+		preparation: Type.Object(
+			{
+				firstKeptEntryId: Type.String({ minLength: 1 }),
+				tokensBefore: Type.Number({ minimum: 0 }),
+			},
+			{ additionalProperties: true },
+		),
+		reason: Type.Literal("manual"),
+	},
+	{ additionalProperties: true },
+);
 
 type LooseEventHandler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type AgentMessage = ContextEvent["messages"][number];
 
-function addCompactMagicContextPrompt(event: unknown): unknown {
-	if (typeof event !== "object" || event === null) return event;
-	const systemPrompt = Reflect.get(event, "systemPrompt");
-	if (typeof systemPrompt !== "string" || systemPrompt.includes(MAGIC_CONTEXT_PROMPT_MARKER)) return event;
-	return { ...(event as Record<string, unknown>), systemPrompt: `${systemPrompt}\n\n${COMPACT_MAGIC_CONTEXT_PROMPT}` };
+function addCompactMagicContextPrompt<Event>(event: Event) {
+	if (!Check(COMPACT_PROMPT_EVENT_SCHEMA, event) || event.systemPrompt.includes(MAGIC_CONTEXT_PROMPT_MARKER)) {
+		return event;
+	}
+	return { ...event, systemPrompt: `${event.systemPrompt}\n\n${COMPACT_MAGIC_CONTEXT_PROMPT}` };
 }
 
 function addCompactMagicContextMessage(messages: readonly AgentMessage[]): AgentMessage[] {
@@ -653,39 +680,35 @@ function createMagicModuleSource(loader: () => Promise<MagicModule>): MagicModul
 	};
 }
 
-function quietMagicContext(ctx: ExtensionContext, notifications = false): ExtensionContext {
+function quietMagicContext(
+	ctx: ExtensionContext,
+	notifications = false,
+	hasUi: boolean | undefined = undefined,
+): ExtensionContext {
 	const ui = ctx.ui;
 	if (!ui || typeof ui !== "object") return ctx;
 	const quietUi = new Proxy(ui, {
 		get(target, property, receiver) {
 			if (MAGIC_QUIET_UI_METHODS.has(String(property)) || (!notifications && property === "notify"))
 				return () => undefined;
-			const value = Reflect.get(target, property, receiver) as unknown;
-			return typeof value === "function" ? value.bind(target) : value;
+			const value = readHostProxyProperty(target, property, receiver);
+			return Guard.IsFunction(value) ? value.bind(target) : value;
 		},
 	});
 	return new Proxy(ctx, {
 		get(target, property, receiver) {
 			if (property === "ui") return quietUi;
-			const value = Reflect.get(target, property, receiver) as unknown;
-			return typeof value === "function" ? value.bind(target) : value;
+			if (property === "hasUI" && hasUi !== undefined) return hasUi;
+			const value = readHostProxyProperty(target, property, receiver);
+			return Guard.IsFunction(value) ? value.bind(target) : value;
 		},
 	});
 }
 
 function magicCommandContext(name: string, ctx: ExtensionContext): ExtensionContext {
-	const quiet = quietMagicContext(ctx);
-	if (name !== "ctx-status") return quiet;
-	return new Proxy(quiet, {
-		get(target, property, receiver) {
-			// The official status command otherwise owns its own centered overlay.
-			// Pi Stuff asks for the non-UI status payload and renders it in the
-			// shared Command Dialog instead.
-			if (property === "hasUI") return false;
-			const value = Reflect.get(target, property, receiver) as unknown;
-			return typeof value === "function" ? value.bind(target) : value;
-		},
-	});
+	// The official status command otherwise owns its own centered overlay.
+	// Pi Stuff asks for the non-UI status payload and renders it in the shared Command Dialog instead.
+	return quietMagicContext(ctx, false, name === "ctx-status" ? false : undefined);
 }
 
 function firstPresentationTarget(args: Readonly<Record<string, unknown>>): string {
@@ -1680,7 +1703,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 					return { cancel: true };
 				}
 				if (!this.isCurrentGeneration(generation)) return;
-				if (typeof result === "object" && result !== null && Reflect.get(result, "cancel") === true) {
+				if (Check(CANCELLED_EVENT_RESULT_SCHEMA, result)) {
 					const manual = magicManualCompaction(rawEvent);
 					if (manual) return manual;
 					this.emitCompactionBypassed(ctx);
@@ -1733,13 +1756,13 @@ class ContextCapabilityRuntime implements ContextCapability {
 		}
 	}
 
-	private captureMagicCommandStatus(data: unknown): void {
-		if (!data || typeof data !== "object") return;
-		if (this.capturingStatus && Reflect.get(data, "title") === "/ctx-status") {
-			this.capturedStatusMessage = data as MagicStatusMessage;
+	private captureMagicCommandStatus<Data>(data: Data): void {
+		if (!Check(MAGIC_STATUS_MESSAGE_SCHEMA, data)) return;
+		if (this.capturingStatus && data.title === "/ctx-status") {
+			this.capturedStatusMessage = data;
 			return;
 		}
-		const message = data as { level?: string; text?: string; title?: string };
+		const message: MagicStatusMessage = data;
 		const operation = message.title ? CONTEXT_OPERATION_BY_MAGIC_TITLE[message.title] : undefined;
 		if (!operation) return;
 		const activity =
@@ -1791,14 +1814,14 @@ class ContextCapabilityRuntime implements ContextCapability {
 					};
 				}
 				if (suppressedMethods.has(property)) return () => undefined;
-				const value = Reflect.get(target, property, receiver) as unknown;
-				return typeof value === "function" ? value.bind(runtime.pi) : value;
+				const value = readHostProxyProperty(target, property, receiver);
+				return Guard.IsFunction(value) ? value.bind(runtime.pi) : value;
 			},
 		});
 	}
 }
 
-function magicManualCompaction(event: unknown):
+function magicManualCompaction<Event>(event: Event):
 	| {
 			readonly compaction: {
 				readonly details: {
@@ -1812,19 +1835,8 @@ function magicManualCompaction(event: unknown):
 			};
 	  }
 	| undefined {
-	if (typeof event !== "object" || event === null || Reflect.get(event, "reason") !== "manual") return undefined;
-	const preparation = Reflect.get(event, "preparation");
-	if (typeof preparation !== "object" || preparation === null) return undefined;
-	const candidate = preparation as Partial<ManualCompactionPreparation>;
-	if (
-		typeof candidate.firstKeptEntryId !== "string" ||
-		!candidate.firstKeptEntryId ||
-		typeof candidate.tokensBefore !== "number" ||
-		!Number.isFinite(candidate.tokensBefore) ||
-		candidate.tokensBefore < 0
-	) {
-		return undefined;
-	}
+	if (!Check(MANUAL_COMPACTION_EVENT_SCHEMA, event)) return undefined;
+	const candidate: ManualCompactionPreparation = event.preparation;
 	return {
 		compaction: {
 			details: { engine: "magic-context", mode: "managed-history", source: "magic-context" },

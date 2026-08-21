@@ -12,6 +12,7 @@ import {
 	type CommandDialogCoordinator,
 	getCommandDialogCoordinator,
 } from "../conversation-ui/index.js";
+import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { registerSuiteOwnedTool } from "../tool-display/index.js";
 import { createMcpControlView } from "./mcp-dialog.js";
 import { MCP_PRESENTATION } from "./presentation.js";
@@ -127,13 +128,13 @@ export function suppressMcpFooterContext(ctx: ExtensionContext): ExtensionContex
 	const ui = new Proxy(ctx.ui, {
 		get(target, property, receiver) {
 			if (property === "setStatus") return setStatus;
-			return Reflect.get(target, property, receiver) as unknown;
+			return readHostProxyProperty(target, property, receiver);
 		},
 	});
 	return new Proxy(ctx, {
 		get(target, property, receiver) {
 			if (property === "ui") return ui;
-			return Reflect.get(target, property, receiver) as unknown;
+			return readHostProxyProperty(target, property, receiver);
 		},
 	});
 }
@@ -164,13 +165,13 @@ export function routeMcpCustomUiThroughCommandDialog<Context extends ExtensionCo
 	const ui = new Proxy(ctx.ui, {
 		get(target, property, receiver) {
 			if (property === "custom") return custom;
-			return Reflect.get(target, property, receiver) as unknown;
+			return readHostProxyProperty(target, property, receiver);
 		},
 	});
 	return new Proxy(ctx, {
 		get(target, property, receiver) {
 			if (property === "ui") return ui;
-			return Reflect.get(target, property, receiver) as unknown;
+			return readHostProxyProperty(target, property, receiver);
 		},
 	}) as Context;
 }
@@ -195,7 +196,7 @@ export function createMcpAdapterApi(pi: ExtensionAPI, commands: CapturedCommands
 			if (property === "registerTool") return registerTool;
 			if (property === "registerCommand") return registerCommand;
 			if (property === "on") return on;
-			return Reflect.get(target, property, receiver) as unknown;
+			return readHostProxyProperty(target, property, receiver);
 		},
 	});
 }
