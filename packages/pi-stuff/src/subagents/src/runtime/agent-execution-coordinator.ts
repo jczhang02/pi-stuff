@@ -96,10 +96,10 @@ export interface AgentExecutionCoordinatorPort {
 		readonly params: GovernedAgentParams;
 		readonly resumeTargetRunId?: string;
 	}): Promise<AgentExecutionPrepareResult>;
-	observeAsyncStarted(event: unknown): Promise<void>;
+	observeAsyncStarted<Event>(event: Event): Promise<void>;
 	settle(invocation: AgentExecutionInvocation, result: GovernedEngineResult): Promise<void>;
 	fail(invocation: AgentExecutionInvocation): Promise<void>;
-	complete(event: unknown): Promise<void>;
+	complete<Event>(event: Event): Promise<void>;
 	reconcileDead(): Promise<void>;
 	reconcileExisting(): Promise<void>;
 	inspectExistingRuntimeLeases?(): Promise<readonly AgentGovernorLease[]>;
@@ -114,12 +114,27 @@ export interface AgentExecutionCoordinatorOptions {
 }
 
 interface AsyncStart {
-	readonly runtimeRunId: string;
-	readonly pid?: number;
-	readonly processStartIdentity?: string;
-	readonly asyncDir?: string;
-	readonly acknowledgeStart?: () => void;
-	readonly abortStart?: () => boolean;
+	runtimeRunId: string;
+	pid?: number;
+	processStartIdentity?: string;
+	asyncDir?: string;
+	acknowledgeStart?: () => void;
+	abortStart?: () => boolean;
+}
+
+interface AgentRuntimeEventRecord {
+	readonly abortStart?: unknown;
+	readonly acknowledgeStart?: unknown;
+	readonly asyncDir?: unknown;
+	readonly code?: unknown;
+	readonly detached?: unknown;
+	readonly id?: unknown;
+	readonly index?: unknown;
+	readonly pid?: unknown;
+	readonly processStartIdentity?: unknown;
+	readonly results?: unknown;
+	readonly runId?: unknown;
+	readonly taskIndex?: unknown;
 }
 
 export class AgentRuntimeBindingRejectedError extends Error {
@@ -153,6 +168,16 @@ interface PendingSettlement {
 	retryIndex: number;
 	retryTimer?: ReturnType<typeof setTimeout>;
 	inFlight?: Promise<void>;
+}
+
+interface PendingSettlementInput {
+	readonly owner?: BoundInvocation;
+	readonly session: AgentExecutionCoordinatorSession;
+	readonly reservation: AgentExecutionReservation;
+	readonly runtimeRunId: string;
+	start?: AsyncStart;
+	readonly bindRuntime: boolean;
+	readonly settlement: AgentExecutionSettlement;
 }
 
 interface PendingCompletion {
@@ -275,7 +300,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		return { ok: true, invocation };
 	}
 
-	async observeAsyncStarted(event: unknown): Promise<void> {
+	async observeAsyncStarted<Event>(event: Event): Promise<void> {
 		const value = record(event);
 		const runtimeRunId = optionalText(value.id) ?? optionalText(value.runId);
 		if (!runtimeRunId) return;
@@ -284,10 +309,12 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 			optionalText(value.processStartIdentity) ??
 			(pid === undefined ? undefined : this.readProcessStartIdentity(pid));
 		const asyncDir = optionalText(value.asyncDir);
-		const rawAcknowledgeStart = isRuntimeFunction(value.acknowledgeStart)
-			? (value.acknowledgeStart as () => void)
+		const acknowledgeStartCandidate = value.acknowledgeStart;
+		const rawAcknowledgeStart = isRuntimeFunction(acknowledgeStartCandidate)
+			? () => acknowledgeStartCandidate()
 			: undefined;
-		const abortStart = isRuntimeFunction(value.abortStart) ? (value.abortStart as () => boolean) : undefined;
+		const abortStartCandidate = value.abortStart;
+		const abortStart = isRuntimeFunction(abortStartCandidate) ? () => abortStartCandidate() === true : undefined;
 		let startupAcknowledged = false;
 		const acknowledgeStart = rawAcknowledgeStart
 			? () => {
@@ -296,14 +323,12 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 					startupAcknowledged = true;
 				}
 			: undefined;
-		const start: AsyncStart = {
-			runtimeRunId,
-			...(pid === undefined ? {} : { pid }),
-			...(processStartIdentity === undefined ? {} : { processStartIdentity }),
-			...(asyncDir === undefined ? {} : { asyncDir }),
-			...(acknowledgeStart === undefined ? {} : { acknowledgeStart }),
-			...(abortStart === undefined ? {} : { abortStart }),
-		};
+		const start: AsyncStart = { runtimeRunId };
+		if (pid !== undefined) start.pid = pid;
+		if (processStartIdentity !== undefined) start.processStartIdentity = processStartIdentity;
+		if (asyncDir !== undefined) start.asyncDir = asyncDir;
+		if (acknowledgeStart !== undefined) start.acknowledgeStart = acknowledgeStart;
+		if (abortStart !== undefined) start.abortStart = abortStart;
 		this.asyncStarts.set(runtimeRunId, start);
 		const exact = this.active.get(runtimeRunId);
 		const resumeCandidates = exact
@@ -332,18 +357,19 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		const runtimeRunId =
 			optionalText(result.details.asyncId) ?? optionalText(result.details.runId) ?? invocation.launchRunId;
 		const lifecycleBinding = result.details.lifecycleBinding;
-		const resultStart = lifecycleBinding
-			? {
-					runtimeRunId,
-					pid: lifecycleBinding.pid,
-					...(lifecycleBinding.processStartIdentity
-						? { processStartIdentity: lifecycleBinding.processStartIdentity }
-						: {}),
-					asyncDir: lifecycleBinding.asyncDir,
-					acknowledgeStart: lifecycleBinding.acknowledgeStart,
-					abortStart: lifecycleBinding.abortStart,
-				}
-			: undefined;
+		let resultStart: AsyncStart | undefined;
+		if (lifecycleBinding) {
+			resultStart = {
+				runtimeRunId,
+				pid: lifecycleBinding.pid,
+				asyncDir: lifecycleBinding.asyncDir,
+			};
+			if (lifecycleBinding.processStartIdentity) {
+				resultStart.processStartIdentity = lifecycleBinding.processStartIdentity;
+			}
+			if (lifecycleBinding.acknowledgeStart) resultStart.acknowledgeStart = lifecycleBinding.acknowledgeStart;
+			if (lifecycleBinding.abortStart) resultStart.abortStart = lifecycleBinding.abortStart;
+		}
 		let settlement: AgentExecutionSettlement;
 		let bindRuntime = true;
 		const start = owner.starts.get(runtimeRunId) ?? this.asyncStarts.get(runtimeRunId) ?? resultStart;
@@ -396,15 +422,16 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		const starts = [...owner.starts.values()];
 		const start = owner.starts.get(invocation.launchRunId) ?? (starts.length === 1 ? starts[0] : undefined);
 		const startupFailure = classifyStartupFailure(start, starts.length > 0);
-		const pending = this.createPendingSettlement({
+		const pendingInput: PendingSettlementInput = {
 			owner,
 			session: owner.session,
 			reservation: invocation.reservation,
 			runtimeRunId: start?.runtimeRunId ?? invocation.launchRunId,
-			...(start ? { start } : {}),
 			bindRuntime: startupFailure.bindRuntime,
 			settlement: startupFailure.settlement,
-		});
+		};
+		if (start) pendingInput.start = start;
+		const pending = this.createPendingSettlement(pendingInput);
 		owner.pending = pending;
 		try {
 			await this.attemptPendingSettlement(pending);
@@ -414,7 +441,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		}
 	}
 
-	async complete(event: unknown): Promise<void> {
+	async complete<Event>(event: Event): Promise<void> {
 		if (!this.boundIdentity) return;
 		const session = this.session();
 		const generation = this.generation;
@@ -455,15 +482,7 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		this.boundSession = undefined;
 	}
 
-	private createPendingSettlement(input: {
-		readonly owner?: BoundInvocation;
-		readonly session: AgentExecutionCoordinatorSession;
-		readonly reservation: AgentExecutionReservation;
-		readonly runtimeRunId: string;
-		readonly start?: AsyncStart;
-		readonly bindRuntime: boolean;
-		readonly settlement: AgentExecutionSettlement;
-	}): PendingSettlement {
+	private createPendingSettlement(input: PendingSettlementInput): PendingSettlement {
 		const pending: PendingSettlement = { ...input, retryIndex: 0 };
 		this.pendingSettlements.add(pending);
 		return pending;
@@ -561,13 +580,16 @@ export class AgentExecutionCoordinator implements AgentExecutionCoordinatorPort 
 		start?: AsyncStart,
 	): Promise<void> {
 		for (let reservationIndex = 0; reservationIndex < reservation.leases.length; reservationIndex += 1) {
-			const rebound = await session.governor.rebindChild(reservation, reservationIndex, {
+			const request = {
 				runtimeRunId,
 				childIndex: reservation.kind === "resume" ? 0 : reservationIndex,
-				...(start?.pid === undefined ? {} : { pid: start.pid }),
-				...(start?.processStartIdentity === undefined ? {} : { processStartIdentity: start.processStartIdentity }),
-				...(start?.asyncDir === undefined ? {} : { asyncDir: start.asyncDir }),
-			});
+			} satisfies RebindAgentRuntimeRequest;
+			if (start?.pid !== undefined) Object.assign(request, { pid: start.pid });
+			if (start?.processStartIdentity !== undefined) {
+				Object.assign(request, { processStartIdentity: start.processStartIdentity });
+			}
+			if (start?.asyncDir !== undefined) Object.assign(request, { asyncDir: start.asyncDir });
+			const rebound = await session.governor.rebindChild(reservation, reservationIndex, request);
 			if (!rebound.rebound) {
 				throw new AgentRuntimeBindingRejectedError(
 					`Agent runtime binding was rejected for child ${reservationIndex} (${rebound.reason}).`,
@@ -831,7 +853,7 @@ function safeReadBootIdentity(readIdentity: () => string | undefined): string | 
 	}
 }
 
-export function runtimeCompletionAddresses(event: unknown): AgentRuntimeCompletionEvent[] {
+export function runtimeCompletionAddresses<Event>(event: Event): AgentRuntimeCompletionEvent[] {
 	const value = record(event);
 	const runtimeRunId = optionalText(value.runId) ?? optionalText(value.id);
 	if (!runtimeRunId) return [];
@@ -869,7 +891,7 @@ export function explicitProcessPidState(pid: number): boolean | undefined {
 	}
 }
 
-function completionChildIndex(value: Record<string, unknown>, fallback: number): number {
+function completionChildIndex(value: AgentRuntimeEventRecord, fallback: number): number {
 	const candidate = value.taskIndex ?? value.index;
 	return optionalNonNegativeSafeInteger(candidate) ?? fallback;
 }
@@ -914,11 +936,13 @@ function samePath(left: readonly string[], right: readonly string[]): boolean {
 	return left.length === right.length && left.every((component, index) => component === right[index]);
 }
 
-function record(value: unknown): Record<string, unknown> {
-	return isRuntimeObject(value) && value !== null ? (value as Record<string, unknown>) : {};
+function record<Value>(value: Value): AgentRuntimeEventRecord {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
+	// SAFETY: lifecycle consumers read only the declared raw fields and validate them before use.
+	return value as Value & AgentRuntimeEventRecord;
 }
 
-function optionalText(value: unknown): string | undefined {
+function optionalText<Value>(value: Value): string | undefined {
 	return isRuntimeString(value) && value.trim().length > 0 ? value.trim() : undefined;
 }
 
@@ -928,11 +952,11 @@ function requiredText(name: string, value: string): string {
 	return resolved;
 }
 
-function optionalPositiveSafeInteger(value: unknown): number | undefined {
+function optionalPositiveSafeInteger<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
-function optionalNonNegativeSafeInteger(value: unknown): number | undefined {
+function optionalNonNegativeSafeInteger<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
