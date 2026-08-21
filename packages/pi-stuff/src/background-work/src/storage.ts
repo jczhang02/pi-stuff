@@ -213,8 +213,8 @@ function loadOrCreateAuthorityKey(injected?: Uint8Array, create = true): Buffer 
 	}
 }
 
-function isMissingPath(error: unknown): boolean {
-	return error instanceof Error && "code" in error && error.code === "ENOENT";
+function isMissingPath(cause: unknown): boolean {
+	return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
 }
 
 function isDirectory(path: string): boolean {

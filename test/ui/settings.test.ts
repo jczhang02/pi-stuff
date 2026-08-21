@@ -183,7 +183,7 @@ test("a failed latest UI settings write rolls the live value back", async () => 
 
 		const error = await store.set("statusline", false).then(
 			() => undefined,
-			(reason: unknown) => reason,
+			(cause: unknown) => cause,
 		);
 
 		expect(error).toBeInstanceOf(Error);

@@ -47,7 +47,7 @@ type SessionHandler = (event: unknown, ctx: ExtensionContext) => object | undefi
 
 interface TestDeferred<Value> {
 	readonly promise: Promise<Value>;
-	reject(reason: unknown): void;
+	reject(cause: unknown): void;
 	resolve(value: Value): void;
 }
 
@@ -56,7 +56,7 @@ interface HostCall {
 	doneCalls: number;
 	doneRequested: boolean;
 	readonly options: { overlay?: boolean } | undefined;
-	reject(reason: unknown): void;
+	reject(cause: unknown): void;
 	settleDone(): void;
 }
 
@@ -241,10 +241,10 @@ class UiHarness {
 		this.workingWrites.push(visible);
 	}
 
-	rejectCurrent(reason: unknown): void {
+	rejectCurrent(cause: unknown): void {
 		const call = this.hostCalls.at(-1);
 		if (!call) throw new Error("Expected an active custom call");
-		call.reject(reason);
+		call.reject(cause);
 	}
 
 	settleCurrentDone(): void {
@@ -451,7 +451,7 @@ async function settleAgentRun(
 
 function createDeferred<Value>(): TestDeferred<Value> {
 	let resolvePromise: (value: Value) => void = () => {};
-	let rejectPromise: (reason: unknown) => void = () => {};
+	let rejectPromise: (cause: unknown) => void = () => {};
 	const promise = new Promise<Value>((resolve, reject) => {
 		resolvePromise = resolve;
 		rejectPromise = reject;

@@ -1688,9 +1688,9 @@ async function main(): Promise<void> {
 		fail(`Bun ${CERTIFIED_PI_BUN_VERSION} is required; received ${Bun.version}`);
 	}
 	const benchmarkRoot = await mkdtemp(join(tmpdir(), "pi-stuff-lifecycle-benchmark-"));
-	const provenance = await stageCertifiedPiHost(options.piBinary, benchmarkRoot).catch(async (error: unknown) => {
+	const provenance = await stageCertifiedPiHost(options.piBinary, benchmarkRoot).catch(async (cause: unknown) => {
 		await rm(benchmarkRoot, { recursive: true, force: true });
-		throw error;
+		throw cause;
 	});
 	options = { ...options, piBinary: provenance.binaryPath };
 	const projectDirectory = join(benchmarkRoot, "project");

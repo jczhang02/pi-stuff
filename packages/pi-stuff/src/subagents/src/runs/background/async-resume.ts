@@ -110,8 +110,8 @@ export interface AsyncRunLocation {
 	resolvedId?: string;
 }
 
-function getErrorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+function getErrorMessage(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
 }
 
 function ensureObject(value: unknown, source: string): Record<string, unknown> {
@@ -260,8 +260,8 @@ function assertInsideRoot(root: string, target: string, label: string): void {
 	throw new Error(`${label} must be inside ${rootPath}.`);
 }
 
-function isNotFoundError(error: unknown): boolean {
-	return isRuntimeObject(error) && error !== null && (error as NodeJS.ErrnoException).code === "ENOENT";
+function isNotFoundError(cause: unknown): boolean {
+	return isRuntimeObject(cause) && cause !== null && (cause as NodeJS.ErrnoException).code === "ENOENT";
 }
 
 function isSafeDirectEntry(root: string, target: string, kind: "directory" | "file"): boolean {

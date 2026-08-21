@@ -89,8 +89,8 @@ export function processTerminalPath(asyncDir: string): string {
 	return path.join(asyncDir, "process-terminal.json");
 }
 
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+function errorMessage(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
 }
 
 export function readProcessTerminalCandidate(asyncDir: string): ProcessTerminalCandidate | undefined {

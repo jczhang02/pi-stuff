@@ -175,9 +175,9 @@ export function contextActivityUpdateFromMagic(
 }
 
 export function failedContextActivity(
-	error: unknown,
+	cause: unknown,
 ): Omit<ContextActivityData, "id" | "kind" | "operation" | "version"> {
-	const detail = cleanDetail(error instanceof Error ? error.message : String(error));
+	const detail = cleanDetail(cause instanceof Error ? cause.message : String(cause));
 	return { detail, state: "error", summary: "failed" };
 }
 

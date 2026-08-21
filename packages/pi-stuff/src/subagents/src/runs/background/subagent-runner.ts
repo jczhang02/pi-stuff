@@ -597,8 +597,8 @@ function stoppedResult(task: RunnerAgentTask, message: string): BackgroundTaskRe
 	};
 }
 
-function failedResult(task: RunnerAgentTask, error: unknown): BackgroundTaskResult {
-	const message = boundResultText(error instanceof Error ? error.message : String(error), MAX_RESULT_ERROR_BYTES);
+function failedResult(task: RunnerAgentTask, cause: unknown): BackgroundTaskResult {
+	const message = boundResultText(cause instanceof Error ? cause.message : String(cause), MAX_RESULT_ERROR_BYTES);
 	return {
 		agent: task.agent,
 		...(task.context ? { context: task.context } : {}),
@@ -618,12 +618,12 @@ function terminalizeRejectedStep(
 	statusPath: string,
 	eventsPath: string,
 	index: number,
-	error: unknown,
+	cause: unknown,
 ): void {
 	const step = status.steps[index];
 	if (!step) return;
 	const endedAt = Date.now();
-	const message = boundResultText(error instanceof Error ? error.message : String(error), MAX_RESULT_ERROR_BYTES);
+	const message = boundResultText(cause instanceof Error ? cause.message : String(cause), MAX_RESULT_ERROR_BYTES);
 	step.status = "failed";
 	step.endedAt = endedAt;
 	step.durationMs = Math.max(0, endedAt - (step.startedAt ?? endedAt));

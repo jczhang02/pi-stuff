@@ -19,7 +19,7 @@ afterEach(() => resetDiagnosticProcessState());
 
 interface Deferred {
 	readonly promise: Promise<void>;
-	reject(reason: unknown): void;
+	reject(cause: unknown): void;
 }
 
 interface UiHarness {

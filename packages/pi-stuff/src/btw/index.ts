@@ -43,11 +43,11 @@ function waitForMainIdle(ctx: ExtensionCommandContext, signal: AbortSignal): Pro
 		signal.addEventListener("abort", abort, { once: true });
 		void ctx.waitForIdle().then(
 			() => finish(true),
-			(error: unknown) => {
+			(cause: unknown) => {
 				if (settled) return;
 				settled = true;
 				signal.removeEventListener("abort", abort);
-				reject(error);
+				reject(cause);
 			},
 		);
 	});

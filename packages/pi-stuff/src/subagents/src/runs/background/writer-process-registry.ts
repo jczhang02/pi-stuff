@@ -529,8 +529,8 @@ function safeProofFileName(value: string): string | undefined {
 	return /^[A-Za-z0-9._-]{1,256}$/u.test(value) && value !== "." && value !== ".." ? value : undefined;
 }
 
-function errorCode(error: unknown): string | undefined {
-	return error && isRuntimeObject(error) && "code" in error
-		? String((error as NodeJS.ErrnoException).code)
+function errorCode(cause: unknown): string | undefined {
+	return cause && isRuntimeObject(cause) && "code" in cause
+		? String((cause as NodeJS.ErrnoException).code)
 		: undefined;
 }

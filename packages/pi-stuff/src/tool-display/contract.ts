@@ -2197,9 +2197,9 @@ function uniqueToolNames(names: readonly string[]): string[] {
 	return [...new Set(names)];
 }
 
-function errorToolResult(error: unknown): AgentToolResult<unknown> {
+function errorToolResult(cause: unknown): AgentToolResult<unknown> {
 	return {
-		content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+		content: [{ type: "text", text: cause instanceof Error ? cause.message : String(cause) }],
 		details: {},
 	};
 }

@@ -110,7 +110,7 @@ test("a stale failed write does not roll back a newer value", async () => {
 		const first = store.setLiveElapsed(false);
 		const firstError = first.then(
 			() => undefined,
-			(error: unknown) => error,
+			(cause: unknown) => cause,
 		);
 		await started.promise;
 
@@ -145,7 +145,7 @@ test("a latest failed write rolls back to the value that actually persisted", as
 		const second = store.setLiveElapsed(true);
 		const secondError = second.then(
 			() => undefined,
-			(error: unknown) => error,
+			(cause: unknown) => cause,
 		);
 
 		release.resolve();

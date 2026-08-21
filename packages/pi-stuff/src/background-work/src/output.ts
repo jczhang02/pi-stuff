@@ -193,9 +193,9 @@ export class BoundedOutputFile {
 		this.tail = Buffer.from(joined.subarray(Math.max(0, joined.length - MEMORY_TAIL_LIMIT)));
 	}
 
-	private degradeStorage(error: unknown): void {
+	private degradeStorage(cause: unknown): void {
 		if (this.storageError !== undefined) return;
-		this.storageError = error instanceof Error ? error.message : String(error);
+		this.storageError = cause instanceof Error ? cause.message : String(cause);
 		this.remember(Buffer.from(`\n[Background output storage failed: ${this.storageError}]\n`, "utf-8"));
 		this.closeStorage();
 	}

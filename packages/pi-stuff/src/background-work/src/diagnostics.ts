@@ -7,11 +7,11 @@ interface WorkDiagnosticOptions {
 	readonly severity?: "error" | "info" | "warning";
 }
 
-export function reportWorkDiagnostic(summary: string, error?: unknown, options: WorkDiagnosticOptions = {}): void {
+export function reportWorkDiagnostic(summary: string, cause?: unknown, options: WorkDiagnosticOptions = {}): void {
 	reportDiagnostic({
 		...(options.action ? { action: options.action } : {}),
 		capability: "Background Work",
-		...(error === undefined ? {} : { error }),
+		...(cause === undefined ? {} : { error: cause }),
 		...(options.key ? { key: options.key } : {}),
 		severity: options.severity ?? "error",
 		summary,

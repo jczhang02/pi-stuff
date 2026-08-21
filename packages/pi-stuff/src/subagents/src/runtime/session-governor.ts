@@ -1444,8 +1444,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
-function errorCode(error: unknown): string | undefined {
-	return isRecord(error) && isRuntimeString(error["code"]) ? error["code"] : undefined;
+function errorCode(cause: unknown): string | undefined {
+	return isRecord(cause) && isRuntimeString(cause["code"]) ? cause["code"] : undefined;
 }
 
 async function ensurePrivateDirectory(fs: SessionGovernorFileSystem, directory: string): Promise<void> {

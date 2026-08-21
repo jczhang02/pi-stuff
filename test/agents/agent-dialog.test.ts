@@ -25,13 +25,13 @@ const theme = testTheme;
 
 interface Deferred<Value> {
 	readonly promise: Promise<Value>;
-	reject(error: unknown): void;
+	reject(cause: unknown): void;
 	resolve(value: Value): void;
 }
 
 function deferred<Value>(): Deferred<Value> {
 	let resolve!: (value: Value) => void;
-	let reject!: (error: unknown) => void;
+	let reject!: (cause: unknown) => void;
 	const promise = new Promise<Value>((onResolve, onReject) => {
 		resolve = onResolve;
 		reject = onReject;

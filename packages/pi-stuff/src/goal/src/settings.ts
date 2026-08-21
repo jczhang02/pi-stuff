@@ -212,10 +212,10 @@ function ownRecord(value: unknown): Record<string, unknown> | undefined {
 	return value && isRuntimeObject(value) && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-	return error instanceof Error && "code" in error;
+function isNodeError(cause: unknown): cause is NodeJS.ErrnoException {
+	return cause instanceof Error && "code" in cause;
 }
 
-function formatError(error: unknown) {
-	return error instanceof Error ? error.message : String(error);
+function formatError(cause: unknown) {
+	return cause instanceof Error ? cause.message : String(cause);
 }

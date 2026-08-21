@@ -164,7 +164,7 @@ type HostRunState = "closed" | "closing" | "open" | "opening";
 
 interface Deferred<Value> {
 	readonly promise: Promise<Value>;
-	reject(reason: unknown): void;
+	reject(cause: unknown): void;
 	resolve(value: Value): void;
 }
 
@@ -183,7 +183,7 @@ interface DialogRequest {
 	component: CommandDialogComponent | undefined;
 	state: DialogRequestState;
 	mount(scope: HostScope): CommandDialogComponent;
-	reject(reason: unknown): void;
+	reject(cause: unknown): void;
 	resolve(value: unknown): void;
 }
 
@@ -552,11 +552,11 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		queue.push(request);
 	}
 
-	private failRun(run: HostRun, reason: unknown): void {
+	private failRun(run: HostRun, cause: unknown): void {
 		if (run.state === "closed") return;
 		run.state = "closing";
 		for (const request of [...run.blocking, ...run.normal]) {
-			this.finishRequest(run, request, { kind: "reject", reason }, false);
+			this.finishRequest(run, request, { kind: "reject", reason: cause }, false);
 		}
 		this.closeHost(run);
 	}
@@ -1095,7 +1095,7 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 
 function createDeferred<Value>(): Deferred<Value> {
 	let resolvePromise: (value: Value) => void = () => {};
-	let rejectPromise: (reason: unknown) => void = () => {};
+	let rejectPromise: (cause: unknown) => void = () => {};
 	const promise = new Promise<Value>((resolve, reject) => {
 		resolvePromise = resolve;
 		rejectPromise = reject;

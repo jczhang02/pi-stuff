@@ -119,8 +119,8 @@ const statusCache = new Map<
 >();
 export const MAX_ASYNC_STATUS_FILE_BYTES = 8 * 1024 * 1024;
 
-function getErrorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+function getErrorMessage(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
 }
 
 export function resolveChildCwd(baseCwd: string, childCwd: string | undefined): string {
@@ -128,9 +128,9 @@ export function resolveChildCwd(baseCwd: string, childCwd: string | undefined): 
 	return path.isAbsolute(childCwd) ? childCwd : path.resolve(baseCwd, childCwd);
 }
 
-function isNotFoundError(error: unknown): boolean {
+function isNotFoundError(cause: unknown): boolean {
 	return (
-		isRuntimeObject(error) && error !== null && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
+		isRuntimeObject(cause) && cause !== null && "code" in cause && (cause as NodeJS.ErrnoException).code === "ENOENT"
 	);
 }
 

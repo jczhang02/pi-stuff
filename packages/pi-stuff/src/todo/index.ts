@@ -19,8 +19,8 @@ export const TODO_TOGGLE_KEY = Key.ctrlShift("t");
 export type TodoHost = import("../tool-display/contract.js").SuiteToolRegistrationHost &
 	Pick<ExtensionAPI, "registerShortcut">;
 
-function isStaleContext(error: unknown): boolean {
-	return /stale after session replacement/.test(String(error));
+function isStaleContext(cause: unknown): boolean {
+	return /stale after session replacement/.test(String(cause));
 }
 
 export default function piStuffTodo(pi: TodoHost): void {

@@ -145,13 +145,13 @@ interface AsyncRunListOptions {
 	preselectRecent?: boolean;
 }
 
-function getErrorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+function getErrorMessage(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
 }
 
-function isNotFoundError(error: unknown): boolean {
+function isNotFoundError(cause: unknown): boolean {
 	return (
-		isRuntimeObject(error) && error !== null && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
+		isRuntimeObject(cause) && cause !== null && "code" in cause && (cause as NodeJS.ErrnoException).code === "ENOENT"
 	);
 }
 

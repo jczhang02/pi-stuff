@@ -515,13 +515,13 @@ export function createAsyncJobTracker(
 		}
 	};
 
-	const startFallbackObserver = (job: AsyncJobState, reason: unknown): void => {
+	const startFallbackObserver = (job: AsyncJobState, cause: unknown): void => {
 		watchers.get(job.asyncId)?.close();
 		watchers.delete(job.asyncId);
 		if (fallbackTimers.has(job.asyncId)) return;
 		reportAgentDiagnostic(
 			`Agent status observation for '${job.asyncId}' fell back to asynchronous reconciliation:`,
-			reason,
+			cause,
 		);
 		const timer = setInterval(() => void observeJob(job, { status: true, control: true }), fallbackIntervalMs);
 		timer.unref?.();

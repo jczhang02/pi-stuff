@@ -14,8 +14,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
-function isMissingFile(error: unknown): boolean {
-	return isRecord(error) && error["code"] === "ENOENT";
+function isMissingFile(cause: unknown): boolean {
+	return isRecord(cause) && cause["code"] === "ENOENT";
 }
 
 export function codeModeProjectSettingsPath(cwd: string): string {

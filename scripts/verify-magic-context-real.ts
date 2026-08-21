@@ -335,8 +335,8 @@ async function createRpcTransport(
 				break;
 			}
 		}
-	})().catch((error: unknown) => {
-		readError = error instanceof Error ? error : new Error(String(error));
+	})().catch((cause: unknown) => {
+		readError = cause instanceof Error ? cause : new Error(String(cause));
 		for (const request of pending.values()) {
 			clearTimeout(request.timeout);
 			request.reject(readError);

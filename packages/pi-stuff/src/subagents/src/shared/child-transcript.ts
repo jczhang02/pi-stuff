@@ -79,8 +79,8 @@ export interface ChildTranscriptWriter {
 	getError(): string | undefined;
 }
 
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+function errorMessage(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
 }
 
 function finiteNumber(value: unknown): number | undefined {

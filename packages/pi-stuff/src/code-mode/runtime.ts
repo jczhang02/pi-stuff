@@ -170,8 +170,8 @@ function settleRunningTraces(
 	}
 }
 
-function wasCancelled(error: unknown, signal?: AbortSignal): boolean {
-	return signal?.aborted === true || (error instanceof Error && error.name === "AbortError");
+function wasCancelled(cause: unknown, signal?: AbortSignal): boolean {
+	return signal?.aborted === true || (cause instanceof Error && cause.name === "AbortError");
 }
 
 function contentItem(item: RuntimeContentItem): AgentToolResult<unknown>["content"][number] | undefined {

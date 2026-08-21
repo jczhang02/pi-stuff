@@ -225,10 +225,10 @@ export class RtkRuntime {
 		return selectedPath.replace(/^(["'])(.*)\1$/u, "$2");
 	}
 
-	private markDrifted(error: unknown, certificate: RuntimeCertificate): void {
+	private markDrifted(cause: unknown, certificate: RuntimeCertificate): void {
 		this.certificate = undefined;
 		this.snapshotValue = {
-			lastError: `RTK identity drift: ${cleanOneLine(error)}`,
+			lastError: `RTK identity drift: ${cleanOneLine(cause)}`,
 			path: certificate.path,
 			sha256: certificate.sha256,
 			state: "drifted",

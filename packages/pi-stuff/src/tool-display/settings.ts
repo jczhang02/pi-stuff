@@ -22,7 +22,7 @@ type SettingsListener = (settings: ToolUiSettings) => void;
 type SettingsWriter = (path: string, settings: ToolUiSettings) => Promise<void>;
 
 interface PersistenceWaiter {
-	reject(reason: unknown): void;
+	reject(cause: unknown): void;
 	resolve(): void;
 }
 

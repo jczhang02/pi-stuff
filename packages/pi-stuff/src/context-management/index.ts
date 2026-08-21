@@ -1562,7 +1562,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		}
 	}
 
-	private async degradeCommittedMagic(error: unknown, ctx: ExtensionContext): Promise<void> {
+	private async degradeCommittedMagic(cause: unknown, ctx: ExtensionContext): Promise<void> {
 		const generation = ++this.generation;
 		this.activeCommandActivity = undefined;
 		this.magicCommands.clear();
@@ -1594,7 +1594,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 			state: "degraded",
 			engine: "native",
 			trigger: "startup",
-			error: error instanceof Error ? error.message : String(error),
+			error: cause instanceof Error ? cause.message : String(cause),
 		};
 	}
 

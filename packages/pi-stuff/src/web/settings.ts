@@ -21,8 +21,8 @@ function isRecord(value: JsonInputValue): value is SettingsRecord {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
-function isFileError(error: unknown, code: string): boolean {
-	return error instanceof Error && "code" in error && error.code === code;
+function isFileError(cause: unknown, code: string): boolean {
+	return cause instanceof Error && "code" in cause && cause.code === code;
 }
 
 function settingsRecord<Value extends object>(value: Value): SettingsRecord {

@@ -219,18 +219,18 @@ function sanitizeNestedResultChildren(
 	return children.length ? children : undefined;
 }
 
-function errorCode(error: unknown): string | undefined {
-	return isRuntimeObject(error) && error !== null && "code" in error
-		? (error as NodeJS.ErrnoException).code
+function errorCode(cause: unknown): string | undefined {
+	return isRuntimeObject(cause) && cause !== null && "code" in cause
+		? (cause as NodeJS.ErrnoException).code
 		: undefined;
 }
 
-function isNotFound(error: unknown): boolean {
-	return errorCode(error) === "ENOENT";
+function isNotFound(cause: unknown): boolean {
+	return errorCode(cause) === "ENOENT";
 }
 
-function shouldPoll(error: unknown): boolean {
-	const code = errorCode(error);
+function shouldPoll(cause: unknown): boolean {
+	const code = errorCode(cause);
 	return code === "EMFILE" || code === "ENOSPC";
 }
 
@@ -429,13 +429,13 @@ export function createResultWatcher(
 		state.resultFileCoalescer.schedule(file, delayMs);
 	};
 
-	const reportStatusRepair = (file: string, message: string, error?: unknown): void => {
+	const reportStatusRepair = (file: string, message: string, cause?: unknown): void => {
 		const now = Date.now();
 		const last = statusRepairLastLog.get(file) ?? 0;
 		if (now - last < STATUS_REPAIR_LOG_INTERVAL_MS) return;
 		statusRepairLastLog.set(file, now);
-		if (error === undefined) reportAgentDiagnostic(message);
-		else reportAgentDiagnostic(message, error);
+		if (cause === undefined) reportAgentDiagnostic(message);
+		else reportAgentDiagnostic(message, cause);
 	};
 
 	const scheduleStatusRepair = (file: string, triggerTurn: boolean): void => {
@@ -855,14 +855,14 @@ export function createResultWatcher(
 		})();
 	};
 
-	const startPolling = (reason: unknown): boolean => {
+	const startPolling = (cause: unknown): boolean => {
 		state.watcher?.close();
 		state.watcher = null;
 		if (safetyScanTimer) timers.clearInterval(safetyScanTimer);
 		safetyScanTimer = undefined;
 		if (state.watcherRestartTimer) return true;
 		reportAgentDiagnostic(
-			`Subagent result watcher for '${resultsDir}' fell back to polling because native fs.watch is unavailable (${errorCode(reason) ?? "unknown error"}).`,
+			`Subagent result watcher for '${resultsDir}' fell back to polling because native fs.watch is unavailable (${errorCode(cause) ?? "unknown error"}).`,
 		);
 		primeExistingResults();
 		state.watcherRestartTimer = timers.setInterval(primeExistingResults, pollIntervalMs);

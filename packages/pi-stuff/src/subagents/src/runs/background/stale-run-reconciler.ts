@@ -69,8 +69,8 @@ interface ReconcileAsyncRunResult {
 	message?: string;
 }
 
-function getErrorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+function getErrorMessage(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
 }
 
 function readRunnerStartupDiagnostics(asyncDir: string): string | undefined {
@@ -98,9 +98,9 @@ function readRunnerStartupDiagnostics(asyncDir: string): string | undefined {
 	return lines.length > 4000 ? `${lines.slice(-4000)}\n[stderr tail truncated]` : lines;
 }
 
-function isNotFoundError(error: unknown): boolean {
+function isNotFoundError(cause: unknown): boolean {
 	return (
-		isRuntimeObject(error) && error !== null && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
+		isRuntimeObject(cause) && cause !== null && "code" in cause && (cause as NodeJS.ErrnoException).code === "ENOENT"
 	);
 }
 

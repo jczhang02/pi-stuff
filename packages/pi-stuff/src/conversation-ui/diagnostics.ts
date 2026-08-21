@@ -118,14 +118,14 @@ function safeJson(value: unknown): string | undefined {
 	}
 }
 
-function errorDetails(error: unknown): string[] {
-	if (error === undefined || error === null) return [];
-	if (error instanceof Error) {
-		const source = error.stack || `${error.name}: ${error.message}`;
+function errorDetails(cause: unknown): string[] {
+	if (cause === undefined || cause === null) return [];
+	if (cause instanceof Error) {
+		const source = cause.stack || `${cause.name}: ${cause.message}`;
 		return source.split(/\r?\n/gu);
 	}
-	if (isRuntimeString(error)) return error.split(/\r?\n/gu);
-	return [safeJson(error) ?? String(error)];
+	if (isRuntimeString(cause)) return cause.split(/\r?\n/gu);
+	return [safeJson(cause) ?? String(cause)];
 }
 
 function normalizedDetails(report: DiagnosticReport): string[] {

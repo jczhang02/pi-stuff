@@ -282,8 +282,8 @@ export function registerSteeringInbox(
 	let interval: NodeJS.Timeout | undefined;
 	let lastRuntimeError = "";
 	let lastRuntimeErrorAt = 0;
-	const reportRuntimeError = (context: string, error: unknown): void => {
-		const message = `${context}: ${error instanceof Error ? error.message : String(error)}`;
+	const reportRuntimeError = (context: string, cause: unknown): void => {
+		const message = `${context}: ${cause instanceof Error ? cause.message : String(cause)}`;
 		const now = Date.now();
 		if (message === lastRuntimeError && now - lastRuntimeErrorAt < 30_000) return;
 		lastRuntimeError = message;

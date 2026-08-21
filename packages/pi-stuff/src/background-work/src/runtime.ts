@@ -934,12 +934,12 @@ export class BackgroundWorkRuntime {
 			throw error;
 		}
 		let inputFailed = false;
-		const failInput = (error: unknown) => {
+		const failInput = (cause: unknown) => {
 			if (inputFailed) return;
 			inputFailed = true;
 			activity.output.append(
 				Buffer.from(
-					`Background supervisor input failed: ${error instanceof Error ? error.message : String(error)}\n`,
+					`Background supervisor input failed: ${cause instanceof Error ? cause.message : String(cause)}\n`,
 					"utf-8",
 				),
 			);

@@ -276,7 +276,7 @@ describe("background result watcher", () => {
 			JSON.stringify({ id: "release-failure", sessionId: "root-session", success: true, summary: "done" }),
 		);
 		const unhandled: unknown[] = [];
-		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		const onUnhandled = (cause: unknown) => unhandled.push(cause);
 		process.on("unhandledRejection", onUnhandled);
 		let releases = 0;
 		const state = {
@@ -738,7 +738,7 @@ describe("background result watcher", () => {
 		const deliveries: Array<{
 			promise: Promise<boolean>;
 			resolve: (value: boolean | PromiseLike<boolean>) => void;
-			reject: (reason?: unknown) => void;
+			reject: (cause?: unknown) => void;
 		}> = [];
 		let calls = 0;
 		const state = {

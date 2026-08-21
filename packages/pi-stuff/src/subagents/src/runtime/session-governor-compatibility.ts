@@ -376,12 +376,12 @@ function explicitPidState(pid: number): boolean | undefined {
 	}
 }
 
-function messageCode(error: unknown): string | undefined {
-	return error && isRuntimeObject(error) && "code" in error
-		? String((error as NodeJS.ErrnoException).code)
+function messageCode(cause: unknown): string | undefined {
+	return cause && isRuntimeObject(cause) && "code" in cause
+		? String((cause as NodeJS.ErrnoException).code)
 		: undefined;
 }
 
-function messageOf(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+function messageOf(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
 }

@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { isRuntimeObject } from "../../../shared/runtime-type.js";
 
-function notFound(error: unknown): boolean {
-	return isRuntimeObject(error) && error !== null && (error as NodeJS.ErrnoException).code === "ENOENT";
+function notFound(cause: unknown): boolean {
+	return isRuntimeObject(cause) && cause !== null && (cause as NodeJS.ErrnoException).code === "ENOENT";
 }
 
 /** Create or validate an Agent runtime directory without accepting symlink ownership. */
@@ -123,8 +123,8 @@ export class OwnedFileChangedDuringReadError extends Error {
 }
 
 /** Recognize a transient snapshot race through any local error wrappers. */
-export function isOwnedFileChangedDuringReadError(error: unknown): boolean {
-	let current = error;
+export function isOwnedFileChangedDuringReadError(cause: unknown): boolean {
+	let current = cause;
 	for (let depth = 0; depth < 8; depth += 1) {
 		if (current instanceof OwnedFileChangedDuringReadError) return true;
 		if (!isRuntimeObject(current) || current === null || !("cause" in current)) return false;

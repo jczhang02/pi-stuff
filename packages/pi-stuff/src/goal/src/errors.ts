@@ -37,8 +37,8 @@ const RETRYABLE_GOAL_ERROR_PATTERNS = [
 	/context[_\s-]*length[_\s-]*exceeded|input exceeds the context window/i,
 ] as const;
 
-export function formatError(error: unknown) {
-	return truncateNotification(error instanceof Error ? error.message : String(error));
+export function formatError(cause: unknown) {
+	return truncateNotification(cause instanceof Error ? cause.message : String(cause));
 }
 
 export function truncateNotification(value: string) {
