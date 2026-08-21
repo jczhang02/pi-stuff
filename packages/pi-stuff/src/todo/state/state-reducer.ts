@@ -1,3 +1,4 @@
+import type { JsonInputObject } from "../../shared/json-value.js";
 import type { Task, TaskAction, TaskMutationParams, TaskStatus } from "../tool/types.js";
 import { isTransitionValid } from "./invariants.js";
 import type { TaskState } from "./state.js";
@@ -25,14 +26,11 @@ function errorResult(state: TaskState, message: string): ApplyResult {
 	return { state, op: { kind: "error", message } };
 }
 
-function sameRecord(a: Record<string, unknown> | undefined, b: Record<string, unknown> | undefined): boolean {
+function sameRecord(a: JsonInputObject | undefined, b: JsonInputObject | undefined): boolean {
 	return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
-function mergeMetadata(
-	current: Record<string, unknown> | undefined,
-	patch: Record<string, unknown>,
-): Record<string, unknown> | undefined {
+function mergeMetadata(current: JsonInputObject | undefined, patch: JsonInputObject): JsonInputObject | undefined {
 	const merged = { ...current };
 	for (const [key, value] of Object.entries(patch)) {
 		if (value === null) delete merged[key];

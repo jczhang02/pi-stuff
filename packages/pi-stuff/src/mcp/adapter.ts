@@ -13,6 +13,7 @@ import {
 	getCommandDialogCoordinator,
 } from "../conversation-ui/index.js";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
+import { isJsonSourceValue } from "../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../shared/runtime-type.js";
 import { registerSuiteOwnedTool, type SuiteToolRegistrationHost } from "../tool-display/index.js";
 import { createMcpControlView } from "./mcp-dialog.js";
@@ -321,7 +322,7 @@ export function installMcpCapability(pi: ExtensionAPI): void {
 	const commands: CapturedCommands = {};
 	const store = new McpStatusStore();
 	const unsubscribeStatus = pi.events.on(MCP_STATUS_EVENT, (value) => {
-		store.set(value);
+		if (isJsonSourceValue(value)) store.set(value);
 	});
 	const adapter = createMcpAdapter({
 		deferStartupConnections: true,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { decodeCodeModeOperations } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { isTaskDetails, replayFromBranch } from "../../packages/pi-stuff/src/todo/state/replay.js";
 import {
@@ -10,6 +11,28 @@ import {
 	type TaskDetails,
 } from "../../packages/pi-stuff/src/todo/tool/types.js";
 import { ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+
+type SessionMessageEntry = Extract<SessionEntry, { type: "message" }>;
+const ZERO_USAGE = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+let entrySequence = 0;
+
+function sessionMessage(message: SessionMessageEntry["message"]): SessionMessageEntry {
+	entrySequence += 1;
+	return {
+		id: `todo-replay-${String(entrySequence)}`,
+		message,
+		parentId: null,
+		timestamp: "2026-08-22T00:00:00.000Z",
+		type: "message",
+	};
+}
 
 function task(id: string, subject: string, overrides: Partial<Task> = {}): Task {
 	return {
@@ -30,11 +53,19 @@ function snapshot(tasks: Task[], nextId: number): TaskDetails {
 	};
 }
 
-function toolResult(toolName: string, details: unknown) {
-	return { type: "message", message: { role: "toolResult", toolName, details } };
+function toolResult<Details extends object>(toolName: string, details: Details): SessionMessageEntry {
+	return sessionMessage({
+		role: "toolResult",
+		toolCallId: `call-${String(entrySequence + 1)}`,
+		toolName,
+		content: [],
+		details,
+		isError: false,
+		timestamp: 0,
+	});
 }
 
-function replay(branch: unknown[], projectMessages?: (messages: readonly unknown[]) => readonly unknown[]) {
+function replay(branch: SessionEntry[], projectMessages?: (messages: readonly unknown[]) => readonly unknown[]) {
 	return replayFromBranch({ sessionManager: { getBranch: () => branch } }, projectMessages);
 }
 
@@ -64,7 +95,7 @@ describe("isTaskDetails", () => {
 describe("replayFromBranch", () => {
 	it("returns a fresh empty state when no task snapshot exists", () => {
 		const first = replay([]);
-		const second = replay([{ type: "message", message: { role: "user", content: "hello" } }]);
+		const second = replay([sessionMessage({ role: "user", content: "hello", timestamp: 0 })]);
 		expect(first).toEqual({ tasks: [], nextId: 1 });
 		expect(second).toEqual({ tasks: [], nextId: 1 });
 		expect(first.tasks).not.toBe(second.tasks);
@@ -89,35 +120,37 @@ describe("replayFromBranch", () => {
 		const latestSnapshot = snapshot([task("1", "Nested")], 2);
 		const state = replay(
 			[
-				{
-					type: "message",
-					message: {
-						role: "assistant",
-						content: [{ type: "toolCall", id: "outer", name: "codemode", arguments: { code: "..." } }],
+				sessionMessage({
+					role: "assistant",
+					content: [{ type: "toolCall", id: "outer", name: "codemode", arguments: { code: "..." } }],
+					api: "openai-completions",
+					provider: "fixture",
+					model: "fixture",
+					usage: ZERO_USAGE,
+					stopReason: "toolUse",
+					timestamp: 0,
+				}),
+				sessionMessage({
+					role: "toolResult",
+					toolCallId: "outer",
+					toolName: "codemode",
+					content: [],
+					details: {
+						kind: "pi-stuff-code-mode",
+						operations: [
+							{
+								args: { taskId: "1", status: "completed" },
+								id: "nested-task",
+								name: TASK_UPDATE_TOOL_NAME,
+								result: { content: [], details: latestSnapshot },
+								state: "success",
+							},
+						],
+						status: "success",
 					},
-				},
-				{
-					type: "message",
-					message: {
-						role: "toolResult",
-						toolCallId: "outer",
-						toolName: "codemode",
-						content: [],
-						details: {
-							kind: "pi-stuff-code-mode",
-							operations: [
-								{
-									args: { taskId: "1", status: "completed" },
-									id: "nested-task",
-									name: TASK_UPDATE_TOOL_NAME,
-									result: { content: [], details: latestSnapshot },
-									state: "success",
-								},
-							],
-							status: "success",
-						},
-					},
-				},
+					isError: false,
+					timestamp: 0,
+				}),
 			],
 			(messages) => runtime.projectMessages(messages),
 		);

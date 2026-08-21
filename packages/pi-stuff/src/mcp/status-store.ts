@@ -1,3 +1,4 @@
+import type { JsonSourceObject, JsonSourceValue } from "../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { boundTerminalLine } from "../tool-display/index.js";
 import type { McpServerRuntimeStatus, McpServerStatusSnapshot, McpStatusSnapshot } from "./runtime/index.js";
@@ -16,44 +17,64 @@ const MAX_SERVERS = 500;
 const MAX_SERVER_NAME = 200;
 const MAX_FAILURE_DETAIL = 400;
 
-function record(value: unknown): Record<string, unknown> | undefined {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: undefined;
+interface McpServerOptionalSnapshot {
+	autoConnect?: boolean;
+	failedAgoSeconds?: number;
+	failureDetail?: string;
+	oauth?: boolean;
+	resourceCount?: number;
 }
 
-function count(value: unknown): number {
+function isJsonSourceObject(value: JsonSourceValue | undefined): value is JsonSourceObject {
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
+}
+
+function record(value: JsonSourceValue | undefined): JsonSourceObject | undefined {
+	return isJsonSourceObject(value) ? value : undefined;
+}
+
+function count(value: JsonSourceValue | undefined): number {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
 }
 
-function serverName(value: unknown): string {
+function serverName(value: JsonSourceValue | undefined): string {
 	return boundTerminalLine(value, MAX_SERVER_NAME);
 }
 
-function serverSnapshot(value: unknown): McpServerStatusSnapshot | undefined {
+function runtimeStatus(value: JsonSourceValue | undefined): McpServerRuntimeStatus | undefined {
+	if (!isRuntimeString(value)) return undefined;
+	for (const status of STATUSES) {
+		if (value === status) return status;
+	}
+	return undefined;
+}
+
+function serverSnapshot(value: JsonSourceValue): McpServerStatusSnapshot | undefined {
 	const candidate = record(value);
 	if (!candidate) return undefined;
 	const name = serverName(candidate["name"]);
-	const status = candidate["status"];
-	if (!name || !isRuntimeString(status) || !STATUSES.has(status as McpServerRuntimeStatus)) return undefined;
+	const status = runtimeStatus(candidate["status"]);
+	if (!name || !status) return undefined;
 	const resources = candidate["resourceCount"];
 	const failedAge = candidate["failedAgoSeconds"];
 	const failureDetail = boundTerminalLine(candidate["failureDetail"], MAX_FAILURE_DETAIL);
+	const optional: McpServerOptionalSnapshot = {};
+	if (isRuntimeNumber(resources)) optional.resourceCount = count(resources);
+	if (isRuntimeNumber(failedAge)) optional.failedAgoSeconds = count(failedAge);
+	if (status === "failed" && failureDetail) optional.failureDetail = failureDetail;
+	if (candidate["oauth"] === true) optional.oauth = true;
+	if (candidate["autoConnect"] === true) optional.autoConnect = true;
 	return {
 		disabled: candidate["disabled"] === true,
 		name,
-		...(isRuntimeNumber(resources) ? { resourceCount: count(resources) } : {}),
-		...(isRuntimeNumber(failedAge) ? { failedAgoSeconds: count(failedAge) } : {}),
-		...(status === "failed" && failureDetail ? { failureDetail } : {}),
-		...(candidate["oauth"] === true ? { oauth: true } : {}),
-		...(candidate["autoConnect"] === true ? { autoConnect: true } : {}),
-		status: status as McpServerRuntimeStatus,
+		...optional,
+		status,
 		toolCount: count(candidate["toolCount"]),
 	};
 }
 
 /** Accept only the versioned, bounded snapshot shape published by the fork. */
-export function parseMcpStatusSnapshot(value: unknown): McpStatusSnapshot | undefined {
+export function parseMcpStatusSnapshot(value: JsonSourceValue): McpStatusSnapshot | undefined {
 	const candidate = record(value);
 	if (candidate?.["version"] !== 1 || !Array.isArray(candidate["servers"])) return undefined;
 	const servers = candidate["servers"].slice(0, MAX_SERVERS).flatMap((server) => {
@@ -78,7 +99,7 @@ export class McpStatusStore {
 		return this.value;
 	}
 
-	set(value: unknown): void {
+	set(value: JsonSourceValue): void {
 		const snapshot = parseMcpStatusSnapshot(value);
 		if (!snapshot) return;
 		this.value = snapshot;

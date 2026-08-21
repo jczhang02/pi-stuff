@@ -203,6 +203,8 @@ describe("extension registration", () => {
 			"session_compact",
 			"session_shutdown",
 			"session_shutdown",
+			"session_shutdown",
+			"session_shutdown",
 			"session_start",
 			"session_tree",
 		]);

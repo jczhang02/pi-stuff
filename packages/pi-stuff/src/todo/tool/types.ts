@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 
 export const TASK_CREATE_TOOL_NAME = "TaskCreate";
 export const TASK_GET_TOOL_NAME = "TaskGet";
@@ -26,7 +27,20 @@ export interface Task {
 	status: TaskStatus;
 	blockedBy?: string[];
 	owner?: string;
-	metadata?: Record<string, unknown>;
+	metadata?: JsonInputObject;
+}
+
+/** Schema-validated Task Tool input shared by the Tool and pure reducer. */
+export interface TaskMutationParams {
+	taskId?: string;
+	subject?: string;
+	description?: string;
+	activeForm?: string;
+	status?: TaskStatus;
+	addBlockedBy?: string[];
+	addBlocks?: string[];
+	owner?: string;
+	metadata?: JsonInputObject;
 }
 
 /** Tool-result details may carry operation metadata, but replay only trusts the versioned snapshot fields. */
@@ -36,7 +50,7 @@ export interface TaskDetails {
 	tasks: Task[];
 	nextId: number;
 	action?: TaskAction;
-	params?: Record<string, unknown>;
+	params?: TaskMutationParams;
 	error?: string;
 }
 
@@ -45,7 +59,7 @@ const TaskStatusSchema = Type.Union(
 	{ description: "Current task lifecycle state" },
 );
 
-const MetadataSchema = Type.Record(Type.String(), Type.Unknown(), {
+const MetadataSchema = Type.Record(Type.String(), Type.Unsafe<JsonInputValue>({}), {
 	description: "Metadata keys to merge; a null value removes an existing key",
 });
 
@@ -84,17 +98,3 @@ export const TaskUpdateParamsSchema = Type.Object(
 	},
 	{ additionalProperties: false },
 );
-
-/** Structural bag used by the pure reducer after schema validation at the tool boundary. */
-export interface TaskMutationParams {
-	[key: string]: unknown;
-	taskId?: string;
-	subject?: string;
-	description?: string;
-	activeForm?: string;
-	status?: TaskStatus;
-	addBlockedBy?: string[];
-	addBlocks?: string[];
-	owner?: string;
-	metadata?: Record<string, unknown>;
-}
