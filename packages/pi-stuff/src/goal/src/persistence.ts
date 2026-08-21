@@ -1,6 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import {
+	isJsonInputValue,
+	type JsonInputObject,
+	type JsonInputValue,
+	type JsonObject,
+	parseJsonValue,
+} from "../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { isNonNegativeFiniteNumber, nonNegativeFiniteNumber, normalizeTokenBudget } from "./accounting.js";
 import type { GoalStatus } from "./prompts.js";
@@ -91,10 +98,12 @@ export function serializeGoalState(
 	queue: readonly ActiveGoal[],
 	pendingAction: PendingQueueAction | undefined,
 ): GoalStateEntryData {
+	const optional: Pick<GoalStateEntryData, "pendingAction" | "queue"> = {};
+	if (queue.length > 0) optional.queue = [...queue];
+	if (pendingAction) optional.pendingAction = pendingAction;
 	return {
 		goal: goal ?? null,
-		...(queue.length > 0 ? { queue: [...queue] } : {}),
-		...(pendingAction ? { pendingAction } : {}),
+		...optional,
 	};
 }
 
@@ -103,15 +112,19 @@ export function loadGoalStateFromSession(ctx: SessionContext): LoadedGoalState {
 	const canonicalEntry = entries
 		.filter((entry) => entry.type === "custom" && entry.customType === GOAL_STATE_ENTRY_TYPE)
 		.pop();
-	if (canonicalEntry) return loadCanonicalGoalState(canonicalEntry.data);
+	if (canonicalEntry) {
+		return loadCanonicalGoalState(isJsonInputValue(canonicalEntry.data) ? canonicalEntry.data : undefined);
+	}
 
 	const legacyEntry = entries
 		.filter((entry) => entry.type === "custom" && entry.customType === LEGACY_GOALS_STATE_ENTRY_TYPE)
 		.pop();
-	return legacyEntry ? loadLegacyGoalsState(legacyEntry.data) : emptyGoalState("none");
+	return legacyEntry
+		? loadLegacyGoalsState(isJsonInputValue(legacyEntry.data) ? legacyEntry.data : undefined)
+		: emptyGoalState("none");
 }
 
-function loadCanonicalGoalState(data: unknown): LoadedGoalState {
+function loadCanonicalGoalState(data: JsonInputValue): LoadedGoalState {
 	if (!isRecord(data)) return emptyGoalState("canonical");
 	const rawGoal = data.goal;
 	if (rawGoal !== null && !isGoal(rawGoal)) return emptyGoalState("canonical");
@@ -137,7 +150,7 @@ function loadCanonicalGoalState(data: unknown): LoadedGoalState {
 	};
 }
 
-function loadLegacyGoalsState(data: unknown): LoadedGoalState {
+function loadLegacyGoalsState(data: JsonInputValue): LoadedGoalState {
 	if (!isRecord(data)) return emptyGoalState("legacy-goals");
 	let rawGoals: ActiveGoal[];
 	if (Array.isArray(data.goals)) {
@@ -160,7 +173,7 @@ function loadLegacyGoalsState(data: unknown): LoadedGoalState {
 	};
 }
 
-function normalizePendingQueueAction(value: unknown): PendingQueueAction | undefined {
+function normalizePendingQueueAction(value: JsonInputValue): PendingQueueAction | undefined {
 	if (!isRecord(value)) return undefined;
 	if (value.kind === "prioritize") {
 		if (
@@ -169,12 +182,13 @@ function normalizePendingQueueAction(value: unknown): PendingQueueAction | undef
 		) {
 			return undefined;
 		}
-		return {
+		const action: Extract<PendingQueueAction, { kind: "prioritize" }> = {
 			kind: "prioritize",
 			objective: value.objective,
 			tokenBudget: normalizeTokenBudget(value.tokenBudget),
-			...(value.displacedUsageFinalized === true ? { displacedUsageFinalized: true } : {}),
 		};
+		if (value.displacedUsageFinalized === true) action.displacedUsageFinalized = true;
+		return action;
 	}
 	if (value.kind === "advance") {
 		if (
@@ -196,7 +210,7 @@ function normalizePendingQueueAction(value: unknown): PendingQueueAction | undef
 	return undefined;
 }
 
-function normalizeLegacyPendingPrioritize(value: unknown): PendingQueueAction | undefined {
+function normalizeLegacyPendingPrioritize(value: JsonInputValue): PendingQueueAction | undefined {
 	if (!isRecord(value) || !validObjective(value.objective)) return undefined;
 	return {
 		kind: "prioritize",
@@ -205,7 +219,7 @@ function normalizeLegacyPendingPrioritize(value: unknown): PendingQueueAction | 
 	};
 }
 
-function validObjective(value: unknown): value is string {
+function validObjective(value: JsonInputValue): value is string {
 	return isRuntimeString(value) && Boolean(value.trim()) && value.length <= 4_000;
 }
 
@@ -238,7 +252,10 @@ function normalizeLoadedGoal(goal: ActiveGoal): ActiveGoal {
 	};
 }
 
-function normalizeBlockerAudit(value: unknown, iteration: number): GoalBlockerAudit | undefined {
+function normalizeBlockerAudit(
+	value: GoalBlockerAudit | JsonInputValue,
+	iteration: number,
+): GoalBlockerAudit | undefined {
 	if (!isRecord(value)) return undefined;
 	const reasonFingerprint = normalizeOutputFingerprint(value.reasonFingerprint);
 	const lastIteration = normalizeSafetyCounter(value.lastIteration);
@@ -257,7 +274,7 @@ function normalizeBlockerAudit(value: unknown, iteration: number): GoalBlockerAu
 	return { reasonFingerprint, lastIteration, consecutiveTurns, attempts };
 }
 
-function normalizeBlockerAttempts(value: unknown): GoalBlockerAttempt[] {
+function normalizeBlockerAttempts(value: readonly GoalBlockerAttempt[] | JsonInputValue): GoalBlockerAttempt[] {
 	if (!Array.isArray(value) || value.length === 0 || value.length > 3) return [];
 	const attempts: GoalBlockerAttempt[] = [];
 	for (const candidate of value) {
@@ -287,15 +304,15 @@ function normalizeBlockerAttempts(value: unknown): GoalBlockerAttempt[] {
 	return attempts;
 }
 
-function normalizeSafetyCounter(value: unknown) {
+function normalizeSafetyCounter(value: JsonInputValue): number {
 	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
-function normalizeOutputFingerprint(value: unknown) {
+function normalizeOutputFingerprint(value: JsonInputValue): string | undefined {
 	return isRuntimeString(value) && /^[a-f0-9]{64}$/u.test(value) ? value : undefined;
 }
 
-function normalizeSafetyPauseCause(value: unknown): SafetyPauseCause | undefined {
+function normalizeSafetyPauseCause(value: JsonInputValue): SafetyPauseCause | undefined {
 	return value === "continuation_limit" || value === "no_progress" || value === "runaway_backstop" ? value : undefined;
 }
 
@@ -307,17 +324,21 @@ export function clearLegacyPersistedGoal(cwd: string) {
 	writeFileSync(STATE_FILE, `${JSON.stringify(goals, null, 2)}\n`);
 }
 
-function readState(): Record<string, unknown> {
+function isJsonObject(value: JsonInputValue): value is JsonObject {
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
+}
+
+function readState(): JsonObject {
 	if (!existsSync(STATE_FILE)) return {};
 	try {
-		const parsed = JSON.parse(readFileSync(STATE_FILE, "utf8")) as unknown;
-		return parsed && isRuntimeObject(parsed) && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+		const parsed = parseJsonValue(readFileSync(STATE_FILE, "utf8"));
+		return isJsonObject(parsed) ? parsed : {};
 	} catch {
 		return {};
 	}
 }
 
-function isGoal(value: unknown): value is ActiveGoal {
+function isGoal(value: JsonInputValue): value is JsonInputValue & ActiveGoal {
 	if (!isRecord(value)) return false;
 	return (
 		isRuntimeString(value.id) &&
@@ -338,11 +359,11 @@ function isGoal(value: unknown): value is ActiveGoal {
 	);
 }
 
-function isQueueGoal(value: unknown): value is ActiveGoal {
+function isQueueGoal(value: JsonInputValue): value is JsonInputValue & ActiveGoal {
 	return isGoal(value) && value.status !== "complete";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord<Value>(value: Value): value is Value & JsonInputObject {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 

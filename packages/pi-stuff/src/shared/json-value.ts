@@ -10,6 +10,14 @@ export interface JsonInputObject {
 	[key: string]: JsonInputValue;
 }
 
+export function isJsonInputValue<Value>(value: Value): value is Value & JsonInputValue {
+	if (value === null || isRuntimeBoolean(value) || isRuntimeString(value) || isRuntimeUndefined(value)) return true;
+	if (isRuntimeNumber(value)) return Number.isFinite(value);
+	if (Array.isArray(value)) return value.every(isJsonInputValue);
+	if (!isRuntimeObject(value)) return false;
+	return Object.values(value).every(isJsonInputValue);
+}
+
 /** A value observed at a runtime boundary that already conforms to the JSON grammar. */
 export type JsonSourceValue = boolean | null | number | string | readonly JsonSourceValue[] | JsonSourceObject;
 
@@ -30,4 +38,10 @@ export function parseJsonValue(text: string): JsonValue {
 	return JSON.parse(text) as JsonValue;
 }
 
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "./runtime-type.js";
+import {
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+	isRuntimeUndefined,
+} from "./runtime-type.js";

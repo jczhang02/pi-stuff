@@ -1,10 +1,5 @@
 import { type SessionEntry, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
-import {
-	isJsonSourceValue,
-	type JsonInputObject,
-	type JsonSourceObject,
-	type JsonSourceValue,
-} from "../../shared/json-value.js";
+import { isJsonInputValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	TASK_SNAPSHOT_CAPABILITY,
@@ -21,43 +16,43 @@ const VERSIONED_TOOL_NAMES = new Set<string>(Object.values(TASK_TOOL_NAMES));
 const LEGACY_TOOL_NAME = "todo";
 
 interface RawTask {
-	id?: JsonSourceValue;
-	subject?: JsonSourceValue;
-	description?: JsonSourceValue;
-	activeForm?: JsonSourceValue;
-	status?: JsonSourceValue;
-	blockedBy?: JsonSourceValue;
-	owner?: JsonSourceValue;
-	metadata?: JsonSourceValue;
+	id?: JsonInputValue;
+	subject?: JsonInputValue;
+	description?: JsonInputValue;
+	activeForm?: JsonInputValue;
+	status?: JsonInputValue;
+	blockedBy?: JsonInputValue;
+	owner?: JsonInputValue;
+	metadata?: JsonInputValue;
 }
 
 interface RawSnapshot {
-	capability?: JsonSourceValue;
-	schemaVersion?: JsonSourceValue;
-	tasks?: JsonSourceValue;
-	nextId?: JsonSourceValue;
+	capability?: JsonInputValue;
+	schemaVersion?: JsonInputValue;
+	tasks?: JsonInputValue;
+	nextId?: JsonInputValue;
 }
 
 interface RawToolResult {
-	role?: JsonSourceValue;
-	toolName?: JsonSourceValue;
-	details?: JsonSourceValue;
+	role?: JsonInputValue;
+	toolName?: JsonInputValue;
+	details?: JsonInputValue;
 }
 
-function isRecord(value: JsonSourceValue | undefined): value is JsonSourceObject {
+function isRecord(value: JsonInputValue): value is JsonInputObject {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
-function isTaskStatus(value: JsonSourceValue | undefined): value is TaskStatus {
+function isTaskStatus(value: JsonInputValue): value is TaskStatus {
 	return value === "pending" || value === "in_progress" || value === "completed" || value === "deleted";
 }
 
-function cloneMetadata(value: JsonSourceValue | undefined): JsonInputObject | undefined | null {
+function cloneMetadata(value: JsonInputValue): JsonInputObject | undefined | null {
 	if (!isRecord(value)) return value === undefined ? undefined : null;
 	return { ...value };
 }
 
-function normalizeVersionedTask(value: JsonSourceValue): Task | null {
+function normalizeVersionedTask(value: JsonInputValue): Task | null {
 	if (!isRecord(value)) return null;
 	const raw: RawTask = value;
 	if (!isRuntimeString(raw.id) || raw.id.length === 0) return null;
@@ -94,7 +89,7 @@ function normalizeVersionedTask(value: JsonSourceValue): Task | null {
 	return task;
 }
 
-function normalizeLegacyTask(value: JsonSourceValue): Task | null {
+function normalizeLegacyTask(value: JsonInputValue): Task | null {
 	if (!isRecord(value)) return null;
 	const raw: RawTask = value;
 	if (!isRuntimeNumber(raw.id) || !Number.isSafeInteger(raw.id) || raw.id < 1) return null;
@@ -152,10 +147,7 @@ function validateTasks(tasks: readonly Task[]): boolean {
 	return !hasCycle(tasks);
 }
 
-function decodeTasks(
-	values: JsonSourceValue | undefined,
-	normalize: (value: JsonSourceValue) => Task | null,
-): Task[] | null {
+function decodeTasks(values: JsonInputValue, normalize: (value: JsonInputValue) => Task | null): Task[] | null {
 	if (!Array.isArray(values)) return null;
 	const tasks: Task[] = [];
 	for (const value of values) {
@@ -166,12 +158,12 @@ function decodeTasks(
 	return validateTasks(tasks) ? tasks : null;
 }
 
-function normalizeNextId(value: JsonSourceValue | undefined, tasks: readonly Task[]): number | null {
+function normalizeNextId(value: JsonInputValue, tasks: readonly Task[]): number | null {
 	if (!isRuntimeNumber(value) || !Number.isSafeInteger(value) || value < 1) return null;
 	return Math.max(value, numericIdFloor(tasks));
 }
 
-function decodeVersionedSnapshot(value: JsonSourceValue | undefined): TaskState | null {
+function decodeVersionedSnapshot(value: JsonInputValue): TaskState | null {
 	if (!isRecord(value)) return null;
 	const raw: RawSnapshot = value;
 	if (raw.capability !== TASK_SNAPSHOT_CAPABILITY || raw.schemaVersion !== TASK_SNAPSHOT_SCHEMA_VERSION) return null;
@@ -181,7 +173,7 @@ function decodeVersionedSnapshot(value: JsonSourceValue | undefined): TaskState 
 	return nextId === null ? null : { tasks, nextId };
 }
 
-function decodeLegacySnapshot(value: JsonSourceValue | undefined): TaskState | null {
+function decodeLegacySnapshot(value: JsonInputValue): TaskState | null {
 	if (!isRecord(value)) return null;
 	const raw: RawSnapshot = value;
 	const tasks = decodeTasks(raw.tasks, normalizeLegacyTask);
@@ -192,7 +184,7 @@ function decodeLegacySnapshot(value: JsonSourceValue | undefined): TaskState | n
 
 /** Strict discriminator for the new, versioned task snapshot envelope. */
 export function isTaskDetails<Value>(value: Value): value is Value & TaskDetails {
-	return isJsonSourceValue(value) && decodeVersionedSnapshot(value) !== null;
+	return isJsonInputValue(value) && decodeVersionedSnapshot(value) !== null;
 }
 
 /**
@@ -208,7 +200,7 @@ export function replayFromBranch(
 	let highWaterNextId = result.nextId;
 	const branchMessages = [...ctx.sessionManager.getBranch()].flatMap(sessionEntryToContextMessages);
 	for (const candidate of projectMessages(branchMessages)) {
-		if (!isJsonSourceValue(candidate) || !isRecord(candidate)) continue;
+		if (!isJsonInputValue(candidate) || !isRecord(candidate)) continue;
 		const message: RawToolResult = candidate;
 		if (message.role !== "toolResult" || !isRuntimeString(message.toolName)) continue;
 
