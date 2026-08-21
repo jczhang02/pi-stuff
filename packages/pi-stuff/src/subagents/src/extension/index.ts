@@ -94,6 +94,7 @@ import { createAgentToolPresentation } from "./agent-tool-presentation.ts";
 import { loadConfig, type PiStuffAgentsConfig } from "./config.ts";
 import { routeLiveNestedAgentControl } from "./nested-control-router.ts";
 import {
+	type AgentEngineResult,
 	normalizePublicAgentParams,
 	type PublicAgentParams,
 	projectEngineResult,
@@ -134,10 +135,10 @@ interface RootExecutor {
 
 interface RootTracker {
 	ensureObserver(): void;
-	handleComplete(data: unknown): void;
-	handleProcessTerminal(data: unknown): void;
-	handleStarted(data: unknown): void;
-	handleStatus(data: unknown): void;
+	handleComplete<Data>(data: Data): void;
+	handleProcessTerminal<Data>(data: Data): void;
+	handleStarted<Data>(data: Data): void;
+	handleStatus<Data>(data: Data): void;
 	resetJobs(): void;
 	restoreActiveJobs(asyncDirectories?: readonly string[]): Promise<void>;
 }
@@ -176,6 +177,20 @@ interface RootWatcherInput {
 	readonly pi: ExtensionAPI;
 	readonly state: SubagentState;
 }
+
+interface AgentsRuntimeGlobal {
+	[RUNTIME_CLEANUP_KEY]?: () => void | Promise<void>;
+}
+
+interface CompletionStateProjection {
+	status?: string;
+	state?: string;
+	stopped?: boolean;
+	interrupted?: boolean;
+	success?: boolean;
+}
+
+type ExtensionEventHandler = Parameters<ExtensionAPI["events"]["on"]>[1];
 
 export type ExtensionRootRoster = Pick<
 	AgentRoster,
@@ -295,11 +310,10 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 };
 
 function createState(config: PiStuffAgentsConfig): SubagentState {
-	return {
+	const state: SubagentState = {
 		baseCwd: "",
 		currentSessionId: null,
 		currentSessionScope: null,
-		...(config.artifactDir ? { artifactDirPreference: config.artifactDir } : {}),
 		parentSessionFile: null,
 		subagentInProgress: false,
 		subagentSpawns: {
@@ -325,13 +339,22 @@ function createState(config: PiStuffAgentsConfig): SubagentState {
 			clear: () => {},
 		},
 	};
+	if (config.artifactDir) state.artifactDirPreference = config.artifactDir;
+	return state;
 }
 
-function record(value: unknown): Record<string, unknown> {
-	return isRuntimeObject(value) && value !== null ? (value as Record<string, unknown>) : {};
+function projectCompletionState<Value>(value: Value): CompletionStateProjection {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
+	const projection: CompletionStateProjection = {};
+	if ("status" in value && isRuntimeString(value.status)) projection.status = value.status;
+	if ("state" in value && isRuntimeString(value.state)) projection.state = value.state;
+	if ("stopped" in value && isRuntimeBoolean(value.stopped)) projection.stopped = value.stopped;
+	if ("interrupted" in value && isRuntimeBoolean(value.interrupted)) projection.interrupted = value.interrupted;
+	if ("success" in value && isRuntimeBoolean(value.success)) projection.success = value.success;
+	return projection;
 }
 
-function completionState(value: Record<string, unknown>, fallback: CompletionNotification): CompletionOutcomeStatus {
+function completionState(value: CompletionStateProjection, fallback: CompletionNotification): CompletionOutcomeStatus {
 	const explicitState = isRuntimeString(value.status)
 		? value.status
 		: isRuntimeString(value.state)
@@ -373,18 +396,19 @@ function completionDuration(result: CompletionNotification): number | undefined 
 }
 
 function completionOutcome(result: CompletionNotification, key: string): CompletionOutcomeEntry {
-	const raw = record(result);
-	const children = Array.isArray(raw.results) && raw.results.length > 0 ? raw.results.map(record) : [raw];
+	const raw = projectCompletionState(result);
+	const children = result.results?.length ? result.results.map(projectCompletionState) : [raw];
 	const states = children.map((child) => completionState(child, result));
 	const status = states.includes("failed") ? "failed" : states.includes("stopped") ? "stopped" : "completed";
 	const durationMs = completionDuration(result);
-	return {
+	let outcome: CompletionOutcomeEntry = {
 		version: 1,
 		key,
 		count: children.length,
 		status,
-		...(durationMs !== undefined ? { durationMs } : {}),
 	};
+	if (durationMs !== undefined) outcome = { ...outcome, durationMs };
+	return outcome;
 }
 
 function formatDuration(durationMs: number | undefined): string | undefined {
@@ -454,8 +478,18 @@ function createCompactCompletionNotifier(
 			delivered.clear();
 			for (const entry of entries) {
 				if (entry.type !== "custom" || entry.customType !== COMPLETION_ENTRY_TYPE) continue;
-				const data = record(entry.data);
-				if (data.version === 1 && isRuntimeString(data.key)) delivered.add(data.key);
+				const data = entry.data;
+				if (
+					isRuntimeObject(data) &&
+					data !== null &&
+					!Array.isArray(data) &&
+					"version" in data &&
+					data.version === 1 &&
+					"key" in data &&
+					isRuntimeString(data.key)
+				) {
+					delivered.add(data.key);
+				}
 			}
 		},
 		dispose() {
@@ -477,8 +511,8 @@ function firstText(result: AgentToolResult<Details>): string {
 		.trim();
 }
 
-function resultIsError(result: unknown): boolean {
-	return record(result).isError === true;
+function resultIsError(result: AgentEngineResult): boolean {
+	return result.isError === true;
 }
 
 function hasLiveWork(state: SubagentState): boolean {
@@ -514,7 +548,8 @@ export default function registerSubagentExtension(
 	const deps: ExtensionRootDependencies = { ...PRODUCTION_DEPENDENCIES, ...overrides };
 	if (deps.isChildProcess()) return;
 
-	const globalStore = globalThis as Record<string, unknown>;
+	// SAFETY: this Extension owns one literal global slot whose only value is its cleanup callback.
+	const globalStore = globalThis as typeof globalThis & AgentsRuntimeGlobal;
 	const previousCleanup = globalStore[RUNTIME_CLEANUP_KEY];
 	let previousCleanupPromise = Promise.resolve();
 	if (isRuntimeFunction(previousCleanup)) {
@@ -567,7 +602,7 @@ export default function registerSubagentExtension(
 		onUpdate: ((result: AgentToolResult<Details>) => void) | undefined,
 		ctx: ExtensionContext,
 		parentRunOrigin: AgentWorkOrigin,
-	) => Promise<AgentToolResult<Details>>;
+	) => Promise<AgentEngineResult>;
 	let activateCurrentSessionRuntime!: (ctx: ExtensionContext) => Promise<void>;
 	let recoverCurrentSessionHistory!: (ctx: ExtensionContext) => Promise<void>;
 
@@ -575,10 +610,9 @@ export default function registerSubagentExtension(
 		if (!ctx.hasUI) return Promise.resolve();
 		await activateCurrentSessionRuntime(ctx);
 		await recoverCurrentSessionHistory(ctx);
-		return deps.openDialog(ctx, coordinator, current, {
-			...(initialKey ? { initialKey } : {}),
-			readTranscript: readAgentTranscript,
-		});
+		let options: AgentDialogOptions = { readTranscript: readAgentTranscript };
+		if (initialKey) options = { ...options, initialKey };
+		return deps.openDialog(ctx, coordinator, current, options);
 	};
 
 	const contextForControl = (): ExtensionContext | null => state.lastUiContext;
@@ -589,12 +623,12 @@ export default function registerSubagentExtension(
 	): Promise<AgentControlAcknowledgement> => {
 		const ctx = contextForControl();
 		if (!ctx) return { acknowledged: false, message: "No active parent session is available." };
-		const params: PublicAgentParams = {
+		let params: PublicAgentParams = {
 			action,
 			id: row.runId,
 			index: row.childIndex,
-			...(message ? { message } : {}),
 		};
+		if (message) params = { ...params, message };
 		const result = await executePublicAgent(
 			deps.randomId(),
 			params,
@@ -797,15 +831,14 @@ export default function registerSubagentExtension(
 		return recovery.promise;
 	};
 
-	const governorFailureResult = (params: PublicAgentParams, message: string): AgentToolResult<Details> =>
-		({
-			content: [{ type: "text", text: message }],
-			isError: true,
-			details: {
-				mode: params.action ? "management" : params.tasks?.length ? "parallel" : "single",
-				results: [],
-			},
-		}) as AgentToolResult<Details>;
+	const governorFailureResult = (params: PublicAgentParams, message: string): AgentEngineResult => ({
+		content: [{ type: "text", text: message }],
+		isError: true,
+		details: {
+			mode: params.action ? "management" : params.tasks?.length ? "parallel" : "single",
+			results: [],
+		},
+	});
 
 	executePublicAgent = async (id, params, signal, onUpdate, ctx, parentRunOrigin) => {
 		const requestedEpoch = sessionEpoch;
@@ -860,11 +893,12 @@ export default function registerSubagentExtension(
 				governorFailureResult(params, error instanceof Error ? error.message : String(error)),
 			);
 		}
-		const prepared = await executionGovernor.prepare({
+		let prepareInput: Parameters<typeof executionGovernor.prepare>[0] = {
 			launchRunId,
 			params,
-			...(resumeTargetRunId ? { resumeTargetRunId } : {}),
-		});
+		};
+		if (resumeTargetRunId) prepareInput = { ...prepareInput, resumeTargetRunId };
+		const prepared = await executionGovernor.prepare(prepareInput);
 		if (!prepared.ok) return projectEngineResult(params, governorFailureResult(params, prepared.message));
 		const invocation: AgentExecutionInvocation | undefined = prepared.invocation;
 		if (!active || invocationEpoch !== sessionEpoch || state.currentSessionId !== invocationSessionId) {
@@ -886,6 +920,21 @@ export default function registerSubagentExtension(
 				startRunRuntime({ createDirectories: true, primeExisting: true });
 			}
 			const engineParams = { ...toEngineParams(params), launchRunId };
+			let hooks: SubagentExecutionHooks = { parentRunOrigin };
+			if (invocation && params.foreground === true) {
+				hooks = {
+					...hooks,
+					beforeForegroundStart: async ({ runId, asyncDir, abortStart }) => {
+						await executionGovernor.observeAsyncStarted({
+							id: runId,
+							pid: process.pid,
+							asyncDir,
+							abortStart,
+						});
+						foregroundStarted = true;
+					},
+				};
+			}
 			const result = await executor.execute(
 				id,
 				engineParams,
@@ -897,22 +946,7 @@ export default function registerSubagentExtension(
 						}
 					: undefined,
 				ctx,
-				{
-					parentRunOrigin,
-					...(invocation && params.foreground === true
-						? {
-								beforeForegroundStart: async ({ runId, asyncDir, abortStart }) => {
-									await executionGovernor.observeAsyncStarted({
-										id: runId,
-										pid: process.pid,
-										asyncDir,
-										abortStart,
-									});
-									foregroundStarted = true;
-								},
-							}
-						: {}),
-				},
+				hooks,
 			);
 			if (
 				invocation &&
@@ -1002,11 +1036,12 @@ export default function registerSubagentExtension(
 		description: buildSubagentToolDescription(),
 		parameters: SubagentParams,
 		async execute(id, rawParams, signal, onUpdate, ctx) {
+			// SAFETY: ToolDefinition validates rawParams against SubagentParams before invoking execute.
+			const supplied = rawParams as PublicAgentParams;
 			let params: PublicAgentParams;
 			try {
-				params = normalizePublicAgentParams(rawParams as PublicAgentParams);
+				params = normalizePublicAgentParams(supplied);
 			} catch (error) {
-				const supplied = rawParams as PublicAgentParams;
 				return projectEngineResult(
 					supplied,
 					governorFailureResult(supplied, error instanceof Error ? error.message : String(error)),
@@ -1046,14 +1081,16 @@ export default function registerSubagentExtension(
 	});
 
 	const eventUnsubscribes: Array<() => void> = [];
-	const onBus = (event: string, handler: (data: unknown) => void): void => {
+	const onBus = (event: string, handler: ExtensionEventHandler): void => {
 		const unsubscribe = pi.events.on(event, handler);
 		if (isRuntimeFunction(unsubscribe)) eventUnsubscribes.push(unsubscribe);
 	};
-	const belongsToCurrentSession = (data: unknown): boolean => {
-		if (!data || !isRuntimeObject(data)) return false;
-		const event = data as { sessionId?: unknown; runId?: unknown; id?: unknown };
-		return sessionArtifactMatches(state.currentSessionScope, event.sessionId, event.runId ?? event.id);
+	const belongsToCurrentSession = <Data>(data: Data): boolean => {
+		if (!data || !isRuntimeObject(data) || data === null || Array.isArray(data)) return false;
+		const sessionId = "sessionId" in data ? data.sessionId : undefined;
+		const runId = "runId" in data ? data.runId : undefined;
+		const id = "id" in data ? data.id : undefined;
+		return sessionArtifactMatches(state.currentSessionScope, sessionId, runId ?? id);
 	};
 	const normalizeCurrentSessionEvent = <Event>(data: Event) =>
 		data && isRuntimeObject(data) && state.currentSessionId ? { ...data, sessionId: state.currentSessionId } : data;
@@ -1078,7 +1115,13 @@ export default function registerSubagentExtension(
 		});
 		tracker.handleComplete(normalized);
 		current.refresh();
-		if ((normalized as CompletionNotification).parentRunOrigin === "user") {
+		if (
+			isRuntimeObject(normalized) &&
+			normalized !== null &&
+			!Array.isArray(normalized) &&
+			"parentRunOrigin" in normalized &&
+			normalized.parentRunOrigin === "user"
+		) {
 			requestStatuslineGitRefreshAfterUserWork(pi);
 		}
 	});
