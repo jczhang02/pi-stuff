@@ -37,4 +37,6 @@ Use signed Conventional Commits:
 <type>(<scope>): <imperative subject>
 ```
 
-Maintainers may push verified commits directly to `main`. External contributions should use a pull request. Force-pushing and deleting `main` are prohibited.
+Maintainers may push verified commits directly to `main`. External contributions should use a pull request as the
+code-delivery and review surface; accepted scope and status remain in Beads as described in the
+[issue-tracker contract](../docs/agents/issue-tracker.md). Force-pushing and deleting `main` are prohibited.

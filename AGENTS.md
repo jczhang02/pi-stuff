@@ -1,95 +1,58 @@
 # Repository instructions
 
-These instructions apply only while developing this repository. This file is not a Pi Package resource and must never be copied to the user's global Pi agent directory.
+These instructions apply only while developing this repository. `AGENTS.md`, `CONTEXT.md`, and `docs/` are engineering
+material, not Pi Runtime Resources; never copy them into a user's global Pi Agent directory.
 
-## Before changing code
+## Read by task
 
-- Read `CONTEXT.md` and the relevant records under `docs/adr/`.
-- Read `DESIGN.md` before changing a visible surface. It owns the shared visual language; Capability ADRs own
-  surface-specific content and behavior.
-- Use the canonical terms from the glossary in code, tests, issues, and documentation.
-- Read `docs/agents/issue-tracker.md` before creating or changing work items.
-- Target the certified host and toolchain versions documented in `docs/compatibility.md`.
+- Before changing code, read `CONTEXT.md`, the relevant accepted ADRs, and `docs/compatibility.md`.
+- For visible surfaces, also read `DESIGN.md` and the owning Module README or ADR. For work items, read
+  `docs/agents/issue-tracker.md`.
+- Use the glossary's canonical terms. Record durable terminology or architecture decisions in `CONTEXT.md` or an ADR,
+  not only in Session history.
 
-## Architecture
+## Working rules
 
-- Pi is the Host. Do not create another CLI, runtime, session layer, SDK, or TUI shell.
-- `@jczhang02/pi-stuff` is the one local Pi Package and has one default Extension factory.
-- A Capability Module owns one coherent behavior inside that Package. Modules are not independently versioned,
-  installed, or published.
-- Lifecycle authority stays with its owner. Pi owns the ordinary foreground Agent run; Goal owns Goal continuation,
-  budgets, convergence, pause, completion, and terminal state; Agents owns delegated Agent execution, limits, and
-  termination. Another Module may expose observations or pressure signals through a narrow interface, but it must not
-  enforce that lifecycle's policy or hard-code its commands, Tools, statuses, or terminal protocol.
-- Context Management is the Magic Context Adapter. It owns provider context projection, retrieval, compaction, and
-  context-pressure handling. It owns no task anchor or general work-convergence policy, must not impose generic turn,
-  Tool, or delegation limits on Goal, Agents, or ordinary Pi work, and must not decide when those lifecycles pause,
-  stop, complete, or fail.
-- Keep Extension import pure: no network calls, file writes, subprocesses, or host-setting mutations. Session startup must not perform network calls, spawn subprocesses, mutate Host settings, or create, rewrite, or migrate user configuration. A documented Capability may initialize rebuildable derived local state before editor readiness when an accepted ADR requires that work off the message-submission path.
-- During user-started work, a Capability may update its own documented derived local state across automatic continuations. First-use configuration creation must wait for direct interactive/RPC input or an explicit command or Tool; external, destructive, or unrelated effects still require an explicit user-triggered contract.
-- The Statusline has one observation-only exception: after a complete user-driven Agent run settles it may run a bounded, no-lock `git status` read to obtain change counts that Pi does not expose. It must never run during import, initialization, `session_start`, individual model/Tool turns, or Extension-authored automatic runs, and failure must degrade to branch-only display.
-- Let initialization errors propagate. A partially loaded Suite is not a supported state.
+- Fix the shared root cause and inspect the complete affected Capability, not only the reported example. Prefer the
+  smallest change at the owning seam and reuse Pi's public APIs, native behavior, and existing Suite components.
+- For material design choices, compare viable options and evidence before choosing the smallest adequate one. Explain
+  unfamiliar terms and the result in plain language.
+- Make obvious, reversible repository-local decisions without asking. Ask one concise question in the conversation,
+  not through a question widget, only when scope, authority, or a material product decision genuinely depends on it.
+- Keep long-running work observable. The Agent owns focused checks and representative real-Host acceptance; do not hand
+  routine verification back to the user. Use independent review for broad, cross-Capability, architecture, or
+  release-risk work, and when the user requests adversarial review—not for every small isolated change.
 
-## UI contract
+## Hard boundaries
 
-- Use Claude Code as the primary visible-behavior reference and Pi's native interaction grammar as the Host constraint. Reproduce the useful hierarchy, density, and lifecycle rather than copying source code or introducing another shell.
-- Temporary focused surfaces are full-width, non-floating Command Dialogs. Settings use Pi's native SettingsList and keyboard behavior.
-- Use Pi semantic theme tokens only. Never hard-code a personal theme, ANSI palette, or decorative frame for a focused
-  Capability surface. The confirmed Claude-style bordered Welcome card is the sole exception: it is scrollable startup
-  identity inside the conversation document, not a modal, overlay, or permanent Package dashboard.
-- Preserve the conversation-first layout: reduce or omit lower-priority information at narrow widths before allowing overlap, stale chrome, editor displacement, or unbounded growth.
-- Focus, Escape, draft, footer, working row, Todo widget, and Agent roster restoration are one deterministic cross-Capability contract.
-- Keep information at one authority. Do not duplicate Todo, Agent, BTW, Permission, or Tool state in the Statusline or another permanent dashboard.
+- Pi is the Host. Do not create another CLI, runtime, session layer, SDK, or TUI shell. Pi Stuff remains one local
+  Package with one default Extension factory; Capability Modules are internal and not independently installed or
+  published.
+- Lifecycle authority stays with its owner: Pi owns ordinary foreground Agent runs, Goal owns Goal continuation and
+  terminal policy, and Agents owns delegated execution. Context Management owns context projection, retrieval,
+  compaction, and pressure handling—not task convergence or another lifecycle's limits or terminal decisions.
+- Keep Extension import pure. Session startup must not access the network, spawn subprocesses, mutate Host settings, or
+  create, rewrite, or migrate user configuration. First-use configuration waits for direct interactive/RPC input or an
+  explicit command or Tool. Let initialization errors propagate rather than loading a partial Suite.
+- Follow `DESIGN.md` for UI and keep each state at one visible authority. Ship TypeScript source without a `dist/`
+  lane. Change `packages/pi-stuff/suite.json`, then run `bun run suite:generate`; never edit generated composition
+  output alone.
 
-## Package contract
+## Workflow and safety
 
-- Ship TypeScript source; do not add a `dist/` build lane.
-- Pi core packages are wildcard peer dependencies and exact `0.84.2` development dependencies. Runtime certification
-  uses the upstream source profile in `docs/compatibility.md`; never treat the same version string as sufficient proof.
-- Declare external runtime dependencies once in `packages/pi-stuff/package.json`; internal Modules use relative imports
-  and must never depend on a self-owned `@jczhang02/pi-*` package.
-- Only files in the Package's explicit `files` allowlist may enter its local verification archive.
-- Keep the Package private and do not add lifecycle or npm publication scripts.
-- `packages/pi-stuff/suite.json` is the ordered composition source of truth. Run `bun run suite:generate` after changing it; never edit generated composition output alone.
+- Put every Pi Stuff Git worktree under repository-local `.worktrees/`.
+- Use the versions in `docs/compatibility.md`; keep direct dependencies exact and `trustedDependencies` empty.
+- During development, run focused tests and `bun run check:fast`. Before marking a PR ready or merging, run
+  `bun run check` once against the final changes. Public-seam certification cannot be claimed from mocks.
+- Do not infer a merge from ancestry alone. Inspect the relevant patch or commits, every associated worktree's tracked
+  and untracked state, and the target branch before reporting merge or cleanup status.
+- Commit small, coherent checkpoints frequently after the relevant focused check; do not accumulate unrelated work in
+  one commit. Use signed Conventional Commits.
+- Keep current source, ADRs, maintainer instructions, and executable documentation in English. Update the owning
+  current documentation in the same change whenever behavior, contracts, terminology, compatibility, or workflow
+  changes; do not defer documentation until the end.
+- Never commit credentials, auth, model stores, Sessions, caches, `.env`, machine state, or private absolute paths.
+  Installing the Suite remains an explicit maintainer action through `pi install`; Suite code must not install itself.
 
-## Verification seams
-
-Tests observe behavior at these agreed seams:
-
-- the Suite generator's result and committed artifacts;
-- repository safety through its audit command;
-- Extension discovery through Pi's public RPC protocol;
-- the extracted local Package archive through Pi's Package loader.
-
-Use `bun test` and integration-style assertions at these seams. Host and Package certification must use the public seams and may not be claimed from mocks or private helpers. Focused regression tests may exercise Module-internal pure logic and state, but supplement rather than replace seam-level certification. No test may call an LLM or require credentials.
-
-## Tooling
-
-- Create every Pi Stuff Git worktree under the repository-local `.worktrees/` directory; do not place worktrees elsewhere.
-- Use Bun 1.3.14 for dependency management, scripts, and tests.
-- Keep all direct dependencies exact and keep `trustedDependencies` empty.
-- During development, run focused tests and `bun run check:fast`.
-- Before marking a pull request ready or merging, run `bun run check` once against the final changes.
-- Current source, ADRs, maintainer instructions, and executable documentation are English. Deliberately localized historical reports and CJK/UI fixtures may retain their language.
-- Use Conventional Commits and preserve GPG signing.
-
-## Generated and local state
-
-- Never commit auth, model-store, session, cache, `.env`, or machine-specific state.
-- Never put private absolute paths or credentials in Beads or public documentation.
-- The repository root `AGENTS.md`, `CONTEXT.md`, and `docs/` are engineering material, not Runtime Resources.
-- Installing the local Suite is an explicit maintainer action through `pi install`; Suite code must not perform installation.
-
-## Agent skills
-
-### Issue tracker
-
-Beads is the canonical issue tracker; GitHub Issues is a public push-only mirror and external request inbox. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Use the five canonical triage labels without aliases. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-This repository uses a single-context domain layout. See `docs/agents/domain.md`.
+Beads is the canonical issue tracker; GitHub Issues is its public push-only mirror and external intake. The five
+canonical labels and the single-context domain layout are defined under `docs/agents/`.

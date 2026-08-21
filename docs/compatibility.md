@@ -23,12 +23,14 @@ mismatch, not cryptographic proof against a process that forges the workflow env
 is the trust root.
 
 CI exposes two stable checks. `Fast` always validates the frozen dependency graph, repository formatting, type surfaces,
-unused-code analysis, generated composition, and public-release safety. `Acceptance` then builds the certified Host and
-RTK runtime before running every test file in a fresh Bun process, real TUI verification, the Tool Activity benchmark,
-and package verification in a network-isolated namespace. Per-file process isolation prevents one process- or PTY-heavy
-test from contaminating the native resources used by a later test. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip `Acceptance`;
-executable documentation remains fully certified. Manual dispatch always runs both checks. A separate weekly upstream
-watch reports when the npm `latest` tag moves beyond the certified Host, but never changes certification automatically.
+unused-code analysis, generated composition, and public-release safety. For pull requests, the scope classifier starts
+`Acceptance` when executable behavior or executable documentation changed; a direct push to `main` runs `Fast` only,
+and manual dispatch runs both checks. `Acceptance` builds the certified Host and RTK runtime before running every test
+file in a fresh Bun process, real TUI verification, the Tool Activity benchmark, and package verification in a
+network-isolated namespace. Per-file process isolation prevents one process- or PTY-heavy test from contaminating the
+native resources used by a later test. Only Beads metadata and recorded PNG, GIF, HTML, or ANSI evidence may skip
+`Acceptance`; executable documentation remains fully certified. A separate weekly upstream watch reports when the npm
+`latest` tag moves beyond the certified Host, but never changes certification automatically.
 
 Bun dependency upgrades are deliberate maintainer changes because the frozen Bun lockfile, exact toolchain, and certified
 Pi profile must move coherently. Dependabot is limited to pinned GitHub Actions; it does not produce npm pull requests

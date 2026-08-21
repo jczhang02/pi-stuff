@@ -9,3 +9,6 @@
 | `wontfix` | `wontfix` | Will not be actioned |
 
 When a skill names a canonical role, use the corresponding tracker label.
+
+These labels describe the public GitHub triage mirror. They do not make work executable: Beads ownership,
+dependencies, and `bd ready` remain authoritative.

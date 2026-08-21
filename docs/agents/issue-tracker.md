@@ -69,7 +69,9 @@ When a skill says "fetch the relevant ticket", use `bd show <id>`. Treat its Git
 
 ## Pull requests as a triage surface
 
-PRs as a request surface: no.
+PRs are for delivering and reviewing code, not for requesting work or defining its authoritative scope. External
+contributors may submit a PR, but a maintainer must adopt accepted scope into Beads before implementation is treated
+as repository work. Review comments may refine the patch; Beads retains work-item status, dependencies, and closure.
 
 ## Public-data policy
 
