@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { terminateOrphanWriterProcesses } from "../runs/background/writer-process-registry.ts";
 import { readForegroundOwnerExit, readForegroundOwnerExitAsync } from "../runs/foreground/owner-exit.ts";
@@ -20,11 +21,59 @@ const MAX_REPLAYED_CHILDREN = 20;
 const MAX_FOREGROUND_COMPLETION_BYTES = 32 * 1024 * 1024;
 const FOREGROUND_OWNER_CRASH = "Foreground Agent crashed because its owning Pi process exited.";
 
-function record(value: unknown): Record<string, unknown> {
-	return value && isRuntimeObject(value) && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+interface ForegroundReplayRecord {
+	readonly activityState?: unknown;
+	readonly agent?: unknown;
+	readonly agentStatus?: unknown;
+	readonly capabilityCeiling?: unknown;
+	readonly children?: unknown;
+	readonly context?: unknown;
+	readonly crashed?: unknown;
+	readonly currentPath?: unknown;
+	readonly currentTool?: unknown;
+	readonly currentToolStartedAt?: unknown;
+	readonly cwd?: unknown;
+	readonly details?: unknown;
+	readonly endedAt?: unknown;
+	readonly error?: unknown;
+	readonly exitCode?: unknown;
+	readonly finalOutput?: unknown;
+	readonly id?: unknown;
+	readonly interrupted?: unknown;
+	readonly label?: unknown;
+	readonly lastActivityAt?: unknown;
+	readonly launchContractDigest?: unknown;
+	readonly message?: unknown;
+	readonly mode?: unknown;
+	readonly model?: unknown;
+	readonly output?: unknown;
+	readonly recentOutput?: unknown;
+	readonly results?: unknown;
+	readonly role?: unknown;
+	readonly runId?: unknown;
+	readonly sessionFile?: unknown;
+	readonly state?: unknown;
+	readonly stopped?: unknown;
+	readonly success?: unknown;
+	readonly summary?: unknown;
+	readonly task?: unknown;
+	readonly thinking?: unknown;
+	readonly timestamp?: unknown;
+	readonly toolCount?: unknown;
+	readonly toolName?: unknown;
+	readonly transcriptError?: unknown;
+	readonly transcriptPath?: unknown;
+	readonly turnCount?: unknown;
+	readonly type?: unknown;
 }
 
-function displayString(value: unknown, maxChars: number): string | undefined {
+function record<Value>(value: Value): ForegroundReplayRecord {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return {};
+	// SAFETY: callers read only the explicitly declared raw fields and validate each before projection.
+	return value as Value & ForegroundReplayRecord;
+}
+
+function displayString<Value>(value: Value, maxChars: number): string | undefined {
 	if (!isRuntimeString(value) || !value.trim()) return undefined;
 	return value.length > maxChars ? value.slice(0, maxChars) : value;
 }
@@ -37,31 +86,31 @@ function hasControlCharacter(value: string): boolean {
 	return false;
 }
 
-function exactString(value: unknown, maxChars: number): string | undefined {
+function exactString<Value>(value: Value, maxChars: number): string | undefined {
 	if (!isRuntimeString(value) || !value.trim() || value.length > maxChars || hasControlCharacter(value)) {
 		return undefined;
 	}
 	return value;
 }
 
-function finiteInteger(value: unknown): number | undefined {
+function finiteInteger<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) && Number.isInteger(value) ? value : undefined;
 }
 
-function entryTime(value: unknown): number {
+function entryTime<Value>(value: Value): number {
 	if (!isRuntimeString(value)) return 0;
 	const parsed = Date.parse(value);
 	return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function childStatus(child: Record<string, unknown>): ForegroundResumeChild["status"] {
+function childStatus(child: ForegroundReplayRecord): ForegroundResumeChild["status"] {
 	if (child.stopped === true) return "stopped";
 	if (child.interrupted === true) return "paused";
 	if (child.crashed === true) return "failed";
 	return finiteInteger(child.exitCode) === 0 ? "completed" : "failed";
 }
 
-function replayChild(value: unknown, index: number, updatedAt: number): ForegroundResumeChild | undefined {
+function replayChild<Value>(value: Value, index: number, updatedAt: number): ForegroundResumeChild | undefined {
 	const child = record(value);
 	const agent = exactString(child.agent, 256);
 	const task = displayString(child.task, 16 * 1024);
@@ -102,27 +151,28 @@ function replayChild(value: unknown, index: number, updatedAt: number): Foregrou
 				.map((nested) => sanitizeSummary(nested))
 				.filter((nested): nested is NonNullable<typeof nested> => Boolean(nested))
 		: undefined;
-	return {
+	const replayed: ForegroundResumeChild = {
 		agent,
 		index,
 		task,
 		status: childStatus(child),
 		exitCode,
 		updatedAt,
-		...(context ? { context } : {}),
-		...(child.crashed === true ? { crashed: true } : {}),
-		...(sessionFile ? { sessionFile } : {}),
-		...(childCwd ? { cwd: childCwd } : {}),
-		...(model ? { model } : {}),
-		...(thinking ? { thinking } : {}),
-		...(error ? { error } : {}),
-		...(finalOutput ? { finalOutput } : {}),
-		...(transcriptPath ? { transcriptPath } : {}),
-		...(transcriptError ? { transcriptError } : {}),
-		...(launchContractDigest ? { launchContractDigest } : {}),
-		...(capabilityCeiling ? { capabilityCeiling } : {}),
-		...(children?.length ? { children } : {}),
 	};
+	if (context) replayed.context = context;
+	if (child.crashed === true) replayed.crashed = true;
+	if (sessionFile) replayed.sessionFile = sessionFile;
+	if (childCwd) replayed.cwd = childCwd;
+	if (model) replayed.model = model;
+	if (thinking) replayed.thinking = thinking;
+	if (error) replayed.error = error;
+	if (finalOutput) replayed.finalOutput = finalOutput;
+	if (transcriptPath) replayed.transcriptPath = transcriptPath;
+	if (transcriptError) replayed.transcriptError = transcriptError;
+	if (launchContractDigest) replayed.launchContractDigest = launchContractDigest;
+	if (capabilityCeiling) replayed.capabilityCeiling = capabilityCeiling;
+	if (children?.length) replayed.children = children;
+	return replayed;
 }
 
 /** Rebuild bounded foreground resume/report state from subagent tool results on the active session branch. */
@@ -162,6 +212,10 @@ export function replayForegroundRuns(entries: Iterable<unknown>, sessionId: stri
 	);
 }
 
+function hasErrorCode<ErrorValue>(error: ErrorValue, code: string): boolean {
+	return isRuntimeObject(error) && error !== null && "code" in error && error.code === code;
+}
+
 function ownerLiveness(status: AsyncStatus): "alive" | "dead" | "unknown" {
 	const pid = status.pid;
 	if (!isRuntimeNumber(pid) || !Number.isSafeInteger(pid) || pid <= 0 || !status.processStartIdentity)
@@ -172,7 +226,7 @@ function ownerLiveness(status: AsyncStatus): "alive" | "dead" | "unknown" {
 		process.kill(pid, 0);
 		return "unknown";
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "ESRCH" ? "dead" : "unknown";
+		return hasErrorCode(error, "ESRCH") ? "dead" : "unknown";
 	}
 }
 
@@ -186,11 +240,14 @@ async function ownerLivenessAsync(status: AsyncStatus): Promise<"alive" | "dead"
 		process.kill(pid, 0);
 		return "unknown";
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "ESRCH" ? "dead" : "unknown";
+		return hasErrorCode(error, "ESRCH") ? "dead" : "unknown";
 	}
 }
 
-function foregroundChildStatus(status: unknown): ForegroundResumeChild["status"] | undefined {
+type RuntimeStep = NonNullable<AsyncStatus["steps"]>[number];
+type RuntimeReplayStep = RuntimeStep & { readonly cwd?: unknown };
+
+function foregroundChildStatus(status: RuntimeStep["status"]): ForegroundResumeChild["status"] | undefined {
 	if (status === "complete" || status === "completed") return "completed";
 	if (status === "paused") return "paused";
 	if (status === "stopped") return "stopped";
@@ -199,12 +256,11 @@ function foregroundChildStatus(status: unknown): ForegroundResumeChild["status"]
 	return undefined;
 }
 
-function finiteTimestamp(value: unknown): number | undefined {
+function finiteTimestamp<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
-function runtimeChild(value: unknown, index: number, updatedAt: number): ForegroundResumeChild | undefined {
-	const step = record(value);
+function runtimeChild(step: RuntimeReplayStep, index: number, updatedAt: number): ForegroundResumeChild | undefined {
 	const agent = exactString(step.agent, 256);
 	const status = foregroundChildStatus(step.status);
 	if (!agent || !status) return undefined;
@@ -257,45 +313,43 @@ function runtimeChild(value: unknown, index: number, updatedAt: number): Foregro
 	const exitCode = finiteInteger(step.exitCode);
 	const turnCount = finiteInteger(step.turnCount);
 	const toolCount = finiteInteger(step.toolCount);
-	return {
+	const error = displayString(step.error, 8 * 1024);
+	const transcriptError = displayString(step.transcriptError, 8 * 1024);
+	const lastActivityAt = finiteTimestamp(step.lastActivityAt);
+	const currentToolStartedAt = finiteTimestamp(step.currentToolStartedAt);
+	const child: ForegroundResumeChild = {
 		agent,
 		index,
-		...(description ? { description } : {}),
-		...(task ? { task } : {}),
-		...(context ? { context } : {}),
 		status,
-		...(step.agentStatus === "crashed" ? { crashed: true } : {}),
-		...(sessionFile ? { sessionFile } : {}),
-		...(childCwd ? { cwd: childCwd } : {}),
-		...(model ? { model } : {}),
-		...(thinking ? { thinking } : {}),
-		...(launchContractDigest ? { launchContractDigest } : {}),
-		...(capabilityCeiling ? { capabilityCeiling } : {}),
-		...(exitCode !== undefined ? { exitCode } : {}),
-		...(displayString(step.error, 8 * 1024) ? { error: displayString(step.error, 8 * 1024) } : {}),
-		...(recentOutput ? { finalOutput: recentOutput } : {}),
-		...(transcriptPath ? { transcriptPath } : {}),
-		...(displayString(step.transcriptError, 8 * 1024)
-			? { transcriptError: displayString(step.transcriptError, 8 * 1024) }
-			: {}),
-		...(children?.length ? { children } : {}),
-		...(activityState ? { activityState } : {}),
-		...(finiteTimestamp(step.lastActivityAt) !== undefined
-			? { lastActivityAt: finiteTimestamp(step.lastActivityAt) }
-			: {}),
-		...(currentTool ? { currentTool } : {}),
-		...(finiteTimestamp(step.currentToolStartedAt) !== undefined
-			? { currentToolStartedAt: finiteTimestamp(step.currentToolStartedAt) }
-			: {}),
-		...(currentPath ? { currentPath } : {}),
-		...(turnCount !== undefined && turnCount >= 0 ? { turnCount } : {}),
-		...(toolCount !== undefined && toolCount >= 0 ? { toolCount } : {}),
 		updatedAt: finiteTimestamp(step.endedAt) ?? updatedAt,
 	};
+	if (description) child.description = description;
+	if (task) child.task = task;
+	if (context) child.context = context;
+	if (step.agentStatus === "crashed") child.crashed = true;
+	if (sessionFile) child.sessionFile = sessionFile;
+	if (childCwd) child.cwd = childCwd;
+	if (model) child.model = model;
+	if (thinking) child.thinking = thinking;
+	if (launchContractDigest) child.launchContractDigest = launchContractDigest;
+	if (capabilityCeiling) child.capabilityCeiling = capabilityCeiling;
+	if (exitCode !== undefined) child.exitCode = exitCode;
+	if (error) child.error = error;
+	if (recentOutput) child.finalOutput = recentOutput;
+	if (transcriptPath) child.transcriptPath = transcriptPath;
+	if (transcriptError) child.transcriptError = transcriptError;
+	if (children?.length) child.children = children;
+	if (activityState) child.activityState = activityState;
+	if (lastActivityAt !== undefined) child.lastActivityAt = lastActivityAt;
+	if (currentTool) child.currentTool = currentTool;
+	if (currentToolStartedAt !== undefined) child.currentToolStartedAt = currentToolStartedAt;
+	if (currentPath) child.currentPath = currentPath;
+	if (turnCount !== undefined && turnCount >= 0) child.turnCount = turnCount;
+	if (toolCount !== undefined && toolCount >= 0) child.toolCount = toolCount;
+	return child;
 }
 
-function runFromStatus(value: unknown, asyncDir: string): ForegroundResumeRun | undefined {
-	const status = record(value);
+function runFromStatus(status: AsyncStatus, asyncDir: string): ForegroundResumeRun | undefined {
 	const runId = exactString(status.runId, 256);
 	const mode = status.mode === "single" || status.mode === "parallel" ? status.mode : undefined;
 	const cwd = exactString(status.cwd, 4_096);
@@ -318,29 +372,26 @@ function runFromStatus(value: unknown, asyncDir: string): ForegroundResumeRun | 
 		.filter((child): child is ForegroundResumeChild => child !== undefined);
 	if (children.length !== steps.length) return undefined;
 	const nestedRoute = resolvePersistedNestedRoute(status.nestedRoute, runId);
-	return {
+	const run: ForegroundResumeRun = {
 		runId,
 		mode,
 		cwd,
 		asyncDir,
 		sessionId,
 		updatedAt,
-		...(nestedRoute ? { nestedRoute } : {}),
 		children,
 	};
+	if (nestedRoute) run.nestedRoute = nestedRoute;
+	return run;
 }
 
 function applyCompletionToStatus(status: AsyncStatus, completionPath: string): AsyncStatus | undefined {
-	let completion: Record<string, unknown>;
 	try {
-		completion = JSON.parse(readBoundedOwnedFile(completionPath, MAX_FOREGROUND_COMPLETION_BYTES)) as Record<
-			string,
-			unknown
-		>;
+		const completion = record(parseJsonValue(readBoundedOwnedFile(completionPath, MAX_FOREGROUND_COMPLETION_BYTES)));
+		return applyCompletionValue(status, completion, completionPath);
 	} catch {
 		return undefined;
 	}
-	return applyCompletionValue(status, completion, completionPath);
 }
 
 async function applyCompletionToStatusAsync(
@@ -349,7 +400,7 @@ async function applyCompletionToStatusAsync(
 ): Promise<AsyncStatus | undefined> {
 	try {
 		const snapshot = await readBoundedOwnedFileSnapshotAsync(completionPath, MAX_FOREGROUND_COMPLETION_BYTES);
-		return applyCompletionValue(status, JSON.parse(snapshot.text) as Record<string, unknown>, completionPath);
+		return applyCompletionValue(status, record(parseJsonValue(snapshot.text)), completionPath);
 	} catch {
 		return undefined;
 	}
@@ -357,7 +408,7 @@ async function applyCompletionToStatusAsync(
 
 function applyCompletionValue(
 	status: AsyncStatus,
-	completion: Record<string, unknown>,
+	completion: ForegroundReplayRecord,
 	completionPath: string,
 ): AsyncStatus | undefined {
 	const identities = [completion.runId, completion.id].filter((value) => value !== undefined);
@@ -368,7 +419,7 @@ function applyCompletionValue(
 		completion.results.length !== status.steps?.length
 	)
 		return undefined;
-	const completionResults = completion.results as unknown[];
+	const completionResults = completion.results;
 	for (const value of completionResults) {
 		const result = record(value);
 		for (const field of ["sessionFile", "transcriptPath"] as const) {
@@ -596,7 +647,7 @@ export function recoverForegroundRuntimeRuns(
 	try {
 		entries = fs.readdirSync(rootDirectory, { withFileTypes: true });
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Map();
+		if (hasErrorCode(error, "ENOENT")) return new Map();
 		throw error;
 	}
 	const candidates = entries
@@ -690,7 +741,7 @@ export function observeForegroundRuntimeRuns(
 	try {
 		entries = fs.readdirSync(rootDirectory, { withFileTypes: true });
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Map();
+		if (hasErrorCode(error, "ENOENT")) return new Map();
 		throw error;
 	}
 	const candidates = entries
@@ -748,7 +799,7 @@ export async function observeForegroundRuntimeRunsAsync(
 		try {
 			entries = await fs.promises.readdir(rootDirectory, { withFileTypes: true });
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Map();
+			if (hasErrorCode(error, "ENOENT")) return new Map();
 			throw error;
 		}
 		directories = entries
