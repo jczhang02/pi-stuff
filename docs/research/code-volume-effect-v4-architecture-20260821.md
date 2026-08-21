@@ -5,7 +5,11 @@
 **Certified runtime:** Bun 1.3.14, Pi 0.84.2, Linux x64  
 **Bead:** `ps-4xm` — Reduce Suite code volume and evaluate Effect v4
 
-## Revised decision
+> **Historical recommendation:** [ADR 0016](../adr/0016-keep-capability-mechanisms-repository-owned.md) rejects upstream
+> `core` or factory externalization as a Pi Stuff
+> code-volume strategy. The 39,000–48,000-line target below is retired and must not be treated as an active plan.
+
+## Historical recommendation
 
 The earlier 184–265 line estimate answered a narrow question: how much can be deleted by local refactoring while every
 Capability and dependency boundary stays fixed. That is not the useful ceiling for a 78,780-line owned implementation.
