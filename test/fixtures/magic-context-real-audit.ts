@@ -1,5 +1,10 @@
 import { appendFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { Guard } from "typebox/guard";
+import { Check } from "typebox/value";
+
+const MESSAGE_CONTENT_SCHEMA = Type.Object({ content: Type.Unknown() }, { additionalProperties: true });
 
 interface AuditRecord {
 	readonly [key: string]: unknown;
@@ -19,15 +24,13 @@ function write(record: AuditRecord): void {
 	});
 }
 
-function contentCharacters(content: unknown): number {
-	if (!Array.isArray(content)) return typeof content === "string" ? content.length : 0;
+function contentCharacters<Content>(content: Content): number {
+	if (!Array.isArray(content)) return Guard.IsString(content) ? content.length : 0;
 	return content.reduce((total, block) => {
-		if (typeof block !== "object" || block === null) return total;
-		const text = Reflect.get(block, "text");
-		const thinking = Reflect.get(block, "thinking");
-		return (
-			total + (typeof text === "string" ? text.length : 0) + (typeof thinking === "string" ? thinking.length : 0)
-		);
+		if (!Guard.IsObject(block)) return total;
+		const text = block["text"];
+		const thinking = block["thinking"];
+		return total + (Guard.IsString(text) ? text.length : 0) + (Guard.IsString(thinking) ? thinking.length : 0);
 	}, 0);
 }
 
@@ -58,7 +61,8 @@ export default function magicContextRealAudit(pi: ExtensionAPI): void {
 	pi.on("context", (event) => {
 		write({
 			characters: event.messages.reduce(
-				(total, message) => total + contentCharacters(Reflect.get(message, "content")),
+				(total, message) =>
+					total + (Check(MESSAGE_CONTENT_SCHEMA, message) ? contentCharacters(message.content) : 0),
 				0,
 			),
 			messages: event.messages.length,

@@ -1,6 +1,8 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import { terminateDetachedProcessGroup } from "./detached-process.js";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
@@ -9,14 +11,50 @@ const TIMEOUT_MS = 30_000;
 
 type Scenario = "blocker" | "compaction" | "normal" | "reload";
 
-interface RpcRecord {
-	command?: unknown;
-	data?: unknown;
-	id?: unknown;
-	success?: unknown;
-	type?: unknown;
-	[key: string]: unknown;
-}
+const GOAL_RECORD_SCHEMA = Type.Object(
+	{
+		blockerAudit: Type.Optional(
+			Type.Object({ attempts: Type.Optional(Type.Array(Type.Unknown())) }, { additionalProperties: true }),
+		),
+		status: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const GOAL_STATE_SCHEMA = Type.Object(
+	{ goal: Type.Optional(Type.Union([GOAL_RECORD_SCHEMA, Type.Null()])) },
+	{ additionalProperties: true },
+);
+const SESSION_ENTRY_SCHEMA = Type.Object(
+	{
+		customType: Type.Optional(Type.String()),
+		data: Type.Optional(Type.Unknown()),
+		type: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const RPC_RECORD_SCHEMA = Type.Object(
+	{
+		aborted: Type.Optional(Type.Boolean()),
+		command: Type.Optional(Type.Unknown()),
+		data: Type.Optional(Type.Unknown()),
+		entry: Type.Optional(SESSION_ENTRY_SCHEMA),
+		error: Type.Optional(Type.Unknown()),
+		event: Type.Optional(Type.Unknown()),
+		extensionPath: Type.Optional(Type.Unknown()),
+		id: Type.Optional(Type.String()),
+		reason: Type.Optional(Type.Unknown()),
+		result: Type.Optional(Type.Unknown()),
+		success: Type.Optional(Type.Boolean()),
+		type: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const ENTRIES_DATA_SCHEMA = Type.Object({ entries: Type.Array(SESSION_ENTRY_SCHEMA) }, { additionalProperties: true });
+
+type GoalRecord = Static<typeof GOAL_RECORD_SCHEMA>;
+type GoalState = Static<typeof GOAL_STATE_SCHEMA>;
+type RpcRecord = Static<typeof RPC_RECORD_SCHEMA>;
+type SessionEntryRecord = Static<typeof SESSION_ENTRY_SCHEMA>;
 
 interface RpcTransport {
 	records: RpcRecord[];
@@ -56,9 +94,9 @@ function parseRecords(stdout: string): RpcRecord[] {
 		.split("\n")
 		.filter(Boolean)
 		.map((line) => {
-			const value: unknown = JSON.parse(line);
-			if (typeof value !== "object" || value === null) throw new Error(`Invalid Pi RPC record: ${line}`);
-			return value as RpcRecord;
+			const value = JSON.parse(line);
+			if (!Check(RPC_RECORD_SCHEMA, value)) throw new Error(`Invalid Pi RPC record: ${line}`);
+			return value;
 		});
 }
 
@@ -76,9 +114,9 @@ async function createRpcTransport(command: string[], cwd: string, env: Record<st
 	let readError: Error | undefined;
 	const consume = (line: string) => {
 		if (!line) return;
-		const parsed: unknown = JSON.parse(line);
-		if (typeof parsed !== "object" || parsed === null) throw new Error(`Invalid Pi RPC record: ${line}`);
-		const record = parsed as RpcRecord;
+		const parsed = JSON.parse(line);
+		if (!Check(RPC_RECORD_SCHEMA, parsed)) throw new Error(`Invalid Pi RPC record: ${line}`);
+		const record = parsed;
 		records.push(record);
 		if (typeof record.id !== "string" || record.type !== "response") return;
 		const request = pending.get(record.id);
@@ -102,8 +140,8 @@ async function createRpcTransport(command: string[], cwd: string, env: Record<st
 				break;
 			}
 		}
-	})().catch((error: unknown) => {
-		readError = error instanceof Error ? error : new Error(String(error));
+	})().catch((cause: unknown) => {
+		readError = cause instanceof Error ? cause : new Error(String(cause));
 		for (const request of pending.values()) {
 			clearTimeout(request.timeout);
 			request.reject(readError);
@@ -146,24 +184,20 @@ function response(records: readonly RpcRecord[], id: string): RpcRecord {
 	return record;
 }
 
-function entries(record: RpcRecord): Record<string, unknown>[] {
-	const data = record.data;
-	if (typeof data !== "object" || data === null) throw new Error("Pi get_entries response has no data");
-	const value = Reflect.get(data, "entries");
-	if (!Array.isArray(value)) throw new Error("Pi get_entries response has no entries");
-	return value as Record<string, unknown>[];
+function entries(record: RpcRecord): SessionEntryRecord[] {
+	if (!Check(ENTRIES_DATA_SCHEMA, record.data)) throw new Error("Pi get_entries response has no entries");
+	return record.data.entries;
 }
 
-function goalStates(records: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+function goalStates(records: readonly SessionEntryRecord[]): GoalState[] {
 	return records
-		.filter((entry) => Reflect.get(entry, "type") === "custom" && Reflect.get(entry, "customType") === "goal-state")
-		.map((entry) => Reflect.get(entry, "data"))
-		.filter((data): data is Record<string, unknown> => typeof data === "object" && data !== null);
+		.filter((entry) => entry.type === "custom" && entry.customType === "goal-state")
+		.map((entry) => entry.data)
+		.filter((data) => Check(GOAL_STATE_SCHEMA, data));
 }
 
-function goal(state: Record<string, unknown>): Record<string, unknown> | null {
-	const value = Reflect.get(state, "goal");
-	return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+function goal(state: GoalState): GoalRecord | null {
+	return state.goal ?? null;
 }
 
 function assertScenario(
@@ -178,11 +212,10 @@ function assertScenario(
 	const goals = states.map(goal);
 	const finalGoal = goals.at(-1);
 	if (scenario === "blocker") {
-		if (!finalGoal || Reflect.get(finalGoal, "status") !== "blocked") {
+		if (!finalGoal || finalGoal.status !== "blocked") {
 			throw new Error("blocker: Goal did not reach blocked status");
 		}
-		const audit = Reflect.get(finalGoal, "blockerAudit");
-		const attempts = typeof audit === "object" && audit !== null ? Reflect.get(audit, "attempts") : undefined;
+		const attempts = finalGoal.blockerAudit?.attempts;
 		if (!Array.isArray(attempts) || attempts.length !== 3) {
 			throw new Error("blocker: three distinct persisted attempts were not certified");
 		}
@@ -193,7 +226,7 @@ function assertScenario(
 		throw new Error(`${scenario}: active Goal state was not persisted`);
 	}
 	if (scenario === "reload") {
-		if (!logRecords.some((record) => record.type === "session_start" && Reflect.get(record, "reason") === "reload")) {
+		if (!logRecords.some((record) => record.type === "session_start" && record.reason === "reload")) {
 			throw new Error("reload: certified host did not emit session_start reason=reload");
 		}
 	}
@@ -208,16 +241,12 @@ function assertScenario(
 			);
 		}
 		if (completionBoundaries[0]?.type === "session_compact") {
-			if (
-				!compactionEnd ||
-				Reflect.get(compactionEnd, "aborted") === true ||
-				!Reflect.get(compactionEnd, "result")
-			) {
+			if (!compactionEnd || compactionEnd.aborted === true || !compactionEnd.result) {
 				throw new Error(
 					`compaction: certified host did not complete native compaction successfully: ${JSON.stringify(compactionEnd)}`,
 				);
 			}
-		} else if (!compactionEnd || Reflect.get(compactionEnd, "aborted") !== true) {
+		} else if (!compactionEnd || compactionEnd.aborted !== true) {
 			throw new Error(
 				`compaction: Magic Context bypass did not intentionally cancel native compaction: ${JSON.stringify(compactionEnd)}`,
 			);
@@ -289,7 +318,7 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 			await transport.send({ type: "prompt", message: startMessage });
 			const deadline = Date.now() + TIMEOUT_MS;
 			let finalRecords: RpcRecord[] | undefined;
-			let latestGoalState: Record<string, unknown> | null | undefined;
+			let latestGoalState: GoalRecord | null | undefined;
 			let observedActiveGoal = false;
 			while (!finalRecords) {
 				if (Date.now() >= deadline) {
@@ -299,23 +328,17 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 						.slice(-30)
 						.map((record) => ({
 							command: record.command,
-							error: Reflect.get(record, "error"),
-							event: Reflect.get(record, "event"),
-							extensionPath: Reflect.get(record, "extensionPath"),
+							error: record.error,
+							event: record.event,
+							extensionPath: record.extensionPath,
 							id: record.id,
-							reason: Reflect.get(record, "reason"),
+							reason: record.reason,
 							success: record.success,
 							type: record.type,
 						}));
 					const appendedGoalEntries = transport.records
 						.filter((record) => record.type === "entry_appended")
-						.map((record) => Reflect.get(record, "entry"))
-						.filter(
-							(entry): entry is Record<string, unknown> =>
-								typeof entry === "object" &&
-								entry !== null &&
-								Reflect.get(entry, "customType") === "goal-state",
-						);
+						.flatMap((record) => (record.entry?.customType === "goal-state" ? [record.entry] : []));
 					throw new Error(
 						`${scenario}: Goal lifecycle did not reach a terminal state: ${JSON.stringify({ diagnostics, latestGoalState, observedActiveGoal, appendedGoalEntries, lifecycle: lifecycleLog.slice(-50) })}`,
 					);
@@ -326,17 +349,16 @@ async function runScenario(options: VerifyGoalLifecycleOptions, scenario: Scenar
 				const appendedGoals = goalStates(
 					transport.records
 						.filter((record) => record.type === "entry_appended")
-						.map((record) => Reflect.get(record, "entry"))
-						.filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null),
+						.flatMap((record) => (record.entry ? [record.entry] : [])),
 				).map(goal);
 				const latest = goals.at(-1);
 				latestGoalState = latest;
 				observedActiveGoal ||= [...goals, ...appendedGoals].some(
-					(candidate) => candidate !== null && Reflect.get(candidate, "status") === "active",
+					(candidate) => candidate !== null && candidate.status === "active",
 				);
 				const terminal =
 					scenario === "blocker"
-						? latest !== null && latest !== undefined && Reflect.get(latest, "status") === "blocked"
+						? latest !== null && latest !== undefined && latest.status === "blocked"
 						: latest === null &&
 							observedActiveGoal &&
 							(scenario !== "compaction" ||

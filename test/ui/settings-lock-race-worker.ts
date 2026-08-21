@@ -14,7 +14,7 @@ const store = await UiSettingsStore.load(settingsPath, async (path: string, sett
 		await mkdir(activeWriterPath);
 		ownsMarker = true;
 	} catch (error) {
-		if (!(error instanceof Error) || !Reflect.has(error, "code") || Reflect.get(error, "code") !== "EEXIST") {
+		if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") {
 			throw error;
 		}
 		await writeFile(overlapPath, `overlap observed by worker ${workerId}\n`);

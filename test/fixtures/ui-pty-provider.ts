@@ -169,7 +169,7 @@ function taskCreatesSinceLatestUser(context: Context): number {
 	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
 		const message = context.messages[index];
 		if (message?.role === "user") break;
-		if (message?.role === "toolResult" && Reflect.get(message, "toolName") === "TaskCreate") count += 1;
+		if (message?.role === "toolResult" && message.toolName === "TaskCreate") count += 1;
 	}
 	return count;
 }
@@ -206,9 +206,7 @@ function goalCompletionStream(model: Model<Api>, prompt: string) {
 }
 
 function hasGoalCompletionResult(context: Context): boolean {
-	return context.messages.some(
-		(message) => message.role === "toolResult" && Reflect.get(message, "toolName") === "goal_complete",
-	);
+	return context.messages.some((message) => message.role === "toolResult" && message.toolName === "goal_complete");
 }
 
 function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
@@ -429,7 +427,7 @@ export default function uiPtyProvider(pi: ExtensionAPI): void {
 		appendRecord({
 			type: "inventory",
 			commands: pi.getCommands().map((command) => command.name),
-			markdownTransformer: typeof Reflect.get(pi, "registerMarkdownTransformer") === "function",
+			markdownTransformer: pi.registerMarkdownTransformer instanceof Function,
 			theme: ctx.ui.theme.name,
 			themeAccent: ctx.ui.theme.getFgAnsi("accent"),
 			themeMode: ctx.ui.theme.getColorMode(),

@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/context-pty-provider.ts");
 const runner = join(root, "test/fixtures/context-pty-runner.sh");
 const MEMORY_EVIDENCE = "真实 Context 检索证据";
+const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object({ summary: Type.String() }, { additionalProperties: true });
 
 export interface ContextPtyVerificationOptions {
 	readonly piBinary: string;
@@ -751,7 +754,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			fail(`Context command activity was not durably recorded: ${JSON.stringify(contextActivities)}`);
 		}
 		const activitySummaries = contextActivities.map((line) =>
-			typeof line.data === "object" && line.data !== null ? Reflect.get(line.data, "summary") : undefined,
+			Check(CONTEXT_ACTIVITY_DATA_SCHEMA, line.data) ? line.data.summary : undefined,
 		);
 		if (!activitySummaries.includes("applying queued drops") || !activitySummaries.includes("nothing queued")) {
 			fail(`Context command activity lost its anchor or result: ${JSON.stringify(activitySummaries)}`);

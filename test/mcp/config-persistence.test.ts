@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import {
 	ensureCompatibilityImports,
 	writeProjectServerDisabledOverride,
@@ -11,6 +13,13 @@ import {
 } from "../../packages/pi-stuff/src/mcp/runtime/config.js";
 import { parseMcpCommand } from "../../packages/pi-stuff/src/mcp/runtime/implementation.js";
 import { acquireSettingsLock } from "../../packages/pi-stuff/src/shared/settings-io/lock.js";
+
+const MCP_CONFIG_DOCUMENT_SCHEMA = Type.Object(
+	{
+		mcpServers: Type.Record(Type.String(), Type.Object({ lifecycle: Type.String() }, { additionalProperties: true })),
+	},
+	{ additionalProperties: true },
+);
 
 test("parses the full server name after an MCP subcommand", () => {
 	expect(parseMcpCommand("  reconnect docs local  ")).toEqual({
@@ -89,12 +98,16 @@ test("creates the first project override and preserves special server names", as
 		expect((await writeProjectServerLifecycleOverride(cwd, "docs", "keep-alive")).changed).toBe(true);
 		expect((await writeProjectServerLifecycleOverride(cwd, "__proto__", "keep-alive")).changed).toBe(true);
 		expect((await writeProjectServerLifecycleOverride(cwd, "toString", "lazy")).changed).toBe(true);
-		const document = JSON.parse(await readFile(path, "utf8")) as { mcpServers: Record<string, unknown> };
+		const document = JSON.parse(await readFile(path, "utf8"));
+		expect(Check(MCP_CONFIG_DOCUMENT_SCHEMA, document)).toBe(true);
+		if (!Check(MCP_CONFIG_DOCUMENT_SCHEMA, document)) throw new Error("Expected an MCP config document");
 		expect(Object.hasOwn(document.mcpServers, "docs")).toBe(true);
 		expect(Object.hasOwn(document.mcpServers, "__proto__")).toBe(true);
 		expect(Object.hasOwn(document.mcpServers, "toString")).toBe(true);
-		expect(Reflect.get(document.mcpServers, "__proto__")).toEqual({ lifecycle: "keep-alive" });
-		expect(Reflect.get(document.mcpServers, "toString")).toEqual({ lifecycle: "lazy" });
+		expect(Object.getOwnPropertyDescriptor(document.mcpServers, "__proto__")?.value).toEqual({
+			lifecycle: "keep-alive",
+		});
+		expect(document.mcpServers["toString"]).toEqual({ lifecycle: "lazy" });
 	} finally {
 		await rm(cwd, { force: true, recursive: true });
 	}

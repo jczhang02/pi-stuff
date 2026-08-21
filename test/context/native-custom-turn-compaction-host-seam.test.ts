@@ -13,6 +13,7 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { Guard } from "typebox/guard";
 import piStuffContext, {
 	type ContextStatusSnapshot,
 	getContextCapability,
@@ -52,12 +53,10 @@ function assistantMessage(provider: string, model: string, text: string, inputTo
 function contextText(context: Context): string {
 	return context.messages
 		.map((message) => {
-			const content = Reflect.get(message, "content");
-			if (typeof content === "string") return content;
+			const content = message.content;
+			if (Guard.IsString(content)) return content;
 			if (!Array.isArray(content)) return "";
-			return content
-				.map((part) => (part && typeof part === "object" ? String(Reflect.get(part, "text") ?? "") : ""))
-				.join("\n");
+			return content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
 		})
 		.join("\n");
 }

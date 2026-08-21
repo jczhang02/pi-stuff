@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import piStuffCodex from "../../packages/pi-stuff/src/codex/index.js";
 import piStuffUi, {
 	type CommandDialogComponent,
@@ -21,6 +23,12 @@ import piStuffUi, {
 	withAgentWorkOrigin,
 } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { installUiSessionPresentation } from "../../packages/pi-stuff/src/conversation-ui/session-presentation.js";
+
+const HANDLED_ACTION_SCHEMA = Type.Object({ action: Type.Literal("handled") }, { additionalProperties: true });
+const INPUT_EVENT_SCHEMA = Type.Object(
+	{ source: Type.Optional(Type.String()), text: Type.String() },
+	{ additionalProperties: true },
+);
 
 type FooterFactory = Parameters<ExtensionUIContext["setFooter"]>[0];
 type HeaderFactory = Parameters<ExtensionUIContext["setHeader"]>[0];
@@ -265,12 +273,7 @@ function createApiHarness(
 			const handlerContext = event === "input" ? Object.create(ctx) : ctx;
 			for (const handler of eventHandlers.get(event) ?? []) {
 				const result = await handler(data, handlerContext);
-				if (
-					event === "input" &&
-					result &&
-					typeof result === "object" &&
-					Reflect.get(result, "action") === "handled"
-				) {
+				if (event === "input" && Check(HANDLED_ACTION_SCHEMA, result)) {
 					return;
 				}
 			}
@@ -991,7 +994,7 @@ describe("normal UI presentation integration", () => {
 		const api = createApiHarness();
 		await piStuffUi(api.api);
 		api.api.on("input", (event) =>
-			Reflect.get(event, "text") === "handled correction" && Reflect.get(event, "source") === "interactive"
+			Check(INPUT_EVENT_SCHEMA, event) && event.text === "handled correction" && event.source === "interactive"
 				? { action: "handled" as const }
 				: undefined,
 		);
@@ -1039,7 +1042,7 @@ describe("normal UI presentation integration", () => {
 		// Registered after session_start, this simulates a separately loaded
 		// Extension that Pi visits after Pi Stuff's Package-local late observer.
 		api.api.on("input", (event) => {
-			const text = Reflect.get(event, "text");
+			const text = Check(INPUT_EVENT_SCHEMA, event) ? event.text : undefined;
 			if (text === "handled user correction") return { action: "handled" as const };
 			if (text === "raw automatic correction") {
 				return { action: "transform" as const, text: "transformed automatic correction" };

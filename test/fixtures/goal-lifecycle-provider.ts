@@ -2,10 +2,17 @@ import { appendFileSync } from "node:fs";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { Guard } from "typebox/guard";
+import { Check } from "typebox/value";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
 const CONTEXT_COMPACTION_BYPASSED_EVENT = "@jczhang02/pi-stuff-context/compaction-bypassed/v1";
+const CONTEXT_COMPACTION_BYPASSED_SCHEMA = Type.Object(
+	{ schemaVersion: Type.Literal(1), source: Type.Literal("magic-context") },
+	{ additionalProperties: true },
+);
 const ZERO_USAGE = {
 	input: 0,
 	output: 0,
@@ -96,17 +103,14 @@ function retryableErrorStream(errorMessage: string) {
 function contextText(context: Context): string {
 	const text = [context.systemPrompt ?? ""];
 	for (const entry of context.messages) {
-		const content = Reflect.get(entry, "content");
-		if (typeof content === "string") {
+		const content = entry.content;
+		if (Guard.IsString(content)) {
 			text.push(content);
 			continue;
 		}
 		if (!Array.isArray(content)) continue;
 		for (const item of content) {
-			if (item && typeof item === "object" && Reflect.get(item, "type") === "text") {
-				const value = Reflect.get(item, "text");
-				if (typeof value === "string") text.push(value);
-			}
+			if (item.type === "text") text.push(item.text);
 		}
 	}
 	return text.join("\n");
@@ -187,12 +191,7 @@ function activeGoal(objective: string) {
 
 export default function goalLifecycleProvider(pi: ExtensionAPI): void {
 	pi.events.on(CONTEXT_COMPACTION_BYPASSED_EVENT, (event) => {
-		if (
-			typeof event === "object" &&
-			event !== null &&
-			Reflect.get(event, "schemaVersion") === 1 &&
-			Reflect.get(event, "source") === "magic-context"
-		) {
+		if (Check(CONTEXT_COMPACTION_BYPASSED_SCHEMA, event)) {
 			log({ type: "context_compaction_bypassed" });
 		}
 	});

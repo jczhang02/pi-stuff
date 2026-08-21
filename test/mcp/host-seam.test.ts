@@ -17,6 +17,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { Guard } from "typebox/guard";
+import { Check } from "typebox/value";
 import piStuffContext, { getContextCapability } from "../../packages/pi-stuff/src/context-management/index.js";
 import { readAgentWorkOrigin } from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
 import {
@@ -31,6 +33,20 @@ import {
 
 const sessions: AgentSession[] = [];
 const temporaryRoots: string[] = [];
+const MESSAGE_CONTENT_SCHEMA = Type.Object(
+	{
+		content: Type.Union([
+			Type.String(),
+			Type.Array(
+				Type.Object(
+					{ text: Type.Optional(Type.Unknown()), type: Type.Optional(Type.String()) },
+					{ additionalProperties: true },
+				),
+			),
+		]),
+	},
+	{ additionalProperties: true },
+);
 
 afterEach(async () => {
 	for (const session of sessions.splice(0)) session.dispose();
@@ -45,15 +61,12 @@ function deferred<Value>() {
 	return { promise, resolve };
 }
 
-function messageText(message: unknown): string {
-	if (!message || typeof message !== "object") return "";
-	const content = Reflect.get(message, "content");
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.filter((part): part is object => Boolean(part) && typeof part === "object")
-		.filter((part) => Reflect.get(part, "type") === "text")
-		.map((part) => String(Reflect.get(part, "text") ?? ""))
+function messageText<Message>(message: Message): string {
+	if (!Check(MESSAGE_CONTENT_SCHEMA, message)) return "";
+	if (Guard.IsString(message.content)) return message.content;
+	return message.content
+		.filter((part) => part.type === "text")
+		.map((part) => String(part.text ?? ""))
 		.join("\n");
 }
 

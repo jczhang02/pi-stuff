@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { CERTIFIED_RTK_LINUX_X64_SHA256S, CERTIFIED_RTK_VERSION } from "../packages/pi-stuff/src/rtk/runtime.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
@@ -9,6 +11,24 @@ const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/rtk-pty-provider.ts");
 const runner = join(root, "test/fixtures/rtk-pty-runner.sh");
 const LONG_RESULT_ID = "rtk-pty-long-output";
+const SESSION_TOOL_RESULT_SCHEMA = Type.Object(
+	{
+		message: Type.Object(
+			{
+				content: Type.Array(
+					Type.Object(
+						{ text: Type.Optional(Type.String()), type: Type.Optional(Type.String()) },
+						{ additionalProperties: true },
+					),
+				),
+				role: Type.Literal("toolResult"),
+				toolCallId: Type.String(),
+			},
+			{ additionalProperties: true },
+		),
+	},
+	{ additionalProperties: true },
+);
 
 interface ContextRecord {
 	readonly bashCommands?: unknown;
@@ -253,16 +273,11 @@ function verifyCommandHistory(record: ContextRecord): void {
 function rawResult(sessionContents: string, toolCallId: string): string {
 	for (const line of sessionContents.split("\n")) {
 		if (!line) continue;
-		const entry = JSON.parse(line) as { message?: unknown };
-		const message = entry.message;
-		if (typeof message !== "object" || message === null) continue;
-		if (Reflect.get(message, "role") !== "toolResult" || Reflect.get(message, "toolCallId") !== toolCallId) continue;
-		const content = Reflect.get(message, "content");
-		if (!Array.isArray(content)) continue;
-		return content
-			.filter((part) => typeof part === "object" && part !== null && Reflect.get(part, "type") === "text")
-			.map((part) => Reflect.get(part, "text"))
-			.filter((text): text is string => typeof text === "string")
+		const entry = JSON.parse(line);
+		if (!Check(SESSION_TOOL_RESULT_SCHEMA, entry) || entry.message.toolCallId !== toolCallId) continue;
+		return entry.message.content
+			.filter((part) => part.type === "text")
+			.flatMap((part) => (part.text === undefined ? [] : [part.text]))
 			.join("\n");
 	}
 	fail(`raw session has no Bash Tool result for ${toolCallId}`);

@@ -4,6 +4,8 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import { terminateDetachedProcessGroup } from "./detached-process.js";
 
 const root = resolve(import.meta.dir, "..");
@@ -20,6 +22,40 @@ const PRESSURE_FILE_BYTES = 48 * 1024;
 const PRESSURE_FILE_COUNT = 12;
 const TODO_SUBJECT = "Preserve Magic-only acceptance state";
 const AUDIT_EXTENSION = join(root, "test/fixtures/magic-context-real-audit.ts");
+const AUDIT_RESULT_SCHEMA = Type.Object(
+	{
+		content: Type.Array(Type.Object({ text: Type.Optional(Type.String()) }, { additionalProperties: true })),
+	},
+	{ additionalProperties: true },
+);
+const TOOL_RESULT_SCHEMA = Type.Object({ isError: Type.Optional(Type.Boolean()) }, { additionalProperties: true });
+const MAGIC_COMPACTION_DETAILS_SCHEMA = Type.Object(
+	{ source: Type.Literal("magic-context") },
+	{ additionalProperties: true },
+);
+const MAGIC_BOUNDARY_DETAILS_SCHEMA = Type.Object(
+	{ lastCompactedOrdinal: Type.Integer({ minimum: 0 }) },
+	{ additionalProperties: true },
+);
+const PROVIDER_USAGE_SCHEMA = Type.Object(
+	{
+		cacheRead: Type.Optional(Type.Number()),
+		cacheWrite: Type.Optional(Type.Number()),
+		input: Type.Optional(Type.Number()),
+		output: Type.Optional(Type.Number()),
+		totalTokens: Type.Optional(Type.Number()),
+	},
+	{ additionalProperties: true },
+);
+const PROVIDER_MESSAGE_SCHEMA = Type.Object({ usage: PROVIDER_USAGE_SCHEMA }, { additionalProperties: true });
+const GOAL_STATE_DATA_SCHEMA = Type.Object(
+	{
+		goal: Type.Object({ status: Type.String() }, { additionalProperties: true }),
+	},
+	{ additionalProperties: true },
+);
+
+type ProviderUsage = Static<typeof PROVIDER_USAGE_SCHEMA>;
 
 interface Options {
 	readonly archivePath?: string;
@@ -211,16 +247,8 @@ async function extractPackage(archivePath: string, destination: string): Promise
 
 function auditRecordContent(record: RpcRecord): string {
 	const result = record["result"];
-	if (typeof result !== "object" || result === null) return "";
-	const content = Reflect.get(result, "content");
-	if (!Array.isArray(content)) return "";
-	return content
-		.map((block) => {
-			if (typeof block !== "object" || block === null) return "";
-			const text = Reflect.get(block, "text");
-			return typeof text === "string" ? text : "";
-		})
-		.join("\n");
+	if (!Check(AUDIT_RESULT_SCHEMA, result)) return "";
+	return result.content.map((block) => block.text ?? "").join("\n");
 }
 
 function successfulResponse(record: RpcRecord, commandName: string): Record<string, unknown> {
@@ -520,7 +548,7 @@ function assertToolSuccess(records: readonly RpcRecord[], name: string, expected
 	}
 	for (const event of events) {
 		const result = event["result"];
-		if (typeof result !== "object" || result === null || Reflect.get(result, "isError") === true) {
+		if (!Check(TOOL_RESULT_SCHEMA, result) || result.isError === true) {
 			fail(`${name} returned an error: ${JSON.stringify(event)}`);
 		}
 	}
@@ -578,8 +606,7 @@ function parseSession(path: string): Promise<SessionEntry[]> {
 
 function magicCompactions(entries: readonly SessionEntry[]): SessionEntry[] {
 	return entries.filter((entry) => {
-		if (entry.type !== "compaction" || typeof entry.details !== "object" || entry.details === null) return false;
-		return Reflect.get(entry.details, "source") === "magic-context";
+		return entry.type === "compaction" && Check(MAGIC_COMPACTION_DETAILS_SCHEMA, entry.details);
 	});
 }
 
@@ -662,14 +689,10 @@ function readCompartmentRanges(databasePath: string, sessionId: string): Compart
 
 function magicBoundaryOrdinals(entries: readonly SessionEntry[]): number[] {
 	return magicCompactions(entries).map((entry) => {
-		const ordinal =
-			typeof entry.details === "object" && entry.details !== null
-				? Reflect.get(entry.details, "lastCompactedOrdinal")
-				: undefined;
-		if (typeof ordinal !== "number" || !Number.isInteger(ordinal) || ordinal < 0) {
+		if (!Check(MAGIC_BOUNDARY_DETAILS_SCHEMA, entry.details)) {
 			fail(`Magic boundary has no valid lastCompactedOrdinal: ${JSON.stringify(entry)}`);
 		}
-		return ordinal;
+		return entry.details.lastCompactedOrdinal;
 	});
 }
 
@@ -698,24 +721,18 @@ function readMagicPressure(log: string): MagicPressureEvidence {
 
 function maximumProviderPromptTokens(entries: readonly SessionEntry[]): number {
 	return entries.reduce((maximum, entry) => {
-		if (entry.type !== "message" || typeof entry.message !== "object" || entry.message === null) return maximum;
-		const usage = Reflect.get(entry.message, "usage");
-		if (typeof usage !== "object" || usage === null) return maximum;
-		const promptTokens =
-			Number(Reflect.get(usage, "input") ?? 0) +
-			Number(Reflect.get(usage, "cacheRead") ?? 0) +
-			Number(Reflect.get(usage, "cacheWrite") ?? 0);
+		if (entry.type !== "message" || !Check(PROVIDER_MESSAGE_SCHEMA, entry.message)) {
+			return maximum;
+		}
+		const usage = entry.message.usage;
+		const promptTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
 		return Math.max(maximum, promptTokens);
 	}, 0);
 }
 
 function latestGoalStatus(entries: readonly SessionEntry[]): string | undefined {
 	const goalEntry = entries.filter((entry) => entry.type === "custom" && entry["customType"] === "goal-state").at(-1);
-	if (!goalEntry || typeof goalEntry.data !== "object" || goalEntry.data === null) return undefined;
-	const goal = Reflect.get(goalEntry.data, "goal");
-	if (typeof goal !== "object" || goal === null) return undefined;
-	const status = Reflect.get(goal, "status");
-	return typeof status === "string" ? status : undefined;
+	return goalEntry && Check(GOAL_STATE_DATA_SCHEMA, goalEntry.data) ? goalEntry.data.goal.status : undefined;
 }
 
 function countAuditRecords(records: readonly RpcRecord[], type: string): number {
@@ -1154,12 +1171,11 @@ async function main(): Promise<void> {
 			fail(`a provider request reached or exceeded the real context window: ${String(providerPromptTokens)}`);
 		}
 		const finalStats = await (async (): Promise<SessionStats> => {
-			const assistantUsage = finalEntries
-				.filter((entry) => entry.type === "message" && typeof entry.message === "object" && entry.message !== null)
-				.map((entry) => Reflect.get(entry.message as object, "usage"))
-				.filter((usage): usage is Record<string, unknown> => typeof usage === "object" && usage !== null);
-			const sum = (field: string): number =>
-				assistantUsage.reduce((total, usage) => total + Number(Reflect.get(usage, field) ?? 0), 0);
+			const assistantUsage = finalEntries.flatMap((entry) =>
+				entry.type === "message" && Check(PROVIDER_MESSAGE_SCHEMA, entry.message) ? [entry.message.usage] : [],
+			);
+			const sum = (field: keyof ProviderUsage): number =>
+				assistantUsage.reduce((total, usage) => total + (usage[field] ?? 0), 0);
 			return {
 				tokens: {
 					cacheRead: sum("cacheRead"),

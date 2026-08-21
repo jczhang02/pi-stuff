@@ -2,10 +2,21 @@ import { appendFileSync } from "node:fs";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 
 const PROVIDER = "pi-stuff-work-monitor-matrix";
 const MODEL = "fixture-model";
 const MARKER = "WORK_MONITOR_SCENARIO:";
+const MONITOR_RESULT_SCHEMA = Type.Object(
+	{
+		details: Type.Object(
+			{ status: Type.Optional(Type.String()), taskId: Type.Optional(Type.String()) },
+			{ additionalProperties: true },
+		),
+	},
+	{ additionalProperties: true },
+);
 
 type Scenario = "cancel" | "command_failure" | "file_error" | "http_success" | "log_success" | "timeout";
 
@@ -87,13 +98,7 @@ function currentScenario(context: Context): Scenario | undefined {
 function terminalStatus(context: Context, scenario: Scenario): string | undefined {
 	if (scenario === "cancel") {
 		const stopped = toolResult(context, `matrix-stop-${scenario}`);
-		if (stopped && typeof stopped === "object") {
-			const details = Reflect.get(stopped, "details");
-			if (details && typeof details === "object") {
-				const status = Reflect.get(details, "status");
-				if (typeof status === "string") return status;
-			}
-		}
+		if (Check(MONITOR_RESULT_SCHEMA, stopped)) return stopped.details.status;
 	}
 	for (const text of userTexts(context).reverse()) {
 		if (!text.includes("<background-work-notification>") || !text.includes(TITLES[scenario])) continue;
@@ -102,16 +107,12 @@ function terminalStatus(context: Context, scenario: Scenario): string | undefine
 	return undefined;
 }
 
-function toolResult(context: Context, id: string): unknown {
+function toolResult(context: Context, id: string): Context["messages"][number] | undefined {
 	return context.messages.find((entry) => entry.role === "toolResult" && entry.toolCallId === id);
 }
 
-function taskId(result: unknown): string | undefined {
-	if (!result || typeof result !== "object") return undefined;
-	const details = Reflect.get(result, "details");
-	if (!details || typeof details !== "object") return undefined;
-	const value = Reflect.get(details, "taskId");
-	return typeof value === "string" ? value : undefined;
+function taskId<Result>(result: Result): string | undefined {
+	return Check(MONITOR_RESULT_SCHEMA, result) ? result.details.taskId : undefined;
 }
 
 function record(value: Record<string, unknown>): void {

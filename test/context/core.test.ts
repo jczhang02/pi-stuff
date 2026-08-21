@@ -10,6 +10,7 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { Check } from "typebox/value";
 import piStuffContext, {
 	__test,
 	CONTEXT_COMPACTION_BYPASSED_EVENT,
@@ -27,6 +28,17 @@ import {
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type Handlers = Map<string, Handler[]>;
 const UI_RENDER_REQUEST_EVENT = "@jczhang02/pi-stuff-ui/render-request/v1";
+const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object(
+	{
+		detail: Type.Optional(Type.String()),
+		kind: Type.Optional(Type.String()),
+		state: Type.Optional(Type.String()),
+		summary: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const HANDLED_ACTION_SCHEMA = Type.Object({ action: Type.Literal("handled") }, { additionalProperties: true });
+const SYSTEM_PROMPT_EVENT_SCHEMA = Type.Object({ systemPrompt: Type.String() }, { additionalProperties: true });
 
 interface TestCommandDefinition {
 	readonly argumentHint?: string;
@@ -42,6 +54,11 @@ interface HostRegistrations {
 	commandDefinitions?: Map<string, TestCommandDefinition>;
 	entries?: Array<{ customType: string; data: unknown }>;
 	entryRenderers: string[];
+}
+
+function contextActivityData<Value>(value: Value) {
+	if (!Check(CONTEXT_ACTIVITY_DATA_SCHEMA, value)) throw new Error("Expected Context activity data");
+	return value;
 }
 
 function apiFor(
@@ -118,7 +135,7 @@ async function emit(handlers: Handlers, name: string, event: unknown, ctx = cont
 async function emitUntilHandled(handlers: Handlers, name: string, event: unknown, ctx = context()): Promise<void> {
 	for (const handler of handlers.get(name) ?? []) {
 		const result = await handler(event, ctx);
-		if (result && typeof result === "object" && Reflect.get(result, "action") === "handled") return;
+		if (Check(HANDLED_ACTION_SCHEMA, result)) return;
 	}
 }
 
@@ -842,12 +859,12 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		await commandDefinitions.get("ctx")?.handler?.("flush", ctx);
 
-		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+		expect(entries.map((entry) => contextActivityData(entry.data).summary)).toEqual([
 			"applying queued drops",
 			"unavailable",
 		]);
-		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("error");
-		expect(Reflect.get(entries.at(-1)?.data as object, "detail")).toBe("Magic module unavailable");
+		expect(contextActivityData(entries.at(-1)?.data).state).toBe("error");
+		expect(contextActivityData(entries.at(-1)?.data).detail).toBe("Magic module unavailable");
 		expect(renderRequests).toEqual([{ force: false, handled: true }]);
 	});
 
@@ -958,21 +975,21 @@ describe("Context capability lifecycle", () => {
 		await commandDefinitions.get("ctx")?.handler?.("", ctx);
 
 		expect(recompCalls).toBe(2);
-		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+		expect(entries.map((entry) => contextActivityData(entry.data).summary)).toEqual([
 			"rebuilding range 1-500",
 			"confirmation required",
 			"rebuilding range 1-500",
 		]);
-		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("running");
+		expect(contextActivityData(entries.at(-1)?.data).state).toBe("running");
 		if (!publishRecompComplete) throw new Error("Expected deferred recomp completion callback");
 		publishRecompComplete();
-		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+		expect(entries.map((entry) => contextActivityData(entry.data).summary)).toEqual([
 			"rebuilding range 1-500",
 			"confirmation required",
 			"rebuilding range 1-500",
 			"rebuilt 4 compartments",
 		]);
-		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("success");
+		expect(contextActivityData(entries.at(-1)?.data).state).toBe("success");
 	});
 
 	test("keeps Magic's internal Historian agent native and recursion-free", async () => {
@@ -1055,12 +1072,12 @@ describe("Context capability lifecycle", () => {
 		expect(registrations.entryRenderers).toEqual(["pi-stuff-context-activity"]);
 		expect(entries).toHaveLength(3);
 		expect(entries.every((entry) => entry.customType === "pi-stuff-context-activity")).toBeTrue();
-		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+		expect(entries.map((entry) => contextActivityData(entry.data).summary)).toEqual([
 			"keeping 20 recent messages",
 			"planning history compaction",
 			"wrapped up 84 messages into 3 compartments",
 		]);
-		expect(entries.map((entry) => Reflect.get(entry.data as object, "kind"))).toEqual(["anchor", "update", "update"]);
+		expect(entries.map((entry) => contextActivityData(entry.data).kind)).toEqual(["anchor", "update", "update"]);
 	});
 
 	test("routes detached maintenance completion back to its running activity", async () => {
@@ -1100,19 +1117,19 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		await commandDefinitions.get("ctx")?.handler?.("recomp", ctx);
 
-		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+		expect(entries.map((entry) => contextActivityData(entry.data).summary)).toEqual([
 			"preparing full rebuild",
 			"rebuilding compartments",
 		]);
-		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("running");
+		expect(contextActivityData(entries.at(-1)?.data).state).toBe("running");
 
 		finishRecomp?.();
-		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+		expect(entries.map((entry) => contextActivityData(entry.data).summary)).toEqual([
 			"preparing full rebuild",
 			"rebuilding compartments",
 			"rebuilt 4 compartments",
 		]);
-		expect(Reflect.get(entries.at(-1)?.data as object, "state")).toBe("success");
+		expect(contextActivityData(entries.at(-1)?.data).state).toBe("success");
 	});
 
 	test("does not route detached maintenance updates into a different Session", async () => {
@@ -1160,7 +1177,7 @@ describe("Context capability lifecycle", () => {
 		await emit(handlers, "session_start", { type: "session_start", reason: "resume" }, secondCtx);
 		await commandDefinitions.get("ctx")?.handler?.("recomp", secondCtx);
 		expect(recompCalls).toBe(1);
-		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+		expect(entries.map((entry) => contextActivityData(entry.data).summary)).toEqual([
 			"preparing full rebuild",
 			"rebuilding compartments",
 			"continuing after Session switch",
@@ -1219,7 +1236,7 @@ describe("Context capability lifecycle", () => {
 
 		await commandDefinitions.get("ctx")?.handler?.("recomp", secondCtx);
 		expect(recompCalls).toBe(2);
-		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+		expect(entries.map((entry) => contextActivityData(entry.data).summary)).toEqual([
 			"preparing full rebuild",
 			"rebuilding compartments",
 			"continuing after Session switch",
@@ -1254,11 +1271,11 @@ describe("Context capability lifecycle", () => {
 		await commandDefinitions.get("ctx")?.handler?.("flush", ctx);
 
 		expect(entries).toHaveLength(2);
-		expect(entries.map((entry) => Reflect.get(entry.data as object, "summary"))).toEqual([
+		expect(entries.map((entry) => contextActivityData(entry.data).summary)).toEqual([
 			"applying queued drops",
 			"failed",
 		]);
-		expect(Reflect.get(entries[1]?.data as object, "detail")).toBe("database unavailable");
+		expect(contextActivityData(entries[1]?.data).detail).toBe("database unavailable");
 	});
 
 	test("does not widen a tool policy changed after session start", async () => {
@@ -2218,13 +2235,13 @@ describe("certified Pi extension ordering contract", () => {
 				default: async (magicApi: ExtensionAPI) => {
 					magicApi.on("context", (event) => event);
 					magicApi.on("before_agent_start", (event) => {
-						const systemPrompt = Reflect.get(event, "systemPrompt");
-						if (typeof systemPrompt !== "string") return;
-						upstreamSawMarker = systemPrompt.includes("## Magic Context");
+						if (!Check(SYSTEM_PROMPT_EVENT_SCHEMA, event)) return;
+						const upstreamSystemPrompt = event.systemPrompt;
+						upstreamSawMarker = upstreamSystemPrompt.includes("## Magic Context");
 						return {
 							systemPrompt: upstreamSawMarker
-								? systemPrompt
-								: `${systemPrompt}\n\n## Magic Context\n\nVERBOSE_UPSTREAM_GUIDANCE`,
+								? upstreamSystemPrompt
+								: `${upstreamSystemPrompt}\n\n## Magic Context\n\nVERBOSE_UPSTREAM_GUIDANCE`,
 						};
 					});
 				},

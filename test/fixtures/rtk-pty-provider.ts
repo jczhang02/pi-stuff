@@ -2,6 +2,7 @@ import { appendFileSync } from "node:fs";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Guard } from "typebox/guard";
 
 const PROVIDER = "pi-stuff-rtk-pty";
 const MODEL = "fixture-model";
@@ -59,8 +60,8 @@ function contextRecord(context: Context, phase: string): object {
 		if (entry.role === "assistant") {
 			for (const part of entry.content) {
 				if (part.type !== "toolCall" || part.name !== "bash") continue;
-				const command = Reflect.get(part.arguments, "command");
-				if (typeof command === "string") bashCommands.push(command);
+				const command = part.arguments["command"];
+				if (Guard.IsString(command)) bashCommands.push(command);
 			}
 		}
 		if (entry.role !== "toolResult" || entry.toolName !== "bash") continue;
