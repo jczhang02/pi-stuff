@@ -7,7 +7,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import { getAgentDir as getPiAgentDir } from "@earendil-works/pi-coding-agent";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
+import type { ToolArguments } from "../../../tool-display/activity.js";
 import { boundTerminalLine } from "../../../tool-display/index.js";
 import { formatToolCall } from "./formatters.ts";
 import {
@@ -47,19 +49,32 @@ export function resolveWatchPath(
 	}
 }
 
-function validConfigDirName(value: unknown): string | undefined {
+function validConfigDirName<Value>(value: Value): string | undefined {
 	return isRuntimeString(value) && value.trim() ? value : undefined;
 }
 
 function readConfigDirNameFromPackageRoot(packageRoot: string | undefined): string | undefined {
 	if (!packageRoot) return undefined;
 	try {
-		const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf-8")) as {
-			name?: unknown;
-			piConfig?: { configDir?: unknown };
-		};
-		if (pkg.name !== PI_CODING_AGENT_PACKAGE_NAME) return undefined;
-		return validConfigDirName(pkg.piConfig?.configDir);
+		const pkg = parseJsonValue(fs.readFileSync(path.join(packageRoot, "package.json"), "utf-8"));
+		if (
+			!isRuntimeObject(pkg) ||
+			pkg === null ||
+			Array.isArray(pkg) ||
+			!("name" in pkg) ||
+			pkg.name !== PI_CODING_AGENT_PACKAGE_NAME
+		) {
+			return undefined;
+		}
+		if (
+			!("piConfig" in pkg) ||
+			!isRuntimeObject(pkg.piConfig) ||
+			pkg.piConfig === null ||
+			Array.isArray(pkg.piConfig)
+		) {
+			return undefined;
+		}
+		return "configDir" in pkg.piConfig ? validConfigDirName(pkg.piConfig.configDir) : undefined;
 	} catch {
 		return undefined;
 	}
@@ -85,10 +100,14 @@ function resolveConfigDirNameFromPackageJson(
 	return undefined;
 }
 
-export function resolveConfigDirName(codingAgentModule?: unknown, entryPoint?: string, packageRoot?: string): string {
+export function resolveConfigDirName<CodingAgentModule>(
+	codingAgentModule?: CodingAgentModule,
+	entryPoint?: string,
+	packageRoot?: string,
+): string {
 	const moduleValue =
-		codingAgentModule && isRuntimeObject(codingAgentModule)
-			? validConfigDirName((codingAgentModule as { CONFIG_DIR_NAME?: unknown }).CONFIG_DIR_NAME)
+		codingAgentModule && isRuntimeObject(codingAgentModule) && "CONFIG_DIR_NAME" in codingAgentModule
+			? validConfigDirName(codingAgentModule.CONFIG_DIR_NAME)
 			: undefined;
 	return moduleValue ?? resolveConfigDirNameFromPackageJson(entryPoint, packageRoot) ?? DEFAULT_CONFIG_DIR_NAME;
 }
@@ -128,10 +147,23 @@ export function resolveChildCwd(baseCwd: string, childCwd: string | undefined): 
 	return path.isAbsolute(childCwd) ? childCwd : path.resolve(baseCwd, childCwd);
 }
 
-function isNotFoundError(cause: unknown): boolean {
-	return (
-		isRuntimeObject(cause) && cause !== null && "code" in cause && (cause as NodeJS.ErrnoException).code === "ENOENT"
-	);
+function isNotFoundError<Cause>(cause: Cause): boolean {
+	return isRuntimeObject(cause) && cause !== null && "code" in cause && cause.code === "ENOENT";
+}
+
+function asyncStatusForRun(status: JsonValue, statusPath: string, expectedRunId: string): AsyncStatus {
+	if (
+		!isRuntimeObject(status) ||
+		status === null ||
+		Array.isArray(status) ||
+		!("runId" in status) ||
+		status.runId !== expectedRunId
+	) {
+		throw new Error(`Async status file '${statusPath}' runId must exactly match its run directory.`);
+	}
+	// SAFETY: the bounded file is read from a verified private directory, Suite writers serialize AsyncStatus,
+	// and the checked runId binds this typed artifact to the directory selected by the caller.
+	return status as JsonObject & AsyncStatus;
 }
 
 /**
@@ -164,17 +196,15 @@ export function readStatus(asyncDir: string): AsyncStatus | null {
 		return cached.status;
 	}
 
-	let status: AsyncStatus;
+	let parsed: JsonValue;
 	try {
-		status = JSON.parse(snapshot.text) as AsyncStatus;
+		parsed = parseJsonValue(snapshot.text);
 	} catch (error) {
 		throw new Error(`Failed to parse async status file '${statusPath}': ${getErrorMessage(error)}`, {
 			cause: error instanceof Error ? error : undefined,
 		});
 	}
-	if (!status || !isRuntimeObject(status) || Array.isArray(status) || status.runId !== path.basename(asyncDir)) {
-		throw new Error(`Async status file '${statusPath}' runId must exactly match its run directory.`);
-	}
+	const status = asyncStatusForRun(parsed, statusPath, path.basename(asyncDir));
 
 	statusCache.set(statusPath, {
 		mtime: snapshot.mtimeMs,
@@ -220,17 +250,15 @@ export async function readStatusAsync(asyncDir: string): Promise<AsyncStatus | n
 		return cached.status;
 	}
 
-	let status: AsyncStatus;
+	let parsed: JsonValue;
 	try {
-		status = JSON.parse(snapshot.text) as AsyncStatus;
+		parsed = parseJsonValue(snapshot.text);
 	} catch (error) {
 		throw new Error(`Failed to parse async status file '${statusPath}': ${getErrorMessage(error)}`, {
 			cause: error instanceof Error ? error : undefined,
 		});
 	}
-	if (!status || !isRuntimeObject(status) || Array.isArray(status) || status.runId !== path.basename(asyncDir)) {
-		throw new Error(`Async status file '${statusPath}' runId must exactly match its run directory.`);
-	}
+	const status = asyncStatusForRun(parsed, statusPath, path.basename(asyncDir));
 	statusCache.set(statusPath, {
 		mtime: snapshot.mtimeMs,
 		ctime: snapshot.ctimeMs,
@@ -572,17 +600,17 @@ export function detectSubagentError(messages: Message[]): ErrorInfo {
 /**
  * Extract a preview of tool arguments for display
  */
-export function extractToolArgsPreview(args: Record<string, unknown>): string {
+export function extractToolArgsPreview(args: ToolArguments): string {
 	const truncatePreview = (value: string, maximumWidth: number): string =>
 		boundTerminalLine(value, maximumWidth, "...");
 
-	const stringifyPreviewValue = (value: unknown): string | undefined => {
+	const stringifyPreviewValue = <Value>(value: Value): string | undefined => {
 		if (isRuntimeString(value) && value.trim().length > 0) return value;
 		if (isRuntimeNumber(value) || isRuntimeBoolean(value)) return String(value);
 		return undefined;
 	};
 
-	const previewArray = (value: unknown): string | undefined => {
+	const previewArray = <Value>(value: Value): string | undefined => {
 		if (!Array.isArray(value) || value.length === 0) return undefined;
 		const first = stringifyPreviewValue(value[0]);
 		if (!first) return undefined;
@@ -608,10 +636,8 @@ export function extractToolArgsPreview(args: Record<string, unknown>): string {
 
 	const previewKeys = ["command", "path", "file_path", "pattern", "query", "url", "task", "describe", "search"];
 	for (const key of previewKeys) {
-		if (args[key] && isRuntimeString(args[key])) {
-			const value = args[key] as string;
-			return truncatePreview(value, 60);
-		}
+		const value = args[key];
+		if (value && isRuntimeString(value)) return truncatePreview(value, 60);
 	}
 
 	// Fallback: show first string value found
@@ -629,7 +655,7 @@ export function extractToolArgsPreview(args: Record<string, unknown>): string {
 /**
  * Extract text content from various message content formats
  */
-export function extractTextFromContent(content: unknown): string {
+export function extractTextFromContent<Content>(content: Content): string {
 	if (!content) return "";
 	// Handle string content directly
 	if (isRuntimeString(content)) return content;
