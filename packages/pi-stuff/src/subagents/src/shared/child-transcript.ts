@@ -3,13 +3,14 @@ import * as path from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
+import type { ToolArguments } from "../../../tool-display/activity.js";
 import { withArtifactGroupWriteClaim } from "./artifacts.ts";
 import { extractTextFromContent, extractToolArgsPreview } from "./utils.ts";
 
 const MAX_TOOL_PAYLOAD_BYTES = 32 * 1024;
 const TOOL_PAYLOAD_TRUNCATION_MARKER = "\n\n… payload truncated";
 
-function boundedPayload(value: unknown, maxBytes = MAX_TOOL_PAYLOAD_BYTES): string | undefined {
+function boundedPayload<Value>(value: Value, maxBytes = MAX_TOOL_PAYLOAD_BYTES): string | undefined {
 	let text: string;
 	if (isRuntimeString(value)) text = value;
 	else {
@@ -69,6 +70,54 @@ interface ChildTranscriptWriterInput {
 	artifactManaged?: boolean;
 }
 
+interface TranscriptUsageRecord {
+	readonly cacheRead?: unknown;
+	readonly cacheWrite?: unknown;
+	readonly cost?: unknown;
+	readonly input?: unknown;
+	readonly inputTokens?: unknown;
+	readonly output?: unknown;
+	readonly outputTokens?: unknown;
+	readonly total?: unknown;
+}
+
+interface NormalizedTranscriptUsage {
+	readonly cacheRead: number;
+	readonly cacheWrite: number;
+	readonly cost: number;
+	readonly input: number;
+	readonly output: number;
+}
+
+interface ChildTranscriptRecord {
+	version: typeof CHILD_TRANSCRIPT_ARTIFACT_VERSION;
+	recordType: ChildTranscriptRecordType;
+	source: ChildTranscriptSource;
+	runId: string;
+	agent: string;
+	childIndex?: number;
+	cwd: string;
+	ts: number;
+	timestamp: string;
+	argsPayload?: string;
+	argsPreview?: string;
+	customType?: string;
+	display?: boolean;
+	errorMessage?: string;
+	isError?: boolean;
+	maxBytes?: number;
+	message?: unknown;
+	model?: string;
+	outputTruncated?: boolean;
+	role?: string;
+	sourceEventType?: string;
+	stopReason?: string;
+	text?: string;
+	toolCallId?: string;
+	toolName?: string;
+	usage?: NormalizedTranscriptUsage;
+}
+
 export interface ChildTranscriptWriter {
 	path: string;
 	writeInitialUserMessage(prompt: string): void;
@@ -79,23 +128,27 @@ export interface ChildTranscriptWriter {
 	getError(): string | undefined;
 }
 
-function errorMessage(cause: unknown): string {
+function errorMessage<Cause>(cause: Cause): string {
 	return cause instanceof Error ? cause.message : String(cause);
 }
 
-function finiteNumber(value: unknown): number | undefined {
+function finiteNumber<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
-function normalizeUsage(
-	value: unknown,
-): { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number } | undefined {
+function usageRecord<Value>(value: Value): TranscriptUsageRecord {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
+	// SAFETY: transcript projection reads only the declared usage fields and validates every number.
+	return value as Value & TranscriptUsageRecord;
+}
+
+function normalizeUsage<Value>(value: Value): NormalizedTranscriptUsage | undefined {
 	if (!value || !isRuntimeObject(value)) return undefined;
-	const raw = value as Record<string, unknown>;
+	const raw = usageRecord(value);
 	const rawCost = raw.cost;
 	const cost =
 		rawCost && isRuntimeObject(rawCost)
-			? (finiteNumber((rawCost as { total?: unknown }).total) ?? 0)
+			? (finiteNumber(usageRecord(rawCost).total) ?? 0)
 			: (finiteNumber(rawCost) ?? 0);
 	return {
 		input: finiteNumber(raw.input) ?? finiteNumber(raw.inputTokens) ?? 0,
@@ -106,10 +159,10 @@ function normalizeUsage(
 	};
 }
 
-function eventArgs(event: ChildTranscriptEvent): Record<string, unknown> {
-	return event.args && isRuntimeObject(event.args) && !Array.isArray(event.args)
-		? (event.args as Record<string, unknown>)
-		: {};
+function eventArgs(event: ChildTranscriptEvent): ToolArguments {
+	if (!event.args || !isRuntimeObject(event.args) || Array.isArray(event.args)) return {};
+	// SAFETY: Pi owns Tool arguments as a string-keyed object; this writer only previews and serializes them.
+	return event.args as ToolArguments;
 }
 
 export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): ChildTranscriptWriter {
@@ -122,19 +175,20 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 		else operation();
 	};
 
-	const baseRecord = (recordType: ChildTranscriptRecordType) => {
+	const baseRecord = (recordType: ChildTranscriptRecordType): ChildTranscriptRecord => {
 		const ts = Date.now();
-		return {
+		const record: ChildTranscriptRecord = {
 			version: CHILD_TRANSCRIPT_ARTIFACT_VERSION,
 			recordType,
 			source: input.source,
 			runId: input.runId,
 			agent: input.agent,
-			...(input.childIndex !== undefined ? { childIndex: input.childIndex } : {}),
 			cwd: input.cwd,
 			ts,
 			timestamp: new Date(ts).toISOString(),
 		};
+		if (input.childIndex !== undefined) record.childIndex = input.childIndex;
+		return record;
 	};
 
 	const writeTruncatedMarker = () => {
@@ -156,7 +210,7 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 		}
 	};
 
-	const writeRecord = (record: Record<string, unknown>) => {
+	const writeRecord = (record: ChildTranscriptRecord) => {
 		if (writeError || truncated) return;
 		const line = `${JSON.stringify(record)}\n`;
 		const bytes = Buffer.byteLength(line, "utf-8");
@@ -192,37 +246,46 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 		const text = extractTextFromContent(message.content);
 		if (message.role === "toolResult") {
 			const output = boundedPayload(text);
-			writeRecord({
+			const nestedMessage = {
+				role: message.role,
+				toolCallId: message.toolCallId,
+				toolName: message.toolName,
+				isError: message.isError,
+				content: output ? [{ type: "text", text: output }] : [],
+			};
+			if (message.timestamp !== undefined) Object.assign(nestedMessage, { timestamp: message.timestamp });
+			const record: ChildTranscriptRecord = {
 				...baseRecord("message"),
 				sourceEventType,
 				role: message.role,
 				toolCallId: message.toolCallId,
 				toolName: message.toolName,
 				isError: message.isError,
-				...(output ? { text: output, outputTruncated: output.includes("… payload truncated") } : {}),
-				message: {
-					role: message.role,
-					toolCallId: message.toolCallId,
-					toolName: message.toolName,
-					isError: message.isError,
-					content: output ? [{ type: "text", text: output }] : [],
-					...(message.timestamp !== undefined ? { timestamp: message.timestamp } : {}),
-				},
-			});
+				message: nestedMessage,
+			};
+			if (output) {
+				record.text = output;
+				record.outputTruncated = output.includes("… payload truncated");
+			}
+			writeRecord(record);
 			return;
 		}
-		writeRecord({
+		const record: ChildTranscriptRecord = {
 			...baseRecord("message"),
 			sourceEventType,
 			role: message.role,
-			...(message.role === "custom" ? { customType: message.customType, display: message.display } : {}),
-			...(text ? { text } : {}),
-			...(message.model ? { model: message.model } : {}),
-			...(message.stopReason ? { stopReason: message.stopReason } : {}),
-			...(message.errorMessage ? { errorMessage: message.errorMessage } : {}),
-			...(message.usage ? { usage: normalizeUsage(message.usage) } : {}),
 			message,
-		});
+		};
+		if (message.role === "custom") {
+			record.customType = message.customType;
+			record.display = message.display;
+		}
+		if (text) record.text = text;
+		if (message.model) record.model = message.model;
+		if (message.stopReason) record.stopReason = message.stopReason;
+		if (message.errorMessage) record.errorMessage = message.errorMessage;
+		if (message.usage) record.usage = normalizeUsage(message.usage);
+		writeRecord(record);
 	};
 
 	return {
@@ -244,24 +307,26 @@ export function createChildTranscriptWriter(input: ChildTranscriptWriterInput): 
 			if (event.type === "tool_execution_start" && event.toolName) {
 				const args = eventArgs(event);
 				const argsPayload = boundedPayload(args);
-				writeRecord({
+				const record: ChildTranscriptRecord = {
 					...baseRecord("tool_start"),
 					sourceEventType: event.type,
-					...(event.toolCallId ? { toolCallId: event.toolCallId } : {}),
 					toolName: event.toolName,
-					...(Object.keys(args).length > 0 ? { argsPreview: extractToolArgsPreview(args) } : {}),
-					...(argsPayload ? { argsPayload } : {}),
-				});
+				};
+				if (event.toolCallId) record.toolCallId = event.toolCallId;
+				if (Object.keys(args).length > 0) record.argsPreview = extractToolArgsPreview(args);
+				if (argsPayload) record.argsPayload = argsPayload;
+				writeRecord(record);
 				return;
 			}
 			if (event.type === "tool_execution_end") {
-				writeRecord({
+				const record: ChildTranscriptRecord = {
 					...baseRecord("tool_end"),
 					sourceEventType: event.type,
-					...(event.toolCallId ? { toolCallId: event.toolCallId } : {}),
-					...(event.toolName ? { toolName: event.toolName } : {}),
-					...(isRuntimeBoolean(event.isError) ? { isError: event.isError } : {}),
-				});
+				};
+				if (event.toolCallId) record.toolCallId = event.toolCallId;
+				if (event.toolName) record.toolName = event.toolName;
+				if (isRuntimeBoolean(event.isError)) record.isError = event.isError;
+				writeRecord(record);
 			}
 		},
 		writeStdoutLine(line: string) {
