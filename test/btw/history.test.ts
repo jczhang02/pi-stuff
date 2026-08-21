@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import {
+	createEventBus,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type SessionEntry,
+} from "@earendil-works/pi-coding-agent";
 import {
 	BTW_HISTORY_BYTES_LIMIT,
 	BTW_HISTORY_ENTRY_TYPE,
@@ -11,7 +16,9 @@ import {
 	recordBtwExchange,
 	resetBtwHistoryForTests,
 } from "../../packages/pi-stuff/src/btw/btw-history.js";
+import type { BtwHost } from "../../packages/pi-stuff/src/btw/index.js";
 import piStuffBtw from "../../packages/pi-stuff/src/btw/index.js";
+import { createExtensionContext } from "../fixtures/extension-context.js";
 
 beforeEach(() => resetBtwHistoryForTests());
 
@@ -142,13 +149,16 @@ describe("BTW display history", () => {
 
 	test("evicts only the shutting-down session and can replay that session again", async () => {
 		const shutdownHandlers: Array<(event: unknown, ctx: ExtensionContext) => unknown> = [];
-		const api = {
-			events: {},
+		// SAFETY: this test adapter records the one shutdown overload without changing its callback.
+		const on = ((event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
+			if (event === "session_shutdown") shutdownHandlers.push(handler);
+		}) as ExtensionAPI["on"];
+		const api: BtwHost = {
+			appendEntry: () => undefined,
+			events: createEventBus(),
 			registerCommand: () => {},
-			on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
-				if (event === "session_shutdown") shutdownHandlers.push(handler);
-			},
-		} as unknown as ExtensionAPI;
+			on,
+		};
 		piStuffBtw(api);
 
 		const persisted: unknown[] = [];
@@ -156,9 +166,10 @@ describe("BTW display history", () => {
 		record("session-b", 2);
 		expect(shutdownHandlers).toHaveLength(1);
 
-		await shutdownHandlers[0]?.({ reason: "switch", type: "session_shutdown" }, {
-			sessionManager: { getSessionId: () => "session-a" },
-		} as unknown as ExtensionContext);
+		await shutdownHandlers[0]?.(
+			{ reason: "switch", type: "session_shutdown" },
+			createExtensionContext({ sessionManager: { getSessionId: () => "session-a" } }),
+		);
 
 		expect(readBtwHistory("session-a")).toEqual([]);
 		expect(readBtwHistory("session-b").map((exchange) => exchange.question)).toEqual(["question 2"]);

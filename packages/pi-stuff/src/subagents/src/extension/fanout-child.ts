@@ -203,7 +203,7 @@ export default function registerFanoutChildSubagentExtension(
 		description: buildFanoutChildSubagentToolDescription(),
 		parameters: FanoutChildSubagentParams,
 		async execute(id, rawParams, signal, onUpdate, ctx) {
-			const supplied = rawParams as unknown as Record<string, unknown>;
+			const supplied = rawParams as Record<string, unknown>;
 			const forbiddenField = ["action", "id", "index", "message", "foreground"].find((field) =>
 				Object.hasOwn(supplied, field),
 			);

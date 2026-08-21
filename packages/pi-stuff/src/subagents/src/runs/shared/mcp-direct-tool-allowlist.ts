@@ -74,6 +74,38 @@ interface MetadataCache {
 	servers: Record<string, ServerCacheEntry>;
 }
 
+function cacheRecord(value: object): Record<string, unknown> {
+	return Object.fromEntries(Object.entries(value));
+}
+
+function cachedTool(value: unknown): CachedTool | undefined {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
+	const raw = cacheRecord(value);
+	return isRuntimeString(raw.name) ? { name: raw.name } : {};
+}
+
+function cachedResource(value: unknown): CachedResource | undefined {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
+	const raw = cacheRecord(value);
+	return {
+		...(isRuntimeString(raw.name) ? { name: raw.name } : {}),
+		...(isRuntimeString(raw.uri) ? { uri: raw.uri } : {}),
+	};
+}
+
+function serverCacheEntry(value: unknown): ServerCacheEntry | undefined {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
+	const raw = cacheRecord(value);
+	return {
+		...(isRuntimeString(raw.configHash) ? { configHash: raw.configHash } : {}),
+		...(isRuntimeNumber(raw.cachedAt) ? { cachedAt: raw.cachedAt } : {}),
+		...(Array.isArray(raw.tools) ? { tools: raw.tools.flatMap((tool) => cachedTool(tool) ?? []) } : {}),
+		...(Array.isArray(raw.resources)
+			? { resources: raw.resources.flatMap((resource) => cachedResource(resource) ?? []) }
+			: {}),
+	};
+}
+
 export interface ResolvedMcpDirectToolSelection {
 	name: string;
 	selector: string;
@@ -105,11 +137,17 @@ function loadMetadataCache(): MetadataCache | null {
 	}
 
 	if (!parsed || !isRuntimeObject(parsed)) return null;
-	const raw = parsed as Record<string, unknown>;
+	const raw = cacheRecord(parsed);
 	if (raw.version !== CACHE_VERSION || !raw.servers || !isRuntimeObject(raw.servers) || Array.isArray(raw.servers)) {
 		return null;
 	}
-	return raw as unknown as MetadataCache;
+	const servers = Object.fromEntries(
+		Object.entries(raw.servers).flatMap(([name, value]) => {
+			const entry = serverCacheEntry(value);
+			return entry ? [[name, entry]] : [];
+		}),
+	);
+	return { servers, version: CACHE_VERSION };
 }
 
 function loadMcpConfig(cwd: string): McpConfig {

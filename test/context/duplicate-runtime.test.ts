@@ -3,6 +3,8 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createExtensionApi } from "../fixtures/extension-api.js";
+import { createExtensionContext } from "../fixtures/extension-context.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type ContextModule = typeof import("../../packages/pi-stuff/src/context-management/index.js");
@@ -52,16 +54,18 @@ test("physical Context Module copies share one Host runtime", async () => {
 		let activeTools: string[] = [];
 		const createApi = () => {
 			const handlers = new Map<string, Handler[]>();
-			const api = {
+			// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
+			const on = ((event: string, handler: Handler) => {
+				handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+			}) as ExtensionAPI["on"];
+			const api = createExtensionApi({
 				events: {
 					emit: (event: string, data: unknown) => bus.emit(event, data),
 					on: (event: string, listener: (data: unknown) => void) => bus.on(event, listener),
 				},
 				registerCommand() {},
 				registerEntryRenderer() {},
-				on(event: string, handler: Handler) {
-					handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-				},
+				on,
 				registerTool(tool: { name: string }) {
 					if (!activeTools.includes(tool.name)) activeTools.push(tool.name);
 				},
@@ -69,7 +73,7 @@ test("physical Context Module copies share one Host runtime", async () => {
 				setActiveTools(names: string[]) {
 					activeTools = [...names];
 				},
-			} as unknown as ExtensionAPI;
+			});
 			return { api, handlers };
 		};
 		const firstApi = createApi();
@@ -86,14 +90,14 @@ test("physical Context Module copies share one Host runtime", async () => {
 				};
 			},
 		});
-		const ctx = {
+		const ctx = createExtensionContext({
 			cwd: "/workspace/duplicate",
 			sessionManager: {
 				buildContextEntries: () => [],
 				getSessionFile: () => "/sessions/duplicate.jsonl",
 				getSessionId: () => "duplicate",
 			},
-		} as unknown as ExtensionContext;
+		});
 		for (const handler of firstApi.handlers.get("session_start") ?? []) {
 			await handler({ type: "session_start", reason: "startup" }, ctx);
 		}

@@ -84,7 +84,7 @@ function invalidResult(name: string, path: string, expected: string, received: u
 }
 
 /** Cloudflare-compatible MCP/Pi result unwrapping with a strict content boundary. */
-export function unwrapSuiteToolResult(name: string, result: AgentToolResult<unknown>): unknown {
+export function unwrapSuiteToolResult(name: string, result: unknown): unknown {
 	if (!isRuntimeObject(result) || result === null) invalidResult(name, "result", "an object", result);
 	const record = result as AgentToolResult<unknown> & {
 		readonly structuredContent?: unknown;

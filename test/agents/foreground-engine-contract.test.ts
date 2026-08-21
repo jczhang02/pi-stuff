@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	createEventBus,
+	createSyntheticSourceInfo,
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+	type SessionEntry,
+	type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";
 import { steerRequestsDir } from "../../packages/pi-stuff/src/subagents/src/runs/background/control-channel.js";
 import { createInitialStatus } from "../../packages/pi-stuff/src/subagents/src/runs/background/initial-status.js";
@@ -41,6 +48,8 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/session/foreground-replay.js";
 import { resolveCurrentSessionId } from "../../packages/pi-stuff/src/subagents/src/shared/session-identity.js";
 import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import { createExtensionApi } from "../fixtures/extension-api.js";
+import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 
 const temporaryDirectories: string[] = [];
 const environment = new Map<string, string | undefined>();
@@ -120,26 +129,93 @@ function state(): SubagentState {
 	};
 }
 
+type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
+
+function toolInfo(tool: Pick<ToolDefinition, "description" | "name" | "parameters" | "promptGuidelines">): ToolInfo {
+	return {
+		description: tool.description,
+		name: tool.name,
+		parameters: tool.parameters,
+		promptGuidelines: tool.promptGuidelines,
+		sourceInfo: createSyntheticSourceInfo(`/test/${tool.name}`, { source: "extension" }),
+	};
+}
+
+function userEntry(content: string): SessionEntry {
+	return {
+		id: "parent-message",
+		message: { content, role: "user", timestamp: 0 },
+		parentId: null,
+		timestamp: "2026-08-06T10:00:00.000Z",
+		type: "message",
+	};
+}
+
+function extensionApiWithoutToolIntrospection(
+	overrides: Partial<ExtensionAPI> = {},
+	missing: ReadonlySet<"getActiveTools" | "getAllTools"> = new Set(["getActiveTools", "getAllTools"]),
+): ExtensionAPI {
+	return new Proxy(createExtensionApi(overrides), {
+		get(target, property) {
+			if (property === "getActiveTools" && missing.has(property)) return undefined;
+			if (property === "getAllTools" && missing.has(property)) return undefined;
+			// SAFETY: Proxy property keys come from reads against this exact ExtensionAPI target.
+			return target[property as keyof ExtensionAPI];
+		},
+	});
+}
+
+type ForegroundTestContext = ExtensionCommandContext & {
+	readonly sessionManager: ExtensionCommandContext["sessionManager"] & {
+		openSession: () => unknown;
+	};
+};
+
 function context(
 	cwd: string,
 	models: Array<{ provider: string; id: string; contextWindow: number; maxTokens: number }> = [],
 	usageTokens?: number,
-): ExtensionContext {
-	return {
+): ForegroundTestContext {
+	const availableModels = models.map(({ contextWindow, id, maxTokens, provider }) => ({
+		api: "openai-responses" as const,
+		baseUrl: "https://example.invalid",
+		contextWindow,
+		cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
+		id,
+		input: ["text" as const],
+		maxTokens,
+		name: id,
+		provider,
+		reasoning: false,
+	}));
+	const base = createExtensionCommandContext({
 		cwd,
-		hasUI: true,
-		model: { provider: "test", id: "model" },
-		modelRegistry: { getAvailable: () => models },
+		model: {
+			api: "openai-responses",
+			baseUrl: "https://example.invalid",
+			contextWindow: 200_000,
+			cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
+			id: "model",
+			input: ["text"],
+			maxTokens: 8_000,
+			name: "model",
+			provider: "test",
+			reasoning: false,
+		},
 		sessionManager: {
 			buildContextEntries: () => [],
 			getLeafId: () => "leaf",
 			getSessionFile: () => path.join(cwd, "parent.jsonl"),
 			getSessionId: () => "parent-session",
-			openSession: () => ({ createBranchedSession: () => path.join(cwd, "parent.jsonl") }),
 		},
 		getContextUsage: () =>
 			usageTokens === undefined ? undefined : { tokens: usageTokens, contextWindow: 200_000, percent: 1 },
-	} as unknown as ExtensionContext;
+	});
+	base.modelRegistry.getAvailable = () => availableModels;
+	const sessionManager = Object.assign(base.sessionManager, {
+		openSession: () => ({ createBranchedSession: () => path.join(cwd, "parent.jsonl") }),
+	});
+	return Object.assign(base, { sessionManager });
 }
 
 function executor(
@@ -175,7 +251,7 @@ function executor(
 		projectContext?: Parameters<typeof createSubagentExecutor>[0]["projectContext"];
 	} = {},
 ) {
-	const pi = options.pi ?? ({ events: { emit: () => {} } } as unknown as ExtensionAPI);
+	const pi = options.pi ?? extensionApiWithoutToolIntrospection();
 	const delegate = createSubagentExecutor({
 		pi,
 		state: runState,
@@ -293,12 +369,14 @@ describe("reduced foreground Agent engine", () => {
 			temporaryDirectories.push(cwd);
 			fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 			let observed: boolean | undefined;
-			const pi = {
-				events: { emit: () => {} },
-				// Suite capabilities see the unwrapped virtual Tool set even when the
-				// outer Host surface contains the Code Mode envelope.
-				getActiveTools: () => ["read"],
-			} as unknown as ExtensionAPI;
+			const pi = extensionApiWithoutToolIntrospection(
+				{
+					// Suite capabilities see the unwrapped virtual Tool set even when the
+					// outer Host surface contains the Code Mode envelope.
+					getActiveTools: () => ["read"],
+				},
+				new Set(["getAllTools"]),
+			);
 			await executor(
 				cwd,
 				state(),
@@ -469,14 +547,16 @@ describe("reduced foreground Agent engine", () => {
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 		const runState = state();
+		const observerEvents = createEventBus();
 		const result = await executor(cwd, runState, undefined, {
-			pi: {
+			pi: extensionApiWithoutToolIntrospection({
 				events: {
 					emit: () => {
 						throw new Error("completion observer failed");
 					},
+					on: observerEvents.on,
 				},
-			} as unknown as ExtensionAPI,
+			}),
 		}).execute(
 			"observer-call",
 			{ agent: "general-purpose", task: "Inspect the parser", async: false, context: "fresh" },
@@ -886,7 +966,7 @@ describe("reduced foreground Agent engine", () => {
 		let captured: { sessionFile?: string; task: string } | undefined;
 		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 3_500);
-		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+		ctx.sessionManager.openSession = () => {
 			openSessionCalls += 1;
 			return {
 				createBranchedSession: () => {
@@ -923,7 +1003,7 @@ describe("reduced foreground Agent engine", () => {
 		let captured: { sessionFile?: string; task: string } | undefined;
 		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 7_000);
-		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+		ctx.sessionManager.openSession = () => {
 			openSessionCalls += 1;
 			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
 		};
@@ -971,11 +1051,9 @@ describe("reduced foreground Agent engine", () => {
 			temporaryDirectories.push(cwd);
 			fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 			const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 100);
-			(ctx.sessionManager as unknown as { buildContextEntries: () => unknown[] }).buildContextEntries = () => [
-				{ type: "message", message: { role: "user", content: history } },
-			];
+			ctx.sessionManager.buildContextEntries = () => [userEntry(history)];
 			let openSessionCalls = 0;
-			(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+			ctx.sessionManager.openSession = () => {
 				openSessionCalls += 1;
 				return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
 			};
@@ -1232,9 +1310,7 @@ describe("reduced foreground Agent engine", () => {
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 		let engineCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }]);
-		(ctx.sessionManager as unknown as { buildContextEntries: () => unknown[] }).buildContextEntries = () => [
-			{ type: "message", message: { role: "user", content: "x".repeat(80_000) } },
-		];
+		ctx.sessionManager.buildContextEntries = () => [userEntry("x".repeat(80_000))];
 		const result = await executor(
 			cwd,
 			state(),
@@ -1261,10 +1337,8 @@ describe("reduced foreground Agent engine", () => {
 		let captured: { sessionFile?: string; task: string } | undefined;
 		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "large", contextWindow: 128_000, maxTokens: 8_000 }], 70_000);
-		(ctx.sessionManager as unknown as { buildContextEntries: () => unknown[] }).buildContextEntries = () => [
-			{ type: "message", message: { role: "user", content: "x".repeat(2_000_000) } },
-		];
-		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+		ctx.sessionManager.buildContextEntries = () => [userEntry("x".repeat(2_000_000))];
+		ctx.sessionManager.openSession = () => {
 			openSessionCalls += 1;
 			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
 		};
@@ -1303,10 +1377,10 @@ describe("reduced foreground Agent engine", () => {
 		let captured: { sessionFile?: string; task: string } | undefined;
 		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 500);
-		(ctx.sessionManager as unknown as { buildContextEntries: () => unknown[] }).buildContextEntries = () => {
+		ctx.sessionManager.buildContextEntries = () => {
 			throw new Error("injected branch read failure");
 		};
-		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+		ctx.sessionManager.openSession = () => {
 			openSessionCalls += 1;
 			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
 		};
@@ -1353,7 +1427,7 @@ describe("reduced foreground Agent engine", () => {
 		);
 		let openSessionCalls = 0;
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 500);
-		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+		ctx.sessionManager.openSession = () => {
 			openSessionCalls += 1;
 			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
 		};
@@ -1381,7 +1455,7 @@ describe("reduced foreground Agent engine", () => {
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 100);
-		(ctx as unknown as { getSystemPrompt: () => string }).getSystemPrompt = () => "p".repeat(20_000);
+		ctx.getSystemPrompt = () => "p".repeat(20_000);
 		let engineCalls = 0;
 
 		const result = await executor(
@@ -1408,18 +1482,17 @@ describe("reduced foreground Agent engine", () => {
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 		let engineCalls = 0;
-		const pi = {
-			events: { emit: () => {} },
+		const pi = createExtensionApi({
 			getActiveTools: () => ["read"],
 			getAllTools: () => [
-				{
+				toolInfo({
 					name: "read",
 					description: "Read a file.",
 					parameters: { type: "object", properties: { path: { type: "string" } } },
 					promptGuidelines: ["s".repeat(20_000)],
-				},
+				}),
 			],
-		} as unknown as ExtensionAPI;
+		});
 
 		const result = await executor(
 			cwd,
@@ -1449,14 +1522,18 @@ describe("reduced foreground Agent engine", () => {
 		fs.mkdirSync(path.join(skillRoot, skillName), { recursive: true });
 		fs.writeFileSync(path.join(skillRoot, skillName, "SKILL.md"), "---\ndescription: Small skill\n---\nUse it.\n");
 		let engineCalls = 0;
-		const pi = {
-			events: { emit: () => {} },
+		const pi = createExtensionApi({
 			getActiveTools: () => ["write"],
 			getAllTools: () => [
-				{ name: "write", description: "Write.", parameters: {} },
-				{ name: "read", description: "Read.", parameters: {}, promptGuidelines: ["r".repeat(20_000)] },
+				toolInfo({ name: "write", description: "Write.", parameters: {} }),
+				toolInfo({
+					name: "read",
+					description: "Read.",
+					parameters: {},
+					promptGuidelines: ["r".repeat(20_000)],
+				}),
 			],
-		} as unknown as ExtensionAPI;
+		});
 
 		const result = await executor(
 			cwd,
@@ -1491,7 +1568,7 @@ describe("reduced foreground Agent engine", () => {
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 		const ctx = context(cwd, [{ provider: "test", id: "small", contextWindow: 8_000, maxTokens: 2_000 }], 100);
-		(ctx as unknown as { getSystemPrompt: () => string }).getSystemPrompt = () => "parent".repeat(4_000);
+		ctx.getSystemPrompt = () => "parent".repeat(4_000);
 		let engineCalls = 0;
 
 		const result = await executor(
@@ -1526,15 +1603,15 @@ describe("reduced foreground Agent engine", () => {
 		temporaryDirectories.push(cwd);
 		fs.writeFileSync(path.join(cwd, "parent.jsonl"), "");
 		const ctx = context(cwd, [{ provider: "test", id: "large", contextWindow: 32_000, maxTokens: 4_000 }], 17_000);
-		(ctx as unknown as { getSystemPrompt: () => string }).getSystemPrompt = () => "default base".repeat(20_000);
-		(ctx as unknown as { getSystemPromptOptions: () => unknown }).getSystemPromptOptions = () => ({
+		ctx.getSystemPrompt = () => "default base".repeat(20_000);
+		ctx.getSystemPromptOptions = () => ({
 			cwd,
 			customPrompt: "default base".repeat(20_000),
 			contextFiles: [{ path: path.join(cwd, "AGENTS.md"), content: "p".repeat(4_000) }],
 			skills: [],
 		});
 		let openSessionCalls = 0;
-		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+		ctx.sessionManager.openSession = () => {
 			openSessionCalls += 1;
 			return { createBranchedSession: () => path.join(cwd, "child.jsonl") };
 		};
@@ -1581,13 +1658,13 @@ describe("reduced foreground Agent engine", () => {
 			[{ provider: "test", id: "large", contextWindow: 32_000, maxTokens: 4_000 }],
 			13_000,
 		);
-		(ctx as unknown as { getSystemPromptOptions: () => unknown }).getSystemPromptOptions = () => ({
+		ctx.getSystemPromptOptions = () => ({
 			cwd: parentCwd,
 			contextFiles: [{ path: path.join(parentCwd, "AGENTS.md"), content: "small parent rule" }],
 			skills: [],
 		});
 		let openSessionCalls = 0;
-		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+		ctx.sessionManager.openSession = () => {
 			openSessionCalls += 1;
 			return { createBranchedSession: () => path.join(parentCwd, "child.jsonl") };
 		};
@@ -1640,7 +1717,7 @@ describe("reduced foreground Agent engine", () => {
 			],
 			7_000,
 		);
-		(ctx.sessionManager as unknown as { openSession: () => unknown }).openSession = () => {
+		ctx.sessionManager.openSession = () => {
 			openSessionCalls += 1;
 			return {
 				createBranchedSession: () => {

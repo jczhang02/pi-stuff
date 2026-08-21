@@ -268,7 +268,7 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		const release = this.acquireLock ? await this.acquireLock(this.lockPath, "pi-stuff") : async () => {};
 		try {
 			const record = await readNamespace(this.path, this.namespace);
-			const current = record === undefined ? this.persistedValue : (record as unknown as T);
+			const current = record === undefined ? this.persistedValue : (record as T);
 			const next = apply(current);
 			await this.writer(this.path, this.namespace, next);
 			this.persistedValue = next;

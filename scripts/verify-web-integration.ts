@@ -2,8 +2,16 @@ import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import {
+	type AgentToolResult,
+	createEventBus,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import { isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import type { WebCapabilityHost } from "../packages/pi-stuff/src/web/adapter.js";
+import { createExtensionContext } from "../test/fixtures/extension-context.js";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -28,32 +36,40 @@ function resultText(result: AgentToolResult<unknown>): string {
 function harness(): {
 	readonly context: ExtensionContext;
 	readonly handlers: Map<string, EventHandler[]>;
-	readonly pi: ExtensionAPI;
+	readonly pi: WebCapabilityHost;
 	readonly tools: Map<string, ToolDefinition>;
 } {
 	const handlers = new Map<string, EventHandler[]>();
 	const tools = new Map<string, ToolDefinition>();
-	const events = {};
-	const pi = {
+	let activeTools: string[] = [];
+	// SAFETY: this verification adapter records Host callbacks without changing their arguments or result.
+	const on = ((event: string, handler: EventHandler) => {
+		const listeners = handlers.get(event) ?? [];
+		listeners.push(handler);
+		handlers.set(event, listeners);
+	}) as ExtensionAPI["on"];
+	const pi: WebCapabilityHost = {
 		appendEntry: () => undefined,
-		events,
+		events: createEventBus(),
 		exec: async () => ({ code: 1, killed: false, stderr: "disabled", stdout: "" }),
-		on: (event: string, handler: EventHandler) => {
-			const listeners = handlers.get(event) ?? [];
-			listeners.push(handler);
-			handlers.set(event, listeners);
-		},
+		getActiveTools: () => [...activeTools],
+		on,
 		registerCommand: () => undefined,
 		registerShortcut: () => undefined,
-		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
+		registerTool: (tool) => {
+			// SAFETY: this verification registry erases only generic renderer state and retains the original Tool object.
+			tools.set(tool.name, tool as ToolDefinition);
+		},
 		sendMessage: () => undefined,
-	} as unknown as ExtensionAPI;
-	const context = {
+		setActiveTools: (names) => {
+			activeTools = [...names];
+		},
+	};
+	const context = createExtensionContext({
 		cwd: process.cwd(),
 		hasUI: false,
 		sessionManager: { getBranch: () => [] },
-		ui: {},
-	} as unknown as ExtensionContext;
+	});
 	return { context, handlers, pi, tools };
 }
 

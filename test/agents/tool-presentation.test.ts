@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import {
+	type AgentToolResult,
+	createSyntheticSourceInfo,
+	type ExtensionAPI,
+	type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	isRuntimeFunction,
@@ -58,13 +63,48 @@ import {
 	extractToolArgsPreview,
 } from "../../packages/pi-stuff/src/subagents/src/shared/utils.js";
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { createExtensionApi } from "../fixtures/extension-api.js";
+import { testTheme } from "../fixtures/extension-context.js";
 
 const environment = new Map<string, string | undefined>();
 const temporaryDirectories: string[] = [];
-const theme = {
-	bold: (value: string) => value,
-	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+const theme = testTheme;
+
+type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
+
+function toolInfo(tool: Pick<ToolDefinition, "description" | "name" | "parameters">): ToolInfo {
+	return {
+		description: tool.description,
+		name: tool.name,
+		parameters: tool.parameters,
+		sourceInfo: createSyntheticSourceInfo(`/test/${tool.name}`, { source: "extension" }),
+	};
+}
+
+function lifecycleHandlers<Handler extends (...args: never[]) => unknown>(
+	handlers: Map<string, Handler[]>,
+): ExtensionAPI["on"] {
+	return new Proxy(createExtensionApi().on, {
+		apply(_target, _thisArg, [event, handler]) {
+			if (typeof event !== "string" || typeof handler !== "function") return undefined;
+			// SAFETY: Tests invoke each captured callback only with the matching lifecycle payload used at registration.
+			const captured = handler as Handler;
+			handlers.set(event, [...(handlers.get(event) ?? []), captured]);
+			return undefined;
+		},
+	});
+}
+
+function lifecycleHandler<Event>(handlers: Map<string, (event: Event) => unknown>): ExtensionAPI["on"] {
+	return new Proxy(createExtensionApi().on, {
+		apply(_target, _thisArg, [event, handler]) {
+			if (typeof event !== "string" || typeof handler !== "function") return undefined;
+			// SAFETY: Tests invoke each captured callback only with the matching lifecycle payload used at registration.
+			handlers.set(event, handler as (event: Event) => unknown);
+			return undefined;
+		},
+	});
+}
 
 function isWellFormed(value: string): boolean {
 	for (let index = 0; index < value.length; index += 1) {
@@ -90,15 +130,15 @@ function apiHarness(): {
 } {
 	const tools = new Map<string, ToolDefinition>();
 	const handlers = new Map<string, Array<(...args: never[]) => unknown>>();
-	const api = {
-		events: { emit: () => {}, on: () => () => {} },
-		getAllTools: () => [...tools.values()].map((tool) => ({ name: tool.name })),
-		on: (event: string, handler: (...args: never[]) => unknown) => {
-			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+	const api = createExtensionApi({
+		getAllTools: () => [...tools.values()].map(toolInfo),
+		on: lifecycleHandlers(handlers),
+		registerTool: (tool) => {
+			// SAFETY: this test registry erases only generic renderer state and returns the original Tool unchanged.
+			tools.set(tool.name, tool as ToolDefinition);
 		},
-		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
 		sendMessage: () => {},
-	} as unknown as ExtensionAPI;
+	});
 	return {
 		api,
 		tools,
@@ -354,7 +394,22 @@ test("bounds live Agent arguments and streamed text by grapheme and terminal cel
 
 test("native parent and child communication tools use the shared Tool row", async () => {
 	const parent = apiHarness();
-	const channel = createNativeSupervisorChannel(parent.api, { lastUiContext: undefined } as unknown as SubagentState);
+	const state: SubagentState = {
+		asyncJobs: new Map(),
+		baseCwd: "",
+		cleanupTimers: new Map(),
+		completionSeen: new Map(),
+		currentSessionId: null,
+		foregroundControls: new Map(),
+		foregroundRuns: new Map(),
+		lastForegroundControlId: null,
+		lastUiContext: null,
+		recentAgentJobs: new Map(),
+		resultFileCoalescer: { clear: () => {}, schedule: () => false },
+		watcher: null,
+		watcherRestartTimer: null,
+	};
+	const channel = createNativeSupervisorChannel(parent.api, state);
 	channel.start();
 	expectCompactPresentation(parent.tools.get("subagent_supervisor"));
 	await parent.run("before_agent_start");
@@ -414,23 +469,19 @@ test("waits until before_agent_start before installing intercom fallback so a la
 
 	const tools = new Map<string, ToolDefinition>();
 	const handlers = new Map<string, Array<(event: never) => unknown>>();
-	const api = {
-		events: { emit: () => {}, on: () => () => {} },
-		getAllTools: () => [...tools.values()].map((tool) => ({ name: tool.name })),
-		on: (event: string, handler: (event: never) => unknown) => {
-			const listeners = handlers.get(event) ?? [];
-			listeners.push(handler);
-			handlers.set(event, listeners);
-		},
+	const api = createExtensionApi({
+		getAllTools: () => [...tools.values()].map(toolInfo),
+		on: lifecycleHandlers(handlers),
 		// Pi's extension registry is first-wins for duplicate tool names.
-		registerTool: (tool: ToolDefinition) => {
-			if (!tools.has(tool.name)) tools.set(tool.name, tool);
+		registerTool: (tool) => {
+			// SAFETY: this test registry erases only generic renderer state and returns the original Tool unchanged.
+			if (!tools.has(tool.name)) tools.set(tool.name, tool as ToolDefinition);
 		},
 		sendMessage: () => {},
-	} as unknown as ExtensionAPI;
+	});
 	registerSubagentPromptRuntime(api);
-	(api as ExtensionAPI).on("session_start", () => {
-		(api as ExtensionAPI).registerTool({
+	api.on("session_start", () => {
+		api.registerTool({
 			name: "intercom",
 			label: "External Intercom",
 			description: "Dynamically registered external intercom.",
@@ -704,10 +755,10 @@ test("leaves Host-like delimiter examples intact because resource isolation belo
 
 test("a rejected advisory tool-budget nudge cannot escape the child runtime", async () => {
 	const handlers = new Map<string, (event: { toolName?: string }) => unknown>();
-	const pi = {
-		on: (event: string, handler: (event: { toolName?: string }) => unknown) => handlers.set(event, handler),
+	const pi = createExtensionApi({
+		on: lifecycleHandler(handlers),
 		sendUserMessage: () => Promise.reject(new Error("injected advisory transport failure")),
-	} as unknown as ExtensionAPI;
+	});
 	registerToolBudget(pi, { soft: 1, hard: 1, block: "*" });
 
 	expect(handlers.get("tool_call")?.({ toolName: "read" })).toBeUndefined();
@@ -724,15 +775,13 @@ test("aborts an oversized final child provider payload with a durable diagnostic
 	const diagnosticPath = join(root, "child-diagnostic.json");
 	setEnvironment(CHILD_TOOL_DIAGNOSTIC_PATH_ENV, diagnosticPath);
 	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
-	const pi = {
+	const pi = createExtensionApi({
 		events: { emit: () => {}, on: () => () => {} },
 		getAllTools: () => [],
-		on: (event: string, handler: (event: never, ctx: never) => unknown) => {
-			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-		},
+		on: lifecycleHandlers(handlers),
 		registerTool: () => {},
 		sendMessage: () => {},
-	} as unknown as ExtensionAPI;
+	});
 	registerSubagentPromptRuntime(pi);
 	let aborts = 0;
 	for (const handler of handlers.get("before_provider_request") ?? []) {
@@ -761,16 +810,14 @@ test("projects long child Tool history before a continuation request while prese
 		description: "Read bounded project files.",
 		parameters: { type: "object", properties: { path: { type: "string" } } },
 	};
-	const pi = {
+	const pi = createExtensionApi({
 		events: { emit: () => {}, on: () => () => {} },
 		getActiveTools: () => ["read"],
-		getAllTools: () => [activeTool],
-		on: (event: string, handler: (event: never, ctx: never) => unknown) => {
-			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-		},
+		getAllTools: () => [toolInfo(activeTool)],
+		on: lifecycleHandlers(handlers),
 		registerTool: () => {},
 		sendMessage: () => {},
-	} as unknown as ExtensionAPI;
+	});
 	registerSubagentPromptRuntime(pi);
 
 	const delegatedTask = "DELEGATED_TASK_AUTHORITY: inspect every fixture and finish the requested audit.";
@@ -876,16 +923,14 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 		description: "Execute a bounded command.",
 		parameters: { type: "object", properties: { command: { type: "string" } } },
 	};
-	const pi = {
+	const pi = createExtensionApi({
 		events: { emit: () => {}, on: () => () => {} },
 		getActiveTools: () => ["bash"],
-		getAllTools: () => [activeTool],
-		on: (event: string, handler: (event: never, ctx: never) => unknown) => {
-			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-		},
+		getAllTools: () => [toolInfo(activeTool)],
+		on: lifecycleHandlers(handlers),
 		registerTool: () => {},
 		sendMessage: () => {},
-	} as unknown as ExtensionAPI;
+	});
 	registerSubagentPromptRuntime(pi);
 	const task = "EXTREME_TASK_AUTHORITY: complete the long audit.";
 	const steering = "EXTREME_STEERING_AUTHORITY: finish with a verification count.";
@@ -979,16 +1024,14 @@ test("projects oversized non-text Tool evidence without breaking the signed rece
 		description: "Capture the current screen.",
 		parameters: { type: "object", properties: {} },
 	};
-	const pi = {
+	const pi = createExtensionApi({
 		events: { emit: () => {}, on: () => () => {} },
 		getActiveTools: () => ["screenshot"],
-		getAllTools: () => [activeTool],
-		on: (event: string, handler: (event: never, ctx: never) => unknown) => {
-			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-		},
+		getAllTools: () => [toolInfo(activeTool)],
+		on: lifecycleHandlers(handlers),
 		registerTool: () => {},
 		sendMessage: () => {},
-	} as unknown as ExtensionAPI;
+	});
 	registerSubagentPromptRuntime(pi);
 	const task = "Inspect the captured screen and continue.";
 	setEnvironment(SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV, createHash("sha256").update(task).digest("hex"));
@@ -1038,16 +1081,14 @@ test("labels an irreducible oversized request as a continuation after a resumed 
 	const diagnosticPath = join(root, "child-diagnostic.json");
 	setEnvironment(CHILD_TOOL_DIAGNOSTIC_PATH_ENV, diagnosticPath);
 	const handlers = new Map<string, Array<(event: never, ctx: never) => unknown>>();
-	const pi = {
+	const pi = createExtensionApi({
 		events: { emit: () => {}, on: () => () => {} },
 		getActiveTools: () => [],
 		getAllTools: () => [],
-		on: (event: string, handler: (event: never, ctx: never) => unknown) => {
-			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
-		},
+		on: lifecycleHandlers(handlers),
 		registerTool: () => {},
 		sendMessage: () => {},
-	} as unknown as ExtensionAPI;
+	});
 	registerSubagentPromptRuntime(pi);
 	for (const handler of handlers.get("session_start") ?? []) {
 		await handler({ type: "session_start", reason: "resume" } as never, {} as never);
@@ -1197,10 +1238,10 @@ test("retries a failed steering acknowledgement without delivering the steer twi
 
 	const handlers = new Map<string, (event: unknown) => unknown>();
 	const delivered: string[] = [];
-	const pi = {
-		on: (event: string, handler: (event: unknown) => unknown) => handlers.set(event, handler),
+	const pi = createExtensionApi({
+		on: lifecycleHandler(handlers),
 		sendUserMessage: (content: string) => delivered.push(content),
-	} as unknown as ExtensionAPI;
+	});
 	registerSteeringInbox(pi);
 	try {
 		handlers.get("session_start")?.({});
@@ -1248,10 +1289,10 @@ test("retries a correlated steering acknowledgement once during immediate shutdo
 
 	const handlers = new Map<string, (event: unknown) => unknown>();
 	const delivered: string[] = [];
-	const pi = {
-		on: (event: string, handler: (event: unknown) => unknown) => handlers.set(event, handler),
+	const pi = createExtensionApi({
+		on: lifecycleHandler(handlers),
 		sendUserMessage: (content: string) => delivered.push(content),
-	} as unknown as ExtensionAPI;
+	});
 	registerSteeringInbox(pi);
 	handlers.get("session_start")?.({});
 	writeSteerRequestToDir(inbox, {
@@ -1285,10 +1326,12 @@ test("holds startup steering until the child's initial Agent turn has started", 
 
 	const handlers = new Map<string, (event: unknown) => unknown>();
 	const delivered: string[] = [];
-	registerSteeringInbox({
-		on: (event: string, handler: (event: unknown) => unknown) => handlers.set(event, handler),
-		sendUserMessage: (content: string) => delivered.push(content),
-	} as unknown as ExtensionAPI);
+	registerSteeringInbox(
+		createExtensionApi({
+			on: lifecycleHandler(handlers),
+			sendUserMessage: (content: string) => delivered.push(content),
+		}),
+	);
 	handlers.get("session_start")?.({});
 	writeSteerRequestToDir(inbox, {
 		type: "steer",
@@ -1323,10 +1366,12 @@ test("replays a steering request after dispatch crashes before Pi accepts the in
 	};
 	const firstHandlers = new Map<string, (event: unknown) => unknown>();
 	const firstDeliveries: string[] = [];
-	registerSteeringInbox({
-		on: (event: string, handler: (event: unknown) => unknown) => firstHandlers.set(event, handler),
-		sendUserMessage: (content: string) => firstDeliveries.push(content),
-	} as unknown as ExtensionAPI);
+	registerSteeringInbox(
+		createExtensionApi({
+			on: lifecycleHandler(firstHandlers),
+			sendUserMessage: (content: string) => firstDeliveries.push(content),
+		}),
+	);
 	firstHandlers.get("session_start")?.({});
 	writeSteerRequestToDir(inbox, request);
 	firstHandlers.get("agent_start")?.({});
@@ -1336,10 +1381,12 @@ test("replays a steering request after dispatch crashes before Pi accepts the in
 
 	const replacementHandlers = new Map<string, (event: unknown) => unknown>();
 	const replacementDeliveries: string[] = [];
-	registerSteeringInbox({
-		on: (event: string, handler: (event: unknown) => unknown) => replacementHandlers.set(event, handler),
-		sendUserMessage: (content: string) => replacementDeliveries.push(content),
-	} as unknown as ExtensionAPI);
+	registerSteeringInbox(
+		createExtensionApi({
+			on: lifecycleHandler(replacementHandlers),
+			sendUserMessage: (content: string) => replacementDeliveries.push(content),
+		}),
+	);
 	replacementHandlers.get("session_start")?.({});
 	replacementHandlers.get("agent_start")?.({});
 	expect(replacementDeliveries).toHaveLength(1);
@@ -1379,10 +1426,12 @@ test("uses an existing steering acknowledgement to retire a crash-left request w
 
 	const handlers = new Map<string, (event: unknown) => unknown>();
 	const delivered: string[] = [];
-	registerSteeringInbox({
-		on: (event: string, handler: (event: unknown) => unknown) => handlers.set(event, handler),
-		sendUserMessage: (content: string) => delivered.push(content),
-	} as unknown as ExtensionAPI);
+	registerSteeringInbox(
+		createExtensionApi({
+			on: lifecycleHandler(handlers),
+			sendUserMessage: (content: string) => delivered.push(content),
+		}),
+	);
 	handlers.get("session_start")?.({});
 	handlers.get("agent_start")?.({});
 	expect(delivered).toEqual([]);

@@ -37,6 +37,9 @@ interface GoalMenuRuntimeView {
 	pendingQueueAction?: PendingQueueAction;
 	queueFrozen: boolean;
 	settings: GoalRuntime["settings"];
+	menuController?: GoalRuntime["menuController"];
+	menuGeneration?: GoalRuntime["menuGeneration"];
+	pi?: GoalRuntime["pi"];
 	recordGoalUsage?: GoalRuntime["recordGoalUsage"];
 	persistGoal?: GoalRuntime["persistGoal"];
 	updateStatus?: GoalRuntime["updateStatus"];
@@ -135,7 +138,7 @@ export async function showGoalManager(
 		commands.showGoal(ctx);
 		return;
 	}
-	const owner = runtime as GoalRuntime;
+	const owner = runtime;
 	const generation = owner.menuGeneration;
 	const ownerSignal = owner.menuController?.signal;
 	let displayedGoal: ActiveGoal | undefined;

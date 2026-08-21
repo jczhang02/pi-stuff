@@ -22,10 +22,10 @@ test("ToolActivityStore exposes immutable snapshots", () => {
 	expect(Object.isFrozen(settled)).toBe(true);
 	expect(Object.isFrozen(settled.detailLines)).toBe(true);
 	expect(() => {
-		(settled as unknown as { summary: string }).summary = "tampered";
+		(settled as { summary: string }).summary = "tampered";
 	}).toThrow();
 	expect(() => {
-		(settled.detailLines as unknown as string[]).push("tampered");
+		(settled.detailLines as string[]).push("tampered");
 	}).toThrow();
 	expect(store.get("call-1")?.summary).toBe("Read 1 file");
 });

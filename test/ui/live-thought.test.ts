@@ -170,7 +170,7 @@ describe("live Thought display", () => {
 		const toolTheme = {
 			bold: (value: string) => value,
 			fg: (_color: string, value: string) => value,
-		} as unknown as Theme;
+		} as Theme;
 		const activity = new CachedToolRow(toolTheme, {
 			active: false,
 			expandable: true,
@@ -346,7 +346,7 @@ describe("live Thought Host adapter", () => {
 				return value;
 			},
 			getColorMode: () => "truecolor",
-		} as unknown as import("@earendil-works/pi-coding-agent").Theme;
+		} as import("@earendil-works/pi-coding-agent").Theme;
 		const original = theme.fg;
 		const key = Symbol.for("@earendil-works/pi-coding-agent:theme");
 		const previous = (globalThis as Record<symbol, unknown>)[key];
@@ -373,7 +373,7 @@ describe("live Thought Host adapter", () => {
 			registerMarkdownTransformer: (transformer: ThoughtMarkdownTransformer) => {
 				registered = transformer;
 			},
-		} as unknown as ExtensionAPI;
+		} as ExtensionAPI;
 
 		registerLiveThoughtDisplay(api);
 		expect(registered).toBeDefined();

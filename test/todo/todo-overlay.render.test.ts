@@ -33,7 +33,7 @@ function setup(tasks: readonly Task[], options: { lingerCompleted?: boolean } = 
 	const setWidget = (...args: unknown[]): void => {
 		setWidgetCalls.push(args);
 	};
-	const ui = { setWidget, theme: identityTheme } as unknown as ExtensionUIContext;
+	const ui = { setWidget, theme: identityTheme } as ExtensionUIContext;
 	const overlay = new TodoOverlay();
 	overlay.setUICtx(ui);
 	overlay.refresh(options);
@@ -215,7 +215,7 @@ describe("TodoOverlay all-complete linger", () => {
 			scheduledCallback = callback;
 			scheduledDelay = delay;
 			return timerHandle;
-		}) as unknown as typeof setTimeout;
+		}) as typeof setTimeout;
 		try {
 			const { overlay, setWidgetCalls, widget } = setup([task("1", "finished", "completed")], {
 				lingerCompleted: true,
@@ -249,7 +249,7 @@ describe("TodoOverlay all-complete linger", () => {
 			scheduledCallback = callback;
 			scheduledDelay = delay;
 			return timerHandle;
-		}) as unknown as typeof setTimeout;
+		}) as typeof setTimeout;
 		try {
 			const { overlay } = setup([task("1", "finishing")]);
 			overlay.setSuppressed(true);

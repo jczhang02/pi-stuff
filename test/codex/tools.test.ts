@@ -1,23 +1,16 @@
 import { expect, test } from "bun:test";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerCodexTools } from "../../packages/pi-stuff/src/codex/tools.js";
+import type { SuiteToolRegistrationHost } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
 function harness(initial = ["read"]): {
 	readonly active: () => readonly string[];
-	readonly api: ExtensionAPI;
+	readonly api: SuiteToolRegistrationHost;
 	readonly registered: Map<string, ToolDefinition>;
 } {
-	let active = [...initial];
-	const registered = new Map<string, ToolDefinition>();
-	const api = {
-		events: {},
-		getActiveTools: () => [...active],
-		registerTool: (tool: ToolDefinition) => registered.set(tool.name, tool),
-		setActiveTools: (names: string[]) => {
-			active = [...names];
-		},
-	} as unknown as ExtensionAPI;
-	return { active: () => active, api, registered };
+	const { activeTools, host, tools } = toolRegistrationHarness(initial);
+	return { active: activeTools, api: host, registered: tools };
 }
 
 function model(input: ("image" | "text")[]): NonNullable<ExtensionContext["model"]> {

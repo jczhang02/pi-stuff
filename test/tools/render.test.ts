@@ -16,7 +16,7 @@ import {
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
 
 function result(text: string, details?: unknown): AgentToolResult<unknown> {
 	return {
@@ -70,7 +70,7 @@ describe("terminal-safe Tool rendering", () => {
 					if (value === "•") markerColors.push(color);
 					return value;
 				},
-			} as unknown as Theme;
+			} as Theme;
 			const row = new CachedToolRow(recordingTheme, {
 				durationMs: 0,
 				label: "Tool",
@@ -118,7 +118,7 @@ describe("terminal-safe Tool rendering", () => {
 					if (value === "•") stoppedMarkerColors.push(color);
 					return value;
 				},
-			} as unknown as Theme,
+			} as Theme,
 			{
 				active: false,
 				expandable: false,
@@ -319,7 +319,7 @@ describe("terminal-safe Tool rendering", () => {
 				calls.push([color, value]);
 				return value;
 			},
-		} as unknown as Theme;
+		} as Theme;
 		const row = new CachedToolRow(recordingTheme, {
 			active: false,
 			command: "seq 1 5",
@@ -445,7 +445,7 @@ describe("terminal-safe Tool rendering", () => {
 					if (value === "•") colors.push(color);
 					return value;
 				},
-			} as unknown as Theme;
+			} as Theme;
 			const row = new CachedToolRow(recordingTheme, {
 				active: outcome === "running",
 				expandable: true,

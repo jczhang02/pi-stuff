@@ -821,14 +821,11 @@ export class ToolUiRuntime {
 		activity: ToolActivityMetadata<TArgs, TDetails>,
 		resultIsError?: (args: Readonly<TArgs>, result: AgentToolResult<TDetails>) => boolean,
 	): void {
-		this.activityPolicies.set(name, activity as unknown as ToolActivityMetadata<Record<string, unknown>, unknown>);
+		this.activityPolicies.set(name, activity as ToolActivityMetadata<Record<string, unknown>, unknown>);
 		if (resultIsError) {
 			this.errorPolicies.set(
 				name,
-				resultIsError as unknown as (
-					args: Readonly<Record<string, unknown>>,
-					result: AgentToolResult<unknown>,
-				) => boolean,
+				resultIsError as (args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean,
 			);
 		} else {
 			this.errorPolicies.delete(name);
@@ -2051,7 +2048,11 @@ function runtimeRegistry(): WeakMap<ExtensionAPI["events"], ToolUiRuntime> {
 	return registry;
 }
 
-export function getToolUiRuntime(pi: ExtensionAPI): ToolUiRuntime {
+export type ToolUiRuntimeHost = Pick<ExtensionAPI, "events" | "on">;
+export type SuiteToolRegistrationHost = ToolUiRuntimeHost &
+	Pick<ExtensionAPI, "getActiveTools" | "registerTool" | "setActiveTools">;
+
+export function getToolUiRuntime(pi: ToolUiRuntimeHost): ToolUiRuntime {
 	const registry = runtimeRegistry();
 	return getHostSharedResource(
 		pi.events,
@@ -2064,7 +2065,7 @@ export function getToolUiRuntime(pi: ExtensionAPI): ToolUiRuntime {
 
 /** Predeclare Activity metadata for a conditionally registered owned Tool. */
 export function registerSuiteToolActivityMetadata<TArgs extends Record<string, unknown>, TDetails>(
-	pi: ExtensionAPI,
+	pi: ToolUiRuntimeHost,
 	name: string,
 	activity: ToolActivityMetadata<TArgs, TDetails>,
 	resultIsError?: (args: Readonly<TArgs>, result: AgentToolResult<TDetails>) => boolean,
@@ -2072,8 +2073,10 @@ export function registerSuiteToolActivityMetadata<TArgs extends Record<string, u
 	getToolUiRuntime(pi).registerActivity(name, activity, resultIsError);
 }
 
-export interface SuiteToolRegistrationTracker {
-	readonly api: ExtensionAPI;
+export type SuiteToolTrackerHost = SuiteToolRegistrationHost & Pick<ExtensionAPI, "getAllTools">;
+
+export interface SuiteToolRegistrationTracker<Host extends SuiteToolTrackerHost = ExtensionAPI> {
+	readonly api: Host;
 	readonly registry: SuiteToolDefinitionRegistry;
 	readonly surface: SuiteToolSurfaceController;
 	readonly toolNames: ReadonlySet<string>;
@@ -2083,62 +2086,107 @@ function suiteActivityRendererMarker(tool: unknown): SuiteActivityRendererMarker
 	if (!isRecordValue(tool)) return undefined;
 	if (!isRuntimeFunction(tool["renderCall"]) || !isRuntimeFunction(tool["renderResult"])) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_ACTIVITY_RENDERER)?.value;
-	return isRecordValue(marker) && isRecordValue(marker["activity"])
-		? (marker as unknown as SuiteActivityRendererMarker)
-		: undefined;
+	return isSuiteActivityRendererMarker(marker) ? marker : undefined;
 }
 
 function hasSuiteActivityRenderer(tool: unknown): boolean {
 	return suiteActivityRendererMarker(tool) !== undefined;
 }
 
-function suiteToolCodeModeContract(tool: unknown): SuiteToolCodeModeContract | undefined {
-	if (!isRecordValue(tool)) return undefined;
-	const value = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_CODE_MODE)?.value;
-	if (!isRecordValue(value)) return undefined;
+function isSuiteActivityRendererMarker(value: unknown): value is SuiteActivityRendererMarker {
+	if (!isRecordValue(value) || !isRecordValue(value["activity"])) return false;
+	const activity = value["activity"];
+	return (
+		Array.isArray(activity["categories"]) &&
+		isRuntimeFunction(activity["classify"]) &&
+		(activity["silentSuccess"] === undefined || isRuntimeBoolean(activity["silentSuccess"])) &&
+		(activity["summarizeIssue"] === undefined || isRuntimeFunction(activity["summarizeIssue"])) &&
+		(value["resultIsError"] === undefined || isRuntimeFunction(value["resultIsError"]))
+	);
+}
+
+function isSuiteToolCodeModeContract(value: unknown): value is SuiteToolCodeModeContract {
+	if (!isRecordValue(value)) return false;
 	if (value["replay"] !== "never" && value["replay"] !== "record" && value["replay"] !== "reexecute") {
-		return undefined;
+		return false;
 	}
-	if (value["compensate"] !== undefined && !isRuntimeFunction(value["compensate"])) return undefined;
+	if (value["compensate"] !== undefined && !isRuntimeFunction(value["compensate"])) return false;
+	if (value["requiresApproval"] !== undefined && !isRuntimeBoolean(value["requiresApproval"])) return false;
 	if (value["lifecycle"] !== undefined) {
-		if (!isRecordValue(value["lifecycle"])) return undefined;
+		if (!isRecordValue(value["lifecycle"])) return false;
 		if (
 			value["lifecycle"]["disposeExecution"] !== undefined &&
 			!isRuntimeFunction(value["lifecycle"]["disposeExecution"])
 		) {
-			return undefined;
+			return false;
 		}
 		if (value["lifecycle"]["onPassEnd"] !== undefined && !isRuntimeFunction(value["lifecycle"]["onPassEnd"])) {
-			return undefined;
+			return false;
 		}
 	}
-	return value as unknown as SuiteToolCodeModeContract;
+	return true;
+}
+
+function suiteToolCodeModeContract(tool: unknown): SuiteToolCodeModeContract | undefined {
+	if (!isRecordValue(tool)) return undefined;
+	const value = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_CODE_MODE)?.value;
+	return isSuiteToolCodeModeContract(value) ? value : undefined;
 }
 
 function suiteToolEnvelopeMarker(tool: unknown): SuiteToolEnvelopeMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_ENVELOPE)?.value;
-	if (!isRecordValue(marker) || !isRuntimeFunction(marker["decode"]) || !isRecordValue(marker["registry"])) {
-		return undefined;
+	return isSuiteToolEnvelopeMarker(marker) ? marker : undefined;
+}
+
+function isSuiteToolEnvelopeMarker(value: unknown): value is SuiteToolEnvelopeMarker {
+	if (!isRecordValue(value) || !isRuntimeFunction(value["decode"]) || !isRecordValue(value["registry"])) {
+		return false;
 	}
-	return marker as unknown as SuiteToolEnvelopeMarker;
+	const registry = value["registry"];
+	return (
+		(value["media"] === undefined || isRuntimeFunction(value["media"])) &&
+		isRuntimeFunction(registry["catalog"]) &&
+		isRuntimeFunction(registry["compensate"]) &&
+		isRuntimeFunction(registry["get"]) &&
+		isRuntimeFunction(registry["invoke"]) &&
+		isRuntimeFunction(registry["isActive"]) &&
+		isRuntimeFunction(registry["list"])
+	);
 }
 
 function suiteToolEnvelopeCompanionMarker(tool: unknown): SuiteToolEnvelopeCompanionMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_ENVELOPE_COMPANION)?.value;
-	return isRecordValue(marker) && isRuntimeString(marker["owner"])
-		? (marker as unknown as SuiteToolEnvelopeCompanionMarker)
-		: undefined;
+	return isSuiteToolEnvelopeCompanionMarker(marker) ? marker : undefined;
+}
+
+function isSuiteToolEnvelopeCompanionMarker(value: unknown): value is SuiteToolEnvelopeCompanionMarker {
+	return isRecordValue(value) && isRuntimeString(value["owner"]);
 }
 
 function suiteToolReplayDefinition(tool: unknown): SuiteToolReplayDefinition | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_REPLAY)?.value;
-	if (!isRecordValue(marker) || !isRecordValue(marker["tool"]) || !isRecordValue(marker["presentation"])) {
-		return undefined;
+	return isSuiteToolReplayDefinition(marker) ? marker : undefined;
+}
+
+function isSuiteToolReplayDefinition(value: unknown): value is SuiteToolReplayDefinition {
+	if (!isRecordValue(value) || !isRecordValue(value["tool"]) || !isRecordValue(value["presentation"])) {
+		return false;
 	}
-	return marker as unknown as SuiteToolReplayDefinition;
+	const presentation = value["presentation"];
+	const tool = value["tool"];
+	return (
+		(value["codeMode"] === undefined || isSuiteToolCodeModeContract(value["codeMode"])) &&
+		isSuiteActivityRendererMarker({
+			activity: presentation["activity"],
+			resultIsError: presentation["resultIsError"],
+		}) &&
+		isRuntimeString(tool["name"]) &&
+		isRecordValue(tool["parameters"]) &&
+		isRuntimeFunction(tool["execute"])
+	);
 }
 
 const CAPTURED_TOOL_EVENTS = new Set([
@@ -2148,8 +2196,6 @@ const CAPTURED_TOOL_EVENTS = new Set([
 	"tool_execution_update",
 	"tool_execution_end",
 ]);
-
-type CapturedToolHandler = (event: Record<string, unknown>, context: ExtensionContext) => unknown | Promise<unknown>;
 
 function uniqueToolNames(names: readonly string[]): string[] {
 	return [...new Set(names)];
@@ -2162,8 +2208,16 @@ function errorToolResult(error: unknown): AgentToolResult<unknown> {
 	};
 }
 
+type CapturedToolHandler = (event: Record<string, unknown>, context: ExtensionContext) => unknown;
+
+function isCapturedToolHandler(value: unknown): value is CapturedToolHandler {
+	return isRuntimeFunction(value);
+}
+
 /** Observe every Tool registered by Suite modules without changing the Host API. */
-export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolRegistrationTracker {
+export function createSuiteToolRegistrationTracker<Host extends SuiteToolTrackerHost>(
+	pi: Host,
+): SuiteToolRegistrationTracker<Host> {
 	const capturedHandlers = new Map<string, CapturedToolHandler[]>();
 	const envelopeCompanions = new Map<string, Set<string>>();
 	const envelopeTools = new Set<string>();
@@ -2205,14 +2259,17 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 		virtualActiveTools = uniqueToolNames(names.filter((name) => !envelopeTools.has(name)));
 		applyActiveProjection();
 	};
-	const on = ((event: string, handler: CapturedToolHandler) => {
-		if (CAPTURED_TOOL_EVENTS.has(event)) {
-			const handlers = capturedHandlers.get(event) ?? [];
-			handlers.push(handler);
-			capturedHandlers.set(event, handlers);
-		}
-		(pi.on as unknown as (name: string, value: CapturedToolHandler) => void)(event, handler);
-	}) as unknown as ExtensionAPI["on"];
+	const on = new Proxy(pi.on, {
+		apply(target, _thisArgument, argumentsList) {
+			const [event, handler] = argumentsList;
+			if (isRuntimeString(event) && CAPTURED_TOOL_EVENTS.has(event) && isCapturedToolHandler(handler)) {
+				const handlers = capturedHandlers.get(event) ?? [];
+				handlers.push(handler);
+				capturedHandlers.set(event, handlers);
+			}
+			return Function.prototype.apply.call(target, pi, argumentsList);
+		},
+	});
 
 	const dispatchInformational = async (
 		event: "tool_execution_end" | "tool_execution_start" | "tool_execution_update",
@@ -2221,7 +2278,7 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 	): Promise<void> => {
 		for (const handler of capturedHandlers.get(event) ?? []) {
 			try {
-				await handler(value, context);
+				await handler.call(undefined, value, context);
 			} catch {
 				// Pi reports lifecycle handler failures without changing Tool execution.
 			}
@@ -2279,7 +2336,7 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 		};
 		try {
 			for (const handler of capturedHandlers.get("tool_call") ?? []) {
-				const decision = await handler(callEvent, invocation.context);
+				const decision = await handler.call(undefined, callEvent, invocation.context);
 				if (!isRecordValue(decision) || decision["block"] !== true) continue;
 				const result = errorToolResult(
 					isRuntimeString(decision["reason"]) ? decision["reason"] : "Tool execution was blocked",
@@ -2395,7 +2452,7 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 		};
 		for (const handler of capturedHandlers.get("tool_result") ?? []) {
 			try {
-				const replacement = await handler(resultEvent, invocation.context);
+				const replacement = await handler.call(undefined, resultEvent, invocation.context);
 				if (!isRecordValue(replacement)) continue;
 				for (const key of ["content", "details", "isError", "usage"] as const) {
 					if (replacement[key] !== undefined) resultEvent[key] = replacement[key];
@@ -2522,7 +2579,7 @@ export function createSuiteToolRegistrationTracker(pi: ExtensionAPI): SuiteToolR
 
 /** Fail fast when a Suite-owned Tool bypasses or under-declares the required Activity contract. */
 export function assertSuiteToolActivityCoverage(
-	pi: ExtensionAPI,
+	pi: SuiteToolTrackerHost,
 	declaredToolNames: readonly string[],
 	registeredToolNames?: ReadonlySet<string>,
 	optionalToolNames: readonly string[] = [],
@@ -2573,7 +2630,7 @@ export function assertSuiteToolActivityCoverage(
 	}
 }
 
-export function installToolUiRuntime(pi: ExtensionAPI, settings: ToolUiSettingsStore): ToolUiRuntime {
+export function installToolUiRuntime(pi: ToolUiRuntimeHost, settings: ToolUiSettingsStore): ToolUiRuntime {
 	const runtime = getToolUiRuntime(pi);
 	runtime.configure(settings);
 	return runtime;
@@ -2877,7 +2934,7 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 			const typed = {
 				...context,
 				args,
-			} as unknown as ToolRenderContext<TArgs>;
+			} as ToolRenderContext<TArgs>;
 			const state = typed.state as RendererState<TArgs, TDetails>;
 			if (state.lastResult && state.component) {
 				runtime.setRowExpanded(context.toolCallId, typed.expanded);
@@ -2890,7 +2947,7 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 			const replayResult =
 				context.executionStarted === false ? runtime.projectedResult(context.toolCallId) : undefined;
 			if (replayResult) {
-				const replayArgs = args as unknown as TArgs;
+				const replayArgs = args as TArgs;
 				state.args = replayArgs;
 				state.wasLiveExecution = false;
 				const model: ToolRowModel = {
@@ -2920,7 +2977,7 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 				args: state.args ?? ({} as TArgs),
 				expanded: renderOptions.expanded,
 				isPartial: renderOptions.isPartial,
-			} as unknown as ToolRenderContext<TArgs>;
+			} as ToolRenderContext<TArgs>;
 			if (renderOptions.isPartial) {
 				updateRunningRow(tool, presentation, runtime, state, typed, theme);
 				return new EmptyToolComponent();
@@ -2942,10 +2999,10 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 	Object.defineProperty(decorated, SUITE_ACTIVITY_RENDERER, {
 		enumerable: true,
 		value: {
-			activity: presentation.activity as unknown as ToolActivityMetadata<Record<string, unknown>, unknown>,
+			activity: presentation.activity as ToolActivityMetadata<Record<string, unknown>, unknown>,
 			...(presentation.resultIsError
 				? {
-						resultIsError: presentation.resultIsError as unknown as NonNullable<
+						resultIsError: presentation.resultIsError as NonNullable<
 							SuiteActivityRendererMarker["resultIsError"]
 						>,
 					}
@@ -3144,7 +3201,7 @@ function renderEnvelopeOperations(
  * Tool Activity renderers. The envelope itself is intentionally visually silent.
  */
 export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = unknown>(
-	pi: ExtensionAPI,
+	pi: SuiteToolRegistrationHost,
 	tool: ToolDefinition<TParams, TDetails>,
 	presentation: SuiteToolEnvelopePresentation,
 ): void {
@@ -3177,7 +3234,7 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 				result as AgentToolResult<unknown>,
 				options as ToolResultRenderOptions,
 				theme,
-				context as unknown as ToolRenderContext<Record<string, unknown>>,
+				context as ToolRenderContext<Record<string, unknown>>,
 				presentation,
 			),
 	};
@@ -3197,7 +3254,7 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 
 /** Register a Tool that is visible only while its owning execution envelope is enabled. */
 export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDetails = unknown>(
-	pi: ExtensionAPI,
+	pi: SuiteToolRegistrationHost,
 	owner: string,
 	tool: ToolDefinition<TParams, TDetails>,
 	presentation: SuiteToolPresentation<Static<TParams> & Record<string, unknown>, TDetails>,
@@ -3205,11 +3262,10 @@ export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDet
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
-	const decorated = attachRenderer(
-		tool as unknown as ToolDefinition<TSchema, TDetails>,
-		presentation,
-		runtime,
-	) as ToolDefinition<TParams, TDetails>;
+	const decorated = attachRenderer(tool as ToolDefinition<TSchema, TDetails>, presentation, runtime) as ToolDefinition<
+		TParams,
+		TDetails
+	>;
 	Object.defineProperty(decorated, SUITE_TOOL_ENVELOPE_COMPANION, {
 		enumerable: true,
 		value: { owner } satisfies SuiteToolEnvelopeCompanionMarker,
@@ -3223,7 +3279,7 @@ export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDet
 
 /** Register a Suite-owned Tool without changing its execute protocol or result. */
 export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unknown>(
-	pi: ExtensionAPI,
+	pi: SuiteToolRegistrationHost,
 	tool: ToolDefinition<TParams, TDetails>,
 	presentation: SuiteToolPresentation<Static<TParams> & Record<string, unknown>, TDetails>,
 	codeMode?: SuiteToolCodeModeContract,
@@ -3231,18 +3287,17 @@ export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unkno
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
-	const decorated = attachRenderer(
-		tool as unknown as ToolDefinition<TSchema, TDetails>,
-		presentation,
-		runtime,
-	) as ToolDefinition<TParams, TDetails>;
+	const decorated = attachRenderer(tool as ToolDefinition<TSchema, TDetails>, presentation, runtime) as ToolDefinition<
+		TParams,
+		TDetails
+	>;
 	if (codeMode) Object.defineProperty(decorated, SUITE_TOOL_CODE_MODE, { enumerable: true, value: codeMode });
 	Object.defineProperty(decorated, SUITE_TOOL_REPLAY, {
 		enumerable: true,
 		value: {
 			...(codeMode ? { codeMode } : {}),
-			presentation: presentation as unknown as SuiteToolPresentation<Record<string, unknown>, unknown>,
-			tool: tool as unknown as ToolDefinition<TSchema, unknown>,
+			presentation: presentation as SuiteToolPresentation<Record<string, unknown>, unknown>,
+			tool: tool as ToolDefinition<TSchema, unknown>,
 		} satisfies SuiteToolReplayDefinition,
 	});
 	pi.registerTool(decorated);

@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Api, Context, Model, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { openBtwStream } from "../../packages/pi-stuff/src/btw/pi-compat.js";
+import { type BtwTransportContext, openBtwStream } from "../../packages/pi-stuff/src/btw/pi-compat.js";
 
 const model: Model<Api> = {
 	id: "custom-model",
@@ -36,7 +35,7 @@ function setup(
 	const provider = {
 		id: model.provider,
 		name: "Custom provider",
-		auth: {} as Provider["auth"],
+		auth: {},
 		getModels: () => [model],
 		stream: () => createAssistantMessageEventStream(),
 		streamSimple: (requestModel: Model<Api>, requestContext: Context, options?: SimpleStreamOptions) => {
@@ -44,14 +43,14 @@ function setup(
 			return createAssistantMessageEventStream();
 		},
 	} satisfies Provider<Api>;
-	const ctx = {
+	const ctx: BtwTransportContext = {
 		thinkingLevel: "high",
 		modelRegistry: {
 			getProvider: () => provider,
 			getProviderAuth,
 			getApiKeyAndHeaders: getRequestAuth,
 		},
-	} as unknown as ExtensionContext;
+	};
 	return {
 		ctx,
 		get captured() {

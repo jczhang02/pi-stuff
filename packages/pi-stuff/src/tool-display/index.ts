@@ -25,7 +25,7 @@ interface ToolLifecycleState {
 }
 
 function toolLifecycleStates(): WeakMap<ExtensionAPI["events"], ToolLifecycleState> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], ToolLifecycleState> | undefined;
 	};
 	root[TOOL_LIFECYCLE_STATES] ??= new WeakMap();
@@ -93,13 +93,16 @@ export {
 	type SuiteToolInvocation,
 	type SuiteToolInvocationResult,
 	type SuiteToolPresentation,
+	type SuiteToolRegistrationHost,
 	type SuiteToolRegistrationTracker,
 	type SuiteToolReplayDefinition,
 	type SuiteToolSurfaceController,
+	type SuiteToolTrackerHost,
 	type ToolActivityDetailMode,
 	type ToolActivityDetailView,
 	type ToolActivityGroupView,
 	ToolUiRuntime,
+	type ToolUiRuntimeHost,
 } from "./contract.js";
 export { CachedToolRow, formatElapsed } from "./render.js";
 export {

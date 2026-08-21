@@ -7,7 +7,7 @@ import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conve
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
 
 initTheme("dark", false);
 
@@ -28,7 +28,7 @@ test("keeps Codex error, selection, and Escape reachable at very low height", as
 		signal: new AbortController().signal,
 		theme,
 		tui: { terminal: { rows: 6 } },
-	} as unknown as CommandDialogViewContext<void>;
+	} as CommandDialogViewContext<void>;
 	const component = createCodexDialogView({
 		getFast: () => false,
 		getUsage: () => undefined,
@@ -54,7 +54,7 @@ test("keeps Codex usage state and Tool identities above the tertiary dim token",
 			colors.push({ color, text });
 			return text;
 		},
-	} as unknown as Theme;
+	} as Theme;
 	const component = createCodexDialogView({
 		getFast: () => false,
 		getUsage: () => undefined,
@@ -69,7 +69,7 @@ test("keeps Codex usage state and Tool identities above the tertiary dim token",
 		signal: new AbortController().signal,
 		theme: recordingTheme,
 		tui: { terminal: { rows: 24 } },
-	} as unknown as CommandDialogViewContext<void>);
+	} as CommandDialogViewContext<void>);
 	component.render(64);
 	expect(colors).toContainEqual({ color: "muted", text: "Loading usage…" });
 	expect(colors.some(({ color, text }) => color === "muted" && text.includes("apply_patch"))).toBe(true);

@@ -8,13 +8,13 @@ import type {
 import { type TSchema, Type } from "typebox";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import {
-	type CommandDialogComponent,
-	type CommandDialogCoordinator,
+	type CommandDialogKeybindings,
+	type CommandDialogView,
 	getCommandDialogCoordinator,
 } from "../conversation-ui/index.js";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../shared/runtime-type.js";
-import { registerSuiteOwnedTool } from "../tool-display/index.js";
+import { registerSuiteOwnedTool, type SuiteToolRegistrationHost } from "../tool-display/index.js";
 import { createMcpControlView } from "./mcp-dialog.js";
 import { MCP_PRESENTATION } from "./presentation.js";
 import { createMcpAdapter, MCP_STATUS_EVENT } from "./runtime/index.js";
@@ -22,6 +22,7 @@ import { logger } from "./runtime/logger.js";
 import { McpStatusStore } from "./status-store.js";
 
 type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
+export type McpAdapterHost = SuiteToolRegistrationHost & Pick<ExtensionAPI, "registerCommand">;
 type CommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];
 type CommandContext = Parameters<CommandSpec["handler"]>[1];
 type CapturedCommandSpec = Omit<CommandSpec, "handler"> & {
@@ -30,6 +31,23 @@ type CapturedCommandSpec = Omit<CommandSpec, "handler"> & {
 type EventHandler = (event: unknown, ctx: ExtensionContext) => unknown;
 type McpCustomFactory = Parameters<ExtensionUIContext["custom"]>[0];
 type McpCustomKeybindings = Parameters<McpCustomFactory>[2];
+
+interface McpCustomUiContext {
+	readonly ui: Pick<ExtensionUIContext, "custom">;
+}
+
+interface McpCustomUiCoordinator<Context> {
+	show<Result>(ctx: Context, view: CommandDialogView<Result>): Promise<Result | undefined>;
+}
+
+function isMcpCustomKeybindings(value: CommandDialogKeybindings): value is McpCustomKeybindings {
+	return (
+		"reload" in value &&
+		isRuntimeFunction(value.reload) &&
+		"getEffectiveConfig" in value &&
+		isRuntimeFunction(value.getEffectiveConfig)
+	);
+}
 
 interface CapturedCommands {
 	mcp?: CapturedCommandSpec;
@@ -109,7 +127,7 @@ function sharedToolFields(upstream: CapturedTool) {
 	};
 }
 
-function registerGateway(pi: ExtensionAPI, upstream: CapturedTool): void {
+function registerGateway(pi: SuiteToolRegistrationHost, upstream: CapturedTool): void {
 	const tool: ToolDefinition<typeof MCP_PARAMETERS, unknown> = {
 		...sharedToolFields(upstream),
 		description: MCP_GATEWAY_DESCRIPTION,
@@ -141,24 +159,24 @@ export function suppressMcpFooterContext(ctx: ExtensionContext): ExtensionContex
 }
 
 /** Keep retained MCP custom components inside the Suite-owned focused surface. */
-export function routeMcpCustomUiThroughCommandDialog<Context extends ExtensionContext>(
+export function routeMcpCustomUiThroughCommandDialog<Context extends McpCustomUiContext>(
 	ctx: Context,
-	coordinator: CommandDialogCoordinator,
+	coordinator: McpCustomUiCoordinator<Context>,
 ): Context {
 	const custom = (async (factory: McpCustomFactory) => {
 		const result = await coordinator.show<unknown>(ctx, {
 			priority: "normal",
 			create: (context) => {
-				const component = factory(
-					context.tui,
-					context.theme,
-					context.keybindings as unknown as McpCustomKeybindings,
-					(value: unknown) => context.close(value),
+				if (!isMcpCustomKeybindings(context.keybindings)) {
+					throw new Error("MCP custom UI requires Pi application keybindings");
+				}
+				const component = factory(context.tui, context.theme, context.keybindings, (value: unknown) =>
+					context.close(value),
 				);
 				if (component instanceof Promise) {
 					throw new Error("Async MCP custom component factories are unsupported");
 				}
-				return component as CommandDialogComponent;
+				return component;
 			},
 		});
 		return result;
@@ -178,7 +196,7 @@ export function routeMcpCustomUiThroughCommandDialog<Context extends ExtensionCo
 }
 
 /** Build the narrow host facade supplied to the pinned fork. */
-export function createMcpAdapterApi(pi: ExtensionAPI, commands: CapturedCommands): ExtensionAPI {
+export function createMcpAdapterApi<Host extends McpAdapterHost>(pi: Host, commands: CapturedCommands): Host {
 	const registerTool = ((tool: CapturedTool) => {
 		if (tool.name === "mcp") registerGateway(pi, tool);
 	}) as ExtensionAPI["registerTool"];
@@ -186,7 +204,7 @@ export function createMcpAdapterApi(pi: ExtensionAPI, commands: CapturedCommands
 		if (name === "mcp") commands.mcp = spec as CapturedCommandSpec;
 	}) as ExtensionAPI["registerCommand"];
 	const on = ((event: string, handler: EventHandler) => {
-		const hostOn = pi.on as unknown as (eventName: string, eventHandler: EventHandler) => unknown;
+		const hostOn = pi.on as (eventName: string, eventHandler: EventHandler) => unknown;
 		if (event === "session_start") {
 			return hostOn(event, (eventData, ctx) => handler(eventData, suppressMcpFooterContext(ctx)));
 		}
@@ -253,7 +271,11 @@ function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: Mc
 					}),
 				);
 				if (result?.action === "setup") {
-					await invoke(commands.mcp, "setup", routeMcpCustomUiThroughCommandDialog(ctx, coordinator));
+					await invoke(
+						commands.mcp,
+						"setup",
+						routeMcpCustomUiThroughCommandDialog<CommandContext>(ctx, coordinator),
+					);
 				} else if (result?.action === "set-disabled") {
 					await invoke(commands.mcp, `${result.disabled ? "disable" : "enable"} ${result.server}`, ctx);
 				} else if (result?.action === "set-auto-connect") {
@@ -262,7 +284,7 @@ function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: Mc
 				return;
 			}
 			if (subcommand === "setup") {
-				await invoke(commands.mcp, args, routeMcpCustomUiThroughCommandDialog(ctx, coordinator));
+				await invoke(commands.mcp, args, routeMcpCustomUiThroughCommandDialog<CommandContext>(ctx, coordinator));
 				return;
 			}
 			if (subcommand === "tools") {

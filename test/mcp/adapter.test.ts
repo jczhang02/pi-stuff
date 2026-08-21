@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type {
-	AgentToolResult,
-	ExtensionAPI,
-	ExtensionContext,
-	Theme,
-	ToolDefinition,
+import {
+	type AgentToolResult,
+	createEventBus,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { SuiteCodeModeConnector } from "../../packages/pi-stuff/src/code-mode/connector.js";
 import type {
@@ -13,8 +14,14 @@ import type {
 	CommandDialogView,
 	CommandDialogViewContext,
 } from "../../packages/pi-stuff/src/conversation-ui/index.js";
-import { createMcpAdapterApi, routeMcpCustomUiThroughCommandDialog } from "../../packages/pi-stuff/src/mcp/adapter.js";
+import {
+	createMcpAdapterApi,
+	type McpAdapterHost,
+	routeMcpCustomUiThroughCommandDialog,
+} from "../../packages/pi-stuff/src/mcp/adapter.js";
 import type { SuiteToolDefinitionRegistry } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { createExtensionContext, testTheme } from "../fixtures/extension-context.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
 const Parameters = Type.Object({}, { additionalProperties: true });
 type Tool = ToolDefinition<typeof Parameters, unknown>;
@@ -23,18 +30,25 @@ type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
 function harness() {
 	const handlers = new Map<string, Handler[]>();
 	const tools = new Map<string, ToolDefinition>();
-	const pi = {
-		events: {},
-		on: (event: string, handler: Handler) => {
-			const list = handlers.get(event) ?? [];
-			list.push(handler);
-			handlers.set(event, list);
-		},
+	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
+	const on = ((event: string, handler: Handler) => {
+		const list = handlers.get(event) ?? [];
+		list.push(handler);
+		handlers.set(event, list);
+	}) as ExtensionAPI["on"];
+	const pi: McpAdapterHost = {
+		events: createEventBus(),
+		getActiveTools: () => [],
+		on,
 		registerCommand: () => {
 			throw new Error("captured fork commands must not reach the host");
 		},
-		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-	} as unknown as ExtensionAPI;
+		registerTool: (tool) => {
+			// SAFETY: the test registry erases only generic renderer state and retains the original Tool object.
+			tools.set(tool.name, tool as ToolDefinition);
+		},
+		setActiveTools: () => undefined,
+	};
 	return { handlers, pi, tools };
 }
 
@@ -120,13 +134,13 @@ describe("Pi Stuff MCP fork boundary", () => {
 		expect(Object.keys(commands)).toEqual(["mcp"]);
 
 		const writes: Array<[string, string | undefined]> = [];
-		const ctx = {
+		const ctx = createExtensionContext({
 			hasUI: true,
 			ui: {
 				setStatus: (key: string, value: string | undefined) => writes.push([key, value]),
-				theme: { fg: (_color: string, value: string) => value } as Theme,
+				theme: testTheme,
 			},
-		} as unknown as ExtensionContext;
+		});
 		adapter.on("session_start", (_event, wrapped) => {
 			wrapped.ui.setStatus("mcp", "verbose upstream footer");
 			wrapped.ui.setStatus("mcp-oauth", "authenticating");
@@ -138,16 +152,16 @@ describe("Pi Stuff MCP fork boundary", () => {
 	test("routes retained Setup UI through the shared non-overlay coordinator", async () => {
 		let originalCustomCalled = false;
 		let shows = 0;
-		const ctx = {
+		const ctx = createExtensionContext({
 			hasUI: true,
 			mode: "tui",
 			ui: {
-				custom: async () => {
+				custom: async <Result>(): Promise<Result> => {
 					originalCustomCalled = true;
-					return undefined;
+					throw new Error("The original custom UI must not be called");
 				},
 			},
-		} as unknown as ExtensionContext;
+		});
 		const coordinator = {
 			show: async (_ctx: ExtensionContext, view: CommandDialogView<unknown>) => {
 				shows += 1;
@@ -156,17 +170,17 @@ describe("Pi Stuff MCP fork boundary", () => {
 					close: (value) => {
 						result = value;
 					},
-					keybindings: { matches: () => false } as never,
+					keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
 					requestRender: () => undefined,
 					signal: new AbortController().signal,
-					theme: { fg: (_color: string, value: string) => value } as Theme,
-					tui: { requestRender: () => undefined } as never,
+					theme: testTheme,
+					tui: new TestTui(),
 				};
 				const component = view.create(dialogContext);
 				component.handleInput?.("confirm");
 				return result;
 			},
-		} as unknown as CommandDialogCoordinator;
+		} as CommandDialogCoordinator;
 		const routed = routeMcpCustomUiThroughCommandDialog(ctx, coordinator);
 		const result = await routed.ui.custom<string>(
 			(_tui, _theme, _keybindings, done) => ({

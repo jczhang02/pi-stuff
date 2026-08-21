@@ -6,7 +6,6 @@ import type {
 	AgentToolResult,
 	AgentToolUpdateCallback,
 	BashToolDetails,
-	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -22,6 +21,7 @@ import {
 	withAgentWorkOrigin,
 } from "../../conversation-ui/agent-run-origin.js";
 import { requestStatuslineGitRefreshAfterUserWork, sendSuiteAgentMessage } from "../../conversation-ui/index.js";
+import type { SuiteAgentMessageHost } from "../../conversation-ui/suite-agent-message.js";
 import { settleWithin } from "../../lifecycle-deadline.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
@@ -235,7 +235,7 @@ interface RuntimeOptions {
 	readonly captureSupervisorIdentity?: typeof captureProcessIdentityWithRetry;
 	readonly commandPrefix?: string;
 	readonly cwd: string;
-	readonly pi: ExtensionAPI;
+	readonly pi: SuiteAgentMessageHost;
 	readonly outputFactory?: (path: string) => BoundedOutputFile;
 	/** Test seam for transient stale-runtime recovery failure. */
 	readonly reconcileStale?: typeof reconcileStaleRuns;
@@ -483,7 +483,7 @@ export class BackgroundWorkRuntime {
 	private notificationTimer: ReturnType<typeof setTimeout> | undefined;
 	private preparation: Promise<void> | undefined;
 	private readonly outputFactory: (path: string) => BoundedOutputFile;
-	private readonly pi: ExtensionAPI;
+	private readonly pi: SuiteAgentMessageHost;
 	private readonly reconcileStale: typeof reconcileStaleRuns;
 	private readonly rollbackSettlements = new Set<Promise<void>>();
 	private readonly shellPath: string | undefined;

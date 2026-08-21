@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { FooterTailComponent } from "../../../conversation-ui/index.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../shared/runtime-type.js";
-import type { AgentRow, AgentSessionSnapshot, CurrentAgents } from "../session/current-agents.js";
+import type { AgentRow, AgentSessionSnapshot, CurrentAgentsView } from "../session/current-agents.js";
 import { boundedTerminalLine } from "../shared/display-description.js";
 
 const WIDGET_KEY = "pi-stuff-agent-roster";
@@ -46,7 +46,7 @@ interface IndexedRow {
 
 /** Claude-style projection of the current session's direct children. */
 export class AgentRoster {
-	private readonly current: CurrentAgents;
+	private readonly current: CurrentAgentsView;
 	private readonly clearTimeout: NonNullable<AgentRosterOptions["clearTimeout"]>;
 	private readonly dismissedTerminalKeys = new Set<string>();
 	private readonly now: () => number;
@@ -67,7 +67,7 @@ export class AgentRoster {
 	private widgetTui: TUI | undefined;
 	private widgetRegistered = false;
 
-	constructor(current: CurrentAgents, options: AgentRosterOptions) {
+	constructor(current: CurrentAgentsView, options: AgentRosterOptions) {
 		this.current = current;
 		this.onOpen = options.onOpen;
 		this.now = options.now ?? Date.now;
@@ -368,7 +368,7 @@ export class AgentRoster {
 	}
 
 	private editorHasFocus(): boolean {
-		const focused = (this.activeTui() as unknown as { focusedComponent?: unknown } | undefined)?.focusedComponent;
+		const focused = (this.activeTui() as { focusedComponent?: unknown } | undefined)?.focusedComponent;
 		return isEditorComponent(focused);
 	}
 

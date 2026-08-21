@@ -1,8 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import type { KeybindingsManager, TUI } from "@earendil-works/pi-tui";
+import {
+	type KeybindingsManager as AgentKeybindingsManager,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type ExtensionUIContext,
+	ModelRegistry,
+	type Theme,
+} from "@earendil-works/pi-coding-agent";
+import { type KeybindingsConfig, KeybindingsManager, type TUI, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import piStuffCodex from "../../packages/pi-stuff/src/codex/index.js";
@@ -23,6 +30,9 @@ import piStuffUi, {
 	withAgentWorkOrigin,
 } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { installUiSessionPresentation } from "../../packages/pi-stuff/src/conversation-ui/session-presentation.js";
+import { createExtensionApi } from "../fixtures/extension-api.js";
+import { createExtensionContext, testTheme } from "../fixtures/extension-context.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
 const HANDLED_ACTION_SCHEMA = Type.Object({ action: Type.Literal("handled") }, { additionalProperties: true });
 const INPUT_EVENT_SCHEMA = Type.Object(
@@ -34,7 +44,6 @@ type FooterFactory = Parameters<ExtensionUIContext["setFooter"]>[0];
 type HeaderFactory = Parameters<ExtensionUIContext["setHeader"]>[0];
 type EditorFactory = NonNullable<ReturnType<ExtensionUIContext["getEditorComponent"]>>;
 type SessionHandler = (event: unknown, ctx: ExtensionContext) => Promise<unknown> | unknown;
-type ShutdownHandler = (event: unknown, ctx: ExtensionContext) => Promise<void> | void;
 
 interface TestDeferred<Value> {
 	readonly promise: Promise<Value>;
@@ -84,7 +93,7 @@ class FocusableTestComponent extends TestComponent {
 
 interface EventBusLike {
 	emit(event: string, data: unknown): void;
-	on(event: string, listener: (data: unknown) => void): (() => void) | undefined;
+	on(event: string, listener: (data: unknown) => void): () => void;
 }
 
 class EventBusHarness implements EventBusLike {
@@ -112,6 +121,31 @@ function eventBusView(bus: EventBusHarness): EventBusLike {
 	};
 }
 
+class UiHarnessKeybindings extends KeybindingsManager {
+	constructor() {
+		super(TUI_KEYBINDINGS);
+	}
+
+	getEffectiveConfig(): KeybindingsConfig {
+		return this.getResolvedBindings();
+	}
+
+	reload(): void {}
+}
+
+class UiHarnessTui extends TestTui {
+	private readonly requests: Array<boolean | undefined>;
+
+	constructor(requests: Array<boolean | undefined>) {
+		super();
+		this.requests = requests;
+	}
+
+	override requestRender(force?: boolean): void {
+		this.requests.push(force);
+	}
+}
+
 class UiHarness {
 	autoResolveOnDone = true;
 	editorText = "saved draft";
@@ -120,18 +154,12 @@ class UiHarness {
 	readonly headerWrites: Array<HeaderFactory | undefined> = [];
 	readonly forbiddenCalls: string[] = [];
 	readonly hostCalls: HostCall[] = [];
-	readonly keybindings = { identity: "keybindings" } as unknown as KeybindingsManager;
 	readonly renderRequests: Array<boolean | undefined> = [];
-	readonly theme = {
-		fg: (_color: string, text: string) => text,
-		identity: "theme",
-	} as unknown as Theme;
+	// SAFETY: the test manager implements the two Agent additions and otherwise uses the inherited TUI keybinding contract.
+	readonly keybindings = new UiHarnessKeybindings() as AgentKeybindingsManager;
+	readonly theme = testTheme;
 	throwOnFooterRestore = false;
-	readonly tui = {
-		requestRender: (force?: boolean) => {
-			this.renderRequests.push(force);
-		},
-	} as unknown as TUI;
+	readonly tui = new UiHarnessTui(this.renderRequests);
 	readonly workingWrites: boolean[] = [];
 	private editorFactory: EditorFactory | undefined;
 
@@ -145,7 +173,7 @@ class UiHarness {
 		factory: (
 			tui: TUI,
 			theme: Theme,
-			keybindings: KeybindingsManager,
+			keybindings: AgentKeybindingsManager,
 			done: (result: Result) => void,
 		) => CommandDialogComponent | Promise<CommandDialogComponent>,
 		options?: { overlay?: boolean },
@@ -226,39 +254,37 @@ class UiHarness {
 	}
 }
 
-type ExecResult = { code: number; killed: boolean; stderr: string; stdout: string };
-
-function createApiHarness(
-	events: EventBusLike = new EventBusHarness(),
-	execute?: (...args: unknown[]) => Promise<ExecResult>,
-) {
+function createApiHarness(events: EventBusLike = new EventBusHarness(), execute?: ExtensionAPI["exec"]) {
 	const execCalls: unknown[][] = [];
 	const eventHandlers = new Map<string, SessionHandler[]>();
 	const registeredCommands: string[] = [];
 	const sessionHandlers: SessionHandler[] = [];
-	const shutdownHandlers: ShutdownHandler[] = [];
-	const api = {
+	const shutdownHandlers: SessionHandler[] = [];
+	const exec: ExtensionAPI["exec"] = async (command, args, options) => {
+		execCalls.push([command, args, options]);
+		return execute ? execute(command, args, options) : { code: 1, killed: false, stderr: "", stdout: "" };
+	};
+	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
+	const on = ((event: string, handler: SessionHandler) => {
+		const handlers = eventHandlers.get(event) ?? [];
+		handlers.push(handler);
+		eventHandlers.set(event, handlers);
+		if (event === "session_start") sessionHandlers.push(handler);
+		if (event === "session_shutdown") shutdownHandlers.push(handler);
+	}) as ExtensionAPI["on"];
+	const api = createExtensionApi({
 		events,
-		exec: async (...args: unknown[]) => {
-			execCalls.push(args);
-			return execute ? execute(...args) : { code: 1, killed: false, stderr: "", stdout: "" };
-		},
+		exec,
 		getAllTools: () => [],
 		getActiveTools: () => [],
 		getCommands: () => [],
 		getThinkingLevel: () => "medium",
-		on: (event: string, handler: ShutdownHandler) => {
-			const handlers = eventHandlers.get(event) ?? [];
-			handlers.push(handler);
-			eventHandlers.set(event, handlers);
-			if (event === "session_start") sessionHandlers.push(handler);
-			if (event === "session_shutdown") shutdownHandlers.push(handler);
-		},
+		on,
 		registerCommand: (name: string) => registeredCommands.push(name),
 		registerMarkdownTransformer: () => {},
 		registerTool: () => {},
 		setActiveTools: () => {},
-	} as unknown as ExtensionAPI;
+	});
 
 	return {
 		api,
@@ -302,9 +328,29 @@ interface ContextOptions {
 	readonly isIdle?: () => boolean;
 	readonly model?: ExtensionContext["model"];
 	readonly modelId?: string;
-	readonly modelRegistry?: ExtensionContext["modelRegistry"];
+	readonly modelRegistry?: Partial<ExtensionContext["modelRegistry"]>;
 	readonly provider?: string;
 	readonly signal?: AbortSignal;
+}
+
+function createTestModel(
+	id: string,
+	provider = "fixture",
+	overrides: Partial<NonNullable<ExtensionContext["model"]>> = {},
+): NonNullable<ExtensionContext["model"]> {
+	return {
+		api: "openai-responses",
+		baseUrl: "https://example.test",
+		contextWindow: 200_000,
+		cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
+		id,
+		input: ["text"],
+		maxTokens: 8_192,
+		name: id,
+		provider,
+		reasoning: true,
+		...overrides,
+	};
 }
 
 function createContext(
@@ -313,19 +359,33 @@ function createContext(
 	options: ContextOptions = {},
 ): ExtensionContext {
 	const cwd = options.cwd ?? "/workspace";
-	return {
+	return createExtensionContext({
 		cwd,
 		getContextUsage: () => options.contextUsage,
 		hasUI: mode !== "rpc",
 		hasPendingMessages: options.hasPendingMessages ?? (() => false),
 		isIdle: options.isIdle ?? (() => true),
 		mode,
-		model: options.model ?? (options.modelId ? { id: options.modelId, provider: options.provider } : undefined),
-		modelRegistry: options.modelRegistry,
+		model: options.model ?? (options.modelId ? createTestModel(options.modelId, options.provider) : undefined),
+		...(options.modelRegistry
+			? { modelRegistry: Object.assign(Object.create(ModelRegistry.prototype), options.modelRegistry) }
+			: {}),
 		sessionManager: { getBranch: () => [], getCwd: () => cwd },
 		signal: options.signal,
-		ui: ui as unknown as ExtensionUIContext,
-	} as unknown as ExtensionContext;
+		ui: {
+			custom: (factory, dialogOptions) => ui.custom(factory, dialogOptions),
+			getEditorComponent: () => ui.getEditorComponent(),
+			getEditorText: () => ui.getEditorText(),
+			setEditorComponent: (factory) => ui.setEditorComponent(factory),
+			setEditorText: (text) => ui.setEditorText(text),
+			setFooter: (factory) => ui.setFooter(factory),
+			setHeader: (factory) => ui.setHeader(factory),
+			setStatus: () => ui.setStatus(),
+			setWidget: () => ui.setWidget(),
+			setWorkingVisible: (visible) => ui.setWorkingVisible(visible),
+			theme: ui.theme,
+		},
+	});
 }
 
 function createFooterData(branch: string | null = null) {
@@ -472,14 +532,14 @@ describe("normal UI presentation integration", () => {
 				id: "gpt-5.6-sol",
 				input: ["text"],
 				provider: "openai-codex",
-			} as unknown as ExtensionContext["model"],
+			} as ExtensionContext["model"],
 			modelRegistry: {
 				getApiKeyAndHeaders: async () => ({
 					apiKey: "test-token",
 					headers: { "chatgpt-account-id": "account-42" },
 					ok: true,
 				}),
-			} as unknown as ExtensionContext["modelRegistry"],
+			},
 			signal: controller.signal,
 		});
 		let fetchCalls = 0;
@@ -492,19 +552,22 @@ describe("normal UI presentation integration", () => {
 				status: 200,
 			});
 		const originalFetch = globalThis.fetch;
-		globalThis.fetch = (async () => {
-			fetchCalls += 1;
-			if (deferredFetch) {
-				const pending = deferredFetch;
-				deferredFetch = undefined;
-				return pending;
-			}
-			if (failNextFetch) {
-				failNextFetch = false;
-				throw new Error("usage unavailable");
-			}
-			return usageResponse(usedPercent);
-		}) as unknown as typeof globalThis.fetch;
+		globalThis.fetch = Object.assign(
+			async (_input: string | URL | Request, _init?: RequestInit) => {
+				fetchCalls += 1;
+				if (deferredFetch) {
+					const pending = deferredFetch;
+					deferredFetch = undefined;
+					return pending;
+				}
+				if (failNextFetch) {
+					failNextFetch = false;
+					throw new Error("usage unavailable");
+				}
+				return usageResponse(usedPercent);
+			},
+			{ preconnect: originalFetch.preconnect },
+		);
 
 		try {
 			await uiApi.start(ctx);

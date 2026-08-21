@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createSyntheticSourceInfo, type ExtensionAPI, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	createNativeSupervisorChannel,
 	garbageCollectSupervisorChannel,
@@ -11,6 +11,8 @@ import {
 import { shardedDurableClaimName } from "../../packages/pi-stuff/src/subagents/src/shared/durable-claim.js";
 import { type SubagentState, TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/index.js";
+import { createExtensionApi } from "../fixtures/extension-api.js";
+import { createExtensionContext } from "../fixtures/extension-context.js";
 
 const directories: string[] = [];
 
@@ -57,13 +59,14 @@ function harness(input: {
 		},
 		getSessionId: () => input.logicalSessionId ?? "header-b",
 	};
-	const ctx = {
+	const ctx = createExtensionContext({
 		cwd: path.dirname(input.legacyFile),
-		hasUI: true,
-		mode: "tui",
 		sessionManager,
-	} as unknown as ExtensionContext;
-	const state = {
+	});
+	const state: SubagentState = {
+		baseCwd: ctx.cwd,
+		cleanupTimers: new Map(),
+		completionSeen: new Map(),
 		currentSessionId: input.primary,
 		currentSessionScope: {
 			sessionId: input.primary,
@@ -74,18 +77,28 @@ function harness(input: {
 			legacyRunIds: input.legacyRunIds,
 		},
 		lastUiContext: ctx,
+		lastForegroundControlId: null,
 		foregroundControls: new Map(),
 		foregroundRuns: new Map(),
 		asyncJobs: new Map(),
 		recentAgentJobs: new Map(),
-	} as unknown as SubagentState;
-	const api = {
-		events: { emit: () => {}, on: () => () => {} },
+		resultFileCoalescer: { clear: () => {}, schedule: () => false },
+		watcher: null,
+		watcherRestartTimer: null,
+	};
+	const api = createExtensionApi({
 		getActiveTools: () => [...activeTools],
-		getAllTools: () => [...tools.values()].map(({ name }) => ({ name })),
-		registerTool: (tool: ToolDefinition) => {
+		getAllTools: () =>
+			[...tools.values()].map(({ description, name, parameters }) => ({
+				description,
+				name,
+				parameters,
+				sourceInfo: createSyntheticSourceInfo(`/test/${name}`, { source: "extension" }),
+			})),
+		registerTool: (tool) => {
 			if (!tools.has(tool.name)) activeTools.push(tool.name);
-			tools.set(tool.name, tool);
+			// SAFETY: The harness stores the Host-validated definition and only invokes it through ToolDefinition.
+			tools.set(tool.name, tool as ToolDefinition);
 		},
 		setActiveTools: (names: string[]) => {
 			activeTools = [...names];
@@ -95,7 +108,7 @@ function harness(input: {
 		},
 		sendMessage:
 			input.sendMessage ?? ((message: { customType?: string; details?: unknown }) => messages.push(message)),
-	} as unknown as ExtensionAPI;
+	});
 	return {
 		api,
 		ctx,
@@ -237,7 +250,7 @@ describe("native supervisor protocol compatibility", () => {
 			async execute() {
 				return { content: [{ type: "text" as const, text: "external" }], details: {} };
 			},
-		} as unknown as ToolDefinition;
+		} as ToolDefinition;
 		test.api.registerTool(external);
 
 		await test.run("before_agent_start");

@@ -14,7 +14,7 @@ const recordingTheme = {
 	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
 	bold: (text: string) => `<bold>${text}</bold>`,
 	strikethrough: (text: string) => `<strike>${text}</strike>`,
-} as unknown as Theme;
+} as Theme;
 
 function task(overrides: Partial<OverlayTask> = {}): OverlayTask {
 	return {
@@ -98,7 +98,7 @@ describe("formatOverlayTaskLine", () => {
 			fg: (_color: string, text: string) => text,
 			bold: (text: string) => text,
 			strikethrough: (text: string) => text,
-		} as unknown as Theme;
+		} as Theme;
 
 		for (const width of [100, 64, 48, 32, 24]) {
 			const line = formatOverlayTaskLine(row, plainTheme, width);

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { parseForStorage, stringifyForStorage } from "./cloudflare/codec.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import { stableStringify } from "./cloudflare/stable-stringify.js";
@@ -279,77 +279,180 @@ function eventFrom(value: unknown): LedgerEvent | undefined {
 		return undefined;
 	}
 	if (!isRuntimeNumber(value["at"]) || !Number.isFinite(value["at"])) return undefined;
-	const executionId = isRuntimeString(value["executionId"]) && value["executionId"].length > 0;
+	const at = value["at"];
+	const executionId =
+		isRuntimeString(value["executionId"]) && value["executionId"].length > 0 ? value["executionId"] : undefined;
 	switch (value["kind"]) {
-		case "execution-started":
-			return executionId &&
-				isRuntimeString(value["code"]) &&
-				(value["cwd"] === undefined || isRuntimeString(value["cwd"])) &&
-				isRuntimeString(value["outerToolCallId"])
-				? (value as unknown as ExecutionStartedEvent)
-				: undefined;
+		case "execution-started": {
+			const code = value["code"];
+			const cwd = value["cwd"];
+			const outerToolCallId = value["outerToolCallId"];
+			if (
+				!executionId ||
+				!isRuntimeString(code) ||
+				(cwd !== undefined && !isRuntimeString(cwd)) ||
+				!isRuntimeString(outerToolCallId)
+			) {
+				return undefined;
+			}
+			const event: ExecutionStartedEvent = {
+				at,
+				code,
+				executionId,
+				kind: "execution-started",
+				outerToolCallId,
+				schemaVersion: SCHEMA_VERSION,
+			};
+			return cwd === undefined ? event : { ...event, cwd };
+		}
 		case "call-pending":
-		case "call-started":
-			return executionId &&
-				isRuntimeString(value["argsKey"]) &&
-				storedValue(value["args"]) &&
-				isRuntimeString(value["callId"]) &&
-				isRuntimeString(value["name"]) &&
-				(value["replay"] === "never" || value["replay"] === "record" || value["replay"] === "reexecute") &&
-				Number.isInteger(value["attempt"]) &&
-				Number.isInteger(value["sequence"])
-				? (value as unknown as CallPendingEvent | CallStartedEvent)
-				: undefined;
-		case "call-settled":
-			return executionId &&
-				isRuntimeString(value["callId"]) &&
-				(value["status"] === "error" || value["status"] === "success") &&
-				(value["error"] === undefined || isRuntimeString(value["error"])) &&
-				(value["result"] === undefined || storedValue(value["result"])) &&
-				(value["value"] === undefined || storedValue(value["value"]))
-				? (value as unknown as CallSettledEvent)
-				: undefined;
-		case "call-compensated":
-			return executionId && isRuntimeString(value["callId"])
-				? (value as unknown as CallCompensatedEvent)
-				: undefined;
-		case "execution-settled":
-			return executionId &&
-				Number.isInteger(value["attempt"]) &&
-				[
-					"abandoned",
-					"cancelled",
-					"compensated",
-					"error",
-					"expired",
-					"incomplete",
-					"paused",
-					"rejected",
-					"rolled_back",
-					"running",
-					"success",
-				].includes(String(value["status"])) &&
-				(value["error"] === undefined || isRuntimeString(value["error"]))
-				? (value as unknown as ExecutionSettledEvent)
-				: undefined;
-		case "execution-pruned":
-			return executionId ? (value as unknown as ExecutionPrunedEvent) : undefined;
-		case "execution-resumed":
-			return executionId && Number.isInteger(value["attempt"])
-				? (value as unknown as ExecutionResumedEvent)
-				: undefined;
-		case "snippet-saved": {
-			const snippet = value["snippet"];
-			return isRecord(snippet) &&
-				isRuntimeString(snippet["name"]) &&
-				isRuntimeString(snippet["description"]) &&
-				isRuntimeString(snippet["code"]) &&
-				isRuntimeNumber(snippet["savedAt"])
-				? (value as unknown as SnippetSavedEvent)
+		case "call-started": {
+			const args = value["args"];
+			const argsKey = value["argsKey"];
+			const attempt = value["attempt"];
+			const callId = value["callId"];
+			const name = value["name"];
+			const replay = value["replay"];
+			const requiresApproval = value["requiresApproval"];
+			const sequence = value["sequence"];
+			if (
+				!executionId ||
+				!storedValue(args) ||
+				!isRuntimeString(argsKey) ||
+				!isRuntimeNumber(attempt) ||
+				!Number.isInteger(attempt) ||
+				!isRuntimeString(callId) ||
+				!isRuntimeString(name) ||
+				(replay !== "never" && replay !== "record" && replay !== "reexecute") ||
+				(requiresApproval !== undefined && !isRuntimeBoolean(requiresApproval)) ||
+				!isRuntimeNumber(sequence) ||
+				!Number.isInteger(sequence)
+			) {
+				return undefined;
+			}
+			const common: Omit<CallPendingEvent, "kind"> = {
+				args,
+				argsKey,
+				at,
+				attempt,
+				callId,
+				executionId,
+				name,
+				replay,
+				schemaVersion: SCHEMA_VERSION,
+				sequence,
+			};
+			if (value["kind"] === "call-pending") return { ...common, kind: "call-pending" };
+			const event: CallStartedEvent = { ...common, kind: "call-started" };
+			return requiresApproval === undefined ? event : { ...event, requiresApproval };
+		}
+		case "call-settled": {
+			const callId = value["callId"];
+			const error = value["error"];
+			const result = value["result"];
+			const status = value["status"];
+			const settledValue = value["value"];
+			if (
+				!executionId ||
+				!isRuntimeString(callId) ||
+				(status !== "error" && status !== "success") ||
+				(error !== undefined && !isRuntimeString(error)) ||
+				(result !== undefined && !storedValue(result)) ||
+				(settledValue !== undefined && !storedValue(settledValue))
+			) {
+				return undefined;
+			}
+			const event: CallSettledEvent = {
+				at,
+				callId,
+				executionId,
+				kind: "call-settled",
+				schemaVersion: SCHEMA_VERSION,
+				status,
+			};
+			if (error !== undefined) Object.assign(event, { error });
+			if (result !== undefined) Object.assign(event, { result });
+			if (settledValue !== undefined) Object.assign(event, { value: settledValue });
+			return event;
+		}
+		case "call-compensated": {
+			const callId = value["callId"];
+			return executionId && isRuntimeString(callId)
+				? { at, callId, executionId, kind: "call-compensated", schemaVersion: SCHEMA_VERSION }
 				: undefined;
 		}
-		case "snippet-deleted":
-			return isRuntimeString(value["name"]) ? (value as unknown as SnippetDeletedEvent) : undefined;
+		case "execution-settled": {
+			const attempt = value["attempt"];
+			const error = value["error"];
+			const status = value["status"];
+			if (
+				!executionId ||
+				!isRuntimeNumber(attempt) ||
+				!Number.isInteger(attempt) ||
+				(status !== "abandoned" &&
+					status !== "cancelled" &&
+					status !== "compensated" &&
+					status !== "error" &&
+					status !== "expired" &&
+					status !== "incomplete" &&
+					status !== "paused" &&
+					status !== "rejected" &&
+					status !== "rolled_back" &&
+					status !== "running" &&
+					status !== "success") ||
+				(error !== undefined && !isRuntimeString(error))
+			) {
+				return undefined;
+			}
+			const event: ExecutionSettledEvent = {
+				at,
+				attempt,
+				executionId,
+				kind: "execution-settled",
+				schemaVersion: SCHEMA_VERSION,
+				status,
+			};
+			if (error !== undefined) Object.assign(event, { error });
+			return event;
+		}
+		case "execution-pruned":
+			return executionId ? { at, executionId, kind: "execution-pruned", schemaVersion: SCHEMA_VERSION } : undefined;
+		case "execution-resumed": {
+			const attempt = value["attempt"];
+			return executionId && isRuntimeNumber(attempt) && Number.isInteger(attempt)
+				? { at, attempt, executionId, kind: "execution-resumed", schemaVersion: SCHEMA_VERSION }
+				: undefined;
+		}
+		case "snippet-saved": {
+			const snippet = value["snippet"];
+			if (!isRecord(snippet)) return undefined;
+			const code = snippet["code"];
+			const connectors = snippet["connectors"];
+			const description = snippet["description"];
+			const name = snippet["name"];
+			const savedAt = snippet["savedAt"];
+			if (
+				!isRuntimeString(code) ||
+				(connectors !== undefined &&
+					(!Array.isArray(connectors) || !connectors.every((connector) => isRuntimeString(connector)))) ||
+				!isRuntimeString(description) ||
+				!isRuntimeString(name) ||
+				!isRuntimeNumber(savedAt) ||
+				!Number.isFinite(savedAt)
+			) {
+				return undefined;
+			}
+			const parsed: Snippet = { code, description, name, savedAt };
+			if (connectors !== undefined) parsed.connectors = connectors;
+			if (Object.hasOwn(snippet, "inputSchema")) parsed.inputSchema = snippet["inputSchema"];
+			return { at, kind: "snippet-saved", schemaVersion: SCHEMA_VERSION, snippet: parsed };
+		}
+		case "snippet-deleted": {
+			const name = value["name"];
+			return isRuntimeString(name)
+				? { at, kind: "snippet-deleted", name, schemaVersion: SCHEMA_VERSION }
+				: undefined;
+		}
 		default:
 			return undefined;
 	}

@@ -94,6 +94,6 @@ describe("render session pointer", () => {
 describe("sid", () => {
 	it("normalizes an absent runtime session id to the empty key", () => {
 		expect(sid({ sessionManager: { getSessionId: () => "abc" } })).toBe("abc");
-		expect(sid({ sessionManager: { getSessionId: () => undefined as unknown as string } })).toBe("");
+		expect(sid({ sessionManager: { getSessionId: () => undefined } })).toBe("");
 	});
 });

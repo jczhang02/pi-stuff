@@ -36,7 +36,7 @@ describe("live compaction presentation", () => {
 				reads += 1;
 				return [compact, kept];
 			},
-		} as unknown as ExtensionContext["sessionManager"];
+		} as ExtensionContext["sessionManager"];
 		const original = manager.buildContextEntries;
 
 		expect(suppressDuplicatedLiveCompactionReplay(manager, "compact-1")).toBe(true);
@@ -50,13 +50,13 @@ describe("live compaction presentation", () => {
 		const compact = compactionEntry("compact-older");
 		const manager = {
 			buildContextEntries: () => [compact],
-		} as unknown as ExtensionContext["sessionManager"];
+		} as ExtensionContext["sessionManager"];
 		expect(suppressDuplicatedLiveCompactionReplay(manager, "compact-new")).toBe(true);
 		expect(manager.buildContextEntries()).toEqual([compact]);
 
 		const immutable = Object.freeze({
 			buildContextEntries: () => [compact],
-		}) as unknown as ExtensionContext["sessionManager"];
+		}) as ExtensionContext["sessionManager"];
 		expect(suppressDuplicatedLiveCompactionReplay(immutable, "compact-older")).toBe(false);
 		expect(immutable.buildContextEntries()).toEqual([compact]);
 	});

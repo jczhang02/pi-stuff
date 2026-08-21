@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+	type KeybindingsManager as AgentKeybindingsManager,
 	createExtensionRuntime,
 	createSyntheticSourceInfo,
 	type Extension,
 	type ExtensionAPI,
+	type ExtensionCommandContext,
 	type ExtensionContext,
 	ExtensionRunner,
 	type SessionEntry,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import piStuffContext, {
@@ -25,6 +28,9 @@ import {
 	withDirectUserActivation,
 } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { createExtensionApi } from "../fixtures/extension-api.js";
+import { createExtensionCommandContext, testTheme } from "../fixtures/extension-context.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type Handlers = Map<string, Handler[]>;
@@ -41,14 +47,7 @@ const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object(
 const HANDLED_ACTION_SCHEMA = Type.Object({ action: Type.Literal("handled") }, { additionalProperties: true });
 const SYSTEM_PROMPT_EVENT_SCHEMA = Type.Object({ systemPrompt: Type.String() }, { additionalProperties: true });
 
-interface TestCommandDefinition {
-	readonly argumentHint?: string;
-	readonly description?: string;
-	readonly getArgumentCompletions?: (
-		prefix: string,
-	) => readonly { readonly description?: string; readonly label: string; readonly value: string }[] | null;
-	readonly handler?: (args: string, ctx: ExtensionContext) => unknown;
-}
+type TestCommandDefinition = Parameters<ExtensionAPI["registerCommand"]>[1];
 
 interface HostRegistrations {
 	commands: string[];
@@ -69,7 +68,13 @@ function apiFor(
 ): ExtensionAPI {
 	let activeTools: string[] = [];
 	const eventBus = new Map<string, Array<(value: unknown) => void>>();
-	return {
+	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
+	const on = ((event: string, handler: Handler): void => {
+		const current = handlers.get(event) ?? [];
+		current.push(handler);
+		handlers.set(event, current);
+	}) as ExtensionAPI["on"];
+	return createExtensionApi({
 		appendEntry(customType: string, data: unknown): void {
 			registrations.entries?.push({ customType, data });
 		},
@@ -88,17 +93,15 @@ function apiFor(
 				};
 			},
 		},
-		on(event: string, handler: Handler): void {
-			const current = handlers.get(event) ?? [];
-			current.push(handler);
-			handlers.set(event, current);
-		},
-		registerTool(tool: ToolDefinition): void {
-			const existing = tools.findIndex((candidate) => candidate.name === tool.name);
+		on,
+		registerTool(tool): void {
+			// SAFETY: this test registry erases only generic renderer state and retains the original Tool object.
+			const stored = tool as ToolDefinition;
+			const existing = tools.findIndex((candidate) => candidate.name === stored.name);
 			if (existing < 0) {
-				tools.push(tool);
-				if (!activeTools.includes(tool.name)) activeTools.push(tool.name);
-			} else tools[existing] = tool;
+				tools.push(stored);
+				if (!activeTools.includes(stored.name)) activeTools.push(stored.name);
+			} else tools[existing] = stored;
 		},
 		registerCommand(name: string, definition: TestCommandDefinition): void {
 			if (!registrations.commands.includes(name)) registrations.commands.push(name);
@@ -111,22 +114,22 @@ function apiFor(
 		setActiveTools(names: string[]): void {
 			activeTools = [...names];
 		},
-	} as unknown as ExtensionAPI;
+	});
 }
 
 function context(
 	entries: readonly SessionEntry[] = [],
 	cwd = "/workspace/project-a",
 	sessionId = "session-a",
-): ExtensionContext {
-	return {
+): ExtensionCommandContext {
+	return createExtensionCommandContext({
 		cwd,
 		sessionManager: {
 			buildContextEntries: () => [...entries],
 			getSessionId: () => sessionId,
 			getSessionFile: () => `/sessions/${sessionId}.jsonl`,
 		},
-	} as unknown as ExtensionContext;
+	});
 }
 
 async function emit(handlers: Handlers, name: string, event: unknown, ctx = context()): Promise<void> {
@@ -163,7 +166,7 @@ function magicModule(
 ) {
 	return {
 		default: async (pi: ExtensionAPI) => {
-			const register = pi.on.bind(pi) as unknown as (event: string, handler: Handler) => void;
+			const register = pi.on.bind(pi) as (event: string, handler: Handler) => void;
 			register("context", (event, ctx) => {
 				options.onContext?.(ctx);
 				const contextEvent = event as { messages: unknown[] };
@@ -471,7 +474,7 @@ describe("Context capability lifecycle", () => {
 				return options.allowConfigurationMutation ? "ready" : "deferred";
 			},
 		});
-		(api.on as unknown as (event: string, handler: Handler) => void)("input", () => ({ action: "handled" }));
+		(api.on as (event: string, handler: Handler) => void)("input", () => ({ action: "handled" }));
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 
@@ -782,14 +785,15 @@ describe("Context capability lifecycle", () => {
 				},
 			}),
 		});
-		const ctx = {
+		const ctx = createExtensionCommandContext({
 			...context(),
 			hasUI: true,
 			mode: "tui",
 			ui: {
-				custom: () => {
+				custom: async <Result>(): Promise<Result> => {
 					uiCalls.push("custom");
-					return Promise.resolve(undefined);
+					// SAFETY: the captured Magic command ignores the dialog result; undefined represents its dismissed test UI.
+					return undefined as Result;
 				},
 				notify: (message: string) => uiCalls.push(`notify:${message}`),
 				setFooter: () => uiCalls.push("footer"),
@@ -797,7 +801,7 @@ describe("Context capability lifecycle", () => {
 				setStatus: () => uiCalls.push("status"),
 				setWidget: () => uiCalls.push("widget"),
 			},
-		} as unknown as ExtensionContext;
+		});
 
 		expect(registrations.commands).toEqual(["ctx"]);
 		const command = commandDefinitions.get("ctx");
@@ -927,41 +931,28 @@ describe("Context capability lifecycle", () => {
 				},
 			}),
 		});
-		const theme = {
-			bold: (value: string) => value,
-			fg: (_color: string, value: string) => value,
-		};
-		const ctx = {
+		// SAFETY: this test dialog uses only TUI-level matching inherited by the Agent keybindings manager.
+		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS) as AgentKeybindingsManager;
+		const ctx = createExtensionCommandContext({
 			...context(),
 			getContextUsage: () => ({ contextWindow: 200_000, percent: 5, tokens: 10_000 }),
 			hasUI: true,
 			mode: "tui",
 			ui: {
-				custom: <Result>(
-					factory: (
-						tui: unknown,
-						themeValue: unknown,
-						keybindings: unknown,
-						done: (result: Result) => void,
-					) => { handleInput?: (data: string) => void },
-				) =>
-					new Promise<Result>((resolve) => {
-						const component = factory(
-							{ requestRender: () => undefined, terminal: { rows: 28 } },
-							theme,
-							{},
-							(result) => resolve(result),
-						);
-						queueMicrotask(() => {
-							component.handleInput?.("\u001b[B");
-							component.handleInput?.("\u001b[B");
-							component.handleInput?.("\r");
-							component.handleInput?.("\u001b[B");
-							component.handleInput?.("\r");
-							component.handleInput?.("1-500");
-							component.handleInput?.("\r");
-							component.handleInput?.("\u001b[B");
-							component.handleInput?.("\r");
+				custom: (factory) =>
+					new Promise((resolve) => {
+						void Promise.resolve(factory(new TestTui(28), testTheme, keybindings, resolve)).then((component) => {
+							queueMicrotask(() => {
+								component.handleInput?.("\u001b[B");
+								component.handleInput?.("\u001b[B");
+								component.handleInput?.("\r");
+								component.handleInput?.("\u001b[B");
+								component.handleInput?.("\r");
+								component.handleInput?.("1-500");
+								component.handleInput?.("\r");
+								component.handleInput?.("\u001b[B");
+								component.handleInput?.("\r");
+							});
 						});
 					}),
 				getEditorText: () => "saved draft",
@@ -970,7 +961,7 @@ describe("Context capability lifecycle", () => {
 				setFooter: () => undefined,
 				setWorkingVisible: () => undefined,
 			},
-		} as unknown as ExtensionContext;
+		});
 
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		await commandDefinitions.get("ctx")?.handler?.("", ctx);
@@ -1342,7 +1333,7 @@ describe("Context capability lifecycle", () => {
 				await loadGate;
 				return {
 					default: async (pi: ExtensionAPI) => {
-						const register = pi.on.bind(pi) as unknown as (event: string, handler: Handler) => void;
+						const register = pi.on.bind(pi) as (event: string, handler: Handler) => void;
 						register("context", (event) => event);
 						register("session_before_compact", () => {
 							sequence.push("magic-compaction");
@@ -1641,7 +1632,7 @@ describe("Context capability lifecycle", () => {
 		piStuffContext(api, {
 			loadMagicContext: async () => ({
 				default: async (pi: ExtensionAPI) => {
-					const register = pi.on.bind(pi) as unknown as (event: string, handler: Handler) => void;
+					const register = pi.on.bind(pi) as (event: string, handler: Handler) => void;
 					register("context", (event) => {
 						if (shouldFail) return;
 						const contextEvent = event as { messages: unknown[] };
@@ -1682,7 +1673,7 @@ describe("Context capability lifecycle", () => {
 		piStuffContext(apiFor(handlers), {
 			loadMagicContext: async () => ({
 				default: async (magicApi: ExtensionAPI) => {
-					const register = magicApi.on.bind(magicApi) as unknown as (event: string, handler: Handler) => void;
+					const register = magicApi.on.bind(magicApi) as (event: string, handler: Handler) => void;
 					register("context", (event) => {
 						projections++;
 						const contextEvent = event as { messages: unknown[] };
@@ -1847,10 +1838,10 @@ describe("Context capability lifecycle", () => {
 			}),
 		});
 		const notifications: string[] = [];
-		const ctx = {
+		const ctx = createExtensionCommandContext({
 			...context(),
 			ui: { notify: (message: string) => notifications.push(message) },
-		} as unknown as ExtensionContext;
+		});
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
 		await emit(handlers, "input", { type: "input", text: "direct", source: "rpc" }, ctx);
 
@@ -1884,7 +1875,7 @@ describe("Context projections", () => {
 			parentId: null,
 			timestamp: "2026-08-09T00:00:00.000Z",
 			message: taggedMessage("parent <instruction>history</instruction>"),
-		} as unknown as SessionEntry;
+		} as SessionEntry;
 		const ctx = context([entry]);
 
 		const fork = await projectCurrentContext("agent-fork", ctx, { maxTokens: 512 });
@@ -1921,7 +1912,7 @@ describe("Context projections", () => {
 				parentId: null,
 				timestamp: "2026-08-09T00:00:00.000Z",
 				message: taggedMessage("leaked later context"),
-			} as unknown as SessionEntry,
+			} as SessionEntry,
 		]);
 		const original = ctx.sessionManager.buildContextEntries.bind(ctx.sessionManager);
 		ctx.sessionManager.buildContextEntries = () => {
@@ -1963,7 +1954,7 @@ describe("Context projections", () => {
 					parentId: null,
 					timestamp: "2026-08-09T00:00:00.000Z",
 					message: taggedMessage("old snapshot"),
-				} as unknown as SessionEntry,
+				} as SessionEntry,
 			],
 			"/workspace/frozen",
 			"frozen-session",
@@ -2149,7 +2140,7 @@ describe("Context projections", () => {
 		piStuffContext(apiFor(handlers), {
 			loadMagicContext: async () => ({
 				default: async (pi: ExtensionAPI) => {
-					const register = pi.on.bind(pi) as unknown as (event: string, handler: Handler) => void;
+					const register = pi.on.bind(pi) as (event: string, handler: Handler) => void;
 					register("context", (event, ctx) => {
 						const contextEvent = event as { messages: unknown[] };
 						return {
@@ -2163,10 +2154,10 @@ describe("Context projections", () => {
 			}),
 		});
 		const projectAContext = context([], "/workspace/project-a");
-		const projectBContext = {
+		const projectBContext = createExtensionCommandContext({
 			...projectAContext,
 			cwd: "/workspace/project-b",
-		} as ExtensionContext;
+		});
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, projectAContext);
 
 		const projectA = await projectCurrentContext("agent-fresh", projectAContext);

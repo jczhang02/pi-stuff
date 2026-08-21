@@ -1,10 +1,15 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
 import { readFile, stat } from "node:fs/promises";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import { activityKey, registerSuiteOwnedTool, singleActivity } from "../tool-display/index.js";
+import {
+	activityKey,
+	registerSuiteOwnedTool,
+	type SuiteToolRegistrationHost,
+	singleActivity,
+} from "../tool-display/index.js";
 import { isOpenAICodexResponsesModel, resolveCodexAccount, supportsCodexImages } from "./account.js";
 import { parseNativeJson, runNativeTool } from "./native-runner.js";
 
@@ -284,7 +289,7 @@ export interface CodexToolController {
 	sync(model: ExtensionContext["model"]): void;
 }
 
-export function registerCodexTools(pi: ExtensionAPI): CodexToolController {
+export function registerCodexTools(pi: SuiteToolRegistrationHost): CodexToolController {
 	const applyPatch = createApplyPatchTool();
 	const viewImage = createViewImageTool();
 	const imageGeneration = createImageGenerationTool();

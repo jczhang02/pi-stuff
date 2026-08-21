@@ -14,6 +14,18 @@ export interface CodexAccount {
 
 type CodexModel = NonNullable<ExtensionContext["model"]>;
 
+export interface CodexAccountContext {
+	readonly model: ExtensionContext["model"];
+	readonly modelRegistry: {
+		getApiKeyAndHeaders(
+			model: CodexModel,
+		): Promise<
+			| { readonly apiKey?: string; readonly headers?: unknown; readonly ok: true }
+			| { readonly error: string; readonly ok: false }
+		>;
+	};
+}
+
 function headerValue(headers: Readonly<Record<string, string>> | undefined, name: string): string | undefined {
 	const normalized = name.toLowerCase();
 	for (const [key, value] of Object.entries(headers ?? {})) {
@@ -67,7 +79,7 @@ export function supportsCodexImages(model: ExtensionContext["model"]): boolean {
 	return isOpenAICodexResponsesModel(model) && Array.isArray(model?.input) && model.input.includes("image");
 }
 
-export async function resolveCodexAccount(ctx: ExtensionContext): Promise<CodexAccount> {
+export async function resolveCodexAccount(ctx: CodexAccountContext): Promise<CodexAccount> {
 	const model = ctx.model;
 	if (!isOpenAICodexResponsesModel(model)) {
 		throw new Error("Select an OpenAI Codex subscription model first.");

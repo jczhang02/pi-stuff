@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	isRuntimeFunction,
 	isRuntimeNumber,
@@ -35,6 +35,7 @@ import {
 	type SubagentState,
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.ts";
 import { CERTIFIED_PI_VERSION } from "../../scripts/pi-host-contract.ts";
+import { createExtensionApi } from "../fixtures/extension-api.ts";
 import { PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH } from "./fixtures/process-controls-provider.ts";
 
 const providerExtension = PROCESS_CONTROLS_PROVIDER_EXTENSION_PATH;
@@ -138,7 +139,16 @@ class EventLog {
 }
 
 function extensionApi(events: EventLog): ExtensionAPI {
-	return { events } as unknown as ExtensionAPI;
+	const bus = createEventBus();
+	return createExtensionApi({
+		events: {
+			emit(event, payload) {
+				events.emit(event, payload);
+				bus.emit(event, payload);
+			},
+			on: bus.on,
+		},
+	});
 }
 
 function artifactConfig() {

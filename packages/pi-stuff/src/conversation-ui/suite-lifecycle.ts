@@ -50,10 +50,10 @@ function createGate(sessionManager: SessionManager): ReadinessGate {
 function createReadinessApi(pi: ExtensionAPI): ExtensionAPI {
 	const on = ((event: string, handler: (...args: unknown[]) => unknown) => {
 		if (event !== "session_start") {
-			(pi.on as unknown as (name: string, value: typeof handler) => void)(event, handler);
+			(pi.on as (name: string, value: typeof handler) => void)(event, handler);
 			return;
 		}
-		(pi.on as unknown as (name: string, value: typeof handler) => void)(event, async (...args: unknown[]) => {
+		(pi.on as (name: string, value: typeof handler) => void)(event, async (...args: unknown[]) => {
 			try {
 				return await handler(...args);
 			} catch (error) {

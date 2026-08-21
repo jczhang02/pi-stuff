@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import piStuffCodeMode from "../../packages/pi-stuff/src/code-mode/extension.js";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import piStuffCodeMode, { type CodeModeHost } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import {
 	readCodeModeProjectEnabled,
 	writeCodeModeProjectEnabled,
@@ -12,11 +12,10 @@ import type {
 	SuiteToolDefinitionRegistry,
 	SuiteToolSurfaceController,
 } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { createExtensionCommandContext } from "../fixtures/extension-context.js";
+import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
-type Command = {
-	getArgumentCompletions?: (prefix: string) => Array<{ label: string; value: string }> | null;
-	handler(args: string, context: ExtensionContext): Promise<void>;
-};
+type Command = Parameters<ExtensionAPI["registerCommand"]>[1];
 
 type EventHandler = (event: unknown, context: ExtensionContext) => unknown;
 
@@ -47,25 +46,34 @@ function loadExtension(surface: SuiteToolSurfaceController): {
 } {
 	const commands = new Map<string, Command>();
 	const events = new Map<string, EventHandler[]>();
-	const api = {
-		events: {},
-		on: (name: string, handler: EventHandler) => events.set(name, [...(events.get(name) ?? []), handler]),
-		registerCommand: (name: string, command: Command) => commands.set(name, command),
-		registerTool: () => {},
-	} as unknown as ExtensionAPI;
+	const { host } = toolRegistrationHarness();
+	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
+	const on = ((name: string, handler: EventHandler) => {
+		events.set(name, [...(events.get(name) ?? []), handler]);
+	}) as ExtensionAPI["on"];
+	const registerCommand: ExtensionAPI["registerCommand"] = (name, command) => {
+		commands.set(name, command);
+	};
+	const api: CodeModeHost = {
+		...host,
+		appendEntry: () => undefined,
+		on,
+		registerCommand,
+		sendMessage: () => undefined,
+	};
 	piStuffCodeMode(api, { registry, surface });
 	return { commands, events };
 }
 
-function context(cwd: string, trusted = true): ExtensionContext & { notifications: string[] } {
+function context(cwd: string, trusted = true): ExtensionCommandContext & { notifications: string[] } {
 	const notifications: string[] = [];
-	return {
+	const base = createExtensionCommandContext({
 		cwd,
 		hasUI: false,
 		isProjectTrusted: () => trusted,
-		notifications,
 		ui: { notify: (message: string) => notifications.push(message) },
-	} as unknown as ExtensionContext & { notifications: string[] };
+	});
+	return Object.assign(base, { notifications });
 }
 
 async function sessionStart(events: Map<string, EventHandler[]>, ctx: ExtensionContext): Promise<void> {
@@ -83,14 +91,14 @@ test("bare /codemode owns the interactive dialog path and status is no longer a 
 	const { commands } = loadExtension(surface);
 	const command = commands.get("codemode");
 	if (!command) throw new Error("missing /codemode command");
-	const completions = command.getArgumentCompletions?.("") ?? [];
+	const completions = (await command.getArgumentCompletions?.("")) ?? [];
 	expect(completions.map(({ value }) => value)).not.toContain("status");
 
 	const notifications: string[] = [];
-	const context = {
+	const context = createExtensionCommandContext({
 		hasUI: false,
 		ui: { notify: (message: string) => notifications.push(message) },
-	} as unknown as ExtensionContext;
+	});
 	await command.handler("", context);
 	expect(notifications.at(-1)).toBe("/codemode requires interactive TUI mode; use /codemode on or /codemode off.");
 	await command.handler("status", context);

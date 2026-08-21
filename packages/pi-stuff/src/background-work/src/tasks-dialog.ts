@@ -21,7 +21,7 @@ import {
 	renderCommandDialogSplit,
 	WIDE_COMMAND_DIALOG_MIN_WIDTH,
 } from "../../conversation-ui/index.js";
-import type { BackgroundWorkRuntime, BackgroundWorkSnapshot } from "./runtime.js";
+import type { BackgroundWorkOutcome, BackgroundWorkSnapshot } from "./runtime.js";
 
 type TaskDialogMode = "detail" | "list";
 
@@ -43,6 +43,12 @@ interface TaskRow {
 
 const GUTTER = "  ";
 const LIST_ROWS = 9;
+
+interface TasksDialogRuntime {
+	snapshot(): readonly BackgroundWorkSnapshot[];
+	stop(id: string): Promise<BackgroundWorkOutcome>;
+	subscribe(listener: () => void): () => void;
+}
 const NARROW_LIST_ROWS = 6;
 const NARROW_WIDTH = 64;
 const TASK_DIALOG_ROWS = 18;
@@ -165,10 +171,10 @@ class TasksDialogComponent implements CommandDialogComponent {
 	private splitFocus: "left" | "right" = "left";
 	private stopping = false;
 	private readonly timer: ReturnType<typeof setInterval>;
-	private readonly runtime: BackgroundWorkRuntime;
+	private readonly runtime: TasksDialogRuntime;
 	private readonly unsubscribe: () => void;
 
-	constructor(runtime: BackgroundWorkRuntime, context: CommandDialogViewContext<void>) {
+	constructor(runtime: TasksDialogRuntime, context: CommandDialogViewContext<void>) {
 		this.context = context;
 		this.runtime = runtime;
 		this.refresh();
@@ -488,7 +494,7 @@ class TasksDialogComponent implements CommandDialogComponent {
 	}
 }
 
-export function createTasksDialogView(runtime: BackgroundWorkRuntime): CommandDialogView<void> {
+export function createTasksDialogView(runtime: TasksDialogRuntime): CommandDialogView<void> {
 	return {
 		priority: "normal",
 		create: (context) => new TasksDialogComponent(runtime, context),

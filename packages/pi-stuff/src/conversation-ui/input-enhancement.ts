@@ -38,10 +38,11 @@ const INSTALLED_FACTORY_RECORD = Symbol.for("@jczhang02/pi-stuff-ui/input-enhanc
 function installedFactoryRecord(factory: EditorFactory): InstalledFactoryRecord | undefined {
 	const local = installedFactories.get(factory);
 	if (local) return local;
-	const shared = (factory as unknown as Record<symbol, unknown>)[INSTALLED_FACTORY_RECORD];
-	return isRuntimeObject(shared) && shared !== null && "supersede" in shared
-		? (shared as InstalledFactoryRecord)
-		: undefined;
+	const shared = Object.getOwnPropertyDescriptor(factory, INSTALLED_FACTORY_RECORD)?.value;
+	if (!isRuntimeObject(shared) || shared === null || !("supersede" in shared)) return undefined;
+	if (!isRuntimeFunction(shared.supersede)) return undefined;
+	if ("previous" in shared && shared.previous !== undefined && !isRuntimeFunction(shared.previous)) return undefined;
+	return shared;
 }
 
 function registerInstalledFactory(factory: EditorFactory, record: InstalledFactoryRecord): void {

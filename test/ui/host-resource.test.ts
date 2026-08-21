@@ -12,7 +12,7 @@ test("Host resource discovery fails initialization instead of creating a facade-
 			throw new Error("injected discovery failure");
 		},
 		on: () => () => {},
-	} as unknown as Events;
+	} as Events;
 	expect(() =>
 		getHostSharedResource(emitFailure, local, "test:resource", () => {
 			creates += 1;
@@ -26,7 +26,7 @@ test("Host resource discovery fails initialization instead of creating a facade-
 		on: () => {
 			throw new Error("injected registration failure");
 		},
-	} as unknown as Events;
+	} as Events;
 	expect(() => getHostSharedResource(registrationFailure, local, "test:resource", () => ({}))).toThrow(
 		"injected registration failure",
 	);
@@ -43,7 +43,7 @@ test("Host resource cleanup remains idempotent when its event unsubscribe fails"
 			unsubscribeCalls += 1;
 			throw new Error("injected unsubscribe failure");
 		},
-	} as unknown as Events;
+	} as Events;
 	const resource = getHostSharedResource(events, local, "test:resource", () => ({}), {
 		registerOwnerCleanup: (cleanup) => cleanups.push(cleanup),
 	});

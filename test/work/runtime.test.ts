@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
 import { BoundedOutputFile, readBoundedTail } from "../../packages/pi-stuff/src/background-work/src/output.js";
 import {
@@ -119,13 +119,15 @@ function context(cwd: string): ExtensionContext {
 			getSessionId: () => "work-test-session",
 		},
 		thinkingLevel: "off",
-	} as unknown as ExtensionContext;
+	} as ExtensionContext;
 }
 
 function runtime(cwd: string, messages: unknown[] = [], backgroundAfterMs?: number): BackgroundWorkRuntime {
 	const pi = {
-		sendMessage: (message: unknown, options: unknown) => messages.push({ message, options }),
-	} as unknown as ExtensionAPI;
+		sendMessage: (message: unknown, options?: unknown) => {
+			messages.push({ message, options });
+		},
+	};
 	return new BackgroundWorkRuntime({
 		...(backgroundAfterMs !== undefined ? { backgroundAfterMs } : {}),
 		cwd,
@@ -139,7 +141,7 @@ function attributedRuntime(
 	cwd: string,
 	readOrigin: () => "automatic" | "user",
 	messages: unknown[] = [],
-	sendMessage: (message: unknown, options: unknown) => void = (message, options) =>
+	sendMessage: (message: unknown, options?: unknown) => void = (message, options) =>
 		messages.push({ message, options }),
 ): { readonly active: BackgroundWorkRuntime; readRefreshRequests(): number } {
 	let refreshRequests = 0;
@@ -162,7 +164,7 @@ function attributedRuntime(
 	const pi = {
 		events,
 		sendMessage,
-	} as unknown as ExtensionAPI;
+	};
 	listenForAgentWorkOriginQueries(pi, readOrigin);
 	return {
 		active: new BackgroundWorkRuntime({
@@ -307,7 +309,7 @@ describe("BackgroundWorkRuntime", () => {
 		activateDiagnosticChannel(diagnostics);
 		const active = new BackgroundWorkRuntime({
 			cwd: root,
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			reconcileStale: async () => ({ cleanedDirectories: 0, killedProcesses: 0, unresolvedDirectories: 1 }),
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
@@ -325,7 +327,7 @@ describe("BackgroundWorkRuntime", () => {
 		let attempts = 0;
 		const active = new BackgroundWorkRuntime({
 			cwd: root,
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			reconcileStale: async () => {
 				attempts += 1;
 				if (attempts === 1) throw Object.assign(new Error("injected recovery EIO"), { code: "EIO" });
@@ -355,7 +357,7 @@ describe("BackgroundWorkRuntime", () => {
 				outputFactoryCalls += 1;
 				return new BoundedOutputFile(filePath);
 			},
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			sessionId: "work-test-session",
 			storage: new AuthorizationPathFailsStorage(root, "work-test-session", {
 				authorityKey: TEST_WORK_AUTHORITY_KEY,
@@ -396,7 +398,7 @@ describe("BackgroundWorkRuntime", () => {
 				return captureProcessIdentityWithRetry(pid);
 			},
 			cwd: root,
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			sessionId: "work-test-session",
 			storage,
 		});
@@ -428,7 +430,7 @@ describe("BackgroundWorkRuntime", () => {
 		const root = temporaryRoot();
 		const active = new BackgroundWorkRuntime({
 			cwd: root,
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			sessionId: "work-test-session",
 			shutdownGraceMs: 10,
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
@@ -468,7 +470,7 @@ describe("BackgroundWorkRuntime", () => {
 				return captureProcessIdentityWithRetry(pid);
 			},
 			cwd: root,
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		});
@@ -530,7 +532,7 @@ describe("BackgroundWorkRuntime", () => {
 				return captureProcessIdentityWithRetry(pid);
 			},
 			cwd: root,
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		});
@@ -590,7 +592,7 @@ describe("BackgroundWorkRuntime", () => {
 						throw Object.assign(new Error("injected runtime output EIO"), { code: "EIO" });
 					},
 				}),
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		});
@@ -681,7 +683,7 @@ describe("BackgroundWorkRuntime", () => {
 			backgroundAfterMs: 50,
 			cwd: root,
 			metadataHeartbeatMs: 40,
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		});
@@ -726,7 +728,7 @@ describe("BackgroundWorkRuntime", () => {
 					if (attempts === 1) throw Object.assign(new Error("injected transient send failure"), { code: "EIO" });
 					messages.push({ message, options });
 				},
-			} as unknown as ExtensionAPI,
+			},
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 		});
@@ -806,7 +808,7 @@ describe("BackgroundWorkRuntime", () => {
 					...(trigger === "output-limit"
 						? { outputFactory: (filePath) => new BoundedOutputFile(filePath, 64) }
 						: {}),
-					pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+					pi: { sendMessage: () => {} },
 					sessionId: "work-test-session",
 					storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 					signalSupervisor: (supervisor, _identity, signal) => {
@@ -846,7 +848,7 @@ describe("BackgroundWorkRuntime", () => {
 		let attempts = 0;
 		const active = new BackgroundWorkRuntime({
 			cwd: root,
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			sessionId: "work-test-session",
 			storage: new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY }),
 			signalSupervisor: (supervisor, identity, signal) => {
@@ -878,7 +880,7 @@ describe("BackgroundWorkRuntime", () => {
 		const storage = new WorkRunStorage(root, "work-test-session", { authorityKey: TEST_WORK_AUTHORITY_KEY });
 		const active = new BackgroundWorkRuntime({
 			cwd: root,
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			sessionId: "work-test-session",
 			storage,
 		});
@@ -904,7 +906,7 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("rolls back a spawned supervisor when post-spawn metadata persistence fails", async () => {
 		const root = temporaryRoot();
-		const pi = { sendMessage: () => {} } as unknown as ExtensionAPI;
+		const pi = { sendMessage: () => {} };
 		const active = new BackgroundWorkRuntime({
 			cwd: root,
 			pi,
@@ -955,7 +957,7 @@ describe("BackgroundWorkRuntime", () => {
 		});
 		const active = new BackgroundWorkRuntime({
 			cwd: root,
-			pi: { sendMessage: () => {} } as unknown as ExtensionAPI,
+			pi: { sendMessage: () => {} },
 			sessionId: "work-test-session",
 			storage,
 			signalSupervisor: (supervisor, identity, signal) => {
@@ -987,7 +989,7 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("keeps running and shuts down cleanly when live metadata storage degrades", async () => {
 		const root = temporaryRoot();
-		const pi = { sendMessage: () => {} } as unknown as ExtensionAPI;
+		const pi = { sendMessage: () => {} };
 		const active = new BackgroundWorkRuntime({
 			cwd: root,
 			pi,

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { CodexAccountContext } from "../../packages/pi-stuff/src/codex/account.js";
 import {
 	buildCodexUsageUrl,
 	fetchCodexUsage,
@@ -48,23 +48,28 @@ test("omits unavailable windows instead of rendering an unknown quota", () => {
 
 test("builds the authenticated usage request only when explicitly invoked", async () => {
 	const token = jwt("account-42");
-	const ctx = {
+	const ctx: CodexAccountContext = {
 		model: {
 			api: "openai-responses",
 			baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+			contextWindow: 200_000,
+			cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
 			headers: { "x-placeholder": "remove-me" },
 			id: "gpt-5.2-codex",
 			input: ["text"],
+			maxTokens: 16_384,
+			name: "GPT-5.2 Codex",
 			provider: "openai-codex",
+			reasoning: true,
 		},
 		modelRegistry: {
 			getApiKeyAndHeaders: async () => ({
 				apiKey: token,
-				headers: { "X-Placeholder": null } as unknown as Record<string, string>,
+				headers: { "X-Placeholder": null },
 				ok: true,
 			}),
 		},
-	} as unknown as ExtensionContext;
+	};
 	let request: Request | undefined;
 	const usage = await fetchCodexUsage(ctx, async (input, init) => {
 		if (input instanceof Request) request = new Request(input, init);

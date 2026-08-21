@@ -283,7 +283,7 @@ function ownerKey(pi: ExtensionAPI): object {
 }
 
 function capabilityRegistry(): ContextCapabilityRegistry {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: ContextCapabilityRegistry | undefined;
 	};
 	root[CONTEXT_CAPABILITY_REGISTRY] ??= {
@@ -1675,7 +1675,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 	}
 
 	private registerMagicHandler(event: string, handler: LooseEventHandler, generation: number): void {
-		const register = this.pi.on.bind(this.pi) as unknown as (name: string, value: LooseEventHandler) => void;
+		const register = this.pi.on.bind(this.pi) as (name: string, value: LooseEventHandler) => void;
 		if (event === "session_before_compact") {
 			register(event, async (rawEvent, ctx) => {
 				if (!this.isCurrentGeneration(generation) || this.state.state !== "active" || !this.magicContextHandler)
@@ -1950,7 +1950,7 @@ export const __test = {
 	clear(): void {
 		const registry = capabilityRegistry();
 		for (const runtime of registry.runtimes) void runtime.dispose();
-		const root = globalThis as unknown as { [key: symbol]: ContextCapabilityRegistry | undefined };
+		const root = globalThis as { [key: symbol]: ContextCapabilityRegistry | undefined };
 		delete root[CONTEXT_CAPABILITY_REGISTRY];
 	},
 	extractMagicProjection,

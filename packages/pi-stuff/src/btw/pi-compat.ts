@@ -18,6 +18,14 @@ import type {
 } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+export interface BtwTransportContext {
+	readonly modelRegistry: Pick<
+		ExtensionContext["modelRegistry"],
+		"getApiKeyAndHeaders" | "getProvider" | "getProviderAuth"
+	>;
+	readonly thinkingLevel?: ExtensionContext["thinkingLevel"];
+}
+
 class BtwTransportConfigurationError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -26,7 +34,7 @@ class BtwTransportConfigurationError extends Error {
 }
 
 export interface OpenBtwStreamRequest {
-	readonly ctx: ExtensionContext;
+	readonly ctx: BtwTransportContext;
 	readonly model: Model<Api>;
 	readonly context: Context;
 	readonly signal: AbortSignal;

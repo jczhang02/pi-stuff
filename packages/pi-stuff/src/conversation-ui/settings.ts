@@ -83,6 +83,8 @@ export interface UiSettingRegistry {
 	register(setting: RegisteredUiSetting): () => void;
 }
 
+export type UiSettingsHost = Pick<ExtensionAPI, "events" | "on">;
+
 const DEFAULT_SETTINGS: UiSettings = {
 	inlineSlashAutocomplete: true,
 	inputHighlighting: true,
@@ -426,22 +428,22 @@ const SETTINGS_REGISTRY = Symbol.for("@jczhang02/pi-stuff-ui/settings-registry/v
 const SETTINGS_REGISTRY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/settings-registry-discovery/v1";
 
 function settingsRegistries(): WeakMap<ExtensionAPI["events"], UiSettingRegistryImplementation> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], UiSettingRegistryImplementation> | undefined;
 	};
 	root[SETTINGS_REGISTRY] ??= new WeakMap();
 	return root[SETTINGS_REGISTRY];
 }
 
-export function beginUiSettingsGeneration(pi: ExtensionAPI): UiSettingRegistry {
+export function beginUiSettingsGeneration(pi: UiSettingsHost): UiSettingRegistry {
 	return getUiSettingRegistryImplementation(pi).beginGeneration();
 }
 
-export function getUiSettingRegistry(pi: ExtensionAPI): UiSettingRegistry {
+export function getUiSettingRegistry(pi: UiSettingsHost): UiSettingRegistry {
 	return getUiSettingRegistryImplementation(pi).currentGeneration();
 }
 
-function getUiSettingRegistryImplementation(pi: ExtensionAPI): UiSettingRegistryImplementation {
+function getUiSettingRegistryImplementation(pi: UiSettingsHost): UiSettingRegistryImplementation {
 	const registries = settingsRegistries();
 	return getHostSharedResource(
 		pi.events,

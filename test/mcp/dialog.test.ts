@@ -1,13 +1,36 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { KeybindingsManager, type TUI, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
+import { type Keybinding, KeybindingsManager, type KeyId, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import { createMcpControlView } from "../../packages/pi-stuff/src/mcp/mcp-dialog.js";
 import { McpStatusStore } from "../../packages/pi-stuff/src/mcp/status-store.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
+
+class ExplicitTestKeybindings extends KeybindingsManager {
+	constructor() {
+		super(TUI_KEYBINDINGS);
+	}
+
+	getEffectiveConfig(): Record<string, never> {
+		return {};
+	}
+
+	override getKeys(_keybinding: Keybinding): KeyId[] {
+		return [];
+	}
+
+	override matches(data: string, binding: Keybinding): boolean {
+		return (
+			(data === "confirm" && binding === "tui.select.confirm") || (data === "down" && binding === "tui.select.down")
+		);
+	}
+
+	reload(): void {}
+}
 
 describe("MCP Command Dialog", () => {
 	test("renders live status as a full-width bounded surface", () => {
@@ -30,7 +53,7 @@ describe("MCP Command Dialog", () => {
 			version: 1,
 		});
 		let closed = 0;
-		const terminal = { rows: 20 };
+		const terminal = new TestTui(20);
 		const component = createMcpControlView(store, {
 			authenticate: async () => true,
 			logout: async () => true,
@@ -43,7 +66,7 @@ describe("MCP Command Dialog", () => {
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal } as unknown as TUI,
+			tui: terminal,
 		});
 		const lines = component.render(36);
 		const wide = component.render(100).join("\n");
@@ -102,7 +125,7 @@ describe("MCP Command Dialog", () => {
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows: 10 } } as unknown as TUI,
+			tui: new TestTui(10),
 		});
 
 		component.render(64);
@@ -144,7 +167,7 @@ describe("MCP Command Dialog", () => {
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows: 20 } } as unknown as TUI,
+			tui: new TestTui(20),
 		});
 
 		expect(component.render(64).join("\n")).toContain("Enter manage");
@@ -178,16 +201,11 @@ describe("MCP Command Dialog", () => {
 			close: (value) => {
 				result = value;
 			},
-			keybindings: {
-				getKeys: () => [],
-				matches: (data: string, binding: string) =>
-					(data === "confirm" && binding === "tui.select.confirm") ||
-					(data === "down" && binding === "tui.select.down"),
-			} as unknown as KeybindingsManager,
+			keybindings: new ExplicitTestKeybindings(),
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows: 24 } } as unknown as TUI,
+			tui: new TestTui(24),
 		});
 
 		component.handleInput?.(" ");
@@ -235,16 +253,11 @@ describe("MCP Command Dialog", () => {
 			close: (value) => {
 				result = value;
 			},
-			keybindings: {
-				getKeys: () => [],
-				matches: (data: string, binding: string) =>
-					(data === "confirm" && binding === "tui.select.confirm") ||
-					(data === "down" && binding === "tui.select.down"),
-			} as unknown as KeybindingsManager,
+			keybindings: new ExplicitTestKeybindings(),
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows: 24 } } as unknown as TUI,
+			tui: new TestTui(24),
 		});
 
 		component.handleInput?.("confirm");
@@ -309,7 +322,7 @@ describe("MCP Command Dialog", () => {
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows: 20 } } as unknown as TUI,
+			tui: new TestTui(20),
 		});
 
 		component.handleInput?.("\r");
@@ -350,7 +363,7 @@ describe("MCP Command Dialog", () => {
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows: 20 } } as unknown as TUI,
+			tui: new TestTui(20),
 		});
 
 		component.handleInput?.("\r");
@@ -397,7 +410,7 @@ describe("MCP Command Dialog", () => {
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows: 20 } } as unknown as TUI,
+			tui: new TestTui(20),
 		});
 
 		const list = component.render(64).join("\n");
@@ -457,7 +470,7 @@ describe("MCP Command Dialog", () => {
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows: 20 } } as unknown as TUI,
+			tui: new TestTui(20),
 		});
 
 		expect(component.render(64).join("\n")).toContain("s setup");

@@ -10,9 +10,14 @@ export interface RuntimeSsrfDefaults {
   readonly trustEnvProxy?: boolean;
 }
 
+export type PiWebAccessHost = Pick<
+  ExtensionAPI,
+  "appendEntry" | "exec" | "on" | "registerCommand" | "registerShortcut" | "registerTool" | "sendMessage"
+>;
+
 export function configureRuntimeSsrfDefaults(defaults?: RuntimeSsrfDefaults): void;
 
-export function createPiWebAccess(options?: PiWebAccessOptions): (pi: ExtensionAPI) => void;
+export function createPiWebAccess(options?: PiWebAccessOptions): (pi: PiWebAccessHost) => void;
 
-declare const piWebAccess: (pi: ExtensionAPI) => void;
+declare const piWebAccess: (pi: PiWebAccessHost) => void;
 export default piWebAccess;

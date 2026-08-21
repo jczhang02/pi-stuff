@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { TUI } from "@earendil-works/pi-tui";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import type {
 	CommandDialogComponent,
@@ -12,22 +11,17 @@ import type {
 	AgentRow,
 	AgentSessionSnapshot,
 	AgentStatus,
-	CurrentAgents,
+	CurrentAgentsView,
 } from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
 import {
 	type AgentDialogOptions,
 	type AgentTranscriptRequest,
 	createAgentDialogView,
 } from "../../packages/pi-stuff/src/subagents/src/ui/agent-dialog.js";
+import { testTheme } from "../fixtures/extension-context.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
-const theme = {
-	bg: (_color: string, text: string) => text,
-	bold: (text: string) => text,
-	fg: (_color: string, text: string) => text,
-	italic: (text: string) => text,
-	strikethrough: (text: string) => text,
-	underline: (text: string) => text,
-} as unknown as Theme;
+const theme = testTheme;
 
 interface Deferred<Value> {
 	readonly promise: Promise<Value>;
@@ -56,8 +50,8 @@ class CurrentAgentsHarness {
 		this.value = snapshot(rows);
 	}
 
-	asCurrentAgents(): CurrentAgents {
-		return this as unknown as CurrentAgents;
+	asCurrentAgents(): CurrentAgentsView {
+		return this;
 	}
 
 	control(action: AgentControlAction): Promise<AgentControlResult> {
@@ -89,7 +83,7 @@ class DialogContextHarness {
 	closed = 0;
 	renderRequests = 0;
 	readonly controller = new AbortController();
-	readonly tui = { terminal: { columns: 64, rows: 28 } } as unknown as TUI;
+	readonly tui = new TestTui(28, 64);
 	private readonly activeTheme: Theme;
 	private readonly keybindings: KeybindingsManager;
 
@@ -186,7 +180,7 @@ describe("Agent Command Dialog", () => {
 				colors.push({ color, text });
 				return text;
 			},
-		} as unknown as Theme;
+		} as Theme;
 		const { component } = setup([row("reviewer", "running")], {}, recordingTheme);
 		component.render(64);
 		expect(colors).toContainEqual({ color: "accent", text: "● 12s" });

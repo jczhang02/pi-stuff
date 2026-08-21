@@ -109,10 +109,9 @@ test("showGoalManager preserves non-TUI status behavior", async () => {
 });
 
 test("Goal Command Dialog keeps title, selection, and Escape reachable at very low height", async () => {
-	const state = runtime();
-	state.settings.experimental.goals = true;
 	const mock = createMockPi();
-	(state as unknown as { pi: unknown }).pi = mock.pi;
+	const state = { ...runtime(), pi: mock.pi };
+	state.settings.experimental.goals = true;
 	let rendered = "";
 	const context = createMockContext({
 		mode: "tui",

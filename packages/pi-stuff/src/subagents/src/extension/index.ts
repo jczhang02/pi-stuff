@@ -177,6 +177,11 @@ interface RootWatcherInput {
 	readonly state: SubagentState;
 }
 
+export type ExtensionRootRoster = Pick<
+	AgentRoster,
+	"createFooterTail" | "dispose" | "setContext" | "setFooterHosted" | "setSuppressed"
+>;
+
 /** Narrow seams keep the production root auditable and the host contract testable. */
 export interface ExtensionRootDependencies {
 	readonly childBaseExtensionPath?: string;
@@ -188,7 +193,7 @@ export interface ExtensionRootDependencies {
 	readonly prepareGovernorCompatibility: (
 		input: PrepareSessionGovernorCompatibilityInput,
 	) => Promise<SessionGovernorCompatibilityResult>;
-	readonly createRoster: (current: CurrentAgents, options: AgentRosterOptions) => AgentRoster;
+	readonly createRoster: (current: CurrentAgents, options: AgentRosterOptions) => ExtensionRootRoster;
 	readonly createSupervisor: (pi: ExtensionAPI, state: SubagentState) => RootSupervisor;
 	readonly createTracker: (pi: ExtensionAPI, state: SubagentState, onRefresh: () => void) => RootTracker;
 	readonly createWatcher: (input: RootWatcherInput) => RootWatcher;

@@ -9,6 +9,7 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 import { withAgentWorkOrigin } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversation-ui/index.js";
+import type { SuiteAgentMessageHost } from "../../conversation-ui/suite-agent-message.js";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import type { McpExtensionState } from "./state.ts";
 import { isServerDisabled, type McpConfig, type PromptMetadata } from "./types.ts";
@@ -207,7 +208,7 @@ export function formatPromptResult(result: GetPromptResult): string {
 
 /** Deliver a slash-command prompt while preserving its explicit user origin. */
 export function dispatchMcpPromptToAgent(
-  pi: ExtensionAPI,
+  pi: SuiteAgentMessageHost,
   text: string,
   isCurrent: () => boolean = () => true,
 ): Promise<boolean> {
@@ -229,7 +230,7 @@ export function dispatchMcpPromptToAgent(
 }
 
 /** Render generated MCP prompt content with Pi's public native user-message component. */
-export function registerMcpPromptMessageRenderer(pi: ExtensionAPI): void {
+export function registerMcpPromptMessageRenderer(pi: Pick<ExtensionAPI, "registerMessageRenderer">): void {
   pi.registerMessageRenderer(MCP_USER_PROMPT_MESSAGE_TYPE, (message, { outputPad }) => {
     const content = typeof message.content === "string" ? message.content : formatMessageContent(message.content);
     return new UserMessageComponent(content, undefined, outputPad);

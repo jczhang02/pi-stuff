@@ -89,7 +89,7 @@ function lastUserText(context: Context): string {
 
 function lastOwnedGoalPrompt(context: Context): string | undefined {
 	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
-		const message = context.messages[index] as unknown as {
+		const message = context.messages[index] as {
 			role?: unknown;
 			customType?: unknown;
 			content?: unknown;

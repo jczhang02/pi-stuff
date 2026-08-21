@@ -27,6 +27,10 @@ export type ProviderPayloadModel = {
 type ChildMessage = ContextEvent["messages"][number];
 type JsonRecord = Record<string, unknown>;
 
+function jsonRecord(value: object): JsonRecord {
+	return Object.fromEntries(Object.entries(value));
+}
+
 interface CompletedToolBatch {
 	readonly assistantIndex: number;
 	readonly callIds: string[];
@@ -134,7 +138,7 @@ function childMessageTargetTokens(
 }
 
 function promptVisibleMessage(message: ChildMessage): JsonRecord {
-	const source = message as unknown as JsonRecord;
+	const source = jsonRecord(message);
 	const projected: JsonRecord = { role: source.role };
 	for (const key of [
 		"content",
@@ -203,7 +207,7 @@ function textFromContent(content: unknown): string {
 	const texts: string[] = [];
 	for (const part of content) {
 		if (!part || !isRuntimeObject(part)) continue;
-		const record = part as JsonRecord;
+		const record = jsonRecord(part);
 		if (record.type === "text" && isRuntimeString(record.text)) {
 			texts.push(record.text);
 			continue;
@@ -223,7 +227,7 @@ function textFromContent(content: unknown): string {
 }
 
 function projectedToolResult(message: ChildMessage, maxBytes: number): ChildMessage {
-	const source = message as unknown as JsonRecord;
+	const source = jsonRecord(message);
 	const fullText = textFromContent(source.content);
 	let serializedContentBytes = Number.POSITIVE_INFINITY;
 	try {
@@ -241,17 +245,17 @@ function projectedToolResult(message: ChildMessage, maxBytes: number): ChildMess
 	const bodyBudget = Math.max(0, maxBytes - Buffer.byteLength(header, "utf8"));
 	const text = `${header}${boundedHeadTail(fullText, bodyBudget, marker)}`;
 	return {
-		...(message as unknown as JsonRecord),
+		...jsonRecord(message),
 		content: [{ type: "text", text }],
-	} as unknown as ChildMessage;
+	} as ChildMessage;
 }
 
 function toolCallIds(message: ChildMessage): string[] {
-	const source = message as unknown as JsonRecord;
+	const source = jsonRecord(message);
 	if (source.role !== "assistant" || !Array.isArray(source.content)) return [];
 	return source.content.flatMap((part) => {
 		if (!part || !isRuntimeObject(part)) return [];
-		const block = part as JsonRecord;
+		const block = jsonRecord(part);
 		return block.type === "toolCall" && isRuntimeString(block.id) ? [block.id] : [];
 	});
 }
@@ -262,7 +266,8 @@ function latestCompletedToolBatch(messages: readonly ChildMessage[]): CompletedT
 		if (callIds.length === 0 || new Set(callIds).size !== callIds.length) continue;
 		const resultById = new Map<string, number>();
 		for (let index = assistantIndex + 1; index < messages.length; index += 1) {
-			const record = messages[index] as unknown as JsonRecord | undefined;
+			const message = messages[index];
+			const record = message ? jsonRecord(message) : undefined;
 			if (record?.role === "assistant") break;
 			if (record?.role !== "toolResult" || !isRuntimeString(record.toolCallId)) continue;
 			if (!callIds.includes(record.toolCallId) || resultById.has(record.toolCallId)) continue;
@@ -280,13 +285,13 @@ function latestCompletedToolBatch(messages: readonly ChildMessage[]): CompletedT
 }
 
 function messageText(message: ChildMessage): string {
-	const content = (message as unknown as JsonRecord).content;
+	const content = jsonRecord(message).content;
 	if (isRuntimeString(content)) return content;
 	if (!Array.isArray(content)) return "";
 	return content
 		.flatMap((part) => {
 			if (!part || !isRuntimeObject(part)) return [];
-			const text = (part as JsonRecord).text;
+			const text = jsonRecord(part).text;
 			return isRuntimeString(text) ? [text] : [];
 		})
 		.join("\n");
@@ -310,7 +315,8 @@ function delegatedTaskIndex(messages: readonly ChildMessage[]): number | undefin
 	const expected = process.env[SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV]?.trim();
 	if (!expected || !TASK_FINGERPRINT.test(expected)) return undefined;
 	for (let index = messages.length - 1; index >= 0; index -= 1) {
-		const record = messages[index] as unknown as JsonRecord | undefined;
+		const message = messages[index];
+		const record = message ? jsonRecord(message) : undefined;
 		if (record?.role !== "user") continue;
 		if (
 			taskCandidates(messageText(messages[index] as ChildMessage)).some(
@@ -327,21 +333,23 @@ export function childContextHasOwnContinuation(messages: readonly ChildMessage[]
 	const taskIndex = delegatedTaskIndex(messages);
 	if (taskIndex === undefined) return false;
 	return messages.slice(taskIndex + 1).some((message) => {
-		const role = (message as unknown as JsonRecord).role;
+		const role = jsonRecord(message).role;
 		return role === "assistant" || role === "toolResult";
 	});
 }
 
 function latestUserIndex(messages: readonly ChildMessage[]): number | undefined {
 	for (let index = messages.length - 1; index >= 0; index -= 1) {
-		if ((messages[index] as unknown as JsonRecord | undefined)?.role === "user") return index;
+		const message = messages[index];
+		if (message && jsonRecord(message).role === "user") return index;
 	}
 	return undefined;
 }
 
 function latestSteeringIndex(messages: readonly ChildMessage[]): number | undefined {
 	for (let index = messages.length - 1; index >= 0; index -= 1) {
-		const record = messages[index] as unknown as JsonRecord | undefined;
+		const message = messages[index];
+		const record = message ? jsonRecord(message) : undefined;
 		if (
 			record?.role === "user" &&
 			messageText(messages[index] as ChildMessage).includes("<pi-stuff-steer request=")
@@ -355,7 +363,7 @@ function latestSteeringIndex(messages: readonly ChildMessage[]): number | undefi
 function toolProtocolIsValid(messages: readonly ChildMessage[]): boolean {
 	let expected: Set<string> | undefined;
 	for (const message of messages) {
-		const record = message as unknown as JsonRecord;
+		const record = jsonRecord(message);
 		if (expected) {
 			if (
 				record.role !== "toolResult" ||
@@ -386,7 +394,8 @@ function emergencyProjection(messages: readonly ChildMessage[]): ChildMessage[] 
 		// Never guess which inherited user message owns the child task. Retain all
 		// authority and let the final gate fail honestly if it is irreducible.
 		for (let index = 0; index < messages.length; index += 1) {
-			if ((messages[index] as unknown as JsonRecord | undefined)?.role === "user") authorityIndices.add(index);
+			const message = messages[index];
+			if (message && jsonRecord(message).role === "user") authorityIndices.add(index);
 		}
 	} else {
 		authorityIndices.add(taskIndex);
@@ -444,7 +453,7 @@ function withProjectedToolResults(
 	maxBytes: number,
 ): ChildMessage[] {
 	return messages.map((message, index) => {
-		const record = message as unknown as JsonRecord;
+		const record = jsonRecord(message);
 		return record.role === "toolResult" && predicate(record, index)
 			? projectedToolResult(message, maxBytes)
 			: message;

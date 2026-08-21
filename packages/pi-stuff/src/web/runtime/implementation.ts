@@ -27,6 +27,11 @@ import {
 	type StoredSearchData,
 } from "./storage.ts";
 import { activityMonitor, type ActivityEntry } from "./activity.ts";
+
+export type PiWebAccessHost = Pick<
+	ExtensionAPI,
+	"appendEntry" | "exec" | "on" | "registerCommand" | "registerShortcut" | "registerTool" | "sendMessage"
+>;
 import { startCuratorServer, type CuratorSearchEntry, type CuratorServerHandle, type IndexedCuratorSearchEntry } from "./curator-server.ts";
 import {
 	buildDeterministicSummary,
@@ -649,7 +654,7 @@ function closeCurator(callId?: string): void {
 	activeCurators.clear();
 }
 
-async function openInBrowser(pi: ExtensionAPI, url: string): Promise<void> {
+async function openInBrowser(pi: Pick<ExtensionAPI, "exec">, url: string): Promise<void> {
 	const plat = platform();
 	const result = plat === "darwin"
 		? await pi.exec("open", [url])
@@ -856,7 +861,7 @@ function handleSessionChange(ctx: ExtensionContext): void {
 	}
 }
 
-function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void {
+function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): void {
 	const initConfig = loadConfigForExtensionInit();
 	const toolNames = resolveToolNames(initConfig);
 	const storedContentSources = initConfig.webSearch?.enabled === false
@@ -3310,7 +3315,7 @@ function installPiWebAccess(pi: ExtensionAPI, options: PiWebAccessOptions): void
 }
 
 export function createPiWebAccess(options: PiWebAccessOptions = {}) {
-	return function piWebAccess(pi: ExtensionAPI): void {
+	return function piWebAccess(pi: PiWebAccessHost): void {
 		installPiWebAccess(pi, options);
 	};
 }

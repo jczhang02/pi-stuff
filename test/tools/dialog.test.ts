@@ -1,19 +1,19 @@
 import { expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
-import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { createToolDialogView } from "../../packages/pi-stuff/src/tool-display/tool-dialog.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
 
 function contextHarness(rows = 28, activeTheme = theme, keybindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
 	let closed = 0;
 	let renders = 0;
-	const terminal = { rows };
+	const terminal = new TestTui(rows);
 	return {
 		closed: () => closed,
 		context: {
@@ -22,8 +22,8 @@ function contextHarness(rows = 28, activeTheme = theme, keybindings = new Keybin
 			requestRender: () => renders++,
 			signal: new AbortController().signal,
 			theme: activeTheme,
-			tui: { terminal },
-		} as unknown as CommandDialogViewContext<void>,
+			tui: terminal,
+		},
 		renders: () => renders,
 		terminal,
 	};
@@ -301,7 +301,7 @@ test("/tools colors mixed groups amber and no-success failures red", () => {
 			const code = colorCodes[color];
 			return code === undefined ? value : `\u001b[${String(code)}m${value}\u001b[0m`;
 		},
-	} as unknown as Theme;
+	} as Theme;
 	const mixed = createToolDialogView(groupedRuntime(["a.ts", "missing.ts"], 1)).create(
 		contextHarness(28, semanticTheme).context,
 	);
@@ -337,7 +337,7 @@ test("/tools keeps list and detail visible on wide terminals", () => {
 	const focusTheme = {
 		bold: (value: string) => value,
 		fg: (color: string, value: string) => (color === "accent" ? `\u001b[35m${value}\u001b[0m` : value),
-	} as unknown as Theme;
+	} as Theme;
 	const harness = contextHarness(32, focusTheme);
 	const component = createToolDialogView(groupedRuntime(["a.ts", "b.ts"], -1, true)).create(harness.context);
 	let lines = component.render(100);

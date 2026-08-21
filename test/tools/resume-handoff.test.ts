@@ -17,6 +17,8 @@ import piStuffTools, {
 	createSuiteToolRegistrationTracker,
 	registerSuiteOwnedTool,
 } from "../../packages/pi-stuff/src/tool-display/index.js";
+import { createExtensionApi } from "../fixtures/extension-api.js";
+import { createExtensionContext } from "../fixtures/extension-context.js";
 
 type EventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => Promise<unknown> | unknown;
 const HOST_BUILTINS = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
@@ -53,22 +55,33 @@ function apiHarness(
 	const handlers = new Map<string, EventHandler[]>();
 	const tools = new Map<string, ToolDefinition>();
 	let activeTools = [...initialActiveTools];
-	const api = {
+	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
+	const on = ((type: string, handler: EventHandler) => {
+		handlers.set(type, [...(handlers.get(type) ?? []), handler]);
+	}) as ExtensionAPI["on"];
+	const api = createExtensionApi({
 		events: eventBus.view(),
 		getActiveTools: () => [...activeTools],
-		getAllTools: () => [...tools.values()],
-		on: (type: string, handler: EventHandler) => {
-			handlers.set(type, [...(handlers.get(type) ?? []), handler]);
-		},
+		getAllTools: () =>
+			[...tools.values()].map((tool) => ({
+				description: tool.description,
+				name: tool.name,
+				parameters: tool.parameters,
+				...(tool.promptGuidelines === undefined ? {} : { promptGuidelines: tool.promptGuidelines }),
+				sourceInfo: { origin: "top-level", path: "<test>", scope: "temporary", source: "test" },
+			})),
+		on,
 		registerCommand: () => {},
-		registerTool: (tool: ToolDefinition) => {
-			tools.set(tool.name, tool);
-			if (!HOST_BUILTINS.has(tool.name) && !activeTools.includes(tool.name)) activeTools.push(tool.name);
+		registerTool: (tool) => {
+			// SAFETY: this test registry erases only generic renderer state and retains the original Tool object.
+			const stored = tool as ToolDefinition;
+			tools.set(stored.name, stored);
+			if (!HOST_BUILTINS.has(stored.name) && !activeTools.includes(stored.name)) activeTools.push(stored.name);
 		},
 		setActiveTools: (names: string[]) => {
 			activeTools = [...names];
 		},
-	} as unknown as ExtensionAPI;
+	});
 	return {
 		api,
 		tools,
@@ -84,11 +97,11 @@ function apiHarness(
 }
 
 function context(cwd: string, branch: readonly SessionEntry[] = []): ExtensionContext {
-	return {
+	return createExtensionContext({
 		cwd,
 		isProjectTrusted: () => true,
-		sessionManager: { getBranch: () => branch },
-	} as unknown as ExtensionContext;
+		sessionManager: { getBranch: () => [...branch] },
+	});
 }
 
 function historicalToolBranch(
@@ -187,7 +200,7 @@ test("cold Session binds only declared Suite renderers present in history", asyn
 				return branch;
 			},
 		},
-	} as unknown as ExtensionContext;
+	} as ExtensionContext;
 
 	await host.emit("session_start", { reason: "startup", type: "session_start" }, targetContext);
 

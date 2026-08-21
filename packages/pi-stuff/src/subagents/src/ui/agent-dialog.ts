@@ -42,7 +42,7 @@ import type {
 	AgentSessionSnapshot,
 	AgentStatus,
 	AgentTranscriptTarget,
-	CurrentAgents,
+	CurrentAgentsView,
 } from "../session/current-agents.js";
 import { boundedTerminalLine, isTaskOnlyAgentText } from "../shared/display-description.js";
 import { fitAgentDescription } from "./agent-roster.js";
@@ -111,7 +111,10 @@ interface Transcript {
 }
 
 /** Create the normal-priority, non-overlay view used by `/agents` and roster Enter. */
-export function createAgentDialogView(current: CurrentAgents, options: AgentDialogOptions): CommandDialogView<void> {
+export function createAgentDialogView(
+	current: CurrentAgentsView,
+	options: AgentDialogOptions,
+): CommandDialogView<void> {
 	const maxTranscriptChars = normalizeTranscriptLimit(options.maxTranscriptChars);
 	return {
 		priority: "normal",
@@ -128,7 +131,7 @@ export function createAgentDialogView(current: CurrentAgents, options: AgentDial
 export function openAgentDialog(
 	ctx: ExtensionContext,
 	coordinator: CommandDialogCoordinator,
-	current: CurrentAgents,
+	current: CurrentAgentsView,
 	options: AgentDialogOptions,
 ): Promise<void> {
 	return coordinator.show(ctx, createAgentDialogView(current, options)).then(() => undefined);
@@ -142,7 +145,7 @@ interface NormalizedOptions {
 
 class AgentDialogComponent implements CommandDialogComponent {
 	private readonly context: CommandDialogViewContext<void>;
-	private readonly current: CurrentAgents;
+	private readonly current: CurrentAgentsView;
 	private disposed = false;
 	private feedback: Feedback | undefined;
 	private input = "";
@@ -167,7 +170,7 @@ class AgentDialogComponent implements CommandDialogComponent {
 	private readonly options: NormalizedOptions;
 	private readonly unsubscribe: () => void;
 
-	constructor(current: CurrentAgents, context: CommandDialogViewContext<void>, options: NormalizedOptions) {
+	constructor(current: CurrentAgentsView, context: CommandDialogViewContext<void>, options: NormalizedOptions) {
 		this.context = context;
 		this.current = current;
 		this.markdown = createMarkdownRenderer(context.theme);

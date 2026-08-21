@@ -3,7 +3,6 @@ import {
 	type Component,
 	decodeKittyPrintable,
 	Key,
-	type KeybindingsManager,
 	Loader,
 	type Markdown,
 	matchesKey,
@@ -13,6 +12,7 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import {
+	type CommandDialogKeybindings,
 	type CommandDialogViewContext,
 	commandDialogNavigation,
 	commandDialogPrimaryKey,
@@ -190,7 +190,7 @@ export class BtwDialogController implements Component {
 	private readonly tui: TUI;
 	private readonly loader: Loader;
 	private readonly markdown: Markdown;
-	private readonly keybindings: KeybindingsManager;
+	private readonly keybindings: CommandDialogKeybindings;
 	private readonly promotionController = new AbortController();
 	private readonly closeDialog: () => void;
 	private readonly clearEarlier: (currentId: string | undefined) => void;
@@ -210,7 +210,7 @@ export class BtwDialogController implements Component {
 	private disposed = false;
 	private showKeyHelp = false;
 
-	constructor(theme: Theme, tui: TUI, keybindings: KeybindingsManager, options: BtwDialogOptions) {
+	constructor(theme: Theme, tui: TUI, keybindings: CommandDialogKeybindings, options: BtwDialogOptions) {
 		this.theme = theme;
 		this.tui = tui;
 		this.keybindings = keybindings;

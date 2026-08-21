@@ -131,7 +131,7 @@ function primeBlockerAudit(goal: ActiveGoal, reason: string) {
 function requireGoalTool(mock: ReturnType<typeof createMockPi>, name: string) {
 	const tool = mock.tools.find((candidate) => candidate.name === name);
 	assert.ok(tool, `expected ${name} to be registered`);
-	return tool as unknown as GoalTool;
+	return tool as GoalTool;
 }
 
 function assistantUsageEntry(totalTokens: number) {

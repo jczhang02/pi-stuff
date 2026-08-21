@@ -16,12 +16,14 @@ import { registerTaskTools } from "./todo.js";
 import { TodoOverlay } from "./todo-overlay.js";
 
 export const TODO_TOGGLE_KEY = Key.ctrlShift("t");
+export type TodoHost = import("../tool-display/contract.js").SuiteToolRegistrationHost &
+	Pick<ExtensionAPI, "registerShortcut">;
 
 function isStaleContext(error: unknown): boolean {
 	return /stale after session replacement/.test(String(error));
 }
 
-export default function piStuffTodo(pi: ExtensionAPI): void {
+export default function piStuffTodo(pi: TodoHost): void {
 	const overlay = new TodoOverlay();
 	const toolUi = getToolUiRuntime(pi);
 	getCommandDialogCoordinator(pi).registerChrome("todo", {

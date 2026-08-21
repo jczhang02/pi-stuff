@@ -227,10 +227,7 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 	let softNudged = false;
 	const sendUserMessage = (pi as { sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => unknown })
 		.sendUserMessage;
-	const onRuntimeEvent = pi.on as unknown as (
-		event: string,
-		handler: (event: { toolName?: string }) => unknown,
-	) => void;
+	const onRuntimeEvent = pi.on as (event: string, handler: (event: { toolName?: string }) => unknown) => void;
 	onRuntimeEvent("tool_call", (event) => {
 		const toolName = isRuntimeString(event.toolName) ? event.toolName : "tool";
 		toolCount++;
@@ -439,7 +436,7 @@ export function registerSteeringInbox(
 		return undefined;
 	};
 
-	const onRuntimeEvent = pi.on as unknown as (event: string, handler: (event: unknown) => unknown) => void;
+	const onRuntimeEvent = pi.on as (event: string, handler: (event: unknown) => unknown) => void;
 	// Register input before the watcher so an accepted extension input cannot race request dispatch.
 	onRuntimeEvent("input", onInput);
 	onRuntimeEvent("session_start", activate);
@@ -539,7 +536,7 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 					terminate: true,
 				};
 			},
-		} as unknown as ToolDefinition<TSchema, Record<string, unknown>>;
+		} as ToolDefinition<TSchema, Record<string, unknown>>;
 		registerSuiteOwnedTool(pi, structuredOutputTool, {
 			activity: {
 				categories: ["record-result"],

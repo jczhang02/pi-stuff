@@ -18,7 +18,7 @@ function fakePi() {
 			current.push(handler);
 			handlers.set(name, current);
 		},
-	} as unknown as ExtensionAPI;
+	} as ExtensionAPI;
 	return { handlers, pi };
 }
 

@@ -15,7 +15,7 @@ interface ResumeToolHandoffStore {
 const RESUME_TOOL_HANDOFF = Symbol.for("@jczhang02/pi-stuff-tools/resume-tool-handoff/v3");
 
 function handoffStore(): ResumeToolHandoffStore {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: ResumeToolHandoffStore | undefined;
 	};
 	root[RESUME_TOOL_HANDOFF] ??= { pending: undefined };

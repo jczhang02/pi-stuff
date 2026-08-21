@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	DiagnosticNoticeController,
@@ -13,11 +12,10 @@ import {
 } from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
 import { createDiagnosticsView } from "../../packages/pi-stuff/src/conversation-ui/diagnostics-dialog.js";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { createExtensionUi, testTheme } from "../fixtures/extension-context.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
-const theme = {
-	bold: (value: string) => value,
-	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+const theme = testTheme;
 
 afterEach(() => resetDiagnosticProcessState());
 
@@ -36,6 +34,7 @@ function report(channel: DiagnosticChannel, index = 1, visibility: "notice" | "s
 function dialogHarness(rows = 24, keybindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
 	let closes = 0;
 	let renders = 0;
+	const tui = new TestTui(rows);
 	return {
 		closed: () => closes,
 		context: {
@@ -48,8 +47,8 @@ function dialogHarness(rows = 24, keybindings = new KeybindingsManager(TUI_KEYBI
 			},
 			signal: new AbortController().signal,
 			theme,
-			tui: { terminal: { rows } },
-		} as unknown as CommandDialogViewContext<void>,
+			tui,
+		} satisfies CommandDialogViewContext<void>,
 		renders: () => renders,
 	};
 }
@@ -170,10 +169,10 @@ describe("diagnostic notice row", () => {
 	test("registers only actionable notices above the editor and restores after suppression", () => {
 		const channel = new DiagnosticChannel();
 		const calls: unknown[][] = [];
-		const ui = {
+		const ui = createExtensionUi({
 			setWidget: (...args: unknown[]) => calls.push(args),
 			theme,
-		} as unknown as ExtensionUIContext;
+		});
 		const controller = new DiagnosticNoticeController(ui, channel);
 		report(channel, 1, "silent");
 		expect(calls).toHaveLength(0);

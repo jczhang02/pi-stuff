@@ -105,6 +105,8 @@ export interface CurrentAgentsOptions {
 	readonly now?: () => number;
 }
 
+export type CurrentAgentsView = Pick<CurrentAgents, "control" | "snapshot" | "subscribe">;
+
 type CurrentAgentsState = Pick<
 	SubagentState,
 	"currentSessionId" | "asyncJobs" | "recentAgentJobs" | "foregroundControls" | "foregroundRuns"

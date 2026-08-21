@@ -1,6 +1,7 @@
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
+import type { SuiteAgentMessageHost } from "../conversation-ui/suite-agent-message.js";
 import { isRuntimeObject } from "../shared/runtime-type.js";
 import {
 	registerSuiteToolEnvelope,
@@ -8,6 +9,7 @@ import {
 	type SuiteToolDefinitionRegistry,
 	type SuiteToolEnvelopeOperation,
 	type SuiteToolPresentation,
+	type SuiteToolRegistrationHost,
 	type SuiteToolSurfaceController,
 	sendSuiteAgentMessage,
 	withAgentWorkOrigin,
@@ -62,6 +64,10 @@ export interface PiStuffCodeModeOptions {
 	readonly registry: SuiteToolDefinitionRegistry;
 	readonly surface: SuiteToolSurfaceController;
 }
+
+export type CodeModeHost = SuiteToolRegistrationHost &
+	SuiteAgentMessageHost &
+	Pick<ExtensionAPI, "appendEntry" | "registerCommand">;
 
 export interface CodeModeSearchDetails {
 	readonly paths: readonly string[];
@@ -196,7 +202,7 @@ export async function compensateCodeModeExecution(
 }
 
 async function deliverCodeModeDecision(
-	pi: ExtensionAPI,
+	pi: SuiteAgentMessageHost,
 	action: "approved" | "rejected",
 	executionId: string,
 	result?: AgentToolResult<PiStuffCodeModeDetails>,
@@ -223,14 +229,14 @@ async function deliverCodeModeDecision(
 }
 
 /** Register before context managers so they receive the provider-visible result, not the TUI projection. */
-export function registerCodeModeContextProjection(pi: ExtensionAPI): void {
+export function registerCodeModeContextProjection(pi: Pick<ExtensionAPI, "on">): void {
 	pi.on("context", (event) => {
 		const messages = rehydrateCodeModeMessages(event.messages);
 		return messages ? { messages } : undefined;
 	});
 }
 
-export default function piStuffCodeMode(pi: ExtensionAPI, options: PiStuffCodeModeOptions): void {
+export default function piStuffCodeMode(pi: CodeModeHost, options: PiStuffCodeModeOptions): void {
 	const connector = new SuiteCodeModeConnector(options.registry);
 	const ledger = new CodeModeSessionLedger(pi);
 	const runtime = new CodeModeRuntime(connector, new V8CodeModeExecutor(), ledger);

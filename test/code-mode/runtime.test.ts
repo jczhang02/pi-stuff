@@ -108,7 +108,7 @@ function sessionLedgerFixture(): {
 				getEntries: () => branch,
 				getSessionId: () => "runtime-recovery-session",
 			},
-		} as unknown as ExtensionContext,
+		} as ExtensionContext,
 		ledger: new CodeModeSessionLedger({
 			appendEntry(customType, data) {
 				branch.push({ customType, data, type: "custom" });
@@ -228,7 +228,7 @@ test("result adaptation unwraps structured/text JSON and reports an actionable f
 		unwrapSuiteToolResult("fixture", {
 			content: [{ type: "text", text: 7 }],
 			details: {},
-		} as unknown as AgentToolResult<unknown>),
+		}),
 	).toThrow(
 		'Code Mode Tool "fixture" returned an invalid result at result.content[0].text: expected a string; received number; retry safe: false',
 	);

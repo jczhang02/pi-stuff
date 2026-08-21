@@ -11,7 +11,7 @@ const theme = {
 	italic: (text: string) => text,
 	underline: (text: string) => text,
 	strikethrough: (text: string) => text,
-} as unknown as Theme;
+} as Theme;
 
 function exchange(index: number): BtwExchange {
 	return {

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
 	ExtensionAPI,
+	ExtensionCommandContext,
 	ExtensionContext,
 	TerminalInputHandler,
 	Theme,
@@ -13,49 +14,55 @@ import type { TSchema } from "typebox";
 import piStuffWork from "../../packages/pi-stuff/src/background-work/index.js";
 import type { BackgroundWorkRuntime } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
 import { SELF_RENDERED_TRANSCRIPT_PADDING } from "../../packages/pi-stuff/src/conversation-ui/transcript.js";
+import { createExtensionApi } from "../fixtures/extension-api.js";
+import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 
 type Handler = (event: unknown, context: ExtensionContext) => unknown | Promise<unknown>;
 
 class HostHarness {
 	readonly activeTools = new Set<string>(["bash"]);
-	readonly commands = new Map<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }>();
+	readonly commands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]>();
 	readonly handlers = new Map<string, Handler[]>();
 	readonly messages: Array<{ readonly message: unknown; readonly options: unknown }> = [];
 	readonly renderers = new Map<string, (message: unknown, options: unknown, theme: Theme) => unknown>();
 	readonly tools = new Map<string, ToolDefinition<TSchema, unknown>>();
 	terminalInput: TerminalInputHandler | undefined;
 
-	readonly api = {
-		events: { on: () => () => {} },
-		getActiveTools: () => [...this.activeTools],
-		on: (event: string, handler: Handler) => {
+	readonly api: ExtensionAPI;
+
+	constructor() {
+		// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
+		const on = ((event: string, handler: Handler) => {
 			const handlers = this.handlers.get(event) ?? [];
 			handlers.push(handler);
 			this.handlers.set(event, handlers);
-		},
-		registerCommand: (
-			name: string,
-			command: { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void },
-		) => {
-			this.commands.set(name, command);
-		},
-		registerMessageRenderer: (
-			name: string,
-			renderer: (message: unknown, options: unknown, theme: Theme) => unknown,
-		) => this.renderers.set(name, renderer),
-		registerTool: (tool: ToolDefinition<TSchema, unknown>) => {
-			this.tools.set(tool.name, tool);
-			this.activeTools.add(tool.name);
-		},
-		setActiveTools: (names: string[]) => {
-			this.activeTools.clear();
-			for (const name of names) this.activeTools.add(name);
-		},
-		sendMessage: (message: unknown, options: unknown) => this.messages.push({ message, options }),
-	} as unknown as ExtensionAPI;
+		}) as ExtensionAPI["on"];
+		this.api = createExtensionApi({
+			getActiveTools: () => [...this.activeTools],
+			on,
+			registerCommand: (name, command) => {
+				this.commands.set(name, command);
+			},
+			registerMessageRenderer: (name, renderer) => {
+				// SAFETY: the harness stores the renderer without changing its message, options, theme, or result.
+				this.renderers.set(name, renderer as (message: unknown, options: unknown, theme: Theme) => unknown);
+			},
+			registerTool: (tool) => {
+				// SAFETY: this test registry erases only generic renderer state and retains the original Tool object.
+				const stored = tool as ToolDefinition<TSchema, unknown>;
+				this.tools.set(stored.name, stored);
+				this.activeTools.add(stored.name);
+			},
+			setActiveTools: (names) => {
+				this.activeTools.clear();
+				for (const name of names) this.activeTools.add(name);
+			},
+			sendMessage: (message, options) => this.messages.push({ message, options }),
+		});
+	}
 
-	context(cwd: string): ExtensionContext {
-		return {
+	context(cwd: string): ExtensionCommandContext {
+		return createExtensionCommandContext({
 			cwd,
 			hasUI: true,
 			isProjectTrusted: () => true,
@@ -74,7 +81,7 @@ class HostHarness {
 					};
 				},
 			},
-		} as unknown as ExtensionContext;
+		});
 	}
 
 	async emit(event: string, context: ExtensionContext): Promise<void> {
@@ -124,7 +131,7 @@ describe("Pi Stuff Work host composition", () => {
 					if (value === "•") markerColors.push(color);
 					return value;
 				},
-			} as unknown as Theme,
+			} as Theme,
 		) as { render(width: number): string[] } | undefined;
 		expect(component?.render(80).map((line) => line.trimEnd())).toEqual([
 			" • Background Shell finished",
@@ -223,7 +230,7 @@ describe("Pi Stuff Work host composition", () => {
 						record.shutdownCalls += 1;
 						if (record === created[0]) await new Promise<void>((resolve) => (releaseShutdown = resolve));
 					},
-				} as unknown as BackgroundWorkRuntime;
+				} as BackgroundWorkRuntime;
 			},
 		});
 		const ctx = host.context(root);
@@ -257,7 +264,7 @@ describe("Pi Stuff Work host composition", () => {
 						record.shutdownCalls += 1;
 						if (record === created[0]) await new Promise<void>((resolve) => (releaseShutdown = resolve));
 					},
-				} as unknown as BackgroundWorkRuntime;
+				} as BackgroundWorkRuntime;
 			},
 		});
 		const ctx = host.context(root);

@@ -213,7 +213,7 @@ realTest("the certified V8 host runs durable steps and saved snippets with binar
 			getEntries: () => branch,
 			getSessionId: () => "real-v8-ledger",
 		},
-	} as unknown as ExtensionContext;
+	} as ExtensionContext;
 	const ledger = new CodeModeSessionLedger({
 		appendEntry(customType, data) {
 			branch.push({ customType, data, type: "custom" });
@@ -286,7 +286,7 @@ realTest("the certified V8 host pauses an approval-required Tool and executes it
 			getEntries: () => branch,
 			getSessionId: () => "real-v8-approval",
 		},
-	} as unknown as ExtensionContext;
+	} as ExtensionContext;
 	const ledger = new CodeModeSessionLedger({
 		appendEntry(customType, data) {
 			branch.push({ customType, data, type: "custom" });

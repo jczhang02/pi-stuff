@@ -13,7 +13,7 @@ initTheme("dark", false);
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
 
 const MAGIC_STATUS = `## Magic Status
 
@@ -82,7 +82,7 @@ function harness(rows = 24) {
 		requestRender: () => undefined,
 		signal: new AbortController().signal,
 		theme,
-		tui: { terminal: { rows } } as unknown as TUI,
+		tui: { terminal: { rows } } as TUI,
 	} as CommandDialogViewContext<ContextDialogCommand>;
 	return { context, getCloseCalls: () => closeCalls, getClosed: () => closed };
 }

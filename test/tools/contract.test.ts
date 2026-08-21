@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import type { ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import {
+	createEventBus,
+	type EventBus,
+	type ExtensionAPI,
+	type Theme,
+	type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { ToolExecutionComponent } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js";
@@ -16,6 +22,7 @@ import {
 	registerSuiteToolEnvelopeCompanion,
 	type SuiteToolCodeModeContract,
 	type SuiteToolEnvelopeOperation,
+	type SuiteToolTrackerHost,
 	ToolUiRuntime,
 	type ToolUiTimerScheduler,
 } from "../../packages/pi-stuff/src/tool-display/contract.js";
@@ -29,7 +36,7 @@ type RenderContext = Parameters<NonNullable<ToolDefinition<typeof Params>["rende
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
 
 class ManualTimerScheduler implements ToolUiTimerScheduler {
 	private readonly callbacks = new Map<number, () => void>();
@@ -83,31 +90,41 @@ function eventBusView(bus: EventBusHarness): EventBusLike {
 	};
 }
 
-function apiHarness(events: Partial<ExtensionAPI["events"]> = {}): {
-	readonly api: ExtensionAPI;
+function apiHarness(events: EventBus = createEventBus()): {
+	readonly api: SuiteToolTrackerHost;
 	readonly handlers: Map<string, Array<(event: unknown, context: unknown) => unknown>>;
 	readonly tools: Map<string, ToolDefinition>;
 } {
 	let activeTools: string[] = [];
 	const handlers = new Map<string, Array<(event: unknown, context: unknown) => unknown>>();
 	const tools = new Map<string, ToolDefinition>();
-	const api = {
+	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
+	const on = ((event: string, handler: (event: unknown, context: unknown) => unknown) => {
+		const existing = handlers.get(event) ?? [];
+		existing.push(handler);
+		handlers.set(event, existing);
+	}) as ExtensionAPI["on"];
+	const api: SuiteToolTrackerHost = {
 		events,
 		getActiveTools: () => [...activeTools],
-		getAllTools: () => [...tools.values()],
-		on: (event: string, handler: (event: unknown, context: unknown) => unknown) => {
-			const existing = handlers.get(event) ?? [];
-			existing.push(handler);
-			handlers.set(event, existing);
-		},
-		registerTool: (tool: ToolDefinition) => {
-			tools.set(tool.name, tool);
+		getAllTools: () =>
+			[...tools.values()].map((tool) => ({
+				description: tool.description,
+				name: tool.name,
+				parameters: tool.parameters,
+				...(tool.promptGuidelines === undefined ? {} : { promptGuidelines: tool.promptGuidelines }),
+				sourceInfo: { origin: "top-level", path: "<test>", scope: "temporary", source: "test" },
+			})),
+		on,
+		registerTool: (tool) => {
+			// SAFETY: the test registry erases only generic renderer state and retains the original Tool object.
+			tools.set(tool.name, tool as ToolDefinition);
 			if (!activeTools.includes(tool.name)) activeTools.push(tool.name);
 		},
 		setActiveTools: (names: string[]) => {
 			activeTools = [...names];
 		},
-	} as unknown as ExtensionAPI;
+	};
 	return { api, handlers, tools };
 }
 
@@ -2493,7 +2510,7 @@ test("reload handoff crosses the fresh Extension event registry created by Pi", 
 
 test("reload accepts the previous active-name-only handoff during a live code upgrade", () => {
 	const key = Symbol.for("@jczhang02/pi-stuff-tools/reload-handoff.v1");
-	const host = globalThis as unknown as { [name: symbol]: readonly string[] | undefined };
+	const host = globalThis as { [name: symbol]: readonly string[] | undefined };
 	host[key] = ["read", "bash"];
 	const incoming = new ToolUiRuntime();
 	expect(incoming.hasReloadSnapshot()).toBe(true);

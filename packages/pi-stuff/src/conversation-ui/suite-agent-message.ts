@@ -9,10 +9,10 @@ const NATIVE_COMPACTION_PREFLIGHTS = Symbol.for("@jczhang02/pi-stuff-ui/native-c
 type SuiteAgentMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
 export type SuiteAgentMessageOptions = Parameters<ExtensionAPI["sendMessage"]>[1];
 
-type SuiteAgentMessageHost = Omit<ExtensionAPI, "events" | "sendMessage"> & {
+export interface SuiteAgentMessageHost {
 	readonly events?: ExtensionAPI["events"];
 	sendMessage(message: SuiteAgentMessage, options?: SuiteAgentMessageOptions): void | PromiseLike<void>;
-};
+}
 
 export interface SuiteAgentMessagePreparation {
 	prepare(activation: "automatic" | "direct-user", options: SuiteAgentMessageOptions): Promise<void>;
@@ -25,7 +25,7 @@ interface SuiteAgentMessageBroker {
 }
 
 function brokerRegistry(): WeakMap<object, SuiteAgentMessageBroker> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<object, SuiteAgentMessageBroker> | undefined;
 	};
 	root[SUITE_AGENT_MESSAGE_BROKERS] ??= new WeakMap();
@@ -98,7 +98,7 @@ export async function sendSuiteAgentMessage(
 }
 
 function nativeCompactionPreflights(): WeakMap<object, number> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<object, number> | undefined;
 	};
 	root[NATIVE_COMPACTION_PREFLIGHTS] ??= new WeakMap();

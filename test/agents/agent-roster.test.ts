@@ -6,13 +6,15 @@ import type {
 	AgentRow,
 	AgentSessionSnapshot,
 	AgentStatus,
-	CurrentAgents,
+	CurrentAgentsView,
 } from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
 import {
 	AgentRoster,
 	type AgentRosterContext,
 	type AgentRosterOptions,
 } from "../../packages/pi-stuff/src/subagents/src/ui/agent-roster.js";
+import { testTheme } from "../fixtures/extension-context.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
 type InputResult = { consume?: boolean; data?: string } | undefined;
 type InputHandler = (data: string) => InputResult;
@@ -24,14 +26,7 @@ interface RosterComponent {
 
 type RosterFactory = (tui: TUI, theme: Theme) => RosterComponent;
 
-const theme = {
-	bg: (_color: string, text: string) => text,
-	bold: (text: string) => text,
-	fg: (_color: string, text: string) => text,
-	italic: (text: string) => text,
-	strikethrough: (text: string) => text,
-	underline: (text: string) => text,
-} as unknown as Theme;
+const theme = testTheme;
 
 const editor = {
 	getText: () => "",
@@ -47,16 +42,22 @@ class CurrentAgentsHarness {
 	private value: AgentSessionSnapshot;
 
 	constructor(rows: readonly AgentRow[]) {
-		this.value = { rows } as AgentSessionSnapshot;
+		this.value = { revision: 1, rows, sessionId: "session" };
 	}
 
-	asCurrentAgents(): CurrentAgents {
-		return this as unknown as CurrentAgents;
+	asCurrentAgents(): CurrentAgentsView {
+		return this;
 	}
 
-	control(action: { key: string; type: string }): Promise<undefined> {
+	control(action: Parameters<CurrentAgentsView["control"]>[0]): ReturnType<CurrentAgentsView["control"]> {
 		this.actions.push(action);
-		return Promise.resolve(undefined);
+		return Promise.resolve({
+			acknowledged: true,
+			key: action.key,
+			message: "accepted",
+			status: null,
+			type: action.type,
+		});
 	}
 
 	snapshot(): AgentSessionSnapshot {
@@ -69,7 +70,7 @@ class CurrentAgentsHarness {
 	}
 
 	update(rows: readonly AgentRow[]): void {
-		this.value = { rows } as AgentSessionSnapshot;
+		this.value = { revision: this.value.revision + 1, rows, sessionId: "session" };
 		for (const listener of this.listeners) listener(this.value);
 	}
 }
@@ -84,14 +85,7 @@ class UiHarness {
 	private component: RosterComponent | undefined;
 	private inputHandler: InputHandler | undefined;
 
-	readonly tui = {
-		get focusedComponent() {
-			return undefined;
-		},
-		requestRender: () => {
-			this.renderRequests.push(this.renderRequests.length + 1);
-		},
-	} as unknown as TUI;
+	readonly tui = new TestTui();
 
 	constructor() {
 		Object.defineProperty(this.tui, "focusedComponent", {
@@ -101,7 +95,7 @@ class UiHarness {
 	}
 
 	context(): AgentRosterContext {
-		return { hasUI: true, ui: this as unknown as AgentRosterContext["ui"] };
+		return { hasUI: true, ui: this as AgentRosterContext["ui"] };
 	}
 
 	emit(data: string): InputResult {
@@ -152,15 +146,25 @@ function row(
 ): AgentRow {
 	const task = overrides.task ?? `work assigned to ${key}`;
 	return {
+		childIndex: 0,
 		description: overrides.description ?? task,
 		endedAt: overrides.endedAt ?? null,
+		error: null,
+		elapsedMs: overrides.elapsedMs ?? null,
 		key,
 		name: overrides.name ?? key,
+		nestedAgents: [],
+		nestedCount: 0,
+		partialResult: null,
+		runId: `run-${key}`,
+		savedOutputPath: null,
+		sessionFile: null,
+		sessionId: "session",
+		startedAt: overrides.startedAt ?? null,
 		status,
 		task,
-		...(overrides.elapsedMs === undefined ? {} : { elapsedMs: overrides.elapsedMs }),
-		...(overrides.startedAt === undefined ? {} : { startedAt: overrides.startedAt }),
-	} as AgentRow;
+		transcriptPath: null,
+	};
 }
 
 function setup(rows: readonly AgentRow[], options: Partial<AgentRosterOptions> = {}) {
@@ -196,17 +200,18 @@ function containsBidiFormatControl(value: string): boolean {
 
 class FakeClock {
 	now = 1_000;
-	private nextId = 1;
-	private readonly timers = new Map<number, { callback: () => void; dueAt: number }>();
+	private readonly timers = new Map<ReturnType<typeof setTimeout>, { callback: () => void; dueAt: number }>();
 
 	readonly clearTimeout = (timer: ReturnType<typeof setTimeout>): void => {
-		this.timers.delete(timer as unknown as number);
+		clearTimeout(timer);
+		this.timers.delete(timer);
 	};
 
 	readonly setTimeout = (callback: () => void, delayMs: number): ReturnType<typeof setTimeout> => {
-		const id = this.nextId++;
-		this.timers.set(id, { callback, dueAt: this.now + delayMs });
-		return id as unknown as ReturnType<typeof setTimeout>;
+		const timer = setTimeout(() => {}, 2_147_483_647);
+		timer.unref?.();
+		this.timers.set(timer, { callback, dueAt: this.now + delayMs });
+		return timer;
 	};
 
 	advance(ms: number): void {
@@ -216,6 +221,7 @@ class FakeClock {
 				.filter(([, timer]) => timer.dueAt <= this.now)
 				.sort((left, right) => left[1].dueAt - right[1].dueAt)[0];
 			if (!due) return;
+			clearTimeout(due[0]);
 			this.timers.delete(due[0]);
 			due[1].callback();
 		}
@@ -231,7 +237,7 @@ describe("AgentRoster", () => {
 				colors.push({ color, text });
 				return text;
 			},
-		} as unknown as Theme;
+		} as Theme;
 		const result = setup([row("research", "running", { elapsedMs: 5_000 })]);
 		result.roster.setFooterHosted(true);
 		const tail = result.roster.createFooterTail(result.ui.tui, recordingTheme);
@@ -458,7 +464,7 @@ describe("AgentRoster", () => {
 				colors.push({ color, text });
 				return text;
 			},
-		} as unknown as Theme;
+		} as Theme;
 		const result = setup([row("scout", "waiting_supervisor")]);
 		result.roster.setFooterHosted(true);
 		const tail = result.roster.createFooterTail(result.ui.tui, recordingTheme);
@@ -510,7 +516,7 @@ describe("AgentRoster", () => {
 					colors.push({ color, text });
 					return text;
 				},
-			} as unknown as Theme;
+			} as Theme;
 			const result = setup([row("worker", expected.status)]);
 			result.roster.setFooterHosted(true);
 			const tail = result.roster.createFooterTail(result.ui.tui, recordingTheme);

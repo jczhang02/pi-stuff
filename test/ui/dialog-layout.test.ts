@@ -16,7 +16,7 @@ import {
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
 function context(rows: number): Pick<CommandDialogViewContext<unknown>, "tui"> {
-	return { tui: { terminal: { rows } } } as unknown as Pick<CommandDialogViewContext<unknown>, "tui">;
+	return { tui: { terminal: { rows } } } as Pick<CommandDialogViewContext<unknown>, "tui">;
 }
 
 const sections = {
@@ -63,7 +63,7 @@ test("key help keeps configured compact-keyboard aliases visible when space allo
 	const theme = {
 		bold: (value: string) => value,
 		fg: (_color: string, value: string) => value,
-	} as unknown as Theme;
+	} as Theme;
 	const lines = renderCommandDialogKeyHelp(
 		{ keybindings, theme, tui: { terminal: { rows: 24 } } } as never,
 		64,
@@ -136,7 +136,7 @@ test("fixed fitting keeps the footer on the last row", () => {
 });
 
 test("split rendering stays one full-width surface with one internal divider", () => {
-	const theme = { fg: (_color: string, value: string) => value } as unknown as Theme;
+	const theme = { fg: (_color: string, value: string) => value } as Theme;
 	const lines = renderCommandDialogSplit(
 		theme,
 		100,

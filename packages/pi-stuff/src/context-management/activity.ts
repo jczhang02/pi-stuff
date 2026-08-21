@@ -283,7 +283,7 @@ export class ContextActivityRegistry {
 		return next;
 	}
 
-	render: EntryRenderer<ContextActivityData> = (entry, options, theme) => {
+	render: EntryRenderer<unknown> = (entry, options, theme) => {
 		const custom = asEntry(entry);
 		const data = custom ? normalizeActivityData(custom.data) : undefined;
 		if (!data) return undefined;

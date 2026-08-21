@@ -10,6 +10,7 @@ import {
 	type AutocompleteProvider,
 	type EditorComponent,
 	type EditorTheme,
+	type KeybindingsConfig,
 	KeybindingsManager,
 	type TUI,
 	TUI_KEYBINDINGS,
@@ -20,6 +21,7 @@ import {
 	type InputEnhancementSettings,
 	installInputEnhancementEditor,
 } from "../../packages/pi-stuff/src/conversation-ui/input-enhancement.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
 const ACCENT_OPEN = "\u001b[35m";
 const ACCENT_CLOSE = "\u001b[39m";
@@ -37,23 +39,22 @@ const editorTheme: EditorTheme = {
 
 const theme = {
 	fg: (color: string, text: string) => (color === "accent" ? `${ACCENT_OPEN}${text}${ACCENT_CLOSE}` : text),
-} as unknown as Theme;
+} as Theme;
 
-class TestTui {
-	followingEnd = false;
-	readonly terminal = { rows: 32 };
-	renderRequests = 0;
-	scrollToBottomCalls = 0;
-
-	requestRender(): void {
-		this.renderRequests += 1;
+class TestAppKeybindings extends KeybindingsManager {
+	constructor() {
+		super(TUI_KEYBINDINGS);
 	}
 
-	scrollToBottom(): void {
-		this.followingEnd = true;
-		this.scrollToBottomCalls += 1;
-		this.requestRender();
+	getEffectiveConfig(): KeybindingsConfig {
+		return this.getResolvedBindings();
 	}
+
+	reload(): void {}
+}
+
+function isAgentKeybindings(value: KeybindingsManager): value is AgentKeybindingsManager {
+	return value instanceof TestAppKeybindings;
 }
 
 class CommandProvider implements AutocompleteProvider {
@@ -126,8 +127,9 @@ function createEditor(
 		getSettings: () => mutableSettings,
 		getTheme: () => theme,
 	});
-	const keybindings = new KeybindingsManager(TUI_KEYBINDINGS) as unknown as AgentKeybindingsManager;
-	const editor = factory(tui as unknown as TUI, editorTheme, keybindings) as ObservableEditor;
+	const keybindings = new TestAppKeybindings();
+	if (!isAgentKeybindings(keybindings)) throw new Error("Test keybindings are incomplete");
+	const editor = factory(tui, editorTheme, keybindings) as ObservableEditor;
 	const provider = new CommandProvider(providerItems);
 	editor.setAutocompleteProvider?.(provider);
 	return { editor, provider, settings: mutableSettings, tui };
@@ -309,7 +311,7 @@ describe("editor composition", () => {
 					installedFactory = factory;
 				},
 			},
-		} as unknown as ExtensionContext;
+		} as ExtensionContext;
 		const settings = { inlineSlashAutocomplete: true, inputHighlighting: false };
 		const controller = installInputEnhancementEditor(context, {
 			getCommands: () => commands("skill:review"),
@@ -319,8 +321,9 @@ describe("editor composition", () => {
 		const visibility: boolean[] = [];
 		const unsubscribe = controller.subscribe((visible) => visibility.push(visible));
 		const tui = new TestTui();
-		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS) as unknown as AgentKeybindingsManager;
-		const editor = installedFactory?.(tui as unknown as TUI, editorTheme, keybindings) as ObservableEditor;
+		const keybindings = new TestAppKeybindings();
+		if (!isAgentKeybindings(keybindings)) throw new Error("Test keybindings are incomplete");
+		const editor = installedFactory?.(tui, editorTheme, keybindings) as ObservableEditor;
 		editor.setAutocompleteProvider?.(new CommandProvider([{ value: "skill:review", label: "skill:review" }]));
 		editor.setText("ask /re");
 		await settleAutocomplete();
@@ -391,8 +394,9 @@ describe("editor composition", () => {
 			getSettings: () => ({ inlineSlashAutocomplete: true, inputHighlighting: true }),
 			getTheme: () => theme,
 		});
-		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS) as unknown as AgentKeybindingsManager;
-		const result = factory(new TestTui() as unknown as TUI, editorTheme, keybindings);
+		const keybindings = new TestAppKeybindings();
+		if (!isAgentKeybindings(keybindings)) throw new Error("Test keybindings are incomplete");
+		const result = factory(new TestTui(), editorTheme, keybindings);
 
 		expect(result).toBe(opaque);
 		result.handleInput("保留");

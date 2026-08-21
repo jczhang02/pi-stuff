@@ -1,13 +1,15 @@
 import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type TSchema, Type } from "typebox";
 import { readHostProxyProperty } from "../shared/host-proxy.js";
-import { registerSuiteOwnedTool } from "../tool-display/index.js";
+import { registerSuiteOwnedTool, type SuiteToolRegistrationHost } from "../tool-display/index.js";
 import { FakeIpCompatibility } from "./fake-ip.js";
 import { WEB_CONTENT_PRESENTATION, WEB_FETCH_PRESENTATION, WEB_SEARCH_PRESENTATION } from "./presentation.js";
-import { createPiWebAccess } from "./runtime/index.js";
+import { createPiWebAccess, type PiWebAccessHost } from "./runtime/index.js";
 import { validateWebFetchInput } from "./url-policy.js";
 
 type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
+export type WebAdapterHost = SuiteToolRegistrationHost & Pick<ExtensionAPI, "registerCommand" | "registerShortcut">;
+export type WebCapabilityHost = WebAdapterHost & PiWebAccessHost;
 
 export interface WebAdapterOptions {
 	readonly fakeIpCompatibility?: Pick<FakeIpCompatibility, "prepare">;
@@ -75,7 +77,7 @@ function sharedToolFields(upstream: CapturedTool) {
 	};
 }
 
-function registerSearch(pi: ExtensionAPI, upstream: CapturedTool): void {
+function registerSearch(pi: SuiteToolRegistrationHost, upstream: CapturedTool): void {
 	const tool: ToolDefinition<typeof WEB_SEARCH_PARAMETERS, unknown> = {
 		...sharedToolFields(upstream),
 		description:
@@ -89,7 +91,7 @@ function registerSearch(pi: ExtensionAPI, upstream: CapturedTool): void {
 }
 
 function registerFetch(
-	pi: ExtensionAPI,
+	pi: SuiteToolRegistrationHost,
 	upstream: CapturedTool,
 	fakeIpCompatibility: Pick<FakeIpCompatibility, "prepare">,
 ): void {
@@ -110,7 +112,7 @@ function registerFetch(
 	registerSuiteOwnedTool(pi, tool, WEB_FETCH_PRESENTATION);
 }
 
-function registerContinuation(pi: ExtensionAPI, upstream: CapturedTool): void {
+function registerContinuation(pi: SuiteToolRegistrationHost, upstream: CapturedTool): void {
 	const tool: ToolDefinition<typeof WEB_CONTENT_PARAMETERS, unknown> = {
 		...sharedToolFields(upstream),
 		description: "Retrieve one bounded slice or matching passage from a previous web search or document read result.",
@@ -123,7 +125,7 @@ function registerContinuation(pi: ExtensionAPI, upstream: CapturedTool): void {
 }
 
 function registerSelectedTool(
-	pi: ExtensionAPI,
+	pi: SuiteToolRegistrationHost,
 	tool: CapturedTool,
 	fakeIpCompatibility: Pick<FakeIpCompatibility, "prepare">,
 ): void {
@@ -144,7 +146,7 @@ function registerSelectedTool(
 }
 
 /** Build the narrow host facade supplied to the pinned fork. */
-export function createWebAdapterApi(pi: ExtensionAPI, options: WebAdapterOptions = {}): ExtensionAPI {
+export function createWebAdapterApi<Host extends WebAdapterHost>(pi: Host, options: WebAdapterOptions = {}): Host {
 	const fakeIpCompatibility = options.fakeIpCompatibility ?? new FakeIpCompatibility();
 	const registerTool = ((tool: CapturedTool) =>
 		registerSelectedTool(pi, tool, fakeIpCompatibility)) as ExtensionAPI["registerTool"];
@@ -161,6 +163,6 @@ export function createWebAdapterApi(pi: ExtensionAPI, options: WebAdapterOptions
 }
 
 /** Installation performs configuration reads only; all external work stays Tool-triggered. */
-export function installWebCapability(pi: ExtensionAPI): void {
+export function installWebCapability(pi: WebCapabilityHost): void {
 	piWebAccess(createWebAdapterApi(pi));
 }

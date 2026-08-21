@@ -1,10 +1,11 @@
-import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import { isRuntimeString } from "../shared/runtime-type.js";
 import {
 	activityKey,
 	registerSuiteOwnedTool,
 	type SuiteToolPresentation,
+	type SuiteToolRegistrationHost,
 	type ToolActivityCategory,
 } from "../tool-display/index.js";
 import { applyTaskMutation, type Op } from "./state/state-reducer.js";
@@ -107,7 +108,7 @@ export function summarizeTaskList(result: AgentToolResult<TaskDetails>): string 
 	return `${String(tasks.length)} tasks (${String(done)} done, ${String(tasks.length - done)} open)`;
 }
 
-export function registerTaskTools(pi: ExtensionAPI, onMutation?: TaskMutationListener): void {
+export function registerTaskTools(pi: SuiteToolRegistrationHost, onMutation?: TaskMutationListener): void {
 	function execute(action: TaskAction, params: TaskMutationParams, ctx: Parameters<typeof sid>[0]) {
 		const sessionId = sid(ctx);
 		const previous = getState(sessionId);

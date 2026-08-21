@@ -9,7 +9,7 @@ import type {
 	ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 import { parseSkillBlock } from "@earendil-works/pi-coding-agent";
-import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { isRuntimeNumber, isRuntimeString } from "../shared/runtime-type.js";
 import { getHostSharedResource } from "./host-resource.js";
 
@@ -151,7 +151,7 @@ class SharedCodexStatusChannel implements CodexStatusChannel, CodexStatusSource 
 }
 
 function codexStatusChannels(): WeakMap<ExtensionAPI["events"], CodexStatusChannel> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], CodexStatusChannel> | undefined;
 	};
 	root[CODEX_STATUS_CHANNELS] ??= new WeakMap();
@@ -213,7 +213,7 @@ class SharedGoalStatusChannel implements GoalStatusChannel, GoalStatusSource {
 }
 
 function goalStatusChannels(): WeakMap<ExtensionAPI["events"], GoalStatusChannel> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], GoalStatusChannel> | undefined;
 	};
 	root[GOAL_STATUS_CHANNELS] ??= new WeakMap();
@@ -292,8 +292,28 @@ interface SessionStatusSnapshot {
 }
 
 interface RenderRegistration {
-	requestRender(): void;
+	requestRender(force?: boolean): void;
 }
+
+export type StatuslineHost = Pick<ExtensionAPI, "getCommands" | "getThinkingLevel">;
+
+type StatuslineSessionManager = Pick<
+	ExtensionContext["sessionManager"],
+	"getCwd" | "getEntry" | "getLeafId" | "getSessionId"
+>;
+
+export interface StatuslineContext {
+	readonly cwd: string;
+	getContextUsage():
+		| { readonly contextWindow: number | null; readonly percent: number | null; readonly tokens: number | null }
+		| undefined;
+	readonly model: ExtensionContext["model"];
+	readonly modelRegistry: Pick<ExtensionContext["modelRegistry"], "isUsingOAuth">;
+	readonly sessionManager: StatuslineSessionManager;
+	readonly thinkingLevel?: ExtensionContext["thinkingLevel"];
+}
+
+type GitStatusHost = Pick<ExtensionAPI, "exec">;
 
 /**
  * Mutable Git summary refreshed by the integration layer after accepted Host
@@ -324,7 +344,7 @@ export class GitStatusSource implements GitChangeCountsSource {
 		return this.counts;
 	}
 
-	refresh(pi: ExtensionAPI, cwd: string): Promise<void> {
+	refresh(pi: GitStatusHost, cwd: string): Promise<void> {
 		if (this.disposed) return Promise.resolve();
 		this.requestedCwd = cwd;
 		if (this.refreshPromise) return this.refreshPromise;
@@ -338,7 +358,7 @@ export class GitStatusSource implements GitChangeCountsSource {
 		return completion;
 	}
 
-	private async drainRefreshes(pi: ExtensionAPI): Promise<void> {
+	private async drainRefreshes(pi: GitStatusHost): Promise<void> {
 		while (!this.disposed && this.requestedCwd !== undefined) {
 			const cwd = this.requestedCwd;
 			this.requestedCwd = undefined;
@@ -346,7 +366,7 @@ export class GitStatusSource implements GitChangeCountsSource {
 		}
 	}
 
-	private async performRefresh(pi: ExtensionAPI, cwd: string): Promise<void> {
+	private async performRefresh(pi: GitStatusHost, cwd: string): Promise<void> {
 		const generation = ++this.generation;
 		let next: GitChangeCounts | undefined;
 		let nextBranch: string | undefined;
@@ -453,21 +473,21 @@ function parseGitBranchPorcelain(output: string): string | undefined {
 export class StatuslineController {
 	private disposed = false;
 	private readonly options: StatuslineControllerOptions;
-	private readonly pi: ExtensionAPI;
+	private readonly pi: StatuslineHost;
 	private readonly renderers = new Set<RenderRegistration>();
-	private readonly sessionStatusSources = new WeakMap<ExtensionContext["sessionManager"], SessionStatusSource>();
+	private readonly sessionStatusSources = new WeakMap<StatuslineSessionManager, SessionStatusSource>();
 	private readonly skillAliases: ReadonlyMap<string, string>;
 	private suppressed = false;
 
-	constructor(pi: ExtensionAPI, options: StatuslineControllerOptions) {
+	constructor(pi: StatuslineHost, options: StatuslineControllerOptions) {
 		this.pi = pi;
 		this.options = options;
 		this.skillAliases = readSkillAliases(pi);
 	}
 
 	createFooter(
-		ctx: ExtensionContext,
-		tui: TUI,
+		ctx: StatuslineContext,
+		tui: RenderRegistration,
 		theme: Theme,
 		footerData: ReadonlyFooterDataProvider,
 	): Component & { dispose(): void } {
@@ -514,7 +534,7 @@ export class StatuslineController {
 		};
 	}
 
-	render(ctx: ExtensionContext, theme: Theme, footerData: ReadonlyFooterDataProvider, width: number): string[] {
+	render(ctx: StatuslineContext, theme: Theme, footerData: ReadonlyFooterDataProvider, width: number): string[] {
 		if (!this.isVisible()) return [];
 		const renderWidth = Math.max(0, Math.floor(width));
 		if (renderWidth < 1) return [];
@@ -564,7 +584,7 @@ export class StatuslineController {
 		};
 	}
 
-	private getSessionStatusSource(ctx: ExtensionContext): SessionStatusSource {
+	private getSessionStatusSource(ctx: StatuslineContext): SessionStatusSource {
 		const sessionManager = ctx.sessionManager;
 		let source = this.sessionStatusSources.get(sessionManager);
 		if (!source) {
@@ -583,12 +603,12 @@ export class StatuslineController {
 class SessionStatusSource {
 	private activeLeafId: string | null | undefined;
 	private readonly byEntryId = new Map<string, SessionStatusSnapshot>();
-	private readonly sessionManager: ExtensionContext["sessionManager"];
+	private readonly sessionManager: StatuslineSessionManager;
 	private sessionId: string | undefined;
 	private snapshot = emptySessionStatus();
 	private readonly skillAliases: ReadonlyMap<string, string>;
 
-	constructor(sessionManager: ExtensionContext["sessionManager"], skillAliases: ReadonlyMap<string, string>) {
+	constructor(sessionManager: StatuslineSessionManager, skillAliases: ReadonlyMap<string, string>) {
 		this.sessionManager = sessionManager;
 		this.skillAliases = skillAliases;
 	}
@@ -666,17 +686,17 @@ class SessionStatusSource {
 
 class StatuslineFooter implements Component {
 	private readonly controller: StatuslineController;
-	private readonly ctx: ExtensionContext;
+	private readonly ctx: StatuslineContext;
 	private disposed = false;
 	private readonly footerData: ReadonlyFooterDataProvider;
 	private readonly theme: Theme;
-	private readonly tui: TUI;
+	private readonly tui: RenderRegistration;
 	private readonly unsubscribe: Array<() => void>;
 
 	constructor(
 		controller: StatuslineController,
-		ctx: ExtensionContext,
-		tui: TUI,
+		ctx: StatuslineContext,
+		tui: RenderRegistration,
 		theme: Theme,
 		footerData: ReadonlyFooterDataProvider,
 	) {
@@ -736,8 +756,8 @@ interface SegmentText {
 }
 
 function renderStatusline(
-	pi: ExtensionAPI,
-	ctx: ExtensionContext,
+	pi: StatuslineHost,
+	ctx: StatuslineContext,
 	theme: Theme,
 	footerData: ReadonlyFooterDataProvider,
 	branch: string,
@@ -866,13 +886,13 @@ function compactCount(value: number): string {
 }
 
 function renderContextSegment(
-	ctx: ExtensionContext,
+	ctx: StatuslineContext,
 	theme: Theme,
 	icons: StatuslineIcons,
 	statuses: ReadonlyMap<string, string>,
 ): SegmentText | undefined {
 	if (statuses.has("compact-policy")) return undefined;
-	let usage: ReturnType<ExtensionContext["getContextUsage"]>;
+	let usage: ReturnType<StatuslineContext["getContextUsage"]>;
 	try {
 		usage = ctx.getContextUsage();
 	} catch {
@@ -1076,7 +1096,7 @@ function rawSkillPromptPreview(
 	return { skills: uniqueSkills(skills), text: sanitizeOneLine(text) || undefined };
 }
 
-function readSkillAliases(pi: ExtensionAPI): ReadonlyMap<string, string> {
+function readSkillAliases(pi: StatuslineHost): ReadonlyMap<string, string> {
 	const aliases = new Map<string, string>();
 	try {
 		for (const command of pi.getCommands()) {
@@ -1130,7 +1150,7 @@ function formatCacheHitRate(usage: UsageTotals): string | undefined {
 }
 
 function readCodexStatus(
-	ctx: ExtensionContext,
+	ctx: StatuslineContext,
 	source: CodexStatusSource | undefined,
 ): CodexStatusSnapshot | undefined {
 	if (ctx.model?.provider !== "openai-codex" || !source) return undefined;
@@ -1149,7 +1169,7 @@ function formatCodexWeekly(snapshot: CodexStatusSnapshot | undefined): string | 
 		: undefined;
 }
 
-function shouldShowCost(ctx: ExtensionContext): boolean {
+function shouldShowCost(ctx: StatuslineContext): boolean {
 	const model = ctx.model;
 	if (!model) return false;
 	if (model.provider === "kimi-coding") return false;
@@ -1166,7 +1186,7 @@ function shouldShowCost(ctx: ExtensionContext): boolean {
 	return rates.some((rate) => Number.isFinite(rate) && rate > 0);
 }
 
-function readThinkingLevel(pi: ExtensionAPI, ctx: ExtensionContext): string {
+function readThinkingLevel(pi: StatuslineHost, ctx: StatuslineContext): string {
 	try {
 		return pi.getThinkingLevel();
 	} catch {
@@ -1200,14 +1220,14 @@ function thinkingColor(level: string): ThemeColor {
 	return colors[level] ?? "thinkingText";
 }
 
-function displayModelIdentity(ctx: ExtensionContext): string {
+function displayModelIdentity(ctx: StatuslineContext): string {
 	const provider = sanitizeOneLine(ctx.model?.provider ?? "");
 	const model = sanitizeOneLine(ctx.model?.id ?? ctx.model?.name ?? "no-model").replace(/^Claude\s+/u, "");
 	if (!provider || model.startsWith(`${provider}/`)) return model || "no-model";
 	return `${provider}/${model || "no-model"}`;
 }
 
-function displayCompactModelName(ctx: ExtensionContext): string {
+function displayCompactModelName(ctx: StatuslineContext): string {
 	const model = sanitizeOneLine(ctx.model?.id ?? ctx.model?.name ?? "no-model").replace(/^Claude\s+/u, "");
 	return middleTruncate(model || "no-model", 11);
 }
@@ -1250,11 +1270,11 @@ function hasNerdFonts(): boolean {
 	return ["iterm", "wezterm", "kitty", "ghostty", "alacritty"].some((name) => terminal.includes(name));
 }
 
-function readCwd(ctx: ExtensionContext): string {
+function readCwd(ctx: StatuslineContext): string {
 	return sanitizeOneLine(readRawCwd(ctx)) || ".";
 }
 
-function readRawCwd(ctx: ExtensionContext): string {
+function readRawCwd(ctx: StatuslineContext): string {
 	try {
 		return ctx.sessionManager.getCwd() || ctx.cwd || ".";
 	} catch {

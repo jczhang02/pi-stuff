@@ -1,4 +1,4 @@
-import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
@@ -9,6 +9,7 @@ import {
 	classifyBashActivity,
 	registerSuiteOwnedTool,
 	type SuiteToolPresentation,
+	type SuiteToolRegistrationHost,
 	singleActivity,
 } from "../../tool-display/index.js";
 import { startMonitor } from "./monitor.js";
@@ -164,7 +165,7 @@ const backgroundPresentation: SuiteToolPresentation<Record<string, unknown>, Wor
 };
 
 export function registerWorkTools(
-	pi: ExtensionAPI,
+	pi: SuiteToolRegistrationHost,
 	runtimeRef: WorkToolRuntimeRef,
 	options: { readonly includeBash?: boolean } = {},
 ): void {

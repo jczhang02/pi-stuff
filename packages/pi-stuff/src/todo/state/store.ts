@@ -23,7 +23,7 @@ let activeRenderSession = "";
  * mirrors `replay.ts`'s ctx shape so `state/` stays Pi-import-free. Returns
  * `… ?? ""` so an unknown/empty session resolves to a plain string key.
  */
-export function sid(ctx: { sessionManager: { getSessionId(): string } }): string {
+export function sid(ctx: { sessionManager: { getSessionId(): string | undefined } }): string {
 	return ctx.sessionManager.getSessionId() ?? "";
 }
 

@@ -3,7 +3,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { type Tool, validateToolArguments } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	createEventBus,
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+	type ExtensionContext,
+	type SessionEntry,
+} from "@earendil-works/pi-coding-agent";
 import {
 	type AgentWorkOrigin,
 	listenForAgentWorkOriginQueries,
@@ -35,27 +41,20 @@ import {
 	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
 	type SubagentState,
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
-import type { AgentRoster } from "../../packages/pi-stuff/src/subagents/src/ui/agent-roster.js";
+import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
+import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
 type EntryRenderer = (...args: unknown[]) => unknown;
 
-interface TestMessage {
-	readonly content?: string;
-	readonly customType?: string;
-	readonly details?: unknown;
-	readonly display?: boolean;
-}
+type TestMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
 
 interface TestToolResult {
 	readonly content: Array<{ readonly text: string; readonly type: string }>;
 	readonly details?: unknown;
 }
 
-interface RegisteredCommand {
-	readonly description?: string;
-	readonly handler: (args: string, ctx: ExtensionContext) => Promise<void> | void;
-}
+type RegisteredCommand = Parameters<ExtensionAPI["registerCommand"]>[1];
 
 interface TestTool extends Tool {
 	readonly label: string;
@@ -70,25 +69,33 @@ interface TestTool extends Tool {
 
 class EventBusHarness {
 	readonly emissions: string[] = [];
-	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
+	private readonly bus = createEventBus();
+	private listeners = 0;
+	readonly host: ExtensionAPI["events"] = {
+		emit: (event, data) => {
+			this.emissions.push(event);
+			this.bus.emit(event, data);
+		},
+		on: (event, listener) => {
+			this.listeners += 1;
+			const unsubscribe = this.bus.on(event, listener);
+			return () => {
+				this.listeners -= 1;
+				unsubscribe();
+			};
+		},
+	};
 
 	emit(event: string, data: unknown): void {
-		this.emissions.push(event);
-		for (const listener of [...(this.listeners.get(event) ?? [])]) listener(data);
+		this.host.emit(event, data);
 	}
 
 	on(event: string, listener: (data: unknown) => void): () => void {
-		let listeners = this.listeners.get(event);
-		if (!listeners) {
-			listeners = new Set();
-			this.listeners.set(event, listeners);
-		}
-		listeners.add(listener);
-		return () => listeners?.delete(listener);
+		return this.host.on(event, listener);
 	}
 
 	size(): number {
-		return [...this.listeners.values()].reduce((total, listeners) => total + listeners.size, 0);
+		return this.listeners;
 	}
 }
 
@@ -102,20 +109,26 @@ class ApiHarness {
 	readonly renderers: string[] = [];
 	readonly tools = new Map<string, TestTool>();
 
-	readonly api = {
-		events: this.events,
-		on: (event: string, handler: Handler) => {
-			const handlers = this.handlers.get(event) ?? [];
-			handlers.push(handler);
-			this.handlers.set(event, handlers);
+	readonly api = createExtensionApi({
+		events: this.events.host,
+		on: captureExtensionHandlers(this.handlers),
+		registerTool: (tool) => {
+			// SAFETY: this test registry erases only generic renderer state and invokes the original Tool unchanged.
+			this.tools.set(tool.name, tool as TestTool);
 		},
-		registerTool: (tool: TestTool) => this.tools.set(tool.name, tool),
-		registerCommand: (name: string, command: RegisteredCommand) => this.commands.set(name, command),
-		registerEntryRenderer: (name: string, renderer: EntryRenderer) => this.entryRenderers.set(name, renderer),
+		registerCommand: (name, command) => {
+			this.commands.set(name, command);
+		},
+		registerEntryRenderer: (name, renderer) => {
+			// SAFETY: the harness calls the renderer with the same entry details registered for its custom type.
+			this.entryRenderers.set(name, renderer as EntryRenderer);
+		},
 		registerMessageRenderer: (name: string) => this.renderers.push(name),
 		appendEntry: (customType: string, data: unknown) => this.entries.push({ customType, data }),
-		sendMessage: (message: TestMessage, options: unknown) => this.messages.push({ message, options }),
-	} as unknown as ExtensionAPI;
+		sendMessage: (message, options) => {
+			this.messages.push({ message, options });
+		},
+	});
 
 	async fire(event: string, data: unknown, ctx = context()): Promise<void> {
 		for (const handler of this.handlers.get(event) ?? []) await handler(data, ctx);
@@ -191,20 +204,18 @@ function config(): PiStuffAgentsConfig {
 }
 
 function context(
-	entries: readonly unknown[] = [],
+	entries: readonly SessionEntry[] = [],
 	identity: { sessionFile?: string; sessionId?: string } = {},
-): ExtensionContext {
-	return {
+): ExtensionCommandContext {
+	return createExtensionCommandContext({
 		cwd: "/project",
-		hasUI: true,
-		mode: "tui",
 		sessionManager: {
+			getBranch: () => [...entries],
 			getEntries: () => [...entries],
 			getSessionFile: () => identity.sessionFile ?? "/sessions/root.jsonl",
 			getSessionId: () => identity.sessionId ?? "root-id",
 		},
-		ui: {},
-	} as unknown as ExtensionContext;
+	});
 }
 
 function currentSessionId(root: RootHarness): string {
@@ -250,7 +261,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			};
 		},
 		whenIdle: () => options.coordinatorIdle ?? Promise.resolve(),
-	} as unknown as CommandDialogCoordinator;
+	} as CommandDialogCoordinator;
 
 	const dependencies: Partial<ExtensionRootDependencies> = {
 		isChildProcess: () => false,
@@ -448,16 +459,18 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 		createRoster: (_current, rosterOptions) => {
 			expect(rosterOptions.onOpen).toBeTypeOf("function");
 			return {
-				createFooterTail: () => ({ invalidate: () => {}, render: () => [] }),
+				createFooterTail: () => ({ dispose: () => {}, invalidate: () => {}, render: () => [] }),
 				setContext: () => {
 					roster.contexts += 1;
 				},
 				setFooterHosted: () => {},
-				setSuppressed: (suppressed: boolean) => roster.suppressed.push(suppressed),
+				setSuppressed: (suppressed: boolean) => {
+					roster.suppressed.push(suppressed);
+				},
 				dispose: () => {
 					roster.disposed += 1;
 				},
-			} as unknown as AgentRoster;
+			};
 		},
 		openDialog: async (_ctx, _coordinator, _current, dialogOptions) => {
 			dialogs.push({
@@ -574,7 +587,7 @@ describe("Agents extension composition root", () => {
 
 		expect([...root.api.tools.keys()]).toEqual(["subagent"]);
 		expect(root.api.tools.get("subagent")?.label).toBe("Agent");
-		const presentation = root.api.tools.get("subagent") as unknown as {
+		const presentation = root.api.tools.get("subagent") as {
 			renderCall?: unknown;
 			renderResult?: unknown;
 			renderShell?: unknown;
@@ -1160,10 +1173,16 @@ describe("Agents extension composition root", () => {
 			{ reason: "resume", type: "session_start" },
 			context([
 				{
+					id: "cold-foreground-entry",
+					parentId: null,
 					type: "message",
 					timestamp: "2026-08-06T10:00:00.000Z",
 					message: {
+						content: [],
+						isError: false,
 						role: "toolResult",
+						timestamp: Date.parse("2026-08-06T10:00:00.000Z"),
+						toolCallId: "cold-foreground-call",
 						toolName: "subagent",
 						details: {
 							mode: "single",
@@ -1202,10 +1221,16 @@ describe("Agents extension composition root", () => {
 			{ reason: "resume", type: "session_start" },
 			context([
 				{
+					id: "legacy-foreground-entry",
+					parentId: null,
 					type: "message",
 					timestamp: "2026-08-06T10:00:00.000Z",
 					message: {
+						content: [],
+						isError: false,
 						role: "toolResult",
+						timestamp: Date.parse("2026-08-06T10:00:00.000Z"),
+						toolCallId: "legacy-foreground-call",
 						toolName: "subagent",
 						details: {
 							mode: "single",
@@ -1375,7 +1400,16 @@ describe("Agents extension composition root", () => {
 
 		const resumed = createHarness();
 		let entryReads = 0;
-		const resumedContext = context([{ type: "custom", customType: persisted.customType, data: persisted.data }]);
+		const resumedContext = context([
+			{
+				customType: persisted.customType,
+				data: persisted.data,
+				id: "persisted-completion",
+				parentId: null,
+				timestamp: "2026-08-06T10:00:00.000Z",
+				type: "custom",
+			},
+		]);
 		const getEntries = resumedContext.sessionManager.getEntries.bind(resumedContext.sessionManager);
 		resumedContext.sessionManager.getEntries = () => {
 			entryReads += 1;

@@ -6,13 +6,18 @@ import type {
 	TerminalInputHandler,
 } from "@earendil-works/pi-coding-agent";
 import { getUiSettingRegistry } from "../../packages/pi-stuff/src/conversation-ui/index.js";
-import { installNotificationCapability } from "../../packages/pi-stuff/src/notification/index.js";
+import {
+	installNotificationCapability,
+	type NotificationHost,
+} from "../../packages/pi-stuff/src/notification/index.js";
 import {
 	DEFAULT_NOTIFICATION_SETTINGS,
 	NotificationSettingsStore,
 } from "../../packages/pi-stuff/src/notification/settings.js";
+import { createExtensionCommandContext, createExtensionContext } from "../fixtures/extension-context.js";
 
 type EventHandler = (event: ExtensionEvent, context: ExtensionContext) => unknown | Promise<unknown>;
+type CommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];
 
 class EventBusHarness {
 	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
@@ -31,21 +36,25 @@ class EventBusHarness {
 }
 
 function harness(): {
-	readonly api: ExtensionAPI;
-	readonly commands: Map<string, { handler(args: string, ctx: ExtensionContext): unknown }>;
+	readonly api: NotificationHost;
+	readonly commands: Map<string, CommandSpec>;
 	readonly handlers: Map<string, EventHandler[]>;
 } {
-	const commands = new Map<string, { handler(args: string, ctx: ExtensionContext): unknown }>();
+	const commands = new Map<string, CommandSpec>();
 	const handlers = new Map<string, EventHandler[]>();
 	const bus = new EventBusHarness();
+	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
+	const on = ((type: string, handler: EventHandler) => {
+		handlers.set(type, [...(handlers.get(type) ?? []), handler]);
+	}) as ExtensionAPI["on"];
 	return {
 		api: {
 			events: bus.view,
-			on: (type: string, handler: EventHandler) => handlers.set(type, [...(handlers.get(type) ?? []), handler]),
-			registerCommand: (name: string, command: { handler(args: string, ctx: ExtensionContext): unknown }) => {
+			on,
+			registerCommand: (name, command) => {
 				commands.set(name, command);
 			},
-		} as unknown as ExtensionAPI,
+		},
 		commands,
 		handlers,
 	};
@@ -61,15 +70,18 @@ test("Notification owns a dedicated settings command and releases its terminal o
 	expect(host.commands.has("notify-test")).toBeFalse();
 	expect(host.handlers.get("agent_settled")).toBeUndefined();
 	const notices: string[] = [];
-	await host.commands.get("notifications")?.handler("", {
-		hasUI: false,
-		mode: "rpc",
-		ui: { notify: (message: string) => notices.push(message) },
-	} as unknown as ExtensionContext);
+	await host.commands.get("notifications")?.handler(
+		"",
+		createExtensionCommandContext({
+			hasUI: false,
+			mode: "rpc",
+			ui: { notify: (message: string) => notices.push(message) },
+		}),
+	);
 	expect(notices).toEqual(["/notifications requires interactive TUI mode."]);
 
 	let terminalInput: TerminalInputHandler | undefined;
-	const context = {
+	const context = createExtensionContext({
 		cwd: "/project",
 		hasPendingMessages: () => false,
 		hasUI: true,
@@ -85,7 +97,7 @@ test("Notification owns a dedicated settings command and releases its terminal o
 				};
 			},
 		},
-	} as unknown as ExtensionContext;
+	});
 	for (const handler of host.handlers.get("session_start") ?? []) {
 		await handler({ reason: "startup", type: "session_start" }, context);
 	}

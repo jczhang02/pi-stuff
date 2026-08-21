@@ -109,12 +109,16 @@ export interface CommandDialogChrome {
 	setSuppressed(suppressed: boolean): void;
 }
 
+export type CommandDialogCoordinatorHost = Pick<ExtensionAPI, "events" | "on">;
+
 export interface CommandDialogComponent extends Component {
 	dispose?(): void;
 }
 
+export type CommandDialogKeybindings = Pick<KeybindingsManager, "getKeys" | "matches">;
+
 export interface CommandDialogViewContext<Result = void> {
-	readonly keybindings: KeybindingsManager;
+	readonly keybindings: CommandDialogKeybindings;
 	readonly signal: AbortSignal;
 	readonly theme: Theme;
 	readonly tui: TUI;
@@ -336,7 +340,7 @@ class CommandDialogHost implements Component, Focusable {
 
 class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator {
 	private readonly chrome = new Map<string, ChromeRecord>();
-	private readonly boundApis = new WeakSet<ExtensionAPI>();
+	private readonly boundApis = new WeakSet<CommandDialogCoordinatorHost>();
 	private readonly footerTails = new Map<string, FooterTailFactory>();
 	private activeRun: HostRun | undefined;
 	private accepting = true;
@@ -349,7 +353,7 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		workingVisible: true,
 	};
 
-	bind(pi: ExtensionAPI): void {
+	bind(pi: CommandDialogCoordinatorHost): void {
 		if (this.boundApis.has(pi)) return;
 		this.boundApis.add(pi);
 		pi.on("session_shutdown", async () => {
@@ -357,7 +361,7 @@ class CommandDialogCoordinatorImplementation implements CommandDialogCoordinator
 		});
 	}
 
-	ensureGeneration(pi: ExtensionAPI): void {
+	ensureGeneration(pi: CommandDialogCoordinatorHost): void {
 		this.bind(pi);
 		if (this.generationActive) return;
 
@@ -692,14 +696,14 @@ const COORDINATOR_REGISTRY = Symbol.for("@jczhang02/pi-stuff-ui/coordinators/v1"
 const COORDINATOR_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/coordinator-discovery/v1";
 
 function coordinatorRegistry(): WeakMap<ExtensionAPI["events"], CommandDialogCoordinatorImplementation> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], CommandDialogCoordinatorImplementation> | undefined;
 	};
 	root[COORDINATOR_REGISTRY] ??= new WeakMap();
 	return root[COORDINATOR_REGISTRY];
 }
 
-export function getCommandDialogCoordinator(pi: ExtensionAPI): CommandDialogCoordinator {
+export function getCommandDialogCoordinator(pi: CommandDialogCoordinatorHost): CommandDialogCoordinator {
 	const registry = coordinatorRegistry();
 	const existing = registry.get(pi.events);
 	if (existing) {
@@ -740,7 +744,7 @@ interface UiLifecycleState {
 }
 
 function uiLifecycleStates(): WeakMap<ExtensionAPI["events"], UiLifecycleState> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], UiLifecycleState> | undefined;
 	};
 	root[UI_LIFECYCLE_STATES] ??= new WeakMap();
@@ -779,7 +783,7 @@ export const UI_RENDER_REQUEST_EVENT = "@jczhang02/pi-stuff-ui/render-request/v1
 const UI_RENDER_REQUEST_LISTENERS = Symbol.for("@jczhang02/pi-stuff-ui/render-request-listeners/v1");
 
 function statuslineGitRefreshListeners(): WeakMap<ExtensionAPI["events"], () => void> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], () => void> | undefined;
 	};
 	root[STATUSLINE_GIT_REFRESH_LISTENERS] ??= new WeakMap();
@@ -805,16 +809,16 @@ function listenForStatuslineGitRefreshAfterUserWorkRequests(pi: ExtensionAPI, re
 }
 
 /** Report completed user-initiated work whose Git observation may need to wait for Host idle. */
-export function requestStatuslineGitRefreshAfterUserWork(pi: Pick<ExtensionAPI, "events">): void {
+export function requestStatuslineGitRefreshAfterUserWork(pi: { readonly events?: ExtensionAPI["events"] }): void {
 	try {
-		pi.events.emit(STATUSLINE_GIT_REFRESH_AFTER_USER_WORK_REQUEST, undefined);
+		pi.events?.emit(STATUSLINE_GIT_REFRESH_AFTER_USER_WORK_REQUEST, undefined);
 	} catch {
 		// A cosmetic refresh request cannot be allowed to break the caller's lifecycle.
 	}
 }
 
 function uiRenderRequestListeners(): WeakMap<ExtensionAPI["events"], () => void> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], () => void> | undefined;
 	};
 	root[UI_RENDER_REQUEST_LISTENERS] ??= new WeakMap();
@@ -854,7 +858,7 @@ export function requestUiRender(pi: Pick<ExtensionAPI, "events">, force = false)
 }
 
 function uiSettingsCommandStates(): WeakMap<ExtensionAPI["events"], UiSettingsCommandState> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], UiSettingsCommandState> | undefined;
 	};
 	root[UI_SETTINGS_COMMAND_STATES] ??= new WeakMap();

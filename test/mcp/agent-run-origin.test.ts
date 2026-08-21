@@ -1,26 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { type ExtensionAPI, initTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
+import { createEventBus, type ExtensionAPI, initTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import {
 	hasDirectUserActivation,
 	readAgentWorkOrigin,
 } from "../../packages/pi-stuff/src/conversation-ui/agent-run-origin.js";
+import type { SuiteAgentMessageHost } from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
 import { registerSuiteAgentMessagePreparation } from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
 import {
 	dispatchMcpPromptToAgent,
 	MCP_USER_PROMPT_MESSAGE_TYPE,
 	registerMcpPromptMessageRenderer,
 } from "../../packages/pi-stuff/src/mcp/runtime/prompts.js";
-import type { McpExtensionState } from "../../packages/pi-stuff/src/mcp/runtime/state.js";
-import { sendUserDrivenUiAgentMessage } from "../../packages/pi-stuff/src/mcp/runtime/ui-session.js";
+import {
+	sendUserDrivenUiAgentMessage,
+	type UiAgentMessageState,
+} from "../../packages/pi-stuff/src/mcp/runtime/ui-session.js";
 
 describe("MCP user-driven Agent attribution", () => {
 	test("delivers an MCP prompt as a marked custom follow-up", async () => {
 		type SendMessageArguments = Parameters<ExtensionAPI["sendMessage"]>;
 		const delivered: Array<{ message: SendMessageArguments[0]; options: SendMessageArguments[1] }> = [];
-		const pi = {
-			sendMessage: (message: SendMessageArguments[0], options: SendMessageArguments[1]) =>
-				delivered.push({ message, options }),
-		} as unknown as ExtensionAPI;
+		const pi: SuiteAgentMessageHost = {
+			sendMessage: (message: SendMessageArguments[0], options?: SendMessageArguments[1]) => {
+				delivered.push({ message, options });
+			},
+		};
 
 		await dispatchMcpPromptToAgent(pi, "Review this MCP prompt");
 		expect(delivered).toHaveLength(1);
@@ -39,26 +43,14 @@ describe("MCP user-driven Agent attribution", () => {
 		const preparation = new Promise<void>((resolve) => {
 			releasePreparation = resolve;
 		});
-		const listeners = new Map<string, Set<(value: unknown) => void>>();
-		const events = {
-			emit(name: string, value: unknown) {
-				for (const listener of listeners.get(name) ?? []) listener(value);
-			},
-			on(name: string, listener: (value: unknown) => void) {
-				const current = listeners.get(name) ?? new Set();
-				current.add(listener);
-				listeners.set(name, current);
-				return () => current.delete(listener);
-			},
-		};
 		let deliveries = 0;
 		let current = true;
-		const pi = {
-			events,
+		const pi: SuiteAgentMessageHost & Pick<ExtensionAPI, "events"> = {
+			events: createEventBus(),
 			sendMessage: () => {
 				deliveries++;
 			},
-		} as unknown as ExtensionAPI;
+		};
 		registerSuiteAgentMessagePreparation(pi, { prepare: () => preparation });
 
 		const pending = dispatchMcpPromptToAgent(pi, "stale prompt", () => current);
@@ -76,7 +68,7 @@ describe("MCP user-driven Agent attribution", () => {
 			registerMessageRenderer: (_type: string, next: typeof renderer) => {
 				renderer = next;
 			},
-		} as unknown as ExtensionAPI;
+		} as ExtensionAPI;
 
 		registerMcpPromptMessageRenderer(pi);
 		const component = renderer?.({ content: "Rendered MCP prompt" }, { outputPad: 1 });
@@ -95,7 +87,7 @@ describe("MCP user-driven Agent attribution", () => {
 				messages.push({ message, options });
 			},
 			promoteActiveAgentWorkToUser: () => order.push("promote"),
-		} as unknown as McpExtensionState;
+		} satisfies UiAgentMessageState;
 
 		expect(
 			sendUserDrivenUiAgentMessage(state, {
@@ -122,7 +114,7 @@ describe("MCP user-driven Agent attribution", () => {
 			promoteActiveAgentWorkToUser: () => {
 				promotions += 1;
 			},
-		} as unknown as McpExtensionState;
+		} satisfies UiAgentMessageState;
 
 		expect(
 			sendUserDrivenUiAgentMessage(state, {
@@ -146,7 +138,7 @@ describe("MCP user-driven Agent attribution", () => {
 					accept = resolve;
 				}),
 			promoteActiveAgentWorkToUser: () => order.push("promote"),
-		} as unknown as McpExtensionState;
+		} satisfies UiAgentMessageState;
 
 		expect(
 			sendUserDrivenUiAgentMessage(state, {

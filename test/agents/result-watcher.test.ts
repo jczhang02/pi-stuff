@@ -4,7 +4,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { CompletionNotification } from "../../packages/pi-stuff/src/subagents/src/runs/background/notify.js";
-import { createResultWatcher } from "../../packages/pi-stuff/src/subagents/src/runs/background/result-watcher.js";
+import {
+	createResultWatcher,
+	type ResultWatcherState,
+} from "../../packages/pi-stuff/src/subagents/src/runs/background/result-watcher.js";
 import { reconcileAsyncRun } from "../../packages/pi-stuff/src/subagents/src/runs/background/stale-run-reconciler.js";
 import { readBoundedOwnedFileSnapshot } from "../../packages/pi-stuff/src/subagents/src/shared/private-directory.js";
 import {
@@ -12,7 +15,6 @@ import {
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
 	SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT,
 	SUBAGENT_RESULT_INTERCOM_EVENT,
-	type SubagentState,
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
@@ -85,7 +87,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			readResultSnapshot: async (target, maxBytes) => {
 				readStarted.resolve();
@@ -138,7 +140,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			fs: {
 				existsSync: fs.existsSync,
@@ -220,7 +222,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			asyncDirRoot,
 			fs: {
@@ -286,7 +288,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			acquireClaim: () => ({
 				directory: path.join(resultsDir, "fake.lock"),
@@ -324,7 +326,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -358,7 +360,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -430,7 +432,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -493,7 +495,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -560,7 +562,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			fs: {
 				existsSync: fs.existsSync,
@@ -637,7 +639,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -658,7 +660,7 @@ describe("background result watcher", () => {
 			mode: "parallel",
 			sessionFile: "/tmp/root-session.jsonl",
 		});
-		const projected = delivered[0] as unknown as Record<string, unknown>;
+		const projected = delivered[0] as Record<string, unknown>;
 		for (const retired of [
 			"chainStepCount",
 			"workflowGraph",
@@ -706,7 +708,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -748,7 +750,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async () => {
@@ -835,7 +837,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher(
 			{
 				events: {
@@ -926,7 +928,7 @@ describe("background result watcher", () => {
 			resultFileCoalescer: { clear: () => {}, schedule: () => false },
 			watcher: null,
 			watcherRestartTimer: null,
-		} as unknown as SubagentState;
+		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {

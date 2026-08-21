@@ -1,6 +1,11 @@
 import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getCommandDialogCoordinator, readCurrentAgentWorkOrigin, reportDiagnostic } from "../conversation-ui/index.js";
+import {
+	type CommandDialogCoordinatorHost,
+	getCommandDialogCoordinator,
+	readCurrentAgentWorkOrigin,
+	reportDiagnostic,
+} from "../conversation-ui/index.js";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { extractNotificationPreview, formatNotificationContent } from "./format.js";
 import { createNotificationSettingsView } from "./notification-settings-dialog.js";
@@ -13,6 +18,8 @@ const SYSTEM_CLOCK: NotificationClock = {
 	now: Date.now,
 	setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
 };
+
+export type NotificationHost = CommandDialogCoordinatorHost & Pick<ExtensionAPI, "registerCommand">;
 
 function sessionLabel(ctx: ExtensionContext): string {
 	return ctx.sessionManager.getSessionName()?.trim() || basename(ctx.cwd) || "Pi session";
@@ -55,7 +62,7 @@ function sendTestNotification(ctx: ExtensionContext, settings: NotificationSetti
 }
 
 export async function installNotificationCapability(
-	pi: ExtensionAPI,
+	pi: NotificationHost,
 	settings: NotificationSettingsStore,
 	clock: NotificationClock = SYSTEM_CLOCK,
 ): Promise<void> {
@@ -137,6 +144,6 @@ export async function installNotificationCapability(
 	});
 }
 
-export default async function piStuffNotification(pi: ExtensionAPI): Promise<void> {
+export default async function piStuffNotification(pi: NotificationHost): Promise<void> {
 	await installNotificationCapability(pi, await NotificationSettingsStore.load());
 }

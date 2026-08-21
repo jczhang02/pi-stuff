@@ -8,7 +8,7 @@ import type {
 	SessionEntry,
 	Theme,
 } from "@earendil-works/pi-coding-agent";
-import { type TUI, visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	type BooleanValueSource,
 	type CodexStatusSnapshot,
@@ -16,7 +16,9 @@ import {
 	type GitChangeCounts,
 	GitStatusSource,
 	parseGitStatusPorcelain,
+	type StatuslineContext,
 	StatuslineController,
+	type StatuslineHost,
 	type StatuslinePreferences,
 } from "../../packages/pi-stuff/src/conversation-ui/statusline.js";
 
@@ -105,7 +107,13 @@ function messageEntries(prompt: string, cacheRead = 18_200, cost = 0.42, input =
 	] as SessionEntry[];
 }
 
-function model(metered: boolean, id = "sonnet-4.5", provider = "anthropic", name = id, reasoning = true) {
+function model(
+	metered: boolean,
+	id = "sonnet-4.5",
+	provider = "anthropic",
+	name = id,
+	reasoning = true,
+): NonNullable<StatuslineContext["model"]> {
 	const rate = metered ? 3 : 0;
 	return {
 		api: "anthropic-messages",
@@ -133,7 +141,7 @@ function context(options: {
 	reasoning?: boolean;
 	sessionManager?: ExtensionContext["sessionManager"];
 	subscription?: boolean;
-}): ExtensionContext {
+}): StatuslineContext {
 	const cwd = options.cwd ?? join(homedir(), "dev", "pi-stuff");
 	const branch = options.branch ?? messageEntries("Implement the accepted Pi Stuff statusline.");
 	const entriesById = new Map(branch.map((entry) => [entry.id, entry]));
@@ -145,7 +153,7 @@ function context(options: {
 			getEntry: (id: string) => entriesById.get(id),
 			getLeafId: () => branch.at(-1)?.id ?? null,
 			getSessionId: () => "statusline-test-session",
-		} as unknown as ExtensionContext["sessionManager"]);
+		} as ExtensionContext["sessionManager"]);
 	return {
 		cwd,
 		getContextUsage: () => ({
@@ -157,7 +165,7 @@ function context(options: {
 		modelRegistry: { isUsingOAuth: () => options.subscription === true },
 		sessionManager,
 		thinkingLevel: "medium",
-	} as unknown as ExtensionContext;
+	};
 }
 
 function turnEntries(
@@ -207,7 +215,7 @@ function trackedSession(
 		},
 		getLeafId: () => leafId,
 		getSessionId: () => "tracked-statusline-session",
-	} as unknown as ExtensionContext["sessionManager"];
+	} as ExtensionContext["sessionManager"];
 	return {
 		manager,
 		reads,
@@ -227,7 +235,10 @@ function footerData(branch: string, statuses = new Map<string, string>()): Reado
 	};
 }
 
-function api(thinking = "medium", skillNames: readonly string[] = []): ExtensionAPI {
+function api(
+	thinking: ReturnType<ExtensionAPI["getThinkingLevel"]> = "medium",
+	skillNames: readonly string[] = [],
+): StatuslineHost {
 	return {
 		getCommands: () =>
 			skillNames.map((name) => ({
@@ -237,19 +248,19 @@ function api(thinking = "medium", skillNames: readonly string[] = []): Extension
 				sourceInfo: { origin: "top-level", path: `${name}/SKILL.md`, scope: "user", source: "fixture" },
 			})),
 		getThinkingLevel: () => thinking,
-	} as unknown as ExtensionAPI;
+	};
 }
 
 const theme = {
 	bold: (text: string) => text,
 	fg: (_color: string, text: string) => text,
-} as unknown as Theme;
+} as Theme;
 
-function tuiHarness(): { readonly requests: Array<boolean | undefined>; readonly tui: TUI } {
+function tuiHarness() {
 	const requests: Array<boolean | undefined> = [];
 	return {
 		requests,
-		tui: { requestRender: (force?: boolean) => requests.push(force) } as unknown as TUI,
+		tui: { requestRender: (force?: boolean) => requests.push(force) },
 	};
 }
 
@@ -479,7 +490,7 @@ describe("StatuslineController", () => {
 					colored.set(color, values);
 					return text;
 				},
-			} as unknown as Theme;
+			} as Theme;
 			const git = new ValueSource<GitChangeCounts | undefined>({ staged: 12, unstaged: 3, untracked: 1 });
 			const controller = new StatuslineController(api(), { enabled: new ValueSource(true), gitChanges: git });
 			const component = controller.createFooter(
@@ -1038,7 +1049,7 @@ describe("StatuslineController", () => {
 				requestRender: () => {
 					throw new Error("TUI render failed");
 				},
-			} as unknown as TUI,
+			},
 			theme,
 			data,
 		);
@@ -1068,11 +1079,11 @@ describe("GitStatusSource", () => {
 		const fakeApi = {
 			exec: () => {
 				execCalls += 1;
-				return new Promise((resolve) => {
+				return new Promise<Awaited<ReturnType<ExtensionAPI["exec"]>>>((resolve) => {
 					resolveExec = resolve;
 				});
 			},
-		} as unknown as ExtensionAPI;
+		};
 		const source = new GitStatusSource();
 		let healthyNotifications = 0;
 		source.subscribe(() => {
@@ -1106,7 +1117,7 @@ describe("GitStatusSource", () => {
 				new Promise<{ code: number; killed: boolean; stderr: string; stdout: string }>((resolve) => {
 					resolvers.push(resolve);
 				}),
-		} as unknown as ExtensionAPI;
+		};
 		const source = new GitStatusSource();
 
 		const first = source.refresh(fakeApi, "/workspace");
@@ -1141,7 +1152,7 @@ describe("GitStatusSource", () => {
 				new Promise<{ code: number; killed: boolean; stderr: string; stdout: string }>((resolve) => {
 					resolveExec = resolve;
 				}),
-		} as unknown as ExtensionAPI;
+		};
 		const source = new GitStatusSource();
 		let notifications = 0;
 		source.subscribe(() => {
@@ -1165,7 +1176,7 @@ describe("GitStatusSource", () => {
 				new Promise<{ code: number; killed: boolean; stderr: string; stdout: string }>((resolve) => {
 					resolvers.push(resolve);
 				}),
-		} as unknown as ExtensionAPI;
+		};
 		const source = new GitStatusSource();
 
 		const first = source.refresh(fakeApi, "/workspace/old");
@@ -1184,8 +1195,9 @@ describe("GitStatusSource", () => {
 		let porcelain = "## old-branch\0 M old-branch.ts\0";
 		const fakeApi = {
 			exec: async () => ({ code: 0, killed: false, stderr: "", stdout: porcelain }),
-			getThinkingLevel: () => "medium",
-		} as unknown as ExtensionAPI;
+			getCommands: () => [],
+			getThinkingLevel: () => "medium" as const,
+		};
 		const source = new GitStatusSource();
 		const cwd = join(homedir(), "dev", "pi-stuff");
 		await source.refresh(fakeApi, cwd);

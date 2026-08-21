@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createEventBus, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isRuntimeFunction } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { PiStuffAgentsConfig } from "../../packages/pi-stuff/src/subagents/src/extension/config.js";
 import registerFanoutChild, {
@@ -21,26 +21,13 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/runs/shared/pi-args.js";
 import type { AgentExecutionInvocation } from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-coordinator.js";
 import { SUBAGENT_ASYNC_COMPLETE_EVENT } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
+import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
+import { createExtensionContext } from "../fixtures/extension-context.js";
 
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
 
-class EventBusHarness {
-	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
-
-	emit(event: string, data: unknown): void {
-		for (const listener of this.listeners.get(event) ?? []) listener(data);
-	}
-
-	on(event: string, listener: (data: unknown) => void): () => void {
-		const listeners = this.listeners.get(event) ?? new Set();
-		listeners.add(listener);
-		this.listeners.set(event, listeners);
-		return () => listeners.delete(listener);
-	}
-}
-
 class ApiHarness {
-	readonly events = new EventBusHarness();
+	readonly events = createEventBus();
 	readonly handlers = new Map<string, Handler[]>();
 	tool:
 		| {
@@ -59,22 +46,19 @@ class ApiHarness {
 	toolRegistrations = 0;
 	failToolRegistrations = 0;
 
-	readonly api = {
+	readonly api = createExtensionApi({
 		events: this.events,
-		on: (event: string, handler: Handler) => {
-			const handlers = this.handlers.get(event) ?? [];
-			handlers.push(handler);
-			this.handlers.set(event, handlers);
-		},
-		registerTool: (tool: NonNullable<ApiHarness["tool"]>) => {
+		on: captureExtensionHandlers(this.handlers),
+		registerTool: (tool) => {
 			this.toolRegistrations += 1;
 			if (this.failToolRegistrations > 0) {
 				this.failToolRegistrations -= 1;
 				throw new Error("injected tool registration failure");
 			}
-			this.tool = tool;
+			// SAFETY: this test registry invokes the original Host-validated Tool definition unchanged.
+			this.tool = tool as NonNullable<ApiHarness["tool"]>;
 		},
-	} as unknown as ExtensionAPI;
+	});
 
 	async fire(event: string, value: unknown): Promise<void> {
 		for (const handler of this.handlers.get(event) ?? []) await handler(value, context());
@@ -90,15 +74,14 @@ function config(): PiStuffAgentsConfig {
 }
 
 function context(): ExtensionContext {
-	return {
+	return createExtensionContext({
 		cwd: "/project",
 		hasUI: false,
-		mode: "tui",
 		sessionManager: {
 			getSessionFile: () => "/sessions/child.jsonl",
 			getSessionId: () => "child-session-id",
 		},
-	} as unknown as ExtensionContext;
+	});
 }
 
 const priorEnvironment = new Map<string, string | undefined>();
@@ -138,7 +121,7 @@ describe("fanout child Agent composition", () => {
 				unsubscribe();
 				if (index === 0) throw new Error("injected unsubscribe failure");
 			};
-		}) as EventBusHarness["on"];
+		}) as typeof api.events.on;
 		let disposed = 0;
 		registerFanoutChild(api.api, {
 			loadConfiguration: config,
@@ -243,7 +226,7 @@ describe("fanout child Agent composition", () => {
 		expect(api.tool?.description).toContain("always owner-blocking");
 		if (!api.tool) throw new Error("Expected nested Agent tool");
 		expect((api.tool.parameters as { properties?: Record<string, unknown> }).properties?.foreground).toBeUndefined();
-		const presentation = api.tool as unknown as {
+		const presentation = api.tool as {
 			renderCall?: unknown;
 			renderResult?: unknown;
 			renderShell?: unknown;

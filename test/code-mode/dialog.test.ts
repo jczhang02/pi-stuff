@@ -3,7 +3,7 @@ import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { type CodeModeDialogSnapshot, createCodeModeDialogView } from "../../packages/pi-stuff/src/code-mode/dialog.js";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
-const theme = { bold: (value: string) => value, fg: (_color: string, value: string) => value } as unknown as Theme;
+const theme = { bold: (value: string) => value, fg: (_color: string, value: string) => value } as Theme;
 initTheme("dark", false);
 
 function snapshot(overrides: Partial<CodeModeDialogSnapshot> = {}): CodeModeDialogSnapshot {
@@ -31,7 +31,7 @@ function context(rows = 24): CommandDialogViewContext<void> {
 		signal: new AbortController().signal,
 		theme,
 		tui: { terminal: { rows } },
-	} as unknown as CommandDialogViewContext<void>;
+	} as CommandDialogViewContext<void>;
 }
 
 test("shows effective provenance and persists independent project and global settings", async () => {

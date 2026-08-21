@@ -64,7 +64,7 @@ interface DiagnosticProcessState {
 }
 
 function processState(): DiagnosticProcessState {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: DiagnosticProcessState | undefined;
 	};
 	root[PROCESS_STATE] ??= { nextId: 0, pending: [] };
@@ -72,7 +72,7 @@ function processState(): DiagnosticProcessState {
 }
 
 function channelRegistry(): WeakMap<ExtensionAPI["events"], DiagnosticChannel> {
-	const root = globalThis as unknown as {
+	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], DiagnosticChannel> | undefined;
 	};
 	root[DIAGNOSTIC_REGISTRY] ??= new WeakMap();

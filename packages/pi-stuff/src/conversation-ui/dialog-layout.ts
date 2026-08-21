@@ -2,14 +2,13 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
 	Key,
 	type Keybinding,
-	type KeybindingsManager,
 	matchesKey,
 	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { isRuntimeNumber } from "../shared/runtime-type.js";
-import type { CommandDialogViewContext } from "./index.js";
+import type { CommandDialogKeybindings, CommandDialogViewContext } from "./index.js";
 
 const DEFAULT_TERMINAL_ROWS = 24;
 const DEFAULT_NORMAL_SCREEN_RESERVE_ROWS = 3;
@@ -40,7 +39,7 @@ export function commandDialogRows(
 	context: Pick<CommandDialogViewContext<unknown>, "tui">,
 	reserveRows = DEFAULT_NORMAL_SCREEN_RESERVE_ROWS,
 ): number {
-	const terminalRows = (context.tui.terminal as { readonly rows?: number }).rows;
+	const terminalRows = context.tui.terminal.rows;
 	const rows =
 		isRuntimeNumber(terminalRows) && Number.isFinite(terminalRows)
 			? Math.max(0, Math.floor(terminalRows))
@@ -51,7 +50,7 @@ export function commandDialogRows(
 
 export function commandDialogNavigation(
 	data: string,
-	keybindings: Pick<KeybindingsManager, "matches">,
+	keybindings: Pick<CommandDialogKeybindings, "matches">,
 ): CommandDialogNavigation | undefined {
 	if (keybindings.matches(data, "tui.select.up") || matchesKey(data, Key.ctrl("p"))) return "up";
 	if (keybindings.matches(data, "tui.select.down") || matchesKey(data, Key.ctrl("n"))) return "down";
@@ -89,11 +88,14 @@ export function commandDialogScrollOffset(
 	return Math.max(0, Math.min(boundedMaximum, current + delta));
 }
 
-export function matchesCommandDialogCancel(data: string, keybindings: Pick<KeybindingsManager, "matches">): boolean {
+export function matchesCommandDialogCancel(
+	data: string,
+	keybindings: Pick<CommandDialogKeybindings, "matches">,
+): boolean {
 	return keybindings.matches(data, "tui.select.cancel");
 }
 
-export function matchesCommandDialogConfirm(data: string, keybindings: KeybindingsManager): boolean {
+export function matchesCommandDialogConfirm(data: string, keybindings: CommandDialogKeybindings): boolean {
 	return keybindings.matches(data, "tui.select.confirm");
 }
 
@@ -133,7 +135,7 @@ function formatCommandDialogKey(key: string): string {
 }
 
 export function commandDialogKeys(
-	keybindings: Pick<KeybindingsManager, "getKeys">,
+	keybindings: Pick<CommandDialogKeybindings, "getKeys">,
 	binding: Keybinding,
 	fallback: string,
 ): string {
@@ -142,7 +144,7 @@ export function commandDialogKeys(
 }
 
 export function commandDialogPrimaryKey(
-	keybindings: Pick<KeybindingsManager, "getKeys">,
+	keybindings: Pick<CommandDialogKeybindings, "getKeys">,
 	binding: Keybinding,
 	fallback: string,
 ): string {
@@ -167,7 +169,10 @@ export function commandDialogHintLines(theme: Theme, width: number, hints: reado
 	);
 }
 
-function commandDialogNavigationKeyHelp(keybindings: KeybindingsManager, unit: string): CommandDialogKeyHelpEntry[] {
+function commandDialogNavigationKeyHelp(
+	keybindings: CommandDialogKeybindings,
+	unit: string,
+): CommandDialogKeyHelpEntry[] {
 	return [
 		{
 			keys: `${commandDialogKeys(keybindings, "tui.select.up", "↑")}/${commandDialogKeys(keybindings, "tui.select.down", "↓")}, Ctrl+P/Ctrl+N`,
@@ -180,7 +185,7 @@ function commandDialogNavigationKeyHelp(keybindings: KeybindingsManager, unit: s
 	];
 }
 
-function commandDialogExitKeyHelp(keybindings: KeybindingsManager): CommandDialogKeyHelpEntry[] {
+function commandDialogExitKeyHelp(keybindings: CommandDialogKeybindings): CommandDialogKeyHelpEntry[] {
 	return [
 		{ keys: "?", description: "Show this key guide" },
 		{
@@ -191,7 +196,7 @@ function commandDialogExitKeyHelp(keybindings: KeybindingsManager): CommandDialo
 }
 
 export function commandDialogListKeyHelp(
-	keybindings: KeybindingsManager,
+	keybindings: CommandDialogKeybindings,
 	item: string,
 	extra: readonly CommandDialogKeyHelpEntry[] = [],
 ): CommandDialogKeyHelpEntry[] {
@@ -208,7 +213,7 @@ export function commandDialogListKeyHelp(
 }
 
 export function commandDialogReadKeyHelp(
-	keybindings: KeybindingsManager,
+	keybindings: CommandDialogKeybindings,
 	unit: string,
 	extra: readonly CommandDialogKeyHelpEntry[] = [],
 ): CommandDialogKeyHelpEntry[] {

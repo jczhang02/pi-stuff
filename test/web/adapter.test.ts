@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { AgentToolResult, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { type AgentToolResult, createEventBus, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { createWebAdapterApi } from "../../packages/pi-stuff/src/web/adapter.js";
+import { createWebAdapterApi, type WebAdapterHost } from "../../packages/pi-stuff/src/web/adapter.js";
 
 const Parameters = Type.Object({}, { additionalProperties: true });
 type Tool = ToolDefinition<typeof Parameters, unknown>;
@@ -10,8 +10,9 @@ function harness() {
 	const tools = new Map<string, ToolDefinition>();
 	let commandCount = 0;
 	let shortcutCount = 0;
-	const pi = {
-		events: {},
+	const pi: WebAdapterHost = {
+		events: createEventBus(),
+		getActiveTools: () => [],
 		on: () => undefined,
 		registerCommand: () => {
 			commandCount += 1;
@@ -19,8 +20,12 @@ function harness() {
 		registerShortcut: () => {
 			shortcutCount += 1;
 		},
-		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-	} as unknown as ExtensionAPI;
+		registerTool: (tool) => {
+			// SAFETY: the test registry erases only generic renderer state and retains the original Tool object.
+			tools.set(tool.name, tool as ToolDefinition);
+		},
+		setActiveTools: () => undefined,
+	};
 	return {
 		get commandCount() {
 			return commandCount;

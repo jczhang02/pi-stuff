@@ -58,7 +58,7 @@ interface BtwHistoryState {
 const BTW_HISTORY_STATE = Symbol.for("@jczhang02/pi-stuff-btw/history/v2");
 
 function state(): BtwHistoryState {
-	const root = globalThis as unknown as { [key: symbol]: BtwHistoryState | undefined };
+	const root = globalThis as { [key: symbol]: BtwHistoryState | undefined };
 	root[BTW_HISTORY_STATE] ??= { sessions: new Map(), hydratedSessions: new Set() };
 	return root[BTW_HISTORY_STATE];
 }

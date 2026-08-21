@@ -53,6 +53,16 @@ const STATUS_REPAIR_RETRY_MAX_MS = 30_000;
 const STATUS_REPAIR_LOG_INTERVAL_MS = 30_000;
 const PROCESS_RETRY_INITIAL_MS = 100;
 const PROCESS_RETRY_MAX_MS = 30_000;
+
+export type ResultWatcherState = Pick<
+	SubagentState,
+	| "completionSeen"
+	| "currentSessionId"
+	| "currentSessionScope"
+	| "resultFileCoalescer"
+	| "watcher"
+	| "watcherRestartTimer"
+>;
 const MAX_RESULT_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_DELIVERY_STATE_BYTES = 16 * 1024;
 const MAX_IGNORED_RESULT_FINGERPRINTS = 5_000;
@@ -308,7 +318,7 @@ async function deliverNotificationWithAbort(
  */
 export function createResultWatcher(
 	pi: { events: IntercomEventBus },
-	state: SubagentState,
+	state: ResultWatcherState,
 	resultsDir: string,
 	completionTtlMs: number,
 	deps: ResultWatcherDeps = {},

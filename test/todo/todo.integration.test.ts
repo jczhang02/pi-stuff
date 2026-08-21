@@ -1,12 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import type {
-	AgentToolResult,
-	ExtensionAPI,
-	ExtensionContext,
-	Theme,
-	ToolDefinition,
-} from "@earendil-works/pi-coding-agent";
-import piStuffTodo, { TODO_TOGGLE_KEY } from "../../packages/pi-stuff/src/todo/index.js";
+import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import piStuffTodo, { TODO_TOGGLE_KEY, type TodoHost } from "../../packages/pi-stuff/src/todo/index.js";
 import { isTaskDetails } from "../../packages/pi-stuff/src/todo/state/replay.js";
 import { __resetState } from "../../packages/pi-stuff/src/todo/state/store.js";
 import { registerTaskTools } from "../../packages/pi-stuff/src/todo/todo.js";
@@ -17,24 +11,20 @@ import {
 	TASK_UPDATE_TOOL_NAME,
 	type TaskDetails,
 } from "../../packages/pi-stuff/src/todo/tool/types.js";
-import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { getToolUiRuntime, type SuiteToolRegistrationHost } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { createExtensionContext } from "../fixtures/extension-context.js";
+import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
 const TOOL_NAMES = [TASK_CREATE_TOOL_NAME, TASK_GET_TOOL_NAME, TASK_LIST_TOOL_NAME, TASK_UPDATE_TOOL_NAME];
 type TaskMutationEvent = Parameters<NonNullable<Parameters<typeof registerTaskTools>[1]>>[0];
 
 function createToolHarness(onMutation: (event: TaskMutationEvent) => void) {
 	const definitions = new Map<string, ToolDefinition>();
-	const api = {
-		events: {},
-		registerTool(definition: ToolDefinition) {
-			definitions.set(definition.name, definition);
-		},
-	} as unknown as ExtensionAPI;
+	const { host: api, tools } = toolRegistrationHarness();
 	registerTaskTools(api, onMutation);
+	for (const [name, definition] of tools) definitions.set(name, definition);
 
-	const context = {
-		sessionManager: { getSessionId: () => "integration-session" },
-	} as unknown as ExtensionContext;
+	const context = createExtensionContext({ sessionManager: { getSessionId: () => "integration-session" } });
 
 	function tool(name: string): ToolDefinition {
 		const definition = definitions.get(name);
@@ -63,7 +53,7 @@ function text(result: AgentToolResult<unknown>): string {
 let renderedCallSequence = 0;
 
 function renderedLines(
-	api: ExtensionAPI,
+	api: SuiteToolRegistrationHost,
 	tool: ToolDefinition,
 	result: AgentToolResult<unknown>,
 	isError: boolean,
@@ -75,7 +65,7 @@ function renderedLines(
 	const theme = {
 		bold: (value: string) => value,
 		fg: (_color: string, value: string) => value,
-	} as unknown as Theme;
+	} as Theme;
 	const state = {};
 	renderedCallSequence += 1;
 	const toolCallId = `render-${tool.name}-${String(renderedCallSequence)}`;
@@ -172,7 +162,7 @@ describe("registered Task tools", () => {
 		const validationFailure = {
 			content: [{ type: "text", text: "Invalid TaskUpdate input" }],
 			details: undefined,
-		} as unknown as AgentToolResult<unknown>;
+		} as AgentToolResult<unknown>;
 		expect(
 			renderedLines(harness.api, harness.tool(TASK_UPDATE_TOOL_NAME), validationFailure, true).join("\n").trim(),
 		).toBe("• Task update · Invalid TaskUpdate input");
@@ -184,17 +174,21 @@ describe("extension registration", () => {
 	it("registers Ctrl+Shift+T as the task-list toggle", () => {
 		const shortcuts: Array<{ key: string; description: string }> = [];
 		const lifecycleEvents: string[] = [];
-		const api = {
-			events: {},
-			registerTool: () => {},
+		const { host } = toolRegistrationHarness();
+		// SAFETY: this test adapter records lifecycle event names without invoking or changing their callbacks.
+		const on = ((event: string) => {
+			lifecycleEvents.push(event);
+		}) as ExtensionAPI["on"];
+		const api: TodoHost = {
+			...host,
 			registerShortcut: (key: unknown, options: { description?: string }) => {
 				shortcuts.push({
 					key: String(key),
 					description: options.description ?? "",
 				});
 			},
-			on: (event: string) => lifecycleEvents.push(event),
-		} as unknown as ExtensionAPI;
+			on,
+		};
 
 		piStuffTodo(api);
 

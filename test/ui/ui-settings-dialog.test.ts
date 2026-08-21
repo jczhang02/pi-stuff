@@ -13,7 +13,7 @@ import { createUiSettingsView } from "../../packages/pi-stuff/src/conversation-u
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
 
 afterEach(() => resetDiagnosticProcessState());
 
@@ -52,7 +52,7 @@ function harness(rows = 28): {
 			signal: new AbortController().signal,
 			theme,
 			tui: { terminal },
-		} as unknown as CommandDialogViewContext<void>,
+		} as CommandDialogViewContext<void>,
 		renders: () => renders,
 		terminal,
 	};

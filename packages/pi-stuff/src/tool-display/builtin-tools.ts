@@ -6,12 +6,11 @@ import {
 	createLsToolDefinition,
 	createReadToolDefinition,
 	createWriteToolDefinition,
-	type ExtensionAPI,
 	getAgentDir,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { classifyBashActivity, singleActivity } from "./activity.js";
-import { registerSuiteOwnedTool } from "./contract.js";
+import { registerSuiteOwnedTool, type SuiteToolRegistrationHost } from "./contract.js";
 import { describeBuiltinTarget, formatElapsed, summarizeBuiltin } from "./render.js";
 
 const PROGRAMMATIC_READ = { replay: "record" } as const;
@@ -42,7 +41,7 @@ export function resolveBuiltinHostSettings(
 }
 
 export function registerBuiltins(
-	pi: ExtensionAPI,
+	pi: SuiteToolRegistrationHost,
 	cwd: string,
 	hostSettings: BuiltinHostSettings,
 	factories: BuiltinFactoryOverrides = {},

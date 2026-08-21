@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createAsyncJobTracker } from "../../packages/pi-stuff/src/subagents/src/runs/background/async-job-tracker.js";
 import {
 	type AgentControlAcknowledgement,
@@ -45,6 +45,19 @@ function signalChannel(): SignalChannel {
 		subscribe(listener) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
+		},
+	};
+}
+
+function eventHost(emit: (event: string, payload: unknown) => void = () => {}): Pick<ExtensionAPI, "events"> {
+	const events = createEventBus();
+	return {
+		events: {
+			emit(event, payload) {
+				emit(event, payload);
+				events.emit(event, payload);
+			},
+			on: events.on,
 		},
 	};
 }
@@ -451,11 +464,7 @@ describe("CurrentAgents snapshot", () => {
 			}),
 		);
 		const state = createFullState(sessionId);
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			state,
-			root,
-		);
+		const tracker = createAsyncJobTracker(eventHost(), state, root);
 
 		try {
 			await tracker.restoreActiveJobs();
@@ -476,25 +485,20 @@ describe("CurrentAgents snapshot", () => {
 		fs.mkdirSync(unrelated);
 		const reads: string[] = [];
 		const state = createFullState("root-session");
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			state,
-			root,
-			{
-				readRunStatus: async (asyncDir) => {
-					reads.push(asyncDir);
-					return {
-						runId: path.basename(asyncDir),
-						sessionId: "root-session",
-						state: "running",
-						mode: "single",
-						startedAt: 1_000,
-						lastUpdate: 2_000,
-						steps: [{ agent: "reviewer", status: "running" }],
-					};
-				},
+		const tracker = createAsyncJobTracker(eventHost(), state, root, {
+			readRunStatus: async (asyncDir) => {
+				reads.push(asyncDir);
+				return {
+					runId: path.basename(asyncDir),
+					sessionId: "root-session",
+					state: "running",
+					mode: "single",
+					startedAt: 1_000,
+					lastUpdate: 2_000,
+					steps: [{ agent: "reviewer", status: "running" }],
+				};
 			},
-		);
+		});
 
 		try {
 			await tracker.restoreActiveJobs([target]);
@@ -511,11 +515,7 @@ describe("CurrentAgents snapshot", () => {
 		const root = path.join(base, "async-runs");
 		const runDir = path.join(root, "late-run");
 		const state = createFullState("root-session");
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			state,
-			root,
-		);
+		const tracker = createAsyncJobTracker(eventHost(), state, root);
 
 		try {
 			await tracker.restoreActiveJobs();
@@ -551,28 +551,23 @@ describe("CurrentAgents snapshot", () => {
 		fs.mkdirSync(asyncDir);
 		const state = createFullState("root-session");
 		let attempts = 0;
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			state,
-			root,
-			{
-				pollIntervalMs: 10,
-				readRunStatus: async () => {
-					attempts += 1;
-					if (attempts === 1) throw Object.assign(new Error("transient observer EIO"), { code: "EIO" });
-					return {
-						runId: "observer-retry",
-						sessionId: "root-session",
-						mode: "single",
-						state: "running",
-						pid: process.pid,
-						startedAt: 1_000,
-						lastUpdate: 2_000,
-						steps: [{ agent: "reviewer", status: "running" }],
-					};
-				},
+		const tracker = createAsyncJobTracker(eventHost(), state, root, {
+			pollIntervalMs: 10,
+			readRunStatus: async () => {
+				attempts += 1;
+				if (attempts === 1) throw Object.assign(new Error("transient observer EIO"), { code: "EIO" });
+				return {
+					runId: "observer-retry",
+					sessionId: "root-session",
+					mode: "single",
+					state: "running",
+					pid: process.pid,
+					startedAt: 1_000,
+					lastUpdate: 2_000,
+					steps: [{ agent: "reviewer", status: "running" }],
+				};
 			},
-		);
+		});
 
 		try {
 			tracker.handleStarted({
@@ -604,15 +599,10 @@ describe("CurrentAgents snapshot", () => {
 			runId: "terminal-monotonic",
 			runnerProcessInstanceId: "terminal-monotonic-runner",
 		};
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			state,
-			root,
-			{
-				completionRetentionMs: 25,
-				readRunStatus: async () => null,
-			},
-		);
+		const tracker = createAsyncJobTracker(eventHost(), state, root, {
+			completionRetentionMs: 25,
+			readRunStatus: async () => null,
+		});
 
 		try {
 			tracker.handleStarted({
@@ -705,12 +695,7 @@ describe("CurrentAgents snapshot", () => {
 				steps: [{ agent: "reviewer", status: "failed" }],
 			}),
 		);
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			state,
-			root,
-			{ completionRetentionMs: 20 },
-		);
+		const tracker = createAsyncJobTracker(eventHost(), state, root, { completionRetentionMs: 20 });
 
 		try {
 			await tracker.restoreActiveJobs();
@@ -750,17 +735,12 @@ describe("CurrentAgents snapshot", () => {
 		});
 		state.foregroundRuns?.set(run.runId, run);
 		let watchCalls = 0;
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			state,
-			root,
-			{
-				watchRun: ((...args: unknown[]) => {
-					watchCalls += 1;
-					return (fs.watch as (...watchArgs: unknown[]) => fs.FSWatcher)(...args);
-				}) as typeof fs.watch,
-			},
-		);
+		const tracker = createAsyncJobTracker(eventHost(), state, root, {
+			watchRun: ((...args: unknown[]) => {
+				watchCalls += 1;
+				return (fs.watch as (...watchArgs: unknown[]) => fs.FSWatcher)(...args);
+			}) as typeof fs.watch,
+		});
 
 		try {
 			tracker.ensureObserver();
@@ -793,11 +773,7 @@ describe("CurrentAgents snapshot", () => {
 			);
 		}
 		const state = createFullState("root-session");
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			state,
-			root,
-		);
+		const tracker = createAsyncJobTracker(eventHost(), state, root);
 		try {
 			await tracker.restoreActiveJobs();
 			expect([...state.asyncJobs.keys()].sort()).toEqual(["first", "second"]);
@@ -888,11 +864,7 @@ describe("CurrentAgents snapshot", () => {
 			}),
 		);
 		const restoredState = createFullState("root-session");
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			restoredState,
-			root,
-		);
+		const tracker = createAsyncJobTracker(eventHost(), restoredState, root);
 		try {
 			await tracker.restoreActiveJobs();
 			const restored = row(new CurrentAgents(restoredState, acknowledgedOptions()).snapshot(), "failed-detail:0");
@@ -1214,11 +1186,7 @@ describe("CurrentAgents snapshot", () => {
 			}),
 		);
 		const state = createFullState("root-session");
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			state,
-			root,
-		);
+		const tracker = createAsyncJobTracker(eventHost(), state, root);
 		let hostTicked = false;
 		const hostTick = new Promise<void>((resolve) =>
 			setTimeout(() => {
@@ -1363,13 +1331,9 @@ describe("CurrentAgents lifecycle", () => {
 		};
 		const notices: unknown[] = [];
 		const tracker = createAsyncJobTracker(
-			{
-				events: {
-					emit: (event: string, payload: unknown) => {
-						if (event === SUBAGENT_STEERING_NOTICE_EVENT) notices.push(payload);
-					},
-				},
-			} as unknown as Pick<ExtensionAPI, "events">,
+			eventHost((event, payload) => {
+				if (event === SUBAGENT_STEERING_NOTICE_EVENT) notices.push(payload);
+			}),
 			state,
 			root,
 			{ pollIntervalMs: 10 },
@@ -1422,14 +1386,10 @@ describe("CurrentAgents lifecycle", () => {
 		const state = createFullState("root-session");
 		let observerCalls = 0;
 		const tracker = createAsyncJobTracker(
-			{
-				events: {
-					emit: () => {
-						observerCalls += 1;
-						throw new Error("injected lifecycle observer failure");
-					},
-				},
-			} as unknown as Pick<ExtensionAPI, "events">,
+			eventHost(() => {
+				observerCalls += 1;
+				throw new Error("injected lifecycle observer failure");
+			}),
 			state,
 			root,
 			{ pollIntervalMs: 10 },
@@ -1498,13 +1458,9 @@ describe("CurrentAgents lifecycle", () => {
 		const state = createFullState("root-session");
 		const delivered: unknown[] = [];
 		const tracker = createAsyncJobTracker(
-			{
-				events: {
-					emit: (event: string, payload: unknown) => {
-						if (event === SUBAGENT_CONTROL_EVENT) delivered.push(payload);
-					},
-				},
-			} as unknown as Pick<ExtensionAPI, "events">,
+			eventHost((event, payload) => {
+				if (event === SUBAGENT_CONTROL_EVENT) delivered.push(payload);
+			}),
 			state,
 			root,
 			{ pollIntervalMs: 10 },
@@ -1550,17 +1506,12 @@ describe("CurrentAgents lifecycle", () => {
 		fs.mkdirSync(asyncDir);
 		const state = createFullState("root-session");
 		let refreshes = 0;
-		const tracker = createAsyncJobTracker(
-			{ events: { emit: () => {} } } as unknown as Pick<ExtensionAPI, "events">,
-			state,
-			root,
-			{
-				onRefresh: () => {
-					refreshes += 1;
-				},
-				readRunStatus: async () => null,
+		const tracker = createAsyncJobTracker(eventHost(), state, root, {
+			onRefresh: () => {
+				refreshes += 1;
 			},
-		);
+			readRunStatus: async () => null,
+		});
 
 		try {
 			tracker.handleStarted({ id: "live", asyncDir, sessionId: "root-session" });

@@ -219,10 +219,10 @@ export function listenForAgentWorkOriginQueries(
  * Read the active Agent run's origin without consuming it. Missing or failed UI
  * attribution is treated as automatic so observation-only policy fails closed.
  */
-export function readCurrentAgentWorkOrigin(pi: Pick<ExtensionAPI, "events">): AgentWorkOrigin {
+export function readCurrentAgentWorkOrigin(pi: { readonly events?: ExtensionAPI["events"] }): AgentWorkOrigin {
 	const query: AgentWorkOriginQuery = { handled: false, origin: "automatic" };
 	try {
-		pi.events.emit(AGENT_WORK_ORIGIN_QUERY_EVENT, query);
+		pi.events?.emit(AGENT_WORK_ORIGIN_QUERY_EVENT, query);
 	} catch {
 		return "automatic";
 	}

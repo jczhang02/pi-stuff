@@ -3,16 +3,16 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import type {
 	BackgroundWorkOutcome,
-	BackgroundWorkRuntime,
 	BackgroundWorkSnapshot,
 } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
 import { createTasksDialogView } from "../../packages/pi-stuff/src/background-work/src/tasks-dialog.js";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
 
 class RuntimeHarness {
 	readonly listeners = new Set<() => void>();
@@ -78,8 +78,8 @@ function harness(
 			},
 			signal: new AbortController().signal,
 			theme: activeTheme,
-			tui: { terminal: { rows } },
-		} as unknown as CommandDialogViewContext<void>,
+			tui: new TestTui(rows),
+		},
 		renders: () => renders,
 	};
 }
@@ -93,10 +93,10 @@ describe("/tasks Command Dialog", () => {
 				colors.push({ color, text });
 				return text;
 			},
-		} as unknown as Theme;
+		} as Theme;
 		const runtime = new RuntimeHarness();
 		const ui = harness(24, recordingTheme);
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
+		const component = createTasksDialogView(runtime).create(ui.context);
 		component.render(92);
 		expect(colors.some(({ color, text }) => color === "muted" && text.includes("Run the complete"))).toBe(false);
 		expect(colors.some(({ color, text }) => color === "accent" && text.includes("●"))).toBe(true);
@@ -107,7 +107,7 @@ describe("/tasks Command Dialog", () => {
 	test("renders active Background Work as one full-width bounded list", () => {
 		const runtime = new RuntimeHarness();
 		const ui = harness();
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
+		const component = createTasksDialogView(runtime).create(ui.context);
 		const normal = component.render(92);
 		expect(normal[0]).toBe("━".repeat(92));
 		expect(normal.join("\n")).toContain("Tasks · 1 current");
@@ -125,7 +125,7 @@ describe("/tasks Command Dialog", () => {
 	test("keeps task selection and Shell detail together in one stable wide Dialog", () => {
 		const runtime = new RuntimeHarness();
 		const ui = harness(32);
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
+		const component = createTasksDialogView(runtime).create(ui.context);
 		const lines = component.render(100);
 		const output = lines.join("\n");
 		expect(lines).toHaveLength(18);
@@ -169,7 +169,7 @@ describe("/tasks Command Dialog", () => {
 			},
 		];
 		const ui = harness(32);
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
+		const component = createTasksDialogView(runtime).create(ui.context);
 		const output = component.render(100).join("\n");
 		expect(output).toContain("Tasks / Monitor");
 		expect(output).toContain("◆ Source");
@@ -194,7 +194,7 @@ describe("/tasks Command Dialog", () => {
 			title: `Task ${String(index + 1)}`,
 		}));
 		const ui = harness();
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
+		const component = createTasksDialogView(runtime).create(ui.context);
 		expect(component.render(64).join("\n")).toContain("? keys");
 		component.handleInput?.(" ");
 		component.handleInput?.("\r");
@@ -208,9 +208,7 @@ describe("/tasks Command Dialog", () => {
 		if (!first) throw new Error("missing task fixture");
 		runtime.rows = [first, { ...first, id: "second", title: "Second task" }];
 		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.down": "ctrl+y" });
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(
-			harness(24, theme, keybindings).context,
-		);
+		const component = createTasksDialogView(runtime).create(harness(24, theme, keybindings).context);
 		component.render(64);
 		component.handleInput?.("\u0019");
 		component.handleInput?.("\r");
@@ -221,7 +219,7 @@ describe("/tasks Command Dialog", () => {
 	test("stops a selected Shell or Monitor activity", async () => {
 		const runtime = new RuntimeHarness();
 		const ui = harness();
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
+		const component = createTasksDialogView(runtime).create(ui.context);
 		component.handleInput?.("x");
 		await Bun.sleep(0);
 		expect(runtime.stopped).toEqual(["b-shell"]);
@@ -233,7 +231,7 @@ describe("/tasks Command Dialog", () => {
 	test("preserves controls in a short terminal", () => {
 		const runtime = new RuntimeHarness();
 		const ui = harness(6);
-		const component = createTasksDialogView(runtime as unknown as BackgroundWorkRuntime).create(ui.context);
+		const component = createTasksDialogView(runtime).create(ui.context);
 		const lines = component.render(38);
 		expect(lines).toHaveLength(3);
 		expect(lines.join("\n")).toContain("Tasks");

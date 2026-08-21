@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { isRuntimeNumber } from "../shared/runtime-type.js";
 
 const MAX_DYNAMIC_TEXT_CODE_UNITS = 16 * 1024;
@@ -29,6 +29,26 @@ export interface WelcomeHeaderControllerOptions {
 	readonly inventory: WelcomeHeaderInventorySource;
 }
 
+interface WelcomeRegistryHost {
+	getAllTools(): readonly { readonly sourceInfo: { readonly path: string; readonly source: string } }[];
+	getCommands(): readonly {
+		readonly name: string;
+		readonly source: string;
+		readonly sourceInfo: { readonly path: string };
+	}[];
+}
+
+interface WelcomeHeaderTui {
+	requestRender(force?: boolean): void;
+	readonly terminal?: { readonly rows?: number };
+}
+
+interface WelcomeHeaderContext {
+	readonly cwd: string;
+	readonly model: { readonly id?: string; readonly name?: string; readonly provider?: string } | undefined;
+	readonly sessionManager: Pick<ExtensionContext["sessionManager"], "getCwd">;
+}
+
 /**
  * Registry-backed inventory available through Pi's public Extension API.
  * Context-file count is supplied later from `before_agent_start` because the
@@ -38,9 +58,9 @@ export class WelcomeRegistrySource implements WelcomeHeaderInventorySource {
 	private contextFiles: number | undefined;
 	private inventory: WelcomeHeaderInventory;
 	private readonly listeners = new Set<() => void>();
-	private readonly pi: ExtensionAPI;
+	private readonly pi: WelcomeRegistryHost;
 
-	constructor(pi: ExtensionAPI, contextFiles?: number) {
+	constructor(pi: WelcomeRegistryHost, contextFiles?: number) {
 		this.pi = pi;
 		this.contextFiles = normalizeCount(contextFiles);
 		this.inventory = readWelcomeRegistryInventory(pi, this.contextFiles);
@@ -74,10 +94,7 @@ export class WelcomeRegistrySource implements WelcomeHeaderInventorySource {
 }
 
 /** Read the exact public registries and count registry-visible extensions. */
-export function readWelcomeRegistryInventory(
-	pi: Pick<ExtensionAPI, "getAllTools" | "getCommands">,
-	contextFiles?: number,
-): WelcomeHeaderInventory {
+export function readWelcomeRegistryInventory(pi: WelcomeRegistryHost, contextFiles?: number): WelcomeHeaderInventory {
 	const commands = pi.getCommands();
 	const tools = pi.getAllTools();
 	const extensionPaths = new Set<string>();
@@ -104,32 +121,32 @@ export function readWelcomeRegistryInventory(
  */
 export class WelcomeHeaderController {
 	readonly enabledAtLaunch: boolean;
-	private readonly ctx: ExtensionContext;
+	private readonly ctx: WelcomeHeaderContext;
 	private readonly inventory: WelcomeHeaderInventorySource;
 
-	constructor(ctx: ExtensionContext, options: WelcomeHeaderControllerOptions) {
+	constructor(ctx: WelcomeHeaderContext, options: WelcomeHeaderControllerOptions) {
 		this.ctx = ctx;
 		this.inventory = options.inventory;
 		this.enabledAtLaunch = options.enabled.get();
 	}
 
-	createHeader(tui: TUI, theme: Theme): Component & { dispose(): void } {
+	createHeader(tui: WelcomeHeaderTui, theme: Theme): Component & { dispose(): void } {
 		return new WelcomeHeaderComponent(this.ctx, tui, theme, this.inventory, this.enabledAtLaunch);
 	}
 }
 
 class WelcomeHeaderComponent implements Component {
-	private readonly ctx: ExtensionContext;
+	private readonly ctx: WelcomeHeaderContext;
 	private disposed = false;
 	private readonly enabled: boolean;
 	private readonly inventory: WelcomeHeaderInventorySource;
 	private readonly theme: Theme;
-	private readonly tui: TUI;
+	private readonly tui: WelcomeHeaderTui;
 	private readonly unsubscribe: () => void;
 
 	constructor(
-		ctx: ExtensionContext,
-		tui: TUI,
+		ctx: WelcomeHeaderContext,
+		tui: WelcomeHeaderTui,
 		theme: Theme,
 		inventory: WelcomeHeaderInventorySource,
 		enabled: boolean,
@@ -164,7 +181,12 @@ class WelcomeHeaderComponent implements Component {
 	}
 }
 
-function wideLines(ctx: ExtensionContext, inventory: WelcomeHeaderInventory, theme: Theme, width: number): string[] {
+function wideLines(
+	ctx: WelcomeHeaderContext,
+	inventory: WelcomeHeaderInventory,
+	theme: Theme,
+	width: number,
+): string[] {
 	const rightWidth = Math.max(1, width - WIDE_LEFT_COLUMN_WIDTH - 3);
 	const logo = piLogo(theme, false);
 	const rightDivider = theme.fg("borderMuted", "─".repeat(Math.max(0, rightWidth - 2)));
@@ -186,7 +208,7 @@ function wideLines(ctx: ExtensionContext, inventory: WelcomeHeaderInventory, the
 	];
 }
 
-function narrowLines(ctx: ExtensionContext, theme: Theme, width: number, rows: number | undefined): string[] {
+function narrowLines(ctx: WelcomeHeaderContext, theme: Theme, width: number, rows: number | undefined): string[] {
 	if (width < MIN_BOX_WIDTH) return [clip(theme.bold("Pi Stuff"), width)];
 	const logo = piLogo(theme, width < 48 || (rows !== undefined && rows <= 18));
 	const provider = sanitizeOneLine(ctx.model?.provider ?? "");
@@ -203,8 +225,8 @@ function narrowLines(ctx: ExtensionContext, theme: Theme, width: number, rows: n
 	];
 }
 
-function terminalRows(tui: TUI): number | undefined {
-	const rows = (tui as unknown as { terminal?: { rows?: unknown } }).terminal?.rows;
+function terminalRows(tui: WelcomeHeaderTui): number | undefined {
+	const rows = tui.terminal?.rows;
 	return isRuntimeNumber(rows) && Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : undefined;
 }
 
@@ -262,14 +284,14 @@ function welcomeInventoryLines(inventory: WelcomeHeaderInventory, theme: Theme):
 	return [theme.fg("muted", first), theme.fg("muted", second)];
 }
 
-function modelIdentity(ctx: ExtensionContext, theme: Theme, includeProvider: boolean): string {
+function modelIdentity(ctx: WelcomeHeaderContext, theme: Theme, includeProvider: boolean): string {
 	const model = sanitizeOneLine(ctx.model?.name ?? ctx.model?.id ?? "").replace(/^Claude\s+/u, "");
 	if (!model) return "";
 	const provider = sanitizeOneLine(ctx.model?.provider ?? "");
 	return `${theme.fg("accent", model)}${includeProvider && provider ? theme.fg("dim", ` · ${provider}`) : ""}`;
 }
 
-function displayCwd(ctx: ExtensionContext): string {
+function displayCwd(ctx: WelcomeHeaderContext): string {
 	const cwd = sanitizeOneLine(ctx.sessionManager.getCwd()) || sanitizeOneLine(ctx.cwd) || ".";
 	const home = sanitizeOneLine(homedir());
 	return home && (cwd === home || cwd.startsWith(`${home}/`)) ? `~${cwd.slice(home.length)}` : cwd;

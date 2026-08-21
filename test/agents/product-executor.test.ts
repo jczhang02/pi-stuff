@@ -187,7 +187,7 @@ describe("projectEngineResult", () => {
 			agent: "worker",
 			task: "Build",
 			usage: { cacheRead: 0, cacheWrite: 0, cost: 0, input: 0, output: 0, turns: 0 },
-		} as unknown as Details["results"][number];
+		} as Details["results"][number];
 		const result = projectEngineResult(
 			{ agent: "worker", foreground: true, task: "Build" },
 			{

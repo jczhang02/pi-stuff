@@ -5,6 +5,7 @@ import { type ExtensionContext, estimateTokens, type SessionEntry } from "@earen
 import { executeBtw, type OpenBtwStream, readEffectiveContext } from "../../packages/pi-stuff/src/btw/btw.js";
 import { fitBranch } from "../../packages/pi-stuff/src/btw/btw-budget.js";
 import piStuffContext, { __test as contextTest } from "../../packages/pi-stuff/src/context-management/index.js";
+import { createExtensionContext } from "../fixtures/extension-context.js";
 
 const MODEL: Model<Api> = {
 	id: "fixture-model",
@@ -58,7 +59,7 @@ function extensionContext(
 	buildContextEntries: () => SessionEntry[],
 	mainSignal: AbortSignal = new AbortController().signal,
 ): ExtensionContext {
-	return {
+	return createExtensionContext({
 		model: MODEL,
 		thinkingLevel: "high",
 		signal: mainSignal,
@@ -69,7 +70,7 @@ function extensionContext(
 				throw new Error("getBranch must not be used");
 			},
 		},
-	} as unknown as ExtensionContext;
+	});
 }
 
 function completedStream(deltas: readonly string[], final: AssistantMessage) {
@@ -250,7 +251,7 @@ describe("BTW stream execution", () => {
 			piStuffContext(api, {
 				loadMagicContext: async () => ({
 					default: async (magicPi) => {
-						const register = magicPi.on.bind(magicPi) as unknown as (
+						const register = magicPi.on.bind(magicPi) as (
 							event: string,
 							handler: (event: unknown) => unknown,
 						) => void;

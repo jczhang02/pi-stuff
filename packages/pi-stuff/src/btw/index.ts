@@ -1,6 +1,10 @@
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { type CommandDialogView, getCommandDialogCoordinator } from "../conversation-ui/index.js";
+import {
+	type CommandDialogCoordinatorHost,
+	type CommandDialogView,
+	getCommandDialogCoordinator,
+} from "../conversation-ui/index.js";
 import { BTW_COMMAND_NAME, executeBtw } from "./btw.js";
 import {
 	type BtwExchange,
@@ -22,6 +26,8 @@ const ZERO_USAGE = {
 	totalTokens: 0,
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
+
+export type BtwHost = CommandDialogCoordinatorHost & Pick<ExtensionAPI, "appendEntry" | "registerCommand">;
 
 function waitForMainIdle(ctx: ExtensionCommandContext, signal: AbortSignal): Promise<boolean> {
 	if (signal.aborted) return Promise.resolve(false);
@@ -87,7 +93,7 @@ async function promoteBtwExchange(
 	if (result.cancelled) throw new Error("Could not fork BTW because the session switch was cancelled");
 }
 
-function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
+function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: BtwHost): Promise<void> {
 	if (ctx.mode !== "tui") return Promise.resolve();
 
 	const coordinator = getCommandDialogCoordinator(pi);
@@ -159,7 +165,7 @@ function runBtw(question: string | undefined, ctx: ExtensionCommandContext, pi: 
 	return surface.then(() => undefined);
 }
 
-export default function piStuffBtw(pi: ExtensionAPI): void {
+export default function piStuffBtw(pi: BtwHost): void {
 	pi.registerCommand(BTW_COMMAND_NAME, {
 		description: "Ask one side question without changing the main conversation",
 		handler: (args, ctx) => runBtw(args.trim() || undefined, ctx, pi),

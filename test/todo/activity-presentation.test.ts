@@ -1,28 +1,23 @@
 import { expect, test } from "bun:test";
-import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { decodeCodeModeOperations } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { registerTaskTools } from "../../packages/pi-stuff/src/todo/todo.js";
-import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { getToolUiRuntime, type SuiteToolRegistrationHost } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
 
-function registeredTools(): { readonly api: ExtensionAPI; readonly tools: Map<string, ToolDefinition> } {
-	const tools = new Map<string, ToolDefinition>();
-	const api = {
-		events: { emit: () => {}, on: () => () => {} },
-		getAllTools: () => [...tools.values()].map((tool) => ({ name: tool.name })),
-		on: () => {},
-		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-	} as unknown as ExtensionAPI;
+function registeredTools(): { readonly api: SuiteToolRegistrationHost; readonly tools: Map<string, ToolDefinition> } {
+	const { host: api, tools } = toolRegistrationHarness();
 	registerTaskTools(api);
 	return { api, tools };
 }
 
 function renderedSummary(
-	api: ExtensionAPI,
+	api: SuiteToolRegistrationHost,
 	tool: ToolDefinition | undefined,
 	args: Record<string, unknown>,
 	result: AgentToolResult<unknown>,

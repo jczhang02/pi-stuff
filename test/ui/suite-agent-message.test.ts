@@ -10,10 +10,15 @@ import {
 	beginSuiteNativeCompactionPreflight,
 	isSuiteNativeCompactionPreflight,
 	registerSuiteAgentMessagePreparation,
+	type SuiteAgentMessageHost,
 	sendSuiteAgentMessage,
 } from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
 
-function hostApis(sendMessage: ExtensionAPI["sendMessage"]): [ExtensionAPI, ExtensionAPI] {
+type SuiteAgentMessageEventHost = SuiteAgentMessageHost & Pick<ExtensionAPI, "events">;
+
+function hostApis(
+	sendMessage: SuiteAgentMessageHost["sendMessage"],
+): [SuiteAgentMessageEventHost, SuiteAgentMessageEventHost] {
 	const listeners = new Map<string, Set<(value: unknown) => void>>();
 	const facade = () => ({
 		emit(name: string, value: unknown): void {
@@ -27,26 +32,30 @@ function hostApis(sendMessage: ExtensionAPI["sendMessage"]): [ExtensionAPI, Exte
 		},
 	});
 	return [
-		{ events: facade(), sendMessage } as unknown as ExtensionAPI,
-		{ events: facade(), sendMessage } as unknown as ExtensionAPI,
+		{ events: facade(), sendMessage },
+		{ events: facade(), sendMessage },
 	];
 }
 
 test("Suite Agent message preparation crosses Pi event facades and awaits thenables", async () => {
 	const order: string[] = [];
-	const thenable = {
+	const thenable: PromiseLike<void> = {
 		// biome-ignore lint/suspicious/noThenProperty: this regression intentionally exercises a non-Promise thenable.
-		then(resolve: () => void): void {
-			queueMicrotask(() => {
-				order.push("accepted");
-				resolve();
-			});
+		then<TResult1 = void, TResult2 = never>(
+			onfulfilled?: ((value: void) => PromiseLike<TResult1> | TResult1) | null,
+			_onrejected?: ((reason: unknown) => PromiseLike<TResult2> | TResult2) | null,
+		): PromiseLike<TResult1 | TResult2> {
+			return Promise.resolve()
+				.then(() => {
+					order.push("accepted");
+				})
+				.then(onfulfilled, _onrejected);
 		},
 	};
-	const [owner, sender] = hostApis((() => {
+	const [owner, sender] = hostApis(() => {
 		order.push("send");
 		return thenable;
-	}) as ExtensionAPI["sendMessage"]);
+	});
 	const unregister = registerSuiteAgentMessagePreparation(owner, {
 		prepare: async (origin) => {
 			order.push(`prepare:${origin}`);
@@ -74,7 +83,7 @@ test("direct activation authority stays separate from historical user attributio
 	const delivered: Array<Parameters<ExtensionAPI["sendMessage"]>[0]> = [];
 	const [owner, sender] = hostApis(((message) => {
 		delivered.push(message);
-	}) as ExtensionAPI["sendMessage"]);
+	}) as SuiteAgentMessageHost["sendMessage"]);
 	registerSuiteAgentMessagePreparation(owner, {
 		prepare: async (activation) => {
 			activations.push(activation);
@@ -101,7 +110,7 @@ test("direct activation authority stays separate from historical user attributio
 test("Suite Agent message delivery rolls staged state back only when Host delivery fails", async () => {
 	const order: string[] = [];
 	const [owner, sender] = hostApis((() =>
-		Promise.reject(new Error("delivery failed"))) as ExtensionAPI["sendMessage"]);
+		Promise.reject(new Error("delivery failed"))) as SuiteAgentMessageHost["sendMessage"]);
 	registerSuiteAgentMessagePreparation(owner, {
 		prepare: async () => {},
 		stage: () => () => order.push("rollback"),
@@ -122,7 +131,7 @@ test("Suite Agent message delivery rechecks session ownership after asynchronous
 	let deliveries = 0;
 	const [owner, sender] = hostApis((() => {
 		deliveries += 1;
-	}) as ExtensionAPI["sendMessage"]);
+	}) as SuiteAgentMessageHost["sendMessage"]);
 	registerSuiteAgentMessagePreparation(owner, {
 		prepare: () => preparation,
 	});
@@ -147,7 +156,7 @@ test("Suite Agent message delivery cannot accept into a session replaced during 
 	});
 	let current = true;
 	let accepted = 0;
-	const [, sender] = hostApis((() => delivery) as ExtensionAPI["sendMessage"]);
+	const [, sender] = hostApis((() => delivery) as SuiteAgentMessageHost["sendMessage"]);
 
 	const pending = sendSuiteAgentMessage(
 		sender,
@@ -171,7 +180,7 @@ test("Suite Agent messages fail open through a partial standalone API without an
 		sendMessage: () => {
 			delivered = true;
 		},
-	} as unknown as ExtensionAPI;
+	};
 
 	await sendSuiteAgentMessage(api, { customType: "test", content: "continue", display: false });
 	expect(delivered).toBe(true);

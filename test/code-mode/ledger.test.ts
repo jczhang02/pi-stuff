@@ -20,7 +20,7 @@ function fixture(): {
 			getEntries: () => branch,
 			getSessionId: () => "session-code-mode",
 		},
-	} as unknown as ExtensionContext;
+	} as ExtensionContext;
 	const ledger = new CodeModeSessionLedger({
 		appendEntry(customType, data) {
 			branch.push({ customType, data, type: "custom" });

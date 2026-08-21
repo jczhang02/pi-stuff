@@ -3,7 +3,6 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	CONTEXT_ACTIVITY_ENTRY_TYPE,
-	type ContextActivityData,
 	ContextActivityRegistry,
 	contextActivityUpdateFromMagic,
 	failedContextActivity,
@@ -13,7 +12,7 @@ import {
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
 
 test("renders one Pi Stuff activity row while persisted updates stay hidden", () => {
 	let renders = 0;
@@ -136,7 +135,7 @@ test("rejects malformed restored activities and sanitizes accepted Session data"
 		registry.render(
 			{
 				customType: CONTEXT_ACTIVITY_ENTRY_TYPE,
-				data: { ...anchor, operation: "constructor" } as unknown as ContextActivityData,
+				data: { ...anchor, operation: "constructor" },
 				id: "entry-bad",
 				parentId: null,
 				timestamp: "2026-08-13T00:00:00.000Z",

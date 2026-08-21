@@ -1,7 +1,6 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import { resolveCodexAccount } from "./account.js";
+import { type CodexAccountContext, resolveCodexAccount } from "./account.js";
 
 const USAGE_TIMEOUT_MS = 10_000;
 const WEEKLY_WINDOW_MINUTES = 7 * 24 * 60;
@@ -90,7 +89,7 @@ export function buildCodexUsageUrl(baseUrl: string): string {
 }
 
 export async function fetchCodexUsage(
-	ctx: ExtensionContext,
+	ctx: CodexAccountContext & { readonly signal?: AbortSignal | undefined },
 	fetcher: Fetcher = fetch,
 	signal: AbortSignal | undefined = ctx.signal,
 ): Promise<CodexUsageSnapshot> {

@@ -57,7 +57,7 @@ function extensionContext(cwd?: string): ExtensionContext {
 	return {
 		cwd,
 		model: { id: "fixture-model", provider: "fixture-provider" },
-	} as unknown as ExtensionContext;
+	} as ExtensionContext;
 }
 
 afterEach(async () => {

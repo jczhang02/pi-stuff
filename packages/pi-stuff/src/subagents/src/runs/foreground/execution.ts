@@ -78,6 +78,25 @@ function record(value: unknown): Record<string, unknown> {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+function validateTaskResult(value: unknown, source: string): BackgroundTaskResult {
+	const candidate = record(value);
+	if (
+		!isRuntimeString(candidate.agent) ||
+		!isRuntimeString(candidate.output) ||
+		!isRuntimeBoolean(candidate.success) ||
+		!(candidate.exitCode === null || isRuntimeNumber(candidate.exitCode))
+	) {
+		throw new Error(`Foreground Agent task result is malformed: ${source}`);
+	}
+	return {
+		...candidate,
+		agent: candidate.agent,
+		exitCode: candidate.exitCode,
+		output: candidate.output,
+		success: candidate.success,
+	};
+}
+
 function validateCompletion(value: unknown, source: string): ForegroundCompletion {
 	const candidate = record(value);
 	if (
@@ -93,7 +112,15 @@ function validateCompletion(value: unknown, source: string): ForegroundCompletio
 	if (state !== "complete" && state !== "failed" && state !== "stopped" && state !== "paused") {
 		throw new Error(`Foreground Agent result has an invalid state: ${source}`);
 	}
-	return candidate as unknown as ForegroundCompletion;
+	return {
+		...candidate,
+		id: candidate.id,
+		mode: candidate.mode,
+		results: candidate.results.map((result) => validateTaskResult(result, source)),
+		runId: candidate.runId,
+		state,
+		success: candidate.success,
+	};
 }
 
 function tasks(config: BackgroundRunnerConfig): RunnerAgentTask[] {

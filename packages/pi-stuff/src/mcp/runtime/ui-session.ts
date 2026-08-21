@@ -93,9 +93,13 @@ export function summarizeUiSessionResult(uiSession: UiSessionRuntime | null): Ui
 const MAX_COMPLETED_SESSIONS = 10;
 
 type UiAgentMessage = Parameters<NonNullable<McpExtensionState["sendMessage"]>>[0];
+export type UiAgentMessageState = Pick<
+  McpExtensionState,
+  "isAgentIdle" | "promoteActiveAgentWorkToUser" | "sendMessage"
+> & { readonly owner: Pick<McpExtensionState["owner"], "isActive"> };
 
 /** Send one explicit MCP UI action and preserve its user-driven Agent attribution. */
-export function sendUserDrivenUiAgentMessage(state: McpExtensionState, message: UiAgentMessage): boolean {
+export function sendUserDrivenUiAgentMessage(state: UiAgentMessageState, message: UiAgentMessage): boolean {
   if (!state.sendMessage || !state.owner.isActive()) return false;
   let wasIdle = false;
   try {

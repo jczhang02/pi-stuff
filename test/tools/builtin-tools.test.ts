@@ -6,15 +6,14 @@ import {
 	type BashToolOptions,
 	createBashToolDefinition,
 	createReadToolDefinition,
-	type ExtensionAPI,
 	type ReadToolOptions,
-	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import {
 	registerBuiltins,
 	resolveBuiltinHostSettings,
 } from "../../packages/pi-stuff/src/tool-display/builtin-tools.js";
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
 test("built-in overrides receive Pi's merged image and shell settings exactly", () => {
 	const directory = mkdtempSync(join(tmpdir(), "pi-stuff-builtin-settings-"));
@@ -47,11 +46,7 @@ test("built-in overrides receive Pi's merged image and shell settings exactly", 
 
 		let readOptions: ReadToolOptions | undefined;
 		let bashOptions: BashToolOptions | undefined;
-		const tools = new Map<string, ToolDefinition>();
-		const pi = {
-			events: {},
-			registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-		} as unknown as ExtensionAPI;
+		const { host: pi, tools } = toolRegistrationHarness();
 		registerBuiltins(pi, projectDirectory, trusted, {
 			bash: (cwd, options) => {
 				bashOptions = options;
@@ -72,11 +67,7 @@ test("built-in overrides receive Pi's merged image and shell settings exactly", 
 });
 
 test("shell prefixes do not leak into standalone Bash operation titles", () => {
-	const tools = new Map<string, ToolDefinition>();
-	const pi = {
-		events: {},
-		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-	} as unknown as ExtensionAPI;
+	const { host: pi, tools } = toolRegistrationHarness();
 	registerBuiltins(pi, "/project", {
 		autoResizeImages: true,
 		shellCommandPrefix: "printf prefix",
@@ -128,11 +119,7 @@ test("shell prefixes do not leak into standalone Bash operation titles", () => {
 });
 
 test("built-in retrieval metadata deduplicates Read paths but counts Search and List calls", () => {
-	const tools = new Map<string, ToolDefinition>();
-	const pi = {
-		events: {},
-		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-	} as unknown as ExtensionAPI;
+	const { host: pi } = toolRegistrationHarness();
 	registerBuiltins(pi, "/project", {
 		autoResizeImages: true,
 		shellCommandPrefix: undefined,

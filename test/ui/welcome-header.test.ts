@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { type TUI, visibleWidth } from "@earendil-works/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	readWelcomeRegistryInventory,
 	WelcomeHeaderController,
@@ -39,17 +39,17 @@ function context(modelId = "gpt-5.6-sol", provider = "openai-codex", cwd = join(
 		cwd,
 		model: { id: modelId, provider },
 		sessionManager: { getCwd: () => cwd },
-	} as unknown as ExtensionContext;
+	};
 }
 
 const theme = {
 	bold: (text: string) => text,
 	fg: (_color: string, text: string) => text,
-} as unknown as Theme;
+} as Theme;
 
 function tuiHarness(rows?: number): {
 	readonly requests: Array<boolean | undefined>;
-	readonly tui: TUI;
+	readonly tui: { requestRender(force?: boolean): void; terminal?: { rows: number } };
 } {
 	const requests: Array<boolean | undefined> = [];
 	return {
@@ -57,7 +57,7 @@ function tuiHarness(rows?: number): {
 		tui: {
 			requestRender: (force?: boolean) => requests.push(force),
 			...(rows === undefined ? {} : { terminal: { rows } }),
-		} as unknown as TUI,
+		},
 	};
 }
 
@@ -236,7 +236,7 @@ describe("WelcomeHeaderController", () => {
 				requestRender: () => {
 					throw new Error("Welcome repaint failed");
 				},
-			} as unknown as TUI,
+			},
 			theme,
 		);
 
@@ -297,7 +297,7 @@ describe("readWelcomeRegistryInventory", () => {
 					sourceInfo: sourceInfo("/extensions/b.ts", "package:b"),
 				},
 			],
-		} as unknown as Pick<ExtensionAPI, "getAllTools" | "getCommands">;
+		};
 
 		expect(readWelcomeRegistryInventory(pi, 3)).toEqual({
 			contextFiles: 3,
@@ -320,7 +320,7 @@ describe("readWelcomeRegistryInventory", () => {
 					},
 				})),
 			getCommands: () => [],
-		} as unknown as ExtensionAPI;
+		};
 		const source = new WelcomeRegistrySource(pi);
 		let healthyNotifications = 0;
 		source.subscribe(() => {

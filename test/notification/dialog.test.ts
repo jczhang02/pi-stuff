@@ -7,7 +7,7 @@ import { NotificationSettingsStore } from "../../packages/pi-stuff/src/notificat
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
-} as unknown as Theme;
+} as Theme;
 
 test("Notification settings use one owned native Command Dialog", async () => {
 	initTheme("dark", false);
@@ -24,7 +24,7 @@ test("Notification settings use one owned native Command Dialog", async () => {
 		signal: new AbortController().signal,
 		theme,
 		tui: { terminal },
-	} as unknown as CommandDialogViewContext<void>;
+	} as CommandDialogViewContext<void>;
 	const component = createNotificationSettingsView(settings, { onTest: () => (tests += 1) }).create(context);
 
 	const initial = component.render(72).join("\n");

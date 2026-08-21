@@ -1,41 +1,28 @@
 import { expect, test } from "bun:test";
-import type { ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerWorkTools } from "../../packages/pi-stuff/src/background-work/src/tools.js";
 import {
 	createSuiteToolRegistrationTracker,
 	getToolUiRuntime,
+	type SuiteToolRegistrationHost,
 } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
-function registeredBash(): { readonly api: ExtensionAPI; readonly bash: ToolDefinition } {
-	const tools = new Map<string, ToolDefinition>();
-	const api = {
-		events: { emit: () => {}, on: () => () => {} },
-		getActiveTools: () => ["bash"],
-		getAllTools: () => [...tools.values()].map((tool) => ({ name: tool.name })),
-		on: () => {},
-		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-		setActiveTools: () => {},
-	} as unknown as ExtensionAPI;
+function registeredBash(): { readonly api: SuiteToolRegistrationHost; readonly bash: ToolDefinition } {
+	const { host: api, tools } = toolRegistrationHarness(["bash"]);
 	registerWorkTools(api, { current: () => undefined });
 	const bash = tools.get("bash");
-	expect(bash).toBeDefined();
-	return { api, bash: bash as ToolDefinition };
+	if (!bash) throw new Error("Background Work did not register Bash");
+	return { api, bash };
 }
 
 test("the live Background Work Bash keeps its Code Mode contract", () => {
-	const tools = new Map<string, ToolDefinition>();
-	const api = {
-		events: { emit: () => {}, on: () => () => {} },
-		getActiveTools: () => ["bash"],
-		getAllTools: () => [...tools.values()].map((tool) => ({ name: tool.name })),
-		on: () => {},
-		registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
-		setActiveTools: () => {},
-	} as unknown as ExtensionAPI;
-	const registrations = createSuiteToolRegistrationTracker(api);
+	const { host } = toolRegistrationHarness(["bash"]);
+	const registrations = createSuiteToolRegistrationTracker({ ...host, getAllTools: () => [] });
 	registerWorkTools(registrations.api, { current: () => undefined });
+	const catalog = registrations.registry.catalog();
 
-	expect(registrations.registry.catalog().find((entry) => entry.definition.name === "bash")).toMatchObject({
+	expect(catalog.find((entry) => entry.definition.name === "bash")).toMatchObject({
 		codeMode: { replay: "never" },
 	});
 });
@@ -102,7 +89,7 @@ test("standalone Bash preserves an automatic foreground-to-background handoff in
 	const theme = {
 		bold: (value: string) => value,
 		fg: (_color: string, value: string) => value,
-	} as unknown as Theme;
+	} as Theme;
 	const state = {};
 	const context = {
 		args,

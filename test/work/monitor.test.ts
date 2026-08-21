@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { type MonitorInput, startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
 import { BackgroundWorkRuntime } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
@@ -31,8 +31,10 @@ function setup(): {
 		options: { triggerTurn: boolean };
 	}> = [];
 	const pi = {
-		sendMessage: (message: unknown, options: unknown) => messages.push({ message, options } as never),
-	} as unknown as ExtensionAPI;
+		sendMessage: (message: unknown, options?: unknown) => {
+			messages.push({ message, options } as never);
+		},
+	};
 	const runtime = new BackgroundWorkRuntime({ cwd: root, pi, sessionId: "monitor-test" });
 	const context = {
 		cwd: root,
@@ -41,7 +43,7 @@ function setup(): {
 			getSessionFile: () => join(root, "session.jsonl"),
 			getSessionId: () => "monitor-test",
 		},
-	} as unknown as ExtensionContext;
+	} as ExtensionContext;
 	return { context, messages, root, runtime };
 }
 
