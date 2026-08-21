@@ -13,6 +13,7 @@ const STATUSES = new Set<McpServerRuntimeStatus>([
 ]);
 const MAX_SERVERS = 500;
 const MAX_SERVER_NAME = 200;
+const MAX_FAILURE_DETAIL = 400;
 
 function record(value: unknown): Record<string, unknown> | undefined {
 	return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -36,11 +37,15 @@ function serverSnapshot(value: unknown): McpServerStatusSnapshot | undefined {
 	if (!name || typeof status !== "string" || !STATUSES.has(status as McpServerRuntimeStatus)) return undefined;
 	const resources = candidate["resourceCount"];
 	const failedAge = candidate["failedAgoSeconds"];
+	const failureDetail = boundTerminalLine(candidate["failureDetail"], MAX_FAILURE_DETAIL);
 	return {
 		disabled: candidate["disabled"] === true,
 		name,
 		...(typeof resources === "number" ? { resourceCount: count(resources) } : {}),
 		...(typeof failedAge === "number" ? { failedAgoSeconds: count(failedAge) } : {}),
+		...(status === "failed" && failureDetail ? { failureDetail } : {}),
+		...(candidate["oauth"] === true ? { oauth: true } : {}),
+		...(candidate["autoConnect"] === true ? { autoConnect: true } : {}),
 		status: status as McpServerRuntimeStatus,
 		toolCount: count(candidate["toolCount"]),
 	};

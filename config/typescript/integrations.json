@@ -16,8 +16,11 @@
 		"../../packages/pi-stuff/src/mcp/runtime/**/*.ts",
 		"../../test/mcp/agent-run-origin.test.ts",
 		"../../test/mcp/command-secret.test.ts",
+		"../../test/mcp/config-persistence.test.ts",
 		"../../test/mcp/host-seam.test.ts",
+		"../../test/mcp/proxy-description.test.ts",
 		"../../test/mcp/runtime-owner.test.ts",
+		"../../test/mcp/setup-panel.test.ts",
 		"../../test/mcp/xdg-paths.test.ts",
 		"../../test/web/extraction-process.test.ts"
 	],

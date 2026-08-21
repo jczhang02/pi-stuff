@@ -102,12 +102,14 @@ test("Code Mode follows trusted project settings, persists explicit toggles, and
 	const previousAgentDir = process.env["PI_CODING_AGENT_DIR"];
 	const previousDefault = process.env["PI_STUFF_CODE_MODE_DEFAULT"];
 	const previousFrozen = process.env["PI_STUFF_CODE_MODE_FROZEN"];
+	const previousAgentDirectory = process.env["PI_CODING_AGENT_DIR"];
 	delete process.env["PI_STUFF_CODE_MODE_DEFAULT"];
 	delete process.env["PI_STUFF_CODE_MODE_FROZEN"];
 	try {
 		process.env["PI_CODING_AGENT_DIR"] = await project();
 		const first = await project();
 		const second = await project();
+		process.env["PI_CODING_AGENT_DIR"] = await project();
 		await writeCodeModeProjectEnabled(first, true);
 		let enabled = false;
 		const surface: SuiteToolSurfaceController = {
@@ -175,5 +177,7 @@ test("Code Mode follows trusted project settings, persists explicit toggles, and
 		else process.env["PI_STUFF_CODE_MODE_DEFAULT"] = previousDefault;
 		if (previousFrozen === undefined) delete process.env["PI_STUFF_CODE_MODE_FROZEN"];
 		else process.env["PI_STUFF_CODE_MODE_FROZEN"] = previousFrozen;
+		if (previousAgentDirectory === undefined) delete process.env["PI_CODING_AGENT_DIR"];
+		else process.env["PI_CODING_AGENT_DIR"] = previousAgentDirectory;
 	}
 });

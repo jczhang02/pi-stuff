@@ -158,7 +158,7 @@ export async function reconnectServer(
     state.owner?.throwIfInactive();
     if (connection.status === "needs-auth") {
       if (ui) {
-        ui.notify(`MCP: ${name} requires OAuth. Run /mcp-auth ${name} first.`, "warning");
+        ui.notify(`MCP: ${name} requires OAuth. Run /mcp auth ${name} first.`, "warning");
       }
       updateStatusBar(state);
       return false;
@@ -266,7 +266,7 @@ export async function authenticateServer(
       return { ok: false, message };
     }
 
-    ui.setStatus("mcp-auth", `Authenticating ${serverName}...`);
+    ui.setStatus("mcp-oauth", `Authenticating ${serverName}...`);
     const authStorageOptions = getAuthStorageOptions(config.settings?.oauthDir, cwd);
     const status = await authenticate(serverName, serverUrl, definition, {
       ...(authStorageOptions.baseDir ? { authStorageOptions } : {}),
@@ -297,7 +297,7 @@ export async function authenticateServer(
     ui.notify(`Failed to authenticate "${serverName}": ${message}`, "error");
     return { ok: false, message };
   } finally {
-    if (!signal?.aborted) ui.setStatus("mcp-auth", undefined);
+    if (!signal?.aborted) ui.setStatus("mcp-oauth", undefined);
   }
 }
 
@@ -344,7 +344,7 @@ export async function logoutServer(
   state.owner?.throwIfInactive();
   updateStatusBar(state);
 
-  const message = `OAuth credentials cleared for "${serverName}". Run /mcp-auth ${serverName} to authenticate again.`;
+  const message = `OAuth credentials cleared for "${serverName}". Run /mcp auth ${serverName} to authenticate again.`;
   if (ui) ui.notify(message, "info");
   return { ok: true, message };
 }
@@ -399,12 +399,12 @@ export async function openMcpSetup(
     },
     previewKnownServer: (preset: KnownServerPreset) => previewSharedServerEntry(getProjectConfigPath(ctx.cwd), preset.id, preset.entry),
     adoptImports: async (imports: ImportKind[]) => {
-      const result = ensureCompatibilityImports(imports, configOverridePath);
+      const result = await ensureCompatibilityImports(imports, configOverridePath);
       if (result.added.length > 0) configChanged = true;
       return result;
     },
     scaffoldProjectConfig: async () => {
-      const path = writeStarterProjectConfig(ctx.cwd);
+      const path = await writeStarterProjectConfig(ctx.cwd);
       configChanged = true;
       return { path };
     },
@@ -413,12 +413,12 @@ export async function openMcpSetup(
       if (!repoPrompt.entry || !repoPrompt.targetPath || !repoPrompt.serverName) {
         throw new Error("RepoPrompt is not available to add from this setup screen.");
       }
-      const path = writeSharedServerEntry(repoPrompt.targetPath, repoPrompt.serverName, repoPrompt.entry);
+      const path = await writeSharedServerEntry(repoPrompt.targetPath, repoPrompt.serverName, repoPrompt.entry);
       configChanged = true;
       return { path, serverName: repoPrompt.serverName };
     },
     addKnownServer: async (preset: KnownServerPreset) => {
-      const path = writeSharedServerEntry(getProjectConfigPath(ctx.cwd), preset.id, preset.entry);
+      const path = await writeSharedServerEntry(getProjectConfigPath(ctx.cwd), preset.id, preset.entry);
       configChanged = true;
       return { path, serverName: preset.name };
     },
@@ -438,7 +438,6 @@ export async function openMcpSetup(
           resolve({ configChanged });
         });
       },
-      { overlay: true, overlayOptions: { anchor: "center", width: 92 } },
     );
   });
 }
@@ -534,7 +533,7 @@ export async function openMcpPanel(
         return createMcpPanel(config, cache, provenanceMap, callbacks, tui, theme, (result: McpPanelResult) => {
           void (async () => {
             if (!result.cancelled && result.changes.size > 0) {
-              writeDirectToolsConfig(result.changes, provenanceMap, config);
+              await writeDirectToolsConfig(result.changes, provenanceMap, config);
               await onDirectToolsConfigChanged?.(result.changes);
               ctx.ui.notify("Direct tools updated for this session.", "info");
             }
@@ -558,50 +557,4 @@ export async function openMcpPanel(
   }
 
   return { configChanged };
-}
-
-export async function openMcpAuthPanel(
-  state: McpExtensionState,
-  pi: ExtensionAPI,
-  ctx: ExtensionContext,
-  configOverridePath?: string,
-): Promise<PanelFlowResult> {
-  if (!ctx.hasUI) return { configChanged: false };
-  if (state.programmaticConfig) {
-    ctx.ui.notify("Use /mcp-auth <server> to authenticate a server from the in-memory SDK config.", "info");
-    return { configChanged: false };
-  }
-
-  const config = state.config;
-  const oauthServers = Object.entries(config.mcpServers).filter(
-    ([, definition]) => !isServerDisabled(definition) && supportsOAuth(definition),
-  );
-  if (oauthServers.length === 0) {
-    ctx.ui.notify("No OAuth-capable MCP servers are configured.", "warning");
-    return { configChanged: false };
-  }
-
-  const cache = loadMetadataCache();
-  const configPath = pi.getFlag("mcp-config") as string | undefined ?? configOverridePath;
-  const provenanceMap = getServerProvenance(configPath, ctx.cwd);
-  const callbacks = buildMcpPanelCallbacks(state, config, ctx);
-  const { createMcpPanel } = await import("./mcp-panel.ts");
-
-  await new Promise<void>((resolve) => {
-    ctx.ui.custom(
-      (tui, theme, keybindings, done) => {
-        return createMcpPanel(config, cache, provenanceMap, callbacks, tui, theme, () => {
-          done(undefined);
-          resolve();
-        }, {
-          authOnly: true,
-          keybindings,
-          noticeLines: ["Select an OAuth MCP server and press Enter or ctrl+a to authenticate."],
-        });
-      },
-      { overlay: true, overlayOptions: { anchor: "center", width: 82 } },
-    );
-  });
-
-  return { configChanged: false };
 }

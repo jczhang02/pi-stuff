@@ -152,7 +152,6 @@ class McpPanel {
   private visibleItems: VisibleItem[] = [];
   private tui: { requestRender(): void };
   private readonly t: PanelTheme;
-  private authOnly: boolean;
   private keys: PanelKeys;
 
   private static readonly MAX_VISIBLE = 12;
@@ -166,17 +165,15 @@ class McpPanel {
     tui: { requestRender(): void },
     theme: Theme,
     private done: (result: McpPanelResult) => void,
-    options: { noticeLines?: string[]; authOnly?: boolean; keybindings?: PanelKeybindings } = {},
+    options: { noticeLines?: string[]; keybindings?: PanelKeybindings } = {},
   ) {
     this.tui = tui;
     this.t = createPanelTheme(theme);
     this.noticeLines = options.noticeLines ?? [];
-    this.authOnly = options.authOnly === true;
     this.keys = createPanelKeys(options.keybindings);
     this.prefix = config.settings?.toolPrefix ?? "server";
 
     for (const [serverName, definition] of Object.entries(config.mcpServers)) {
-      if (this.authOnly && !callbacks.canAuthenticate(serverName)) continue;
       const prov = provenance.get(serverName);
       const serverCache = cache?.servers?.[serverName];
 
@@ -189,7 +186,7 @@ class McpPanel {
       }
 
       const tools: ToolState[] = [];
-      if (serverCache && !this.authOnly && !isServerDisabled(definition)) {
+      if (serverCache && !isServerDisabled(definition)) {
         for (const tool of serverCache.tools ?? []) {
           if (!isToolAllowed(tool.name, serverName, this.prefix, definition.includeTools, definition.excludeTools)) {
             continue;
@@ -268,14 +265,6 @@ class McpPanel {
     this.visibleItems = [];
     for (let si = 0; si < this.servers.length; si++) {
       const server = this.servers[si];
-      if (query && this.authOnly) {
-        const score = mode === "name" ? fuzzyScore(query, server.name) : 0;
-        if (score > 0) {
-          this.visibleItems.push({ type: "server", serverIndex: si });
-        }
-        continue;
-      }
-
       this.visibleItems.push({ type: "server", serverIndex: si });
       if (server.expanded || query) {
         for (let ti = 0; ti < server.tools.length; ti++) {
@@ -294,7 +283,7 @@ class McpPanel {
       }
     }
 
-    if (query && !this.authOnly) {
+    if (query) {
       this.visibleItems = this.visibleItems.filter((item) => {
         if (item.type === "server") {
           return this.visibleItems.some(
@@ -406,7 +395,7 @@ class McpPanel {
 
     if (matchesKey(data, "space")) {
       const item = this.visibleItems[this.cursorIndex];
-      if (item && !this.authOnly) this.toggleItem(item);
+      if (item) this.toggleItem(item);
       return;
     }
 
@@ -416,7 +405,7 @@ class McpPanel {
       const server = this.servers[item.serverIndex];
       if (item.type === "server") {
         if (server.connectionStatus === "disabled") return;
-        if (this.authOnly || server.connectionStatus === "needs-auth") {
+        if (server.connectionStatus === "needs-auth") {
           this.authenticateServer(server);
           return;
         }
@@ -466,7 +455,6 @@ class McpPanel {
     }
 
     if (data === "?") {
-      if (this.authOnly) return;
       this.descSearchActive = true;
       this.descQuery = "";
       this.rebuildVisibleItems();
@@ -564,7 +552,6 @@ class McpPanel {
   }
 
   private toggleItem(item: VisibleItem): void {
-    if (this.authOnly) return;
     const server = this.servers[item.serverIndex];
     if (item.type === "server") {
       const newState = !server.tools.every((t) => t.isDirect);
@@ -675,7 +662,7 @@ class McpPanel {
     const emptyRow = () => fg(t.border, "│") + " ".repeat(innerW) + fg(t.border, "│");
     const divider = () => fg(t.border, "├" + "─".repeat(innerW) + "┤");
 
-    const titleText = this.authOnly ? " MCP OAuth " : " MCP Servers ";
+    const titleText = " MCP Servers ";
     const borderLen = innerW - visibleWidth(titleText);
     const leftB = Math.floor(borderLen / 2);
     const rightB = borderLen - leftB;
@@ -704,7 +691,7 @@ class McpPanel {
 
     if (this.servers.length === 0) {
       lines.push(emptyRow());
-      lines.push(row(fg(t.hint, italic(this.authOnly ? "No OAuth-capable MCP servers configured." : "No MCP servers configured."))));
+      lines.push(row(fg(t.hint, italic("No MCP servers configured."))));
       lines.push(emptyRow());
     } else {
       const maxVis = McpPanel.MAX_VISIBLE;
@@ -761,41 +748,29 @@ class McpPanel {
         : fg(t.hint, "  Keep & Close  ");
       lines.push(row(`Discard unsaved changes?  ${discardBtn}   ${keepBtn}`));
     } else {
-      if (this.authOnly) {
-        lines.push(row(fg(t.description, "select a server to authenticate")));
-      } else {
-        const directCount = this.servers.reduce((sum, s) => sum + s.tools.filter((t) => t.isDirect).length, 0);
-        const totalTokens = this.servers.reduce(
-          (sum, s) => sum + s.tools.filter((t) => t.isDirect).reduce((ts, t) => ts + t.estimatedTokens, 0),
-          0,
-        );
-        const stats =
-          directCount > 0 ? `${directCount} direct  ~${totalTokens.toLocaleString()} tokens` : "no direct tools";
-        lines.push(row(fg(t.description, stats + (this.dirty ? fg(t.needsAuth, "  (unsaved)") : ""))));
-      }
+      const directCount = this.servers.reduce((sum, s) => sum + s.tools.filter((t) => t.isDirect).length, 0);
+      const totalTokens = this.servers.reduce(
+        (sum, s) => sum + s.tools.filter((t) => t.isDirect).reduce((ts, t) => ts + t.estimatedTokens, 0),
+        0,
+      );
+      const stats =
+        directCount > 0 ? `${directCount} direct  ~${totalTokens.toLocaleString()} tokens` : "no direct tools";
+      lines.push(row(fg(t.description, stats + (this.dirty ? fg(t.needsAuth, "  (unsaved)") : ""))));
     }
 
     lines.push(emptyRow());
-    const hints = this.authOnly
-      ? [
-          italic("↑↓") + " navigate",
-          italic("⏎") + " auth",
-          italic("ctrl+a") + " auth",
-          italic("esc") + " clear/close",
-          italic("ctrl+c") + " quit",
-        ]
-      : [
-          italic("↑↓") + " navigate",
-          italic("space") + " toggle",
-          italic("⏎") + " expand/auth",
-          italic("ctrl+a") + " auth",
-          italic("ctrl+r") + " reconnect",
-          ...(this.selectedServerHasFailureMessage() ? [italic("ctrl+y") + " copy error"] : []),
-          italic("?") + " desc search",
-          italic("ctrl+s") + " save",
-          italic("esc") + " clear/close",
-          italic("ctrl+c") + " quit",
-        ];
+    const hints = [
+      italic("↑↓") + " navigate",
+      italic("space") + " toggle",
+      italic("⏎") + " expand/auth",
+      italic("ctrl+a") + " auth",
+      italic("ctrl+r") + " reconnect",
+      ...(this.selectedServerHasFailureMessage() ? [italic("ctrl+y") + " copy error"] : []),
+      italic("?") + " desc search",
+      italic("ctrl+s") + " save",
+      italic("esc") + " clear/close",
+      italic("ctrl+c") + " quit",
+    ];
     const gap = "  ";
     const gapW = 2;
     const maxW = innerW - 2;
@@ -833,7 +808,7 @@ class McpPanel {
     const importLabel = server.source === "import" ? fg(t.description, ` (${importKind})`) : "";
     const statusLabel = this.renderConnectionStatus(server);
 
-    if (!server.hasCachedData && !this.authOnly) {
+    if (!server.hasCachedData) {
       return `${prefix}   ${nameStr}${importLabel}  ${fg(t.description, "(not cached)")}${statusLabel}`;
     }
 
@@ -907,8 +882,6 @@ class McpPanel {
     if (server.connectionStatus === "needs-auth") return `  ${fg(t.needsAuth, "needs auth")}`;
     if (server.connectionStatus === "connecting") return `  ${fg(t.needsAuth, "connecting")}`;
     if (server.connectionStatus === "failed") return `  ${fg(t.cancel, "failed")}`;
-    if (this.authOnly && server.connectionStatus === "connected") return `  ${fg(t.direct, "connected")}`;
-    if (this.authOnly) return `  ${fg(t.description, "idle")}`;
     return "";
   }
 
@@ -947,7 +920,7 @@ export function createMcpPanel(
   tui: { requestRender(): void },
   theme: Theme,
   done: (result: McpPanelResult) => void,
-  options?: { noticeLines?: string[]; authOnly?: boolean; keybindings?: PanelKeybindings },
+  options?: { noticeLines?: string[]; keybindings?: PanelKeybindings },
 ): McpPanel & { dispose(): void } {
   return new McpPanel(config, cache, provenance, callbacks, tui, theme, done, options ?? {});
 }

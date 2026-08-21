@@ -1,15 +1,15 @@
 # Pi Stuff MCP
 
 Pi Stuff MCP reads standard MCP declarations such as project `.mcp.json` and
-exposes one `mcp` gateway Tool. Servers stay disconnected until the agent asks
-to connect, search, describe, or invoke a Tool. A failing optional server does
-not prevent Pi or another server from working.
+exposes one `mcp` gateway Tool. Servers connect on demand by default; a user may
+persist automatic connection for an individual server. A failing optional
+server does not prevent Pi or another server from working.
 
-`/mcp` opens Pi Stuff's full-width non-floating status dialog. Operational
-subcommands such as `/mcp reconnect <server>`, `/mcp disable <server>`, and
-`/mcp enable <server>` remain available. Add or edit declarations directly in
-`.mcp.json`, then run `/reload`. OAuth is started only by explicit
-`/mcp-auth <server>` use.
+`/mcp` opens Pi Stuff's full-width non-floating server control dialog. Opening
+it never connects to a server or writes configuration. Select a server with the
+arrow keys and press Enter to see its available actions. Operational
+subcommands such as `/mcp reconnect <server>` remain available for experienced
+users.
 
 The package never exposes direct per-server Tools, JavaScript batching, MCP
 Apps browser/native windows, floating panels, or bundled Skills. The shared
@@ -19,52 +19,68 @@ search and its heavyweight execution backends are intentionally omitted.
 Server-initiated sampling and elicitation are not advertised, so MCP callbacks
 cannot open native prompts behind the shared Command Dialog contract.
 
-## Accepted `/mcp` readability target
+## Accepted `/mcp` control target
 
-**Decision update:** 2026-08-17
-**Status:** Implemented on 2026-08-18.
+**Decision update:** 2026-08-20
+**Status:** Implemented.
 
-Bare `/mcp` remains a read-only server status overview. It does not add a selectable detail mode or duplicate setup,
-OAuth, Tool discovery, or protocol inspection. Operational subcommands, `/mcp-auth`, `.mcp.json`, `/reload`, and the
-single gateway Tool retain their existing authority.
+Bare `/mcp` is the default interactive route for status, setup, authentication,
+reconnection, and enable/disable operations. It does not duplicate Tool
+discovery or protocol inspection. The retained MCP runtime remains the sole
+owner of connection, OAuth, setup, configuration, and reload behavior.
 
 The server name is each row's primary identity. Use a real state icon plus the full state word:
 
 ```text
-MCP · 2/3 connected · 14 tools · 3 resources
+MCP · 1/4 connected · 14 tools · 3 resources
 
-✓ filesystem · connected          8 tools · 1 resource
-! github · needs auth             run /mcp-auth github
-× browser · failed 12s ago        run /mcp reconnect browser
-■ legacy · disabled
-○ docs · cached                    6 tools · 2 resources
+› ✓ filesystem · connected · 8 tools · 1 resource
+  ! github · needs auth
+  × browser · failed 12s ago
+  ■ legacy · disabled
+  ○ docs · cached · 6 tools · 2 resources
 
-PgUp/PgDn page · ? keys · Esc close · configure in .mcp.json
+↑/↓ navigate · Enter manage · s setup · ? keys · Esc close
 ```
 
-Use `✓` connected, `○` cached or not connected, `×` failed, `!` needs auth, and `■` disabled. Initial loading uses
-`● initializing`. Keep the state word because cached, not connected, and disabled are materially different even when a
-compact icon category is shared.
+Use `✓` connected, `○` cached or not connected, `×` failed, `!` needs auth,
+and `■` disabled. Keep the state word because cached, not connected, and
+disabled are materially different even when a compact icon category is shared.
+The connection denominator counts enabled servers; disabled rows remain visible
+but are not expected to connect.
 
-Rows stay in `.mcp.json` declaration order and update in place; a connection change must not reorder the server list.
-For `needs auth`, show the explicit `/mcp-auth <server>` next step. For a recent failure, show
-`/mcp reconnect <server>`. Actions are guidance text, not inline controls. Disabled and ordinary lazy-disconnected
-servers need no warning action.
+Rows stay in declaration order and update in place. Enter opens a focused action
+list for the selected server. Reconnect, authenticate, and logout run inline;
+recent failures show one bounded, redacted reason. `Ctrl+R` reconnects and
+`Ctrl+A` authenticates the selected server directly.
 
-Show per-server and aggregate resource counts when reported, in addition to Tool counts. At narrow widths preserve
-state icon, server name, and state word; then preserve the actionable command for auth or failure before capability
-counts. Omit zero or unavailable capability counts rather than adding placeholders.
+The detail view shows whether connection is `automatic` or `on demand`.
+Changing that policy requires confirmation, persists only the server's
+`lifecycle` field in project-local `.pi/mcp.json`, and reloads Pi. Automatic
+uses MCP's `keep-alive` lifecycle; on demand uses `lazy`.
 
-Pi's configured Up and Down actions scroll one line; Ctrl+P/Ctrl+N are read-only aliases. PageUp/PageDown and
-`b`/Space scroll one visible page only when the list overflows, while Home/End jump to the top or bottom. Keep the
-configuration hint, `?` help, and Escape path. Enter and Space do not close the status surface. An empty page says
-`No MCP servers configured.` followed by `Add .mcp.json, then run /reload.`
+Logout and enable/disable require a confirmation. Enable/disable writes
+`.pi/mcp.json` through the retained runtime and reloads Pi after success. The
+default confirmation choice is Cancel.
 
-The status snapshot and Dialog continue to exclude server URLs, executable commands, arguments, environment values,
-OAuth data, tokens, detailed failure messages, and other configuration secrets. Detailed operational failures belong
-in bounded `/diagnostics`; Tool call protocol belongs in `/tools`.
+Pi's configured Up and Down actions move one row; Ctrl+P/Ctrl+N are aliases.
+PageUp/PageDown and `b`/Space move one visible page only when the list
+overflows, while Home/End jump to the first or last row. `?` opens the shared
+key guide. Escape goes back from details or closes the server list.
 
-The implementation now uses distinct state icons, includes resource counts, shows status-specific next steps, provides
-the two-line empty state, and routes Pi's configured page actions plus `b`/Space through one paging path. Focused tests cover live
-updates, declaration order, narrow fitting, empty state, sensitive-data exclusion, and page aliases; the real PTY
-verifier covers Host rendering.
+Space never performs a persistent operation. In setup it may toggle an import's
+temporary selection; Enter reviews the exact target and diff, and a second
+confirmation performs the write. Press `s` from the server list, or Enter on an
+empty list, to open setup inside the same Command Dialog. OAuth authentication
+and logout are available from each eligible server's detail actions.
+
+Setup uses the same continuous full-width top rule, two-cell content gutter,
+bold Header, `◆` section headings, bounded list windows, and separate Escape
+route as the other Suite Command Dialogs. Narrow layouts omit optional previews;
+low-height layouts retain the Header, current choice, confirmation detail, and
+way back before secondary discovery text.
+
+The status snapshot excludes server URLs, executable commands, arguments,
+environment values, OAuth data, and tokens. It adds only OAuth capability,
+automatic-connection policy, and one sanitized, redacted, length-bounded recent
+failure reason.

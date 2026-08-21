@@ -4,8 +4,13 @@ import type { McpExtensionState } from "./state.ts";
 import type { DirectToolSpec, McpAdapterOptions, McpConfig, PromptMetadata } from "./types.ts";
 import type { McpOAuthRuntime } from "./mcp-auth-flow.ts";
 import { Type } from "typebox";
-import { showStatus, showTools, showPrompts, reconnectServer, reconnectServers, authenticateServer, logoutServer, openMcpAuthPanel, openMcpPanel, openMcpSetup } from "./commands.ts";
-import { cloneMcpConfig, loadMcpConfig, writeProjectServerDisabledOverride } from "./config.ts";
+import { showStatus, showTools, showPrompts, reconnectServer, reconnectServers, authenticateServer, logoutServer, openMcpPanel, openMcpSetup } from "./commands.ts";
+import {
+  cloneMcpConfig,
+  loadMcpConfig,
+  writeProjectServerDisabledOverride,
+  writeProjectServerLifecycleOverride,
+} from "./config.ts";
 import { buildProxyDescription, createDirectToolExecutor, getMissingConfiguredDirectToolServers, resolveDirectTools } from "./direct-tools.ts";
 import { flushMetadataCache, initializeMcp, updateStatusBar } from "./init.ts";
 import { loadMetadataCache, type MetadataCache } from "./metadata-cache.ts";
@@ -444,6 +449,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
       const argumentMatch = normalized.match(/^(\S+)\s+(.*)$/);
       if (!argumentMatch) {
         const subcommands = [
+          { value: "auth", label: "auth — Authenticate a server" },
           { value: "reconnect", label: "reconnect — Reconnect servers" },
           { value: "tools", label: "tools — List all tools" },
           { value: "prompts", label: "prompts — List all MCP prompts" },
@@ -451,13 +457,15 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
           { value: "logout", label: "logout — Clear server credentials" },
           { value: "disable", label: "disable — Disable a server" },
           { value: "enable", label: "enable — Enable a server" },
+          { value: "auto-connect", label: "auto-connect — Persist automatic connection" },
+          { value: "on-demand", label: "on-demand — Persist lazy connection" },
           { value: "status", label: "status — Show server status" },
         ].filter(({ value }) => value.startsWith(normalized));
         return subcommands.length > 0 ? subcommands : null;
       }
 
       const [, subcommand, argumentPrefix] = argumentMatch;
-      if ((subcommand !== "reconnect" && subcommand !== "logout" && subcommand !== "disable" && subcommand !== "enable") || !state) return null;
+      if (!(["auth", "reconnect", "logout", "disable", "enable", "auto-connect", "on-demand"] as string[]).includes(subcommand) || !state) return null;
 
       const servers = Object.keys(state.config.mcpServers)
         .filter((serverName) => serverName.startsWith(argumentPrefix.trimStart()))
@@ -499,6 +507,20 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
       const rest = parts.slice(1).join(" ");
 
       switch (subcommand) {
+        case "auth": {
+          const serverName = rest;
+          if (!serverName) {
+            if (commandCtx.hasUI) commandCtx.ui?.notify("Usage: /mcp auth <server>", "error");
+            return;
+          }
+          commandOwner?.throwIfInactive();
+          const result = await authenticateServer(serverName, state.config, commandCtx, commandCtx.signal, state.oauthRuntime);
+          if (result.ok) {
+            commandOwner?.throwIfInactive();
+            await reconnectServer(state, commandCtx, serverName);
+          }
+          break;
+        }
         case "reconnect":
           commandOwner?.throwIfInactive();
           await reconnectServers(state, commandCtx, targetServer);
@@ -545,17 +567,55 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
             commandCtx.ui?.notify(`Usage: /mcp ${subcommand} <server>`, "error");
             break;
           }
-          if (!state.config.mcpServers[serverName]) {
+          if (!Object.hasOwn(state.config.mcpServers, serverName)) {
             commandCtx.ui?.notify(`Server "${serverName}" not found in effective config`, "error");
             break;
           }
           commandOwner?.throwIfInactive();
-          const result = writeProjectServerDisabledOverride(earlyConfigPath, commandCtx.cwd, serverName, subcommand === "disable");
+          const result = await writeProjectServerDisabledOverride(earlyConfigPath, commandCtx.cwd, serverName, subcommand === "disable");
           if (result.changed) {
-            commandCtx.ui?.notify(`${subcommand === "disable" ? "Disabled" : "Enabled"} server "${serverName}" in ${result.path} — run /reload to apply`, "info");
+            commandCtx.ui?.notify(`${subcommand === "disable" ? "Disabled" : "Enabled"} server "${serverName}" in ${result.path}. Reloading Pi…`, "info");
+            await commandReload();
+            return;
           } else {
             commandCtx.ui?.notify(`Server "${serverName}" is already ${subcommand === "disable" ? "disabled" : "enabled"}`, "info");
           }
+          break;
+        }
+        case "auto-connect":
+        case "on-demand": {
+          const serverName = rest;
+          if (programmaticConfig) {
+            commandCtx.ui?.notify(`/mcp ${subcommand} is unavailable when config is supplied by createMcpAdapter().`, "info");
+            break;
+          }
+          if (!serverName) {
+            commandCtx.ui?.notify(`Usage: /mcp ${subcommand} <server>`, "error");
+            break;
+          }
+          if (!Object.hasOwn(state.config.mcpServers, serverName)) {
+            commandCtx.ui?.notify(`Server "${serverName}" not found in effective config`, "error");
+            break;
+          }
+          commandOwner?.throwIfInactive();
+          const autoConnect = subcommand === "auto-connect";
+          const result = await writeProjectServerLifecycleOverride(
+            commandCtx.cwd,
+            serverName,
+            autoConnect ? "keep-alive" : "lazy",
+          );
+          if (result.changed) {
+            commandCtx.ui?.notify(
+              `${autoConnect ? "Automatic" : "On-demand"} connection saved for "${serverName}" in ${result.path}. Reloading Pi…`,
+              "info",
+            );
+            await commandReload();
+            return;
+          }
+          commandCtx.ui?.notify(
+            `Server "${serverName}" already uses ${autoConnect ? "automatic" : "on-demand"} connection`,
+            "info",
+          );
           break;
         }
         case "status":
@@ -581,58 +641,6 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
             await showStatus(state, commandCtx);
           }
           break;
-      }
-    },
-  });
-
-  pi.registerCommand("mcp-auth", {
-    description: "Authenticate with an MCP server (OAuth)",
-    handler: async (args, ctx) => {
-      const commandOwner = currentOwner;
-      const commandHasUI = ctx.hasUI;
-      const commandCtx = {
-        hasUI: commandHasUI,
-        ui: commandHasUI
-          ? commandOwner ? createOwnedUi(ctx.ui, commandOwner) : ctx.ui
-          : undefined,
-        cwd: ctx.cwd,
-        mode: ctx.mode,
-        signal: commandOwner?.signal ?? ctx.signal,
-      } as unknown as ExtensionContext;
-      const serverName = args?.trim();
-      if (!serverName && !commandCtx.hasUI) {
-        return;
-      }
-
-      if (!state && initPromise) {
-        try {
-          const initialized = await initPromise;
-          commandOwner?.throwIfInactive();
-          state = initialized;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (commandCtx.hasUI) commandCtx.ui?.notify(`MCP initialization failed: ${message}`, "error");
-          return;
-        }
-      }
-      if (!state) {
-        if (commandCtx.hasUI) commandCtx.ui?.notify("MCP not initialized", "error");
-        return;
-      }
-
-      if (!serverName) {
-        if (programmaticConfig) {
-          commandCtx.ui?.notify("Use /mcp-auth <server> to authenticate a server from the in-memory SDK config.", "info");
-          return;
-        }
-        await openMcpAuthPanel(state, pi, commandCtx, earlyConfigPath);
-        return;
-      }
-
-      const result = await authenticateServer(serverName, state.config, commandCtx, commandCtx.signal, state.oauthRuntime);
-      if (result.ok) {
-        commandOwner?.throwIfInactive();
-        await reconnectServer(state, commandCtx, serverName);
       }
     },
   });

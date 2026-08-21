@@ -337,7 +337,7 @@ export function createPromptCommand(
         if (ctx.hasUI) {
           const conn = state.manager.getConnection(metadata.serverName);
           const message = conn?.status === "needs-auth"
-            ? `MCP server "${metadata.serverName}" needs authentication. Run /mcp-auth ${metadata.serverName}.`
+            ? `MCP server "${metadata.serverName}" needs authentication. Run /mcp auth ${metadata.serverName}.`
             : `MCP server "${metadata.serverName}" is not available. Run /mcp reconnect ${metadata.serverName}.`;
           ctx.ui.notify(message, "error");
         }

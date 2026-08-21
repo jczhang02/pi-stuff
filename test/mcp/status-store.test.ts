@@ -38,4 +38,26 @@ describe("MCP status projection", () => {
 		});
 		expect(snapshot?.servers[0]?.name).toBe("red next");
 	});
+
+	test("projects only bounded control metadata needed by the Dialog", () => {
+		const snapshot = parseMcpStatusSnapshot({
+			...SNAPSHOT,
+			servers: [
+				{
+					autoConnect: true,
+					disabled: false,
+					failureDetail: `spawn failed\n${"x".repeat(600)}`,
+					name: "local",
+					oauth: true,
+					status: "failed",
+					toolCount: 0,
+				},
+			],
+		});
+		expect(snapshot?.servers[0]?.oauth).toBe(true);
+		expect(snapshot?.servers[0]?.autoConnect).toBe(true);
+		const detail = snapshot?.servers[0]?.failureDetail;
+		expect(detail).toStartWith("spawn failed x");
+		expect(detail?.length ?? 0).toBeLessThanOrEqual(400);
+	});
 });

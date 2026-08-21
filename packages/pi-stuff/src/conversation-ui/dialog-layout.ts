@@ -50,7 +50,7 @@ export function commandDialogRows(
 
 export function commandDialogNavigation(
 	data: string,
-	keybindings: KeybindingsManager,
+	keybindings: Pick<KeybindingsManager, "matches">,
 ): CommandDialogNavigation | undefined {
 	if (keybindings.matches(data, "tui.select.up") || matchesKey(data, Key.ctrl("p"))) return "up";
 	if (keybindings.matches(data, "tui.select.down") || matchesKey(data, Key.ctrl("n"))) return "down";
@@ -88,7 +88,7 @@ export function commandDialogScrollOffset(
 	return Math.max(0, Math.min(boundedMaximum, current + delta));
 }
 
-export function matchesCommandDialogCancel(data: string, keybindings: KeybindingsManager): boolean {
+export function matchesCommandDialogCancel(data: string, keybindings: Pick<KeybindingsManager, "matches">): boolean {
 	return keybindings.matches(data, "tui.select.cancel");
 }
 
@@ -131,13 +131,17 @@ function formatCommandDialogKey(key: string): string {
 		.join("+");
 }
 
-export function commandDialogKeys(keybindings: KeybindingsManager, binding: Keybinding, fallback: string): string {
+export function commandDialogKeys(
+	keybindings: Pick<KeybindingsManager, "getKeys">,
+	binding: Keybinding,
+	fallback: string,
+): string {
 	const keys = keybindings.getKeys(binding);
 	return keys.length > 0 ? keys.map(formatCommandDialogKey).join("/") : fallback;
 }
 
 export function commandDialogPrimaryKey(
-	keybindings: KeybindingsManager,
+	keybindings: Pick<KeybindingsManager, "getKeys">,
 	binding: Keybinding,
 	fallback: string,
 ): string {

@@ -71,6 +71,8 @@ Precedence is:
 
 `/mcp disable <server>` and `/mcp enable <server>` persist only the `disabled` field in the project-local `.pi/mcp.json`, which is the highest-precedence Pi layer. Enabling removes the project flag when lower layers are enabled, or writes `false` when needed to override a disabled lower source. This applies even when the effective server came from a shared global/project file, an imported host config, or `configPath`; the source file is never rewritten and credentials are never copied. Run `/reload` after changing the flag so registered tool surfaces are refreshed. The manual equivalent is to add `{ "disabled": true }` to a server in any normal MCP config. Supplied in-memory `createMcpAdapter({ config })` configurations are isolated and do not read or write this project override; the commands are unavailable in that mode.
 
+`/mcp auto-connect <server>` and `/mcp on-demand <server>` likewise persist only the server's `lifecycle` field in project-local `.pi/mcp.json`, using `"keep-alive"` and `"lazy"` respectively, then reload Pi. They never copy the source server definition or credentials into the override.
+
 Servers are **lazy by default** — they won't connect until you actually call one of their tools. The adapter caches tool metadata so search and describe work without live connections.
 
 ```
@@ -132,7 +134,7 @@ const extension = createMcpAdapter({
 
 The package ships TypeScript source for Pi's source-loader and SDK integrations. Use a TypeScript-capable loader/toolchain (for example `node --import tsx`) when importing the package from a standalone Node process; raw Node ESM does not execute the `.ts` entry directly.
 
-A supplied `config` is a complete, isolated snapshot. It is not merged with files, imports, global config, project config, or `--mcp-config`, and it is never mutated. Each adapter factory and session receives its own clone, so separate integrations can use different servers and settings safely. In this mode, server status, reconnect, explicit `/mcp-auth <server>`, proxy calls, and direct tools continue to work; setup and no-argument auth/status panels report the limitation instead of discovering or writing ambient config.
+A supplied `config` is a complete, isolated snapshot. It is not merged with files, imports, global config, project config, or `--mcp-config`, and it is never mutated. Each adapter factory and session receives its own clone, so separate integrations can use different servers and settings safely. In this mode, server status, reconnect, explicit `/mcp auth <server>`, proxy calls, and direct tools continue to work; setup and status panels report the limitation instead of discovering or writing ambient config.
 
 With `configPath` and no `config`, the adapter keeps normal file merge behavior, and that path takes precedence over argv and `--mcp-config`. The default export keeps the normal file-based behavior. OAuth credentials are stored in the operating system credential store and keyed by the configured server name; URL binding prevents credentials from being accepted for a different server URL. `settings.oauthDir` and `MCP_OAUTH_DIR` are used only as legacy plaintext import locations for older `tokens.json` files, not as credential namespaces. CSRF state and PKCE verifiers are flow-local, so concurrent authorization flows do not share transient secrets.
 
@@ -608,13 +610,14 @@ Servers that provide usage guidance via the MCP `instructions` field surface it 
 | `/mcp reconnect <server>` | Connect or reconnect a single server |
 | `/mcp disable <server>` | Disable a server in the project-local `.pi/mcp.json` (requires `/reload` to apply) |
 | `/mcp enable <server>` | Enable through the project-local override layer (requires `/reload` to apply) |
+| `/mcp auto-connect <server>` | Persist automatic keep-alive connection in the project-local override and reload |
+| `/mcp on-demand <server>` | Persist lazy on-demand connection in the project-local override and reload |
 | `/mcp logout <server>` | Clear stored OAuth credentials for a server and disconnect it |
-| `/mcp-auth` | Open an OAuth server picker in interactive UI sessions |
-| `/mcp-auth <server>` | OAuth setup for a specific server |
+| `/mcp auth <server>` | OAuth setup for a specific server |
 
 If `settings.autoAuth` is `true`, `mcp({ connect: ... })`, `mcp({ tool: ... })`, and direct tool calls automatically run OAuth when needed and retry once.
 
-In interactive sessions, you can also authenticate from `/mcp` with `ctrl+a` or Enter on a server that needs auth. In remote/headless sessions, use the proxy tool's `auth-start` and `auth-complete` actions to copy the authorization URL locally and paste the redirect URL back into Pi. `/mcp-auth` without a server only opens a picker in the interactive UI.
+In interactive sessions, authenticate from `/mcp` with `ctrl+a` or the server detail action. In remote/headless sessions, use the proxy tool's `auth-start` and `auth-complete` actions to copy the authorization URL locally and paste the redirect URL back into Pi.
 
 ### MCP output schemas
 

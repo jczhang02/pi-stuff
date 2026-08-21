@@ -9,7 +9,6 @@ exec "$PI_STUFF_MCP_PTY_BIN" \
 	--no-skills \
 	--no-context-files \
 	--no-prompt-templates \
-	--no-themes \
 	--no-builtin-tools \
 	--extension "$PI_STUFF_MCP_PTY_PACKAGE" \
 	--extension "$PI_STUFF_MCP_PTY_PROVIDER_EXTENSION" \

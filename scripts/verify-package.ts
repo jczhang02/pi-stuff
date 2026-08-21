@@ -325,13 +325,13 @@ async function verifySuiteSurface(piBinary: string, packagePath: string): Promis
 		"web-tools-certified",
 		"mcp-tools-certified",
 		"mcp",
-		"mcp-auth",
 		"tasks",
 		"notifications",
 		"work-tools-certified",
 	];
 	const missing = requiredCommands.filter((command) => !smoke.commandNames.includes(command));
 	if (missing.length > 0) throw new Error(`Pi Stuff is missing commands: ${missing.join(", ")}`);
+	if (smoke.commandNames.includes("mcp-auth")) throw new Error("Legacy /mcp-auth must remain removed");
 	if (smoke.createdFiles.includes("agent/pi-stuff-notification.json")) {
 		throw new Error("/notifications created Notification settings during the RPC purity probe");
 	}

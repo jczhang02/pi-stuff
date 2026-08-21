@@ -1,4 +1,7 @@
 import type { McpExtensionState } from "./state.ts";
+import { supportsOAuth } from "./mcp-auth-flow.ts";
+import { redactTraceText } from "./mcp-trace.ts";
+import { sanitizeTerminalText } from "./utils.ts";
 import {
   MCP_STATUS_EVENT,
   MCP_STATUS_SNAPSHOT_VERSION,
@@ -38,6 +41,9 @@ export function createMcpStatusSnapshot(state: McpExtensionState): McpStatusSnap
       ? undefined
       : state.resourceCounts?.get(name) ?? (connection?.status === "connected" ? connection.resources.length : undefined);
     const failedAgoSeconds = disabled ? undefined : getActiveFailureAgeSeconds(state, name);
+    const failureDetail = failedAgoSeconds === undefined
+      ? ""
+      : redactTraceText(sanitizeTerminalText(state.failureMessages?.get(name) ?? ""), 400);
 
     let status: McpServerStatusSnapshot["status"] = "not-connected";
     if (disabled) {
@@ -62,7 +68,10 @@ export function createMcpStatusSnapshot(state: McpExtensionState): McpStatusSnap
       toolCount,
       ...(resourceCount !== undefined ? { resourceCount } : {}),
       ...(status === "failed" && failedAgoSeconds !== undefined ? { failedAgoSeconds } : {}),
+      ...(status === "failed" && failureDetail ? { failureDetail } : {}),
       disabled,
+      oauth: definition ? supportsOAuth(definition) : false,
+      autoConnect: definition?.lifecycle === "eager" || definition?.lifecycle === "keep-alive",
     });
   }
 

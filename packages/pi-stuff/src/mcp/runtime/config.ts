@@ -1,9 +1,11 @@
 // config.ts - Config loading with import support
-import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import stripJsonComments from "strip-json-comments";
+import { withSettingsLock } from "../../shared/settings-io/lock.ts";
 import { xdgConfigHome } from "../../xdg/index.ts";
 import { getAgentPath } from "./agent-dir.ts";
 import { logger } from "./logger.ts";
@@ -844,23 +846,49 @@ function readRawConfigObject(filePath: string): Record<string, unknown> {
 
   try {
     const raw = parseJsonConfig(readFileSync(filePath, "utf-8"));
-    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
-  } catch {
-    return {};
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+			throw new Error("root value must be an object");
+		}
+    return raw as Record<string, unknown>;
+  } catch (error) {
+		throw new Error(
+			`Failed to read MCP config at ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+			{ cause: error },
+		);
   }
 }
 
+function resolveConfigWritePath(filePath: string): string {
+  const directory = dirname(filePath);
+  mkdirSync(directory, { recursive: true });
+  return existsSync(filePath) ? realpathSync(filePath) : join(realpathSync(directory), basename(filePath));
+}
+
 function writeRawConfigObject(filePath: string, raw: Record<string, unknown>): void {
-  mkdirSync(dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.${process.pid}.tmp`;
-  writeFileSync(tmpPath, `${JSON.stringify(raw, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
-  renameSync(tmpPath, filePath);
+  const writePath = resolveConfigWritePath(filePath);
+  const tmpPath = `${writePath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(tmpPath, `${JSON.stringify(raw, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
+    renameSync(tmpPath, writePath);
+  } catch (error) {
+    rmSync(tmpPath, { force: true });
+    throw error;
+  }
+}
+
+function withConfigWriteLock<T>(filePath: string, write: () => T): Promise<T> {
+  filePath = resolveConfigWritePath(filePath);
+  return withSettingsLock(filePath, "MCP project config", write);
+}
+
+function withProjectConfigWriteLock<T>(cwd: string, write: () => T): Promise<T> {
+  return withConfigWriteLock(getProjectPiConfigPath(cwd), write);
 }
 
 function getServersObject(raw: Record<string, unknown>): Record<string, ServerEntry> {
   const existing = raw.mcpServers ?? raw["mcp-servers"] ?? {};
   if (!existing || typeof existing !== "object" || Array.isArray(existing)) {
-    return {};
+		throw new Error("MCP config mcpServers must be an object");
   }
   return existing as Record<string, ServerEntry>;
 }
@@ -875,17 +903,15 @@ export interface ServerDisabledOverrideResult {
   changed: boolean;
 }
 
-/**
- * Persist only the disabled field in the project Pi layer. Enabling writes an
- * explicit false only when a lower-precedence source is itself disabled; this
- * writer never copies a server definition or its credentials into the file.
- */
-export function writeProjectServerDisabledOverride(
-  overridePath: string | undefined,
-  cwd: string,
-  serverName: string,
-  disabled: boolean,
-): ServerDisabledOverrideResult {
+interface ProjectServerOverride {
+  existing: Record<string, unknown> | undefined;
+  filePath: string;
+  raw: Record<string, unknown>;
+  serverKey: "mcpServers" | "mcp-servers";
+  servers: Record<string, unknown>;
+}
+
+function readProjectServerOverride(cwd: string, serverName: string): ProjectServerOverride {
   const filePath = getProjectPiConfigPath(cwd);
   let raw: Record<string, unknown> = {};
   if (existsSync(filePath)) {
@@ -906,11 +932,55 @@ export function writeProjectServerDisabledOverride(
     throw new Error(`Failed to update project MCP override at ${filePath}: ${serverKey} must be an object`);
   }
   const servers = (rawServers ?? {}) as Record<string, unknown>;
-  const previous = servers[serverName];
+  const previous = Object.hasOwn(servers, serverName) ? servers[serverName] : undefined;
   if (previous !== undefined && (!previous || typeof previous !== "object" || Array.isArray(previous))) {
     throw new Error(`Failed to update project MCP override at ${filePath}: server "${serverName}" must be an object`);
   }
-  const existing = previous as Record<string, unknown> | undefined;
+  return { existing: previous as Record<string, unknown> | undefined, filePath, raw, serverKey, servers };
+}
+
+function writeProjectServerOverride(
+  override: ProjectServerOverride,
+  serverName: string,
+  next: Record<string, unknown>,
+): ServerDisabledOverrideResult {
+  const { existing, filePath, raw, serverKey, servers } = override;
+  if ((!existing && Object.keys(next).length === 0) || JSON.stringify(existing) === JSON.stringify(next)) {
+    return { path: filePath, changed: false };
+  }
+  if (Object.keys(next).length === 0) delete servers[serverName];
+  else Object.defineProperty(servers, serverName, { configurable: true, enumerable: true, value: next, writable: true });
+  raw[serverKey] = servers;
+  writeRawConfigObject(filePath, raw);
+  return { path: filePath, changed: true };
+}
+
+/**
+ * Persist only the disabled field in the project Pi layer. Enabling writes an
+ * explicit false only when a lower-precedence source is itself disabled; this
+ * writer never copies a server definition or its credentials into the file.
+ * A custom global config participates only in that lower-precedence lookup;
+ * the mutation target remains the project Pi layer.
+ */
+export function writeProjectServerDisabledOverride(
+	globalConfigPath: string | undefined,
+	cwd: string,
+  serverName: string,
+  disabled: boolean,
+): Promise<ServerDisabledOverrideResult> {
+	return withProjectConfigWriteLock(cwd, () =>
+		writeProjectServerDisabledOverrideUnlocked(globalConfigPath, cwd, serverName, disabled),
+	);
+}
+
+function writeProjectServerDisabledOverrideUnlocked(
+	globalConfigPath: string | undefined,
+  cwd: string,
+  serverName: string,
+  disabled: boolean,
+): ServerDisabledOverrideResult {
+  const override = readProjectServerOverride(cwd, serverName);
+  const { existing, filePath, raw } = override;
 
   let next: Record<string, unknown>;
   if (disabled) {
@@ -918,7 +988,7 @@ export function writeProjectServerDisabledOverride(
   } else {
     next = Object.fromEntries(Object.entries(existing ?? {}).filter(([key]) => key !== "disabled"));
     let lowerConfig: McpConfig = { mcpServers: {} };
-    for (const source of getConfigSources(overridePath, cwd)) {
+		for (const source of getConfigSources(globalConfigPath, cwd)) {
       if (source.readPath === filePath) continue;
       const loaded = readValidatedConfig(source.readPath, `MCP config from ${source.readPath}`);
       if (loaded) lowerConfig = mergeConfigs(lowerConfig, expandImports(loaded, cwd));
@@ -931,16 +1001,19 @@ export function writeProjectServerDisabledOverride(
     }
     if (isServerDisabled(lowerConfig.mcpServers[serverName])) next.disabled = false;
   }
+  return writeProjectServerOverride(override, serverName, next);
+}
 
-  if ((!existing && Object.keys(next).length === 0) || JSON.stringify(existing) === JSON.stringify(next)) {
-    return { path: filePath, changed: false };
-  }
-  if (Object.keys(next).length === 0) delete servers[serverName];
-  else servers[serverName] = next;
-
-  raw[serverKey] = servers;
-  writeRawConfigObject(filePath, raw);
-  return { path: filePath, changed: true };
+/** Persist only a server's connection policy in the project Pi layer. */
+export function writeProjectServerLifecycleOverride(
+  cwd: string,
+  serverName: string,
+  lifecycle: "keep-alive" | "lazy",
+): Promise<ServerDisabledOverrideResult> {
+  return withProjectConfigWriteLock(cwd, () => {
+    const override = readProjectServerOverride(cwd, serverName);
+    return writeProjectServerOverride(override, serverName, { ...override.existing, lifecycle });
+  });
 }
 
 function isRepoPromptServer(name: string, entry: ServerEntry): boolean {
@@ -1021,21 +1094,20 @@ export function previewCompatibilityImports(importKinds: ImportKind[], overrideP
   return buildConfigWritePreview(targetPath, nextRaw);
 }
 
-export function ensureCompatibilityImports(importKinds: ImportKind[], overridePath?: string): { path: string; added: ImportKind[] } {
+export function ensureCompatibilityImports(importKinds: ImportKind[], overridePath?: string): Promise<{ path: string; added: ImportKind[] }> {
   const targetPath = getPiGlobalConfigPath(overridePath);
-  const raw = readRawConfigObject(targetPath);
-  const currentImports = Array.isArray(raw.imports) ? raw.imports.filter((value): value is ImportKind => typeof value === "string") : [];
-  const merged = [...new Set([...currentImports, ...importKinds])];
-  const added = merged.filter((kind) => !currentImports.includes(kind));
-  if (added.length === 0) {
-    return { path: targetPath, added: [] };
-  }
+  return withConfigWriteLock(targetPath, () => {
+    const raw = readRawConfigObject(targetPath);
+    const currentImports = Array.isArray(raw.imports) ? raw.imports.filter((value): value is ImportKind => typeof value === "string") : [];
+    const merged = [...new Set([...currentImports, ...importKinds])];
+    const added = merged.filter((kind) => !currentImports.includes(kind));
+    if (added.length === 0) return { path: targetPath, added: [] };
 
-  raw.imports = merged;
-  const servers = getServersObject(raw);
-  setServersObject(raw, servers);
-  writeRawConfigObject(targetPath, raw);
-  return { path: targetPath, added };
+    raw.imports = merged;
+    setServersObject(raw, getServersObject(raw));
+    writeRawConfigObject(targetPath, raw);
+    return { path: targetPath, added };
+  });
 }
 
 export function buildStarterProjectConfig(): McpConfig {
@@ -1050,11 +1122,13 @@ export function previewStarterProjectConfig(cwd = process.cwd()): ConfigWritePre
   return buildConfigWritePreview(targetPath, nextRaw);
 }
 
-export function writeStarterProjectConfig(cwd = process.cwd()): string {
+export function writeStarterProjectConfig(cwd = process.cwd()): Promise<string> {
   const targetPath = getProjectConfigPath(cwd);
-  const raw = { mcpServers: buildStarterProjectConfig().mcpServers };
-  writeRawConfigObject(targetPath, raw);
-  return targetPath;
+  return withConfigWriteLock(targetPath, () => {
+    if (existsSync(targetPath)) throw new Error(`Refusing to replace existing MCP config at ${targetPath}`);
+    writeRawConfigObject(targetPath, { mcpServers: buildStarterProjectConfig().mcpServers });
+    return targetPath;
+  });
 }
 
 export function previewSharedServerEntry(filePath: string, serverName: string, entry: ServerEntry): ConfigWritePreview {
@@ -1066,13 +1140,15 @@ export function previewSharedServerEntry(filePath: string, serverName: string, e
   return buildConfigWritePreview(filePath, nextRaw);
 }
 
-export function writeSharedServerEntry(filePath: string, serverName: string, entry: ServerEntry): string {
-  const raw = readRawConfigObject(filePath);
-  const servers = getServersObject(raw);
-  servers[serverName] = entry;
-  setServersObject(raw, servers);
-  writeRawConfigObject(filePath, raw);
-  return filePath;
+export function writeSharedServerEntry(filePath: string, serverName: string, entry: ServerEntry): Promise<string> {
+  return withConfigWriteLock(filePath, () => {
+    const raw = readRawConfigObject(filePath);
+    const servers = getServersObject(raw);
+    Object.defineProperty(servers, serverName, { configurable: true, enumerable: true, value: entry, writable: true });
+    setServersObject(raw, servers);
+    writeRawConfigObject(filePath, raw);
+    return filePath;
+  });
 }
 
 export function getServerProvenance(overridePath?: string, cwd = process.cwd()): Map<string, ServerProvenance> {
@@ -1121,11 +1197,11 @@ export function getServerProvenance(overridePath?: string, cwd = process.cwd()):
   return provenance;
 }
 
-export function writeDirectToolsConfig(
+export async function writeDirectToolsConfig(
   changes: Map<string, true | string[] | false>,
   provenance: Map<string, ServerProvenance>,
   fullConfig: McpConfig,
-): void {
+): Promise<void> {
   const byPath = new Map<string, { name: string; value: true | string[] | false; prov: ServerProvenance }[]>();
 
   for (const [serverName, value] of changes) {
@@ -1139,22 +1215,24 @@ export function writeDirectToolsConfig(
   }
 
   for (const [filePath, entries] of byPath) {
-    const raw = readRawConfigObject(filePath);
-    const servers = getServersObject(raw);
+    await withConfigWriteLock(filePath, () => {
+      const raw = readRawConfigObject(filePath);
+      const servers = getServersObject(raw);
 
-    for (const { name, value, prov } of entries) {
-      if (prov.kind === "import") {
-        const fullDef = fullConfig.mcpServers[name];
-        if (fullDef) {
-          servers[name] = { ...fullDef, directTools: value };
+      for (const { name, value, prov } of entries) {
+        if (prov.kind === "import") {
+          const fullDef = fullConfig.mcpServers[name];
+          if (fullDef) {
+            Object.defineProperty(servers, name, { configurable: true, enumerable: true, value: { ...fullDef, directTools: value }, writable: true });
+          }
+        } else if (Object.hasOwn(servers, name)) {
+          Object.defineProperty(servers, name, { configurable: true, enumerable: true, value: { ...servers[name], directTools: value }, writable: true });
         }
-      } else if (servers[name]) {
-        servers[name] = { ...servers[name], directTools: value };
       }
-    }
 
-    setServersObject(raw, servers);
-    writeRawConfigObject(filePath, raw);
+      setServersObject(raw, servers);
+      writeRawConfigObject(filePath, raw);
+    });
   }
 }
 

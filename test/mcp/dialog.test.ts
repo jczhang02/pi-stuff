@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, type TUI, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
-import { createMcpStatusView } from "../../packages/pi-stuff/src/mcp/mcp-dialog.js";
+import { createMcpControlView } from "../../packages/pi-stuff/src/mcp/mcp-dialog.js";
 import { McpStatusStore } from "../../packages/pi-stuff/src/mcp/status-store.js";
 
 const theme = {
@@ -16,16 +16,26 @@ describe("MCP Command Dialog", () => {
 			connectedCount: 1,
 			disabledCount: 1,
 			servers: [
-				{ disabled: false, name: "local-filesystem-with-a-very-long-name", status: "connected", toolCount: 8 },
+				{
+					disabled: false,
+					name: "local-filesystem-with-a-very-long-name",
+					resourceCount: 1,
+					status: "connected",
+					toolCount: 8,
+				},
 				{ disabled: true, name: "remote", status: "disabled", toolCount: 0 },
 			],
-			totalResources: 0,
+			totalResources: 1,
 			totalTools: 8,
 			version: 1,
 		});
 		let closed = 0;
 		const terminal = { rows: 20 };
-		const component = createMcpStatusView(store).create({
+		const component = createMcpControlView(store, {
+			authenticate: async () => undefined,
+			logout: async () => undefined,
+			reconnect: async () => undefined,
+		}).create({
 			close: () => {
 				closed += 1;
 			},
@@ -36,13 +46,16 @@ describe("MCP Command Dialog", () => {
 			tui: { terminal } as unknown as TUI,
 		});
 		const lines = component.render(36);
+		const wide = component.render(100).join("\n");
 
 		expect(lines[0]).toBe("━".repeat(36));
 		expect(lines.join("\n")).toContain("MCP · 1/1 connected · 8 tools");
 		expect(lines.join("\n")).toContain("local-filesystem");
+		expect(lines.join("\n")).toContain("✓");
+		expect(wide).toContain("1 resource");
+		expect(lines.join("\n")).toContain("■");
 		expect(lines.join("\n")).not.toMatch(/[╭╮╰╯]/u);
 		expect(lines.every((line) => visibleWidth(line) <= 36)).toBe(true);
-		component.handleInput?.("\r");
 		component.handleInput?.(" ");
 		expect(closed).toBe(0);
 		component.handleInput?.("?");
@@ -57,6 +70,377 @@ describe("MCP Command Dialog", () => {
 		expect(low.at(-1)).toContain("Esc close");
 		component.handleInput?.("\u001b");
 		expect(closed).toBe(1);
+		component.dispose?.();
+	});
+
+	test("uses the shared list aliases without turning Space into a server toggle", () => {
+		const store = new McpStatusStore();
+		store.set({
+			connectedCount: 0,
+			disabledCount: 0,
+			servers: Array.from({ length: 12 }, (_, index) => ({
+				disabled: false,
+				name: `server-${String(index)}`,
+				status: "not-connected" as const,
+				toolCount: 0,
+			})),
+			totalResources: 0,
+			totalTools: 0,
+			version: 1,
+		});
+		let result: unknown;
+		const component = createMcpControlView(store, {
+			authenticate: async () => undefined,
+			logout: async () => undefined,
+			reconnect: async () => undefined,
+		}).create({
+			close: (value) => {
+				result = value;
+			},
+			keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+			requestRender: () => undefined,
+			signal: new AbortController().signal,
+			theme,
+			tui: { terminal: { rows: 10 } } as unknown as TUI,
+		});
+
+		component.render(64);
+		component.handleInput?.(" ");
+		expect(component.render(64).join("\n")).toContain("› ○ server-3");
+		expect(result).toBeUndefined();
+		component.handleInput?.("\u001b[F");
+		expect(component.render(64).join("\n")).toContain("› ○ server-11");
+		component.handleInput?.("\u0010");
+		expect(component.render(64).join("\n")).toContain("› ○ server-10");
+		component.handleInput?.("b");
+		expect(component.render(64).join("\n")).toContain("› ○ server-7");
+		component.handleInput?.("\u001b[H");
+		expect(component.render(64).join("\n")).toContain("› ○ server-0");
+		component.dispose?.();
+	});
+
+	test("lets a user inspect a server and reconnect without knowing a subcommand", async () => {
+		const store = new McpStatusStore();
+		store.set({
+			connectedCount: 0,
+			disabledCount: 0,
+			servers: [{ disabled: false, name: "local", status: "not-connected", toolCount: 0 }],
+			totalResources: 0,
+			totalTools: 0,
+			version: 1,
+		});
+		const reconnected: string[] = [];
+		const component = createMcpControlView(store, {
+			authenticate: async () => undefined,
+			logout: async () => undefined,
+			reconnect: async (server) => {
+				reconnected.push(server);
+			},
+		}).create({
+			close: () => undefined,
+			keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+			requestRender: () => undefined,
+			signal: new AbortController().signal,
+			theme,
+			tui: { terminal: { rows: 20 } } as unknown as TUI,
+		});
+
+		expect(component.render(64).join("\n")).toContain("Enter manage");
+		component.handleInput?.("\x12");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(reconnected).toEqual(["local"]);
+		component.handleInput?.("\r");
+		expect(component.render(64).join("\n")).toContain("MCP / local");
+		component.handleInput?.("\r");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(reconnected).toEqual(["local", "local"]);
+		component.dispose?.();
+	});
+
+	test("keeps Space harmless and requires an explicit confirmation before disabling", () => {
+		const store = new McpStatusStore();
+		store.set({
+			connectedCount: 1,
+			disabledCount: 0,
+			servers: [{ disabled: false, name: "local", oauth: true, status: "connected", toolCount: 1 }],
+			totalResources: 0,
+			totalTools: 1,
+			version: 1,
+		});
+		let result: unknown;
+		const component = createMcpControlView(store, {
+			authenticate: async () => undefined,
+			logout: async () => undefined,
+			reconnect: async () => undefined,
+		}).create({
+			close: (value) => {
+				result = value;
+			},
+			keybindings: {
+				getKeys: () => [],
+				matches: (data: string, binding: string) =>
+					(data === "confirm" && binding === "tui.select.confirm") ||
+					(data === "down" && binding === "tui.select.down"),
+			} as unknown as KeybindingsManager,
+			requestRender: () => undefined,
+			signal: new AbortController().signal,
+			theme,
+			tui: { terminal: { rows: 24 } } as unknown as TUI,
+		});
+
+		component.handleInput?.(" ");
+		expect(result).toBeUndefined();
+		component.handleInput?.("confirm");
+		const actions = component.render(72).join("\n");
+		expect(actions).toContain("Authenticate");
+		expect(actions).toContain("Log out");
+		expect(actions).toContain("Disable");
+		component.handleInput?.("down");
+		component.handleInput?.("down");
+		component.handleInput?.("down");
+		component.handleInput?.("down");
+		component.handleInput?.("confirm");
+		const disableConfirmation = component.render(72).join("\n");
+		expect(disableConfirmation).toContain("Disable local?");
+		expect(disableConfirmation).toContain("◆ Preview");
+		expect(disableConfirmation).toContain("Target  .pi/mcp.json");
+		expect(disableConfirmation).toContain("Change  disabled = true");
+		component.handleInput?.("confirm");
+		expect(result).toBeUndefined();
+		component.handleInput?.("confirm");
+		component.handleInput?.("down");
+		component.handleInput?.("confirm");
+		expect(result).toEqual({ action: "set-disabled", disabled: true, server: "local" });
+		component.dispose?.();
+	});
+
+	test("confirms and returns a persistent automatic-connection choice", () => {
+		const store = new McpStatusStore();
+		store.set({
+			connectedCount: 0,
+			disabledCount: 0,
+			servers: [{ disabled: false, name: "docs", status: "cached", toolCount: 4 }],
+			totalResources: 0,
+			totalTools: 4,
+			version: 1,
+		});
+		let result: unknown;
+		const component = createMcpControlView(store, {
+			authenticate: async () => undefined,
+			logout: async () => undefined,
+			reconnect: async () => undefined,
+		}).create({
+			close: (value) => {
+				result = value;
+			},
+			keybindings: {
+				getKeys: () => [],
+				matches: (data: string, binding: string) =>
+					(data === "confirm" && binding === "tui.select.confirm") ||
+					(data === "down" && binding === "tui.select.down"),
+			} as unknown as KeybindingsManager,
+			requestRender: () => undefined,
+			signal: new AbortController().signal,
+			theme,
+			tui: { terminal: { rows: 24 } } as unknown as TUI,
+		});
+
+		component.handleInput?.("confirm");
+		expect(component.render(72).join("\n")).toContain("Connection  on demand");
+		component.handleInput?.("down");
+		component.handleInput?.("confirm");
+		const confirmation = component.render(72).join("\n");
+		expect(confirmation).toContain("◆ Confirm change");
+		expect(confirmation).toContain("◆ Preview");
+		expect(confirmation).toContain("Change  lifecycle = keep-alive");
+		expect(confirmation).toContain("Connect docs automatically?");
+		expect(confirmation).toContain("› Cancel");
+		component.handleInput?.("down");
+		component.handleInput?.("confirm");
+		expect(result).toEqual({ action: "set-auto-connect", enabled: true, server: "docs" });
+		component.dispose?.();
+	});
+
+	test("shows a bounded failure reason without claiming reconnect success", async () => {
+		const store = new McpStatusStore();
+		store.set({
+			connectedCount: 0,
+			disabledCount: 0,
+			servers: [
+				{
+					disabled: false,
+					failureDetail: "Executable was not found.",
+					name: "broken",
+					status: "failed",
+					toolCount: 0,
+				},
+			],
+			totalResources: 0,
+			totalTools: 0,
+			version: 1,
+		});
+		const component = createMcpControlView(store, {
+			authenticate: async () => undefined,
+			logout: async () => undefined,
+			reconnect: async () => {
+				store.set({
+					connectedCount: 0,
+					disabledCount: 0,
+					servers: [
+						{
+							disabled: false,
+							failureDetail: "Executable was not found.",
+							name: "broken",
+							status: "failed",
+							toolCount: 0,
+						},
+					],
+					totalResources: 0,
+					totalTools: 0,
+					version: 1,
+				});
+			},
+		}).create({
+			close: () => undefined,
+			keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+			requestRender: () => undefined,
+			signal: new AbortController().signal,
+			theme,
+			tui: { terminal: { rows: 20 } } as unknown as TUI,
+		});
+
+		component.handleInput?.("\r");
+		const detail = component.render(64).join("\n");
+		expect(detail).toContain("Executable was not found.");
+		expect(detail).toContain("Reconnect");
+		component.handleInput?.("\r");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const failed = component.render(64).join("\n");
+		expect(failed).toContain("Reconnect failed for broken.");
+		expect(failed).not.toContain("Reconnected broken.");
+		component.dispose?.();
+	});
+
+	test("invalidates stale actions and confirmations when live status changes", () => {
+		const store = new McpStatusStore();
+		const snapshot = (name: string, disabled: boolean) => ({
+			connectedCount: 0,
+			disabledCount: disabled ? 1 : 0,
+			servers: [
+				{ disabled, name, status: disabled ? ("disabled" as const) : ("not-connected" as const), toolCount: 0 },
+			],
+			totalResources: 0,
+			totalTools: 0,
+			version: 1 as const,
+		});
+		store.set(snapshot("local", false));
+		let result: unknown;
+		const component = createMcpControlView(store, {
+			authenticate: async () => undefined,
+			logout: async () => undefined,
+			reconnect: async () => undefined,
+		}).create({
+			close: (value) => {
+				result = value;
+			},
+			keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+			requestRender: () => undefined,
+			signal: new AbortController().signal,
+			theme,
+			tui: { terminal: { rows: 20 } } as unknown as TUI,
+		});
+
+		component.handleInput?.("\r");
+		component.handleInput?.("\u001b[B");
+		component.handleInput?.("\u001b[B");
+		store.set(snapshot("local", true));
+		expect(component.render(64).join("\n")).toContain("› Enable");
+		component.handleInput?.("\r");
+		expect(component.render(64).join("\n")).toContain("Enable local?");
+		store.set(snapshot("replacement", false));
+		const refreshed = component.render(64).join("\n");
+		expect(refreshed).toContain("replacement");
+		expect(refreshed).not.toContain("Enable local?");
+		component.handleInput?.("\r");
+		expect(result).toBeUndefined();
+		component.dispose?.();
+	});
+
+	test("authenticates an OAuth server from the normal MCP detail actions", async () => {
+		const store = new McpStatusStore();
+		store.set({
+			connectedCount: 0,
+			disabledCount: 0,
+			servers: [{ disabled: false, name: "oauth-server", oauth: true, status: "needs-auth", toolCount: 0 }],
+			totalResources: 0,
+			totalTools: 0,
+			version: 1,
+		});
+		const authenticated: string[] = [];
+		const component = createMcpControlView(store, {
+			authenticate: async (server) => {
+				authenticated.push(server);
+				throw new Error("token=SECRET\u001b]8;;https://malicious.invalid\u0007link");
+			},
+			logout: async () => undefined,
+			reconnect: async () => undefined,
+		}).create({
+			close: () => undefined,
+			keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+			requestRender: () => undefined,
+			signal: new AbortController().signal,
+			theme,
+			tui: { terminal: { rows: 20 } } as unknown as TUI,
+		});
+
+		const list = component.render(64).join("\n");
+		expect(list).toContain("MCP");
+		expect(list).toContain("oauth-server");
+		component.handleInput?.("\r");
+		const actions = component.render(64).join("\n");
+		expect(actions).toContain("Authenticate");
+		expect(actions).toContain("Disable");
+		component.handleInput?.("\u001b[B");
+		component.handleInput?.("\u001b[B");
+		component.handleInput?.("\r");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(authenticated).toEqual(["oauth-server"]);
+		const failed = component.render(64).join("\n");
+		expect(failed).toContain("Action failed. See /diagnostics for details.");
+		expect(failed).not.toContain("SECRET");
+		expect(failed).not.toContain("malicious.invalid");
+		component.dispose?.();
+	});
+
+	test("makes Setup discoverable from the server list", () => {
+		const store = new McpStatusStore();
+		store.set({
+			connectedCount: 0,
+			disabledCount: 0,
+			servers: [{ disabled: false, name: "local", status: "not-connected", toolCount: 0 }],
+			totalResources: 0,
+			totalTools: 0,
+			version: 1,
+		});
+		let result: unknown;
+		const component = createMcpControlView(store, {
+			authenticate: async () => undefined,
+			logout: async () => undefined,
+			reconnect: async () => undefined,
+		}).create({
+			close: (value) => {
+				result = value;
+			},
+			keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+			requestRender: () => undefined,
+			signal: new AbortController().signal,
+			theme,
+			tui: { terminal: { rows: 20 } } as unknown as TUI,
+		});
+
+		expect(component.render(64).join("\n")).toContain("s setup");
+		component.handleInput?.("s");
+		expect(result).toEqual({ action: "setup" });
 		component.dispose?.();
 	});
 });

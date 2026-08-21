@@ -26,7 +26,11 @@ export interface McpServerStatusSnapshot {
   readonly toolCount: number;
   readonly resourceCount?: number;
   readonly failedAgoSeconds?: number;
+  readonly failureDetail?: string;
   readonly disabled: boolean;
+  readonly oauth?: boolean;
+  /** Whether this server is configured to connect and recover automatically. */
+  readonly autoConnect?: boolean;
 }
 
 export interface McpStatusSnapshot {

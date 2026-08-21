@@ -12,6 +12,11 @@ const httpServer = join(root, "test/fixtures/mcp/http-server.mjs");
 const DEFAULT_COLUMNS = 64;
 const NARROW_COLUMNS = 48;
 const DEFAULT_ROWS = 28;
+const LOW_ROWS = 12;
+const SETUP_THEMES = [
+	{ accent: "\u001b[38;2;136;57;239m", name: "catppuccin-latte" },
+	{ accent: "\u001b[38;2;203;166;247m", name: "catppuccin-mocha" },
+] as const;
 const RESUME_FIRST_FRAME_BOUNDARY = "MCP_RESUME_FIRST_FRAME_BOUNDARY";
 const RESUME_RAW_MARKER = "RAW_MCP_RESUME_RESULT_MARKER";
 
@@ -127,34 +132,127 @@ if {[file size $env(PI_STUFF_MCP_PTY_HTTP_LOG)] != 0} {
     puts stderr "Opening /mcp contacted the HTTP server"
     exit 8
 }
-send -- "\\033"
+send -- " "
 after 100
-send -- "/mcp reconnect local\\r"
+if {[file exists $env(PI_STUFF_MCP_PTY_MARKER)]} {
+    puts stderr "Space connected a server"
+    exit 9
+}
+if {[file size $env(PI_STUFF_MCP_PTY_HTTP_LOG)] != 0} {
+    puts stderr "Space contacted the HTTP server"
+    exit 10
+}
+send -- "\\r"
+must_expect "MCP / broken"
+send -- "\\033\\[B"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "Disable broken?"
+must_expect "Cancel"
+if {[file exists $env(PI_STUFF_MCP_PTY_OVERRIDE)]} {
+    puts stderr "Opening disable confirmation wrote an override"
+    exit 16
+}
+send -- "\\r"
+after 100
+if {[file exists $env(PI_STUFF_MCP_PTY_OVERRIDE)]} {
+    puts stderr "Default Cancel wrote a disable override"
+    exit 17
+}
+send -- "\\r"
+must_expect "Disable broken?"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "Disabled server"
+after 1000
+send -- "/mcp\\r"
+must_expect "0/2 connected"
+must_expect "broken"
+must_expect "disabled"
+send -- "\\r"
+must_expect "MCP / broken"
+must_expect "Enable"
+send -- "\\r"
+must_expect "Enable broken?"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "Enabled server"
+after 1000
+send -- "/mcp\\r"
+must_expect "0/3 connected"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "MCP / local"
+must_expect "Reconnect"
+must_expect "Connect automatically"
+must_expect "Disable"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "Connect local automatically?"
+must_expect "Cancel"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "Automatic connection saved"
+after 1000
+send -- "/mcp\\r"
+must_expect "0/3 connected"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "MCP / local"
+must_expect "Connection  automatic"
+must_expect "Connect on demand"
+send -- "\\r"
 wait_for_marker
 must_expect "MCP: Reconnected to local"
-send -- "/mcp\\r"
+after 100
+send -- "\\033"
 must_expect "1/3 connected"
 must_expect "local"
 must_expect "1 tool"
 must_expect "Esc close"
 send -- "\\033"
 after 100
-send -- "/mcp reconnect broken\\r"
-must_expect "MCP: Failed to reconnect to broken"
 send -- "/mcp\\r"
 must_expect "1/3 connected"
-must_expect "broken"
+send -- "\\r"
+must_expect "MCP / broken"
+send -- "\\r"
+must_expect "MCP: Failed to reconnect to broken"
+must_expect "State  failed"
+must_expect "Error"
+after 100
+send -- "\\033"
+must_expect "1/3 connected"
 must_expect "failed"
 must_expect "Esc close"
 send -- "\\033"
 after 100
-send -- "/mcp reconnect remote\\r"
+send -- "/mcp\\r"
+must_expect "1/3 connected"
+send -- "\\033\\[B"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "MCP / remote"
+send -- "\\r"
 must_expect "MCP: Reconnected to remote"
+after 100
+send -- "\\033"
+must_expect "2/3 connected"
+must_expect "remote"
+must_expect "1 tool"
+must_expect "Esc close"
+send -- "\\033"
+after 100
 send -- "/mcp\\r"
 must_expect "2/3 connected"
-must_expect "2 tools"
-must_expect "remote"
-must_expect "Esc close"
+send -- "\\033\\[B"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "MCP / remote"
+must_expect "Authenticate"
+must_expect "Log out"
+send -- "\\033"
+must_expect "2/3 connected"
 send -- "\\033"
 stty rows $env(PI_STUFF_MCP_PTY_ROWS) columns $env(PI_STUFF_MCP_PTY_NARROW_COLUMNS) < $mcp_pty
 after 200
@@ -182,6 +280,111 @@ expect {
     eof {}
     timeout {
         puts stderr "Timed out waiting for Pi to exit"
+        exit 4
+    }
+}
+`;
+}
+
+function noobExpectProgram(): string {
+	return `
+set timeout 25
+
+proc must_expect {pattern} {
+    expect {
+        -exact $pattern {}
+        timeout {
+            puts stderr "Timed out waiting for: $pattern"
+            exit 2
+        }
+        eof {
+            puts stderr "Reached EOF while waiting for: $pattern"
+            exit 3
+        }
+    }
+}
+
+spawn -noecho script -qefc $env(PI_STUFF_MCP_PTY_RUNNER) /dev/null
+set mcp_pty $spawn_out(slave,name)
+must_expect "Welcome back!"
+after 150
+if {[file exists $env(PI_STUFF_MCP_PTY_FRESH_CONFIG)]} {
+    puts stderr "Fresh project already had MCP config"
+    exit 11
+}
+send -- "/mcp\\r"
+must_expect "0/0 connected"
+must_expect "No MCP servers configured."
+must_expect "Press Enter to set up your first server."
+send -- " "
+after 100
+if {[file exists $env(PI_STUFF_MCP_PTY_FRESH_CONFIG)]} {
+    puts stderr "Space wrote MCP config"
+    exit 12
+}
+send -- "\\r"
+must_expect "MCP setup"
+must_expect "◆ Setup"
+must_expect "View example"
+must_expect "Scaffold project"
+must_expect "◆ Preview"
+must_expect "Esc close"
+stty rows $env(PI_STUFF_MCP_PTY_ROWS) columns $env(PI_STUFF_MCP_PTY_NARROW_COLUMNS) < $mcp_pty
+after 200
+must_expect "◆ Setup"
+must_expect "Esc close"
+stty rows $env(PI_STUFF_MCP_PTY_LOW_ROWS) columns $env(PI_STUFF_MCP_PTY_NARROW_COLUMNS) < $mcp_pty
+after 200
+must_expect "MCP setup"
+must_expect "View example"
+must_expect "Esc close"
+stty rows $env(PI_STUFF_MCP_PTY_ROWS) columns $env(PI_STUFF_MCP_PTY_NARROW_COLUMNS) < $mcp_pty
+after 200
+send -- "\\033\\[B"
+send -- "\\033\\[B"
+send -- "\\033\\[B"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "◆ Confirm change"
+must_expect "Add Context7 to the MCP config?"
+must_expect "◆ Preview"
+must_expect "Cancel"
+if {[file exists $env(PI_STUFF_MCP_PTY_FRESH_CONFIG)]} {
+    puts stderr "Opening write confirmation wrote MCP config"
+    exit 13
+}
+send -- "\\r"
+after 100
+if {[file exists $env(PI_STUFF_MCP_PTY_FRESH_CONFIG)]} {
+    puts stderr "Default Cancel wrote MCP config"
+    exit 14
+}
+send -- "\\r"
+must_expect "Add Context7 to the MCP config?"
+send -- "\\033\\[B"
+send -- "\\r"
+must_expect "Added Context7 to"
+for {set index 0} {$index < 100} {incr index} {
+    if {[file exists $env(PI_STUFF_MCP_PTY_FRESH_CONFIG)]} { break }
+    after 50
+}
+if {![file exists $env(PI_STUFF_MCP_PTY_FRESH_CONFIG)]} {
+    puts stderr "Confirmed setup did not write MCP config"
+    exit 15
+}
+send -- "\\033"
+after 1000
+send -- "/mcp\\r"
+must_expect "0/1 connected"
+must_expect "context7"
+must_expect "not connected"
+send -- "\\033"
+after 100
+send -- "\\004"
+expect {
+    eof {}
+    timeout {
+        puts stderr "Timed out waiting for fresh Pi session to exit"
         exit 4
     }
 }
@@ -248,18 +451,51 @@ async function processExists(pid: number): Promise<boolean> {
 	}
 }
 
+function runExpect(program: string, cwd: string, env: Record<string, string | undefined>): string {
+	const result = Bun.spawnSync(["expect", "-c", program], {
+		cwd,
+		env,
+		stderr: "pipe",
+		stdout: "pipe",
+	});
+	const output = `${result.stdout.toString()}\n${result.stderr.toString()}`;
+	if (result.exitCode !== 0) fail(output.trim() || `expect exited ${String(result.exitCode)}`);
+	return output;
+}
+
 export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<void> {
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-mcp-pty-"));
 	const config = join(temporaryDirectory, "agent");
 	const home = join(temporaryDirectory, "home");
+	const xdgCache = join(temporaryDirectory, "xdg-cache");
+	const xdgConfig = join(temporaryDirectory, "xdg-config");
+	const xdgState = join(temporaryDirectory, "xdg-state");
+	const noobCases = SETUP_THEMES.map((theme) => ({
+		...theme,
+		project: join(temporaryDirectory, `noob-${theme.name}`),
+		sessions: join(temporaryDirectory, `noob-${theme.name}-sessions`),
+	}));
 	const project = join(temporaryDirectory, "project");
 	const sessions = join(temporaryDirectory, "sessions");
 	const marker = join(temporaryDirectory, "stdio-marker.txt");
+	const override = join(project, ".pi/mcp.json");
 	const httpEndpoint = join(temporaryDirectory, "http-endpoint.txt");
 	const httpLog = join(temporaryDirectory, "http-requests.jsonl");
 	const columns = options.columns ?? DEFAULT_COLUMNS;
 	const rows = options.rows ?? DEFAULT_ROWS;
-	await Promise.all([mkdir(config), mkdir(home), mkdir(project), mkdir(sessions)]);
+	await Promise.all([
+		mkdir(config),
+		mkdir(home),
+		mkdir(xdgCache),
+		mkdir(xdgConfig),
+		mkdir(xdgState),
+		...noobCases.flatMap(({ project: noobProject, sessions: noobSessions }) => [
+			mkdir(noobProject),
+			mkdir(noobSessions),
+		]),
+		mkdir(project),
+		mkdir(sessions),
+	]);
 	let httpChild: ReturnType<typeof Bun.spawn> | undefined;
 
 	try {
@@ -275,65 +511,101 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 		});
 		await waitForFile(httpEndpoint);
 		const httpUrl = (await readFile(httpEndpoint, "utf8")).trim();
-		await Promise.all([
-			writeFile(
+		const commonEnv = {
+			...process.env,
+			COLORTERM: "truecolor",
+			HOME: home,
+			PI_CODING_AGENT_DIR: config,
+			PI_OFFLINE: "1",
+			PI_STUFF_MCP_PTY_BIN: options.piBinary,
+			PI_STUFF_MCP_PTY_COLUMNS: String(columns),
+			PI_STUFF_MCP_PTY_LOW_ROWS: String(LOW_ROWS),
+			PI_STUFF_MCP_PTY_NARROW_COLUMNS: String(NARROW_COLUMNS),
+			PI_STUFF_MCP_PTY_PACKAGE: resolve(options.packagePath),
+			PI_STUFF_MCP_PTY_PROVIDER_EXTENSION: providerExtension,
+			PI_STUFF_MCP_PTY_ROWS: String(rows),
+			PI_STUFF_MCP_PTY_RUNNER: runner,
+			PI_TELEMETRY: "0",
+			SHELL: "/bin/sh",
+			TERM: "xterm-256color",
+			XDG_CACHE_HOME: xdgCache,
+			XDG_CONFIG_HOME: xdgConfig,
+			XDG_STATE_HOME: xdgState,
+		};
+		for (const noobCase of noobCases) {
+			await writeFile(
 				join(config, "settings.json"),
-				`${JSON.stringify({ defaultProjectTrust: "always", enableInstallTelemetry: false, quietStartup: true }, null, "\t")}\n`,
-			),
-			writeFile(
-				join(project, ".mcp.json"),
-				`${JSON.stringify(
-					{
-						mcpServers: {
-							broken: {
-								command: join(temporaryDirectory, "missing-mcp-server"),
-								env: { MCP_SECRET: "MCP_SECRET_SHOULD_NOT_APPEAR" },
-							},
-							local: {
-								args: [server],
-								command: process.execPath,
-								env: {
-									MCP_SECRET: "MCP_SECRET_SHOULD_NOT_APPEAR",
-									PI_STUFF_MCP_MARKER: marker,
-								},
-							},
-							remote: { url: httpUrl },
+				`${JSON.stringify({ defaultProjectTrust: "always", enableInstallTelemetry: false, quietStartup: true, theme: noobCase.name }, null, "\t")}\n`,
+			);
+			const freshConfig = join(noobCase.project, ".mcp.json");
+			const noobOutput = runExpect(noobExpectProgram(), noobCase.project, {
+				...commonEnv,
+				PI_STUFF_MCP_PTY_FRESH_CONFIG: freshConfig,
+				PI_STUFF_MCP_PTY_RESUME_TARGET: join(noobCase.sessions, "unused.jsonl"),
+				PI_STUFF_MCP_PTY_SESSIONS: noobCase.sessions,
+				PI_STUFF_MCP_PTY_SESSION_ID: `mcp-noob-${noobCase.name}`,
+			});
+			const noobVisible = stripTerminalControls(noobOutput);
+			if (!noobOutput.includes(noobCase.accent)) {
+				fail(`MCP setup did not render the ${noobCase.name} semantic accent`);
+			}
+			if (!noobVisible.includes("Write and reload")) {
+				fail("fresh-state flow never exposed the confirmed write action");
+			}
+			for (const width of [columns, NARROW_COLUMNS]) {
+				if (!noobVisible.includes("━".repeat(width))) {
+					fail(`MCP setup did not render a ${String(width)}-column divider`);
+				}
+			}
+			const freshDocument = JSON.parse(await readFile(freshConfig, "utf8")) as {
+				mcpServers?: Record<string, { url?: unknown }>;
+			};
+			if (
+				!freshDocument.mcpServers ||
+				typeof freshDocument.mcpServers !== "object" ||
+				Array.isArray(freshDocument.mcpServers)
+			) {
+				fail("fresh-state setup did not write a valid MCP server map");
+			}
+			if (freshDocument.mcpServers["context7"]?.url !== "https://mcp.context7.com/mcp") {
+				fail("fresh-state setup did not persist the selected Context7 server");
+			}
+		}
+
+		await writeFile(
+			join(project, ".mcp.json"),
+			`${JSON.stringify(
+				{
+					mcpServers: {
+						broken: {
+							command: join(temporaryDirectory, "missing-mcp-server"),
+							env: { MCP_SECRET: "MCP_SECRET_SHOULD_NOT_APPEAR" },
 						},
+						local: {
+							args: [server],
+							command: process.execPath,
+							env: {
+								MCP_SECRET: "MCP_SECRET_SHOULD_NOT_APPEAR",
+								PI_STUFF_MCP_MARKER: marker,
+							},
+						},
+						remote: { url: httpUrl },
 					},
-					null,
-					"\t",
-				)}\n`,
-			),
-		]);
+				},
+				null,
+				"\t",
+			)}\n`,
+		);
 		const resumeTarget = seedResumeTarget(sessions, project);
-		const result = Bun.spawnSync(["expect", "-c", expectProgram()], {
-			cwd: project,
-			env: {
-				...process.env,
-				HOME: home,
-				PI_CODING_AGENT_DIR: config,
-				PI_OFFLINE: "1",
-				PI_STUFF_MCP_PTY_BIN: options.piBinary,
-				PI_STUFF_MCP_PTY_COLUMNS: String(columns),
-				PI_STUFF_MCP_PTY_MARKER: marker,
-				PI_STUFF_MCP_PTY_HTTP_LOG: httpLog,
-				PI_STUFF_MCP_PTY_NARROW_COLUMNS: String(NARROW_COLUMNS),
-				PI_STUFF_MCP_PTY_PACKAGE: resolve(options.packagePath),
-				PI_STUFF_MCP_PTY_PROVIDER_EXTENSION: providerExtension,
-				PI_STUFF_MCP_PTY_RESUME_TARGET: resumeTarget,
-				PI_STUFF_MCP_PTY_ROWS: String(rows),
-				PI_STUFF_MCP_PTY_RUNNER: runner,
-				PI_STUFF_MCP_PTY_SESSIONS: sessions,
-				PI_STUFF_MCP_PTY_SESSION_ID: "mcp-source-session",
-				PI_TELEMETRY: "0",
-				SHELL: "/bin/sh",
-				TERM: "xterm-256color",
-			},
-			stderr: "pipe",
-			stdout: "pipe",
+		const output = runExpect(expectProgram(), project, {
+			...commonEnv,
+			PI_STUFF_MCP_PTY_MARKER: marker,
+			PI_STUFF_MCP_PTY_HTTP_LOG: httpLog,
+			PI_STUFF_MCP_PTY_OVERRIDE: override,
+			PI_STUFF_MCP_PTY_RESUME_TARGET: resumeTarget,
+			PI_STUFF_MCP_PTY_SESSIONS: sessions,
+			PI_STUFF_MCP_PTY_SESSION_ID: "mcp-source-session",
 		});
-		const output = `${result.stdout.toString()}\n${result.stderr.toString()}`;
-		if (result.exitCode !== 0) fail(output.trim() || `expect exited ${String(result.exitCode)}`);
 
 		const visible = stripTerminalControls(output);
 		for (const required of [
@@ -366,6 +638,15 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 		}
 		if (/mcp:\d+/u.test(visible)) fail("terminal output exposed a Capability-specific MCP Statusline segment");
 		if (visible.includes("MCP_SECRET_SHOULD_NOT_APPEAR")) fail("terminal output exposed an MCP configuration secret");
+		const overrideDocument = JSON.parse(await readFile(override, "utf8")) as {
+			mcpServers?: Record<string, { lifecycle?: unknown }>;
+		};
+		if (overrideDocument.mcpServers && Object.hasOwn(overrideDocument.mcpServers, "broken")) {
+			fail("re-enabling the server left a stale disabled override");
+		}
+		if (overrideDocument.mcpServers?.["local"]?.lifecycle !== "keep-alive") {
+			fail("automatic connection choice was not persisted in the project MCP override");
+		}
 
 		await access(marker);
 		const markerLines = (await readFile(marker, "utf8")).trim().split("\n");
@@ -400,5 +681,7 @@ export async function verifyMcpPty(options: McpPtyVerificationOptions): Promise<
 if (import.meta.main) {
 	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 	await verifyMcpPty({ packagePath: join(root, "packages/pi-stuff"), piBinary: PI_BIN });
-	console.log("Certified lazy MCP lifecycle, Tool call/resume rendering, and Command Dialog in real Pi TUI");
+	console.log(
+		"Certified light/dark responsive setup at wide, narrow, and low sizes; reload/re-read, persisted connection policy, OAuth detail actions, MCP lifecycle, Tool call/resume rendering, and Command Dialog in real Pi TUI",
+	);
 }

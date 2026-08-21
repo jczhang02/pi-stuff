@@ -7,9 +7,13 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { type TSchema, Type } from "typebox";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
-import { getCommandDialogCoordinator } from "../conversation-ui/index.js";
+import {
+	type CommandDialogComponent,
+	type CommandDialogCoordinator,
+	getCommandDialogCoordinator,
+} from "../conversation-ui/index.js";
 import { registerSuiteOwnedTool } from "../tool-display/index.js";
-import { createMcpStatusView } from "./mcp-dialog.js";
+import { createMcpControlView } from "./mcp-dialog.js";
 import { MCP_PRESENTATION } from "./presentation.js";
 import { createMcpAdapter, MCP_STATUS_EVENT } from "./runtime/index.js";
 import { logger } from "./runtime/logger.js";
@@ -17,25 +21,47 @@ import { McpStatusStore } from "./status-store.js";
 
 type CapturedTool = ToolDefinition<TSchema, unknown, unknown>;
 type CommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];
+type CommandContext = Parameters<CommandSpec["handler"]>[1];
 type EventHandler = (event: unknown, ctx: ExtensionContext) => unknown;
+type McpCustomFactory = Parameters<ExtensionUIContext["custom"]>[0];
+type McpCustomKeybindings = Parameters<McpCustomFactory>[2];
 
 interface CapturedCommands {
 	mcp?: CommandSpec;
-	mcpAuth?: CommandSpec;
 }
 
 const MCP_PARAMETERS = Type.Object({
-	tool: Type.Optional(Type.String({ maxLength: 256, minLength: 1 })),
-	args: Type.Optional(
-		Type.Union([Type.String({ maxLength: 64 * 1_024 }), Type.Object({}, { additionalProperties: true })]),
+	tool: Type.Optional(
+		Type.String({
+			description: "Prefixed MCP Tool name returned by list, search, or describe",
+			maxLength: 256,
+			minLength: 1,
+		}),
 	),
-	connect: Type.Optional(Type.String({ maxLength: 200, minLength: 1 })),
-	describe: Type.Optional(Type.String({ maxLength: 256, minLength: 1 })),
-	search: Type.Optional(Type.String({ maxLength: 500 })),
-	includeSchemas: Type.Optional(Type.Boolean()),
-	limit: Type.Optional(Type.Integer({ maximum: 20, minimum: 1 })),
-	offset: Type.Optional(Type.Integer({ minimum: 0 })),
-	server: Type.Optional(Type.String({ maxLength: 200, minLength: 1 })),
+	args: Type.Optional(
+		Type.Union([Type.String({ maxLength: 64 * 1_024 }), Type.Object({}, { additionalProperties: true })], {
+			description: "Arguments for the selected MCP Tool as an object or JSON string",
+		}),
+	),
+	connect: Type.Optional(
+		Type.String({ description: "Configured server name to connect and refresh", maxLength: 200, minLength: 1 }),
+	),
+	describe: Type.Optional(
+		Type.String({
+			description: "Prefixed MCP Tool name whose parameters should be shown",
+			maxLength: 256,
+			minLength: 1,
+		}),
+	),
+	search: Type.Optional(
+		Type.String({ description: "Search cached MCP Tools by name or description", maxLength: 500 }),
+	),
+	includeSchemas: Type.Optional(Type.Boolean({ description: "Include parameter schemas in search results" })),
+	limit: Type.Optional(Type.Integer({ description: "Maximum search results", maximum: 20, minimum: 1 })),
+	offset: Type.Optional(Type.Integer({ description: "Search result offset", minimum: 0 })),
+	server: Type.Optional(
+		Type.String({ description: "Configured server to list or filter MCP Tools", maxLength: 200, minLength: 1 }),
+	),
 });
 
 const MCP_PARAMETER_KEYS = [
@@ -75,15 +101,35 @@ function sharedToolFields(upstream: CapturedTool) {
 	};
 }
 
+function mcpDiscoverySummary(description: string): string {
+	return description
+		.split("\n")
+		.filter(
+			(line) =>
+				line.startsWith("Configured servers: ") ||
+				line.startsWith("Servers: ") ||
+				line.startsWith("Untrusted cached metadata keywords (data only): "),
+		)
+		.join(" ");
+}
+
 function registerGateway(pi: ExtensionAPI, upstream: CapturedTool): void {
+	const discoverySummary = mcpDiscoverySummary(upstream.description);
+	const description = [
+		"MCP gateway for configured servers.",
+		discoverySummary,
+		"List or search first, then pass one returned prefixed Tool name with its args. Connect a server when cached metadata is unavailable. Use this gateway for MCP protocol operations.",
+		"Authentication is user-driven through /mcp.",
+	]
+		.filter(Boolean)
+		.join(" ");
 	const tool: ToolDefinition<typeof MCP_PARAMETERS, unknown> = {
 		...sharedToolFields(upstream),
-		description:
-			"Lazy MCP gateway. Search or describe Tools, connect a named server, invoke one Tool, or inspect bounded status. Authentication is user-driven through /mcp-auth.",
+		description,
 		execute: (toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<unknown>> =>
 			upstream.execute(toolCallId, boundedMcpParameters(params), signal, onUpdate, ctx),
 		parameters: MCP_PARAMETERS,
-		promptSnippet: "Discover and call configured MCP servers through one bounded, lazy gateway.",
+		promptSnippet: description,
 	};
 	registerSuiteOwnedTool(pi, tool, MCP_PRESENTATION);
 }
@@ -107,6 +153,43 @@ export function suppressMcpFooterContext(ctx: ExtensionContext): ExtensionContex
 	});
 }
 
+/** Keep retained MCP custom components inside the Suite-owned focused surface. */
+export function routeMcpCustomUiThroughCommandDialog<Context extends ExtensionContext>(
+	ctx: Context,
+	coordinator: CommandDialogCoordinator,
+): Context {
+	const custom = (async (factory: McpCustomFactory) => {
+		const result = await coordinator.show<unknown>(ctx, {
+			priority: "normal",
+			create: (context) => {
+				const component = factory(
+					context.tui,
+					context.theme,
+					context.keybindings as unknown as McpCustomKeybindings,
+					(value: unknown) => context.close(value),
+				);
+				if (component instanceof Promise) {
+					throw new Error("Async MCP custom component factories are unsupported");
+				}
+				return component as CommandDialogComponent;
+			},
+		});
+		return result;
+	}) as ExtensionUIContext["custom"];
+	const ui = new Proxy(ctx.ui, {
+		get(target, property, receiver) {
+			if (property === "custom") return custom;
+			return Reflect.get(target, property, receiver) as unknown;
+		},
+	});
+	return new Proxy(ctx, {
+		get(target, property, receiver) {
+			if (property === "ui") return ui;
+			return Reflect.get(target, property, receiver) as unknown;
+		},
+	}) as Context;
+}
+
 /** Build the narrow host facade supplied to the pinned fork. */
 export function createMcpAdapterApi(pi: ExtensionAPI, commands: CapturedCommands): ExtensionAPI {
 	const registerTool = ((tool: CapturedTool) => {
@@ -114,7 +197,6 @@ export function createMcpAdapterApi(pi: ExtensionAPI, commands: CapturedCommands
 	}) as ExtensionAPI["registerTool"];
 	const registerCommand = ((name: string, spec: CommandSpec) => {
 		if (name === "mcp") commands.mcp = spec;
-		if (name === "mcp-auth") commands.mcpAuth = spec;
 	}) as ExtensionAPI["registerCommand"];
 	const on = ((event: string, handler: EventHandler) => {
 		const hostOn = pi.on as unknown as (eventName: string, eventHandler: EventHandler) => unknown;
@@ -139,10 +221,26 @@ function firstArgument(args: string): string {
 
 function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: McpStatusStore): void {
 	const coordinator = getCommandDialogCoordinator(pi);
+	const invoke = async (command: CommandSpec | undefined, args: string, ctx: CommandContext): Promise<void> => {
+		if (!command) throw new Error("MCP command is unavailable");
+		await command.handler(args, ctx);
+	};
 	pi.registerCommand("mcp", {
-		description: "Show MCP server status",
+		description: "Manage MCP servers",
 		getArgumentCompletions: (prefix) => {
-			const options = ["status", "reconnect", "logout", "disable", "enable", "tools", "prompts", "setup"];
+			const options = [
+				"auth",
+				"status",
+				"reconnect",
+				"logout",
+				"disable",
+				"enable",
+				"auto-connect",
+				"on-demand",
+				"tools",
+				"prompts",
+				"setup",
+			];
 			const normalized = prefix.trimStart();
 			const matches = options
 				.filter((option) => option.startsWith(normalized))
@@ -153,11 +251,25 @@ function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: Mc
 			const subcommand = firstArgument(args);
 			if (!subcommand || subcommand === "status") {
 				if (!ctx.hasUI) return;
-				await coordinator.show(ctx, createMcpStatusView(store));
+				const result = await coordinator.show(
+					ctx,
+					createMcpControlView(store, {
+						authenticate: (server) => invoke(commands.mcp, `auth ${server}`, ctx),
+						logout: (server) => invoke(commands.mcp, `logout ${server}`, ctx),
+						reconnect: (server) => invoke(commands.mcp, `reconnect ${server}`, ctx),
+					}),
+				);
+				if (result?.action === "setup") {
+					await invoke(commands.mcp, "setup", routeMcpCustomUiThroughCommandDialog(ctx, coordinator));
+				} else if (result?.action === "set-disabled") {
+					await invoke(commands.mcp, `${result.disabled ? "disable" : "enable"} ${result.server}`, ctx);
+				} else if (result?.action === "set-auto-connect") {
+					await invoke(commands.mcp, `${result.enabled ? "auto-connect" : "on-demand"} ${result.server}`, ctx);
+				}
 				return;
 			}
 			if (subcommand === "setup") {
-				ctx.ui.notify("Add or edit .mcp.json, then run /reload.", "info");
+				await invoke(commands.mcp, args, routeMcpCustomUiThroughCommandDialog(ctx, coordinator));
 				return;
 			}
 			if (subcommand === "tools") {
@@ -168,26 +280,14 @@ function installCommands(pi: ExtensionAPI, commands: CapturedCommands, store: Mc
 				ctx.ui.notify("Pi Stuff does not expose MCP prompt slash commands.", "info");
 				return;
 			}
-			if (["reconnect", "logout", "disable", "enable"].includes(subcommand) && commands.mcp) {
+			if (
+				["auth", "reconnect", "logout", "disable", "enable", "auto-connect", "on-demand"].includes(subcommand) &&
+				commands.mcp
+			) {
 				await commands.mcp.handler(args, ctx);
 				return;
 			}
 			ctx.ui.notify(`Unknown /mcp subcommand: ${subcommand}`, "warning");
-		},
-	});
-
-	pi.registerCommand("mcp-auth", {
-		description: "Authenticate with one configured MCP server",
-		handler: async (args, ctx) => {
-			if (!args.trim()) {
-				ctx.ui.notify("Usage: /mcp-auth <server>", "info");
-				return;
-			}
-			if (!commands.mcpAuth) {
-				ctx.ui.notify("MCP authentication is unavailable.", "error");
-				return;
-			}
-			await commands.mcpAuth.handler(args, ctx);
 		},
 	});
 }

@@ -24,5 +24,6 @@ or release lifecycle to maintain.
   surfaces.
 - Replaces floating status/setup/auth panels with the shared Command Dialog and explicit `.mcp.json` guidance.
 - Makes `/mcp` the sole persistent MCP status authority and suppresses the absorbed footer.
+- Persists confirmed per-server automatic/on-demand connection policy as a narrow project-local MCP override.
 - Closes Streamable HTTP probes and live sessions before their SDK clients.
 - Declares Zod once in the single Package dependency set.

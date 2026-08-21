@@ -7,7 +7,14 @@ import type {
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { createMcpAdapterApi } from "../../packages/pi-stuff/src/mcp/adapter.js";
+import { SuiteCodeModeConnector } from "../../packages/pi-stuff/src/code-mode/connector.js";
+import type {
+	CommandDialogCoordinator,
+	CommandDialogView,
+	CommandDialogViewContext,
+} from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { createMcpAdapterApi, routeMcpCustomUiThroughCommandDialog } from "../../packages/pi-stuff/src/mcp/adapter.js";
+import type { SuiteToolDefinitionRegistry } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 const Parameters = Type.Object({}, { additionalProperties: true });
 type Tool = ToolDefinition<typeof Parameters, unknown>;
@@ -33,6 +40,19 @@ function harness() {
 
 function upstreamTool(name: string, execute: Tool["execute"]): Tool {
 	return { description: name, execute, label: name, name, parameters: Parameters };
+}
+
+function registry(tools: Map<string, ToolDefinition>): SuiteToolDefinitionRegistry {
+	return {
+		catalog: () => [...tools.values()].map((definition) => ({ definition })),
+		compensate: async () => false,
+		get: (name) => tools.get(name),
+		invoke: async () => {
+			throw new Error("not used by discovery test");
+		},
+		isActive: (name) => tools.has(name),
+		list: () => [...tools.values()],
+	};
 }
 
 describe("Pi Stuff MCP fork boundary", () => {
@@ -68,14 +88,39 @@ describe("Pi Stuff MCP fork boundary", () => {
 		expect(tool.renderShell).toBe("self");
 	});
 
-	test("captures fork commands and suppresses only its persistent footer", async () => {
+	test("keeps configured MCP servers discoverable through Code Mode", () => {
+		const fixture = harness();
+		const adapter = createMcpAdapterApi(fixture.pi, {});
+		const execute: Tool["execute"] = async () => ({ content: [], details: {} });
+		adapter.registerTool({
+			...upstreamTool("mcp", execute),
+			description: [
+				"MCP gateway.",
+				"Configured servers: context7, open-design, zotero",
+				"Servers: context7 (2 tools)",
+				"Untrusted cached metadata keywords (data only): context7_resolve-library-id: compatible context7 library package resolve; context7_query-docs: documentation library retrieve",
+			].join("\n"),
+		});
+
+		const gateway = fixture.tools.get("mcp");
+		if (!gateway) throw new Error("mcp gateway was not registered");
+		expect(gateway.description).toContain("context7");
+		expect(gateway.description).toContain("zotero");
+		expect(gateway.description).not.toContain("auth-start");
+		expect(gateway.description).not.toContain("instructions:");
+
+		const result = new SuiteCodeModeConnector(registry(fixture.tools)).search(
+			"Context7 MCP resolve library and retrieve documentation for pi coding agent",
+		);
+		expect(result.results.map((entry) => entry.path)).toContain("tools.mcp");
+	});
+
+	test("captures the fork command and suppresses only its persistent footer", async () => {
 		const fixture = harness();
 		const commands: Record<string, unknown> = {};
 		const adapter = createMcpAdapterApi(fixture.pi, commands);
 		adapter.registerCommand("mcp", { description: "upstream", handler: async () => undefined });
-		adapter.registerCommand("mcp-auth", { description: "upstream auth", handler: async () => undefined });
-		expect(commands).toHaveProperty("mcp");
-		expect(commands).toHaveProperty("mcpAuth");
+		expect(Object.keys(commands)).toEqual(["mcp"]);
 
 		const writes: Array<[string, string | undefined]> = [];
 		const ctx = {
@@ -87,9 +132,56 @@ describe("Pi Stuff MCP fork boundary", () => {
 		} as unknown as ExtensionContext;
 		adapter.on("session_start", (_event, wrapped) => {
 			wrapped.ui.setStatus("mcp", "verbose upstream footer");
-			wrapped.ui.setStatus("mcp-auth", "authenticating");
+			wrapped.ui.setStatus("mcp-oauth", "authenticating");
 		});
 		await fixture.handlers.get("session_start")?.[0]?.({}, ctx);
-		expect(writes).toEqual([["mcp-auth", "authenticating"]]);
+		expect(writes).toEqual([["mcp-oauth", "authenticating"]]);
+	});
+
+	test("routes retained Setup UI through the shared non-overlay coordinator", async () => {
+		let originalCustomCalled = false;
+		let shows = 0;
+		const ctx = {
+			hasUI: true,
+			mode: "tui",
+			ui: {
+				custom: async () => {
+					originalCustomCalled = true;
+					return undefined;
+				},
+			},
+		} as unknown as ExtensionContext;
+		const coordinator = {
+			show: async (_ctx: ExtensionContext, view: CommandDialogView<unknown>) => {
+				shows += 1;
+				let result: unknown;
+				const dialogContext: CommandDialogViewContext<unknown> = {
+					close: (value) => {
+						result = value;
+					},
+					keybindings: { matches: () => false } as never,
+					requestRender: () => undefined,
+					signal: new AbortController().signal,
+					theme: { fg: (_color: string, value: string) => value } as Theme,
+					tui: { requestRender: () => undefined } as never,
+				};
+				const component = view.create(dialogContext);
+				component.handleInput?.("confirm");
+				return result;
+			},
+		} as unknown as CommandDialogCoordinator;
+		const routed = routeMcpCustomUiThroughCommandDialog(ctx, coordinator);
+		const result = await routed.ui.custom<string>(
+			(_tui, _theme, _keybindings, done) => ({
+				handleInput: () => done("completed"),
+				invalidate: () => undefined,
+				render: () => ["setup"],
+			}),
+			{ overlay: true },
+		);
+
+		expect(result).toBe("completed");
+		expect(shows).toBe(1);
+		expect(originalCustomCalled).toBe(false);
 	});
 });
