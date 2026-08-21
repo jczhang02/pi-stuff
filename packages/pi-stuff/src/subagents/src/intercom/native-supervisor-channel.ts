@@ -6,7 +6,9 @@ import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-w
 import { type TSchema, Type } from "typebox";
 import { withAgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage } from "../../../conversation-ui/index.js";
+import { parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
+import type { ToolArguments } from "../../../tool-display/activity.js";
 import { activityKey, getToolUiRuntime, registerSuiteOwnedTool, singleActivity } from "../../../tool-display/index.js";
 import {
 	SUBAGENT_CHILD_AGENT_ENV,
@@ -128,6 +130,43 @@ interface IntercomParams {
 	replyTo?: string;
 }
 
+interface SupervisorChannelRecord {
+	readonly acceptedAt?: unknown;
+	readonly agent?: unknown;
+	readonly childIndex?: unknown;
+	readonly childTarget?: unknown;
+	readonly createdAt?: unknown;
+	readonly customType?: unknown;
+	readonly details?: unknown;
+	readonly expectsReply?: unknown;
+	readonly expiresAt?: unknown;
+	readonly id?: unknown;
+	readonly interview?: unknown;
+	readonly lastAttemptAt?: unknown;
+	readonly message?: unknown;
+	readonly orchestratorSessionId?: unknown;
+	readonly orchestratorTarget?: unknown;
+	readonly ownerPid?: unknown;
+	readonly ownerProcessStartIdentity?: unknown;
+	readonly physicalSessionId?: unknown;
+	readonly reason?: unknown;
+	readonly requestId?: unknown;
+	readonly runId?: unknown;
+	readonly type?: unknown;
+	readonly updatedAt?: unknown;
+	readonly version?: unknown;
+}
+
+function supervisorChannelRecord<Value>(value: Value): SupervisorChannelRecord {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return {};
+	// SAFETY: consumers read only the declared raw fields and validate them before use.
+	return value as Value & SupervisorChannelRecord;
+}
+
+function errorCode<Value>(cause: Value): string | undefined {
+	return isRuntimeObject(cause) && cause !== null && "code" in cause ? String(cause.code) : undefined;
+}
+
 const ContactSupervisorParamsSchema = Type.Object(
 	{
 		reason: Type.String({ enum: ["need_decision", "interview_request", "progress_update"] }),
@@ -187,13 +226,16 @@ function writeSupervisorChannelMetadata(
 	metadata: Omit<SupervisorChannelMetadata, "version" | "ownerPid" | "ownerProcessStartIdentity" | "updatedAt">,
 ): void {
 	const ownerProcessStartIdentity = readProcessStartIdentity(process.pid);
-	writeAtomicJson(path.join(channelDir, CHANNEL_METADATA_FILE), {
+	const record: SupervisorChannelMetadata = {
 		version: 1,
 		...metadata,
 		ownerPid: process.pid,
-		...(ownerProcessStartIdentity ? { ownerProcessStartIdentity } : {}),
 		updatedAt: Date.now(),
-	} satisfies SupervisorChannelMetadata);
+	};
+	writeAtomicJson(
+		path.join(channelDir, CHANNEL_METADATA_FILE),
+		ownerProcessStartIdentity ? { ...record, ownerProcessStartIdentity } : record,
+	);
 }
 
 function requestPath(channelDir: string, requestId: string): string {
@@ -217,29 +259,24 @@ interface RequestDeliveryState {
 
 function readRequestDeliveryState(requestFile: string, requestId: string): RequestDeliveryState | undefined {
 	try {
-		const value = JSON.parse(
-			readBoundedOwnedFile(requestDeliveryStatePath(requestFile), MAX_DELIVERY_STATE_BYTES),
-		) as {
-			version?: unknown;
-			requestId?: unknown;
-			lastAttemptAt?: unknown;
-			acceptedAt?: unknown;
-		};
+		const value = supervisorChannelRecord(
+			parseJsonValue(readBoundedOwnedFile(requestDeliveryStatePath(requestFile), MAX_DELIVERY_STATE_BYTES)),
+		);
 		if (
 			(value.version !== 1 && value.version !== 2) ||
-			(value.requestId === requestId &&
-				(!isRuntimeNumber(value.lastAttemptAt) || !Number.isFinite(value.lastAttemptAt)))
+			value.requestId !== requestId ||
+			!isRuntimeNumber(value.lastAttemptAt) ||
+			!Number.isFinite(value.lastAttemptAt)
 		)
 			return undefined;
-		if (value.requestId !== requestId) return undefined;
 		const acceptedAt =
 			isRuntimeNumber(value.acceptedAt) && Number.isFinite(value.acceptedAt) ? value.acceptedAt : undefined;
-		return {
+		const state: RequestDeliveryState = {
 			version: 2,
 			requestId,
-			lastAttemptAt: value.lastAttemptAt as number,
-			...(acceptedAt !== undefined ? { acceptedAt } : {}),
+			lastAttemptAt: value.lastAttemptAt,
 		};
+		return acceptedAt === undefined ? state : { ...state, acceptedAt };
 	} catch {
 		return undefined;
 	}
@@ -255,7 +292,7 @@ function removeRequestDeliveryAttempt(requestFile: string): void {
 	try {
 		fs.unlinkSync(requestDeliveryStatePath(requestFile));
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		if (errorCode(error) !== "ENOENT") throw error;
 	}
 }
 
@@ -406,13 +443,13 @@ async function waitForReply(
 	while (Date.now() <= deadline) {
 		if (signal?.aborted) throw new Error("Supervisor request cancelled.");
 		if (fs.existsSync(file)) {
-			let parsed: Partial<SupervisorReply> | undefined;
+			let parsed: SupervisorChannelRecord | undefined;
 			let snapshot: OwnedFileSnapshot | undefined;
 			try {
 				snapshot = readBoundedOwnedFileSnapshot(file, MAX_MESSAGE_BYTES);
-				parsed = JSON.parse(snapshot.text) as Partial<SupervisorReply>;
+				parsed = supervisorChannelRecord(parseJsonValue(snapshot.text));
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				if (errorCode(error) === "ENOENT") continue;
 				throw error;
 			}
 			if (
@@ -423,7 +460,12 @@ async function waitForReply(
 				isRuntimeString(parsed.message) &&
 				Buffer.byteLength(parsed.message, "utf-8") <= MAX_MESSAGE_BYTES
 			) {
-				const reply = parsed as SupervisorReply;
+				const reply: SupervisorReply = {
+					type: "subagent.supervisor.reply",
+					requestId,
+					createdAt: parsed.createdAt,
+					message: parsed.message,
+				};
 				try {
 					if (!snapshot || removeOwnedFileSnapshot(file, snapshot) !== "removed") continue;
 				} catch (error) {
@@ -479,15 +521,15 @@ async function sendSupervisorRequest(
 		reason: params.reason,
 		message,
 		expectsReply,
-		...(metadata.orchestratorTarget ? { orchestratorTarget: metadata.orchestratorTarget } : {}),
-		...(metadata.orchestratorSessionId ? { orchestratorSessionId: metadata.orchestratorSessionId } : {}),
 		physicalSessionId: metadata.physicalSessionId,
 		runId: metadata.runId,
 		agent: metadata.agent,
 		childIndex: metadata.childIndex,
-		...(metadata.childTarget ? { childTarget: metadata.childTarget } : {}),
-		...(params.interview !== undefined ? { interview: params.interview } : {}),
 	};
+	if (metadata.orchestratorTarget) request.orchestratorTarget = metadata.orchestratorTarget;
+	if (metadata.orchestratorSessionId) request.orchestratorSessionId = metadata.orchestratorSessionId;
+	if (metadata.childTarget) request.childTarget = metadata.childTarget;
+	if (params.interview !== undefined) request.interview = params.interview;
 	const serialized = JSON.stringify(request, null, "\t");
 	if (Buffer.byteLength(serialized, "utf-8") > MAX_MESSAGE_BYTES) throw new Error("Supervisor request is too large.");
 	const lifecycleClaim = await acquireChannelLifecycleClaim(signal);
@@ -547,13 +589,13 @@ function toolResultText<Details>(result: AgentToolResult<Details>): string {
 	return "";
 }
 
-function communicationTarget(args: Readonly<Record<string, unknown>>): string {
+function communicationTarget(args: ToolArguments): string {
 	const action = isRuntimeString(args.action) ? args.action : isRuntimeString(args.reason) ? args.reason : "";
 	const destination = isRuntimeString(args.replyTo) ? args.replyTo : isRuntimeString(args.to) ? args.to : "";
 	return [action, destination].filter(Boolean).join(" · ");
 }
 
-function communicationCategory(args: Readonly<Record<string, unknown>>) {
+function communicationCategory(args: ToolArguments) {
 	const action = isRuntimeString(args.action) ? args.action : "";
 	return action === "status" || action === "list" || action === "pending" ? "check-agent" : "message-agent";
 }
@@ -592,6 +634,7 @@ export function registerNativeSupervisorClient(
 				"Contact the parent/supervisor session for a blocking decision, structured interview, or progress update.",
 			parameters: ContactSupervisorParamsSchema,
 			execute(_id, params, signal) {
+				// SAFETY: Pi validates Tool arguments against ContactSupervisorParamsSchema before execute.
 				return sendSupervisorRequest(params as ContactSupervisorParams, signal);
 			},
 		};
@@ -605,7 +648,9 @@ export function registerNativeSupervisorClient(
 				"Native supervisor-channel intercom fallback for subagents. Prefer contact_supervisor when available.",
 			parameters: IntercomParamsSchema,
 			async execute(_id, params, signal) {
-				const action = (params as IntercomParams).action;
+				// SAFETY: Pi validates Tool arguments against IntercomParamsSchema before execute.
+				const input = params as IntercomParams;
+				const action = input.action;
 				if (action === "status")
 					return {
 						content: [{ type: "text", text: "Native supervisor channel is active." }],
@@ -617,15 +662,9 @@ export function registerNativeSupervisorClient(
 						details: { sessions: [] },
 					};
 				if (action === "send")
-					return sendSupervisorRequest(
-						{ reason: "progress_update", message: (params as IntercomParams).message ?? "" },
-						signal,
-					);
+					return sendSupervisorRequest({ reason: "progress_update", message: input.message ?? "" }, signal);
 				if (action === "ask")
-					return sendSupervisorRequest(
-						{ reason: "need_decision", message: (params as IntercomParams).message ?? "" },
-						signal,
-					);
+					return sendSupervisorRequest({ reason: "need_decision", message: input.message ?? "" }, signal);
 				throw new Error(
 					"Native child intercom supports status, list, send, and ask. Use parent intercom reply from the supervisor session.",
 				);
@@ -640,11 +679,11 @@ function parseRequestFile(file: string, channelDir: string): SupervisorRequestFi
 	try {
 		snapshot = readBoundedOwnedFileSnapshot(file, MAX_MESSAGE_BYTES);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		if (errorCode(error) === "ENOENT") return undefined;
 		throw error;
 	}
 	try {
-		const parsed = JSON.parse(snapshot.text) as Partial<SupervisorRequest>;
+		const parsed = supervisorChannelRecord(parseJsonValue(snapshot.text));
 		if (parsed.type !== "subagent.supervisor.request") return { snapshot };
 		if (!isRuntimeString(parsed.id) || !parsed.id.trim() || parsed.id.length > 256) return { snapshot };
 		if (
@@ -693,16 +732,28 @@ function parseRequestFile(file: string, channelDir: string): SupervisorRequestFi
 		if (path.resolve(channelDir) !== path.resolve(expectedChannel)) {
 			return { snapshot };
 		}
-		return {
-			snapshot,
-			request: {
-				...(parsed as SupervisorRequest),
-				protocolVersion,
-				channelDir,
-				requestFile: file,
-				requestSnapshot: snapshot,
-			},
+		const request: PendingSupervisorRequest = {
+			type: "subagent.supervisor.request",
+			id: parsed.id,
+			createdAt: parsed.createdAt,
+			reason: parsed.reason,
+			message: parsed.message,
+			expectsReply: parsed.expectsReply,
+			orchestratorSessionId: parsed.orchestratorSessionId,
+			runId: parsed.runId,
+			agent: parsed.agent,
+			childIndex: parsed.childIndex,
+			protocolVersion,
+			channelDir,
+			requestFile: file,
+			requestSnapshot: snapshot,
 		};
+		if (isRuntimeNumber(parsed.expiresAt)) request.expiresAt = parsed.expiresAt;
+		if (physicalSessionId) request.physicalSessionId = physicalSessionId;
+		if (isRuntimeString(parsed.orchestratorTarget)) request.orchestratorTarget = parsed.orchestratorTarget;
+		if (isRuntimeString(parsed.childTarget)) request.childTarget = parsed.childTarget;
+		if (parsed.interview !== undefined) request.interview = parsed.interview;
+		return { snapshot, request };
 	} catch {
 		return { snapshot };
 	}
@@ -729,7 +780,7 @@ async function channelOwnerAlive(metadata: SupervisorChannelMetadata): Promise<b
 		process.kill(metadata.ownerPid, 0);
 		return undefined;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "ESRCH" ? false : undefined;
+		return errorCode(error) === "ESRCH" ? false : undefined;
 	}
 }
 
@@ -769,7 +820,7 @@ async function metadataLessChannelSafeToCollect(channelDir: string, now: number)
 			await fs.promises.lstat(path.join(resolved, CHANNEL_METADATA_FILE));
 			return false;
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+			if (errorCode(error) !== "ENOENT") return false;
 		}
 		for (const entry of await fs.promises.readdir(resolved, { withFileTypes: true })) {
 			if (entry.name !== REQUESTS_DIR && entry.name !== REPLIES_DIR) return false;
@@ -792,14 +843,16 @@ async function metadataLessChannelSafeToCollect(channelDir: string, now: number)
 
 async function readSupervisorChannelMetadataAsync(channelDir: string): Promise<SupervisorChannelMetadata | undefined> {
 	try {
-		const value = JSON.parse(
-			(
-				await readBoundedOwnedFileSnapshotAsync(
-					path.join(channelDir, CHANNEL_METADATA_FILE),
-					MAX_CHANNEL_METADATA_BYTES,
-				)
-			).text,
-		) as Partial<SupervisorChannelMetadata>;
+		const value = supervisorChannelRecord(
+			parseJsonValue(
+				(
+					await readBoundedOwnedFileSnapshotAsync(
+						path.join(channelDir, CHANNEL_METADATA_FILE),
+						MAX_CHANNEL_METADATA_BYTES,
+					)
+				).text,
+			),
+		);
 		if (
 			value.version !== 1 ||
 			!isRuntimeString(value.physicalSessionId) ||
@@ -811,8 +864,9 @@ async function readSupervisorChannelMetadataAsync(channelDir: string): Promise<S
 			!isRuntimeNumber(value.childIndex) ||
 			!Number.isSafeInteger(value.childIndex) ||
 			value.childIndex < 0 ||
+			!isRuntimeNumber(value.ownerPid) ||
 			!Number.isSafeInteger(value.ownerPid) ||
-			(value.ownerPid ?? -1) <= 0 ||
+			value.ownerPid <= 0 ||
 			!isRuntimeNumber(value.updatedAt) ||
 			!Number.isFinite(value.updatedAt) ||
 			(value.ownerProcessStartIdentity !== undefined &&
@@ -821,7 +875,19 @@ async function readSupervisorChannelMetadataAsync(channelDir: string): Promise<S
 			return undefined;
 		}
 		const expected = resolveSupervisorChannelDir(value.runId, value.agent, value.childIndex, value.physicalSessionId);
-		return path.resolve(expected) === path.resolve(channelDir) ? (value as SupervisorChannelMetadata) : undefined;
+		if (path.resolve(expected) !== path.resolve(channelDir)) return undefined;
+		const metadata: SupervisorChannelMetadata = {
+			version: 1,
+			physicalSessionId: value.physicalSessionId,
+			runId: value.runId,
+			agent: value.agent,
+			childIndex: value.childIndex,
+			ownerPid: value.ownerPid,
+			updatedAt: value.updatedAt,
+		};
+		return value.ownerProcessStartIdentity === undefined
+			? metadata
+			: { ...metadata, ownerProcessStartIdentity: value.ownerProcessStartIdentity };
 	} catch {
 		return undefined;
 	}
@@ -890,13 +956,10 @@ function requestMatchesContext(
 	);
 }
 
-function addPersistedSupervisorRequestId(entry: unknown, requestIds: Set<string>): void {
-	if (!entry || !isRuntimeObject(entry)) return;
-	const candidate = entry as { type?: unknown; customType?: unknown; details?: unknown };
+function addPersistedSupervisorRequestId<Entry>(entry: Entry, requestIds: Set<string>): void {
+	const candidate = supervisorChannelRecord(entry);
 	if (candidate.type !== "custom_message" || candidate.customType !== "subagent_supervisor_request") return;
-	const details = candidate.details;
-	if (!details || !isRuntimeObject(details)) return;
-	const id = (details as { id?: unknown }).id;
+	const id = supervisorChannelRecord(candidate.details).id;
 	if (isRuntimeString(id) && id) requestIds.add(id);
 }
 
@@ -918,7 +981,8 @@ async function persistedSupervisorRequestIds(ctx: ExtensionContext): Promise<Rea
 	if (!sessionFile || !path.isAbsolute(sessionFile)) return requestIds;
 	let handle: fs.promises.FileHandle | undefined;
 	try {
-		const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+		const noFollow =
+			"O_NOFOLLOW" in fs.constants && isRuntimeNumber(fs.constants.O_NOFOLLOW) ? fs.constants.O_NOFOLLOW : 0;
 		handle = await fs.promises.open(sessionFile, fs.constants.O_RDONLY | noFollow);
 		const stat = await handle.stat();
 		const currentUid = process.getuid?.();
@@ -932,7 +996,7 @@ async function persistedSupervisorRequestIds(ctx: ExtensionContext): Promise<Rea
 		for (const line of text.split("\n")) {
 			if (!line.includes("subagent_supervisor_request")) continue;
 			try {
-				addPersistedSupervisorRequestId(JSON.parse(line), requestIds);
+				addPersistedSupervisorRequestId(parseJsonValue(line), requestIds);
 			} catch {
 				// Ignore unrelated or partially written JSONL records.
 			}
@@ -1009,7 +1073,7 @@ function removeRequestFile(file: string, snapshot?: OwnedFileSnapshot): boolean 
 type SupervisorRequestLifecycle = "pending" | "resolved" | "expired" | "inactive" | "missing" | "wrong-session";
 
 function requestExpiresAt(request: SupervisorRequest, now: number): number {
-	const expiresAt = (request as { expiresAt?: unknown }).expiresAt;
+	const expiresAt = request.expiresAt;
 	if (isRuntimeNumber(expiresAt) && Number.isFinite(expiresAt)) return expiresAt;
 	return Number.isFinite(request.createdAt) ? request.createdAt + askTimeoutMs() : now;
 }
@@ -1116,14 +1180,14 @@ function writeReply(
 	try {
 		fs.lstatSync(request.requestFile);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+		if (errorCode(error) === "ENOENT") return;
 		throw error;
 	}
 	let replySnapshot: OwnedFileSnapshot;
 	try {
 		replySnapshot = readBoundedOwnedFileSnapshot(outputPath, MAX_MESSAGE_BYTES);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+		if (errorCode(error) === "ENOENT") return;
 		throw error;
 	}
 	removeOwnedFileSnapshot(outputPath, replySnapshot);
@@ -1159,7 +1223,16 @@ function resolvePendingRequest(
 	throw new Error("Multiple pending supervisor requests need replies. Use replyTo.");
 }
 
-function publicPendingRequests(pending: Map<string, PendingSupervisorRequest>): Array<Record<string, unknown>> {
+interface PublicPendingSupervisorRequest {
+	readonly agent: string;
+	readonly childIndex: number;
+	readonly expectsReply: boolean;
+	readonly id: string;
+	readonly reason: SupervisorReason;
+	readonly runId: string;
+}
+
+function publicPendingRequests(pending: Map<string, PendingSupervisorRequest>): PublicPendingSupervisorRequest[] {
 	return [...pending.values()].map((request) => ({
 		id: request.id,
 		runId: request.runId,
@@ -1170,12 +1243,17 @@ function publicPendingRequests(pending: Map<string, PendingSupervisorRequest>): 
 	}));
 }
 
+type ParentIntercomDetails =
+	| { readonly active: true; readonly pending: number; readonly root: string }
+	| { readonly pending: PublicPendingSupervisorRequest[] }
+	| { readonly agent: string; readonly replyTo: string; readonly runId: string };
+
 function buildParentIntercomTool(
 	pending: Map<string, PendingSupervisorRequest>,
 	state: SubagentState,
 	name = "intercom",
 	afterReplyPublish?: (replyPath: string) => void,
-): ToolDefinition<typeof IntercomParamsSchema, Record<string, unknown>> {
+): ToolDefinition<typeof IntercomParamsSchema, ParentIntercomDetails> {
 	return {
 		name,
 		label: name === "intercom" ? "Intercom" : "Subagent Supervisor",
@@ -1186,6 +1264,7 @@ function buildParentIntercomTool(
 		parameters: IntercomParamsSchema,
 		async execute(_id, params) {
 			refreshPendingRequests(pending, state, state.lastUiContext ?? undefined);
+			// SAFETY: Pi validates Tool arguments against IntercomParamsSchema before execute.
 			const input = params as IntercomParams;
 			if (input.action === "status") {
 				return {
@@ -1305,7 +1384,7 @@ export function createNativeSupervisorChannel(
 			if (channelScanOffset >= channelScanEntries.length) resetChannelScan();
 		} catch (error) {
 			resetChannelScan();
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			if (errorCode(error) !== "ENOENT") throw error;
 		}
 		return files;
 	};
@@ -1437,6 +1516,7 @@ export function createNativeSupervisorChannel(
 						pending.set(deliveredRequest.id, deliveredRequest);
 						markForegroundSupervisorAttention(deliveredRequest, state);
 						try {
+							// SAFETY: ExtensionAPI owns the optional typed event bus used by this Suite integration.
 							(pi as { events?: IntercomEventBus }).events?.emit(INTERCOM_DETACH_REQUEST_EVENT, {
 								requestId: deliveredRequest.id,
 								runId: deliveredRequest.runId,
