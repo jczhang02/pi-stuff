@@ -157,9 +157,9 @@ Package 包含 `catppuccin-latte`、`catppuccin-frappe`、`catppuccin-macchiato`
 | 契约 | 已认证配置 |
 | --- | --- |
 | Pi Host | `0.84.2`，上游提交 `914cf1472e715297caa30db4b9535d534a9eb718` |
+| Pi Host 二进制 | 已审核的上游 Linux x64 Release SHA-256 |
 | 平台 | Linux x64；CI 系统工具基线为 Ubuntu 24.04 |
 | Bun | `1.3.14` |
-| Node.js / npm | `24.16.0` / `11.13.0`，用于构建认证 Host |
 | TypeScript | `5.9.3` |
 | 可选 RTK runtime | `0.42.4`，只认证 Linux x64 构建 |
 
@@ -175,8 +175,8 @@ bun install --frozen-lockfile --ignore-scripts
 bun run check
 ```
 
-检查范围包括格式、类型接口、测试、未使用代码、生成的 Suite 组合、仓库安全、Tool Activity 性能，以及提取后
-本地 Package 的验证。`bun run host:build` 会在被忽略的 `.artifacts/` 下构建固定版本的 Pi Host，用于完整验收。
+检查范围包括格式、类型接口、测试、未使用代码、生成的 Suite 组合、仓库安全、Tool Activity 性能，以及使用认证
+Pi Host Release 对提取后本地 Package 的验证。CI 会下载该 Release、校验精确二进制哈希，然后断网运行验收。
 
 修改行为前，请阅读 [`CONTRIBUTING.md`](../.github/CONTRIBUTING.md)、[`CONTEXT.md`](../CONTEXT.md) 中的规范术语，以及
 [`adr/`](adr/) 下相关决策记录。工程工作由 Beads 跟踪，并同步到

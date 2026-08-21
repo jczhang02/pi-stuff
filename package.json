@@ -21,8 +21,6 @@
 		"check:repository": "bun scripts/check-repository-safety.ts",
 		"format": "biome check --write .",
 		"format:check": "biome check .",
-		"host:build": "bun scripts/build-certified-pi-host.ts",
-		"host:model-data:refresh": "bun scripts/refresh-certified-pi-model-data.ts",
 		"knip": "knip --no-progress --include files,dependencies,unlisted,binaries,unresolved,cycles",
 		"pack:verify": "bun scripts/verify-package.ts",
 		"suite:generate": "bun scripts/generate-suite.ts",
