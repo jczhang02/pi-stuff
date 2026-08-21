@@ -1176,6 +1176,7 @@ export interface ForegroundResumeChild {
 	cwd?: string;
 	description?: string;
 	task?: string;
+	startedAt?: number;
 	context?: "fresh" | "fork";
 	sessionFile?: string;
 	model?: string;

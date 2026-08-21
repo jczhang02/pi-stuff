@@ -16,6 +16,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { projectCurrentContext } from "../../../../context-management/index.js";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import { parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject } from "../../../../shared/runtime-type.js";
 import type { AgentConfig, AgentScope } from "../../agents/agents.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
@@ -40,7 +41,11 @@ import {
 	DEFAULT_ARTIFACT_CONFIG,
 	type Details,
 	type ExtensionConfig,
+	type ForegroundResumeChild,
+	type ForegroundResumeRun,
 	type ForegroundRunControl,
+	type NestedRunSummary,
+	type NestedStepSummary,
 	RESULTS_DIR,
 	type ResolvedToolBudget,
 	type ResolvedTurnBudget,
@@ -58,6 +63,7 @@ import {
 	buildAsyncParallelRunnerWork,
 	buildAsyncSingleRunnerWork,
 	buildResolvedTask,
+	type AsyncParallelTaskInput,
 	executeAsyncParallel,
 	executeAsyncSingle,
 	isAsyncAvailable,
@@ -69,6 +75,7 @@ import {
 	findAsyncRunPrefixMatches,
 	readAsyncRecoveryDescriptor,
 	resolveAsyncResumeTarget,
+	type AsyncResumeTarget,
 } from "../background/async-resume.ts";
 import { deliverStopRequest, requestAsyncSteer } from "../background/control-channel.ts";
 import { createInitialStatus } from "../background/initial-status.ts";
@@ -264,8 +271,8 @@ function errorResult(mode: Details["mode"], message: string, extras: Partial<Det
 	};
 }
 
-function resultIsError(value: unknown): boolean {
-	return isRuntimeObject(value) && value !== null && (value as { isError?: unknown }).isError === true;
+function resultIsError(value: AgentToolResult<Details>): boolean {
+	return value.isError === true;
 }
 
 function requestedMode(params: SubagentParamsLike): "single" | "parallel" {
@@ -314,7 +321,7 @@ function inheritedContextSnapshot(ctx: ExtensionContext) {
 		// Continue with the persisted branch estimator.
 	}
 	try {
-		const entries = [...ctx.sessionManager.buildContextEntries()] as SessionEntry[];
+		const entries: SessionEntry[] = [...ctx.sessionManager.buildContextEntries()];
 		const persistedMessages = entries.flatMap((entry) => sessionEntryToContextMessages(entry));
 		const messages = entries
 			.filter(
@@ -343,14 +350,10 @@ function inheritedLaunchPromptTokens(ctx: ExtensionContext): number {
 		// Older compatible Hosts or focused tests may not expose this optional seam.
 	}
 	try {
-		const getOptions = (
-			ctx as ExtensionContext & {
-				getSystemPromptOptions?: () => {
-					readonly cwd?: string;
-					readonly [key: string]: object | string | undefined;
-				};
-			}
-		).getSystemPromptOptions;
+		const getOptions =
+			"getSystemPromptOptions" in ctx && isRuntimeFunction(ctx.getSystemPromptOptions)
+				? ctx.getSystemPromptOptions
+				: undefined;
 		const options = getOptions?.call(ctx);
 		const serialized = JSON.stringify(options);
 		if (serialized !== undefined) promptTokens = Math.max(promptTokens, estimateTextTokens(serialized));
@@ -540,19 +543,20 @@ function prepareLaunchModelPlan(input: {
 		const agent = input.agents.find((candidate) => candidate.name === task.agent);
 		if (!agent) throw new Error(`Unknown Agent: ${task.agent}`);
 		const normalizedSkill = normalizeSkillInput(task.skill);
-		const built = buildResolvedTask({
+		const taskInput: AsyncParallelTaskInput = {
+			agent: task.agent,
+			task: input.context === "fork" ? wrapForkTask(task.task) : task.task,
+		};
+		if (task.description) taskInput.description = task.description;
+		if (task.cwd) taskInput.cwd = task.cwd;
+		if (task.model) taskInput.model = task.model;
+		if (normalizedSkill !== undefined) taskInput.skill = normalizedSkill;
+		if (task.turnBudget) taskInput.turnBudget = task.turnBudget;
+		if (task.toolBudget) taskInput.toolBudget = task.toolBudget;
+		const buildInput: Parameters<typeof buildResolvedTask>[0] = {
 			runId: input.runId,
 			index,
-			taskInput: {
-				agent: task.agent,
-				...(task.description ? { description: task.description } : {}),
-				task: input.context === "fork" ? wrapForkTask(task.task) : task.task,
-				...(task.cwd ? { cwd: task.cwd } : {}),
-				...(task.model ? { model: task.model } : {}),
-				...(normalizedSkill !== undefined ? { skill: normalizedSkill } : {}),
-				...(task.turnBudget ? { turnBudget: task.turnBudget } : {}),
-				...(task.toolBudget ? { toolBudget: task.toolBudget } : {}),
-			},
+			taskInput,
 			agent,
 			params: {
 				ctx: {
@@ -578,9 +582,10 @@ function prepareLaunchModelPlan(input: {
 			},
 			runnerCwd: input.effectiveCwd,
 			context: input.context,
-			...(normalizedSkill === false ? { skills: [] } : {}),
 			thinkingOverride: input.params.thinking,
-		});
+		};
+		if (normalizedSkill === false) buildInput.skills = [];
+		const built = buildResolvedTask(buildInput);
 		if ("error" in built) throw new Error(built.error);
 		const candidates = built.task.modelCandidates ?? [];
 		const replacementPromptEstimate =
@@ -637,13 +642,15 @@ function prepareLaunchModelPlan(input: {
 				`Shorten the task or choose a model with a larger context window.`,
 		);
 	});
-	return {
-		...(input.context === "fork" ? { forkContextTokens: forkTokens } : {}),
-		...(input.context === "fork" && forkSnapshot.messages ? { forkSourceMessages: forkSnapshot.messages } : {}),
+	const plan: Pick<PreparedLaunch, "rawForkByIndex" | "fixedInputTokensByIndex" | "modelCandidatesByIndex"> &
+		Partial<Pick<PreparedLaunch, "forkContextTokens" | "forkSourceMessages">> = {
 		rawForkByIndex,
 		fixedInputTokensByIndex,
 		modelCandidatesByIndex,
 	};
+	if (input.context === "fork") plan.forkContextTokens = forkTokens;
+	if (input.context === "fork" && forkSnapshot.messages) plan.forkSourceMessages = forkSnapshot.messages;
+	return plan;
 }
 
 async function attachContextProjection(
@@ -658,10 +665,11 @@ async function attachContextProjection(
 	if (maxTokens <= 0) return;
 	try {
 		const audience = data.context === "fork" ? "agent-fork" : "agent-fresh";
-		const projection = await projectContext(audience, ctx, {
-			maxTokens,
-			...(data.context === "fork" && data.forkSourceMessages ? { sourceMessages: data.forkSourceMessages } : {}),
-		});
+		const options =
+			data.context === "fork" && data.forkSourceMessages
+				? { maxTokens, sourceMessages: data.forkSourceMessages }
+				: { maxTokens };
+		const projection = await projectContext(audience, ctx, options);
 		if (projection.text) data.params.contextProjection = projection.text;
 	} catch {
 		// Context continuity is optional; Agent launch remains fail-open.
@@ -671,7 +679,7 @@ async function attachContextProjection(
 function rememberParentModel(
 	state: { currentSessionId?: string | null; lastParentModel?: ParentModel },
 	sessionId: string,
-	model: unknown,
+	model: ExtensionContext["model"],
 ): ParentModel | undefined {
 	if (state.currentSessionId !== sessionId) state.lastParentModel = undefined;
 	state.currentSessionId = sessionId;
@@ -702,7 +710,7 @@ function validateLaunchInput(params: SubagentParamsLike, agents: readonly AgentC
 	return undefined;
 }
 
-function resolveTimeout(value: unknown) {
+function resolveTimeout(value: SubagentParamsLike["timeoutMs"]) {
 	if (value === undefined) return {};
 	if (!isRuntimeNumber(value) || !Number.isInteger(value) || value <= 0) {
 		return { error: "timeoutMs must be a positive integer." };
@@ -717,17 +725,13 @@ function contextFor(params: SubagentParamsLike): ContextMode {
 function taskInputs(params: SubagentParamsLike): TaskParam[] {
 	if (params.tasks?.length) return params.tasks;
 	if (!params.agent || !params.task) return [];
-	return [
-		{
-			agent: params.agent,
-			...(params.description ? { description: params.description } : {}),
-			task: params.task,
-			...(params.model ? { model: params.model } : {}),
-			...(params.skill !== undefined ? { skill: params.skill } : {}),
-			...(params.turnBudget ? { turnBudget: params.turnBudget } : {}),
-			...(params.toolBudget ? { toolBudget: params.toolBudget } : {}),
-		},
-	];
+	const task: TaskParam = { agent: params.agent, task: params.task };
+	if (params.description) task.description = params.description;
+	if (params.model) task.model = params.model;
+	if (params.skill !== undefined) task.skill = params.skill;
+	if (params.turnBudget) task.turnBudget = params.turnBudget;
+	if (params.toolBudget) task.toolBudget = params.toolBudget;
+	return [task];
 }
 
 function prepareForkSessions(input: {
@@ -895,14 +899,13 @@ async function prepareLaunch(
 
 	const inheritedNestedRoute = resolveInheritedNestedRouteFromEnv();
 	const nestedParentAddress = inheritedNestedRoute ? resolveNestedParentAddressFromEnv() : undefined;
-	return {
+	const prepared: PreparedLaunch = {
 		params,
 		mode,
 		effectiveCwd,
 		agents: discovered.agents,
 		currentSessionId,
 		governorSessionId,
-		...(directParentSessionId ? { directParentSessionId } : {}),
 		parentSessionFile,
 		parentModel,
 		availableModels: models,
@@ -917,8 +920,6 @@ async function prepareLaunch(
 		timeoutMs: timeout.timeoutMs,
 		context,
 		contextSummary: context,
-		...(modelPlan.forkContextTokens !== undefined ? { forkContextTokens: modelPlan.forkContextTokens } : {}),
-		...(modelPlan.forkSourceMessages ? { forkSourceMessages: modelPlan.forkSourceMessages } : {}),
 		rawForkByIndex: modelPlan.rawForkByIndex,
 		fixedInputTokensByIndex: modelPlan.fixedInputTokensByIndex,
 		modelCandidatesByIndex: modelPlan.modelCandidatesByIndex,
@@ -930,6 +931,10 @@ async function prepareLaunch(
 		capabilityCeiling,
 		maxSubagentDepth,
 	};
+	if (directParentSessionId) prepared.directParentSessionId = directParentSessionId;
+	if (modelPlan.forkContextTokens !== undefined) prepared.forkContextTokens = modelPlan.forkContextTokens;
+	if (modelPlan.forkSourceMessages) prepared.forkSourceMessages = modelPlan.forkSourceMessages;
+	return prepared;
 }
 
 function childTask(data: PreparedLaunch, task: TaskParam, index: number): string {
@@ -955,20 +960,21 @@ function asyncContext(data: PreparedLaunch, ctx: ExtensionContext, pi: Extension
 	};
 }
 
-function parallelInputs(data: PreparedLaunch) {
+function parallelInputs(data: PreparedLaunch): AsyncParallelTaskInput[] {
 	return (data.params.tasks ?? []).map((task, index) => {
 		const skill = normalizeSkillInput(task.skill);
-		return {
+		const input: AsyncParallelTaskInput = {
 			agent: task.agent,
-			...(task.description ? { description: task.description } : {}),
 			delegatedTask: task.task,
 			task: childTask(data, task, index),
-			...(task.cwd ? { cwd: task.cwd } : {}),
-			...(task.model ? { model: task.model } : {}),
-			...(skill !== undefined ? { skill } : {}),
-			...(task.turnBudget ? { turnBudget: task.turnBudget } : {}),
-			...(task.toolBudget ? { toolBudget: task.toolBudget } : {}),
 		};
+		if (task.description) input.description = task.description;
+		if (task.cwd) input.cwd = task.cwd;
+		if (task.model) input.model = task.model;
+		if (skill !== undefined) input.skill = skill;
+		if (task.turnBudget) input.turnBudget = task.turnBudget;
+		if (task.toolBudget) input.toolBudget = task.toolBudget;
+		return input;
 	});
 }
 
@@ -1138,29 +1144,27 @@ function buildForegroundConfig(
 	const asyncDir = directoryClaim.asyncDir;
 	const resultPath = path.join(asyncDir, "completion.json");
 	const deadlineAt = data.timeoutMs === undefined ? undefined : Date.now() + data.timeoutMs;
-	const nestedSelf =
-		data.inheritedNestedRoute && data.nestedParentAddress
-			? {
-					parentRunId: data.nestedParentAddress.parentRunId,
-					...(data.nestedParentAddress.parentStepIndex !== undefined
-						? { parentStepIndex: data.nestedParentAddress.parentStepIndex }
-						: {}),
-					depth: data.nestedParentAddress.depth,
-					path: data.nestedParentAddress.path,
-				}
-			: undefined;
+	let nestedSelf: BackgroundRunnerConfig["nestedSelf"];
+	if (data.inheritedNestedRoute && data.nestedParentAddress) {
+		nestedSelf = {
+			parentRunId: data.nestedParentAddress.parentRunId,
+			depth: data.nestedParentAddress.depth,
+			path: data.nestedParentAddress.path,
+		};
+		if (data.nestedParentAddress.parentStepIndex !== undefined) {
+			nestedSelf.parentStepIndex = data.nestedParentAddress.parentStepIndex;
+		}
+	}
 	const config: BackgroundRunnerConfig = {
 		version: 2,
 		id: data.runId,
 		codeModeEnabled: common.codeModeEnabled,
-		...(common.codeModeProviderTools?.length ? { codeModeProviderTools: [...common.codeModeProviderTools] } : {}),
 		work: built.work,
 		resultPath,
 		cwd: built.runnerCwd,
 		asyncDir,
 		sessionId: data.currentSessionId,
 		startedAt: Date.now(),
-		...(data.artifactConfig.enabled ? { artifactsDir: data.artifactsDir } : {}),
 		artifactConfig: data.artifactConfig,
 		nativeSupervisor: false,
 		sessionDir: data.sessionRoot,
@@ -1169,9 +1173,14 @@ function buildForegroundConfig(
 		worktreeBaseDir: deps.config.worktreeBaseDir,
 		nestedRoute: data.nestedRoute,
 		nestedSelf,
-		...(data.timeoutMs !== undefined ? { timeoutMs: data.timeoutMs, deadlineAt } : {}),
-		...(data.capabilityCeiling ? { capabilityCeiling: data.capabilityCeiling } : {}),
 	};
+	if (common.codeModeProviderTools?.length) config.codeModeProviderTools = [...common.codeModeProviderTools];
+	if (data.artifactConfig.enabled) config.artifactsDir = data.artifactsDir;
+	if (data.timeoutMs !== undefined) {
+		config.timeoutMs = data.timeoutMs;
+		config.deadlineAt = deadlineAt;
+	}
+	if (data.capabilityCeiling) config.capabilityCeiling = data.capabilityCeiling;
 	const recoveries = "recoveries" in built ? built.recoveries : [built.recovery];
 	return { config, directoryClaim, recoveries };
 }
@@ -1204,7 +1213,7 @@ function claimForegroundRunDirectory(
 	try {
 		fs.mkdirSync(asyncDir, { mode: 0o700 });
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+		if (error && isRuntimeObject(error) && "code" in error && error.code === "EEXIST") {
 			throw new Error(
 				`Foreground Agent runtime '${asyncDir}' already exists; refusing to overwrite retained lifecycle evidence.`,
 			);
@@ -1254,8 +1263,8 @@ function claimForegroundRunDirectory(
 		if (committed) return false;
 		try {
 			if (!stillCreatedInode()) return false;
-			const marker = JSON.parse(readBoundedOwnedFile(markerPath, 4 * 1024)) as { token?: unknown };
-			return marker.token === token;
+			const marker = parseJsonValue(readBoundedOwnedFile(markerPath, 4 * 1024));
+			return isRuntimeObject(marker) && marker !== null && !Array.isArray(marker) && marker["token"] === token;
 		} catch {
 			return false;
 		}
@@ -1408,45 +1417,90 @@ function emitNestedLifecycle(
 	const state = nestedState(result);
 	const terminalResult = result && state !== "running" ? result : undefined;
 	const directTasks = taskInputs(data.params);
-	const liveSteps = liveStatus?.steps?.map((step) => ({
-		agent: step.agent,
-		...(step.delegatedTask ? { delegatedTask: step.delegatedTask } : {}),
-		...(step.task ? { task: step.task } : {}),
-		...(step.label ? { description: step.label } : {}),
-		status: step.status,
-		...(step.processTerminal?.state === "observed" &&
-		step.processTerminal.instances.some(
-			(instance) => instance.kind === "pi-writer" && instance.terminationOrigin === "external",
-		)
-			? { agentStatus: "crashed" as const }
-			: {}),
-		...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
-		...(step.transcriptPath ? { transcriptPath: step.transcriptPath } : {}),
-		...(step.transcriptError ? { transcriptError: step.transcriptError } : {}),
-		...(step.activityState ? { activityState: step.activityState } : {}),
-		...(step.lastActivityAt ? { lastActivityAt: step.lastActivityAt } : {}),
-		...(step.currentTool ? { currentTool: step.currentTool } : {}),
-		...(step.currentToolStartedAt ? { currentToolStartedAt: step.currentToolStartedAt } : {}),
-		...(step.currentPath ? { currentPath: step.currentPath } : {}),
-		...(step.turnCount !== undefined ? { turnCount: step.turnCount } : {}),
-		...(step.toolCount !== undefined ? { toolCount: step.toolCount } : {}),
-		...(step.error ? { error: step.error } : {}),
-	}));
+	const liveSteps = liveStatus?.steps?.map((step): NestedStepSummary => {
+		const projected: NestedStepSummary = { agent: step.agent, status: step.status };
+		if (step.delegatedTask) projected.delegatedTask = step.delegatedTask;
+		if (step.task) projected.task = step.task;
+		if (step.label) projected.description = step.label;
+		if (
+			step.processTerminal?.state === "observed" &&
+			step.processTerminal.instances.some(
+				(instance) => instance.kind === "pi-writer" && instance.terminationOrigin === "external",
+			)
+		) {
+			projected.agentStatus = "crashed";
+		}
+		if (step.sessionFile) projected.sessionFile = step.sessionFile;
+		if (step.transcriptPath) projected.transcriptPath = step.transcriptPath;
+		if (step.transcriptError) projected.transcriptError = step.transcriptError;
+		if (step.activityState) projected.activityState = step.activityState;
+		if (step.lastActivityAt) projected.lastActivityAt = step.lastActivityAt;
+		if (step.currentTool) projected.currentTool = step.currentTool;
+		if (step.currentToolStartedAt) projected.currentToolStartedAt = step.currentToolStartedAt;
+		if (step.currentPath) projected.currentPath = step.currentPath;
+		if (step.turnCount !== undefined) projected.turnCount = step.turnCount;
+		if (step.toolCount !== undefined) projected.toolCount = step.toolCount;
+		if (step.error) projected.error = step.error;
+		return projected;
+	});
 	const projectedLiveSteps = liveSteps?.length
 		? liveSteps
-		: [...(control.activeChildren?.values() ?? [])].map((child) => ({
+		: [...(control.activeChildren?.values() ?? [])].map((child): NestedStepSummary => {
+				const projected: NestedStepSummary = { agent: child.agent, status: child.status ?? "running" };
+				if (child.task) projected.task = child.task;
+				if (child.description) projected.description = child.description;
+				if (child.currentActivityState) projected.activityState = child.currentActivityState;
+				if (child.lastActivityAt) projected.lastActivityAt = child.lastActivityAt;
+				if (child.currentTool) projected.currentTool = child.currentTool;
+				if (child.currentToolStartedAt) projected.currentToolStartedAt = child.currentToolStartedAt;
+				if (child.currentPath) projected.currentPath = child.currentPath;
+				if (child.turnCount !== undefined) projected.turnCount = child.turnCount;
+				if (child.toolCount !== undefined) projected.toolCount = child.toolCount;
+				return projected;
+			});
+	const nestedChild: NestedRunSummary = {
+		id: data.runId,
+		parentRunId: data.nestedParentAddress.parentRunId,
+		parentStepIndex: data.nestedParentAddress.parentStepIndex,
+		depth: data.nestedParentAddress.depth,
+		path: data.nestedParentAddress.path,
+		asyncDir: config.asyncDir,
+		ownerState: state === "running" ? "live" : "gone",
+		mode: data.mode,
+		state,
+		agent: directTasks[0]?.agent,
+		agents: directTasks.map((task) => task.agent),
+		startedAt,
+		lastUpdate: now,
+	};
+	if (terminalResult) nestedChild.endedAt = now;
+	if (result?.details.results.length) {
+		nestedChild.steps = result.details.results.map((child, index): NestedStepSummary => {
+			const projected: NestedStepSummary = {
 				agent: child.agent,
-				...(child.task ? { task: child.task } : {}),
-				...(child.description ? { description: child.description } : {}),
-				status: child.status ?? "running",
-				...(child.currentActivityState ? { activityState: child.currentActivityState } : {}),
-				...(child.lastActivityAt ? { lastActivityAt: child.lastActivityAt } : {}),
-				...(child.currentTool ? { currentTool: child.currentTool } : {}),
-				...(child.currentToolStartedAt ? { currentToolStartedAt: child.currentToolStartedAt } : {}),
-				...(child.currentPath ? { currentPath: child.currentPath } : {}),
-				...(child.turnCount !== undefined ? { turnCount: child.turnCount } : {}),
-				...(child.toolCount !== undefined ? { toolCount: child.toolCount } : {}),
-			}));
+				status: child.detached
+					? "running"
+					: child.stopped
+						? "stopped"
+						: child.interrupted
+							? "paused"
+							: child.exitCode === 0
+								? "complete"
+								: "failed",
+			};
+			if (directTasks[index]?.task) projected.task = directTasks[index].task;
+			if (directTasks[index]?.description) projected.description = directTasks[index].description;
+			if (child.crashed) projected.agentStatus = "crashed";
+			if (child.sessionFile) projected.sessionFile = child.sessionFile;
+			if (child.transcriptPath) projected.transcriptPath = child.transcriptPath;
+			if (child.transcriptError) projected.transcriptError = child.transcriptError;
+			if (child.error) projected.error = child.error;
+			if (child.children?.length) projected.children = child.children;
+			return projected;
+		});
+	} else if (projectedLiveSteps.length) {
+		nestedChild.steps = projectedLiveSteps;
+	}
 	try {
 		writeNestedEvent(data.inheritedNestedRoute, {
 			type: terminalResult
@@ -1457,48 +1511,7 @@ function emitNestedLifecycle(
 			ts: now,
 			parentRunId: data.nestedParentAddress.parentRunId,
 			parentStepIndex: data.nestedParentAddress.parentStepIndex,
-			child: {
-				id: data.runId,
-				parentRunId: data.nestedParentAddress.parentRunId,
-				parentStepIndex: data.nestedParentAddress.parentStepIndex,
-				depth: data.nestedParentAddress.depth,
-				path: data.nestedParentAddress.path,
-				asyncDir: config.asyncDir,
-				ownerState: state === "running" ? "live" : "gone",
-				mode: data.mode,
-				state,
-				agent: directTasks[0]?.agent,
-				agents: directTasks.map((task) => task.agent),
-				startedAt,
-				...(terminalResult ? { endedAt: now } : {}),
-				lastUpdate: now,
-				...(result?.details.results.length
-					? {
-							steps: result.details.results.map((child, index) => ({
-								agent: child.agent,
-								...(directTasks[index]?.task ? { task: directTasks[index].task } : {}),
-								...(directTasks[index]?.description ? { description: directTasks[index].description } : {}),
-								status: child.detached
-									? ("running" as const)
-									: child.stopped
-										? ("stopped" as const)
-										: child.interrupted
-											? ("paused" as const)
-											: child.exitCode === 0
-												? ("complete" as const)
-												: ("failed" as const),
-								...(child.crashed ? { agentStatus: "crashed" as const } : {}),
-								...(child.sessionFile ? { sessionFile: child.sessionFile } : {}),
-								...(child.transcriptPath ? { transcriptPath: child.transcriptPath } : {}),
-								...(child.transcriptError ? { transcriptError: child.transcriptError } : {}),
-								...(child.error ? { error: child.error } : {}),
-								...(child.children?.length ? { children: child.children } : {}),
-							})),
-						}
-					: projectedLiveSteps.length
-						? { steps: projectedLiveSteps }
-						: {}),
-			},
+			child: nestedChild,
 		});
 	} catch (error) {
 		reportAgentDiagnostic("Failed to record nested foreground Agent lifecycle:", error);
@@ -1515,55 +1528,57 @@ function rememberForegroundResult(
 	const updatedAt = Date.now();
 	const rememberedTasks = taskInputs(data.params);
 	state.foregroundRuns ??= new Map();
-	state.foregroundRuns.set(data.runId, {
+	const remembered: ForegroundResumeRun = {
 		runId: data.runId,
 		mode: data.mode,
 		cwd: data.effectiveCwd,
 		asyncDir,
 		sessionId: data.currentSessionId,
 		updatedAt,
-		...(fs.existsSync(path.dirname(data.nestedRoute.eventSink)) ? { nestedRoute: data.nestedRoute } : {}),
-		children: result.details.results.map((child, index) => ({
-			agent: child.agent,
-			index,
-			...(child.cwd ? { cwd: child.cwd } : {}),
-			description: rememberedTasks[index]?.description,
-			task: rememberedTasks[index]?.task,
-			startedAt,
-			...(child.context ? { context: child.context } : {}),
-			...(child.crashed ? { crashed: true } : {}),
-			status: child.detached
-				? "detached"
-				: child.stopped
-					? "stopped"
-					: child.interrupted
-						? "paused"
-						: child.exitCode === 0
-							? "completed"
-							: "failed",
-			...(child.sessionFile ? { sessionFile: child.sessionFile } : {}),
-			...(child.model ? { model: child.model } : {}),
-			...(child.thinking ? { thinking: child.thinking } : {}),
-			exitCode: child.exitCode,
-			...(child.error ? { error: child.error } : {}),
-			...(child.detachedReason ? { detachedReason: child.detachedReason } : {}),
-			...(child.finalOutput ? { finalOutput: child.finalOutput } : {}),
-			...(child.artifactPaths ? { artifactPaths: child.artifactPaths } : {}),
-			...(child.transcriptPath ? { transcriptPath: child.transcriptPath } : {}),
-			...(child.transcriptError ? { transcriptError: child.transcriptError } : {}),
-			...(child.launchContractDigest ? { launchContractDigest: child.launchContractDigest } : {}),
-			...(child.capabilityCeiling ? { capabilityCeiling: child.capabilityCeiling } : {}),
-			...(child.capabilityAudit ? { capabilityAudit: child.capabilityAudit } : {}),
-			...(child.children?.length
-				? {
-						children: child.children
-							.map((nested) => sanitizeSummary(nested))
-							.filter((nested): nested is NonNullable<typeof nested> => Boolean(nested)),
-					}
-				: {}),
-			updatedAt,
-		})),
-	});
+		children: result.details.results.map((child, index): ForegroundResumeChild => {
+			const rememberedChild: ForegroundResumeChild = {
+				agent: child.agent,
+				index,
+				description: rememberedTasks[index]?.description,
+				task: rememberedTasks[index]?.task,
+				startedAt,
+				status: child.detached
+					? "detached"
+					: child.stopped
+						? "stopped"
+						: child.interrupted
+							? "paused"
+							: child.exitCode === 0
+								? "completed"
+								: "failed",
+				exitCode: child.exitCode,
+				updatedAt,
+			};
+			if (child.cwd) rememberedChild.cwd = child.cwd;
+			if (child.context) rememberedChild.context = child.context;
+			if (child.crashed) rememberedChild.crashed = true;
+			if (child.sessionFile) rememberedChild.sessionFile = child.sessionFile;
+			if (child.model) rememberedChild.model = child.model;
+			if (child.thinking) rememberedChild.thinking = child.thinking;
+			if (child.error) rememberedChild.error = child.error;
+			if (child.detachedReason) rememberedChild.detachedReason = child.detachedReason;
+			if (child.finalOutput) rememberedChild.finalOutput = child.finalOutput;
+			if (child.artifactPaths) rememberedChild.artifactPaths = child.artifactPaths;
+			if (child.transcriptPath) rememberedChild.transcriptPath = child.transcriptPath;
+			if (child.transcriptError) rememberedChild.transcriptError = child.transcriptError;
+			if (child.launchContractDigest) rememberedChild.launchContractDigest = child.launchContractDigest;
+			if (child.capabilityCeiling) rememberedChild.capabilityCeiling = child.capabilityCeiling;
+			if (child.capabilityAudit) rememberedChild.capabilityAudit = child.capabilityAudit;
+			if (child.children?.length) {
+				rememberedChild.children = child.children
+					.map((nested) => sanitizeSummary(nested))
+					.filter((nested): nested is NonNullable<typeof nested> => Boolean(nested));
+			}
+			return rememberedChild;
+		}),
+	};
+	if (fs.existsSync(path.dirname(data.nestedRoute.eventSink))) remembered.nestedRoute = data.nestedRoute;
+	state.foregroundRuns.set(data.runId, remembered);
 	while (state.foregroundRuns.size > 200) {
 		const oldest = [...state.foregroundRuns.values()].sort((left, right) => left.updatedAt - right.updatedAt)[0];
 		if (!oldest) break;
@@ -1750,13 +1765,14 @@ function stopRun(params: SubagentParamsLike, deps: ExecutorDeps): AgentToolResul
 		return errorResult("management", `Agent '${job.asyncId}' child ${params.index} is no longer running.`);
 	}
 	try {
-		deliverStopRequest({
+		const input: Parameters<typeof deliverStopRequest>[0] = {
 			asyncDir: job.asyncDir,
 			pid: isRuntimeNumber(status.pid) ? status.pid : undefined,
 			kill: deps.kill,
 			source: "agent-stop",
-			...(params.index !== undefined ? { targetIndex: params.index } : {}),
-		});
+		};
+		if (params.index !== undefined) input.targetIndex = params.index;
+		deliverStopRequest(input);
 		return {
 			content: [
 				{
@@ -1777,7 +1793,11 @@ function stopRun(params: SubagentParamsLike, deps: ExecutorDeps): AgentToolResul
 	}
 }
 
-function foregroundResumeTarget(params: SubagentParamsLike, state: SubagentState, resolvedRunId: string) {
+function foregroundResumeTarget(
+	params: SubagentParamsLike,
+	state: SubagentState,
+	resolvedRunId: string,
+): AsyncResumeTarget | undefined {
 	const run = [...(state.foregroundRuns?.values() ?? [])].find(
 		(candidate) => candidate.sessionId === state.currentSessionId && candidate.runId === resolvedRunId,
 	);
@@ -1806,7 +1826,7 @@ function foregroundResumeTarget(params: SubagentParamsLike, state: SubagentState
 		});
 	}
 	const recoveryDescriptor = run.asyncDir ? readAsyncRecoveryDescriptor(run.asyncDir, index) : undefined;
-	return {
+	const target: AsyncResumeTarget = {
 		kind: "revive" as const,
 		runId: run.runId,
 		agent: child.agent,
@@ -1818,8 +1838,9 @@ function foregroundResumeTarget(params: SubagentParamsLike, state: SubagentState
 		context: child.context,
 		launchContractDigest: child.launchContractDigest,
 		capabilityCeiling: child.capabilityCeiling,
-		...(recoveryDescriptor ? { recoveryDescriptor } : {}),
 	};
+	if (recoveryDescriptor) target.recoveryDescriptor = recoveryDescriptor;
+	return target;
 }
 
 /** Resolve a public resume prefix before the governor reserves its logical Agent. */
@@ -1937,10 +1958,10 @@ async function resumeRun(input: {
 	const nestedRoute = inheritedNestedRoute ?? createNestedRoute(runId);
 	let backgroundOwnsRoute = false;
 	try {
-		const result = await input.engines.backgroundSingle(runId, {
+		const resumeInput: Parameters<ExecutorEngines["backgroundSingle"]>[1] = {
 			agent: target.agent,
 			description: resolveDisplayDescription(undefined, followUp),
-			task: buildRevivedAsyncTask(target as Parameters<typeof buildRevivedAsyncTask>[0], followUp),
+			task: buildRevivedAsyncTask(target, followUp),
 			goal: followUp,
 			agentConfig: agent,
 			ctx: {
@@ -1978,25 +1999,25 @@ async function resumeRun(input: {
 			maxSubagentDepth:
 				descriptor?.maxSubagentDepth ?? resolveCurrentMaxSubagentDepth(input.deps.config.maxSubagentDepth),
 			availableModels: availableModels(input.ctx),
-			...(timeout.timeoutMs !== undefined ? { timeoutMs: timeout.timeoutMs } : {}),
-			...(input.absoluteDeadlineAt !== undefined ? { absoluteDeadlineAt: input.absoluteDeadlineAt } : {}),
-			...(turn.turnBudget ? { turnBudget: turn.turnBudget } : {}),
-			...(tool.budget ? { toolBudget: tool.budget } : {}),
 			capabilityCeiling: intersectSubagentCapabilityCeilings(
 				target.capabilityCeiling,
 				descriptor?.capabilityCeiling,
 				resolveCurrentSubagentCapabilityCeiling(input.deps.state.currentSessionId ?? undefined),
 			),
-		});
+		};
+		if (timeout.timeoutMs !== undefined) resumeInput.timeoutMs = timeout.timeoutMs;
+		if (input.absoluteDeadlineAt !== undefined) resumeInput.absoluteDeadlineAt = input.absoluteDeadlineAt;
+		if (turn.turnBudget) resumeInput.turnBudget = turn.turnBudget;
+		if (tool.budget) resumeInput.toolBudget = tool.budget;
+		const result = await input.engines.backgroundSingle(runId, resumeInput);
 		backgroundOwnsRoute = Boolean(result.details.asyncId);
 		if (resultIsError(result)) return result;
 		const revivedId = result.details.asyncId ?? runId;
+		const details: Details = { ...result.details };
+		if (target.launchContractDigest) details.sourceLaunchContractDigest = target.launchContractDigest;
 		return {
 			content: [{ type: "text", text: `Agent ${target.agent} resumed from ${target.runId} as ${revivedId}.` }],
-			details: {
-				...result.details,
-				...(target.launchContractDigest ? { sourceLaunchContractDigest: target.launchContractDigest } : {}),
-			},
+			details,
 		};
 	} finally {
 		if (!inheritedNestedRoute && !backgroundOwnsRoute) {
@@ -2088,13 +2109,15 @@ async function steerRun(
 	}
 	const requestId = randomUUID();
 	try {
-		requestAsyncSteer(job.asyncDir, {
+		const request: Parameters<typeof requestAsyncSteer>[1] = {
 			id: requestId,
 			message,
-			...(parentRunOrigin ? { parentRunOrigin } : {}),
-			...(index !== undefined ? { targetIndex: index } : { targetIndexes }),
 			source: "agent-steer",
-		});
+		};
+		if (parentRunOrigin) request.parentRunOrigin = parentRunOrigin;
+		if (index !== undefined) request.targetIndex = index;
+		else request.targetIndexes = targetIndexes;
+		requestAsyncSteer(job.asyncDir, request);
 	} catch (error) {
 		return errorResult(
 			"management",
@@ -2129,11 +2152,12 @@ async function steerRun(
 				: steering.state === "pending"
 					? "pending acknowledgment"
 					: steering.state;
-	return {
+	const result: AgentToolResult<Details> = {
 		content: [{ type: "text", text: `Steering ${label} for Agent ${job.asyncId} (request ${requestId}).` }],
-		...(failed ? { isError: true } : {}),
 		details: { mode: "management", results: [], steering },
 	};
+	if (failed) result.isError = true;
+	return result;
 }
 
 function duplicateForegroundResult(params: SubagentParamsLike): AgentToolResult<Details> {
