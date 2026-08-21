@@ -1,5 +1,5 @@
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	activityKey,
@@ -85,10 +85,13 @@ export interface WorkToolRuntimeRef {
 }
 
 function textResult<T>(text: string, details: T, isError = false): AgentToolResult<T> {
-	return { content: [{ type: "text", text }], details, ...(isError ? { isError: true } : {}) };
+	const result = isError
+		? { content: [{ type: "text" as const, text }], details, isError: true }
+		: { content: [{ type: "text" as const, text }], details };
+	return result;
 }
 
-function firstLine(value: unknown): string {
+function firstLine(value: string | undefined): string {
 	return isRuntimeString(value) ? boundTerminalLine(value.split(/\r?\n/u)[0] ?? "", 180) : "";
 }
 
@@ -112,12 +115,10 @@ function backgroundBashDetailLines(result: AgentToolResult<BackgroundWorkBashDet
 	const taskId = result.details?.backgroundTaskId;
 	if (!taskId) return [];
 	const outputPath = result.details?.fullOutputPath;
-	return [
-		`Started in background · ${taskId}`,
-		...(outputPath ? ["", "Output file", outputPath] : []),
-		"",
-		"Result will be delivered automatically.",
-	];
+	const lines = [`Started in background · ${taskId}`];
+	if (outputPath) lines.push("", "Output file", outputPath);
+	lines.push("", "Result will be delivered automatically.");
+	return lines;
 }
 
 function requireRuntime(ref: WorkToolRuntimeRef): BackgroundWorkRuntime {
@@ -143,7 +144,7 @@ function listText(runtime: BackgroundWorkRuntime): string {
 	return snapshots.map((task) => `${task.id}  ${task.kind}  ${task.status}  ${task.title}`).join("\n");
 }
 
-const backgroundPresentation: SuiteToolPresentation<Record<string, unknown>, WorkToolDetails> = {
+const backgroundPresentation: SuiteToolPresentation<Static<typeof BACKGROUND_PARAMETERS>, WorkToolDetails> = {
 	activity: {
 		categories: ["inspect-background", "read-background", "stop-background"],
 		classify: ({ args }) => {
@@ -184,18 +185,14 @@ export function registerWorkTools(
 			],
 			parameters: BASH_PARAMETERS,
 			async execute(toolCallId, params, signal, onUpdate, ctx) {
-				return requireRuntime(runtimeRef).executeBash(
-					{
-						command: params.command,
-						...(params.description ? { description: params.description } : {}),
-						...(onUpdate ? { onUpdate } : {}),
-						...(params.run_in_background !== undefined ? { runInBackground: params.run_in_background } : {}),
-						...(signal ? { signal } : {}),
-						...(params.timeout !== undefined ? { timeoutSeconds: params.timeout } : {}),
-						toolCallId,
-					},
-					ctx,
-				);
+				const input = { command: params.command, toolCallId };
+				if (params.description) Object.assign(input, { description: params.description });
+				if (onUpdate) Object.assign(input, { onUpdate });
+				if (params.run_in_background !== undefined)
+					Object.assign(input, { runInBackground: params.run_in_background });
+				if (signal) Object.assign(input, { signal });
+				if (params.timeout !== undefined) Object.assign(input, { timeoutSeconds: params.timeout });
+				return requireRuntime(runtimeRef).executeBash(input, ctx);
 			},
 		};
 		registerSuiteOwnedTool(
@@ -256,12 +253,10 @@ export function registerWorkTools(
 					return textResult(output, { action: "output", status: "read", taskId });
 				}
 				const outcome = await runtime.stop(taskId);
-				return textResult(outcomeText(outcome), {
-					action: "stop",
-					...(outcome.outputPath ? { outputPath: outcome.outputPath } : {}),
-					status: outcome.status,
-					taskId,
-				});
+				const details: WorkToolDetails = outcome.outputPath
+					? { action: "stop", outputPath: outcome.outputPath, status: outcome.status, taskId }
+					: { action: "stop", status: outcome.status, taskId };
+				return textResult(outcomeText(outcome), details);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return textResult(`Error: ${message}`, { action: params.action, error: message }, true);
@@ -285,28 +280,21 @@ export function registerWorkTools(
 			try {
 				const runtime = requireRuntime(runtimeRef);
 				await runtime.prepare();
-				const started = await startMonitor(
-					runtime,
-					{
-						...(params.description ? { description: params.description } : {}),
-						...(params.failure_text ? { failureText: params.failure_text } : {}),
-						...(params.interval_seconds !== undefined ? { intervalSeconds: params.interval_seconds } : {}),
-						source: params.source,
-						...(params.start_at_end !== undefined ? { startAtEnd: params.start_at_end } : {}),
-						...(params.success_text ? { successText: params.success_text } : {}),
-						target: params.target,
-						...(params.timeout_seconds !== undefined ? { timeoutSeconds: params.timeout_seconds } : {}),
-						toolCallId,
-					},
-					ctx,
-				);
+				const input = { source: params.source, target: params.target, toolCallId };
+				if (params.description) Object.assign(input, { description: params.description });
+				if (params.failure_text) Object.assign(input, { failureText: params.failure_text });
+				if (params.interval_seconds !== undefined)
+					Object.assign(input, { intervalSeconds: params.interval_seconds });
+				if (params.start_at_end !== undefined) Object.assign(input, { startAtEnd: params.start_at_end });
+				if (params.success_text) Object.assign(input, { successText: params.success_text });
+				if (params.timeout_seconds !== undefined) Object.assign(input, { timeoutSeconds: params.timeout_seconds });
+				const started = await startMonitor(runtime, input, ctx);
+				const details: WorkToolDetails = started.outputPath
+					? { outputPath: started.outputPath, status: "running", taskId: started.id }
+					: { status: "running", taskId: started.id };
 				return textResult(
 					`Monitor ${started.id} is waiting for "${started.title}". Its terminal result will be delivered automatically; continue useful work instead of polling.`,
-					{
-						...(started.outputPath ? { outputPath: started.outputPath } : {}),
-						status: "running",
-						taskId: started.id,
-					},
+					details,
 				);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
