@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
@@ -99,12 +100,10 @@ function readRunnerStartupDiagnostics(asyncDir: string): string | undefined {
 }
 
 function isNotFoundError(cause: unknown): boolean {
-	return (
-		isRuntimeObject(cause) && cause !== null && "code" in cause && (cause as NodeJS.ErrnoException).code === "ENOENT"
-	);
+	return isRuntimeObject(cause) && cause !== null && "code" in cause && cause.code === "ENOENT";
 }
 
-function safeRunId(value: unknown): value is string {
+function safeRunId<Value>(value: Value): value is Value & string {
 	return (
 		isRuntimeString(value) &&
 		value.length > 0 &&
@@ -205,7 +204,28 @@ interface ResultRepairData {
 	nestedChildren?: NestedRunSummary[];
 }
 
-function finiteTimestamp(value: unknown): number | undefined {
+interface ResultFileRecord {
+	readonly children?: JsonValue;
+	readonly endedAt?: JsonValue;
+	readonly exitCode?: JsonValue;
+	readonly id?: JsonValue;
+	readonly model?: JsonValue;
+	readonly nestedChildren?: JsonValue;
+	readonly parentRunOrigin?: JsonValue;
+	readonly results?: JsonValue;
+	readonly runId?: JsonValue;
+	readonly startedAt?: JsonValue;
+	readonly state?: JsonValue;
+	readonly success?: JsonValue;
+	readonly thinking?: JsonValue;
+	readonly timedOut?: JsonValue;
+}
+
+function isResultFileRecord<Value extends JsonValue>(value: Value): value is Value & ResultFileRecord {
+	return Boolean(value) && isRuntimeObject(value) && !Array.isArray(value);
+}
+
+function finiteTimestamp<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
@@ -215,19 +235,8 @@ function readResultRepairData(
 	resultContent?: string,
 ): ResultRepairData | undefined {
 	try {
-		const data = JSON.parse(resultContent ?? readBoundedOwnedFile(resultPath, MAX_RESULT_FILE_BYTES)) as {
-			id?: unknown;
-			runId?: unknown;
-			success?: boolean;
-			state?: string;
-			exitCode?: number;
-			startedAt?: number;
-			endedAt?: number;
-			timedOut?: boolean;
-			parentRunOrigin?: unknown;
-			results?: unknown;
-			nestedChildren?: unknown;
-		};
+		const data = parseJsonValue(resultContent ?? readBoundedOwnedFile(resultPath, MAX_RESULT_FILE_BYTES));
+		if (!isResultFileRecord(data)) throw new Error(`Invalid async result file '${resultPath}'.`);
 		if (
 			(data.id !== undefined && data.id !== expectedRunId) ||
 			(data.runId !== undefined && data.runId !== expectedRunId)
@@ -243,7 +252,8 @@ function readResultRepairData(
 					: "failed";
 		const results = Array.isArray(data.results)
 			? data.results.map((entry, index) => {
-					if (!entry || !isRuntimeObject(entry) || Array.isArray(entry)) return {};
+					if (!isResultFileRecord(entry)) return {};
+					// SAFETY: Suite result writers own this child shape; the object boundary and compatibility fields are checked here.
 					const child = entry as ResultChildOutcome;
 					if (child.model !== undefined && !isRuntimeString(child.model))
 						throw new Error(
@@ -253,12 +263,14 @@ function readResultRepairData(
 						throw new Error(
 							`Invalid async result file '${resultPath}': results[${index}].thinking must be a string.`,
 						);
-					const children = Array.isArray((entry as { children?: unknown }).children)
-						? (entry as { children: unknown[] }).children
+					const children = Array.isArray(entry.children)
+						? entry.children
 								.map((nested) => sanitizeSummary(nested))
 								.filter((nested): nested is NestedRunSummary => Boolean(nested))
 						: undefined;
-					return { ...child, ...(children?.length ? { children } : {}) };
+					const outcome: ResultChildOutcome = { ...child };
+					if (children?.length) outcome.children = children;
+					return outcome;
 				})
 			: undefined;
 		const nestedChildren = Array.isArray(data.nestedChildren)
@@ -266,17 +278,20 @@ function readResultRepairData(
 					.map((child) => sanitizeSummary(child))
 					.filter((child): child is NestedRunSummary => Boolean(child))
 			: undefined;
-		return {
-			...(data.parentRunOrigin === "automatic" || data.parentRunOrigin === "user"
-				? { parentRunOrigin: data.parentRunOrigin }
-				: {}),
+		const repair: ResultRepairData = {
 			state,
-			...(finiteTimestamp(data.startedAt) !== undefined ? { startedAt: finiteTimestamp(data.startedAt) } : {}),
-			...(finiteTimestamp(data.endedAt) !== undefined ? { endedAt: finiteTimestamp(data.endedAt) } : {}),
-			...(data.timedOut === true || results?.some((child) => child.timedOut === true) ? { timedOut: true } : {}),
-			...(results ? { results } : {}),
-			...(nestedChildren ? { nestedChildren } : {}),
 		};
+		if (data.parentRunOrigin === "automatic" || data.parentRunOrigin === "user") {
+			repair.parentRunOrigin = data.parentRunOrigin;
+		}
+		const startedAt = finiteTimestamp(data.startedAt);
+		const endedAt = finiteTimestamp(data.endedAt);
+		if (startedAt !== undefined) repair.startedAt = startedAt;
+		if (endedAt !== undefined) repair.endedAt = endedAt;
+		if (data.timedOut === true || results?.some((child) => child.timedOut === true)) repair.timedOut = true;
+		if (results) repair.results = results;
+		if (nestedChildren) repair.nestedChildren = nestedChildren;
+		return repair;
 	} catch (error) {
 		if (isNotFoundError(error)) return undefined;
 		throw new Error(`Failed to read async result file '${resultPath}': ${getErrorMessage(error)}`, {
@@ -361,23 +376,10 @@ function terminalStatusFromResult(
 		nestedWorkIncludesUser(repair.nestedChildren)
 			? "user"
 			: (status.parentRunOrigin ?? repair.parentRunOrigin);
-	return {
+	const terminalStatus: AsyncStatus = {
 		...status,
-		...(parentRunOrigin ? { parentRunOrigin } : {}),
 		startedAt: repair.startedAt ?? status.startedAt,
 		state: repair.state,
-		...(status.lifecycleArtifactVersion === 3 &&
-		(!status.processTerminal || status.processTerminal.state === "pending")
-			? {
-					processTerminal: {
-						version: 1 as const,
-						state: "unknown" as const,
-						runId: status.runId,
-						runnerProcessInstanceId: "observer-unavailable",
-						reason: "observer-unavailable" as const,
-					},
-				}
-			: {}),
 		error: repair.state === "complete" ? undefined : (error ?? status.error),
 		stopped: repair.state === "stopped" ? true : undefined,
 		timedOut: repair.timedOut === true ? true : undefined,
@@ -389,6 +391,20 @@ function terminalStatusFromResult(
 		endedAt: status.endedAt ?? endedAt,
 		steps,
 	};
+	if (parentRunOrigin) terminalStatus.parentRunOrigin = parentRunOrigin;
+	if (
+		status.lifecycleArtifactVersion === 3 &&
+		(!status.processTerminal || status.processTerminal.state === "pending")
+	) {
+		terminalStatus.processTerminal = {
+			version: 1,
+			state: "unknown",
+			runId: status.runId,
+			runnerProcessInstanceId: "observer-unavailable",
+			reason: "observer-unavailable",
+		};
+	}
+	return terminalStatus;
 }
 
 /**
@@ -450,24 +466,25 @@ function buildStartedStatus(asyncDir: string, startedRun: StartedRunMetadata, no
 	const startedAt = startedRun.startedAt ?? now;
 	const agents = startedRun.agents?.length ? startedRun.agents : ["subagent"];
 	const parallelGroups = normalizeParallelGroups(startedRun.parallelGroups, agents.length);
-	return {
+	const status: AsyncStatus = {
 		runId: startedRun.runId || path.basename(asyncDir),
-		...(startedRun.sessionId ? { sessionId: startedRun.sessionId } : {}),
 		mode: startedRun.mode ?? (agents.length > 1 ? "parallel" : "single"),
-		...(startedRun.nestedRoute ? { nestedRoute: startedRun.nestedRoute } : {}),
 		state: "running",
 		pid: startedRun.pid,
 		startedAt,
 		lastUpdate: now,
 		currentStep: 0,
-		...(parallelGroups.length ? { parallelGroups } : {}),
 		steps: agents.map((agent) => ({
 			agent,
 			status: "running" as const,
 			startedAt,
 		})),
-		...(startedRun.sessionFile ? { sessionFile: startedRun.sessionFile } : {}),
 	};
+	if (startedRun.sessionId) status.sessionId = startedRun.sessionId;
+	if (startedRun.nestedRoute) status.nestedRoute = startedRun.nestedRoute;
+	if (parallelGroups.length) status.parallelGroups = parallelGroups;
+	if (startedRun.sessionFile) status.sessionFile = startedRun.sessionFile;
+	return status;
 }
 
 function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, reason?: string) {
@@ -502,18 +519,6 @@ function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, r
 	const repairedStatus: AsyncStatus = {
 		...status,
 		state: "failed",
-		...(status.lifecycleArtifactVersion === 3 &&
-		(!status.processTerminal || status.processTerminal.state === "pending")
-			? {
-					processTerminal: {
-						version: 1 as const,
-						state: "unknown" as const,
-						runId,
-						runnerProcessInstanceId: "observer-unavailable",
-						reason: "stale-repair" as const,
-					},
-				}
-			: {}),
 		activityState: undefined,
 		currentTool: undefined,
 		currentToolStartedAt: undefined,
@@ -522,35 +527,48 @@ function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, r
 		endedAt: now,
 		steps: repairedSteps,
 	};
+	if (
+		status.lifecycleArtifactVersion === 3 &&
+		(!status.processTerminal || status.processTerminal.state === "pending")
+	) {
+		repairedStatus.processTerminal = {
+			version: 1,
+			state: "unknown",
+			runId,
+			runnerProcessInstanceId: "observer-unavailable",
+			reason: "stale-repair",
+		};
+	}
 	const resultAgent = repairedSteps[status.currentStep ?? 0]?.agent ?? repairedSteps[0]?.agent ?? "subagent";
+	const result = {
+		id: runId,
+		agent: resultAgent,
+		mode: status.mode,
+		success: false,
+		state: "failed" as const,
+		summary: message,
+		results: repairedSteps.map((step) => ({
+			agent: step.agent,
+			output: step.status === "complete" || step.status === "completed" ? "" : message,
+			error: step.status === "complete" || step.status === "completed" ? undefined : (step.error ?? message),
+			success: step.status === "complete" || step.status === "completed",
+			model: step.model,
+			attemptedModels: step.attemptedModels,
+			modelAttempts: step.modelAttempts,
+			sessionFile: step.sessionFile,
+		})),
+		exitCode: 1,
+		timestamp: now,
+		durationMs: Math.max(0, now - status.startedAt),
+		asyncDir,
+		sessionId: status.sessionId,
+		sessionFile: status.sessionFile,
+	};
+	if (status.parentRunOrigin) Object.assign(result, { parentRunOrigin: status.parentRunOrigin });
 	return {
 		status: repairedStatus,
 		message,
-		result: {
-			id: runId,
-			...(status.parentRunOrigin ? { parentRunOrigin: status.parentRunOrigin } : {}),
-			agent: resultAgent,
-			mode: status.mode,
-			success: false,
-			state: "failed",
-			summary: message,
-			results: repairedSteps.map((step) => ({
-				agent: step.agent,
-				output: step.status === "complete" || step.status === "completed" ? "" : message,
-				error: step.status === "complete" || step.status === "completed" ? undefined : (step.error ?? message),
-				success: step.status === "complete" || step.status === "completed",
-				model: step.model,
-				attemptedModels: step.attemptedModels,
-				modelAttempts: step.modelAttempts,
-				sessionFile: step.sessionFile,
-			})),
-			exitCode: 1,
-			timestamp: now,
-			durationMs: Math.max(0, now - status.startedAt),
-			asyncDir,
-			sessionId: status.sessionId,
-			sessionFile: status.sessionFile,
-		},
+		result,
 	};
 }
 
@@ -643,10 +661,7 @@ export function checkPidLiveness(pid: number, kill: KillFn = process.kill): PidL
 		kill(pid, 0);
 		return "alive";
 	} catch (error) {
-		const code =
-			isRuntimeObject(error) && error !== null && "code" in error
-				? (error as NodeJS.ErrnoException).code
-				: undefined;
+		const code = isRuntimeObject(error) && error !== null && "code" in error ? error.code : undefined;
 		if (code === "ESRCH") return "dead";
 		if (code === "EPERM") return "unknown";
 		return "unknown";
@@ -682,10 +697,9 @@ function reconcileAsyncRunWithStatusClaim(
 	if (!effectiveStatus) return { status: null, repaired: false };
 	const statusPath = path.join(asyncDir, "status.json");
 	for (const [index, step] of (effectiveStatus.steps ?? []).entries()) {
-		const stepRecord = step as Record<string, unknown>;
-		if (stepRecord.model !== undefined && !isRuntimeString(stepRecord.model))
+		if (step.model !== undefined && !isRuntimeString(step.model))
 			throw new Error(`Invalid async status file '${statusPath}': steps[${index}].model must be a string.`);
-		if (stepRecord.thinking !== undefined && !isRuntimeString(stepRecord.thinking))
+		if (step.thinking !== undefined && !isRuntimeString(step.thinking))
 			throw new Error(`Invalid async status file '${statusPath}': steps[${index}].thinking must be a string.`);
 	}
 
@@ -709,12 +723,13 @@ function reconcileAsyncRunWithStatusClaim(
 		const finalized = { ...effectiveStatus, processTerminal: durableProcessTerminal };
 		const changed = JSON.stringify(effectiveStatus.processTerminal) !== JSON.stringify(durableProcessTerminal);
 		if (changed) writeAtomicJson(statusPath, finalized);
-		return {
+		const result: ReconcileAsyncRunResult = {
 			status: finalized,
 			repaired: changed,
 			resultPath: resultPresent ? resultPath : undefined,
-			...(changed ? { message: "Merged durable Agent process-terminal proof into terminal status." } : {}),
 		};
+		if (changed) result.message = "Merged durable Agent process-terminal proof into terminal status.";
+		return result;
 	}
 	if (resultPresent) {
 		const terminalStatus =
@@ -804,7 +819,8 @@ function reconcileAsyncRunWithStatusClaim(
 			try {
 				if (liveness !== "dead") (options.kill ?? process.kill)(effectiveStatus.pid, "SIGTERM");
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ESRCH") liveness = "dead";
+				if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "ESRCH")
+					liveness = "dead";
 				else {
 					return {
 						status: status ?? null,
@@ -848,7 +864,7 @@ function reconcileAsyncRunWithStatusClaim(
 			try {
 				if (liveness !== "dead") (options.kill ?? process.kill)(effectiveStatus.pid, "SIGKILL");
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+				if (!(isRuntimeObject(error) && error !== null && "code" in error && error.code === "ESRCH")) {
 					return {
 						status: status ?? null,
 						repaired: false,
