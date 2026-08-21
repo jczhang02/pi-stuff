@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
 	captureProcessIdentity,
@@ -59,21 +60,25 @@ function safeToken(value: string): string {
 	return normalized.slice(0, 64) || "session";
 }
 
-function isPositiveInteger(value: unknown): value is number {
+function isPositiveInteger(value: JsonValue | undefined): value is number {
 	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0;
 }
 
-function parseIdentity(value: unknown): ProcessIdentity | undefined {
-	if (!value || !isRuntimeObject(value)) return undefined;
-	const record = value as Record<string, unknown>;
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
+}
+
+function parseIdentity(value: JsonValue | undefined): ProcessIdentity | undefined {
+	if (!isJsonObject(value)) return undefined;
+	const record = value;
 	return isPositiveInteger(record["pid"]) && isRuntimeString(record["started"]) && record["started"]
 		? { pid: record["pid"], started: record["started"] }
 		: undefined;
 }
 
-function parseStoredRuntime(value: unknown, authorityKey: Uint8Array): StoredRuntime | undefined {
-	if (!value || !isRuntimeObject(value)) return undefined;
-	const record = value as Record<string, unknown>;
+function parseStoredRuntime(value: JsonValue, authorityKey: Uint8Array): StoredRuntime | undefined {
+	if (!isJsonObject(value)) return undefined;
+	const record = value;
 	const owner = parseIdentity(record["owner"]);
 	if (
 		record["schemaVersion"] !== SCHEMA_VERSION ||
@@ -85,18 +90,18 @@ function parseStoredRuntime(value: unknown, authorityKey: Uint8Array): StoredRun
 	}
 	const tasks: StoredProcessTask[] = [];
 	for (const value of record["tasks"]) {
-		if (!value || !isRuntimeObject(value)) return undefined;
-		const task = value as Record<string, unknown>;
+		if (!isJsonObject(value)) return undefined;
+		const task = value;
 		const supervisor = parseIdentity(task["supervisor"]);
 		const command = task["command"] === undefined ? undefined : parseIdentity(task["command"]);
 		if (!isRuntimeString(task["id"]) || !task["id"] || !supervisor || (task["command"] && !command)) {
 			return undefined;
 		}
-		tasks.push({ id: task["id"], supervisor, ...(command ? { command } : {}) });
+		tasks.push(command ? { id: task["id"], supervisor, command } : { id: task["id"], supervisor });
 	}
 	const auth = record["auth"];
-	if (!auth || !isRuntimeObject(auth)) return undefined;
-	const authRecord = auth as Record<string, unknown>;
+	if (!isJsonObject(auth)) return undefined;
+	const authRecord = auth;
 	if (
 		authRecord["algorithm"] !== AUTHORITY_ALGORITHM ||
 		!isRuntimeString(authRecord["digest"]) ||
@@ -119,7 +124,7 @@ function readStoredRuntime(directory: string, authorityKey: Uint8Array): StoredR
 		const metadataPath = join(directory, METADATA_FILE);
 		const stat = lstatSync(metadataPath);
 		if (stat.isSymbolicLink() || !stat.isFile() || stat.size > 1024 * 1024) return undefined;
-		return parseStoredRuntime(JSON.parse(readFileSync(metadataPath, "utf-8")), authorityKey);
+		return parseStoredRuntime(parseJsonValue(readFileSync(metadataPath, "utf-8")), authorityKey);
 	} catch {
 		return undefined;
 	}
@@ -129,11 +134,15 @@ function canonicalRuntimePayload(payload: StoredRuntimePayload): string {
 	return JSON.stringify({
 		owner: { pid: payload.owner.pid, started: payload.owner.started },
 		schemaVersion: SCHEMA_VERSION,
-		tasks: payload.tasks.map((task) => ({
-			id: task.id,
-			...(task.command ? { command: { pid: task.command.pid, started: task.command.started } } : {}),
-			supervisor: { pid: task.supervisor.pid, started: task.supervisor.started },
-		})),
+		tasks: payload.tasks.map((task) =>
+			task.command
+				? {
+						id: task.id,
+						command: { pid: task.command.pid, started: task.command.started },
+						supervisor: { pid: task.supervisor.pid, started: task.supervisor.started },
+					}
+				: { id: task.id, supervisor: { pid: task.supervisor.pid, started: task.supervisor.started } },
+		),
 	});
 }
 
@@ -208,7 +217,7 @@ function loadOrCreateAuthorityKey(injected?: Uint8Array, create = true): Buffer 
 		writeFileSync(target, key, { flag: "wx", mode: 0o600 });
 		return key;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		if (!isRuntimeObject(error) || error === null || !("code" in error) || error.code !== "EEXIST") throw error;
 		return loadOrCreateAuthorityKey(undefined, true);
 	}
 }
