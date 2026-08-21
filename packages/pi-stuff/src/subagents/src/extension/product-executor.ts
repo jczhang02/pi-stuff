@@ -1,5 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { isRuntimeNumber } from "../../../shared/runtime-type.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
 import type { SubagentParamsLike } from "../runs/foreground/subagent-executor.ts";
 import { scanAgentReport } from "../runtime/final-report-scanner.ts";
 import { resolveDisplayDescription } from "../shared/display-description.ts";
@@ -58,6 +58,7 @@ function sharedTaskValue<K extends "context" | "isolation" | "foreground">(
 	if (hasOwn(params, field) && params[field] !== first) {
 		throw new Error(`Top-level ${field} conflicts with the shared task ${field} value.`);
 	}
+	// SAFETY: field is the same generic key for every task value and the selected top-level value.
 	return (hasOwn(params, field) ? params[field] : first) as PublicAgentParams[K];
 }
 
@@ -81,15 +82,16 @@ export function normalizePublicAgentParams(params: PublicAgentParams): PublicAge
 		const context = sharedTaskValue(params, "context");
 		const isolation = sharedTaskValue(params, "isolation");
 		const foreground = sharedTaskValue(params, "foreground");
-		return {
+		const normalized = {
 			...params,
-			...(context !== undefined ? { context } : {}),
-			...(isolation !== undefined ? { isolation } : {}),
-			...(foreground !== undefined ? { foreground } : {}),
 			tasks: params.tasks?.map(
 				({ context: _context, isolation: _isolation, foreground: _foreground, ...task }) => task,
 			),
 		};
+		if (context !== undefined) normalized.context = context;
+		if (isolation !== undefined) normalized.isolation = isolation;
+		if (foreground !== undefined) normalized.foreground = foreground;
+		return normalized;
 	}
 	if (!params.agent?.trim() || !params.task?.trim()) {
 		throw new Error("Provide agent plus task for one launch, or a non-empty tasks list for parallel work.");
@@ -119,30 +121,33 @@ export interface PublicAgentParams {
 }
 
 function mutableSkill(value: PublicAgentParams["skill"]): SubagentParamsLike["skill"] {
-	if (Array.isArray(value)) return [...value] as string[];
-	return value as string | boolean | undefined;
+	if (isRuntimeString(value) || isRuntimeBoolean(value) || value === undefined) return value;
+	return [...value];
 }
 
 function mutableToolBudget(value: PublicAgentParams["toolBudget"]): SubagentParamsLike["toolBudget"] {
 	if (!value) return undefined;
-	return {
+	const budget: NonNullable<SubagentParamsLike["toolBudget"]> = {
 		soft: value.soft,
 		hard: value.hard,
-		block: Array.isArray(value.block) ? ([...value.block] as string[]) : (value.block as "*" | undefined),
 	};
+	if (Array.isArray(value.block)) budget.block = [...value.block];
+	else if (value.block === "*") budget.block = "*";
+	return budget;
 }
 
-function mapTask(task: PublicAgentTask) {
-	return {
+function mapTask(task: PublicAgentTask): NonNullable<SubagentParamsLike["tasks"]>[number] {
+	const mapped: NonNullable<SubagentParamsLike["tasks"]>[number] = {
 		agent: task.agent,
 		description: resolveDisplayDescription(task.description, task.task),
 		task: task.task,
-		...(task.cwd ? { cwd: task.cwd } : {}),
-		...(task.model ? { model: task.model } : {}),
-		...(task.skill !== undefined ? { skill: mutableSkill(task.skill) } : {}),
-		...(task.turnBudget ? { turnBudget: { ...task.turnBudget } } : {}),
-		...(task.toolBudget ? { toolBudget: mutableToolBudget(task.toolBudget) } : {}),
 	};
+	if (task.cwd) mapped.cwd = task.cwd;
+	if (task.model) mapped.model = task.model;
+	if (task.skill !== undefined) mapped.skill = mutableSkill(task.skill);
+	if (task.turnBudget) mapped.turnBudget = { ...task.turnBudget };
+	if (task.toolBudget) mapped.toolBudget = mutableToolBudget(task.toolBudget);
+	return mapped;
 }
 
 /**
@@ -152,53 +157,48 @@ function mapTask(task: PublicAgentTask) {
 export function toEngineParams(input: PublicAgentParams): SubagentParamsLike {
 	const params = normalizePublicAgentParams(input);
 	if (params.action) {
-		return {
-			action: params.action,
-			...(params.id ? { id: params.id } : {}),
-			...(params.index !== undefined ? { index: params.index } : {}),
-			...(params.message ? { message: params.message } : {}),
-		};
+		const control: SubagentParamsLike = { action: params.action };
+		if (params.id) control.id = params.id;
+		if (params.index !== undefined) control.index = params.index;
+		if (params.message) control.message = params.message;
+		return control;
 	}
 
 	const worktree = params.isolation === "worktree";
 	const common: SubagentParamsLike = {
 		async: params.foreground !== true,
 		context: params.context ?? "fresh",
-		...(worktree ? { worktree: true } : {}),
-		...(params.cwd ? { cwd: params.cwd } : {}),
-		...(params.model ? { model: params.model } : {}),
-		...(params.thinking ? { thinking: params.thinking } : {}),
-		...(params.skill !== undefined ? { skill: mutableSkill(params.skill) } : {}),
-		...(params.timeoutMs !== undefined ? { timeoutMs: params.timeoutMs } : {}),
-		...(params.turnBudget ? { turnBudget: { ...params.turnBudget } } : {}),
-		...(params.toolBudget ? { toolBudget: mutableToolBudget(params.toolBudget) } : {}),
 	};
+	if (worktree) common.worktree = true;
+	if (params.cwd) common.cwd = params.cwd;
+	if (params.model) common.model = params.model;
+	if (params.thinking) common.thinking = params.thinking;
+	if (params.skill !== undefined) common.skill = mutableSkill(params.skill);
+	if (params.timeoutMs !== undefined) common.timeoutMs = params.timeoutMs;
+	if (params.turnBudget) common.turnBudget = { ...params.turnBudget };
+	if (params.toolBudget) common.toolBudget = mutableToolBudget(params.toolBudget);
 
 	if (params.tasks?.length) {
 		return { ...common, tasks: params.tasks.map(mapTask) };
 	}
 	if (worktree && params.agent && params.task) {
+		const task: PublicAgentTask = { agent: params.agent, task: params.task };
+		if (params.description) Object.assign(task, { description: params.description });
+		if (params.model) Object.assign(task, { model: params.model });
+		if (params.skill !== undefined) Object.assign(task, { skill: params.skill });
+		if (params.turnBudget) Object.assign(task, { turnBudget: params.turnBudget });
+		if (params.toolBudget) Object.assign(task, { toolBudget: params.toolBudget });
 		return {
 			...common,
-			tasks: [
-				mapTask({
-					agent: params.agent,
-					...(params.description ? { description: params.description } : {}),
-					task: params.task,
-					...(params.model ? { model: params.model } : {}),
-					...(params.skill !== undefined ? { skill: params.skill } : {}),
-					...(params.turnBudget ? { turnBudget: params.turnBudget } : {}),
-					...(params.toolBudget ? { toolBudget: params.toolBudget } : {}),
-				}),
-			],
+			tasks: [mapTask(task)],
 		};
 	}
-	return {
-		...common,
-		...(params.agent ? { agent: params.agent } : {}),
-		...(params.task ? { description: resolveDisplayDescription(params.description, params.task) } : {}),
-		...(params.task ? { task: params.task } : {}),
-	};
+	if (params.agent) common.agent = params.agent;
+	if (params.task) {
+		common.description = resolveDisplayDescription(params.description, params.task);
+		common.task = params.task;
+	}
+	return common;
 }
 
 function bounded(value: string, limit: number): string {
@@ -258,9 +258,9 @@ export function projectEngineResult(params: PublicAgentParams, result: AgentEngi
 		);
 	const publicResult: AgentEngineResult = {
 		...result,
-		...(childFailed ? { isError: true } : {}),
 		details: publicDetails,
 	};
+	if (childFailed) Object.assign(publicResult, { isError: true });
 	if (params.action) {
 		const text = bounded(
 			scanAgentReport(firstText(publicResult) || "Agent action finished.").text,
