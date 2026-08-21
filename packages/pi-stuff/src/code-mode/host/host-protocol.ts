@@ -4,7 +4,16 @@ import type { RuntimeContentItem, RuntimeResponse, SuiteSandboxTool } from "../p
 export const DEFAULT_EXEC_YIELD_MS = 60_000;
 export const MAX_OUTPUT_TOKENS = 100_000;
 
-export function toWireToolDefinition(tool: SuiteSandboxTool): Record<string, unknown> {
+interface WireToolDefinition {
+	readonly description: string;
+	readonly input_schema: SuiteSandboxTool["inputSchema"];
+	readonly kind: "function";
+	readonly name: string;
+	readonly output_schema: null;
+	readonly tool_name: { readonly name: string; readonly namespace: null };
+}
+
+export function toWireToolDefinition(tool: SuiteSandboxTool): WireToolDefinition {
 	return {
 		description: [`Usage: ${tool.usage}`, tool.description].filter(Boolean).join("\n"),
 		input_schema: tool.inputSchema,

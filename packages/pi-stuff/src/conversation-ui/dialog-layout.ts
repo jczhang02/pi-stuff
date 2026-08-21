@@ -108,7 +108,10 @@ export function matchesCommandDialogPaneSwitch(data: string): boolean {
 }
 
 function formatCommandDialogKey(key: string): string {
-	const labels: Readonly<Record<string, string>> = {
+	interface KeyLabels {
+		readonly [key: string]: string;
+	}
+	const labels: KeyLabels = {
 		alt: "Alt",
 		ctrl: "Ctrl",
 		down: "↓",

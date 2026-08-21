@@ -409,7 +409,7 @@ class ContextDialog implements CommandDialogComponent, Focusable {
 		selectedLines: readonly string[],
 		inputLines: readonly string[],
 		errorLines: readonly string[],
-	): { readonly body: string[]; readonly footer: string; readonly title: string } {
+	) {
 		if (this.screen.kind === "overview") {
 			const counts = `${plural(this.snapshot.compartmentCount, "compartment")} · ${plural(this.snapshot.memoryCount, "memory", "memories")} · ${plural(this.snapshot.noteCount, "note")}`;
 			const runtime = `Historian ${this.snapshot.historian} · cache ${this.snapshot.cache}`;

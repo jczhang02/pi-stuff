@@ -698,7 +698,7 @@ describe("terminal-safe Tool rendering", () => {
 
 	test("bounds work and retained previews for multi-megabyte arguments and results", () => {
 		let lateGetterReads = 0;
-		const hugeArguments: Record<string, unknown> = { command: "x".repeat(8 * 1024 * 1024) };
+		const hugeArguments = { command: "x".repeat(8 * 1024 * 1024) } satisfies Record<string, unknown>;
 		Object.defineProperty(hugeArguments, "late", {
 			enumerable: true,
 			get: () => {

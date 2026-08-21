@@ -72,7 +72,11 @@ function diagnosticTail(value: string): string {
 	return JSON.stringify(tail.length === trimmed.length ? tail : `…${tail}`);
 }
 
-function isolatedEnvironment(temporaryDirectory: string): Record<string, string> {
+interface SmokeEnvironment {
+	readonly [name: string]: string;
+}
+
+function isolatedEnvironment(temporaryDirectory: string): SmokeEnvironment {
 	const { PATH: path } = process.env;
 	if (!path) {
 		throw new Error("PATH is required to start the Pi host");

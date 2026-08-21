@@ -191,11 +191,7 @@ export function inspectWriterChildProcessLiveness(
 }
 
 /** Kill writers orphaned by a dead runner. Unknown/unconfirmable writers remain recorded and counted. */
-export function terminateOrphanWriterProcesses(
-	asyncDir: string,
-	kill: KillFn = process.kill,
-	now = Date.now(),
-): { remaining: number; terminated: number } {
+export function terminateOrphanWriterProcesses(asyncDir: string, kill: KillFn = process.kill, now = Date.now()) {
 	const registryPath = writerProcessRegistryPath(asyncDir);
 	if (!fs.existsSync(registryPath)) return { remaining: 1, terminated: 0 };
 	const registry = readWriterProcessRegistry(asyncDir);

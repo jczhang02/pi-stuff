@@ -212,10 +212,7 @@ function outputFileMtime(outputFile: string | undefined): number | undefined {
 	}
 }
 
-function deriveAsyncActivityState(
-	asyncDir: string,
-	status: AsyncStatus,
-): { activityState?: ActivityState; lastActivityAt?: number } {
+function deriveAsyncActivityState(asyncDir: string, status: AsyncStatus) {
 	if (status.state !== "running")
 		return { activityState: status.activityState, lastActivityAt: status.lastActivityAt };
 	const outputPath = status.outputFile

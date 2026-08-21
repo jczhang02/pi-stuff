@@ -179,7 +179,7 @@ export function buildWriterSpawnCommand(
 	groupMemberProofPath?: string,
 	writerSupervisorRuntime = resolveBunRuntimeCommand(),
 	control?: { readonly path: string; readonly token: string },
-): { readonly command: string; readonly args: string[]; readonly gated: boolean } {
+) {
 	if (platform === "win32") return { command, args: [...args], gated: false };
 	const parentStarted = readProcessStartIdentity(process.pid);
 	if (!parentStarted) throw new Error("Agent writer supervisor requires a stable runner process identity.");
@@ -943,12 +943,7 @@ function interruptDescendants(config: BackgroundRunnerConfig, kind: "pause" | "t
 	}
 }
 
-function createTranscript(
-	config: BackgroundRunnerConfig,
-	task: RunnerAgentTask,
-	index: number,
-	count: number,
-): { writer: ChildTranscriptWriter; path: string; artifactPaths?: ArtifactPaths } {
+function createTranscript(config: BackgroundRunnerConfig, task: RunnerAgentTask, index: number, count: number) {
 	let artifactPaths: ArtifactPaths | undefined;
 	let transcriptPath = path.join(
 		config.asyncDir,

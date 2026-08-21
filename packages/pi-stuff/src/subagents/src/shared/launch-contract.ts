@@ -31,7 +31,7 @@ function fileDigest(filePath: string): string | undefined {
 }
 
 /** Public-safe, deterministic evidence for the parsed launch-affecting agent definition. */
-export function projectAgentDefinition(agent: AgentConfig): Record<string, unknown> {
+export function projectAgentDefinition(agent: AgentConfig) {
 	return {
 		version: AGENT_DEFINITION_PROJECTION_VERSION,
 		name: agent.name,
@@ -84,7 +84,7 @@ export interface LaunchBindingInput {
 }
 
 /** Canonical projection of the resolved inputs handed to the child. */
-export function projectLaunchBinding(input: LaunchBindingInput): Record<string, unknown> {
+export function projectLaunchBinding(input: LaunchBindingInput) {
 	return {
 		version: LAUNCH_BINDING_PROJECTION_VERSION,
 		definitionDigest: input.definitionDigest,

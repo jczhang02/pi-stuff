@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { ContextEvent, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import Tokenizer from "ai-tokenizer";
 import * as o200kBase from "ai-tokenizer/encoding/o200k_base";
+import type { JsonInputObject } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV } from "./pi-args.ts";
 
@@ -25,9 +26,8 @@ export type ProviderPayloadModel = {
 };
 
 type ChildMessage = ContextEvent["messages"][number];
-type JsonRecord = Record<string, unknown>;
 
-function jsonRecord<Value extends object>(value: Value): JsonRecord {
+function jsonRecord<Value extends object>(value: Value): JsonInputObject {
 	return Object.fromEntries(Object.entries(value));
 }
 
@@ -137,9 +137,10 @@ function childMessageTargetTokens(
 	return Math.max(0, Math.min(Math.floor(capacity * CHILD_CONTEXT_MAX_BUDGET_RATIO), capacity - fixedReserve - guard));
 }
 
-function promptVisibleMessage(message: ChildMessage): JsonRecord {
+function promptVisibleMessage(message: ChildMessage): JsonInputObject {
 	const source = jsonRecord(message);
-	const projected: JsonRecord = { role: source.role };
+	const projected: JsonInputObject = {};
+	projected.role = source.role;
 	for (const key of [
 		"content",
 		"toolCallId",
@@ -449,7 +450,7 @@ function emergencyProjection(messages: readonly ChildMessage[]): ChildMessage[] 
 
 function withProjectedToolResults(
 	messages: readonly ChildMessage[],
-	predicate: (_message: JsonRecord, index: number) => boolean,
+	predicate: (_message: JsonInputObject, index: number) => boolean,
 	maxBytes: number,
 ): ChildMessage[] {
 	return messages.map((message, index) => {

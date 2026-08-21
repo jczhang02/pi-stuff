@@ -47,6 +47,8 @@ export interface PiStuffCodeModeDetails {
 	readonly status: "cancelled" | "error" | "incomplete" | "paused" | "running" | "success";
 }
 
+type ControllerSettlement = Pick<PiStuffCodeModeDetails, "error" | "status">;
+
 function approvalMessage(executionId: string, pending: readonly CodeModePendingAction[]): string {
 	const action = pending[0];
 	return action
@@ -87,7 +89,7 @@ function imageKey(item: AgentToolResult<unknown>["content"][number]): string | u
 function projectFinalMedia(
 	traces: ReadonlyMap<string, RuntimeToolTrace>,
 	content: AgentToolResult<unknown>["content"],
-): { readonly content: AgentToolResult<unknown>["content"]; readonly operations: SuiteToolEnvelopeOperation[] } {
+) {
 	const output = [...content];
 	const available = new Map<string, number[]>();
 	let imageIndex = 0;
@@ -225,11 +227,7 @@ function aggregateUsage(results: readonly AgentToolResult<unknown>[]): ToolUsage
 	};
 }
 
-function nestedResultControls(traces: ReadonlyMap<string, RuntimeToolTrace>): {
-	readonly addedToolNames?: string[];
-	readonly terminate?: true;
-	readonly usage?: ToolUsage;
-} {
+function nestedResultControls(traces: ReadonlyMap<string, RuntimeToolTrace>) {
 	const results = [...traces.values()].flatMap((trace) => (trace.result ? [trace.result] : []));
 	const addedToolNames = [...new Set(results.flatMap((result) => result.addedToolNames ?? []))];
 	const usage = aggregateUsage(results);
@@ -244,7 +242,7 @@ function settleController(
 	controller: CodeModeExecutionController | undefined,
 	status: PiStuffCodeModeDetails["status"],
 	error?: string,
-): { readonly error?: string; readonly status: PiStuffCodeModeDetails["status"] } {
+): ControllerSettlement {
 	try {
 		controller?.finish(status, error);
 		return { ...(error ? { error } : {}), status };

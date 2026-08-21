@@ -14,7 +14,7 @@ interface ModelAttemptSummary {
 	usage?: Usage;
 }
 
-export function splitThinkingSuffix(model: string): { baseModel: string; thinkingSuffix: string } {
+export function splitThinkingSuffix(model: string) {
 	const colonIdx = model.lastIndexOf(":");
 	if (colonIdx === -1) return { baseModel: model, thinkingSuffix: "" };
 	return {

@@ -33,6 +33,12 @@ function tokenize(value: string): string[] {
 
 type PreparedField = { raw: string; tokens: string[] };
 
+interface FieldScore {
+	exactPhrase: boolean;
+	matchedTokens: Set<string>;
+	score: number;
+}
+
 function prepareField(value?: string): PreparedField {
 	return {
 		raw: normalizeSearchText(value ?? ""),
@@ -40,12 +46,7 @@ function prepareField(value?: string): PreparedField {
 	};
 }
 
-function scoreField(
-	query: string,
-	queryTokens: string[],
-	field: PreparedField,
-	weight: number,
-): { score: number; matchedTokens: Set<string>; exactPhrase: boolean } {
+function scoreField(query: string, queryTokens: string[], field: PreparedField, weight: number): FieldScore {
 	if (field.raw.length === 0) return { score: 0, matchedTokens: new Set(), exactPhrase: false };
 
 	let score = 0;

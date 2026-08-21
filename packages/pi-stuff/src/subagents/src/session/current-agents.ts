@@ -145,7 +145,7 @@ const ACTIVE_SOURCE_STATUSES = new Set(["queued", "running"]);
 const TERMINAL_SOURCE_STATUSES = new Set(["complete", "completed", "failed", "paused", "stopped"]);
 const TERMINAL_STATUSES = new Set<AgentStatus>(["completed", "failed", "agent_stopped", "user_cancelled", "crashed"]);
 const RESUMABLE_STATUSES = new Set<AgentStatus>(["completed", "failed", "agent_stopped", "crashed"]);
-const STATUS_ORDER: Record<AgentStatus, number> = {
+const STATUS_ORDER = {
 	waiting_supervisor: 0,
 	stopping: 1,
 	resuming: 2,
@@ -156,7 +156,7 @@ const STATUS_ORDER: Record<AgentStatus, number> = {
 	user_cancelled: 7,
 	agent_stopped: 8,
 	completed: 9,
-};
+} satisfies Record<AgentStatus, number>;
 const MAX_PARTIAL_RESULT_CHARS = 4_000;
 const MAX_TERMINAL_ERROR_CHARS = 1_000;
 const MAX_TASK_CHARS = 4_000;

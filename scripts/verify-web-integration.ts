@@ -33,12 +33,7 @@ function resultText(result: AgentToolResult<unknown>): string {
 		.join("\n");
 }
 
-function harness(): {
-	readonly context: ExtensionContext;
-	readonly handlers: Map<string, EventHandler[]>;
-	readonly pi: WebCapabilityHost;
-	readonly tools: Map<string, ToolDefinition>;
-} {
+function harness() {
 	const handlers = new Map<string, EventHandler[]>();
 	const tools = new Map<string, ToolDefinition>();
 	let activeTools: string[] = [];

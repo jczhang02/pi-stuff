@@ -95,10 +95,7 @@ function registryFixture(
 	};
 }
 
-function sessionLedgerFixture(): {
-	readonly context: ExtensionContext;
-	readonly ledger: CodeModeSessionLedger;
-} {
+function sessionLedgerFixture() {
 	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
 	return {
 		context: {

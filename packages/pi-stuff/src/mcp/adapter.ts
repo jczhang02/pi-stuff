@@ -5,7 +5,7 @@ import type {
 	ExtensionUIContext,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { type TSchema, Type } from "typebox";
+import { type Static, type TSchema, Type } from "typebox";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import {
 	type CommandDialogKeybindings,
@@ -90,27 +90,26 @@ const MCP_PARAMETERS = Type.Object({
 	),
 });
 
-const MCP_PARAMETER_KEYS = [
-	"tool",
-	"args",
-	"connect",
-	"describe",
-	"search",
-	"includeSchemas",
-	"limit",
-	"offset",
-	"server",
-] as const;
+type McpParameters = Static<typeof MCP_PARAMETERS>;
 
-function boundedMcpParameters(params: Record<string, unknown>): Record<string, unknown> {
-	const bounded: Record<string, unknown> = {};
-	for (const key of MCP_PARAMETER_KEYS) {
-		if (params[key] !== undefined) bounded[key] = params[key];
-	}
+function boundedMcpParameters(params: McpParameters): McpParameters {
+	const bounded: McpParameters = {};
+	if (params.tool !== undefined) bounded.tool = params.tool;
+	if (params.args !== undefined) bounded.args = params.args;
+	if (params.connect !== undefined) bounded.connect = params.connect;
+	if (params.describe !== undefined) bounded.describe = params.describe;
+	if (params.search !== undefined) bounded.search = params.search;
+	if (params.includeSchemas !== undefined) bounded.includeSchemas = params.includeSchemas;
+	if (params.limit !== undefined) bounded.limit = params.limit;
+	if (params.offset !== undefined) bounded.offset = params.offset;
+	if (params.server !== undefined) bounded.server = params.server;
 	if (isRuntimeNumber(bounded["limit"])) bounded["limit"] = Math.min(20, Math.max(1, bounded["limit"]));
 	const serverOnly =
 		isRuntimeString(bounded["server"]) &&
-		!["tool", "connect", "describe", "search"].some((key) => bounded[key] !== undefined);
+		bounded.tool === undefined &&
+		bounded.connect === undefined &&
+		bounded.describe === undefined &&
+		bounded.search === undefined;
 	if (serverOnly) {
 		bounded["search"] = "";
 		bounded["limit"] ??= 12;

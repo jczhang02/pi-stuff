@@ -294,7 +294,10 @@ test("/tools caps formatted and Raw protocol content per selected call", () => {
 });
 
 test("/tools colors mixed groups amber and no-success failures red", () => {
-	const colorCodes: Record<string, number> = { error: 31, muted: 90, success: 32, warning: 33 };
+	interface ColorCodes {
+		readonly [color: string]: number;
+	}
+	const colorCodes: ColorCodes = { error: 31, muted: 90, success: 32, warning: 33 };
 	const semanticTheme = {
 		bold: (value: string) => value,
 		fg: (color: string, value: string) => {

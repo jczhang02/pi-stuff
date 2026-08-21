@@ -7,11 +7,7 @@ import {
 	CodeModeSessionLedger,
 } from "../../packages/pi-stuff/src/code-mode/ledger.js";
 
-function fixture(): {
-	readonly branch: Array<{ customType: string; data: unknown; type: "custom" }>;
-	readonly context: ExtensionContext;
-	readonly ledger: CodeModeSessionLedger;
-} {
+function fixture() {
 	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
 	const context = {
 		cwd: "/project",

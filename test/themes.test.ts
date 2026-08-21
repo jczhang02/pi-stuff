@@ -29,12 +29,12 @@ const paletteKeys = [
 	"base",
 	"mantle",
 ] as const;
-const paletteDigests: Readonly<Record<(typeof flavors)[number], string>> = {
+const paletteDigests = {
 	frappe: "f4c040a4945c6318df79a4c4e0a627fe3548245da4f7cbedfa2f1f4d7725d1cf",
 	latte: "d73d4a0670fb273d737cb0703ca80160674072206eef97c0bda7086d31e15daf",
 	macchiato: "5cd1fd99248d713c352c3e9a5f9bd3692d5a9c9e1140ebb3f665c1b1fed2513d",
 	mocha: "80621b904473d938e1d7c7039ed1d7b8be3eb43bf138d024c96a4fda575a789e",
-};
+} satisfies Readonly<Record<(typeof flavors)[number], string>>;
 const requiredColors = [
 	"accent",
 	"bashMode",

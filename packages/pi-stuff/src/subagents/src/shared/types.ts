@@ -8,6 +8,7 @@ import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
+import type { JsonInputObject } from "../../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
 import { xdgRuntimeHome, xdgStateHome } from "../../../xdg/index.js";
 import type { AgentConfig } from "../agents/agents.ts";
@@ -28,7 +29,7 @@ export type OutputMode = "inline" | "file-only";
 
 export type AcceptanceRole = "read-only" | "writer";
 
-export type JsonSchemaObject = Record<string, unknown>;
+export interface JsonSchemaObject extends JsonInputObject {}
 
 export interface SavedOutputReference {
 	path: string;
@@ -1600,14 +1601,19 @@ export function resolveChildMaxSubagentDepth(parentMaxDepth: number, agentMaxDep
 	return normalizedAgent === undefined ? normalizedParent : Math.min(normalizedParent, normalizedAgent);
 }
 
-export function checkSubagentDepth(configMaxDepth?: number): { blocked: boolean; depth: number; maxDepth: number } {
+export function checkSubagentDepth(configMaxDepth?: number) {
 	const depth = Number(process.env.PI_SUBAGENT_DEPTH ?? "0");
 	const maxDepth = resolveCurrentMaxSubagentDepth(configMaxDepth);
 	const blocked = Number.isFinite(depth) && depth >= maxDepth;
 	return { blocked, depth, maxDepth };
 }
 
-export function getSubagentDepthEnv(maxDepth?: number, env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+export interface SubagentDepthEnvironment {
+	readonly PI_SUBAGENT_DEPTH: string;
+	readonly PI_SUBAGENT_MAX_DEPTH: string;
+}
+
+export function getSubagentDepthEnv(maxDepth?: number, env: NodeJS.ProcessEnv = process.env): SubagentDepthEnvironment {
 	const parentDepth = Number(env.PI_SUBAGENT_DEPTH ?? "0");
 	const nextDepth = Number.isFinite(parentDepth) ? parentDepth + 1 : 1;
 	return {

@@ -135,7 +135,24 @@ export function childMessageProtocolError(value: unknown): string | undefined {
 	return undefined;
 }
 
-export function parseChildProtocolEvent(value: unknown): { event?: ChildProtocolEvent; error?: string } {
+export interface ParsedChildProtocolEvent {
+	error?: string;
+	event?: ChildProtocolEvent;
+}
+
+export interface BoundedLineReader {
+	end(): void;
+	exceeded(): boolean;
+	push(chunk: Buffer | string): void;
+}
+
+export interface BoundedByteTail {
+	byteLength(): number;
+	push(chunk: Buffer | string): void;
+	text(): string;
+}
+
+export function parseChildProtocolEvent(value: unknown): ParsedChildProtocolEvent {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) {
 		return { error: "event must be an object" };
 	}
@@ -165,11 +182,7 @@ export function createBoundedLineReader(options: {
 	maxPendingLineBytes?: number;
 	onLine: (line: string) => void;
 	onLimit: (limit: ProtocolOutputLimit) => void;
-}): {
-	push(chunk: Buffer | string): void;
-	end(): void;
-	exceeded(): boolean;
-} {
+}): BoundedLineReader {
 	const maxPendingLineBytes = options.maxPendingLineBytes ?? MAX_CHILD_PENDING_LINE_BYTES;
 	if (!Number.isInteger(maxPendingLineBytes) || maxPendingLineBytes < 1) {
 		throw new Error("maxPendingLineBytes must be a positive integer.");
@@ -258,11 +271,7 @@ function trimToUtf8Boundary(buffer: Buffer, maxBytes: number): Buffer {
 	return buffer.subarray(start);
 }
 
-export function createBoundedByteTail(maxBytes = MAX_CHILD_STDERR_BYTES): {
-	push(chunk: Buffer | string): void;
-	text(): string;
-	byteLength(): number;
-} {
+export function createBoundedByteTail(maxBytes = MAX_CHILD_STDERR_BYTES): BoundedByteTail {
 	if (!Number.isInteger(maxBytes) || maxBytes < 1) throw new Error("maxBytes must be a positive integer.");
 	let tail: Buffer = Buffer.alloc(0);
 	return {

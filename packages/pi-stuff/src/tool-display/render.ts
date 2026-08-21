@@ -275,11 +275,7 @@ function bashCommandLines(command: string, expanded: boolean): string[] {
 	return lines;
 }
 
-function bashOutputLines(model: BashOperationRowModel): {
-	readonly hidden: number;
-	readonly lines: string[];
-	readonly truncated: boolean;
-} {
+function bashOutputLines(model: BashOperationRowModel) {
 	const normalized = boundTerminalText(model.output, ROW_PREVIEW_MAX_CODE_UNITS, "")
 		.replaceAll("\r", "")
 		.split("\n", DETAIL_MAX_LINES + 1)
@@ -581,7 +577,7 @@ function lineCount(value: string): number {
 	return lines;
 }
 
-function writeLineCount(value: string): { readonly count: number; readonly truncated: boolean } {
+function writeLineCount(value: string) {
 	if (!value) return { count: 0, truncated: false };
 	const scanLength = Math.min(value.length, SUMMARY_TEXT_MAX_CODE_UNITS);
 	let count = 1;
@@ -595,7 +591,7 @@ function nonEmptyLineCount(value: string): number {
 	return value.split("\n").filter((line) => line.trim().length > 0).length;
 }
 
-function diffCounts(value: string): { readonly additions: number; readonly deletions: number } {
+function diffCounts(value: string) {
 	let additions = 0;
 	let deletions = 0;
 	for (const line of value.slice(0, SUMMARY_TEXT_MAX_CODE_UNITS).split("\n")) {

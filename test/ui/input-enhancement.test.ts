@@ -77,13 +77,7 @@ class CommandProvider implements AutocompleteProvider {
 		return { items: [...this.items], prefix };
 	}
 
-	applyCompletion(
-		lines: string[],
-		cursorLine: number,
-		cursorCol: number,
-		item: AutocompleteItem,
-		prefix: string,
-	): { lines: string[]; cursorLine: number; cursorCol: number } {
+	applyCompletion(lines: string[], cursorLine: number, cursorCol: number, item: AutocompleteItem, prefix: string) {
 		const next = [...lines];
 		const line = next[cursorLine] ?? "";
 		next[cursorLine] = `${line.slice(0, cursorCol - prefix.length)}/${item.value} ${line.slice(cursorCol)}`;
@@ -111,12 +105,7 @@ function createEditor(
 	settings: InputEnhancementSettings,
 	providerItems: readonly AutocompleteItem[],
 	registeredCommands: readonly SlashCommandInfo[] = commands("review", "skill:inspect"),
-): {
-	readonly editor: ObservableEditor;
-	readonly provider: CommandProvider;
-	readonly settings: InputEnhancementSettings;
-	readonly tui: TestTui;
-} {
+) {
 	const tui = new TestTui();
 	const mutableSettings = settings as {
 		inlineSlashAutocomplete: boolean;

@@ -30,21 +30,29 @@ export function resolveSubagentResultStatus(input: {
 	return "failed";
 }
 
-function countStatuses(children: SubagentResultIntercomChild[]): Record<SubagentResultStatus, number> {
-	const counts: Record<SubagentResultStatus, number> = {
+interface StatusCounts {
+	completed: number;
+	detached: number;
+	failed: number;
+	paused: number;
+	stopped: number;
+}
+
+function countStatuses(children: SubagentResultIntercomChild[]): StatusCounts {
+	const counts = {
 		completed: 0,
 		failed: 0,
 		paused: 0,
 		stopped: 0,
 		detached: 0,
-	};
+	} satisfies Record<SubagentResultStatus, number>;
 	for (const child of children) {
 		counts[child.status] += 1;
 	}
 	return counts;
 }
 
-function formatStatusCounts(counts: Record<SubagentResultStatus, number>): string {
+function formatStatusCounts(counts: StatusCounts): string {
 	const parts = [
 		counts.completed ? `${counts.completed} completed` : undefined,
 		counts.failed ? `${counts.failed} failed` : undefined,

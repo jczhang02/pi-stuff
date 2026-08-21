@@ -19,10 +19,7 @@ import {
 
 const temporaryDirectories: string[] = [];
 
-function createIntercomBus(deliveries: boolean[]): {
-	bus: IntercomEventBus;
-	received: Array<Record<string, unknown>>;
-} {
+function createIntercomBus(deliveries: boolean[]) {
 	const handlers = new Map<string, Set<(data: unknown) => void>>();
 	const received: Array<Record<string, unknown>> = [];
 	const bus: IntercomEventBus = {

@@ -41,17 +41,16 @@ class EventBusHarness {
 	}
 }
 
-function apiHarness(
-	initialActiveTools: readonly string[],
-	eventBus = new EventBusHarness(),
-): {
+interface ApiHarness {
 	readonly api: ExtensionAPI;
 	readonly tools: Map<string, ToolDefinition>;
 	emit(type: ExtensionEvent["type"], event: ExtensionEvent, ctx: ExtensionContext): Promise<void>;
 	getActiveTools(): readonly string[];
 	handlerCount(type: ExtensionEvent["type"]): number;
 	setActiveTools(names: readonly string[]): void;
-} {
+}
+
+function apiHarness(initialActiveTools: readonly string[], eventBus = new EventBusHarness()): ApiHarness {
 	const handlers = new Map<string, EventHandler[]>();
 	const tools = new Map<string, ToolDefinition>();
 	let activeTools = [...initialActiveTools];

@@ -543,16 +543,7 @@ class TmuxAgentsSession {
 	}
 }
 
-function fleetviewLineIndices(
-	screen: string,
-	help: string | undefined,
-): {
-	readonly agent: number;
-	readonly help: number;
-	readonly main: number;
-	readonly prompt: number;
-	readonly status: number;
-} {
+function fleetviewLineIndices(screen: string, help: string | undefined) {
 	const lines = screen.split("\n").map((line) => line.trimEnd());
 	const status = lines.findIndex((line) => line.startsWith("\u{F06A9} "));
 	return {

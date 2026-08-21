@@ -1,11 +1,7 @@
 import { createEventBus, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { SuiteToolRegistrationHost } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
-export function toolRegistrationHarness(initialActiveTools: readonly string[] = []): {
-	readonly activeTools: () => readonly string[];
-	readonly host: SuiteToolRegistrationHost;
-	readonly tools: Map<string, ToolDefinition>;
-} {
+export function toolRegistrationHarness(initialActiveTools: readonly string[] = []) {
 	let activeTools = [...initialActiveTools];
 	const tools = new Map<string, ToolDefinition>();
 	const host: SuiteToolRegistrationHost = {

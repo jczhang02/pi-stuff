@@ -1,3 +1,4 @@
+import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { TaskState } from "../state/state.js";
 import type { Op } from "../state/state-reducer.js";
 import { deriveBlocks } from "../state/task-graph.js";
@@ -70,7 +71,7 @@ export function buildToolResult(
 	params: TaskMutationParams,
 	state: TaskState,
 	op: Op,
-): { content: Array<{ type: "text"; text: string }>; details: TaskDetails } {
+): AgentToolResult<TaskDetails> {
 	const details: TaskDetails = {
 		capability: TASK_SNAPSHOT_CAPABILITY,
 		schemaVersion: TASK_SNAPSHOT_SCHEMA_VERSION,

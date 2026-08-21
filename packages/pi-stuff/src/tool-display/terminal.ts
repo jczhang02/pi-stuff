@@ -178,11 +178,7 @@ export function truncateUtf8Graphemes(value: string, maximumBytes: number): stri
 	return output;
 }
 
-function pathParts(value: string): {
-	readonly origin: string;
-	readonly segments: readonly string[];
-	readonly separator: "/" | "\\";
-} {
+function pathParts(value: string) {
 	const separator = value.includes("\\") && !value.includes("/") ? "\\" : "/";
 	const allSegments = value.split(/[\\/]+/u).filter(Boolean);
 	if (value.startsWith("\\\\") || value.startsWith("//")) {

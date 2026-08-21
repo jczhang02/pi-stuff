@@ -6,7 +6,6 @@ import type {
 	BackgroundWorkSnapshot,
 } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
 import { createTasksDialogView } from "../../packages/pi-stuff/src/background-work/src/tasks-dialog.js";
-import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
 const theme = {
@@ -55,15 +54,7 @@ class RuntimeHarness {
 	}
 }
 
-function harness(
-	rows = 24,
-	activeTheme = theme,
-	keybindings = new KeybindingsManager(TUI_KEYBINDINGS),
-): {
-	readonly closed: () => number;
-	readonly context: CommandDialogViewContext<void>;
-	readonly renders: () => number;
-} {
+function harness(rows = 24, activeTheme = theme, keybindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
 	let closed = 0;
 	let renders = 0;
 	return {

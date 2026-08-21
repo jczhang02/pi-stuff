@@ -10,7 +10,7 @@ const theme = {
 	fg: (_color: string, value: string) => value,
 } as Theme;
 
-function registeredTools(): { readonly api: SuiteToolRegistrationHost; readonly tools: Map<string, ToolDefinition> } {
+function registeredTools() {
 	const { host: api, tools } = toolRegistrationHarness();
 	registerTaskTools(api);
 	return { api, tools };

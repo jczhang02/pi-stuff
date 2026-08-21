@@ -19,11 +19,11 @@ export interface NativeToolInvocation {
 	readonly tool: NativeToolName;
 }
 
-const BINARY_DIRECTORIES: Readonly<Record<NativeToolName, string>> = {
+const BINARY_DIRECTORIES = {
 	apply_patch: "apply-patch",
 	imagegen: "imagegen",
 	view_image: "view-image",
-};
+} satisfies Readonly<Record<NativeToolName, string>>;
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const PACKAGE_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 

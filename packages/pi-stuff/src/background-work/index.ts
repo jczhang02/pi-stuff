@@ -49,7 +49,7 @@ function registerCompletionRenderer(pi: ExtensionAPI): void {
 	});
 }
 
-function hostSettings(ctx: ExtensionContext): { readonly commandPrefix?: string; readonly shellPath?: string } {
+function hostSettings(ctx: ExtensionContext) {
 	const settings = SettingsManager.create(ctx.cwd, getAgentDir(), { projectTrusted: ctx.isProjectTrusted() });
 	const commandPrefix = settings.getShellCommandPrefix();
 	const shellPath = settings.getShellPath();

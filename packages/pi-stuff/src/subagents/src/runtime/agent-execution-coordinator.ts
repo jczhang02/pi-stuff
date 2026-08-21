@@ -882,10 +882,15 @@ function retryDelay(index: number): number {
 	return GOVERNOR_RETRY_DELAYS_MS[Math.min(index, GOVERNOR_RETRY_DELAYS_MS.length - 1)] ?? 2_000;
 }
 
+interface StartupFailureClassification {
+	readonly bindRuntime: boolean;
+	readonly settlement: AgentExecutionSettlement;
+}
+
 function classifyStartupFailure(
 	start: AsyncStart | undefined,
 	hasAmbiguousObservedStart = false,
-): { readonly bindRuntime: boolean; readonly settlement: AgentExecutionSettlement } {
+): StartupFailureClassification {
 	if (!start && !hasAmbiguousObservedStart) {
 		return { bindRuntime: false, settlement: { kind: "start-error" } };
 	}

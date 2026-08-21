@@ -81,7 +81,11 @@ const SUITE_COMPOSITION_SOURCE_FILES = new Set([
 	"packages/pi-stuff/src/suite-runtime.ts",
 ]);
 const SHARED_MODULE_DEPENDENCIES = ["conversation-ui", "tool-display"] as const;
-const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<InternalModule, ReadonlySet<InternalModule>>> = {
+interface InternalDependencyTable {
+	readonly [module: string]: ReadonlySet<InternalModule>;
+}
+
+const ALLOWED_INTERNAL_DEPENDENCIES: InternalDependencyTable = {
 	"conversation-ui": new Set(),
 	"tool-display": new Set(["conversation-ui"]),
 	"context-management": new Set(SHARED_MODULE_DEPENDENCIES),
@@ -207,7 +211,7 @@ async function auditInternalModuleImports(root: string, path: string): Promise<S
 		if (
 			targetModule &&
 			targetModule !== sourceModule &&
-			!ALLOWED_INTERNAL_DEPENDENCIES[sourceModule].has(targetModule)
+			ALLOWED_INTERNAL_DEPENDENCIES[sourceModule]?.has(targetModule) !== true
 		) {
 			findings.push({
 				path,

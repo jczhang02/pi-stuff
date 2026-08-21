@@ -68,7 +68,11 @@ export interface VerifyGoalLifecycleOptions {
 	piBinary: string;
 }
 
-function environment(temporaryDirectory: string, scenario: Scenario, logPath: string): Record<string, string> {
+interface GoalLifecycleEnvironment {
+	readonly [name: string]: string;
+}
+
+function environment(temporaryDirectory: string, scenario: Scenario, logPath: string): GoalLifecycleEnvironment {
 	const { PATH: path } = process.env;
 	if (!path) throw new Error("PATH is required to start the Pi host");
 	return {

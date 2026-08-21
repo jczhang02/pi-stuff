@@ -123,11 +123,7 @@ function setEnvironment(name: string, value: string): void {
 	process.env[name] = value;
 }
 
-function apiHarness(): {
-	readonly api: ExtensionAPI;
-	readonly tools: Map<string, ToolDefinition>;
-	run(event: string): Promise<void>;
-} {
+function apiHarness() {
 	const tools = new Map<string, ToolDefinition>();
 	const handlers = new Map<string, Array<(...args: never[]) => unknown>>();
 	const api = createExtensionApi({

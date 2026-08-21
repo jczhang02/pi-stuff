@@ -35,11 +35,13 @@ class EventBusHarness {
 	};
 }
 
-function harness(): {
+interface NotificationHarness {
 	readonly api: NotificationHost;
 	readonly commands: Map<string, CommandSpec>;
 	readonly handlers: Map<string, EventHandler[]>;
-} {
+}
+
+function harness(): NotificationHarness {
 	const commands = new Map<string, CommandSpec>();
 	const handlers = new Map<string, EventHandler[]>();
 	const bus = new EventBusHarness();

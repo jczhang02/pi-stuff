@@ -8,6 +8,7 @@ import {
 	mergeNamespaceRecord,
 	readNamespace,
 	resolveSettingsLockPath,
+	type SettingsRecord,
 } from "../shared/settings-io/index.js";
 import { reportDiagnostic } from "./diagnostics.js";
 import { getHostSharedResource } from "./host-resource.js";
@@ -348,9 +349,9 @@ async function migrateLegacyUiSettings(
 	path: string,
 	namespace: string,
 	legacyPath: string,
-	legacy: Record<string, unknown>,
+	legacy: SettingsRecord,
 	owner: string,
-	isExistingValid: (record: Record<string, unknown>) => boolean,
+	isExistingValid: (record: SettingsRecord) => boolean,
 ): Promise<boolean> {
 	const { migrateLegacyNamespace } = await import("../shared/settings-io/lock.js");
 	return migrateLegacyNamespace(path, namespace, legacyPath, legacy, owner, isExistingValid);

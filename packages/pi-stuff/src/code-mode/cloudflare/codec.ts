@@ -40,7 +40,7 @@ function base64ToBytes(b64: string): Uint8Array {
 	return bytes;
 }
 
-export function encodeCodemodeValue(value: unknown): unknown {
+export function encodeCodemodeValue<Value>(value: Value): EncodedBinary | Value {
 	if (value instanceof Uint8Array) {
 		return { [BINARY_TAG]: "Uint8Array", data: bytesToBase64(value) };
 	}
@@ -60,15 +60,15 @@ export function encodeCodemodeValue(value: unknown): unknown {
 	return value;
 }
 
-export function decodeCodemodeValue(value: unknown): unknown {
+export function decodeCodemodeValue<Value>(value: Value): ArrayBuffer | Uint8Array | Value {
 	if (!value || !isRuntimeObject(value) || !(BINARY_TAG in value)) {
 		return value;
 	}
-	const encoded = value as EncodedBinary;
-	if (!isRuntimeString(encoded.data)) return value;
-	const bytes = base64ToBytes(encoded.data);
-	if (encoded[BINARY_TAG] === "ArrayBuffer") {
-		return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+	const data = "data" in value ? value.data : undefined;
+	if (!isRuntimeString(data)) return value;
+	const bytes = base64ToBytes(data);
+	if (value[BINARY_TAG] === "ArrayBuffer") {
+		return bytes.slice().buffer;
 	}
 	return bytes;
 }

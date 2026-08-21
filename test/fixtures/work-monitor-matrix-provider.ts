@@ -21,14 +21,14 @@ const MONITOR_RESULT_SCHEMA = Type.Object(
 
 type Scenario = "cancel" | "command_failure" | "file_error" | "http_success" | "log_success" | "timeout";
 
-const TITLES: Readonly<Record<Scenario, string>> = {
+const TITLES = {
 	cancel: "Matrix cancellation",
 	command_failure: "Matrix command failure",
 	file_error: "Matrix source failure",
 	http_success: "Matrix HTTP success",
 	log_success: "Matrix log success",
 	timeout: "Matrix timeout",
-};
+} satisfies Readonly<Record<Scenario, string>>;
 
 const ZERO_USAGE = {
 	input: 0,
@@ -63,7 +63,7 @@ function textStream(text: string) {
 	return stream;
 }
 
-function toolStream(name: string, id: string, arguments_: Record<string, unknown>) {
+function toolStream<Arguments extends object>(name: string, id: string, arguments_: Arguments) {
 	const stream = createAssistantMessageEventStream();
 	const pending = message([], "pending");
 	const toolCall = { arguments: arguments_, id, name, type: "toolCall" as const };
@@ -116,12 +116,23 @@ function taskId<Result>(result: Result): string | undefined {
 	return Check(MONITOR_RESULT_SCHEMA, result) ? result.details.taskId : undefined;
 }
 
-function record(value: Record<string, unknown>): void {
+function record<Value extends object>(value: Value): void {
 	const path = process.env["PI_STUFF_WORK_MONITOR_MATRIX_LOG"];
 	if (path) appendFileSync(path, `${JSON.stringify({ at: Date.now(), ...value })}\n`);
 }
 
-function monitorArguments(scenario: Scenario): Record<string, unknown> {
+interface MonitorArguments {
+	readonly description: string;
+	readonly failure_text?: string;
+	readonly interval_seconds: number;
+	readonly source: "command" | "file" | "http" | "log";
+	readonly start_at_end?: boolean;
+	readonly success_text?: string;
+	readonly target: string;
+	readonly timeout_seconds: number;
+}
+
+function monitorArguments(scenario: Scenario): MonitorArguments {
 	const common = { description: TITLES[scenario], interval_seconds: 0.1 };
 	switch (scenario) {
 		case "command_failure":

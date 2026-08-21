@@ -15,15 +15,7 @@ afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
 });
 
-function setup(): {
-	readonly context: ExtensionContext;
-	readonly messages: Array<{
-		message: { details: { outcomes: Array<{ status: string }> } };
-		options: { triggerTurn: boolean };
-	}>;
-	readonly root: string;
-	readonly runtime: BackgroundWorkRuntime;
-} {
+function setup() {
 	const root = mkdtempSync(join(tmpdir(), "pi-stuff-monitor-test-"));
 	roots.push(root);
 	const messages: Array<{

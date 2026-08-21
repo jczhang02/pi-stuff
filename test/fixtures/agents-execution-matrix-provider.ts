@@ -157,11 +157,26 @@ function delayedTextStream(text: string, options?: SimpleStreamOptions) {
 	return stream;
 }
 
-function toolArguments(scenario: ScenarioId): Record<string, unknown> {
+interface SingleAgentArguments {
+	readonly agent: string;
+	readonly context: "fork" | "fresh";
+	readonly foreground: boolean;
+	readonly task: string;
+}
+
+interface ParallelAgentArguments {
+	readonly context: "fork" | "fresh";
+	readonly foreground: boolean;
+	readonly tasks: readonly { readonly agent: string; readonly task: string }[];
+}
+
+type AgentToolArguments = ParallelAgentArguments | SingleAgentArguments;
+
+function toolArguments(scenario: ScenarioId): AgentToolArguments {
 	const common = {
 		context: scenario.includes("-fork-") ? "fork" : "fresh",
 		foreground: scenario.endsWith("-foreground"),
-	};
+	} as const;
 	if (scenario.startsWith("single-") || scenario === "aggregate-fanout-foreground" || scenario.startsWith("long-")) {
 		return {
 			...common,

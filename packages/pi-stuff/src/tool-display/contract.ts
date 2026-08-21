@@ -410,7 +410,7 @@ class GroupSummaryIndex {
 		return true;
 	}
 
-	issue(): { readonly count: number; readonly detail: string | undefined; readonly id: string | undefined } {
+	issue() {
 		const first = this.firstIssueId ? this.members.get(this.firstIssueId) : undefined;
 		return {
 			count: (this.stateCounts.error ?? 0) + (this.stateCounts.rejected ?? 0) + (this.stateCounts.cancelled ?? 0),
@@ -1694,11 +1694,7 @@ export class ToolUiRuntime {
 		if (modelChanged || visibilityChanged) this.scheduleInvalidation(binding.invalidate);
 	}
 
-	private bashOutput(
-		binding: GroupedRowBinding,
-		result: AgentToolResult<unknown> | undefined,
-		expanded: boolean,
-	): { readonly text: string; readonly truncated: boolean } {
+	private bashOutput(binding: GroupedRowBinding, result: AgentToolResult<unknown> | undefined, expanded: boolean) {
 		if (binding.bashOutputResult === result && binding.bashOutputExpanded === expanded) {
 			return { text: binding.bashOutput ?? "", truncated: binding.bashOutputTruncated === true };
 		}
@@ -2328,12 +2324,12 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 			return { isError: true, result };
 		}
 
-		const callEvent: Record<string, unknown> = {
+		const callEvent = {
 			input: prepared,
 			toolCallId: invocation.toolCallId,
 			toolName: invocation.name,
 			type: "tool_call",
-		};
+		} satisfies Record<string, unknown>;
 		try {
 			for (const handler of capturedHandlers.get("tool_call") ?? []) {
 				const decision = await handler.call(undefined, callEvent, invocation.context);
@@ -2440,7 +2436,7 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 		}
 		await Promise.all(updateEvents);
 
-		const resultEvent: Record<string, unknown> = {
+		const resultEvent = {
 			content: result.content ?? [],
 			details: result.details,
 			input: prepared,
@@ -2449,13 +2445,20 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 			toolName: invocation.name,
 			type: "tool_result",
 			...(result.usage ? { usage: result.usage } : {}),
-		};
+		} satisfies Record<string, unknown>;
 		for (const handler of capturedHandlers.get("tool_result") ?? []) {
 			try {
 				const replacement = await handler.call(undefined, resultEvent, invocation.context);
 				if (!isRecordValue(replacement)) continue;
 				for (const key of ["content", "details", "isError", "usage"] as const) {
-					if (replacement[key] !== undefined) resultEvent[key] = replacement[key];
+					if (replacement[key] !== undefined) {
+						Object.defineProperty(resultEvent, key, {
+							configurable: true,
+							enumerable: true,
+							value: replacement[key],
+							writable: true,
+						});
+					}
 				}
 			} catch {
 				// Pi reports result-handler failures and keeps the previous result.

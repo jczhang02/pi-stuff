@@ -51,7 +51,11 @@ const SUBSCRIPTION_MODEL = "ui-pty-subscription";
 const POLL_INTERVAL_MS = 50;
 const WAIT_TIMEOUT_MS = 20_000;
 const thoughtTransformer = createLiveThoughtTransformer();
-const CATPPUCCIN_ACCENTS: Readonly<Record<string, string>> = {
+interface ThemeAccents {
+	readonly [theme: string]: string;
+}
+
+const CATPPUCCIN_ACCENTS: ThemeAccents = {
 	"catppuccin-frappe": "#ca9ee6",
 	"catppuccin-latte": "#8839ef",
 	"catppuccin-macchiato": "#c6a0f6",

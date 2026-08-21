@@ -243,8 +243,12 @@ export function jsonSchemaToType(schema: JSONSchema7, typeName: string): string 
 /**
  * Extract field descriptions from a JSON Schema's properties.
  */
-function extractJsonSchemaDescriptions(schema: JSONSchema7): Record<string, string> {
-	const descriptions: Record<string, string> = {};
+interface JsonSchemaDescriptions {
+	[fieldName: string]: string;
+}
+
+function extractJsonSchemaDescriptions(schema: JSONSchema7): JsonSchemaDescriptions {
+	const descriptions: JsonSchemaDescriptions = {};
 	if (schema.properties) {
 		for (const [fieldName, propSchema] of Object.entries(schema.properties)) {
 			if (propSchema && isRuntimeObject(propSchema) && propSchema.description) {

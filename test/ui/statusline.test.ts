@@ -186,14 +186,7 @@ function turnEntries(
 	return [user, assistant];
 }
 
-function trackedSession(
-	entries: SessionEntry[],
-	initialLeafId: string,
-): {
-	readonly manager: ExtensionContext["sessionManager"];
-	readonly reads: { branches: number; entries: number };
-	setLeaf(id: string): void;
-} {
+function trackedSession(entries: SessionEntry[], initialLeafId: string) {
 	const byId = new Map(entries.map((entry) => [entry.id, entry]));
 	let leafId = initialLeafId;
 	const reads = { branches: 0, entries: 0 };

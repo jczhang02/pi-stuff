@@ -491,7 +491,7 @@ interface PhraseSpec {
 	readonly priority: number;
 }
 
-const PHRASES: Readonly<Record<ToolActivityCategory, PhraseSpec>> = {
+const PHRASES = {
 	"complete-goal": { past: "Completed", present: "Completing", singular: "goal", plural: "goals", priority: 10 },
 	"block-goal": {
 		past: "Reported",
@@ -614,7 +614,7 @@ const PHRASES: Readonly<Record<ToolActivityCategory, PhraseSpec>> = {
 		plural: "background outputs",
 		priority: 63,
 	},
-};
+} satisfies Readonly<Record<ToolActivityCategory, PhraseSpec>>;
 
 interface CategoryAccumulator {
 	count: number;
@@ -763,14 +763,16 @@ function phrase(category: ToolActivityCategory, accumulator: CategoryAccumulator
 	return `${active ? spec.present : spec.past} ${String(safeCount)} ${safeCount === 1 ? spec.singular : spec.plural}`;
 }
 
-function issueSummaryFromCounts(
-	counts: Readonly<Partial<Record<ToolActivityState, number>>>,
-	firstIssueLabel = "",
-): {
+interface ToolIssueSummary {
 	readonly issueLabel: string;
 	readonly issueState: "cancelled" | "error" | "rejected" | undefined;
 	readonly text: string;
-} {
+}
+
+function issueSummaryFromCounts(
+	counts: Readonly<Partial<Record<ToolActivityState, number>>>,
+	firstIssueLabel = "",
+): ToolIssueSummary {
 	const failed = counts.error ?? 0;
 	const rejected = counts.rejected ?? 0;
 	const cancelled = counts.cancelled ?? 0;

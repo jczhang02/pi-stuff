@@ -470,12 +470,7 @@ function buildStartedStatus(asyncDir: string, startedRun: StartedRunMetadata, no
 	};
 }
 
-function buildFailedRepair(
-	status: AsyncStatus,
-	asyncDir: string,
-	now: number,
-	reason?: string,
-): { status: AsyncStatus; result: object; message: string } {
+function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, reason?: string) {
 	const runId = status.runId || path.basename(asyncDir);
 	const pid = isRuntimeNumber(status.pid) ? status.pid : "unknown";
 	const baseMessage =

@@ -346,7 +346,7 @@ function formatChildMessage(input: {
 	return lines.join("\n").trimEnd();
 }
 
-function parseStructuredReply(message: string): { value?: unknown; error?: string } {
+function parseStructuredReply(message: string) {
 	const trimmed = message.trim();
 	const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1]?.trim();
 	try {
@@ -438,10 +438,23 @@ async function waitForReply(
 	throw new Error("Timed out waiting for supervisor reply.");
 }
 
+interface SupervisorRequestDetails {
+	delivered?: true;
+	readonly reason: SupervisorReason;
+	readonly requestId: string;
+	structuredReply?: unknown;
+	structuredReplyParseError?: string;
+}
+
+type NativeCommunicationDetails =
+	| SupervisorRequestDetails
+	| { readonly active: true }
+	| { readonly sessions: readonly never[] };
+
 async function sendSupervisorRequest(
 	params: ContactSupervisorParams,
 	signal?: AbortSignal,
-): Promise<AgentToolResult<Record<string, unknown>>> {
+): Promise<AgentToolResult<SupervisorRequestDetails>> {
 	const metadata = readChildMetadata();
 	if (!metadata) throw new Error("Native supervisor channel is not available for this subagent.");
 	if (params.reason !== "progress_update" && !params.message?.trim() && params.reason !== "interview_request") {
@@ -500,7 +513,7 @@ async function sendSupervisorRequest(
 
 	try {
 		const reply = await waitForReply(metadata.channelDir, requestId, replyDeadline, signal);
-		const details: Record<string, unknown> = { requestId, reason: params.reason };
+		const details: SupervisorRequestDetails = { requestId, reason: params.reason };
 		if (params.reason === "interview_request") {
 			const structured = parseStructuredReply(reply.message);
 			if (structured.error) details.structuredReplyParseError = structured.error;
@@ -525,7 +538,7 @@ function hasLiveTool(pi: ExtensionAPI, name: string): boolean {
 	}
 }
 
-function toolResultText(result: AgentToolResult<Record<string, unknown>>): string {
+function toolResultText<Details>(result: AgentToolResult<Details>): string {
 	for (const entry of result.content) {
 		if (entry.type !== "text") continue;
 		const preview = entry.text.slice(0, 8 * 1024).trim();
@@ -545,9 +558,9 @@ function communicationCategory(args: Readonly<Record<string, unknown>>) {
 	return action === "status" || action === "list" || action === "pending" ? "check-agent" : "message-agent";
 }
 
-function registerCommunicationTool<TParams extends TSchema>(
+function registerCommunicationTool<TParams extends TSchema, Details>(
 	pi: ExtensionAPI,
-	tool: ToolDefinition<TParams, Record<string, unknown>>,
+	tool: ToolDefinition<TParams, Details>,
 	runningSummary: string,
 ): void {
 	registerSuiteOwnedTool(pi, tool, {
@@ -572,7 +585,7 @@ export function registerNativeSupervisorClient(
 	if (!readChildMetadata()) return;
 	const includeIntercomFallback = options.includeIntercomFallback !== false;
 	if (!hasLiveTool(pi, "contact_supervisor")) {
-		const tool: ToolDefinition<typeof ContactSupervisorParamsSchema, Record<string, unknown>> = {
+		const tool: ToolDefinition<typeof ContactSupervisorParamsSchema, SupervisorRequestDetails> = {
 			name: "contact_supervisor",
 			label: "Contact Supervisor",
 			description:
@@ -585,7 +598,7 @@ export function registerNativeSupervisorClient(
 		registerCommunicationTool(pi, tool, "contacting");
 	}
 	if (includeIntercomFallback && !hasLiveTool(pi, "intercom")) {
-		const tool: ToolDefinition<typeof IntercomParamsSchema, Record<string, unknown>> = {
+		const tool: ToolDefinition<typeof IntercomParamsSchema, NativeCommunicationDetails> = {
 			name: "intercom",
 			label: "Intercom",
 			description:
@@ -1214,12 +1227,7 @@ export function createNativeSupervisorChannel(
 		acquireDeliveryClaim?: typeof tryAcquireDurableClaim;
 		afterReplyPublish?: (replyPath: string) => void;
 	} = {},
-): {
-	start: () => Promise<void>;
-	pause: () => void;
-	dispose: () => void;
-	pending: Map<string, PendingSupervisorRequest>;
-} {
+) {
 	const pending = new Map<string, PendingSupervisorRequest>();
 	let poller: ReturnType<typeof setInterval> | undefined;
 	let pollInFlight = false;

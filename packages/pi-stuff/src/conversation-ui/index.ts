@@ -1103,10 +1103,7 @@ function createDeferred<Value>(): Deferred<Value> {
 	return { promise, reject: rejectPromise, resolve: resolvePromise };
 }
 
-function createDialogRequest<Result>(view: CommandDialogView<Result>): {
-	readonly promise: Promise<Result | undefined>;
-	readonly request: DialogRequest;
-} {
+function createDialogRequest<Result>(view: CommandDialogView<Result>) {
 	const completion = createDeferred<Result | undefined>();
 	const controller = new AbortController();
 	const request: DialogRequest = {

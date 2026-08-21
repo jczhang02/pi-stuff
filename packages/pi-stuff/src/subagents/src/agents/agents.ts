@@ -368,7 +368,7 @@ function extraUserAgentDirs(): string[] {
 		.filter(Boolean);
 }
 
-function splitTools(values: string[] | undefined): { tools: string[]; mcpDirectTools: string[] } {
+function splitTools(values: string[] | undefined) {
 	const tools: string[] = [];
 	const mcpDirectTools: string[] = [];
 	for (const value of values ?? []) {

@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import type { JsonInputObject, JsonInputValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeFunction,
@@ -39,10 +40,18 @@ const SCHEMA_SINGLE_KEYWORDS = [
 ] as const;
 const SCHEMA_ARRAY_KEYWORDS = ["allOf", "anyOf", "oneOf", "prefixItems"] as const;
 
-function rewriteLocalJsonPointerRefs(schema: unknown, pointerPrefix: string, inheritsWrapperResource = true): unknown {
-	if (isRuntimeBoolean(schema) || !schema || !isRuntimeObject(schema) || Array.isArray(schema)) return schema;
-	const source = schema as Record<string, unknown>;
-	const rewritten: Record<string, unknown> = { ...source };
+function isJsonInputObject(value: JsonInputValue): value is JsonInputObject {
+	return Boolean(value) && isRuntimeObject(value) && !Array.isArray(value);
+}
+
+function rewriteLocalJsonPointerRefs(
+	schema: JsonInputValue,
+	pointerPrefix: string,
+	inheritsWrapperResource = true,
+): JsonInputValue {
+	if (isRuntimeBoolean(schema) || !isJsonInputObject(schema)) return schema;
+	const source = schema;
+	const rewritten: JsonInputObject = { ...source };
 	const sharesWrapperResource = inheritsWrapperResource && !isRuntimeString(source.$id);
 	if (sharesWrapperResource) {
 		for (const keyword of ["$ref", "$dynamicRef", "$recursiveRef"] as const) {

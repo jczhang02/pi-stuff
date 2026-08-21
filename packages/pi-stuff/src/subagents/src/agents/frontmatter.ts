@@ -62,7 +62,7 @@ export function parseFrontmatterList(raw: string | undefined): string[] | undefi
  * Block values are stored as single strings with embedded newlines.
  * The indentation of the block content is preserved relative to the key.
  */
-export function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } {
+export function parseFrontmatter(content: string) {
 	const frontmatter: Record<string, string> = {};
 	const normalized = content.replace(/\r\n/g, "\n");
 

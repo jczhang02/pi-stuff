@@ -16,11 +16,7 @@ function formatValue(value: unknown): string {
 	}
 }
 
-function normalize(values: readonly unknown[]): {
-	details: readonly string[];
-	error: Error | undefined;
-	summary: string;
-} {
+function normalize(values: readonly unknown[]) {
 	const error = values.find((value): value is Error => value instanceof Error);
 	const firstValue = values[0];
 	const first = sanitizeDiagnosticLine(firstValue instanceof Error ? firstValue.message : formatValue(firstValue))

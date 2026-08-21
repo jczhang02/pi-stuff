@@ -203,7 +203,7 @@ export function terminalSteeringNoticeState(
 export function claimSteeringRecovery(
 	asyncDir: string,
 	input: { requestId: string; sourceRunId: string; committedAt: number },
-): { claimPath: string; markerPath: string } {
+) {
 	const recoveryDir = path.join(asyncDir, "control", "steer-recovery");
 	fs.mkdirSync(recoveryDir, { recursive: true, mode: 0o700 });
 	const claimPath = path.join(recoveryDir, "claim.json");
@@ -243,22 +243,19 @@ export function readSteeringStatus(asyncDir: string): SteeringStatus | undefined
 	return readStatus(asyncDir)?.steering;
 }
 
-export function remainingSteeringRecoveryLimits(
-	descriptor: Pick<SteeringRecoveryDescriptor, "absoluteDeadlineAt" | "initialTurnBudget" | "initialToolBudget">,
-	status: Pick<AsyncStatus, "turnBudget" | "turnCount" | "toolBudget" | "toolCount">,
-	now = Date.now(),
-): {
+interface RemainingSteeringRecoveryLimits {
 	timeoutMs?: number;
 	absoluteDeadlineAt?: number;
 	turnBudget?: ResolvedTurnBudget;
 	toolBudget?: ResolvedToolBudget;
-} {
-	const limits: {
-		timeoutMs?: number;
-		absoluteDeadlineAt?: number;
-		turnBudget?: ResolvedTurnBudget;
-		toolBudget?: ResolvedToolBudget;
-	} = {};
+}
+
+export function remainingSteeringRecoveryLimits(
+	descriptor: Pick<SteeringRecoveryDescriptor, "absoluteDeadlineAt" | "initialTurnBudget" | "initialToolBudget">,
+	status: Pick<AsyncStatus, "turnBudget" | "turnCount" | "toolBudget" | "toolCount">,
+	now = Date.now(),
+) {
+	const limits: RemainingSteeringRecoveryLimits = {};
 	if (descriptor.absoluteDeadlineAt !== undefined) {
 		const timeoutMs = descriptor.absoluteDeadlineAt - now;
 		if (timeoutMs <= 0) throw new Error("Source run has no remaining deadline budget; it remains paused.");

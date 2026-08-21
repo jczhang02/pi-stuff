@@ -90,11 +90,7 @@ function eventBusView(bus: EventBusHarness): EventBusLike {
 	};
 }
 
-function apiHarness(events: EventBus = createEventBus()): {
-	readonly api: SuiteToolTrackerHost;
-	readonly handlers: Map<string, Array<(event: unknown, context: unknown) => unknown>>;
-	readonly tools: Map<string, ToolDefinition>;
-} {
+function apiHarness(events: EventBus = createEventBus()) {
 	let activeTools: string[] = [];
 	const handlers = new Map<string, Array<(event: unknown, context: unknown) => unknown>>();
 	const tools = new Map<string, ToolDefinition>();
@@ -150,15 +146,15 @@ function renderContext(
 	};
 }
 
-function assistant(...content: unknown[]): unknown {
+function assistant(...content: unknown[]) {
 	return { role: "assistant", content };
 }
 
-function call(id: string, name: string, value: string): unknown {
+function call(id: string, name: string, value: string) {
 	return { type: "toolCall", id, name, arguments: { value } };
 }
 
-function result(id: string, text = "ok", isError = false): unknown {
+function result(id: string, text = "ok", isError = false) {
 	return {
 		role: "toolResult",
 		toolCallId: id,
@@ -168,7 +164,7 @@ function result(id: string, text = "ok", isError = false): unknown {
 	};
 }
 
-function bashCall(id: string, command: string): unknown {
+function bashCall(id: string, command: string) {
 	return { type: "toolCall", id, name: "bash", arguments: { command, value: command } };
 }
 
@@ -337,11 +333,7 @@ function settle(
 	isError = false,
 	expanded = false,
 	resultText = isError ? "FAILED" : "MODEL_VISIBLE",
-): {
-	callComponent: { render(width: number): string[] };
-	callLines: string[];
-	resultLines: string[];
-} {
+) {
 	const state = {};
 	const args = { value };
 	const context = renderContext(state, args, {

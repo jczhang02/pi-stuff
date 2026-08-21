@@ -126,15 +126,7 @@ export function createAsyncJobTracker(
 	state: SubagentState,
 	asyncDirRoot: string,
 	options: AsyncJobTrackerOptions = {},
-): {
-	ensureObserver: () => void;
-	handleComplete: (data: unknown) => void;
-	handleProcessTerminal: (data: unknown) => void;
-	handleStarted: (data: unknown) => void;
-	handleStatus: (data: unknown) => void;
-	resetJobs: () => void;
-	restoreActiveJobs: (asyncDirectories?: readonly string[]) => Promise<void>;
-} {
+) {
 	const completionRetentionMs = options.completionRetentionMs ?? 10_000;
 	const fallbackIntervalMs = options.pollIntervalMs ?? Math.max(3_000, POLL_INTERVAL_MS);
 	const readRunStatus = options.readRunStatus ?? readStatusAsync;

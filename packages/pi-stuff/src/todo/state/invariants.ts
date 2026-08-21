@@ -1,7 +1,14 @@
 import type { TaskStatus } from "../tool/types.js";
 
 /** Claude-compatible live-state transitions. Only the deleted tombstone is terminal. */
-const VALID_TRANSITIONS: Record<TaskStatus, ReadonlySet<TaskStatus>> = {
+interface TaskTransitionTable {
+	readonly completed: ReadonlySet<TaskStatus>;
+	readonly deleted: ReadonlySet<TaskStatus>;
+	readonly in_progress: ReadonlySet<TaskStatus>;
+	readonly pending: ReadonlySet<TaskStatus>;
+}
+
+const VALID_TRANSITIONS: TaskTransitionTable = {
 	pending: new Set(["in_progress", "completed", "deleted"]),
 	in_progress: new Set(["pending", "completed", "deleted"]),
 	completed: new Set(["pending", "in_progress", "deleted"]),

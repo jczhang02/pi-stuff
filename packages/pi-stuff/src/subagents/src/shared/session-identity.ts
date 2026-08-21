@@ -222,10 +222,7 @@ interface LegacyLaunchDeclaration {
 	readonly logicalAgentIds: readonly string[];
 }
 
-function legacyLaunchDeclarations(entries: Iterable<unknown>): {
-	readonly declared: Set<string>;
-	readonly started: Set<string>;
-} {
+function legacyLaunchDeclarations(entries: Iterable<unknown>) {
 	const values = [...entries];
 	const byToolCallId = new Map<string, LegacyLaunchDeclaration>();
 	const byRunId = new Map<string, LegacyLaunchDeclaration>();

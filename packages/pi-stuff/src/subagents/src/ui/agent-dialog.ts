@@ -984,7 +984,7 @@ function selectedWindow<T extends { readonly key: string }>(
 	rows: readonly T[],
 	selectedKey: string | undefined,
 	limit: number,
-): { readonly rows: readonly T[]; readonly start: number } {
+) {
 	if (rows.length <= limit) return { rows, start: 0 };
 	const selectedIndex = Math.max(
 		0,

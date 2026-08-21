@@ -412,6 +412,8 @@ async function createRpcTransport(
 	};
 }
 
+interface MagicContextEnvironment extends NodeJS.ProcessEnv {}
+
 function environment(paths: {
 	readonly agent: string;
 	readonly audit: string;
@@ -421,7 +423,7 @@ function environment(paths: {
 	readonly magicLog: string;
 	readonly state: string;
 	readonly xdgConfig: string;
-}): Record<string, string | undefined> {
+}): MagicContextEnvironment {
 	return {
 		...process.env,
 		HOME: paths.home,

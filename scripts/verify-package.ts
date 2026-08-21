@@ -113,7 +113,7 @@ const REQUIRED_ARCHIVE_FILES = [
 	"package/themes/README.md",
 ] as const;
 
-const PROVENANCE_REQUIREMENTS: Readonly<Record<string, readonly string[]>> = {
+const PROVENANCE_REQUIREMENTS = {
 	"background-work": ["pi-background-tasks", "Pi Stuff delta"],
 	btw: ["@juicesharp/rpiv-btw", "Pi Stuff delta"],
 	"code-mode": ["@howaboua/pi-codex-conversion", "Cloudflare Code Mode", "Pi Stuff delta"],
@@ -126,7 +126,7 @@ const PROVENANCE_REQUIREMENTS: Readonly<Record<string, readonly string[]>> = {
 	todo: ["@juicesharp/rpiv-todo", "Pi Stuff delta"],
 	"tool-display": ["@mobrienv/pi-tidy-tools", "Pi Stuff delta"],
 	web: ["nicobailon/pi-web-access", "Pi Stuff delta"],
-};
+} satisfies Readonly<Record<string, readonly string[]>>;
 
 export interface PackageArchiveManifest {
 	dependencies?: unknown;

@@ -49,7 +49,7 @@ export function resolveEffectiveThinking(
 	return THINKING_LEVELS.find((level) => level === configThinking);
 }
 
-export function splitKnownThinkingSuffix(model: string): { baseModel: string; thinkingSuffix: string } {
+export function splitKnownThinkingSuffix(model: string) {
 	const colonIdx = model.lastIndexOf(":");
 	if (colonIdx === -1) return { baseModel: model, thinkingSuffix: "" };
 	const suffix = THINKING_LEVELS.find((level) => level === model.substring(colonIdx + 1));

@@ -47,10 +47,7 @@ const theme = {
 	fg: (_color: string, text: string) => text,
 } as Theme;
 
-function tuiHarness(rows?: number): {
-	readonly requests: Array<boolean | undefined>;
-	readonly tui: { requestRender(force?: boolean): void; terminal?: { rows: number } };
-} {
+function tuiHarness(rows?: number) {
 	const requests: Array<boolean | undefined> = [];
 	return {
 		requests,

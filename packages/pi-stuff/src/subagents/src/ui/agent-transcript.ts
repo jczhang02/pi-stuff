@@ -107,7 +107,7 @@ function cleanTerminalText(value: string): string {
 	return result.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
 }
 
-function boundedTail(value: string, maxChars: number): { readonly text: string; readonly truncated: boolean } {
+function boundedTail(value: string, maxChars: number) {
 	const clean = cleanTerminalText(value).trim();
 	if (clean.length <= maxChars) return { text: clean, truncated: false };
 	return {

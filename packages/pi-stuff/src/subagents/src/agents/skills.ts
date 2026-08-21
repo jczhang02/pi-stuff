@@ -6,6 +6,7 @@ import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { getAgentDir, getProjectConfigDir } from "../shared/utils.ts";
 
@@ -54,7 +55,7 @@ const LOAD_SKILLS_CACHE_TTL_MS = 5000;
 
 const SUBAGENT_ORCHESTRATION_SKILL = "pi-subagents";
 
-const SOURCE_PRIORITY: Record<SkillSource, number> = {
+const SOURCE_PRIORITY = {
 	project: 700,
 	"project-settings": 650,
 	"project-package": 600,
@@ -64,7 +65,7 @@ const SOURCE_PRIORITY: Record<SkillSource, number> = {
 	extension: 150,
 	builtin: 100,
 	unknown: 0,
-};
+} satisfies Record<SkillSource, number>;
 
 function stripSkillFrontmatter(content: string): string {
 	const normalized = content.replace(/\r\n/g, "\n");
@@ -81,9 +82,9 @@ function isWithinPath(filePath: string, dir: string): boolean {
 	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-function readOptionalJsonFile(filePath: string, label: string): unknown {
+function readOptionalJsonFile(filePath: string, label: string): JsonValue | null {
 	try {
-		return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+		return parseJsonValue(fs.readFileSync(filePath, "utf-8"));
 	} catch (error) {
 		const code =
 			isRuntimeObject(error) && error !== null && "code" in error ? (error as { code?: unknown }).code : undefined;
@@ -95,9 +96,9 @@ function readOptionalJsonFile(filePath: string, label: string): unknown {
 	}
 }
 
-function readJsonFileBestEffort(filePath: string): unknown {
+function readJsonFileBestEffort(filePath: string): JsonValue | null {
 	try {
-		return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+		return parseJsonValue(fs.readFileSync(filePath, "utf-8"));
 	} catch {
 		// Package scans over installed dependencies are opportunistic.
 		return null;
@@ -632,12 +633,7 @@ function readSkill(skillName: string, skillPath: string, source: SkillSource): R
 	}
 }
 
-export function resolveSkills(
-	skillNames: string[],
-	cwd: string,
-	localSkillPaths?: string[],
-	localBaseDir?: string,
-): { resolved: ResolvedSkill[]; missing: string[] } {
+export function resolveSkills(skillNames: string[], cwd: string, localSkillPaths?: string[], localBaseDir?: string) {
 	const resolved: ResolvedSkill[] = [];
 	const missing: string[] = [];
 	const localByName = new Map<string, CachedSkillEntry>();
@@ -683,7 +679,7 @@ export function resolveSkillsWithFallback(
 	fallbackCwd?: string,
 	localSkillPaths?: string[],
 	localBaseDir?: string,
-): { resolved: ResolvedSkill[]; missing: string[] } {
+) {
 	const primary = resolveSkills(skillNames, primaryCwd, localSkillPaths, localBaseDir);
 	if (!fallbackCwd || primary.missing.length === 0) return primary;
 	if (path.resolve(primaryCwd) === path.resolve(fallbackCwd)) return primary;

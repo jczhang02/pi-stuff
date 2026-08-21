@@ -30,7 +30,7 @@ test("Host resource discovery fails initialization instead of creating a facade-
 	expect(() => getHostSharedResource(registrationFailure, local, "test:resource", () => ({}))).toThrow(
 		"injected registration failure",
 	);
-	expect(local.has(registrationFailure as object)).toBe(false);
+	expect(local.has(registrationFailure)).toBe(false);
 });
 
 test("Host resource cleanup remains idempotent when its event unsubscribe fails", () => {
@@ -47,11 +47,11 @@ test("Host resource cleanup remains idempotent when its event unsubscribe fails"
 	const resource = getHostSharedResource(events, local, "test:resource", () => ({}), {
 		registerOwnerCleanup: (cleanup) => cleanups.push(cleanup),
 	});
-	expect(local.get(events as object)).toBe(resource);
+	expect(local.get(events)).toBe(resource);
 	expect(cleanups).toHaveLength(1);
 
 	expect(() => cleanups[0]?.()).not.toThrow();
 	expect(() => cleanups[0]?.()).not.toThrow();
 	expect(unsubscribeCalls).toBe(1);
-	expect(local.has(events as object)).toBe(false);
+	expect(local.has(events)).toBe(false);
 });

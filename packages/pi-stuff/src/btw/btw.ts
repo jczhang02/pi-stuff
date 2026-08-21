@@ -9,7 +9,6 @@
 import type { Api, AssistantMessage, Message, Model, StopReason, UserMessage } from "@earendil-works/pi-ai";
 import { isContextOverflow } from "@earendil-works/pi-ai";
 import {
-	type ContextEvent,
 	convertToLlm,
 	type ExtensionContext,
 	type SessionEntry,
@@ -68,11 +67,7 @@ function isPendingAssistant(entry: SessionEntry | undefined): boolean {
 }
 
 /** Pi's effective active context, with compaction/branch summaries applied. */
-export function readEffectiveContext(ctx: Pick<ExtensionContext, "sessionManager">): {
-	entries: SessionEntry[];
-	contextMessages: ContextEvent["messages"];
-	messages: Message[];
-} {
+export function readEffectiveContext(ctx: Pick<ExtensionContext, "sessionManager">) {
 	const entries = ([...ctx.sessionManager.buildContextEntries()] as SessionEntry[]).filter(
 		(entry) => !isPendingAssistant(entry),
 	);

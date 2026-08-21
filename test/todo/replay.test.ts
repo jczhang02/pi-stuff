@@ -30,7 +30,7 @@ function snapshot(tasks: Task[], nextId: number): TaskDetails {
 	};
 }
 
-function toolResult(toolName: string, details: unknown): unknown {
+function toolResult(toolName: string, details: unknown) {
 	return { type: "message", message: { role: "toolResult", toolName, details } };
 }
 

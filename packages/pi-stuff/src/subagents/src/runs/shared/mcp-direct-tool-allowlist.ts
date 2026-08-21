@@ -302,7 +302,7 @@ export function resolveMcpDirectToolNames(mcpDirectTools: string[] | undefined, 
 	return resolveMcpDirectToolSelections(mcpDirectTools, cwd).map((selection) => selection.name);
 }
 
-function parseSelections(selections: string[]): { servers: Set<string>; tools: Map<string, Set<string>> } {
+function parseSelections(selections: string[]) {
 	const servers = new Set<string>();
 	const tools = new Map<string, Set<string>>();
 	for (let item of selections) {
@@ -333,7 +333,7 @@ function isServerCacheValid(entry: ServerCacheEntry | undefined, definition: Ser
 }
 
 export function computeMcpServerHash(definition: ServerEntry): string {
-	const identity: Record<string, unknown> = {
+	const identity = {
 		command: definition.command,
 		args: definition.args,
 		socket: resolveConfigPath(definition.socket),
@@ -347,7 +347,7 @@ export function computeMcpServerHash(definition: ServerEntry): string {
 		exposeResources: definition.exposeResources,
 		includeTools: definition.includeTools,
 		excludeTools: definition.excludeTools,
-	};
+	} satisfies Record<string, unknown>;
 	return createHash("sha256").update(stableStringify(identity)).digest("hex");
 }
 

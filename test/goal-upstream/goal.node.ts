@@ -1830,7 +1830,11 @@ test("ordinary sessions do not rescan long provider history for absent Goal prot
 	await mock.events.get("session_start")?.[0]?.({}, context.ctx);
 	let inspected = 0;
 	const messages = Array.from({ length: 10_000 }, () => {
-		const message = { content: "ordinary work" } as { content: string; role?: string };
+		interface InspectedMessage {
+			content: string;
+			role?: string;
+		}
+		const message: InspectedMessage = { content: "ordinary work" };
 		Object.defineProperty(message, "role", {
 			enumerable: true,
 			get: () => {

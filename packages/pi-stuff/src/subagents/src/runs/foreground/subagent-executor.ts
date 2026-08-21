@@ -305,10 +305,7 @@ function estimateContextMessageTokens(message: ContextEvent["messages"][number])
 	return Math.max(piEstimate, serializedEstimate);
 }
 
-function inheritedContextSnapshot(ctx: ExtensionContext): {
-	readonly messages?: ContextEvent["messages"];
-	readonly tokens: number;
-} {
+function inheritedContextSnapshot(ctx: ExtensionContext) {
 	let effective: number | undefined;
 	try {
 		const value = ctx.getContextUsage()?.tokens;
@@ -358,7 +355,7 @@ function inheritedLaunchPromptTokens(ctx: ExtensionContext): number {
 
 function inheritedReplacementPromptTokens(
 	task: Pick<RunnerAgentTask, "cwd" | "inheritProjectContext" | "inheritSkills">,
-): { readonly tokens: number; readonly rawForkSafe: boolean } {
+) {
 	try {
 		let retained = "";
 		if (task.inheritProjectContext) {
@@ -524,13 +521,7 @@ function prepareLaunchModelPlan(input: {
 	capabilityCeiling?: ReturnType<typeof resolveCurrentSubagentCapabilityCeiling>;
 	maxSubagentDepth: number;
 	childBaseExtensionPath?: string;
-}): {
-	forkContextTokens?: number;
-	forkSourceMessages?: ContextEvent["messages"];
-	rawForkByIndex: boolean[];
-	fixedInputTokensByIndex: number[];
-	modelCandidatesByIndex: Array<string[] | undefined>;
-} {
+}) {
 	const tasks = taskInputs(input.params);
 	const forkSnapshot: { readonly messages?: ContextEvent["messages"]; readonly tokens: number } =
 		input.context === "fork" ? inheritedContextSnapshot(input.ctx) : { tokens: 0 };
@@ -704,7 +695,7 @@ function validateLaunchInput(params: SubagentParamsLike, agents: readonly AgentC
 	return undefined;
 }
 
-function resolveTimeout(value: unknown): { timeoutMs?: number; error?: string } {
+function resolveTimeout(value: unknown) {
 	if (value === undefined) return {};
 	if (!isRuntimeNumber(value) || !Number.isInteger(value) || value <= 0) {
 		return { error: "timeoutMs must be a positive integer." };
@@ -742,7 +733,7 @@ function prepareForkSessions(input: {
 	modelScope?: import("../shared/model-scope.ts").ModelScopeConfig;
 	modelCandidatesByIndex: Array<string[] | undefined>;
 	rawForkByIndex: boolean[];
-}): { sessionFiles: Array<string | undefined>; thinkingOverrides: Array<AgentConfig["thinking"] | undefined> } {
+}) {
 	const tasks = taskInputs(input.params);
 	if (input.context !== "fork") {
 		return {
@@ -1529,11 +1520,9 @@ function rememberForegroundResult(
 			agent: child.agent,
 			index,
 			...(child.cwd ? { cwd: child.cwd } : {}),
-			...({
-				description: rememberedTasks[index]?.description,
-				task: rememberedTasks[index]?.task,
-				startedAt,
-			} as Record<string, unknown>),
+			description: rememberedTasks[index]?.description,
+			task: rememberedTasks[index]?.task,
+			startedAt,
 			...(child.context ? { context: child.context } : {}),
 			...(child.crashed ? { crashed: true } : {}),
 			status: child.detached
@@ -2147,16 +2136,7 @@ function duplicateForegroundResult(params: SubagentParamsLike): AgentToolResult<
 	);
 }
 
-export function createSubagentExecutor(deps: ExecutorDeps): {
-	execute(
-		id: string,
-		params: SubagentParamsLike,
-		signal: AbortSignal,
-		onUpdate: ((result: AgentToolResult<Details>) => void) | undefined,
-		ctx: ExtensionContext,
-		hooks?: SubagentExecutionHooks,
-	): Promise<AgentToolResult<Details>>;
-} {
+export function createSubagentExecutor(deps: ExecutorDeps) {
 	const engines: ExecutorEngines = { ...DEFAULT_ENGINES, ...deps.engines };
 	const execute = async (
 		id: string,

@@ -74,7 +74,15 @@ const BTW_PROJECTION_LIMIT = 48_000;
 const AGENT_FORK_PROJECTION_LIMIT = 64_000;
 const AGENT_FRESH_PROJECTION_LIMIT = 24_000;
 const PROJECTION_OMISSION_MARKER = "\n[Pi Stuff omitted the middle of this context projection to keep it bounded.]\n";
-const MAGIC_TOOL_LABELS: Readonly<Record<string, string>> = {
+interface MagicToolLabels {
+	readonly [toolName: string]: string;
+}
+
+interface ContextOperationByMagicTitle {
+	readonly [title: string]: ContextOperation;
+}
+
+const MAGIC_TOOL_LABELS: MagicToolLabels = {
 	ctx_expand: "Context expand",
 	ctx_memory: "Context memory",
 	ctx_note: "Context note",
@@ -109,7 +117,7 @@ const CONTEXT_COMMAND_NAMES = {
 	wrapup: "ctx-wrapup",
 } as const;
 const CONTEXT_BACKGROUND_OPERATIONS = new Set<ContextOperation>(["recomp", "upgrade"]);
-const CONTEXT_OPERATION_BY_MAGIC_TITLE: Readonly<Record<string, ContextOperation>> = {
+const CONTEXT_OPERATION_BY_MAGIC_TITLE: ContextOperationByMagicTitle = {
 	"/ctx-flush": "flush",
 	"/ctx-recomp": "recomp",
 	"/ctx-session-upgrade": "upgrade",
@@ -272,6 +280,11 @@ interface CachedProjection {
 	readonly full: string;
 }
 
+interface ProjectionFlight {
+	readonly generation: number;
+	readonly promise: Promise<CachedProjection | undefined>;
+}
+
 interface ContextCapabilityRegistry {
 	readonly contexts: WeakMap<object, ContextCapabilityRuntime>;
 	readonly owners: WeakMap<object, ContextCapabilityRuntime>;
@@ -389,7 +402,7 @@ function escapedXmlUnit(value: string): string {
 	return value;
 }
 
-function escapedXmlPrefix(parts: readonly string[], limit: number): { text: string; complete: boolean } {
+function escapedXmlPrefix(parts: readonly string[], limit: number) {
 	const chunks: string[] = [];
 	let used = 0;
 	let started = false;
@@ -411,7 +424,7 @@ function escapedXmlPrefix(parts: readonly string[], limit: number): { text: stri
 	return { text: chunks.join("").trimEnd(), complete: true };
 }
 
-function previousCodePoint(value: string, end: number): { start: number; value: string } {
+function previousCodePoint(value: string, end: number) {
 	let start = Math.max(0, end - 1);
 	const last = value.charCodeAt(start);
 	if (last >= 0xdc00 && last <= 0xdfff && start > 0) {
@@ -421,7 +434,7 @@ function previousCodePoint(value: string, end: number): { start: number; value: 
 	return { start, value: value.slice(start, end) };
 }
 
-function escapedXmlSuffix(parts: readonly string[], limit: number): { text: string; complete: boolean } {
+function escapedXmlSuffix(parts: readonly string[], limit: number) {
 	const reversed: string[] = [];
 	let used = 0;
 	let started = false;
@@ -484,7 +497,7 @@ function nativeMessageSuffix(message: AgentMessage, limit: number): BoundedMessa
 	return { text: `${content.text}${close}`, complete: false };
 }
 
-function nativeHistoryPrefix(messages: readonly AgentMessage[], limit: number): { text: string; complete: boolean } {
+function nativeHistoryPrefix(messages: readonly AgentMessage[], limit: number) {
 	const chunks: string[] = [];
 	let used = 0;
 	for (const message of messages) {
@@ -587,7 +600,7 @@ function safeSuffix(value: string, length: number): string {
 	return value.slice(start);
 }
 
-function boundProjection(value: string, limit: number): { text: string; truncated: boolean } {
+function boundProjection(value: string, limit: number) {
 	if (value.length <= limit) return { text: value, truncated: false };
 	if (limit <= PROJECTION_OMISSION_MARKER.length) return { text: safePrefix(value, limit), truncated: true };
 	const available = Math.max(0, limit - PROJECTION_OMISSION_MARKER.length);
@@ -598,11 +611,7 @@ function boundProjection(value: string, limit: number): { text: string; truncate
 	};
 }
 
-function formatProjection(
-	full: string,
-	audience: ContextProjectionAudience,
-	options?: ContextProjectionOptions,
-): { text: string; truncated: boolean } {
+function formatProjection(full: string, audience: ContextProjectionAudience, options?: ContextProjectionOptions) {
 	const selected = audience === "agent-fresh" ? projectMemoryOnly(full) : full;
 	if (!selected) return { text: "", truncated: false };
 	const prefix = [
@@ -854,10 +863,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 	private disposed = false;
 	private projectionGeneration = 0;
 	private readonly projections = new Map<string, CachedProjection>();
-	private readonly projectionFlights = new Map<
-		string,
-		{ generation: number; promise: Promise<CachedProjection | undefined> }
-	>();
+	private readonly projectionFlights = new Map<string, ProjectionFlight>();
 	/** Last valid project-memory snapshot, captured only by the normal Magic context event. */
 	private readonly memories = new Map<string, string>();
 	private readonly registry: ContextCapabilityRegistry;
@@ -1420,7 +1426,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 		if (!cached && handler && this.isCurrentGeneration(generation)) {
 			let flight = this.projectionFlights.get(key);
 			if (!flight || flight.generation !== projectionGeneration) {
-				let created!: { generation: number; promise: Promise<CachedProjection | undefined> };
+				let created!: ProjectionFlight;
 				const promise = (async (): Promise<CachedProjection | undefined> => {
 					try {
 						const event: ContextEvent = {

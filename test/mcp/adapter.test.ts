@@ -23,6 +23,14 @@ import type { SuiteToolDefinitionRegistry } from "../../packages/pi-stuff/src/to
 import { createExtensionContext, testTheme } from "../fixtures/extension-context.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
+class TestAppKeybindingsManager extends KeybindingsManager {
+	getEffectiveConfig() {
+		return {};
+	}
+
+	reload(): void {}
+}
+
 const Parameters = Type.Object({}, { additionalProperties: true });
 type Tool = ToolDefinition<typeof Parameters, unknown>;
 type Handler = (event: unknown, ctx: ExtensionContext) => unknown;
@@ -170,7 +178,7 @@ describe("Pi Stuff MCP fork boundary", () => {
 					close: (value) => {
 						result = value;
 					},
-					keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+					keybindings: new TestAppKeybindingsManager(TUI_KEYBINDINGS),
 					requestRender: () => undefined,
 					signal: new AbortController().signal,
 					theme: testTheme,

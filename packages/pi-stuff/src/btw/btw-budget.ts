@@ -157,7 +157,7 @@ function forwardScanToTurnStart(entries: SessionEntry[], fromIndex: number): num
  *  turn-start (NOT the host's backward findTurnStartIndex), then unfiltered conversion so
  *  a head compaction/branch summary survives (hybrid filter). Returns {messages:null} when
  *  no valid cut (firstKeptEntryIndex<=0) or no turn-start exists — caller stubs the full cache. */
-function trimBranch(entries: SessionEntry[], keepRecentTokens: number): { messages: Message[] | null } {
+function trimBranch(entries: SessionEntry[], keepRecentTokens: number) {
 	const cut = findCutPoint(entries, 0, entries.length, keepRecentTokens);
 	if (cut.firstKeptEntryIndex <= 0) return { messages: null }; // no valid cut → stub the cache
 	const startIdx = forwardScanToTurnStart(entries, cut.firstKeptEntryIndex);
@@ -335,7 +335,7 @@ function truncateToFit(result: Message[], budget: number, initialEstimate: numbe
  *  objects are never mutated. Phase 1 ({@link stubToolResultsToFit}) stubs toolResults
  *  oldest-first; phase 2 ({@link truncateToFit}) truncates the largest text block toward
  *  the token gap. Signature and return shape are unchanged. */
-function stubToFit(messages: Message[], budget: number): { messages: Message[]; stubbed: boolean } {
+function stubToFit(messages: Message[], budget: number) {
 	const result = messages.slice(); // shallow: new array, shared message objects — one place, guards both phases
 	const initialEstimate = estimateMessagesTokens(result);
 	const toolResults = stubToolResultsToFit(result, budget, initialEstimate);

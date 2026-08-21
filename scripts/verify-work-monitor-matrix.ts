@@ -9,14 +9,14 @@ const TIMEOUT_MS = 20_000;
 
 type Scenario = "cancel" | "command_failure" | "file_error" | "http_success" | "log_success" | "timeout";
 
-const EXPECTED: Readonly<Record<Scenario, string>> = {
+const EXPECTED = {
 	cancel: "stopped",
 	command_failure: "failed",
 	file_error: "failed",
 	http_success: "completed",
 	log_success: "completed",
 	timeout: "timed_out",
-};
+} satisfies Readonly<Record<Scenario, string>>;
 
 interface MatrixRecord {
 	readonly phase?: unknown;

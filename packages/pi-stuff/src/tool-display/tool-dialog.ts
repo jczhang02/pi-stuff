@@ -463,17 +463,7 @@ class ToolDialogComponent implements CommandDialogComponent {
 		);
 	}
 
-	private detailLayout(
-		group: ToolActivityGroupView,
-		width: number,
-	): {
-		readonly document: readonly string[];
-		readonly footer: readonly string[];
-		readonly maxOffset: number;
-		readonly members: readonly ToolActivity[];
-		readonly memberStart: number;
-		readonly viewportRows: number;
-	} {
+	private detailLayout(group: ToolActivityGroupView, width: number) {
 		const memberStart = Math.max(
 			0,
 			Math.min(

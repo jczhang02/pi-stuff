@@ -1068,7 +1068,11 @@ async function prepareFixture(
 	};
 }
 
-function isolatedEnvironment(root: string): Record<string, string> {
+interface BenchmarkEnvironment {
+	readonly [name: string]: string;
+}
+
+function isolatedEnvironment(root: string): BenchmarkEnvironment {
 	const path = process.env["PATH"];
 	if (!path) fail("PATH is required");
 	return {

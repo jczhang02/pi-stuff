@@ -41,6 +41,7 @@ import {
 	projectNestedRegistryForRootAuthoritatively,
 	sanitizeSummary,
 } from "../shared/nested-events.ts";
+import type { BackgroundTaskResult } from "../shared/parallel-utils.ts";
 import { buildCompletionKey, markSeenWithTtl } from "./completion-dedupe.ts";
 import type { CompletionNotification } from "./notify.ts";
 import { repairTerminalStatusFromResult } from "./stale-run-reconciler.ts";
@@ -108,17 +109,8 @@ type ResultWatcherDeps = {
 	projectNestedRegistry?: typeof projectNestedRegistryForRootAuthoritatively;
 };
 
-type ResultFileChild = {
-	agent?: string;
-	output?: string;
-	error?: string;
-	success?: boolean;
+type ResultFileChild = Partial<BackgroundTaskResult> & {
 	state?: string;
-	interrupted?: boolean;
-	stopped?: boolean;
-	sessionFile?: string;
-	artifactPaths?: { outputPath?: string };
-	intercomTarget?: string;
 	children?: unknown;
 };
 
@@ -188,11 +180,13 @@ const RESULT_CHILD_FIELDS = [
 	"writerAttemptCount",
 ] as const;
 
-function pickFields<Source extends object>(source: Source, fields: readonly string[]): Record<string, unknown> {
-	const record = source as Record<string, unknown>;
-	const picked: Record<string, unknown> = {};
+function pickFields<Source extends object, Key extends keyof Source>(
+	source: Source,
+	fields: readonly Key[],
+): Partial<Pick<Source, Key>> {
+	const picked: Partial<Pick<Source, Key>> = {};
 	for (const field of fields) {
-		if (record[field] !== undefined) picked[field] = record[field];
+		if (source[field] !== undefined) picked[field] = source[field];
 	}
 	return picked;
 }
@@ -322,11 +316,7 @@ export function createResultWatcher(
 	resultsDir: string,
 	completionTtlMs: number,
 	deps: ResultWatcherDeps = {},
-): {
-	startResultWatcher: () => boolean;
-	primeExistingResults: (options?: { triggerTurn?: boolean }) => void;
-	stopResultWatcher: () => void;
-} {
+) {
 	const fsApi = deps.fs ?? fs;
 	const asyncDirRoot =
 		deps.asyncDirRoot ??

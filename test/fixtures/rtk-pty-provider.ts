@@ -53,7 +53,7 @@ function toolCallStream(id: string, command: string) {
 	return stream;
 }
 
-function contextRecord(context: Context, phase: string): object {
+function contextRecord(context: Context, phase: string) {
 	const bashCommands: string[] = [];
 	const toolResults: Array<{ id: string; text: string }> = [];
 	for (const entry of context.messages) {

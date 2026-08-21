@@ -24,6 +24,10 @@ interface RosterComponent {
 	render(width: number): string[];
 }
 
+interface FocusedComponent {
+	render(): string[];
+}
+
 type RosterFactory = (tui: TUI, theme: Theme) => RosterComponent;
 
 const theme = testTheme;
@@ -77,7 +81,7 @@ class CurrentAgentsHarness {
 
 class UiHarness {
 	editorText = "";
-	focusedComponent: unknown = editor;
+	focusedComponent: FocusedComponent = editor;
 	readonly notifications: Array<{ message: string; level: string }> = [];
 	readonly placements: Array<string | undefined> = [];
 	readonly renderRequests: number[] = [];

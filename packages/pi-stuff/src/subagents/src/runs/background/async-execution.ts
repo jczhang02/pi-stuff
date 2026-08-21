@@ -375,7 +375,7 @@ function resolveTaskTurnBudget(
 	explicit: TurnBudgetConfig | undefined,
 	runBudget: ResolvedTurnBudget | undefined,
 	agentBudget: TurnBudgetConfig | undefined,
-): { turnBudget?: ResolvedTurnBudget; error?: string } {
+) {
 	if (explicit !== undefined) return resolveTurnBudgetConfig(explicit, "turnBudget");
 	if (runBudget !== undefined) return { turnBudget: runBudget };
 	return resolveTurnBudgetConfig(agentBudget, "agent.turnBudget");
@@ -386,7 +386,7 @@ function resolveTaskToolBudget(
 	runBudget: ResolvedToolBudget | undefined,
 	agentBudget: ToolBudgetConfig | undefined,
 	configBudget: ResolvedToolBudget | undefined,
-): { toolBudget?: ResolvedToolBudget; error?: string } {
+) {
 	if (explicit !== undefined) {
 		const resolved = validateToolBudgetConfig(explicit, "toolBudget");
 		return { toolBudget: resolved.budget, error: resolved.error };
@@ -650,10 +650,7 @@ export function buildAsyncSingleRunnerWork(
 	};
 }
 
-export function resolveAsyncRunnerLogPaths(cfg: Pick<BackgroundRunnerConfig, "asyncDir">): {
-	stdoutPath: string;
-	stderrPath: string;
-} {
+export function resolveAsyncRunnerLogPaths(cfg: Pick<BackgroundRunnerConfig, "asyncDir">) {
 	return {
 		stdoutPath: path.join(cfg.asyncDir, "runner.stdout.log"),
 		stderrPath: path.join(cfg.asyncDir, "runner.stderr.log"),

@@ -43,6 +43,11 @@ import {
 import { reconcileStaleRuns, type StoredProcessTask, WorkRunStorage } from "./storage.js";
 
 const DEFAULT_BACKGROUND_AFTER_MS = 120_000;
+
+interface NotificationBatch {
+	readonly content: string;
+	readonly outcomes: BackgroundWorkOutcome[];
+}
 const QUICK_COMPLETION_MS = 2_000;
 const MAX_CONCURRENT_ACTIVITIES = 16;
 const MAX_TERMINAL_RECEIPTS = 64;
@@ -1327,10 +1332,7 @@ export class BackgroundWorkRuntime {
 		return textResult(snapshot.text || "(no output)", snapshot.details);
 	}
 
-	private foregroundSnapshot(outcome: BackgroundWorkOutcome): {
-		readonly details?: BackgroundWorkBashDetails;
-		readonly text: string;
-	} {
+	private foregroundSnapshot(outcome: BackgroundWorkOutcome) {
 		if (!outcome.outputPath) return { text: outcome.recentOutput ?? "" };
 		let raw: string;
 		try {
@@ -1547,7 +1549,7 @@ function escapedBytes(value: string): number {
 	return Buffer.byteLength(escapeXml(value), "utf-8");
 }
 
-function fitEscapedHead(value: string, maxBytes: number): { readonly escaped: string; readonly raw: string } {
+function fitEscapedHead(value: string, maxBytes: number) {
 	const escaped = escapeXml(value);
 	if (Buffer.byteLength(escaped, "utf-8") <= maxBytes) return { escaped, raw: value };
 	const points = Array.from(value);
@@ -1564,7 +1566,7 @@ function fitEscapedHead(value: string, maxBytes: number): { readonly escaped: st
 	return escapedBytes(raw) <= maxBytes ? { escaped: escapeXml(raw), raw } : { escaped: "", raw: "" };
 }
 
-function fitEscapedTail(value: string, maxBytes: number): { readonly escaped: string; readonly raw: string } {
+function fitEscapedTail(value: string, maxBytes: number) {
 	const escaped = escapeXml(value);
 	if (Buffer.byteLength(escaped, "utf-8") <= maxBytes) return { escaped, raw: value };
 	const markerBytes = escapedBytes(NOTIFICATION_TRUNCATION_MARKER);
@@ -1610,10 +1612,7 @@ function fairInlineBudgets(values: string[], totalBytes: number): number[] {
 	return budgets;
 }
 
-export function projectNotificationBatch(outcomes: readonly BackgroundWorkOutcome[]): {
-	readonly content: string;
-	readonly outcomes: BackgroundWorkOutcome[];
-} {
+export function projectNotificationBatch(outcomes: readonly BackgroundWorkOutcome[]): NotificationBatch {
 	const rows = outcomes.map((outcome) => {
 		const id = fitEscapedHead(outcome.id, 256);
 		const summary = fitEscapedHead(outcome.summary, MAX_NOTIFICATION_SUMMARY_BYTES);

@@ -837,12 +837,7 @@ function statusSegment(
 	return { compact, full, id, ...(minimum ? { minimum } : {}), priority };
 }
 
-function renderGitSegments(
-	theme: Theme,
-	icons: StatuslineIcons,
-	branch: string,
-	counts: GitChangeCounts | undefined,
-): { readonly branch?: SegmentText; readonly diff?: SegmentText } {
+function renderGitSegments(theme: Theme, icons: StatuslineIcons, branch: string, counts: GitChangeCounts | undefined) {
 	const ahead = counts?.ahead ?? 0;
 	const behind = counts?.behind ?? 0;
 	const conflicted = counts?.conflicted ?? 0;
@@ -1082,10 +1077,7 @@ function buildPromptPreview(rawText: string, skillAliases: ReadonlyMap<string, s
 	return promptPreview(rawPreview.text, uniqueSkills([...skills, ...rawPreview.skills]));
 }
 
-function rawSkillPromptPreview(
-	value: string,
-	aliases: ReadonlyMap<string, string>,
-): { readonly skills: readonly string[]; readonly text: string | undefined } {
+function rawSkillPromptPreview(value: string, aliases: ReadonlyMap<string, string>) {
 	const skills: string[] = [];
 	const text = value.replace(/(^|\s)\/([^\s]+)/gu, (match, prefix: string, commandName: string) => {
 		const skill = aliases.get(commandName.toLowerCase());
@@ -1195,7 +1187,10 @@ function readThinkingLevel(pi: StatuslineHost, ctx: StatuslineContext): string {
 }
 
 function formatThinking(level: string): string {
-	const labels: Record<string, string> = {
+	interface ThinkingLabels {
+		readonly [level: string]: string;
+	}
+	const labels: ThinkingLabels = {
 		high: "high",
 		low: "low",
 		max: "max",
@@ -1208,7 +1203,10 @@ function formatThinking(level: string): string {
 }
 
 function thinkingColor(level: string): ThemeColor {
-	const colors: Record<string, ThemeColor> = {
+	interface ThinkingColors {
+		readonly [level: string]: ThemeColor;
+	}
+	const colors: ThinkingColors = {
 		high: "thinkingHigh",
 		low: "thinkingLow",
 		max: "thinkingMax",

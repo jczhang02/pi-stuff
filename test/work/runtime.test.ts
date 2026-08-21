@@ -143,7 +143,7 @@ function attributedRuntime(
 	messages: unknown[] = [],
 	sendMessage: (message: unknown, options?: unknown) => void = (message, options) =>
 		messages.push({ message, options }),
-): { readonly active: BackgroundWorkRuntime; readRefreshRequests(): number } {
+) {
 	let refreshRequests = 0;
 	const listeners = new Map<string, Set<(data: unknown) => void>>();
 	const events = {

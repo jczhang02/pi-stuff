@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { type DnsLookup, FakeIpCompatibility } from "../../packages/pi-stuff/src/web/fake-ip.js";
 
-function resolver(records: Record<string, readonly string[]>): {
+interface ResolverHarness {
 	readonly calls: string[];
 	readonly lookup: DnsLookup;
-} {
+}
+
+function resolver(records: Record<string, readonly string[]>): ResolverHarness {
 	const calls: string[] = [];
 	return {
 		calls,

@@ -15,7 +15,7 @@ function normalizePackageName(value: string | undefined): string | undefined {
 		.replace(/(?:^[-.]+|[-.]+$)/g, "");
 }
 
-export function parsePackageName(value: unknown, label = "package"): { packageName?: string; error?: string } {
+export function parsePackageName(value: unknown, label = "package") {
 	if (value === undefined || value === false || value === "") return { packageName: undefined };
 	if (!isRuntimeString(value)) return { error: `${label} must be a string or false when provided.` };
 	const packageName = normalizePackageName(value);

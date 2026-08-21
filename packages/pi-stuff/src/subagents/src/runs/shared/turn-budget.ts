@@ -3,10 +3,7 @@ import type { ResolvedTurnBudget, TurnBudgetState } from "../../shared/types.ts"
 
 export const DEFAULT_TURN_BUDGET_GRACE_TURNS = 1;
 
-export function resolveTurnBudgetConfig(
-	raw: unknown,
-	label = "turnBudget",
-): { turnBudget?: ResolvedTurnBudget; error?: string } {
+export function resolveTurnBudgetConfig(raw: unknown, label = "turnBudget") {
 	if (raw === undefined) return {};
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) {
 		return { error: `${label} must be an object with maxTurns and optional graceTurns.` };

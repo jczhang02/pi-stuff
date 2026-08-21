@@ -22,6 +22,18 @@ interface Deferred {
 	reject(reason: unknown): void;
 }
 
+interface UiHarness {
+	readonly closed: () => number;
+	readonly context: CommandDialogViewContext<void>;
+	readonly renders: () => number;
+	readonly terminal: { rows: number };
+}
+
+interface FailingSettingHarness {
+	readonly setting: RegisteredUiSetting;
+	readonly value: () => string;
+}
+
 function deferred(): Deferred {
 	let reject = (_reason: unknown): void => {};
 	const promise = new Promise<void>((_resolve, promiseReject) => {
@@ -30,12 +42,7 @@ function deferred(): Deferred {
 	return { promise, reject };
 }
 
-function harness(rows = 28): {
-	readonly closed: () => number;
-	readonly context: CommandDialogViewContext<void>;
-	readonly renders: () => number;
-	readonly terminal: { rows: number };
-} {
+function harness(rows = 28): UiHarness {
 	let closed = 0;
 	let renders = 0;
 	const terminal = { rows };
@@ -86,10 +93,7 @@ function setting(
 	};
 }
 
-function failingSetting(persistence: Promise<void>): {
-	readonly setting: RegisteredUiSetting;
-	readonly value: () => string;
-} {
+function failingSetting(persistence: Promise<void>): FailingSettingHarness {
 	const listeners = new Set<() => void>();
 	let value = "true";
 	const notify = (): void => {

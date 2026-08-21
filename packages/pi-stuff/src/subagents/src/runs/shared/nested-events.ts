@@ -1409,10 +1409,7 @@ function discardInvalidImmutableEvent(eventPath: string, onlyStructurallyUnsafe 
 	}
 }
 
-function projectNestedEventBatch(
-	route: NestedRoute,
-	registry: NestedRegistry,
-): { registry: NestedRegistry; entriesRead: number } {
+function projectNestedEventBatch(route: NestedRoute, registry: NestedRegistry) {
 	const seen = new Set(registry.processedEvents);
 	let changed = false;
 	let entries: string[] = [];
@@ -1819,7 +1816,14 @@ export function writeNestedEvent(
 	writeRouteRecord(route.eventSink, sanitized.ts, sanitized);
 }
 
-export function nestedRouteEnv(route: NestedRoute): Record<string, string> {
+export interface NestedRouteEnvironment {
+	readonly [SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV]: string;
+	readonly [SUBAGENT_PARENT_CONTROL_INBOX_ENV]: string;
+	readonly [SUBAGENT_PARENT_EVENT_SINK_ENV]: string;
+	readonly [SUBAGENT_PARENT_ROOT_RUN_ID_ENV]: string;
+}
+
+export function nestedRouteEnv(route: NestedRoute): NestedRouteEnvironment {
 	validateRouteStorage(route);
 	return {
 		[SUBAGENT_PARENT_EVENT_SINK_ENV]: route.eventSink,
@@ -2013,7 +2017,12 @@ export function nestedSummaryFromAsyncStatus(
 	};
 }
 
-export function nestedArtifactEnv(rootRunId: string, parentRunId: string): Record<string, string> {
+export interface NestedArtifactEnvironment {
+	readonly PI_SUBAGENT_NESTED_PARENT_RUN_ID: string;
+	readonly PI_SUBAGENT_NESTED_ROOT_RUN_ID: string;
+}
+
+export function nestedArtifactEnv(rootRunId: string, parentRunId: string): NestedArtifactEnvironment {
 	return {
 		PI_SUBAGENT_NESTED_ROOT_RUN_ID: rootRunId,
 		PI_SUBAGENT_NESTED_PARENT_RUN_ID: parentRunId,

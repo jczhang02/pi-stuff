@@ -9,6 +9,10 @@ import {
 
 type MockHandler = (...args: unknown[]) => unknown;
 
+interface StringLookup<Value> {
+	readonly [key: string]: Value;
+}
+
 type MockCommand = {
 	description?: string;
 	handler: MockHandler;
@@ -421,7 +425,7 @@ function createCustomSelectorHarness(
 		},
 		keybindingsOverride ?? {
 			matches(data: string, key: string) {
-				const bindings: Record<string, KeyId> = {
+				const bindings: StringLookup<KeyId> = {
 					"tui.select.up": Key.up,
 					"tui.select.down": Key.down,
 					"tui.select.pageUp": Key.pageUp,
@@ -451,7 +455,7 @@ function createCustomSelectorHarness(
 	);
 	return {
 		handleInput(data: string) {
-			const inputData: Record<string, string> = {
+			const inputData: StringLookup<string> = {
 				"tui.select.up": "\u001b[A",
 				"tui.select.down": "\u001b[B",
 				"tui.select.pageUp": "\u001b[5~",

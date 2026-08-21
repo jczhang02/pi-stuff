@@ -121,7 +121,7 @@ function createApplyPatchTool() {
 		promptSnippet: "Use apply_patch for text-file edits; split oversized patches",
 		parameters: APPLY_PATCH_PARAMETERS,
 		executionMode: "sequential" as const,
-		prepareArguments(args: unknown): { input: string } {
+		prepareArguments(args: unknown) {
 			if (isRuntimeObject(args) && args !== null) {
 				const source = args as Record<string, unknown>;
 				for (const key of ["input", "patch", "patchText"] as const) {
@@ -183,7 +183,7 @@ function createViewImageTool() {
 		description: "View a local image",
 		promptSnippet: "Use view_image to inspect local image files",
 		parameters: VIEW_IMAGE_PARAMETERS,
-		prepareArguments(args: unknown): { detail?: "original"; path: string } {
+		prepareArguments(args: unknown) {
 			if (!isRuntimeObject(args) || args === null) return args as { path: string };
 			const source = args as Record<string, unknown>;
 			const path = source["path"] ?? source["file_path"] ?? source["image_path"];

@@ -1,14 +1,13 @@
 import { expect, test } from "bun:test";
-import type { Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { registerWorkTools } from "../../packages/pi-stuff/src/background-work/src/tools.js";
 import {
 	createSuiteToolRegistrationTracker,
 	getToolUiRuntime,
-	type SuiteToolRegistrationHost,
 } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
-function registeredBash(): { readonly api: SuiteToolRegistrationHost; readonly bash: ToolDefinition } {
+function registeredBash() {
 	const { host: api, tools } = toolRegistrationHarness(["bash"]);
 	registerWorkTools(api, { current: () => undefined });
 	const bash = tools.get("bash");

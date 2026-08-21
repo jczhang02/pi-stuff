@@ -96,7 +96,10 @@ export default function notificationPtyProvider(pi: ExtensionAPI): void {
 			if (prompt.includes("NOTIFY_ABORT")) {
 				return delayedText("UNEXPECTED_ABORT_FINISH", options, 5_000);
 			}
-			const responses: Record<string, string> = {
+			interface NotificationResponses {
+				readonly [scenario: string]: string;
+			}
+			const responses: NotificationResponses = {
 				NOTIFY_CHAOS_CANCEL: "NOTIFICATION_CHAOS_DONE",
 				NOTIFY_RELOAD_CANCEL: "NOTIFICATION_RELOAD_DONE",
 				NOTIFY_SHUTDOWN_CANCEL: "NOTIFICATION_SHUTDOWN_DONE",

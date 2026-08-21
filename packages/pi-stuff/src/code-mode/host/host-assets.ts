@@ -1,6 +1,10 @@
 export const HOST_RELEASE = "rust-v0.145.0";
 
-const HOST_ASSETS = {
+interface HostAssetLookup {
+	readonly [target: string]: readonly [string, string];
+}
+
+const HOST_ASSETS: HostAssetLookup = {
 	"darwin-arm64": [
 		"codex-code-mode-host-aarch64-apple-darwin.tar.gz",
 		"75f9306834aa8913b5c1f91ff72f1f6b9441e5a92cd5d64b8e605cf54668460c",
@@ -25,14 +29,14 @@ const HOST_ASSETS = {
 		"codex-code-mode-host-x86_64-pc-windows-msvc.exe",
 		"de58d3bd9fb88c44555de1104d06fba78e207bce7115d92691b42f6b0f87f3b7",
 	],
-} as const;
+};
 
 export function codeModeHostBinaryName(platform: string): string {
 	return platform === "win32" ? "codex-code-mode-host.exe" : "codex-code-mode-host";
 }
 
 export function resolveCodeModeHostAsset(platform: string, arch: string): readonly [string, string] {
-	const asset = (HOST_ASSETS as Record<string, readonly [string, string]>)[`${platform}-${arch}`];
+	const asset = HOST_ASSETS[`${platform}-${arch}`];
 	if (!asset) throw new Error(`Unsupported Code Mode platform: ${platform}-${arch}`);
 	return asset;
 }

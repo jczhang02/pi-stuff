@@ -21,11 +21,7 @@ function changedPaths(base: string, head: string): string[] {
 	return output.split("\0").filter(Boolean);
 }
 
-function resolveAcceptanceRequirement(environment: NodeJS.ProcessEnv): {
-	paths: readonly string[];
-	required: boolean;
-	reason: string;
-} {
+function resolveAcceptanceRequirement(environment: NodeJS.ProcessEnv) {
 	if (environment["GITHUB_EVENT_NAME"] === "workflow_dispatch") {
 		return { paths: [], required: true, reason: "manual dispatch always runs full acceptance" };
 	}

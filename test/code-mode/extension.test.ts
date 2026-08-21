@@ -40,10 +40,7 @@ async function project(): Promise<string> {
 	return root;
 }
 
-function loadExtension(surface: SuiteToolSurfaceController): {
-	commands: Map<string, Command>;
-	events: Map<string, EventHandler[]>;
-} {
+function loadExtension(surface: SuiteToolSurfaceController) {
 	const commands = new Map<string, Command>();
 	const events = new Map<string, EventHandler[]>();
 	const { host } = toolRegistrationHarness();

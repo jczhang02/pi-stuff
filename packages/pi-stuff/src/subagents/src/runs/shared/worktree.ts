@@ -491,7 +491,7 @@ function emptyDiff(index: number, agent: string, branch: string, patchPath: stri
 	};
 }
 
-function parseNumstat(numstat: string): { filesChanged: number; insertions: number; deletions: number } {
+function parseNumstat(numstat: string) {
 	const lines = numstat
 		.split("\n")
 		.map((line) => line.trim())

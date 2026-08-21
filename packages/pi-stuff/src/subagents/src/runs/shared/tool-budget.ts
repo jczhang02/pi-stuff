@@ -11,11 +11,7 @@ export function normalizeToolBudgetBlock(block: ToolBudgetConfig["block"] | unde
 	return [...new Set(block.map((tool) => tool.trim()).filter(Boolean))];
 }
 
-export function validateToolBudgetConfig(
-	raw: unknown,
-	label = "toolBudget",
-	options: { minimumHard?: 0 | 1 } = {},
-): { budget?: ResolvedToolBudget; error?: string } {
+export function validateToolBudgetConfig(raw: unknown, label = "toolBudget", options: { minimumHard?: 0 | 1 } = {}) {
 	if (raw === undefined) return {};
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw))
 		return { error: `${label} must be an object with hard and optional soft/block.` };

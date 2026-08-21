@@ -1,14 +1,9 @@
 import { expect, test } from "bun:test";
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { registerCodexTools } from "../../packages/pi-stuff/src/codex/tools.js";
-import type { SuiteToolRegistrationHost } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
-function harness(initial = ["read"]): {
-	readonly active: () => readonly string[];
-	readonly api: SuiteToolRegistrationHost;
-	readonly registered: Map<string, ToolDefinition>;
-} {
+function harness(initial = ["read"]) {
 	const { activeTools, host, tools } = toolRegistrationHarness(initial);
 	return { active: activeTools, api: host, registered: tools };
 }
