@@ -11,7 +11,7 @@ import { verifyGoalLifecycle } from "./verify-goal-lifecycle.ts";
 import { verifyGoalPty } from "./verify-goal-pty.ts";
 import { verifyMcpPty } from "./verify-mcp-pty.ts";
 import { verifyNotificationPty } from "./verify-notification-pty.ts";
-import { verifyPiHostProvenance } from "./verify-pi-host-provenance.ts";
+import { stageCertifiedPiHost } from "./verify-pi-host-provenance.ts";
 import { verifyRtkPty } from "./verify-rtk-pty.ts";
 import { verifyToolsPty } from "./verify-tools-pty.ts";
 import { verifyToolsResumePty } from "./verify-tools-resume-pty.ts";
@@ -361,14 +361,14 @@ async function main(): Promise<void> {
 	const { PI_BIN = "/opt/pi-coding-agent/pi" } = process.env;
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-local-package-"));
 	try {
-		verifyPiVersion(PI_BIN);
-		await verifyPiHostProvenance(PI_BIN);
+		const host = await stageCertifiedPiHost(PI_BIN, temporaryDirectory);
+		verifyPiVersion(host.binaryPath);
 		await verifySinglePackageBoundary();
 		await verifyInstalledRuntimeDependencies();
 		await verifyProvenanceAndLicenses(packageDirectory);
-		await verifySuiteSurface(PI_BIN, packageDirectory);
+		await verifySuiteSurface(host.binaryPath, packageDirectory);
 		const { archiveFiles, extractedPackage } = await packAndExtract(temporaryDirectory);
-		await verifyRealPi(PI_BIN, extractedPackage);
+		await verifyRealPi(host.binaryPath, extractedPackage);
 		console.log(
 			`Certified one local @jczhang02/pi-stuff Package (${archiveFiles.length} files) with Pi Host ${CERTIFIED_PI_HOST_PROFILE}`,
 		);

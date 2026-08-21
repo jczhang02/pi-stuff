@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -29,4 +29,16 @@ test("Host provenance rejects an executable outside the release-binary allowlist
 	await writeFile(binary, "compatible-looking fixture");
 
 	await expect(verifyPiHostProvenance(binary)).rejects.toThrow("is not the certified");
+});
+
+test("Host provenance rejects symbolic links and non-regular files", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "pi-host-provenance-test-"));
+	temporaryDirectories.push(directory);
+	const binary = join(directory, "pi");
+	const link = join(directory, "pi-link");
+	await writeFile(binary, "compatible-looking fixture");
+	await symlink(binary, link);
+
+	await expect(verifyPiHostProvenance(link)).rejects.toThrow("Cannot read PI_BIN");
+	await expect(verifyPiHostProvenance("/dev/null")).rejects.toThrow("must be a regular file");
 });

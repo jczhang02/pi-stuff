@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { CERTIFIED_PI_BUN_VERSION } from "./pi-host-contract.js";
-import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
+import { stageCertifiedPiHost } from "./verify-pi-host-provenance.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const DEFAULT_PI_BINARY = "/opt/pi-coding-agent/pi";
@@ -1670,7 +1670,7 @@ function progress(sample: LifecycleSample, phase: "initial" | "confirmation" = "
 }
 
 async function main(): Promise<void> {
-	const options = parseOptions(Bun.argv.slice(2));
+	let options = parseOptions(Bun.argv.slice(2));
 	if (
 		options.actions.some(
 			(action) => action === "background-exit" || action === "agent-exit" || action === "reload-change",
@@ -1682,8 +1682,12 @@ async function main(): Promise<void> {
 	if (Bun.version !== CERTIFIED_PI_BUN_VERSION) {
 		fail(`Bun ${CERTIFIED_PI_BUN_VERSION} is required; received ${Bun.version}`);
 	}
-	const provenance = await verifyPiHostProvenance(options.piBinary);
 	const benchmarkRoot = await mkdtemp(join(tmpdir(), "pi-stuff-lifecycle-benchmark-"));
+	const provenance = await stageCertifiedPiHost(options.piBinary, benchmarkRoot).catch(async (error: unknown) => {
+		await rm(benchmarkRoot, { recursive: true, force: true });
+		throw error;
+	});
+	options = { ...options, piBinary: provenance.binaryPath };
 	const projectDirectory = join(benchmarkRoot, "project");
 	const fixturePackage = join(benchmarkRoot, "fixture-package");
 	await Promise.all([

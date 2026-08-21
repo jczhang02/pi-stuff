@@ -18,7 +18,7 @@ describe("MCP Command Dialog", () => {
 			servers: [
 				{
 					disabled: false,
-					name: "local-filesystem-with-a-very-long-name",
+					name: "本地-文件🧪-e\u0301-with-a-very-long-name",
 					resourceCount: 1,
 					status: "connected",
 					toolCount: 8,
@@ -50,7 +50,8 @@ describe("MCP Command Dialog", () => {
 
 		expect(lines[0]).toBe("━".repeat(36));
 		expect(lines.join("\n")).toContain("MCP · 1/1 connected · 8 tools");
-		expect(lines.join("\n")).toContain("local-filesystem");
+		expect(lines.join("\n")).toContain("本地-文件");
+		expect(wide).toContain("🧪-e\u0301");
 		expect(lines.join("\n")).toContain("✓");
 		expect(wide).toContain("1 resource");
 		expect(lines.join("\n")).toContain("■");
@@ -66,7 +67,7 @@ describe("MCP Command Dialog", () => {
 		const low = component.render(36);
 		expect(low).toHaveLength(3);
 		expect(low.join("\n")).toContain("MCP");
-		expect(low.join("\n")).toContain("local-filesystem");
+		expect(low.join("\n")).toContain("本地-文件");
 		expect(low.at(-1)).toContain("Esc close");
 		component.handleInput?.("\u001b");
 		expect(closed).toBe(1);
@@ -318,7 +319,7 @@ describe("MCP Command Dialog", () => {
 		component.handleInput?.("\r");
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		const failed = component.render(64).join("\n");
-		expect(failed).toContain("Action failed. See /diagnostics for details.");
+		expect(failed).toContain("Reconnect failed for broken. See /diagnostics for details.");
 		expect(failed).not.toContain("Reconnected broken.");
 		component.dispose?.();
 	});
@@ -368,7 +369,7 @@ describe("MCP Command Dialog", () => {
 		component.dispose?.();
 	});
 
-	test("authenticates an OAuth server from the normal MCP detail actions", async () => {
+	test("reports OAuth authentication and logout failures at their owning actions", async () => {
 		const store = new McpStatusStore();
 		store.set({
 			connectedCount: 0,
@@ -379,12 +380,16 @@ describe("MCP Command Dialog", () => {
 			version: 1,
 		});
 		const authenticated: string[] = [];
+		const loggedOut: string[] = [];
 		const component = createMcpControlView(store, {
 			authenticate: async (server) => {
 				authenticated.push(server);
 				throw new Error("token=SECRET\u001b]8;;https://malicious.invalid\u0007link");
 			},
-			logout: async () => true,
+			logout: async (server) => {
+				loggedOut.push(server);
+				return false;
+			},
 			reconnect: async () => true,
 		}).create({
 			close: () => undefined,
@@ -408,9 +413,24 @@ describe("MCP Command Dialog", () => {
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		expect(authenticated).toEqual(["oauth-server"]);
 		const failed = component.render(64).join("\n");
-		expect(failed).toContain("Action failed. See /diagnostics for details.");
+		expect(failed).toContain("Authentication failed for oauth-server.");
 		expect(failed).not.toContain("SECRET");
 		expect(failed).not.toContain("malicious.invalid");
+		store.set({
+			connectedCount: 1,
+			disabledCount: 0,
+			servers: [{ disabled: false, name: "oauth-server", oauth: true, status: "connected", toolCount: 1 }],
+			totalResources: 0,
+			totalTools: 1,
+			version: 1,
+		});
+		component.handleInput?.("\u001b[B");
+		component.handleInput?.("\r");
+		component.handleInput?.("\u001b[B");
+		component.handleInput?.("\r");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(loggedOut).toEqual(["oauth-server"]);
+		expect(component.render(64).join("\n")).toContain("Logout failed for oauth-server.");
 		component.dispose?.();
 	});
 

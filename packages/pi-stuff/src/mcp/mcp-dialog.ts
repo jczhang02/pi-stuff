@@ -361,18 +361,24 @@ class McpControlDialog implements CommandDialogComponent {
 		this.busy = true;
 		const verb =
 			action === "authenticate" ? "Authenticating" : action === "logout" ? "Logging out of" : "Reconnecting";
+		const failure =
+			action === "authenticate"
+				? `Authentication failed for ${server}.`
+				: action === "logout"
+					? `Logout failed for ${server}.`
+					: `Reconnect failed for ${server}. See /diagnostics for details.`;
 		this.notice = `${verb} ${server}…`;
 		this.context.requestRender();
 		void this.actions[action](server)
 			.then((succeeded) => {
 				if (this.disposed) return;
-				if (!succeeded) this.notice = "Action failed. See /diagnostics for details.";
+				if (!succeeded) this.notice = failure;
 				else if (action === "logout") this.notice = `Logged out of ${server}.`;
 				else if (action === "authenticate") this.notice = `Authenticated ${server}.`;
 				else this.notice = `Reconnected ${server}.`;
 			})
 			.catch(() => {
-				if (!this.disposed) this.notice = "Action failed. See /diagnostics for details.";
+				if (!this.disposed) this.notice = failure;
 			})
 			.finally(() => {
 				if (this.disposed) return;

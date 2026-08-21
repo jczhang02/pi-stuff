@@ -8,6 +8,7 @@ export const CERTIFIED_PI_SOURCE_REPOSITORY = "https://github.com/earendil-works
 
 /** Audited upstream Linux x64 release binary. */
 export const CERTIFIED_PI_RELEASE_BINARY_SHA256 = "9a2d20fab3caacbe3517d91e59d495ccc49fd4b51a1a72dcec6e8c1f4b7d6ab2";
+export const CERTIFIED_PI_RELEASE_BINARY_SIZE = 104_532_096;
 
 export const CERTIFIED_PI_BUN_VERSION = "1.3.14";
 

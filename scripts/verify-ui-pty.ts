@@ -14,7 +14,7 @@ import {
 } from "../test/fixtures/ui-pty-provider.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 import { armUiPtyOwnerWatchdog, disarmUiPtyOwnerWatchdog, type UiPtyOwnerWatchdog } from "./ui-pty-owner-watchdog.js";
-import { verifyPiHostProvenance } from "./verify-pi-host-provenance.js";
+import { stageCertifiedPiHost } from "./verify-pi-host-provenance.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/ui-pty-provider.ts");
@@ -1217,14 +1217,14 @@ function verifyInventory(
 }
 
 export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<UiPtyEvidence> {
-	verifyHostVersion(options.piBinary);
-	await verifyPiHostProvenance(options.piBinary);
-	commandOutput("tmux", ["-V"]);
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-ui-pty-"));
 	const verified: string[] = [];
 	let markdownTransformer = false;
 	let liveThought = false;
 	try {
+		options = { ...options, piBinary: (await stageCertifiedPiHost(options.piBinary, temporaryDirectory)).binaryPath };
+		verifyHostVersion(options.piBinary);
+		commandOutput("tmux", ["-V"]);
 		for (const { columns, rows } of TARGET_SIZES) {
 			const paths = await createCase(
 				temporaryDirectory,
@@ -1302,15 +1302,20 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 export async function verifyThemeLifecyclePty(
 	options: Omit<UiPtyVerificationOptions, "sessionId" | "theme">,
 ): Promise<ThemeLifecycleEvidence> {
-	verifyHostVersion(options.piBinary);
-	await verifyPiHostProvenance(options.piBinary);
-	commandOutput("tmux", ["-V"]);
 	const themes = ["catppuccin-latte", "catppuccin-frappe", "catppuccin-macchiato", "catppuccin-mocha"] as const;
 	const sizes = [
 		{ columns: 64, rows: 28 },
 		{ columns: 100, rows: 32 },
 	] as const;
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-theme-pty-"));
+	try {
+		options = { ...options, piBinary: (await stageCertifiedPiHost(options.piBinary, temporaryDirectory)).binaryPath };
+		verifyHostVersion(options.piBinary);
+		commandOutput("tmux", ["-V"]);
+	} catch (error) {
+		await rm(temporaryDirectory, { force: true, recursive: true });
+		throw error;
+	}
 	const paths = await createCase(temporaryDirectory, "lifecycle", themes[0], options.packagePath);
 	const lifecycleOptions: UiPtyVerificationOptions = {
 		...options,
