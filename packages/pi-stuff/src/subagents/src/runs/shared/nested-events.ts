@@ -1782,7 +1782,7 @@ export async function projectNestedEventsAuthoritatively(
 	}
 }
 
-function writeRouteRecord(dir: string, ts: number, payload: object): string {
+function writeRouteRecord(dir: string, ts: number, payload: NestedEventRecord): string {
 	const content = `${JSON.stringify(payload)}\n`;
 	if (Buffer.byteLength(content, "utf-8") > MAX_EVENT_BYTES)
 		throw new Error("Nested route record exceeds the maximum size.");

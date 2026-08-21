@@ -717,7 +717,7 @@ export function getCommandDialogCoordinator(pi: ExtensionAPI): CommandDialogCoor
 
 interface UiSettingsCommandState {
 	active: boolean;
-	activation?: object;
+	activation?: symbol;
 	registry?: UiSettingRegistry;
 }
 
@@ -729,7 +729,7 @@ const USER_AGENT_RUN_SETTLED_EVENT = "@jczhang02/pi-stuff-ui/user-agent-run-sett
 
 interface UiLifecycleState {
 	active: boolean;
-	activation?: object;
+	activation?: symbol;
 }
 
 function uiLifecycleStates(): WeakMap<ExtensionAPI["events"], UiLifecycleState> {
@@ -868,7 +868,7 @@ export function ensureUiSettingsCommand(pi: ExtensionAPI): UiSettingRegistry {
 	);
 	if (state.active && state.registry) return state.registry;
 	const registry = beginUiSettingsGeneration(pi);
-	const activation = {};
+	const activation = Symbol("ui-settings-command");
 	state.active = true;
 	state.activation = activation;
 	state.registry = registry;
@@ -905,7 +905,7 @@ export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
 	);
 	if (lifecycle.active) return;
-	const activation = {};
+	const activation = Symbol("ui-lifecycle");
 	lifecycle.active = true;
 	lifecycle.activation = activation;
 	try {
@@ -919,7 +919,7 @@ export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 	}
 }
 
-async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState, activation: object): Promise<void> {
+async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState, activation: symbol): Promise<void> {
 	const coordinator = getCommandDialogCoordinator(pi);
 	const diagnostics = getDiagnosticChannel(pi);
 	activateDiagnosticChannel(diagnostics);

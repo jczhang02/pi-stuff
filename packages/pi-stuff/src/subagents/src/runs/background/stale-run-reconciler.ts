@@ -159,7 +159,7 @@ function safeRegularFile(root: string, target: string, label: string, maxBytes: 
 	return "present";
 }
 
-function appendJsonlBestEffort(filePath: string, payload: object): void {
+function appendJsonlBestEffort<Payload extends object>(filePath: string, payload: Payload): void {
 	try {
 		fs.mkdirSync(path.dirname(filePath), { recursive: true });
 		fs.appendFileSync(filePath, `${JSON.stringify(payload)}\n`, "utf-8");

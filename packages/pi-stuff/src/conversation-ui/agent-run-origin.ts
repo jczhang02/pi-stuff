@@ -158,10 +158,10 @@ export function withAgentWorkOrigin<Message extends object>(
 	return { ...message, details };
 }
 
-export function readAgentWorkOrigin(message: object): AgentWorkOrigin | undefined {
+export function readAgentWorkOrigin<Message extends object>(message: Message): AgentWorkOrigin | undefined {
 	const details = Reflect.get(message, "details");
 	if (!details || typeof details !== "object") return undefined;
-	const origin = Reflect.get(details, AGENT_WORK_ORIGIN_DETAIL);
+	const origin: unknown = Reflect.get(details, AGENT_WORK_ORIGIN_DETAIL);
 	return origin === "user" || origin === "automatic" ? origin : undefined;
 }
 
@@ -177,7 +177,7 @@ export function withDirectUserActivation<Message extends object>(message: Messag
 	return { ...message, details };
 }
 
-export function hasDirectUserActivation(message: object): boolean {
+export function hasDirectUserActivation<Message extends object>(message: Message): boolean {
 	const details = Reflect.get(message, "details");
 	return Boolean(
 		details && typeof details === "object" && Reflect.get(details, DIRECT_USER_ACTIVATION_DETAIL) === true,

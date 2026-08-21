@@ -385,9 +385,9 @@ describe("Context capability lifecycle", () => {
 		const handlers: Handlers = new Map();
 		const preparations: boolean[] = [];
 		let factories = 0;
-		let delivered: object | undefined;
+		let delivered: Parameters<ExtensionAPI["sendMessage"]>[0] | undefined;
 		const api = apiFor(handlers);
-		Reflect.set(api, "sendMessage", (message: object) => {
+		Reflect.set(api, "sendMessage", (message: Parameters<ExtensionAPI["sendMessage"]>[0]) => {
 			delivered = message;
 		});
 		piStuffContext(api, {

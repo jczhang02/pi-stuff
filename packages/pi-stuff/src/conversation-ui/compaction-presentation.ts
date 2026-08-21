@@ -37,7 +37,7 @@ export function suppressDuplicatedLiveCompactionReplay(
 
 	const wrapped = function (this: SessionManager): SessionEntry[] {
 		restore();
-		const entries = Reflect.apply(original, this, []) as SessionEntry[];
+		const entries = original.call(this);
 		const first = entries[0];
 		return first?.type === "compaction" && first.id === compactionEntryId ? entries.slice(1) : entries;
 	};

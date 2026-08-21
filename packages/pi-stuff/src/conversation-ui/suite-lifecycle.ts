@@ -1,14 +1,16 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+type SessionManager = ExtensionContext["sessionManager"];
+
 interface ReadinessGate {
-	readonly sessionManager: object;
+	readonly sessionManager: SessionManager;
 	readonly promise: Promise<boolean>;
 	resolve(ready: boolean): void;
 	settled: boolean;
 }
 
 interface ReadinessState {
-	activation: object | undefined;
+	activation: symbol | undefined;
 	api: ExtensionAPI | undefined;
 	current: ReadinessGate | undefined;
 	installed: boolean;
@@ -25,7 +27,7 @@ function stateFor(pi: Pick<ExtensionAPI, "events">): ReadinessState {
 	return state;
 }
 
-function createGate(sessionManager: object): ReadinessGate {
+function createGate(sessionManager: SessionManager): ReadinessGate {
 	let settle = (_ready: boolean): void => {};
 	const gate: ReadinessGate = {
 		promise: new Promise<boolean>((resolve) => {
@@ -78,7 +80,7 @@ export function installSuiteSessionReadiness(pi: ExtensionAPI): ExtensionAPI {
 	const state = stateFor(pi);
 	state.api ??= createReadinessApi(pi);
 	if (state.installed) return state.api;
-	const activation = {};
+	const activation = Symbol("suite-session-readiness");
 	state.activation = activation;
 	state.installed = true;
 	pi.on("session_start", (_event, ctx) => {

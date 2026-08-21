@@ -128,7 +128,7 @@ export function formatOutputArtifactContent(input: {
 	return lines.join("\n");
 }
 
-export function writeMetadata(filePath: string, metadata: object): void {
+export function writeMetadata<Metadata extends object>(filePath: string, metadata: Metadata): void {
 	withArtifactGroupWriteClaim(filePath, () => fs.writeFileSync(filePath, JSON.stringify(metadata, null, 2), "utf-8"));
 }
 

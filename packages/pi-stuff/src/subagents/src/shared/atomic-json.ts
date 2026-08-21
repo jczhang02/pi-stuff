@@ -38,7 +38,7 @@ function renameWithRetry(
 
 export function createAtomicJsonWriter(
 	options: AtomicJsonWriterOptions = {},
-): (filePath: string, payload: object) => void {
+): <Payload extends object>(filePath: string, payload: Payload) => void {
 	const fsImpl = options.fs ?? fs;
 	const now = options.now ?? Date.now;
 	const pid = options.pid ?? process.pid;
@@ -50,7 +50,7 @@ export function createAtomicJsonWriter(
 	const renameRetryDelaysMs = retryRenameErrors ? retryDelaysMs : [];
 	const directoryRetryDelaysMs = retryDirectoryErrors ? retryDelaysMs : [];
 	const wait = options.wait ?? waitForFileSystemRetry;
-	return (filePath: string, payload: object): void => {
+	return <Payload extends object>(filePath: string, payload: Payload): void => {
 		runFileSystemOperationWithRetry(
 			() => {
 				fsImpl.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -78,7 +78,10 @@ export const writeAtomicJson = createAtomicJsonWriter();
 export const writePrivateAtomicJson = createAtomicJsonWriter({ mode: 0o600 });
 
 /** Host-side atomic writer; unlike the runner writer, retries never sleep the TUI thread. */
-export async function writePrivateAtomicJsonAsync(filePath: string, payload: object): Promise<void> {
+export async function writePrivateAtomicJsonAsync<Payload extends object>(
+	filePath: string,
+	payload: Payload,
+): Promise<void> {
 	const retryDelaysMs = process.platform === "win32" ? DEFAULT_FILE_SYSTEM_RETRY_DELAYS_MS : [];
 	await runFileSystemOperationWithRetryAsync(
 		() => fs.promises.mkdir(path.dirname(filePath), { recursive: true }).then(() => undefined),

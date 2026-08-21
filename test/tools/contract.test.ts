@@ -82,7 +82,7 @@ function eventBusView(bus: EventBusHarness): EventBusLike {
 	};
 }
 
-function apiHarness(events: object = {}): {
+function apiHarness(events: Partial<ExtensionAPI["events"]> = {}): {
 	readonly api: ExtensionAPI;
 	readonly handlers: Map<string, Array<(event: unknown, context: unknown) => unknown>>;
 	readonly tools: Map<string, ToolDefinition>;
@@ -1139,12 +1139,12 @@ test("streaming, rebuild, and Code Mode share retrieval eligibility", () => {
 		true,
 	);
 
-	const shape = (runtime: ToolUiRuntime) =>
+	const groupActivityNames = (runtime: ToolUiRuntime) =>
 		runtime.listGroups().map((group) => runtime.groupActivities(group.id).map((activity) => activity.name));
 	const expected = [["read"], ["edit"], ["read", "bash"]];
-	expect(shape(rebuilt)).toEqual(expected);
-	expect(shape(streaming)).toEqual(expected);
-	expect(shape(codeMode)).toEqual(expected);
+	expect(groupActivityNames(rebuilt)).toEqual(expected);
+	expect(groupActivityNames(streaming)).toEqual(expected);
+	expect(groupActivityNames(codeMode)).toEqual(expected);
 });
 
 test("the Code Mode surface hides every active Suite Tool without changing the virtual active Tool set", () => {

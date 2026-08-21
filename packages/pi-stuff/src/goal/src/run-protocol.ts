@@ -48,6 +48,13 @@ interface GoalRunStartPayload {
 	tokenBudget?: number;
 }
 
+interface GoalRunPayloadRecord {
+	readonly objective?: unknown;
+	readonly reason?: unknown;
+	readonly runId?: unknown;
+	readonly tokenBudget?: unknown;
+}
+
 interface BoundSession {
 	generation: number;
 	ctx: StatusContext;
@@ -67,7 +74,7 @@ function goalRunEventChannel(runId: string) {
 	return `pi-goal:event:${runId}`;
 }
 
-function isPayloadRecord(data: unknown): data is object {
+function isPayloadRecord(data: unknown): data is GoalRunPayloadRecord {
 	if (!data || typeof data !== "object") return false;
 	try {
 		return !Array.isArray(data);
@@ -77,11 +84,11 @@ function isPayloadRecord(data: unknown): data is object {
 }
 
 function readPayloadProperty(
-	data: object,
-	key: "runId" | "objective" | "tokenBudget" | "reason",
+	data: GoalRunPayloadRecord,
+	key: keyof GoalRunPayloadRecord,
 ): { ok: true; value: unknown } | { ok: false } {
 	try {
-		return { ok: true, value: Reflect.get(data, key) };
+		return { ok: true, value: data[key] };
 	} catch {
 		return { ok: false };
 	}

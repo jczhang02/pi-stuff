@@ -21,7 +21,7 @@ const TOOL_LIFECYCLE_DISCOVERY_EVENT = "@jczhang02/pi-stuff-tools/lifecycle-disc
 
 interface ToolLifecycleState {
 	active: boolean;
-	activation?: object;
+	activation?: symbol;
 }
 
 function toolLifecycleStates(): WeakMap<ExtensionAPI["events"], ToolLifecycleState> {
@@ -32,7 +32,7 @@ function toolLifecycleStates(): WeakMap<ExtensionAPI["events"], ToolLifecycleSta
 	return root[TOOL_LIFECYCLE_STATES];
 }
 
-function releaseToolLifecycle(state: ToolLifecycleState, activation: object): void {
+function releaseToolLifecycle(state: ToolLifecycleState, activation: symbol): void {
 	if (state.activation !== activation) return;
 	state.active = false;
 	delete state.activation;
@@ -123,7 +123,7 @@ export default async function piStuffTools(pi: ExtensionAPI): Promise<void> {
 		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
 	);
 	if (lifecycle.active) return;
-	const activation = {};
+	const activation = Symbol("tool-display-lifecycle");
 	lifecycle.active = true;
 	lifecycle.activation = activation;
 	try {

@@ -475,7 +475,7 @@ function boundRunResultOutputs(results: BackgroundTaskResult[]): BackgroundTaskR
 	}));
 }
 
-function appendDiagnosticEvent(eventsPath: string, event: object): void {
+function appendDiagnosticEvent<Event extends object>(eventsPath: string, event: Event): void {
 	try {
 		const limit = maxAsyncEventsBytes();
 		const line = `${JSON.stringify(event)}\n`;

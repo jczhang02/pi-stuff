@@ -71,8 +71,8 @@ test("Suite Agent message preparation crosses Pi event facades and awaits thenab
 
 test("direct activation authority stays separate from historical user attribution", async () => {
 	const activations: string[] = [];
-	const delivered: object[] = [];
-	const [owner, sender] = hostApis(((message: object) => {
+	const delivered: Array<Parameters<ExtensionAPI["sendMessage"]>[0]> = [];
+	const [owner, sender] = hostApis(((message) => {
 		delivered.push(message);
 	}) as ExtensionAPI["sendMessage"]);
 	registerSuiteAgentMessagePreparation(owner, {

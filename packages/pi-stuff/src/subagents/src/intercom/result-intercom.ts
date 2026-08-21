@@ -278,15 +278,19 @@ export async function deliverSubagentResultIntercomEvent(
 	return deliverSubagentIntercomMessageEvent(events, payload.to, payload.message, timeoutMs, payload);
 }
 
+interface SubagentIntercomExtra {
+	readonly requestId?: string;
+}
+
 export async function deliverSubagentIntercomMessageEvent(
 	events: IntercomEventBus,
 	to: string,
 	message: string,
 	timeoutMs = 500,
-	extra: object = {},
+	extra: SubagentIntercomExtra = {},
 ): Promise<boolean> {
 	if (typeof events.on !== "function" || typeof events.emit !== "function") return false;
-	const requestId = "requestId" in extra && typeof extra.requestId === "string" ? extra.requestId : randomUUID();
+	const requestId = extra.requestId ?? randomUUID();
 	return new Promise((resolve) => {
 		let settled = false;
 		let unsubscribe: (() => void) | undefined;

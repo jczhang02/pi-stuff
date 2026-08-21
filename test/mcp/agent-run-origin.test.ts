@@ -15,9 +15,11 @@ import { sendUserDrivenUiAgentMessage } from "../../packages/pi-stuff/src/mcp/ru
 
 describe("MCP user-driven Agent attribution", () => {
 	test("delivers an MCP prompt as a marked custom follow-up", async () => {
-		const delivered: Array<{ message: object; options: unknown }> = [];
+		type SendMessageArguments = Parameters<ExtensionAPI["sendMessage"]>;
+		const delivered: Array<{ message: SendMessageArguments[0]; options: SendMessageArguments[1] }> = [];
 		const pi = {
-			sendMessage: (message: object, options: unknown) => delivered.push({ message, options }),
+			sendMessage: (message: SendMessageArguments[0], options: SendMessageArguments[1]) =>
+				delivered.push({ message, options }),
 		} as unknown as ExtensionAPI;
 
 		await dispatchMcpPromptToAgent(pi, "Review this MCP prompt");

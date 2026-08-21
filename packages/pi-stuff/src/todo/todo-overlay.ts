@@ -63,7 +63,7 @@ export class TodoOverlay {
 	refresh(options: TodoOverlayRefreshOptions = {}): void {
 		if (!this.uiCtx) return;
 		const { forceExpanded = false, lingerCompleted = false } = options;
-		const shapeChanged = forceExpanded && this.collapsed;
+		const shouldForceRender = forceExpanded && this.collapsed;
 		if (forceExpanded) this.collapsed = false;
 
 		const tasks = currentTasks();
@@ -91,7 +91,7 @@ export class TodoOverlay {
 			this.unregisterWidget();
 			return;
 		}
-		this.registerOrRenderWidget(shapeChanged);
+		this.registerOrRenderWidget(shouldForceRender);
 	}
 
 	toggle(): void {

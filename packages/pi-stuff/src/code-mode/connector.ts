@@ -54,7 +54,7 @@ export class SuiteToolInvocationError extends Error {
 	}
 }
 
-function shape(value: unknown): string {
+function describeReceivedValue(value: unknown): string {
 	if (value === null) return "null";
 	if (Array.isArray(value)) return "array";
 	return typeof value;
@@ -62,7 +62,7 @@ function shape(value: unknown): string {
 
 function invalidResult(name: string, path: string, expected: string, received: unknown): never {
 	throw new Error(
-		`Code Mode Tool ${JSON.stringify(name)} returned an invalid result at ${path}: expected ${expected}; received ${shape(received)}; retry safe: false`,
+		`Code Mode Tool ${JSON.stringify(name)} returned an invalid result at ${path}: expected ${expected}; received ${describeReceivedValue(received)}; retry safe: false`,
 	);
 }
 

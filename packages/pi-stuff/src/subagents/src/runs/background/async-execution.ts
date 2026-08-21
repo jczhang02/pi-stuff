@@ -649,12 +649,13 @@ export function buildAsyncSingleRunnerWork(
 	};
 }
 
-export function resolveAsyncRunnerLogPaths(cfg: object): { stdoutPath: string; stderrPath: string } | undefined {
-	const asyncDir = (cfg as { asyncDir?: unknown }).asyncDir;
-	if (typeof asyncDir !== "string") return undefined;
+export function resolveAsyncRunnerLogPaths(cfg: Pick<BackgroundRunnerConfig, "asyncDir">): {
+	stdoutPath: string;
+	stderrPath: string;
+} {
 	return {
-		stdoutPath: path.join(asyncDir, "runner.stdout.log"),
-		stderrPath: path.join(asyncDir, "runner.stderr.log"),
+		stdoutPath: path.join(cfg.asyncDir, "runner.stdout.log"),
+		stderrPath: path.join(cfg.asyncDir, "runner.stderr.log"),
 	};
 }
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import {
 	installSuiteSessionReadiness,
 	markSuiteSessionReady,
@@ -22,7 +22,7 @@ function fakePi() {
 	return { handlers, pi };
 }
 
-function context(sessionManager: object): ExtensionContext {
+function context(sessionManager: ExtensionContext["sessionManager"]): ExtensionContext {
 	return { sessionManager } as ExtensionContext;
 }
 
@@ -49,7 +49,7 @@ test("Suite readiness releases startup work only after later Capability initiali
 		markSuiteSessionReady(pi, ctx);
 	});
 
-	const ctx = context({});
+	const ctx = context(SessionManager.inMemory());
 	for (const handler of handlers.get("session_start") ?? []) {
 		await handler({ reason: "reload", type: "session_start" }, ctx);
 	}
@@ -65,8 +65,8 @@ test("Suite readiness rejects stale startup generations and resolves shutdown wa
 	const shutdown = handlers.get("session_shutdown")?.[0];
 	if (!start || !shutdown) throw new Error("Expected readiness lifecycle handlers");
 
-	const first = context({});
-	const second = context({});
+	const first = context(SessionManager.inMemory());
+	const second = context(SessionManager.inMemory());
 	await start({ reason: "startup", type: "session_start" }, first);
 	const staleReady = whenSuiteSessionReady(pi, first);
 	await start({ reason: "switch", type: "session_start" }, second);
@@ -78,7 +78,7 @@ test("Suite readiness rejects stale startup generations and resolves shutdown wa
 	expect(await currentReady).toBe(false);
 	expect(await whenSuiteSessionReady(pi, second)).toBe(false);
 
-	const third = context({});
+	const third = context(SessionManager.inMemory());
 	await start({ reason: "resume", type: "session_start" }, third);
 	const resumedReady = whenSuiteSessionReady(pi, third);
 	markSuiteSessionReady(pi, third);
@@ -96,7 +96,7 @@ test("Suite readiness rejects startup work when final validation fails", async (
 		rejectSuiteSessionReadiness(pi, ctx);
 	});
 
-	const ctx = context({});
+	const ctx = context(SessionManager.inMemory());
 	for (const handler of handlers.get("session_start") ?? []) {
 		await handler({ reason: "startup", type: "session_start" }, ctx);
 	}
@@ -118,7 +118,7 @@ test("Suite readiness rejects when Pi catches an earlier Capability startup fail
 		markSuiteSessionReady(pi, ctx);
 	});
 
-	const ctx = context({});
+	const ctx = context(SessionManager.inMemory());
 	const errors: unknown[] = [];
 	for (const handler of handlers.get("session_start") ?? []) {
 		try {
@@ -134,5 +134,5 @@ test("Suite readiness rejects when Pi catches an earlier Capability startup fail
 
 test("standalone Capabilities have no aggregate Suite startup barrier", async () => {
 	const { pi } = fakePi();
-	expect(await whenSuiteSessionReady(pi, context({}))).toBe(true);
+	expect(await whenSuiteSessionReady(pi, context(SessionManager.inMemory()))).toBe(true);
 });

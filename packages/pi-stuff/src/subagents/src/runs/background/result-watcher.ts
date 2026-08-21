@@ -172,7 +172,7 @@ const RESULT_CHILD_FIELDS = [
 	"writerAttemptCount",
 ] as const;
 
-function pickFields(source: object, fields: readonly string[]): Record<string, unknown> {
+function pickFields<Source extends object>(source: Source, fields: readonly string[]): Record<string, unknown> {
 	const record = source as Record<string, unknown>;
 	const picked: Record<string, unknown> = {};
 	for (const field of fields) {
