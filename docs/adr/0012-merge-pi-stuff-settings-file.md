@@ -1,5 +1,6 @@
 ---
 status: accepted
+amended_by: 0013-unify-web-configuration
 ---
 
 # Consolidate Pi Stuff settings into one merged JSON file
@@ -23,8 +24,8 @@ permissions, a `flock`-based exclusive lock (where concurrency mattered), and a 
 fallback to defaults. The duplication was substantial, the file count was growing, and there was no shared place for
 cross-Capability settings concerns.
 
-One file — `web-search.json` — was **excluded** from consolidation. It is a credential store (API keys, proxy zones),
-not a settings document, and must stay a standalone secret file under the repository's auth/secrets separation rules.
+At the time of this decision, `web-search.json` was excluded from consolidation. ADR 0013 later amended that exception
+and made the `web` namespace in `pi-stuff.json` canonical.
 
 ## Decision
 
@@ -71,10 +72,10 @@ Each Capability that had a pre-existing per-file config performs a **one-time li
 file has no entry for that namespace but the legacy file exists, the legacy content is parsed and seeded into the
 namespace, then persisted, and the legacy file is **deleted**. There is no `.bak` retention (per the project decision).
 
-### Excluded: `web-search.json`
+### Original exclusion: `web-search.json`
 
-`web-search.json` is a credential store, not settings. It stays a standalone file. Merging it would mix secrets with
-non-secret settings and violate the auth/secrets separation boundary.
+This section records the superseded part of the original decision. See ADR 0013 for the current Web configuration and
+on-demand secret-resolution contract.
 
 ## Consequences
 

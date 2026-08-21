@@ -13,23 +13,25 @@ The single local Pi Package for the complete Pi Stuff Suite.
 
 ## Included modules
 
-- `conversation-ui`: Statusline, Welcome, live Thought, input presentation, `/ui`, and Command Dialog lifecycle.
-- `tool-display`: compact presentation for Pi built-ins and participating Suite Tools.
-- `code-mode`: one provider-visible JavaScript Tool that composes active Suite Tools locally without changing Tool UI.
-- `context-management`: configured official Magic Context integration, the `/ctx` control center, and Pi JSONL as raw
+- [`conversation-ui`](src/conversation-ui/README.md): Statusline, Welcome, live Thought, input presentation, `/ui`, and Command Dialog lifecycle.
+- [`tool-display`](src/tool-display/README.md): compact presentation for Pi built-ins and participating Suite Tools.
+- [`code-mode`](src/code-mode/README.md): one provider-visible JavaScript Tool that composes active Suite Tools locally without changing Tool UI.
+- [`context-management`](src/context-management/README.md): configured official Magic Context integration, the `/ctx` control center, and Pi JSONL as raw
   session authority.
-- `rtk`: fail-open Bash rewriting and model-only Bash/Grep output projection.
-- `codex`: `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen`.
-- `goal`: persistent objective, continuation, accounting, and evidence-gated completion/blocking.
-- `web`: bounded search, public HTTP(S)/PDF reading, and continuation retrieval.
-- `mcp`: lazy proxy gateway, explicit authentication, stdio/HTTP transports, and `/mcp` status.
-- `background-work`: current-session Background Shell, Monitor, and `/tasks` management.
-- `subagents`: current-session foreground/background Agents and their shared roster.
-- `todo`: branch-replayable Task Tools and the compact checklist above Pi's editor.
-- `btw`: one-shot side questions using effective conversation context without changing the main transcript.
-- `notification`: delayed terminal-native completion and failure alerts, with owned `/notifications` settings and test.
+- [`rtk`](src/rtk/README.md): fail-open Bash rewriting and model-only Bash/Grep output projection.
+- [`codex`](src/codex/README.md): `/codex`, Fast mode, subscription usage, `apply_patch`, `view_image`, and `imagegen`.
+- [`goal`](src/goal/README.md): persistent objective, continuation, accounting, and evidence-gated completion/blocking.
+- [`web`](src/web/README.md): bounded search, public HTTP(S)/PDF reading, and continuation retrieval.
+- [`mcp`](src/mcp/README.md): lazy proxy gateway, explicit authentication, stdio/HTTP transports, and `/mcp` status.
+- [`background-work`](src/background-work/README.md): current-session Background Shell, Monitor, and `/tasks` management.
+- [`subagents`](src/subagents/README.md): current-session foreground/background Agents and their shared roster.
+- [`todo`](src/todo/README.md): branch-replayable Task Tools and the compact checklist above Pi's editor.
+- [`btw`](src/btw/README.md): one-shot side questions using effective conversation context without changing the main transcript.
+- [`notification`](src/notification/README.md): delayed terminal-native completion and failure alerts, with owned `/notifications` settings and test.
 
 These names are internal maintenance boundaries, not npm dependencies or independently installable Packages.
+Before changing absorbed or adapted source, read the nearest Module README and its adjacent `UPSTREAM.md`,
+`SECURITY.md`, and third-party notices when present.
 
 ## Context controls
 
@@ -39,12 +41,16 @@ Magic Context's own global UI remains suppressed.
 
 ## Storage
 
-Pi Stuff follows the Host for Pi-owned configuration and uses XDG directories only for data it owns:
+Pi Stuff keeps user configuration beside the Pi Agent directory or owning project and uses XDG directories for its
+derived state, cache, and runtime files:
 
 | Data | Location |
 | --- | --- |
-| Pi-owned configuration (`settings.json`, `mcp.json`, `web-search.json`, UI, Goal, and Notification settings) | Pi `getAgentDir()` / `PI_CODING_AGENT_DIR` |
+| Pi Host settings | `<agentDir>/settings.json` |
+| Pi Stuff settings (`ui`, `tools`, `rtk`, `codex`, `notification`, `goal`, `codeMode`, and `web`) | `<agentDir>/pi-stuff.json` |
 | Shared standard MCP configuration | `$XDG_CONFIG_HOME/mcp/mcp.json` |
+| Pi-specific MCP overrides | `<agentDir>/mcp.json` and `<project>/.pi/mcp.json` |
+| Project Code Mode choice | `<project>/.pi/code-mode.json` |
 | Pi Stuff state | `$XDG_STATE_HOME/pi-stuff` |
 | Pi Stuff cache | `$XDG_CACHE_HOME/pi-stuff` |
 | Ephemeral locks and Agent runtime files | `$XDG_RUNTIME_DIR/pi-stuff` |
@@ -54,6 +60,9 @@ Only absolute XDG environment paths are accepted. Config, state, and cache fall 
 `~/.local/state`, and `~/.cache`; when `XDG_RUNTIME_DIR` is unavailable, existing lock/temp fallbacks remain active.
 Legacy MCP onboarding state is read from the Pi Agent directory only when the XDG state file is absent; subsequent
 writes use XDG state without deleting the legacy file.
+
+Legacy per-Capability settings files, including `web-search.json`, are migration inputs rather than current
+configuration locations. Direct user configuration changes migrate their owned namespace into `pi-stuff.json`.
 
 ## Themes
 

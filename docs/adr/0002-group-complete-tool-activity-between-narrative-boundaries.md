@@ -5,6 +5,9 @@ superseded_by: 0010-fold-continuous-retrieval-segments
 
 # Group complete Tool activity between Narrative Boundaries
 
+> Superseded by [ADR 0010](0010-fold-continuous-retrieval-segments.md). Do not implement this design; retain it only as
+> decision history.
+
 Pi Stuff will evolve from grouping only adjacent successful exploration calls to building one display-only Tool Activity Group for every continuous execution phase. Participating non-Bash Tool calls and results between adjacent Narrative Boundaries belong to that group regardless of Tool kind or terminal state. Each Bash call instead forms one standalone operation block at its native position and closes the aggregate before and after itself. Assistant prose, user input, and visible model-context Custom Messages close the aggregate; Thinking remains visible but neither enters nor splits it. Hidden state and branch/compaction metadata do not create boundaries. This removes repetitive non-Bash transcript rows while preserving command-and-output causality without changing Tool protocol events, model-visible results, or session history.
 
 ## Consequences

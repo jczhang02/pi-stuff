@@ -1,3 +1,7 @@
+---
+status: accepted
+---
+
 # Keep Pi as the Host
 
 Pi Stuff is one normal Pi Package rather than a new coding-agent runtime. Its entry point composes ordered internal

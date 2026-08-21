@@ -1,12 +1,14 @@
-# ADR 0013: Unify Web configuration and resolve secret references on demand
+---
+status: accepted
+amends: 0012-merge-pi-stuff-settings-file
+---
 
-## Status
-
-Accepted. This supersedes ADR 0012 only where it excludes `web-search.json` from the merged settings file.
+# Unify Web configuration and resolve secret references on demand
 
 ## Decision
 
-Web owns the `web` top-level namespace in `<agentDir>/pi-stuff.json`. Its existing field names and nested shapes remain unchanged. The Web Module reads the canonical namespace first and falls back to the legacy `<agentDir>/web-search.json` only when the namespace is absent. A direct Web configuration update lifts the complete legacy object under the shared settings lock, preserves sibling namespaces, and deletes the legacy file only after the canonical write succeeds.
+This amends ADR 0012 only where it excluded `web-search.json` from the merged settings file. Web owns the `web`
+top-level namespace in `<agentDir>/pi-stuff.json`. Its existing field names and nested shapes remain unchanged. The Web Module reads the canonical namespace first and falls back to the legacy `<agentDir>/web-search.json` only when the namespace is absent. A direct Web configuration update lifts the complete legacy object under the shared settings lock, preserves sibling namespaces, and deletes the legacy file only after the canonical write succeeds.
 
 The merged file remains plain JSON with mode `0600`. Web configuration reads never create or migrate files during Extension import or Session startup.
 

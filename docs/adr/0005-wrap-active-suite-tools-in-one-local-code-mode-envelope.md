@@ -5,6 +5,9 @@ superseded_by: 0009-align-code-mode-with-openai-and-cloudflare
 
 # Wrap active Suite Tools in one local Code Mode envelope
 
+> Superseded by [ADR 0009](0009-align-code-mode-with-openai-and-cloudflare.md). Do not implement this design; retain it
+> only as decision history.
+
 When enabled, Pi Stuff exposes one model-facing `codemode({ code })` Tool and moves the full active Package Tool
 catalog into an isolated local V8 Connector. This solves repeated schema cost rather than merely deferring schemas for
 one turn: future provider requests continue to carry only the small envelope while locally activated Tools remain
