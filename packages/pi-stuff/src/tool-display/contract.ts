@@ -49,6 +49,7 @@ import {
 	type ToolActivityItem,
 	type ToolActivityMetadata,
 	type ToolActivityOutcome,
+	type ToolArguments,
 	toolActivityOutcome,
 } from "./activity.js";
 import { type ToolActivity, type ToolActivityState, ToolActivityStore } from "./activity-store.js";
@@ -68,7 +69,11 @@ import {
 } from "./render.js";
 import { ToolUiSettingsStore } from "./settings.js";
 
-export { sendSuiteAgentMessage, withAgentWorkOrigin, withDirectUserActivation } from "../conversation-ui/index.js";
+export {
+	sendSuiteAgentMessage,
+	withAgentWorkOrigin,
+	withDirectUserActivation,
+} from "../conversation-ui/index.js";
 
 const TOOL_RUNTIME_REGISTRY = Symbol.for("@jczhang02/pi-stuff-tools/runtime-registry.v1");
 const TOOL_RUNTIME_DISCOVERY_EVENT = "@jczhang02/pi-stuff-tools/runtime-discovery/v1";
@@ -81,8 +86,8 @@ const SUITE_TOOL_REPLAY = Symbol.for("@jczhang02/pi-stuff-tools/replay-definitio
 const ERROR_RESULT_SCHEMA = Type.Object({ isError: Type.Literal(true) }, { additionalProperties: true });
 
 interface SuiteActivityRendererMarker {
-	readonly activity: ToolActivityMetadata<Record<string, unknown>, unknown>;
-	readonly resultIsError?: (args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean;
+	readonly activity: ToolActivityMetadata<ToolArguments, unknown>;
+	readonly resultIsError?: (args: ToolArguments, result: AgentToolResult<unknown>) => boolean;
 }
 
 interface SuiteToolEnvelopeMarker {
@@ -97,17 +102,17 @@ interface SuiteToolEnvelopeCompanionMarker {
 
 interface ToolDetailPresentation {
 	readonly detailLines?: (
-		args: Readonly<Record<string, unknown>>,
+		args: ToolArguments,
 		result: AgentToolResult<unknown>,
 		state: Exclude<ToolActivityState, "running">,
 	) => readonly string[];
-	readonly label: (args: Readonly<Record<string, unknown>>) => string;
+	readonly label: (args: ToolArguments) => string;
 	readonly summary: (
-		args: Readonly<Record<string, unknown>>,
+		args: ToolArguments,
 		result: AgentToolResult<unknown> | undefined,
 		state: ToolActivityState,
 	) => string;
-	readonly target: (args: Readonly<Record<string, unknown>>) => string;
+	readonly target: (args: ToolArguments) => string;
 }
 const DETAIL_LINE_LIMIT = 240;
 const DETAIL_BYTE_LIMIT = 24 * 1_024;
@@ -119,7 +124,61 @@ const TIMER_STATE_LIMIT = 768;
 const BASH_OUTPUT_SOURCE_LIMIT = 32 * 1_024;
 const BASH_OUTPUT_COLLAPSED_SOURCE_LIMIT = 2 * 1_024;
 
-function isRecordValue(value: unknown): value is Record<string, unknown> {
+interface ToolRuntimeRecord {
+	readonly activity?: unknown;
+	readonly arguments?: unknown;
+	readonly block?: unknown;
+	readonly categories?: unknown;
+	readonly classify?: unknown;
+	readonly codeMode?: unknown;
+	readonly compensate?: unknown;
+	readonly content?: unknown;
+	readonly decode?: unknown;
+	readonly details?: unknown;
+	readonly display?: unknown;
+	readonly disposeExecution?: unknown;
+	readonly execute?: unknown;
+	readonly id?: unknown;
+	readonly input?: unknown;
+	readonly isError?: unknown;
+	readonly lifecycle?: unknown;
+	readonly media?: unknown;
+	readonly name?: unknown;
+	readonly onPassEnd?: unknown;
+	readonly owner?: unknown;
+	readonly partialResult?: unknown;
+	readonly parameters?: unknown;
+	readonly presentation?: unknown;
+	readonly reason?: unknown;
+	readonly renderCall?: unknown;
+	readonly renderResult?: unknown;
+	readonly registry?: unknown;
+	readonly replay?: unknown;
+	readonly requiresApproval?: unknown;
+	readonly result?: unknown;
+	readonly resultIsError?: unknown;
+	readonly role?: unknown;
+	readonly silentSuccess?: unknown;
+	readonly stopReason?: unknown;
+	readonly summarizeIssue?: unknown;
+	readonly terminate?: unknown;
+	readonly tool?: unknown;
+	readonly toolCallId?: unknown;
+	readonly toolName?: unknown;
+	readonly type?: unknown;
+	readonly usage?: unknown;
+	readonly catalog?: unknown;
+	readonly get?: unknown;
+	readonly invoke?: unknown;
+	readonly isActive?: unknown;
+	readonly list?: unknown;
+}
+
+function isRecordValue<Value>(value: Value): value is Value & ToolRuntimeRecord {
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
+}
+
+function isToolArguments<Value>(value: Value): value is Value & ToolArguments {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
@@ -132,35 +191,35 @@ function normalizeReloadHandoff(
 	value: ToolReloadHandoff | readonly string[] | undefined,
 ): ToolReloadHandoff | undefined {
 	if (!value) return undefined;
-	if (Array.isArray(value)) return { activeNames: [...value], toolDefinitions: [] };
-	return value as ToolReloadHandoff;
+	return "activeNames" in value ? value : { activeNames: [...value], toolDefinitions: [] };
 }
 
 function reloadHandoff(value?: ToolReloadHandoff): ToolReloadHandoff | undefined {
-	const host = globalThis as typeof globalThis & {
-		[key: symbol]: ToolReloadHandoff | readonly string[] | undefined;
-	};
 	if (value !== undefined) {
-		host[TOOL_RELOAD_HANDOFF] = {
-			activeNames: [...value.activeNames],
-			toolDefinitions: [...value.toolDefinitions],
-		};
+		Object.defineProperty(globalThis, TOOL_RELOAD_HANDOFF, {
+			configurable: true,
+			value: {
+				activeNames: [...value.activeNames],
+				toolDefinitions: [...value.toolDefinitions],
+			},
+			writable: true,
+		});
 	}
-	return normalizeReloadHandoff(host[TOOL_RELOAD_HANDOFF]);
+	return normalizeReloadHandoff(Object.getOwnPropertyDescriptor(globalThis, TOOL_RELOAD_HANDOFF)?.value);
 }
 
 function consumeReloadHandoff(): ToolReloadHandoff | undefined {
-	const host = globalThis as typeof globalThis & {
-		[key: symbol]: ToolReloadHandoff | readonly string[] | undefined;
-	};
-	const value = normalizeReloadHandoff(host[TOOL_RELOAD_HANDOFF]);
-	host[TOOL_RELOAD_HANDOFF] = undefined;
+	const value = normalizeReloadHandoff(Object.getOwnPropertyDescriptor(globalThis, TOOL_RELOAD_HANDOFF)?.value);
+	Reflect.deleteProperty(globalThis, TOOL_RELOAD_HANDOFF);
 	return value === undefined
 		? undefined
-		: { activeNames: [...value.activeNames], toolDefinitions: [...value.toolDefinitions] };
+		: {
+				activeNames: [...value.activeNames],
+				toolDefinitions: [...value.toolDefinitions],
+			};
 }
 
-export interface SuiteToolPresentation<TArgs extends Record<string, unknown>, TDetails> {
+export interface SuiteToolPresentation<TArgs extends ToolArguments, TDetails> {
 	/** Required semantic metadata for complete Tool Activity Group projection. */
 	readonly activity: ToolActivityMetadata<TArgs, TDetails>;
 	readonly detailLines?: (
@@ -183,14 +242,14 @@ export interface SuiteToolPresentation<TArgs extends Record<string, unknown>, TD
 
 export interface SuiteToolReplayDefinition {
 	readonly codeMode?: SuiteToolCodeModeContract;
-	readonly presentation: SuiteToolPresentation<Record<string, unknown>, unknown>;
+	readonly presentation: SuiteToolPresentation<ToolArguments, unknown>;
 	readonly tool: ToolDefinition<TSchema, unknown>;
 }
 
 export type SuiteToolEnvelopeOperationState = "cancelled" | "error" | "rejected" | "running" | "success";
 
 export interface SuiteToolEnvelopeOperation {
-	readonly args: Readonly<Record<string, unknown>>;
+	readonly args: ToolArguments;
 	readonly attempt?: number;
 	readonly executionId?: string;
 	readonly id: string;
@@ -210,10 +269,12 @@ export interface SuiteToolEnvelopeMediaPlacement {
 	readonly mediaIndex: number;
 }
 
-export type SuiteToolEnvelopeDecoder = (details: unknown) => readonly SuiteToolEnvelopeOperation[];
+export type SuiteToolEnvelopeDetails = AgentToolResult<unknown>["details"];
+
+export type SuiteToolEnvelopeDecoder = (details: SuiteToolEnvelopeDetails) => readonly SuiteToolEnvelopeOperation[];
 
 export type SuiteToolEnvelopeMediaResolver = (
-	details: unknown,
+	details: SuiteToolEnvelopeDetails,
 ) => readonly (readonly AgentToolResult<unknown>["content"][number][])[];
 
 export interface SuiteToolDefinitionRegistry {
@@ -282,7 +343,7 @@ export interface SuiteToolEnvelopePresentation {
 	readonly registry: SuiteToolDefinitionRegistry;
 }
 
-interface RendererState<TArgs extends Record<string, unknown>, TDetails> {
+interface RendererState<TArgs extends ToolArguments, TDetails> {
 	args?: Readonly<TArgs>;
 	component?: CachedToolRow;
 	detailLines?: readonly string[];
@@ -296,8 +357,8 @@ interface RendererState<TArgs extends Record<string, unknown>, TDetails> {
 	wasLiveExecution?: boolean;
 }
 
-interface ToolRenderContext<TArgs extends Record<string, unknown>> {
-	readonly args: TArgs;
+interface ToolRenderContext<TArgs extends ToolArguments> {
+	readonly args: Readonly<TArgs>;
 	readonly cwd: string;
 	readonly executionStarted?: boolean;
 	readonly expanded: boolean;
@@ -306,7 +367,7 @@ interface ToolRenderContext<TArgs extends Record<string, unknown>> {
 	readonly isPartial: boolean;
 	readonly lastComponent: Component | undefined;
 	readonly showImages: boolean;
-	readonly state: Record<string, unknown>;
+	readonly state: object;
 	readonly toolCallId: string;
 }
 
@@ -316,7 +377,7 @@ interface ToolResultRenderOptions {
 }
 
 interface PresentedToolMetadata {
-	readonly args: Readonly<Record<string, unknown>>;
+	readonly args: ToolArguments;
 	readonly cwd?: string;
 	readonly name: string;
 	readonly result?: AgentToolResult<unknown>;
@@ -353,7 +414,14 @@ interface ToolTimerState {
 
 interface IndexedCategory {
 	numericCount: number;
-	readonly details: Map<string, { readonly detail: string; readonly itemIndex: number; readonly order: number }>;
+	readonly details: Map<
+		string,
+		{
+			readonly detail: string;
+			readonly itemIndex: number;
+			readonly order: number;
+		}
+	>;
 	readonly keyRefs: Map<string, number>;
 }
 
@@ -394,7 +462,12 @@ class GroupSummaryIndex {
 		if (previous?.signature === signature && previous.order === order) return false;
 		this.cachedAggregate = undefined;
 		if (previous) this.remove(id, previous);
-		const indexed: IndexedSummaryMember = { ...member, order, signature, target };
+		const indexed: IndexedSummaryMember = {
+			...member,
+			order,
+			signature,
+			target,
+		};
 		this.members.set(id, indexed);
 		this.stateCounts[indexed.state] = (this.stateCounts[indexed.state] ?? 0) + 1;
 		this.updateTarget(previous, indexed);
@@ -433,15 +506,16 @@ class GroupSummaryIndex {
 			});
 		}
 		const firstIssueLabel = this.firstIssueId ? this.members.get(this.firstIssueId)?.issueLabel : undefined;
-		this.cachedAggregate = {
+		const aggregate: ToolActivityAggregate = {
 			categories,
-			...(firstIssueLabel ? { firstIssueLabel } : {}),
 			outcome: effectiveToolActivityOutcome(
 				[...this.members.values()].sort((left, right) => left.order - right.order),
 			),
 			stateCounts: { ...this.stateCounts },
 			target,
 		};
+		if (firstIssueLabel) Object.assign(aggregate, { firstIssueLabel });
+		this.cachedAggregate = aggregate;
 		return this.cachedAggregate;
 	}
 
@@ -461,7 +535,11 @@ class GroupSummaryIndex {
 			category.numericCount += count;
 		}
 		if (item.detail)
-			category.details.set(`${id}\u0000${String(itemIndex)}`, { detail: item.detail, itemIndex, order });
+			category.details.set(`${id}\u0000${String(itemIndex)}`, {
+				detail: item.detail,
+				itemIndex,
+				order,
+			});
 	}
 
 	private remove(id: string, member: IndexedSummaryMember): void {
@@ -535,7 +613,7 @@ function isIssueState(state: ToolActivityState): state is "cancelled" | "error" 
 	return state === "error" || state === "rejected" || state === "cancelled";
 }
 
-function assistantTerminalState(stopReason: unknown): "cancelled" | "error" | undefined {
+function assistantTerminalState<StopReason>(stopReason: StopReason): "cancelled" | "error" | undefined {
 	return stopReason === "aborted" ? "cancelled" : stopReason === "error" ? "error" : undefined;
 }
 
@@ -599,7 +677,7 @@ function hashRetryText(hash: Hash, value: string): void {
 	hash.update(value);
 }
 
-function hashRetryValue(hash: Hash, value: unknown, seen = new WeakSet<object>()): void {
+function hashRetryValue<Value>(hash: Hash, value: Value, seen = new WeakSet<object>()): void {
 	if (value === null) {
 		hash.update("n");
 		return;
@@ -626,11 +704,11 @@ function hashRetryValue(hash: Hash, value: unknown, seen = new WeakSet<object>()
 		for (const entry of value) hashRetryValue(hash, entry, seen);
 	} else {
 		if (!isRecordValue(value)) throw new TypeError("non-JSON Tool arguments");
-		const keys = Object.keys(value).sort();
-		hash.update(`o${String(keys.length)}:`);
-		for (const key of keys) {
+		const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
+		hash.update(`o${String(entries.length)}:`);
+		for (const [key, entry] of entries) {
 			hashRetryText(hash, key);
-			hashRetryValue(hash, value[key], seen);
+			hashRetryValue(hash, entry, seen);
 		}
 	}
 	seen.delete(value);
@@ -638,7 +716,7 @@ function hashRetryValue(hash: Hash, value: unknown, seen = new WeakSet<object>()
 
 function activityRecoveryKeys(
 	name: string,
-	args: Readonly<Record<string, unknown>>,
+	args: ToolArguments,
 	items: readonly ToolActivityItem[],
 ): readonly string[] {
 	const keys = new Set<string>();
@@ -657,7 +735,7 @@ function activityRecoveryKeys(
 
 function terminalStateFromResult(
 	member: PlannedToolActivityMember,
-	resultIsError: ((args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean) | undefined,
+	resultIsError: ((args: ToolArguments, result: AgentToolResult<unknown>) => boolean) | undefined,
 ): ToolActivityState {
 	if (!member.result) return member.terminalState ?? "running";
 	let domainError = Check(ERROR_RESULT_SCHEMA, member.result);
@@ -673,12 +751,12 @@ function terminalStateFromResult(
 
 export class ToolUiRuntime {
 	readonly activities = new ToolActivityStore();
-	private readonly activityPolicies = new Map<string, ToolActivityMetadata<Record<string, unknown>, unknown>>();
+	private readonly activityPolicies = new Map<string, ToolActivityMetadata<ToolArguments, unknown>>();
 	private readonly bindings = new Map<string, GroupedRowBinding>();
 	private readonly detailPresentations = new Map<string, ToolDetailPresentation>();
 	private readonly errorPolicies = new Map<
 		string,
-		(args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean
+		(args: ToolArguments, result: AgentToolResult<unknown>) => boolean
 	>();
 	private readonly envelopeCalls = new Map<string, string>();
 	private readonly envelopeDecoders = new Map<string, SuiteToolEnvelopeDecoder>();
@@ -816,16 +894,18 @@ export class ToolUiRuntime {
 		);
 	}
 
-	registerActivity<TArgs extends Record<string, unknown>, TDetails>(
+	registerActivity<TArgs extends object, TDetails>(
 		name: string,
 		activity: ToolActivityMetadata<TArgs, TDetails>,
 		resultIsError?: (args: Readonly<TArgs>, result: AgentToolResult<TDetails>) => boolean,
 	): void {
-		this.activityPolicies.set(name, activity as ToolActivityMetadata<Record<string, unknown>, unknown>);
+		// SAFETY: activity is retrieved only for the same registered Tool name whose schema produced the arguments.
+		this.activityPolicies.set(name, activity as ToolActivityMetadata<ToolArguments, unknown>);
 		if (resultIsError) {
 			this.errorPolicies.set(
 				name,
-				resultIsError as (args: Readonly<Record<string, unknown>>, result: AgentToolResult<unknown>) => boolean,
+				// SAFETY: the error policy is invoked only with arguments and results from its registered Tool name.
+				resultIsError as (args: ToolArguments, result: AgentToolResult<unknown>) => boolean,
 			);
 		} else {
 			this.errorPolicies.delete(name);
@@ -891,7 +971,7 @@ export class ToolUiRuntime {
 		});
 	}
 
-	private groupDisposition(name: string, args: Readonly<Record<string, unknown>>): ToolActivityGroupDisposition {
+	private groupDisposition(name: string, args: ToolArguments): ToolActivityGroupDisposition {
 		if (!this.renderedToolNames.has(name)) return "boundary";
 		return classifyToolActivityGroupInvocation(name, args, this.activityPolicies.get(name));
 	}
@@ -922,16 +1002,14 @@ export class ToolUiRuntime {
 		this.closeOpenGroup();
 	}
 
-	observeAssistantUpdate(message: unknown): void {
-		if (!isRuntimeObject(message) || message === null) return;
-		const value = message as Record<string, unknown>;
-		if (value["role"] !== "assistant" || !Array.isArray(value["content"])) return;
+	observeAssistantUpdate<Message>(message: Message): void {
+		if (!isRecordValue(message) || message.role !== "assistant" || !Array.isArray(message.content)) return;
 		if (!this.streamActive) {
 			this.streamActive = true;
 			this.streamedProseIndexes.clear();
 			this.streamedToolCallSignatures.clear();
 		}
-		this.applyAssistantContent(value["content"], true, assistantTerminalState(value["stopReason"]));
+		this.applyAssistantContent(message.content, true, assistantTerminalState(message.stopReason));
 	}
 
 	observeAssistantEvent(event: AssistantMessageEvent): void {
@@ -949,7 +1027,7 @@ export class ToolUiRuntime {
 		}
 		if (event.type !== "toolcall_end") return;
 		const { id, name, arguments: args } = event.toolCall;
-		if (!id || !name || !isRecordValue(args) || this.streamedToolCallSignatures.has(id)) return;
+		if (!id || !name || !isToolArguments(args) || this.streamedToolCallSignatures.has(id)) return;
 		this.streamedToolCallSignatures.set(id, "complete");
 		this.appendToolCall({ args, id, name });
 	}
@@ -961,21 +1039,17 @@ export class ToolUiRuntime {
 		this.rebuildGroups();
 	}
 
-	indexMessage(message: unknown): void {
+	indexMessage<Message>(message: Message): void {
 		this.indexedMessages.push(message);
 		this.applyMessage(message);
-		if (
-			isRuntimeObject(message) &&
-			message !== null &&
-			(message as Record<string, unknown>)["role"] === "assistant"
-		) {
+		if (isRecordValue(message) && message.role === "assistant") {
 			this.streamActive = false;
 			this.streamedProseIndexes.clear();
 			this.streamedToolCallSignatures.clear();
 		}
 	}
 
-	observeEnvelopeResult(envelopeName: string, envelopeId: string, details: unknown): void {
+	observeEnvelopeResult(envelopeName: string, envelopeId: string, details: SuiteToolEnvelopeDetails): void {
 		for (const operation of this.decodeEnvelope(envelopeName, details)) {
 			const owner = this.envelopeCalls.get(operation.id);
 			if (owner && owner !== envelopeId) continue;
@@ -984,12 +1058,13 @@ export class ToolUiRuntime {
 				this.observeToolExecutionUpdate(operation.id, operation.result);
 			}
 			const result = envelopeOperationResult(operation);
-			this.appendToolCall({
+			const member = {
 				args: operation.args,
 				id: operation.id,
 				name: operation.name,
-				...(result ? { result } : {}),
-			});
+			};
+			if (result) Object.assign(member, { result });
+			this.appendToolCall(member);
 		}
 	}
 
@@ -1150,7 +1225,7 @@ export class ToolUiRuntime {
 		const visible = existing?.visible ?? true;
 		if (existing) this.timerStates.delete(toolCallId);
 		while (this.timerStates.size >= TIMER_STATE_LIMIT) {
-			const oldestId = this.timerStates.keys().next().value as string | undefined;
+			const oldestId = this.timerStates.keys().next().value;
 			if (!oldestId) break;
 			const oldest = this.timerStates.get(oldestId);
 			this.timerStates.delete(oldestId);
@@ -1158,7 +1233,11 @@ export class ToolUiRuntime {
 			this.pulseGroup(oldestId, true);
 			this.reconcileGroupForTool(oldestId);
 		}
-		this.timerStates.set(toolCallId, { invalidate, setMarkerVisible, visible });
+		this.timerStates.set(toolCallId, {
+			invalidate,
+			setMarkerVisible,
+			visible,
+		});
 		setMarkerVisible(visible);
 		if (this.isGroupMarkerDriver(toolCallId)) this.pulseGroup(toolCallId, visible);
 		if (this.timer === undefined) {
@@ -1249,7 +1328,9 @@ export class ToolUiRuntime {
 				group.memberIds.some((memberId) => memberId === normalized || memberId.startsWith(normalized)),
 		);
 		if (matches.length !== 1) return matches.length > 1 ? "ambiguous" : undefined;
-		const { order: _order, ...group } = matches[0] as ToolActivityGroupView & { order: number };
+		const match = matches[0];
+		if (!match) return undefined;
+		const { order: _order, ...group } = match;
 		return group;
 	}
 
@@ -1265,7 +1346,7 @@ export class ToolUiRuntime {
 			: this.groups.get(leaderId)?.members[memberIndex]?.result;
 	}
 
-	isStandaloneInvocation(name: string, args: Readonly<Record<string, unknown>>): boolean {
+	isStandaloneInvocation(name: string, args: ToolArguments): boolean {
 		return this.groupDisposition(name, args) === "boundary";
 	}
 
@@ -1297,7 +1378,10 @@ export class ToolUiRuntime {
 		const name = member?.name ?? binding?.metadata.name ?? activity.name;
 		const result = member?.result ?? binding?.metadata.result ?? this.liveResults.get(toolCallId);
 		if (mode === "raw") {
-			return { activity, lines: buildRawToolDetailLines(toolCallId, name, args, result) };
+			return {
+				activity,
+				lines: buildRawToolDetailLines(toolCallId, name, args, result),
+			};
 		}
 		let lines: readonly string[] | undefined;
 		const presentation = this.detailPresentations.get(name);
@@ -1324,7 +1408,7 @@ export class ToolUiRuntime {
 		};
 	}
 
-	private decodeEnvelope(name: string, details: unknown): readonly SuiteToolEnvelopeOperation[] {
+	private decodeEnvelope(name: string, details: SuiteToolEnvelopeDetails): readonly SuiteToolEnvelopeOperation[] {
 		const decode = this.envelopeDecoders.get(name);
 		if (!decode) return [];
 		return decodeEnvelopeOperations(decode, details);
@@ -1390,14 +1474,15 @@ export class ToolUiRuntime {
 				for (const operation of operations) {
 					const result = envelopeOperationResult(operation);
 					if (!result) continue;
-					projected.push({
+					const projectedResult = {
 						role: "toolResult",
 						toolCallId: operation.id,
 						toolName: operation.name,
 						content: result.content,
 						details: result.details,
-						...(result.isError === true ? { isError: true } : {}),
-					});
+					};
+					if (result.isError === true) Object.assign(projectedResult, { isError: true });
+					projected.push(projectedResult);
 				}
 				continue;
 			}
@@ -1440,31 +1525,32 @@ export class ToolUiRuntime {
 		}
 	}
 
-	private applyMessage(message: unknown): void {
-		if (!isRuntimeObject(message) || message === null) return;
-		const value = message as Record<string, unknown>;
-		const role = value["role"];
-		if (role === "assistant" && Array.isArray(value["content"])) {
-			this.applyAssistantContent(value["content"], false, assistantTerminalState(value["stopReason"]));
+	private applyMessage<Message>(message: Message): void {
+		if (!isRecordValue(message)) return;
+		const role = message.role;
+		if (role === "assistant" && Array.isArray(message.content)) {
+			this.applyAssistantContent(message.content, false, assistantTerminalState(message.stopReason));
 			return;
 		}
 		if (role === "toolResult") {
-			const id = value["toolCallId"];
-			const content = value["content"];
+			const id = message.toolCallId;
+			const content = message.content;
 			if (!isRuntimeString(id) || !Array.isArray(content)) return;
-			const name = value["toolName"];
+			const name = "toolName" in message ? message.toolName : undefined;
 			if (isRuntimeString(name) && this.envelopeDecoders.has(name)) {
 				this.rebuildGroups();
 				return;
 			}
-			this.updateToolResult(id, {
+			const baseResult: AgentToolResult<unknown> & { isError?: true } = {
+				// SAFETY: Pi tool-result messages own this content array; the UI preserves blocks without interpreting them here.
 				content: content as AgentToolResult<unknown>["content"],
-				...(value["details"] !== undefined ? { details: value["details"] } : { details: undefined }),
-				...(value["isError"] === true ? { isError: true } : {}),
-			});
+				details: message.details,
+			};
+			if (message.isError === true) Object.assign(baseResult, { isError: true as const });
+			this.updateToolResult(id, baseResult);
 			return;
 		}
-		if (role === "user" || role === "bashExecution" || (role === "custom" && value["display"] === true)) {
+		if (role === "user" || role === "bashExecution" || (role === "custom" && message.display === true)) {
 			this.tailForcedClosed = true;
 			this.closeOpenGroup();
 		}
@@ -1477,9 +1563,8 @@ export class ToolUiRuntime {
 	): void {
 		for (let index = 0; index < content.length; index += 1) {
 			const block = content[index];
-			if (!isRuntimeObject(block) || block === null) continue;
-			const item = block as Record<string, unknown>;
-			if (item["type"] === "text" && isRuntimeString(item["text"]) && item["text"].trim()) {
+			if (!isRecordValue(block)) continue;
+			if (block.type === "text" && "text" in block && isRuntimeString(block.text) && block.text.trim()) {
 				if (
 					streaming
 						? this.streamedProseIndexes.has(index)
@@ -1492,18 +1577,29 @@ export class ToolUiRuntime {
 				this.closeOpenGroup();
 				continue;
 			}
-			if (item["type"] !== "toolCall") continue;
-			const id = item["id"];
-			const name = item["name"];
-			const args = item["arguments"];
-			if (!isRuntimeString(id) || !id || !isRuntimeString(name) || !name || !isRecordValue(args)) continue;
+			if (block.type !== "toolCall") continue;
+			const id = block.id;
+			const name = block.name;
+			const args = block.arguments;
+			if (!isRuntimeString(id) || !id || !isRuntimeString(name) || !name || !isToolArguments(args)) continue;
 			if (streaming && name === "bash") continue;
 			const trackedSnapshot = streaming || this.streamActive;
-			const signature = trackedSnapshot ? JSON.stringify([name, args, terminalState ?? ""]) : "";
+			let signature = "";
+			if (trackedSnapshot) {
+				try {
+					const hash = createHash("sha256");
+					hashRetryValue(hash, [name, args, terminalState ?? ""]);
+					signature = hash.digest("base64url");
+				} catch {
+					signature = "invalid";
+				}
+			}
 			const previousSignature = trackedSnapshot ? this.streamedToolCallSignatures.get(id) : undefined;
 			if (trackedSnapshot && previousSignature === signature) continue;
 			if (trackedSnapshot) this.streamedToolCallSignatures.set(id, signature);
-			this.appendToolCall({ args, id, name, ...(terminalState ? { terminalState } : {}) });
+			const member = { args, id, name };
+			if (terminalState) Object.assign(member, { terminalState });
+			this.appendToolCall(member);
 		}
 	}
 
@@ -1518,13 +1614,13 @@ export class ToolUiRuntime {
 				? (member.result ?? previous?.result ?? this.pendingResults.get(member.id))
 				: (previous?.result ?? member.result ?? this.pendingResults.get(member.id));
 			const terminalState = result ? undefined : (member.terminalState ?? previous?.terminalState);
-			const completeMember: PlannedToolActivityMember = {
+			const completeMember = {
 				args: member.args,
 				id: member.id,
 				name: member.name,
-				...(result ? { result } : {}),
-				...(terminalState ? { terminalState } : {}),
 			};
+			if (result) Object.assign(completeMember, { result });
+			if (terminalState) Object.assign(completeMember, { terminalState });
 			this.mutableMembers(group)[memberIndex] = completeMember;
 			this.pendingResults.delete(member.id);
 			this.reconcileGroup(group, member.id);
@@ -1539,21 +1635,22 @@ export class ToolUiRuntime {
 		let group = this.openGroupLeaderId ? this.groups.get(this.openGroupLeaderId) : undefined;
 		const result = member.result ?? this.pendingResults.get(member.id);
 		const terminalState = result ? undefined : member.terminalState;
-		const completeMember: PlannedToolActivityMember = {
+		const completeMember = {
 			args: member.args,
 			id: member.id,
 			name: member.name,
-			...(result ? { result } : {}),
-			...(terminalState ? { terminalState } : {}),
 		};
+		if (result) Object.assign(completeMember, { result });
+		if (terminalState) Object.assign(completeMember, { terminalState });
 		this.pendingResults.delete(member.id);
 		if (!group || group.closed) {
-			group = {
+			const nextGroup = {
 				closed: disposition === "boundary" || !this.agentActive,
 				leaderId: member.id,
 				members: [completeMember],
-				...(disposition === "boundary" ? { standalone: true } : {}),
 			};
+			if (disposition === "boundary") Object.assign(nextGroup, { standalone: true });
+			group = nextGroup;
 			this.groups.set(group.leaderId, group);
 			this.groupOrder.push(group.leaderId);
 			if (!group.closed) this.openGroupLeaderId = group.leaderId;
@@ -1577,7 +1674,7 @@ export class ToolUiRuntime {
 			if (binding && this.renderedToolNames.has(binding.metadata.name)) {
 				this.pendingResults.set(id, result);
 				while (this.pendingResults.size > PENDING_RESULT_LIMIT) {
-					const oldest = this.pendingResults.keys().next().value as string | undefined;
+					const oldest = this.pendingResults.keys().next().value;
 					if (oldest === undefined) break;
 					this.pendingResults.delete(oldest);
 				}
@@ -1602,6 +1699,7 @@ export class ToolUiRuntime {
 	}
 
 	private mutableMembers(group: PlannedToolActivityGroup): PlannedToolActivityMember[] {
+		// SAFETY: groups are owned by this runtime; mutation is confined to its indexed reconciliation methods.
 		return group.members as PlannedToolActivityMember[];
 	}
 
@@ -1696,7 +1794,10 @@ export class ToolUiRuntime {
 
 	private bashOutput(binding: GroupedRowBinding, result: AgentToolResult<unknown> | undefined, expanded: boolean) {
 		if (binding.bashOutputResult === result && binding.bashOutputExpanded === expanded) {
-			return { text: binding.bashOutput ?? "", truncated: binding.bashOutputTruncated === true };
+			return {
+				text: binding.bashOutput ?? "",
+				truncated: binding.bashOutputTruncated === true,
+			};
 		}
 		const limit = expanded ? BASH_OUTPUT_SOURCE_LIMIT : BASH_OUTPUT_COLLAPSED_SOURCE_LIMIT;
 		let output = "";
@@ -1758,8 +1859,8 @@ export class ToolUiRuntime {
 			...binding?.metadata,
 			args: binding?.metadata.args ?? member.args,
 			name: member.name,
-			...(member.result ? { result: member.result } : {}),
 		};
+		if (member.result) Object.assign(metadata, { result: member.result });
 		const transparent = this.groupDisposition(member.name, metadata.args) === "transparent";
 		const silentSuccess = state === "success" && this.activityPolicies.get(member.name)?.silentSuccess === true;
 		const classifiedItems = forcedTerminal || transparent || silentSuccess ? [] : this.classify(metadata, state);
@@ -1782,18 +1883,19 @@ export class ToolUiRuntime {
 					: metadata.result
 						? this.issueDetail(member.name, metadata.args, metadata.result, state)
 						: (binding?.baseModel.summary ?? issueLabel);
-		return {
-			...(issueDetail ? { issueDetail } : {}),
-			...(issueLabel ? { issueLabel } : {}),
+		const summary: ActivitySummaryMember = {
 			items,
 			recoveryKeys: transparent ? [] : activityRecoveryKeys(member.name, metadata.args, classifiedItems),
 			state,
 		};
+		if (issueDetail) Object.assign(summary, { issueDetail });
+		if (issueLabel) Object.assign(summary, { issueLabel });
+		return summary;
 	}
 
 	private issueDetail(
 		name: string,
-		args: Readonly<Record<string, unknown>>,
+		args: ToolArguments,
 		result: AgentToolResult<unknown>,
 		state: Exclude<ToolActivityState, "running" | "success">,
 	): string {
@@ -1818,12 +1920,13 @@ export class ToolUiRuntime {
 		const policy = this.activityPolicies.get(metadata.name);
 		if (!policy) return [];
 		try {
-			const classified = policy.classify({
+			const input = {
 				args: metadata.args,
-				...(metadata.cwd ? { cwd: metadata.cwd } : {}),
-				...(metadata.result ? { result: metadata.result } : {}),
 				state,
-			});
+			};
+			if (metadata.cwd) Object.assign(input, { cwd: metadata.cwd });
+			if (metadata.result) Object.assign(input, { result: metadata.result });
+			const classified = policy.classify(input);
 			const items = classified.map((item) =>
 				item.countKeys
 					? {
@@ -1988,17 +2091,13 @@ export class ToolUiRuntime {
 	private activityFromPlan(member: PlannedToolActivityMember): ToolActivity {
 		const state = terminalStateFromResult(member, this.errorPolicies.get(member.name));
 		const transparent = this.groupDisposition(member.name, member.args) === "transparent";
+		const metadata: PresentedToolMetadata = {
+			args: member.args,
+			name: member.name,
+		};
+		if (member.result) Object.assign(metadata, { result: member.result });
 		const classifiedItems =
-			transparent || (member.terminalState && !member.result)
-				? []
-				: this.classify(
-						{
-							args: member.args,
-							name: member.name,
-							...(member.result ? { result: member.result } : {}),
-						},
-						state,
-					);
+			transparent || (member.terminalState && !member.result) ? [] : this.classify(metadata, state);
 		const items = visibleActivityItems(classifiedItems, state);
 		const summary = summarizeToolActivityGroup([{ items, state }], state !== "running");
 		const presentation = this.detailPresentations.get(member.name);
@@ -2033,14 +2132,17 @@ export class ToolUiRuntime {
 	}
 }
 
-function runtimeRegistry(): WeakMap<ExtensionAPI["events"], ToolUiRuntime> {
-	const host = globalThis as typeof globalThis & {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], ToolUiRuntime> | undefined;
-	};
-	const existing = host[TOOL_RUNTIME_REGISTRY];
-	if (existing) return existing;
-	const registry = new WeakMap<ExtensionAPI["events"], ToolUiRuntime>();
-	host[TOOL_RUNTIME_REGISTRY] = registry;
+function runtimeRegistry(): WeakMap<object, ToolUiRuntime> {
+	const existing = Object.getOwnPropertyDescriptor(globalThis, TOOL_RUNTIME_REGISTRY)?.value;
+	if (existing instanceof WeakMap) {
+		// SAFETY: this global symbol is written only below with ToolUiRuntime values keyed by Pi event facades.
+		return existing as WeakMap<object, ToolUiRuntime>;
+	}
+	const registry = new WeakMap<object, ToolUiRuntime>();
+	Object.defineProperty(globalThis, TOOL_RUNTIME_REGISTRY, {
+		configurable: true,
+		value: registry,
+	});
 	return registry;
 }
 
@@ -2050,17 +2152,13 @@ export type SuiteToolRegistrationHost = ToolUiRuntimeHost &
 
 export function getToolUiRuntime(pi: ToolUiRuntimeHost): ToolUiRuntime {
 	const registry = runtimeRegistry();
-	return getHostSharedResource(
-		pi.events,
-		registry as WeakMap<object, ToolUiRuntime>,
-		TOOL_RUNTIME_DISCOVERY_EVENT,
-		() => new ToolUiRuntime(),
-		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
-	);
+	return getHostSharedResource(pi.events, registry, TOOL_RUNTIME_DISCOVERY_EVENT, () => new ToolUiRuntime(), {
+		registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup),
+	});
 }
 
 /** Predeclare Activity metadata for a conditionally registered owned Tool. */
-export function registerSuiteToolActivityMetadata<TArgs extends Record<string, unknown>, TDetails>(
+export function registerSuiteToolActivityMetadata<TArgs extends ToolArguments, TDetails>(
 	pi: ToolUiRuntimeHost,
 	name: string,
 	activity: ToolActivityMetadata<TArgs, TDetails>,
@@ -2078,18 +2176,18 @@ export interface SuiteToolRegistrationTracker<Host extends SuiteToolTrackerHost 
 	readonly toolNames: ReadonlySet<string>;
 }
 
-function suiteActivityRendererMarker(tool: unknown): SuiteActivityRendererMarker | undefined {
+function suiteActivityRendererMarker<Tool>(tool: Tool): SuiteActivityRendererMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	if (!isRuntimeFunction(tool["renderCall"]) || !isRuntimeFunction(tool["renderResult"])) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_ACTIVITY_RENDERER)?.value;
 	return isSuiteActivityRendererMarker(marker) ? marker : undefined;
 }
 
-function hasSuiteActivityRenderer(tool: unknown): boolean {
+function hasSuiteActivityRenderer<Tool>(tool: Tool): boolean {
 	return suiteActivityRendererMarker(tool) !== undefined;
 }
 
-function isSuiteActivityRendererMarker(value: unknown): value is SuiteActivityRendererMarker {
+function isSuiteActivityRendererMarker<Value>(value: Value): value is Value & SuiteActivityRendererMarker {
 	if (!isRecordValue(value) || !isRecordValue(value["activity"])) return false;
 	const activity = value["activity"];
 	return (
@@ -2101,7 +2199,7 @@ function isSuiteActivityRendererMarker(value: unknown): value is SuiteActivityRe
 	);
 }
 
-function isSuiteToolCodeModeContract(value: unknown): value is SuiteToolCodeModeContract {
+function isSuiteToolCodeModeContract<Value>(value: Value): value is Value & SuiteToolCodeModeContract {
 	if (!isRecordValue(value)) return false;
 	if (value["replay"] !== "never" && value["replay"] !== "record" && value["replay"] !== "reexecute") {
 		return false;
@@ -2123,19 +2221,19 @@ function isSuiteToolCodeModeContract(value: unknown): value is SuiteToolCodeMode
 	return true;
 }
 
-function suiteToolCodeModeContract(tool: unknown): SuiteToolCodeModeContract | undefined {
+function suiteToolCodeModeContract<Tool>(tool: Tool): SuiteToolCodeModeContract | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	const value = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_CODE_MODE)?.value;
 	return isSuiteToolCodeModeContract(value) ? value : undefined;
 }
 
-function suiteToolEnvelopeMarker(tool: unknown): SuiteToolEnvelopeMarker | undefined {
+function suiteToolEnvelopeMarker<Tool>(tool: Tool): SuiteToolEnvelopeMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_ENVELOPE)?.value;
 	return isSuiteToolEnvelopeMarker(marker) ? marker : undefined;
 }
 
-function isSuiteToolEnvelopeMarker(value: unknown): value is SuiteToolEnvelopeMarker {
+function isSuiteToolEnvelopeMarker<Value>(value: Value): value is Value & SuiteToolEnvelopeMarker {
 	if (!isRecordValue(value) || !isRuntimeFunction(value["decode"]) || !isRecordValue(value["registry"])) {
 		return false;
 	}
@@ -2151,23 +2249,23 @@ function isSuiteToolEnvelopeMarker(value: unknown): value is SuiteToolEnvelopeMa
 	);
 }
 
-function suiteToolEnvelopeCompanionMarker(tool: unknown): SuiteToolEnvelopeCompanionMarker | undefined {
+function suiteToolEnvelopeCompanionMarker<Tool>(tool: Tool): SuiteToolEnvelopeCompanionMarker | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_ENVELOPE_COMPANION)?.value;
 	return isSuiteToolEnvelopeCompanionMarker(marker) ? marker : undefined;
 }
 
-function isSuiteToolEnvelopeCompanionMarker(value: unknown): value is SuiteToolEnvelopeCompanionMarker {
+function isSuiteToolEnvelopeCompanionMarker<Value>(value: Value): value is Value & SuiteToolEnvelopeCompanionMarker {
 	return isRecordValue(value) && isRuntimeString(value["owner"]);
 }
 
-function suiteToolReplayDefinition(tool: unknown): SuiteToolReplayDefinition | undefined {
+function suiteToolReplayDefinition<Tool>(tool: Tool): SuiteToolReplayDefinition | undefined {
 	if (!isRecordValue(tool)) return undefined;
 	const marker = Object.getOwnPropertyDescriptor(tool, SUITE_TOOL_REPLAY)?.value;
 	return isSuiteToolReplayDefinition(marker) ? marker : undefined;
 }
 
-function isSuiteToolReplayDefinition(value: unknown): value is SuiteToolReplayDefinition {
+function isSuiteToolReplayDefinition<Value>(value: Value): value is Value & SuiteToolReplayDefinition {
 	if (!isRecordValue(value) || !isRecordValue(value["tool"]) || !isRecordValue(value["presentation"])) {
 		return false;
 	}
@@ -2199,7 +2297,12 @@ function uniqueToolNames(names: readonly string[]): string[] {
 
 function errorToolResult(cause: unknown): AgentToolResult<unknown> {
 	return {
-		content: [{ type: "text", text: cause instanceof Error ? cause.message : String(cause) }],
+		content: [
+			{
+				type: "text",
+				text: cause instanceof Error ? cause.message : String(cause),
+			},
+		],
 		details: {},
 	};
 }
@@ -2214,12 +2317,26 @@ interface CapturedToolHandlerResult {
 	readonly usage?: AgentToolResult<unknown>["usage"];
 }
 
+interface CapturedToolEvent {
+	readonly args?: unknown;
+	content?: AgentToolResult<unknown>["content"];
+	details?: SuiteToolEnvelopeDetails;
+	readonly input?: unknown;
+	isError?: boolean;
+	readonly partialResult?: AgentToolResult<unknown>;
+	readonly result?: AgentToolResult<unknown>;
+	readonly toolCallId: string;
+	readonly toolName: string;
+	readonly type: string;
+	usage?: AgentToolResult<unknown>["usage"];
+}
+
 type CapturedToolHandler = (
-	event: Record<string, unknown>,
+	event: CapturedToolEvent,
 	context: ExtensionContext,
 ) => CapturedToolHandlerResult | undefined | Promise<CapturedToolHandlerResult | undefined>;
 
-function isCapturedToolHandler(value: unknown): value is CapturedToolHandler {
+function isCapturedToolHandler<Value>(value: Value): value is Value & CapturedToolHandler {
 	return isRuntimeFunction(value);
 }
 
@@ -2282,7 +2399,7 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 
 	const dispatchInformational = async (
 		event: "tool_execution_end" | "tool_execution_start" | "tool_execution_update",
-		value: Record<string, unknown>,
+		value: CapturedToolEvent,
 		context: ExtensionContext,
 	): Promise<void> => {
 		for (const handler of capturedHandlers.get(event) ?? []) {
@@ -2308,19 +2425,22 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 			invocation.context,
 		);
 
-		let prepared: unknown;
+		let prepared: ToolArguments;
 		try {
-			prepared = tool.prepareArguments ? tool.prepareArguments(invocation.input) : invocation.input;
-			prepared = validateToolArguments(
+			const rawArguments = tool.prepareArguments ? tool.prepareArguments(invocation.input) : invocation.input;
+			// SAFETY: the registry erases each Tool's schema, while validation immediately below restores its runtime contract.
+			const validated = validateToolArguments(
 				tool as never,
+				// SAFETY: the call record matches Pi's ToolCall shape and is consumed only by the selected Tool's schema validator.
 				{
-					arguments: prepared,
+					arguments: rawArguments,
 					id: invocation.toolCallId,
 					name: invocation.name,
 					type: "toolCall",
 				} as never,
 			);
-			if (!isRecordValue(prepared)) throw new Error(`Suite Tool ${invocation.name} requires object arguments`);
+			if (!isToolArguments(validated)) throw new Error(`Suite Tool ${invocation.name} requires object arguments`);
+			prepared = validated;
 		} catch (error) {
 			const result = errorToolResult(error);
 			await dispatchInformational(
@@ -2337,12 +2457,12 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 			return { isError: true, result };
 		}
 
-		const callEvent = {
+		const callEvent: CapturedToolEvent = {
 			input: prepared,
 			toolCallId: invocation.toolCallId,
 			toolName: invocation.name,
 			type: "tool_call",
-		} satisfies Record<string, unknown>;
+		};
 		try {
 			for (const handler of capturedHandlers.get("tool_call") ?? []) {
 				const decision = await handler.call(undefined, callEvent, invocation.context);
@@ -2401,6 +2521,7 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 		let isError = false;
 		const activeBefore = getActiveTools();
 		try {
+			// SAFETY: validation above produced the argument type owned by this registry-selected Tool definition.
 			result = await tool.execute(
 				invocation.toolCallId,
 				prepared as never,
@@ -2408,7 +2529,7 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 				(partialResult) => {
 					if (!acceptingUpdates) return;
 					try {
-						invocation.onUpdate?.(partialResult as AgentToolResult<unknown>);
+						invocation.onUpdate?.(partialResult);
 					} catch {
 						// Rendering updates do not change nested Tool execution.
 					}
@@ -2449,7 +2570,7 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 		}
 		await Promise.all(updateEvents);
 
-		const resultEvent = {
+		const resultEvent: CapturedToolEvent = {
 			content: result.content ?? [],
 			details: result.details,
 			input: prepared,
@@ -2457,8 +2578,8 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 			toolCallId: invocation.toolCallId,
 			toolName: invocation.name,
 			type: "tool_result",
-			...(result.usage ? { usage: result.usage } : {}),
-		} satisfies Record<string, unknown>;
+		};
+		if (result.usage) resultEvent.usage = result.usage;
 		for (const handler of capturedHandlers.get("tool_result") ?? []) {
 			try {
 				const replacement = await handler.call(undefined, resultEvent, invocation.context);
@@ -2477,13 +2598,14 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 				// Pi reports result-handler failures and keeps the previous result.
 			}
 		}
-		result = {
+		const finalResult = {
 			...result,
-			content: resultEvent["content"] as AgentToolResult<unknown>["content"],
-			details: resultEvent["details"],
-			...(resultEvent["usage"] === undefined ? {} : { usage: resultEvent["usage"] as never }),
+			content: resultEvent.content ?? [],
+			details: resultEvent.details,
 		};
-		isError = resultEvent["isError"] === true;
+		if (resultEvent.usage !== undefined) Object.assign(finalResult, { usage: resultEvent.usage });
+		result = finalResult;
+		isError = resultEvent.isError === true;
 		await dispatchInformational(
 			"tool_execution_end",
 			{
@@ -2501,10 +2623,9 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 		catalog: () =>
 			[...tools.values()].map((definition) => {
 				const codeMode = suiteToolCodeModeContract(definition);
-				return {
-					...(codeMode ? { codeMode } : {}),
-					definition,
-				};
+				const entry: SuiteToolCatalogEntry = { definition };
+				if (codeMode) Object.assign(entry, { codeMode });
+				return entry;
 			}),
 		async compensate(invocation) {
 			const contract = suiteToolCodeModeContract(tools.get(invocation.name));
@@ -2572,6 +2693,7 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 			return;
 		}
 		toolNames.add(tool.name);
+		// SAFETY: this registry preserves each Tool definition intact and erases generics only for name-based lookup.
 		tools.set(tool.name, tool as ToolDefinition);
 		if (enabledEnvelope && virtualActiveTools && pi.getActiveTools().includes(tool.name)) {
 			virtualActiveTools = uniqueToolNames([...virtualActiveTools, tool.name]);
@@ -2660,7 +2782,7 @@ function capPresentationDetails(result: AgentToolResult<unknown>, extra: readonl
 	);
 }
 
-function labelFor<TArgs extends Record<string, unknown>, TDetails>(
+function labelFor<TArgs extends ToolArguments, TDetails>(
 	tool: ToolDefinition<TSchema, TDetails>,
 	presentation: SuiteToolPresentation<TArgs, TDetails>,
 	args: Readonly<TArgs>,
@@ -2669,7 +2791,7 @@ function labelFor<TArgs extends Record<string, unknown>, TDetails>(
 	return sanitizeTerminalText(label ?? tool.label ?? tool.name) || tool.name;
 }
 
-function updateRunningRow<TArgs extends Record<string, unknown>, TDetails>(
+function updateRunningRow<TArgs extends ToolArguments, TDetails>(
 	tool: ToolDefinition<TSchema, TDetails>,
 	presentation: SuiteToolPresentation<TArgs, TDetails>,
 	runtime: ToolUiRuntime,
@@ -2696,15 +2818,20 @@ function updateRunningRow<TArgs extends Record<string, unknown>, TDetails>(
 	if (!state.component) state.component = new CachedToolRow(theme, model);
 	const startLiveEffects = state.wasLiveExecution && !state.liveEffectsStarted;
 	if (startLiveEffects) {
-		runtime.activities.begin({
+		const activity = {
 			id: context.toolCallId,
 			label: model.label,
 			name: tool.name,
-			...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
 			target: model.target,
-		});
+		};
+		if (state.startedAt !== undefined) Object.assign(activity, { startedAt: state.startedAt });
+		runtime.activities.begin(activity);
 	}
-	const metadata: PresentedToolMetadata = { args, cwd: context.cwd, name: tool.name };
+	const metadata: PresentedToolMetadata = {
+		args,
+		cwd: context.cwd,
+		name: tool.name,
+	};
 	runtime.presentRow(context.toolCallId, state.component, model, true, context.invalidate, context.expanded, metadata);
 	if (startLiveEffects) {
 		state.liveEffectsStarted = true;
@@ -2715,7 +2842,7 @@ function updateRunningRow<TArgs extends Record<string, unknown>, TDetails>(
 	return state.component;
 }
 
-function settleRow<TArgs extends Record<string, unknown>, TDetails>(
+function settleRow<TArgs extends ToolArguments, TDetails>(
 	tool: ToolDefinition<TSchema, TDetails>,
 	presentation: SuiteToolPresentation<TArgs, TDetails>,
 	runtime: ToolUiRuntime,
@@ -2741,7 +2868,7 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 			state.detailMaterialized = false;
 		} else if (!state.detailMaterialized) {
 			state.detailLines = capPresentationDetails(
-				state.lastResult as AgentToolResult<unknown>,
+				state.lastResult,
 				presentation.detailLines?.(args, state.lastResult, state.terminalState),
 			);
 			state.detailMaterialized = true;
@@ -2787,10 +2914,7 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 	state.terminalState = activityState;
 	state.terminalModelMaterialized = !lightweightHistoricalReplay || tool.name === "bash";
 	if (context.expanded && tool.name !== "bash") {
-		state.detailLines = capPresentationDetails(
-			result as AgentToolResult<unknown>,
-			presentation.detailLines?.(args, result, activityState),
-		);
+		state.detailLines = capPresentationDetails(result, presentation.detailLines?.(args, result, activityState));
 		state.detailMaterialized = true;
 	} else {
 		delete state.detailLines;
@@ -2801,7 +2925,7 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 		args,
 		cwd: context.cwd,
 		name: tool.name,
-		result: result as AgentToolResult<unknown>,
+		result,
 	};
 	if (
 		!state.projectedReplay ||
@@ -2827,13 +2951,14 @@ function settleRow<TArgs extends Record<string, unknown>, TDetails>(
 	}
 	state.projectedReplay = false;
 	if (state.wasLiveExecution) {
-		runtime.activities.begin({
+		const activity = {
 			id: context.toolCallId,
 			label: model.label,
 			name: tool.name,
-			...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
 			target: model.target,
-		});
+		};
+		if (state.startedAt !== undefined) Object.assign(activity, { startedAt: state.startedAt });
+		runtime.activities.begin(activity);
 		runtime.activities.settle(context.toolCallId, {
 			detailLines: state.detailLines ?? [],
 			durationMs: model.durationMs,
@@ -2863,7 +2988,7 @@ function imagePreviewFallback(mimeType: string, data: string, showImages: boolea
 		.join(" · ");
 }
 
-function resultBody<TArgs extends Record<string, unknown>, TDetails>(
+function resultBody<TArgs extends ToolArguments, TDetails>(
 	state: RendererState<TArgs, TDetails>,
 	result: AgentToolResult<TDetails>,
 	expanded: boolean,
@@ -2915,42 +3040,57 @@ function resultBody<TArgs extends Record<string, unknown>, TDetails>(
 	return text || images.length > 0 ? container : new EmptyToolComponent();
 }
 
-function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
-	tool: ToolDefinition<TSchema, TDetails>,
-	presentation: SuiteToolPresentation<TArgs, TDetails>,
+function attachRenderer<TParams extends TSchema, TDetails>(
+	tool: ToolDefinition<TParams, TDetails>,
+	presentation: SuiteToolPresentation<Static<TParams> & ToolArguments, TDetails>,
 	runtime: ToolUiRuntime,
-): ToolDefinition<TSchema, TDetails> {
-	runtime.registerDetailPresentation(tool.name, {
-		...(presentation.detailLines
-			? {
-					detailLines: (args, result, state) =>
-						presentation.detailLines?.(args as Readonly<TArgs>, result as AgentToolResult<TDetails>, state) ?? [],
-				}
-			: {}),
-		label: (args) => labelFor(tool, presentation, args as Readonly<TArgs>),
+): ToolDefinition<TParams, TDetails> {
+	type TArgs = Static<TParams> & ToolArguments;
+	const argsForPresentation = <Args>(args: Args): Readonly<TArgs> => {
+		// SAFETY: this renderer is attached to the same Tool definition and therefore receives its schema-validated arguments.
+		return args as Readonly<TArgs>;
+	};
+	const resultForPresentation = (result: AgentToolResult<unknown>): AgentToolResult<TDetails> => {
+		// SAFETY: this renderer is attached to the same Tool definition and therefore receives its declared result details.
+		return result as AgentToolResult<TDetails>;
+	};
+	const detailPresentation: ToolDetailPresentation = {
+		label: (args) => labelFor(tool, presentation, argsForPresentation(args)),
 		summary: (args, result, state) => {
-			const typedArgs = args as Readonly<TArgs>;
+			const typedArgs = argsForPresentation(args);
 			if (state === "running") {
 				const source = presentation.runningSummary;
 				return oneLine(isRuntimeFunction(source) ? source(typedArgs, undefined) : (source ?? "working"));
 			}
 			return oneLine(
 				result
-					? (presentation.summarize?.(typedArgs, result as AgentToolResult<TDetails>, state, undefined) ??
+					? (presentation.summarize?.(typedArgs, resultForPresentation(result), state, undefined) ??
 							(state === "success" ? "done" : state))
 					: state,
 			);
 		},
-		target: (args) => oneLine(presentation.target?.(args as Readonly<TArgs>) ?? ""),
-	});
-	const decorated: ToolDefinition<TSchema, TDetails> = {
+		target: (args) => oneLine(presentation.target?.(argsForPresentation(args)) ?? ""),
+	};
+	if (presentation.detailLines) {
+		Object.assign(detailPresentation, {
+			detailLines: (
+				args: ToolArguments,
+				result: AgentToolResult<unknown>,
+				state: Exclude<ToolActivityState, "running">,
+			) => presentation.detailLines?.(argsForPresentation(args), resultForPresentation(result), state) ?? [],
+		});
+	}
+	runtime.registerDetailPresentation(tool.name, detailPresentation);
+	const decorated: ToolDefinition<TParams, TDetails> = {
 		...tool,
 		renderShell: "self" as const,
 		renderCall: (args, theme, context) => {
-			const typed = {
+			const typedArgs = argsForPresentation(args);
+			const typed: ToolRenderContext<TArgs> = {
 				...context,
-				args,
-			} as ToolRenderContext<TArgs>;
+				args: typedArgs,
+			};
+			// SAFETY: Pi preserves this mutable state object across renderCall and renderResult for one Tool call.
 			const state = typed.state as RendererState<TArgs, TDetails>;
 			if (state.lastResult && state.component) {
 				runtime.setRowExpanded(context.toolCallId, typed.expanded);
@@ -2963,7 +3103,7 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 			const replayResult =
 				context.executionStarted === false ? runtime.projectedResult(context.toolCallId) : undefined;
 			if (replayResult) {
-				const replayArgs = args as TArgs;
+				const replayArgs = typedArgs;
 				state.args = replayArgs;
 				state.wasLiveExecution = false;
 				const model: ToolRowModel = {
@@ -2986,14 +3126,17 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 			return updateRunningRow(tool, presentation, runtime, state, typed, theme);
 		},
 		renderResult: (result, options, theme, context) => {
+			// SAFETY: Pi supplies this documented two-flag render options object to Tool result renderers.
 			const renderOptions = options as ToolResultRenderOptions;
+			// SAFETY: Pi reuses the state object initialized by this Tool's renderCall callback.
 			const state = context.state as RendererState<TArgs, TDetails>;
-			const typed = {
+			const args = state.args ?? argsForPresentation({});
+			const typed: ToolRenderContext<TArgs> = {
 				...context,
-				args: state.args ?? ({} as TArgs),
+				args,
 				expanded: renderOptions.expanded,
 				isPartial: renderOptions.isPartial,
-			} as ToolRenderContext<TArgs>;
+			};
 			if (renderOptions.isPartial) {
 				updateRunningRow(tool, presentation, runtime, state, typed, theme);
 				return new EmptyToolComponent();
@@ -3012,32 +3155,33 @@ function attachRenderer<TArgs extends Record<string, unknown>, TDetails>(
 			);
 		},
 	};
+	// SAFETY: marker consumers recover this metadata only from the Tool definition that owns the same argument schema.
+	const marker: SuiteActivityRendererMarker = {
+		activity: presentation.activity as ToolActivityMetadata<ToolArguments, unknown>,
+	};
+	if (presentation.resultIsError) {
+		// SAFETY: marker consumers invoke this callback only with results from the Tool definition that owns this presentation.
+		Object.assign(marker, {
+			resultIsError: presentation.resultIsError as NonNullable<SuiteActivityRendererMarker["resultIsError"]>,
+		});
+	}
 	Object.defineProperty(decorated, SUITE_ACTIVITY_RENDERER, {
 		enumerable: true,
-		value: {
-			activity: presentation.activity as ToolActivityMetadata<Record<string, unknown>, unknown>,
-			...(presentation.resultIsError
-				? {
-						resultIsError: presentation.resultIsError as NonNullable<
-							SuiteActivityRendererMarker["resultIsError"]
-						>,
-					}
-				: {}),
-		} satisfies SuiteActivityRendererMarker,
+		value: marker,
 	});
 	return decorated;
 }
 
-const ENVELOPE_CHILD_RENDERERS = Symbol("pi-stuff-tool-envelope-child-renderers");
-
 interface EnvelopeChildRenderer {
 	component?: Component;
-	readonly state: Record<string, unknown>;
+	readonly state: ToolRenderContext<ToolArguments>["state"];
 }
 
 interface EnvelopeRendererState {
 	readonly children: Map<string, EnvelopeChildRenderer>;
 }
+
+const ENVELOPE_RENDERER_STATES = new WeakMap<object, EnvelopeRendererState>();
 
 class EnvelopeOperationsComponent implements Component {
 	private readonly operations: readonly Component[];
@@ -3062,18 +3206,17 @@ class EnvelopeOperationsComponent implements Component {
 	}
 }
 
-function envelopeRendererState(state: Record<string, unknown>): EnvelopeRendererState {
-	const host = state as Record<PropertyKey, unknown>;
-	const existing = host[ENVELOPE_CHILD_RENDERERS];
-	if (existing instanceof Map) return { children: existing as Map<string, EnvelopeChildRenderer> };
-	const children = new Map<string, EnvelopeChildRenderer>();
-	host[ENVELOPE_CHILD_RENDERERS] = children;
-	return { children };
+function envelopeRendererState(state: ToolRenderContext<ToolArguments>["state"]): EnvelopeRendererState {
+	const existing = ENVELOPE_RENDERER_STATES.get(state);
+	if (existing) return existing;
+	const rendererState = { children: new Map<string, EnvelopeChildRenderer>() };
+	ENVELOPE_RENDERER_STATES.set(state, rendererState);
+	return rendererState;
 }
 
 function decodeEnvelopeOperations(
 	decode: SuiteToolEnvelopeDecoder,
-	details: unknown,
+	details: SuiteToolEnvelopeDetails,
 ): readonly SuiteToolEnvelopeOperation[] {
 	try {
 		return decode(details).filter(
@@ -3151,7 +3294,7 @@ function renderEnvelopeOperations(
 	result: AgentToolResult<unknown>,
 	options: ToolResultRenderOptions,
 	theme: Theme,
-	context: ToolRenderContext<Record<string, unknown>>,
+	context: ToolRenderContext<ToolArguments>,
 	presentation: SuiteToolEnvelopePresentation,
 ): Component {
 	const operations = decodeEnvelopeOperations(presentation.decode, result.details);
@@ -3178,7 +3321,6 @@ function renderEnvelopeOperations(
 		rendererState.children.set(operation.id, child);
 		const childContext = {
 			...context,
-			...(hostImageKeys ? { [EMBEDDED_HOST_IMAGE_KEYS]: hostImageKeys } : {}),
 			[EMBEDDED_TOOL_RESULT]: true,
 			args: operation.args,
 			argsComplete: true,
@@ -3189,7 +3331,12 @@ function renderEnvelopeOperations(
 			state: child.state,
 			toolCallId: operation.id,
 		};
+		if (hostImageKeys)
+			Object.assign(childContext, {
+				[EMBEDDED_HOST_IMAGE_KEYS]: hostImageKeys,
+			});
 		const container = new Container();
+		// SAFETY: the registry returns the Tool that owns this decoded operation and child renderer context.
 		const call = tool.renderCall(operation.args, theme, childContext as never);
 		child.component = call;
 		container.addChild(call);
@@ -3198,11 +3345,16 @@ function renderEnvelopeOperations(
 		const operationResult = projectEnvelopeOperationResult(operation, media);
 		if (!operationResult) continue;
 		const childIsPartial = options.isPartial && operation.state === "running";
+		// SAFETY: the registry-selected Tool owns both the decoded result and the child renderer context.
 		const body = tool.renderResult(
 			operationResult,
 			{ expanded: options.expanded, isPartial: childIsPartial },
 			theme,
-			{ ...childContext, isPartial: childIsPartial, lastComponent: call } as never,
+			{
+				...childContext,
+				isPartial: childIsPartial,
+				lastComponent: call,
+			} as never,
 		);
 		if (body) container.addChild(body);
 	}
@@ -3246,21 +3398,23 @@ export function registerSuiteToolEnvelope<TParams extends TSchema, TDetails = un
 		renderShell: "self" as const,
 		renderCall: () => new EmptyToolComponent(),
 		renderResult: (result, options, theme, context) =>
+			// SAFETY: this adapter preserves Pi's renderer values while erasing only the envelope Tool's generic parameters.
 			renderEnvelopeOperations(
 				result as AgentToolResult<unknown>,
 				options as ToolResultRenderOptions,
 				theme,
-				context as ToolRenderContext<Record<string, unknown>>,
+				context as ToolRenderContext<ToolArguments>,
 				presentation,
 			),
 	};
+	const marker: SuiteToolEnvelopeMarker = {
+		decode: presentation.decode,
+		registry: presentation.registry,
+	};
+	if (presentation.media) Object.assign(marker, { media: presentation.media });
 	Object.defineProperty(decorated, SUITE_TOOL_ENVELOPE, {
 		enumerable: true,
-		value: {
-			decode: presentation.decode,
-			...(presentation.media ? { media: presentation.media } : {}),
-			registry: presentation.registry,
-		} satisfies SuiteToolEnvelopeMarker,
+		value: marker,
 	});
 	pi.registerTool(decorated);
 	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
@@ -3273,15 +3427,12 @@ export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDet
 	pi: SuiteToolRegistrationHost,
 	owner: string,
 	tool: ToolDefinition<TParams, TDetails>,
-	presentation: SuiteToolPresentation<Static<TParams> & Record<string, unknown>, TDetails>,
+	presentation: SuiteToolPresentation<Static<TParams> & ToolArguments, TDetails>,
 ): void {
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
-	const decorated = attachRenderer(tool as ToolDefinition<TSchema, TDetails>, presentation, runtime) as ToolDefinition<
-		TParams,
-		TDetails
-	>;
+	const decorated = attachRenderer(tool, presentation, runtime);
 	Object.defineProperty(decorated, SUITE_TOOL_ENVELOPE_COMPANION, {
 		enumerable: true,
 		value: { owner } satisfies SuiteToolEnvelopeCompanionMarker,
@@ -3297,24 +3448,28 @@ export function registerSuiteToolEnvelopeCompanion<TParams extends TSchema, TDet
 export function registerSuiteOwnedTool<TParams extends TSchema, TDetails = unknown>(
 	pi: SuiteToolRegistrationHost,
 	tool: ToolDefinition<TParams, TDetails>,
-	presentation: SuiteToolPresentation<Static<TParams> & Record<string, unknown>, TDetails>,
+	presentation: SuiteToolPresentation<Static<TParams> & ToolArguments, TDetails>,
 	codeMode?: SuiteToolCodeModeContract,
 ): void {
 	const runtime = getToolUiRuntime(pi);
 	const replacesReplay = runtime.markLiveTool(tool.name);
 	registerSuiteToolActivityMetadata(pi, tool.name, presentation.activity, presentation.resultIsError);
-	const decorated = attachRenderer(tool as ToolDefinition<TSchema, TDetails>, presentation, runtime) as ToolDefinition<
-		TParams,
-		TDetails
-	>;
-	if (codeMode) Object.defineProperty(decorated, SUITE_TOOL_CODE_MODE, { enumerable: true, value: codeMode });
+	const decorated = attachRenderer(tool, presentation, runtime);
+	if (codeMode)
+		Object.defineProperty(decorated, SUITE_TOOL_CODE_MODE, {
+			enumerable: true,
+			value: codeMode,
+		});
 	Object.defineProperty(decorated, SUITE_TOOL_REPLAY, {
 		enumerable: true,
-		value: {
-			...(codeMode ? { codeMode } : {}),
-			presentation: presentation as SuiteToolPresentation<Record<string, unknown>, unknown>,
-			tool: tool as ToolDefinition<TSchema, unknown>,
-		} satisfies SuiteToolReplayDefinition,
+		// SAFETY: replay markers remain attached to the Tool and presentation whose generic schema this registry erases.
+		value: Object.assign(
+			{
+				presentation: presentation as SuiteToolPresentation<ToolArguments, unknown>,
+				tool: tool as ToolDefinition<TSchema, unknown>,
+			},
+			codeMode ? { codeMode } : undefined,
+		) satisfies SuiteToolReplayDefinition,
 	});
 	pi.registerTool(decorated);
 	if (replacesReplay && !pi.getActiveTools().includes(tool.name)) {
@@ -3341,7 +3496,12 @@ function replayFallbackDefinition(name: string): SuiteToolReplayDefinition {
 			description: `Historical ${name} Tool display`,
 			parameters: Type.Object({}, { additionalProperties: true }),
 			execute: async () => ({
-				content: [{ type: "text", text: `${name} is unavailable during Session replay.` }],
+				content: [
+					{
+						type: "text",
+						text: `${name} is unavailable during Session replay.`,
+					},
+				],
 				details: undefined,
 				isError: true,
 			}),
@@ -3374,7 +3534,12 @@ function registerMissingReplayToolDefinitions(
 			{
 				...definition.tool,
 				execute: async () => ({
-					content: [{ type: "text", text: `${definition.tool.name} is unavailable during Session replay.` }],
+					content: [
+						{
+							type: "text",
+							text: `${definition.tool.name} is unavailable during Session replay.`,
+						},
+					],
 					details: undefined,
 					isError: true,
 				}),

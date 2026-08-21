@@ -1,3 +1,4 @@
+import type { ToolCall } from "@earendil-works/pi-ai";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { ToolActivityState } from "./activity-store.js";
@@ -57,6 +58,8 @@ export type ToolActivityCategory =
 	| "update-task"
 	| "view-image";
 
+export type ToolArguments = Readonly<ToolCall["arguments"]>;
+
 export interface ToolActivityItem {
 	readonly category: ToolActivityCategory;
 	/** Stable identities are deduplicated within one Activity Group. */
@@ -69,7 +72,7 @@ export interface ToolActivityItem {
 	readonly target?: string;
 }
 
-export interface ToolActivityClassifierInput<TArgs extends Record<string, unknown>, TDetails> {
+export interface ToolActivityClassifierInput<TArgs extends object, TDetails> {
 	readonly args: Readonly<TArgs>;
 	/** Host working directory for canonicalizing relative Activity identities. */
 	readonly cwd?: string;
@@ -77,7 +80,7 @@ export interface ToolActivityClassifierInput<TArgs extends Record<string, unknow
 	readonly state: ToolActivityState;
 }
 
-export interface ToolActivityMetadata<TArgs extends Record<string, unknown>, TDetails> {
+export interface ToolActivityMetadata<TArgs extends object, TDetails> {
 	/** Every semantic category this Tool may contribute. Empty is valid only for declared infrastructure. */
 	readonly categories: readonly ToolActivityCategory[];
 	readonly classify: (input: ToolActivityClassifierInput<TArgs, TDetails>) => readonly ToolActivityItem[];
@@ -110,15 +113,17 @@ export function activityTarget(value: string): string {
 
 export function singleActivity(
 	category: ToolActivityCategory,
-	options: { readonly key?: string; readonly target?: string; readonly count?: number } = {},
+	options: {
+		readonly key?: string;
+		readonly target?: string;
+		readonly count?: number;
+	} = {},
 ): readonly ToolActivityItem[] {
-	return [
-		{
-			category,
-			...(options.key ? { countKeys: [options.key] } : { count: options.count ?? 1 }),
-			...(options.target ? { target: activityTarget(options.target) } : {}),
-		},
-	];
+	let item: ToolActivityItem = options.key
+		? { category, countKeys: [options.key] }
+		: { category, count: options.count ?? 1 };
+	if (options.target) item = { ...item, target: activityTarget(options.target) };
+	return [item];
 }
 
 function resultText(result: AgentToolResult<unknown> | undefined): string {
@@ -313,7 +318,7 @@ function bashSegmentWords(segment: string): readonly string[] | undefined {
 }
 
 /** Classify only clearly read-only shell retrieval; ambiguity stays standalone. */
-export function classifyBashRetrievalActivity(args: Readonly<Record<string, unknown>>): readonly ToolActivityItem[] {
+export function classifyBashRetrievalActivity(args: ToolArguments): readonly ToolActivityItem[] {
 	if (args["run_in_background"] === true) return [];
 	const command = isRuntimeString(args["command"]) ? args["command"] : "";
 	const segments = splitBashRetrievalSegments(command);
@@ -347,7 +352,7 @@ export function classifyBashRetrievalActivity(args: Readonly<Record<string, unkn
 
 /** Conservative Bash semantics shared by Host Bash and Background Work Bash. */
 export function classifyBashActivity(
-	input: ToolActivityClassifierInput<Record<string, unknown>, unknown>,
+	input: ToolActivityClassifierInput<ToolArguments, unknown>,
 ): readonly ToolActivityItem[] {
 	const command = isRuntimeString(input.args["command"]) ? input.args["command"] : "";
 	const description = isRuntimeString(input.args["description"]) ? oneLine(input.args["description"]) : "";
@@ -374,7 +379,11 @@ export function classifyBashActivity(
 	const outcomes: ToolActivityItem[] = [];
 	if (commitCommand) {
 		const sha = text.match(/\[[^\]\r\n]+\s([0-9a-f]{7,40})\]/iu)?.[1];
-		if (running || sha) outcomes.push({ category: "commit", count: 1, ...(sha ? { detail: sha } : {}), target });
+		if (running || sha) {
+			outcomes.push(
+				sha ? { category: "commit", count: 1, detail: sha, target } : { category: "commit", count: 1, target },
+			);
+		}
 	}
 	if (pushCommand) {
 		const branchFromCommand = command.match(/\bgit\s+push(?:\s+\S+)?\s+([^\s;&|]+)/iu)?.[1];
@@ -384,31 +393,50 @@ export function classifyBashActivity(
 			"",
 		);
 		if (running || hasPushEvidence(text)) {
-			outcomes.push({
+			const outcome: ToolActivityItem = {
 				category: "push",
 				count: 1,
-				...(branch && !branch.startsWith("-") ? { detail: branch } : {}),
 				target,
-			});
+			};
+			outcomes.push(branch && !branch.startsWith("-") ? { ...outcome, detail: branch } : outcome);
 		}
 	}
 	if (mergeBranch && (running || hasMergeEvidence(text))) {
-		outcomes.push({ category: "merge", count: 1, detail: mergeBranch, target });
+		outcomes.push({
+			category: "merge",
+			count: 1,
+			detail: mergeBranch,
+			target,
+		});
 	}
 	if (rebaseBranch && (running || hasRebaseEvidence(text))) {
-		outcomes.push({ category: "rebase", count: 1, detail: rebaseBranch, target });
+		outcomes.push({
+			category: "rebase",
+			count: 1,
+			detail: rebaseBranch,
+			target,
+		});
 	}
 	if (createPrCommand) {
 		const number = text.match(/https:\/\/github\.com\/[^\s]+\/pull\/(\d+)/u)?.[1];
 		if (running || number) {
-			outcomes.push({ category: "create-pr", count: 1, ...(number ? { detail: `#${number}` } : {}), target });
+			outcomes.push(
+				number
+					? {
+							category: "create-pr",
+							count: 1,
+							detail: `#${number}`,
+							target,
+						}
+					: { category: "create-pr", count: 1, target },
+			);
 		}
 	}
 	return outcomes.length > 0 ? outcomes : singleActivity("run-command", { target });
 }
 
 export interface PlannedToolActivityMember {
-	readonly args: Readonly<Record<string, unknown>>;
+	readonly args: ToolArguments;
 	readonly id: string;
 	readonly name: string;
 	readonly result?: AgentToolResult<unknown>;
@@ -425,10 +453,7 @@ export interface PlannedToolActivityGroup {
 }
 
 export type ToolActivityGroupDisposition = "boundary" | "retrieval" | "transparent";
-export type ToolActivityGroupClassifier = (
-	name: string,
-	args: Readonly<Record<string, unknown>>,
-) => ToolActivityGroupDisposition;
+export type ToolActivityGroupClassifier = (name: string, args: ToolArguments) => ToolActivityGroupDisposition;
 
 const RETRIEVAL_ACTIVITY_CATEGORIES = new Set<ToolActivityCategory>(["read-file", "search-pattern", "list-directory"]);
 const TRANSPARENT_ACTIVITY_TOOL_NAMES = new Set(["ctx_reduce", "tool_search"]);
@@ -436,8 +461,8 @@ const TRANSPARENT_ACTIVITY_TOOL_NAMES = new Set(["ctx_reduce", "tool_search"]);
 /** One invocation-level policy shared by streaming, replay, and envelope projection. */
 export function classifyToolActivityGroupInvocation(
 	name: string,
-	args: Readonly<Record<string, unknown>>,
-	metadata: ToolActivityMetadata<Record<string, unknown>, unknown> | undefined,
+	args: ToolArguments,
+	metadata: ToolActivityMetadata<ToolArguments, unknown> | undefined,
 ): ToolActivityGroupDisposition {
 	if (TRANSPARENT_ACTIVITY_TOOL_NAMES.has(name)) return "transparent";
 	if (!metadata) return "boundary";
@@ -492,7 +517,13 @@ interface PhraseSpec {
 }
 
 const PHRASES = {
-	"complete-goal": { past: "Completed", present: "Completing", singular: "goal", plural: "goals", priority: 10 },
+	"complete-goal": {
+		past: "Completed",
+		present: "Completing",
+		singular: "goal",
+		plural: "goals",
+		priority: 10,
+	},
 	"block-goal": {
 		past: "Reported",
 		present: "Reporting",
@@ -500,10 +531,34 @@ const PHRASES = {
 		plural: "goal blockers",
 		priority: 11,
 	},
-	commit: { past: "Committed", present: "Committing", singular: "change", plural: "changes", priority: 12 },
-	push: { past: "Pushed", present: "Pushing", singular: "branch", plural: "branches", priority: 13 },
-	merge: { past: "Merged", present: "Merging", singular: "branch", plural: "branches", priority: 13 },
-	rebase: { past: "Rebased", present: "Rebasing", singular: "branch", plural: "branches", priority: 13 },
+	commit: {
+		past: "Committed",
+		present: "Committing",
+		singular: "change",
+		plural: "changes",
+		priority: 12,
+	},
+	push: {
+		past: "Pushed",
+		present: "Pushing",
+		singular: "branch",
+		plural: "branches",
+		priority: 13,
+	},
+	merge: {
+		past: "Merged",
+		present: "Merging",
+		singular: "branch",
+		plural: "branches",
+		priority: 13,
+	},
+	rebase: {
+		past: "Rebased",
+		present: "Rebasing",
+		singular: "branch",
+		plural: "branches",
+		priority: 13,
+	},
 	"create-pr": {
 		past: "Created",
 		present: "Creating",
@@ -511,15 +566,69 @@ const PHRASES = {
 		plural: "pull requests",
 		priority: 14,
 	},
-	"record-result": { past: "Recorded", present: "Recording", singular: "result", plural: "results", priority: 15 },
-	"generate-image": { past: "Generated", present: "Generating", singular: "image", plural: "images", priority: 16 },
-	"change-file": { past: "Changed", present: "Changing", singular: "file", plural: "files", priority: 20 },
-	"update-task": { past: "Updated", present: "Updating", singular: "task", plural: "tasks", priority: 21 },
-	"update-memory": { past: "Updated", present: "Updating", singular: "memory", plural: "memories", priority: 22 },
-	"save-memory": { past: "Saved", present: "Saving", singular: "memory", plural: "memories", priority: 23 },
-	"save-note": { past: "Saved", present: "Saving", singular: "note", plural: "notes", priority: 24 },
-	"update-note": { past: "Updated", present: "Updating", singular: "note", plural: "notes", priority: 25 },
-	"run-agent": { past: "Ran", present: "Running", singular: "agent", plural: "agents", priority: 30 },
+	"record-result": {
+		past: "Recorded",
+		present: "Recording",
+		singular: "result",
+		plural: "results",
+		priority: 15,
+	},
+	"generate-image": {
+		past: "Generated",
+		present: "Generating",
+		singular: "image",
+		plural: "images",
+		priority: 16,
+	},
+	"change-file": {
+		past: "Changed",
+		present: "Changing",
+		singular: "file",
+		plural: "files",
+		priority: 20,
+	},
+	"update-task": {
+		past: "Updated",
+		present: "Updating",
+		singular: "task",
+		plural: "tasks",
+		priority: 21,
+	},
+	"update-memory": {
+		past: "Updated",
+		present: "Updating",
+		singular: "memory",
+		plural: "memories",
+		priority: 22,
+	},
+	"save-memory": {
+		past: "Saved",
+		present: "Saving",
+		singular: "memory",
+		plural: "memories",
+		priority: 23,
+	},
+	"save-note": {
+		past: "Saved",
+		present: "Saving",
+		singular: "note",
+		plural: "notes",
+		priority: 24,
+	},
+	"update-note": {
+		past: "Updated",
+		present: "Updating",
+		singular: "note",
+		plural: "notes",
+		priority: 25,
+	},
+	"run-agent": {
+		past: "Ran",
+		present: "Running",
+		singular: "agent",
+		plural: "agents",
+		priority: 30,
+	},
 	"launch-agent": {
 		past: "Launched",
 		present: "Launching",
@@ -527,11 +636,41 @@ const PHRASES = {
 		plural: "background agents",
 		priority: 31,
 	},
-	"check-agent": { past: "Checked", present: "Checking", singular: "agent", plural: "agents", priority: 32 },
-	"message-agent": { past: "Messaged", present: "Messaging", singular: "agent", plural: "agents", priority: 32 },
-	"resume-agent": { past: "Resumed", present: "Resuming", singular: "agent", plural: "agents", priority: 32 },
-	"steer-agent": { past: "Steered", present: "Steering", singular: "agent", plural: "agents", priority: 32 },
-	"stop-agent": { past: "Stopped", present: "Stopping", singular: "agent", plural: "agents", priority: 32 },
+	"check-agent": {
+		past: "Checked",
+		present: "Checking",
+		singular: "agent",
+		plural: "agents",
+		priority: 32,
+	},
+	"message-agent": {
+		past: "Messaged",
+		present: "Messaging",
+		singular: "agent",
+		plural: "agents",
+		priority: 32,
+	},
+	"resume-agent": {
+		past: "Resumed",
+		present: "Resuming",
+		singular: "agent",
+		plural: "agents",
+		priority: 32,
+	},
+	"steer-agent": {
+		past: "Steered",
+		present: "Steering",
+		singular: "agent",
+		plural: "agents",
+		priority: 32,
+	},
+	"stop-agent": {
+		past: "Stopped",
+		present: "Stopping",
+		singular: "agent",
+		plural: "agents",
+		priority: 32,
+	},
 	"launch-background": {
 		past: "Launched",
 		present: "Launching",
@@ -539,7 +678,13 @@ const PHRASES = {
 		plural: "background tasks",
 		priority: 33,
 	},
-	"start-monitor": { past: "Started", present: "Starting", singular: "monitor", plural: "monitors", priority: 34 },
+	"start-monitor": {
+		past: "Started",
+		present: "Starting",
+		singular: "monitor",
+		plural: "monitors",
+		priority: 34,
+	},
 	"stop-background": {
 		past: "Stopped",
 		present: "Stopping",
@@ -547,8 +692,20 @@ const PHRASES = {
 		plural: "background tasks",
 		priority: 35,
 	},
-	"run-command": { past: "Ran", present: "Running", singular: "command", plural: "commands", priority: 40 },
-	"invoke-mcp": { past: "Invoked", present: "Invoking", singular: "MCP tool", plural: "MCP tools", priority: 41 },
+	"run-command": {
+		past: "Ran",
+		present: "Running",
+		singular: "command",
+		plural: "commands",
+		priority: 40,
+	},
+	"invoke-mcp": {
+		past: "Invoked",
+		present: "Invoking",
+		singular: "MCP tool",
+		plural: "MCP tools",
+		priority: 41,
+	},
 	"connect-mcp": {
 		past: "Connected to",
 		present: "Connecting to",
@@ -563,7 +720,13 @@ const PHRASES = {
 		plural: "MCP catalogs",
 		priority: 43,
 	},
-	"search-pattern": { past: "Searched", present: "Searching", singular: "pattern", plural: "patterns", priority: 50 },
+	"search-pattern": {
+		past: "Searched",
+		present: "Searching",
+		singular: "pattern",
+		plural: "patterns",
+		priority: 50,
+	},
 	"search-tool": {
 		past: "Searched",
 		present: "Searching",
@@ -571,8 +734,20 @@ const PHRASES = {
 		plural: "Tool catalogs",
 		priority: 50,
 	},
-	"search-web": { past: "Searched", present: "Searching", singular: "web query", plural: "web queries", priority: 51 },
-	"fetch-page": { past: "Fetched", present: "Fetching", singular: "page", plural: "pages", priority: 52 },
+	"search-web": {
+		past: "Searched",
+		present: "Searching",
+		singular: "web query",
+		plural: "web queries",
+		priority: 51,
+	},
+	"fetch-page": {
+		past: "Fetched",
+		present: "Fetching",
+		singular: "page",
+		plural: "pages",
+		priority: 52,
+	},
 	"retrieve-passage": {
 		past: "Retrieved",
 		present: "Retrieving",
@@ -580,9 +755,27 @@ const PHRASES = {
 		plural: "passages",
 		priority: 53,
 	},
-	"read-file": { past: "Read", present: "Reading", singular: "file", plural: "files", priority: 54 },
-	"list-directory": { past: "Listed", present: "Listing", singular: "directory", plural: "directories", priority: 55 },
-	"view-image": { past: "Viewed", present: "Viewing", singular: "image", plural: "images", priority: 56 },
+	"read-file": {
+		past: "Read",
+		present: "Reading",
+		singular: "file",
+		plural: "files",
+		priority: 54,
+	},
+	"list-directory": {
+		past: "Listed",
+		present: "Listing",
+		singular: "directory",
+		plural: "directories",
+		priority: 55,
+	},
+	"view-image": {
+		past: "Viewed",
+		present: "Viewing",
+		singular: "image",
+		plural: "images",
+		priority: 56,
+	},
 	"search-history": {
 		past: "Searched",
 		present: "Searching",
@@ -597,9 +790,27 @@ const PHRASES = {
 		plural: "history ranges",
 		priority: 58,
 	},
-	"check-task": { past: "Checked", present: "Checking", singular: "task", plural: "tasks", priority: 59 },
-	"read-memory": { past: "Read", present: "Reading", singular: "memory", plural: "memories", priority: 60 },
-	"read-note": { past: "Read", present: "Reading", singular: "note", plural: "notes", priority: 61 },
+	"check-task": {
+		past: "Checked",
+		present: "Checking",
+		singular: "task",
+		plural: "tasks",
+		priority: 59,
+	},
+	"read-memory": {
+		past: "Read",
+		present: "Reading",
+		singular: "memory",
+		plural: "memories",
+		priority: 60,
+	},
+	"read-note": {
+		past: "Read",
+		present: "Reading",
+		singular: "note",
+		plural: "notes",
+		priority: 61,
+	},
 	"inspect-background": {
 		past: "Inspected",
 		present: "Inspecting",
@@ -636,48 +847,77 @@ export interface ToolActivityAggregate {
 	readonly target?: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+interface ToolTranscriptRecord {
+	readonly arguments?: unknown;
+	readonly content?: unknown;
+	readonly details?: unknown;
+	readonly display?: unknown;
+	readonly id?: unknown;
+	readonly isError?: unknown;
+	readonly name?: unknown;
+	readonly role?: unknown;
+	readonly stopReason?: unknown;
+	readonly text?: unknown;
+	readonly toolCallId?: unknown;
+	readonly type?: unknown;
+}
+
+function isRecord<Value>(value: Value): value is Value & ToolTranscriptRecord {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
-function toolCall(value: unknown): Omit<PlannedToolActivityMember, "result"> | undefined {
-	if (!isRecord(value) || value["type"] !== "toolCall") return undefined;
-	const id = value["id"];
-	const name = value["name"];
-	const args = value["arguments"];
-	if (!isRuntimeString(id) || !id || !isRuntimeString(name) || !name || !isRecord(args)) return undefined;
+function isToolArguments<Value>(value: Value): value is Value & ToolArguments {
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
+}
+
+function toolCall<Value>(value: Value): Omit<PlannedToolActivityMember, "result"> | undefined {
+	if (!isRecord(value) || !("type" in value) || value.type !== "toolCall") return undefined;
+	const id = "id" in value ? value.id : undefined;
+	const name = "name" in value ? value.name : undefined;
+	const args = "arguments" in value ? value.arguments : undefined;
+	if (!isRuntimeString(id) || !id || !isRuntimeString(name) || !name || !isToolArguments(args)) return undefined;
 	return { args, id, name };
 }
 
-function toolResult(value: unknown): { readonly id: string; readonly result: AgentToolResult<unknown> } | undefined {
-	if (!isRecord(value) || value["role"] !== "toolResult") return undefined;
-	const id = value["toolCallId"];
-	const content = value["content"];
+function toolResult<Value>(
+	value: Value,
+): { readonly id: string; readonly result: AgentToolResult<unknown> } | undefined {
+	if (!isRecord(value) || !("role" in value) || value.role !== "toolResult") return undefined;
+	const id = "toolCallId" in value ? value.toolCallId : undefined;
+	const content = "content" in value ? value.content : undefined;
 	if (!isRuntimeString(id) || !id || !Array.isArray(content)) return undefined;
+	const baseResult = {
+		// SAFETY: Pi tool-result messages own this content array; the transcript planner preserves blocks without interpreting them.
+		content: content as AgentToolResult<unknown>["content"],
+		details: "details" in value ? value.details : undefined,
+	};
+	const result = "isError" in value && value.isError === true ? { ...baseResult, isError: true } : baseResult;
 	return {
 		id,
-		result: {
-			content: content as AgentToolResult<unknown>["content"],
-			...(value["details"] !== undefined ? { details: value["details"] } : { details: undefined }),
-			...(value["isError"] === true ? { isError: true } : {}),
-		},
+		result,
 	};
 }
 
-function hasVisibleText(block: unknown): boolean {
+function hasVisibleText<Value>(block: Value): boolean {
 	return (
-		isRecord(block) && block["type"] === "text" && isRuntimeString(block["text"]) && block["text"].trim().length > 0
+		isRecord(block) &&
+		"type" in block &&
+		block.type === "text" &&
+		"text" in block &&
+		isRuntimeString(block.text) &&
+		block.text.trim().length > 0
 	);
 }
 
-function isVisibleMessageBoundary(message: Record<string, unknown>): boolean {
-	const role = message["role"];
-	if (role === "custom") return message["display"] === true;
+function isVisibleMessageBoundary(message: ToolTranscriptRecord): boolean {
+	const role = message.role;
+	if (role === "custom") return message.display === true;
 	return role === "user" || role === "bashExecution";
 }
 
-function assistantTerminalState(message: Record<string, unknown>): "cancelled" | "error" | undefined {
-	return message["stopReason"] === "aborted" ? "cancelled" : message["stopReason"] === "error" ? "error" : undefined;
+function assistantTerminalState(message: ToolTranscriptRecord): "cancelled" | "error" | undefined {
+	const stopReason = message.stopReason;
+	return stopReason === "aborted" ? "cancelled" : stopReason === "error" ? "error" : undefined;
 }
 
 /**
@@ -708,7 +948,12 @@ export function planToolActivityGroups(
 	};
 	const appendStandalone = (member: PlannedToolActivityMember) => {
 		flush(true);
-		groups.push({ closed: true, leaderId: member.id, members: [member], standalone: true });
+		groups.push({
+			closed: true,
+			leaderId: member.id,
+			members: [member],
+			standalone: true,
+		});
 	};
 
 	for (const candidate of messages) {
@@ -727,7 +972,10 @@ export function planToolActivityGroups(
 			const call = toolCall(block);
 			if (!call) continue;
 			const result = results.get(call.id);
-			const member = { ...call, ...(result ? { result } : terminalState ? { terminalState } : {}) };
+			const member = {
+				...call,
+				...(result ? { result } : terminalState ? { terminalState } : {}),
+			};
 			const disposition = classifyInvocation(call.name, call.args);
 			if (disposition === "boundary") {
 				appendStandalone(member);
