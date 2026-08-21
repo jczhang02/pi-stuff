@@ -8,9 +8,7 @@ export interface ProcessIdentity {
 }
 
 function errorCode(cause: unknown): string | undefined {
-	return cause && isRuntimeObject(cause) && "code" in cause
-		? String((cause as NodeJS.ErrnoException).code)
-		: undefined;
+	return cause && isRuntimeObject(cause) && "code" in cause ? String(cause.code) : undefined;
 }
 
 /** Stable enough to distinguish a live process from a reused PID. */

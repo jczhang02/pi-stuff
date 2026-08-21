@@ -62,7 +62,7 @@ export function encodeCodemodeValue<Value>(value: Value): EncodedBinary | Value 
 		};
 	}
 	if (ArrayBuffer.isView(value)) {
-		const view = value as ArrayBufferView;
+		const view = value;
 		return {
 			[BINARY_TAG]: "ArrayBufferView",
 			data: bytesToBase64(new Uint8Array(view.buffer, view.byteOffset, view.byteLength)),

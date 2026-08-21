@@ -73,7 +73,7 @@ function formatNestedActivity(input: {
 	if (input.turnCount !== undefined) facts.push(`${input.turnCount} turns`);
 	if (input.toolCount !== undefined) facts.push(`${input.toolCount} tools`);
 	if (input.totalTokens) facts.push(`${formatTokens(input.totalTokens.total)} tok`);
-	const activity = formatActivityLabel(input.lastActivityAt, input.activityState as ActivityState | undefined);
+	const activity = formatActivityLabel(input.lastActivityAt, input.activityState);
 	return activity || facts.length ? [activity, ...facts].filter(Boolean).join(" | ") : undefined;
 }
 

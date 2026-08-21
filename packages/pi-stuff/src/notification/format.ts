@@ -13,7 +13,8 @@ function withoutFencedCode(value: string): string {
 	const lines: string[] = [];
 	let fence: "`" | "~" | undefined;
 	for (const line of value.replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n")) {
-		const marker = line.match(/^\s*(`{3,}|~{3,})/u)?.[1]?.[0] as "`" | "~" | undefined;
+		const match = line.match(/^\s*(`{3,}|~{3,})/u)?.[1];
+		const marker = match?.startsWith("`") ? "`" : match?.startsWith("~") ? "~" : undefined;
 		if (marker) {
 			if (!fence) fence = marker;
 			else if (fence === marker) fence = undefined;

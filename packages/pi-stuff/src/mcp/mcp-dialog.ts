@@ -503,14 +503,13 @@ class McpControlDialog implements CommandDialogComponent {
 
 	private actionItems(server: McpServerStatusSnapshot): ServerAction[] {
 		if (server.disabled) return ["enable"];
-		return [
-			"reconnect",
-			server.autoConnect ? "on-demand" : "auto-connect",
-			...(server.oauth
-				? (["authenticate", ...(server.status === "needs-auth" ? [] : ["logout"])] as ServerAction[])
-				: []),
-			"disable",
-		];
+		const actions: ServerAction[] = ["reconnect", server.autoConnect ? "on-demand" : "auto-connect"];
+		if (server.oauth) {
+			actions.push("authenticate");
+			if (server.status !== "needs-auth") actions.push("logout");
+		}
+		actions.push("disable");
+		return actions;
 	}
 
 	private confirmationApplies(confirmation: Confirmation, server: McpServerStatusSnapshot): boolean {

@@ -15,6 +15,7 @@ interface ResumeToolHandoffStore {
 const RESUME_TOOL_HANDOFF = Symbol.for("@jczhang02/pi-stuff-tools/resume-tool-handoff/v3");
 
 function handoffStore(): ResumeToolHandoffStore {
+	// SAFETY: this process-global symbol is private to the Suite and always stores this module's handoff shape.
 	const root = globalThis as {
 		[key: symbol]: ResumeToolHandoffStore | undefined;
 	};

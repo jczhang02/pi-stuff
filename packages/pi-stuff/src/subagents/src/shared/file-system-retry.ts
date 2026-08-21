@@ -30,7 +30,7 @@ export function waitForFileSystemRetry(delayMs: number): void {
 }
 
 export function isRetryableFileSystemError(cause: unknown): boolean {
-	const code = (cause as NodeJS.ErrnoException | undefined)?.code;
+	const code = isRuntimeObject(cause) && cause !== null && "code" in cause ? cause.code : undefined;
 	return isRuntimeString(code) && RETRYABLE_FILE_SYSTEM_ERROR_CODES.has(code);
 }
 

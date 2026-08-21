@@ -208,6 +208,7 @@ export function listenForAgentWorkOriginQueries(
 ): () => void {
 	const unsubscribe = pi.events.on(AGENT_WORK_ORIGIN_QUERY_EVENT, (value) => {
 		if (!value || !isRuntimeObject(value)) return;
+		// SAFETY: this private event is emitted only below with the mutable query object owned by this module.
 		const query = value as AgentWorkOriginQuery;
 		query.origin = readOrigin();
 		query.handled = true;
