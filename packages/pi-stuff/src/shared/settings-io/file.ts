@@ -10,13 +10,17 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { type JsonInputObject, type JsonValue, parseJsonValue } from "../json-value.js";
+import { type JsonInputObject, type JsonInputValue, type JsonValue, parseJsonValue } from "../json-value.js";
 import { isRuntimeObject } from "../runtime-type.js";
 
 export interface SettingsRecord extends JsonInputObject {}
 
-function isRecord(value: unknown): value is SettingsRecord {
+function isSettingsRecord(value: JsonInputValue): value is SettingsRecord {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
+}
+
+function isMissingFile(cause: unknown): boolean {
+	return isRuntimeObject(cause) && cause !== null && "code" in cause && cause.code === "ENOENT";
 }
 
 /** Missing file returns `{}`; a malformed file throws so callers can fall back. */
@@ -25,7 +29,7 @@ export async function readSettingsFile(path: string): Promise<SettingsRecord> {
 	try {
 		content = await readFile(path, "utf8");
 	} catch (error) {
-		if (isRecord(error) && error["code"] === "ENOENT") return {};
+		if (isMissingFile(error)) return {};
 		throw error;
 	}
 	return parseSettingsContent(content, path);
@@ -66,7 +70,7 @@ export async function readNamespace(path: string, namespace: string): Promise<Se
 	const file = await readSettingsFile(path);
 	const value = file[namespace];
 	if (value === undefined) return undefined;
-	if (!isRecord(value)) throw new Error(`Settings namespace "${namespace}" at ${path} is not a JSON object`);
+	if (!isSettingsRecord(value)) throw new Error(`Settings namespace "${namespace}" at ${path} is not a JSON object`);
 	return value;
 }
 
@@ -81,7 +85,7 @@ function parseSettingsContent(content: string, path: string): SettingsRecord {
 	} catch {
 		throw new Error(`Settings file at ${path} contains invalid JSON`);
 	}
-	if (!isRecord(parsed)) throw new Error(`Settings file at ${path} is not a JSON object`);
+	if (!isSettingsRecord(parsed)) throw new Error(`Settings file at ${path} is not a JSON object`);
 	return parsed;
 }
 
@@ -90,7 +94,7 @@ export function readSettingsFileSync(path: string): SettingsRecord {
 	try {
 		content = readFileSync(path, "utf8");
 	} catch (error) {
-		if (isRecord(error) && error["code"] === "ENOENT") return {};
+		if (isMissingFile(error)) return {};
 		throw error;
 	}
 	return parseSettingsContent(content, path);
@@ -123,6 +127,6 @@ export function readNamespaceSync(path: string, namespace: string): SettingsReco
 	const file = readSettingsFileSync(path);
 	const value = file[namespace];
 	if (value === undefined) return undefined;
-	if (!isRecord(value)) throw new Error(`Settings namespace "${namespace}" at ${path} is not a JSON object`);
+	if (!isSettingsRecord(value)) throw new Error(`Settings namespace "${namespace}" at ${path} is not a JSON object`);
 	return value;
 }

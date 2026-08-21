@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
+import { isJsonInputValue, type JsonInputObject, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import {
 	mergedSettingsPath,
@@ -45,25 +46,37 @@ type SettingsChanges = {
 	-readonly [Id in Exclude<keyof NotificationSettings, "schemaVersion">]?: NotificationSettings[Id];
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: JsonInputValue): value is JsonInputObject {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
-function parseSettings(value: unknown): NotificationSettings {
+function deliveryMode(value: JsonInputValue): TerminalDeliveryMode | undefined {
+	if (!isRuntimeString(value)) return undefined;
+	for (const mode of DELIVERY_MODES) {
+		if (value === mode) return mode;
+	}
+	return undefined;
+}
+
+function parseSettings(value: JsonInputValue): NotificationSettings {
 	if (!isRecord(value)) throw new Error("expected a settings object");
-	const delivery = value["delivery"];
+	const delivery = deliveryMode(value["delivery"]);
 	const minimumDurationMs = value["minimumDurationMs"];
 	const gracePeriodMs = value["gracePeriodMs"];
 	const legacy = value["schemaVersion"] === 1;
+	const enabled = value["enabled"];
+	const completionAlerts = value["completionAlerts"];
+	const failureAlerts = value["failureAlerts"];
+	const responsePreview = legacy ? false : value["responsePreview"];
+	const terminalBell = legacy ? value["sound"] : value["terminalBell"];
 	if (
 		(!legacy && value["schemaVersion"] !== 2) ||
-		!isRuntimeBoolean(value["enabled"]) ||
-		!isRuntimeBoolean(value["completionAlerts"]) ||
-		!isRuntimeBoolean(value["failureAlerts"]) ||
-		(legacy ? !isRuntimeBoolean(value["sound"]) : !isRuntimeBoolean(value["terminalBell"])) ||
-		(!legacy && !isRuntimeBoolean(value["responsePreview"])) ||
-		!isRuntimeString(delivery) ||
-		!DELIVERY_MODES.has(delivery as TerminalDeliveryMode) ||
+		!isRuntimeBoolean(enabled) ||
+		!isRuntimeBoolean(completionAlerts) ||
+		!isRuntimeBoolean(failureAlerts) ||
+		!isRuntimeBoolean(terminalBell) ||
+		!isRuntimeBoolean(responsePreview) ||
+		!delivery ||
 		!isRuntimeNumber(minimumDurationMs) ||
 		!Number.isFinite(minimumDurationMs) ||
 		minimumDurationMs < 0 ||
@@ -74,15 +87,15 @@ function parseSettings(value: unknown): NotificationSettings {
 		throw new Error("expected schemaVersion 1 or 2 and valid Notification settings");
 	}
 	return {
-		completionAlerts: value["completionAlerts"],
-		delivery: delivery as TerminalDeliveryMode,
-		enabled: value["enabled"],
-		failureAlerts: value["failureAlerts"],
+		completionAlerts,
+		delivery,
+		enabled,
+		failureAlerts,
 		gracePeriodMs,
 		minimumDurationMs,
-		responsePreview: legacy ? false : (value["responsePreview"] as boolean),
+		responsePreview,
 		schemaVersion: 2,
-		terminalBell: legacy ? (value["sound"] as boolean) : (value["terminalBell"] as boolean),
+		terminalBell,
 	};
 }
 
@@ -91,7 +104,9 @@ async function readSettings(path: string): Promise<NotificationSettings> {
 		const namespace = await readNamespace(path, NOTIFICATION_NAMESPACE);
 		return namespace === undefined ? DEFAULT_NOTIFICATION_SETTINGS : parseSettings(namespace);
 	} catch (error) {
-		if (isRecord(error) && error["code"] === "ENOENT") return DEFAULT_NOTIFICATION_SETTINGS;
+		if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "ENOENT") {
+			return DEFAULT_NOTIFICATION_SETTINGS;
+		}
 		reportDiagnostic({
 			action: "/notifications",
 			capability: "Notification",
@@ -113,7 +128,7 @@ async function writeSettings(path: string, settings: NotificationSettings): Prom
 /** One-time lift of the legacy `pi-stuff-notification.json` into the merged `notification` namespace. */
 async function readLegacySettings(path: string): Promise<NotificationSettings | undefined> {
 	try {
-		return parseSettings(JSON.parse(await readFile(join(dirname(path), SETTINGS_FILE_NAME), "utf8")));
+		return parseSettings(parseJsonValue(await readFile(join(dirname(path), SETTINGS_FILE_NAME), "utf8")));
 	} catch {
 		return undefined;
 	}
@@ -229,8 +244,9 @@ export class NotificationSettingsStore {
 	}
 }
 
-function isValidSettings(value: unknown): boolean {
+function isValidSettings<Value>(value: Value): boolean {
 	try {
+		if (!isJsonInputValue(value)) return false;
 		parseSettings(value);
 		return true;
 	} catch {
