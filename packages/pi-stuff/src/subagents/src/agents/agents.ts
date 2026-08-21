@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { MAX_MODEL_CANDIDATES_PER_CHILD } from "../runs/shared/model-fallback.ts";
 import type { ModelScopeConfig } from "../runs/shared/model-scope.ts";
@@ -169,34 +169,32 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 			return undefined;
 		}
 
-		return {
+		let agent: AgentConfig = {
 			name: buildRuntimeName(localName, packageName),
 			localName,
-			...(packageName ? { packageName } : {}),
 			description,
-			...(rawTools !== undefined ? { tools } : {}),
-			...(mcpDirectTools.length > 0 ? { mcpDirectTools } : {}),
-			...(optionalText(frontmatter.model) ? { model: frontmatter.model.trim() } : {}),
-			...(fallbackModels ? { fallbackModels } : {}),
-			...(frontmatter.thinking === "false"
-				? { thinking: false as const }
-				: optionalText(frontmatter.thinking)
-					? { thinking: frontmatter.thinking.trim() }
-					: {}),
 			systemPromptMode,
 			inheritProjectContext,
 			inheritSkills,
-			...(defaultTurnBudget ? { defaultTurnBudget } : {}),
 			systemPrompt: body.trim(),
 			source,
 			filePath,
-			...(skills ? { skills } : {}),
-			...(skillPath ? { skillPath } : {}),
-			...(extensions !== undefined ? { extensions } : {}),
-			...(subagentOnlyExtensions ? { subagentOnlyExtensions } : {}),
-			...(maxSubagentDepth !== undefined ? { maxSubagentDepth } : {}),
-			...(toolBudget ? { toolBudget } : {}),
 		};
+		if (packageName) agent = { ...agent, packageName };
+		if (rawTools !== undefined) agent = { ...agent, tools };
+		if (mcpDirectTools.length > 0) agent = { ...agent, mcpDirectTools };
+		if (optionalText(frontmatter.model)) agent = { ...agent, model: frontmatter.model.trim() };
+		if (fallbackModels) agent = { ...agent, fallbackModels };
+		if (frontmatter.thinking === "false") agent = { ...agent, thinking: false };
+		else if (optionalText(frontmatter.thinking)) agent = { ...agent, thinking: frontmatter.thinking.trim() };
+		if (defaultTurnBudget) agent = { ...agent, defaultTurnBudget };
+		if (skills) agent = { ...agent, skills };
+		if (skillPath) agent = { ...agent, skillPath };
+		if (extensions !== undefined) agent = { ...agent, extensions };
+		if (subagentOnlyExtensions) agent = { ...agent, subagentOnlyExtensions };
+		if (maxSubagentDepth !== undefined) agent = { ...agent, maxSubagentDepth };
+		if (toolBudget) agent = { ...agent, toolBudget };
+		return agent;
 	} catch {
 		// One malformed optional Agent definition must not make the Agent tool unavailable.
 		return undefined;
@@ -205,7 +203,7 @@ async function loadAgent(filePath: string, source: AgentSource): Promise<AgentCo
 
 function parseTurnBudget(value: string | undefined, name: string): TurnBudgetConfig | undefined {
 	if (!optionalText(value)) return undefined;
-	const parsed = JSON.parse(value) as unknown;
+	const parsed = parseJsonValue(value);
 	const result = resolveTurnBudgetConfig(parsed, `Agent '${name}' turnBudget`);
 	if (result.error) throw new Error(result.error);
 	return result.turnBudget;
@@ -213,7 +211,7 @@ function parseTurnBudget(value: string | undefined, name: string): TurnBudgetCon
 
 function parseToolBudget(value: string | undefined, name: string): ToolBudgetConfig | undefined {
 	if (!optionalText(value)) return undefined;
-	const parsed = JSON.parse(value) as unknown;
+	const parsed = parseJsonValue(value);
 	const result = validateToolBudgetConfig(parsed, `Agent '${name}' toolBudget`);
 	if (result.error) throw new Error(result.error);
 	return result.budget;
@@ -425,7 +423,7 @@ async function readJson(filePath: string): Promise<JsonValue | undefined> {
 	}
 }
 
-function stringArray(value: unknown): string[] {
+function stringArray(value: JsonValue | undefined): string[] {
 	return Array.isArray(value)
 		? value.filter((entry): entry is string => isRuntimeString(entry) && entry.trim().length > 0)
 		: [];
@@ -444,7 +442,7 @@ function isWithin(candidate: string, root: string): boolean {
 	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: JsonValue | undefined): value is JsonObject {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
