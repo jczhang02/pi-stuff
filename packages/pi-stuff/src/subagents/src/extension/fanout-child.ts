@@ -48,6 +48,14 @@ import {
 import { FanoutChildSubagentParams } from "./schemas.ts";
 import { buildFanoutChildSubagentToolDescription } from "./tool-description.ts";
 
+interface FanoutChildGlobalStore {
+	__piSubagentFanoutChildRegisteredApis?: WeakSet<ExtensionAPI>;
+}
+
+type AgentPrepareInput = Parameters<AgentExecutionCoordinatorPort["prepare"]>[0];
+type AgentToolFailureResult = AgentToolResult<Details> & { readonly isError: true };
+type ExtensionEventPayload = Parameters<Parameters<ExtensionAPI["events"]["on"]>[1]>[0];
+
 interface FanoutExecutor {
 	execute(
 		id: string,
@@ -141,13 +149,13 @@ export default function registerFanoutChildSubagentExtension(
 	if (process.env[SUBAGENT_CHILD_ENV] !== "1" || process.env[SUBAGENT_FANOUT_CHILD_ENV] !== "1") return;
 	const deps: FanoutChildDependencies = { ...PRODUCTION_DEPENDENCIES, ...overrides };
 
-	const globalStore = globalThis as Record<string, unknown>;
-	const registeredKey = "__piSubagentFanoutChildRegisteredApis";
+	// SAFETY: this module owns the single optional global WeakSet slot and validates it before reuse.
+	const globalStore = globalThis as typeof globalThis & FanoutChildGlobalStore;
 	const registeredApis =
-		globalStore[registeredKey] instanceof WeakSet
-			? (globalStore[registeredKey] as WeakSet<ExtensionAPI>)
+		globalStore.__piSubagentFanoutChildRegisteredApis instanceof WeakSet
+			? globalStore.__piSubagentFanoutChildRegisteredApis
 			: new WeakSet<ExtensionAPI>();
-	globalStore[registeredKey] = registeredApis;
+	globalStore.__piSubagentFanoutChildRegisteredApis = registeredApis;
 	if (registeredApis.has(pi)) return;
 
 	const config = deps.loadConfiguration();
@@ -187,15 +195,17 @@ export default function registerFanoutChildSubagentExtension(
 		return undefined;
 	};
 
-	const governorFailureResult = (params: PublicAgentParams, message: string): AgentToolResult<Details> =>
-		({
+	const governorFailureResult = (params: PublicAgentParams, message: string): AgentToolResult<Details> => {
+		const result: AgentToolFailureResult = {
 			content: [{ type: "text", text: message }],
 			isError: true,
 			details: {
 				mode: params.action ? "management" : params.tasks?.length ? "parallel" : "single",
 				results: [],
 			},
-		}) as AgentToolResult<Details>;
+		};
+		return result;
+	};
 
 	const tool: ToolDefinition<typeof FanoutChildSubagentParams, Details> = {
 		name: "subagent",
@@ -203,12 +213,13 @@ export default function registerFanoutChildSubagentExtension(
 		description: buildFanoutChildSubagentToolDescription(),
 		parameters: FanoutChildSubagentParams,
 		async execute(id, rawParams, signal, onUpdate, ctx) {
-			const supplied = rawParams as Record<string, unknown>;
+			// SAFETY: FanoutChildSubagentParams is an explicit launch-only subset of PublicAgentParams.
+			const publicParams = rawParams as PublicAgentParams;
 			const forbiddenField = ["action", "id", "index", "message", "foreground"].find((field) =>
-				Object.hasOwn(supplied, field),
+				Object.hasOwn(rawParams, field),
 			);
 			if (forbiddenField) {
-				const params = { ...(rawParams as PublicAgentParams), foreground: true };
+				const params = { ...publicParams, foreground: true };
 				return projectEngineResult(
 					params,
 					governorFailureResult(
@@ -222,9 +233,9 @@ export default function registerFanoutChildSubagentExtension(
 			// collected before the parent writer can report terminal success.
 			let params: PublicAgentParams;
 			try {
-				params = normalizePublicAgentParams({ ...(rawParams as PublicAgentParams), foreground: true });
+				params = normalizePublicAgentParams({ ...publicParams, foreground: true });
 			} catch (error) {
-				const supplied = { ...(rawParams as PublicAgentParams), foreground: true };
+				const supplied = { ...publicParams, foreground: true };
 				return projectEngineResult(
 					supplied,
 					governorFailureResult(supplied, error instanceof Error ? error.message : String(error)),
@@ -246,11 +257,12 @@ export default function registerFanoutChildSubagentExtension(
 					governorFailureResult(params, error instanceof Error ? error.message : String(error)),
 				);
 			}
-			const prepared = await executionGovernor.prepare({
+			const prepareInput = {
 				launchRunId,
 				params,
-				...(resumeTargetRunId ? { resumeTargetRunId } : {}),
-			});
+			} satisfies AgentPrepareInput;
+			if (resumeTargetRunId) Object.assign(prepareInput, { resumeTargetRunId });
+			const prepared = await executionGovernor.prepare(prepareInput);
 			if (!prepared.ok) return projectEngineResult(params, governorFailureResult(params, prepared.message));
 			if (!active) {
 				if (prepared.invocation) {
@@ -356,7 +368,7 @@ export default function registerFanoutChildSubagentExtension(
 	};
 
 	const eventUnsubscribes: Array<() => void> = [];
-	const onBus = (event: string, handler: (data: unknown) => void): void => {
+	const onBus = (event: string, handler: (data: ExtensionEventPayload) => void): void => {
 		const unsubscribe = pi.events.on(event, handler);
 		if (isRuntimeFunction(unsubscribe)) eventUnsubscribes.push(unsubscribe);
 	};
@@ -375,7 +387,7 @@ export default function registerFanoutChildSubagentExtension(
 		}
 	};
 	try {
-		const complete = (data: unknown): void => {
+		const complete = (data: ExtensionEventPayload): void => {
 			if (!active) return;
 			void executionGovernor.complete(data).catch((error) => {
 				reportAgentDiagnostic("Failed to release completed nested Agent lease:", error);
