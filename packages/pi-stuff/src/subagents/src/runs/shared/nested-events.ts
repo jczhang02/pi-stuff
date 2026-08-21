@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import { parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeNumber,
@@ -104,6 +105,152 @@ interface CachedNestedRegistry {
 	readonly weightBytes: number;
 }
 
+interface RawNestedRoute {
+	rootRunId?: unknown;
+	eventSink?: unknown;
+	controlInbox?: unknown;
+	capabilityToken?: unknown;
+}
+
+interface RawTokenUsage {
+	input?: unknown;
+	output?: unknown;
+	total?: unknown;
+}
+
+interface RawCost {
+	inputTokens?: unknown;
+	outputTokens?: unknown;
+	costUsd?: unknown;
+}
+
+interface RawTurnBudget {
+	maxTurns?: unknown;
+	graceTurns?: unknown;
+	turnCount?: unknown;
+	outcome?: unknown;
+	wrapUpRequestedAtTurn?: unknown;
+	terminationDeferredAtTurn?: unknown;
+	exceededAtTurn?: unknown;
+}
+
+interface RawToolBudget {
+	hard?: unknown;
+	soft?: unknown;
+	block?: unknown;
+	outcome?: unknown;
+	toolCount?: unknown;
+	softReachedAt?: unknown;
+	hardReachedAt?: unknown;
+	blockedTool?: unknown;
+}
+
+interface RawCapabilityAudit {
+	ceiling?: unknown;
+	requestedTools?: unknown;
+	effectiveTools?: unknown;
+	removedTools?: unknown;
+	internalTools?: unknown;
+	extensionsDenied?: unknown;
+	removedExtensionCount?: unknown;
+	requestedMcpToolCount?: unknown;
+	effectiveMcpTools?: unknown;
+}
+
+interface RawParallelGroup {
+	start?: unknown;
+	count?: unknown;
+	stepIndex?: unknown;
+}
+
+interface RawNestedStep {
+	agent?: unknown;
+	delegatedTask?: unknown;
+	task?: unknown;
+	description?: unknown;
+	agentStatus?: unknown;
+	status?: unknown;
+	sessionFile?: unknown;
+	transcriptPath?: unknown;
+	transcriptError?: unknown;
+	activityState?: unknown;
+	lastActivityAt?: unknown;
+	currentTool?: unknown;
+	currentToolStartedAt?: unknown;
+	currentPath?: unknown;
+	turnCount?: unknown;
+	toolCount?: unknown;
+	startedAt?: unknown;
+	endedAt?: unknown;
+	error?: unknown;
+	timedOut?: unknown;
+	stopped?: unknown;
+	turnBudget?: unknown;
+	turnBudgetExceeded?: unknown;
+	wrapUpRequested?: unknown;
+	toolBudget?: unknown;
+	toolBudgetBlocked?: unknown;
+	processTerminal?: unknown;
+	capabilityCeiling?: unknown;
+	capabilityAudit?: unknown;
+	children?: unknown;
+}
+
+interface RawNestedSummary extends RawNestedStep {
+	id?: unknown;
+	parentRunOrigin?: unknown;
+	parentRunId?: unknown;
+	parentStepIndex?: unknown;
+	parentAgent?: unknown;
+	depth?: unknown;
+	path?: unknown;
+	state?: unknown;
+	asyncDir?: unknown;
+	pid?: unknown;
+	sessionId?: unknown;
+	intercomTarget?: unknown;
+	ownerIntercomTarget?: unknown;
+	leafIntercomTarget?: unknown;
+	ownerState?: unknown;
+	controlInbox?: unknown;
+	capabilityToken?: unknown;
+	mode?: unknown;
+	agents?: unknown;
+	currentStep?: unknown;
+	parallelGroups?: unknown;
+	totalTokens?: unknown;
+	totalCost?: unknown;
+	lastUpdate?: unknown;
+	timeoutMs?: unknown;
+	deadlineAt?: unknown;
+	steps?: unknown;
+}
+
+interface RawNestedEvent {
+	type?: unknown;
+	ts?: unknown;
+	rootRunId?: unknown;
+	parentRunId?: unknown;
+	parentStepIndex?: unknown;
+	capabilityToken?: unknown;
+	child?: unknown;
+}
+
+interface RawNestedRegistry {
+	rootRunId?: unknown;
+	updatedAt?: unknown;
+	children?: unknown;
+	pendingChildren?: unknown;
+	processedEvents?: unknown;
+}
+
+interface NestedParentAddress {
+	parentRunId: string;
+	parentStepIndex?: number;
+	depth: number;
+	path: NestedPathEntry[];
+}
+
 /**
  * CurrentAgents refreshes several times per second while work is live. Keep a
  * bounded, stat-keyed cache so an unchanged registry is not repeatedly read
@@ -118,7 +265,7 @@ export interface AuthoritativeNestedProjectionOptions {
 	readonly timeoutMs?: number;
 }
 
-export function isSafeNestedId(value: unknown): value is string {
+export function isSafeNestedId<Value>(value: Value): value is Value & string {
 	return isSafeNestedPathId(value);
 }
 
@@ -159,10 +306,10 @@ function validateRouteStorage(route: NestedRoute): void {
 	assertPrivateDirectory(routeRoot);
 	assertPrivateDirectory(route.eventSink);
 	assertPrivateDirectory(route.controlInbox);
-	const metadata = JSON.parse(readBoundedOwnedFile(path.join(routeRoot, ROUTE_FILE), MAX_ROUTE_METADATA_BYTES)) as {
-		rootRunId?: unknown;
-		capabilityToken?: unknown;
-	};
+	const metadata = parseJsonValue(readBoundedOwnedFile(path.join(routeRoot, ROUTE_FILE), MAX_ROUTE_METADATA_BYTES));
+	if (!isRuntimeObject(metadata) || metadata === null || Array.isArray(metadata)) {
+		throw new Error("Nested event route metadata is not an object.");
+	}
 	if (metadata.rootRunId !== route.rootRunId || metadata.capabilityToken !== route.capabilityToken) {
 		throw new Error("Nested event route metadata does not match the provided root id and capability token.");
 	}
@@ -226,9 +373,10 @@ export function resolveInheritedNestedRouteFromEnv(env: NodeJS.ProcessEnv = proc
 }
 
 /** Validate one exact persisted route without falling back to another route with the same root id. */
-export function resolvePersistedNestedRoute(value: unknown, expectedRootRunId: string): NestedRoute | undefined {
+export function resolvePersistedNestedRoute<Value>(value: Value, expectedRootRunId: string): NestedRoute | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	const raw = value as Record<string, unknown>;
+	// SAFETY: the object guard proves the persisted route can be inspected through its optional raw fields.
+	const raw = value as Value & RawNestedRoute;
 	if (
 		raw.rootRunId !== expectedRootRunId ||
 		!isSafeNestedId(raw.rootRunId) ||
@@ -264,7 +412,7 @@ export function recoverRetiredNestedRouteStatus(route: NestedRoute, rootAsyncDir
 		fs.lstatSync(commonRouteRoot(route));
 		return undefined;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") return undefined;
+		if (!isRuntimeObject(error) || error === null || !("code" in error) || error.code !== "ENOENT") return undefined;
 	}
 	const claim = tryAcquireStatusMutationClaim(rootAsyncDir);
 	if (!claim) return undefined;
@@ -285,11 +433,11 @@ export function recoverRetiredNestedRouteStatus(route: NestedRoute, rootAsyncDir
 			runId: status.runId,
 			runnerProcessInstanceId: status.processTerminal?.runnerProcessInstanceId,
 		});
-		const repaired = {
+		const repaired: AsyncStatus = {
 			...status,
 			nestedRoute: undefined,
-			...(processTerminal ? { processTerminal } : {}),
 		};
+		if (processTerminal) repaired.processTerminal = processTerminal;
 		writePrivateAtomicJson(path.join(rootAsyncDir, "status.json"), repaired);
 		return repaired;
 	} finally {
@@ -299,17 +447,23 @@ export function recoverRetiredNestedRouteStatus(route: NestedRoute, rootAsyncDir
 
 export function resolveNestedParentAddressFromEnv(
 	env: NodeJS.ProcessEnv = process.env,
-): { parentRunId: string; parentStepIndex?: number; depth: number; path: NestedPathEntry[] } | undefined {
+): NestedParentAddress | undefined {
 	const parentRunId = env[SUBAGENT_PARENT_RUN_ID_ENV];
 	if (!isSafeNestedId(parentRunId)) return undefined;
 	const rawIndex = env[SUBAGENT_PARENT_CHILD_INDEX_ENV];
 	const parentStepIndex = rawIndex && /^\d+$/.test(rawIndex) ? Number(rawIndex) : undefined;
 	const depth = Math.min(Math.max(1, clampNumber(Number(env[SUBAGENT_PARENT_DEPTH_ENV])) ?? 1), MAX_DEPTH);
 	const parsedPath = parseNestedPathEnv(env[SUBAGENT_PARENT_PATH_ENV]);
-	const nestedPath = parsedPath.length
-		? parsedPath
-		: [{ runId: parentRunId, ...(parentStepIndex !== undefined ? { stepIndex: parentStepIndex } : {}) }];
-	return { parentRunId, ...(parentStepIndex !== undefined ? { parentStepIndex } : {}), depth, path: nestedPath };
+	const parentPath: NestedPathEntry = { runId: parentRunId };
+	if (parentStepIndex !== undefined) parentPath.stepIndex = parentStepIndex;
+	const nestedPath = parsedPath.length ? parsedPath : [parentPath];
+	const address: NestedParentAddress = {
+		parentRunId,
+		depth,
+		path: nestedPath,
+	};
+	if (parentStepIndex !== undefined) address.parentStepIndex = parentStepIndex;
+	return address;
 }
 
 export function resolveNestedAsyncDir(rootRunId: string, run: NestedRunSummary): string | undefined {
@@ -327,26 +481,28 @@ export function resolveNestedAsyncDir(rootRunId: string, run: NestedRunSummary):
 	}
 }
 
-function clampNumber(value: unknown): number | undefined {
+function clampNumber<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
-function stringValue(value: unknown, max = 512): string | undefined {
+function stringValue<Value>(value: Value, max = 512): string | undefined {
 	return isRuntimeString(value) && value.length > 0 ? value.slice(0, max) : undefined;
 }
 
-function sanitizeTokenUsage(value: unknown): NestedRunSummary["totalTokens"] | undefined {
+function sanitizeTokenUsage<Value>(value: Value): NestedRunSummary["totalTokens"] | undefined {
 	if (!value || !isRuntimeObject(value)) return undefined;
-	const raw = value as Record<string, unknown>;
+	// SAFETY: the object guard proves this token-usage candidate has inspectable optional raw fields.
+	const raw = value as Value & RawTokenUsage;
 	const input = clampNumber(raw.input);
 	const output = clampNumber(raw.output);
 	const total = clampNumber(raw.total);
 	return input !== undefined && output !== undefined && total !== undefined ? { input, output, total } : undefined;
 }
 
-function sanitizeCost(value: unknown): NestedRunSummary["totalCost"] | undefined {
+function sanitizeCost<Value>(value: Value): NestedRunSummary["totalCost"] | undefined {
 	if (!value || !isRuntimeObject(value)) return undefined;
-	const raw = value as Record<string, unknown>;
+	// SAFETY: the object guard proves this cost candidate has inspectable optional raw fields.
+	const raw = value as Value & RawCost;
 	const inputTokens = clampNumber(raw.inputTokens);
 	const outputTokens = clampNumber(raw.outputTokens);
 	const costUsd = clampNumber(raw.costUsd);
@@ -355,9 +511,10 @@ function sanitizeCost(value: unknown): NestedRunSummary["totalCost"] | undefined
 		: undefined;
 }
 
-function sanitizeTurnBudget(value: unknown): TurnBudgetState | undefined {
+function sanitizeTurnBudget<Value>(value: Value): TurnBudgetState | undefined {
 	if (!value || !isRuntimeObject(value)) return undefined;
-	const raw = value as Record<string, unknown>;
+	// SAFETY: the object guard proves this turn-budget candidate has inspectable optional raw fields.
+	const raw = value as Value & RawTurnBudget;
 	const maxTurns = clampNumber(raw.maxTurns);
 	const graceTurns = clampNumber(raw.graceTurns);
 	const turnCount = clampNumber(raw.turnCount);
@@ -369,24 +526,20 @@ function sanitizeTurnBudget(value: unknown): TurnBudgetState | undefined {
 			? raw.outcome
 			: undefined;
 	if (maxTurns === undefined || graceTurns === undefined || turnCount === undefined || !outcome) return undefined;
-	return {
-		maxTurns,
-		graceTurns,
-		turnCount,
-		outcome,
-		...(clampNumber(raw.wrapUpRequestedAtTurn) !== undefined
-			? { wrapUpRequestedAtTurn: clampNumber(raw.wrapUpRequestedAtTurn) }
-			: {}),
-		...(clampNumber(raw.terminationDeferredAtTurn) !== undefined
-			? { terminationDeferredAtTurn: clampNumber(raw.terminationDeferredAtTurn) }
-			: {}),
-		...(clampNumber(raw.exceededAtTurn) !== undefined ? { exceededAtTurn: clampNumber(raw.exceededAtTurn) } : {}),
-	};
+	const budget: TurnBudgetState = { maxTurns, graceTurns, turnCount, outcome };
+	const wrapUpRequestedAtTurn = clampNumber(raw.wrapUpRequestedAtTurn);
+	const terminationDeferredAtTurn = clampNumber(raw.terminationDeferredAtTurn);
+	const exceededAtTurn = clampNumber(raw.exceededAtTurn);
+	if (wrapUpRequestedAtTurn !== undefined) budget.wrapUpRequestedAtTurn = wrapUpRequestedAtTurn;
+	if (terminationDeferredAtTurn !== undefined) budget.terminationDeferredAtTurn = terminationDeferredAtTurn;
+	if (exceededAtTurn !== undefined) budget.exceededAtTurn = exceededAtTurn;
+	return budget;
 }
 
-function sanitizeToolBudget(value: unknown): NestedStepSummary["toolBudget"] | undefined {
+function sanitizeToolBudget<Value>(value: Value): NestedStepSummary["toolBudget"] | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	const raw = value as Record<string, unknown>;
+	// SAFETY: the non-array object guard proves this tool-budget candidate has inspectable optional raw fields.
+	const raw = value as Value & RawToolBudget;
 	const hard = clampNumber(raw.hard);
 	const toolCount = clampNumber(raw.toolCount);
 	const outcome =
@@ -415,19 +568,18 @@ function sanitizeToolBudget(value: unknown): NestedStepSummary["toolBudget"] | u
 		return undefined;
 	}
 	const soft = clampNumber(raw.soft);
-	return {
-		hard,
-		block,
-		outcome,
-		toolCount,
-		...(soft !== undefined && Number.isInteger(soft) && soft >= 0 ? { soft } : {}),
-		...(clampNumber(raw.softReachedAt) !== undefined ? { softReachedAt: clampNumber(raw.softReachedAt) } : {}),
-		...(clampNumber(raw.hardReachedAt) !== undefined ? { hardReachedAt: clampNumber(raw.hardReachedAt) } : {}),
-		...(stringValue(raw.blockedTool, 128) ? { blockedTool: stringValue(raw.blockedTool, 128) } : {}),
-	};
+	const budget: NonNullable<NestedStepSummary["toolBudget"]> = { hard, block, outcome, toolCount };
+	const softReachedAt = clampNumber(raw.softReachedAt);
+	const hardReachedAt = clampNumber(raw.hardReachedAt);
+	const blockedTool = stringValue(raw.blockedTool, 128);
+	if (soft !== undefined && Number.isInteger(soft) && soft >= 0) budget.soft = soft;
+	if (softReachedAt !== undefined) budget.softReachedAt = softReachedAt;
+	if (hardReachedAt !== undefined) budget.hardReachedAt = hardReachedAt;
+	if (blockedTool) budget.blockedTool = blockedTool;
+	return budget;
 }
 
-function sanitizeCapabilityCeiling(value: unknown): ResolvedSubagentCapabilityCeiling | undefined {
+function sanitizeCapabilityCeiling<Value>(value: Value): ResolvedSubagentCapabilityCeiling | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 	try {
 		return decodeSubagentCapabilityCeiling(Buffer.from(JSON.stringify(value), "utf8").toString("base64url"));
@@ -436,7 +588,7 @@ function sanitizeCapabilityCeiling(value: unknown): ResolvedSubagentCapabilityCe
 	}
 }
 
-function sanitizeStringList(value: unknown): string[] | undefined {
+function sanitizeStringList<Value>(value: Value): string[] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	return value
 		.map((entry) => stringValue(entry, 128))
@@ -444,9 +596,10 @@ function sanitizeStringList(value: unknown): string[] | undefined {
 		.slice(0, 256);
 }
 
-function sanitizeCapabilityAudit(value: unknown): SubagentCapabilityAudit | undefined {
+function sanitizeCapabilityAudit<Value>(value: Value): SubagentCapabilityAudit | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	const raw = value as Record<string, unknown>;
+	// SAFETY: the non-array object guard proves this audit candidate has inspectable optional raw fields.
+	const raw = value as Value & RawCapabilityAudit;
 	const ceiling = sanitizeCapabilityCeiling(raw.ceiling);
 	const effectiveTools = sanitizeStringList(raw.effectiveTools);
 	const removedTools = sanitizeStringList(raw.removedTools);
@@ -471,9 +624,8 @@ function sanitizeCapabilityAudit(value: unknown): SubagentCapabilityAudit | unde
 		return undefined;
 	}
 	const requestedTools = sanitizeStringList(raw.requestedTools);
-	return {
+	const audit: SubagentCapabilityAudit = {
 		ceiling,
-		...(requestedTools ? { requestedTools } : {}),
 		effectiveTools,
 		removedTools,
 		internalTools,
@@ -482,25 +634,37 @@ function sanitizeCapabilityAudit(value: unknown): SubagentCapabilityAudit | unde
 		requestedMcpToolCount,
 		effectiveMcpTools,
 	};
+	if (requestedTools) audit.requestedTools = requestedTools;
+	return audit;
 }
 
-function sanitizeState(value: unknown, fallback: NestedRunState): NestedRunState {
-	return value === "queued" ||
-		value === "running" ||
-		value === "complete" ||
-		value === "failed" ||
-		value === "paused" ||
-		value === "stopped"
-		? value
-		: fallback;
+function sanitizeState<Value>(value: Value, fallback: NestedRunState): NestedRunState {
+	if (!isRuntimeString(value)) return fallback;
+	switch (value) {
+		case "queued":
+			return "queued";
+		case "running":
+			return "running";
+		case "complete":
+			return "complete";
+		case "failed":
+			return "failed";
+		case "paused":
+			return "paused";
+		case "stopped":
+			return "stopped";
+		default:
+			return fallback;
+	}
 }
 
-function sanitizeParallelGroups(value: unknown): NestedRunSummary["parallelGroups"] | undefined {
+function sanitizeParallelGroups<Value>(value: Value): NestedRunSummary["parallelGroups"] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	return value
 		.map((entry) => {
 			if (!entry || !isRuntimeObject(entry) || Array.isArray(entry)) return undefined;
-			const raw = entry as Record<string, unknown>;
+			// SAFETY: the non-array object guard proves this parallel-group candidate has inspectable optional raw fields.
+			const raw = entry as RawParallelGroup;
 			const start = clampNumber(raw.start);
 			const count = clampNumber(raw.count);
 			const stepIndex = clampNumber(raw.stepIndex);
@@ -515,9 +679,10 @@ function sanitizeParallelGroups(value: unknown): NestedRunSummary["parallelGroup
 		.slice(0, MAX_STEPS);
 }
 
-function sanitizeStep(input: unknown, depth: number): NestedStepSummary | undefined {
+function sanitizeStep<Value>(input: Value, depth: number): NestedStepSummary | undefined {
 	if (!input || !isRuntimeObject(input)) return undefined;
-	const raw = input as Record<string, unknown>;
+	// SAFETY: the object guard proves this nested-step candidate has inspectable optional raw fields.
+	const raw = input as Value & RawNestedStep;
 	const agent = stringValue(raw.agent, 128);
 	if (!agent) return undefined;
 	const status =
@@ -534,54 +699,67 @@ function sanitizeStep(input: unknown, depth: number): NestedStepSummary | undefi
 	const capabilityCeiling = sanitizeCapabilityCeiling(raw.capabilityCeiling);
 	const capabilityAudit = sanitizeCapabilityAudit(raw.capabilityAudit);
 	const toolBudget = sanitizeToolBudget(raw.toolBudget);
-	return {
-		agent,
-		...(stringValue(raw.delegatedTask, 500) ? { delegatedTask: stringValue(raw.delegatedTask, 500) } : {}),
-		...(stringValue(raw.task, 500) ? { task: stringValue(raw.task, 500) } : {}),
-		...(stringValue(raw.description, 500) ? { description: stringValue(raw.description, 500) } : {}),
-		...(raw.agentStatus === "crashed" ? { agentStatus: "crashed" as const } : {}),
-		status,
-		...(stringValue(raw.sessionFile, 2048) ? { sessionFile: stringValue(raw.sessionFile, 2048) } : {}),
-		...(stringValue(raw.transcriptPath, 2048) ? { transcriptPath: stringValue(raw.transcriptPath, 2048) } : {}),
-		...(stringValue(raw.transcriptError, 1024) ? { transcriptError: stringValue(raw.transcriptError, 1024) } : {}),
-		...(raw.activityState === "active_long_running" || raw.activityState === "needs_attention"
-			? { activityState: raw.activityState }
-			: {}),
-		...(clampNumber(raw.lastActivityAt) !== undefined ? { lastActivityAt: clampNumber(raw.lastActivityAt) } : {}),
-		...(stringValue(raw.currentTool, 128) ? { currentTool: stringValue(raw.currentTool, 128) } : {}),
-		...(clampNumber(raw.currentToolStartedAt) !== undefined
-			? { currentToolStartedAt: clampNumber(raw.currentToolStartedAt) }
-			: {}),
-		...(stringValue(raw.currentPath, 2048) ? { currentPath: stringValue(raw.currentPath, 2048) } : {}),
-		...(clampNumber(raw.turnCount) !== undefined ? { turnCount: clampNumber(raw.turnCount) } : {}),
-		...(clampNumber(raw.toolCount) !== undefined ? { toolCount: clampNumber(raw.toolCount) } : {}),
-		...(clampNumber(raw.startedAt) !== undefined ? { startedAt: clampNumber(raw.startedAt) } : {}),
-		...(clampNumber(raw.endedAt) !== undefined ? { endedAt: clampNumber(raw.endedAt) } : {}),
-		...(stringValue(raw.error, 1024) ? { error: stringValue(raw.error, 1024) } : {}),
-		...(raw.timedOut === true ? { timedOut: true } : {}),
-		...(raw.stopped === true ? { stopped: true } : {}),
-		...(sanitizeTurnBudget(raw.turnBudget) ? { turnBudget: sanitizeTurnBudget(raw.turnBudget) } : {}),
-		...(raw.turnBudgetExceeded === true ? { turnBudgetExceeded: true } : {}),
-		...(raw.wrapUpRequested === true ? { wrapUpRequested: true } : {}),
-		...(toolBudget ? { toolBudget } : {}),
-		...(raw.toolBudgetBlocked === true ? { toolBudgetBlocked: true } : {}),
-		...(processTerminal ? { processTerminal } : {}),
-		...(capabilityCeiling ? { capabilityCeiling } : {}),
-		...(capabilityAudit ? { capabilityAudit } : {}),
-		...(depth < MAX_DEPTH && Array.isArray(raw.children)
-			? {
-					children: raw.children
-						.map((child) => sanitizeSummary(child, depth + 1))
-						.filter((child): child is NestedRunSummary => Boolean(child))
-						.slice(0, MAX_CHILDREN),
-				}
-			: {}),
-	};
+	const step: Partial<NestedStepSummary> = { agent };
+	const delegatedTask = stringValue(raw.delegatedTask, 500);
+	const task = stringValue(raw.task, 500);
+	const description = stringValue(raw.description, 500);
+	const sessionFile = stringValue(raw.sessionFile, 2048);
+	const transcriptPath = stringValue(raw.transcriptPath, 2048);
+	const transcriptError = stringValue(raw.transcriptError, 1024);
+	const lastActivityAt = clampNumber(raw.lastActivityAt);
+	const currentTool = stringValue(raw.currentTool, 128);
+	const currentToolStartedAt = clampNumber(raw.currentToolStartedAt);
+	const currentPath = stringValue(raw.currentPath, 2048);
+	const turnCount = clampNumber(raw.turnCount);
+	const toolCount = clampNumber(raw.toolCount);
+	const startedAt = clampNumber(raw.startedAt);
+	const endedAt = clampNumber(raw.endedAt);
+	const error = stringValue(raw.error, 1024);
+	const turnBudget = sanitizeTurnBudget(raw.turnBudget);
+	if (delegatedTask) step.delegatedTask = delegatedTask;
+	if (task) step.task = task;
+	if (description) step.description = description;
+	if (raw.agentStatus === "crashed") step.agentStatus = "crashed";
+	step.status = status;
+	if (sessionFile) step.sessionFile = sessionFile;
+	if (transcriptPath) step.transcriptPath = transcriptPath;
+	if (transcriptError) step.transcriptError = transcriptError;
+	if (raw.activityState === "active_long_running" || raw.activityState === "needs_attention") {
+		step.activityState = raw.activityState;
+	}
+	if (lastActivityAt !== undefined) step.lastActivityAt = lastActivityAt;
+	if (currentTool) step.currentTool = currentTool;
+	if (currentToolStartedAt !== undefined) step.currentToolStartedAt = currentToolStartedAt;
+	if (currentPath) step.currentPath = currentPath;
+	if (turnCount !== undefined) step.turnCount = turnCount;
+	if (toolCount !== undefined) step.toolCount = toolCount;
+	if (startedAt !== undefined) step.startedAt = startedAt;
+	if (endedAt !== undefined) step.endedAt = endedAt;
+	if (error) step.error = error;
+	if (raw.timedOut === true) step.timedOut = true;
+	if (raw.stopped === true) step.stopped = true;
+	if (turnBudget) step.turnBudget = turnBudget;
+	if (raw.turnBudgetExceeded === true) step.turnBudgetExceeded = true;
+	if (raw.wrapUpRequested === true) step.wrapUpRequested = true;
+	if (toolBudget) step.toolBudget = toolBudget;
+	if (raw.toolBudgetBlocked === true) step.toolBudgetBlocked = true;
+	if (processTerminal) step.processTerminal = processTerminal;
+	if (capabilityCeiling) step.capabilityCeiling = capabilityCeiling;
+	if (capabilityAudit) step.capabilityAudit = capabilityAudit;
+	if (depth < MAX_DEPTH && Array.isArray(raw.children)) {
+		step.children = raw.children
+			.map((child) => sanitizeSummary(child, depth + 1))
+			.filter((child): child is NestedRunSummary => Boolean(child))
+			.slice(0, MAX_CHILDREN);
+	}
+	// SAFETY: agent and status are assigned before every return; all optional fields are individually validated.
+	return step as NestedStepSummary;
 }
 
-export function sanitizeSummary(input: unknown, depth = 0): NestedRunSummary | undefined {
+export function sanitizeSummary<Value>(input: Value, depth = 0): NestedRunSummary | undefined {
 	if (!input || !isRuntimeObject(input)) return undefined;
-	const raw = input as Record<string, unknown>;
+	// SAFETY: the object guard proves this nested-summary candidate has inspectable optional raw fields.
+	const raw = input as Value & RawNestedSummary;
 	if (!isSafeNestedId(raw.id) || !isSafeNestedId(raw.parentRunId)) return undefined;
 	const pathParts = sanitizeNestedPath(raw.path);
 	const steps = Array.isArray(raw.steps)
@@ -598,85 +776,100 @@ export function sanitizeSummary(input: unknown, depth = 0): NestedRunSummary | u
 	const capabilityAudit = sanitizeCapabilityAudit(raw.capabilityAudit);
 	const parallelGroups = sanitizeParallelGroups(raw.parallelGroups);
 	const toolBudget = sanitizeToolBudget(raw.toolBudget);
-	return {
-		id: raw.id,
-		...(raw.agentStatus === "crashed" ? { agentStatus: "crashed" as const } : {}),
-		...(raw.parentRunOrigin === "automatic" || raw.parentRunOrigin === "user"
-			? { parentRunOrigin: raw.parentRunOrigin }
-			: {}),
-		parentRunId: raw.parentRunId,
-		...(clampNumber(raw.parentStepIndex) !== undefined ? { parentStepIndex: clampNumber(raw.parentStepIndex) } : {}),
-		...(stringValue(raw.parentAgent, 128) ? { parentAgent: stringValue(raw.parentAgent, 128) } : {}),
-		depth: Math.min(Math.max(0, clampNumber(raw.depth) ?? 0), MAX_DEPTH),
-		path: pathParts,
-		state: sanitizeState(raw.state, "running"),
-		...(stringValue(raw.asyncDir, 2048) ? { asyncDir: stringValue(raw.asyncDir, 2048) } : {}),
-		...(pid !== undefined && pid > 0 && Number.isInteger(pid) ? { pid } : {}),
-		...(stringValue(raw.sessionId, 256) ? { sessionId: stringValue(raw.sessionId, 256) } : {}),
-		...(stringValue(raw.sessionFile, 2048) ? { sessionFile: stringValue(raw.sessionFile, 2048) } : {}),
-		...(stringValue(raw.intercomTarget, 256) ? { intercomTarget: stringValue(raw.intercomTarget, 256) } : {}),
-		...(stringValue(raw.ownerIntercomTarget, 256)
-			? { ownerIntercomTarget: stringValue(raw.ownerIntercomTarget, 256) }
-			: {}),
-		...(stringValue(raw.leafIntercomTarget, 256)
-			? { leafIntercomTarget: stringValue(raw.leafIntercomTarget, 256) }
-			: {}),
-		...(raw.ownerState === "live" || raw.ownerState === "gone" || raw.ownerState === "unknown"
-			? { ownerState: raw.ownerState }
-			: {}),
-		...(stringValue(raw.controlInbox, 2048) ? { controlInbox: stringValue(raw.controlInbox, 2048) } : {}),
-		...(stringValue(raw.capabilityToken, 128) ? { capabilityToken: stringValue(raw.capabilityToken, 128) } : {}),
-		...(raw.mode === "single" || raw.mode === "parallel" ? { mode: raw.mode } : {}),
-		...(stringValue(raw.agent, 128) ? { agent: stringValue(raw.agent, 128) } : {}),
-		...(Array.isArray(raw.agents)
-			? {
-					agents: raw.agents
-						.map((agent) => stringValue(agent, 128))
-						.filter((agent): agent is string => Boolean(agent))
-						.slice(0, MAX_STEPS),
-				}
-			: {}),
-		...(clampNumber(raw.currentStep) !== undefined ? { currentStep: clampNumber(raw.currentStep) } : {}),
-		...(parallelGroups?.length ? { parallelGroups } : {}),
-		...(raw.activityState === "active_long_running" || raw.activityState === "needs_attention"
-			? { activityState: raw.activityState }
-			: {}),
-		...(clampNumber(raw.lastActivityAt) !== undefined ? { lastActivityAt: clampNumber(raw.lastActivityAt) } : {}),
-		...(stringValue(raw.currentTool, 128) ? { currentTool: stringValue(raw.currentTool, 128) } : {}),
-		...(clampNumber(raw.currentToolStartedAt) !== undefined
-			? { currentToolStartedAt: clampNumber(raw.currentToolStartedAt) }
-			: {}),
-		...(stringValue(raw.currentPath, 2048) ? { currentPath: stringValue(raw.currentPath, 2048) } : {}),
-		...(clampNumber(raw.turnCount) !== undefined ? { turnCount: clampNumber(raw.turnCount) } : {}),
-		...(clampNumber(raw.toolCount) !== undefined ? { toolCount: clampNumber(raw.toolCount) } : {}),
-		...(totalTokens ? { totalTokens } : {}),
-		...(totalCost ? { totalCost } : {}),
-		...(clampNumber(raw.startedAt) !== undefined ? { startedAt: clampNumber(raw.startedAt) } : {}),
-		...(clampNumber(raw.endedAt) !== undefined ? { endedAt: clampNumber(raw.endedAt) } : {}),
-		...(clampNumber(raw.lastUpdate) !== undefined ? { lastUpdate: clampNumber(raw.lastUpdate) } : {}),
-		...(clampNumber(raw.timeoutMs) !== undefined ? { timeoutMs: clampNumber(raw.timeoutMs) } : {}),
-		...(clampNumber(raw.deadlineAt) !== undefined ? { deadlineAt: clampNumber(raw.deadlineAt) } : {}),
-		...(raw.timedOut === true ? { timedOut: true } : {}),
-		...(raw.stopped === true ? { stopped: true } : {}),
-		...(sanitizeTurnBudget(raw.turnBudget) ? { turnBudget: sanitizeTurnBudget(raw.turnBudget) } : {}),
-		...(raw.turnBudgetExceeded === true ? { turnBudgetExceeded: true } : {}),
-		...(raw.wrapUpRequested === true ? { wrapUpRequested: true } : {}),
-		...(toolBudget ? { toolBudget } : {}),
-		...(raw.toolBudgetBlocked === true ? { toolBudgetBlocked: true } : {}),
-		...(processTerminal ? { processTerminal } : {}),
-		...(capabilityCeiling ? { capabilityCeiling } : {}),
-		...(capabilityAudit ? { capabilityAudit } : {}),
-		...(stringValue(raw.error, 1024) ? { error: stringValue(raw.error, 1024) } : {}),
-		...(steps && steps.length > 0 ? { steps } : {}),
-		...(depth < MAX_DEPTH && Array.isArray(raw.children)
-			? {
-					children: raw.children
-						.map((child) => sanitizeSummary(child, depth + 1))
-						.filter((child): child is NestedRunSummary => Boolean(child))
-						.slice(0, MAX_CHILDREN),
-				}
-			: {}),
-	};
+	const summary: Partial<NestedRunSummary> = { id: raw.id };
+	const parentStepIndex = clampNumber(raw.parentStepIndex);
+	const parentAgent = stringValue(raw.parentAgent, 128);
+	const asyncDir = stringValue(raw.asyncDir, 2048);
+	const sessionId = stringValue(raw.sessionId, 256);
+	const sessionFile = stringValue(raw.sessionFile, 2048);
+	const intercomTarget = stringValue(raw.intercomTarget, 256);
+	const ownerIntercomTarget = stringValue(raw.ownerIntercomTarget, 256);
+	const leafIntercomTarget = stringValue(raw.leafIntercomTarget, 256);
+	const controlInbox = stringValue(raw.controlInbox, 2048);
+	const capabilityToken = stringValue(raw.capabilityToken, 128);
+	const agent = stringValue(raw.agent, 128);
+	const currentStep = clampNumber(raw.currentStep);
+	const lastActivityAt = clampNumber(raw.lastActivityAt);
+	const currentTool = stringValue(raw.currentTool, 128);
+	const currentToolStartedAt = clampNumber(raw.currentToolStartedAt);
+	const currentPath = stringValue(raw.currentPath, 2048);
+	const turnCount = clampNumber(raw.turnCount);
+	const toolCount = clampNumber(raw.toolCount);
+	const startedAt = clampNumber(raw.startedAt);
+	const endedAt = clampNumber(raw.endedAt);
+	const lastUpdate = clampNumber(raw.lastUpdate);
+	const timeoutMs = clampNumber(raw.timeoutMs);
+	const deadlineAt = clampNumber(raw.deadlineAt);
+	const turnBudget = sanitizeTurnBudget(raw.turnBudget);
+	const error = stringValue(raw.error, 1024);
+	if (raw.agentStatus === "crashed") summary.agentStatus = "crashed";
+	if (raw.parentRunOrigin === "automatic" || raw.parentRunOrigin === "user") {
+		summary.parentRunOrigin = raw.parentRunOrigin;
+	}
+	summary.parentRunId = raw.parentRunId;
+	if (parentStepIndex !== undefined) summary.parentStepIndex = parentStepIndex;
+	if (parentAgent) summary.parentAgent = parentAgent;
+	summary.depth = Math.min(Math.max(0, clampNumber(raw.depth) ?? 0), MAX_DEPTH);
+	summary.path = pathParts;
+	summary.state = sanitizeState(raw.state, "running");
+	if (asyncDir) summary.asyncDir = asyncDir;
+	if (pid !== undefined && pid > 0 && Number.isInteger(pid)) summary.pid = pid;
+	if (sessionId) summary.sessionId = sessionId;
+	if (sessionFile) summary.sessionFile = sessionFile;
+	if (intercomTarget) summary.intercomTarget = intercomTarget;
+	if (ownerIntercomTarget) summary.ownerIntercomTarget = ownerIntercomTarget;
+	if (leafIntercomTarget) summary.leafIntercomTarget = leafIntercomTarget;
+	if (raw.ownerState === "live" || raw.ownerState === "gone" || raw.ownerState === "unknown") {
+		summary.ownerState = raw.ownerState;
+	}
+	if (controlInbox) summary.controlInbox = controlInbox;
+	if (capabilityToken) summary.capabilityToken = capabilityToken;
+	if (raw.mode === "single" || raw.mode === "parallel") summary.mode = raw.mode;
+	if (agent) summary.agent = agent;
+	if (Array.isArray(raw.agents)) {
+		summary.agents = raw.agents
+			.map((candidate) => stringValue(candidate, 128))
+			.filter((candidate): candidate is string => Boolean(candidate))
+			.slice(0, MAX_STEPS);
+	}
+	if (currentStep !== undefined) summary.currentStep = currentStep;
+	if (parallelGroups?.length) summary.parallelGroups = parallelGroups;
+	if (raw.activityState === "active_long_running" || raw.activityState === "needs_attention") {
+		summary.activityState = raw.activityState;
+	}
+	if (lastActivityAt !== undefined) summary.lastActivityAt = lastActivityAt;
+	if (currentTool) summary.currentTool = currentTool;
+	if (currentToolStartedAt !== undefined) summary.currentToolStartedAt = currentToolStartedAt;
+	if (currentPath) summary.currentPath = currentPath;
+	if (turnCount !== undefined) summary.turnCount = turnCount;
+	if (toolCount !== undefined) summary.toolCount = toolCount;
+	if (totalTokens) summary.totalTokens = totalTokens;
+	if (totalCost) summary.totalCost = totalCost;
+	if (startedAt !== undefined) summary.startedAt = startedAt;
+	if (endedAt !== undefined) summary.endedAt = endedAt;
+	if (lastUpdate !== undefined) summary.lastUpdate = lastUpdate;
+	if (timeoutMs !== undefined) summary.timeoutMs = timeoutMs;
+	if (deadlineAt !== undefined) summary.deadlineAt = deadlineAt;
+	if (raw.timedOut === true) summary.timedOut = true;
+	if (raw.stopped === true) summary.stopped = true;
+	if (turnBudget) summary.turnBudget = turnBudget;
+	if (raw.turnBudgetExceeded === true) summary.turnBudgetExceeded = true;
+	if (raw.wrapUpRequested === true) summary.wrapUpRequested = true;
+	if (toolBudget) summary.toolBudget = toolBudget;
+	if (raw.toolBudgetBlocked === true) summary.toolBudgetBlocked = true;
+	if (processTerminal) summary.processTerminal = processTerminal;
+	if (capabilityCeiling) summary.capabilityCeiling = capabilityCeiling;
+	if (capabilityAudit) summary.capabilityAudit = capabilityAudit;
+	if (error) summary.error = error;
+	if (steps && steps.length > 0) summary.steps = steps;
+	if (depth < MAX_DEPTH && Array.isArray(raw.children)) {
+		summary.children = raw.children
+			.map((child) => sanitizeSummary(child, depth + 1))
+			.filter((child): child is NestedRunSummary => Boolean(child))
+			.slice(0, MAX_CHILDREN);
+	}
+	// SAFETY: all required NestedRunSummary fields are assigned after id and parentRunId pass safe-id validation.
+	return summary as NestedRunSummary;
 }
 
 function truncateUtf8(value: string | undefined, maxBytes: number): string | undefined {
@@ -730,25 +923,25 @@ function compactStepForTransport(step: NestedStepSummary, includeChildren: boole
 	const transcriptError = locatorOmitted
 		? "Transcript locator omitted from the bounded nested projection; inspect the child status artifact."
 		: truncateUtf8(step.transcriptError, 256);
-	return {
-		...base,
-		...(truncateUtf8(step.delegatedTask, 512) ? { delegatedTask: truncateUtf8(step.delegatedTask, 512) } : {}),
-		...(truncateUtf8(step.task, 512) ? { task: truncateUtf8(step.task, 512) } : {}),
-		...(truncateUtf8(step.description, 256) ? { description: truncateUtf8(step.description, 256) } : {}),
-		...(step.agentStatus === "crashed" || externalWriterCrash(step.processTerminal)
-			? { agentStatus: "crashed" as const }
-			: {}),
-		...(sessionFile ? { sessionFile } : {}),
-		...(transcriptPath ? { transcriptPath } : {}),
-		...(transcriptError ? { transcriptError } : {}),
-		...(truncateUtf8(step.currentPath, 256) ? { currentPath: truncateUtf8(step.currentPath, 256) } : {}),
-		...(truncateUtf8(step.error, 256) ? { error: truncateUtf8(step.error, 256) } : {}),
-		...(includeChildren && step.children?.length
-			? {
-					children: step.children.slice(-MAX_CHILDREN).map((child) => compactSummaryForTransport(child, true)),
-				}
-			: {}),
-	};
+	const compact: NestedStepSummary = { ...base };
+	const delegatedTask = truncateUtf8(step.delegatedTask, 512);
+	const task = truncateUtf8(step.task, 512);
+	const description = truncateUtf8(step.description, 256);
+	const currentPath = truncateUtf8(step.currentPath, 256);
+	const error = truncateUtf8(step.error, 256);
+	if (delegatedTask) compact.delegatedTask = delegatedTask;
+	if (task) compact.task = task;
+	if (description) compact.description = description;
+	if (step.agentStatus === "crashed" || externalWriterCrash(step.processTerminal)) compact.agentStatus = "crashed";
+	if (sessionFile) compact.sessionFile = sessionFile;
+	if (transcriptPath) compact.transcriptPath = transcriptPath;
+	if (transcriptError) compact.transcriptError = transcriptError;
+	if (currentPath) compact.currentPath = currentPath;
+	if (error) compact.error = error;
+	if (includeChildren && step.children?.length) {
+		compact.children = step.children.slice(-MAX_CHILDREN).map((child) => compactSummaryForTransport(child, true));
+	}
+	return compact;
 }
 
 function compactSummaryForTransport(summary: NestedRunSummary, includeChildren: boolean): NestedRunSummary {
@@ -769,25 +962,23 @@ function compactSummaryForTransport(summary: NestedRunSummary, includeChildren: 
 	const asyncDir = exactBoundedLocator(summary.asyncDir, 768);
 	const sessionFile = exactBoundedLocator(summary.sessionFile, 768);
 	const controlInbox = exactBoundedLocator(summary.controlInbox, 768);
-	return {
-		...base,
-		...(summary.agentStatus === "crashed" || externalWriterCrash(summary.processTerminal)
-			? { agentStatus: "crashed" as const }
-			: {}),
-		...(asyncDir ? { asyncDir } : {}),
-		...(sessionFile ? { sessionFile } : {}),
-		...(controlInbox ? { controlInbox } : {}),
-		...(truncateUtf8(summary.currentPath, 256) ? { currentPath: truncateUtf8(summary.currentPath, 256) } : {}),
-		...(truncateUtf8(summary.error, 256) ? { error: truncateUtf8(summary.error, 256) } : {}),
-		...(summary.steps?.length
-			? { steps: summary.steps.slice(0, MAX_STEPS).map((step) => compactStepForTransport(step, includeChildren)) }
-			: {}),
-		...(includeChildren && summary.children?.length
-			? {
-					children: summary.children.slice(-MAX_CHILDREN).map((child) => compactSummaryForTransport(child, true)),
-				}
-			: {}),
-	};
+	const compact: NestedRunSummary = { ...base };
+	const currentPath = truncateUtf8(summary.currentPath, 256);
+	const error = truncateUtf8(summary.error, 256);
+	if (summary.agentStatus === "crashed" || externalWriterCrash(summary.processTerminal))
+		compact.agentStatus = "crashed";
+	if (asyncDir) compact.asyncDir = asyncDir;
+	if (sessionFile) compact.sessionFile = sessionFile;
+	if (controlInbox) compact.controlInbox = controlInbox;
+	if (currentPath) compact.currentPath = currentPath;
+	if (error) compact.error = error;
+	if (summary.steps?.length) {
+		compact.steps = summary.steps.slice(0, MAX_STEPS).map((step) => compactStepForTransport(step, includeChildren));
+	}
+	if (includeChildren && summary.children?.length) {
+		compact.children = summary.children.slice(-MAX_CHILDREN).map((child) => compactSummaryForTransport(child, true));
+	}
+	return compact;
 }
 
 function registryJsonBytes(registry: NestedRegistry): number {
@@ -804,47 +995,45 @@ function compactSummaryForRegistry(summary: NestedRunSummary, remainingDepth: nu
 			);
 	}
 	if (remainingDepth > 0 && summary.steps?.length) {
-		compact.steps = summary.steps.slice(0, MAX_STEPS).map((step) => ({
-			...compactStepForTransport(step, false),
-			...(step.children?.length
-				? {
-						children: step.children
-							.slice(-MAX_CHILDREN)
-							.map((child) => compactSummaryForRegistry(child, remainingDepth - 1)),
-					}
-				: {}),
-		}));
+		compact.steps = summary.steps.slice(0, MAX_STEPS).map((step) => {
+			const compactStep = compactStepForTransport(step, false);
+			if (step.children?.length) {
+				compactStep.children = step.children
+					.slice(-MAX_CHILDREN)
+					.map((child) => compactSummaryForRegistry(child, remainingDepth - 1));
+			}
+			return compactStep;
+		});
 	}
 	return compact;
 }
 
 function skeletonSummary(summary: NestedRunSummary): NestedRunSummary {
-	const skeleton: NestedRunSummary = {
-		id: summary.id,
-		...(summary.parentRunOrigin ? { parentRunOrigin: summary.parentRunOrigin } : {}),
-		parentRunId: summary.parentRunId,
-		...(summary.parentStepIndex !== undefined ? { parentStepIndex: summary.parentStepIndex } : {}),
-		...(summary.parentAgent ? { parentAgent: summary.parentAgent } : {}),
-		depth: summary.depth,
-		path: summary.path,
-		state: summary.state,
-		...(summary.ownerState ? { ownerState: summary.ownerState } : {}),
-		...(summary.agent ? { agent: summary.agent } : {}),
-		...(summary.agents?.length ? { agents: summary.agents.slice(0, MAX_STEPS) } : {}),
-		...(summary.startedAt !== undefined ? { startedAt: summary.startedAt } : {}),
-		...(summary.endedAt !== undefined ? { endedAt: summary.endedAt } : {}),
-		...(summary.lastUpdate !== undefined ? { lastUpdate: summary.lastUpdate } : {}),
-		...(summary.agentStatus === "crashed" ? { agentStatus: "crashed" as const } : {}),
-		...(exactBoundedLocator(summary.asyncDir, 768) ? { asyncDir: exactBoundedLocator(summary.asyncDir, 768) } : {}),
-		...(exactBoundedLocator(summary.controlInbox, 768)
-			? { controlInbox: exactBoundedLocator(summary.controlInbox, 768) }
-			: {}),
-		...(summary.capabilityToken ? { capabilityToken: summary.capabilityToken } : {}),
-	};
+	const skeleton: Partial<NestedRunSummary> = { id: summary.id };
+	if (summary.parentRunOrigin) skeleton.parentRunOrigin = summary.parentRunOrigin;
+	skeleton.parentRunId = summary.parentRunId;
+	if (summary.parentStepIndex !== undefined) skeleton.parentStepIndex = summary.parentStepIndex;
+	if (summary.parentAgent) skeleton.parentAgent = summary.parentAgent;
+	skeleton.depth = summary.depth;
+	skeleton.path = summary.path;
+	skeleton.state = summary.state;
+	if (summary.ownerState) skeleton.ownerState = summary.ownerState;
+	if (summary.agent) skeleton.agent = summary.agent;
+	if (summary.agents?.length) skeleton.agents = summary.agents.slice(0, MAX_STEPS);
+	if (summary.startedAt !== undefined) skeleton.startedAt = summary.startedAt;
+	if (summary.endedAt !== undefined) skeleton.endedAt = summary.endedAt;
+	if (summary.lastUpdate !== undefined) skeleton.lastUpdate = summary.lastUpdate;
+	if (summary.agentStatus === "crashed") skeleton.agentStatus = "crashed";
+	const asyncDir = exactBoundedLocator(summary.asyncDir, 768);
+	const controlInbox = exactBoundedLocator(summary.controlInbox, 768);
+	if (asyncDir) skeleton.asyncDir = asyncDir;
+	if (controlInbox) skeleton.controlInbox = controlInbox;
+	if (summary.capabilityToken) skeleton.capabilityToken = summary.capabilityToken;
 	if (summary.children?.length) {
 		skeleton.children = summary.children.slice(-MAX_CHILDREN).map(skeletonSummary);
 	}
-	return skeleton;
+	// SAFETY: the required summary address and state fields are copied before every return.
+	return skeleton as NestedRunSummary;
 }
 
 function boundedRegistry(registry: NestedRegistry): NestedRegistry {
@@ -872,14 +1061,15 @@ function boundedRegistry(registry: NestedRegistry): NestedRegistry {
 
 function parseRecord(content: string, route: NestedRoute): NestedEventRecord | undefined {
 	if (Buffer.byteLength(content, "utf-8") > MAX_EVENT_BYTES) return undefined;
-	let parsed: unknown;
+	let parsed;
 	try {
-		parsed = JSON.parse(content);
+		parsed = parseJsonValue(content);
 	} catch {
 		return undefined;
 	}
 	if (!parsed || !isRuntimeObject(parsed)) return undefined;
-	const raw = parsed as Record<string, unknown>;
+	// SAFETY: the parsed non-null JSON object can be inspected through the event schema's optional raw fields.
+	const raw = parsed as RawNestedEvent;
 	if (
 		raw.type !== "subagent.nested.started" &&
 		raw.type !== "subagent.nested.updated" &&
@@ -905,15 +1095,16 @@ function parseRecord(content: string, route: NestedRoute): NestedEventRecord | u
 		capabilityToken: route.capabilityToken,
 		ownerState: child.ownerState ?? "unknown",
 	};
-	return {
+	const record: NestedEventRecord = {
 		type: raw.type,
 		ts,
 		rootRunId: route.rootRunId,
 		parentRunId: raw.parentRunId,
-		...(parentStepIndex !== undefined ? { parentStepIndex } : {}),
 		capabilityToken: route.capabilityToken,
 		child: routedChild,
 	};
+	if (parentStepIndex !== undefined) record.parentStepIndex = parentStepIndex;
+	return record;
 }
 
 export function parseNestedEventRecords(content: string, route: NestedRoute): NestedEventRecord[] {
@@ -996,8 +1187,8 @@ function canonicalNestedForest(
 		const stripped: NestedRunSummary = {
 			...run,
 			children: undefined,
-			...(run.steps ? { steps: run.steps.map((step) => ({ ...step, children: undefined })) } : {}),
 		};
+		if (run.steps) stripped.steps = run.steps.map((step) => ({ ...step, children: undefined }));
 		summaries.set(run.id, mergeStoredSummary(summaries.get(run.id), stripped));
 		for (const child of nested) collect(child);
 	};
@@ -1012,7 +1203,13 @@ function canonicalNestedForest(
 			);
 		})
 		.slice(0, MAX_CHILDREN);
-	const nodes = new Map(retained.map((run) => [run.id, { ...run, children: [] as NestedRunSummary[] }]));
+	const nodes = new Map(
+		retained.map((run) => {
+			const children: NestedRunSummary[] = [];
+			const entry: [string, NestedRunSummary] = [run.id, { ...run, children }];
+			return entry;
+		}),
+	);
 	const wouldCycle = (run: NestedRunSummary): boolean => {
 		const seen = new Set([run.id]);
 		let parentId = run.parentRunId;
@@ -1042,10 +1239,11 @@ function canonicalNestedForest(
 	const stable = (left: NestedRunSummary, right: NestedRunSummary) =>
 		(left.startedAt ?? left.lastUpdate ?? 0) - (right.startedAt ?? right.lastUpdate ?? 0) ||
 		left.id.localeCompare(right.id);
-	const sortTree = (run: NestedRunSummary): NestedRunSummary => ({
-		...run,
-		...(run.children?.length ? { children: run.children.map(sortTree).sort(stable) } : { children: undefined }),
-	});
+	const sortTree = (run: NestedRunSummary): NestedRunSummary => {
+		const sorted = { ...run };
+		sorted.children = run.children?.length ? run.children.map(sortTree).sort(stable) : undefined;
+		return sorted;
+	};
 	return {
 		children: roots.map(sortTree).sort(stable),
 		pendingChildren: pending.map(sortTree).sort(stable),
@@ -1088,7 +1286,7 @@ function cachedNestedRegistry(filePath: string): NestedRegistry | undefined {
 	try {
 		stat = fs.lstatSync(filePath);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+		if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "ENOENT") {
 			forgetNestedRegistry(filePath);
 			return undefined;
 		}
@@ -1142,7 +1340,7 @@ function nestedRouteEntries(): string[] {
 		assertPrivateDirectory(NESTED_EVENTS_DIR);
 		return fs.readdirSync(NESTED_EVENTS_DIR);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+		if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "ENOENT") return [];
 		throw error;
 	}
 }
@@ -1150,10 +1348,8 @@ function nestedRouteEntries(): string[] {
 function routeFromRoot(routeRoot: string): NestedRoute | undefined {
 	try {
 		assertPrivateDirectory(routeRoot);
-		const metadata = JSON.parse(readBoundedOwnedFile(path.join(routeRoot, ROUTE_FILE), MAX_ROUTE_METADATA_BYTES)) as {
-			rootRunId?: unknown;
-			capabilityToken?: unknown;
-		};
+		const metadata = parseJsonValue(readBoundedOwnedFile(path.join(routeRoot, ROUTE_FILE), MAX_ROUTE_METADATA_BYTES));
+		if (!isRuntimeObject(metadata) || metadata === null || Array.isArray(metadata)) return undefined;
 		if (!isSafeNestedId(metadata.rootRunId) || !isSafeNestedId(metadata.capabilityToken)) return undefined;
 		if (path.basename(routeRoot) !== `${metadata.rootRunId}-${metadata.capabilityToken}`) return undefined;
 		const route: NestedRoute = {
@@ -1342,25 +1538,30 @@ export function readNestedRegistry(route: NestedRoute): NestedRegistry {
 	if (cached) return cached;
 	try {
 		const snapshot = readBoundedOwnedFileSnapshot(filePath, MAX_REGISTRY_BYTES);
-		const parsed = JSON.parse(snapshot.text) as NestedRegistry;
-		if (parsed.rootRunId !== route.rootRunId) {
+		const parsed = parseJsonValue(snapshot.text);
+		if (!isRuntimeObject(parsed) || parsed === null || Array.isArray(parsed)) {
+			throw new Error("Nested registry is not an object.");
+		}
+		// SAFETY: the parsed JSON object can be inspected through the registry schema's optional raw fields.
+		const raw = parsed as RawNestedRegistry;
+		if (raw.rootRunId !== route.rootRunId) {
 			throw new Error("Nested registry root id does not match its route metadata.");
 		}
 		const registry = {
 			rootRunId: route.rootRunId,
-			updatedAt: isRuntimeNumber(parsed.updatedAt) ? parsed.updatedAt : 0,
-			children: Array.isArray(parsed.children)
-				? parsed.children
+			updatedAt: isRuntimeNumber(raw.updatedAt) ? raw.updatedAt : 0,
+			children: Array.isArray(raw.children)
+				? raw.children
 						.map((child) => sanitizeSummary(child))
 						.filter((child): child is NestedRunSummary => Boolean(child))
 				: [],
-			pendingChildren: Array.isArray(parsed.pendingChildren)
-				? parsed.pendingChildren
+			pendingChildren: Array.isArray(raw.pendingChildren)
+				? raw.pendingChildren
 						.map((child) => sanitizeSummary(child))
 						.filter((child): child is NestedRunSummary => Boolean(child))
 				: [],
-			processedEvents: Array.isArray(parsed.processedEvents)
-				? parsed.processedEvents
+			processedEvents: Array.isArray(raw.processedEvents)
+				? raw.processedEvents
 						.filter(
 							(item): item is string =>
 								isRuntimeString(item) && path.basename(item) === item && item.length <= 256,
@@ -1383,7 +1584,7 @@ export function readNestedRegistry(route: NestedRoute): NestedRegistry {
 		);
 		return registry;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		if (!isRuntimeObject(error) || error === null || !("code" in error) || error.code !== "ENOENT") throw error;
 		forgetNestedRegistry(filePath);
 		return {
 			rootRunId: route.rootRunId,
@@ -1405,7 +1606,7 @@ function discardInvalidImmutableEvent(eventPath: string, onlyStructurallyUnsafe 
 		fs.unlinkSync(eventPath);
 		return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "ENOENT";
+		return isRuntimeObject(error) && error !== null && "code" in error && error.code === "ENOENT";
 	}
 }
 
@@ -1421,7 +1622,7 @@ function projectNestedEventBatch(route: NestedRoute, registry: NestedRegistry) {
 			.filter((entry) => !seen.has(entry))
 			.slice(0, MAX_EVENT_FILES_PER_PROJECTION);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		if (!isRuntimeObject(error) || error === null || !("code" in error) || error.code !== "ENOENT") throw error;
 	}
 	for (const entry of entries) {
 		const eventPath = path.join(route.eventSink, entry);
@@ -1551,7 +1752,7 @@ function routeHasRetainedState(route: NestedRoute): boolean {
 		const registry = readNestedRegistry(route);
 		return registry.children.length > 0 || registry.pendingChildren.length > 0 || registry.processedEvents.length > 0;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		if (isRuntimeObject(error) && error !== null && "code" in error && error.code === "ENOENT") return false;
 		return true;
 	}
 }
@@ -1610,9 +1811,10 @@ interface NestedRootTerminalMarker {
 
 function readRootTerminalMarker(route: NestedRoute): NestedRootTerminalMarker | undefined {
 	try {
-		const marker = JSON.parse(
+		const marker = parseJsonValue(
 			readBoundedOwnedFile(path.join(commonRouteRoot(route), ROOT_TERMINAL_FILE), MAX_ROUTE_METADATA_BYTES),
-		) as Partial<NestedRootTerminalMarker>;
+		);
+		if (!isRuntimeObject(marker) || marker === null || Array.isArray(marker)) return undefined;
 		if (
 			marker.version === 1 &&
 			marker.rootRunId === route.rootRunId &&
@@ -1621,7 +1823,13 @@ function readRootTerminalMarker(route: NestedRoute): NestedRootTerminalMarker | 
 			isRuntimeNumber(marker.committedAt) &&
 			Number.isFinite(marker.committedAt)
 		) {
-			return marker as NestedRootTerminalMarker;
+			return {
+				version: 1,
+				rootRunId: marker.rootRunId,
+				capabilityToken: marker.capabilityToken,
+				rootAsyncDir: marker.rootAsyncDir,
+				committedAt: marker.committedAt,
+			};
 		}
 		return undefined;
 	} catch {
@@ -1653,14 +1861,15 @@ function persistTerminalRootProjection(
 			status.parentRunOrigin === "user" || nestedWorkIncludesUser(registry.children)
 				? "user"
 				: status.parentRunOrigin;
-		writePrivateAtomicJson(path.join(marker.rootAsyncDir, "status.json"), {
+		const updated: AsyncStatus = {
 			...status,
-			...(parentRunOrigin ? { parentRunOrigin } : {}),
 			steps,
 			nestedRoute: retiring ? undefined : route,
-			...(processTerminal ? { processTerminal } : {}),
 			lastUpdate: Math.max(status.lastUpdate ?? 0, registry.updatedAt),
-		});
+		};
+		if (parentRunOrigin) updated.parentRunOrigin = parentRunOrigin;
+		if (processTerminal) updated.processTerminal = processTerminal;
+		writePrivateAtomicJson(path.join(marker.rootAsyncDir, "status.json"), updated);
 		return true;
 	} catch {
 		return false;
@@ -1906,115 +2115,101 @@ export function nestedSummaryFromAsyncStatus(
 		ts: number;
 	},
 ): NestedRunSummary {
-	return {
-		id: status.runId || fallback.id,
-		...(status.parentRunOrigin ? { parentRunOrigin: status.parentRunOrigin } : {}),
-		parentRunId: fallback.parentRunId,
-		...(fallback.parentStepIndex !== undefined ? { parentStepIndex: fallback.parentStepIndex } : {}),
-		depth: fallback.depth,
-		path: fallback.path ?? [
-			{
-				runId: fallback.parentRunId,
-				...(fallback.parentStepIndex !== undefined ? { stepIndex: fallback.parentStepIndex } : {}),
-			},
-		],
-		asyncDir,
-		...(status.pid ? { pid: status.pid } : {}),
-		...(status.sessionId ? { sessionId: status.sessionId } : {}),
-		mode: status.mode ?? fallback.mode,
-		ownerState:
-			status.state === "complete" ||
-			status.state === "failed" ||
-			status.state === "paused" ||
-			status.state === "stopped"
-				? "gone"
-				: status.pid
-					? "live"
-					: "unknown",
-		...(status.processTerminal
-			? {
-					processTerminal: sanitizeProcessTerminal(
-						status.processTerminal,
-						{
-							runId: status.runId || fallback.id,
-							runnerProcessInstanceId: status.processTerminal.runnerProcessInstanceId,
-						},
-						`${asyncDir}/status.json`,
-					),
+	const runId = status.runId || fallback.id;
+	const fallbackPath: NestedPathEntry = { runId: fallback.parentRunId };
+	if (fallback.parentStepIndex !== undefined) fallbackPath.stepIndex = fallback.parentStepIndex;
+	const summary: Partial<NestedRunSummary> = { id: runId };
+	if (status.parentRunOrigin) summary.parentRunOrigin = status.parentRunOrigin;
+	summary.parentRunId = fallback.parentRunId;
+	if (fallback.parentStepIndex !== undefined) summary.parentStepIndex = fallback.parentStepIndex;
+	summary.depth = fallback.depth;
+	summary.path = fallback.path ?? [fallbackPath];
+	summary.asyncDir = asyncDir;
+	if (status.pid) summary.pid = status.pid;
+	if (status.sessionId) summary.sessionId = status.sessionId;
+	summary.mode = status.mode ?? fallback.mode;
+	summary.ownerState =
+		status.state === "complete" ||
+		status.state === "failed" ||
+		status.state === "paused" ||
+		status.state === "stopped"
+			? "gone"
+			: status.pid
+				? "live"
+				: "unknown";
+	if (status.processTerminal) {
+		summary.processTerminal = sanitizeProcessTerminal(
+			status.processTerminal,
+			{ runId, runnerProcessInstanceId: status.processTerminal.runnerProcessInstanceId },
+			`${asyncDir}/status.json`,
+		);
+	}
+	if (status.capabilityCeiling) summary.capabilityCeiling = status.capabilityCeiling;
+	if (status.capabilityAudit) summary.capabilityAudit = status.capabilityAudit;
+	summary.state = status.state;
+	if (status.currentStep !== undefined) summary.currentStep = status.currentStep;
+	if (status.activityState) summary.activityState = status.activityState;
+	if (status.lastActivityAt !== undefined) summary.lastActivityAt = status.lastActivityAt;
+	if (status.currentTool) summary.currentTool = status.currentTool;
+	if (status.currentToolStartedAt !== undefined) summary.currentToolStartedAt = status.currentToolStartedAt;
+	if (status.currentPath) summary.currentPath = status.currentPath;
+	if (status.turnCount !== undefined) summary.turnCount = status.turnCount;
+	if (status.toolCount !== undefined) summary.toolCount = status.toolCount;
+	if (status.totalTokens) summary.totalTokens = status.totalTokens;
+	if (status.timeoutMs !== undefined) summary.timeoutMs = status.timeoutMs;
+	if (status.deadlineAt !== undefined) summary.deadlineAt = status.deadlineAt;
+	if (status.timedOut !== undefined) summary.timedOut = status.timedOut;
+	if (status.stopped !== undefined) summary.stopped = status.stopped;
+	if (status.turnBudget) summary.turnBudget = status.turnBudget;
+	if (status.turnBudgetExceeded !== undefined) summary.turnBudgetExceeded = status.turnBudgetExceeded;
+	if (status.wrapUpRequested !== undefined) summary.wrapUpRequested = status.wrapUpRequested;
+	if (status.error) summary.error = status.error;
+	summary.startedAt = status.startedAt ?? fallback.ts;
+	if (status.endedAt !== undefined) summary.endedAt = status.endedAt;
+	summary.lastUpdate = status.lastUpdate ?? fallback.ts;
+	if (status.sessionFile) summary.sessionFile = status.sessionFile;
+	if (status.steps?.length) {
+		summary.steps = status.steps
+			.map((step, index) => {
+				const projected: Partial<NestedStepSummary> = { agent: step.agent };
+				if (step.delegatedTask) projected.delegatedTask = step.delegatedTask;
+				if (step.task) projected.task = step.task;
+				if (step.label) projected.description = step.label;
+				projected.status = step.status;
+				if (step.sessionFile) projected.sessionFile = step.sessionFile;
+				if (step.transcriptPath) projected.transcriptPath = step.transcriptPath;
+				if (step.transcriptError) projected.transcriptError = step.transcriptError;
+				if (step.activityState) projected.activityState = step.activityState;
+				if (step.lastActivityAt !== undefined) projected.lastActivityAt = step.lastActivityAt;
+				if (step.currentTool) projected.currentTool = step.currentTool;
+				if (step.currentToolStartedAt !== undefined) projected.currentToolStartedAt = step.currentToolStartedAt;
+				if (step.currentPath) projected.currentPath = step.currentPath;
+				if (step.turnCount !== undefined) projected.turnCount = step.turnCount;
+				if (step.toolCount !== undefined) projected.toolCount = step.toolCount;
+				if (step.startedAt !== undefined) projected.startedAt = step.startedAt;
+				if (step.endedAt !== undefined) projected.endedAt = step.endedAt;
+				if (step.error) projected.error = step.error;
+				if (step.timedOut !== undefined) projected.timedOut = step.timedOut;
+				if (step.stopped !== undefined) projected.stopped = step.stopped;
+				if (step.turnBudget) projected.turnBudget = step.turnBudget;
+				if (step.turnBudgetExceeded !== undefined) projected.turnBudgetExceeded = step.turnBudgetExceeded;
+				if (step.wrapUpRequested !== undefined) projected.wrapUpRequested = step.wrapUpRequested;
+				if (step.processTerminal) {
+					projected.processTerminal = sanitizeProcessTerminal(
+						step.processTerminal,
+						{ runId, runnerProcessInstanceId: step.processTerminal.runnerProcessInstanceId },
+						`${asyncDir}/status.json step ${index}`,
+					);
 				}
-			: {}),
-		...(status.capabilityCeiling ? { capabilityCeiling: status.capabilityCeiling } : {}),
-		...(status.capabilityAudit ? { capabilityAudit: status.capabilityAudit } : {}),
-		state: status.state,
-		...(status.currentStep !== undefined ? { currentStep: status.currentStep } : {}),
-		...(status.activityState ? { activityState: status.activityState } : {}),
-		...(status.lastActivityAt !== undefined ? { lastActivityAt: status.lastActivityAt } : {}),
-		...(status.currentTool ? { currentTool: status.currentTool } : {}),
-		...(status.currentToolStartedAt !== undefined ? { currentToolStartedAt: status.currentToolStartedAt } : {}),
-		...(status.currentPath ? { currentPath: status.currentPath } : {}),
-		...(status.turnCount !== undefined ? { turnCount: status.turnCount } : {}),
-		...(status.toolCount !== undefined ? { toolCount: status.toolCount } : {}),
-		...(status.totalTokens ? { totalTokens: status.totalTokens } : {}),
-		...(status.timeoutMs !== undefined ? { timeoutMs: status.timeoutMs } : {}),
-		...(status.deadlineAt !== undefined ? { deadlineAt: status.deadlineAt } : {}),
-		...(status.timedOut !== undefined ? { timedOut: status.timedOut } : {}),
-		...(status.stopped !== undefined ? { stopped: status.stopped } : {}),
-		...(status.turnBudget ? { turnBudget: status.turnBudget } : {}),
-		...(status.turnBudgetExceeded !== undefined ? { turnBudgetExceeded: status.turnBudgetExceeded } : {}),
-		...(status.wrapUpRequested !== undefined ? { wrapUpRequested: status.wrapUpRequested } : {}),
-		...(status.error ? { error: status.error } : {}),
-		...(status.startedAt !== undefined ? { startedAt: status.startedAt } : { startedAt: fallback.ts }),
-		...(status.endedAt !== undefined ? { endedAt: status.endedAt } : {}),
-		lastUpdate: status.lastUpdate ?? fallback.ts,
-		...(status.sessionFile ? { sessionFile: status.sessionFile } : {}),
-		...(status.steps?.length
-			? {
-					steps: status.steps
-						.map((step, index) => ({
-							agent: step.agent,
-							...(step.delegatedTask ? { delegatedTask: step.delegatedTask } : {}),
-							...(step.task ? { task: step.task } : {}),
-							...(step.label ? { description: step.label } : {}),
-							status: step.status,
-							...(step.sessionFile ? { sessionFile: step.sessionFile } : {}),
-							...(step.transcriptPath ? { transcriptPath: step.transcriptPath } : {}),
-							...(step.transcriptError ? { transcriptError: step.transcriptError } : {}),
-							...(step.activityState ? { activityState: step.activityState } : {}),
-							...(step.lastActivityAt !== undefined ? { lastActivityAt: step.lastActivityAt } : {}),
-							...(step.currentTool ? { currentTool: step.currentTool } : {}),
-							...(step.currentToolStartedAt !== undefined
-								? { currentToolStartedAt: step.currentToolStartedAt }
-								: {}),
-							...(step.currentPath ? { currentPath: step.currentPath } : {}),
-							...(step.turnCount !== undefined ? { turnCount: step.turnCount } : {}),
-							...(step.toolCount !== undefined ? { toolCount: step.toolCount } : {}),
-							...(step.startedAt !== undefined ? { startedAt: step.startedAt } : {}),
-							...(step.endedAt !== undefined ? { endedAt: step.endedAt } : {}),
-							...(step.error ? { error: step.error } : {}),
-							...(step.timedOut !== undefined ? { timedOut: step.timedOut } : {}),
-							...(step.stopped !== undefined ? { stopped: step.stopped } : {}),
-							...(step.turnBudget ? { turnBudget: step.turnBudget } : {}),
-							...(step.turnBudgetExceeded !== undefined ? { turnBudgetExceeded: step.turnBudgetExceeded } : {}),
-							...(step.wrapUpRequested !== undefined ? { wrapUpRequested: step.wrapUpRequested } : {}),
-							...(step.processTerminal
-								? {
-										processTerminal: sanitizeProcessTerminal(
-											step.processTerminal,
-											{
-												runId: status.runId || fallback.id,
-												runnerProcessInstanceId: step.processTerminal.runnerProcessInstanceId,
-											},
-											`${asyncDir}/status.json step ${index}`,
-										),
-									}
-								: {}),
-							...(step.capabilityCeiling ? { capabilityCeiling: step.capabilityCeiling } : {}),
-							...(step.capabilityAudit ? { capabilityAudit: step.capabilityAudit } : {}),
-						}))
-						.slice(0, MAX_STEPS),
-				}
-			: {}),
-	};
+				if (step.capabilityCeiling) projected.capabilityCeiling = step.capabilityCeiling;
+				if (step.capabilityAudit) projected.capabilityAudit = step.capabilityAudit;
+				// SAFETY: agent and status are copied from the canonical AsyncStatus step before returning the projection.
+				return projected as NestedStepSummary;
+			})
+			.slice(0, MAX_STEPS);
+	}
+	// SAFETY: the required nested address and state fields are assigned from canonical status and fallback inputs.
+	return summary as NestedRunSummary;
 }
 
 export interface NestedArtifactEnvironment {

@@ -1829,6 +1829,7 @@ function foregroundResumeTarget(
 	const target: AsyncResumeTarget = {
 		kind: "revive" as const,
 		runId: run.runId,
+		state: child.status === "completed" ? "complete" : child.status === "detached" ? "running" : child.status,
 		agent: child.agent,
 		index,
 		cwd: child.cwd ?? run.cwd,
