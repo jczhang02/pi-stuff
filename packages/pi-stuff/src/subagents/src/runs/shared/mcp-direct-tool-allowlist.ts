@@ -2,7 +2,14 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
+import type { ServerEntry } from "../../../../mcp/runtime/types.ts";
+import { type JsonInputValue, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
+import {
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+} from "../../../../shared/runtime-type.js";
 import { piStuffCachePath, xdgConfigHome } from "../../../../xdg/index.ts";
 import { getAgentDir, getProjectConfigDir } from "../../shared/utils.ts";
 
@@ -26,23 +33,6 @@ const IMPORT_PATHS = {
 
 type ToolPrefix = "server" | "none" | "short";
 type ImportKind = keyof typeof IMPORT_PATHS;
-
-interface ServerEntry {
-	command?: string;
-	args?: string[];
-	socket?: string;
-	env?: Record<string, string>;
-	cwd?: string;
-	url?: string;
-	headers?: Record<string, string>;
-	auth?: "oauth" | "bearer" | false;
-	bearerToken?: string;
-	bearerTokenEnv?: string;
-	exposeResources?: boolean;
-	includeTools?: string[];
-	excludeTools?: string[];
-	directTools?: boolean | string[];
-}
 
 interface McpConfig {
 	mcpServers: Record<string, ServerEntry>;
@@ -74,36 +64,29 @@ interface MetadataCache {
 	servers: Record<string, ServerCacheEntry>;
 }
 
-function cacheRecord<Value extends object>(value: Value): Record<string, unknown> {
-	return Object.fromEntries(Object.entries(value));
+function cachedTool(value: JsonValue): CachedTool | undefined {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
+	return isRuntimeString(value.name) ? { name: value.name } : {};
 }
 
-function cachedTool(value: unknown): CachedTool | undefined {
+function cachedResource(value: JsonValue): CachedResource | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	const raw = cacheRecord(value);
-	return isRuntimeString(raw.name) ? { name: raw.name } : {};
+	const resource: CachedResource = {};
+	if (isRuntimeString(value.name)) resource.name = value.name;
+	if (isRuntimeString(value.uri)) resource.uri = value.uri;
+	return resource;
 }
 
-function cachedResource(value: unknown): CachedResource | undefined {
+function serverCacheEntry(value: JsonValue): ServerCacheEntry | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	const raw = cacheRecord(value);
-	return {
-		...(isRuntimeString(raw.name) ? { name: raw.name } : {}),
-		...(isRuntimeString(raw.uri) ? { uri: raw.uri } : {}),
-	};
-}
-
-function serverCacheEntry(value: unknown): ServerCacheEntry | undefined {
-	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	const raw = cacheRecord(value);
-	return {
-		...(isRuntimeString(raw.configHash) ? { configHash: raw.configHash } : {}),
-		...(isRuntimeNumber(raw.cachedAt) ? { cachedAt: raw.cachedAt } : {}),
-		...(Array.isArray(raw.tools) ? { tools: raw.tools.flatMap((tool) => cachedTool(tool) ?? []) } : {}),
-		...(Array.isArray(raw.resources)
-			? { resources: raw.resources.flatMap((resource) => cachedResource(resource) ?? []) }
-			: {}),
-	};
+	const entry: ServerCacheEntry = {};
+	if (isRuntimeString(value.configHash)) entry.configHash = value.configHash;
+	if (isRuntimeNumber(value.cachedAt)) entry.cachedAt = value.cachedAt;
+	if (Array.isArray(value.tools)) entry.tools = value.tools.flatMap((tool) => cachedTool(tool) ?? []);
+	if (Array.isArray(value.resources)) {
+		entry.resources = value.resources.flatMap((resource) => cachedResource(resource) ?? []);
+	}
+	return entry;
 }
 
 export interface ResolvedMcpDirectToolSelection {
@@ -129,20 +112,26 @@ export function resolveMcpDirectToolSelections(
 
 function loadMetadataCache(): MetadataCache | null {
 	const cachePath = piStuffCachePath("mcp", "mcp-cache.json");
-	let parsed: unknown;
+	let parsed: JsonValue;
 	try {
-		parsed = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+		parsed = parseJsonValue(fs.readFileSync(cachePath, "utf-8"));
 	} catch {
 		return null;
 	}
 
-	if (!parsed || !isRuntimeObject(parsed)) return null;
-	const raw = cacheRecord(parsed);
-	if (raw.version !== CACHE_VERSION || !raw.servers || !isRuntimeObject(raw.servers) || Array.isArray(raw.servers)) {
+	if (
+		!parsed ||
+		!isRuntimeObject(parsed) ||
+		Array.isArray(parsed) ||
+		parsed.version !== CACHE_VERSION ||
+		!parsed.servers ||
+		!isRuntimeObject(parsed.servers) ||
+		Array.isArray(parsed.servers)
+	) {
 		return null;
 	}
 	const servers = Object.fromEntries(
-		Object.entries(raw.servers).flatMap(([name, value]) => {
+		Object.entries(parsed.servers).flatMap(([name, value]) => {
 			const entry = serverCacheEntry(value);
 			return entry ? [[name, entry]] : [];
 		}),
@@ -174,30 +163,90 @@ function getConfigPaths(cwd: string): string[] {
 }
 
 function readConfig(configPath: string): McpConfig | null {
-	let parsed: unknown;
+	let parsed: JsonValue;
 	try {
-		parsed = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+		parsed = parseJsonValue(fs.readFileSync(configPath, "utf-8"));
 	} catch {
 		return null;
 	}
 	return validateConfig(parsed);
 }
 
-function validateConfig(raw: unknown): McpConfig {
+function stringArray(value: JsonValue | undefined): string[] | undefined {
+	return Array.isArray(value) && value.every(isRuntimeString) ? [...value] : undefined;
+}
+
+function stringRecord(value: JsonValue | undefined): Record<string, string> | undefined {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
+	const record: Record<string, string> = {};
+	for (const [key, entry] of Object.entries(value)) {
+		if (!isRuntimeString(entry)) return undefined;
+		record[key] = entry;
+	}
+	return record;
+}
+
+function serverEntry(value: JsonValue): ServerEntry | undefined {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
+	const entry: ServerEntry = {};
+	for (const key of ["bearerToken", "bearerTokenEnv", "command", "cwd", "socket", "url"] as const) {
+		const field = value[key];
+		if (field !== undefined && !isRuntimeString(field)) return undefined;
+		if (isRuntimeString(field)) entry[key] = field;
+	}
+	for (const key of ["args", "excludeTools", "includeTools"] as const) {
+		const field = value[key];
+		const parsed = stringArray(field);
+		if (field !== undefined && !parsed) return undefined;
+		if (parsed) entry[key] = parsed;
+	}
+	for (const key of ["env", "headers"] as const) {
+		const field = value[key];
+		const parsed = stringRecord(field);
+		if (field !== undefined && !parsed) return undefined;
+		if (parsed) entry[key] = parsed;
+	}
+	if (value.auth !== undefined && value.auth !== "oauth" && value.auth !== "bearer" && value.auth !== false) {
+		return undefined;
+	}
+	if (value.auth === "oauth" || value.auth === "bearer" || value.auth === false) entry.auth = value.auth;
+	if (value.exposeResources !== undefined && !isRuntimeBoolean(value.exposeResources)) return undefined;
+	if (isRuntimeBoolean(value.exposeResources)) entry.exposeResources = value.exposeResources;
+	if (value.directTools !== undefined) {
+		const directTools = stringArray(value.directTools);
+		if (!isRuntimeBoolean(value.directTools) && !directTools) return undefined;
+		entry.directTools = isRuntimeBoolean(value.directTools) ? value.directTools : directTools;
+	}
+	return entry;
+}
+
+function serverEntries(value: JsonValue | undefined): Record<string, ServerEntry> {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return {};
+	return Object.fromEntries(
+		Object.entries(value).flatMap(([name, definition]) => {
+			const parsed = serverEntry(definition);
+			return parsed ? [[name, parsed]] : [];
+		}),
+	);
+}
+
+function configSettings(value: JsonValue | undefined): McpConfig["settings"] | undefined {
+	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
+	const settings: NonNullable<McpConfig["settings"]> = {};
+	if (value.toolPrefix === "server" || value.toolPrefix === "none" || value.toolPrefix === "short") {
+		settings.toolPrefix = value.toolPrefix;
+	}
+	if (isRuntimeBoolean(value.directTools)) settings.directTools = value.directTools;
+	return settings;
+}
+
+function validateConfig(raw: JsonValue): McpConfig {
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) return { mcpServers: {} };
-	const obj = raw as Record<string, unknown>;
-	const servers = obj.mcpServers ?? obj["mcp-servers"] ?? {};
-	return {
-		mcpServers:
-			servers && isRuntimeObject(servers) && !Array.isArray(servers) ? (servers as Record<string, ServerEntry>) : {},
-		imports: Array.isArray(obj.imports)
-			? obj.imports.filter((value): value is ImportKind => isImportKind(value))
-			: undefined,
-		settings:
-			obj.settings && isRuntimeObject(obj.settings) && !Array.isArray(obj.settings)
-				? (obj.settings as McpConfig["settings"])
-				: undefined,
-	};
+	const config: McpConfig = { mcpServers: serverEntries(raw.mcpServers ?? raw["mcp-servers"] ?? {}) };
+	if (Array.isArray(raw.imports)) config.imports = raw.imports.filter(isImportKind);
+	const settings = configSettings(raw.settings);
+	if (settings) config.settings = settings;
+	return config;
 }
 
 function mergeConfigs(base: McpConfig, next: McpConfig): McpConfig {
@@ -216,9 +265,9 @@ function expandImports(config: McpConfig, cwd: string): McpConfig {
 	for (const importKind of config.imports) {
 		const importPath = resolveImportPath(importKind, cwd);
 		if (!importPath) continue;
-		let imported: unknown;
+		let imported: JsonValue;
 		try {
-			imported = JSON.parse(fs.readFileSync(importPath, "utf-8"));
+			imported = parseJsonValue(fs.readFileSync(importPath, "utf-8"));
 		} catch {
 			continue;
 		}
@@ -242,16 +291,13 @@ function resolveImportPath(importKind: ImportKind, cwd: string): string | null {
 	return null;
 }
 
-function extractServers(config: unknown, kind: ImportKind): Record<string, ServerEntry> {
+function extractServers(config: JsonValue, kind: ImportKind): Record<string, ServerEntry> {
 	if (!config || !isRuntimeObject(config) || Array.isArray(config)) return {};
-	const obj = config as Record<string, unknown>;
 	const servers =
 		kind === "cursor" || kind === "windsurf" || kind === "vscode"
-			? (obj.mcpServers ?? obj["mcp-servers"])
-			: obj.mcpServers;
-	return servers && isRuntimeObject(servers) && !Array.isArray(servers)
-		? (servers as Record<string, ServerEntry>)
-		: {};
+			? (config.mcpServers ?? config["mcp-servers"])
+			: config.mcpServers;
+	return serverEntries(servers);
 }
 
 function resolveDirectToolSelections(
@@ -347,15 +393,15 @@ export function computeMcpServerHash(definition: ServerEntry): string {
 		exposeResources: definition.exposeResources,
 		includeTools: definition.includeTools,
 		excludeTools: definition.excludeTools,
-	} satisfies Record<string, unknown>;
+	};
 	return createHash("sha256").update(stableStringify(identity)).digest("hex");
 }
 
-function getToolPrefix(value: unknown): ToolPrefix {
+function getToolPrefix(value: NonNullable<McpConfig["settings"]>["toolPrefix"]): ToolPrefix {
 	return value === "none" || value === "short" || value === "server" ? value : "server";
 }
 
-function isImportKind(value: unknown): value is ImportKind {
+function isImportKind(value: JsonValue): value is ImportKind {
 	return isRuntimeString(value) && Object.hasOwn(IMPORT_PATHS, value);
 }
 
@@ -373,15 +419,20 @@ function formatToolName(toolName: string, serverName: string, prefix: ToolPrefix
 	return serverPrefix ? `${serverPrefix}_${toolName}` : toolName;
 }
 
-function isToolExcluded(toolName: string, serverName: string, prefix: ToolPrefix, excludeTools: unknown): boolean {
-	if (!Array.isArray(excludeTools) || excludeTools.length === 0) return false;
+function isToolExcluded(
+	toolName: string,
+	serverName: string,
+	prefix: ToolPrefix,
+	excludeTools: readonly string[] | undefined,
+): boolean {
+	if (!excludeTools?.length) return false;
 	const candidates = new Set([
 		normalizeToolName(toolName),
 		normalizeToolName(formatToolName(toolName, serverName, prefix)),
 		normalizeToolName(formatToolName(toolName, serverName, "server")),
 		normalizeToolName(formatToolName(toolName, serverName, "short")),
 	]);
-	return excludeTools.some((excluded) => isRuntimeString(excluded) && candidates.has(normalizeToolName(excluded)));
+	return excludeTools.some((excluded) => candidates.has(normalizeToolName(excluded)));
 }
 
 function normalizeToolName(value: string): string {
@@ -458,15 +509,14 @@ function resolveBearerToken(definition: Pick<ServerEntry, "bearerToken" | "beare
 	return definition.bearerTokenEnv ? process.env[definition.bearerTokenEnv] : undefined;
 }
 
-function stableStringify(value: unknown): string {
+function stableStringify(value: JsonInputValue): string {
 	if (value === null || value === undefined || !isRuntimeObject(value)) {
 		const serialized = JSON.stringify(value);
 		return serialized === undefined ? "undefined" : serialized;
 	}
 	if (Array.isArray(value)) return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
-	const obj = value as Record<string, unknown>;
-	return `{${Object.keys(obj)
-		.sort()
-		.map((key) => `${JSON.stringify(key)}:${stableStringify(obj[key])}`)
+	return `{${Object.entries(value)
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`)
 		.join(",")}}`;
 }
