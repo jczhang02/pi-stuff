@@ -6,8 +6,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Message } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeFunction,
@@ -36,6 +37,7 @@ import {
 	type ModelAttempt,
 	type ProtocolOutputLimit,
 	type SteeringTargetState,
+	type SteeringTargetStatus,
 	SUBAGENT_ASYNC_STATUS_EVENT,
 	type TokenUsage,
 	type ToolBudgetState,
@@ -83,7 +85,7 @@ import {
 	type RunnerAgentTask,
 } from "../shared/parallel-utils.ts";
 import { buildPiArgs, cleanupTempDir } from "../shared/pi-args.ts";
-import { getPiSpawnCommand } from "../shared/pi-spawn.ts";
+import { getPiSpawnCommand, type PiSpawnDeps } from "../shared/pi-spawn.ts";
 import { acquireSessionLease } from "../shared/session-lease.ts";
 import { readChildToolDiagnosticError } from "../shared/tool-availability.ts";
 import { toolBudgetState } from "../shared/tool-budget.ts";
@@ -148,6 +150,27 @@ type ChildMessage = ChildProtocolMessage;
 
 type ChildEvent = ChildProtocolEvent;
 
+interface WriterSupervisorEnvelope {
+	command: string;
+	args: string[];
+	parentPid: number;
+	parentStarted: string;
+	dispositionPath?: string;
+	groupMemberProofPath?: string;
+	controlPath?: string;
+	controlToken?: string;
+}
+
+interface ChildCompletedDiagnosticEvent {
+	type: "subagent.child.completed";
+	ts: number;
+	runId: string;
+	index: number;
+	agent: string;
+	success: boolean;
+	error?: string;
+}
+
 interface ChildProcessResult {
 	exitCode: number | null;
 	signal: string | null;
@@ -187,18 +210,19 @@ export function buildWriterSpawnCommand(
 		throw new Error("Bun is required to launch the Agent writer supervisor, but no executable was found.");
 	}
 	const supervisor = path.join(path.dirname(fileURLToPath(import.meta.url)), "writer-process-supervisor.mjs");
-	const envelope = Buffer.from(
-		JSON.stringify({
-			command,
-			args: [...args],
-			parentPid: process.pid,
-			parentStarted,
-			dispositionPath,
-			groupMemberProofPath,
-			...(control ? { controlPath: control.path, controlToken: control.token } : {}),
-		}),
-		"utf-8",
-	).toString("base64url");
+	const supervisorEnvelope: WriterSupervisorEnvelope = {
+		command,
+		args: [...args],
+		parentPid: process.pid,
+		parentStarted,
+		dispositionPath,
+		groupMemberProofPath,
+	};
+	if (control) {
+		supervisorEnvelope.controlPath = control.path;
+		supervisorEnvelope.controlToken = control.token;
+	}
+	const envelope = Buffer.from(JSON.stringify(supervisorEnvelope), "utf-8").toString("base64url");
 	return {
 		command: writerSupervisorRuntime,
 		args: [supervisor, envelope],
@@ -207,16 +231,16 @@ export function buildWriterSpawnCommand(
 }
 
 interface WriterSupervisorDisposition {
-	readonly version: 1;
-	readonly supervisorPid: number;
-	readonly supervisorProcessStartIdentity: string;
-	readonly childPid: number;
-	readonly childProcessStartIdentity: string;
-	readonly exitCode: number | null;
-	readonly signal: string | null;
-	readonly origin: "external" | "manager-final-drain" | "manager-request" | null;
-	readonly reaped: boolean;
-	readonly outputForwardingError?: string;
+	version: 1;
+	supervisorPid: number;
+	supervisorProcessStartIdentity: string;
+	childPid: number;
+	childProcessStartIdentity: string;
+	exitCode: number | null;
+	signal: string | null;
+	origin: "external" | "manager-final-drain" | "manager-request" | null;
+	reaped: boolean;
+	outputForwardingError?: string;
 }
 
 function readWriterSupervisorDisposition(
@@ -226,8 +250,11 @@ function readWriterSupervisorDisposition(
 ): WriterSupervisorDisposition | undefined {
 	if (supervisorPid === undefined || !supervisorProcessStartIdentity) return undefined;
 	try {
-		const value = JSON.parse(readBoundedOwnedFile(filePath, 8 * 1024)) as Partial<WriterSupervisorDisposition>;
+		const value = parseJsonValue(readBoundedOwnedFile(filePath, 8 * 1024));
 		if (
+			!isRuntimeObject(value) ||
+			value === null ||
+			Array.isArray(value) ||
 			value.version !== 1 ||
 			value.supervisorPid !== supervisorPid ||
 			value.supervisorProcessStartIdentity !== supervisorProcessStartIdentity ||
@@ -246,7 +273,21 @@ function readWriterSupervisorDisposition(
 				(!isRuntimeString(value.outputForwardingError) || value.outputForwardingError.length > 1_000))
 		)
 			return undefined;
-		return value as WriterSupervisorDisposition;
+		const disposition: WriterSupervisorDisposition = {
+			version: 1,
+			supervisorPid,
+			supervisorProcessStartIdentity,
+			childPid: value.childPid,
+			childProcessStartIdentity: value.childProcessStartIdentity,
+			exitCode: value.exitCode,
+			signal: value.signal,
+			origin: value.origin,
+			reaped: value.reaped,
+		};
+		if (value.outputForwardingError !== undefined) {
+			disposition.outputForwardingError = value.outputForwardingError;
+		}
+		return disposition;
 	} catch {
 		return undefined;
 	}
@@ -258,7 +299,7 @@ function writerProcessGroupAlive(pid: number): boolean | undefined {
 		process.kill(-pid, 0);
 		return true;
 	} catch (error) {
-		const code = (error as NodeJS.ErrnoException).code;
+		const code = errorCode(error);
 		if (code === "ESRCH") return false;
 		return undefined;
 	}
@@ -289,7 +330,7 @@ export async function captureWriterProcessStartIdentity(
 		try {
 			process.kill(pid, 0);
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "EPERM") return undefined;
+			if (errorCode(error) !== "EPERM") return undefined;
 		}
 		if (Date.now() >= deadline) return undefined;
 		await new Promise<void>((resolve) => setTimeout(resolve, options.intervalMs ?? 20));
@@ -306,7 +347,7 @@ async function closeWriterProcessGroup(pid: number, expectedProcessStartIdentity
 		try {
 			process.kill(-pid, signal);
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ESRCH") return true;
+			if (errorCode(error) === "ESRCH") return true;
 			return false;
 		}
 		const deadline = Date.now() + 500;
@@ -379,9 +420,15 @@ const FALLBACK_CLAIM_WAIT_MS = 5;
 const FALLBACK_ORPHAN_GRACE_MS = 60 * 60 * 1_000;
 const FALLBACK_ORPHANS_PER_SWEEP = 64;
 const LINUX_O_TMPFILE = 0o20000000;
+const O_NOFOLLOW =
+	"O_NOFOLLOW" in fs.constants && isRuntimeNumber(fs.constants.O_NOFOLLOW) ? fs.constants.O_NOFOLLOW : 0;
 const RESULT_TRUNCATION_MARKER = "\n[output truncated; full text remains in the Agent transcript/output artifact]\n";
 const BACKGROUND_RUNNER_SENTINEL_ENV = "PI_STUFF_BACKGROUND_RUNNER";
 const BACKGROUND_RUNNER_CONFIG_ENV = "PI_STUFF_BACKGROUND_RUNNER_CONFIG";
+
+function errorCode<Value>(cause: Value): string | undefined {
+	return isRuntimeObject(cause) && cause !== null && "code" in cause ? String(cause.code) : undefined;
+}
 
 /** Runner identity must never leak into a Pi writer process. */
 export function buildWriterProcessEnv(
@@ -444,7 +491,7 @@ function boundResultText(value: string, maxBytes: number): string {
 }
 
 function fairResultBudgets(values: readonly string[], maxBytes: number): number[] {
-	const budgets = Array(values.length).fill(0) as number[];
+	const budgets = Array.from({ length: values.length }, () => 0);
 	let remaining = maxBytes;
 	let unresolved = values.map((_, index) => index);
 	while (unresolved.length > 0 && remaining > 0) {
@@ -494,7 +541,7 @@ function appendDiagnosticEvent<Event extends object>(eventsPath: string, event: 
 			if (stat.isSymbolicLink() || !stat.isFile()) return;
 			size = stat.size;
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
+			if (errorCode(error) !== "ENOENT") return;
 		}
 		if (size + lineBytes <= limit) {
 			appendJsonl(eventsPath, line.trimEnd());
@@ -526,7 +573,7 @@ function emptyUsage(): Usage {
 	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
 }
 
-function finiteUsageNumber(value: unknown): number {
+function finiteUsageNumber<Value>(value: Value): number {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : 0;
 }
 
@@ -553,14 +600,12 @@ function costSummary(attempts: ModelAttempt[]): CostSummary | undefined {
 	return inputTokens || outputTokens || costUsd ? { inputTokens, outputTokens, costUsd } : undefined;
 }
 
-function assistantStartsToolCall(message: Message): boolean {
-	return (
-		Array.isArray(message.content) && message.content.some((part) => (part as { type?: string }).type === "toolCall")
-	);
+function assistantStartsToolCall(message: AssistantMessage): boolean {
+	return message.content.some((part) => part.type === "toolCall");
 }
 
-function terminalAssistantStop(message: Message): boolean {
-	return (message as { stopReason?: string }).stopReason === "stop" && !assistantStartsToolCall(message);
+function terminalAssistantStop(message: AssistantMessage): boolean {
+	return message.stopReason === "stop" && !assistantStartsToolCall(message);
 }
 
 function findLatestSessionFile(sessionDir: string | undefined): string | undefined {
@@ -582,35 +627,37 @@ function taskList(work: BackgroundRunnerWork): RunnerAgentTask[] {
 }
 
 function stoppedResult(task: RunnerAgentTask, message: string): BackgroundTaskResult {
-	return {
+	const result: BackgroundTaskResult = {
 		agent: task.agent,
-		...(task.context ? { context: task.context } : {}),
 		output: message,
 		success: false,
 		exitCode: 1,
 		stopped: true,
 		error: message,
-		...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
-		...(task.model ? { model: task.model } : {}),
-		...(task.thinking ? { thinking: task.thinking } : {}),
-		...(task.launchContractDigest ? { launchContractDigest: task.launchContractDigest } : {}),
 	};
+	if (task.context) result.context = task.context;
+	if (task.sessionFile) result.sessionFile = task.sessionFile;
+	if (task.model) result.model = task.model;
+	if (task.thinking) result.thinking = task.thinking;
+	if (task.launchContractDigest) result.launchContractDigest = task.launchContractDigest;
+	return result;
 }
 
 function failedResult(task: RunnerAgentTask, cause: unknown): BackgroundTaskResult {
 	const message = boundResultText(cause instanceof Error ? cause.message : String(cause), MAX_RESULT_ERROR_BYTES);
-	return {
+	const result: BackgroundTaskResult = {
 		agent: task.agent,
-		...(task.context ? { context: task.context } : {}),
 		output: message,
 		success: false,
 		exitCode: 1,
 		error: message,
-		...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
-		...(task.model ? { model: task.model } : {}),
-		...(task.thinking ? { thinking: task.thinking } : {}),
-		...(task.launchContractDigest ? { launchContractDigest: task.launchContractDigest } : {}),
 	};
+	if (task.context) result.context = task.context;
+	if (task.sessionFile) result.sessionFile = task.sessionFile;
+	if (task.model) result.model = task.model;
+	if (task.thinking) result.thinking = task.thinking;
+	if (task.launchContractDigest) result.launchContractDigest = task.launchContractDigest;
+	return result;
 }
 
 function terminalizeRejectedStep(
@@ -690,15 +737,16 @@ function reconcileUnfinishedSteps(
 		const step = status.steps[index];
 		if (!step || (step.status !== "pending" && step.status !== "running")) continue;
 		applyTerminalResultToStep(step, result, endedAt);
-		appendDiagnosticEvent(eventsPath, {
+		const event: ChildCompletedDiagnosticEvent = {
 			type: "subagent.child.completed",
 			ts: endedAt,
 			runId: status.runId,
 			index,
 			agent: step.agent,
 			success: result.success,
-			...(result.error ? { error: result.error } : {}),
-		});
+		};
+		if (result.error) event.error = result.error;
+		appendDiagnosticEvent(eventsPath, event);
 	}
 }
 
@@ -741,7 +789,6 @@ export async function runBackgroundWork(
 	if (tasks.length > MAX_BACKGROUND_TASKS) {
 		throw new RangeError(`Background runner supports at most ${MAX_BACKGROUND_TASKS} tasks per launch.`);
 	}
-	const results: Array<BackgroundTaskResult | undefined> = [];
 	const stopMessage = options.stoppedMessage ?? "Agent stopped before it started.";
 	const executeTask = async (task: RunnerAgentTask, index: number): Promise<BackgroundTaskResult> => {
 		if (options.signal?.aborted) return stoppedResult(task, stopMessage);
@@ -752,18 +799,9 @@ export async function runBackgroundWork(
 		}
 	};
 	if (work.mode === "single") {
-		results[0] = await executeTask(work.task, 0);
-		return results as BackgroundTaskResult[];
+		return [await executeTask(work.task, 0)];
 	}
-
-	await mapConcurrent(tasks, work.group.concurrency, async (task, index) => {
-		results[index] = await executeTask(task, index);
-	});
-	for (let index = 0; index < tasks.length; index++) {
-		const task = tasks[index];
-		if (task) results[index] ??= stoppedResult(task, stopMessage);
-	}
-	return results as BackgroundTaskResult[];
+	return mapConcurrent(tasks, work.group.concurrency, executeTask);
 }
 
 function parallelSummary(results: BackgroundTaskResult[]): string {
@@ -800,26 +838,28 @@ export function createBackgroundCompletion(
 		config.work.mode === "single"
 			? results[0]?.output || results[0]?.error || "(no output)"
 			: parallelSummary(results);
-	return {
+	const completion: BackgroundCompletion = {
 		id: config.id,
 		runId: config.id,
-		...(config.parentRunOrigin ? { parentRunOrigin: config.parentRunOrigin } : {}),
-		...(config.sessionId !== undefined ? { sessionId: config.sessionId } : {}),
 		mode: config.work.mode,
 		state,
 		success,
-		...(stopped ? { stopped: true } : {}),
-		...(timedOut ? { timedOut: true } : {}),
-		...(interrupted ? { interrupted: true } : {}),
 		summary,
 		results,
 		cwd: config.cwd,
 		asyncDir: config.asyncDir,
 		startedAt,
 		endedAt,
-		...(results.length === 1 && results[0]?.sessionFile ? { sessionFile: results[0].sessionFile } : {}),
-		...extras,
 	};
+	if (config.parentRunOrigin) completion.parentRunOrigin = config.parentRunOrigin;
+	if (config.sessionId !== undefined) completion.sessionId = config.sessionId;
+	if (stopped) completion.stopped = true;
+	if (timedOut) completion.timedOut = true;
+	if (interrupted) completion.interrupted = true;
+	if (results.length === 1 && results[0]?.sessionFile) completion.sessionFile = results[0].sessionFile;
+	if (extras.nestedChildren) completion.nestedChildren = extras.nestedChildren;
+	if (extras.worktree) completion.worktree = extras.worktree;
+	return completion;
 }
 
 function updateRunProjection(status: RunnerStatus): void {
@@ -1034,10 +1074,7 @@ function assertOwnedFallbackSession(filePath: string, stat: fs.Stats): void {
 function openOwnedFallbackSession(filePath: string): number {
 	const pathStat = fs.lstatSync(filePath);
 	assertOwnedFallbackSession(filePath, pathStat);
-	const descriptor = fs.openSync(
-		filePath,
-		fs.constants.O_RDONLY | ((fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0),
-	);
+	const descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | O_NOFOLLOW);
 	try {
 		const descriptorStat = fs.fstatSync(descriptor);
 		assertOwnedFallbackSession(filePath, descriptorStat);
@@ -1089,7 +1126,7 @@ function ensureFallbackPrivateDirectory(parent: string, name: string): string {
 	try {
 		fs.mkdirSync(directory, { mode: 0o700 });
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		if (errorCode(error) !== "EEXIST") throw error;
 	}
 	ensurePrivateDirectory(directory);
 	return directory;
@@ -1129,7 +1166,7 @@ function removeOwnedFallbackTemporary(filePath: string): void {
 		assertOwnedFallbackSession(filePath, stat);
 		fs.unlinkSync(filePath);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		if (errorCode(error) !== "ENOENT") throw error;
 	}
 }
 
@@ -1143,7 +1180,7 @@ function readFallbackSweepCursor(directory: string, kind: "restore" | "snapshot"
 		const value = readBoundedOwnedFile(path.join(directory, FALLBACK_SWEEP_CURSOR_FILE), 128).trim();
 		return fallbackTemporaryIdentity(value, kind) ? value : "";
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+		if (errorCode(error) !== "ENOENT") {
 			reportAgentDiagnostic(`Failed to read ${kind} fallback orphan cursor:`, error);
 		}
 		return "";
@@ -1158,10 +1195,7 @@ function writeFallbackSweepCursor(directory: string, value: string): void {
 	try {
 		descriptor = fs.openSync(
 			temporary,
-			fs.constants.O_CREAT |
-				fs.constants.O_EXCL |
-				fs.constants.O_WRONLY |
-				((fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0),
+			fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY | O_NOFOLLOW,
 			0o600,
 		);
 		fs.writeFileSync(descriptor, `${value}\n`, "utf8");
@@ -1214,7 +1248,7 @@ function sweepFallbackOrphans(directory: string, kind: "restore" | "snapshot", n
 				stat = fs.lstatSync(candidate);
 				assertOwnedFallbackSession(candidate, stat);
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				if (errorCode(error) === "ENOENT") continue;
 				throw error;
 			}
 			if (now - stat.mtimeMs < FALLBACK_ORPHAN_GRACE_MS) continue;
@@ -1225,7 +1259,7 @@ function sweepFallbackOrphans(directory: string, kind: "restore" | "snapshot", n
 				assertOwnedFallbackSession(candidate, current);
 				if (now - current.mtimeMs >= FALLBACK_ORPHAN_GRACE_MS) fs.unlinkSync(candidate);
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+				if (errorCode(error) !== "ENOENT") throw error;
 			} finally {
 				owner.release();
 			}
@@ -1269,11 +1303,7 @@ function openFallbackSessionStorage(sessionKey: string): FallbackSessionStorage 
 				throw error;
 			}
 		} catch (error) {
-			if (
-				!new Set(["EISDIR", "EINVAL", "ENOTSUP", "EOPNOTSUPP", "EPERM"]).has(
-					(error as NodeJS.ErrnoException).code ?? "",
-				)
-			) {
+			if (!new Set(["EISDIR", "EINVAL", "ENOTSUP", "EOPNOTSUPP", "EPERM"]).has(errorCode(error) ?? "")) {
 				throw error;
 			}
 			// Some Linux filesystems do not implement O_TMPFILE. The private named
@@ -1291,10 +1321,7 @@ function openFallbackSessionStorage(sessionKey: string): FallbackSessionStorage 
 		removeOwnedFallbackTemporary(temporary);
 		descriptor = fs.openSync(
 			temporary,
-			fs.constants.O_CREAT |
-				fs.constants.O_EXCL |
-				fs.constants.O_RDWR |
-				((fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0),
+			fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_RDWR | O_NOFOLLOW,
 			0o600,
 		);
 		fs.fchmodSync(descriptor, 0o600);
@@ -1338,7 +1365,7 @@ function disposeFallbackSessionStorage(storage: FallbackSessionStorage): void {
 		try {
 			fs.unlinkSync(storage.namedPath);
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT" && firstError === undefined) firstError = error;
+			if (errorCode(error) !== "ENOENT" && firstError === undefined) firstError = error;
 		}
 	}
 	try {
@@ -1408,7 +1435,7 @@ function createSessionFallbackSnapshot(
 			assertOwnedFallbackSession(sessionFile, stat);
 			existed = true;
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			if (errorCode(error) !== "ENOENT") throw error;
 		}
 		if (existed) snapshot = createAnonymousFallbackSession(sessionFile, sessionKey);
 	} catch (error) {
@@ -1442,17 +1469,14 @@ function createSessionFallbackSnapshot(
 						fs.unlinkSync(sessionFile);
 						syncDirectoryBestEffort(parent);
 					} catch (error) {
-						if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+						if (errorCode(error) !== "ENOENT") throw error;
 					}
 				} else {
 					if (snapshot === undefined) throw new Error("Fallback session snapshot is unavailable.");
 					removeOwnedFallbackTemporary(temporary);
 					destination = fs.openSync(
 						temporary,
-						fs.constants.O_CREAT |
-							fs.constants.O_EXCL |
-							fs.constants.O_RDWR |
-							((fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0),
+						fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_RDWR | O_NOFOLLOW,
 						0o600,
 					);
 					fs.fchmodSync(destination, 0o600);
@@ -1476,7 +1500,7 @@ function createSessionFallbackSnapshot(
 			try {
 				fs.unlinkSync(temporary);
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") cleanupErrors.push(error);
+				if (errorCode(error) !== "ENOENT") cleanupErrors.push(error);
 			}
 			try {
 				restoreClaim.release();
@@ -1589,11 +1613,11 @@ function runChildProcess(input: {
 					steerAckDir: steerAcksDir(input.config.asyncDir, input.index),
 					toolBudget: input.task.toolBudget,
 				});
-				const spawnSpec = getPiSpawnCommand(built.args, {
-					...(input.config.piPackageRoot ? { piPackageRoot: input.config.piPackageRoot } : {}),
-					...(input.config.piArgv1 ? { argv1: input.config.piArgv1 } : {}),
-					...(input.config.piExecutable ? { execPath: input.config.piExecutable } : {}),
-				});
+				const spawnDeps: PiSpawnDeps = {};
+				if (input.config.piPackageRoot) spawnDeps.piPackageRoot = input.config.piPackageRoot;
+				if (input.config.piArgv1) spawnDeps.argv1 = input.config.piArgv1;
+				if (input.config.piExecutable) spawnDeps.execPath = input.config.piExecutable;
+				const spawnSpec = getPiSpawnCommand(built.args, spawnDeps);
 				const usage = emptyUsage();
 				const messages: ChildMessage[] = [];
 				const stderrTail = createBoundedByteTail();
@@ -1771,12 +1795,13 @@ function runChildProcess(input: {
 				}
 				if (isRuntimeNumber(child.pid)) {
 					try {
-						input.onWriterProcess?.({
+						const writerState: WriterRuntimeState = {
 							state: "running",
 							pid: child.pid,
 							processStartIdentity: writerProcessStartIdentity,
-							...(writerSpawn.gated ? { groupMemberProofFile } : {}),
-						});
+						};
+						if (writerSpawn.gated) writerState.groupMemberProofFile = groupMemberProofFile;
+						input.onWriterProcess?.(writerState);
 					} catch (error) {
 						writerProcessBindingError = error;
 					}
@@ -2256,6 +2281,15 @@ function runChildProcess(input: {
 						} catch {
 							// The transcript and result remain authoritative if this convenience file fails.
 						}
+						const writerProcess: WriterProcess = {
+							processInstanceId,
+							kind: "pi-writer",
+							attempt: 0,
+							closeObservedAt: Date.now(),
+							exitCode: observedExitCode,
+							signal: observedSignal,
+						};
+						if (terminationOrigin) writerProcess.terminationOrigin = terminationOrigin;
 						return {
 							exitCode:
 								interrupted || timedOut || stopped || turnBudgetExceeded
@@ -2281,15 +2315,7 @@ function runChildProcess(input: {
 							turnBudget,
 							turnBudgetExceeded: turnBudgetExceeded || undefined,
 							contextNudgeObserved: contextNudgeObserved || undefined,
-							process: {
-								processInstanceId,
-								kind: "pi-writer",
-								attempt: 0,
-								closeObservedAt: Date.now(),
-								exitCode: observedExitCode,
-								signal: observedSignal,
-								...(terminationOrigin ? { terminationOrigin } : {}),
-							},
+							process: writerProcess,
 						};
 					} finally {
 						teardownClosedChild();
@@ -2542,34 +2568,41 @@ async function runResolvedTask(input: {
 	);
 	const result: BackgroundTaskResult = {
 		agent: task.agent,
-		...(task.context ? { context: task.context } : {}),
 		output,
 		success,
 		exitCode: final?.exitCode ?? 1,
-		...(resultError ? { error: resultError } : {}),
-		...(final?.protocolError ? { protocolError: final.protocolError } : {}),
-		...(final?.interrupted ? { interrupted: true } : {}),
-		...(final?.timedOut ? { timedOut: true } : {}),
-		...(final?.stopped ? { stopped: true } : {}),
-		...(final?.turnBudget ? { turnBudget: final.turnBudget } : {}),
-		...(final?.turnBudgetExceeded ? { turnBudgetExceeded: true, wrapUpRequested: true } : {}),
-		...(final?.contextNudgeObserved ? { contextNudgeObserved: true } : {}),
-		...(toolBudget ? { toolBudget } : {}),
-		...(sessionFile ? { sessionFile } : {}),
-		...(config.childIntercomTargets?.[index] ? { intercomTarget: config.childIntercomTargets[index] } : {}),
-		...((final?.model ?? task.model) ? { model: final?.model ?? task.model } : {}),
-		...(task.thinking ? { thinking: task.thinking } : {}),
-		...(attemptedModels.length > 0 ? { attemptedModels } : {}),
 		modelAttempts: attempts,
-		...(costSummary(attempts) ? { totalCost: costSummary(attempts) } : {}),
-		...(transcript.artifactPaths ? { artifactPaths: transcript.artifactPaths } : {}),
 		transcriptPath: transcript.path,
-		...(transcript.writer.getError() ? { transcriptError: transcript.writer.getError() } : {}),
-		...(task.launchContractDigest ? { launchContractDigest: task.launchContractDigest } : {}),
-		...(task.capabilityCeiling ? { capabilityCeiling: task.capabilityCeiling } : {}),
 		writerProcesses,
 		writerAttemptCount: writerProcesses.length,
 	};
+	if (task.context) result.context = task.context;
+	if (resultError) result.error = resultError;
+	if (final?.protocolError) result.protocolError = final.protocolError;
+	if (final?.interrupted) result.interrupted = true;
+	if (final?.timedOut) result.timedOut = true;
+	if (final?.stopped) result.stopped = true;
+	if (final?.turnBudget) result.turnBudget = final.turnBudget;
+	if (final?.turnBudgetExceeded) {
+		result.turnBudgetExceeded = true;
+		result.wrapUpRequested = true;
+	}
+	if (final?.contextNudgeObserved) result.contextNudgeObserved = true;
+	if (toolBudget) result.toolBudget = toolBudget;
+	if (sessionFile) result.sessionFile = sessionFile;
+	const intercomTarget = config.childIntercomTargets?.[index];
+	if (intercomTarget) result.intercomTarget = intercomTarget;
+	const model = final?.model ?? task.model;
+	if (model) result.model = model;
+	if (task.thinking) result.thinking = task.thinking;
+	if (attemptedModels.length > 0) result.attemptedModels = attemptedModels;
+	const totalCost = costSummary(attempts);
+	if (totalCost) result.totalCost = totalCost;
+	if (transcript.artifactPaths) result.artifactPaths = transcript.artifactPaths;
+	const transcriptError = transcript.writer.getError();
+	if (transcriptError) result.transcriptError = transcriptError;
+	if (task.launchContractDigest) result.launchContractDigest = task.launchContractDigest;
+	if (task.capabilityCeiling) result.capabilityCeiling = task.capabilityCeiling;
 
 	if (transcript.artifactPaths && config.artifactConfig?.includeOutput !== false) {
 		const error = writeOptionalArtifact(
@@ -2767,7 +2800,9 @@ async function runConfiguredWork(
 				state = "failed";
 				reason = `Agent is ${step.status}.`;
 			}
-			return { index, state, ...(reason ? { reason } : {}) };
+			const target: SteeringTargetStatus = { index, state };
+			if (reason) target.reason = reason;
+			return target;
 		});
 		recordSteeringRequest(projection, {
 			id: request.id,
@@ -2944,12 +2979,13 @@ async function runConfiguredWork(
 			} catch (error) {
 				evidenceErrors.push(`Worktree cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
 			}
-			worktreeEvidence = {
+			const evidence: NonNullable<BackgroundCompletion["worktree"]> = {
 				diffs,
 				summary: formatWorktreeDiffSummary(diffs),
 				cleanup,
-				...(evidenceErrors.length ? { error: evidenceErrors.join("\n") } : {}),
 			};
+			if (evidenceErrors.length) evidence.error = evidenceErrors.join("\n");
+			worktreeEvidence = evidence;
 		}
 
 		const endedAt = Date.now();
@@ -2970,10 +3006,10 @@ async function runConfiguredWork(
 				// The event stream remains available for later projection.
 			}
 		}
-		const completion = createBackgroundCompletion(config, results, startedAt, endedAt, {
-			...(nestedProjectionCommitted ? { nestedChildren: nestedChildren ?? [] } : {}),
-			...(worktreeEvidence ? { worktree: worktreeEvidence } : {}),
-		});
+		const completionExtras: Pick<BackgroundCompletion, "nestedChildren" | "worktree"> = {};
+		if (nestedProjectionCommitted) completionExtras.nestedChildren = nestedChildren ?? [];
+		if (worktreeEvidence) completionExtras.worktree = worktreeEvidence;
+		const completion = createBackgroundCompletion(config, results, startedAt, endedAt, completionExtras);
 		status.state = completion.state;
 		status.endedAt = endedAt;
 		status.lastUpdate = endedAt;
@@ -3024,9 +3060,9 @@ async function runConfiguredWork(
 				runnerProcessInstanceId: config.runnerProcessInstanceId,
 				writers,
 				expectedWriters,
-				...(config.revivalLease?.sessionFile ? { sessionFile: config.revivalLease.sessionFile } : {}),
-				...(config.revivalLeaseToken ? { revivalLeaseToken: config.revivalLeaseToken } : {}),
 			};
+			if (config.revivalLease?.sessionFile) candidate.sessionFile = config.revivalLease.sessionFile;
+			if (config.revivalLeaseToken) candidate.revivalLeaseToken = config.revivalLeaseToken;
 			try {
 				writeProcessTerminalCandidate(config.asyncDir, candidate);
 			} catch (error) {
@@ -3066,7 +3102,7 @@ async function runConfiguredWork(
 					}),
 				});
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				if (errorCode(error) !== "ENOENT") {
 					reportAgentDiagnostic(`Failed to settle nested route after '${config.id}' completed:`, error);
 				}
 			}
@@ -3088,10 +3124,10 @@ async function waitForStartupControl(
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() <= deadline) {
 		if (fs.existsSync(controlPath)) {
-			const payload = JSON.parse(fs.readFileSync(controlPath, "utf-8")) as {
-				action?: unknown;
-				token?: unknown;
-			};
+			const payload = parseJsonValue(fs.readFileSync(controlPath, "utf-8"));
+			if (!isRuntimeObject(payload) || payload === null || Array.isArray(payload)) {
+				throw new Error("Runner startup control payload is invalid.");
+			}
 			if (payload.token !== token) throw new Error("Runner startup token does not match the session lease.");
 			if (payload.action === action) return;
 			if (payload.action !== "ack" && payload.action !== "proceed") {
@@ -3223,7 +3259,7 @@ export async function runConfiguredBackground(
 			try {
 				await finalizeNestedRouteRoot(config.nestedRoute, config.asyncDir);
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				if (errorCode(error) !== "ENOENT") {
 					reportAgentDiagnostic(`Failed to settle terminal nested route for '${config.id}':`, error);
 				}
 			}
@@ -3238,8 +3274,67 @@ function startConfiguredBackground(config: BackgroundRunnerConfig): void {
 	});
 }
 
+function isJsonObject(value: JsonValue): value is JsonObject {
+	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
+}
+
+function isRunnerAgentTask(value: JsonValue): value is JsonObject & RunnerAgentTask {
+	return (
+		isJsonObject(value) &&
+		isRuntimeString(value.agent) &&
+		isRuntimeString(value.task) &&
+		isRuntimeString(value.cwd) &&
+		isRuntimeBoolean(value.inheritProjectContext) &&
+		isRuntimeBoolean(value.inheritSkills)
+	);
+}
+
+function isBackgroundRunnerWork(value: JsonValue): value is JsonObject & BackgroundRunnerWork {
+	if (!isJsonObject(value)) return false;
+	if (value.mode === "single") return isRunnerAgentTask(value.task);
+	return (
+		value.mode === "parallel" &&
+		isJsonObject(value.group) &&
+		Array.isArray(value.group.tasks) &&
+		value.group.tasks.every(isRunnerAgentTask) &&
+		isRuntimeNumber(value.group.concurrency) &&
+		Number.isSafeInteger(value.group.concurrency) &&
+		value.group.concurrency > 0 &&
+		isRuntimeBoolean(value.group.worktree)
+	);
+}
+
+function parseBackgroundRunnerConfig(text: string): BackgroundRunnerConfig {
+	const value = parseJsonValue(text);
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		Array.isArray(value) ||
+		value.version !== 2 ||
+		!isRuntimeString(value.id) ||
+		!value.id ||
+		!isRuntimeString(value.resultPath) ||
+		!value.resultPath ||
+		!isRuntimeString(value.cwd) ||
+		!value.cwd ||
+		!isRuntimeString(value.asyncDir) ||
+		!value.asyncDir ||
+		!isBackgroundRunnerWork(value.work)
+	) {
+		throw new Error("Background runner config is invalid.");
+	}
+	return Object.assign({}, value, {
+		version: 2 as const,
+		id: value.id,
+		resultPath: value.resultPath,
+		cwd: value.cwd,
+		asyncDir: value.asyncDir,
+		work: value.work,
+	});
+}
+
 function startFromConfigPath(configPath: string): void {
-	const config = JSON.parse(fs.readFileSync(configPath, "utf-8")) as BackgroundRunnerConfig;
+	const config = parseBackgroundRunnerConfig(readBoundedOwnedFile(configPath, 8 * 1024 * 1024));
 	try {
 		fs.unlinkSync(configPath);
 	} catch {
