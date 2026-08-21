@@ -32,51 +32,75 @@ export function createInitialStatus(
 	runnerPid = process.pid,
 	processStartIdentity = readProcessStartIdentity(runnerPid),
 ): BackgroundRunnerStatus {
+	const session: Pick<BackgroundRunnerStatus, "parentRunOrigin" | "sessionId"> = {};
+	if (config.sessionId) session.sessionId = config.sessionId;
+	if (config.parentRunOrigin) session.parentRunOrigin = config.parentRunOrigin;
+	const nesting: Pick<BackgroundRunnerStatus, "nestedRoute"> = {};
+	if (config.nestedRoute) nesting.nestedRoute = config.nestedRoute;
+	const process: Pick<BackgroundRunnerStatus, "processStartIdentity" | "processTerminal"> = {};
+	if (processStartIdentity) process.processStartIdentity = processStartIdentity;
+	if (config.runnerProcessInstanceId) {
+		process.processTerminal = {
+			version: 1,
+			state: "pending",
+			runId: config.id,
+			runnerProcessInstanceId: config.runnerProcessInstanceId,
+		};
+	}
+	const limits: Pick<BackgroundRunnerStatus, "artifactsDir" | "capabilityCeiling" | "deadlineAt" | "timeoutMs"> = {};
+	if (config.timeoutMs !== undefined) limits.timeoutMs = config.timeoutMs;
+	if (config.deadlineAt !== undefined) limits.deadlineAt = config.deadlineAt;
+	if (config.capabilityCeiling) limits.capabilityCeiling = config.capabilityCeiling;
+	if (config.artifactsDir) limits.artifactsDir = config.artifactsDir;
 	return {
 		lifecycleArtifactVersion: SUBAGENT_LIFECYCLE_ARTIFACT_VERSION,
 		runId: config.id,
-		...(config.sessionId ? { sessionId: config.sessionId } : {}),
-		...(config.parentRunOrigin ? { parentRunOrigin: config.parentRunOrigin } : {}),
+		...session,
 		mode: config.work.mode,
 		isNested: Boolean(config.nestedSelf),
-		...(config.nestedRoute ? { nestedRoute: config.nestedRoute } : {}),
+		...nesting,
 		state: "running",
 		startedAt,
 		lastUpdate: startedAt,
 		pid: runnerPid,
-		...(processStartIdentity ? { processStartIdentity } : {}),
-		...(config.runnerProcessInstanceId
-			? {
-					processTerminal: {
-						version: 1 as const,
-						state: "pending" as const,
-						runId: config.id,
-						runnerProcessInstanceId: config.runnerProcessInstanceId,
-					},
-				}
-			: {}),
+		...process,
 		cwd: config.cwd,
-		...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
-		...(config.deadlineAt !== undefined ? { deadlineAt: config.deadlineAt } : {}),
-		...(config.capabilityCeiling ? { capabilityCeiling: config.capabilityCeiling } : {}),
-		...(config.artifactsDir ? { artifactsDir: config.artifactsDir } : {}),
+		...limits,
 		steering: createSteeringStatus(),
-		steps: tasks(config.work).map((task) => ({
-			agent: task.agent,
-			cwd: task.cwd,
-			...(task.context ? { context: task.context } : {}),
-			...(task.description ? { label: task.description } : {}),
-			...(task.delegatedTask && task.delegatedTask !== task.task ? { delegatedTask: task.delegatedTask } : {}),
-			task: task.task,
-			status: "pending" as const,
-			...(task.sessionFile ? { sessionFile: task.sessionFile } : {}),
-			...(task.model ? { model: task.model } : {}),
-			...(task.thinking ? { thinking: task.thinking } : {}),
-			...(task.skills?.length ? { skills: task.skills } : {}),
-			...(task.turnBudget ? { turnBudget: initialTurnBudgetState(task.turnBudget) } : {}),
-			...(task.toolBudget ? { toolBudget: initialToolBudgetState(task.toolBudget) } : {}),
-			...(task.launchContractDigest ? { launchContractDigest: task.launchContractDigest } : {}),
-			...(task.capabilityCeiling ? { capabilityCeiling: task.capabilityCeiling } : {}),
-		})),
+		steps: tasks(config.work).map((task) => {
+			const description: Pick<BackgroundRunnerStatusStep, "context" | "delegatedTask" | "label"> = {};
+			if (task.context) description.context = task.context;
+			if (task.description) description.label = task.description;
+			if (task.delegatedTask && task.delegatedTask !== task.task) {
+				description.delegatedTask = task.delegatedTask;
+			}
+			const launch: Pick<
+				BackgroundRunnerStatusStep,
+				| "capabilityCeiling"
+				| "launchContractDigest"
+				| "model"
+				| "sessionFile"
+				| "skills"
+				| "thinking"
+				| "toolBudget"
+				| "turnBudget"
+			> = {};
+			if (task.sessionFile) launch.sessionFile = task.sessionFile;
+			if (task.model) launch.model = task.model;
+			if (task.thinking) launch.thinking = task.thinking;
+			if (task.skills?.length) launch.skills = task.skills;
+			if (task.turnBudget) launch.turnBudget = initialTurnBudgetState(task.turnBudget);
+			if (task.toolBudget) launch.toolBudget = initialToolBudgetState(task.toolBudget);
+			if (task.launchContractDigest) launch.launchContractDigest = task.launchContractDigest;
+			if (task.capabilityCeiling) launch.capabilityCeiling = task.capabilityCeiling;
+			return {
+				agent: task.agent,
+				cwd: task.cwd,
+				...description,
+				task: task.task,
+				status: "pending",
+				...launch,
+			};
+		}),
 	};
 }
