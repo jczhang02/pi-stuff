@@ -17,8 +17,8 @@ Suite contract, including public `registerMarkdownTransformer()`, regular and fu
 space-preserving native settings search. The exact binary hash, rather than a reusable version string, is the executable
 identity. Pi Stuff does not rebuild or distribute Pi Host.
 
-CI exposes two stable checks. `Fast` always validates the frozen dependency graph, repository formatting, type surfaces,
-unused-code analysis, generated composition, and public-release safety. For pull requests, the scope classifier starts
+CI exposes two stable checks. `Fast` always validates the frozen dependency graph, repository formatting, anti-slop
+lint, type surfaces, unused-code analysis, generated composition, and public-release safety. For pull requests, the scope classifier starts
 `Acceptance` when executable behavior or executable documentation changed; a direct push to `main` runs `Fast` only,
 and manual dispatch runs both checks. `Acceptance` downloads and verifies the certified Host release and RTK runtime
 before running every test
