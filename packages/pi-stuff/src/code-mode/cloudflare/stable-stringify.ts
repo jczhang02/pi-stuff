@@ -1,4 +1,5 @@
 import { isRuntimeBigInt, isRuntimeObject } from "../../shared/runtime-type.js";
+import type { CodemodeValue } from "./codec.js";
 /**
  * Deterministic JSON of a value: object keys sorted recursively, BigInt tagged.
  * Used to compare a replayed call's args against the recorded args. Best-effort
@@ -6,15 +7,12 @@ import { isRuntimeBigInt, isRuntimeObject } from "../../shared/runtime-type.js";
  * which case the caller skips the args check rather than reporting a false
  * divergence.
  */
-export function stableStringify(value: unknown): string | undefined {
+export function stableStringify(value: CodemodeValue): string | undefined {
 	try {
 		return JSON.stringify(value, (_key, val) => {
 			if (isRuntimeBigInt(val)) return `__bigint__:${val.toString()}`;
 			if (val && isRuntimeObject(val) && !Array.isArray(val)) {
-				const record = val as Record<string, unknown>;
-				const sorted: Record<string, unknown> = {};
-				for (const key of Object.keys(record).sort()) sorted[key] = record[key];
-				return sorted;
+				return Object.fromEntries(Object.entries(val).sort(([left], [right]) => left.localeCompare(right)));
 			}
 			return val;
 		});
