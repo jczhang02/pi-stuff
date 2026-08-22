@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
+import type { Usage } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -126,10 +126,10 @@ class SharedCodexStatusChannel implements CodexStatusChannel, CodexStatusSource 
 	publish(snapshot: CodexStatusSnapshot): void {
 		const next: CodexStatusSnapshot = {
 			fastEnabled: snapshot.fastEnabled === true,
-			...(isRuntimeNumber(snapshot.weeklyRemainingPercent) && Number.isFinite(snapshot.weeklyRemainingPercent)
-				? { weeklyRemainingPercent: snapshot.weeklyRemainingPercent }
-				: {}),
 		};
+		if (isRuntimeNumber(snapshot.weeklyRemainingPercent) && Number.isFinite(snapshot.weeklyRemainingPercent)) {
+			Object.assign(next, { weeklyRemainingPercent: snapshot.weeklyRemainingPercent });
+		}
 		this.setSnapshot(next);
 	}
 
@@ -151,6 +151,7 @@ class SharedCodexStatusChannel implements CodexStatusChannel, CodexStatusSource 
 }
 
 function codexStatusChannels(): WeakMap<ExtensionAPI["events"], CodexStatusChannel> {
+	// SAFETY: this package is the sole writer of the symbol-owned slot and stores only the declared WeakMap.
 	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], CodexStatusChannel> | undefined;
 	};
@@ -161,9 +162,11 @@ function codexStatusChannels(): WeakMap<ExtensionAPI["events"], CodexStatusChann
 /** Share one late-bindable Codex presentation channel across Capability copies. */
 export function getCodexStatusChannel(pi: Pick<ExtensionAPI, "events" | "on">): CodexStatusChannel {
 	const channels = codexStatusChannels();
+	// SAFETY: ExtensionAPI events are objects, so this WeakMap's keys satisfy the shared resource's object-key contract.
+	const sharedChannels = channels as WeakMap<object, CodexStatusChannel>;
 	return getHostSharedResource(
 		pi.events,
-		channels as WeakMap<object, CodexStatusChannel>,
+		sharedChannels,
 		CODEX_STATUS_DISCOVERY_EVENT,
 		() => new SharedCodexStatusChannel(),
 		{ registerOwnerCleanup: (cleanup) => registerStatusChannelCleanup(pi, cleanup) },
@@ -187,11 +190,12 @@ class SharedGoalStatusChannel implements GoalStatusChannel, GoalStatusSource {
 		if (!isGoalStatus(snapshot.status)) return;
 		const tokensUsed = finiteNonNegative(snapshot.tokensUsed);
 		const tokenBudget = finitePositive(snapshot.tokenBudget);
-		this.setSnapshot({
+		const next: GoalStatusSnapshot = {
 			status: snapshot.status,
 			tokensUsed,
-			...(tokenBudget === undefined ? {} : { tokenBudget }),
-		});
+		};
+		if (tokenBudget !== undefined) Object.assign(next, { tokenBudget });
+		this.setSnapshot(next);
 	}
 
 	subscribe(listener: () => void): () => void {
@@ -213,6 +217,7 @@ class SharedGoalStatusChannel implements GoalStatusChannel, GoalStatusSource {
 }
 
 function goalStatusChannels(): WeakMap<ExtensionAPI["events"], GoalStatusChannel> {
+	// SAFETY: this package is the sole writer of the symbol-owned slot and stores only the declared WeakMap.
 	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], GoalStatusChannel> | undefined;
 	};
@@ -223,9 +228,11 @@ function goalStatusChannels(): WeakMap<ExtensionAPI["events"], GoalStatusChannel
 /** Share one observation-only Goal presentation channel across Capability copies. */
 export function getGoalStatusChannel(pi: Pick<ExtensionAPI, "events" | "on">): GoalStatusChannel {
 	const channels = goalStatusChannels();
+	// SAFETY: ExtensionAPI events are objects, so this WeakMap's keys satisfy the shared resource's object-key contract.
+	const sharedChannels = channels as WeakMap<object, GoalStatusChannel>;
 	return getHostSharedResource(
 		pi.events,
-		channels as WeakMap<object, GoalStatusChannel>,
+		sharedChannels,
 		GOAL_STATUS_DISCOVERY_EVENT,
 		() => new SharedGoalStatusChannel(),
 		{ registerOwnerCleanup: (cleanup) => registerStatusChannelCleanup(pi, cleanup) },
@@ -755,6 +762,11 @@ interface SegmentText {
 	readonly full: string;
 }
 
+interface GitSegments {
+	branch?: SegmentText;
+	diff?: SegmentText;
+}
+
 function renderStatusline(
 	pi: StatuslineHost,
 	ctx: StatuslineContext,
@@ -834,7 +846,9 @@ function statusSegment(
 	compact = full,
 	minimum?: string,
 ): StatusSegment {
-	return { compact, full, id, ...(minimum ? { minimum } : {}), priority };
+	const segment: StatusSegment = { compact, full, id, priority };
+	if (minimum) Object.assign(segment, { minimum });
+	return segment;
 }
 
 function renderGitSegments(theme: Theme, icons: StatuslineIcons, branch: string, counts: GitChangeCounts | undefined) {
@@ -873,7 +887,10 @@ function renderGitSegments(theme: Theme, icons: StatuslineIcons, branch: string,
 					full: `${theme.fg("muted", icons.diff)} ${fullState.join(" ")}`,
 				}
 			: undefined;
-	return { ...(branchSegment ? { branch: branchSegment } : {}), ...(diffSegment ? { diff: diffSegment } : {}) };
+	const segments: GitSegments = {};
+	if (branchSegment) segments.branch = branchSegment;
+	if (diffSegment) segments.diff = diffSegment;
+	return segments;
 }
 
 function compactCount(value: number): string {
@@ -933,7 +950,7 @@ function finitePositive(value: number | undefined): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-function isGoalStatus(value: unknown): value is GoalStatus {
+function isGoalStatus(value: string): value is GoalStatus {
 	return ["active", "paused", "blocked", "usage_limited", "budget_limited", "complete"].includes(String(value));
 }
 
@@ -1024,14 +1041,11 @@ function extendSessionStatus(
 	const usage = { ...previous.usage };
 	let latestPrompt = previous.latestPrompt;
 	if (entry.type === "message") {
-		if (
-			entry.message.role === "assistant" &&
-			entry.message.stopReason !== "error" &&
-			entry.message.stopReason !== "aborted"
-		) {
-			addUsage(usage, (entry.message as AssistantMessage).usage);
+		const message = entry.message;
+		if (message.role === "assistant" && message.stopReason !== "error" && message.stopReason !== "aborted") {
+			addUsage(usage, message.usage);
 		}
-		if (entry.message.role === "user") latestPrompt = userPrompt(entry.message.content, skillAliases) ?? latestPrompt;
+		if (message.role === "user") latestPrompt = userPrompt(message.content, skillAliases) ?? latestPrompt;
 	}
 	return { latestPrompt, usage };
 }
