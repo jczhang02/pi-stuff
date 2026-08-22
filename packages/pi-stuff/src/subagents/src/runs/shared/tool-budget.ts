@@ -1,4 +1,5 @@
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
+import { isJsonInputObject, parseJsonValue } from "../../../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
 import type { ResolvedToolBudget, ToolBudgetConfig, ToolBudgetState } from "../../shared/types.ts";
 
 export const DEFAULT_TOOL_BUDGET_BLOCK = ["read", "grep", "find", "ls"] as const;
@@ -11,36 +12,36 @@ export function normalizeToolBudgetBlock(block: ToolBudgetConfig["block"] | unde
 	return [...new Set(block.map((tool) => tool.trim()).filter(Boolean))];
 }
 
-export function validateToolBudgetConfig(raw: unknown, label = "toolBudget", options: { minimumHard?: 0 | 1 } = {}) {
+export function validateToolBudgetConfig<Raw>(raw: Raw, label = "toolBudget", options: { minimumHard?: 0 | 1 } = {}) {
 	if (raw === undefined) return {};
-	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw))
-		return { error: `${label} must be an object with hard and optional soft/block.` };
-	const value = raw as ToolBudgetConfig;
+	if (!isJsonInputObject(raw)) return { error: `${label} must be an object with hard and optional soft/block.` };
+	const hard = raw["hard"];
+	const soft = raw["soft"];
+	const block = raw["block"];
 	const minimumHard = options.minimumHard ?? 1;
-	if (!isRuntimeNumber(value.hard) || !Number.isInteger(value.hard) || value.hard < minimumHard) {
+	if (!isRuntimeNumber(hard) || !Number.isInteger(hard) || hard < minimumHard) {
 		return { error: `${label}.hard must be an integer >= ${minimumHard}.` };
 	}
-	if (value.soft !== undefined && (!isRuntimeNumber(value.soft) || !Number.isInteger(value.soft) || value.soft < 1)) {
+	if (soft !== undefined && (!isRuntimeNumber(soft) || !Number.isInteger(soft) || soft < 1)) {
 		return { error: `${label}.soft must be an integer >= 1 when provided.` };
 	}
-	if (value.soft !== undefined && value.soft > value.hard) {
+	if (soft !== undefined && soft > hard) {
 		return { error: `${label}.soft must be <= ${label}.hard.` };
 	}
-	if (value.block !== undefined && value.block !== "*") {
-		if (!Array.isArray(value.block)) return { error: `${label}.block must be "*" or an array of tool names.` };
-		if (value.block.length === 0) return { error: `${label}.block must contain at least one tool name.` };
-		for (const item of value.block) {
+	if (block !== undefined && block !== "*") {
+		if (!Array.isArray(block)) return { error: `${label}.block must be "*" or an array of tool names.` };
+		if (block.length === 0) return { error: `${label}.block must contain at least one tool name.` };
+		for (const item of block) {
 			if (!isRuntimeString(item) || !item.trim())
 				return { error: `${label}.block must contain non-empty tool names.` };
 		}
 	}
-	return {
-		budget: {
-			hard: value.hard,
-			...(value.soft !== undefined ? { soft: value.soft } : {}),
-			block: normalizeToolBudgetBlock(value.block),
-		},
+	const budget: ResolvedToolBudget = {
+		hard,
+		block: normalizeToolBudgetBlock(block),
 	};
+	if (soft !== undefined) budget.soft = soft;
+	return { budget };
 }
 
 export function initialToolBudgetState(budget: ResolvedToolBudget): ToolBudgetState {
@@ -50,13 +51,17 @@ export function initialToolBudgetState(budget: ResolvedToolBudget): ToolBudgetSt
 export function toolBudgetState(budget: ResolvedToolBudget, toolCount: number, blockedTool?: string): ToolBudgetState {
 	const overHard = toolCount > budget.hard;
 	const overSoft = budget.soft !== undefined && toolCount >= budget.soft;
-	return {
+	const state: ToolBudgetState = {
 		...budget,
 		toolCount,
 		outcome: overHard ? "hard-blocked" : overSoft ? "soft-reached" : "within-budget",
-		...(overSoft ? { softReachedAt: budget.soft } : {}),
-		...(overHard ? { hardReachedAt: budget.hard, blockedTool } : {}),
 	};
+	if (overSoft && budget.soft !== undefined) state.softReachedAt = budget.soft;
+	if (overHard) {
+		state.hardReachedAt = budget.hard;
+		state.blockedTool = blockedTool;
+	}
+	return state;
 }
 
 export function shouldBlockToolForBudget(budget: ResolvedToolBudget, toolName: string, nextToolCount: number): boolean {
@@ -81,7 +86,7 @@ export function decodeToolBudgetEnv(
 	options: { allowZero?: boolean } = {},
 ): ResolvedToolBudget | undefined {
 	if (!value?.trim()) return undefined;
-	const parsed = JSON.parse(value) as unknown;
+	const parsed = parseJsonValue(value);
 	const normalized = validateToolBudgetConfig(
 		parsed,
 		TOOL_BUDGET_ENV,
