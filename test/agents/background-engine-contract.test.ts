@@ -5,6 +5,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import { type Static, Type, type TSchema } from "typebox";
+import { Check } from "typebox/value";
 import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.js";
 import {
 	acquireRunnerProcessStartIdentity,
@@ -78,6 +80,39 @@ const originalRunResultMaxBytes = process.env.PI_SUBAGENT_RUN_RESULT_MAX_BYTES;
 const originalTmpDir = process.env.TMPDIR;
 const originalTmp = process.env.TMP;
 const originalTemp = process.env.TEMP;
+const WRITER_REGISTRY_SCHEMA = Type.Object(
+	{
+		writers: Type.Optional(
+			Type.Record(
+				Type.String(),
+				Type.Object({ state: Type.Optional(Type.String()) }, { additionalProperties: true }),
+			),
+		),
+	},
+	{ additionalProperties: true },
+);
+const PROCESS_TERMINAL_CANDIDATE_SCHEMA = Type.Object(
+	{
+		expectedWriters: Type.Optional(Type.Record(Type.String(), Type.Number())),
+		writers: Type.Optional(Type.Record(Type.String(), Type.Array(Type.Unknown()))),
+	},
+	{ additionalProperties: true },
+);
+const TRANSCRIPT_RECORD_SCHEMA = Type.Object(
+	{
+		customType: Type.Optional(Type.String()),
+		recordType: Type.Optional(Type.String()),
+		role: Type.Optional(Type.String()),
+		text: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+
+function readFixtureJson<Schema extends TSchema>(filePath: string, schema: Schema): Static<Schema> {
+	const value = JSON.parse(fs.readFileSync(filePath, "utf8"));
+	if (!Check(schema, value)) throw new Error(`Expected a valid fixture document at ${filePath}`);
+	return value;
+}
 
 afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) {
@@ -956,7 +991,7 @@ describe("background runner configuration", () => {
 			memory: { scope: "project", path: "/retired" },
 			completionGuard: true,
 			output: "/retired/output",
-		} as AgentConfig & Record<string, unknown>;
+		};
 
 		const definition = projectAgentDefinition(configured);
 		const binding = projectLaunchBinding({
@@ -2110,9 +2145,7 @@ setInterval(() => {}, 1_000);
 				writerProcesses?: Array<{ signal?: string | null }>;
 			}>;
 		};
-		const registry = JSON.parse(fs.readFileSync(path.join(asyncDir, "writer-processes-live.json"), "utf8")) as {
-			writers?: Record<string, { state?: string }>;
-		};
+		const registry = readFixtureJson(path.join(asyncDir, "writer-processes-live.json"), WRITER_REGISTRY_SCHEMA);
 
 		expect(completion).toMatchObject({
 			state: "failed",
@@ -2166,9 +2199,7 @@ setInterval(() => {}, 1_000);
 			state: string;
 			results: Array<{ error?: string; writerProcesses?: unknown[] }>;
 		};
-		const registry = JSON.parse(fs.readFileSync(path.join(asyncDir, "writer-processes-live.json"), "utf8")) as {
-			writers?: Record<string, { state?: string }>;
-		};
+		const registry = readFixtureJson(path.join(asyncDir, "writer-processes-live.json"), WRITER_REGISTRY_SCHEMA);
 
 		expect(completion).toMatchObject({
 			state: "failed",
@@ -2240,9 +2271,7 @@ setInterval(() => {}, 1_000);
 			state: string;
 			results: Array<{ error?: string; writerProcesses?: unknown[]; writerAttemptCount?: number }>;
 		};
-		const registry = JSON.parse(fs.readFileSync(path.join(asyncDir, "writer-processes-live.json"), "utf8")) as {
-			writers?: Record<string, { state?: string }>;
-		};
+		const registry = readFixtureJson(path.join(asyncDir, "writer-processes-live.json"), WRITER_REGISTRY_SCHEMA);
 
 		expect(completion.state).toBe("failed");
 		expect(completion.results[0]?.error).toContain("null bytes");
@@ -2283,9 +2312,7 @@ setInterval(() => {}, 1_000);
 			state: string;
 			results: Array<{ error?: string; writerProcesses?: unknown[] }>;
 		};
-		const registry = JSON.parse(fs.readFileSync(path.join(asyncDir, "writer-processes-live.json"), "utf8")) as {
-			writers?: Record<string, { state?: string }>;
-		};
+		const registry = readFixtureJson(path.join(asyncDir, "writer-processes-live.json"), WRITER_REGISTRY_SCHEMA);
 		const leaked = fs.readdirSync(tempRoot).filter((entry) => entry.startsWith("pi-subagent-"));
 
 		expect(completion).toMatchObject({
@@ -2901,10 +2928,10 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 				modelAttempts?: Array<{ model?: string; error?: string }>;
 			}>;
 		};
-		const candidate = JSON.parse(fs.readFileSync(path.join(asyncDir, "process-terminal-candidate.json"), "utf8")) as {
-			expectedWriters?: Record<string, number>;
-			writers?: Record<string, unknown[]>;
-		};
+		const candidate = readFixtureJson(
+			path.join(asyncDir, "process-terminal-candidate.json"),
+			PROCESS_TERMINAL_CANDIDATE_SCHEMA,
+		);
 
 		expect(completion).toMatchObject({
 			state: "failed",
@@ -3170,7 +3197,11 @@ process.exit(0);
 			.readFileSync(transcriptPath, "utf8")
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as Record<string, unknown>);
+			.map((line) => {
+				const value = JSON.parse(line);
+				if (!Check(TRANSCRIPT_RECORD_SCHEMA, value)) throw new Error("Expected a transcript fixture record");
+				return value;
+			});
 		expect(transcript).toContainEqual(
 			expect.objectContaining({
 				recordType: "message",

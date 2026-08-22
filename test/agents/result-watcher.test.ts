@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import type { CompletionNotification } from "../../packages/pi-stuff/src/subagents/src/runs/background/notify.js";
 import {
 	createResultWatcher,
@@ -18,10 +19,41 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
 
 const temporaryDirectories: string[] = [];
+const INTERCOM_PAYLOAD_SCHEMA = Type.Object(
+	{
+		requestId: Type.Optional(Type.String()),
+		runId: Type.String(),
+		to: Type.String(),
+	},
+	{ additionalProperties: true },
+);
+const LEGACY_COMPLETION_SCHEMA = Type.Object(
+	{
+		results: Type.Array(
+			Type.Object(
+				{
+					sessionFile: Type.Optional(Type.String()),
+					transcriptPath: Type.Optional(Type.String()),
+				},
+				{ additionalProperties: true },
+			),
+		),
+	},
+	{ additionalProperties: true },
+);
+const COMPLETION_EVENT_SCHEMA = Type.Object(
+	{
+		parentRunOrigin: Type.Optional(Type.Union([Type.Literal("automatic"), Type.Literal("user")])),
+	},
+	{ additionalProperties: true },
+);
+type IntercomPayload = Parameters<Parameters<IntercomEventBus["on"]>[1]>[0];
+type IntercomListener = Parameters<IntercomEventBus["on"]>[1];
+type ReceivedIntercomPayload = Static<typeof INTERCOM_PAYLOAD_SCHEMA>;
 
 function createIntercomBus(deliveries: boolean[]) {
-	const handlers = new Map<string, Set<(data: unknown) => void>>();
-	const received: Array<Record<string, unknown>> = [];
+	const handlers = new Map<string, Set<IntercomListener>>();
+	const received: ReceivedIntercomPayload[] = [];
 	const bus: IntercomEventBus = {
 		on(channel, handler) {
 			const listeners = handlers.get(channel) ?? new Set();
@@ -30,12 +62,11 @@ function createIntercomBus(deliveries: boolean[]) {
 			return () => listeners.delete(handler);
 		},
 		emit(channel, data) {
-			if (channel === SUBAGENT_RESULT_INTERCOM_EVENT && data && isRuntimeObject(data)) {
-				const payload = data as Record<string, unknown>;
-				received.push(payload);
+			if (channel === SUBAGENT_RESULT_INTERCOM_EVENT && Check(INTERCOM_PAYLOAD_SCHEMA, data)) {
+				received.push(data);
 				const delivered = deliveries.shift() ?? false;
 				for (const handler of handlers.get(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT) ?? []) {
-					handler({ requestId: payload.requestId, delivered });
+					handler({ requestId: data.requestId, delivered });
 				}
 			}
 			for (const handler of handlers.get(channel) ?? []) handler(data);
@@ -581,7 +612,7 @@ describe("background result watcher", () => {
 				readdirSync: fs.readdirSync,
 				realpathSync: fs.realpathSync,
 				unlinkSync: fs.unlinkSync,
-				watch: (_directory: unknown, listener: typeof watchListener) => {
+				watch: (_directory: Parameters<typeof fs.watch>[0], listener: typeof watchListener) => {
 					watchListener = listener;
 					return fakeWatcher;
 				},
@@ -670,7 +701,10 @@ describe("background result watcher", () => {
 			mode: "parallel",
 			sessionFile: "/tmp/root-session.jsonl",
 		});
-		const projected = delivered[0] as Record<string, unknown>;
+		const projected = delivered[0];
+		if (!projected || !Check(LEGACY_COMPLETION_SCHEMA, projected)) {
+			throw new Error("Expected a projected legacy completion");
+		}
 		for (const retired of [
 			"chainStepCount",
 			"workflowGraph",
@@ -681,7 +715,7 @@ describe("background result watcher", () => {
 		]) {
 			expect(projected).not.toHaveProperty(retired);
 		}
-		const children = projected.results as Array<Record<string, unknown>>;
+		const children = projected.results;
 		expect(children[0]).toMatchObject({
 			sessionFile: "/tmp/writer.jsonl",
 			transcriptPath: "/tmp/writer.md",
@@ -854,9 +888,10 @@ describe("background result watcher", () => {
 			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{
 				events: {
-					emit: (channel: string, data: unknown) => {
-						// SAFETY: this test controls the value and supplies every CompletionNotification member exercised by this case.
-						if (channel === SUBAGENT_ASYNC_COMPLETE_EVENT) emitted.push(data as CompletionNotification);
+					emit: (channel: string, data: IntercomPayload) => {
+						if (channel === SUBAGENT_ASYNC_COMPLETE_EVENT && Check(COMPLETION_EVENT_SCHEMA, data)) {
+							emitted.push(data);
+						}
 					},
 				},
 			} as never,

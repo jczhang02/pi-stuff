@@ -2,6 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
+import { parseJsonValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import {
 	acquireSessionLease,
 	SessionLeaseConflictError,
@@ -9,6 +12,7 @@ import {
 } from "../../packages/pi-stuff/src/subagents/src/runs/shared/session-lease.js";
 
 const roots = new Set<string>();
+const LEGACY_OWNER_SCHEMA = Type.Object({ asyncDir: Type.Optional(Type.String()) }, { additionalProperties: true });
 
 afterEach(() => {
 	for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
@@ -93,7 +97,8 @@ describe("canonical Agent session lease", () => {
 			const original = acquireOriginal(input);
 			if (mode === "legacy") {
 				const ownerPath = path.join(sessionLeaseDir(input.sessionFile, input.leases), "owner.json");
-				const owner = JSON.parse(fs.readFileSync(ownerPath, "utf-8")) as Record<string, unknown>;
+				const owner = parseJsonValue(fs.readFileSync(ownerPath, "utf-8"));
+				if (!Check(LEGACY_OWNER_SCHEMA, owner)) throw new Error("Expected a Session lease owner object");
 				delete owner.asyncDir;
 				fs.writeFileSync(ownerPath, JSON.stringify(owner), { mode: 0o600 });
 			}

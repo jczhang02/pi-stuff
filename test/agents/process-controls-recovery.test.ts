@@ -3,12 +3,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-	isRuntimeFunction,
-	isRuntimeNumber,
-	isRuntimeObject,
-	isRuntimeString,
-} from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
+import { isRuntimeFunction, isRuntimeNumber } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { AgentConfig } from "../../packages/pi-stuff/src/subagents/src/agents/agents.ts";
 import {
 	executeAsyncParallel,
@@ -52,6 +49,62 @@ const originalEnvironment = {
 	piBinary: process.env[SUBAGENT_PI_BINARY_ENV],
 };
 let piBinaryCertified = false;
+const ASYNC_EVENT_SCHEMA = Type.Object(
+	{
+		acknowledgeStart: Type.Optional(Type.Function([], Type.Unknown())),
+		asyncDir: Type.Optional(Type.String()),
+		id: Type.String(),
+		pid: Type.Optional(Type.Number()),
+	},
+	{ additionalProperties: true },
+);
+const PROCESS_JSON_SCHEMA = Type.Object(
+	{
+		memberPid: Type.Optional(Type.Number()),
+		results: Type.Optional(
+			Type.Array(
+				Type.Object(
+					{
+						output: Type.Optional(Type.String()),
+						stopped: Type.Optional(Type.Boolean()),
+						success: Type.Optional(Type.Boolean()),
+					},
+					{ additionalProperties: true },
+				),
+			),
+		),
+		steps: Type.Optional(
+			Type.Array(Type.Object({ status: Type.Optional(Type.String()) }, { additionalProperties: true })),
+		),
+		success: Type.Optional(Type.Boolean()),
+		summary: Type.Optional(Type.String()),
+		writers: Type.Optional(
+			Type.Record(
+				Type.String(),
+				Type.Object(
+					{
+						groupMemberProofFile: Type.Optional(Type.String()),
+						pid: Type.Optional(Type.Number()),
+						state: Type.Optional(Type.String()),
+					},
+					{ additionalProperties: true },
+				),
+			),
+		),
+	},
+	{ additionalProperties: true },
+);
+const PROVIDER_RECORD_SCHEMA = Type.Object(
+	{
+		childIndex: Type.Optional(Type.String()),
+		kind: Type.Optional(Type.String()),
+		userText: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const ERRNO_SCHEMA = Type.Object({ code: Type.Optional(Type.String()) }, { additionalProperties: true });
+type AsyncEvent = Static<typeof ASYNC_EVENT_SCHEMA>;
+type EventPayload = Parameters<ExtensionAPI["events"]["emit"]>[1];
 
 afterEach(() => {
 	for (const pid of processGroups) killProcessGroup(pid);
@@ -104,9 +157,9 @@ function agent(root: string): AgentConfig {
 }
 
 class EventLog {
-	readonly records: Array<{ name: string; data: unknown }> = [];
+	readonly records: Array<{ name: string; data: EventPayload }> = [];
 
-	emit(name: string, data: unknown): void {
+	emit(name: string, data: EventPayload): void {
 		this.records.push({ name, data });
 	}
 
@@ -114,29 +167,23 @@ class EventLog {
 		return () => {};
 	}
 
-	started(runId: string): Record<string, unknown> {
-		const match = this.records.find(
-			(record) =>
-				record.name === SUBAGENT_ASYNC_STARTED_EVENT &&
-				isRuntimeObject(record.data) &&
-				record.data !== null &&
-				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-				(record.data as { id?: unknown }).id === runId,
-		);
+	started(runId: string): AsyncEvent {
+		const match = this.event(SUBAGENT_ASYNC_STARTED_EVENT, runId);
 		if (!match) throw new Error(`No start event recorded for ${runId}.`);
-		return match.data as Record<string, unknown>;
+		return match;
 	}
 
-	status(runId: string): Record<string, unknown> | undefined {
-		const match = this.records.find(
-			(record) =>
-				record.name === SUBAGENT_ASYNC_STATUS_EVENT &&
-				isRuntimeObject(record.data) &&
-				record.data !== null &&
-				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-				(record.data as { id?: unknown }).id === runId,
-		);
-		return match?.data as Record<string, unknown> | undefined;
+	status(runId: string): AsyncEvent | undefined {
+		return this.event(SUBAGENT_ASYNC_STATUS_EVENT, runId);
+	}
+
+	private event(name: string, runId: string): AsyncEvent | undefined {
+		for (const record of this.records) {
+			if (record.name === name && Check(ASYNC_EVENT_SCHEMA, record.data) && record.data.id === runId) {
+				return record.data;
+			}
+		}
+		return undefined;
 	}
 }
 
@@ -157,27 +204,26 @@ function artifactConfig() {
 	return { ...DEFAULT_ARTIFACT_CONFIG, enabled: false };
 }
 
-function readJson(filePath: string): Record<string, unknown> {
-	return JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown>;
+function readJson(filePath: string) {
+	const value = JSON.parse(fs.readFileSync(filePath, "utf8"));
+	if (!Check(PROCESS_JSON_SCHEMA, value)) throw new Error(`Expected process fixture JSON at ${filePath}`);
+	return value;
 }
 
-interface ProviderRecord {
-	kind?: unknown;
-	childIndex?: unknown;
-	userText?: unknown;
-}
+type ProviderRecord = Static<typeof PROVIDER_RECORD_SCHEMA>;
 
 function readProviderRecords(root: string): ProviderRecord[] {
 	const logPath = path.join(root, "provider.jsonl");
 	if (!fs.existsSync(logPath)) return [];
-	return (
-		fs
-			.readFileSync(logPath, "utf8")
-			.split("\n")
-			.filter(Boolean)
-			// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-			.map((line) => JSON.parse(line) as ProviderRecord)
-	);
+	return fs
+		.readFileSync(logPath, "utf8")
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => {
+			const value = JSON.parse(line);
+			if (!Check(PROVIDER_RECORD_SCHEMA, value)) throw new Error("Expected a process-controls provider record");
+			return value;
+		});
 }
 
 async function waitFor<T>(description: string, read: () => T | undefined, timeoutMs = 12_000): Promise<T> {
@@ -206,7 +252,7 @@ function processAlive(pid: number): boolean {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM";
+		return Check(ERRNO_SCHEMA, error) && error.code === "EPERM";
 	}
 }
 
@@ -322,8 +368,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					const statusPath = path.join(asyncDir, "status.json");
 					if (!fs.existsSync(statusPath)) return undefined;
 					const status = readJson(statusPath);
-					// SAFETY: this test controls the value and supplies every Array member exercised by this case.
-					const steps = status.steps as Array<{ status?: string }> | undefined;
+					const steps = status.steps;
 					return steps?.length === 2 && steps.every((step) => step.status === "running") ? status : undefined;
 				});
 
@@ -351,8 +396,7 @@ describe("process-level Agent controls and crash recovery", () => {
 						(record) =>
 							record.kind === "request" &&
 							record.childIndex === "0" &&
-							isRuntimeString( record.userText) &&
-							record.userText.includes("TARGET_ONLY_CHILD_ZERO"),
+							record.userText?.includes("TARGET_ONLY_CHILD_ZERO") === true,
 					);
 					return request ? true : undefined;
 				});
@@ -360,8 +404,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					readProviderRecords(root).some(
 						(record) =>
 							record.childIndex === "1" &&
-							isRuntimeString( record.userText) &&
-							record.userText.includes("TARGET_ONLY_CHILD_ZERO"),
+							record.userText?.includes("TARGET_ONLY_CHILD_ZERO") === true,
 					),
 				).toBeFalse();
 
@@ -370,8 +413,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					const statusPath = path.join(asyncDir, "status.json");
 					if (!fs.existsSync(statusPath)) return undefined;
 					const status = readJson(statusPath);
-					// SAFETY: this test controls the value and supplies every Array member exercised by this case.
-					const steps = status.steps as Array<{ status?: string }> | undefined;
+					const steps = status.steps;
 					const siblingStatus = steps?.[1]?.status;
 					return steps?.[0]?.status === "stopped" &&
 						(siblingStatus === "running" || siblingStatus === "complete")
@@ -383,7 +425,8 @@ describe("process-level Agent controls and crash recovery", () => {
 					const resultPath = path.join(RESULTS_DIR, `${runId}.json`);
 					return fs.existsSync(resultPath) ? readJson(resultPath) : undefined;
 				}, 12_000);
-				const children = result.results as Array<Record<string, unknown>>;
+				const children = result.results;
+				if (!children) throw new Error("Parallel completion did not contain child results");
 				expect(children[0]).toMatchObject({ stopped: true, success: false });
 				expect(children[1]).toMatchObject({ success: true, output: "PROCESS_CONTROL_RUNNING_1" });
 				const eventsText = fs.readFileSync(path.join(asyncDir, "events.jsonl"), "utf8");
@@ -443,8 +486,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					const statusPath = path.join(asyncDir, "status.json");
 					if (!fs.existsSync(statusPath)) return undefined;
 					const status = readJson(statusPath);
-					// SAFETY: this test controls the value and supplies every Array member exercised by this case.
-					const steps = status.steps as Array<{ status?: string }> | undefined;
+					const steps = status.steps;
 					return steps?.[0]?.status === "running" ? status : undefined;
 				});
 				const liveProjection = await waitFor("runner IPC status projection", () => events.status(sourceRunId));
@@ -456,8 +498,8 @@ describe("process-level Agent controls and crash recovery", () => {
 					const registryPath = writerProcessRegistryPath(asyncDir);
 					if (!fs.existsSync(registryPath)) return undefined;
 					const registry = readJson(registryPath);
-					const writer = (registry.writers as Record<string, { state?: string; pid?: number }> | undefined)?.["0"];
-					return writer?.state === "running" && isRuntimeNumber( writer.pid) ? writer.pid : undefined;
+					const writer = registry.writers?.["0"];
+					return writer?.state === "running" && writer.pid !== undefined ? writer.pid : undefined;
 				});
 				expect(processAlive(writerPid)).toBeTrue();
 				process.kill(pid, "SIGKILL");
@@ -465,11 +507,7 @@ describe("process-level Agent controls and crash recovery", () => {
 
 				const terminationStarted = reconcileAsyncRun(asyncDir, { resultsDir: RESULTS_DIR });
 				const physicallyRepaired = (result: ReturnType<typeof reconcileAsyncRun>) => {
-					// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-					const status = result.status as
-						| { processTerminal?: { state?: string } }
-						| null;
-					return result.repaired && status?.processTerminal?.state === "observed" && !processAlive(writerPid)
+					return result.repaired && result.status?.processTerminal?.state === "observed" && !processAlive(writerPid)
 						? result
 						: undefined;
 				};
@@ -606,16 +644,12 @@ describe("process-level Agent controls and crash recovery", () => {
 					const registryPath = writerProcessRegistryPath(asyncDir);
 					if (!fs.existsSync(registryPath)) return undefined;
 					const registry = readJson(registryPath);
-					const writer = (
-						registry.writers as
-							| Record<string, { state?: string; pid?: number; groupMemberProofFile?: string }>
-							| undefined
-					)?.["0"];
+					const writer = registry.writers?.["0"];
 					if (writer?.state !== "running" || !writer.pid || !writer.groupMemberProofFile) return undefined;
 					const proofPath = path.join(asyncDir, writer.groupMemberProofFile);
 					if (!fs.existsSync(proofPath)) return undefined;
 					const proof = readJson(proofPath);
-					return isRuntimeNumber( proof.memberPid)
+					return proof.memberPid !== undefined
 						? { supervisorPid: writer.pid, memberPid: proof.memberPid }
 						: undefined;
 				});
@@ -633,7 +667,7 @@ describe("process-level Agent controls and crash recovery", () => {
 				processGroups.delete(identities.supervisorPid);
 				await waitFor("writer registry release", () => {
 					const registry = readJson(writerProcessRegistryPath(asyncDir));
-					const writer = (registry.writers as Record<string, { state?: string }>)["0"];
+					const writer = registry.writers?.["0"];
 					return writer?.state === "none" ? true : undefined;
 				});
 				await waitFor("supervisor-crash runner exit", () => {

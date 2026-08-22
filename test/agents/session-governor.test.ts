@@ -3,6 +3,8 @@ import * as nodeFs from "node:fs/promises";
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import {
 	type AgentGovernorLease,
 	DEFAULT_SESSION_GOVERNOR_LIMITS,
@@ -18,6 +20,22 @@ import {
 import { getAgentSessionsDir } from "../../packages/pi-stuff/src/subagents/src/shared/utils.js";
 
 const roots: string[] = [];
+const GOVERNOR_LEDGER_SCHEMA = Type.Object(
+	{
+		leases: Type.Array(
+			Type.Object(
+				{
+					childIndex: Type.Optional(Type.Number()),
+					pid: Type.Optional(Type.Number()),
+					runtimeRunId: Type.Optional(Type.String()),
+				},
+				{ additionalProperties: true },
+			),
+		),
+		total: Type.Optional(Type.Number()),
+	},
+	{ additionalProperties: true },
+);
 
 afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -34,6 +52,12 @@ async function ledgerPath(rootDir: string): Promise<string> {
 	const sessionDirectory = entries[0];
 	if (!sessionDirectory) throw new Error("Expected a session governor directory");
 	return join(rootDir, sessionDirectory, "ledger.json");
+}
+
+async function readGovernorLedger(path: string) {
+	const value = JSON.parse(await readFile(path, "utf8"));
+	if (!Check(GOVERNOR_LEDGER_SCHEMA, value)) throw new Error("Expected a Session governor ledger");
+	return value;
 }
 
 function requireLease(result: Awaited<ReturnType<SessionAgentGovernor["acquireSpawn"]>>): AgentGovernorLease {
@@ -287,9 +311,7 @@ describe("session-wide Agent resource governor", () => {
 			],
 		});
 		expect(await reloaded.findRuntimeLease("persisted-runtime", 6)).toEqual(rebound.lease);
-		const persisted = JSON.parse(await readFile(await ledgerPath(rootDir), "utf8")) as {
-			leases: Array<Record<string, unknown>>;
-		};
+		const persisted = await readGovernorLedger(await ledgerPath(rootDir));
 		expect(persisted.leases[0]).toMatchObject({ runtimeRunId: "persisted-runtime", childIndex: 6, pid: 902 });
 	});
 
@@ -299,9 +321,7 @@ describe("session-wide Agent resource governor", () => {
 		const first = new SessionAgentGovernor({ rootDir, sessionId });
 		await first.acquireSpawn({ logicalAgentId: "legacy-agent", pid: 1_001 });
 		const pathToLedger = await ledgerPath(rootDir);
-		const legacy = JSON.parse(await readFile(pathToLedger, "utf8")) as {
-			leases: Array<Record<string, unknown>>;
-		};
+		const legacy = await readGovernorLedger(pathToLedger);
 		const legacyLease = legacy.leases[0];
 		if (!legacyLease) throw new Error("Expected a legacy lease record");
 		delete legacyLease.runtimeRunId;
@@ -314,9 +334,7 @@ describe("session-wide Agent resource governor", () => {
 		});
 		expect(await migrated.findRuntimeLease("legacy-agent", 0)).toMatchObject({ logicalAgentId: "legacy-agent" });
 
-		const rewritten = JSON.parse(await readFile(pathToLedger, "utf8")) as {
-			leases: Array<Record<string, unknown>>;
-		};
+		const rewritten = await readGovernorLedger(pathToLedger);
 		expect(rewritten.leases[0]).toMatchObject({ runtimeRunId: "legacy-agent", childIndex: 0 });
 	});
 
