@@ -141,7 +141,8 @@ describe("background result watcher", () => {
 		await Bun.sleep(10);
 		expect(hostTimerFired).toBeTrue();
 		releaseRead.resolve();
-		for (let attempt = 0; attempt < 100 && delivered.length === 0; attempt += 1) await Bun.sleep(10);
+		for (let attempt = 0; attempt < 100 && (delivered.length === 0 || fs.existsSync(resultPath)); attempt += 1)
+			await Bun.sleep(10);
 
 		expect(delivered).toHaveLength(1);
 		expect(fs.existsSync(resultPath)).toBeFalse();
@@ -216,7 +217,8 @@ describe("background result watcher", () => {
 		);
 		fs.renameSync(replacement, resultPath);
 		watcher.primeExistingResults();
-		for (let attempt = 0; attempt < 100 && delivered.length === 0; attempt += 1) await Bun.sleep(10);
+		for (let attempt = 0; attempt < 100 && (delivered.length === 0 || fs.existsSync(resultPath)); attempt += 1)
+			await Bun.sleep(10);
 
 		expect(reads).toBe(2);
 		expect(delivered).toHaveLength(1);
@@ -295,7 +297,8 @@ describe("background result watcher", () => {
 		);
 		fs.renameSync(replacement, resultPath);
 		watcher.primeExistingResults();
-		for (let attempt = 0; attempt < 100 && delivered.length === 0; attempt += 1) await Bun.sleep(10);
+		for (let attempt = 0; attempt < 100 && (delivered.length === 0 || fs.existsSync(resultPath)); attempt += 1)
+			await Bun.sleep(10);
 
 		expect(reads).toBe(2);
 		expect(delivered).toHaveLength(1);
