@@ -1,4 +1,5 @@
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { TSchema } from "typebox";
 import type { CodemodeValue } from "./cloudflare/codec.js";
 
 export interface SandboxToolExecutionContext {
@@ -13,7 +14,7 @@ export interface SuiteSandboxTool {
 	readonly description: string;
 	/** Platform plumbing may manage its own durable step instead of creating a second ledger entry. */
 	readonly ledger?: "bypass";
-	readonly inputSchema: unknown;
+	readonly inputSchema: TSchema;
 	readonly name: string;
 	/** Platform plumbing is not a user Tool row. */
 	readonly presentation?: "hidden";

@@ -1,4 +1,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import type { JSONSchema7 } from "json-schema";
+import type { TSchema } from "typebox";
+import { parseJsonValue } from "../shared/json-value.js";
 import {
 	isRuntimeBigInt,
 	isRuntimeBoolean,
@@ -14,9 +17,10 @@ import type {
 	SuiteToolCodeModeLifecycle,
 	SuiteToolCodeModePassEndStatus,
 	SuiteToolDefinitionRegistry,
+	SuiteToolInvocation,
 } from "../tool-display/contract.js";
 import type { CodemodeValue } from "./cloudflare/codec.js";
-import type { ConnectorDescription } from "./cloudflare/connector-types.js";
+import type { ConnectorDescription, ToolAnnotations } from "./cloudflare/connector-types.js";
 import { describeTarget } from "./cloudflare/describe.js";
 import { normalizeCode } from "./cloudflare/normalize.js";
 import { searchConnectors } from "./cloudflare/search.js";
@@ -30,9 +34,9 @@ export const INTERNAL_STEP_RECORD_TOOL = "__pi_stuff_codemode_step_record_v1";
 
 export interface SuiteSandboxCatalogEntry {
 	readonly description: string;
-	readonly inputSchema: unknown;
+	readonly inputSchema: TSchema;
 	readonly name: string;
-	readonly replay?: "never" | "record" | "reexecute";
+	readonly replay: "never" | "record" | "reexecute";
 	readonly requiresApproval?: boolean;
 }
 
@@ -65,7 +69,7 @@ export class SuiteToolInvocationError extends Error {
 	}
 }
 
-function describeReceivedValue(value: unknown): string {
+function describeReceivedValue<Value>(value: Value): string {
 	if (value === null) return "null";
 	if (Array.isArray(value)) return "array";
 	if (isRuntimeBigInt(value)) return "bigint";
@@ -78,16 +82,18 @@ function describeReceivedValue(value: unknown): string {
 	return "object";
 }
 
-function invalidResult(name: string, path: string, expected: string, received: unknown): never {
+function invalidResult<Received>(name: string, path: string, expected: string, received: Received): never {
 	throw new Error(
 		`Code Mode Tool ${JSON.stringify(name)} returned an invalid result at ${path}: expected ${expected}; received ${describeReceivedValue(received)}; retry safe: false`,
 	);
 }
 
 /** Cloudflare-compatible MCP/Pi result unwrapping with a strict content boundary. */
-export function unwrapSuiteToolResult(name: string, result: unknown): CodemodeValue {
+export function unwrapSuiteToolResult<Result>(name: string, result: Result): CodemodeValue {
 	if (!isRuntimeObject(result) || result === null) invalidResult(name, "result", "an object", result);
-	const record = result as AgentToolResult<unknown> & {
+	// SAFETY: the object guard above permits inspection through the Suite Tool result envelope validated below.
+	const record = result as Result & {
+		readonly content?: unknown;
 		readonly structuredContent?: unknown;
 		readonly toolResult?: unknown;
 	};
@@ -101,29 +107,35 @@ export function unwrapSuiteToolResult(name: string, result: unknown): CodemodeVa
 	}
 	const content: unknown = record.content;
 	if (!Array.isArray(content)) invalidResult(name, "result.content", "an array", content);
+	const textParts: string[] = [];
+	let textOnly = content.length > 0;
 	for (const [index, item] of content.entries()) {
 		if (!isRuntimeObject(item) || item === null) {
 			invalidResult(name, `result.content[${String(index)}]`, "a content object", item);
 		}
-		const block = item as Record<string, unknown>;
-		if (block["type"] === "text" && !isRuntimeString(block["text"])) {
-			invalidResult(name, `result.content[${String(index)}].text`, "a string", block["text"]);
+		const type = "type" in item ? item.type : undefined;
+		const blockText = "text" in item ? item.text : undefined;
+		if (type === "text" && !isRuntimeString(blockText)) {
+			invalidResult(name, `result.content[${String(index)}].text`, "a string", blockText);
 		}
-		if (block["type"] === "image" && (!isRuntimeString(block["data"]) || !isRuntimeString(block["mimeType"]))) {
+		const data = "data" in item ? item.data : undefined;
+		const mimeType = "mimeType" in item ? item.mimeType : undefined;
+		if (type === "image" && (!isRuntimeString(data) || !isRuntimeString(mimeType))) {
 			invalidResult(name, `result.content[${String(index)}]`, "base64 image data and a MIME type", item);
 		}
-		if (block["type"] !== "text" && block["type"] !== "image") {
-			invalidResult(name, `result.content[${String(index)}].type`, '"text" or "image"', block["type"]);
+		if (type !== "text" && type !== "image") {
+			invalidResult(name, `result.content[${String(index)}].type`, '"text" or "image"', type);
 		}
+		if (type === "text") textParts.push(blockText);
+		else textOnly = false;
 	}
-	if (content.length === 0 || !content.every((item) => (item as Record<string, unknown>)["type"] === "text")) {
+	if (!textOnly) {
 		// SAFETY: validated AgentToolResult content blocks are plain Code Mode transport values.
 		return record;
 	}
-	const text = content.map((item) => String((item as Record<string, unknown>)["text"])).join("\n");
+	const text = textParts.join("\n");
 	try {
-		// SAFETY: successful JSON.parse output is within CodemodeValue's recursive JSON branch.
-		return JSON.parse(text) as CodemodeValue;
+		return parseJsonValue(text);
 	} catch {
 		return text;
 	}
@@ -146,13 +158,13 @@ export class SuiteCodeModeConnector {
 						`Code Mode Tool ${JSON.stringify(entry.definition.name)} cannot combine requiresApproval with replay: reexecute`,
 					);
 				}
-				return {
+				const catalogEntry = {
 					description: oneLine(entry.definition.description),
 					inputSchema: entry.definition.parameters,
 					name: entry.definition.name,
 					replay: entry.codeMode?.replay ?? "never",
-					...(entry.codeMode?.requiresApproval ? { requiresApproval: true } : {}),
-				};
+				} satisfies SuiteSandboxCatalogEntry;
+				return entry.codeMode?.requiresApproval ? { ...catalogEntry, requiresApproval: true } : catalogEntry;
 			});
 	}
 
@@ -175,15 +187,18 @@ export class SuiteCodeModeConnector {
 	}
 
 	tools(): SuiteSandboxTool[] {
-		return this.catalog().map((entry) => ({
-			description: entry.description,
-			inputSchema: entry.inputSchema,
-			name: entry.name,
-			...(entry.replay ? { replay: entry.replay } : {}),
-			...(entry.requiresApproval ? { requiresApproval: true } : {}),
-			usage: `${toolPath(entry.name)}(input)`,
-			invoke: (input, context, signal) => this.invoke(entry.name, input, context, signal),
-		}));
+		return this.catalog().map((entry) => {
+			const tool = {
+				description: entry.description,
+				inputSchema: entry.inputSchema,
+				name: entry.name,
+				replay: entry.replay,
+				usage: `${toolPath(entry.name)}(input)`,
+				invoke: (input: CodemodeValue, context: SandboxToolExecutionContext, signal: AbortSignal) =>
+					this.invoke(entry.name, input, context, signal),
+			} satisfies SuiteSandboxTool;
+			return entry.requiresApproval ? { ...tool, requiresApproval: true } : tool;
+		});
 	}
 
 	runtimeTools(snippets: readonly Snippet[] = []): SuiteSandboxTool[] {
@@ -231,18 +246,21 @@ export class SuiteCodeModeConnector {
 	private connectorDescription(): ConnectorDescription {
 		return {
 			annotations: Object.fromEntries(
-				this.catalog().map((entry) => [
-					entry.name,
-					{
-						...(entry.requiresApproval ? { requiresApproval: true } : {}),
-						...(entry.replay === "reexecute" ? { replay: "reexecute" as const } : {}),
-					},
-				]),
+				this.catalog().map((entry) => {
+					const annotations: ToolAnnotations = {};
+					if (entry.requiresApproval) annotations.requiresApproval = true;
+					if (entry.replay === "reexecute") annotations.replay = "reexecute";
+					return [entry.name, annotations];
+				}),
 			),
 			descriptors: Object.fromEntries(
 				this.catalog().map((entry) => [
 					entry.name,
-					{ description: entry.description, inputSchema: entry.inputSchema as never },
+					{
+						description: entry.description,
+						// SAFETY: Pi Tool parameters are TypeBox schemas, which implement the JSON Schema object contract.
+						inputSchema: entry.inputSchema as JSONSchema7,
+					},
 				]),
 			),
 			name: "tools",
@@ -262,20 +280,22 @@ export class SuiteCodeModeConnector {
 
 	private async invoke(
 		name: string,
-		input: unknown,
+		input: CodemodeValue,
 		context: SandboxToolExecutionContext,
 		signal: AbortSignal,
 	): Promise<CodemodeValue> {
 		if (!context.extensionContext) throw new Error("Code Mode ExtensionContext is unavailable");
 		if (!context.toolCallId) throw new Error("Code Mode nested Tool call ID is unavailable");
-		const outcome = await this.registry.invoke({
+		const invocation = {
 			context: context.extensionContext,
 			input,
 			name,
-			...(context.onUpdate ? { onUpdate: context.onUpdate } : {}),
 			signal,
 			toolCallId: context.toolCallId,
-		});
+		} satisfies SuiteToolInvocation;
+		const outcome = await this.registry.invoke(
+			context.onUpdate ? { ...invocation, onUpdate: context.onUpdate } : invocation,
+		);
 		context.captureResult?.(outcome.result);
 		if (outcome.isError)
 			throw new SuiteToolInvocationError(toolErrorMessage(outcome.result, `${name} failed`), outcome.result);
@@ -289,13 +309,15 @@ export function buildSuiteSandboxSource(
 	snippets: readonly Snippet[] = [],
 ): string {
 	const serialized = JSON.stringify(
-		catalog.map((entry) => ({
-			description: entry.description,
-			inputSchema: entry.inputSchema,
-			name: entry.name,
-			path: toolPath(entry.name),
-			...(entry.requiresApproval ? { requiresApproval: true } : {}),
-		})),
+		catalog.map((entry) => {
+			const serializedEntry = {
+				description: entry.description,
+				inputSchema: entry.inputSchema,
+				name: entry.name,
+				path: toolPath(entry.name),
+			};
+			return entry.requiresApproval ? { ...serializedEntry, requiresApproval: true } : serializedEntry;
+		}),
 	);
 	const snippetEntries = snippets
 		.map((snippet) => `[${JSON.stringify(snippet.name)},(${normalizeCode(snippet.code)})]`)
