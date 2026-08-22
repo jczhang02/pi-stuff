@@ -75,7 +75,7 @@ function goalRunEventChannel(runId: string) {
 	return `pi-goal:event:${runId}`;
 }
 
-function isPayloadRecord(data: unknown): data is GoalRunPayloadRecord {
+function isPayloadRecord<Value>(data: Value): data is Value & GoalRunPayloadRecord {
 	if (!data || !isRuntimeObject(data)) return false;
 	try {
 		return !Array.isArray(data);
@@ -95,8 +95,7 @@ function readPayloadProperty(
 	}
 }
 
-function parseRunId(data: unknown): string | undefined {
-	if (!isPayloadRecord(data)) return undefined;
+function parseRunId(data: GoalRunPayloadRecord): string | undefined {
 	const runId = readPayloadProperty(data, "runId");
 	return runId.ok && isRuntimeString(runId.value) && RUN_ID_PATTERN.test(runId.value) ? runId.value : undefined;
 }
@@ -105,8 +104,7 @@ function currentActiveGoal(runtime: GoalRuntime) {
 	return runtime.activeGoal;
 }
 
-function parseStartPayload(data: unknown): string | Omit<GoalRunStartPayload, "runId"> {
-	if (!isPayloadRecord(data)) return "start payload must be an object";
+function parseStartPayload(data: GoalRunPayloadRecord): string | Omit<GoalRunStartPayload, "runId"> {
 	const objectiveValue = readPayloadProperty(data, "objective");
 	if (!objectiveValue.ok || !isRuntimeString(objectiveValue.value)) {
 		return "objective must be a string";
@@ -125,11 +123,11 @@ function parseStartPayload(data: unknown): string | Omit<GoalRunStartPayload, "r
 	) {
 		return "tokenBudget must be a positive integer";
 	}
-	return { objective, tokenBudget: tokenBudgetValue.value as number | undefined };
+	if (tokenBudgetValue.value === undefined) return { objective };
+	return { objective, tokenBudget: tokenBudgetValue.value };
 }
 
-function parseCancelReason(data: unknown): string | undefined | { error: string } {
-	if (!isPayloadRecord(data)) return { error: "cancel payload must be an object" };
+function parseCancelReason(data: GoalRunPayloadRecord): string | undefined | { error: string } {
 	const reasonValue = readPayloadProperty(data, "reason");
 	if (!reasonValue.ok || (reasonValue.value !== undefined && !isRuntimeString(reasonValue.value))) {
 		return { error: "reason must be a string" };
@@ -157,9 +155,11 @@ export class GoalRunController {
 	}
 
 	register(pi: ExtensionAPI) {
-		pi.events.on(GOAL_RUN_START_CHANNEL, (data) => this.handleStart(data));
+		pi.events.on(GOAL_RUN_START_CHANNEL, (data) => {
+			if (isPayloadRecord(data)) void this.handleStart(data);
+		});
 		pi.events.on(GOAL_RUN_CANCEL_CHANNEL, (data) => {
-			this.handleCancel(data);
+			if (isPayloadRecord(data)) this.handleCancel(data);
 		});
 	}
 
@@ -177,7 +177,7 @@ export class GoalRunController {
 		this.usedRunIds.clear();
 	}
 
-	private async handleStart(data: unknown) {
+	private async handleStart(data: GoalRunPayloadRecord) {
 		const runId = parseRunId(data);
 		if (!runId) return;
 		const session = this.session;
@@ -252,7 +252,7 @@ export class GoalRunController {
 		if (run.cancelRequested) this.cancelActiveRun(run, session, run.cancelReason);
 	}
 
-	private handleCancel(data: unknown) {
+	private handleCancel(data: GoalRunPayloadRecord) {
 		const runId = parseRunId(data);
 		if (!runId) return;
 		const session = this.session;
@@ -323,9 +323,9 @@ export class GoalRunController {
 			runId: run.runId,
 			goalId: snapshot.goalId,
 			status,
-			...(snapshot.summary ? { summary: snapshot.summary } : {}),
-			...(snapshot.reason ? { reason: snapshot.reason } : {}),
 		};
+		if (snapshot.summary) event.summary = snapshot.summary;
+		if (snapshot.reason) event.reason = snapshot.reason;
 		if (!isTerminalGoalStatus(status)) {
 			this.runtime.pi.events.emit(goalRunEventChannel(run.runId), event);
 			return;
