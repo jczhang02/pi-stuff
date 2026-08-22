@@ -1,6 +1,8 @@
 import { access, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_SOURCE_COMMIT, CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { runPiRpcSmoke } from "./smoke-pi.ts";
@@ -137,6 +139,26 @@ export interface PackageArchiveManifest {
 	bundledDependencies?: unknown;
 }
 
+const PACKAGE_ARCHIVE_MANIFEST_SCHEMA = Type.Object(
+	{
+		bundledDependencies: Type.Optional(Type.Unknown()),
+		dependencies: Type.Optional(Type.Unknown()),
+		files: Type.Optional(Type.Unknown()),
+		name: Type.Optional(Type.Unknown()),
+		pi: Type.Optional(Type.Unknown()),
+		private: Type.Optional(Type.Unknown()),
+	},
+	{ additionalProperties: true },
+);
+const RUNTIME_MANIFEST_SCHEMA = Type.Object(
+	{ dependencies: Type.Optional(Type.Record(Type.String(), Type.Unknown())) },
+	{ additionalProperties: true },
+);
+const INSTALLED_MANIFEST_SCHEMA = Type.Object(
+	{ name: Type.Optional(Type.Unknown()), version: Type.Optional(Type.Unknown()) },
+	{ additionalProperties: true },
+);
+
 function run(command: readonly string[], cwd = root): string {
 	const result = Bun.spawnSync([...command], { cwd, stdout: "pipe", stderr: "pipe" });
 	const stdout = result.stdout.toString();
@@ -216,9 +238,8 @@ async function verifySinglePackageBoundary(): Promise<void> {
 }
 
 export async function verifyInstalledRuntimeDependencies(baseDirectory = packageDirectory): Promise<void> {
-	const manifest = (await Bun.file(join(baseDirectory, "package.json")).json()) as {
-		dependencies?: Record<string, unknown>;
-	};
+	const manifest = await Bun.file(join(baseDirectory, "package.json")).json();
+	if (!Check(RUNTIME_MANIFEST_SCHEMA, manifest)) throw new Error("Package manifest must be a JSON object");
 	for (const [name, version] of Object.entries(manifest.dependencies ?? {})) {
 		if (
 			!isRuntimeString(version) ||
@@ -227,12 +248,11 @@ export async function verifyInstalledRuntimeDependencies(baseDirectory = package
 			throw new Error(`Runtime dependency ${name} must use an exact version`);
 		}
 		const installedManifestPath = join(baseDirectory, "node_modules", name, "package.json");
-		let installedManifest: { name?: unknown; version?: unknown };
+		let installedManifest;
 		try {
-			installedManifest = JSON.parse(await readFile(installedManifestPath, "utf8")) as {
-				name?: unknown;
-				version?: unknown;
-			};
+			const parsed = JSON.parse(await readFile(installedManifestPath, "utf8"));
+			if (!Check(INSTALLED_MANIFEST_SCHEMA, parsed)) throw new Error("installed manifest must be an object");
+			installedManifest = parsed;
 		} catch (error) {
 			throw new Error(`Cannot read installed runtime dependency ${name}`, { cause: error });
 		}
@@ -292,7 +312,8 @@ async function packAndExtract(
 	if (archives.length !== 1 || !archives[0]) throw new Error("Bun did not produce exactly one Pi Stuff archive");
 	const archivePath = join(packsDirectory, archives[0]);
 	const archiveFiles = run(["tar", "-tzf", archivePath]).trim().split("\n").filter(Boolean).sort();
-	const manifest = JSON.parse(run(["tar", "-xOzf", archivePath, "package/package.json"])) as PackageArchiveManifest;
+	const manifest = JSON.parse(run(["tar", "-xOzf", archivePath, "package/package.json"]));
+	if (!Check(PACKAGE_ARCHIVE_MANIFEST_SCHEMA, manifest)) throw new Error("Archive manifest must be an object");
 	verifyPackageArchive(manifest, archiveFiles);
 	run(["tar", "-xzf", archivePath, "-C", extractDirectory]);
 	const extractedPackage = join(extractDirectory, "package");

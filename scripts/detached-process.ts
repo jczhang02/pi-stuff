@@ -16,7 +16,7 @@ function processGroupExists(pid: number): boolean {
 		process.kill(-pid, 0);
 		return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM";
+		return Check(ERRNO_SCHEMA, error) && error.code === "EPERM";
 	}
 }
 
@@ -26,7 +26,7 @@ function signalDetachedProcessGroup(child: DetachedSubprocess, signal: NodeJS.Si
 			process.kill(-child.pid, signal);
 			return;
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+			if (!Check(ERRNO_SCHEMA, error) || error.code !== "ESRCH") throw error;
 			// Fall back to the leader when the platform did not create a process group.
 		}
 	}
@@ -78,3 +78,7 @@ export async function waitForDetachedProcess(
 	await terminateDetachedProcessGroup(child, graceMs);
 	return { exitCode: await child.exited, timedOut: true };
 }
+import { Type } from "typebox";
+import { Check } from "typebox/value";
+
+const ERRNO_SCHEMA = Type.Object({ code: Type.Optional(Type.String()) }, { additionalProperties: true });

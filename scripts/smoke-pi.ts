@@ -1,7 +1,9 @@
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { waitForDetachedProcess } from "./detached-process.js";
 
 const RPC_REQUEST_ID = "pi-stuff-smoke";
@@ -24,19 +26,22 @@ export interface PiRpcSmokeResult {
 	stderr: string;
 }
 
-interface RpcObject {
-	command?: unknown;
-	commands?: unknown;
-	data?: unknown;
-	id?: unknown;
-	name?: unknown;
-	success?: unknown;
-	type?: unknown;
-	[key: string]: unknown;
-}
+const RPC_OBJECT_SCHEMA = Type.Object(
+	{
+		command: Type.Optional(Type.Unknown()),
+		commands: Type.Optional(Type.Unknown()),
+		data: Type.Optional(Type.Unknown()),
+		id: Type.Optional(Type.Unknown()),
+		name: Type.Optional(Type.Unknown()),
+		success: Type.Optional(Type.Unknown()),
+		type: Type.Optional(Type.Unknown()),
+	},
+	{ additionalProperties: true },
+);
+type RpcObject = Static<typeof RPC_OBJECT_SCHEMA>;
 
-function isRpcObject(value: unknown): value is RpcObject {
-	return isRuntimeObject(value) && value !== null;
+function isRpcObject<Value>(value: Value): value is Value & RpcObject {
+	return Check(RPC_OBJECT_SCHEMA, value);
 }
 
 function parseJsonLines(stdout: string): RpcObject[] {

@@ -1,6 +1,8 @@
 import { access, readFile } from "node:fs/promises";
 import { join, posix, resolve } from "node:path";
 import ts from "typescript";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const FORBIDDEN_HOST_FILES = new Set(["auth.json", "models-store.json"]);
@@ -106,48 +108,57 @@ export interface SafetyFinding {
 	rule: string;
 }
 
-interface PackageManifest {
-	dependencies?: unknown;
-	devDependencies?: unknown;
-	files?: unknown;
-	optionalDependencies?: unknown;
-	packageManager?: unknown;
-	peerDependencies?: unknown;
-	pi?: unknown;
-	private?: unknown;
-	scripts?: unknown;
-	trustedDependencies?: unknown;
-	workspaces?: unknown;
-}
-
-interface SuiteManifest {
-	capabilities?: unknown;
-}
-
-interface SuiteSchema {
-	properties?: {
-		capabilities?: {
-			items?: {
-				enum?: unknown;
-			};
-		};
-	};
-}
+const PACKAGE_MANIFEST_SCHEMA = Type.Object(
+	{
+		dependencies: Type.Optional(Type.Unknown()),
+		devDependencies: Type.Optional(Type.Unknown()),
+		files: Type.Optional(Type.Unknown()),
+		optionalDependencies: Type.Optional(Type.Unknown()),
+		packageManager: Type.Optional(Type.Unknown()),
+		peerDependencies: Type.Optional(Type.Unknown()),
+		pi: Type.Optional(Type.Unknown()),
+		private: Type.Optional(Type.Unknown()),
+		scripts: Type.Optional(Type.Unknown()),
+		trustedDependencies: Type.Optional(Type.Unknown()),
+		workspaces: Type.Optional(Type.Unknown()),
+	},
+	{ additionalProperties: true },
+);
+const SUITE_MANIFEST_SCHEMA = Type.Object(
+	{ capabilities: Type.Optional(Type.Unknown()) },
+	{ additionalProperties: true },
+);
+const SUITE_SCHEMA_SCHEMA = Type.Object(
+	{
+		properties: Type.Optional(
+			Type.Object(
+				{
+					capabilities: Type.Optional(
+						Type.Object(
+							{ items: Type.Optional(Type.Object({ enum: Type.Optional(Type.Unknown()) })) },
+							{ additionalProperties: true },
+						),
+					),
+				},
+				{ additionalProperties: true },
+			),
+		),
+	},
+	{ additionalProperties: true },
+);
+const STRING_ARRAY_SCHEMA = Type.Array(Type.String());
+type PackageManifest = Static<typeof PACKAGE_MANIFEST_SCHEMA>;
 
 function isLocalPiPackageManifest(path: string): boolean {
 	return path === "packages/pi-stuff/package.json";
 }
 
-function hasExplicitFilesAllowlist(files: unknown): boolean {
-	if (
-		!Array.isArray(files) ||
-		files.length === 0 ||
-		!files.some((entry) => isRuntimeString(entry) && !entry.startsWith("!"))
-	) {
+function hasExplicitFilesAllowlist(files: readonly string[] | undefined): boolean {
+	if (files === undefined || files.length === 0 || !files.some((entry) => !entry.startsWith("!"))) {
 		return false;
 	}
 	return files.every((entry) => {
-		if (!isRuntimeString(entry) || entry.length === 0) return false;
+		if (entry.length === 0) return false;
 		const normalized = entry.startsWith("!") ? entry.slice(1) : entry;
 		if (normalized.length === 0 || normalized.startsWith("/") || normalized.includes("\\")) return false;
 		const segments = normalized.split("/").filter((segment) => segment.length > 0 && segment !== ".");
@@ -189,7 +200,11 @@ function internalModuleFromPath(path: string): InternalModule | undefined {
 	const prefix = "packages/pi-stuff/src/";
 	if (!path.startsWith(prefix)) return undefined;
 	const module = path.slice(prefix.length).split("/", 1)[0];
-	return module && INTERNAL_MODULE_SET.has(module) ? (module as InternalModule) : undefined;
+	return module && isInternalModule(module) ? module : undefined;
+}
+
+function isInternalModule(value: string): value is InternalModule {
+	return INTERNAL_MODULE_SET.has(value);
 }
 
 function isUnownedInternalSource(path: string): boolean {
@@ -284,7 +299,8 @@ function hasInexactDependency(manifest: PackageManifest): boolean {
 }
 
 async function auditPackageManifest(root: string, path: string): Promise<SafetyFinding[]> {
-	const manifest = JSON.parse(await readFile(join(root, path), "utf8")) as PackageManifest;
+	const manifest = JSON.parse(await readFile(join(root, path), "utf8"));
+	if (!Check(PACKAGE_MANIFEST_SCHEMA, manifest)) throw new Error(`${path}: package manifest must be an object`);
 	const findings: SafetyFinding[] = [];
 	if (hasInexactDependency(manifest)) {
 		findings.push({ path, rule: "direct-dependency-must-be-exact" });
@@ -307,7 +323,8 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 		if (manifest.private !== true) {
 			findings.push({ path, rule: "local-package-must-be-private" });
 		}
-		if (!hasExplicitFilesAllowlist(manifest.files)) {
+		const files = Check(STRING_ARRAY_SCHEMA, manifest.files) ? manifest.files : undefined;
+		if (!hasExplicitFilesAllowlist(files)) {
 			findings.push({ path, rule: "package-files-allowlist" });
 		}
 		const expectedPiManifest = JSON.stringify({
@@ -329,11 +346,11 @@ async function auditPackageManifest(root: string, path: string): Promise<SafetyF
 }
 
 async function auditSuiteManifest(root: string, path: string): Promise<SafetyFinding[]> {
-	const manifest = JSON.parse(await readFile(join(root, path), "utf8")) as SuiteManifest;
-	if (!Array.isArray(manifest.capabilities) || manifest.capabilities.some((name) => !isRuntimeString(name))) {
+	const manifest = JSON.parse(await readFile(join(root, path), "utf8"));
+	if (!Check(SUITE_MANIFEST_SCHEMA, manifest) || !Check(STRING_ARRAY_SCHEMA, manifest.capabilities)) {
 		return [{ path, rule: "suite-capabilities-must-be-string-array" }];
 	}
-	const capabilities = new Set(manifest.capabilities as string[]);
+	const capabilities = new Set(manifest.capabilities);
 	const findings: SafetyFinding[] = [];
 	for (const capability of capabilities) {
 		if (!INTERNAL_MODULE_SET.has(capability)) {
@@ -347,16 +364,15 @@ async function auditSuiteManifest(root: string, path: string): Promise<SafetyFin
 }
 
 async function auditSuiteSchema(root: string, path: string): Promise<SafetyFinding[]> {
-	const schema = JSON.parse(await readFile(join(root, path), "utf8")) as SuiteSchema;
-	const declared = schema.properties?.capabilities?.items?.enum;
-	if (
-		!Array.isArray(declared) ||
-		declared.some((name) => !isRuntimeString(name)) ||
-		new Set(declared).size !== declared.length
-	) {
+	const schema = JSON.parse(await readFile(join(root, path), "utf8"));
+	if (!Check(SUITE_SCHEMA_SCHEMA, schema)) {
 		return [{ path, rule: "suite-schema-capabilities-must-be-unique-string-array" }];
 	}
-	const capabilities = new Set(declared as string[]);
+	const declared = schema.properties?.capabilities?.items?.enum;
+	if (!Check(STRING_ARRAY_SCHEMA, declared) || new Set(declared).size !== declared.length) {
+		return [{ path, rule: "suite-schema-capabilities-must-be-unique-string-array" }];
+	}
+	const capabilities = new Set(declared);
 	const findings: SafetyFinding[] = [];
 	for (const capability of capabilities) {
 		if (!INTERNAL_MODULE_SET.has(capability)) {
