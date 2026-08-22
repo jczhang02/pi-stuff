@@ -5,6 +5,7 @@ import type {
 	ExtensionEvent,
 	TerminalInputHandler,
 } from "@earendil-works/pi-coding-agent";
+import { createEventBus } from "@earendil-works/pi-coding-agent";
 import { getUiSettingRegistry } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 import {
 	installNotificationCapability,
@@ -22,22 +23,6 @@ type EventHandler = (
 ) => object | undefined | Promise<object | undefined>;
 type CommandSpec = Parameters<ExtensionAPI["registerCommand"]>[1];
 
-class EventBusHarness {
-	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
-
-	readonly view = {
-		emit: (event: string, data: unknown) => {
-			for (const listener of this.listeners.get(event) ?? []) listener(data);
-		},
-		on: (event: string, listener: (data: unknown) => void) => {
-			const listeners = this.listeners.get(event) ?? new Set();
-			listeners.add(listener);
-			this.listeners.set(event, listeners);
-			return () => listeners.delete(listener);
-		},
-	};
-}
-
 interface NotificationHarness {
 	readonly api: NotificationHost;
 	readonly commands: Map<string, CommandSpec>;
@@ -47,14 +32,13 @@ interface NotificationHarness {
 function harness(): NotificationHarness {
 	const commands = new Map<string, CommandSpec>();
 	const handlers = new Map<string, EventHandler[]>();
-	const bus = new EventBusHarness();
 	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
 	const on = ((type: string, handler: EventHandler) => {
 		handlers.set(type, [...(handlers.get(type) ?? []), handler]);
 	}) as ExtensionAPI["on"];
 	return {
 		api: {
-			events: bus.view,
+			events: createEventBus(),
 			on,
 			registerCommand: (name, command) => {
 				commands.set(name, command);

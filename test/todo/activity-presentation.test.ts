@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { JsonValue } from "@earendil-works/pi-ai";
 import type { AgentToolResult, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { decodeCodeModeOperations } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { registerTaskTools } from "../../packages/pi-stuff/src/todo/todo.js";
@@ -20,10 +21,10 @@ function registeredTools() {
 function renderedSummary(
 	api: SuiteToolRegistrationHost,
 	tool: ToolDefinition | undefined,
-	args: Record<string, unknown>,
+	args: Record<string, JsonValue>,
 	result: AgentToolResult<unknown>,
 	toolCallId: string,
-	messages?: readonly unknown[],
+	messages?: readonly object[],
 	expanded = false,
 ): string {
 	expect(tool).toBeDefined();

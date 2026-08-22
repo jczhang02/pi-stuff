@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { type ExtensionAPI, type ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
+import {
+	type ExtensionAPI,
+	type ExtensionContext,
+	type ExtensionEvent,
+	SessionManager,
+} from "@earendil-works/pi-coding-agent";
 import {
 	installSuiteSessionReadiness,
 	markSuiteSessionReady,
@@ -7,7 +12,7 @@ import {
 	whenSuiteSessionReady,
 } from "../packages/pi-stuff/src/conversation-ui/suite-lifecycle.js";
 
-type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
+type Handler = (event: ExtensionEvent, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 
 function fakePi() {
 	const handlers = new Map<string, Handler[]>();
@@ -71,7 +76,7 @@ test("Suite readiness rejects stale startup generations and resolves shutdown wa
 	const second = context(SessionManager.inMemory());
 	await start({ reason: "startup", type: "session_start" }, first);
 	const staleReady = whenSuiteSessionReady(pi, first);
-	await start({ reason: "switch", type: "session_start" }, second);
+	await start({ reason: "new", type: "session_start" }, second);
 	expect(await staleReady).toBe(false);
 	markSuiteSessionReady(pi, first);
 

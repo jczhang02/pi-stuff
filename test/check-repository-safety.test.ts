@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { JsonInputObject } from "../packages/pi-stuff/src/shared/json-value.js";
 import { auditRepositoryFiles } from "../scripts/check-repository-safety.ts";
 
 const TEMPORARY_ROOTS: string[] = [];
@@ -61,7 +62,7 @@ async function createRepository(): Promise<string> {
 	return root;
 }
 
-async function writeLocalPackage(root: string, manifest: Record<string, unknown>): Promise<void> {
+async function writeLocalPackage(root: string, manifest: JsonInputObject): Promise<void> {
 	await writeFile(join(root, "packages", "pi-stuff", "package.json"), `${JSON.stringify(manifest, null, "\t")}\n`);
 }
 

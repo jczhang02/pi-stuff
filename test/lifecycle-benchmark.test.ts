@@ -90,7 +90,7 @@ function acceptanceCells(): CellSummary[] {
 	);
 }
 
-function sessionEntries(messages: readonly Record<string, unknown>[] = []): unknown[] {
+function sessionEntries(messages: readonly object[] = []): unknown[] {
 	return [
 		{ type: "session", version: 3 },
 		{

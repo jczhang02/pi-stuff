@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import { createCodexDialogView, formatCodexToolLines } from "../../packages/pi-stuff/src/codex/dialog.js";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { TestTui } from "../fixtures/test-tui.js";
 
 // SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
@@ -11,6 +12,17 @@ const theme = {
 } as Theme;
 
 initTheme("dark", false);
+
+function dialogContext(rows: number, activeTheme = theme): CommandDialogViewContext<void> {
+	return {
+		close: () => {},
+		keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+		requestRender: () => {},
+		signal: new AbortController().signal,
+		theme: activeTheme,
+		tui: new TestTui(rows),
+	};
+}
 
 test("packs complete Codex Tool labels at wide and narrow widths", () => {
 	expect(formatCodexToolLines(80)).toEqual(["apply_patch · view_image · imagegen · gpt-image-2"]);
@@ -22,15 +34,7 @@ test("packs complete Codex Tool labels at wide and narrow widths", () => {
 });
 
 test("keeps Codex error, selection, and Escape reachable at very low height", async () => {
-	// SAFETY: this test controls the value and supplies every CommandDialogViewContext member exercised by this case.
-	const context = {
-		close: () => {},
-		keybindings: {},
-		requestRender: () => {},
-		signal: new AbortController().signal,
-		theme,
-		tui: { terminal: { rows: 6 } },
-	} as CommandDialogViewContext<void>;
+	const context = dialogContext(6);
 	const component = createCodexDialogView({
 		getFast: () => false,
 		getUsage: () => undefined,
@@ -65,15 +69,7 @@ test("keeps Codex usage state and Tool identities above the tertiary dim token",
 			throw new Error("usage unavailable");
 		},
 		setFast: async () => {},
-		// SAFETY: this test controls the value and supplies every CommandDialogViewContext member exercised by this case.
-	}).create({
-		close: () => {},
-		keybindings: {},
-		requestRender: () => {},
-		signal: new AbortController().signal,
-		theme: recordingTheme,
-		tui: { terminal: { rows: 24 } },
-	} as CommandDialogViewContext<void>);
+	}).create(dialogContext(24, recordingTheme));
 	component.render(64);
 	expect(colors).toContainEqual({ color: "muted", text: "Loading usage…" });
 	expect(colors.some(({ color, text }) => color === "muted" && text.includes("apply_patch"))).toBe(true);

@@ -6,6 +6,7 @@ import {
 	CodeModeIncompleteExecutionError,
 	CodeModeSessionLedger,
 } from "../../packages/pi-stuff/src/code-mode/ledger.js";
+import type { JsonInputObject } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 function fixture() {
 	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
@@ -294,7 +295,7 @@ test("explicit compensation attempts applied calls in reverse order and records 
 test("ledger maintenance expires stale work and retains only the newest fifty terminal executions", () => {
 	const { branch, context, ledger } = fixture();
 	const now = Date.now();
-	const append = (data: unknown): void => {
+	const append = (data: JsonInputObject): void => {
 		branch.push({ customType: CODE_MODE_LEDGER_ENTRY_TYPE, data, type: "custom" });
 	};
 	append({

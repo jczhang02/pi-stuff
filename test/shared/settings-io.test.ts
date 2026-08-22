@@ -2,7 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import {
 	mergeNamespaceRecord,
 	NamespacedSettingsStore,
@@ -77,15 +78,12 @@ test("readNamespace rejects a malformed namespace", async () => {
 	await expect(readNamespace(path, "codeMode")).rejects.toThrow("is not a JSON object");
 });
 
-type TestSettings = { enabled: boolean; count: number };
+const TEST_SETTINGS_SCHEMA = Type.Object({ count: Type.Number(), enabled: Type.Boolean() });
+type TestSettings = Static<typeof TEST_SETTINGS_SCHEMA>;
 
-function normalize(value: unknown): TestSettings {
-	if (!isRuntimeObject(value) || value === null) throw new Error("expected an object");
-	const record = value as Record<string, unknown>;
-	if (!isRuntimeBoolean(record["enabled"]) || !isRuntimeNumber(record["count"])) {
-		throw new Error("expected enabled boolean and count number");
-	}
-	return { enabled: record["enabled"], count: record["count"] };
+function normalize<Value>(value: Value): TestSettings {
+	if (!Check(TEST_SETTINGS_SCHEMA, value)) throw new Error("expected enabled boolean and count number");
+	return value;
 }
 
 test("NamespacedSettingsStore loads defaults when the namespace is absent", async () => {

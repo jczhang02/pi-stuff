@@ -2,7 +2,12 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+	ExtensionEvent,
+} from "@earendil-works/pi-coding-agent";
 import piStuffCodeMode, { type CodeModeHost } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import {
 	readCodeModeProjectEnabled,
@@ -17,7 +22,7 @@ import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
 type Command = Parameters<ExtensionAPI["registerCommand"]>[1];
 
-type EventHandler = (event: unknown, context: ExtensionContext) => object | undefined;
+type EventHandler = (event: ExtensionEvent, context: ExtensionContext) => object | undefined;
 
 const roots: string[] = [];
 

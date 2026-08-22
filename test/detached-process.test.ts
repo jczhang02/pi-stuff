@@ -2,14 +2,19 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { waitForDetachedProcess } from "../scripts/detached-process.js";
+
+const ERRNO_SCHEMA = Type.Object({ code: Type.Optional(Type.String()) }, { additionalProperties: true });
+const PROCESS_RECORD_SCHEMA = Type.Object({ childPid: Type.Number(), parentPid: Type.Number() });
 
 function processExists(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM";
+		return Check(ERRNO_SCHEMA, error) && error.code === "EPERM";
 	}
 }
 
@@ -17,8 +22,11 @@ async function readProcessRecord(path: string): Promise<{ readonly childPid: num
 	const deadline = Date.now() + 2_000;
 	while (Date.now() < deadline) {
 		const contents = await readFile(path, "utf8").catch(() => "");
-		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-		if (contents) return JSON.parse(contents) as { childPid: number; parentPid: number };
+		if (contents) {
+			const record = JSON.parse(contents);
+			if (Check(PROCESS_RECORD_SCHEMA, record)) return record;
+			throw new Error("Detached process fixture published malformed process ids");
+		}
 		await Bun.sleep(20);
 	}
 	throw new Error("Detached process fixture did not publish its process ids");

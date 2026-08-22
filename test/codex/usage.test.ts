@@ -7,9 +7,10 @@ import {
 	parseCodexUsage,
 	weeklyRemainingPercent,
 } from "../../packages/pi-stuff/src/codex/usage.js";
+import type { JsonInputObject } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 function jwt(accountId: string): string {
-	const encode = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString("base64url");
+	const encode = (value: JsonInputObject): string => Buffer.from(JSON.stringify(value)).toString("base64url");
 	return `${encode({ alg: "none" })}.${encode({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } })}.x`;
 }
 

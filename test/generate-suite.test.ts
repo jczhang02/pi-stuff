@@ -2,11 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { JsonInputObject } from "../packages/pi-stuff/src/shared/json-value.js";
 import { generateSuite } from "../scripts/generate-suite.ts";
 
 const TEMPORARY_ROOTS: string[] = [];
 
-async function writeJson(path: string, value: unknown): Promise<void> {
+async function writeJson(path: string, value: JsonInputObject): Promise<void> {
 	await writeFile(path, `${JSON.stringify(value, null, "\t")}\n`);
 }
 

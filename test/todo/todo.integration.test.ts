@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
+import type { JsonValue } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import piStuffTodo, { TODO_TOGGLE_KEY, type TodoHost } from "../../packages/pi-stuff/src/todo/index.js";
 import { isTaskDetails } from "../../packages/pi-stuff/src/todo/state/replay.js";
@@ -32,7 +33,7 @@ function createToolHarness(onMutation: (event: TaskMutationEvent) => void) {
 		return definition;
 	}
 
-	async function execute(name: string, params: Record<string, unknown>): Promise<AgentToolResult<unknown>> {
+	async function execute(name: string, params: Record<string, JsonValue>): Promise<AgentToolResult<unknown>> {
 		return tool(name).execute(`call-${name}`, params, undefined, undefined, context);
 	}
 
@@ -57,7 +58,7 @@ function renderedLines(
 	tool: ToolDefinition,
 	result: AgentToolResult<unknown>,
 	isError: boolean,
-	args: Record<string, unknown> = {},
+	args: Record<string, JsonValue> = {},
 ): string[] {
 	const callRenderer = tool.renderCall;
 	const renderer = tool.renderResult;
@@ -177,6 +178,7 @@ describe("registered Task tools", () => {
 
 describe("extension registration", () => {
 	it("registers Ctrl+Shift+T as the task-list toggle", () => {
+		type RegisterShortcutArguments = Parameters<ExtensionAPI["registerShortcut"]>;
 		const shortcuts: Array<{ key: string; description: string }> = [];
 		const lifecycleEvents: string[] = [];
 		const { host } = toolRegistrationHarness();
@@ -186,7 +188,7 @@ describe("extension registration", () => {
 		}) as ExtensionAPI["on"];
 		const api: TodoHost = {
 			...host,
-			registerShortcut: (key: unknown, options: { description?: string }) => {
+			registerShortcut: (key: RegisterShortcutArguments[0], options: RegisterShortcutArguments[1]) => {
 				shortcuts.push({
 					key: String(key),
 					description: options.description ?? "",
