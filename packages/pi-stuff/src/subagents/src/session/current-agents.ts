@@ -263,7 +263,7 @@ function terminalError(status: AgentStatus, ...values: AgentProjectionValue[]): 
 	for (const value of values) {
 		const record = asRecord(value);
 		for (const candidate of [record["error"], asRecord(record["execution"])["error"]]) {
-			const safe = boundedTerminalLine(candidate);
+			const safe = boundedTerminalLine(optionalString(candidate));
 			if (safe) return boundedText(safe, MAX_TERMINAL_ERROR_CHARS);
 		}
 	}
@@ -703,7 +703,10 @@ function projectForegroundRun(run: ForegroundRun, sessionId: string): RowDraft[]
 				childIndex: child.index,
 				sessionId,
 				name: child.agent || "agent",
-				description: resolveDisplayDescription(persistedTask ? childRecord["description"] : undefined, taskSource),
+				description: resolveDisplayDescription(
+					persistedTask ? firstString(childRecord["description"]) : undefined,
+					taskSource,
+				),
 				task: boundedTask(taskSource),
 				status,
 				error: terminalError(status, childRecord),

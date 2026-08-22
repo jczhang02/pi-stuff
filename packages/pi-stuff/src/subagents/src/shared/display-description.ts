@@ -14,12 +14,12 @@ function compactPaths(value: string): string {
 }
 
 /** Strip terminal controls and collapse one bounded display line. */
-export function boundedTerminalLine(value: unknown): string {
+export function boundedTerminalLine(value: string | null | undefined): string {
 	return boundTerminalLine(value, MAX_DISPLAY_SOURCE_WIDTH);
 }
 
 /** Match only exact task text or the deterministic wrappers emitted by Agent runtimes. */
-export function isTaskOnlyAgentText(value: unknown, task: unknown): boolean {
+export function isTaskOnlyAgentText(value: string | null | undefined, task: string | null | undefined): boolean {
 	const expected = boundedTerminalLine(task);
 	if (!expected) return false;
 	let candidate = boundedTerminalLine(value);
@@ -29,7 +29,10 @@ export function isTaskOnlyAgentText(value: unknown, task: unknown): boolean {
 }
 
 /** Resolve one terminal-safe, bounded label without asking another model. */
-export function resolveDisplayDescription(description: unknown, task: unknown): string {
+export function resolveDisplayDescription(
+	description: string | null | undefined,
+	task: string | null | undefined,
+): string {
 	const explicit = boundedTerminalLine(description);
 	if (explicit) return boundTerminalLine(explicit, MAX_DISPLAY_DESCRIPTION_WIDTH);
 	const legacyTask = compactPaths(boundedTerminalLine(task));
