@@ -61,6 +61,7 @@ interface DiagnosticProcessState {
 }
 
 function processState(): DiagnosticProcessState {
+	// SAFETY: PROCESS_STATE is a versioned global symbol written only by this module as DiagnosticProcessState.
 	const root = globalThis as {
 		[key: symbol]: DiagnosticProcessState | undefined;
 	};
@@ -68,9 +69,10 @@ function processState(): DiagnosticProcessState {
 	return root[PROCESS_STATE];
 }
 
-function channelRegistry(): WeakMap<ExtensionAPI["events"], DiagnosticChannel> {
+function channelRegistry(): WeakMap<object, DiagnosticChannel> {
+	// SAFETY: DIAGNOSTIC_REGISTRY is a versioned global symbol written only by this module as this WeakMap.
 	const root = globalThis as {
-		[key: symbol]: WeakMap<ExtensionAPI["events"], DiagnosticChannel> | undefined;
+		[key: symbol]: WeakMap<object, DiagnosticChannel> | undefined;
 	};
 	root[DIAGNOSTIC_REGISTRY] ??= new WeakMap();
 	return root[DIAGNOSTIC_REGISTRY];
@@ -110,14 +112,6 @@ function bounded(value: string, maximum: number): string {
 	return value.length <= maximum ? value : `${value.slice(0, Math.max(0, maximum - 1))}…`;
 }
 
-function safeJson(value: unknown): string | undefined {
-	try {
-		return JSON.stringify(value);
-	} catch {
-		return undefined;
-	}
-}
-
 function errorDetails(cause: unknown): string[] {
 	if (cause === undefined || cause === null) return [];
 	if (cause instanceof Error) {
@@ -125,7 +119,11 @@ function errorDetails(cause: unknown): string[] {
 		return source.split(/\r?\n/gu);
 	}
 	if (isRuntimeString(cause)) return cause.split(/\r?\n/gu);
-	return [safeJson(cause) ?? String(cause)];
+	try {
+		return [JSON.stringify(cause) ?? String(cause)];
+	} catch {
+		return [String(cause)];
+	}
 }
 
 function normalizedDetails(report: DiagnosticReport): string[] {
@@ -187,7 +185,6 @@ export class DiagnosticChannel {
 		} else {
 			const sequence = ++processState().nextId;
 			record = {
-				...(action ? { action } : {}),
 				capability,
 				count: 1,
 				details,
@@ -198,6 +195,7 @@ export class DiagnosticChannel {
 				summary,
 				visibility,
 			};
+			if (action) record.action = action;
 			this.records.unshift(record);
 		}
 		if (visibility === "notice") this.noticeIds.add(record.id);
@@ -250,7 +248,7 @@ export class DiagnosticChannel {
 export function getDiagnosticChannel(pi: Pick<ExtensionAPI, "events" | "on">): DiagnosticChannel {
 	return getHostSharedResource(
 		pi.events,
-		channelRegistry() as WeakMap<object, DiagnosticChannel>,
+		channelRegistry(),
 		DIAGNOSTIC_DISCOVERY_EVENT,
 		() => new DiagnosticChannel(),
 		{ registerOwnerCleanup: (cleanup) => pi.on("session_shutdown", cleanup) },
