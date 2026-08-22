@@ -4,7 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
-import { mergedSettingsPath, readNamespace } from "../shared/settings-io/index.js";
+import { mergedSettingsPath, readNamespace, type SettingsRecord } from "../shared/settings-io/index.js";
 import { mergeNamespaceRecordLocked, migrateLegacyNamespace } from "../shared/settings-io/lock.js";
 
 const SETTINGS_FILE_NAME = "pi-stuff-rtk.json";
@@ -49,10 +49,10 @@ function parseSettings<Value>(value: Value): RtkSettings {
 	if (!Check(RTK_SETTINGS_SCHEMA, value)) {
 		throw new Error("expected schemaVersion 1 and boolean RTK settings");
 	}
-	return value;
+	return toRecord(value);
 }
 
-function toRecord(settings: RtkSettings) {
+function toRecord(settings: RtkSettings): RtkSettings & SettingsRecord {
 	return { outputProjection: settings.outputProjection, rewriteCommands: settings.rewriteCommands, schemaVersion: 1 };
 }
 

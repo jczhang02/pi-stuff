@@ -176,6 +176,13 @@ test("invalid persisted UI settings fail quiet to the complete default", async (
 	});
 });
 
+test("complete UI settings discard unknown persisted keys", async () => {
+	await withTemporarySettings(async (path) => {
+		await writeFile(path, `${JSON.stringify({ ui: { ...DEFAULTS, future: "ignored" } })}\n`);
+		expect((await UiSettingsStore.load(path)).get()).toEqual(DEFAULTS);
+	});
+});
+
 test("a failed latest UI settings write rolls the live value back", async () => {
 	await withTemporarySettings(async (path) => {
 		const store = await UiSettingsStore.load(path, async () => {

@@ -116,6 +116,21 @@ test("NamespacedSettingsStore replace writes the whole namespace wholesale", asy
 	expect(await readNamespace(path, "codex")).toEqual({ enabled: true, count: 7 });
 });
 
+test("NamespacedSettingsStore replace repairs an invalid namespace and preserves siblings", async () => {
+	const path = join(await dir(), "pi-stuff.json");
+	await writeSettingsFile(path, { codex: { enabled: false, count: 0 }, ui: { statusline: true } });
+	const store = await NamespacedSettingsStore.load<TestSettings>("codex", { enabled: false, count: 0 }, normalize, {
+		path,
+	});
+	await writeSettingsFile(path, { codex: { enabled: "invalid" }, ui: { statusline: true } });
+	await store.replace({ enabled: true, count: 7 });
+	expect(store.get()).toEqual({ enabled: true, count: 7 });
+	expect(await readSettingsFile(path)).toEqual({
+		codex: { enabled: true, count: 7 },
+		ui: { statusline: true },
+	});
+});
+
 test("NamespacedSettingsStore migrates a legacy file into the namespace on first load", async () => {
 	const root = await dir();
 	const mergedPath = join(root, "pi-stuff.json");

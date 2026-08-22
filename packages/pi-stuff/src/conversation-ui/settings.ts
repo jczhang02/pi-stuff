@@ -135,7 +135,18 @@ function parseVersionOneSettings(value: Static<typeof UI_SETTINGS_VERSION_ONE_SC
 
 function parseSettings<Value>(value: Value): UiSettings {
 	if (Check(UI_SETTINGS_VERSION_ONE_SCHEMA, value)) return parseVersionOneSettings(value);
-	if (Check(UI_SETTINGS_VERSION_TWO_SCHEMA, value)) return value;
+	if (Check(UI_SETTINGS_VERSION_TWO_SCHEMA, value)) {
+		return {
+			inlineSlashAutocomplete: value.inlineSlashAutocomplete,
+			inputHighlighting: value.inputHighlighting,
+			schemaVersion: 2,
+			statusline: value.statusline,
+			statuslineDensity: value.statuslineDensity,
+			statuslineIcons: value.statuslineIcons,
+			statuslineLatestPrompt: value.statuslineLatestPrompt,
+			welcomeHeader: value.welcomeHeader,
+		};
+	}
 	throw new Error("expected schemaVersion 1 or 2");
 }
 

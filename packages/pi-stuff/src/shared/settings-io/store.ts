@@ -166,21 +166,21 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 
 	/** Apply a partial patch to the namespace and persist under the whole-file lock. */
 	async update(patch: Partial<T>): Promise<T> {
-		return this.commit((current) => ({ ...current, ...patch }));
+		return this.commit((current) => ({ ...current, ...patch }), true);
 	}
 
 	/** Replace the namespace wholesale (used by full-state setters). */
 	async replace(next: T): Promise<T> {
-		return this.commit(() => next);
+		return this.commit(() => next, false);
 	}
 
-	private async commit(apply: (current: T) => T): Promise<T> {
+	private async commit(apply: (current: T) => T, readCurrent: boolean): Promise<T> {
 		if (!this.path) {
 			this.replaceValue(apply(this.value));
 			return this.value;
 		}
 		const write = this.pending.then(async () => {
-			this.replaceValue(await this.persistNamespace(apply));
+			this.replaceValue(await this.persistNamespace(apply, readCurrent));
 		});
 		this.pending = write.catch(() => undefined);
 		await write;
@@ -276,10 +276,10 @@ export class NamespacedSettingsStore<T extends NamespaceRecord> {
 		}
 	}
 
-	private async persistNamespace(apply: (current: T) => T): Promise<T> {
+	private async persistNamespace(apply: (current: T) => T, readCurrent: boolean): Promise<T> {
 		const release = this.acquireLock ? await this.acquireLock(this.lockPath, "pi-stuff") : async () => {};
 		try {
-			const record = await readNamespace(this.path, this.namespace);
+			const record = readCurrent ? await readNamespace(this.path, this.namespace) : undefined;
 			const current = record === undefined || !this.normalize ? this.persistedValue : this.normalize(record);
 			const next = apply(current);
 			await this.writer(this.path, this.namespace, next);
