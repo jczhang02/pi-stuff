@@ -18,6 +18,10 @@ export function isJsonInputValue<Value>(value: Value): value is Value & JsonInpu
 	return Object.values(value).every(isJsonInputValue);
 }
 
+export function isJsonInputObject<Value>(value: Value): value is Value & JsonInputObject {
+	return value !== null && isRuntimeObject(value) && !Array.isArray(value) && isJsonInputValue(value);
+}
+
 /** A value observed at a runtime boundary that already conforms to the JSON grammar. */
 export type JsonSourceValue = boolean | null | number | string | readonly JsonSourceValue[] | JsonSourceObject;
 

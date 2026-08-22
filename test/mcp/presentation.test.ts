@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { MCP_PRESENTATION } from "../../packages/pi-stuff/src/mcp/presentation.js";
+import { MCP_PRESENTATION, type McpPresentationArguments } from "../../packages/pi-stuff/src/mcp/presentation.js";
 
-function category(args: Record<string, unknown>): string | undefined {
+function category(args: McpPresentationArguments): string | undefined {
 	return MCP_PRESENTATION.activity.classify({ args, state: "running" })[0]?.category;
 }
 
