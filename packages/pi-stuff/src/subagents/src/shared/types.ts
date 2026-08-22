@@ -1326,9 +1326,7 @@ export interface SubagentState {
 // Display
 // ============================================================================
 
-export type DisplayItem =
-	| { type: "text"; text: string }
-	| { type: "tool"; name: string; args: Record<string, unknown> };
+export type DisplayItem = { type: "text"; text: string } | { type: "tool"; name: string; args: JsonInputObject };
 
 // ============================================================================
 // Error Handling
@@ -1341,9 +1339,11 @@ export interface ErrorInfo {
 	details?: string;
 }
 
+export interface IntercomEventData extends JsonInputObject {}
+
 export interface IntercomEventBus {
-	on(channel: string, handler: (data: unknown) => void): () => void;
-	emit(channel: string, data: unknown): void;
+	on(channel: string, handler: (data: IntercomEventData) => void): () => void;
+	emit(channel: string, data: IntercomEventData): void;
 }
 
 export const INTERCOM_DETACH_REQUEST_EVENT = "pi-intercom:detach-request";
@@ -1506,6 +1506,7 @@ export function resolveTempScopeId(options?: {
 
 const MAX_PARALLEL = 8;
 export const MAX_CONCURRENCY = 4;
+type NumericConfigInput = number | string | undefined;
 export function resolveTempRootDir(options?: {
 	env?: NodeJS.ProcessEnv;
 	getuid?: (() => number) | undefined;
@@ -1548,17 +1549,20 @@ export const DEFAULT_FORK_PREAMBLE =
 	"Do not continue or answer prior messages as if they are waiting for a reply. " +
 	"Your sole job is to execute the task below and return a focused result for that task using your tools.";
 
-function normalizeTopLevelParallelValue(value: unknown): number | undefined {
+function normalizeTopLevelParallelValue(value: NumericConfigInput): number | undefined {
 	const parsed = isRuntimeNumber(value) ? value : isRuntimeString(value) ? Number(value) : NaN;
 	if (!Number.isInteger(parsed) || parsed < 1) return undefined;
 	return parsed;
 }
 
-export function resolveTopLevelParallelMaxTasks(value: unknown): number {
+export function resolveTopLevelParallelMaxTasks(value: NumericConfigInput): number {
 	return normalizeTopLevelParallelValue(value) ?? MAX_PARALLEL;
 }
 
-export function resolveTopLevelParallelConcurrency(override: unknown, configValue: unknown): number {
+export function resolveTopLevelParallelConcurrency(
+	override: NumericConfigInput,
+	configValue: NumericConfigInput,
+): number {
 	return normalizeTopLevelParallelValue(override) ?? normalizeTopLevelParallelValue(configValue) ?? MAX_CONCURRENCY;
 }
 
@@ -1578,13 +1582,13 @@ export function wrapForkTask(task: string, preamble?: string | false): string {
 // Recursion Depth Guard
 // ============================================================================
 
-function normalizeNonNegativeInteger(value: unknown): number | undefined {
+function normalizeNonNegativeInteger(value: NumericConfigInput): number | undefined {
 	const parsed = isRuntimeNumber(value) ? value : isRuntimeString(value) ? Number(value) : NaN;
 	if (!Number.isInteger(parsed) || parsed < 0) return undefined;
 	return parsed;
 }
 
-export function normalizeMaxSubagentDepth(value: unknown): number | undefined {
+export function normalizeMaxSubagentDepth(value: NumericConfigInput): number | undefined {
 	return normalizeNonNegativeInteger(value);
 }
 
@@ -1627,7 +1631,7 @@ export function getSubagentDepthEnv(maxDepth?: number, env: NodeJS.ProcessEnv = 
 	};
 }
 
-export function normalizeMaxSubagentSpawnsPerSession(value: unknown): number | undefined {
+export function normalizeMaxSubagentSpawnsPerSession(value: NumericConfigInput): number | undefined {
 	const normalized = normalizeNonNegativeInteger(value);
 	return normalized !== undefined && normalized >= 1 ? normalized : undefined;
 }

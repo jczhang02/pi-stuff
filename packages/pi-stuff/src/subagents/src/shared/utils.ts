@@ -7,7 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import { getAgentDir as getPiAgentDir } from "@earendil-works/pi-coding-agent";
-import { type JsonObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
+import { isJsonInputValue, type JsonObject, type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import type { ToolArguments } from "../../../tool-display/activity.js";
 import { boundTerminalLine } from "../../../tool-display/index.js";
@@ -385,6 +385,7 @@ export function getDisplayItems(messages: Message[] | undefined): DisplayItem[] 
 					part.type === "toolCall" &&
 					isRuntimeString(part.name) &&
 					part.arguments !== null &&
+					isJsonInputValue(part.arguments) &&
 					isRuntimeObject(part.arguments) &&
 					!Array.isArray(part.arguments)
 				)
