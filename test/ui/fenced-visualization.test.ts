@@ -4,13 +4,20 @@ import {
 	getMarkdownTheme,
 	initTheme,
 } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
-import { projectFencedVisualizations } from "../../packages/pi-stuff/src/conversation-ui/fenced-visualization.js";
-import { renderTreeSource } from "../../packages/pi-stuff/src/conversation-ui/indentation-tree.js";
+import { projectFencedVisualizations as projectFencedVisualizationsWithWidth } from "../../packages/pi-stuff/src/conversation-ui/fenced-visualization.js";
+import { renderTreeSource as renderTreeSourceWithWidth } from "../../packages/pi-stuff/src/conversation-ui/indentation-tree.js";
 import {
 	createLiveThoughtTransformer,
 	type ThoughtMarkdownTransformContext,
 } from "../../packages/pi-stuff/src/conversation-ui/live-thought.js";
-import { renderChartSource } from "../../packages/pi-stuff/src/conversation-ui/unicode-chart.js";
+import { renderChartSource as renderChartSourceWithWidth } from "../../packages/pi-stuff/src/conversation-ui/unicode-chart.js";
+
+const projectFencedVisualizations = (markdown: string, availableWidth: number): string =>
+	projectFencedVisualizationsWithWidth(markdown, availableWidth, visibleWidth);
+const renderChartSource = (source: string, availableWidth: number): string[] =>
+	renderChartSourceWithWidth(source, availableWidth, visibleWidth);
+const renderTreeSource = (source: string, availableWidth: number): string[] =>
+	renderTreeSourceWithWidth(source, availableWidth, visibleWidth);
 
 const BACKTICK = String.fromCharCode(0x60);
 const FENCE = BACKTICK.repeat(3);

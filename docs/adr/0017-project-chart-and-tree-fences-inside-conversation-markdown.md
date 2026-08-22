@@ -11,10 +11,13 @@ remains under Live Thoughts and never enters this visualization path.
 
 The dispatcher is static and internal to Conversation UI. It runs inside the Module’s one registered Host Markdown
 transformer; there is no second transformer, plugin registry, setting, Capability, Package, or runtime dependency.
-Assistant candidate recognition is fused into the existing chunk-preserving sanitizer traversal; User Markdown uses an exact opening-fence
-prefilter. Ordinary messages never enter visualization parsing. A matched block is projected only when its
-closing fence, grammar, safety checks, limits, and available terminal width all succeed. At most 16 valid blocks are
-projected per Markdown message. Otherwise the original fence is returned byte-for-byte.
+Assistant candidate recognition is fused into the existing chunk-preserving sanitizer traversal; User Markdown uses an
+exact opening-fence prefilter. The fixed repository-owned projector modules are synchronously lazy-loaded only after a
+target-fence candidate is detected; the owning transformer injects Pi TUI’s column measurement so those modules have
+no Host imports. Ordinary startup and messages therefore never load or enter visualization parsing. A
+matched block is projected only when its closing fence, grammar, safety checks, limits, and available terminal width all
+succeed. At most 16 valid blocks are projected per Markdown message. Otherwise the original fence is returned
+byte-for-byte.
 
 `chart` accepts `bar`/`histogram`, `line`, `scatter`, `sparkline`, and `heatmap`. Its adapted MIT implementation is
 pinned and recorded beside the source. Input is capped at 12,000 characters and 64 ordinary points; heatmaps are

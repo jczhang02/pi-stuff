@@ -34,12 +34,20 @@ export interface FencedVisualizationProjection {
 }
 
 /** Project complete chart/tree fences into safe Markdown while preserving canonical source. */
-export function projectFencedVisualizations(markdown: string, availableWidth: number): string {
-	return prepareFencedVisualizations(markdown, availableWidth).markdown;
+export function projectFencedVisualizations(
+	markdown: string,
+	availableWidth: number,
+	measureWidth: (value: string) => number,
+): string {
+	return prepareFencedVisualizations(markdown, availableWidth, measureWidth).markdown;
 }
 
 /** Return projection metadata needed by the owning Host Markdown adapter. */
-export function prepareFencedVisualizations(markdown: string, availableWidth: number): FencedVisualizationProjection {
+export function prepareFencedVisualizations(
+	markdown: string,
+	availableWidth: number,
+	measureWidth: (value: string) => number,
+): FencedVisualizationProjection {
 	if (!Number.isFinite(availableWidth) || availableWidth < 1 || !TARGET_FENCE.test(markdown)) {
 		return { markdown, projectedBlocks: [] };
 	}
@@ -82,7 +90,7 @@ export function prepareFencedVisualizations(markdown: string, availableWidth: nu
 		}
 		const source = lines.slice(index + 1, close).join("\n");
 		const width = Math.max(0, Math.floor(availableWidth) - opening.indentation);
-		const rendered = sourceIsSafe(source) ? renderVisualization(language, source, width) : [];
+		const rendered = sourceIsSafe(source) ? renderVisualization(language, source, width, measureWidth) : [];
 		if (rendered.length === 0) {
 			output.push(...lines.slice(index, close + 1));
 		} else {
@@ -111,8 +119,15 @@ function visualizationLanguage(value: string): VisualizationLanguage | undefined
 	return undefined;
 }
 
-function renderVisualization(language: VisualizationLanguage, source: string, width: number): readonly string[] {
-	return language === "chart" ? renderChartSource(source, width) : renderTreeSource(source, width);
+function renderVisualization(
+	language: VisualizationLanguage,
+	source: string,
+	width: number,
+	measureWidth: (value: string) => number,
+): readonly string[] {
+	return language === "chart"
+		? renderChartSource(source, width, measureWidth)
+		: renderTreeSource(source, width, measureWidth);
 }
 
 function parseOpeningFence(line: string): OpeningFence | undefined {

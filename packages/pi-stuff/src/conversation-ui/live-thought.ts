@@ -1,11 +1,7 @@
+import { createRequire } from "node:module";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
-import {
-	type FencedVisualizationProjection,
-	type ProjectedVisualizationBlock,
-	prepareFencedVisualizations,
-} from "./fenced-visualization.js";
 import { TRANSCRIPT_MARKER } from "./transcript.js";
 
 export interface ThoughtMarkdownTransformContext {
@@ -18,6 +14,39 @@ export type ThoughtMarkdownTransformer = (markdown: string, context: ThoughtMark
 
 interface MarkdownTransformerExtensionAPI {
 	registerMarkdownTransformer(transformer: ThoughtMarkdownTransformer): void;
+}
+
+interface ProjectedVisualizationBlock {
+	readonly firstLine: string;
+	readonly language: string;
+}
+
+interface FencedVisualizationProjection {
+	readonly markdown: string;
+	readonly projectedBlocks: readonly ProjectedVisualizationBlock[];
+}
+
+type PrepareFencedVisualizations = (
+	markdown: string,
+	availableWidth: number,
+	measureWidth: (value: string) => number,
+) => FencedVisualizationProjection;
+
+const requireConversationModule = createRequire(import.meta.url);
+let prepareFencedVisualizations: PrepareFencedVisualizations | undefined;
+
+function loadFencedVisualizationProjector(): PrepareFencedVisualizations {
+	if (prepareFencedVisualizations) return prepareFencedVisualizations;
+	// SAFETY: the fixed repository-owned module is loaded synchronously only after a target fence is detected.
+	const loaded = requireConversationModule("./fenced-visualization.ts") as {
+		prepareFencedVisualizations?: unknown;
+	};
+	if (!isRuntimeFunction(loaded.prepareFencedVisualizations)) {
+		throw new Error("Pi Stuff fenced visualization projector is unavailable");
+	}
+	// SAFETY: the runtime check above establishes the fixed owned export is callable.
+	prepareFencedVisualizations = loaded.prepareFencedVisualizations as PrepareFencedVisualizations;
+	return prepareFencedVisualizations;
 }
 
 // U+2217 keeps the asterisk's light visual weight while centering it on the
@@ -45,6 +74,7 @@ const TRAILING_HEADING_MARKER = /[ \t]+#+[ \t]*$/u;
 const LIST_ITEM = /^(?:[-+*]|\d{1,9}[.)])[ \t]+(.*)$/u;
 const THEMATIC_BREAK = /^(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/u;
 const EMPHASIS_MARKERS = ["***", "___", "**", "__", "*", "_"] as const;
+const VISUALIZATION_FENCE_CANDIDATE = /(?:^|\r?\n)[ ]{0,3}(?:`{3,}|~{3,})[ \t]*(?:chart|tree)(?=[ \t]*(?:\r?$))/imu;
 
 /** Register the display-only Thought projection through Pi's public Host seam. */
 export function registerLiveThoughtDisplay(pi: ExtensionAPI): void {
@@ -123,7 +153,11 @@ function armMarkdownThemeProjection(assistantMarker: boolean, blocks: readonly P
 }
 
 function prepareVisualizationMarkdown(markdown: string, availableWidth: number): FencedVisualizationProjection {
-	return prepareFencedVisualizations(markdown, Math.max(0, availableWidth - MARKDOWN_CODE_BLOCK_INDENT_WIDTH));
+	return loadFencedVisualizationProjector()(
+		markdown,
+		Math.max(0, availableWidth - MARKDOWN_CODE_BLOCK_INDENT_WIDTH),
+		visibleWidth,
+	);
 }
 
 /** Build the pure projection separately so width and safety behavior can be certified. */
@@ -132,6 +166,7 @@ export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 		restorePendingMarkdownThemeProjection();
 		if (context.messageType === "assistant") return renderAssistantTranscript(markdown, context.availableWidth);
 		if (context.messageType === "user") {
+			if (!VISUALIZATION_FENCE_CANDIDATE.test(markdown)) return markdown;
 			const projection = prepareVisualizationMarkdown(markdown, context.availableWidth);
 			armMarkdownThemeProjection(false, projection.projectedBlocks);
 			return projection.markdown;

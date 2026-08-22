@@ -1,5 +1,3 @@
-import { visibleWidth } from "@earendil-works/pi-tui";
-
 const MAX_TREE_SOURCE_LENGTH = 12_000;
 const MAX_TREE_NODES = 256;
 const MAX_TREE_DEPTH = 32;
@@ -9,14 +7,18 @@ interface TreeNode {
 	readonly label: string;
 }
 
-export function renderTreeSource(source: string, availableWidth: number): string[] {
+export function renderTreeSource(
+	source: string,
+	availableWidth: number,
+	measureWidth: (value: string) => number,
+): string[] {
 	if (!Number.isFinite(availableWidth) || availableWidth < 1 || source.length > MAX_TREE_SOURCE_LENGTH) return [];
 	const nodes = parseTreeSource(source);
 	if (!nodes) return [];
 
 	const lines = renderNodes(nodes);
 	const width = Math.floor(availableWidth);
-	return lines.every((line) => visibleWidth(line) <= width) ? lines : [];
+	return lines.every((line) => measureWidth(line) <= width) ? lines : [];
 }
 
 function parseTreeSource(source: string): readonly TreeNode[] | undefined {

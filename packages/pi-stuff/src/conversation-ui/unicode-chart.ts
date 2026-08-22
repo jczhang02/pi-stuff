@@ -1,5 +1,3 @@
-import { visibleWidth } from "@earendil-works/pi-tui";
-
 /**
  * Rendering algorithms adapted from @howaboua/pi-unicode-charts 0.1.0 (MIT).
  * See the adjacent UPSTREAM.md and THIRD_PARTY_NOTICES.md.
@@ -45,10 +43,18 @@ const BRAILLE_DOTS = [
 const SPARK_GLYPHS = "▁▂▃▄▅▆▇█";
 const HEAT_GLYPHS = "░▒▓█";
 let graphemeSegmenter: Intl.Segmenter | undefined;
+type MeasureWidth = (value: string) => number;
+let measureWidth: MeasureWidth = (value) => value.length;
 
-export function renderChartSource(source: string, availableWidth: number): string[] {
-	const spec = parseChartSource(source);
-	return spec ? renderChart(spec, availableWidth) : [];
+export function renderChartSource(source: string, availableWidth: number, widthOf: MeasureWidth): string[] {
+	const previousMeasureWidth = measureWidth;
+	measureWidth = widthOf;
+	try {
+		const spec = parseChartSource(source);
+		return spec ? renderChart(spec, availableWidth) : [];
+	} finally {
+		measureWidth = previousMeasureWidth;
+	}
 }
 
 function parseChartSource(source: string): ChartSpec | undefined {
@@ -231,7 +237,7 @@ function renderBars(points: ChartPoint[], width: number): string[] {
 	const tickLabels = Array.from({ length: PLOT_ROWS }, (_, row) =>
 		tickRows.has(row) ? formatNumber(barAxisValue(row, minimum, maximum, zeroRow)) : "",
 	);
-	const yLabelWidth = Math.max(3, ...tickLabels.map((label) => visibleWidth(label)));
+	const yLabelWidth = Math.max(3, ...tickLabels.map((label) => measureWidth(label)));
 	const plotWidth = width - yLabelWidth - 3;
 	if (plotWidth < points.length) return [];
 
@@ -296,7 +302,7 @@ function renderSparkline(points: ChartPoint[], width: number): string[] {
 	const maximum = Math.max(...values);
 	const minimumLabel = formatNumber(minimum);
 	const maximumLabel = formatNumber(maximum);
-	const chartWidth = Math.max(4, width - visibleWidth(minimumLabel) - visibleWidth(maximumLabel) - 2);
+	const chartWidth = Math.max(4, width - measureWidth(minimumLabel) - measureWidth(maximumLabel) - 2);
 	const sampled = resample(values, chartWidth);
 	const range = maximum - minimum || 1;
 	const spark = sampled
@@ -316,7 +322,7 @@ function renderBraille(points: ChartPoint[], connect: boolean, width: number): s
 		formatNumber(maximum - ((maximum - minimum) * middleRow) / (PLOT_ROWS - 1)),
 		formatNumber(minimum),
 	];
-	const yLabelWidth = Math.max(3, ...tickLabels.map((label) => visibleWidth(label)));
+	const yLabelWidth = Math.max(3, ...tickLabels.map((label) => measureWidth(label)));
 	const plotColumns = width - yLabelWidth - 3;
 	if (plotColumns < 4) return [];
 
@@ -363,7 +369,7 @@ function renderBraille(points: ChartPoint[], connect: boolean, width: number): s
 	lines.push(`${"".padStart(yLabelWidth)} └${"─".repeat(plotColumns)}`);
 	const first = truncate(points[0]?.label ?? "", Math.floor(plotColumns / 2));
 	const last = truncate(points[points.length - 1]?.label ?? "", Math.floor(plotColumns / 2));
-	const spacer = Math.max(1, plotColumns - visibleWidth(first) - visibleWidth(last));
+	const spacer = Math.max(1, plotColumns - measureWidth(first) - measureWidth(last));
 	lines.push(`${"".padStart(yLabelWidth + 2)}${first}${" ".repeat(spacer)}${last}`);
 	return lines;
 }
@@ -405,7 +411,7 @@ function drawPoint(x: number, y: number, width: number, height: number, dots: Se
 }
 
 function renderHeatmap(rows: HeatmapRow[], width: number): string[] {
-	const rowLabelWidth = Math.min(14, Math.max(3, ...rows.map((row) => visibleWidth(row.label))));
+	const rowLabelWidth = Math.min(14, Math.max(3, ...rows.map((row) => measureWidth(row.label))));
 	const columns = Math.max(0, ...rows.map((row) => row.values.length));
 	const plotWidth = width - rowLabelWidth - 3;
 	if (columns === 0 || plotWidth < 1) return [];
@@ -459,22 +465,22 @@ function formatNumber(value: number): string {
 }
 
 function truncate(value: string, width: number): string {
-	if (visibleWidth(value) <= width) return value;
+	if (measureWidth(value) <= width) return value;
 	if (width <= 1) return "…";
 	let output = "";
 	graphemeSegmenter ??= new Intl.Segmenter("und", { granularity: "grapheme" });
 	for (const { segment } of graphemeSegmenter.segment(value)) {
-		if (visibleWidth(`${output}${segment}…`) > width) break;
+		if (measureWidth(`${output}${segment}…`) > width) break;
 		output += segment;
 	}
 	return `${output}…`;
 }
 
 function padEndWidth(value: string, width: number): string {
-	return `${value}${" ".repeat(Math.max(0, width - visibleWidth(value)))}`;
+	return `${value}${" ".repeat(Math.max(0, width - measureWidth(value)))}`;
 }
 
 function center(value: string, width: number): string {
-	const remaining = Math.max(0, width - visibleWidth(value));
+	const remaining = Math.max(0, width - measureWidth(value));
 	return `${" ".repeat(Math.floor(remaining / 2))}${value}${" ".repeat(Math.ceil(remaining / 2))}`;
 }
