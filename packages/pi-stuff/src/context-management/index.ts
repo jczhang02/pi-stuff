@@ -722,18 +722,18 @@ function quietMagicContext(
 	const ui = ctx.ui;
 	if (!ui || !isRuntimeObject(ui)) return ctx;
 	const quietUi = new Proxy(ui, {
-		get(target, property, receiver) {
+		get(target, property) {
 			if (MAGIC_QUIET_UI_METHODS.has(String(property)) || (!notifications && property === "notify"))
 				return () => undefined;
-			const value = readHostProxyProperty(target, property, receiver);
+			const value = readHostProxyProperty(target, property);
 			return Guard.IsFunction(value) ? value.bind(target) : value;
 		},
 	});
 	return new Proxy(ctx, {
-		get(target, property, receiver) {
+		get(target, property) {
 			if (property === "ui") return quietUi;
 			if (property === "hasUI" && hasUi !== undefined) return hasUi;
-			const value = readHostProxyProperty(target, property, receiver);
+			const value = readHostProxyProperty(target, property);
 			return Guard.IsFunction(value) ? value.bind(target) : value;
 		},
 	});
@@ -1818,7 +1818,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 	private magicPiAdapter(plan: MagicRegistrationPlan): ExtensionAPI {
 		const suppressedMethods = new Set<PropertyKey>(["registerFlag", "registerMessageRenderer", "registerShortcut"]);
 		return new Proxy(this.pi, {
-			get: (target, property, receiver) => {
+			get: (target, property) => {
 				if (property === "appendEntry") {
 					return <Data>(customType: string, data?: Data): void => {
 						if (customType === "ctx-status") this.captureMagicCommandStatus(data);
@@ -1846,7 +1846,7 @@ class ContextCapabilityRuntime implements ContextCapability {
 					};
 				}
 				if (suppressedMethods.has(property)) return () => undefined;
-				const value = readHostProxyProperty(target, property, receiver);
+				const value = readHostProxyProperty(target, property);
 				return Guard.IsFunction(value) ? value.bind(this.pi) : value;
 			},
 		});

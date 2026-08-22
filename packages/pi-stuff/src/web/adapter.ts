@@ -159,11 +159,11 @@ export function createWebAdapterApi<Host extends WebAdapterHost>(pi: Host, optio
 	// SAFETY: registerShortcut returns void, and a zero-argument callback may safely ignore its declaration argument.
 	const ignoreShortcut = (() => undefined) as ExtensionAPI["registerShortcut"];
 	return new Proxy(pi, {
-		get(target, property, receiver) {
+		get(target, property) {
 			if (property === "registerTool") return registerTool;
 			if (property === "registerCommand") return ignoreCommand;
 			if (property === "registerShortcut") return ignoreShortcut;
-			return readHostProxyProperty(target, property, receiver);
+			return readHostProxyProperty(target, property);
 		},
 	});
 }

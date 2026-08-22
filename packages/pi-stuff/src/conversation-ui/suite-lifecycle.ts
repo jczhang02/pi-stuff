@@ -69,7 +69,7 @@ function createReadinessApi(pi: ExtensionAPI): ExtensionAPI {
 					});
 				};
 			}
-			const value = readHostProxyProperty(target, property, target);
+			const value = readHostProxyProperty(target, property);
 			return Guard.IsFunction(value) ? value.bind(target) : value;
 		},
 	});

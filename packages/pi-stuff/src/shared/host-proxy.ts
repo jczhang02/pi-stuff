@@ -1,17 +1,8 @@
-/** Read a proxied Host member with the same prototype and getter-receiver behavior as ordinary property access. */
-export function readHostProxyProperty<Target extends object, Receiver extends object>(
+/** Read a Host member with ordinary property-access semantics, including target Proxy traps. */
+export function readHostProxyProperty<Target extends object>(
 	target: Target,
 	property: PropertyKey,
-	receiver: Receiver,
 ): Target[keyof Target] | undefined {
-	let owner: object | null = target;
-	while (owner) {
-		const descriptor = Object.getOwnPropertyDescriptor(owner, property);
-		if (descriptor) {
-			if ("value" in descriptor) return descriptor.value;
-			return descriptor.get?.call(receiver);
-		}
-		owner = Object.getPrototypeOf(owner);
-	}
-	return undefined;
+	// SAFETY: Proxy traps supply runtime property keys; ordinary indexed access preserves the target's own interception.
+	return target[property as keyof Target];
 }

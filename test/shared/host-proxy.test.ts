@@ -13,11 +13,21 @@ class HostSurface {
 	}
 }
 
-test("Host proxy lookup preserves inherited getter receiver semantics", () => {
+test("Host proxy lookup uses ordinary target access and preserves target Proxy traps", () => {
 	const target = new HostSurface("target");
 	const receiver = new HostSurface("receiver");
+	const reads: PropertyKey[] = [];
+	const proxied = new Proxy(target, {
+		get(inner, property) {
+			reads.push(property);
+			// SAFETY: this test Proxy forwards only HostSurface keys supplied by the property reads below.
+			return inner[property as keyof HostSurface];
+		},
+	});
 
-	expect(readHostProxyProperty(target, "decoratedLabel", receiver)).toBe("[receiver]");
-	expect(readHostProxyProperty(target, "label", receiver)).toBe("target");
-	expect(readHostProxyProperty(target, "missing", receiver)).toBeUndefined();
+	expect(readHostProxyProperty(proxied, "decoratedLabel")).toBe("[target]");
+	expect(readHostProxyProperty(proxied, "label")).toBe("target");
+	expect(readHostProxyProperty(proxied, "missing")).toBeUndefined();
+	expect(reads).toEqual(["decoratedLabel", "label", "missing"]);
+	expect(receiver.decoratedLabel).toBe("[receiver]");
 });

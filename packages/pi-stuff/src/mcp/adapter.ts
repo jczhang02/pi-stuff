@@ -152,15 +152,15 @@ export function suppressMcpFooterContext(ctx: ExtensionContext): ExtensionContex
 		if (key !== "mcp") ctx.ui.setStatus(key, value);
 	};
 	const ui = new Proxy(ctx.ui, {
-		get(target, property, receiver) {
+		get(target, property) {
 			if (property === "setStatus") return setStatus;
-			return readHostProxyProperty(target, property, receiver);
+			return readHostProxyProperty(target, property);
 		},
 	});
 	return new Proxy(ctx, {
-		get(target, property, receiver) {
+		get(target, property) {
 			if (property === "ui") return ui;
-			return readHostProxyProperty(target, property, receiver);
+			return readHostProxyProperty(target, property);
 		},
 	});
 }
@@ -188,16 +188,16 @@ export function routeMcpCustomUiThroughCommandDialog<Context extends McpCustomUi
 		return result;
 	}) as ExtensionUIContext["custom"];
 	const ui = new Proxy(ctx.ui, {
-		get(target, property, receiver) {
+		get(target, property) {
 			if (property === "custom") return custom;
-			return readHostProxyProperty(target, property, receiver);
+			return readHostProxyProperty(target, property);
 		},
 	});
 	// SAFETY: the proxy forwards every Context property and replaces only ui with the same structural contract.
 	return new Proxy(ctx, {
-		get(target, property, receiver) {
+		get(target, property) {
 			if (property === "ui") return ui;
-			return readHostProxyProperty(target, property, receiver);
+			return readHostProxyProperty(target, property);
 		},
 	}) as Context;
 }
@@ -228,11 +228,11 @@ export function createMcpAdapterApi<Host extends McpAdapterHost>(
 	}) as ExtensionAPI["on"];
 	// SAFETY: this proxy forwards the Host unchanged and replaces registerCommand with the fork-private handled-result contract.
 	return new Proxy(pi, {
-		get(target, property, receiver) {
+		get(target, property) {
 			if (property === "registerTool") return registerTool;
 			if (property === "registerCommand") return registerCommand;
 			if (property === "on") return on;
-			return readHostProxyProperty(target, property, receiver);
+			return readHostProxyProperty(target, property);
 		},
 	}) as Host & McpAdapterExtensionAPI;
 }

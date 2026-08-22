@@ -2708,7 +2708,7 @@ export function createSuiteToolRegistrationTracker<Host extends SuiteToolTracker
 			if (property === "on") return on;
 			if (property === "registerTool") return registerTool;
 			if (property === "setActiveTools") return setActiveTools;
-			const value = readHostProxyProperty(target, property, target);
+			const value = readHostProxyProperty(target, property);
 			return Guard.IsFunction(value) ? value.bind(target) : value;
 		},
 	});

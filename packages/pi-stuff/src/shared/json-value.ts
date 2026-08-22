@@ -11,18 +11,25 @@ export interface JsonInputObject {
 }
 
 export function isJsonInputValue<Value>(value: Value): value is Value & JsonInputValue {
+	return isJsonInputValueAt(value, new WeakSet());
+}
+
+function isJsonInputValueAt<Value>(value: Value, ancestors: WeakSet<object>): value is Value & JsonInputValue {
 	if (value === null || isRuntimeBoolean(value) || isRuntimeString(value) || isRuntimeUndefined(value)) return true;
 	if (isRuntimeNumber(value)) return Number.isFinite(value);
-	if (Array.isArray(value)) return value.every(isJsonInputValue);
-	if (!isRuntimeObject(value)) return false;
-	return Object.values(value).every(isJsonInputValue);
+	if (!Array.isArray(value) && !isPlainJsonObject(value)) return false;
+	if (ancestors.has(value)) return false;
+	ancestors.add(value);
+	const valid = Object.values(value).every((item) => isJsonInputValueAt(item, ancestors));
+	ancestors.delete(value);
+	return valid;
 }
 
 export function isJsonInputObject<Value>(value: Value): value is Value & JsonInputObject {
-	return value !== null && isRuntimeObject(value) && !Array.isArray(value) && isJsonInputValue(value);
+	return isPlainJsonObject(value) && isJsonInputValue(value);
 }
 
-/** Validate a value before crossing a JSON serialization or persistence boundary. */
+/** Validate JSON-compatible input, where `undefined` represents an omitted optional value. */
 export function requireJsonInputValue<Value>(value: Value, description: string): Value & JsonInputValue {
 	if (!isJsonInputValue(value)) throw new TypeError(`${description} must contain only JSON values`);
 	return value;
@@ -36,11 +43,18 @@ export interface JsonSourceObject {
 }
 
 export function isJsonSourceValue<Value>(value: Value): value is Value & JsonSourceValue {
+	return isJsonSourceValueAt(value, new WeakSet());
+}
+
+function isJsonSourceValueAt<Value>(value: Value, ancestors: WeakSet<object>): value is Value & JsonSourceValue {
 	if (value === null || isRuntimeBoolean(value) || isRuntimeString(value)) return true;
 	if (isRuntimeNumber(value)) return Number.isFinite(value);
-	if (Array.isArray(value)) return value.every(isJsonSourceValue);
-	if (!isRuntimeObject(value)) return false;
-	return Object.values(value).every(isJsonSourceValue);
+	if (!Array.isArray(value) && !isPlainJsonObject(value)) return false;
+	if (ancestors.has(value)) return false;
+	ancestors.add(value);
+	const valid = Object.values(value).every((item) => isJsonSourceValueAt(item, ancestors));
+	ancestors.delete(value);
+	return valid;
 }
 
 export function jsonInputKind(
@@ -55,8 +69,9 @@ export function jsonInputKind(
 }
 
 export function parseJsonValue(text: string): JsonValue {
-	// SAFETY: successful JSON.parse output is recursively limited to the JSON grammar's value types.
-	return JSON.parse(text) as JsonValue;
+	const value = JSON.parse(text);
+	if (!isJsonSourceValue(value)) throw new TypeError("Parsed JSON must contain only finite JSON values");
+	return value;
 }
 
 export function parseJsonObject(text: string): JsonObject {
@@ -67,6 +82,12 @@ export function parseJsonObject(text: string): JsonObject {
 
 function isJsonObject(value: JsonValue): value is JsonObject {
 	return value !== null && isRuntimeObject(value) && !Array.isArray(value);
+}
+
+function isPlainJsonObject<Value>(value: Value): value is Value & JsonInputObject {
+	if (value === null || !isRuntimeObject(value) || Array.isArray(value)) return false;
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
 }
 
 import {

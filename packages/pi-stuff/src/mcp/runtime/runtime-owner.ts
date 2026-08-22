@@ -19,7 +19,7 @@ export function createMcpRuntimeOwner(shutdownGraceMs = HOST_SHUTDOWN_GRACE_MS):
   const cleanups: Array<() => void | Promise<void>> = [];
   let stopPromise: Promise<void> | undefined;
 
-  const reportCleanupFailure = (error: JsonInputValue, late: boolean) => {
+  const reportCleanupFailure = <ErrorValue>(error: ErrorValue, late: boolean) => {
     logger.error(
       `MCP: ${late ? "late " : ""}runtime cleanup failed`,
       error instanceof Error ? error : new Error(formatTerminalError(error)),
@@ -75,9 +75,9 @@ export function createOwnedUi(ui: ExtensionUIContext, owner: McpRuntimeOwner): E
     }
 
     const proxy = new Proxy(value, {
-      get(target, property, receiver) {
+      get(target, property) {
         if (!owner.isActive()) return undefined;
-        const member = readHostProxyProperty(target, property, receiver);
+        const member = readHostProxyProperty(target, property);
         if (isRuntimeFunction(member)) {
           return (...args: JsonInputValue[]) => {
             if (!owner.isActive()) return undefined;
@@ -96,7 +96,7 @@ export function createOwnedUi(ui: ExtensionUIContext, owner: McpRuntimeOwner): E
   return wrap(ui);
 }
 
-export function isAbortError(error: JsonInputValue, signal?: AbortSignal): boolean {
+export function isAbortError<ErrorValue>(error: ErrorValue, signal?: AbortSignal): boolean {
   if (signal?.aborted) return true;
   return error instanceof Error && (error.name === "AbortError" || error.message === "MCP extension runtime stopped");
 }
