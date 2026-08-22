@@ -140,17 +140,16 @@ function projectProtocolLine(line) {
 		return Buffer.from(JSON.stringify({ type: event.type }));
 	}
 	if (event.type === "agent_end") {
-		return Buffer.from(JSON.stringify({ type: event.type, ...(event.willRetry === true ? { willRetry: true } : {}) }));
+		const projected = { type: event.type };
+		if (event.willRetry === true) projected.willRetry = true;
+		return Buffer.from(JSON.stringify(projected));
 	}
 	if (event.type === "tool_execution_update" || event.type === "tool_execution_end") {
-		return Buffer.from(
-			JSON.stringify({
-				type: event.type,
-				...(Guard.IsString(event.toolCallId) ? { toolCallId: event.toolCallId } : {}),
-				...(Guard.IsString(event.toolName) ? { toolName: event.toolName } : {}),
-				...(Guard.IsBoolean(event.isError) ? { isError: event.isError } : {}),
-			}),
-		);
+		const projected = { type: event.type };
+		if (Guard.IsString(event.toolCallId)) projected.toolCallId = event.toolCallId;
+		if (Guard.IsString(event.toolName)) projected.toolName = event.toolName;
+		if (Guard.IsBoolean(event.isError)) projected.isError = event.isError;
+		return Buffer.from(JSON.stringify(projected));
 	}
 	return line;
 }
@@ -653,7 +652,7 @@ async function settle(code, signal) {
 				: observedSignal;
 	const signalNumber = Guard.IsString(signalCode) ? osConstants.signals[signalCode] : undefined;
 	try {
-		writeTerminalDisposition({
+		const disposition = {
 			version: 1,
 			supervisorPid: process.pid,
 			supervisorProcessStartIdentity: processStartIdentity(process.pid),
@@ -672,14 +671,13 @@ async function settle(code, signal) {
 							? "external"
 							: null,
 			reaped,
-			...(childOutputError
-				? {
-						outputForwardingError: String(
-							childOutputError instanceof Error ? childOutputError.message : childOutputError,
-						).slice(0, 1_000),
-					}
-				: {}),
-		});
+		};
+		if (childOutputError) {
+			disposition.outputForwardingError = String(
+				childOutputError instanceof Error ? childOutputError.message : childOutputError,
+			).slice(0, 1_000);
+		}
+		writeTerminalDisposition(disposition);
 	} catch (error) {
 		process.stderr.write(
 			`Agent writer supervisor failed to persist terminal disposition: ${error instanceof Error ? error.message : String(error)}\n`,
