@@ -30,7 +30,7 @@ export interface BtwExchange {
 	readonly response?: BtwResponseMetadata;
 }
 
-type BtwHistoryEvent =
+export type BtwHistoryEvent =
 	| {
 			readonly version: 1;
 			readonly ownerSessionId: string;
@@ -49,7 +49,7 @@ type BtwHistoryEvent =
 			readonly operation: "clear";
 	  };
 
-type AppendHistoryEntry = (customType: string, event: BtwHistoryEvent) => void;
+export type AppendHistoryEntry = (customType: string, event: BtwHistoryEvent) => void;
 
 interface BtwHistoryState {
 	readonly sessions: Map<string, BtwExchange[]>;

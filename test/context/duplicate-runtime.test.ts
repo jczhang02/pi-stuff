@@ -6,17 +6,23 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
 
-type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
+interface HarnessEvent {
+	readonly reason?: string;
+	readonly type?: string;
+}
+type Handler = (event: HarnessEvent, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 type ContextModule = typeof import("../../packages/pi-stuff/src/context-management/index.js");
+type ExtensionEventListener = Parameters<ExtensionAPI["events"]["on"]>[1];
+type ExtensionEventPayload = Parameters<ExtensionEventListener>[0];
 
 class EventBusHarness {
-	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
+	private readonly listeners = new Map<string, Set<ExtensionEventListener>>();
 
-	emit(event: string, data: unknown): void {
+	emit(event: string, data: ExtensionEventPayload): void {
 		for (const listener of Array.from(this.listeners.get(event) ?? [])) listener(data);
 	}
 
-	on(event: string, listener: (data: unknown) => void): () => void {
+	on(event: string, listener: ExtensionEventListener): () => void {
 		const listeners = this.listeners.get(event) ?? new Set();
 		listeners.add(listener);
 		this.listeners.set(event, listeners);
@@ -62,8 +68,8 @@ test("physical Context Module copies share one Host runtime", async () => {
 			}) as ExtensionAPI["on"];
 			const api = createExtensionApi({
 				events: {
-					emit: (event: string, data: unknown) => bus.emit(event, data),
-					on: (event: string, listener: (data: unknown) => void) => bus.on(event, listener),
+					emit: (event, data) => bus.emit(event, data),
+					on: (event, listener) => bus.on(event, listener),
 				},
 				registerCommand() {},
 				registerEntryRenderer() {},

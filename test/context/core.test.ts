@@ -12,7 +12,7 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import piStuffContext, {
 	__test,
@@ -27,13 +27,22 @@ import {
 	withAgentWorkOrigin,
 	withDirectUserActivation,
 } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import { isJsonSourceValue, type JsonSourceValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionCommandContext, testTheme } from "../fixtures/extension-context.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
-type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
+interface HarnessEvent {
+	readonly message?: { readonly role: string };
+	readonly preparation?: { readonly firstKeptEntryId: string; readonly tokensBefore: number };
+	readonly reason?: string;
+	readonly type?: string;
+}
+type Handler = (event: HarnessEvent, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 type Handlers = Map<string, Handler[]>;
+type ExtensionEventListener = Parameters<ExtensionAPI["events"]["on"]>[1];
+type ExtensionEventPayload = Parameters<ExtensionEventListener>[0];
 const UI_RENDER_REQUEST_EVENT = "@jczhang02/pi-stuff-ui/render-request/v1";
 const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object(
 	{
@@ -46,17 +55,25 @@ const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object(
 );
 const HANDLED_ACTION_SCHEMA = Type.Object({ action: Type.Literal("handled") }, { additionalProperties: true });
 const SYSTEM_PROMPT_EVENT_SCHEMA = Type.Object({ systemPrompt: Type.String() }, { additionalProperties: true });
+type ContextActivityData = Static<typeof CONTEXT_ACTIVITY_DATA_SCHEMA>;
+type CompactOptions = NonNullable<Parameters<ExtensionContext["compact"]>[0]>;
+
+const COMPACTION_RESULT = {
+	firstKeptEntryId: "fixture-entry",
+	summary: "fixture compaction",
+	tokensBefore: 1,
+};
 
 type TestCommandDefinition = Parameters<ExtensionAPI["registerCommand"]>[1];
 
 interface HostRegistrations {
 	commands: string[];
 	commandDefinitions?: Map<string, TestCommandDefinition>;
-	entries?: Array<{ customType: string; data: unknown }>;
+	entries?: Array<{ customType: string; data: JsonSourceValue }>;
 	entryRenderers: string[];
 }
 
-function contextActivityData<Value>(value: Value) {
+function contextActivityData(value: JsonSourceValue | undefined): ContextActivityData {
 	if (!Check(CONTEXT_ACTIVITY_DATA_SCHEMA, value)) throw new Error("Expected Context activity data");
 	return value;
 }
@@ -67,7 +84,7 @@ function apiFor(
 	registrations: HostRegistrations = { commands: [], entryRenderers: [] },
 ): ExtensionAPI {
 	let activeTools: string[] = [];
-	const eventBus = new Map<string, Array<(value: unknown) => void>>();
+	const eventBus = new Map<string, ExtensionEventListener[]>();
 	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
 	const on = ((event: string, handler: Handler): void => {
 		const current = handlers.get(event) ?? [];
@@ -75,14 +92,15 @@ function apiFor(
 		handlers.set(event, current);
 	}) as ExtensionAPI["on"];
 	return createExtensionApi({
-		appendEntry(customType: string, data: unknown): void {
+		appendEntry(customType, data): void {
+			if (!isJsonSourceValue(data)) throw new Error("Expected a serializable Context entry");
 			registrations.entries?.push({ customType, data });
 		},
 		events: {
-			emit(name: string, value: unknown): void {
+			emit(name: string, value: ExtensionEventPayload): void {
 				for (const listener of eventBus.get(name) ?? []) listener(value);
 			},
-			on(name: string, listener: (value: unknown) => void): () => void {
+			on(name: string, listener: ExtensionEventListener): () => void {
 				const listeners = eventBus.get(name) ?? [];
 				listeners.push(listener);
 				eventBus.set(name, listeners);
@@ -132,19 +150,34 @@ function context(
 	});
 }
 
-async function emit(handlers: Handlers, name: string, event: unknown, ctx = context()): Promise<void> {
+async function emit<Event extends HarnessEvent>(
+	handlers: Handlers,
+	name: string,
+	event: Event,
+	ctx = context(),
+): Promise<void> {
 	for (const handler of handlers.get(name) ?? []) await handler(event, ctx);
 }
 
-async function emitUntilHandled(handlers: Handlers, name: string, event: unknown, ctx = context()): Promise<void> {
+async function emitUntilHandled<Event extends HarnessEvent>(
+	handlers: Handlers,
+	name: string,
+	event: Event,
+	ctx = context(),
+): Promise<void> {
 	for (const handler of handlers.get(name) ?? []) {
 		const result = await handler(event, ctx);
 		if (Check(HANDLED_ACTION_SCHEMA, result)) return;
 	}
 }
 
-async function emitResults(handlers: Handlers, name: string, event: unknown, ctx = context()): Promise<unknown[]> {
-	const results: unknown[] = [];
+async function emitResults<Event extends HarnessEvent>(
+	handlers: Handlers,
+	name: string,
+	event: Event,
+	ctx = context(),
+): Promise<Array<object | undefined>> {
+	const results: Array<object | undefined> = [];
 	for (const handler of handlers.get(name) ?? []) results.push(await handler(event, ctx));
 	return results;
 }
@@ -210,9 +243,10 @@ describe("Context capability lifecycle", () => {
 		const handlers: Handlers = new Map();
 		const api = apiFor(handlers);
 		const deliveries: Array<{ triggerTurn?: boolean }> = [];
-		Reflect.set(api, "sendMessage", (_message: unknown, options?: { triggerTurn?: boolean }) => {
+		const sendMessage: ExtensionAPI["sendMessage"] = (_message, options) => {
 			deliveries.push(options ?? {});
-		});
+		};
+		Reflect.set(api, "sendMessage", sendMessage);
 		let releaseActivation = (): void => {};
 		const activationGate = new Promise<void>((resolve) => {
 			releaseActivation = resolve;
@@ -268,10 +302,10 @@ describe("Context capability lifecycle", () => {
 		Reflect.set(api, "sendMessage", () => order.push("send"));
 		const ctx = context();
 		Object.assign(ctx, {
-			compact: (options: { onComplete?: (result: unknown) => void }) => {
+			compact: (options: CompactOptions) => {
 				expect(isSuiteNativeCompactionPreflight(ctx)).toBe(true);
 				order.push("compact");
-				options.onComplete?.({});
+				options.onComplete?.(COMPACTION_RESULT);
 			},
 			getContextUsage: () => ({ contextWindow: 100, percent: 90, tokens: 90 }),
 			isIdle: () => true,
@@ -850,7 +884,7 @@ describe("Context capability lifecycle", () => {
 	test("reports unavailable maintenance through a Pi Stuff activity", async () => {
 		const handlers: Handlers = new Map();
 		const commandDefinitions = new Map<string, TestCommandDefinition>();
-		const entries: Array<{ customType: string; data: unknown }> = [];
+		const entries: NonNullable<HostRegistrations["entries"]> = [];
 		const registrations: HostRegistrations = {
 			commands: [],
 			commandDefinitions,
@@ -887,7 +921,7 @@ describe("Context capability lifecycle", () => {
 	test("executes a rebuild confirmed in the Context dialog without asking the user to repeat the command", async () => {
 		const handlers: Handlers = new Map();
 		const commandDefinitions = new Map<string, TestCommandDefinition>();
-		const entries: Array<{ customType: string; data: unknown }> = [];
+		const entries: NonNullable<HostRegistrations["entries"]> = [];
 		const registrations: HostRegistrations = {
 			commands: [],
 			commandDefinitions,
@@ -1036,7 +1070,7 @@ describe("Context capability lifecycle", () => {
 	test("adapts command progress into one model-hidden Pi Stuff activity", async () => {
 		const handlers: Handlers = new Map();
 		const commandDefinitions = new Map<string, TestCommandDefinition>();
-		const entries: Array<{ customType: string; data: unknown }> = [];
+		const entries: NonNullable<HostRegistrations["entries"]> = [];
 		const registrations: HostRegistrations = {
 			commands: [],
 			commandDefinitions,
@@ -1086,7 +1120,7 @@ describe("Context capability lifecycle", () => {
 	test("routes detached maintenance completion back to its running activity", async () => {
 		const handlers: Handlers = new Map();
 		const commandDefinitions = new Map<string, TestCommandDefinition>();
-		const entries: Array<{ customType: string; data: unknown }> = [];
+		const entries: NonNullable<HostRegistrations["entries"]> = [];
 		const registrations: HostRegistrations = {
 			commands: [],
 			commandDefinitions,
@@ -1138,7 +1172,7 @@ describe("Context capability lifecycle", () => {
 	test("does not route detached maintenance updates into a different Session", async () => {
 		const handlers: Handlers = new Map();
 		const commandDefinitions = new Map<string, TestCommandDefinition>();
-		const entries: Array<{ customType: string; data: unknown }> = [];
+		const entries: NonNullable<HostRegistrations["entries"]> = [];
 		const registrations: HostRegistrations = {
 			commands: [],
 			commandDefinitions,
@@ -1197,7 +1231,7 @@ describe("Context capability lifecycle", () => {
 	test("releases detached maintenance ownership when its handler rejects", async () => {
 		const handlers: Handlers = new Map();
 		const commandDefinitions = new Map<string, TestCommandDefinition>();
-		const entries: Array<{ customType: string; data: unknown }> = [];
+		const entries: NonNullable<HostRegistrations["entries"]> = [];
 		const registrations: HostRegistrations = {
 			commands: [],
 			commandDefinitions,
@@ -1250,7 +1284,7 @@ describe("Context capability lifecycle", () => {
 	test("settles an unexpected maintenance failure into the same activity", async () => {
 		const handlers: Handlers = new Map();
 		const commandDefinitions = new Map<string, TestCommandDefinition>();
-		const entries: Array<{ customType: string; data: unknown }> = [];
+		const entries: NonNullable<HostRegistrations["entries"]> = [];
 		const registrations: HostRegistrations = {
 			commands: [],
 			commandDefinitions,
@@ -1708,12 +1742,12 @@ describe("Context capability lifecycle", () => {
 		});
 		let tokens = 400_001;
 		const ctx = Object.assign(context(), {
-			compact: (options: { onComplete?: (result: unknown) => void }) => {
+			compact: (options: CompactOptions) => {
 				compactions++;
 				void emitResults(handlers, "session_before_compact", {}, ctx).then((results) => {
 					compactionResults = results;
 					tokens = 1_000;
-					options.onComplete?.({});
+					options.onComplete?.(COMPACTION_RESULT);
 				});
 			},
 			getContextUsage: () => ({ contextWindow: 200_000, percent: (tokens / 200_000) * 100, tokens }),

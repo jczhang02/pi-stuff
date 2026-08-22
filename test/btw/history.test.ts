@@ -3,13 +3,16 @@ import {
 	createEventBus,
 	type ExtensionAPI,
 	type ExtensionContext,
+	type SessionShutdownEvent,
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import {
+	type AppendHistoryEntry,
 	BTW_HISTORY_BYTES_LIMIT,
 	BTW_HISTORY_ENTRY_TYPE,
 	BTW_HISTORY_LIMIT,
 	type BtwExchange,
+	type BtwHistoryEvent,
 	clearBtwHistory,
 	clearEarlierBtwHistory,
 	hydrateBtwHistory,
@@ -23,7 +26,7 @@ import { createExtensionContext } from "../fixtures/extension-context.js";
 
 beforeEach(() => resetBtwHistoryForTests());
 
-function record(sessionKey: string, value: number, appendEntry?: (customType: string, data: unknown) => void) {
+function record(sessionKey: string, value: number, appendEntry?: AppendHistoryEntry) {
 	return recordBtwExchange(
 		sessionKey,
 		{
@@ -36,7 +39,7 @@ function record(sessionKey: string, value: number, appendEntry?: (customType: st
 	);
 }
 
-function persistedEntry(index: number, data: unknown): SessionEntry {
+function persistedEntry(index: number, data: BtwHistoryEvent): SessionEntry {
 	return {
 		type: "custom",
 		id: `entry-${index}`,
@@ -75,12 +78,13 @@ describe("BTW display history", () => {
 	});
 
 	test("never retains a single exchange whose serialized form exceeds the 8 MiB guard", () => {
-		const seedEvents: unknown[] = [];
+		const seedEvents: BtwHistoryEvent[] = [];
 		record("seed", 1, (_customType, event) => seedEvents.push(event));
-		const seedEvent = seedEvents[0] as { exchange: Record<string, unknown> };
+		const seedEvent = seedEvents[0];
+		if (seedEvent?.operation !== "record") throw new Error("Expected a persisted record event");
 		resetBtwHistoryForTests();
 		const oversizedAnswer = "x".repeat(BTW_HISTORY_BYTES_LIMIT);
-		const persisted: unknown[] = [];
+		const persisted: BtwHistoryEvent[] = [];
 		recordBtwExchange(
 			"session",
 			{
@@ -104,8 +108,8 @@ describe("BTW display history", () => {
 	});
 
 	test("replays invisible custom entries on resume but ignores them in a new or forked session", () => {
-		const events: unknown[] = [];
-		const appendEntry = (customType: string, data: unknown): void => {
+		const events: BtwHistoryEvent[] = [];
+		const appendEntry: AppendHistoryEntry = (customType, data): void => {
 			expect(customType).toBe(BTW_HISTORY_ENTRY_TYPE);
 			events.push(data);
 		};
@@ -155,8 +159,8 @@ describe("BTW display history", () => {
 	});
 
 	test("replays retain and clear operations without putting history in model context", () => {
-		const events: unknown[] = [];
-		const appendEntry = (_customType: string, data: unknown): void => {
+		const events: BtwHistoryEvent[] = [];
+		const appendEntry: AppendHistoryEntry = (_customType, data): void => {
 			events.push(data);
 		};
 		const first = record("session", 1, appendEntry);
@@ -182,9 +186,10 @@ describe("BTW display history", () => {
 	});
 
 	test("evicts only the shutting-down session and can replay that session again", async () => {
-		const shutdownHandlers: Array<(event: unknown, ctx: ExtensionContext) => Promise<void> | void> = [];
+		type ShutdownHandler = (event: SessionShutdownEvent, ctx: ExtensionContext) => Promise<void> | void;
+		const shutdownHandlers: ShutdownHandler[] = [];
 		// SAFETY: this test adapter records the one shutdown overload without changing its callback.
-		const on = ((event: string, handler: (event: unknown, ctx: ExtensionContext) => Promise<void> | void) => {
+		const on = ((event: string, handler: ShutdownHandler) => {
 			if (event === "session_shutdown") shutdownHandlers.push(handler);
 		}) as ExtensionAPI["on"];
 		const api: BtwHost = {
@@ -195,20 +200,22 @@ describe("BTW display history", () => {
 		};
 		piStuffBtw(api);
 
-		const persisted: unknown[] = [];
+		const persisted: BtwHistoryEvent[] = [];
 		record("session-a", 1, (_customType, event) => persisted.push(event));
 		record("session-b", 2);
 		expect(shutdownHandlers).toHaveLength(1);
 
 		await shutdownHandlers[0]?.(
-			{ reason: "switch", type: "session_shutdown" },
+			{ reason: "resume", type: "session_shutdown" },
 			createExtensionContext({ sessionManager: { getSessionId: () => "session-a" } }),
 		);
 
 		expect(readBtwHistory("session-a")).toEqual([]);
 		expect(readBtwHistory("session-b").map((exchange) => exchange.question)).toEqual(["question 2"]);
+		const persistedEvent = persisted[0];
+		if (!persistedEvent) throw new Error("Expected a persisted BTW history event");
 		expect(
-			hydrateBtwHistory("session-a", [persistedEntry(0, persisted[0])]).map((exchange) => exchange.question),
+			hydrateBtwHistory("session-a", [persistedEntry(0, persistedEvent)]).map((exchange) => exchange.question),
 		).toEqual(["question 1"]);
 	});
 });

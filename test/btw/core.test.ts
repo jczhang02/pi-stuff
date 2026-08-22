@@ -229,12 +229,19 @@ describe("BTW context budget", () => {
 describe("BTW stream execution", () => {
 	test("reuses captured Magic memory without re-running stateful projection for a frozen branch", async () => {
 		type ContextHandlerResult = object | undefined | Promise<object | undefined>;
-		const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => ContextHandlerResult>>();
+		interface ContextHarnessEvent {
+			readonly messages?: readonly Message[];
+			readonly prompt?: string;
+			readonly reason?: string;
+			readonly type?: string;
+		}
+		type ContextHandler = (event: ContextHarnessEvent, ctx: ExtensionContext) => ContextHandlerResult;
+		const handlers = new Map<string, ContextHandler[]>();
 		const activeTools: string[] = [];
 		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const api = {
 			events: {},
-			on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => ContextHandlerResult) => {
+			on: (event: string, handler: ContextHandler) => {
 				const current = handlers.get(event) ?? [];
 				current.push(handler);
 				handlers.set(event, current);
@@ -256,7 +263,7 @@ describe("BTW stream execution", () => {
 						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						const register = magicPi.on.bind(magicPi) as (
 							event: string,
-							handler: (event: unknown) => ContextHandlerResult,
+							handler: (event: ContextHarnessEvent) => ContextHandlerResult,
 						) => void;
 						register("context", () => {
 							magicTransforms += 1;
