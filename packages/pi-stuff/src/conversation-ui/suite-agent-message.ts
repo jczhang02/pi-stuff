@@ -6,7 +6,7 @@ const SUITE_AGENT_MESSAGE_BROKER_DISCOVERY = "@jczhang02/pi-stuff-ui/suite-agent
 const SUITE_AGENT_MESSAGE_BROKERS = Symbol.for("@jczhang02/pi-stuff-ui/suite-agent-message-brokers/v1");
 const NATIVE_COMPACTION_PREFLIGHTS = Symbol.for("@jczhang02/pi-stuff-ui/native-compaction-preflights/v1");
 
-type SuiteAgentMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
+export type SuiteAgentMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
 export type SuiteAgentMessageOptions = Parameters<ExtensionAPI["sendMessage"]>[1];
 
 export interface SuiteAgentMessageHost {

@@ -4,11 +4,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { type MonitorInput, startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
 import { BackgroundWorkRuntime } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
+import type {
+	SuiteAgentMessage,
+	SuiteAgentMessageOptions,
+} from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
 
 const roots: string[] = [];
 const servers: Bun.Server<unknown>[] = [];
+const COMPLETION_DETAILS_SCHEMA = Type.Object(
+	{
+		outcomes: Type.Array(Type.Object({ status: Type.String() }, { additionalProperties: true })),
+	},
+	{ additionalProperties: true },
+);
 
 afterEach(() => {
 	for (const server of servers.splice(0)) server.stop(true);
@@ -18,14 +30,10 @@ afterEach(() => {
 function setup() {
 	const root = mkdtempSync(join(tmpdir(), "pi-stuff-monitor-test-"));
 	roots.push(root);
-	const messages: Array<{
-		message: { details: { outcomes: Array<{ status: string }> } };
-		options: { triggerTurn: boolean };
-	}> = [];
+	const messages: Array<{ message: SuiteAgentMessage; options: SuiteAgentMessageOptions }> = [];
 	const pi = {
-		sendMessage: (message: unknown, options?: unknown) => {
-			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-			messages.push({ message, options } as never);
+		sendMessage: (message: SuiteAgentMessage, options?: SuiteAgentMessageOptions) => {
+			messages.push({ message, options });
 		},
 	};
 	const runtime = new BackgroundWorkRuntime({ cwd: root, pi, sessionId: "monitor-test" });
@@ -50,11 +58,16 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 8_000): Promise<v
 	throw new Error("timed out waiting for Monitor result");
 }
 
+function firstOutcomeStatus(messages: readonly { readonly message: SuiteAgentMessage }[]): string | undefined {
+	const details = messages[0]?.message.details;
+	return Check(COMPLETION_DETAILS_SCHEMA, details) ? details.outcomes[0]?.status : undefined;
+}
+
 async function run(input: Omit<MonitorInput, "toolCallId">): Promise<string> {
 	const state = setup();
 	await startMonitor(state.runtime, { ...input, toolCallId: "monitor-call" }, state.context);
 	await waitUntil(() => state.messages.length === 1);
-	const status = state.messages[0]?.message.details.outcomes[0]?.status;
+	const status = firstOutcomeStatus(state.messages);
 	await state.runtime.shutdown();
 	return status ?? "missing";
 }
@@ -124,7 +137,7 @@ describe("file and log Monitor", () => {
 		expect(state.messages).toHaveLength(0);
 		appendFileSync(path, "READY from this run\n");
 		await waitUntil(() => state.messages.length === 1);
-		expect(state.messages[0]?.message.details.outcomes[0]?.status).toBe("completed");
+		expect(firstOutcomeStatus(state.messages)).toBe("completed");
 		await state.runtime.shutdown();
 	});
 
@@ -145,7 +158,7 @@ describe("file and log Monitor", () => {
 			state.context,
 		);
 		await waitUntil(() => state.messages.length === 1);
-		expect(state.messages[0]?.message.details.outcomes[0]?.status).toBe("failed");
+		expect(firstOutcomeStatus(state.messages)).toBe("failed");
 		await state.runtime.shutdown();
 	});
 
@@ -195,7 +208,7 @@ describe("HTTP Monitor", () => {
 		expect(state.messages).toHaveLength(0);
 		ready = true;
 		await waitUntil(() => state.messages.length === 1);
-		expect(state.messages[0]?.message.details.outcomes[0]?.status).toBe("completed");
+		expect(firstOutcomeStatus(state.messages)).toBe("completed");
 		await state.runtime.shutdown();
 	});
 });

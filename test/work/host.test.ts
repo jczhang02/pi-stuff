@@ -6,25 +6,54 @@ import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
+	MessageRenderOptions,
 	TerminalInputHandler,
 	Theme,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
 import type { TSchema } from "typebox";
-import piStuffWork from "../../packages/pi-stuff/src/background-work/index.js";
+import piStuffWork, {
+	type BackgroundWorkOutcome,
+	type CompletionDetails,
+} from "../../packages/pi-stuff/src/background-work/index.js";
 import type { BackgroundWorkRuntime } from "../../packages/pi-stuff/src/background-work/src/runtime.js";
+import type {
+	SuiteAgentMessage,
+	SuiteAgentMessageOptions,
+} from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
 import { SELF_RENDERED_TRANSCRIPT_PADDING } from "../../packages/pi-stuff/src/conversation-ui/transcript.js";
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 
-type Handler = (event: unknown, context: ExtensionContext) => object | undefined | Promise<object | undefined>;
+interface HostEvent {
+	readonly type: string;
+}
+type Handler = (event: HostEvent, context: ExtensionContext) => object | undefined | Promise<object | undefined>;
+type CompletionRenderer = (
+	message: { readonly details?: CompletionDetails },
+	options: MessageRenderOptions,
+	theme: Theme,
+) => Component | undefined;
+
+function outcome(status: BackgroundWorkOutcome["status"], summary: string): BackgroundWorkOutcome {
+	return {
+		endedAt: 2,
+		id: status,
+		kind: "shell",
+		startedAt: 1,
+		status,
+		summary,
+		title: summary,
+	};
+}
 
 class HostHarness {
 	readonly activeTools = new Set<string>(["bash"]);
 	readonly commands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]>();
 	readonly handlers = new Map<string, Handler[]>();
-	readonly messages: Array<{ readonly message: unknown; readonly options: unknown }> = [];
-	readonly renderers = new Map<string, (message: unknown, options: unknown, theme: Theme) => object | undefined>();
+	readonly messages: Array<{ readonly message: SuiteAgentMessage; readonly options: SuiteAgentMessageOptions }> = [];
+	readonly renderers = new Map<string, CompletionRenderer>();
 	readonly tools = new Map<string, ToolDefinition<TSchema, unknown>>();
 	terminalInput: TerminalInputHandler | undefined;
 
@@ -44,11 +73,8 @@ class HostHarness {
 				this.commands.set(name, command);
 			},
 			registerMessageRenderer: (name, renderer) => {
-				// SAFETY: the harness stores the renderer without changing its message, options, theme, or result.
-				this.renderers.set(
-					name,
-					renderer as (message: unknown, options: unknown, theme: Theme) => object | undefined,
-				);
+				// SAFETY: Pi Stuff Work registers this renderer with CompletionDetails and reads no other message fields.
+				this.renderers.set(name, renderer as CompletionRenderer);
 			},
 			registerTool: (tool) => {
 				// SAFETY: this test registry erases only generic renderer state and retains the original Tool object.
@@ -123,13 +149,13 @@ describe("Pi Stuff Work host composition", () => {
 			{
 				details: {
 					outcomes: [
-						{ status: "completed", summary: "Background Shell finished" },
-						{ status: "failed", summary: "Monitor failed" },
-						{ status: "stopped", summary: "Monitor stopped" },
+						outcome("completed", "Background Shell finished"),
+						outcome("failed", "Monitor failed"),
+						outcome("stopped", "Monitor stopped"),
 					],
 				},
 			},
-			{},
+			{ expanded: false, outputPad: 0 },
 			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 			{
 				fg: (color: string, value: string) => {

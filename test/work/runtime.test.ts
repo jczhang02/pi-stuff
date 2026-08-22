@@ -14,7 +14,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { startMonitor } from "../../packages/pi-stuff/src/background-work/src/monitor.js";
 import { BoundedOutputFile, readBoundedTail } from "../../packages/pi-stuff/src/background-work/src/output.js";
 import {
@@ -45,11 +47,36 @@ import {
 	DiagnosticChannel,
 	resetDiagnosticProcessState,
 } from "../../packages/pi-stuff/src/conversation-ui/diagnostics.js";
+import type {
+	SuiteAgentMessage,
+	SuiteAgentMessageHost,
+	SuiteAgentMessageOptions,
+} from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
 
 const roots: string[] = [];
 const children: ChildProcess[] = [];
 const escapedProcessGroups: number[] = [];
 const TEST_WORK_AUTHORITY_KEY = Buffer.alloc(32, 0x5a);
+const COMPLETION_DETAILS_SCHEMA = Type.Object(
+	{
+		outcomes: Type.Array(
+			Type.Object(
+				{
+					parentRunOrigin: Type.Optional(Type.Union([Type.Literal("automatic"), Type.Literal("user")])),
+				},
+				{ additionalProperties: true },
+			),
+		),
+	},
+	{ additionalProperties: true },
+);
+type ExtensionEventListener = Parameters<ExtensionAPI["events"]["on"]>[1];
+type ExtensionEventPayload = Parameters<ExtensionEventListener>[0];
+
+interface DeliveredMessage {
+	readonly message: SuiteAgentMessage;
+	readonly options: SuiteAgentMessageOptions;
+}
 
 afterEach(() => {
 	resetDiagnosticProcessState();
@@ -123,9 +150,9 @@ function context(cwd: string): ExtensionContext {
 	} as ExtensionContext;
 }
 
-function runtime(cwd: string, messages: unknown[] = [], backgroundAfterMs?: number): BackgroundWorkRuntime {
+function runtime(cwd: string, messages: DeliveredMessage[] = [], backgroundAfterMs?: number): BackgroundWorkRuntime {
 	const pi = {
-		sendMessage: (message: unknown, options?: unknown) => {
+		sendMessage: (message: SuiteAgentMessage, options?: SuiteAgentMessageOptions) => {
 			messages.push({ message, options });
 		},
 	};
@@ -145,18 +172,19 @@ function runtime(cwd: string, messages: unknown[] = [], backgroundAfterMs?: numb
 function attributedRuntime(
 	cwd: string,
 	readOrigin: () => "automatic" | "user",
-	messages: unknown[] = [],
-	sendMessage: (message: unknown, options?: unknown) => void = (message, options) =>
-		messages.push({ message, options }),
+	messages: DeliveredMessage[] = [],
+	sendMessage: SuiteAgentMessageHost["sendMessage"] = (message, options) => {
+		messages.push({ message, options });
+	},
 ) {
 	let refreshRequests = 0;
-	const listeners = new Map<string, Set<(data: unknown) => void>>();
+	const listeners = new Map<string, Set<ExtensionEventListener>>();
 	const events = {
-		emit(event: string, data: unknown) {
+		emit(event: string, data: ExtensionEventPayload) {
 			if (event.includes("statusline-git-refresh-after-user-work-request")) refreshRequests += 1;
 			for (const listener of Array.from(listeners.get(event) ?? [])) listener(data);
 		},
-		on(event: string, listener: (data: unknown) => void) {
+		on(event: string, listener: ExtensionEventListener) {
 			let registered = listeners.get(event);
 			if (!registered) {
 				registered = new Set();
@@ -664,7 +692,7 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("delivers bounded background output when the persisted output path disappears", async () => {
 		const root = temporaryRoot();
-		const messages: unknown[] = [];
+		const messages: DeliveredMessage[] = [];
 		const active = runtime(root, messages);
 		await active.executeBash(
 			{
@@ -724,13 +752,13 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("retries a transient terminal notification failure without duplicating delivery", async () => {
 		const root = temporaryRoot();
-		const messages: Array<{ message: unknown; options: unknown }> = [];
+		const messages: DeliveredMessage[] = [];
 		let attempts = 0;
 		const active = new BackgroundWorkRuntime({
 			backgroundAfterMs: 50,
 			cwd: root,
 			pi: {
-				sendMessage: (message: unknown, options: unknown) => {
+				sendMessage: (message: SuiteAgentMessage, options?: SuiteAgentMessageOptions) => {
 					attempts += 1;
 					if (attempts === 1) throw Object.assign(new Error("injected transient send failure"), { code: "EIO" });
 					messages.push({ message, options });
@@ -805,7 +833,7 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("contains rejected timeout, abort, and output-limit stops without an unhandled rejection", async () => {
 		const unhandled: unknown[] = [];
-		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		const onUnhandled: NodeJS.UnhandledRejectionListener = (reason) => unhandled.push(reason);
 		process.on("unhandledRejection", onUnhandled);
 		try {
 			for (const trigger of ["timeout", "abort", "output-limit"] as const) {
@@ -1138,7 +1166,7 @@ describe("BackgroundWorkRuntime", () => {
 	test("refreshes Git after a user-attributed Background Shell finishes after its parent settles", async () => {
 		const root = temporaryRoot();
 		const marker = join(root, "user-background-edit");
-		const messages: unknown[] = [];
+		const messages: DeliveredMessage[] = [];
 		let deliveryAttempts = 0;
 		let origin: "automatic" | "user" = "user";
 		const { active, readRefreshRequests } = attributedRuntime(
@@ -1166,13 +1194,13 @@ describe("BackgroundWorkRuntime", () => {
 			await waitUntil(() => existsSync(marker) && messages.length === 1);
 			expect(readRefreshRequests()).toBe(1);
 			expect(deliveryAttempts).toBe(2);
-			const delivered = messages[0] as {
-				message: { details: { outcomes: Array<Record<string, unknown>> } };
-				options: { triggerTurn: boolean };
-			};
+			const delivered = messages[0];
+			if (!delivered) throw new Error("Background Shell result was not delivered");
+			const details = delivered.message.details;
+			if (!Check(COMPLETION_DETAILS_SCHEMA, details)) throw new Error("Background Shell details are invalid");
 			expect(readAgentWorkOrigin(delivered.message)).toBe("user");
-			expect(delivered.message.details.outcomes[0]?.["parentRunOrigin"]).toBeUndefined();
-			expect(delivered.options.triggerTurn).toBeFalse();
+			expect(details.outcomes[0]?.parentRunOrigin).toBeUndefined();
+			expect(delivered.options?.triggerTurn).toBeFalse();
 		} finally {
 			await active.shutdown();
 		}
@@ -1181,7 +1209,7 @@ describe("BackgroundWorkRuntime", () => {
 	test("does not refresh Git or wake the Agent after an automatic Background Shell finishes", async () => {
 		const root = temporaryRoot();
 		const marker = join(root, "automatic-background-edit");
-		const messages: unknown[] = [];
+		const messages: DeliveredMessage[] = [];
 		const { active, readRefreshRequests } = attributedRuntime(root, () => "automatic", messages);
 		try {
 			await active.executeBash(
@@ -1226,7 +1254,7 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("delivers a one-shot file Monitor result without conversational polling", async () => {
 		const root = temporaryRoot();
-		const messages: unknown[] = [];
+		const messages: DeliveredMessage[] = [];
 		const active = runtime(root, messages);
 		const target = join(root, "ready.log");
 		const started = await startMonitor(
@@ -1259,7 +1287,7 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("does not enqueue a second Agent turn for work the user explicitly stopped", async () => {
 		const root = temporaryRoot();
-		const messages: unknown[] = [];
+		const messages: DeliveredMessage[] = [];
 		const active = runtime(root, messages);
 		try {
 			await active.executeBash(
@@ -1298,7 +1326,7 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("retains a failed Background Shell receipt with bounded in-memory fallback", async () => {
 		const root = temporaryRoot();
-		const messages: unknown[] = [];
+		const messages: DeliveredMessage[] = [];
 		const active = runtime(root, messages);
 		try {
 			const launched = await active.executeBash(
@@ -1393,7 +1421,7 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("bounds and fairly tails a full batch of missing-file notifications", async () => {
 		const root = temporaryRoot();
-		const messages: unknown[] = [];
+		const messages: DeliveredMessage[] = [];
 		const active = runtime(root, messages);
 		try {
 			await Promise.all(
@@ -1438,7 +1466,7 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("keeps live output paths without duplicating recent output in notification details", async () => {
 		const root = temporaryRoot();
-		const messages: unknown[] = [];
+		const messages: DeliveredMessage[] = [];
 		const active = runtime(root, messages);
 		try {
 			await active.executeBash(
@@ -1464,7 +1492,7 @@ describe("BackgroundWorkRuntime", () => {
 
 	test("enforces a Background Shell runtime timeout after returning control", async () => {
 		const root = temporaryRoot();
-		const messages: unknown[] = [];
+		const messages: DeliveredMessage[] = [];
 		const active = runtime(root, messages);
 		await active.executeBash(
 			{ command: "sleep 30", runInBackground: true, timeoutSeconds: 0.2, toolCallId: "tool-timeout" },

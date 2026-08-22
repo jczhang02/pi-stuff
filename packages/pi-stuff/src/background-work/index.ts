@@ -24,7 +24,7 @@ export { type ReconciliationResult, reconcileStaleRuns, WorkRunStorage } from ".
 
 const COMPLETION_MESSAGE_TYPE = "pi-stuff-background-work-result";
 
-interface CompletionDetails {
+export interface CompletionDetails {
 	readonly outcomes?: readonly BackgroundWorkOutcome[];
 }
 
