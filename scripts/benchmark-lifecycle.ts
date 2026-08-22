@@ -3,7 +3,16 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { AssistantMessage, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
+import {
+	isJsonInputObject,
+	isJsonInputValue,
+	type JsonInputObject,
+	type JsonInputValue,
+	parseJsonValue,
+} from "../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_BUN_VERSION } from "./pi-host-contract.js";
 import { stageCertifiedPiHost } from "./verify-pi-host-provenance.js";
 
@@ -28,6 +37,20 @@ const DEFAULT_SIZES = [
 	{ columns: 100, rows: 32 },
 	{ columns: 64, rows: 28 },
 ] as const;
+const SUITE_TRACE_SCHEMA = Type.Object(
+	{
+		events: Type.Array(
+			Type.Object(
+				{
+					atMs: Type.Number(),
+					label: Type.String(),
+				},
+				{ additionalProperties: true },
+			),
+		),
+	},
+	{ additionalProperties: true },
+);
 
 export type Variant = (typeof VARIANTS)[number];
 export type Scenario = (typeof SCENARIOS)[number];
@@ -108,16 +131,16 @@ export interface CellSummary {
 }
 
 interface ExpectMetrics {
-	readonly acknowledgementMs?: number;
-	readonly interruptMs?: number;
-	readonly providerStartMs?: number;
-	readonly reloadMs?: number;
-	readonly responseMs?: number;
-	readonly shutdownMs: number;
-	readonly steadyAcknowledgementMs?: number;
-	readonly steadyProviderStartMs?: number;
-	readonly steadyResponseMs?: number;
-	readonly startupMs: number;
+	acknowledgementMs?: number;
+	interruptMs?: number;
+	providerStartMs?: number;
+	reloadMs?: number;
+	responseMs?: number;
+	shutdownMs: number;
+	steadyAcknowledgementMs?: number;
+	steadyProviderStartMs?: number;
+	steadyResponseMs?: number;
+	startupMs: number;
 }
 
 export interface HostTiming {
@@ -168,10 +191,11 @@ function listValue<T extends string>(value: string | undefined, flag: string, al
 				.filter(Boolean),
 		),
 	];
-	if (values.length === 0 || values.some((entry) => !allowed.includes(entry as T))) {
-		fail(`${flag} must contain only: ${allowed.join(", ")}`);
-	}
-	return values as T[];
+	return values.map((entry) => {
+		const selected = allowed.find((candidate) => candidate === entry);
+		if (!selected) fail(`${flag} must contain only: ${allowed.join(", ")}`);
+		return selected;
+	});
 }
 
 function terminalSizes(value: string | undefined): readonly TerminalSize[] {
@@ -292,7 +316,9 @@ export function percentile(values: readonly number[], fraction: number): number 
 	if (!(fraction >= 0 && fraction <= 1)) fail("percentile fraction must be from zero through one");
 	const sorted = [...values].sort((left, right) => left - right);
 	const index = Math.max(0, Math.ceil(fraction * sorted.length) - 1);
-	return sorted[index] as number;
+	const result = sorted[index];
+	if (result === undefined) fail("percentile selected no sample");
+	return result;
 }
 
 function rounded(value: number): number {
@@ -309,16 +335,12 @@ export function summarize(values: readonly number[]): MetricSummary {
 	};
 }
 
-function objectValue(value: unknown): Record<string, unknown> | undefined {
-	return isRuntimeObject(value) && value !== null ? (value as Record<string, unknown>) : undefined;
+function objectValue(value: JsonInputValue): JsonInputObject | undefined {
+	return isJsonInputObject(value) ? value : undefined;
 }
 
-function serializedIncludes(value: unknown, marker: string): boolean {
-	try {
-		return JSON.stringify(value).includes(marker);
-	} catch {
-		return false;
-	}
+function serializedIncludes(value: JsonInputValue, marker: string): boolean {
+	return JSON.stringify(value)?.includes(marker) ?? false;
 }
 
 export function lifecycleSessionFindings(
@@ -329,12 +351,14 @@ export function lifecycleSessionFindings(
 	expectedLongToolBytes = 0,
 ): string[] {
 	const findings: string[] = [];
-	const header = objectValue(entries[0]);
+	const parsedEntries = entries.filter(isJsonInputValue);
+	if (parsedEntries.length !== entries.length) findings.push("Session JSONL contains a non-JSON value");
+	const header = objectValue(parsedEntries[0]);
 	if (header?.["type"] !== "session" || header["version"] !== 3) {
 		findings.push("Session JSONL is missing its certified version 3 header");
 	}
 	if (
-		!entries.some((entry) => {
+		!parsedEntries.some((entry) => {
 			const record = objectValue(entry);
 			return (
 				record?.["type"] === "model_change" &&
@@ -345,9 +369,10 @@ export function lifecycleSessionFindings(
 	) {
 		findings.push("Session JSONL lost its deterministic model selection");
 	}
-	const messages = entries.flatMap((entry) => {
+	const messages = parsedEntries.flatMap((entry) => {
 		const message = objectValue(entry)?.["message"];
-		return objectValue(message) ? [message as Record<string, unknown>] : [];
+		const object = objectValue(message);
+		return object ? [object] : [];
 	});
 	const requireMarker = (marker: string): void => {
 		if (!messages.some((message) => serializedIncludes(message, marker))) {
@@ -439,13 +464,14 @@ async function verifySessionDurability(
 				.map((name) => join(sessionDirectory, name));
 	if (paths.length === 0 && !knownSessionFile && (action === "exit" || action === "ctrl-c")) return;
 	if (paths.length !== 1) fail(`expected one durable Session JSONL, found ${String(paths.length)}`);
-	const path = paths[0] as string;
+	const [path] = paths;
+	if (!path) fail("durable Session JSONL was not found");
 	const raw = await readFile(path, "utf8");
-	const entries: unknown[] = [];
+	const entries: JsonInputValue[] = [];
 	for (const [index, line] of raw.split("\n").entries()) {
 		if (!line.trim()) continue;
 		try {
-			entries.push(JSON.parse(line));
+			entries.push(parseJsonValue(line));
 		} catch (error) {
 			fail(
 				`Session JSONL ${path} line ${String(index + 1)} is invalid: ${error instanceof Error ? error.message : String(error)}`,
@@ -928,8 +954,9 @@ function parseHostTimings(output: string): HostTiming[] {
 		if (!namespace || !body) continue;
 		for (const line of body.split("\n")) {
 			const match = /^\s{2}(.+): (\d+)ms$/.exec(line);
-			if (!match || match[1] === "TOTAL") continue;
-			timings.push({ label: match[1] as string, milliseconds: Number(match[2]), namespace });
+			const label = match?.[1];
+			if (!label || label === "TOTAL") continue;
+			timings.push({ label, milliseconds: Number(match?.[2]), namespace });
 		}
 	}
 	return timings;
@@ -1110,7 +1137,7 @@ function processIsAlive(pid: number): boolean {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM";
+		return error instanceof Error && "code" in error && error.code === "EPERM";
 	}
 }
 
@@ -1220,7 +1247,6 @@ async function runSample(
 	const traceSuite = options.trace || action === "reload-change";
 	const environment = {
 		...isolatedEnvironment(runDirectory),
-		...(process.env["PS5BW_CHILD_BUN_OPTIONS"] ? { BUN_OPTIONS: process.env["PS5BW_CHILD_BUN_OPTIONS"] } : {}),
 		HF_HOME: join(runDirectory, "cache"),
 		HF_HUB_OFFLINE: "1",
 		PI_CODING_AGENT_DIR: configDirectory,
@@ -1243,9 +1269,11 @@ async function runSample(
 		PS5BW_SUITE_TRACE: suiteTracePath,
 		PS5BW_SURFACE_MARKER: `PS5BW_SURFACE_READY_${variant.toUpperCase()}`,
 		PS5BW_TRACE_EXTENSION: traceSuite ? seeded.traceExtension : "",
-		...(options.trace ? { PI_TIMING: "1" } : {}),
 		TRANSFORMERS_OFFLINE: "1",
 	};
+	const childBunOptions = process.env["PS5BW_CHILD_BUN_OPTIONS"];
+	if (childBunOptions) Object.assign(environment, { BUN_OPTIONS: childBunOptions });
+	if (options.trace) Object.assign(environment, { PI_TIMING: "1" });
 	const result = Bun.spawnSync(["expect", "-c", lifecycleExpectProgram(action, options.trace)], {
 		cwd: join(benchmarkRoot, "project"),
 		env: environment,
@@ -1277,73 +1305,76 @@ async function runSample(
 		options.longSessionToolBytes,
 	);
 	const metrics: ExpectMetrics = {
-		...(action === "agent-exit" ? { interruptMs: parseMetric(output, "interrupt") } : {}),
-		startupMs: parseMetric(output, "startup"),
 		shutdownMs: parseMetric(output, "shutdown"),
-		...(action === "reload" || action === "reload-change" ? { reloadMs: parseMetric(output, "reload") } : {}),
-		...(action === "prompt"
-			? {
-					acknowledgementMs: parseMetric(output, "acknowledgement"),
-					providerStartMs: parseMetric(output, "provider_start"),
-					responseMs: parseMetric(output, "response"),
-					steadyAcknowledgementMs: parseMetric(output, "steady_acknowledgement"),
-					steadyProviderStartMs: parseMetric(output, "steady_provider_start"),
-					steadyResponseMs: parseMetric(output, "steady_response"),
-				}
-			: {}),
+		startupMs: parseMetric(output, "startup"),
 	};
+	if (action === "agent-exit") metrics.interruptMs = parseMetric(output, "interrupt");
+	if (action === "reload" || action === "reload-change") metrics.reloadMs = parseMetric(output, "reload");
+	if (action === "prompt") {
+		metrics.acknowledgementMs = parseMetric(output, "acknowledgement");
+		metrics.providerStartMs = parseMetric(output, "provider_start");
+		metrics.responseMs = parseMetric(output, "response");
+		metrics.steadyAcknowledgementMs = parseMetric(output, "steady_acknowledgement");
+		metrics.steadyProviderStartMs = parseMetric(output, "steady_provider_start");
+		metrics.steadyResponseMs = parseMetric(output, "steady_response");
+	}
 	const rawPtyLog = options.trace ? output : "";
 	const trace = options.trace ? parseHostTimings(rawPtyLog) : [];
 	if (options.trace && trace.length === 0) {
 		fail(`PI_TIMING produced no parseable Host timings; PTY tail:\n${rawPtyLog.slice(-20_000)}`);
 	}
-	const suiteTrace = traceSuite
-		? (JSON.parse(await readFile(suiteTracePath, "utf8")) as { readonly events?: unknown }).events
-		: undefined;
-	if (traceSuite && !Array.isArray(suiteTrace)) fail("Suite lifecycle trace was not persisted");
-	if (action === "reload" && variant === "suite" && Array.isArray(suiteTrace)) {
-		const labels = suiteTrace.map((event) => (event as Partial<LifecycleTraceEvent>).label);
+	let suiteTrace: readonly LifecycleTraceEvent[] | undefined;
+	if (traceSuite) {
+		const traceDocument = JSON.parse(await readFile(suiteTracePath, "utf8"));
+		if (!Check(SUITE_TRACE_SCHEMA, traceDocument)) fail("Suite lifecycle trace was not persisted");
+		suiteTrace = traceDocument.events;
+	}
+	if (action === "reload" && variant === "suite" && suiteTrace) {
+		const labels = suiteTrace.map((event) => event.label);
 		if (!labels.includes("suite.loader.cache.hit")) fail("unchanged Suite reload did not use the runtime cache");
 		if (labels.filter((label) => label === "suite.module-imported").length !== 1) {
 			fail("unchanged Suite reload unexpectedly re-evaluated the generated runtime module");
 		}
 	}
-	if (action === "reload-change" && Array.isArray(suiteTrace)) {
-		const moduleImports = suiteTrace.filter(
-			(event) => (event as Partial<LifecycleTraceEvent>).label === "suite.module-imported",
-		);
+	if (action === "reload-change" && suiteTrace) {
+		const moduleImports = suiteTrace.filter((event) => event.label === "suite.module-imported");
 		if (moduleImports.length < 2) fail("Suite source change did not re-evaluate the generated runtime module");
-		if (
-			!suiteTrace.some((event) => (event as Partial<LifecycleTraceEvent>).label === "suite.source-change.applied")
-		) {
+		if (!suiteTrace.some((event) => event.label === "suite.source-change.applied")) {
 			fail("Suite source change did not re-evaluate the changed nested module");
 		}
 	}
-	return {
+	const sample = {
 		action,
-		...(metrics.acknowledgementMs === undefined ? {} : { acknowledgementMs: rounded(metrics.acknowledgementMs) }),
 		columns: size.columns,
-		...(metrics.interruptMs === undefined ? {} : { interruptMs: rounded(metrics.interruptMs) }),
 		iteration,
-		...(metrics.providerStartMs === undefined ? {} : { providerStartMs: rounded(metrics.providerStartMs) }),
-		...(metrics.reloadMs === undefined ? {} : { reloadMs: metrics.reloadMs }),
-		...(metrics.responseMs === undefined ? {} : { responseMs: rounded(metrics.responseMs) }),
 		rows: size.rows,
 		scenario,
 		shutdownMs: rounded(metrics.shutdownMs),
-		...(metrics.steadyAcknowledgementMs === undefined
-			? {}
-			: { steadyAcknowledgementMs: rounded(metrics.steadyAcknowledgementMs) }),
-		...(metrics.steadyProviderStartMs === undefined
-			? {}
-			: { steadyProviderStartMs: rounded(metrics.steadyProviderStartMs) }),
-		...(metrics.steadyResponseMs === undefined ? {} : { steadyResponseMs: rounded(metrics.steadyResponseMs) }),
 		startupMs: rounded(metrics.startupMs),
-		...(Array.isArray(suiteTrace) ? { suiteTrace: suiteTrace as LifecycleTraceEvent[] } : {}),
-		...(trace.length === 0 ? {} : { trace }),
 		variant,
 		warmup,
 	};
+	if (metrics.acknowledgementMs !== undefined) {
+		Object.assign(sample, { acknowledgementMs: rounded(metrics.acknowledgementMs) });
+	}
+	if (metrics.interruptMs !== undefined) Object.assign(sample, { interruptMs: rounded(metrics.interruptMs) });
+	if (metrics.providerStartMs !== undefined) {
+		Object.assign(sample, { providerStartMs: rounded(metrics.providerStartMs) });
+	}
+	if (metrics.reloadMs !== undefined) Object.assign(sample, { reloadMs: metrics.reloadMs });
+	if (metrics.responseMs !== undefined) Object.assign(sample, { responseMs: rounded(metrics.responseMs) });
+	if (metrics.steadyAcknowledgementMs !== undefined) {
+		Object.assign(sample, { steadyAcknowledgementMs: rounded(metrics.steadyAcknowledgementMs) });
+	}
+	if (metrics.steadyProviderStartMs !== undefined) {
+		Object.assign(sample, { steadyProviderStartMs: rounded(metrics.steadyProviderStartMs) });
+	}
+	if (metrics.steadyResponseMs !== undefined) {
+		Object.assign(sample, { steadyResponseMs: rounded(metrics.steadyResponseMs) });
+	}
+	if (suiteTrace) Object.assign(sample, { suiteTrace });
+	if (trace.length > 0) Object.assign(sample, { trace });
+	return sample;
 }
 
 function cellKey(sample: LifecycleSample): string {
@@ -1361,9 +1392,10 @@ function summaries(samples: readonly LifecycleSample[]): CellSummary[] {
 		else cell.measured.push(sample);
 		cells.set(key, cell);
 	}
-	return [...cells.values()].flatMap(({ measured: values, warmups }) => {
-		if (values.length === 0) return [];
-		const first = values[0] as LifecycleSample;
+	const results: CellSummary[] = [];
+	for (const { measured: values, warmups } of cells.values()) {
+		const [first] = values;
+		if (!first) continue;
 		const acknowledgementValues = values.flatMap((sample) =>
 			sample.acknowledgementMs === undefined ? [] : [sample.acknowledgementMs],
 		);
@@ -1384,31 +1416,37 @@ function summaries(samples: readonly LifecycleSample[]): CellSummary[] {
 		const steadyResponseValues = values.flatMap((sample) =>
 			sample.steadyResponseMs === undefined ? [] : [sample.steadyResponseMs],
 		);
-		return [
-			{
-				action: first.action,
-				...(acknowledgementValues.length > 0 ? { acknowledgement: summarize(acknowledgementValues) } : {}),
-				columns: first.columns,
-				...(interruptValues.length > 0 ? { interrupt: summarize(interruptValues) } : {}),
-				...(providerStartValues.length > 0 ? { providerStart: summarize(providerStartValues) } : {}),
-				...(reloadValues.length > 0 ? { reload: summarize(reloadValues) } : {}),
-				...(responseValues.length > 0 ? { response: summarize(responseValues) } : {}),
-				rows: first.rows,
-				scenario: first.scenario,
-				shutdown: summarize(values.map((sample) => sample.shutdownMs)),
-				...(steadyAcknowledgementValues.length > 0
-					? { steadyAcknowledgement: summarize(steadyAcknowledgementValues) }
-					: {}),
-				...(steadyProviderStartValues.length > 0
-					? { steadyProviderStart: summarize(steadyProviderStartValues) }
-					: {}),
-				...(steadyResponseValues.length > 0 ? { steadyResponse: summarize(steadyResponseValues) } : {}),
-				startup: summarize(values.map((sample) => sample.startupMs)),
-				variant: first.variant,
-				warmups,
-			},
-		];
-	});
+		const result = {
+			action: first.action,
+			columns: first.columns,
+			rows: first.rows,
+			scenario: first.scenario,
+			shutdown: summarize(values.map((sample) => sample.shutdownMs)),
+			startup: summarize(values.map((sample) => sample.startupMs)),
+			variant: first.variant,
+			warmups,
+		};
+		if (acknowledgementValues.length > 0) {
+			Object.assign(result, { acknowledgement: summarize(acknowledgementValues) });
+		}
+		if (interruptValues.length > 0) Object.assign(result, { interrupt: summarize(interruptValues) });
+		if (providerStartValues.length > 0) {
+			Object.assign(result, { providerStart: summarize(providerStartValues) });
+		}
+		if (reloadValues.length > 0) Object.assign(result, { reload: summarize(reloadValues) });
+		if (responseValues.length > 0) Object.assign(result, { response: summarize(responseValues) });
+		if (steadyAcknowledgementValues.length > 0) {
+			Object.assign(result, { steadyAcknowledgement: summarize(steadyAcknowledgementValues) });
+		}
+		if (steadyProviderStartValues.length > 0) {
+			Object.assign(result, { steadyProviderStart: summarize(steadyProviderStartValues) });
+		}
+		if (steadyResponseValues.length > 0) {
+			Object.assign(result, { steadyResponse: summarize(steadyResponseValues) });
+		}
+		results.push(result);
+	}
+	return results;
 }
 
 const ACCEPTANCE_MINIMUM_SAMPLES = 3;
