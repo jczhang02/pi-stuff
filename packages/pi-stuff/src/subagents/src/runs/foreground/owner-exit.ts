@@ -1,5 +1,6 @@
 import * as path from "node:path";
-import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
+import { parseJsonValue } from "../../../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { readBoundedOwnedFile, readBoundedOwnedFileSnapshotAsync } from "../../shared/private-directory.ts";
 
@@ -34,24 +35,34 @@ export function recordForegroundOwnerExit(asyncDir: string, runId: string, error
 	return value;
 }
 
+function decodeForegroundOwnerExit<Value>(value: Value, runId: string): ForegroundOwnerExit | undefined {
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		!("version" in value) ||
+		value.version !== 1 ||
+		!("runId" in value) ||
+		value.runId !== runId ||
+		!("endedAt" in value) ||
+		!isRuntimeNumber(value.endedAt) ||
+		!Number.isFinite(value.endedAt) ||
+		value.endedAt < 0 ||
+		!("error" in value) ||
+		!isRuntimeString(value.error) ||
+		value.error.length === 0 ||
+		value.error.length > MAX_FOREGROUND_OWNER_ERROR_CHARS
+	) {
+		return undefined;
+	}
+	return { endedAt: value.endedAt, error: value.error, runId: value.runId, version: 1 };
+}
+
 export function readForegroundOwnerExit(asyncDir: string, runId: string): ForegroundOwnerExit | undefined {
 	try {
-		const value = JSON.parse(
-			readBoundedOwnedFile(foregroundOwnerExitPath(asyncDir), MAX_FOREGROUND_OWNER_EXIT_BYTES),
-		) as Partial<ForegroundOwnerExit>;
-		if (
-			value.version !== 1 ||
-			value.runId !== runId ||
-			!isRuntimeNumber(value.endedAt) ||
-			!Number.isFinite(value.endedAt) ||
-			value.endedAt < 0 ||
-			!isRuntimeString(value.error) ||
-			value.error.length === 0 ||
-			value.error.length > MAX_FOREGROUND_OWNER_ERROR_CHARS
-		) {
-			return undefined;
-		}
-		return value as ForegroundOwnerExit;
+		return decodeForegroundOwnerExit(
+			parseJsonValue(readBoundedOwnedFile(foregroundOwnerExitPath(asyncDir), MAX_FOREGROUND_OWNER_EXIT_BYTES)),
+			runId,
+		);
 	} catch {
 		return undefined;
 	}
@@ -62,22 +73,17 @@ export async function readForegroundOwnerExitAsync(
 	runId: string,
 ): Promise<ForegroundOwnerExit | undefined> {
 	try {
-		const value = JSON.parse(
-			(await readBoundedOwnedFileSnapshotAsync(foregroundOwnerExitPath(asyncDir), MAX_FOREGROUND_OWNER_EXIT_BYTES))
-				.text,
-		) as Partial<ForegroundOwnerExit>;
-		if (
-			value.version !== 1 ||
-			value.runId !== runId ||
-			!isRuntimeNumber(value.endedAt) ||
-			!Number.isFinite(value.endedAt) ||
-			value.endedAt < 0 ||
-			!isRuntimeString(value.error) ||
-			value.error.length === 0 ||
-			value.error.length > MAX_FOREGROUND_OWNER_ERROR_CHARS
-		)
-			return undefined;
-		return value as ForegroundOwnerExit;
+		return decodeForegroundOwnerExit(
+			parseJsonValue(
+				(
+					await readBoundedOwnedFileSnapshotAsync(
+						foregroundOwnerExitPath(asyncDir),
+						MAX_FOREGROUND_OWNER_EXIT_BYTES,
+					)
+				).text,
+			),
+			runId,
+		);
 	} catch {
 		return undefined;
 	}

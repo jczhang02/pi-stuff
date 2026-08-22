@@ -6,10 +6,10 @@ import type { AgentConfig } from "../agents/agents.ts";
 export const AGENT_DEFINITION_PROJECTION_VERSION = 2 as const;
 export const LAUNCH_BINDING_PROJECTION_VERSION = 2 as const;
 
-function stableJson(value: unknown): string {
+function stableJson<Value>(value: Value): string {
 	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
 	if (value && isRuntimeObject(value)) {
-		return `{${Object.entries(value as Record<string, unknown>)
+		return `{${Object.entries(value)
 			.filter(([, entry]) => entry !== undefined)
 			.sort(([a], [b]) => a.localeCompare(b))
 			.map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
@@ -18,7 +18,7 @@ function stableJson(value: unknown): string {
 	return JSON.stringify(value);
 }
 
-function sha256(value: unknown): string {
+function sha256<Value>(value: Value): string {
 	return createHash("sha256").update(stableJson(value)).digest("hex");
 }
 

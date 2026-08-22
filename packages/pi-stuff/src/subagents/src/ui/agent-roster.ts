@@ -368,7 +368,9 @@ export class AgentRoster {
 	}
 
 	private editorHasFocus(): boolean {
-		const focused = (this.activeTui() as { focusedComponent?: unknown } | undefined)?.focusedComponent;
+		const tui = this.activeTui();
+		const descriptor = tui ? Object.getOwnPropertyDescriptor(tui, "focusedComponent") : undefined;
+		const focused = descriptor?.get && tui ? descriptor.get.call(tui) : descriptor?.value;
 		return isEditorComponent(focused);
 	}
 
@@ -434,17 +436,26 @@ function isTerminal(row: AgentRow): boolean {
 	return TERMINAL_STATUSES.has(row.status);
 }
 
-function isEditorComponent(
-	value: unknown,
-): value is Pick<EditorComponent, "getText" | "handleInput" | "invalidate" | "render" | "setText"> {
-	if (!isRuntimeObject(value) || value === null) return false;
-	const candidate = value as Partial<EditorComponent>;
+function isEditorComponent<Value>(
+	value: Value,
+): value is Value & Pick<EditorComponent, "getText" | "handleInput" | "invalidate" | "render" | "setText"> {
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		!("getText" in value) ||
+		!("setText" in value) ||
+		!("handleInput" in value) ||
+		!("invalidate" in value) ||
+		!("render" in value)
+	) {
+		return false;
+	}
 	return (
-		isRuntimeFunction(candidate.getText) &&
-		isRuntimeFunction(candidate.setText) &&
-		isRuntimeFunction(candidate.handleInput) &&
-		isRuntimeFunction(candidate.invalidate) &&
-		isRuntimeFunction(candidate.render)
+		isRuntimeFunction(value.getText) &&
+		isRuntimeFunction(value.setText) &&
+		isRuntimeFunction(value.handleInput) &&
+		isRuntimeFunction(value.invalidate) &&
+		isRuntimeFunction(value.render)
 	);
 }
 
@@ -528,6 +539,6 @@ export function fitAgentDescription(description: string, availableWidth: number)
 	return safe && visibleWidth(safe) <= availableWidth ? safe : "";
 }
 
-function errorMessage(error: unknown): string {
+function errorMessage<ErrorValue>(error: ErrorValue): string {
 	return error instanceof Error ? error.message : String(error);
 }
