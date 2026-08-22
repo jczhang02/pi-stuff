@@ -59,6 +59,7 @@ Rules:
 - Write plain JavaScript with top-level await and await every tools.* call.
 - Call only methods listed for this Agent or returned by codemode.search(query); inspect unfamiliar methods with codemode.describe("tools.name"). Do not guess Tool names.
 - Tool results are unwrapped to structured JSON when available, parsed JSON when valid, or text.
+- Structured results are already unwrapped; do not pass them to JSON.parse. Example: const pkg = await tools.read({ path: "package.json" }); text(pkg.packageManager);
 - Emit only the evidence needed with text(...), image(...), or another supported output helper.
 Cloudflare-style async arrow functions with return and the legacy suite.* alias are accepted, but tools.* plus explicit output helpers are canonical. console is unavailable. The sandbox has no direct filesystem, network, process, Node, Bun, require, fetch, or credentials; I/O is only through tools.*. Other helpers include generatedImage, store, load, notify, exit, setTimeout, clearTimeout, and yield_control.`;
 

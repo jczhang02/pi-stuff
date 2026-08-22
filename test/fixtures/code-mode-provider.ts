@@ -64,13 +64,12 @@ text(String(cancelled));`
 const selected = matches.results.find((entry) => entry.method === "read");
 if (!selected) throw new Error("read not found");
 const docs = await codemode.describe(selected.path);
-const result = await tools[selected.method]({ path: "README.md", limit: 1 });
+const pkg = await tools[selected.method]({ path: "package.json" });
 await tools.bash({ command: "printf CODE_MODE_GROUP_OK", description: "Check Tool grouping" });
 await tools.background({ action: "list" });
 await tools.subagent({ action: "status" });
-const firstLine = String(result).split("\\n")[0];
 text(JSON.stringify({
-  firstLine,
+  packageManager: pkg.packageManager,
   typed: docs.types.includes("path")
 }));`,
 		},

@@ -119,13 +119,16 @@ function sessionLedgerFixture() {
 	};
 }
 
-test("the compact Tool contract describes execution without advertising optional Tools", () => {
+test("the compact Tool contract describes canonical unwrapped Read results", () => {
 	// SAFETY: this test controls the value and supplies every CodeModeRuntime member exercised by this case.
 	const definition = createCodeModeDefinition({} as CodeModeRuntime);
 	expect(definition.description).toContain("top-level await");
 	expect(definition.description).toContain("await every tools.* call");
 	expect(definition.description).toContain("Do not guess Tool names");
-	expect(definition.description).not.toContain("tools.read");
+	expect(definition.description).toContain(
+		'const pkg = await tools.read({ path: "package.json" }); text(pkg.packageManager);',
+	);
+	expect(definition.description).toContain("do not pass them to JSON.parse");
 	expect(definition.description).not.toContain("tools.bash");
 	expect(definition.description).toContain("console is unavailable");
 	expect(definition.description).toContain("async arrow functions with return");
@@ -252,7 +255,8 @@ test("result adaptation unwraps structured/text JSON and reports an actionable f
 });
 
 test("the local prelude provides canonical tools plus compatible suite/search/describe without entering model history", () => {
-	const source = buildSuiteSandboxSource("const value = await tools.read({ path: 'README.md' }); text(value)", [
+	const program = 'const pkg = await tools.read({ path: "package.json" }); text(pkg.packageManager);';
+	const source = buildSuiteSandboxSource(program, [
 		{
 			description: "Read a file",
 			inputSchema: Type.Object({ path: Type.String() }),
@@ -263,8 +267,8 @@ test("the local prelude provides canonical tools plus compatible suite/search/de
 	expect(source).toContain("globalThis.suite=globalThis.tools");
 	expect(source).toContain("globalThis.codemode=");
 	expect(source).toContain("codemode.search");
-	expect(source).toContain("const value = await tools.read({ path: 'README.md' });");
-	expect(source).toContain("return (text(value))");
+	expect(source).toContain('const pkg = await tools.read({ path: "package.json" });');
+	expect(source).toContain("return (text(pkg.packageManager))");
 	expect(source).toContain("__piStuffOutputCount===0");
 	expect(source).toContain("keys.length===1&&Object.hasOwn(value,__piStuffBigintTag)");
 	expect(source).toContain("keys.length===2&&Object.hasOwn(value,__piStuffBinaryTag)");

@@ -22,7 +22,7 @@ The child's existing Tool allowlist and capability ceiling still bound what its 
 ## What the model uses
 
 ```js
-const pkg = JSON.parse(await tools.read({ path: "package.json" }));
+const pkg = await tools.read({ path: "package.json" });
 text(pkg.packageManager);
 ```
 

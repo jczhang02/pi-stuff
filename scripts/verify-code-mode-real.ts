@@ -111,11 +111,11 @@ try {
 		mkdir(join(temporary, "sessions"), { recursive: true }),
 	]);
 	await writeFile(join(temporary, "agent", "settings.json"), "{}\n");
-	await writeFile(join(temporary, "project", "README.md"), '<div align="center">\nCode Mode fixture\n');
+	await writeFile(join(temporary, "project", "package.json"), '{"packageManager":"bun@1.3.14"}\n');
 	const started = await runPi(root, temporary, sessionId, "start");
 	if (!started.stdout.includes("CODE_MODE_COMPLETE")) throw new Error(`Code Mode did not complete: ${started.stdout}`);
-	if (!started.stdout.includes('"firstLine":"<div align=\\"center\\">"')) {
-		throw new Error(`Code Mode did not execute the real Suite read Tool: ${started.stdout}`);
+	if (!started.stdout.includes('"packageManager":"bun@1.3.14"')) {
+		throw new Error(`Code Mode did not return the canonical packageManager value: ${started.stdout}`);
 	}
 	if (!started.stdout.includes('"typed":true'))
 		throw new Error(`Code Mode describe contract failed: ${started.stdout}`);
