@@ -1,6 +1,6 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { isRuntimeFunction } from "../shared/runtime-type.js";
+import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
 import { TRANSCRIPT_MARKER } from "./transcript.js";
 
 export interface ThoughtMarkdownTransformContext {
@@ -50,9 +50,14 @@ export function registerLiveThoughtDisplay(pi: ExtensionAPI): void {
 const HOST_THEME_KEY = Symbol.for("@earendil-works/pi-coding-agent:theme");
 const PENDING_ASSISTANT_MARKER = Symbol.for("@jczhang02/pi-stuff:pending-assistant-marker");
 
-type PendingAssistantMarkerTheme = Theme & {
+interface PendingAssistantMarkerTheme {
+	fg: Theme["fg"];
 	[PENDING_ASSISTANT_MARKER]?: { restore(): void };
-};
+}
+
+function isPendingAssistantMarkerTheme<Value>(value: Value): value is Value & PendingAssistantMarkerTheme {
+	return value !== null && isRuntimeObject(value) && "fg" in value && isRuntimeFunction(value.fg);
+}
 
 /**
  * Host Markdown normalizes every unordered-list source marker to `-`. Arm only
@@ -62,8 +67,8 @@ type PendingAssistantMarkerTheme = Theme & {
  * extremely narrow projections that never reach a list marker.
  */
 function armAssistantTranscriptMarker(): void {
-	const themed = (globalThis as Record<symbol, unknown>)[HOST_THEME_KEY] as PendingAssistantMarkerTheme | undefined;
-	if (!themed || !isRuntimeFunction(themed.fg) || themed[PENDING_ASSISTANT_MARKER]) return;
+	const themed: unknown = Object.getOwnPropertyDescriptor(globalThis, HOST_THEME_KEY)?.value;
+	if (!isPendingAssistantMarkerTheme(themed) || themed[PENDING_ASSISTANT_MARKER]) return;
 	const originalFg = themed.fg;
 	let restored = false;
 	const restore = () => {
@@ -76,13 +81,14 @@ function armAssistantTranscriptMarker(): void {
 		configurable: true,
 		value: { restore },
 	});
-	themed.fg = ((color, text) => {
+	const wrappedFg: Theme["fg"] = (color, text) => {
 		if (color !== "mdListBullet" || text !== ASSISTANT_LIST_PREFIX) {
 			return originalFg.call(themed, color, text);
 		}
 		restore();
 		return originalFg.call(themed, color, `${TRANSCRIPT_MARKER} `);
-	}) as Theme["fg"];
+	};
+	themed.fg = wrappedFg;
 	queueMicrotask(restore);
 }
 
@@ -113,8 +119,7 @@ function renderAssistantTranscript(markdown: string, availableWidth: number): st
 }
 
 function hasMarkdownTransformer(pi: ExtensionAPI): pi is ExtensionAPI & MarkdownTransformerExtensionAPI {
-	const candidate = pi as ExtensionAPI & Partial<MarkdownTransformerExtensionAPI>;
-	return isRuntimeFunction(candidate.registerMarkdownTransformer);
+	return "registerMarkdownTransformer" in pi && isRuntimeFunction(pi.registerMarkdownTransformer);
 }
 
 function latestMeaningfulMarkdownFragment(markdown: string): string {
