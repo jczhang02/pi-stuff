@@ -215,6 +215,7 @@ class McpControlDialog implements CommandDialogComponent {
 		const priority = mcpDialogPriority(body, [
 			"question",
 			"failure",
+			"notice",
 			"selected",
 			"preview-heading",
 			"preview-detail",

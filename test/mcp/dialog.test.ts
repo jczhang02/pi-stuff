@@ -198,6 +198,7 @@ describe("MCP Command Dialog", () => {
 			bold: (value: string) => value,
 			fg: (color: string, value: string) => `[${color}]${value}`,
 		} as Theme;
+		const terminal = new TestTui(20);
 		const component = createMcpControlView(store, {
 			authenticate: async () => true,
 			logout: async () => true,
@@ -208,12 +209,14 @@ describe("MCP Command Dialog", () => {
 			requestRender: () => undefined,
 			signal: new AbortController().signal,
 			theme: semanticTheme,
-			tui: new TestTui(20),
+			tui: terminal,
 		});
 
 		component.handleInput?.("\r");
 		component.handleInput?.("\r");
 		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(component.render(72).join("\n")).toContain("[success]Reconnected failed-proxy.");
+		terminal.rows = 6;
 		expect(component.render(72).join("\n")).toContain("[success]Reconnected failed-proxy.");
 		succeeds = false;
 		component.handleInput?.("\r");
