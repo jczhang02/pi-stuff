@@ -1,8 +1,15 @@
-import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { type AgentToolResult, resizeImage } from "@earendil-works/pi-coding-agent";
 import { getImageDimensions } from "@earendil-works/pi-tui";
 
 export const INVALID_CODE_MODE_IMAGE_MESSAGE =
 	"Code Mode rejected an invalid or incomplete image. Use an image-producing Tool such as tools.read instead of Base64 from a text Tool.";
+
+export class InvalidCodeModeImageError extends Error {
+	constructor() {
+		super(INVALID_CODE_MODE_IMAGE_MESSAGE);
+		this.name = "InvalidCodeModeImageError";
+	}
+}
 
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -89,14 +96,38 @@ export function codeModeImageFromDataUrl(value: string): ImageContent {
 	const mimeType = match?.[1] ? supportedMimeType(match[1]) : undefined;
 	const image: ImageContent | undefined =
 		match && mimeType ? { type: "image", data: match[2] ?? "", mimeType } : undefined;
-	if (!image || !isValidCodeModeImage(image)) throw new Error(INVALID_CODE_MODE_IMAGE_MESSAGE);
+	if (!image || !isValidCodeModeImage(image)) throw new InvalidCodeModeImageError();
 	return image;
 }
 
 export function assertValidSupportedCodeModeImages(content: readonly ToolContent[number][]): void {
 	for (const item of content) {
 		if (item.type !== "image" || !supportedMimeType(item.mimeType)) continue;
-		if (!isValidCodeModeImage(item)) throw new Error(INVALID_CODE_MODE_IMAGE_MESSAGE);
+		if (!isValidCodeModeImage(item)) throw new InvalidCodeModeImageError();
+	}
+}
+
+export async function assertDecodableSupportedCodeModeImages(content: readonly ToolContent[number][]): Promise<void> {
+	const checked = new Set<string>();
+	for (const item of content) {
+		if (item.type !== "image") continue;
+		const mimeType = supportedMimeType(item.mimeType);
+		if (!mimeType) continue;
+		const key = `${mimeType}\u0000${item.data}`;
+		if (checked.has(key)) continue;
+		checked.add(key);
+		const bytes = decodeBase64(item.data);
+		if (!bytes || !isValidCodeModeImage(item)) throw new InvalidCodeModeImageError();
+		try {
+			const decoded = await resizeImage(bytes, mimeType, {
+				maxBytes: Number.MAX_SAFE_INTEGER,
+				maxHeight: 0x7fffffff,
+				maxWidth: 0x7fffffff,
+			});
+			if (!decoded) throw new InvalidCodeModeImageError();
+		} catch {
+			throw new InvalidCodeModeImageError();
+		}
 	}
 }
 

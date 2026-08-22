@@ -73,7 +73,7 @@ realTest("the certified V8 host cannot persist malformed image helper output", a
 		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const result = await runtime.execute(
 			"outer-invalid-image",
-			'const data="AQEB".repeat(24); image({image_url:"data:image/jpeg;base64,"+data});',
+			'image({image_url:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12No/wAAggCB3UNq9AAAAABJRU5ErkJggg=="});',
 			{ cwd: process.cwd() } as ExtensionContext,
 		);
 		expect(result.details).toMatchObject({ error: INVALID_CODE_MODE_IMAGE_MESSAGE, status: "error" });

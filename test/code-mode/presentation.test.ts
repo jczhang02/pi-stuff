@@ -17,7 +17,7 @@ const originalImage = {
 	type: "image" as const,
 };
 const normalizedImage = {
-	data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
+	data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
 	mimeType: "image/png",
 	type: "image" as const,
 };

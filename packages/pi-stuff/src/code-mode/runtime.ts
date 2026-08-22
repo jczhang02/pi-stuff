@@ -10,7 +10,11 @@ import {
 	type SuiteCodeModeConnector,
 } from "./connector.js";
 import { CodeModeHostLostError } from "./host/host-client.js";
-import { codeModeImageFromDataUrl } from "./image-content.js";
+import {
+	assertDecodableSupportedCodeModeImages,
+	codeModeImageFromDataUrl,
+	InvalidCodeModeImageError,
+} from "./image-content.js";
 import type { CodeModeExecutionController, CodeModePendingAction, CodeModeSessionLedger } from "./ledger.js";
 import { captureCodeModeModelContent } from "./presentation.js";
 import type {
@@ -110,6 +114,7 @@ function imageKey(item: AgentToolResult<unknown>["content"][number]): string | u
 function projectFinalMedia(
 	traces: ReadonlyMap<string, RuntimeToolTrace>,
 	content: AgentToolResult<unknown>["content"],
+	includeMedia = true,
 ) {
 	const output = [...content];
 	const available = new Map<string, number[]>();
@@ -125,6 +130,12 @@ function projectFinalMedia(
 	const operations = [...traces.values()].map((trace) => {
 		const projected = operation(trace);
 		if (!trace.result) return projected;
+		if (!includeMedia) {
+			const nonMedia = trace.result.content.filter((item) => item.type !== "image");
+			return nonMedia.length === trace.result.content.length
+				? projected
+				: { ...projected, result: { ...trace.result, content: nonMedia } };
+		}
 		const mediaPlacements: Array<{ readonly afterContentIndex: number; readonly mediaIndex: number }> = [];
 		const nonMedia: AgentToolResult<unknown>["content"] = [];
 		for (const item of trace.result.content) {
@@ -547,10 +558,11 @@ export class CodeModeRuntime {
 									? "Code Mode execution was cancelled"
 									: "Code completed with no output; use text(...) to return a value"),
 						);
+			const media = projectFinalMedia(traces, finalContent);
+			await assertDecodableSupportedCodeModeImages(media.content);
 			const settled = settleController(controller, status, finalError);
 			status = settled.status;
 			finalError = settled.error;
-			const media = projectFinalMedia(traces, finalContent);
 			const finalDetails = details(status, finalError, media.operations);
 			captureCodeModeModelContent(finalDetails, media.content);
 			await settleConnectorLifecycle(this.connector, controller, status);
@@ -579,12 +591,16 @@ export class CodeModeRuntime {
 			status = settled.status;
 			message = settled.error ?? message;
 			const pending = controller && this.ledger ? this.ledger.pending(context, controller.executionId) : [];
-			const media = projectFinalMedia(traces, [
-				{
-					type: "text",
-					text: status === "paused" && controller ? approvalMessage(controller.executionId, pending) : message,
-				},
-			]);
+			const media = projectFinalMedia(
+				traces,
+				[
+					{
+						type: "text",
+						text: status === "paused" && controller ? approvalMessage(controller.executionId, pending) : message,
+					},
+				],
+				!(error instanceof InvalidCodeModeImageError),
+			);
 			const finalDetails = details(status, message, media.operations);
 			captureCodeModeModelContent(finalDetails, media.content);
 			await settleConnectorLifecycle(this.connector, controller, status);

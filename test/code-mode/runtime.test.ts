@@ -661,9 +661,53 @@ test("runtime rejects malformed image output before settling the execution as su
 	expect(ledger.history(context)[0]).toMatchObject({ status: "error" });
 });
 
+test("runtime removes undecodable nested media from the failed result and its operation details", async () => {
+	const valid = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
+		"base64",
+	);
+	valid[45] = (valid[45] ?? 0) ^ 0xff;
+	const corrupt = { type: "image" as const, data: valid.toString("base64"), mimeType: "image/png" };
+	const { context, ledger } = sessionLedgerFixture();
+	const executor: CodeModeExecutor = {
+		async execute() {
+			return {
+				cellId: "cell-undecodable-trace",
+				contentItems: [],
+				kind: "result",
+				traces: [
+					{
+						id: "nested-undecodable-image",
+						input: { path: "corrupt.png" },
+						name: "view_image",
+						result: { content: [{ type: "text", text: "before" }, corrupt], details: {} },
+						status: "done",
+					},
+				],
+			};
+		},
+		async shutdown() {},
+		async wait() {
+			throw new Error("unexpected wait");
+		},
+	};
+	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor, ledger).execute(
+		"outer-undecodable-trace",
+		"await tools.read({ path: 'corrupt.png' })",
+		context,
+	);
+
+	expect(result.content).toEqual([{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }]);
+	expect(result.details.operations).toMatchObject([
+		{ result: { content: [{ type: "text", text: "before" }] }, state: "success" },
+	]);
+	expect(result.details.operations[0]).not.toHaveProperty("mediaPlacements");
+	expect(ledger.history(context)[0]).toMatchObject({ status: "error" });
+});
+
 test("runtime hoists nested media while preserving each image's position inside its Tool result", async () => {
 	const image = {
-		data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2n1cAAAAASUVORK5CYII=",
+		data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVQI12NoAAAAggCB3UNq9AAAAABJRU5ErkJggg==",
 		mimeType: "image/png",
 		type: "image" as const,
 	};
