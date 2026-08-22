@@ -1166,61 +1166,6 @@ describe("Agents extension composition root", () => {
 		expect(root.engineParams).toHaveLength(1);
 	});
 
-	test("releases a legacy governor barrier on A to B to A session transitions", async () => {
-		let barrierHeld = false;
-		let releases = 0;
-		const root = createHarness({
-			compatibility: async () => {
-				if (barrierHeld) return { ok: false, message: "self-held legacy barrier" };
-				barrierHeld = true;
-				let released = false;
-				return {
-					ok: true,
-					importedLogicalAgentIds: [],
-					legacyLedgerObserved: false,
-					releaseLegacyBarrier: async () => {
-						if (released) return;
-						released = true;
-						barrierHeld = false;
-						releases += 1;
-					},
-				};
-			},
-		});
-		const headerA = context([], { sessionFile: "/sessions/barrier-a.jsonl", sessionId: "barrier-a" });
-		const headerB = context([], { sessionFile: "/sessions/barrier-b.jsonl", sessionId: "barrier-b" });
-		const tool = root.api.tools.get("subagent");
-		if (!tool) throw new Error("Expected public Agent tool");
-
-		await root.api.fire("session_start", { reason: "startup", type: "session_start" }, headerA);
-		const first = await tool.execute(
-			"barrier-a-first",
-			{ agent: "researcher", task: "First A launch" },
-			new AbortController().signal,
-			undefined,
-			headerA,
-		);
-		expect(first.content[0]?.text).toContain("started in the background");
-		expect(barrierHeld).toBeTrue();
-
-		await root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerB);
-		expect(barrierHeld).toBeFalse();
-		expect(releases).toBe(1);
-		await root.api.fire("session_start", { reason: "switch", type: "session_start" }, headerA);
-		const second = await tool.execute(
-			"barrier-a-second",
-			{ agent: "researcher", task: "Second A launch" },
-			new AbortController().signal,
-			undefined,
-			headerA,
-		);
-		expect(second.content[0]?.text).toContain("started in the background");
-		expect(barrierHeld).toBeTrue();
-		await root.api.fire("session_shutdown", { reason: "quit", type: "session_shutdown" }, headerA);
-		expect(barrierHeld).toBeFalse();
-		expect(releases).toBe(2);
-	});
-
 	test("normalizes one branch-proven v1 lifecycle event before tracker projection", async () => {
 		const root = createHarness();
 		await root.api.fire("session_start", { reason: "resume", type: "session_start" });

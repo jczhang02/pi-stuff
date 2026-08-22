@@ -29,6 +29,9 @@ user definitions, and user definitions override Package definitions.
   made to name legacy work.
 - Independent tasks may run concurrently. The session-wide defaults are 20 running Agents, 200 total launches, and a
   maximum nesting depth of three.
+- Current releases import proven history from an unlocked pre-v2 governor ledger but do not hold its crash-prone
+  directory lock. Running pre-v2 and current Pi Stuff processes against the same Pi Session is unsupported; a present
+  pre-v2 lock pauses new launches until the older process exits.
 - `turnBudget`, `toolBudget`, and `timeoutMs` are optional per-Agent overrides. Ordinary launches use product backstops
   of 64 assistant turns plus two wrap-up turns, 96/128 soft/hard Tool calls with every Tool blocked after the hard
   limit, and 30 minutes. Task overrides win over launch overrides, which win over Agent definitions and the product

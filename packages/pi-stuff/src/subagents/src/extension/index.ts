@@ -612,7 +612,6 @@ export default function registerSubagentExtension(
 	let governorCompatibilityError: string | undefined;
 	let governorCompatibilityCheck: { epoch: number; promise: Promise<void> } | undefined;
 	let governorCompatibilityScope: ReturnType<typeof buildSessionGovernorCompatibilityScope> | undefined;
-	let releaseLegacyGovernorBarrier: (() => Promise<void>) | undefined;
 	let maintenanceTimer: ReturnType<typeof setTimeout> | undefined;
 	let maintenanceInFlight = false;
 	let nextMaintenanceAt = 0;
@@ -776,13 +775,9 @@ export default function registerSubagentExtension(
 					},
 				});
 				if (active && epoch === sessionEpoch) {
-					if (result.ok && result.releaseLegacyBarrier) {
-						await releaseLegacyGovernorBarrier?.();
-						releaseLegacyGovernorBarrier = result.releaseLegacyBarrier;
-					}
 					governorCompatibilityReady = result.ok;
 					governorCompatibilityError = result.ok ? undefined : result.message;
-				} else if (result.ok) await result.releaseLegacyBarrier?.();
+				}
 			} catch (error) {
 				if (active && epoch === sessionEpoch) {
 					governorCompatibilityReady = false;
@@ -1191,11 +1186,6 @@ export default function registerSubagentExtension(
 		await previousCleanupPromise;
 		sessionEpoch += 1;
 		agentRoster = [];
-		// A legacy compatibility barrier belongs to exactly one parent session.
-		// Release it before rebinding state so A→B→A cannot deadlock against this
-		// extension instance's own stale A lock.
-		await releaseLegacyGovernorBarrier?.();
-		releaseLegacyGovernorBarrier = undefined;
 		runtimeActivatedEpoch = -1;
 		runtimeActivation = undefined;
 		historyRecoveredEpoch = -1;
@@ -1283,8 +1273,6 @@ export default function registerSubagentExtension(
 		governorCompatibilityReady = false;
 		governorCompatibilityError = undefined;
 		governorCompatibilityScope = undefined;
-		const releaseBarrier = releaseLegacyGovernorBarrier;
-		releaseLegacyGovernorBarrier = undefined;
 		state.parentSessionFile = null;
 		state.lastUiContext = null;
 		notifier.dispose();
@@ -1297,7 +1285,6 @@ export default function registerSubagentExtension(
 		delete process.env[SUBAGENT_PARENT_SESSION_ENV];
 		delete process.env[SUBAGENT_PARENT_PHYSICAL_SESSION_ENV];
 		if (globalStore[RUNTIME_CLEANUP_KEY] === cleanup) delete globalStore[RUNTIME_CLEANUP_KEY];
-		await releaseBarrier?.();
 	};
 
 	globalStore[RUNTIME_CLEANUP_KEY] = cleanup;

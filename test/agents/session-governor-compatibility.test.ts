@@ -95,6 +95,20 @@ function runtimeDirectory(runId: string, sessionId: string, childIndex = 0): str
 }
 
 describe("session governor v1 compatibility", () => {
+	test("does not retain a pre-upgrade directory lock for the current process lifetime", async () => {
+		const currentRoot = temporaryRoot("pi-governor-current-");
+		const legacyRoot = temporaryRoot("pi-governor-legacy-");
+		const result = await prepareSessionGovernorCompatibility({
+			scope: scope(),
+			limits,
+			currentRootDir: currentRoot,
+			legacyRootDir: legacyRoot,
+		});
+
+		expect(result.ok).toBeTrue();
+		expect(fs.existsSync(legacyLockPath(legacyRoot))).toBeFalse();
+	});
+
 	test("never reclaims a stale v1 lock whose directory protocol cannot exclude a legacy replacement race", async () => {
 		const currentRoot = temporaryRoot("pi-governor-current-");
 		const legacyRoot = temporaryRoot("pi-governor-legacy-");
@@ -109,7 +123,7 @@ describe("session governor v1 compatibility", () => {
 			limits,
 			currentRootDir: currentRoot,
 			legacyRootDir: legacyRoot,
-			legacyBarrierOptions: { timeoutMs: 20, retryMs: 1 },
+			legacyLockOptions: { timeoutMs: 20, retryMs: 1 },
 		});
 
 		expect(result.ok).toBeFalse();
@@ -136,7 +150,7 @@ describe("session governor v1 compatibility", () => {
 			limits,
 			currentRootDir: currentRootA,
 			legacyRootDir: legacyRoot,
-			legacyBarrierOptions: {
+			legacyLockOptions: {
 				timeoutMs: 30,
 				retryMs: 1,
 			},
@@ -146,7 +160,7 @@ describe("session governor v1 compatibility", () => {
 			limits,
 			currentRootDir: currentRootB,
 			legacyRootDir: legacyRoot,
-			legacyBarrierOptions: { timeoutMs: 30, retryMs: 1 },
+			legacyLockOptions: { timeoutMs: 30, retryMs: 1 },
 		});
 		const results = await Promise.all([first, second]);
 		expect(results.every((result) => !result.ok)).toBeTrue();
@@ -163,7 +177,7 @@ describe("session governor v1 compatibility", () => {
 			limits,
 			currentRootDir: currentRoot,
 			legacyRootDir: legacyRoot,
-			legacyBarrierOptions: { timeoutMs: 20, retryMs: 1 },
+			legacyLockOptions: { timeoutMs: 20, retryMs: 1 },
 		});
 		expect(result.ok).toBeFalse();
 		expect(fs.existsSync(lockDir)).toBeTrue();
@@ -179,8 +193,7 @@ describe("session governor v1 compatibility", () => {
 			legacyRootDir: legacyRoot,
 			now: () => 10,
 		});
-		if (!first.ok || !first.releaseLegacyBarrier) throw new Error("Expected a no-ledger v1 barrier.");
-		await first.releaseLegacyBarrier();
+		if (!first.ok) throw new Error("Expected a successful v1 history import.");
 		const second = await prepareSessionGovernorCompatibility({
 			scope: scope({ declared: ["started:0", "preflight-only:0"], started: ["started:0"] }),
 			limits,
@@ -188,62 +201,13 @@ describe("session governor v1 compatibility", () => {
 			legacyRootDir: legacyRoot,
 			now: () => 10,
 		});
-		if (!second.ok || !second.releaseLegacyBarrier) throw new Error("Expected an idempotent v1 barrier.");
-		await second.releaseLegacyBarrier();
+		if (!second.ok) throw new Error("Expected an idempotent v1 history import.");
 		const snapshot = await governor(currentRoot, "ps2-current").inspectExistingSnapshot();
 
 		expect(first).toMatchObject({ ok: true, importedLogicalAgentIds: ["started:0"] });
 		expect(second).toMatchObject({ ok: true, importedLogicalAgentIds: [] });
 		expect(snapshot?.agents.map(({ logicalAgentId }) => logicalAgentId)).toEqual(["started:0"]);
 		expect(snapshot?.agents[0]?.limits).toEqual({ maxDepth: 1, maxRunning: 1, maxTotal: 1 });
-	});
-
-	test("blocks a pre-upgrade governor's first write even when no v1 ledger existed at startup", async () => {
-		const currentRoot = temporaryRoot("pi-governor-current-");
-		const legacyRoot = temporaryRoot("pi-governor-legacy-");
-		const result = await prepareSessionGovernorCompatibility({
-			scope: scope(),
-			limits,
-			currentRootDir: currentRoot,
-			legacyRootDir: legacyRoot,
-		});
-		if (!result.ok || !result.releaseLegacyBarrier) throw new Error("Expected a retained no-ledger v1 barrier.");
-
-		const sessionDir = path.join(legacyRoot, createHash("sha256").update("logical-session").digest("hex"));
-		const legacyWriter = `
-			import * as fs from "node:fs";
-			import * as path from "node:path";
-			const sessionDir = process.argv[1];
-			const lockDir = path.join(sessionDir, "ledger.lock");
-			const deadline = Date.now() + 250;
-			while (Date.now() < deadline) {
-				try {
-					fs.mkdirSync(lockDir, { mode: 0o700 });
-					fs.writeFileSync(path.join(lockDir, "owner.json"), JSON.stringify({ token: "legacy", pid: process.pid }), { flag: "wx", mode: 0o600 });
-					fs.writeFileSync(path.join(sessionDir, "ledger.json"), JSON.stringify({ version: 1, sessionId: "logical-session", limits: { maxDepth: 3, maxRunning: 20, maxTotal: 200 }, total: 0, agents: [], leases: [], updatedAtMs: Date.now() }), { mode: 0o600 });
-					fs.rmSync(lockDir, { recursive: true });
-					process.exit(0);
-				} catch (error) {
-					if (error?.code !== "EEXIST") throw error;
-			}
-			await Bun.sleep(5);
-			}
-			process.exit(75);
-		`;
-		const blocked = Bun.spawnSync([process.execPath, "-e", legacyWriter, sessionDir], {
-			stdout: "ignore",
-			stderr: "ignore",
-		});
-		expect(blocked.exitCode).toBe(75);
-		expect(fs.existsSync(path.join(sessionDir, "ledger.json"))).toBe(false);
-
-		await result.releaseLegacyBarrier();
-		const admitted = Bun.spawnSync([process.execPath, "-e", legacyWriter, sessionDir], {
-			stdout: "ignore",
-			stderr: "ignore",
-		});
-		expect(admitted.exitCode).toBe(0);
-		expect(fs.existsSync(path.join(sessionDir, "ledger.json"))).toBe(true);
 	});
 
 	test("never imports an undeclared parallel index from an idle v1 ledger", async () => {
@@ -267,16 +231,7 @@ describe("session governor v1 compatibility", () => {
 
 		expect(result.ok).toBeTrue();
 		expect(snapshot?.agents.map(({ logicalAgentId }) => logicalAgentId).sort()).toEqual(["parallel:0", "parallel:1"]);
-		if (!result.ok || !result.releaseLegacyBarrier) throw new Error("Legacy migration barrier was not retained.");
-		const legacyLock = path.join(
-			legacyRoot,
-			createHash("sha256").update("logical-session").digest("hex"),
-			"ledger.lock",
-		);
-		expect(() => fs.mkdirSync(legacyLock)).toThrow();
-		await result.releaseLegacyBarrier();
-		expect(() => fs.mkdirSync(legacyLock)).not.toThrow();
-		fs.rmSync(legacyLock, { recursive: true, force: true });
+		expect(fs.existsSync(legacyLockPath(legacyRoot))).toBeFalse();
 	});
 
 	test("quarantines a v1 lease whose runtime ownership is still live or unknown", async () => {
