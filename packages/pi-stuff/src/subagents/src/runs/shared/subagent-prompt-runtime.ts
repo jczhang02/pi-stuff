@@ -1,12 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ContextEvent, ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { TSchema } from "typebox";
+import { Type } from "typebox";
+import { type JsonInputValue, parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { activityKey, registerSuiteOwnedTool, singleActivity } from "../../../../tool-display/index.js";
 import { registerNativeSupervisorClient } from "../../intercom/native-supervisor-channel.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
-import type { JsonSchemaObject, ResolvedToolBudget } from "../../shared/types.ts";
+import type { ResolvedToolBudget } from "../../shared/types.ts";
 import { resolveWatchPath } from "../../shared/utils.ts";
 import {
 	processSteerRequestsFromDir,
@@ -31,6 +32,7 @@ import {
 	SUBAGENT_STEER_INBOX_ENV,
 } from "./pi-args.ts";
 import {
+	assertJsonSchemaObject,
 	createStructuredOutputToolParameters,
 	STRUCTURED_OUTPUT_CAPTURE_ENV,
 	STRUCTURED_OUTPUT_SCHEMA_ENV,
@@ -93,7 +95,7 @@ const PARENT_ONLY_CUSTOM_MESSAGE_TYPES = new Set([
 type SubagentContextMessage = ContextEvent["messages"][number];
 
 export function validateFinalProviderPayload(
-	payload: unknown,
+	payload: Parameters<typeof validateChildProviderPayload>[0],
 	model: ProviderPayloadModel | undefined,
 ): { ok: true } | { ok: false; message: string } {
 	return validateChildProviderPayload(payload, model);
@@ -108,20 +110,20 @@ function readBooleanEnv(name: string): boolean | undefined {
 function readRequiredChildTools(): string[] | undefined {
 	const encoded = process.env[REQUIRED_CHILD_TOOLS_ENV]?.trim();
 	if (!encoded) return undefined;
-	const required = JSON.parse(encoded) as unknown;
+	const required = parseJsonValue(encoded);
 	if (!Array.isArray(required) || required.some((name) => !isRuntimeString(name) || !name)) {
 		throw new Error(`Invalid ${REQUIRED_CHILD_TOOLS_ENV} payload.`);
 	}
-	return required;
+	return required.filter(isRuntimeString);
 }
 
 function readMcpDirectChildTools(): string[] | undefined {
 	const encoded = process.env[MCP_DIRECT_CHILD_TOOLS_ENV]?.trim();
 	if (!encoded) return undefined;
 	try {
-		const tools = JSON.parse(encoded) as unknown;
+		const tools = parseJsonValue(encoded);
 		if (!Array.isArray(tools) || tools.some((name) => !isRuntimeString(name) || !name)) return undefined;
-		return tools;
+		return tools.filter(isRuntimeString);
 	} catch {
 		return undefined;
 	}
@@ -219,12 +221,14 @@ export function registerToolBudget(pi: ExtensionAPI, budget: ResolvedToolBudget 
 	if (!budget) return;
 	let toolCount = 0;
 	let softNudged = false;
+	// SAFETY: Pi exposes sendUserMessage at runtime; the optional function check below gates every call.
 	const sendUserMessage = (
 		pi as {
 			sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => PromiseLike<void> | void;
 		}
 	).sendUserMessage;
 	type ToolBudgetEventResult = { readonly block: true; readonly reason: string } | undefined;
+	// SAFETY: this adapter registers Pi's documented tool_call event and preserves its block-result contract.
 	const onRuntimeEvent = pi.on as (
 		event: string,
 		handler: (event: { toolName?: string }) => ToolBudgetEventResult,
@@ -258,6 +262,7 @@ export function registerSteeringInbox(
 	if (!steerInbox) return;
 	const capabilityPath = process.env[SUBAGENT_STEER_CAPABILITY_ENV]?.trim();
 	const ackDir = process.env[SUBAGENT_STEER_ACK_DIR_ENV]?.trim();
+	// SAFETY: Pi exposes sendUserMessage at runtime; canSteer and isRuntimeFunction gate every call.
 	const sendUserMessage = (
 		pi as {
 			sendUserMessage?: (content: string, options: { deliverAs: "steer" }) => PromiseLike<void> | void;
@@ -383,23 +388,19 @@ export function registerSteeringInbox(
 			reportRuntimeError("Failed to process child steering inbox", error);
 		}
 	};
-	const onInput = (event: unknown): undefined => {
+	const onInput = <Event>(event: Event): undefined => {
 		if (disposed || !event || !isRuntimeObject(event)) return undefined;
-		const input = event as { source?: unknown; streamingBehavior?: unknown; text?: unknown; content?: unknown };
+		const source = "source" in event ? event.source : undefined;
+		const streamingBehavior = "streamingBehavior" in event ? event.streamingBehavior : undefined;
+		const eventText = "text" in event ? event.text : undefined;
+		const content = "content" in event ? event.content : undefined;
 		// Pi reports `steer` only when the Agent is still streaming. If the same
 		// accepted extension message arrives just after the stream ends, it starts a
 		// normal turn and the field is undefined. Exact pending-text correlation makes
 		// both forms authoritative while still rejecting queued follow-ups.
-		if (
-			input.source !== "extension" ||
-			(input.streamingBehavior !== undefined && input.streamingBehavior !== "steer")
-		)
+		if (source !== "extension" || (streamingBehavior !== undefined && streamingBehavior !== "steer"))
 			return undefined;
-		const text = isRuntimeString(input.text)
-			? input.text
-			: isRuntimeString(input.content)
-				? input.content
-				: undefined;
+		const text = isRuntimeString(eventText) ? eventText : isRuntimeString(content) ? content : undefined;
 		if (!text) return undefined;
 		const requestId = steerRequestIdFromInput(text);
 		const delivery = requestId ? pendingById.get(requestId) : undefined;
@@ -440,7 +441,8 @@ export function registerSteeringInbox(
 		return undefined;
 	};
 
-	const onRuntimeEvent = pi.on as (event: string, handler: (event: unknown) => void) => void;
+	// SAFETY: these literal event names are Pi lifecycle events; each handler validates fields before use.
+	const onRuntimeEvent = pi.on as <Event>(event: string, handler: (event: Event) => void) => void;
 	// Register input before the watcher so an accepted extension input cannot race request dispatch.
 	onRuntimeEvent("input", onInput);
 	onRuntimeEvent("session_start", activate);
@@ -520,14 +522,15 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 	const structuredOutputPath = process.env[STRUCTURED_OUTPUT_CAPTURE_ENV];
 	const structuredSchemaPath = process.env[STRUCTURED_OUTPUT_SCHEMA_ENV];
 	if (structuredOutputPath && structuredSchemaPath) {
-		const schema = JSON.parse(fs.readFileSync(structuredSchemaPath, "utf-8")) as JsonSchemaObject;
-		const parameters = createStructuredOutputToolParameters(schema);
-		const structuredOutputTool = {
+		const schema = parseJsonValue(fs.readFileSync(structuredSchemaPath, "utf-8"));
+		assertJsonSchemaObject(schema, "structured output schema");
+		const parameters = Type.Unsafe<{ value: JsonInputValue }>(createStructuredOutputToolParameters(schema));
+		const structuredOutputTool: ToolDefinition<typeof parameters, { readonly path: string }> = {
 			name: "structured_output",
 			label: "Structured Output",
 			description: "Submit the required final structured output for this subagent step. This terminates the step.",
-			parameters: parameters as never,
-			async execute(_id: string, params: { value: unknown }) {
+			parameters,
+			async execute(_id, params) {
 				const validation = await validateStructuredOutputValue(schema, params.value);
 				if (validation.status === "invalid") {
 					throw new Error(`Structured output validation failed: ${validation.message}`);
@@ -540,7 +543,7 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 					terminate: true,
 				};
 			},
-		} as ToolDefinition<TSchema, Record<string, unknown>>;
+		};
 		registerSuiteOwnedTool(pi, structuredOutputTool, {
 			activity: {
 				categories: ["record-result"],
@@ -558,10 +561,10 @@ export default function registerSubagentPromptRuntime(pi: ExtensionAPI): void {
 
 	pi.on("context", (event, ctx) => {
 		const messages = stripParentOnlySubagentMessages(event.messages);
-		continuationHistoryObserved ||= childContextHasOwnContinuation(messages as typeof event.messages);
-		const projected = projectChildContinuationContext(messages as typeof event.messages, pi, ctx);
+		continuationHistoryObserved ||= childContextHasOwnContinuation(messages);
+		const projected = projectChildContinuationContext(messages, pi, ctx);
 		if (messages === event.messages && !projected.changed) return undefined;
-		return { messages: projected.messages as typeof event.messages };
+		return { messages: projected.messages };
 	});
 
 	pi.on("before_agent_start", async (event) => {
