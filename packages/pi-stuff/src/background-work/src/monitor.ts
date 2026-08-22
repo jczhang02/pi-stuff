@@ -157,13 +157,10 @@ class PollingMonitor implements BackgroundMonitorActivity {
 	}
 
 	snapshot(): BackgroundWorkSnapshot {
-		return {
-			...(this.input.description ? { description: this.input.description } : {}),
+		const snapshot: BackgroundWorkSnapshot = {
 			id: this.id,
 			kind: "monitor",
-			...(this.input.failureText ? { monitorFailureText: this.input.failureText } : {}),
 			monitorSource: this.input.source,
-			...(this.input.successText ? { monitorSuccessText: this.input.successText } : {}),
 			monitorTarget: this.input.target,
 			monitorTimeoutSeconds: Math.round(this.timeoutMs / 1_000),
 			recentOutput: this.evidence,
@@ -171,6 +168,10 @@ class PollingMonitor implements BackgroundMonitorActivity {
 			status: this.status,
 			title: this.title,
 		};
+		if (this.input.description) Object.assign(snapshot, { description: this.input.description });
+		if (this.input.failureText) Object.assign(snapshot, { monitorFailureText: this.input.failureText });
+		if (this.input.successText) Object.assign(snapshot, { monitorSuccessText: this.input.successText });
+		return snapshot;
 	}
 
 	async cancel(reason: "shutdown" | "user"): Promise<BackgroundWorkOutcome> {
@@ -286,18 +287,18 @@ export async function startMonitor(
 			throw new Error("Monitor HTTP target must use http or https");
 	}
 	if (input.source === "command") {
-		const started = await runtime.startCommandMonitor(
-			{
-				command: input.target,
-				...(input.description ? { description: input.description } : {}),
-				...(input.failureText ? { failureText: input.failureText } : {}),
-				...(input.successText ? { successText: input.successText } : {}),
-				timeoutSeconds,
-				toolCallId: input.toolCallId,
-			},
-			ctx,
-		);
-		return { id: started.id, ...(started.outputPath ? { outputPath: started.outputPath } : {}), title };
+		const commandInput = {
+			command: input.target,
+			timeoutSeconds,
+			toolCallId: input.toolCallId,
+		};
+		if (input.description) Object.assign(commandInput, { description: input.description });
+		if (input.failureText) Object.assign(commandInput, { failureText: input.failureText });
+		if (input.successText) Object.assign(commandInput, { successText: input.successText });
+		const started = await runtime.startCommandMonitor(commandInput, ctx);
+		const result: StartedMonitor = { id: started.id, title };
+		if (started.outputPath) Object.assign(result, { outputPath: started.outputPath });
+		return result;
 	}
 	const intervalSeconds = boundedSeconds(input.intervalSeconds, DEFAULT_INTERVAL_SECONDS, "Monitor interval", 60);
 	const id = runtime.newMonitorId();
