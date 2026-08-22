@@ -11,14 +11,15 @@ import {
 	summarizeToolActivityGroup,
 	type ToolActivityCategory,
 	type ToolActivityMetadata,
+	type ToolArguments,
 } from "../../packages/pi-stuff/src/tool-display/activity.js";
 
 const retrieval = (category: "list-directory" | "read-file" | "search-pattern") =>
 	({
 		categories: [category],
 		classify: ({ args }) => singleActivity(category, { target: String(args["value"] ?? "") }),
-	}) satisfies ToolActivityMetadata<Record<string, unknown>, unknown>;
-const policies = new Map<string, ToolActivityMetadata<Record<string, unknown>, unknown>>([
+	}) satisfies ToolActivityMetadata<ToolArguments, unknown>;
+const policies = new Map<string, ToolActivityMetadata<ToolArguments, unknown>>([
 	["read", retrieval("read-file")],
 	["grep", retrieval("search-pattern")],
 	["find", retrieval("search-pattern")],
@@ -38,7 +39,7 @@ const policies = new Map<string, ToolActivityMetadata<Record<string, unknown>, u
 		},
 	],
 ]);
-const classify = (name: string, args: Readonly<Record<string, unknown>>) =>
+const classify = (name: string, args: ToolArguments) =>
 	classifyToolActivityGroupInvocation(name, args, policies.get(name));
 
 const call = (id: string, name: string, value: string) => ({

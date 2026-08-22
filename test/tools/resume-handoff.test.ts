@@ -17,6 +17,7 @@ import piStuffTools, {
 	configureSuiteToolReplay,
 	createSuiteToolRegistrationTracker,
 	registerSuiteOwnedTool,
+	type ToolArguments,
 } from "../../packages/pi-stuff/src/tool-display/index.js";
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionContext } from "../fixtures/extension-context.js";
@@ -25,7 +26,7 @@ type EventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => object | u
 const HOST_BUILTINS = new Set(["bash", "edit", "find", "grep", "ls", "read", "write"]);
 
 class EventBusHarness {
-	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
+	private readonly listeners = new Map<string, Set<Parameters<ExtensionAPI["events"]["on"]>[1]>>();
 
 	view(): ExtensionAPI["events"] {
 		return {
@@ -107,11 +108,7 @@ function context(cwd: string, branch: readonly SessionEntry[] = []): ExtensionCo
 	});
 }
 
-function historicalToolBranch(
-	name: string,
-	args: Record<string, unknown>,
-	resultText: string,
-): readonly SessionEntry[] {
+function historicalToolBranch(name: string, args: ToolArguments, resultText: string): readonly SessionEntry[] {
 	const usage = {
 		input: 0,
 		output: 0,

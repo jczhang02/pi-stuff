@@ -10,6 +10,8 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import {
 	isRuntimeFunction,
 	isRuntimeObject,
@@ -63,6 +65,7 @@ import {
 	extractToolArgsPreview,
 } from "../../packages/pi-stuff/src/subagents/src/shared/utils.js";
 import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
+import type { ToolArguments } from "../../packages/pi-stuff/src/tool-display/activity.js";
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { testTheme } from "../fixtures/extension-context.js";
 
@@ -72,7 +75,51 @@ const theme = testTheme;
 
 type ToolInfo = ReturnType<ExtensionAPI["getAllTools"]>[number];
 type LifecycleResult = object | undefined | Promise<object | undefined>;
-type LifecycleHandler = (...args: never[]) => LifecycleResult;
+const FIXTURE_MESSAGE_SCHEMA = Type.Object(
+	{
+		content: Type.Unknown(),
+		isError: Type.Optional(Type.Boolean()),
+		role: Type.String(),
+		stopReason: Type.Optional(Type.String()),
+		timestamp: Type.Optional(Type.Number()),
+		toolCallId: Type.Optional(Type.String()),
+		toolName: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const CONTEXT_RESULT_SCHEMA = Type.Object(
+	{ messages: Type.Optional(Type.Array(FIXTURE_MESSAGE_SCHEMA)) },
+	{ additionalProperties: true },
+);
+type FixtureMessage = Static<typeof FIXTURE_MESSAGE_SCHEMA>;
+
+interface LifecycleEvent {
+	readonly content?: string;
+	readonly messages?: FixtureMessage[];
+	readonly payload?: object;
+	readonly reason?: string;
+	readonly source?: string;
+	readonly streamingBehavior?: string;
+	readonly systemPrompt?: string;
+	readonly toolName?: string;
+}
+
+interface LifecycleContext {
+	abort?(): void;
+	getSystemPrompt?(): string;
+	readonly model?: {
+		readonly contextWindow: number;
+		readonly id?: string;
+		readonly maxTokens: number;
+		readonly provider?: string;
+	};
+}
+
+type LifecycleHandler = (event: LifecycleEvent, context?: LifecycleContext) => LifecycleResult;
+
+function projectedMessages(result: Awaited<LifecycleResult>, fallback: FixtureMessage[]): FixtureMessage[] {
+	return Check(CONTEXT_RESULT_SCHEMA, result) && result.messages ? result.messages : fallback;
+}
 
 function toolInfo(tool: Pick<ToolDefinition, "description" | "name" | "parameters">): ToolInfo {
 	return {
@@ -139,7 +186,7 @@ function apiHarness() {
 		api,
 		tools,
 		run: async (event: string) => {
-			for (const handler of handlers.get(event) ?? []) await handler();
+			for (const handler of handlers.get(event) ?? []) await handler({});
 		},
 	};
 }
@@ -154,7 +201,7 @@ function expectCompactPresentation(tool: ToolDefinition | undefined): void {
 function renderedSummary(
 	api: ExtensionAPI,
 	tool: ToolDefinition | undefined,
-	args: Record<string, unknown>,
+	args: ToolArguments,
 	result: AgentToolResult<unknown>,
 	toolCallId: string,
 	isError = false,
@@ -481,15 +528,15 @@ test("waits until before_agent_start before installing intercom fallback so a la
 	setEnvironment(REQUIRED_CHILD_TOOLS_ENV, JSON.stringify(["intercom"]));
 
 	const tools = new Map<string, ToolDefinition>();
-	const handlers = new Map<string, Array<(event: never) => LifecycleResult>>();
+	const handlers = new Map<string, LifecycleHandler[]>();
 	const api = createExtensionApi({
 		getAllTools: () => [...tools.values()].map(toolInfo),
 		on: lifecycleHandlers(handlers),
 		// Pi's extension registry is first-wins for duplicate tool names.
 		registerTool: (tool) => {
 			// SAFETY: this test registry erases only generic renderer state and returns the original Tool unchanged.
-			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-			if (!tools.has(tool.name)) tools.set(tool.name, tool as ToolDefinition);
+			const stored = tool as ToolDefinition;
+			if (!tools.has(stored.name)) tools.set(stored.name, stored);
 		},
 		sendMessage: () => {},
 	});
@@ -506,12 +553,10 @@ test("waits until before_agent_start before installing intercom fallback so a la
 		} as ToolDefinition);
 	});
 
-	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-	for (const handler of handlers.get("session_start") ?? []) await handler({} as never);
+	for (const handler of handlers.get("session_start") ?? []) await handler({});
 	expect(tools.get("intercom")?.label).toBe("External Intercom");
 	for (const handler of handlers.get("before_agent_start") ?? []) {
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		await handler({ systemPrompt: "child" } as never);
+		await handler({ systemPrompt: "child" });
 	}
 	expect(tools.get("intercom")?.label).toBe("External Intercom");
 	expect(tools.get("contact_supervisor")?.label).toBe("Contact Supervisor");
@@ -795,7 +840,7 @@ test("aborts an oversized final child provider payload with a durable diagnostic
 	temporaryDirectories.push(root);
 	const diagnosticPath = join(root, "child-diagnostic.json");
 	setEnvironment(CHILD_TOOL_DIAGNOSTIC_PATH_ENV, diagnosticPath);
-	const handlers = new Map<string, Array<(event: never, ctx: never) => LifecycleResult>>();
+	const handlers = new Map<string, LifecycleHandler[]>();
 	const pi = createExtensionApi({
 		events: { emit: () => {}, on: () => () => {} },
 		getAllTools: () => [],
@@ -807,15 +852,13 @@ test("aborts an oversized final child provider payload with a durable diagnostic
 	let aborts = 0;
 	for (const handler of handlers.get("before_provider_request") ?? []) {
 		await handler(
-			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-			{ payload: { input: "𠮷".repeat(2_000), tools: [{ description: "x".repeat(10_000) }] } } as never,
-			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+			{ payload: { input: "𠮷".repeat(2_000), tools: [{ description: "x".repeat(10_000) }] } },
 			{
 				model: { contextWindow: 8_000, maxTokens: 2_000 },
 				abort: () => {
 					aborts += 1;
 				},
-			} as never,
+			},
 		);
 	}
 
@@ -827,7 +870,7 @@ test("aborts an oversized final child provider payload with a durable diagnostic
 });
 
 test("projects long child Tool history before a continuation request while preserving task and steering authority", async () => {
-	const handlers = new Map<string, Array<(event: never, ctx: never) => LifecycleResult>>();
+	const handlers = new Map<string, LifecycleHandler[]>();
 	const activeTool = {
 		name: "read",
 		description: "Read bounded project files.",
@@ -850,7 +893,7 @@ test("projects long child Tool history before a continuation request while prese
 		"LATEST_STEERING_AUTHORITY: keep the regression test and report the exact final count.",
 		"</pi-stuff-steer>",
 	].join("\n");
-	const messages: Array<Record<string, unknown>> = [
+	const messages: FixtureMessage[] = [
 		{ role: "user", content: [{ type: "text", text: `§1§ Task: ${delegatedTask}` }], timestamp: 1 },
 	];
 	for (const [index, output] of [
@@ -896,10 +939,7 @@ test("projects long child Tool history before a continuation request while prese
 	} as never;
 	let projected = messages;
 	for (const handler of handlers.get("context") ?? []) {
-		const result = (await handler({ messages: projected } as never, ctx)) as
-			| { messages?: Array<Record<string, unknown>> }
-			| undefined;
-		projected = result?.messages ?? projected;
+		projected = projectedMessages(await handler({ messages: projected }, ctx), projected);
 	}
 
 	expect(messages).toEqual(original);
@@ -935,14 +975,13 @@ test("projects long child Tool history before a continuation request while prese
 
 	let aborts = 0;
 	for (const handler of handlers.get("before_provider_request") ?? []) {
-		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-		await handler({ payload: providerPayload } as never, { model, abort: () => (aborts += 1) } as never);
+		await handler({ payload: providerPayload }, { model, abort: () => (aborts += 1) });
 	}
 	expect(aborts).toBe(0);
 });
 
 test("falls back to a bounded authority-and-recent-Tool continuation when old outputs are extreme", async () => {
-	const handlers = new Map<string, Array<(event: never, ctx: never) => LifecycleResult>>();
+	const handlers = new Map<string, LifecycleHandler[]>();
 	const activeTool = {
 		name: "bash",
 		description: "Execute a bounded command.",
@@ -960,7 +999,7 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 	const task = "EXTREME_TASK_AUTHORITY: complete the long audit.";
 	const steering = "EXTREME_STEERING_AUTHORITY: finish with a verification count.";
 	setEnvironment(SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV, createHash("sha256").update(task).digest("hex"));
-	const messages: Array<Record<string, unknown>> = [
+	const messages: FixtureMessage[] = [
 		{
 			role: "user",
 			content: [{ type: "text", text: "PARENT_FORK_HISTORY: unrelated earlier user authority." }],
@@ -1008,12 +1047,10 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 	const model = { provider: "openai-codex", contextWindow: 100_000, maxTokens: 40_000 };
 	let projected = messages;
 	for (const handler of handlers.get("context") ?? []) {
-		const result = (await handler(
-			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-			{ messages: projected } as never,
-			{ model, getSystemPrompt: () => "Child prompt. ".repeat(200) } as never,
-		)) as { messages?: Array<Record<string, unknown>> } | undefined;
-		projected = result?.messages ?? projected;
+		projected = projectedMessages(
+			await handler({ messages: projected }, { model, getSystemPrompt: () => "Child prompt. ".repeat(200) }),
+			projected,
+		);
 	}
 	const serialized = JSON.stringify(projected);
 	expect(messages).toEqual(original);
@@ -1044,7 +1081,7 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 });
 
 test("projects oversized non-text Tool evidence without breaking the signed recent Tool exchange", async () => {
-	const handlers = new Map<string, Array<(event: never, ctx: never) => LifecycleResult>>();
+	const handlers = new Map<string, LifecycleHandler[]>();
 	const activeTool = {
 		name: "screenshot",
 		description: "Capture the current screen.",
@@ -1070,7 +1107,7 @@ test("projects oversized non-text Tool evidence without breaking the signed rece
 		stopReason: "toolUse",
 		timestamp: 2,
 	};
-	const messages: Array<Record<string, unknown>> = [
+	const messages: FixtureMessage[] = [
 		{ role: "user", content: [{ type: "text", text: `§1§ Task: ${task}` }], timestamp: 1 },
 		signedAssistant,
 		{
@@ -1085,12 +1122,10 @@ test("projects oversized non-text Tool evidence without breaking the signed rece
 	const model = { provider: "openai", id: "unknown-azure-deployment", contextWindow: 100_000, maxTokens: 40_000 };
 	let projected = messages;
 	for (const handler of handlers.get("context") ?? []) {
-		const result = (await handler(
-			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
-			{ messages: projected } as never,
-			{ model, getSystemPrompt: () => "Child prompt." } as never,
-		)) as { messages?: Array<Record<string, unknown>> } | undefined;
-		projected = result?.messages ?? projected;
+		projected = projectedMessages(
+			await handler({ messages: projected }, { model, getSystemPrompt: () => "Child prompt." }),
+			projected,
+		);
 	}
 
 	expect(projected).not.toBe(messages);
@@ -1107,7 +1142,7 @@ test("labels an irreducible oversized request as a continuation after a resumed 
 	temporaryDirectories.push(root);
 	const diagnosticPath = join(root, "child-diagnostic.json");
 	setEnvironment(CHILD_TOOL_DIAGNOSTIC_PATH_ENV, diagnosticPath);
-	const handlers = new Map<string, Array<(event: never, ctx: never) => LifecycleResult>>();
+	const handlers = new Map<string, LifecycleHandler[]>();
 	const pi = createExtensionApi({
 		events: { emit: () => {}, on: () => () => {} },
 		getActiveTools: () => [],
@@ -1118,19 +1153,16 @@ test("labels an irreducible oversized request as a continuation after a resumed 
 	});
 	registerSubagentPromptRuntime(pi);
 	for (const handler of handlers.get("session_start") ?? []) {
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		await handler({ type: "session_start", reason: "resume" } as never, {} as never);
+		await handler({ reason: "resume" }, {});
 	}
 	let aborts = 0;
 	for (const handler of handlers.get("before_provider_request") ?? []) {
 		await handler(
-			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-			{ payload: { input: "AP6Zz9+/0f3cD7aQ".repeat(4_000) } } as never,
-			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+			{ payload: { input: "AP6Zz9+/0f3cD7aQ".repeat(4_000) } },
 			{
 				model: { provider: "openai-codex", contextWindow: 80_000, maxTokens: 32_000 },
 				abort: () => (aborts += 1),
-			} as never,
+			},
 		);
 	}
 
@@ -1268,7 +1300,7 @@ test("retries a failed steering acknowledgement without delivering the steer twi
 	setEnvironment(SUBAGENT_STEER_ACK_DIR_ENV, ackDir);
 	setEnvironment(SUBAGENT_CHILD_INDEX_ENV, "0");
 
-	const handlers = new Map<string, (event: unknown) => LifecycleResult>();
+	const handlers = new Map<string, (event: LifecycleEvent) => LifecycleResult>();
 	const delivered: string[] = [];
 	const pi = createExtensionApi({
 		on: lifecycleHandler(handlers),
@@ -1320,7 +1352,7 @@ test("retries a correlated steering acknowledgement once during immediate shutdo
 	setEnvironment(SUBAGENT_STEER_ACK_DIR_ENV, ackDir);
 	setEnvironment(SUBAGENT_CHILD_INDEX_ENV, "0");
 
-	const handlers = new Map<string, (event: unknown) => LifecycleResult>();
+	const handlers = new Map<string, (event: LifecycleEvent) => LifecycleResult>();
 	const delivered: string[] = [];
 	const pi = createExtensionApi({
 		on: lifecycleHandler(handlers),
@@ -1358,7 +1390,7 @@ test("holds startup steering until the child's initial Agent turn has started", 
 	const inbox = join(directory, "inbox");
 	setEnvironment(SUBAGENT_STEER_INBOX_ENV, inbox);
 
-	const handlers = new Map<string, (event: unknown) => LifecycleResult>();
+	const handlers = new Map<string, (event: LifecycleEvent) => LifecycleResult>();
 	const delivered: string[] = [];
 	registerSteeringInbox(
 		createExtensionApi({
@@ -1398,7 +1430,7 @@ test("replays a steering request after dispatch crashes before Pi accepts the in
 		ts: Date.now(),
 		message: "Continue after the child restart.",
 	};
-	const firstHandlers = new Map<string, (event: unknown) => LifecycleResult>();
+	const firstHandlers = new Map<string, (event: LifecycleEvent) => LifecycleResult>();
 	const firstDeliveries: string[] = [];
 	registerSteeringInbox(
 		createExtensionApi({
@@ -1413,7 +1445,7 @@ test("replays a steering request after dispatch crashes before Pi accepts the in
 	expect(readdirSync(inbox).some((entry) => entry.includes(".pi-stuff-inflight."))).toBeTrue();
 	firstHandlers.get("session_shutdown")?.({});
 
-	const replacementHandlers = new Map<string, (event: unknown) => LifecycleResult>();
+	const replacementHandlers = new Map<string, (event: LifecycleEvent) => LifecycleResult>();
 	const replacementDeliveries: string[] = [];
 	registerSteeringInbox(
 		createExtensionApi({
@@ -1458,7 +1490,7 @@ test("uses an existing steering acknowledgement to retire a crash-left request w
 		message: "Pi accepted the correlated steering input.",
 	});
 
-	const handlers = new Map<string, (event: unknown) => LifecycleResult>();
+	const handlers = new Map<string, (event: LifecycleEvent) => LifecycleResult>();
 	const delivered: string[] = [];
 	registerSteeringInbox(
 		createExtensionApi({

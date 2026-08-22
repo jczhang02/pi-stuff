@@ -13,13 +13,20 @@ import {
 	summarizeBuiltin,
 } from "../../packages/pi-stuff/src/tool-display/render.js";
 
+type ToolResultDetails = AgentToolResult<unknown>["details"];
+
+interface HugeArguments {
+	command: string;
+	late?: string;
+}
+
 // SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
 } as Theme;
 
-function result(text: string, details?: unknown): AgentToolResult<unknown> {
+function result(text: string, details?: ToolResultDetails): AgentToolResult<ToolResultDetails> {
 	return {
 		content: [{ type: "text", text }],
 		details,
@@ -703,7 +710,7 @@ describe("terminal-safe Tool rendering", () => {
 
 	test("bounds work and retained previews for multi-megabyte arguments and results", () => {
 		let lateGetterReads = 0;
-		const hugeArguments = { command: "x".repeat(8 * 1024 * 1024) } satisfies Record<string, unknown>;
+		const hugeArguments: HugeArguments = { command: "x".repeat(8 * 1024 * 1024) };
 		Object.defineProperty(hugeArguments, "late", {
 			enumerable: true,
 			get: () => {

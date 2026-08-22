@@ -1,17 +1,18 @@
 import { expect, test } from "bun:test";
 import {
 	createEventBus,
+	type AgentToolResult,
 	type EventBus,
-	type ExtensionAPI,
 	type Theme,
 	type ToolDefinition,
 	type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import { resetCapabilitiesCache, setCapabilities } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { ToolExecutionComponent } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js";
 import { initTheme } from "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
-import { isRuntimeNumber, isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import { isRuntimeNumber } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { classifyBashActivity } from "../../packages/pi-stuff/src/tool-display/activity.js";
 import {
 	assertSuiteToolActivityCoverage,
@@ -31,6 +32,7 @@ import { CachedToolRow } from "../../packages/pi-stuff/src/tool-display/render.j
 import { ToolUiSettingsStore } from "../../packages/pi-stuff/src/tool-display/settings.js";
 
 const Params = Type.Object({ value: Type.String() });
+const BashParams = Type.Object({ command: Type.String() });
 type Params = { value: string };
 type RenderContext = Parameters<NonNullable<ToolDefinition<typeof Params>["renderCall"]>>[2];
 
@@ -65,19 +67,18 @@ class ManualTimerScheduler implements ToolUiTimerScheduler {
 	}
 }
 
-interface EventBusLike {
-	emit(event: string, data: unknown): void;
-	on(event: string, listener: (data: unknown) => void): () => void;
-}
+type EventBusLike = Pick<EventBus, "emit" | "on">;
+type EventBusListener = Parameters<EventBus["on"]>[1];
+type EventBusPayload = Parameters<EventBusListener>[0];
 
 class EventBusHarness implements EventBusLike {
-	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
+	private readonly listeners = new Map<string, Set<EventBusListener>>();
 
-	emit(event: string, data: unknown): void {
+	emit(event: string, data: EventBusPayload): void {
 		for (const listener of Array.from(this.listeners.get(event) ?? [])) listener(data);
 	}
 
-	on(event: string, listener: (data: unknown) => void): () => void {
+	on(event: string, listener: EventBusListener): () => void {
 		const listeners = this.listeners.get(event) ?? new Set();
 		listeners.add(listener);
 		this.listeners.set(event, listeners);
@@ -94,15 +95,7 @@ function eventBusView(bus: EventBusHarness): EventBusLike {
 
 function apiHarness(events: EventBus = createEventBus()) {
 	let activeTools: string[] = [];
-	type CapturedHandlerResult = object | undefined | Promise<object | undefined>;
-	const handlers = new Map<string, Array<(event: unknown, context: unknown) => CapturedHandlerResult>>();
 	const tools = new Map<string, ToolDefinition>();
-	// SAFETY: this test adapter records every Host event callback without changing its arguments or result.
-	const on = ((event: string, handler: (event: unknown, context: unknown) => CapturedHandlerResult) => {
-		const existing = handlers.get(event) ?? [];
-		existing.push(handler);
-		handlers.set(event, existing);
-	}) as ExtensionAPI["on"];
 	const api: SuiteToolTrackerHost = {
 		events,
 		getActiveTools: () => [...activeTools],
@@ -117,7 +110,7 @@ function apiHarness(events: EventBus = createEventBus()) {
 				if (tool.promptGuidelines !== undefined) info.promptGuidelines = tool.promptGuidelines;
 				return info;
 			}),
-		on,
+		on: () => {},
 		registerTool: (tool) => {
 			// SAFETY: the test registry erases only generic renderer state and retains the original Tool object.
 			tools.set(tool.name, tool as ToolDefinition);
@@ -127,11 +120,11 @@ function apiHarness(events: EventBus = createEventBus()) {
 			activeTools = [...names];
 		},
 	};
-	return { api, handlers, tools };
+	return { api, tools };
 }
 
 function renderContext(
-	state: Record<string, unknown>,
+	state: RenderContext["state"],
 	args: Params,
 	overrides: Partial<RenderContext> = {},
 ): RenderContext {
@@ -197,7 +190,8 @@ function presentation(category: FixtureCategory) {
 		},
 		label: category,
 		runningSummary: "working",
-		summarize: (_args: Readonly<Params>, _result: unknown, state: string) => (state === "success" ? "done" : state),
+		summarize: (_args: Readonly<Params>, _result: AgentToolResult<unknown>, state: string) =>
+			state === "success" ? "done" : state,
 		target: (args: Readonly<Params>) => args.value,
 	};
 }
@@ -546,11 +540,7 @@ test("a Code Mode envelope renders the same compact Tool Activity as a direct To
 			parameters: Type.Object({ code: Type.String() }),
 		},
 		{
-			decode: (details) =>
-				isRuntimeObject(details) && details !== null && "operations" in details
-					? // SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-						((details as { operations: readonly SuiteToolEnvelopeOperation[] }).operations ?? [])
-					: [],
+			decode: () => [operation],
 			registry: registrations.registry,
 		},
 	);
@@ -650,11 +640,7 @@ test("Code Mode and direct Tools stay pixel-equivalent when expanded, failed, an
 				parameters: Type.Object({ code: Type.String() }),
 			},
 			{
-				decode: (details) =>
-					isRuntimeObject(details) && details !== null && "operations" in details
-						? // SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-							((details as { operations: readonly SuiteToolEnvelopeOperation[] }).operations ?? [])
-						: [],
+				decode: () => [operation],
 				registry: registrations.registry,
 			},
 		);
@@ -1420,8 +1406,7 @@ test("a Code Mode Bash call still reaches RTK's normal tool_call rewrite seam", 
 	const registrations = createSuiteToolRegistrationTracker(harness.api);
 	let executed = "";
 	registrations.api.on("tool_call", (event) => {
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		if (event.toolName === "bash") (event.input as { command: string }).command = "rtk git status";
+		if (event.toolName === "bash" && Check(BashParams, event.input)) event.input.command = "rtk git status";
 	});
 	registerSuiteOwnedTool(
 		registrations.api,
@@ -1433,7 +1418,7 @@ test("a Code Mode Bash call still reaches RTK's normal tool_call rewrite seam", 
 			},
 			label: "Bash",
 			name: "bash",
-			parameters: Type.Object({ command: Type.String() }),
+			parameters: BashParams,
 		},
 		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		presentation("run-command") as never,
