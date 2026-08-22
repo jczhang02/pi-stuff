@@ -1,4 +1,4 @@
-import { isRuntimeNumber, isRuntimeObject } from "./shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "./shared/runtime-type.js";
 
 const LIFECYCLE_TRACE_KEY = "@jczhang02/pi-stuff/lifecycle-performance";
 
@@ -7,12 +7,31 @@ interface LifecycleTraceState {
 	readonly events: Array<{ readonly atMs: number; readonly label: string }>;
 }
 
+function isLifecycleEvent<Value>(value: Value): value is Value & LifecycleTraceState["events"][number] {
+	return (
+		isRuntimeObject(value) &&
+		value !== null &&
+		"atMs" in value &&
+		isRuntimeNumber(value.atMs) &&
+		"label" in value &&
+		isRuntimeString(value.label)
+	);
+}
+
 function traceState(): LifecycleTraceState | undefined {
-	const value = (globalThis as Record<symbol, unknown>)[Symbol.for(LIFECYCLE_TRACE_KEY)];
-	if (!isRuntimeObject(value) || value === null) return undefined;
-	const state = value as Partial<LifecycleTraceState>;
-	if (!isRuntimeNumber(state.origin) || !Array.isArray(state.events)) return undefined;
-	return state as LifecycleTraceState;
+	const value = Object.getOwnPropertyDescriptor(globalThis, Symbol.for(LIFECYCLE_TRACE_KEY))?.value;
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		!("origin" in value) ||
+		!isRuntimeNumber(value.origin) ||
+		!("events" in value) ||
+		!Array.isArray(value.events) ||
+		!value.events.every(isLifecycleEvent)
+	) {
+		return undefined;
+	}
+	return { events: value.events, origin: value.origin };
 }
 
 /** Inert unless the explicit lifecycle benchmark installs an in-process observer. */

@@ -62,9 +62,11 @@ function accountIdFromToken(token: string): string | undefined {
 		if (!encoded) return undefined;
 		const payload: unknown = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
 		if (!isRuntimeObject(payload) || payload === null) return undefined;
-		const claims = (payload as Record<string, unknown>)[JWT_AUTH_CLAIM];
+		if (!(JWT_AUTH_CLAIM in payload)) return undefined;
+		const claims = payload[JWT_AUTH_CLAIM];
 		if (!isRuntimeObject(claims) || claims === null) return undefined;
-		const accountId = (claims as Record<string, unknown>)["chatgpt_account_id"];
+		if (!("chatgpt_account_id" in claims)) return undefined;
+		const accountId = claims["chatgpt_account_id"];
 		return isRuntimeString(accountId) && accountId.trim() ? accountId.trim() : undefined;
 	} catch {
 		return undefined;

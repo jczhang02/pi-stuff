@@ -112,11 +112,13 @@ interface InlineAutocompleteState {
 }
 
 function isCursorAwareEditor(editor: EditorComponent): editor is CursorAwareEditor {
-	const candidate = editor as Partial<CursorAwareEditor>;
 	return (
-		isRuntimeFunction(candidate.getCursor) &&
-		isRuntimeFunction(candidate.getLines) &&
-		isRuntimeFunction(candidate.isShowingAutocomplete)
+		"getCursor" in editor &&
+		isRuntimeFunction(editor.getCursor) &&
+		"getLines" in editor &&
+		isRuntimeFunction(editor.getLines) &&
+		"isShowingAutocomplete" in editor &&
+		isRuntimeFunction(editor.isShowingAutocomplete)
 	);
 }
 
@@ -233,11 +235,12 @@ function safeAutocompleteItems(items: readonly AutocompleteItem[], allowedNames:
 		if (!name || !allowedNames.has(name) || seen.has(name)) continue;
 		seen.add(name);
 		const description = item.description ? sanitizeTerminalText(item.description) : "";
-		result.push({
+		const safeItem: SelectItem = {
 			value: name,
 			label: `/${name}`,
-			...(description ? { description } : {}),
-		});
+		};
+		if (description) Object.assign(safeItem, { description });
+		result.push(safeItem);
 		if (result.length >= MAX_COMMANDS) break;
 	}
 	return result;
@@ -483,7 +486,9 @@ class InputEnhancementEditor implements EditorComponent {
 
 	set onSubmit(value: (text: string) => void) {
 		this.editor.onSubmit = (text) => {
-			(this.tui as TUI & { scrollToBottom?(): void }).scrollToBottom?.();
+			if ("scrollToBottom" in this.tui && isRuntimeFunction(this.tui.scrollToBottom)) {
+				this.tui.scrollToBottom();
+			}
 			value(text);
 		};
 	}
@@ -838,13 +843,15 @@ export function installInputEnhancementEditor(
 		supersede();
 		throw error;
 	}
-	const controller = dispose as InputEnhancementController;
-	controller.dispose = dispose;
-	controller.isShowingAutocomplete = () => currentEditor?.isShowingAutocomplete() === true;
-	controller.requestRender = (force) => currentEditor?.requestRender(force);
-	controller.subscribe = (listener) => {
-		listeners.add(listener);
-		return () => listeners.delete(listener);
-	};
-	return controller;
+	return Object.assign(dispose, {
+		dispose,
+		isShowingAutocomplete: () => currentEditor?.isShowingAutocomplete() === true,
+		requestRender: (force?: boolean) => currentEditor?.requestRender(force),
+		subscribe: (listener: (visible: boolean) => void) => {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+	});
 }
