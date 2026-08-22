@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isRuntimeString } from "../../../../shared/runtime-type.js";
+import { parseJsonValue } from "../../../../shared/json-value.js";
+import { isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 
 export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
 export const PI_SUBAGENT_PI_BINARY_ENV = "PI_SUBAGENT_PI_BINARY";
@@ -11,10 +12,8 @@ export function findPiPackageRootFromEntry(entryPoint: string): string | undefin
 	while (dir !== path.dirname(dir)) {
 		const packageJsonPath = path.join(dir, "package.json");
 		if (fs.existsSync(packageJsonPath)) {
-			const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as {
-				name?: unknown;
-			};
-			if (pkg.name === PI_CODING_AGENT_PACKAGE) return dir;
+			const pkg = parseJsonValue(fs.readFileSync(packageJsonPath, "utf-8"));
+			if (isRuntimeObject(pkg) && pkg !== null && "name" in pkg && pkg.name === PI_CODING_AGENT_PACKAGE) return dir;
 		}
 		dir = path.dirname(dir);
 	}
@@ -113,11 +112,14 @@ export function resolvePiCliScript(deps: PiSpawnDeps = {}): string | undefined {
 				return path.join(packageRoot, "package.json");
 			});
 		const packageJsonPath = resolvePackageJson();
-		const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
-			bin?: string | Record<string, string>;
-		};
+		const packageJson = parseJsonValue(readFileSync(packageJsonPath, "utf-8"));
+		if (!isRuntimeObject(packageJson) || packageJson === null || !("bin" in packageJson)) return undefined;
 		const binField = packageJson.bin;
-		const binPath = isRuntimeString(binField) ? binField : (binField?.pi ?? Object.values(binField ?? {})[0]);
+		let binPath = isRuntimeString(binField) ? binField : undefined;
+		if (!binPath && isRuntimeObject(binField) && binField !== null && !Array.isArray(binField)) {
+			const candidate = "pi" in binField ? binField.pi : Object.values(binField)[0];
+			if (isRuntimeString(candidate)) binPath = candidate;
+		}
 		if (!binPath) return undefined;
 		const candidate = path.resolve(path.dirname(packageJsonPath), binPath);
 		if (isRunnableNodeScript(candidate, existsSync)) {

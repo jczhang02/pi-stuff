@@ -23,11 +23,12 @@ interface NestedControlRouterOptions {
 }
 
 function managementResult(text: string, isError = false): AgentToolResult<Details> & { isError?: boolean } {
-	return {
+	const result: AgentToolResult<Details> & { isError?: boolean } = {
 		content: [{ type: "text", text }],
-		...(isError ? { isError: true } : {}),
 		details: { mode: "management", results: [] },
 	};
+	if (isError) Object.assign(result, { isError: true });
+	return result;
 }
 
 function belongsToCurrentSession(sessionId: string | undefined, currentSessionId: string | null): boolean {
@@ -150,11 +151,12 @@ export async function routeLiveNestedAgentControl(
 
 	if (params.action === "stop") {
 		try {
-			deliverStopRequest({
+			const request: Parameters<typeof deliverStopRequest>[0] = {
 				asyncDir,
 				source: "nested-agent-stop",
-				...(params.index !== undefined ? { targetIndex: params.index } : {}),
-			});
+			};
+			if (params.index !== undefined) Object.assign(request, { targetIndex: params.index });
+			deliverStopRequest(request);
 			return managementResult(
 				`Interrupt requested for nested Agent ${match.run.id}${params.index === undefined ? "" : ` child ${params.index}`}.`,
 			);
@@ -216,9 +218,10 @@ export async function routeLiveNestedAgentControl(
 				: steering.state === "pending"
 					? "pending acknowledgment"
 					: steering.state;
-	return {
+	const result: AgentToolResult<Details> & { isError?: boolean } = {
 		content: [{ type: "text", text: `Steering ${label} for nested Agent ${match.run.id} (request ${requestId}).` }],
-		...(failed ? { isError: true } : {}),
 		details: { mode: "management", results: [], steering },
 	};
+	if (failed) Object.assign(result, { isError: true });
+	return result;
 }

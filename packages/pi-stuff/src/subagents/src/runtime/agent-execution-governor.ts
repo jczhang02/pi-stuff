@@ -99,16 +99,16 @@ export class AgentExecutionGovernor {
 	async reserveSpawn(input: ReserveAgentSpawnInput): Promise<AgentExecutionReservationResult> {
 		const launchRunId = requiredText("launchRunId", input.launchRunId);
 		const childCount = positiveSafeInteger("childCount", input.childCount);
-		const requests = Array.from(
-			{ length: childCount },
-			(_, childIndex): AcquireSpawnRequest => ({
+		const requests = Array.from({ length: childCount }, (_, childIndex): AcquireSpawnRequest => {
+			const request: AcquireSpawnRequest = {
 				logicalAgentId: agentExecutionLogicalId(launchRunId, childIndex),
 				runtimeRunId: launchRunId,
 				childIndex,
-				...(input.childLimits ? { childLimits: input.childLimits } : {}),
-				...(input.pid === undefined ? {} : { pid: input.pid }),
-			}),
-		);
+			};
+			if (input.childLimits) Object.assign(request, { childLimits: input.childLimits });
+			if (input.pid !== undefined) Object.assign(request, { pid: input.pid });
+			return request;
+		});
 		const acquired = await this.backend.acquireSpawnBatch(requests);
 		if (!acquired.ok) return reservationFailure(acquired.error, "start", childCount);
 		return {
@@ -122,12 +122,13 @@ export class AgentExecutionGovernor {
 		const launchRunId = requiredText("launchRunId", input.launchRunId);
 		const targetRunId = requiredText("targetRunId", input.targetRunId);
 		const childIndex = nonNegativeSafeInteger("childIndex", input.childIndex);
-		const acquired = await this.backend.acquireResume({
+		const request: AcquireAgentRequest = {
 			logicalAgentId: agentExecutionLogicalId(targetRunId, childIndex),
 			runtimeRunId: launchRunId,
 			childIndex,
-			...(input.pid === undefined ? {} : { pid: input.pid }),
-		});
+		};
+		if (input.pid !== undefined) Object.assign(request, { pid: input.pid });
+		const acquired = await this.backend.acquireResume(request);
 		if (!acquired.ok) return reservationFailure(acquired.error, "resume", 1);
 		return {
 			ok: true,

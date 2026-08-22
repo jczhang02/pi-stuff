@@ -3,22 +3,22 @@ import type { ResolvedTurnBudget, TurnBudgetState } from "../../shared/types.ts"
 
 export const DEFAULT_TURN_BUDGET_GRACE_TURNS = 1;
 
-export function resolveTurnBudgetConfig(raw: unknown, label = "turnBudget") {
+export function resolveTurnBudgetConfig<Value>(raw: Value, label = "turnBudget") {
 	if (raw === undefined) return {};
 	if (!raw || !isRuntimeObject(raw) || Array.isArray(raw)) {
 		return { error: `${label} must be an object with maxTurns and optional graceTurns.` };
 	}
 	const unknownField = Object.keys(raw).find((key) => key !== "maxTurns" && key !== "graceTurns");
 	if (unknownField) return { error: `${label}.${unknownField} is not supported.` };
-	const budget = raw as { maxTurns?: unknown; graceTurns?: unknown };
-	if (!isRuntimeNumber(budget.maxTurns) || !Number.isInteger(budget.maxTurns) || budget.maxTurns < 1) {
+	if (!("maxTurns" in raw) || !isRuntimeNumber(raw.maxTurns) || !Number.isInteger(raw.maxTurns) || raw.maxTurns < 1) {
 		return { error: `${label}.maxTurns must be an integer >= 1.` };
 	}
-	const graceTurns = budget.graceTurns ?? DEFAULT_TURN_BUDGET_GRACE_TURNS;
+	const graceTurns =
+		"graceTurns" in raw ? (raw.graceTurns ?? DEFAULT_TURN_BUDGET_GRACE_TURNS) : DEFAULT_TURN_BUDGET_GRACE_TURNS;
 	if (!isRuntimeNumber(graceTurns) || !Number.isInteger(graceTurns) || graceTurns < 0) {
 		return { error: `${label}.graceTurns must be an integer >= 0.` };
 	}
-	return { turnBudget: { maxTurns: budget.maxTurns, graceTurns } };
+	return { turnBudget: { maxTurns: raw.maxTurns, graceTurns } };
 }
 
 export function appendTurnBudgetSystemPrompt(systemPrompt: string, budget: ResolvedTurnBudget | undefined): string {
@@ -57,13 +57,14 @@ export function initialTurnBudgetState(budget: ResolvedTurnBudget): TurnBudgetSt
 }
 
 export function turnBudgetState(budget: ResolvedTurnBudget, turnCount: number, exceeded: boolean): TurnBudgetState {
-	return {
+	const state: TurnBudgetState = {
 		...budget,
 		turnCount,
 		outcome: exceeded ? "exceeded" : "wrap-up-requested",
 		wrapUpRequestedAtTurn: budget.maxTurns,
-		...(exceeded ? { exceededAtTurn: turnCount } : {}),
 	};
+	if (exceeded) state.exceededAtTurn = turnCount;
+	return state;
 }
 
 export function turnBudgetDeferredState(

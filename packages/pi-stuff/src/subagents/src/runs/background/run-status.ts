@@ -27,11 +27,12 @@ export interface RunStatusDeps {
 export type RunStatusResult = AgentToolResult<Details> & { readonly isError?: boolean };
 
 function statusResult(text: string, isError = false): RunStatusResult {
-	return {
+	const result: RunStatusResult = {
 		content: [{ type: "text", text }],
-		...(isError ? { isError: true } : {}),
 		details: { mode: "management", results: [] },
 	};
+	if (isError) Object.assign(result, { isError: true });
+	return result;
 }
 
 function compactText(value: string, limit: number): string {
@@ -95,13 +96,14 @@ function rowDetail(row: AgentRow): string {
 function currentRows(deps: RunStatusDeps): readonly AgentRow[] {
 	if (!deps.state?.currentSessionId) return [];
 	const rejectControl = () => false;
-	const current = new CurrentAgents(deps.state, {
+	const options: ConstructorParameters<typeof CurrentAgents>[1] = {
 		inspect: rejectControl,
 		steer: rejectControl,
 		stop: rejectControl,
 		resume: rejectControl,
-		...(deps.now ? { now: deps.now } : {}),
-	});
+	};
+	if (deps.now) Object.assign(options, { now: deps.now });
+	const current = new CurrentAgents(deps.state, options);
 	try {
 		return current.snapshot().rows;
 	} finally {

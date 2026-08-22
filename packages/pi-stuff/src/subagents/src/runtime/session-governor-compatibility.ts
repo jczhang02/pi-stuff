@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseJsonValue } from "../../../shared/json-value.js";
 import { isRuntimeObject } from "../../../shared/runtime-type.js";
 import { inspectWriterProcessLivenessAsync } from "../runs/background/writer-process-registry.ts";
 import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
@@ -152,14 +153,15 @@ export async function prepareSessionGovernorCompatibility(
 		const imported = [...historical.values()];
 		const after = imported.length > 0 ? await current.importHistoricalAgents(imported) : before;
 		const previous = new Set(before?.agents.map(({ logicalAgentId }) => logicalAgentId) ?? []);
-		return {
+		const result: Extract<SessionGovernorCompatibilityResult, { ok: true }> = {
 			ok: true,
 			importedLogicalAgentIds: Object.freeze(
 				(after?.agents ?? []).map(({ logicalAgentId }) => logicalAgentId).filter((id) => !previous.has(id)),
 			),
 			legacyLedgerObserved: legacySnapshot !== undefined,
-			...(legacyBarrier ? { releaseLegacyBarrier: legacyBarrier.release } : {}),
 		};
+		if (legacyBarrier) Object.assign(result, { releaseLegacyBarrier: legacyBarrier.release });
+		return result;
 	} catch (error) {
 		await legacyBarrier?.release();
 		return {
@@ -227,10 +229,10 @@ async function acquireLegacyGovernorBarrier(
 					if (released) return;
 					released = true;
 					try {
-						const owner = JSON.parse(await fs.promises.readFile(path.join(lockDir, "owner.json"), "utf8")) as {
-							token?: unknown;
-						};
-						if (owner.token === token) await fs.promises.rm(lockDir, { recursive: true, force: true });
+						const owner = parseJsonValue(await fs.promises.readFile(path.join(lockDir, "owner.json"), "utf8"));
+						if (isRuntimeObject(owner) && owner !== null && "token" in owner && owner.token === token) {
+							await fs.promises.rm(lockDir, { recursive: true, force: true });
+						}
 					} catch {
 						// A missing/replaced owner is no longer ours to remove.
 					}
@@ -377,9 +379,7 @@ function explicitPidState(pid: number): boolean | undefined {
 }
 
 function messageCode(cause: unknown): string | undefined {
-	return cause && isRuntimeObject(cause) && "code" in cause
-		? String((cause as NodeJS.ErrnoException).code)
-		: undefined;
+	return cause && isRuntimeObject(cause) && "code" in cause ? String(cause.code) : undefined;
 }
 
 function messageOf(cause: unknown): string {

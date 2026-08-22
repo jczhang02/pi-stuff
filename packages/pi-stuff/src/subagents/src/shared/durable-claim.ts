@@ -2,6 +2,7 @@ import { dlopen, FFIType, ptr } from "bun:ffi";
 import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { assertPrivateDirectory } from "./private-directory.ts";
 import { readProcessStartIdentity } from "./process-identity.ts";
 
@@ -27,6 +28,12 @@ function safeClaimName(name: string): string {
 		throw new Error("Durable claim name must be one safe path component.");
 	}
 	return name;
+}
+
+function errorCode<Value>(value: Value): string | undefined {
+	return isRuntimeObject(value) && value !== null && "code" in value && isRuntimeString(value.code)
+		? value.code
+		: undefined;
 }
 
 /** Map an unbounded stream of logical owners onto a fixed set of lock inodes. */
@@ -129,7 +136,7 @@ function tryAcquireClaim(parentDirectory: string, name: string, persistOwner: bo
 	try {
 		descriptor = fs.openSync(lockPath, flags, 0o600);
 	} catch (error) {
-		const code = (error as NodeJS.ErrnoException).code;
+		const code = errorCode(error);
 		if (code === "EISDIR" || code === "ELOOP") {
 			throw new Error(`Durable claim '${lockPath}' must be a regular file.`, {
 				cause: error instanceof Error ? error : undefined,
@@ -204,7 +211,7 @@ export async function tryAcquireKernelClaimAsync(
 	try {
 		handle = await fs.promises.open(lockPath, flags, 0o600);
 	} catch (error) {
-		const code = (error as NodeJS.ErrnoException).code;
+		const code = errorCode(error);
 		if (code === "EISDIR" || code === "ELOOP") {
 			throw new Error(`Durable claim '${lockPath}' must be a regular file.`, {
 				cause: error instanceof Error ? error : undefined,

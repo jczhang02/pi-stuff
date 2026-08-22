@@ -1,11 +1,11 @@
 export type ContextMode = "fresh" | "fork";
 export type ContextSummary = ContextMode | "mixed";
 
-export function isContextMode(value: unknown): value is ContextMode {
+export function isContextMode<Value>(value: Value): value is Value & ContextMode {
 	return value === "fresh" || value === "fork";
 }
 
-export function isContextSummary(value: unknown): value is ContextSummary {
+export function isContextSummary<Value>(value: Value): value is Value & ContextSummary {
 	return isContextMode(value) || value === "mixed";
 }
 

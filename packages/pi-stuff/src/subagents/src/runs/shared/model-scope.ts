@@ -84,32 +84,31 @@ export function checkModelScope(
  * Throws a descriptive error for malformed configs (matching the surrounding
  * settings-parsing style). Returns `undefined` when the field is absent.
  */
-export function parseModelScopeConfig(value: unknown, meta: { filePath: string }): ModelScopeConfig | undefined {
+export function parseModelScopeConfig<Value>(value: Value, meta: { filePath: string }): ModelScopeConfig | undefined {
 	if (value === undefined) return undefined;
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) {
 		throw new Error(`Subagent settings in '${meta.filePath}' have invalid 'modelScope'; expected an object.`);
 	}
 
-	const input = value as Record<string, unknown>;
 	const config: ModelScopeConfig = {};
 
-	if ("enforce" in input) {
-		if (!isRuntimeBoolean(input.enforce)) {
+	if ("enforce" in value) {
+		if (!isRuntimeBoolean(value.enforce)) {
 			throw new Error(
 				`Subagent settings in '${meta.filePath}' have invalid 'modelScope.enforce'; expected a boolean.`,
 			);
 		}
-		config.enforce = input.enforce;
+		config.enforce = value.enforce;
 	}
 
-	if ("allow" in input) {
-		if (!Array.isArray(input.allow)) {
+	if ("allow" in value) {
+		if (!Array.isArray(value.allow)) {
 			throw new Error(
 				`Subagent settings in '${meta.filePath}' have invalid 'modelScope.allow'; expected an array of strings.`,
 			);
 		}
 		const allow: string[] = [];
-		for (const entry of input.allow) {
+		for (const entry of value.allow) {
 			if (!isRuntimeString(entry)) {
 				throw new Error(
 					`Subagent settings in '${meta.filePath}' have invalid 'modelScope.allow'; expected an array of strings.`,

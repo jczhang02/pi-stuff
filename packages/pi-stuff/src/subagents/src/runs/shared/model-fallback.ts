@@ -35,12 +35,12 @@ export interface ParentModel {
 	id: string;
 }
 
-export function normalizeParentModel(model: unknown): ParentModel | undefined {
+export function normalizeParentModel<Value>(model: Value): ParentModel | undefined {
 	if (!model || !isRuntimeObject(model)) return undefined;
-	const candidate = model as { provider?: unknown; id?: unknown };
-	if (!isRuntimeString(candidate.provider) || !isRuntimeString(candidate.id)) return undefined;
-	if (!candidate.provider || !candidate.id) return undefined;
-	return { provider: candidate.provider, id: candidate.id };
+	if (!("provider" in model) || !("id" in model)) return undefined;
+	if (!isRuntimeString(model.provider) || !isRuntimeString(model.id)) return undefined;
+	if (!model.provider || !model.id) return undefined;
+	return { provider: model.provider, id: model.id };
 }
 
 /**

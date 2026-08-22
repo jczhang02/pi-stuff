@@ -10,13 +10,13 @@ interface CompletionDataLike {
 	success?: unknown;
 }
 
-function asNonEmptyString(value: unknown): string | undefined {
+function asNonEmptyString<Value>(value: Value): string | undefined {
 	if (!isRuntimeString(value)) return undefined;
 	const trimmed = value.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function asFiniteNumber(value: unknown): number | undefined {
+function asFiniteNumber<Value>(value: Value): number | undefined {
 	if (!isRuntimeNumber(value)) return undefined;
 	return Number.isFinite(value) ? value : undefined;
 }
