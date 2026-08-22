@@ -1992,9 +1992,9 @@ function runChildProcess(input: {
 						return;
 					}
 					stdoutProtocolBytes = observedBytes;
-					let parsed: unknown;
+					let parsed: JsonValue;
 					try {
-						parsed = JSON.parse(line);
+						parsed = parseJsonValue(line);
 					} catch {
 						rawOutputTail.push(`${line}\n`);
 						input.transcript.writeStdoutLine(line);

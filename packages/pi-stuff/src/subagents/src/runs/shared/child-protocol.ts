@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
+import type { JsonObject, JsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeNumber,
@@ -60,19 +61,23 @@ const CHILD_PROTOCOL_EVENT_TYPES = new Set([
 	"bash_execution_update",
 ]);
 
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+	return value !== null && value !== undefined && isRuntimeObject(value) && !Array.isArray(value);
+}
+
 export interface ChildProtocolEvent {
 	type: string;
 	message?: ChildProtocolMessage;
 	toolCallId?: string;
 	toolName?: string;
-	args?: Record<string, unknown>;
+	args?: JsonObject;
 	isError?: boolean;
-	willRetry?: unknown;
+	willRetry?: JsonValue;
 }
 
-export function childMessageProtocolError(value: unknown): string | undefined {
-	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return "message must be an object";
-	const message = value as Record<string, unknown>;
+export function childMessageProtocolError(value: JsonValue | undefined): string | undefined {
+	if (!isJsonObject(value)) return "message must be an object";
+	const message = value;
 	if (
 		message.role !== "assistant" &&
 		message.role !== "user" &&
@@ -100,8 +105,8 @@ export function childMessageProtocolError(value: unknown): string | undefined {
 	if (message.role === "user" && isRuntimeString(message.content)) return undefined;
 	if (!Array.isArray(message.content)) return `message.content for role '${message.role}' must be an array`;
 	for (const part of message.content) {
-		if (!part || !isRuntimeObject(part) || Array.isArray(part)) return "message.content contains a non-object part";
-		const content = part as Record<string, unknown>;
+		if (!isJsonObject(part)) return "message.content contains a non-object part";
+		const content = part;
 		if (!isRuntimeString(content.type)) return "message.content part type must be a string";
 		if (content.type === "text" && !isRuntimeString(content.text)) {
 			return "message.content text must be a string";
@@ -114,11 +119,7 @@ export function childMessageProtocolError(value: unknown): string | undefined {
 		}
 		if (
 			content.type === "toolCall" &&
-			(!isRuntimeString(content.id) ||
-				!isRuntimeString(content.name) ||
-				!content.arguments ||
-				!isRuntimeObject(content.arguments) ||
-				Array.isArray(content.arguments))
+			(!isRuntimeString(content.id) || !isRuntimeString(content.name) || !isJsonObject(content.arguments))
 		) {
 			return "message.content toolCall fields are invalid";
 		}
@@ -152,11 +153,11 @@ export interface BoundedByteTail {
 	text(): string;
 }
 
-export function parseChildProtocolEvent(value: unknown): ParsedChildProtocolEvent {
-	if (!value || !isRuntimeObject(value) || Array.isArray(value)) {
+export function parseChildProtocolEvent(value: JsonValue): ParsedChildProtocolEvent {
+	if (!isJsonObject(value)) {
 		return { error: "event must be an object" };
 	}
-	const event = value as Record<string, unknown>;
+	const event = value;
 	if (!isRuntimeString(event.type) || !event.type.trim()) {
 		return { error: "event.type must be a non-empty string" };
 	}
@@ -167,7 +168,8 @@ export function parseChildProtocolEvent(value: unknown): ParsedChildProtocolEven
 		const error = childMessageProtocolError(event.message);
 		if (error) return { error: `${event.type} ${error}` };
 	}
-	return { event: { ...event, type: event.type } };
+	// SAFETY: supported event names are checked above, and final message events pass the complete message validator.
+	return { event: { ...event, type: event.type } as ChildProtocolEvent };
 }
 
 export function formatProtocolOutputLimit(limit: ProtocolOutputLimit): string {
