@@ -48,8 +48,8 @@ interface VerifyOptions {
 	readonly signal?: AbortSignal;
 }
 
-function cleanOneLine(value: unknown): string {
-	const text = value instanceof Error ? value.message : String(value);
+function cleanOneLine(cause: unknown): string {
+	const text = cause instanceof Error ? cause.message : String(cause);
 	return boundTerminalLine(text, 220);
 }
 
@@ -149,10 +149,9 @@ export class RtkRuntime {
 		}
 
 		try {
-			const result = await pi.exec(certificate.path, ["rewrite", command], {
-				...(signal ? { signal } : {}),
-				timeout: this.rewriteTimeoutMs,
-			});
+			const options = { timeout: this.rewriteTimeoutMs };
+			if (signal) Object.assign(options, { signal });
+			const result = await pi.exec(certificate.path, ["rewrite", command], options);
 			if (result.code === 1 || result.code === 2) return undefined;
 			if (result.code !== 0 && result.code !== 3) {
 				if (result.killed) this.markUnavailable("RTK rewrite timed out", certificate);
@@ -170,10 +169,12 @@ export class RtkRuntime {
 		try {
 			const selectedPath = await this.resolveSelectedPath(pi, signal);
 			const path = await realpath(selectedPath);
+			const versionOptions = { timeout: this.versionTimeoutMs };
+			if (signal) Object.assign(versionOptions, { signal });
 			const [fingerprint, sha256, versionResult] = await Promise.all([
 				fileFingerprint(path),
 				sha256File(path),
-				pi.exec(path, ["--version"], { ...(signal ? { signal } : {}), timeout: this.versionTimeoutMs }),
+				pi.exec(path, ["--version"], versionOptions),
 			]);
 			const version = parseVersion(`${versionResult.stdout}\n${versionResult.stderr}`);
 			if (versionResult.code !== 0 || !version) throw new Error("RTK returned no valid version");
@@ -216,10 +217,9 @@ export class RtkRuntime {
 
 	private async resolveSelectedPath(pi: Pick<ExtensionAPI, "exec">, signal?: AbortSignal): Promise<string> {
 		const resolver = this.platform === "win32" ? "where" : "which";
-		const result = await pi.exec(resolver, ["rtk"], {
-			...(signal ? { signal } : {}),
-			timeout: this.resolveTimeoutMs,
-		});
+		const options = { timeout: this.resolveTimeoutMs };
+		if (signal) Object.assign(options, { signal });
+		const result = await pi.exec(resolver, ["rtk"], options);
 		const selectedPath = firstNonEmptyLine(result.stdout);
 		if (result.code !== 0 || !selectedPath) throw new Error(`${resolver} could not resolve rtk`);
 		return selectedPath.replace(/^(["'])(.*)\1$/u, "$2");
@@ -238,10 +238,13 @@ export class RtkRuntime {
 
 	private markUnavailable(error: string, certificate?: RuntimeCertificate): void {
 		this.certificate = undefined;
-		this.snapshotValue = {
+		const snapshot = {
 			lastError: error,
-			...(certificate ? { path: certificate.path, sha256: certificate.sha256, version: certificate.version } : {}),
-			state: "unavailable",
+			state: "unavailable" as const,
 		};
+		if (certificate) {
+			Object.assign(snapshot, { path: certificate.path, sha256: certificate.sha256, version: certificate.version });
+		}
+		this.snapshotValue = snapshot;
 	}
 }
