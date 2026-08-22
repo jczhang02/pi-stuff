@@ -17,6 +17,7 @@ import {
 	matchesCommandDialogHelp,
 	renderCommandDialogKeyHelp,
 } from "../conversation-ui/index.js";
+import { type McpDialogRows, mcpDialogPriority } from "./mcp-dialog-rows.js";
 import type { McpServerStatusSnapshot, McpStatusSnapshot } from "./runtime/index.js";
 import type { McpStatusStore } from "./status-store.js";
 
@@ -114,7 +115,7 @@ class McpControlDialog implements CommandDialogComponent {
 	private readonly context: CommandDialogViewContext<McpControlResult>;
 	private disposed = false;
 	private lastViewportRows = 1;
-	private notice: string | undefined;
+	private notice: { readonly text: string; readonly tone: "error" | "success" | "warning" } | undefined;
 	private screen: "servers" | "actions" = "servers";
 	private selectedServer = 0;
 	private showKeyHelp = false;
@@ -211,25 +212,20 @@ class McpControlDialog implements CommandDialogComponent {
 			: this.screen === "servers"
 				? this.renderServers()
 				: this.renderActions();
-		const failureLine =
-			this.screen === "actions" && this.currentServer()?.failureDetail
-				? body.find((line) => line.includes(this.currentServer()?.failureDetail ?? ""))
-				: undefined;
-		const questionLine = body.find((line) => line.includes("! "));
-		const previewHeading = body.find((line) => line.includes("◆ Preview"));
-		const previewDetail = previewHeading ? body[body.indexOf(previewHeading) + 1] : undefined;
-		const selectedLine = body.find((line) => line.includes("›"));
+		const priority = mcpDialogPriority(body, [
+			"question",
+			"failure",
+			"selected",
+			"preview-heading",
+			"preview-detail",
+		]);
+		if (priority.length === 0) priority.push(body.lines[0] ?? footer[0] ?? "");
 		const lines = fitCommandDialogRows(
 			{
 				header,
-				body,
+				body: body.lines,
 				footer,
-				priority: [
-					questionLine ?? failureLine ?? selectedLine ?? body[0] ?? footer[0] ?? "",
-					...(selectedLine ? [selectedLine] : []),
-					...(previewHeading ? [previewHeading] : []),
-					...(previewDetail ? [previewDetail] : []),
-				],
+				priority,
 			},
 			maximumRows,
 		);
@@ -367,18 +363,18 @@ class McpControlDialog implements CommandDialogComponent {
 				: action === "logout"
 					? `Logout failed for ${server}.`
 					: `Reconnect failed for ${server}. See /diagnostics for details.`;
-		this.notice = `${verb} ${server}…`;
+		this.notice = { text: `${verb} ${server}…`, tone: "warning" };
 		this.context.requestRender();
 		void this.actions[action](server)
 			.then((succeeded) => {
 				if (this.disposed) return;
-				if (!succeeded) this.notice = failure;
-				else if (action === "logout") this.notice = `Logged out of ${server}.`;
-				else if (action === "authenticate") this.notice = `Authenticated ${server}.`;
-				else this.notice = `Reconnected ${server}.`;
+				if (!succeeded) this.notice = { text: failure, tone: "error" };
+				else if (action === "logout") this.notice = { text: `Logged out of ${server}.`, tone: "success" };
+				else if (action === "authenticate") this.notice = { text: `Authenticated ${server}.`, tone: "success" };
+				else this.notice = { text: `Reconnected ${server}.`, tone: "success" };
 			})
 			.catch(() => {
-				if (!this.disposed) this.notice = failure;
+				if (!this.disposed) this.notice = { text: failure, tone: "error" };
 			})
 			.finally(() => {
 				if (this.disposed) return;
@@ -387,51 +383,54 @@ class McpControlDialog implements CommandDialogComponent {
 			});
 	}
 
-	private renderServers(): string[] {
+	private renderServers(): McpDialogRows {
 		const servers = this.servers();
 		if (servers.length === 0) {
-			return [
-				`${GUTTER}${this.context.theme.fg("muted", "No MCP servers configured.")}`,
-				`${GUTTER}${this.context.theme.fg("text", "Press Enter to set up your first server.")}`,
-			];
+			return {
+				lines: [
+					`${GUTTER}${this.context.theme.fg("muted", "No MCP servers configured.")}`,
+					`${GUTTER}${this.context.theme.fg("text", "Press Enter to set up your first server.")}`,
+				],
+				roles: {},
+			};
 		}
-		return this.serverWindow().map((server) => serverLine(this.context, server, server === this.currentServer()));
+		const window = this.serverWindow();
+		const lines = window.map((server) => serverLine(this.context, server, server === this.currentServer()));
+		const selected = this.currentServer();
+		const selectedLine = selected ? lines[window.indexOf(selected)] : undefined;
+		return { lines, roles: selectedLine ? { selected: selectedLine } : {} };
 	}
 
-	private renderActions(): string[] {
+	private renderActions(): McpDialogRows {
 		const server = this.currentServer();
-		if (!server) return [];
+		if (!server) return { lines: [], roles: {} };
+		const roles: McpDialogRows["roles"] = {};
 		const lines = [
 			`${GUTTER}${this.context.theme.fg("muted", `State  ${statusLabel(server)}`)}`,
 			`${GUTTER}${this.context.theme.fg("muted", `Connection  ${server.autoConnect ? "automatic" : "on demand"}`)}`,
-			...(server.failureDetail
-				? [
-						`${GUTTER}${this.context.theme.fg("muted", "◆ Error")}`,
-						`${GUTTER}${this.context.theme.fg("error", server.failureDetail)}`,
-					]
-				: []),
-			...(this.notice
-				? [
-						`${GUTTER}${this.context.theme.fg(
-							this.busy ? "warning" : this.notice.includes("failed") ? "error" : "success",
-							this.notice,
-						)}`,
-					]
-				: []),
-			"",
-			`${GUTTER}${this.context.theme.fg("muted", "◆ Actions")}`,
 		];
-		for (const [index, action] of this.actionItems(server).entries()) {
-			lines.push(
-				`${GUTTER}${index === this.actionCursor ? this.context.theme.fg("accent", "› ") : "  "}${this.actionLabel(action)}`,
-			);
+		if (server.failureDetail) {
+			const failureLine = `${GUTTER}${this.context.theme.fg("error", server.failureDetail)}`;
+			lines.push(`${GUTTER}${this.context.theme.fg("muted", "◆ Error")}`, failureLine);
+			roles.failure = failureLine;
 		}
-		return lines;
+		if (this.notice) {
+			const noticeLine = `${GUTTER}${this.context.theme.fg(this.notice.tone, this.notice.text)}`;
+			lines.push(noticeLine);
+			roles.notice = noticeLine;
+		}
+		lines.push("", `${GUTTER}${this.context.theme.fg("muted", "◆ Actions")}`);
+		for (const [index, action] of this.actionItems(server).entries()) {
+			const line = `${GUTTER}${index === this.actionCursor ? this.context.theme.fg("accent", "› ") : "  "}${this.actionLabel(action)}`;
+			lines.push(line);
+			if (index === this.actionCursor) roles.selected = line;
+		}
+		return { lines, roles };
 	}
 
-	private renderConfirmation(): string[] {
+	private renderConfirmation(): McpDialogRows {
 		const confirmation = this.confirmation;
-		if (!confirmation) return [];
+		if (!confirmation) return { lines: [], roles: {} };
 		const logout = confirmation.action === "logout";
 		const connection = confirmation.action === "set-auto-connect";
 		const verb = confirmation.disabled ? "Disable" : "Enable";
@@ -445,20 +444,35 @@ class McpControlDialog implements CommandDialogComponent {
 			: confirmation.disabled
 				? "Change  disabled = true"
 				: "Change  remove disabled override; preserve enabled state";
-		return [
-			`${GUTTER}${this.context.theme.fg("muted", "◆ Confirm change")}`,
-			`${GUTTER}${this.context.theme.fg("warning", `! ${question}`)}`,
+		const headingLine = `${GUTTER}${this.context.theme.fg("muted", "◆ Confirm change")}`;
+		const questionLine = `${GUTTER}${this.context.theme.fg("warning", `! ${question}`)}`;
+		const previewHeading = `${GUTTER}${this.context.theme.fg("muted", "◆ Preview")}`;
+		const previewDetail = `${GUTTER}${this.context.theme.fg("muted", "Target  .pi/mcp.json")}`;
+		const cancelLine = `${GUTTER}${this.confirmCursor === 0 ? this.context.theme.fg("accent", "› ") : "  "}Cancel`;
+		const confirmLine = `${GUTTER}${this.confirmCursor === 1 ? this.context.theme.fg("accent", "› ") : "  "}${logout ? "Log out" : connection ? `${confirmation.enabled ? "Automatic" : "On demand"} and reload` : `${verb} and reload`}`;
+		const lines = [
+			headingLine,
+			questionLine,
 			...(logout
 				? [`${GUTTER}${this.context.theme.fg("muted", "Saved OAuth credentials will be removed.")}`]
-				: [
-						`${GUTTER}${this.context.theme.fg("muted", "◆ Preview")}`,
-						`${GUTTER}${this.context.theme.fg("muted", "Target  .pi/mcp.json")}`,
-						`${GUTTER}${this.context.theme.fg("muted", preview)}`,
-					]),
+				: [previewHeading, previewDetail, `${GUTTER}${this.context.theme.fg("muted", preview)}`]),
 			"",
-			`${GUTTER}${this.confirmCursor === 0 ? this.context.theme.fg("accent", "› ") : "  "}Cancel`,
-			`${GUTTER}${this.confirmCursor === 1 ? this.context.theme.fg("accent", "› ") : "  "}${logout ? "Log out" : connection ? `${confirmation.enabled ? "Automatic" : "On demand"} and reload` : `${verb} and reload`}`,
+			cancelLine,
+			confirmLine,
 		];
+		const roles: McpDialogRows["roles"] = {
+			confirmation: headingLine,
+			question: questionLine,
+			selected: this.confirmCursor === 0 ? cancelLine : confirmLine,
+		};
+		if (!logout) {
+			roles["preview-heading"] = previewHeading;
+			roles["preview-detail"] = previewDetail;
+		}
+		return {
+			lines,
+			roles,
+		};
 	}
 
 	private renderFooter(width: number, overflow: boolean): string[] {

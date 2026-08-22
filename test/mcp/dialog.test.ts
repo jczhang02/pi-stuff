@@ -144,6 +144,84 @@ describe("MCP Command Dialog", () => {
 		component.dispose?.();
 	});
 
+	test("keeps structural selection ahead of server-name glyph collisions at normal and low heights", () => {
+		const store = new McpStatusStore();
+		store.set({
+			connectedCount: 0,
+			disabledCount: 0,
+			servers: [
+				{ disabled: false, name: "decoy ! attention › ◆ Preview", status: "not-connected", toolCount: 0 },
+				{ disabled: false, name: "actual-selection", status: "not-connected", toolCount: 0 },
+			],
+			totalResources: 0,
+			totalTools: 0,
+			version: 1,
+		});
+		const terminal = new TestTui(20);
+		const component = createMcpControlView(store, {
+			authenticate: async () => true,
+			logout: async () => true,
+			reconnect: async () => true,
+		}).create({
+			close: () => undefined,
+			keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+			requestRender: () => undefined,
+			signal: new AbortController().signal,
+			theme,
+			tui: terminal,
+		});
+
+		component.handleInput?.("\u001b[B");
+		const normal = component.render(64).join("\n");
+		expect(normal).toContain("decoy ! attention › ◆ Preview");
+		expect(normal).toContain("› ○ actual-selection");
+		terminal.rows = 6;
+		const low = component.render(64).join("\n");
+		expect(low).toContain("actual-selection");
+		expect(low).not.toContain("decoy ! attention › ◆ Preview");
+		component.dispose?.();
+	});
+
+	test("colors inline action notices from semantic outcomes instead of server prose", async () => {
+		const store = new McpStatusStore();
+		store.set({
+			connectedCount: 0,
+			disabledCount: 0,
+			servers: [{ disabled: false, name: "failed-proxy", status: "not-connected", toolCount: 0 }],
+			totalResources: 0,
+			totalTools: 0,
+			version: 1,
+		});
+		let succeeds = true;
+		// SAFETY: this test theme implements the exact Host color methods exercised by the MCP Dialog.
+		const semanticTheme = {
+			bold: (value: string) => value,
+			fg: (color: string, value: string) => `[${color}]${value}`,
+		} as Theme;
+		const component = createMcpControlView(store, {
+			authenticate: async () => true,
+			logout: async () => true,
+			reconnect: async () => succeeds,
+		}).create({
+			close: () => undefined,
+			keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+			requestRender: () => undefined,
+			signal: new AbortController().signal,
+			theme: semanticTheme,
+			tui: new TestTui(20),
+		});
+
+		component.handleInput?.("\r");
+		component.handleInput?.("\r");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(component.render(72).join("\n")).toContain("[success]Reconnected failed-proxy.");
+		succeeds = false;
+		component.handleInput?.("\r");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(component.render(72).join("\n")).toContain("[error]Reconnect failed for failed-proxy.");
+		component.dispose?.();
+	});
+
 	test("lets a user inspect a server and reconnect without knowing a subcommand", async () => {
 		const store = new McpStatusStore();
 		store.set({

@@ -7,6 +7,7 @@ import { KNOWN_SERVER_PRESETS, type ConfigWritePreview, type KnownServerPreset, 
 import { redactTraceText } from "./mcp-trace.ts";
 import type { McpOnboardingState } from "./onboarding-state.ts";
 import { formatTerminalError } from "./utils.ts";
+import { type McpDialogRows, mcpDialogPriority } from "../mcp-dialog-rows.js";
 import {
 	commandDialogPrimaryKey,
 	fitCommandDialogRows,
@@ -503,6 +504,7 @@ export class McpSetupPanel {
 		const contentW = this.contentWidth(panelW);
 		const header = [fg(this.t.border, "━".repeat(panelW)), this.padLine(fg(this.t.title, "MCP setup"), panelW)];
 		const body: string[] = [];
+		const roles: McpDialogRows["roles"] = {};
 		const summary = this.discoverySummary();
 		for (const line of wrapTextWithAnsi(summary.text, contentW)) {
 			body.push(this.padLine(fg(summary.tone === "warning" ? this.t.warning : this.t.hint, line), panelW));
@@ -525,31 +527,27 @@ export class McpSetupPanel {
 			}
 			body.push(this.padLine("", panelW));
 		}
+		roles.notice = noticeLine;
 
-		if (this.confirmation) {
-			body.push(...this.renderConfirmation(panelW));
-		} else if (this.screen === "imports") {
-			body.push(...this.renderImports(panelW));
-		} else if (this.screen === "paths") {
-			body.push(...this.renderPaths(panelW));
-		} else {
-			body.push(...this.renderActions(panelW));
-		}
-		const selected = body.find((line) => line.includes("›"));
-		const question = body.find((line) => line.includes("! "));
-		const confirmHeading = body.find((line) => line.includes("◆ Confirm change"));
-		const previewHeading = body.find((line) => line.includes("◆ Preview"));
-		const previewDetail = previewHeading ? body[body.indexOf(previewHeading) + 1] : undefined;
-		const priority = [
-			question ?? selected ?? noticeLine ?? body[0],
-			noticeLine,
-			selected,
-			confirmHeading,
-			previewHeading,
-			previewDetail,
-		].filter(
-			(line, index, lines): line is string => !!line && lines.indexOf(line) === index,
-		);
+		const content = this.confirmation
+			? this.renderConfirmation(panelW)
+			: this.screen === "imports"
+				? this.renderImports(panelW)
+				: this.screen === "paths"
+					? this.renderPaths(panelW)
+					: this.renderActions(panelW);
+		body.push(...content.lines);
+		Object.assign(roles, content.roles);
+		const dialogBody = { lines: body, roles };
+		const priority = mcpDialogPriority(dialogBody, [
+			"question",
+			"selected",
+			"notice",
+			"confirmation",
+			"preview-heading",
+			"preview-detail",
+		]);
+		if (priority.length === 0 && body[0]) priority.push(body[0]);
 		const lines = fitCommandDialogRows(
 			{ header, body, footer: this.renderFooter(panelW), priority },
 			this.maximumRows(),
@@ -557,9 +555,9 @@ export class McpSetupPanel {
 		return lines.map((line) => truncateToWidth(line, panelW, "…"));
   }
 
-	private renderConfirmation(innerW: number): string[] {
+	private renderConfirmation(innerW: number): McpDialogRows {
 		const pending = this.confirmation;
-		if (!pending) return [];
+		if (!pending) return { lines: [], roles: {} };
 		const contentW = this.contentWidth(innerW);
 		const action = pending.kind === "action" ? pending.action : undefined;
 		const question = pending.kind === "imports"
@@ -597,11 +595,21 @@ export class McpSetupPanel {
 			this.padLine(`${this.confirmCursor === 1 ? fg(this.t.selected, "›") : " "} Write and reload`, innerW),
 			this.padLine("", innerW),
 		);
-		return lines;
+		return {
+			lines,
+			roles: {
+				confirmation: lines[0],
+				question: lines[1],
+				"preview-heading": lines[4],
+				"preview-detail": lines[5],
+				selected: lines.at(this.confirmCursor === 0 ? -3 : -2),
+			},
+		};
 	}
 
-  private renderActions(innerW: number): string[] {
+  private renderActions(innerW: number): McpDialogRows {
     const lines: string[] = [];
+		const roles: McpDialogRows["roles"] = {};
     const actions = this.getActions();
 		const { start, end } = this.visibleRange(actions.length, this.actionCursor);
 
@@ -618,28 +626,35 @@ export class McpSetupPanel {
       }
       const selected = index === this.actionCursor;
       const cursor = selected ? fg(this.t.selected, "›") : " ";
-      lines.push(this.padLine(`${cursor} ${truncateToWidth(action.label, this.contentWidth(innerW) - 2)}`, innerW));
+			const line = this.padLine(`${cursor} ${truncateToWidth(action.label, this.contentWidth(innerW) - 2)}`, innerW);
+			lines.push(line);
+			if (selected) roles.selected = line;
     }
     if (end < actions.length) {
 			lines.push(this.padLine(fg(this.t.muted, `… ${actions.length - end} later`), innerW));
     }
 		if (innerW >= COMPACT_WIDTH) {
 			lines.push(this.padLine("", innerW));
-			lines.push(this.padLine(fg(this.t.section, "◆ Preview"), innerW));
+			const previewHeading = this.padLine(fg(this.t.section, "◆ Preview"), innerW);
+			lines.push(previewHeading);
+			roles["preview-heading"] = previewHeading;
 			const preview = this.safePreview(
 				() => this.getActionPreview(this.getSelectedAction(), this.previewWidth(innerW)),
 				this.previewWidth(innerW),
 			);
-			for (const line of this.boundedPreview(preview)) {
-				lines.push(this.padLine(line, innerW));
+			for (const [index, line] of this.boundedPreview(preview).entries()) {
+				const rendered = this.padLine(line, innerW);
+				lines.push(rendered);
+				if (index === 0) roles["preview-detail"] = rendered;
 			}
 		}
 		lines.push(this.padLine("", innerW));
-    return lines;
+    return { lines, roles };
   }
 
-  private renderImports(innerW: number): string[] {
+  private renderImports(innerW: number): McpDialogRows {
     const lines: string[] = [];
+		const roles: McpDialogRows["roles"] = {};
 		lines.push(this.padLine(fg(this.t.section, "◆ Compatibility imports"), innerW));
 		lines.push(this.padLine(fg(this.t.muted, "Choose sources to copy into Pi-owned compatibility config."), innerW));
     lines.push(this.padLine("", innerW));
@@ -649,7 +664,9 @@ export class McpSetupPanel {
       const entry = this.discovery.imports[index];
       const selected = this.selectedImports.has(entry.kind) ? "[x]" : "[ ]";
       const cursor = index === this.importCursor ? fg(this.t.selected, "›") : " ";
-      lines.push(this.padLine(`${cursor} ${selected} ${entry.kind}  ${entry.path}`, innerW));
+			const line = this.padLine(`${cursor} ${selected} ${entry.kind}  ${entry.path}`, innerW);
+			lines.push(line);
+			if (index === this.importCursor) roles.selected = line;
     }
 		if (end < this.discovery.imports.length) {
 			lines.push(this.padLine(fg(this.t.muted, `… ${this.discovery.imports.length - end} later`), innerW));
@@ -659,7 +676,9 @@ export class McpSetupPanel {
 		lines.push(this.padLine(fg(this.t.muted, `${selected.length} selected`), innerW));
 		if (innerW >= COMPACT_WIDTH) {
 			lines.push(this.padLine("", innerW));
-			lines.push(this.padLine(fg(this.t.section, "◆ Preview"), innerW));
+			const previewHeading = this.padLine(fg(this.t.section, "◆ Preview"), innerW);
+			lines.push(previewHeading);
+			roles["preview-heading"] = previewHeading;
 			const preview = this.safePreview(
 				() => this.formatWritePreview(
 					"Compatibility import write preview",
@@ -669,17 +688,18 @@ export class McpSetupPanel {
 				),
 				this.previewWidth(innerW),
 			);
-			for (const line of this.boundedPreview(
-				preview,
-			)) {
-				lines.push(this.padLine(line, innerW));
+			for (const [index, line] of this.boundedPreview(preview).entries()) {
+				const rendered = this.padLine(line, innerW);
+				lines.push(rendered);
+				if (index === 0) roles["preview-detail"] = rendered;
 			}
     }
-    return lines;
+    return { lines, roles };
   }
 
-  private renderPaths(innerW: number): string[] {
+  private renderPaths(innerW: number): McpDialogRows {
     const lines: string[] = [];
+		const roles: McpDialogRows["roles"] = {};
 		lines.push(this.padLine(fg(this.t.section, "◆ Detected paths"), innerW));
 		lines.push(this.padLine(fg(this.t.muted, "Open a discovered MCP config in the Host."), innerW));
     lines.push(this.padLine("", innerW));
@@ -688,10 +708,12 @@ export class McpSetupPanel {
 		if (start > 0) lines.push(this.padLine(fg(this.t.muted, `… ${start} earlier`), innerW));
 		for (let index = start; index < end; index++) {
       const cursor = index === this.pathCursor ? fg(this.t.selected, "›") : " ";
-      lines.push(this.padLine(`${cursor} ${paths[index]}`, innerW));
+			const line = this.padLine(`${cursor} ${paths[index]}`, innerW);
+			lines.push(line);
+			if (index === this.pathCursor) roles.selected = line;
     }
 		if (end < paths.length) lines.push(this.padLine(fg(this.t.muted, `… ${paths.length - end} later`), innerW));
-    return lines;
+    return { lines, roles };
   }
 
   private discoverySummary(): DiscoverySummaryLine {

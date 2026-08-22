@@ -106,6 +106,32 @@ test("MCP Setup follows the Command Dialog hierarchy at wide, narrow, and low he
 	lowPanel.dispose();
 });
 
+test("MCP Setup keeps the selected import ahead of path glyph collisions", () => {
+	const collisionDiscovery: McpDiscoverySummary = {
+		...discovery,
+		hasAnyConfig: true,
+		hasAnyDetectedPaths: true,
+		imports: [
+			{ kind: "cursor", path: "/decoy ! attention › ◆ Preview", serverCount: 1 },
+			{ kind: "claude-code", path: "/actual-selection", serverCount: 1 },
+		],
+	};
+	for (const rows of [28, 6]) {
+		const panel = createPanel(
+			callbacks(async () => ({ path: "/project/.mcp.json" })),
+			rows,
+			collisionDiscovery,
+		);
+		panel.handleInput("confirm");
+		panel.handleInput("down");
+		const rendered = panel.render(64).join("\n");
+		expect(rendered).toContain("actual-selection");
+		if (rows === 28) expect(rendered).toContain("decoy ! attention › ◆ Preview");
+		else expect(rendered).not.toContain("decoy ! attention › ◆ Preview");
+		panel.dispose();
+	}
+});
+
 test("MCP Setup honors compact list aliases and keeps import Space as selection", () => {
 	const panel = createPanel(callbacks(async () => ({ path: "/project/.mcp.json" })));
 
