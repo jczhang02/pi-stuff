@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type JsonValue, parseJsonValue } from "../shared/json-value.js";
+import { isJsonSourceValue, type JsonObject, type JsonValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { type CodemodeValue, parseForStorage, stringifyForStorage } from "./cloudflare/codec.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import { stableStringify } from "./cloudflare/stable-stringify.js";
-import type { RuntimeToolCallPlan, RuntimeToolCallSettlement } from "./protocol.js";
+import type { RuntimeToolCallPlan, RuntimeToolCallSettlement, RuntimeToolReplay } from "./protocol.js";
 
 export const CODE_MODE_LEDGER_ENTRY_TYPE = "pi-stuff-code-mode-ledger";
 const SCHEMA_VERSION = 1;
@@ -212,7 +212,7 @@ interface SessionScope {
 	readonly sessionId?: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: JsonValue | undefined): value is JsonObject {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
@@ -237,7 +237,7 @@ function sessionScope(context: ExtensionContext): SessionScope {
 	return id ? { context, sessionId: id } : { context };
 }
 
-function durableValue(what: string, value: unknown): StoredValue {
+function durableValue(what: string, value: CodemodeValue): StoredValue {
 	let serialized: string | undefined;
 	try {
 		serialized = stringifyForStorage(value);
@@ -256,7 +256,7 @@ function durableValue(what: string, value: unknown): StoredValue {
 	return { json: parseJsonValue(serialized), kind: "json" };
 }
 
-function optionalPresentationValue(value: unknown): StoredValue | undefined {
+function optionalPresentationValue(value: AgentToolResult<unknown>): StoredValue | undefined {
 	try {
 		return durableValue("The Tool presentation result", value);
 	} catch {
@@ -269,13 +269,18 @@ function restoreValue(value: StoredValue | undefined): CodemodeValue {
 	return parseForStorage(JSON.stringify(value.json));
 }
 
-function storedValue(value: unknown): value is StoredValue {
-	return (
-		isRecord(value) && (value["kind"] === "undefined" || (value["kind"] === "json" && Object.hasOwn(value, "json")))
-	);
+function parseStoredValue(value: JsonValue | undefined): StoredValue | undefined {
+	if (!value || !isRecord(value)) return undefined;
+	if (value["kind"] === "undefined") return { kind: "undefined" };
+	const json = value["json"];
+	return value["kind"] === "json" && Object.hasOwn(value, "json") && json !== undefined
+		? { json, kind: "json" }
+		: undefined;
 }
 
-function eventFrom(value: unknown): LedgerEvent | undefined {
+function eventFrom(source: SessionEntry["data"]): LedgerEvent | undefined {
+	if (!isJsonSourceValue(source)) return undefined;
+	const value = parseJsonValue(JSON.stringify(source));
 	if (!isRecord(value) || value["schemaVersion"] !== SCHEMA_VERSION || !isRuntimeString(value["kind"])) {
 		return undefined;
 	}
@@ -308,7 +313,7 @@ function eventFrom(value: unknown): LedgerEvent | undefined {
 		}
 		case "call-pending":
 		case "call-started": {
-			const args = value["args"];
+			const args = parseStoredValue(value["args"]);
 			const argsKey = value["argsKey"];
 			const attempt = value["attempt"];
 			const callId = value["callId"];
@@ -318,7 +323,7 @@ function eventFrom(value: unknown): LedgerEvent | undefined {
 			const sequence = value["sequence"];
 			if (
 				!executionId ||
-				!storedValue(args) ||
+				!args ||
 				!isRuntimeString(argsKey) ||
 				!isRuntimeNumber(attempt) ||
 				!Number.isInteger(attempt) ||
@@ -350,16 +355,16 @@ function eventFrom(value: unknown): LedgerEvent | undefined {
 		case "call-settled": {
 			const callId = value["callId"];
 			const error = value["error"];
-			const result = value["result"];
+			const result = parseStoredValue(value["result"]);
 			const status = value["status"];
-			const settledValue = value["value"];
+			const settledValue = parseStoredValue(value["value"]);
 			if (
 				!executionId ||
 				!isRuntimeString(callId) ||
 				(status !== "error" && status !== "success") ||
 				(error !== undefined && !isRuntimeString(error)) ||
-				(result !== undefined && !storedValue(result)) ||
-				(settledValue !== undefined && !storedValue(settledValue))
+				(value["result"] !== undefined && !result) ||
+				(value["value"] !== undefined && !settledValue)
 			) {
 				return undefined;
 			}
@@ -476,18 +481,19 @@ function snapshot(context: ExtensionContext): LedgerSnapshot {
 
 function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
 	if (event.kind === "execution-started") {
-		state.executions.set(event.executionId, {
+		const execution: ExecutionState = {
 			attempt: 0,
 			calls: new Map(),
 			code: event.code,
 			createdAt: event.at,
-			...(event.cwd === undefined ? {} : { cwd: event.cwd }),
 			executionId: event.executionId,
 			outerToolCallId: event.outerToolCallId,
 			status: "running",
 			toolCalls: 0,
 			updatedAt: event.at,
-		});
+		};
+		if (event.cwd !== undefined) execution.cwd = event.cwd;
+		state.executions.set(event.executionId, execution);
 		return;
 	}
 	if (event.kind === "execution-pruned") {
@@ -942,15 +948,16 @@ export class CodeModeExecutionController {
 				throw new Error(message);
 			}
 			if (existing.status === "error") {
+				const replayResult: RuntimeToolReplay = {
+					kind: "error",
+					message: existing.error ?? `${name} failed`,
+				};
+				if (existing.result) Object.assign(replayResult, { result: existing.result });
 				return {
 					attempt: this.passAttempt,
 					executionId: this.execution.executionId,
 					id: callId,
-					replay: {
-						kind: "error",
-						message: existing.error ?? `${name} failed`,
-						...(existing.result ? { result: existing.result } : {}),
-					},
+					replay: replayResult,
 					sequence,
 				};
 			}
@@ -972,15 +979,16 @@ export class CodeModeExecutionController {
 				return { attempt: this.passAttempt, executionId: this.execution.executionId, id: callId, sequence };
 			}
 			if (existing.status === "success" && replay !== "reexecute" && existing.valuePresent) {
+				const replayResult: RuntimeToolReplay = {
+					kind: "result",
+					value: existing.value,
+				};
+				if (existing.result) Object.assign(replayResult, { result: existing.result });
 				return {
 					attempt: this.passAttempt,
 					executionId: this.execution.executionId,
 					id: callId,
-					replay: {
-						kind: "result",
-						...(existing.result ? { result: existing.result } : {}),
-						value: existing.value,
-					},
+					replay: replayResult,
 					sequence,
 				};
 			}
@@ -1049,29 +1057,31 @@ export class CodeModeExecutionController {
 		const value =
 			settlement.status === "success" ? durableValue(`The result of ${call.name}`, settlement.value) : undefined;
 		const result = settlement.result ? optionalPresentationValue(settlement.result) : undefined;
-		this.ledger.append(this.scope, this.state, {
+		const event: CallSettledEvent = {
 			at: Date.now(),
 			callId: plan.id,
-			...(settlement.message ? { error: settlement.message } : {}),
 			executionId: this.execution.executionId,
 			kind: "call-settled",
-			...(result ? { result } : {}),
 			schemaVersion: SCHEMA_VERSION,
 			status: settlement.status,
-			...(value ? { value } : {}),
-		});
+		};
+		if (settlement.message) Object.assign(event, { error: settlement.message });
+		if (result) Object.assign(event, { result });
+		if (value) Object.assign(event, { value });
+		this.ledger.append(this.scope, this.state, event);
 	};
 
 	finish(status: CodeModeExecutionStatus, error?: string): void {
 		if (this.execution.status === status && this.execution.error === error) return;
-		this.ledger.append(this.scope, this.state, {
+		const event: ExecutionSettledEvent = {
 			at: Date.now(),
 			attempt: this.passAttempt,
-			...(error ? { error } : {}),
 			executionId: this.execution.executionId,
 			kind: "execution-settled",
 			schemaVersion: SCHEMA_VERSION,
 			status,
-		});
+		};
+		if (error) Object.assign(event, { error });
+		this.ledger.append(this.scope, this.state, event);
 	}
 }
