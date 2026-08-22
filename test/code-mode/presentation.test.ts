@@ -83,6 +83,7 @@ test("historical malformed Code Mode images are replaced only in provider contex
 		toolCallId: "direct-bad-image",
 		toolName: "codemode",
 	};
+	// SAFETY: this fixture supplies every Tool-result message member read by context rehydration.
 	const projected = rehydrateCodeModeMessages([direct] as AgentMessage[]);
 
 	expect(projected?.[0]).toMatchObject({
@@ -107,6 +108,7 @@ test("historical malformed normalized media is quarantined during rehydration", 
 		toolCallId: "normalized-bad-image",
 		toolName: "codemode",
 	};
+	// SAFETY: this fixture supplies every Tool-result message member read by context rehydration.
 	const projected = rehydrateCodeModeMessages([persisted] as AgentMessage[]);
 
 	expect(projected?.[0]).toMatchObject({

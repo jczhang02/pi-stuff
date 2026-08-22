@@ -118,6 +118,7 @@ test("the outer Tool result boundary replaces malformed images before Session pe
 	const { events } = loadExtension(surface);
 	const handler = events.get("tool_result")?.[0];
 	if (!handler) throw new Error("missing tool_result handler");
+	// SAFETY: this fixture supplies the complete custom Tool-result event consumed by the registered handler.
 	const patch = handler(
 		{
 			content: [{ type: "image", data: Buffer.alloc(96, 1).toString("base64"), mimeType: "image/jpeg" }],
