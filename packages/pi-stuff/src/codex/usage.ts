@@ -1,4 +1,5 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: TypeScript enforces bracket access for untrusted index-signature data.
+import { type JsonInputObject, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import { type CodexAccountContext, resolveCodexAccount } from "./account.js";
 
@@ -17,23 +18,26 @@ export interface CodexUsageSnapshot {
 	readonly weekly?: CodexUsageWindow;
 }
 
+type CodexUsageWindowBuilder = { -readonly [Key in keyof CodexUsageWindow]: CodexUsageWindow[Key] };
+type CodexUsageSnapshotBuilder = { -readonly [Key in keyof CodexUsageSnapshot]: CodexUsageSnapshot[Key] };
+
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-function record(value: unknown): Record<string, unknown> | undefined {
-	return isRuntimeObject(value) && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: undefined;
+function record(value: JsonInputValue): JsonInputObject | undefined {
+	if (!isRuntimeObject(value) || value === null || Array.isArray(value)) return undefined;
+	// SAFETY: JsonInputValue leaves only JsonInputObject after excluding null, scalars, and arrays.
+	return value as JsonInputObject;
 }
 
-function finiteNumber(value: unknown): number | undefined {
+function finiteNumber(value: JsonInputValue): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
-function text(value: unknown): string | undefined {
+function text(value: JsonInputValue): string | undefined {
 	return isRuntimeString(value) && value.trim() ? value.trim() : undefined;
 }
 
-function parseWindow(value: unknown): CodexUsageWindow | undefined {
+function parseWindow(value: JsonInputValue): CodexUsageWindow | undefined {
 	const source = record(value);
 	if (!source) return undefined;
 	const seconds = finiteNumber(source["limit_window_seconds"]);
@@ -41,14 +45,14 @@ function parseWindow(value: unknown): CodexUsageWindow | undefined {
 	const windowMinutes = finiteNumber(source["window_minutes"]) ?? (seconds === undefined ? undefined : seconds / 60);
 	const resetsAt = finiteNumber(source["resets_at"]) ?? finiteNumber(source["reset_at"]);
 	if (usedPercent === undefined && windowMinutes === undefined && resetsAt === undefined) return undefined;
-	return {
-		...(resetsAt === undefined ? {} : { resetsAt }),
-		...(usedPercent === undefined ? {} : { usedPercent }),
-		...(windowMinutes === undefined ? {} : { windowMinutes }),
-	};
+	const parsed: CodexUsageWindowBuilder = {};
+	if (resetsAt !== undefined) parsed.resetsAt = resetsAt;
+	if (usedPercent !== undefined) parsed.usedPercent = usedPercent;
+	if (windowMinutes !== undefined) parsed.windowMinutes = windowMinutes;
+	return parsed;
 }
 
-export function parseCodexUsage(value: unknown): CodexUsageSnapshot {
+export function parseCodexUsage(value: JsonInputValue): CodexUsageSnapshot {
 	const root = record(value) ?? {};
 	const rateLimit = record(root["rate_limit"]) ?? {};
 	let fiveHour = parseWindow(rateLimit["primary_window"] ?? rateLimit["primary"]);
@@ -58,11 +62,11 @@ export function parseCodexUsage(value: unknown): CodexUsageSnapshot {
 		fiveHour = undefined;
 	}
 	const plan = text(root["plan_type"]);
-	return {
-		...(fiveHour ? { fiveHour } : {}),
-		...(plan ? { plan } : {}),
-		...(weekly ? { weekly } : {}),
-	};
+	const snapshot: CodexUsageSnapshotBuilder = {};
+	if (fiveHour) snapshot.fiveHour = fiveHour;
+	if (plan) snapshot.plan = plan;
+	if (weekly) snapshot.weekly = weekly;
+	return snapshot;
 }
 
 export function weeklyRemainingPercent(snapshot: CodexUsageSnapshot | undefined): number | undefined {
@@ -112,7 +116,7 @@ export async function fetchCodexUsage(
 		const body = await response.text();
 		if (!response.ok) throw new Error(`Codex usage request failed (${String(response.status)}).`);
 		try {
-			return parseCodexUsage(JSON.parse(body) as unknown);
+			return parseCodexUsage(parseJsonValue(body));
 		} catch {
 			throw new Error("Codex usage returned invalid JSON.");
 		}
