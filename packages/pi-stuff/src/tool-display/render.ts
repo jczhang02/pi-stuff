@@ -15,7 +15,7 @@ import {
 	isRuntimeSymbol,
 	isRuntimeUndefined,
 } from "../shared/runtime-type.js";
-import type { ToolActivityOutcome } from "./activity.js";
+import type { ToolActivityOutcome, ToolArguments } from "./activity.js";
 import type { ToolActivityState } from "./activity-store.js";
 import {
 	boundTerminalText,
@@ -152,9 +152,9 @@ export class CachedToolRow implements Component {
 		this.computationCountValue += 1;
 		this.cache.set(normalizedWidth, rendered);
 		while (this.cache.size > MAX_ROW_CACHE_WIDTHS) {
-			const oldest = this.cache.keys().next().value as number | undefined;
-			if (oldest === undefined) break;
-			this.cache.delete(oldest);
+			const oldest = this.cache.keys().next();
+			if (oldest.done) break;
+			this.cache.delete(oldest.value);
 		}
 		return rendered;
 	}
@@ -502,12 +502,12 @@ export function oneLine(value: string): string {
 	return truncateUtf8Graphemes(`${raw}${suffix}`, ROW_PREVIEW_MAX_BYTES);
 }
 
-function stringArgument(args: Readonly<Record<string, unknown>>, key: string): string {
+function stringArgument(args: ToolArguments, key: string): string {
 	const value = args[key];
 	return isRuntimeString(value) ? value : "";
 }
 
-export function describeBuiltinTarget(name: string, args: Readonly<Record<string, unknown>>): string {
+export function describeBuiltinTarget(name: string, args: ToolArguments): string {
 	if (name === "bash") return oneLine(stringArgument(args, "command"));
 	if (name === "grep" || name === "find") {
 		const pattern = oneLine(stringArgument(args, "pattern"));
@@ -601,15 +601,20 @@ function diffCounts(value: string) {
 	return { additions, deletions };
 }
 
-function detailsRecord(result: AgentToolResult<unknown>): Record<string, unknown> {
-	return isRuntimeObject(result.details) && result.details !== null && !Array.isArray(result.details)
-		? (result.details as Record<string, unknown>)
-		: {};
+function diffDetail(result: AgentToolResult<unknown>): string | undefined {
+	const details = result.details;
+	return isRuntimeObject(details) &&
+		details !== null &&
+		!Array.isArray(details) &&
+		"diff" in details &&
+		isRuntimeString(details.diff)
+		? details.diff
+		: undefined;
 }
 
 export function summarizeBuiltin(
 	name: string,
-	args: Readonly<Record<string, unknown>>,
+	args: ToolArguments,
 	result: AgentToolResult<unknown>,
 	state: Exclude<ToolActivityState, "running">,
 	durationMs: number | undefined,
@@ -627,8 +632,8 @@ export function summarizeBuiltin(
 		return `${lines.truncated ? "≥" : ""}${String(lines.count)} ${lines.count === 1 ? "line" : "lines"}`;
 	}
 	if (name === "edit") {
-		const diff = detailsRecord(result)["diff"];
-		if (!isRuntimeString(diff) || !diff) return "applied";
+		const diff = diffDetail(result);
+		if (!diff) return "applied";
 		const counts = diffCounts(diff);
 		return `+${String(counts.additions)}/-${String(counts.deletions)}`;
 	}
@@ -653,7 +658,7 @@ export function summarizeBuiltin(
 	return oneLine(firstNonEmptyLine(text || "done"));
 }
 
-function boundedJson(value: unknown, maxCodeUnits: number): string {
+function boundedJson<Value>(value: Value, maxCodeUnits: number): string {
 	const parts: string[] = [];
 	let remaining = Math.max(1, Math.floor(maxCodeUnits));
 	let truncated = false;
@@ -669,7 +674,7 @@ function boundedJson(value: unknown, maxCodeUnits: number): string {
 		if (next.length < text.length) truncated = true;
 		return !truncated;
 	};
-	const visit = (candidate: unknown, depth: number): void => {
+	const visit = <Candidate>(candidate: Candidate, depth: number): void => {
 		if (truncated) return;
 		if (candidate === null) {
 			append("null");
@@ -721,15 +726,14 @@ function boundedJson(value: unknown, maxCodeUnits: number): string {
 		}
 		append("{");
 		let first = true;
-		for (const key in candidate) {
+		for (const [key, nested] of Object.entries(candidate)) {
 			if (truncated) break;
-			if (!Object.hasOwn(candidate, key)) continue;
 			if (!first) append(", ");
 			first = false;
 			append(JSON.stringify(key));
 			append(": ");
 			try {
-				visit((candidate as Record<string, unknown>)[key], depth + 1);
+				visit(nested, depth + 1);
 			} catch {
 				append('"[unavailable]"');
 			}
@@ -857,7 +861,7 @@ export function buildToolResultLines(result: AgentToolResult<unknown>): string[]
 export function buildRawToolDetailLines(
 	id: string,
 	name: string,
-	args: Readonly<Record<string, unknown>>,
+	args: ToolArguments,
 	result: AgentToolResult<unknown> | undefined,
 ): string[] {
 	return capDetailLines([
@@ -875,10 +879,7 @@ export function buildRawToolDetailLines(
 	]);
 }
 
-export function buildToolDetailLines(
-	args: Readonly<Record<string, unknown>>,
-	result: AgentToolResult<unknown>,
-): string[] {
+export function buildToolDetailLines(args: ToolArguments, result: AgentToolResult<unknown>): string[] {
 	const collector = new DetailCollector(DETAIL_MAX_LINES, DETAIL_MAX_BYTES);
 	collector.add("Call");
 	let argumentCount = 0;
