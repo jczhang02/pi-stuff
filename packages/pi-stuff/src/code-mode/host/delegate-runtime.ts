@@ -1,5 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import { type JsonValue, parseJsonValue } from "../../shared/json-value.js";
+import { type JsonInputValue, type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { type CodemodeValue, parseForStorage, stringifyForStorage } from "../cloudflare/codec.js";
 import { SuiteToolInvocationError } from "../connector.js";
@@ -10,21 +10,17 @@ import type {
 	RuntimeToolTrace,
 	SuiteSandboxTool,
 } from "../protocol.js";
-import type { DelegateRequestMessage } from "./host-protocol.js";
+import type { DelegateRequestMessage, DelegateResponseMessage, HostResult } from "./host-protocol.js";
 import { CodeModeTraceStore } from "./trace-store.js";
 
 const MAX_NOTIFICATION_CHARS = 16_384;
 const MAX_NOTIFICATIONS_PER_CELL = 100;
 
-type SendMessage = (message: unknown) => void;
+type SendMessage = (message: DelegateResponseMessage) => void;
 
-function resultFromValue(value: unknown): AgentToolResult<unknown> {
-	if (
-		isRuntimeObject(value) &&
-		value !== null &&
-		"content" in value &&
-		Array.isArray((value as { content?: unknown }).content)
-	) {
+function resultFromValue(value: CodemodeValue): AgentToolResult<unknown> {
+	if (isRuntimeObject(value) && value !== null && "content" in value && Array.isArray(value.content)) {
+		// SAFETY: the Tool-result boundary requires an object with an array content payload; optional fields stay opaque.
 		return value as AgentToolResult<unknown>;
 	}
 	let text: string;
@@ -43,12 +39,12 @@ function resultFromValue(value: unknown): AgentToolResult<unknown> {
 	};
 }
 
-function decodeTransportValue(value: unknown): CodemodeValue {
+function decodeTransportValue(value: JsonInputValue): CodemodeValue {
 	const serialized = JSON.stringify(value);
 	return serialized === undefined ? undefined : parseForStorage(serialized);
 }
 
-function encodeTransportValue(value: unknown): JsonValue | undefined {
+function encodeTransportValue(value: CodemodeValue): JsonValue | undefined {
 	try {
 		const serialized = stringifyForStorage(value);
 		return serialized === undefined ? undefined : parseJsonValue(serialized);
@@ -274,7 +270,7 @@ export class CodeModeDelegateRuntime {
 		this.controllers.delete(id);
 	}
 
-	private respond(id: number, result: Record<string, unknown>): Error | undefined {
+	private respond(id: number, result: HostResult): Error | undefined {
 		try {
 			this.send({ id, result, type: "delegate/response" });
 			return undefined;

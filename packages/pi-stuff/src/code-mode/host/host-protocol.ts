@@ -1,4 +1,4 @@
-import type { JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import type { RuntimeContentItem, RuntimeResponse, SuiteSandboxTool } from "../protocol.js";
 
@@ -25,7 +25,7 @@ export function toWireToolDefinition(tool: SuiteSandboxTool): WireToolDefinition
 	};
 }
 
-export function parseRuntimeResponse(value: unknown): RuntimeResponse {
+export function parseRuntimeResponse(value: JsonInputValue): RuntimeResponse {
 	if (!isRecord(value)) throw new Error("Code Mode host returned an invalid runtime response");
 	const kind = isRecord(value["Yielded"])
 		? "yielded"
@@ -39,15 +39,17 @@ export function parseRuntimeResponse(value: unknown): RuntimeResponse {
 	if (!isRecord(body) || !isRuntimeString(body["cell_id"])) {
 		throw new Error("Code Mode host returned an invalid runtime response");
 	}
-	return {
+	const response = {
 		cellId: body["cell_id"],
 		contentItems: parseContentItems(body["content_items"]),
 		kind,
-		...(kind === "result" && isRuntimeString(body["error_text"]) ? { errorText: body["error_text"] } : {}),
-	};
+	} satisfies RuntimeResponse;
+	return kind === "result" && isRuntimeString(body["error_text"])
+		? { ...response, errorText: body["error_text"] }
+		: response;
 }
 
-function parseContentItems(value: unknown): RuntimeContentItem[] {
+function parseContentItems(value: JsonInputValue): RuntimeContentItem[] {
 	if (value === undefined) return [];
 	if (!Array.isArray(value)) throw new Error("Code Mode host returned invalid content items");
 	return value.map((item) => {
@@ -56,18 +58,16 @@ function parseContentItems(value: unknown): RuntimeContentItem[] {
 			return { type: "input_text", text: item["text"] };
 		}
 		if (item["type"] === "input_image" && isRuntimeString(item["image_url"]) && isImageDetail(item["detail"])) {
-			return {
-				type: "input_image",
-				image_url: item["image_url"],
-				...(item["detail"] === undefined ? {} : { detail: item["detail"] }),
-			};
+			return item["detail"] === undefined
+				? { type: "input_image", image_url: item["image_url"] }
+				: { type: "input_image", image_url: item["image_url"], detail: item["detail"] };
 		}
 		if (item["type"] === "input_audio") throw new Error("Code Mode audio output is not supported by Pi Stuff");
 		throw new Error("Code Mode host returned an invalid content item");
 	});
 }
 
-function isImageDetail(value: unknown): value is "auto" | "high" | "low" | "original" | null | undefined {
+function isImageDetail(value: JsonInputValue): value is "auto" | "high" | "low" | "original" | null | undefined {
 	return (
 		value === undefined ||
 		value === null ||
@@ -102,11 +102,20 @@ export interface DelegateRequestMessage {
 		  };
 }
 
-type HostResult =
+type ToolInvocation = Extract<DelegateRequestMessage["request"], { readonly type: "tool/invoke" }>["invocation"];
+type ToolInvocationBuilder = { -readonly [Key in keyof ToolInvocation]: ToolInvocation[Key] };
+
+export type HostResult =
 	| { readonly status: "error"; readonly message: string }
 	| { readonly status: "ok"; readonly value: JsonInputValue };
 
-export function parseHostMessage(value: unknown): HostMessage {
+export type DelegateResponseMessage = {
+	readonly id: number;
+	readonly result: HostResult;
+	readonly type: "delegate/response";
+};
+
+export function parseHostMessage(value: JsonInputValue): HostMessage {
 	if (!isRecord(value) || !isRuntimeString(value["type"])) {
 		throw new Error("Code Mode host returned an invalid message");
 	}
@@ -118,8 +127,7 @@ export function parseHostMessage(value: unknown): HostMessage {
 		return { capabilities: value["capabilities"], selectedVersion: 1, type };
 	}
 	if (type === "connection/rejected") {
-		// SAFETY: host messages arrive from JSON.parse, so every field is recursively a JSON value or absent.
-		return { reason: value["reason"] as JsonInputValue, type };
+		return { reason: value["reason"], type };
 	}
 	if (type === "operation/response" || type === "execute/initialResponse") {
 		return { id: parseMessageId(value["id"]), result: parseHostResult(value["result"]), type };
@@ -133,19 +141,18 @@ export function parseHostMessage(value: unknown): HostMessage {
 	throw new Error(`Code Mode host returned an unsupported message: ${type}`);
 }
 
-export function executionCellId(value: unknown): string | undefined {
+export function executionCellId(value: JsonInputValue): string | undefined {
 	return isRecord(value) && value["type"] === "execution/started" && isRuntimeString(value["cellId"])
 		? value["cellId"]
 		: undefined;
 }
 
-export function runtimeOutcome(value: unknown): JsonInputValue {
+export function runtimeOutcome(value: JsonInputValue): JsonInputValue {
 	if (!isRecord(value) || !isRecord(value["outcome"])) return undefined;
-	// SAFETY: runtime outcomes are fields of a message produced by JSON.parse.
-	return (value["outcome"]["LiveCell"] ?? value["outcome"]["MissingCell"]) as JsonInputValue;
+	return value["outcome"]["LiveCell"] ?? value["outcome"]["MissingCell"];
 }
 
-function parseDelegateRequest(value: Record<string, unknown>): DelegateRequestMessage {
+function parseDelegateRequest(value: JsonInputObject): DelegateRequestMessage {
 	const id = parseMessageId(value["id"]);
 	const request = value["request"];
 	if (!isRecord(request) || !isRuntimeString(request["type"])) {
@@ -170,30 +177,25 @@ function parseDelegateRequest(value: Record<string, unknown>): DelegateRequestMe
 	) {
 		throw new Error("Code Mode host returned an invalid tool invocation");
 	}
+	const parsedInvocation: ToolInvocationBuilder = {
+		cell_id: invocation["cell_id"],
+		runtime_tool_call_id: invocation["runtime_tool_call_id"],
+		tool_name: { name: toolName["name"] },
+	};
+	if (invocation["input"] !== undefined) parsedInvocation.input = invocation["input"];
 	return {
 		id,
 		request: {
-			invocation: {
-				cell_id: invocation["cell_id"],
-				runtime_tool_call_id: invocation["runtime_tool_call_id"],
-				tool_name: { name: toolName["name"] },
-				...(invocation["input"] === undefined
-					? {}
-					: {
-							// SAFETY: delegate requests are parsed JSON messages.
-							input: invocation["input"] as JsonInputValue,
-						}),
-			},
+			invocation: parsedInvocation,
 			type: "tool/invoke",
 		},
 	};
 }
 
-function parseHostResult(value: unknown): HostResult {
+function parseHostResult(value: JsonInputValue): HostResult {
 	if (!isRecord(value)) throw new Error("Code Mode host returned an invalid operation result");
 	if (value["status"] === "ok") {
-		// SAFETY: operation results are parsed JSON messages.
-		return { status: "ok", value: value["value"] as JsonInputValue };
+		return { status: "ok", value: value["value"] };
 	}
 	if (value["status"] === "error" && isRuntimeString(value["message"])) {
 		return { message: value["message"], status: "error" };
@@ -201,16 +203,16 @@ function parseHostResult(value: unknown): HostResult {
 	throw new Error("Code Mode host returned an invalid operation result");
 }
 
-function parseMessageId(value: unknown): number {
+function parseMessageId(value: JsonInputValue): number {
 	if (!Number.isSafeInteger(value) || Number(value) < 0)
 		throw new Error("Code Mode host returned an invalid message id");
 	return Number(value);
 }
 
-function isStringArray(value: unknown): value is string[] {
+function isStringArray(value: JsonInputValue): value is string[] {
 	return Array.isArray(value) && value.every((entry) => isRuntimeString(entry));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: JsonInputValue): value is JsonInputObject {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }

@@ -1,6 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import type { JsonInputValue } from "../../shared/json-value.js";
+import { type JsonInputValue, parseJsonValue } from "../../shared/json-value.js";
 import type {
 	CodeModeExecuteOptions,
 	CodeModeWaitOptions,
@@ -11,6 +11,7 @@ import type {
 import { CodeModeDelegateRuntime } from "./delegate-runtime.js";
 import {
 	DEFAULT_EXEC_YIELD_MS,
+	type DelegateResponseMessage,
 	executionCellId,
 	type HostMessage,
 	MAX_OUTPUT_TOKENS,
@@ -26,11 +27,29 @@ const SHUTDOWN_GRACE_MS = 250;
 const STARTUP_TIMEOUT_MS = 10_000;
 
 interface Pending {
-	readonly context?: ExecutorContext;
+	context?: ExecutorContext;
 	reject(error: Error): void;
 	resolve(value: JsonInputValue): void;
-	readonly tools?: Map<string, SuiteSandboxTool>;
+	tools?: Map<string, SuiteSandboxTool>;
 }
+
+interface HostOperationRequest {
+	readonly cellId?: string;
+	readonly method: "session/execute" | "session/open" | "session/shutdown" | "session/terminate" | "session/wait";
+	readonly request?: object;
+	readonly sessionId: string;
+}
+
+type HostOutboundMessage =
+	| DelegateResponseMessage
+	| { readonly id: number; readonly type: "operation/cancel" }
+	| { readonly id: number; readonly request: HostOperationRequest; readonly type: "operation/request" }
+	| {
+			readonly optionalCapabilities: string[];
+			readonly requiredCapabilities: string[];
+			readonly supportedVersions: [1];
+			readonly type: "connection/hello";
+	  };
 
 export class CodeModeHostLostError extends Error {
 	constructor(message: string, options?: ErrorOptions) {
@@ -216,23 +235,21 @@ export class CodeModeHostClient {
 		await this.request({ method: "session/open", sessionId: this.sessionId });
 	}
 
-	private request(request: Record<string, unknown>, context?: ExecutorContext): Promise<JsonInputValue> {
+	private request(request: HostOperationRequest, context?: ExecutorContext): Promise<JsonInputValue> {
 		return this.requestWithId(++this.requestId, request, context);
 	}
 
 	private requestWithId(
 		id: number,
-		request: Record<string, unknown>,
+		request: HostOperationRequest,
 		context?: ExecutorContext,
 		tools?: Map<string, SuiteSandboxTool>,
 	): Promise<JsonInputValue> {
 		return new Promise((resolve, reject) => {
-			this.pending.set(id, {
-				...(context ? { context } : {}),
-				reject,
-				resolve,
-				...(tools ? { tools } : {}),
-			});
+			const pending: Pending = { reject, resolve };
+			if (context) pending.context = context;
+			if (tools) pending.tools = tools;
+			this.pending.set(id, pending);
 			try {
 				this.send({ id, request, type: "operation/request" });
 			} catch (error) {
@@ -251,7 +268,7 @@ export class CodeModeHostClient {
 		initial?.reject(error);
 	}
 
-	private send(message: unknown): void {
+	private send(message: HostOutboundMessage): void {
 		const child = this.child;
 		if (!child?.stdin.writable) throw new Error("Code Mode host is not running");
 		const payload = Buffer.from(JSON.stringify(message));
@@ -283,7 +300,7 @@ export class CodeModeHostClient {
 			const payload = this.buffer.subarray(4, length + 4);
 			this.buffer = this.buffer.subarray(length + 4);
 			try {
-				this.handleMessage(parseHostMessage(JSON.parse(payload.toString("utf8"))));
+				this.handleMessage(parseHostMessage(parseJsonValue(payload.toString("utf8"))));
 			} catch (error) {
 				this.failAll(error instanceof Error ? error : new Error(String(error)));
 				return;
