@@ -1,3 +1,4 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ConsentManager } from "./consent-manager.ts";
 import type { McpLifecycleManager } from "./lifecycle.ts";
@@ -24,7 +25,7 @@ export type SendMessageFn = (
     customType: string;
     content: Array<{ type: "text"; text: string }>;
     display?: string;
-    details?: unknown;
+    details?: JsonInputValue;
   },
   options?: { deliverAs?: "steer" | "followUp" | "nextTurn"; triggerTurn?: boolean }
 ) => void | Promise<boolean>;

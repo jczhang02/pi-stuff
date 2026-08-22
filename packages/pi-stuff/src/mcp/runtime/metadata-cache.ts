@@ -1,4 +1,7 @@
 // metadata-cache.ts - Persistent MCP metadata cache
+import { isJsonInputObject, parseJsonObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeObject } from "../../shared/runtime-type.js";
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { piStuffCachePath } from "../../xdg/index.ts";
@@ -29,9 +32,15 @@ import {
   resolveServerUrl,
 } from "./utils.ts";
 import { extractUiToolVisibility, isUiToolVisibleToModel } from "./ui-tool-visibility.ts";
+import type { UiToolVisibility } from "./ui-tool-visibility.ts";
 
 const CACHE_VERSION = 1;
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface DirectToolSelectors {
+	servers: Set<string>;
+	tools: Map<string, Set<string>>;
+}
 
 export type { CachedPrompt, CachedResource, CachedTool, MetadataCache, ServerCacheEntry } from "./types.ts";
 
@@ -43,11 +52,7 @@ export function loadMetadataCache(): MetadataCache | null {
   const cachePath = getMetadataCachePath();
   if (!existsSync(cachePath)) return null;
   try {
-    const raw = JSON.parse(readFileSync(cachePath, "utf-8"));
-    if (!raw || typeof raw !== "object") return null;
-    if (raw.version !== CACHE_VERSION) return null;
-    if (!raw.servers || typeof raw.servers !== "object") return null;
-    return raw as MetadataCache;
+	    return parseMetadataCache(readFileSync(cachePath, "utf-8"));
   } catch {
     return null;
   }
@@ -59,10 +64,10 @@ export function saveMetadataCache(cache: MetadataCache): void {
   mkdirSync(dir, { recursive: true });
 
   let merged: MetadataCache = { version: CACHE_VERSION, servers: {} };
-  try {
-    if (existsSync(cachePath)) {
-      const existing = JSON.parse(readFileSync(cachePath, "utf-8")) as MetadataCache;
-      if (existing && existing.version === CACHE_VERSION && existing.servers) {
+	  try {
+	    if (existsSync(cachePath)) {
+	      const existing = parseMetadataCache(readFileSync(cachePath, "utf-8"));
+	      if (existing) {
         merged.servers = { ...existing.servers };
       }
     }
@@ -82,7 +87,7 @@ export function computeServerHash(definition: ServerEntry): string {
   // Hash only fields that affect server identity and tool/resource output.
   // Exclude lifecycle, idleTimeout, requestTimeoutMs, debug — those are runtime behavior settings
   // that don't change which tools a server exposes.
-  const identity: Record<string, unknown> = {
+  const identity: JsonInputObject = {
     command: definition.command,
     args: definition.args,
     socket: resolveConfigPath(definition.socket),
@@ -113,15 +118,12 @@ export function isServerCacheValid(
     return false;
   }
   if (!entry || entry.configHash !== configHash) return false;
-  if (!entry.cachedAt || typeof entry.cachedAt !== "number") return false;
+  if (!entry.cachedAt || !isRuntimeNumber(entry.cachedAt)) return false;
   if (maxAgeMs > 0 && Date.now() - entry.cachedAt > maxAgeMs) return false;
   return true;
 }
 
-export function parseDirectToolSelectors(selectors: string[]): {
-  servers: Set<string>;
-  tools: Map<string, Set<string>>;
-} {
+export function parseDirectToolSelectors(selectors: string[]): DirectToolSelectors {
   const servers = new Set<string>();
   const tools = new Map<string, Set<string>>();
 
@@ -300,17 +302,115 @@ export function reconstructPromptMetadata(
   });
 }
 
-function stableStringify(value: unknown): string {
-  if (value === null || value === undefined || typeof value !== "object") {
+function stableStringify(value: JsonInputValue): string {
+  if (value === null || value === undefined || !isRuntimeObject(value)) {
     const serialized = JSON.stringify(value);
     return serialized === undefined ? "undefined" : serialized;
   }
   if (Array.isArray(value)) {
     return `[${value.map(v => stableStringify(v)).join(",")}]`;
   }
-  const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
-  return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
+	  if (!isJsonInputObject(value)) return "undefined";
+	  const keys = Object.keys(value).sort();
+	  return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+}
+
+function parseMetadataCache(text: string): MetadataCache | null {
+	const value = parseJsonObject(text);
+	if (value.version !== CACHE_VERSION || !isJsonInputObject(value.servers)) return null;
+	const servers: Record<string, ServerCacheEntry> = {};
+	for (const [name, entry] of Object.entries(value.servers)) {
+		const parsed = parseServerCacheEntry(entry);
+		if (!parsed) return null;
+		Object.defineProperty(servers, name, { configurable: true, enumerable: true, value: parsed, writable: true });
+	}
+	return { version: CACHE_VERSION, servers };
+}
+
+function parseServerCacheEntry(value: JsonInputValue): ServerCacheEntry | null {
+	if (!isJsonInputObject(value) || !isRuntimeString(value.configHash) || !isRuntimeNumber(value.cachedAt) || !Number.isFinite(value.cachedAt)) return null;
+	const tools = parseCacheList(value.tools, parseCachedTool);
+	const resources = parseCacheList(value.resources, parseCachedResource);
+	if (!tools || !resources) return null;
+	const entry: ServerCacheEntry = { configHash: value.configHash, tools, resources, cachedAt: value.cachedAt };
+	if (value.prompts !== undefined) {
+		const prompts = parseCacheList(value.prompts, parseCachedPrompt);
+		if (!prompts) return null;
+		entry.prompts = prompts;
+	}
+	if (value.instructions !== undefined) {
+		if (!isRuntimeString(value.instructions)) return null;
+		entry.instructions = value.instructions;
+	}
+	return entry;
+}
+
+function parseCachedTool(value: JsonInputValue): CachedTool | null {
+	if (!isJsonInputObject(value) || !isRuntimeString(value.name)) return null;
+	const tool: CachedTool = { name: value.name };
+	if (!assignCacheString(tool, "description", value.description)) return null;
+	if (!assignCacheString(tool, "uiResourceUri", value.uiResourceUri)) return null;
+	if (value.inputSchema !== undefined) tool.inputSchema = value.inputSchema;
+	if (value.uiVisibility !== undefined) {
+		if (!Array.isArray(value.uiVisibility) || !value.uiVisibility.every(isUiToolVisibility)) return null;
+		tool.uiVisibility = value.uiVisibility;
+	}
+	if (value.uiStreamMode !== undefined) {
+		if (value.uiStreamMode !== "eager" && value.uiStreamMode !== "stream-first") return null;
+		tool.uiStreamMode = value.uiStreamMode;
+	}
+	return tool;
+}
+
+function parseCachedResource(value: JsonInputValue): CachedResource | null {
+	if (!isJsonInputObject(value) || !isRuntimeString(value.uri) || !isRuntimeString(value.name)) return null;
+	const resource: CachedResource = { uri: value.uri, name: value.name };
+	return assignCacheString(resource, "description", value.description) ? resource : null;
+}
+
+function parseCachedPrompt(value: JsonInputValue): CachedPrompt | null {
+	if (!isJsonInputObject(value) || !isRuntimeString(value.name)) return null;
+	const prompt: CachedPrompt = { name: value.name };
+	if (!assignCacheString(prompt, "title", value.title) || !assignCacheString(prompt, "description", value.description)) return null;
+	if (value.arguments !== undefined) {
+		const args = parseCacheList(value.arguments, parseCachedPromptArgument);
+		if (!args) return null;
+		prompt.arguments = args;
+	}
+	return prompt;
+}
+
+function parseCachedPromptArgument(value: JsonInputValue): NonNullable<CachedPrompt["arguments"]>[number] | null {
+	if (!isJsonInputObject(value) || !isRuntimeString(value.name)) return null;
+	const argument: NonNullable<CachedPrompt["arguments"]>[number] = { name: value.name };
+	if (!assignCacheString(argument, "description", value.description)) return null;
+	if (value.required !== undefined) {
+		if (value.required !== true && value.required !== false) return null;
+		argument.required = value.required;
+	}
+	return argument;
+}
+
+function parseCacheList<Value>(value: JsonInputValue, parse: (entry: JsonInputValue) => Value | null): Value[] | null {
+	if (!Array.isArray(value)) return null;
+	const parsed: Value[] = [];
+	for (const entry of value) {
+		const item = parse(entry);
+		if (!item) return null;
+		parsed.push(item);
+	}
+	return parsed;
+}
+
+function assignCacheString<Target extends object, Key extends keyof Target>(target: Target, key: Key, value: JsonInputValue): boolean {
+	if (value === undefined) return true;
+	if (!isRuntimeString(value)) return false;
+	Object.assign(target, { [key]: value });
+	return true;
+}
+
+function isUiToolVisibility(value: JsonInputValue): value is UiToolVisibility {
+	return value === "model" || value === "app";
 }
 
 function tryGetToolUiResourceUri(tool: McpTool): string | undefined {

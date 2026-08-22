@@ -5,6 +5,9 @@
  * Uses Node.js http module for compatibility.
  */
 
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "http"
 import {
   DEFAULT_OAUTH_CALLBACK_PATH,
@@ -199,7 +202,9 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
   // Clear timeout and resolve the pending promise
   clearTimeout(pending.timeout)
   pendingAuths.delete(state)
-  pending.resolve({ code, ...(iss !== null ? { iss } : {}) })
+	  const response: OAuthCallbackResponse = { code }
+	  if (iss !== null) response.iss = iss
+	  pending.resolve(response)
 
   res.writeHead(200, { "Content-Type": "text/html" })
   res.end(HTML_SUCCESS)
@@ -294,7 +299,7 @@ async function ensureCallbackServerLocked(options: EnsureCallbackServerOptions =
       setOAuthCallbackPort(requiredPort)
     } else {
       const address = candidateServer.address()
-      if (!address || typeof address === "string" || typeof address.port !== "number") {
+      if (!address || isRuntimeString(address) || !isRuntimeNumber(address.port)) {
         throw new Error("OAuth callback server did not report an assigned port")
       }
       setOAuthCallbackPort(address.port)
@@ -318,12 +323,12 @@ async function ensureCallbackServerLocked(options: EnsureCallbackServerOptions =
     if (reservedState) {
       reservedAuthStates.delete(reservedState)
     }
-    const nodeError = error as NodeJS.ErrnoException
+	    const errorCode = isJsonInputObject(error) ? error.code : undefined
     await new Promise<void>((resolve) => {
       candidateServer.close(() => resolve())
     })
 
-    if (strictPort && nodeError.code === "EADDRINUSE") {
+	    if (strictPort && errorCode === "EADDRINUSE") {
       throw new Error(
         `OAuth callback port ${requiredPort} is already in use. Pre-registered OAuth clients require an exact redirect URI; set MCP_OAUTH_CALLBACK_PORT to your registered port or free port ${requiredPort}`,
         { cause: error }

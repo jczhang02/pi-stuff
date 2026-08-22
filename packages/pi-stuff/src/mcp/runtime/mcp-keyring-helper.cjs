@@ -5,6 +5,7 @@ const { createRequire } = require('node:module');
 const { dirname, join } = require('node:path');
 
 const requireFromHere = createRequire(__filename);
+const { Guard } = requireFromHere('typebox/guard');
 
 function loadKeyringEntryClass() {
   try {
@@ -59,11 +60,11 @@ function writeResponse(response) {
 (async () => {
   try {
     const request = JSON.parse(await readStdin());
-    if (!request || typeof request !== 'object') throw new Error('invalid request');
+    if (!Guard.IsObject(request)) throw new Error('invalid request');
     const { operation, service, account, payload } = request;
     if (!['read', 'write', 'remove'].includes(operation)) throw new Error('invalid operation');
-    if (typeof service !== 'string' || !service) throw new Error('invalid service');
-    if (typeof account !== 'string' || !account) throw new Error('invalid account');
+    if (!Guard.IsString(service) || !service) throw new Error('invalid service');
+    if (!Guard.IsString(account) || !account) throw new Error('invalid account');
 
     const Entry = loadKeyringEntryClass();
     const entry = new Entry(service, account);
@@ -74,7 +75,7 @@ function writeResponse(response) {
       return;
     }
     if (operation === 'write') {
-      if (typeof payload !== 'string') throw new Error('invalid payload');
+      if (!Guard.IsString(payload)) throw new Error('invalid payload');
       entry.setPassword(payload);
       writeResponse({ ok: true });
       return;

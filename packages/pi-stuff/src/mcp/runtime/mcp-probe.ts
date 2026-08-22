@@ -1,3 +1,4 @@
+import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 const PROBE_TIMEOUT_MS = 5_000;
 
 export interface McpProbeResult {
@@ -16,9 +17,9 @@ const INITIALIZE_REQUEST = {
   },
 };
 
-function isJsonRpcEnvelope(value: unknown): boolean {
-  return typeof value === "object" && value !== null &&
-    (value as { jsonrpc?: unknown }).jsonrpc === "2.0" &&
+function isJsonRpcEnvelope(value: JsonInputValue): boolean {
+	  return isJsonInputObject(value) &&
+	    value.jsonrpc === "2.0" &&
     ("result" in value || "error" in value);
 }
 

@@ -1,3 +1,4 @@
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
@@ -10,11 +11,14 @@ import {
   type ElicitResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
-import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation/types.js";
 import open from "open";
 
 export type ElicitationValue = string | number | boolean | string[] | undefined;
 type FormProperty = ElicitRequestFormParams["requestedSchema"]["properties"][string];
+
+export interface ElicitationContent {
+	[name: string]: string | number | boolean | string[];
+}
 
 export type ElicitationUIContext = ExtensionUIContext;
 
@@ -92,15 +96,16 @@ async function collectValidField(
   const required = params.requestedSchema.required?.includes(name) === true;
   while (true) {
     const result = await collectField(ui, params, name, schema, current);
-    if (!("value" in result)) return result;
-    try {
-      coerceAndValidateFormValues({
-        ...params,
-        requestedSchema: {
-          type: "object",
-          properties: { [name]: schema },
-          ...(required ? { required: [name] } : {}),
-        },
+	    if (!("value" in result)) return result;
+	    try {
+	      const requestedSchema = {
+	        type: "object" as const,
+	        properties: { [name]: schema },
+	      };
+	      if (required) Object.assign(requestedSchema, { required: [name] });
+	      coerceAndValidateFormValues({
+	        ...params,
+	        requestedSchema,
       }, { [name]: result.value });
       return result;
     } catch (error) {
@@ -191,8 +196,8 @@ async function collectField(
 export function coerceAndValidateFormValues(
   params: ElicitRequestFormParams,
   values: Record<string, ElicitationValue>,
-): Record<string, string | number | boolean | string[]> {
-  const output: Record<string, string | number | boolean | string[]> = {};
+): ElicitationContent {
+	  const output: ElicitationContent = {};
   const required = new Set(params.requestedSchema.required ?? []);
   for (const [name, schema] of Object.entries(params.requestedSchema.properties)) {
     const value = values[name];
@@ -202,12 +207,13 @@ export function coerceAndValidateFormValues(
     }
     if (schema.type === "string") {
       const stringValue = String(value);
-      const limits = schema as typeof schema & { minLength?: number; maxLength?: number };
-      if (limits.minLength !== undefined && stringValue.length < limits.minLength) {
-        throw new Error(`Elicitation field ${name} is shorter than minimum length ${limits.minLength}`);
-      }
-      if (limits.maxLength !== undefined && stringValue.length > limits.maxLength) {
-        throw new Error(`Elicitation field ${name} is longer than maximum length ${limits.maxLength}`);
+	      const minLength = "minLength" in schema && isRuntimeNumber(schema.minLength) ? schema.minLength : undefined;
+	      const maxLength = "maxLength" in schema && isRuntimeNumber(schema.maxLength) ? schema.maxLength : undefined;
+	      if (minLength !== undefined && stringValue.length < minLength) {
+	        throw new Error(`Elicitation field ${name} is shorter than minimum length ${minLength}`);
+	      }
+	      if (maxLength !== undefined && stringValue.length > maxLength) {
+	        throw new Error(`Elicitation field ${name} is longer than maximum length ${maxLength}`);
       }
       if ("enum" in schema && !schema.enum.includes(stringValue)) {
         throw new Error(`Elicitation field ${name} is not an allowed value`);
@@ -219,10 +225,10 @@ export function coerceAndValidateFormValues(
       continue;
     }
     if (schema.type === "number" || schema.type === "integer") {
-      if (typeof value === "string" && value.trim() === "") {
+      if (isRuntimeString(value) && value.trim() === "") {
         throw new Error(`Elicitation field ${name} must be a number`);
       }
-      const numberValue = typeof value === "number" ? value : Number(value);
+      const numberValue = isRuntimeNumber(value) ? value : Number(value);
       if (!Number.isFinite(numberValue)) throw new Error(`Elicitation field ${name} must be a number`);
       if (schema.type === "integer" && !Number.isInteger(numberValue)) {
         throw new Error(`Elicitation field ${name} must be an integer`);
@@ -237,7 +243,7 @@ export function coerceAndValidateFormValues(
       continue;
     }
     if (schema.type === "boolean") {
-      output[name] = typeof value === "boolean" ? value : value === "true";
+      output[name] = isRuntimeBoolean(value) ? value : value === "true";
       continue;
     }
     if (schema.type === "array") {
@@ -255,9 +261,9 @@ export function coerceAndValidateFormValues(
       }
       output[name] = arrayValue;
     }
-  }
-  const validation = new AjvJsonSchemaValidator()
-    .getValidator(params.requestedSchema as JsonSchemaType)(output);
+	  }
+	  const validation = new AjvJsonSchemaValidator()
+	    .getValidator(params.requestedSchema)(output);
   if (!validation.valid) {
     throw new Error(`Invalid elicitation response: ${validation.errorMessage}`);
   }
@@ -285,16 +291,16 @@ function uniqueAction(label: string, choices: string[]): string {
 }
 
 function extractMultiSelectOptions(schema: Extract<FormProperty, { type: "array" }>): Array<{ value: string; display: string }> {
-  const items = schema.items as { enum?: string[]; anyOf?: Array<{ const: string; title: string }> };
-  return items.anyOf
-    ? items.anyOf.map(option => ({ value: option.const, display: formatChoice(option.const, option.title) }))
-    : (items.enum ?? []).map(value => ({ value, display: value }));
+	  const items = schema.items;
+	  return "anyOf" in items
+	    ? items.anyOf.map(option => ({ value: option.const, display: formatChoice(option.const, option.title) }))
+	    : items.enum.map(value => ({ value, display: value }));
 }
 
 function formatReview(
   serverName: string,
   properties: Array<[string, FormProperty]>,
-  content: Record<string, string | number | boolean | string[]>,
+	  content: ElicitationContent,
 ): string {
   const rows = properties.map(([name, schema]) =>
     `${schema.title ?? humanizeName(name)}: ${content[name] === undefined ? "(omitted)" : String(content[name])}`);

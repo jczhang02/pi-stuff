@@ -1,3 +1,4 @@
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
 import { z } from "zod";
 
 export const UI_STREAM_HOST_CONTEXT_KEY = "pi-mcp-adapter/stream";
@@ -73,17 +74,15 @@ export interface UiStreamSummary {
   lastMessage?: string;
 }
 
-export function getUiStreamHostContext(hostContext: Record<string, unknown> | undefined): UiStreamHostContext | undefined {
+export function getUiStreamHostContext(hostContext: JsonInputObject | undefined): UiStreamHostContext | undefined {
   const candidate = hostContext?.[UI_STREAM_HOST_CONTEXT_KEY];
   const parsed = uiStreamHostContextSchema.safeParse(candidate);
   return parsed.success ? parsed.data : undefined;
 }
 
-export function getVisualizationStreamEnvelope(structuredContent: unknown): VisualizationStreamEnvelope | undefined {
-  if (!structuredContent || typeof structuredContent !== "object" || Array.isArray(structuredContent)) {
-    return undefined;
-  }
-  const candidate = (structuredContent as Record<string, unknown>)[UI_STREAM_STRUCTURED_CONTENT_KEY];
+export function getVisualizationStreamEnvelope(structuredContent: JsonInputValue): VisualizationStreamEnvelope | undefined {
+	  if (!isJsonInputObject(structuredContent)) return undefined;
+	  const candidate = structuredContent[UI_STREAM_STRUCTURED_CONTENT_KEY];
   const parsed = visualizationStreamEnvelopeSchema.safeParse(candidate);
   return parsed.success ? parsed.data : undefined;
 }

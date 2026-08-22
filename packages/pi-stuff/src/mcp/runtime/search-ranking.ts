@@ -15,6 +15,7 @@ const FIELD_WEIGHTS = {
   server: 8,
   description: 5,
 } as const;
+const SEARCH_FIELDS = ["name", "originalName", "server", "description"] as const;
 
 export interface RankedToolMatch {
   server: string;
@@ -49,7 +50,8 @@ export function scoreToolMatch(tool: ToolMetadata, server: string, query: string
   let wholeFieldExact = false;
   const matchedTokens = new Set<string>();
 
-  for (const [field, value] of Object.entries(fields) as Array<[keyof typeof FIELD_WEIGHTS, string]>) {
+	  for (const field of SEARCH_FIELDS) {
+	    const value = fields[field];
     const weight = FIELD_WEIGHTS[field];
     const fieldTokens = tokenize(value);
     if (value === normalizedQuery) {
@@ -100,7 +102,14 @@ export function rankToolMatches(state: McpExtensionState, query: string, server?
   return matches.sort((a, b) => b.score - a.score || a.tool.name.localeCompare(b.tool.name));
 }
 
-export function paginate<T>(items: T[], offset: number, limit: number): { items: T[]; total: number; hasMore: boolean; nextOffset: number | null } {
+export interface Page<Value> {
+	hasMore: boolean;
+	items: Value[];
+	nextOffset: number | null;
+	total: number;
+}
+
+export function paginate<T>(items: T[], offset: number, limit: number): Page<T> {
   const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.trunc(offset)) : 0;
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.trunc(limit)) : 1;
   const total = items.length;

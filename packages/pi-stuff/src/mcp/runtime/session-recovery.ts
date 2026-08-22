@@ -20,6 +20,7 @@
 //     many things other than "your session is gone"
 //   - treat generic -32000/ConnectionClosed errors as session expiry
 //   - treat AbortError/cancellation as a session failure
+import type { JsonInputValue } from "../../shared/json-value.js";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { logger } from "./logger.ts";
@@ -43,7 +44,7 @@ const SERVER_NOT_INITIALIZED_MCP_MESSAGES = new Set([
   `MCP error ${ErrorCode.ConnectionClosed}: Bad Request: Server not initialized`,
 ]);
 
-export function isTerminatedSession(err: unknown, hadSessionId: boolean): boolean {
+export function isTerminatedSession(err: JsonInputValue, hadSessionId: boolean): boolean {
   if (!hadSessionId) return false;
   if (err instanceof StreamableHTTPError) {
     return err.code === 404
@@ -60,8 +61,8 @@ function hasSessionId(connection: ServerConnection): boolean {
   // Only StreamableHTTPClientTransport exposes `sessionId`; stdio/SSE
   // transports (and test doubles that omit `transport` entirely) simply
   // read as `undefined` here.
-  const transport = connection.transport as { sessionId?: string } | undefined;
-  return transport?.sessionId != null;
+	  const transport = connection.transport;
+	  return !!transport && "sessionId" in transport && transport.sessionId != null;
 }
 
 export class SessionRecoveryAuthRequiredError extends Error {

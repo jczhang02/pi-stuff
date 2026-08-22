@@ -1,7 +1,10 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
+import { readHostProxyProperty } from "../../shared/host-proxy.js";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
 import { dirname, isAbsolute, resolve } from "node:path";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage, MessageExtraInfo } from "@modelcontextprotocol/sdk/types.js";
 
 export const MCP_TRACE_SCHEMA_VERSION = 1;
@@ -48,6 +51,11 @@ export interface McpTraceWriterOptions {
   mkdir?: (path: string, options: { recursive: true }) => Promise<string | undefined>;
 }
 
+export interface McpTraceStats {
+	bytes: number;
+	events: number;
+}
+
 function boundedPositiveInteger(value: number | undefined, fallback: number): number {
   if (!Number.isFinite(value) || value === undefined || value <= 0) return fallback;
   return Math.floor(value);
@@ -71,10 +79,10 @@ function messageKind(message: JSONRPCMessage): McpTraceMessageKind {
   return "response";
 }
 
-function traceId(value: unknown): string | number | null | undefined {
+function traceId(value: JsonInputValue): string | number | null | undefined {
   if (value === null) return null;
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") return "[REDACTED_ID]";
+  if (isRuntimeNumber(value) && Number.isFinite(value)) return value;
+  if (isRuntimeString(value)) return "[REDACTED_ID]";
   return undefined;
 }
 
@@ -92,7 +100,7 @@ export function createMcpTraceEvent(
   transport: McpTraceTransport,
   message: JSONRPCMessage,
   status: "sent" | "received" | "error",
-  options?: { relatedRequestId?: unknown; durationMs?: number },
+  options?: { relatedRequestId?: JsonInputValue; durationMs?: number },
 ): McpTraceEvent {
   const kind = messageKind(message);
   const event: McpTraceEvent = {
@@ -109,7 +117,7 @@ export function createMcpTraceEvent(
   if ("id" in message) event.id = traceId(message.id) ?? null;
   const relatedRequestId = traceId(options?.relatedRequestId);
   if (relatedRequestId !== undefined && relatedRequestId !== null) event.relatedRequestId = relatedRequestId;
-  if ("error" in message && message.error && typeof message.error.code === "number") {
+  if ("error" in message && message.error && isRuntimeNumber(message.error.code)) {
     event.errorCode = message.error.code;
   }
   if (options?.durationMs !== undefined && Number.isFinite(options.durationMs)) {
@@ -161,7 +169,7 @@ export class McpTraceWriter {
     return this.disabled;
   }
 
-  get stats(): { bytes: number; events: number } {
+	  get stats(): McpTraceStats {
     return { bytes: this.bytesWritten, events: this.eventsWritten };
   }
 
@@ -245,11 +253,9 @@ export function wrapTransportWithMcpTrace<T extends Transport>(
       // An observer failure must never alter SDK transport behavior.
     }
   };
-  const traced: Transport = {
-    start: () => transport.start(),
-    send: async (message, options) => {
-      const started = performance.now();
-      const messages = Array.isArray(message) ? message : [message];
+	  const send = async (message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> => {
+	      const started = performance.now();
+	      const messages = Array.isArray(message) ? message : [message];
       try {
         await transport.send(message, options);
         for (const item of messages) {
@@ -263,42 +269,39 @@ export function wrapTransportWithMcpTrace<T extends Transport>(
             durationMs: performance.now() - started,
           }));
         }
-        throw error;
-      }
-    },
-    close: () => transport.close(),
-    get onclose() {
-      return transport.onclose;
-    },
-    set onclose(handler) {
-      transport.onclose = handler;
-    },
-    get onerror() {
-      return transport.onerror;
-    },
-    set onerror(handler) {
-      transport.onerror = handler;
-    },
-    get onmessage() {
-      return messageHandler;
-    },
-    set onmessage(handler) {
-      messageHandler = handler;
-      transport.onmessage = handler
-        ? ((message: JSONRPCMessage, extra?: MessageExtraInfo) => {
-            record(createMcpTraceEvent("inbound", server, transportKind, message, "received"));
-            handler(message, extra);
-          }) as Transport["onmessage"]
-        : undefined;
-    },
-    get sessionId() {
-      return transport.sessionId;
-    },
-    setProtocolVersion: transport.setProtocolVersion
-      ? version => transport.setProtocolVersion!(version)
-      : undefined,
-  };
-  return traced as T;
+	        throw error;
+	      }
+	  };
+	  return new Proxy(transport, {
+	    get(target, property, receiver) {
+	      if (property === "send") return send;
+	      if (property === "onmessage") return messageHandler;
+	      const value = readHostProxyProperty(target, property, receiver);
+	      return isRuntimeFunction(value) ? value.bind(target) : value;
+	    },
+	    set(target, property, value) {
+	      if (property === "onmessage") {
+	        messageHandler = isRuntimeFunction(value) ? value : undefined;
+	        transport.onmessage = messageHandler
+	          ? <Message extends JSONRPCMessage>(message: Message, extra?: MessageExtraInfo) => {
+	              record(createMcpTraceEvent("inbound", server, transportKind, message, "received"));
+	              messageHandler?.(message, extra);
+	            }
+	          : undefined;
+	        return true;
+	      }
+	      if (property === "onclose") {
+	        target.onclose = value;
+	        return true;
+	      }
+	      if (property === "onerror") {
+	        target.onerror = value;
+	        return true;
+	      }
+	      Object.defineProperty(target, property, { configurable: true, value, writable: true });
+	      return true;
+	    },
+	  });
 }
 
 export function traceTransportKind(definition: { command?: string; url?: string; socket?: string }, transport: Transport): McpTraceTransport {

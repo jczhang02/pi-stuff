@@ -1,4 +1,6 @@
 // npx-resolver.ts - Resolve npx/npm exec binaries to avoid npm parent processes
+import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { existsSync, readFileSync, realpathSync, readdirSync, statSync, writeFileSync, renameSync, mkdirSync, openSync, readSync, closeSync } from "node:fs";
 import { join, dirname, extname, resolve, sep } from "node:path";
 import { piStuffCachePath } from "../../xdg/index.ts";
@@ -19,6 +21,11 @@ interface NpxCacheEntry {
 interface NpxCache {
   version: number;
   entries: Record<string, NpxCacheEntry>;
+}
+
+interface NpmPackageJson {
+	bin?: string | Record<string, string>;
+	version?: string;
 }
 
 export interface NpxResolution {
@@ -188,12 +195,9 @@ function resolveFromNpmCache(packageSpec: string, binName?: string): NpxCacheEnt
   const packageJsonPath = join(packageDir, "package.json");
   if (!existsSync(packageJsonPath)) return null;
 
-  let pkg: { bin?: string | Record<string, string>; version?: string } | null = null;
+	  let pkg: NpmPackageJson | null = null;
   try {
-    pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
-      bin?: string | Record<string, string>;
-      version?: string;
-    };
+	    pkg = parseNpmPackageJson(readFileSync(packageJsonPath, "utf-8"));
   } catch {
     return null;
   }
@@ -205,7 +209,7 @@ function resolveFromNpmCache(packageSpec: string, binName?: string): NpxCacheEnt
   let chosenBinName: string | undefined;
   let binRel: string | undefined;
 
-  if (typeof binField === "string") {
+  if (isRuntimeString(binField)) {
     chosenBinName = defaultBinName(packageName);
     binRel = binField;
   } else {
@@ -276,7 +280,7 @@ async function forceNpxCache(packageSpec: string, signal?: AbortSignal): Promise
         reject(err);
       });
     });
-  } catch (error) {
+	  } catch {
     if (signal?.aborted) throwIfAborted(signal);
     // Ignore failures, resolution will fall back to original command
   }
@@ -364,9 +368,9 @@ function findCachedPackageDir(cacheDir: string, packageName: string, exactVersio
     const pkgDir = join(npxDir, entry.name, "node_modules", ...packagePathParts);
     const packageJsonPath = join(pkgDir, "package.json");
     if (!existsSync(packageJsonPath)) continue;
-    if (exactVersion) {
-      try {
-        const pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { version?: unknown };
+	    if (exactVersion) {
+	      try {
+	        const pkg = parseNpmPackageJson(readFileSync(packageJsonPath, "utf-8"));
         if (pkg.version !== exactVersion) continue;
       } catch {
         continue;
@@ -434,13 +438,9 @@ export function getNpxCachePath(): string {
 
 function loadCache(): NpxCache | null {
   const cachePath = getNpxCachePath();
-  if (!existsSync(cachePath)) return null;
-  try {
-    const raw = JSON.parse(readFileSync(cachePath, "utf-8"));
-    if (!raw || typeof raw !== "object") return null;
-    if (raw.version !== CACHE_VERSION) return null;
-    if (!raw.entries || typeof raw.entries !== "object") return null;
-    return raw as NpxCache;
+	  if (!existsSync(cachePath)) return null;
+	  try {
+	    return parseNpxCache(readFileSync(cachePath, "utf-8"));
   } catch {
     return null;
   }
@@ -452,10 +452,10 @@ function saveCacheEntry(key: string, entry: NpxCacheEntry): void {
   mkdirSync(dir, { recursive: true });
 
   let merged: NpxCache = { version: CACHE_VERSION, entries: {} };
-  try {
-    if (existsSync(cachePath)) {
-      const existing = JSON.parse(readFileSync(cachePath, "utf-8")) as NpxCache;
-      if (existing && existing.version === CACHE_VERSION && existing.entries) {
+	  try {
+	    if (existsSync(cachePath)) {
+	      const existing = parseNpxCache(readFileSync(cachePath, "utf-8"));
+	      if (existing) {
         merged.entries = { ...existing.entries };
       }
     }
@@ -467,6 +467,50 @@ function saveCacheEntry(key: string, entry: NpxCacheEntry): void {
   const tmpPath = `${cachePath}.${process.pid}.tmp`;
   writeFileSync(tmpPath, JSON.stringify(merged, null, 2), "utf-8");
   renameSync(tmpPath, cachePath);
+}
+
+function parseNpmPackageJson(text: string): NpmPackageJson {
+	const value = parseJsonObject(text);
+	const pkg: NpmPackageJson = {};
+	if (value.version !== undefined) {
+		if (!isRuntimeString(value.version)) throw new Error("Invalid package version");
+		pkg.version = value.version;
+	}
+	if (value.bin === undefined) return pkg;
+	if (isRuntimeString(value.bin)) {
+		pkg.bin = value.bin;
+		return pkg;
+	}
+	if (!isJsonInputObject(value.bin)) throw new Error("Invalid package bin field");
+	const bins: Record<string, string> = {};
+	for (const [name, target] of Object.entries(value.bin)) {
+		if (!isRuntimeString(target)) throw new Error("Invalid package bin target");
+		Object.defineProperty(bins, name, { configurable: true, enumerable: true, value: target, writable: true });
+	}
+	pkg.bin = bins;
+	return pkg;
+}
+
+function parseNpxCache(text: string): NpxCache | null {
+	const value = parseJsonObject(text);
+	if (value.version !== CACHE_VERSION || !isJsonInputObject(value.entries)) return null;
+	const entries: Record<string, NpxCacheEntry> = {};
+	for (const [key, rawEntry] of Object.entries(value.entries)) {
+		if (!isJsonInputObject(rawEntry)
+			|| !isRuntimeString(rawEntry.resolvedBin)
+			|| !isRuntimeNumber(rawEntry.resolvedAt)
+			|| !Number.isFinite(rawEntry.resolvedAt)
+			|| !isRuntimeBoolean(rawEntry.isJs)
+			|| (rawEntry.packageVersion !== undefined && !isRuntimeString(rawEntry.packageVersion))) return null;
+		const entry: NpxCacheEntry = {
+			resolvedBin: rawEntry.resolvedBin,
+			resolvedAt: rawEntry.resolvedAt,
+			isJs: rawEntry.isJs,
+		};
+		if (isRuntimeString(rawEntry.packageVersion)) entry.packageVersion = rawEntry.packageVersion;
+		Object.defineProperty(entries, key, { configurable: true, enumerable: true, value: entry, writable: true });
+	}
+	return { version: CACHE_VERSION, entries };
 }
 
 function safeRealpath(path: string): string {

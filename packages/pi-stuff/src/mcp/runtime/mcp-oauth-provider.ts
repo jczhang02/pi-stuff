@@ -30,6 +30,7 @@ import {
   type StoredClientInfo,
 } from "./mcp-auth.ts"
 import { resolveCommandSecret } from "./utils.ts"
+import { isRuntimeString } from "../../shared/runtime-type.js"
 
 type IssuerBoundClientInformation = OAuthClientInformationMixed & { issuer?: string }
 type IssuerBoundTokens = OAuthTokens & { issuer?: string }
@@ -38,6 +39,10 @@ function issuersMatch(first: string, second: string): boolean {
   return first === second
     || (first.endsWith("/") && first.slice(0, -1) === second)
     || (second.endsWith("/") && second.slice(0, -1) === first)
+}
+
+function issuerFrom(value: OAuthClientInformationMixed | OAuthTokens): string | undefined {
+  return "issuer" in value && isRuntimeString(value.issuer) ? value.issuer : undefined
 }
 
 // Callback server configuration
@@ -208,15 +213,16 @@ export class McpOAuthProvider implements OAuthClientProvider {
       throw new Error("redirectUrl is required for authorization_code flow")
     }
 
-    return {
-      redirect_uris: [redirectUrl],
+	    const metadata: OAuthClientMetadata = {
+	      redirect_uris: [redirectUrl],
       client_name: this.config.clientName ?? "Pi Coding Agent",
       client_uri: this.config.clientUri ?? "https://github.com/nicobailon/pi-mcp-adapter",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: this.config.clientSecret ? "client_secret_post" : "none",
-      ...(this.config.scope !== undefined ? { scope: this.config.scope } : {}),
-    }
+	    }
+	    if (this.config.scope !== undefined) metadata.scope = this.config.scope
+	    return metadata
   }
 
   /**
@@ -249,11 +255,12 @@ export class McpOAuthProvider implements OAuthClientProvider {
           this.runtimeSignal,
         )
         : this.config.clientSecret
-      return {
-        client_id: this.config.clientId,
-        client_secret: clientSecret,
-        ...(issuer !== undefined ? { issuer } : {}),
-      } as IssuerBoundClientInformation
+	      const configuredClient: IssuerBoundClientInformation = {
+	        client_id: this.config.clientId,
+	        client_secret: clientSecret,
+	      }
+	      if (issuer !== undefined) configuredClient.issuer = issuer
+	      return configuredClient
     }
 
     // Keep client registration associated with this in-flight flow even if
@@ -290,20 +297,15 @@ export class McpOAuthProvider implements OAuthClientProvider {
       }
       // Return all registration metadata and the local issuer extension.
       // This keeps the SDK v1 view and the stored issuer binding consistent.
-      return {
-        client_id: clientInfo.clientId,
-        client_secret: clientInfo.clientSecret,
-        ...(clientInfo.clientIdIssuedAt !== undefined
-          ? { client_id_issued_at: clientInfo.clientIdIssuedAt }
-          : {}),
-        ...(clientInfo.clientSecretExpiresAt !== undefined
-          ? { client_secret_expires_at: clientInfo.clientSecretExpiresAt }
-          : {}),
-        ...(clientInfo.redirectUris !== undefined
-          ? { redirect_uris: clientInfo.redirectUris }
-          : {}),
-        ...(clientInfo.issuer !== undefined ? { issuer: clientInfo.issuer } : {}),
-      } as IssuerBoundClientInformation
+	      const registeredClient: IssuerBoundClientInformation = {
+	        client_id: clientInfo.clientId,
+	        client_secret: clientInfo.clientSecret,
+	      }
+	      if (clientInfo.clientIdIssuedAt !== undefined) registeredClient.client_id_issued_at = clientInfo.clientIdIssuedAt
+	      if (clientInfo.clientSecretExpiresAt !== undefined) registeredClient.client_secret_expires_at = clientInfo.clientSecretExpiresAt
+	      if (clientInfo.redirectUris !== undefined) registeredClient.redirect_uris = clientInfo.redirectUris
+	      if (clientInfo.issuer !== undefined) registeredClient.issuer = clientInfo.issuer
+	      return registeredClient
     }
 
     // No client info or URL changed - will trigger dynamic registration
@@ -315,7 +317,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
    */
   async saveClientInformation(info: OAuthClientInformationMixed): Promise<void> {
     this.throwIfInactive()
-    const issuer = this.discoveredIssuer ?? (info as IssuerBoundClientInformation).issuer
+	    const issuer = this.discoveredIssuer ?? issuerFrom(info)
     if (this.config.clientId && info.client_id === this.config.clientId) {
       updateClientInfo(
         this.serverName,
@@ -355,16 +357,17 @@ export class McpOAuthProvider implements OAuthClientProvider {
       updateTokens(this.serverName, entry.tokens, this.serverUrl, this.storageOptions)
     }
 
-    return {
-      access_token: entry.tokens.accessToken,
+	    const tokens: IssuerBoundTokens = {
+	      access_token: entry.tokens.accessToken,
       token_type: "Bearer",
       refresh_token: entry.tokens.refreshToken,
       expires_in: entry.tokens.expiresAt
         ? Math.max(0, Math.floor(entry.tokens.expiresAt - Date.now() / 1000))
         : undefined,
       scope: entry.tokens.scope,
-      ...(entry.tokens.issuer !== undefined ? { issuer: entry.tokens.issuer } : {}),
-    } as IssuerBoundTokens
+	    }
+	    if (entry.tokens.issuer !== undefined) tokens.issuer = entry.tokens.issuer
+	    return tokens
   }
 
   /**
@@ -379,7 +382,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
       // being persisted as never-expiring.
       expiresAt: tokens.expires_in !== undefined ? Date.now() / 1000 + tokens.expires_in : undefined,
       scope: tokens.scope,
-      issuer: this.discoveredIssuer ?? (tokens as IssuerBoundTokens).issuer,
+	      issuer: this.discoveredIssuer ?? issuerFrom(tokens),
     }
     this.throwIfInactive()
     updateTokens(this.serverName, storedTokens, this.serverUrl, this.storageOptions)

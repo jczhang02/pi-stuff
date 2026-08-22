@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeFunction } from "../../shared/runtime-type.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { isServerDisabled, type ServerDefinition } from "./types.ts";
 import type { McpServerManager } from "./server-manager.ts";
 import { hasPendingAuth } from "./mcp-auth-flow.ts";
@@ -5,7 +8,7 @@ import { logger } from "./logger.ts";
 import { formatTerminalError, sanitizeTerminalText } from "./utils.ts";
 
 export type ReconnectCallback = (serverName: string) => void;
-export type ReconnectFailureCallback = (serverName: string, error: unknown) => void;
+export type ReconnectFailureCallback = (serverName: string, error: JsonInputValue) => void;
 
 export class McpLifecycleManager {
   private keepAliveServers = new Map<string, ServerDefinition>();
@@ -55,8 +58,8 @@ export class McpLifecycleManager {
   }
 
   startHealthChecks(signalOrInterval?: AbortSignal | number, maybeIntervalMs = 30000): void {
-    const signal = typeof signalOrInterval === "number" ? undefined : signalOrInterval;
-    const intervalMs = typeof signalOrInterval === "number" ? signalOrInterval : maybeIntervalMs;
+    const signal = isRuntimeNumber(signalOrInterval) ? undefined : signalOrInterval;
+    const intervalMs = isRuntimeNumber(signalOrInterval) ? signalOrInterval : maybeIntervalMs;
     this.stopped = false;
     this.healthSignal = signal;
     if (signal?.aborted) {
@@ -151,7 +154,7 @@ export class McpLifecycleManager {
     this.onReconnect = undefined;
     this.onReconnectFailure = undefined;
     this.onIdleShutdown = undefined;
-    if (typeof this.manager.closeAll === "function") {
+    if (isRuntimeFunction(this.manager.closeAll)) {
       await this.manager.closeAll();
     }
   }

@@ -1,3 +1,4 @@
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { createPanelKeys, type PanelKeybindings, type PanelKeys } from "./panel-keys.ts";
@@ -91,6 +92,16 @@ type PendingWrite =
 interface SetupTui {
 	requestRender(): void;
 	readonly terminal?: { readonly rows?: number };
+}
+
+interface DiscoverySummaryLine {
+	text: string;
+	tone: "hint" | "warning";
+}
+
+interface VisibleRange {
+	start: number;
+	end: number;
 }
 
 export class McpSetupPanel {
@@ -480,9 +491,10 @@ export class McpSetupPanel {
     } finally {
       this.busy = false;
 			this.busyCanClose = false;
-			if (this.disposed) return;
-			this.resetInactivityTimeout();
-      this.tui.requestRender();
+			if (!this.disposed) {
+				this.resetInactivityTimeout();
+				this.tui.requestRender();
+			}
     }
   }
 
@@ -682,7 +694,7 @@ export class McpSetupPanel {
     return lines;
   }
 
-  private discoverySummary(): { text: string; tone: "hint" | "warning" } {
+  private discoverySummary(): DiscoverySummaryLine {
     if (!this.discovery.hasAnyConfig) {
 			return {
 				text: this.options.onboardingState.setupCompleted
@@ -720,7 +732,7 @@ export class McpSetupPanel {
     return `Shared MCP files are preferred. Pi-owned files are only for compatibility imports and adapter-specific overrides.${hostNote}${conflictNote}`;
   }
 
-  private visibleRange(total: number, cursor: number): { start: number; end: number } {
+  private visibleRange(total: number, cursor: number): VisibleRange {
 		if (total <= LIST_WINDOW_ROWS) return { start: 0, end: total };
 		const half = Math.floor(LIST_WINDOW_ROWS / 2);
 		const start = Math.min(Math.max(0, cursor - half), Math.max(0, total - LIST_WINDOW_ROWS));
@@ -931,7 +943,7 @@ export class McpSetupPanel {
 
 	private maximumRows(): number {
 		const rows = this.tui.terminal?.rows;
-		return typeof rows === "number" && Number.isFinite(rows) ? Math.max(1, Math.floor(rows) - 3) : 21;
+		return isRuntimeNumber(rows) && Number.isFinite(rows) ? Math.max(1, Math.floor(rows) - 3) : 21;
 	}
 
   invalidate(): void {}

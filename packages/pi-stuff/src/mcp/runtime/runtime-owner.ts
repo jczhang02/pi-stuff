@@ -1,5 +1,8 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeFunction, isRuntimeObject } from "../../shared/runtime-type.js";
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../../lifecycle-deadline.js";
+import { readHostProxyProperty } from "../../shared/host-proxy.js";
 import { logger } from "./logger.ts";
 import { formatTerminalError } from "./utils.ts";
 
@@ -16,7 +19,7 @@ export function createMcpRuntimeOwner(shutdownGraceMs = HOST_SHUTDOWN_GRACE_MS):
   const cleanups: Array<() => void | Promise<void>> = [];
   let stopPromise: Promise<void> | undefined;
 
-  const reportCleanupFailure = (error: unknown, late: boolean) => {
+  const reportCleanupFailure = (error: JsonInputValue, late: boolean) => {
     logger.error(
       `MCP: ${late ? "late " : ""}runtime cleanup failed`,
       error instanceof Error ? error : new Error(formatTerminalError(error)),
@@ -64,34 +67,36 @@ export function combineAbortSignals(...signals: Array<AbortSignal | undefined>):
 /** Fence session-bound UI calls after the owning extension runtime stops. */
 export function createOwnedUi(ui: ExtensionUIContext, owner: McpRuntimeOwner): ExtensionUIContext {
   const proxies = new WeakMap<object, object>();
-  const wrap = (value: unknown): unknown => {
-    if ((typeof value !== "object" || value === null) && typeof value !== "function") {
-      return value;
+  const wrap = <Value extends object>(value: Value): Value => {
+    const existing = proxies.get(value);
+    if (existing) {
+      // SAFETY: this cache stores only transparent proxies created for the exact same source object.
+      return existing as Value;
     }
-    const object = value as object;
-    const existing = proxies.get(object);
-    if (existing) return existing;
 
-    const proxy = new Proxy(object, {
+    const proxy = new Proxy(value, {
       get(target, property, receiver) {
         if (!owner.isActive()) return undefined;
-        const member = Reflect.get(target, property, receiver);
-        if (typeof member === "function") {
-          return (...args: unknown[]) => {
+        const member = readHostProxyProperty(target, property, receiver);
+        if (isRuntimeFunction(member)) {
+          return (...args: JsonInputValue[]) => {
             if (!owner.isActive()) return undefined;
-            return Reflect.apply(member, target, args);
+            return member.apply(target, args);
           };
         }
-        return owner.isActive() ? wrap(member) : undefined;
+        if (member !== null && isRuntimeObject(member)) {
+          return owner.isActive() ? wrap(member) : undefined;
+        }
+        return owner.isActive() ? member : undefined;
       },
     });
-    proxies.set(object, proxy);
+    proxies.set(value, proxy);
     return proxy;
   };
-  return wrap(ui) as ExtensionUIContext;
+  return wrap(ui);
 }
 
-export function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+export function isAbortError(error: JsonInputValue, signal?: AbortSignal): boolean {
   if (signal?.aborted) return true;
   return error instanceof Error && (error.name === "AbortError" || error.message === "MCP extension runtime stopped");
 }

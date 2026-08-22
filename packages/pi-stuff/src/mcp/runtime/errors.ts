@@ -1,3 +1,5 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject } from "../../shared/json-value.js";
 /**
  * Custom error types for MCP UI operations.
  * Provides structured errors with context and recovery hints.
@@ -8,7 +10,7 @@ export interface McpUiErrorContext {
   tool?: string;
   uri?: string;
   session?: string;
-  [key: string]: unknown;
+  [key: string]: JsonInputValue;
 }
 
 /**
@@ -42,7 +44,7 @@ export class McpUiError extends Error {
     }
   }
 
-  toJSON(): Record<string, unknown> {
+  toJSON(): JsonInputObject {
     return {
       name: this.name,
       code: this.code,
@@ -190,7 +192,7 @@ export class McpServerError extends McpUiError {
 /**
  * Wrap an unknown error into an McpUiError.
  */
-export function wrapError(error: unknown, context?: McpUiErrorContext): McpUiError {
+export function wrapError(error: JsonInputValue, context?: McpUiErrorContext): McpUiError {
   if (error instanceof McpUiError) {
     // Merge contexts
     return new McpUiError(error.message, {
@@ -214,6 +216,6 @@ export function wrapError(error: unknown, context?: McpUiErrorContext): McpUiErr
 /**
  * Check if an error is a specific MCP UI error type.
  */
-export function isErrorCode(error: unknown, code: string): boolean {
+export function isErrorCode(error: JsonInputValue, code: string): boolean {
   return error instanceof McpUiError && error.code === code;
 }

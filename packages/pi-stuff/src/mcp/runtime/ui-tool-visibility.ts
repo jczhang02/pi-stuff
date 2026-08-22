@@ -1,10 +1,11 @@
+import { isJsonInputObject, type JsonInputObject } from "../../shared/json-value.js";
 export type UiToolVisibility = "model" | "app";
 
-export function extractUiToolVisibility(meta: Record<string, unknown> | undefined): UiToolVisibility[] | undefined {
-  if (!meta || typeof meta !== "object") return undefined;
-  const ui = meta.ui;
-  if (!ui || typeof ui !== "object" || Array.isArray(ui)) return undefined;
-  const visibility = (ui as Record<string, unknown>).visibility;
+export function extractUiToolVisibility(meta: JsonInputObject | undefined): UiToolVisibility[] | undefined {
+	  if (!meta) return undefined;
+	  const ui = meta.ui;
+	  if (!isJsonInputObject(ui)) return undefined;
+	  const visibility = ui.visibility;
   if (visibility === undefined) return undefined;
   if (!Array.isArray(visibility)) return [];
 

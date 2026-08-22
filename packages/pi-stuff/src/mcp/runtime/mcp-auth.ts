@@ -10,6 +10,9 @@
  * then the plaintext file is removed.
  */
 
+import { isJsonInputObject, isJsonInputValue, parseJsonValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeNumber } from "../../shared/runtime-type.js";
+import { isRuntimeFunction, isRuntimeString } from "../../shared/runtime-type.js";
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { createRequire } from 'module';
@@ -80,7 +83,7 @@ export class OAuthCredentialStoreError extends Error {
   constructor(
     message: string,
     readonly operation: 'read' | 'write' | 'remove',
-    cause: unknown,
+    cause: JsonInputValue,
   ) {
     super(message, { cause });
     this.name = 'OAuthCredentialStoreError';
@@ -92,19 +95,26 @@ export type OAuthCredentialStatus =
   | { status: 'absent' }
   | { status: 'unavailable'; message: string };
 
-function causeChainContains(error: unknown, pattern: RegExp): boolean {
-  const seen = new Set<unknown>();
-  let current = error;
-  while ((typeof current === 'object' && current !== null) || typeof current === 'function') {
+function causeChainContains(error: JsonInputValue, pattern: RegExp): boolean {
+	  const seen = new Set<JsonInputObject>();
+	  let current = error;
+	  while (isJsonInputObject(current)) {
     if (seen.has(current)) break;
     seen.add(current);
-    const candidate = current as { name?: unknown; message?: unknown; code?: unknown; cause?: unknown };
-    if ([candidate.name, candidate.message, candidate.code].some(value => typeof value === 'string' && pattern.test(value))) {
-      return true;
-    }
-    current = candidate.cause;
+	    const name = readObjectField(current, 'name');
+	    const message = readObjectField(current, 'message');
+	    const code = readObjectField(current, 'code');
+	    if ([name, message, code].some(value => isRuntimeString(value) && pattern.test(value))) {
+	      return true;
+	    }
+	    current = readObjectField(current, 'cause');
   }
   return false;
+}
+
+function readObjectField(value: JsonInputObject, key: string): JsonInputValue {
+	const field = Object.getOwnPropertyDescriptor(value, key)?.value;
+	return isJsonInputValue(field) ? field : undefined;
 }
 
 export function formatOAuthCredentialStoreUnavailable(error: OAuthCredentialStoreError): string {
@@ -122,7 +132,10 @@ interface KeyringEntry {
 
 type KeyringEntryConstructor = new (service: string, account: string) => KeyringEntry;
 type KeyringModule = { Entry: KeyringEntryConstructor };
-type KeyringRequire = ((id: string) => unknown) & { resolve(id: string): string };
+interface KeyringModuleExport {
+	Entry?: JsonInputValue | KeyringEntryConstructor;
+}
+type KeyringRequire = ((id: string) => KeyringModuleExport) & { resolve(id: string): string };
 
 interface AuthSecretStore {
   read(account: string): string | undefined;
@@ -221,7 +234,7 @@ function getKeyringEntry(account: string): KeyringEntry {
 
 function loadKeyringEntryClass(keyringRequire: KeyringRequire = require, platform: NodeJS.Platform = process.platform, arch: NodeJS.Architecture = process.arch): KeyringEntryConstructor {
   try {
-    return (keyringRequire('@napi-rs/keyring') as KeyringModule).Entry;
+	    return parseKeyringModule(keyringRequire('@napi-rs/keyring')).Entry;
   } catch (loaderError) {
     try {
       return loadKeyringNativeBindingFallback(keyringRequire, platform, arch).Entry;
@@ -239,17 +252,22 @@ function loadKeyringNativeBindingFallback(keyringRequire: KeyringRequire, platfo
     throw new Error(`Unsupported @napi-rs/keyring native binding target: ${platform}-${arch}`);
   }
 
-  let lastError: unknown;
+  let lastError: JsonInputValue;
   for (const target of targets) {
     try {
       const packageJsonPath = keyringRequire.resolve(`${target.packageName}/package.json`);
-      return keyringRequire(join(dirname(packageJsonPath), target.bindingFile)) as KeyringModule;
+	      return parseKeyringModule(keyringRequire(join(dirname(packageJsonPath), target.bindingFile)));
     } catch (error) {
       lastError = error;
     }
   }
 
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function parseKeyringModule(value: KeyringModuleExport): KeyringModule {
+	if (!isRuntimeFunction(value.Entry)) throw new Error('Keyring native binding did not export Entry');
+	return { Entry: value.Entry };
 }
 
 function getKeyringNativeBindingTargets(platform: NodeJS.Platform, arch: NodeJS.Architecture): { packageName: string; bindingFile: string }[] {
@@ -279,7 +297,7 @@ function getKeyringNativeBindingSuffixes(platform: NodeJS.Platform, arch: NodeJS
   return [];
 }
 
-function formatErrorMessage(error: unknown): string {
+function formatErrorMessage(error: JsonInputValue): string {
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -294,7 +312,7 @@ function isLinuxKeyringRecoveryEnabled(): boolean {
   return process.platform === 'linux' || process.env[TEST_LINUX_KEYRING_RECOVERY_ENV] === '1';
 }
 
-function shouldAttemptLinuxKeyringRecovery(error: unknown): boolean {
+function shouldAttemptLinuxKeyringRecovery(error: JsonInputValue): boolean {
   return isLinuxKeyringRecoveryEnabled()
     && causeChainContains(error, /key\s*(?:has been\s*)?revoked|keyrevoked/i);
 }
@@ -320,23 +338,34 @@ function runLinuxKeyringRecoveryOperation(operation: KeyringRecoveryOperation, a
     throw new Error(`Linux keyring recovery helper failed with exit code ${result.status ?? 'unknown'}`);
   }
 
-  let response: unknown;
+	  let response: JsonInputValue;
   try {
-    response = JSON.parse(result.stdout.trim()) as unknown;
+	    response = parseJsonValue(result.stdout.trim());
   } catch (error) {
     throw new Error('Linux keyring recovery helper returned invalid JSON', { cause: error });
   }
-  if (typeof response !== 'object' || response === null || typeof (response as { ok?: unknown }).ok !== 'boolean') {
-    throw new Error('Linux keyring recovery helper returned an invalid response');
-  }
-  const typedResponse = response as KeyringRecoveryResponse;
-  if (typedResponse.ok === false) {
-    throw new Error(typedResponse.error || 'Linux keyring recovery helper failed');
-  }
-  if (operation === 'read' && typedResponse.found === true && typeof typedResponse.value !== 'string') {
-    throw new Error('Linux keyring recovery helper returned an invalid read response');
-  }
-  return typedResponse;
+	  if (!isJsonInputObject(response) || !isRuntimeBoolean(response.ok)) {
+	    throw new Error('Linux keyring recovery helper returned an invalid response');
+	  }
+	  if (response.ok === false) {
+	    if (response.error !== undefined && !isRuntimeString(response.error)) {
+	      throw new Error('Linux keyring recovery helper returned an invalid error response');
+	    }
+	    throw new Error(response.error || 'Linux keyring recovery helper failed');
+	  }
+	  if (response.found !== undefined && !isRuntimeBoolean(response.found)) {
+	    throw new Error('Linux keyring recovery helper returned an invalid found flag');
+	  }
+	  if (response.value !== undefined && !isRuntimeString(response.value)) {
+	    throw new Error('Linux keyring recovery helper returned an invalid read response');
+	  }
+	  if (operation === 'read' && response.found === true && response.value === undefined) {
+	    throw new Error('Linux keyring recovery helper returned an invalid read response');
+	  }
+	  const recovery: KeyringRecoveryResponse = { ok: true };
+	  if (response.found !== undefined) recovery.found = response.found;
+	  if (response.value !== undefined) recovery.value = response.value;
+	  return recovery;
 }
 
 const linuxKeyringRecoveryAuthSecretStore: AuthSecretStore = {
@@ -356,7 +385,7 @@ export function loadTestKeyringEntryClass(keyringRequire: KeyringRequire, platfo
   return loadKeyringEntryClass(keyringRequire, platform, arch);
 }
 
-export function getAuthStorageOptions(oauthDir: unknown, cwd = process.cwd()): AuthStorageOptions {
+export function getAuthStorageOptions(oauthDir: JsonInputValue, cwd = process.cwd()): AuthStorageOptions {
   const baseDir = resolveConfiguredOAuthDir(oauthDir, cwd);
   return baseDir ? { baseDir } : {};
 }
@@ -371,7 +400,7 @@ export function getAuthBaseDir(options: AuthStorageOptions = {}): string {
  * Get the legacy server-specific directory path.
  */
 function getServerDir(serverName: string, options?: AuthStorageOptions): string {
-  if (typeof serverName !== 'string') {
+  if (!isRuntimeString(serverName)) {
     throw new Error(`Invalid MCP server name: ${JSON.stringify(serverName)}`);
   }
   const storageKey = getAuthEntryAccount(serverName);
@@ -379,7 +408,7 @@ function getServerDir(serverName: string, options?: AuthStorageOptions): string 
 }
 
 function getAuthEntryAccount(serverName: string): string {
-  if (typeof serverName !== 'string') {
+  if (!isRuntimeString(serverName)) {
     throw new Error(`Invalid MCP server name: ${JSON.stringify(serverName)}`);
   }
   return `sha256-${createHash('sha256').update(serverName, 'utf8').digest('hex')}`;
@@ -392,27 +421,99 @@ export function getAuthEntryFilePath(serverName: string, options?: AuthStorageOp
   return join(getServerDir(serverName, options), 'tokens.json');
 }
 
-function parseJsonPayload(serverName: string, payload: string, source: string): unknown {
+function parseJsonPayload(serverName: string, payload: string, source: string): JsonInputValue {
   try {
-    return JSON.parse(payload) as unknown;
+	    return parseJsonValue(payload);
   } catch (error) {
     throw new Error(`Failed to parse OAuth credentials for ${serverName} from ${source}`, { cause: error });
   }
 }
 
 function parseAuthEntryPayload(serverName: string, payload: string, source: string): AuthEntry {
-  return parseJsonPayload(serverName, payload, source) as AuthEntry;
+	  const value = parseJsonPayload(serverName, payload, source);
+	  if (!isJsonInputObject(value)) throw new Error(`Invalid OAuth credentials for ${serverName} from ${source}`);
+	  const entry: AuthEntry = {};
+	  if (value.tokens !== undefined) entry.tokens = parseStoredTokens(value.tokens, serverName, source);
+	  if (value.clientInfo !== undefined) entry.clientInfo = parseStoredClientInfo(value.clientInfo, serverName, source);
+	  assignOptionalString(entry, 'codeVerifier', value.codeVerifier, serverName, source);
+	  assignOptionalString(entry, 'oauthState', value.oauthState, serverName, source);
+	  assignOptionalString(entry, 'serverUrl', value.serverUrl, serverName, source);
+	  return entry;
 }
 
-function isAuthEntryChunkManifest(value: unknown): value is AuthEntryChunkManifest {
-  if (typeof value !== 'object' || value === null) return false;
-  const manifest = value as Partial<AuthEntryChunkManifest>;
-  return manifest[AUTH_CHUNK_MANIFEST_KEY] === 1
-    && typeof manifest.chunkCount === 'number'
-    && Number.isInteger(manifest.chunkCount)
-    && manifest.chunkCount > 0
-    && typeof manifest.chunkDigest === 'string'
-    && /^[a-f0-9]{16}$/.test(manifest.chunkDigest);
+function parseStoredTokens(value: JsonInputValue, serverName: string, source: string): StoredTokens {
+	const record = requireAuthObject(value, 'tokens', serverName, source);
+	if (!isRuntimeString(record.accessToken)) throw invalidAuthField('tokens.accessToken', serverName, source);
+	const tokens: StoredTokens = { accessToken: record.accessToken };
+	assignOptionalString(tokens, 'refreshToken', record.refreshToken, serverName, source);
+	assignOptionalNumber(tokens, 'expiresAt', record.expiresAt, serverName, source);
+	assignOptionalString(tokens, 'scope', record.scope, serverName, source);
+	assignOptionalString(tokens, 'issuer', record.issuer, serverName, source);
+	return tokens;
+}
+
+function parseStoredClientInfo(value: JsonInputValue, serverName: string, source: string): StoredClientInfo {
+	const record = requireAuthObject(value, 'clientInfo', serverName, source);
+	if (!isRuntimeString(record.clientId)) throw invalidAuthField('clientInfo.clientId', serverName, source);
+	const info: StoredClientInfo = { clientId: record.clientId };
+	assignOptionalString(info, 'clientSecret', record.clientSecret, serverName, source);
+	assignOptionalNumber(info, 'clientIdIssuedAt', record.clientIdIssuedAt, serverName, source);
+	assignOptionalNumber(info, 'clientSecretExpiresAt', record.clientSecretExpiresAt, serverName, source);
+	assignOptionalString(info, 'issuer', record.issuer, serverName, source);
+	if (record.redirectUris !== undefined) {
+		if (!Array.isArray(record.redirectUris) || !record.redirectUris.every(isRuntimeString)) {
+			throw invalidAuthField('clientInfo.redirectUris', serverName, source);
+		}
+		info.redirectUris = record.redirectUris;
+	}
+	if (record.configPreRegistered !== undefined) {
+		if (!isRuntimeBoolean(record.configPreRegistered)) throw invalidAuthField('clientInfo.configPreRegistered', serverName, source);
+		info.configPreRegistered = record.configPreRegistered;
+	}
+	return info;
+}
+
+function requireAuthObject(value: JsonInputValue, field: string, serverName: string, source: string): JsonInputObject {
+	if (!isJsonInputObject(value)) throw invalidAuthField(field, serverName, source);
+	return value;
+}
+
+function invalidAuthField(field: string, serverName: string, source: string): Error {
+	return new Error(`Invalid OAuth credential field ${field} for ${serverName} from ${source}`);
+}
+
+function assignOptionalString<Target extends object, Key extends keyof Target>(
+	target: Target,
+	key: Key,
+	value: JsonInputValue,
+	serverName: string,
+	source: string,
+): void {
+	if (value === undefined) return;
+	if (!isRuntimeString(value)) throw invalidAuthField(String(key), serverName, source);
+	Object.assign(target, { [key]: value });
+}
+
+function assignOptionalNumber<Target extends object, Key extends keyof Target>(
+	target: Target,
+	key: Key,
+	value: JsonInputValue,
+	serverName: string,
+	source: string,
+): void {
+	if (value === undefined) return;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) throw invalidAuthField(String(key), serverName, source);
+	Object.assign(target, { [key]: value });
+}
+
+function isAuthEntryChunkManifest(value: JsonInputValue): value is AuthEntryChunkManifest {
+	  if (!isJsonInputObject(value)) return false;
+	  return value[AUTH_CHUNK_MANIFEST_KEY] === 1
+	    && isRuntimeNumber(value.chunkCount)
+	    && Number.isInteger(value.chunkCount)
+	    && value.chunkCount > 0
+	    && isRuntimeString(value.chunkDigest)
+	    && /^[a-f0-9]{16}$/.test(value.chunkDigest);
 }
 
 function getAuthEntryChunkAccount(account: string, manifest: AuthEntryChunkManifest, index: number): string {

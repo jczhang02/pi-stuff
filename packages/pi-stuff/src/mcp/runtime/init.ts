@@ -1,3 +1,4 @@
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { promoteActiveAgentWorkToUser } from "../../conversation-ui/agent-run-origin.js";
 import { sendSuiteAgentMessage } from "../../conversation-ui/index.js";
@@ -85,6 +86,17 @@ export function isTuiMode(ctx: Pick<ExtensionContext, "hasUI" | "mode">): boolea
   return ctx.hasUI && ctx.mode === "tui";
 }
 
+export interface McpInitializationContext {
+	cwd: string;
+	hasUI: boolean;
+	isIdle(): boolean;
+	mode: ExtensionContext["mode"];
+	model: ExtensionContext["model"];
+	modelRegistry: ExtensionContext["modelRegistry"] | undefined;
+	signal: AbortSignal | undefined;
+	ui: ExtensionContext["ui"] | undefined;
+}
+
 type McpInitializationOptions = McpAdapterOptions & {
   oauthRuntime?: McpOAuthRuntime;
   statusEvents?: McpExtensionState["statusEvents"];
@@ -92,15 +104,16 @@ type McpInitializationOptions = McpAdapterOptions & {
 
 export async function initializeMcp(
   pi: ExtensionAPI,
-  ctx: ExtensionContext,
+	  ctx: McpInitializationContext,
   owner: McpRuntimeOwner = createMcpRuntimeOwner(),
   options: McpInitializationOptions = {},
 ): Promise<McpExtensionState> {
   // Pi guards ExtensionContext getters after reload. Snapshot all values that
   // can be used by asynchronous work before the first await.
+	const configFlag = options.config === undefined ? pi.getFlag("mcp-config") : undefined;
   const configPath = options.config !== undefined
     ? undefined
-    : options.configPath ?? (pi.getFlag("mcp-config") as string | undefined);
+	    : options.configPath ?? (isRuntimeString(configFlag) ? configFlag : undefined);
   const cwd = ctx.cwd;
   const hasUI = ctx.hasUI;
   const mode = ctx.mode;
@@ -125,8 +138,9 @@ export async function initializeMcp(
   const samplingAutoApprove = config.settings?.samplingAutoApprove === true;
   if (
     options.interactiveProtocolRequests !== false &&
-    config.settings?.sampling !== false &&
-    (hasUI || samplingAutoApprove)
+	    config.settings?.sampling !== false &&
+	    (hasUI || samplingAutoApprove) &&
+	    modelRegistry
   ) {
     manager.setSamplingConfig({
       autoApprove: samplingAutoApprove,
@@ -188,7 +202,7 @@ export async function initializeMcp(
       if (!owner.isActive()) return;
       return sendSuiteAgentMessage(
         pi,
-        message as unknown as Parameters<typeof pi.sendMessage>[0],
+		message,
         options,
         () => owner.isActive(),
       );
@@ -223,7 +237,7 @@ export async function initializeMcp(
     return state;
   }
 
-  const idleSetting = typeof config.settings?.idleTimeout === "number" ? config.settings.idleTimeout : 10;
+  const idleSetting = isRuntimeNumber(config.settings?.idleTimeout) ? config.settings.idleTimeout : 10;
   lifecycle.setGlobalIdleTimeout(idleSetting);
 
   const cachePath = getMetadataCachePath();
@@ -501,14 +515,14 @@ export function updateMetadataCache(
     resources = existingEntry.resources;
   }
 
-  const entry: ServerCacheEntry = {
+	const entry: ServerCacheEntry = {
     configHash,
     tools,
     resources,
-    ...(prompts !== undefined ? { prompts } : {}),
     instructions: connection.instructions,
     cachedAt: Date.now(),
   };
+	if (prompts !== undefined) entry.prompts = prompts;
 
   saveMetadataCache({ version: 1, servers: { [serverName]: entry } });
 }
@@ -516,8 +530,8 @@ export function updateMetadataCache(
 export function notifyToolMetadataUpdated(state: McpExtensionState, serverName: string, reason: string): void {
   try {
     const result = state.onToolMetadataUpdated?.(serverName, reason);
-    if (result && typeof (result as Promise<void>).catch === "function") {
-      (result as Promise<void>).catch((error) => {
+	if (result) {
+		result.catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         logger.debug(`MCP: metadata update hook failed for ${serverName}: ${message}`);
       });
@@ -635,10 +649,10 @@ export async function lazyConnect(state: McpExtensionState, serverName: string, 
 function getEffectiveIdleTimeoutMinutes(state: McpExtensionState, serverName: string): number {
   const definition = state.config.mcpServers[serverName];
   if (!definition) {
-    return typeof state.config.settings?.idleTimeout === "number" ? state.config.settings.idleTimeout : 10;
+    return isRuntimeNumber(state.config.settings?.idleTimeout) ? state.config.settings.idleTimeout : 10;
   }
-  if (typeof definition.idleTimeout === "number") return definition.idleTimeout;
+  if (isRuntimeNumber(definition.idleTimeout)) return definition.idleTimeout;
   const mode = definition.lifecycle ?? "lazy";
   if (mode === "eager" || mode === "lazy-keep-alive") return 0;
-  return typeof state.config.settings?.idleTimeout === "number" ? state.config.settings.idleTimeout : 10;
+  return isRuntimeNumber(state.config.settings?.idleTimeout) ? state.config.settings.idleTimeout : 10;
 }

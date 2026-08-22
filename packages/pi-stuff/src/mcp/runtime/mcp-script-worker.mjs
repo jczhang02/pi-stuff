@@ -1,14 +1,15 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { formatWithOptions } from "node:util";
 import vm from "node:vm";
+import { Guard } from "typebox/guard";
 
 const TOOLS_ENUMERATION_ERROR = "tools is not enumerable — use tools.search({ query })";
 const RESERVED_TOOL_PROPS = new Set(["then", "catch", "finally", "toJSON", "toString", "valueOf"]);
 
 // Keep this formatting logic in sync with mcp-code.ts; the standalone worker cannot import the TypeScript host module.
 function needsInspectableFormatting(value, stack = new WeakSet()) {
-  if (value === undefined || typeof value === "bigint" || typeof value === "function" || typeof value === "symbol") return true;
-  if (typeof value !== "object" || value === null) return false;
+  if (value === undefined || Guard.IsBigInt(value) || Guard.IsFunction(value) || Guard.IsSymbol(value)) return true;
+  if (!Guard.IsObject(value)) return false;
   if (stack.has(value)) return true;
   if (value instanceof Map || value instanceof Set || value instanceof WeakMap || value instanceof WeakSet) return true;
   stack.add(value);
@@ -20,7 +21,7 @@ function needsInspectableFormatting(value, stack = new WeakSet()) {
 }
 
 function formatValue(value) {
-  if (typeof value === "string") return value;
+  if (Guard.IsString(value)) return value;
   try {
     if (!needsInspectableFormatting(value)) {
       const json = JSON.stringify(value, null, 2);
@@ -33,11 +34,11 @@ function formatValue(value) {
 }
 
 function toContentBlock(value) {
-  if (typeof value === "object" && value !== null) {
-    if (value.type === "text" && typeof value.text === "string") {
+  if (Guard.IsObject(value)) {
+    if (value.type === "text" && Guard.IsString(value.text)) {
       return { type: "text", text: value.text };
     }
-    if (value.type === "image" && typeof value.data === "string" && typeof value.mimeType === "string") {
+    if (value.type === "image" && Guard.IsString(value.data) && Guard.IsString(value.mimeType)) {
       return { type: "image", data: value.data, mimeType: value.mimeType };
     }
   }
@@ -48,7 +49,7 @@ let nextRequestId = 0;
 const pending = new Map();
 
 parentPort.on("message", (message) => {
-  if (message?.type !== "result" || typeof message.id !== "number") return;
+  if (message?.type !== "result" || !Guard.IsNumber(message.id)) return;
   const resolve = pending.get(message.id);
   if (!resolve) return;
   pending.delete(message.id);
@@ -71,7 +72,7 @@ const tools = new Proxy(Object.create(null), {
     if (property === "call") {
       return async (path, args) => {
         // Invalid paths never reach dispatch and therefore never appear in the call trace.
-        if (typeof path !== "string" || path.trim() === "") {
+        if (!Guard.IsString(path) || path.trim() === "") {
           return {
             ok: false,
             error: {
@@ -86,7 +87,7 @@ const tools = new Proxy(Object.create(null), {
     if (property === "describe") {
       return async (input) => request("describe", { input });
     }
-    if (typeof property !== "string" || RESERVED_TOOL_PROPS.has(property)) return undefined;
+    if (!Guard.IsString(property) || RESERVED_TOOL_PROPS.has(property)) return undefined;
     return (args) => request("call", { path: property, args });
   },
   ownKeys() {

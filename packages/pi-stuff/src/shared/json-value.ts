@@ -37,9 +37,28 @@ export function isJsonSourceValue<Value>(value: Value): value is Value & JsonSou
 	return Object.values(value).every(isJsonSourceValue);
 }
 
+export function jsonInputKind(value: JsonInputValue): "array" | "boolean" | "null" | "number" | "object" | "string" | "undefined" {
+	if (value === null) return "null";
+	if (value === undefined) return "undefined";
+	if (isRuntimeBoolean(value)) return "boolean";
+	if (isRuntimeNumber(value)) return "number";
+	if (isRuntimeString(value)) return "string";
+	return Array.isArray(value) ? "array" : "object";
+}
+
 export function parseJsonValue(text: string): JsonValue {
 	// SAFETY: successful JSON.parse output is recursively limited to the JSON grammar's value types.
 	return JSON.parse(text) as JsonValue;
+}
+
+export function parseJsonObject(text: string): JsonObject {
+	const value = parseJsonValue(text);
+	if (!isJsonObject(value)) throw new TypeError("Expected a JSON object");
+	return value;
+}
+
+function isJsonObject(value: JsonValue): value is JsonObject {
+	return value !== null && isRuntimeObject(value) && !Array.isArray(value);
 }
 
 import {

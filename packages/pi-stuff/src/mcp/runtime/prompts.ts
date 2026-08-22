@@ -1,3 +1,6 @@
+import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeObject } from "../../shared/runtime-type.js";
 import {
   type ExtensionAPI,
   type ExtensionCommandContext,
@@ -51,7 +54,12 @@ export function resolveCachedPrompts(config: McpConfig): PromptMetadata[] {
  *   /mcp__demo__brief today "important tasks"
  *   /mcp__demo__brief day=today topic="important tasks"
  */
-export function parsePromptArgs(input: string): { positional: string[]; named: Record<string, string> } {
+export interface ParsedPromptArgs {
+	named: Record<string, string>;
+	positional: string[];
+}
+
+export function parsePromptArgs(input: string): ParsedPromptArgs {
   const positional: string[] = [];
   const named: Record<string, string> = {};
 
@@ -232,18 +240,18 @@ export function dispatchMcpPromptToAgent(
 /** Render generated MCP prompt content with Pi's public native user-message component. */
 export function registerMcpPromptMessageRenderer(pi: Pick<ExtensionAPI, "registerMessageRenderer">): void {
   pi.registerMessageRenderer(MCP_USER_PROMPT_MESSAGE_TYPE, (message, { outputPad }) => {
-    const content = typeof message.content === "string" ? message.content : formatMessageContent(message.content);
+    const content = isRuntimeString(message.content) ? message.content : formatMessageContent(message.content);
     return new UserMessageComponent(content, undefined, outputPad);
   });
 }
 
-function formatMessageContent(content: unknown): string {
+function formatMessageContent(content: JsonInputValue): string {
   if (!Array.isArray(content)) return "";
   return content
-    .filter((part): part is object => Boolean(part) && typeof part === "object")
+    .filter(isJsonInputObject)
     .map(part => {
-      if (Reflect.get(part, "type") === "text") return String(Reflect.get(part, "text") ?? "");
-      if (Reflect.get(part, "type") === "image") return "[image]";
+      if (part.type === "text") return String(part.text ?? "");
+      if (part.type === "image") return "[image]";
       return "";
     })
     .filter(Boolean)
@@ -252,14 +260,14 @@ function formatMessageContent(content: unknown): string {
 
 function extractMessageText(message: PromptMessage): string {
   const content = message.content;
-  if (!content || typeof content !== "object") return "";
+  if (!content || !isRuntimeObject(content)) return "";
   switch (content.type) {
     case "text":
       return content.text ?? "";
     case "resource": {
       const resource = content.resource;
       if (!resource) return "";
-      if ("text" in resource && typeof resource.text === "string") {
+      if ("text" in resource && isRuntimeString(resource.text)) {
         return `[resource ${resource.uri}]\n${resource.text}`;
       }
       return `[resource ${resource.uri}]`;

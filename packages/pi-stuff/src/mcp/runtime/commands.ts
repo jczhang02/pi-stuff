@@ -21,7 +21,9 @@ import { loadOnboardingState, markSetupCompleted as persistSetupCompleted } from
 import { openPath, resolveServerUrl, sanitizeTerminalText } from "./utils.ts";
 import { isAbortError } from "./runtime-owner.ts";
 
-export async function showStatus(state: McpExtensionState, ctx: ExtensionContext): Promise<void> {
+export type McpCommandContext = Pick<ExtensionContext, "cwd" | "hasUI" | "signal" | "ui">;
+
+export async function showStatus(state: McpExtensionState, ctx: McpCommandContext): Promise<void> {
   if (!ctx.hasUI) return;
 
   const lines: string[] = ["MCP Server Status:", ""];
@@ -67,7 +69,7 @@ export async function showStatus(state: McpExtensionState, ctx: ExtensionContext
   ctx.ui.notify(lines.join("\n"), "info");
 }
 
-export async function showPrompts(state: McpExtensionState, ctx: ExtensionContext): Promise<void> {
+export async function showPrompts(state: McpExtensionState, ctx: McpCommandContext): Promise<void> {
   if (!ctx.hasUI) return;
   const allPrompts = [...(state.promptMetadata?.values() ?? [])].flat();
   const failedPromptServers = [...(state.manager.getAllConnections?.() ?? [])]
@@ -104,7 +106,7 @@ export async function showPrompts(state: McpExtensionState, ctx: ExtensionContex
   ctx.ui.notify(lines.join("\n"), "info");
 }
 
-export async function showTools(state: McpExtensionState, ctx: ExtensionContext): Promise<void> {
+export async function showTools(state: McpExtensionState, ctx: McpCommandContext): Promise<void> {
   if (!ctx.hasUI) return;
 
   const allTools = [...state.toolMetadata.entries()]
@@ -129,7 +131,7 @@ export async function showTools(state: McpExtensionState, ctx: ExtensionContext)
 
 export async function reconnectServer(
   state: McpExtensionState,
-  ctx: ExtensionContext,
+	  ctx: McpCommandContext,
   name: string,
 ): Promise<boolean> {
   const definition = state.config.mcpServers[name];
@@ -203,7 +205,7 @@ export async function reconnectServer(
 
 export async function reconnectServers(
   state: McpExtensionState,
-  ctx: ExtensionContext,
+	  ctx: McpCommandContext,
   targetServer?: string
 ): Promise<boolean> {
   if (targetServer && !state.config.mcpServers[targetServer]) {
@@ -226,7 +228,7 @@ export async function reconnectServers(
 export async function authenticateServer(
   serverName: string,
   config: McpConfig,
-  ctx: ExtensionContext,
+	  ctx: McpCommandContext,
   signal?: AbortSignal,
   runtime?: McpOAuthRuntime,
 ): Promise<McpAuthResult> {
@@ -265,20 +267,21 @@ export async function authenticateServer(
       return { ok: false, message };
     }
 
-    ui.setStatus("mcp-oauth", `Authenticating ${serverName}...`);
-    const authStorageOptions = getAuthStorageOptions(config.settings?.oauthDir, cwd);
-    const status = await authenticate(serverName, serverUrl, definition, {
-      ...(authStorageOptions.baseDir ? { authStorageOptions } : {}),
-      onAuthorizationUrl: (authorizationUrl) => {
+	    ui.setStatus("mcp-oauth", `Authenticating ${serverName}...`);
+	    const authStorageOptions = getAuthStorageOptions(config.settings?.oauthDir, cwd);
+	    const authOptions: Parameters<typeof authenticate>[3] = {
+	      onAuthorizationUrl: (authorizationUrl) => {
         ui.notify(
           `Open this URL to authenticate ${serverName}:\n\n${authorizationUrl}\n\n` +
           "After approving, return to Pi; the local callback will complete automatically.",
           "info"
         );
       },
-      signal,
-      runtime,
-    });
+	      signal,
+	      runtime,
+	    };
+	    if (authStorageOptions.baseDir) authOptions.authStorageOptions = authStorageOptions;
+	    const status = await authenticate(serverName, serverUrl, definition, authOptions);
     if (signal?.aborted) signal.throwIfAborted();
 
     if (status === "authenticated") {
@@ -303,7 +306,7 @@ export async function authenticateServer(
 export async function logoutServer(
   serverName: string,
   state: McpExtensionState,
-  ctx: ExtensionContext
+	  ctx: McpCommandContext
 ): Promise<{ ok: boolean; message: string }> {
   const definition = state.config.mcpServers[serverName];
   const ui = ctx.hasUI ? ctx.ui : undefined;
@@ -355,7 +358,7 @@ export interface PanelFlowResult {
 export async function openMcpSetup(
   state: McpExtensionState,
   pi: ExtensionAPI,
-  ctx: ExtensionContext,
+	  ctx: McpCommandContext,
   configOverridePath?: string,
   mode: "empty" | "setup" = "setup",
 ): Promise<PanelFlowResult> {

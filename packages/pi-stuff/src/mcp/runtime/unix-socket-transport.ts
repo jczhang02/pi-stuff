@@ -1,3 +1,4 @@
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { createConnection, type Socket } from "node:net";
 import { ReadBuffer, serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -30,7 +31,7 @@ export class UnixSocketClientTransport implements Transport {
       });
       socket.on("data", chunk => {
         try {
-          this.readBuffer.append(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+          this.readBuffer.append(isRuntimeString(chunk) ? Buffer.from(chunk) : chunk);
           while (true) {
             const message = this.readBuffer.readMessage();
             if (message === null) break;

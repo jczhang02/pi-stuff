@@ -1,3 +1,5 @@
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { getToolUiResourceUri } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { McpExtensionState } from "./state.ts";
 import type { ToolMetadata, McpTool, McpResource, ServerEntry, ToolPrefix } from "./types.ts";
@@ -6,13 +8,18 @@ import { resourceNameToToolName } from "./resource-tools.ts";
 import { extractToolUiStreamMode } from "./utils.ts";
 import { extractUiToolVisibility, isUiToolVisibleToModel } from "./ui-tool-visibility.ts";
 
+export interface ToolMetadataBuildResult {
+	failedTools: string[];
+	metadata: ToolMetadata[];
+}
+
 export function buildToolMetadata(
   tools: McpTool[],
   resources: McpResource[],
   definition: ServerEntry,
   serverName: string,
   prefix: ToolPrefix
-): { metadata: ToolMetadata[]; failedTools: string[] } {
+): ToolMetadataBuildResult {
   const metadata: ToolMetadata[] = [];
   const failedTools: string[] = [];
   const seenNames = new Set<string>();
@@ -100,16 +107,14 @@ export function findToolByName(metadata: ToolMetadata[] | undefined, toolName: s
   return metadata.find(m => m.name.replace(/-/g, "_") === normalized);
 }
 
-export function formatSchema(schema: unknown, indent = "  "): string {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+export function formatSchema(schema: JsonInputValue, indent = "  "): string {
+	  if (!isJsonInputObject(schema)) {
     return `${indent}(no schema)`;
   }
 
-  const s = schema as Record<string, unknown>;
-
-  if (s.type === "object" && s.properties && typeof s.properties === "object" && !Array.isArray(s.properties)) {
-    const props = s.properties as Record<string, unknown>;
-    const required = Array.isArray(s.required) ? s.required.filter((name): name is string => typeof name === "string") : [];
+	  if (schema.type === "object" && isJsonInputObject(schema.properties)) {
+	    const props = schema.properties;
+	    const required = Array.isArray(schema.required) ? schema.required.filter((name): name is string => isRuntimeString(name)) : [];
 
     if (Object.keys(props).length === 0) {
       return `${indent}(no parameters)`;
@@ -122,12 +127,12 @@ export function formatSchema(schema: unknown, indent = "  "): string {
     return lines.join("\n");
   }
 
-  const lines = formatNestedSchema(s, indent);
+	  const lines = formatNestedSchema(schema, indent);
   if (lines.length > 0) {
     return lines.join("\n");
   }
 
-  const typeStr = formatType(s);
+	  const typeStr = formatType(schema);
   if (typeStr) {
     return `${indent}(${typeStr})`;
   }
@@ -135,22 +140,21 @@ export function formatSchema(schema: unknown, indent = "  "): string {
   return `${indent}(complex schema)`;
 }
 
-function formatProperty(name: string, schema: unknown, required: boolean, indent: string): string[] {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+function formatProperty(name: string, schema: JsonInputValue, required: boolean, indent: string): string[] {
+	  if (!isJsonInputObject(schema)) {
     return [`${indent}${name}${required ? " *required*" : ""}`];
   }
 
-  const s = schema as Record<string, unknown>;
-  const parts = [`${indent}${name}`];
-  const typeStr = formatType(s);
+	  const parts = [`${indent}${name}`];
+	  const typeStr = formatType(schema);
   if (typeStr) parts.push(`(${typeStr})`);
   if (required) parts.push("*required*");
-  appendSchemaAnnotations(parts, s);
+	  appendSchemaAnnotations(parts, schema);
 
-  return [parts.join(" "), ...formatNestedSchema(s, `${indent}  `)];
+	  return [parts.join(" "), ...formatNestedSchema(schema, `${indent}  `)];
 }
 
-function formatNestedSchema(schema: Record<string, unknown>, indent: string): string[] {
+function formatNestedSchema(schema: JsonInputObject, indent: string): string[] {
   const lines: string[] = [];
 
   if (Array.isArray(schema.anyOf)) {
@@ -162,9 +166,9 @@ function formatNestedSchema(schema: Record<string, unknown>, indent: string): st
   if (schema.items !== undefined) {
     lines.push(...formatProperty("items", schema.items, false, indent));
   }
-  if (schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)) {
-    const required = Array.isArray(schema.required) ? schema.required.filter((name): name is string => typeof name === "string") : [];
-    for (const [name, propSchema] of Object.entries(schema.properties as Record<string, unknown>)) {
+	  if (isJsonInputObject(schema.properties)) {
+    const required = Array.isArray(schema.required) ? schema.required.filter((name): name is string => isRuntimeString(name)) : [];
+	    for (const [name, propSchema] of Object.entries(schema.properties)) {
       lines.push(...formatProperty(name, propSchema, required.includes(name), indent));
     }
   }
@@ -172,27 +176,26 @@ function formatNestedSchema(schema: Record<string, unknown>, indent: string): st
   return lines;
 }
 
-function formatVariants(keyword: "anyOf" | "oneOf", variants: unknown[], indent: string): string[] {
+function formatVariants(keyword: "anyOf" | "oneOf", variants: JsonInputValue[], indent: string): string[] {
   const lines = [`${indent}${keyword}:`];
 
   for (const variant of variants) {
-    if (!variant || typeof variant !== "object" || Array.isArray(variant)) {
+	    if (!isJsonInputObject(variant)) {
       lines.push(`${indent}  - ${JSON.stringify(variant)}`);
       continue;
     }
 
-    const s = variant as Record<string, unknown>;
-    const typeStr = formatType(s) || "schema";
+	    const typeStr = formatType(variant) || "schema";
     const parts = [`${indent}  - ${typeStr}`];
-    appendSchemaAnnotations(parts, s);
+	    appendSchemaAnnotations(parts, variant);
     lines.push(parts.join(" "));
-    lines.push(...formatNestedSchema(s, `${indent}    `));
+	    lines.push(...formatNestedSchema(variant, `${indent}    `));
   }
 
   return lines;
 }
 
-function formatType(schema: Record<string, unknown>): string {
+function formatType(schema: JsonInputObject): string {
   if (Object.hasOwn(schema, "const")) {
     return `const ${JSON.stringify(schema.const)}`;
   }
@@ -209,7 +212,7 @@ function formatType(schema: Record<string, unknown>): string {
     return String(schema.type);
   }
 
-  if (schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)) {
+  if (schema.properties && isRuntimeObject(schema.properties) && !Array.isArray(schema.properties)) {
     return "object";
   }
 
@@ -220,8 +223,8 @@ function formatType(schema: Record<string, unknown>): string {
   return "";
 }
 
-function appendSchemaAnnotations(parts: string[], schema: Record<string, unknown>): void {
-  if (schema.description && typeof schema.description === "string") {
+function appendSchemaAnnotations(parts: string[], schema: JsonInputObject): void {
+  if (schema.description && isRuntimeString(schema.description)) {
     parts.push(`- ${schema.description}`);
   }
 

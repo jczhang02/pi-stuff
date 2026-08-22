@@ -1,8 +1,11 @@
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
+import { isRuntimeFunction, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { exec } from "node:child_process";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 import type { McpConfig, ServerEntry } from "./types.ts";
 
 const execAsync = promisify(exec);
@@ -81,12 +84,12 @@ function getMissingEnvVars(value: string): string[] {
   return [...missing];
 }
 
-export function toStringRecord(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+export function toStringRecord(value: JsonInputValue): Record<string, string> | undefined {
+  if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
 
   const result: Record<string, string> = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === "string") result[key] = entry;
+    if (isRuntimeString(entry)) result[key] = entry;
   }
   return Object.keys(result).length > 0 ? result : undefined;
 }
@@ -128,15 +131,17 @@ export async function resolveCommandSecret(
       windowsHide: true,
       signal,
     }));
-  } catch (error) {
-    signal?.throwIfAborted();
-    const commandError = error as NodeJS.ErrnoException & { killed?: boolean; signal?: string };
-    const reason = commandError.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
-      ? "command output exceeded 1 MiB"
-      : commandError.killed && commandError.signal === "SIGTERM"
-        ? "command timed out after 10 seconds"
-        : typeof commandError.code === "number"
-          ? `command exited with code ${commandError.code}`
+	  } catch (error) {
+	    signal?.throwIfAborted();
+	    const code = isJsonInputObject(error) ? error.code : undefined;
+	    const killed = isJsonInputObject(error) ? error.killed : undefined;
+	    const terminationSignal = isJsonInputObject(error) ? error.signal : undefined;
+	    const reason = code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+	      ? "command output exceeded 1 MiB"
+	      : killed === true && terminationSignal === "SIGTERM"
+	        ? "command timed out after 10 seconds"
+	        : isRuntimeNumber(code)
+	          ? `command exited with code ${code}`
           : "command failed to start";
     throw new Error(`Failed to resolve ${context}: ${reason}`);
   }
@@ -163,7 +168,7 @@ export async function resolveCommandSecretsRecord(
 
 export function resolveServerUrl(definition: Pick<ServerEntry, "url">): string | undefined {
   if (definition.url == null) return undefined;
-  if (typeof definition.url !== "string") {
+  if (!isRuntimeString(definition.url)) {
     throw new Error("MCP server URL must be a string");
   }
 
@@ -225,19 +230,23 @@ export function stripOscSequences(text: string): string {
 }
 
 export function sanitizeTerminalText(text: string): string {
-  return stripOscSequences(text)
-    .replace(/(?:\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-Z\\-_])/g, "")
-    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ")
-    .replace(/\s+/g, " ")
+	  const plain = stripVTControlCharacters(stripOscSequences(text));
+	  let withoutControls = "";
+	  for (const char of plain) {
+	    const code = char.charCodeAt(0);
+	    withoutControls += code <= 0x1f || (code >= 0x7f && code <= 0x9f) ? " " : char;
+	  }
+	  return withoutControls
+	    .replace(/\s+/g, " ")
     .trim();
 }
 
-export function formatTerminalError(error: unknown): string {
+export function formatTerminalError(error: JsonInputValue): string {
   const messages: string[] = [];
-  const seen = new Set<unknown>();
-  const collect = (value: unknown) => {
+	  const seen = new Set<JsonInputValue>();
+  const collect = (value: JsonInputValue) => {
     if (seen.has(value)) return;
-    if ((typeof value === "object" && value !== null) || typeof value === "function") seen.add(value);
+    if ((isRuntimeObject(value) && value !== null) || isRuntimeFunction(value)) seen.add(value);
 
     if (value instanceof AggregateError) {
       const countBefore = messages.length;
@@ -271,11 +280,11 @@ export function truncateAtWord(text: string, target: number): string {
   return truncated + "...";
 }
 
-export function normalizeDirectToolInputSchema(schema: unknown): Record<string, unknown> {
-  const inputSchema = schema && typeof schema === "object" && !Array.isArray(schema)
-    ? schema as Record<string, unknown>
-    : { type: "object", properties: {} };
-  const { $schema, additionalProperties, ...normalized } = inputSchema;
+export function normalizeDirectToolInputSchema(schema: JsonInputValue): JsonInputObject {
+	  const inputSchema = isJsonInputObject(schema)
+	    ? schema
+	    : { type: "object", properties: {} };
+	  const { $schema: _schema, additionalProperties: _additionalProperties, ...normalized } = inputSchema;
   return normalized;
 }
 
@@ -296,10 +305,10 @@ export function formatMcpStatus(config: Pick<McpConfig, "settings">, message: st
 /**
  * Extract the adapter-owned UI stream mode from tool metadata.
  */
-export function extractToolUiStreamMode(toolMeta: Record<string, unknown> | undefined): "eager" | "stream-first" | undefined {
-  const uiMeta = toolMeta?.ui;
-  if (!uiMeta || typeof uiMeta !== "object") return undefined;
-  const streamMode = (uiMeta as Record<string, unknown>)["pi-mcp-adapter.streamMode"];
+export function extractToolUiStreamMode(toolMeta: JsonInputObject | undefined): "eager" | "stream-first" | undefined {
+	  const uiMeta = toolMeta?.ui;
+	  if (!isJsonInputObject(uiMeta)) return undefined;
+	  const streamMode = uiMeta["pi-mcp-adapter.streamMode"];
   if (streamMode === "eager" || streamMode === "stream-first") {
     return streamMode;
   }

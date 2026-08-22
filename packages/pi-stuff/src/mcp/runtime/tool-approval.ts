@@ -1,3 +1,4 @@
+import type { JsonInputObject } from "../../shared/json-value.js";
 import { abortable } from "./abort.ts";
 import { boundTerminalLine, boundTerminalText } from "../../tool-display/index.js";
 import { combineAbortSignals } from "./runtime-owner.ts";
@@ -38,7 +39,7 @@ export async function ensureToolCallApproved(
   state: McpExtensionState,
   serverName: string,
   toolMeta: ToolMetadata,
-  args: Record<string, unknown> | undefined,
+  args: JsonInputObject | undefined,
   signal?: AbortSignal,
 ): Promise<ToolCallApprovalResult> {
   if (!isToolCallApprovalRequired(state.config, serverName, toolMeta)) {

@@ -1,3 +1,4 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export const MCP_STATUS_EVENT: "pi-mcp-adapter/status/v1";
@@ -33,7 +34,7 @@ export interface McpStatusSnapshot {
 }
 
 export interface McpAdapterOptions {
-  config?: unknown;
+  config?: JsonInputValue;
   configPath?: string;
   deferStartupConnections?: boolean;
   interactiveUi?: boolean;

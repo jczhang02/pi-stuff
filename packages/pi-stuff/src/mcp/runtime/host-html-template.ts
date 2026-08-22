@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import type { UiHostContext, UiResourceContent, UiResourceCsp } from "./types.ts";
 
 // Use locally bundled AppBridge to avoid CDN Zod bundling issues
@@ -7,7 +10,7 @@ export interface HostHtmlTemplateInput {
   sessionToken: string;
   serverName: string;
   toolName: string;
-  toolArgs: Record<string, unknown>;
+  toolArgs: JsonInputObject;
   resource: UiResourceContent;
   allowAttribute: string;
   requireToolConsent: boolean;
@@ -237,14 +240,14 @@ export function buildHostHtmlTemplate(input: HostHtmlTemplateInput): string {
     // These bypass the AppBridge protocol but are used by some MCP UI implementations
     window.addEventListener("message", async (event) => {
       const data = event.data;
-      if (!data || typeof data !== "object") return;
+      if (!data || !isRuntimeObject(data)) return;
       
       // Skip AppBridge protocol messages (handled by bridge)
-      if (data.jsonrpc || (typeof data.method === "string" && (data.method.startsWith("app/") || data.method.startsWith("host/")))) return;
+      if (data.jsonrpc || (isRuntimeString(data.method) && (data.method.startsWith("app/") || data.method.startsWith("host/")))) return;
       
       // Handle raw UI action messages
       const msgType = data.type;
-      if (typeof msgType !== "string") return;
+      if (!isRuntimeString(msgType)) return;
       
       if (msgType === "notify" || msgType === "prompt" || msgType === "intent" || msgType === "message") {
         // Standard MCP-UI types - preserve their semantics
@@ -286,10 +289,10 @@ export function buildHostHtmlTemplate(input: HostHtmlTemplateInput): string {
     };
 
     bridge.onsizechange = ({ width, height }) => {
-      if (typeof width === "number" && width > 0) {
+      if (isRuntimeNumber(width) && width > 0) {
         iframe.style.minWidth = Math.min(width, window.innerWidth - 24) + "px";
       }
-      if (typeof height === "number" && height > 0) {
+      if (isRuntimeNumber(height) && height > 0) {
         iframe.style.height = Math.max(height, 320) + "px";
       }
     };
@@ -422,12 +425,12 @@ function toDirective(name: string, trustedSources: string[], domains: string[]):
   return `${name} ${[...new Set([...trustedSources, ...domains])].join(" ")}`;
 }
 
-function sanitizeCspDomains(domains: unknown): string[] {
+function sanitizeCspDomains(domains: JsonInputValue): string[] {
   if (!Array.isArray(domains)) return [];
 
   return [...new Set(domains.filter(
     (domain): domain is string =>
-      typeof domain === "string" &&
+      isRuntimeString(domain) &&
       domain.length > 0 &&
       // HTTP headers must be printable ASCII; rejecting all other code points also
       // excludes every C0/C1 control character before Node serializes the policy.
@@ -436,7 +439,7 @@ function sanitizeCspDomains(domains: unknown): string[] {
   ))];
 }
 
-function safeInlineJSON(value: unknown): string {
+function safeInlineJSON(value: JsonInputValue): string {
   return JSON.stringify(value)
     .replace(/</g, "\\u003c")
     .replace(/>/g, "\\u003e")
@@ -452,12 +455,4 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }

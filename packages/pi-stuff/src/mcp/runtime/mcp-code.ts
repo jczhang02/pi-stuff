@@ -1,3 +1,6 @@
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
+import { isRuntimeBigInt, isRuntimeFunction, isRuntimeObject, isRuntimeString, isRuntimeSymbol } from "../../shared/runtime-type.js";
 import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 import { formatWithOptions } from "node:util";
 import { Worker } from "node:worker_threads";
@@ -7,7 +10,7 @@ import { combineAbortSignals } from "./runtime-owner.ts";
 import { paginate, rankSuggestions, rankToolMatches } from "./search-ranking.ts";
 import type { McpExtensionState } from "./state.ts";
 import { findToolByName } from "./tool-metadata.ts";
-import { renderTsShape } from "./ts-shape.ts";
+import { renderTsType } from "./ts-shape.ts";
 import type { ContentBlock } from "./types.ts";
 
 export const DEFAULT_MCP_SCRIPT_TIMEOUT_MS = 30_000;
@@ -19,21 +22,29 @@ class McpScriptTimeoutError extends Error {
   }
 }
 
-type SearchInput = { query?: unknown; server?: unknown; limit?: unknown; offset?: unknown };
-type DescribeInput = { path?: unknown };
+interface SearchInput extends JsonInputObject {
+	limit?: JsonInputValue;
+	offset?: JsonInputValue;
+	query?: JsonInputValue;
+	server?: JsonInputValue;
+}
+
+interface DescribeInput extends JsonInputObject {
+	path?: JsonInputValue;
+}
 type WorkerMessage =
-  | { type: "emit"; block: unknown }
-  | { type: "call"; id: number; path: string; args?: unknown }
-  | { type: "search"; id: number; input?: unknown }
-  | { type: "describe"; id: number; input?: unknown }
-  | { type: "done"; returnBlock?: unknown }
+  | { type: "emit"; block: JsonInputValue }
+  | { type: "call"; id: number; path: string; args?: JsonInputValue }
+  | { type: "search"; id: number; input?: JsonInputValue }
+  | { type: "describe"; id: number; input?: JsonInputValue }
+  | { type: "done"; returnBlock?: JsonInputValue }
   | { type: "error"; message: string };
 
-type WorkerResultMessage = { type: "result"; id: number; envelope: unknown };
+type WorkerResultMessage = { type: "result"; id: number; envelope: JsonInputValue };
 
-function needsInspectableFormatting(value: unknown, stack = new WeakSet<object>()): boolean {
-  if (value === undefined || typeof value === "bigint" || typeof value === "function" || typeof value === "symbol") return true;
-  if (typeof value !== "object" || value === null) return false;
+function needsInspectableFormatting(value: JsonInputValue, stack = new WeakSet<object>()): boolean {
+  if (value === undefined || isRuntimeBigInt(value) || isRuntimeFunction(value) || isRuntimeSymbol(value)) return true;
+  if (!isRuntimeObject(value) || value === null) return false;
   if (stack.has(value)) return true;
   if (value instanceof Map || value instanceof Set || value instanceof WeakMap || value instanceof WeakSet) return true;
   stack.add(value);
@@ -44,8 +55,8 @@ function needsInspectableFormatting(value: unknown, stack = new WeakSet<object>(
   }
 }
 
-function formatValue(value: unknown): string {
-  if (typeof value === "string") return value;
+function formatValue(value: JsonInputValue): string {
+  if (isRuntimeString(value)) return value;
   try {
     if (!needsInspectableFormatting(value)) {
       const json = JSON.stringify(value, null, 2);
@@ -57,14 +68,14 @@ function formatValue(value: unknown): string {
   }
 }
 
-function toContentBlock(value: unknown): ContentBlock {
-  if (typeof value === "object" && value !== null) {
-    const block = value as Record<string, unknown>;
-    if (block.type === "text" && typeof block.text === "string") {
-      return { type: "text", text: block.text };
-    }
-    if (block.type === "image" && typeof block.data === "string" && typeof block.mimeType === "string") {
-      return { type: "image", data: block.data, mimeType: block.mimeType };
+function toContentBlock(value: JsonInputValue): ContentBlock {
+  if (isRuntimeObject(value) && value !== null) {
+	    if (!isJsonInputObject(value)) return { type: "text", text: formatValue(value) };
+	    if (value.type === "text" && isRuntimeString(value.text)) {
+	      return { type: "text", text: value.text };
+	    }
+	    if (value.type === "image" && isRuntimeString(value.data) && isRuntimeString(value.mimeType)) {
+	      return { type: "image", data: value.data, mimeType: value.mimeType };
     }
   }
   return { type: "text", text: formatValue(value) };
@@ -77,29 +88,28 @@ function textFromContent(content: ContentBlock[]): string {
     .join("\n");
 }
 
-function abortReasonError(reason: unknown): Error {
+function abortReasonError(reason: JsonInputValue): Error {
   return reason instanceof Error ? reason : new Error(String(reason ?? "MCP request aborted"));
 }
 
-function parseWorkerMessage(value: unknown): WorkerMessage | null {
-  if (typeof value !== "object" || value === null) return null;
-  const message = value as Record<string, unknown>;
-  if (message.type === "emit" && "block" in message) return { type: "emit", block: message.block };
-  if (message.type === "call" && typeof message.id === "number" && typeof message.path === "string") {
-    return "args" in message
-      ? { type: "call", id: message.id, path: message.path, args: message.args }
-      : { type: "call", id: message.id, path: message.path };
-  }
-  if ((message.type === "search" || message.type === "describe") && typeof message.id === "number") {
-    return "input" in message
-      ? { type: message.type, id: message.id, input: message.input }
-      : { type: message.type, id: message.id };
-  }
-  if (message.type === "done") {
-    return "returnBlock" in message ? { type: "done", returnBlock: message.returnBlock } : { type: "done" };
-  }
-  if (message.type === "error" && typeof message.message === "string") {
-    return { type: "error", message: message.message };
+function parseWorkerMessage(value: JsonInputValue): WorkerMessage | null {
+	  if (!isJsonInputObject(value)) return null;
+	  if (value.type === "emit" && "block" in value) return { type: "emit", block: value.block };
+	  if (value.type === "call" && isRuntimeNumber(value.id) && isRuntimeString(value.path)) {
+	    if (!("args" in value)) return { type: "call", id: value.id, path: value.path };
+	    if (!isJsonInputObject(value.args)) return null;
+	    return { type: "call", id: value.id, path: value.path, args: value.args };
+	  }
+	  if ((value.type === "search" || value.type === "describe") && isRuntimeNumber(value.id)) {
+	    if (!("input" in value)) return { type: value.type, id: value.id };
+	    if (!isJsonInputObject(value.input)) return null;
+	    return { type: value.type, id: value.id, input: value.input };
+	  }
+	  if (value.type === "done") {
+	    return "returnBlock" in value ? { type: "done", returnBlock: value.returnBlock } : { type: "done" };
+	  }
+	  if (value.type === "error" && isRuntimeString(value.message)) {
+	    return { type: "error", message: value.message };
   }
   return null;
 }
@@ -135,7 +145,7 @@ export async function runMcpScript(
       : operation.durationMs,
   }));
   let callsSnapshot: ScriptOperation[] | undefined;
-  const callTool = async (path: string, args?: Record<string, unknown>) => {
+  const callTool = async (path: string, args?: JsonInputObject) => {
     // Record before dispatch so calls still in flight at timeout/abort appear in the trace.
     const startedAt = Date.now();
     const index = calls.push({ operation: "call", path, ok: false, error: "incomplete", durationMs: 0, startedAt }) - 1;
@@ -144,11 +154,11 @@ export async function runMcpScript(
     if (details.error !== undefined) {
       const errorCode = String(details.error);
       const suggestions = Array.isArray(details.suggestions)
-        ? details.suggestions.filter((suggestion): suggestion is string => typeof suggestion === "string")
+        ? details.suggestions.filter((suggestion): suggestion is string => isRuntimeString(suggestion))
         : [];
       const message = errorCode === "tool_not_found"
         ? `Tool "${path}" not found. Use await tools.search({ query: "..." }) inside mcp_script.${suggestions.length > 0 ? ` Did you mean: ${suggestions.join(", ")}` : ""}`
-        : typeof details.message === "string"
+        : isRuntimeString(details.message)
           ? details.message
           : textFromContent(result.content);
       calls[index] = { operation: "call", path, ok: false, error: errorCode, durationMs: Date.now() - startedAt, startedAt };
@@ -166,25 +176,23 @@ export async function runMcpScript(
 
   const searchTools = (input?: SearchInput) => {
     const startedAt = Date.now();
-    const query = typeof input?.query === "string" ? input.query : "";
-    let error: unknown;
+    const query = isRuntimeString(input?.query) ? input.query : "";
+    let error: JsonInputValue;
     try {
       if (query.trim() === "") {
         return { items: [], total: 0, hasMore: false, nextOffset: null };
       }
-      const server = typeof input.server === "string" ? input.server : undefined;
-      const limit = typeof input.limit === "number" ? input.limit : 12;
-      const offset = typeof input.offset === "number" ? input.offset : 0;
+      const server = isRuntimeString(input.server) ? input.server : undefined;
+      const limit = isRuntimeNumber(input.limit) ? input.limit : 12;
+      const offset = isRuntimeNumber(input.offset) ? input.offset : 0;
       const page = paginate(rankToolMatches(state, query, server), offset, limit);
       return {
         ...page,
-        items: page.items.map(({ server: matchServer, tool, score }) => ({
-          path: tool.name,
-          name: tool.originalName,
-          server: matchServer,
-          ...(tool.description ? { description: tool.description } : {}),
-          score,
-        })),
+	        items: page.items.map(({ server: matchServer, tool, score }) => {
+	          const item = { path: tool.name, name: tool.originalName, server: matchServer, score };
+	          if (tool.description) Object.assign(item, { description: tool.description });
+	          return item;
+	        }),
       };
     } catch (caught) {
       error = caught;
@@ -198,20 +206,21 @@ export async function runMcpScript(
 
   const describeTool = (input?: DescribeInput) => {
     const startedAt = Date.now();
-    const path = typeof input?.path === "string" ? input.path : "";
-    let error: unknown;
+    const path = isRuntimeString(input?.path) ? input.path : "";
+    let error: JsonInputValue;
     try {
       for (const [server, metadata] of state.toolMetadata) {
         const tool = findToolByName(metadata, path);
         if (!tool) continue;
-        const inputTypeScript = tool.inputSchema ? renderTsShape(tool.inputSchema) : null;
-        return {
-          path: tool.name,
-          name: tool.originalName,
-          server,
-          ...(tool.description ? { description: tool.description } : {}),
-          ...(inputTypeScript ? { inputTypeScript } : {}),
-        };
+        const inputTypeScript = tool.inputSchema ? renderTsType(tool.inputSchema) : null;
+	        const description = {
+	          path: tool.name,
+	          name: tool.originalName,
+	          server,
+	        };
+	        if (tool.description) Object.assign(description, { description: tool.description });
+	        if (inputTypeScript) Object.assign(description, { inputTypeScript });
+	        return description;
       }
       const suggestions = path ? rankSuggestions(state, path, 5) : [];
       error = "tool_not_found";
@@ -251,7 +260,7 @@ export async function runMcpScript(
     const activeWorker = worker;
     const execution = new Promise<void>((resolve, reject) => {
       let completed = false;
-      activeWorker.on("message", (value: unknown) => {
+      activeWorker.on("message", (value: JsonInputValue) => {
         const message = parseWorkerMessage(value);
         if (!message || completed) return;
         if (message.type === "emit") {
@@ -271,13 +280,13 @@ export async function runMcpScript(
         }
 
         void (async () => {
-          let envelope: unknown;
-          if (message.type === "call") {
-            envelope = await callTool(message.path, message.args as Record<string, unknown> | undefined);
-          } else if (message.type === "search") {
-            envelope = searchTools(message.input as SearchInput | undefined);
-          } else {
-            envelope = describeTool(message.input as DescribeInput | undefined);
+	          let envelope: JsonInputValue;
+	          if (message.type === "call") {
+	            envelope = await callTool(message.path, message.args);
+	          } else if (message.type === "search") {
+	            envelope = searchTools(message.input);
+	          } else {
+	            envelope = describeTool(message.input);
           }
           const response: WorkerResultMessage = { type: "result", id: message.id, envelope };
           activeWorker.postMessage(response);
@@ -339,14 +348,15 @@ export async function runMcpScript(
     output.length > 0 ? [...output] : [{ type: "text", text: "(no output)" }],
     resolveMcpOutputGuardOptions(state.config.settings),
   );
-  return {
-    content: guarded.content,
-    details: {
-      mode: "script",
-      ...(errorCode ? { error: errorCode, message: errorMessage } : {}),
-      timeoutMs: resolvedTimeoutMs,
-      ...(callsSnapshot.length > 0 ? { calls: callsSnapshot } : {}),
-      ...guardedMcpDetails(guarded),
-    },
-  };
+	  const details = {
+	    mode: "script",
+	    timeoutMs: resolvedTimeoutMs,
+	    ...guardedMcpDetails(guarded),
+	  };
+	  if (errorCode) Object.assign(details, { error: errorCode, message: errorMessage });
+	  if (callsSnapshot.length > 0) Object.assign(details, { calls: callsSnapshot });
+	  return {
+	    content: guarded.content,
+	    details,
+	  };
 }

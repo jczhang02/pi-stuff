@@ -1,3 +1,4 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
 /**
  * Centralized logging for MCP UI operations.
  * Provides structured, contextual logs with levels.
@@ -10,7 +11,7 @@ export interface LogContext {
   session?: string;
   tool?: string;
   uri?: string;
-  [key: string]: unknown;
+  [key: string]: JsonInputValue;
 }
 
 export interface LogEntry {
@@ -23,7 +24,7 @@ export interface LogEntry {
 
 type LogHandler = (entry: LogEntry) => void;
 
-const LEVEL_PRIORITY: Record<LogLevel, number> = {
+	const LEVEL_PRIORITY = {
   debug: 0,
   info: 1,
   warn: 2,
@@ -59,13 +60,13 @@ class Logger {
   private emit(level: LogLevel, message: string, context?: LogContext, error?: Error): void {
     if (!this.shouldLog(level)) return;
 
-    const entry: LogEntry = {
-      level,
-      message,
-      context: { ...this.defaultContext, ...context },
-      ...(error ? { error } : {}),
-      timestamp: new Date(),
-    };
+	    const entry: LogEntry = {
+	      level,
+	      message,
+	      context: { ...this.defaultContext, ...context },
+	      timestamp: new Date(),
+	    };
+	    if (error) entry.error = error;
 
     // The embedding Capability owns presentation. Writing to stdout/stderr here
     // would bypass Pi's renderer and corrupt the Host TUI.

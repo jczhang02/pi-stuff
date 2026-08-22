@@ -1,4 +1,6 @@
 // types.ts - Core type definitions
+import { isJsonInputObject, parseJsonObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import type { Transport as McpTransport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { ContentBlock as McpContentBlock } from "@modelcontextprotocol/sdk/types.js";
 import type { TextContent, ImageContent } from "@earendil-works/pi-ai";
@@ -57,8 +59,8 @@ export interface McpTool {
   name: string;
   title?: string;
   description?: string;
-  inputSchema?: unknown; // JSON Schema
-  _meta?: Record<string, unknown>;
+  inputSchema?: JsonInputValue; // JSON Schema
+  _meta?: JsonInputObject;
 }
 
 // Resource definition from MCP server
@@ -67,7 +69,7 @@ export interface McpResource {
   name: string;
   description?: string;
   mimeType?: string;
-  _meta?: Record<string, unknown>;
+  _meta?: JsonInputObject;
 }
 
 export interface McpPromptArgument {
@@ -81,7 +83,7 @@ export interface McpPrompt {
   title?: string;
   description?: string;
   arguments?: McpPromptArgument[];
-  _meta?: Record<string, unknown>;
+  _meta?: JsonInputObject;
 }
 
 export interface UiResourceMeta {
@@ -103,7 +105,7 @@ export interface UiProxyRequestBody<TParams> {
   params: TParams;
 }
 
-export interface UiProxyResult<T = Record<string, unknown>> {
+export interface UiProxyResult<T = JsonInputObject> {
   ok: boolean;
   result?: T;
   error?: string;
@@ -128,14 +130,14 @@ export interface UiToolInfo {
   tool: {
     name: string;
     description?: string;
-    inputSchema?: unknown;
+    inputSchema?: JsonInputValue;
   };
 }
 
 export interface UiHostContext {
   toolInfo?: UiToolInfo;
   theme?: "light" | "dark";
-  styles?: Record<string, unknown>;
+  styles?: JsonInputObject;
   displayMode?: UiDisplayMode;
   availableDisplayModes?: UiDisplayMode[];
   containerDimensions?: {
@@ -144,7 +146,7 @@ export interface UiHostContext {
     height?: number;
     maxHeight?: number;
   };
-  [key: string]: unknown;
+  [key: string]: JsonInputValue;
 }
 
 export type UiDisplayMode = "inline" | "fullscreen" | "pip";
@@ -182,13 +184,13 @@ export {
 
 export interface UiMessageParams {
   role?: string;
-  content?: unknown[];
+  content?: JsonInputValue[];
   type?: "prompt" | "notify" | "intent" | "message";
   message?: string;
   prompt?: string;
   intent?: string;
-  params?: Record<string, unknown>;
-  [key: string]: unknown;
+  params?: JsonInputObject;
+  [key: string]: JsonInputValue;
 }
 
 /**
@@ -202,7 +204,7 @@ export function extractUiPromptText(params: UiMessageParams): string | undefined
 
   if (params.role === "user" && Array.isArray(params.content)) {
     const text = params.content
-      .map((block) => (block && typeof block === "object" && "text" in block ? String((block as { text?: unknown }).text ?? "") : ""))
+	      .map((block) => isJsonInputObject(block) ? String(block.text ?? "") : "")
       .filter(Boolean)
       .join("\n\n");
     return text || undefined;
@@ -216,7 +218,7 @@ export function extractUiPromptText(params: UiMessageParams): string | undefined
  */
 export interface UiPromptHandoff {
   intent: string;
-  params: Record<string, unknown>;
+  params: JsonInputObject;
   raw: string;
 }
 
@@ -240,13 +242,10 @@ export function parseUiPromptHandoff(prompt: string): UiPromptHandoff | undefine
   }
 
   try {
-    const parsed = JSON.parse(payloadText);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return undefined;
-    }
+	    const parsed = parseJsonObject(payloadText);
     return {
       intent,
-      params: parsed as Record<string, unknown>,
+	      params: parsed,
       raw: prompt,
     };
   } catch {
@@ -261,19 +260,19 @@ export function parseUiPromptHandoff(prompt: string): UiPromptHandoff | undefine
 export interface UiSessionMessages {
   prompts: string[];
   notifications: string[];
-  intents: Array<{ intent: string; params?: Record<string, unknown> }>;
+  intents: Array<{ intent: string; params?: JsonInputObject }>;
   contexts: UiModelContextUpdate[];
 }
 
 export interface UiModelContextUpdate {
   summary: string;
   truncated: boolean;
-  payload?: Record<string, unknown>;
+  payload?: JsonInputObject;
 }
 
 export interface UiModelContextParams {
   content?: McpContentBlock[];
-  structuredContent?: Record<string, unknown>;
+  structuredContent?: JsonInputObject;
 }
 
 export function createUiModelContextUpdate(params: UiModelContextParams, maxChars = 12_000): UiModelContextUpdate | undefined {
@@ -295,7 +294,7 @@ export function createUiModelContextUpdate(params: UiModelContextParams, maxChar
 
 export interface UiOpenLinkResult {
   isError?: boolean;
-  [key: string]: unknown;
+  [key: string]: JsonInputValue;
 }
 
 export interface UiDisplayModeRequest {
@@ -304,23 +303,7 @@ export interface UiDisplayModeRequest {
 
 export interface UiDisplayModeResult {
   mode: UiDisplayMode;
-  [key: string]: unknown;
-}
-
-// Content types from MCP
-export interface McpContent {
-  type: "text" | "image" | "audio" | "resource" | "resource_link";
-  text?: string;
-  data?: string;
-  mimeType?: string;
-  resource?: {
-    uri: string;
-    text?: string;
-    blob?: string;
-  };
-  uri?: string;
-  name?: string;
-  description?: string;
+  [key: string]: JsonInputValue;
 }
 
 // Pi content block type
@@ -512,7 +495,7 @@ export interface ToolMetadata {
   resourceUri?: string;   // For resource tools: the URI to read
   uiResourceUri?: string; // For app-enabled tools: the UI resource URI
   uiVisibility?: UiToolVisibility[];
-  inputSchema?: unknown;  // JSON Schema for parameters (stored for describe/errors)
+  inputSchema?: JsonInputValue;  // JSON Schema for parameters (stored for describe/errors)
   uiStreamMode?: UiStreamMode;
 }
 
@@ -530,7 +513,7 @@ export interface DirectToolSpec {
   originalName: string;
   prefixedName: string;
   description: string;
-  inputSchema?: unknown;
+  inputSchema?: JsonInputValue;
   resourceUri?: string;
   uiResourceUri?: string;
   uiStreamMode?: UiStreamMode;
@@ -544,7 +527,7 @@ export interface McpAuthResult {
 export interface CachedTool {
   name: string;
   description?: string;
-  inputSchema?: unknown;
+  inputSchema?: JsonInputValue;
   uiResourceUri?: string;
   uiVisibility?: UiToolVisibility[];
   uiStreamMode?: "eager" | "stream-first";
@@ -648,11 +631,11 @@ function globToRegExp(pattern: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
-export function matchesToolPattern(candidates: Set<string>, patterns?: unknown): boolean {
+export function matchesToolPattern(candidates: Set<string>, patterns?: JsonInputValue): boolean {
   if (!Array.isArray(patterns) || patterns.length === 0) return false;
 
   for (const pattern of patterns) {
-    if (typeof pattern !== "string") continue;
+    if (!isRuntimeString(pattern)) continue;
     const normalized = normalizeToolName(pattern);
     if (!normalized.includes("*") && !normalized.includes("?") && candidates.has(normalized)) {
       return true;
@@ -669,7 +652,7 @@ export function isToolIncluded(
   toolName: string,
   serverName: string,
   prefix: ToolPrefix,
-  includeTools?: unknown
+  includeTools?: JsonInputValue
 ): boolean {
   if (!Array.isArray(includeTools) || includeTools.length === 0) return true;
   return matchesToolPattern(getToolNameCandidates(toolName, serverName, prefix), includeTools);
@@ -679,7 +662,7 @@ export function isToolExcluded(
   toolName: string,
   serverName: string,
   prefix: ToolPrefix,
-  excludeTools?: unknown
+  excludeTools?: JsonInputValue
 ): boolean {
   return matchesToolPattern(getToolNameCandidates(toolName, serverName, prefix), excludeTools);
 }
@@ -688,8 +671,8 @@ export function isToolAllowed(
   toolName: string,
   serverName: string,
   prefix: ToolPrefix,
-  includeTools?: unknown,
-  excludeTools?: unknown,
+  includeTools?: JsonInputValue,
+  excludeTools?: JsonInputValue,
 ): boolean {
   return isToolIncluded(toolName, serverName, prefix, includeTools)
     && !isToolExcluded(toolName, serverName, prefix, excludeTools);

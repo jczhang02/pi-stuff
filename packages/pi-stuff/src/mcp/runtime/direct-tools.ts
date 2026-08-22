@@ -1,7 +1,7 @@
 import type { AgentToolResult, AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { UrlElicitationRequiredError } from "@modelcontextprotocol/sdk/types.js";
 import type { McpExtensionState } from "./state.ts";
-import type { DirectToolSpec, McpConfig, McpContent, ToolPrefix } from "./types.ts";
+import type { DirectToolSpec, McpConfig, ToolPrefix } from "./types.ts";
 import type { MetadataCache } from "./metadata-cache.ts";
 import { lazyConnect, getFailureAgeSeconds, clearFailure } from "./init.ts";
 import { abortable, throwIfAborted } from "./abort.ts";
@@ -236,11 +236,11 @@ export function buildProxyDescription(): string {
 
 type DirectToolExecute = (
   toolCallId: string,
-  params: Record<string, unknown>,
+  params: JsonInputObject,
   signal: AbortSignal | undefined,
-  onUpdate: AgentToolUpdateCallback<Record<string, unknown>> | undefined,
+  onUpdate: AgentToolUpdateCallback<JsonInputObject> | undefined,
   ctx: ExtensionContext,
-) => Promise<AgentToolResult<Record<string, unknown>>>;
+) => Promise<AgentToolResult<JsonInputObject>>;
 
 export function createDirectToolExecutor(
   getState: () => McpExtensionState | null,
@@ -388,7 +388,7 @@ export function createDirectToolExecutor(
         );
         const content = (result.contents ?? []).map(c => ({
           type: "text" as const,
-          text: "text" in c ? c.text : ("blob" in c ? `[Binary data: ${(c as { mimeType?: string }).mimeType ?? "unknown"}]` : JSON.stringify(c)),
+	          text: "text" in c ? c.text : ("blob" in c ? `[Binary data: ${c.mimeType ?? "unknown"}]` : JSON.stringify(c)),
         }));
         const guarded = await guardMcpOutput(content.length > 0 ? content : [{ type: "text" as const, text: "(empty resource)" }], outputGuardOptions);
         return {
@@ -419,11 +419,10 @@ export function createDirectToolExecutor(
           _meta: uiSession?.requestMeta,
         }, undefined, requestOptions), ownedSignal),
       );
-      uiSession?.sendToolResult(result as unknown as import("@modelcontextprotocol/sdk/types.js").CallToolResult);
+      uiSession?.sendToolResult(result);
 
       if (result.isError) {
-        const mcpContent = (result.content ?? []) as McpContent[];
-        const content = transformMcpContent(mcpContent);
+			const content = transformMcpContent(result.content);
         const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
         const schemaText = spec.inputSchema ? `\n\nExpected parameters:\n${formatSchema(spec.inputSchema)}` : "";
         const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, prefix: "Error: ", suffix: schemaText, emptyTextFallback: "Tool execution failed" });
@@ -433,7 +432,7 @@ export function createDirectToolExecutor(
         };
       }
 
-      const content = resolveMcpResultContent(result as Record<string, unknown>);
+      const content = resolveMcpResultContent(result);
       const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
       if (hasUi) {
         const uiSummary = summarizeUiSessionResult(uiSession);

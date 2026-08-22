@@ -1,3 +1,5 @@
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import type { Api, AssistantMessage, Message, Model, TextContent } from "@earendil-works/pi-ai";
 import { complete } from "@earendil-works/pi-ai/compat";
 import { truncateAtWord } from "./utils.ts";
@@ -75,7 +77,7 @@ export async function handleSamplingRequest(
       headers,
       maxTokens: params.maxTokens,
       temperature: params.temperature,
-      metadata: params.metadata as Record<string, unknown> | undefined,
+	      metadata: isJsonInputObject(params.metadata) ? params.metadata : undefined,
       signal,
     },
   );
@@ -112,7 +114,7 @@ function formatResponseApproval(serverName: string, response: CreateMessageResul
 }
 
 function messageText(message: Message): string {
-  if (typeof message.content === "string") return message.content;
+  if (isRuntimeString(message.content)) return message.content;
   return message.content.map((block) => {
     if (block.type === "text") return block.text;
     if (block.type === "image") return `[image: ${block.mimeType}]`;

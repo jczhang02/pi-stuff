@@ -1,3 +1,6 @@
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeBoolean } from "../../shared/runtime-type.js";
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/app-bridge";
 import { UrlElicitationRequiredError, type ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { ResourceFetchError, ResourceParseError } from "./errors.ts";
@@ -5,14 +8,6 @@ import { logger } from "./logger.ts";
 import { SessionRecoveryAuthRequiredError, withSessionRecovery, type SessionRecoveryDeps } from "./session-recovery.ts";
 import type { McpServerManager } from "./server-manager.ts";
 import { isServerDisabled, type McpConfig, type UiResourceContent, type UiResourceCsp, type UiResourceMeta } from "./types.ts";
-
-interface ResourceContentRecord {
-  uri?: string;
-  mimeType?: string;
-  text?: string;
-  blob?: string;
-  _meta?: Record<string, unknown>;
-}
 
 interface ReadUiResourceOptions {
   config?: McpConfig;
@@ -105,17 +100,16 @@ export class UiResourceHandler {
     };
   }
 
-  private getListResourceMeta(serverName: string, uri: string): Record<string, unknown> | undefined {
+  private getListResourceMeta(serverName: string, uri: string): JsonInputObject | undefined {
     const connection = this.manager.getConnection(serverName);
     if (!connection?.resources?.length) return undefined;
-    const resource = connection.resources.find((entry) => entry.uri === uri);
-    if (!resource || !resource._meta || typeof resource._meta !== "object") return undefined;
-    return resource._meta;
+	    const resource = connection.resources.find((entry) => entry.uri === uri);
+	    return isJsonInputObject(resource?._meta) ? resource._meta : undefined;
   }
 }
 
-function selectContent(result: ReadResourceResult, preferredUri: string): ResourceContentRecord {
-  const contents = (result.contents ?? []) as ResourceContentRecord[];
+function selectContent(result: ReadResourceResult, preferredUri: string): ReadResourceResult["contents"][number] {
+	  const contents = result.contents ?? [];
   if (contents.length === 0) {
     throw new Error(`No contents returned for UI resource: ${preferredUri}`);
   }
@@ -136,12 +130,12 @@ function isHtmlMimeType(mimeType: string): boolean {
   return normalized.startsWith("text/html") || normalized === RESOURCE_MIME_TYPE.toLowerCase();
 }
 
-function toHtml(content: ResourceContentRecord): string {
-  if (typeof content.text === "string") {
+function toHtml(content: ReadResourceResult["contents"][number]): string {
+	  if ("text" in content && isRuntimeString(content.text)) {
     return content.text;
   }
 
-  if (typeof content.blob === "string") {
+	  if ("blob" in content && isRuntimeString(content.blob)) {
     return Buffer.from(content.blob, "base64").toString("utf-8");
   }
 
@@ -160,9 +154,10 @@ const UI_CSP_DOMAIN_FIELDS: readonly (keyof UiResourceCsp)[] = [
   "frameDomains",
   "baseUriDomains",
 ];
+const UI_PERMISSION_FIELDS = ["camera", "microphone", "geolocation", "clipboardWrite"] as const;
 
-function extractUiMeta(meta: Record<string, unknown> | undefined): UiResourceMeta {
-  if (!meta || typeof meta !== "object") return {};
+function extractUiMeta(meta: JsonInputObject | undefined): UiResourceMeta {
+  if (!meta || !isRuntimeObject(meta)) return {};
 
   const ui = isRecord(meta.ui) ? meta.ui : undefined;
   const out: UiResourceMeta = {};
@@ -191,20 +186,28 @@ function extractUiMeta(meta: Record<string, unknown> | undefined): UiResourceMet
     }
   }
 
-  if (ui && isRecord(ui.permissions)) {
-    out.permissions = ui.permissions as UiResourceMeta["permissions"];
-  }
-  if (ui && typeof ui.domain === "string") {
+	  const permissions = normalizeUiResourcePermissions(ui?.permissions);
+	  if (permissions) out.permissions = permissions;
+  if (ui && isRuntimeString(ui.domain)) {
     out.domain = ui.domain;
   }
-  if (ui && typeof ui.prefersBorder === "boolean") {
+  if (ui && isRuntimeBoolean(ui.prefersBorder)) {
     out.prefersBorder = ui.prefersBorder;
   }
 
   return out;
 }
 
-function normalizeUiResourceCsp(value: unknown): UiResourceCsp {
+function normalizeUiResourcePermissions(value: JsonInputValue): NonNullable<UiResourceMeta["permissions"]> | undefined {
+	if (!isRecord(value)) return undefined;
+	const permissions: NonNullable<UiResourceMeta["permissions"]> = {};
+	for (const field of UI_PERMISSION_FIELDS) {
+		if (isRecord(value[field])) permissions[field] = {};
+	}
+	return permissions;
+}
+
+function normalizeUiResourceCsp(value: JsonInputValue): UiResourceCsp {
   if (!isRecord(value)) return {};
 
   const csp: UiResourceCsp = {};
@@ -215,7 +218,7 @@ function normalizeUiResourceCsp(value: unknown): UiResourceCsp {
   return csp;
 }
 
-function normalizeOpenAiWidgetCsp(value: unknown): UiResourceCsp {
+function normalizeOpenAiWidgetCsp(value: JsonInputValue): UiResourceCsp {
   if (!isRecord(value)) return {};
 
   const csp: UiResourceCsp = {};
@@ -226,16 +229,16 @@ function normalizeOpenAiWidgetCsp(value: unknown): UiResourceCsp {
   return csp;
 }
 
-function copyStringArray(value: unknown): string[] | undefined {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string")
+function copyStringArray(value: JsonInputValue): string[] | undefined {
+  return Array.isArray(value) && value.every((entry) => isRuntimeString(entry))
     ? [...value]
     : undefined;
 }
 
-function hasOwnProperty(record: Record<string, unknown>, property: string): boolean {
+function hasOwnProperty(record: JsonInputObject, property: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, property);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function isRecord(value: JsonInputValue): value is JsonInputObject {
+  return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }

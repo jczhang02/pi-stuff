@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeFunction } from "../../shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -66,7 +69,7 @@ type HttpAuthProviderState =
   | { status: "explicit"; provider: McpOAuthProvider }
   | { status: "implicit-challenged"; provider: McpOAuthProvider };
 
-function isUnauthorizedHttpError(error: unknown): boolean {
+function isUnauthorizedHttpError(error: JsonInputValue): boolean {
   return error instanceof UnauthorizedError || (error instanceof StreamableHTTPError && error.code === 401);
 }
 
@@ -117,11 +120,11 @@ type UiStreamListener = (serverName: string, notification: ServerStreamResultPat
 type MetadataListChangedListener = (serverName: string, reason: string) => void;
 
 function createSessionTerminator(transport: Transport, serverName: string): (() => Promise<void>) | undefined {
-  const candidate = transport as Transport & { terminateSession?: () => Promise<void> };
-  if (typeof candidate.terminateSession !== "function") return undefined;
-  return async () => {
-    try {
-      await candidate.terminateSession?.call(transport);
+	  if (!("terminateSession" in transport) || !isRuntimeFunction(transport.terminateSession)) return undefined;
+	  const terminateSession = transport.terminateSession.bind(transport);
+	  return async () => {
+	    try {
+	      await terminateSession();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.debug(`MCP: Failed to terminate HTTP session for ${serverName}: ${message}`);
@@ -207,10 +210,10 @@ export class McpServerManager {
       return undefined;
     }
 
-    return {
-      ...(ownedSignal ? { signal: ownedSignal } : {}),
-      ...(timeout !== undefined ? { timeout } : {}),
-    };
+	    const options: RequestOptions = {};
+	    if (ownedSignal) options.signal = ownedSignal;
+	    if (timeout !== undefined) options.timeout = timeout;
+	    return options;
   }
 
   async connect(name: string, definition: ServerDefinition, signal?: AbortSignal): Promise<ServerConnection> {
@@ -335,7 +338,7 @@ export class McpServerManager {
     let terminateSession: (() => Promise<void>) | undefined;
     let stderrTail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
     const configuredTransports = [definition.command, definition.url, definition.socket]
-      .filter(value => typeof value === "string" && value.length > 0);
+      .filter(value => isRuntimeString(value) && value.length > 0);
     if (configuredTransports.length !== 1) {
       throw new Error(`Server ${name} must configure exactly one of command, url, or socket`);
     }
@@ -444,7 +447,7 @@ export class McpServerManager {
             abortCleanup ?? Promise.resolve().then(() => client.close()),
           ]);
       const cleanupFailures = cleanupResults.flatMap(result => result.status === "rejected" ? [result.reason] : []);
-      let reportedError: unknown = error;
+      let reportedError: JsonInputValue = error;
       if (cleanupFailures.length > 0) {
         reportedError = new AggregateError([error, ...cleanupFailures], "MCP connection setup failed");
       }
@@ -478,7 +481,7 @@ export class McpServerManager {
     }
   }
 
-  private async enrichHttpConnectionError(definition: ServerDefinition, error: unknown): Promise<Error> {
+  private async enrichHttpConnectionError(definition: ServerDefinition, error: JsonInputValue): Promise<Error> {
     const originalMessage = error instanceof Error ? error.message : String(error);
     try {
       const probe = await probeMcpEndpoint(resolveServerUrl(definition)!);
@@ -518,29 +521,23 @@ export class McpServerManager {
     }
   }
 
-  private buildClientCapabilities() {
-    return {
-      ...(this.samplingConfig ? { sampling: {} } : {}),
-      ...(this.elicitationConfig
-        ? {
-            elicitation: {
-              form: {},
-              ...(this.elicitationConfig.allowUrl ? { url: {} } : {}),
-            },
-          }
-        : {}),
-    };
+	  private buildClientCapabilities() {
+	    const capabilities = {};
+	    if (this.samplingConfig) Object.assign(capabilities, { sampling: {} });
+	    if (this.elicitationConfig) {
+	      const elicitation = { form: {} };
+	      if (this.elicitationConfig.allowUrl) Object.assign(elicitation, { url: {} });
+	      Object.assign(capabilities, { elicitation });
+	    }
+	    return capabilities;
   }
 
   private createClient(serverName: string): Client {
     const capabilities = this.buildClientCapabilities();
     let client: Client;
-    client = new Client(
-      { name: `pi-mcp-${serverName}`, version: "1.0.0" },
-      {
-        jsonSchemaValidator: createJsonSchemaValidator(),
-        ...(Object.keys(capabilities).length > 0 ? { capabilities } : {}),
-        listChanged: {
+	    const clientOptions = {
+	        jsonSchemaValidator: createJsonSchemaValidator(),
+	        listChanged: {
           tools: {
             onChanged: (error: Error | null, tools: McpTool[] | null) => {
               this.handleToolsListChanged(serverName, client, error, tools);
@@ -556,9 +553,13 @@ export class McpServerManager {
               this.handlePromptsListChanged(serverName, client, error, prompts);
             },
           },
-        },
-      },
-    );
+	        },
+	      };
+	    if (Object.keys(capabilities).length > 0) Object.assign(clientOptions, { capabilities });
+	    client = new Client(
+	      { name: `pi-mcp-${serverName}`, version: "1.0.0" },
+	      clientOptions,
+	    );
     if (this.samplingConfig) {
       registerSamplingHandler(client, { ...this.samplingConfig, serverName });
     }
@@ -886,8 +887,10 @@ export class McpServerManager {
     try {
       this.touch(name);
       this.incrementInFlight(name);
-      return await connection.client.getPrompt(
-        { name: promptName, ...(args ? { arguments: args } : {}) },
+	      const params = { name: promptName };
+	      if (args) Object.assign(params, { arguments: args });
+	      return await connection.client.getPrompt(
+	        params,
         this.getRequestOptions(name, signal),
       );
     } finally {
@@ -989,8 +992,8 @@ export class McpServerManager {
     if (failures.length > 0) throw new AggregateError(failures, "MCP manager cleanup failed");
   }
 
-  private containsCleanupFailure(error: unknown): boolean {
-    const pending: unknown[] = [error];
+  private containsCleanupFailure(error: JsonInputValue): boolean {
+    const pending: JsonInputValue[] = [error];
     const seen = new Set<unknown>();
     while (pending.length > 0) {
       const current = pending.pop();
@@ -1063,7 +1066,7 @@ async function resolveEnv(
 }
 
 function normalizeRequestTimeoutMs(timeoutMs: number | undefined): number | undefined {
-  return typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+  return isRuntimeNumber(timeoutMs) && Number.isFinite(timeoutMs) && timeoutMs > 0
     ? timeoutMs
     : undefined;
 }

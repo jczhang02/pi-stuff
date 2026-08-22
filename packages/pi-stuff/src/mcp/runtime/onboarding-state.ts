@@ -1,3 +1,4 @@
+import { parseJsonObject } from "../../shared/json-value.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 import { piStuffStatePath } from "../../xdg/index.ts";
@@ -23,8 +24,7 @@ export function loadOnboardingState(): McpOnboardingState {
   if (!existsSync(path)) return { ...DEFAULT_STATE };
 
   try {
-    const raw = JSON.parse(readFileSync(path, "utf-8")) as Partial<McpOnboardingState>;
-    if (!raw || typeof raw !== "object") return { ...DEFAULT_STATE };
+	    const raw = parseJsonObject(readFileSync(path, "utf-8"));
     return {
       version: 1,
       setupCompleted: raw.setupCompleted === true,

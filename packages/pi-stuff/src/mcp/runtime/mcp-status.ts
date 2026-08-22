@@ -1,3 +1,4 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
 import type { McpExtensionState } from "./state.ts";
 import { supportsOAuth } from "./mcp-auth-flow.ts";
 import { redactTraceText } from "./mcp-trace.ts";
@@ -12,7 +13,7 @@ import {
 const FAILURE_BACKOFF_MS = 60 * 1000;
 
 export interface McpStatusEventBus {
-  emit(channel: string, data: unknown): void;
+  emit(channel: string, data: JsonInputValue): void;
 }
 
 function getActiveFailureAgeSeconds(state: McpExtensionState, serverName: string): number | undefined {
@@ -62,17 +63,18 @@ export function createMcpStatusSnapshot(state: McpExtensionState): McpStatusSnap
 
     totalTools += disabled ? 0 : toolCount;
     if (!disabled && resourceCount !== undefined) totalResources += resourceCount;
-    servers.push({
-      name,
-      status,
-      toolCount,
-      ...(resourceCount !== undefined ? { resourceCount } : {}),
-      ...(status === "failed" && failedAgoSeconds !== undefined ? { failedAgoSeconds } : {}),
-      ...(status === "failed" && failureDetail ? { failureDetail } : {}),
-      disabled,
-      oauth: definition ? supportsOAuth(definition) : false,
-      autoConnect: definition?.lifecycle === "eager" || definition?.lifecycle === "keep-alive",
-    });
+	    const snapshot: McpServerStatusSnapshot = {
+	      name,
+	      status,
+	      toolCount,
+	      disabled,
+	      oauth: definition ? supportsOAuth(definition) : false,
+	      autoConnect: definition?.lifecycle === "eager" || definition?.lifecycle === "keep-alive",
+	    };
+	    if (resourceCount !== undefined) snapshot.resourceCount = resourceCount;
+	    if (status === "failed" && failedAgoSeconds !== undefined) snapshot.failedAgoSeconds = failedAgoSeconds;
+	    if (status === "failed" && failureDetail) snapshot.failureDetail = failureDetail;
+	    servers.push(snapshot);
   }
 
   return {

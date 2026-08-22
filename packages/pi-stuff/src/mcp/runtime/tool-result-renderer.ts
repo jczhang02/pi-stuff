@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { type Component, Text, visibleWidth } from "@earendil-works/pi-tui";
 import {
@@ -6,7 +9,7 @@ import {
   graphemePrefix,
 } from "../../tool-display/index.js";
 
-type McpToolResultDetails = Record<string, unknown> & { error?: unknown };
+type McpToolResultDetails = JsonInputObject & { error?: JsonInputValue };
 type McpToolContentBlock = AgentToolResult<McpToolResultDetails>["content"][number];
 
 interface RenderTheme {
@@ -18,7 +21,7 @@ const plainTheme: RenderTheme = { fg: (_name, text) => text };
 
 export interface McpProxyToolCallInput {
   tool?: string;
-  args?: string | Record<string, unknown>;
+  args?: string | JsonInputObject;
   connect?: string;
   describe?: string;
   search?: string;
@@ -91,8 +94,8 @@ function truncateText(value: string, maxChars: number): string {
   return boundTerminalText(value, maxChars);
 }
 
-function formatJsonish(value: unknown, maxChars: number): string {
-  if (typeof value === "string") {
+function formatJsonish(value: JsonInputValue, maxChars: number): string {
+  if (isRuntimeString(value)) {
     try {
       return truncateText(JSON.stringify(JSON.parse(value), null, 2), maxChars);
     } catch {
@@ -107,8 +110,8 @@ function formatJsonish(value: unknown, maxChars: number): string {
   }
 }
 
-function hasUsefulObjectContent(value: unknown): boolean {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).length > 0;
+function hasUsefulObjectContent(value: JsonInputValue): boolean {
+  return isRuntimeObject(value) && value !== null && !Array.isArray(value) && Object.keys(value).length > 0;
 }
 
 export function formatMcpProxyToolCallLines(
@@ -143,7 +146,7 @@ export function formatMcpProxyToolCallLines(
 
 export function formatMcpDirectToolCallLines(
   displayName: string,
-  args: Record<string, unknown>,
+  args: JsonInputObject,
   maxInputChars = DEFAULT_MAX_CALL_INPUT_CHARS,
 ): string[] {
   if (!hasUsefulObjectContent(args)) return [displayName];
@@ -164,7 +167,7 @@ export function renderMcpProxyToolCall(args: McpProxyToolCallInput, theme?: Rend
 }
 
 export function createMcpDirectToolCallRenderer(displayName: string) {
-  return (args: Record<string, unknown>, theme?: RenderTheme) => {
+  return (args: JsonInputObject, theme?: RenderTheme) => {
     return renderToolCallLines(formatMcpDirectToolCallLines(displayName, args), theme);
   };
 }
@@ -231,15 +234,15 @@ function collectCollapsedResultLines(
 
 export function formatMcpToolResultIdentity(details: McpToolResultDetails | undefined): string | null {
   if (details?.mode !== "call") return null;
-  const server = typeof details.server === "string"
+  const server = isRuntimeString(details.server)
     ? details.server
-    : typeof details.hintServer === "string"
+    : isRuntimeString(details.hintServer)
       ? details.hintServer
       : null;
   if (!server) return null;
-  if (typeof details.tool === "string") return `MCP ${server}/${details.tool}`;
-  if (typeof details.resourceUri === "string") return `MCP ${server} resource ${details.resourceUri}`;
-  if (typeof details.requestedTool === "string") return `MCP ${server}/${details.requestedTool}`;
+  if (isRuntimeString(details.tool)) return `MCP ${server}/${details.tool}`;
+  if (isRuntimeString(details.resourceUri)) return `MCP ${server} resource ${details.resourceUri}`;
+  if (isRuntimeString(details.requestedTool)) return `MCP ${server}/${details.requestedTool}`;
   return null;
 }
 

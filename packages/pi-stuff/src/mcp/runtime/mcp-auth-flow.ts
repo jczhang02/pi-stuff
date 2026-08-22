@@ -4,6 +4,7 @@
  * High-level OAuth flow management using the MCP SDK's built-in auth functions.
  */
 
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import {
   auth as runSdkAuth,
   extractWWWAuthenticateParams,
@@ -56,6 +57,12 @@ export interface AuthenticateOptions {
 type AuthDiscovery = {
   resourceMetadataUrl?: URL
   scope?: string
+}
+
+type OAuthRedirect = {
+  port: number
+  callbackHost: string
+  callbackPath: string
 }
 
 function applyConfiguredScope(discovery: AuthDiscovery, config: McpOAuthConfig): AuthDiscovery {
@@ -153,34 +160,34 @@ export function extractOAuthConfig(definition: ServerEntry): McpOAuthConfig {
   const config: McpOAuthConfig = {}
   if (definition.oauth?.grantType !== undefined) config.grantType = definition.oauth.grantType
   if (definition.oauth?.clientId !== undefined) {
-    if (typeof definition.oauth.clientId !== "string") throw new Error("OAuth clientId must be a string")
+    if (!isRuntimeString(definition.oauth.clientId)) throw new Error("OAuth clientId must be a string")
     config.clientId = interpolateEnvVars(definition.oauth.clientId)
   }
   if (definition.oauth?.clientSecret !== undefined) {
-    if (typeof definition.oauth.clientSecret !== "string") throw new Error("OAuth clientSecret must be a string")
+    if (!isRuntimeString(definition.oauth.clientSecret)) throw new Error("OAuth clientSecret must be a string")
     // Preserve command expressions for the provider; interpolation remains eager for ordinary values.
     config.clientSecret = definition.oauth.clientSecret.startsWith("!")
       ? definition.oauth.clientSecret
       : interpolateEnvVars(definition.oauth.clientSecret)
   }
   if (definition.oauth?.scope !== undefined) {
-    if (typeof definition.oauth.scope !== "string") throw new Error("OAuth scope must be a string")
+    if (!isRuntimeString(definition.oauth.scope)) throw new Error("OAuth scope must be a string")
     config.scope = interpolateEnvVars(definition.oauth.scope)
   }
   if (definition.oauth?.authorizationParams !== undefined) {
     const params = definition.oauth.authorizationParams
-    if (!params || typeof params !== "object" || Array.isArray(params)) {
+    if (!params || !isRuntimeObject(params) || Array.isArray(params)) {
       throw new Error("OAuth authorizationParams must be an object")
     }
     config.authorizationParams = {}
     for (const [key, value] of Object.entries(params)) {
       if (!key) throw new Error("OAuth authorizationParams keys must not be empty")
-      if (typeof value !== "string") throw new Error(`OAuth authorizationParams.${key} must be a string`)
+      if (!isRuntimeString(value)) throw new Error(`OAuth authorizationParams.${key} must be a string`)
       config.authorizationParams[key] = interpolateEnvVars(value)
     }
   }
   if (definition.oauth?.redirectUri !== undefined) {
-    if (typeof definition.oauth.redirectUri !== "string") {
+    if (!isRuntimeString(definition.oauth.redirectUri)) {
       throw new Error("OAuth redirectUri must be a string")
     }
     const redirectUri = interpolateEnvVars(definition.oauth.redirectUri).trim()
@@ -190,7 +197,7 @@ export function extractOAuthConfig(definition: ServerEntry): McpOAuthConfig {
     config.redirectUri = redirectUri
   }
   if (definition.oauth?.clientName !== undefined) {
-    if (typeof definition.oauth.clientName !== "string") {
+    if (!isRuntimeString(definition.oauth.clientName)) {
       throw new Error("OAuth clientName must be a string")
     }
     const clientName = interpolateEnvVars(definition.oauth.clientName).trim()
@@ -200,7 +207,7 @@ export function extractOAuthConfig(definition: ServerEntry): McpOAuthConfig {
     config.clientName = clientName
   }
   if (definition.oauth?.clientUri !== undefined) {
-    if (typeof definition.oauth.clientUri !== "string") {
+    if (!isRuntimeString(definition.oauth.clientUri)) {
       throw new Error("OAuth clientUri must be a string")
     }
     const clientUri = interpolateEnvVars(definition.oauth.clientUri).trim()
@@ -244,8 +251,11 @@ async function probeAuthDiscovery(serverUrl: string, definition?: ServerEntry, s
     })
     const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response)
     await response.body?.cancel().catch(() => {})
-    return { ...(resourceMetadataUrl ? { resourceMetadataUrl } : {}), ...(scope ? { scope } : {}) }
-  } catch (error) {
+    const discovery: AuthDiscovery = {}
+    if (resourceMetadataUrl) discovery.resourceMetadataUrl = resourceMetadataUrl
+    if (scope) discovery.scope = scope
+    return discovery
+  } catch {
     if (signal?.aborted) throwIfAborted(signal)
     return {}
   } finally {
@@ -253,7 +263,7 @@ async function probeAuthDiscovery(serverUrl: string, definition?: ServerEntry, s
   }
 }
 
-function parseOAuthRedirectUri(redirectUri: string): { port: number; callbackHost: string; callbackPath: string } {
+function parseOAuthRedirectUri(redirectUri: string): OAuthRedirect {
   let url: URL
   try {
     url = new URL(redirectUri)
@@ -343,12 +353,17 @@ export async function startAuth(
   const oauthState = generateState()
 
   try {
-    await ensureCallbackServer({
-      strictPort: Boolean(config.clientId) || config.redirectUri !== undefined,
-      oauthState,
-      reserveState: true,
-      ...(redirectCallback ? { port: redirectCallback.port, callbackHost: redirectCallback.callbackHost, callbackPath: redirectCallback.callbackPath } : {}),
-    })
+    const callbackServerOptions = redirectCallback === undefined
+      ? { strictPort: Boolean(config.clientId) || config.redirectUri !== undefined, oauthState, reserveState: true }
+      : {
+          strictPort: Boolean(config.clientId) || config.redirectUri !== undefined,
+          oauthState,
+          reserveState: true,
+          port: redirectCallback.port,
+          callbackHost: redirectCallback.callbackHost,
+          callbackPath: redirectCallback.callbackPath,
+        }
+    await ensureCallbackServer(callbackServerOptions)
     throwIfAborted(signal)
   } catch (error) {
     releaseCallbackServer(oauthState)
@@ -523,7 +538,9 @@ export function parseAuthorizationRedirectInput(input: string, expectedState?: s
     const code = params.get("code")
     if (code) {
       const iss = params.get("iss")
-      return { code, ...(iss !== null ? { iss } : {}) }
+      const result: AuthorizationCodeInput = { code }
+      if (iss !== null) result.iss = iss
+      return result
     }
   }
 
@@ -556,7 +573,6 @@ export async function completeAuthFromInput(
   const signal = combineAbortSignals(runtime.signal, options.signal)
   throwIfAborted(signal)
   const key = getPendingAuthKey(serverName, fallbackAuthStorageOptions)
-  const authStorageOptions = runtimeState.pendingAuths.get(key)?.authStorageOptions ?? fallbackAuthStorageOptions
   const oauthState = runtimeState.pendingAuthStates.get(key)
   throwIfAborted(signal)
   const parsed = parseAuthorizationRedirectInput(input, oauthState)
@@ -573,7 +589,7 @@ export async function completeAuth(
 ): Promise<AuthStatus> {
   const runtime = getRuntime(options)
   const runtimeState = getRuntimeState(runtime)
-  const { code, iss } = typeof authorizationCode === "string"
+  const { code, iss } = isRuntimeString(authorizationCode)
     ? { code: authorizationCode, iss: undefined }
     : authorizationCode
   const fallbackAuthStorageOptions = options.authStorageOptions ?? {}
@@ -590,13 +606,13 @@ export async function completeAuth(
   throwIfAborted(signal)
 
   let keepPendingForRetry = false
-  let caughtError: unknown
   try {
     const discoveryState = await pendingAuth.authProvider.discoveryState()
     const metadata = discoveryState?.authorizationServerMetadata
     const expectedIssuer = metadata?.issuer ?? discoveryState?.authorizationServerUrl
-    const requiresIssuer = (metadata as { authorization_response_iss_parameter_supported?: unknown } | undefined)
-      ?.authorization_response_iss_parameter_supported === true
+    const requiresIssuer = metadata !== undefined
+      && "authorization_response_iss_parameter_supported" in metadata
+      && metadata.authorization_response_iss_parameter_supported === true
     if (expectedIssuer !== undefined && iss === undefined && requiresIssuer) {
       keepPendingForRetry = true
       throw new Error(
@@ -617,22 +633,18 @@ export async function completeAuth(
     if (result !== "AUTHORIZED") {
       throw new UnauthorizedError("Failed to authorize")
     }
-    return "authenticated"
   } catch (error) {
-    caughtError = error
-    throw error
-  } finally {
     if (!keepPendingForRetry) {
       try {
         await clearPendingAuth(runtime, serverName, oauthState, authStorageOptions)
       } catch (cleanupError) {
-        if (caughtError !== undefined) {
-          throw new AggregateError([caughtError, cleanupError], "OAuth completion cleanup failed")
-        }
-        throw cleanupError
+        throw new AggregateError([error, cleanupError], "OAuth completion cleanup failed")
       }
     }
+    throw error
   }
+  await clearPendingAuth(runtime, serverName, oauthState, authStorageOptions)
+  return "authenticated"
 }
 
 /**
@@ -819,12 +831,15 @@ export async function getValidToken(
  * @returns The current auth status
  */
 export async function getAuthStatus(serverName: string, options: AuthenticateOptions = {}): Promise<AuthStatus> {
-  const runtime = getRuntime(options)
+  const signal = combineAbortSignals(getRuntime(options).signal, options.signal)
+  throwIfAborted(signal)
   const authStorageOptions = options.authStorageOptions ?? {}
   const hasTokens = await hasStoredTokens(serverName, authStorageOptions)
+  throwIfAborted(signal)
   if (!hasTokens) return "not_authenticated"
 
   const expired = await isTokenExpired(serverName, authStorageOptions)
+  throwIfAborted(signal)
   return expired ? "expired" : "authenticated"
 }
 
@@ -881,14 +896,14 @@ export function supportsOAuth(definition: ServerEntry): boolean {
 export async function initializeOAuth(
   runtimeOrSignal?: McpOAuthRuntime | AbortSignal,
 ): Promise<McpOAuthRuntime> {
-  if (runtimeOrSignal && "signal" in runtimeOrSignal) {
+  if (runtimeOrSignal !== undefined && "signal" in runtimeOrSignal) {
     runtimeOrSignal.signal.throwIfAborted()
     activeRuntimes.add(runtimeOrSignal)
     return runtimeOrSignal
   }
 
   await shutdownOAuth(legacyRuntime)
-  legacyRuntime = createOAuthRuntime(runtimeOrSignal as AbortSignal | undefined)
+  legacyRuntime = createOAuthRuntime(runtimeOrSignal)
   return legacyRuntime
 }
 

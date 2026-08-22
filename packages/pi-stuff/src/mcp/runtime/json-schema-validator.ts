@@ -1,15 +1,13 @@
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { Ajv } from "ajv";
-import Ajv2020Import from "ajv/dist/2020.js";
-import addFormatsImport from "ajv-formats";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import type {
   JsonSchemaType,
   JsonSchemaValidator,
   jsonSchemaValidator as JsonSchemaValidatorProvider,
 } from "@modelcontextprotocol/sdk/validation/types.js";
-
-// ajv-formats types target its bundled ajv; the runtime accepts both instances.
-const addFormats = addFormatsImport as unknown as (instance: Ajv) => void;
 
 type SchemaDialect =
   | { status: "unstamped" }
@@ -24,7 +22,7 @@ const DRAFT_2020_12_SCHEMA_URIS: ReadonlySet<string> = new Set([
 ]);
 
 function schemaDialect(schema: JsonSchemaType): SchemaDialect {
-  if (!("$schema" in schema) || typeof schema.$schema !== "string") {
+  if (!("$schema" in schema) || !isRuntimeString(schema.$schema)) {
     return { status: "unstamped" };
   }
   return {
@@ -42,7 +40,6 @@ export function createJsonSchemaValidator(): JsonSchemaValidatorProvider {
       const dialect = schemaDialect(schema);
       if (dialect.status === "unstamped" || DRAFT_2020_12_SCHEMA_URIS.has(dialect.uri)) {
         draft2020Validator ??= (() => {
-          const Ajv2020 = Ajv2020Import as unknown as typeof Ajv;
           const ajv = new Ajv2020({ strict: false, allErrors: true });
           addFormats(ajv);
           return new AjvJsonSchemaValidator(ajv);

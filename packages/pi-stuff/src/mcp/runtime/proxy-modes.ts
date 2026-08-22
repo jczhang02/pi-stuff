@@ -1,13 +1,13 @@
 import type { AgentToolResult, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { UrlElicitationRequiredError } from "@modelcontextprotocol/sdk/types.js";
 import type { McpExtensionState } from "./state.ts";
-import type { ToolMetadata, McpContent } from "./types.ts";
+import type { ToolMetadata } from "./types.ts";
 import { getServerPrefix, isServerDisabled, parseUiPromptHandoff } from "./types.ts";
 import { lazyConnect, markKeepAliveAfterConnect, notifyToolMetadataUpdated, updateServerMetadata, updateMetadataCache, getFailureAgeSeconds, updateStatusBar, clearFailure, recordFailure } from "./init.ts";
 import { abortable, throwIfAborted } from "./abort.ts";
 import { combineAbortSignals, isAbortError } from "./runtime-owner.ts";
 import { buildToolMetadata, getToolNames, findToolByName, formatSchema } from "./tool-metadata.ts";
-import { renderTsShape } from "./ts-shape.ts";
+import { renderTsType } from "./ts-shape.ts";
 import { reconstructPromptMetadata } from "./metadata-cache.ts";
 import { resolveMcpResultContent, transformMcpContent } from "./tool-registrar.ts";
 import { guardMcpOutput, guardedMcpDetails, resolveMcpOutputGuardOptions } from "./mcp-output-guard.ts";
@@ -18,7 +18,7 @@ import { SessionRecoveryAuthRequiredError, withSessionRecovery } from "./session
 import { paginate, rankSuggestions, rankToolMatches } from "./search-ranking.ts";
 import { ensureToolCallApproved, isToolCallApprovalRequired } from "./tool-approval.ts";
 
-type ProxyToolResult = AgentToolResult<Record<string, unknown>>;
+type ProxyToolResult = AgentToolResult<JsonInputObject>;
 
 const INSTRUCTIONS_PREVIEW_LENGTH = 300;
 
@@ -164,7 +164,7 @@ export function executeUiMessages(state: McpExtensionState): ProxyToolResult {
   const allPrompts: string[] = [];
   const allIntents = sessions.flatMap((session) => session.messages.intents);
   const allContexts = sessions.flatMap((session) => session.messages.contexts);
-  const parsedHandoffs: Array<{ intent: string; params: Record<string, unknown>; raw: string }> = [];
+  const parsedHandoffs: Array<{ intent: string; params: JsonInputObject; raw: string }> = [];
 
   for (const session of sessions) {
     const timestamp = session.completedAt.toLocaleTimeString();
@@ -257,7 +257,8 @@ export function executeStatus(state: McpExtensionState): ProxyToolResult {
       status = "cached";
     }
 
-    servers.push({ name, status, toolCount, failedAgo, ...(disabled ? { disabled: true } : {}) });
+	const server = { name, status, toolCount, failedAgo, disabled };
+	servers.push(server);
   }
 
   const disabledCount = servers.filter(s => s.disabled).length;
@@ -431,8 +432,8 @@ export function executeDescribe(state: McpExtensionState, toolName: string): Pro
   text += `\n${toolMeta.description || "(no description)"}\n`;
 
   if (toolMeta.inputSchema && !toolMeta.resourceUri) {
-    const shape = renderTsShape(toolMeta.inputSchema);
-    text += shape === null ? `\nParameters:\n${formatSchema(toolMeta.inputSchema)}` : `\nShape:\n${shape}`;
+    const renderedType = renderTsType(toolMeta.inputSchema);
+    text += renderedType === null ? `\nParameters:\n${formatSchema(toolMeta.inputSchema)}` : `\nShape:\n${renderedType}`;
   } else if (toolMeta.resourceUri) {
     text += `\nNo parameters required (resource tool).`;
   } else {
@@ -495,10 +496,10 @@ export function executeSearch(
       text += `${match.tool.name}${approvalMarker}\n`;
       text += `  ${match.tool.description || "(no description)"}\n`;
       if (match.tool.inputSchema && !match.tool.resourceUri) {
-        const shape = renderTsShape(match.tool.inputSchema);
-        text += shape === null
+        const renderedType = renderTsType(match.tool.inputSchema);
+        text += renderedType === null
           ? `\n  Parameters:\n${formatSchema(match.tool.inputSchema, "    ")}\n`
-          : `\n  Shape:\n${shape.split("\n").map(line => `    ${line}`).join("\n")}\n`;
+          : `\n  Shape:\n${renderedType.split("\n").map(line => `    ${line}`).join("\n")}\n`;
       } else if (match.tool.resourceUri) {
         text += "  No parameters (resource tool).\n";
       }
@@ -699,7 +700,7 @@ export async function executeConnect(state: McpExtensionState, serverName: strin
 export async function executeCall(
   state: McpExtensionState,
   toolName: string,
-  args?: Record<string, unknown>,
+  args?: JsonInputObject,
   serverOverride?: string,
   getPiTools?: () => ToolInfo[],
   signal?: AbortSignal,
@@ -1047,7 +1048,7 @@ export async function executeCall(
       );
       const content = (result.contents ?? []).map(c => ({
         type: "text" as const,
-        text: "text" in c ? c.text : ("blob" in c ? `[Binary data: ${(c as { mimeType?: string }).mimeType ?? "unknown"}]` : JSON.stringify(c)),
+        text: "text" in c ? c.text : ("blob" in c ? `[Binary data: ${c.mimeType ?? "unknown"}]` : JSON.stringify(c)),
       }));
       const guarded = await guardMcpOutput(content.length > 0 ? content : [{ type: "text" as const, text: "(empty resource)" }], outputGuardOptions);
       return {
@@ -1079,11 +1080,10 @@ export async function executeCall(
     );
 
     if (toolMeta.uiResourceUri) {
-      uiSession?.sendToolResult(result as unknown as import("@modelcontextprotocol/sdk/types.js").CallToolResult);
+      uiSession?.sendToolResult(result);
 
       if (result.isError) {
-        const mcpContent = (result.content ?? []) as McpContent[];
-        const content = transformMcpContent(mcpContent);
+        const content = transformMcpContent(result.content);
         const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
         const schemaText = toolMeta.inputSchema ? `\n\nExpected parameters:\n${formatSchema(toolMeta.inputSchema)}` : "";
         const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, prefix: "Error: ", suffix: schemaText, emptyTextFallback: "Tool execution failed", rawMcpResult: result });
@@ -1093,7 +1093,7 @@ export async function executeCall(
         };
       }
 
-      const content = resolveMcpResultContent(result as Record<string, unknown>);
+      const content = resolveMcpResultContent(result);
       const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
       const uiSummary = summarizeUiSessionResult(uiSession);
       const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, suffix: `\n\n${uiSummary.message}`, rawMcpResult: result });
@@ -1111,8 +1111,7 @@ export async function executeCall(
     }
 
     if (result.isError) {
-      const mcpContent = (result.content ?? []) as McpContent[];
-      const content = transformMcpContent(mcpContent);
+      const content = transformMcpContent(result.content);
       const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
       const schemaText = toolMeta.inputSchema ? `\n\nExpected parameters:\n${formatSchema(toolMeta.inputSchema)}` : "";
       const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, prefix: "Error: ", suffix: schemaText, emptyTextFallback: "Tool execution failed", rawMcpResult: result });
@@ -1122,7 +1121,7 @@ export async function executeCall(
       };
     }
 
-    const content = resolveMcpResultContent(result as Record<string, unknown>);
+    const content = resolveMcpResultContent(result);
     const outputContent = content.length > 0 ? content : [{ type: "text" as const, text: "(empty result)" }];
     const guarded = await guardMcpOutput(outputContent, { ...outputGuardOptions, rawMcpResult: result });
     return {

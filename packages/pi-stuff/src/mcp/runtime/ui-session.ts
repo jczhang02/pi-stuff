@@ -1,7 +1,8 @@
+import { isJsonInputObject, type JsonInputObject } from "../../shared/json-value.js";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import net from "node:net";
-import { UrlElicitationRequiredError, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolResultSchema, UrlElicitationRequiredError, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { McpExtensionState } from "./state.ts";
 import {
   createUiModelContextUpdate,
@@ -28,7 +29,7 @@ let activeGlimpseWindow: { close(): void } | null = null;
 export interface UiSessionRequest {
   serverName: string;
   toolName: string;
-  toolArgs: Record<string, unknown>;
+  toolArgs: JsonInputObject;
   uiResourceUri: string;
   streamMode?: UiStreamMode;
   signal?: AbortSignal;
@@ -44,7 +45,7 @@ export interface UiSessionRuntime {
   streamId?: string;
   streamToken?: string;
   streamMode?: UiStreamMode;
-  requestMeta?: Record<string, unknown>;
+  requestMeta?: JsonInputObject;
   url: string;
   viewer: UiSessionViewer;
   windowOpen: boolean;
@@ -133,13 +134,13 @@ function withStreamEnvelope(
     return result;
   }
 
-  const structuredContent = result.structuredContent && typeof result.structuredContent === "object" && !Array.isArray(result.structuredContent)
-    ? { ...result.structuredContent }
+	  const structuredContent = isJsonInputObject(result.structuredContent)
+	    ? { ...result.structuredContent }
     : {};
 
   const rawEnvelope = structuredContent[UI_STREAM_STRUCTURED_CONTENT_KEY];
-  const envelope = rawEnvelope && typeof rawEnvelope === "object" && !Array.isArray(rawEnvelope)
-    ? { ...rawEnvelope as Record<string, unknown> }
+	  const envelope = isJsonInputObject(rawEnvelope)
+	    ? { ...rawEnvelope }
     : {
         frameType: "final",
         phase: "settled",
@@ -260,13 +261,12 @@ export async function maybeStartUiSession(
       existingHandle.sendToolInput(request.toolArgs);
 
       if (streamToken) {
-        state.manager.registerUiStreamListener(streamToken, (serverName, notification) => {
+	        state.manager.registerUiStreamListener(streamToken, (serverName, notification) => {
           if (!active || state.uiServer !== existingHandle) return;
           if (serverName !== request.serverName) return;
           nextStreamSequence += 1;
-          existingHandle.sendResultPatch(
-            withStreamEnvelope(notification.result as CallToolResult, streamId, nextStreamSequence),
-          );
+	          const result = CallToolResultSchema.safeParse(notification.result);
+	          if (result.success) existingHandle.sendResultPatch(withStreamEnvelope(result.data, streamId, nextStreamSequence));
         });
       }
 
@@ -478,11 +478,12 @@ export async function maybeStartUiSession(
     }
 
     if (streamToken) {
-      state.manager.registerUiStreamListener(streamToken, (serverName, notification) => {
+	      state.manager.registerUiStreamListener(streamToken, (serverName, notification) => {
         if (!active || state.uiServer !== handle) return;
         if (serverName !== request.serverName) return;
         nextStreamSequence += 1;
-        handle.sendResultPatch(withStreamEnvelope(notification.result as CallToolResult, streamId, nextStreamSequence));
+	        const result = CallToolResultSchema.safeParse(notification.result);
+	        if (result.success) handle.sendResultPatch(withStreamEnvelope(result.data, streamId, nextStreamSequence));
       });
     }
 
