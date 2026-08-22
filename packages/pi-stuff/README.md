@@ -13,7 +13,7 @@ The single local Pi Package for the complete Pi Stuff Suite.
 
 ## Included modules
 
-- [`conversation-ui`](src/conversation-ui/README.md): Statusline, Welcome, live Thought, input presentation, `/ui`, and Command Dialog lifecycle.
+- [`conversation-ui`](src/conversation-ui/README.md): Statusline, Welcome, live Thought, terminal `chart`/`tree` fences, input presentation, `/ui`, and Command Dialog lifecycle.
 - [`tool-display`](src/tool-display/README.md): compact presentation for Pi built-ins and participating Suite Tools.
 - [`code-mode`](src/code-mode/README.md): one provider-visible JavaScript Tool that composes active Suite Tools locally without changing Tool UI.
 - [`context-management`](src/context-management/README.md): configured official Magic Context integration, the `/ctx` control center, and Pi JSONL as raw

@@ -61,6 +61,12 @@ A model-invisible, persisted Session record for one user-started Context mainten
 projects its anchor and later updates after resume. It is not a Tool call, Diagnostic Record, or Statusline item.
 _Avoid_: Context Tool Activity, Context notification, Context status
 
+**Fenced Visualization Projection**:
+A display-only conversion of a complete, valid `chart` or `tree` fenced code block into width-bounded terminal text at
+the Conversation Markdown seam. Canonical message text, Session records, copy/export source, and Provider context remain
+unchanged; failed validation preserves the original fence.
+_Avoid_: Fenced Block plugin, visualization runtime, transformed Session content
+
 **Todo Task**:
 A planned unit of work maintained by the Suite's Task tools and checklist. It describes intent; it is not an executing process, wait, or Agent.
 _Avoid_: Background task, job

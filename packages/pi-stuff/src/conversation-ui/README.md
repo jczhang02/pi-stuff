@@ -1,8 +1,8 @@
 # Conversation UI module
 
 The unified presentation layer for the Pi Stuff Suite. It keeps Pi as the Host and adds a responsive Statusline,
-Welcome header, live Thought projection, input enhancements, one `/ui` settings surface, and the shared non-floating
-Command Dialog used by focused Suite commands.
+Welcome header, live Thought and fenced visualization projection, input enhancements, one `/ui` settings surface, and
+the shared non-floating Command Dialog used by focused Suite commands.
 
 ## Daily UI
 
@@ -111,6 +111,52 @@ such as Fleetview, dialogs, Todo, MCP, diagnostics, and selection state. Every A
 one outer marker, including structured Markdown. Continuation paragraphs, headings, lists, quotes, tables, and fenced
 code stay inside that message-level body and retain their Markdown hierarchy. This projection is display-only and does
 not rewrite Assistant text, Session records, copy/export source, or provider context.
+
+### Fenced visualizations
+
+Complete `chart` and `tree` fenced code blocks in User or Assistant Markdown receive a display-only terminal projection.
+Thinking stays exclusively under Live Thoughts. Pi Stuff does not add Provider instructions to solicit these formats,
+and it does not alter the message stored in the Session or sent back to a Provider.
+
+A chart uses one `type`, an optional `title`, an optional `data:` marker, and bounded rows:
+
+```chart
+type: bar
+title: Monthly net change
+data:
+Jan -8
+Feb 5
+Mar 12
+```
+
+Supported types are `bar` (with `histogram` as an alias), `line`, `scatter`, `sparkline`, and `heatmap`. Ordinary
+series accept at most 64 points. Heatmaps accept at most 32 rows and 64 values per row. Chart source is capped at
+12,000 characters, requires at least 24 available display cells, and never renders wider than 80.
+
+A tree uses exactly two spaces per level:
+
+```tree
+Pi Stuff
+  conversation-ui
+    chart
+    tree
+  tools
+```
+
+Trees require one root, reject tabs, odd indentation, blank nodes, depth jumps, and multiple roots, and are capped at
+12,000 characters, 256 nodes, and 32 levels. Labels are measured with Pi TUI terminal-cell width, including CJK and
+emoji. If any tree row cannot fit without truncating its label, the original fence remains visible.
+
+Both backtick and tilde fences are accepted. Unknown, malformed, unsafe, incomplete, over-limit, nested, or too-narrow
+blocks remain ordinary fenced code. The static dispatcher is part of the existing single Conversation Markdown
+transformer; it is not a plugin API or setting. See ADR 0017 and `UPSTREAM.md` for design and provenance. Ordinary
+path performance is certified with:
+
+```bash
+bun run benchmark:conversation-markdown -- --baseline-root <baseline> --candidate-root <candidate>
+```
+
+The command reports feature rendering separately and fails only on a repeatable ordinary-path regression.
 
 ### Diagnostics
 

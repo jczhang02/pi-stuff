@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Add display-only terminal projections for complete `chart` and strict two-space `tree` fences in User and Assistant
+  Conversation Markdown. Invalid, incomplete, unsafe, over-limit, or too-narrow input stays as source; Thinking, Session
+  records, and Provider context remain unchanged. See ADR 0017.
 - Consolidate the global pi-stuff settings into a single merged `pi-stuff.json` at `<agentDir>/pi-stuff.json`, with each
   Capability owning one top-level namespace (`ui`, `tools`, `rtk`, `codex`, `notification`, `goal`, `codeMode`). The merged
   file is plain JSON on both read and write (no JSONC, no comments); writes emit canonical tab-indented JSON under a

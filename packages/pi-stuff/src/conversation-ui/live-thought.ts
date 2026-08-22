@@ -1,6 +1,7 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
+import { projectFencedVisualizations } from "./fenced-visualization.js";
 import { TRANSCRIPT_MARKER } from "./transcript.js";
 
 export interface ThoughtMarkdownTransformContext {
@@ -96,6 +97,9 @@ function armAssistantTranscriptMarker(): void {
 export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 	return (markdown, context) => {
 		if (context.messageType === "assistant") return renderAssistantTranscript(markdown, context.availableWidth);
+		if (context.messageType === "user") {
+			return projectFencedVisualizations(markdown, context.availableWidth);
+		}
 		if (context.messageType !== "assistant-thinking") return markdown;
 
 		const fragment = latestMeaningfulMarkdownFragment(markdown);
@@ -105,13 +109,14 @@ export function createLiveThoughtTransformer(): ThoughtMarkdownTransformer {
 }
 
 function renderAssistantTranscript(markdown: string, availableWidth: number): string {
-	const sanitized = sanitizeMarkdown(markdown);
-	const text = sanitized.trim();
 	const width = normalizeWidth(availableWidth);
+	const visualizationWidth = Math.max(0, width - visibleWidth(ASSISTANT_LIST_PREFIX));
+	const projected = projectFencedVisualizations(sanitizeMarkdown(markdown), visualizationWidth);
+	const text = projected.trim();
 	if (!text || width === 0) return "";
 	if (width <= visibleWidth(ASSISTANT_LIST_PREFIX)) return fitHead(`${ASSISTANT_LIST_PREFIX}${text}`, width);
 	armAssistantTranscriptMarker();
-	const firstLine = (sanitized.split("\n").find((line) => line.trim()) ?? "").trimEnd();
+	const firstLine = (projected.split("\n").find((line) => line.trim()) ?? "").trimEnd();
 	if (LIST_ITEM.test(firstLine) && !THEMATIC_BREAK.test(firstLine)) {
 		return `${ASSISTANT_LIST_PREFIX}${ASSISTANT_MARKER_ANCHOR}\n${ASSISTANT_LIST_CONTINUATION}${text.replaceAll("\n", `\n${ASSISTANT_LIST_CONTINUATION}`)}`;
 	}

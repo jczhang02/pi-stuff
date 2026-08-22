@@ -15,6 +15,7 @@ test("real Pi renders and restores the integrated production UI at all accepted 
 		"priority Statusline fields and responsive prompt bounds at all accepted widths",
 		"native and inline autocomplete suppression and restoration",
 		"long CJK prompt, Welcome scroll-away, live and settled Thought",
+		"streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",
 		"metered and API-key subscription Statusline cost behavior",
 		"responsive /codex controls, Fast persistence, and offline degradation",
 		"native /ui settings, Notification exclusion, enum changes, and restart persistence",

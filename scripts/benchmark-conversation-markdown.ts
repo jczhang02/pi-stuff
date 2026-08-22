@@ -25,6 +25,7 @@ interface TransformerModule {
 }
 
 interface Scenario {
+	readonly feature?: true;
 	readonly id: string;
 	readonly isStreaming: boolean;
 	readonly markdown: readonly string[];
@@ -44,9 +45,11 @@ interface TimingSummary {
 interface ScenarioReport {
 	readonly baselineMs: TimingSummary;
 	readonly candidateMs: TimingSummary;
+	readonly feature: boolean;
 	readonly id: string;
 	readonly medianRatioConfidence95: readonly [number, number];
 	readonly regression: boolean;
+	readonly slowerThanBaseline: boolean;
 }
 
 interface BenchmarkOptions {
@@ -115,8 +118,12 @@ function parseOptions(arguments_: readonly string[]): BenchmarkOptions {
 	};
 }
 
+function liveThoughtModuleUrl(root: string): string {
+	return pathToFileURL(resolve(root, "packages/pi-stuff/src/conversation-ui/live-thought.ts")).href;
+}
+
 async function loadTransformer(root: string): Promise<MarkdownTransformer> {
-	const moduleUrl = pathToFileURL(resolve(root, "packages/pi-stuff/src/conversation-ui/live-thought.ts")).href;
+	const moduleUrl = liveThoughtModuleUrl(root);
 	// SAFETY: the benchmark loads the repository-owned module at the exact public export exercised by its focused tests.
 	const module = (await import(moduleUrl)) as TransformerModule;
 	return module.createLiveThoughtTransformer();
@@ -219,8 +226,22 @@ function scenarios(): readonly Scenario[] {
 			rounds: 1,
 			widths: [100],
 		},
-		{ id: "chart-64-points", isStreaming: false, markdown: [chartSource(64)], messageType: "assistant", rounds: 5 },
-		{ id: "tree-128-nodes", isStreaming: false, markdown: [treeSource(128)], messageType: "assistant", rounds: 3 },
+		{
+			feature: true,
+			id: "chart-64-points",
+			isStreaming: false,
+			markdown: [chartSource(64)],
+			messageType: "assistant",
+			rounds: 5,
+		},
+		{
+			feature: true,
+			id: "tree-128-nodes",
+			isStreaming: false,
+			markdown: [treeSource(128)],
+			messageType: "assistant",
+			rounds: 3,
+		},
 	];
 }
 
@@ -325,27 +346,90 @@ function benchmarkScenario(
 	const baselineMs = summary(pairs.map((pair) => pair.baselineMs));
 	const candidateMs = summary(pairs.map((pair) => pair.candidateMs));
 	const confidence = bootstrapMedianRatio(pairs);
+	const slowerThanBaseline = confidence[0] > 1 && candidateMs.p95 > baselineMs.p95;
 	return {
 		baselineMs,
 		candidateMs,
+		feature: scenario.feature === true,
 		id: scenario.id,
 		medianRatioConfidence95: confidence,
-		regression: confidence[0] > 1 && candidateMs.p95 > baselineMs.p95,
+		regression: scenario.feature !== true && slowerThanBaseline,
+		slowerThanBaseline,
+	};
+}
+
+function timedFreshImport(root: string): number {
+	const moduleUrl = liveThoughtModuleUrl(root);
+	const started = performance.now();
+	const child = Bun.spawnSync([process.execPath, "-e", `await import(${JSON.stringify(moduleUrl)})`], {
+		cwd: root,
+		stderr: "pipe",
+		stdout: "ignore",
+	});
+	const elapsed = performance.now() - started;
+	if (child.exitCode !== 0) {
+		const error = new TextDecoder().decode(child.stderr).trim();
+		fail(`fresh import exited ${String(child.exitCode)}: ${error.slice(0, 500)}`);
+	}
+	return elapsed;
+}
+
+function benchmarkFreshImport(
+	baselineRoot: string,
+	candidateRoot: string,
+	warmups: number,
+	samples: number,
+): ScenarioReport {
+	for (let index = 0; index < warmups; index += 1) {
+		timedFreshImport(index % 2 === 0 ? baselineRoot : candidateRoot);
+		timedFreshImport(index % 2 === 0 ? candidateRoot : baselineRoot);
+	}
+	const pairs: SamplePair[] = [];
+	for (let index = 0; index < samples; index += 1) {
+		if (index % 2 === 0) {
+			pairs.push({ baselineMs: timedFreshImport(baselineRoot), candidateMs: timedFreshImport(candidateRoot) });
+		} else {
+			const candidateMs = timedFreshImport(candidateRoot);
+			pairs.push({ baselineMs: timedFreshImport(baselineRoot), candidateMs });
+		}
+	}
+	const baselineMs = summary(pairs.map((pair) => pair.baselineMs));
+	const candidateMs = summary(pairs.map((pair) => pair.candidateMs));
+	const confidence = bootstrapMedianRatio(pairs);
+	const slowerThanBaseline = confidence[0] > 1 && candidateMs.p95 > baselineMs.p95;
+	return {
+		baselineMs,
+		candidateMs,
+		feature: false,
+		id: "fresh-live-thought-import",
+		medianRatioConfidence95: confidence,
+		regression: slowerThanBaseline,
+		slowerThanBaseline,
 	};
 }
 
 const options = parseOptions(process.argv.slice(2));
 initTheme("dark");
+process.stderr.write("Benchmarking fresh-live-thought-import...\n");
+const reports: ScenarioReport[] = [
+	benchmarkFreshImport(options.baselineRoot, options.candidateRoot, options.warmups, options.samples),
+];
 const baseline = await loadTransformer(options.baselineRoot);
 const candidate = await loadTransformer(options.candidateRoot);
 const selectedScenarios = scenarios();
-const reports: ScenarioReport[] = [];
 for (const scenario of selectedScenarios) {
 	process.stderr.write(`Benchmarking ${scenario.id}...\n`);
 	reports.push(benchmarkScenario(baseline, candidate, scenario, options.warmups, options.samples));
 }
 const confirmations: ScenarioReport[] = [];
 for (const report of reports.filter((candidateReport) => candidateReport.regression)) {
+	if (report.id === "fresh-live-thought-import") {
+		process.stderr.write("Confirming fresh-live-thought-import...\n");
+		confirmations.push(
+			benchmarkFreshImport(options.baselineRoot, options.candidateRoot, options.warmups, options.samples),
+		);
+		continue;
+	}
 	const scenario = selectedScenarios.find((candidateScenario) => candidateScenario.id === report.id);
 	if (!scenario) fail(`missing confirmation scenario ${report.id}`);
 	process.stderr.write(`Confirming ${scenario.id}...\n`);
