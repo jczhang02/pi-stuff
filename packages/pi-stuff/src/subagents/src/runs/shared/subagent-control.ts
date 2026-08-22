@@ -1,3 +1,4 @@
+import type { JsonInputValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeString } from "../../../../shared/runtime-type.js";
 import type {
 	ActivityState,
@@ -21,17 +22,21 @@ export const DEFAULT_CONTROL_CONFIG: ResolvedControlConfig = {
 	notifyChannels: CONTROL_NOTIFICATION_CHANNELS,
 };
 
-function parsePositiveInt(value: unknown): number | undefined {
+function parsePositiveInt(value: JsonInputValue): number | undefined {
 	if (!isRuntimeNumber(value)) return undefined;
 	if (!Number.isFinite(value) || !Number.isInteger(value) || value < 1) return undefined;
 	return value;
 }
 
-function parseControlList<T extends string>(value: unknown, allowed: readonly T[]): T[] | undefined {
+function parseControlList<T extends string>(value: JsonInputValue, allowed: readonly T[]): T[] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	if (value.length === 0) return [];
 	const allowedSet = new Set(allowed);
-	const parsed = value.filter((entry): entry is T => isRuntimeString(entry) && allowedSet.has(entry as T));
+	const parsed = value.filter((entry): entry is T => {
+		if (!isRuntimeString(entry)) return false;
+		// SAFETY: membership in the caller-owned allowed set proves entry is one of its T values.
+		return allowedSet.has(entry as T);
+	});
 	return parsed.length > 0 ? Array.from(new Set(parsed)) : undefined;
 }
 
@@ -118,25 +123,26 @@ export function buildControlEvent(input: {
 			: elapsedSeconds !== undefined
 				? `${input.agent} needs attention (no observed activity for ${elapsedSeconds}s)`
 				: `${input.agent} needs attention`);
-	return {
+	const event: ControlEvent = {
 		type,
-		...(input.from ? { from: input.from } : {}),
 		to: input.to,
 		ts,
 		runId: input.runId,
 		agent: input.agent,
-		...(input.index !== undefined ? { index: input.index } : {}),
 		message,
 		reason: input.reason ?? (type === "active_long_running" ? "active_long_running" : "idle"),
-		...(input.turns !== undefined ? { turns: input.turns } : {}),
-		...(input.tokens !== undefined ? { tokens: input.tokens } : {}),
-		...(input.toolCount !== undefined ? { toolCount: input.toolCount } : {}),
-		...(input.currentTool ? { currentTool: input.currentTool } : {}),
-		...(input.currentToolDurationMs !== undefined ? { currentToolDurationMs: input.currentToolDurationMs } : {}),
-		...(input.currentPath ? { currentPath: input.currentPath } : {}),
-		...(elapsedMs !== undefined ? { elapsedMs } : {}),
-		...(input.recentFailureSummary ? { recentFailureSummary: input.recentFailureSummary } : {}),
 	};
+	if (input.from) event.from = input.from;
+	if (input.index !== undefined) event.index = input.index;
+	if (input.turns !== undefined) event.turns = input.turns;
+	if (input.tokens !== undefined) event.tokens = input.tokens;
+	if (input.toolCount !== undefined) event.toolCount = input.toolCount;
+	if (input.currentTool) event.currentTool = input.currentTool;
+	if (input.currentToolDurationMs !== undefined) event.currentToolDurationMs = input.currentToolDurationMs;
+	if (input.currentPath) event.currentPath = input.currentPath;
+	if (elapsedMs !== undefined) event.elapsedMs = elapsedMs;
+	if (input.recentFailureSummary) event.recentFailureSummary = input.recentFailureSummary;
+	return event;
 }
 
 export function shouldNotifyControlEvent(config: ResolvedControlConfig, event: ControlEvent): boolean {
