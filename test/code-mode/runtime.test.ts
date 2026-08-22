@@ -166,6 +166,19 @@ test("the Connector exposes every active Suite Tool without a per-Tool caller co
 	});
 });
 
+test("the Connector reads the current Tool description instead of caching its initial contract", () => {
+	const registry = registryFixture();
+	const definition = registry.get("read");
+	if (!definition) throw new Error("missing read fixture");
+	let description = "Initial Agent roster";
+	Object.defineProperty(definition, "description", { get: () => description });
+	const connector = new SuiteCodeModeConnector(registry);
+
+	expect(connector.catalog().find((entry) => entry.name === "read")?.description).toBe("Initial Agent roster");
+	description = "Current Agent roster";
+	expect(connector.catalog().find((entry) => entry.name === "read")?.description).toBe("Current Agent roster");
+});
+
 test("top-level and in-program discovery share Cloudflare-ranked catalog data and typed describe output", async () => {
 	const connector = new SuiteCodeModeConnector(registryFixture());
 	const search = connector.search("read file");

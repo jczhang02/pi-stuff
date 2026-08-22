@@ -720,6 +720,32 @@ describe("Agents extension composition root", () => {
 		expect(Object.hasOwn(tool.parameters as object, "oneOf")).toBeFalse();
 	});
 
+	test("projects the current effective Agent roster into the public Tool contract", async () => {
+		const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pi-stuff-agent-roster-"));
+		temporaryDirectories.add(projectRoot);
+		const agentsDir = path.join(projectRoot, ".pi", "agents");
+		fs.mkdirSync(agentsDir, { recursive: true });
+		fs.writeFileSync(
+			path.join(agentsDir, "explore.md"),
+			[
+				"---",
+				"name: explore",
+				"description: Fast read-only code search Agent",
+				"tools: read, grep, find, ls, bash",
+				"---",
+				"Inspect local code and return concise evidence.",
+			].join("\n"),
+		);
+		const root = createHarness();
+		const tool = root.api.tools.get("subagent");
+		if (!tool) throw new Error("Expected public Agent tool");
+		const projectContext = { ...context(), cwd: projectRoot };
+
+		await root.api.fire("before_agent_start", { type: "before_agent_start" }, projectContext);
+
+		expect(tool.description).toContain("explore — Fast read-only code search Agent (tools: read, find, ls, bash)");
+	});
+
 	test("keeps session and Agent submission free of full artifact discovery", async () => {
 		const root = createHarness();
 		await root.api.fire("session_start", { reason: "startup", type: "session_start" });

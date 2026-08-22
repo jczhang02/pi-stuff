@@ -21,7 +21,7 @@ import {
 	isRuntimeString,
 } from "../../../shared/runtime-type.js";
 import { CachedToolRow, registerSuiteOwnedTool } from "../../../tool-display/index.js";
-import { discoverAgents } from "../agents/agents.ts";
+import { type AgentConfig, type AgentDiscoveryResult, type AgentScope, discoverAgents } from "../agents/agents.ts";
 import { createNativeSupervisorChannel } from "../intercom/native-supervisor-channel.ts";
 import { createAsyncJobTracker } from "../runs/background/async-job-tracker.ts";
 import type { CompletionNotification } from "../runs/background/notify.ts";
@@ -36,6 +36,7 @@ import {
 import { hasLiveNestedDescendants } from "../runs/shared/nested-events.ts";
 import {
 	PI_STUFF_AGENT_PATH_ENV,
+	resolvePiLaunchToolPlan,
 	SUBAGENT_CHILD_ENV,
 	SUBAGENT_PARENT_PHYSICAL_SESSION_ENV,
 	SUBAGENT_PARENT_SESSION_ENV,
@@ -101,7 +102,7 @@ import {
 	toEngineParams,
 } from "./product-executor.ts";
 import { SubagentParams } from "./schemas.ts";
-import { buildSubagentToolDescription } from "./tool-description.ts";
+import { type AgentToolRosterEntry, buildSubagentToolDescription } from "./tool-description.ts";
 
 export { loadConfig } from "./config.ts";
 
@@ -164,6 +165,7 @@ interface CompactCompletionNotifier {
 interface RootExecutorInput {
 	readonly config: PiStuffAgentsConfig;
 	readonly codeModeProviderTools?: readonly string[];
+	readonly discoverAgents: (cwd: string, scope: AgentScope) => Promise<AgentDiscoveryResult>;
 	readonly pi: ExtensionAPI;
 	readonly projectContext: typeof projectCurrentContext;
 	readonly resolveCodeModeEnabled?: () => boolean;
@@ -212,6 +214,7 @@ export interface ExtensionRootDependencies {
 	readonly createSupervisor: (pi: ExtensionAPI, state: SubagentState) => RootSupervisor;
 	readonly createTracker: (pi: ExtensionAPI, state: SubagentState, onRefresh: () => void) => RootTracker;
 	readonly createWatcher: (input: RootWatcherInput) => RootWatcher;
+	readonly discoverAgents: (cwd: string, scope: AgentScope) => Promise<AgentDiscoveryResult>;
 	readonly ensureDirectory: (directory: string) => void;
 	readonly getCoordinator: (pi: ExtensionAPI) => CommandDialogCoordinator;
 	readonly isChildProcess: () => boolean;
@@ -245,6 +248,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 		childBaseExtensionPath,
 		codeModeProviderTools,
 		config,
+		discoverAgents: discoverAgentDefinitions,
 		onForegroundStatus,
 		pi,
 		projectContext,
@@ -259,7 +263,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 			tempArtifactsDir: getArtifactsDir(null),
 			getSubagentSessionRoot,
 			expandTilde,
-			discoverAgents,
+			discoverAgents: discoverAgentDefinitions,
 			projectContext,
 			childBaseExtensionPath,
 			codeModeProviderTools,
@@ -295,6 +299,7 @@ const PRODUCTION_DEPENDENCIES: ExtensionRootDependencies = {
 			notifier,
 			deliverIntercomResults: true,
 		}),
+	discoverAgents,
 	ensureDirectory: ensureAccessibleDir,
 	getCoordinator: getCommandDialogCoordinator,
 	isChildProcess: () => process.env[SUBAGENT_CHILD_ENV] === "1",
@@ -341,6 +346,22 @@ function createState(config: PiStuffAgentsConfig): SubagentState {
 	};
 	if (config.artifactDir) state.artifactDirPreference = config.artifactDir;
 	return state;
+}
+
+function projectAgentRoster(agents: readonly AgentConfig[], cwd: string): AgentToolRosterEntry[] {
+	return agents
+		.map((agent) => {
+			const plan = resolvePiLaunchToolPlan({
+				tools: agent.tools,
+				extensions: agent.extensions,
+				subagentOnlyExtensions: agent.subagentOnlyExtensions,
+				mcpDirectTools: agent.mcpDirectTools,
+				cwd,
+			});
+			const entry = { name: agent.name, description: agent.description };
+			return plan.explicitToolAllowlist ? { ...entry, tools: plan.effectiveToolAllowlist } : entry;
+		})
+		.sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function projectCompletionState<Value>(value: Value): CompletionStateProjection {
@@ -573,6 +594,7 @@ export default function registerSubagentExtension(
 		state,
 		childBaseExtensionPath: deps.childBaseExtensionPath,
 		codeModeProviderTools: deps.codeModeProviderTools,
+		discoverAgents: deps.discoverAgents,
 	});
 	const executionGovernor = deps.createGovernorCoordinator(config);
 	const tracker = deps.createTracker(pi, state, () => current.refresh());
@@ -605,6 +627,7 @@ export default function registerSubagentExtension(
 	) => Promise<AgentEngineResult>;
 	let activateCurrentSessionRuntime!: (ctx: ExtensionContext) => Promise<void>;
 	let recoverCurrentSessionHistory!: (ctx: ExtensionContext) => Promise<void>;
+	let agentRoster: AgentToolRosterEntry[] = [];
 
 	const showAgents = async (ctx: ExtensionContext, initialKey?: string): Promise<void> => {
 		if (!ctx.hasUI) return Promise.resolve();
@@ -1033,7 +1056,9 @@ export default function registerSubagentExtension(
 	const tool: ToolDefinition<typeof SubagentParams, Details> = {
 		name: "subagent",
 		label: "Agent",
-		description: buildSubagentToolDescription(),
+		get description() {
+			return buildSubagentToolDescription(agentRoster);
+		},
 		parameters: SubagentParams,
 		async execute(id, rawParams, signal, onUpdate, ctx) {
 			// SAFETY: ToolDefinition validates rawParams against SubagentParams before invoking execute.
@@ -1059,6 +1084,13 @@ export default function registerSubagentExtension(
 	};
 
 	registerSuiteOwnedTool(pi, tool, createAgentToolPresentation());
+	pi.on("before_agent_start", async (_event, ctx) => {
+		if (!active) return;
+		const epoch = sessionEpoch;
+		const discovered = await deps.discoverAgents(ctx.cwd, "both");
+		if (!active || epoch !== sessionEpoch) return;
+		agentRoster = projectAgentRoster(discovered.agents, ctx.cwd);
+	});
 	pi.registerCommand("agents", {
 		description: "Inspect and control Agents in the current session",
 		handler: async (_args, ctx) => showAgents(ctx),
@@ -1158,6 +1190,7 @@ export default function registerSubagentExtension(
 		if (!active) return;
 		await previousCleanupPromise;
 		sessionEpoch += 1;
+		agentRoster = [];
 		// A legacy compatibility barrier belongs to exactly one parent session.
 		// Release it before rebinding state so A→B→A cannot deadlock against this
 		// extension instance's own stale A lock.

@@ -3155,6 +3155,12 @@ function attachRenderer<TParams extends TSchema, TDetails>(
 			);
 		},
 	};
+	if (Object.getOwnPropertyDescriptor(tool, "description")?.get) {
+		Object.defineProperty(decorated, "description", {
+			enumerable: true,
+			get: () => tool.description,
+		});
+	}
 	// SAFETY: marker consumers recover this metadata only from the Tool definition that owns the same argument schema.
 	const marker: SuiteActivityRendererMarker = {
 		activity: presentation.activity as ToolActivityMetadata<ToolArguments, unknown>,
