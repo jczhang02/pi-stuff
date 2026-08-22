@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ServerEntry } from "../../../../mcp/runtime/types.ts";
 import { type JsonInputValue, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
@@ -34,8 +33,25 @@ const IMPORT_PATHS = {
 type ToolPrefix = "server" | "none" | "short";
 type ImportKind = keyof typeof IMPORT_PATHS;
 
+interface McpDirectToolServerEntry {
+	args?: string[];
+	auth?: "bearer" | "oauth" | false;
+	bearerToken?: string;
+	bearerTokenEnv?: string;
+	command?: string;
+	cwd?: string;
+	directTools?: boolean | string[];
+	env?: Record<string, string>;
+	excludeTools?: string[];
+	exposeResources?: boolean;
+	headers?: Record<string, string>;
+	includeTools?: string[];
+	socket?: string;
+	url?: string;
+}
+
 interface McpConfig {
-	mcpServers: Record<string, ServerEntry>;
+	mcpServers: Record<string, McpDirectToolServerEntry>;
 	imports?: ImportKind[];
 	settings?: {
 		toolPrefix?: ToolPrefix;
@@ -186,9 +202,9 @@ function stringRecord(value: JsonValue | undefined): Record<string, string> | un
 	return record;
 }
 
-function serverEntry(value: JsonValue): ServerEntry | undefined {
+function serverEntry(value: JsonValue): McpDirectToolServerEntry | undefined {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	const entry: ServerEntry = {};
+	const entry: McpDirectToolServerEntry = {};
 	for (const key of ["bearerToken", "bearerTokenEnv", "command", "cwd", "socket", "url"] as const) {
 		const field = value[key];
 		if (field !== undefined && !isRuntimeString(field)) return undefined;
@@ -220,7 +236,7 @@ function serverEntry(value: JsonValue): ServerEntry | undefined {
 	return entry;
 }
 
-function serverEntries(value: JsonValue | undefined): Record<string, ServerEntry> {
+function serverEntries(value: JsonValue | undefined): Record<string, McpDirectToolServerEntry> {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return {};
 	return Object.fromEntries(
 		Object.entries(value).flatMap(([name, definition]) => {
@@ -261,7 +277,7 @@ function mergeConfigs(base: McpConfig, next: McpConfig): McpConfig {
 function expandImports(config: McpConfig, cwd: string): McpConfig {
 	if (!config.imports?.length) return config;
 
-	const importedServers: Record<string, ServerEntry> = {};
+	const importedServers: Record<string, McpDirectToolServerEntry> = {};
 	for (const importKind of config.imports) {
 		const importPath = resolveImportPath(importKind, cwd);
 		if (!importPath) continue;
@@ -291,7 +307,7 @@ function resolveImportPath(importKind: ImportKind, cwd: string): string | null {
 	return null;
 }
 
-function extractServers(config: JsonValue, kind: ImportKind): Record<string, ServerEntry> {
+function extractServers(config: JsonValue, kind: ImportKind): Record<string, McpDirectToolServerEntry> {
 	if (!config || !isRuntimeObject(config) || Array.isArray(config)) return {};
 	const servers =
 		kind === "cursor" || kind === "windsurf" || kind === "vscode"
@@ -372,13 +388,16 @@ function parseSelections(selections: string[]) {
 	return { servers, tools };
 }
 
-function isServerCacheValid(entry: ServerCacheEntry | undefined, definition: ServerEntry): entry is ServerCacheEntry {
+function isServerCacheValid(
+	entry: ServerCacheEntry | undefined,
+	definition: McpDirectToolServerEntry,
+): entry is ServerCacheEntry {
 	if (!entry || entry.configHash !== computeMcpServerHash(definition)) return false;
 	if (!entry.cachedAt || !isRuntimeNumber(entry.cachedAt)) return false;
 	return Date.now() - entry.cachedAt <= CACHE_MAX_AGE_MS;
 }
 
-export function computeMcpServerHash(definition: ServerEntry): string {
+export function computeMcpServerHash(definition: McpDirectToolServerEntry): string {
 	const identity = {
 		command: definition.command,
 		args: definition.args,
@@ -476,7 +495,7 @@ function getMissingEnvVars(value: string): string[] {
 	return [...missing];
 }
 
-function resolveServerUrl(definition: Pick<ServerEntry, "url">): string | undefined {
+function resolveServerUrl(definition: Pick<McpDirectToolServerEntry, "url">): string | undefined {
 	if (definition.url == null) return undefined;
 	if (!isRuntimeString(definition.url)) throw new Error("MCP server URL must be a string");
 
@@ -504,7 +523,9 @@ function resolveConfigPath(value: string | undefined): string | undefined {
 	return resolved;
 }
 
-function resolveBearerToken(definition: Pick<ServerEntry, "bearerToken" | "bearerTokenEnv">): string | undefined {
+function resolveBearerToken(
+	definition: Pick<McpDirectToolServerEntry, "bearerToken" | "bearerTokenEnv">,
+): string | undefined {
 	if (definition.bearerToken !== undefined) return interpolateSecretExpression(definition.bearerToken);
 	return definition.bearerTokenEnv ? process.env[definition.bearerTokenEnv] : undefined;
 }

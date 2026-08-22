@@ -59,14 +59,12 @@ interface MockSelectorKeybindings {
 	matches(data: string, key: string): boolean;
 }
 
-interface MockSelectorFactory {
-	(
-		tui: { readonly terminal: { rows: number }; requestRender(): void },
-		theme: { bold(text: string): string; fg(color: string, text: string): string },
-		keybindings: MockSelectorKeybindings,
-		close: <Value>(value: Value) => void,
-	): MockSelectorComponent;
-}
+type MockSelectorFactory = (
+	tui: { readonly terminal: { rows: number }; requestRender(): void },
+	theme: { bold(text: string): string; fg(color: string, text: string): string },
+	keybindings: MockSelectorKeybindings,
+	close: <Value>(value: Value) => void,
+) => MockSelectorComponent;
 
 export interface MockContextOverrides {
 	abort?: () => void;

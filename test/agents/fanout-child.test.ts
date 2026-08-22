@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createEventBus, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Type, type TSchema } from "typebox";
+import { type TSchema, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeFunction } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import type { PiStuffAgentsConfig } from "../../packages/pi-stuff/src/subagents/src/extension/config.js";

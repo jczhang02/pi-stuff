@@ -14,7 +14,7 @@ import { buildSkillInjection, normalizeSkillInput, resolveSkillsWithFallback } f
 import { writePrivateAtomicJson } from "../../shared/atomic-json.ts";
 import { reportAgentDiagnostic } from "../../shared/diagnostics.ts";
 import { resolveDisplayDescription } from "../../shared/display-description.ts";
-import { agentDefinitionDigest, launchBindingDigest, type LaunchBindingInput } from "../../shared/launch-contract.ts";
+import { agentDefinitionDigest, type LaunchBindingInput, launchBindingDigest } from "../../shared/launch-contract.ts";
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
 import { ensurePrivateDirectory, readBoundedOwnedFile } from "../../shared/private-directory.ts";
 import { readProcessStartIdentity } from "../../shared/process-identity.ts";

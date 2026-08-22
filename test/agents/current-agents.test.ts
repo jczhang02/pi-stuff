@@ -111,7 +111,7 @@ function signalledProcessTerminal(
 	terminationOrigin?: "external" | "manager-final-drain" | "manager-request",
 	exitCode: number | null = null,
 ): ProcessTerminalV1 {
-	const instance: ProcessTerminalV1["instances"][number] = {
+	const instance: Extract<ProcessTerminalV1, { state: "observed" }>["instances"][number] = {
 		kind: "pi-writer",
 		processInstanceId: `${runId}-writer`,
 		attempt: 0,

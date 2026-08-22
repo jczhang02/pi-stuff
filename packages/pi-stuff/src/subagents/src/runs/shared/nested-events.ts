@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentWorkOrigin } from "../../../../conversation-ui/agent-run-origin.js";
-import { parseJsonValue } from "../../../../shared/json-value.js";
+import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import {
 	isRuntimeBoolean,
 	isRuntimeNumber,
@@ -1061,7 +1061,7 @@ function boundedRegistry(registry: NestedRegistry): NestedRegistry {
 
 function parseRecord(content: string, route: NestedRoute): NestedEventRecord | undefined {
 	if (Buffer.byteLength(content, "utf-8") > MAX_EVENT_BYTES) return undefined;
-	let parsed;
+	let parsed: JsonValue;
 	try {
 		parsed = parseJsonValue(content);
 	} catch {

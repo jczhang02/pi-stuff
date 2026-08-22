@@ -23,7 +23,7 @@ import {
 import { requestStatuslineGitRefreshAfterUserWork, sendSuiteAgentMessage } from "../../conversation-ui/index.js";
 import type { SuiteAgentMessageHost } from "../../conversation-ui/suite-agent-message.js";
 import { settleWithin } from "../../lifecycle-deadline.js";
-import { parseJsonValue } from "../../shared/json-value.js";
+import { type JsonValue, parseJsonValue } from "../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
 import { reportWorkDiagnostic } from "./diagnostics.js";
@@ -1127,7 +1127,7 @@ export class BackgroundWorkRuntime {
 			if (newline === -1) return;
 			const line = activity.controlBuffer.slice(0, newline);
 			activity.controlBuffer = activity.controlBuffer.slice(newline + 1);
-			let event;
+			let event: JsonValue;
 			try {
 				event = parseJsonValue(line);
 			} catch {

@@ -64,8 +64,8 @@ import {
 	boundStreamedRecentOutput,
 	extractToolArgsPreview,
 } from "../../packages/pi-stuff/src/subagents/src/shared/utils.js";
-import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import type { ToolArguments } from "../../packages/pi-stuff/src/tool-display/activity.js";
+import { getToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { createExtensionApi } from "../fixtures/extension-api.js";
 import { testTheme } from "../fixtures/extension-context.js";
 

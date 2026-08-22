@@ -21,6 +21,7 @@ import type { PiStuffAgentsConfig } from "../../packages/pi-stuff/src/subagents/
 import registerAgents, {
 	type ExtensionRootDependencies,
 } from "../../packages/pi-stuff/src/subagents/src/extension/index.js";
+import type { PublicAgentParams } from "../../packages/pi-stuff/src/subagents/src/extension/product-executor.js";
 import type { CompletionNotification } from "../../packages/pi-stuff/src/subagents/src/runs/background/notify.js";
 import {
 	deriveLaunchRunId,
@@ -31,6 +32,7 @@ import type {
 	AgentExecutionInvocation,
 	GovernedAgentParams,
 } from "../../packages/pi-stuff/src/subagents/src/runtime/agent-execution-coordinator.js";
+import type { AgentGovernorLease } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.js";
 import { CurrentAgents } from "../../packages/pi-stuff/src/subagents/src/session/current-agents.js";
 import {
 	ASYNC_DIR,
@@ -42,7 +44,6 @@ import {
 	SUBAGENT_FOREGROUND_COMPLETE_EVENT,
 	type SubagentState,
 } from "../../packages/pi-stuff/src/subagents/src/shared/types.js";
-import type { AgentGovernorLease } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.js";
 import { captureExtensionHandlers, createExtensionApi } from "../fixtures/extension-api.js";
 import { createExtensionCommandContext } from "../fixtures/extension-context.js";
 
@@ -71,7 +72,7 @@ interface TestTool extends Tool {
 	readonly label: string;
 	execute(
 		id: string,
-		params: SubagentParamsLike,
+		params: PublicAgentParams,
 		signal: AbortSignal,
 		onUpdate: undefined,
 		ctx: ExtensionContext,

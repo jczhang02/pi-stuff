@@ -315,7 +315,7 @@ describe("native supervisor protocol compatibility", () => {
 	test("keeps one durable reply owner after an ask is accepted across two Pi hosts", async () => {
 		const now = Date.now();
 		const runId = `ask-${now}`;
-		const request = {
+		const request: SupervisorRequestFixture = {
 			...baseRequest(`ask-request-${now}`, runId, now),
 			reason: "need_decision",
 			message: "Choose one safe path",
@@ -420,7 +420,7 @@ describe("native supervisor protocol compatibility", () => {
 	test("releases a durable reply owner on pause so the next session Host can take over", async () => {
 		const now = Date.now();
 		const runId = `paused-ask-${now}`;
-		const request = {
+		const request: SupervisorRequestFixture = {
 			...baseRequest(`paused-ask-request-${now}`, runId, now),
 			reason: "need_decision",
 			message: "Keep the request recoverable across a session switch",
@@ -469,7 +469,7 @@ describe("native supervisor protocol compatibility", () => {
 	test("keeps an in-flight delivery claimed until the replaced session becomes stale", async () => {
 		const now = Date.now();
 		const runId = `in-flight-pause-${now}`;
-		const request = {
+		const request: SupervisorRequestFixture = {
 			...baseRequest(`in-flight-pause-request-${now}`, runId, now),
 			reason: "need_decision",
 			message: "Do not deliver this request concurrently across a session switch",
@@ -578,7 +578,7 @@ describe("native supervisor protocol compatibility", () => {
 	test("does not rescan the session for an already accepted request awaiting a reply", async () => {
 		const now = Date.now();
 		const runId = `accepted-ask-${now}`;
-		const request = {
+		const request: SupervisorRequestFixture = {
 			...baseRequest(`accepted-ask-request-${now}`, runId, now),
 			reason: "need_decision",
 			message: "Keep waiting for the supervisor",
@@ -618,7 +618,7 @@ describe("native supervisor protocol compatibility", () => {
 	test("does not rescan the session on repeated polls during an unaccepted delivery grace period", async () => {
 		const now = Date.now();
 		const runId = `delivery-grace-${now}`;
-		const request = {
+		const request: SupervisorRequestFixture = {
 			...baseRequest(`delivery-grace-request-${now}`, runId, now),
 			reason: "need_decision",
 			message: "Wait for canonical session persistence",
@@ -654,7 +654,7 @@ describe("native supervisor protocol compatibility", () => {
 	test("indexes the session once and records accepted delivery without another history scan", async () => {
 		const now = Date.now();
 		const runId = `accepted-index-${now}`;
-		const request = {
+		const request: SupervisorRequestFixture = {
 			...baseRequest(`accepted-index-request-${now}`, runId, now),
 			reason: "need_decision",
 			expectsReply: true,
@@ -684,7 +684,7 @@ describe("native supervisor protocol compatibility", () => {
 	test("treats a reply consumed immediately after publication as delivered", async () => {
 		const now = Date.now();
 		const runId = `reply-race-${now}`;
-		const request = {
+		const request: SupervisorRequestFixture = {
 			...baseRequest(`reply-race-request-${now}`, runId, now),
 			reason: "need_decision",
 			message: "Choose one safe path",

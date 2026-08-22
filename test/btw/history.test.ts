@@ -3,8 +3,8 @@ import {
 	createEventBus,
 	type ExtensionAPI,
 	type ExtensionContext,
-	type SessionShutdownEvent,
 	type SessionEntry,
+	type SessionShutdownEvent,
 } from "@earendil-works/pi-coding-agent";
 import {
 	type AppendHistoryEntry,

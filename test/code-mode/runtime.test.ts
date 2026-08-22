@@ -13,8 +13,8 @@ import {
 } from "../../packages/pi-stuff/src/code-mode/extension.js";
 import { CodeModeHostLostError } from "../../packages/pi-stuff/src/code-mode/host/host-client.js";
 import { CodeModeSessionLedger } from "../../packages/pi-stuff/src/code-mode/ledger.js";
-import { type CodeModeExecutor, CodeModeRuntime } from "../../packages/pi-stuff/src/code-mode/runtime.js";
 import type { RuntimeResponse } from "../../packages/pi-stuff/src/code-mode/protocol.js";
+import { type CodeModeExecutor, CodeModeRuntime } from "../../packages/pi-stuff/src/code-mode/runtime.js";
 import type {
 	SuiteToolCodeModeLifecycle,
 	SuiteToolDefinitionRegistry,

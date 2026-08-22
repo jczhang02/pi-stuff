@@ -1,8 +1,9 @@
 import { access, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import { parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_HOST_PROFILE, CERTIFIED_PI_SOURCE_COMMIT, CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 import { runPiRpcSmoke } from "./smoke-pi.ts";
@@ -248,9 +249,9 @@ export async function verifyInstalledRuntimeDependencies(baseDirectory = package
 			throw new Error(`Runtime dependency ${name} must use an exact version`);
 		}
 		const installedManifestPath = join(baseDirectory, "node_modules", name, "package.json");
-		let installedManifest;
+		let installedManifest: Static<typeof INSTALLED_MANIFEST_SCHEMA>;
 		try {
-			const parsed = JSON.parse(await readFile(installedManifestPath, "utf8"));
+			const parsed = parseJsonValue(await readFile(installedManifestPath, "utf8"));
 			if (!Check(INSTALLED_MANIFEST_SCHEMA, parsed)) throw new Error("installed manifest must be an object");
 			installedManifest = parsed;
 		} catch (error) {

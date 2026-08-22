@@ -1,8 +1,8 @@
 import { access, readFile } from "node:fs/promises";
 import { join, posix, resolve } from "node:path";
-import ts from "typescript";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import ts from "typescript";
 import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const FORBIDDEN_HOST_FILES = new Set(["auth.json", "models-store.json"]);

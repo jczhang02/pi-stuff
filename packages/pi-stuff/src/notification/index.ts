@@ -9,7 +9,7 @@ import {
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { extractNotificationPreview, formatNotificationContent } from "./format.js";
 import { createNotificationSettingsView } from "./notification-settings-dialog.js";
-import { type NotificationClock, type NotificationRuntimeEvent, NotificationRuntime } from "./runtime.js";
+import { type NotificationClock, NotificationRuntime, type NotificationRuntimeEvent } from "./runtime.js";
 import { type NotificationSettings, NotificationSettingsStore } from "./settings.js";
 import { sendTerminalNotification, type TerminalNotificationResult } from "./transport.js";
 

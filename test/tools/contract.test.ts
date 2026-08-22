@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-	createEventBus,
 	type AgentToolResult,
+	createEventBus,
 	type EventBus,
 	type Theme,
 	type ToolDefinition,
