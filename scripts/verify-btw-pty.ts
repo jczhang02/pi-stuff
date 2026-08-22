@@ -1,7 +1,15 @@
 import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	type JsonInputValue,
+	parseJsonValue,
+} from "../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/btw-pty-provider.ts");
@@ -14,56 +22,61 @@ export interface BtwPtyVerificationOptions {
 	readonly rows: number;
 }
 
-interface RequestRecord {
-	readonly lastUser?: unknown;
-	readonly messageChars?: unknown;
-	readonly messageCount?: unknown;
-	readonly tools?: unknown;
-}
-
-interface PersistedLine {
-	readonly type?: unknown;
-	readonly customType?: unknown;
-	readonly parentSession?: unknown;
-	readonly message?: unknown;
-}
+const REQUEST_RECORD_SCHEMA = Type.Object(
+	{
+		lastUser: Type.Optional(Type.String()),
+		messageChars: Type.Optional(Type.Number()),
+		messageCount: Type.Optional(Type.Number()),
+		tools: Type.Optional(Type.Array(Type.String())),
+	},
+	{ additionalProperties: true },
+);
+type RequestRecord = Static<typeof REQUEST_RECORD_SCHEMA>;
 
 interface PersistedSession {
 	readonly path: string;
-	readonly lines: readonly PersistedLine[];
+	readonly lines: readonly JsonInputObject[];
 	readonly messageText: readonly string[];
 }
 
-function textPart(value: unknown): { readonly type?: unknown; readonly text?: unknown } | undefined {
-	return isRuntimeObject(value) && value !== null
-		? (value as { readonly type?: unknown; readonly text?: unknown })
-		: undefined;
-}
-
-function contentText(content: unknown): string {
+function contentText(content: JsonInputValue): string {
 	if (isRuntimeString(content)) return content;
 	if (!Array.isArray(content)) return "";
 	return content
-		.map(textPart)
-		.filter((part): part is { readonly type?: unknown; readonly text?: unknown } => part !== undefined)
-		.filter((part) => part.type === "text" && isRuntimeString(part.text))
-		.map((part) => part.text as string)
+		.flatMap((part) => {
+			if (!isJsonInputObject(part) || part["type"] !== "text" || !isRuntimeString(part["text"])) return [];
+			return [part["text"]];
+		})
 		.join("\n");
 }
 
-function messageText(line: PersistedLine): string | undefined {
-	if (line.type !== "message") return undefined;
-	if (!isRuntimeObject(line.message) || line.message === null) return undefined;
-	const message = line.message as { readonly role?: unknown; readonly content?: unknown };
-	if (message.role !== "user" && message.role !== "assistant") return undefined;
-	return contentText(message.content);
+function messageText(line: JsonInputObject): string | undefined {
+	if (line["type"] !== "message" || !isJsonInputObject(line["message"])) return undefined;
+	const message = line["message"];
+	if (message["role"] !== "user" && message["role"] !== "assistant") return undefined;
+	return contentText(message["content"]);
+}
+
+function parseRequestRecords(contents: string): RequestRecord[] {
+	return contents
+		.trim()
+		.split("\n")
+		.map((line) => {
+			const record = JSON.parse(line);
+			if (!Check(REQUEST_RECORD_SCHEMA, record)) fail("provider log contains a malformed request record");
+			return record;
+		});
 }
 
 async function readSession(path: string): Promise<PersistedSession> {
 	const lines = (await readFile(path, "utf8"))
 		.trim()
 		.split("\n")
-		.map((line) => JSON.parse(line) as PersistedLine);
+		.map((line) => {
+			const value = parseJsonValue(line);
+			if (!isJsonInputObject(value)) fail(`session ${path} contains a non-object record`);
+			return value;
+		});
 	return {
 		path,
 		lines,
@@ -288,10 +301,7 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 			fail(diagnostic || `expect exited ${result.exitCode}`);
 		}
 
-		const requests = (await readFile(requestLog, "utf8"))
-			.trim()
-			.split("\n")
-			.map((line) => JSON.parse(line) as RequestRecord);
+		const requests = parseRequestRecords(await readFile(requestLog, "utf8"));
 		if (requests.length !== 3) fail(`expected three model requests, received ${requests.length}`);
 		const [main, side, secondSide] = requests;
 		if (main?.lastUser !== "main request") fail("main request was not observed");
@@ -321,7 +331,7 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 			}
 		}
 		const originalHistory = original.lines.filter(
-			(line) => line.type === "custom" && line.customType === "@jczhang02/pi-stuff-btw/history/v1",
+			(line) => line["type"] === "custom" && line["customType"] === "@jczhang02/pi-stuff-btw/history/v1",
 		);
 		if (
 			originalHistory.length !== 3 ||
@@ -338,13 +348,13 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 		}
 		if (
 			promoted.lines.some(
-				(line) => line.type === "custom" && line.customType === "@jczhang02/pi-stuff-btw/history/v1",
+				(line) => line["type"] === "custom" && line["customType"] === "@jczhang02/pi-stuff-btw/history/v1",
 			)
 		) {
 			fail("the promoted session inherited BTW display history");
 		}
-		const promotedHeader = promoted.lines.find((line) => line.type === "session");
-		if (promotedHeader?.parentSession !== original.path)
+		const promotedHeader = promoted.lines.find((line) => line["type"] === "session");
+		if (promotedHeader?.["parentSession"] !== original.path)
 			fail("the promoted session lost its original-session lineage");
 
 		const resume = Bun.spawnSync(["expect", "-c", resumeExpectProgram()], {
@@ -385,14 +395,11 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 		if (!fitDuration || Number(fitDuration) > 2_000) {
 			fail(`large BTW fit took ${fitDuration ?? "an unknown number of"} ms`);
 		}
-		const largeRequests = (await readFile(largeRequestLog, "utf8"))
-			.trim()
-			.split("\n")
-			.map((line) => JSON.parse(line) as RequestRecord);
+		const largeRequests = parseRequestRecords(await readFile(largeRequestLog, "utf8"));
 		if (largeRequests.length !== 2) fail(`expected main and large BTW requests, received ${largeRequests.length}`);
 		const largeRequest = largeRequests[1];
 		if (largeRequest?.lastUser !== "large fit question") fail("large BTW question was not observed");
-		if (!isRuntimeNumber(largeRequest.messageChars) || largeRequest.messageChars > 750_000) {
+		if (largeRequest.messageChars === undefined || largeRequest.messageChars > 750_000) {
 			fail(`large BTW request was not fitted to the model window: ${String(largeRequest.messageChars)}`);
 		}
 		if (!Array.isArray(largeRequest.tools) || largeRequest.tools.length !== 0) {
@@ -402,9 +409,11 @@ export async function verifyBtwPty(options: BtwPtyVerificationOptions): Promise<
 			.filter((entry) => entry.endsWith(".jsonl"))
 			.map((entry) => join(largeSessionDirectory, entry));
 		if (largeSessionFiles.length !== 1) fail(`expected one large-fit session, received ${largeSessionFiles.length}`);
-		const largeSession = await readSession(largeSessionFiles[0] as string);
+		const [largeSessionFile] = largeSessionFiles;
+		if (!largeSessionFile) fail("large-fit session file was not found");
+		const largeSession = await readSession(largeSessionFile);
 		const largeHistory = largeSession.lines.filter(
-			(line) => line.type === "custom" && line.customType === "@jczhang02/pi-stuff-btw/history/v1",
+			(line) => line["type"] === "custom" && line["customType"] === "@jczhang02/pi-stuff-btw/history/v1",
 		);
 		if (!JSON.stringify(largeHistory).includes('"contextTrimmed":true')) {
 			fail("large BTW fit was not recorded as trimmed");
@@ -420,7 +429,12 @@ if (import.meta.main) {
 		[100, 32],
 		[64, 28],
 	] as const) {
-		await verifyBtwPty({ piBinary: PI_BIN, packagePath: join(root, "packages/pi-stuff"), columns, rows });
+		await verifyBtwPty({
+			piBinary: PI_BIN,
+			packagePath: join(root, "packages/pi-stuff"),
+			columns,
+			rows,
+		});
 	}
 	console.log("Certified BTW in 100x32 and 64x28 PTYs");
 }

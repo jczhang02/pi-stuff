@@ -3,8 +3,11 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import { createLiveThoughtTransformer } from "../packages/pi-stuff/src/conversation-ui/live-thought.js";
-import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { isJsonInputObject, type JsonInputValue, parseJsonValue } from "../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import {
 	DIAGNOSTIC_PTY_SUMMARY,
 	FIXTURE_THINKING,
@@ -84,22 +87,26 @@ export interface ThemeLifecycleEvidence {
 	readonly verified: readonly string[];
 }
 
-interface FixtureRecord {
-	readonly commands?: unknown;
-	readonly lastUser?: unknown;
-	readonly markdownTransformer?: unknown;
-	readonly model?: unknown;
-	readonly provider?: unknown;
-	readonly priorThinkingPreserved?: unknown;
-	readonly selected?: unknown;
-	readonly success?: unknown;
-	readonly theme?: unknown;
-	readonly themeAccent?: unknown;
-	readonly themeMode?: unknown;
-	readonly themes?: unknown;
-	readonly type?: unknown;
-	readonly usingOAuth?: unknown;
-}
+const FIXTURE_RECORD_SCHEMA = Type.Object(
+	{
+		commands: Type.Optional(Type.Array(Type.String())),
+		lastUser: Type.Optional(Type.String()),
+		markdownTransformer: Type.Optional(Type.Boolean()),
+		model: Type.Optional(Type.String()),
+		provider: Type.Optional(Type.String()),
+		priorThinkingPreserved: Type.Optional(Type.Boolean()),
+		selected: Type.Optional(Type.Boolean()),
+		success: Type.Optional(Type.Boolean()),
+		theme: Type.Optional(Type.String()),
+		themeAccent: Type.Optional(Type.String()),
+		themeMode: Type.Optional(Type.String()),
+		themes: Type.Optional(Type.Array(Type.String())),
+		type: Type.Optional(Type.String()),
+		usingOAuth: Type.Optional(Type.Boolean()),
+	},
+	{ additionalProperties: true },
+);
+type FixtureRecord = Static<typeof FIXTURE_RECORD_SCHEMA>;
 
 interface CasePaths {
 	readonly config: string;
@@ -115,11 +122,9 @@ function fail(message: string): never {
 }
 
 function commandOutput(command: string, args: readonly string[], options: { readonly cwd?: string } = {}): string {
-	const result = Bun.spawnSync([command, ...args], {
-		...(options.cwd ? { cwd: options.cwd } : {}),
-		stderr: "pipe",
-		stdout: "pipe",
-	});
+	const result = options.cwd
+		? Bun.spawnSync([command, ...args], { cwd: options.cwd, stderr: "pipe", stdout: "pipe" })
+		: Bun.spawnSync([command, ...args], { stderr: "pipe", stdout: "pipe" });
 	if (result.exitCode !== 0) {
 		fail(
 			`${command} ${args.join(" ")} exited ${String(result.exitCode)}: ${result.stderr.toString().trim() || result.stdout.toString().trim()}`,
@@ -586,18 +591,18 @@ async function waitForPersistedSetting(
 	path: string,
 	namespace: string,
 	key: string,
-	expected: unknown,
-): Promise<Record<string, unknown>> {
+	expected: boolean | string,
+): Promise<void> {
 	const deadline = Date.now() + WAIT_TIMEOUT_MS;
 	let last = "settings file not created";
 	while (Date.now() < deadline) {
 		try {
 			const text = await readFile(path, "utf8");
 			last = text;
-			const file = JSON.parse(text) as Record<string, unknown>;
-			const section = file[namespace];
-			const settings = (isRuntimeObject(section) && section !== null ? section : {}) as Record<string, unknown>;
-			if (Object.is(settings[key], expected)) return settings;
+			const file = parseJsonValue(text);
+			if (!isJsonInputObject(file)) throw new Error("settings file is not a JSON object");
+			const settings = file[namespace];
+			if (isJsonInputObject(settings) && Object.is(settings[key], expected)) return;
 		} catch (error) {
 			last = String(error);
 		}
@@ -617,10 +622,10 @@ async function waitForFixtureRecords(path: string, type: string, count: number):
 	fail(`fixture log did not reach ${String(count)} ${type} record(s)`);
 }
 
-function containsFixtureThinking(value: unknown): boolean {
+function containsFixtureThinking(value: JsonInputValue): boolean {
 	if (value === FIXTURE_THINKING) return true;
 	if (Array.isArray(value)) return value.some(containsFixtureThinking);
-	if (!isRuntimeObject(value) || value === null) return false;
+	if (!isJsonInputObject(value)) return false;
 	return Object.values(value).some(containsFixtureThinking);
 }
 
@@ -633,7 +638,7 @@ async function waitForPersistedThinking(sessionDirectory: string): Promise<void>
 				.trim()
 				.split("\n")
 				.filter(Boolean)
-				.map((line) => JSON.parse(line) as unknown);
+				.map(parseJsonValue);
 			if (records.some(containsFixtureThinking)) return;
 		}
 		await delay(POLL_INTERVAL_MS);
@@ -1162,7 +1167,11 @@ async function readFixtureRecords(path: string): Promise<readonly FixtureRecord[
 		.trim()
 		.split("\n")
 		.filter(Boolean)
-		.map((line) => JSON.parse(line) as FixtureRecord);
+		.map((line) => {
+			const record = JSON.parse(line);
+			if (!Check(FIXTURE_RECORD_SCHEMA, record)) fail(`fixture log ${path} contains a malformed record`);
+			return record;
+		});
 }
 
 function verifyCatppuccinRecord(
@@ -1227,7 +1236,10 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 	let markdownTransformer = false;
 	let liveThought = false;
 	try {
-		options = { ...options, piBinary: (await stageCertifiedPiHost(options.piBinary, temporaryDirectory)).binaryPath };
+		options = {
+			...options,
+			piBinary: (await stageCertifiedPiHost(options.piBinary, temporaryDirectory)).binaryPath,
+		};
 		verifyHostVersion(options.piBinary);
 		commandOutput("tmux", ["-V"]);
 		for (const { columns, rows } of TARGET_SIZES) {
@@ -1314,7 +1326,10 @@ export async function verifyThemeLifecyclePty(
 	] as const;
 	const temporaryDirectory = await mkdtemp(join(tmpdir(), "pi-stuff-theme-pty-"));
 	try {
-		options = { ...options, piBinary: (await stageCertifiedPiHost(options.piBinary, temporaryDirectory)).binaryPath };
+		options = {
+			...options,
+			piBinary: (await stageCertifiedPiHost(options.piBinary, temporaryDirectory)).binaryPath,
+		};
 		verifyHostVersion(options.piBinary);
 		commandOutput("tmux", ["-V"]);
 	} catch (error) {
@@ -1406,12 +1421,15 @@ export async function verifyThemeLifecyclePty(
 if (import.meta.main) {
 	const { PI_BIN = "/opt/bin/pi", PI_STUFF_UI_PTY_ARTIFACT_DIR, PI_STUFF_UI_PTY_THEME } = process.env;
 	const theme = PI_STUFF_UI_PTY_THEME?.trim() || "dark";
-	const evidence = await verifyUiPty({
-		...(PI_STUFF_UI_PTY_ARTIFACT_DIR ? { artifactDirectory: PI_STUFF_UI_PTY_ARTIFACT_DIR } : {}),
+	const verificationOptions = {
 		piBinary: PI_BIN,
 		packagePath: join(root, "packages/pi-stuff"),
 		theme,
-	});
+	};
+	if (PI_STUFF_UI_PTY_ARTIFACT_DIR) {
+		Object.assign(verificationOptions, { artifactDirectory: PI_STUFF_UI_PTY_ARTIFACT_DIR });
+	}
+	const evidence = await verifyUiPty(verificationOptions);
 	console.log(`Certified production UI in ${evidence.sizes.join(", ")}`);
 	console.log(`Host profile: ${CERTIFIED_PI_HOST_PROFILE}`);
 	console.log(`Thought transformer: ${evidence.markdownTransformer ? "upstream Host verified" : "missing"}`);
