@@ -1,10 +1,20 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { isRuntimeObject } from "../../../shared/runtime-type.js";
+import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
+
+function errnoCode<Value>(cause: Value): string | undefined {
+	if (!isRuntimeObject(cause) || cause === null || !("code" in cause)) return undefined;
+	return isRuntimeString(cause.code) ? cause.code : undefined;
+}
+
+function noFollowFlag(): number {
+	// SAFETY: Node exposes O_NOFOLLOW only on supporting platforms; this reads that optional numeric constant.
+	return (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+}
 
 function notFound(cause: unknown): boolean {
-	return isRuntimeObject(cause) && cause !== null && (cause as NodeJS.ErrnoException).code === "ENOENT";
+	return errnoCode(cause) === "ENOENT";
 }
 
 /** Create or validate an Agent runtime directory without accepting symlink ownership. */
@@ -65,7 +75,7 @@ export function ensurePrivateDirectoryWithin(root: string, directory: string): v
 		try {
 			fs.mkdirSync(cursor, { mode: 0o700 });
 		} catch (error) {
-			if (!((error as NodeJS.ErrnoException).code === "EEXIST")) throw error;
+			if (errnoCode(error) !== "EEXIST") throw error;
 		}
 		assertPrivateDirectory(cursor);
 		fs.chmodSync(cursor, 0o700);
@@ -84,12 +94,12 @@ function assertOwnedRegularFile(filePath: string, stat: fs.Stats, maxBytes?: num
 }
 
 function openOwnedRegularFile(filePath: string, maxBytes?: number): number {
-	const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+	const noFollow = noFollowFlag();
 	let fd: number;
 	try {
 		fd = fs.openSync(filePath, fs.constants.O_RDONLY | noFollow);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+		if (errnoCode(error) === "ELOOP") {
 			throw new Error(`Agent runtime file '${filePath}' must not be a symbolic link.`, { cause: error });
 		}
 		throw error;
@@ -128,7 +138,7 @@ export function isOwnedFileChangedDuringReadError(cause: unknown): boolean {
 	for (let depth = 0; depth < 8; depth += 1) {
 		if (current instanceof OwnedFileChangedDuringReadError) return true;
 		if (!isRuntimeObject(current) || current === null || !("cause" in current)) return false;
-		current = (current as { cause?: unknown }).cause;
+		current = current.cause;
 	}
 	return false;
 }
@@ -184,12 +194,12 @@ export async function readBoundedOwnedFileSnapshotAsync(
 	maxBytes: number,
 ): Promise<OwnedFileSnapshot> {
 	if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new Error("Owned file byte limit must be non-negative.");
-	const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+	const noFollow = noFollowFlag();
 	let handle: fs.promises.FileHandle;
 	try {
 		handle = await fs.promises.open(filePath, fs.constants.O_RDONLY | noFollow);
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+		if (errnoCode(error) === "ELOOP") {
 			throw new Error(`Agent runtime file '${filePath}' must not be a symbolic link.`, { cause: error });
 		}
 		throw error;
@@ -326,7 +336,7 @@ export function readOwnedFileTail(filePath: string, maxBytes: number): OwnedFile
 /** Async counterpart for Host-side recovery and detail readers. */
 export async function readOwnedFileTailAsync(filePath: string, maxBytes: number): Promise<OwnedFileTail> {
 	if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new Error("Owned file tail limit must be non-negative.");
-	const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
+	const noFollow = noFollowFlag();
 	const handle = await fs.promises.open(filePath, fs.constants.O_RDONLY | noFollow);
 	try {
 		const stat = await handle.stat();
