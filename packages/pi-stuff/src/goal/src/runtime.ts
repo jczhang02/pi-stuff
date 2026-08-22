@@ -5,7 +5,13 @@ import { sendSuiteAgentMessage, withDirectUserActivation } from "../../conversat
 import { type GoalStatusSnapshot, getGoalStatusChannel } from "../../conversation-ui/statusline.js";
 import { isJsonInputObject } from "../../shared/json-value.js";
 import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
-import { checkpointGoalActiveTime, formatDuration, formatTokenCount, updateGoalUsage } from "./accounting.js";
+import {
+	checkpointGoalActiveTime,
+	formatDuration,
+	formatTokenCount,
+	type UsageContext,
+	updateGoalUsage,
+} from "./accounting.js";
 import { formatError, truncateNotification } from "./errors.js";
 import { appendGoalPromptMarker, extractContinuationMarker, extractGoalPromptMarker } from "./markers.js";
 import {
@@ -52,7 +58,7 @@ export interface CompletedGoalRun {
 	toolAttempted: boolean;
 }
 
-export interface StatusContext {
+export interface StatusContext extends UsageContext {
 	cwd: string;
 	mode?: "tui" | "rpc" | "json" | "print";
 	ui: {
@@ -63,7 +69,6 @@ export interface StatusContext {
 	hasPendingMessages?: () => boolean;
 	waitForIdle?: () => Promise<void>;
 	abort?: () => void;
-	sessionManager?: unknown;
 }
 
 export interface GoalToolVisibilitySnapshot {

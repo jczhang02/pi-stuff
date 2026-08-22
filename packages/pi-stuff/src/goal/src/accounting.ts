@@ -1,4 +1,3 @@
-import type { Usage } from "@earendil-works/pi-ai";
 import { isRuntimeNumber, isRuntimeObject } from "../../shared/runtime-type.js";
 
 export interface GoalAccountingState {
@@ -10,13 +9,10 @@ export interface GoalAccountingState {
 	updatedAt: number;
 }
 
-interface AssistantUsageEntryLike {
-	type?: unknown;
-	message?: unknown;
-}
-
-interface UsageContext {
-	sessionManager?: unknown;
+export interface UsageContext {
+	readonly sessionManager?: {
+		getBranch?(): readonly object[];
+	};
 }
 
 export function checkpointGoalActiveTime(goal: GoalAccountingState, now: number, continueClock: boolean) {
@@ -60,44 +56,43 @@ export function formatTokenCount(value: number) {
 	return `${Number.isInteger(value / 1_000_000) ? value / 1_000_000 : (value / 1_000_000).toFixed(1)}m`;
 }
 
-export function isNonNegativeFiniteNumber(value: unknown): value is number {
+export function isNonNegativeFiniteNumber<Value>(value: Value): value is Value & number {
 	return isRuntimeNumber(value) && Number.isFinite(value) && value >= 0;
 }
 
-export function nonNegativeFiniteNumber(value: unknown) {
+export function nonNegativeFiniteNumber<Value>(value: Value): number {
 	return isNonNegativeFiniteNumber(value) ? value : 0;
 }
 
-export function normalizeTokenBudget(value: unknown) {
+export function normalizeTokenBudget<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
-export function assistantUsageTokens(value: unknown) {
+export function assistantUsageTokens<Value>(value: Value): number {
 	if (!value || !isRuntimeObject(value)) return 0;
-	const usage = value as Partial<Usage>;
-	if (isNonNegativeFiniteNumber(usage.totalTokens)) return usage.totalTokens;
+	const totalTokens = "totalTokens" in value ? value.totalTokens : undefined;
+	if (isNonNegativeFiniteNumber(totalTokens)) return totalTokens;
 	return Math.min(
 		Number.MAX_SAFE_INTEGER,
-		nonNegativeFiniteNumber(usage.input) +
-			nonNegativeFiniteNumber(usage.output) +
-			nonNegativeFiniteNumber(usage.cacheRead) +
-			nonNegativeFiniteNumber(usage.cacheWrite),
+		nonNegativeFiniteNumber("input" in value ? value.input : undefined) +
+			nonNegativeFiniteNumber("output" in value ? value.output : undefined) +
+			nonNegativeFiniteNumber("cacheRead" in value ? value.cacheRead : undefined) +
+			nonNegativeFiniteNumber("cacheWrite" in value ? value.cacheWrite : undefined),
 	);
 }
 
-export function cumulativeAssistantTokens(entries: unknown[]) {
+export function cumulativeAssistantTokens<Entry>(entries: readonly Entry[]): number {
 	let total = 0;
 	for (const entry of entries) {
-		const candidate = entry as AssistantUsageEntryLike;
-		if (candidate?.type !== "message") continue;
-		const message = candidate.message as { role?: unknown; usage?: unknown } | undefined;
-		if (message?.role !== "assistant") continue;
-		total = Math.min(Number.MAX_SAFE_INTEGER, total + assistantUsageTokens(message.usage));
+		if (!entry || !isRuntimeObject(entry) || !("type" in entry) || entry.type !== "message") continue;
+		const message = "message" in entry ? entry.message : undefined;
+		if (!message || !isRuntimeObject(message) || !("role" in message) || message.role !== "assistant") continue;
+		const usage = "usage" in message ? message.usage : undefined;
+		total = Math.min(Number.MAX_SAFE_INTEGER, total + assistantUsageTokens(usage));
 	}
 	return total;
 }
 
 export function currentTokenTotal(ctx: UsageContext): number {
-	const sessionManager = ctx.sessionManager as { getBranch?: () => unknown[] } | undefined;
-	return cumulativeAssistantTokens(sessionManager?.getBranch?.() ?? []);
+	return cumulativeAssistantTokens(ctx.sessionManager?.getBranch?.() ?? []);
 }
