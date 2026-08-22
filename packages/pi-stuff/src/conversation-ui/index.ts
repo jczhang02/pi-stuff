@@ -3,7 +3,7 @@ import { type Component, type Focusable, isFocusable, type KeybindingsManager, t
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
-import { isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
+import { isRuntimeBoolean, isRuntimeFunction, isRuntimeObject } from "../shared/runtime-type.js";
 import {
 	AgentRunOriginTracker,
 	listenForActiveAgentWorkUserPromotions,
@@ -173,7 +173,7 @@ interface HostScope {
 	readonly signal: AbortSignal;
 	readonly theme: Theme;
 	readonly tui: TUI;
-	close(value: unknown): void;
+	close<Value>(value?: Value): void;
 	requestRender(force?: boolean): void;
 }
 
@@ -184,7 +184,7 @@ interface DialogRequest {
 	state: DialogRequestState;
 	mount(scope: HostScope): CommandDialogComponent;
 	reject(cause: unknown): void;
-	resolve(value: unknown): void;
+	resolve<Value>(value: Value): void;
 }
 
 interface ChromeRecord {
@@ -237,7 +237,7 @@ class FooterStackComponent implements Component {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		for (const component of [...this.components].reverse()) disposeComponent(component as CommandDialogComponent);
+		for (const component of [...this.components].reverse()) disposeComponent(component);
 	}
 
 	invalidate(): void {
@@ -254,7 +254,7 @@ class FooterStackComponent implements Component {
 			let rendered = false;
 			let replacesBaseRow2 = false;
 			callComponent(() => {
-				replacesBaseRow2 = (component as FooterTailComponent).replacesBaseRow2 === true;
+				replacesBaseRow2 = "replacesBaseRow2" in component && component.replacesBaseRow2 === true;
 				section.push(...component.render(width));
 				rendered = true;
 			});
@@ -696,6 +696,7 @@ const COORDINATOR_REGISTRY = Symbol.for("@jczhang02/pi-stuff-ui/coordinators/v1"
 const COORDINATOR_DISCOVERY_EVENT = "@jczhang02/pi-stuff-ui/coordinator-discovery/v1";
 
 function coordinatorRegistry(): WeakMap<ExtensionAPI["events"], CommandDialogCoordinatorImplementation> {
+	// SAFETY: this package-owned symbol slot is initialized only with the coordinator WeakMap.
 	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], CommandDialogCoordinatorImplementation> | undefined;
 	};
@@ -713,6 +714,7 @@ export function getCommandDialogCoordinator(pi: CommandDialogCoordinatorHost): C
 
 	const coordinator = getHostSharedResource(
 		pi.events,
+		// SAFETY: ExtensionAPI event buses are objects, so this narrower WeakMap satisfies the shared Host registry seam.
 		registry as WeakMap<object, CommandDialogCoordinatorImplementation>,
 		COORDINATOR_DISCOVERY_EVENT,
 		() => new CommandDialogCoordinatorImplementation(),
@@ -744,6 +746,7 @@ interface UiLifecycleState {
 }
 
 function uiLifecycleStates(): WeakMap<ExtensionAPI["events"], UiLifecycleState> {
+	// SAFETY: this package-owned symbol slot is initialized only with the UI lifecycle WeakMap.
 	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], UiLifecycleState> | undefined;
 	};
@@ -783,6 +786,7 @@ export const UI_RENDER_REQUEST_EVENT = "@jczhang02/pi-stuff-ui/render-request/v1
 const UI_RENDER_REQUEST_LISTENERS = Symbol.for("@jczhang02/pi-stuff-ui/render-request-listeners/v1");
 
 function statuslineGitRefreshListeners(): WeakMap<ExtensionAPI["events"], () => void> {
+	// SAFETY: this package-owned symbol slot is initialized only with statusline refresh listeners.
 	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], () => void> | undefined;
 	};
@@ -818,6 +822,7 @@ export function requestStatuslineGitRefreshAfterUserWork(pi: { readonly events?:
 }
 
 function uiRenderRequestListeners(): WeakMap<ExtensionAPI["events"], () => void> {
+	// SAFETY: this package-owned symbol slot is initialized only with UI render listeners.
 	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], () => void> | undefined;
 	};
@@ -831,10 +836,18 @@ function listenForUiRenderRequests(pi: ExtensionAPI, render: (force: boolean) =>
 
 	let active = true;
 	const unsubscribe = pi.events.on(UI_RENDER_REQUEST_EVENT, (value) => {
-		if (!active || !isRuntimeObject(value) || value === null) return;
-		const request = value as { force?: unknown; handled?: unknown };
-		request.handled = true;
-		render(request.force === true);
+		if (
+			!active ||
+			!isRuntimeObject(value) ||
+			value === null ||
+			!("force" in value) ||
+			!isRuntimeBoolean(value.force) ||
+			!("handled" in value) ||
+			!isRuntimeBoolean(value.handled)
+		)
+			return;
+		value.handled = true;
+		render(value.force);
 	});
 	const cleanup = (): void => {
 		if (!active) return;
@@ -858,6 +871,7 @@ export function requestUiRender(pi: Pick<ExtensionAPI, "events">, force = false)
 }
 
 function uiSettingsCommandStates(): WeakMap<ExtensionAPI["events"], UiSettingsCommandState> {
+	// SAFETY: this package-owned symbol slot is initialized only with UI settings command state.
 	const root = globalThis as {
 		[key: symbol]: WeakMap<ExtensionAPI["events"], UiSettingsCommandState> | undefined;
 	};
@@ -871,6 +885,7 @@ export function ensureUiSettingsCommand(pi: ExtensionAPI): UiSettingRegistry {
 	const commandStates = uiSettingsCommandStates();
 	const state = getHostSharedResource<UiSettingsCommandState>(
 		pi.events,
+		// SAFETY: ExtensionAPI event buses are objects, so this narrower WeakMap satisfies the shared Host registry seam.
 		commandStates as WeakMap<object, UiSettingsCommandState>,
 		UI_SETTINGS_COMMAND_STATE_DISCOVERY_EVENT,
 		() => ({ active: false }),
@@ -909,6 +924,7 @@ export function ensureUiSettingsCommand(pi: ExtensionAPI): UiSettingRegistry {
 export default async function piStuffUi(pi: ExtensionAPI): Promise<void> {
 	const lifecycle = getHostSharedResource<UiLifecycleState>(
 		pi.events,
+		// SAFETY: ExtensionAPI event buses are objects, so this narrower WeakMap satisfies the shared Host registry seam.
 		uiLifecycleStates() as WeakMap<object, UiLifecycleState>,
 		UI_LIFECYCLE_DISCOVERY_EVENT,
 		() => ({ active: false }),
@@ -1047,6 +1063,7 @@ async function installUiCapability(pi: ExtensionAPI, lifecycle: UiLifecycleState
 			pi,
 			ctx,
 			settings,
+			// SAFETY: this coordinator is the implementation returned by getCommandDialogCoordinator above.
 			coordinator as CommandDialogCoordinatorImplementation,
 			diagnostics,
 		);
@@ -1121,7 +1138,10 @@ function createDialogRequest<Result>(view: CommandDialogView<Result>) {
 				requestRender: (force) => scope.requestRender(force),
 			}),
 		reject: completion.reject,
-		resolve: (value) => completion.resolve(value as Result | undefined),
+		resolve: <Value>(value: Value) => {
+			// SAFETY: this request is created from CommandDialogView<Result>, so its close value has that same Result contract.
+			completion.resolve(value as Result | undefined);
+		},
 	};
 	return { promise: completion.promise, request };
 }
@@ -1169,9 +1189,9 @@ function callComponent(callback: () => void): void {
 	}
 }
 
-function disposeComponent(component: CommandDialogComponent | undefined): void {
+function disposeComponent(component: Component | undefined): void {
 	try {
-		component?.dispose?.();
+		if (component && "dispose" in component && isRuntimeFunction(component.dispose)) component.dispose();
 	} catch {
 		// A child cannot prevent the coordinator from advancing or restoring Pi UI.
 	}
