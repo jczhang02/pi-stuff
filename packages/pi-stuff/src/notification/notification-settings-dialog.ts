@@ -9,7 +9,6 @@ import {
 } from "../conversation-ui/index.js";
 import { boundTerminalLine } from "../tool-display/index.js";
 import type { NotificationSettings, NotificationSettingsStore } from "./settings.js";
-import type { TerminalDeliveryMode } from "./transport.js";
 
 const GUTTER = "  ";
 const MIN_RENDER_WIDTH = 24;
@@ -106,8 +105,10 @@ function settingPatch(id: string, value: string): Partial<Omit<NotificationSetti
 	if (id === "gracePeriodMs" && GRACE_VALUES.some((candidate) => candidate === value)) {
 		return { gracePeriodMs: Number.parseInt(value, 10) * 1_000 };
 	}
-	if (id === "delivery" && DELIVERY_VALUES.some((candidate) => candidate === value)) {
-		return { delivery: value as TerminalDeliveryMode };
+	if (id === "delivery") {
+		for (const delivery of DELIVERY_VALUES) {
+			if (delivery === value) return { delivery };
+		}
 	}
 	if (!BOOLEAN_VALUES.some((candidate) => candidate === value)) return undefined;
 	const enabled = value === "true";
@@ -202,7 +203,7 @@ class NotificationSettingsDialog implements CommandDialogComponent {
 		const generation = (this.generations.get(id) ?? 0) + 1;
 		this.generations.set(id, generation);
 		this.error = "";
-		void this.settings.update(patch).catch((error: unknown) => {
+		void this.settings.update(patch).catch((error) => {
 			if (this.generations.get(id) !== generation) return;
 			const message = boundTerminalLine(String(error), 160) || "Unable to save Notification setting.";
 			if (this.disposed) {

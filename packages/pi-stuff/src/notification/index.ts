@@ -9,12 +9,15 @@ import {
 import { HOST_SHUTDOWN_GRACE_MS, settleWithin } from "../lifecycle-deadline.js";
 import { extractNotificationPreview, formatNotificationContent } from "./format.js";
 import { createNotificationSettingsView } from "./notification-settings-dialog.js";
-import { type NotificationClock, NotificationRuntime } from "./runtime.js";
+import { type NotificationClock, type NotificationRuntimeEvent, NotificationRuntime } from "./runtime.js";
 import { type NotificationSettings, NotificationSettingsStore } from "./settings.js";
 import { sendTerminalNotification, type TerminalNotificationResult } from "./transport.js";
 
 const SYSTEM_CLOCK: NotificationClock = {
-	clearTimeout: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+	clearTimeout: (timer) => {
+		// SAFETY: this paired clock adapter only receives handles returned by its platform setTimeout implementation.
+		clearTimeout(timer as ReturnType<typeof setTimeout>);
+	},
 	now: Date.now,
 	setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
 };
@@ -98,12 +101,13 @@ export async function installNotificationCapability(
 			isQuiet: () => ctx.isIdle() && !ctx.hasPendingMessages(),
 			notify: (alert) => {
 				const current = settings.get();
-				const content = formatNotificationContent({
+				const notification: Parameters<typeof formatNotificationContent>[0] = {
 					includeResponsePreview: current.responsePreview,
 					outcome: alert.outcome,
-					...(alert.preview ? { preview: alert.preview } : {}),
 					session: sessionLabel(ctx),
-				});
+				};
+				if (alert.preview) Object.assign(notification, { preview: alert.preview });
+				const content = formatNotificationContent(notification);
 				notify(ctx, current, content.title, content.body);
 			},
 		});
@@ -128,12 +132,15 @@ export async function installNotificationCapability(
 	pi.on("message_end", (event) => {
 		if (!active || event.message.role !== "assistant") return;
 		const preview = extractNotificationPreview(event.message.content);
-		active.observe({
-			...(event.message.errorMessage !== undefined ? { errorMessage: event.message.errorMessage } : {}),
-			...(preview ? { preview } : {}),
+		const observation: NotificationRuntimeEvent = {
 			stopReason: event.message.stopReason,
 			type: "assistant_finalized",
-		});
+		};
+		if (event.message.errorMessage !== undefined) {
+			Object.assign(observation, { errorMessage: event.message.errorMessage });
+		}
+		if (preview) Object.assign(observation, { preview });
+		active.observe(observation);
 	});
 	pi.on("session_shutdown", async () => {
 		removeTerminalInput?.();
