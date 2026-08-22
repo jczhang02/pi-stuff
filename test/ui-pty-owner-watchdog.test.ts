@@ -17,7 +17,7 @@ function processExists(pid: number): boolean {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM";
+		return error instanceof Error && "code" in error && error.code === "EPERM";
 	}
 }
 
@@ -25,8 +25,10 @@ async function waitForRecord(path: string): Promise<WatchdogRecord> {
 	const deadline = Date.now() + 3_000;
 	while (Date.now() < deadline) {
 		const value = await readFile(path, "utf8").catch(() => "");
-		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-		if (value) return JSON.parse(value) as WatchdogRecord;
+		if (value) {
+			// SAFETY: the spawned watchdog fixture owns this JSON file and writes every WatchdogRecord field before signaling readiness.
+			return JSON.parse(value) as WatchdogRecord;
+		}
 		await Bun.sleep(20);
 	}
 	throw new Error("UI PTY watchdog fixture did not become ready");

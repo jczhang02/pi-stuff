@@ -15,16 +15,17 @@ import {
 } from "../../packages/pi-stuff/src/conversation-ui/suite-agent-message.js";
 
 type SuiteAgentMessageEventHost = SuiteAgentMessageHost & Pick<ExtensionAPI, "events">;
+type ExtensionEventListener = Parameters<ExtensionAPI["events"]["on"]>[1];
 
 function hostApis(
 	sendMessage: SuiteAgentMessageHost["sendMessage"],
 ): [SuiteAgentMessageEventHost, SuiteAgentMessageEventHost] {
-	const listeners = new Map<string, Set<(value: unknown) => void>>();
-	const facade = () => ({
-		emit(name: string, value: unknown): void {
+	const listeners = new Map<string, Set<ExtensionEventListener>>();
+	const facade = (): ExtensionAPI["events"] => ({
+		emit(name, value): void {
 			for (const listener of listeners.get(name) ?? []) listener(value);
 		},
-		on(name: string, listener: (value: unknown) => void): () => void {
+		on(name, listener): () => void {
 			const current = listeners.get(name) ?? new Set();
 			current.add(listener);
 			listeners.set(name, current);

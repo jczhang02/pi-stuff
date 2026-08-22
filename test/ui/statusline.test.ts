@@ -146,16 +146,15 @@ function context(options: {
 	const cwd = options.cwd ?? join(homedir(), "dev", "pi-stuff");
 	const branch = options.branch ?? messageEntries("Implement the accepted Pi Stuff statusline.");
 	const entriesById = new Map(branch.map((entry) => [entry.id, entry]));
-	const sessionManager =
-		options.sessionManager ??
-		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
-		({
-			getBranch: () => branch,
-			getCwd: () => cwd,
-			getEntry: (id: string) => entriesById.get(id),
-			getLeafId: () => branch.at(-1)?.id ?? null,
-			getSessionId: () => "statusline-test-session",
-		} as ExtensionContext["sessionManager"]);
+	const sessionManagerFixture = {
+		getBranch: () => branch,
+		getCwd: () => cwd,
+		getEntry: (id: string) => entriesById.get(id),
+		getLeafId: () => branch.at(-1)?.id ?? null,
+		getSessionId: () => "statusline-test-session",
+	};
+	// SAFETY: this controlled fixture implements exactly the SessionManager reads performed by the Statusline.
+	const sessionManager = options.sessionManager ?? (sessionManagerFixture as ExtensionContext["sessionManager"]);
 	return {
 		cwd,
 		getContextUsage: () => ({

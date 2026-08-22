@@ -43,7 +43,24 @@ const INPUT_EVENT_SCHEMA = Type.Object(
 type FooterFactory = Parameters<ExtensionUIContext["setFooter"]>[0];
 type HeaderFactory = Parameters<ExtensionUIContext["setHeader"]>[0];
 type EditorFactory = NonNullable<ReturnType<ExtensionUIContext["getEditorComponent"]>>;
-type SessionHandler = (event: unknown, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
+interface HarnessMessage {
+	readonly content?: string | readonly object[];
+	readonly role: string;
+}
+
+interface HarnessEvent {
+	readonly message?: HarnessMessage;
+	readonly reason?: string;
+	readonly source?: string;
+	readonly streamingBehavior?: "followUp" | "steer";
+	readonly text?: string;
+	readonly timestamp?: number;
+	readonly turnIndex?: number;
+	readonly type: string;
+}
+type SessionHandler = (event: HarnessEvent, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
+type ExtensionEventListener = Parameters<ExtensionAPI["events"]["on"]>[1];
+type ExtensionEventPayload = Parameters<ExtensionEventListener>[0];
 
 interface TestDeferred<Value> {
 	readonly promise: Promise<Value>;
@@ -92,18 +109,18 @@ class FocusableTestComponent extends TestComponent {
 }
 
 interface EventBusLike {
-	emit(event: string, data: unknown): void;
-	on(event: string, listener: (data: unknown) => void): () => void;
+	emit(event: string, data: ExtensionEventPayload): void;
+	on(event: string, listener: ExtensionEventListener): () => void;
 }
 
 class EventBusHarness implements EventBusLike {
-	private readonly listeners = new Map<string, Set<(data: unknown) => void>>();
+	private readonly listeners = new Map<string, Set<ExtensionEventListener>>();
 
-	emit(event: string, data: unknown): void {
+	emit(event: string, data: ExtensionEventPayload): void {
 		for (const listener of Array.from(this.listeners.get(event) ?? [])) listener(data);
 	}
 
-	on(event: string, listener: (data: unknown) => void): () => void {
+	on(event: string, listener: ExtensionEventListener): () => void {
 		let listeners = this.listeners.get(event);
 		if (!listeners) {
 			listeners = new Set();
@@ -293,7 +310,7 @@ function createApiHarness(events: EventBusLike = new EventBusHarness(), execute?
 		registeredCommands,
 		sessionHandlers,
 		shutdownHandlers,
-		async emit(event: string, data: unknown, ctx: ExtensionContext): Promise<void> {
+		async emit(event: string, data: HarnessEvent, ctx: ExtensionContext): Promise<void> {
 			// Pi 0.84.2 creates one context per input dispatch and shares it across
 			// that dispatch's handlers. Other lifecycle events receive the supplied
 			// session context directly.

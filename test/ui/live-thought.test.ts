@@ -341,19 +341,19 @@ describe("live Thought display", () => {
 describe("live Thought Host adapter", () => {
 	test("maps only the next synthetic outer Assistant list marker and restores the Theme", async () => {
 		const calls: Array<readonly [string, string]> = [];
-		const theme = {
+		const themeFixture = {
 			fg: (color: string, value: string) => {
 				calls.push([color, value]);
 				return value;
 			},
 			getColorMode: () => "truecolor",
-		} as import("@earendil-works/pi-coding-agent").Theme;
+		};
+		// SAFETY: this controlled Theme fixture implements exactly the color operations exercised by the adapter.
+		const theme = themeFixture as Theme;
 		const original = theme.fg;
 		const key = Symbol.for("@earendil-works/pi-coding-agent:theme");
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		const previous = (globalThis as Record<symbol, unknown>)[key];
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		(globalThis as Record<symbol, unknown>)[key] = theme;
+		const previous = Object.getOwnPropertyDescriptor(globalThis, key);
+		Object.defineProperty(globalThis, key, { configurable: true, value: theme, writable: true });
 		transform("Outer\n\n- nested", { messageType: "assistant" });
 		expect(theme.fg("mdListBullet", "- ")).toBe("• ");
 		expect(theme.fg).toBe(original);
@@ -366,10 +366,8 @@ describe("live Thought Host adapter", () => {
 		]);
 		await Promise.resolve();
 		expect(theme.fg).toBe(original);
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		if (previous === undefined) delete (globalThis as Record<symbol, unknown>)[key];
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		else (globalThis as Record<symbol, unknown>)[key] = previous;
+		if (previous === undefined) Reflect.deleteProperty(globalThis, key);
+		else Object.defineProperty(globalThis, key, previous);
 	});
 
 	test("registers through the upstream public seam", () => {

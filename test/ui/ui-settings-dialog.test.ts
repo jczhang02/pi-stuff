@@ -20,7 +20,7 @@ afterEach(() => resetDiagnosticProcessState());
 
 interface Deferred {
 	readonly promise: Promise<void>;
-	reject(cause: unknown): void;
+	reject(cause: Error): void;
 }
 
 interface UiHarness {
@@ -36,7 +36,7 @@ interface FailingSettingHarness {
 }
 
 function deferred(): Deferred {
-	let reject = (_reason: unknown): void => {};
+	let reject = (_reason: Error): void => {};
 	const promise = new Promise<void>((_resolve, promiseReject) => {
 		reject = promiseReject;
 	});
