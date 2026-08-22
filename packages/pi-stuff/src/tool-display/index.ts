@@ -71,6 +71,7 @@ export {
 	type ToolActivityGroupDisposition,
 	type ToolActivityItem,
 	type ToolActivityMetadata,
+	type ToolArguments,
 } from "./activity.js";
 export { BASH_CODE_MODE_CONTRACT } from "./builtin-tools.js";
 export {

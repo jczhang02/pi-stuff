@@ -12,11 +12,10 @@ import {
 } from "./types.js";
 
 function cloneTask(task: Task): Task {
-	return {
-		...task,
-		...(task.blockedBy ? { blockedBy: [...task.blockedBy] } : {}),
-		...(task.metadata ? { metadata: { ...task.metadata } } : {}),
-	};
+	const clone: Task = { ...task };
+	if (task.blockedBy) clone.blockedBy = [...task.blockedBy];
+	if (task.metadata) clone.metadata = { ...task.metadata };
+	return clone;
 }
 
 function formatTask(task: Task, state: TaskState): string {
@@ -79,8 +78,8 @@ export function buildToolResult(
 		params: { ...params },
 		tasks: state.tasks.map(cloneTask),
 		nextId: state.nextId,
-		...(op.kind === "error" ? { error: op.message } : {}),
 	};
+	if (op.kind === "error") details.error = op.message;
 	return {
 		content: [{ type: "text", text: formatContent(op, state) }],
 		details,

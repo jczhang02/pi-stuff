@@ -7,6 +7,8 @@ import {
 	type SuiteToolPresentation,
 	type SuiteToolRegistrationHost,
 	type ToolActivityCategory,
+	type ToolActivityItem,
+	type ToolArguments,
 } from "../tool-display/index.js";
 import { applyTaskMutation, type Op } from "./state/state-reducer.js";
 import { commitState, getState, sid } from "./state/store.js";
@@ -33,7 +35,7 @@ interface TaskMutationEvent {
 
 type TaskMutationListener = (event: TaskMutationEvent) => void;
 
-interface TaskIdPresentationParams extends Record<string, unknown> {
+interface TaskIdPresentationParams extends ToolArguments {
 	readonly taskId?: unknown;
 }
 
@@ -53,7 +55,7 @@ function taskIdTarget(params: Readonly<TaskIdPresentationParams>): string {
 	return isRuntimeString(taskId) && taskId ? `#${taskId}` : "";
 }
 
-function taskPresentation<TParams extends Record<string, unknown>>(
+function taskPresentation<TParams extends ToolArguments>(
 	label: string,
 	category: Extract<ToolActivityCategory, "check-task" | "update-task">,
 	target: (params: Readonly<TParams>) => string,
@@ -80,17 +82,15 @@ function taskPresentation<TParams extends Record<string, unknown>>(
 					/already matches the requested values\s*$/u.test(resultText(result))
 						? "check-task"
 						: category;
-				return [
-					{
-						category: effectiveCategory,
-						...(returnedIds
-							? returnedIds.length > 0
-								? { countKeys: returnedIds }
-								: { count: 0 }
-							: { countKeys: [activityKey(value || label)] }),
-						...(value ? { target: value } : {}),
-					},
-				];
+				const activity: ToolActivityItem = { category: effectiveCategory };
+				if (returnedIds) {
+					if (returnedIds.length > 0) Object.assign(activity, { countKeys: returnedIds });
+					else Object.assign(activity, { count: 0 });
+				} else {
+					Object.assign(activity, { countKeys: [activityKey(value || label)] });
+				}
+				if (value) Object.assign(activity, { target: value });
+				return [activity];
 			},
 		},
 		label,
