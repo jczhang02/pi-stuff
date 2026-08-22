@@ -6,7 +6,7 @@ import type { FSWatcher } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentWorkOrigin } from "../../../conversation-ui/agent-run-origin.js";
 import type { JsonInputObject } from "../../../shared/json-value.js";
 import { isRuntimeFunction, isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
@@ -1339,12 +1339,7 @@ export interface ErrorInfo {
 	details?: string;
 }
 
-export interface IntercomEventData extends JsonInputObject {}
-
-export interface IntercomEventBus {
-	on(channel: string, handler: (data: IntercomEventData) => void): () => void;
-	emit(channel: string, data: IntercomEventData): void;
-}
+export type IntercomEventBus = Pick<ExtensionAPI["events"], "emit" | "on">;
 
 export const INTERCOM_DETACH_REQUEST_EVENT = "pi-intercom:detach-request";
 export const INTERCOM_DETACH_RESPONSE_EVENT = "pi-intercom:detach-response";

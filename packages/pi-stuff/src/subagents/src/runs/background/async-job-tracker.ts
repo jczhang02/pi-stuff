@@ -175,7 +175,8 @@ export function createAsyncJobTracker(
 	const normalizeAcceptedSessionId = <SessionId, RunId>(sessionId: SessionId, runId: RunId): string | undefined => {
 		if (!state.currentSessionId || !isRuntimeString(sessionId)) return undefined;
 		if (sessionId === state.currentSessionId) return state.currentSessionId;
-		return state.currentSessionScope && sessionArtifactMatches(state.currentSessionScope, sessionId, runId)
+		const artifactRunId = isRuntimeString(runId) ? runId : undefined;
+		return state.currentSessionScope && sessionArtifactMatches(state.currentSessionScope, sessionId, artifactRunId)
 			? state.currentSessionId
 			: undefined;
 	};

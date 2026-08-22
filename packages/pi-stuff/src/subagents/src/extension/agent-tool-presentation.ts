@@ -1,5 +1,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { Static } from "typebox";
 import { isRuntimeString } from "../../../shared/runtime-type.js";
+import type { ToolArguments } from "../../../tool-display/activity.js";
 import {
 	activityKey,
 	boundTerminalLine,
@@ -8,7 +10,11 @@ import {
 } from "../../../tool-display/index.js";
 import { boundedTerminalLine, resolveDisplayDescription } from "../shared/display-description.ts";
 import type { Details } from "../shared/types.ts";
-import type { PublicAgentParams } from "./product-executor.ts";
+import type { FanoutChildSubagentParams, SubagentParams } from "./schemas.ts";
+
+type AgentPresentationParams =
+	| (Static<typeof FanoutChildSubagentParams> & ToolArguments)
+	| (Static<typeof SubagentParams> & ToolArguments);
 
 const PRESENTATION_PREVIEW_WIDTH = 160;
 const AGENT_ACTION_PRESENTATION = {
@@ -27,10 +33,16 @@ function firstText(result: AgentToolResult<Details>): string {
 	return "";
 }
 
-function action(params: PublicAgentParams): keyof typeof AGENT_ACTION_PRESENTATION | undefined {
-	return isRuntimeString(params.action) && Object.hasOwn(AGENT_ACTION_PRESENTATION, params.action)
-		? params.action
-		: undefined;
+function action(params: AgentPresentationParams): keyof typeof AGENT_ACTION_PRESENTATION | undefined {
+	switch (params.action) {
+		case "resume":
+		case "status":
+		case "steer":
+		case "stop":
+			return params.action;
+		default:
+			return undefined;
+	}
 }
 
 function launchTarget(agent: string | undefined, description: string | undefined, task: string | undefined): string {
@@ -39,26 +51,26 @@ function launchTarget(agent: string | undefined, description: string | undefined
 	return [safeAgent, safeTask ? resolveDisplayDescription(description, task) : ""].filter(Boolean).join(" · ");
 }
 
-function requestedLaunchCount(params: PublicAgentParams): number {
+function requestedLaunchCount(params: AgentPresentationParams): number {
 	if (Array.isArray(params.tasks)) {
 		return params.tasks.filter((task) => boundedTerminalLine(task?.agent) && boundedTerminalLine(task?.task)).length;
 	}
 	return boundedTerminalLine(params.agent) && boundedTerminalLine(params.task) ? 1 : 0;
 }
 
-function launchedCount(params: PublicAgentParams, result?: AgentToolResult<Details>): number {
+function launchedCount(params: AgentPresentationParams, result?: AgentToolResult<Details>): number {
 	if (!result) return 0;
 	if (params.foreground === true) return Array.isArray(result.details?.results) ? result.details.results.length : 0;
 	return isRuntimeString(result.details?.asyncId) && result.details.asyncId.trim() ? requestedLaunchCount(params) : 0;
 }
 
-function label(params: PublicAgentParams): string {
+function label(params: AgentPresentationParams): string {
 	const operation = action(params);
 	if (operation) return `Agent ${operation}`;
 	return Array.isArray(params.tasks) ? "Agents" : "Agent";
 }
 
-function target(params: PublicAgentParams): string {
+function target(params: AgentPresentationParams): string {
 	if (action(params)) return boundedTerminalLine(params.id);
 	if (Array.isArray(params.tasks) && params.tasks.length > 0)
 		return params.tasks
@@ -69,7 +81,7 @@ function target(params: PublicAgentParams): string {
 	return launchTarget(params.agent, params.description, params.task);
 }
 
-function successSummary(params: PublicAgentParams, result: AgentToolResult<Details>): string {
+function successSummary(params: AgentPresentationParams, result: AgentToolResult<Details>): string {
 	const operation = action(params);
 	if (operation) return AGENT_ACTION_PRESENTATION[operation].summary;
 	if (params.foreground === true) return "finished";
@@ -78,7 +90,7 @@ function successSummary(params: PublicAgentParams, result: AgentToolResult<Detai
 }
 
 /** One shared row grammar for root and nested public Agent tools. */
-export function createAgentToolPresentation(): SuiteToolPresentation<PublicAgentParams, Details> {
+export function createAgentToolPresentation(): SuiteToolPresentation<AgentPresentationParams, Details> {
 	return {
 		activity: {
 			categories: ["check-agent", "launch-agent", "resume-agent", "run-agent", "steer-agent", "stop-agent"],

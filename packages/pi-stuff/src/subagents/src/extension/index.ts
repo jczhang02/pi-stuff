@@ -1090,7 +1090,9 @@ export default function registerSubagentExtension(
 		const sessionId = "sessionId" in data ? data.sessionId : undefined;
 		const runId = "runId" in data ? data.runId : undefined;
 		const id = "id" in data ? data.id : undefined;
-		return sessionArtifactMatches(state.currentSessionScope, sessionId, runId ?? id);
+		const artifactSessionId = isRuntimeString(sessionId) ? sessionId : undefined;
+		const artifactRunId = isRuntimeString(runId) ? runId : isRuntimeString(id) ? id : undefined;
+		return sessionArtifactMatches(state.currentSessionScope, artifactSessionId, artifactRunId);
 	};
 	const normalizeCurrentSessionEvent = <Event>(data: Event) =>
 		data && isRuntimeObject(data) && state.currentSessionId ? { ...data, sessionId: state.currentSessionId } : data;
