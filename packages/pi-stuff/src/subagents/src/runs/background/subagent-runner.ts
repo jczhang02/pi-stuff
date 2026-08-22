@@ -367,7 +367,6 @@ interface ChildRuntimeControl {
 
 interface RunBackgroundWorkOptions {
 	signal?: AbortSignal;
-	stoppedMessage?: string;
 }
 
 interface BackgroundCompletion {
@@ -626,15 +625,22 @@ function taskList(work: BackgroundRunnerWork): RunnerAgentTask[] {
 	return work.mode === "single" ? [work.task] : work.group.tasks;
 }
 
-function stoppedResult(task: RunnerAgentTask, message: string): BackgroundTaskResult {
+function stoppedResult(
+	task: RunnerAgentTask,
+	cause: NonNullable<BackgroundTaskResult["preStartTerminalCause"]>,
+): BackgroundTaskResult {
+	const message = `Agent ${cause === "timeout" ? "timed out" : cause === "pause" ? "paused" : "stopped"} before it started.`;
 	const result: BackgroundTaskResult = {
 		agent: task.agent,
 		output: message,
 		success: false,
 		exitCode: 1,
-		stopped: true,
 		error: message,
+		preStartTerminalCause: cause,
 	};
+	if (cause === "pause") result.interrupted = true;
+	else if (cause === "timeout") result.timedOut = true;
+	else result.stopped = true;
 	if (task.context) result.context = task.context;
 	if (task.sessionFile) result.sessionFile = task.sessionFile;
 	if (task.model) result.model = task.model;
@@ -789,9 +795,11 @@ export async function runBackgroundWork(
 	if (tasks.length > MAX_BACKGROUND_TASKS) {
 		throw new RangeError(`Background runner supports at most ${MAX_BACKGROUND_TASKS} tasks per launch.`);
 	}
-	const stopMessage = options.stoppedMessage ?? "Agent stopped before it started.";
 	const executeTask = async (task: RunnerAgentTask, index: number): Promise<BackgroundTaskResult> => {
-		if (options.signal?.aborted) return stoppedResult(task, stopMessage);
+		if (options.signal?.aborted) {
+			const reason = options.signal.reason;
+			return stoppedResult(task, reason === "pause" || reason === "timeout" ? reason : "stop");
+		}
 		try {
 			return await runTask(task, index, options.signal);
 		} catch (error) {
@@ -2373,7 +2381,7 @@ async function runResolvedTask(input: {
 	const { config, task, index, status, statusPath } = input;
 	const statusStep = status.steps[index];
 	if (!statusStep) throw new Error(`Missing status step for Agent index ${index}.`);
-	if (input.consumeScheduledStop(index)) return stoppedResult(task, "Agent stopped before it started.");
+	if (input.consumeScheduledStop(index)) return stoppedResult(task, "stop");
 	const startedAt = Date.now();
 	statusStep.status = "running";
 	statusStep.startedAt = startedAt;
@@ -2916,39 +2924,8 @@ async function runConfiguredWork(
 				},
 				{
 					signal: schedulingAbort.signal,
-					stoppedMessage:
-						terminalKind === "timeout"
-							? "Agent timed out before it started."
-							: terminalKind === "pause"
-								? "Agent paused before it started."
-								: "Agent stopped before it started.",
 				},
 			);
-			if (terminalKind === "pause") {
-				results = results.map((result) =>
-					result.stopped && result.error?.includes("before it started")
-						? {
-								...result,
-								stopped: undefined,
-								interrupted: true,
-								error: "Agent paused before it started.",
-								output: "Agent paused before it started.",
-							}
-						: result,
-				);
-			} else if (terminalKind === "timeout") {
-				results = results.map((result) =>
-					result.stopped && result.error?.includes("before it started")
-						? {
-								...result,
-								stopped: undefined,
-								timedOut: true,
-								error: "Agent timed out before it started.",
-								output: "Agent timed out before it started.",
-							}
-						: result,
-				);
-			}
 			results = boundRunResultOutputs(results);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

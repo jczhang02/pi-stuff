@@ -130,6 +130,7 @@ export interface BackgroundTaskResult {
 	interrupted?: boolean;
 	timedOut?: boolean;
 	stopped?: boolean;
+	preStartTerminalCause?: "pause" | "timeout" | "stop";
 	turnBudget?: TurnBudgetState;
 	turnBudgetExceeded?: boolean;
 	wrapUpRequested?: boolean;

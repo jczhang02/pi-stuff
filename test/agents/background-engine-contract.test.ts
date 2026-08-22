@@ -1729,6 +1729,7 @@ setInterval(() => {}, 1_000);
 		expect(started).toEqual([0]);
 		expect(results).toHaveLength(3);
 		expect(results.every((result) => result.stopped)).toBe(true);
+		expect(results.slice(1).every((result) => result.preStartTerminalCause === "stop")).toBe(true);
 
 		const config = {
 			version: 2,
@@ -1743,6 +1744,38 @@ setInterval(() => {}, 1_000);
 			success: false,
 			stopped: true,
 		});
+	});
+
+	test("projects every queued terminal cause without rewriting a launched Agent error", async () => {
+		for (const cause of ["pause", "timeout", "stop"] as const) {
+			const controller = new AbortController();
+			const collision = "Provider failed before it started returning output.";
+			const results = await runBackgroundWork(
+				{
+					mode: "parallel",
+					group: { tasks: [task(0), task(1)], concurrency: 1, worktree: false },
+				},
+				async (child) => {
+					controller.abort(cause);
+					return {
+						agent: child.agent,
+						output: collision,
+						success: false,
+						exitCode: 1,
+						stopped: true,
+						error: collision,
+					};
+				},
+				{ signal: controller.signal },
+			);
+
+			expect(results[0]).toMatchObject({ error: collision, output: collision, stopped: true });
+			expect(results[0]).not.toHaveProperty("preStartTerminalCause");
+			expect(results[1]?.preStartTerminalCause).toBe(cause);
+			expect(results[1]?.interrupted).toBe(cause === "pause" ? true : undefined);
+			expect(results[1]?.timedOut).toBe(cause === "timeout" ? true : undefined);
+			expect(results[1]?.stopped).toBe(cause === "stop" ? true : undefined);
+		}
 	});
 
 	test("terminalizes queued status steps when a bounded group is stopped", async () => {
