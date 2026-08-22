@@ -4,15 +4,54 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	type JsonInputValue,
+	parseJsonValue,
+} from "../packages/pi-stuff/src/shared/json-value.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/context-pty-provider.ts");
 const runner = join(root, "test/fixtures/context-pty-runner.sh");
 const MEMORY_EVIDENCE = "真实 Context 检索证据";
 const CONTEXT_ACTIVITY_DATA_SCHEMA = Type.Object({ summary: Type.String() }, { additionalProperties: true });
+const RECORD_LINE_SCHEMA = Type.Object(
+	{
+		commands: Type.Optional(Type.Array(Type.String())),
+		cwd: Type.Optional(Type.String()),
+		hasCompactMagicContextPrompt: Type.Optional(Type.Boolean()),
+		hasContextActivityText: Type.Optional(Type.Boolean()),
+		hasHistory: Type.Optional(Type.Boolean()),
+		hasNativeSummary: Type.Optional(Type.Boolean()),
+		hasSince: Type.Optional(Type.Boolean()),
+		hasVerboseMagicContextPrompt: Type.Optional(Type.Boolean()),
+		lastUser: Type.Optional(Type.String()),
+		searchResult: Type.Optional(Type.String()),
+		sessionId: Type.Optional(Type.String()),
+		subagent: Type.Optional(Type.Boolean()),
+		systemPromptChars: Type.Optional(Type.Number()),
+		tools: Type.Optional(Type.Array(Type.String())),
+		type: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const SESSION_LINE_FIELDS_SCHEMA = Type.Object(
+	{
+		customType: Type.Optional(Type.String()),
+		type: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const MAGIC_COMPACTION_DETAILS_SCHEMA = Type.Object(
+	{ source: Type.Literal("magic-context") },
+	{ additionalProperties: true },
+);
+const COUNT_ROW_SCHEMA = Type.Object({ count: Type.Number() }, { additionalProperties: true });
+const PROJECT_PATH_ROW_SCHEMA = Type.Object({ project_path: Type.String() }, { additionalProperties: true });
+const PROJECT_PATH_ROWS_SCHEMA = Type.Array(PROJECT_PATH_ROW_SCHEMA);
 
 export interface ContextPtyVerificationOptions {
 	readonly piBinary: string;
@@ -21,23 +60,7 @@ export interface ContextPtyVerificationOptions {
 	readonly rows?: number;
 }
 
-interface RecordLine {
-	readonly type?: unknown;
-	readonly cwd?: unknown;
-	readonly sessionId?: unknown;
-	readonly lastUser?: unknown;
-	readonly hasContextActivityText?: unknown;
-	readonly hasHistory?: unknown;
-	readonly hasSince?: unknown;
-	readonly hasNativeSummary?: unknown;
-	readonly systemPromptChars?: unknown;
-	readonly hasCompactMagicContextPrompt?: unknown;
-	readonly hasVerboseMagicContextPrompt?: unknown;
-	readonly commands?: unknown;
-	readonly tools?: unknown;
-	readonly searchResult?: unknown;
-	readonly subagent?: unknown;
-}
+type RecordLine = Static<typeof RECORD_LINE_SCHEMA>;
 
 const ZERO_USAGE = {
 	input: 0,
@@ -48,12 +71,12 @@ const ZERO_USAGE = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-interface SessionLine {
-	readonly customType?: unknown;
-	readonly data?: unknown;
-	readonly type?: unknown;
-	readonly message?: unknown;
-	readonly details?: unknown;
+interface SessionLine extends JsonInputObject {
+	readonly customType?: string;
+	readonly data?: JsonInputValue;
+	readonly type?: string;
+	readonly message?: JsonInputValue;
+	readonly details?: JsonInputValue;
 }
 
 function fail(message: string): never {
@@ -266,11 +289,9 @@ expect { eof {} timeout { puts stderr "Native-compacted Context Pi did not exit"
 }
 
 function runCommand(args: readonly string[], environment?: Record<string, string | undefined>): string {
-	const result = Bun.spawnSync([...args], {
-		...(environment ? { env: environment } : {}),
-		stderr: "pipe",
-		stdout: "pipe",
-	});
+	const result = environment
+		? Bun.spawnSync([...args], { env: environment, stderr: "pipe", stdout: "pipe" })
+		: Bun.spawnSync([...args], { stderr: "pipe", stdout: "pipe" });
 	if (result.exitCode !== 0) {
 		fail(`${args.join(" ")} exited ${String(result.exitCode)}: ${result.stderr.toString().trim()}`);
 	}
@@ -478,7 +499,25 @@ async function readRecords(path: string): Promise<RecordLine[]> {
 		.trim()
 		.split("\n")
 		.filter(Boolean)
-		.map((line) => JSON.parse(line) as RecordLine);
+		.map((line) => {
+			const record = JSON.parse(line);
+			if (!Check(RECORD_LINE_SCHEMA, record)) fail(`provider log ${path} contains a malformed record`);
+			return record;
+		});
+}
+
+function parseSessionLines(contents: string, path: string): SessionLine[] {
+	return contents
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => {
+			const value = parseJsonValue(line);
+			if (!isJsonInputObject(value) || !Check(SESSION_LINE_FIELDS_SCHEMA, value)) {
+				fail(`session ${path} contains a malformed record`);
+			}
+			return value;
+		});
 }
 
 function sessionText(lines: readonly SessionLine[]): string {
@@ -742,11 +781,9 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			.filter((entry) => entry.endsWith(".jsonl"))
 			.map((entry) => join(sessionDirectory, entry));
 		if (sessionFiles.length !== 1) fail(`expected one durable session, received ${String(sessionFiles.length)}`);
-		const sessionFile = sessionFiles[0] as string;
-		const rawLines = (await readFile(sessionFile, "utf8"))
-			.trim()
-			.split("\n")
-			.map((line) => JSON.parse(line) as SessionLine);
+		const [sessionFile] = sessionFiles;
+		if (!sessionFile) fail("durable session file was not found");
+		const rawLines = parseSessionLines(await readFile(sessionFile, "utf8"), sessionFile);
 		const persisted = sessionText(rawLines);
 		const contextActivities = rawLines.filter(
 			(line) => line.type === "custom" && line.customType === "pi-stuff-context-activity",
@@ -787,19 +824,15 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		try {
 			const historianSuccess = pressureDatabase
 				.query("SELECT COUNT(*) AS count FROM historian_runs WHERE session_id = ? AND status = 'success'")
-				.get(`context-pty-${String(columns)}x${String(rows)}`) as { readonly count?: unknown } | null;
-			if (!historianSuccess || Number(historianSuccess.count) < 1) {
+				.get(`context-pty-${String(columns)}x${String(rows)}`);
+			if (!Check(COUNT_ROW_SCHEMA, historianSuccess) || historianSuccess.count < 1) {
 				fail("high-pressure turn did not complete a successful Magic Context historian run");
 			}
 		} finally {
 			pressureDatabase.close();
 		}
 		const freshNativeCompactions = rawLines.filter(
-			(line) =>
-				line.type === "compaction" &&
-				(!isRuntimeObject(line.details) ||
-					line.details === null ||
-					(line.details as { readonly source?: unknown }).source !== "magic-context"),
+			(line) => line.type === "compaction" && !Check(MAGIC_COMPACTION_DETAILS_SCHEMA, line.details),
 		);
 		if (freshNativeCompactions.length > 0) {
 			fail("fresh session appended a Pi-native compaction even though Magic Context owns the transformed view");
@@ -834,22 +867,14 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		if (resumeOutput.includes("category=PROJECT_RULES")) {
 			fail("resumed ctx_search history exposed the raw Magic Context result block");
 		}
-		const resumedRawLines = (await readFile(sessionFile, "utf8"))
-			.trim()
-			.split("\n")
-			.map((line) => JSON.parse(line) as SessionLine);
+		const resumedRawLines = parseSessionLines(await readFile(sessionFile, "utf8"), sessionFile);
 		const records = await readRecords(requestLog);
 		if (!records.some((record) => record.type === "historian")) {
 			const diagnosticMagicLog = await readFile(magicLog, "utf8").catch(() => "<Magic Context log unavailable>");
 			fail(`high-usage session never completed a real Magic Context historian model call\n${diagnosticMagicLog}`);
 		}
 		const compactions = resumedRawLines.filter((line) => line.type === "compaction");
-		const magicCompactions = compactions.filter(
-			(line) =>
-				isRuntimeObject(line.details) &&
-				line.details !== null &&
-				(line.details as { readonly source?: unknown }).source === "magic-context",
-		);
+		const magicCompactions = compactions.filter((line) => Check(MAGIC_COMPACTION_DETAILS_SCHEMA, line.details));
 		if (compactions.length !== magicCompactions.length) {
 			fail("resumed high-usage session appended a Pi-native compaction instead of the Magic Context marker");
 		}
@@ -876,12 +901,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		for (const inventory of inventories) {
 			const commands = Array.isArray(inventory.commands) ? inventory.commands : [];
 			const tools = Array.isArray(inventory.tools) ? inventory.tools : [];
-			const contextCommands = commands
-				.filter(
-					(command): command is string =>
-						isRuntimeString(command) && (command === "ctx" || command.startsWith("ctx-")),
-				)
-				.sort();
+			const contextCommands = commands.filter((command) => command === "ctx" || command.startsWith("ctx-")).sort();
 			if (JSON.stringify(contextCommands) !== JSON.stringify(expectedCommands)) {
 				fail(`focused Magic diagnostics differ: ${JSON.stringify(contextCommands)}`);
 			}
@@ -906,29 +926,27 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			if (request.hasVerboseMagicContextPrompt !== false) {
 				fail(`verbose upstream Magic Context instructions leaked into request ${String(request.lastUser)}`);
 			}
-			if (!isRuntimeNumber(request.systemPromptChars) || request.systemPromptChars > 8_000) {
+			if (request.systemPromptChars === undefined || request.systemPromptChars > 8_000) {
 				fail(
 					`provider-visible system prompt exceeded the 8,000-character budget: ${String(request.systemPromptChars)}`,
 				);
 			}
 		}
-		const searchRequest = requests.find((record) => isRuntimeString(record.searchResult));
-		if (!searchRequest || !(searchRequest.searchResult as string).includes(MEMORY_EVIDENCE)) {
+		const searchRequest = requests.find((record) => record.searchResult !== undefined);
+		if (!searchRequest?.searchResult?.includes(MEMORY_EVIDENCE)) {
 			fail("ctx_search did not retrieve the Chinese memory written through ctx_memory");
 		}
 		const magicLogContents = await readFile(magicLog, "utf8");
 		if (magicLogContents.includes("embedding model failed to load")) {
 			fail("the certified lexical-only profile still attempted to load the incompatible local embedding runtime");
 		}
-		const resumed = requests.find(
-			(record) => isRuntimeString(record.lastUser) && record.lastUser.includes("CONTEXT_RESUME"),
-		);
+		const resumed = requests.find((record) => record.lastUser?.includes("CONTEXT_RESUME") === true);
 		if (!resumed) {
 			fail(`resumed session did not reach the model: ${JSON.stringify(requests.map((record) => record.lastUser))}`);
 		}
 
 		const sessionRecord = records.find((record) => record.type === "session");
-		if (!isRuntimeString(sessionRecord?.sessionId)) fail("session identity was not recorded");
+		if (!sessionRecord?.sessionId) fail("session identity was not recorded");
 		const isolationSessionDirectory = join(temporaryDirectory, "isolation-sessions");
 		const isolationLog = join(temporaryDirectory, "isolation.jsonl");
 		await mkdir(isolationSessionDirectory);
@@ -946,9 +964,9 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			isolatedProjectDirectory,
 		);
 		const isolationRequests = (await readRecords(isolationLog)).filter((record) => record.type === "request");
-		const isolationSearch = isolationRequests.find((record) => isRuntimeString(record.searchResult));
-		if (!isolationSearch) fail("isolated project did not execute ctx_search");
-		if ((isolationSearch.searchResult as string).includes(MEMORY_EVIDENCE)) {
+		const isolationSearch = isolationRequests.find((record) => record.searchResult !== undefined);
+		if (!isolationSearch?.searchResult) fail("isolated project did not execute ctx_search");
+		if (isolationSearch.searchResult.includes(MEMORY_EVIDENCE)) {
 			fail("memory from the first project leaked into the isolated project search");
 		}
 
@@ -969,9 +987,7 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			nativeCompactedProjectDirectory,
 		);
 		const nativeRequests = (await readRecords(nativeLog)).filter((record) => record.type === "request");
-		const nativeResume = nativeRequests.find(
-			(record) => isRuntimeString(record.lastUser) && record.lastUser.includes("CONTEXT_NATIVE_RESUME"),
-		);
+		const nativeResume = nativeRequests.find((record) => record.lastUser?.includes("CONTEXT_NATIVE_RESUME") === true);
 		if (nativeResume?.hasHistory !== true || nativeResume.hasNativeSummary !== true) {
 			fail("Magic Context did not adopt the existing Pi-native compaction summary on resume");
 		}
@@ -984,8 +1000,8 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 		try {
 			const ownership = database
 				.query("SELECT project_path FROM session_projects WHERE session_id = ? AND harness = 'pi'")
-				.get(sessionRecord.sessionId) as { readonly project_path?: unknown } | null;
-			if (!ownership || !isRuntimeString(ownership.project_path)) {
+				.get(sessionRecord.sessionId);
+			if (!Check(PROJECT_PATH_ROW_SCHEMA, ownership)) {
 				fail("Magic Context did not persist a Pi-scoped project binding");
 			}
 			if (!ownership.project_path.startsWith("git:") && !ownership.project_path.startsWith("dir:")) {
@@ -993,8 +1009,8 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			}
 			const isolatedOwnership = database
 				.query("SELECT project_path FROM session_projects WHERE session_id = ? AND harness = 'pi'")
-				.get("context-isolation") as { readonly project_path?: unknown } | null;
-			if (!isRuntimeString(isolatedOwnership?.project_path)) {
+				.get("context-isolation");
+			if (!Check(PROJECT_PATH_ROW_SCHEMA, isolatedOwnership)) {
 				fail("isolated Pi session did not persist its project binding");
 			}
 			if (isolatedOwnership.project_path === ownership.project_path) {
@@ -1002,7 +1018,10 @@ export async function verifyContextPty(options: ContextPtyVerificationOptions): 
 			}
 			const memoryOwnership = database
 				.query("SELECT DISTINCT project_path FROM memories WHERE content LIKE ?")
-				.all(`%${MEMORY_EVIDENCE}%`) as Array<{ readonly project_path?: unknown }>;
+				.all(`%${MEMORY_EVIDENCE}%`);
+			if (!Check(PROJECT_PATH_ROWS_SCHEMA, memoryOwnership)) {
+				fail("memory ownership query returned malformed rows");
+			}
 			if (memoryOwnership.length !== 1 || memoryOwnership[0]?.project_path !== ownership.project_path) {
 				fail("written memory was not confined to the originating project identity");
 			}

@@ -6,7 +6,13 @@ import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
-import { isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	type JsonInputValue,
+	parseJsonValue,
+} from "../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { terminateDetachedProcessGroup } from "./detached-process.js";
 
 const root = resolve(import.meta.dir, "..");
@@ -55,6 +61,88 @@ const GOAL_STATE_DATA_SCHEMA = Type.Object(
 	},
 	{ additionalProperties: true },
 );
+const PACKAGE_MANIFEST_SCHEMA = Type.Object(
+	{
+		name: Type.String(),
+		private: Type.Optional(Type.Boolean()),
+		version: Type.String(),
+	},
+	{ additionalProperties: true },
+);
+const RPC_RECORD_FIELDS_SCHEMA = Type.Object(
+	{
+		command: Type.Optional(Type.String()),
+		id: Type.Optional(Type.String()),
+		success: Type.Optional(Type.Boolean()),
+		type: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const SESSION_ENTRY_FIELDS_SCHEMA = Type.Object(
+	{
+		customType: Type.Optional(Type.String()),
+		fromHook: Type.Optional(Type.Boolean()),
+		type: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const SESSION_STATE_SCHEMA = Type.Object(
+	{
+		autoCompactionEnabled: Type.Optional(Type.Boolean()),
+		model: Type.Optional(
+			Type.Union([
+				Type.Null(),
+				Type.Object(
+					{
+						contextWindow: Type.Optional(Type.Number()),
+						id: Type.Optional(Type.String()),
+						provider: Type.Optional(Type.String()),
+					},
+					{ additionalProperties: true },
+				),
+			]),
+		),
+		sessionFile: Type.Optional(Type.String()),
+		sessionId: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const SESSION_STATS_SCHEMA = Type.Object(
+	{
+		contextUsage: Type.Optional(
+			Type.Object(
+				{
+					contextWindow: Type.Number(),
+					percent: Type.Union([Type.Number(), Type.Null()]),
+					tokens: Type.Union([Type.Number(), Type.Null()]),
+				},
+				{ additionalProperties: true },
+			),
+		),
+		tokens: Type.Optional(
+			Type.Object(
+				{
+					cacheRead: Type.Optional(Type.Number()),
+					cacheWrite: Type.Optional(Type.Number()),
+					input: Type.Optional(Type.Number()),
+					output: Type.Optional(Type.Number()),
+					total: Type.Optional(Type.Number()),
+				},
+				{ additionalProperties: true },
+			),
+		),
+	},
+	{ additionalProperties: true },
+);
+const COUNT_ROW_SCHEMA = Type.Object({ count: Type.Number() }, { additionalProperties: true });
+const MARKER_ROW_SCHEMA = Type.Object(
+	{ marker: Type.Union([Type.Null(), Type.String()]) },
+	{ additionalProperties: true },
+);
+const PROJECT_IDENTITY_ROW_SCHEMA = Type.Object({ projectIdentity: Type.String() }, { additionalProperties: true });
+const COMPARTMENT_RANGES_SCHEMA = Type.Array(
+	Type.Object({ end: Type.Number(), start: Type.Number() }, { additionalProperties: true }),
+);
 
 type ProviderUsage = Static<typeof PROVIDER_USAGE_SCHEMA>;
 
@@ -66,20 +154,19 @@ interface Options {
 	readonly reportPath: string;
 }
 
-interface RpcRecord {
-	readonly [key: string]: unknown;
-	readonly command?: unknown;
-	readonly data?: unknown;
-	readonly id?: unknown;
-	readonly success?: unknown;
-	readonly type?: unknown;
+interface RpcRecord extends JsonInputObject {
+	readonly command?: string;
+	readonly data?: JsonInputValue;
+	readonly id?: string;
+	readonly success?: boolean;
+	readonly type?: string;
 }
 
 interface RpcTransport {
 	readonly records: RpcRecord[];
 	readonly stderr: () => string;
 	promptAndWait(message: string, timeoutMs?: number): Promise<RpcRecord[]>;
-	send(command: Record<string, unknown>, timeoutMs?: number): Promise<RpcRecord>;
+	send(command: JsonInputObject, timeoutMs?: number): Promise<RpcRecord>;
 	stop(): Promise<void>;
 	waitFor(
 		predicate: (record: RpcRecord) => boolean,
@@ -87,36 +174,15 @@ interface RpcTransport {
 	): Promise<RpcRecord>;
 }
 
-interface ContextUsage {
-	readonly contextWindow: number;
-	readonly percent: number | null;
-	readonly tokens: number | null;
-}
+type SessionStats = Static<typeof SESSION_STATS_SCHEMA>;
+type SessionState = Static<typeof SESSION_STATE_SCHEMA>;
 
-interface SessionStats {
-	readonly contextUsage?: ContextUsage;
-	readonly tokens?: {
-		readonly cacheRead?: number;
-		readonly cacheWrite?: number;
-		readonly input?: number;
-		readonly output?: number;
-		readonly total?: number;
-	};
-}
-
-interface SessionState {
-	readonly autoCompactionEnabled?: unknown;
-	readonly model?: { readonly contextWindow?: unknown; readonly id?: unknown; readonly provider?: unknown } | null;
-	readonly sessionFile?: unknown;
-	readonly sessionId?: unknown;
-}
-
-interface SessionEntry extends Record<string, unknown> {
-	readonly data?: unknown;
-	readonly details?: unknown;
-	readonly fromHook?: unknown;
-	readonly message?: unknown;
-	readonly type?: unknown;
+interface SessionEntry extends JsonInputObject {
+	readonly data?: JsonInputValue;
+	readonly details?: JsonInputValue;
+	readonly fromHook?: boolean;
+	readonly message?: JsonInputValue;
+	readonly type?: string;
 }
 
 interface DatabaseEvidence {
@@ -171,13 +237,14 @@ function parseOptions(argv: readonly string[]): Options {
 	for (const key of values.keys()) {
 		if (!["--archive", "--auth", "--package", "--pi", "--report"].includes(key)) fail(`unknown option ${key}`);
 	}
-	return {
-		...(archive ? { archivePath: resolve(archive) } : {}),
+	const options = {
 		authPath: resolve(values.get("--auth") ?? join(homedir(), ".pi/agent/auth.json")),
 		packagePath: resolve(packagePath ?? join(root, "packages/pi-stuff")),
 		piBinary: resolve(values.get("--pi") ?? process.env["PI_BIN"] ?? DEFAULT_PI_BINARY),
 		reportPath: resolve(values.get("--report") ?? join(root, "docs/reports/magic-context-real-acceptance.json")),
 	};
+	if (archive) Object.assign(options, { archivePath: resolve(archive) });
+	return options;
 }
 
 function sha256(value: Uint8Array | string): string {
@@ -206,22 +273,23 @@ function assertSafeArchiveEntries(entries: readonly string[]): void {
 }
 
 async function verifyLocalPackage(packagePath: string): Promise<string> {
-	const manifest = JSON.parse(await readFile(join(packagePath, "package.json"), "utf8")) as {
-		name?: unknown;
-		private?: unknown;
-		version?: unknown;
-	};
-	if (manifest.name !== "@jczhang02/pi-stuff" || manifest.private !== true || !isRuntimeString(manifest.version)) {
+	const manifest = JSON.parse(await readFile(join(packagePath, "package.json"), "utf8"));
+	if (
+		!Check(PACKAGE_MANIFEST_SCHEMA, manifest) ||
+		manifest.name !== "@jczhang02/pi-stuff" ||
+		manifest.private !== true
+	) {
 		fail(`path is not the private local @jczhang02/pi-stuff Package: ${JSON.stringify(manifest)}`);
 	}
 	const resolver = createRequire(join(packagePath, "package.json"));
 	const officialManifest = JSON.parse(
 		await readFile(resolver.resolve("@cortexkit/pi-magic-context/package.json"), "utf8"),
-	) as {
-		name?: unknown;
-		version?: unknown;
-	};
-	if (officialManifest.name !== "@cortexkit/pi-magic-context" || officialManifest.version !== "0.33.1") {
+	);
+	if (
+		!Check(PACKAGE_MANIFEST_SCHEMA, officialManifest) ||
+		officialManifest.name !== "@cortexkit/pi-magic-context" ||
+		officialManifest.version !== "0.33.1"
+	) {
 		fail(`Pi Stuff does not resolve the audited official Magic Context 0.33.1: ${JSON.stringify(officialManifest)}`);
 	}
 	return packagePath;
@@ -235,11 +303,8 @@ async function extractPackage(archivePath: string, destination: string): Promise
 	assertSafeArchiveEntries(entries);
 	command(["tar", "--extract", "--gzip", "--file", archivePath, "--directory", destination], destination);
 	const packagePath = join(destination, "package");
-	const manifest = JSON.parse(await readFile(join(packagePath, "package.json"), "utf8")) as {
-		name?: unknown;
-		version?: unknown;
-	};
-	if (manifest.name !== "@jczhang02/pi-stuff" || !isRuntimeString(manifest.version)) {
+	const manifest = JSON.parse(await readFile(join(packagePath, "package.json"), "utf8"));
+	if (!Check(PACKAGE_MANIFEST_SCHEMA, manifest) || manifest.name !== "@jczhang02/pi-stuff") {
 		fail(`archive is not @jczhang02/pi-stuff: ${JSON.stringify(manifest)}`);
 	}
 	await symlink(join(root, "packages/pi-stuff/node_modules"), join(packagePath, "node_modules"), "dir");
@@ -252,12 +317,19 @@ function auditRecordContent(record: RpcRecord): string {
 	return result.content.map((block) => block.text ?? "").join("\n");
 }
 
-function successfulResponse(record: RpcRecord, commandName: string): Record<string, unknown> {
+function successfulResponse(record: RpcRecord, commandName: string): JsonInputObject {
 	if (record.type !== "response" || record.command !== commandName || record.success !== true) {
 		fail(`RPC ${commandName} failed: ${JSON.stringify(record)}`);
 	}
-	if (!isRuntimeObject(record.data) || record.data === null) return {};
-	return record.data as Record<string, unknown>;
+	return isJsonInputObject(record.data) ? record.data : {};
+}
+
+function parseRpcRecord(line: string): RpcRecord {
+	const value = parseJsonValue(line);
+	if (!isJsonInputObject(value) || !Check(RPC_RECORD_FIELDS_SCHEMA, value)) {
+		throw new Error(`Invalid Pi RPC record: ${line}`);
+	}
+	return value;
 }
 
 async function createRpcTransport(
@@ -301,11 +373,9 @@ async function createRpcTransport(
 
 	const consume = (line: string): void => {
 		if (!line) return;
-		const parsed: unknown = JSON.parse(line);
-		if (!isRuntimeObject(parsed) || parsed === null) throw new Error(`Invalid Pi RPC record: ${line}`);
-		const record = parsed as RpcRecord;
+		const record = parseRpcRecord(line);
 		records.push(record);
-		if (isRuntimeString(record.id) && record.type === "response") {
+		if (record.id && record.type === "response") {
 			const request = pending.get(record.id);
 			if (request) {
 				pending.delete(record.id);
@@ -563,17 +633,27 @@ async function lastAssistantText(rpc: RpcTransport): Promise<string> {
 }
 
 async function sessionState(rpc: RpcTransport): Promise<SessionState> {
-	return successfulResponse(await rpc.send({ type: "get_state" }), "get_state") as SessionState;
+	const data = successfulResponse(await rpc.send({ type: "get_state" }), "get_state");
+	if (!Check(SESSION_STATE_SCHEMA, data)) fail("get_state returned malformed state");
+	return data;
 }
 
 async function sessionStats(rpc: RpcTransport): Promise<SessionStats> {
-	return successfulResponse(await rpc.send({ type: "get_session_stats" }), "get_session_stats") as SessionStats;
+	const data = successfulResponse(await rpc.send({ type: "get_session_stats" }), "get_session_stats");
+	if (!Check(SESSION_STATS_SCHEMA, data)) fail("get_session_stats returned malformed statistics");
+	return data;
 }
 
 async function sessionEntries(rpc: RpcTransport): Promise<SessionEntry[]> {
 	const data = successfulResponse(await rpc.send({ type: "get_entries" }), "get_entries");
-	if (!Array.isArray(data["entries"])) fail("get_entries returned no entries array");
-	return data["entries"] as SessionEntry[];
+	const entries = data["entries"];
+	if (!Array.isArray(entries)) fail("get_entries returned no entries array");
+	return entries.map((entry) => {
+		if (!isJsonInputObject(entry) || !Check(SESSION_ENTRY_FIELDS_SCHEMA, entry)) {
+			fail("get_entries returned a malformed entry");
+		}
+		return entry;
+	});
 }
 
 function observePressure(observations: PressureObservation[], label: string, stats: SessionStats): void {
@@ -603,7 +683,13 @@ function parseSession(path: string): Promise<SessionEntry[]> {
 			.trim()
 			.split("\n")
 			.filter(Boolean)
-			.map((line) => JSON.parse(line) as SessionEntry),
+			.map((line) => {
+				const entry = parseJsonValue(line);
+				if (!isJsonInputObject(entry) || !Check(SESSION_ENTRY_FIELDS_SCHEMA, entry)) {
+					fail(`session ${path} contains a malformed entry`);
+				}
+				return entry;
+			}),
 	);
 }
 
@@ -641,12 +727,13 @@ function readDatabaseEvidence(databasePath: string, sessionId: string): Database
 	const database = new Database(databasePath, { readonly: true });
 	try {
 		const count = (sql: string): number => {
-			const row = database.query(sql).get(sessionId) as { readonly count?: unknown } | null;
-			return Number(row?.count ?? 0);
+			const row = database.query(sql).get(sessionId);
+			if (!Check(COUNT_ROW_SCHEMA, row)) return 0;
+			return row.count;
 		};
 		const marker = database
 			.query("SELECT pending_pi_compaction_marker_state AS marker FROM session_meta WHERE session_id = ?")
-			.get(sessionId) as { readonly marker?: unknown } | null;
+			.get(sessionId);
 		return {
 			compartments: count("SELECT COUNT(*) AS count FROM compartments WHERE session_id = ? AND harness = 'pi'"),
 			historianFailures: count(
@@ -655,7 +742,7 @@ function readDatabaseEvidence(databasePath: string, sessionId: string): Database
 			historianSuccesses: count(
 				"SELECT COUNT(*) AS count FROM historian_runs WHERE session_id = ? AND status = 'success'",
 			),
-			pendingMarker: isRuntimeString(marker?.marker) && marker.marker.length > 0,
+			pendingMarker: Check(MARKER_ROW_SCHEMA, marker) && marker.marker !== null && marker.marker.length > 0,
 		};
 	} finally {
 		database.close();
@@ -667,8 +754,8 @@ function readProjectIdentity(databasePath: string, sessionId: string): string {
 	try {
 		const row = database
 			.query("SELECT project_path AS projectIdentity FROM session_projects WHERE session_id = ? AND harness = 'pi'")
-			.get(sessionId) as { readonly projectIdentity?: unknown } | null;
-		if (!isRuntimeString(row?.projectIdentity) || !row.projectIdentity) {
+			.get(sessionId);
+		if (!Check(PROJECT_IDENTITY_ROW_SCHEMA, row) || !row.projectIdentity) {
 			fail(`Magic Context stored no project identity for ${sessionId}`);
 		}
 		return row.projectIdentity;
@@ -680,11 +767,13 @@ function readProjectIdentity(databasePath: string, sessionId: string): string {
 function readCompartmentRanges(databasePath: string, sessionId: string): CompartmentRange[] {
 	const database = new Database(databasePath, { readonly: true });
 	try {
-		return database
+		const rows = database
 			.query(
 				"SELECT start_message AS start, end_message AS end FROM compartments WHERE session_id = ? AND harness = 'pi' ORDER BY sequence",
 			)
-			.all(sessionId) as CompartmentRange[];
+			.all(sessionId);
+		if (!Check(COMPARTMENT_RANGES_SCHEMA, rows)) fail("Magic Context returned malformed compartment ranges");
+		return rows;
 	} finally {
 		database.close();
 	}
@@ -744,11 +833,7 @@ function countAuditRecords(records: readonly RpcRecord[], type: string): number 
 
 async function readAudit(path: string): Promise<RpcRecord[]> {
 	const contents = await readFile(path, "utf8");
-	return contents
-		.trim()
-		.split("\n")
-		.filter(Boolean)
-		.map((line) => JSON.parse(line) as RpcRecord);
+	return contents.trim().split("\n").filter(Boolean).map(parseRpcRecord);
 }
 
 async function preserveEvidence(
