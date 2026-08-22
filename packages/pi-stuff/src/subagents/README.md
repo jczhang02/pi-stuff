@@ -32,6 +32,9 @@ user definitions, and user definitions override Package definitions.
 - `turnBudget`, `toolBudget`, and `timeoutMs` are optional per-Agent limits. When neither the launch nor its Agent
   definition supplies a limit, that dimension remains unbounded. Agents owns enforcement, stop, resume, and terminal
   state; Context Management does not impose a second aggregate limit.
+- Queued work that never launches records an explicit `pause`, `timeout`, or `stop` pre-start cause. Terminal
+  projection uses that cause rather than matching error prose, so a real Agent failure keeps its original state and
+  message even when the text happens to contain `before it started`.
 - Each Agent has a stable identity, its own transcript, durable acknowledged steering, independent stop, and safe
   resume when its terminal state permits it. Steering recovery is deliberately at-least-once: if a child accepts input
   immediately before a crash prevents its acknowledgement from becoming durable, recovery may replay that request

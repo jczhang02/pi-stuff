@@ -3097,11 +3097,12 @@ export async function waitForStartupControl(
 	token: string,
 	action: "ack" | "proceed",
 	timeoutMs = 30_000,
+	readControl: (path: string) => string = (path) => fs.readFileSync(path, "utf-8"),
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() <= deadline) {
 		try {
-			const payload = parseJsonValue(fs.readFileSync(controlPath, "utf-8"));
+			const payload = parseJsonValue(readControl(controlPath));
 			if (!isRuntimeObject(payload) || payload === null || Array.isArray(payload)) {
 				throw new Error("Runner startup control payload is invalid.");
 			}

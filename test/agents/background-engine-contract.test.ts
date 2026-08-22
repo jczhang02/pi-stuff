@@ -441,14 +441,24 @@ describe("background runner configuration", () => {
 		).not.toThrow();
 	});
 
-	test("retries a missing startup control without accepting invalid controls", async () => {
+	test("retries a startup control removed before open without accepting invalid controls", async () => {
 		const root = fixtureRoot();
 		const controlPath = path.join(root, "runner-startup-control.json");
-		const waiting = waitForStartupControl(controlPath, "expected-token", "proceed", 200);
+		fs.writeFileSync(controlPath, JSON.stringify({ action: "proceed", token: "expected-token" }));
+		let cleanupInjected = false;
+		const waiting = waitForStartupControl(controlPath, "expected-token", "proceed", 200, (path) => {
+			if (!cleanupInjected) {
+				expect(fs.existsSync(path)).toBeTrue();
+				cleanupInjected = true;
+				fs.rmSync(path);
+			}
+			return fs.readFileSync(path, "utf8");
+		});
 		setTimeout(() => {
 			fs.writeFileSync(controlPath, JSON.stringify({ action: "proceed", token: "expected-token" }));
 		}, 25);
 		await waiting;
+		expect(cleanupInjected).toBeTrue();
 
 		fs.writeFileSync(controlPath, "not-json");
 		await expect(waitForStartupControl(controlPath, "expected-token", "proceed", 50)).rejects.toThrow();

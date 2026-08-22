@@ -4831,7 +4831,7 @@ test("manual compaction cancels stale continuation and sends one fresh continuat
 	assert.equal(compacted.mock.sentUserMessages.length, 3);
 });
 
-test("Magic Context compaction bypass sends one fresh continuation without session_compact", async () => {
+test("the shared Magic Context bypass rejects malformed and mismatched payloads before valid Goal handoff", async () => {
 	let idleWaits = 0;
 	const sessionManager = {
 		getBranch: () => [],
@@ -4863,6 +4863,12 @@ test("Magic Context compaction bypass sends one fresh continuation without sessi
 		schemaVersion: 1,
 		sessionManager: {},
 		source: "magic-context",
+	});
+	await new Promise((resolve) => setTimeout(resolve, 5));
+	assert.equal(compacted.mock.sentUserMessages.length, 2);
+	compacted.mock.eventBus.emit(CONTEXT_COMPACTION_BYPASSED_EVENT, {
+		schemaVersion: 1,
+		sessionManager,
 	});
 	await new Promise((resolve) => setTimeout(resolve, 5));
 	assert.equal(compacted.mock.sentUserMessages.length, 2);
