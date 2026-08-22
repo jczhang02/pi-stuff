@@ -8,7 +8,16 @@ import {
 } from "../../packages/pi-stuff/src/web/presentation.js";
 import { buildSearchErrorPlan } from "../../packages/pi-stuff/src/web/runtime/render-search-error.js";
 
-function result(details: Record<string, unknown>): AgentToolResult<unknown> {
+interface WebFixtureDetails {
+	readonly queryCount?: number;
+	readonly resultCount?: number;
+	readonly successful?: number;
+	readonly successfulQueries?: number;
+	readonly totalResults?: number;
+	readonly urlCount?: number;
+}
+
+function result(details: WebFixtureDetails): AgentToolResult<WebFixtureDetails> {
 	return { content: [{ type: "text", text: "fixture" }], details };
 }
 

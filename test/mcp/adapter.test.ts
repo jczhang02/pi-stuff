@@ -4,10 +4,12 @@ import {
 	createEventBus,
 	type ExtensionAPI,
 	type ExtensionContext,
+	type ExtensionEvent,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { SuiteCodeModeConnector } from "../../packages/pi-stuff/src/code-mode/connector.js";
 import type {
 	CommandDialogCoordinator,
@@ -32,8 +34,22 @@ class TestAppKeybindingsManager extends KeybindingsManager {
 }
 
 const Parameters = Type.Object({}, { additionalProperties: true });
+const McpGatewayParameters = Type.Object(
+	{
+		properties: Type.Object(
+			{
+				action: Type.Optional(Type.Unknown()),
+				instructions: Type.Optional(Type.Unknown()),
+				limit: Type.Object({ maximum: Type.Number() }, { additionalProperties: true }),
+				uiMessages: Type.Optional(Type.Unknown()),
+			},
+			{ additionalProperties: true },
+		),
+	},
+	{ additionalProperties: true },
+);
 type Tool = ToolDefinition<typeof Parameters, unknown>;
-type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined;
+type Handler = (event: ExtensionEvent, ctx: ExtensionContext) => object | undefined;
 
 function harness() {
 	const handlers = new Map<string, Handler[]>();
@@ -80,7 +96,7 @@ function registry(tools: Map<string, ToolDefinition>): SuiteToolDefinitionRegist
 describe("Pi Stuff MCP fork boundary", () => {
 	test("retains one gateway and bounds server-only discovery", async () => {
 		const fixture = harness();
-		const commands: Record<string, unknown> = {};
+		const commands = {};
 		const adapter = createMcpAdapterApi(fixture.pi, commands);
 		let received: unknown;
 		const execute: Tool["execute"] = async (_id, params): Promise<AgentToolResult<unknown>> => {
@@ -104,12 +120,12 @@ describe("Pi Stuff MCP fork boundary", () => {
 			{} as never,
 		);
 		expect(received).toEqual({ limit: 12, search: "", server: "demo" });
-		const properties = (tool.parameters as { properties?: Record<string, unknown> }).properties ?? {};
+		if (!Check(McpGatewayParameters, tool.parameters)) throw new Error("mcp gateway parameters were malformed");
+		const properties = tool.parameters.properties;
 		expect(properties).not.toHaveProperty("instructions");
 		expect(properties).not.toHaveProperty("uiMessages");
 		expect(properties).not.toHaveProperty("action");
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		expect((properties["limit"] as { maximum?: number }).maximum).toBe(20);
+		expect(properties.limit.maximum).toBe(20);
 		expect(tool.renderShell).toBe("self");
 	});
 
@@ -139,7 +155,7 @@ describe("Pi Stuff MCP fork boundary", () => {
 
 	test("captures the fork command and suppresses only its persistent footer", async () => {
 		const fixture = harness();
-		const commands: Record<string, unknown> = {};
+		const commands = {};
 		const adapter = createMcpAdapterApi(fixture.pi, commands);
 		adapter.registerCommand("mcp", { description: "upstream", handler: async () => undefined });
 		expect(Object.keys(commands)).toEqual(["mcp"]);
@@ -156,7 +172,7 @@ describe("Pi Stuff MCP fork boundary", () => {
 			wrapped.ui.setStatus("mcp", "verbose upstream footer");
 			wrapped.ui.setStatus("mcp-oauth", "authenticating");
 		});
-		await fixture.handlers.get("session_start")?.[0]?.({}, ctx);
+		await fixture.handlers.get("session_start")?.[0]?.({ reason: "startup", type: "session_start" }, ctx);
 		expect(writes).toEqual([["mcp-oauth", "authenticating"]]);
 	});
 

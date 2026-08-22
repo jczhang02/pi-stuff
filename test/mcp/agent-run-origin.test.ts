@@ -83,12 +83,14 @@ describe("MCP user-driven Agent attribution", () => {
 	});
 
 	test("marks an MCP UI action only after its Agent message is accepted", () => {
+		type SendMessage = NonNullable<UiAgentMessageState["sendMessage"]>;
+		type SendMessageArguments = Parameters<SendMessage>;
 		const order: string[] = [];
-		const messages: unknown[] = [];
+		const messages: Array<{ message: SendMessageArguments[0]; options: SendMessageArguments[1] }> = [];
 		const state = {
 			owner: { isActive: () => true },
 			isAgentIdle: () => false,
-			sendMessage: (message: unknown, options: unknown) => {
+			sendMessage: (message: SendMessageArguments[0], options: SendMessageArguments[1]) => {
 				order.push("send");
 				messages.push({ message, options });
 			},
@@ -103,8 +105,8 @@ describe("MCP user-driven Agent attribution", () => {
 		).toBe(true);
 		expect(order).toEqual(["send", "promote"]);
 		expect(messages).toHaveLength(1);
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		const delivered = messages[0] as { message: { details?: unknown }; options: unknown };
+		const delivered = messages[0];
+		if (!delivered) throw new Error("MCP UI action was not delivered");
 		expect(readAgentWorkOrigin(delivered.message)).toBe("user");
 		expect(delivered.options).toEqual({ deliverAs: "steer", triggerTurn: true });
 	});

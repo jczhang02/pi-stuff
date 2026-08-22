@@ -1,9 +1,36 @@
 import { describe, expect, test } from "bun:test";
 import { type AgentToolResult, createEventBus, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { createWebAdapterApi, type WebAdapterHost } from "../../packages/pi-stuff/src/web/adapter.js";
 
 const Parameters = Type.Object({}, { additionalProperties: true });
+const SearchParameters = Type.Object(
+	{
+		properties: Type.Object(
+			{
+				includeContent: Type.Optional(Type.Unknown()),
+				workflow: Type.Optional(Type.Unknown()),
+			},
+			{ additionalProperties: true },
+		),
+	},
+	{ additionalProperties: true },
+);
+const ErrorDetails = Type.Object({ error: Type.String() }, { additionalProperties: true });
+const ContinuationParameters = Type.Object(
+	{
+		properties: Type.Object(
+			{
+				limit: Type.Object({ maximum: Type.Number() }, { additionalProperties: true }),
+				offset: Type.Object({ minimum: Type.Number() }, { additionalProperties: true }),
+				responseId: Type.Object({ maxLength: Type.Number() }, { additionalProperties: true }),
+			},
+			{ additionalProperties: true },
+		),
+	},
+	{ additionalProperties: true },
+);
 type Tool = ToolDefinition<typeof Parameters, unknown>;
 
 function harness() {
@@ -77,7 +104,8 @@ describe("Pi Stuff Web fork boundary", () => {
 		await tool.execute("search-1", { query: "Pi 0.83" }, undefined, undefined, {} as never);
 
 		expect(received).toEqual({ includeContent: false, query: "Pi 0.83", workflow: "none" });
-		const properties = (tool.parameters as { properties?: Record<string, unknown> }).properties ?? {};
+		if (!Check(SearchParameters, tool.parameters)) throw new Error("web search parameters were malformed");
+		const properties = tool.parameters.properties;
 		expect(properties).not.toHaveProperty("workflow");
 		expect(properties).not.toHaveProperty("includeContent");
 	});
@@ -102,8 +130,8 @@ describe("Pi Stuff Web fork boundary", () => {
 		);
 
 		expect(calls).toBe(0);
-		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-		expect((result.details as { error?: string }).error).toContain("Local and private");
+		if (!Check(ErrorDetails, result.details)) throw new Error("fetch error details were malformed");
+		expect(result.details.error).toContain("Local and private");
 	});
 
 	test("bounds continuation selectors and returned slices", () => {
@@ -111,11 +139,14 @@ describe("Pi Stuff Web fork boundary", () => {
 		createWebAdapterApi(fixture.pi).registerTool(upstreamTool("get_search_content", "Get Search Content"));
 		const tool = fixture.tools.get("get_search_content");
 		if (!tool) throw new Error("get_search_content was not registered");
-		const properties = (tool.parameters as { properties?: Record<string, Record<string, unknown>> }).properties ?? {};
+		if (!Check(ContinuationParameters, tool.parameters)) {
+			throw new Error("web continuation parameters were malformed");
+		}
+		const properties = tool.parameters.properties;
 
-		expect(properties["responseId"]?.["maxLength"]).toBe(256);
-		expect(properties["limit"]?.["maximum"]).toBe(30_000);
-		expect(properties["offset"]?.["minimum"]).toBe(0);
+		expect(properties.responseId.maxLength).toBe(256);
+		expect(properties.limit.maximum).toBe(30_000);
+		expect(properties.offset.minimum).toBe(0);
 		expect(tool.renderShell).toBe("self");
 	});
 });
