@@ -2,11 +2,12 @@ import type {
 	AgentToolResult,
 	ExtensionAPI,
 	ExtensionContext,
+	ExtensionEvent,
 	ExtensionUIContext,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, type TSchema, Type } from "typebox";
-import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
+import { type DiagnosticReport, reportDiagnostic } from "../conversation-ui/diagnostics.js";
 import {
 	type CommandDialogKeybindings,
 	type CommandDialogView,
@@ -29,7 +30,7 @@ type CommandContext = Parameters<CommandSpec["handler"]>[1];
 type CapturedCommandSpec = Omit<CommandSpec, "handler"> & {
 	handler(args: string, ctx: CommandContext): boolean | undefined | Promise<boolean | undefined>;
 };
-type EventHandler = (event: unknown, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
+type EventHandler = (event: ExtensionEvent, ctx: ExtensionContext) => object | undefined | Promise<object | undefined>;
 type McpCustomFactory = Parameters<ExtensionUIContext["custom"]>[0];
 type McpCustomKeybindings = Parameters<McpCustomFactory>[2];
 
@@ -119,12 +120,15 @@ function boundedMcpParameters(params: McpParameters): McpParameters {
 }
 
 function sharedToolFields(upstream: CapturedTool) {
-	return {
-		...(upstream.constrainedSampling !== undefined ? { constrainedSampling: upstream.constrainedSampling } : {}),
-		...(upstream.executionMode !== undefined ? { executionMode: upstream.executionMode } : {}),
+	const fields = {
 		label: upstream.label,
 		name: upstream.name,
 	};
+	if (upstream.constrainedSampling !== undefined) {
+		Object.assign(fields, { constrainedSampling: upstream.constrainedSampling });
+	}
+	if (upstream.executionMode !== undefined) Object.assign(fields, { executionMode: upstream.executionMode });
+	return fields;
 }
 
 function registerGateway(pi: SuiteToolRegistrationHost, upstream: CapturedTool): void {
@@ -163,6 +167,7 @@ export function routeMcpCustomUiThroughCommandDialog<Context extends McpCustomUi
 	ctx: Context,
 	coordinator: McpCustomUiCoordinator<Context>,
 ): Context {
+	// SAFETY: the wrapper preserves Pi's generic custom-UI result and synchronously delegates the same factory contract.
 	const custom = (async (factory: McpCustomFactory) => {
 		const result = await coordinator.show<unknown>(ctx, {
 			priority: "normal",
@@ -170,9 +175,7 @@ export function routeMcpCustomUiThroughCommandDialog<Context extends McpCustomUi
 				if (!isMcpCustomKeybindings(context.keybindings)) {
 					throw new Error("MCP custom UI requires Pi application keybindings");
 				}
-				const component = factory(context.tui, context.theme, context.keybindings, (value: unknown) =>
-					context.close(value),
-				);
+				const component = factory(context.tui, context.theme, context.keybindings, (value) => context.close(value));
 				if (component instanceof Promise) {
 					throw new Error("Async MCP custom component factories are unsupported");
 				}
@@ -187,6 +190,7 @@ export function routeMcpCustomUiThroughCommandDialog<Context extends McpCustomUi
 			return readHostProxyProperty(target, property, receiver);
 		},
 	});
+	// SAFETY: the proxy forwards every Context property and replaces only ui with the same structural contract.
 	return new Proxy(ctx, {
 		get(target, property, receiver) {
 			if (property === "ui") return ui;
@@ -197,13 +201,20 @@ export function routeMcpCustomUiThroughCommandDialog<Context extends McpCustomUi
 
 /** Build the narrow host facade supplied to the pinned fork. */
 export function createMcpAdapterApi<Host extends McpAdapterHost>(pi: Host, commands: CapturedCommands): Host {
+	// SAFETY: the pinned MCP fork calls registerTool with Pi Tool definitions; the adapter intentionally retains only mcp.
 	const registerTool = ((tool: CapturedTool) => {
 		if (tool.name === "mcp") registerGateway(pi, tool);
 	}) as ExtensionAPI["registerTool"];
+	// SAFETY: the pinned fork's mcp handler returns only its documented handled boolean or undefined.
 	const registerCommand = ((name: string, spec: CommandSpec) => {
-		if (name === "mcp") commands.mcp = spec as CapturedCommandSpec;
+		if (name === "mcp") {
+			// SAFETY: the pinned fork's mcp command uses the CapturedCommandSpec handler result contract.
+			commands.mcp = spec as CapturedCommandSpec;
+		}
 	}) as ExtensionAPI["registerCommand"];
+	// SAFETY: the pinned fork registers Pi extension events; this facade changes only session_start's UI context.
 	const on = ((event: string, handler: EventHandler) => {
+		// SAFETY: pi.on accepts the same ExtensionEvent and ExtensionContext pair after event-name dispatch.
 		const hostOn = pi.on as (eventName: string, eventHandler: EventHandler) => void;
 		if (event === "session_start") {
 			return hostOn(event, (eventData, ctx) => handler(eventData, suppressMcpFooterContext(ctx)));
@@ -311,13 +322,14 @@ export function installMcpCapability(pi: ExtensionAPI): void {
 	const removeDiagnosticHandler = logger.addHandler((entry) => {
 		const context =
 			entry.context && Object.keys(entry.context).length > 0 ? JSON.stringify(entry.context) : undefined;
-		reportDiagnostic({
+		const diagnostic: DiagnosticReport = {
 			capability: "MCP",
-			...(context ? { details: context } : {}),
-			...(entry.error ? { error: entry.error } : {}),
 			severity: entry.level === "error" ? "error" : entry.level === "warn" ? "warning" : "info",
 			summary: entry.message,
-		});
+		};
+		if (context) Object.assign(diagnostic, { details: context });
+		if (entry.error) Object.assign(diagnostic, { error: entry.error });
+		reportDiagnostic(diagnostic);
 	});
 	const commands: CapturedCommands = {};
 	const store = new McpStatusStore();
