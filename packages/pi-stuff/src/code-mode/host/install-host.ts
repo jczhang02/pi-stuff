@@ -163,10 +163,16 @@ function lockOwnerIsAlive(owner: InstallLockOwner): boolean {
 function readLockSnapshot(lockPath: string): InstallLockSnapshot {
 	const metadata = statSync(lockPath);
 	const owner = readLockOwner(lockPath);
+	if (!owner) {
+		return {
+			identity: `${String(metadata.dev)}:${String(metadata.ino)}`,
+			mtimeMs: metadata.mtimeMs,
+		};
+	}
 	return {
-		identity: owner?.token ?? `${String(metadata.dev)}:${String(metadata.ino)}`,
+		identity: owner.token,
 		mtimeMs: metadata.mtimeMs,
-		...(owner ? { owner } : {}),
+		owner,
 	};
 }
 
@@ -228,11 +234,12 @@ export async function installCodeModeHost(options: InstallCodeModeHostOptions): 
 		try {
 			const timeoutSignal = AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS);
 			const proxy = getProxyForUrl(assetUrl);
-			const response = await fetch(assetUrl, {
+			const request: RequestInit & { proxy?: string } = {
 				redirect: "follow",
 				signal: options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal,
-				...(proxy ? { proxy } : {}),
-			} as RequestInit & { proxy?: string });
+			};
+			if (proxy) request.proxy = proxy;
+			const response = await fetch(assetUrl, request);
 			if (!response.ok) throw new Error(`${String(response.status)} ${response.statusText}`);
 			bytes = Buffer.from(await response.arrayBuffer());
 		} catch (error) {

@@ -34,15 +34,26 @@ interface SuiteRuntimeCache {
 	readonly entries: Map<string, SuiteRuntimeCacheEntry>;
 }
 
+function isSuiteRuntimeCache<Value>(value: Value): value is Value & SuiteRuntimeCache {
+	return (
+		isRuntimeObject(value) &&
+		value !== null &&
+		"entries" in value &&
+		value.entries instanceof Map &&
+		"attemptedRoots" in value &&
+		value.attemptedRoots instanceof Set
+	);
+}
+
 function runtimeCache(): SuiteRuntimeCache {
-	const root = globalThis as Record<symbol, unknown>;
-	const existing = root[SUITE_RUNTIME_CACHE_KEY];
-	if (isRuntimeObject(existing) && existing !== null && "entries" in existing) {
-		const state = existing as Partial<SuiteRuntimeCache>;
-		if (state.entries instanceof Map && state.attemptedRoots instanceof Set) return existing as SuiteRuntimeCache;
-	}
+	const existing = Object.getOwnPropertyDescriptor(globalThis, SUITE_RUNTIME_CACHE_KEY)?.value;
+	if (isSuiteRuntimeCache(existing)) return existing;
 	const created: SuiteRuntimeCache = { attemptedRoots: new Set(), entries: new Map() };
-	root[SUITE_RUNTIME_CACHE_KEY] = created;
+	Object.defineProperty(globalThis, SUITE_RUNTIME_CACHE_KEY, {
+		configurable: true,
+		value: created,
+		writable: true,
+	});
 	return created;
 }
 
