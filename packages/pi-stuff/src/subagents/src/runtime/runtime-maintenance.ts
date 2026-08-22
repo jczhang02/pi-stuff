@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { isRuntimeNumber, isRuntimeString } from "../../../shared/runtime-type.js";
+import { isJsonInputObject, parseJsonValue } from "../../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { inspectWriterProcessLivenessAsync } from "../runs/background/writer-process-registry.ts";
 import { readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
 import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
@@ -174,6 +175,7 @@ async function trimDiagnosticTail(filePath: string): Promise<number> {
 	let handle: fs.promises.FileHandle | undefined;
 	let temporary: string | undefined;
 	try {
+		// SAFETY: Node exposes O_NOFOLLOW only on supporting platforms; this reads that optional numeric constant.
 		const noFollow = (fs.constants as typeof fs.constants & { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
 		handle = await fs.promises.open(filePath, fs.constants.O_RDONLY | noFollow);
 		const stat = await handle.stat();
@@ -213,30 +215,38 @@ async function readPreparationMarker(directory: string, kind: RuntimeRunKind): P
 	const markerName =
 		kind === "foreground" ? ".foreground-preparation-owner.json" : ".background-preparation-owner.json";
 	try {
-		const value = JSON.parse(
+		const value = parseJsonValue(
 			(await readBoundedOwnedFileSnapshotAsync(path.join(directory, markerName), 4 * 1024)).text,
-		) as Partial<PreparationMarker>;
+		);
+		if (!isJsonInputObject(value)) return undefined;
+		const { createdAt, device, inode, pid, processStartIdentity, token, version } = value;
 		if (
-			value.version !== 2 ||
-			!isRuntimeString(value.token) ||
-			!/^[0-9a-f-]{16,64}$/iu.test(value.token) ||
-			!Number.isSafeInteger(value.pid) ||
-			(value.pid ?? 0) <= 0 ||
-			!isRuntimeString(value.processStartIdentity) ||
-			value.processStartIdentity.length === 0 ||
-			!isRuntimeNumber(value.createdAt) ||
-			!Number.isFinite(value.createdAt) ||
-			!isRuntimeNumber(value.device) ||
-			!Number.isFinite(value.device) ||
-			!isRuntimeNumber(value.inode) ||
-			!Number.isFinite(value.inode)
+			version !== 2 ||
+			!isRuntimeString(token) ||
+			!/^[0-9a-f-]{16,64}$/iu.test(token) ||
+			!isRuntimeNumber(pid) ||
+			!Number.isSafeInteger(pid) ||
+			pid <= 0 ||
+			!isRuntimeString(processStartIdentity) ||
+			processStartIdentity.length === 0 ||
+			!isRuntimeNumber(createdAt) ||
+			!Number.isFinite(createdAt) ||
+			!isRuntimeNumber(device) ||
+			!Number.isFinite(device) ||
+			!isRuntimeNumber(inode) ||
+			!Number.isFinite(inode)
 		) {
 			return undefined;
 		}
-		return value as PreparationMarker;
+		return { version, token, pid, processStartIdentity, createdAt, device, inode };
 	} catch {
 		return undefined;
 	}
+}
+
+function errnoCode<Value>(cause: Value): string | undefined {
+	if (!isRuntimeObject(cause) || cause === null || !("code" in cause)) return undefined;
+	return isRuntimeString(cause.code) ? cause.code : undefined;
 }
 
 async function preparationOwnerIsDead(marker: PreparationMarker): Promise<boolean> {
@@ -246,7 +256,7 @@ async function preparationOwnerIsDead(marker: PreparationMarker): Promise<boolea
 		process.kill(marker.pid, 0);
 		return false;
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "ESRCH";
+		return errnoCode(error) === "ESRCH";
 	}
 }
 
@@ -258,7 +268,7 @@ async function reclaimAbandonedPreparation(directory: string, kind: RuntimeRunKi
 			await fs.promises.access(path.join(directory, file));
 			return false;
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+			if (errnoCode(error) !== "ENOENT") return false;
 		}
 	}
 	if ((await inspectWriterProcessLivenessAsync(directory)) === true) return false;
