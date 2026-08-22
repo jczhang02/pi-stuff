@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { AssistantMessage, StopReason, Usage } from "@earendil-works/pi-ai";
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { isRuntimeBoolean, isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../shared/runtime-type.js";
 
 /** A session would have to accumulate roughly three BTW exchanges a day for a year to reach this guard. */
 export const BTW_HISTORY_LIMIT = 1_000;
@@ -58,84 +59,140 @@ interface BtwHistoryState {
 const BTW_HISTORY_STATE = Symbol.for("@jczhang02/pi-stuff-btw/history/v2");
 
 function state(): BtwHistoryState {
+	// SAFETY: this module is the sole writer for its versioned global symbol and always stores BtwHistoryState.
 	const root = globalThis as { [key: symbol]: BtwHistoryState | undefined };
 	root[BTW_HISTORY_STATE] ??= { sessions: new Map(), hydratedSessions: new Set() };
 	return root[BTW_HISTORY_STATE];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return isRuntimeObject(value) && value !== null;
+function isStopReason(value: JsonInputValue): value is StopReason {
+	switch (value) {
+		case "aborted":
+		case "deferred":
+		case "error":
+		case "length":
+		case "pending":
+		case "stop":
+		case "toolUse":
+			return true;
+		default:
+			return false;
+	}
 }
 
-function isResponseMetadata(value: unknown): value is BtwResponseMetadata {
-	if (!isRecord(value)) return false;
-	const candidate = value as {
-		api?: unknown;
-		provider?: unknown;
-		model?: unknown;
-		usage?: unknown;
-		stopReason?: unknown;
-		timestamp?: unknown;
+function readUsage(value: JsonInputValue): Usage | undefined {
+	if (!isJsonInputObject(value)) return undefined;
+	const { cacheRead, cacheWrite, cacheWrite1h, cost, input, output, reasoning, totalTokens } = value;
+	if (!isJsonInputObject(cost)) return undefined;
+	const { cacheRead: costCacheRead, cacheWrite: costCacheWrite, input: costInput, output: costOutput, total } = cost;
+	if (
+		!isRuntimeNumber(cacheRead) ||
+		!isRuntimeNumber(cacheWrite) ||
+		!isRuntimeNumber(input) ||
+		!isRuntimeNumber(output) ||
+		!isRuntimeNumber(totalTokens) ||
+		!isRuntimeNumber(costCacheRead) ||
+		!isRuntimeNumber(costCacheWrite) ||
+		!isRuntimeNumber(costInput) ||
+		!isRuntimeNumber(costOutput) ||
+		!isRuntimeNumber(total)
+	) {
+		return undefined;
+	}
+	const usage: Usage = {
+		cacheRead,
+		cacheWrite,
+		input,
+		output,
+		totalTokens,
+		cost: {
+			cacheRead: costCacheRead,
+			cacheWrite: costCacheWrite,
+			input: costInput,
+			output: costOutput,
+			total,
+		},
 	};
-	if (!isRecord(candidate.usage)) return false;
-	return (
-		isRuntimeString(candidate.api) &&
-		isRuntimeString(candidate.provider) &&
-		isRuntimeString(candidate.model) &&
-		isRuntimeString(candidate.stopReason) &&
-		isRuntimeNumber(candidate.timestamp)
-	);
+	if (isRuntimeNumber(cacheWrite1h)) usage.cacheWrite1h = cacheWrite1h;
+	if (isRuntimeNumber(reasoning)) usage.reasoning = reasoning;
+	return usage;
 }
 
-function isExchange(value: unknown): value is BtwExchange {
-	if (!isRecord(value)) return false;
-	const candidate = value as {
-		id?: unknown;
-		question?: unknown;
-		answer?: unknown;
-		timestamp?: unknown;
-		contextTrimmed?: unknown;
-		response?: unknown;
+function readResponseMetadata(value: JsonInputValue): BtwResponseMetadata | undefined {
+	if (!isJsonInputObject(value)) return undefined;
+	const { api, errorMessage, model, provider, stopReason, timestamp } = value;
+	const usage = readUsage(value["usage"]);
+	if (
+		!isRuntimeString(api) ||
+		!isRuntimeString(provider) ||
+		!isRuntimeString(model) ||
+		!isStopReason(stopReason) ||
+		!isRuntimeNumber(timestamp) ||
+		!usage
+	) {
+		return undefined;
+	}
+	const response: BtwResponseMetadata = {
+		api,
+		provider,
+		model,
+		usage,
+		stopReason,
+		timestamp,
 	};
-	return (
-		isRuntimeString(candidate.id) &&
-		isRuntimeString(candidate.question) &&
-		isRuntimeString(candidate.answer) &&
-		isRuntimeNumber(candidate.timestamp) &&
-		isRuntimeBoolean(candidate.contextTrimmed) &&
-		(candidate.response === undefined || isResponseMetadata(candidate.response))
-	);
+	return isRuntimeString(errorMessage) ? { ...response, errorMessage } : response;
+}
+
+function readExchange(value: JsonInputValue): BtwExchange | undefined {
+	if (!isJsonInputObject(value)) return undefined;
+	const { answer, contextTrimmed, id, question, response: responseValue, timestamp } = value;
+	if (
+		!isRuntimeString(id) ||
+		!isRuntimeString(question) ||
+		!isRuntimeString(answer) ||
+		!isRuntimeNumber(timestamp) ||
+		!isRuntimeBoolean(contextTrimmed)
+	) {
+		return undefined;
+	}
+	const exchange: BtwExchange = {
+		id,
+		question,
+		answer,
+		timestamp,
+		contextTrimmed,
+	};
+	if (responseValue === undefined) return exchange;
+	const response = readResponseMetadata(responseValue);
+	return response ? { ...exchange, response } : undefined;
 }
 
 function readEvent(entry: SessionEntry): BtwHistoryEvent | undefined {
-	if (entry.type !== "custom" || entry.customType !== BTW_HISTORY_ENTRY_TYPE || !isRecord(entry.data)) {
+	if (entry.type !== "custom" || entry.customType !== BTW_HISTORY_ENTRY_TYPE || !isJsonInputObject(entry.data)) {
 		return undefined;
 	}
-	const data = entry.data as {
-		version?: unknown;
-		ownerSessionId?: unknown;
-		operation?: unknown;
-		exchangeId?: unknown;
-		exchange?: unknown;
-	};
-	if (data.version !== 1 || !isRuntimeString(data.ownerSessionId)) return undefined;
-	if (data.operation === "clear") {
-		return { version: 1, ownerSessionId: data.ownerSessionId, operation: "clear" };
+	const data: JsonInputObject = entry.data;
+	const { exchange: exchangeValue, exchangeId, operation, ownerSessionId, version } = data;
+	if (version !== 1 || !isRuntimeString(ownerSessionId)) return undefined;
+	if (operation === "clear") {
+		return { version: 1, ownerSessionId, operation: "clear" };
 	}
-	if (data.operation === "retain" && isRuntimeString(data.exchangeId)) {
+	if (operation === "retain" && isRuntimeString(exchangeId)) {
 		return {
 			version: 1,
-			ownerSessionId: data.ownerSessionId,
+			ownerSessionId,
 			operation: "retain",
-			exchangeId: data.exchangeId,
+			exchangeId,
 		};
 	}
-	if (data.operation === "record" && isExchange(data.exchange)) {
+	if (operation === "record") {
+		const exchange = readExchange(exchangeValue);
+		if (!exchange) return undefined;
 		return {
 			version: 1,
-			ownerSessionId: data.ownerSessionId,
+			ownerSessionId,
 			operation: "record",
-			exchange: data.exchange,
+			exchange,
 		};
 	}
 	return undefined;

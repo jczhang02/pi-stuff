@@ -120,6 +120,39 @@ describe("BTW display history", () => {
 		expect(hydrateBtwHistory("fork-session", entries)).toEqual([]);
 	});
 
+	test("replays validated provider metadata for BTW promotion", () => {
+		const response = {
+			api: "openai-responses",
+			provider: "openai",
+			model: "gpt-test",
+			usage: {
+				input: 10,
+				output: 5,
+				cacheRead: 2,
+				cacheWrite: 1,
+				totalTokens: 18,
+				cost: { input: 0.1, output: 0.2, cacheRead: 0.01, cacheWrite: 0.02, total: 0.33 },
+			},
+			stopReason: "stop",
+			timestamp: 123,
+		};
+		const entry = persistedEntry(0, {
+			version: 1,
+			ownerSessionId: "session",
+			operation: "record",
+			exchange: {
+				id: "exchange",
+				question: "question",
+				answer: "answer",
+				timestamp: 123,
+				contextTrimmed: false,
+				response,
+			},
+		});
+
+		expect(hydrateBtwHistory("session", [entry])[0]?.response).toEqual(response);
+	});
+
 	test("replays retain and clear operations without putting history in model context", () => {
 		const events: unknown[] = [];
 		const appendEntry = (_customType: string, data: unknown): void => {
