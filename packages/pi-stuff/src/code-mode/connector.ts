@@ -19,7 +19,7 @@ import type {
 	SuiteToolDefinitionRegistry,
 	SuiteToolInvocation,
 } from "../tool-display/contract.js";
-import type { CodemodeValue } from "./cloudflare/codec.js";
+import { type CodemodeValue, isCodemodeValue, requireCodemodeValue } from "./cloudflare/codec.js";
 import type { ConnectorDescription, ToolAnnotations } from "./cloudflare/connector-types.js";
 import { describeTarget } from "./cloudflare/describe.js";
 import { normalizeCode } from "./cloudflare/normalize.js";
@@ -98,12 +98,16 @@ export function unwrapSuiteToolResult<Result>(name: string, result: Result): Cod
 		readonly toolResult?: unknown;
 	};
 	if (record.toolResult !== undefined) {
-		// SAFETY: Suite Tool values cross Code Mode through its JSON/binary/bigint codec, whose supported domain is CodemodeValue.
-		return record.toolResult as CodemodeValue;
+		if (!isCodemodeValue(record.toolResult)) {
+			invalidResult(name, "result.toolResult", "a Code Mode transport value", record.toolResult);
+		}
+		return record.toolResult;
 	}
 	if (record.structuredContent != null) {
-		// SAFETY: structured Tool output crosses Code Mode through its JSON/binary/bigint codec.
-		return record.structuredContent as CodemodeValue;
+		if (!isCodemodeValue(record.structuredContent)) {
+			invalidResult(name, "result.structuredContent", "a Code Mode transport value", record.structuredContent);
+		}
+		return record.structuredContent;
 	}
 	const content: unknown = record.content;
 	if (!Array.isArray(content)) invalidResult(name, "result.content", "an array", content);
@@ -130,12 +134,12 @@ export function unwrapSuiteToolResult<Result>(name: string, result: Result): Cod
 		else textOnly = false;
 	}
 	if (!textOnly) {
-		// SAFETY: validated AgentToolResult content blocks are plain Code Mode transport values.
+		if (!isCodemodeValue(record)) invalidResult(name, "result", "a Code Mode transport value", record);
 		return record;
 	}
 	const text = textParts.join("\n");
 	try {
-		return parseJsonValue(text);
+		return requireCodemodeValue(parseJsonValue(text), "Code Mode text result");
 	} catch {
 		return text;
 	}
@@ -217,9 +221,12 @@ export class SuiteCodeModeConnector {
 				replay: "record",
 				usage: `${INTERNAL_SEARCH_TOOL}({ query })`,
 				invoke: async (input) =>
-					this.search(
-						isRuntimeObject(input) && input !== null && "query" in input ? String(input["query"]) : "",
-						snippets,
+					requireCodemodeValue(
+						this.search(
+							isRuntimeObject(input) && input !== null && "query" in input ? String(input["query"]) : "",
+							snippets,
+						),
+						"Code Mode search result",
 					),
 			},
 			{
@@ -235,9 +242,12 @@ export class SuiteCodeModeConnector {
 				replay: "record",
 				usage: `${INTERNAL_DESCRIBE_TOOL}({ target })`,
 				invoke: async (input) =>
-					this.describe(
-						isRuntimeObject(input) && input !== null && "target" in input ? String(input["target"]) : "",
-						snippets,
+					requireCodemodeValue(
+						this.describe(
+							isRuntimeObject(input) && input !== null && "target" in input ? String(input["target"]) : "",
+							snippets,
+						),
+						"Code Mode describe result",
 					),
 			},
 		];
@@ -332,7 +342,7 @@ const __piStuffBase64="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234
 const __piStuffToBase64=(bytes)=>{let output="";for(let index=0;index<bytes.length;index+=3){const first=bytes[index];const second=bytes[index+1];const third=bytes[index+2];output+=__piStuffBase64[first>>2]+__piStuffBase64[((first&3)<<4)|((second??0)>>4)]+(second===undefined?"=":__piStuffBase64[((second&15)<<2)|((third??0)>>6)])+(third===undefined?"=":__piStuffBase64[third&63]);}return output;};
 const __piStuffFromBase64=(value)=>{let buffer=0,bits=0;const output=[];for(const character of value){if(character==="=")break;const digit=__piStuffBase64.indexOf(character);if(digit<0)throw new TypeError("Invalid Code Mode binary value");buffer=(buffer<<6)|digit;bits+=6;if(bits>=8){bits-=8;output.push((buffer>>bits)&255);}}return new Uint8Array(output);};
 const __piStuffEncode=(value)=>{if(typeof value==="bigint")return {[__piStuffBigintTag]:value.toString()};if(value instanceof Uint8Array)return {[__piStuffBinaryTag]:"Uint8Array",data:__piStuffToBase64(value)};if(value instanceof ArrayBuffer)return {[__piStuffBinaryTag]:"ArrayBuffer",data:__piStuffToBase64(new Uint8Array(value))};if(ArrayBuffer.isView(value))return {[__piStuffBinaryTag]:"ArrayBufferView",data:__piStuffToBase64(new Uint8Array(value.buffer,value.byteOffset,value.byteLength))};if(Array.isArray(value))return value.map(__piStuffEncode);if(value&&typeof value==="object")return Object.fromEntries(Object.entries(value).map(([key,nested])=>[key,__piStuffEncode(nested)]));return value;};
-const __piStuffDecode=(value)=>{if(Array.isArray(value))return value.map(__piStuffDecode);if(!value||typeof value!=="object")return value;if(typeof value[__piStuffBigintTag]==="string")return BigInt(value[__piStuffBigintTag]);if(typeof value.data==="string"&&typeof value[__piStuffBinaryTag]==="string"){const bytes=__piStuffFromBase64(value.data);return value[__piStuffBinaryTag]==="ArrayBuffer"?bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength):bytes;}return Object.fromEntries(Object.entries(value).map(([key,nested])=>[key,__piStuffDecode(nested)]));};
+const __piStuffDecode=(value)=>{if(Array.isArray(value))return value.map(__piStuffDecode);if(!value||typeof value!=="object")return value;const keys=Object.keys(value);if(keys.length===1&&Object.hasOwn(value,__piStuffBigintTag)){const encoded=value[__piStuffBigintTag];if(typeof encoded!=="string"||!${String.raw`/^-?(?:0|[1-9]\d*)$/u`}.test(encoded))throw new TypeError("Invalid Code Mode bigint envelope");return BigInt(encoded);}if(keys.length===2&&Object.hasOwn(value,__piStuffBinaryTag)&&Object.hasOwn(value,"data")){const tag=value[__piStuffBinaryTag];if((tag!=="ArrayBuffer"&&tag!=="ArrayBufferView"&&tag!=="Uint8Array")||typeof value.data!=="string")throw new TypeError("Invalid Code Mode binary envelope");const bytes=__piStuffFromBase64(value.data);return tag==="ArrayBuffer"?bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength):bytes;}return Object.fromEntries(Object.entries(value).map(([key,nested])=>[key,__piStuffDecode(nested)]));};
 const __piStuffRawTools=globalThis.tools;
 const __piStuffToolCache=new Map();
 globalThis.tools=new Proxy(__piStuffRawTools,{get(target,key){const value=Reflect.get(target,key,target);if(typeof value!=="function")return value;if(!__piStuffToolCache.has(key))__piStuffToolCache.set(key,async(...args)=>__piStuffDecode(await value.apply(target,args.map(__piStuffEncode))));return __piStuffToolCache.get(key);}});

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { Type } from "typebox";
+import { isCodemodeObject, requireCodemodeValue } from "../../packages/pi-stuff/src/code-mode/cloudflare/codec.js";
 import { CodeModeDelegateRuntime } from "../../packages/pi-stuff/src/code-mode/host/delegate-runtime.js";
 
 test("delegate transport preserves binary and bigint values across the JSON host boundary", async () => {
@@ -24,8 +25,9 @@ test("delegate transport preserves binary and bigint values across the JSON host
 					inputSchema: Type.Object({ payload: Type.Unknown() }),
 					async invoke(input) {
 						received = input;
-						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-						return { count: 1n, payload: (input as { payload: unknown }).payload };
+						if (!isCodemodeObject(input)) throw new TypeError("fixture input must be an object");
+						const payload = input["payload"];
+						return requireCodemodeValue({ count: 1n, payload }, "delegate test result");
 					},
 					name: "fixture",
 					usage: "suite.fixture({})",

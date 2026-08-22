@@ -1,6 +1,5 @@
 import type { AgentToolResult, ContextEvent } from "@earendil-works/pi-coding-agent";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
-import type { PiStuffCodeModeDetails } from "./runtime.js";
 
 type ToolContent = AgentToolResult<unknown>["content"];
 type ToolContentItem = ToolContent[number];
@@ -10,6 +9,11 @@ const RAW_MODEL_CONTENT = Symbol("pi-stuff-code-mode-raw-model-content");
 
 export interface CodeModeModelContentOwner {
 	readonly kind: "pi-stuff-code-mode";
+}
+
+interface CodeModeMediaProjectionDetails {
+	readonly mediaContentIndexes: readonly (readonly number[])[];
+	readonly modelContent: ToolContent;
 }
 
 export function isCodeModeModelContentOwner<Value>(value: Value): value is Value & CodeModeModelContentOwner {
@@ -106,15 +110,36 @@ function normalizedMediaContentIndexes(
  * context hook. This lets each original renderer own its image position and
  * prevents Pi from appending every nested image below the Code Mode envelope.
  */
-export function separateCodeModeMediaForUi(
-	result: AgentToolResult<PiStuffCodeModeDetails>,
-): AgentToolResult<PiStuffCodeModeDetails> | undefined {
+export function separateCodeModeMediaForUi<Details>(
+	result: AgentToolResult<Details>,
+): AgentToolResult<Details & CodeModeMediaProjectionDetails> | undefined {
 	const details = result.details;
-	const referencedMedia = new Set(
-		details.operations.flatMap((operation) =>
-			(operation.mediaPlacements ?? []).map((placement) => placement.mediaIndex),
-		),
-	);
+	if (!isCodeModeModelContentOwner(details) || !("operations" in details) || !Array.isArray(details.operations)) {
+		return undefined;
+	}
+	const referencedMedia = new Set<number>();
+	for (const operation of details.operations) {
+		if (
+			!isRuntimeObject(operation) ||
+			operation === null ||
+			!("mediaPlacements" in operation) ||
+			!Array.isArray(operation.mediaPlacements)
+		) {
+			continue;
+		}
+		for (const placement of operation.mediaPlacements) {
+			if (
+				isRuntimeObject(placement) &&
+				placement !== null &&
+				"mediaIndex" in placement &&
+				isRuntimeNumber(placement.mediaIndex) &&
+				Number.isSafeInteger(placement.mediaIndex) &&
+				placement.mediaIndex >= 0
+			) {
+				referencedMedia.add(placement.mediaIndex);
+			}
+		}
+	}
 	if (referencedMedia.size === 0) return undefined;
 	const raw = Object.getOwnPropertyDescriptor(details, RAW_MODEL_CONTENT)?.value;
 	if (!isCodeModeToolContent(raw)) return undefined;

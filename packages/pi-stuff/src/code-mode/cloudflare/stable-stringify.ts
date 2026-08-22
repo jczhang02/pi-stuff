@@ -12,7 +12,9 @@ export function stableStringify(value: CodemodeValue): string | undefined {
 		return JSON.stringify(value, (_key, val) => {
 			if (isRuntimeBigInt(val)) return `__bigint__:${val.toString()}`;
 			if (val && isRuntimeObject(val) && !Array.isArray(val)) {
-				return Object.fromEntries(Object.entries(val).sort(([left], [right]) => left.localeCompare(right)));
+				return Object.fromEntries(
+					Object.entries(val).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+				);
 			}
 			return val;
 		});

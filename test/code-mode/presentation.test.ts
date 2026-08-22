@@ -90,3 +90,13 @@ test("standalone Code Mode images remain Host-rendered while nested images stay 
 	expect(result?.content).toEqual([standaloneImage]);
 	expect(decodeCodeModeMediaSegments(result?.details)).toEqual([[standaloneImage], [nestedImage]]);
 });
+
+test("malformed Host details are ignored at the media projection boundary", () => {
+	expect(separateCodeModeMediaForUi({ content: [], details: null })).toBeUndefined();
+	expect(
+		separateCodeModeMediaForUi({
+			content: [],
+			details: { kind: "pi-stuff-code-mode", operations: [null] },
+		}),
+	).toBeUndefined();
+});

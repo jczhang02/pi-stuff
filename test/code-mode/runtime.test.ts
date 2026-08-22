@@ -238,6 +238,17 @@ test("result adaptation unwraps structured/text JSON and reports an actionable f
 	).toThrow(
 		'Code Mode Tool "fixture" returned an invalid result at result.content[0].text: expected a string; received number; retry safe: false',
 	);
+	interface CyclicResultFixture {
+		self?: CyclicResultFixture;
+	}
+	const cyclic: CyclicResultFixture = {};
+	cyclic.self = cyclic;
+	expect(() => unwrapSuiteToolResult("fixture", { content: [], details: {}, structuredContent: cyclic })).toThrow(
+		"result.structuredContent",
+	);
+	expect(() => unwrapSuiteToolResult("fixture", { content: [], details: {}, toolResult: new Date() })).toThrow(
+		"result.toolResult",
+	);
 });
 
 test("the local prelude provides canonical tools plus compatible suite/search/describe without entering model history", () => {
@@ -255,6 +266,9 @@ test("the local prelude provides canonical tools plus compatible suite/search/de
 	expect(source).toContain("const value = await tools.read({ path: 'README.md' });");
 	expect(source).toContain("return (text(value))");
 	expect(source).toContain("__piStuffOutputCount===0");
+	expect(source).toContain("keys.length===1&&Object.hasOwn(value,__piStuffBigintTag)");
+	expect(source).toContain("keys.length===2&&Object.hasOwn(value,__piStuffBinaryTag)");
+	expect(source).toContain("Invalid Code Mode binary envelope");
 });
 
 test("the local catalog emits executable paths for non-identifier Tool names", () => {

@@ -1,4 +1,11 @@
-import { isRuntimeBigInt, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
+import {
+	isRuntimeBigInt,
+	isRuntimeBoolean,
+	isRuntimeNumber,
+	isRuntimeObject,
+	isRuntimeString,
+	isRuntimeUndefined,
+} from "../../shared/runtime-type.js";
 /**
  * Host-side value codec.
  *
@@ -29,9 +36,49 @@ export type CodemodeValue =
 	| boolean
 	| null
 	| number
-	| object
+	| readonly CodemodeValue[]
+	| CodemodeObject
 	| string
 	| undefined;
+
+export interface CodemodeObject {
+	readonly [key: string]: CodemodeValue;
+}
+
+export function isCodemodeValue<Value>(value: Value): value is Value & CodemodeValue {
+	return isCodemodeValueAt(value, new WeakSet());
+}
+
+export function requireCodemodeValue<Value>(value: Value, description: string): Value & CodemodeValue {
+	if (!isCodemodeValue(value)) throw new TypeError(`${description} is not a Code Mode transport value`);
+	return value;
+}
+
+export function isCodemodeObject<Value>(value: Value): value is Value & CodemodeObject {
+	if (value === null || !isRuntimeObject(value) || Array.isArray(value)) return false;
+	const prototype = Object.getPrototypeOf(value);
+	return prototype === Object.prototype || prototype === null;
+}
+
+function isCodemodeValueAt<Value>(value: Value, ancestors: WeakSet<object>): value is Value & CodemodeValue {
+	if (
+		value === null ||
+		isRuntimeBigInt(value) ||
+		isRuntimeBoolean(value) ||
+		isRuntimeString(value) ||
+		isRuntimeUndefined(value)
+	) {
+		return true;
+	}
+	if (isRuntimeNumber(value)) return Number.isFinite(value);
+	if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return true;
+	if (!Array.isArray(value) && !isCodemodeObject(value)) return false;
+	if (ancestors.has(value)) return false;
+	ancestors.add(value);
+	const valid = Object.values(value).every((item) => isCodemodeValueAt(item, ancestors));
+	ancestors.delete(value);
+	return valid;
+}
 
 function bytesToBase64(bytes: Uint8Array): string {
 	let binary = "";
@@ -72,25 +119,31 @@ export function encodeCodemodeValue<Value>(value: Value): EncodedBinary | Value 
 }
 
 export function decodeCodemodeValue<Value>(value: Value): ArrayBuffer | Uint8Array | Value {
-	if (!value || !isRuntimeObject(value) || !(BINARY_TAG in value)) {
+	if (!value || !isRuntimeObject(value) || !Object.hasOwn(value, BINARY_TAG)) {
 		return value;
 	}
-	const data = "data" in value ? value.data : undefined;
-	if (!isRuntimeString(data)) return value;
+	if (Object.keys(value).length !== 2 || !Object.hasOwn(value, "data")) return value;
+	const tag: unknown = Object.getOwnPropertyDescriptor(value, BINARY_TAG)?.value;
+	const data: unknown = Object.getOwnPropertyDescriptor(value, "data")?.value;
+	if ((tag !== "ArrayBuffer" && tag !== "ArrayBufferView" && tag !== "Uint8Array") || !isRuntimeString(data)) {
+		throw new TypeError("Code Mode binary envelope is invalid");
+	}
 	const bytes = base64ToBytes(data);
-	if (value[BINARY_TAG] === "ArrayBuffer") {
+	if (tag === "ArrayBuffer") {
 		return bytes.slice().buffer;
 	}
 	return bytes;
 }
 
 export function stringifyForCodemode<Value>(value: Value): string {
+	if (!isCodemodeValue(value)) throw new TypeError("Code Mode transport value is not serializable");
 	return JSON.stringify(value, (_key, nested) => encodeCodemodeValue(nested));
 }
 
 export function parseForCodemode(json: string): CodemodeValue {
-	// SAFETY: JSON.parse plus this reviver can only produce JSON values and the binary values returned by decodeCodemodeValue.
-	return JSON.parse(json, (_key, nested) => decodeCodemodeValue(nested)) as CodemodeValue;
+	const value = JSON.parse(json, (_key, nested) => decodeCodemodeValue(nested));
+	if (!isCodemodeValue(value)) throw new TypeError("Code Mode transport value is invalid");
+	return value;
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +161,7 @@ export function parseForCodemode(json: string): CodemodeValue {
  */
 export function stringifyForStorage<Value>(value: Value): string | undefined {
 	if (value === undefined) return undefined;
+	if (!isCodemodeValue(value)) throw new TypeError("Code Mode storage value is not serializable");
 	return JSON.stringify(value, (_key, nested) => {
 		if (isRuntimeBigInt(nested)) {
 			return { [BIGINT_TAG]: nested.toString() };
@@ -118,12 +172,16 @@ export function stringifyForStorage<Value>(value: Value): string | undefined {
 
 export function parseForStorage(json: string | null): CodemodeValue {
 	if (json === null) return undefined;
-	// SAFETY: JSON.parse plus this reviver can only produce JSON, binary, and bigint values declared by CodemodeValue.
-	return JSON.parse(json, (_key, nested) => {
-		const encodedBigInt = nested && isRuntimeObject(nested) && BIGINT_TAG in nested ? nested[BIGINT_TAG] : undefined;
-		if (nested && isRuntimeObject(nested) && BIGINT_TAG in nested && isRuntimeString(encodedBigInt)) {
+	const value = JSON.parse(json, (_key, nested) => {
+		const isBigIntEnvelope =
+			nested && isRuntimeObject(nested) && Object.hasOwn(nested, BIGINT_TAG) && Object.keys(nested).length === 1;
+		const encodedBigInt = isBigIntEnvelope ? nested[BIGINT_TAG] : undefined;
+		if (isBigIntEnvelope && isRuntimeString(encodedBigInt) && /^-?(?:0|[1-9]\d*)$/u.test(encodedBigInt)) {
 			return BigInt(encodedBigInt);
 		}
+		if (isBigIntEnvelope) throw new TypeError("Code Mode bigint envelope is invalid");
 		return decodeCodemodeValue(nested);
-	}) as CodemodeValue;
+	});
+	if (!isCodemodeValue(value)) throw new TypeError("Code Mode storage value is invalid");
+	return value;
 }

@@ -1,7 +1,7 @@
 import type { AgentToolResult, AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../shared/runtime-type.js";
 import type { SuiteToolEnvelopeOperation } from "../tool-display/contract.js";
-import type { CodemodeValue } from "./cloudflare/codec.js";
+import { type CodemodeValue, isCodemodeObject, requireCodemodeValue } from "./cloudflare/codec.js";
 import type { Snippet } from "./cloudflare/snippet.js";
 import {
 	buildSuiteSandboxSource,
@@ -27,6 +27,23 @@ const AUTO_WAIT_MS = 60_000;
 const MAX_OUTPUT_CHARS = 400_000;
 const NESTED_CANCELLATION_TEXT = "Operation aborted";
 const HOST_RECOVERY_LIMIT = 1;
+
+function isRuntimeToolCallPlan<Value>(value: Value): value is Value & RuntimeToolCallPlan {
+	return (
+		isRuntimeObject(value) &&
+		value !== null &&
+		"attempt" in value &&
+		isRuntimeNumber(value.attempt) &&
+		Number.isSafeInteger(value.attempt) &&
+		"executionId" in value &&
+		isRuntimeString(value.executionId) &&
+		"id" in value &&
+		isRuntimeString(value.id) &&
+		"sequence" in value &&
+		isRuntimeNumber(value.sequence) &&
+		Number.isSafeInteger(value.sequence)
+	);
+}
 
 export interface CodeModeExecutor {
 	execute(options: CodeModeExecuteOptions): Promise<RuntimeResponse>;
@@ -61,10 +78,7 @@ function approvalMessage(executionId: string, pending: readonly CodeModePendingA
 
 function operation(trace: RuntimeToolTrace): SuiteToolEnvelopeOperation {
 	let args: Readonly<Record<string, CodemodeValue>> = {};
-	if (isRuntimeObject(trace.input) && trace.input !== null && !Array.isArray(trace.input)) {
-		// SAFETY: the Code Mode transport decoded this non-null, non-array Tool input as a CodemodeValue object.
-		args = trace.input as Record<string, CodemodeValue>;
-	}
+	if (isCodemodeObject(trace.input)) args = trace.input;
 	const value: SuiteToolEnvelopeOperation = {
 		args,
 		id: trace.id,
@@ -281,8 +295,11 @@ function stepTools(controller: CodeModeExecutionController): SuiteSandboxTool[] 
 			description: "Decide whether a durable Code Mode step should execute or replay",
 			inputSchema: { properties: { name: { type: "string" } }, required: ["name"], type: "object" },
 			invoke: async (input) =>
-				controller.beginStep(
-					isRuntimeObject(input) && input !== null && "name" in input ? String(input["name"]) : "",
+				requireCodemodeValue(
+					controller.beginStep(
+						isRuntimeObject(input) && input !== null && "name" in input ? String(input["name"]) : "",
+					),
+					"Code Mode step decision",
 				),
 			ledger: "bypass",
 			name: INTERNAL_STEP_DECIDE_TOOL,
@@ -300,10 +317,10 @@ function stepTools(controller: CodeModeExecutionController): SuiteSandboxTool[] 
 				if (!isRuntimeObject(input) || input === null || !("plan" in input)) {
 					throw new Error("Code Mode step record is missing its decision");
 				}
-				// SAFETY: sandbox Tool inputs were decoded by the Code Mode transport codec.
-				const value = "value" in input ? (input["value"] as CodemodeValue) : undefined;
-				// SAFETY: beginStep produced this plan and the sandbox returned it unchanged through the Code Mode codec.
-				controller.completeStep(input["plan"] as RuntimeToolCallPlan, value);
+				const plan = input["plan"];
+				if (!isRuntimeToolCallPlan(plan)) throw new Error("Code Mode step record has an invalid decision");
+				const value = "value" in input ? requireCodemodeValue(input["value"], "Code Mode step value") : undefined;
+				controller.completeStep(plan, value);
 				return true;
 			},
 			ledger: "bypass",

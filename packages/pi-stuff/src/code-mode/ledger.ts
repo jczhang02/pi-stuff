@@ -237,7 +237,7 @@ function sessionScope(context: ExtensionContext): SessionScope {
 	return id ? { context, sessionId: id } : { context };
 }
 
-function durableValue(what: string, value: CodemodeValue): StoredValue {
+function durableValue<Value>(what: string, value: Value): StoredValue {
 	let serialized: string | undefined;
 	try {
 		serialized = stringifyForStorage(value);
@@ -555,9 +555,9 @@ function applyEvent(state: LedgerSnapshot, event: LedgerEvent): void {
 	}
 	if (event.result) {
 		const result = restoreValue(event.result);
-		if (isRuntimeObject(result) && result !== null) {
+		if (isRuntimeObject(result) && result !== null && "content" in result && Array.isArray(result["content"])) {
 			// SAFETY: call-settled events persist AgentToolResult through the lossless storage codec.
-			call.result = result as AgentToolResult<unknown>;
+			call.result = result as CodemodeValue & AgentToolResult<unknown>;
 		}
 	}
 }

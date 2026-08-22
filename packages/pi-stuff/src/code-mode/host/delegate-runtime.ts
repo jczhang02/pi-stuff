@@ -19,9 +19,9 @@ const MAX_NOTIFICATIONS_PER_CELL = 100;
 type SendMessage = (message: DelegateResponseMessage) => void;
 
 function resultFromValue(value: CodemodeValue): AgentToolResult<unknown> {
-	if (isRuntimeObject(value) && value !== null && "content" in value && Array.isArray(value.content)) {
+	if (isRuntimeObject(value) && value !== null && "content" in value && Array.isArray(value["content"])) {
 		// SAFETY: the Tool-result boundary requires an object with an array content payload; optional fields stay opaque.
-		return value as AgentToolResult<unknown>;
+		return value as CodemodeValue & AgentToolResult<unknown>;
 	}
 	let text: string;
 	try {
