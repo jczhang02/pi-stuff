@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { isRuntimeObject } from "../../../shared/runtime-type.js";
+import { type JsonValue, parseJsonValue } from "../../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
 import { inspectWriterProcessLivenessAsync } from "../runs/background/writer-process-registry.ts";
+import { tryAcquireKernelClaimAsync } from "../shared/durable-claim.ts";
+import { assertPrivateDirectory, readBoundedOwnedFileSnapshotAsync } from "../shared/private-directory.ts";
+import { readProcessStartIdentityAsync } from "../shared/process-identity.ts";
 import type { SessionGovernorCompatibilityScope } from "../shared/session-identity.ts";
 import { LEGACY_SESSION_GOVERNOR_ROOT, SESSION_GOVERNOR_ROOT, TEMP_ROOT_DIR } from "../shared/types.ts";
 import { type readStatus, readStatusAsync } from "../shared/utils.ts";
@@ -165,9 +169,14 @@ async function legacyGovernorLocked(
 ): Promise<boolean> {
 	const lockDir = legacyGovernorLockPath(rootDir, sessionId);
 	const deadline = Date.now() + (options.timeoutMs ?? 1_000);
+	let recoveryAttempted = false;
 	while (Date.now() <= deadline) {
 		try {
 			await fs.promises.lstat(lockDir);
+			if (!recoveryAttempted) {
+				recoveryAttempted = true;
+				if (await reclaimStaleCurrentBarrier(lockDir)) continue;
+			}
 			await new Promise<void>((resolve) => setTimeout(resolve, options.retryMs ?? 10));
 		} catch (error) {
 			if (messageCode(error) === "ENOENT") return false;
@@ -175,6 +184,87 @@ async function legacyGovernorLocked(
 		}
 	}
 	return true;
+}
+
+interface CurrentBarrierOwner {
+	readonly token: string;
+	readonly pid: number;
+	readonly processStartIdentity: string;
+	readonly acquiredAtMs: number;
+}
+
+async function reclaimStaleCurrentBarrier(lockDir: string): Promise<boolean> {
+	try {
+		assertPrivateDirectory(lockDir, await fs.promises.lstat(lockDir));
+	} catch (error) {
+		if (messageCode(error) === "ENOENT") return true;
+		throw error;
+	}
+	const claim = await tryAcquireKernelClaimAsync(path.dirname(lockDir), "ledger-v1-recovery");
+	if (!claim) return false;
+	try {
+		const owner = await readCurrentBarrierOwner(path.join(lockDir, "owner.json"));
+		if (!owner) return false;
+		const currentIdentity = await readProcessStartIdentityAsync(owner.pid);
+		if (
+			currentIdentity === owner.processStartIdentity ||
+			(currentIdentity === undefined && explicitPidState(owner.pid) !== false)
+		) {
+			return false;
+		}
+		const staleDir = `${lockDir}.stale-${claim.token}`;
+		try {
+			await fs.promises.rename(lockDir, staleDir);
+		} catch (error) {
+			if (messageCode(error) === "ENOENT") return true;
+			throw error;
+		}
+		const movedOwner = await readCurrentBarrierOwner(path.join(staleDir, "owner.json"));
+		if (!movedOwner || movedOwner.token !== owner.token) {
+			await fs.promises.rename(staleDir, lockDir).catch(() => undefined);
+			throw new Error("Pre-upgrade governor ownership changed during stale-lock recovery.");
+		}
+		await fs.promises.rm(staleDir, { recursive: true, force: true });
+		return true;
+	} finally {
+		await claim.release();
+	}
+}
+
+async function readCurrentBarrierOwner(ownerPath: string): Promise<CurrentBarrierOwner | undefined> {
+	let value: JsonValue;
+	try {
+		value = parseJsonValue((await readBoundedOwnedFileSnapshotAsync(ownerPath, 4_096)).text);
+	} catch {
+		return undefined;
+	}
+	if (
+		!isRuntimeObject(value) ||
+		value === null ||
+		!("token" in value) ||
+		!isRuntimeString(value.token) ||
+		!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value.token) ||
+		!("pid" in value) ||
+		!isRuntimeNumber(value.pid) ||
+		!Number.isSafeInteger(value.pid) ||
+		value.pid <= 0 ||
+		!("processStartIdentity" in value) ||
+		!isRuntimeString(value.processStartIdentity) ||
+		value.processStartIdentity.length === 0 ||
+		value.processStartIdentity.length > 512 ||
+		!("acquiredAtMs" in value) ||
+		!isRuntimeNumber(value.acquiredAtMs) ||
+		!Number.isSafeInteger(value.acquiredAtMs) ||
+		value.acquiredAtMs <= 0
+	) {
+		return undefined;
+	}
+	return {
+		token: value.token,
+		pid: value.pid,
+		processStartIdentity: value.processStartIdentity,
+		acquiredAtMs: value.acquiredAtMs,
+	};
 }
 
 type LegacyClassification =

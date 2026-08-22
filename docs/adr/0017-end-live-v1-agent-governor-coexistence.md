@@ -17,7 +17,9 @@ ordinary crash permanently disable delegation for that Session.
 
 - The v2 governor remains the only current execution authority and keeps its process-death-safe stable-inode kernel
   claim.
-- An existing locked v1 ledger remains fail-closed and is never reclaimed automatically.
+- An existing locked v1 ledger remains fail-closed and is never reclaimed automatically. A stale barrier written by
+  the immediately preceding current-release compatibility code is reclaimed only when its process-generation metadata
+  positively proves that owner is gone; current recovery contenders serialize through the v2 kernel claim.
 - Running pre-v2 and current Pi Stuff processes against the same Pi Session is unsupported; finish the old process
   before launching Agents with the current release.
 - Compatibility startup does not create directories or locks when no v1 ledger exists, so killing the current Pi

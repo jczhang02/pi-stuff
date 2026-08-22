@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { initializeWriterProcessRegistry } from "../../packages/pi-stuff/src/subagents/src/runs/background/writer-process-registry.ts";
 import { SessionAgentGovernor } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor.ts";
 import { prepareSessionGovernorCompatibility } from "../../packages/pi-stuff/src/subagents/src/runtime/session-governor-compatibility.ts";
+import { readProcessStartIdentity } from "../../packages/pi-stuff/src/subagents/src/shared/process-identity.ts";
 import type { SessionGovernorCompatibilityScope } from "../../packages/pi-stuff/src/subagents/src/shared/session-identity.ts";
 import { TEMP_ROOT_DIR } from "../../packages/pi-stuff/src/subagents/src/shared/types.ts";
 
@@ -61,7 +62,7 @@ function legacyLockPath(rootDir: string): string {
 function writeStaleLegacyLock(rootDir: string, owner: LegacyLockOwnerFixture): string {
 	const lockDir = legacyLockPath(rootDir);
 	fs.mkdirSync(lockDir, { recursive: true, mode: 0o700 });
-	fs.writeFileSync(path.join(lockDir, "owner.json"), JSON.stringify(owner), { mode: 0o600 });
+	fs.writeFileSync(path.join(lockDir, "owner.json"), JSON.stringify({ ...owner, acquiredAtMs: 1 }), { mode: 0o600 });
 	const old = new Date(Date.now() - 60_000);
 	fs.utimesSync(lockDir, old, old);
 	return lockDir;
@@ -109,11 +110,11 @@ describe("session governor v1 compatibility", () => {
 		expect(fs.existsSync(legacyLockPath(legacyRoot))).toBeFalse();
 	});
 
-	test("never reclaims a stale v1 lock whose directory protocol cannot exclude a legacy replacement race", async () => {
+	test("reclaims a stale barrier written by the previous current release", async () => {
 		const currentRoot = temporaryRoot("pi-governor-current-");
 		const legacyRoot = temporaryRoot("pi-governor-legacy-");
 		const lockDir = writeStaleLegacyLock(legacyRoot, {
-			token: "dead-generation",
+			token: "f8878118-8a4d-431e-bb8c-09ad89886309",
 			pid: process.pid,
 			processStartIdentity: "definitely-not-the-current-process-generation",
 		});
@@ -126,18 +127,62 @@ describe("session governor v1 compatibility", () => {
 			legacyLockOptions: { timeoutMs: 20, retryMs: 1 },
 		});
 
+		expect(result.ok).toBeTrue();
+		expect(fs.existsSync(lockDir)).toBeFalse();
+	});
+
+	test("keeps a live previous-release barrier fail-closed", async () => {
+		const currentRoot = temporaryRoot("pi-governor-current-");
+		const legacyRoot = temporaryRoot("pi-governor-legacy-");
+		const processStartIdentity = readProcessStartIdentity(process.pid);
+		if (!processStartIdentity) throw new Error("Expected a process identity on the certified platform.");
+		const lockDir = writeStaleLegacyLock(legacyRoot, {
+			token: "7b73d977-1d87-4f2a-97ec-ae7541fe7831",
+			pid: process.pid,
+			processStartIdentity,
+		});
+
+		const result = await prepareSessionGovernorCompatibility({
+			scope: scope(),
+			limits,
+			currentRootDir: currentRoot,
+			legacyRootDir: legacyRoot,
+			legacyLockOptions: { timeoutMs: 20, retryMs: 1 },
+		});
+
 		expect(result.ok).toBeFalse();
-		if (result.ok) throw new Error("Expected the stale v1 lock to remain blocked.");
-		expect(result.message).toContain("may be stale after a crash");
-		expect(result.message).toContain(lockDir);
 		expect(fs.existsSync(lockDir)).toBeTrue();
-		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
-		const owner = JSON.parse(fs.readFileSync(path.join(lockDir, "owner.json"), "utf8")) as {
-			processStartIdentity?: unknown;
-			token?: unknown;
-		};
-		expect(owner.token).toBe("dead-generation");
-		expect(owner.processStartIdentity).toBe("definitely-not-the-current-process-generation");
+	});
+
+	test("serializes concurrent recovery of one stale previous-release barrier", async () => {
+		const currentRootA = temporaryRoot("pi-governor-current-a-");
+		const currentRootB = temporaryRoot("pi-governor-current-b-");
+		const legacyRoot = temporaryRoot("pi-governor-legacy-");
+		const lockDir = writeStaleLegacyLock(legacyRoot, {
+			token: "04057a65-e2e2-4b9e-8cd5-52b027bc05d1",
+			pid: 999_999_991,
+			processStartIdentity: "linux:dead",
+		});
+		const options = { timeoutMs: 100, retryMs: 1 };
+		const results = await Promise.all([
+			prepareSessionGovernorCompatibility({
+				scope: scope(),
+				limits,
+				currentRootDir: currentRootA,
+				legacyRootDir: legacyRoot,
+				legacyLockOptions: options,
+			}),
+			prepareSessionGovernorCompatibility({
+				scope: scope(),
+				limits,
+				currentRootDir: currentRootB,
+				legacyRootDir: legacyRoot,
+				legacyLockOptions: options,
+			}),
+		]);
+
+		expect(results.every((result) => result.ok)).toBeTrue();
+		expect(fs.existsSync(lockDir)).toBeFalse();
 	});
 
 	test("keeps concurrent upgraded contenders fail-closed behind one uncooperative v1 lock", async () => {
