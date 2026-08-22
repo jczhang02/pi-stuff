@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto";
-import type { ContextEvent, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+	BeforeProviderRequestEvent,
+	ContextEvent,
+	ExtensionAPI,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import Tokenizer from "ai-tokenizer";
 import * as o200kBase from "ai-tokenizer/encoding/o200k_base";
-import type { JsonInputObject } from "../../../../shared/json-value.js";
+import type { JsonInputObject, JsonInputValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { SUBAGENT_DELEGATED_TASK_FINGERPRINT_ENV } from "./pi-args.ts";
 
@@ -81,7 +86,7 @@ export function estimateChildPayloadTokens(serialized: string, model: ProviderPa
 	return Buffer.byteLength(serialized, "utf8");
 }
 
-function serializedTokens(value: unknown, model: ProviderPayloadModel | undefined): number {
+function serializedTokens<Value>(value: Value, model: ProviderPayloadModel | undefined): number {
 	try {
 		const serialized = JSON.stringify(value);
 		if (serialized !== undefined) return estimateChildPayloadTokens(serialized, model);
@@ -202,7 +207,7 @@ function boundedHeadTail(value: string, maxBytes: number, marker: string): strin
 	return `${utf8Prefix(value, headBytes).trimEnd()}${marker}${utf8Suffix(value, available - headBytes).trimStart()}`;
 }
 
-function textFromContent(content: unknown): string {
+function textFromContent(content: JsonInputValue | undefined): string {
 	if (isRuntimeString(content)) return content;
 	if (!Array.isArray(content)) return "";
 	const texts: string[] = [];
@@ -245,10 +250,12 @@ function projectedToolResult(message: ChildMessage, maxBytes: number): ChildMess
 	const marker = "\n[...compacted for child continuation safety...]\n";
 	const bodyBudget = Math.max(0, maxBytes - Buffer.byteLength(header, "utf8"));
 	const text = `${header}${boundedHeadTail(fullText, bodyBudget, marker)}`;
-	return {
+	const projected = {
 		...jsonRecord(message),
 		content: [{ type: "text", text }],
-	} as ChildMessage;
+	};
+	// SAFETY: projected copies a Pi child message and replaces only its content with a valid text content block.
+	return projected as ChildMessage;
 }
 
 function toolCallIds(message: ChildMessage): string[] {
@@ -263,7 +270,9 @@ function toolCallIds(message: ChildMessage): string[] {
 
 function latestCompletedToolBatch(messages: readonly ChildMessage[]): CompletedToolBatch | undefined {
 	for (let assistantIndex = messages.length - 1; assistantIndex >= 0; assistantIndex -= 1) {
-		const callIds = toolCallIds(messages[assistantIndex] as ChildMessage);
+		const assistant = messages[assistantIndex];
+		if (!assistant) continue;
+		const callIds = toolCallIds(assistant);
 		if (callIds.length === 0 || new Set(callIds).size !== callIds.length) continue;
 		const resultById = new Map<string, number>();
 		for (let index = assistantIndex + 1; index < messages.length; index += 1) {
@@ -275,10 +284,14 @@ function latestCompletedToolBatch(messages: readonly ChildMessage[]): CompletedT
 			resultById.set(record.toolCallId, index);
 		}
 		if (callIds.every((id) => resultById.has(id))) {
+			const resultIndices = callIds.flatMap((id) => {
+				const index = resultById.get(id);
+				return index === undefined ? [] : [index];
+			});
 			return {
 				assistantIndex,
 				callIds,
-				resultIndices: callIds.map((id) => resultById.get(id) as number).sort((left, right) => left - right),
+				resultIndices: resultIndices.sort((left, right) => left - right),
 			};
 		}
 	}
@@ -319,11 +332,7 @@ function delegatedTaskIndex(messages: readonly ChildMessage[]): number | undefin
 		const message = messages[index];
 		const record = message ? jsonRecord(message) : undefined;
 		if (record?.role !== "user") continue;
-		if (
-			taskCandidates(messageText(messages[index] as ChildMessage)).some(
-				(candidate) => fingerprint(candidate) === expected,
-			)
-		) {
+		if (taskCandidates(messageText(message)).some((candidate) => fingerprint(candidate) === expected)) {
 			return index;
 		}
 	}
@@ -351,10 +360,7 @@ function latestSteeringIndex(messages: readonly ChildMessage[]): number | undefi
 	for (let index = messages.length - 1; index >= 0; index -= 1) {
 		const message = messages[index];
 		const record = message ? jsonRecord(message) : undefined;
-		if (
-			record?.role === "user" &&
-			messageText(messages[index] as ChildMessage).includes("<pi-stuff-steer request=")
-		) {
+		if (record?.role === "user" && messageText(message).includes("<pi-stuff-steer request=")) {
 			return index;
 		}
 	}
@@ -431,7 +437,7 @@ function emergencyProjection(messages: readonly ChildMessage[]): ChildMessage[] 
 				},
 			],
 			timestamp: Date.now(),
-		} as ChildMessage);
+		});
 	}
 	retained.push(...beforeBatch);
 	if (batch) {
@@ -470,12 +476,22 @@ export function projectChildContinuationContext(
 	const targetTokens = childMessageTargetTokens(pi, ctx, model);
 	const estimatedTokensBefore = estimateMessages(messages, model);
 	if (targetTokens === undefined || estimatedTokensBefore <= targetTokens) {
+		// SAFETY: Pi supplies a mutable message array; this function accepts it as readonly only to prevent local mutation.
+		const unchangedMessages = messages as ChildMessage[];
+		if (targetTokens === undefined) {
+			return {
+				messages: unchangedMessages,
+				changed: false,
+				estimatedTokensBefore,
+				estimatedTokensAfter: estimatedTokensBefore,
+			};
+		}
 		return {
-			messages: messages as ChildMessage[],
+			messages: unchangedMessages,
 			changed: false,
 			estimatedTokensBefore,
 			estimatedTokensAfter: estimatedTokensBefore,
-			...(targetTokens !== undefined ? { targetTokens } : {}),
+			targetTokens,
 		};
 	}
 
@@ -517,7 +533,7 @@ export function projectChildContinuationContext(
 }
 
 export function validateChildProviderPayload(
-	payload: unknown,
+	payload: BeforeProviderRequestEvent["payload"],
 	model: ProviderPayloadModel | undefined,
 	phase: ChildProviderRequestPhase = "launch",
 ): { ok: true } | { ok: false; message: string } {
