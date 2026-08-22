@@ -1,3 +1,5 @@
+import { isJsonInputObject, parseJsonObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 import { execFile } from "node:child_process";
 
@@ -25,15 +27,15 @@ Format as markdown.`;
 const YOUTUBE_REGEX =
 	/(?:(?:www\.|m\.)?youtube\.com\/(?:watch\?.*v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function shouldRethrow(err: unknown): boolean {
+function shouldRethrow(err: JsonInputValue): boolean {
 	return errorMessage(err).startsWith("Failed to parse ");
 }
 
-function addAttemptError(errors: string[], label: string, err: unknown): void {
+function addAttemptError(errors: string[], label: string, err: JsonInputValue): void {
 	const message = errorMessage(err).replace(/\s+/g, " ").trim();
 	if (message) errors.push(`${label}: ${message}`);
 }
@@ -43,14 +45,14 @@ interface YouTubeConfig {
 	preferredModel: string;
 }
 
-function normalizePreferredModel(value: unknown, fallback: string): string {
-	if (typeof value !== "string") return fallback;
+function normalizePreferredModel(value: JsonInputValue, fallback: string): string {
+	if (!isRuntimeString(value)) return fallback;
 	const normalized = value.trim();
 	return normalized.length > 0 ? normalized : fallback;
 }
 
-function normalizeEnabled(value: unknown, fallback: boolean): boolean {
-	return typeof value === "boolean" ? value : fallback;
+function normalizeEnabled(value: JsonInputValue, fallback: boolean): boolean {
+	return isRuntimeBoolean(value) ? value : fallback;
 }
 
 const defaults: YouTubeConfig = { enabled: true, preferredModel: "gemini-3.6-flash" };
@@ -63,15 +65,15 @@ function loadYouTubeConfig(): YouTubeConfig {
 	}
 
 	const rawText = readWebConfigText();
-	let raw: { youtube?: { enabled?: boolean; preferredModel?: string } };
+	let raw;
 	try {
-		raw = JSON.parse(rawText) as { youtube?: { enabled?: boolean; preferredModel?: string } };
+		raw = parseJsonObject(rawText);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
 
-	const yt = raw.youtube ?? {};
+	const yt = isJsonInputObject(raw.youtube) ? raw.youtube : {};
 	cachedConfig = {
 		enabled: normalizeEnabled(yt.enabled, defaults.enabled),
 		preferredModel: normalizePreferredModel(yt.preferredModel, defaults.preferredModel),
@@ -79,7 +81,12 @@ function loadYouTubeConfig(): YouTubeConfig {
 	return cachedConfig;
 }
 
-export function isYouTubeURL(url: string): { isYouTube: boolean; videoId: string | null } {
+export interface YouTubeUrlInfo {
+	isYouTube: boolean;
+	videoId: string | null;
+}
+
+export function isYouTubeURL(url: string): YouTubeUrlInfo {
 	try {
 		const parsed = new URL(url);
 		if (parsed.pathname === "/playlist") {
@@ -143,7 +150,7 @@ export async function extractYouTube(
 type StreamInfo = { streamUrl: string; duration: number | null };
 type StreamResult = StreamInfo | { error: string };
 
-function mapYtDlpError(err: unknown): string {
+function mapYtDlpError(err: JsonInputValue): string {
 	const { code, stderr, message } = readExecError(err);
 	if (code === "ENOENT") return "yt-dlp is not installed. Install with: brew install yt-dlp";
 	if (isTimeoutError(err)) return "yt-dlp timed out fetching video info";
@@ -249,12 +256,13 @@ async function tryGeminiWeb(
 
 		if (signal?.aborted) return null;
 
-		const text = await queryWithCookies(prompt, cookies, {
+		const geminiOptions = {
 			youtubeUrl: url,
-			...(model !== "gemini-3.6-flash" ? { model } : {}),
 			signal,
 			timeoutMs: 120000,
-		});
+		};
+		if (model !== "gemini-3.6-flash") Object.assign(geminiOptions, { model });
+		const text = await queryWithCookies(prompt, cookies, geminiOptions);
 
 		return {
 			url,

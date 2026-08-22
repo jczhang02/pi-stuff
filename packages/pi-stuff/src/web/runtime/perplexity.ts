@@ -1,3 +1,8 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject } from "../../shared/json-value.js";
+import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -35,7 +40,7 @@ export interface SearchOptions {
 }
 
 interface WebSearchConfig {
-	perplexityApiKey?: unknown;
+	perplexityApiKey?: JsonInputValue;
 }
 
 let cachedConfig: WebSearchConfig | null = null;
@@ -48,7 +53,7 @@ function loadConfig(): WebSearchConfig {
 
 	const content = readWebConfigText();
 	try {
-		cachedConfig = JSON.parse(content) as WebSearchConfig;
+		cachedConfig = parseJsonObject(content);
 		return cachedConfig;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -118,11 +123,11 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 	});
 
 	const apiKey = await getApiKey(options.signal);
-	const numResults = typeof options.numResults === "number" && Number.isFinite(options.numResults)
+	const numResults = isRuntimeNumber(options.numResults) && Number.isFinite(options.numResults)
 		? Math.max(1, Math.min(Math.floor(options.numResults), 20))
 		: 5;
 
-	const requestBody: Record<string, unknown> = {
+	const requestBody: JsonInputObject = {
 		model: "sonar",
 		messages: [{ role: "user", content: query }],
 		max_tokens: 1024,
@@ -142,15 +147,16 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 
 	let response: Response;
 	try {
-		response = await fetch(PERPLEXITY_API_URL, {
+		const request: RequestInit = {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(requestBody),
-			...(options.signal ? { signal: options.signal } : {}),
-		});
+		};
+		if (options.signal) request.signal = options.signal;
+		response = await fetch(PERPLEXITY_API_URL, request);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		const redactedMessage = redactCredential(message, apiKey);
@@ -171,26 +177,30 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 		throw new Error(`Perplexity API error ${response.status}: ${errorText}`);
 	}
 
-	let data: Record<string, unknown>;
+	let data;
 	try {
-		data = (await response.json()) as Record<string, unknown>;
+		const responseBody = await response.json();
+		if (!isJsonInputObject(responseBody)) throw new TypeError("expected an object");
+		data = responseBody;
 	} catch (err) {
 		activityMonitor.logComplete(activityId, response.status);
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Perplexity API returned invalid JSON: ${message}`);
 	}
 
-	const answer = (data.choices as Array<{ message?: { content?: string } }>)?.[0]?.message?.content || "";
+	const firstChoice = Array.isArray(data.choices) && isJsonInputObject(data.choices[0]) ? data.choices[0] : undefined;
+	const message = isJsonInputObject(firstChoice?.message) ? firstChoice.message : undefined;
+	const answer = isRuntimeString(message?.content) ? message.content : "";
 	const citations = Array.isArray(data.citations) ? data.citations : [];
 
 	const results: SearchResult[] = [];
 	for (let i = 0; i < Math.min(citations.length, numResults); i++) {
 		const citation = citations[i];
-		if (typeof citation === "string") {
+		if (isRuntimeString(citation)) {
 			results.push({ title: `Source ${i + 1}`, url: citation, snippet: "" });
-		} else if (citation && typeof citation === "object" && typeof citation.url === "string") {
+		} else if (isJsonInputObject(citation) && isRuntimeString(citation.url)) {
 			results.push({
-				title: citation.title || `Source ${i + 1}`,
+				title: isRuntimeString(citation.title) ? citation.title : `Source ${i + 1}`,
 				url: citation.url,
 				snippet: "",
 			});

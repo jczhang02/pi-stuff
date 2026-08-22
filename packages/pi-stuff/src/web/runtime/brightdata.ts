@@ -1,3 +1,7 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -20,22 +24,22 @@ const ZONE_PATTERN = /^[A-Za-z0-9_-]+$/;
 // Google's own time filter, passed straight through in the proxied URL. Unlike a
 // query-text hint this is an engine-side filter, so results outside the window
 // are not returned at all.
-const RECENCY_TBS: Record<string, string> = {
+const RECENCY_TBS = {
 	day: "qdr:d",
 	week: "qdr:w",
 	month: "qdr:m",
 	year: "qdr:y",
-};
+} satisfies Record<NonNullable<SearchOptions["recencyFilter"]>, string>;
 
-interface WebSearchConfig {
-	brightdataApiKey?: unknown;
-	brightdataSerpZone?: unknown;
+interface WebSearchConfig extends JsonInputObject {
+	brightdataApiKey?: JsonInputValue;
+	brightdataSerpZone?: JsonInputValue;
 }
 
 interface BrightDataOrganicResult {
-	link?: unknown;
-	title?: unknown;
-	description?: unknown;
+	link?: JsonInputValue;
+	title?: JsonInputValue;
+	description?: JsonInputValue;
 }
 
 interface BrightDataSerpResponse {
@@ -65,7 +69,7 @@ let cachedConfig: WebSearchConfig | null = null;
 // `anysearch.ts:48-51` and `firecrawl.ts:50-53`, which all quote the parser message
 // verbatim. They have the same leak; fixing it for every provider is a separate
 // change, and this module is not going to copy the bug forward to justify symmetry.
-function configParseDetail(err: unknown): string {
+function configParseDetail(err: JsonInputValue): string {
 	const position = errorMessage(err).match(/at position \d+(?: \(line \d+ column \d+\))?/i);
 	return position ? `not valid JSON, ${position[0]}` : "not valid JSON";
 }
@@ -77,16 +81,16 @@ function loadConfig(): WebSearchConfig {
 	}
 
 	const raw = readWebConfigText();
-	let parsed: unknown;
+	let parsed: JsonInputValue;
 	try {
 		parsed = JSON.parse(raw);
 	} catch (err) {
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${configParseDetail(err)}`);
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+	if (!isJsonInputObject(parsed)) {
 		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
 	}
-	cachedConfig = parsed as WebSearchConfig;
+	cachedConfig = parsed;
 	return cachedConfig;
 }
 
@@ -124,8 +128,8 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 // `web_search` down for Brave and OpenAI too, over one mistyped Bright Data
 // setting. The loud, actionable error belongs on the request path, in
 // `requireSerpZone()`, where only this provider is affected.
-function normalizeZone(value: unknown): string | null {
-	if (typeof value !== "string") return null;
+function normalizeZone(value: JsonInputValue): string | null {
+	if (!isRuntimeString(value)) return null;
 	const trimmed = value.trim();
 	if (!trimmed) return null;
 	return ZONE_PATTERN.test(trimmed) ? trimmed : null;
@@ -141,11 +145,11 @@ interface ZoneSetting {
 // setting the user actually filled in is the setting the error names.
 function serpZoneSetting(): ZoneSetting | null {
 	const fromEnv = process.env.BRIGHTDATA_SERP_ZONE;
-	if (typeof fromEnv === "string" && fromEnv.trim()) {
+	if (isRuntimeString(fromEnv) && fromEnv.trim()) {
 		return { raw: fromEnv.trim(), label: "BRIGHTDATA_SERP_ZONE" };
 	}
 	const configured = loadConfig().brightdataSerpZone;
-	if (typeof configured === "string" && configured.trim()) {
+	if (isRuntimeString(configured) && configured.trim()) {
 		return { raw: configured.trim(), label: `brightdataSerpZone in ${CONFIG_PATH}` };
 	}
 	return null;
@@ -183,7 +187,7 @@ function requireSerpZone(): string {
 }
 
 function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
@@ -274,7 +278,7 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
@@ -287,7 +291,7 @@ function errorMessage(err: unknown): string {
 // happened is that a 200 was billed and is unusable. Status-shaped phrases in
 // quoted text are rewritten to `upstream <code>`: the number is still reported,
 // but only this module's own wording can name the status we received.
-const STATUS_SHAPED_PATTERN = /\b(?:error|status|http)[\s:=-]{1,4}(\d{3})\b/gi;
+const STATUS_FORMAT_PATTERN = /\b(?:error|status|http)[\s:=-]{1,4}(\d{3})\b/gi;
 
 // `providerErrorStatus` is not the only thing that reads our message.
 // `classifyProviderError` also matches bare keyword phrases, and its branch order
@@ -304,7 +308,7 @@ const STATUS_SHAPED_PATTERN = /\b(?:error|status|http)[\s:=-]{1,4}(\d{3})\b/gi;
 // The phrase is replaced rather than removed: the reader still learns the upstream
 // page mentioned a rate limit, but no substring of the replacement matches any
 // classifier branch ("rate-limit" is hyphenated, so /rate limit/ cannot match).
-const QUOTA_SHAPED_PATTERN = /rate limit|quota|too many requests/gi;
+const QUOTA_FORMAT_PATTERN = /rate limit|quota|too many requests/gi;
 
 // The complete inventory of places foreign text is quoted into a message or a log
 // line, and what each one is required to apply. Adding a fifth means adding it here:
@@ -348,8 +352,8 @@ function untrustedText(text: string, limit = 300): string {
 		.replace(/\s+/g, " ")
 		.trim()
 		.slice(0, limit)
-		.replace(STATUS_SHAPED_PATTERN, "upstream $1")
-		.replace(QUOTA_SHAPED_PATTERN, "upstream rate-limit notice");
+		.replace(STATUS_FORMAT_PATTERN, "upstream $1")
+		.replace(QUOTA_FORMAT_PATTERN, "upstream rate-limit notice");
 }
 
 function invalidResponse(zone: string, message: string): Error {
@@ -363,18 +367,18 @@ function invalidResponse(zone: string, message: string): Error {
 // The envelope is upstream text, so it gets the same two-step treatment as every other
 // quoted body: `redactCredential` first (an upstream "token <yours> is not valid for
 // this zone" must not reprint the token), then `untrustedText`.
-function envelopeError(envelope: Record<string, unknown>, apiKey: string | null): string | null {
+function envelopeError(envelope: JsonInputObject, apiKey: string | null): string | null {
 	const parts: string[] = [];
 	const { error, errors } = envelope;
-	if (typeof error === "string" && error.trim()) parts.push(error.trim());
-	else if (error && typeof error === "object") parts.push(JSON.stringify(error));
+	if (isRuntimeString(error) && error.trim()) parts.push(error.trim());
+	else if (error && isRuntimeObject(error)) parts.push(JSON.stringify(error));
 	if (Array.isArray(errors) && errors.length > 0) parts.push(JSON.stringify(errors));
-	else if (typeof errors === "string" && errors.trim()) parts.push(errors.trim());
+	else if (isRuntimeString(errors) && errors.trim()) parts.push(errors.trim());
 	if (parts.length === 0) return null;
 	for (const key of ["code", "error_code"]) {
 		const code = envelope[key];
-		if (typeof code === "string" && code.trim()) parts.push(`${key} ${code.trim()}`);
-		else if (typeof code === "number") parts.push(`${key} ${code}`);
+		if (isRuntimeString(code) && code.trim()) parts.push(`${key} ${code.trim()}`);
+		else if (isRuntimeNumber(code)) parts.push(`${key} ${code}`);
 	}
 	return untrustedText(redactCredential(parts.join(", "), apiKey), 200);
 }
@@ -388,29 +392,28 @@ function envelopeError(envelope: Record<string, unknown>, apiKey: string | null)
 // Individual organic entries are the one deliberate exception: a real SERP mixes
 // in entries with no link, and one of those must not throw away a page of results
 // that was already paid for.
-function parseSerpResponse(value: unknown, zone: string, apiKey: string | null): BrightDataSerpResponse {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
+function parseSerpResponse(value: JsonInputValue, zone: string, apiKey: string | null): BrightDataSerpResponse {
+	if (!isJsonInputObject(value)) {
 		throw invalidResponse(zone, "expected an object envelope");
 	}
-	const envelope = value as Record<string, unknown>;
-	const upstreamError = envelopeError(envelope, apiKey);
+	const upstreamError = envelopeError(value, apiKey);
 	if (upstreamError) {
 		throw invalidResponse(zone, `Bright Data reported an error instead of a SERP: ${upstreamError}`);
 	}
-	if (envelope.organic === undefined || envelope.organic === null) {
+	if (value.organic === undefined || value.organic === null) {
 		throw invalidResponse(
 			zone,
 			"expected an organic array and the envelope carried none. A `serp` zone queried with brd_json=1 " +
 			"returns { organic: [...] }; a zone of type `unblocker`, or a missing brd_json=1, is the usual cause",
 		);
 	}
-	if (!Array.isArray(envelope.organic)) throw invalidResponse(zone, "expected organic array");
+	if (!Array.isArray(value.organic)) throw invalidResponse(zone, "expected organic array");
 	const organic: BrightDataOrganicResult[] = [];
-	for (const [index, entry] of envelope.organic.entries()) {
-		if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+	for (const [index, entry] of value.organic.entries()) {
+		if (!isJsonInputObject(entry)) {
 			throw invalidResponse(zone, `expected organic[${index}] object`);
 		}
-		organic.push(entry as BrightDataOrganicResult);
+		organic.push({ link: entry.link, title: entry.title, description: entry.description });
 	}
 	return { organic };
 }
@@ -423,13 +426,13 @@ function mapResults(
 	if (!Array.isArray(organic)) return [];
 	const mapped: SearchResponse["results"] = [];
 	for (const item of organic) {
-		const url = typeof item.link === "string" ? item.link.trim() : "";
+		const url = isRuntimeString(item.link) ? item.link.trim() : "";
 		if (!url || !passesDomainFilters(url, filters)) continue;
-		const title = typeof item.title === "string" ? item.title.trim() : "";
+		const title = isRuntimeString(item.title) ? item.title.trim() : "";
 		mapped.push({
 			title: title || `Source ${mapped.length + 1}`,
 			url,
-			snippet: typeof item.description === "string" ? item.description.replace(/\s+/g, " ").trim() : "",
+			snippet: isRuntimeString(item.description) ? item.description.replace(/\s+/g, " ").trim() : "",
 		});
 		if (mapped.length >= numResults) break;
 	}
@@ -480,7 +483,7 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 	const numResults = normalizeCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
 	const searchQuery = buildSearchQuery(query, filters);
-	const body: Record<string, unknown> = {
+	const body: JsonInputObject = {
 		url: buildSerpUrl(searchQuery, numResults, options.recencyFilter),
 		zone,
 		// `format: "raw"` returns the proxied body verbatim; `data_format` selects
@@ -532,10 +535,10 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 		throw new Error(`Bright Data API returned empty response for zone ${zone}`);
 	}
 
-	let rawData: unknown;
+	let rawData: JsonInputValue;
 	try {
 		rawData = JSON.parse(raw);
-	} catch (err) {
+	} catch {
 		activityMonitor.logComplete(activityId, response.status);
 		// The parser's own message is deliberately NOT quoted here. V8 embeds a short
 		// window of the offending input in it (`Unexpected token 'x', "xxxxxxxx-x"...`),

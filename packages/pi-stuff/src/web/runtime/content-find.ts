@@ -15,6 +15,13 @@ interface Range {
 	matches: Match[];
 }
 
+export interface FindContentResult {
+	text: string;
+	matchCount: number;
+	returnedMatches: number;
+	queryResults: Array<{ query: string; matchCount: number }>;
+}
+
 function normalize(value: string): string {
 	return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
 }
@@ -96,7 +103,7 @@ export function findContent(
 	text: string,
 	queries: string[],
 	mode: FindMode,
-): { text: string; matchCount: number; returnedMatches: number; queryResults: Array<{ query: string; matchCount: number }> } {
+): FindContentResult {
 	const normalizedQueries = [...new Set(queries.map(query => query.trim()).filter(Boolean))];
 	const matches = normalizedQueries.flatMap(query => mode === "fuzzy"
 		? fuzzyMatches(text, query)
@@ -115,7 +122,7 @@ export function findContent(
 		const suffix = range.end < text.length ? "…" : "";
 		const snippet = `${prefix}${text.slice(range.start, range.end).replace(/\s+/g, " ").trim()}${suffix}`;
 		const counts = [...new Set(range.matches.map(match => match.query))]
-			.map(query => `\"${query}\" ×${range.matches.filter(match => match.query === query).length}`)
+			.map(query => `"${query}" ×${range.matches.filter(match => match.query === query).length}`)
 			.join(", ");
 		const section = `${sections.length}. ${counts}\n${snippet}`;
 		if (formattedLength + 2 + section.length > MAX_OUTPUT_CHARS) break;
@@ -124,7 +131,7 @@ export function findContent(
 		returnedMatches += range.matches.length;
 	}
 
-	const missing = queryResults.filter(result => result.matchCount === 0).map(result => `\"${result.query}\"`);
+	const missing = queryResults.filter(result => result.matchCount === 0).map(result => `"${result.query}"`);
 	const footer = [
 		...(missing.length > 0 ? [`No matches: ${missing.join(", ")}`] : []),
 		...(returnedMatches < matches.length ? [`Showing ${returnedMatches} of ${matches.length} matches.`] : []),

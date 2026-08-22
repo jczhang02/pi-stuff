@@ -1,5 +1,7 @@
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfig, updateWebConfig } from "../settings.ts";
-import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, AgentToolUpdateCallback, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, type KeyId } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { StringEnum, complete, type Api, type ImageContent, type Model, type TextContent } from "@earendil-works/pi-ai/compat";
@@ -14,7 +16,7 @@ import { answerFromPage } from "./page-query.ts";
 import { clearCloneCache } from "./github-extract.ts";
 import { getConfiguredSearchRouting, normalizeSearchProviderSelection, RESOLVED_SEARCH_PROVIDERS, SEARCH_PROVIDERS, search, type AttributedSearchResponse, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 import type { SearchResult } from "./perplexity.ts";
-import { formatSeconds, getWebSearchConfigDir, getWebSearchConfigPath, resolveCuratorNetworkConfig } from "./utils.ts";
+import { formatSeconds, getWebSearchConfigPath, resolveCuratorNetworkConfig } from "./utils.ts";
 import {
 	clearResults,
 	deleteResult,
@@ -69,7 +71,7 @@ import { isXaiSearchAvailable } from "./xai-search.ts";
 const execFileAsync = promisify(execFile);
 import { isBrightDataAvailable } from "./brightdata.ts";
 import { isSerpBaseAvailable } from "./serpbase.ts";
-import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
+import { buildSearchErrorPlan, type SearchErrorPlan } from "./render-search-error.ts";
 import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.ts";
 import {
 	buildResearchArtifact,
@@ -103,8 +105,12 @@ async function fetchAllContent(
 	return extractModule.fetchAllContent(urls, signal, options);
 }
 
-function isAbortError(err: unknown): boolean {
+function isAbortError(err: JsonInputValue): boolean {
 	return (err instanceof Error ? err.message : String(err)).toLowerCase().includes("abort");
+}
+
+function resolveFindMode(value: JsonInputValue): FindMode {
+	return value === "exact" || value === "fuzzy" ? value : "case-insensitive";
 }
 
 /** Shared collapsed/expanded renderer for an error/cancel plan produced by
@@ -126,20 +132,20 @@ function renderSearchErrorPlan(plan: SearchErrorPlan, expanded: boolean, theme: 
 }
 
 interface WebSearchConfig {
-	anysearchApiKey?: unknown;
-	brightdataApiKey?: unknown;
-	brightdataSerpZone?: unknown;
-	kagiApiKey?: unknown;
-	ollamaApiKey?: unknown;
-	serpbaseApiKey?: unknown;
-	tinyfishApiKey?: unknown;
-	xaiApiKey?: unknown;
-	provider?: unknown;
-	searchProvider?: unknown;
+	anysearchApiKey?: JsonInputValue;
+	brightdataApiKey?: JsonInputValue;
+	brightdataSerpZone?: JsonInputValue;
+	kagiApiKey?: JsonInputValue;
+	ollamaApiKey?: JsonInputValue;
+	serpbaseApiKey?: JsonInputValue;
+	tinyfishApiKey?: JsonInputValue;
+	xaiApiKey?: JsonInputValue;
+	provider?: JsonInputValue;
+	searchProvider?: JsonInputValue;
 	workflow?: string;
-	curatorTimeoutSeconds?: unknown;
-	autoOpenBrowser?: unknown;
-	curatorRemote?: unknown;
+	curatorTimeoutSeconds?: JsonInputValue;
+	autoOpenBrowser?: JsonInputValue;
+	curatorRemote?: JsonInputValue;
 	summaryModel?: string;
 	webSearch?: {
 		enabled?: boolean;
@@ -194,7 +200,7 @@ interface CuratorBootstrap {
 
 
 function loadConfig(): WebSearchConfig {
-	return (readWebConfig() ?? {}) as WebSearchConfig;
+	return readWebConfig() ?? {};
 }
 
 async function saveConfig(updates: Partial<WebSearchConfig>): Promise<void> {
@@ -214,6 +220,7 @@ const DEFAULT_TOOL_NAMES: ToolNames = {
 	fetchContent: "fetch_content",
 	getSearchContent: "get_search_content",
 };
+const TOOL_NAME_KEYS = ["webSearch", "sourceCheck", "fetchContent", "getSearchContent"] as const;
 const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const DEFAULT_SHORTCUTS = { curate: "ctrl+shift+s", activity: "ctrl+shift+w" } satisfies Record<string, KeyId>;
 const DEFAULT_CURATOR_TIMEOUT_SECONDS = 20;
@@ -228,14 +235,14 @@ function searchProviderSchema(description: string) {
 }
 
 function resolveToolNames(config: WebSearchConfig): ToolNames {
-	if (config.toolNames !== undefined && (!config.toolNames || typeof config.toolNames !== "object" || Array.isArray(config.toolNames))) {
+	if (config.toolNames !== undefined && (!config.toolNames || !isRuntimeObject(config.toolNames) || Array.isArray(config.toolNames))) {
 		throw new Error(`toolNames in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
 	}
 	const names = { ...DEFAULT_TOOL_NAMES };
-	for (const key of Object.keys(DEFAULT_TOOL_NAMES) as Array<keyof ToolNames>) {
+	for (const key of TOOL_NAME_KEYS) {
 		const value = config.toolNames?.[key];
 		if (value === undefined) continue;
-		if (typeof value !== "string") throw new Error(`toolNames.${key} in ${WEB_SEARCH_CONFIG_PATH} must be a string`);
+		if (!isRuntimeString(value)) throw new Error(`toolNames.${key} in ${WEB_SEARCH_CONFIG_PATH} must be a string`);
 		const trimmed = value.trim();
 		if (!TOOL_NAME_PATTERN.test(trimmed)) {
 			throw new Error(`toolNames.${key} in ${WEB_SEARCH_CONFIG_PATH} must start with a letter and contain only letters, numbers, underscores, or hyphens`);
@@ -269,12 +276,12 @@ function loadConfigForExtensionInit(): WebSearchConfig {
 	}
 }
 
-function normalizeProviderInput(value: unknown, label = "provider"): SearchProviderSelection | undefined {
+function normalizeProviderInput(value: JsonInputValue, label = "provider"): SearchProviderSelection | undefined {
 	if (value === undefined) return undefined;
 	return normalizeSearchProviderSelection(value, label);
 }
 
-function resolveRequestedProvider(requested: unknown): SearchProviderSelection {
+function resolveRequestedProvider(requested: JsonInputValue): SearchProviderSelection {
 	const normalizedRequested = normalizeProviderInput(requested);
 	if (normalizedRequested && normalizedRequested !== "auto") return normalizedRequested;
 	const config = loadConfig();
@@ -286,38 +293,38 @@ function toCuratorProvider(provider: SearchProviderSelection): CuratorProvider |
 	return provider === "auto" ? undefined : provider;
 }
 
-function resolveCuratorSearchProvider(requested: unknown, current: SearchProviderSelection): SearchProviderSelection {
+function resolveCuratorSearchProvider(requested: JsonInputValue, current: SearchProviderSelection): SearchProviderSelection {
 	const normalized = normalizeProviderInput(requested);
 	if (!normalized || normalized === "auto") return current;
 	if (normalized === "all" && Array.isArray(current)) return current;
 	return normalized;
 }
 
-function normalizeRecencyFilter(value: unknown): RecencyFilter | undefined {
+function normalizeRecencyFilter(value: JsonInputValue): RecencyFilter | undefined {
 	return value === "day" || value === "week" || value === "month" || value === "year"
 		? value
 		: undefined;
 }
 
-function normalizeCuratorTimeoutSeconds(value: unknown): number | undefined {
-	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+function normalizeCuratorTimeoutSeconds(value: JsonInputValue): number | undefined {
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return undefined;
 	const normalized = Math.floor(value);
 	if (normalized < 1) return undefined;
 	return Math.min(normalized, MAX_CURATOR_TIMEOUT_SECONDS);
 }
 
-function resolveWorkflow(input: unknown, hasUI: boolean): WebSearchWorkflow {
-	const normalized = typeof input === "string" ? input.trim().toLowerCase() : "";
+function resolveWorkflow(input: JsonInputValue, hasUI: boolean): WebSearchWorkflow {
+	const normalized = isRuntimeString(input) ? input.trim().toLowerCase() : "";
 	if (normalized === "auto-summary") return "auto-summary";
 	if (!hasUI) return "none";
 	if (normalized === "none") return "none";
 	return "summary-review";
 }
 
-function normalizeQueryList(queryList: unknown[]): string[] {
+function normalizeQueryList(queryList: JsonInputValue[]): string[] {
 	const normalized: string[] = [];
 	for (const query of queryList) {
-		if (typeof query !== "string") continue;
+		if (!isRuntimeString(query)) continue;
 		const trimmed = query.trim();
 		if (trimmed.length > 0) normalized.push(trimmed);
 	}
@@ -372,14 +379,14 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 function shouldPreferOpenAI(options?: Pick<PendingCurate, "numResults" | "recencyFilter">): boolean {
 	if (!options) return true;
 	if (options.recencyFilter) return false;
-	if (typeof options.numResults === "number" && Number.isFinite(options.numResults) && Math.floor(options.numResults) !== 5) {
+	if (isRuntimeNumber(options.numResults) && Number.isFinite(options.numResults) && Math.floor(options.numResults) !== 5) {
 		return false;
 	}
 	return true;
 }
 
 async function loadCuratorBootstrap(
-	requestedProvider: unknown,
+	requestedProvider: JsonInputValue,
 	ctx: ExtensionContext,
 	options?: Pick<PendingCurate, "numResults" | "recencyFilter">,
 ): Promise<CuratorBootstrap> {
@@ -509,10 +516,10 @@ interface PendingCurate {
 	defaultSummaryModel: string | null;
 	timeoutSeconds: number;
 	curatorUrl?: string;
-	onUpdate: ((update: { content: Array<{ type: string; text: string }>; details?: Record<string, unknown> }) => void) | undefined;
+	onUpdate: AgentToolUpdateCallback<unknown> | undefined;
 	signal: AbortSignal | undefined;
 	abortSearches: () => void;
-	finish: (value: AgentToolResult<Record<string, unknown>>) => void;
+	finish: (value: AgentToolResult<JsonInputObject>) => void;
 	cancel: (reason?: "user" | "stale") => void;
 	browserPromise?: Promise<void>;
 	browserOpenError?: string;
@@ -524,17 +531,19 @@ const DEFAULT_CONTENT_SLICE_LENGTH = MAX_INLINE_CONTENT;
 const MAX_CONTENT_SLICE_LENGTH = MAX_INLINE_CONTENT;
 
 function stripThumbnails(results: ExtractedContent[]): ExtractedContent[] {
-	return results.map(({ thumbnail, frames, ...rest }) => rest);
+	return results.map(({ thumbnail: _thumbnail, frames: _frames, ...rest }) => rest);
 }
 
-function initialContentSlice(content: string): {
+interface InitialContentSlice {
 	text: string;
 	endOffset: number;
 	totalBytes: number;
 	totalLines: number;
 	shownBytes: number;
 	shownLines: number;
-} {
+}
+
+function initialContentSlice(content: string): InitialContentSlice {
 	let endOffset = Math.min(content.length, MAX_INLINE_CONTENT);
 	if (endOffset < content.length) {
 		const lineBreak = content.lastIndexOf("\n", endOffset);
@@ -668,13 +677,13 @@ async function openInBrowser(pi: Pick<ExtensionAPI, "exec">, url: string): Promi
 
 interface GlimpseWindow {
 	on(event: "closed", handler: () => void): void;
-	on(event: "message", handler: (data: unknown) => void): void;
+	on(event: "message", handler: (data: JsonInputValue) => void): void;
 	on(event: "ready", handler: (info: { screen?: { visibleHeight?: number } }) => void): void;
 	close(): void;
-	_write(obj: Record<string, unknown>): void;
+	_write(obj: JsonInputObject): void;
 }
 
-let glimpseOpen: ((html: string, opts: Record<string, unknown>) => GlimpseWindow) | null | undefined;
+let glimpseOpen: ((html: string, opts: JsonInputObject) => GlimpseWindow) | null | undefined;
 
 async function findGlimpseMjs(): Promise<string | null> {
 	try {
@@ -708,7 +717,7 @@ async function getGlimpseOpen() {
 }
 
 function openInGlimpse(
-	open: (html: string, opts: Record<string, unknown>) => GlimpseWindow,
+	open: (html: string, opts: JsonInputObject) => GlimpseWindow,
 	url: string,
 	title: string,
 ): GlimpseWindow {
@@ -728,15 +737,13 @@ function openInGlimpse(
 	let maxHeight = 1200;
 	win.on("ready", (info) => {
 		const visibleHeight = info?.screen?.visibleHeight;
-		if (typeof visibleHeight === "number" && visibleHeight > 0) {
+		if (isRuntimeNumber(visibleHeight) && visibleHeight > 0) {
 			maxHeight = Math.floor(visibleHeight * 0.85);
 		}
 	});
 	win.on("message", (data) => {
-		if (!data || typeof data !== "object") return;
-		const msg = data as Record<string, unknown>;
-		if (msg.type !== "resize" || typeof msg.height !== "number") return;
-		const clamped = Math.max(400, Math.min(Math.round(msg.height), maxHeight));
+		if (!isJsonInputObject(data) || data.type !== "resize" || !isRuntimeNumber(data.height)) return;
+		const clamped = Math.max(400, Math.min(Math.round(data.height), maxHeight));
 		win._write({ type: "resize", width: 800, height: clamped });
 	});
 
@@ -993,7 +1000,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			curatorUrl?: string;
 			browserOpenError?: string;
 		},
-	): AgentToolResult<Record<string, unknown>> {
+	): AgentToolResult<JsonInputObject> {
 		const message = `Search curation cancelled (${reason}).`;
 		const cancelledQueries = partial?.queries?.length
 			? partial.queries.map(q => ({
@@ -1132,7 +1139,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 		}
 
 		const config = loadConfig();
-		const configuredSummaryModel = typeof config.summaryModel === "string" ? config.summaryModel.trim() : "";
+		const configuredSummaryModel = isRuntimeString(config.summaryModel) ? config.summaryModel.trim() : "";
 		const preferredDefaults = [
 			{ provider: "anthropic", id: "claude-haiku-4-5" },
 			{ provider: "openai-codex", id: "gpt-5.3-codex-spark" },
@@ -1173,8 +1180,8 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 	function resolveSummaryForSubmit(
 		payload: { selectedQueryIndices: number[]; summary?: string; summaryMeta?: SummaryMeta },
 		resultsByIndex: Map<number, QueryResultData>,
-	): { approvedSummary: string; summaryMeta: SummaryMeta } {
-		const submittedSummary = typeof payload.summary === "string" ? payload.summary.trim() : "";
+	): ApprovedSummary {
+		const submittedSummary = isRuntimeString(payload.summary) ? payload.summary.trim() : "";
 		if (submittedSummary.length > 0) {
 			return {
 				approvedSummary: submittedSummary,
@@ -1191,14 +1198,20 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 		};
 	}
 
-	function buildSearchReturn(opts: SearchReturnOptions): AgentToolResult<Record<string, unknown>> {
+	interface ApprovedSummary {
+		approvedSummary: string;
+		summaryMeta: SummaryMeta;
+	}
+
+	function buildSearchReturn(opts: SearchReturnOptions): AgentToolResult<JsonInputObject> {
 		const sc = opts.results.filter(r => !r.error).length;
 		const tr = opts.results.reduce((sum, r) => sum + r.results.length, 0);
 
-		const hasApprovedSummary = typeof opts.approvedSummary === "string" && opts.approvedSummary.trim().length > 0;
+		const approvedSummary = isRuntimeString(opts.approvedSummary) ? opts.approvedSummary.trim() : "";
+		const hasApprovedSummary = approvedSummary.length > 0;
 		let output = "";
 		if (hasApprovedSummary) {
-			output = opts.approvedSummary!.trim();
+			output = approvedSummary;
 		} else {
 			if (opts.curated) {
 				output += "[These results were manually curated by the user in the browser. Use them as-is — do not re-search or discard.]\n\n";
@@ -1240,44 +1253,48 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 		const searchId = storeAndPublishSearch(opts.results);
 		const isBackgroundFetch = fetchId !== null && !hasInlineReady;
 
+		const details = {
+			queries: opts.queryList,
+			queryCount: opts.queryList.length,
+			successfulQueries: sc,
+			totalResults: tr,
+			includeContent: opts.includeContent,
+			fetchId,
+			fetchUrls: isBackgroundFetch ? opts.urls : undefined,
+			searchId,
+		};
+		if (opts.curated) {
+			Object.assign(details, {
+				curated: true,
+				curatedFrom: opts.curatedFrom,
+				curatedQueries: opts.results.map(r => ({
+					query: r.query,
+					provider: r.provider || null,
+					answer: r.answer || null,
+					sources: r.results.map(s => ({ title: s.title, url: s.url })),
+					error: r.error,
+				})),
+			});
+		}
+		if (opts.workflow && hasApprovedSummary) {
+			Object.assign(details, {
+				summary: {
+					text: approvedSummary,
+					workflow: opts.workflow,
+					model: opts.summaryMeta?.model ?? null,
+					durationMs: opts.summaryMeta?.durationMs ?? 0,
+					tokenEstimate: opts.summaryMeta?.tokenEstimate ?? 0,
+					fallbackUsed: opts.summaryMeta?.fallbackUsed === true,
+					fallbackReason: opts.summaryMeta?.fallbackReason,
+					phase: opts.summaryMeta?.phase,
+					edited: opts.summaryMeta?.edited === true,
+				},
+			});
+		}
+
 		return {
 			content: [{ type: "text", text: output.trim() }],
-			details: {
-				queries: opts.queryList,
-				queryCount: opts.queryList.length,
-				successfulQueries: sc,
-				totalResults: tr,
-				includeContent: opts.includeContent,
-				fetchId,
-				fetchUrls: isBackgroundFetch ? opts.urls : undefined,
-				searchId,
-				...(opts.curated ? {
-					curated: true,
-					curatedFrom: opts.curatedFrom,
-					curatedQueries: opts.results.map(r => ({
-						query: r.query,
-						provider: r.provider || null,
-						answer: r.answer || null,
-						sources: r.results.map(s => ({ title: s.title, url: s.url })),
-						error: r.error,
-					})),
-				} : {}),
-				...((opts.workflow && hasApprovedSummary)
-					? {
-						summary: {
-							text: opts.approvedSummary!.trim(),
-							workflow: opts.workflow,
-							model: opts.summaryMeta?.model ?? null,
-							durationMs: opts.summaryMeta?.durationMs ?? 0,
-							tokenEstimate: opts.summaryMeta?.tokenEstimate ?? 0,
-							fallbackUsed: opts.summaryMeta?.fallbackUsed === true,
-							fallbackReason: opts.summaryMeta?.fallbackReason,
-							phase: opts.summaryMeta?.phase,
-							edited: opts.summaryMeta?.edited === true,
-						},
-					}
-					: {}),
-			},
+			details,
 		};
 	}
 
@@ -1612,7 +1629,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 		}),
 
 		async execute(callId, params, signal, onUpdate, ctx) {
-			const rawQueryList: unknown[] = Array.isArray(params.queries)
+			const rawQueryList: JsonInputValue[] = Array.isArray(params.queries)
 				? params.queries
 				: (params.query !== undefined ? [params.query] : []);
 			const queryList = normalizeQueryList(rawQueryList);
@@ -1638,8 +1655,8 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			if (shouldCurate) {
 				closeCurator(callId);
 
-				let resolvePromise: (value: AgentToolResult<Record<string, unknown>>) => void = () => {};
-				const promise = new Promise<AgentToolResult<Record<string, unknown>>>((resolve) => {
+				let resolvePromise: (value: AgentToolResult<JsonInputObject>) => void = () => {};
+				const promise = new Promise<AgentToolResult<JsonInputObject>>((resolve) => {
 					resolvePromise = resolve;
 				});
 				const includeContent = params.includeContent ?? false;
@@ -1690,7 +1707,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 					summaryModels: summaryModelChoices.summaryModels,
 					defaultSummaryModel: summaryModelChoices.defaultSummaryModel,
 					timeoutSeconds: curatorTimeoutSeconds,
-					onUpdate: onUpdate as PendingCurate["onUpdate"],
+						onUpdate,
 					signal,
 					abortSearches: () => {
 						if (!searchAbort.signal.aborted) searchAbort.abort();
@@ -1699,7 +1716,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 					cancel: () => {},
 				};
 
-				const finish = (value: AgentToolResult<Record<string, unknown>>) => {
+				const finish = (value: AgentToolResult<JsonInputObject>) => {
 					if (cancelled) return;
 					cancelled = true;
 					pc.abortSearches();
@@ -1896,8 +1913,8 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 		},
 
 		renderCall(args, theme) {
-			const input = args as { query?: unknown; queries?: unknown };
-			const rawQueryList: unknown[] = Array.isArray(input.queries)
+				const input = isJsonInputObject(args) ? args : {};
+			const rawQueryList: JsonInputValue[] = Array.isArray(input.queries)
 				? input.queries
 				: (input.query !== undefined ? [input.query] : []);
 			const queryList = normalizeQueryList(rawQueryList);
@@ -1928,7 +1945,8 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 				sources: Array<{ title: string; url: string }>;
 				error: string | null;
 			};
-			const details = result.details as {
+				// SAFETY: this renderer is paired with the execute function above, which emits this exact details contract.
+				const details = result.details as {
 				queryCount?: number;
 				successfulQueries?: number;
 				totalResults?: number;
@@ -1968,8 +1986,8 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 					const lines = [theme.fg("warning", "Open the search curator manually:")];
 					if (details?.curatorUrl) lines.push(theme.fg("muted", `  ${details.curatorUrl}`));
 					if (details?.browserOpenError) lines.push(theme.fg("dim", `  auto-open failed: ${details.browserOpenError}`));
-					const timeout = typeof details?.timeoutSeconds === "number" ? details.timeoutSeconds : undefined;
-					const shortcut = typeof details?.shortcut === "string" ? details.shortcut : curateKey;
+					const timeout = isRuntimeNumber(details?.timeoutSeconds) ? details.timeoutSeconds : undefined;
+					const shortcut = isRuntimeString(details?.shortcut) ? details.shortcut : curateKey;
 					lines.push(theme.fg("dim", timeout ? `  auto-submits after ${timeout}s idle; ${shortcut} reopens` : `  ${shortcut} reopens`));
 					return new Text(lines.join("\n"), 0, 0);
 				}
@@ -1983,8 +2001,8 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 					if (details?.curatorUrl) {
 						lines.push(theme.fg("muted", `  ${details.curatorUrl}`));
 					}
-					const timeout = typeof details?.timeoutSeconds === "number" ? details.timeoutSeconds : undefined;
-					const shortcut = typeof details?.shortcut === "string" ? details.shortcut : curateKey;
+					const timeout = isRuntimeNumber(details?.timeoutSeconds) ? details.timeoutSeconds : undefined;
+					const shortcut = isRuntimeString(details?.shortcut) ? details.shortcut : curateKey;
 					if (timeout) {
 						lines.push(theme.fg("dim", `  auto-submits after ${timeout}s idle; ${shortcut} reopens`));
 					} else {
@@ -2007,7 +2025,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			if (details?.error) {
 				// Expandable Ctrl+O diagnostics: which queries completed, per-query errors,
 				// browser connection state, cancel reason. See render-search-error.ts.
-				const plan = buildSearchErrorPlan(details as SearchErrorDetails);
+					const plan = buildSearchErrorPlan(details);
 				if (plan) return renderSearchErrorPlan(plan, expanded, theme);
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
@@ -2166,20 +2184,20 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			provider: Type.Optional(searchProviderSchema("Search provider or non-empty list of providers to search simultaneously; all searches every eligible provider except AnySearch, xAI, Bright Data, and SerpBase")),
 		}),
 		async execute(_callId, params, signal, _onUpdate, ctx) {
-			const claim = typeof params.claim === "string" ? params.claim.trim() : "";
+			const claim = isRuntimeString(params.claim) ? params.claim.trim() : "";
 			if (!claim) {
 				return { content: [{ type: "text", text: "Error: 'claim' is required." }], details: { error: "Missing claim" } };
 			}
 
 			const requestedQueries = Array.isArray(params.queries)
-				? params.queries.filter((query): query is string => typeof query === "string").map((query) => query.trim()).filter(Boolean)
+				? params.queries.filter((query): query is string => isRuntimeString(query)).map((query) => query.trim()).filter(Boolean)
 				: [];
 			const queries = (requestedQueries.length > 0 ? requestedQueries : [claim]).slice(0, 8);
-			const numResults = typeof params.numResults === "number" && Number.isFinite(params.numResults)
+			const numResults = isRuntimeNumber(params.numResults) && Number.isFinite(params.numResults)
 				? Math.min(20, Math.max(1, Math.floor(params.numResults)))
 				: 5;
 			const domainFilter = Array.isArray(params.domainFilter)
-				? params.domainFilter.filter((domain): domain is string => typeof domain === "string")
+				? params.domainFilter.filter((domain): domain is string => isRuntimeString(domain))
 				: undefined;
 			const recencyFilter = normalizeRecencyFilter(params.recencyFilter);
 			const resultsByUrl = new Map<string, SearchResult>();
@@ -2279,7 +2297,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			})),
 		}),
 
-		async execute(_toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<Record<string, unknown>>> {
+		async execute(_toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<JsonInputObject>> {
 			let normalized: ReturnType<typeof normalizeFetchContentParams>;
 			try {
 				normalized = normalizeFetchContentParams(params);
@@ -2331,12 +2349,13 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 						return { ...result, error: "Page answer requires textual fetched content" };
 					}
 					try {
-						const answer = await answerFromPage({
-							question: options.prompt!,
-							pageText: result.content,
-							sourceUrl: result.url,
-							...(options.answerModel ? { model: options.answerModel } : {}),
-						}, ctx, signal);
+							const pageInput = {
+								question: options.prompt!,
+								pageText: result.content,
+								sourceUrl: result.url,
+							};
+							if (options.answerModel) Object.assign(pageInput, { model: options.answerModel });
+							const answer = await answerFromPage(pageInput, ctx, signal);
 						return { ...result, content: answer.text };
 					} catch (err) {
 						return { ...result, error: `Page answer failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -2459,7 +2478,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			if (timestamp) {
 				lines.push(theme.fg("dim", "  timestamp: ") + theme.fg("warning", timestamp));
 			}
-			if (typeof frames === "number") {
+			if (isRuntimeNumber(frames)) {
 				lines.push(theme.fg("dim", "  frames: ") + theme.fg("warning", String(frames)));
 			}
 			if (prompt) {
@@ -2475,8 +2494,9 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			return new Text(lines.join("\n"), 0, 0);
 		},
 
-		renderResult(result, { expanded, isPartial }, theme) {
-			const details = result.details as {
+			renderResult(result, { expanded, isPartial }, theme) {
+				// SAFETY: this renderer is paired with the execute function above, which emits this exact details contract.
+				const details = result.details as {
 				urlCount?: number;
 				successful?: number;
 				totalChars?: number;
@@ -2491,8 +2511,9 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 				prompt?: string;
 				timestamp?: string;
 				frames?: number;
-				duration?: number;
-			};
+					duration?: number;
+					urls?: string[];
+				};
 
 			if (isPartial) {
 				const progress = details?.progress ?? 0;
@@ -2500,16 +2521,15 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 				return new Text(theme.fg("accent", `[${bar}] ${details?.phase || "fetching"}`), 0, 0);
 			}
 
-			if (details?.error) {
-				const fd = details as typeof details & { urls?: string[] };
-				const extras: string[] = [];
-				if (typeof fd.urlCount === "number" || typeof fd.successful === "number") {
-					extras.push(`urls: ${fd.successful ?? 0}/${fd.urlCount ?? 0} succeeded`);
-				}
-				if (fd.responseId) extras.push(`response id: ${fd.responseId}`);
-				if (fd.urls && fd.urls.length > 0) {
-					for (const u of fd.urls.slice(0, 8)) extras.push(`  \u25b8 ${u}`);
-					if (fd.urls.length > 8) extras.push(`  ... and ${fd.urls.length - 8} more`);
+				if (details?.error) {
+					const extras: string[] = [];
+					if (isRuntimeNumber(details.urlCount) || isRuntimeNumber(details.successful)) {
+						extras.push(`urls: ${details.successful ?? 0}/${details.urlCount ?? 0} succeeded`);
+					}
+					if (details.responseId) extras.push(`response id: ${details.responseId}`);
+					if (details.urls && details.urls.length > 0) {
+						for (const u of details.urls.slice(0, 8)) extras.push(`  \u25b8 ${u}`);
+						if (details.urls.length > 8) extras.push(`  ... and ${details.urls.length - 8} more`);
 				}
 				const plan = buildSearchErrorPlan({ error: details.error, extraLines: extras });
 				if (plan) return renderSearchErrorPlan(plan, expanded, theme);
@@ -2528,7 +2548,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 				if (details?.truncated) {
 					statusLine += theme.fg("warning", " [truncated]");
 				}
-				if (typeof details?.duration === "number") {
+				if (isRuntimeNumber(details?.duration)) {
 					statusLine += theme.fg("muted", ` | ${formatSeconds(Math.floor(details.duration))} total`);
 				}
 				const textContent = result.content.find((c) => c.type === "text")?.text || "";
@@ -2544,7 +2564,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 				if (details?.timestamp) {
 					lines.push(theme.fg("dim", `  timestamp: ${details.timestamp}`));
 				}
-				if (typeof details?.frames === "number") {
+				if (isRuntimeNumber(details?.frames)) {
 					lines.push(theme.fg("dim", `  frames: ${details.frames}`));
 				}
 				const preview = boundTerminalText(textContent, 500, "...");
@@ -2584,7 +2604,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			findMode: Type.Optional(StringEnum(["exact", "case-insensitive", "fuzzy"], { description: "Matching mode for findText (default: case-insensitive)." })),
 		}),
 
-		async execute(_toolCallId, params): Promise<AgentToolResult<Record<string, unknown>>> {
+		async execute(_toolCallId, params): Promise<AgentToolResult<JsonInputObject>> {
 			if (params.findText !== undefined && (params.offset !== undefined || params.limit !== undefined)) {
 				return { content: [{ type: "text", text: "findText cannot be combined with offset or limit" }], details: { error: "Incompatible find options" } };
 			}
@@ -2666,11 +2686,12 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 				const fullResults = formatFullResults(queryData);
 				if (params.findText !== undefined) {
 					try {
-						const found = findContent(fullResults, normalizeFindQueries(params.findText), (params.findMode ?? "case-insensitive") as FindMode);
+							const findMode = resolveFindMode(params.findMode);
+							const found = findContent(fullResults, normalizeFindQueries(params.findText), findMode);
 						const { text, ...findDetails } = found;
 						return {
 							content: [{ type: "text", text }],
-							details: { query: queryData.query, resultCount: queryData.results.length, findMode: params.findMode ?? "case-insensitive", ...findDetails },
+								details: { query: queryData.query, resultCount: queryData.results.length, findMode, ...findDetails },
 						};
 					} catch (err) {
 						const error = err instanceof Error ? err.message : String(err);
@@ -2724,11 +2745,12 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 
 				if (params.findText !== undefined) {
 					try {
-						const found = findContent(urlData.content, normalizeFindQueries(params.findText), (params.findMode ?? "case-insensitive") as FindMode);
+							const findMode = resolveFindMode(params.findMode);
+							const found = findContent(urlData.content, normalizeFindQueries(params.findText), findMode);
 						const { text, ...findDetails } = found;
 						return {
 							content: [{ type: "text", text: `# ${urlData.title || urlData.url}\n\n${text}` }],
-							details: { url: urlData.url, title: urlData.title, contentLength: urlData.content.length, findMode: params.findMode ?? "case-insensitive", ...findDetails },
+								details: { url: urlData.url, title: urlData.title, contentLength: urlData.content.length, findMode, ...findDetails },
 						};
 					} catch (err) {
 						const error = err instanceof Error ? err.message : String(err);
@@ -2789,8 +2811,9 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			};
 		},
 
-		renderCall(args, theme) {
-			const { responseId, query, queryIndex, url, urlIndex, offset, findText } = args as {
+			renderCall(args, theme) {
+				// SAFETY: Pi validates tool arguments against the get-content schema before invoking this renderer.
+				const { responseId, query, queryIndex, url, urlIndex, offset, findText } = args as {
 				responseId: string;
 				query?: string;
 				queryIndex?: number;
@@ -2812,8 +2835,9 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			return new Text(theme.fg("toolTitle", theme.bold("get_content ")) + theme.fg("accent", target || responseId.slice(0, 8)), 0, 0);
 		},
 
-		renderResult(result, { expanded }, theme) {
-			const details = result.details as {
+			renderResult(result, { expanded }, theme) {
+				// SAFETY: this renderer is paired with the execute function above, which emits this exact details contract.
+				const details = result.details as {
 				error?: string;
 				query?: string;
 				url?: string;
@@ -2838,7 +2862,7 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			}
 
 			let statusLine: string;
-			if (typeof details?.matchCount === "number") {
+			if (isRuntimeNumber(details?.matchCount)) {
 				statusLine = theme.fg("success", details?.title || details?.query || "Content") + theme.fg("muted", ` (${details.matchCount} matches, ${details.returnedMatches ?? 0} shown)`);
 			} else if (details?.query) {
 				statusLine = theme.fg("success", `"${details.query}"`) + theme.fg("muted", ` (${details.resultCount} results)`);
@@ -2886,7 +2910,6 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 			const availableProviders = bootstrap.availableProviders;
 			const initialProvider = bootstrap.defaultProvider;
 			const curatorTimeoutSeconds = bootstrap.timeoutSeconds;
-			let currentProvider: CuratorProvider = initialProvider;
 			const commandConfig = loadConfig();
 			const rawSearchProvider = normalizeProviderInput(
 				commandConfig.searchProvider ?? commandConfig.provider ?? "auto",
@@ -3006,7 +3029,6 @@ function installPiWebAccess(pi: PiWebAccessHost, options: PiWebAccessOptions): v
 							if (commandHandle && !isCommandActive()) return;
 							const normalized = normalizeProviderInput(provider);
 							if (!normalized || normalized === "auto" || Array.isArray(normalized)) return;
-							currentProvider = normalized;
 							currentSearchProvider = normalized;
 							try {
 								await saveConfig({ provider: normalized });

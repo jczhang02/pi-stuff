@@ -22,9 +22,8 @@
 		"coverage/**",
 		"dist/**",
 		"docs/prototypes/**",
-		"packages/pi-stuff/src/mcp/runtime/**",
-		"packages/pi-stuff/src/rtk/upstream/**",
-		"packages/pi-stuff/src/web/runtime/**",
+		"packages/pi-stuff/src/mcp/runtime/app-bridge.bundle.js",
+		"packages/pi-stuff/src/rtk/upstream/techniques/**",
 		"tools/oxlint/anti-slop/**"
 	],
 	"jsPlugins": [

@@ -1,3 +1,5 @@
+import { parseJsonObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { getWebSearchConfigPath } from "./utils.ts";
@@ -11,8 +13,8 @@ interface GeminiWebConfig {
 
 let cachedConfig: GeminiWebConfig | null = null;
 
-export function normalizeChromeProfile(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
+export function normalizeChromeProfile(value: JsonInputValue): string | undefined {
+	if (!isRuntimeString(value)) return undefined;
 	const normalized = value.trim();
 	return normalized.length > 0 ? normalized : undefined;
 }
@@ -24,9 +26,9 @@ function loadConfig(): GeminiWebConfig {
 	}
 
 	const rawText = readWebConfigText();
-	let raw: { chromeProfile?: unknown; allowBrowserCookies?: unknown };
+	let raw;
 	try {
-		raw = JSON.parse(rawText) as { chromeProfile?: unknown; allowBrowserCookies?: unknown };
+		raw = parseJsonObject(rawText);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);

@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, parseJsonValue } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { getLastGoogleCookieDiagnostic, type CookieMap, getGoogleCookies } from "./chrome-cookies.ts";
@@ -16,11 +19,11 @@ const USER_AGENT =
 
 const MODEL_HEADER_NAME = "x-goog-ext-525001261-jspb";
 export const DEFAULT_GEMINI_WEB_MODEL = "gemini-3.1-pro";
-const MODEL_HEADERS: Record<string, string> = {
-	[DEFAULT_GEMINI_WEB_MODEL]: '[1,null,null,null,"9d8ca3786ebdfbea",null,null,0,[4]]',
-	"gemini-2.5-pro": '[1,null,null,null,"4af6c7f5da75d65d",null,null,0,[4]]',
-	"gemini-2.5-flash": '[1,null,null,null,"9ec249fc9ad08861",null,null,0,[4]]',
-};
+const MODEL_HEADERS = new Map([
+	[DEFAULT_GEMINI_WEB_MODEL, '[1,null,null,null,"9d8ca3786ebdfbea",null,null,0,[4]]'],
+	["gemini-2.5-pro", '[1,null,null,null,"4af6c7f5da75d65d",null,null,0,[4]]'],
+	["gemini-2.5-flash", '[1,null,null,null,"9ec249fc9ad08861",null,null,0,[4]]'],
+]);
 
 const REQUIRED_COOKIES = ["__Secure-1PSID", "__Secure-1PSIDTS"];
 
@@ -82,7 +85,7 @@ export async function queryWithCookies(
 	options: GeminiWebOptions = {},
 ): Promise<string> {
 	const model = options.model ?? DEFAULT_GEMINI_WEB_MODEL;
-	if (!MODEL_HEADERS[model]) {
+	if (!MODEL_HEADERS.has(model)) {
 		throw new Error(`Gemini Web does not support model ${model}; configure Gemini API or choose a supported Gemini Web model.`);
 	}
 	const timeoutMs = options.timeoutMs ?? 120000;
@@ -114,6 +117,8 @@ async function runGeminiWebOnce(
 	signal?: AbortSignal,
 ): Promise<GeminiWebResult> {
 	const effectiveSignal = withTimeout(signal, timeoutMs);
+	const modelHeader = MODEL_HEADERS.get(model);
+	if (!modelHeader) throw new Error(`Gemini Web does not support model ${model}`);
 	const cookieHeader = buildCookieHeader(cookieMap);
 	const accessToken = await fetchAccessToken(cookieHeader, effectiveSignal);
 
@@ -140,7 +145,7 @@ async function runGeminiWebOnce(
 			"x-same-domain": "1",
 			"user-agent": USER_AGENT,
 			cookie: cookieHeader,
-			[MODEL_HEADER_NAME]: MODEL_HEADERS[model],
+			[MODEL_HEADER_NAME]: modelHeader,
 		},
 		body: params.toString(),
 		signal: effectiveSignal,
@@ -157,7 +162,7 @@ async function runGeminiWebOnce(
 	} catch (err) {
 		let errorCode: number | undefined;
 		try {
-			const json = JSON.parse(trimJsonEnvelope(rawText));
+			const json = parseJsonValue(trimJsonEnvelope(rawText));
 			errorCode = extractErrorCode(json);
 		} catch {
 		}
@@ -239,14 +244,14 @@ function extractEmailFromGeminiHtml(html: string): string | null {
 function extractEmailFromListAccounts(text: string): string | null {
 	const trimmed = text.replace(/^\)\]\}'\s*/, "");
 	try {
-		return findEmailInValue(JSON.parse(trimmed)) ?? findFirstEmail(trimmed);
+		return findEmailInValue(parseJsonValue(trimmed)) ?? findFirstEmail(trimmed);
 	} catch {
 		return findFirstEmail(trimmed);
 	}
 }
 
-function findEmailInValue(value: unknown): string | null {
-	if (typeof value === "string") return normalizeEmail(value);
+function findEmailInValue(value: JsonInputValue): string | null {
+	if (isRuntimeString(value)) return normalizeEmail(value);
 	if (Array.isArray(value)) {
 		for (const item of value) {
 			const email = findEmailInValue(item);
@@ -254,8 +259,8 @@ function findEmailInValue(value: unknown): string | null {
 		}
 		return null;
 	}
-	if (value && typeof value === "object") {
-		for (const item of Object.values(value as Record<string, unknown>)) {
+	if (isJsonInputObject(value)) {
+		for (const item of Object.values(value)) {
 			const email = findEmailInValue(item);
 			if (email) return email;
 		}
@@ -342,17 +347,17 @@ function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortS
 
 function buildCookieHeader(cookieMap: CookieMap): string {
 	return Object.entries(cookieMap)
-		.filter(([, value]) => typeof value === "string" && value.length > 0)
+		.filter(([, value]) => isRuntimeString(value) && value.length > 0)
 		.map(([name, value]) => `${name}=${value}`)
 		.join("; ");
 }
 
-function getNestedValue(value: unknown, pathParts: number[]): unknown {
-	let current: unknown = value;
+function getNestedValue(value: JsonInputValue, pathParts: number[]): JsonInputValue {
+	let current: JsonInputValue = value;
 	for (const part of pathParts) {
 		if (current == null) return undefined;
 		if (!Array.isArray(current)) return undefined;
-		current = (current as unknown[])[part];
+		current = current[part];
 	}
 	return current;
 }
@@ -366,40 +371,40 @@ function trimJsonEnvelope(text: string): string {
 	return text.slice(start, end + 1);
 }
 
-function extractErrorCode(responseJson: unknown): number | undefined {
+function extractErrorCode(responseJson: JsonInputValue): number | undefined {
 	const code = getNestedValue(responseJson, [0, 5, 2, 0, 1, 0]);
-	return typeof code === "number" && code >= 0 ? code : undefined;
+	return isRuntimeNumber(code) && code >= 0 ? code : undefined;
 }
 
-function extractCandidateText(candidate: unknown): string {
+function extractCandidateText(candidate: JsonInputValue): string {
 	const textRaw = getNestedValue(candidate, [1, 0]);
-	let text = typeof textRaw === "string" ? textRaw : "";
+	let text = isRuntimeString(textRaw) ? textRaw : "";
 
 	if (/^http:\/\/googleusercontent\.com\/card_content\/\d+/.test(text)) {
 		const alt = getNestedValue(candidate, [22, 0]);
-		if (typeof alt === "string" && alt.length > 0) text = alt;
+		if (isRuntimeString(alt) && alt.length > 0) text = alt;
 	}
 
 	return text;
 }
 
 function parseStreamGenerateResponse(rawText: string): GeminiWebResult {
-	const responseJson = JSON.parse(trimJsonEnvelope(rawText));
+	const responseJson = parseJsonValue(trimJsonEnvelope(rawText));
 	const errorCode = extractErrorCode(responseJson);
 
 	const parts = Array.isArray(responseJson) ? responseJson : [];
-	let firstCandidateSeen: unknown = undefined;
+	let firstCandidateSeen: JsonInputValue = undefined;
 	let latestNonEmptyText = "";
 
 	for (let i = 0; i < parts.length; i++) {
 		const partBody = getNestedValue(parts[i], [2]);
-		if (!partBody || typeof partBody !== "string") continue;
+		if (!partBody || !isRuntimeString(partBody)) continue;
 		try {
-			const parsed = JSON.parse(partBody);
+			const parsed = parseJsonValue(partBody);
 			const candidateList = getNestedValue(parsed, [4]);
 			if (!Array.isArray(candidateList) || candidateList.length === 0) continue;
 
-			const firstCandidate = (candidateList as unknown[])[0];
+			const firstCandidate = candidateList[0];
 			if (firstCandidateSeen === undefined) firstCandidateSeen = firstCandidate;
 
 			const text = extractCandidateText(firstCandidate);

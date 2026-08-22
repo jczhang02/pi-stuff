@@ -1,10 +1,14 @@
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl, type Lookup, type SsrfConfig } from "./ssrf-protection.ts";
+import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl, type SsrfConfig } from "./ssrf-protection.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const OLLAMA_SEARCH_URL = "https://ollama.com/api/web_search";
@@ -12,8 +16,8 @@ const OLLAMA_FETCH_URL = "https://ollama.com/api/web_fetch";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
 
-interface WebSearchConfig {
-	ollamaApiKey?: unknown;
+interface WebSearchConfig extends JsonInputObject {
+	ollamaApiKey?: JsonInputValue;
 }
 
 interface OllamaSearchResult {
@@ -29,7 +33,7 @@ interface OllamaSearchResponse {
 interface OllamaFetchResponse {
 	title: string;
 	content: string;
-	links?: unknown;
+	links?: JsonInputValue;
 }
 
 interface OllamaSearchOptions extends SearchOptions {
@@ -49,17 +53,17 @@ function loadConfig(): WebSearchConfig {
 	}
 
 	const raw = readWebConfigText();
-	let parsed: unknown;
+	let parsed: JsonInputValue;
 	try {
 		parsed = JSON.parse(raw);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+	if (!isJsonInputObject(parsed)) {
 		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
 	}
-	cachedConfig = parsed as WebSearchConfig;
+	cachedConfig = parsed;
 	return cachedConfig;
 }
 
@@ -86,11 +90,11 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 }
 
 function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
 	return Math.max(1, Math.min(Math.floor(value), 10));
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
@@ -98,28 +102,25 @@ function invalidResponse(message: string): Error {
 	return new Error(`Ollama API returned invalid response: ${message}`);
 }
 
-function parseSearchResponse(value: unknown): OllamaSearchResponse {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponse("expected an object envelope");
-	const envelope = value as Record<string, unknown>;
-	if (!Array.isArray(envelope.results)) throw invalidResponse("expected results array");
+function parseSearchResponse(value: JsonInputValue): OllamaSearchResponse {
+	if (!isJsonInputObject(value)) throw invalidResponse("expected an object envelope");
+	if (!Array.isArray(value.results)) throw invalidResponse("expected results array");
 	const results: OllamaSearchResult[] = [];
-	for (const [index, value] of envelope.results.entries()) {
-		if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponse(`expected results[${index}] object`);
-		const item = value as Record<string, unknown>;
-		if (typeof item.title !== "string") throw invalidResponse(`expected results[${index}].title string`);
-		if (typeof item.url !== "string" || !item.url) throw invalidResponse(`expected results[${index}].url non-empty string`);
-		if (typeof item.content !== "string") throw invalidResponse(`expected results[${index}].content string`);
+	for (const [index, item] of value.results.entries()) {
+		if (!isJsonInputObject(item)) throw invalidResponse(`expected results[${index}] object`);
+		if (!isRuntimeString(item.title)) throw invalidResponse(`expected results[${index}].title string`);
+		if (!isRuntimeString(item.url) || !item.url) throw invalidResponse(`expected results[${index}].url non-empty string`);
+		if (!isRuntimeString(item.content)) throw invalidResponse(`expected results[${index}].content string`);
 		results.push({ title: item.title, url: item.url, content: item.content });
 	}
 	return { results };
 }
 
-function parseFetchResponse(value: unknown): OllamaFetchResponse {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponse("expected fetch object envelope");
-	const envelope = value as Record<string, unknown>;
-	if (typeof envelope.title !== "string") throw invalidResponse("expected title string");
-	if (typeof envelope.content !== "string") throw invalidResponse("expected content string");
-	return { title: envelope.title, content: envelope.content, links: envelope.links };
+function parseFetchResponse(value: JsonInputValue): OllamaFetchResponse {
+	if (!isJsonInputObject(value)) throw invalidResponse("expected fetch object envelope");
+	if (!isRuntimeString(value.title)) throw invalidResponse("expected title string");
+	if (!isRuntimeString(value.content)) throw invalidResponse("expected content string");
+	return { title: value.title, content: value.content, links: value.links };
 }
 
 function buildAnswer(results: SearchResponse["results"]): string {
@@ -161,7 +162,7 @@ export async function searchWithOllama(query: string, options: OllamaSearchOptio
 		throw new Error(`Ollama API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	let rawData: unknown;
+	let rawData: JsonInputValue;
 	try {
 		rawData = await response.json();
 	} catch (err) {
@@ -189,27 +190,29 @@ export function isOllamaFetchAvailable(): boolean {
 export async function extractWithOllama(url: string, signal?: AbortSignal, options: OllamaExtractOptions = {}): Promise<ExtractedContent | null> {
 	const ssrf = options.ssrf ?? loadSsrfConfig();
 	const domainPolicy = loadFetchContentDomainPolicy();
-	await validateRemoteUrl(url, {
+	const validationOptions = {
 		allowRanges: ssrf.allowRanges,
 		trustEnvProxy: ssrf.trustEnvProxy,
 		domainPolicy,
-		...(options.lookup ? { lookup: options.lookup } : {}),
-	});
+	};
+	if (options.lookup) Object.assign(validationOptions, { lookup: options.lookup });
+	await validateRemoteUrl(url, validationOptions);
 	const apiKey = await requireApiKey(signal);
 	const activityId = activityMonitor.logStart({ type: "api", query: `ollama fetch: ${url}` });
 	let response: Response;
 	try {
+		const remoteOptions = {
+			allowRanges: ssrf.allowRanges,
+			trustEnvProxy: ssrf.trustEnvProxy,
+			onRedirect: ({ from, to, init }: { from: URL; to: URL; init: RequestInit }) => to.origin === from.origin ? init : { ...init, headers: { "Content-Type": "application/json" } },
+		};
+		if (options.lookup) Object.assign(remoteOptions, { lookup: options.lookup });
 		response = await fetchRemoteUrl(OLLAMA_FETCH_URL, {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
 			body: JSON.stringify({ url }),
 			signal: signal ? AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS), signal]) : AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
-		}, {
-			allowRanges: ssrf.allowRanges,
-			trustEnvProxy: ssrf.trustEnvProxy,
-			onRedirect: ({ from, to, init }) => to.origin === from.origin ? init : { ...init, headers: { "Content-Type": "application/json" } },
-			...(options.lookup ? { lookup: options.lookup } : {}),
-		});
+		}, remoteOptions);
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
@@ -226,7 +229,7 @@ export async function extractWithOllama(url: string, signal?: AbortSignal, optio
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Ollama Web Fetch error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
-	let rawData: unknown;
+	let rawData: JsonInputValue;
 	try {
 		rawData = await response.json();
 	} catch (err) {

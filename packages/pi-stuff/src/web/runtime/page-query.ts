@@ -1,3 +1,4 @@
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { complete, type Api, type Message, type Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.ts";
@@ -16,7 +17,12 @@ export interface PageAnswer {
 	truncated: boolean;
 }
 
-function parseModelSelector(value: string): { provider: string; id: string } {
+interface ModelSelector {
+	provider: string;
+	id: string;
+}
+
+function parseModelSelector(value: string): ModelSelector {
 	const separator = value.indexOf("/");
 	if (separator <= 0 || separator === value.length - 1) {
 		throw new Error(`Invalid answerModel: ${value}. Use provider/model-id.`);
@@ -39,12 +45,11 @@ function resolveModel(ctx: ExtensionContext, override?: string): Model<Api> {
 	return model;
 }
 
-function responseText(content: unknown): string {
-	if (!Array.isArray(content)) return "";
+type CompletionContent = Awaited<ReturnType<typeof complete>>["content"];
+
+function responseText(content: CompletionContent): string {
 	return content.map(part => {
-		if (!part || typeof part !== "object") return "";
-		const value = part as Record<string, unknown>;
-		return typeof value.text === "string" ? value.text : "";
+		return "text" in part && isRuntimeString(part.text) ? part.text : "";
 	}).join("\n").trim();
 }
 

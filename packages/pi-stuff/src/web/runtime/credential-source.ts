@@ -1,3 +1,5 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -73,8 +75,8 @@ export type CredentialProgramRunner = (
 
 export interface CredentialOptions {
 	provider: string;
-	configuredValue?: unknown;
-	environmentValue?: unknown;
+	configuredValue?: JsonInputValue;
+	environmentValue?: JsonInputValue;
 	environment?: Record<string, string | undefined>;
 	signal?: AbortSignal;
 	runCommand?: CredentialCommandRunner;
@@ -85,13 +87,13 @@ export function redactCredential(text: string, credential: string | null | undef
 	return credential ? text.split(credential).join("[redacted]") : text;
 }
 
-function normalize(value: unknown): string | null {
-	if (typeof value !== "string") return null;
+function normalize(value: JsonInputValue): string | null {
+	if (!isRuntimeString(value)) return null;
 	const normalized = value.trim();
 	return normalized.length > 0 ? normalized : null;
 }
 
-function commandEnvironment(source: Record<string, string | undefined>): Record<string, string> {
+function commandEnvironment(source: Record<string, string | undefined>) {
 	const environment: Record<string, string> = {};
 	for (const name of COMMAND_ENVIRONMENT_NAMES) {
 		const value = source[name];
@@ -159,23 +161,25 @@ function onePasswordOutput(provider: string, output: string | Buffer): string {
 	}
 	const value = stdout.trim();
 	if (!value) throw new CredentialResolutionError(provider, "command-empty");
-	if (Array.from(value).some((character) => {
-		const code = character.charCodeAt(0);
-		return code < 32 || code === 127;
-	})) {
+	if (hasControlCharacter(value)) {
 		throw new CredentialResolutionError(provider, "command-invalid-output");
 	}
 	return value;
 }
 
-function commandFailureCategory(error: unknown, signal?: AbortSignal): CredentialFailureCategory {
-	if (signal?.aborted) return "command-aborted";
-	if (error && typeof error === "object") {
-		const code = (error as { code?: string }).code;
-		if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return "command-output-too-large";
-		if ((error as { killed?: boolean }).killed || code === "ETIMEDOUT") return "command-timeout";
-	}
-	return "command-failed";
+function hasControlCharacter(value: string): boolean {
+	return Array.from(value).some((character) => {
+		const code = character.charCodeAt(0);
+		return code < 32 || code === 127;
+	});
+}
+
+function commandFailureCategory(error: Error, signal?: AbortSignal): CredentialFailureCategory {
+  if (signal?.aborted) return "command-aborted";
+  const code = "code" in error && isRuntimeString(error.code) ? error.code : undefined;
+  if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return "command-output-too-large";
+  if (("killed" in error && error.killed === true) || code === "ETIMEDOUT") return "command-timeout";
+  return "command-failed";
 }
 
 export function hasCredentialSource(options: CredentialOptions): boolean {
@@ -192,14 +196,16 @@ export async function resolveCredential(options: CredentialOptions): Promise<str
 	if (source?.startsWith("op://")) {
 		let result: CredentialCommandResult;
 		try {
-			result = await (options.runProgram ?? defaultRunProgram)("op", ["read", "--no-newline", source], {
-				...(options.signal ? { signal: options.signal } : {}),
+			const commandOptions: CredentialCommandOptions = {
 				timeoutMs: ONE_PASSWORD_TIMEOUT_MS,
 				maxOutputBytes: MAX_CREDENTIAL_BYTES,
 				environment: commandEnvironment(options.environment ?? process.env),
-			});
+			};
+			if (options.signal) commandOptions.signal = options.signal;
+			result = await (options.runProgram ?? defaultRunProgram)("op", ["read", "--no-newline", source], commandOptions);
 		} catch (error) {
-			throw new CredentialResolutionError(options.provider, commandFailureCategory(error, options.signal));
+			const cause = error instanceof Error ? error : new Error(String(error));
+			throw new CredentialResolutionError(options.provider, commandFailureCategory(cause, options.signal));
 		}
 		return onePasswordOutput(options.provider, result.stdout);
 	}
@@ -208,14 +214,16 @@ export async function resolveCredential(options: CredentialOptions): Promise<str
 		if (!command) throw new CredentialResolutionError(options.provider, "invalid-source");
 		let result: CredentialCommandResult;
 		try {
-			result = await (options.runCommand ?? defaultRunCommand)(command, {
-				...(options.signal ? { signal: options.signal } : {}),
+			const commandOptions: CredentialCommandOptions = {
 				timeoutMs: COMMAND_TIMEOUT_MS,
 				maxOutputBytes: MAX_CREDENTIAL_BYTES,
 				environment: commandEnvironment(options.environment ?? process.env),
-			});
+			};
+			if (options.signal) commandOptions.signal = options.signal;
+			result = await (options.runCommand ?? defaultRunCommand)(command, commandOptions);
 		} catch (error) {
-			throw new CredentialResolutionError(options.provider, commandFailureCategory(error, options.signal));
+			const cause = error instanceof Error ? error : new Error(String(error));
+			throw new CredentialResolutionError(options.provider, commandFailureCategory(cause, options.signal));
 		}
 		const stdout = Buffer.isBuffer(result.stdout) ? result.stdout.toString("utf8") : result.stdout;
 		if (Buffer.byteLength(stdout, "utf8") > MAX_CREDENTIAL_BYTES) {
@@ -223,7 +231,7 @@ export async function resolveCredential(options: CredentialOptions): Promise<str
 		}
 		const value = stdout.trim();
 		if (!value) throw new CredentialResolutionError(options.provider, "command-empty");
-		if (/[\0-\x1f\x7f]/.test(value)) {
+		if (hasControlCharacter(value)) {
 			throw new CredentialResolutionError(options.provider, "command-invalid-output");
 		}
 		return value;

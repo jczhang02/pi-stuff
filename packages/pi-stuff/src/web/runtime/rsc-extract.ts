@@ -1,3 +1,5 @@
+import { isJsonInputObject, parseJsonValue, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 /**
  * RSC Content Extractor
  * 
@@ -22,7 +24,9 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
   for (const match of html.matchAll(scriptRegex)) {
     let content: string;
     try {
-      content = JSON.parse('"' + match[1] + '"');
+      const parsedContent = parseJsonValue('"' + match[1] + '"');
+      if (!isRuntimeString(parsedContent)) continue;
+      content = parsedContent;
     } catch {
       continue;
     }
@@ -56,9 +60,9 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
   const title = titleMatch?.[1]?.split("|")[0]?.trim() || "";
 
   // Parse and cache parsed chunks
-  const parsedCache = new Map<string, unknown>();
+  const parsedCache = new Map<string, JsonInputValue | null>();
   
-  function getParsedChunk(id: string): unknown | null {
+  function getParsedChunk(id: string): JsonInputValue | null {
     if (parsedCache.has(id)) return parsedCache.get(id);
     
     const chunk = chunkMap.get(id);
@@ -68,7 +72,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
     }
     
     try {
-      const parsed = JSON.parse(chunk);
+      const parsed = parseJsonValue(chunk);
       parsedCache.set(id, parsed);
       return parsed;
     } catch {
@@ -78,13 +82,12 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
   }
 
   // Extract markdown from nodes, resolving refs on the fly
-  type Node = unknown;
   const visitedRefs = new Set<string>();
 
-  function extractNode(node: Node, ctx = { inTable: false, inCode: false }): string {
+  function extractNode(node: JsonInputValue, ctx = { inTable: false, inCode: false }): string {
     if (node === null || node === undefined) return "";
     
-    if (typeof node === "string") {
+    if (isRuntimeString(node)) {
       // Check if it's a reference like "$L30"
       const refMatch = node.match(/^\$L([0-9a-f]+)$/i);
       if (refMatch) {
@@ -101,14 +104,14 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
       return node.trim() ? node : "";
     }
     
-    if (typeof node === "number") return String(node);
-    if (typeof node === "boolean") return "";
+    if (isRuntimeNumber(node)) return String(node);
+    if (isRuntimeBoolean(node)) return "";
     if (!Array.isArray(node)) return "";
 
     // RSC element: ["$", "tag", key, props]
-    if (node[0] === "$" && typeof node[1] === "string") {
-      const tag = node[1] as string;
-      const props = (node[3] || {}) as Record<string, unknown>;
+    if (node[0] === "$" && isRuntimeString(node[1])) {
+      const tag = node[1];
+      const props = isJsonInputObject(node[3]) ? node[3] : {};
 
       // Skip non-content
       const skipTags = ["script", "style", "svg", "path", "circle", "link", "meta", 
@@ -131,14 +134,14 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
         if (refNode) {
           result = extractNode(refNode, ctx);
         } else if (props.children) {
-          result = extractNode(props.children as Node, ctx);
+          result = extractNode(props.children, ctx);
         }
         visitedRefs.delete(refId);
         return result;
       }
 
       const children = props.children;
-      const content = children ? extractNode(children as Node, ctx) : "";
+      const content = children ? extractNode(children, ctx) : "";
 
       switch (tag) {
         case "h1": return `# ${content.trim()}\n\n`;
@@ -149,11 +152,11 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
         case "h6": return `###### ${content.trim()}\n\n`;
         case "p": return ctx.inTable ? content : `${content.trim()}\n\n`;
         case "code": {
-          const codeContent = children ? extractNode(children as Node, { ...ctx, inCode: true }) : "";
+          const codeContent = children ? extractNode(children, { ...ctx, inCode: true }) : "";
           return ctx.inCode ? codeContent : `\`${codeContent}\``;
         }
         case "pre": {
-          const preContent = children ? extractNode(children as Node, { ...ctx, inCode: true }) : "";
+          const preContent = children ? extractNode(children, { ...ctx, inCode: true }) : "";
           return "```\n" + preContent + "\n```\n\n";
         }
         case "strong": case "b": return `**${content}**`;
@@ -161,7 +164,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
         case "li": return `- ${content.trim()}\n`;
         case "ul": case "ol": return content + "\n";
         case "blockquote": return `> ${content.trim()}\n\n`;
-        case "table": return extractTable(node as unknown[]) + "\n";
+        case "table": return extractTable(node) + "\n";
         case "thead": case "tbody": case "tr": case "th": case "td":
           return content;
         case "div":
@@ -170,7 +173,7 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
           }
           return content;
         case "a": {
-          const href = props.href as string | undefined;
+		  const href = isRuntimeString(props.href) ? props.href : undefined;
           return href && !href.startsWith("#") ? `[${content}](${href})` : content;
         }
         default: return content;
@@ -178,19 +181,19 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
     }
 
     // Array of child nodes
-    return (node as Node[]).map(n => extractNode(n, ctx)).join("");
+    return node.map(n => extractNode(n, ctx)).join("");
   }
 
-  function extractTable(tableNode: unknown[]): string {
-    const props = (tableNode[3] || {}) as Record<string, unknown>;
+  function extractTable(tableNode: JsonInputValue[]): string {
+    const props = isJsonInputObject(tableNode[3]) ? tableNode[3] : {};
     const rows: string[][] = [];
     let headerRowCount = 0;
 
-    function walkTable(node: unknown, isHeader = false): void {
+    function walkTable(node: JsonInputValue, isHeader = false): void {
       if (node === null || node === undefined) return;
       
       // Handle string refs
-      if (typeof node === "string") {
+      if (isRuntimeString(node)) {
         const refMatch = node.match(/^\$L([0-9a-f]+)$/i);
         if (refMatch && !visitedRefs.has(refMatch[1])) {
           visitedRefs.add(refMatch[1]);
@@ -203,9 +206,9 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
       
       if (!Array.isArray(node)) return;
       
-      if (node[0] === "$") {
-        const tag = node[1] as string;
-        const nodeProps = (node[3] || {}) as Record<string, unknown>;
+      if (node[0] === "$" && isRuntimeString(node[1])) {
+        const tag = node[1];
+        const nodeProps = isJsonInputObject(node[3]) ? node[3] : {};
         
         // Handle component refs
         if (tag.startsWith("$L")) {
@@ -234,11 +237,11 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
       }
     }
 
-    function walkCells(node: unknown, cells: string[]): void {
+    function walkCells(node: JsonInputValue, cells: string[]): void {
       if (node === null || node === undefined) return;
       
       // Handle string refs
-      if (typeof node === "string") {
+      if (isRuntimeString(node)) {
         const refMatch = node.match(/^\$L([0-9a-f]+)$/i);
         if (refMatch && !visitedRefs.has(refMatch[1])) {
           visitedRefs.add(refMatch[1]);
@@ -252,16 +255,16 @@ export function extractRSCContent(html: string): RSCExtractResult | null {
       if (!Array.isArray(node)) return;
       
       if (node[0] === "$" && (node[1] === "td" || node[1] === "th")) {
-        const cellProps = (node[3] || {}) as Record<string, unknown>;
+        const cellProps = isJsonInputObject(node[3]) ? node[3] : {};
         const text = extractNode(cellProps.children, { inTable: true, inCode: false })
           .trim()
           .replace(/\n/g, " ")
           .replace(/\\/g, "\\\\")  // Escape backslashes first
           .replace(/\|/g, "\\|");  // Then escape pipes
         cells.push(text);
-      } else if (node[0] === "$" && typeof node[1] === "string" && (node[1] as string).startsWith("$L")) {
+      } else if (node[0] === "$" && isRuntimeString(node[1]) && node[1].startsWith("$L")) {
         // Component ref for a cell
-        const refId = (node[1] as string).slice(2);
+        const refId = node[1].slice(2);
         if (!visitedRefs.has(refId)) {
           visitedRefs.add(refId);
           const refNode = getParsedChunk(refId);

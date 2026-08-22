@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -10,7 +13,7 @@ const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 30_000;
 
 interface WebSearchConfig {
-	braveApiKey?: unknown;
+	braveApiKey?: JsonInputValue;
 }
 
 interface NormalizedDomainFilters {
@@ -28,7 +31,7 @@ function loadConfig(): WebSearchConfig {
 
 	const raw = readWebConfigText();
 	try {
-		cachedConfig = JSON.parse(raw) as WebSearchConfig;
+		cachedConfig = parseJsonObject(raw);
 		return cachedConfig;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -46,7 +49,7 @@ async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 }
 
 function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
@@ -149,12 +152,12 @@ export async function searchWithBrave(
 	});
 
 	if (options.recencyFilter) {
-		const freshnessMap: Record<string, string> = {
+		const freshnessMap = {
 			day: "pd",
 			week: "pw",
 			month: "pm",
 			year: "py",
-		};
+		} satisfies Record<NonNullable<SearchOptions["recencyFilter"]>, string>;
 		const freshness = freshnessMap[options.recencyFilter];
 		if (freshness) params.set("freshness", freshness);
 	}
@@ -178,18 +181,19 @@ export async function searchWithBrave(
 			throw new Error(`Brave Search API error ${response.status}: ${errorText.slice(0, 300)}`);
 		}
 
-		const data = await response.json() as {
-			web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
-		};
+		const data = await response.json();
+		if (!isJsonInputObject(data)) throw new Error("Brave Search API returned an invalid response");
 		activityMonitor.logComplete(activityId, response.status);
 
 		const results: SearchResult[] = [];
-		for (const item of data.web?.results ?? []) {
-			if (!item.url || !matchesDomainFilters(item.url, domainFilters)) continue;
+		const web = isJsonInputObject(data.web) ? data.web : undefined;
+		const responseResults = Array.isArray(web?.results) ? web.results : [];
+		for (const item of responseResults) {
+			if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !matchesDomainFilters(item.url, domainFilters)) continue;
 			results.push({
-				title: item.title || item.url,
+				title: isRuntimeString(item.title) ? item.title : item.url,
 				url: item.url,
-				snippet: item.description || "",
+				snippet: isRuntimeString(item.description) ? item.description : "",
 			});
 			if (results.length >= numResults) break;
 		}

@@ -1,4 +1,6 @@
 // Structured source checking and machine-readable research artifacts.
+import { isJsonInputObject, isJsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { createHash } from "node:crypto";
 import { generateId, getResult, storeResult } from "./storage.ts";
 import type { SearchResult } from "./perplexity.ts";
@@ -233,37 +235,39 @@ export function buildResearchArtifact(input: BuildArtifactInput): ResearchArtifa
 		seen.add(result.url);
 		const page = fetchedByUrl.get(result.url);
 		const fetched = Boolean(page && !page.error);
-		sources.push({
+		const source: ResearchSource = {
 			rank: result.rank ?? index + 1,
 			url: result.url,
 			title: result.title,
 			snippet: result.snippet,
 			quality: classifySource(result.url),
 			fetched,
-			...(page ? { fetch_timestamp: Date.now() } : {}),
-			...(page && !page.error ? { content_hash: hashContent(page.content) } : {}),
-			...(page?.error ? { fetch_error: page.error } : {}),
-		});
+		};
+		if (page) source.fetch_timestamp = Date.now();
+		if (page && !page.error) source.content_hash = hashContent(page.content);
+		if (page?.error) source.fetch_error = page.error;
+		sources.push(source);
 	}
 	const passages = buildPassages(sources, input.fetched, input.query);
 	const domainInclude = filters.filter((domain) => !domain.startsWith("-"));
 	const domainExclude = filters.filter((domain) => domain.startsWith("-")).map((domain) => domain.slice(1));
-	return {
+	const artifact: ResearchArtifact = {
 		id: generateId(),
 		type: "research",
 		timestamp: Date.now(),
 		query: input.query,
 		sources,
 		passages,
-		...(input.provider !== undefined ? { provider: input.provider } : {}),
-		...(input.summary !== undefined ? { summary: input.summary } : {}),
-		...(passages.length > 0 ? { content_hash: hashContent(passages.map((passage) => passage.text).join("\n")) } : {}),
 		filters: {
-			...(input.recency !== undefined ? { recency: input.recency } : {}),
 			domain_include: domainInclude,
 			domain_exclude: domainExclude,
 		},
 	};
+	if (input.provider !== undefined) artifact.provider = input.provider;
+	if (input.summary !== undefined) artifact.summary = input.summary;
+	if (passages.length > 0) artifact.content_hash = hashContent(passages.map((passage) => passage.text).join("\n"));
+	if (input.recency !== undefined && artifact.filters) artifact.filters.recency = input.recency;
+	return artifact;
 }
 
 export function withClaimAssessment(artifact: ResearchArtifact, claims: string[]): ResearchArtifact {
@@ -272,11 +276,42 @@ export function withClaimAssessment(artifact: ResearchArtifact, claims: string[]
 
 export function storeResearchArtifact(artifact: ResearchArtifact): void {
 	if (!artifact.id) throw new Error("Research artifact id must not be empty");
+	if (!isJsonInputValue(artifact)) throw new TypeError("Research artifact must be JSON-serializable");
 	storeResult(artifact.id, { id: artifact.id, type: "research", timestamp: artifact.timestamp, artifact });
 }
 
 export function getResearchArtifact(id: string): ResearchArtifact | null {
 	const data = getResult(id);
-	if (!data || data.type !== "research" || !data.artifact || typeof data.artifact !== "object") return null;
-	return data.artifact as ResearchArtifact;
+	if (!data || data.type !== "research" || !isResearchArtifact(data.artifact)) return null;
+	return data.artifact;
+}
+
+function isResearchArtifact<Value>(value: Value): value is Value & ResearchArtifact {
+	if (!isJsonInputObject(value)
+		|| value.type !== "research"
+		|| !isRuntimeString(value.id)
+		|| !isRuntimeNumber(value.timestamp)
+		|| !isRuntimeString(value.query)
+		|| !Array.isArray(value.sources)
+		|| !Array.isArray(value.passages)) return false;
+	const validSources = value.sources.every(source => isJsonInputObject(source)
+		&& isRuntimeNumber(source.rank)
+		&& isRuntimeString(source.url)
+		&& isRuntimeString(source.title)
+		&& isRuntimeString(source.quality));
+	const validPassages = value.passages.every(passage => isJsonInputObject(passage)
+		&& isRuntimeString(passage.passage_id)
+		&& isRuntimeString(passage.source_url)
+		&& isRuntimeNumber(passage.source_rank)
+		&& isRuntimeString(passage.text));
+	const validClaims = value.claims === undefined || (Array.isArray(value.claims) && value.claims.every(claim => isJsonInputObject(claim)
+		&& isRuntimeString(claim.claim)
+		&& isRuntimeString(claim.status)
+		&& Array.isArray(claim.supporting_passages)
+		&& claim.supporting_passages.every(isRuntimeString)
+		&& Array.isArray(claim.contradicting_passages)
+		&& claim.contradicting_passages.every(isRuntimeString)
+		&& isRuntimeString(claim.rationale)
+		&& isRuntimeNumber(claim.confidence)));
+	return validSources && validPassages && validClaims;
 }

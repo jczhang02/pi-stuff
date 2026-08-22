@@ -1,3 +1,6 @@
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeObject, isRuntimeString } from "../../shared/runtime-type.js";
 import { hostname } from "node:os";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getWebConfigPath, readWebConfig } from "../settings.ts";
@@ -19,15 +22,15 @@ export interface CuratorNetworkConfig {
 
 const LOCAL_CURATOR_NETWORK_DEFAULTS: CuratorNetworkConfig = { enabled: false, host: "localhost", bind: "127.0.0.1" };
 
-function trimmedString(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
+function trimmedString(value: JsonInputValue): string | undefined {
+	if (!isRuntimeString(value)) return undefined;
 	const trimmed = value.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
 }
 
 /** Resolves the curator server bind address and URL host from `curatorRemote`. */
 export function resolveCuratorNetworkConfig(): CuratorNetworkConfig {
-	let raw: Record<string, unknown> | undefined;
+	let raw: JsonInputObject | undefined;
 	try {
 		raw = readWebConfig();
 	} catch {
@@ -38,12 +41,11 @@ export function resolveCuratorNetworkConfig(): CuratorNetworkConfig {
 	const curatorRemote = raw.curatorRemote;
 	if (curatorRemote === true) return { enabled: true, host: hostname(), bind: "0.0.0.0" };
 
-	if (curatorRemote && typeof curatorRemote === "object" && !Array.isArray(curatorRemote)) {
-		const obj = curatorRemote as Record<string, unknown>;
+	if (isJsonInputObject(curatorRemote)) {
 		return {
 			enabled: true,
-			host: trimmedString(obj.host) ?? hostname(),
-			bind: trimmedString(obj.bind) ?? "0.0.0.0",
+			host: trimmedString(curatorRemote.host) ?? hostname(),
+			bind: trimmedString(curatorRemote.bind) ?? "0.0.0.0",
 		};
 	}
 
@@ -58,27 +60,44 @@ export function formatSeconds(s: number): string {
 	return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-export function readExecError(err: unknown): { code?: string; stderr: string; message: string } {
-	if (!err || typeof err !== "object") {
+export interface ExecErrorDetails {
+	code?: string;
+	stderr: string;
+	message: string;
+}
+
+export type ExecErrorInput =
+	| Error
+	| JsonInputValue
+	| {
+		code?: JsonInputValue;
+		killed?: JsonInputValue;
+		message?: JsonInputValue;
+		name?: JsonInputValue;
+		stderr?: Buffer | JsonInputValue;
+	};
+
+export function readExecError(err: ExecErrorInput): ExecErrorDetails {
+	if (!err || !isRuntimeObject(err)) {
 		return { stderr: "", message: String(err) };
 	}
-	const code = (err as { code?: string }).code;
-	const message = (err as { message?: string }).message ?? "";
-	const stderrRaw = (err as { stderr?: Buffer | string }).stderr;
+	const code = "code" in err && isRuntimeString(err.code) ? err.code : undefined;
+	const message = "message" in err && isRuntimeString(err.message) ? err.message : "";
+	const stderrRaw = "stderr" in err ? err.stderr : undefined;
 	const stderr = Buffer.isBuffer(stderrRaw)
 		? stderrRaw.toString("utf-8")
-		: typeof stderrRaw === "string"
+		: isRuntimeString(stderrRaw)
 			? stderrRaw
 			: "";
 	return { code, stderr, message };
 }
 
-export function isTimeoutError(err: unknown): boolean {
-	if (!err || typeof err !== "object") return false;
-	if ((err as { killed?: boolean }).killed) return true;
-	const name = (err as { name?: string }).name;
-	const code = (err as { code?: string }).code;
-	const message = (err as { message?: string }).message ?? "";
+export function isTimeoutError(err: ExecErrorInput): boolean {
+	if (!err || !isRuntimeObject(err)) return false;
+	if ("killed" in err && err.killed === true) return true;
+	const name = "name" in err && isRuntimeString(err.name) ? err.name : undefined;
+	const code = "code" in err && isRuntimeString(err.code) ? err.code : undefined;
+	const message = "message" in err && isRuntimeString(err.message) ? err.message : "";
 	return name === "AbortError" || code === "ETIMEDOUT" || message.toLowerCase().includes("timed out");
 }
 
@@ -86,7 +105,7 @@ export function trimErrorText(text: string): string {
 	return text.replace(/\s+/g, " ").trim().slice(0, 200);
 }
 
-export function mapFfmpegError(err: unknown): string {
+export function mapFfmpegError(err: ExecErrorInput): string {
 	const { code, stderr, message } = readExecError(err);
 	if (code === "ENOENT") return "ffmpeg is not installed. Install with: brew install ffmpeg";
 	if (isTimeoutError(err)) return "ffmpeg timed out extracting frame";

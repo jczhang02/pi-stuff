@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, type JsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -23,17 +26,11 @@ export interface FirecrawlExtractOptions extends Pick<ExtractOptions, "timeoutMs
 	ssrf?: FirecrawlSsrfOptions;
 }
 
-interface FirecrawlConfig {
-	firecrawlBaseUrl?: unknown;
-	firecrawlApiKey?: unknown;
-	firecrawlApiVersion?: unknown;
-	firecrawlFreshScrape?: unknown;
-}
-
-interface FirecrawlScrapeData {
-	title?: unknown;
-	markdown?: unknown;
-	metadata?: { title?: unknown };
+interface FirecrawlConfig extends JsonInputObject {
+	firecrawlBaseUrl?: JsonInputValue;
+	firecrawlApiKey?: JsonInputValue;
+	firecrawlApiVersion?: JsonInputValue;
+	firecrawlFreshScrape?: JsonInputValue;
 }
 
 let cachedConfig: FirecrawlConfig | null = null;
@@ -44,17 +41,17 @@ function loadConfig(): FirecrawlConfig {
 		return cachedConfig;
 	}
 	const raw = readWebConfigText();
-	let parsed: unknown;
+	let parsed: JsonInputValue;
 	try {
 		parsed = JSON.parse(raw);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+	if (!isJsonInputObject(parsed)) {
 		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
 	}
-	cachedConfig = parsed as FirecrawlConfig;
+	cachedConfig = parsed;
 	return cachedConfig;
 }
 
@@ -62,8 +59,8 @@ export function clearFirecrawlConfigCache(): void {
 	cachedConfig = null;
 }
 
-function normalizeBaseUrl(value: unknown): string | null {
-	if (typeof value !== "string") return null;
+function normalizeBaseUrl(value: JsonInputValue): string | null {
+	if (!isRuntimeString(value)) return null;
 	const trimmed = value.trim();
 	if (!trimmed) return null;
 	let parsed: URL;
@@ -101,20 +98,20 @@ function requireBaseUrl(): string {
 }
 
 function getApiVersion(): FirecrawlApiVersion {
-	const environmentValue = typeof process.env.FIRECRAWL_API_VERSION === "string"
+	const environmentValue = isRuntimeString(process.env.FIRECRAWL_API_VERSION)
 		? process.env.FIRECRAWL_API_VERSION.trim()
 		: "";
 	const raw = environmentValue || loadConfig().firecrawlApiVersion;
 	if (raw === undefined || raw === null) return DEFAULT_API_VERSION;
-	if (typeof raw !== "string") {
+	if (!isRuntimeString(raw)) {
 		throw new Error(`firecrawlApiVersion in ${CONFIG_PATH} must be a string ("v1" or "v2")`);
 	}
 	const normalized = raw.trim().toLowerCase();
 	if (!normalized) return DEFAULT_API_VERSION;
-	if (!SUPPORTED_API_VERSIONS.includes(normalized as FirecrawlApiVersion)) {
+	if (normalized !== "v1" && normalized !== "v2") {
 		throw new Error(`Unsupported Firecrawl API version "${raw}". Supported versions: ${SUPPORTED_API_VERSIONS.join(", ")}`);
 	}
-	return normalized as FirecrawlApiVersion;
+	return normalized;
 }
 
 function allowFreshScrape(): boolean {
@@ -122,7 +119,7 @@ function allowFreshScrape(): boolean {
 	if (environmentValue !== undefined) return environmentValue === "1" || environmentValue.toLowerCase() === "true";
 	const configured = loadConfig().firecrawlFreshScrape;
 	if (configured === undefined || configured === null) return false;
-	if (typeof configured !== "boolean") throw new Error(`firecrawlFreshScrape in ${CONFIG_PATH} must be a boolean`);
+	if (!isRuntimeBoolean(configured)) throw new Error(`firecrawlFreshScrape in ${CONFIG_PATH} must be a boolean`);
 	return configured;
 }
 
@@ -141,36 +138,40 @@ function requestSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
 	return signal ? AbortSignal.any([timeout, signal]) : timeout;
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function isAbortError(err: unknown): boolean {
+function isAbortError(err: JsonInputValue): boolean {
 	return errorMessage(err).toLowerCase().includes("abort");
 }
 
-function ssrfOptions(options?: FirecrawlExtractOptions): { lookup?: Lookup; allowRanges: string[]; trustEnvProxy: boolean } {
-	return {
-		allowRanges: options?.ssrf?.allowRanges ?? [],
-		trustEnvProxy: options?.ssrf?.trustEnvProxy ?? false,
-		...(options?.lookup ? { lookup: options.lookup } : {}),
-	};
+interface FirecrawlValidationOptions {
+	lookup?: Lookup;
+	allowRanges: string[];
+	trustEnvProxy: boolean;
 }
 
-function withoutSensitiveHeaders(headers: Record<string, string>): Record<string, string> {
-	const next = { ...headers };
-	delete next.Authorization;
-	delete next.authorization;
-	delete next.Cookie;
-	delete next.cookie;
-	delete next["X-API-Key"];
-	delete next["x-api-key"];
+function ssrfOptions(options?: FirecrawlExtractOptions): FirecrawlValidationOptions {
+	const validation: FirecrawlValidationOptions = {
+		allowRanges: options?.ssrf?.allowRanges ?? [],
+		trustEnvProxy: options?.ssrf?.trustEnvProxy ?? false,
+	};
+	if (options?.lookup) validation.lookup = options.lookup;
+	return validation;
+}
+
+function withoutSensitiveHeaders(headers: Headers): Headers {
+	const next = new Headers(headers);
+	next.delete("Authorization");
+	next.delete("Cookie");
+	next.delete("X-API-Key");
 	return next;
 }
 
 async function fetchFirecrawlApi(
 	url: string,
-	init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal },
+	init: { method: string; headers: Headers; body: string; signal: AbortSignal },
 	options: FirecrawlExtractOptions | undefined,
 ): Promise<Response> {
 	let current = await validateRemoteUrl(url, ssrfOptions(options));
@@ -190,26 +191,27 @@ async function fetchFirecrawlApi(
 	throw new Error(`Too many redirects fetching ${current.toString()}`);
 }
 
-function scrapeBody(url: string): Record<string, unknown> {
-	return {
+function scrapeBody(url: string): JsonInputObject {
+	const body: JsonInputObject = {
 		url,
 		formats: ["markdown"],
 		onlyMainContent: true,
-		...(allowFreshScrape() ? {} : { lockdown: true }),
 	};
+	if (!allowFreshScrape()) body.lockdown = true;
+	return body;
 }
 
 async function firecrawlFetch(
 	endpoint: string,
-	body: Record<string, unknown>,
+	body: JsonInputObject,
 	signal: AbortSignal | undefined,
 	options: FirecrawlExtractOptions | undefined,
-): Promise<Record<string, unknown>> {
+): Promise<JsonInputObject> {
 	const baseUrl = requireBaseUrl();
 	const version = getApiVersion();
 	const apiKey = await getApiKey(signal);
-	const headers: Record<string, string> = { "Content-Type": "application/json" };
-	if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+	const headers = new Headers({ "Content-Type": "application/json" });
+	if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);
 	const requestUrl = `${baseUrl}/${version}/${endpoint}`;
 	const activityId = activityMonitor.logStart({ type: "fetch", url: requestUrl });
 	try {
@@ -223,25 +225,24 @@ async function firecrawlFetch(
 			const text = await response.text().catch(() => "");
 			throw new Error(`Firecrawl scrape error ${response.status}: ${redactCredential(text.slice(0, 300), apiKey)}`);
 		}
-		let data: unknown;
+		let data: JsonInputValue;
 		try {
 			data = await response.json();
 		} catch (err) {
 			throw new Error(`Firecrawl scrape returned invalid JSON: ${errorMessage(err)}`);
 		}
-		if (!data || typeof data !== "object" || Array.isArray(data)) {
+		if (!isJsonInputObject(data)) {
 			throw new Error("Firecrawl scrape returned an unexpected response shape");
 		}
-		const envelope = data as Record<string, unknown>;
-		if (envelope.success === false) {
-			const reason = typeof envelope.error === "string" && envelope.error.trim() ? envelope.error : "unknown error";
+		if (data.success === false) {
+			const reason = isRuntimeString(data.error) && data.error.trim() ? data.error : "unknown error";
 			throw new Error(`Firecrawl scrape unsuccessful: ${redactCredential(reason, apiKey)}`);
 		}
-		if (envelope.success !== true) {
+		if (data.success !== true) {
 			throw new Error("Firecrawl scrape returned an unexpected response shape");
 		}
 		activityMonitor.logComplete(activityId, response.status);
-		return envelope;
+		return data;
 	} catch (err) {
 		if (isAbortError(err)) activityMonitor.logComplete(activityId, 0);
 		else activityMonitor.logError(activityId, errorMessage(err));
@@ -262,18 +263,18 @@ export async function extractWithFirecrawl(
 	await validateRemoteUrl(url, ssrfOptions(options));
 	const envelope = await firecrawlFetch("scrape", scrapeBody(url), signal, options);
 	const data = envelope.data;
-	if (!data || typeof data !== "object" || Array.isArray(data)) {
+	if (!isJsonInputObject(data)) {
 		throw new Error("Firecrawl scrape returned an unexpected data shape");
 	}
-	const scrape = data as FirecrawlScrapeData;
-	if (typeof scrape.markdown !== "string") {
+	if (!isRuntimeString(data.markdown)) {
 		throw new Error("Firecrawl scrape returned markdown in an unexpected shape");
 	}
-	const content = scrape.markdown.trim();
+	const content = data.markdown.trim();
 	if (!content) return null;
-	const metadataTitle = scrape.metadata?.title;
-	const title = typeof metadataTitle === "string" && metadataTitle.trim()
+	const metadata = isJsonInputObject(data.metadata) ? data.metadata : undefined;
+	const metadataTitle = metadata?.title;
+	const title = isRuntimeString(metadataTitle) && metadataTitle.trim()
 		? metadataTitle.trim()
-		: typeof scrape.title === "string" ? scrape.title.trim() : "";
+		: isRuntimeString(data.title) ? data.title.trim() : "";
 	return { url, title, content, error: null };
 }

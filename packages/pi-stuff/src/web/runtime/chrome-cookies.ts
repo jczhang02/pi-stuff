@@ -1,8 +1,12 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, parseJsonValue, type JsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { execFile } from "node:child_process";
 import { pbkdf2Sync, createDecipheriv } from "node:crypto";
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir, homedir, platform } from "node:os";
 import { isAbsolute, join, sep } from "node:path";
+import type { SQLOutputValue } from "node:sqlite";
 import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
 
 export type CookieMap = Record<string, string>;
@@ -15,7 +19,7 @@ interface BrowserConfig {
 	secretToolApp?: string;
 }
 
-type SqliteRow = Record<string, unknown>;
+type SqliteRow = JsonInputObject;
 type SqliteFailure = "unavailable" | "query";
 
 const GOOGLE_ORIGINS = [
@@ -67,7 +71,7 @@ export async function getGoogleCookies(
 	}
 
 	const warningSet = new Set<string>();
-	const rawProfile = typeof options?.profile === "string" ? options.profile.trim() : "";
+	const rawProfile = isRuntimeString(options?.profile) ? options.profile.trim() : "";
 	const requestedProfile = normalizeProfileName(options?.profile);
 	if (rawProfile && !requestedProfile) {
 		lastCookieDiagnostic = "Configured Chromium profile must be a profile directory name, not a path.";
@@ -125,10 +129,10 @@ export async function getGoogleCookies(
 
 				const cookies: CookieMap = {};
 				for (const row of rowsResult.rows) {
-					const name = typeof row.name === "string" ? row.name : "";
+					const name = isRuntimeString(row.name) ? row.name : "";
 					if (!ALL_COOKIE_NAMES.has(name) || cookies[name]) continue;
-					let value = typeof row.value === "string" && row.value.length > 0 ? row.value : null;
-					if (!value && typeof row.encrypted_value_hex === "string" && /^[0-9a-f]*$/i.test(row.encrypted_value_hex)) {
+					let value = isRuntimeString(row.value) && row.value.length > 0 ? row.value : null;
+					if (!value && isRuntimeString(row.encrypted_value_hex) && /^[0-9a-f]*$/i.test(row.encrypted_value_hex)) {
 						value = decryptCookieValue(Buffer.from(row.encrypted_value_hex, "hex"), key, metaVersion.value >= 24);
 					}
 					if (value) cookies[name] = value;
@@ -163,7 +167,7 @@ export async function getGoogleCookies(
 }
 
 function normalizeProfileName(value: string | undefined): string | undefined {
-	if (typeof value !== "string") return undefined;
+	if (!isRuntimeString(value)) return undefined;
 	const normalized = value.trim();
 	if (!normalized) return undefined;
 	if (isAbsolute(normalized) || normalized === "." || normalized === ".." || normalized.includes("/") || normalized.includes("\\")) {
@@ -189,7 +193,7 @@ function resolveProfilePath(home: string, config: BrowserConfig, profile: string
 
 function normalizeCookieNames(names: string[] | undefined): string[] | undefined {
 	if (!names?.length) return undefined;
-	const normalized = names.filter((name): name is string => typeof name === "string").map((name) => name.trim()).filter(Boolean);
+	const normalized = names.filter((name): name is string => isRuntimeString(name)).map((name) => name.trim()).filter(Boolean);
 	return normalized.length > 0 ? [...new Set(normalized)] : undefined;
 }
 
@@ -292,18 +296,30 @@ async function importSqlite(): Promise<typeof import("node:sqlite") | null> {
 	if (process.env.PI_WEB_ACCESS_DISABLE_NODE_SQLITE === "1") return null;
 	if (sqliteImportAttempted) return sqliteModule;
 	sqliteImportAttempted = true;
-	const orig = process.emitWarning.bind(process);
-	process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
-		const msg = typeof warning === "string" ? warning : warning?.message ?? "";
-		if (msg.includes("SQLite is an experimental feature")) return;
-		return (orig as Function)(warning, ...args);
-	}) as typeof process.emitWarning;
+	const originalEmitWarning = process.emitWarning;
+	process.emitWarning = new Proxy(originalEmitWarning, {
+		apply(target, _thisArgument, argumentsList) {
+			const warning = argumentsList[0];
+			const msg = isRuntimeString(warning) ? warning : warning instanceof Error ? warning.message : "";
+			if (msg.includes("SQLite is an experimental feature")) return;
+			switch (argumentsList.length) {
+				case 1:
+					return target(warning);
+				case 2:
+					return target(warning, argumentsList[1]);
+				case 3:
+					return target(warning, argumentsList[1], argumentsList[2]);
+				default:
+					return target(warning, argumentsList[1], argumentsList[2], argumentsList[3]);
+			}
+		},
+	});
 	try {
 		sqliteModule = await import("node:sqlite");
 	} catch {
 		sqliteModule = null;
 	} finally {
-		process.emitWarning = orig;
+		process.emitWarning = originalEmitWarning;
 	}
 	return sqliteModule;
 }
@@ -319,7 +335,9 @@ async function runSqliteQuery(dbPath: string, sql: string): Promise<QueryResult>
 		try {
 			const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
 			try {
-				return { status: "success", rows: db.prepare(sql).all() as SqliteRow[] };
+				const rows = db.prepare(sql).all();
+				if (!isSqliteRows(rows)) throw new TypeError("SQLite returned non-object rows");
+				return { status: "success", rows };
 			} finally {
 				db.close();
 			}
@@ -342,8 +360,8 @@ function runSqliteCli(dbPath: string, sql: string): Promise<QueryResult> {
 		execFile("sqlite3", ["-readonly", "-json", dbPath, sql], { timeout: 5000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
 			if (err) { resolve({ status: "failure", failure: err.code === "ENOENT" ? "unavailable" : "query" }); return; }
 			try {
-				const parsed = JSON.parse(stdout || "[]");
-				resolve(Array.isArray(parsed) ? { status: "success", rows: parsed as SqliteRow[] } : { status: "failure", failure: "query" });
+				const parsed = parseJsonValue(stdout || "[]");
+				resolve(isSqliteRows(parsed) ? { status: "success", rows: parsed } : { status: "failure", failure: "query" });
 			} catch {
 				resolve({ status: "failure", failure: "query" });
 			}
@@ -357,13 +375,17 @@ function runPythonSqlite(dbPath: string, sql: string): Promise<QueryResult> {
 		execFile("python3", ["-c", script, dbPath, sql], { timeout: 5000, maxBuffer: 1024 * 1024 }, (err, stdout) => {
 			if (err) { resolve({ status: "failure", failure: err.code === "ENOENT" ? "unavailable" : "query" }); return; }
 			try {
-				const parsed = JSON.parse(stdout || "[]");
-				resolve(Array.isArray(parsed) ? { status: "success", rows: parsed as SqliteRow[] } : { status: "failure", failure: "query" });
+				const parsed = parseJsonValue(stdout || "[]");
+				resolve(isSqliteRows(parsed) ? { status: "success", rows: parsed } : { status: "failure", failure: "query" });
 			} catch {
 				resolve({ status: "failure", failure: "query" });
 			}
 		});
 	});
+}
+
+function isSqliteRows(value: JsonInputValue | Record<string, SQLOutputValue>[]): value is SqliteRow[] {
+	return Array.isArray(value) && value.every(isJsonInputObject);
 }
 
 async function readMetaVersion(dbPath: string): Promise<{ value: number | null; failure?: SqliteFailure }> {
@@ -374,15 +396,15 @@ async function readMetaVersion(dbPath: string): Promise<{ value: number | null; 
 			: { value: 0 };
 	}
 	const value = result.rows[0]?.value;
-	if (typeof value === "number") return { value: Math.floor(value) };
-	if (typeof value === "string") return { value: parseInt(value, 10) || 0 };
+	if (isRuntimeNumber(value)) return { value: Math.floor(value) };
+	if (isRuntimeString(value)) return { value: parseInt(value, 10) || 0 };
 	return { value: 0 };
 }
 
 async function hasCookieNames(dbPath: string, hosts: string[], names: string[]): Promise<{ present: boolean; failure?: SqliteFailure }> {
 	const result = await runSqliteQuery(dbPath, `SELECT DISTINCT name FROM cookies WHERE ${buildCookieWhere(hosts, names)}`);
 	if (result.status === "failure") return { present: false, failure: result.failure };
-	const present = new Set(result.rows.map((row) => typeof row.name === "string" ? row.name : ""));
+	const present = new Set(result.rows.map((row) => isRuntimeString(row.name) ? row.name : ""));
 	return { present: names.every((name) => present.has(name)) };
 }
 

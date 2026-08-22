@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, type JsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -22,9 +25,9 @@ export interface BrightDataExtractOptions extends Pick<ExtractOptions, "timeoutM
 	ssrf?: BrightDataSsrfOptions;
 }
 
-interface BrightDataConfig {
-	brightdataApiKey?: unknown;
-	brightdataUnlockerZone?: unknown;
+interface BrightDataConfig extends JsonInputObject {
+	brightdataApiKey?: JsonInputValue;
+	brightdataUnlockerZone?: JsonInputValue;
 }
 
 let cachedConfig: BrightDataConfig | null = null;
@@ -37,7 +40,7 @@ let cachedConfig: BrightDataConfig | null = null;
 // credential into an error string that extract.ts surfaces to the user. Only the
 // position is safe to repeat; the snippet never is. The `Failed to parse ` prefix
 // is preserved because extract.ts's isConfigParseError matches on it.
-function parseFailureDetail(err: unknown): string {
+function parseFailureDetail(err: JsonInputValue): string {
 	const message = err instanceof Error ? err.message : String(err);
 	const position = message.match(/at position \d+(?: \(line \d+ column \d+\))?/);
 	return position ? `invalid JSON ${position[0]}` : "invalid JSON";
@@ -49,16 +52,16 @@ function loadConfig(): BrightDataConfig {
 		return cachedConfig;
 	}
 	const raw = readWebConfigText();
-	let parsed: unknown;
+	let parsed: JsonInputValue;
 	try {
 		parsed = JSON.parse(raw);
 	} catch (err) {
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${parseFailureDetail(err)}`);
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+	if (!isJsonInputObject(parsed)) {
 		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
 	}
-	cachedConfig = parsed as BrightDataConfig;
+	cachedConfig = parsed;
 	return cachedConfig;
 }
 
@@ -66,8 +69,8 @@ export function clearBrightDataUnlockerConfigCache(): void {
 	cachedConfig = null;
 }
 
-function normalizeZone(value: unknown): string | null {
-	if (typeof value !== "string") return null;
+function normalizeZone(value: JsonInputValue): string | null {
+	if (!isRuntimeString(value)) return null;
 	const trimmed = value.trim();
 	if (!trimmed) return null;
 	return ZONE_PATTERN.test(trimmed) ? trimmed : null;
@@ -80,9 +83,9 @@ interface ZoneSetting {
 
 function zoneSetting(): ZoneSetting | null {
 	const fromEnv = process.env.BRIGHTDATA_UNLOCKER_ZONE;
-	if (typeof fromEnv === "string" && fromEnv.trim()) return { raw: fromEnv.trim(), label: "BRIGHTDATA_UNLOCKER_ZONE" };
+	if (isRuntimeString(fromEnv) && fromEnv.trim()) return { raw: fromEnv.trim(), label: "BRIGHTDATA_UNLOCKER_ZONE" };
 	const configured = loadConfig().brightdataUnlockerZone;
-	if (typeof configured === "string" && configured.trim()) return { raw: configured.trim(), label: `brightdataUnlockerZone in ${CONFIG_PATH}` };
+	if (isRuntimeString(configured) && configured.trim()) return { raw: configured.trim(), label: `brightdataUnlockerZone in ${CONFIG_PATH}` };
 	return null;
 }
 
@@ -136,36 +139,40 @@ function requestSignal(timeoutMs: number, signal?: AbortSignal): AbortSignal {
 	return signal ? AbortSignal.any([timeout, signal]) : timeout;
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function isAbortError(err: unknown): boolean {
+function isAbortError(err: JsonInputValue): boolean {
 	return errorMessage(err).toLowerCase().includes("abort");
 }
 
-function ssrfOptions(options?: BrightDataExtractOptions): { lookup?: Lookup; allowRanges: string[]; trustEnvProxy: boolean } {
-	return {
-		allowRanges: options?.ssrf?.allowRanges ?? [],
-		trustEnvProxy: options?.ssrf?.trustEnvProxy ?? false,
-		...(options?.lookup ? { lookup: options.lookup } : {}),
-	};
+interface BrightDataValidationOptions {
+	lookup?: Lookup;
+	allowRanges: string[];
+	trustEnvProxy: boolean;
 }
 
-function withoutSensitiveHeaders(headers: Record<string, string>): Record<string, string> {
-	const next = { ...headers };
-	delete next.Authorization;
-	delete next.authorization;
-	delete next.Cookie;
-	delete next.cookie;
-	delete next["X-API-Key"];
-	delete next["x-api-key"];
+function ssrfOptions(options?: BrightDataExtractOptions): BrightDataValidationOptions {
+	const validation: BrightDataValidationOptions = {
+		allowRanges: options?.ssrf?.allowRanges ?? [],
+		trustEnvProxy: options?.ssrf?.trustEnvProxy ?? false,
+	};
+	if (options?.lookup) validation.lookup = options.lookup;
+	return validation;
+}
+
+function withoutSensitiveHeaders(headers: Headers): Headers {
+	const next = new Headers(headers);
+	next.delete("Authorization");
+	next.delete("Cookie");
+	next.delete("X-API-Key");
 	return next;
 }
 
 async function fetchBrightDataApi(
 	url: string,
-	init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal },
+	init: { method: string; headers: Headers; body: string; signal: AbortSignal },
 	options: BrightDataExtractOptions | undefined,
 ): Promise<Response> {
 	let current = await validateRemoteUrl(url, ssrfOptions(options));
@@ -193,7 +200,7 @@ async function fetchBrightDataApi(
 	}
 }
 
-function unlockerBody(url: string, zone: string): Record<string, unknown> {
+function unlockerBody(url: string, zone: string): JsonInputObject {
 	return {
 		url,
 		zone,
@@ -209,10 +216,10 @@ async function brightDataRequest(
 	options: BrightDataExtractOptions | undefined,
 ): Promise<string> {
 	const apiKey = await getApiKey(signal);
-	const headers: Record<string, string> = {
+	const headers = new Headers({
 		"Content-Type": "application/json",
 		Authorization: `Bearer ${apiKey}`,
-	};
+	});
 	const activityId = activityMonitor.logStart({ type: "fetch", url });
 	try {
 		const response = await fetchBrightDataApi(BRIGHTDATA_REQUEST_URL, {

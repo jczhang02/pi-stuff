@@ -1,3 +1,6 @@
+import { isJsonInputObject, parseJsonObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -52,14 +55,14 @@ export class SearchProviderError extends Error {
 	readonly provider: ResolvedSearchProvider;
 	readonly kind: SearchProviderErrorKind;
 	readonly status?: number;
-	readonly causeError: unknown;
+	readonly causeError: JsonInputValue;
 
 	constructor(
 		provider: ResolvedSearchProvider,
 		kind: SearchProviderErrorKind,
 		message: string,
 		status: number | undefined,
-		cause: unknown,
+		cause: JsonInputValue,
 	) {
 		super(`${provider} search failed (${kind}): ${message}`);
 		this.name = "SearchProviderError";
@@ -108,13 +111,9 @@ function getSearchConfig(): SearchConfig {
 	}
 
 	const rawText = readWebConfigText();
-	let raw: Record<string, unknown>;
+	let raw: JsonInputObject;
 	try {
-		const parsed: unknown = JSON.parse(rawText);
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-			throw new Error("expected a JSON object");
-		}
-		raw = parsed as Record<string, unknown>;
+		raw = parseJsonObject(rawText);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
@@ -122,31 +121,31 @@ function getSearchConfig(): SearchConfig {
 
 	const searchModel = normalizeSearchModel(raw.searchModel);
 	const searchProviderConfigured = Object.hasOwn(raw, "searchProvider") || Object.hasOwn(raw, "provider");
-	cachedSearchConfig = {
+	const config: SearchConfig = {
 		searchProvider: normalizeSearchProviderSelection(raw.searchProvider ?? raw.provider, `provider in ${CONFIG_PATH}`),
 		searchProviderConfigured,
-		...(Object.hasOwn(raw, "searchRouting") ? { searchRouting: normalizeSearchRouting(raw.searchRouting) } : {}),
-		...(searchModel ? { searchModel } : {}),
 	};
+	if (Object.hasOwn(raw, "searchRouting")) config.searchRouting = normalizeSearchRouting(raw.searchRouting);
+	if (searchModel) config.searchModel = searchModel;
+	cachedSearchConfig = config;
 	return cachedSearchConfig;
 }
 
-function normalizeSearchRouting(value: unknown): SearchRoutingConfig {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
+function normalizeSearchRouting(value: JsonInputValue): SearchRoutingConfig {
+	if (!isJsonInputObject(value)) {
 		throw new Error(`searchRouting in ${CONFIG_PATH} must be an object`);
 	}
-	const raw = value as Record<string, unknown>;
-	const providers = normalizeResolvedProviderList(raw.providers, `searchRouting.providers in ${CONFIG_PATH}`);
-	if (!Array.isArray(raw.fallbackOn) || raw.fallbackOn.length === 0) {
+	const providers = normalizeResolvedProviderList(value.providers, `searchRouting.providers in ${CONFIG_PATH}`);
+	if (!Array.isArray(value.fallbackOn) || value.fallbackOn.length === 0) {
 		throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} must be a non-empty array`);
 	}
 	const fallbackOn: SearchRoutingConfig["fallbackOn"] = [];
-	for (const kind of raw.fallbackOn) {
-		if (typeof kind !== "string" || !VALID_ROUTING_KINDS.includes(kind as typeof VALID_ROUTING_KINDS[number])) {
+	for (const kind of value.fallbackOn) {
+		if (!isRoutingFallbackKind(kind)) {
 			throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} may only contain transient, quota, or network`);
 		}
-		if (!fallbackOn.includes(kind as SearchRoutingConfig["fallbackOn"][number])) {
-			fallbackOn.push(kind as SearchRoutingConfig["fallbackOn"][number]);
+		if (!fallbackOn.includes(kind)) {
+			fallbackOn.push(kind);
 		}
 	}
 	return { providers, fallbackOn };
@@ -157,34 +156,46 @@ export function getConfiguredSearchRouting(): SearchRoutingConfig | undefined {
 	return config.searchProviderConfigured ? undefined : config.searchRouting;
 }
 
-function normalizeSearchModel(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
+function normalizeSearchModel(value: JsonInputValue): string | undefined {
+	if (!isRuntimeString(value)) return undefined;
 	const normalized = value.trim();
 	return normalized.length > 0 ? normalized : undefined;
 }
 
-function normalizeResolvedProviderList(value: unknown, label: string): ResolvedSearchProvider[] {
+function isRoutingFallbackKind(value: JsonInputValue): value is SearchRoutingConfig["fallbackOn"][number] {
+	return isRuntimeString(value) && VALID_ROUTING_KINDS.some((kind) => kind === value);
+}
+
+function isResolvedSearchProvider(value: string): value is ResolvedSearchProvider {
+	return RESOLVED_SEARCH_PROVIDERS.some((provider) => provider === value);
+}
+
+function isSearchProvider(value: string): value is SearchProvider {
+	return SEARCH_PROVIDERS.some((provider) => provider === value);
+}
+
+function normalizeResolvedProviderList(value: JsonInputValue, label: string): ResolvedSearchProvider[] {
 	if (!Array.isArray(value) || value.length === 0) {
 		throw new Error(`${label} must be a non-empty array`);
 	}
 	const providers: ResolvedSearchProvider[] = [];
 	for (const provider of value) {
-		const normalized = typeof provider === "string" ? provider.trim().toLowerCase() : "";
-		if (!RESOLVED_SEARCH_PROVIDERS.includes(normalized as ResolvedSearchProvider)) {
+		const normalized = isRuntimeString(provider) ? provider.trim().toLowerCase() : "";
+		if (!isResolvedSearchProvider(normalized)) {
 			throw new Error(`${label} contains an invalid provider: ${String(provider)}`);
 		}
-		if (providers.includes(normalized as ResolvedSearchProvider)) {
+		if (providers.includes(normalized)) {
 			throw new Error(`${label} must not contain duplicates: ${normalized}`);
 		}
-		providers.push(normalized as ResolvedSearchProvider);
+		providers.push(normalized);
 	}
 	return providers;
 }
 
-export function normalizeSearchProviderSelection(value: unknown, label = "provider"): SearchProviderSelection {
+export function normalizeSearchProviderSelection(value: JsonInputValue, label = "provider"): SearchProviderSelection {
 	if (Array.isArray(value)) return normalizeResolvedProviderList(value, label);
-	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return SEARCH_PROVIDERS.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
+	const normalized = isRuntimeString(value) ? value.trim().toLowerCase() : "";
+	return isSearchProvider(normalized) ? normalized : "auto";
 }
 
 export interface FullSearchOptions extends SearchOptions {
@@ -193,17 +204,17 @@ export interface FullSearchOptions extends SearchOptions {
 	extensionContext?: ExtensionContext;
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function isAbortError(err: unknown): boolean {
+function isAbortError(err: JsonInputValue): boolean {
 	return errorMessage(err).toLowerCase().includes("abort");
 }
 
 function shouldTryOpenAIInAuto(options: SearchOptions): boolean {
 	if (options.recencyFilter) return false;
-	if (typeof options.numResults === "number" && Number.isFinite(options.numResults) && Math.floor(options.numResults) !== 5) {
+	if (isRuntimeNumber(options.numResults) && Number.isFinite(options.numResults) && Math.floor(options.numResults) !== 5) {
 		return false;
 	}
 	return true;
@@ -247,7 +258,7 @@ function providerErrorStatus(message: string): number | undefined {
 	return Number(match[1]);
 }
 
-function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): SearchProviderError {
+function classifyProviderError(provider: ResolvedSearchProvider, err: JsonInputValue): SearchProviderError {
 	if (err instanceof SearchProviderError) return err;
 	const message = errorMessage(err);
 	const lower = message.toLowerCase();
@@ -287,7 +298,7 @@ async function searchWithResolvedProvider(
 	provider: ResolvedSearchProvider,
 	query: string,
 	options: FullSearchOptions,
-): Promise<AttributedSearchResponse> {
+): Promise<ProviderSearchResponse> {
 	if (provider === "openai") {
 		const result = await searchWithOpenAI(query, options, options.extensionContext);
 		return { ...result, provider };
@@ -365,7 +376,7 @@ async function searchWithAllProvider(
 	provider: ResolvedSearchProvider,
 	query: string,
 	options: FullSearchOptions,
-): Promise<AttributedSearchResponse> {
+): Promise<ProviderSearchResponse> {
 	if (provider !== "gemini") return searchWithResolvedProvider(provider, query, options);
 	const result = await searchWithGeminiApi(query, options);
 	if (result) return { ...result, provider };
@@ -394,7 +405,7 @@ async function searchWithProviders(
 	);
 	if (options.signal?.aborted) throw new Error("Aborted");
 
-	const successes: AttributedSearchResponse[] = [];
+	const successes: ProviderSearchResponse[] = [];
 	const failures: Array<{ provider: ResolvedSearchProvider; error: string }> = [];
 	for (let index = 0; index < settled.length; index++) {
 		const outcome = settled[index];
@@ -427,7 +438,7 @@ async function searchWithProviders(
 	}
 
 	const answerSections = successes.map((response) =>
-		`## ${providerLabel(response.provider as ResolvedSearchProvider)}\n\n${response.answer || "(No answer text returned.)"}`
+		`## ${providerLabel(response.provider)}\n\n${response.answer || "(No answer text returned.)"}`
 	);
 	if (failures.length > 0) {
 		answerSections.push(
@@ -435,14 +446,15 @@ async function searchWithProviders(
 		);
 	}
 
-	return {
+	const response: AttributedSearchResponse = {
 		provider: "all",
 		answer: answerSections.join("\n\n"),
 		results,
-		providerResponses: successes as ProviderSearchResponse[],
-		...(failures.length > 0 ? { providerErrors: failures } : {}),
-		...(inlineContent.length > 0 ? { inlineContent } : {}),
+		providerResponses: successes,
 	};
+	if (failures.length > 0) response.providerErrors = failures;
+	if (inlineContent.length > 0) response.inlineContent = inlineContent;
+	return response;
 }
 
 async function searchWithConfiguredRouting(
@@ -461,7 +473,7 @@ async function searchWithConfiguredRouting(
 		} catch (err) {
 			const classified = classifyProviderError(provider, err);
 			diagnostics.push(`${provider} [${classified.kind}]: ${errorMessage(err)}`);
-			if (!routing.fallbackOn.includes(classified.kind as SearchRoutingConfig["fallbackOn"][number])) {
+			if (!isRoutingFallbackKind(classified.kind) || !routing.fallbackOn.includes(classified.kind)) {
 				throw classified;
 			}
 		}
@@ -679,14 +691,11 @@ async function searchWithGeminiApi(query: string, options: SearchOptions = {}): 
 			throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
 		}
 
-		const data = await res.json() as GeminiSearchResponse;
+		const data = parseGeminiSearchPayload(parseJsonObject(await res.text()));
 		activityMonitor.logComplete(activityId, res.status);
 
-		const answer = data.candidates?.[0]?.content?.parts
-			?.map(p => p.text).filter(Boolean).join("\n") ?? "";
-
-		const metadata = data.candidates?.[0]?.groundingMetadata;
-		const results = await resolveGroundingChunks(metadata?.groundingChunks, options.signal);
+		const answer = data.parts.map((part) => part.text).filter(Boolean).join("\n");
+		const results = await resolveGroundingChunks(data.groundingChunks, options.signal);
 
 		if (!answer && results.length === 0) return null;
 		return { answer, results };
@@ -733,7 +742,7 @@ function buildSearchPrompt(query: string, options: SearchOptions): string {
 	let prompt = `Search the web and answer the following question. Include source URLs for your claims.\nFormat your response as:\n1. A direct answer to the question\n2. Cited sources as markdown links\n\nQuestion: ${query}`;
 
 	if (options.recencyFilter) {
-		const labels: Record<string, string> = {
+		const labels = {
 			day: "past 24 hours",
 			week: "past week",
 			month: "past month",
@@ -803,20 +812,58 @@ async function resolveRedirect(proxyUrl: string, signal?: AbortSignal): Promise<
 	}
 }
 
-interface GeminiSearchResponse {
-	candidates?: Array<{
-		content?: { parts?: Array<{ text?: string }> };
-		groundingMetadata?: {
-			webSearchQueries?: string[];
-			groundingChunks?: GroundingChunk[];
-			groundingSupports?: Array<{
-				segment?: { startIndex?: number; endIndex?: number; text?: string };
-				groundingChunkIndices?: number[];
-			}>;
-		};
-	}>;
+interface GeminiSearchPayload {
+	parts: Array<{ text: string }>;
+	groundingChunks: GroundingChunk[];
 }
 
 interface GroundingChunk {
-	web?: { uri?: string; title?: string };
+	web: { uri: string; title: string } | undefined;
+}
+
+function readOptionalObject(value: JsonInputValue, label: string): JsonInputObject | undefined {
+	if (value === undefined) return undefined;
+	if (!isJsonInputObject(value)) throw new Error(`Gemini API returned invalid ${label}`);
+	return value;
+}
+
+function readOptionalArray(value: JsonInputValue, label: string): JsonInputValue[] {
+	if (value === undefined) return [];
+	if (!Array.isArray(value)) throw new Error(`Gemini API returned invalid ${label}`);
+	return value;
+}
+
+function readOptionalString(value: JsonInputValue, label: string): string {
+	if (value === undefined) return "";
+	if (!isRuntimeString(value)) throw new Error(`Gemini API returned invalid ${label}`);
+	return value;
+}
+
+function parseGeminiSearchPayload(value: JsonInputObject): GeminiSearchPayload {
+	const candidates = readOptionalArray(value.candidates, "candidates");
+	const candidate = readOptionalObject(candidates[0], "candidates[0]");
+	const content = readOptionalObject(candidate?.content, "candidates[0].content");
+	const parts = readOptionalArray(content?.parts, "candidates[0].content.parts").map((part, index) => {
+		const entry = readOptionalObject(part, `candidates[0].content.parts[${index}]`);
+		if (!entry) throw new Error(`Gemini API returned invalid candidates[0].content.parts[${index}]`);
+		return { text: readOptionalString(entry.text, `candidates[0].content.parts[${index}].text`) };
+	});
+
+	const metadata = readOptionalObject(candidate?.groundingMetadata, "candidates[0].groundingMetadata");
+	const groundingChunks = readOptionalArray(metadata?.groundingChunks, "candidates[0].groundingMetadata.groundingChunks")
+		.map((chunk, index) => {
+			const entry = readOptionalObject(chunk, `groundingChunks[${index}]`);
+			if (!entry) throw new Error(`Gemini API returned invalid groundingChunks[${index}]`);
+			const web = readOptionalObject(entry.web, `groundingChunks[${index}].web`);
+			return {
+				web: web
+					? {
+						uri: readOptionalString(web.uri, `groundingChunks[${index}].web.uri`),
+						title: readOptionalString(web.title, `groundingChunks[${index}].web.title`),
+					}
+					: undefined,
+			};
+		});
+
+	return { parts, groundingChunks };
 }

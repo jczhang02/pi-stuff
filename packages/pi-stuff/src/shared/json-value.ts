@@ -22,6 +22,12 @@ export function isJsonInputObject<Value>(value: Value): value is Value & JsonInp
 	return value !== null && isRuntimeObject(value) && !Array.isArray(value) && isJsonInputValue(value);
 }
 
+/** Validate a value before crossing a JSON serialization or persistence boundary. */
+export function requireJsonInputValue<Value>(value: Value, description: string): Value & JsonInputValue {
+	if (!isJsonInputValue(value)) throw new TypeError(`${description} must contain only JSON values`);
+	return value;
+}
+
 /** A value observed at a runtime boundary that already conforms to the JSON grammar. */
 export type JsonSourceValue = boolean | null | number | string | readonly JsonSourceValue[] | JsonSourceObject;
 
@@ -37,7 +43,9 @@ export function isJsonSourceValue<Value>(value: Value): value is Value & JsonSou
 	return Object.values(value).every(isJsonSourceValue);
 }
 
-export function jsonInputKind(value: JsonInputValue): "array" | "boolean" | "null" | "number" | "object" | "string" | "undefined" {
+export function jsonInputKind(
+	value: JsonInputValue,
+): "array" | "boolean" | "null" | "number" | "object" | "string" | "undefined" {
 	if (value === null) return "null";
 	if (value === undefined) return "undefined";
 	if (isRuntimeBoolean(value)) return "boolean";

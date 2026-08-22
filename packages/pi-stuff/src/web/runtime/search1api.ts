@@ -1,3 +1,7 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, parseJsonObject, type JsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -12,32 +16,8 @@ const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
 const CRAWL_TIMEOUT_MS = 60_000;
 
-interface WebSearchConfig {
-	search1apiApiKey?: unknown;
-}
-
-interface Search1APISearchResult {
-	title?: string | null;
-	link?: string | null;
-	snippet?: string | null;
-	content?: string | null;
-}
-
-interface Search1APISearchResponse {
-	searchParameters?: Record<string, unknown>;
-	results?: Search1APISearchResult[];
-}
-
-interface Search1APICrawlResult {
-	title?: string | null;
-	link?: string | null;
-	content?: string | null;
-	metadata?: Record<string, unknown>;
-}
-
-interface Search1APICrawlResponse {
-	crawlParameters?: { url?: string };
-	results?: Search1APICrawlResult;
+interface WebSearchConfig extends JsonInputObject {
+	search1apiApiKey?: JsonInputValue;
 }
 
 interface Search1APISearchOptions extends SearchOptions {
@@ -53,17 +33,17 @@ function loadConfig(): WebSearchConfig {
 	}
 
 	const raw = readWebConfigText();
-	let parsed: unknown;
+	let parsed: JsonInputValue;
 	try {
 		parsed = JSON.parse(raw);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+	if (!isJsonInputObject(parsed)) {
 		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
 	}
-	cachedConfig = parsed as WebSearchConfig;
+	cachedConfig = parsed;
 	return cachedConfig;
 }
 
@@ -93,7 +73,7 @@ export function isSearch1APIAvailable(): boolean {
 	});
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
@@ -103,7 +83,7 @@ function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): Abor
 }
 
 function normalizeNumResults(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
@@ -122,7 +102,7 @@ function normalizeDomain(value: string): string | null {
 	return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(input) ? input : null;
 }
 
-function mapDomainFilter(domainFilter: string[] | undefined): { includeSites: string[]; excludeSites: string[] } {
+function mapDomainFilter(domainFilter: string[] | undefined) {
 	const includeSites: string[] = [];
 	const excludeSites: string[] = [];
 	for (const raw of domainFilter ?? []) {
@@ -134,27 +114,28 @@ function mapDomainFilter(domainFilter: string[] | undefined): { includeSites: st
 	return { includeSites, excludeSites };
 }
 
-function buildSearchBody(query: string, options: Search1APISearchOptions): Record<string, unknown> {
+function buildSearchBody(query: string, options: Search1APISearchOptions): JsonInputObject {
 	const numResults = normalizeNumResults(options.numResults);
 	const { includeSites, excludeSites } = mapDomainFilter(options.domainFilter);
-	return {
+	const body: JsonInputObject = {
 		query,
 		max_results: numResults,
 		crawl_results: options.includeContent ? numResults : 0,
-		...(includeSites.length > 0 ? { include_sites: includeSites } : {}),
-		...(excludeSites.length > 0 ? { exclude_sites: excludeSites } : {}),
-		...(options.recencyFilter ? { time_range: options.recencyFilter } : {}),
 	};
+	if (includeSites.length > 0) body.include_sites = includeSites;
+	if (excludeSites.length > 0) body.exclude_sites = excludeSites;
+	if (options.recencyFilter) body.time_range = options.recencyFilter;
+	return body;
 }
 
-async function search1APIJsonRequest<T>(
+async function search1APIJsonRequest(
 	label: "Search" | "Crawl",
 	url: string,
 	apiKey: string,
-	body: Record<string, unknown>,
+	body: JsonInputObject,
 	timeoutMs: number,
 	signal?: AbortSignal,
-): Promise<T> {
+): Promise<JsonInputObject> {
 	let response: Response;
 	try {
 		response = await fetch(url, {
@@ -180,35 +161,35 @@ async function search1APIJsonRequest<T>(
 		throw new Error(`Search1API ${label} API error ${response.status}: ${redactCredential(raw, apiKey).slice(0, 300)}`);
 	}
 	try {
-		return JSON.parse(raw) as T;
+		return parseJsonObject(raw);
 	} catch (err) {
 		throw new Error(`Search1API ${label} API returned invalid JSON: ${errorMessage(err)}`);
 	}
 }
 
-function mapSearchResults(results: Search1APISearchResult[] | undefined): SearchResponse["results"] {
+function mapSearchResults(results: JsonInputValue): SearchResponse["results"] {
 	if (!Array.isArray(results)) {
 		throw new Error("Search1API Search API returned an unexpected response shape");
 	}
 	return results.flatMap((item) => {
-		if (!item || typeof item.link !== "string" || item.link.trim().length === 0) return [];
+		if (!isJsonInputObject(item) || !isRuntimeString(item.link) || item.link.trim().length === 0) return [];
 		const url = item.link.trim();
 		return [{
-			title: typeof item.title === "string" && item.title.trim() ? item.title.trim() : url,
+			title: isRuntimeString(item.title) && item.title.trim() ? item.title.trim() : url,
 			url,
-			snippet: typeof item.snippet === "string" ? item.snippet.replace(/\s+/g, " ").trim() : "",
+			snippet: isRuntimeString(item.snippet) ? item.snippet.replace(/\s+/g, " ").trim() : "",
 		}];
 	});
 }
 
-function mapInlineContent(results: Search1APISearchResult[] | undefined): ExtractedContent[] {
+function mapInlineContent(results: JsonInputValue): ExtractedContent[] {
 	if (!Array.isArray(results)) return [];
 	return results.flatMap((item) => {
-		if (!item || typeof item.link !== "string" || item.link.trim().length === 0) return [];
-		if (typeof item.content !== "string" || item.content.trim().length === 0) return [];
+		if (!isJsonInputObject(item) || !isRuntimeString(item.link) || item.link.trim().length === 0) return [];
+		if (!isRuntimeString(item.content) || item.content.trim().length === 0) return [];
 		return [{
 			url: item.link.trim(),
-			title: typeof item.title === "string" ? item.title.trim() : "",
+			title: isRuntimeString(item.title) ? item.title.trim() : "",
 			content: item.content,
 			error: null,
 		}];
@@ -229,7 +210,7 @@ export async function searchWithSearch1API(
 	const apiKey = await getApiKey(options.signal);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
-		const data = await search1APIJsonRequest<Search1APISearchResponse>(
+		const data = await search1APIJsonRequest(
 			"Search",
 			SEARCH1API_SEARCH_URL,
 			apiKey,
@@ -265,21 +246,21 @@ export async function extractWithSearch1API(
 	const apiKey = await getApiKey(signal);
 	const activityId = activityMonitor.logStart({ type: "fetch", url });
 	try {
-		const data = await search1APIJsonRequest<Search1APICrawlResponse>(
+		const data = await search1APIJsonRequest(
 			"Crawl",
 			SEARCH1API_CRAWL_URL,
 			apiKey,
 			{ url },
-			typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
+			isRuntimeNumber(options.timeoutMs) && Number.isFinite(options.timeoutMs)
 				? Math.max(1, Math.floor(options.timeoutMs))
 				: CRAWL_TIMEOUT_MS,
 			signal,
 		);
 		const result = data.results;
-		if (!result || typeof result !== "object") {
+		if (!isJsonInputObject(result)) {
 			throw new Error("Search1API Crawl API returned an unexpected response shape");
 		}
-		const content = typeof result.content === "string" ? result.content.trim() : "";
+		const content = isRuntimeString(result.content) ? result.content.trim() : "";
 		if (!content) {
 			activityMonitor.logComplete(activityId, 200);
 			return null;
@@ -287,7 +268,7 @@ export async function extractWithSearch1API(
 		activityMonitor.logComplete(activityId, 200);
 		return {
 			url,
-			title: typeof result.title === "string" ? result.title.trim() : "",
+			title: isRuntimeString(result.title) ? result.title.trim() : "",
 			content,
 			error: null,
 		};

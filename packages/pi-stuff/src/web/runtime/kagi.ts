@@ -1,3 +1,6 @@
+import type { JsonInputObject, JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -12,8 +15,8 @@ const KAGI_EXTRACT_URL = "https://kagi.com/api/v1/extract";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
 
-interface WebSearchConfig {
-	kagiApiKey?: unknown;
+interface WebSearchConfig extends JsonInputObject {
+	kagiApiKey?: JsonInputValue;
 }
 
 interface KagiSearchOptions extends SearchOptions {
@@ -32,17 +35,17 @@ function loadConfig(): WebSearchConfig {
 		return cachedConfig;
 	}
 	const raw = readWebConfigText();
-	let parsed: unknown;
+	let parsed: JsonInputValue;
 	try {
 		parsed = JSON.parse(raw);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+	if (!isJsonInputObject(parsed)) {
 		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
 	}
-	cachedConfig = parsed as WebSearchConfig;
+	cachedConfig = parsed;
 	return cachedConfig;
 }
 
@@ -69,11 +72,11 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 }
 
 function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
@@ -81,70 +84,69 @@ function invalidResponse(message: string): Error {
 	return new Error(`Kagi API returned invalid response: ${message}`);
 }
 
-function firstString(...values: unknown[]): string | null {
+function firstString<Value>(...values: Value[]): string | null {
 	for (const value of values) {
-		if (typeof value === "string" && value.trim()) return value.trim();
+		if (isRuntimeString(value) && value.trim()) return value.trim();
 	}
 	return null;
 }
 
-function appendSearchItems(value: unknown, results: SearchResponse["results"], inlineContent: ExtractedContent[]): void {
+function appendSearchItems(value: JsonInputValue, results: SearchResponse["results"], inlineContent: ExtractedContent[]): void {
 	if (Array.isArray(value)) {
 		for (const item of value) appendSearchItems(item, results, inlineContent);
 		return;
 	}
-	if (!value || typeof value !== "object") return;
-	const item = value as Record<string, unknown>;
-	const nested = item.results ?? item.items ?? item.list;
+	if (!isJsonInputObject(value)) return;
+	const nested = value.results ?? value.items ?? value.list;
 	if (Array.isArray(nested)) appendSearchItems(nested, results, inlineContent);
-	const url = firstString(item.url, item.href, item.link);
+	const url = firstString(value.url, value.href, value["link"]);
 	if (!url) return;
-	const title = firstString(item.title, item.name) ?? url;
-	const snippet = firstString(item.snippet, item.description, item.summary, item.content, item.markdown, item.text) ?? "";
+	const title = firstString(value.title, value.name) ?? url;
+	const snippet = firstString(value.snippet, value.description, value.summary, value.content, value.markdown, value.text) ?? "";
 	results.push({ title, url, snippet });
-	const content = firstString(item.markdown, item.content, item.text);
+	const content = firstString(value.markdown, value.content, value.text);
 	if (content) inlineContent.push({ url, title, content, error: null });
 }
 
-function parseErrors(value: unknown): string | null {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-	const envelope = value as Record<string, unknown>;
-	const rawErrors = envelope.errors ?? envelope.error;
+function parseErrors(value: JsonInputValue): string | null {
+	if (!isJsonInputObject(value)) return null;
+	const rawErrors = value.errors ?? value.error;
 	if (!Array.isArray(rawErrors)) return null;
 	const messages = rawErrors.map((entry) => {
-		if (!entry || typeof entry !== "object") return String(entry);
-		const raw = entry as Record<string, unknown>;
-		return firstString(raw.message, raw.msg, raw.code) ?? JSON.stringify(raw);
+		if (!isJsonInputObject(entry)) return String(entry);
+		return firstString(entry.message, entry.msg, entry.code) ?? JSON.stringify(entry);
 	});
 	return messages.length > 0 ? messages.join("; ") : null;
 }
 
-function parseSearchResponse(value: unknown): { results: SearchResponse["results"]; inlineContent: ExtractedContent[] } {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponse("expected an object envelope");
+interface ParsedSearchResponse {
+	results: SearchResponse["results"];
+	inlineContent: ExtractedContent[];
+}
+
+function parseSearchResponse(value: JsonInputValue): ParsedSearchResponse {
+	if (!isJsonInputObject(value)) throw invalidResponse("expected an object envelope");
 	const message = parseErrors(value);
 	if (message) throw invalidResponse(message);
-	const envelope = value as Record<string, unknown>;
 	const results: SearchResponse["results"] = [];
 	const inlineContent: ExtractedContent[] = [];
-	appendSearchItems(envelope.data, results, inlineContent);
-	if (results.length === 0 && envelope.data !== null) appendSearchItems(envelope, results, inlineContent);
+	appendSearchItems(value.data, results, inlineContent);
+	if (results.length === 0 && value.data !== null) appendSearchItems(value, results, inlineContent);
 	return { results, inlineContent };
 }
 
-function parseExtractResponse(value: unknown, requestedUrl: string): ExtractedContent | null {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponse("expected extract object envelope");
+function parseExtractResponse(value: JsonInputValue, requestedUrl: string): ExtractedContent | null {
+	if (!isJsonInputObject(value)) throw invalidResponse("expected extract object envelope");
 	const message = parseErrors(value);
 	if (message) throw invalidResponse(message);
-	const envelope = value as Record<string, unknown>;
-	const candidates = Array.isArray(envelope.data) ? envelope.data : [envelope.data ?? envelope];
+	const candidates = Array.isArray(value.data) ? value.data : [value.data ?? value];
 	for (const candidate of candidates) {
-		if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
-		const item = candidate as Record<string, unknown>;
-		const content = firstString(item.markdown, item.content, item.text);
+		if (!isJsonInputObject(candidate)) continue;
+		const content = firstString(candidate.markdown, candidate.content, candidate.text);
 		if (!content) continue;
 		return {
-			url: firstString(item.url, item.href, item.link) ?? requestedUrl,
-			title: firstString(item.title, item.name) ?? requestedUrl,
+			url: firstString(candidate.url, candidate.href, candidate.link) ?? requestedUrl,
+			title: firstString(candidate.title, candidate.name) ?? requestedUrl,
 			content,
 			error: null,
 		};
@@ -190,7 +192,7 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Kagi API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
-	let rawData: unknown;
+	let rawData: JsonInputValue;
 	try {
 		rawData = await response.json();
 	} catch (err) {
@@ -216,27 +218,29 @@ export function isKagiExtractAvailable(): boolean {
 export async function extractWithKagi(url: string, signal?: AbortSignal, options: KagiExtractOptions = {}): Promise<ExtractedContent | null> {
 	const ssrf = options.ssrf ?? loadSsrfConfig();
 	const domainPolicy = loadFetchContentDomainPolicy();
-	await validateRemoteUrl(url, {
+	const validationOptions = {
 		allowRanges: ssrf.allowRanges,
 		trustEnvProxy: ssrf.trustEnvProxy,
 		domainPolicy,
-		...(options.lookup ? { lookup: options.lookup } : {}),
-	});
+	};
+	if (options.lookup) Object.assign(validationOptions, { lookup: options.lookup });
+	await validateRemoteUrl(url, validationOptions);
 	const apiKey = await requireApiKey(signal);
 	const activityId = activityMonitor.logStart({ type: "api", query: `kagi extract: ${url}` });
 	let response: Response;
 	try {
+		const remoteOptions = {
+			allowRanges: ssrf.allowRanges,
+			trustEnvProxy: ssrf.trustEnvProxy,
+			onRedirect: ({ from, to, init }: { from: URL; to: URL; init: RequestInit }) => to.origin === from.origin ? init : { ...init, headers: { "Content-Type": "application/json", Accept: "application/json" } },
+		};
+		if (options.lookup) Object.assign(remoteOptions, { lookup: options.lookup });
 		response = await fetchRemoteUrl(KAGI_EXTRACT_URL, {
 			method: "POST",
 			headers: { Authorization: `Bot ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({ urls: [url] }),
 			signal: signal ? AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS), signal]) : AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
-		}, {
-			allowRanges: ssrf.allowRanges,
-			trustEnvProxy: ssrf.trustEnvProxy,
-			onRedirect: ({ from, to, init }) => to.origin === from.origin ? init : { ...init, headers: { "Content-Type": "application/json", Accept: "application/json" } },
-			...(options.lookup ? { lookup: options.lookup } : {}),
-		});
+		}, remoteOptions);
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
@@ -252,7 +256,7 @@ export async function extractWithKagi(url: string, signal?: AbortSignal, options
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`Kagi Extract API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
-	let rawData: unknown;
+	let rawData: JsonInputValue;
 	try {
 		rawData = await response.json();
 	} catch (err) {

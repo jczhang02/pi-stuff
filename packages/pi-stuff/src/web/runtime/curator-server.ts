@@ -1,3 +1,5 @@
+import { isJsonInputObject, isJsonInputValue, parseJsonValue, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { generateCuratorPage } from "./curator-page.ts";
 import type { SummaryMeta } from "./summary-review.ts";
@@ -59,7 +61,8 @@ export interface CuratorServerHandle {
 	getConnectionState: () => { browserConnected: boolean; lastHeartbeatAgeMs: number };
 }
 
-function sendJson(res: ServerResponse, status: number, payload: unknown): void {
+function sendJson<Value>(res: ServerResponse, status: number, payload: Value): void {
+	if (!isJsonInputValue(payload)) throw new TypeError("Curator response must be JSON-serializable");
 	res.writeHead(status, {
 		"Content-Type": "application/json",
 		"Cache-Control": "no-store",
@@ -67,7 +70,7 @@ function sendJson(res: ServerResponse, status: number, payload: unknown): void {
 	res.end(JSON.stringify(payload));
 }
 
-function parseJSONBody(req: IncomingMessage): Promise<unknown> {
+function parseJSONBody(req: IncomingMessage): Promise<JsonInputValue> {
 	return new Promise((resolve, reject) => {
 		let body = "";
 		let size = 0;
@@ -82,7 +85,7 @@ function parseJSONBody(req: IncomingMessage): Promise<unknown> {
 		});
 		req.on("end", () => {
 			try {
-				resolve(JSON.parse(body));
+				resolve(parseJsonValue(body));
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				reject(new Error(`Invalid JSON: ${message}`));
@@ -92,7 +95,7 @@ function parseJSONBody(req: IncomingMessage): Promise<unknown> {
 	});
 }
 
-async function parseBodyOrSend(req: IncomingMessage, res: ServerResponse): Promise<unknown | null> {
+async function parseBodyOrSend(req: IncomingMessage, res: ServerResponse): Promise<JsonInputValue | null> {
 	try {
 		return await parseJSONBody(req);
 	} catch (err) {
@@ -104,7 +107,7 @@ async function parseBodyOrSend(req: IncomingMessage, res: ServerResponse): Promi
 }
 
 function normalizeSelectedIndices(
-	value: unknown,
+	value: JsonInputValue,
 	options: { allowEmpty: boolean; maxExclusive: number },
 ): { ok: true; indices: number[] } | { ok: false; error: string } {
 	if (!Array.isArray(value)) {
@@ -118,7 +121,7 @@ function normalizeSelectedIndices(
 	const normalized: number[] = [];
 	const seen = new Set<number>();
 	for (const item of value) {
-		if (typeof item !== "number" || !Number.isInteger(item) || item < 0) {
+		if (!isRuntimeNumber(item) || !Number.isInteger(item) || item < 0) {
 			return { ok: false, error: "Invalid selection" };
 		}
 		if (item >= options.maxExclusive) {
@@ -138,27 +141,27 @@ function normalizeSelectedIndices(
 	return { ok: true, indices: normalized };
 }
 
-function normalizeSummaryMeta(value: unknown): SummaryMeta | null {
-	if (!value || typeof value !== "object") return null;
-	const meta = value as Record<string, unknown>;
+function normalizeSummaryMeta(value: JsonInputValue): SummaryMeta | null {
+	if (!isJsonInputObject(value)) return null;
+	const meta = value;
 
 	const model = meta.model === null
 		? null
-		: typeof meta.model === "string"
+		: isRuntimeString(meta.model)
 			? meta.model
 			: undefined;
 	if (model === undefined) return null;
 
 	const durationMs = meta.durationMs;
-	if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0) return null;
+	if (!isRuntimeNumber(durationMs) || !Number.isFinite(durationMs) || durationMs < 0) return null;
 
 	const tokenEstimate = meta.tokenEstimate;
-	if (typeof tokenEstimate !== "number" || !Number.isFinite(tokenEstimate) || tokenEstimate < 0) return null;
+	if (!isRuntimeNumber(tokenEstimate) || !Number.isFinite(tokenEstimate) || tokenEstimate < 0) return null;
 
 	const fallbackUsed = meta.fallbackUsed;
-	if (typeof fallbackUsed !== "boolean") return null;
+	if (!isRuntimeBoolean(fallbackUsed)) return null;
 
-	const fallbackReason = typeof meta.fallbackReason === "string" ? meta.fallbackReason : undefined;
+	const fallbackReason = isRuntimeString(meta.fallbackReason) ? meta.fallbackReason : undefined;
 	if (meta.fallbackReason !== undefined && fallbackReason === undefined) return null;
 
 	const phase = meta.phase === "summary-model" || meta.phase === "deterministic-fallback"
@@ -168,18 +171,19 @@ function normalizeSummaryMeta(value: unknown): SummaryMeta | null {
 	if (phase === "deterministic-fallback" && fallbackUsed !== true) return null;
 	if (phase === "summary-model" && fallbackUsed !== false) return null;
 
-	const edited = typeof meta.edited === "boolean" ? meta.edited : undefined;
+	const edited = isRuntimeBoolean(meta.edited) ? meta.edited : undefined;
 	if (meta.edited !== undefined && edited === undefined) return null;
 
-	return {
+	const normalized: SummaryMeta = {
 		model,
 		durationMs,
 		tokenEstimate,
 		fallbackUsed,
-		...(fallbackReason !== undefined ? { fallbackReason } : {}),
-		...(phase !== undefined ? { phase } : {}),
-		...(edited !== undefined ? { edited } : {}),
 	};
+	if (fallbackReason !== undefined) normalized.fallbackReason = fallbackReason;
+	if (phase !== undefined) normalized.phase = phase;
+	if (edited !== undefined) normalized.edited = edited;
+	return normalized;
 }
 
 export function startCuratorServer(
@@ -252,12 +256,12 @@ export function startCuratorServer(
 		clientIdleMs >= getEffectiveTimeoutMs()
 	);
 
-	function validateToken(body: unknown, res: ServerResponse): boolean {
-		if (!body || typeof body !== "object") {
+	function validateToken(body: JsonInputValue, res: ServerResponse): body is JsonInputObject {
+		if (!isJsonInputObject(body)) {
 			sendJson(res, 400, { ok: false, error: "Invalid body" });
 			return false;
 		}
-		if ((body as { token?: string }).token !== sessionToken) {
+		if (body.token !== sessionToken) {
 			sendJson(res, 403, { ok: false, error: "Invalid session" });
 			return false;
 		}
@@ -288,7 +292,7 @@ export function startCuratorServer(
 		return false;
 	}
 
-	function sendSSE(event: string, data: unknown): void {
+	function sendSSE(event: string, data: JsonInputValue): void {
 		const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 		const res = sseResponse;
 		if (res && !res.writableEnded && res.socket && !res.socket.destroyed) {
@@ -381,12 +385,11 @@ export function startCuratorServer(
 				if (!body) return;
 				if (!validateToken(body, res)) return;
 				touchHeartbeat();
-				const heartbeat = body as { idleMs?: unknown; timeoutSec?: unknown };
-				if (typeof heartbeat.timeoutSec === "number" && Number.isFinite(heartbeat.timeoutSec) && heartbeat.timeoutSec > 0) {
-					clientTimeoutSeconds = Math.min(600, Math.floor(heartbeat.timeoutSec));
+				if (isRuntimeNumber(body.timeoutSec) && Number.isFinite(body.timeoutSec) && body.timeoutSec > 0) {
+					clientTimeoutSeconds = Math.min(600, Math.floor(body.timeoutSec));
 				}
-				if (typeof heartbeat.idleMs === "number" && Number.isFinite(heartbeat.idleMs) && heartbeat.idleMs >= 0) {
-					clientIdleMs = Math.floor(heartbeat.idleMs);
+				if (isRuntimeNumber(body.idleMs) && Number.isFinite(body.idleMs) && body.idleMs >= 0) {
+					clientIdleMs = Math.floor(body.idleMs);
 				}
 				const timedOut = shouldTimeoutFromClientIdle();
 				sendJson(res, 200, { ok: true });
@@ -400,8 +403,8 @@ export function startCuratorServer(
 				const body = await parseBodyOrSend(req, res);
 				if (!body) return;
 				if (!validateToken(body, res)) return;
-				const { provider } = body as { provider?: string };
-				if (typeof provider !== "string" || provider.length === 0) {
+				const provider = body.provider;
+				if (!isRuntimeString(provider) || provider.length === 0) {
 					sendJson(res, 400, { ok: false, error: "Invalid provider" });
 					return;
 				}
@@ -422,20 +425,23 @@ export function startCuratorServer(
 					sendJson(res, 409, { ok: false, error: "Session closed" });
 					return;
 				}
-				const { query, provider } = body as { query?: string; provider?: string };
-				if (typeof query !== "string" || query.trim().length === 0) {
+				const query = body.query;
+				if (!isRuntimeString(query) || query.trim().length === 0) {
 					sendJson(res, 400, { ok: false, error: "Invalid query" });
 					return;
 				}
-				if (provider !== undefined) {
-					if (typeof provider !== "string" || provider.length === 0) {
+				const requestedProvider = body.provider;
+				let provider: string | undefined;
+				if (requestedProvider !== undefined) {
+					if (!isRuntimeString(requestedProvider) || requestedProvider.length === 0) {
 						sendJson(res, 400, { ok: false, error: "Invalid provider" });
 						return;
 					}
-					if (!isAvailableProvider(provider)) {
-						sendJson(res, 400, { ok: false, error: `Provider unavailable: ${provider}` });
+					if (!isAvailableProvider(requestedProvider)) {
+						sendJson(res, 400, { ok: false, error: `Provider unavailable: ${requestedProvider}` });
 						return;
 					}
+					provider = requestedProvider;
 				}
 				const qi = nextQueryIndex++;
 				const trimmedQuery = query.trim();
@@ -458,7 +464,7 @@ export function startCuratorServer(
 						answer: "",
 						results: [],
 						error: message,
-						provider: typeof provider === "string" && provider.length > 0 ? provider : defaultProvider,
+						provider: isRuntimeString(provider) && provider.length > 0 ? provider : defaultProvider,
 					};
 					callbacks.onAddSearchResults([entry]);
 					sendJson(res, 200, { ok: true, ...entry, entries: [entry] });
@@ -475,7 +481,7 @@ export function startCuratorServer(
 					return;
 				}
 
-				const parsed = normalizeSelectedIndices((body as { selected?: unknown }).selected, {
+				const parsed = normalizeSelectedIndices(body.selected, {
 					allowEmpty: false,
 					maxExclusive: nextQueryIndex,
 				});
@@ -485,9 +491,9 @@ export function startCuratorServer(
 				}
 
 				let model: string | undefined;
-				const bodyModel = (body as { model?: unknown }).model;
+				const bodyModel = body.model;
 				if (bodyModel !== undefined) {
-					if (typeof bodyModel !== "string") {
+					if (!isRuntimeString(bodyModel)) {
 						sendJson(res, 400, { ok: false, error: "Invalid model" });
 						return;
 					}
@@ -495,8 +501,8 @@ export function startCuratorServer(
 					model = trimmedModel.length > 0 ? trimmedModel : undefined;
 				}
 
-				const bodyFeedback = (body as { feedback?: unknown }).feedback;
-				const feedback = typeof bodyFeedback === "string" && bodyFeedback.trim().length > 0
+				const bodyFeedback = body.feedback;
+				const feedback = isRuntimeString(bodyFeedback) && bodyFeedback.trim().length > 0
 					? bodyFeedback.trim()
 					: undefined;
 
@@ -536,8 +542,8 @@ export function startCuratorServer(
 					sendJson(res, 409, { ok: false, error: "Session closed" });
 					return;
 				}
-				const { query } = body as { query?: unknown };
-				if (typeof query !== "string" || query.trim().length === 0) {
+				const query = body.query;
+				if (!isRuntimeString(query) || query.trim().length === 0) {
 					sendJson(res, 400, { ok: false, error: "Invalid query" });
 					return;
 				}
@@ -560,7 +566,7 @@ export function startCuratorServer(
 				if (!body) return;
 				if (!validateToken(body, res)) return;
 
-				const parsed = normalizeSelectedIndices((body as { selected?: unknown }).selected, {
+				const parsed = normalizeSelectedIndices(body.selected, {
 					allowEmpty: true,
 					maxExclusive: nextQueryIndex,
 				});
@@ -570,9 +576,9 @@ export function startCuratorServer(
 				}
 
 				let summary: string | undefined;
-				const bodySummary = (body as { summary?: unknown }).summary;
+				const bodySummary = body.summary;
 				if (bodySummary !== undefined) {
-					if (typeof bodySummary !== "string") {
+					if (!isRuntimeString(bodySummary)) {
 						sendJson(res, 400, { ok: false, error: "Invalid summary" });
 						return;
 					}
@@ -581,7 +587,7 @@ export function startCuratorServer(
 				}
 
 				let summaryMeta: SummaryMeta | undefined;
-				const bodySummaryMeta = (body as { summaryMeta?: unknown }).summaryMeta;
+				const bodySummaryMeta = body.summaryMeta;
 				if (bodySummaryMeta !== undefined) {
 					const parsedSummaryMeta = normalizeSummaryMeta(bodySummaryMeta);
 					if (!parsedSummaryMeta) {
@@ -599,14 +605,15 @@ export function startCuratorServer(
 					sendJson(res, 409, { ok: false, error: "Session closed" });
 					return;
 				}
-				const rawResults = (body as { rawResults?: unknown }).rawResults === true;
+				const rawResults = body.rawResults === true;
 				sendJson(res, 200, { ok: true });
-				setImmediate(() => callbacks.onSubmit({
+				const submission: Parameters<CuratorServerCallbacks["onSubmit"]>[0] = {
 					selectedQueryIndices: parsed.indices,
-					...(summary !== undefined ? { summary } : {}),
-					...(summaryMeta !== undefined ? { summaryMeta } : {}),
 					rawResults,
-				}));
+				};
+				if (summary !== undefined) submission.summary = summary;
+				if (summaryMeta !== undefined) submission.summaryMeta = summaryMeta;
+				setImmediate(() => callbacks.onSubmit(submission));
 				return;
 			}
 
@@ -618,7 +625,7 @@ export function startCuratorServer(
 					sendJson(res, 200, { ok: true });
 					return;
 				}
-				const { reason } = body as { reason?: string };
+				const reason = body.reason;
 				sendJson(res, 200, { ok: true });
 				const cancelReason = reason === "timeout" ? "timeout" : "user";
 				setImmediate(() => callbacks.onCancel(cancelReason));
@@ -644,7 +651,7 @@ export function startCuratorServer(
 		server.listen(0, networkConfig.bind, () => {
 			server.off("error", onError);
 			const addr = server.address();
-			if (!addr || typeof addr === "string") {
+			if (!addr || isRuntimeString(addr)) {
 				reject(new Error("Curator server: invalid address"));
 				return;
 			}

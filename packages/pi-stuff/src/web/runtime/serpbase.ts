@@ -1,3 +1,6 @@
+import { isJsonInputObject, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -8,32 +11,32 @@ import { getWebSearchConfigPath } from "./utils.ts";
 const SERPBASE_API_URL = "https://api.serpbase.dev/google/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
-const RECENCY_TBS: Record<string, string> = {
+const RECENCY_TBS = {
 	day: "qdr:d",
 	week: "qdr:w",
 	month: "qdr:m",
 	year: "qdr:y",
-};
+} satisfies Record<NonNullable<SearchOptions["recencyFilter"]>, string>;
 
-interface WebSearchConfig {
-	serpbaseApiKey?: unknown;
+interface WebSearchConfig extends JsonInputObject {
+	serpbaseApiKey?: JsonInputValue;
 }
 
 interface SerpBaseOrganicResult {
-	title?: unknown;
-	link?: unknown;
-	url?: unknown;
-	snippet?: unknown;
-	description?: unknown;
+	title?: JsonInputValue;
+	link?: JsonInputValue;
+	url?: JsonInputValue;
+	snippet?: JsonInputValue;
+	description?: JsonInputValue;
 }
 
 interface SerpBaseResponse {
 	organic_results?: SerpBaseOrganicResult[];
 	organic?: SerpBaseOrganicResult[];
 	results?: SerpBaseOrganicResult[];
-	status?: unknown;
-	error?: unknown;
-	message?: unknown;
+	status?: JsonInputValue;
+	error?: JsonInputValue;
+	message?: JsonInputValue;
 }
 
 let cachedConfig: WebSearchConfig | null = null;
@@ -44,17 +47,17 @@ function loadConfig(): WebSearchConfig {
 		return cachedConfig;
 	}
 	const raw = readWebConfigText();
-	let parsed: unknown;
+	let parsed: JsonInputValue;
 	try {
 		parsed = JSON.parse(raw);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+	if (!isJsonInputObject(parsed)) {
 		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
 	}
-	cachedConfig = parsed as WebSearchConfig;
+	cachedConfig = parsed;
 	return cachedConfig;
 }
 
@@ -81,7 +84,7 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 }
 
 function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 10;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 10;
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
@@ -142,7 +145,7 @@ function buildQuery(query: string, filters: DomainFilters): string {
 	return parts.join(" ");
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
@@ -150,16 +153,22 @@ function invalidResponse(message: string): Error {
 	return new Error(`SerpBase API returned invalid response: ${message}`);
 }
 
-function parseResponse(value: unknown): SerpBaseResponse {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponse("expected an object envelope");
-	const envelope = value as SerpBaseResponse;
-	if (typeof envelope.error === "string" && envelope.error.trim()) {
-		const suffix = typeof envelope.status === "number" || typeof envelope.status === "string" ? ` (status ${envelope.status})` : "";
-		throw invalidResponse(`${envelope.error}${suffix}`);
+function parseResponse(value: JsonInputValue): SerpBaseResponse {
+	if (!isJsonInputObject(value)) throw invalidResponse("expected an object envelope");
+	if (isRuntimeString(value.error) && value.error.trim()) {
+		const suffix = isRuntimeNumber(value.status) || isRuntimeString(value.status) ? ` (status ${value.status})` : "";
+		throw invalidResponse(`${value.error}${suffix}`);
 	}
-	const organic = envelope.organic_results ?? envelope.organic ?? envelope.results;
+	const organic = value.organic_results ?? value.organic ?? value.results;
 	if (!Array.isArray(organic)) throw invalidResponse("expected organic_results array");
-	return { ...envelope, organic_results: organic };
+	const organicResults: SerpBaseOrganicResult[] = organic.flatMap(item => isJsonInputObject(item) ? [{
+		title: item.title,
+		link: item.link,
+		url: item.url,
+		snippet: item.snippet,
+		description: item.description,
+	}] : []);
+	return { organic_results: organicResults };
 }
 
 function buildAnswer(results: SearchResponse["results"]): string {
@@ -204,7 +213,7 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 		const errorText = redactCredential(await response.text(), apiKey);
 		throw new Error(`SerpBase API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
-	let rawData: unknown;
+	let rawData: JsonInputValue;
 	try {
 		rawData = await response.json();
 	} catch (err) {
@@ -215,12 +224,12 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 	activityMonitor.logComplete(activityId, response.status);
 	const results: SearchResponse["results"] = [];
 	for (const item of data.organic_results ?? []) {
-		const url = typeof item.link === "string" ? item.link : typeof item.url === "string" ? item.url : "";
+		const url = isRuntimeString(item.link) ? item.link : isRuntimeString(item.url) ? item.url : "";
 		if (!url || !passesDomainFilters(url, filters)) continue;
 		results.push({
-			title: typeof item.title === "string" && item.title.trim() ? item.title : `Source ${results.length + 1}`,
+			title: isRuntimeString(item.title) && item.title.trim() ? item.title : `Source ${results.length + 1}`,
 			url,
-			snippet: typeof item.snippet === "string" ? item.snippet : typeof item.description === "string" ? item.description : "",
+			snippet: isRuntimeString(item.snippet) ? item.snippet : isRuntimeString(item.description) ? item.description : "",
 		});
 		if (results.length >= numResults) break;
 	}

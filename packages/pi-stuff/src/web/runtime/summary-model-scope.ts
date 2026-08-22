@@ -1,3 +1,5 @@
+import { parseJsonObject, type JsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -43,11 +45,11 @@ export function findModelWithProviderRouting<T extends ModelLike>(
 	return routed ?? registry.find(provider, id);
 }
 
-function readSettings(path: string): Record<string, unknown> {
+function readSettings(path: string): JsonInputObject {
 	if (!existsSync(path)) return {};
 	const raw = readFileSync(path, "utf8");
 	try {
-		return JSON.parse(raw) as Record<string, unknown>;
+		return parseJsonObject(raw);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${path}: ${message}`);
@@ -65,7 +67,7 @@ export function loadEnabledModelPatterns(ctx: SummaryModelScopeContext): string[
 	if (value === undefined) return null;
 	if (!Array.isArray(value)) throw new Error("enabledModels must be an array");
 	return value
-		.filter((item): item is string => typeof item === "string")
+		.filter((item): item is string => isRuntimeString(item))
 		.map(item => item.trim())
 		.filter(Boolean);
 }

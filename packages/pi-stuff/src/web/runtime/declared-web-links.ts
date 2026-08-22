@@ -8,13 +8,13 @@ const DECLARATION_RELATIONS = new Set([
 	"service-meta",
 ]);
 
-const RELATION_LABELS: Record<string, string> = {
-	"api-catalog": "API catalog",
-	"describedby": "Description",
-	"service-desc": "Service description",
-	"service-doc": "Service documentation",
-	"service-meta": "Service metadata",
-};
+const RELATION_LABELS = new Map([
+	["api-catalog", "API catalog"],
+	["describedby", "Description"],
+	["service-desc", "Service description"],
+	["service-doc", "Service documentation"],
+	["service-meta", "Service metadata"],
+]);
 
 export interface DeclaredWebLink {
 	url: string;
@@ -82,11 +82,12 @@ function addDeclaredLink(
 	}
 	if (links.size >= MAX_DECLARED_LINKS) return;
 	const type = normalizeMetadata(candidate.type);
-	links.set(candidate.url, {
+	const link: DeclaredWebLink = {
 		url: candidate.url,
 		relations: candidate.relations,
-		...(type ? { type } : {}),
-	});
+	};
+	if (type) link.type = type;
+	links.set(candidate.url, link);
 }
 
 function declaredRelations(value: string | null | undefined): string[] {

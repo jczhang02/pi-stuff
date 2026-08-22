@@ -1,3 +1,7 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject } from "../../shared/json-value.js";
+import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -33,8 +37,8 @@ const SEARCH_TIMEOUT_MS = 60_000;
 const AUTH_MODEL_CANDIDATES = ["grok-4.5", "grok-4.3", "grok-build-0.1"] as const;
 
 interface WebSearchConfig {
-	xaiApiKey?: unknown;
-	xaiSearchModel?: unknown;
+	xaiApiKey?: JsonInputValue;
+	xaiSearchModel?: JsonInputValue;
 }
 
 interface XaiAuth {
@@ -53,7 +57,7 @@ function loadConfig(): WebSearchConfig {
 
 	const raw = readWebConfigText();
 	try {
-		cachedConfig = JSON.parse(raw) as WebSearchConfig;
+		cachedConfig = parseJsonObject(raw);
 		return cachedConfig;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -61,9 +65,9 @@ function loadConfig(): WebSearchConfig {
 	}
 }
 
-function resolveConfiguredSearchModel(value: unknown): string | undefined {
+function resolveConfiguredSearchModel(value: JsonInputValue): string | undefined {
 	if (value == null) return undefined;
-	if (typeof value !== "string" || value.trim().length === 0) {
+	if (!isRuntimeString(value) || value.trim().length === 0) {
 		throw new Error(`xaiSearchModel in ${CONFIG_PATH} must be a non-empty string`);
 	}
 	return value.trim();
@@ -150,7 +154,7 @@ function buildInput(query: string, options: SearchOptions): string {
 	];
 
 	if (options.recencyFilter) {
-		const labels: Record<string, string> = {
+		const labels = {
 			day: "past 24 hours",
 			week: "past week",
 			month: "past month",
@@ -159,7 +163,7 @@ function buildInput(query: string, options: SearchOptions): string {
 		lines.push(`Prefer sources from the ${labels[options.recencyFilter]}.`);
 	}
 
-	if (typeof options.numResults === "number" && Number.isFinite(options.numResults) && options.numResults > 0) {
+	if (isRuntimeNumber(options.numResults) && Number.isFinite(options.numResults) && options.numResults > 0) {
 		lines.push(`Prefer around ${Math.min(Math.floor(options.numResults), 20)} distinct sources.`);
 	}
 
@@ -177,35 +181,35 @@ function buildInput(query: string, options: SearchOptions): string {
 	return `${lines.join(" ")}\n\n${query}`;
 }
 
-function addResult(results: SearchResult[], seen: Set<string>, url: unknown, title: unknown, snippet = ""): void {
-	if (typeof url !== "string" || url.trim().length === 0) return;
+function addResult(results: SearchResult[], seen: Set<string>, url: JsonInputValue, title: JsonInputValue, snippet = ""): void {
+	if (!isRuntimeString(url) || url.trim().length === 0) return;
 	if (seen.has(url)) return;
 	seen.add(url);
 	results.push({
-		title: typeof title === "string" && title.trim().length > 0 ? title : url,
+		title: isRuntimeString(title) && title.trim().length > 0 ? title : url,
 		url,
 		snippet,
 	});
 }
 
-function extractSnippetAround(text: string, start: unknown, end: unknown): string {
-	if (typeof start !== "number" || typeof end !== "number" || !text) return "";
+function extractSnippetAround(text: string, start: JsonInputValue, end: JsonInputValue): string {
+	if (!isRuntimeNumber(start) || !isRuntimeNumber(end) || !text) return "";
 	const before = Math.max(0, start - 100);
 	const after = Math.min(text.length, end + 100);
 	const snippet = text.slice(before, after).replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim();
 	return snippet.length > 300 ? `${snippet.slice(0, 297)}...` : snippet;
 }
 
-function extractAnswer(output: unknown[]): string {
+function extractAnswer(output: JsonInputValue[]): string {
 	const parts: string[] = [];
 	for (const item of output) {
-		if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "message") continue;
-		const content = (item as { content?: unknown }).content;
+		if (!isJsonInputObject(item) || item.type !== "message") continue;
+		const content = item.content;
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
-			if (!part || typeof part !== "object") continue;
-			const text = (part as { text?: unknown }).text;
-			if (typeof text === "string" && text.trim().length > 0) parts.push(text);
+			if (!isJsonInputObject(part)) continue;
+			const text = part.text;
+			if (isRuntimeString(text) && text.trim().length > 0) parts.push(text);
 		}
 	}
 	return parts.join("\n").trim();
@@ -218,50 +222,47 @@ function extractAnswer(output: unknown[]): string {
  * `web_search_call` visited. A third-party extension that reads `data.citations`
  * silently returns answers with no sources at all — hence both paths here.
  */
-function extractSearchResults(output: unknown[], numResults: number | undefined): SearchResult[] {
+function extractSearchResults(output: JsonInputValue[], numResults: number | undefined): SearchResult[] {
 	const results: SearchResult[] = [];
 	const seenUrls = new Set<string>();
 
 	for (const item of output) {
-		if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "message") continue;
-		const content = (item as { content?: unknown }).content;
+		if (!isJsonInputObject(item) || item.type !== "message") continue;
+		const content = item.content;
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
-			if (!part || typeof part !== "object") continue;
-			const text = typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : "";
-			const annotations = (part as { annotations?: unknown }).annotations;
+			if (!isJsonInputObject(part)) continue;
+			const text = isRuntimeString(part.text) ? part.text : "";
+			const annotations = part.annotations;
 			if (!Array.isArray(annotations)) continue;
 			for (const annotation of annotations) {
-				if (!annotation || typeof annotation !== "object") continue;
-				if ((annotation as { type?: unknown }).type !== "url_citation") continue;
+				if (!isJsonInputObject(annotation) || annotation.type !== "url_citation") continue;
 				addResult(
 					results,
 					seenUrls,
-					(annotation as { url?: unknown }).url,
-					(annotation as { title?: unknown }).title,
-					extractSnippetAround(text, (annotation as { start_index?: unknown }).start_index, (annotation as { end_index?: unknown }).end_index),
+					annotation.url,
+					annotation.title,
+					extractSnippetAround(text, annotation.start_index, annotation.end_index),
 				);
 			}
 		}
 	}
 
 	for (const item of output) {
-		if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "web_search_call") continue;
-		const value = item as { action?: unknown; sources?: unknown; results?: unknown };
-		const actionSources = value.action && typeof value.action === "object"
-			? (value.action as { sources?: unknown }).sources
+		if (!isJsonInputObject(item) || item.type !== "web_search_call") continue;
+		const actionSources = isJsonInputObject(item.action)
+			? item.action.sources
 			: undefined;
-		for (const group of [actionSources, value.sources, value.results]) {
+		for (const group of [actionSources, item.sources, item.results]) {
 			if (!Array.isArray(group)) continue;
 			for (const source of group) {
-				if (!source || typeof source !== "object") continue;
-				const record = source as Record<string, unknown>;
-				addResult(results, seenUrls, record.url ?? record.source_website_url, record.title ?? record.caption);
+				if (!isJsonInputObject(source)) continue;
+				addResult(results, seenUrls, source.url ?? source.source_website_url, source.title ?? source.caption);
 			}
 		}
 	}
 
-	if (typeof numResults === "number" && Number.isFinite(numResults) && numResults > 0) {
+	if (isRuntimeNumber(numResults) && Number.isFinite(numResults) && numResults > 0) {
 		return results.slice(0, Math.min(Math.floor(numResults), 20));
 	}
 	return results;
@@ -307,9 +308,11 @@ export async function searchWithXai(
 			throw new Error(`xAI API error ${response.status}: ${errorText.slice(0, 300)}`);
 		}
 
-		let parsed: Record<string, unknown>;
+		let parsed: JsonInputObject;
 		try {
-			parsed = await response.json() as Record<string, unknown>;
+			const responseValue = await response.json();
+			if (!isJsonInputObject(responseValue)) throw new TypeError("expected a JSON object");
+			parsed = responseValue;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			throw new Error(`xAI API returned invalid JSON: ${message}`);

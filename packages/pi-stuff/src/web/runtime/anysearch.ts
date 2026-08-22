@@ -1,3 +1,7 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -10,8 +14,8 @@ const ANYSEARCH_API_URL = "https://api.anysearch.com/v1/search";
 const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 30_000;
 
-interface WebSearchConfig {
-	anysearchApiKey?: unknown;
+interface WebSearchConfig extends JsonInputObject {
+	anysearchApiKey?: JsonInputValue;
 }
 
 interface AnySearchResult {
@@ -29,7 +33,7 @@ interface AnySearchResponse {
 	code: 0;
 	data: {
 		results: AnySearchResult[];
-		metadata: Record<string, unknown>;
+		metadata: JsonInputObject;
 	};
 }
 
@@ -42,17 +46,17 @@ function loadConfig(): WebSearchConfig {
 	}
 
 	const raw = readWebConfigText();
-	let parsed: unknown;
+	let parsed: JsonInputValue;
 	try {
 		parsed = JSON.parse(raw);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+	if (!isJsonInputObject(parsed)) {
 		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
 	}
-	cachedConfig = parsed as WebSearchConfig;
+	cachedConfig = parsed;
 	return cachedConfig;
 }
 
@@ -66,11 +70,11 @@ async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 }
 
 function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
@@ -78,37 +82,35 @@ function invalidResponse(message: string): Error {
 	return new Error(`AnySearch API returned invalid response: ${message}`);
 }
 
-function parseResponse(value: unknown): AnySearchResponse {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
+function parseResponse(value: JsonInputValue): AnySearchResponse {
+	if (!isJsonInputObject(value)) {
 		throw invalidResponse("expected an object envelope");
 	}
-	const envelope = value as Record<string, unknown>;
-	if (envelope.code !== 0) throw invalidResponse("expected code 0");
-	if (!envelope.data || typeof envelope.data !== "object" || Array.isArray(envelope.data)) {
+	if (value.code !== 0) throw invalidResponse("expected code 0");
+	if (!isJsonInputObject(value.data)) {
 		throw invalidResponse("expected data object");
 	}
-	const data = envelope.data as Record<string, unknown>;
+	const data = value.data;
 	if (!Array.isArray(data.results)) throw invalidResponse("expected data.results array");
-	if (!data.metadata || typeof data.metadata !== "object" || Array.isArray(data.metadata)) {
+	if (!isJsonInputObject(data.metadata)) {
 		throw invalidResponse("expected data.metadata object");
 	}
 
 	const results: AnySearchResult[] = [];
 	for (const [index, value] of data.results.entries()) {
-		if (!value || typeof value !== "object" || Array.isArray(value)) {
+		if (!isJsonInputObject(value)) {
 			throw invalidResponse(`expected data.results[${index}] object`);
 		}
-		const result = value as Record<string, unknown>;
-		const { title, url, snippet, content } = result;
-		if (typeof title !== "string") throw invalidResponse(`expected data.results[${index}].title string`);
-		if (typeof url !== "string") throw invalidResponse(`expected data.results[${index}].url string`);
-		if (typeof snippet !== "string") throw invalidResponse(`expected data.results[${index}].snippet string`);
-		if (typeof content !== "string") throw invalidResponse(`expected data.results[${index}].content string`);
+		const { title, url, snippet, content } = value;
+		if (!isRuntimeString(title)) throw invalidResponse(`expected data.results[${index}].title string`);
+		if (!isRuntimeString(url)) throw invalidResponse(`expected data.results[${index}].url string`);
+		if (!isRuntimeString(snippet)) throw invalidResponse(`expected data.results[${index}].snippet string`);
+		if (!isRuntimeString(content)) throw invalidResponse(`expected data.results[${index}].content string`);
 		if (!url) throw invalidResponse(`expected data.results[${index}].url to be non-empty`);
 		results.push({ title, url, snippet, content });
 	}
 
-	return { code: 0, data: { results, metadata: data.metadata as Record<string, unknown> } };
+	return { code: 0, data: { results, metadata: data.metadata } };
 }
 
 function buildAnswer(results: SearchResponse["results"]): string {
@@ -131,12 +133,11 @@ export async function searchWithAnySearch(query: string, options: AnySearchSearc
 	let response: Response;
 
 	try {
+		const headers = new Headers({ "Content-Type": "application/json" });
+		if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);
 		response = await fetch(ANYSEARCH_API_URL, {
 			method: "POST",
-			headers: {
-				...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-				"Content-Type": "application/json",
-			},
+			headers,
 			body: JSON.stringify(body),
 			signal: options.signal
 				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
@@ -159,7 +160,7 @@ export async function searchWithAnySearch(query: string, options: AnySearchSearc
 		throw new Error(`AnySearch API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	let rawData: unknown;
+	let rawData: JsonInputValue;
 	try {
 		rawData = await response.json();
 	} catch (err) {

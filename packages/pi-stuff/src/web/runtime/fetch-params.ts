@@ -1,13 +1,16 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeBoolean } from "../../shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 export interface FetchContentParams {
-	url?: unknown;
-	urls?: unknown;
-	forceClone?: unknown;
-	prompt?: unknown;
-	timestamp?: unknown;
-	frames?: unknown;
-	model?: unknown;
-	mode?: unknown;
-	answerModel?: unknown;
+	url?: JsonInputValue;
+	urls?: JsonInputValue;
+	forceClone?: JsonInputValue;
+	prompt?: JsonInputValue;
+	timestamp?: JsonInputValue;
+	frames?: JsonInputValue;
+	model?: JsonInputValue;
+	mode?: JsonInputValue;
+	answerModel?: JsonInputValue;
 }
 
 export interface NormalizedFetchContentParams {
@@ -32,50 +35,50 @@ export function normalizeFetchContentParams(params: FetchContentParams): Normali
 
 	const shouldIncludeFrames = frames !== undefined && (timestamp !== undefined || frames > 1);
 
-	const forceClone = typeof params.forceClone === "boolean" ? params.forceClone : undefined;
+	const forceClone = isRuntimeBoolean(params.forceClone) ? params.forceClone : undefined;
 	const model = normalizeOptionalString(params.model);
 	const mode = normalizeMode(params.mode);
 	const answerModel = normalizeOptionalString(params.answerModel);
+	const options: NormalizedFetchContentParams["options"] = {};
+	if (forceClone !== undefined) options.forceClone = forceClone;
+	if (prompt !== undefined) options.prompt = prompt;
+	if (timestamp !== undefined) options.timestamp = timestamp;
+	if (shouldIncludeFrames) options.frames = frames;
+	if (model !== undefined) options.model = model;
+	if (mode !== undefined) options.mode = mode;
+	if (answerModel !== undefined) options.answerModel = answerModel;
 
 	return {
 		urlList,
-		options: {
-			...(forceClone !== undefined ? { forceClone } : {}),
-			...(prompt !== undefined ? { prompt } : {}),
-			...(timestamp !== undefined ? { timestamp } : {}),
-			...(shouldIncludeFrames ? { frames } : {}),
-			...(model !== undefined ? { model } : {}),
-			...(mode !== undefined ? { mode } : {}),
-			...(answerModel !== undefined ? { answerModel } : {}),
-		},
+		options,
 	};
 }
 
-function normalizeUrlArray(value: unknown): string[] {
+function normalizeUrlArray(value: JsonInputValue): string[] {
 	if (!Array.isArray(value)) return [];
 	return value.flatMap(normalizeSingleUrl);
 }
 
-function normalizeSingleUrl(value: unknown): string[] {
-	if (typeof value !== "string") return [];
+function normalizeSingleUrl(value: JsonInputValue): string[] {
+	if (!isRuntimeString(value)) return [];
 	const trimmed = value.trim();
 	return trimmed ? [trimmed] : [];
 }
 
-function normalizeOptionalString(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
+function normalizeOptionalString(value: JsonInputValue): string | undefined {
+	if (!isRuntimeString(value)) return undefined;
 	const trimmed = value.trim();
 	return trimmed || undefined;
 }
 
-function normalizeMode(value: unknown): "readable" | "raw" | "answer" | undefined {
+function normalizeMode(value: JsonInputValue): "readable" | "raw" | "answer" | undefined {
 	if (value === undefined) return undefined;
 	if (value === "readable" || value === "raw" || value === "answer") return value;
 	throw new Error('mode must be "readable", "raw", or "answer"');
 }
 
-function normalizeOptionalInteger(value: unknown): number | undefined {
-	if (typeof value !== "number" || !Number.isInteger(value) || value < 1) return undefined;
+function normalizeOptionalInteger(value: JsonInputValue): number | undefined {
+	if (!isRuntimeNumber(value) || !Number.isInteger(value) || value < 1) return undefined;
 	return value;
 }
 

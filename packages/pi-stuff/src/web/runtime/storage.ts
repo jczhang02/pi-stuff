@@ -1,3 +1,5 @@
+import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchResult } from "./perplexity.ts";
@@ -18,7 +20,7 @@ export interface StoredSearchData {
 	timestamp: number;
 	queries?: QueryResultData[];
 	urls?: ExtractedContent[];
-	artifact?: unknown;
+	artifact?: JsonInputValue;
 }
 
 const storedResults = new Map<string, StoredSearchData>();
@@ -47,15 +49,14 @@ export function clearResults(): void {
 	storedResults.clear();
 }
 
-function isValidStoredData(data: unknown): data is StoredSearchData {
-	if (!data || typeof data !== "object") return false;
-	const d = data as Record<string, unknown>;
-	if (typeof d.id !== "string" || !d.id) return false;
-	if (d.type !== "search" && d.type !== "fetch" && d.type !== "research") return false;
-	if (typeof d.timestamp !== "number") return false;
-	if (d.type === "search" && !Array.isArray(d.queries)) return false;
-	if (d.type === "fetch" && !Array.isArray(d.urls)) return false;
-	if (d.type === "research" && (!d.artifact || typeof d.artifact !== "object")) return false;
+function isValidStoredData<Value>(data: Value): data is Value & StoredSearchData {
+	if (!isJsonInputObject(data)) return false;
+	if (!isRuntimeString(data.id) || !data.id) return false;
+	if (data.type !== "search" && data.type !== "fetch" && data.type !== "research") return false;
+	if (!isRuntimeNumber(data.timestamp)) return false;
+	if (data.type === "search" && !Array.isArray(data.queries)) return false;
+	if (data.type === "fetch" && !Array.isArray(data.urls)) return false;
+	if (data.type === "research" && !isJsonInputObject(data.artifact)) return false;
 	return true;
 }
 

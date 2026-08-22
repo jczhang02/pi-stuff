@@ -1,3 +1,7 @@
+import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject } from "../../shared/json-value.js";
+import { parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -22,22 +26,8 @@ type SerpdiveModel = (typeof MODELS)[number];
 const DEFAULT_MODEL: SerpdiveModel = "krill";
 
 interface WebSearchConfig {
-	serpdiveApiKey?: unknown;
-	serpdiveModel?: unknown;
-}
-
-interface SerpdiveResult {
-	url?: string;
-	title?: string | null;
-	date?: string;
-	content?: string;
-}
-
-interface SerpdiveResponse {
-	query?: string;
-	model?: string;
-	answer?: string | null;
-	results?: SerpdiveResult[];
+	serpdiveApiKey?: JsonInputValue;
+	serpdiveModel?: JsonInputValue;
 }
 
 interface SerpdiveSearchOptions extends SearchOptions {
@@ -54,7 +44,7 @@ function loadConfig(): WebSearchConfig {
 
 	const raw = readWebConfigText();
 	try {
-		cachedConfig = JSON.parse(raw) as WebSearchConfig;
+		cachedConfig = parseJsonObject(raw);
 		return cachedConfig;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -88,13 +78,13 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 // in a config file must not cost the user money, and must not break search.
 function resolveModel(): SerpdiveModel {
 	const raw = process.env.SERPDIVE_MODEL ?? loadConfig().serpdiveModel;
-	if (typeof raw !== "string") return DEFAULT_MODEL;
+	if (!isRuntimeString(raw)) return DEFAULT_MODEL;
 	const value = raw.trim().toLowerCase();
-	return (MODELS as readonly string[]).includes(value) ? value as SerpdiveModel : DEFAULT_MODEL;
+	return value === "krill" || value === "mako" || value === "moby" ? value : DEFAULT_MODEL;
 }
 
 function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
@@ -156,12 +146,12 @@ function passesDomainFilters(url: string, filters: DomainFilters): boolean {
 // still come back.
 function applyRecencyHint(query: string, recencyFilter: SearchOptions["recencyFilter"]): string {
 	if (!recencyFilter) return query;
-	const hints: Record<string, string> = {
+	const hints = {
 		day: "past 24 hours",
 		week: "past week",
 		month: "past month",
 		year: "past year",
-	};
+	} satisfies Record<NonNullable<SearchOptions["recencyFilter"]>, string>;
 	const hint = hints[recencyFilter];
 	return hint ? `${query} ${hint}` : query;
 }
@@ -171,37 +161,37 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
 function mapResults(
-	results: SerpdiveResult[] | undefined,
+	results: JsonInputValue,
 	numResults: number,
 	filters: DomainFilters,
 ): SearchResponse["results"] {
 	if (!Array.isArray(results)) return [];
 	const mapped: SearchResponse["results"] = [];
 	for (const item of results) {
-		if (!item?.url || !passesDomainFilters(item.url, filters)) continue;
+		if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !passesDomainFilters(item.url, filters)) continue;
 		mapped.push({
-			title: item.title || `Source ${mapped.length + 1}`,
+			title: isRuntimeString(item.title) ? item.title : `Source ${mapped.length + 1}`,
 			url: item.url,
-			snippet: typeof item.content === "string" ? item.content.replace(/\s+/g, " ").trim() : "",
+			snippet: isRuntimeString(item.content) ? item.content.replace(/\s+/g, " ").trim() : "",
 		});
 		if (mapped.length >= numResults) break;
 	}
 	return mapped;
 }
 
-function mapInlineContent(results: SerpdiveResult[] | undefined, filters: DomainFilters): ExtractedContent[] {
+function mapInlineContent(results: JsonInputValue, filters: DomainFilters): ExtractedContent[] {
 	if (!Array.isArray(results)) return [];
 	return results.flatMap((item) => {
-		if (!item?.url || !passesDomainFilters(item.url, filters)) return [];
-		if (typeof item.content !== "string" || item.content.trim().length === 0) return [];
+		if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !passesDomainFilters(item.url, filters)) return [];
+		if (!isRuntimeString(item.content) || item.content.trim().length === 0) return [];
 		return [{
 			url: item.url,
-			title: item.title || "",
+			title: isRuntimeString(item.title) ? item.title : "",
 			content: item.content,
 			error: null,
 		}];
@@ -212,8 +202,8 @@ function mapInlineContent(results: SerpdiveResult[] | undefined, filters: Domain
 // one is assembled from the sources — the same shape brave.ts and searxng.ts
 // produce for providers that do not synthesize. mako and moby ask the API for a
 // real answer and use it when it comes back.
-function buildAnswer(apiAnswer: string | null | undefined, results: SearchResponse["results"]): string {
-	if (typeof apiAnswer === "string" && apiAnswer.trim().length > 0) return apiAnswer;
+function buildAnswer(apiAnswer: JsonInputValue, results: SearchResponse["results"]): string {
+	if (isRuntimeString(apiAnswer) && apiAnswer.trim().length > 0) return apiAnswer;
 	return results
 		.map((result) => {
 			if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
@@ -235,16 +225,16 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 	const numResults = normalizeCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
 	const model = resolveModel();
-	const body: Record<string, unknown> = {
+	const body: JsonInputObject = {
 		query: applyRecencyHint(query, options.recencyFilter),
 		model,
 		// max_results is a CAP, never a minimum: the engine returns what it
 		// judges relevant, up to this many. Asking for more does not produce more.
 		max_results: Math.min(numResults, 10),
-		// krill has no answer synthesis — asking for one there is silently ignored
-		// by the API, so it is not asked for at all.
-		...(model === "krill" ? {} : { answer: true }),
 	};
+	// krill has no answer synthesis — asking for one there is silently ignored
+	// by the API, so it is not asked for at all.
+	if (model !== "krill") body.answer = true;
 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
@@ -275,9 +265,11 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 		throw new Error(`SERPdive API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	let data: SerpdiveResponse;
+	let data;
 	try {
-		data = await response.json() as SerpdiveResponse;
+		const responseBody = await response.json();
+		if (!isJsonInputObject(responseBody)) throw new TypeError("expected an object");
+		data = responseBody;
 	} catch (err) {
 		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`SERPdive API returned invalid JSON: ${errorMessage(err)}`);

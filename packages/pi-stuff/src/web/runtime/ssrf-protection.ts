@@ -1,3 +1,6 @@
+import { isJsonInputObject, jsonInputKind, type JsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeBoolean } from "../../shared/runtime-type.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { lookup as dnsLookup } from "node:dns/promises";
 import net from "node:net";
 import { readWebConfig } from "../settings.ts";
@@ -12,7 +15,7 @@ type Fetch = typeof fetch;
 
 const WEB_SEARCH_CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 
-function loadConfigRoot(): Record<string, unknown> | null {
+function loadConfigRoot(): JsonInputObject | null {
 	try {
 		return readWebConfig() ?? null;
 	} catch {
@@ -58,29 +61,28 @@ export function loadFetchContentDomainPolicy(): DomainPolicy {
 	if (!parsed) return { ...DEFAULT_DOMAIN_POLICY };
 	const fetchContent = parsed.fetchContent;
 	if (fetchContent === undefined || fetchContent === null) return { ...DEFAULT_DOMAIN_POLICY };
-	if (typeof fetchContent !== "object" || Array.isArray(fetchContent)) {
+	if (!isJsonInputObject(fetchContent)) {
 		throw new Error(`fetchContent in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
 	}
-	const policy = (fetchContent as { domainPolicy?: unknown }).domainPolicy;
+	const policy = fetchContent.domainPolicy;
 	if (policy === undefined || policy === null) return { ...DEFAULT_DOMAIN_POLICY };
-	if (typeof policy !== "object" || Array.isArray(policy)) {
+	if (!isJsonInputObject(policy)) {
 		throw new Error(`fetchContent.domainPolicy in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
 	}
-	const config = policy as { allow?: unknown; deny?: unknown };
 	return {
-		allow: parseDomainEntries(config.allow, "allow"),
-		deny: parseDomainEntries(config.deny, "deny"),
+		allow: parseDomainEntries(policy.allow, "allow"),
+		deny: parseDomainEntries(policy.deny, "deny"),
 	};
 }
 
-function parseDomainEntries(value: unknown, field: "allow" | "deny"): string[] {
+function parseDomainEntries(value: JsonInputValue, field: "allow" | "deny"): string[] {
 	if (value === undefined || value === null) return [];
 	if (!Array.isArray(value)) {
 		throw new Error(`fetchContent.domainPolicy.${field} in ${WEB_SEARCH_CONFIG_PATH} must be an array of hostnames`);
 	}
 	return value.map((entry, index) => {
-		if (typeof entry !== "string") {
-			throw new Error(`fetchContent.domainPolicy.${field} in ${WEB_SEARCH_CONFIG_PATH} must contain only hostnames; entry ${index + 1} is ${typeof entry}`);
+		if (!isRuntimeString(entry)) {
+			throw new Error(`fetchContent.domainPolicy.${field} in ${WEB_SEARCH_CONFIG_PATH} must contain only hostnames; entry ${index + 1} is ${jsonInputKind(entry)}`);
 		}
 		const hostname = normalizeDomainEntry(entry);
 		if (!hostname) {
@@ -113,22 +115,21 @@ export function loadSsrfConfig(): SsrfConfig {
 			trustEnvProxy: runtimeSsrfDefaults.trustEnvProxy,
 		};
 	}
-	if (typeof ssrf !== "object" || Array.isArray(ssrf)) {
+	if (!isJsonInputObject(ssrf)) {
 		throw new Error(`ssrf in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
 	}
-	const config = ssrf as { allowRanges?: unknown; trustEnvProxy?: unknown };
-	if (config.allowRanges !== undefined && config.allowRanges !== null && !Array.isArray(config.allowRanges)) {
+	if (ssrf.allowRanges !== undefined && ssrf.allowRanges !== null && !Array.isArray(ssrf.allowRanges)) {
 		throw new Error(`ssrf.allowRanges in ${WEB_SEARCH_CONFIG_PATH} must be an array of CIDR strings`);
 	}
-	if (config.trustEnvProxy !== undefined && typeof config.trustEnvProxy !== "boolean") {
+	if (ssrf.trustEnvProxy !== undefined && !isRuntimeBoolean(ssrf.trustEnvProxy)) {
 		throw new Error(`ssrf.trustEnvProxy in ${WEB_SEARCH_CONFIG_PATH} must be a boolean`);
 	}
-	const allowRanges = Array.isArray(config.allowRanges)
-		? config.allowRanges
+	const allowRanges = Array.isArray(ssrf.allowRanges)
+		? ssrf.allowRanges
 				.map((entry, index) => {
-					if (typeof entry !== "string") {
+					if (!isRuntimeString(entry)) {
 						throw new Error(
-							`ssrf.allowRanges in ${WEB_SEARCH_CONFIG_PATH} must contain only CIDR strings; entry ${index + 1} is ${typeof entry}`,
+							`ssrf.allowRanges in ${WEB_SEARCH_CONFIG_PATH} must contain only CIDR strings; entry ${index + 1} is ${jsonInputKind(entry)}`,
 						);
 					}
 					return entry.trim();
@@ -139,7 +140,7 @@ export function loadSsrfConfig(): SsrfConfig {
 	return {
 		allowRanges,
 		trustEnvProxy:
-			typeof config.trustEnvProxy === "boolean" ? config.trustEnvProxy : runtimeSsrfDefaults.trustEnvProxy,
+			isRuntimeBoolean(ssrf.trustEnvProxy) ? ssrf.trustEnvProxy : runtimeSsrfDefaults.trustEnvProxy,
 	};
 }
 
@@ -417,15 +418,15 @@ function parseIPv6(address: string): number[] | null {
 }
 
 /** Parse `allowRanges` config value into validated CIDR rules. Throws on malformed entries. */
-function parseAllowRanges(input: unknown): ParsedCidr[] {
+function parseAllowRanges(input: JsonInputValue): ParsedCidr[] {
 	if (input === undefined || input === null) return [];
 	if (!Array.isArray(input)) {
 		throw new Error("ssrf.allowRanges must be an array of CIDR strings");
 	}
 	const rules: ParsedCidr[] = [];
 	for (const entry of input) {
-		if (typeof entry !== "string") {
-			throw new Error(`ssrf.allowRanges entries must be strings, got ${typeof entry}`);
+		if (!isRuntimeString(entry)) {
+			throw new Error(`ssrf.allowRanges entries must be strings, got ${jsonInputKind(entry)}`);
 		}
 		const rule = parseCidr(entry.trim());
 		if (!rule) {

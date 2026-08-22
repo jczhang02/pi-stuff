@@ -1,4 +1,6 @@
-function safeInlineJSON(data: unknown): string {
+import type { JsonInputValue } from "../../shared/json-value.js";
+
+function safeInlineJSON(data: JsonInputValue): string {
 	return JSON.stringify(data)
 		.replace(/</g, "\\u003c")
 		.replace(/>/g, "\\u003e")
@@ -69,7 +71,7 @@ export function generateCuratorPage(
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
 <style>
 ${CSS}
 </style>
@@ -1443,24 +1445,47 @@ main {
 `;
 
 const SCRIPT = `(function() {
+  function isRuntimeBoolean(value) {
+    return value === true || value === false;
+  }
+
+  function isRuntimeFunction(value) {
+    return value instanceof Function;
+  }
+
+  function isRuntimeNumber(value) {
+    return Number.isFinite(value)
+      || Object.is(value, Number.NaN)
+      || value === Number.POSITIVE_INFINITY
+      || value === Number.NEGATIVE_INFINITY;
+  }
+
+  function isRuntimeObject(value) {
+    return value === null || (Object(value) === value && !isRuntimeFunction(value));
+  }
+
+  function isRuntimeString(value) {
+    return Object(value) !== value && Object.prototype.toString.call(value) === "[object String]";
+  }
+
   var DATA = __INLINE_DATA__;
   var token = DATA.sessionToken;
   var timeoutSec = DATA.timeout;
   var queries = Array.isArray(DATA.queries) ? DATA.queries : [];
   var providers = ["all", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "serpdive", "kagi", "ollama", "searxng", "perplexity", "gemini", "anysearch", "xai", "brightdata", "serpbase"];
-  var availProviders = DATA.availableProviders && typeof DATA.availableProviders === "object" ? DATA.availableProviders : {};
+  var availProviders = DATA.availableProviders && isRuntimeObject(DATA.availableProviders) ? DATA.availableProviders : {};
   var workflow = "summary-review";
-  var initialDefaultProvider = typeof DATA.defaultProvider === "string" ? DATA.defaultProvider : "exa";
+  var initialDefaultProvider = isRuntimeString(DATA.defaultProvider) ? DATA.defaultProvider : "exa";
   if (providers.indexOf(initialDefaultProvider) === -1) initialDefaultProvider = "exa";
-  var initialSearchProvider = typeof DATA.searchProvider === "string" ? DATA.searchProvider.toLowerCase() : initialDefaultProvider;
+  var initialSearchProvider = isRuntimeString(DATA.searchProvider) ? DATA.searchProvider.toLowerCase() : initialDefaultProvider;
   if (initialSearchProvider !== "auto" && providers.indexOf(initialSearchProvider) === -1) initialSearchProvider = initialDefaultProvider;
 
   var summaryModels = Array.isArray(DATA.summaryModels)
     ? DATA.summaryModels.filter(function(model) {
-      return model && typeof model === "object" && typeof model.value === "string";
+      return model && isRuntimeObject(model) && isRuntimeString(model.value);
     })
     : [];
-  var defaultSummaryModel = typeof DATA.defaultSummaryModel === "string"
+  var defaultSummaryModel = isRuntimeString(DATA.defaultSummaryModel)
     ? DATA.defaultSummaryModel.trim()
     : "";
 
@@ -1543,18 +1568,23 @@ const SCRIPT = `(function() {
   var summaryGeneratingPhase = -1;
   var rewriteInFlight = false;
 
-  function escHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;");
-  }
+	  function escHtml(s) {
+	    return String(s)
+	      .replace(/&/g, "&amp;")
+	      .replace(/</g, "&lt;")
+	      .replace(/>/g, "&gt;")
+	      .replace(/"/g, "&quot;");
+	  }
 
-  function sanitizeHref(url) {
-    var value = typeof url === "string" ? url.trim() : "";
-    return /^https?:\/\//i.test(value) ? value : "#";
-  }
+	  function sanitizeHref(url) {
+	    var value = isRuntimeString(url) ? url.trim() : "";
+	    try {
+	      var parsed = new URL(value);
+	      return parsed.protocol === "http:" || parsed.protocol === "https:" ? value : "#";
+	    } catch (_err) {
+	      return "#";
+	    }
+	  }
 
   function sanitizeMarkdownHtml(html) {
     var container = document.createElement("div");
@@ -1601,8 +1631,8 @@ const SCRIPT = `(function() {
   }
 
   function extractServerError(data) {
-    if (!data || typeof data !== "object") return "";
-    if (typeof data.error === "string" && data.error.trim()) return data.error.trim();
+    if (!data || !isRuntimeObject(data)) return "";
+    if (isRuntimeString(data.error) && data.error.trim()) return data.error.trim();
     return "";
   }
 
@@ -1635,11 +1665,11 @@ const SCRIPT = `(function() {
   }
 
   function normalizeProvider(provider, fallback) {
-    if (typeof provider === "string") {
+    if (isRuntimeString(provider)) {
       var normalized = provider.toLowerCase();
       if (providers.indexOf(normalized) !== -1) return normalized;
     }
-    if (typeof fallback === "string") {
+    if (isRuntimeString(fallback)) {
       var fallbackNormalized = fallback.toLowerCase();
       if (providers.indexOf(fallbackNormalized) !== -1) return fallbackNormalized;
     }
@@ -1690,7 +1720,7 @@ const SCRIPT = `(function() {
   }
 
   function getSummaryProvider(modelValue) {
-    if (typeof modelValue !== "string") return "";
+    if (!isRuntimeString(modelValue)) return "";
     var trimmed = modelValue.trim();
     var slash = trimmed.indexOf("/");
     if (slash <= 0) return "";
@@ -1712,7 +1742,7 @@ const SCRIPT = `(function() {
 
     for (var i = 0; i < summaryModels.length; i++) {
       var model = summaryModels[i];
-      if (!model || typeof model.value !== "string") continue;
+      if (!model || !isRuntimeString(model.value)) continue;
       var value = model.value.trim();
       if (!value || seenValues[value]) continue;
       var provider = getSummaryProvider(value);
@@ -1724,7 +1754,7 @@ const SCRIPT = `(function() {
         summaryProviders.push(provider);
       }
 
-      var label = typeof model.label === "string" && model.label.trim().length > 0
+      var label = isRuntimeString(model.label) && model.label.trim().length > 0
         ? model.label.trim()
         : value;
       summaryModelsByProvider[provider].push({ value: value, label: label });
@@ -1783,7 +1813,7 @@ const SCRIPT = `(function() {
       summaryModelSelect.value = "";
     }
 
-    currentSummaryModel = typeof summaryModelSelect.value === "string"
+    currentSummaryModel = isRuntimeString(summaryModelSelect.value)
       ? summaryModelSelect.value.trim()
       : "";
   }
@@ -1825,13 +1855,13 @@ const SCRIPT = `(function() {
 
   function getSelectedSummaryModel() {
     if (!summaryModelSelect) return currentSummaryModel;
-    if (typeof summaryModelSelect.value !== "string") return currentSummaryModel;
+    if (!isRuntimeString(summaryModelSelect.value)) return currentSummaryModel;
     currentSummaryModel = summaryModelSelect.value.trim();
     return currentSummaryModel;
   }
 
   function getFeedbackText() {
-    if (!summaryFeedback || typeof summaryFeedback.value !== "string") return "";
+    if (!summaryFeedback || !isRuntimeString(summaryFeedback.value)) return "";
     return summaryFeedback.value;
   }
 
@@ -1844,7 +1874,7 @@ const SCRIPT = `(function() {
   }
 
   function markCoverage(provider, slotId) {
-    if (typeof slotId !== "number") return;
+    if (!isRuntimeNumber(slotId)) return;
     var normalized = normalizeProvider(provider, "");
     if (!normalized) return;
     getCoverageSet(normalized).add(slotId);
@@ -1937,7 +1967,7 @@ const SCRIPT = `(function() {
   }
 
   function getSummaryDraftText() {
-    if (!summaryInput || typeof summaryInput.value !== "string") return "";
+    if (!summaryInput || !isRuntimeString(summaryInput.value)) return "";
     return summaryInput.value.trim();
   }
 
@@ -2164,8 +2194,8 @@ const SCRIPT = `(function() {
 
     var bodyHtml = "";
     if (data.answer) {
-      var rendered = typeof marked !== "undefined" && marked.parse
-        ? marked.parse(data.answer, { breaks: true })
+	      var rendered = window.marked && isRuntimeFunction(window.marked.parse)
+	        ? window.marked.parse(data.answer, { breaks: true })
         : "<p>" + escHtml(data.answer) + "</p>";
       bodyHtml += '<div class="result-card-answer">' + sanitizeMarkdownHtml(rendered) + "</div>";
     }
@@ -2246,19 +2276,19 @@ const SCRIPT = `(function() {
     if (!card || !data) return;
     if (submitted || timerExpired) return;
 
-    var queryIndex = typeof data.queryIndex === "number" ? data.queryIndex : null;
+    var queryIndex = isRuntimeNumber(data.queryIndex) ? data.queryIndex : null;
     if (queryIndex !== null) {
       card.dataset.qi = String(queryIndex);
     }
 
-    var slotId = typeof slotHint === "number" ? slotHint : (queryIndex !== null ? queryIndexToSlot.get(queryIndex) : undefined);
-    if (typeof slotId !== "number" && queryIndex !== null) {
+    var slotId = isRuntimeNumber(slotHint) ? slotHint : (queryIndex !== null ? queryIndexToSlot.get(queryIndex) : undefined);
+    if (!isRuntimeNumber(slotId) && queryIndex !== null) {
       slotId = queryIndex;
     }
-    if (queryIndex !== null && typeof slotId === "number") {
+    if (queryIndex !== null && isRuntimeNumber(slotId)) {
       queryIndexToSlot.set(queryIndex, slotId);
     }
-    if (typeof slotId === "number") {
+    if (isRuntimeNumber(slotId)) {
       card.dataset.slot = String(slotId);
     }
 
@@ -2524,7 +2554,7 @@ const SCRIPT = `(function() {
           if (!data || data.ok === false) {
             throw new Error(extractServerError(data) || "Rewrite failed");
           }
-          var rewritten = typeof data.query === "string" ? data.query.trim() : "";
+          var rewritten = isRuntimeString(data.query) ? data.query.trim() : "";
           if (rewritten) {
             addSearchInput.value = rewritten;
             addSearchInput.focus();
@@ -2754,8 +2784,8 @@ const SCRIPT = `(function() {
     if (!data) return;
 
     var queryText = data.query || queries[data.queryIndex] || "";
-    var slotId = typeof data.slotIndex === "number" ? data.slotIndex : queryIndexToSlot.get(data.queryIndex);
-    if (typeof slotId !== "number") slotId = data.queryIndex;
+    var slotId = isRuntimeNumber(data.slotIndex) ? data.slotIndex : queryIndexToSlot.get(data.queryIndex);
+    if (!isRuntimeNumber(slotId)) slotId = data.queryIndex;
     var card = resultCardsEl.querySelector('.result-card[data-qi="' + data.queryIndex + '"]');
     if (!card) {
       card = createSearchingCard(queryText, data.provider);
@@ -2770,8 +2800,8 @@ const SCRIPT = `(function() {
     if (!data) return;
 
     var queryText = data.query || queries[data.queryIndex] || "";
-    var slotId = typeof data.slotIndex === "number" ? data.slotIndex : queryIndexToSlot.get(data.queryIndex);
-    if (typeof slotId !== "number") slotId = data.queryIndex;
+    var slotId = isRuntimeNumber(data.slotIndex) ? data.slotIndex : queryIndexToSlot.get(data.queryIndex);
+    if (!isRuntimeNumber(slotId)) slotId = data.queryIndex;
     var card = resultCardsEl.querySelector('.result-card[data-qi="' + data.queryIndex + '"]');
     if (!card) {
       card = createSearchingCard(queryText, data.provider);
@@ -2881,7 +2911,7 @@ const SCRIPT = `(function() {
   }
 
   function normalizeSummaryMeta(meta, edited) {
-    if (!meta || typeof meta !== "object") {
+    if (!meta || !isRuntimeObject(meta)) {
       return {
         model: null,
         durationMs: 0,
@@ -2892,18 +2922,18 @@ const SCRIPT = `(function() {
     }
 
     return {
-      model: typeof meta.model === "string" || meta.model === null ? meta.model : null,
-      durationMs: typeof meta.durationMs === "number" && Number.isFinite(meta.durationMs) && meta.durationMs >= 0 ? meta.durationMs : 0,
-      tokenEstimate: typeof meta.tokenEstimate === "number" && Number.isFinite(meta.tokenEstimate) && meta.tokenEstimate >= 0 ? meta.tokenEstimate : 0,
+      model: isRuntimeString(meta.model) || meta.model === null ? meta.model : null,
+      durationMs: isRuntimeNumber(meta.durationMs) && Number.isFinite(meta.durationMs) && meta.durationMs >= 0 ? meta.durationMs : 0,
+      tokenEstimate: isRuntimeNumber(meta.tokenEstimate) && Number.isFinite(meta.tokenEstimate) && meta.tokenEstimate >= 0 ? meta.tokenEstimate : 0,
       fallbackUsed: meta.fallbackUsed === true,
-      fallbackReason: typeof meta.fallbackReason === "string" ? meta.fallbackReason : undefined,
+      fallbackReason: isRuntimeString(meta.fallbackReason) ? meta.fallbackReason : undefined,
       phase: meta.phase === "summary-model" || meta.phase === "deterministic-fallback" ? meta.phase : undefined,
       edited: !!edited,
     };
   }
 
   function isSummaryModelSelectionError(message) {
-    if (typeof message !== "string") return false;
+    if (!isRuntimeString(message)) return false;
     return message.indexOf("Invalid summary model") !== -1
       || message.indexOf("Summary model not found") !== -1
       || message.indexOf("No API key available for summary model") !== -1
@@ -2972,7 +3002,7 @@ const SCRIPT = `(function() {
     updateStageUI();
 
     var requestId = ++summaryRequestSeq;
-    var feedbackText = typeof feedback === "string" ? feedback.trim() : "";
+    var feedbackText = isRuntimeString(feedback) ? feedback.trim() : "";
     var summarizePayload = { selected: indices };
     if (selectedSummaryModel.length > 0) {
       summarizePayload.model = selectedSummaryModel;
@@ -3017,7 +3047,7 @@ const SCRIPT = `(function() {
       .then(function(data) {
         if (requestId !== summaryRequestSeq) return;
 
-        var summaryText = typeof data.summary === "string" ? data.summary.trim() : "";
+        var summaryText = isRuntimeString(data.summary) ? data.summary.trim() : "";
         if (!summaryText) {
           throw new Error("Summary response was empty");
         }
@@ -3176,8 +3206,8 @@ const SCRIPT = `(function() {
   function openPreviewModal() {
     var draft = getSummaryDraftText();
     if (!draft || !previewModal || !previewModalBody) return;
-    var rendered = typeof marked !== "undefined" && marked.parse
-      ? marked.parse(draft, { breaks: true })
+	    var rendered = window.marked && isRuntimeFunction(window.marked.parse)
+	      ? window.marked.parse(draft, { breaks: true })
       : "<pre>" + escHtml(draft) + "</pre>";
     previewModalBody.innerHTML = sanitizeMarkdownHtml(rendered);
     if (previewModalModel) {
@@ -3338,7 +3368,7 @@ const SCRIPT = `(function() {
 
   if (summaryInput) {
     summaryInput.addEventListener("input", function() {
-      if (!summaryMeta || typeof summaryMeta !== "object") {
+      if (!summaryMeta || !isRuntimeObject(summaryMeta)) {
         summaryMeta = normalizeSummaryMeta(null, true);
       }
       summaryMeta.edited = true;
@@ -3350,7 +3380,7 @@ const SCRIPT = `(function() {
 
   if (summaryProviderSelect) {
     summaryProviderSelect.addEventListener("change", function() {
-      var provider = typeof summaryProviderSelect.value === "string" ? summaryProviderSelect.value : "";
+      var provider = isRuntimeString(summaryProviderSelect.value) ? summaryProviderSelect.value : "";
       if (!provider || provider === currentSummaryProvider) return;
       setSummaryProvider(provider, "");
       clearError();
@@ -3361,7 +3391,7 @@ const SCRIPT = `(function() {
 
   if (summaryModelSelect) {
     summaryModelSelect.addEventListener("change", function() {
-      currentSummaryModel = typeof summaryModelSelect.value === "string"
+      currentSummaryModel = isRuntimeString(summaryModelSelect.value)
         ? summaryModelSelect.value.trim()
         : "";
       clearError();
@@ -3373,8 +3403,8 @@ const SCRIPT = `(function() {
     if (!target || !target.tagName) return false;
     var tag = target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || tag === "A") return true;
-    if (typeof target.isContentEditable === "boolean" && target.isContentEditable) return true;
-    if (typeof target.closest === "function") {
+    if (isRuntimeBoolean(target.isContentEditable) && target.isContentEditable) return true;
+    if (isRuntimeFunction(target.closest)) {
       return !!target.closest('[contenteditable=""], [contenteditable="true"]');
     }
     return false;
@@ -3435,7 +3465,7 @@ const SCRIPT = `(function() {
       selectable.forEach(function(cb) { if (!cb.checked) allChecked = false; });
       selectable.forEach(function(cb) {
         cb.checked = !allChecked;
-        var parentCard = typeof cb.closest === "function" ? cb.closest(".result-card") : null;
+        var parentCard = isRuntimeFunction(cb.closest) ? cb.closest(".result-card") : null;
         if (parentCard) parentCard.classList.toggle("checked", cb.checked);
       });
       updateStageUI();
@@ -3456,7 +3486,7 @@ const SCRIPT = `(function() {
 
   var lastResizeHeight = 0;
   function checkContentHeight() {
-    if (!window.glimpse || typeof window.glimpse.send !== "function") return;
+    if (!window.glimpse || !isRuntimeFunction(window.glimpse.send)) return;
     var h = document.documentElement.scrollHeight || document.body.scrollHeight;
     if (h > 0 && Math.abs(h - lastResizeHeight) > 30) {
       lastResizeHeight = h;

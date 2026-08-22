@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { complete, type Api, type Message, type Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.ts";
@@ -18,6 +21,16 @@ export interface SummaryMeta {
 	fallbackReason?: string;
 	phase?: "summary-model" | "deterministic-fallback";
 	edited?: boolean;
+}
+
+export interface SummaryResult {
+	summary: string;
+	meta: SummaryMeta;
+}
+
+interface ModelSelector {
+	provider: string;
+	id: string;
 }
 
 export type SummaryGenerationContext = Pick<ExtensionContext, "model" | "modelRegistry" | "cwd" | "isProjectTrusted">;
@@ -162,7 +175,7 @@ function buildDeterministicSummaryLines(results: QueryResultData[]): string[] {
 	return lines;
 }
 
-export function buildDeterministicSummary(results: QueryResultData[]): { summary: string; meta: SummaryMeta } {
+export function buildDeterministicSummary(results: QueryResultData[]): SummaryResult {
 	const summary = buildDeterministicSummaryLines(results).join("\n").trim();
 	const nonEmptySummary = summary.length > 0
 		? summary
@@ -182,7 +195,7 @@ export function buildDeterministicSummary(results: QueryResultData[]): { summary
 	};
 }
 
-function parseModelSelector(value: string): { provider: string; id: string } {
+function parseModelSelector(value: string): ModelSelector {
 	const slashIndex = value.indexOf("/");
 	if (slashIndex <= 0 || slashIndex >= value.length - 1) {
 		throw new Error(`Invalid summary model: ${value}. Use provider/model-id.`);
@@ -199,7 +212,7 @@ async function resolveSummaryModelCandidates(
 ): Promise<{ candidates: Array<{ model: Model<Api>; apiKey: string; headers?: Record<string, string> }>; errors: string[] }> {
 	const enabledModelPatterns = loadEnabledModelPatterns(ctx);
 	const specs: Array<{ provider: string; id: string }> = [];
-	const normalizedOverride = typeof modelOverride === "string" ? modelOverride.trim() : "";
+	const normalizedOverride = isRuntimeString(modelOverride) ? modelOverride.trim() : "";
 	if (normalizedOverride.length > 0) specs.push(parseModelSelector(normalizedOverride));
 	specs.push(...PREFERRED_SUMMARY_MODELS);
 
@@ -234,7 +247,7 @@ function buildFallbackSummary(
 	results: QueryResultData[],
 	fallbackReason: string,
 	durationMs = 0,
-): { summary: string; meta: SummaryMeta } {
+): SummaryResult {
 	const deterministic = buildDeterministicSummary(results);
 	return {
 		summary: deterministic.summary,
@@ -246,25 +259,24 @@ function buildFallbackSummary(
 	};
 }
 
-function isAbortError(err: unknown): boolean {
-	if (!err || typeof err !== "object") return false;
-	const name = (err as { name?: unknown }).name;
-	const message = (err as { message?: unknown }).message;
-	return name === "AbortError" || (typeof message === "string" && message.toLowerCase().includes("abort"));
+function isAbortError(err: JsonInputValue): boolean {
+	if (err instanceof Error) return err.name === "AbortError" || err.message.toLowerCase().includes("abort");
+	if (!isJsonInputObject(err)) return false;
+	const name = err.name;
+	const message = err.message;
+	return name === "AbortError" || (isRuntimeString(message) && message.toLowerCase().includes("abort"));
 }
 
-function getTextFromContentPart(part: unknown): string {
-	if (!part || typeof part !== "object") return "";
-	const value = part as Record<string, unknown>;
-	if (typeof value.text === "string") return value.text;
-	if (typeof value.refusal === "string") return value.refusal;
+type CompletionContentPart = Awaited<ReturnType<typeof complete>>["content"][number];
+
+function getTextFromContentPart(part: CompletionContentPart): string {
+	if ("text" in part && isRuntimeString(part.text)) return part.text;
+	if ("refusal" in part && isRuntimeString(part.refusal)) return part.refusal;
 	return "";
 }
 
-function getContentPartType(part: unknown): string {
-	if (!part || typeof part !== "object") return "unknown";
-	const value = part as Record<string, unknown>;
-	return typeof value.type === "string" ? value.type : "unknown";
+function getContentPartType(part: CompletionContentPart): string {
+	return part.type;
 }
 
 export async function generateSummaryDraft(
@@ -309,14 +321,16 @@ export async function generateSummaryDraft(
 		// A provider may ignore AbortSignal and never settle; observe it before racing so
 		// its eventual rejection cannot become an unhandled promise rejection.
 		void operation.then(() => undefined, () => undefined);
-		const contenders: Promise<unknown>[] = [operation, deadlinePromise];
+		const operationResult = operation.then(value => ({ kind: "operation" as const, value }));
+		const deadlineResult = deadlinePromise.then(() => ({ kind: "deadline" as const }));
+		const contenders = [operationResult, deadlineResult];
 		if (callerAbortPromise) contenders.push(callerAbortPromise);
 		const result = await Promise.race(contenders);
-		if (result === deadlineMarker) {
+		if (result.kind === "deadline") {
 			if (signal?.aborted) throw new Error("Aborted");
 			throw deadlineMarker;
 		}
-		return result as T;
+		return result.value;
 	}
 
 	try {

@@ -1,3 +1,5 @@
+import { isJsonInputObject, parseJsonObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 import { existsSync, readFileSync, rmSync, statSync, readdirSync, openSync, readSync, closeSync, realpathSync } from "node:fs";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
@@ -55,12 +57,12 @@ const cloneCache = new Map<string, CachedClone>();
 
 let cachedConfig: GitHubCloneConfig | null = null;
 
-function normalizeEnabled(value: unknown, fallback: boolean): boolean {
-	return typeof value === "boolean" ? value : fallback;
+function normalizeEnabled(value: JsonInputValue, fallback: boolean): boolean {
+	return isRuntimeBoolean(value) ? value : fallback;
 }
 
-function normalizePositiveNumber(value: unknown, fallback: number): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+function normalizePositiveNumber(value: JsonInputValue, fallback: number): number {
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return fallback;
 	return value > 0 ? value : fallback;
 }
 
@@ -77,8 +79,8 @@ function expandPath(value: string): string {
 	return expanded;
 }
 
-function normalizeClonePath(value: unknown, fallback: string): string {
-	if (typeof value !== "string") return fallback;
+function normalizeClonePath(value: JsonInputValue, fallback: string): string {
+	if (!isRuntimeString(value)) return fallback;
 	const normalized = value.trim();
 	if (normalized.length === 0) return fallback;
 	return expandPath(normalized);
@@ -99,20 +101,21 @@ function loadGitHubConfig(): GitHubCloneConfig {
 	}
 
 	const rawText = readWebConfigText();
-	let raw: { githubClone?: { enabled?: unknown; maxRepoSizeMB?: unknown; cloneTimeoutSeconds?: unknown; clonePath?: unknown } };
+	let raw;
 	try {
-		raw = JSON.parse(rawText) as { githubClone?: { enabled?: unknown; maxRepoSizeMB?: unknown; cloneTimeoutSeconds?: unknown; clonePath?: unknown } };
+		raw = parseJsonObject(rawText);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
 
-	const gc = raw.githubClone ?? {};
+	const gc = raw.githubClone;
+	const githubClone = isJsonInputObject(gc) ? gc : undefined;
 	cachedConfig = {
-		enabled: normalizeEnabled(gc.enabled, defaults.enabled),
-		maxRepoSizeMB: normalizePositiveNumber(gc.maxRepoSizeMB, defaults.maxRepoSizeMB),
-		cloneTimeoutSeconds: normalizePositiveNumber(gc.cloneTimeoutSeconds, defaults.cloneTimeoutSeconds),
-		clonePath: normalizeClonePath(gc.clonePath, defaults.clonePath),
+		enabled: normalizeEnabled(githubClone?.enabled, defaults.enabled),
+		maxRepoSizeMB: normalizePositiveNumber(githubClone?.maxRepoSizeMB, defaults.maxRepoSizeMB),
+		cloneTimeoutSeconds: normalizePositiveNumber(githubClone?.cloneTimeoutSeconds, defaults.cloneTimeoutSeconds),
+		clonePath: normalizeClonePath(githubClone?.clonePath, defaults.clonePath),
 	};
 	return cachedConfig;
 }
@@ -173,7 +176,7 @@ export function parseGitHubUrl(url: string): GitHubUrlInfo | null {
 		ref,
 		refIsFullSha,
 		path,
-		type: action as "blob" | "tree",
+		type: action,
 	};
 }
 

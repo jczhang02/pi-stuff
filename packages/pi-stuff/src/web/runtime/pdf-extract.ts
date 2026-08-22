@@ -1,3 +1,6 @@
+import { isJsonInputObject, parseJsonValue, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeFunction } from "../../shared/runtime-type.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 /**
  * PDF Content Extractor
@@ -50,20 +53,18 @@ export function loadPDFConfig(): PDFConfig {
   }
 
   const rawText = readWebConfigText();
-  let raw: unknown;
+  let raw: JsonInputValue;
   try {
-    raw = JSON.parse(rawText) as unknown;
+    raw = parseJsonValue(rawText);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
   }
 
-  const root = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-  const pdf = root.pdf && typeof root.pdf === "object"
-    ? root.pdf as Record<string, unknown>
-    : {};
+  const root = isJsonInputObject(raw) ? raw : {};
+  const pdf = isJsonInputObject(root.pdf) ? root.pdf : {};
   const configured = pdf.maxSizeMB;
-  const normalized = typeof configured === "number" && Number.isFinite(configured) && configured > 0
+  const normalized = isRuntimeNumber(configured) && Number.isFinite(configured) && configured > 0
     ? Math.min(configured, MAX_PDF_MAX_SIZE_MB)
     : DEFAULT_PDF_MAX_SIZE_MB;
 
@@ -72,7 +73,7 @@ export function loadPDFConfig(): PDFConfig {
 }
 
 async function getUnpdf() {
-  if (typeof (Promise as PromiseConstructor & { try?: unknown }).try !== "function") {
+  if (!("try" in Promise) || !isRuntimeFunction(Promise.try)) {
     const { default: promiseTry } = await import("promise.try");
     promiseTry.shim();
   }
@@ -81,9 +82,12 @@ async function getUnpdf() {
     import("unpdf"),
     import("unpdf/pdfjs"),
   ]);
-  const { VerbosityLevel } = pdfjs as typeof pdfjs & { VerbosityLevel: { ERRORS: number } };
+  const verbosityLevel = "VerbosityLevel" in pdfjs ? pdfjs.VerbosityLevel : undefined;
+  if (!isJsonInputObject(verbosityLevel) || !isRuntimeNumber(verbosityLevel.ERRORS)) {
+    throw new Error("unpdf did not expose its expected verbosity levels");
+  }
 
-  return { getDocumentProxy: unpdf.getDocumentProxy, VerbosityLevel };
+  return { getDocumentProxy: unpdf.getDocumentProxy, VerbosityLevel: verbosityLevel };
 }
 
 /**
@@ -109,12 +113,13 @@ export async function extractPDFToMarkdown(
 
   try {
     if (isGeminiApiAvailable()) {
-      const markdownBody = await extractPDFViaGemini(buffer, {
+      const geminiOptions = {
         maxPages: safeMaxPages,
         title: urlTitle,
-        ...(signal ? { signal } : {}),
-        ...(geminiTimeoutMs !== undefined ? { timeoutMs: geminiTimeoutMs } : {}),
-      });
+      };
+      if (signal) Object.assign(geminiOptions, { signal });
+      if (geminiTimeoutMs !== undefined) Object.assign(geminiOptions, { timeoutMs: geminiTimeoutMs });
+      const markdownBody = await extractPDFViaGemini(buffer, geminiOptions);
       return writeMarkdownResult({
         markdownBody,
         title: urlTitle,
@@ -133,12 +138,10 @@ export async function extractPDFToMarkdown(
     verbosity: VerbosityLevel.ERRORS,
   });
   const metadata = await pdf.getMetadata();
-  const metadataInfo = metadata.info && typeof metadata.info === "object"
-    ? metadata.info as Record<string, unknown>
-    : null;
+  const metadataInfo = isJsonInputObject(metadata.info) ? metadata.info : null;
 
-  const metaTitle = typeof metadataInfo?.Title === "string" ? metadataInfo.Title : undefined;
-  const metaAuthor = typeof metadataInfo?.Author === "string" ? metadataInfo.Author : undefined;
+  const metaTitle = isRuntimeString(metadataInfo?.Title) ? metadataInfo.Title : undefined;
+  const metaAuthor = isRuntimeString(metadataInfo?.Author) ? metadataInfo.Author : undefined;
   const title = metaTitle?.trim() || urlTitle;
   const pagesToExtract = Math.min(pdf.numPages, safeMaxPages);
   const truncated = pdf.numPages > safeMaxPages;
@@ -148,9 +151,8 @@ export async function extractPDFToMarkdown(
     const page = await pdf.getPage(i);
     const textContent = await page.getTextContent();
     const pageText = textContent.items
-      .map((item: unknown) => {
-        const textItem = item as { str?: string };
-        return textItem.str || "";
+      .map((item: JsonInputValue) => {
+        return isJsonInputObject(item) && isRuntimeString(item.str) ? item.str : "";
       })
       .join(" ")
       .replace(/\s+/g, " ")
@@ -232,7 +234,7 @@ function countPageMarkers(markdown: string): number {
   return [...markdown.matchAll(PAGE_MARKER_PATTERN)].length;
 }
 
-function shouldRethrowGeminiError(err: unknown, signal?: AbortSignal): boolean {
+function shouldRethrowGeminiError(err: JsonInputValue, signal?: AbortSignal): boolean {
   if (signal?.aborted) return true;
   if (err instanceof CredentialResolutionError) return true;
   const message = err instanceof Error ? err.message : String(err);

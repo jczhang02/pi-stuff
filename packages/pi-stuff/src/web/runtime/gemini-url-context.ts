@@ -1,3 +1,5 @@
+import { isJsonInputObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { activityMonitor } from "./activity.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
 import { getApiKey, getVersionedApiBase, fetchGeminiApi, isGatewayConfigured, DEFAULT_MODEL } from "./gemini-api.ts";
@@ -10,7 +12,7 @@ Do not summarize — extract the full content.
 
 URL: `;
 
-function shouldRethrow(err: unknown): boolean {
+function shouldRethrow(err: JsonInputValue): boolean {
 	const message = err instanceof Error ? err.message : String(err);
 	return err instanceof CredentialResolutionError || message.startsWith("Failed to parse ");
 }
@@ -47,19 +49,30 @@ export async function extractWithUrlContext(
 			return null;
 		}
 
-		const data = await res.json() as UrlContextResponse;
+		const data = await res.json();
+		if (!isJsonInputObject(data)) throw new Error("Gemini URL context returned an invalid response");
 		activityMonitor.logComplete(activityId, res.status);
 
-		const metadata = data.candidates?.[0]?.url_context_metadata;
-		if (metadata?.url_metadata?.length) {
-			const status = metadata.url_metadata[0].url_retrieval_status;
+		const candidate = Array.isArray(data.candidates) && isJsonInputObject(data.candidates[0])
+			? data.candidates[0]
+			: undefined;
+		const metadata = isJsonInputObject(candidate?.url_context_metadata)
+			? candidate.url_context_metadata
+			: undefined;
+		const urlMetadata = Array.isArray(metadata?.url_metadata) ? metadata.url_metadata : [];
+		if (isJsonInputObject(urlMetadata[0])) {
+			const status = urlMetadata[0].url_retrieval_status;
 			if (status === "URL_RETRIEVAL_STATUS_UNSAFE" || status === "URL_RETRIEVAL_STATUS_ERROR") {
 				return null;
 			}
 		}
 
-		const content = data.candidates?.[0]?.content?.parts
-			?.map(p => p.text).filter(Boolean).join("\n") ?? "";
+		const candidateContent = isJsonInputObject(candidate?.content) ? candidate.content : undefined;
+		const parts = Array.isArray(candidateContent?.parts) ? candidateContent.parts : [];
+		const content = parts
+			.map(part => isJsonInputObject(part) && isRuntimeString(part.text) ? part.text : "")
+			.filter(Boolean)
+			.join("\n");
 
 		if (!content || content.length < 50) return null;
 
@@ -112,16 +125,4 @@ export async function extractWithGeminiWeb(
 
 function extractTitleFromContent(text: string, url: string): string {
 	return extractHeadingTitle(text) ?? (new URL(url).pathname.split("/").pop() || url);
-}
-
-interface UrlContextResponse {
-	candidates?: Array<{
-		content?: { parts?: Array<{ text?: string }> };
-		url_context_metadata?: {
-			url_metadata?: Array<{
-				retrieved_url?: string;
-				url_retrieval_status?: string;
-			}>;
-		};
-	}>;
 }

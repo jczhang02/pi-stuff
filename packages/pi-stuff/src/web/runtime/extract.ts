@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { Readability } from "@mozilla/readability";
 import { resizeImage } from "@earendil-works/pi-coding-agent";
 import { parseHTML } from "linkedom";
@@ -37,15 +40,15 @@ export function loadSsrfAllowRanges(): string[] {
 	return loadSsrfConfig().allowRanges;
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function isConfigParseError(err: unknown): boolean {
+function isConfigParseError(err: JsonInputValue): boolean {
 	return errorMessage(err).startsWith("Failed to parse ");
 }
 
-function isAbortError(err: unknown): boolean {
+function isAbortError(err: JsonInputValue): boolean {
 	return errorMessage(err).toLowerCase().includes("abort");
 }
 
@@ -119,7 +122,7 @@ async function extractWithJinaReader(
 			allowRanges: ssrf.allowRanges,
 			trustEnvProxy: ssrf.trustEnvProxy,
 			domainPolicy,
-			...(lookup ? { lookup } : {}),
+			lookup,
 		});
 		const res = await fetch(jinaUrl, {
 			headers: {
@@ -215,14 +218,15 @@ function buildFrameResult(
 		const msg = error ?? "Frame extraction failed";
 		return { url, title: `Frames ${label} (0/${requestedCount})`, content: msg, error: msg };
 	}
-	return {
+	const result: ExtractedContent = {
 		url,
 		title: `Frames ${label} (${frames.length}/${requestedCount})`,
 		content: `${frames.length} frames extracted from ${label}`,
 		error: null,
 		frames,
-		...(duration !== undefined ? { duration } : {}),
 	};
+	if (duration !== undefined) result.duration = duration;
+	return result;
 }
 
 async function extractLocalFrames(
@@ -238,7 +242,12 @@ async function extractLocalFrames(
 	return { frames, error: frames.length === 0 && firstError ? firstError.error : null };
 }
 
-function safeVideoInfo(url: string): { info: ReturnType<typeof isVideoFile>; error?: string } {
+interface VideoInfoResult {
+	info: ReturnType<typeof isVideoFile>;
+	error?: string;
+}
+
+function safeVideoInfo(url: string): VideoInfoResult {
 	try {
 		return { info: isVideoFile(url) };
 	} catch (err) {
@@ -269,7 +278,7 @@ export async function extractContent(
 				allowRanges: ssrf.allowRanges,
 				trustEnvProxy: ssrf.trustEnvProxy,
 				domainPolicy,
-				...(options?.lookup ? { lookup: options.lookup } : {}),
+				lookup: options?.lookup,
 			});
 		} catch (err) {
 			return { url, title: "", content: "", error: errorMessage(err) };
@@ -305,7 +314,7 @@ export async function extractContent(
 		}
 		if (localVideo.info) {
 			const durationResult = await getLocalVideoDuration(localVideo.info.absolutePath, signal);
-			if (typeof durationResult !== "number") {
+			if (!isRuntimeNumber(durationResult)) {
 				return { url, title: "Frames", content: durationResult.error, error: durationResult.error };
 			}
 			const dur = Math.floor(durationResult);
@@ -484,7 +493,8 @@ export async function extractContent(
 
 	if (signal?.aborted) return abortedResult(url);
 	if (!httpResult.error) return httpResult;
-	if (NON_RECOVERABLE_ERRORS.some(prefix => httpResult.error!.startsWith(prefix))) return httpResult;
+	const httpError = httpResult.error;
+	if (NON_RECOVERABLE_ERRORS.some(prefix => httpError.startsWith(prefix))) return httpResult;
 
 	let firecrawlError: string | null = null;
 	try {
@@ -492,7 +502,7 @@ export async function extractContent(
 			const ssrf = loadSsrfConfig();
 			const firecrawlResult = await extractWithFirecrawl(url, signal, {
 				timeoutMs: options?.timeoutMs,
-				...(options?.lookup ? { lookup: options.lookup } : {}),
+				lookup: options?.lookup,
 				ssrf,
 			});
 			if (firecrawlResult) return withDeclaredLinks(firecrawlResult);
@@ -559,7 +569,7 @@ export async function extractContent(
 			const ssrf = loadSsrfConfig();
 			const kagiResult = await extractWithKagi(url, signal, {
 				timeoutMs: options?.timeoutMs,
-				...(options?.lookup ? { lookup: options.lookup } : {}),
+				lookup: options?.lookup,
 				ssrf,
 			});
 			if (kagiResult) return withDeclaredLinks(kagiResult);
@@ -579,7 +589,7 @@ export async function extractContent(
 			const ssrf = loadSsrfConfig();
 			const ollamaResult = await extractWithOllama(url, signal, {
 				timeoutMs: options?.timeoutMs,
-				...(options?.lookup ? { lookup: options.lookup } : {}),
+				lookup: options?.lookup,
 				ssrf,
 			});
 			if (ollamaResult) return withDeclaredLinks(ollamaResult);
@@ -614,7 +624,7 @@ export async function extractContent(
 			const ssrf = loadSsrfConfig();
 			const brightdataResult = await extractWithBrightDataUnlocker(url, signal, {
 				timeoutMs: options?.timeoutMs,
-				...(options?.lookup ? { lookup: options.lookup } : {}),
+				lookup: options?.lookup,
 				ssrf,
 			});
 			if (brightdataResult) return withDeclaredLinks(brightdataResult);
@@ -701,7 +711,7 @@ async function readTextResponseWithLimit(response: Response, maxBytes: number): 
 	const buffer = await readResponseBufferWithLimit(response, maxBytes, () => responseSizeLimitError(maxBytes));
 	const charset = response.headers.get("content-type")?.match(/charset\s*=\s*["']?([^;"'\s]+)/i)?.[1];
 	try {
-		return new TextDecoder((charset || "utf-8") as ConstructorParameters<typeof TextDecoder>[0]).decode(buffer);
+		return new TextDecoder(charset || "utf-8").decode(buffer);
 	} catch {
 		return new TextDecoder("utf-8").decode(buffer);
 	}
@@ -804,7 +814,7 @@ async function extractViaHttp(
 				allowRanges: ssrf.allowRanges,
 				trustEnvProxy: ssrf.trustEnvProxy,
 				domainPolicy,
-				...(options?.lookup ? { lookup: options.lookup } : {}),
+				lookup: options?.lookup,
 			},
 		);
 
@@ -924,11 +934,11 @@ async function extractViaHttp(
 		const { document } = parseHTML(text);
 		const documentTitle = document.title?.trim() ?? "";
 		const declaredLinks = discoverDeclaredWebLinks(
-			document as unknown as Document,
+			document,
 			response.headers.get("link"),
 			response.url || url,
 		);
-		const reader = new Readability(document as unknown as Document);
+		const reader = new Readability(document);
 		const article = reader.parse();
 
 		if (!article) {
@@ -959,7 +969,7 @@ async function extractViaHttp(
 			};
 		}
 
-		if (typeof article.content !== "string") {
+		if (!isRuntimeString(article.content)) {
 			throw new Error("Readability returned invalid article content");
 		}
 		const markdown = turndown.turndown(article.content);

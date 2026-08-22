@@ -1,3 +1,4 @@
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { boundTerminalLine } from "../../tool-display/index.js";
 
 /**
@@ -70,7 +71,7 @@ export function buildSearchErrorPlan(details: SearchErrorDetails | undefined | n
 
 	const headline = boundTerminalLine(details.error ?? "Search cancelled.", 300);
 	const queries = details.cancelledQueries ?? [];
-	const queryCount = typeof details.queryCount === "number" && details.queryCount > 0
+	const queryCount = isRuntimeNumber(details.queryCount) && details.queryCount > 0
 		? details.queryCount
 		: queries.length;
 	const done = queries.length;
@@ -104,7 +105,7 @@ export function buildSearchErrorPlan(details: SearchErrorDetails | undefined | n
 				? "connected"
 				: "never connected";
 		diag.push(`browser         : ${browserLabel}`);
-		if (typeof details.lastHeartbeatAgeMs === "number" && Number.isFinite(details.lastHeartbeatAgeMs)) {
+		if (isRuntimeNumber(details.lastHeartbeatAgeMs) && Number.isFinite(details.lastHeartbeatAgeMs)) {
 			diag.push(`last heartbeat  : ${Math.round(details.lastHeartbeatAgeMs / 1000)}s ago`);
 		}
 		if (queryCount > 0) {

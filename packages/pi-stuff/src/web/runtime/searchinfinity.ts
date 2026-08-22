@@ -1,3 +1,7 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, parseJsonObject, type JsonInputObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -10,41 +14,8 @@ const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 // API Key authenticated requests time out server-side after 30 seconds.
 const SEARCH_TIMEOUT_MS = 30_000;
 
-interface WebSearchConfig {
-	searchinfinityApiKey?: unknown;
-}
-
-interface SearchinfinityWebResult {
-	Id?: string;
-	SortId?: number;
-	Title?: string | null;
-	SiteName?: string | null;
-	Url?: string | null;
-	Snippet?: string | null;
-	Summary?: string | null;
-	PublishTime?: string | null;
-	LogoUrl?: string | null;
-}
-
-interface SearchinfinitySearchResponse {
-	ResponseMetadata?: {
-		RequestId?: string;
-		Error?: {
-			CodeN?: number;
-			Code?: string;
-			Message?: string;
-		} | null;
-	};
-	Result?: {
-		ResultCount?: number;
-		WebResults?: SearchinfinityWebResult[];
-		SearchContext?: {
-			OriginQuery?: string;
-			SearchType?: string;
-		};
-		TimeCost?: number;
-		LogId?: string;
-	} | null;
+interface WebSearchConfig extends JsonInputObject {
+	searchinfinityApiKey?: JsonInputValue;
 }
 
 interface SearchinfinitySearchOptions extends SearchOptions {
@@ -60,17 +31,17 @@ function loadConfig(): WebSearchConfig {
 	}
 
 	const raw = readWebConfigText();
-	let parsed: unknown;
+	let parsed: JsonInputValue;
 	try {
 		parsed = JSON.parse(raw);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+	if (!isJsonInputObject(parsed)) {
 		throw new Error(`Invalid config in ${CONFIG_PATH}: expected a JSON object`);
 	}
-	cachedConfig = parsed as WebSearchConfig;
+	cachedConfig = parsed;
 	return cachedConfig;
 }
 
@@ -100,7 +71,7 @@ export function isSearchinfinityAvailable(): boolean {
 	});
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
@@ -110,7 +81,7 @@ function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): Abor
 }
 
 function normalizeNumResults(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
@@ -137,7 +108,7 @@ function mapRecencyFilter(recency: SearchOptions["recencyFilter"]): string | und
 	return undefined;
 }
 
-function buildSearchBody(query: string, options: SearchinfinitySearchOptions): Record<string, unknown> {
+function buildSearchBody(query: string, options: SearchinfinitySearchOptions): JsonInputObject {
 	const includeSites: string[] = [];
 	const blockHosts: string[] = [];
 	for (const raw of options.domainFilter ?? []) {
@@ -146,17 +117,18 @@ function buildSearchBody(query: string, options: SearchinfinitySearchOptions): R
 		const target = raw.trim().startsWith("-") ? blockHosts : includeSites;
 		if (target.length < 5 && !target.includes(domain)) target.push(domain);
 	}
-	const filter: Record<string, unknown> = {};
+	const filter: JsonInputObject = {};
 	if (includeSites.length > 0) filter.Sites = includeSites.join("|");
 	if (blockHosts.length > 0) filter.BlockHosts = blockHosts.join("|");
 
 	const timeRange = mapRecencyFilter(options.recencyFilter);
-	return {
+	const body: JsonInputObject = {
 		Query: query,
 		Count: normalizeNumResults(options.numResults),
-		...(Object.keys(filter).length > 0 ? { Filter: filter } : {}),
-		...(timeRange ? { TimeRange: timeRange } : {}),
 	};
+	if (Object.keys(filter).length > 0) body.Filter = filter;
+	if (timeRange) body.TimeRange = timeRange;
+	return body;
 }
 
 // Map Searchinfinity business error codes to the closest HTTP semantics so
@@ -174,9 +146,9 @@ function businessErrorStatus(codeN: number | undefined, code: string, message: s
 
 async function searchinfinityJsonRequest(
 	apiKey: string,
-	body: Record<string, unknown>,
+	body: JsonInputObject,
 	signal?: AbortSignal,
-): Promise<SearchinfinitySearchResponse> {
+): Promise<JsonInputObject> {
 	let response: Response;
 	try {
 		response = await fetch(SEARCHINFINITY_SEARCH_URL, {
@@ -201,18 +173,20 @@ async function searchinfinityJsonRequest(
 	if (!response.ok) {
 		throw new Error(`Searchinfinity Search API error ${response.status}: ${redactCredential(raw, apiKey).slice(0, 300)}`);
 	}
-	let data: SearchinfinitySearchResponse;
+	let data;
 	try {
-		data = JSON.parse(raw) as SearchinfinitySearchResponse;
+		data = parseJsonObject(raw);
 	} catch (err) {
 		throw new Error(`Searchinfinity Search API returned invalid JSON: ${errorMessage(err)}`);
 	}
-	const businessError = data.ResponseMetadata?.Error;
+	const responseMetadata = isJsonInputObject(data.ResponseMetadata) ? data.ResponseMetadata : undefined;
+	const businessError = isJsonInputObject(responseMetadata?.Error) ? responseMetadata.Error : undefined;
 	if (businessError && (businessError.Code || businessError.Message)) {
-		const code = typeof businessError.Code === "string" && businessError.Code ? businessError.Code : "unknown";
-		const message = typeof businessError.Message === "string" && businessError.Message ? businessError.Message : "unknown error";
-		const status = businessErrorStatus(businessError.CodeN, code, message);
-		const codeLabel = typeof businessError.CodeN === "number" ? `${businessError.CodeN} ${code}` : code;
+		const code = isRuntimeString(businessError.Code) && businessError.Code ? businessError.Code : "unknown";
+		const message = isRuntimeString(businessError.Message) && businessError.Message ? businessError.Message : "unknown error";
+		const codeN = isRuntimeNumber(businessError.CodeN) ? businessError.CodeN : undefined;
+		const status = businessErrorStatus(codeN, code, message);
+		const codeLabel = isRuntimeNumber(businessError.CodeN) ? `${businessError.CodeN} ${code}` : code;
 		throw new Error(
 			`Searchinfinity Search API error ${status ?? "unknown"}: ${message} (code ${codeLabel})`,
 		);
@@ -220,17 +194,17 @@ async function searchinfinityJsonRequest(
 	return data;
 }
 
-function mapSearchResults(results: SearchinfinityWebResult[] | undefined): SearchResponse["results"] {
+function mapSearchResults(results: JsonInputValue): SearchResponse["results"] {
 	if (!Array.isArray(results)) {
 		throw new Error("Searchinfinity Search API returned an unexpected response shape");
 	}
 	return results.flatMap((item) => {
-		if (!item || typeof item.Url !== "string" || item.Url.trim().length === 0) return [];
+		if (!isJsonInputObject(item) || !isRuntimeString(item.Url) || item.Url.trim().length === 0) return [];
 		const url = item.Url.trim();
-		const summary = typeof item.Summary === "string" ? item.Summary.replace(/\s+/g, " ").trim() : "";
-		const snippet = typeof item.Snippet === "string" ? item.Snippet.replace(/\s+/g, " ").trim() : "";
+		const summary = isRuntimeString(item.Summary) ? item.Summary.replace(/\s+/g, " ").trim() : "";
+		const snippet = isRuntimeString(item.Snippet) ? item.Snippet.replace(/\s+/g, " ").trim() : "";
 		return [{
-			title: typeof item.Title === "string" && item.Title.trim() ? item.Title.trim() : url,
+			title: isRuntimeString(item.Title) && item.Title.trim() ? item.Title.trim() : url,
 			url,
 			snippet: summary || snippet,
 		}];
@@ -252,7 +226,8 @@ export async function searchWithSearchinfinity(
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const data = await searchinfinityJsonRequest(apiKey, buildSearchBody(query, options), options.signal);
-		const results = mapSearchResults(data.Result?.WebResults);
+		const resultEnvelope = isJsonInputObject(data.Result) ? data.Result : undefined;
+		const results = mapSearchResults(resultEnvelope?.WebResults);
 		const response: SearchResponse = { answer: buildAnswer(results), results };
 		activityMonitor.logComplete(activityId, 200);
 		return response;

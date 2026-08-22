@@ -1,3 +1,8 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import type { JsonInputObject } from "../../shared/json-value.js";
+import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
+import { isRuntimeNumber } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -11,19 +16,7 @@ const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
-	tavilyApiKey?: unknown;
-}
-
-interface TavilyResult {
-	title?: string;
-	url?: string;
-	content?: string;
-	raw_content?: string | null;
-}
-
-interface TavilyResponse {
-	answer?: string;
-	results?: TavilyResult[];
+	tavilyApiKey?: JsonInputValue;
 }
 
 interface TavilySearchOptions extends SearchOptions {
@@ -40,7 +33,7 @@ function loadConfig(): WebSearchConfig {
 
 	const raw = readWebConfigText();
 	try {
-		cachedConfig = JSON.parse(raw) as WebSearchConfig;
+		cachedConfig = parseJsonObject(raw);
 		return cachedConfig;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -71,7 +64,7 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 }
 
 function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
@@ -90,7 +83,12 @@ function normalizeDomain(value: string): string | null {
 	return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(input) ? input : null;
 }
 
-function mapDomainFilter(domainFilter: string[] | undefined): { include_domains?: string[]; exclude_domains?: string[] } {
+interface TavilyDomainFilter {
+	include_domains?: string[];
+	exclude_domains?: string[];
+}
+
+function mapDomainFilter(domainFilter: string[] | undefined): TavilyDomainFilter {
 	if (!domainFilter?.length) return {};
 	const include_domains: string[] = [];
 	const exclude_domains: string[] = [];
@@ -100,10 +98,10 @@ function mapDomainFilter(domainFilter: string[] | undefined): { include_domains?
 		const target = raw.trim().startsWith("-") ? exclude_domains : include_domains;
 		if (!target.includes(domain)) target.push(domain);
 	}
-	return {
-		...(include_domains.length > 0 ? { include_domains } : {}),
-		...(exclude_domains.length > 0 ? { exclude_domains } : {}),
-	};
+	const filter: TavilyDomainFilter = {};
+	if (include_domains.length > 0) filter.include_domains = include_domains;
+	if (exclude_domains.length > 0) filter.exclude_domains = exclude_domains;
+	return filter;
 }
 
 function requestSignal(signal?: AbortSignal): AbortSignal {
@@ -111,32 +109,32 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-function errorMessage(err: unknown): string {
+function errorMessage(err: JsonInputValue): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function mapResults(results: TavilyResult[] | undefined, numResults: number): SearchResponse["results"] {
+function mapResults(results: JsonInputValue, numResults: number): SearchResponse["results"] {
 	if (!Array.isArray(results)) return [];
 	const mapped: SearchResponse["results"] = [];
 	for (const item of results) {
-		if (!item?.url) continue;
+		if (!isJsonInputObject(item) || !isRuntimeString(item.url)) continue;
 		mapped.push({
-			title: item.title || `Source ${mapped.length + 1}`,
+			title: isRuntimeString(item.title) ? item.title : `Source ${mapped.length + 1}`,
 			url: item.url,
-			snippet: typeof item.content === "string" ? item.content.replace(/\s+/g, " ").trim() : "",
+			snippet: isRuntimeString(item.content) ? item.content.replace(/\s+/g, " ").trim() : "",
 		});
 		if (mapped.length >= numResults) break;
 	}
 	return mapped;
 }
 
-function mapInlineContent(results: TavilyResult[] | undefined): ExtractedContent[] {
+function mapInlineContent(results: JsonInputValue): ExtractedContent[] {
 	if (!Array.isArray(results)) return [];
 	return results.flatMap((item) => {
-		if (!item?.url || typeof item.raw_content !== "string" || item.raw_content.trim().length === 0) return [];
+		if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !isRuntimeString(item.raw_content) || item.raw_content.trim().length === 0) return [];
 		return [{
 			url: item.url,
-			title: item.title || "",
+			title: isRuntimeString(item.title) ? item.title : "",
 			content: item.raw_content,
 			error: null,
 		}];
@@ -154,15 +152,15 @@ export function isTavilyAvailable(): boolean {
 export async function searchWithTavily(query: string, options: TavilySearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeCount(options.numResults);
-	const body: Record<string, unknown> = {
+	const body: JsonInputObject = {
 		query,
 		search_depth: "basic",
 		max_results: numResults,
 		include_answer: "basic",
 		include_raw_content: options.includeContent ? "markdown" : false,
-		...(options.recencyFilter ? { time_range: options.recencyFilter } : {}),
-		...mapDomainFilter(options.domainFilter),
 	};
+	if (options.recencyFilter) body.time_range = options.recencyFilter;
+	Object.assign(body, mapDomainFilter(options.domainFilter));
 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
@@ -193,9 +191,11 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 		throw new Error(`Tavily API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	let data: TavilyResponse;
+	let data;
 	try {
-		data = await response.json() as TavilyResponse;
+		const responseBody = await response.json();
+		if (!isJsonInputObject(responseBody)) throw new TypeError("expected an object");
+		data = responseBody;
 	} catch (err) {
 		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Tavily API returned invalid JSON: ${errorMessage(err)}`);
@@ -203,7 +203,7 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 
 	activityMonitor.logComplete(activityId, response.status);
 	const result: SearchResponse = {
-		answer: typeof data.answer === "string" ? data.answer : "",
+		answer: isRuntimeString(data.answer) ? data.answer : "",
 		results: mapResults(data.results, numResults),
 	};
 	if (options.includeContent) {

@@ -1,3 +1,5 @@
+import { isJsonInputObject, parseJsonObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeBoolean, isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -23,20 +25,20 @@ const DEFAULT_VIDEO_PROMPT = `Extract the complete content of this video. Includ
 
 Format as markdown.`;
 
-const VIDEO_EXTENSIONS: Record<string, string> = {
-	".mp4": "video/mp4",
-	".mov": "video/quicktime",
-	".webm": "video/webm",
-	".avi": "video/x-msvideo",
-	".mpeg": "video/mpeg",
-	".mpg": "video/mpeg",
-	".wmv": "video/x-ms-wmv",
-	".flv": "video/x-flv",
-	".3gp": "video/3gpp",
-	".3gpp": "video/3gpp",
-};
+const VIDEO_EXTENSIONS = new Map([
+	[".mp4", "video/mp4"],
+	[".mov", "video/quicktime"],
+	[".webm", "video/webm"],
+	[".avi", "video/x-msvideo"],
+	[".mpeg", "video/mpeg"],
+	[".mpg", "video/mpeg"],
+	[".wmv", "video/x-ms-wmv"],
+	[".flv", "video/x-flv"],
+	[".3gp", "video/3gpp"],
+	[".3gpp", "video/3gpp"],
+]);
 
-function shouldRethrow(err: unknown): boolean {
+function shouldRethrow(err: JsonInputValue): boolean {
 	const message = err instanceof Error ? err.message : String(err);
 	return message.startsWith("Failed to parse ");
 }
@@ -55,18 +57,18 @@ interface VideoConfig {
 	maxSizeMB: number;
 }
 
-function normalizePreferredModel(value: unknown, fallback: string): string {
-	if (typeof value !== "string") return fallback;
+function normalizePreferredModel(value: JsonInputValue, fallback: string): string {
+	if (!isRuntimeString(value)) return fallback;
 	const normalized = value.trim();
 	return normalized.length > 0 ? normalized : fallback;
 }
 
-function normalizeEnabled(value: unknown, fallback: boolean): boolean {
-	return typeof value === "boolean" ? value : fallback;
+function normalizeEnabled(value: JsonInputValue, fallback: boolean): boolean {
+	return isRuntimeBoolean(value) ? value : fallback;
 }
 
-function normalizeMaxSizeMB(value: unknown, fallback: number): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+function normalizeMaxSizeMB(value: JsonInputValue, fallback: number): number {
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return fallback;
 	return value > 0 ? value : fallback;
 }
 
@@ -85,15 +87,15 @@ function loadVideoConfig(): VideoConfig {
 	}
 
 	const rawText = readWebConfigText();
-	let raw: { video?: { enabled?: boolean; preferredModel?: string; maxSizeMB?: number } };
+	let raw;
 	try {
-		raw = JSON.parse(rawText) as { video?: { enabled?: boolean; preferredModel?: string; maxSizeMB?: number } };
+		raw = parseJsonObject(rawText);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
 
-	const v = raw.video ?? {};
+	const v = isJsonInputObject(raw.video) ? raw.video : {};
 	cachedVideoConfig = {
 		enabled: normalizeEnabled(v.enabled, VIDEO_CONFIG_DEFAULTS.enabled),
 		preferredModel: normalizePreferredModel(v.preferredModel, VIDEO_CONFIG_DEFAULTS.preferredModel),
@@ -119,7 +121,7 @@ export function isVideoFile(input: string): VideoFileInfo | null {
 	}
 
 	const ext = extname(filePath).toLowerCase();
-	const mimeType = VIDEO_EXTENSIONS[ext];
+	const mimeType = VIDEO_EXTENSIONS.get(ext);
 	if (!mimeType) return null;
 
 	const absolutePath = resolveFilePath(filePath);
@@ -202,7 +204,7 @@ export async function extractVideo(
 	return null;
 }
 
-function mapFfprobeError(err: unknown): string {
+function mapFfprobeError(err: JsonInputValue): string {
 	const { code, stderr, message } = readExecError(err);
 	if (code === "ENOENT") return "ffprobe is not installed. Install ffmpeg which includes ffprobe";
 	const snippet = trimErrorText(stderr || message);
@@ -258,12 +260,13 @@ async function tryVideoGeminiWeb(
 		if (!cookies) return null;
 		if (signal?.aborted) return null;
 
-		const text = await queryWithCookies(prompt, cookies, {
+		const geminiOptions = {
 			files: [info.absolutePath],
-			...(model !== "gemini-3.6-flash" ? { model } : {}),
 			signal,
 			timeoutMs: 180000,
-		});
+		};
+		if (model !== "gemini-3.6-flash") Object.assign(geminiOptions, { model });
+		const text = await queryWithCookies(prompt, cookies, geminiOptions);
 
 		return {
 			url: info.absolutePath,
@@ -361,8 +364,12 @@ async function uploadToFilesApi(
 		throw new Error(`File upload failed: ${uploadRes.status} (${text.slice(0, 200)})`);
 	}
 
-	const result = await uploadRes.json() as { file: { name: string; uri: string } };
-	return result.file;
+	const result = await uploadRes.json();
+	if (!isJsonInputObject(result) || !isJsonInputObject(result.file)
+		|| !isRuntimeString(result.file.name) || !isRuntimeString(result.file.uri)) {
+		throw new Error("File upload returned an unexpected response shape");
+	}
+	return { name: result.file.name, uri: result.file.uri };
 }
 
 async function pollFileState(
@@ -379,7 +386,10 @@ async function pollFileState(
 		const res = await fetchGeminiApi(`${API_BASE}/${fileName}`, { signal }, apiKey);
 		if (!res.ok) throw new Error(`File state check failed: ${res.status}`);
 
-		const data = await res.json() as { state: string };
+		const data = await res.json();
+		if (!isJsonInputObject(data) || !isRuntimeString(data.state)) {
+			throw new Error("File state check returned an unexpected response shape");
+		}
 		if (data.state === "ACTIVE") return;
 		if (data.state === "FAILED") throw new Error("File processing failed");
 

@@ -1,3 +1,5 @@
+import { isJsonInputObject, parseJsonObject, type JsonInputValue } from "../../shared/json-value.js";
+import { isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
@@ -10,9 +12,9 @@ const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 export const DEFAULT_MODEL = "gemini-3.6-flash";
 
 interface GeminiApiConfig {
-	geminiApiKey?: unknown;
-	geminiBaseUrl?: unknown;
-	cloudflareApiKey?: unknown;
+	geminiApiKey?: JsonInputValue;
+	geminiBaseUrl?: JsonInputValue;
+	cloudflareApiKey?: JsonInputValue;
 }
 
 let cachedConfig: GeminiApiConfig | null = null;
@@ -25,7 +27,7 @@ function loadConfig(): GeminiApiConfig {
 
 	const raw = readWebConfigText();
 	try {
-		cachedConfig = JSON.parse(raw) as GeminiApiConfig;
+		cachedConfig = parseJsonObject(raw);
 		return cachedConfig;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -38,14 +40,14 @@ function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortS
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-function normalizeApiKey(value: unknown): string | null {
-	if (typeof value !== "string") return null;
+function normalizeApiKey(value: JsonInputValue): string | null {
+	if (!isRuntimeString(value)) return null;
 	const normalized = value.trim();
 	return normalized.length > 0 ? normalized : null;
 }
 
-function normalizeBaseUrl(value: unknown): string | null {
-	if (typeof value !== "string") return null;
+function normalizeBaseUrl(value: JsonInputValue): string | null {
+	if (!isRuntimeString(value)) return null;
 	const normalized = value.trim().replace(/\/+$/, "");
 	return normalized.length > 0 ? normalized : null;
 }
@@ -181,6 +183,28 @@ export interface GeminiGenerateContentResult {
 	blockReason?: string;
 }
 
+interface GeminiFileData {
+	fileUri: string;
+	mimeType?: string;
+}
+
+function parseGenerateContentResponse(value: JsonInputValue): GeminiGenerateContentResult {
+	if (!isJsonInputObject(value)) throw new Error("Gemini API returned an invalid response");
+	const candidate = Array.isArray(value.candidates) && isJsonInputObject(value.candidates[0])
+		? value.candidates[0]
+		: undefined;
+	const content = isJsonInputObject(candidate?.content) ? candidate.content : undefined;
+	const parts = Array.isArray(content?.parts) ? content.parts : [];
+	const text = parts
+		.flatMap(part => isJsonInputObject(part) && isRuntimeString(part.text) && part.text.length > 0 ? [part.text] : [])
+		.join("\n");
+	const promptFeedback = isJsonInputObject(value.promptFeedback) ? value.promptFeedback : undefined;
+	const result: GeminiGenerateContentResult = { text };
+	if (isRuntimeString(candidate?.finishReason)) result.finishReason = candidate.finishReason;
+	if (isRuntimeString(promptFeedback?.blockReason)) result.blockReason = promptFeedback.blockReason;
+	return result;
+}
+
 export async function queryGeminiApiWithInlineData(
 	prompt: string,
 	data: string,
@@ -223,18 +247,7 @@ export async function queryGeminiApiWithInlineData(
 		throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	const response = (await res.json()) as GenerateContentResponse;
-	const candidate = response.candidates?.[0];
-	const text = candidate?.content?.parts
-		?.map((part) => part.text)
-		.filter((part): part is string => typeof part === "string" && part.length > 0)
-		.join("\n") ?? "";
-
-	return {
-		text,
-		...(candidate?.finishReason ? { finishReason: candidate.finishReason } : {}),
-		...(response.promptFeedback?.blockReason ? { blockReason: response.promptFeedback.blockReason } : {}),
-	};
+	return parseGenerateContentResponse(await res.json());
 }
 
 export async function queryGeminiApiWithVideo(
@@ -255,7 +268,7 @@ export async function queryGeminiApiWithVideo(
 	const model = options.model ?? DEFAULT_MODEL;
 	const url = `${getVersionedApiBase()}/models/${model}:generateContent`;
 
-	const fileData: Record<string, string> = { fileUri: videoUri };
+	const fileData: GeminiFileData = { fileUri: videoUri };
 	if (options.mimeType) fileData.mimeType = options.mimeType;
 
 	const body = {
@@ -282,24 +295,8 @@ export async function queryGeminiApiWithVideo(
 		throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	const data = (await res.json()) as GenerateContentResponse;
-	const text = data.candidates?.[0]?.content?.parts
-		?.map((p) => p.text)
-		.filter(Boolean)
-		.join("\n");
+	const { text } = parseGenerateContentResponse(await res.json());
 
 	if (!text) throw new Error("Gemini API returned empty response");
 	return text;
-}
-
-interface GenerateContentResponse {
-	candidates?: Array<{
-		content?: {
-			parts?: Array<{ text?: string }>;
-		};
-		finishReason?: string;
-	}>;
-	promptFeedback?: {
-		blockReason?: string;
-	};
 }

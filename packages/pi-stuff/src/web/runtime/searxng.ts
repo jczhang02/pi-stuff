@@ -1,3 +1,6 @@
+import type { JsonInputValue } from "../../shared/json-value.js";
+import { isJsonInputObject, parseJsonObject } from "../../shared/json-value.js";
+import { isRuntimeNumber, isRuntimeString } from "../../shared/runtime-type.js";
 import { readWebConfigText, webConfigExists } from "../settings.ts";
 
 import { activityMonitor } from "./activity.ts";
@@ -9,24 +12,13 @@ const CONFIG_PATH = `${getWebSearchConfigPath()} under "web"`;
 const SEARCH_TIMEOUT_MS = 30_000;
 
 interface WebSearchConfig {
-	searxngBaseUrl?: unknown;
-	searxngHeaders?: unknown;
+	searxngBaseUrl?: JsonInputValue;
+	searxngHeaders?: JsonInputValue;
 }
 
 interface NormalizedDomainFilters {
 	allowed: string[];
 	blocked: string[];
-}
-
-interface SearXNGResult {
-	title?: string;
-	url?: string;
-	content?: string;
-}
-
-interface SearXNGResponse {
-	results?: SearXNGResult[];
-	answers?: string[];
 }
 
 let cachedConfig: WebSearchConfig | null = null;
@@ -39,7 +31,7 @@ function loadConfig(): WebSearchConfig {
 
 	const raw = readWebConfigText();
 	try {
-		cachedConfig = JSON.parse(raw) as WebSearchConfig;
+		cachedConfig = parseJsonObject(raw);
 		return cachedConfig;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -47,8 +39,8 @@ function loadConfig(): WebSearchConfig {
 	}
 }
 
-function normalizeBaseUrl(value: unknown): string | null {
-	if (typeof value !== "string") return null;
+function normalizeBaseUrl(value: JsonInputValue): string | null {
+	if (!isRuntimeString(value)) return null;
 	const trimmed = value.trim();
 	if (!trimmed) return null;
 	try {
@@ -71,41 +63,30 @@ function getBaseUrl(): string | null {
 		: normalizeBaseUrl(loadConfig().searxngBaseUrl);
 }
 
-function isValidHeaderValue(value: string): boolean {
-	try {
-		new Headers({ "x-pi-web-access-validation": value });
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-function normalizeHeaders(value: unknown): Record<string, string> {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-	const headers: Record<string, string> = {};
-	for (const [key, headerValue] of Object.entries(value as Record<string, unknown>)) {
-		if (typeof headerValue !== "string") continue;
+function normalizeHeaders(value: JsonInputValue): Headers {
+	const headers = new Headers();
+	if (!isJsonInputObject(value)) return headers;
+	for (const [key, headerValue] of Object.entries(value)) {
+		if (!isRuntimeString(headerValue)) continue;
 		const name = key.trim();
 		// RFC 7230 token chars only — reject empty or malformed header names.
 		if (!name || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) continue;
-		if (!isValidHeaderValue(headerValue)) continue;
-		headers[name] = headerValue;
+		try {
+			headers.set(name, headerValue);
+		} catch {
+			continue;
+		}
 	}
 	return headers;
 }
 
-function getConfiguredHeaders(): Record<string, string> {
+function getConfiguredHeaders(): Headers {
 	return normalizeHeaders(loadConfig().searxngHeaders);
 }
 
-function mergeDefaultHeaders(configured: Record<string, string>): Record<string, string> {
-	const headers: Record<string, string> = { Accept: "application/json" };
-	for (const [name, value] of Object.entries(configured)) {
-		for (const existing of Object.keys(headers)) {
-			if (existing.toLowerCase() === name.toLowerCase()) delete headers[existing];
-		}
-		headers[name] = value;
-	}
+function mergeDefaultHeaders(configured: Headers): Headers {
+	const headers = new Headers({ Accept: "application/json" });
+	configured.forEach((value, name) => headers.set(name, value));
 	return headers;
 }
 
@@ -122,7 +103,7 @@ function requireBaseUrl(): string {
 }
 
 function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
+	if (!isRuntimeNumber(value) || !Number.isFinite(value)) return 5;
 	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
@@ -223,9 +204,11 @@ export async function searchWithSearXNG(query: string, options: SearchOptions = 
 			throw new Error(`SearXNG search error ${response.status}: ${errorText.slice(0, 300)}`);
 		}
 
-		let data: SearXNGResponse;
+		let data;
 		try {
-			data = await response.json() as SearXNGResponse;
+			const responseBody = await response.json();
+			if (!isJsonInputObject(responseBody)) throw new TypeError("expected an object");
+			data = responseBody;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			throw new Error(`SearXNG returned invalid JSON: ${message}`);
@@ -233,13 +216,19 @@ export async function searchWithSearXNG(query: string, options: SearchOptions = 
 
 		activityMonitor.logComplete(activityId, response.status);
 		const results: SearchResult[] = [];
-		for (const item of data.results ?? []) {
-			if (!item.url || !matchesDomainFilters(item.url, filters)) continue;
-			results.push({ title: item.title || item.url, url: item.url, snippet: item.content || "" });
+		const responseResults = Array.isArray(data.results) ? data.results : [];
+		for (const item of responseResults) {
+			if (!isJsonInputObject(item) || !isRuntimeString(item.url) || !matchesDomainFilters(item.url, filters)) continue;
+			results.push({
+				title: isRuntimeString(item.title) ? item.title : item.url,
+				url: item.url,
+				snippet: isRuntimeString(item.content) ? item.content : "",
+			});
 			if (results.length >= numResults) break;
 		}
 
-		const answerParts = (data.answers ?? []).filter((answer): answer is string => typeof answer === "string" && answer.trim().length > 0).map(answer => answer.trim());
+		const answers = Array.isArray(data.answers) ? data.answers : [];
+		const answerParts = answers.filter((answer): answer is string => isRuntimeString(answer) && answer.trim().length > 0).map(answer => answer.trim());
 		answerParts.push(...results.map(result => result.snippet
 			? `${result.snippet}\nSource: ${result.title} (${result.url})`
 			: `Source: ${result.title} (${result.url})`));
