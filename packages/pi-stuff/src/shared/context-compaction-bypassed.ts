@@ -18,8 +18,6 @@ const CONTEXT_COMPACTION_BYPASSED_SCHEMA = Type.Object(
 	{ additionalProperties: true },
 );
 
-export function isContextCompactionBypassedEvent<Value>(
-	value: Value,
-): value is Value & ContextCompactionBypassedEvent {
+export function isContextCompactionBypassedEvent<Value>(value: Value): value is Value & ContextCompactionBypassedEvent {
 	return Check(CONTEXT_COMPACTION_BYPASSED_SCHEMA, value);
 }

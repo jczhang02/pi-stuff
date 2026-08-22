@@ -65,7 +65,9 @@ import {
 
 const CONTEXT_CAPABILITY_REGISTRY = Symbol.for("@jczhang02/pi-stuff-context/runtime/v2");
 const CONTEXT_CAPABILITY_DISCOVERY_EVENT = "@jczhang02/pi-stuff-context/runtime-discovery/v1";
+
 export { CONTEXT_COMPACTION_BYPASSED_EVENT } from "../shared/context-compaction-bypassed.js";
+
 const MAGIC_CONTEXT_MODULE = "@cortexkit/pi-magic-context";
 const MAGIC_CONTEXT_PROMPT_MARKER = "## Magic Context";
 const MAGIC_CONTEXT_NATIVE_COMPACTION_MULTIPLIER = 2;

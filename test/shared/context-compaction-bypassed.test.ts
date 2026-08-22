@@ -3,9 +3,7 @@ import { isContextCompactionBypassedEvent } from "../../packages/pi-stuff/src/sh
 
 test("the shared Context compaction-bypass contract rejects schema mismatches", () => {
 	const sessionManager = {};
-	expect(
-		isContextCompactionBypassedEvent({ schemaVersion: 1, sessionManager, source: "magic-context" }),
-	).toBeTrue();
+	expect(isContextCompactionBypassedEvent({ schemaVersion: 1, sessionManager, source: "magic-context" })).toBeTrue();
 	for (const value of [
 		undefined,
 		{},

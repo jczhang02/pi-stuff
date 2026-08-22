@@ -152,7 +152,9 @@ const MAX_BLOCKER_REASON_LENGTH = 1_000;
 const MAX_BLOCKER_EVIDENCE_LENGTH = 4_000;
 const MAX_COMPLETION_EVIDENCE_ITEMS = 50;
 const MAX_COMPLETION_EVIDENCE_TEXT_LENGTH = 4_000;
+
 export { CONTEXT_COMPACTION_BYPASSED_EVENT } from "../../shared/context-compaction-bypassed.js";
+
 const GOAL_COMPLETION_EVIDENCE_INPUT_SCHEMA = Type.Object(
 	{ proof: Type.String(), requirement: Type.String() },
 	{ additionalProperties: true },

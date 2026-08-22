@@ -31,7 +31,6 @@ import goal, {
 	parseTokenBudget,
 	validateObjective,
 } from "../../packages/pi-stuff/src/goal/src/goal.js";
-import { CONTEXT_COMPACTION_BYPASSED_EVENT } from "../../packages/pi-stuff/src/shared/context-compaction-bypassed.js";
 import type { ActiveGoal } from "../../packages/pi-stuff/src/goal/src/persistence.js";
 import { createGoal } from "../../packages/pi-stuff/src/goal/src/runtime.js";
 import {
@@ -42,6 +41,7 @@ import {
 	normalizeVisibleAssistantOutput,
 	recordGoalBlockerAttempt,
 } from "../../packages/pi-stuff/src/goal/src/safety.js";
+import { CONTEXT_COMPACTION_BYPASSED_EVENT } from "../../packages/pi-stuff/src/shared/context-compaction-bypassed.js";
 import {
 	isRuntimeFunction,
 	isRuntimeObject,
