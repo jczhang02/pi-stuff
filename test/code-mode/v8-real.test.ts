@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { AgentToolResult, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { buildSuiteSandboxSource, SuiteCodeModeConnector } from "../../packages/pi-stuff/src/code-mode/connector.js";
+import { INVALID_CODE_MODE_IMAGE_MESSAGE } from "../../packages/pi-stuff/src/code-mode/image-content.js";
 import { CodeModeSessionLedger } from "../../packages/pi-stuff/src/code-mode/ledger.js";
 import type { RuntimeResponse, SuiteSandboxTool } from "../../packages/pi-stuff/src/code-mode/protocol.js";
 import { CodeModeRuntime } from "../../packages/pi-stuff/src/code-mode/runtime.js";
@@ -54,6 +55,32 @@ realTest("the certified V8 host executes a real Connector call and returns its t
 		]);
 	} finally {
 		await executor.shutdown();
+	}
+});
+
+realTest("the certified V8 host cannot persist malformed image helper output", async () => {
+	const executor = new V8CodeModeExecutor();
+	const registry: SuiteToolDefinitionRegistry = {
+		catalog: () => [],
+		compensate: async () => false,
+		get: () => undefined,
+		invoke: async () => ({ isError: false, result: { content: [], details: {} } }),
+		isActive: () => false,
+		list: () => [],
+	};
+	const runtime = new CodeModeRuntime(new SuiteCodeModeConnector(registry), executor);
+	try {
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
+		const result = await runtime.execute(
+			"outer-invalid-image",
+			'const data="AQEB".repeat(24); image({image_url:"data:image/jpeg;base64,"+data});',
+			{ cwd: process.cwd() } as ExtensionContext,
+		);
+		expect(result.details).toMatchObject({ error: INVALID_CODE_MODE_IMAGE_MESSAGE, status: "error" });
+		expect(result.content).toEqual([{ type: "text", text: INVALID_CODE_MODE_IMAGE_MESSAGE }]);
+		expect(result.content.some((item) => item.type === "image")).toBe(false);
+	} finally {
+		await runtime.shutdown();
 	}
 });
 
