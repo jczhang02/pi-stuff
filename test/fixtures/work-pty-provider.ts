@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, JsonValue, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -40,7 +40,7 @@ function textStream(text: string) {
 	return stream;
 }
 
-function toolStream(name: string, id: string, arguments_: Record<string, unknown>) {
+function toolStream(name: string, id: string, arguments_: Record<string, JsonValue>) {
 	const stream = createAssistantMessageEventStream();
 	const pending = message([], "pending");
 	const toolCall = { arguments: arguments_, id, name, type: "toolCall" as const };

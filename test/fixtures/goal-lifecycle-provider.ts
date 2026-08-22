@@ -5,6 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Guard } from "typebox/guard";
 import { Check } from "typebox/value";
+import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 const PROVIDER = "pi-stuff-goal-lifecycle";
 const MODEL = "fixture-model";
@@ -34,7 +35,7 @@ function scenario(): Scenario {
 	throw new Error(`Unknown Goal lifecycle scenario: ${value ?? "missing"}`);
 }
 
-function log(record: Record<string, unknown>): void {
+function log(record: Record<string, JsonInputValue>): void {
 	const path = process.env["PI_STUFF_GOAL_LIFECYCLE_LOG"];
 	if (path) appendFileSync(path, `${JSON.stringify(record)}\n`);
 }
@@ -80,7 +81,7 @@ function textStream(text: string) {
 	return stream([{ type: "text", text }], "stop");
 }
 
-function toolStream(name: string, arguments_: Record<string, unknown>) {
+function toolStream<Arguments extends object>(name: string, arguments_: Arguments) {
 	return stream(
 		[
 			{

@@ -1,4 +1,4 @@
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, JsonValue, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -17,7 +17,7 @@ const ZERO_USAGE = {
 };
 
 interface FixtureCall {
-	readonly arguments: Record<string, unknown>;
+	readonly arguments: Record<string, JsonValue>;
 	readonly name: string;
 }
 

@@ -1,7 +1,8 @@
 import { appendFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, JsonValue, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 const PROVIDER = "pi-stuff-agents-pty";
@@ -48,7 +49,7 @@ function lastUserText(context: Context): string {
 	return "";
 }
 
-function record(value: Record<string, unknown>): void {
+function record(value: Record<string, JsonInputValue>): void {
 	const path = process.env["PI_STUFF_AGENTS_PTY_LOG"];
 	if (!path) return;
 	appendFileSync(path, `${JSON.stringify({ at: Date.now(), ...value })}\n`);
@@ -95,7 +96,7 @@ function childReadStream() {
 	return toolCallStream("agents-pty-child-read", "read", { path: "agent-tool-target.txt" });
 }
 
-function toolCallStream(id: string, name: string, argumentsValue: Record<string, unknown>) {
+function toolCallStream(id: string, name: string, argumentsValue: Record<string, JsonValue>) {
 	const stream = createAssistantMessageEventStream();
 	const pending = message([], "pending");
 	const toolCall = {

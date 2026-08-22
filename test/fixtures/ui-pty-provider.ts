@@ -4,6 +4,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { getCommandDialogCoordinator, reportDiagnostic } from "../../packages/pi-stuff/src/conversation-ui/index.js";
+import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 const PROVIDER = "pi-stuff-ui-pty";
@@ -113,7 +114,7 @@ function lastOwnedGoalPrompt(context: Context): string | undefined {
 	return undefined;
 }
 
-function appendRecord(record: unknown): void {
+function appendRecord(record: Readonly<Record<string, JsonInputValue>>): void {
 	const { PI_STUFF_UI_PTY_LOG: path } = process.env;
 	if (path) appendFileSync(path, `${JSON.stringify(record)}\n`);
 }

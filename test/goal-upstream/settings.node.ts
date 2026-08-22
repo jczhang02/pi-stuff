@@ -13,7 +13,7 @@ import {
 import { type JsonValue, parseJsonValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeObject } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
-function goalDocument(value: unknown): string {
+function goalDocument<Value>(value: Value): string {
 	return `${JSON.stringify({ goal: value })}\n`;
 }
 

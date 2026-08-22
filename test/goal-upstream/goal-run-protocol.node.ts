@@ -52,6 +52,15 @@ type RunErrorEvent = {
 
 type RunEvent = RunStateEvent | RunErrorEvent;
 
+interface StartRunOverrides {
+	readonly objective?: number | string;
+	readonly tokenBudget?: number | string;
+}
+
+interface CancelRunOverrides {
+	readonly reason?: number | string;
+}
+
 type GoalTool = {
 	name?: string;
 	execute: (...args: unknown[]) => Promise<{
@@ -83,7 +92,7 @@ function observeRun(mock: ReturnType<typeof createMockPi>, runId: string) {
 	return events;
 }
 
-function startRun(mock: ReturnType<typeof createMockPi>, runId: string, overrides: Record<string, unknown> = {}) {
+function startRun(mock: ReturnType<typeof createMockPi>, runId: string, overrides: StartRunOverrides = {}) {
 	mock.eventBus.emit(START_CHANNEL, {
 		runId,
 		objective: "ship the managed run",
@@ -91,7 +100,7 @@ function startRun(mock: ReturnType<typeof createMockPi>, runId: string, override
 	});
 }
 
-function cancelRun(mock: ReturnType<typeof createMockPi>, runId: string, overrides: Record<string, unknown> = {}) {
+function cancelRun(mock: ReturnType<typeof createMockPi>, runId: string, overrides: CancelRunOverrides = {}) {
 	mock.eventBus.emit(CANCEL_CHANNEL, { runId, ...overrides });
 }
 
@@ -237,7 +246,7 @@ test("unsafe or missing run ids are ignored without creating channel injection",
 });
 
 test("valid run ids receive structured request validation errors", async () => {
-	const invalidPayloads: Array<{ runId: string; overrides: Record<string, unknown> }> = [
+	const invalidPayloads: Array<{ runId: string; overrides: StartRunOverrides }> = [
 		{ runId: "empty-objective", overrides: { objective: "" } },
 		{ runId: "wrong-objective", overrides: { objective: 42 } },
 		{ runId: "zero-budget", overrides: { tokenBudget: 0 } },
@@ -648,7 +657,7 @@ test("blocked and usage-limited transitions preserve terminal reasons", async ()
 });
 
 test("budget exhaustion emits the budget-limited terminal state", async () => {
-	const branch: Array<Record<string, unknown>> = [];
+	const branch: Array<ReturnType<typeof assistantUsageEntry>> = [];
 	const mock = createMockPi({ activeTools: ["read", "bash"] });
 	registerGoal(mock);
 	const context = bindSession(

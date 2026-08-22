@@ -3,6 +3,7 @@ import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from 
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
 const PROVIDER = "pi-stuff-agents-execution-matrix";
@@ -74,7 +75,7 @@ function scenarioId(): ScenarioId {
 	return value;
 }
 
-function record(value: Record<string, unknown>): void {
+function record(value: Record<string, JsonInputValue>): void {
 	const path = requiredEnvironment("PI_STUFF_AGENTS_EXECUTION_MATRIX_LOG");
 	appendFileSync(path, `${JSON.stringify({ at: Date.now(), pid: process.pid, ...value })}\n`);
 }

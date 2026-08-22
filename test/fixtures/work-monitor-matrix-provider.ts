@@ -2,7 +2,7 @@ import { appendFileSync } from "node:fs";
 import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 
@@ -19,7 +19,15 @@ const MONITOR_RESULT_SCHEMA = Type.Object(
 	{ additionalProperties: true },
 );
 
-type Scenario = "cancel" | "command_failure" | "file_error" | "http_success" | "log_success" | "timeout";
+const SCENARIO_SCHEMA = Type.Union([
+	Type.Literal("cancel"),
+	Type.Literal("command_failure"),
+	Type.Literal("file_error"),
+	Type.Literal("http_success"),
+	Type.Literal("log_success"),
+	Type.Literal("timeout"),
+]);
+type Scenario = Static<typeof SCENARIO_SCHEMA>;
 
 const TITLES = {
 	cancel: "Matrix cancellation",
@@ -91,8 +99,7 @@ function currentScenario(context: Context): Scenario | undefined {
 			.slice(text.indexOf(MARKER) + MARKER.length)
 			.trim()
 			.split(/\s/u)[0];
-		// SAFETY: this test controls the value and supplies every Scenario member exercised by this case.
-		if (candidate && candidate in TITLES) return candidate as Scenario;
+		if (Check(SCENARIO_SCHEMA, candidate)) return candidate;
 	}
 	return undefined;
 }

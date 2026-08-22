@@ -3,11 +3,12 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Guard } from "typebox/guard";
 import { Check } from "typebox/value";
+import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
 
 const MESSAGE_CONTENT_SCHEMA = Type.Object({ content: Type.Unknown() }, { additionalProperties: true });
 
 interface AuditRecord {
-	readonly [key: string]: unknown;
+	readonly [key: string]: JsonInputValue;
 	readonly type: string;
 }
 

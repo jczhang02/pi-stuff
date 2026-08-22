@@ -1,9 +1,10 @@
 import { appendFileSync, writeFileSync } from "node:fs";
-import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, JsonValue, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { isRuntimeObject, isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
+import type { JsonInputValue } from "../../packages/pi-stuff/src/shared/json-value.js";
+import { isRuntimeString } from "../../packages/pi-stuff/src/shared/runtime-type.js";
 import { registerSuiteOwnedTool } from "../../packages/pi-stuff/src/tool-display/contract.js";
 
 const PROVIDER = "pi-stuff-context-pty";
@@ -29,33 +30,24 @@ const LOW_USAGE = {
 	totalTokens: 1_000,
 };
 
-function record(value: Readonly<Record<string, unknown>>): void {
+function record(value: Readonly<Record<string, JsonInputValue>>): void {
 	const path = process.env["PI_STUFF_CONTEXT_PTY_LOG"];
 	if (path) appendFileSync(path, `${JSON.stringify(value)}\n`);
 }
 
-function contentText(content: unknown): string {
+function contentText(content: Context["messages"][number]["content"]): string {
 	if (isRuntimeString(content)) return content;
-	if (!Array.isArray(content)) return "";
 	return content
-		.map((part) => {
-			if (!part || !isRuntimeObject(part)) return "";
-			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-			const text = (part as { readonly text?: unknown }).text;
-			return isRuntimeString(text) ? text : "";
-		})
+		.map((part) => (part.type === "text" ? part.text : ""))
 		.filter(Boolean)
 		.join("\n");
 }
 
 function allText(context: Context): string {
-	return (
-		context.messages
-			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-			.map((entry) => contentText((entry as { readonly content?: unknown }).content))
-			.filter(Boolean)
-			.join("\n")
-	);
+	return context.messages
+		.map((entry) => contentText(entry.content))
+		.filter(Boolean)
+		.join("\n");
 }
 
 function lastUserText(context: Context): string {
@@ -124,7 +116,7 @@ function textStream(text: string, usage = ZERO_USAGE) {
 	return stream;
 }
 
-function toolCallStream(id: string, name: string, argumentsValue: Readonly<Record<string, unknown>>) {
+function toolCallStream(id: string, name: string, argumentsValue: Record<string, JsonValue>) {
 	const stream = createAssistantMessageEventStream();
 	const pending = assistantMessage([], "pending");
 	const toolCall = {
@@ -156,10 +148,7 @@ function fixtureStream(context: Context) {
 	);
 	const repeatSearchResult = context.messages.find(
 		(entry) =>
-			entry.role === "toolResult" &&
-			entry.toolName === "ctx_search" &&
-			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
-			(entry as { readonly toolCallId?: unknown }).toolCallId === "context-search-2",
+			entry.role === "toolResult" && entry.toolName === "ctx_search" && entry.toolCallId === "context-search-2",
 	);
 	const bulkResult = context.messages.find(
 		(entry) => entry.role === "toolResult" && entry.toolName === "context_bulk",
