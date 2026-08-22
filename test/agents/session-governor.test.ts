@@ -148,6 +148,7 @@ describe("session-wide Agent resource governor", () => {
 			reason: "already_released",
 			snapshot: { total: 1, running: 0 },
 		});
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const persisted = JSON.parse(await readFile(join(sessionDir, "ledger.json"), "utf8")) as {
 			total: number;
 			leases: unknown[];

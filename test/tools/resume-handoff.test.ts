@@ -116,6 +116,7 @@ function historicalToolBranch(
 		totalTokens: 0,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 	};
+	// SAFETY: this test controls the value and supplies every SessionEntry member exercised by this case.
 	return [
 		{
 			id: "historical-tool-call",
@@ -191,6 +192,7 @@ test("cold Session binds only declared Suite renderers present in history", asyn
 	expect(host.tools.has("subagent_supervisor")).toBe(false);
 	const branch = historicalToolBranch("subagent_supervisor", { action: "pending" }, "No pending supervisor requests.");
 	let branchReads = 0;
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const targetContext = {
 		...context("/target"),
 		sessionManager: {
@@ -214,6 +216,7 @@ test("cold Session binds only declared Suite renderers present in history", asyn
 });
 
 test("production replay catalog covers conditional child Tools", async () => {
+	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 	const suite = JSON.parse(await readFile(new URL("../../packages/pi-stuff/suite.json", import.meta.url), "utf8")) as {
 		readonly deferredTools?: readonly string[];
 		readonly optionalTools?: readonly string[];
@@ -241,6 +244,7 @@ test("production replay catalog covers conditional child Tools", async () => {
 
 test("cold Session does not replace a live same-name Tool", async () => {
 	const host = apiHarness(["read", "fixture_state"]);
+	// SAFETY: this test controls the value and supplies every ToolDefinition member exercised by this case.
 	const external = {
 		name: "subagent_supervisor",
 		label: "External Supervisor",
@@ -273,6 +277,7 @@ test("tree and compaction reconstruction bind newly visible historical Suite ren
 
 		await host.emit(
 			type,
+			// SAFETY: this test controls the value and supplies every ExtensionEvent member exercised by this case.
 			{ type } as ExtensionEvent,
 			context("/target", historicalToolBranch("subagent_supervisor", { action: "pending" }, "No pending requests.")),
 		);
@@ -500,6 +505,7 @@ test("resumed built-ins execute against the target cwd and trusted project setti
 			{ path: "target.txt" },
 			new AbortController().signal,
 			undefined,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{} as never,
 		);
 		const bashResult = await bash.execute(
@@ -507,6 +513,7 @@ test("resumed built-ins execute against the target cwd and trusted project setti
 			{ command: "printf 'TARGET_BODY\\n'" },
 			new AbortController().signal,
 			undefined,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			undefined as never,
 		);
 		const text = (result: AgentToolResult<unknown>): string =>

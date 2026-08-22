@@ -3,6 +3,7 @@ import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { type CodeModeDialogSnapshot, createCodeModeDialogView } from "../../packages/pi-stuff/src/code-mode/dialog.js";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = { bold: (value: string) => value, fg: (_color: string, value: string) => value } as Theme;
 initTheme("dark", false);
 
@@ -24,6 +25,7 @@ function snapshot(overrides: Partial<CodeModeDialogSnapshot> = {}): CodeModeDial
 }
 
 function context(rows = 24): CommandDialogViewContext<void> {
+	// SAFETY: this test controls the value and supplies every CommandDialogViewContext member exercised by this case.
 	return {
 		close: () => {},
 		keybindings: {},

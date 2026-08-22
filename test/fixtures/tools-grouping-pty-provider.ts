@@ -203,6 +203,7 @@ function fixtureStream(context: Context) {
 			break;
 		}
 	}
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const request = lastUserIndex < 0 ? "" : textContent(context.messages[lastUserIndex] as Context["messages"][number]);
 	const completed = context.messages.slice(lastUserIndex + 1).reduce((count, entry) => {
 		if (entry.role !== "assistant") return count;
@@ -286,6 +287,7 @@ function fixtureStream(context: Context) {
 	return completed < SUCCESS_CALLS.length
 		? toolCallsStream(
 				`group-success-${String(completed + 1)}`,
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				[SUCCESS_CALLS[completed] as FixtureCall],
 				`THINKING_STEP_${String(completed + 1)}`,
 			)
@@ -322,11 +324,13 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 				classify: () => [{ category: "run-command", count: 1, target: "Waiting for permission…" }],
 			},
 			summarize: (_args, result) =>
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				(result.details as { readonly confirmed?: boolean } | undefined)?.confirmed
 					? "permission allowed"
 					: "permission rejected",
 			target: () => "Waiting for permission…",
 			resultIsError: (_args, result) =>
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				(result.details as { readonly confirmed?: boolean } | undefined)?.confirmed !== true,
 		},
 	);
@@ -395,6 +399,7 @@ export default function toolsGroupingPtyProvider(pi: ExtensionAPI): void {
 				classify: () => [{ category: "run-command", count: 1 }],
 			},
 			resultIsError: (_args, result) =>
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				(result.details as { readonly failed?: boolean } | undefined)?.failed === true,
 			summarize: (_args, _result, state) => (state === "success" ? "recovered" : "retry failed"),
 			target: (args) => args.value,

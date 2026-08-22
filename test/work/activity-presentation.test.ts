@@ -85,6 +85,7 @@ test("standalone Bash preserves an automatic foreground-to-background handoff in
 		],
 		true,
 	);
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const theme = {
 		bold: (value: string) => value,
 		fg: (_color: string, value: string) => value,
@@ -104,8 +105,10 @@ test("standalone Bash preserves an automatic foreground-to-background handoff in
 		state,
 		toolCallId: "bash-auto-background",
 	};
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const row = bash.renderCall?.(args, theme, context as never);
 	expect(row).toBeDefined();
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	bash.renderResult?.(result, { expanded: false, isPartial: false }, theme, {
 		...context,
 		lastComponent: row,

@@ -22,9 +22,11 @@ test("ToolActivityStore exposes immutable snapshots", () => {
 	expect(Object.isFrozen(settled)).toBe(true);
 	expect(Object.isFrozen(settled.detailLines)).toBe(true);
 	expect(() => {
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(settled as { summary: string }).summary = "tampered";
 	}).toThrow();
 	expect(() => {
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(settled.detailLines as string[]).push("tampered");
 	}).toThrow();
 	expect(store.get("call-1")?.summary).toBe("Read 1 file");

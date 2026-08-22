@@ -17,6 +17,7 @@ initTheme("dark", false);
 
 function runtime() {
 	const mock = createMockPi({ activeTools: ["read"] });
+	// SAFETY: this test controls the value and supplies every GoalRuntime member exercised by this case.
 	const state = new GoalRuntime(mock.pi) as GoalRuntime & {
 		readonly visibility: ReturnType<GoalRuntime["snapshotGoalToolVisibility"]>;
 	};
@@ -53,6 +54,7 @@ test("applyGoalSettings saves before committing runtime settings and enforces lo
 	};
 	const context = createMockContext();
 
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	applyGoalSettings(state as never, next, context.ctx, {
 		save(settings: GoalSettings) {
 			saved = structuredClone(settings);
@@ -75,6 +77,7 @@ test("applyGoalSettings restores effective tool policy when persistence fails", 
 
 	assert.throws(
 		() =>
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			applyGoalSettings(state as never, next, context.ctx, {
 				save() {
 					throw new Error("disk full");

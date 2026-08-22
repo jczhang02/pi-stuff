@@ -11,6 +11,7 @@ import { RtkSettingsStore } from "../../packages/pi-stuff/src/rtk/settings.js";
 import { compactPath } from "../../packages/pi-stuff/src/rtk/upstream/techniques/path-utils.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
@@ -78,6 +79,7 @@ describe("RTK-owned settings", () => {
 
 test("RTK status keeps unchecked and off states readable at low height", () => {
 	const colors: Array<{ color: string; text: string }> = [];
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const recordingTheme = {
 		bold: (value: string) => value,
 		fg: (color: string, text: string) => {

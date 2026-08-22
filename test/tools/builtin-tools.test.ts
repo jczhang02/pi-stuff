@@ -87,10 +87,12 @@ test("shell prefixes do not leak into standalone Bash operation titles", () => {
 	]);
 	const bash = tools.get("bash");
 	if (!bash?.renderCall || !bash.renderResult) throw new Error("Expected decorated Bash renderers");
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const theme = { bold: (value: string) => value, fg: (_color: string, value: string) => value } as never;
 	const settle = (toolCallId: string) => {
 		const state = {};
 		const args = { command: "pwd" };
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const context = {
 			args,
 			executionStarted: false,

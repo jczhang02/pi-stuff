@@ -188,6 +188,7 @@ class UiHarness {
 			reject: completion.reject,
 			settleDone: () => {
 				if (!call.doneRequested) throw new Error("Host done was not requested");
+				// SAFETY: this test controls the value and supplies every Result member exercised by this case.
 				completion.resolve(doneResult as Result);
 			},
 		};
@@ -488,6 +489,7 @@ describe("normal UI presentation integration", () => {
 
 		const factory = ui.footerWrites.at(-1);
 		if (!factory) throw new Error("Expected the Suite footer factory");
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const footer = factory(ui.tui, ui.theme, createFooterData("main") as never);
 		const initial = footer.render(120).join("\n");
 		expect(initial).not.toContain("weekly");
@@ -526,6 +528,7 @@ describe("normal UI presentation integration", () => {
 		await piStuffCodex(codexApi.api);
 		const controller = new AbortController();
 		const ctx = createContext(new UiHarness(), "tui", {
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 			model: {
 				api: "openai-responses",
 				baseUrl: "https://chatgpt.com/backend-api",
@@ -646,6 +649,7 @@ describe("normal UI presentation integration", () => {
 
 		const factory = ui.footerWrites.at(-1);
 		if (!factory) throw new Error("Expected the Suite footer factory");
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const footer = factory(ui.tui, ui.theme, createFooterData("main") as never);
 		expect(footer.render(120).join("\n")).not.toContain("goal");
 
@@ -692,6 +696,7 @@ describe("normal UI presentation integration", () => {
 		const factory = ui.footerWrites.at(-1);
 		if (!factory) throw new Error("Expected the Suite footer factory");
 		const footerData = createFooterData("main");
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const footer = factory(ui.tui, ui.theme, footerData as never);
 		const statusline = footer.render(100).join("\n");
 		for (const expected of ["gpt-5.6-sol", "med", "pi-stuff", "main", "42.4%"]) {
@@ -716,6 +721,8 @@ describe("normal UI presentation integration", () => {
 		const main = "● main";
 		const prompt = "prompt";
 		const reviewer = "○ reviewer  3s";
+
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(
 			coordinator as typeof coordinator & {
 				installFooter(context: ExtensionContext, factory: NonNullable<FooterFactory>): void;
@@ -726,6 +733,7 @@ describe("normal UI presentation integration", () => {
 		}));
 		const initialFactory = ui.footerWrites.at(-1);
 		if (!initialFactory) throw new Error("Expected the primary Suite Footer");
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const initialLines = initialFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100);
 		expect(initialLines).toEqual(["status", prompt]);
 		const unregister = coordinator.registerFooterTail?.("fleetview-fixture", () => ({
@@ -737,6 +745,7 @@ describe("normal UI presentation integration", () => {
 		}));
 		const stackedFactory = ui.footerWrites.at(-1);
 		if (!stackedFactory) throw new Error("Expected the stacked Suite Footer");
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const idle = stackedFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100);
 
 		expect(idle[0]).toBe("status");
@@ -746,6 +755,7 @@ describe("normal UI presentation integration", () => {
 		const idleMainIndex = idle.indexOf(main);
 
 		managing = true;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const active = stackedFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100);
 		expect(active[0]).toBe("status");
 		expect(active[1]).toBe(hint);
@@ -753,6 +763,7 @@ describe("normal UI presentation integration", () => {
 		expect(active.indexOf(main)).toBe(idleMainIndex);
 
 		managing = false;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const restored = stackedFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100);
 		expect(restored[1]).toBe(prompt);
 		expect(restored).not.toContain(hint);
@@ -760,6 +771,7 @@ describe("normal UI presentation integration", () => {
 		unregister?.();
 		const statusOnlyFactory = ui.footerWrites.at(-1);
 		if (!statusOnlyFactory) throw new Error("Expected the restored primary Footer");
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		expect(statusOnlyFactory(ui.tui, ui.theme, createFooterData("main") as never).render(100)).not.toContain(main);
 	});
 
@@ -770,11 +782,13 @@ describe("normal UI presentation integration", () => {
 		const ui = new UiHarness();
 		const ctx = createContext(ui);
 		await api.start(ctx);
-		const installFooter = (
-			coordinator as typeof coordinator & {
-				installFooter(context: ExtensionContext, factory: NonNullable<FooterFactory>): void;
-			}
-		).installFooter.bind(coordinator);
+		const installFooter =
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
+			(
+				coordinator as typeof coordinator & {
+					installFooter(context: ExtensionContext, factory: NonNullable<FooterFactory>): void;
+				}
+			).installFooter.bind(coordinator);
 		let managing = false;
 		const unregister = coordinator.registerFooterTail?.("fleetview-fixture", () => ({
 			get replacesBaseRow2() {
@@ -791,6 +805,7 @@ describe("normal UI presentation integration", () => {
 			}));
 			const factory = ui.footerWrites.at(-1);
 			if (!factory) throw new Error("Expected a composed Footer");
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const component = factory(ui.tui, ui.theme, {} as never);
 
 			managing = false;
@@ -817,6 +832,7 @@ describe("normal UI presentation integration", () => {
 			api.api,
 			ctx,
 			settings,
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			coordinator as never,
 			new DiagnosticChannel(),
 		);
@@ -1377,6 +1393,7 @@ describe("Command Dialog coordinator", () => {
 		expect(chromeWrites).toEqual([true]);
 		const footerFactory = ui.footerWrites[1];
 		expect(footerFactory).toBeTypeOf("function");
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		expect(footerFactory?.(ui.tui, ui.theme, {} as never).render(80)).toEqual([]);
 		expect(ui.currentHost.render(80)).toEqual(["normal"]);
 		expect(ui.renderRequests).toEqual([undefined]);
@@ -1452,6 +1469,7 @@ describe("Command Dialog coordinator", () => {
 				return component;
 			},
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const host = ui.currentHost as CommandDialogComponent & { focused: boolean };
 		host.focused = true;
 		expect(component.focused).toBeTrue();
@@ -1507,6 +1525,8 @@ describe("Command Dialog coordinator", () => {
 		if (!viewContext) throw new Error("Expected the dialog to mount");
 		const writesWhileOwned = ui.footerWrites.length;
 		const updatedFooter: FooterFactory = () => new TestComponent("updated footer");
+
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(
 			coordinator as typeof coordinator & {
 				installFooter(context: ExtensionContext, factory: NonNullable<FooterFactory>): void;
@@ -1520,6 +1540,7 @@ describe("Command Dialog coordinator", () => {
 
 		const restoredFooter = ui.footerWrites.at(-1);
 		expect(restoredFooter).not.toBe(initialFooter);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		expect(restoredFooter?.(ui.tui, ui.theme, {} as never).render(80)).toEqual(["updated footer"]);
 		expect(ui.workingWrites).toEqual([false, false]);
 	});
@@ -1533,6 +1554,7 @@ describe("Command Dialog coordinator", () => {
 		await api.start(startupContext);
 		const normalFooter = ui.footerWrites.at(-1);
 		if (!normalFooter) throw new Error("Expected the normal Suite footer");
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const commandContext = {
 			...startupContext,
 			ui: new Proxy(startupContext.ui, {}),

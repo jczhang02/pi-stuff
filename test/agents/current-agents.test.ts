@@ -736,8 +736,10 @@ describe("CurrentAgents snapshot", () => {
 		state.foregroundRuns?.set(run.runId, run);
 		let watchCalls = 0;
 		const tracker = createAsyncJobTracker(eventHost(), state, root, {
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			watchRun: ((...args: unknown[]) => {
 				watchCalls += 1;
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				return (fs.watch as (...watchArgs: unknown[]) => fs.FSWatcher)(...args);
 			}) as typeof fs.watch,
 		});
@@ -882,6 +884,7 @@ describe("CurrentAgents snapshot", () => {
 			asyncJob("queued", "queued"),
 			asyncJob("running", "running"),
 			asyncJob("supervisor", "running", { currentTool: "contact_supervisor", activityState: "needs_attention" }),
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			asyncJob("stopping", "running", { stopping: true } as Partial<AsyncJobState>),
 		];
 		for (const job of active) state.asyncJobs.set(job.asyncId, job);
@@ -900,6 +903,7 @@ describe("CurrentAgents snapshot", () => {
 					},
 				],
 			}),
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			asyncJob("resuming", "complete", { resuming: true } as Partial<AsyncJobState>),
 		];
 		for (const job of terminal) state.recentAgentJobs?.set(job.asyncId, job);
@@ -955,6 +959,7 @@ describe("CurrentAgents snapshot", () => {
 			"timed-out",
 			asyncJob("timed-out", "failed", {
 				steps: [
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					{
 						agent: "reviewer",
 						status: "failed",

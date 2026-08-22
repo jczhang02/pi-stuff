@@ -61,6 +61,7 @@ test("normalized nested media moves into persistent presentation details without
 		toolCallId: "outer",
 		toolName: "codemode",
 	};
+	// SAFETY: this test controls the value and supplies every AgentMessage member exercised by this case.
 	const messages = rehydrateCodeModeMessages([persisted] as AgentMessage[]);
 	expect(messages?.[0]).toMatchObject({ content: normalized.content });
 	expect(persisted.content).toEqual([before, after]);

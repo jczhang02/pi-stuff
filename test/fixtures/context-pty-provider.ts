@@ -40,6 +40,7 @@ function contentText(content: unknown): string {
 	return content
 		.map((part) => {
 			if (!part || !isRuntimeObject(part)) return "";
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const text = (part as { readonly text?: unknown }).text;
 			return isRuntimeString(text) ? text : "";
 		})
@@ -48,10 +49,13 @@ function contentText(content: unknown): string {
 }
 
 function allText(context: Context): string {
-	return context.messages
-		.map((entry) => contentText((entry as { readonly content?: unknown }).content))
-		.filter(Boolean)
-		.join("\n");
+	return (
+		context.messages
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
+			.map((entry) => contentText((entry as { readonly content?: unknown }).content))
+			.filter(Boolean)
+			.join("\n")
+	);
 }
 
 function lastUserText(context: Context): string {
@@ -154,6 +158,7 @@ function fixtureStream(context: Context) {
 		(entry) =>
 			entry.role === "toolResult" &&
 			entry.toolName === "ctx_search" &&
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			(entry as { readonly toolCallId?: unknown }).toolCallId === "context-search-2",
 	);
 	const bulkResult = context.messages.find(

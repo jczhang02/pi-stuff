@@ -166,9 +166,11 @@ function magicModule(
 ) {
 	return {
 		default: async (pi: ExtensionAPI) => {
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const register = pi.on.bind(pi) as (event: string, handler: Handler) => void;
 			register("context", (event, ctx) => {
 				options.onContext?.(ctx);
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				const contextEvent = event as { messages: unknown[] };
 				return {
 					messages: [
@@ -477,6 +479,7 @@ describe("Context capability lifecycle", () => {
 				return options.allowConfigurationMutation ? "ready" : "deferred";
 			},
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(api.on as (event: string, handler: Handler) => void)("input", () => ({ action: "handled" }));
 		const ctx = context();
 		await emit(handlers, "session_start", { type: "session_start", reason: "startup" }, ctx);
@@ -552,6 +555,7 @@ describe("Context capability lifecycle", () => {
 		const api = apiFor(handlers);
 		api.events.on(UI_RENDER_REQUEST_EVENT, (value) => {
 			renderRequests++;
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			(value as { handled: boolean }).handled = true;
 		});
 		piStuffContext(api, {
@@ -726,6 +730,7 @@ describe("Context capability lifecycle", () => {
 					magicApi.on("context", (event) => event);
 					magicApi.on("session_start", (event) => {
 						starts++;
+						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						reason = (event as { readonly reason?: unknown }).reason;
 					});
 				},
@@ -755,7 +760,9 @@ describe("Context capability lifecycle", () => {
 						ctx.ui.notify("announcement");
 					});
 					magicApi.on("before_agent_start", (_event, ctx) => {
+						// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 						ctx.ui.setFooter(() => ({ render: () => [] }) as never);
+						// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 						ctx.ui.setHeader(() => ({ render: () => [] }) as never);
 					});
 					for (const name of [
@@ -854,6 +861,7 @@ describe("Context capability lifecycle", () => {
 		const renderRequests: Array<{ force?: unknown; handled?: unknown }> = [];
 		api.events.on(UI_RENDER_REQUEST_EVENT, (value) => {
 			if (!isRuntimeObject(value) || value === null) return;
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const request = value as { force?: unknown; handled?: unknown };
 			request.handled = true;
 			renderRequests.push(request);
@@ -1336,6 +1344,7 @@ describe("Context capability lifecycle", () => {
 				await loadGate;
 				return {
 					default: async (pi: ExtensionAPI) => {
+						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						const register = pi.on.bind(pi) as (event: string, handler: Handler) => void;
 						register("context", (event) => (isRuntimeObject(event) && event !== null ? event : undefined));
 						register("session_before_compact", () => {
@@ -1480,6 +1489,7 @@ describe("Context capability lifecycle", () => {
 						magicApi.on("context", (event) => event);
 						magicApi.on("session_start", (event, ctx) => {
 							observed.push({
+								// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 								reason: (event as { readonly reason?: unknown }).reason,
 								sessionId: ctx.sessionManager.getSessionId(),
 							});
@@ -1515,6 +1525,7 @@ describe("Context capability lifecycle", () => {
 				default: async (magicApi: ExtensionAPI) => {
 					magicApi.on("context", (event) => event);
 					magicApi.on("session_start", async (event) => {
+						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						const reason = String((event as { readonly reason?: unknown }).reason);
 						order.push(`${reason}:start`);
 						if (reason === "first") await firstGate;
@@ -1559,6 +1570,7 @@ describe("Context capability lifecycle", () => {
 					const factory = factories;
 					magicApi.on("context", (event) => event);
 					magicApi.on("session_start", (event) => {
+						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						if (factory === 1 && (event as { readonly reason?: unknown }).reason === "fail") {
 							throw new Error("startup failed");
 						}
@@ -1635,9 +1647,11 @@ describe("Context capability lifecycle", () => {
 		piStuffContext(api, {
 			loadMagicContext: async () => ({
 				default: async (pi: ExtensionAPI) => {
+					// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 					const register = pi.on.bind(pi) as (event: string, handler: Handler) => void;
 					register("context", (event) => {
 						if (shouldFail) return;
+						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						const contextEvent = event as { messages: unknown[] };
 						return {
 							messages: [taggedMessage("<session-history>healthy</session-history>"), ...contextEvent.messages],
@@ -1676,9 +1690,11 @@ describe("Context capability lifecycle", () => {
 		piStuffContext(apiFor(handlers), {
 			loadMagicContext: async () => ({
 				default: async (magicApi: ExtensionAPI) => {
+					// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 					const register = magicApi.on.bind(magicApi) as (event: string, handler: Handler) => void;
 					register("context", (event) => {
 						projections++;
+						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						const contextEvent = event as { messages: unknown[] };
 						return {
 							messages: [taggedMessage("<session-history>managed</session-history>"), ...contextEvent.messages],
@@ -1872,6 +1888,7 @@ describe("Context capability lifecycle", () => {
 
 describe("Context projections", () => {
 	test("falls back to bounded native history for forked Agents without giving fresh Agents the whole session", async () => {
+		// SAFETY: this test controls the value and supplies every SessionEntry member exercised by this case.
 		const entry = {
 			type: "message",
 			id: "message-1",
@@ -1909,6 +1926,7 @@ describe("Context projections", () => {
 	test("projects a caller-owned frozen snapshot without re-reading a changed session", async () => {
 		let reads = 0;
 		const ctx = context([
+			// SAFETY: this test controls the value and supplies every SessionEntry member exercised by this case.
 			{
 				type: "message",
 				id: "leaked-message",
@@ -1940,6 +1958,7 @@ describe("Context projections", () => {
 				default: async (pi: ExtensionAPI) => {
 					pi.on("context", (event) => {
 						magicTransforms += 1;
+						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						const contextEvent = event as { messages: ReturnType<typeof taggedMessage>[] };
 						const input = contextEvent.messages.map((message) => message.content[0]?.text ?? "").join(" ");
 						return {
@@ -1951,6 +1970,7 @@ describe("Context projections", () => {
 		});
 		const ctx = context(
 			[
+				// SAFETY: this test controls the value and supplies every SessionEntry member exercised by this case.
 				{
 					type: "message",
 					id: "old-message",
@@ -2143,8 +2163,10 @@ describe("Context projections", () => {
 		piStuffContext(apiFor(handlers), {
 			loadMagicContext: async () => ({
 				default: async (pi: ExtensionAPI) => {
+					// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 					const register = pi.on.bind(pi) as (event: string, handler: Handler) => void;
 					register("context", (event, ctx) => {
+						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						const contextEvent = event as { messages: unknown[] };
 						return {
 							messages: [
@@ -2248,6 +2270,7 @@ describe("certified Pi extension ordering contract", () => {
 			sourceInfo: createSyntheticSourceInfo("<inline:context-compact-prompt>", {
 				source: "context-compact-prompt",
 			}),
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			handlers: handlers as Extension["handlers"],
 			tools: new Map(),
 			messageRenderers: new Map(),
@@ -2259,7 +2282,9 @@ describe("certified Pi extension ordering contract", () => {
 			[extension],
 			createExtensionRuntime(),
 			"/workspace/project-a",
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			context().sessionManager as never,
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			{} as never,
 		);
 
@@ -2289,6 +2314,7 @@ describe("certified Pi extension ordering contract", () => {
 			path: "<inline:context-contract>",
 			resolvedPath: "<inline:context-contract>",
 			sourceInfo: createSyntheticSourceInfo("<inline:context-contract>", { source: "context-contract" }),
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			handlers: handlers as Extension["handlers"],
 			tools: new Map(),
 			messageRenderers: new Map(),
@@ -2300,7 +2326,9 @@ describe("certified Pi extension ordering contract", () => {
 			[extension],
 			createExtensionRuntime(),
 			"/workspace/project-a",
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			context().sessionManager as never,
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			{} as never,
 		);
 

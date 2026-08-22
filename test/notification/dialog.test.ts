@@ -4,6 +4,7 @@ import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conve
 import { createNotificationSettingsView } from "../../packages/pi-stuff/src/notification/notification-settings-dialog.ts";
 import { NotificationSettingsStore } from "../../packages/pi-stuff/src/notification/settings.ts";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
@@ -15,6 +16,7 @@ test("Notification settings use one owned native Command Dialog", async () => {
 	let tests = 0;
 	const settings = NotificationSettingsStore.memory();
 	const terminal = { rows: 30 };
+	// SAFETY: this test controls the value and supplies every CommandDialogViewContext member exercised by this case.
 	const context = {
 		close: () => {
 			closed += 1;

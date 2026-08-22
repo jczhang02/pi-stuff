@@ -11,6 +11,7 @@ type Handler = (event: unknown, ctx: ExtensionContext) => object | undefined | P
 
 function fakePi() {
 	const handlers = new Map<string, Handler[]>();
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const pi = {
 		events: {},
 		on(name: string, handler: Handler) {
@@ -23,6 +24,7 @@ function fakePi() {
 }
 
 function context(sessionManager: ExtensionContext["sessionManager"]): ExtensionContext {
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	return { sessionManager } as ExtensionContext;
 }
 

@@ -42,6 +42,7 @@ function context(modelId = "gpt-5.6-sol", provider = "openai-codex", cwd = join(
 	};
 }
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (text: string) => text,
 	fg: (_color: string, text: string) => text,

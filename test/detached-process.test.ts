@@ -17,6 +17,7 @@ async function readProcessRecord(path: string): Promise<{ readonly childPid: num
 	const deadline = Date.now() + 2_000;
 	while (Date.now() < deadline) {
 		const contents = await readFile(path, "utf8").catch(() => "");
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		if (contents) return JSON.parse(contents) as { childPid: number; parentPid: number };
 		await Bun.sleep(20);
 	}

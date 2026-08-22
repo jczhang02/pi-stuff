@@ -52,6 +52,7 @@ export function ensureUiSettingsCommand() {
 }
 
 export function getCommandDialogCoordinator(pi: ExtensionAPI): TestCoordinator {
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const key = pi.events as object;
 	const existing = coordinators.get(key);
 	if (existing) return existing;

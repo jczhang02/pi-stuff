@@ -62,6 +62,7 @@ function renderedLines(
 	const callRenderer = tool.renderCall;
 	const renderer = tool.renderResult;
 	if (!callRenderer || !renderer) throw new Error(`Tool ${tool.name} has no complete renderer`);
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const theme = {
 		bold: (value: string) => value,
 		fg: (_color: string, value: string) => value,
@@ -82,6 +83,7 @@ function renderedLines(
 		],
 		true,
 	);
+	// SAFETY: this test controls the value and supplies every Parameters member exercised by this case.
 	const context = {
 		args,
 		argsComplete: true,
@@ -159,6 +161,7 @@ describe("registered Task tools", () => {
 				"\n",
 			),
 		).toContain("#missing not found");
+		// SAFETY: this test controls the value and supplies every AgentToolResult member exercised by this case.
 		const validationFailure = {
 			content: [{ type: "text", text: "Invalid TaskUpdate input" }],
 			details: undefined,

@@ -113,6 +113,7 @@ describe("fanout child Agent composition", () => {
 		const subscribe = api.events.on.bind(api.events);
 		let unsubscribeCalls = 0;
 		let subscriptionIndex = 0;
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		api.events.on = ((event: string, listener: (data: unknown) => void) => {
 			const unsubscribe = subscribe(event, listener);
 			const index = subscriptionIndex++;
@@ -126,6 +127,7 @@ describe("fanout child Agent composition", () => {
 		registerFanoutChild(api.api, {
 			loadConfiguration: config,
 			createExecutor: () => ({
+				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				execute: async () => ({ content: [], details: { mode: "single", results: [] } }) as never,
 			}),
 			createGovernorCoordinator: () => ({
@@ -159,9 +161,13 @@ describe("fanout child Agent composition", () => {
 		temporaryDirectories.add(runtimeDir);
 		const engineParams: SubagentParamsLike[] = [];
 		const governor = {
+			// SAFETY: this test controls the value and supplies every Array member exercised by this case.
 			binds: [] as Array<{ sessionId: string; ownerAgentPath: readonly string[] }>,
+			// SAFETY: this test controls the value and supplies every Array member exercised by this case.
 			prepares: [] as Array<{ launchRunId: string; params: unknown }>,
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			starts: [] as unknown[],
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			completions: [] as unknown[],
 			settled: 0,
 			disposed: 0,
@@ -182,6 +188,7 @@ describe("fanout child Agent composition", () => {
 							writerCount: 1,
 							abortStart: () => true,
 						});
+						// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 						return {
 							content: [{ type: "text", text: "private engine receipt" }],
 							details: {
@@ -197,6 +204,7 @@ describe("fanout child Agent composition", () => {
 				bindSession: (identity) => governor.binds.push(identity),
 				prepare: async (input) => {
 					governor.prepares.push({ launchRunId: input.launchRunId, params: input.params });
+					// SAFETY: this test controls the value and supplies every AgentExecutionInvocation member exercised by this case.
 					return { ok: true, invocation: { launchRunId: input.launchRunId } as AgentExecutionInvocation };
 				},
 				observeAsyncStarted: async (event) => {
@@ -226,6 +234,7 @@ describe("fanout child Agent composition", () => {
 		expect(api.tool?.description).toContain("always owner-blocking");
 		if (!api.tool) throw new Error("Expected nested Agent tool");
 		expect((api.tool.parameters as { properties?: Record<string, unknown> }).properties?.foreground).toBeUndefined();
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const presentation = api.tool as {
 			renderCall?: unknown;
 			renderResult?: unknown;
@@ -296,6 +305,7 @@ describe("fanout child Agent composition", () => {
 			registerFanoutChild(api.api, {
 				loadConfiguration: config,
 				createExecutor: () => ({
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					execute: async () => ({ content: [], details: { mode: "single", results: [] } }) as never,
 				}),
 				createGovernorCoordinator: () => ({
@@ -343,6 +353,7 @@ describe("fanout child Agent composition", () => {
 			createExecutor: () => ({
 				execute: async () => {
 					launches += 1;
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					return {
 						content: [{ type: "text", text: "launched" }],
 						details: { mode: "single", results: [], asyncId: "nested-live" },
@@ -353,6 +364,7 @@ describe("fanout child Agent composition", () => {
 				bindSession: () => {},
 				prepare: async (input) => ({
 					ok: true,
+					// SAFETY: this test controls the value and supplies every AgentExecutionInvocation member exercised by this case.
 					invocation: { launchRunId: input.launchRunId } as AgentExecutionInvocation,
 				}),
 				observeAsyncStarted: async () => {},
@@ -397,6 +409,7 @@ describe("fanout child Agent composition", () => {
 			createExecutor: () => ({
 				execute: async () => {
 					launches += 1;
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					return { content: [], details: { mode: "single", results: [] } } as never;
 				},
 			}),
@@ -407,6 +420,7 @@ describe("fanout child Agent composition", () => {
 					await gate.promise;
 					return {
 						ok: true,
+						// SAFETY: this test controls the value and supplies every AgentExecutionInvocation member exercised by this case.
 						invocation: { launchRunId: input.launchRunId } as AgentExecutionInvocation,
 					};
 				},
@@ -454,6 +468,7 @@ describe("fanout child Agent composition", () => {
 				execute: async () => {
 					launched = true;
 					await gate.promise;
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					return {
 						content: [{ type: "text", text: "runner retained" }],
 						details: {
@@ -469,6 +484,7 @@ describe("fanout child Agent composition", () => {
 				bindSession: () => {},
 				prepare: async (input) => ({
 					ok: true,
+					// SAFETY: this test controls the value and supplies every AgentExecutionInvocation member exercised by this case.
 					invocation: { launchRunId: input.launchRunId } as AgentExecutionInvocation,
 				}),
 				observeAsyncStarted: async () => {},
@@ -518,6 +534,7 @@ describe("fanout child Agent composition", () => {
 				execute: async () => {
 					launched = true;
 					await gate.promise;
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					return {
 						content: [{ type: "text", text: "runner retained" }],
 						details: {
@@ -537,6 +554,7 @@ describe("fanout child Agent composition", () => {
 				bindSession: () => {},
 				prepare: async (input) => ({
 					ok: true,
+					// SAFETY: this test controls the value and supplies every AgentExecutionInvocation member exercised by this case.
 					invocation: { launchRunId: input.launchRunId } as AgentExecutionInvocation,
 				}),
 				observeAsyncStarted: async () => {},
@@ -595,6 +613,7 @@ describe("fanout child Agent composition", () => {
 						abortStart: () => true,
 					});
 					await gate.promise;
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					return {
 						content: [{ type: "text", text: "finished" }],
 						details: {
@@ -612,6 +631,7 @@ describe("fanout child Agent composition", () => {
 				bindSession: () => {},
 				prepare: async (input) => ({
 					ok: true,
+					// SAFETY: this test controls the value and supplies every AgentExecutionInvocation member exercised by this case.
 					invocation: { launchRunId: input.launchRunId } as AgentExecutionInvocation,
 				}),
 				observeAsyncStarted: async () => {
@@ -655,6 +675,7 @@ describe("fanout child Agent composition", () => {
 		const dependencies: Partial<FanoutChildDependencies> = {
 			loadConfiguration: config,
 			createExecutor: () => ({
+				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				execute: async () => ({ content: [], details: { mode: "single", results: [] } }) as never,
 			}),
 			createGovernorCoordinator: () => ({

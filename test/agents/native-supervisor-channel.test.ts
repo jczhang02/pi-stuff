@@ -242,10 +242,12 @@ describe("native supervisor protocol compatibility", () => {
 		await channel.start();
 		expect(test.tools.has("subagent_supervisor")).toBe(true);
 		expect(test.tools.has("intercom")).toBe(false);
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const external = {
 			name: "intercom",
 			label: "External Intercom",
 			description: "Dynamically registered external intercom.",
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			parameters: {} as never,
 			async execute() {
 				return { content: [{ type: "text" as const, text: "external" }], details: {} };
@@ -271,10 +273,12 @@ describe("native supervisor protocol compatibility", () => {
 			legacyRunIds: new Set(),
 			startedAtMs: now,
 		});
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const replay = {
 			name: "subagent_supervisor",
 			label: "Historical Subagent Supervisor",
 			description: "Historical replay definition",
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			parameters: {} as never,
 			async execute() {
 				return { content: [{ type: "text" as const, text: "replay-only" }], details: {} };
@@ -475,6 +479,7 @@ describe("native supervisor protocol compatibility", () => {
 		};
 		const firstHost = harness({
 			...common,
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 			sendMessage: (() => {
 				firstDeliveries += 1;
 				return firstDelivery;

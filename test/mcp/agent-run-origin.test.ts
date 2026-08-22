@@ -34,7 +34,9 @@ describe("MCP user-driven Agent attribution", () => {
 			customType: MCP_USER_PROMPT_MESSAGE_TYPE,
 			display: true,
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		expect(readAgentWorkOrigin(delivered[0]?.message as object)).toBe("user");
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		expect(hasDirectUserActivation(delivered[0]?.message as object)).toBe(true);
 	});
 
@@ -66,6 +68,7 @@ describe("MCP user-driven Agent attribution", () => {
 		let renderer:
 			| ((message: { content: string }, options: { outputPad: number }) => UserMessageComponent | undefined)
 			| undefined;
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const pi = {
 			registerMessageRenderer: (_type: string, next: typeof renderer) => {
 				renderer = next;
@@ -75,6 +78,7 @@ describe("MCP user-driven Agent attribution", () => {
 		registerMcpPromptMessageRenderer(pi);
 		const component = renderer?.({ content: "Rendered MCP prompt" }, { outputPad: 1 });
 		expect(component).toBeInstanceOf(UserMessageComponent);
+		// SAFETY: this test controls the value and supplies every UserMessageComponent member exercised by this case.
 		expect((component as UserMessageComponent).render(80).join("\n")).toContain("Rendered MCP prompt");
 	});
 
@@ -99,6 +103,7 @@ describe("MCP user-driven Agent attribution", () => {
 		).toBe(true);
 		expect(order).toEqual(["send", "promote"]);
 		expect(messages).toHaveLength(1);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const delivered = messages[0] as { message: { details?: unknown }; options: unknown };
 		expect(readAgentWorkOrigin(delivered.message)).toBe("user");
 		expect(delivered.options).toEqual({ deliverAs: "steer", triggerTurn: true });
@@ -125,6 +130,7 @@ describe("MCP user-driven Agent attribution", () => {
 			}),
 		).toBe(true);
 		expect(promotions).toBe(0);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		expect(readAgentWorkOrigin(delivered as object)).toBe("user");
 	});
 

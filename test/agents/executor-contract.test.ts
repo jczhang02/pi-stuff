@@ -50,6 +50,7 @@ describe("Agent product contract", () => {
 	});
 
 	test("keeps the provider schema branch-free and enforces exclusive shapes at runtime", () => {
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const nodes = [SubagentParams as unknown];
 		while (nodes.length > 0) {
 			const node = nodes.pop();

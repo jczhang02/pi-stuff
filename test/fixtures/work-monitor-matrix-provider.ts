@@ -91,6 +91,7 @@ function currentScenario(context: Context): Scenario | undefined {
 			.slice(text.indexOf(MARKER) + MARKER.length)
 			.trim()
 			.split(/\s/u)[0];
+		// SAFETY: this test controls the value and supplies every Scenario member exercised by this case.
 		if (candidate && candidate in TITLES) return candidate as Scenario;
 	}
 	return undefined;

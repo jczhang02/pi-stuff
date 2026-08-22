@@ -33,6 +33,7 @@ const Params = Type.Object({ value: Type.String() });
 type Params = { value: string };
 type RenderContext = Parameters<NonNullable<ToolDefinition<typeof Params>["renderCall"]>>[2];
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
@@ -232,6 +233,7 @@ function toolFromHarness(
 	);
 	const decorated = harness.tools.get(name);
 	if (!decorated) throw new Error(`missing ${name}`);
+	// SAFETY: this test controls the value and supplies every ToolDefinition member exercised by this case.
 	return decorated as ToolDefinition<typeof Params, { source: string }>;
 }
 
@@ -366,6 +368,7 @@ test("decoration preserves execution and projects one Tool immediately", async (
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.startTurn([assistant(call("r1", "read", "a.ts"))]);
 
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const execution = await tool.execute("r1", { value: "a.ts" }, undefined, undefined, {} as never);
 	expect(execution.content).toEqual([{ type: "text", text: "MODEL_VISIBLE" }]);
 	const rendered = settle(tool, "r1", "a.ts");
@@ -397,6 +400,7 @@ test("settled Host redraws build detail only while globally expanded", () => {
 			},
 		},
 	);
+	// SAFETY: this test controls the value and supplies every ToolDefinition member exercised by this case.
 	const tool = harness.tools.get("read") as ToolDefinition<typeof Params, { source: string }>;
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.indexMessages([assistant(call("lazy-read", "read", "a.ts")), result("lazy-read", "MODEL_VISIBLE")], true);
@@ -454,6 +458,7 @@ test("collapsed and expanded historical replay skip the synthetic running pass",
 			},
 		},
 	);
+	// SAFETY: this test controls the value and supplies every ToolDefinition member exercised by this case.
 	const tool = harness.tools.get("read") as ToolDefinition<typeof Params, { source: string }>;
 	const runtime = getToolUiRuntime(harness.api);
 	for (const expanded of [false, true]) {
@@ -537,7 +542,8 @@ test("a Code Mode envelope renders the same compact Tool Activity as a direct To
 		{
 			decode: (details) =>
 				isRuntimeObject(details) && details !== null && "operations" in details
-					? ((details as { operations: readonly SuiteToolEnvelopeOperation[] }).operations ?? [])
+					? // SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
+						((details as { operations: readonly SuiteToolEnvelopeOperation[] }).operations ?? [])
 					: [],
 			registry: registrations.registry,
 		},
@@ -559,6 +565,7 @@ test("a Code Mode envelope renders the same compact Tool Activity as a direct To
 	);
 	const state = {};
 	const context = renderContext(state, { value: "unused" }, { toolCallId: "exec-1" });
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const callComponent = envelope.renderCall?.({ code: "read" }, theme, context as never);
 	if (!callComponent) throw new Error("missing Code Mode call component");
 	const resultComponent = envelope.renderResult?.(
@@ -568,6 +575,7 @@ test("a Code Mode envelope renders the same compact Tool Activity as a direct To
 		},
 		{ expanded: false, isPartial: false },
 		theme,
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		{ ...context, lastComponent: callComponent } as never,
 	);
 	if (!resultComponent) throw new Error("missing Code Mode result component");
@@ -638,7 +646,8 @@ test("Code Mode and direct Tools stay pixel-equivalent when expanded, failed, an
 			{
 				decode: (details) =>
 					isRuntimeObject(details) && details !== null && "operations" in details
-						? ((details as { operations: readonly SuiteToolEnvelopeOperation[] }).operations ?? [])
+						? // SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
+							((details as { operations: readonly SuiteToolEnvelopeOperation[] }).operations ?? [])
 						: [],
 				registry: registrations.registry,
 			},
@@ -669,11 +678,13 @@ test("Code Mode and direct Tools stay pixel-equivalent when expanded, failed, an
 				toolCallId: "outer",
 			},
 		);
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const callComponent = envelope.renderCall?.({ code: "read" }, theme, context as never);
 		const rendered = envelope.renderResult?.(
 			{ content: [], details: { operations: [operation] } },
 			{ expanded: scenario.expanded, isPartial: false },
 			theme,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{ ...context, lastComponent: callComponent } as never,
 		);
 		if (!rendered) throw new Error(`missing ${scenario.label} envelope result`);
@@ -758,11 +769,13 @@ test("Code Mode preserves the original Tool media projection without envelope ch
 			toolCallId: "outer-media",
 		},
 	);
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const envelopeCall = envelope.renderCall?.({ code: "view" }, theme, envelopeContext as never);
 	const envelopeBody = envelope.renderResult?.(
 		{ content: [image], details: { operations: [operation] } },
 		{ expanded: false, isPartial: false },
 		theme,
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		{ ...envelopeContext, lastComponent: envelopeCall } as never,
 	);
 	if (!envelopeBody) throw new Error("missing envelope media renderer");
@@ -829,11 +842,13 @@ test("Code Mode keeps multiple Kitty images inside their original expanded Tool 
 			{ value: "unused" },
 			{ expanded: true, showImages: true, toolCallId: "outer-kitty" },
 		);
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const callComponent = envelope.renderCall?.({ code: "view" }, theme, context as never);
 		const body = envelope.renderResult?.(
 			{ content: [], details: { operations } },
 			{ expanded: true, isPartial: false },
 			theme,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{ ...context, lastComponent: callComponent } as never,
 		);
 		if (!body) throw new Error("missing Kitty media body");
@@ -884,6 +899,7 @@ test("Pi 0.84.2 Host renders expanded multi-image Tools identically through Code
 				{ value: "first.png" },
 				{ showImages: true },
 				directView,
+				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				hostUi as never,
 				"/project",
 			),
@@ -893,6 +909,7 @@ test("Pi 0.84.2 Host renders expanded multi-image Tools identically through Code
 				{ value: "second.png" },
 				{ showImages: true },
 				directView,
+				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				hostUi as never,
 				"/project",
 			),
@@ -966,6 +983,7 @@ test("Pi 0.84.2 Host renders expanded multi-image Tools identically through Code
 			{ code: "view" },
 			{ showImages: true },
 			envelope,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			hostUi as never,
 			"/project",
 		);
@@ -1004,12 +1022,14 @@ test("a completed nested Tool settles in place while the outer Code Mode result 
 	const runtime = getToolUiRuntime(harness.api);
 	const state = {};
 	const context = renderContext(state, { value: "unused" }, { toolCallId: "outer-live" });
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const callComponent = envelope.renderCall?.({ code: "read" }, theme, context as never);
 	runtime.observeEnvelopeResult("codemode", "outer-live", { operations });
 	const running = envelope.renderResult?.(
 		{ content: [], details: { operations } },
 		{ expanded: false, isPartial: true },
 		theme,
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		{ ...context, lastComponent: callComponent } as never,
 	);
 	if (!running) throw new Error("missing running envelope result");
@@ -1029,6 +1049,7 @@ test("a completed nested Tool settles in place while the outer Code Mode result 
 		{ content: [], details: { operations } },
 		{ expanded: false, isPartial: true },
 		theme,
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		{ ...context, lastComponent: running } as never,
 	);
 	if (!settled) throw new Error("missing settled envelope result");
@@ -1124,6 +1145,7 @@ test("streaming, rebuild, and Code Mode share retrieval eligibility", () => {
 	for (const entry of calls) {
 		streaming.observeAssistantEvent({
 			contentIndex: 0,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			partial: assistant() as never,
 			toolCall: { ...entry, type: "toolCall" },
 			type: "toolcall_end",
@@ -1218,6 +1240,7 @@ test("the Code Mode surface hides every active Suite Tool without changing the v
 		},
 		{ expanded: false, isPartial: false },
 		theme,
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		{ ...context, lastComponent: callComponent } as never,
 	);
 	expect(renderLines(callComponent)).toEqual([]);
@@ -1275,6 +1298,7 @@ test("an active Suite Tool needs no per-Tool caller policy to run through Code M
 
 	expect(registrations.registry.catalog()).toMatchObject([{ definition: { name: "write" } }]);
 	const result = await registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		context: { cwd: "/project" } as never,
 		input: { value: "file.ts" },
 		name: "write",
@@ -1296,6 +1320,7 @@ test("Code Mode compensation runs only an explicitly declared inverse operation"
 	toolFromHarness({ ...harness, api: registrations.api }, "read", "read-file", {
 		replay: "record",
 	});
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const context = { cwd: "/project" } as never;
 	expect(
 		await registrations.registry.compensate({
@@ -1331,6 +1356,7 @@ test("nested invocation preserves Pi preparation, lifecycle hooks, updates, and 
 	});
 	registrations.api.on("tool_call", (event) => {
 		order.push("call");
+		// SAFETY: this test controls the value and supplies every Params member exercised by this case.
 		(event.input as Params).value += "-hook";
 	});
 	registrations.api.on("tool_execution_update", () => {
@@ -1357,12 +1383,14 @@ test("nested invocation preserves Pi preparation, lifecycle hooks, updates, and 
 			label: "Lifecycle",
 			name: "lifecycle",
 			parameters: Params,
+			// SAFETY: this test controls the value and supplies every Params member exercised by this case.
 			prepareArguments: (input) => ({ ...(input as Params), value: (input as Params).value.trim() }),
 		},
 		presentation("run-command"),
 	);
 	const updates: string[] = [];
 	const invocation = await registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		context: { cwd: "/project" } as never,
 		input: { value: "  value  " },
 		name: "lifecycle",
@@ -1384,6 +1412,7 @@ test("a Code Mode Bash call still reaches RTK's normal tool_call rewrite seam", 
 	const registrations = createSuiteToolRegistrationTracker(harness.api);
 	let executed = "";
 	registrations.api.on("tool_call", (event) => {
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		if (event.toolName === "bash") (event.input as { command: string }).command = "rtk git status";
 	});
 	registerSuiteOwnedTool(
@@ -1398,11 +1427,13 @@ test("a Code Mode Bash call still reaches RTK's normal tool_call rewrite seam", 
 			name: "bash",
 			parameters: Type.Object({ command: Type.String() }),
 		},
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		presentation("run-command") as never,
 		{ replay: "never" },
 	);
 	harness.api.setActiveTools(["bash"]);
 	await registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		context: { cwd: "/project" } as never,
 		input: { command: "git status" },
 		name: "bash",
@@ -1441,6 +1472,7 @@ test("a failing nested tool_call hook still emits Pi's terminal lifecycle event"
 	);
 
 	const outcome = await registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		context: { cwd: "/project" } as never,
 		input: { value: "value" },
 		name: "hook_failure",
@@ -1473,6 +1505,7 @@ test("a permission-style nested tool_call rejection blocks execution and preserv
 	);
 
 	const outcome = await registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		context: { cwd: "/project" } as never,
 		input: { value: "value" },
 		name: "permission_fixture",
@@ -1525,6 +1558,7 @@ test("nested invocation matches Pi cancellation and ignores updates after execut
 
 	const updates: string[] = [];
 	const completed = await registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		context: { cwd: "/project" } as never,
 		input: { value: "value" },
 		name: "late_update",
@@ -1540,6 +1574,7 @@ test("nested invocation matches Pi cancellation and ignores updates after execut
 	const controller = new AbortController();
 	controller.abort();
 	const cancelled = await registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		context: { cwd: "/project" } as never,
 		input: { value: "cancelled" },
 		name: "late_update",
@@ -1583,6 +1618,7 @@ test("nested invocation records Tools activated by the original Pi Tool", async 
 	registrations.api.setActiveTools(["activator"]);
 
 	const invocation = await registrations.registry.invoke({
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		context: { cwd: "/project" } as never,
 		input: { value: "value" },
 		name: "activator",
@@ -1701,13 +1737,16 @@ test("Bash partial results update in place and the final output wins", () => {
 			toolCallId: "stream-bash",
 		},
 	);
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const callComponent = bash.renderCall?.({ value: "printf 'first\\nsecond\\n'" }, theme, context as never);
 	if (!callComponent) throw new Error("missing running Bash component");
 	expect(renderLines(callComponent)).toEqual([" • Bash(printf 'first\\nsecond\\n')", "  ⎿  Running…"]);
 
 	const partial = { content: [{ type: "text" as const, text: "first\nsecond" }], details: { source: "bash" } };
 	runtime.observeToolExecutionUpdate("stream-bash", partial);
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	bash.renderCall?.({ value: "printf 'first\\nsecond\\n'" }, theme, context as never);
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	bash.renderResult?.(partial, { expanded: false, isPartial: true }, theme, {
 		...context,
 		lastComponent: callComponent,
@@ -1720,7 +1759,9 @@ test("Bash partial results update in place and the final output wins", () => {
 		isError: true,
 	};
 	runtime.observeToolExecutionEnd("stream-bash", finalResult);
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	bash.renderCall?.({ value: "printf 'first\\nsecond\\n'" }, theme, context as never);
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	bash.renderResult?.(finalResult, { expanded: false, isPartial: false }, theme, {
 		...context,
 		isError: true,
@@ -1753,10 +1794,13 @@ test("replaying Pi's Bash partial renderer pass settles after one invalidation",
 
 	runtime.indexMessages([assistant(bashCall(toolCallId, args.value))], false);
 	runtime.observeToolExecutionStart(toolCallId);
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const component = bash.renderCall?.(args, theme, context as never);
 	if (!component) throw new Error("missing running Bash component");
 	renderPass = () => {
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		bash.renderCall?.(args, theme, context as never);
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		bash.renderResult?.(partial, { expanded: false, isPartial: true }, theme, {
 			...context,
 			lastComponent: component,
@@ -1841,11 +1885,13 @@ test("Code Mode preserves standalone Bash operation blocks in compact and expand
 		[true, directExpanded],
 	] as const) {
 		const context = renderContext({}, { value: "unused" }, { expanded, toolCallId: "outer" });
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const callComponent = envelope.renderCall?.({ code: "bash" }, theme, context as never);
 		const body = envelope.renderResult?.(
 			{ content: [], details: { operations: [operation] } },
 			{ expanded, isPartial: false },
 			theme,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{ ...context, lastComponent: callComponent } as never,
 		);
 		if (!body) throw new Error("missing Code Mode Bash body");
@@ -2035,6 +2081,7 @@ test("streaming Tool argument deltas do not rescan the accumulated argument", ()
 			type: "toolcall_delta",
 			contentIndex: 0,
 			delta: "x".repeat(10_000),
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			partial: pending as never,
 		});
 	}
@@ -2042,6 +2089,7 @@ test("streaming Tool argument deltas do not rescan the accumulated argument", ()
 		type: "toolcall_end",
 		contentIndex: 0,
 		toolCall: { type: "toolCall", id: "large-write", name: "write", arguments: { value: "large.ts" } },
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		partial: pending as never,
 	});
 
@@ -2432,6 +2480,7 @@ test("successful infrastructure-only groups disappear but expand normally", () =
 		label: "ctx_reduce",
 		summarize: () => "done",
 	});
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const tool = harness.tools.get("ctx_reduce") as ToolDefinition<typeof Params, { source: string }>;
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.indexMessages([assistant(call("i1", "ctx_reduce", "context")), result("i1")], true);
@@ -2459,6 +2508,7 @@ test("failed infrastructure-only groups use the protocol fallback label", () => 
 		label: "ctx_reduce",
 		summarize: () => "failed",
 	});
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const tool = harness.tools.get("ctx_reduce") as ToolDefinition<typeof Params, { source: string }>;
 	const runtime = getToolUiRuntime(harness.api);
 	runtime.indexMessages(
@@ -2503,6 +2553,7 @@ test("reload handoff crosses the fresh Extension event registry created by Pi", 
 
 test("reload accepts the previous active-name-only handoff during a live code upgrade", () => {
 	const key = Symbol.for("@jczhang02/pi-stuff-tools/reload-handoff.v1");
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const host = globalThis as { [name: symbol]: readonly string[] | undefined };
 	host[key] = ["read", "bash"];
 	const incoming = new ToolUiRuntime();

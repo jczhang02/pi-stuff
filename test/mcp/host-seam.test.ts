@@ -260,6 +260,7 @@ test("real Pi 0.84.2 preserves MCP prompt provenance, Context, persistence, and 
 	initTheme("dark", false);
 	const reloadedMessage = sessionEntryToContextMessages(reopenedEntry)[0];
 	if (reloadedMessage?.role !== "custom") throw new Error("Expected reloaded custom message");
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const component = renderer(reloadedMessage, { expanded: false, outputPad: 1 }, {} as Theme);
 	expect(component?.render(80).join("\n")).toContain(prompt);
 }, 20_000);

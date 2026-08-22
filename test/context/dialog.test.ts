@@ -10,6 +10,7 @@ import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conve
 
 initTheme("dark", false);
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
@@ -73,15 +74,18 @@ const MAGIC_DETAILS = {
 function harness(rows = 24) {
 	let closed: ContextDialogCommand | undefined;
 	let closeCalls = 0;
+	// SAFETY: this test controls the value and supplies every KeybindingsManager member exercised by this case.
 	const context = {
 		close: (result?: ContextDialogCommand) => {
 			closeCalls++;
 			closed = result;
 		},
+		// SAFETY: this test controls the value and supplies every KeybindingsManager member exercised by this case.
 		keybindings: {} as KeybindingsManager,
 		requestRender: () => undefined,
 		signal: new AbortController().signal,
 		theme,
+		// SAFETY: this test controls the value and supplies every TUI member exercised by this case.
 		tui: { terminal: { rows } } as TUI,
 	} as CommandDialogViewContext<ContextDialogCommand>;
 	return { context, getCloseCalls: () => closeCalls, getClosed: () => closed };

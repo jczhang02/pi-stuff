@@ -9,6 +9,7 @@ import {
 	isContextActivitySettled,
 } from "../../packages/pi-stuff/src/context-management/activity.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,

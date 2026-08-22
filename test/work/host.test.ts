@@ -118,6 +118,7 @@ describe("Pi Stuff Work host composition", () => {
 		expect(host.renderers.has("pi-stuff-background-work-result")).toBe(true);
 		const renderer = host.renderers.get("pi-stuff-background-work-result");
 		const markerColors: string[] = [];
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const component = renderer?.(
 			{
 				details: {
@@ -129,6 +130,7 @@ describe("Pi Stuff Work host composition", () => {
 				},
 			},
 			{},
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 			{
 				fg: (color: string, value: string) => {
 					if (value === "•") markerColors.push(color);
@@ -226,6 +228,7 @@ describe("Pi Stuff Work host composition", () => {
 			createRuntime: () => {
 				const record = { shutdownCalls: 0 };
 				created.push(record);
+				// SAFETY: this test controls the value and supplies every BackgroundWorkRuntime member exercised by this case.
 				return {
 					detachActiveForeground: () => false,
 					prepare: async () => {},
@@ -260,6 +263,7 @@ describe("Pi Stuff Work host composition", () => {
 			createRuntime: () => {
 				const record = { shutdownCalls: 0 };
 				created.push(record);
+				// SAFETY: this test controls the value and supplies every BackgroundWorkRuntime member exercised by this case.
 				return {
 					detachActiveForeground: () => false,
 					prepare: async () => {},

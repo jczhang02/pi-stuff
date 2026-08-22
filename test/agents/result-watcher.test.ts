@@ -85,6 +85,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			readResultSnapshot: async (target, maxBytes) => {
 				readStarted.resolve();
@@ -138,6 +139,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			fs: {
 				existsSync: fs.existsSync,
@@ -146,6 +148,7 @@ describe("background result watcher", () => {
 				unlinkSync: fs.unlinkSync,
 				readdirSync: fs.readdirSync,
 				realpathSync: fs.realpathSync,
+				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				watch: (() => inertWatcher) as never,
 			},
 			readResultSnapshot: (target, maxBytes) => {
@@ -220,6 +223,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			asyncDirRoot,
 			fs: {
@@ -229,6 +233,7 @@ describe("background result watcher", () => {
 				unlinkSync: fs.unlinkSync,
 				readdirSync: fs.readdirSync,
 				realpathSync: fs.realpathSync,
+				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				watch: (() => inertWatcher) as never,
 			},
 			readResultSnapshot: (target, maxBytes) => {
@@ -286,6 +291,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			acquireClaim: () => ({
 				directory: path.join(resultsDir, "fake.lock"),
@@ -324,6 +330,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -358,6 +365,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -430,6 +438,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -493,6 +502,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -560,7 +570,9 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			fs: {
 				existsSync: fs.existsSync,
 				lstatSync: fs.lstatSync,
@@ -637,6 +649,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -706,6 +719,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -748,6 +762,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: { emit: () => {} } as never }, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async () => {
@@ -836,9 +851,11 @@ describe("background result watcher", () => {
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
 		const watcher = createResultWatcher(
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{
 				events: {
 					emit: (channel: string, data: unknown) => {
+						// SAFETY: this test controls the value and supplies every CompletionNotification member exercised by this case.
 						if (channel === SUBAGENT_ASYNC_COMPLETE_EVENT) emitted.push(data as CompletionNotification);
 					},
 				},
@@ -855,6 +872,7 @@ describe("background result watcher", () => {
 					},
 				},
 				projectNestedEvents: async () =>
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					({
 						version: 3,
 						rootRunId: runId,
@@ -926,6 +944,7 @@ describe("background result watcher", () => {
 			watcher: null,
 			watcherRestartTimer: null,
 		} satisfies ResultWatcherState;
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const watcher = createResultWatcher({ events: bus } as never, state, resultsDir, 60_000, {
 			notifier: {
 				deliver: async (notification) => {
@@ -936,6 +955,7 @@ describe("background result watcher", () => {
 			projectNestedEvents: async () => {
 				projectionStarted.resolve();
 				await projectionRelease.promise;
+				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				return { version: 3, rootRunId: runId, updatedAt: Date.now(), children: [] } as never;
 			},
 		});

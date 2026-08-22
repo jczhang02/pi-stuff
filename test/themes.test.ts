@@ -112,6 +112,7 @@ function blend(base: string, color: string): string {
 }
 
 test("the Package ships all four complete official Catppuccin themes", async () => {
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const manifest = (await Bun.file(join(packageDirectory, "package.json")).json()) as {
 		files?: unknown;
 		pi?: unknown;
@@ -120,6 +121,7 @@ test("the Package ships all four complete official Catppuccin themes", async () 
 	expect(manifest.pi).toEqual({ extensions: ["./index.ts"], themes: ["./themes/*.json"] });
 
 	for (const flavor of flavors) {
+		// SAFETY: this test controls the value and supplies every ThemeJson member exercised by this case.
 		const theme = (await Bun.file(join(packageDirectory, "themes", `catppuccin-${flavor}.json`)).json()) as ThemeJson;
 		expect(theme.name).toBe(`catppuccin-${flavor}`);
 		expect(Object.keys(theme.colors).sort()).toEqual(requiredColors);

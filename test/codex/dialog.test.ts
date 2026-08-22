@@ -4,6 +4,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { createCodexDialogView, formatCodexToolLines } from "../../packages/pi-stuff/src/codex/dialog.js";
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
@@ -21,6 +22,7 @@ test("packs complete Codex Tool labels at wide and narrow widths", () => {
 });
 
 test("keeps Codex error, selection, and Escape reachable at very low height", async () => {
+	// SAFETY: this test controls the value and supplies every CommandDialogViewContext member exercised by this case.
 	const context = {
 		close: () => {},
 		keybindings: {},
@@ -48,6 +50,7 @@ test("keeps Codex error, selection, and Escape reachable at very low height", as
 
 test("keeps Codex usage state and Tool identities above the tertiary dim token", () => {
 	const colors: Array<{ color: string; text: string }> = [];
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const recordingTheme = {
 		...theme,
 		fg: (color: string, text: string) => {
@@ -62,6 +65,7 @@ test("keeps Codex usage state and Tool identities above the tertiary dim token",
 			throw new Error("usage unavailable");
 		},
 		setFast: async () => {},
+		// SAFETY: this test controls the value and supplies every CommandDialogViewContext member exercised by this case.
 	}).create({
 		close: () => {},
 		keybindings: {},

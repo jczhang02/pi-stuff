@@ -37,6 +37,7 @@ const editorTheme: EditorTheme = {
 	},
 };
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	fg: (color: string, text: string) => (color === "accent" ? `${ACCENT_OPEN}${text}${ACCENT_CLOSE}` : text),
 } as Theme;
@@ -98,6 +99,7 @@ function commands(...names: string[]): SlashCommandInfo[] {
 }
 
 function command(name: string, source: SlashCommandInfo["source"]): SlashCommandInfo {
+	// SAFETY: this test controls the value and supplies every SlashCommandInfo member exercised by this case.
 	return { name, source } as SlashCommandInfo;
 }
 
@@ -107,6 +109,7 @@ function createEditor(
 	registeredCommands: readonly SlashCommandInfo[] = commands("review", "skill:inspect"),
 ) {
 	const tui = new TestTui();
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const mutableSettings = settings as {
 		inlineSlashAutocomplete: boolean;
 		inputHighlighting: boolean;
@@ -118,6 +121,7 @@ function createEditor(
 	});
 	const keybindings = new TestAppKeybindings();
 	if (!isAgentKeybindings(keybindings)) throw new Error("Test keybindings are incomplete");
+	// SAFETY: this test controls the value and supplies every ObservableEditor member exercised by this case.
 	const editor = factory(tui, editorTheme, keybindings) as ObservableEditor;
 	const provider = new CommandProvider(providerItems);
 	editor.setAutocompleteProvider?.(provider);
@@ -259,6 +263,7 @@ describe("Pi Stuff inline slash autocomplete", () => {
 		await settleAutocomplete();
 		expect(created.editor.render(64).length).toBeGreaterThan(3);
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(created.settings as { inlineSlashAutocomplete: boolean }).inlineSlashAutocomplete = false;
 		const disabled = created.editor.render(64);
 		expect(disabled).toHaveLength(3);
@@ -293,6 +298,7 @@ describe("editor composition", () => {
 	test("exposes native and inline autocomplete visibility through a cleanup-compatible controller", async () => {
 		type Factory = (tui: TUI, theme: EditorTheme, keybindings: AgentKeybindingsManager) => EditorComponent;
 		let installedFactory: Factory | undefined;
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const context = {
 			ui: {
 				getEditorComponent: () => installedFactory,
@@ -312,6 +318,7 @@ describe("editor composition", () => {
 		const tui = new TestTui();
 		const keybindings = new TestAppKeybindings();
 		if (!isAgentKeybindings(keybindings)) throw new Error("Test keybindings are incomplete");
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const editor = installedFactory?.(tui, editorTheme, keybindings) as ObservableEditor;
 		editor.setAutocompleteProvider?.(new CommandProvider([{ value: "skill:review", label: "skill:review" }]));
 		editor.setText("ask /re");

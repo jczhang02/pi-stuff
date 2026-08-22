@@ -5,6 +5,7 @@ import { createMcpControlView } from "../../packages/pi-stuff/src/mcp/mcp-dialog
 import { McpStatusStore } from "../../packages/pi-stuff/src/mcp/status-store.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,

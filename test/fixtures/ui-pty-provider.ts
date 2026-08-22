@@ -89,6 +89,7 @@ function lastUserText(context: Context): string {
 
 function lastOwnedGoalPrompt(context: Context): string | undefined {
 	for (let index = context.messages.length - 1; index >= 0; index -= 1) {
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const message = context.messages[index] as {
 			role?: unknown;
 			customType?: unknown;
@@ -407,6 +408,7 @@ export default function uiPtyProvider(pi: ExtensionAPI): void {
 	pi.registerShortcut(Key.f9, {
 		description: "Switch to the next Catppuccin theme fixture",
 		handler: async (ctx) => {
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const current = CATPPUCCIN_THEMES.indexOf(ctx.ui.theme.name as (typeof CATPPUCCIN_THEMES)[number]);
 			const theme = CATPPUCCIN_THEMES[(current + 1) % CATPPUCCIN_THEMES.length] ?? CATPPUCCIN_THEMES[0];
 			const result = ctx.ui.setTheme(theme);

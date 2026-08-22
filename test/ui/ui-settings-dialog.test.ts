@@ -10,6 +10,7 @@ import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conve
 import type { RegisteredUiSetting, UiSettingRegistry } from "../../packages/pi-stuff/src/conversation-ui/settings.js";
 import { createUiSettingsView } from "../../packages/pi-stuff/src/conversation-ui/ui-settings-dialog.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
@@ -48,6 +49,7 @@ function harness(rows = 28): UiHarness {
 	const terminal = { rows };
 	return {
 		closed: () => closed,
+		// SAFETY: this test controls the value and supplies every CommandDialogViewContext member exercised by this case.
 		context: {
 			close: () => {
 				closed += 1;
@@ -140,6 +142,7 @@ test("/ui uses one native searchable list for all eight presentation settings", 
 		setting("inlineSlashAutocomplete", "Inline slash autocomplete", 40),
 		setting("toolRunningTimer", "Tool running timer", 50),
 	];
+	// SAFETY: this test controls the value and supplies every UiSettingRegistry member exercised by this case.
 	const registry = { list: () => settings, register: () => () => {} } as UiSettingRegistry;
 	const testHarness = harness();
 	const component = createUiSettingsView(registry).create(testHarness.context);
@@ -169,6 +172,7 @@ test("/ui uses one native searchable list for all eight presentation settings", 
 test("/ui cycles each setting through its registered values", async () => {
 	initTheme("dark", false);
 	const density = setting("statuslineDensity", "Statusline density", 11, ["auto", "full", "compact"]);
+	// SAFETY: this test controls the value and supplies every UiSettingRegistry member exercised by this case.
 	const registry = {
 		list: () => [density],
 		register: () => () => {},
@@ -185,6 +189,7 @@ test("/ui cycles each setting through its registered values", async () => {
 
 test("/ui remains bounded at narrow width and very low height", () => {
 	initTheme("dark", false);
+	// SAFETY: this test controls the value and supplies every UiSettingRegistry member exercised by this case.
 	const registry = {
 		list: () => [setting("statusline", "Statusline", 10)],
 		register: () => () => {},
@@ -214,6 +219,7 @@ test("/ui rolls a failed setting back and shows the error while it remains open"
 	initTheme("dark", false);
 	const pending = deferred();
 	const controlled = failingSetting(pending.promise);
+	// SAFETY: this test controls the value and supplies every UiSettingRegistry member exercised by this case.
 	const registry = {
 		list: () => [controlled.setting],
 		register: () => () => {},
@@ -240,6 +246,7 @@ test("/ui reports a failed write through its host adapter after immediate close"
 	initTheme("dark", false);
 	const pending = deferred();
 	const controlled = failingSetting(pending.promise);
+	// SAFETY: this test controls the value and supplies every UiSettingRegistry member exercised by this case.
 	const registry = {
 		list: () => [controlled.setting],
 		register: () => () => {},
@@ -278,6 +285,7 @@ test("/ui isolates Capability observer setup and cleanup failures", () => {
 	healthy.subscribe = () => () => {
 		healthyReleased = true;
 	};
+	// SAFETY: this test controls the value and supplies every UiSettingRegistry member exercised by this case.
 	const registry = {
 		list: () => [brokenSubscribe, brokenCleanup, healthy],
 		register: () => () => {},

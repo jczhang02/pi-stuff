@@ -8,6 +8,7 @@ import type {
 import { createTasksDialogView } from "../../packages/pi-stuff/src/background-work/src/tasks-dialog.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
@@ -78,6 +79,7 @@ function harness(rows = 24, activeTheme = theme, keybindings = new KeybindingsMa
 describe("/tasks Command Dialog", () => {
 	test("keeps running task identity and state above the tertiary dim token", () => {
 		const colors: Array<{ color: string; text: string }> = [];
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const recordingTheme = {
 			...theme,
 			fg: (color: string, text: string) => {

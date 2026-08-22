@@ -78,6 +78,7 @@ function runEventChannel(runId: string) {
 
 function observeRun(mock: ReturnType<typeof createMockPi>, runId: string) {
 	const events: RunEvent[] = [];
+	// SAFETY: this test controls the value and supplies every RunEvent member exercised by this case.
 	mock.eventBus.on(runEventChannel(runId), (data) => events.push(data as RunEvent));
 	return events;
 }
@@ -106,6 +107,7 @@ function lastPersistedGoal(mock: ReturnType<typeof createMockPi>) {
 	const current = runtimeByPi.get(mock.pi)?.activeGoal;
 	if (current) return current;
 	const entry = mock.entries.filter((candidate) => candidate.customType === "goal-state").at(-1);
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	return (entry?.data as { goal?: ActiveGoal })?.goal;
 }
 
@@ -131,6 +133,7 @@ function primeBlockerAudit(goal: ActiveGoal, reason: string) {
 function requireGoalTool(mock: ReturnType<typeof createMockPi>, name: string) {
 	const tool = mock.tools.find((candidate) => candidate.name === name);
 	assert.ok(tool, `expected ${name} to be registered`);
+	// SAFETY: this test controls the value and supplies every GoalTool member exercised by this case.
 	return tool as GoalTool;
 }
 
@@ -403,6 +406,7 @@ test("cancel during the first active event prevents kickoff delivery", async () 
 	bindSession(mock);
 	const events = observeRun(mock, "cancel-before-kickoff");
 	mock.eventBus.on(runEventChannel("cancel-before-kickoff"), (data) => {
+		// SAFETY: this test controls the value and supplies every RunEvent member exercised by this case.
 		const event = data as RunEvent;
 		if (event.type === "state" && event.status === "active") {
 			cancelRun(mock, "cancel-before-kickoff", { reason: "cancel before kickoff" });
@@ -524,6 +528,7 @@ test("a completion listener can start the next managed run", async () => {
 	const firstEvents = observeRun(mock, "chained-first");
 	const secondEvents = observeRun(mock, "chained-second");
 	mock.eventBus.on(runEventChannel("chained-first"), (data) => {
+		// SAFETY: this test controls the value and supplies every RunEvent member exercised by this case.
 		const event = data as RunEvent;
 		if (event.type === "state" && event.status === "complete") {
 			startRun(mock, "chained-second", { objective: "second managed objective" });
@@ -563,6 +568,7 @@ test("terminal listeners cannot make stale pause work mutate a replacement", asy
 	const firstEvents = observeRun(mock, "pause-first");
 	const secondEvents = observeRun(mock, "pause-second");
 	mock.eventBus.on(runEventChannel("pause-first"), (data) => {
+		// SAFETY: this test controls the value and supplies every RunEvent member exercised by this case.
 		const event = data as RunEvent;
 		if (event.type === "state" && event.status === "paused") {
 			void mock.commands.get("goal")?.handler("clear", context.ctx);

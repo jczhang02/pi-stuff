@@ -6,6 +6,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { prepareMagicContext } from "../../packages/pi-stuff/src/context-management/config.js";
 
 const roots: string[] = [];
+// SAFETY: this test controls the value and supplies every NodeJS member exercised by this case.
 const environment = process.env as NodeJS.ProcessEnv & {
 	HOME?: string;
 	PI_CODING_AGENT_DIR?: string;
@@ -54,6 +55,7 @@ async function isolatedEnvironment(): Promise<{
 }
 
 function extensionContext(cwd?: string): ExtensionContext {
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	return {
 		cwd,
 		model: { id: "fixture-model", provider: "fixture-provider" },
@@ -86,6 +88,7 @@ describe.serial("Magic Context first-use configuration", () => {
 
 		await prepareMagicContext(extensionContext(paths.root));
 
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const config = JSON.parse(await readFile(paths.canonical, "utf8")) as BootstrapConfig;
 		expect(config.historian?.model).toBe("fixture-provider/fixture-model");
 		expect(config.embedding?.provider).toBe("off");

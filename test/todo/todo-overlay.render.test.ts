@@ -33,10 +33,12 @@ function setup(tasks: readonly Task[], options: { lingerCompleted?: boolean } = 
 	const setWidget = (...args: unknown[]): void => {
 		setWidgetCalls.push(args);
 	};
+	// SAFETY: this test controls the value and supplies every ExtensionUIContext member exercised by this case.
 	const ui = { setWidget, theme: identityTheme } as ExtensionUIContext;
 	const overlay = new TodoOverlay();
 	overlay.setUICtx(ui);
 	overlay.refresh(options);
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const factory = setWidgetCalls[0]?.[1] as
 		| ((
 				tui: { requestRender: (...args: unknown[]) => void },
@@ -211,6 +213,7 @@ describe("TodoOverlay all-complete linger", () => {
 		let scheduledCallback: (() => void) | undefined;
 		let scheduledDelay: number | undefined;
 		const timerHandle = { unref: () => {} };
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		globalThis.setTimeout = ((callback: () => void, delay?: number) => {
 			scheduledCallback = callback;
 			scheduledDelay = delay;
@@ -245,6 +248,7 @@ describe("TodoOverlay all-complete linger", () => {
 		let scheduledCallback: (() => void) | undefined;
 		let scheduledDelay: number | undefined;
 		const timerHandle = { unref: () => {} };
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		globalThis.setTimeout = ((callback: () => void, delay?: number) => {
 			scheduledCallback = callback;
 			scheduledDelay = delay;

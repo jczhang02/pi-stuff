@@ -10,6 +10,7 @@ import {
 	selectOverlayLayout,
 } from "../../packages/pi-stuff/src/todo/view/format.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const recordingTheme = {
 	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
 	bold: (text: string) => `<bold>${text}</bold>`,
@@ -94,6 +95,7 @@ describe("formatOverlayTaskLine", () => {
 			task: task({ subject: "检查🙂非常长的子任务路径与输出内容" }),
 			openBlockers: ["依赖-🧪-非常长的名称"],
 		};
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const plainTheme = {
 			fg: (_color: string, text: string) => text,
 			bold: (text: string) => text,

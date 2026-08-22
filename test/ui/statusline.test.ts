@@ -80,6 +80,7 @@ function usage(cacheRead: number, cost: number, input = 10, cacheWrite = 0) {
 }
 
 function messageEntries(prompt: string, cacheRead = 18_200, cost = 0.42, input = 10, cacheWrite = 0): SessionEntry[] {
+	// SAFETY: this test controls the value and supplies every SessionEntry member exercised by this case.
 	return [
 		{
 			id: "user",
@@ -147,6 +148,7 @@ function context(options: {
 	const entriesById = new Map(branch.map((entry) => [entry.id, entry]));
 	const sessionManager =
 		options.sessionManager ??
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		({
 			getBranch: () => branch,
 			getCwd: () => cwd,
@@ -190,6 +192,7 @@ function trackedSession(entries: SessionEntry[], initialLeafId: string) {
 	const byId = new Map(entries.map((entry) => [entry.id, entry]));
 	let leafId = initialLeafId;
 	const reads = { branches: 0, entries: 0 };
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const manager = {
 		getBranch: () => {
 			reads.branches += 1;
@@ -244,6 +247,7 @@ function api(
 	};
 }
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (text: string) => text,
 	fg: (_color: string, text: string) => text,
@@ -475,6 +479,7 @@ describe("StatuslineController", () => {
 	test("maps the accepted icon grammar onto Pi semantic theme tokens", () => {
 		withNerdFontPreference(false, () => {
 			const colored = new Map<string, string[]>();
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 			const recordingTheme = {
 				bold: (text: string) => text,
 				fg: (color: string, text: string) => {
@@ -846,6 +851,7 @@ describe("StatuslineController", () => {
 			throw new Error("Expected assistant fixture entry");
 		}
 		assistant.message.stopReason = "aborted";
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const compaction = {
 			firstKeptEntryId: user.id,
 			id: "aborted-compaction",
@@ -872,6 +878,7 @@ describe("StatuslineController", () => {
 	test("incrementally caches unchanged history and follows branch and compaction leaves", () => {
 		const [rootUser, rootAssistant] = turnEntries("root", "Root prompt", null, 100, 0.1);
 		const [mainUser, mainAssistant] = turnEntries("main", "Main branch prompt", rootAssistant.id, 200, 0.2);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const compaction = {
 			firstKeptEntryId: mainUser.id,
 			id: "main-compaction",
@@ -983,6 +990,7 @@ describe("StatuslineController", () => {
 	test("strips terminal and bidi controls from every dynamic field", () => {
 		const injected = "前\u001b]0;OWNED_TITLE\u0007后\u009b31m红\u202eABC";
 		const controller = new StatuslineController(api("medium"), {
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			enabled: new ValueSource(true) as BooleanValueSource,
 		});
 		const component = controller.createFooter(
@@ -1017,6 +1025,7 @@ describe("StatuslineController", () => {
 			},
 		};
 		let branchListener: (() => void) | undefined;
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const data = {
 			getAvailableProviderCount: () => 1,
 			getExtensionStatuses: () => new Map<string, string>(),
@@ -1196,6 +1205,7 @@ describe("GitStatusSource", () => {
 		await source.refresh(fakeApi, cwd);
 		let branch = "old-branch";
 		let notifyBranchChange: (() => void) | undefined;
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const data = {
 			getAvailableProviderCount: () => 1,
 			getExtensionStatuses: () => new Map<string, string>(),

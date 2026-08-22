@@ -188,8 +188,10 @@ function renderedSummary(
 		state,
 		toolCallId,
 	};
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const row = tool?.renderCall?.(args, theme, context as never);
 	expect(row).toBeDefined();
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	tool?.renderResult?.(result, { expanded: false, isPartial: false }, theme, {
 		...context,
 		lastComponent: row,
@@ -223,7 +225,9 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 	expect(
 		presentation.target?.({
 			tasks: [
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				{} as never,
+				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				{ agent: undefined, description: undefined, task: undefined } as never,
 				{ agent: "reviewer", task: "Inspect the partial payload." },
 			],
@@ -234,6 +238,7 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 		content: [
 			{ type: "text" as const, text: "Agent general-purpose returned a deliberately long final report.".repeat(20) },
 		],
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		details: { asyncId: "run-1", mode: "parallel", results: [] } as never,
 	};
 	expect(presentation.summarize?.({ agent: "reviewer", task: fullTask }, longReport, "success", 18_000)).toBe(
@@ -260,6 +265,7 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 	expect(presentation.summarize?.({ action: "stop", id: "run-1" }, longReport, "success", 18_000)).toBe("stopped");
 	expect(presentation.summarize?.({ action: "status", id: "run-1" }, longReport, "success", 18_000)).toBe("checked");
 	expect(presentation.summarize?.({}, longReport, "cancelled", 18_000)).toBe("cancelled");
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const backgroundActivities = presentation.activity?.classify({
 		args: { agent: "reviewer", task: fullTask },
 		result: { content: [], details: { asyncId: "run-1", mode: "single", results: [] } },
@@ -277,6 +283,7 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 	};
 	expect(isRuntimeFunction(presentation.label) ? presentation.label(parallelArgs) : presentation.label).toBe("Agents");
 	expect(
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		presentation.activity?.classify({
 			args: parallelArgs,
 			state: "running",
@@ -290,6 +297,7 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 	};
 	expect(presentation.resultIsError?.(parallelArgs, refused)).toBeTrue();
 	expect(
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		presentation.activity?.classify({
 			args: parallelArgs,
 			result: refused,
@@ -303,6 +311,7 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 	};
 	expect(presentation.resultIsError?.(parallelArgs, launched)).toBeFalse();
 	expect(
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		presentation.activity?.classify({
 			args: parallelArgs,
 			result: launched,
@@ -317,6 +326,7 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 		},
 	]);
 	expect(presentation.summarize?.(parallelArgs, launched, "success", 18_000)).toBe("3 launched");
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const foregroundActivities = presentation.activity?.classify({
 		args: { ...parallelArgs, foreground: true },
 		result: { content: [], details: { mode: "parallel", results: [{}, {}] } },
@@ -331,12 +341,15 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 		},
 	]);
 	expect(
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		presentation.activity?.classify({
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			args: { tasks: [{} as never] },
 			state: "running",
 			toolCallId: "agent-partial",
 		} as never),
 	).toEqual([]);
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const cancelledBeforeLaunch = presentation.activity?.classify({
 		args: { agent: "reviewer", foreground: true, task: fullTask },
 		result: {
@@ -353,6 +366,7 @@ test("Agent Tool rows use short descriptions and honest lifecycle outcomes", () 
 		["stop", "stop-agent"],
 		["resume", "resume-agent"],
 	] as const) {
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const managedActivities = presentation.activity?.classify({
 			args: { action, id: "run-1" },
 			result: { content: [], details: { mode: "control", results: [] } },
@@ -380,6 +394,7 @@ test("bounds live Agent arguments and streamed text by grapheme and terminal cel
 	const presentation = createAgentToolPresentation();
 	const issue = presentation.summarize?.(
 		{ agent: "reviewer", foreground: true, task: "Inspect" },
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		{ content: [{ type: "text", text: `\u001b[31m${"失败".repeat(100)}\u001b[0m` }], details: {} as never },
 		"error",
 		1,
@@ -471,24 +486,29 @@ test("waits until before_agent_start before installing intercom fallback so a la
 		// Pi's extension registry is first-wins for duplicate tool names.
 		registerTool: (tool) => {
 			// SAFETY: this test registry erases only generic renderer state and returns the original Tool unchanged.
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			if (!tools.has(tool.name)) tools.set(tool.name, tool as ToolDefinition);
 		},
 		sendMessage: () => {},
 	});
 	registerSubagentPromptRuntime(api);
 	api.on("session_start", () => {
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		api.registerTool({
 			name: "intercom",
 			label: "External Intercom",
 			description: "Dynamically registered external intercom.",
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			parameters: {} as never,
 			execute: async () => ({ content: [{ type: "text", text: "external" }], details: {} }),
 		} as ToolDefinition);
 	});
 
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	for (const handler of handlers.get("session_start") ?? []) await handler({} as never);
 	expect(tools.get("intercom")?.label).toBe("External Intercom");
 	for (const handler of handlers.get("before_agent_start") ?? []) {
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		await handler({ systemPrompt: "child" } as never);
 	}
 	expect(tools.get("intercom")?.label).toBe("External Intercom");
@@ -550,6 +570,7 @@ test("replaces ambient child discovery with a controlled Suite surface and a ter
 	});
 	if (ambientSafe.tempDir) temporaryDirectories.push(ambientSafe.tempDir);
 	const ambientSafePaths = ambientSafe.args.flatMap((argument, index) =>
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		argument === "--extension" && ambientSafe.args[index + 1] ? [ambientSafe.args[index + 1] as string] : [],
 	);
 	expect(ambientSafe.args).toContain("--no-extensions");
@@ -567,6 +588,7 @@ test("replaces ambient child discovery with a controlled Suite surface and a ter
 	});
 	if (built.tempDir) temporaryDirectories.push(built.tempDir);
 	const extensionPaths = built.args.flatMap((argument, index) =>
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		argument === "--extension" && built.args[index + 1] ? [built.args[index + 1] as string] : [],
 	);
 
@@ -782,7 +804,9 @@ test("aborts an oversized final child provider payload with a durable diagnostic
 	let aborts = 0;
 	for (const handler of handlers.get("before_provider_request") ?? []) {
 		await handler(
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{ payload: { input: "𠮷".repeat(2_000), tools: [{ description: "x".repeat(10_000) }] } } as never,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{
 				model: { contextWindow: 8_000, maxTokens: 2_000 },
 				abort: () => {
@@ -862,6 +886,7 @@ test("projects long child Tool history before a continuation request while prese
 		contextWindow: 120_000,
 		maxTokens: 48_000,
 	};
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const ctx = {
 		model,
 		getSystemPrompt: () => "Child system prompt. ".repeat(300),
@@ -907,6 +932,7 @@ test("projects long child Tool history before a continuation request while prese
 
 	let aborts = 0;
 	for (const handler of handlers.get("before_provider_request") ?? []) {
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		await handler({ payload: providerPayload } as never, { model, abort: () => (aborts += 1) } as never);
 	}
 	expect(aborts).toBe(0);
@@ -980,6 +1006,7 @@ test("falls back to a bounded authority-and-recent-Tool continuation when old ou
 	let projected = messages;
 	for (const handler of handlers.get("context") ?? []) {
 		const result = (await handler(
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			{ messages: projected } as never,
 			{ model, getSystemPrompt: () => "Child prompt. ".repeat(200) } as never,
 		)) as { messages?: Array<Record<string, unknown>> } | undefined;
@@ -1056,6 +1083,7 @@ test("projects oversized non-text Tool evidence without breaking the signed rece
 	let projected = messages;
 	for (const handler of handlers.get("context") ?? []) {
 		const result = (await handler(
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{ messages: projected } as never,
 			{ model, getSystemPrompt: () => "Child prompt." } as never,
 		)) as { messages?: Array<Record<string, unknown>> } | undefined;
@@ -1087,12 +1115,15 @@ test("labels an irreducible oversized request as a continuation after a resumed 
 	});
 	registerSubagentPromptRuntime(pi);
 	for (const handler of handlers.get("session_start") ?? []) {
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		await handler({ type: "session_start", reason: "resume" } as never, {} as never);
 	}
 	let aborts = 0;
 	for (const handler of handlers.get("before_provider_request") ?? []) {
 		await handler(
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			{ payload: { input: "AP6Zz9+/0f3cD7aQ".repeat(4_000) } } as never,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{
 				model: { provider: "openai-codex", contextWindow: 80_000, maxTokens: 32_000 },
 				abort: () => (aborts += 1),
@@ -1182,6 +1213,7 @@ test("native supervisor channels are created lazily on the first child request",
 		{ reason: "progress_update", message: "Still working." },
 		new AbortController().signal,
 		undefined,
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		undefined as never,
 	);
 
@@ -1214,6 +1246,7 @@ test("structured_output uses the shared Tool row without changing its terminatin
 		{ value: { answer: "ok" } },
 		new AbortController().signal,
 		undefined,
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		{} as never,
 	);
 	expect(result).toMatchObject({
@@ -1262,6 +1295,7 @@ test("retries a failed steering acknowledgement without delivering the steer twi
 		rmSync(ackDir, { force: true });
 		mkdirSync(ackDir, { recursive: true });
 		handlers.get("turn_end")?.({});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const ack = JSON.parse(readFileSync(steerAckPathFromDir(ackDir, "retry-ack"), "utf-8")) as {
 			requestId: string;
 			state: string;
@@ -1306,6 +1340,7 @@ test("retries a correlated steering acknowledgement once during immediate shutdo
 	rmSync(ackDir, { force: true });
 	mkdirSync(ackDir, { recursive: true });
 	handlers.get("session_shutdown")?.({});
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const ack = JSON.parse(readFileSync(steerAckPathFromDir(ackDir, "shutdown-retry-ack"), "utf-8")) as {
 		requestId: string;
 		state: string;

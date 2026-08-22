@@ -19,6 +19,7 @@ realTest("the certified V8 host executes a real Connector call and returns its t
 		usage: "suite.fixture({ value: string })",
 		async invoke(input, context) {
 			const result = {
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				content: [{ type: "text" as const, text: (input as { value: string }).value }],
 				details: { real: true },
 			};
@@ -64,6 +65,7 @@ realTest("the certified V8 host exposes a delegated Tool literally named bash", 
 		name: "bash",
 		usage: "tools.bash({ command })",
 		async invoke(input) {
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			return (input as { command: string }).command;
 		},
 	};
@@ -206,6 +208,7 @@ realTest("the certified V8 host settles a rejected delegated Tool call", async (
 realTest("the certified V8 host runs durable steps and saved snippets with binary and bigint values", async () => {
 	const executor = new V8CodeModeExecutor();
 	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const context = {
 		cwd: process.cwd(),
 		sessionManager: {
@@ -240,6 +243,7 @@ realTest("the certified V8 host runs durable steps and saved snippets with binar
 		async invoke(invocation) {
 			invocations += 1;
 			received = invocation.input;
+			// SAFETY: this test controls the value and supplies every AgentToolResult member exercised by this case.
 			const result = {
 				content: [],
 				details: {},
@@ -279,6 +283,7 @@ realTest("the certified V8 host runs durable steps and saved snippets with binar
 realTest("the certified V8 host pauses an approval-required Tool and executes it once after approval", async () => {
 	const executor = new V8CodeModeExecutor();
 	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const context = {
 		cwd: process.cwd(),
 		sessionManager: {

@@ -34,6 +34,7 @@ async function createGovernor(
 
 function requireReservation<T extends { ok: boolean }>(result: T): Extract<T, { ok: true }> {
 	if (!result.ok) throw new Error("Expected an Agent execution reservation");
+	// SAFETY: this test controls the value and supplies every Extract member exercised by this case.
 	return result as Extract<T, { ok: true }>;
 }
 

@@ -16,6 +16,7 @@ import {
 import type { CommandDialogViewContext } from "../../packages/pi-stuff/src/conversation-ui/index.js";
 
 function context(rows: number): Pick<CommandDialogViewContext<unknown>, "tui"> {
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 	return { tui: { terminal: { rows } } } as Pick<CommandDialogViewContext<unknown>, "tui">;
 }
 
@@ -30,6 +31,7 @@ test("Command Dialog row budgets reserve normal Pi chrome", () => {
 	expect(commandDialogRows(context(24))).toBe(21);
 	expect(commandDialogRows(context(3))).toBe(1);
 	expect(commandDialogRows(context(0))).toBe(0);
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	expect(commandDialogRows({ tui: { terminal: {} } } as never)).toBe(21);
 });
 
@@ -60,11 +62,13 @@ test("shared navigation clamps lists and scrollable documents", () => {
 
 test("key help keeps configured compact-keyboard aliases visible when space allows", () => {
 	const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.down": "ctrl+y" });
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const theme = {
 		bold: (value: string) => value,
 		fg: (_color: string, value: string) => value,
 	} as Theme;
 	const lines = renderCommandDialogKeyHelp(
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		{ keybindings, theme, tui: { terminal: { rows: 24 } } } as never,
 		64,
 		"Tasks",
@@ -136,6 +140,7 @@ test("fixed fitting keeps the footer on the last row", () => {
 });
 
 test("split rendering stays one full-width surface with one internal divider", () => {
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const theme = { fg: (_color: string, value: string) => value } as Theme;
 	const lines = renderCommandDialogSplit(
 		theme,

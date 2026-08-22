@@ -29,6 +29,7 @@ async function execute(command: string, args: string[], options: { timeout?: num
 }
 
 test.skipIf(!localRtk)("certifies and uses the real local RTK 0.42.4 executable", async () => {
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 	const pi = { exec: execute } as Pick<ExtensionAPI, "exec">;
 	const runtime = new RtkRuntime();
 

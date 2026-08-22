@@ -5,6 +5,7 @@ import { ToolUiRuntime } from "../../packages/pi-stuff/src/tool-display/contract
 import { createToolDialogView } from "../../packages/pi-stuff/src/tool-display/tool-dialog.js";
 import { TestTui } from "../fixtures/test-tui.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
@@ -302,6 +303,7 @@ test("/tools colors mixed groups amber and no-success failures red", () => {
 		readonly [color: string]: number;
 	}
 	const colorCodes: ColorCodes = { error: 31, muted: 90, success: 32, warning: 33 };
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const semanticTheme = {
 		bold: (value: string) => value,
 		fg: (color: string, value: string) => {
@@ -341,6 +343,7 @@ test("/tools respects narrow widths and terminal row budgets", () => {
 });
 
 test("/tools keeps list and detail visible on wide terminals", () => {
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const focusTheme = {
 		bold: (value: string) => value,
 		fg: (color: string, value: string) => (color === "accent" ? `\u001b[35m${value}\u001b[0m` : value),

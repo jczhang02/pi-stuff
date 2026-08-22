@@ -140,6 +140,7 @@ test("saveGoalSettings atomically preserves unknown top-level and nested fields"
 		rpc: { enabled: false, futureRpc: "keep" },
 		continuationLimits: { automaticTurns: 40, noProgressTurns: null, futureLimit: 9 },
 	});
+	// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 	assert.deepEqual((JSON.parse(readFileSync(settingsPath, "utf8")) as { ui?: unknown }).ui, {
 		statusline: true,
 	});

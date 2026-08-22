@@ -95,6 +95,7 @@ function stateWithRoute(routeInfo: NestedRouteInfo): SubagentState {
 		asyncJobs: new Map([
 			[
 				routeInfo.rootRunId,
+				// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 				{
 					asyncId: routeInfo.rootRunId,
 					sessionId: "nested-race-session",
@@ -454,6 +455,7 @@ describe("nested event projection ownership", () => {
 			child: { ...completed, parentRunOrigin: "automatic", lastUpdate: 3 },
 		});
 		projectNestedEvents(routeInfo);
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const persisted = JSON.parse(
 			fs.readFileSync(path.join(path.dirname(routeInfo.eventSink), "registry.json"), "utf8"),
 		) as { children: Array<{ parentRunOrigin?: string }> };

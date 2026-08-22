@@ -4,6 +4,7 @@ import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-wor
 import type { BtwExchange } from "../../packages/pi-stuff/src/btw/btw-history.js";
 import { BtwDialogController } from "../../packages/pi-stuff/src/btw/btw-ui.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	fg: (_color: string, text: string) => text,
 	bg: (_color: string, text: string) => text,
@@ -42,6 +43,7 @@ function setup(
 		},
 	};
 	const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const controller = new BtwDialogController(theme, tui as never, keybindings, {
 		history: options.history ?? [],
 		...(options.question === undefined ? {} : { question: options.question }),

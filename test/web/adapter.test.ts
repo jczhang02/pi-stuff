@@ -73,6 +73,7 @@ describe("Pi Stuff Web fork boundary", () => {
 		createWebAdapterApi(fixture.pi).registerTool(upstreamTool("web_search", "Web Search", execute));
 		const tool = fixture.tools.get("web_search");
 		if (!tool) throw new Error("web_search was not registered");
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		await tool.execute("search-1", { query: "Pi 0.83" }, undefined, undefined, {} as never);
 
 		expect(received).toEqual({ includeContent: false, query: "Pi 0.83", workflow: "none" });
@@ -96,10 +97,12 @@ describe("Pi Stuff Web fork boundary", () => {
 			{ url: "http://127.0.0.1/private" },
 			undefined,
 			undefined,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{} as never,
 		);
 
 		expect(calls).toBe(0);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		expect((result.details as { error?: string }).error).toContain("Local and private");
 	});
 

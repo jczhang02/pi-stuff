@@ -28,6 +28,7 @@ async function realArchive(): Promise<{ files: string[]; manifest: PackageArchiv
 	const path = join(output, archive);
 	return {
 		files: run(["tar", "-tzf", path], root).trim().split("\n").filter(Boolean).sort(),
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		manifest: JSON.parse(run(["tar", "-xOzf", path, "package/package.json"], root)) as PackageArchiveManifest,
 	};
 }

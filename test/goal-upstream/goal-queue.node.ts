@@ -47,6 +47,7 @@ test("experimental mode keeps singular registration and exposes canonical queue 
 	);
 	assert.equal(harness.mock.commands.has("goals"), false);
 	assert.deepEqual(
+		// SAFETY: this test controls the value and supplies every Array member exercised by this case.
 		(harness.mock.commands.get("goal")?.getArgumentCompletions?.("") as Array<{ label: string }> | undefined)?.map(
 			({ label }) => label,
 		),
@@ -1403,10 +1404,12 @@ function blockedTool(mock: ReturnType<typeof createMockPi>) {
 function findGoalTool(mock: ReturnType<typeof createMockPi>, name: string) {
 	const tool = mock.tools.find((candidate) => candidate.name === name);
 	assert.ok(tool);
+	// SAFETY: this test controls the value and supplies every GoalTool member exercised by this case.
 	return tool as GoalTool;
 }
 
 function lastState(mock: ReturnType<typeof createMockPi>) {
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const persisted = mock.entries.filter(({ customType }) => customType === "goal-state").at(-1)?.data as
 		| GoalStateEntryData
 		| undefined;

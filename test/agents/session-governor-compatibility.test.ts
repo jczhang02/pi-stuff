@@ -110,6 +110,7 @@ describe("session governor v1 compatibility", () => {
 		expect(result.message).toContain("may be stale after a crash");
 		expect(result.message).toContain(lockDir);
 		expect(fs.existsSync(lockDir)).toBeTrue();
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const owner = JSON.parse(fs.readFileSync(path.join(lockDir, "owner.json"), "utf8")) as {
 			processStartIdentity?: unknown;
 			token?: unknown;

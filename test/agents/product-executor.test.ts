@@ -183,6 +183,7 @@ describe("projectEngineResult", () => {
 	});
 
 	test("does not invent a child failure when a defensive partial result omits its exit code", () => {
+		// SAFETY: this test controls the value and supplies every Details member exercised by this case.
 		const partialChild = {
 			agent: "worker",
 			task: "Build",

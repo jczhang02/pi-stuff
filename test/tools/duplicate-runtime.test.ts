@@ -24,7 +24,9 @@ test("physical Tool Display Module copies share one runtime through the stable g
 		symlinkSync(join(process.cwd(), "packages/pi-stuff/src/shared"), join(copy, "..", "shared"), "dir");
 	}
 	try {
+		// SAFETY: this test controls the value and supplies every ContractModule member exercised by this case.
 		const first = (await import(pathToFileURL(join(firstPath, "contract.ts")).href)) as ContractModule;
+		// SAFETY: this test controls the value and supplies every ContractModule member exercised by this case.
 		const second = (await import(pathToFileURL(join(secondPath, "contract.ts")).href)) as ContractModule;
 		const api = { events: createEventBus(), on: () => undefined } satisfies ToolUiRuntimeHost;
 		const beforeInstall = first.getToolUiRuntime(api);

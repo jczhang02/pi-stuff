@@ -25,6 +25,7 @@ async function waitForRecord(path: string): Promise<WatchdogRecord> {
 	const deadline = Date.now() + 3_000;
 	while (Date.now() < deadline) {
 		const value = await readFile(path, "utf8").catch(() => "");
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		if (value) return JSON.parse(value) as WatchdogRecord;
 		await Bun.sleep(20);
 	}

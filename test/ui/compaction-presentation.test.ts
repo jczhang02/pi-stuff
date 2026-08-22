@@ -3,6 +3,7 @@ import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-a
 import { suppressDuplicatedLiveCompactionReplay } from "../../packages/pi-stuff/src/conversation-ui/compaction-presentation.js";
 
 function compactionEntry(id: string): SessionEntry {
+	// SAFETY: this test controls the value and supplies every SessionEntry member exercised by this case.
 	return {
 		firstKeptEntryId: "kept",
 		fromHook: true,
@@ -16,6 +17,7 @@ function compactionEntry(id: string): SessionEntry {
 }
 
 function customEntry(id: string): SessionEntry {
+	// SAFETY: this test controls the value and supplies every SessionEntry member exercised by this case.
 	return {
 		customType: "fixture",
 		data: {},
@@ -31,6 +33,7 @@ describe("live compaction presentation", () => {
 		const compact = compactionEntry("compact-1");
 		const kept = customEntry("kept");
 		let reads = 0;
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const manager = {
 			buildContextEntries: () => {
 				reads += 1;
@@ -48,12 +51,14 @@ describe("live compaction presentation", () => {
 
 	test("preserves a nonmatching replay and fails open for an immutable Host", () => {
 		const compact = compactionEntry("compact-older");
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const manager = {
 			buildContextEntries: () => [compact],
 		} as ExtensionContext["sessionManager"];
 		expect(suppressDuplicatedLiveCompactionReplay(manager, "compact-new")).toBe(true);
 		expect(manager.buildContextEntries()).toEqual([compact]);
 
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const immutable = Object.freeze({
 			buildContextEntries: () => [compact],
 		}) as ExtensionContext["sessionManager"];

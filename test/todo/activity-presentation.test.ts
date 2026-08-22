@@ -5,6 +5,7 @@ import { registerTaskTools } from "../../packages/pi-stuff/src/todo/todo.js";
 import { getToolUiRuntime, type SuiteToolRegistrationHost } from "../../packages/pi-stuff/src/tool-display/contract.js";
 import { toolRegistrationHarness } from "../fixtures/tool-registration-host.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
@@ -48,8 +49,10 @@ function renderedSummary(
 		state,
 		toolCallId,
 	};
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	const row = tool?.renderCall?.(args, theme, context as never);
 	expect(row).toBeDefined();
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	tool?.renderResult?.(result, { expanded, isPartial: false }, theme, {
 		...context,
 		lastComponent: row,

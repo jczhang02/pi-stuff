@@ -99,6 +99,7 @@ class UiHarness {
 	}
 
 	context(): AgentRosterContext {
+		// SAFETY: this test controls the value and supplies every AgentRosterContext member exercised by this case.
 		return { hasUI: true, ui: this as AgentRosterContext["ui"] };
 	}
 
@@ -235,6 +236,7 @@ class FakeClock {
 describe("AgentRoster", () => {
 	test("keeps a live Agent state above the tertiary dim token", () => {
 		const colors: Array<{ color: string; text: string }> = [];
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const recordingTheme = {
 			...theme,
 			fg: (color: string, text: string) => {
@@ -462,6 +464,7 @@ describe("AgentRoster", () => {
 
 	test("uses marker color only for selection and confines state color to the right text", () => {
 		const colors: Array<{ color: string; text: string }> = [];
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const recordingTheme = {
 			...theme,
 			fg: (color: string, text: string) => {
@@ -514,6 +517,7 @@ describe("AgentRoster", () => {
 
 		for (const expected of cases) {
 			const colors: Array<{ color: string; text: string }> = [];
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const recordingTheme = {
 				...theme,
 				fg: (color: string, text: string) => {

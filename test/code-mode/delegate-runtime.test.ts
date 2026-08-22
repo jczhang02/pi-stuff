@@ -24,6 +24,7 @@ test("delegate transport preserves binary and bigint values across the JSON host
 					inputSchema: Type.Object({ payload: Type.Unknown() }),
 					async invoke(input) {
 						received = input;
+						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						return { count: 1n, payload: (input as { payload: unknown }).payload };
 					},
 					name: "fixture",

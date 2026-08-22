@@ -60,6 +60,7 @@ test("UI settings default on without writing during startup and persist explicit
 		]);
 		await store.whenIdle();
 
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const persisted = JSON.parse(await readFile(path, "utf8")) as { ui: UiSettings };
 		expect(persisted).toEqual({ ui: { ...DEFAULTS, inputHighlighting: false } });
 		expect((await stat(path)).mode & 0o777).toBe(0o600);
@@ -193,6 +194,7 @@ test("a failed latest UI settings write rolls the live value back", async () => 
 });
 
 test("the registry presents owned and Capability settings in one stable order", async () => {
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const api = { events: {} } as ExtensionAPI;
 	const store = UiSettingsStore.memory();
 	const registry = beginUiSettingsGeneration(api);
@@ -241,6 +243,7 @@ test("the registry presents owned and Capability settings in one stable order", 
 });
 
 test("a reload generation drops stale Capability setting adapters", () => {
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const api = { events: {} } as ExtensionAPI;
 	const first = beginUiSettingsGeneration(api);
 	first.register({

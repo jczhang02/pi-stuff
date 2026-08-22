@@ -134,6 +134,7 @@ test("goal registers command, status tools, and lifecycle hooks", () => {
 	assert.equal(blockedParameters?.properties?.repeated_turns?.minimum, 1);
 	assert.match(String(blockerDefinition?.description), /three distinct failed actions.*same blocker/i);
 	assert.match(
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		String((blockerDefinition?.promptGuidelines as string[] | undefined)?.join(" ")),
 		/fresh three-turn blocker audit/i,
 	);
@@ -162,7 +163,9 @@ test("goal command attributes its hidden Agent prompt to the user", async () => 
 	const context = createMockContext();
 	mock.events.get("session_start")?.[0]?.({}, context.ctx);
 	await mock.commands.get("goal")?.handler("finish the work", context.ctx);
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	assert.equal(readAgentWorkOrigin(mock.sentHiddenGoalMessages.at(-1)?.message as { details?: unknown }), "user");
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	assert.equal(hasDirectUserActivation(mock.sentHiddenGoalMessages.at(-1)?.message as object), true);
 
 	await mock.commands.get("goal")?.handler("status", context.ctx);
@@ -207,6 +210,7 @@ test("bare goal is menu-first in TUI, observable in RPC, and rejects headless mo
 		},
 	});
 	await assert.rejects(
+		// SAFETY: this test controls the value and supplies every Promise member exercised by this case.
 		mock.commands.get("goal")?.handler("", print.ctx) as Promise<unknown>,
 		/\/goal status is unavailable in print mode/i,
 	);
@@ -215,6 +219,7 @@ test("bare goal is menu-first in TUI, observable in RPC, and rejects headless mo
 
 	const json = createMockContext({ mode: "json", hasUI: false });
 	await assert.rejects(
+		// SAFETY: this test controls the value and supplies every Promise member exercised by this case.
 		mock.commands.get("goal")?.handler("status", json.ctx) as Promise<unknown>,
 		/\/goal status is unavailable in json mode/i,
 	);
@@ -271,6 +276,7 @@ test("session restore stays read-only until the next agent turn begins", async (
 
 	assert.equal(mock.entries.length, 1, "the first real turn must flush the restored Goal snapshot");
 	assert.equal(mock.entries[0]?.customType, "goal-state");
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	assert.equal((mock.entries[0]?.data as { goal?: StoredGoal } | undefined)?.goal?.id, restoredGoal.id);
 });
 
@@ -578,6 +584,7 @@ test("a later restrictive tool policy pauses the goal at agent_end without conti
 		context.ctx,
 	);
 	assert.match(
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		String((promptResult as { message?: { content?: string } } | undefined)?.message?.content),
 		/Active \/goal/,
 	);
@@ -922,6 +929,7 @@ test("child session initialization does not erase or reroute the parent goal", a
 	const rootGoalStates = root.entries
 		.slice(rootEntriesBeforeChild)
 		.filter((entry) => entry.customType === "goal-state")
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		.map((entry) => entry.data as { goal?: StoredGoal | null });
 	assert.equal(rootGoalStates.length, 2);
 	assert.equal(rootGoalStates[0]?.goal?.status, "complete");
@@ -934,6 +942,7 @@ test("child session initialization does not erase or reroute the parent goal", a
 	assert.equal(childGoalStates.length, 0);
 	assert.equal(
 		childGoalStates.some(
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			(entry) => (entry.data as { goal?: StoredGoal | null } | undefined)?.goal?.id === rootGoal.id,
 		),
 		false,
@@ -1007,6 +1016,7 @@ test("independent goal instances keep completion local", async () => {
 	const rootGoalStates = root.entries
 		.slice(rootEntriesBefore)
 		.filter((entry) => entry.customType === "goal-state")
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		.map((entry) => entry.data as { goal?: StoredGoal | null });
 	assert.equal(rootGoalStates.length, 2);
 	assert.equal(rootGoalStates[0]?.goal?.status, "complete");
@@ -1148,6 +1158,7 @@ test("pending continuation and budget state survive later child startup", async 
 	rootBranch.push(assistantUsageEntry({ totalTokens: 5 }));
 	root.events.get("tool_execution_end")?.[0]?.({}, rootContext.ctx);
 	assert.equal(lastGoalStatus(root), "budget_limited");
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const wrapUp = root.sentMessages.at(-1)?.message as {
 		customType?: string;
 		details?: { goalId?: string };
@@ -1324,6 +1335,7 @@ test("child shutdown does not clear the parent goal", async () => {
 	const rootGoalStates = root.entries
 		.slice(rootEntriesBeforeChild)
 		.filter((entry) => entry.customType === "goal-state")
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		.map((entry) => entry.data as { goal?: StoredGoal | null });
 	assert.equal(rootGoalStates.length, 2);
 	assert.equal(rootGoalStates[0]?.goal?.status, "complete");
@@ -1732,6 +1744,7 @@ test("all goal prompt paths share the goal_id guard and hardened audit", async (
 	assertPromptHasGoalId(initialPrompt, initialGoal.id);
 	assertHardenedGoalPrompt(initialPrompt);
 
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const hiddenContext = started.mock.events.get("before_agent_start")?.[0]?.({ systemPrompt: "base" }, started.ctx) as
 		| { message?: { content?: string; display?: boolean } }
 		| undefined;
@@ -1780,6 +1793,7 @@ test("all goal prompt paths share the goal_id guard and hardened audit", async (
 	const expectedOrigins = ["user", "automatic", "user", "user"] as const;
 	for (const [index, delivery] of started.mock.sentHiddenGoalMessages.entries()) {
 		assert.deepEqual(delivery.options, { deliverAs: "followUp", triggerTurn: true });
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const message = delivery.message as {
 			content: string;
 			customType: string;
@@ -1796,6 +1810,7 @@ test("all goal prompt paths share the goal_id guard and hardened audit", async (
 test("goal protocol stays hidden and only its latest context reaches the provider", async () => {
 	const started = await startGoalForTest();
 	const beforeStart = started.mock.events.get("before_agent_start")?.[0];
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const hiddenContext = beforeStart?.({ prompt: "continue current goal", systemPrompt: "base" }, started.ctx) as
 		| { message?: { customType?: string; content?: string; display?: boolean } }
 		| undefined;
@@ -1805,6 +1820,7 @@ test("goal protocol stays hidden and only its latest context reaches the provide
 	const currentContext = hiddenContext?.message;
 	assert.ok(currentContext);
 	const ordinaryMessage = { role: "user", content: "ordinary work" };
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const contextResult = started.mock.events.get("context")?.[0]?.(
 		{
 			messages: [
@@ -2823,6 +2839,7 @@ test("no-progress classifier normalizes visible output conservatively", () => {
 
 test("blocker audit counts at most once per turn and resets for gaps or a different reason", async () => {
 	const harness = await startGoalForTest();
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const activeGoal = requireLastGoal(harness.mock) as ActiveGoal;
 	activeGoal.iteration = 4;
 	activeGoal.blockerAudit = recordGoalBlockerAttempt(
@@ -3891,6 +3908,7 @@ test("tool_execution_end enforces budget once and injects one bounded wrap-up", 
 	const wrapUp = budgeted.mock.sentMessages[0];
 	assert.ok(wrapUp);
 	assert.deepEqual(wrapUp.options, { deliverAs: "steer" });
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const wrapUpMessage = wrapUp.message as { customType?: string; content?: string };
 	assert.equal(wrapUpMessage.customType, "goal-budget-wrap-up");
 	assert.equal(readAgentWorkOrigin(wrapUpMessage), "automatic");
@@ -4158,6 +4176,7 @@ test("budget wrap-up custom message retains goal ownership through agent_end", a
 		{ toolCallId: "tool-1", toolName: "bash", result: {}, isError: false },
 		budgeted.ctx,
 	);
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const queuedWrapUp = budgeted.mock.sentMessages[0]?.message as Record<string, unknown> | undefined;
 	assert.ok(queuedWrapUp);
 	const wrapUpMessage = { role: "custom", ...queuedWrapUp };
@@ -4990,6 +5009,7 @@ type StoredGoal = {
 };
 
 function primeBlockerAudit(goal: StoredGoal, reason: string) {
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const activeGoal = goal as ActiveGoal;
 	const finalIteration = Math.max(2, activeGoal.iteration);
 	activeGoal.iteration = finalIteration - 2;
@@ -5050,6 +5070,7 @@ function escapeRegExp(value: string) {
 function requireGoalTool(mock: ReturnType<typeof createMockPi>, name: string) {
 	const tool = mock.tools.find((tool) => tool.name === name);
 	assert.ok(tool, `expected ${name} to be registered`);
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	return tool as GoalTool;
 }
 
@@ -5133,8 +5154,11 @@ function requireLastGoal(mock: ReturnType<typeof createMockPi>) {
 
 function lastGoal(mock: ReturnType<typeof createMockPi>) {
 	const entry = mock.entries.filter((entry) => entry.customType === "goal-state").at(-1);
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const persisted = (entry?.data as { goal?: StoredGoal | null } | undefined)?.goal;
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	if (persisted !== undefined) return persisted as StoredGoal | null;
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	return (runtimeByPi.get(mock.pi)?.activeGoal ?? null) as StoredGoal | null;
 }
 
@@ -5142,6 +5166,7 @@ function findPersistedGoal(mock: ReturnType<typeof createMockPi>, status: string
 	for (let index = mock.entries.length - 1; index >= 0; index--) {
 		const entry = mock.entries[index];
 		if (entry?.customType !== "goal-state") continue;
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const stored = (entry.data as { goal?: StoredGoal | null } | undefined)?.goal;
 		if (stored?.status === status) return stored;
 	}

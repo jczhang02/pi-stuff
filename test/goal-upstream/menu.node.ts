@@ -14,7 +14,9 @@ import { createMockContext, createMockPi } from "./support.js";
 function runtime(goal?: ActiveGoal) {
 	return {
 		activeGoal: goal,
+		// SAFETY: this test controls the value and supplies every ActiveGoal member exercised by this case.
 		queuedGoals: [] as ActiveGoal[],
+		// SAFETY: this test controls the value and supplies every PendingQueueAction member exercised by this case.
 		pendingQueueAction: undefined as PendingQueueAction | undefined,
 		queueFrozen: false,
 		settings: structuredClone(DEFAULT_GOAL_SETTINGS),
@@ -101,6 +103,7 @@ test("safeGoalMenuText strips terminal controls and bounds untrusted previews", 
 test("showGoalManager preserves non-TUI status behavior", async () => {
 	const tracked = commands();
 	const context = createMockContext({ mode: "print", hasUI: false });
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	await showGoalManager(runtime(), tracked.controller as never, context.ctx, async () => undefined);
 	assert.deepEqual(
 		tracked.calls.map((call) => call.name),
@@ -123,6 +126,7 @@ test("Goal Command Dialog keeps title, selection, and Escape reachable at very l
 		},
 	});
 
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	await showGoalManager(state, commands().controller as never, context.ctx, async () => undefined);
 	const lines = rendered.split("\n");
 	assert.equal(lines.length, 3);
@@ -149,6 +153,7 @@ test("menu cancellation has no side effects and clear requires an exact preview"
 		},
 	});
 
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 	assert.equal(tracked.calls.length, 0);
 });
@@ -167,6 +172,7 @@ test("clear confirmation does not erase a queue that changed while open", async 
 		},
 	});
 
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 
 	assert.equal(
@@ -196,6 +202,7 @@ test("clear preview includes a pending priority objective", async () => {
 		},
 	});
 
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 	assert.equal(tracked.calls.length, 0);
 });
@@ -216,6 +223,7 @@ test("menu preserves exact token values in status and budget input", async () =>
 			return undefined;
 		},
 	});
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 	assert.equal(placeholder, "10500");
 	assert.equal(tracked.calls.length, 0);
@@ -236,6 +244,7 @@ test("Queue Back returns to the refreshed main menu", async () => {
 		},
 	});
 
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 	assert.equal(selectionCount, 3);
 	assert.equal(tracked.calls.length, 0);
@@ -276,6 +285,7 @@ test("queue menu previews prioritize, skip, and drop-last before delegation", as
 			},
 		});
 
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 		assert.equal(tracked.calls[0]?.name, scenario.method);
 	}
@@ -298,6 +308,7 @@ test("Skip preview reflects a stopped next goal without promising activation", a
 		},
 	});
 
+	// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 	await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 	assert.equal(tracked.calls.length, 0);
 });
@@ -350,6 +361,7 @@ test("queue confirmations do not mutate a changed active head or queue selection
 			},
 		});
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 
 		assert.equal(
@@ -381,6 +393,7 @@ test("main-menu pause and resume do not mutate a replacement goal", async () => 
 			},
 		});
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 
 		assert.equal(
@@ -407,6 +420,7 @@ test("edit dialogs do not mutate a replacement active goal", async () => {
 		confirm: async () => true,
 	});
 
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 
 	assert.equal(tracked.calls.length, 0);
@@ -430,6 +444,7 @@ test("budget dialogs do not mutate a replacement active goal", async () => {
 		confirm: async () => true,
 	});
 
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	await showGoalManager(state, tracked.controller as never, context.ctx, async () => undefined);
 
 	assert.equal(tracked.calls.length, 0);
@@ -445,6 +460,7 @@ test("menu start and edit delegate raw objective data only after explicit input"
 		select: async () => GOAL_MENU_ACTIONS.start,
 		editor: async () => "  implement menu  ",
 	});
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	await showGoalManager(empty, started.controller as never, startContext.ctx, async () => undefined);
 	assert.equal(started.calls[0]?.name, "startGoal");
 	assert.deepEqual(started.calls[0]?.args.slice(0, 2), ["implement menu", undefined]);
@@ -463,6 +479,7 @@ test("menu start and edit delegate raw objective data only after explicit input"
 			return true;
 		},
 	});
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	await showGoalManager(active, edited.controller as never, editContext.ctx, async () => undefined);
 	assert.equal(edited.calls[0]?.name, "editGoal");
 	assert.deepEqual(edited.calls[0]?.args.slice(0, 2), ["new objective", undefined]);

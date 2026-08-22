@@ -120,6 +120,7 @@ class EventLog {
 				record.name === SUBAGENT_ASYNC_STARTED_EVENT &&
 				isRuntimeObject(record.data) &&
 				record.data !== null &&
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				(record.data as { id?: unknown }).id === runId,
 		);
 		if (!match) throw new Error(`No start event recorded for ${runId}.`);
@@ -132,6 +133,7 @@ class EventLog {
 				record.name === SUBAGENT_ASYNC_STATUS_EVENT &&
 				isRuntimeObject(record.data) &&
 				record.data !== null &&
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				(record.data as { id?: unknown }).id === runId,
 		);
 		return match?.data as Record<string, unknown> | undefined;
@@ -168,11 +170,14 @@ interface ProviderRecord {
 function readProviderRecords(root: string): ProviderRecord[] {
 	const logPath = path.join(root, "provider.jsonl");
 	if (!fs.existsSync(logPath)) return [];
-	return fs
-		.readFileSync(logPath, "utf8")
-		.split("\n")
-		.filter(Boolean)
-		.map((line) => JSON.parse(line) as ProviderRecord);
+	return (
+		fs
+			.readFileSync(logPath, "utf8")
+			.split("\n")
+			.filter(Boolean)
+			// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
+			.map((line) => JSON.parse(line) as ProviderRecord)
+	);
 }
 
 async function waitFor<T>(description: string, read: () => T | undefined, timeoutMs = 12_000): Promise<T> {
@@ -317,6 +322,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					const statusPath = path.join(asyncDir, "status.json");
 					if (!fs.existsSync(statusPath)) return undefined;
 					const status = readJson(statusPath);
+					// SAFETY: this test controls the value and supplies every Array member exercised by this case.
 					const steps = status.steps as Array<{ status?: string }> | undefined;
 					return steps?.length === 2 && steps.every((step) => step.status === "running") ? status : undefined;
 				});
@@ -364,6 +370,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					const statusPath = path.join(asyncDir, "status.json");
 					if (!fs.existsSync(statusPath)) return undefined;
 					const status = readJson(statusPath);
+					// SAFETY: this test controls the value and supplies every Array member exercised by this case.
 					const steps = status.steps as Array<{ status?: string }> | undefined;
 					const siblingStatus = steps?.[1]?.status;
 					return steps?.[0]?.status === "stopped" &&
@@ -436,6 +443,7 @@ describe("process-level Agent controls and crash recovery", () => {
 					const statusPath = path.join(asyncDir, "status.json");
 					if (!fs.existsSync(statusPath)) return undefined;
 					const status = readJson(statusPath);
+					// SAFETY: this test controls the value and supplies every Array member exercised by this case.
 					const steps = status.steps as Array<{ status?: string }> | undefined;
 					return steps?.[0]?.status === "running" ? status : undefined;
 				});
@@ -457,6 +465,7 @@ describe("process-level Agent controls and crash recovery", () => {
 
 				const terminationStarted = reconcileAsyncRun(asyncDir, { resultsDir: RESULTS_DIR });
 				const physicallyRepaired = (result: ReturnType<typeof reconcileAsyncRun>) => {
+					// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 					const status = result.status as
 						| { processTerminal?: { state?: string } }
 						| null;

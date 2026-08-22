@@ -48,7 +48,9 @@ test("physical Context Module copies share one Host runtime", async () => {
 
 	let first: ContextModule | undefined;
 	try {
+		// SAFETY: this test controls the value and supplies every ContextModule member exercised by this case.
 		first = (await import(pathToFileURL(join(firstDirectory, "index.ts")).href)) as ContextModule;
+		// SAFETY: this test controls the value and supplies every ContextModule member exercised by this case.
 		const second = (await import(pathToFileURL(join(secondDirectory, "index.ts")).href)) as ContextModule;
 		const bus = new EventBusHarness();
 		let activeTools: string[] = [];

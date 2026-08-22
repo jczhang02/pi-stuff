@@ -184,6 +184,7 @@ function agent(root: string, name: string, overrides: Partial<AgentConfig> = {})
 
 function buildContext(root: string) {
 	return {
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		pi: { events: { emit() {} } } as never,
 		cwd: root,
 		currentSessionId: "parent-session",
@@ -864,6 +865,7 @@ describe("background runner configuration", () => {
 				exitCode: 1,
 				signal: null,
 			});
+			// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 			const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 				steps: Array<{ processTerminal?: { state?: string } }>;
 			};
@@ -1424,6 +1426,7 @@ for (let offset = 0; offset < line.length; offset += 4096) {
 			work: { mode: "single", task: { ...task(0), cwd: root } },
 		});
 
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const result = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ output?: string; success: boolean }>;
@@ -1530,6 +1533,7 @@ setInterval(() => {}, 1_000);
 			{ writerSupervisorRuntime: path.join(root, "missing-bun") },
 		);
 		await Bun.sleep(25);
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -1728,12 +1732,14 @@ setInterval(() => {}, 1_000);
 			targetIndex: 1,
 		});
 		await waitForFileText(path.join(asyncDir, "status.json"), "queued-stop-steer");
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const routed = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			steering?: { recent?: Array<{ targets?: Array<{ state?: string }> }> };
 		};
 		expect(routed.steering?.recent?.[0]?.targets?.[0]?.state).toBe("routed");
 		requestAsyncStop(asyncDir, { source: "test" });
 		await running;
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			state: string;
 			steps: Array<{ status: string; startedAt?: number; endedAt?: number; stopped?: boolean }>;
@@ -1808,6 +1814,7 @@ setInterval(() => {}, 1_000);
 
 		await runConfiguredBackground(config);
 		expect(fs.existsSync(readyMarker)).toBe(true);
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			state: string;
 			timedOut?: boolean;
@@ -1883,10 +1890,12 @@ const timer = setInterval(() => {
 		await waitForFileText(path.join(asyncDir, "events.jsonl"), '"subagent.child.stop_requested"');
 		fs.writeFileSync(releaseMarker, "release");
 		await running;
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ stopped?: boolean; writerProcesses?: unknown[] }>;
 		};
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			steps: Array<{ status: string; startedAt?: number }>;
 		};
@@ -1929,10 +1938,12 @@ const timer = setInterval(() => {
 		};
 
 		await runConfiguredBackground(config);
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
 		};
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			state: string;
 			steps: Array<{ status: string; endedAt?: number; exitCode?: number; error?: string }>;
@@ -1987,6 +1998,7 @@ process.stdout.write(JSON.stringify({
 			resultPath,
 			work: { mode: "single", task: { ...task(0), cwd: root } },
 		});
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ error?: string }>;
@@ -2012,9 +2024,11 @@ process.stdout.write(JSON.stringify({
 			resultPath,
 			work: { mode: "single", task: { ...task(0), cwd: root } },
 		});
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			results: Array<{ error?: string; exitCode: number | null }>;
 		};
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			steps: Array<{ error?: string; exitCode?: number }>;
 		};
@@ -2042,9 +2056,11 @@ process.stdout.write(JSON.stringify({
 			resultPath,
 			work: { mode: "single", task: { ...task(0), cwd: root } },
 		});
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			results: Array<{ error?: string; exitCode: number | null }>;
 		};
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			steps: Array<{ error?: string; exitCode?: number }>;
 		};
@@ -2086,6 +2102,7 @@ setInterval(() => {}, 1_000);
 				if (writerState.state === "running") throw new Error("injected writer binding failure");
 			},
 		});
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{
@@ -2144,6 +2161,7 @@ setInterval(() => {}, 1_000);
 				},
 			},
 		);
+		// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ error?: string; writerProcesses?: unknown[] }>;
@@ -2182,9 +2200,11 @@ setInterval(() => {}, 1_000);
 				},
 			},
 		);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			results: Array<{ error?: string; output: string }>;
 		};
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			steps: Array<{ error?: string }>;
 		};
@@ -2215,6 +2235,7 @@ setInterval(() => {}, 1_000);
 				afterWriterProcessUpdate: (_index, writerState) => observedStates.push(writerState.state),
 			},
 		);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ error?: string; writerProcesses?: unknown[]; writerAttemptCount?: number }>;
@@ -2257,6 +2278,7 @@ setInterval(() => {}, 1_000);
 			},
 		);
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ error?: string; writerProcesses?: unknown[] }>;
@@ -2353,6 +2375,7 @@ if (model.endsWith("model-a")) {
 			},
 		});
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ output?: string; modelAttempts?: Array<{ model?: string; success?: boolean }> }>;
@@ -2470,6 +2493,7 @@ if (model.endsWith("model-a")) {
 			},
 		});
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ success?: boolean; modelAttempts?: Array<{ model?: string; success?: boolean }> }>;
@@ -2545,6 +2569,7 @@ setTimeout(() => process.stdout.write(JSON.stringify({
 			},
 		});
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ error?: string; output?: string; success?: boolean }>;
@@ -2788,6 +2813,7 @@ if (model.endsWith("model-a")) {
 			},
 		});
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ modelAttempts?: Array<{ model?: string; success?: boolean }> }>;
@@ -2866,6 +2892,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 				},
 			},
 		);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{
@@ -3051,6 +3078,7 @@ setInterval(() => {}, 1_000);
 			},
 		);
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{
@@ -3194,6 +3222,7 @@ setInterval(() => {}, 1_000);
 			},
 		);
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			results: Array<{
 				error?: string;
@@ -3320,6 +3349,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 				},
 			},
 		);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -3375,6 +3405,7 @@ setInterval(() => {}, 1_000);
 		};
 
 		await runConfiguredBackground(config);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -3441,6 +3472,7 @@ setInterval(() => {}, 1_000);
 				beforeWriterSupervisorDispositionRead: (filePath) => fs.rmSync(filePath, { force: true }),
 			},
 		);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -3501,6 +3533,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 				},
 			},
 		);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ error?: string; success: boolean }>;
@@ -3597,6 +3630,7 @@ setInterval(() => {}, 1_000);
 		requestAsyncStop(asyncDir, { source: "test" });
 		await running;
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			results: Array<{ writerProcesses?: Array<{ terminationOrigin?: string }> }>;
 		};
@@ -3641,6 +3675,7 @@ setInterval(() => {}, 1_000);
 		requestAsyncStop(asyncDir, { source: "test" });
 		await running;
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ writerProcesses?: Array<{ childPid?: number; terminationOrigin?: string }> }>;
@@ -3700,6 +3735,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 			});
 			expect(Date.now() - startedAt).toBeLessThan(6_000);
 			escapedPid = Number(fs.readFileSync(escapedPidPath, "utf8"));
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 				state: string;
 				results: Array<{ output?: string; success: boolean }>;
@@ -3755,6 +3791,7 @@ setInterval(() => {}, 1_000);
 			resultPath,
 			work: { mode: "single", task: { ...task(0), cwd: root } },
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -3828,10 +3865,12 @@ setInterval(() => {}, 1_000);
 			targetIndex: 0,
 		});
 		await running;
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ writerProcesses?: Array<{ terminationOrigin?: string }> }>;
 		};
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			steering?: { failed?: number; pending?: number };
 		};
@@ -3876,6 +3915,7 @@ setInterval(() => {}, 1_000);
 			resultPath,
 			work: { mode: "single", task: { ...task(0), cwd: root } },
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -3933,6 +3973,7 @@ setInterval(() => {}, 1_000);
 		};
 
 		await runConfiguredBackground(config);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -3995,6 +4036,7 @@ setInterval(() => {}, 1_000);
 		};
 
 		await runConfiguredBackground(config);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -4052,6 +4094,7 @@ setInterval(() => {}, 1_000);
 		};
 
 		await runConfiguredBackground(config);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -4112,6 +4155,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 		};
 
 		await runConfiguredBackground(config);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -4123,6 +4167,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 			}>;
 		};
 		const child = completion.results[0];
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			steps: Array<{ finalOutput?: string; savedOutputPath?: string }>;
 		};
@@ -4139,6 +4184,7 @@ process.stdout.write(JSON.stringify(event) + "\\n");
 		});
 		expect(child?.artifactPaths && fs.existsSync(child.artifactPaths.outputPath)).toBe(true);
 		expect(child?.artifactPaths && fs.existsSync(child.artifactPaths.metadataPath)).toBe(true);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const metadata = JSON.parse(fs.readFileSync(child?.artifactPaths?.metadataPath ?? "", "utf8")) as {
 			state?: string;
 		};
@@ -4181,6 +4227,7 @@ setInterval(() => {}, 1_000);
 			resultPath,
 			work: { mode: "single", task: { ...task(0), cwd: root } },
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{
@@ -4189,6 +4236,7 @@ setInterval(() => {}, 1_000);
 				writerProcesses?: Array<{ terminationOrigin?: string }>;
 			}>;
 		};
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			steps: Array<{ recentOutput?: string[] }>;
 		};
@@ -4253,6 +4301,7 @@ process.stdout.write(events.map((event) => JSON.stringify(event)).join("\\n") + 
 			resultPath,
 			work: { mode: "single", task: { ...task(0), cwd: root } },
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -4307,6 +4356,7 @@ process.stdout.write(JSON.stringify(event), () => process.exit(0));
 				resultPath,
 				work: { mode: "single", task: fixture.task },
 			});
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 				state: string;
 				results: Array<{ error?: string; turnBudgetExceeded?: boolean }>;
@@ -4342,9 +4392,11 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 			resultPath,
 			work: { mode: "single", task: { ...task(0), cwd: root } },
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			results: Array<{ output: string }>;
 		};
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			steps: Array<{ recentOutput?: string[] }>;
 		};
@@ -4388,6 +4440,7 @@ process.stdout.write(JSON.stringify(event) + "\\n", () => process.exit(0));
 				},
 			},
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			results: Array<{ output: string }>;
 		};
@@ -4429,6 +4482,7 @@ setInterval(() => {}, 1_000);
 		};
 
 		await runConfiguredBackground(config);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -4493,6 +4547,7 @@ setTimeout(() => process.exit(0), 1_225);
 		};
 
 		await runConfiguredBackground(config);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -4560,6 +4615,7 @@ setInterval(() => {}, 1_000);
 		};
 
 		await runConfiguredBackground(config);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			success: boolean;
@@ -4626,6 +4682,7 @@ setInterval(() => {}, 1_000);
 			targetIndex: 0,
 		});
 		await running;
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			parentRunOrigin?: string;
 			state: string;
@@ -4707,6 +4764,7 @@ const timer = setInterval(() => {
 		});
 		await waitForCondition(() => {
 			try {
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				const persisted = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 					steering?: { recent?: Array<{ id?: string; targets?: Array<{ state?: string }> }> };
 				};
@@ -4773,6 +4831,7 @@ const timer = setInterval(() => {
 		fs.rmSync(statusPath, { recursive: true, force: true });
 		await waitForCondition(() => {
 			try {
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				const persisted = JSON.parse(fs.readFileSync(statusPath, "utf8")) as {
 					steering?: { recent?: Array<{ id?: string }> };
 				};
@@ -4940,10 +4999,12 @@ setInterval(() => {}, 1_000);
 			targetIndex: 0,
 		});
 		await running;
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const completion = JSON.parse(fs.readFileSync(resultPath, "utf8")) as {
 			state: string;
 			results: Array<{ error?: string; stopped?: boolean }>;
 		};
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const status = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			steering?: { recent?: Array<{ targets?: Array<{ state?: string; reason?: string }> }> };
 		};

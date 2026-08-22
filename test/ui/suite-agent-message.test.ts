@@ -79,6 +79,7 @@ test("Suite Agent message preparation crosses Pi event facades and awaits thenab
 test("direct activation authority stays separate from historical user attribution", async () => {
 	const activations: string[] = [];
 	const delivered: Array<Parameters<ExtensionAPI["sendMessage"]>[0]> = [];
+	// SAFETY: this test controls the value and supplies every SuiteAgentMessageHost member exercised by this case.
 	const [owner, sender] = hostApis(((message) => {
 		delivered.push(message);
 	}) as SuiteAgentMessageHost["sendMessage"]);
@@ -107,6 +108,7 @@ test("direct activation authority stays separate from historical user attributio
 
 test("Suite Agent message delivery rolls staged state back only when Host delivery fails", async () => {
 	const order: string[] = [];
+	// SAFETY: this test controls the value and supplies every SuiteAgentMessageHost member exercised by this case.
 	const [owner, sender] = hostApis((() =>
 		Promise.reject(new Error("delivery failed"))) as SuiteAgentMessageHost["sendMessage"]);
 	registerSuiteAgentMessagePreparation(owner, {
@@ -127,6 +129,7 @@ test("Suite Agent message delivery rechecks session ownership after asynchronous
 	});
 	let current = true;
 	let deliveries = 0;
+	// SAFETY: this test controls the value and supplies every SuiteAgentMessageHost member exercised by this case.
 	const [owner, sender] = hostApis((() => {
 		deliveries += 1;
 	}) as SuiteAgentMessageHost["sendMessage"]);
@@ -154,6 +157,7 @@ test("Suite Agent message delivery cannot accept into a session replaced during 
 	});
 	let current = true;
 	let accepted = 0;
+	// SAFETY: this test controls the value and supplies every SuiteAgentMessageHost member exercised by this case.
 	const [, sender] = hostApis((() => delivery) as SuiteAgentMessageHost["sendMessage"]);
 
 	const pending = sendSuiteAgentMessage(
@@ -185,6 +189,7 @@ test("Suite Agent messages fail open through a partial standalone API without an
 });
 
 test("native custom-turn preflight markers are reference-counted by session", () => {
+	// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 	const ctx = { sessionManager: {} } as Pick<ExtensionContext, "sessionManager">;
 	const finishFirst = beginSuiteNativeCompactionPreflight(ctx);
 	const finishSecond = beginSuiteNativeCompactionPreflight(ctx);

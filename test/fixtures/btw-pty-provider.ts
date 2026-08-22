@@ -97,6 +97,7 @@ export default function btwPtyProvider(pi: ExtensionAPI): void {
 	pi.registerCommand("fixture-btw-large", {
 		description: "Seed an oversized branch for the BTW PTY acceptance fixture",
 		handler: async (_args, ctx) => {
+			// SAFETY: this test controls the value and supplies every SessionManager member exercised by this case.
 			const sessionManager = ctx.sessionManager as SessionManager;
 			sessionManager.appendMessage({
 				role: "user",

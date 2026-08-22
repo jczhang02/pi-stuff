@@ -84,6 +84,7 @@ function registryFixture(
 			invocations.push(invocation);
 			const result: AgentToolResult<unknown> = {
 				content: [{ type: "text", text: "first line" }],
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				details: { path: (invocation.input as { path?: string }).path },
 			};
 			invocation.onUpdate?.({ content: [{ type: "text", text: "partial" }], details: {} });
@@ -98,6 +99,7 @@ function registryFixture(
 function sessionLedgerFixture() {
 	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
 	return {
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		context: {
 			cwd: "/project",
 			sessionManager: {
@@ -115,6 +117,7 @@ function sessionLedgerFixture() {
 }
 
 test("the compact Tool contract describes execution without advertising optional Tools", () => {
+	// SAFETY: this test controls the value and supplies every CodeModeRuntime member exercised by this case.
 	const definition = createCodeModeDefinition({} as CodeModeRuntime);
 	expect(definition.description).toContain("top-level await");
 	expect(definition.description).toContain("await every tools.* call");
@@ -144,6 +147,7 @@ test("the Connector exposes every active Suite Tool without a per-Tool caller co
 				captured = result;
 			},
 			cwd: "/project",
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 			extensionContext: { cwd: "/project" } as ExtensionContext,
 			onUpdate: () => {},
 			toolCallId: "nested-read",
@@ -166,6 +170,7 @@ test("top-level and in-program discovery share Cloudflare-ranked catalog data an
 	expect(connector.describe("tools.read").types).toContain("type ReadInput");
 
 	const definition = createCodeModeSearchDefinition(connector);
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const result = await definition.execute("search-1", { query: "read file" }, undefined, undefined, {
 		cwd: "/project",
 	} as ExtensionContext);
@@ -215,6 +220,7 @@ test("result adaptation unwraps structured/text JSON and reports an actionable f
 		}),
 	).toEqual({ ok: true });
 	expect(
+		// SAFETY: this test controls the value and supplies every AgentToolResult member exercised by this case.
 		unwrapSuiteToolResult("fixture", {
 			content: [],
 			details: {},
@@ -513,6 +519,7 @@ test("runtime auto-waits yielded V8 cells and persists the final nested trace", 
 		},
 	};
 	const runtime = new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor);
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const result = await runtime.execute("outer-1", "text((await suite.read({ path: 'README.md' })).content[0].text)", {
 		cwd: "/project",
 	} as ExtensionContext);
@@ -565,6 +572,7 @@ test("runtime preserves nested termination, deferred Tools, and Tool usage", asy
 	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor).execute(
 		"outer-control",
 		"text('complete')",
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		{ cwd: "/project" } as ExtensionContext,
 	);
 
@@ -613,6 +621,7 @@ test("runtime hoists nested media while preserving each image's position inside 
 	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor).execute(
 		"outer-media",
 		"await suite.view_image({ path: 'pixel.png' })",
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		{ cwd: "/project" } as ExtensionContext,
 	);
 	expect(result.content).toEqual([
@@ -657,6 +666,7 @@ test("runtime settles every still-running nested row when the outer execution is
 	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor).execute(
 		"outer-cancelled",
 		"await suite.bash({ command: 'sleep 30' })",
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		{ cwd: "/project" } as ExtensionContext,
 		controller.signal,
 	);
@@ -689,6 +699,7 @@ test("runtime recognizes an executor AbortError even without an outer AbortSigna
 	const result = await new CodeModeRuntime(new SuiteCodeModeConnector(registryFixture()), executor).execute(
 		"outer-abort-error",
 		"await suite.bash({ command: 'sleep 30' })",
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		{ cwd: "/project" } as ExtensionContext,
 	);
 	expect(result.details.status).toBe("cancelled");

@@ -66,6 +66,7 @@ function createPanel(
 			onboardingState: { setupCompleted: false, version: 1 },
 		},
 		{ requestRender: () => undefined, terminal: { rows } },
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		{ bold: (value: string) => value, fg: (_color: string, value: string) => value } as Theme,
 		done,
 	);
@@ -183,6 +184,7 @@ test("MCP Setup pages only overflowing lists and renders active Pi bindings", ()
 			onboardingState: { setupCompleted: false, version: 1 },
 		},
 		{ requestRender: () => undefined, terminal: { rows: 28 } },
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		{ bold: (value: string) => value, fg: (_color: string, value: string) => value } as Theme,
 		() => undefined,
 	);
@@ -218,6 +220,7 @@ test("MCP Setup honors the active Pi cancel binding", () => {
 			onboardingState: { setupCompleted: false, version: 1 },
 		},
 		{ requestRender: () => undefined, terminal: { rows: 28 } },
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		{ bold: (value: string) => value, fg: (_color: string, value: string) => value } as Theme,
 		() => {
 			closed += 1;

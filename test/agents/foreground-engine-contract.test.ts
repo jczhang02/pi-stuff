@@ -480,6 +480,7 @@ describe("reduced foreground Agent engine", () => {
 				if (entry) requestPath = path.join(directory, entry);
 				else await Bun.sleep(10);
 			}
+			// SAFETY: this test controls the serialized JSON fixture and exercises only the asserted fields.
 			const request = JSON.parse(fs.readFileSync(requestPath, "utf8")) as {
 				id: string;
 				message: string;
@@ -2355,6 +2356,7 @@ describe("reduced foreground Agent engine", () => {
 			root,
 			{ sessionId, governorSessionId: sessionId, legacyRunIds: new Set() },
 			{
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				lstat: ((target: fs.PathLike) => {
 					if (path.basename(String(target)) === disappearingId)
 						throw Object.assign(new Error("disappeared"), { code: "ENOENT" });
@@ -2403,6 +2405,7 @@ describe("reduced foreground Agent engine", () => {
 			governorSessionId: sessionId,
 			legacyRunIds: new Set(),
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const persisted = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			state?: string;
 			steps?: Array<{ status?: string }>;
@@ -2443,6 +2446,7 @@ describe("reduced foreground Agent engine", () => {
 			governorSessionId: sessionId,
 			legacyRunIds: new Set(),
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const persisted = JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf8")) as {
 			state?: string;
 			steps?: Array<{ agentStatus?: string; status?: string }>;

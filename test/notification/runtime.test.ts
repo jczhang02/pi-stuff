@@ -30,6 +30,7 @@ class FakeClock implements NotificationClock {
 	}
 
 	clearTimeout(timer: NotificationTimer): void {
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(timer as { cancelled: boolean }).cancelled = true;
 	}
 

@@ -21,44 +21,105 @@ type MockCommand = {
 };
 
 type MockTool = {
+	description?: string;
 	name?: string;
-	[key: string]: unknown;
+	execute?: MockHandler;
+	parameters?: MockValue;
+	promptGuidelines?: string[];
+	renderCall?: MockValue;
+	renderResult?: MockValue;
+	renderShell?: MockValue;
 };
 
 type MockFlag = {
 	value?: MockValue;
-	[key: string]: unknown;
 };
 
+interface MockRecord {
+	readonly content?: MockValue;
+	readonly customType?: MockValue;
+	readonly deliverAs?: MockValue;
+	readonly kind?: MockValue;
+	readonly triggerTurn?: MockValue;
+	readonly value?: MockValue;
+}
+
+interface MockSelectorComponent {
+	readonly __piTuiKitScreen?: true;
+	dispose?(): void;
+	focused?: boolean;
+	handleInput(data: string): void;
+	invalidate?(): void;
+	render(width: number): string[];
+	waitForPending?(): Promise<void>;
+}
+
+interface MockSelectorKeybindings {
+	getKeys(key: string): readonly string[];
+	matches(data: string, key: string): boolean;
+}
+
+interface MockSelectorFactory {
+	(
+		tui: { readonly terminal: { rows: number }; requestRender(): void },
+		theme: { bold(text: string): string; fg(color: string, text: string): string },
+		keybindings: MockSelectorKeybindings,
+		close: <Value>(value: Value) => void,
+	): MockSelectorComponent;
+}
+
+export interface MockContextOverrides {
+	abort?: () => void;
+	confirm?: (title: string, message: string) => Promise<boolean>;
+	custom?: <Factory, Options>(factory: Factory, options?: Options) => Promise<MockValue>;
+	cwd?: string;
+	editor?: (title: string, initial: string) => Promise<string | undefined>;
+	editorText?: string;
+	getContextUsage?: () => MockValue;
+	hasPendingMessages?: () => boolean;
+	hasUI?: boolean;
+	input?: (title: string, placeholder: string) => Promise<MockValue>;
+	isIdle?: () => boolean;
+	isProjectTrusted?: () => boolean;
+	mode?: string;
+	model?: MockValue;
+	modelRegistry?: object;
+	reload?: () => Promise<void>;
+	select?: (title: string, options: string[]) => Promise<string | undefined>;
+	sessionManager?: object;
+	terminalRows?: number;
+	waitForIdle?: () => Promise<void>;
+}
+
 type MockPiApi = {
-	registerCommand(name: string, command: unknown): void;
-	registerFlag(name: string, flag: unknown): void;
-	registerTool(tool: unknown): void;
+	registerCommand(name: string, command: MockCommand): void;
+	registerFlag(name: string, flag: MockFlag): void;
+	registerTool(tool: MockTool): void;
 	registerEntryRenderer(customType: string, renderer: MockHandler): void;
-	registerProvider(name: string, config: unknown): void;
+	registerProvider<Config>(name: string, config: Config): void;
 	unregisterProvider(name: string): void;
 	on(name: string, handler: MockHandler): void;
 	events: {
-		emit: (channel: string, data: unknown) => void;
-		on: (channel: string, handler: (data: unknown) => void) => () => void;
+		emit<Data>(channel: string, data: Data): void;
+		on<Data>(channel: string, handler: (data: Data) => void): () => void;
 		clear: () => void;
 	};
 	getFlag(name: string): MockValue;
 	getActiveTools(): string[];
 	setActiveTools(names: string[]): void;
-	getAllTools(): unknown[];
+	getAllTools(): MockTool[];
 	getThinkingLevel(): string;
 	setThinkingLevel(level: string): void;
-	appendEntry(customType: string, data: unknown): void;
-	sendUserMessage(text: string, messageOptions?: unknown): void;
-	sendMessage(message: unknown, messageOptions?: unknown): void;
-	setModel(model: unknown): Promise<boolean>;
+	appendEntry<Data>(customType: string, data: Data): void;
+	sendUserMessage<Options>(text: string, messageOptions?: Options): void;
+	sendMessage<Message, Options>(message: Message, messageOptions?: Options): void;
+	setModel<Model>(model: Model): Promise<boolean>;
 };
 
 export function createMockPi(
 	options: {
 		activeTools?: string[];
-		allTools?: unknown[];
+		allTools?: MockTool[];
 		thinkingLevel?: string;
 		clampThinkingLevel?: (level: string) => string;
 	} = {},
@@ -77,9 +138,9 @@ export function createMockPi(
 	const sentHiddenGoalMessages: Array<{ message: unknown; options?: unknown }> = [];
 	const setModels: unknown[] = [];
 	const thinkingLevels: string[] = [];
-	const eventBusSubscriptions = new Map<string, Array<(data: unknown) => void>>();
+	const eventBusSubscriptions = new Map<string, MockHandler[]>();
 	const eventBus = {
-		emit(channel: string, data: unknown) {
+		emit<Data>(channel: string, data: Data) {
 			for (const handler of eventBusSubscriptions.get(channel) ?? []) {
 				try {
 					const result = handler(data);
@@ -89,14 +150,19 @@ export function createMockPi(
 				}
 			}
 		},
-		on(channel: string, handler: (data: unknown) => void) {
+		on<Data>(channel: string, handler: (data: Data) => void) {
 			const list = eventBusSubscriptions.get(channel) ?? [];
-			list.push(handler);
+			const subscription: MockHandler = (data) => {
+				// SAFETY: this test bus delivers values emitted on the same channel whose registration owns Data.
+				handler(data as Data);
+				return undefined;
+			};
+			list.push(subscription);
 			eventBusSubscriptions.set(channel, list);
 			return () => {
 				const current = eventBusSubscriptions.get(channel);
 				if (!current) return;
-				const index = current.indexOf(handler);
+				const index = current.indexOf(subscription);
 				if (index >= 0) current.splice(index, 1);
 			};
 		},
@@ -109,19 +175,19 @@ export function createMockPi(
 	const allTools = options.allTools ?? activeTools.map((name) => builtinTool(name));
 
 	const rawPi: MockPiApi = {
-		registerCommand(name: string, command: unknown) {
-			commands.set(name, command as MockCommand);
+		registerCommand(name: string, command: MockCommand) {
+			commands.set(name, command);
 		},
-		registerFlag(name: string, flag: unknown) {
-			flags.set(name, flag as MockFlag);
+		registerFlag(name: string, flag: MockFlag) {
+			flags.set(name, flag);
 		},
-		registerTool(tool: unknown) {
-			tools.push(tool as MockTool);
+		registerTool(tool: MockTool) {
+			tools.push(tool);
 		},
 		registerEntryRenderer(customType: string, renderer: MockHandler) {
 			entryRenderers.set(customType, renderer);
 		},
-		registerProvider(name: string, config: unknown) {
+		registerProvider<Config>(name: string, config: Config) {
 			const previous = providers.get(name);
 			const effective =
 				previous &&
@@ -161,13 +227,13 @@ export function createMockPi(
 			thinkingLevel = options.clampThinkingLevel?.(level) ?? level;
 			thinkingLevels.push(thinkingLevel);
 		},
-		appendEntry(customType: string, data: unknown) {
+		appendEntry<Data>(customType: string, data: Data) {
 			entries.push({ customType, data });
 		},
-		sendUserMessage(text: string, messageOptions?: unknown) {
+		sendUserMessage<Options>(text: string, messageOptions?: Options) {
 			sentUserMessages.push({ text, options: messageOptions });
 		},
-		sendMessage(message: unknown, messageOptions?: unknown) {
+		sendMessage<Message, Options>(message: Message, messageOptions?: Options) {
 			if (isRecord(message) && message.customType === "pi-stuff-goal-prompt" && isRuntimeString(message.content)) {
 				sentHiddenGoalMessages.push({ message, options: messageOptions });
 				if (isRecord(messageOptions) && messageOptions.triggerTurn === false) return;
@@ -179,7 +245,7 @@ export function createMockPi(
 			}
 			sentMessages.push({ message, options: messageOptions });
 		},
-		async setModel(model: unknown) {
+		async setModel<Model>(model: Model) {
 			setModels.push(model);
 			return true;
 		},
@@ -190,6 +256,7 @@ export function createMockPi(
 	};
 
 	return {
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		pi: rawPi as never,
 		rawPi,
 		commands,
@@ -214,18 +281,16 @@ export function createMockPi(
 	};
 }
 
-export function createMockContext(overrides: Record<string, unknown> = {}) {
+export function createMockContext(overrides: MockContextOverrides = {}) {
 	const notifications: Array<{ message: string; level?: string }> = [];
 	const statuses = new Map<string, string | undefined>();
 	const widgets = new Map<string, unknown>();
 	let footer: unknown;
 	let workingVisible = true;
 	let editorText = String(overrides.editorText ?? "");
-	const selectOverride = overrides.select as
-		| ((title: string, options: string[]) => Promise<string | undefined>)
-		| undefined;
-	const inputOverride = overrides.input as ((title: string, placeholder?: string) => Promise<MockValue>) | undefined;
-	const defaultCustom = async (factory: unknown) => {
+	const selectOverride = overrides.select;
+	const inputOverride = overrides.input;
+	const defaultCustom = async <Factory>(factory: Factory) => {
 		if (!selectOverride) return undefined;
 		const harness = createCustomSelectorHarness(factory, 100, undefined, Number(overrides.terminalRows ?? 24));
 		const options: string[] = [];
@@ -286,10 +351,10 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 		harness.handleInput("tui.select.cancel");
 		return harness.result;
 	};
-	const customOverride = overrides.custom as ((factory: unknown, options?: unknown) => Promise<MockValue>) | undefined;
+	const customOverride = overrides.custom;
 	const custom =
 		customOverride && selectOverride
-			? async (factory: unknown, options?: unknown) => {
+			? async <Factory, Options>(factory: Factory, options?: Options) => {
 					const probe = createCustomSelectorHarness(factory, 100, undefined, Number(overrides.terminalRows ?? 24));
 					const standard = probe.isPiTuiKitScreen;
 					probe.dispose();
@@ -317,10 +382,10 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 			setStatus(key: string, value: string | undefined) {
 				statuses.set(key, value);
 			},
-			setWidget(key: string, value: unknown) {
+			setWidget<Value>(key: string, value: Value) {
 				widgets.set(key, value);
 			},
-			setFooter(value: unknown) {
+			setFooter<Value>(value: Value) {
 				footer = value;
 			},
 			setWorkingVisible(value: boolean) {
@@ -361,6 +426,7 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 	};
 
 	return {
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		ctx: ctx as never,
 		notifications,
 		statuses,
@@ -377,7 +443,7 @@ export function createMockContext(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord<Value>(value: Value): value is Value & MockRecord {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
@@ -393,28 +459,23 @@ function selectedKitRow(lines: readonly string[]): string | undefined {
 		?.trim();
 }
 
-function createCustomSelectorHarness(
-	factory: unknown,
+function createCustomSelectorHarness<Factory>(
+	factory: Factory,
 	width = 100,
-	keybindingsOverride?: {
-		matches(data: string, key: string): boolean;
-		getKeys(key: string): readonly string[];
-	},
+	keybindingsOverride?: MockSelectorKeybindings,
 	terminalRows = 24,
 ) {
 	if (!isRuntimeFunction(factory)) throw new Error("Expected a custom component factory");
 	let result: unknown;
-	let resolveResult!: (value: unknown) => void;
-	const resultPromise = new Promise<unknown>((resolve) => {
-		resolveResult = resolve;
-	});
+	const { promise: resultPromise, resolve: resolveResult } = Promise.withResolvers<unknown>();
+	const close = <Value>(value: Value): void => {
+		result = value;
+		resolveResult(value);
+	};
 	const terminal = { rows: terminalRows };
-	const component = (
-		factory as (...args: unknown[]) => {
-			render(width: number): string[];
-			handleInput(data: string): void;
-		}
-	)(
+	// SAFETY: Pi supplies custom factories with this four-argument TUI contract, and the harness validates callability above.
+	const createComponent = factory as Factory & MockSelectorFactory;
+	const component = createComponent(
 		{ terminal, requestRender() {} },
 		{
 			fg(_color: string, text: string) {
@@ -449,10 +510,7 @@ function createCustomSelectorHarness(
 				return [];
 			},
 		},
-		(value: unknown) => {
-			result = value;
-			resolveResult(value);
-		},
+		close,
 	);
 	return {
 		handleInput(data: string) {
@@ -475,20 +533,20 @@ function createCustomSelectorHarness(
 			terminal.rows = rows;
 		},
 		invalidate() {
-			(component as { invalidate?: () => void }).invalidate?.();
+			component.invalidate?.();
 		},
 		setFocused(focused: boolean) {
-			if ("focused" in component) (component as { focused: boolean }).focused = focused;
+			if ("focused" in component) component.focused = focused;
 		},
 		async waitForPending() {
-			await (component as { waitForPending?: () => Promise<void> }).waitForPending?.();
+			await component.waitForPending?.();
 		},
 		dispose() {
-			(component as { dispose?: () => void }).dispose?.();
+			component.dispose?.();
 		},
 		resultPromise,
 		get isPiTuiKitScreen() {
-			return (component as { __piTuiKitScreen?: true }).__piTuiKitScreen === true;
+			return component.__piTuiKitScreen === true;
 		},
 		get isFocusable() {
 			return "focused" in component;

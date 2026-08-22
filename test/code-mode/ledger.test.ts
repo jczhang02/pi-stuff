@@ -9,6 +9,7 @@ import {
 
 function fixture() {
 	const branch: Array<{ customType: string; data: unknown; type: "custom" }> = [];
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const context = {
 		cwd: "/project",
 		sessionManager: {
@@ -43,6 +44,7 @@ test("the Session ledger replays completed values and preserves binary, bigint, 
 	controller.beginPass(1);
 	const replay = controller.beginToolCall("read", { path: "a.bin" });
 	expect(replay.replay).toMatchObject({ kind: "result", value: { count: 4n } });
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const bytes = replay.replay?.kind === "result" ? (replay.replay.value as { bytes: Uint8Array }).bytes : undefined;
 	if (!bytes) throw new Error("replayed binary result is missing");
 	expect([...bytes]).toEqual([1, 2, 3]);
@@ -104,6 +106,7 @@ test("approval stays paused when the working directory changed", () => {
 	const controller = ledger.begin(context, "outer-cwd", "await tools.write({ path: 'a.txt' })", policies, approvals);
 	controller.beginPass(0);
 	controller.beginToolCall("write", { path: "a.txt" });
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const movedContext = { ...context, cwd: "/another-project" } as ExtensionContext;
 
 	expect(() => ledger.resume(movedContext, controller.executionId, policies, approvals)).toThrow(

@@ -13,6 +13,7 @@ import {
 	summarizeBuiltin,
 } from "../../packages/pi-stuff/src/tool-display/render.js";
 
+// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 const theme = {
 	bold: (value: string) => value,
 	fg: (_color: string, value: string) => value,
@@ -64,6 +65,7 @@ describe("terminal-safe Tool rendering", () => {
 
 		for (const [state, expectedColor] of states) {
 			const markerColors: string[] = [];
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 			const recordingTheme = {
 				bold: (value: string) => value,
 				fg: (color: string, value: string) => {
@@ -112,6 +114,7 @@ describe("terminal-safe Tool rendering", () => {
 	test("renders compact activity summaries without raw Tool chrome", () => {
 		const stoppedMarkerColors: string[] = [];
 		const stopped = new CachedToolRow(
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 			{
 				bold: (value: string) => value,
 				fg: (color: string, value: string) => {
@@ -313,6 +316,7 @@ describe("terminal-safe Tool rendering", () => {
 
 	test("uses Claude-style semantic roles across a settled Bash operation", () => {
 		const calls: Array<[string, string]> = [];
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const recordingTheme = {
 			bold: (value: string) => value,
 			fg: (color: string, value: string) => {
@@ -439,6 +443,7 @@ describe("terminal-safe Tool rendering", () => {
 			["error", "error"],
 		] as const) {
 			const colors: string[] = [];
+			// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 			const recordingTheme = {
 				bold: (value: string) => value,
 				fg: (color: string, value: string) => {

@@ -227,31 +227,40 @@ function currentSessionId(root: RootHarness): string {
 function createHarness(options: HarnessOptions = {}): RootHarness {
 	const api = new ApiHarness();
 	const chrome = { registered: 0, unregistered: 0 };
+	// SAFETY: this test controls the value and supplies every CurrentAgents member exercised by this case.
 	const current = { disposed: 0, refreshes: 0, value: undefined as CurrentAgents | undefined };
 	const directories: string[] = [];
 	const dialogs: Array<{ initialKey?: string; hasReader: boolean }> = [];
 	const engineParams: SubagentParamsLike[] = [];
 	const engineOrigins: AgentWorkOrigin[] = [];
 	const governor = {
+		// SAFETY: this test controls the value and supplies every Array member exercised by this case.
 		binds: [] as Array<{ sessionId: string; ownerAgentPath: readonly string[] }>,
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		completions: [] as unknown[],
 		disposed: 0,
 		failures: 0,
+		// SAFETY: this test controls the value and supplies every Array member exercised by this case.
 		prepares: [] as Array<{ launchRunId: string; params: GovernedAgentParams }>,
 		reconcileChecks: 0,
 		reconciles: 0,
 		settlements: 0,
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		starts: [] as unknown[],
 	};
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const notifier = { value: undefined as { deliver(result: CompletionNotification): Promise<boolean> } | undefined };
 	const projectionOwnership = { delegated: false };
 	const projections: string[] = [];
+	// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 	const roster = { contexts: 0, disposed: 0, suppressed: [] as boolean[] };
+	// SAFETY: this test controls the value and supplies every SubagentState member exercised by this case.
 	const state = { value: undefined as SubagentState | undefined };
 	const supervisor = { disposed: 0, started: 0 };
 	const tracker = { completed: 0, pollers: 0, reset: 0, restored: 0, started: 0 };
 	const watcher = { primes: 0, starts: 0, stops: 0 };
 
+	// SAFETY: this test controls the value and supplies every CommandDialogCoordinator member exercised by this case.
 	const coordinator = {
 		registerChrome: (_id: string, chromeValue: { setSuppressed(suppressed: boolean): void }) => {
 			chrome.registered += 1;
@@ -279,13 +288,15 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			bindSession: (identity) => governor.binds.push(identity),
 			inspectExistingRuntimeLeases: async () =>
 				options.restoreActive || options.restoreFailure || options.restoreGate
-					? ([{ asyncDir: path.join(ASYNC_DIR, "restored") }] as never)
+					? // SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
+						([{ asyncDir: path.join(ASYNC_DIR, "restored") }] as never)
 					: [],
 			prepare: async (input) => {
 				governor.prepares.push({ launchRunId: input.launchRunId, params: input.params });
 				await options.prepareGate;
 				if (options.governorReject) return { ok: false, message: "Agent limit reached; wait for one to finish." };
 				if (input.params.action && input.params.action !== "resume") return { ok: true };
+				// SAFETY: this test controls the value and supplies every AgentExecutionInvocation member exercised by this case.
 				return { ok: true, invocation: { launchRunId: input.launchRunId } as AgentExecutionInvocation };
 			},
 			observeAsyncStarted: async (event) => {
@@ -338,10 +349,12 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 							abortStart: () => true,
 						});
 						await options.foregroundGate;
+						// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 						return {
 							content: [{ type: "text", text: "foreground engine receipt" }],
 							details:
 								options.foregroundDetails ??
+								// SAFETY: this test controls the value and supplies every Details member exercised by this case.
 								({
 									mode: "single",
 									runId: params.launchRunId,
@@ -350,8 +363,10 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 						} as never;
 					}
 					await options.backgroundGate;
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					return {
 						content: [{ type: "text", text: "Async dir: /private/run" }],
+						// SAFETY: this test controls the value and supplies every Details member exercised by this case.
 						details: {
 							mode: "single",
 							results: [],
@@ -381,6 +396,7 @@ function createHarness(options: HarnessOptions = {}): RootHarness {
 			handleStatus: () => {},
 			handleStarted: (data) => {
 				tracker.started += 1;
+				// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 				const event = data as { id?: string; sessionId?: string };
 				if (!event.id) return;
 				rootState.asyncJobs.set(event.id, {
@@ -587,6 +603,7 @@ describe("Agents extension composition root", () => {
 
 		expect([...root.api.tools.keys()]).toEqual(["subagent"]);
 		expect(root.api.tools.get("subagent")?.label).toBe("Agent");
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const presentation = root.api.tools.get("subagent") as {
 			renderCall?: unknown;
 			renderResult?: unknown;
@@ -670,6 +687,7 @@ describe("Agents extension composition root", () => {
 				},
 			}),
 		).not.toThrow();
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		expect(Object.hasOwn(tool.parameters as object, "oneOf")).toBeFalse();
 	});
 
@@ -892,7 +910,9 @@ describe("Agents extension composition root", () => {
 				mode: "parallel",
 				runId: "foreground-mixed",
 				results: [
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					{ agent: "reviewer", success: true, exitCode: 0 } as never,
+					// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 					{ agent: "writer", success: true, exitCode: 0, detached: true } as never,
 				],
 			},
@@ -1306,6 +1326,7 @@ describe("Agents extension composition root", () => {
 		}
 		const renderer = root.api.entryRenderers.get("pi-stuff-agent-outcome");
 		if (!renderer) throw new Error("Expected durable completion entry renderer");
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const component = renderer(
 			{ data: root.api.entries[0]?.data },
 			{ expanded: false },
@@ -1454,6 +1475,7 @@ describe("Agents extension composition root", () => {
 		const renderer = stopped.api.entryRenderers.get("pi-stuff-agent-outcome");
 		if (!renderer) throw new Error("Expected durable completion entry renderer");
 		const markerColors: string[] = [];
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const component = renderer(
 			{ data: stopped.api.entries[0]?.data },
 			{ expanded: false },

@@ -37,6 +37,7 @@ function result(stdout = "", code = 0, options: { killed?: boolean; stderr?: str
 describe("RTK runtime certification", () => {
 	test("bounds runtime errors by terminal cells", async () => {
 		const runtime = new RtkRuntime({ expectedSha256: "unused" });
+		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 		await runtime.verify({
 			exec: async () => {
 				throw new Error(`\u001b[31m${"失败😀".repeat(100)}\u001b[0m`);
@@ -50,6 +51,7 @@ describe("RTK runtime certification", () => {
 	test("verifies one exact executable and rewrites through its absolute path", async () => {
 		const binary = await fakeBinary();
 		const calls: Array<{ args: string[]; command: string }> = [];
+		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 		const pi = {
 			exec: async (command: string, args: string[]) => {
 				calls.push({ args, command });
@@ -73,6 +75,7 @@ describe("RTK runtime certification", () => {
 
 	test("keeps the original command when RTK is missing and avoids repeated probes", async () => {
 		let probes = 0;
+		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 		const pi = {
 			exec: async () => {
 				probes += 1;
@@ -90,6 +93,7 @@ describe("RTK runtime certification", () => {
 	test("fails open when the current platform has no certified binary identity", async () => {
 		const binary = await fakeBinary();
 		let rewriteCalls = 0;
+		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 		const pi = {
 			exec: async (command: string, args: string[]) => {
 				if (command === "which") return result(`${binary.path}\n`);
@@ -108,6 +112,7 @@ describe("RTK runtime certification", () => {
 	test("fails open on timeout and stops retrying the slow executable", async () => {
 		const binary = await fakeBinary();
 		let rewriteCalls = 0;
+		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 		const pi = {
 			exec: async (command: string, args: string[]) => {
 				if (command === "which") return result(`${binary.path}\n`);
@@ -132,6 +137,7 @@ describe("RTK runtime certification", () => {
 		const second = await fakeBinary("second");
 		let selectedPath = first.path;
 		let rewriteCalls = 0;
+		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 		const pi = {
 			exec: async (command: string, args: string[]) => {
 				if (command === "which") return result(`${selectedPath}\n`);
@@ -155,6 +161,7 @@ describe("RTK runtime certification", () => {
 	test("detects in-place binary drift and allows explicit re-certification", async () => {
 		const binary = await fakeBinary("first");
 		let expectedSha256 = binary.sha256;
+		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 		const pi = {
 			exec: async (command: string, args: string[]) => {
 				if (command === "which") return result(`${binary.path}\n`);
@@ -179,6 +186,7 @@ describe("RTK runtime certification", () => {
 
 	test("does not rewrite empty or already-RTK commands", async () => {
 		let calls = 0;
+		// SAFETY: this test controls the value and supplies every Pick member exercised by this case.
 		const pi = {
 			exec: async () => {
 				calls += 1;

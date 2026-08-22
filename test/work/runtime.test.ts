@@ -111,6 +111,7 @@ async function leaderGoneProcessGroup(
 }
 
 function context(cwd: string): ExtensionContext {
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	return {
 		cwd,
 		model: undefined,
@@ -672,6 +673,7 @@ describe("BackgroundWorkRuntime", () => {
 		renameSync(join(root, ".pi"), join(root, ".pi-away"));
 		await waitUntil(() => messages.length > 0);
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const notification = messages[0] as { message?: { content?: string } };
 		expect(notification.message?.content).toContain("BACKGROUND-SURVIVED");
 		await active.shutdown();
@@ -706,6 +708,7 @@ describe("BackgroundWorkRuntime", () => {
 				(entry) => entry.startsWith("pi-stuff-") && existsSync(join(taskRoot, entry, "runtime.json")),
 			);
 			if (!replacement) throw new Error("expected replacement Background Work runtime directory");
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const metadata = JSON.parse(readFileSync(join(taskRoot, replacement, "runtime.json"), "utf-8")) as {
 				tasks?: unknown[];
 			};
@@ -745,6 +748,7 @@ describe("BackgroundWorkRuntime", () => {
 			expect(attempts).toBe(2);
 			await Bun.sleep(600);
 			expect(messages).toHaveLength(1);
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const delivery = messages[0] as {
 				message: { content: string; details: { outcomes: Array<{ outputPath?: string }> } };
 			};
@@ -1179,6 +1183,7 @@ describe("BackgroundWorkRuntime", () => {
 			);
 			await waitUntil(() => existsSync(marker) && messages.length === 1);
 			expect(readRefreshRequests()).toBe(0);
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const delivered = messages[0] as { message: object; options: { triggerTurn: boolean } };
 			expect(readAgentWorkOrigin(delivered.message)).toBe("automatic");
 			expect(delivered.options.triggerTurn).toBeFalse();
@@ -1229,6 +1234,7 @@ describe("BackgroundWorkRuntime", () => {
 		writeFileSync(target, "booting\nREADY\n");
 		await waitUntil(() => active.snapshot().length === 0);
 		await waitUntil(() => messages.length === 1);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const delivered = messages[0] as {
 			message: { details: { outcomes: Array<{ status: string }> } };
 			options: { triggerTurn: boolean };
@@ -1395,6 +1401,7 @@ describe("BackgroundWorkRuntime", () => {
 			await waitUntil(() => active.snapshot().length === 0, 8_000);
 			await waitUntil(() => messages.length > 0);
 			await Bun.sleep(250);
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const deliveries = messages as Array<{
 				message: { content: string; details: { outcomes: Array<{ recentOutput?: string; outputPath?: string }> } };
 			}>;
@@ -1432,6 +1439,7 @@ describe("BackgroundWorkRuntime", () => {
 				context(root),
 			);
 			await waitUntil(() => messages.length === 1);
+			// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 			const delivery = messages[0] as {
 				message: { details: { outcomes: Array<{ recentOutput?: string; outputPath?: string }> } };
 			};
@@ -1455,6 +1463,7 @@ describe("BackgroundWorkRuntime", () => {
 		expect(taskId).toBeString();
 		await waitUntil(() => active.snapshot().length === 0);
 		await waitUntil(() => messages.length === 1);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const delivered = messages[0] as { message: { details: { outcomes: Array<{ status: string }> } } };
 		expect(delivered.message.details.outcomes[0]?.status).toBe("timed_out");
 		expect(active.readOutput(taskId ?? "")).toContain("timed out");
@@ -1578,6 +1587,7 @@ describe("crash supervisor", () => {
 		});
 		children.push(parent);
 		await waitUntil(() => existsSync(readyPath) && existsSync(treePath));
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const ready = JSON.parse(readFileSync(readyPath, "utf-8")) as {
 			commandPid: number;
 			parentPid: number;

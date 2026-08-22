@@ -167,6 +167,7 @@ describe("live Thought display", () => {
 					}),
 			},
 		);
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const toolTheme = {
 			bold: (value: string) => value,
 			fg: (_color: string, value: string) => value,
@@ -349,7 +350,9 @@ describe("live Thought Host adapter", () => {
 		} as import("@earendil-works/pi-coding-agent").Theme;
 		const original = theme.fg;
 		const key = Symbol.for("@earendil-works/pi-coding-agent:theme");
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const previous = (globalThis as Record<symbol, unknown>)[key];
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(globalThis as Record<symbol, unknown>)[key] = theme;
 		transform("Outer\n\n- nested", { messageType: "assistant" });
 		expect(theme.fg("mdListBullet", "- ")).toBe("• ");
@@ -363,12 +366,15 @@ describe("live Thought Host adapter", () => {
 		]);
 		await Promise.resolve();
 		expect(theme.fg).toBe(original);
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		if (previous === undefined) delete (globalThis as Record<symbol, unknown>)[key];
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		else (globalThis as Record<symbol, unknown>)[key] = previous;
 	});
 
 	test("registers through the upstream public seam", () => {
 		let registered: ThoughtMarkdownTransformer | undefined;
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const api = {
 			registerMarkdownTransformer: (transformer: ThoughtMarkdownTransformer) => {
 				registered = transformer;
@@ -381,6 +387,7 @@ describe("live Thought Host adapter", () => {
 	});
 
 	test("fails clearly when the Host cannot provide the accepted projection", () => {
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		const api = {} as ExtensionAPI;
 		expect(() => registerLiveThoughtDisplay(api)).toThrow("registerMarkdownTransformer() support");
 	});

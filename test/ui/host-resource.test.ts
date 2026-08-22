@@ -7,6 +7,7 @@ type Events = ExtensionAPI["events"];
 test("Host resource discovery fails initialization instead of creating a facade-local duplicate", () => {
 	const local = new WeakMap<object, object>();
 	let creates = 0;
+	// SAFETY: this test controls the value and supplies every Events member exercised by this case.
 	const emitFailure = {
 		emit: () => {
 			throw new Error("injected discovery failure");
@@ -21,6 +22,7 @@ test("Host resource discovery fails initialization instead of creating a facade-
 	).toThrow("injected discovery failure");
 	expect(creates).toBe(0);
 
+	// SAFETY: this test controls the value and supplies every Events member exercised by this case.
 	const registrationFailure = {
 		emit: () => {},
 		on: () => {
@@ -37,6 +39,7 @@ test("Host resource cleanup remains idempotent when its event unsubscribe fails"
 	const local = new WeakMap<object, object>();
 	const cleanups: Array<() => void> = [];
 	let unsubscribeCalls = 0;
+	// SAFETY: this test controls the value and supplies every Events member exercised by this case.
 	const events = {
 		emit: () => {},
 		on: () => () => {

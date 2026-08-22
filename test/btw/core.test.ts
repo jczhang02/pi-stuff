@@ -231,6 +231,7 @@ describe("BTW stream execution", () => {
 		type ContextHandlerResult = object | undefined | Promise<object | undefined>;
 		const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => ContextHandlerResult>>();
 		const activeTools: string[] = [];
+		// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 		const api = {
 			events: {},
 			on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => ContextHandlerResult) => {
@@ -252,6 +253,7 @@ describe("BTW stream execution", () => {
 			piStuffContext(api, {
 				loadMagicContext: async () => ({
 					default: async (magicPi) => {
+						// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 						const register = magicPi.on.bind(magicPi) as (
 							event: string,
 							handler: (event: unknown) => ContextHandlerResult,

@@ -174,6 +174,7 @@ async function flush(): Promise<void> {
 describe("Agent Command Dialog", () => {
 	test("keeps running identity and state above the tertiary dim token", () => {
 		const colors: Array<{ color: string; text: string }> = [];
+		// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 		const recordingTheme = {
 			...theme,
 			fg: (color: string, text: string) => {
@@ -244,6 +245,7 @@ describe("Agent Command Dialog", () => {
 				throw failure;
 			},
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(context.tui.terminal as { rows: number }).rows = 6;
 		const list = component.render(64);
 		expect(list).toHaveLength(3);
@@ -284,6 +286,7 @@ describe("Agent Command Dialog", () => {
 		expect(detail).not.toContain("hidden");
 		expect(detail).not.toContain("\u202e");
 
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(context.tui.terminal as { rows: number }).rows = 6;
 		const low = text(component, 64);
 		expect(low).toContain("Provider rejected the child payload");
@@ -496,7 +499,9 @@ describe("Agent Command Dialog", () => {
 			initialKey: "reviewer",
 			readTranscript: () => activity,
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(context.tui.terminal as { columns: number; rows: number }).columns = 120;
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(context.tui.terminal as { columns: number; rows: number }).rows = 76;
 		await flush();
 
@@ -520,7 +525,9 @@ describe("Agent Command Dialog", () => {
 			initialKey: "reviewer",
 			readTranscript: () => "activity line 1\nactivity line 2\nactivity line 3",
 		});
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(context.tui.terminal as { columns: number; rows: number }).columns = 100;
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		(context.tui.terminal as { columns: number; rows: number }).rows = 12;
 		await flush();
 		component.render(100);

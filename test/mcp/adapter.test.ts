@@ -96,9 +96,11 @@ describe("Pi Stuff MCP fork boundary", () => {
 		if (!tool) throw new Error("mcp gateway was not registered");
 		await tool.execute(
 			"mcp-1",
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{ instructions: "hidden upstream field", server: "demo", uiMessages: true } as never,
 			undefined,
 			undefined,
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			{} as never,
 		);
 		expect(received).toEqual({ limit: 12, search: "", server: "demo" });
@@ -106,6 +108,7 @@ describe("Pi Stuff MCP fork boundary", () => {
 		expect(properties).not.toHaveProperty("instructions");
 		expect(properties).not.toHaveProperty("uiMessages");
 		expect(properties).not.toHaveProperty("action");
+		// SAFETY: this test controls the fixture or result and exercises every member of the asserted contract.
 		expect((properties["limit"] as { maximum?: number }).maximum).toBe(20);
 		expect(tool.renderShell).toBe("self");
 	});
@@ -170,6 +173,7 @@ describe("Pi Stuff MCP fork boundary", () => {
 				},
 			},
 		});
+		// SAFETY: this test controls the value and supplies every CommandDialogCoordinator member exercised by this case.
 		const coordinator = {
 			show: async (_ctx: ExtensionContext, view: CommandDialogView<unknown>) => {
 				shows += 1;

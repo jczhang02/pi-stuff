@@ -24,10 +24,12 @@ function setup() {
 	}> = [];
 	const pi = {
 		sendMessage: (message: unknown, options?: unknown) => {
+			// SAFETY: this test double implements the exact Pi members exercised by this case; unused Host members are intentionally erased.
 			messages.push({ message, options } as never);
 		},
 	};
 	const runtime = new BackgroundWorkRuntime({ cwd: root, pi, sessionId: "monitor-test" });
+	// SAFETY: this test fixture implements the exact Host surface exercised by this case.
 	const context = {
 		cwd: root,
 		model: undefined,
