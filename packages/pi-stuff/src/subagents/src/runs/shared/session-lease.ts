@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { type JsonObject, type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 import { createAtomicJsonWriter } from "../../shared/atomic-json.ts";
 import { TEMP_ROOT_DIR } from "../../shared/types.ts";
@@ -104,7 +105,7 @@ function processIsAlive(pid: number): boolean | undefined {
 		process.kill(pid, 0);
 		return true;
 	} catch (error) {
-		const code = (error as NodeJS.ErrnoException).code;
+		const code = error !== null && isRuntimeObject(error) && "code" in error ? error.code : undefined;
 		if (code === "ESRCH") return false;
 		if (code === "EPERM") return true;
 		return undefined;
@@ -137,49 +138,80 @@ export function inspectSessionLease(sessionFile: string, rootDir = SESSION_LEASE
 		: { state: "unreadable", canonicalSessionFile, canonicalSessionId: canonicalSessionIdValue };
 }
 
-function parseOwner(value: unknown): SessionLeaseOwner | undefined {
-	if (!value || !isRuntimeObject(value) || Array.isArray(value)) return undefined;
-	const owner = value as Partial<SessionLeaseOwner>;
+function isJsonObject(value: JsonValue): value is JsonObject {
+	return value !== null && isRuntimeObject(value) && !Array.isArray(value);
+}
+
+function parseOwner(value: JsonValue): SessionLeaseOwner | undefined {
+	if (!isJsonObject(value)) return undefined;
+	const version = value["version"];
+	const token = value["token"];
+	const canonicalSessionFile = value["canonicalSessionFile"];
+	const runId = value["runId"];
+	const sourceRunId = value["sourceRunId"];
+	const parentSessionId = value["parentSessionId"];
+	const pid = value["pid"];
+	const hostname = value["hostname"];
+	const processStartIdentity = value["processStartIdentity"];
+	const writerState = value["writerState"];
+	const writerStartupGate = value["writerStartupGate"];
+	const writerPid = value["writerPid"];
+	const writerProcessStartIdentity = value["writerProcessStartIdentity"];
+	const asyncDir = value["asyncDir"];
+	const acquiredAt = value["acquiredAt"];
+	const acquiredAtMs = value["acquiredAtMs"];
+	const updatedAtMs = value["updatedAtMs"];
 	if (
-		owner.version !== 1 ||
-		!isRuntimeString(owner.token) ||
-		!isRuntimeString(owner.canonicalSessionFile) ||
-		!isRuntimeString(owner.runId) ||
-		!isRuntimeString(owner.sourceRunId) ||
-		!isRuntimeNumber(owner.pid) ||
-		!Number.isInteger(owner.pid) ||
-		owner.pid <= 0 ||
-		!isRuntimeString(owner.hostname) ||
-		(owner.writerState !== "none" && owner.writerState !== "spawning" && owner.writerState !== "running") ||
-		!isRuntimeString(owner.acquiredAt) ||
-		!isRuntimeNumber(owner.acquiredAtMs) ||
-		!isRuntimeNumber(owner.updatedAtMs)
+		version !== 1 ||
+		!isRuntimeString(token) ||
+		!isRuntimeString(canonicalSessionFile) ||
+		!isRuntimeString(runId) ||
+		!isRuntimeString(sourceRunId) ||
+		!isRuntimeNumber(pid) ||
+		!Number.isInteger(pid) ||
+		pid <= 0 ||
+		!isRuntimeString(hostname) ||
+		(writerState !== "none" && writerState !== "spawning" && writerState !== "running") ||
+		!isRuntimeString(acquiredAt) ||
+		!isRuntimeNumber(acquiredAtMs) ||
+		!isRuntimeNumber(updatedAtMs)
 	)
 		return undefined;
-	if (owner.parentSessionId !== undefined && !isRuntimeString(owner.parentSessionId)) return undefined;
-	if (owner.processStartIdentity !== undefined && !isRuntimeString(owner.processStartIdentity)) return undefined;
-	if (
-		owner.writerPid !== undefined &&
-		(!isRuntimeNumber(owner.writerPid) || !Number.isInteger(owner.writerPid) || owner.writerPid <= 0)
-	)
+	if (parentSessionId !== undefined && !isRuntimeString(parentSessionId)) return undefined;
+	if (processStartIdentity !== undefined && !isRuntimeString(processStartIdentity)) return undefined;
+	if (writerPid !== undefined && (!isRuntimeNumber(writerPid) || !Number.isInteger(writerPid) || writerPid <= 0))
 		return undefined;
-	if (owner.writerProcessStartIdentity !== undefined && !isRuntimeString(owner.writerProcessStartIdentity))
+	if (writerProcessStartIdentity !== undefined && !isRuntimeString(writerProcessStartIdentity)) return undefined;
+	if (asyncDir !== undefined && (!isRuntimeString(asyncDir) || !path.isAbsolute(asyncDir))) return undefined;
+	if (writerStartupGate !== undefined && writerStartupGate !== "parent-pipe-v1") return undefined;
+	if (writerState === "running" && writerPid === undefined) return undefined;
+	if (writerState !== "running" && (writerPid !== undefined || writerProcessStartIdentity !== undefined))
 		return undefined;
-	if (owner.asyncDir !== undefined && (!isRuntimeString(owner.asyncDir) || !path.isAbsolute(owner.asyncDir)))
-		return undefined;
-	if (owner.writerStartupGate !== undefined && owner.writerStartupGate !== "parent-pipe-v1") return undefined;
-	if (owner.writerState === "running" && owner.writerPid === undefined) return undefined;
-	if (
-		owner.writerState !== "running" &&
-		(owner.writerPid !== undefined || owner.writerProcessStartIdentity !== undefined)
-	)
-		return undefined;
-	return owner as SessionLeaseOwner;
+	const owner: SessionLeaseOwner = {
+		version: 1,
+		token,
+		canonicalSessionFile,
+		runId,
+		sourceRunId,
+		pid,
+		hostname,
+		writerState,
+		acquiredAt,
+		acquiredAtMs,
+		updatedAtMs,
+	};
+	if (parentSessionId !== undefined) owner.parentSessionId = parentSessionId;
+	if (processStartIdentity !== undefined) owner.processStartIdentity = processStartIdentity;
+	if (writerStartupGate !== undefined) owner.writerStartupGate = writerStartupGate;
+	if (writerPid !== undefined) owner.writerPid = writerPid;
+	if (writerProcessStartIdentity !== undefined) owner.writerProcessStartIdentity = writerProcessStartIdentity;
+	if (asyncDir !== undefined) owner.asyncDir = asyncDir;
+	return owner;
 }
 
 function readLeaseOwner(leaseDir: string): SessionLeaseOwner | undefined {
 	try {
-		return parseOwner(JSON.parse(fs.readFileSync(path.join(leaseDir, "owner.json"), "utf-8")));
+		return parseOwner(parseJsonValue(fs.readFileSync(path.join(leaseDir, "owner.json"), "utf-8")));
 	} catch {
 		return undefined;
 	}
@@ -268,15 +300,15 @@ export function acquireSessionLease(
 		runId: request.runId,
 		sourceRunId: request.sourceRunId,
 		asyncDir: canonicalAsyncDir,
-		...(request.parentSessionId ? { parentSessionId: request.parentSessionId } : {}),
 		pid,
 		hostname,
-		...(processStartIdentity ? { processStartIdentity } : {}),
 		writerState: "none",
 		acquiredAt: new Date(acquiredAtMs).toISOString(),
 		acquiredAtMs,
 		updatedAtMs: acquiredAtMs,
 	};
+	if (request.parentSessionId) owner.parentSessionId = request.parentSessionId;
+	if (processStartIdentity) owner.processStartIdentity = processStartIdentity;
 	const staleOptions = {
 		hostname,
 		isProcessAlive: options.isProcessAlive ?? processIsAlive,
@@ -299,15 +331,13 @@ export function acquireSessionLease(
 					const nextOwner: SessionLeaseOwner = {
 						...owner,
 						writerState: writer.state,
-						...(writer.state === "spawning" && process.platform !== "win32"
-							? { writerStartupGate: "parent-pipe-v1" as const }
-							: {}),
-						...(writer.state === "running" ? { writerPid: writer.pid } : {}),
-						...(writerProcessStartIdentity ? { writerProcessStartIdentity } : {}),
 						updatedAtMs: now(),
 					};
 					delete nextOwner.writerPid;
 					delete nextOwner.writerProcessStartIdentity;
+					if (writer.state === "spawning" && process.platform !== "win32") {
+						nextOwner.writerStartupGate = "parent-pipe-v1";
+					}
 					if (writer.state === "running") {
 						nextOwner.writerPid = writer.pid;
 						if (writerProcessStartIdentity) nextOwner.writerProcessStartIdentity = writerProcessStartIdentity;
@@ -337,7 +367,7 @@ export function acquireSessionLease(
 		try {
 			fs.renameSync(leaseDir, tombstone);
 		} catch (error) {
-			const code = (error as NodeJS.ErrnoException).code;
+			const code = error !== null && isRuntimeObject(error) && "code" in error ? error.code : undefined;
 			if (code === "ENOENT" || fs.existsSync(tombstone)) continue;
 			throw error;
 		}
