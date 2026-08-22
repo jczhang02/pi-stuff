@@ -2,23 +2,30 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { isRuntimeObject, isRuntimeString } from "../../../shared/runtime-type.js";
+import {
+	isJsonInputObject,
+	type JsonInputObject,
+	type JsonInputValue,
+	parseJsonValue,
+} from "../../../shared/json-value.js";
+import { isRuntimeString } from "../../../shared/runtime-type.js";
+import type { ContextMode } from "../runs/shared/context-mode.ts";
 import { findModelInfo, type ModelInfo } from "./model-info.ts";
 
-type SubagentExecutionContext = "fresh" | "fork";
+interface BranchSessionMessage {
+	role?: string;
+	content?: unknown;
+	provider?: string;
+	api?: string;
+	model?: string;
+}
 
 interface BranchSessionEntry {
 	type: string;
 	id?: string;
 	parentId?: string | null;
 	timestamp?: string;
-	message?: {
-		role?: string;
-		content?: unknown;
-		provider?: string;
-		api?: string;
-		model?: string;
-	};
+	message?: BranchSessionMessage;
 	thinkingLevel?: string;
 }
 
@@ -52,8 +59,8 @@ interface ForkContextResolver {
 	thinkingOverrideForIndex(index?: number): "off" | undefined;
 }
 
-export function resolveSubagentContext(value: unknown): SubagentExecutionContext {
-	return value === "fork" ? "fork" : "fresh";
+export function resolveSubagentContext(value: ContextMode): ContextMode {
+	return value;
 }
 
 /** Decide whether a resolved child model uses Anthropic's provider or message API, which
@@ -69,8 +76,8 @@ export function forkedChildRequiresThinkingOff(
 	return info.provider.toLowerCase() === "anthropic" || info.api?.toLowerCase() === "anthropic-messages";
 }
 
-function isUnsafeAnthropicThinkingBlock(message: BranchSessionEntry["message"], block: unknown): boolean {
-	if (!message || !block || !isRuntimeObject(block) || !("type" in block)) return false;
+function isUnsafeAnthropicThinkingBlock<Block>(message: BranchSessionEntry["message"], block: Block): boolean {
+	if (!message || !isJsonInputObject(block)) return false;
 	const provider = isRuntimeString(message.provider) ? message.provider.toLowerCase() : "";
 	const api = isRuntimeString(message.api) ? message.api.toLowerCase() : "";
 	const model = isRuntimeString(message.model) ? message.model.toLowerCase() : "";
@@ -80,6 +87,31 @@ function isUnsafeAnthropicThinkingBlock(message: BranchSessionEntry["message"], 
 	const signature =
 		"thinkingSignature" in block ? block.thinkingSignature : "signature" in block ? block.signature : undefined;
 	return ("redacted" in block && block.redacted === true) || (isRuntimeString(signature) && signature.length > 0);
+}
+
+function isOptionalString(value: JsonInputValue): boolean {
+	return value === undefined || isRuntimeString(value);
+}
+
+function isBranchSessionMessage(value: JsonInputValue): value is JsonInputObject & BranchSessionMessage {
+	return (
+		isJsonInputObject(value) &&
+		isOptionalString(value["role"]) &&
+		isOptionalString(value["provider"]) &&
+		isOptionalString(value["api"]) &&
+		isOptionalString(value["model"])
+	);
+}
+
+function isBranchSessionEntry(value: JsonInputValue): value is JsonInputObject & BranchSessionEntry {
+	if (!isJsonInputObject(value) || !isRuntimeString(value["type"])) return false;
+	return (
+		isOptionalString(value["id"]) &&
+		(value["parentId"] === null || isOptionalString(value["parentId"])) &&
+		isOptionalString(value["timestamp"]) &&
+		isOptionalString(value["thinkingLevel"]) &&
+		(value["message"] === undefined || isBranchSessionMessage(value["message"]))
+	);
 }
 
 function createEntryId(entries: BranchSessionEntry[]): string {
@@ -124,7 +156,9 @@ function readSessionEntries(sessionFile: string): BranchSessionEntry[] {
 		.filter((line) => line.trim().length > 0);
 	return lines.map((line, index) => {
 		try {
-			return JSON.parse(line) as BranchSessionEntry;
+			const entry = parseJsonValue(line);
+			if (!isBranchSessionEntry(entry)) throw new Error("session entry must have a valid type and message shape");
+			return entry;
 		} catch (error) {
 			const cause = error instanceof Error ? error : new Error(String(error));
 			throw new Error(
@@ -137,7 +171,7 @@ function readSessionEntries(sessionFile: string): BranchSessionEntry[] {
 
 export function createForkContextResolver(
 	sessionManager: ForkableSessionManager,
-	requestedContext: unknown,
+	requestedContext: ContextMode,
 	options: ForkContextResolverOptions = {},
 ): ForkContextResolver {
 	if (resolveSubagentContext(requestedContext) !== "fork") {
@@ -209,7 +243,8 @@ export function createForkContextResolver(
 					fs.writeFileSync(sessionFile, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
 				}
 			}
-			const resolution = { sessionFile, ...(thinkingOverride ? { thinkingOverride } : {}) };
+			const resolution: ForkContextResolution = { sessionFile };
+			if (thinkingOverride) Object.assign(resolution, { thinkingOverride });
 			cachedResolutions.set(index, resolution);
 			return resolution;
 		} catch (error) {
