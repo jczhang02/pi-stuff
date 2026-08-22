@@ -131,7 +131,8 @@ Mar 12
 
 Supported types are `bar` (with `histogram` as an alias), `line`, `scatter`, `sparkline`, and `heatmap`. Ordinary
 series accept at most 64 points. Heatmaps accept at most 32 rows and 64 values per row. Chart source is capped at
-12,000 characters, requires at least 24 available display cells, and never renders wider than 80.
+12,000 characters, requires at least 24 chart-content cells, and never renders wider than 80. The Host Markdown code
+indent reserves two additional cells; Assistant messages reserve another two for their outer marker.
 
 A tree uses exactly two spaces per level:
 
@@ -147,8 +148,9 @@ Trees require one root, reject tabs, odd indentation, blank nodes, depth jumps, 
 12,000 characters, 256 nodes, and 32 levels. Labels are measured with Pi TUI terminal-cell width, including CJK and
 emoji. If any tree row cannot fit without truncating its label, the original fence remains visible.
 
-Both backtick and tilde fences are accepted. Unknown, malformed, unsafe, incomplete, over-limit, nested, or too-narrow
-blocks remain ordinary fenced code. The static dispatcher is part of the existing single Conversation Markdown
+Both backtick and tilde fences are accepted. At most 16 valid blocks are projected per Markdown message; later blocks
+remain ordinary fences. Unknown, malformed, unsafe, incomplete, over-limit, nested, or too-narrow blocks also remain
+ordinary fenced code. The static dispatcher is part of the existing single Conversation Markdown
 transformer; it is not a plugin API or setting. See ADR 0017 and `UPSTREAM.md` for design and provenance. Ordinary
 path performance is certified with:
 

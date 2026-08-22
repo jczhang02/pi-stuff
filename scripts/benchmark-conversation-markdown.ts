@@ -236,9 +236,9 @@ function scenarios(): readonly Scenario[] {
 		},
 		{
 			feature: true,
-			id: "tree-128-nodes",
+			id: "tree-256-nodes",
 			isStreaming: false,
-			markdown: [treeSource(128)],
+			markdown: [treeSource(256)],
 			messageType: "assistant",
 			rounds: 3,
 		},

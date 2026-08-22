@@ -15,6 +15,7 @@ import {
 	TODO_PTY_PROMPT,
 	TODO_PTY_READY,
 	TODO_PTY_SUBJECTS,
+	USER_VISUALIZATION_SOURCE,
 	VISUALIZATION_PTY_PROMPT,
 	VISUALIZATION_PTY_RESPONSE,
 } from "../test/fixtures/ui-pty-provider.js";
@@ -829,6 +830,21 @@ async function verifyFencedVisualization(
 	if (probe?.visualizationSourcePreserved !== true) {
 		fail("the next real Provider request did not retain canonical chart/tree fence source");
 	}
+
+	session.sendKey("F8");
+	screen = await session.waitForText("└── user-child");
+	if (!screen.includes("USER_TREE_ROOT")) fail("real Pi User Markdown lost its projected tree root");
+	await session.waitForText("USER-VISUALIZATION-ACK");
+	const userRecords = await waitForFixtureRecords(paths.log, "request", 5);
+	const userRequest = [...userRecords]
+		.reverse()
+		.find((record) => record.type === "request" && record.lastUser === USER_VISUALIZATION_SOURCE);
+	if (!userRequest) fail("real Pi Provider did not receive canonical User tree fence source");
+	await writePtyEvidence(
+		options.artifactDirectory,
+		`pi-${CERTIFIED_PI_VERSION}-fenced-visualization-user-100x32`,
+		session,
+	);
 	await waitForPersistedVisualization(paths.sessions);
 }
 async function verifyLiveResize(session: TmuxPiSession): Promise<void> {
@@ -1387,7 +1403,7 @@ export async function verifyUiPty(options: UiPtyVerificationOptions): Promise<Ui
 						"live resize 100x32 -> 64x28 -> 48x22 -> 32x18 -> 24x16 -> 100x32",
 						"priority Statusline fields and responsive prompt bounds at all accepted widths",
 						"first, replacing, settled, session-preserved, and context-preserved Thought",
-						"streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",
+						"User/Assistant streaming, settled, narrow fallback, wide resize, Provider-canonical, Session-canonical, and resumed fenced visualizations",
 						"native and inline autocomplete suppression and restoration",
 						"long CJK prompt, Welcome scroll-away, live and settled Thought",
 						"metered and API-key subscription Statusline cost behavior",

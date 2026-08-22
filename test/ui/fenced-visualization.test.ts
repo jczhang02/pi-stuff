@@ -118,7 +118,7 @@ describe("fenced visualization projection", () => {
 		expect(lines.join("\n")).not.toContain("�");
 	});
 
-	test("escapes multiple renderer outputs as inert Markdown code spans", async () => {
+	test("renders multiple outputs as inert borderless code blocks", async () => {
 		const tree = fenced("tree", ["root", "  child `code` <tag>"]);
 		const sparkline = chart("sparkline", ["1 3 2 4"]);
 		const source = `${tree}\n\n${sparkline}`;
@@ -126,8 +126,33 @@ describe("fenced visualization projection", () => {
 		expect(projected).not.toContain(`${FENCE}tree`);
 		expect(projected).not.toContain(`${FENCE}chart`);
 		expect(projected.includes("\u001b") || projected.includes("\u009b")).toBe(false);
-		const rendered = await renderProjected(source, 80, "user");
-		expect(rendered.join("\n")).toContain("child `code` <tag>");
+		const rendered = (await renderProjected(source, 80, "user")).join("\n");
+		expect(rendered).toContain("child `code` <tag>");
+		expect(rendered).not.toContain(FENCE);
+	});
+
+	test("preserves ordinary code-block borders around a projected visualization", async () => {
+		const source = [
+			fenced("pi-stuff-visualization", ["reserved"]),
+			fenced("tree", ["root", "  child"]),
+			fenced("text", ["literal"]),
+		].join("\n\n");
+		const rendered = (await renderProjected(source, 80, "user")).join("\n");
+		expect(rendered).toContain("└── child");
+		expect(rendered).toContain(`${FENCE}pi-stuff-visualization`);
+		expect(rendered).toContain(`${FENCE}text`);
+	});
+
+	test("bounds projected blocks and internal border-language selection", () => {
+		const blocks = Array.from({ length: 17 }, (_value, index) => fenced("tree", [`root-${String(index)}`]));
+		const capped = projectFencedVisualizations(blocks.join("\n\n"), 80);
+		expect(capped.split(`${FENCE}tree`)).toHaveLength(2);
+
+		const occupied = Array.from({ length: 33 }, (_value, index) =>
+			fenced(index === 0 ? "pi-stuff-visualization" : `pi-stuff-visualization-${String(index)}`, ["literal"]),
+		);
+		const exhausted = [...occupied, fenced("tree", ["root"])].join("\n\n");
+		expect(projectFencedVisualizations(exhausted, 80)).toBe(exhausted);
 	});
 
 	test("rejects partial chart rows instead of silently dropping them", () => {
@@ -209,12 +234,16 @@ describe("Conversation UI composition", () => {
 		expect(unsafeAssistant).not.toContain("████");
 	});
 
-	test("reserves the two-cell Assistant marker budget before chart rendering", () => {
+	test("reserves the Host code indent and Assistant marker budgets before chart rendering", () => {
 		const source = chart("bar", ["A 1", "B 2"]);
 		const transformer = createLiveThoughtTransformer();
-		const narrow = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 25 });
-		const fitting = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 26 });
-		expect(narrow).toContain(`${FENCE}chart`);
-		expect(fitting).not.toContain(`${FENCE}chart`);
+		const narrowUser = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 25, messageType: "user" });
+		const fittingUser = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 26, messageType: "user" });
+		const narrowAssistant = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 27 });
+		const fittingAssistant = transformer(source, { ...ASSISTANT_CONTEXT, availableWidth: 28 });
+		expect(narrowUser).toContain(`${FENCE}chart`);
+		expect(fittingUser).not.toContain(`${FENCE}chart`);
+		expect(narrowAssistant).toContain(`${FENCE}chart`);
+		expect(fittingAssistant).not.toContain(`${FENCE}chart`);
 	});
 });

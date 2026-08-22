@@ -52,6 +52,7 @@ export const VISUALIZATION_PTY_RESPONSE = [
 	"",
 	"VISUAL-DONE",
 ].join("\n");
+export const USER_VISUALIZATION_SOURCE = ["```tree", "USER_TREE_ROOT", "  user-child", "```"].join("\n");
 export const TODO_PTY_PROMPT = "请建立四项执行清单";
 export const TODO_PTY_READY = "任务清单已建立。";
 export const TODO_PTY_SUBJECTS = ["梳理需求", "设计实现方案", "完成核心实现", "测试与验收"] as const;
@@ -323,6 +324,7 @@ function fixtureStream(model: Model<Api>, context: Context, options?: SimpleStre
 		);
 	}
 	if (lastUser === VISUALIZATION_PTY_PROMPT) return visualizationStream(model, options);
+	if (lastUser === USER_VISUALIZATION_SOURCE) return textOnlyStream(model, "USER-VISUALIZATION-ACK");
 	if (lastUser === TODO_PTY_PROMPT) return taskCreateStream(model, taskCreatesSinceLatestUser(context));
 	const isThoughtProbe = lastUser.startsWith("THOUGHT_PROBE_");
 	const response = isThoughtProbe ? `THOUGHT_DONE_${lastUser.slice("THOUGHT_PROBE_".length)}` : RESPONSE;
@@ -427,6 +429,13 @@ export default function uiPtyProvider(pi: ExtensionAPI): void {
 		],
 		streamSimple: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
 			fixtureStream(model, context, options),
+	});
+
+	pi.registerShortcut(Key.f8, {
+		description: "Submit the UI PTY User visualization fixture",
+		handler: async () => {
+			await pi.sendUserMessage(USER_VISUALIZATION_SOURCE);
+		},
 	});
 
 	pi.registerShortcut(Key.f11, {

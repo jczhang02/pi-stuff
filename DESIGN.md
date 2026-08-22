@@ -155,8 +155,9 @@ while Command Dialogs provide inspection and control. A Dialog redesign does not
 or Tool rendering.
 
 A valid `chart` or `tree` fence may become a Fenced Visualization Projection inside the same Transcript message. Keep
-the result flat, monochrome, and terminal-native: code-span-safe text, Unicode plot or tree glyphs, no frame, no ANSI,
-and no new focus surface. Measure every row in terminal cells. Charts reduce within their bounded plot grammar; trees
+the result flat, monochrome, and terminal-native: inert borderless code-block text and Unicode plot or tree glyphs,
+with no frame, ANSI, or new focus surface. Measure every row in terminal cells. Charts reduce within their bounded
+plot grammar; trees
 never truncate labels and fall back to their source fence when one complete row cannot fit. The outer Assistant `• `
 remains the only message authority, and Thinking never becomes a visualization.
 
