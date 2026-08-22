@@ -8,13 +8,14 @@ interface WorkDiagnosticOptions {
 }
 
 export function reportWorkDiagnostic(summary: string, cause?: unknown, options: WorkDiagnosticOptions = {}): void {
-	reportDiagnostic({
-		...(options.action ? { action: options.action } : {}),
+	const diagnostic: Parameters<typeof reportDiagnostic>[0] = {
 		capability: "Background Work",
-		...(cause === undefined ? {} : { error: cause }),
-		...(options.key ? { key: options.key } : {}),
 		severity: options.severity ?? "error",
 		summary,
 		visibility: options.notice ? "notice" : "silent",
-	});
+	};
+	if (options.action) Object.assign(diagnostic, { action: options.action });
+	if (cause !== undefined) Object.assign(diagnostic, { error: cause });
+	if (options.key) Object.assign(diagnostic, { key: options.key });
+	reportDiagnostic(diagnostic);
 }

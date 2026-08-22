@@ -1,4 +1,5 @@
 import {
+	type BashToolOptions,
 	createBashToolDefinition,
 	createEditToolDefinition,
 	createFindToolDefinition,
@@ -97,10 +98,12 @@ export function registerBuiltins(
 	}
 
 	if (!selectedNames || selectedNames.has("bash")) {
-		const bash = (factories.bash ?? createBashToolDefinition)(cwd, {
-			...(hostSettings.shellCommandPrefix !== undefined ? { commandPrefix: hostSettings.shellCommandPrefix } : {}),
-			...(hostSettings.shellPath !== undefined ? { shellPath: hostSettings.shellPath } : {}),
-		});
+		const bashOptions: BashToolOptions = {};
+		if (hostSettings.shellCommandPrefix !== undefined) {
+			bashOptions.commandPrefix = hostSettings.shellCommandPrefix;
+		}
+		if (hostSettings.shellPath !== undefined) bashOptions.shellPath = hostSettings.shellPath;
+		const bash = (factories.bash ?? createBashToolDefinition)(cwd, bashOptions);
 		registerSuiteOwnedTool(
 			pi,
 			bash,

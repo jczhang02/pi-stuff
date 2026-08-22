@@ -28,6 +28,11 @@ interface CompletionDetails {
 	readonly outcomes?: readonly BackgroundWorkOutcome[];
 }
 
+interface BackgroundHostSettings {
+	readonly commandPrefix?: string;
+	readonly shellPath?: string;
+}
+
 function registerCompletionRenderer(pi: ExtensionAPI): void {
 	pi.registerMessageRenderer<CompletionDetails>(COMPLETION_MESSAGE_TYPE, (message, _options, theme) => {
 		const outcomes = message.details?.outcomes ?? [];
@@ -49,14 +54,14 @@ function registerCompletionRenderer(pi: ExtensionAPI): void {
 	});
 }
 
-function hostSettings(ctx: ExtensionContext) {
+function hostSettings(ctx: ExtensionContext): BackgroundHostSettings {
 	const settings = SettingsManager.create(ctx.cwd, getAgentDir(), { projectTrusted: ctx.isProjectTrusted() });
 	const commandPrefix = settings.getShellCommandPrefix();
 	const shellPath = settings.getShellPath();
-	return {
-		...(commandPrefix !== undefined ? { commandPrefix } : {}),
-		...(shellPath !== undefined ? { shellPath } : {}),
-	};
+	const result: BackgroundHostSettings = {};
+	if (commandPrefix !== undefined) Object.assign(result, { commandPrefix });
+	if (shellPath !== undefined) Object.assign(result, { shellPath });
+	return result;
 }
 
 export default async function piStuffWork(

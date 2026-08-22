@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { reportDiagnostic } from "../conversation-ui/diagnostics.js";
+import { type JsonInputObject, type JsonInputValue, parseJsonValue } from "../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeObject } from "../shared/runtime-type.js";
 import { mergedSettingsPath, readNamespace, type SettingsRecord } from "../shared/settings-io/index.js";
 
@@ -32,11 +33,11 @@ interface PendingSettingsWrite {
 	readonly waiters: PersistenceWaiter[];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord<Value>(value: Value): value is Value & JsonInputObject {
 	return isRuntimeObject(value) && value !== null && !Array.isArray(value);
 }
 
-function parseSettings(value: unknown): ToolUiSettings {
+function parseSettings(value: JsonInputValue): ToolUiSettings {
 	if (!isRecord(value) || value["schemaVersion"] !== 1 || !isRuntimeBoolean(value["liveElapsed"])) {
 		throw new Error("expected schemaVersion 1 and a boolean liveElapsed value");
 	}
@@ -72,8 +73,7 @@ async function readSettings(path: string): Promise<ToolUiSettings> {
 async function readLegacySettings(path: string): Promise<ToolUiSettings | undefined> {
 	const legacyPath = join(dirname(path), SETTINGS_FILE_NAME);
 	try {
-		const raw: unknown = JSON.parse(await readFile(legacyPath, "utf8"));
-		return parseSettings(raw);
+		return parseSettings(parseJsonValue(await readFile(legacyPath, "utf8")));
 	} catch (error) {
 		if (isRecord(error) && error["code"] === "ENOENT") return undefined;
 		return undefined;
@@ -237,7 +237,7 @@ async function migrateLegacyToolSettings(
 	return migrateLegacyNamespace(path, namespace, legacyPath, legacy, owner, isExistingValid);
 }
 
-function isValidSettings(value: unknown): boolean {
+function isValidSettings(value: SettingsRecord): boolean {
 	try {
 		parseSettings(value);
 		return true;
