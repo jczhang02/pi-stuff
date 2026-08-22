@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
+import { isRuntimeFunction } from "../packages/pi-stuff/src/shared/runtime-type.js";
 
 const root = resolve(import.meta.dir, "..");
 const providerExtension = join(root, "test/fixtures/ui-pty-provider.ts");
@@ -18,14 +20,40 @@ export interface GoalPtyVerificationOptions {
 	readonly rows: number;
 }
 
-interface PersistedGoalSessionEntry {
-	readonly customType?: unknown;
-	readonly data?: unknown;
-	readonly display?: unknown;
-	readonly message?: unknown;
-	readonly type?: unknown;
-}
-
+const PROVIDER_REQUEST_SCHEMA = Type.Object(
+	{ ownedGoalPrompt: Type.Optional(Type.String()), type: Type.Optional(Type.String()) },
+	{ additionalProperties: true },
+);
+const GIT_PROBE_SCHEMA = Type.Object(
+	{ providerRequests: Type.Optional(Type.Number()) },
+	{ additionalProperties: true },
+);
+const GOAL_DATA_SCHEMA = Type.Object(
+	{
+		goal: Type.Optional(Type.Object({ status: Type.Optional(Type.String()) }, { additionalProperties: true })),
+	},
+	{ additionalProperties: true },
+);
+const SESSION_MESSAGE_SCHEMA = Type.Object(
+	{
+		content: Type.Optional(
+			Type.Array(Type.Object({ text: Type.Optional(Type.String()) }, { additionalProperties: true })),
+		),
+		role: Type.Optional(Type.String()),
+		toolName: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const SESSION_ENTRY_SCHEMA = Type.Object(
+	{
+		customType: Type.Optional(Type.String()),
+		data: Type.Optional(Type.Unknown()),
+		display: Type.Optional(Type.Boolean()),
+		message: Type.Optional(SESSION_MESSAGE_SCHEMA),
+		type: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
 function fail(message: string): never {
 	throw new Error(`Goal PTY verification failed: ${message}`);
 }
@@ -268,7 +296,11 @@ exec /usr/bin/git "$@"
 		const requests = requestLog
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as { ownedGoalPrompt?: string; type?: string })
+			.map((line) => {
+				const record = JSON.parse(line);
+				if (!Check(PROVIDER_REQUEST_SCHEMA, record)) fail("provider log contains a malformed request");
+				return record;
+			})
 			.filter((record) => record.type === "request");
 		if (requests.length !== 2) {
 			fail(`two-turn Goal fixture produced ${String(requests.length)} provider requests instead of two`);
@@ -283,7 +315,11 @@ exec /usr/bin/git "$@"
 			.trim()
 			.split("\n")
 			.filter(Boolean)
-			.map((line) => JSON.parse(line) as { providerRequests?: unknown });
+			.map((line) => {
+				const record = JSON.parse(line);
+				if (!Check(GIT_PROBE_SCHEMA, record)) fail("Git probe log contains a malformed record");
+				return record;
+			});
 		if (gitRefreshes.length !== 1 || gitRefreshes[0]?.providerRequests !== requests.length) {
 			fail(
 				`Statusline Git refresh did not wait for the complete user-driven Goal run: ${JSON.stringify(gitRefreshes)}`,
@@ -305,27 +341,32 @@ exec /usr/bin/git "$@"
 		if (sessionFiles.length !== 1) {
 			fail(`expected one persisted Goal session, found ${String(sessionFiles.length)}`);
 		}
-		const sessionJsonl = await readFile(sessionFiles[0] as string, "utf8");
+		const [sessionFile] = sessionFiles;
+		if (!sessionFile) fail("persisted Goal session path is missing");
+		const sessionJsonl = await readFile(sessionFile, "utf8");
 		const entries = sessionJsonl
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as PersistedGoalSessionEntry);
+			.map((line) => {
+				const entry = JSON.parse(line);
+				if (!Check(SESSION_ENTRY_SCHEMA, entry)) fail("Goal session contains a malformed entry");
+				return entry;
+			});
 		const hiddenEntry = entries.find(
 			(entry) => entry.type === "custom_message" && entry.customType === "pi-stuff-goal-prompt",
 		);
 		if (hiddenEntry?.display !== false) fail("persisted Goal protocol is not marked display=false");
 		const goalStates = entries.filter((entry) => entry.type === "custom" && entry.customType === "goal-state");
 		const completedGoal = goalStates
-			.map((entry) => (entry.data as { goal?: { status?: unknown } } | undefined)?.goal)
+			.map((entry) => (Check(GOAL_DATA_SCHEMA, entry.data) ? entry.data.goal : undefined))
 			.find((goal) => goal?.status === "complete");
-		const completionResults = entries
-			.filter((entry) => {
-				const message = entry.message as { role?: unknown; toolName?: unknown } | undefined;
-				return entry.type === "message" && message?.role === "toolResult" && message.toolName === "goal_complete";
-			})
-			.map((entry) => entry.message as { content?: Array<{ text?: unknown }> });
+		const completionResults = entries.flatMap((entry) =>
+			entry.type === "message" && entry.message?.role === "toolResult" && entry.message.toolName === "goal_complete"
+				? [entry.message]
+				: [],
+		);
 		const successfulCompletion = completionResults.some((message) =>
-			message.content?.some((part) => isRuntimeString(part.text) && part.text.startsWith("Goal complete:")),
+			message.content?.some((part) => part.text?.startsWith("Goal complete:")),
 		);
 		if (!completedGoal || !successfulCompletion) {
 			fail(
@@ -336,11 +377,10 @@ exec /usr/bin/git "$@"
 		const exportPath = join(temporaryDirectory, "goal-session.html");
 		const piEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
 		const exportModuleUrl = pathToFileURL(join(dirname(piEntry), "core/export-html/index.js")).href;
-		const { exportFromFile } = (await import(exportModuleUrl)) as {
-			exportFromFile(inputPath: string, options: { outputPath: string }): Promise<string>;
-		};
+		const exportModule = await import(exportModuleUrl);
+		if (!isRuntimeFunction(exportModule.exportFromFile)) fail("certified Pi HTML exporter is unavailable");
 		try {
-			await exportFromFile(sessionFiles[0] as string, { outputPath: exportPath });
+			await exportModule.exportFromFile(sessionFile, { outputPath: exportPath });
 		} catch (error) {
 			fail(`Pi HTML export failed: ${error instanceof Error ? error.message : String(error)}`);
 		}

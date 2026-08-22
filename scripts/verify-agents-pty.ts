@@ -2,7 +2,9 @@ import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { isRuntimeNumber, isRuntimeObject, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
+import { isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -17,29 +19,31 @@ export interface AgentsPtyVerificationOptions {
 	readonly rows: number;
 }
 
-interface LogRecord {
-	readonly at?: unknown;
-	readonly completion?: unknown;
-	readonly kind?: unknown;
-	readonly lastUser?: unknown;
-	readonly phase?: unknown;
-	readonly role?: unknown;
-	readonly tools?: unknown;
-}
-
-interface PersistedSessionEntry {
-	readonly customType?: unknown;
-	readonly data?: unknown;
-	readonly type?: unknown;
-}
-
-interface PersistedOutcome {
-	readonly [key: string]: unknown;
-	readonly count?: unknown;
-	readonly key?: unknown;
-	readonly status?: unknown;
-	readonly version?: unknown;
-}
+const LOG_RECORD_SCHEMA = Type.Object(
+	{
+		at: Type.Optional(Type.Number()),
+		completion: Type.Optional(Type.Boolean()),
+		kind: Type.Optional(Type.String()),
+		lastUser: Type.Optional(Type.String()),
+		phase: Type.Optional(Type.String()),
+		role: Type.Optional(Type.String()),
+		tools: Type.Optional(Type.Array(Type.String())),
+	},
+	{ additionalProperties: true },
+);
+const SESSION_ENTRY_SCHEMA = Type.Object(
+	{
+		customType: Type.Optional(Type.String()),
+		data: Type.Optional(Type.Unknown()),
+		type: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+const OUTCOME_SCHEMA = Type.Object(
+	{ count: Type.Number(), key: Type.String(), status: Type.String(), version: Type.Number() },
+	{ additionalProperties: true },
+);
+type LogRecord = Static<typeof LOG_RECORD_SCHEMA>;
 
 function expectProgram(): string {
 	return `
@@ -188,7 +192,7 @@ function fail(message: string): never {
 	throw new Error(`Agents PTY verification failed: ${message}`);
 }
 
-function number(value: unknown): number | undefined {
+function number<Value>(value: Value): number | undefined {
 	return isRuntimeNumber(value) && Number.isFinite(value) ? value : undefined;
 }
 
@@ -200,7 +204,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function readFailureDiagnostics(directory: string): Promise<string> {
-	const entries = await readdir(directory, { recursive: true }).catch(() => [] as string[]);
+	const entries = await readdir(directory, { recursive: true }).catch((): string[] => []);
 	const candidates = entries
 		.filter((entry) =>
 			/(?:status|result|events|output|stderr|transcript|work).*\.(?:json|jsonl|log|txt)$/i.test(entry),
@@ -844,7 +848,11 @@ Return the deterministic fixture result.
 			.trim()
 			.split("\n")
 			.filter(Boolean)
-			.map((line) => JSON.parse(line) as LogRecord);
+			.map((line) => {
+				const record = JSON.parse(line);
+				if (!Check(LOG_RECORD_SCHEMA, record)) fail("provider log contains a malformed request record");
+				return record;
+			});
 		verifyRequests(records);
 		const gitStatus = git(workspaceDirectory, ["status", "--porcelain"]);
 		if (gitStatus) fail(`read-only Agent delegation dirtied the workspace:\n${gitStatus}`);
@@ -873,7 +881,11 @@ Return the deterministic fixture result.
 			.trim()
 			.split("\n")
 			.filter(Boolean)
-			.map((line) => JSON.parse(line) as PersistedSessionEntry);
+			.map((line) => {
+				const entry = JSON.parse(line);
+				if (!Check(SESSION_ENTRY_SCHEMA, entry)) fail("session contains a malformed entry");
+				return entry;
+			});
 		const outcomes = sessionEntries.filter(
 			(entry) => entry.type === "custom" && entry.customType === "pi-stuff-agent-outcome",
 		);
@@ -883,8 +895,8 @@ Return the deterministic fixture result.
 			);
 		}
 		const outcomeData = outcomes[0]?.data;
-		if (!outcomeData || !isRuntimeObject(outcomeData)) fail("durable completion outcome has no data");
-		const outcome = outcomeData as PersistedOutcome;
+		if (!Check(OUTCOME_SCHEMA, outcomeData)) fail("durable completion outcome has invalid data");
+		const outcome = outcomeData;
 		if (outcome.version !== 1 || outcome.count !== 1 || outcome.status !== "completed") {
 			fail("durable completion outcome has the wrong public state projection");
 		}
@@ -896,7 +908,7 @@ Return the deterministic fixture result.
 		}
 
 		const artifactsDirectory = join(sessionDirectory, "subagent-artifacts");
-		const artifactEntries = await readdir(artifactsDirectory, { recursive: true }).catch(() => [] as string[]);
+		const artifactEntries = await readdir(artifactsDirectory, { recursive: true }).catch((): string[] => []);
 		if (!artifactEntries.some((entry) => entry.endsWith("_transcript.jsonl"))) {
 			fail("Settings-owned session artifacts did not retain the Agent transcript for /agents resume inspection");
 		}
@@ -915,13 +927,16 @@ if (import.meta.main) {
 		[100, 32],
 		[64, 28],
 	] as const) {
-		await verifyAgentsPty({
-			...(PI_STUFF_AGENTS_PTY_ARTIFACT_DIR ? { artifactDirectory: PI_STUFF_AGENTS_PTY_ARTIFACT_DIR } : {}),
+		const verificationOptions: AgentsPtyVerificationOptions = {
 			piBinary: PI_BIN,
 			packagePath: join(root, "packages/pi-stuff"),
 			columns,
 			rows,
-		});
+		};
+		if (PI_STUFF_AGENTS_PTY_ARTIFACT_DIR) {
+			Object.assign(verificationOptions, { artifactDirectory: PI_STUFF_AGENTS_PTY_ARTIFACT_DIR });
+		}
+		await verifyAgentsPty(verificationOptions);
 	}
 	console.log("Certified Agents in 100x32 and 64x28 PTYs");
 }

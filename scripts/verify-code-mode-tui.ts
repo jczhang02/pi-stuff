@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { waitForDetachedProcess } from "./detached-process.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
@@ -27,14 +29,24 @@ interface ArmCapture {
 	readonly screen: string;
 }
 
-interface ProviderRequestMetrics {
-	readonly estimatedInputTokens: number;
-	readonly hasResult?: boolean;
-	readonly messageTokens: number;
-	readonly resultImageCount?: number;
-	readonly schemaChars: number;
-	readonly systemPromptChars: number;
-	readonly toolNames: string[];
+const PROVIDER_REQUEST_SCHEMA = Type.Object(
+	{
+		estimatedInputTokens: Type.Number(),
+		hasResult: Type.Optional(Type.Boolean()),
+		messageTokens: Type.Number(),
+		resultImageCount: Type.Optional(Type.Number()),
+		schemaChars: Type.Number(),
+		systemPromptChars: Type.Number(),
+		toolNames: Type.Array(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+type ProviderRequestMetrics = Static<typeof PROVIDER_REQUEST_SCHEMA>;
+
+function providerRequest(line: string): ProviderRequestMetrics {
+	const record = JSON.parse(line);
+	if (!Check(PROVIDER_REQUEST_SCHEMA, record)) throw new Error(`Malformed Code Mode provider capture: ${line}`);
+	return record;
 }
 
 async function capture(tmux: Tmux, session: string, styled = false): Promise<string> {
@@ -127,7 +139,7 @@ async function runOldEnvelopeBenchmark(root: string, temporary: string): Promise
 	if (exitCode !== 0) throw new Error(`Old Code Mode benchmark exited ${String(exitCode)}: ${stderr || stdout}`);
 	const line = (await readFile(logPath, "utf8")).trim().split("\n")[0];
 	if (!line) throw new Error("Missing old Code Mode provider capture");
-	return JSON.parse(line) as ProviderRequestMetrics;
+	return providerRequest(line);
 }
 
 async function runArm(
@@ -268,10 +280,11 @@ try {
 	await writeFile(join(temporary, "project", "pixel-copy.png"), Buffer.from(MEDIA_FIXTURE_PNG, "base64"));
 	const oldEnvelopeRequest = await runOldEnvelopeBenchmark(root, temporary);
 	const scenarios = ["group", "failure", "media", "cancel"] as const;
-	if (SCENARIO_FILTER && !scenarios.includes(SCENARIO_FILTER as (typeof scenarios)[number])) {
+	const selectedScenario = SCENARIO_FILTER ? scenarios.find((scenario) => scenario === SCENARIO_FILTER) : undefined;
+	if (SCENARIO_FILTER && !selectedScenario) {
 		throw new Error(`Unknown Code Mode TUI scenario: ${SCENARIO_FILTER}`);
 	}
-	const selectedScenarios = SCENARIO_FILTER ? scenarios.filter((scenario) => scenario === SCENARIO_FILTER) : scenarios;
+	const selectedScenarios = selectedScenario ? [selectedScenario] : scenarios;
 	for (const scenario of selectedScenarios.filter((candidate) => candidate !== "cancel")) {
 		for (const [width, height] of [
 			[100, 32],
@@ -334,7 +347,7 @@ try {
 		const requests = (await readFile(join(temporary, `provider-${reportScenario}-${mode}-100.jsonl`), "utf8"))
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as ProviderRequestMetrics);
+			.map(providerRequest);
 		const first = requests[0];
 		if (!first) throw new Error(`Missing ${mode} provider capture`);
 		return {
@@ -387,7 +400,7 @@ try {
 		const codeMediaRequests = (await readFile(join(temporary, "provider-media-code-100.jsonl"), "utf8"))
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as { hasResult?: boolean; resultImageCount?: number });
+			.map(providerRequest);
 		if (!codeMediaRequests.some((request) => request.hasResult && request.resultImageCount === 2)) {
 			throw new Error(
 				`Code Mode did not restore both normalized nested images in provider context: ${JSON.stringify(codeMediaRequests)}`,

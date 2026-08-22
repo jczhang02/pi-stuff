@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { Type } from "typebox";
+import { Check } from "typebox/value";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { waitForDetachedProcess } from "./detached-process.js";
 import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
@@ -10,6 +12,10 @@ import { CERTIFIED_PI_VERSION } from "./pi-host-contract.js";
 const PI_BINARY = process.env["PI_BIN"] ?? "/opt/pi-coding-agent/pi";
 const TIMEOUT_MS = 30_000;
 const execFileAsync = promisify(execFile);
+const PROVIDER_RECORD_SCHEMA = Type.Object(
+	{ toolNames: Type.Optional(Type.Array(Type.String())) },
+	{ additionalProperties: true },
+);
 
 async function assertCertifiedPi(): Promise<void> {
 	const version = (await execFileAsync(PI_BINARY, ["--version"])).stdout.trim();
@@ -122,7 +128,8 @@ try {
 
 	const providerLog = await readFile(join(temporary, "provider.jsonl"), "utf8");
 	for (const line of providerLog.trim().split("\n")) {
-		const record = JSON.parse(line) as { toolNames?: unknown };
+		const record = JSON.parse(line);
+		if (!Check(PROVIDER_RECORD_SCHEMA, record)) throw new Error(`Provider capture is malformed: ${line}`);
 		if (!Array.isArray(record.toolNames)) throw new Error(`Provider capture omitted its Tool surface: ${line}`);
 		if (
 			record.toolNames.length !== 2 ||

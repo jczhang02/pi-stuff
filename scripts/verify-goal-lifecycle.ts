@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
+import type { JsonInputObject } from "../packages/pi-stuff/src/shared/json-value.js";
 import { isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { terminateDetachedProcessGroup } from "./detached-process.js";
 
@@ -59,7 +60,7 @@ type SessionEntryRecord = Static<typeof SESSION_ENTRY_SCHEMA>;
 
 interface RpcTransport {
 	records: RpcRecord[];
-	send(command: Record<string, unknown>): Promise<RpcRecord>;
+	send(command: JsonInputObject): Promise<RpcRecord>;
 	stop(): Promise<void>;
 }
 

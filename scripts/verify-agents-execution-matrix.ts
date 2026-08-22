@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { type Static, Type } from "typebox";
+import { Check } from "typebox/value";
 import { codeModeHostBinaryPath } from "../packages/pi-stuff/src/code-mode/host/binary.js";
 import { isRuntimeNumber, isRuntimeString } from "../packages/pi-stuff/src/shared/runtime-type.js";
 import { waitForDetachedProcess } from "./detached-process.js";
@@ -30,23 +32,27 @@ interface Scenario {
 	readonly foreground: boolean;
 }
 
-interface LogRecord {
-	readonly at?: unknown;
-	readonly kind?: unknown;
-	readonly result?: unknown;
-	readonly baseExtensionMatches?: unknown;
-	readonly activeTools?: unknown;
-	readonly childBaseExtension?: unknown;
-	readonly codeModeFrozen?: unknown;
-	readonly sawRootMarker?: unknown;
-	readonly sawSuiteSurface?: unknown;
-	readonly scenario?: unknown;
-	readonly task?: unknown;
-	readonly round?: unknown;
-	readonly payloadBytes?: unknown;
-	readonly sawProjection?: unknown;
-	readonly sawSteering?: unknown;
-}
+const LOG_RECORD_SCHEMA = Type.Object(
+	{
+		activeTools: Type.Optional(Type.Array(Type.String())),
+		at: Type.Optional(Type.Number()),
+		baseExtensionMatches: Type.Optional(Type.Boolean()),
+		childBaseExtension: Type.Optional(Type.String()),
+		codeModeFrozen: Type.Optional(Type.String()),
+		kind: Type.Optional(Type.String()),
+		payloadBytes: Type.Optional(Type.Number()),
+		result: Type.Optional(Type.String()),
+		round: Type.Optional(Type.Number()),
+		sawProjection: Type.Optional(Type.Boolean()),
+		sawRootMarker: Type.Optional(Type.Boolean()),
+		sawSteering: Type.Optional(Type.Boolean()),
+		sawSuiteSurface: Type.Optional(Type.Boolean()),
+		scenario: Type.Optional(Type.String()),
+		task: Type.Optional(Type.String()),
+	},
+	{ additionalProperties: true },
+);
+type LogRecord = Static<typeof LOG_RECORD_SCHEMA>;
 
 interface ProcessResult {
 	readonly exitCode: number;
@@ -120,7 +126,11 @@ export function parseCompleteLogRecords(contents: string): LogRecord[] {
 		.slice(0, completeEnd)
 		.split("\n")
 		.filter((line) => line.trim().length > 0)
-		.map((line) => JSON.parse(line) as LogRecord);
+		.map((line) => {
+			const record = JSON.parse(line);
+			if (!Check(LOG_RECORD_SCHEMA, record)) fail("provider log contains a malformed record");
+			return record;
+		});
 }
 
 async function readRecords(logPath: string): Promise<LogRecord[]> {
