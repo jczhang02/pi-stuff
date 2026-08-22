@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { type JsonValue, parseJsonValue } from "../../../../shared/json-value.js";
 import { isRuntimeBoolean, isRuntimeObject, isRuntimeString } from "../../../../shared/runtime-type.js";
 
 export const SUBAGENT_CAPABILITY_CEILING_VERSION = 1 as const;
@@ -44,11 +45,13 @@ type Registry = Map<string, Map<symbol, Registration>>;
 
 function registry(): Registry {
 	const key = Symbol.for(SUBAGENT_CAPABILITY_CEILING_REGISTRY_KEY);
-	const store = globalThis as typeof globalThis & { [key: symbol]: unknown };
-	const existing = store[key];
-	if (existing instanceof Map) return existing as Registry;
+	const existing = Object.getOwnPropertyDescriptor(globalThis, key)?.value;
+	if (existing instanceof Map) {
+		// SAFETY: this package-owned symbol slot is initialized below only with the nested capability Registry.
+		return existing as Registry;
+	}
 	const created: Registry = new Map();
-	store[key] = created;
+	Object.defineProperty(globalThis, key, { configurable: true, value: created, writable: true });
 	return created;
 }
 
@@ -60,7 +63,7 @@ function hasControlCharacter(value: string): boolean {
 	return false;
 }
 
-function validateText(value: unknown, field: string): string {
+function validateText<Value>(value: Value, field: string): string {
 	if (
 		!isRuntimeString(value) ||
 		!value.trim() ||
@@ -74,24 +77,26 @@ function validateText(value: unknown, field: string): string {
 	return value.trim();
 }
 
-function normalizeCeiling(ceiling: SubagentCapabilityCeiling): ResolvedSubagentCapabilityCeiling {
+function normalizeCeiling<Ceiling>(ceiling: Ceiling): ResolvedSubagentCapabilityCeiling {
 	if (!ceiling || !isRuntimeObject(ceiling) || Array.isArray(ceiling))
 		throw new Error("Invalid capability ceiling; expected an object.");
 	const hasAllowedTools = Object.hasOwn(ceiling, "allowedTools");
 	const hasDenyExtensions = Object.hasOwn(ceiling, "denyExtensions");
 	if (!hasAllowedTools && !hasDenyExtensions)
 		throw new Error("Invalid capability ceiling; expected allowedTools or denyExtensions.");
-	if (hasDenyExtensions && !isRuntimeBoolean(ceiling.denyExtensions))
+	const denyExtensions = "denyExtensions" in ceiling ? ceiling.denyExtensions : undefined;
+	if (hasDenyExtensions && !isRuntimeBoolean(denyExtensions))
 		throw new Error("Invalid capability ceiling denyExtensions; expected a boolean.");
 	let allowedTools: string[] | undefined;
 	if (hasAllowedTools) {
-		if (!Array.isArray(ceiling.allowedTools))
+		const rawAllowedTools = "allowedTools" in ceiling ? ceiling.allowedTools : undefined;
+		if (!Array.isArray(rawAllowedTools))
 			throw new Error("Invalid capability ceiling allowedTools; expected an array.");
-		if (ceiling.allowedTools.length > 256)
+		if (rawAllowedTools.length > 256)
 			throw new Error("Invalid capability ceiling allowedTools; expected at most 256 names.");
 		allowedTools = [
 			...new Set(
-				ceiling.allowedTools.map((tool) => {
+				rawAllowedTools.map((tool) => {
 					const name = validateText(tool, "allowedTools entry");
 					if (!/^[A-Za-z0-9_.:-]+$/u.test(name))
 						throw new Error(`Invalid capability ceiling allowedTools entry '${name}'.`);
@@ -102,24 +107,25 @@ function normalizeCeiling(ceiling: SubagentCapabilityCeiling): ResolvedSubagentC
 			),
 		].sort();
 	}
-	return {
+	const normalized: ResolvedSubagentCapabilityCeiling = {
 		version: SUBAGENT_CAPABILITY_CEILING_VERSION,
-		...(allowedTools ? { allowedTools } : {}),
-		denyExtensions: ceiling.denyExtensions === true,
+		denyExtensions: denyExtensions === true,
 		sources: [],
 	};
+	if (allowedTools) normalized.allowedTools = allowedTools;
+	return normalized;
 }
 
-export function parseSubagentCapabilityCeiling(
-	value: unknown,
+export function parseSubagentCapabilityCeiling<Value>(
+	value: Value,
 	field = "capability ceiling",
 ): ResolvedSubagentCapabilityCeiling {
 	if (!value || !isRuntimeObject(value) || Array.isArray(value))
 		throw new Error(`Invalid ${field}; expected an object.`);
-	const record = value as Record<string, unknown>;
-	if (record.version !== SUBAGENT_CAPABILITY_CEILING_VERSION) throw new Error(`Invalid ${field} version.`);
-	const normalized = normalizeCeiling(record as SubagentCapabilityCeiling);
-	const sources = record.sources;
+	if (!("version" in value) || value.version !== SUBAGENT_CAPABILITY_CEILING_VERSION)
+		throw new Error(`Invalid ${field} version.`);
+	const normalized = normalizeCeiling(value);
+	const sources = "sources" in value ? value.sources : undefined;
 	if (!Array.isArray(sources) || sources.some((source) => !isRuntimeString(source)))
 		throw new Error(`Invalid ${field} sources; expected an array of strings.`);
 	normalized.sources = [...new Set(sources.map((source) => validateText(source, `${field} source`)))].sort();
@@ -175,12 +181,13 @@ export function intersectSubagentCapabilityCeilings(
 	if (firstDefinedList) {
 		allowedTools = [...firstDefinedList].filter((tool) => definedLists.every((list) => list.has(tool))).sort();
 	}
-	return {
+	const intersection: ResolvedSubagentCapabilityCeiling = {
 		version: SUBAGENT_CAPABILITY_CEILING_VERSION,
-		...(allowedTools ? { allowedTools } : {}),
 		denyExtensions: active.some((ceiling) => ceiling.denyExtensions),
 		sources: [...new Set(active.flatMap((ceiling) => ceiling.sources))].sort(),
 	};
+	if (allowedTools) intersection.allowedTools = allowedTools;
+	return intersection;
 }
 
 export function resolveSubagentCapabilityCeiling(
@@ -215,9 +222,9 @@ export function decodeSubagentCapabilityCeiling(
 	value: string | undefined,
 ): ResolvedSubagentCapabilityCeiling | undefined {
 	if (value === undefined || value === "") return undefined;
-	let parsed: unknown;
+	let parsed: JsonValue;
 	try {
-		parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+		parsed = parseJsonValue(Buffer.from(value, "base64url").toString("utf8"));
 	} catch (error) {
 		throw new Error(
 			`Invalid inherited capability ceiling: ${error instanceof Error ? error.message : String(error)}`,
@@ -227,7 +234,8 @@ export function decodeSubagentCapabilityCeiling(
 		!parsed ||
 		!isRuntimeObject(parsed) ||
 		Array.isArray(parsed) ||
-		(parsed as { version?: unknown }).version !== SUBAGENT_CAPABILITY_CEILING_VERSION
+		!("version" in parsed) ||
+		parsed.version !== SUBAGENT_CAPABILITY_CEILING_VERSION
 	) {
 		throw new Error("Invalid inherited capability ceiling version.");
 	}
