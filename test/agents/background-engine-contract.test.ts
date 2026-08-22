@@ -47,6 +47,7 @@ import {
 	createInitialStatus,
 	runBackgroundWork,
 	runConfiguredBackground,
+	waitForStartupControl,
 } from "../../packages/pi-stuff/src/subagents/src/runs/background/subagent-runner.js";
 import {
 	initializeWriterProcessRegistry,
@@ -438,6 +439,27 @@ describe("background runner configuration", () => {
 				throw Object.assign(new Error("injected cleanup EIO"), { code: "EIO" });
 			}),
 		).not.toThrow();
+	});
+
+	test("retries a missing startup control without accepting invalid controls", async () => {
+		const root = fixtureRoot();
+		const controlPath = path.join(root, "runner-startup-control.json");
+		const waiting = waitForStartupControl(controlPath, "expected-token", "proceed", 200);
+		setTimeout(() => {
+			fs.writeFileSync(controlPath, JSON.stringify({ action: "proceed", token: "expected-token" }));
+		}, 25);
+		await waiting;
+
+		fs.writeFileSync(controlPath, "not-json");
+		await expect(waitForStartupControl(controlPath, "expected-token", "proceed", 50)).rejects.toThrow();
+		fs.writeFileSync(controlPath, JSON.stringify({ action: "proceed", token: "wrong-token" }));
+		await expect(waitForStartupControl(controlPath, "expected-token", "proceed", 50)).rejects.toThrow(
+			"Runner startup token does not match the session lease.",
+		);
+		fs.writeFileSync(controlPath, JSON.stringify({ action: "launch", token: "expected-token" }));
+		await expect(waitForStartupControl(controlPath, "expected-token", "proceed", 50)).rejects.toThrow(
+			"Runner startup control action is invalid.",
+		);
 	});
 
 	test("contains close-time terminal proof failure when the runtime directory disappears", () => {

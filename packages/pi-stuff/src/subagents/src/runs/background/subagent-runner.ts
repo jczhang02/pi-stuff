@@ -3115,7 +3115,7 @@ async function runConfiguredWork(
 	}
 }
 
-async function waitForStartupControl(
+export async function waitForStartupControl(
 	controlPath: string,
 	token: string,
 	action: "ack" | "proceed",
@@ -3123,7 +3123,7 @@ async function waitForStartupControl(
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() <= deadline) {
-		if (fs.existsSync(controlPath)) {
+		try {
 			const payload = parseJsonValue(fs.readFileSync(controlPath, "utf-8"));
 			if (!isRuntimeObject(payload) || payload === null || Array.isArray(payload)) {
 				throw new Error("Runner startup control payload is invalid.");
@@ -3133,6 +3133,8 @@ async function waitForStartupControl(
 			if (payload.action !== "ack" && payload.action !== "proceed") {
 				throw new Error("Runner startup control action is invalid.");
 			}
+		} catch (error) {
+			if (errorCode(error) !== "ENOENT") throw error;
 		}
 		await new Promise<void>((resolve) => setTimeout(resolve, 20));
 	}
